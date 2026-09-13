@@ -85,7 +85,7 @@ differs. `pokeldn/ldn/pia4.py` implements it.
 
 ## The message framing
 
-Pia 5.11-5.12: a fixed 22-byte message header, not the presence-flagged one of 5.18 and later.
+Pia 5.11-5.12: a fixed 22-byte message header; 5.18 and later use a presence-flagged one.
 `nn::pia::transport::ProtocolMessageAccessor::Header`'s deserializer at `0x5ae870` refuses fewer
 than `0x16` bytes and copies field by field; the writer at `0x5aeb00` stores a literal 1 at byte 1.
 
@@ -164,15 +164,15 @@ joiner's constant id, variable id and service variable id.
 The handshake, measured on a retail Let's Go Pikachu, completes the full version-9 sequence (the
 inverse connection request the 5.27 simplification later removed):
 
-    ->  our connection request (type 1, is_inverse 0, target the host constant id, our location)
+    ->  the joiner's connection request (type 1, is_inverse 0, target the host constant id, its location)
     <-  the host's type-5 ack, then its inverse connection request (type 1, is_inverse 1),
-        addressed to our constant id and the variable id we sent, carrying its own location and a
+        addressed to the joiner's constant id and the variable id it sent, carrying its own location and a
         trailing ack id
-    ->  our type-5 ack of that ack id, then our connection response (type 2, result 0, the host's
+    ->  the joiner's type-5 ack of that ack id, then its connection response (type 2, result 0, the host's
         constant id at [5] and variable id at [0xD], gate byte 1 at [0x37], padded to 0x38)
-    <-  the host's connection response (type 2, result 0, 840 bytes, platform 4, carrying our ids,
-        a network id and one player info), which it repeats until we ack it
-    ->  our type-5 ack of that response
+    <-  the host's connection response (type 2, result 0, 840 bytes, platform 4, carrying the joiner's
+        ids, a network id and one player info), repeated until acknowledged
+    ->  the joiner's type-5 ack of that response
 
 The connection-response parser at `0x5b9270` reads `[1]` the result, `[5]` a big-endian u64 against
 its own constant id, `[0xD]` a big-endian u32 against its own variable id, and `[0x37]` a gate byte
@@ -180,8 +180,8 @@ the result-0 path drops when 5 or more. `station9.build_connection_response` wri
 
 ### The connection response a station sends
 
-A Let's Go station answers a connection request with 0x348 bytes, not the 0x3C the station protocol
-needs to be accepted. The body carries the network the station joined and who is playing:
+A Let's Go station answers a connection request with 0x348 bytes, where the station protocol accepts
+0x3C. The body carries the network the station joined and who is playing:
 
     0x00  1  message type 2
     0x01  1  result
@@ -220,7 +220,7 @@ seated.
 
 ## The RTT Protocol (0x58), version 3
 
-Sixteen bytes, as Sword's, but the kind is a big-endian u32 at [0] rather than a byte, and the
+Sixteen bytes, as Sword's, with the kind a big-endian u32 at [0] where Sword has a byte, and the
 timestamp is the sender's own system tick at 19.2 MHz in a u64 at [8]. A response copies the
 timestamp and sets the kind to 1. Each station sends its own requests about once a second and
 answers the other's.
@@ -242,16 +242,16 @@ the station halves the round trip and adds it to the value it was given.
 
 A joiner sends its first request 46 ms after the mesh join response; 436 of these carried a
 seven-minute session between two Let's Go endpoints. The clocks in the Clone Protocol's messages
-are this clock, not a station's own uptime: a Let's Go host that receives clone messages timed
-against something else releases the clone and leaves. `pokeldn.ldn.sync_clock`, and
+are this clock: a Let's Go host that receives clone messages timed against a station's own uptime
+releases the clone and leaves. `pokeldn.ldn.sync_clock`, and
 `bin/lgpe_join.py --connect` runs it from the mesh join (`--no-sync-clock` turns it off).
 
 The keep-alive protocol is 0x08, a message with no body; each side answers one in kind.
 
 ## The Reliable Protocol (0x7C), where the game's data is
 
-The game's own messages ride on protocol 0x7C. Pia 5.11's header is 24 bytes, not the 9 or 13 of
-5.29-5.43, and its sequence ids are 32 bits starting at 0xFFFFF82F on both stations.
+The game's own messages ride on protocol 0x7C. Pia 5.11's header is 24 bytes, where 5.29-5.43 have
+9 or 13, and its sequence ids are 32 bits starting at 0xFFFFF82F on both stations.
 
     0x00  1  flags
     0x01  1  stream id, 3 for the game's stream and 0 on an acknowledgement
@@ -264,20 +264,11 @@ The game's own messages ride on protocol 0x7C. Pia 5.11's header is 24 bytes, no
 
 An acknowledgement is the header alone with the stream and the size zero. `pokeldn.ldn.reliable3`.
 
-The payload is framed by the game, little-endian: a u32 message type, the body length as a u32, a
-u32 counting the sender's messages, and the constant 0x0000FF00, then the body.
-
-    type 1, 376 bytes   the trainer name and the partner Pokemon's name in UTF-16, a sixteen-byte
-                        value at +0x90, a 64-byte block at +0xD0 that repeats one eight-byte group
-                        where the plaintext is constant, and 64 bytes at +0x120 that look random.
-                        Everything else is zero
-    type 2, 248 bytes   no zero bytes at all, and two consecutive messages from one station share
-                        nothing after the first six bytes of the body
-
-So the game's traffic is encrypted from the second message on, and the first message is a plaintext
-handshake carrying the two stations' names and, in its two opaque blocks, what the rest is keyed
-with. A retail console acknowledges a type-1 message replayed from another session on the reliable
-window and sends no message of its own.
+The payload is framed by the game: a 16-byte header of kind, body length, step and a constant, then
+the body ("The game's messages on the reliable protocol" below). The kind 1 body carries the two
+stations' names in the clear; the kind 2 and kind 4 bodies are encrypted box structures. A retail
+console acknowledges a kind 1 message replayed from another session on the reliable window and sends
+no message of its own.
 
 ## The Clone Protocol (0x73)
 
@@ -314,9 +305,8 @@ the other's with a clock reply (type 0x21, 22 bytes). Serializers `0x51f9b0` and
 - The clone clock is milliseconds since the sender's clone protocol started (element +0x14 in the
   reply serializer), about 60 ms before its first request.
 
-A reply that copies the request's counter, count and bitmap, with the clock field zero, is what
-the retail console received from this project; it is not what a peer sends, and the retail console
-kept requesting.
+A reply that copies the request's counter, count and bitmap, with the clock field zero, leaves the
+retail console requesting; a peer fills the clock.
 
 ### Participate
 
@@ -365,7 +355,7 @@ then a u16 clone id and a byte that is 1 while the copy is empty and 3 once it i
     0x20 0x0A u16 clone id  0x05  u8 the station being acknowledged   u32 clock
 
 A station publishes the six-byte form first and the filled one after it. The six-byte form is a
-publish being retried, not a heartbeat: a settled session builds no clone records at all.
+publish being retried: a settled session builds no clone records at all.
 
 The deflate is one compress, a sync flush and a final empty block, at a level between 2 and 5:
 every captured stream is reproduced byte for byte by `clone.pack_record`. The 0xfN header's two
@@ -396,20 +386,20 @@ pcap, `scratchpad/lgpe_jsonl_clone.py` for a `--capture` log.
 
 ### The game's messages on the reliable protocol
 
-The trade's own traffic is protocol `0x7c`, `reliable3`, sequences starting at `0xFFFFF82F`. Two
-messages are sent before a trade is agreed, each a 16-byte header and a body of the stated length:
+The trade's own traffic is protocol `0x7c`, `reliable3`, sequences starting at `0xFFFFF82F`. Every
+message is a 16-byte header and a body of the stated length:
 
 ```
-+0x00  4  message kind, 1, 2 or 3
-+0x04  4  body length, 0x168 for kind 1, 0x0e8 for kind 2 and 4 for kind 3
++0x00  4  kind, 1 to 4
++0x04  4  body length: 0x168 for kind 1, 0xe8 for kinds 2 and 4, 4 for kind 3
 +0x08  4  step, counting every message a station sends from 1
 +0x0c  4  0x0000ff00
 +0x10     the body
 ```
 
-**Type 1**, body 0x168 bytes, is the first message, sent from state 6 by both stations before either
-has received anything. Its length is exactly the 0x168 the state-6 sender copies from `obj+0x450`, so
-the header is prepended to that buffer. Names are UTF-16LE, at body offsets:
+**Kind 1**, body 0x168 bytes, is the identity, sent from state 6 by both stations before either has
+received anything. Its length is the 0x168 the state-6 sender copies from `obj+0x450`, so the header
+is prepended to that buffer. Names are UTF-16LE, at body offsets:
 
 ```
 +0x34  2  0x0002
@@ -417,18 +407,17 @@ the header is prepended to that buffer. Names are UTF-16LE, at body offsets:
 +0x52 16  Pokemon name
 ```
 
-**Type 2**, body 0xe8 bytes, is the offer, sent the instant the station's published state word
+**Kind 2**, body 0xe8 bytes, is the offer, sent the instant the station's published state word
 reaches 2 and again under the next step every time the station's player changes the Pokemon it is
 offering. A station moving its cursor over a party of three sent steps 2 through 7 in a minute,
-carrying its first Pokemon twice and its second four times. Each step is owed an answer; repeating a
-step is a retransmit and is not.
+carrying its first Pokemon twice and its second four times. A new step is answered; a repeated step
+is a retransmit and is not.
 
 **Kind 3**, body 4 bytes, is the commit: one u32, sent when a station's player has agreed to the
 trade. It goes twice, carrying 1 and then 2, and each is answered with the same value under the
-answering station's next step. A station that has sent a commit shows a screen carrying a spinner and
-no button prompt, so nothing on its own side can move the trade on: it is waiting for the peer's. A
-commit that is not answered aborts the trade and leaves the save in an interrupted-trade lockout that
-refuses the next attempt.
+answering station's next step. A station that has sent a commit shows a spinner with no button
+prompt and waits for the peer's. A commit that is not answered aborts the trade and leaves the save
+in an interrupted-trade lockout that refuses the next attempt.
 
 **Kind 4**, body 0xe8 bytes, is the result: one box structure per slot, the party as it stands once
 the trade has gone through. A station that gave a Pokemon and received one sends its own unchanged
@@ -442,14 +431,17 @@ step 2  kind 2   the offer, again under a fresh step per selection
 step 5  kind 3   commit, body 1
 step 6  kind 3   commit, body 2
 step 7  kind 4   the result, one message per slot
-``` The body is one 232-byte box structure: the generation 7 layout under the generation 6
-encryption, with an encryption constant at +0x00, a zero sanity word at +0x04, a checksum at +0x06,
-and four 56-byte blocks from +0x08 permuted by `((ec >> 13) & 0x1F) % 24` and XORed with a 16-bit
-stream from an LCRNG seeded with the constant. `pokeldn.lgpe.pb7` reads and writes it; a captured
-offer decrypts to a checksum that agrees and re-encrypts to the bytes that arrived.
+```
+
+The body of kinds 2 and 4 is one 232-byte box structure: the generation 7 layout under the
+generation 6 encryption, with an encryption constant at +0x00, a zero sanity word at +0x04, a
+checksum at +0x06, and four 56-byte blocks from +0x08 permuted by `((ec >> 13) & 0x1F) % 24` and
+XORed with a 16-bit stream from an LCRNG seeded with the constant. `pokeldn.lgpe.pb7` reads and
+writes it; a captured offer decrypts to a checksum that agrees and re-encrypts to the bytes that
+arrived.
 
 The state word is byte 12 of the `f3` state data and walks 0, 1, 2 on every clone a station owns. A
-station that publishes 2 and sends its type 2 message waits there until the peer answers with one of
+station that publishes 2 and sends its kind 2 message waits there until the peer answers with one of
 its own.
 
 ### What gates the game's own first message
@@ -482,15 +474,16 @@ The receiving side stores each arriving message at `this + node * 0x1C8 + 0xC0` 
 `this+0x470`; at two it advances and goes quiet. The barrier is two because the sender delivers its
 own message to itself, so a partner that never sends leaves the count at one.
 
-### Where a retail console stops when we host
+### Where a retail console stops against a hosted session
 
 The console joins, seats in the mesh, participates, answers the clone-0 announcement pair, announces
 its own copy, acknowledges the data, and performs the take-over burst on a clone the host announces:
 an 0x82 on clone type 1, a 0x91 on clone type 4, a 0x91 on clone type 2 carrying its own station,
 and an 0x84 on clone type 4. A joiner in a session that works sends three more messages in the same
 burst, an 0x81 on clone type 2 with its own station and an 0xa1 on clone types 4 and 1, and then an
-0xa2 on clone type 2. What makes it send those is unresolved, and it is the message that fills the
-other station's acknowledged set.
+0xa2 on clone type 2, the message that fills the other station's acknowledged set. The host runs the
+clone participant with the joiner's take-over corrections off ("The take-over exchange a joiner runs
+once per clone"); nothing has been hosted with them on.
 
 ### What a host does with a joiner that holds no clone data
 
@@ -502,8 +495,8 @@ same point 1.1 seconds after its own participate and the host then sends the clo
 
 ### Past the gate
 
-The gate at `0x11b080` has been passed, and a Let's Go host has taken this project's joiner through
-its whole trade handshake to state 8, the settled state, in 66 milliseconds:
+The gate at `0x11b080` has been passed, and a Let's Go host has taken the joiner through its whole
+trade handshake to state 8, the settled state, in 66 milliseconds:
 
     4 -> 5    the gate passes after seven refusals
     5 -> 6
@@ -517,17 +510,16 @@ own and the peer's, compared with `b.ne` rather than a bound. It stops receiving
 the count cannot overshoot. The host's screen reads that a player has been found.
 
 The game's first message is the 376 bytes a joiner sends on the Reliable Protocol: a 16-byte header
-and the 0x168-byte body state 6 transmits. The header is `type`, `length`, `count` and a flag
-halfword, little-endian, and its length and flags are the arguments of the `0x116f30` call in state 6:
+and the 0x168-byte body state 6 transmits. The header's length and flags are the arguments of the
+`0x116f30` call in state 6:
 
-    01000000 68010000 01000000 00ff0000    type 1, 0x168 bytes, count 1
-    02000000 e8000000 02000000 00ff0000    type 2, 0xe8 bytes, count 2
-    02000000 e8000000 03000000 00ff0000    type 2, 0xe8 bytes, count 3
+    01000000 68010000 01000000 00ff0000    kind 1, 0x168 bytes, step 1
+    02000000 e8000000 02000000 00ff0000    kind 2, 0xe8 bytes, step 2
+    02000000 e8000000 03000000 00ff0000    kind 2, 0xe8 bytes, step 3
 
-In a session that works the type-1 messages are exchanged and acknowledged within 70 milliseconds,
-the clone ids 2 and 3 are announced 3.2 seconds later, and the type-2 messages follow 0.4 seconds
-after that. The type-1 body carries the two player names in UTF-16 in the clear; everything from the
-type-2 messages on is encrypted.
+In a session that works the kind 1 messages are exchanged and acknowledged within 70 milliseconds,
+the clone ids 2 and 3 are announced 3.2 seconds later, and the kind 2 messages follow 0.4 seconds
+after that.
 
 A host that has reached state 8 sends nothing further on its own. Its clone element's clock stops
 advancing and the mode word at `+0x8C` stays 0, so the subsystem that announces clone ids 2 and 3
@@ -729,9 +721,9 @@ one of the two is built from the peer's announcement.
 
 ### The take-over exchange a joiner runs once per clone
 
-A take-over is an ownership transfer, not a fault. The cancellation `0x520d30` performs is the point
-of it: the peer's announcement ends because the clone now belongs to the joiner, which announces it
-again under its own clock in the same frame. The reference exchange for the two party clones, with
+A take-over is an ownership transfer. The cancellation `0x520d30` performs ends the peer's
+announcement because the clone now belongs to the joiner, which announces it again under its own
+clock in the same frame. The reference exchange for the two party clones, with
 the host's announcement at zero:
 
 ```
@@ -756,8 +748,8 @@ to change hands, and the peer re-announces without limit: 1792 retransmits over 
 three. The clocks in the two records are correct in both cases; what is wrong is which record is
 sent.
 
-The record that drives a completion is the `0xa2`, not the `f3`: each completion is preceded by one,
-and neither of the two `f3` sends in a stalled window is followed by a completion. A station's own
+The record that drives a completion is the `0xa2`: each completion is preceded by one, and neither
+of the two `f3` sends in a stalled window is followed by a completion. A station's own
 announcer completes off the loopback of its own `0xa2` within about 6 milliseconds, which is why the
 first party clone always succeeds. The second needs the joiner's, and the per-tick builder unlinks an
 announcer about 30 milliseconds after it is linked. The joiner of a session that works sends **no** acknowledgement in its take-over burst. Measured on
@@ -784,50 +776,13 @@ keeps sending 0xa1 on clone type 1. The 0xa2 on clone type 2 is the only message
 station's bit in `clone+0xA8`, so the destination field of the announce decides whether the gate at
 `0x11b080` can ever see the acknowledged set fill.
 
-Measured against the retail Let's Go Pikachu: the console sends the 0xa2 pair and then returns to
-re-announcing 0xa1 on clone type 1, and its game sends nothing. Republishing the clone with 2 in its
-participants field where it had 3 is not part of that; a host in a session that works does the same,
-one frame after the joiner's announce.
-
-What the console does not do is publish its own copy of the clone on clone type 2. In a session that
-works the host publishes `f3` on clone type 2 with its own station, and the joiner publishes its copy
-0.04 s later; the joiner publishes nothing on clone type 2 before that. Holding the joiner's publish
-back until the console publishes its own does not make it publish.
-
-Ordered by message type, clone type and station, the joiner's whole exchange for clone id 1 now
-matches the two-console capture: the type-3 clone 0 handshake, the take-over and announcement in one
-frame, the console's `0xa2` pair, the joiner's `0xa2` on clone type 2 and its `0xe3` on clone type 4.
-The streams diverge at one message. Where the reference host sends `f3` on clone type 2 with its own
-station, the console sends `0x82` on clone type 1 again and goes on retransmitting.
-
-The console publishes two of the three record shapes with content: the 22-byte record on clone type 3
-id 0 and the 46-byte record on clone type 4 id 1, both carrying the participating mask 3, the same
-shapes a station in a session that works sends. The 34-byte record on clone type 2 with its own
-station is the one it never sends. A record of mostly zeros with a single `01` is the healthy form of
-that shape, so its length and its clone id are what identify it, not its zero count.
-
-A station in a session that works announces clone id 1, completes the publish exchange, and announces
-ids 2 and 3 about three seconds later; the console announces id 1 and stops.
-
-The same stall reproduces against an emulated host. An instance that publishes all three shapes and
-announces clone ids 1, 2 and 3 when another instance joins it does none of that when this project's
-joiner joins it instead, over the ldn_mitm association and plain UDP:
-
-| | host `0x81` | `0xa1` on clone type 1 | host `f3` on clone type 2 |
-|---|---|---|---|
-| two consoles, the reference session | 9 | 9 | 31 |
-| the retail console, our joiner | 1 | 1085 | 0 |
-| an emulated host, our joiner | 1 | 1052 | 0 |
-
-So the refusal is not a property of the retail console. Whatever the peer is waiting for, this
-project's joiner does not send it, and the stall can be reproduced under a debugger on demand.
-
 The measurement that separates a session that works from one that stalls is the retransmit count of
 `0xa1` on clone type 1. The two stations of a session that works send nine each over the whole
-session. The retail console sends 1194 in 150 seconds, one about every 0.12 s for as long as the
-session is held, so its type-1 clone announcement is never acknowledged to its satisfaction. It also
-sends `0x82` on clone type 1, the request for the joiner's copy, and asks again after the state
-acknowledgement it gets back.
+session. A peer whose announcement is taken over at every re-announcement sends one about every
+0.12 s for as long as the session is held, over a thousand in 150 seconds from the retail console
+and from an emulated host alike, and its game sends nothing. The same peer, against a joiner that takes each clone
+over once and answers a re-announcement with one `0xa2` carrying that announcement's clock, sends
+nine ("The take-over exchange a joiner runs once per clone").
 
 Every clone message is built through one function, `0x51e3d0`, the protocol object's ninth vtable
 slot; its fourth returns 0x73. Thirteen call sites build the messages, eight with a literal type

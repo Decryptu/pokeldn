@@ -41,7 +41,7 @@ held. `docs/lgpe_session.md`.
 
 - A trade with this project as the host. The console joining a hosted session announces clone id 1,
   takes over the host's, and never publishes its own copy on clone type 2, so its game sends nothing
-  (`lgpe_session.md`, "Where a retail console stops when we host"). The host runs the joiner's clone
+  (`lgpe_session.md`, "Where a retail console stops against a hosted session"). The host runs the joiner's clone
   participant with its take-over corrections off, one take-over per clone and an acknowledgement
   carrying the peer's announcement clock; nothing has been hosted with them on.
 - How the three-Pokemon link code becomes the password. Its CRC32 at application-data +4 was 0 on a
