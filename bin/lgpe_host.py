@@ -26,6 +26,9 @@ import time
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
 from pokeldn.ldn import clone, pia3, pia4, reliable3, station4, station9, sync_clock
+from pokeldn.lgpe import pb7
+from pokeldn.lgpe.trade import (TRADE_IN_PROGRESS, _answer_commit, _answer_offer, _send_step,
+                                _warn_if_mid_trade)
 from pokeldn.ldn import local_protocol as lp
 from pokeldn.ldn import mesh_protocol as mp
 from pokeldn.ldn import rtt_protocol as rtt
@@ -86,6 +89,31 @@ def build_parser():
                     help="let the LDN layer pick the session id. A Let's Go network's is the "
                          "fixed value every console advertises, which is the default here")
     ap.add_argument("--network-id", type=lambda s: int(s, 0), default=None)
+    ap.add_argument("--first", metavar="echo|PATH",
+                    help="our kind-1 identity message, sent when the console's arrives: a captured "
+                         "376-byte message, header included, or echo for the console's own back")
+    ap.add_argument("--our-trainer", metavar="TID:SID",
+                    help="the trainer id pair written over the identity's")
+    ap.add_argument("--offer", metavar="echo|PATH",
+                    help="answer the console's offer with this 232-byte box structure (echo: "
+                         "its own back), and its commits with commits")
+    ap.add_argument("--no-type4-data", dest="type4_data", action="store_false",
+                    help="publish no clone data on clone types 4 and 1. Without it the console "
+                         "never passes the gate at 0x11b080 and stays on its search screen")
+    ap.add_argument("--drive-delay", type=float, default=1.0,
+                    help="seconds between the steps the host drives an offered clone through")
+    ap.add_argument("--grace", type=float, default=900.0,
+                    help="seconds past --seconds to hold a session whose trade is half done")
+    ap.add_argument("--first-copies", type=int, default=1,
+                    help="how many kind 1 identities to send, 0.3 s apart under successive steps")
+    ap.add_argument("--advance-after", type=float, default=0.0,
+                    help="seconds after the party clones to move our state word to 2 and send the "
+                         "offer, which is what a station does as its own state word reaches 2")
+    ap.add_argument("--party-clones", type=int, default=2,
+                    help="how many party clones (ids 2 up) to announce after the identities; the "
+                         "reference host announced two")
+    ap.add_argument("--party-clones-delay", type=float, default=3.2,
+                    help="seconds after our identity to announce them")
     ap.add_argument("--session-param", type=lambda s: int(s, 0), default=None)
     return ap
 
@@ -130,7 +158,15 @@ def main(argv=None):
     session = Session(host, adv, args, record)
     t0 = time.monotonic()
     try:
-        while time.monotonic() - t0 < args.seconds:
+        while True:
+            if time.monotonic() - t0 >= args.seconds:
+                # a run that stops between the offer and the result leaves the console waiting on
+                # a peer that is gone, and it refuses the next trade for about half an hour. Hold
+                # the session until the exchange is settled or the console has left.
+                if not TRADE_IN_PROGRESS["offer"] or session.trade.get("done"):
+                    break
+                if time.monotonic() - t0 >= args.seconds + args.grace:
+                    break
             session.poll()
             time.sleep(0.005)
     except KeyboardInterrupt:
@@ -139,6 +175,7 @@ def main(argv=None):
         host.stop()
         if cap:
             cap.close()
+        _warn_if_mid_trade(tag="[lgh]")
     print(f"[lgh] done: {session.rx} datagrams in, {session.tx} out, "
           f"{len(session.payloads)} game payload(s)")
     return 0
@@ -165,15 +202,33 @@ class Session:
         self.ack_id = 1
         self.seen = {}
         self.window = reliable3.Window()
+        self.trade = {"window": self.window, "step": 1}
         self.payloads = []
         self.clone = None
+        # the reference host's order, each step timed off the console's answer to the last:
+        # its 0x33 -> a1+b1 for clone 0 30 ms later; its a2 -> the filled f3 30 ms later; the
+        # f3 -> the clone 1 announcement 30 ms later, before the e3 arrives (docs/lgpe_session.md)
+        self.announce_clone_0_at = None
         self.clone_0_announced = False
+        self.publish_clone_0_at = None
+        self.clone_0_published = False
         self.clone_0_acked = False
         self.clone_0_data = bytes(8)
         self.next_clone_0 = 0.0
+        self.announce_clone_1_at = None
         self.clone_1_announced = False
+        self.party_clones_at = None
+        self.party_clones_announced = False
+        self.advance_at = None
+        self.advanced = False
+        self.extra_first = None
+        self.drive = []
+        self.commit_clone = None
+        self.committed = False
         self.update_counter = 0
         self.session_sequence = 1
+        self.sent_nodes = None
+        self.repeat_session_at = None
         self.local_network_id = random.getrandbits(32)
         self.next_update = 0.0
         self.next_rtt = 0.0
@@ -251,35 +306,85 @@ class Session:
             return
         # A host speaks first: a console that associates and hears nothing leaves again. The
         # update session goes out from the moment a station is seated, the mesh once it has joined.
-        if now >= self.next_update:
-            self.next_update = now + 2.0
-            self.broadcast_session()
+        # the update session goes out when the session changes and once more behind it, never on a
+        # timer: a reference host sent four in 441 s, one per change, each repeated once. The mesh
+        # update is the one that goes every 2 s (docs/lgpe_session.md)
+        nodes = self.session_nodes()
+        if nodes != self.sent_nodes:
+            self.sent_nodes = nodes
+            self.session_sequence += 1
+            self.repeat_session_at = now + 0.1
+            self.broadcast_session(nodes)
+        elif self.repeat_session_at is not None and now >= self.repeat_session_at:
+            self.repeat_session_at = None
+            self.broadcast_session(nodes)
         if not self.joined:
             return
+        if now >= self.next_update:
+            self.next_update = now + 2.0
+            self.broadcast_mesh()
         if now >= self.next_rtt:
             self.next_rtt = now + 1.0
             self.send(rtt.build_v3(rtt.REQUEST, int(now * rtt.TICK_HZ_V3)), rtt.PROTOCOL)
         if self.clone is not None:
             for out in self.clone.poll(now):
+                if out[1] == clone.PARTICIPATE:
+                    print("[lgh] clone: PARTICIPATE sent, 1.1 s after the console's")
                 self.send(out, clone.PROTOCOL)
-            # the host owns clone 0 and publishes its data; the console asks for it with an empty
-            # record every half second until it arrives, and acknowledges it with an 0xe3
-            if (self.clone.participated and self.clone.peer_participated
-                    and not self.clone_0_announced):
+            if (self.announce_clone_0_at is not None and not self.clone_0_announced
+                    and now >= self.announce_clone_0_at):
                 self.clone_0_announced = True
                 self.announce_clone_0(now)
-            if (self.clone.participated and self.clone.peer_participated
-                    and self.clone_0_announced and not self.clone_0_acked
-                    and now >= self.next_clone_0):
-                self.next_clone_0 = now + 0.25
+            # the host owns clone 0 and publishes its data once the console has answered the
+            # announcement pair; the console acknowledges it with an 0xe3
+            if (self.publish_clone_0_at is not None and not self.clone_0_acked
+                    and now >= self.publish_clone_0_at and now >= self.next_clone_0):
+                self.next_clone_0 = now + 0.5
                 record = clone.build_state_record(0, HOST_INDEX, 3, self.clone.ms(now),
                                                   bytes(self.clone_0_data))
                 self.send(clone.build_data_message(clone.STATE_DATA, 3, 0xFD, 0,
                                                    self.clone.frame(now), record, flags=3),
                           clone.PROTOCOL)
-            if self.clone_0_acked and not self.clone_1_announced:
+                if not self.clone_0_published:
+                    self.clone_0_published = True
+                    # the reference host announces clone 1 in the frame it publishes clone 0, and
+                    # the joiner's own copy is a mirror of it. The console announces its own 31 ms
+                    # after this, so anything later loses the race and reverses the two roles.
+                    self.announce_clone_1_at = now
+                    print("[lgh] clone: published clone 0")
+            if (self.announce_clone_1_at is not None and not self.clone_1_announced
+                    and now >= self.announce_clone_1_at):
                 self.clone_1_announced = True
                 self.announce_clone_1(now)
+            # the party clones, ids 2 and 3, come 3.2 s after the identities in the reference
+            # session, from the host, one per party Pokemon (docs/lgpe_session.md)
+            if (self.party_clones_at is not None and not self.party_clones_announced
+                    and now >= self.party_clones_at):
+                self.party_clones_announced = True
+                for cid in range(2, 2 + self.args.party_clones):
+                    self.announce_clone(now, cid)
+                if self.args.advance_after:
+                    self.advance_at = now + self.args.advance_after
+            # the state word's move to 2 and the offer that goes with it: in the reference the
+            # two stations do this 3.4 s after the identities, within 30 ms of each other
+            while self.drive and now >= self.drive[0][0]:
+                _, cid, flags, tail = self.drive.pop(0)
+                self.clone.flags[cid] = flags
+                self.clone.tail[cid] = tail
+                self.publish_step()
+                print(f"[lgh] clone: clone {cid} -> {flags.hex()} tail {tail}")
+            if self.extra_first is not None and now >= self.extra_first[1]:
+                body, _, left = self.extra_first
+                # the same bytes, step 1 again: the receive at 0x117390 compares the message's
+                # word at +8 against a fixed value, so a copy under a fresh step is dropped
+                self.send(self.window.send(pb7.build_message(pb7.FIRST_MESSAGE, body)),
+                          reliable3.PROTOCOL)
+                left -= 1
+                self.extra_first = (body, now + 0.3, left) if left else None
+                print("[lgh] game: another identity, step 1 again")
+            if self.advance_at is not None and not self.advanced and now >= self.advance_at:
+                self.advanced = True
+                self.send_offer()
 
     def announce_clone_0(self, now):
         """The clone the host owns from the start. A host announces it with the clock-and-count
@@ -292,44 +397,80 @@ class Session:
                   clone.PROTOCOL)
         self.send(c._command(clone.CLOCK_AND_PARTICIPANT, 3, 0xFD, 0, now,
                              struct.pack(">II", ms, HOST_BIT | JOINER_BIT)), clone.PROTOCOL)
-        # a host publishes the empty record first and the filled one after it, which is the
-        # progression a working session shows
-        self.send(clone.build_data_message(clone.STATE_DATA, 3, 0xFD, 0, c.frame(now),
-                                           clone.build_empty_record(0), flags=1), clone.PROTOCOL)
-        print("[lgh] clone: announced clone 0 and published it empty")
+        print("[lgh] clone: announced clone 0 (a1 + b1)")
 
-    def announce_clone_1(self, now):
-        """The second clone, the one both stations hold. A host announces it on clone type 2 and
-        on types 4 and 1, then publishes its data; the joiner mirrors it and answers with an 0xa2
-        on clone type 2, which is the only message that puts a station in a clone's acknowledged
-        set (docs/lgpe_session.md)."""
+    def publish_step(self):
+        """Our step counter goes in the clone type 2 copies, at +12 of the 20-byte data. Both
+        stations carry their own there and it moves with every game message they send: the
+        reference pair walked 1 with the identity, 2 with the offer, 3 and 4 with the commits and
+        5 with the result (docs/lgpe_session.md)."""
+        for out in self.clone.advance_state(time.monotonic(), self.trade.get("step", 1) & 0xFF):
+            self.send(out, clone.PROTOCOL)
+
+    def send_offer(self):
+        """Our kind 2 offer, unprompted. A station sends one as its own state word reaches 2
+        rather than in answer to the peer's (docs/lgpe_session.md)."""
+        if not self.args.offer or self.args.offer == "echo":
+            print("[lgh] game: no --offer structure to send first")
+            return
+        raw = open(self.args.offer, "rb").read()
+        if len(raw) != pb7.BOX_SIZE:
+            print(f"[lgh] game: {self.args.offer} is {len(raw)} bytes, not {pb7.BOX_SIZE}")
+            return
+        body = raw if pb7.valid(raw) else pb7.encrypt(raw)
+        TRADE_IN_PROGRESS["offer"] = True
+        step = _send_step(self.trade, self.send, pb7.OFFER_MESSAGE, body)
+        print(f"[lgh] offer: *** SENT {len(body)} B step {step} *** {self.args.offer}, unprompted")
+        self.publish_step()
+
+    def announce_clone(self, now, cid):
+        """A clone this station owns. A host announces it on clone type 2 and on types 4 and 1,
+        then publishes its data on clone type 4; the joiner takes it over and announces its own
+        copy (docs/lgpe_session.md, "The take-over exchange a joiner runs once per clone")."""
         c = self.clone
+        c.owned.add(cid)
         content = b"\x01\x28\x08\xab"
         # the announcement is addressed to every station, where the rest go to the peer alone
-        announce = clone.build_command(clone.COMMAND_ANNOUNCE, 2, HOST_INDEX, 1,
+        announce = clone.build_command(clone.COMMAND_ANNOUNCE, 2, HOST_INDEX, cid,
                                        c._next_count(), HOST_BIT | JOINER_BIT)
         self.send(announce[:2] + struct.pack(">H", c.frame(now)) + announce[4:], clone.PROTOCOL)
         clk = struct.pack(">I", c.ms(now))
         for ctype in (4, 1):
-            self.send(c._command(clone.CLOCK_AND_COUNT, ctype, 0xFD, 1, now, clk + content),
+            self.send(c._command(clone.CLOCK_AND_COUNT, ctype, 0xFD, cid, now, clk + content),
                       clone.PROTOCOL)
-        record = clone.build_state_record(1, HOST_INDEX, 3, c.ms(now), bytes(32))
-        self.send(clone.build_data_message(clone.STATE_DATA, 4, 0xFD, 1, c.frame(now), record,
-                                           flags=3), clone.PROTOCOL)
-        print("[lgh] clone: announced clone 1 on clone types 2, 4 and 1")
+        if c.publish_type4:
+            record = clone.build_state_record(cid, HOST_INDEX, 3, c.ms(now), bytes(32))
+            self.send(clone.build_data_message(clone.STATE_DATA, 4, 0xFD, cid, c.frame(now),
+                                               record, flags=3), clone.PROTOCOL)
+        c.held.add(cid)
+        # the clone type 2 copy is not published here: a reference host publishes it only in the
+        # frame that answers the peer's re-announcement, with the 0x82 (docs/lgpe_session.md)
+        print(f"[lgh] clone: announced clone {cid} on clone types 2, 4 and 1")
 
-    def broadcast_session(self):
+    def announce_clone_1(self, now):
+        self.announce_clone(now, 1)
+
+    def session_nodes(self):
+        """The session's node list. The peer joins it when it joins the mesh, not when it
+        associates: a reference host declared one node until the joiner's mesh join and two from
+        the frame after it (docs/lgpe_session.md)."""
         nodes = [(self.host.our_ip, PIA_PORT, 0)]
-        if self.peer_ip:
+        if self.peer_ip and self.joined:
             nodes.append((self.peer_ip, PIA_PORT, 1))
+        return tuple(nodes)
+
+    def broadcast_session(self, nodes):
         body = local_host.build_update_session(
             self.session_sequence, self.local_network_id, self.args.variable_id,
-            ldn_service_variable_id(self.host.our_mac), self.our_const.to_bytes(8, "big"), nodes)
-        self.session_sequence += 1
+            # the Local Protocol's body carries the constant id little-endian where the message
+            # header carries it big-endian (tests/test_pia4.py, over a retail console's own
+            # announcement). The game resolves a message's sender to a node through this table.
+            ldn_service_variable_id(self.host.our_mac), self.our_const.to_bytes(8, "little"),
+            list(nodes))
         self.send(body, lp.PROTOCOL, destination=0,
                   flags=pia3.MESSAGE_FLAG_BITMAP | pia3.MESSAGE_FLAG_UNBUNDLED)
-        if not self.joined:
-            return
+
+    def broadcast_mesh(self):
         self.update_counter += 1
         entries = [(self.our_location, HOST_INDEX)]
         if self.peer_location:
@@ -361,14 +502,10 @@ class Session:
             self.send(b"", KEEPALIVE_PROTOCOL)
         elif protocol == clone.PROTOCOL:
             if self.clone is None:
-                self.clone = clone.Participant(time.monotonic(), dest=JOINER_BIT, own=HOST_BIT,
-                                               station=HOST_INDEX)
-            d = clone.parse_data_message(pl)
-            if d and d["type"] == clone.STATE_ACK and d["clone_id"] == 0 \
-                    and not self.clone_0_acked:
-                self.clone_0_acked = True
-                print("[lgh] clone: the console acknowledged our clone 0")
-            for out in self.clone.receive(pl, time.monotonic()):
+                self.new_clone()
+            now = time.monotonic()
+            self.clone_step(pl, now)
+            for out in self.clone.receive(pl, now):
                 self.send(out, clone.PROTOCOL)
         elif protocol == reliable3.PROTOCOL:
             r = reliable3.parse(pl)
@@ -380,6 +517,123 @@ class Session:
                 open(name, "wb").write(r["payload"])
                 print(f"[lgh] *** THE CONSOLE'S GAME PAYLOAD *** {r['size']}B -> {name}")
                 print(f"[lgh]     {r['payload'][:48].hex()}")
+                self.game(pb7.parse_message(r["payload"]))
+
+    def game(self, msg):
+        """The trade's own protocol: our identity once the console's arrives, then the offer and
+        the commit answered the way the joiner answers a host's."""
+        if msg is None:
+            print("[lgh] game: not a trade message")
+            return
+        print(f"[lgh] game: kind {msg['kind']} step {msg['step']} body {msg['size']} B")
+        if msg["kind"] == pb7.FIRST_MESSAGE and self.args.first and not self.trade.get("first"):
+            self.trade["first"] = True
+            # echo: the console's own identity back, under our trainer id, which separates a
+            # field it needs from the peer from a screen that waits on something else
+            body = (pb7.build_message(msg["kind"], msg["body"]) if self.args.first == "echo"
+                    else open(self.args.first, "rb").read())
+            first = pb7.parse_message(body)
+            if first and self.args.our_trainer:
+                tid, sid = (int(v, 0) for v in self.args.our_trainer.split(":"))
+                body = pb7.build_message(first["kind"], pb7.set_trainer_id(first["body"], tid, sid))
+            self.send(self.window.send(body), reliable3.PROTOCOL)
+            self.trade["step"] = 1
+            self.publish_step()
+            print(f"[lgh] game: *** SENT our identity *** {len(body)} B from {self.args.first}")
+            # state 7 leaves for 8 at exactly two first messages counted at obj+0x470, and the
+            # console's own is assumed to be one of them. A second of ours separates a count that
+            # never sees ours from a count that needs two from the peer (main 0x34946c).
+            if self.args.first_copies > 1:
+                self.extra_first = (first["body"] if first else body[16:],
+                                    time.monotonic() + 0.3, self.args.first_copies - 1)
+            self.party_clones_at = time.monotonic() + self.args.party_clones_delay
+        elif msg["kind"] == pb7.OFFER_MESSAGE:
+            _answer_offer(self.args, self.trade, msg, self.send, tag="[lgh]")
+            self.publish_step()
+        elif msg["kind"] == pb7.COMMIT_MESSAGE:
+            _answer_commit(self.args, self.trade, msg, self.send, tag="[lgh]")
+            self.publish_step()
+        elif msg["kind"] == pb7.RESULT_MESSAGE:
+            self.trade["done"] = True
+            print("[lgh] game: *** THE RESULT *** the trade has gone through on the console")
+
+    def new_clone(self):
+        self.clone = clone.Participant(time.monotonic(), dest=JOINER_BIT, own=HOST_BIT,
+                                       station=HOST_INDEX)
+        self.clone.host_role = True
+        # the take-over corrections a joiner of ours needs against a console that announces:
+        # one take-over per clone, later re-announcements answered with one a2 carrying their clock
+        self.clone.ack_peer_clock = True
+        self.clone.ack_re_announcement = True
+        # under test: publish our copy of a taken-over clone 40 ms after the take-over, without
+        # waiting for the announcer's, which the console never sends
+        self.clone.publish_on_announce = True
+        self.clone.publish_delay = 0.04
+        self.clone.request_publishes_type4 = True
+        self.clone.publish_type4 = self.args.type4_data
+        # a retail station answers every clone type 2 publish with its own copy and keeps the
+        # exchange running about ten times a second for the whole session: the completed trade
+        # carried 2410 from the console and 2393 from the joiner (docs/lgpe_session.md)
+        self.clone.publish_once = False
+
+    def clone_step(self, pl, now):
+        """What the console's clone message schedules on the host's side."""
+        kind = pl[1] if len(pl) > 1 else -1
+        if kind == clone.PARTICIPATE:
+            print("[lgh] clone: the console PARTICIPATED")
+        elif kind == clone.COMMAND_ANNOUNCE and not self.clone_1_announced:
+            # the console announces clone 1 itself 32 ms after our clone 0 data; the Participant
+            # takes it over the way a joiner does and the wrapper's own announcement is not owed
+            self.clone_1_announced = True
+            print("[lgh] clone: the console announced clone 1 first; taking it over")
+        elif kind == clone.PARTICIPATE_ACK and self.announce_clone_0_at is None:
+            self.announce_clone_0_at = now + 0.03
+        elif kind in (clone.CLOCK_AND_COUNT_2, clone.CLOCK_COUNT_PARTICIPANT,
+                      clone.CLOCK_COMMAND) and self.clone_0_announced \
+                and self.publish_clone_0_at is None:
+            # the reference joiner answers the pair with an a2 and a c1 in one frame; a 0x91
+            # here is the answer a console gave when the pair reached it before its own a1
+            c = clone.parse_command(pl)
+            if c and (c["ctype"], c["station"], c["clone_id"]) == (3, 0xFD, 0):
+                self.publish_clone_0_at = now + 0.03
+                print(f"[lgh] clone: the console answered the clone 0 pair with {kind:#04x}")
+        d = clone.parse_data_message(pl)
+        # the offered party clone: once both stations publish 1 in each of the first three words,
+        # the host is what moves the trailing word to 1 and the joiner answers it
+        # (docs/lgpe_session.md). Until it does, the console holds "communication en cours".
+        if (d and d["type"] == clone.STATE_DATA and d["ctype"] == 2 and d["record"]
+                and d["record"].get("data", b"")[:12] == b"\x01\0\0\0" * 3
+                and self.clone.tail.get(d["clone_id"]) is None):
+            self.clone.tail[d["clone_id"]] = 1
+            self.publish_step()
+            # the rest of the walk the host drives, on the pace a player sets in a real session:
+            # 01 02 02 with the trailing word still 1, then the trailing word 2
+            # only the offered party clone walks on to 01 02 02. The clone the commit creates
+            # stops at the trailing word 1: the reference pair took it 01 01 01, trailing word 1,
+            # and the peer answered 00 01 01 with its commit (docs/lgpe_session.md).
+            self.commit_clone = (None if d["clone_id"] < 2 + self.args.party_clones
+                                 else d["clone_id"])
+            if d["clone_id"] < 2 + self.args.party_clones:
+                self.drive = [(time.monotonic() + self.args.drive_delay, d["clone_id"],
+                               b"\x01\0\0\0" + b"\x02\0\0\0" * 2, 1),
+                              (time.monotonic() + 2 * self.args.drive_delay, d["clone_id"],
+                               b"\x01\0\0\0" + b"\x02\0\0\0" * 2, 2)]
+            print(f"[lgh] clone: clone {d['clone_id']} offered on both sides; driving it on")
+        # the peer answers the commit clone with a zero in the first word and sends its kind 3 in
+        # the same frame. Both stations send one: neither run that reached this point sent ours,
+        # and the two then wait on each other (docs/lgpe_session.md).
+        if (d and d["type"] == clone.STATE_DATA and d["ctype"] == 2
+                and d["clone_id"] == self.commit_clone and d["record"]
+                and d["record"].get("data", b"")[:4] == bytes(4) and not self.committed):
+            self.committed = True
+            step = _send_step(self.trade, self.send, pb7.COMMIT_MESSAGE, b"\x01\0\0\0")
+            TRADE_IN_PROGRESS["commit"] = True
+            self.publish_step()
+            print(f"[lgh] game: *** COMMIT sent, step {step} ***")
+        if d and d["type"] == clone.STATE_ACK and d["clone_id"] == 0 \
+                and not self.clone_0_acked:
+            self.clone_0_acked = True
+            print("[lgh] clone: the console acknowledged our clone 0")
 
     def station(self, pl):
         kind = pl[0]
@@ -424,11 +678,10 @@ class Session:
             self.joined = True
             # the host starts the clone protocol: in a real session its first clock request goes
             # out about 40 ms after the join response
-            self.clone = clone.Participant(time.monotonic(), dest=JOINER_BIT, own=HOST_BIT,
-                                           station=HOST_INDEX)
+            self.new_clone()
             print("[lgh] *** THE CONSOLE JOINED THE MESH *** answered its join request; "
                   "starting the clone protocol")
-            self.broadcast_session()
+            self.broadcast_mesh()
 
 
 if __name__ == "__main__":

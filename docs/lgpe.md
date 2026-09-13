@@ -39,11 +39,10 @@ held. `docs/lgpe_session.md`.
 
 ## Unresolved
 
-- A trade with this project as the host. The console joining a hosted session announces clone id 1,
-  takes over the host's, and never publishes its own copy on clone type 2, so its game sends nothing
-  (`lgpe_session.md`, "Where a retail console stops against a hosted session"). The host runs the joiner's clone
-  participant with its take-over corrections off, one take-over per clone and an acknowledgement
-  carrying the peer's announcement clock; nothing has been hosted with them on.
+- A trade with this project as the host. A console that joins reaches its trade screen, renders both
+  Pokemon and exchanges offers in both directions, then holds "communication en cours" with every
+  button but Retour greyed (`lgpe_session.md`, "Where a retail console stops against a hosted
+  session").
 - How the three-Pokemon link code becomes the password. Its CRC32 at application-data +4 was 0 on a
   session hosted with the code Pikachu, Pikachu, Pikachu, so the code does not reach the Pia
   password field. Where the game checks it is unread.

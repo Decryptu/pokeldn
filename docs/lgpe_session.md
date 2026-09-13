@@ -474,16 +474,75 @@ The receiving side stores each arriving message at `this + node * 0x1C8 + 0xC0` 
 `this+0x470`; at two it advances and goes quiet. The barrier is two because the sender delivers its
 own message to itself, so a partner that never sends leaves the count at one.
 
-### Where a retail console stops against a hosted session
+### Hosting a retail console to its trade screen
 
-The console joins, seats in the mesh, participates, answers the clone-0 announcement pair, announces
-its own copy, acknowledges the data, and performs the take-over burst on a clone the host announces:
-an 0x82 on clone type 1, a 0x91 on clone type 4, a 0x91 on clone type 2 carrying its own station,
-and an 0x84 on clone type 4. A joiner in a session that works sends three more messages in the same
-burst, an 0x81 on clone type 2 with its own station and an 0xa1 on clone types 4 and 1, and then an
-0xa2 on clone type 2, the message that fills the other station's acknowledged set. The host runs the
-clone participant with the joiner's take-over corrections off ("The take-over exchange a joiner runs
-once per clone"); nothing has been hosted with them on.
+A console that joins a hosted session renders both Pokemon on its trade screen and exchanges the
+game's own messages. What it takes, above the layers a joiner already needed:
+
+- **The Local Protocol's body carries the host's constant id little-endian**, where the message
+  header carries the same value big-endian. The game resolves an arriving message to a node through
+  the session's station table (`0x1171b0` to `0x5bbe70` to `0x5b6130`), and a sender it cannot
+  resolve is given node 0xFD, which the receive at `0x117334` compares against 3 and skips. With the
+  id big-endian every game message from the host is dropped before it is counted, while the mesh and
+  clone protocols, which read the mesh table, are unaffected: the console sends its own first message
+  and waits at state 7 forever, its screen reading that it will soon be connected to another player.
+- The update session goes out when the session changes and once more behind it, never on a timer.
+  A reference host sent four in 441 seconds. Its node list holds one node until the peer has joined
+  the mesh and two from the frame after.
+- A station stops sending clone clock requests the moment it participates.
+- The host announces clone 1 in the frame it publishes clone 0. The console announces its own copy
+  31 milliseconds later, so a host that waits loses the race and the two roles are reversed.
+- The answer to the peer's announcement of a clone the host owns is built after the whole datagram
+  is parsed. The clock its `0xa2` must carry arrives in the `0xa1` behind the `0x81` that asks for
+  it, and an answer built from the `0x81` alone carries the host's own clock, which no completion
+  matches: the console then retransmits that announcement every half second for the rest of the
+  session and never publishes its own copy.
+- Both stations answer every clone type 2 publish with a copy of their own, about ten times a second
+  for the whole session. The completed trade carried 2410 records from the console and 2393 from the
+  joiner.
+- The 20-byte data a clone type 2 copy carries holds the station's own step counter at +12. It moves
+  with every game message the station sends, and the two stations' counters track each other.
+- An offer is answered under the step the offer carried, not the next one. A station that answers
+  under a fresh step opens a round of its own, and the two then answer each other without end.
+
+### The two clone records a trade walks
+
+The trade object publishes its state on the clone it owns and reads the peer's back. Two records
+carry it.
+
+The clone type 2 copy's 20-byte data is five words, written by `0x11bc00` and its siblings:
+
+```
++0x00  4  the state, 1 from 0x11bc00 and 4 from 0x11bcf0
++0x04  4  that call's argument, 1 on selection and 2 on confirmation
++0x08  4  a counter, incremented on each call
++0x0c  4  the station's own step, the number of game messages it has sent
++0x10  4  the trailing word
+```
+
+The clone type 4 copy's 32-byte data carries three of the same values:
+
+```
++0x00  4  the clone type 2 record's argument
++0x04 20  zero
++0x18  4  the station's step
++0x1c  4  the trailing word
+```
+
+`0x11b688` stages an arriving clone type 4 record into the trade object at `+0x1638`, and `0x11ba20`
+compares it field for field against the object's own: `+0x1638` against `obj+0x04`, `+0x163c`
+against `obj+0x10`, and one word per node from `+0x1640` against `obj+0x0c`. A host that publishes
+32 zeros there leaves every comparison unsatisfied: the console renders both Pokemon, holds
+"communication en cours" and greys every button but Retour. Carrying the state unlocks them.
+
+The offered party clone walks 1 in each of the first three words, then a trailing word of 1, then 2
+in the second and third, then a trailing word of 2. The clone the commit creates takes only the
+first two of those: 1 in each of the first three words, then a trailing word of 1, and the peer
+answers 0 in the first word with its kind 3 message. A host that walks the commit clone the way it
+walks the offered one leaves the console on its confirmation screen.
+
+Publishing no clone data on clone types 4 and 1 at all, which is what two retail consoles exchange,
+leaves a console that joins short of the gate at `0x11b080` and on its search screen.
 
 ### What a host does with a joiner that holds no clone data
 

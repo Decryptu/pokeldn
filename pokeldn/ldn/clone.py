@@ -54,6 +54,11 @@ RECORD_TAG = 0x20
 # The data a Let's Go station publishes for the clone both stations hold when the trade screen
 # opens: twenty bytes with a single 1 at offset 12, the same from both stations in a real session.
 SHARED_CLONE_DATA = bytes(12) + b"\x01" + bytes(7)
+
+
+def shared_clone_data(state_word):
+    """The 20-byte data a clone type 2 copy carries. Byte 12 is the station's state word."""
+    return bytes(12) + bytes([state_word]) + bytes(7)
 RECORD_EMPTY = 0x01                 # a clone that has no data yet: six bytes, no clock
 RECORD_STATE = 0x03
 RECORD_ACK = 0x05
@@ -244,6 +249,7 @@ class Participant:
         self.participate_after = requests_before_participate
         self.participated = False
         self.peer_participated = False
+        self.peer_participated_at = None
         self.announced = False
         self.mesh_ms = None
         self.contents = {}
@@ -253,6 +259,24 @@ class Participant:
         self.publish_deadline = {}
         self.announce_clocks = {}
         self.taken_over = {}
+        # clones this station announced itself (docs/lgpe_session.md, "The take-over exchange a
+        # joiner runs once per clone"): the peer takes them over rather than the reverse
+        self.owned = set()
+        self.owned_answered = set()
+        # byte 12 of a clone type 2 copy's 20-byte data. Both stations walk it 0, 1, 2 and each
+        # sends its kind 2 offer as it reaches 2 (docs/lgpe_session.md)
+        self.state_word = 1
+        self.held = set()
+        # (when, clone id): the answer owed to the peer's announcement of a clone we own. It is
+        # built in poll rather than in receive because the clock it must carry arrives in the
+        # 0xa1 behind the 0x81 that asks for it, in the same datagram.
+        self.answer_owned = []
+        # the trailing u32 of a clone type 2 copy's 20-byte data, when this station drives it past
+        # what the peer published (docs/lgpe_session.md)
+        self.tail = {}
+        # the first three words of a clone type 2 copy's data, when this station drives them past
+        # what the peer published: 01 01 01 on selection, then 01 02 02 (docs/lgpe_session.md)
+        self.flags = {}
         self.queue = []
         self.log = []
 
@@ -281,13 +305,27 @@ class Participant:
     def poll(self, now):
         """-> [payload] to send now: a clock request on its interval, the participate once due."""
         out = []
-        if now >= self.next_request:
+        # a station stops requesting the clock the moment it participates: the reference host sent
+        # its last at 3.343 s and participated at 3.406, the joiner 2.279 and 2.310, and neither
+        # sent one for the remaining 438 s (docs/lgpe_session.md)
+        if not self.participated and now >= self.next_request:
             self.next_request = now + self.request_interval
             out.append(build_clock_request(self.frame(now), self._next_count(), self.dest,
                                            self.tick(now)))
-        if not self.participated and self.answered >= self.participate_after:
+        if self.host_role:
+            # a host participates 1.1 s after the joiner did, measured on the reference session
+            due = (self.peer_participated
+                   and now >= self.peer_participated_at + self.participate_delay)
+        else:
+            due = self.answered >= self.participate_after
+        if not self.participated and due:
             self.participated = True
             out.append(build_participate(self.frame(now), self._next_count(), 0x0003))
+        for when, cid in list(self.answer_owned):
+            if now < when:
+                continue
+            self.answer_owned.remove((when, cid))
+            out.extend(self._owned_answer(cid, now))
         for cid, when in list(self.publish_deadline.items()):
             if now >= when:
                 del self.publish_deadline[cid]
@@ -304,8 +342,9 @@ class Participant:
                 out.append(build_data_message(
                     STATE_DATA, ctype, station, clone_id, self.frame(now),
                     build_state_record(clone_id, station, 3, self.ms(now),
-                                       self.shared.get(clone_id, SHARED_CLONE_DATA)),
+                                       self.our_data(clone_id)),
                     flags=3))
+                self.held.add(clone_id)
                 continue
             payload = content or b""
             if kind == CLOCK_AND_COUNT:
@@ -326,7 +365,8 @@ class Participant:
                         or struct.pack(">I", self.ms(now)))
                 payload = echo + struct.pack(">BBH", 0, 0, self.element_ms(now) & 0xFFFF)
             out.append(self._command(kind, ctype, station, clone_id, now, payload, qdest))
-        if self.participated and self.peer_participated_ack and not self.announced:
+        if (self.participated and self.peer_participated_ack and not self.announced
+                and not self.host_role):
             # what a joiner sends 6 ms after the host's 0x33: a ClockAndCount (0xa1) for the
             # type-3 clone id 0, count 1
             self.announced = True
@@ -335,6 +375,15 @@ class Participant:
         return out
 
     peer_participated_ack = False
+    # the host side of the exchange: participate after the peer, answer its first announcement of
+    # clone 0 with a 0x91, and never announce clone 0 the way a joiner does (docs/lgpe_session.md)
+    host_role = False
+    participate_delay = 1.1
+    request_publishes_type4 = False
+    # a retail pair publishes no clone data on clone types 4 and 1 at all: the completed trade
+    # carried none in either direction, and the trade object stages what arrives there into the
+    # buffer it compares the peer's record from (main 0x11b688, 0x11ba20)
+    publish_type4 = False
     announce_mesh_dest = True
     echo_takeover_clock = True
     takeover_per_sequence = True
@@ -402,6 +451,86 @@ class Participant:
             self.publish_deadline[cid] = now + self.publish_fallback
         return out
 
+    def our_data(self, clone_id):
+        """The 20 bytes our clone type 2 copy of `clone_id` carries: the peer's own, with our
+        state word written over byte 12."""
+        data = self.shared.get(clone_id, SHARED_CLONE_DATA)
+        tail = self.tail.get(clone_id)
+        out = (self.flags.get(clone_id) or data[:12]) + bytes([self.state_word]) + data[13:16]
+        return out + (struct.pack("<I", tail) if tail is not None else data[16:20])
+
+    def type4_data(self, clone_id):
+        """The 32 bytes a clone type 4 copy carries. The trade object stages it and compares its
+        own values against it (main 0x11b688, 0x11ba20): the second word of the clone type 2 state
+        at +0x00, the station's step at +0x18 and the trailing word at +0x1c. A reference host
+        published zeros until its player pressed and these three from then on
+        (docs/lgpe_session.md)."""
+        flags = self.flags.get(clone_id) or self.shared.get(clone_id, SHARED_CLONE_DATA)[:12]
+        arg = flags[4:8] if len(flags) >= 8 else bytes(4)
+        return arg + bytes(0x14) + struct.pack("<I", self.state_word) + \
+            struct.pack("<I", self.tail.get(clone_id, 0))
+
+    def advance_state(self, now, state_word):
+        """-> the clone type 2 copies to send when this station's state word moves. The reference
+        pair republishes every copy it holds in one frame and sends its game message with them
+        (docs/lgpe_session.md)."""
+        self.state_word = state_word
+        out = []
+        for cid in sorted(self.held):
+            out.append(build_data_message(
+                STATE_DATA, 2, self.station, cid, self.frame(now),
+                build_state_record(cid, self.station, 3, self.ms(now), self.our_data(cid)),
+                flags=3))
+            if self.publish_type4:
+                out.append(build_data_message(
+                    STATE_DATA, 4, 0xFD, cid, self.frame(now),
+                    build_state_record(cid, self.station, 3, self.ms(now),
+                                       self.type4_data(cid)), flags=3))
+        return out
+
+    def _answer_takeover(self, c, now):
+        """Queue the answer owed to the peer's announcement of a clone we own; poll sends it."""
+        self.answer_owned.append((now, c["clone_id"]))
+        return []
+
+    def _owned_answer(self, cid, now):
+        """What the announcer of a clone sends when the peer announces its own copy of it. The
+        first time, in the reference session 27 ms after the peer's take-over burst: an a2 on clone
+        type 4 and one on clone type 2 carrying the peer's announcement clock, an a1 on clone type
+        1 carrying that clock and our content, and the clone type 4 data with the peer's bit as its
+        participants. On the peer's re-announcement after that: a request (82) on clone type 1
+        and our own copy on clone type 2 (docs/lgpe_session.md)."""
+        peer_clock = self.announce_clocks.get(cid) or struct.pack(">I", self.ms(now))
+        out = []
+        if cid not in self.owned_answered:
+            self.owned_answered.add(cid)
+            # every later announcement of this clone carries a fresh sequence, and each is owed one
+            # acknowledgement carrying it or the peer's announcer never completes and it
+            # retransmits without limit (docs/lgpe_session.md)
+            self.taken_over[cid] = peer_clock
+            out.append(self._command(CLOCK_AND_COUNT_2, 4, 0xFD, cid, now,
+                                     peer_clock + struct.pack(">BBH", 1, 0,
+                                                              self.element_ms(now) & 0xFFFF)))
+            out.append(self._command(CLOCK_AND_COUNT_2, 2, self.station, cid, now,
+                                     peer_clock + struct.pack(">BBH", 0, 0,
+                                                              self.element_ms(now) & 0xFFFF)))
+            content = (self.contents.get((4, 0xFD, cid)) or self.contents.get((1, 0xFD, cid))
+                       or b"\x01\x28\x08\xab")
+            out.append(self._command(CLOCK_AND_COUNT, 1, 0xFD, cid, now, peer_clock + content))
+            if self.publish_type4:
+                out.append(build_data_message(
+                    STATE_DATA, 4, 0xFD, cid, self.frame(now),
+                    build_state_record(cid, self.station, self.dest, self.ms(now), bytes(32)),
+                    flags=self.dest))
+            return out
+        out.append(self._command(COMMAND_REQUEST, 1, 0xFD, cid, now))
+        self.published.add(cid)
+        out.append(build_data_message(
+            STATE_DATA, 2, self.station, cid, self.frame(now),
+            build_state_record(cid, self.station, 3, self.ms(now), self.our_data(cid)),
+            flags=3))
+        return out
+
     def _command(self, kind, ctype, station, clone_id, now, payload=b"", dest=None):
         m = build_command(kind, ctype, station, clone_id, self._next_count(),
                           self.dest if dest is None else dest, payload)
@@ -424,6 +553,7 @@ class Participant:
             return []
         if kind == PARTICIPATE:
             self.peer_participated = True
+            self.peer_participated_at = now
             return [build_participate(self.frame(now), self._next_count(), self.dest,
                                       kind=PARTICIPATE_ACK)]
         if kind == PARTICIPATE_ACK:
@@ -457,12 +587,17 @@ class Participant:
                     if (not self.publish_once or d["clone_id"] not in self.published
                             or seen != r["data"]):
                         self.published.add(d["clone_id"])
+                        self.held.add(d["clone_id"])
                         return [build_data_message(
                             STATE_DATA, 2, self.station, d["clone_id"], self.frame(now),
                             build_state_record(r["clone_id"], self.station, r["participants"],
-                                               self.ms(now), r["data"]),
+                                               self.ms(now), self.our_data(d["clone_id"])),
                             flags=r["participants"])]
-                return [build_data_message(STATE_ACK, d["ctype"], d["station"], d["clone_id"],
+                # a clone type 2 copy is acknowledged on clone type 1, station 0xFD, with the
+                # publisher's station in the header byte: every e3 for one in the reference
+                # session and from the console is shaped so (docs/lgpe_session.md)
+                ctype, station = (1, 0xFD) if d["ctype"] == 2 else (d["ctype"], d["station"])
+                return [build_data_message(STATE_ACK, ctype, station, d["clone_id"],
                                            self.frame(now),
                                            build_ack_record(r["clone_id"], r["station"],
                                                             r["clock"]),
@@ -478,6 +613,8 @@ class Participant:
             # allocated for that clone at 0x520c30, and 0x520ce0 completes a take-over only when
             # the take-over carries it back (docs/lgpe_session.md)
             self.announce_clocks[c["clone_id"]] = c["payload"][:4]
+        if kind == COMMAND_ANNOUNCE and c["ctype"] == 2 and c["clone_id"] in self.owned:
+            return self._answer_takeover(c, now)
         if kind == COMMAND_ANNOUNCE and c["ctype"] == 2 and c["clone_id"] != 0:
             return self._mirror_announce(c, now)
         if (self.takeover_per_sequence and kind == CLOCK_AND_COUNT and c["clone_id"] != 0
@@ -500,6 +637,9 @@ class Participant:
                     return [self._command(CLOCK_AND_COUNT_2, 2, self.station, c["clone_id"], now,
                                           seq + b"\x00\x00\x00\x02")]
                 return self._mirror_announce(c, now, takeover_only=True)
+        if kind == CLOCK_AND_COUNT_2 and c["ctype"] == 2 and c["clone_id"] in self.owned:
+            # the peer's acknowledgement of a clone we announced; its re-announcement follows
+            return []
         if kind == CLOCK_AND_COUNT_2 and c["ctype"] == 2 and c["station"] != self.station:
             # the host acknowledges our copy of the clone: acknowledge its own the same way, and
             # announce ours once more, which is what a real joiner does 35 ms later
@@ -522,6 +662,9 @@ class Participant:
                     payload = seq + payload[4:]
             return [self._command(CLOCK_AND_COUNT_2, 2, self.station, c["clone_id"], now,
                                   payload)]
+        if kind == CLOCK_COMMAND and c["clone_id"] in self.owned:
+            # the take-over of a clone we announced is answered once, off the 81 that follows it
+            return []
         if kind == CLOCK_COMMAND and c["clone_id"] != 0:
             # the peer has taken our clone over on this clone type: acknowledge it. The clone
             # type 2 answer carries our own station, where clone type 4 keeps 0xFD.
@@ -535,13 +678,37 @@ class Participant:
                                               self.element_ms(now) & 0xFFFF))]
         if kind == COMMAND_REQUEST and c["ctype"] == 1:
             # the host asks for our copy: answer with the state acknowledgement
-            return [build_data_message(STATE_ACK, 1, 0xFD, c["clone_id"], self.frame(now),
-                                       build_ack_record(c["clone_id"], 0, self.ms(now)),
-                                       flags=0)]
+            out = [build_data_message(STATE_ACK, 1, 0xFD, c["clone_id"], self.frame(now),
+                                      build_ack_record(c["clone_id"], 0, self.ms(now)),
+                                      flags=0)]
+            if self.host_role and c["clone_id"] != 0 and c["clone_id"] not in self.owned:
+                # the reference joiner answers the 82 with its own clone type 2 copy
+                # in the same frame; a console joining sends the 82 and publishes nothing itself
+                self.published.add(c["clone_id"])
+                out.append(build_data_message(
+                    STATE_DATA, 2, self.station, c["clone_id"], self.frame(now),
+                    build_state_record(c["clone_id"], self.station, 3, self.ms(now),
+                                       self.our_data(c["clone_id"])),
+                    flags=3))
+                if self.request_publishes_type4 and self.publish_type4:
+                    # under test: the announcer of a session that works publishes the clone
+                    # type 4 copy after the take-over with the taker's bit as its participants;
+                    # here the peer is the announcer and never does, so the host does it for it
+                    out.append(build_data_message(
+                        STATE_DATA, 4, 0xFD, c["clone_id"], self.frame(now),
+                        build_state_record(c["clone_id"], self.station, self.dest, self.ms(now),
+                                           bytes(32)),
+                        flags=self.dest))
+            return out
         if key == (3, 0xFD, 0):
             # the measured joiner answers of the type-3 clone: a2 echoes a1's clock with count 1,
             # c1 echoes b1's clock with count 1 and its participant bitmap, 0x84 answers 0x83
             if kind == CLOCK_AND_COUNT and len(c["payload"]) >= 8:
+                if self.host_role:
+                    # the reference host answers the joiner's announcement of clone 0, sent 6 ms
+                    # after its 0x33, with a 0x91 echoing the clock; its own a1/b1 pair follows
+                    # its own participate a second later
+                    return [self._command(CLOCK_COMMAND, 3, 0xFD, 0, now, c["payload"][:4])]
                 # echo the clock and the count and checksum bytes the announcement carried
                 return [self._command(CLOCK_AND_COUNT_2, 3, 0xFD, 0, now, c["payload"][:8])]
             if kind == CLOCK_AND_PARTICIPANT and len(c["payload"]) >= 8:
