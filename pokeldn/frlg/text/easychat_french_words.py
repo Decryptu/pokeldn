@@ -12,10 +12,10 @@ and move id [decomp:src/easy_chat.c:155], so those slots are language-safe by
 construction - `easychat.species_word` and `easychat.move_word` build them.
 """
 
-# group id -> (the run that read it, the sEasyChatGroup_* address, {index: word})
+# group id -> (the sEasyChatGroup_* address, {index: word})
 GROUPS = {
     1: (  # EC_GROUP_TRAINER
-        'bs20', 0x083DE528, {
+        0x083DE528, {
             0: 'CE SERA TOI',
             1: 'JE T’AI EU',
             2: 'ECHANGER',
@@ -44,7 +44,7 @@ GROUPS = {
             25: 'ARGENT',
         }),
     2: (  # EC_GROUP_STATUS
-        'bs35+bs36', 0x083DEA50, {
+        0x083DEA50, {
             0: 'PSY',
             1: 'PUANTEUR',
             2: 'ISOGRAISSE',
@@ -156,7 +156,7 @@ GROUPS = {
             108: 'ECRAN POUDRE',
         }),
     3: (  # EC_GROUP_BATTLE
-        'bs27', 0x083DF170, {
+        0x083DF170, {
             0: 'TECHNIQUE',
             1: 'ALLEZ',
             2: 'Nº 1',
@@ -222,7 +222,7 @@ GROUPS = {
             62: 'CAPACITE',
         }),
     4: (  # EC_GROUP_GREETINGS
-        'bs22', 0x083DF5C0, {
+        0x083DF5C0, {
             0: 'MERCI BIEN!',
             1: 'OUI',
             2: 'DEBUTONS',
@@ -267,7 +267,7 @@ GROUPS = {
             41: 'C’EST CA',
         }),
     5: (  # EC_GROUP_PEOPLE
-        'bs23', 0x083DF984, {
+        0x083DF984, {
             0: 'ADVERSAIRE',
             1: 'JE',
             2: 'TU',
@@ -345,7 +345,7 @@ GROUPS = {
             74: 'CERTAINS',
         }),
     6: (  # EC_GROUP_VOICES
-        'bs28', 0x083DFE94, {
+        0x083DFE94, {
             0: '!',
             1: '!!',
             2: '?!',
@@ -411,7 +411,7 @@ GROUPS = {
             62: 'OUAHAHA',
         }),
     7: (  # EC_GROUP_SPEECH
-        'bs19', 0x083E0370, {
+        0x083E0370, {
             0: 'QUELQU’UN',
             1: 'PAS TROP',
             2: 'DESAGREABLE',
@@ -474,7 +474,7 @@ GROUPS = {
             59: 'FANTASTIQUE',
         }),
     8: (  # EC_GROUP_ENDINGS
-        'bs21', 0x083E07E8, {
+        0x083E07E8, {
             0: 'JE VAIS',
             1: 'DU',
             2: 'OU',
@@ -546,7 +546,7 @@ GROUPS = {
             68: 'PARTOUT',
         }),
     9: (  # EC_GROUP_FEELINGS
-        'bs18', 0x083E0D54, {
+        0x083E0D54, {
             0: 'JOYEUX',
             1: 'SATISFAIT',
             2: 'PRESSE',
@@ -618,7 +618,7 @@ GROUPS = {
             68: 'COMPREND',
         }),
     10: (  # EC_GROUP_CONDITIONS
-        'bs25', 0x083E12B4, {
+        0x083E12B4, {
             0: 'CHAUD',
             1: 'EXISTE',
             2: 'EXCES',
@@ -690,7 +690,7 @@ GROUPS = {
             68: 'GRAVEMENT',
         }),
     11: (  # EC_GROUP_ACTIONS
-        'bs26', 0x083E1850, {
+        0x083E1850, {
             0: 'RENCONTRER',
             1: 'CEDE',
             2: 'DONNER',
@@ -771,7 +771,7 @@ GROUPS = {
             77: 'EVANOUI',
         }),
     12: (  # EC_GROUP_LIFESTYLE
-        'bs29', 0x083E1D68, {
+        0x083E1D68, {
             0: 'ROUTINE',
             1: 'MAISON',
             2: 'ARGENT',
@@ -819,7 +819,7 @@ GROUPS = {
             44: 'MONDE',
         }),
     13: (  # EC_GROUP_HOBBIES
-        'bs30', 0x083E214C, {
+        0x083E214C, {
             0: 'STAR',
             1: 'DESSIN ANIME',
             2: 'CHANSON',
@@ -876,7 +876,7 @@ GROUPS = {
             53: 'COCOONING',
         }),
     14: (  # EC_GROUP_TIME
-        'bs31', 0x083E252C, {
+        0x083E252C, {
             0: 'AUTOMNE',
             1: 'MATIN',
             2: 'DEMAIN',
@@ -924,7 +924,7 @@ GROUPS = {
             44: 'SEMAINE',
         }),
     15: (  # EC_GROUP_MISC
-        'bs24', 0x083E2878, {
+        0x083E2878, {
             0: 'HAUTEUR',
             1: 'PROFONDEUR',
             2: 'FACON',
@@ -969,7 +969,7 @@ GROUPS = {
             41: 'DROITE',
         }),
     16: (  # EC_GROUP_ADJECTIVES
-        'bs32', 0x083E2BB4, {
+        0x083E2BB4, {
             0: 'NOMADE',
             1: 'MINUSCULE',
             2: 'SOLIDE',
@@ -1008,7 +1008,7 @@ GROUPS = {
             35: 'ATTENDU',
         }),
     17: (  # EC_GROUP_EVENTS
-        'bs33', 0x083E2E40, {
+        0x083E2E40, {
             0: 'CHARME',
             1: 'EVENEMENTS',
             2: 'ARENE',
@@ -1039,7 +1039,7 @@ GROUPS = {
             27: 'SANS FIL',
         }),
     20: (  # EC_GROUP_TRENDY_SAYING
-        'bs34', 0x083E337C, {
+        0x083E337C, {
             0: 'CHENAPAN',
             1: 'CA BICHE',
             2: 'P’TIT GARS',
@@ -1079,5 +1079,5 @@ GROUPS = {
 # slot id -> word, flattened: (group << 9) | index, the form an Easy Chat
 # operand actually takes.
 WORDS = {(group << 9) | index: word
-         for group, (_tag, _address, words) in GROUPS.items()
+         for group, (_address, words) in GROUPS.items()
          for index, word in words.items()}

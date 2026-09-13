@@ -189,10 +189,9 @@ def test_the_leafgreen_party_was_found_by_finding_a_pokemon():
     assert rom_map.leafgreen("gEnemyParty") == 0x02024280 - 600
 
 
-def test_every_leafgreen_address_carries_the_run_that_measured_it():
-    for symbol, (address, run) in rom_map.LEAFGREEN.items():
+def test_every_leafgreen_address_is_an_address():
+    for symbol, address in rom_map.LEAFGREEN.items():
         assert isinstance(address, int) and address > 0, symbol
-        assert run.startswith("lg"), f"{symbol} has no LeafGreen run tag"
 
 
 def test_the_leafgreen_cartridge_is_identified_off_the_cartridge():
@@ -277,7 +276,7 @@ def test_the_easy_chat_region_has_its_own_delta_and_it_is_not_the_one_below_it()
     from pokeldn.frlg.text import easychat_french_words
     assert rom_map.leafgreen("sEasyChatGroups") == 0x083E353C
     assert rom_map.leafgreen_guess(0x083E3700) == 0x083E353C
-    for _run, firered_address, _words in easychat_french_words.GROUPS.values():
+    for firered_address, _words in easychat_french_words.GROUPS.values():
         assert rom_map.leafgreen_guess(firered_address) == firered_address - 0x1C4
     # And the address it would have had under the segment below is NOT where the table is.
     assert 0x083E3700 - 0x24 != rom_map.leafgreen("sEasyChatGroups")
@@ -287,7 +286,7 @@ def test_the_french_vocabulary_itself_transfers_because_a_console_said_so():
     """A run read LeafGreen's group 1 with string-gather: 26/26 words identical to a run's FireRed
     reading, same slots, same order. The counts matching was evidence; this is the confirmation."""
     from pokeldn.frlg.text import easychat_french_words
-    _run, _address, words = easychat_french_words.GROUPS[1]
+    _address, words = easychat_french_words.GROUPS[1]
     assert len(words) == 26
     assert words[0] == "CE SERA TOI" and words[25] == "ARGENT"
 

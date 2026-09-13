@@ -106,7 +106,7 @@ def test_the_pairing_puts_leafgreen_where_two_runs_of_its_own_had_measured_it():
     # Neither run knew about this method: one needled AddBagItem and the other read Random out of a
     # literal pool, and the paired call sites land on both.
     assert leafgreen_twins.TWINS[0x0809DA70] == rom_map.LEAFGREEN_ADD_BAG_ITEM
-    assert leafgreen_twins.TWINS[0x080486B0] == rom_map.LEAFGREEN["Random"][0]
+    assert leafgreen_twins.TWINS[0x080486B0] == rom_map.LEAFGREEN["Random"]
 
 
 def test_every_twin_agrees_with_the_segment_it_falls_in():

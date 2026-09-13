@@ -50,10 +50,10 @@ def test_a_group_read_off_the_console_is_read_whole():
     """A gather run that stopped on its budget leaves a group half known, and a half-known group
     is the one thing that would make `check` lie: it would pass a slot nobody has read."""
     from pokeldn.frlg.text import easychat_french_words as table
-    for group, (tag, _address, words) in table.GROUPS.items():
+    for group, (_address, words) in table.GROUPS.items():
         indices = sorted(words)
         assert indices == list(range(len(indices))), \
-            f"EC_GROUP {group} ({tag}) has a hole at {set(range(len(indices))) - set(indices)}"
+            f"EC_GROUP {group} has a hole at {set(range(len(indices))) - set(indices)}"
 
 
 def test_species_and_move_slots_need_no_table_at_all():

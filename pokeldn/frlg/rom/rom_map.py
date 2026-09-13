@@ -490,22 +490,21 @@ def read_client_funcs(dump):
 LEAFGREEN_GAME_CODE = b"BPGF"       # off the cartridge; FireRed is BPRF
 LEAFGREEN_SOFTWARE_VERSION = 0x0A   # the same Switch revision as FireRed
 LEAFGREEN = {
-    # symbol: (address, provenance)
-    "gDecompressionBuffer": (0x0201C000, "lg160"),
-    "mystery_gift_call_site": (0x08148C50, "lg160"),   # FireRed 0x08148C74, so -0x24
-    "Random": (0x080486B0, "lg162"),
-    "SeedRng": (0x080486D0, "lg162"),
-    "gRngValue": (0x03004220, "lg162"),                # named twice, from two independent pools
-    "gPlayerParty": (0x02024280, "lg164"),             # found by finding a Pokemon in a dump
-    "gPlayerPartyCount": (0x02024025, "lg164"),
-    "gEnemyParty": (0x02024028, "lg164"),              # 600 bytes below [src/pokemon.c:61-62]
-    "gSpeciesInfo": (0x0824CDD8, "lg165"),             # FireRed 0x0824CDFC, so -0x24
-    "CreateMon": (0x08041150, "lg166"),                # same as FireRed: below the split
-    "sEasyChatGroups": (0x083E353C, "lg168/lg169"),    # FireRed 0x083E3700, so -0x1C4
-    "gSpecialVar_0x8000": (0x020370B4, "lg171"),       # same as FireRed
-    "gSpecialVars": (0x08163984, "lg171"),             # FireRed 0x081639A8, so -0x24
-    "gSaveBlock1Ptr": (0x03004228, "lg175"),           # same as FireRed
-    "gSaveBlock2Ptr": (0x0300422C, "lg175"),           # same as FireRed
+    "gDecompressionBuffer": 0x0201C000,
+    "mystery_gift_call_site": 0x08148C50,   # FireRed 0x08148C74, so -0x24
+    "Random": 0x080486B0,
+    "SeedRng": 0x080486D0,
+    "gRngValue": 0x03004220,                # named twice, from two independent pools
+    "gPlayerParty": 0x02024280,             # found by finding a Pokemon in a dump
+    "gPlayerPartyCount": 0x02024025,
+    "gEnemyParty": 0x02024028,              # 600 bytes below [src/pokemon.c:61-62]
+    "gSpeciesInfo": 0x0824CDD8,             # FireRed 0x0824CDFC, so -0x24
+    "CreateMon": 0x08041150,                # same as FireRed: below the split
+    "sEasyChatGroups": 0x083E353C,          # FireRed 0x083E3700, so -0x1C4
+    "gSpecialVar_0x8000": 0x020370B4,       # same as FireRed
+    "gSpecialVars": 0x08163984,             # FireRed 0x081639A8, so -0x24
+    "gSaveBlock1Ptr": 0x03004228,           # same as FireRed
+    "gSaveBlock2Ptr": 0x0300422C,           # same as FireRed
 }
 
 # The ROM delta is a property of a region. Scanning both consoles for RAND_MULT gives eleven hits
@@ -634,7 +633,7 @@ def leafgreen_guess(firered_address):
 def leafgreen(symbol):
     """-> the LeafGreen address of `symbol`, or raise. Never falls back to the FireRed table."""
     try:
-        return LEAFGREEN[symbol][0]
+        return LEAFGREEN[symbol]
     except KeyError:
         raise KeyError(
             f"{symbol!r} has not been measured on LeafGreen; have {sorted(LEAFGREEN)}. "
