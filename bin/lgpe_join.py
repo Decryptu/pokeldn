@@ -35,7 +35,7 @@ import trio
 import ldn
 from pokeldn.ldn import pia3, pia4, station9, station4
 from pokeldn.ldn import mesh_protocol as mp
-from pokeldn.ldn import clone, sync_clock
+from pokeldn.ldn import clone, sync_clock, ldn_mitm
 from pokeldn.ldn import rtt_protocol as rtt
 from pokeldn.ldn import reliable3
 from pokeldn.ldn import local_protocol as lp
@@ -45,6 +45,118 @@ from pokeldn.host_support import resolve_keys
 from pokeldn.lgpe import (COMM_ID_PIKACHU, PASSPHRASE, PIA_PORT, PIA_VERSION, packet_iv,
                           session_keys)
 from pokeldn.lgpe.session import APP_HEADER_SIZE
+from pokeldn.lgpe import pb7
+
+
+def _survive_netlink_overflow():
+    """A netlink multicast socket returns ENOBUFS when the kernel's event queue overflows, and the
+    library's reader lets it out of the nursery, which kills the whole run.
+
+    Losing wifi events is survivable — the association is already up and nothing above the link reads
+    them. A run that dies mid-trade is not: on a retail console an interrupted trade leaves the save
+    refusing the next one, and there is no restore. So the reader swallows ENOBUFS and carries on,
+    and the socket's receive buffer is raised so it happens far less often.
+    """
+    import errno
+    import socket as _socket
+    try:
+        import netlink
+    except ImportError:
+        return
+    inner = netlink.NetlinkSocket.start
+
+    async def start(self):
+        try:
+            self._socket.setsockopt(_socket.SOL_SOCKET, _socket.SO_RCVBUF, 8 << 20)
+        except OSError:
+            pass
+        while True:
+            try:
+                await inner(self)
+                return
+            except OSError as exc:
+                if exc.errno != errno.ENOBUFS:
+                    raise
+                print("[lg] netlink: event queue overflowed, continuing")
+
+    netlink.NetlinkSocket.start = start
+
+
+_survive_netlink_overflow()
+
+# set once the peer has offered: a run that ends abnormally after this point has left a trade half
+# done, which on a retail console locks the save out of the next one for about half an hour
+TRADE_IN_PROGRESS = {"offer": False, "commit": False}
+
+
+def _warn_if_mid_trade():
+    """Say plainly that the link died with a trade half done.
+
+    A run that ends here has left the peer waiting, and a retail console answers that by refusing the
+    next trade for about half an hour with no save restore available. Reading a run's end as one's
+    own doing rather than checking why it ended is what made this cost a lockout once already.
+    """
+    if not TRADE_IN_PROGRESS["offer"]:
+        return
+    stage = "after the commit" if TRADE_IN_PROGRESS["commit"] else "during the offers"
+    print(f"[lg] *** THE LINK ENDED MID-TRADE, {stage} *** the peer was mid-exchange when this "
+          "run stopped. A console will refuse the next trade for about half an hour.")
+
+
+def _send_step(state, send, kind, body):
+    """Send one trade message under our next step and return it."""
+    state["step"] = step = state.get("step", 1) + 1
+    send(state["window"].send(pb7.build_message(kind, body, step=step)), reliable3.PROTOCOL)
+    return step
+
+
+def _answer_commit(args, state, msg, send):
+    """The peer's player has agreed to the trade. Agree back.
+
+    The commit is one u32 holding 1. Both stations send one, and the peer sits on its "Attention!"
+    screen with a spinner until ours arrives: that screen has no button, so nothing on its side can
+    move the trade on.
+    """
+    if not args.offer or msg["step"] <= state.get("answered_step", 0):
+        return
+    state["answered_step"] = msg["step"]
+    TRADE_IN_PROGRESS["commit"] = True
+    step = _send_step(state, send, pb7.COMMIT_MESSAGE, msg["body"])
+    print(f"[lg] offer: *** COMMITTED step {step} *** answering the host's step {msg['step']}")
+
+
+def _answer_offer(args, state, msg, send):
+    """The host has offered a Pokemon. Answer with ours, once.
+
+    Its offer is a box structure whose checksum we can verify, so `--offer echo` returns exactly the
+    bytes it sent, which is by construction a structure the game accepts: a refusal of that one is
+    about the protocol rather than the contents.
+    """
+    if not args.offer or msg["step"] <= state.get("answered_step", 0):
+        return
+    if not pb7.valid(msg["body"]):
+        print("[lg] offer: the host's structure did not verify; not answering")
+        return
+    plain = pb7.decrypt(msg["body"])
+    print(f"[lg] offer: the host holds species "
+          f"{int.from_bytes(plain[8:10], 'little')} "
+          f"{plain[0x40:0x5A].decode('utf-16le').split(chr(0))[0]!r}")
+    if args.offer == "echo":
+        body = msg["body"]
+    else:
+        raw = open(args.offer, "rb").read()
+        if len(raw) != pb7.BOX_SIZE:
+            print(f"[lg] offer: {args.offer} is {len(raw)} bytes, not {pb7.BOX_SIZE}")
+            return
+        body = raw if pb7.valid(raw) else pb7.encrypt(raw)
+    # the peer sends a fresh message under the next step every time its player changes what it is
+    # offering, so an answer is owed per step rather than once per session
+    state["answered_step"] = msg["step"]
+    TRADE_IN_PROGRESS["offer"] = True
+    step = _send_step(state, send, pb7.OFFER_MESSAGE, body)
+    what = "the host's own structure" if args.offer == "echo" else args.offer
+    print(f"[lg] offer: *** SENT {len(body)} B step {step} *** {what} "
+          f"(answering the host's step {msg['step']})")
 
 STALE_VIFS = ["ldn", "ldn-mon", "ldn-tap", "ldnclient"]
 
@@ -104,15 +216,69 @@ def facts_of(net):
     }
 
 
-def make_socket(ifname):
+class _IpParticipant:
+    def __init__(self, ip, mac, name=b""):
+        self.ip_address, self.mac_address, self.name = ip, mac, name
+        self.connected = True
+
+
+class _IpNetwork:
+    """A scanned network's stand-in when the peer is reached over IP instead of the radio: an
+    emulator's Pia socket on :12345. Only `application_data` decides the session key."""
+
+    def __init__(self, app, host_ip, host_mac, our_ip, our_mac):
+        self.application_data = app
+        self.ssid = b""
+        self.server_random = self.nonce = b""
+        self.challenge = None
+        self.local_communication_id = COMM_ID_PIKACHU
+        self.scene_id = self.version = self.app_version = 0
+        self.channel = 0
+        self.num_participants, self.max_participants = 1, 8
+        self.address = host_ip
+        self.participants = [_IpParticipant(host_ip, host_mac),
+                             _IpParticipant(our_ip, our_mac)]
+
+
+class _IpSession:
+    """`ldn.connect`'s shape with no radio behind it."""
+
+    def __init__(self, net):
+        self._net = net
+
+    async def __aenter__(self):
+        return self
+
+    async def __aexit__(self, *exc):
+        return False
+
+    def info(self):
+        return self._net
+
+
+def _mac(text):
+    raw = bytes.fromhex(text.replace(":", "").replace("-", ""))
+    if len(raw) != 6:
+        raise ValueError(f"a MAC is six bytes, got {len(raw)}")
+    return raw
+
+
+def _blob(text):
+    if text.startswith("@"):
+        return open(text[1:], "rb").read()
+    return bytes.fromhex(text)
+
+
+def make_socket(ifname, bind_ip=None):
     s = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
     s.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
     s.setsockopt(socket.SOL_SOCKET, socket.SO_BROADCAST, 1)
-    try:
-        s.setsockopt(socket.SOL_SOCKET, socket.SO_BINDTODEVICE, ifname.encode())
-    except PermissionError:
-        pass
-    s.bind(("", PIA_PORT))
+    if bind_ip is None:
+        try:
+            s.setsockopt(socket.SOL_SOCKET, socket.SO_BINDTODEVICE, ifname.encode())
+        except (PermissionError, OSError):
+            pass
+    s.bind((bind_ip or "", PIA_PORT))
     s.setblocking(False)
     return s
 
@@ -183,6 +349,61 @@ def build_parser():
                     help="once in the mesh, do not run the clone clock exchange (requests every "
                          "0.2 s, replies with our ms clock, participate after ten answers: "
                          "docs/lgpe_session.md). Default: run it")
+    ap.add_argument("--over-ip", action="store_true",
+                    help="reach the peer over plain UDP instead of the radio: no scan, no LDN "
+                         "association, the Pia socket straight at --host-ip:12345. For an "
+                         "emulated host under a debugger. Needs --app-data, --host-mac, --our-mac")
+    ap.add_argument("--host-ip", default="127.0.0.2")
+    ap.add_argument("--host-mac", help="the hosting station's MAC, as it appears in its own "
+                                       "advertisement")
+    ap.add_argument("--our-ip", default="127.0.0.3")
+    ap.add_argument("--our-mac", help="the MAC we present; any value the host has not seen")
+    ap.add_argument("--app-data", help="the host's advertise data as hex, or @FILE, instead of "
+                                       "scanning for it. Needs --host-mac alongside")
+    ap.add_argument("--discover-timeout", type=float, default=5.0,
+                    help="how long to wait for the scan response and the sync")
+    ap.add_argument("--ack-peer-clock", action="store_true",
+                    help="carry the peer's announcement clock in our acknowledgement on clone type "
+                         "2 rather than the clock round-tripped from our own announcement, which "
+                         "is what a reference joiner carries")
+    ap.add_argument("--our-trainer", metavar="TID:SID",
+                    help="replace the trainer id pair in the first message. A payload captured "
+                         "between two emulators that share a save carries the host's own pair, "
+                         "which presents the joiner as the station it is trading with")
+    ap.add_argument("--offer", metavar="echo|PATH",
+                    help="answer the host's type 2 message with a box structure of our own. "
+                         "'echo' returns the host's own, which the game accepts by construction; "
+                         "a path is a 232-byte structure, encrypted or not")
+    ap.add_argument("--ack-re-announce", action="store_true",
+                    help="answer a peer re-announcement with an acknowledgement carrying its "
+                         "clock rather than a second take-over. A reference joiner takes a clone "
+                         "over once and never again")
+    ap.add_argument("--publish-delay", type=float, default=0.09,
+                    help="seconds after the take-over burst to publish our copy, with "
+                         "--publish-on-announce. Zero puts it in the burst's own frame")
+    ap.add_argument("--publish-once", action="store_true",
+                    help="answer only the first of a peer's repeated publishes with a copy of our "
+                         "own and acknowledge the rest. Measured to stop the peer publishing at "
+                         "all, so the default answers each one")
+    ap.add_argument("--own-takeover-clock", action="store_true",
+                    help="stamp our own clock on the take-over instead of the clock the peer's "
+                         "announcement carried. The peer completes a take-over only when it "
+                         "matches the sequence it allocated, so the echo is the default")
+    ap.add_argument("--announce-after-burst", action="store_true",
+                    help="send the announcement of our own copy a tick after the take-over burst. "
+                         "Both stations of a session that works put all seven in one frame, which "
+                         "is the default here")
+    ap.add_argument("--publish-on-announce", action="store_true",
+                    help="publish our copy of a clone on clone type 2 as part of the announce "
+                         "burst. A real joiner waits for the peer to publish its own copy first, "
+                         "which is the default here")
+    ap.add_argument("--publish-fallback", type=float, default=3.0,
+                    help="publish anyway this many seconds after the announce if the peer never "
+                         "published its own copy. Not a measured value")
+    ap.add_argument("--peer-announce-dest", action="store_true",
+                    help="address our own clone announce to the peer alone. A real joiner "
+                         "addresses the first announce of a clone to the whole mesh "
+                         "(dest 0x0003), which is the default here")
     ap.add_argument("--clone-requests", type=int, default=10,
                     help="answered clock requests of our own before the participate (measured 10)")
     return ap
@@ -201,6 +422,12 @@ def pick(nets, want):
 def main(argv=None):
     ap = build_parser()
     args = ap.parse_args(argv)
+    if args.over_ip:
+        if not args.our_mac:
+            ap.error("--over-ip needs --our-mac")
+        if args.app_data and not args.host_mac:
+            ap.error("--app-data replaces the scan, so it needs --host-mac with it")
+        return _main_over_ip(args)
     if os.geteuid() != 0:
         ap.error("must run as root (LDN needs the raw radio)")
     phy = find_ap_phy(log=print) if args.phy == "auto" else args.phy
@@ -253,6 +480,67 @@ def main(argv=None):
     param.name, param.app_version = args.name.encode(), net.app_version
     param.phyname, param.ifname = phy, args.ifname
 
+    return _run(args, net, keys, facts, lambda: ldn.connect(param))
+
+
+def _discover(args, our_mac):
+    """The ldn_mitm association, in place of the radio: scan the host, then hold a TCP connection
+    open for the session so its game has a node for us. -> (advertise data, host MAC, socket)."""
+    with socket.socket(socket.AF_INET, socket.SOCK_DGRAM) as us:
+        us.settimeout(args.discover_timeout)
+        # scan from our own address: ldn_mitm drops a scan whose source is the host's own LDN
+        # address, and the response goes back to whatever it came from
+        us.bind((args.our_ip, 0))
+        us.sendto(ldn_mitm.build(ldn_mitm.SCAN), (args.host_ip, ldn_mitm.PORT))
+        print(f"[ldn] scan -> {args.host_ip}:{ldn_mitm.PORT}")
+        while True:
+            data, _ = us.recvfrom(4096)
+            kind, info = ldn_mitm.parse(data)
+            if kind == ldn_mitm.SCAN_RESP:
+                break
+            print(f"[ldn] ignoring type {kind}")
+    print(f"[ldn] scan response: NetworkInfo {len(info)} B, host mac "
+          f"{ldn_mitm.host_mac(info).hex()}")
+
+    tcp = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+    tcp.settimeout(args.discover_timeout)
+    tcp.bind((args.our_ip, 0))
+    tcp.connect((args.host_ip, ldn_mitm.PORT))
+    node = ldn_mitm.build_node_info(args.our_ip, our_mac, args.name.encode())
+    tcp.sendall(ldn_mitm.build(ldn_mitm.CONNECT, node))
+    kind, synced = ldn_mitm.parse(tcp.recv(8192))
+    if kind != ldn_mitm.SYNC_NETWORK:
+        raise RuntimeError(f"the host answered our connect with type {kind}, not SyncNetwork")
+    print("[ldn] *** JOINED *** the host synced the network with us in it; holding the connection")
+    tcp.settimeout(None)
+    return ldn_mitm.advertise_data(synced), ldn_mitm.host_mac(synced), tcp
+
+
+def _main_over_ip(args):
+    """Join a host reached over plain UDP: an emulated console on a debugger, with no radio and no
+    LDN association between us. The session key still comes from its advertise data."""
+    our_mac = _mac(args.our_mac)
+    held = None
+    if args.app_data:
+        app, host_mac = _blob(args.app_data), _mac(args.host_mac)
+    else:
+        app, host_mac, held = _discover(args, our_mac)
+        print(f"[ldn] advertise data {app.hex()} ({len(app)} B)")
+    net = _IpNetwork(app, args.host_ip, host_mac, args.our_ip, our_mac)
+    net.held_connection = held          # the host FINs it when its game leaves; keep it open
+    keys = session_keys(net)
+    facts = facts_of(net)
+    print(f"[lg] over IP: host {args.host_ip}:{PIA_PORT} mac={host_mac.hex()}, "
+          f"us {args.our_ip} mac={our_mac.hex()}")
+    print(f"[lg] {keys}")
+    for k in ("app_header",):
+        print(f"[net] {k:24s} {facts[k]}")
+    return _run(args, net, keys, facts, lambda: _IpSession(net))
+
+
+def _run(args, net, keys, facts, opener):
+    """Everything above the link: the Pia handshake, the mesh, the clone session and the
+    game. `opener` yields the seat, from the radio or from nothing at all."""
     cap = open(args.capture, "w") if args.capture else None
 
     def record(**kw):
@@ -262,7 +550,7 @@ def main(argv=None):
     record(rec="target", **facts, session_key=keys.session_key.hex())
 
     async def attempt():
-        async with ldn.connect(param) as network:
+        async with opener() as network:
             info = network.info()
             parts = list(getattr(info, "participants", []) or [])
             macs = [bytes(getattr(p, "mac_address", b"") or b"") for p in parts]
@@ -280,7 +568,7 @@ def main(argv=None):
             ours = parts[1] if len(parts) > 1 else None
             our_ip = str(getattr(ours, "ip_address", "") or host_ip.rsplit(".", 1)[0] + ".2")
             our_mac = macs[1] if len(macs) > 1 else (macs[0] if macs else bytes(6))
-            sock = make_socket(args.ifname)
+            sock = make_socket(args.ifname, args.our_ip if args.over_ip else None)
             t0 = time.monotonic()
             n_rx = n_ok = n_v3 = 0
             versions = {}
@@ -393,6 +681,17 @@ def main(argv=None):
                     path = state["payloads"].pop(0)
                     state["next_payload"] = time.monotonic() + args.reliable_interval
                     body = open(path, "rb").read()
+                    if args.our_trainer:
+                        # a capture taken between two emulators sharing a save carries the host's
+                        # own trainer id, so a joiner replaying it presents itself as the station
+                        # it is trading with
+                        msg = pb7.parse_message(body)
+                        tid, sid = (int(v, 0) for v in args.our_trainer.split(":"))
+                        if msg:
+                            body = pb7.build_message(
+                                msg["kind"], pb7.set_trainer_id(msg["body"], tid, sid))
+                            print(f"[lg] reliable: trainer id "
+                                  f"{pb7.trainer_id(msg['body'])} -> ({tid}, {sid})")
                     to_host_bitmap(state["window"].send(body), reliable3.PROTOCOL)
                     print(f"[lg] reliable: sent {len(body)} B from {path}")
                 if args.connect and not args.no_rtt and state["mesh_joined"] \
@@ -410,6 +709,15 @@ def main(argv=None):
                         state["clone"] = clone.Participant(
                             now, dest=HOST_STATION_BIT, own=1 << our_index, station=our_index,
                             requests_before_participate=args.clone_requests)
+                        state["clone"].announce_mesh_dest = not args.peer_announce_dest
+                        state["clone"].announce_in_burst = not args.announce_after_burst
+                        state["clone"].echo_takeover_clock = not args.own_takeover_clock
+                        state["clone"].publish_once = args.publish_once
+                        state["clone"].publish_delay = args.publish_delay
+                        state["clone"].ack_peer_clock = args.ack_peer_clock
+                        state["clone"].ack_re_announcement = args.ack_re_announce
+                        state["clone"].publish_on_announce = args.publish_on_announce
+                        state["clone"].publish_fallback = args.publish_fallback
                         print("[lg] clone: sending clock requests every 0.2 s")
                     sc = state.get("sync")
                     if sc is not None and sc.now_ms(now) is not None:
@@ -505,6 +813,13 @@ def main(argv=None):
                                         n = len(w.received)
                                         open(f"{args.capture or 'scratchpad/lgpe'}"
                                              f".payload{n}.bin", "wb").write(r["payload"])
+                                        msg = pb7.parse_message(r["payload"])
+                                        if msg and msg["kind"] == pb7.OFFER_MESSAGE:
+                                            _answer_offer(args, state, msg,
+                                                          to_host_bitmap)
+                                        elif msg and msg["kind"] == pb7.COMMIT_MESSAGE:
+                                            _answer_commit(args, state, msg,
+                                                           to_host_bitmap)
                                     else:
                                         print(f"[lg] reliable: acked, expects "
                                               f"{r['expected']:#x}")
@@ -559,6 +874,13 @@ def main(argv=None):
                                     to_host(lp.build_ack(seq), lp.PROTOCOL)
                                 except Exception:
                                     pass
+                        # the packet's messages are all in, so the announcement of our own copy
+                        # goes out in the same frame as the take-over, the way a real joiner does,
+                        # with the content the host's own announcements carried resolved
+                        part = state.get("clone")
+                        if part is not None and part.announce_in_burst:
+                            for out in part.poll(time.monotonic()):
+                                clone_send(out)
                         if n_ok <= 8:
                             print(f"[rx] v{hdr.version} st={hdr.station} sid={hdr.session_id:#x} "
                                   f"{len(data)}B from {addr[0]} AUTH mac={mac.hex()} "
@@ -577,6 +899,7 @@ def main(argv=None):
 
     try:
         trio.run(attempt)
+        _warn_if_mid_trade()
         return 0
     except BaseException as e:
         print(f"[lg] failed: {type(e).__name__}: {e}")
@@ -584,6 +907,7 @@ def main(argv=None):
             print(f"[lg]   caused by: {type(sub).__name__}: {sub}")
         import traceback; traceback.print_exc()
         cleanup_stale()
+        _warn_if_mid_trade()
         return 6
 
 

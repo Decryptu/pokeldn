@@ -278,17 +278,22 @@ def test_clone_announcement_is_mirrored_the_way_a_real_joiner_does():
     for ctype in (4, 1):
         assert p.receive(clone.build_command(0xA1, ctype, 0xFD, 1, 5, 2,
                                              bytes.fromhex("0000a39f0138743b")), 1.0) == []
-    out = p.receive(clone.build_command(clone.COMMAND_ANNOUNCE, 2, 0x00, 1, 6, 2), 1.0)
+    assert p.receive(clone.build_command(clone.COMMAND_ANNOUNCE, 2, 0x00, 1, 6, 2), 1.0) == []
+    # all seven go out in one frame, the way both stations of a session that works send them
+    out = [m for m in p.poll(1.0) if m[1] >= 0x80]
     kinds = [(m[1], clone.parse_command(m)["ctype"], clone.parse_command(m)["station"]) for m in out]
+    # the shape the reference joiner sends: no acknowledgement in the burst at all. It sends one
+    # 72 ms later, as a reply to the peer's own, and its session completes
     assert kinds == [(clone.COMMAND_REQUEST, 1, 0xFD), (clone.CLOCK_COMMAND, 4, 0xFD),
-                     (clone.CLOCK_COMMAND, 2, 1), (clone.COMMAND_END_ACK, 4, 0xFD)]
-    assert clone.parse_command(out[1])["payload"] == (0xA39F).to_bytes(4, "big")
-    later = [m for m in p.poll(1.05) if m[1] >= 0x80]
-    kinds = [(m[1], clone.parse_command(m)["ctype"]) for m in later]
-    assert kinds == [(clone.COMMAND_ANNOUNCE, 2), (clone.CLOCK_AND_COUNT, 4),
-                     (clone.CLOCK_AND_COUNT, 1)]
-    # the announcement carries the clock and the content the host's own announcement carried
-    assert clone.parse_command(later[1])["payload"].hex() == "0000a39f0138743b"
+                     (clone.CLOCK_COMMAND, 2, 1), (clone.COMMAND_END_ACK, 4, 0xFD),
+                     (clone.COMMAND_ANNOUNCE, 2, 1), (clone.CLOCK_AND_COUNT, 4, 0xFD),
+                     (clone.CLOCK_AND_COUNT, 1, 0xFD)]
+    # the take-over carries the clock the host stamped on its own announcement, not ours: it is the
+    # sequence the host allocated for the clone, and it completes a take-over only on a match
+    assert clone.parse_command(out[1])["payload"] == bytes.fromhex("0000a39f")
+    assert clone.parse_command(out[2])["payload"] == bytes.fromhex("0000a39f")
+    # the announcement of our own copy keeps our own clock, with the host's content behind it
+    assert clone.parse_command(out[5])["payload"].hex() == "0000a39f0138743b"
     assert p.receive(clone.build_command(clone.COMMAND_ANNOUNCE, 2, 0x00, 1, 7, 2), 1.1) == []
 
 
@@ -407,3 +412,168 @@ def test_the_host_answers_a_connection_request_and_a_join_request():
     assert (mp.PROTOCOL, mp.JOIN_RESPONSE, 148) in out
     assert (mp.PROTOCOL, mp.UPDATE_MESH, 524) in out
     assert s.peer_variable_id == 0x0B0B0B0B and s.joined
+
+
+def test_a_new_sequence_gets_a_fresh_take_over():
+    """Under `takeover_per_sequence`, a re-announcement gets a take-over carrying the new sequence.
+    Off by default: a joiner in a session that works sends one take-over per clone, and a second
+    one matches the sequence the peer allocated and cancels the announcement (0x520d30)."""
+    from pokeldn.ldn import clone
+    p = clone.Participant(0.0, dest=0x0001, own=0x0002, station=1)
+    p.takeover_per_sequence = True
+    p.participated = p.peer_participated_ack = p.announced = True
+    p.mesh_ms = 0x1418F
+
+    def announce(t, seq):
+        for ctype in (4, 1):
+            p.receive(clone.build_command(0xA1, ctype, 0xFD, 1, 5, 2,
+                                          bytes.fromhex(seq + "015cce0c")), t)
+
+    def takeover_clocks(t):
+        return [clone.parse_command(m)["payload"][:4].hex()
+                for m in p.poll(t) if m[1] == clone.CLOCK_COMMAND]
+
+    announce(1.0, "0001418f")
+    p.receive(clone.build_command(clone.COMMAND_ANNOUNCE, 2, 0x00, 1, 6, 2), 1.0)
+    assert takeover_clocks(1.0) == ["0001418f", "0001418f"]
+
+    announce(1.012, "000141c7")
+    assert takeover_clocks(1.012) == ["000141c7", "000141c7"]
+
+    # and it stays quiet while the peer retransmits the same one, which it does about ten times a
+    # second for the rest of a stalled session
+    announce(1.2, "000141c7")
+    assert takeover_clocks(1.2) == []
+
+
+def test_a_retransmitted_publish_is_answered_once_with_a_copy_then_acknowledged():
+    """A peer retransmits its publish about ten times a second. Answering each with a copy of our
+    own makes the pair trade publishes for the whole session, where a session that works carries a
+    few dozen; the copy goes once and the rest are acknowledged."""
+    from pokeldn.ldn import clone
+    p = clone.Participant(0.0, dest=0x0001, own=0x0002, station=1)
+    p.participated = p.peer_participated_ack = p.announced = True
+    p.publish_once = True
+    p.mesh_ms = 0x1000
+    record = clone.build_state_record(1, 0, 3, 0x1000, bytes(20))
+    publish = clone.build_data_message(clone.STATE_DATA, 2, 0x00, 1, 1, record, flags=3)
+    answers = [[m[1] for m in p.receive(publish, 1.0 + i * 0.1)] for i in range(5)]
+    assert answers == [[clone.STATE_DATA]] + [[clone.STATE_ACK]] * 4
+
+    # data the peer has changed is worth a copy again
+    changed = clone.build_data_message(
+        clone.STATE_DATA, 2, 0x00, 1, 2,
+        clone.build_state_record(1, 0, 3, 0x2000, bytes(19) + b"\x01"), flags=3)
+    assert [m[1] for m in p.receive(changed, 2.0)] == [clone.STATE_DATA]
+
+
+def test_a_re_announcement_is_answered_with_the_take_over_alone():
+    """The 0x82 in the burst is the request that makes a peer enqueue an announcer and allocate the
+    next sequence, so repeating the whole burst on every re-announcement mints the sequences it then
+    fails to match. A re-announcement is answered with the two clock commands and nothing else."""
+    from pokeldn.ldn import clone
+    p = clone.Participant(0.0, dest=0x0001, own=0x0002, station=1)
+    p.takeover_per_sequence = True
+    p.participated = p.peer_participated_ack = p.announced = True
+    p.mesh_ms = 0x1418F
+
+    def announce(t, seq):
+        for ctype in (4, 1):
+            p.receive(clone.build_command(0xA1, ctype, 0xFD, 1, 5, 2,
+                                          bytes.fromhex(seq + "015cce0c")), t)
+
+    announce(1.0, "0001418f")
+    p.receive(clone.build_command(clone.COMMAND_ANNOUNCE, 2, 0x00, 1, 6, 2), 1.0)
+    assert [m[1] for m in p.poll(1.0) if m[1] >= 0x80] == [
+        clone.COMMAND_REQUEST, clone.CLOCK_COMMAND, clone.CLOCK_COMMAND, clone.COMMAND_END_ACK,
+        clone.COMMAND_ANNOUNCE, clone.CLOCK_AND_COUNT, clone.CLOCK_AND_COUNT]
+
+    announce(1.03, "000141c7")
+    again = [m for m in p.poll(1.03) if m[1] >= 0x80]
+    # the two take-overs and no acknowledgement: the peer's own 0xa2 arrives in the same frame and
+    # the reply to it carries the sequence the completion matches, where one of ours would carry
+    # the announcement's clock and fail on it
+    assert [m[1] for m in again] == [clone.CLOCK_COMMAND, clone.CLOCK_COMMAND]
+    assert all(clone.parse_command(m)["payload"][:4] == bytes.fromhex("000141c7") for m in again)
+
+
+def test_a_single_take_over_leaves_the_peer_re_announcing():
+    """0x91 on clone type 2 is the negative acknowledgement: 0x520d30 unlinks the announcer on the
+    same three preconditions as 0x520ce0 and does not write +0x110. A second take-over carries the
+    sequence the peer allocated after the first, matches, and cancels the announcement it is meant
+    to complete. The reference joiner sends one per clone."""
+    from pokeldn.ldn import clone
+    p = clone.Participant(0.0, dest=0x0001, own=0x0002, station=1)
+    p.takeover_per_sequence = False
+    p.participated = p.peer_participated_ack = p.announced = True
+    p.mesh_ms = 0x1418F
+
+    def announce(t, seq):
+        for ctype in (4, 1):
+            p.receive(clone.build_command(0xA1, ctype, 0xFD, 1, 5, 2,
+                                          bytes.fromhex(seq + "015cce0c")), t)
+
+    announce(1.0, "0001418f")
+    p.receive(clone.build_command(clone.COMMAND_ANNOUNCE, 2, 0x00, 1, 6, 2), 1.0)
+    assert [m[1] for m in p.poll(1.0)].count(clone.CLOCK_COMMAND) == 2
+
+    # with it off, a re-announcement is answered with nothing, and the peer re-announces without
+    # limit: 1792 retransmits over one 180 s run against three when each is taken over
+    announce(1.03, "000141c7")
+    assert [m for m in p.poll(1.03) if m[1] == clone.CLOCK_COMMAND] == []
+    announce(1.2, "00014210")
+    assert [m for m in p.poll(1.2) if m[1] == clone.CLOCK_COMMAND] == []
+
+
+def test_a_re_announcement_is_acknowledged_rather_than_taken_over_again():
+    """`ack_re_announcement` answers a peer re-announcement with an acknowledgement carrying the
+    clock that announcement stamped. The reference joiner sends six take-overs across a whole
+    session, all at the two first announcements of each clone, and answers every re-announcement
+    after that with one 0xa2 (scratchpad/037_clone_parsed.txt, 6.839 -> 6.878)."""
+    from pokeldn.ldn import clone
+    p = clone.Participant(0.0, dest=0x0001, own=0x0002, station=1)
+    p.takeover_per_sequence = True
+    p.ack_re_announcement = True
+    p.participated = p.peer_participated_ack = p.announced = True
+    p.mesh_ms = 0x1418F
+
+    def announce(t, seq):
+        out = []
+        for ctype in (4, 1):
+            out += p.receive(clone.build_command(0xA1, ctype, 0xFD, 1, 5, 2,
+                                                 bytes.fromhex(seq + "015cce0c")), t)
+        return out
+
+    # the first announcement of a clone we do not own still gets the take-over burst
+    announce(1.0, "0001418f")
+    p.receive(clone.build_command(clone.COMMAND_ANNOUNCE, 2, 0x00, 1, 6, 2), 1.0)
+    assert [clone.parse_command(m)["payload"][:4].hex()
+            for m in p.poll(1.0) if m[1] == clone.CLOCK_COMMAND] == ["0001418f", "0001418f"]
+
+    # the re-announcement gets one acknowledgement carrying its clock, and no take-over
+    out = announce(1.012, "000141c7") + p.poll(1.012)
+    assert [clone.parse_command(m)["payload"][:4].hex()
+            for m in out if m[1] == clone.CLOCK_COMMAND] == []
+    acks = [clone.parse_command(m) for m in out if m[1] == clone.CLOCK_AND_COUNT_2]
+    assert [a["payload"].hex() for a in acks] == ["000141c700000002"]
+    assert [(a["ctype"], a["station"]) for a in acks] == [(2, 1)]
+
+
+def test_the_peers_acknowledgement_is_not_answered_with_one_of_our_own():
+    """With `ack_re_announcement` the peer's 0xa2 gets the re-announcement 35 ms later and no
+    acknowledgement: the reference joiner sends one 0xa2 per clone, answering the peer's 0xa1.
+    Answering the 0xa2 too sends a second carrying the peer's superseded announcement clock."""
+    from pokeldn.ldn import clone
+    p = clone.Participant(0.0, dest=0x0001, own=0x0002, station=1)
+    p.ack_peer_clock = p.ack_re_announcement = True
+    p.participated = p.peer_participated_ack = p.announced = True
+    p.mesh_ms = 0x1000
+    p.announce_clocks[1] = bytes.fromhex("00018435")
+
+    out = p.receive(clone.build_command(0xA2, 2, 0x00, 1, 9, 2,
+                                        bytes.fromhex("0001847f01000002")), 1.0)
+    assert [m for m in out if m[1] == clone.CLOCK_AND_COUNT_2] == []
+
+    # the announcement of our own copy still goes out 35 ms later, as the reference does
+    assert [clone.parse_command(m)["clone_id"]
+            for m in p.poll(1.036) if m[1] == clone.COMMAND_ANNOUNCE] == [1]

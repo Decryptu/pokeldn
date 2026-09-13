@@ -394,6 +394,64 @@ The full decode of a real session is `scratchpad/037_clone_parsed.txt`, its data
 `scratchpad/lgpe_clone_data.py`. The decoders: `scratchpad/lgpe_pcap_decode.py` for an ldn_mitm
 pcap, `scratchpad/lgpe_jsonl_clone.py` for a `--capture` log.
 
+### The game's messages on the reliable protocol
+
+The trade's own traffic is protocol `0x7c`, `reliable3`, sequences starting at `0xFFFFF82F`. Two
+messages are sent before a trade is agreed, each a 16-byte header and a body of the stated length:
+
+```
++0x00  4  message kind, 1, 2 or 3
++0x04  4  body length, 0x168 for kind 1, 0x0e8 for kind 2 and 4 for kind 3
++0x08  4  step, counting every message a station sends from 1
++0x0c  4  0x0000ff00
++0x10     the body
+```
+
+**Type 1**, body 0x168 bytes, is the first message, sent from state 6 by both stations before either
+has received anything. Its length is exactly the 0x168 the state-6 sender copies from `obj+0x450`, so
+the header is prepended to that buffer. Names are UTF-16LE, at body offsets:
+
+```
++0x34  2  0x0002
++0x38 16  trainer name
++0x52 16  Pokemon name
+```
+
+**Type 2**, body 0xe8 bytes, is the offer, sent the instant the station's published state word
+reaches 2 and again under the next step every time the station's player changes the Pokemon it is
+offering. A station moving its cursor over a party of three sent steps 2 through 7 in a minute,
+carrying its first Pokemon twice and its second four times. Each step is owed an answer; repeating a
+step is a retransmit and is not.
+
+**Kind 3**, body 4 bytes, is the commit: one u32, sent when a station's player has agreed to the
+trade. It goes twice, carrying 1 and then 2, and each is answered with the same value under the
+answering station's next step. A station that has sent a commit shows a screen carrying a spinner and
+no button prompt, so nothing on its own side can move the trade on: it is waiting for the peer's. A
+commit that is not answered aborts the trade and leaves the save in an interrupted-trade lockout that
+refuses the next attempt.
+
+**Kind 4**, body 0xe8 bytes, is the result: one box structure per slot, the party as it stands once
+the trade has gone through. A station that gave a Pokemon and received one sends its own unchanged
+slot and then the slot holding what it received, so the second carries the peer's trainer id and OT.
+
+A complete trade, both stations counting their own steps:
+
+```
+step 1  kind 1   identity
+step 2  kind 2   the offer, again under a fresh step per selection
+step 5  kind 3   commit, body 1
+step 6  kind 3   commit, body 2
+step 7  kind 4   the result, one message per slot
+``` The body is one 232-byte box structure: the generation 7 layout under the generation 6
+encryption, with an encryption constant at +0x00, a zero sanity word at +0x04, a checksum at +0x06,
+and four 56-byte blocks from +0x08 permuted by `((ec >> 13) & 0x1F) % 24` and XORed with a 16-bit
+stream from an LCRNG seeded with the constant. `pokeldn.lgpe.pb7` reads and writes it; a captured
+offer decrypts to a checksum that agrees and re-encrypts to the bytes that arrived.
+
+The state word is byte 12 of the `f3` state data and walks 0, 1, 2 on every clone a station owns. A
+station that publishes 2 and sends its type 2 message waits there until the peer answers with one of
+its own.
+
 ### What gates the game's own first message
 
 The game's link-trade object runs a per-frame state machine (`0x349200`, jump table `0xf4e994` on
@@ -441,6 +499,335 @@ network id and no player. With the clock exchange and the sync clock both runnin
 answers the announcement of a clone, announces its own, and then releases it about five seconds
 after the mesh join and sends 0x32. It sends no 0xb1 and no clone data. A real joiner reaches the
 same point 1.1 seconds after its own participate and the host then sends the clone's data.
+
+### Past the gate
+
+The gate at `0x11b080` has been passed, and a Let's Go host has taken this project's joiner through
+its whole trade handshake to state 8, the settled state, in 66 milliseconds:
+
+    4 -> 5    the gate passes after seven refusals
+    5 -> 6
+    6 -> 7    state 6 sends the game's first message, 0x168 bytes from obj+0x450
+    7         receives its own back, count 0 -> 1
+    7         receives the joiner's, count 1 -> 2
+    7 -> 8
+
+State 7 counts the first messages it receives into `obj+0x470` and leaves for 8 at exactly two, its
+own and the peer's, compared with `b.ne` rather than a bound. It stops receiving once it leaves, so
+the count cannot overshoot. The host's screen reads that a player has been found.
+
+The game's first message is the 376 bytes a joiner sends on the Reliable Protocol: a 16-byte header
+and the 0x168-byte body state 6 transmits. The header is `type`, `length`, `count` and a flag
+halfword, little-endian, and its length and flags are the arguments of the `0x116f30` call in state 6:
+
+    01000000 68010000 01000000 00ff0000    type 1, 0x168 bytes, count 1
+    02000000 e8000000 02000000 00ff0000    type 2, 0xe8 bytes, count 2
+    02000000 e8000000 03000000 00ff0000    type 2, 0xe8 bytes, count 3
+
+In a session that works the type-1 messages are exchanged and acknowledged within 70 milliseconds,
+the clone ids 2 and 3 are announced 3.2 seconds later, and the type-2 messages follow 0.4 seconds
+after that. The type-1 body carries the two player names in UTF-16 in the clear; everything from the
+type-2 messages on is encrypted.
+
+A host that has reached state 8 sends nothing further on its own. Its clone element's clock stops
+advancing and the mode word at `+0x8C` stays 0, so the subsystem that announces clone ids 2 and 3
+never runs. State 8 is terminal for `0x349200`, and what drives the phase after it is a different
+subsystem.
+
+### The state machine above the gate
+
+The gate at `0x11b080` is state 4 of the trade session's own state machine, `0x349200`, dispatched on
+the object's `+0x68` through `0xf4e994`. State 3 allocates the session sub-object at `+0xB8`, calls
+`0x11aec0` through the thunk at `0x11b4c0`, and sets the state word to 4 with no condition of any
+kind; state 4 calls the gate through `0x11b4d0` and advances to 5 when it returns true; state 5 sends
+the game's first message. `0x3495e0` is the setter that puts the object into state 3, guarded only on
+the state word: states 9, 10 and 11 are left alone and everything else becomes 3. Nothing in state 3
+or state 4 reads the network.
+
+Three setters sit in consecutive slots of the vtable at `0x154f648`, each the same seven
+instructions over the same guard:
+
+    0x154f648 -> 0x3495e0    state := 3
+    0x154f650 -> 0x349600    state := 2
+    0x154f658 -> 0x349620    state := 11, then the abort at 0x4d8b00
+
+None is reached by a direct branch; all three are called through the vtable, which is why a scan for
+callers finds nothing. `0x349650`, `0x3497d0`, `0x349880`, `0x3498e0` and `0x349940` follow them in
+the same table.
+
+    0x0011b4c0  ldr   x8, [x0, #0x20]      the thunk into 0x11aec0
+    0x0011b4c4  ldrh  w1, [x0, #0x18]      the clone id
+    0x0011b4c8  mov   x0, x8
+    0x0011b4cc  b     #0x11aec0
+
+    0x0011b4d0  ldr   x0, [x0, #0x20]      the thunk into the gate
+    0x0011b4d4  b     #0x11b080
+
+`0x11aec0` registers and announces a station's whole own clone set in one frame: the type-1 clone at
+`game+0x90` from `game+0x678`, the type-4 clone at `game+0x1258` from `game+0x13f0`, then one clone
+per party member, stride 0x118 from `game+0x218` with its source stride 0x260 from `game+0x8d8`. Each
+goes to `0x51a550` or `0x51a510`, which enqueue an announcer on the element's list at `+0xD8`. The
+sweeper `0x51b380` drains that list a tick later, one record per entry, and the type byte comes from
+the table at `0xf46acc` (0x81, 0xa1, 0x83, 0xb1) indexed by the queued object's kind, not from the
+call site. That is why an announcement arrives as `0x81` on clone type 2, `0xa1` on clone type 4 and
+`0xa1` on clone type 1 in one frame: three entries off one queue in one tick.
+
+The announcement is therefore upstream of the gate rather than an input to it. A station that emits
+that triple has already passed state 3 and is asking the gate; a station that never emits it has not
+reached state 3, and no message shape addressed to the gate's inputs can reach it.
+
+Measured against the retail Let's Go Pikachu, the two directions differ. Hosting, it emits the triple
+for clone id 1 and never for id 2. Joining, it emits no `0x81` at all and only the take-over burst. A
+station in a two-console session runs `0x11aec0` once per clone id, ids 1 then 2 and 3.
+
+### The second publisher and its mode word
+
+`0x11aec0` has two callers. The trade state machine calls it once, during state 3, for clone id 1.
+Clone ids 2 and 3 come about 3.2 seconds later from a different subsystem and a different per-frame
+dispatcher: `0x13a780` -> `0x13a160` -> `0x886530` -> `0x344510` -> `0x349bf0` -> `0x349a90`, with
+its own game object per pass, 0x1680 apart, one per party Pokemon. The state word is 8 by then and
+never returns to 3.
+
+`0x886530` runs every frame from the overworld onward. It reaches the publisher only through one
+comparison on a mode word at `+0x8C` of its object:
+
+    0x886ed0  ldr  w8, [x19, #0x8c]
+    0x886ed4  sub  w9, w8, #1
+    0x886ed8  cmp  w9, #2
+    0x886edc  b.lo #0x886ef8        1 or 2: another arm
+    0x886ee0  cmp  w8, #3
+    0x886ee4  b.eq #0x886f24        3: the publish arm
+    0x886ee8  mov  w8, #8           anything else: park at 8
+
+`0x344510` behind it is a one-shot: it returns early when `[x19+0x68]` is already non-null, and
+otherwise allocates a 0x278-byte object and calls `0x349bf0`.
+
+Three setters write that word, each six instructions over the same singleton indirection, loading the
+object from `[singleton+0x288]`:
+
+    0x7c4530   mode := 1
+    0x7c4580   mode := 2, then 0x147c90 with w1 = 0
+    0x7c45d0   mode := 3, then 0x147c90 with w1 = 0
+
+None of the three setters is the target of a branch or appears in a vtable in the image, and none of
+them runs: on a session traced from the overworld through to a settled trade, all three and
+`0x5a733c` fire zero times on both stations while the mode word moves from 0 to 3.
+
+The object is `0x886530`'s `this`, and its class's vtable is `0x15afa68`, whose slot 9 is `0x886530`.
+The vtable is populated by relocations rather than stored in the image: the entries around `0xe13388`
+are `(r_offset, 0x403, r_addend)` triples writing each slot, which is also how the three setters are
+reached and why no branch or table in the image names them.
+
+None of the class's eleven methods stores to `+0x8C`, so the mode word is written by a function that
+takes the object as an argument. Of the 192 stores to `+0x8C` in `.text`, sixteen write a small
+constant; after the four ruled out by tracing, none of the remainder writes 3. The value therefore
+arrives in a register, and the writer cannot be found by scanning for an immediate.
+
+On every capture against the retail console the only clone ids on the wire are 0 and 1. A station in
+a session that works publishes ids 2 and 3 as well, and all three shapes for each.
+
+### The sequence a take-over has to carry
+
+A station that announces a clone allocates a sequence for it and stamps it on its own announcement.
+`0x520c30` is the request side: it returns early when the clone's `+0x38` is zero, when `+0x110` is
+already set, or when `+0xB0` and `+0xB8` are both non-null, and otherwise allocates that sequence into
+`+0x10C` and enqueues the announcer. `0x520ce0` is the completion side, a separate function: given a
+clone and a value, it unqueues the announcer and writes 1 to `+0x110` only when `+0xB0` and `+0xB8`
+are non-null and `+0x10C` equals the value it was given.
+
+That byte at `+0x110` is the gate's per-station term. The station entries the gate walks at `+0x250`
+are the party clones, one per party Pokemon: `station[i]` is `partyClone[i]+0x38`.
+
+The value reaching `0x520ce0` comes from the take-over, the `0x91` on the clone's types. A joiner in
+a session that works echoes the clock the peer's announcement carried, where the announcement of its
+own copy keeps its own clock:
+
+    host   0xa1 clone type 4   00000cfe 01 2808ab      the sequence it allocated
+    host   0xa1 clone type 1   00000cfe 01 2808ab
+    joiner 0x91 clone type 4   00000cfe               echoed
+    joiner 0x91 clone type 2   00000cfe               echoed
+    joiner 0xa1 clone type 4   00000d21 01 2808ab      its own clock, the host's content
+    joiner 0xa1 clone type 1   00000d21 01 2808ab
+
+Measured against an emulated host with the take-over carrying the joiner's own clock instead: the
+host allocated `0x1114b` for both party clones, the completion for party clone 0 arrived with
+`0x1114b` and set its `+0x110`, and the completion for party clone 1 arrived with `0x111b0`, 101
+milliseconds high, and was refused. One clone's term stays false, the gate at `0x11b080` returns
+false forever, and the state word never leaves 4.
+
+The sequence is per party clone and it is re-allocated. Over one stalled session an emulated host
+stamped three on its announcements in the first 102 milliseconds, `0x1414f`, `0x1418f` and `0x141c7`,
+0x38 apart each time, and then retransmitted the last unchanged for the remaining 200 seconds. Read
+live, the two party clones held different values at the same instant: `0x1418f` on party clone 0 and
+`0x141c7` on party clone 1, the second re-allocated at `0x520cb8` 16 milliseconds after the first
+completed. A take-over echoing the value that was current when it was built is stale from the moment
+the peer allocates the next one, so a take-over is owed once per sequence rather than once per clone.
+
+With the take-over carrying the peer's sequence, a party clone's `+0x110` was set by a joiner's own
+message for the first time: party clone 0 completed on `0x1418f`. With a take-over owed once per
+sequence rather than once per clone, the peer's `0xa1` retransmits on clone type 1 fell from 1992
+over 200 seconds to 3, and it published its own copy on clone type 2 carrying real content, which no
+run against a console or an emulator had produced before.
+
+A peer retransmits that publish about ten times a second, and each of ours is answered with another
+of its own: 1981 each way over 200 seconds, where the reference pair exchanges 31 in total. The
+exchange is nonetheless what keeps the peer satisfied. Answering only the first and acknowledging the
+rest stops the peer publishing at all and returns it to re-announcing, with a fresh sequence on every
+retransmission: 1082 distinct sequences over one run against three when the publishes flow.
+
+A peer's retransmitted announcement does not repeat its sequence, and the reason it re-announces at
+all is the `0x82` in the take-over burst. `0x520c30` is the request side: an inbound `0x82` makes it
+enqueue an announcer and allocate the next sequence. Answering each re-announcement with the whole
+burst therefore mints one sequence per burst, and the pair can trade bursts and allocations about
+thirty times a second without ever converging. A station in a session that works allocates none,
+because nobody sends it a second `0x82`.
+
+Answering a re-announcement with the two `0x91` take-overs carrying the new sequence, and nothing
+else, took the sequences a host allocated over one run from more than 1200 to four, and its `0xa1`
+retransmits on clone type 1 from 1230 to three. It is still not what a joiner does; see the take-over
+exchange below.
+
+The value a completion matches against `+0x10C` is not the one the take-over carried. Over one run a
+host announced `0x14688`, `0x146bc` and `0x1472d`, the joiner echoed each within a millisecond, and
+the completion that was refused carried `0x146f0`, which appears in no message either station sent.
+The allocator steps by about 0x34 between announcements and `0x146f0` is one step past the value that
+was allocated, so both numbers are the host's own and the take-over's clock does not decide the
+comparison.
+
+`0x520c30` allocates when the clone's `+0xB0` or `+0xB8` is null. Those two are not fields but
+`sub+0x08` and `sub+0x10` of the announcer embedded at `clone+0xA8`, the links of an intrusive list,
+so a null pair means the announcer is not in the element's announce list. `0x51e790` links and
+`0x51e810` unlinks. Both clones of a station in a session that works arrive linked and nothing is
+allocated; where a party clone arrives unlinked, the allocation happens and the completion that
+follows is refused.
+
+`0x91` on clone type 2 is the negative acknowledgement. `0x520d30` handles it and `0x520ce0` handles
+the `0xa2`; the two are the same function over the same three preconditions, the clone's `+0xB0` and
+`+0xB8` non-null and `+0x10C` equal to the value the record carries, and both unlink the announcer.
+Only the `0xa2` path then writes 1 to `+0x110`. So a `0x91` that matches cancels the announcement
+where an `0xa2` that matches completes it.
+
+A joiner in a session that works sends one take-over per clone, at the first announcement of a clone
+it does not own; sending one per sequence the peer announces cancels announcements that were never
+meant to change hands. Measured over one run, three `0x91`s on clone type 2 for one clone
+produced three unlinks, each inside the dispatch of one of them, the first included: the peer had
+already linked and allocated for both party clones on the state-4 announce path at `0x517d9c`, about
+27 milliseconds before the take-over arrived, so the first `0x91` matched like the others. Sending
+only one does not avoid the cancellation and leaves the peer re-announcing without limit, 1792
+retransmits over 180 seconds against three.
+
+Each clone carries one announcement clock, not one per station. Whoever announces the clone stamps
+its own mesh clock on the `0xa1`, and from that moment both stations use that number for the clone:
+the peer's acknowledgement carries it, and the peer's own next `0xa1` for the clone carries it too.
+`+0x10C` holds it. So the value a record must carry to match is the clock of the *other* station's
+most recent `0xa1` for that clone, and it changes hands every time ownership does.
+
+A joiner's `0x91` carries that value correctly, which is why it matches and cancels. Its `0xa2` must
+carry the same value and does not: it carries the joiner's own mesh clock, round-tripped through the
+peer's acknowledgement, so it misses. The record that matches is the one that cancels because only
+one of the two is built from the peer's announcement.
+
+### The take-over exchange a joiner runs once per clone
+
+A take-over is an ownership transfer, not a fault. The cancellation `0x520d30` performs is the point
+of it: the peer's announcement ends because the clone now belongs to the joiner, which announces it
+again under its own clock in the same frame. The reference exchange for the two party clones, with
+the host's announcement at zero:
+
+```
++0 ms   host    0x81 clone 2, 0x81 clone 3, dest 0x0003
+        host    0xa1 x2 per clone                        clock 0x197e, the host's
++5 ms   joiner  0x82, 0x91 x2, 0x82, 0x91 x2, 0x84 x2    echoing 0x197e
++75 ms  joiner  0x81 clone 2, 0xa1 x2                    clock 0x19c1, the joiner's own
+        joiner  0x81 clone 3, 0xa1 x2                    clock 0x19c1
++102 ms host    0xa2 per clone                           clock 0x19c1, the joiner's
+        host    0xa1 per clone                           clock 0x19e2, the host's own
++141 ms joiner  0xa2 per clone                           clock 0x19e2, the host's
+```
+
+The joiner takes each clone over exactly once, at the first announcement of a clone it does not own.
+Every later re-announcement is answered with a single `0xa2` carrying that announcement's clock, on
+clone type 2 with the joiner's own station, payload `<clock> 00 00 00 02`. Over a whole session the
+reference joiner sends six `0x91`s, all at those two first announcements, and none afterwards,
+while the host re-announces continuously.
+
+A second take-over against a re-announcement therefore cancels an announcement that was never meant
+to change hands, and the peer re-announces without limit: 1792 retransmits over 180 seconds against
+three. The clocks in the two records are correct in both cases; what is wrong is which record is
+sent.
+
+The record that drives a completion is the `0xa2`, not the `f3`: each completion is preceded by one,
+and neither of the two `f3` sends in a stalled window is followed by a completion. A station's own
+announcer completes off the loopback of its own `0xa2` within about 6 milliseconds, which is why the
+first party clone always succeeds. The second needs the joiner's, and the per-tick builder unlinks an
+announcer about 30 milliseconds after it is linked. The joiner of a session that works sends **no** acknowledgement in its take-over burst. Measured on
+the reference capture, with the peer's announcement at zero: the burst at +5 ms carries `0x82`, the
+two `0x91`s, `0x84`, `0x81` and the two `0xa1`s and nothing else, the peer's own `0xa2` pair arrives
+at +37 ms, and the joiner's single acknowledgement goes at **+72 ms**, as a reply. That session
+completes.
+
+So an announcer surviving long enough to be completed is not a matter of answering within about 30
+milliseconds. A peer that never re-announces never unlinks, and the reference peer allocates no
+sequences at all; the ~30 millisecond unlink is a property of a session already going wrong, and
+moving the acknowledgement earlier does not address it.
+
+### What the announce's destination field decides
+
+The command header `0x51f820` lays out its last field, at `+0x10`, as a station bitmap. An 0x81
+announcing a clone for the first time carries the whole mesh there, 0x0003 in a two-station session;
+the two 0xa1s that follow it on clone types 4 and 1, and the announce repeated 35 ms later, carry the
+peer alone, 0x0001. Both stations of a session that works do this.
+
+A peer that receives the announce with the mesh bitmap answers with a pair of 0xa2s, one on clone
+type 4 and one on clone type 2 carrying its own station. With the peer bitmap it answers neither and
+keeps sending 0xa1 on clone type 1. The 0xa2 on clone type 2 is the only message that sets a
+station's bit in `clone+0xA8`, so the destination field of the announce decides whether the gate at
+`0x11b080` can ever see the acknowledged set fill.
+
+Measured against the retail Let's Go Pikachu: the console sends the 0xa2 pair and then returns to
+re-announcing 0xa1 on clone type 1, and its game sends nothing. Republishing the clone with 2 in its
+participants field where it had 3 is not part of that; a host in a session that works does the same,
+one frame after the joiner's announce.
+
+What the console does not do is publish its own copy of the clone on clone type 2. In a session that
+works the host publishes `f3` on clone type 2 with its own station, and the joiner publishes its copy
+0.04 s later; the joiner publishes nothing on clone type 2 before that. Holding the joiner's publish
+back until the console publishes its own does not make it publish.
+
+Ordered by message type, clone type and station, the joiner's whole exchange for clone id 1 now
+matches the two-console capture: the type-3 clone 0 handshake, the take-over and announcement in one
+frame, the console's `0xa2` pair, the joiner's `0xa2` on clone type 2 and its `0xe3` on clone type 4.
+The streams diverge at one message. Where the reference host sends `f3` on clone type 2 with its own
+station, the console sends `0x82` on clone type 1 again and goes on retransmitting.
+
+The console publishes two of the three record shapes with content: the 22-byte record on clone type 3
+id 0 and the 46-byte record on clone type 4 id 1, both carrying the participating mask 3, the same
+shapes a station in a session that works sends. The 34-byte record on clone type 2 with its own
+station is the one it never sends. A record of mostly zeros with a single `01` is the healthy form of
+that shape, so its length and its clone id are what identify it, not its zero count.
+
+A station in a session that works announces clone id 1, completes the publish exchange, and announces
+ids 2 and 3 about three seconds later; the console announces id 1 and stops.
+
+The same stall reproduces against an emulated host. An instance that publishes all three shapes and
+announces clone ids 1, 2 and 3 when another instance joins it does none of that when this project's
+joiner joins it instead, over the ldn_mitm association and plain UDP:
+
+| | host `0x81` | `0xa1` on clone type 1 | host `f3` on clone type 2 |
+|---|---|---|---|
+| two consoles, the reference session | 9 | 9 | 31 |
+| the retail console, our joiner | 1 | 1085 | 0 |
+| an emulated host, our joiner | 1 | 1052 | 0 |
+
+So the refusal is not a property of the retail console. Whatever the peer is waiting for, this
+project's joiner does not send it, and the stall can be reproduced under a debugger on demand.
+
+The measurement that separates a session that works from one that stalls is the retransmit count of
+`0xa1` on clone type 1. The two stations of a session that works send nine each over the whole
+session. The retail console sends 1194 in 150 seconds, one about every 0.12 s for as long as the
+session is held, so its type-1 clone announcement is never acknowledged to its satisfaction. It also
+sends `0x82` on clone type 1, the request for the joiner's copy, and asks again after the state
+acknowledgement it gets back.
 
 Every clone message is built through one function, `0x51e3d0`, the protocol object's ninth vtable
 slot; its fourth returns 0x73. Thirteen call sites build the messages, eight with a literal type
