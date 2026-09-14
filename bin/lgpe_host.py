@@ -27,7 +27,7 @@ sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
 from pokeldn.ldn import clone, pia3, pia4, reliable3, station4, station9, sync_clock
 from pokeldn.lgpe import pb7
-from pokeldn.lgpe.trade import (TRADE_IN_PROGRESS, _answer_commit, _answer_offer, _send_step,
+from pokeldn.lgpe.trade import (TRADE_IN_PROGRESS, _answer_offer, _send_step,
                                 _warn_if_mid_trade)
 from pokeldn.ldn import local_protocol as lp
 from pokeldn.ldn import mesh_protocol as mp
@@ -202,6 +202,9 @@ class Session:
         self.ack_id = 1
         self.seen = {}
         self.window = reliable3.Window()
+        # an unacknowledged game message goes again: a commit that never arrives leaves the
+        # console on its confirmation screen and its save refusing trades for half an hour
+        self.window.clock = time.monotonic
         self.trade = {"window": self.window, "step": 1}
         self.payloads = []
         self.clone = None
@@ -225,6 +228,13 @@ class Session:
         self.drive = []
         self.commit_clone = None
         self.committed = False
+        self.commit_2_at = None
+        self.peer_committed = False
+        self.committed_2 = False
+        self.result_clones_at = None
+        self.result_clones_announced = False
+        self.result_at = None
+        self.result_sent = False
         self.update_counter = 0
         self.session_sequence = 1
         self.sent_nodes = None
@@ -326,6 +336,10 @@ class Session:
         if now >= self.next_rtt:
             self.next_rtt = now + 1.0
             self.send(rtt.build_v3(rtt.REQUEST, int(now * rtt.TICK_HZ_V3)), rtt.PROTOCOL)
+        for msg in self.window.due(now):
+            self.send(msg, reliable3.PROTOCOL)
+            print(f"[lgh] reliable: sent again, unacknowledged for {self.window.RETRANSMIT_AFTER} s: "
+                  f"{reliable3.parse(msg)['sequence']:#x}")
         if self.clone is not None:
             for out in self.clone.poll(now):
                 if out[1] == clone.PARTICIPATE:
@@ -385,6 +399,26 @@ class Session:
             if self.advance_at is not None and not self.advanced and now >= self.advance_at:
                 self.advanced = True
                 self.send_offer()
+            # the second commit, carrying 2, 63 to 66 ms after the first on both reference hosts
+            # and behind the peer's own kind 3 on both
+            if (self.commit_2_at is not None and not self.committed_2 and self.peer_committed
+                    and now >= self.commit_2_at):
+                self.committed_2 = True
+                step = _send_step(self.trade, self.send, pb7.COMMIT_MESSAGE, b"\x02\0\0\0")
+                self.publish_step()
+                # the trade animation: a retail host sent its result 26.8 s after this, an
+                # emulated one 29.9 s. The result clones come half a second before it.
+                self.result_clones_at = now + 26.5
+                self.result_at = now + 27.0
+                print(f"[lgh] game: *** COMMIT sent, 2 under step {step} *** the trade is agreed; "
+                      "the animation runs on the console now")
+            if (self.result_clones_at is not None and not self.result_clones_announced
+                    and now >= self.result_clones_at):
+                self.result_clones_announced = True
+                for cid in (self.commit_clone + 1, self.commit_clone + 2):
+                    self.announce_clone(now, cid)
+            if self.result_at is not None and now >= self.result_at:
+                self.send_result()
 
     def announce_clone_0(self, now):
         """The clone the host owns from the start. A host announces it with the clock-and-count
@@ -422,6 +456,22 @@ class Session:
         step = _send_step(self.trade, self.send, pb7.OFFER_MESSAGE, body)
         print(f"[lgh] offer: *** SENT {len(body)} B step {step} *** {self.args.offer}, unprompted")
         self.publish_step()
+
+    def send_result(self):
+        """Our kind 4, once: the party as it stands, one message per slot. A reference host
+        sent its own first slot, unchanged, 27 to 30 s after its second commit, and the joiner's
+        own followed within 34 ms (docs/lgpe_session.md)."""
+        if self.result_sent or not self.committed_2:
+            return
+        self.result_sent = True
+        if not self.args.offer or self.args.offer == "echo":
+            print("[lgh] game: no --offer structure to send as the result")
+            return
+        raw = open(self.args.offer, "rb").read()
+        body = raw if pb7.valid(raw) else pb7.encrypt(raw)
+        step = _send_step(self.trade, self.send, pb7.RESULT_MESSAGE, body)
+        self.publish_step()
+        print(f"[lgh] game: *** RESULT sent, step {step} *** {self.args.offer}")
 
     def announce_clone(self, now, cid):
         """A clone this station owns. A host announces it on clone type 2 and on types 4 and 1,
@@ -504,9 +554,12 @@ class Session:
             if self.clone is None:
                 self.new_clone()
             now = time.monotonic()
-            self.clone_step(pl, now)
+            # the Participant reads the peer's record first: a copy published off the record
+            # before it lands carries the previous one, which put a zero first word in the type 4
+            # copy at the commit clone's trailing word 1 and the console never answered it
             for out in self.clone.receive(pl, now):
                 self.send(out, clone.PROTOCOL)
+            self.clone_step(pl, now)
         elif protocol == reliable3.PROTOCOL:
             r = reliable3.parse(pl)
             for out in self.window.receive(pl):
@@ -551,11 +604,16 @@ class Session:
             _answer_offer(self.args, self.trade, msg, self.send, tag="[lgh]")
             self.publish_step()
         elif msg["kind"] == pb7.COMMIT_MESSAGE:
-            _answer_commit(self.args, self.trade, msg, self.send, tag="[lgh]")
-            self.publish_step()
+            # the peer's kind 3 answers the host's first; a host sends its second behind it and
+            # echoes nothing (docs/lgpe_session.md, "The game's messages")
+            value = int.from_bytes(msg["body"][:4], "little")
+            print(f"[lgh] game: the console's commit carries {value}")
+            if value == 1:
+                self.peer_committed = True
         elif msg["kind"] == pb7.RESULT_MESSAGE:
             self.trade["done"] = True
             print("[lgh] game: *** THE RESULT *** the trade has gone through on the console")
+            self.send_result()
 
     def new_clone(self):
         self.clone = clone.Participant(time.monotonic(), dest=JOINER_BIT, own=HOST_BIT,
@@ -603,33 +661,43 @@ class Session:
         # (docs/lgpe_session.md). Until it does, the console holds "communication en cours".
         if (d and d["type"] == clone.STATE_DATA and d["ctype"] == 2 and d["record"]
                 and d["record"].get("data", b"")[:12] == b"\x01\0\0\0" * 3
-                and self.clone.tail.get(d["clone_id"]) is None):
-            self.clone.tail[d["clone_id"]] = 1
-            self.publish_step()
-            # the rest of the walk the host drives, on the pace a player sets in a real session:
-            # 01 02 02 with the trailing word still 1, then the trailing word 2
-            # only the offered party clone walks on to 01 02 02. The clone the commit creates
-            # stops at the trailing word 1: the reference pair took it 01 01 01, trailing word 1,
-            # and the peer answered 00 01 01 with its commit (docs/lgpe_session.md).
-            self.commit_clone = (None if d["clone_id"] < 2 + self.args.party_clones
-                                 else d["clone_id"])
+                and self.clone.tail.get(d["clone_id"]) is None
+                and d["clone_id"] not in self.clone.flags):
+            ones = b"\x01\0\0\0" * 3
+            # the trailing word 1 goes out 30 ms after the 1 1 1, on both reference hosts
+            self.drive = [(now + 0.03, d["clone_id"], ones, 1)]
             if d["clone_id"] < 2 + self.args.party_clones:
-                self.drive = [(time.monotonic() + self.args.drive_delay, d["clone_id"],
-                               b"\x01\0\0\0" + b"\x02\0\0\0" * 2, 1),
-                              (time.monotonic() + 2 * self.args.drive_delay, d["clone_id"],
-                               b"\x01\0\0\0" + b"\x02\0\0\0" * 2, 2)]
+                # the rest of the walk the host drives, on the pace a player sets in a real
+                # session: 01 02 02 with the trailing word still 1, then the trailing word 2
+                self.drive += [(now + self.args.drive_delay, d["clone_id"],
+                                b"\x01\0\0\0" + b"\x02\0\0\0" * 2, 1),
+                               (now + 2 * self.args.drive_delay, d["clone_id"],
+                                b"\x01\0\0\0" + b"\x02\0\0\0" * 2, 2)]
+            else:
+                # the clone the commit creates stops at the trailing word 1: the peer answers
+                # it with a zero first word (docs/lgpe_session.md, "The two clone records")
+                self.commit_clone = d["clone_id"]
             print(f"[lgh] clone: clone {d['clone_id']} offered on both sides; driving it on")
-        # the peer answers the commit clone with a zero in the first word and sends its kind 3 in
-        # the same frame. Both stations send one: neither run that reached this point sent ours,
-        # and the two then wait on each other (docs/lgpe_session.md).
+        # the peer answers the commit clone's trailing word 1 with a zero in its first word. The
+        # host then zeroes the first word of every clone it drove, moves its step and sends its
+        # kind 3 carrying 1, all in one frame; the peer's own kind 3 follows within a frame and
+        # the host's second, carrying 2, four frames after the first (docs/lgpe_session.md)
         if (d and d["type"] == clone.STATE_DATA and d["ctype"] == 2
                 and d["clone_id"] == self.commit_clone and d["record"]
-                and d["record"].get("data", b"")[:4] == bytes(4) and not self.committed):
+                and d["record"].get("data", b"")[:4] == bytes(4)
+                and self.clone.tail.get(self.commit_clone) == 1 and not self.committed):
             self.committed = True
-            step = _send_step(self.trade, self.send, pb7.COMMIT_MESSAGE, b"\x01\0\0\0")
+            self.drive = []
+            for cid, flags in list(self.clone.flags.items()):
+                self.clone.flags[cid] = bytes(4) + flags[4:12]
             TRADE_IN_PROGRESS["commit"] = True
+            self.trade["step"] = self.trade.get("step", 1) + 1
             self.publish_step()
-            print(f"[lgh] game: *** COMMIT sent, step {step} ***")
+            self.send(self.window.send(pb7.build_message(pb7.COMMIT_MESSAGE, b"\x01\0\0\0",
+                                                         step=self.trade["step"])),
+                      reliable3.PROTOCOL)
+            self.commit_2_at = now + 0.065
+            print(f"[lgh] game: *** COMMIT sent, 1 under step {self.trade['step']} ***")
         if d and d["type"] == clone.STATE_ACK and d["clone_id"] == 0 \
                 and not self.clone_0_acked:
             self.clone_0_acked = True

@@ -413,15 +413,17 @@ offering. A station moving its cursor over a party of three sent steps 2 through
 carrying its first Pokemon twice and its second four times. A new step is answered; a repeated step
 is a retransmit and is not.
 
-**Kind 3**, body 4 bytes, is the commit: one u32, sent when a station's player has agreed to the
-trade. It goes twice, carrying 1 and then 2, and each is answered with the same value under the
-answering station's next step. A station that has sent a commit shows a spinner with no button
-prompt and waits for the peer's. A commit that is not answered aborts the trade and leaves the save
-in an interrupted-trade lockout that refuses the next attempt.
+**Kind 3**, body 4 bytes, is the commit: one u32. The host sends it twice, carrying 1 and then 2,
+63 to 66 ms apart; the joiner sends one, carrying 1, within a frame of the host's first, and the
+host's second follows the joiner's. A joiner that also answers the second with a 2 is tolerated. A
+station that has sent a commit shows a spinner with no button prompt and waits for the peer's. A
+commit that is not answered aborts the trade and leaves the save in an interrupted-trade lockout
+that refuses the next attempt for about half an hour.
 
-**Kind 4**, body 0xe8 bytes, is the result: one box structure per slot, the party as it stands once
-the trade has gone through. A station that gave a Pokemon and received one sends its own unchanged
-slot and then the slot holding what it received, so the second carries the peer's trainer id and OT.
+**Kind 4**, body 0xe8 bytes, is the result, sent once the trade animation has run: the station's
+own first party slot, unchanged, which is the structure it offered under step 2. A retail host sent
+it 26.8 s after its second commit and an emulated host 29.9 s; the emulated joiner's followed the
+host's by 34 ms. A joiner that sends none leaves a retail host's trade complete.
 
 A complete trade, both stations counting their own steps:
 
@@ -536,10 +538,29 @@ against `obj+0x10`, and one word per node from `+0x1640` against `obj+0x0c`. A h
 "communication en cours" and greys every button but Retour. Carrying the state unlocks them.
 
 The offered party clone walks 1 in each of the first three words, then a trailing word of 1, then 2
-in the second and third, then a trailing word of 2. The clone the commit creates takes only the
-first two of those: 1 in each of the first three words, then a trailing word of 1, and the peer
-answers 0 in the first word with its kind 3 message. A host that walks the commit clone the way it
-walks the offered one leaves the console on its confirmation screen.
+in the second and third, then a trailing word of 2. The clone the commit creates, one id above the
+party clones, takes the first two of those and then a zero. The host's frames, the same on a retail
+host and an emulated one, with the clone type 2 data as five words:
+
+```
++0 ms     type 4 data, 32 zeros, with the announcement
+          the peer publishes 1 1 1 step 0 once its player has confirmed
+          1 1 1 step 0                 the host's own confirmation
++30 ms    1 1 1 step 1                 type 4 data 1, zeros, step, 1
++8 ms     the peer answers 0 1 1 step 1
++27 ms    0 1 1 step+1 1               the offered clone goes 0 2 2 step+1 2 in the same frame,
+                                       and the kind 3 carrying 1 goes under that step
++3 ms     the peer's kind 3 carrying 1, its copies under its own next step
++63 ms    kind 3 carrying 2 under the next step, every copy republished under it
++27 s     two more clones announced, 32 zeros on type 4; the peer publishes 0 0 0 on each
++0.5 s    kind 4 under the next step, every copy republished under it
+```
+
+The peer answers the trailing word 1 only when the type 4 copy's first word is 1: a host that
+publishes the type 4 copy off the record it held before the peer's 1 1 1 landed carries a 0
+there, and the console mirrors 1 1 1 and waits. A host that walks the commit clone on to 1 2 2
+gets 0 1 1 with the trailing word 2 and no kind 3, and the console sits on its confirmation
+screen.
 
 Publishing no clone data on clone types 4 and 1 at all, which is what two retail consoles exchange,
 leaves a console that joins short of the gate at `0x11b080` and on its search screen.

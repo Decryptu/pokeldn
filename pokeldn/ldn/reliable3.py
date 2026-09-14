@@ -50,23 +50,49 @@ def parse(data):
 class Window:
     """One station's side of the window: it sends payloads in order and acknowledges the peer's."""
 
+    # a message the peer has not acknowledged goes again after this long. Over 120 messages to a
+    # retail console none waited past 0.104 s, so this is a net under a lost datagram, not a pace.
+    RETRANSMIT_AFTER = 0.5
+
     def __init__(self):
         self.sequence = FIRST_SEQUENCE
         self.expected = FIRST_SEQUENCE
         self.received = []
+        # (sequence, message, sent at): what the peer has yet to acknowledge, oldest first. Kept
+        # only when a clock is set: a station that never polls `due` holds nothing.
+        self.clock = None
+        self.pending = []
 
     def send(self, payload):
-        """-> the message carrying `payload`, and move our sequence on."""
+        """-> the message carrying `payload`, and move our sequence on. With a clock set the
+        message is held for `due` until the peer's next-expected id passes it."""
         out = build(payload, self.sequence, self.expected)
+        if self.clock is not None:
+            self.pending.append((self.sequence, out, self.clock()))
         self.sequence = (self.sequence + 1) & 0xFFFFFFFF
         return out
 
     def receive(self, data):
-        """-> [payload] to send in answer: an acknowledgement of a payload, nothing for an ack."""
+        """-> [payload] to send in answer: an acknowledgement of a payload, nothing for an ack.
+        Every message from the peer carries the next id it expects, which settles our pending."""
         m = parse(data)
-        if m is None or not m["size"]:
+        if m is None:
+            return []
+        self.pending = [p for p in self.pending
+                        if ((p[0] - m["expected"]) & 0xFFFFFFFF) < 0x80000000]
+        if not m["size"]:
             return []
         if m["sequence"] == self.expected:
             self.expected = (self.expected + 1) & 0xFFFFFFFF
             self.received.append(m["payload"])
         return [build_ack(self.expected)]
+
+    def due(self, now):
+        """-> the pending messages older than RETRANSMIT_AFTER, byte for byte as first sent, and
+        their clock restarted. A retail station repeats an unacknowledged message the same way."""
+        out = []
+        for i, (seq, msg, at) in enumerate(self.pending):
+            if now - at >= self.RETRANSMIT_AFTER:
+                out.append(msg)
+                self.pending[i] = (seq, msg, now)
+        return out
