@@ -69,8 +69,9 @@ def stage(tmp_path, monkeypatch):
     s.joined = True
     s.new_clone()
     sent = []
-    monkeypatch.setattr(s, "send", lambda payload, protocol, **kw: sent.append((protocol, payload)))
+    monkeypatch.setattr(s, "send", lambda payload, protocol, **kw: sent.append((protocol, payload, kw)))
     s.trade["step"] = 10
+    s.clone.state_word = 10
     s.window.expected = reliable3.FIRST_SEQUENCE + 11
     for cid in (1, 2, 3):
         s.clone.held.add(cid)
@@ -93,7 +94,7 @@ def stage(tmp_path, monkeypatch):
 
     def published(cid, ctype=2):
         out = []
-        for protocol, payload in sent:
+        for protocol, payload, _ in sent:
             if protocol != clone.PROTOCOL:
                 continue
             d = clone.parse_data_message(payload)
@@ -104,7 +105,7 @@ def stage(tmp_path, monkeypatch):
 
     def game_messages():
         out = []
-        for protocol, payload in sent:
+        for protocol, payload, _ in sent:
             if protocol != reliable3.PROTOCOL:
                 continue
             r = reliable3.parse(payload)
@@ -257,7 +258,7 @@ def test_the_result_carries_our_own_structure(stage, tmp_path):
     commit(stage)
     stage["run"](28.0)
     kind, _, _ = stage["game"]()[-1]
-    body = [r for p, payload in stage["sent"] if p == reliable3.PROTOCOL
+    body = [r for p, payload, _ in stage["sent"] if p == reliable3.PROTOCOL
             for r in [reliable3.parse(payload)] if r["size"]][-1]["payload"][16:]
     assert body == open(stage["s"].args.offer, "rb").read()
     assert pb7.valid(body)
@@ -291,18 +292,18 @@ def test_an_unacknowledged_game_message_goes_again_after_half_a_second(stage):
     s = stage["s"]
     commit(stage)
     step = _send_step(s.trade, s.send, pb7.COMMIT_MESSAGE, b"\x02\0\0\0")
-    first = [payload for p, payload in stage["sent"] if p == reliable3.PROTOCOL][-1:]
+    first = [payload for p, payload, _ in stage["sent"] if p == reliable3.PROTOCOL][-1:]
     stage["sent"].clear()
     stage["run"](0.45, ack=False)
-    assert [payload for p, payload in stage["sent"] if p == reliable3.PROTOCOL] == []
+    assert [payload for p, payload, _ in stage["sent"] if p == reliable3.PROTOCOL] == []
     stage["run"](0.1, ack=False)
-    again = [payload for p, payload in stage["sent"] if p == reliable3.PROTOCOL]
+    again = [payload for p, payload, _ in stage["sent"] if p == reliable3.PROTOCOL]
     assert again == first
     # the console's acknowledgement names the id after the last one, and both stop
     s.handle(reliable3.PROTOCOL, reliable3.build_ack(s.window.sequence))
     stage["sent"].clear()
     stage["run"](2.0, ack=False)
-    assert [payload for p, payload in stage["sent"] if p == reliable3.PROTOCOL] == []
+    assert [payload for p, payload, _ in stage["sent"] if p == reliable3.PROTOCOL] == []
 
 
 def test_the_window_holds_nothing_without_a_clock():
@@ -322,7 +323,7 @@ def test_the_consoles_release_of_a_clone_is_acknowledged_on_the_same_clone(stage
     for cid in (3, 2, 4):
         end = clone.build_command(clone.COMMAND_END, 4, 0xFD, cid, 0x478, 1)
         s.handle(clone.PROTOCOL, end)
-        acks = [clone.parse_command(payload) for p, payload in stage["sent"]
+        acks = [clone.parse_command(payload) for p, payload, _ in stage["sent"]
                 if p == clone.PROTOCOL and payload[1] == clone.COMMAND_END_ACK]
         assert (acks[-1]["ctype"], acks[-1]["station"], acks[-1]["clone_id"]) == (4, 0xFD, cid)
         assert cid not in s.clone.held
@@ -331,6 +332,84 @@ def test_the_consoles_release_of_a_clone_is_acknowledged_on_the_same_clone(stage
     assert stage["published"](3) == [] and stage["published"](4) == []
     assert 1 in s.clone.held
     s.handle(clone.PROTOCOL, clone.build_command(clone.COMMAND_END, 2, JOINER, 1, 0x480, 1))
-    ack = [clone.parse_command(payload) for p, payload in stage["sent"]
+    ack = [clone.parse_command(payload) for p, payload, _ in stage["sent"]
            if p == clone.PROTOCOL and payload[1] == clone.COMMAND_END_ACK][-1]
     assert (ack["ctype"], ack["station"], ack["clone_id"]) == (1, 0xFD, 1)
+
+
+def test_the_consoles_state_word_4_is_its_player_leaving_and_is_acknowledged(stage):
+    """A record whose state word is 4 is the peer's player backing out. The host answers 30 ms
+    later on that clone with zeros in the first three words, the trailing word one further on,
+    and the peer's argument in the type 4 copy's first word, which is what an emulated host did
+    before the peer released its clones."""
+    stage["sent"].clear()
+    stage["console_publishes"](3, b"\x04\0\0\0" + b"\x03\0\0\0" + b"\x02\0\0\0"
+                               + struct.pack("<I", 14) + b"\x02\0\0\0")
+    stage["run"](0.02)
+    assert stage["published"](3)[-1] == [1, 2, 2, 10, 2]
+    stage["run"](0.02)
+    assert stage["published"](3)[-1] == [0, 0, 0, 10, 3]
+    assert stage["published"](3, ctype=4)[-1] == [3, 0, 0, 0, 0, 0, 10, 3]
+    stage["run"](1.0)
+    assert stage["published"](3)[-1] == [0, 0, 0, 10, 3]
+
+
+def test_a_second_state_word_4_under_a_fresh_counter_is_answered_again(stage):
+    """A retail console backing out sends argument 0 first and argument 3 as it leaves, under
+    successive counters. Each is answered, with the trailing word one further on each time, and
+    a walk still pending on the clone is dropped."""
+    s = stage["s"]
+    del s.clone.flags[3], s.clone.tail[3]
+    stage["console_publishes"](3, ONES)
+    stage["run"](0.04)
+    assert stage["published"](3)[-1] == [1, 1, 1, 10, 1]
+    stage["console_publishes"](3, b"\x04\0\0\0" + b"\0\0\0\0" + b"\x02\0\0\0"
+                               + struct.pack("<I", 12) + b"\x01\0\0\0")
+    stage["run"](0.04)
+    assert stage["published"](3)[-1] == [0, 0, 0, 10, 2]
+    assert stage["published"](3, ctype=4)[-1] == [0, 0, 0, 0, 0, 0, 10, 2]
+    stage["run"](3.0)
+    assert stage["published"](3)[-1] == [0, 0, 0, 10, 2], "the walk went on after the cancel"
+    stage["console_publishes"](3, b"\x04\0\0\0" + b"\x03\0\0\0" + b"\x03\0\0\0"
+                               + struct.pack("<I", 12) + b"\x02\0\0\0")
+    stage["run"](0.04)
+    assert stage["published"](3)[-1] == [0, 0, 0, 10, 3]
+    assert stage["published"](3, ctype=4)[-1] == [3, 0, 0, 0, 0, 0, 10, 3]
+
+
+def test_the_consoles_leave_request_is_acknowledged_and_answered(stage):
+    """The console leaves the mesh with a leave request on the mesh protocol's reliable port,
+    under the 24-byte reliable header. The host acknowledges that header on the same port,
+    answers with a leave response on the unreliable port, and its mesh and session go back to
+    one node. Unanswered, the console repeats the request every 40 ms for five seconds."""
+    from pokeldn.ldn import mesh_protocol as mp
+    s = stage["s"]
+    stage["sent"].clear()
+    leave = reliable3.build(b"\x04\x01", reliable3.FIRST_SEQUENCE, reliable3.FIRST_SEQUENCE)
+    s.handle(mp.PROTOCOL, leave)
+    mesh = [(payload, kw) for p, payload, kw in stage["sent"] if p == mp.PROTOCOL]
+    acks = [(payload, kw) for payload, kw in mesh if payload[0] == 0]
+    assert len(acks) == 1 and acks[0][1].get("port") == 1
+    assert reliable3.parse(acks[0][0])["expected"] == reliable3.FIRST_SEQUENCE + 1
+    responses = [(payload, kw) for payload, kw in mesh if payload[0] == mp.LEAVE_RESPONSE]
+    assert len(responses) == 1 and responses[0][0] == b"\x08\x01"
+    assert responses[0][1].get("port", 0) == 0
+    assert not s.joined and s.session_nodes() == ((s.host.our_ip, lgpe_host.PIA_PORT, 0),)
+    updates = [payload for payload, kw in mesh if payload[0] == mp.UPDATE_MESH]
+    assert updates and updates[-1][1] == 1, "the mesh update still lists the console"
+    # the same request again is a retransmit
+    s.handle(mp.PROTOCOL, leave)
+    assert len([1 for p, payload, kw in stage["sent"] if p == mp.PROTOCOL
+                and payload[0] == mp.LEAVE_RESPONSE]) == 1
+
+
+def test_the_consoles_disconnection_request_is_answered(stage):
+    """One byte each way on the station protocol. Unanswered, the console repeats it every half
+    second, eight times, and deauthenticates."""
+    from pokeldn.ldn import station9
+    from pokeldn.ldn.station_protocol import DISCONNECTION_REQUEST, DISCONNECTION_RESPONSE
+    s = stage["s"]
+    stage["sent"].clear()
+    s.handle(station9.PROTOCOL, bytes([DISCONNECTION_REQUEST]))
+    answers = [payload for p, payload, kw in stage["sent"] if p == station9.PROTOCOL]
+    assert answers == [bytes([DISCONNECTION_RESPONSE])]

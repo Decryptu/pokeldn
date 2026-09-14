@@ -277,6 +277,9 @@ class Participant:
         # the first three words of a clone type 2 copy's data, when this station drives them past
         # what the peer published: 01 01 01 on selection, then 01 02 02 (docs/lgpe_session.md)
         self.flags = {}
+        # the first word of a clone type 4 copy when it is not the second word of our flags: the
+        # peer's own argument, echoed when its state word is 4 (docs/lgpe_session.md)
+        self.arg = {}
         self.queue = []
         self.log = []
 
@@ -466,7 +469,7 @@ class Participant:
         published zeros until its player pressed and these three from then on
         (docs/lgpe_session.md)."""
         flags = self.flags.get(clone_id) or self.shared.get(clone_id, SHARED_CLONE_DATA)[:12]
-        arg = flags[4:8] if len(flags) >= 8 else bytes(4)
+        arg = self.arg.get(clone_id) or (flags[4:8] if len(flags) >= 8 else bytes(4))
         return arg + bytes(0x14) + struct.pack("<I", self.state_word) + \
             struct.pack("<I", self.tail.get(clone_id, 0))
 
@@ -686,6 +689,7 @@ class Participant:
             self.published.discard(cid)
             self.tail.pop(cid, None)
             self.flags.pop(cid, None)
+            self.arg.pop(cid, None)
             return [self._command(COMMAND_END_ACK, 1 if c["ctype"] == 2 else c["ctype"],
                                   0xFD, cid, now)]
         if kind == COMMAND_REQUEST and c["ctype"] == 1:

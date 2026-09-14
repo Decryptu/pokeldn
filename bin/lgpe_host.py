@@ -32,7 +32,9 @@ from pokeldn.lgpe.trade import (TRADE_IN_PROGRESS, _answer_offer, _send_step,
 from pokeldn.ldn import local_protocol as lp
 from pokeldn.ldn import mesh_protocol as mp
 from pokeldn.ldn import rtt_protocol as rtt
-from pokeldn.ldn.station_protocol import ldn_constant_id, ldn_service_variable_id, station_location
+from pokeldn.ldn.station_protocol import (DISCONNECTION_REQUEST, DISCONNECTION_RESPONSE,
+                                          ldn_constant_id, ldn_service_variable_id,
+                                          station_location)
 from pokeldn.ldn.transport import HostTransport, find_ap_phy
 from pokeldn.host_support import resolve_keys
 from pokeldn.lgpe import (APPLICATION_VERSION, COMM_ID_PIKACHU, MAX_PARTICIPANTS, PASSPHRASE,
@@ -235,6 +237,8 @@ class Session:
         self.result_clones_announced = False
         self.result_at = None
         self.result_sent = False
+        self.leaving = set()
+        self.peer_left = False
         self.update_counter = 0
         self.session_sequence = 1
         self.sent_nodes = None
@@ -252,13 +256,13 @@ class Session:
         return int(self.now() * 1000)
 
     def send(self, payload, protocol, destination=JOINER_BIT,
-             flags=pia3.MESSAGE_FLAG_BITMAP, **what):
+             flags=pia3.MESSAGE_FLAG_BITMAP, port=0, **what):
         """Everything a host sends carries the bitmap flag and its own constant id as the source.
         The station and mesh-join messages are addressed to 0 and the rest to the joiner's bit,
         which is what a retail console does (docs/lgpe_session.md)."""
         if self.peer_ip is None:
             return
-        body = pia3.build_message(payload, protocol=protocol, source=self.our_const, port=0,
+        body = pia3.build_message(payload, protocol=protocol, source=self.our_const, port=port,
                                   destination=destination, message_flags=flags)
         self.nonce += 1
         nonce8 = self.nonce.to_bytes(8, "big")
@@ -678,6 +682,23 @@ class Session:
                 # it with a zero first word (docs/lgpe_session.md, "The two clone records")
                 self.commit_clone = d["clone_id"]
             print(f"[lgh] clone: clone {d['clone_id']} offered on both sides; driving it on")
+        # the peer's state word 4 is its player leaving. The emulated host answered it 29 ms
+        # later with zeros in the first three words, the trailing word moved on by one, and the
+        # peer's own argument in the type 4 copy's first word; the peer then released its clones
+        # (docs/lgpe_session.md). A retail console sends two: argument 0 as it backs out of its
+        # selection, then argument 3 as it leaves, each under a fresh counter and each answered.
+        if (d and d["type"] == clone.STATE_DATA and d["ctype"] == 2 and d["record"]
+                and d["record"].get("data", b"")[:4] == b"\x04\0\0\0"
+                and (d["clone_id"], d["record"]["data"][8:12]) not in self.leaving):
+            self.leaving.add((d["clone_id"], d["record"]["data"][8:12]))
+            self.clone.arg[d["clone_id"]] = d["record"]["data"][4:8]
+            # whatever walk was pending on that clone is off
+            self.drive = [step for step in self.drive if step[1] != d["clone_id"]]
+            self.drive.append((now + 0.03, d["clone_id"], bytes(12),
+                               (self.clone.tail.get(d["clone_id"]) or 0) + 1))
+            arg = int.from_bytes(d["record"]["data"][4:8], "little")
+            print(f"[lgh] clone: the console's state 4 on clone {d['clone_id']}, argument {arg}; "
+                  "acknowledging")
         # the peer answers the commit clone's trailing word 1 with a zero in its first word. The
         # host then zeroes the first word of every clone it drove, moves its step and sends its
         # kind 3 carrying 1, all in one frame; the peer's own kind 3 follows within a frame and
@@ -734,6 +755,11 @@ class Session:
         elif kind == station9.CONNECTION_RESPONSE:
             self.send(station9.build_ack(station9.ack_id_of(pl)), station9.PROTOCOL,
                       destination=0)
+        elif kind == DISCONNECTION_REQUEST:
+            # one byte each way. A console that gets no answer repeats it every half second,
+            # eight times, and deauthenticates: four seconds of black screen for its player
+            self.send(bytes([DISCONNECTION_RESPONSE]), station9.PROTOCOL, destination=0)
+            print("[lgh] the console asked to disconnect; answered")
 
     def mesh(self, pl):
         if pl[0] == mp.JOIN_REQUEST:
@@ -750,6 +776,22 @@ class Session:
             print("[lgh] *** THE CONSOLE JOINED THE MESH *** answered its join request; "
                   "starting the clone protocol")
             self.broadcast_mesh()
+        elif pl[0] == 0 and len(pl) >= reliable3.HEADER_SIZE:
+            # the mesh's reliable port: the leave request rides there under the same 24-byte
+            # header as the game's data, and is owed that header's acknowledgement on that port
+            # and a leave response on the unreliable one. Unanswered, a console repeats it every
+            # 40 ms for five seconds and then falls back to the station disconnect.
+            r = reliable3.parse(pl)
+            if r and r["size"] and r["payload"][0] == mp.LEAVE_REQUEST and not self.peer_left:
+                self.peer_left = True
+                self.send(reliable3.build_ack(r["sequence"] + 1), mp.PROTOCOL, port=1)
+                self.send(bytes([mp.LEAVE_RESPONSE, r["payload"][1]]), mp.PROTOCOL,
+                          destination=0, kind="leave_response")
+                self.peer_location = None
+                self.joined = False
+                self.broadcast_mesh()
+                print(f"[lgh] *** THE CONSOLE LEFT THE MESH *** station {r['payload'][1]}; "
+                      "answered its leave request")
 
 
 if __name__ == "__main__":
