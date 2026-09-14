@@ -9,7 +9,8 @@ from pokeldn.frlg.link import host_session, host_trade, trade_runtime
 from pokeldn.ldn import ldntrace, transport
 from pokeldn.frlg.link.linkplayer import HOST_NAME_PAD
 from pokeldn.ldn.host_beacon import (
-    BeaconInjector, build_colosseum_app_data, build_trade_app_data, build_union_room_app_data,
+    BeaconInjector, NullBeaconInjector, build_colosseum_app_data, build_trade_app_data,
+    build_union_room_app_data,
 )
 from pokeldn.ldn.host_pia import HostPeerProtocol
 from pokeldn.host_support import resolve_keys
@@ -98,6 +99,8 @@ class HostApplication:
         return party
 
     def _resolve_phy_and_keys(self):
+        if not getattr(self.transport_factory, "NEEDS_RADIO", True):
+            return None, None
         phy = self.ldn.phy
         if phy == "auto":
             if self.ldn.adapter:
@@ -336,8 +339,10 @@ class HostApplication:
             link_player = self._build_components()
             self._log_identity(link_player)
             self.network.start(preflight=not self.options.skip_preflight)
-            self.injector = self.injector_factory(
-                channel=self.options.channel, log=self.log)
+            factory = self.injector_factory
+            if not getattr(self.transport_factory, "NEEDS_RADIO", True):
+                factory = NullBeaconInjector
+            self.injector = factory(channel=self.options.channel, log=self.log)
             self.injector.start()
             self.info(self._hosting_instructions())
             while True:

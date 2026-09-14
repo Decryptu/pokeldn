@@ -12,6 +12,7 @@ hands over a BERRY for what it read.
 """
 
 import argparse
+import functools
 import os
 import sys
 
@@ -33,6 +34,7 @@ from pokeldn.frlg.gift.host_mg_app import (  # noqa: E402
     BufferScriptHostApplication, MysteryGiftHostApplication, WonderNewsHostApplication)
 from pokeldn.frlg.gift import wonder_card_events  # noqa: E402
 from pokeldn.frlg.gift.wonder_card import GIFT_BEAST_CUTSCENE  # noqa: E402
+from pokeldn.ldn import ldn_mitm_host, transport  # noqa: E402
 
 HOST_GIFT_CHOICES = gift_registry.GIFT_REGISTRY.live_choices
 
@@ -643,13 +645,19 @@ def main(argv=None):
         except OSError as exc:
             parser.error(f"could not write --artifact-dir {args.artifact_dir!r}: {exc}")
         print(f"wrote Mystery Gift artifact: {artifact_path}")
-    if os.geteuid() != 0:
+    factory = transport.HostTransport
+    if args.over_ip:
+        our_ip = None if args.over_ip == "auto" else args.over_ip
+        factory = functools.partial(ldn_mitm_host.IpHostTransport, our_ip=our_ip)
+        # functools.partial hides the class attribute the phy resolution reads.
+        factory.NEEDS_RADIO = False
+    elif os.geteuid() != 0:
         parser.error("live LDN hosting requires root; run with sudo -E")
     application = (WonderNewsHostApplication if args.news is not None
                    else BufferScriptHostApplication if args.buffer_script is not None
                    else MysteryGiftHostApplication)
     app = application(
-        config, distribution=distribution,
+        config, distribution=distribution, transport_factory=factory,
         log=trade_runtime.ConsoleLog(args.verbose))
     joined = app.run()
     if app.interrupted:

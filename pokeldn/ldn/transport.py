@@ -711,6 +711,8 @@ def preflight_host(phyname, log=print, _iw_output=None):
 
 
 class HostTransport:
+    # A transport that brings up an AP needs a phy and prod.keys; IpHostTransport needs neither.
+    NEEDS_RADIO = True
     # comm_id/scene captured from a real FRLG session; the console's scan filters on comm_id, so a placeholder makes us invisible.
     LOCAL_COMMUNICATION_ID = 0x01006fa0233f8000
     SCENE_ID = 22287

@@ -298,6 +298,511 @@ Never SIGTERM the Mystery Gift host until the dump file exists. The host writes
 
     until ls scratchpad/<tag>_dump.bin >/dev/null 2>&1; do sleep 2; done
 
+## Where a payload can live
+
+A buffer script is 1024 bytes at `gDecompressionBuffer`, re-copied from `client->recvBuffer` on every
+frame, so nothing it writes inside its own image survives the next frame and nothing at all survives
+the session. Code that is to outlive the Mystery Gift menu has to be copied somewhere the game does
+not use.
+
+    0x0203FC00 .. 0x02040000    1024 bytes, above every symbol the game links
+
+The top of EWRAM is unclaimed: the highest sized EWRAM symbol in the build ends at 0x0203FBAC and the
+region ends at 0x02040000 ([EWRAM is at the same addresses in both builds](frlg_rom_map.md)). Dumps
+of a console's EWRAM on the Mystery Gift menu, in the overworld, and after a battle and a map reload
+read zero across the whole span in all three states.
+
+A soft reset clears it twice, and on the Switch release it boots the game twice. `DoSoftReset` calls
+`SoftReset(RESET_ALL & ~RESET_SIO_REGS)` [main.c:488], and `SoftReset` is `svc 0x1` then `svc 0`
+[libagbsyscall.s:69]: a `RegisterRamReset` with those flags before the console reboots, then the BIOS
+reset. `AgbMain` then calls `RegisterRamReset(RESET_ALL)` itself [main.c:134]. `RESET_ALL` is 0xFF
+and bit 0 is `RESET_EWRAM` [include/gba/syscall.h:4,12], so the whole 256 KB goes each time.
+
+Sampled at 328000 readings a second, `gIntrTable` is cleared and rebuilt **twice**, and both rebuilds
+are the complete template, all fourteen words including `0x08000805` at entry 0 and the eight
+`IntrDummy`s. `INTR_VECTOR` at 0x03007FFC is written twice with it. So `InitIntrHandlers` runs twice,
+and therefore `AgbMain` does. Between the two, entries 1, 2 and 7 take their wireless values, so the
+first boot reaches the point where the link comes up before the second clear arrives. The intervals
+are 33.3 ms from the first clear to the first rebuild, 133.6 ms until the second clear, and 33.6 ms
+to the second rebuild. The decomp accounts for two `RegisterRamReset` calls and for one `AgbMain`;
+the second `AgbMain` is the wrapper restarting the emulated console.
+What reads non-zero afterwards is what the boot path rebuilt: the heap, the GPU and font state, and
+the save reloaded out of flash. The rebuild does not reach above 0x0203B0E8, which is why the top of
+EWRAM reads clear rather than spared. A staged payload therefore lives until the console is reset and
+no longer; measured, a marker at 0x0203FC00 survived the gift session closing, the title screen, a
+full reload from it, walking, the START menu, the party and bag screens, the save menu, a save, a map
+change, a wild battle fought to the end and a PC box, and was gone after A+B+START+SELECT.
+
+`gHeap` carries no size in the symbol table, so a naive subtraction reports its 114688 bytes as
+unclaimed. Named from the decomp instead, the top span is not merely the largest unclaimed region in
+EWRAM, it is the **only** one: everything else the link map leaves over is three and eight-byte
+alignment holes. `scratchpad/ewram_symbol.py ADDR LEN` answers the question for one address.
+
+Large quiet spans lower down are not free. 0x0202B280, 0x020185C4 and 0x0203B0E9 are each tens of
+kilobytes that read zero in all three of those states, and each is inside a symbol: the battle and box
+buffers, the run-up to `gDecompressionBuffer`, and allocator bookkeeping. A buffer that happens to be
+empty is not spare memory, and no number of sampled states can tell the two apart. The link map can.
+
+That is not a theoretical caution. Twelve bytes written to 0x0202B280 to test whether a soft reset
+clears EWRAM landed inside `gPokemonStorage` at +0x1F70, which is box 4 slot 10, across that stored
+Pokemon's markings, checksum and the first bytes of its encrypted substructs. Destroying the checksum
+is what makes a BAD EGG. The session saved immediately afterwards so it reached flash, and nothing
+read it for eight tasks, because nothing reads a box slot until a person opens the box. A second
+address in the same run, 0x02012304, was inside `gHeap` and did no harm only because that block
+happened to be free. Both had been chosen for reading zero in three RAM dumps, which is the exact
+mistake this section describes.
+
+## The per-frame hook
+
+`gIntrTable` is at **0x03002720** on the French cartridge and entry 4, the V-blank handler, holds
+`VBlankIntr` at 0x0800071D. The table is a plain array of fourteen function pointers, written once
+by `InitIntrHandlers` from `gIntrTableTemplate` [main.c:339], and the BIOS reaches it through
+`IntrMain`, whose address the hardware vector at 0x03007FFC carries. Replacing entry 4 gives code a
+call every frame in every game state, which nothing else on this console does: `gMain.vblankCallback`
+and `gMain.callback2` are rewritten whenever a menu or a battle starts.
+
+It was located in a console's own IWRAM rather than predicted. `IntrMain_Buffer` reads 0x03002760 at
+0x03007FFC against the English build's 0x03002810, and `gSaveBlock1Ptr` is 0x03004228 against
+0x030042D8: both say the cartridge's IWRAM sits 0xB0 below the English build's. At 0x030027D0 minus
+0xB0 the fourteen words are the table, and four of the five real handlers name themselves, each a
+constant 0x18 below its English address:
+
+| entry | cartridge | English | |
+|---|---|---|---|
+| 0 VCount | 0x08000805 | 0x0800081C | `VCountIntr` |
+| 1 Serial | 0x03004B34 | | replaced with an IWRAM handler while the link is up |
+| 2 Timer3 | 0x08005AE1 | | `Timer3Intr`, a different ROM segment and a different delta |
+| 3 HBlank | 0x080007D5 | 0x080007EC | `HBlankIntr` |
+| 4 VBlank | 0x0800071D | 0x08000734 | `VBlankIntr` |
+| 5, 6, 8-13 | 0x08000885 | 0x0800089C | `IntrDummy`, eight times |
+| 7 | 0x081E0D35 | | the RFU library's timer handler, `sTimerIntrFunc = gIntrTable + 0x7` [main.c:85] |
+
+Entries 1 and 7 being the two that differ from the template is what the decomp says happens while
+wireless is running, so the two slots that break the pattern confirm the identification rather than
+weakening it. The table reads identically on the Mystery Gift menu, in the overworld, and after a
+battle and a map reload.
+
+IWRAM addresses do not transfer between the two builds the way EWRAM addresses do, so the 0xB0 is a
+measured offset at these addresses and not a map.
+
+`InitIntrHandlers` re-runs on a soft reset and writes the table back from `gIntrTableTemplate`, so a
+hook in it is undone by the same event that clears EWRAM and by nothing else. Entries 1 and 2 read
+their template values again afterwards, where a session with the link up had replaced them.
+
+### Code that outlives the session
+
+A twenty-byte stub written into the staging area and installed in entry 4 runs every frame, in every
+game state, after the Mystery Gift session has closed. `asm/resident/vblank-hook.s`:
+
+```arm
+    ldr     r0, .Lcounter
+    ldr     r1, [r0]
+    add     r1, #1
+    str     r1, [r0]
+    ldr     r0, .Loriginal
+    bx      r0                      @ tail branch: lr still points at intr_return
+```
+
+`IntrMain` enters a handler in SYS mode with `lr` pointing at `intr_return` and lets it clobber
+r0-r3 [crt0.s, `jump_intr`], so the stub preserves nothing and leaves `lr` alone: the handler it
+replaced returns to `IntrMain` through its own `bx lr` as if nothing were in the way. Both literals
+are patched before it is sent, so the code is position independent.
+
+Installing it costs no new payload. A `call-chain` writes the five words and then entry 4, in that
+order so the table never points at an incomplete stub, and every write reads itself back:
+
+    read32  [0x03002730]                gIntrTable[4], 0x0800071D
+    write32 [0x0203FC00] = 0x68014802   the stub
+    write32 [0x0203FC04] = 0x60013101
+    write32 [0x0203FC08] = 0x47004801
+    write32 [0x0203FC0C] = 0x0203FC40   the counter's address
+    write32 [0x0203FC10] = 0x0800071D   the handler being replaced
+    write32 [0x03002730] = 0x0203FC01   the hook, THUMB bit set
+    read32  [0x0203FC40]                the counter
+
+Measured over 19995 frames and 329 samples: 59.0 to 63.3 counts a second on the Mystery Gift menu,
+the title screen, the overworld, a party menu and a wild battle, with no stall, no revert and no
+deviation, the spread being the sampler's. It survives a full in-game restart, title screen to save
+load to overworld, without missing a frame. A soft reset ends it, because that clears EWRAM and
+re-runs `InitIntrHandlers`. An IWRAM sample taken at the reset read `gIntrTable[4]` as zero and read
+it as 0x0800071D again ten seconds later, which is the clear caught between `RegisterRamReset` and
+`InitIntrHandlers` writing the table back.
+
+A gift session cannot reach a console that is already carrying a payload. Mystery Gift is reachable
+only from the menu a boot arrives at, and the boot clears EWRAM on the way, so installing a payload
+always destroys whatever was there first. Nothing the gift link can send changes that; the way to
+have a payload present without a human having just run a session is to put its installer in the
+save.
+
+`gIntrTable[1]` and `[2]` are replaced when wireless starts and are not restored when it ends: they
+hold their wireless values in the overworld long after a session closed, and return to the template's
+only at a reset. Entry 4 is never written by any of it.
+
+### Re-arming it after a reset
+
+`--gift resident-hook` sends a Wonder Card whose Mystery Event script `initramscript`s a field script
+onto the player's mother, and that field script installs the hook. The binding lives in the save and
+survives a power cycle ([the one RAM script slot](frlg_gift.md#the-one-ram-script-slot)), so the
+player talks to her once after any boot and the hook is back, with no link and no host.
+
+`asm/field/install-vblank-hook.s`, 68 bytes, staged with `setptr` at six script bytes each and run
+with `callnative`: 418 bytes of the 995 a RAM script body holds.
+
+    read  gIntrTable[4]
+    if it already names the stub: return, writing nothing
+    write the five words of the V-blank stub to the staging area
+    write the handler just read into the stub's fifth word
+    zero the counter
+    write the staging area, Thumb bit set, into gIntrTable[4], last
+
+The tail target is read from the table rather than patched in by the host, so the hook chains
+whatever handler is there. The comparison at the top is a guard and not an optimisation: installing
+twice would make the stub tail-branch to itself, which spins forever inside an interrupt handler and
+freezes the overworld with no menu to back out of. The player can talk to their mother as often as
+they like.
+
+While the script is bound the console reports holding no Wonder Card, and the object's own dialogue
+is replaced rather than extended. The next ordinary card takes the slot back.
+
+Measured on an emulator: the card installed, the player talked to their mother, and the stub and
+`gIntrTable[4] = 0x0203FC01` appeared in the same 50 ms sample with the counter at 1, so the hook
+arms within about a frame of the conversation. A soft reset removed both. The script block at
+`SaveBlock1 + 0x32E0` came back byte for byte at the re-rolled pointer, and talking to her again
+brought the hook back with the host down and the console holding no LDN socket. Ten samples over 78
+seconds saw nothing write the staging area before the script fired, which bounds the claim to what
+was sampled rather than proving the span untouched.
+
+What the save carries is the binding, not the payload. The script rebuilds the code on every arming,
+so the code can never be larger than a script body holds: 162 bytes staged, or about 755 appended
+after the last command and reached with a trampoline. Past that a payload has to live somewhere else
+in the save and be copied in by a loader; `filler_B20` is 1024 bytes and is the only unused region
+already proven to reach flash and come back.
+
+### A payload larger than a script body
+
+What the save keeps is a script, so the script's body bounds the code. A loader removes that bound by
+putting the code somewhere else in the save and copying it in.
+
+`asm/field/save-loader.s`, 64 bytes, is the whole of what the RAM script stages whatever the payload
+weighs: it reads `gSaveBlock2Ptr` fresh, adds 0xB20, copies N words to the staging area, compares the
+first word against a magic and branches into it. It uses only r0-r3 and never pushes, so the branch is
+a tail branch and the payload's return goes straight back to `ScrCmd_callnative`'s caller. The magic
+is the guard: a save that was never written, or a region a later card reached, is not branched into.
+
+The blob is 936 bytes, which is what one `save-write` carries (`MAX_SAVE_WRITE_BYTES`, the 1024-byte
+receive buffer less the payload that writes it):
+
+    +0x000  magic 0x444C4B50
+    +0x004  installer
+    +0x054  the V-blank hook
+    +0x068  filler
+    +0x3A4  checksum over the filler
+
+The installer sums the filler and installs nothing unless the sum matches. The blob travels through a
+save write, flash, a slot rotation and a copy loop, and a short arrival would run perfectly well and
+be wrong, so the checksum is what separates "the branch landed" from "all of it arrived".
+
+The hook's tail target in the save's copy is the measured `VBlankIntr` rather than zero, and that is
+a correctness requirement rather than a convenience. The loader copies the blob on top of whatever is
+at the destination, which may be a hook that is installed and being called every frame, so a V-blank
+landing between the copy and the install would branch to whatever the copy just wrote there. On a
+second visit to the bound object it is not a race at all: the table already names the hook, the
+installer takes its already-installed path and patches nothing, and the copy has already overwritten
+the working tail target. The installer still writes the handler it reads, so the hook still chains
+rather than assumes; the constant is what makes the window and the second visit safe.
+
+Measured, with the zero left in deliberately: the second visit re-zeroed the word, `gIntrTable[4]`
+never changed, the staged blob came back byte-identical to the save, and the console went to a black
+screen 205 frames after the conversation ended. The counter recorded its own last frame, because the
+hook increments before it branches. It is the
+same argument a RAM script body makes about its own filler
+([proving the size](frlg_rng.md#proving-the-size-rather-than-the-jump)).
+
+The resulting RAM script is 394 bytes of 995 and does not grow with the payload. `filler_B20` holds
+1024 bytes, and the other unused regions in the save add about 700 more. A blob larger than one
+`save-write` is not a different mechanism, only more sessions: `save_write_chunks` splits it and the
+region persists between them. At the full 1024 the blob ends at the top of EWRAM, so the frame
+counter moves below it, into the 84 bytes between the highest symbol and the staging area.
+
+Measured on an emulator, 936 bytes through the whole path: the blob arrived in EWRAM identical to
+what was written into the save except the hook's fifth word, filler included; `gIntrTable[4]` read
+the hook's address inside the blob; the counter ran at 60.0 a second. Across three soft resets and
+four installs the staged blob hashed the same every time and the save blob was unchanged before each,
+so the save survives the cycles and the loader reproduces the same bytes.
+
+### Calling the wrapper
+
+The GBA code the Switch release runs reaches its emulator through syscalls the decomp calls Sloop:
+23 of them between `swi 0x40` and `swi 0x62`, with gaps at 0x46, 0x4E, 0x52 and 0x58 to 0x60
+[src/sloopsvc.c]. A resident payload can issue any of them, because it is arbitrary THUMB in EWRAM,
+and the blob carries a two-halfword thunk, `swi N ; bx lr`, assembled into it by the builder with the
+number patched in. Markers go down before the call, since a syscall that does not return leaves
+nothing else to read:
+
+    +0x00  0xB0B00001   the probe was reached
+    +0x04  the syscall number
+    +0x08  0xB0B00002   it returned, and zero until it does
+    +0x0C  r0, r1, r2, r3 as the syscall left them
+
+`swi 0x54`, `svc_CommsAllowedByParentalControls` [sloopsvc.c:182], returned a non-zero u32 on an
+emulated console with no parental controls, which is what it should. `swi 0x46`, one of the four
+numbers the decomp leaves out, returned r0 = 0 and did not hang, so an unhandled number is inert and
+the gaps can be swept without risking the overworld.
+
+The wrapper's dispatcher is at `main + 0x057014` and its jump table at `main + 0x17D7F6`, found by
+arming every candidate function in `main` on an emulator and looking for the one that carried a
+syscall number the game never issues. It admits `N` in **0x40..0x62** and sends everything else to
+the same place as its default:
+
+    cmp   w2, #0x2b ; b.lo default       below 0x2B, the BIOS syscalls
+    sub   w9, w19, #0x40 ; cmp w9, #0x22 ; b.hi default
+    ldrh  w12, [table, w9, lsl #1]       a u16 word-offset from 0x05706C
+    br    base + offset * 4
+
+Thirty-five entries, twenty-three distinct handlers. Every number `sloopsvc.c` names has one of its
+own. **0x52 has a handler the decomp does not have**, at 0x05728C. Called from the overworld with
+`0xC0DE0052` in r0 and distinct markers in r1 to r3, it **writes r0 and nothing else, and writes
+zero**: not an error code, not a pointer, not a handle. r1 to r3 came back bit for bit as passed,
+which rules out a multi-register answer. The console did not freeze and both save slots were
+byte-identical afterwards. Its handler reads the guest CPU state, shifts a word right by 21, indexes
+a structure and calls through a vtable, so it does something rather than nothing, and what that
+something writes is not known: a diff of the payload's own kilobyte cannot see a write anywhere else
+in memory. The eleven that share the default
+are 0x46, 0x4E and 0x58 through 0x60, which are exactly the decomp's gaps, so the gaps are gaps in
+the table rather than in what the game happens to call. 0x48 and 0x56 share one handler, as
+`WriteSector` and `ReplaceSector` should; 0x40 and 0x41 share one that branches on the number itself.
+
+The default handler is `cmp w19, #0x2a ; cset w0, hi` and returns. That `w0` is the wrapper's own
+"did I handle this" boolean, not the guest's r0, so an unimplemented number leaves the guest's
+registers untouched rather than returning zero. A probe that passes zero in and reads zero out has
+measured nothing, which is what the first reading of `swi 0x46` did.
+
+Reading the table also settles that a blind sweep of 0x40..0x62 is not a measurement but a hazard:
+0x48 and 0x56 take a sector number and a pointer, 0x4C finishes a save, 0x55 hands over a SaveBlock2
+pointer, and 0x43, 0x57, 0x61 and 0x62 all take arguments. Sweeping them with a marker in r0 asks the
+wrapper to write flash from a garbage address.
+
+Because the shared ones are inert, the probe sweeps a range rather than taking one number per deployment. The
+thunk is two halfwords in EWRAM and this CPU has no instruction cache, so the payload rewrites its
+own `swi` before each call, records `r0` per number after the seven header words, and writes the
+number it is about to attempt first, so a number that does hang still names itself. The whole
+0x40..0x62 range is 35 results in 140 bytes and fits in one blob. It was chosen first because its
+answer is predictable, so a wrong mechanism reads differently from a wrong answer. A sampler caught
+the call in flight, between the pre-call markers and the return, with the result slots still holding
+the filler pattern, and the whole crossing cost the guest nothing at a 25 ms stall threshold.
+
+**Two sweeps, and they are different experiments.** Stepping the number asks what each syscall does.
+Stepping `r0` with the number pinned asks what one syscall's argument selects, which is the only way
+to read 0x52's index. The payload has a step for each, `p_probe_num_step` and `p_probe_a0_step`, and
+pinning the number needs the first to be zero. It was a hardcoded increment for one deployment, so a
+run configured as ten selectors of `swi 0x52` was ten consecutive syscalls carrying ten different
+arguments, and the differences between its rows measured the number rather than the selector. The
+marker at `+0x04` records the number of the pass in flight and read `0x54` while the first row was
+being called, which is what exposed it.
+
+That run measured four numbers before it stopped, each with an unrelated marker in `r0`:
+
+| number | r0 in | r0 out |
+| --- | --- | --- |
+| `swi 0x52` | `0xA5A00052` | `0` |
+| `swi 0x53` | `0xA5C00052` | `1` |
+| `swi 0x54` | `0xA5E00052` | `1` |
+| `swi 0x55` | `0xA6000052` | `0xA6000052`, unchanged |
+| `swi 0x56` | `0xA6200052` | the wrapper faulted |
+
+0x52 writing zero and 0x54 answering non-zero repeat earlier readings. 0x55 leaving `r0` as passed is
+the default handler's signature, since the boolean it sets is the wrapper's own and never reaches the
+guest.
+
+**0x56 is `ReplaceSector`, and it takes a sector number and a pointer.** Reached with `0xA6200052` in
+`r0` it dereferenced a near-null base and the emulator aborted:
+
+    Invalid memory access at virtual address 0x0000000000000FF8
+    PC  = main+0x573F8     LR = main+0x573EC
+    x19 = 0x56                  the syscall number
+    x22 = 0xA6200052            the guest's r0
+    x13 = 0x0203FFC2            the guest's PC, the halfword after the thunk's `swi`
+    x03 = 0x655DB09BE8          0x2D0 above the object 0x52's index 45 resolves to
+
+The fault address is `+0xFF8` from something near zero rather than an offset into the table, so it is
+inside a callee of the dispatcher and not the dispatch itself. Both save slots verified intact
+afterwards, 14 sectors each and no checksum failure, so the call faulted before it wrote flash.
+
+This is the hazard named two paragraphs above, and the sweep walked into it because the number moved
+when only the argument was meant to. A sweep of numbers is safe only over the range that has been
+read out of the jump table and found to take no pointer; the rest take one, and a marker word is a
+garbage address. With the number pinned the range no longer exists and the question does not arise.
+
+The log labels `0x0855D3F8` as `gba-app:0x573f8`, which re-derives the `main` base as **0x08506000**
+from the emulator's own symbolisation.
+
+With the number pinned and `r0` stepped by `1 << 21`, all ten selectors from index 45 to index 54
+returned and none hung, so the abort belonged to the number and no index in that range is hostile.
+**Every one of them returned `r0` = 0**, index 45 included, whose slot 9 disassembles to two
+instructions returning `r0 & 0x00FFFFFF`. The wrapper therefore does not hand slot 9's return back to
+the guest.
+
+Repeating the walk with distinct markers in `r1` to `r3` closed the rest. All ten indices returned
+`r0` = 0 and `r1` to `r3` exactly as passed, `A5B00001 A5C00002 A5D00003`, one distinct result across
+the ten. **Across indices 45 to 54, `swi 0x52` is indistinguishable from inside the guest**: the four
+registers are everything a guest is handed and none of them varies with the selector. This does not
+show the ten reach the same object. It shows that if they reach different ones, the difference does
+not cross the boundary, which index 45 already demonstrated is possible: its slot 9 computes a
+selector-dependent value and the guest still reads zero.
+
+`swi 0x52`'s handler is at `main + 0x05728C` and its shape accounts for every measurement:
+
+    ldp   w1, w22, [x20, #0x48]     guest r0 into w1, guest r1 into w22
+    lsr   x9, x1, #0x15             r0 >> 21
+    ldr   x8, [x21, #0xe0]!         the region table
+    and   x9, x9, #0x7f8            bits 3..10, so x9 is a BYTE OFFSET, not an index
+    add   x8, x8, x9
+    ldr   x0, [x8, #0x50]           the object for this selector
+    ldr   x8, [x0]                  its vtable
+    ldr   x8, [x8, #0x48]           slot 9
+    blr   x8
+    mov   x0, x20 ; mov w1, wzr ; mov w2, wzr ; b 0x0855D584
+
+**The call's return value is discarded.** `x0` is overwritten with the guest state pointer and the
+write-back at `main + 0x057584` is handed `w1` = `wzr`, so the guest's `r0` is set to a hardcoded
+zero whatever slot 9 computed. The guest reading zero from every selector is what this code does by
+construction, not a failure to propagate.
+
+`swi 0x55` at `main + 0x057304` indexes **the same table with the same shift** and calls the same
+slot 9, then branches to `main + 0x057588`, the exit that never calls the write-back at all. That is
+why 0x55 returns the guest's `r0` unchanged. Two syscalls reach the selector table and neither hands
+anything back.
+
+Reading the object and the resolved target therefore has to happen at the call. The instruction is
+`blr x8` at **`main + 0x0572AC`**, virtual address `0x0855D2AC`, where `x0` holds the object for this
+selector, `x8` holds slot 9's resolved target and `w1` holds the guest `r0` that chose them. Stopping
+one instruction after it reads the return value before `mov x0, x20` overwrites it.
+
+`0x7f8` masks and scales in one instruction, so the entry is
+
+    entry = (r0 >> 24) & 0xFF        and the byte offset is entry * 8
+
+not `(r0 >> 21) & 0xFF`. Reading it as an index times eight makes every entry number eight times too
+large and turns eight neighbouring arguments into what look like eight different entries.
+
+**`r0` is a GBA address and the table is the memory bus.** Bits 24 to 31 of a GBA address are exactly
+what selects a region, and each entry's slot 9 is that region's address-folding function:
+
+| entry | region | slot 9 |
+| --- | --- | --- |
+| 0x02 | EWRAM, 256 KB | `and w0, w1, #0x3ffff` |
+| 0x03 | IWRAM, 32 KB | `and w0, w1, #0x7fff` |
+| 0x05 | palette, 1 KB | `and w0, w1, #0x3ff` |
+| 0x06 | VRAM, 96 KB | `and w8, w1, #0x1ffff`, then `0x18000..0x1FFFF` folded down by `0x8000` |
+| 0x07 | OAM, 1 KB | `and w0, w1, #0x3ff` |
+| 0x08 to 0x0C | ROM, three waitstate mirrors | `ldr w8, [x0, #0x34] ; and w0, w8, w1`, the cartridge's own size mask |
+| 0x0E | SRAM | its object is allocated well away from the others |
+| everything else | unmapped | `and w0, w1, #0xffffff` |
+
+The VRAM fold is the hardware's mirror rule exactly: `0x18000` reads `0x10000` and `0x1FFFF` reads
+`0x17FFF`. The three ROM entries share one vtable and carry three separate objects, which is the
+three waitstate mirrors. The ROM mask is a field rather than a constant because it is the cartridge's
+size.
+
+So `swi 0x52` resolves a GBA address to its region handler and calls slot 9, the fold. The 256 entry
+points are the 256 top bytes of the GBA address space, not 256 unrelated services.
+
+Measured across all 256 entries, the table is the GBA's own top-byte map and nothing else:
+
+| entry | region | object |
+| --- | --- | --- |
+| 0x00 | BIOS | its own, folding with `0xFFFFFF` |
+| 0x01 | unmapped | the default |
+| 0x02, 0x03 | EWRAM, IWRAM | their own |
+| 0x04 | I/O | its own |
+| 0x05, 0x06, 0x07 | palette, VRAM, OAM | their own |
+| 0x08 and 0x09 | ROM waitstate 0 | one object over both entries |
+| 0x0A and 0x0B | ROM waitstate 1 | one object over both entries |
+| 0x0C | ROM waitstate 2 | its own, same vtable as the other two |
+| 0x0D | the top of waitstate 2, where EEPROM sits | its own, with the default vtable |
+| 0x0E | SRAM | allocated away from every other region object |
+| 0x0F | the SRAM mirror | its own |
+| 0x10 to 0xFF | unmapped | the default |
+
+Entries 0 to 15 give 14 distinct objects across 11 distinct vtables.
+
+The vtable is the bus interface. Taking EWRAM's, `main + 0x1C21A0`, with `x0` the region object, `x1`
+the cycle counter, `x2` the address and `x3` the value:
+
+| slot | what it is |
+| --- | --- |
+| 2 | store two words into the object at `+0x24` and `+0x2C` |
+| 3, 4, 5 | read 16, 32 and 8 bits |
+| 6, 7, 8 | write 16, 32 and 8 bits |
+| 9 | fold the address into the region |
+| 10, 11 | return null, and a no-op |
+
+Each accessor charges the cycle counter first, three for a halfword or byte and six for a word, then
+indexes the region's host backing pointer at `+0x10`. The size is at `+0x20` and the ROM size mask at
+`+0x34`.
+
+Seven syscalls reach the table: 0x45, 0x47, 0x48 with 0x56, 0x4D, 0x52, 0x55 and 0x62. Every one of
+them calls slot 9 and nothing else. The read and write accessors are not reachable by syscall number;
+they belong to the emulator's own CPU core. `swi 0x62` is four instructions, incrementing a counter.
+
+A handler must be bounded by its own control flow, not by the next handler's start. Several carry an
+out-of-line continuation placed after the last entry in the table, so bounding by the next start
+attributes that continuation to whichever handler happens to precede it.
+
+### The flash sector path
+
+`swi 0x48` and `swi 0x56` share a handler at `main + 0x057084`, with a continuation at
+`main + 0x057364`. It takes guest `r0` as a 4 KB sector number and guest `r1` as the source address:
+
+    source      = r1, resolved through the region table and folded
+    destination = 0x0E000000 + r0 * 0x1000, resolved the same way
+
+Each side is rejected, and its pointer replaced with null, on any of three conditions: the region's
+backing pointer at `+0x10` is null, the folded offset is at or past the region's size at `+0x20`, or
+fewer than `0x1000` bytes remain after it. Both sides are resolved before either is used, then
+`0x1000` bytes are copied.
+
+**`swi 0x56` then stores `0xFF` at destination `+0xFF8` with no null check**:
+
+    cmp   w19, #0x56
+    b.ne  exit
+    mov   w8, #0xff
+    strb  w8, [x21, #0xff8]
+
+`+0xFF8` is the sector signature [pokeldn/frlg/save/save_inject.py], so that store turns the
+signature `0x08012025` into `0x080120FF` and invalidates the sector it has just written. That is what
+distinguishes `swi 0x56` from `swi 0x48`, and it matches the decomp's names: `ReplaceSector` writes a
+sector and then voids its signature, `WriteSector` writes and leaves it.
+
+A rejected destination leaves `x21` null, so the store faults at `0x0000000000000FF8`. That is the
+abort seen when `swi 0x56` was reached with an argument in an unmapped region: the destination was
+correctly rejected, the copy returned, and the unconditional store went to a null pointer. `swi 0x48`
+takes the same path without the store. Every vtable carries a null typeinfo pointer, so the
+image is built without RTTI and none of the classes has a name to recover.
+
+Read that way, entries 165 and 166 give one object `0x655DB09918`, one vtable `main + 0x1C1FB0` and one
+slot 9 `main + 0x01F7D8`, the unmapped-region default, whose whole body is
+
+    and   w0, w1, #0xffffff
+    ret
+
+and whose returns are `r0_in & 0x00FFFFFF` at every index, including the one where the selector bits
+mask out to `0x00000052`. Its neighbours in the vtable are the same kind of stub: `mov x0, xzr ; ret`
+at slot 10, a bare `ret` at slot 11, a two-store setter at slot 2. The vtable carries a null typeinfo
+pointer at `-0x08`, so the image is built without RTTI and the class has no name to recover.
+
+For a survey of the whole table, the breakpoint belongs at `ldr x8, [x0]`, **`main + 0x0572A4`**,
+where `x0` is already the object and nothing has been dereferenced yet. An entry holding a null or
+unmapped object faults at that instruction, so a stop placed on it reads the object of an index that
+would otherwise take the emulator down before reporting anything.
+
+The store is proven rather than assumed, and the non-zero filler is what proves it. The result table
+holds `offset & 0xFF` filler in the save, so a table that still reads filler is a store that did not
+run and a table that reads anything else is a store that did. After the walk all 160 bytes differed
+from the filler, so forty words were written and ten identical rows are a measurement rather than an
+absence of one.
+
+
 ## Repointing the console's outgoing message
 
 `r0` is `&client->param`, so the whole of `struct MysteryGiftClient`
@@ -465,6 +970,23 @@ past `filler_B20` lands in `encryptionKey`, which money is XORed with, so gettin
 game rather than failing a run. `--write-unsafe` is the deliberate override.
 
 A write survives a reload from the title screen, so `SaveBlock2` really comes back from flash.
+
+Where it lands in the file is not fixed. A sector's physical slot is
+`((gLastWrittenSector + sectorId) % 14) + 14 * (gSaveCounter % 2)` [save.c:174], so the counter's
+parity picks one half of the 28 sectors and `gLastWrittenSector`, which advances by one and wraps at
+14 after every full save [:147], rotates within it. Sector 0 was observed at physical 6, 21, 15, 2,
+17 and 4 across six consecutive saves. Find it by parsing the footers of the slot with the highest
+counter and taking the sector whose id is 0; a fixed file offset reads a previous generation and
+fails without a symptom. `gLastWrittenSector` is reset independently of `gSaveCounter` by
+`Save_ResetSaveCounters` [:104], so computing the rotation from the counter is not safe either.
+
+The write is surgical. Measured across one `save-write` session: zero differing bytes in SaveBlock1,
+196 in SaveBlock2, and every one of them inside the 256-byte span that was asked for. Bytes written
+into `filler_B20` also survive what else the link does to the save: sixteen written there in one
+session were still intact ten save generations later, through a Mystery Event delivery, a Wonder Card
+delivery, several soft resets and the play in between, and 256 bytes written there were unchanged
+after a minute of ordinary play in which 1456 bytes of SaveBlock1 moved. That bounds ordinary play
+rather than endurance.
 
 ### `memory-scan`
 

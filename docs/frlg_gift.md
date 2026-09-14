@@ -117,6 +117,39 @@ The last two are on [Code on the console](frlg_rom.md).
 
 ## The one RAM script slot
 
+A console holds a Wonder Card or a bound RAM script, never both, and the two states are decided by
+one field.
+
+```c
+bool32 ValidateRamScript(void)
+{
+    if (scriptData->magic != RAM_SCRIPT_MAGIC)            return FALSE;
+    if (scriptData->mapGroup != MAP_GROUP(MAP_UNDEFINED)) return FALSE;
+    if (scriptData->mapNum != MAP_NUM(MAP_UNDEFINED))     return FALSE;
+    if (scriptData->objectId != 0xFF)                     return FALSE;
+    ...
+}
+```
+
+[script.c:538], and `ValidateSavedWonderCard` calls it after checking the card's own CRC
+[mystery_gift.c:180]. The field's dispatch takes the other path,
+`GetRamScript(gSpecialVar_LastTalked, script)` [field_control_avatar.c:458], which requires the
+coordinates to match the object being talked to. The two requirements are opposites: a script bound
+to a real object fails the card gate at the first coordinate check, and a script bound to
+MAP_UNDEFINED is never reached from the field.
+
+So a session run while a bound script is installed reports the card missing although its bytes are
+intact and its CRC passes, and the card comes back the moment an ordinary card rebinds the slot to
+the delivery man. Measured on an emulator: with a script bound to the player's mother at 4/0/1 the
+console held no card, and after an ordinary card took the slot the binding read 255/255/255 and the
+card was listed again.
+
+An ordinary card does not clear the slot, it rebinds it. `magic` stays 51 and the coordinates go to
+0xFF. Of a 15872-byte SaveBlock1, 564 bytes changed across one delivery: 246 in the card at +0x32E0
+and 426 in the RAM script at +0x361C, with 582 bytes between them untouched, and only one save sector
+differing.
+
+
 A Wonder Card and an NPC-bound script are mutually exclusive. There is one RAM script slot, and the
 card's validity depends on what is in it:
 

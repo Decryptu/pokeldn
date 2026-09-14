@@ -13,12 +13,14 @@ from dataclasses import dataclass, field
 
 from pokeldn.frlg.rom import rom_map
 from pokeldn.frlg.rom.field_stubs import STUBS
+from pokeldn.frlg.rom.resident_stubs import STUBS as RESIDENT_STUBS
 from pokeldn.frlg.rom.rng_countdown import NATURE_NAMES, NUM_NATURES
 # One encoder for `setptr`, not two: duplicated encoders go out of step and cost a run.
 from pokeldn.frlg.rom.rng_script import (MAX_RAM_SCRIPT_SIZE, SCR_END, SCR_SETPTR, RngScriptError,  # noqa: F401
                          SCR_DOWILDBATTLE, SCR_SETWILDBATTLE, SCR_RELEASEALL, SCR_GOTO,
                          SCR_SETVAR, BATTLE_TAIL, TRAMPOLINE_ADDRESS, TRAMPOLINE_WORD,
-                         MAX_LEVEL, MAX_SPECIES, battle_and_exit, setptr)
+                         MAX_LEVEL, MAX_SPECIES, SCR_PLAYSE, SCR_WAITSE, SE_SUCCESS,
+                         battle_and_exit, setptr)
 
 SCR_CALLNATIVE = 0x23
 
@@ -116,6 +118,295 @@ def build_shiny_hunt_script(species, level, *, item=0, cap=1 << 18, scratch=SCRA
                 sav2ptr=rom_map.GSAVEBLOCK2PTR if sav2_pointer is None else int(sav2_pointer),
                 cap=cap)
     return _stage_and_battle(code, species, level, item=item, scratch=scratch)
+
+
+# --- the resident hook ------------------------------------------------------------------------
+# The staging area at the top of EWRAM: above every symbol the game links, and clear in every state
+# that is not a reset [docs/frlg_rom.md, Where a payload can live].
+RESIDENT_BASE = 0x0203FC00
+RESIDENT_COUNTER = 0x0203FC40
+GINTRTABLE_VBLANK = 0x03002730      # gIntrTable[4] [docs/frlg_rom.md, The per-frame hook]
+
+
+def resident_words(name="vblank-hook", **params):
+    """-> the resident stub as whole words, with its named parameters patched.
+
+    An installer writes words, so a stub whose length is not a multiple of four is a bug in the
+    stub rather than something to pad over here.
+    """
+    try:
+        code, _digest, symbols = RESIDENT_STUBS[name]
+    except KeyError:
+        raise NativeScriptError(
+            f"unknown resident stub {name!r}; have {sorted(RESIDENT_STUBS)}") from None
+    out = bytearray(code)
+    for key, value in params.items():
+        symbol = f"p_{key}"
+        if symbol not in symbols:
+            raise NativeScriptError(
+                f"{name} has no parameter {key!r}; have "
+                f"{sorted(s[2:] for s in symbols if s.startswith('p_'))}")
+        at = symbols[symbol]
+        out[at:at + 4] = (int(value) & 0xFFFFFFFF).to_bytes(4, "little")
+    if len(out) % 4:
+        raise NativeScriptError(f"{name} is {len(out)} bytes, not a whole number of words")
+    return [int.from_bytes(out[i:i + 4], "little") for i in range(0, len(out), 4)]
+
+
+# --- a payload that lives in the save ---------------------------------------------------------
+# What a RAM script keeps is a script, and the script rebuilds its code every time, so the code can
+# never be larger than a body carries. A payload parked in SaveBlock2's filler_B20 is bounded by save
+# space instead. Nothing touches that region: not the save-write that puts it there, not ordinary
+# play, not a later Wonder Card [docs/frlg_rom.md, Reading the save].
+SAVE_PAYLOAD_MAGIC = 0x444C4B50         # "PKLD" little-endian, the loader's guard
+SAVE_PAYLOAD_OFFSET = 0xB20             # filler_B20 inside SaveBlock2 [decomp:include/global.h:357]
+SAVE_PAYLOAD_SIZE = 0x400               # the whole of filler_B20; more than one save-write carries,
+                                        # so the blob is written in two sessions and the loader is
+                                        # the same 64 bytes either way
+SAVE_PAYLOAD_COUNTER = 0x0203FBB0       # BELOW the blob: a full-size payload ends at the top of
+                                        # EWRAM, and 0x0203FBAC..0x0203FC00 is above every symbol
+# Where the V-blank hook sits inside the blob. Deliberately well clear of the head rather than just
+# past it: the hook's address is what gIntrTable[4] reads, so every time the head grew the expected
+# value moved and had to be re-agreed with whoever was watching the console. Fixed once, with room.
+HOOK_OFFSET = 0x140
+PROBE_OUT_OFFSET = 0x300                # the probe answer: seven header words then four per number
+PROBE_RESULTS_OFFSET = PROBE_OUT_OFFSET + 28
+# The thunk and the hook's lr scratch sit ABOVE the results rather than in the middle of them: four
+# words per number grows the result region, and at three words per number it already reached the
+# thunk. The builder refuses an overlap rather than letting a sweep overwrite the code it calls.
+LRSAVE_OFFSET = 0x3BC                   # one word the hook parks lr in while it calls the thunk
+# One word in the tail that says which experiment the blob is. Everything else between the results
+# and the checksum is self-describing filler and a thunk that rarely changes, so two payloads with
+# different probes differed in the tail by the checksum alone: four bytes, and the same four bytes a
+# reader is checking the delivery with. A tail-only diff could not then tell a delivered tail from a
+# skipped one. This is a second, independent witness, and it is not arithmetic over the blob.
+TAIL_MARK_OFFSET = 0x3F0                # clear of the results, the lr scratch and the thunk
+# What the probe passes in r0..r3 when the caller does not say. Distinct and non-zero, so a register
+# the syscall leaves alone reads differently from one it writes zero into.
+PROBE_MARKERS = (0xA5A00052, 0xA5B00001, 0xA5C00002, 0xA5D00003)
+PROBE_THUNK_OFFSET = 0x3C0              # `swi N ; bx lr`, assembled into the blob by the builder
+# The hook's tail target as it sits in the save. The installer overwrites it with whatever it reads
+# out of the table, which is the point, but the copy happens first and the blob may land on top of a
+# hook that is already installed and being called. A zero there is a branch to 0 on the next V-blank,
+# between the copy and the install, and on the second visit to the object the installer takes its
+# already-installed path and never patches it at all. So the save's copy carries the measured handler
+# rather than zero, and a second visit re-writes a hook that already works.
+VBLANK_HANDLER = 0x0800071D             # VBlankIntr [docs/frlg_rom.md, The per-frame hook]
+
+
+def build_save_payload(*, base=RESIDENT_BASE, size=SAVE_PAYLOAD_SIZE,
+                       counter=SAVE_PAYLOAD_COUNTER, table_entry=GINTRTABLE_VBLANK,
+                       magic=SAVE_PAYLOAD_MAGIC, filler_byte=None, original=VBLANK_HANDLER,
+                       probe=0, probe_args=(), probe_count=1, burst=0, probe_a0_step=0,
+                       probe_num_step=1, probe_store=True):
+    """-> the blob to park in the save: magic, installer, the V-blank hook, filler, checksum.
+
+    The checksum is the point of the filler. A branch that lands proves the jump and says nothing
+    about the size, and the blob travels through a save write, flash, a slot rotation and a copy loop
+    before anything runs it. The installer sums the filler and installs nothing unless the sum
+    matches, so a short or truncated arrival is a miss rather than a wrong answer.
+    """
+    head, _digest, symbols = RESIDENT_STUBS["save-payload"]
+    hook_params = {"counter": counter, "original": original, "burst": int(burst or 0),
+                   "thunk": (base + PROBE_THUNK_OFFSET) | 1, "lrsave": base + LRSAVE_OFFSET}
+    hook = b"".join(w.to_bytes(4, "little")
+                    for w in resident_words("vblank-hook", **hook_params))
+    # Where the hook keeps its tail target, taken from its own symbol table rather than counted in
+    # from the start of it: the hook has grown twice and a hardcoded offset would have gone stale
+    # silently, with the freeze only appearing on a second visit.
+    hook_original_at = base + HOOK_OFFSET + RESIDENT_STUBS["vblank-hook"][2]["p_original"]
+    if len(head) > HOOK_OFFSET:
+        raise NativeScriptError(
+            f"the payload head is {len(head)} bytes and the hook sits at {HOOK_OFFSET:#x}")
+    filler_start = HOOK_OFFSET + len(hook)      # where the byte pattern begins
+    # What the installer sums is the WHOLE blob, not the filler. Two payloads differing only above
+    # the filler carried the same checksum, which was not a collision but the design: the sum could
+    # never see the head. A control head with a probe tail passed it on a live console, and would
+    # have installed, verified and run with the probe disabled, all green.
+    sum_from = 0
+    checksum_at = size - 4
+    if checksum_at <= filler_start:
+        raise NativeScriptError(f"{size} bytes leaves no room for filler")
+    blob = bytearray(size)
+    blob[0:len(head)] = head
+    blob[HOOK_OFFSET:HOOK_OFFSET + len(hook)] = hook
+    # Non-zero filler, so a short arrival sums differently rather than summing to the same zero.
+    for i in range(filler_start, checksum_at):
+        blob[i] = (i & 0xFF) if filler_byte is None else (filler_byte & 0xFF)
+    # The probe's thunk is code, and it lives inside the filler so the checksum covers it. It is
+    # written before the sum is taken, so a blob with a probe and one without are both consistent.
+    if probe:
+        if not 0 <= int(probe) <= 0xFF:
+            raise NativeScriptError(f"a Thumb `swi` takes 0..255, got {probe}")
+        # The last number the sweep reaches, not `first + count`: with probe_num_step 0 the sweep
+        # calls one syscall count times and walks r0 instead, which is the only way to ask what a
+        # selector does. A step of 1 and a step of 0 are different experiments and the old check
+        # could not tell them apart because it assumed the first.
+        if int(probe_count) < 1:
+            raise NativeScriptError(f"a sweep runs at least once, got {probe_count}")
+        last = int(probe) + (int(probe_count) - 1) * int(probe_num_step)
+        if not 0 <= last <= 0xFF:
+            raise NativeScriptError(
+                f"a sweep of {probe_count} from {probe:#x} stepping {probe_num_step} ends at "
+                f"{last:#x}, outside the 0..255 a Thumb `swi` takes")
+        # Only a run that STORES its results is bounded by the result region. One read through a
+        # breakpoint on the wrapper's side needs the guest to issue the calls and nothing else, and
+        # then the whole 256-entry selector range fits in one deployment.
+        room = LRSAVE_OFFSET - PROBE_RESULTS_OFFSET
+        if probe_store and int(probe_count) * 16 > room:
+            raise NativeScriptError(
+                f"{probe_count} numbers need {probe_count * 16} bytes of results and there are "
+                f"{room} between the block and the thunk; pass probe_store=False to sweep without "
+                f"storing, when the answer is read from the wrapper's side")
+        if int(probe_count) > 0x100:
+            raise NativeScriptError(f"a sweep of {probe_count} passes more than 256 selectors")
+        for at in (PROBE_OUT_OFFSET, PROBE_THUNK_OFFSET):
+            if not filler_start <= at < checksum_at - 0x20:
+                raise NativeScriptError(f"{at:#x} is not inside the filler of a {size}-byte blob")
+        blob[PROBE_THUNK_OFFSET:PROBE_THUNK_OFFSET + 4] = \
+            (0xDF00 | int(probe)).to_bytes(2, "little") + (0x4770).to_bytes(2, "little")
+    # A register that went in as zero and came out as zero has measured nothing: "the syscall left it
+    # alone" and "the syscall wrote zero" are the same reading. The markers are the default rather
+    # than a caller's responsibility, because a caller who passes r0 and stops gets three dead
+    # registers and a table of zeros that looks like a broken store. That happened once and the run
+    # was spent before the argument list was looked at.
+    args = list(probe_args or ())
+    args += PROBE_MARKERS[len(args):]
+    if probe and any(v == 0 for v in args[:4]):
+        raise NativeScriptError(
+            "every probe register needs a distinct non-zero marker, or a register the syscall "
+            f"leaves alone reads the same as one it zeroes; got {[hex(v) for v in args[:4]]}")
+    patches = {"magic": magic, "hook": (base + HOOK_OFFSET) | 1, "table_entry": table_entry,
+               "counter": counter, "filler_start": base + sum_from,
+               "filler_end": base + checksum_at, "checksum_at": base + checksum_at,
+               "hook_original_at": hook_original_at,
+               "probe_first": int(probe or 0),
+               "probe_count": int(probe_count) if probe else 0,
+               "probe_num_step": int(probe_num_step),
+               "probe_store": 1 if probe_store else 0,
+               "probe_out": base + PROBE_OUT_OFFSET,
+               "probe_thunk": (base + PROBE_THUNK_OFFSET) | 1,
+               "probe_a0": args[0], "probe_a0_step": int(probe_a0_step),
+               "probe_a1": args[1],
+               "probe_a2": args[2], "probe_a3": args[3]}
+    for key, value in patches.items():
+        at = symbols[f"p_{key}"]
+        blob[at:at + 4] = (int(value) & 0xFFFFFFFF).to_bytes(4, "little")
+    # The experiment, written where a reader of the tail can see it, AFTER the patches because it
+    # sums the head and the patches are what the head says. Everything else between the results and
+    # the checksum is self-describing filler and a thunk that rarely changes, so two payloads
+    # differing only in their probe differed in the tail by the checksum word alone: the same four
+    # bytes a reader checks the delivery with, doing two jobs and neither independently.
+    #
+    # The mark NAMES ITS HEAD. Carrying only the syscall number and the pass count, it would be
+    # identical between two builds whose probes match and whose arguments differ, so one build's head
+    # and the other's tail would still read as a pair. With the head summed into it a chimera names
+    # itself: the reader sums the head in flash and the tail says which head it was built against.
+    # The checksum cannot do that, since a mismatch there says something is wrong and never which
+    # half is wrong.
+    if probe:
+        if not filler_start <= TAIL_MARK_OFFSET < checksum_at - 4:
+            raise NativeScriptError(f"{TAIL_MARK_OFFSET:#x} is not inside the filler")
+        for at, span in ((PROBE_THUNK_OFFSET, 4), (LRSAVE_OFFSET, 4)):
+            if at < TAIL_MARK_OFFSET + 4 and TAIL_MARK_OFFSET < at + span:
+                raise NativeScriptError(f"the tail mark at {TAIL_MARK_OFFSET:#x} overlaps {at:#x}")
+        from pokeldn.frlg.rom.buffer_script import MAX_SAVE_WRITE_BYTES
+        head_end = min(MAX_SAVE_WRITE_BYTES, size)
+        if TAIL_MARK_OFFSET < head_end:
+            raise NativeScriptError(
+                f"the tail mark at {TAIL_MARK_OFFSET:#x} is inside the head, which it sums")
+        # FOLDED, not truncated. Taking the sum's low half leaves a witness blind to any change
+        # confined to a word's upper bits, which is not a chance collision but a shape: two builds
+        # differing only in the high halfword of one patched word carry the same mark. A step going
+        # from 0x00200000 to 0x01000000 is exactly that, and it happened. Folding the high half in
+        # makes every bit of the head sum reach the mark.
+        head_sum = sum(int.from_bytes(blob[i:i + 4], "little")
+                       for i in range(0, head_end - head_end % 4, 4)) & 0xFFFFFFFF
+        folded = (head_sum ^ (head_sum >> 16)) & 0xFFFF
+        mark = (folded << 16) | ((int(probe) & 0xFF) << 8) | min(int(probe_count), 0xFF)
+        blob[TAIL_MARK_OFFSET:TAIL_MARK_OFFSET + 4] = mark.to_bytes(4, "little")
+    # LAST, because it now covers the head and the head is what the patches write. Computing it
+    # before them was invisible while the sum began after the hook and is a stored value that does
+    # not describe the blob the moment it does not.
+    total = sum(int.from_bytes(blob[i:i + 4], "little")
+                for i in range(sum_from, checksum_at, 4)) & 0xFFFFFFFF
+    blob[checksum_at:checksum_at + 4] = total.to_bytes(4, "little")
+    return bytes(blob)
+
+
+def save_write_chunks(blob, *, offset=SAVE_PAYLOAD_OFFSET, limit=None):
+    """-> [(offset, bytes)] : the blob split into as few `save-write` sessions as it needs.
+
+    One session carries `MAX_SAVE_WRITE_BYTES`, the receive buffer less the payload that does the
+    writing. A blob larger than that is not a different mechanism, only more sessions; the region it
+    lands in persists between them.
+    """
+    from pokeldn.frlg.rom.buffer_script import MAX_SAVE_WRITE_BYTES
+    limit = MAX_SAVE_WRITE_BYTES if limit is None else int(limit)
+    blob = bytes(blob)
+    return [(offset + at, blob[at:at + limit]) for at in range(0, len(blob), limit)]
+
+
+def build_loader_script(*, base=RESIDENT_BASE, size=SAVE_PAYLOAD_SIZE,
+                        offset=SAVE_PAYLOAD_OFFSET, magic=SAVE_PAYLOAD_MAGIC,
+                        sav2_pointer=None, scratch=SCRATCH, sound=SE_SUCCESS):
+    """The RAM script that copies the payload out of the save and runs it.
+
+    About fifty bytes of staged code whatever the payload's size, where staging the payload itself
+    would cost six script bytes a byte. The save block's address is read from `gSaveBlock2Ptr` every
+    time rather than patched, because it is re-rolled on every battle and every load.
+    """
+    if size % 4:
+        raise NativeScriptError(f"{size} bytes is not a whole number of words")
+    code = stub("save-loader",
+                sav2ptr=rom_map.GSAVEBLOCK2PTR if sav2_pointer is None else int(sav2_pointer),
+                offset=offset, dest=base, words=size // 4, magic=magic)
+    tail = b""
+    if sound is not None:
+        tail += bytes([SCR_PLAYSE]) + int(sound).to_bytes(2, "little") + bytes([SCR_WAITSE])
+    tail += bytes([SCR_END])
+    body = stage(code, scratch) + callnative_at(scratch) + tail
+    plan = budget(len(code), other=len(tail))
+    if not plan["fits"]:
+        raise NativeScriptError(f"{plan['total']} bytes will not fit in {MAX_RAM_SCRIPT_SIZE}")
+    return body
+
+
+def build_install_hook_script(*, base=RESIDENT_BASE, counter=RESIDENT_COUNTER,
+                              table_entry=GINTRTABLE_VBLANK, scratch=SCRATCH, sound=SE_SUCCESS):
+    """The RAM script that installs the resident V-blank hook, and survives a reset to do it again.
+
+    A buffer script can install the hook directly and the console then runs it every frame until
+    something clears EWRAM. Every route to the Mystery Gift menu passes through a boot, and
+    `AgbMain` clears EWRAM and IWRAM there [decomp:src/main.c:134], so a gift session can never be
+    delivered while a payload is live: a new install always destroys the old one first. This is the
+    other way in. The script lives in the save, survives a power cycle, and needs no link, so the
+    player talking to the bound object re-arms the hook on any later boot.
+
+    The stub's own tail target is not passed in. `install-vblank-hook` reads the table entry and
+    writes what it found into the stub, so the hook chains whatever handler is actually there.
+    """
+    # The hook travels with the installer as data, so its size is a number rather than a shape the
+    # installer has to know. `original` is left at the measured handler for the same reason the
+    # save-carried copy does: the installer patches it, but a second visit re-copies this one.
+    words = resident_words("vblank-hook", counter=counter, original=VBLANK_HANDLER)
+    original_at = base + RESIDENT_STUBS["vblank-hook"][2]["p_original"]
+    code = stub("install-vblank-hook",
+                table_entry=table_entry, hook_ptr=base | 1, resident=base, counter=counter,
+                original_at=original_at, words=len(words))
+    tail_at = STUBS["install-vblank-hook"][2]["_words"]
+    code = code[:tail_at] + b"".join(w.to_bytes(4, "little") for w in words)
+    tail = b""
+    if sound is not None:
+        tail += bytes([SCR_PLAYSE]) + int(sound).to_bytes(2, "little") + bytes([SCR_WAITSE])
+    tail += bytes([SCR_END])
+    body = stage(code, scratch) + callnative_at(scratch) + tail
+    plan = budget(len(code), other=len(tail))
+    if not plan["fits"]:
+        raise NativeScriptError(
+            f"{plan['total']} bytes will not fit in {MAX_RAM_SCRIPT_SIZE}")
+    assert len(body) == plan["total"]
+    return body
 
 
 def _stage_and_battle(code, species, level, *, item=0, scratch=SCRATCH):

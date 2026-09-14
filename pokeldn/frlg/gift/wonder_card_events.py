@@ -1014,6 +1014,111 @@ MEVENT_SWEEP_GIFT = WonderGift(
 )
 
 
+GIFT_RESIDENT_HOOK = "resident-hook"
+RESIDENT_HOOK_FLAG_ID = 1003
+
+# The card that makes code of ours run every frame, and keeps making it run after a reset.
+#
+# A buffer script installs the same hook directly, in one session, and the console runs it every
+# frame until something clears EWRAM. What it cannot do is come back: every route to the Mystery
+# Gift menu passes through a boot, and a boot clears EWRAM and rewrites gIntrTable, so a gift
+# session can never reach a console that is already carrying a payload. This card puts the
+# installer in the save instead. The player talks to their MOM and the hook goes in; after any
+# later reset they talk to her again and it goes in again, with no link and no host.
+#
+# docs/frlg_rom.md, Code that outlives the session.
+
+
+def build_resident_hook_script(**kwargs):
+    return build_mevent_npc_script(
+        field_script=native_script.build_install_hook_script(), **_at_mom(kwargs))
+
+
+RESIDENT_HOOK_GIFT = WonderGift(
+    slug=GIFT_RESIDENT_HOOK,
+    card=WonderCardSpec(
+        icon_species=SPECIES_CLEFAIRY_MEVENT,
+        title="MYSTERY EVENT",
+        subtitle="Something that keeps running",
+        body=(
+            "Your MOM was given something to",
+            "hold on to. Talk to her and she",
+            "will pass it on. Talk again any",
+            "time you switch off and back on.",
+        ),
+        footer1="pokeldn",
+        default_flag_id=RESIDENT_HOOK_FLAG_ID,
+    ),
+    intro_message=(
+        "Thank you for using the MYSTERY\n"
+        "GIFT System."),
+    event=GiftSpec(repeatable=True),
+    delivery=DeliveryPlan(delivery=(
+        DeliveryStage(
+            Message(
+                "Someone in PALLET TOWN is holding\n"
+                "something for you."),
+        ),
+    )),
+    completed_message="Talk to your MOM at home.",
+    mevent=build_resident_hook_script(),
+)
+
+
+GIFT_SAVE_LOADER = "save-loader"
+SAVE_LOADER_FLAG_ID = 1003
+
+# The card that lifts the size ceiling.
+#
+# `resident-hook` puts the whole payload in the script body, so the payload can never be larger than
+# a body carries. This one puts a LOADER there instead: about fifty bytes that read gSaveBlock2Ptr,
+# copy a blob out of `filler_B20` into the top of EWRAM and branch into it. The blob is bounded by
+# save space rather than by the script, and it is put there separately by
+# `--buffer-script save-write`, which measurement says nothing else disturbs: not the write itself,
+# not ordinary play, not a later Wonder Card.
+#
+# The two cards share a flag id because they are two deliveries of one idea and a console can hold
+# only one of them at a time.
+#
+# docs/frlg_rom.md, Code that outlives the session.
+
+
+def build_save_loader_script(**kwargs):
+    return build_mevent_npc_script(
+        field_script=native_script.build_loader_script(), **_at_mom(kwargs))
+
+
+SAVE_LOADER_GIFT = WonderGift(
+    slug=GIFT_SAVE_LOADER,
+    card=WonderCardSpec(
+        icon_species=SPECIES_CLEFAIRY_MEVENT,
+        title="MYSTERY EVENT",
+        subtitle="Something larger",
+        body=(
+            "Your MOM is holding the key to",
+            "something that was left with",
+            "you earlier. Talk to her, and",
+            "again after you switch off.",
+        ),
+        footer1="pokeldn",
+        default_flag_id=SAVE_LOADER_FLAG_ID,
+    ),
+    intro_message=(
+        "Thank you for using the MYSTERY\n"
+        "GIFT System."),
+    event=GiftSpec(repeatable=True),
+    delivery=DeliveryPlan(delivery=(
+        DeliveryStage(
+            Message(
+                "Someone in PALLET TOWN is holding\n"
+                "a key for you."),
+        ),
+    )),
+    completed_message="Talk to your MOM at home.",
+    mevent=build_save_loader_script(),
+)
+
+
 GIFT_RNG_SHINY_HUNT = "rng-shiny-hunt"
 RNG_SHINY_HUNT_FLAG_ID = 1012
 

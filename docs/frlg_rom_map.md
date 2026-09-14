@@ -11,8 +11,56 @@ from the decompilation. `pokeldn/frlg/rom/rom_map.py` records how each one was o
 `tests/test_rom_map.py` checks it against the dumps. The mechanism, `memory-dump`, `memory-scan`,
 `table-scan`, `call-chain`, is on [Code on the console](frlg_rom.md).
 
+The same cartridge is also readable in full, offline, off the Switch release itself; see
+[The cartridge image](#the-cartridge-image). Every address below was measured before that image was
+in hand, and the image confirms them rather than supplying them.
+
 Addresses are French FireRed, cartridge BPRF, software version 0x0A. LeafGreen's are on
 [LeafGreen](frlg_leafgreen.md).
+
+## The cartridge image
+
+The Switch release carries the GBA ROM as the only file in its RomFS.
+
+| title id | RomFS file | size | sha1 |
+|---|---|---|---|
+| 01004B3023412000 | `/FireRed_f.gba` | 16777216 | `07566b82dbd2a91321698f730f6400ae4c56ddf1` |
+| 010087C02342E000 | `/LeafGreen_f.gba` | 16777216 | `9f774956dfbad7f69ddb91fb91d2c26e54408f75` |
+
+Header at 0xA0 reads `POKEMON FIRE` `BPRF` and `POKEMON LEAF` `BPGF`, software version 0x0A: the two
+cartridges the consoles run, and the builds every address on this page was measured against.
+
+The Program NCA has one CTR RomFS section and no update, so there is no BKTR layer over it and
+`bktr_read.py` refuses it. `scratchpad/base_romfs.py` opens the same section with the same reader:
+
+    ./.venv/bin/python scratchpad/base_romfs.py "$NSP" --list
+    ./.venv/bin/python scratchpad/base_romfs.py "$NSP" --extract /FireRed_f.gba --out scratchpad/FireRed_f.gba
+
+The image confirms the measurements rather than replacing them. `rom_map.CREATE_MON` is 0x08041150
+and the image reads `f0b5 4746 80b4 87b0` there, the four-instruction prologue the `create-mon`
+payload was written against by dumping it over the air. A French address no longer needs the English
+build and an offset to be named, and a body nobody has dumped is readable without spending a run.
+
+## EWRAM is at the same addresses in both builds
+
+The English build's EWRAM symbols are the French cartridge's EWRAM addresses. Three measured off
+the console independently agree with `pokefirered_switch.elf`:
+
+    gDecompressionBuffer  0x0201C000
+    gPlayerParty          0x02024280
+    gPlayerPartyCount     0x02024025
+
+IWRAM does not transfer: `gSaveBlock1Ptr` is 0x030042D8 in the English build and 0x03004228 on the
+cartridge. So the ELF answers any question about what occupies EWRAM, and answers none about IWRAM.
+
+What that buys is a map of EWRAM that covers every game state at once, where a RAM dump covers only
+the states that were dumped. Every sized EWRAM symbol in the ELF, subtracted from the region, leaves
+one span no symbol claims:
+
+    highest symbol end   0x0203FBAC
+    EWRAM end            0x02040000
+
+`nm -S pokefirered_switch.elf` and `scratchpad/ram_survey.py` do it.
 
 ## The first anchor
 

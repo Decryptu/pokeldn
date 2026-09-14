@@ -87,6 +87,11 @@ def add_host_arguments(parser, *, option_defaults=None, ldn_defaults=None,
         "--adapter", default=getattr(ldn_defaults, "adapter", None),
         help="named Wi-Fi adapter profile used while --phy is auto")
     parser.add_argument("--keys", default=ldn_defaults.keys_path)
+    parser.add_argument(
+        "--over-ip", nargs="?", const="auto", default=None, metavar="IP",
+        help=("host for an emulated console over the LAN instead of over the radio: answer "
+              "ldn_mitm discovery on port 11452 and carry Pia over UDP. Takes the address to "
+              "advertise, or auto. Needs no adapter, no prod.keys and no root"))
     comm_id_default = (None if ldn_defaults.local_comm_id is None
                        else f"{ldn_defaults.local_comm_id:x}")
     parser.add_argument("--comm-id", default=comm_id_default,

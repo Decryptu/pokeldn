@@ -186,6 +186,21 @@ def activate_trade_app_data(app_data, host_session_id):
     return bytes(active_header) + beacon.b85_encode(bytes(record))
 
 
+class NullBeaconInjector:
+    """The injector for a transport with no radio. An ldn_mitm host advertises by answering a scan
+    on port 11452, so there is no 802.11 beacon to inject and nothing for this to do."""
+
+    def __init__(self, monitor=None, ap=None, channel=1, ssid_length=32, dtim_period=3, log=print):
+        self.error = None
+        self.sent = 0
+
+    def start(self, timeout=5):
+        return self
+
+    def stop(self):
+        return None
+
+
 class BeaconInjector:
     """Some Wi-Fi drivers never beacon the AP themselves; this thread injects 802.11 beacons from userspace."""
 
