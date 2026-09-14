@@ -309,3 +309,28 @@ def test_the_window_holds_nothing_without_a_clock():
     w = reliable3.Window()
     w.send(b"x")
     assert w.pending == [] and w.due(10.0) == []
+
+
+def test_the_consoles_release_of_a_clone_is_acknowledged_on_the_same_clone(stage):
+    """After the trade the console releases clones 4, 3 and 2 with a 0x83 on clone type 4,
+    station 0xFD, every 100 ms until each is acknowledged with a 0x84 on that clone; unanswered,
+    its player waits on "interruption de la connexion" until the session dies. The released clone
+    is no longer republished. A release on clone type 2 is acknowledged on clone type 1."""
+    s = stage["s"]
+    commit(stage)
+    stage["sent"].clear()
+    for cid in (3, 2, 4):
+        end = clone.build_command(clone.COMMAND_END, 4, 0xFD, cid, 0x478, 1)
+        s.handle(clone.PROTOCOL, end)
+        acks = [clone.parse_command(payload) for p, payload in stage["sent"]
+                if p == clone.PROTOCOL and payload[1] == clone.COMMAND_END_ACK]
+        assert (acks[-1]["ctype"], acks[-1]["station"], acks[-1]["clone_id"]) == (4, 0xFD, cid)
+        assert cid not in s.clone.held
+    stage["sent"].clear()
+    stage["run"](1.0)
+    assert stage["published"](3) == [] and stage["published"](4) == []
+    assert 1 in s.clone.held
+    s.handle(clone.PROTOCOL, clone.build_command(clone.COMMAND_END, 2, JOINER, 1, 0x480, 1))
+    ack = [clone.parse_command(payload) for p, payload in stage["sent"]
+           if p == clone.PROTOCOL and payload[1] == clone.COMMAND_END_ACK][-1]
+    assert (ack["ctype"], ack["station"], ack["clone_id"]) == (1, 0xFD, 1)

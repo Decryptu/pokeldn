@@ -676,6 +676,18 @@ class Participant:
             return [self._command(CLOCK_AND_COUNT_2, c["ctype"], station, c["clone_id"], now,
                                   struct.pack(">IBBH", self.ms(now), flag, 0,
                                               self.element_ms(now) & 0xFFFF))]
+        if kind == COMMAND_END:
+            # the peer releasing a clone: a 0x84 on the same clone type and id, station 0xFD,
+            # or it repeats the 0x83 every 100 ms and its player waits on "interruption de la
+            # connexion" for as long as the session lasts. A release on clone type 2 is
+            # acknowledged on clone type 1, the way its copies are (docs/lgpe_session.md)
+            cid = c["clone_id"]
+            self.held.discard(cid)
+            self.published.discard(cid)
+            self.tail.pop(cid, None)
+            self.flags.pop(cid, None)
+            return [self._command(COMMAND_END_ACK, 1 if c["ctype"] == 2 else c["ctype"],
+                                  0xFD, cid, now)]
         if kind == COMMAND_REQUEST and c["ctype"] == 1:
             # the host asks for our copy: answer with the state acknowledgement
             out = [build_data_message(STATE_ACK, 1, 0xFD, c["clone_id"], self.frame(now),
@@ -715,6 +727,4 @@ class Participant:
                 clk, part = c["payload"][:4], c["payload"][4:8]
                 return [self._command(CLOCK_COUNT_PARTICIPANT, 3, 0xFD, 0, now,
                                       clk + b"\x01\0\0\x02" + part)]
-            if kind == COMMAND_END:
-                return [self._command(COMMAND_END_ACK, 3, 0xFD, 0, now)]
         return []
