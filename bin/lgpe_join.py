@@ -46,6 +46,7 @@ from pokeldn.lgpe import (COMM_ID_PIKACHU, PASSPHRASE, PIA_PORT, PIA_VERSION, pa
                           session_keys)
 from pokeldn.lgpe.session import APP_HEADER_SIZE
 from pokeldn.lgpe import pb7
+from pokeldn.lgpe.leave import Leaver
 from pokeldn.lgpe.trade import (TRADE_IN_PROGRESS, _answer_commit, _answer_offer,  # noqa: F401
                                 _send_step, _warn_if_mid_trade)
 
@@ -298,6 +299,9 @@ def build_parser():
                     help="replace the trainer id pair in the first message. A payload captured "
                          "between two emulators that share a save carries the host's own pair, "
                          "which presents the joiner as the station it is trading with")
+    ap.add_argument("--leave-after", type=float, default=None, metavar="SECONDS",
+                    help="leave the session the way a console backs out of its trade screen, "
+                         "this long after our offer went out (docs/lgpe_session.md)")
     ap.add_argument("--offer", metavar="echo|PATH",
                     help="answer the host's type 2 message with a box structure of our own. "
                          "'echo' returns the host's own, which the game accepts by construction; "
@@ -530,12 +534,12 @@ def _run(args, net, keys, facts, opener):
                      "mesh_join_sent": False}
             HOST_STATION_BIT = 0x0001
             KEEPALIVE_PROTOCOL = 0x08
-            def to_host_bitmap(payload, protocol):
+            def to_host_bitmap(payload, protocol, port=0):
                 """The framing every post-join protocol uses: our constant id as the source, the
                 host's station bit as a bitmap destination."""
                 our_const = ldn_constant_id(our_mac) if len(our_mac) == 6 else 0
                 send_packet(pia3.build_message(payload, protocol=protocol, source=our_const,
-                                               port=0, destination=HOST_STATION_BIT,
+                                               port=port, destination=HOST_STATION_BIT,
                                                message_flags=pia3.MESSAGE_FLAG_BITMAP))
             def clone_send(payload):
                 to_host_bitmap(payload, clone.PROTOCOL)
@@ -586,6 +590,31 @@ def _run(args, net, keys, facts, opener):
                 deadline = args.hold
                 print(f"[lg] listening on :{PIA_PORT} for {deadline:.0f}s")
             while time.monotonic() - t0 < deadline:
+                # leaving the way a console does, --leave-after seconds after our offer went out
+                if (args.leave_after is not None and state.get("leave_at") is None
+                        and state.get("answered_step")):
+                    state["leave_at"] = time.monotonic() + args.leave_after
+                    print(f"[lg] leaving in {args.leave_after:.0f} s")
+                if (state.get("leave_at") is not None and state.get("leaver") is None
+                        and time.monotonic() >= state["leave_at"]):
+                    part = state["clone"]
+                    offered = [cid for cid, d in part.shared.items() if d[:4] == b"\x01\0\0\0"]
+                    cid = max(offered or part.held or [3])
+                    shared = part.shared.get(cid, bytes(20))
+                    state["leaver"] = Leaver(
+                        part, cid, state.get("step", 1), int.from_bytes(shared[16:20], "little"),
+                        int.from_bytes(shared[8:12], "little"),
+                        station=state.get("station_index", 1), host_bit=HOST_STATION_BIT,
+                        clone_ids=[c for c in (1, 0, 2, 3) if c in part.held or c < 2])
+                    print(f"[lg] *** LEAVING *** state 4 on clone {cid}, then the releases, "
+                          "the leave request and the disconnection")
+                if state.get("leaver") is not None:
+                    now = time.monotonic()
+                    for payload, proto, port in state["leaver"].poll(now):
+                        to_host_bitmap(payload, proto, port=port)
+                    if state["leaver"].done:
+                        print("[lg] *** LEFT *** " + "; ".join(state["leaver"].log))
+                        break
                 if args.connect and not state["host_accepted"] and time.monotonic() - t0 >= next_tx:
                     if not send_connection_request():
                         break
@@ -695,6 +724,10 @@ def _run(args, net, keys, facts, opener):
                                                            port=0, destination=host_const))
                         for m in msgs:
                             pl = m["payload"]
+                            if state.get("leaver") is not None:
+                                for payload, proto, port in state["leaver"].receive(
+                                        m["protocol"], pl, time.monotonic()):
+                                    to_host_bitmap(payload, proto, port=port)
                             if m["protocol"] == station9.PROTOCOL:
                                 kind, result = station9.parse_reply(pl)
                                 is_inverse = kind == 1 and len(pl) > 3 and pl[3] == 1
