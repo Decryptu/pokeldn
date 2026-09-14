@@ -534,6 +534,20 @@ class Participant:
             flags=3))
         return out
 
+    def release(self, clone_id, now):
+        """-> this station's release of a clone: a 0x83 on clone type 2 under its own station to
+        every station, and one on clone type 4, station 0xFD, to the peer; clone 0 on clone type 3
+        alone. The emulated host released the commit clone this way in the frame after the trade
+        was agreed and every other clone as its player left, and the peer answered each with a
+        0x84 and its own release (docs/lgpe_session.md)."""
+        self.held.discard(clone_id)
+        self.published.discard(clone_id)
+        if clone_id == 0:
+            return [self._command(COMMAND_END, 3, 0xFD, 0, now, dest=self.dest)]
+        return [self._command(COMMAND_END, 2, self.station, clone_id, now,
+                              dest=self.own | self.dest),
+                self._command(COMMAND_END, 4, 0xFD, clone_id, now, dest=self.dest)]
+
     def _command(self, kind, ctype, station, clone_id, now, payload=b"", dest=None):
         m = build_command(kind, ctype, station, clone_id, self._next_count(),
                           self.dest if dest is None else dest, payload)

@@ -565,6 +565,33 @@ screen.
 Publishing no clone data on clone types 4 and 1 at all, which is what two retail consoles exchange,
 leaves a console that joins short of the gate at `0x11b080` and on its search screen.
 
+### A joiner leaving
+
+A console that backs out of the trade screen with Retour publishes the offered clone with 4 in its
+state word: argument 0 under a fresh counter as it drops its selection, then argument 3 as it
+leaves. The host answers each 30 ms later with zeros in the first three words, the trailing word
+one further on, and the argument in the type 4 copy's first word; the console mirrors it with a
+zero first word. The console then releases its clones with a 0x83 on clone type 4, station 0xFD
+(clone 0 on clone type 3), and repeats each every 100 ms until a 0x84 on the same clone type and
+id answers it; the host releases its own copies behind it, a 0x83 on clone type 2 under its
+station to both stations and one on clone type 4 to the console, and the console acknowledges
+each. 2.45 s after the last release, the console sends a mesh leave request on the mesh
+protocol's reliable port, two bytes under the 24-byte reliable header:
+
+```
+04 01        leave request, station index
+```
+
+It is owed that header's acknowledgement on the same port and a two-byte leave response, `08`
+and the station index, on the unreliable port; unanswered it repeats every 40 ms for five
+seconds. The host then closes the connection with a one-byte station disconnection request,
+type 3, which the console answers with type 4 within 20 ms and deauthenticates; a host that
+does not, gets the console's own request five seconds later. The 2.45 s before the leave request
+did not move with any of these answers and is the console's own.
+
+An emulated host leaving does the releases first and then a migration start on the reliable
+port, `44 00 01`, which the joiner acknowledges and answers with `48 01`.
+
 ### What a host does with a joiner that holds no clone data
 
 Measured against the retail Let's Go Pikachu, with a 0x3C-byte connection response that carries no

@@ -239,6 +239,9 @@ class Session:
         self.result_sent = False
         self.leaving = set()
         self.peer_left = False
+        self.released = set()
+        self.release_at = []
+        self.participants_at = None
         self.update_counter = 0
         self.session_sequence = 1
         self.sent_nodes = None
@@ -385,6 +388,22 @@ class Session:
                     self.advance_at = now + self.args.advance_after
             # the state word's move to 2 and the offer that goes with it: in the reference the
             # two stations do this 3.4 s after the identities, within 30 ms of each other
+            while self.release_at and now >= self.release_at[0][0]:
+                _, cid = self.release_at.pop(0)
+                for out in self.clone.release(cid, now):
+                    self.send(out, clone.PROTOCOL)
+                self.participants_at = now + 0.1
+                print(f"[lgh] clone: released our clone {cid} after the console's")
+            # under test: the emulated station that stayed sent, with its acknowledgements of
+            # the last releases, a clock-and-participant for clone 0 naming itself alone, and
+            # the leaver answered with its clone exit within 30 ms. The console waits 2.4 s after
+            # the releases before its leave request; this may be what it waits for.
+            if self.participants_at is not None and now >= self.participants_at:
+                self.participants_at = None
+                c = self.clone
+                self.send(c._command(clone.CLOCK_AND_PARTICIPANT, 3, 0xFD, 0, now,
+                                     struct.pack(">II", c.ms(now), HOST_BIT)), clone.PROTOCOL)
+                print("[lgh] clone: clone 0 participants: ourselves alone")
             while self.drive and now >= self.drive[0][0]:
                 _, cid, flags, tail = self.drive.pop(0)
                 self.clone.flags[cid] = flags
@@ -659,6 +678,15 @@ class Session:
             if c and (c["ctype"], c["station"], c["clone_id"]) == (3, 0xFD, 0):
                 self.publish_clone_0_at = now + 0.03
                 print(f"[lgh] clone: the console answered the clone 0 pair with {kind:#04x}")
+        elif kind == clone.EXIT_REQUEST:
+            print("[lgh] clone: the console left the clone protocol; acknowledged")
+        elif kind == clone.COMMAND_END:
+            # under test: the console released its copies and then waited 2.5 s before its leave
+            # request. The emulated pair released their own copies in answer to each other's
+            c = clone.parse_command(pl)
+            if c and c["clone_id"] not in self.released:
+                self.released.add(c["clone_id"])
+                self.release_at.append((now + 0.03, c["clone_id"]))
         d = clone.parse_data_message(pl)
         # the offered party clone: once both stations publish 1 in each of the first three words,
         # the host is what moves the trailing word to 1 and the joiner answers it
@@ -755,6 +783,8 @@ class Session:
         elif kind == station9.CONNECTION_RESPONSE:
             self.send(station9.build_ack(station9.ack_id_of(pl)), station9.PROTOCOL,
                       destination=0)
+        elif kind == DISCONNECTION_RESPONSE:
+            print("[lgh] the console answered our disconnection request")
         elif kind == DISCONNECTION_REQUEST:
             # one byte each way. A console that gets no answer repeats it every half second,
             # eight times, and deauthenticates: four seconds of black screen for its player
@@ -790,8 +820,12 @@ class Session:
                 self.peer_location = None
                 self.joined = False
                 self.broadcast_mesh()
+                # under test: the console waited five seconds after the leave response and then
+                # sent its own disconnection request. A host that closes the connection itself,
+                # with its own disconnection request, may be what it waits for.
+                self.send(bytes([DISCONNECTION_REQUEST]), station9.PROTOCOL, destination=0)
                 print(f"[lgh] *** THE CONSOLE LEFT THE MESH *** station {r['payload'][1]}; "
-                      "answered its leave request")
+                      "answered its leave request and asked it to disconnect")
 
 
 if __name__ == "__main__":

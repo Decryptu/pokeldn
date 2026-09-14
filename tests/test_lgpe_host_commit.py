@@ -413,3 +413,26 @@ def test_the_consoles_disconnection_request_is_answered(stage):
     s.handle(station9.PROTOCOL, bytes([DISCONNECTION_REQUEST]))
     answers = [payload for p, payload, kw in stage["sent"] if p == station9.PROTOCOL]
     assert answers == [bytes([DISCONNECTION_RESPONSE])]
+
+
+def test_the_host_releases_its_own_copy_after_the_consoles(stage):
+    """The emulated pair released their own copies in answer to each other's: 30 ms after the
+    console's 0x83 the host sends its own on clone type 2 under its station to both stations and
+    on clone type 4, station 0xFD, to the console; clone 0 on clone type 3 alone."""
+    s = stage["s"]
+    stage["sent"].clear()
+    s.handle(clone.PROTOCOL, clone.build_command(clone.COMMAND_END, 4, 0xFD, 3, 0x478, 1))
+    s.handle(clone.PROTOCOL, clone.build_command(clone.COMMAND_END, 3, 0xFD, 0, 0x479, 1))
+    stage["run"](0.02)
+    ends = [clone.parse_command(payload) for p, payload, _ in stage["sent"]
+            if p == clone.PROTOCOL and payload[1] == clone.COMMAND_END]
+    assert ends == []
+    stage["run"](0.02)
+    ends = [(c["ctype"], c["station"], c["clone_id"], c["dest"]) for c in
+            (clone.parse_command(payload) for p, payload, _ in stage["sent"]
+             if p == clone.PROTOCOL and payload[1] == clone.COMMAND_END)]
+    assert ends == [(2, 0, 3, 3), (4, 0xFD, 3, 2), (3, 0xFD, 0, 2)]
+    s.handle(clone.PROTOCOL, clone.build_command(clone.COMMAND_END, 4, 0xFD, 3, 0x47a, 1))
+    stage["run"](0.1)
+    assert len([1 for p, payload, _ in stage["sent"]
+                if p == clone.PROTOCOL and payload[1] == clone.COMMAND_END]) == 3
