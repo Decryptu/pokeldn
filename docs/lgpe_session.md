@@ -565,6 +565,17 @@ screen.
 Publishing no clone data on clone types 4 and 1 at all, which is what two retail consoles exchange,
 leaves a console that joins short of the gate at `0x11b080` and on its search screen.
 
+### What a hosted trade puts in the save
+
+The box structure the host offers goes into the console's save as sent. Measured on a retail Let's
+Go Pikachu with a structure built from a donor Pidgey's, every changed field read back on the
+console's own summary screen: species 132, experience 1,000,000 (level 100), ability 150 in the
+hidden slot, a PID with a shiny xor of 0 against trainer id 41234 and secret id 12345 (shown as
+the six-digit id 083154, `(sid << 16 | tid) % 1000000`), nature 10, genderless, 31 in every IV
+("exceptionnel"), 200 in every AV (HP 437 at level 100, the game's own maximum), one move,
+met level 30, met location 4 (Route 2), language 2, original trainer `POKELDN`. The game checks
+none of it on receipt. `scratchpad/lgpe_make_ditto.py` builds it; the offsets are PKHeX's PB7 map.
+
 ### A joiner leaving
 
 A console that backs out of the trade screen with Retour publishes the offered clone with 4 in its
