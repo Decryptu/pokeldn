@@ -589,8 +589,15 @@ type 3, which the console answers with type 4 within 20 ms and deauthenticates; 
 does not, gets the console's own request five seconds later. The 2.45 s before the leave request
 did not move with any of these answers and is the console's own.
 
+A retail host answers a joiner's leave request with `08 00`, its own station index, twice, and
+then sends a Local Protocol start host migration, type 0x13, every 0.3 s. A joiner that sends
+its station disconnection request the instant the leave response arrives puts the host's player
+back on the menu at once, with "l'autre joueur a choisi d'annuler l'échange"; one that waits
+leaves the host repeating the 0x13 for five seconds. `bin/lgpe_join.py --leave-after SECONDS`
+runs the whole exit (`pokeldn.lgpe.leave`).
+
 An emulated host leaving does the releases first and then a migration start on the reliable
-port, `44 00 01`, which the joiner acknowledges and answers with `48 01`.
+port, `44 00 01`, which the joiner acknowledges and answers with `48 01`, then the 0x13.
 
 ### What a host does with a joiner that holds no clone data
 
