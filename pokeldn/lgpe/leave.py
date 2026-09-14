@@ -91,7 +91,7 @@ class Leaver:
             self.disconnect_sent = now
             out.append((bytes([DISCONNECTION_REQUEST]), station9.PROTOCOL, 0))
             self.log.append("disconnection request, ours")
-        if self.disconnect_sent is not None and now - self.disconnect_sent >= 4.0:
+        if self.disconnect_sent is not None and now - self.disconnect_sent >= 2.0:
             self.done = True
             self.log.append("given up on the disconnection response")
         return out
@@ -105,9 +105,10 @@ class Leaver:
         elif protocol == mp.PROTOCOL and payload and payload[0] == mp.LEAVE_RESPONSE:
             if not self.leave_answered:
                 self.leave_answered = True
-                # a host that closes the connection sends its disconnection request within a
-                # frame; the console sent its own after five seconds
-                self.disconnect_at = now + 5.0
+                # a retail host answers the leave with 08 00, sends a Local Protocol start host
+                # migration (0x13) every 0.3 s and waits five seconds for the leaver to go, so
+                # the leaver's own disconnection request goes at once
+                self.disconnect_at = now + 0.05
                 self.log.append("leave response")
         elif protocol == station9.PROTOCOL and payload:
             if payload[0] == DISCONNECTION_REQUEST:

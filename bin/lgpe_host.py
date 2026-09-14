@@ -635,6 +635,7 @@ class Session:
                 self.peer_committed = True
         elif msg["kind"] == pb7.RESULT_MESSAGE:
             self.trade["done"] = True
+            TRADE_IN_PROGRESS["offer"] = TRADE_IN_PROGRESS["commit"] = False
             print("[lgh] game: *** THE RESULT *** the trade has gone through on the console")
             self.send_result()
 
@@ -814,6 +815,7 @@ class Session:
             r = reliable3.parse(pl)
             if r and r["size"] and r["payload"][0] == mp.LEAVE_REQUEST and not self.peer_left:
                 self.peer_left = True
+                TRADE_IN_PROGRESS["offer"] = TRADE_IN_PROGRESS["commit"] = False
                 self.send(reliable3.build_ack(r["sequence"] + 1), mp.PROTOCOL, port=1)
                 self.send(bytes([mp.LEAVE_RESPONSE, r["payload"][1]]), mp.PROTOCOL,
                           destination=0, kind="leave_response")

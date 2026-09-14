@@ -613,14 +613,18 @@ def _run(args, net, keys, facts, opener):
                     for payload, proto, port in state["leaver"].poll(now):
                         to_host_bitmap(payload, proto, port=port)
                     if state["leaver"].done:
+                        # a deliberate exit leaves no trade half done on the peer
+                        TRADE_IN_PROGRESS["offer"] = TRADE_IN_PROGRESS["commit"] = False
                         print("[lg] *** LEFT *** " + "; ".join(state["leaver"].log))
                         break
                 if args.connect and not state["host_accepted"] and time.monotonic() - t0 >= next_tx:
                     if not send_connection_request():
                         break
                     next_tx += 0.5
+                # a station that has left the mesh runs no sync clock, RTT or clone traffic
+                left = state.get("leaver") is not None and state["leaver"].leave_answered
                 if args.connect and not args.no_sync_clock and state["mesh_joined"] \
-                        and len(our_mac) == 6 and len(host_mac) == 6:
+                        and not left and len(our_mac) == 6 and len(host_mac) == 6:
                     now = time.monotonic()
                     if state.get("sync") is None:
                         state["sync"] = sync_clock.SyncClock(now)
@@ -651,14 +655,14 @@ def _run(args, net, keys, facts, opener):
                                   f"{pb7.trainer_id(msg['body'])} -> ({tid}, {sid})")
                     to_host_bitmap(state["window"].send(body), reliable3.PROTOCOL)
                     print(f"[lg] reliable: sent {len(body)} B from {path}")
-                if args.connect and not args.no_rtt and state["mesh_joined"] \
+                if args.connect and not args.no_rtt and state["mesh_joined"] and not left \
                         and len(our_mac) == 6 and len(host_mac) == 6 \
                         and time.monotonic() >= state.get("next_rtt", 0):
                     now = time.monotonic()
                     state["next_rtt"] = now + 1.0
                     to_host_bitmap(rtt.build_v3(rtt.REQUEST, int(now * rtt.TICK_HZ_V3)),
                                    rtt.PROTOCOL)
-                if args.connect and not args.no_clone and state["mesh_joined"] \
+                if args.connect and not args.no_clone and state["mesh_joined"] and not left \
                         and len(our_mac) == 6 and len(host_mac) == 6:
                     now = time.monotonic()
                     if state.get("clone") is None:

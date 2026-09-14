@@ -58,27 +58,28 @@ def test_the_two_state_4_records_then_the_releases_then_the_leave_request():
     # repeated every half second until the response
     out = run(lv, 104.3, 105.3)
     assert len([1 for p, proto, port in out if proto == mp.PROTOCOL]) == 2
-    lv.receive(mp.PROTOCOL, bytes([mp.LEAVE_RESPONSE, 1]), 105.3)
-    out = run(lv, 105.3, 106.3)
+    lv.receive(mp.PROTOCOL, bytes([mp.LEAVE_RESPONSE, 0]), 105.3)
+    out = run(lv, 105.3, 105.4)
     assert [p for p, proto, port in out if proto == mp.PROTOCOL] == []
+    # our disconnection request follows the leave response at once; the host's own, if it comes
+    # first, is answered
+    assert [p for p, proto, port in out if proto == station9.PROTOCOL] == [bytes([DISCONNECTION_REQUEST])]
     assert not lv.done
-    # the host closes the connection: answered, done
-    ans = lv.receive(station9.PROTOCOL, bytes([DISCONNECTION_REQUEST]), 106.3)
+    ans = lv.receive(station9.PROTOCOL, bytes([DISCONNECTION_REQUEST]), 105.4)
     assert ans == [(bytes([DISCONNECTION_RESPONSE]), station9.PROTOCOL, 0)]
     assert lv.done
 
 
-def test_a_host_that_never_closes_gets_our_disconnection_request_after_five_seconds():
+def test_a_host_that_never_answers_the_disconnection_is_given_two_seconds():
     part, lv = make()
     run(lv, 100.0, 101.8)
     for cid in (1, 0, 2, 3):
         lv.receive(clone.PROTOCOL, clone.build_command(clone.COMMAND_END_ACK, 4, 0xFD, cid, 9, 2),
                    101.8)
     run(lv, 101.8, 104.4)
-    lv.receive(mp.PROTOCOL, bytes([mp.LEAVE_RESPONSE, 1]), 104.4)
-    out = run(lv, 104.4, 109.3)
-    assert [p for p, proto, port in out if proto == station9.PROTOCOL] == []
-    out = run(lv, 109.3, 109.5)
+    lv.receive(mp.PROTOCOL, bytes([mp.LEAVE_RESPONSE, 0]), 104.4)
+    out = run(lv, 104.4, 106.3)
     assert [p for p, proto, port in out if proto == station9.PROTOCOL] == [bytes([DISCONNECTION_REQUEST])]
-    lv.receive(station9.PROTOCOL, bytes([DISCONNECTION_RESPONSE]), 109.5)
+    assert not lv.done
+    run(lv, 106.3, 106.6)
     assert lv.done
