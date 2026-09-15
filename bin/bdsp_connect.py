@@ -1549,7 +1549,7 @@ async def main_async(args):
     return 0
 
 
-def main():
+def build_parser():
     ap = argparse.ArgumentParser(description=__doc__,
                                  formatter_class=argparse.RawDescriptionHelpFormatter)
     ap.add_argument("--comm-id", default=None)
@@ -1767,7 +1767,11 @@ def main():
     ap.add_argument("--stop-on-reply", action="store_true", default=True)
     ap.add_argument("--no-stop-on-reply", dest="stop_on_reply", action="store_false")
     ap.add_argument("--capture", default=None)
-    args = ap.parse_args()
+    return ap
+
+
+def main():
+    args = build_parser().parse_args()
     if os.geteuid() != 0:
         ap.error("must run as root")
     if args.complete_trade and not args.trade_reply:

@@ -1,22 +1,27 @@
 # pokeldn
 
-A computer speaking Nintendo Switch local wireless (LDN) to Pokémon games running on a real
-Switch / Switch 2.
+A Linux computer speaking Nintendo Switch local wireless (LDN) to Pokémon games on a real Switch or
+Switch 2. It hosts or joins the game's own wireless session and runs the game's protocol against a
+retail console, with nothing installed on the console. Four games so far:
 
-Two kinds of target share one wireless layer:
+| | FireRed / LeafGreen | Let's Go Pikachu / Eevee | Sword / Shield | Brilliant Diamond / Shining Pearl |
+|---|---|---|---|---|
+| Trade | yes, as host and as joiner | yes, as host and as joiner | yes, joining the console's Link Trade | yes, joining the console's Union Room |
+| Mystery Gift | yes, distribute and receive | not tried | yes, distribute a Wonder Card | not tried |
+| Link battle | yes, Union Room and colosseum | not tried | not tried | as far as the lobby |
+| Code on the console, save read and write | yes, over a Mystery Gift session | no | no | no |
 
-- FireRed and LeafGreen: a GBA ROM inside the Switch's emulator. Trading, Mystery Gift, Union
-  Room battles and native code on the console all work end to end on retail hardware.
-- Native Switch titles: Brilliant Diamond / Shining Pearl and Sword / Shield. Both have
-  completed a trade with a retail console: an invented character walks in a BDSP Union Room and the
-  game runs its own trade flow against it; a Sword accepted a Pokémon, gave one of its own and wrote
-  its save.
+Everything runs on the same radio and the same LDN and Pia layers. FireRed and LeafGreen ship as
+the original GBA ROM inside an emulator, so their GBA link protocol rides on top of those layers
+where the three other games put their own code directly on Pia; nothing else about them is
+different.
 
 The full protocol documentation is at [decryptu.github.io/pokeldn](https://decryptu.github.io/pokeldn/).
 
 The package is layered by what a module is true of: `pokeldn.ldn` is the wireless layer every Switch
 title shares, `pokeldn.gba` is the GBA wireless adapter's protocol above it, and `pokeldn.frlg`,
-`pokeldn.bdsp` and `pokeldn.swsh` are the games. Entry points are named for the game they drive.
+`pokeldn.lgpe`, `pokeldn.swsh` and `pokeldn.bdsp` are the games. Entry points are named for the game
+they drive.
 
 ---
 
@@ -31,24 +36,42 @@ This demo was recorded using the **ALFA AWUS036ACHM**. The RZ616 is half as fast
 
 ## Features
 
-- End-to-end trading with a real game on a real Switch, in both directions
-- `.pk3` / `.ek3` input and output
-- Mystery Gift distribution: Wonder Cards with scripted deliveryman gifts, Wonder News, and a
+FireRed / LeafGreen
+
+- Trading with a real game in both directions, with `.pk3` / `.ek3` input and output
+- Mystery Gift in both directions: Wonder Cards with scripted deliveryman gifts, Wonder News, and a
   visiting Battle Tower trainer
 - Union Room: greetings, trading-board trades, live chat, and full link battles
 - Native code on the console through the gift link: reading and writing its save, mapping its ROM,
-  and calling its own functions
-- Native Switch titles: LDN discovery, association and a completed trade against Brilliant Diamond /
-  Shining Pearl and Sword / Shield, plus an offline toolkit for reading a retail title's own code
+  calling its own functions, and building a Pokémon with its own `CreateMon`
+
+Let's Go Pikachu / Eevee
+
+- Trading in both directions; a box structure built here goes into the console's save as sent
+
+Sword / Shield
+
+- Trading a PKHeX `.pk8` into the console's game
+- Mystery Gift: Wonder Cards built from the command line or served from a published `.wc8`
+  (Pokémon, eggs, items, Battle Points, clothing)
+
+Brilliant Diamond / Shining Pearl
+
+- A character of pokeldn's own in the Union Room: walking, greeting, and trading through the game's
+  own flow
+- Record mixing, ball capsules and the battle lobby, up to the console sending its own records
+
+Every game
+
+- An offline toolkit for reading a retail title's own code (`tools/switch/`)
 
 ## Requirements
 
 - Linux
 - Python 3.11+, and a venv with `requirements.txt` installed
 - A compatible Wi-Fi card (see below)
-- A Switch or Switch 2 with FRLG, played to the point where the Direct Corner has been unlocked
-  (about 20 to 40 minutes)
-- At least 2 `.pk3` files to serve as party members / trade fodder
+- A Switch or Switch 2 with one of the games above. FireRed / LeafGreen needs the Direct Corner
+  unlocked (about 20 to 40 minutes of play) and at least two `.pk3` files as party members
 - Switch `prod.keys` (default location `~/.switch/prod.keys`)
 
 The LDN implementation in [`vendor/LDN`](vendor/LDN) is installed by `pip install -r requirements.txt`.
@@ -90,11 +113,11 @@ See [Adapters](docs/hardware_adapters.md) for the configuration each one needs.
 
 | | |
 |---|---|
-| [`bin/`](bin) | what you run against a console. FireRed/LeafGreen: `frlg_mg_host.py` (Mystery Gift, Wonder News and native code), `frlg_mg_client.py` (receive a card from a console), `frlg_trade_host.py` (trade and Union Room host), `frlg_trade_join.py` (trade joiner). Native titles: `bdsp_join.py`, `bdsp_pia_probe.py`, `swsh_join.py`, `swsh_connect.py` |
+| [`bin/`](bin) | what you run against a console. FireRed/LeafGreen: `frlg_mg_host.py` (Mystery Gift, Wonder News and native code), `frlg_mg_client.py` (receive a card from a console), `frlg_trade_host.py` (trade and Union Room host), `frlg_trade_join.py` (trade joiner). Let's Go: `lgpe_host.py`, `lgpe_join.py`. Sword/Shield: `swsh_connect.py` (trade), `swsh_gift_host.py` (Mystery Gift), `swsh_join.py` (scan). Brilliant Diamond/Shining Pearl: `bdsp_connect.py` (Union Room and trade), `bdsp_join.py`, `bdsp_pia_probe.py` |
 | [`tools/ldn/`](tools/ldn) | the radio, for any target: `ldn_scan.py`, `sniff.py`, `joyspot_probe.py`, `ldn_debug_report.sh` |
 | [`tools/frlg/`](tools/frlg) | reading what a FireRed console sent back, offline: `dump_read.py`, `script_read.py`, `rom_functions.py`, `cartridge_pair.py`, `game_data_read.py`, `english_build.py` |
 | [`tools/switch/`](tools/switch) | reading a retail Switch title's own code, offline: `xci_read.py`, `romfs_read.py`, `nso_read.py`, `nso_relocs.py`, `nso_imports.py`, `rtti_names.py`, `arm64_xref.py`, `arm64_dis.py` |
-| [`pokeldn/`](pokeldn) | the package everything above is made of: `ldn/` the wireless layer, `gba/` the GBA link above it, `frlg/` `bdsp/` `swsh/` the games, `gen8.py` the entity format the two native titles share |
+| [`pokeldn/`](pokeldn) | the package everything above is made of: `ldn/` the wireless layer, `gba/` the GBA link above it, `frlg/` `lgpe/` `swsh/` `bdsp/` the games, `gen8.py` the Pokémon format Sword/Shield and Brilliant Diamond/Shining Pearl share |
 | [`asm/`](asm) | ARM sources for the payloads the console runs; `scripts/gen_buffer_scripts.py` assembles them into `pokeldn/frlg/rom/buffer_payloads.py` |
 | [`scripts/`](scripts) | setup, deployment and code generation; never pointed at a console |
 | [`config/`](config) | host profiles (`host.toml`, and `host.local.toml` for this machine) |
@@ -108,13 +131,15 @@ working directory.
 
 ## Usage
 
-### Join a Switch-hosted trade
+### FireRed and LeafGreen
+
+#### Join a Switch-hosted trade
 
 ```bash
 sudo -E ./.venv/bin/python bin/frlg_trade_join.py --live -o output.pk3 PARTY1.pk3 PARTY2.pk3
 ```
 
-### Host a Direct Corner trade
+#### Host a Direct Corner trade
 
 ```bash
 sudo -E ./.venv/bin/python bin/frlg_trade_host.py -o output.pk3 PARTY1.pk3 PARTY2.pk3
@@ -143,7 +168,7 @@ Some optional flags:
 
 | flag | options | purpose |
 |---|---|---|
-| `--verbose` | | verbose protocol output |
+| `--verbose` | | per-packet protocol output; for `--replay` of a capture only, on a live link it stalls the console |
 | `--phy` | phy name, e.g. `phy1` | Wi-Fi PHY selection |
 | `--keys` | `/path/to/prod.keys` | non-default `prod.keys` location |
 | `--slot` | zero-based party index | host party member offered in the trade |
@@ -159,7 +184,7 @@ Some optional flags:
 
 `--help` is the authoritative list for each entry point.
 
-### Host a Union Room
+#### Host a Union Room
 
 `--union-room` advertises on the middle NPC's path instead of the Direct Corner's; the console applies
 a different accept list.
@@ -179,7 +204,7 @@ Pokémon at level 30 or lower in its own party or it refuses on its own screen.
 See [The link protocol](docs/frlg_link.md) for the connect sequence, the activity bytes and the link
 buffer protocol.
 
-### Trainer identity
+#### Trainer identity
 
 All three entry points start from `DEFAULT_TRAINER` in [`pokeldn/config.py`](pokeldn/config.py). Use
 `--ot`, `--version` and `--id` for per-run overrides; the ID format is decimal `TID[:SID]`:
@@ -197,7 +222,7 @@ Each component must be between 0 and 65535, and the resulting 32-bit LinkPlayer 
 data, LinkPlayer and trainer-card identity. Edit `DEFAULT_TRAINER` for gender, language, National Dex
 or game-completion defaults that have no CLI flag.
 
-### Distribute a Mystery Gift
+#### Distribute a Mystery Gift
 
 `bin/frlg_mg_host.py` advertises on the Friend path and sends a Wonder Card plus a delivery RAM
 script. The default payload is the repeatable legendary-beast cutscene.
@@ -219,7 +244,7 @@ Charmander gives Raikou. The live host also distributes the two halves of a shar
 See [Mystery Gift](docs/frlg_gift.md) for the protocol flow, the gift catalogue, the authoring system,
 and the Friend path requirement.
 
-### Distribute Wonder News
+#### Distribute Wonder News
 
 The console's Mystery Gift menu has a second column, and `--news` serves it. Wonder News is 444 bytes
 of title and body with no flag ID, no delivery script and no gift attached: the reward is a berry from
@@ -234,7 +259,7 @@ sudo -E ./.venv/bin/python -u bin/frlg_mg_host.py --news berry --news-id 7
 A console keeps news only when it differs from what it already holds; `--news-id N` makes the same
 text land again.
 
-### Read the console's save
+#### Read the console's save
 
 A Mystery Gift session can run native ARM code on the console and read its live save back, including
 the secret ID and every party Pokémon's PID, IVs and nature.
@@ -249,7 +274,7 @@ sudo -E ./.venv/bin/python -u bin/frlg_mg_host.py \
 The console stays on its Mystery Gift menu, nothing is written and no Wonder Card changes hands. See
 [Code on the console](docs/frlg_rom.md) for the mechanism and the other payloads.
 
-### Change a field of the console's save
+#### Change a field of the console's save
 
 The same session can edit the save instead of reading it. `flash-patch` reads the save sector a
 field lives in off the flash chip, changes the bytes it means to, recomputes the game's checksum and
@@ -266,35 +291,80 @@ encryption key and the saved map view, because the game writes both only as it s
 patch does not name is the byte the game itself put there. This edits a real save; see
 [A RAM snapshot is not a save](docs/frlg_rom.md) before pointing it at one you care about.
 
-### Native Switch titles
+### Let's Go Pikachu and Eevee
 
-Discovery needs only `prod.keys`; association additionally needs the title's LDN passphrase, which
-`bin/bdsp_join.py` and `bin/swsh_join.py` already carry.
+The console's trade screen alternates hosting and scanning, so pokeldn can host and let the console
+join, or join the console's session. Both need a captured kind-1 identity message for `--first` /
+`--reliable-payload` and a 232-byte PB7 box structure to offer (`pokeldn.lgpe.pb7` reads and writes
+one; `--offer echo` hands the console its own back).
 
-Brilliant Diamond / Shining Pearl. On the console: any Pokémon Center → 2F → the left attendant →
-the plain "yes" (not the password or group option), then wait in the Union Room.
+```bash
+# host: the console finds PkCamp and joins
+sudo -E ./.venv/bin/python bin/lgpe_host.py --seconds 600 --player-name PkCamp \
+  --first identity.bin --our-trainer 41234:12345 --offer offer.pb7
+
+# join the console's session, trade, and leave the way a console does
+sudo -E ./.venv/bin/python bin/lgpe_join.py --connect --connect-seconds 300 \
+  --reliable-payload identity.bin --ack-peer-clock --ack-re-announce \
+  --our-trainer 41234:12345 --offer offer.pb7 --leave-after 15
+```
+
+On the console: menu → Communiquer → Communication locale → Échange, link code Pikachu, Pikachu,
+Pikachu, then wait on the search screen. See [Let's Go](docs/lgpe.md).
+
+### Sword and Shield
+
+Trading joins the console's Link Trade session. The console hosts on Y-Comm → Link Trade over
+local communication; its local communication id is filled at runtime, so the first run is a scan:
+
+```bash
+sudo -E ./.venv/bin/python bin/swsh_join.py --scan-only
+```
+
+Everything each advertisement carries is written to `scratchpad/swsh_net_facts.json`. The trade
+itself is `bin/swsh_connect.py`, which walks the station handshake, the mesh join, the party
+snapshot exchange and the confirmation ladder; `--offer-file FILE` puts a PKHeX `.pk8` on the wire
+in place of a party slot. The flags a completed trade takes are on [Trading](docs/swsh_trade.md).
+
+Mystery Gift needs no session: the gift screen scans, and a distributor advertises a network whose
+advertise data carries the card.
+
+```bash
+sudo -E ./.venv/bin/python bin/swsh_gift_host.py --species 25 --level 25 \
+  --move1 84 --move2 45 --move3 86 --move4 98 --nickname PKCAMP --ot POKELDN --seconds 300
+sudo -E ./.venv/bin/python bin/swsh_gift_host.py --record card.wc8 --seconds 300
+```
+
+On the console: Mystery Gift → receive a gift → via local wireless. `--set FIELD=VALUE`
+sets any record field by name (`shiny_type=3`, `ball=1`, `held_item=236`, `iv_hp=31`,
+`gigantamax=1`), `--ribbon N` adds a ribbon, `--dump FILE` writes the record without a radio.
+A kind-2 card's item ids are checked against the item table before serving: an id the game has no
+row for is accepted and then aborts the game whenever its bag row is on screen. See
+[Mystery Gift](docs/swsh_gift.md).
+
+### Brilliant Diamond and Shining Pearl
+
+pokeldn joins the console's Union Room as a character of its own. On the console: any Pokémon
+Center → 2F → the left attendant → the plain "yes" (not the password or group option), then wait
+in the Union Room, standing clear of the walls.
 
 ```bash
 # see the session without joining it
 sudo -E ./.venv/bin/python tools/ldn/ldn_scan.py --channels 1,6,11,36,40,44,48 --dwell 0.8
 
-# associate and hold a seat, logging everything the advertisement says
-sudo -E ./.venv/bin/python bin/bdsp_join.py --channels 6 --hold 90
+# walk in, greet the player, and trade
+sudo -E ./.venv/bin/python bin/bdsp_connect.py --channels 1,6,11 --count 9 --connect 5 --join 6 \
+  --hold 420 --reliable-ack --reliable-sweep 3 --room-walk 15 --room-pattern fixed \
+  --room-walk-steps 8 --join-avatar 0 --answer-requests --state 0 --recruiting 0 \
+  --answer-talk --can-talk 0 --initiate-talk --initiate-delay 3 \
+  --after-approach 0x06:0001000000 --trade-reply \
+  --trade-template offer.pb8 --trade-nickname PKCAMP --src-var 0x2B7F4C12
 ```
 
-A successful join prints the participant table with the console as participant 0 and this machine as
-participant 1. Nothing happens on the console's screen: LDN association is below the game.
-
-Sword / Shield. Its local communication id is filled at runtime, so the first run is a scan:
-
-```bash
-# on the console: Y-Comm -> Link Trade over LOCAL communication, which puts it on the air
-sudo -E ./.venv/bin/python bin/swsh_join.py --scan-only
-```
-
-Point the scan at a screen where the console hosts. On the Mystery Gift local-wireless screen it is
-a receiver searching and has nothing to advertise. Everything each advertisement carries is written
-to `scratchpad/swsh_net_facts.json`; once the id is known, `--comm-id <hex>` joins it.
+A join is about a one-in-eight shot per attempt and `--room-pattern fixed` bursts fifteen. Use a
+fresh `--src-var` on every run: the console keeps an id it has seen as one of its stations. When the character has appeared and finished walking, the player
+opens Y → the communication menu → trade Pokémon, and the greeting comes up on its own. See
+[Brilliant Diamond and Shining Pearl](docs/bdsp.md).
 
 ### Diagnostics
 

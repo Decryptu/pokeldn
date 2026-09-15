@@ -6,8 +6,8 @@ has_children: true
 
 # Brilliant Diamond and Shining Pearl
 
-Brilliant Diamond and Shining Pearl are native Switch titles built in Unity by ILCA. Pia is the
-game's own transport and IL2CPP game code sits directly on it.
+Brilliant Diamond and Shining Pearl are built in Unity by ILCA. Pia is the game's own transport
+and IL2CPP game code sits directly on it.
 
 Measured against a French Shining Pearl, version 1.3.0, in the Union Room (Pokemon Center 2F, the
 left attendant, the plain "yes") and in the Grand Underground.

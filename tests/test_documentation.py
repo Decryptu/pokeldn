@@ -6,9 +6,15 @@ from pathlib import Path
 
 import pytest
 
+import bdsp_connect
 import frlg_mg_host
 import frlg_trade_join
 import frlg_trade_host
+import lgpe_host
+import lgpe_join
+import swsh_connect
+import swsh_gift_host
+import swsh_join
 
 
 def _options(parser):
@@ -22,9 +28,10 @@ def _options(parser):
 def test_readme_options_exist_in_an_entry_point():
     readme = Path("README.md").read_text(encoding="utf-8")
     documented = set(re.findall(r"`(--[a-z][a-z0-9-]*)", readme))
-    available = (_options(frlg_trade_join.build_parser())
-                 | _options(frlg_trade_host.build_parser())
-                 | _options(frlg_mg_host.build_parser()))
+    available = set()
+    for module in (frlg_trade_join, frlg_trade_host, frlg_mg_host, lgpe_host, lgpe_join,
+                   swsh_connect, swsh_gift_host, swsh_join, bdsp_connect):
+        available |= _options(module.build_parser())
     assert documented <= available, sorted(documented - available)
 
 

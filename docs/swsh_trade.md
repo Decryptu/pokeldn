@@ -367,6 +367,31 @@ own trainer ids, `PkCamp` as the original trainer and the slot-1 template's nick
 builds the record offline, reads it back through `offered_pokemon`, and prints the party and the
 identity consistency.
 
+## The command line of a completed trade
+
+`bin/swsh_connect.py` runs every layer of a trade. The line below completed one against a French
+Sword 1.3.2, the client joining the console's Link Trade session; `SNAPSHOT` is a 3456-byte party
+snapshot, the 0x84 payload of an earlier session against the same console, whose identity is
+rewritten to the client's trainer before it is sent back.
+
+    sudo -E ./.venv/bin/python bin/swsh_connect.py --channels 1,6,11 --dwell 2.5 --listen-first 6 \
+        --station-sweep 0 --ack-seconds 12 --connect --no-variable-id --request-platform 9 \
+        --request-flags 0x09 --connect-station 0 --nat-flags 0 --nat-location 0 --respond \
+        --respond-with theirs --join --answer-rtt --ack-reliable --send-data 610000000a00 \
+        --sync-answers --send-protocol 0x7c --send-after 4 --send-count 1200 --send-period 0.3 \
+        --send-seconds 350 --send2-data 60ea000012020801 --send2-trigger 60ea000012020801 \
+        --send2-protocol 0x80 --ack-snapshot --send-snapshot SNAPSHOT --snapshot-port 1 \
+        --rpc-port-answers --rpc-pair --rpc-bodies --selection-final-delta 9 --selection-offer \
+        --offer-slot 1 --offer-nickname PKCAMP --open-content 30,50 --open-content-offer \
+        --box-commands 1 --box-on-accept 4 --box-period 0.35 --save-offered offered.pk8 \
+        --confirm-commands 0,1,2,3,0,1,2,3,0,1,2,3 --confirm-final-delta 9 --abort-on-stall 15 \
+        --hold 240 --capture trade.jsonl
+
+`--offer-file FILE` in place of `--offer-slot` puts a `.pk8` on the wire. The console moves between
+channels 1 and 6 within a session and `cfg80211` refuses a BSS it has never seen, so a kernel scan
+(`iw dev IFACE scan`) before the run primes its table
+([The cartridge and the session](swsh_session.md)).
+
 ## The penalty, and ending a run cleanly
 
 A trade that times out with the link still alive is reported by the game as a failed trade and

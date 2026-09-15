@@ -14,18 +14,19 @@ Installation, the command-line reference and the code layout are in the
 
 ## Targets
 
-Two kinds of title share one wireless layer.
+Four games, all on retail hardware, all over the same LDN and Pia layers:
 
-FireRed and LeafGreen run as a GBA ROM inside an emulator on the Switch, so two protocol layers
-are stacked: the console's LDN/Pia wireless underneath, and the ROM's own GBA link above it. Proven
-on retail hardware: Mystery Gift in both directions, trade host and joiner, every Union Room
-activity including link battles, Wonder News, the cable-club colosseum, a visiting Battle Tower
-trainer, and arbitrary ARM code on the console: its memory read and written, its ROM mapped, its
-own functions called, and a Pokemon built by its own `CreateMon`.
+| | FireRed / LeafGreen | Let's Go Pikachu / Eevee | Sword / Shield | Brilliant Diamond / Shining Pearl |
+|---|---|---|---|---|
+| Trade | yes, as host and as joiner | yes, as host and as joiner | yes, joining the console's Link Trade | yes, joining the console's Union Room |
+| Mystery Gift | yes, distribute and receive | not tried | yes, distribute a Wonder Card | not tried |
+| Link battle | yes, Union Room and colosseum | not tried | not tried | as far as the lobby |
+| Code on the console, save read and write | yes, over a Mystery Gift session | no | no | no |
 
-Brilliant Diamond and Shining Pearl and Sword and Shield are native Switch titles. Pia is the
-game's own transport, with Unity/IL2CPP (BDSP) or native C++ with protobuf messages (Sword/Shield)
-above it. Both have completed a trade with a retail console.
+FireRed and LeafGreen run as the original GBA ROM inside an emulator on the Switch, so the ROM's
+own GBA link protocol is stacked on the console's LDN and Pia. The three other games put their
+own code directly on Pia: Unity/IL2CPP in Brilliant Diamond and Shining Pearl, C++ with protocol
+buffers over `gflnet3` in Sword and Shield and in Let's Go.
 
 ## Sections
 

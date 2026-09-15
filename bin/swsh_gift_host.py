@@ -58,7 +58,7 @@ def _base_record(args):
         region_mask=args.region_mask, ribbons=args.ribbon or (), **fields)
 
 
-def main():
+def build_parser():
     p = argparse.ArgumentParser(description=__doc__,
                                 formatter_class=argparse.RawDescriptionHelpFormatter)
     p.add_argument("--record", help="a 720-byte record to send instead of building one")
@@ -93,7 +93,11 @@ def main():
     p.add_argument("--protocol", type=int, default=LDN_PROTOCOL, choices=(1, 3),
                    help="LDN advertisement protocol version")
     p.add_argument("--dump", help="write the record and its fragments here and exit")
-    args = p.parse_args()
+    return p
+
+
+def main():
+    args = build_parser().parse_args()
 
     record = build_record(args)
     fragments = beacon.build_message(record)

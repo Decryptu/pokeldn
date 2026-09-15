@@ -6,9 +6,8 @@ has_children: true
 
 # Sword and Shield
 
-Pokemon Sword and Shield are native Switch titles. Pia is the game's own transport and the game's
-code sits directly on it, written in C++ with protocol-buffer messages above a generic
-publish/subscribe framework.
+In Pokemon Sword and Shield, Pia is the game's own transport and the game's code sits directly on
+it, written in C++ with protocol-buffer messages above a generic publish/subscribe framework.
 
 The static reading is taken from a Shield 1.3.2 EUR cartridge image (`01008db008c2c000`, update
 NCA, SDK 7.7.0.0). Hardware measurements are against a French Sword 1.3.2. The two builds share

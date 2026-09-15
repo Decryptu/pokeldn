@@ -6,7 +6,7 @@ has_children: true
 
 # Let's Go Pikachu and Eevee
 
-Pokemon Let's Go Pikachu and Let's Go Eevee are native Switch titles from 2018. Pia is the game's
+In Pokemon Let's Go Pikachu and Let's Go Eevee (2018), Pia is the game's
 own transport, statically linked into `main` (269 `nn::pia` classes in the RTTI), and the game's
 code sits on it in C++ with protocol-buffer messages through `gflnet3`, the same middleware Sword and
 Shield use a year later.
@@ -25,32 +25,32 @@ fixed set. The sessions here use Pikachu, Pikachu, Pikachu.
 
 ## What works
 
-A trade is complete against a retail Let's Go Pikachu, with this project as the joiner, and against
-an emulated host over `ldn_mitm`: a Pokemon built here is in the retail save. Every layer runs:
-association with the 64-byte passphrase, the session key, the version-3 Pia header, the 22-byte
-message framing, the version-9 station connection handshake, the mesh join, the Sync Clock and RTT
-protocols, the Clone Protocol through the take-over exchange that passes the game's `0x11b080` gate,
-and the Reliable Protocol carrying the game's four message kinds: identity, offer, commit and result.
-`pokeldn.lgpe.pb7` reads and writes the 232-byte box structure the offer and the result carry.
+A trade is complete against a retail Let's Go Pikachu in both directions: with this project as
+the joiner of the console's session, and with the console joining a session `bin/lgpe_host.py`
+hosts. A box structure built here goes into the retail save as sent: a shiny level-100 Imposter
+Ditto with 31 in every IV and 200 in every AV reads back on the console's summary screen, and the
+game checks none of its fields on receipt. Every layer runs: association with the 64-byte
+passphrase, the session key, the version-3 Pia header, the 22-byte message framing, the version-9
+station connection handshake, the mesh join, the Sync Clock and RTT protocols, the Clone Protocol
+through the take-over exchange that passes the game's `0x11b080` gate, and the Reliable Protocol
+carrying the game's four message kinds: identity, offer, commit and result. `pokeldn.lgpe.pb7`
+reads and writes the 232-byte box structure the offer and the result carry.
 
-As a host, `bin/lgpe_host.py` advertises the title on LDN protocol 1 with the fixed session id; the
-console finds it, joins, seats in the mesh and runs the clone protocol for as long as the session is
-held. `docs/lgpe_session.md`.
+Leaving is clean both ways. A joiner backs out with `--leave-after` the way a console does, and a
+host answers the console's Retour, so the player lands on the menu with no error. The commit stage
+of the host is pinned against a scripted console by `tests/test_lgpe_host_commit.py`, because a
+host that gets it wrong leaves the console on its confirmation screen and its save refusing trades
+for half an hour. `docs/lgpe_session.md` has every layout.
 
 ## Unresolved
 
-- A trade with this project as the host. A console that joins reaches its trade screen, renders both
-  Pokemon and exchanges offers in both directions, then holds "communication en cours" with every
-  button but Retour greyed (`lgpe_session.md`, "Where a retail console stops against a hosted
-  session").
 - How the three-Pokemon link code becomes the password. Its CRC32 at application-data +4 was 0 on a
   session hosted with the code Pikachu, Pikachu, Pikachu, so the code does not reach the Pia
   password field. Where the game checks it is unread.
-- What the game checks in an offered box structure. The one Pokemon traded in was a donor the game
-  itself wrote, with the trainer id and original trainer changed; a structure built from nothing,
-  an illegal move set, a species outside the Kanto set and a shiny are unmeasured.
 - The three-byte value after the count in the `0xaN` clone messages. For a clone both stations hold
   it is the same on both sides; for clone type 3 id 0 the two stations send different values that
   match neither announcement, and what it is computed from is unread.
 - The flag halfword in the game message header, `0x0000ff00` on every message seen. Nothing has
   varied it.
+- The console sent fourteen kind-4 results, one per party slot, after one trade and a single one
+  after another; what decides the count is unread.
