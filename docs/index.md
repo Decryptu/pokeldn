@@ -41,6 +41,7 @@ buffers over `gflnet3` in Sword and Shield and in Let's Go.
 | [Brilliant Diamond and Shining Pearl](bdsp.md) | Pia 5.27-5.45, the Union Room, and the trade flow. |
 | [Sword and Shield](swsh.md) | Pia 4, the sync framework, trading, and the Mystery Gift local branch. |
 | [Let's Go Pikachu and Eevee](lgpe.md) | Pia 3, the link code, and the trade flow. |
+| [Legends Arceus](pla.md) | Pia header version 11; keys and passphrase read off the binary. |
 | [Hardware and setup](hardware.md) | Adapters, Raspberry Pi deployment, Switch keys. |
 
 ## Credits
