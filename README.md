@@ -4,12 +4,15 @@ A Linux computer speaking Nintendo Switch local wireless (LDN) to Pokémon games
 Switch 2. It hosts or joins the game's own wireless session and runs the game's protocol against a
 retail console, with nothing installed on the console. Four games so far:
 
-| | FireRed / LeafGreen | Let's Go Pikachu / Eevee | Sword / Shield | Brilliant Diamond / Shining Pearl |
-|---|---|---|---|---|
-| Trade | yes, as host and as joiner | yes, as host and as joiner | yes, joining the console's Link Trade | yes, joining the console's Union Room |
-| Mystery Gift | yes, distribute and receive | the game has none over local wireless | yes, distribute a Wonder Card | the game has none over local wireless |
-| Link battle | yes, Union Room and colosseum | not tried | not tried | as far as the lobby |
-| Code on the console, save read and write | yes, over a Mystery Gift session | no | no | no |
+| | FRLG | LGPE | SwSh | BDSP |
+|---|:---:|:---:|:---:|:---:|
+| Trade | ✓ | ✓ | ✓ | ✓ |
+| Mystery Gift | ✓ | ∅ | ✓ | ∅ |
+| Link battle | ✓ | ✗ | ✗ | ✗ |
+| Code on the console, save read and write | ✓ | ✗ | ✗ | ✗ |
+
+✓ works on a retail console · ✗ not done · ∅ the game has no such feature over local wireless
+FRLG FireRed/LeafGreen · LGPE Let's Go Pikachu/Eevee · SwSh Sword/Shield · BDSP Brilliant Diamond/Shining Pearl
 
 Everything runs on the same radio and the same LDN and Pia layers. FireRed and LeafGreen ship as
 the original GBA ROM inside an emulator, so their GBA link protocol rides on top of those layers

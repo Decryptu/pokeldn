@@ -16,12 +16,15 @@ Installation, the command-line reference and the code layout are in the
 
 Four games, all on retail hardware, all over the same LDN and Pia layers:
 
-| | FireRed / LeafGreen | Let's Go Pikachu / Eevee | Sword / Shield | Brilliant Diamond / Shining Pearl |
-|---|---|---|---|---|
-| Trade | yes, as host and as joiner | yes, as host and as joiner | yes, joining the console's Link Trade | yes, joining the console's Union Room |
-| Mystery Gift | yes, distribute and receive | the game has none over local wireless | yes, distribute a Wonder Card | the game has none over local wireless |
-| Link battle | yes, Union Room and colosseum | not tried | not tried | as far as the lobby |
-| Code on the console, save read and write | yes, over a Mystery Gift session | no | no | no |
+| | FRLG | LGPE | SwSh | BDSP |
+|---|:---:|:---:|:---:|:---:|
+| Trade | ✓ | ✓ | ✓ | ✓ |
+| Mystery Gift | ✓ | ∅ | ✓ | ∅ |
+| Link battle | ✓ | ✗ | ✗ | ✗ |
+| Code on the console, save read and write | ✓ | ✗ | ✗ | ✗ |
+
+✓ works on a retail console · ✗ not done · ∅ the game has no such feature over local wireless
+FRLG FireRed/LeafGreen · LGPE Let's Go Pikachu/Eevee · SwSh Sword/Shield · BDSP Brilliant Diamond/Shining Pearl
 
 FireRed and LeafGreen run as the original GBA ROM inside an emulator on the Switch, so the ROM's
 own GBA link protocol is stacked on the console's LDN and Pia. The three other games put their
