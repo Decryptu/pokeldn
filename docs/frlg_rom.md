@@ -1462,6 +1462,84 @@ session's save leaves its own band at `gSaveCounter + 1`, so ours lands exactly 
 that belongs at position 13 is `(13 - gLastWrittenSector) % 14`, derived on the console like the
 rest.
 
+### A RAM snapshot is not a save
+
+The save routine serializes at save time, so `gSaveBlock2Ptr`'s live contents are not what it would
+write. Two fields prove it, and both were found by breaking something a player can see:
+
+- **The encryption key is re-rolled on LOAD.** `LoadGameSave` restores the three blocks from flash
+  and then makes a new key, applies it to every encrypted field in RAM, and stores it in SaveBlock2
+  [decomp:src/load_save.c:126-128]. So the key in RAM is never the key the flash it came from is
+  encrypted under. A SaveBlock2 composed from RAM and placed beside an untouched SaveBlock1 makes the
+  next load decrypt with the wrong key: money read 3345243765 instead of 998927, and the RAM value
+  was predicted to the byte from `raw ^ flash_key ^ ram_key`. The encrypted set spans both blocks
+  [ApplyNewEncryptionKeyToAllEncryptedData]: Trainer Tower times, game stats, bag quantities, berry
+  powder in SaveBlock2, money and coins.
+- **The saved map view is filled only at save time.** 420 bytes at SaveBlock2 `+0x898`, 210 u16
+  metatile ids with `0x03FF` as the blank marker. In a sector the game wrote it is fully populated;
+  in live RAM it is zero. A composed sector hands the loader 210 zero metatiles and the overworld
+  draws as a blank grid with the player and NPCs on it.
+
+Every checksum passes and `gDamagedSaveSectors` stays 0 in both cases: the loader cannot see either.
+Neither is a list to patch. A normal save writes all fourteen sectors from RAM at once, so key and
+ciphertext always move together; any partial write has to reproduce that invariant or recreate this
+in a new place.
+
+### Reading flash: a 64 KiB window over a 128 KiB chip
+
+`swi 0x48` addresses the chip linearly. The CPU does not. A guest load sees a 64 KiB aperture at
+`0x0E000000`, and a 1 Mbit part reaches it as two banks, so
+
+    sector N is bank N / 16 at 0x0E000000 + (N % 16) * 0x1000
+
+An address above the aperture **aliases rather than faulting**. Reading `0x0E01E000` meaning sector
+30 lands on `0x0E00E000` and returns sector 14 of whichever bank is selected, which on a typical save
+is zeros: a wrong answer wearing the failure's clothes. Bank and window are computed from the sector,
+never written by hand.
+
+Selecting the bank is the game's own four stores [decomp:src/agb_flash.c SwitchFlashBank,
+`0x081E0C74`, seven instructions with no loop and no `REG_WAITCNT`]:
+
+    strb 0xAA -> 0x0E005555 ; strb 0x55 -> 0x0E002AAA ; strb 0xB0 -> 0x0E005555 ; strb bank -> 0x0E000000
+
+Inlining them keeps a payload free of ROM calls entirely, so nothing executes off the stack,
+`REG_WAITCNT` is never modified and no ROM function runs while the RFU link is live. Reads are
+byte-wide: the flash bus is 8 bits and a wider load does not return more flash bytes.
+
+**The console's outgoing message cannot be pointed at flash.** `memory-dump` repoints
+`client->link.sendBuffer` and lets the console send the region; aimed at flash it sends something
+else. Asked for `0x0E01BC00` at 1024 bytes and `0x0E01E000` at 252, the console returned identical
+content belonging to neither sector. The content does not depend on the address requested, so it is
+not aliasing, not banking and not size. Unexplained. A payload that wants flash copies it into EWRAM
+and points the send at the copy.
+
+### Changing one field of a real save
+
+Composing a sector is bounded by what the save routine serializes. Reading one is not: the sector
+already on the chip was written by a real save, so its key, its map view and everything nobody has
+thought of are already right and already consistent with the band around it. `flash-patch` reads,
+changes what it means to, and writes back, which makes a field nobody enumerated impossible to get
+wrong.
+
+An edit is two sectors, because the id being edited is rarely the one that carries the slot's
+counter:
+
+    A   the target id's sector: patch the field, recompute the checksum over the id's own chunk,
+        set the counter to gSaveCounter + 2
+    B   the sector at band position 13: set its counter to gSaveCounter + 2 and nothing else, not
+        even the checksum, because +0xFFC is outside the summed data area
+
+The bias of 2 is a property of the ordering rather than of any particular state. A full save
+increments the counter and then writes the band the incremented value selects [decomp:src/save.c:144-153],
+so the band we write (`C % 2`) and the band the session's own save writes (`(C+1) % 2`) are opposite
+by construction, and ours lands exactly one counter above. The band is then a mixture — twelve
+sectors at the old counter and two at the new — which the loader takes because all fourteen ids are
+present and valid and the last valid sector carries the higher counter.
+
+Measured end to end: a player name changed to POKELDN through a Wonder Card link, physical 4
+differing by ten bytes and physical 13 by one, money still 998927, the overworld normal, both key
+copies and all 420 bytes of the map view carried verbatim, and 0 bad checksums across all 28 sectors.
+
 ### The chain, end to end
 
 Established with no step assumed, each one measured on the emulated console:
