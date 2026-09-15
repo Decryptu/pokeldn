@@ -569,6 +569,20 @@ class BufferScriptPayload:
     # keeps a write inside the region the game never reads.
     write_data: bytes | None = None
     write_unsafe: bool = False
+    # flash-write: the sector the syscall writes and the pattern the console composes for it. The
+    # write goes straight into save flash with none of the game's save code in the way, so
+    # `write_unsafe` is what allows a sector inside the two save bands.
+    flash_sector: int | None = None
+    flash_fill_base: int = 0x46570000
+    flash_fill_step: int = 1
+    flash_words: int = buffer_script.FLASH_WRITE_WORDS
+    flash_swi: int = buffer_script.SWI_WRITE_SECTOR
+    flash_footer: bool = False
+    flash_id: int = 0
+    flash_counter: int = 0
+    flash_derive: bool = False
+    flash_counter_bias: int = 0
+    flash_position: int | None = None
     # memory-scan: the needle, the range and the frame budget. The scan is not a dump of somewhere
     # we already knew about - it is how an address is found in the first place.
     scan_word: int | None = None
@@ -669,6 +683,13 @@ class BufferScriptPayload:
         elif self.write_data is not None:
             raise ValueError(
                 f"bytes to write are only meaningful with {buffer_script.SAVE_WRITE}")
+        if self.script == buffer_script.FLASH_WRITE:
+            if self.flash_sector is None:
+                raise ValueError(
+                    f"{buffer_script.FLASH_WRITE} needs the sector to write (--flash-sector)")
+        elif self.flash_sector is not None:
+            raise ValueError(
+                f"a flash sector is only meaningful with {buffer_script.FLASH_WRITE}")
         if self.script == buffer_script.MEMORY_SCAN:
             if self.scan_word is None:
                 raise ValueError(
@@ -814,6 +835,14 @@ class BufferScriptPayload:
             return buffer_script.build_save_write(
                 self.write_data, self.dump_block, self.dump_offset,
                 unsafe=self.write_unsafe)
+        if self.script == buffer_script.FLASH_WRITE:
+            return buffer_script.build_flash_write(
+                self.flash_sector, fill_base=self.flash_fill_base,
+                fill_step=self.flash_fill_step, words=self.flash_words,
+                number=self.flash_swi, unsafe=self.write_unsafe,
+                footer=self.flash_footer, sector_id=self.flash_id,
+                counter=self.flash_counter, derive=self.flash_derive,
+                counter_bias=self.flash_counter_bias, position=self.flash_position)
         return buffer_script.payload(self.script)
 
     def build_distribution(self):

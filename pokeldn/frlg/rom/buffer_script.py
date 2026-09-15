@@ -104,6 +104,19 @@ MEMORY_DUMP_SCATTER = "memory-dump-scatter"
 SAVE_DUMP = "save-dump"
 ANCHORS = "anchors"
 SAVE_WRITE = "save-write"
+FLASH_WRITE = "flash-write"
+
+# Save flash, the destination of the Sloop sector syscalls. 128 KiB, 32 sectors of 0x1000
+# [decomp:include/save.h: SECTOR_SIZE, SECTORS_COUNT]. The CPU cannot write it with a store; only
+# swi 0x48 and swi 0x56 reach it [docs/frlg_rom.md, the Sloop syscall boundary].
+FLASH_BASE, FLASH_SIZE = 0x0E000000, 0x00020000
+FLASH_SECTOR_SIZE = 0x1000
+# The two syscalls that copy a sector. 0x48 writes and leaves; 0x56 writes and then voids the
+# destination's signature at +0xFF8, which is what makes it ReplaceSector rather than WriteSector.
+SWI_WRITE_SECTOR = 0x48
+SWI_REPLACE_SECTOR = 0x56
+SECTOR_SIGNATURE_OFFSET_IN_SECTOR = 0xFF8
+
 
 # save-write's operands, from its disassembly (ldr [pc,#0x44] -> 0x4C, [pc,#0x38] -> 0x50,
 # [pc,#0x30] -> 0x54, add r1,pc,#0x2C -> 0x58). Proven by emulating a patched payload.
@@ -1598,6 +1611,13 @@ SCRIPT_REGISTRY = {
         "--call-arg, --call-watch); the payload writes nothing itself, but the callee may, so the "
         "address has to have been read as code first",
         None),
+    FLASH_WRITE: BufferScriptSpec(
+        FLASH_WRITE,
+        "compose 4 KB in EWRAM on the console and write it straight into a flash sector with "
+        "swi 0x48, bypassing the game's save code entirely - no counter, checksum or signature "
+        "(--flash-sector, --flash-fill-base, --flash-fill-step, --flash-words; a sector inside "
+        "the save bands needs --write-unsafe)",
+        None),
     CALL_CHAIN: BufferScriptSpec(
         CALL_CHAIN,
         "run a LIST of ROM calls and memory accesses in one frame and send back a word for each, "
@@ -1672,6 +1692,219 @@ def build_save_write(data, block=SAVE_BLOCK_2, offset=0xB20, *, unsafe=False):
     code[SAVE_WRITE_SIZE_OFFSET:SAVE_WRITE_SIZE_OFFSET + 4] = len(data).to_bytes(4, "little")
     code[SAVE_WRITE_DATA_OFFSET:] = data.ljust((len(data) + 3) & ~3, b"\x00")
     return bytes(code)
+
+
+# asm/flash-write.s's image, offsets from _start and fixed by construction.
+FLASH_WRITE_SECTOR_OFFSET = 0x04
+FLASH_WRITE_SOURCE_OFFSET = 0x08
+FLASH_WRITE_FILL_BASE_OFFSET = 0x0C
+FLASH_WRITE_FILL_STEP_OFFSET = 0x10
+FLASH_WRITE_WORDS_OFFSET = 0x14
+FLASH_WRITE_FOOTER_OFFSET = 0x18
+FLASH_WRITE_ID_OFFSET = 0x1C
+FLASH_WRITE_COUNTER_OFFSET = 0x20
+FLASH_WRITE_SIGNATURE_OFFSET = 0x24
+FLASH_WRITE_DERIVE_LWS_OFFSET = 0x28
+FLASH_WRITE_DERIVE_SC_OFFSET = 0x2C
+FLASH_WRITE_BIAS_OFFSET = 0x30
+FLASH_WRITE_PHYS_RESULT_OFFSET = 0x40
+FLASH_WRITE_ID_RESULT_OFFSET = 0x44
+FLASH_WRITE_POSITION_OFFSET = 0x48
+FLASH_WRITE_THUNK_OFFSET = 0x4C
+# The save globals, measured live in IWRAM on the French build and confirmed across three
+# consecutive save generations (NOTES.local.md, the save globals).
+GLASTWRITTENSECTOR = 0x030045A0
+GLASTSAVECOUNTER = 0x030045A4
+GLASTKNOWNGOODSECTOR = 0x030045A8
+GDAMAGEDSAVESECTORS = 0x030045AC
+GSAVECOUNTER = 0x030045B0
+SECTORS_PER_BAND = 14
+# The band position whose sector supplies the slot's counter to GetSaveValidStatus: the last one.
+COUNTER_BEARING_POSITION = SECTORS_PER_BAND - 1
+# struct SaveSector [decomp:include/save.h]: data[3968], unused[116], then the footer.
+SECTOR_DATA_SIZE = 3968
+SECTOR_FOOTER_AT = 0xFF4
+SECTOR_SIGNATURE = 0x08012025
+SECTOR_DATA_WORDS = SECTOR_DATA_SIZE // 4
+# How many bytes of each sector the game actually checksums. Read out of sSaveSlotLayout at
+# 0x083F58C4 in the French cartridge, the const table SAVEBLOCK_CHUNK builds [decomp:src/save.c:43]:
+# 14 entries of {u16 offset, u16 size}, one per sector id. Two of them pin the table exactly against
+# a real save, where the last non-zero data byte is the last byte of the chunk: id 0 size 3876 with
+# byte 3875 the last non-zero, id 13 size 2000 with byte 1999.
+#
+# THIS IS NOT SECTOR_DATA_SIZE FOR EVERY ID, and the difference is invisible in a real save: the
+# game zeroes the whole sector buffer and copies only `size` bytes, so summing the full 3968 gives
+# the same answer as summing `size` and the shortcut looks correct against any save on disk. It
+# stops being correct the moment a sector is composed with data past its chunk size, which is
+# exactly what a synthetic sector does.
+SECTOR_CHUNK_SIZES = {0: 3876, 1: 3968, 2: 3968, 3: 3968, 4: 3816, 5: 3968, 6: 3968,
+                      7: 3968, 8: 3968, 9: 3968, 10: 3968, 11: 3968, 12: 3968, 13: 2000}
+SAVE_SLOT_LAYOUT_ADDRESS = 0x083F58C4
+# The smallest chunk any id carries. A sector whose pattern stops here and is zero afterwards
+# checksums identically under EVERY id's chunk size, because the bytes past the pattern are zero and
+# zeros add nothing to the sum. That is what makes a sector composable when the id is only decided
+# on the console, as it is when the position is what was aimed at.
+SECTOR_CHUNK_MIN = 2000
+
+
+def sector_chunk_size(sector_id):
+    """-> how many bytes of sector `sector_id` the game's checksum covers."""
+    try:
+        return SECTOR_CHUNK_SIZES[int(sector_id)]
+    except KeyError:
+        raise BufferScriptError(
+            f"sector id {sector_id} is not one of the {len(SECTOR_CHUNK_SIZES)} a save slot "
+            "carries") from None
+# The scratch the payload fills and hands the syscall: inside gDecompressionBuffer, a full 0x400
+# above the payload's own image so the fill can never overwrite the code doing the filling.
+FLASH_WRITE_SCRATCH = GDECOMPRESSION_BUFFER + 0x400
+FLASH_WRITE_WORDS = FLASH_SECTOR_SIZE // 4
+# Sectors 0..27 are the two 14-sector save bands; 28..31 are Hall of Fame and Trainer Tower and sit
+# outside both, so a write there cannot move what the loader reads [decomp:include/save.h].
+SAVE_BAND_SECTORS = 28
+
+
+def build_flash_write(sector, *, source=FLASH_WRITE_SCRATCH, fill_base=0x46570000, fill_step=1,
+                      words=FLASH_WRITE_WORDS, number=SWI_WRITE_SECTOR, unsafe=False,
+                      footer=False, sector_id=0, counter=0, signature=SECTOR_SIGNATURE,
+                      derive=False, counter_bias=0, position=None):
+    """The flash-write payload: fill `words` words at `source`, then swi `number` into `sector`.
+
+    This writes the console's save flash directly, with none of the game's save code in the way: no
+    counter, no checksum, no signature. The default refuses a sector inside the two save bands,
+    because a sector there is a live save block and the write bypasses every consistency the loader
+    relies on. 28..31 are outside both bands and are the sectors an experiment belongs in.
+    """
+    sector = int(sector)
+    if not 0 <= sector < FLASH_SIZE // FLASH_SECTOR_SIZE:
+        raise BufferScriptError(
+            f"a flash sector is 0..{FLASH_SIZE // FLASH_SECTOR_SIZE - 1}, got {sector}")
+    if not unsafe and not derive and sector < SAVE_BAND_SECTORS:
+        raise BufferScriptError(
+            f"sector {sector} is inside a save band (0..{SAVE_BAND_SECTORS - 1}), so the write "
+            "lands on a live save block with no counter, checksum or signature maintained. "
+            f"Sectors {SAVE_BAND_SECTORS}..{FLASH_SIZE // FLASH_SECTOR_SIZE - 1} are outside both "
+            "bands. Pass unsafe=True only if damaging the save is the experiment.")
+    if number not in (SWI_WRITE_SECTOR, SWI_REPLACE_SECTOR):
+        raise BufferScriptError(
+            f"the sector syscalls are 0x{SWI_WRITE_SECTOR:02X} and 0x{SWI_REPLACE_SECTOR:02X}, "
+            f"got 0x{number:02X}")
+    if number == SWI_REPLACE_SECTOR and not unsafe:
+        raise BufferScriptError(
+            f"swi 0x{SWI_REPLACE_SECTOR:02X} voids the destination's signature at +0xFF8 and "
+            "aborts outright if the destination is rejected. Pass unsafe=True to mean it.")
+    words = int(words)
+    if footer and words == FLASH_WRITE_WORDS:
+        # A composed sector fills its id's OWN chunk and leaves the rest zero, which is what the
+        # game leaves. Filling the whole data area instead would make the sum over 3968 disagree
+        # with the sum over the chunk, and the game checksums the chunk: it would reject the
+        # sector, and the run would read as "the game refuses foreign sectors" when it refused
+        # this sector's arithmetic.
+        words = (sector_chunk_size(sector_id) if position is None
+                 else SECTOR_CHUNK_MIN) // 4
+    if not 1 <= words <= FLASH_WRITE_WORDS:
+        raise BufferScriptError(
+            f"the source is one sector, 1..{FLASH_WRITE_WORDS} words, got {words}")
+    if footer and words > SECTOR_DATA_WORDS:
+        raise BufferScriptError(
+            f"a composed sector's pattern fills the data area, 1..{SECTOR_DATA_WORDS} words, "
+            f"got {words}; the rest is zeroed and the footer follows")
+    if not footer and (sector_id or counter):
+        raise BufferScriptError("an id and a counter are only meaningful with footer=True")
+    if position is not None:
+        if not derive:
+            raise BufferScriptError(
+                "aiming at a band position means deriving the id from it, which needs derive=True")
+        if not 0 <= position < SECTORS_PER_BAND:
+            raise BufferScriptError(
+                f"a band position is 0..{SECTORS_PER_BAND - 1}, got {position}")
+        if sector_id:
+            raise BufferScriptError(
+                "a position derives the id on the console, so an explicit id would be ignored")
+    if derive:
+        if not footer:
+            raise BufferScriptError(
+                "deriving the position only makes sense for a composed sector: the id is what the "
+                "rotation is computed from")
+        if position is None and not 0 <= sector_id < SECTORS_PER_BAND:
+            raise BufferScriptError(
+                f"a derived position needs a real save id, 0..{SECTORS_PER_BAND - 1}, "
+                f"got {sector_id}")
+        if counter:
+            raise BufferScriptError(
+                "a derived write takes its counter from gSaveCounter plus counter_bias, so an "
+                "explicit counter would be ignored")
+        if not unsafe:
+            raise BufferScriptError(
+                "a derived write lands inside a save band by construction, on the sector the id "
+                "actually occupies. Pass unsafe=True to mean it.")
+    elif counter_bias:
+        raise BufferScriptError("counter_bias only applies to a derived write")
+    source = int(source)
+    if source % 4:
+        raise BufferScriptError(f"the source 0x{source:X} must be word aligned")
+    if not (EWRAM_BASE <= source and source + FLASH_SECTOR_SIZE <= EWRAM_BASE + EWRAM_SIZE):
+        raise BufferScriptError(
+            f"the source 0x{source:X} plus a sector must lie inside EWRAM "
+            f"(0x{EWRAM_BASE:X}..0x{EWRAM_BASE + EWRAM_SIZE:X})")
+    code = bytearray(payload(FLASH_WRITE))
+    if source < GDECOMPRESSION_BUFFER + len(code):
+        raise BufferScriptError(
+            f"the source 0x{source:X} overlaps the payload's own image at "
+            f"0x{GDECOMPRESSION_BUFFER:X}..0x{GDECOMPRESSION_BUFFER + len(code):X}")
+    for offset, value in ((FLASH_WRITE_SECTOR_OFFSET, sector),
+                          (FLASH_WRITE_SOURCE_OFFSET, source),
+                          (FLASH_WRITE_FILL_BASE_OFFSET, fill_base),
+                          (FLASH_WRITE_FILL_STEP_OFFSET, fill_step),
+                          (FLASH_WRITE_WORDS_OFFSET, words),
+                          (FLASH_WRITE_FOOTER_OFFSET, 1 if footer else 0),
+                          (FLASH_WRITE_ID_OFFSET, sector_id),
+                          (FLASH_WRITE_COUNTER_OFFSET, counter),
+                          (FLASH_WRITE_SIGNATURE_OFFSET, signature if footer else 0),
+                          (FLASH_WRITE_DERIVE_LWS_OFFSET, GLASTWRITTENSECTOR if derive else 0),
+                          (FLASH_WRITE_DERIVE_SC_OFFSET, GSAVECOUNTER if derive else 0),
+                          (FLASH_WRITE_BIAS_OFFSET, counter_bias),
+                          (FLASH_WRITE_POSITION_OFFSET,
+                           0xFFFFFFFF if position is None else position)):
+        code[offset:offset + 4] = (int(value) & 0xFFFFFFFF).to_bytes(4, "little")
+    # The thunk is `swi N ; bx lr` in THUMB; the number is the low byte of the first halfword.
+    code[FLASH_WRITE_THUNK_OFFSET] = int(number) & 0xFF
+    return bytes(code)
+
+
+def sector_checksum(data, size=SECTOR_DATA_SIZE):
+    """The game's own checksum [decomp:src/save.c CalculateChecksum], over `size` bytes.
+
+    `size` is the id's own chunk size, not SECTOR_DATA_SIZE: the game sums
+    `gRamSaveSectorLocations[id].size` bytes and ids 0, 4 and 13 carry less than a full chunk. For a
+    sector the GAME wrote the two agree, because everything past the chunk is zero, so a default of
+    SECTOR_DATA_SIZE validates any real save and hides the difference. Pass the id's own size, or
+    use `sector_chunk_size`, whenever the data past the chunk might not be zero.
+    """
+    total = 0
+    for i in range(int(size) // 4):
+        total = (total + int.from_bytes(data[i * 4:i * 4 + 4], "little")) & 0xFFFFFFFF
+    return ((total >> 16) + total) & 0xFFFF
+
+
+def flash_write_source(fill_base=0x46570000, fill_step=1, words=FLASH_WRITE_WORDS,
+                       footer=False, sector_id=0, counter=0, signature=SECTOR_SIGNATURE,
+                       position=None):
+    """-> the exact bytes build_flash_write makes the console compose, for verifying the sector."""
+    if footer and words == FLASH_WRITE_WORDS:
+        words = (sector_chunk_size(sector_id) if position is None else SECTOR_CHUNK_MIN) // 4
+    pattern = b"".join(((int(fill_base) + i * int(fill_step)) & 0xFFFFFFFF).to_bytes(4, "little")
+                       for i in range(int(words)))
+    if not footer:
+        return pattern
+    out = bytearray(FLASH_SECTOR_SIZE)          # zeroed, as the game zeroes its buffer
+    out[0:len(pattern)] = pattern
+    out[SECTOR_FOOTER_AT:SECTOR_FOOTER_AT + 2] = (int(sector_id) & 0xFFFF).to_bytes(2, "little")
+    out[SECTOR_FOOTER_AT + 2:SECTOR_FOOTER_AT + 4] = sector_checksum(
+        out, sector_chunk_size(sector_id)).to_bytes(2, "little")
+    out[SECTOR_FOOTER_AT + 4:SECTOR_FOOTER_AT + 8] = (int(signature) & 0xFFFFFFFF).to_bytes(4, "little")
+    out[SECTOR_FOOTER_AT + 8:SECTOR_FOOTER_AT + 12] = (int(counter) & 0xFFFFFFFF).to_bytes(4, "little")
+    return bytes(out)
 
 
 # A dumped region must not change while the block is being sent. MGL_Send takes the header CRC in
@@ -1843,6 +2076,10 @@ PATCHED_SPANS = {
     # The count, the sixteen steps and the answer: everything ahead of the code.
     CALL_CHAIN: ((CHAIN_COUNT_OFFSET,
                   CHAIN_RESULT_OFFSET - CHAIN_COUNT_OFFSET + CHAIN_ANSWER_SIZE),),
+    # The five operands, the two result words, and the thunk whose low byte carries the syscall
+    # number: everything ahead of the code.
+    FLASH_WRITE: ((FLASH_WRITE_SECTOR_OFFSET,
+                   FLASH_WRITE_THUNK_OFFSET + 4 - FLASH_WRITE_SECTOR_OFFSET),),
 }
 
 
@@ -2046,6 +2283,11 @@ class _Machine:
         uc.mem_map(ROM_BASE, ROM_SIZE)
         uc.mem_write(ROM_BASE, bytes(rom if rom is not None else _DEFAULT_ROM_HEADER))
         uc.mem_map(_RETURN_ADDRESS, 0x1000)
+        # Flash starts erased, as an unused sector reads on the console.
+        uc.mem_map(FLASH_BASE, FLASH_SIZE)
+        uc.mem_write(FLASH_BASE, b"\xFF" * FLASH_SIZE)
+        self.flash_writes = []          # (number, sector, source, accepted, why)
+        uc.hook_add(unicorn.UC_HOOK_INTR, self._on_swi)
 
         def word(offset, value):
             uc.mem_write(_CLIENT_ADDRESS + offset, (value & 0xFFFFFFFF).to_bytes(4, "little"))
@@ -2077,6 +2319,51 @@ class _Machine:
         self.armed_size = send_size
         self._sav2_len, self._sav1_len = len(sav2), len(sav1)
         self.calls = 0
+
+    def _on_swi(self, uc, intno, user_data=None):
+        """Model the Sloop sector syscalls so a payload that issues one can be vetted offline.
+
+        Measured on the FR emulator: swi 0x48 copies 0x1000 bytes from r1 into the sector r0 names
+        (0x0E000000 + r0 * 0x1000) and modifies no guest register; each side is rejected
+        independently and a rejected call writes nothing and says nothing. swi 0x56 does the same
+        and then stores 0xFF over the destination's signature at +0xFF8, with no null check, so a
+        rejected destination aborts there rather than returning [docs/frlg_rom.md].
+
+        Only the numbers this project has measured are modelled. Any other `swi` is left alone,
+        which is the honest behaviour: the harness must not invent a result for a syscall nobody
+        has read.
+        """
+        arm = self._arm
+        cpsr = uc.reg_read(arm.UC_ARM_REG_CPSR)
+        pc = uc.reg_read(arm.UC_ARM_REG_PC)
+        if cpsr & (1 << 5):             # THUMB: the swi is the halfword just executed
+            number = int.from_bytes(uc.mem_read(pc - 2, 2), "little") & 0xFF
+        else:
+            number = int.from_bytes(uc.mem_read(pc - 4, 4), "little") & 0xFFFFFF
+        if number not in (SWI_WRITE_SECTOR, SWI_REPLACE_SECTOR):
+            return
+        sector = uc.reg_read(arm.UC_ARM_REG_R0)
+        source = uc.reg_read(arm.UC_ARM_REG_R1)
+        offset = (sector * FLASH_SECTOR_SIZE) & 0xFFFFFFFF
+        why = None
+        if offset >= FLASH_SIZE or FLASH_SIZE - offset < FLASH_SECTOR_SIZE:
+            why = f"destination sector {sector} folds to 0x{offset:X}, outside {FLASH_SIZE:#x}"
+        payload_bytes = None
+        if why is None:
+            try:
+                payload_bytes = bytes(uc.mem_read(source, FLASH_SECTOR_SIZE))
+            except self._unicorn.UcError:
+                why = f"source 0x{source:08X} is not {FLASH_SECTOR_SIZE:#x} bytes of mapped memory"
+        if why is None:
+            uc.mem_write(FLASH_BASE + offset, payload_bytes)
+            if number == SWI_REPLACE_SECTOR:
+                uc.mem_write(FLASH_BASE + offset + SECTOR_SIGNATURE_OFFSET_IN_SECTOR, b"\xFF")
+        elif number == SWI_REPLACE_SECTOR:
+            # The signature store has no null check, so a rejected destination faults at 0xFF8.
+            raise BufferScriptError(
+                f"swi 0x56 with a rejected destination aborts: {why}. On the console that is the "
+                "strb at main+0x573F8 going to a null pointer.")
+        self.flash_writes.append((number, sector, source, why is None, why))
 
     def call(self, instruction_limit=_INSTRUCTION_LIMIT):
         """One frame: what Client_RunBufferScript does with our payload, once."""

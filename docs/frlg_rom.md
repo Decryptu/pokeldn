@@ -777,7 +777,28 @@ sector and then voids its signature, `WriteSector` writes and leaves it.
 A rejected destination leaves `x21` null, so the store faults at `0x0000000000000FF8`. That is the
 abort seen when `swi 0x56` was reached with an argument in an unmapped region: the destination was
 correctly rejected, the copy returned, and the unconditional store went to a null pointer. `swi 0x48`
-takes the same path without the store. Every vtable carries a null typeinfo pointer, so the
+takes the same path without the store.
+
+Both ends of `swi 0x48` are measured on the emulated console rather than read off the handler:
+
+| call | result |
+| --- | --- |
+| `r0` a sector past the flash size, `r1` an unmapped region | nothing written, flash byte-identical, no fault, no freeze |
+| `r0 = 30`, `r1 = 0x08000000` (the ROM header) | sector 30 became the cartridge's first 4 KB, 4096 of 4096 bytes, neighbours untouched |
+| `r0 = 30`, `r1` an EWRAM buffer the payload filled | sector 30 became those bytes; the buffer read back unchanged afterwards |
+
+**It modifies no guest register and reports nothing.** `r0` and `r1` come back as they went in, and
+`r2`, `r3` sentinels are untouched, so there is no accept/reject status: a rejected call is
+distinguishable from an accepted one only by whether flash changed. A probe that passes a sector
+number in `r0` and reads `r0` back has measured nothing, because the value returned is the value
+passed.
+
+The write does not reach the host's save file on its own. The emulator commits its 128 KiB flash
+image when the game itself saves, and that save rewrites the game's own band and commits the whole
+image, carrying a foreign sector along with it. A syscall write followed by a hard kill leaves the
+file unchanged. A write issued from inside a Mystery Gift session is durable by the time the link
+closes, because receiving a card saves; one issued from the resident V-blank hook during ordinary
+play waits for whatever saves next. Every vtable carries a null typeinfo pointer, so the
 image is built without RTTI and none of the classes has a name to recover.
 
 Read that way, entries 165 and 166 give one object `0x655DB09918`, one vtable `main + 0x1C1FB0` and one
@@ -1245,6 +1266,32 @@ The console's own `SeedRng` bytes are the offline fixture: `tests/test_buffer_sc
 under unicorn through the payload. The eight-argument path is checked with powers of two as the
 arguments, so the returned sum names exactly which slots arrived.
 
+### `flash-write`
+
+Composes a 4 KB sector in EWRAM on the console and writes it into save flash with
+[`swi 0x48`](#the-flash-sector-path), with none of the game's save code in the way. The scratch is
+`gDecompressionBuffer + 0x400`, inside the 0x4000 buffer at 0x0201C000 and a full 0x400 above the
+payload's own image, so the fill cannot overwrite the code doing the filling.
+
+    --flash-sector N            the sector, 0..31; 0..27 are the save bands and need --write-unsafe
+    --flash-fill-base WORD      word[i] = base + i * step, the data pattern
+    --flash-footer              compose a well-formed sector instead of a raw pattern
+    --flash-id N                the sector id at +0xFF4
+    --flash-derive              read the save globals and place it where that id actually lives
+    --flash-position N          aim at band position N and derive the id from it instead
+    --flash-counter-bias N      added to gSaveCounter for the footer
+
+With `--flash-footer` the payload zeroes from the end of the pattern to `+0xFF4` the way the game
+zeroes its buffer, computes the game's own checksum, and lays down id, checksum, signature and
+counter. The status word carries the physical sector in its high half and the checksum in its low
+half, so one word says both where the write went and whether the console's arithmetic agreed with
+the host's.
+
+`--flash-derive` reads `gLastWrittenSector` and `gSaveCounter` and computes the position at write
+time. Nothing about placement may be decided when the payload is built: both variables advance on
+every save, and a gift session saves at the end, so a position computed an hour earlier addresses a
+sector the id no longer occupies.
+
 ### `call-chain`
 
 Up to sixteen steps in order in a single frame, one answer word per step. Every question about the
@@ -1330,6 +1377,108 @@ A special reads its operands out of the special vars, so calling one is write, c
 
 None of the warp or message workers may be called from a buffer script: they run inside the Mystery
 Gift menu, where there is no overworld. They belong to a [field stub](frlg_rng.md#the-payload-in-the-script-body).
+
+## Writing a sector the game will load
+
+Four things have to be right at once, and each is a separate claim. They were established one at a
+time, on the emulator, with the target outside the save bands until the arithmetic was settled.
+
+### The checksum covers the id's chunk, not the data area
+
+`CalculateChecksum(data, size)` sums `size` bytes as little-endian u32 words and folds
+`(sum >> 16) + sum` to u16 [decomp:src/save.c]. `size` is the id's own chunk, from `sSaveSlotLayout`,
+the const table at `0x083F58C4` in the French cartridge: 14 entries of {u16 offset, u16 size}.
+
+| id | size | id | size |
+| --- | --- | --- | --- |
+| 0 | 3876 | 4 | 3816 |
+| 1-3 | 3968 | 5-12 | 3968 |
+| 13 | 2000 | | |
+
+Summing the full 3968 instead gives the same answer for every sector the game wrote, because the
+buffer is zeroed and only `size` bytes are copied, so the difference cannot be seen in any save on
+disk. It appears the moment a sector is composed with data past its chunk: the loader sums the chunk,
+reads a checksum taken over more than that, and rejects the sector. Two exact fits pin the table
+against a real save, where the last non-zero data byte is the last byte of the chunk: id 0 size 3876
+with byte 3875 last, id 13 size 2000 with byte 1999 last.
+
+A composed sector therefore fills only its own chunk and leaves the rest zero, which restores the
+equivalence and makes it structurally what the game would have written. When the id is only decided
+on the console the fill stops at 2000, the smallest chunk any id carries: past that the bytes are
+zero under every id, so **one checksum is valid whichever id lands there**.
+
+### Where an id lives, and which sector carries the slot's counter
+
+A save slot is 14 sectors and the game alternates between two of them, rotating which sector holds
+which id [decomp:src/save.c:174]:
+
+    physical = ((gLastWrittenSector + id) % 14) + 14 * (gSaveCounter % 2)
+
+The index is `gLastWrittenSector`, not the counter. They advance together from zero and so coincide
+in ordinary play, which lets a counter-based formula reproduce every sector of a real save and still
+name the wrong variable; they separate as soon as a write is marked damaged, because the game then
+restores `gLastWrittenSector` from `gLastKnownGoodSector` and the counter separately [save.c:159].
+`gLastKnownGoodSector` and `gLastSaveCounter` are assigned from the live pair before they advance, so
+they describe the previous generation exactly and the inactive band never has to be inferred.
+
+`GetSaveValidStatus` decides which slot loads. It reads all 14 sectors of each, and counts a sector
+when its signature is `0x08012025` and its stored checksum equals the checksum over
+`locations[id].size` bytes, where the id comes from the sector's own footer. Two consequences decide
+any injection:
+
+- a slot is OK only when all 14 ids are present and valid; the counters within a slot are never
+  required to agree,
+- `slotNsaveCounter` is assigned on **every** valid sector in physical order, so it ends up holding
+  the counter of the last valid sector, not a consensus and not a maximum.
+
+So raising one sector's counter changes the slot's counter only if that sector is the last valid one
+in its band. This was confirmed on the running game before it was relied on: thirteen sectors at 129
+and one at 131, placed at the end of the band, and the slot reported 131 and was adopted over a
+complete counter-130 band.
+
+The save globals, measured live in IWRAM on the French build:
+
+| address | symbol | width |
+| --- | --- | --- |
+| `0x030045A0` | `gLastWrittenSector` | u16 |
+| `0x030045A4` | `gLastSaveCounter` | u32 |
+| `0x030045A8` | `gLastKnownGoodSector` | u16 |
+| `0x030045AC` | `gDamagedSaveSectors` | u32 |
+| `0x030045B0` | `gSaveCounter` | u32 |
+
+After a load, `gLastWrittenSector` describes the rotation of the slot actually adopted, so a value
+carried over from before the load is wrong.
+
+### The band the session's own save will not write
+
+A full save assigns the previous pair, advances `gLastWrittenSector` and `gSaveCounter`, and then
+writes the band the **incremented** counter selects [save.c:144-153]. Since every gift session saves
+at the end, a sector written into the inactive band during a session is overwritten from RAM seconds
+later by that session's own save. The band to write is the one the counter currently selects: the
+save does not touch it, and our band and the session's are opposite by construction.
+
+To be adopted afterwards, a sector must sit at band position 13 and carry `gSaveCounter + 2`: the
+session's save leaves its own band at `gSaveCounter + 1`, so ours lands exactly one above it. The id
+that belongs at position 13 is `(13 - gLastWrittenSector) % 14`, derived on the console like the
+rest.
+
+### The chain, end to end
+
+Established with no step assumed, each one measured on the emulated console:
+
+1. code arrives over a Wonder Card link and runs as a buffer script,
+2. it composes 4 KB in EWRAM, deriving id, position and counter from the game's live globals,
+3. `swi 0x48` writes it into a real flash sector, bypassing the save code entirely,
+4. the game's own next save commits the whole 128 KiB image to the host file, carrying it along,
+5. on the next load the game adopts our band over its own, `gDamagedSaveSectors` clean and nothing
+   flagged or repaired,
+6. the bytes are the live save data: the delivered pattern reads back in the running game's EWRAM,
+   500 consecutive words at each of two sites.
+
+The delivered pattern differed from the one used to pre-test the loader, which is what makes step 6
+a measurement: the pre-test pattern appears at zero sites afterwards, so nothing being read is left
+over. Had both used the same bytes, a success and a no-op would have differed only in the four bytes
+of the counter field.
 
 # Reading the save
 

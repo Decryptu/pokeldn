@@ -283,6 +283,45 @@ def build_parser(file_config=None, *, shared_path=None, local_path=None):
         "--write-hex", default=None, metavar="hex",
         help="with --buffer-script save-write: the bytes to write, as hex")
     parser.add_argument(
+        "--flash-sector", type=lambda v: int(v, 0), default=None, metavar="N",
+        help=("with --buffer-script flash-write: the 4 KB flash sector (0..31) swi 0x48 writes. "
+              "Sectors 0..27 are the two save bands and need --write-unsafe; 28..31 are outside "
+              "both"))
+    parser.add_argument(
+        "--flash-fill-base", type=lambda v: int(v, 0), default=0x46570000, metavar="WORD",
+        help="with --buffer-script flash-write: word[0] of the pattern the console composes")
+    parser.add_argument(
+        "--flash-fill-step", type=lambda v: int(v, 0), default=1, metavar="WORD",
+        help="with --buffer-script flash-write: added to each word of the pattern")
+    parser.add_argument(
+        "--flash-words", type=int, default=buffer_script.FLASH_WRITE_WORDS, metavar="N",
+        help="with --buffer-script flash-write: how many words of the sector to compose")
+    parser.add_argument(
+        "--flash-footer", action="store_true",
+        help=("with --buffer-script flash-write: compose a WELL-FORMED save sector instead of a "
+              "raw pattern - the console zeroes past the data, computes the game's own checksum "
+              "over the 3968-byte data area and lays down id, checksum, signature and counter"))
+    parser.add_argument(
+        "--flash-id", type=lambda v: int(v, 0), default=0, metavar="N",
+        help="with --flash-footer: the sector id written at +0xFF4")
+    parser.add_argument(
+        "--flash-counter", type=lambda v: int(v, 0), default=0, metavar="N",
+        help="with --flash-footer: the save counter written at +0xFFC")
+    parser.add_argument(
+        "--flash-derive", action="store_true",
+        help=("with --flash-footer: read gLastWrittenSector and gSaveCounter on the console and "
+              "write the sector the --flash-id actually occupies right now, rather than a "
+              "position computed when the payload was built. Needs --write-unsafe"))
+    parser.add_argument(
+        "--flash-position", type=int, default=None, metavar="N",
+        help=("with --flash-derive: aim at band position N (0..13) and derive the ID from it, "
+              "instead of deriving the position from --flash-id. Position 13 is the sector whose "
+              "counter GetSaveValidStatus reports for the whole slot"))
+    parser.add_argument(
+        "--flash-counter-bias", type=lambda v: int(v, 0), default=0, metavar="N",
+        help=("with --flash-derive: added to gSaveCounter for the footer. 0 keeps the sector in "
+              "its own band; a positive value is what would outrank the live slot"))
+    parser.add_argument(
         "--write-unsafe", action="store_true",
         help=("allow a save write outside struct SaveBlock2's never-read filler regions. This is "
               "the player's live save and the console commits it to flash; without this the write "
@@ -527,11 +566,15 @@ def build_run_config(parser, args):
                 parser.error(f"--write-* belongs to --buffer-script {buffer_script.SAVE_WRITE}")
             if args.write_unsafe and args.buffer_script not in (
                     buffer_script.SAVE_WRITE, buffer_script.CREATE_MON,
-                    buffer_script.CALL_CHAIN):
+                    buffer_script.CALL_CHAIN, buffer_script.FLASH_WRITE):
                 parser.error(
                     f"--write-unsafe belongs to --buffer-script {buffer_script.SAVE_WRITE}, "
-                    f"{buffer_script.CREATE_MON} and {buffer_script.CALL_CHAIN}, the three that "
-                    "write the console's memory")
+                    f"{buffer_script.CREATE_MON}, {buffer_script.CALL_CHAIN} and "
+                    f"{buffer_script.FLASH_WRITE}, the four that write the console's memory")
+            if args.flash_sector is not None \
+                    and args.buffer_script != buffer_script.FLASH_WRITE:
+                parser.error(
+                    f"--flash-* belongs to --buffer-script {buffer_script.FLASH_WRITE}")
             if args.buffer_script != buffer_script.CREATE_MON \
                     and (args.create_mon_call is not None or args.create_mon_destination
                          or args.create_mon_append or args.create_mon_append_dry_run):
@@ -562,6 +605,12 @@ def build_run_config(parser, args):
                 dump_addresses=_scatter_addresses(parser, args.dump_scatter),
                 dump_file=args.dump_file,
                 write_data=write_data, write_unsafe=args.write_unsafe,
+                flash_sector=args.flash_sector, flash_fill_base=args.flash_fill_base,
+                flash_fill_step=args.flash_fill_step, flash_words=args.flash_words,
+                flash_footer=args.flash_footer, flash_id=args.flash_id,
+                flash_counter=args.flash_counter, flash_derive=args.flash_derive,
+                flash_counter_bias=args.flash_counter_bias,
+                flash_position=args.flash_position,
                 scan_word=args.scan_word, scan_start=args.scan_start,
                 scan_end=args.scan_end, scan_blocks=args.scan_blocks,
                 scan_max_calls=args.scan_max_calls,
