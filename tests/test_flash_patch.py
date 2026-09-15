@@ -47,7 +47,7 @@ def run(code, flash, lws=LWS, counter=COUNTER):
         bs.GSAVECOUNTER: int(counter).to_bytes(4, "little"),
         bs.FLASH_BASE: flash})
     result = machine.call()
-    after = bytes(machine.uc.mem_read(bs.FLASH_BASE, bs.FLASH_SIZE))
+    after = bytes(machine.flash)
     return result, machine, after
 
 
@@ -97,12 +97,20 @@ def test_both_sectors_carry_the_winning_counter():
         assert int.from_bytes(sector(after, where)[0xFFC:0x1000], "little") == COUNTER + 2
 
 
-def test_it_reads_and_writes_exactly_the_two_sectors_it_derived():
+def test_it_writes_exactly_the_two_sectors_it_derived():
+    """The reads are not logged: the payload reads the window inline rather than calling ReadFlash,
+    so there is no ROM function to hook. That they happened is what every content test above shows."""
     flash, places = band()
     _, machine, _ = run(patched(), flash)
-    assert [r[0] for r in machine.flash_reads] == [places[0], places['counter_bearer']]
     assert [(w[1], w[3]) for w in machine.flash_writes] == \
         [(places[0], True), (places['counter_bearer'], True)]
+
+
+def test_it_reaches_the_far_bank_when_the_sector_is_in_it():
+    """Sector 17 and sector 27 are both bank 1; a payload that never switched would read bank 0."""
+    flash, places = band()
+    _, machine, _ = run(patched(), flash)
+    assert places[0] >= 16 and machine.flash_bank == places["counter_bearer"] // 16
 
 
 @pytest.mark.parametrize("lws,counter", [(3, 135), (0, 134), (13, 129), (7, 200)])

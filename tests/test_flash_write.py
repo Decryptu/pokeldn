@@ -18,7 +18,7 @@ ERASED = b"\xFF" * bs.FLASH_SECTOR_SIZE
 def run(code):
     machine = bs._Machine(code)
     result = machine.call()
-    flash = bytes(machine.uc.mem_read(bs.FLASH_BASE, bs.FLASH_SIZE))
+    flash = bytes(machine.flash)          # the chip, not the 64 KiB aperture
     return result, machine.flash_writes, flash
 
 
@@ -163,7 +163,7 @@ def test_a_derived_sector_carries_the_live_counter_unchanged():
     code = bs.build_flash_write(0, footer=True, sector_id=13, derive=True, unsafe=True)
     machine = bs._Machine(code, memory=globals_at(3, 129))
     machine.call()
-    flash = bytes(machine.uc.mem_read(bs.FLASH_BASE, bs.FLASH_SIZE))
+    flash = bytes(machine.flash)
     written = sector(flash, rotation(3, 129, 13))
     assert int.from_bytes(written[0xFFC:0x1000], "little") == 129     # its own band, not 130
 
@@ -173,7 +173,7 @@ def test_a_counter_bias_outranks_by_exactly_that_much():
                                 counter_bias=2)
     machine = bs._Machine(code, memory=globals_at(3, 129))
     machine.call()
-    flash = bytes(machine.uc.mem_read(bs.FLASH_BASE, bs.FLASH_SIZE))
+    flash = bytes(machine.flash)
     assert int.from_bytes(sector(flash, rotation(3, 129, 13))[0xFFC:0x1000], "little") == 131
 
 
@@ -269,7 +269,7 @@ def test_the_console_derives_the_id_from_the_position(lws, counter):
     want_phys = bs.COUNTER_BEARING_POSITION + bs.SECTORS_PER_BAND * (counter % 2)
     want_id = (bs.COUNTER_BEARING_POSITION - lws) % bs.SECTORS_PER_BAND
     assert result.param >> 16 == want_phys
-    flash = bytes(machine.uc.mem_read(bs.FLASH_BASE, bs.FLASH_SIZE))
+    flash = bytes(machine.flash)
     written = sector(flash, want_phys)
     assert int.from_bytes(written[0xFF4:0xFF6], "little") == want_id
     assert int.from_bytes(written[0xFFC:0x1000], "little") == counter + 2

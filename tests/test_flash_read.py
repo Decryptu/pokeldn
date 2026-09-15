@@ -46,9 +46,9 @@ def test_it_copies_the_window_into_the_scratch_and_sends_the_copy():
     _, window = bs.flash_window_address(30)
     # The engine maps flash flat, so lay the bytes where the payload will read them.
     marker = bytes((0x41 + (i % 7)) for i in range(252))
-    flat = window - bs.FLASH_BASE
+    # The chip is addressed linearly; the payload reaches it through bank 1's window.
     flash = bytearray(b"\x00" * bs.FLASH_SIZE)
-    flash[flat:flat + 252] = marker
+    flash[30 * bs.FLASH_SECTOR_SIZE:30 * bs.FLASH_SECTOR_SIZE + 252] = marker
     machine = bs._Machine(code, memory={bs.FLASH_BASE: bytes(flash)})
     result = machine.call()
     assert result.returned == 1
@@ -71,11 +71,10 @@ def test_the_bank_select_writes_the_games_command_sequence():
     code = bs.build_flash_read(30, length=16)
     machine = bs._Machine(code)
     machine.call()
-    assert machine.uc.mem_read(bs.FLASH_WINDOW_BASE, 1)[0] == 1     # bank 1 was selected last
-    code0 = bs.build_flash_read(14, length=16)                      # bank 0
-    machine0 = bs._Machine(code0)
+    assert machine.flash_bank == 1                                  # sector 30 is in the far bank
+    machine0 = bs._Machine(bs.build_flash_read(14, length=16))       # sector 14 is in bank 0
     machine0.call()
-    assert machine0.uc.mem_read(bs.FLASH_WINDOW_BASE, 1)[0] == 0
+    assert machine0.flash_bank == 0
 
 
 # --- the config path, which is the one the host actually uses -------------------------------------

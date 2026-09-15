@@ -1621,7 +1621,7 @@ SCRIPT_REGISTRY = {
         None),
     FLASH_PATCH: BufferScriptSpec(
         FLASH_PATCH,
-        "read a save sector out of flash with the game's own ReadFlash, change one field, "
+        "read a save sector out of flash through the banked window, change one field, "
         "recompute the checksum and write it back with swi 0x48, then bump the counter-bearing "
         "sector so the loader adopts the band. Nothing is rebuilt from RAM, so a field the save "
         "routine serializes cannot be lost (--flash-id, --flash-patch-offset, --flash-patch-hex; "
@@ -1904,17 +1904,16 @@ def sector_checksum(data, size=SECTOR_DATA_SIZE):
 
 
 # asm/flash-patch.s's image, offsets from _start.
-FLASH_PATCH_READFLASH_OFFSET = 0x04
-FLASH_PATCH_SCRATCH_OFFSET = 0x08
-FLASH_PATCH_LWS_OFFSET = 0x0C
-FLASH_PATCH_SC_OFFSET = 0x10
-FLASH_PATCH_ID_OFFSET = 0x14
-FLASH_PATCH_OFF_OFFSET = 0x18
-FLASH_PATCH_LEN_OFFSET = 0x1C
-FLASH_PATCH_CHUNK_OFFSET = 0x20
-FLASH_PATCH_BIAS_OFFSET = 0x24
-FLASH_PATCH_SIG_OFFSET = 0x28
-FLASH_PATCH_DATA_OFFSET = 0x3C
+FLASH_PATCH_SCRATCH_OFFSET = 0x04
+FLASH_PATCH_LWS_OFFSET = 0x08
+FLASH_PATCH_SC_OFFSET = 0x0C
+FLASH_PATCH_ID_OFFSET = 0x10
+FLASH_PATCH_OFF_OFFSET = 0x14
+FLASH_PATCH_LEN_OFFSET = 0x18
+FLASH_PATCH_CHUNK_OFFSET = 0x1C
+FLASH_PATCH_BIAS_OFFSET = 0x20
+FLASH_PATCH_SIG_OFFSET = 0x24
+FLASH_PATCH_DATA_OFFSET = 0x38
 FLASH_PATCH_MAX_BYTES = 16
 FLASH_PATCH_BAD_MARK = 0xBAD00000
 
@@ -1974,7 +1973,6 @@ def build_flash_patch(sector_id, patch_offset, data, *, scratch=FLASH_WRITE_SCRA
     routine writes, because the routine serializes at save time; every byte this does not patch is
     the byte a real save put there.
     """
-    from pokeldn.frlg.rom import rom_map
     data = bytes(data)
     sector_id = int(sector_id)
     patch_offset = int(patch_offset)
@@ -1993,8 +1991,7 @@ def build_flash_patch(sector_id, patch_offset, data, *, scratch=FLASH_WRITE_SCRA
             f"{chunk:#x}; the checksum only covers the chunk, so a field outside it would be "
             "written and not accounted for")
     code = bytearray(payload(FLASH_PATCH))
-    for offset, value in ((FLASH_PATCH_READFLASH_OFFSET, rom_map.thumb(rom_map.READ_FLASH)),
-                          (FLASH_PATCH_SCRATCH_OFFSET, scratch),
+    for offset, value in ((FLASH_PATCH_SCRATCH_OFFSET, scratch),
                           (FLASH_PATCH_LWS_OFFSET, GLASTWRITTENSECTOR),
                           (FLASH_PATCH_SC_OFFSET, GSAVECOUNTER),
                           (FLASH_PATCH_ID_OFFSET, sector_id),
@@ -2202,9 +2199,9 @@ PATCHED_SPANS = {
     # number: everything ahead of the code.
     FLASH_READ: ((FLASH_READ_BANK_OFFSET,
                   FLASH_READ_SCRATCH_OFFSET + 4 - FLASH_READ_BANK_OFFSET),),
-    FLASH_PATCH: ((FLASH_PATCH_READFLASH_OFFSET,
+    FLASH_PATCH: ((FLASH_PATCH_SCRATCH_OFFSET,
                    FLASH_PATCH_DATA_OFFSET + FLASH_PATCH_MAX_BYTES
-                   - FLASH_PATCH_READFLASH_OFFSET),),
+                   - FLASH_PATCH_SCRATCH_OFFSET),),
     FLASH_WRITE: ((FLASH_WRITE_SECTOR_OFFSET,
                    FLASH_WRITE_THUNK_OFFSET + 4 - FLASH_WRITE_SECTOR_OFFSET),),
 }
@@ -2410,11 +2407,18 @@ class _Machine:
         uc.mem_map(ROM_BASE, ROM_SIZE)
         uc.mem_write(ROM_BASE, bytes(rom if rom is not None else _DEFAULT_ROM_HEADER))
         uc.mem_map(_RETURN_ADDRESS, 0x1000)
-        # Flash starts erased, as an unused sector reads on the console.
-        uc.mem_map(FLASH_BASE, FLASH_SIZE)
-        uc.mem_write(FLASH_BASE, b"\xFF" * FLASH_SIZE)
+        # The chip is 128 KiB and starts erased. The CPU does not see it that way: it sees a 64 KiB
+        # aperture, one bank at a time, which is why `self.flash` is the chip and the mapped region
+        # is only the window onto it. swi 0x48 addresses the chip linearly; a guest load addresses
+        # the window. Modelling one shape would make one of the two payload families untestable.
+        self.uc = uc                    # _show_bank needs it before the rest of the wiring
+        self.flash = bytearray(b"\xFF" * FLASH_SIZE)
+        self.flash_bank = 0
+        uc.mem_map(FLASH_WINDOW_BASE, FLASH_WINDOW_SIZE)
         self.flash_writes = []          # (number, sector, source, accepted, why)
         self.flash_reads = []           # (sector, offset, dest, length)
+        uc.hook_add(unicorn.UC_HOOK_MEM_WRITE, self._on_flash_store,
+                    begin=FLASH_WINDOW_BASE, end=FLASH_WINDOW_BASE + FLASH_WINDOW_SIZE - 1)
         uc.hook_add(unicorn.UC_HOOK_INTR, self._on_swi)
         from pokeldn.frlg.rom import rom_map as _rom_map
         entry = _rom_map.READ_FLASH & ~1
@@ -2444,12 +2448,29 @@ class _Machine:
         if sav1:
             uc.mem_write(_SAV1_ADDRESS, sav1)
         for address, blob in (memory or {}).items():
-            uc.mem_write(address, bytes(blob))
+            if address == FLASH_BASE:
+                self.flash[:len(blob)] = bytes(blob)     # the chip, not the aperture
+            else:
+                uc.mem_write(address, bytes(blob))
+        self._show_bank()
 
         self.uc = uc
         self.armed_size = send_size
         self._sav2_len, self._sav1_len = len(sav2), len(sav1)
         self.calls = 0
+
+    def _show_bank(self):
+        """Put the selected bank in the aperture. Stores never reach the chip, so this also undoes
+        the command bytes a bank select writes into 0x5555 and 0x2AAA."""
+        at = self.flash_bank * FLASH_WINDOW_SIZE
+        self.uc.mem_write(FLASH_WINDOW_BASE, bytes(self.flash[at:at + FLASH_WINDOW_SIZE]))
+
+    def _on_flash_store(self, uc, access, address, size, value, user_data=None):
+        """A store into the aperture is a command, not data. The only one modelled is the bank
+        select [decomp:src/agb_flash.c SwitchFlashBank], whose last store carries the bank."""
+        if address == FLASH_WINDOW_BASE and size == 1 and value in (0, 1):
+            self.flash_bank = value
+        self._show_bank()
 
     def _on_readflash(self, uc, address, size, user_data=None):
         """Model the game's ReadFlash so a payload that calls it can be vetted offline.
@@ -2463,8 +2484,8 @@ class _Machine:
         offset = uc.reg_read(arm.UC_ARM_REG_R1)
         dest = uc.reg_read(arm.UC_ARM_REG_R2)
         length = uc.reg_read(arm.UC_ARM_REG_R3)
-        source = FLASH_BASE + sector * FLASH_SECTOR_SIZE + offset
-        uc.mem_write(dest, bytes(uc.mem_read(source, length)))
+        at = sector * FLASH_SECTOR_SIZE + offset
+        uc.mem_write(dest, bytes(self.flash[at:at + length]))
         self.flash_reads.append((sector, offset, dest, length))
         link = uc.reg_read(arm.UC_ARM_REG_LR)
         cpsr = uc.reg_read(arm.UC_ARM_REG_CPSR)
@@ -2506,9 +2527,10 @@ class _Machine:
             except self._unicorn.UcError:
                 why = f"source 0x{source:08X} is not {FLASH_SECTOR_SIZE:#x} bytes of mapped memory"
         if why is None:
-            uc.mem_write(FLASH_BASE + offset, payload_bytes)
+            self.flash[offset:offset + FLASH_SECTOR_SIZE] = payload_bytes
             if number == SWI_REPLACE_SECTOR:
-                uc.mem_write(FLASH_BASE + offset + SECTOR_SIGNATURE_OFFSET_IN_SECTOR, b"\xFF")
+                self.flash[offset + SECTOR_SIGNATURE_OFFSET_IN_SECTOR] = 0xFF
+            self._show_bank()
         elif number == SWI_REPLACE_SECTOR:
             # The signature store has no null check, so a rejected destination faults at 0xFF8.
             raise BufferScriptError(
