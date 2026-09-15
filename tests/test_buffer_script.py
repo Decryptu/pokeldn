@@ -2227,6 +2227,7 @@ _MINIMAL_ARGS = {
     "call": {"call_address": 0x080486D1},
     "call-chain": {"chain_steps": (buffer_script.chain_call(0x080486D1, [0xB8C0]),)},
     "save-write": {"write_data": b"X", "dump_offset": 0xB20},
+    "flash-read": {"flash_sector": 30},
 }
 
 

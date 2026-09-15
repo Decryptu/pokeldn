@@ -105,6 +105,8 @@ SAVE_DUMP = "save-dump"
 ANCHORS = "anchors"
 SAVE_WRITE = "save-write"
 FLASH_WRITE = "flash-write"
+FLASH_PATCH = "flash-patch"
+FLASH_READ = "flash-read"
 
 # Save flash, the destination of the Sloop sector syscalls. 128 KiB, 32 sectors of 0x1000
 # [decomp:include/save.h: SECTOR_SIZE, SECTORS_COUNT]. The CPU cannot write it with a store; only
@@ -1611,6 +1613,20 @@ SCRIPT_REGISTRY = {
         "--call-arg, --call-watch); the payload writes nothing itself, but the callee may, so the "
         "address has to have been read as code first",
         None),
+    FLASH_READ: BufferScriptSpec(
+        FLASH_READ,
+        "select the flash bank, byte-copy a save sector out of the 64 KiB window into EWRAM with "
+        "the CPU, and send the COPY: the console's outgoing message cannot be pointed at flash "
+        "itself (--flash-sector, --flash-read-offset, --dump-size; reads only, writes nothing)",
+        None),
+    FLASH_PATCH: BufferScriptSpec(
+        FLASH_PATCH,
+        "read a save sector out of flash with the game's own ReadFlash, change one field, "
+        "recompute the checksum and write it back with swi 0x48, then bump the counter-bearing "
+        "sector so the loader adopts the band. Nothing is rebuilt from RAM, so a field the save "
+        "routine serializes cannot be lost (--flash-id, --flash-patch-offset, --flash-patch-hex; "
+        "needs --write-unsafe)",
+        None),
     FLASH_WRITE: BufferScriptSpec(
         FLASH_WRITE,
         "compose 4 KB in EWRAM on the console and write it straight into a flash sector with "
@@ -1887,6 +1903,111 @@ def sector_checksum(data, size=SECTOR_DATA_SIZE):
     return ((total >> 16) + total) & 0xFFFF
 
 
+# asm/flash-patch.s's image, offsets from _start.
+FLASH_PATCH_READFLASH_OFFSET = 0x04
+FLASH_PATCH_SCRATCH_OFFSET = 0x08
+FLASH_PATCH_LWS_OFFSET = 0x0C
+FLASH_PATCH_SC_OFFSET = 0x10
+FLASH_PATCH_ID_OFFSET = 0x14
+FLASH_PATCH_OFF_OFFSET = 0x18
+FLASH_PATCH_LEN_OFFSET = 0x1C
+FLASH_PATCH_CHUNK_OFFSET = 0x20
+FLASH_PATCH_BIAS_OFFSET = 0x24
+FLASH_PATCH_SIG_OFFSET = 0x28
+FLASH_PATCH_DATA_OFFSET = 0x3C
+FLASH_PATCH_MAX_BYTES = 16
+FLASH_PATCH_BAD_MARK = 0xBAD00000
+
+
+# asm/flash-read.s's image.
+FLASH_READ_BANK_OFFSET = 0x04
+FLASH_READ_WINDOW_OFFSET = 0x08
+FLASH_READ_LENGTH_OFFSET = 0x0C
+FLASH_READ_SCRATCH_OFFSET = 0x10
+# The SRAM/flash aperture. 64 KiB, and a 1 Mbit chip reaches it as two banks; an address above it
+# aliases rather than faulting, which is how a read of the wrong bank returns a plausible answer.
+FLASH_WINDOW_BASE = 0x0E000000
+FLASH_WINDOW_SIZE = 0x10000
+FLASH_SECTORS_PER_BANK = FLASH_WINDOW_SIZE // FLASH_SECTOR_SIZE
+
+
+def flash_window_address(sector):
+    """-> (bank, window address) for a physical sector [decomp:src/agb_flash.c ReadFlash]."""
+    sector = int(sector)
+    if not 0 <= sector < FLASH_SIZE // FLASH_SECTOR_SIZE:
+        raise BufferScriptError(f"a flash sector is 0..{FLASH_SIZE // FLASH_SECTOR_SIZE - 1}")
+    return (sector // FLASH_SECTORS_PER_BANK,
+            FLASH_WINDOW_BASE + (sector % FLASH_SECTORS_PER_BANK) * FLASH_SECTOR_SIZE)
+
+
+def build_flash_read(sector, *, offset=0, length=252, scratch=FLASH_WRITE_SCRATCH):
+    """The flash-read payload: select the bank, byte-copy the window into EWRAM, send the copy.
+
+    The send is pointed at the EWRAM copy and never at flash: pointing it at the flash region does
+    not send flash, measured at two addresses and two lengths.
+    """
+    bank, window = flash_window_address(sector)
+    offset, length = int(offset), int(length)
+    if not 0 <= offset < FLASH_SECTOR_SIZE:
+        raise BufferScriptError(f"an offset into a sector is 0..{FLASH_SECTOR_SIZE - 1}")
+    if not 1 <= length <= MAX_BUFFER_SCRIPT_SIZE:
+        raise BufferScriptError(f"a read is 1..{MAX_BUFFER_SCRIPT_SIZE} bytes, got {length}")
+    if window + offset + length > FLASH_WINDOW_BASE + FLASH_WINDOW_SIZE:
+        raise BufferScriptError(
+            f"sector {sector} at +{offset:#x} for {length} bytes runs past the 64 KiB window; the "
+            "read would alias to the start of the window and return another sector")
+    code = bytearray(payload(FLASH_READ))
+    for at, value in ((FLASH_READ_BANK_OFFSET, bank),
+                      (FLASH_READ_WINDOW_OFFSET, window + offset),
+                      (FLASH_READ_LENGTH_OFFSET, length),
+                      (FLASH_READ_SCRATCH_OFFSET, scratch)):
+        code[at:at + 4] = (int(value) & 0xFFFFFFFF).to_bytes(4, "little")
+    return bytes(code)
+
+
+def build_flash_patch(sector_id, patch_offset, data, *, scratch=FLASH_WRITE_SCRATCH,
+                      counter_bias=2, unsafe=False):
+    """The flash-patch payload: read the id's sector out of flash, change `data` at `patch_offset`,
+    recompute the checksum and write it back, then bump the counter-bearing sector.
+
+    Nothing is reconstructed from RAM. A sector composed from a live save block is not what the save
+    routine writes, because the routine serializes at save time; every byte this does not patch is
+    the byte a real save put there.
+    """
+    from pokeldn.frlg.rom import rom_map
+    data = bytes(data)
+    sector_id = int(sector_id)
+    patch_offset = int(patch_offset)
+    if not unsafe:
+        raise BufferScriptError(
+            "flash-patch edits a live save sector in place. Pass unsafe=True to mean it.")
+    if sector_id not in SECTOR_CHUNK_SIZES:
+        raise BufferScriptError(f"sector id {sector_id} is not one a save slot carries")
+    chunk = sector_chunk_size(sector_id)
+    if not 1 <= len(data) <= FLASH_PATCH_MAX_BYTES:
+        raise BufferScriptError(
+            f"a patch carries 1..{FLASH_PATCH_MAX_BYTES} bytes, got {len(data)}")
+    if patch_offset < 0 or patch_offset + len(data) > chunk:
+        raise BufferScriptError(
+            f"{len(data)} bytes at {patch_offset:#x} runs past id {sector_id}'s chunk of "
+            f"{chunk:#x}; the checksum only covers the chunk, so a field outside it would be "
+            "written and not accounted for")
+    code = bytearray(payload(FLASH_PATCH))
+    for offset, value in ((FLASH_PATCH_READFLASH_OFFSET, rom_map.thumb(rom_map.READ_FLASH)),
+                          (FLASH_PATCH_SCRATCH_OFFSET, scratch),
+                          (FLASH_PATCH_LWS_OFFSET, GLASTWRITTENSECTOR),
+                          (FLASH_PATCH_SC_OFFSET, GSAVECOUNTER),
+                          (FLASH_PATCH_ID_OFFSET, sector_id),
+                          (FLASH_PATCH_OFF_OFFSET, patch_offset),
+                          (FLASH_PATCH_LEN_OFFSET, len(data)),
+                          (FLASH_PATCH_CHUNK_OFFSET, chunk),
+                          (FLASH_PATCH_BIAS_OFFSET, counter_bias),
+                          (FLASH_PATCH_SIG_OFFSET, SECTOR_SIGNATURE)):
+        code[offset:offset + 4] = (int(value) & 0xFFFFFFFF).to_bytes(4, "little")
+    code[FLASH_PATCH_DATA_OFFSET:FLASH_PATCH_DATA_OFFSET + len(data)] = data
+    return bytes(code)
+
+
 def flash_write_source(fill_base=0x46570000, fill_step=1, words=FLASH_WRITE_WORDS,
                        footer=False, sector_id=0, counter=0, signature=SECTOR_SIGNATURE,
                        position=None):
@@ -2033,6 +2154,7 @@ def script_choices():
 DUMP_SCRIPTS = frozenset({
     MEMORY_DUMP, MEMORY_DUMP_MULTI, MEMORY_DUMP_SCATTER, SAVE_DUMP, ANCHORS, SAVE_WRITE,
     MEMORY_SCAN, TABLE_SCAN, RNG_TRACE, STRING_GATHER, CREATE_MON, CALL, CALL_CHAIN,
+    FLASH_READ,
 })
 DECODED_SCRIPTS = frozenset({
     MEMORY_SCAN, TABLE_SCAN, RNG_TRACE, STRING_GATHER, CREATE_MON, CALL, CALL_CHAIN,
@@ -2078,6 +2200,11 @@ PATCHED_SPANS = {
                   CHAIN_RESULT_OFFSET - CHAIN_COUNT_OFFSET + CHAIN_ANSWER_SIZE),),
     # The five operands, the two result words, and the thunk whose low byte carries the syscall
     # number: everything ahead of the code.
+    FLASH_READ: ((FLASH_READ_BANK_OFFSET,
+                  FLASH_READ_SCRATCH_OFFSET + 4 - FLASH_READ_BANK_OFFSET),),
+    FLASH_PATCH: ((FLASH_PATCH_READFLASH_OFFSET,
+                   FLASH_PATCH_DATA_OFFSET + FLASH_PATCH_MAX_BYTES
+                   - FLASH_PATCH_READFLASH_OFFSET),),
     FLASH_WRITE: ((FLASH_WRITE_SECTOR_OFFSET,
                    FLASH_WRITE_THUNK_OFFSET + 4 - FLASH_WRITE_SECTOR_OFFSET),),
 }
@@ -2287,7 +2414,11 @@ class _Machine:
         uc.mem_map(FLASH_BASE, FLASH_SIZE)
         uc.mem_write(FLASH_BASE, b"\xFF" * FLASH_SIZE)
         self.flash_writes = []          # (number, sector, source, accepted, why)
+        self.flash_reads = []           # (sector, offset, dest, length)
         uc.hook_add(unicorn.UC_HOOK_INTR, self._on_swi)
+        from pokeldn.frlg.rom import rom_map as _rom_map
+        entry = _rom_map.READ_FLASH & ~1
+        uc.hook_add(unicorn.UC_HOOK_CODE, self._on_readflash, begin=entry, end=entry)
 
         def word(offset, value):
             uc.mem_write(_CLIENT_ADDRESS + offset, (value & 0xFFFFFFFF).to_bytes(4, "little"))
@@ -2319,6 +2450,26 @@ class _Machine:
         self.armed_size = send_size
         self._sav2_len, self._sav1_len = len(sav2), len(sav1)
         self.calls = 0
+
+    def _on_readflash(self, uc, address, size, user_data=None):
+        """Model the game's ReadFlash so a payload that calls it can be vetted offline.
+
+        The real one copies `size` bytes from flash sector `sectorNum` (switching bank itself) into
+        `dest`. Only the copy is modelled; the REG_WAITCNT write it also performs has no meaning in
+        a memory model and is the one effect only the console can be asked about.
+        """
+        arm = self._arm
+        sector = uc.reg_read(arm.UC_ARM_REG_R0) & 0xFFFF
+        offset = uc.reg_read(arm.UC_ARM_REG_R1)
+        dest = uc.reg_read(arm.UC_ARM_REG_R2)
+        length = uc.reg_read(arm.UC_ARM_REG_R3)
+        source = FLASH_BASE + sector * FLASH_SECTOR_SIZE + offset
+        uc.mem_write(dest, bytes(uc.mem_read(source, length)))
+        self.flash_reads.append((sector, offset, dest, length))
+        link = uc.reg_read(arm.UC_ARM_REG_LR)
+        cpsr = uc.reg_read(arm.UC_ARM_REG_CPSR)
+        uc.reg_write(arm.UC_ARM_REG_CPSR, cpsr | (1 << 5) if link & 1 else cpsr & ~(1 << 5))
+        uc.reg_write(arm.UC_ARM_REG_PC, link & ~1)
 
     def _on_swi(self, uc, intno, user_data=None):
         """Model the Sloop sector syscalls so a payload that issues one can be vetted offline.

@@ -313,6 +313,16 @@ def build_parser(file_config=None, *, shared_path=None, local_path=None):
               "write the sector the --flash-id actually occupies right now, rather than a "
               "position computed when the payload was built. Needs --write-unsafe"))
     parser.add_argument(
+        "--flash-read-offset", type=lambda v: int(v, 0), default=0, metavar="N",
+        help="with --buffer-script flash-read: byte offset into the sector to start reading at")
+    parser.add_argument(
+        "--flash-patch-offset", type=lambda v: int(v, 0), default=0, metavar="N",
+        help="with --buffer-script flash-patch: byte offset of the field inside the sector's data")
+    parser.add_argument(
+        "--flash-patch-hex", default=None, metavar="hex",
+        help=("with --buffer-script flash-patch: the replacement bytes for that field, as hex. "
+              "Everything else in the sector is whatever the game's own save routine wrote"))
+    parser.add_argument(
         "--flash-position", type=int, default=None, metavar="N",
         help=("with --flash-derive: aim at band position N (0..13) and derive the ID from it, "
               "instead of deriving the position from --flash-id. Position 13 is the sector whose "
@@ -566,13 +576,14 @@ def build_run_config(parser, args):
                 parser.error(f"--write-* belongs to --buffer-script {buffer_script.SAVE_WRITE}")
             if args.write_unsafe and args.buffer_script not in (
                     buffer_script.SAVE_WRITE, buffer_script.CREATE_MON,
-                    buffer_script.CALL_CHAIN, buffer_script.FLASH_WRITE):
+                    buffer_script.CALL_CHAIN, buffer_script.FLASH_WRITE,
+                    buffer_script.FLASH_PATCH):
                 parser.error(
                     f"--write-unsafe belongs to --buffer-script {buffer_script.SAVE_WRITE}, "
                     f"{buffer_script.CREATE_MON}, {buffer_script.CALL_CHAIN} and "
                     f"{buffer_script.FLASH_WRITE}, the four that write the console's memory")
-            if args.flash_sector is not None \
-                    and args.buffer_script != buffer_script.FLASH_WRITE:
+            if args.flash_sector is not None and args.buffer_script not in (
+                    buffer_script.FLASH_WRITE, buffer_script.FLASH_READ):
                 parser.error(
                     f"--flash-* belongs to --buffer-script {buffer_script.FLASH_WRITE}")
             if args.buffer_script != buffer_script.CREATE_MON \
@@ -611,6 +622,10 @@ def build_run_config(parser, args):
                 flash_counter=args.flash_counter, flash_derive=args.flash_derive,
                 flash_counter_bias=args.flash_counter_bias,
                 flash_position=args.flash_position,
+                flash_read_offset=args.flash_read_offset,
+                flash_patch_offset=args.flash_patch_offset,
+                flash_patch_data=(bytes.fromhex(args.flash_patch_hex.replace(' ', ''))
+                                  if args.flash_patch_hex else None),
                 scan_word=args.scan_word, scan_start=args.scan_start,
                 scan_end=args.scan_end, scan_blocks=args.scan_blocks,
                 scan_max_calls=args.scan_max_calls,

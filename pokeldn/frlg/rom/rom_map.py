@@ -267,6 +267,16 @@ GSPECIAL_VAR_RESULT = 0x020370CC
 # address. Everything here was read off the console or called on it; nothing rests on the decomp
 # alone, whose addresses are a different build's. `callable_function` returns the THUMB pointer a
 # `bx` needs.
+# agb_flash. ReadFlash(u16 sectorNum, u32 offset, void *dest, u32 size) reads a save sector out of
+# flash and switches bank itself, so a caller never sees the two 64 KiB halves. Identified in the
+# cartridge rather than by symbol: the only 0x80-byte stack frame in the flash cluster, whose body
+# is the decomp's first statements in order - REG_WAITCNT's SRAM wait states from the literal at
+# 0x081E0F38, gFlash->romSize against 0x20000, SwitchFlashBank, then sectorNum & 0xF
+# [decomp:src/agb_flash.c ReadFlash].
+READ_FLASH = 0x081E0EEC
+SWITCH_FLASH_BANK = 0x081E0C74
+G_FLASH = 0x03007450                # the pointer ReadFlash dereferences for romSize
+
 CALLABLE = {
     "Random": RANDOM,
     "SeedRng": SEED_RNG,
@@ -288,6 +298,7 @@ CALLABLE = {
     "AddMoney": ADD_MONEY,
     "RemoveMoney": REMOVE_MONEY,
     "CalcCRC16": CALC_CRC16,
+    "ReadFlash": READ_FLASH,
     "GetSetPokedexFlag": GET_SET_POKEDEX_FLAG,
     "SpeciesToNationalPokedexNum": SPECIES_TO_NATIONAL_POKEDEX_NUM,
     "CompactPartySlots": COMPACT_PARTY_SLOTS,
