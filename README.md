@@ -249,6 +249,23 @@ sudo -E ./.venv/bin/python -u bin/frlg_mg_host.py \
 The console stays on its Mystery Gift menu, nothing is written and no Wonder Card changes hands. See
 [Code on the console](docs/frlg_rom.md) for the mechanism and the other payloads.
 
+### Change a field of the console's save
+
+The same session can edit the save instead of reading it. `flash-patch` reads the save sector a
+field lives in off the flash chip, changes the bytes it means to, recomputes the game's checksum and
+writes the sector back, then bumps one counter so the game loads the edited slot.
+
+```bash
+sudo -E ./.venv/bin/python -u bin/frlg_mg_host.py \
+  --buffer-script flash-patch --flash-id 0 --flash-patch-offset 0x00 \
+  --flash-patch-hex cac9c5bfc6bec8ff --write-unsafe
+```
+
+Nothing is rebuilt from RAM, which is the point: a sector composed from the live save block loses the
+encryption key and the saved map view, because the game writes both only as it saves. Every byte the
+patch does not name is the byte the game itself put there. This edits a real save; see
+[A RAM snapshot is not a save](docs/frlg_rom.md) before pointing it at one you care about.
+
 ### Native Switch titles
 
 Discovery needs only `prod.keys`; association additionally needs the title's LDN passphrase, which
