@@ -200,6 +200,13 @@ class IpHostTransport:
         self._info = None
         self._pia = None
         self._udp = None
+        # Bound to the advertised address, for sending. A wildcard socket's replies leave with a
+        # source the kernel picks, and on a peer that shares this machine that is the peer's own
+        # LDN address, which ldn_mitm discards as its own packet (LanProtocol.Read). The wildcard
+        # sockets stay for receiving: a socket bound to one address gets no subnet broadcast, and
+        # a stock emulator on the LAN discovers by broadcast alone.
+        self._udp_tx = None
+        self._pia_tx = None
         self._tcp = None
         self._clients = []
         self._lock = threading.Lock()
@@ -225,6 +232,7 @@ class IpHostTransport:
         self._udp.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
         self._udp.setsockopt(socket.SOL_SOCKET, socket.SO_BROADCAST, 1)
         self._udp.bind(("0.0.0.0", self.discovery_port))
+        self._udp_tx = self._bound_to_us(self.discovery_port)
         self._tcp = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
         self._tcp.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
         self._tcp.bind(("0.0.0.0", self.discovery_port))
@@ -234,6 +242,8 @@ class IpHostTransport:
         self._pia.setsockopt(socket.SOL_SOCKET, socket.SO_BROADCAST, 1)
         self._pia.bind(("0.0.0.0", self.pia_port))
         self._pia.setblocking(False)
+        self._pia_tx = self._bound_to_us(self.pia_port)
+        self._pia_tx.setblocking(False)
         if self.tracer is not None:
             # There is no advertisement frame to record over IP, so the capture carries the ssid
             # itself; host_decode.py needs it to key Pia.
@@ -249,11 +259,20 @@ class IpHostTransport:
                   f"{self.our_ip}:{self.discovery_port}.")
         return self
 
+    def _bound_to_us(self, port):
+        """-> a UDP socket on `our_ip`:`port` next to the wildcard one on the same port. A unicast
+        to our address lands here rather than on the wildcard socket, so both are read."""
+        s = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
+        s.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
+        s.setsockopt(socket.SOL_SOCKET, socket.SO_BROADCAST, 1)
+        s.bind((self.our_ip, port))
+        return s
+
     # -- the discovery service --------------------------------------------------
 
     def _serve(self):
         while not self._stop.is_set():
-            socks = [s for s in (self._udp, self._tcp) if s is not None]
+            socks = [s for s in (self._udp, self._udp_tx, self._tcp) if s is not None]
             socks += [c for c, _ in self._clients]
             try:
                 readable, _, _ = select.select(socks, [], [], 0.2)
@@ -261,8 +280,8 @@ class IpHostTransport:
                 break
             for s in readable:
                 try:
-                    if s is self._udp:
-                        self._on_scan()
+                    if s is self._udp or s is self._udp_tx:
+                        self._on_scan(s)
                     elif s is self._tcp:
                         self._on_accept()
                     else:
@@ -271,8 +290,8 @@ class IpHostTransport:
                     if not self._stop.is_set():
                         self.log(f"[host] discovery: {e}")
 
-    def _on_scan(self):
-        data, addr = self._udp.recvfrom(4096)
+    def _on_scan(self, sock):
+        data, addr = sock.recvfrom(4096)
         try:
             kind, _payload = ldn_mitm.parse(data)
         except ValueError as e:
@@ -284,7 +303,7 @@ class IpHostTransport:
         self._scans += 1
         with self._lock:
             info = self._info
-        self._udp.sendto(ldn_mitm.build(ldn_mitm.SCAN_RESP, info), addr)
+        self._udp_tx.sendto(ldn_mitm.build(ldn_mitm.SCAN_RESP, info), addr)
         if self._scans in (1, 2, 5, 10, 50, 100):
             self.log(f"[host] scan #{self._scans} from {addr[0]}:{addr[1]}, answered with "
                      f"{ldn_mitm.NETWORK_INFO_SIZE} bytes of NetworkInfo")
@@ -387,7 +406,7 @@ class IpHostTransport:
         if self.tracer is not None:
             self.tracer.write("udp_out", dst=dst, hex=bytes(datagram).hex())
         try:
-            self._pia.sendto(datagram, (dst, self.pia_port))
+            self._pia_tx.sendto(datagram, (dst, self.pia_port))
         except BlockingIOError:
             self.tx_dropped += 1
             if self.tx_dropped in (1, 10, 100, 1000):
@@ -399,9 +418,14 @@ class IpHostTransport:
         out = []
         if self._pia is None:
             return out
+        for sock in (self._pia_tx, self._pia):
+            self._drain(sock, out)
+        return out
+
+    def _drain(self, sock, out):
         while True:
             try:
-                payload, addr = self._pia.recvfrom(65535)
+                payload, addr = sock.recvfrom(65535)
             except (BlockingIOError, OSError):
                 break
             src_ip = addr[0]
@@ -414,7 +438,6 @@ class IpHostTransport:
             if self.tracer is not None:
                 self.tracer.write("udp_in", src=src_ip, dst=self.our_ip, hex=payload.hex())
             out.append((payload, src_ip))
-        return out
 
     def wait_readable(self, timeout):
         timeout = max(0.0, float(timeout))
@@ -422,7 +445,7 @@ class IpHostTransport:
             self._stop.wait(timeout)
             return False
         try:
-            readable, _, _ = select.select([self._pia], [], [], timeout)
+            readable, _, _ = select.select([self._pia, self._pia_tx], [], [], timeout)
         except (OSError, ValueError):
             return False
         return bool(readable)
@@ -435,7 +458,7 @@ class IpHostTransport:
             except OSError:
                 pass
         self._clients = []
-        for s in (self._udp, self._tcp, self._pia):
+        for s in (self._udp, self._udp_tx, self._tcp, self._pia, self._pia_tx):
             try:
                 if s:
                     s.close()
