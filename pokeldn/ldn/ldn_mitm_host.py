@@ -164,10 +164,12 @@ class IpHostTransport:
                  phyname=None, ifname=None, ap_ifname=None, mon_ifname=None,
                  channel=None, skip_encryption=False, accept_decrypted_ccmp=False,
                  tracer=None, log=print, protocol=3, ssid=None,
-                 our_ip=None, discovery_port=ldn_mitm.PORT, pia_port=PIA_PORT):
+                 our_ip=None, discovery_port=ldn_mitm.PORT, pia_port=PIA_PORT,
+                 mirror_comm_version=False, mac=None):
         self.log = log
         self.info = getattr(log, "info", log)
         self.tracer = tracer
+        self.mirror_comm_version = mirror_comm_version
         self.app_data = bytes(app_data or b"")
         self.nickname = nickname
         self.max_participants = max_participants
@@ -184,8 +186,11 @@ class IpHostTransport:
             self.APPLICATION_VERSION = app_version
         self.our_ip = our_ip or local_ip()
         self.host_ip = self.our_ip
-        self.our_mac = os.urandom(6)
-        self.our_mac = bytes([(self.our_mac[0] & 0xFE) | 0x02]) + self.our_mac[1:]
+        # An ldn_mitm node's MAC ENCODES ITS ADDRESS: the emulator gives itself 02:00 followed by
+        # the four bytes of its LAN address, so the console at 172.16.86.1 is 02:00:ac:10:56:01.
+        # A random MAC here is a node whose two identities disagree, and a peer that maps one to the
+        # other gets an address that is nobody. Follow the convention the peer already uses.
+        self.our_mac = mac if mac else (b"\x02\x00" + socket.inet_aton(self.our_ip))
         # One value, three uses: the advertised NetworkId.SessionId, the text Ssid in hexadecimal,
         # and the Pia session key's plaintext. HostTransport's `ssid` is the same 16 raw bytes.
         self.ssid = bytes(ssid) if ssid else os.urandom(16)
@@ -348,7 +353,14 @@ class IpHostTransport:
         self.info("A console joined the network.")
 
     def _seat(self, node):
-        """Give the joiner the first free node slot and hand it that node id."""
+        """Give the joiner the first free node slot and hand it that node id.
+
+        The joiner's own NodeInfo states its `localCommunicationVersion` at 0x2E. `nn::ldn` refuses
+        a connection whose version disagrees with the network's, so what the joiner states is worth
+        logging on every join, and `mirror_comm_version` puts it on the host's own node rather than
+        leaving the host advertising a version the game did not ask for.
+        """
+        joiner_version = struct.unpack_from("<H", node, OFF_NODE_LOCAL_COMM_VERSION)[0]
         with self._lock:
             index = self._info[OFF_NODE_COUNT]
             if index >= NODE_MAX:
@@ -357,6 +369,17 @@ class IpHostTransport:
             seated[0x0A] = index
             seated[0x0B] = 1
             self._info = set_node(self._info, index, bytes(seated))
+            host_version = struct.unpack_from(
+                "<H", self._info, OFF_NODES + OFF_NODE_LOCAL_COMM_VERSION)[0]
+            if self.mirror_comm_version and joiner_version != host_version:
+                host = bytearray(self._info[OFF_NODES:OFF_NODES + ldn_mitm.NODE_INFO_SIZE])
+                struct.pack_into("<H", host, OFF_NODE_LOCAL_COMM_VERSION, joiner_version)
+                self._info = set_node(self._info, 0, bytes(host))
+                self.log(f"[host] node localCommunicationVersion: joiner says {joiner_version}, "
+                         f"host said {host_version}; the host node now says {joiner_version}")
+            else:
+                self.log(f"[host] node localCommunicationVersion: joiner {joiner_version}, "
+                         f"host {host_version}")
             info = self._info
         ip, mac, _id, _c, name = read_node(info, index)
         self.participants.append((index, ip, mac, name))

@@ -102,6 +102,13 @@ def build_node_info(ip, mac, name=b"RyuPlayer"):
             ).ljust(NODE_INFO_SIZE, b"\0")[:NODE_INFO_SIZE]
 
 
+def session_id(network_info):
+    """-> the network's 16-byte SessionId, which at Pia 6.16-6.42 is the session key's plaintext."""
+    if len(network_info) < OFF_SESSION_ID + 16:
+        raise ValueError(f"a NetworkInfo is {NETWORK_INFO_SIZE} bytes, got {len(network_info)}")
+    return bytes(network_info[OFF_SESSION_ID:OFF_SESSION_ID + 16])
+
+
 def advertise_data(network_info):
     """-> the advertise data a NetworkInfo declares, which is what a session key derives from."""
     if len(network_info) < OFF_ADVERTISE_DATA:

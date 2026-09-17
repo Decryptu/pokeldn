@@ -48,6 +48,7 @@ protocol (`HostTransport(protocol=...)`).
 |---|---|---|
 | the GBA app (FireRed, LeafGreen), comm id `0x01006fa0233f8000` | 3 | 3, AES-GCM |
 | Sword Mystery Gift screen, comm id `0x0100abf008968000` | 1 | 2, AES-CTR |
+| Legends Arceus local trade, comm id `0x01001f5010dfa000` | 1 | 4 |
 
 Association is the first step that needs a title secret. The passphrase is used verbatim, neither
 padded nor hashed. `nn::pia::local::LdnBackgroundProcessJob` validates the length as 16-64 before
@@ -68,6 +69,21 @@ Pia's LDN advertisement layout, as parsed from a Shining Pearl session:
 The network id and the session parameter both change per session. A key derivation tested against a
 capture from a different session fails on every packet with no distinguishing symptom. Match the
 advertisement and the capture before doubting the derivation.
+
+Pia 6.16 to 6.41 replaced that header with a system property block, and the session parameter with
+it: the session key is derived from the network's SSID instead, and the network id is a hash of the
+SSID rather than a broadcast field.
+
+    +0x00  2  system property data size      0x5C
+    +0x02  1  system communication version   21 for 6.16-6.30, 22 for 6.39-6.41
+    +0x03  2  application communication version
+    +0x05  16 user password
+    +0x15  1  is player limit enabled
+    +0x16  1  number of players
+    +0x17  4  player name size
+    +0x1b  1  player name encoding           1 = UTF-8, 2 = UTF-16
+    +0x1c  64 player name
+    +0x5c     application data
 
 ## Hosting for an emulator
 

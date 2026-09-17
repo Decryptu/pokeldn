@@ -65,8 +65,11 @@ def main():
     for i, n in enumerate(nets):
         print(f"\n--- network {i} ---")
         print(f"  local_communication_id : {n.local_communication_id:016x}")
+        print(f"  ldn protocol           : {getattr(n, 'protocol', '?')}")
         print(f"  scene_id               : {n.scene_id}")
         print(f"  version                : {n.version}")
+        print(f"  app_version            : {n.app_version}")
+        print(f"  security_mode          : {n.security_mode}")
         print(f"  channel                : {n.channel}   band {n.band}")
         print(f"  accept_policy          : {ACCEPT.get(n.accept_policy, n.accept_policy)}")
         print(f"  participants           : {n.num_participants}/{n.max_participants}")

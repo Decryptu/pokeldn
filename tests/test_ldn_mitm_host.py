@@ -149,3 +149,16 @@ def test_new_application_data_replaces_what_a_later_scan_reads(host):
     _kind, info = ldn_mitm.parse(udp.recvfrom(65535)[0])
     assert ldn_mitm.advertise_data(info) == b"\x09" * 40
     udp.close()
+
+
+def test_the_host_mac_encodes_its_address_the_way_the_peer_does():
+    """An emulated console at 172.16.86.1 gives itself 02:00:ac:10:56:01. The host follows suit."""
+    import socket
+
+    from pokeldn.ldn.ldn_mitm_host import IpHostTransport
+
+    t = IpHostTransport(our_ip="172.16.86.128")
+    assert t.our_mac == b"\x02\x00" + socket.inet_aton("172.16.86.128")
+    assert t.our_mac.hex() == "0200ac105680"
+    assert IpHostTransport(our_ip="172.16.86.128", mac=b"\x02\x01\x02\x03\x04\x05").our_mac == \
+        b"\x02\x01\x02\x03\x04\x05"

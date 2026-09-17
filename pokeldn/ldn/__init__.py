@@ -1,8 +1,9 @@
 """The wireless layer, GAME-INDEPENDENT: LDN association, Pia, and the transport crypto.
 
 Layers, bottom-up: UDP :12345 (`transport`) -> zstd + AES-GCM (`crypto`) -> Pia connection
-(`pia_connect`, Pia 6.32+; `pia5`, Pia 5.27-5.45) -> Pia message + a reliable sliding window
-(`reliable` for 6.32, `reliable5` for 5.29-5.43 - different header shapes, do not confuse them).
+(`pia_connect`, Pia 6.32+; `pia6`, Pia 6.16-6.30; `pia5`, Pia 5.27-5.45) -> Pia message + a
+reliable sliding window (`reliable` for 6.32, `reliable5` for 5.29-5.43 - different header shapes,
+do not confuse them).
 `sead` is Nintendo's own RNG, which Pia's LDN session key is built on, and `local_protocol` is
 Pia protocol 36 - the session bookkeeping a Union Room runs on, once its payloads decrypt.
 Above it a 5.x station joins a mesh through `station_protocol` (0x14) and `mesh_protocol` (0x18)
