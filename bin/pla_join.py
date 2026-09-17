@@ -37,6 +37,13 @@ NET_UPDATE_NETWORK_HOST = 0x41
 PROTO_RTT = 0x58
 ESTABLISHING_FLAGS = pia6.MESSAGE_FLAG_SKIP_SOURCE_CHECK
 
+
+def establishing_flags(args):
+    """0x01 skip-source-check by default. At this band, hosting side, 0x01 takes the branch at
+    main+0x74432c that skips the station lookup and sets no wake bit, so --no-skip-source-check
+    (flags 0) is the path that can wake the session when the console has a station for us."""
+    return ESTABLISHING_FLAGS if getattr(args, "skip_source_check", True) else 0
+
 # Our own station's variable id. A joiner invents one and states it; the host learns it from the
 # packets we send, which is the direction that works. 6.32's joiner uses the same constant.
 OUR_VAR = 0xC493
@@ -57,6 +64,36 @@ def scan_once(our_ip, host_ip, timeout):
                     return info
         except (socket.timeout, OSError, ValueError):
             return None
+
+
+def fast_scan(sock, host_ip, interval, deadline, last_ssid):
+    """A tight scan: send SCAN and poll non-blocking every `interval` until a ScanResp for an SSID
+    other than `last_ssid` arrives, or `deadline` passes. Returns (NetworkInfo, t_seen) or (None, _).
+
+    The host latches its node list once when it creates the network, so the joiner has to be present
+    before that latch. A per-request socket with a full timeout loses the race; this reuses one
+    socket and reacts within one `interval` of the network appearing.
+    """
+    while time.time() < deadline:
+        try:
+            sock.sendto(ldn_mitm.build(ldn_mitm.SCAN), (host_ip, ldn_mitm.PORT))
+        except OSError:
+            pass
+        t_end = time.time() + interval
+        while time.time() < t_end:
+            try:
+                data, _ = sock.recvfrom(4096)
+            except (BlockingIOError, OSError):
+                time.sleep(0.001)
+                continue
+            try:
+                kind, info = ldn_mitm.parse(data)
+            except ValueError:
+                continue
+            if kind == ldn_mitm.SCAN_RESP:
+                if ldn_mitm.session_id(info) != last_ssid:
+                    return info, time.time()
+    return None, time.time()
 
 
 def associate(our_ip, host_ip, our_mac, name, timeout):
@@ -85,12 +122,31 @@ def main():
     ap.add_argument("--name", default="PkCamp", help="the LDN node name we publish")
     ap.add_argument("--seconds", type=float, default=600.0)
     ap.add_argument("--scan-timeout", type=float, default=0.4)
+    ap.add_argument("--race", action="store_true",
+                    help="pre-armed low-latency join: hold one scan socket, poll fast, and connect "
+                         "the instant a fresh network appears, to land before the host latches its "
+                         "node list at mesh creation")
+    ap.add_argument("--scan-interval", type=float, default=0.02,
+                    help="race mode: seconds between SCAN sends (default 20 ms)")
     ap.add_argument("--hold", type=float, default=20.0,
                     help="how long to stay in one joined session before scanning again")
     ap.add_argument("--no-answer-migration", dest="answer_migration", action="store_false",
                     help="leave the console's start-host-migration unanswered, to measure it")
     ap.add_argument("--swap-host-fields", action="store_true",
                     help="send the network id before the constant id in the host update")
+    ap.add_argument("--join-address", choices=["kind", "band"], default="band",
+                    help="station address in the join request: 6.39's kind byte + IPv4 + port, "
+                         "or the band's 16 address bytes + port")
+    ap.add_argument("--join-protocols", choices=["6.32", "band"], default="band",
+                    help="the protocol list the join request states")
+    ap.add_argument("--join-app-ver", type=lambda v: int(v, 0), default=0,
+                    help="application communication version in the join request")
+    ap.add_argument("--no-skip-source-check", dest="skip_source_check", action="store_false",
+                    help="clear message flag 0x01; the unflagged path runs the station lookup and "
+                         "can set the wake bit when the host has a station for us")
+    ap.add_argument("--join-repeat", type=float, default=0.0,
+                    help="re-send the join request every N seconds until the console answers "
+                         "on 0x98 (0 = send it once)")
     ap.add_argument("--capture", default=None)
     args = ap.parse_args()
 
@@ -107,10 +163,25 @@ def main():
 
     deadline = time.time() + args.seconds
     attempts = joined = 0
+    race_sock = None
+    last_ssid = b""
+    if args.race:
+        race_sock = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
+        race_sock.setblocking(False)
+        race_sock.bind((args.our_ip, 0))
+        print(f"[pla] race mode: scanning every {args.scan_interval*1000:.0f} ms, "
+              f"joining the instant a fresh network appears")
     try:
         while time.time() < deadline:
             attempts += 1
-            info = scan_once(args.our_ip, args.host_ip, args.scan_timeout)
+            if args.race:
+                info, t_seen = fast_scan(race_sock, args.host_ip, args.scan_interval,
+                                         deadline, last_ssid)
+                if info is None:
+                    continue
+                last_ssid = ldn_mitm.session_id(info)
+            else:
+                info = scan_once(args.our_ip, args.host_ip, args.scan_timeout)
             if info is None:
                 continue
             code = "?"
@@ -129,9 +200,14 @@ def main():
                 print(f"[pla] the association failed: {exc}")
                 continue
             joined += 1
-            print(f"[pla] *** JOINED *** the console synced the network with us in it")
+            latency = (time.time() - t_seen) if args.race else None
+            nodes = synced[0x67] if len(synced) > 0x67 else "?"
+            msg = f"[pla] *** JOINED *** synced, nodes={nodes}"
+            if latency is not None:
+                msg += f", seen->synced {latency*1000:.0f} ms"
+            print(msg)
             record(rec="joined", ssid=ssid.hex(), network_id=keys.network_id, code=code,
-                   network_info=synced.hex(), t=time.time())
+                   network_info=synced.hex(), t=time.time(), join_latency=latency)
             run_session(args, keys, tcp, record)
     except KeyboardInterrupt:
         print("\n[pla] interrupted")
@@ -149,9 +225,16 @@ def run_session(args, keys, tcp, record):
     sock.bind((args.our_ip, pla.PIA_PORT))
     sock.setblocking(False)
     end = time.time() + args.hold
-    host_var, sent_join = None, False
+    host_var, sent_join, session_answered = None, False, False
+    join_sent_at, join_to = 0.0, None
     try:
         while time.time() < end:
+            if sent_join and args.join_repeat > 0 and not session_answered \
+                    and time.time() - join_sent_at >= args.join_repeat:
+                join = build_join(args, keys, host_mac, host_var)
+                sock.sendto(join, (join_to, pla.PIA_PORT))
+                join_sent_at = time.time()
+                record(rec="out", dst=join_to, kind="session join", hex=join.hex())
             try:
                 payload, addr = sock.recvfrom(4096)
             except (BlockingIOError, OSError):
@@ -182,7 +265,7 @@ def run_session(args, keys, tcp, record):
                     reply = pia6.build_packet(
                         keys.session_key, keys.network_id, args.our_ip,
                         pia6.build_message(body, protocol=PROTO_NET,
-                                           port=0, message_flags=ESTABLISHING_FLAGS),
+                                           port=0, message_flags=establishing_flags(args)),
                         dst_var=0, src_var=OUR_VAR, packet_id=0, nonce8=os.urandom(8))
                     sock.sendto(reply, (src_ip, pla.PIA_PORT))
                     record(rec="out", dst=src_ip, kind="update network host", hex=reply.hex())
@@ -197,26 +280,21 @@ def run_session(args, keys, tcp, record):
                             keys.session_key, keys.network_id, args.our_ip,
                             pia6.build_message(pia_connect.build_net_response(seqid),
                                                protocol=PROTO_NET, port=0,
-                                               message_flags=ESTABLISHING_FLAGS),
+                                               message_flags=establishing_flags(args)),
                             dst_var=0, src_var=OUR_VAR, packet_id=0, nonce8=os.urandom(8))
                         sock.sendto(reply, (src_ip, pla.PIA_PORT))
                         record(rec="out", dst=src_ip, kind="net conn response", hex=reply.hex())
                         print("[pla] -> answered with the connection response")
                         if not sent_join:
                             sent_join = True
-                            join = pia6.build_packet(
-                                keys.session_key, keys.network_id, args.our_ip,
-                                pia6.build_message(
-                                    pia_connect.build_session_join(
-                                        our_mac_for(args), OUR_VAR.to_bytes(2, "big"), args.our_ip,
-                                        host_mac, host_var.to_bytes(2, "big"), args.name,
-                                        os.urandom(4)),
-                                    protocol=PROTO_SESSION, port=0,
-                                    message_flags=ESTABLISHING_FLAGS),
-                                dst_var=0, src_var=OUR_VAR, packet_id=0, nonce8=os.urandom(8))
+                            join = build_join(args, keys, host_mac, host_var)
                             sock.sendto(join, (src_ip, pla.PIA_PORT))
+                            join_sent_at, join_to = time.time(), src_ip
                             record(rec="out", dst=src_ip, kind="session join", hex=join.hex())
                             print("[pla] -> sent the session join request")
+                if msg.protocol == PROTO_SESSION:
+                    session_answered = True
+                    print(f"[pla] THE CONSOLE ANSWERED ON 0x98: {msg.payload.hex()}")
     finally:
         sock.close()
         try:
@@ -224,6 +302,33 @@ def run_session(args, keys, tcp, record):
         except OSError:
             pass
         print("[pla] left the session")
+
+
+def build_join(args, keys, host_mac, host_var):
+    """The session join request as one packet, in the layout the flags select.
+
+    The constant id is the wiki's MAC reordering [Pia-Types, constant id], not the raw MAC:
+    `pia_connect.ldn_constant_id`. host_mac already arrives in constant-id form from the Net 0x11.
+    """
+    our_cid = pia_connect.ldn_constant_id(our_mac_for(args))
+    if args.join_address == "kind":
+        body = pia_connect.build_session_join(
+            our_cid, OUR_VAR.to_bytes(2, "big"), args.our_ip, host_mac,
+            host_var.to_bytes(2, "big"), args.name, os.urandom(4),
+            app_ver=args.join_app_ver.to_bytes(2, "big"),
+            protocols=(pia_connect.DEFAULT_PROTOCOLS if args.join_protocols == "6.32"
+                       else pia6.BAND_PROTOCOLS))
+    else:
+        body = pia6.build_session_join(
+            our_cid, OUR_VAR, args.our_ip, host_mac, host_var, args.name, os.urandom(4),
+            app_ver=args.join_app_ver,
+            protocols=(pia_connect.DEFAULT_PROTOCOLS if args.join_protocols == "6.32"
+                       else pia6.BAND_PROTOCOLS))
+    return pia6.build_packet(
+        keys.session_key, keys.network_id, args.our_ip,
+        pia6.build_message(body, protocol=PROTO_SESSION, port=0,
+                           message_flags=establishing_flags(args)),
+        dst_var=0, src_var=OUR_VAR, packet_id=0, nonce8=os.urandom(8))
 
 
 def build_update_network_host(constant_id, network_id, variable_id, swap=False):

@@ -348,8 +348,10 @@ class IpHostTransport:
                 except OSError:
                     pass
         ip, mac, node_id, _c, name = read_node(info, index)
+        n1ip, _m, _i, n1c, _nm = read_node(info, 1)
         self.log(f"[host] *** CONSOLE JOINED *** idx={index} ip={ip} mac={mac.hex()} "
-                 f"name={name!r} (node id {node_id})")
+                 f"name={name!r} (node id {node_id}); SyncNetwork tx NodeCount="
+                 f"{info[OFF_NODE_COUNT]} node1={n1ip} connected={n1c}")
         self.info("A console joined the network.")
 
     def _seat(self, node):

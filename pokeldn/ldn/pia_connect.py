@@ -51,24 +51,31 @@ def ldn_constant_id(mac):
     return bytes((mac[2], mac[4], mac[5], mac[3], mac[1], mac[0], 0, 0))
 
 
-def _net_station(ip=None, port=12345, *, migration_state=0, migration_rank=0):
-    """Pia 6.39 NetStation: [migration_state][rank][0][0] + 16-byte address (IPv4 in the first 4) + BE port; an empty slot is
-    rank 0xff with zero address/port.
+def _net_station(ip=None, port=12345, *, migration_state=0, migration_rank=0, prefix_len=4):
+    """A NetStation: a prefix then an 18-byte station address (16-byte address, IPv4 in the first 4,
+    then a big-endian port). An empty slot is rank 0xff with zero address and port.
+
+    The prefix is 4 bytes at Pia 6.39 ([migration_state][rank][disconnection candidate][kicking]) and
+    3 bytes at the 6.16-6.23 band ([migration_state][rank][one byte]), measured off a console's own
+    0x11 (docs/pla.md). So a station is 22 bytes at 6.39 and 21 here.
     """
     address = (_ip4(ip) + b"\x00" * 12) if ip is not None else b"\x00" * 16
     if ip is None:
         port = 0
-    return (bytes([migration_state & 0xFF, migration_rank & 0xFF, 0, 0])
-            + address + (port & 0xFFFF).to_bytes(2, "big"))
+    prefix = bytes([migration_state & 0xFF, migration_rank & 0xFF]) + b"\x00" * (prefix_len - 2)
+    return prefix + address + (port & 0xFFFF).to_bytes(2, "big")
 
 
-def build_net_conn_request(seqid, host_var, host_mac, network_id, stations, max_stations=6):
+def build_net_conn_request(seqid, host_var, host_mac, network_id, stations, max_stations=6,
+                           station_size=22):
     """Net 0x11: all max_stations slots are always emitted, unused ones rank 0xff; the network id is the 32-bit SSID CRC
-    zero-extended to 8 bytes.
+    zero-extended to 8 bytes. `station_size` is 22 at Pia 6.39 (the GBA app's 6.32 host) and 21 at the
+    6.16-6.23 band Legends Arceus speaks; it sets the NetStation prefix width.
     """
     entries = list(stations)
     if not 1 <= len(entries) <= max_stations:
         raise ValueError("Net 0x11 needs 1..max_stations occupied station addresses")
+    prefix_len = station_size - 18
     body = bytearray()
     body += (seqid & 0xFFFFFFFF).to_bytes(4, "big")
     body += (_vid(host_var) & 0xFFFF).to_bytes(2, "big")
@@ -78,10 +85,10 @@ def build_net_conn_request(seqid, host_var, host_mac, network_id, stations, max_
     body += max_stations.to_bytes(2, "big")
     body += bytes([0])
     for rank, ip in enumerate(entries):
-        body += _net_station(ip, migration_rank=rank)
+        body += _net_station(ip, migration_rank=rank, prefix_len=prefix_len)
     for _ in range(max_stations - len(entries)):
-        body += _net_station(migration_rank=0xFF)
-    station_array_size = max_stations * 22
+        body += _net_station(migration_rank=0xFF, prefix_len=prefix_len)
+    station_array_size = max_stations * station_size
     return bytes([0x01, NET_CONN_REQUEST]) + station_array_size.to_bytes(2, "big") + body
 
 
@@ -301,6 +308,139 @@ def build_session_join_response(join, host_constant_id, host_var, random4):
             + _constant_id8(join["source_constant_id"])
             + (join["source_var"] & 0xFFFF).to_bytes(2, "big")
             + bytes([1]) + (1).to_bytes(2, "big") + b"\x00\x00")
+
+
+# --- Pia 6.16-6.30 (version 11) Session layouts, read from the console's own parsers -------------
+#
+# A location id on the wire is 12 bytes: u64 BE constant id, two zero bytes, u16 BE variable id.
+# `0x73fd98`/`0x73fda0` read the constant and variable ids the ack and response compare against.
+SESSION_JOIN_ACK = 1
+WIRE_SESSION_PROTOCOL = 0x98
+
+
+def _location_id(constant_id, variable_id):
+    return _constant_id8(constant_id) + b"\x00\x00" + (_vid(variable_id) & 0xFFFF).to_bytes(2, "big")
+
+
+def parse_session_join_v11(payload, *, header_end=None):
+    """Parse a version-11 Session type-0 join request (`0x7364e4`), returning None on anything malformed.
+
+    The body is the type byte, a protocol count, that many (id, version) pairs, then a four-byte
+    application/nonce field, the source location id (12), a 32-byte identification token, three
+    zero bytes, the source station address (IPv4 + big-endian port), the destination location id
+    (12), and a trailer. Only the fields the response echoes are returned.
+    """
+    payload = bytes(payload)
+    try:
+        if len(payload) < 2 or payload[0] != SESSION_JOIN_REQUEST:
+            return None
+        nprotocols = payload[1]
+        p = 2 + nprotocols * 2
+        protocols = [(payload[2 + i * 2], payload[2 + i * 2 + 1]) for i in range(nprotocols)]
+        if header_end is not None:
+            p = header_end
+        if p + 4 + 12 + 32 + 3 + 6 + 12 > len(payload):
+            return None
+        app4 = bytes(payload[p:p + 4])
+        source_constant_id = bytes(payload[p + 4:p + 12])
+        source_var = int.from_bytes(payload[p + 14:p + 16], "big")
+        token = bytes(payload[p + 16:p + 48])
+        ip = ".".join(str(x) for x in payload[p + 51:p + 55])
+        port = int.from_bytes(payload[p + 55:p + 57], "big")
+        destination_constant_id = bytes(payload[p + 57:p + 65])
+        destination_var = int.from_bytes(payload[p + 67:p + 69], "big")
+        return {
+            "protocols": protocols,
+            "app4": app4,
+            "source_constant_id": source_constant_id,
+            "source_var": source_var,
+            "identification_token": token,
+            "ip": ip,
+            "port": port,
+            "destination_constant_id": destination_constant_id,
+            "destination_var": destination_var,
+        }
+    except (IndexError, ValueError):
+        return None
+
+
+def build_session_join_ack_v11(host_constant_id, host_var, console_constant_id, console_var):
+    """Session type-1 join-request-ack, 25 bytes (`0x737534`). Every id is compared; a mismatch is
+    dropped silently. It extends the join deadline by 8 s and completes nothing on its own.
+    """
+    return (bytes([SESSION_JOIN_ACK])
+            + _location_id(host_constant_id, host_var)
+            + _location_id(console_constant_id, console_var))
+
+
+def build_session_join_response_v11(host_constant_id, host_var, console_constant_id, console_var,
+                                    *, version=0, status=1, route=(0, 1), station_index=1,
+                                    join_order=1, sequence_id=1):
+    """Session type-2 join response, 43 bytes (`0x7379c0`). Status 1 is the accept path; the four
+    ids are compared, the random field (bytes +4..+0xc) is unread, and the assignment (route bytes,
+    station index, join order, sequence id) is stored without validation. The sequence id is what a
+    later type-5 update must reach to set `JoinMeshJob+0x7c`. The console's own writer puts
+    `(0, 1)`, index 1, join order 1 for a first joiner.
+    """
+    return (bytes([SESSION_JOIN_RESPONSE, WIRE_SESSION_PROTOCOL, version & 0xFF, status & 0xFF])
+            + b"\x00" * 8
+            + _location_id(host_constant_id, host_var)
+            + _location_id(console_constant_id, console_var)
+            + bytes([route[0] & 0xFF, route[1] & 0xFF, station_index & 0xFF])
+            + (join_order & 0xFFFF).to_bytes(2, "big")
+            + (sequence_id & 0xFFFF).to_bytes(2, "big"))
+
+
+def _session_station_v11(constant_id, variable_id, ip, port, *, station_index, route,
+                         join_order, token, players, participants=None, nat=0, private_ipv6=0):
+    """One IPv4 entry in a version-11 type-5 station list, read by `0x739050`.
+
+    The variable id is a big-endian u32 whose low half is the id (`[0000 | var]`), the address is the
+    six-byte IPv4 form, then route bytes A and B, the station index, a big-endian u16 join order, a
+    NAT-mapping byte, a private-IPv6 flag, the 32-byte token, a player count, a participant count, and
+    the 6.32-style player records. The caller clears this station's IPv6 bitmap bit to match.
+    """
+    token = bytes(token)
+    if len(token) != 32:
+        raise ValueError("Pia identification token must be 32 bytes")
+    out = bytearray(_constant_id8(constant_id))
+    out += (_vid(variable_id) & 0xFFFF).to_bytes(4, "big")       # [0000 | var]
+    out += _ip4(ip) + (port & 0xFFFF).to_bytes(2, "big")
+    out += bytes([route[0] & 0xFF, route[1] & 0xFF, station_index & 0xFF])
+    out += (join_order & 0xFFFF).to_bytes(2, "big")
+    out += bytes([nat & 0xFF, 1 if private_ipv6 else 0])
+    out += token
+    out += bytes([len(players) & 0xFF,
+                  (len(players) if participants is None else participants) & 0xFF])
+    for player in players:
+        out += _build_player_info(player["player_id"], player["name"], player.get("encoding", 1))
+    return bytes(out)
+
+
+def build_session_update_v11(host_constant_id, host_var, stations, *, sequence_id=1):
+    """Session type-5 station-list update for the 6.16-6.30 band (`0x738740`, body read at `0x73897c`).
+
+    The reassembler `0x7404a8` reads a seven-byte fragment header first: the type, the big-endian u16
+    sequence, a fragment count, a fragment index, and a big-endian u16 offset. It seeds the buffer with
+    the first three bytes (type and sequence) and copies the fragment payload at the offset, so the
+    payload begins at the host constant id and the reassembled body reads: `05`, the sequence, the host
+    constant id, the host variable id as a `[0000 | var]` u32, the station count, an IPv6 bitmap of
+    `(count + 31) // 32 * 4` bytes, then the station entries. One fragment carries the whole update.
+    """
+    count = len(stations)
+    payload = bytearray(_constant_id8(host_constant_id))
+    payload += (_vid(host_var) & 0xFFFF).to_bytes(4, "big")      # [0000 | var]
+    payload += bytes([count & 0xFF])
+    payload += bytearray((count + 31) // 32 * 4)                 # IPv6 bitmap, all IPv4, bits clear
+    for st in stations:
+        payload += _session_station_v11(
+            st["constant_id"], st["variable_id"], st["ip"], st["port"],
+            station_index=st["station_index"], route=st.get("route", (0, 0)),
+            join_order=st.get("join_order", 0), token=st.get("token", b"\x00" * 32),
+            players=st.get("players", []), participants=st.get("participants"))
+    fragment_header = (bytes([SESSION_UPDATE]) + (sequence_id & 0xFFFF).to_bytes(2, "big")
+                       + bytes([1, 0]) + (3).to_bytes(2, "big"))  # count 1, index 0, offset 3
+    return fragment_header + bytes(payload)
 
 
 def parse_session(payload):

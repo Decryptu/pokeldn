@@ -237,3 +237,53 @@ def build_packet(session_key, network_id, src_ip, plaintext, dst_var=0, src_var=
     header = PiaHeader6(dst_var=dst_var, src_var=src_var, packet_id=packet_id,
                         footer_size=len(tail), nonce8=nonce8, tag=tag, encrypted=True)
     return header.pack() + ct + tail
+
+
+# Session Protocol at this band, protocol id 0x98 [wiki Session-Protocol-(new)]. The join request is
+# the 6.39 layout with one difference the wiki dates to 6.16-6.30 [wiki Pia-Types, StationAddress]:
+# a station address is sixteen address bytes then a big-endian port, with no IPv4/IPv6 kind byte in
+# front, which is how the console writes its own NetStation entries (docs/pla.md, The Net Protocol).
+SESSION_JOIN_REQUEST = 0
+STATION_ADDRESS_SIZE = 18
+
+# The protocol ids the band defines above the packet layer [wiki Pia-Protocols, 6.16-6.30]; the
+# versions are unread here and are stated as zero until the console corrects one.
+PROTO_NET, PROTO_RTT, PROTO_UNRELIABLE = 0x2C, 0x58, 0x68
+PROTO_CLONE = (0x74, 0x75, 0x76, 0x77)
+PROTO_RELIABLE, PROTO_BROADCAST_RELIABLE, PROTO_SESSION, PROTO_MONITORING = 0x7C, 0x80, 0x98, 0xA4
+BAND_PROTOCOLS = [(PROTO_NET, 0), (PROTO_RTT, 0), (PROTO_UNRELIABLE, 0)] \
+    + [(p, 0) for p in PROTO_CLONE] \
+    + [(PROTO_RELIABLE, 0), (PROTO_BROADCAST_RELIABLE, 0), (PROTO_SESSION, 0), (PROTO_MONITORING, 0)]
+
+
+def station_address(ip, port=12345):
+    """The band's 18-byte station address: the IPv4 address in the first four of sixteen bytes,
+    then the port big-endian. Read off the console's own NetStation entries."""
+    return ip_bytes(ip).ljust(16, b"\x00") + int(port).to_bytes(2, "big")
+
+
+def build_session_join(src_constant_id, src_var, src_ip, dst_constant_id, dst_var, player_name,
+                       random4, *, src_port=12345, app_ver=0, protocols=BAND_PROTOCOLS,
+                       player_id=b"\x00" * 16, token=b"\x00" * 32, nat_mapping=0,
+                       private_ipv6=0, num_participants=1):
+    """A session join request for 0x98. Every field is the wiki's 6.39 join request except the
+    station address, which is the band's 18-byte form."""
+    def cid(v):
+        v = bytes(v)
+        return v + b"\x00\x00" if len(v) == 6 else v
+    def vid(v):
+        return (v if isinstance(v, int) else int.from_bytes(v, "big")).to_bytes(2, "big")
+    out = bytearray([SESSION_JOIN_REQUEST, len(protocols)])
+    for pid, ver in protocols:
+        out += bytes([pid & 0xFF, ver & 0xFF])
+    out += int(app_ver).to_bytes(2, "big")
+    out += bytes(random4)[:4].rjust(4, b"\x00")
+    out += cid(src_constant_id) + vid(src_var)
+    out += bytes([nat_mapping & 0xFF, private_ipv6 & 0xFF])
+    out += bytes(token)[:32].ljust(32, b"\x00")
+    out += cid(dst_constant_id) + vid(dst_var)
+    out += bytes([1, num_participants & 0xFF])
+    out += station_address(src_ip, src_port)
+    name = player_name.encode()[:20]
+    out += bytes(player_id)[:16].ljust(16, b"\x00") + len(name).to_bytes(4, "big") + bytes([1]) + name
+    return bytes(out)

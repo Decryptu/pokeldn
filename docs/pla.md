@@ -184,8 +184,192 @@ So `pia_connect.py`, which speaks Net, Session and RTT at 6.32, is the right sha
 with the ids renumbered; `station_protocol.py` and `mesh_protocol.py` are not, because the
 protocols they implement do not exist here.
 
-The per-protocol version numbers in a join request's protocol list are unread. The console states
-its own when it sends a join request, which is what hosting gets first.
+The console states its per-protocol versions in the join request it sends once hosting delivers the
+Net 0x11 to it every station window. Its list, ten protocols:
+
+    Net 0x2c v0   RTT 0x58 v3   Unreliable 0x68 v1   Clone 0x74 v0   Clock 0x77 v0
+    Reliable 0x7c v2   BroadcastReliable 0x80 v3   0x81 v3   Session 0x98 v0   Monitoring 0xa4 v0
+
+### The Session join request
+
+The console sends a 115-byte Session type-0 join request, written by `ClusterPacketWriter`. Header is
+the type byte and a protocol count, then the ten `(id, version)` pairs above. Past the list, both
+constant ids decode against `ldn_constant_id`, which anchors the body:
+
+    +22  2   application version, 0x93b5
+    +24  2   nonce, echoed by the response (width past two bytes unconfirmed)
+    +26  8   source constant id, ldn_constant_id of the console
+    +34  2   zero
+    +36  2   source variable id, fresh per session
+    +38  32  identification token, all zero on a codeless join
+    +70  3   zero
+    +73  4   source station address, IPv4
+    +77  2   source station port, 12345
+    +79  8   destination constant id, the host's
+    +87  2   destination variable id, zero for the host
+    +89  26  trailer, `00 c6 01 01 00..01 00..01 01 20`, unread
+
+A location id on the wire is 12 bytes: a big-endian u64 constant id, two zero bytes, and a big-endian
+u16 variable id. The request's `0000` at +87 is the destination location id's two zero bytes; the
+host variable id is the `00c6` at +89, and the trailer starts at +91.
+
+### The Session join reply
+
+The joiner parses the ack at `0x737534` and the join response at `0x7379c0`, both dispatched from the
+receive loop `0x7353a0` through the type table at `main+0x3973f19`. Each compares four ids and drops
+the message silently on any mismatch. A host echoes the ids the request stated: the host constant and
+variable ids from its destination fields, the console's from its source fields.
+
+The ack is Session type 1, 25 bytes: the type byte, then the host location id and the console location
+id. It sets `JoinMeshJob+0x69` and extends the join deadline `job+0x80` by 8000 ms. It carries no
+random and completes nothing on its own.
+
+The join response is Session type 2, 43 bytes:
+
+    +0x00  1   02
+    +0x01  1   protocol id 0x98, read only when status is 3
+    +0x02  1   Session version, read only when status is 3
+    +0x03  1   status, 1 is the accept path
+    +0x04  8   unread on the accept path
+    +0x0c  12  host location id, four-field compare
+    +0x18  12  console location id, four-field compare
+    +0x24  1   route byte A, stored to the self station +0x90
+    +0x25  1   route byte B, stored to +0x91
+    +0x26  1   station index, sets bitmap bit [+0x788][index]
+    +0x27  2   join order, big-endian u16, stored to +0xf8
+    +0x29  2   sequence id, big-endian u16, stored to +0xde
+
+The random is neither echoed nor read on the accept path. The assignment fields are stored without
+validation; the console's own writer `0x736cec` puts route `00 01`, index 1 and join order 1 for a
+first joiner. Status 1 sets `JoinMeshJob+0x68`. Answering the request once makes the console stop
+repeating it, where an unanswered request repeats about sixteen times a window.
+
+The response only marks the join accepted. `JoinMeshJob+0x7c`, the completion flag, is set by the
+type-5 station-list update `0x738740`, and only once an update whose sequence reaches the response's
+`+0x29` value has been applied, at which point the joiner answers with a Session type 6: the type
+byte, the console constant id, two zero bytes, and the sequence, 13 bytes.
+
+### The type-5 station-list update
+
+The update is reassembled by `0x7404a8` from fragments before `0x73897c` reads it. A single fragment
+carries the whole update. The seven-byte fragment header is the type byte, a big-endian u16 sequence,
+a fragment count, a fragment index, and a big-endian u16 offset. The reassembler seeds its buffer with
+the header's first three bytes (type and sequence) and copies the fragment payload at the offset, so
+the payload begins at the host constant id and the offset is 3. The reassembled body:
+
+    +0x00  1   05, the reassembly byte
+    +0x01  2   sequence id, big-endian u16
+    +0x03  8   host constant id, big-endian u64
+    +0x0b  4   host variable id, a [0000, u16] big-endian u32
+    +0x0f  1   station count, at most 0x18
+    +0x10  n   IPv6 bitmap, (count + 31) / 32 * 4 bytes, little-endian u32 words, bit i set for an
+               IPv6 station
+       ...     station entries
+
+Each station entry, read by `0x739050`, in its IPv4 form:
+
+    +0x00  8   constant id, big-endian u64
+    +0x08  4   variable id, a [0000, u16] big-endian u32, the low half passed to the admit
+    +0x0c  4   IPv4 address
+    +0x10  2   port, big-endian u16
+    +0x12  1   route byte A
+    +0x13  1   route byte B
+    +0x14  1   station index
+    +0x15  2   join order, big-endian u16
+    +0x17  1   NAT mapping
+    +0x18  1   private-IPv6 flag
+    +0x19  32  identification token
+    +0x39  1   player count
+    +0x3a  1   participant count
+    +0x3b  ..  player records, each a 16-byte id, a big-endian u32 name length, an encoding byte, and
+               the name
+
+An IPv6 station carries an 18-byte address in place of the six bytes, shifting the rest by 12. The
+host is route `00 00`, index 0, join order 0; the first joiner is route `00 01`, index 1, join order
+1. The player record matches the one the console emits in its join request tail: id `00..01`, length
+1, encoding 1, name a single space. `0x738bc0` then updates a station that already exists by constant
+id and creates one that does not, and once the applied sequence reaches the response's, sets
+`JoinMeshJob+0x7c` and sends the type 6. On this update a joining console leaves `JoinMeshJob` and
+runs the mesh: it answers with the type 6, then sends RTT, Clone Clock and the Stream Broadcast
+Reliable stream, and holds the session until a peer that never answers those times it out.
+
+## Sustaining the mesh
+
+A joined console runs three protocols the host must answer or the game abandons the session about ten
+seconds after the join. RTT (0x58) is an 11-byte message at this band, a kind byte then an eight-byte
+timestamp and a two-byte target, and a kind-1 response that echoes the timestamp with target 0 is
+accepted. The Clone Clock (0x77) ticks on its own.
+
+The Stream Broadcast Reliable protocol (0x81) carries the sliding window `pokeldn/ldn/reliable5.py`
+reads: the 9-or-13-byte header, then application data or, with the application-data flag clear, a bulk
+ack of `2 + 21 * count` bytes. The ack's leading byte is a type whose only read bit is bit 0, and each
+21-byte entry is a station byte, a big-endian u16 acknowledgement id, a big-endian u16, and a 16-byte
+mask. The consumer `0x742740` reads the entry at the receiver's own station index and requires that
+entry's station byte to equal the sender's index, so a host acking a joiner at index 1 sends at least
+two entries and sets every station byte to 0, the host's index. The acknowledgement id is one past the
+highest sequence received. `0x74f0ec` applies the mask.
+
+Answering RTT and acking the reliable stream stops the console's retransmissions but does not hold the
+session: the game leaves about ten seconds after the join unless the host itself sends reliable data.
+The console opens its own stream with an INITIALIZED data message (flags `0x0f`, seq 1) and a second
+data message, and its once-a-second ack carries a host-stream acknowledgement id that climbs while the
+host stays silent. Host reliable data with the destination bitmap set for the console's own station
+index (bit 1, count 2) is accepted and applied into the console's receive window; a host stream sent to
+the wrong bit is dropped after the sender-station check.
+
+## The game's reader and the pre-handler phase
+
+Above the Pia reliable window, the game polls its own reader at `main+0x2ca4f30` (`0x741494`), 365 times
+a window. Two loops share one handler table: one reads protocol 0x7C (Reliable), the other 0x80
+(BroadcastReliable). Host reliable data sent on 0x80 reaches this reader and returns the host's payload;
+the same data on 0x81 (StreamBroadcastReliable) never reaches it, so 0x80 is the channel the game reads
+host data on. A message's first eight bytes are a two-u32 handler key; the matched handler receives the
+payload past the key with length reduced by eight, and a key that matches nothing is discarded.
+
+At the trade search screen the handler table is empty: the instruction after the reader takes a message
+is `ldr x8, [x19+0xd0]; cbz x8`, and with no handler registered every message on either channel is
+drained and dropped before its key is read. The game registers its handlers through `0x2ca5264`, which
+never runs across a full join and leave, and the handler-array pointer is nulled on leaving the menu.
+The reader loops tick about 2.5 times a second, the rate of a background manager rather than an active
+scene, so the object polling for host data is an idle manager and the trade scene's own manager is
+never constructed.
+
+The game's code resolves exactly three protocols across its nine Pia call sites: 0x68 (Unreliable),
+0x7C (Reliable) and 0x80 (BroadcastReliable), three read loops and four send paths, and none for the
+Clone protocols 0x74 to 0x77. The console's constant 0x77 clock traffic is Pia's own mesh housekeeping
+below the game. The game's two session-state queries both pass, so it is satisfied with the session.
+
+The ten-second leave is therefore not a rejection of any message and not a wait for a handler message:
+the trade scene never starts. The leave is a timer whose 10000 ms and 1000 ms constants are written by
+the constructor `0x2bcc43c` into an object of the same vtable family as the one that runs `LeaveAsync`.
+The missing condition is whatever constructs the trade scene, above the session and the transport.
+
+## The Clone Clock and Atomic protocols
+
+The band splits the Clone protocol family into separate protocols, each with its own message format
+unrelated to the 6.32 clone protocol. The Clone Clock is 0x77 and the Clone Atomic is 0x74.
+
+A Clone Clock message is 18 bytes: a kind byte, a sequence byte, a big-endian u64 originate tick, and a
+big-endian u64 responder clock in milliseconds. Kind 0 is a request, whose handler bails unless the
+receiver is the master, and kind 1 is the reply that does the work: it checks the sequence, computes an
+NTP-style offset, and advances the protocol's state machine. The state at ClockProtocol `+0x5c` runs 0
+reset, 1 requesting, 2 synchronised, 3 master, 4 parked. A joining console parks its clock in state 4,
+its per-frame tick returning immediately while the state reads 4, and sends a few requests then waits.
+A host reply of kind 1, echoing the request's sequence and originate tick and carrying the host's own
+millisecond clock, synchronises it: the sequence field increments, the offset field fills with a
+computed value, the state leaves 4, and the console stops sending its clock.
+
+A Clone Atomic message is 14 bytes: a kind byte (0 announce, 1 commit, 2 ack), a generation byte, a
+big-endian u32 element index rejected unless below 33, and a big-endian u64 value. The element table is
+33 slots of 0x18 bytes, each a generation, a state (0 empty, 1 pending, 2 awaiting-commit), a u64
+value, and at slot `+0x10` an acknowledged-station bitmap written only by kind 2, after the generation
+matches and the sender resolves to a known participant. A participant table indexed by station sits at
+the protocol `+0x78`, and the host at station 0 reads 1 there once joined. No inbound kind creates an
+element: all three handlers index an existing slot, and kinds 1 and 2 require one already pending.
+Elements are created only locally, by the trade scene. A host kind-0 announce draws a kind-2 reply that
+echoes the announced value but fills no slot, so the acknowledged bitmap the trade scene's readiness
+gate reads cannot be filled from outside; the console populates its own table only once the trade scene
+constructs and calls the local announce at `0x6e1e48`.
 
 ## Reading and writing a packet
 
