@@ -190,7 +190,7 @@ class Pia5Message:
                 f"len={len(self.payload)})")
 
 
-def parse_messages(plaintext):
+def parse_messages(plaintext, align=4):
     """Split a decrypted payload into messages. Presence-flagged, and fields INHERIT.
 
     Pia 5.27-6.30: each message opens with a byte saying which header fields are present, and any
@@ -200,6 +200,10 @@ def parse_messages(plaintext):
 
     Sizes and ids here are BIG-endian, like the packet header and unlike the wiki's note about the
     advertisement. docs/bdsp_session.md "What the console is saying".
+
+    `align` is the boundary the next message starts on. 5.27-5.45 aligns to four; the 6.16-6.30 band
+    does not align at all, so `pia6` passes 0. Aligning there walks past a bundled message and reads
+    the packet as carrying one (`docs/pla.md`, The data exchange).
     """
     out, off = [], 0
     flags = size = protocol = port = 0
@@ -241,7 +245,8 @@ def parse_messages(plaintext):
                 pass
         out.append(Pia5Message(flags, protocol, port, destination, body, compressed))
         off += size
-        off += -off % 4
+        if align:
+            off += -off % align
     return out
 
 

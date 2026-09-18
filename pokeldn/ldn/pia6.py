@@ -43,7 +43,8 @@ message flag 0x01 moved, to "skip the source variable id check".
 import struct
 
 from pokeldn.ldn.crypto import PiaCrypto, ip_bytes
-from pokeldn.ldn.pia5 import ALL_FIELDS_PRESENT, decrypt_payload, encrypt_payload, parse_messages
+from pokeldn.ldn.pia5 import ALL_FIELDS_PRESENT, decrypt_payload, encrypt_payload
+from pokeldn.ldn import pia5 as _pia5
 from pokeldn.ldn.pia5 import build_message as _build_message5
 from pokeldn.ldn.pia5 import pad_payload
 
@@ -147,18 +148,37 @@ def footer(data, footer_size=None):
 MESSAGE_PAD = b"\xff"
 
 
-def build_message(payload, protocol, port=0, message_flags=0, destination=0, inherit=False):
-    """One message, aligned to four bytes with 0xFF rather than with zeroes.
+def parse_messages(plaintext):
+    """Split a decrypted payload into messages. `pia5.parse_messages` with no alignment.
 
-    `pia5.build_message` writes the layout; only the alignment bytes differ. 5.27-5.45 pads with
-    zeroes and BDSP's parser stops on a zero presence byte, so there it is invisible.
+    This band starts the next message where the last one ended. Aligning to four, as 5.27-5.45 does,
+    walks past a bundled message: a reference host bundles its stream open behind its data exchange
+    record, and the aligned walk reads that packet as carrying the record alone.
     """
+    return _pia5.parse_messages(plaintext, align=0)
+
+
+def build_message(payload, protocol, port=0, message_flags=0, destination=0, inherit=False):
+    """One message, ending where its payload ends.
+
+    `pia5.build_message` writes the layout and aligns the result to four bytes; this band does not
+    align, and a reference station's bundled packet starts its second message on the byte after the
+    first one's payload. The packet's own 0xFF padding to a multiple of sixteen is `pad_payload`,
+    and with a single message per packet the two are indistinguishable.
+
+    `inherit=True` emits the payload size alone; `inherit="port"` emits the size, the protocol and
+    the port, which is how a reference host bundles a second message that changes port.
+    """
+    if inherit == "port":
+        # Size, protocol and port present; the message flags and destination inherit.
+        return (bytes([0x02 | 0x04]) + struct.pack(">H", len(payload))
+                + bytes([protocol]) + int(port).to_bytes(3, "big") + bytes(payload))
     raw = _build_message5(payload, protocol, port=port, message_flags=message_flags,
-                          destination=destination, inherit=inherit)
+                          destination=destination, inherit=bool(inherit))
     stated = _stated_length(raw)
     if stated is None or stated >= len(raw):
         return raw
-    return raw[:stated] + MESSAGE_PAD * (len(raw) - stated)
+    return raw[:stated]
 
 
 def _stated_length(raw):

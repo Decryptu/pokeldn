@@ -286,14 +286,15 @@ def test_the_net_protocol_id_is_selectable():
     assert pia6.parse_messages(plain)[0].protocol == 1
 
 
-def test_messages_align_with_ff_so_the_walk_stops_on_the_padding():
-    """A zero alignment byte is a legal message header at this band, and it rejects the packet."""
+def test_a_message_ends_where_its_payload_ends_and_the_packet_pads_with_ff():
+    """This band does not align a message: a reference station starts the next one on the byte after
+    the last payload, and only the packet pads, to sixteen and with 0xFF. A zero there is a legal
+    message header and would reject the packet."""
     m = pia6.build_message(b"A" * 74, protocol=0x2C, port=0)
-    assert len(m) == 92 and len(m) % 4 == 0
-    assert m[90:] == b"\xff\xff"
-    assert 0 not in m[90:]
+    assert len(m) == 90                                    # a sixteen-byte header and the payload
     packed = pia6.pad_payload(m)
     assert len(packed) == 96 and set(packed[90:]) == {0xFF}
+    assert 0 not in packed[90:]
 
 
 def test_the_whole_plaintext_after_the_message_is_ff():

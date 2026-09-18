@@ -339,10 +339,445 @@ The game's code resolves exactly three protocols across its nine Pia call sites:
 Clone protocols 0x74 to 0x77. The console's constant 0x77 clock traffic is Pia's own mesh housekeeping
 below the game. The game's two session-state queries both pass, so it is satisfied with the session.
 
-The ten-second leave is therefore not a rejection of any message and not a wait for a handler message:
-the trade scene never starts. The leave is a timer whose 10000 ms and 1000 ms constants are written by
-the constructor `0x2bcc43c` into an object of the same vtable family as the one that runs `LeaveAsync`.
-The missing condition is whatever constructs the trade scene, above the session and the transport.
+The ten-second leave is the failure branch of the game's own matching sequence, one level above the
+Pia mesh join, and the trade scene is its success branch. The trade flow is `0x13d5bfc`, its step at
+`[flow+0xa4]`, jump table `0x397c118` for steps 0x15 to 0x22. Step 0x17 calls `0x26bdcac`, which builds
+the sequence and stores it at `[manager+0x70]`; step 0x18 polls it through vtable slot 9 (`0x12b3290`),
+which returns true when the outstanding-child counter `[request+0x70]` is zero. The counter goes to 1
+when the sequence starts and stays there for the whole wait; the flow reads no network, session or
+mesh field. Step 0x1e, downstream, is where `0x13d5f94 -> 0x26d8c2c -> 0x2bcb8c8 -> 0x2ca5264` registers
+the handlers. The sequence's steps, by the name strings `0x26bdcac` pairs with their functors:
+
+    LoginRelayServer     looked up before the sequence is built; a missing one returns false
+    Matching             the first child, the one that never completes
+    DataExchangeStart
+    OnCancelDataExchange
+    OnSuccess            the trade scene
+    OnFailure            event 8, flow step 0x23 (table `0x397c134`), the leave
+    OnCancel
+    Cleanup
+
+Step 0x18 has two gates. The first is the sequence's outstanding-child counter, which reads 0 at the
+step's own call site `0x13d6130`. The second is `0x13de870`: `[obj+0x7c] == 1`, where `obj` is the
+network-menu object, persistent across sessions, reading 0 for the whole wait. `[obj+0x7c]` is set to
+1 by the case-0 update `0x13de888` when the current page (`[obj+0x88]`, a page's `+0x5b0`) reports
+result 1: `0x13de950` for ViewTop at `[obj+0x90]`, `0x13de9d8` for ViewAlert at `[obj+0x98]`,
+`0x13dea28` for ViewInMatching at `[obj+0xa0]`; the three pages are built by `0x13de3cc` from the
+`netm` layouts. A page's result is its `+0x5bc`: 1 written by its InputDecide and InputBack handlers
+(`0x13dc7b4`, `0x13dc7ec`, `0x13dd3ec`, installed at `0x13dc0a4`, `0x13dc1a0`, `0x13dc9a0`), 2 for
+`button_00` and 3 for `button_01` (`0x13ddcb4`, by button-name hash). The result is written by player
+input and by nothing on the network. Result 2 or 3 sets `[obj+0x7c] = 2` and `[obj+0x84]` to the
+button.
+
+The timeout is thrown as `gflnet::request::Error::Timeout` at `0x26d4ae8`, 10.2 s after the join
+request, and runs `0x13d654c -> 0x13d6384 -> 0x2c43d78 -> 0x2ca0a10 -> Session::LeaveAsync (0x72a6dc)`,
+then the Error 7 dialog. The sequence's completion callback is `[request+0x90] -> 0x26d69e8 ->
+0x26d6a88`, which receives a result object. What the Matching child waits for is unknown.
+
+Between two Ryujinx instances of the game a full trade runs, and its wire shows what the child waits
+for. After the mesh join both stations run a two-round data exchange on the Stream Broadcast Reliable
+protocol (0x81), on port 0 and port 1: each opens the stream with a type-0x0f message, sends a
+44-byte state record (`0000002c ffff` then a station index and per-station counters, flags 0xa0),
+and sends one type-0x1f content record of 74 bytes carrying a 64-byte payload that begins `484b6264`.
+The joiner's Matching step completes 17 ms after it receives the peer's second-round 0x81 record, and
+`OnSuccess` (`0x26d5f64`) is enqueued on the executor at that instant. The trade box, a 399-byte type-7
+record, crosses later on the Reliable protocol (0x7c) once the scene is open, not before it.
+
+A host built here answers the console's 0x81 stream with a reliable ack and never originates on it: no
+0x0f open, no 44-byte state record, no 0x1f content. The data exchange therefore never completes from
+the console's side, the Matching child never fires, and the sequence times out.
+
+A joining console does not wait to be spoken to first. Against a silent host it opens its own stream,
+sends its record and retransmits it about once a second for the whole twelve seconds, so the ordering
+of the reference pair is whichever station was quicker and a host may answer the offer already
+standing.
+
+A message ends where its payload ends. The 5.27-5.45 band aligns a message to four bytes; this one
+does not, and a reference host bundles two messages in the packet that answers the console's stream
+open: the record on port 0, then its own stream open on port 1 under a header that names the size,
+the protocol and the port and inherits the message flags. Only the packet pads, to a multiple of
+sixteen and with 0xFF, where a zero byte would be read as a message header. A parser that aligns
+walks past the second message and reads the packet as carrying one.
+
+The protocols split two ways in how a packet is addressed. The session, clone clock and reliable
+protocols carry the peer's variable id in the packet header with no footer. RTT and Stream Broadcast
+Reliable carry the mesh destination 0x0001 in the header and name the recipient's variable id in the
+plaintext footer, and both reference stations address them that way. A 0x81 message addressed to the
+peer's variable id is transmitted and never reaches the game: the console's own count of received
+datagrams does not move. Driving the 0x81 data
+exchange as the reference host does is what remains. The 64-byte content payload is byte-identical in
+both directions of the same-save pair except for the sender's station index, so whether any of it is
+per-player is not yet separable.
+
+## The game's reliable channel
+
+Once the data exchange completes, the trade flow leaves the step that waits on it and reaches the
+step that ticks the game's own network object, `0x13d5cac`, which tests `[net+0xb8] > 1`. The object
+advances on what the game reads on protocol 0x7c rather than on anything the transport does: state 0
+to 1 through `0x26d9170`, and 1 to 2 on `[net+0x78]`, which the receive handler `0x26da310` sets in
+its case 0.
+
+A message on this protocol is an eight-byte handler key and a body. The dispatcher compares the key
+against the registered handler's own two words at `+0x1c` and `+0x20` and passes the body through
+unexamined. The handler the game registers on reaching this step carries eight zero bytes.
+
+Two channels open, each a `reliable5` stream with no destination bitmap, addressed to the peer's
+variable id the way the session and clock messages are, at sequence 1 under the message-start,
+message-end and initialized flags:
+
+    port 0    key eight zero bytes      body 0100    the host opens it
+    port 1    key b90101b902b90200      body 0001    the joiner opens it
+
+Each station answers its peer's channel message with a one-entry acknowledgement and with the same
+message back on the same port.
+
+## The trade box
+
+With both channels open the trade screen is up and the game's own messages cross on port 0 behind
+the eight-zero-byte handler key. The receive handler is `0x26da310`. It reads a selector and a
+counter, switches on the selector through the byte table at `0x397e388`, and drops anything above 7.
+
+    1   the station is ready       0x26da3a4   sets [net+0x78], which is what step 0x20 waits on
+    2   the Pokemon it is SHOWING  0x26da3f0   stored at [net+0x98] by 0x26da1d8, nothing else
+    3                              0x26da430   -> 0x26d93c8
+    4   the Pokemon it is OFFERING 0x26da3b0   stored at [net+0xb0] by 0x26da23c, phase 0xbc := 3
+    5   the trade is confirmed     0x26da43c   behind a counter check -> 0x26da2c0
+    6   the offer is made          0x26da458   phase 0xbc := 2, bumps the counter at [net+0xf8]
+    7                              0x26da49c   behind the same counter check, phase 0xbc := 5
+
+Before the switch the handler compares its fourth argument against `[net+0x88]` and aborts on a
+mismatch, so a message from a station the game is not in a trade with never reaches a case.
+
+**SELECTORS 2 AND 4 ARE THE SAME MESSAGE AND DIFFERENT EVENTS.** A station entering the box sends 2
+on its own; it sends 4 when the player offers the Pokemon up. The two land in different slots, and
+only 4 moves the phase. An answer therefore has to carry the selector it is answering: a host that
+answers an offer with a showing fills the wrong slot, and the console sits on the trade screen with
+an empty partner hexagon and no error, because from its side the partner has shown a Pokemon and
+never offered one. `pokeldn/pla/trade_box.py` mirrors the selector for that reason.
+
+The body is the game's own tagged encoding, read by `0x26dac6c` for the selector, `0x26662fc` for
+the counter and `0x26dacbc` for the record. A byte under 0x80 is itself, 0x80 introduces a byte,
+0x81 introduces a halfword, and 0xbc introduces the record, which `0x26da3b0` tests for by hand
+before deserialising.
+
+    0x00  1   the selector
+    0x01  1   the counter, 0 on both record-carrying selectors
+    0x02  1   0xbc
+    0x03  1   0x81
+    0x04  2   the record's length, 0x178
+    0x06  376 the record
+
+The message is 390 bytes of payload under a nine-byte header with no destination bitmap, flags 0x07
+- application data, message start, message end, and neither the initialized bit the opens carry nor
+the zlib bit the data exchange carries - at sequence 2, the opens having taken sequence 1.
+
+A console sent the record-carrying message byte for byte identically in two sessions, on two
+machines, minutes apart, against two different hosts and two different session keys. Nothing in it
+is derived from the session, the peer or the clock: it is a function of the save, which is what
+makes a captured one replayable.
+
+The record is the Gen-8 entity with wider blocks. The header, the LCG, the block permutation and the
+16-bit checksum are `pokeldn.gen8`'s field for field, and a block is 0x58 bytes rather than 0x50, so
+a stored record is 0x168 and a party record 0x178. `gen8.BLOCK_ORDER[(ec >> 13) & 31]` is applied as
+it stands when decrypting and inverted when encrypting. The checksum cannot tell those two apart,
+because permuting whole blocks leaves a sum of 16-bit words alone; what tells them apart is where
+the names land. Read directly, the nickname is the second block's first field at 0x60 and the
+trainer name the fourth's at 0x110, which is the Gen-8 layout with the wider block. Read inverted,
+both strings still decode, one block earlier, against a record that carries neither.
+
+The captured record decrypts to a level-70 Azelf: species 482 at 0x08, the nickname at 0x60, the
+trainer name at 0x110, experience 428750 at 0x10, which is the slow curve at the level the party
+tail carries at 0x168. Its trainer id at 0x0c is the same four bytes the data exchange record
+carries as the player id, and its trainer name is the name the data exchange carries, so the two
+messages describe one player.
+
+## Confirming the trade
+
+Choosing Trade it sends selector 5 and a counter, two bytes behind the same zero key, at the next
+sequence on the same channel. Its sender is `0x26d9770`, gated on `[net+0xb8] == 3`, which is the
+state the station reached by sending its own offer; after the send it sets `[net+0xb8]` to 4. Its
+consumer `0x26da2c0` sets the phase `[net+0xbc]` to 4 and, when `[net+0xb8]` is already 4, takes the
+branch that clears `[net+0xc8]` and allocates into it.
+
+So the confirmation is a rendezvous between a station's own send and its peer's: the station that
+confirms second finds the state already 4 and goes on. A host that acknowledges the console's
+confirmation and sends none of its own leaves the console at state 4 with the phase never reaching
+4, which is the trade screen waiting.
+
+Past the confirmation the console opens a **second handler key on port 1**, `b90101b902b902` with a
+last byte of 01 where the channel open carries 00, and the same two-byte body, without the
+initialized flag. It waits for that message to come back the way it waits for the channel opens. A
+host that owes a mirror once per port rather than once per key answers the open and never this, and
+the trade screen waits with the phase already at 5 and nothing else on the wire.
+
+The counter is the halfword the handler reads before the switch, and selectors 5 and 7 check it
+against `[net+0xfa]` and drop a message carrying less. `0x26d9770` sends `[net+0xf8]` as it stands,
+where the selector-6 sender at `0x26d98ac` sends it plus one.
+
+## The trade object's own state machine
+
+`[net+0xb8]` is the state the trade flow's step 0x20 tests, and `0x26d9094` is the tick that moves
+it. Read alongside the handler's cases it accounts for the whole exchange.
+
+    0     if [net+0x90] is set, 0x26d9170 -> state 1
+    1     once [net+0x78] is set, one 64-bit store of 0x200000002 puts the state at 2 and the
+          phase [net+0xbc] at 2 in the same instruction
+    3, 4  while [net+0xc0] is set: read the stopwatch at [net+0xc8], and once [net+0xd0] is past
+          1.5 seconds and the phase is 4 or 5, 0x26d9254 sends selector 7 and the state becomes 5
+    5     no case. The object is finished
+
+So a station that has offered, confirmed and seen its peer's confirmation ends at state 5 with the
+phase at 5 and the stopwatch allocated, and its tick does nothing further. Reaching that state is
+not the trade being carried out: with both stations there, both Pokemon on screen and the whole
+message chain answered, the save is untouched and the screen still reads Communicating. Whatever
+executes the trade is above this object.
+
+## The job that carries the trade out
+
+Reaching state 5 is not the trade. The scene above the trade object polls `0x26d9ea0`, which is
+`[net+0xd8]` non-null and that job's state at `+0x10` in 6..10, and the job's success callback
+`0x26db864` is what writes 6 to `[net+0xb8]`. `0x26d9a90` builds the job from the sub-state 7 arm,
+out of `[net+0xa0]`, `[net+0xa2]`, `[net+0xa4]`, `[net+0xa8]` and the offered record at `[net+0xb0]`.
+It is 0x140 bytes, constructed at `0x26dc08c` with its vtable at `0x416c8f8`, started at `0x26dc564`
+with eight callbacks, and its state at `+0x10` starts at 0 and is set to 1 by `0x26dc2c8`.
+
+`0x26dc71c` is its update: a fourteen-state switch on `state - 1` through the table at `0x397e390`.
+The arm for state 2 is
+
+    0x26dc798   x0 = [job+0x28]; 0x26d7e5c(x0, 3); on true the state becomes 3, otherwise it stays
+
+and `0x26d7e5c(obj, n)` is not a wait on the peer. It reads `[obj+0x70]`, which has to be non-null,
+`[obj+0x90]`, which has to be set, and returns `[obj+0x92] == n`. Those two fields are written by
+`0x26d7e84`, the sender, and only after a send succeeds: it tests `0x2ca34e0([obj+0x70],
+[obj+0x88])`, sends through `[obj+0x70]`'s vtable at +0x40 addressed to `[obj+0x88]`, and then
+records the phase at `+0x92` and sets `+0x90`.
+
+## The phase protocol, and the message only a host sends
+
+The job announces phases on a handler key of its own, `01 00 00 00 00 00 00 00`, which the game
+registers on the fly when the job is created. The object it announces through keeps three pairs of
+fields, a flag and a halfword each:
+
+    [obj+0x94] / [obj+0x96]   the phase this station has announced, written by 0x26d7d8c
+    [obj+0x98] / [obj+0x9a]   the phase the peer has announced, on receiving selector 1
+    [obj+0x90] / [obj+0x92]   written by 0x26d7e84, and on receiving selector 2
+
+The two senders are the same eight instructions apart from the selector they write, and the receive
+handler at `0x26d7f90` is their mirror image: selector 1 fills the peer pair, selector 2 fills the
+third, and selector 0 aborts. The message is the selector and the phase, a byte each while the phase
+is under 0x80.
+
+The job's state 2 arm asks `0x26d7e5c(obj, 3)`, which is the third pair holding 3, so a station
+leaves state 2 only once its peer has announced selector 2 with that phase.
+
+**SELECTOR 2 IS THE HOST'S TO SEND.** `0x26d7e84` is reached only behind `[obj+0x78]`, written once
+at job creation by `0x26d7aa0` from a predicate that ignores its argument and compares the station
+against the session's host station. On a joiner it is zero and is never revisited, so a joiner never
+sends selector 2 and its own job cannot leave state 2 by itself. The host owes the message. A host
+that mirrors the joiner's selector 1 and sends nothing else fills the peer pair and leaves the third
+empty, which is a trade screen waiting with both Pokemon shown, every message acknowledged and
+nothing outstanding on the wire.
+
+A station's sliding window on a port is its own, so every message a station originates there takes
+the next id in its own sequence, mirrors included. Numbering a mirror with the id the peer used
+looks right while the two streams are in lockstep and collides as soon as one station sends two
+messages where the other sent one: the second arrives under an id already delivered, and the window
+discards it without dispatching it. That is one message lost in silence, acknowledged on the wire,
+with the receiving handler never entered.
+
+The setup that writes that flag has five exits before the store, all of which leave it at the
+constructor's zero: a null argument, a null cast, `[vtable+0xd8]()` not returning 2, a station list
+whose count at `+0x28` is not 2, and either station slot coming out null. Against a two-station
+session with the ids the console itself sent, none of them is taken.
+
+## The completed trade
+
+With the host answering each phase, the job walks out on its own. The console announces 3, 6, 0xb
+and 0xe in turn, the host answers each with selector 2 and the same phase, and each answer fills the
+third pair and moves the job on:
+
+    <-  0x7c p0  01 03      ->  01 03   the mirror     ->  02 03   the host's
+    <-  0x7c p0  01 06      ->  02 06
+    <-  0x7c p0  01 0b      ->  02 0b
+    <-  0x7c p0  01 0e      ->  02 0e
+
+240 ms after the first `02 03` is dispatched the third pair reads 1 and 3, and that was the whole
+stall. The animation plays, the console says to take good care of the Pokemon, and the box comes
+back with the panel reading the host's player name as the original partner. Eight files in the save
+differ from the pre-run backup: `main`, `main2` and `backup` in both slots, and both ExtraData
+files. It had been byte-identical through every earlier run.
+
+The console then sends a fresh selector 2 on the trade key, showing whatever the box cursor is on
+now, and a message on the port-1 second key with a body of two zero bytes. The host mirrors a key
+once, so it does not answer that second body, and the trade completes regardless.
+
+## What a trade rewrites
+
+A console shows the box cursor's Pokemon on the trade key every time the cursor moves, so the record
+a host traded in comes back over the wire out of the console's own box, and the two can be compared
+byte for byte. A level-50 record sent with a level-70 party tail came back with 23 bytes changed and
+no others:
+
+    0x006  2   the checksum
+    0x092  1   the current HP, 235 sent, 192 stored
+    0x0b8  26  the handling trainer's name, filled in with the receiver's own
+    0x0d3  1   the handling trainer's language
+    0x0d4  1   the current handler, set to 1
+    0x0d8  1   the handling trainer's friendship
+    0x16a  12  the six party stats, recomputed
+
+So the receiving game fills in its own handler fields and rebuilds the current HP and the stats from
+the level and the experience, and it does not trust the tail it was sent. Everything else is stored
+as it arrived, which is what makes a record the host's to write.
+
+A console walked across its box on that screen is a library of records the game itself considers
+legal, and 46 of them place the moves: four halfwords at 0x54 with four bytes of remaining PP at
+0x5c, both inside the first block, where Gen 8 keeps them in the second at 0x72 and 0x7a. Every pair
+of records of one species carries the same four move ids and the same PP across different levels,
+encryption constants and personality values, a lower-level Chimchar differs from a higher one in the
+fourth move alone, and the Gen-8 offsets read zero in all 46. The three bytes at 0x50, 0x51 and 0x52
+are the height scalar, the weight
+scalar and the scale, which is why the first and the third are always equal.
+
+That comparison is also how the field map was found. The block starts are `pokeldn.gen8`'s plus
+eight bytes per block before them - the nickname at 0x60 for its 0x58, the handling trainer's name at
+0xb8 for its 0xa8, the trainer's name at 0x110 for its 0xf8, the party tail at 0x168 for its 0x148 -
+and the three handler fields inside the third block keep their Gen-8 positions plus 0x10. Inside a block the offsets follow their block: the first block is Gen 8's
+field for field apart from the moves, the second is Gen 8's plus 8, the third plus 0x10, the fourth
+plus 0x18 with the ball moved to just after the met date.
+
+The captured pair exchanges selector 2 and stops: both stations show a Pokemon within 42 ms of one
+another, both acknowledge, and the rest of the capture is RTT. Nobody offered anything up, so
+nothing past the showing is recorded anywhere.
+
+`pokeldn/pla/trade_box.py` builds the message and `pokeldn/pla/pokemon.py` the record; both
+reproduce the console's own bytes on both selectors.
+
+## Choosing what to offer
+
+The record a host offers is its own to compose. A level-100 Arceus under the host's trainer name,
+with the personality value chosen so that the Gen-6 shiny value came out 0, was traded in and the
+console drew it as sent: species Arceus, level 100, nature Lax, experience 1250000, the four moves
+105, 326, 449, 63 on the summary, the sparkle on the summary, on the box panel and on the model,
+and the same eight save files rewritten as on the two trades before it.
+
+Two of those readings check the map by arithmetic rather than by eye. The panel's ID No. read
+201745, which is the whole 32-bit id at 0x0c modulo a million, so the halfword at 0x0e is the high
+half of one trainer id and not a field of its own. The nature byte read 9 and the panel read Lax,
+which is the Gen-3 nature table.
+
+THE FIELD MAP. What the game reads out of a record is PKHeX's PA8, and every offset measured here
+agrees with it: the species at 0x08, the held item at 0x0a, the id at 0x0c, the experience at 0x10,
+the ability at 0x14, the personality value at 0x1c, the nature at 0x20, the form at 0x24, the effort
+values at 0x26, the moves at 0x54 with their PP at 0x5c, the nickname at 0x60, the relearn moves at
+0x8a, the current HP at 0x92, the packed individual values at 0x94, the growth values at 0xa4, the
+absolute height and weight as floats at 0xac and 0xb0, the handling trainer at 0xb8, the version at
+0xee, the language at 0xf2, the trainer name at 0x110, the met date at 0x134, the ball at 0x137, the
+egg and met locations at 0x138 and 0x13a, the met level and the trainer gender sharing 0x13d, the
+level at 0x168 and the six stats at 0x16a. `pokeldn/pla/pokemon.py` holds it as four tables.
+
+Three of its fields are confirmed by the 47 captured records rather than by the source the map came
+from. The alpha bit at 0x16 and the alpha move at 0x3e are set on the same three records and on no
+others, and those three are the ones carrying 0xff in all of 0x50, 0x51 and 0x52. The scale at 0x52
+equals the height scalar at 0x50 in all 47, which is the pattern that had looked like an unread
+triple. The packed individual values at 0x94 carry the egg and nickname bits clear in every record,
+with six values in range. Every record carries version 47 and language 2, the sanity halfword 0 and
+the affixed ribbon 0xff.
+
+ANSWERING EVERY MESSAGE. A console in the box screen sends a showing on every cursor move, and a
+player who cancels an offer sends the mirrored selector with its round byte advanced and then offers
+again. A host that answers one message per selector per station leaves all of those unanswered: a
+run where twelve Pokemon were shown before the offer had one showing answered, eleven cursor moves
+stale by the time the offer arrived, and the second offer, `04 01`, drew nothing at all. The three
+trades that completed each had a single showing before the offer, which is why it took a long box
+session to surface. The host answers each distinct (selector, round, record) once, which answers
+every new message and drops a retransmission.
+
+A record built from zeros with the field map here reproduces a console's own record byte for byte
+apart from the fields chosen: against the console's own level-68 Gengar, the only differences were
+the effort values at 0x26, the individual values at 0x94, the growth values at 0xa4 and the
+purchased move record at 0x159, all four of them deliberate.
+
+Such a record was traded in and stored. A shiny level-68 Gengar assembled from 376 zero bytes,
+nicknamed, with perfect individual values and every growth value 10, went into a console's save on
+the first attempt: the partner summary drew the species, the nickname, the sparkle, the four moves
+with their PP, nature Naive for the byte 14, experience 322272, and all six effort badges reading
+10, which is what draws 0xa4. The dispatch chain was the one the console's own records take, 04, 05,
+07 and then the phase messages, with nothing retried.
+
+The console showed the stored record back out of its box afterwards, and it differs from what was
+sent in the handler fields, the current HP and the stats alone. The individual values, the growth
+values, the empty effort values, the moves, the PP, the size, the ball, the met data and the empty
+purchased move record are all stored exactly as they arrived, which is the record layer answered:
+what a host composes is what the save keeps. The stats the game computed from those values are
+273/210/199/322/345/220 for the 239/136/121/322/304/133 tail it was sent, five of the six raised and
+the speed returned equal to what was sent.
+
+ANYTHING THE GAME HAS CAN BE COMPOSED. An alpha, shiny, nicknamed Garchomp at level 100 of a
+species the save had never held went in on the first attempt, built from 376 zero bytes with every
+value out of the game's own tables: the four latest level-up moves with their PP, the experience for
+the level on the species' curve, its first ability, its gender ratio, the average height and weight
+against the alpha's 0xff scalars, and the six stats from the model above. The console drew the
+nickname on the hexagon, the red alpha marker and the shiny sparkle beside it in the name bar, the
+height and weight, Adamant, the effort badges at 10, and the six stats exactly as sent.
+
+That record came back out of the box with 14 bytes changed: the checksum, the handling trainer's
+name, language, handler flag and friendship. The stats were not touched, because the tail it was
+sent is what the game itself computes, which is the stat model confirmed a second way.
+
+The handling trainer's friendship a trade writes is the species' own base friendship from the
+personal entry, 50 for both Gengar and Garchomp.
+
+MASTERED MOVES. The eight bytes at 0x15d are a bitmap over the 61 moves the game's mastery list
+holds, in that list's order, and a species may master only those its personal entry permits, a u64
+at 0xa8. Of Garchomp's 21 permitted moves two are in the record above, Earth Power and Outrage,
+while Dragon Claw and Double-Edge are not in the list at all and can never carry the flag.
+
+The game reads that bitmap, and a record built here sets it. The marker is the scroll on the
+Pastures screen's Change moves, and a move draws it when its mastery level is at or under the
+current level OR its bit is set, which is why three level-100 records drew it on every move and said
+nothing. The test was a console's own level-13 Chimchar rebuilt with one bit changed: Tackle, whose
+mastery level is 10, drew the scroll on both; Ember, 15 and not in the mastery list at all, drew
+nothing on both; Swift, 20 and flagged at index 10, drew nothing on the console's own record and the
+scroll on ours. The mastery levels are `mastery_la`, one entry per species and form in the
+learnsets' own format.
+
+WHAT THE GAME DOES NOT CHECK. A record sent at level 50 carrying a met level of 70 was stored and
+shown back out of the console's own box with the met level it was sent, so the receiving game does
+not compare the two.
+
+THE STATS THE GAME COMPUTES. A trade discards the six halfwords in the party tail and writes its
+own, and `pokeldn/pla/stats.py` reproduces them: each stat is a growth term, the rounded
+`(sqrt(base) * multiplier + level) / 2.5`, plus a base term, `((level / 100 + 1) * base)` truncated
+and the level added for HP and `((level / 50 + 1) * base / 1.5)` truncated with the nature at 110%
+or 90% for the rest. The multiplier is read from a table by the growth value plus a bias from the
+individual value, 3 at 31 and above, 2 at 26 and 1 at 20, with the sum clamped at 10.
+
+The model is verified on twelve numbers a console computed: 273/210/199/322/345/220 for a built
+record with perfect individual values and every growth value 10, and 239/136/121/322/304/133 for the
+console's own record the values came from. Both at level 68 with nature 14 and Gengar's base stats.
+The clamp is also why a record sent with perfect values came back with the speed it was sent: the
+donor's individual value 22 and growth value 9 reach 10 as surely as 31 and 10 do, so the growth
+term is identical.
+
+The absolute height and weight at 0xac and 0xb0 are the species average times a factor from the
+scalars, `(scalar / 255) * 0.40000004 + 0.8` per scalar, height alone for the height and both
+multiplied for the weight, computed in 32-bit floats. For a console's own Gengar, scalars 111 and
+221 against the averages 150 and 405, it gives 146.11766052246094 and 452.38031005859375, the floats
+the record carries.
+
+A species' base stats, gender ratio, ability, experience curve, average height and weight and
+level-up learnset, and each move's PP, are all in the game's own tables, and PKHeX carries copies:
+`personal_la` at 0xB0 bytes an entry, `lvlmove_la.pkl` as a 16-bit BinLinker archive of move
+halfwords followed by level bytes, the PP in `MoveInfo8a`, the curves in `Experience`. The personal
+entry says whether a species is in the game at all, 0x21 bit 6, which answers what can be built
+without guessing at it: 264 species. `scratchpad/pla_tables.py` reads them and
+`scratchpad/pla_make_from_tables.py` composes a record for any of them.
+
+BUILDING ONE. `pokemon.build` assembles a record from 376 zero bytes, writes the fields it is given
+over defaults that every captured record agrees on, and writes its own checksum. A field the map
+does not cover stays zero, so a record the game accepts from `build` is a record the map covers well
+enough. `scratchpad/pla_make_record.py` composes one that way.
 
 ## The Clone Clock and Atomic protocols
 
@@ -484,9 +919,75 @@ is unread. `pokeldn.pla.user_password` and `pokeldn.pla.link_code` are the two d
 `pokeldn.pla.parse_advertise_data` reads a whole advertisement, checking the code the game states
 against the code its password decodes to.
 
+## Retail
+
+The same host drives a retail console over the air. On 2026-09-18 a record this project built went
+into a retail Legends Arceus save: a shiny level-13 Chimchar with perfect individual values and
+Swift's mastery bit set, assembled from 376 zero bytes, traded from a French cartridge's own box
+screen for a level-59 Ptiravi.
+
+Nothing above the packet layer changed. The retail console associated to the host's AP on channel 6,
+completed the Pia session, took the data exchange record, opened the game channel, showed its own
+Pokemon, and ran the trade through the same selectors and the same phase chain as an emulated one:
+0400, 0500, 0700, then phases 3, 6, 11 and 14 from the host. What the save stored differs from what
+was sent in nine byte runs: the checksum, the handling trainer's name, its language, the handler
+flag and its friendship. The stats were untouched, because the tail sent is what the game computes.
+The handler language it wrote is 3 for a French save where an English one wrote 2.
+
+WHAT THE RADIO NEEDS. The host over the air is `bin/pla_host.py` without `--ip-host`, as root, with
+an AP-capable phy. Two flags that do not exist over IP decide whether it reads anything at all: this
+machine's TP-Link Archer T3U hands its monitor interface already-decrypted frames that still carry
+the CCMP header and MIC, so `skip_encryption` and `accept_decrypted_ccmp` both have to be true. They
+come from `config/host.toml` and the host prints them at startup. The advertisement needs nothing:
+`pla.build_advertise_data` is byte-identical to the beacon a retail console publishes for the same
+link code.
+
+A HOST RESTART COSTS THE CONSOLE ITS SESSION. Bringing the host up without the trade box and
+restarting it to enable one left the console joined to an AP that had gone, and its next search
+ended in error 2318-0006, a communication error raised before the trade warning screen and so
+before anything a failed trade would penalise. The console recovers by leaving the trade menu
+entirely and searching again. The host re-reads its offer file between offers, so the record can be
+changed without a restart; what cannot be changed that way is a flag.
+
+## Leaving
+
+A console quitting the trade sends the Session type-3 leave request, four times in a burst about
+150 ms apart, and closes its ldn_mitm station without waiting for anything:
+
+    03 | u32 random | location id (12) | reason byte | IPv4 (4) | port big-endian (2)
+
+The location id is `pia_connect._location_id`'s, the eight-byte station constant then a zero
+halfword then the variable id big-endian, and the address is the station's own. The random word
+differs on every send, retransmissions of one leave included, so nothing reads it back, and the
+reason byte is 0 on all four captured. The band's type table pairs a leave with no reply: what a
+host owes is the type-7 left-station sync to the OTHER stations, and a session of two has none to
+tell, which is why a host that answers nothing costs a leaving console nothing.
+
+A console sent one takes it, and the message turns out to be decoration. From a box screen with
+nothing offered, about twelve and a half seconds after the host stops the game draws "Your trade
+partner chose not to continue trading", and A dismisses it through some three seconds of
+Communicating into `DisconnectedByUser`, its station closed and the player back on the field, with no
+error code. The control settles what draws it: a host that stops at the same mark and sends no leave
+at all, `--leave-sends 0`, produces the same dialog in the same words after 12.7 s against the
+leave's 12.5, and the same exit. The two runs differ by four datagrams and by nothing the console
+does. So what the game acts on is its own keepalive timeout, it neither shortens nor changes it for a
+leave, and a host that simply goes away is as clean as one that announces itself.
+
+The host's own leave is that message with the host's ids and address, `--leave-after SECONDS`.
+`bin/pla_host.py` sends it to each station that has joined and ends the run. It has no capture
+behind it, because no reference session in hand ever ends: the pair capture stops mid-session and
+every emulated run so far was quit by the console. What is pinned is the shape, against the
+console's four, and that a scripted console reads the host's own leave and finds the host's
+location id in it.
+
 ## Unresolved
 
 - What produces `LINK_CODE_MASK`. It survives a game restart, so it is not per-boot, and it is not
   a literal in `main`. Whether it is per-title or per-console cannot be separated here: one console
   runs this game.
-- Everything above the packet header: the station handshake and the game's own message layer.
+- The two messages a console sends after a trade completes that a host does not answer: a fresh
+  showing on the trade key, and a two-zero-byte body on the second key of port 1. Both arrive with
+  the trade already written and the field back under the player's control.
+- Whether a console reads the host's type-3 leave, and what it does with it. The message is built
+  and proven against a scripted console; no real console has been sent one.
+- Whether the same host drives retail hardware. Every trade so far is into an emulated console.

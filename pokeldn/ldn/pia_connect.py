@@ -417,6 +417,31 @@ def _session_station_v11(constant_id, variable_id, ip, port, *, station_index, r
     return bytes(out)
 
 
+SESSION_LEAVE_REQUEST = 3
+
+
+def build_session_leave_v11(constant_id, variable_id, ip, port=12345, *, reason=0,
+                            random4=b"\0\0\0\0"):
+    """Session type-3 leave request, 24 bytes: the station saying it is going.
+
+    Read off four of a console's own, two per session, which it sends in a burst and does not wait
+    to have answered. The band's type table (NintendoClients, Session Protocol (new)) pairs a leave
+    with nothing; what a host owes the OTHER stations is the type-7 left-station sync, and a session
+    of two has none to tell.
+
+        03 | u32 random | location id (12) | reason byte | IPv4 (4) | port big-endian (2)
+
+    The random field differs on every send, including retransmissions of one leave, so nothing
+    reads it back and the default here is zeros; the host passes fresh bytes to look like a station
+    rather than because anything depends on it. `reason` is 0 on all four.
+    """
+    return (bytes([SESSION_LEAVE_REQUEST])
+            + bytes(random4)[:4].ljust(4, b"\0")
+            + _location_id(constant_id, variable_id)
+            + bytes([reason & 0xFF])
+            + _ip4(ip) + (port & 0xFFFF).to_bytes(2, "big"))
+
+
 def build_session_update_v11(host_constant_id, host_var, stations, *, sequence_id=1):
     """Session type-5 station-list update for the 6.16-6.30 band (`0x738740`, body read at `0x73897c`).
 

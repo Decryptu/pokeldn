@@ -162,3 +162,30 @@ def test_the_host_mac_encodes_its_address_the_way_the_peer_does():
     assert t.our_mac.hex() == "0200ac105680"
     assert IpHostTransport(our_ip="172.16.86.128", mac=b"\x02\x01\x02\x03\x04\x05").our_mac == \
         b"\x02\x01\x02\x03\x04\x05"
+
+
+def test_a_station_that_leaves_frees_its_node_and_the_next_scan_says_so(host):
+    """A station's node info states its own address, which need not be the address its connection
+    comes from: a peer on this machine connects from one and advertises another. The node slot is
+    tracked by the connection, because a session capped at two advertises as full while a slot is
+    held by a station that has gone, and the console will not join."""
+    udp = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
+    udp.settimeout(3)
+    tcp = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+    tcp.settimeout(3)
+    tcp.connect((HOST_IP, DISCOVERY_PORT))          # connects from 127.0.0.1
+    tcp.sendall(ldn_mitm.build(
+        ldn_mitm.CONNECT,
+        ldn_mitm.build_node_info(PEER_IP, bytes.fromhex("02007f000002"), b"RyuPlayer")))
+    kind, synced = ldn_mitm.parse(tcp.recv(65535))   # advertises 127.0.0.2
+    assert kind == ldn_mitm.SYNC_NETWORK
+    assert synced[ldn_mitm_host.OFF_NODE_COUNT] == 2
+
+    tcp.close()
+    assert _wait(lambda: host.participants == [])
+    udp.sendto(ldn_mitm.build(ldn_mitm.SCAN), (HOST_IP, DISCOVERY_PORT))
+    _kind, info = ldn_mitm.parse(udp.recvfrom(65535)[0])
+    assert info[ldn_mitm_host.OFF_NODE_COUNT] == 1, "the seat is free again"
+    assert ldn_mitm_host.read_node(info, 1) == ("0.0.0.0", bytes(6), 0, 0, b"")
+    assert ldn_mitm_host.read_node(info, 0)[0] == HOST_IP
+    udp.close()

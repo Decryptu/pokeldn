@@ -214,6 +214,10 @@ class IpHostTransport:
         self._pia_tx = None
         self._tcp = None
         self._clients = []
+        # conn -> the node slot it was seated in. A station's advertised address is its own node
+        # info's, which a peer sharing this machine states differently from the address its TCP
+        # connection comes from, so the slot cannot be found by address when the connection closes.
+        self._seats = {}
         self._lock = threading.Lock()
         self._stop = threading.Event()
         self._thread = None
@@ -338,6 +342,7 @@ class IpHostTransport:
             return
         node = bytes(payload)[:ldn_mitm.NODE_INFO_SIZE].ljust(ldn_mitm.NODE_INFO_SIZE, b"\0")
         index = self._seat(node)
+        self._seats[conn] = index
         with self._lock:
             info = self._info
         conn.sendall(ldn_mitm.build(ldn_mitm.SYNC_NETWORK, info))
@@ -394,7 +399,8 @@ class IpHostTransport:
             conn.close()
         except OSError:
             pass
-        gone = [p for p in self.participants if p[1] == addr[0]]
+        seat = self._seats.pop(conn, None)
+        gone = [p for p in self.participants if p[0] == seat or p[1] == addr[0]]
         for p in gone:
             self.participants.remove(p)
             with self._lock:
@@ -403,7 +409,9 @@ class IpHostTransport:
                 count = self._info[OFF_NODE_COUNT]
                 self._info = self._info[:OFF_NODE_COUNT] + bytes([max(1, count - 1)]) \
                     + self._info[OFF_NODE_COUNT + 1:]
-        self.log(f"[host] console left: {addr[0]} ({why})")
+        self.log(f"[host] console left: {addr[0]} ({why}), "
+                 f"node {seat if seat is not None else '?'} freed, "
+                 f"{self._info[OFF_NODE_COUNT]} node(s) advertised")
 
     # -- the data plane ---------------------------------------------------------
 
@@ -483,6 +491,7 @@ class IpHostTransport:
             except OSError:
                 pass
         self._clients = []
+        self._seats = {}
         for s in (self._udp, self._udp_tx, self._tcp, self._pia, self._pia_tx):
             try:
                 if s:

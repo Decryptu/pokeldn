@@ -111,3 +111,39 @@ def test_update_header_offsets():
     # 6.32-style player record: id 16, length u32 BE, encoding, name.
     assert e[59:75] == pc.DEFAULT_PLAYER_ID
     assert e[75:79] == (1).to_bytes(4, "big") and e[79] == 1 and e[80:81] == b" "
+
+
+# Four of a console's own type-3 leave requests, two per session, off the ph44 capture. The random
+# field is the only part that moves, including between retransmissions of one leave.
+CONSOLE_LEAVES = (
+    "031ea65baaac560110000200000000e76700ac1056013039",
+    "0307961814ac560110000200000000e76700ac1056013039",
+    "03f48f035aac560110000200000000270f00ac1056013039",
+    "0317829b90ac560110000200000000270f00ac1056013039",
+)
+
+
+def test_the_leave_request_is_the_consoles_own_bytes():
+    """A station saying it is going: type, a random word, its location id, a reason byte, its
+    address. `docs/pla.md`, Leaving."""
+    for hexed in CONSOLE_LEAVES:
+        raw = bytes.fromhex(hexed)
+        var = int.from_bytes(raw[15:17], "big")
+        built = pc.build_session_leave_v11(raw[5:13], var, "172.16.86.1", 12345,
+                                           random4=raw[1:5])
+        assert built.hex() == hexed
+    assert len(bytes.fromhex(CONSOLE_LEAVES[0])) == 24
+
+
+def test_the_leave_carries_the_senders_own_location_and_address():
+    """The host's leave is the same message with its own ids, which is the only way it can be
+    read: the captures have no host-side leave in them."""
+    built = pc.build_session_leave_v11(bytes.fromhex("ac56801000020000"), 0x00C6,
+                                       "172.16.86.128", 12345, random4=b"\x01\x02\x03\x04")
+    assert built[0] == pc.SESSION_LEAVE_REQUEST == 3
+    assert built[1:5] == b"\x01\x02\x03\x04"
+    assert built[5:17].hex() == "ac56801000020000000000c6"
+    assert built[17] == 0                                   # the reason, 0 on all four captured
+    assert built[18:22] == bytes([172, 16, 86, 128])
+    assert built[22:24] == (12345).to_bytes(2, "big")
+    assert len(built) == 24
