@@ -417,9 +417,18 @@ advances on what the game reads on protocol 0x7c rather than on anything the tra
 to 1 through `0x26d9170`, and 1 to 2 on `[net+0x78]`, which the receive handler `0x26da310` sets in
 its case 0.
 
-A message on this protocol is an eight-byte handler key and a body. The dispatcher compares the key
-against the registered handler's own two words at `+0x1c` and `+0x20` and passes the body through
-unexamined. The handler the game registers on reaching this step carries eight zero bytes.
+A message on this protocol is an eight-byte handler key and a body. The dispatcher `0x2ca4a88`
+compares the key against each registered channel's own eight bytes at `+0x6c` and hands the body to
+that channel's receiver with the key stripped. Two channels are registered in the whole game, both
+through `0x2bcb8c8`: key `00 00 00 00 00 00 00 00` for the trade box, created by `0x26d8c2c`, and key
+`01 00 00 00 00 00 00 00` for the phase protocol, created by `0x26d7aa0`.
+
+Port 0 and port 1 are two Reliable protocol instances, registered one after the other in the game's
+protocol sequence at `0x2bba180` as `0x7c000000` and `0x7c000001` (the stream broadcast protocol
+gets the same pair, `0x80000000` and `0x80000001`). The dispatcher polls port 0 of 0x68, 0x7c and
+0x80 and nothing on port 1, and the port-1 protocol id is referenced by its registration and its
+teardown alone, so nothing a port-1 message carries reaches a game handler through this path. The
+code that sends on port 1 is not located.
 
 Two channels open, each a `reliable5` stream with no destination bitmap, addressed to the peer's
 variable id the way the session and clock messages are, at sequence 1 under the message-start,
@@ -504,11 +513,13 @@ confirms second finds the state already 4 and goes on. A host that acknowledges 
 confirmation and sends none of its own leaves the console at state 4 with the phase never reaching
 4, which is the trade screen waiting.
 
-Past the confirmation the console opens a **second handler key on port 1**, `b90101b902b902` with a
-last byte of 01 where the channel open carries 00, and the same two-byte body, without the
+Past the confirmation the console sends a **second message on port 1**, `b90101b902b902` with a
+last byte of 01 where the port-1 open carries 00, and the same two-byte body, without the
 initialized flag. It waits for that message to come back the way it waits for the channel opens. A
-host that owes a mirror once per port rather than once per key answers the open and never this, and
-the trade screen waits with the phase already at 5 and nothing else on the wire.
+host that owes a mirror once per port rather than once per leading eight bytes answers the open and
+never this, and the trade screen waits with the phase already at 5 and nothing else on the wire.
+The leading eight bytes match neither game handler key, so what waits for the mirror is not the
+handler dispatch; where the game reads port 1 is unlocated.
 
 The counter is the halfword the handler reads before the switch, and selectors 5 and 7 check it
 against `[net+0xfa]` and drop a message carrying less. `0x26d9770` sends `[net+0xf8]` as it stands,
@@ -608,8 +619,11 @@ differ from the pre-run backup: `main`, `main2` and `backup` in both slots, and 
 files. It had been byte-identical through every earlier run.
 
 The console then sends a fresh selector 2 on the trade key, showing whatever the box cursor is on
-now, and a message on the port-1 second key with a body of two zero bytes. The host mirrors a key
-once, so it does not answer that second body, and the trade completes regardless.
+now, which the host answers with its own showing, and the port-1 message with its last byte 01 and
+a body of two zero bytes, where the two earlier port-1 bodies carried `00 01`. The host mirrors a
+port-1 message once, so it does not answer that third one, and the trade completes regardless: a
+retail console sent both after the trade of 2026-09-18 with the record already in its save and the
+player back on the field.
 
 ## What a trade rewrites
 
@@ -985,9 +999,9 @@ location id in it.
 - What produces `LINK_CODE_MASK`. It survives a game restart, so it is not per-boot, and it is not
   a literal in `main`. Whether it is per-title or per-console cannot be separated here: one console
   runs this game.
-- The two messages a console sends after a trade completes that a host does not answer: a fresh
-  showing on the trade key, and a two-zero-byte body on the second key of port 1. Both arrive with
-  the trade already written and the field back under the player's control.
-- Whether a console reads the host's type-3 leave, and what it does with it. The message is built
-  and proven against a scripted console; no real console has been sent one.
-- Whether the same host drives retail hardware. Every trade so far is into an emulated console.
+- The port-1 Reliable stream: which code sends its three messages and which reads them. The
+  leading eight bytes match neither game handler key and the handler dispatch never polls port 1;
+  the body changes from `00 01` to `00 00` once the trade is written, and a host that answers none
+  of them past the open completes the trade.
+- Whether a retail console reads the host's type-3 leave, and what it does with it. The emulated
+  console draws the same dialog at the same time with and without it.
