@@ -275,6 +275,10 @@ def build_parser():
                          "end the run; the one direction no capture shows")
     ap.add_argument("--leave-sends", type=int, default=4,
                     help="how many times to send it; a console sends four")
+    ap.add_argument("--stay-after-leave", action="store_true",
+                    help="keep the network up and go silent after the leave instead of ending the "
+                         "run; separates what a console reads in the leave from what it reads in "
+                         "the network going down")
     ap.add_argument("--data-exchange-skip-source-check", action="store_true",
                     help="put the skip-source-check flag on the record, where a reference host "
                          "sends none; one variable if a run shows the record is not dispatched")
@@ -457,7 +461,7 @@ def main():
                 for ip, ids in list(station_ids.items()):
                     if ip not in left and now - ids["at"] >= args.leave_after:
                         leave(ip)
-                if left and all(ip in left for ip in station_ids):
+                if left and all(ip in left for ip in station_ids) and not args.stay_after_leave:
                     print("[pla] left the session; the run ends here")
                     break
             # Open the Net exchange with every station that has joined, and keep repeating it until
@@ -476,7 +480,7 @@ def main():
                     # station down and rebinds every cycle, and each new station window needs the
                     # Net 0x11 again to fill its +0xb8 and pass WaitConnected. Gating on `answered`
                     # gave exactly one working window, then silence for every cycle after.
-                    if ip == transport.our_ip:
+                    if ip == transport.our_ip or ip in left:
                         continue
                     if now - net_sent.get(ip, 0) < NET_REPEAT_SECONDS:
                         continue
@@ -500,6 +504,8 @@ def main():
             for payload, src_ip in transport.recv():
                 seen += 1
                 record(rec="in", src=src_ip, hex=payload.hex(), t=time.time())
+                if src_ip in left:
+                    continue          # silent after the leave; the network stays up
                 if not pia6.is_pia6(payload):
                     print(f"[pla] {src_ip}: not a version-11 packet, {payload[:8].hex()}")
                     continue

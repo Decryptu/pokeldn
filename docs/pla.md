@@ -988,11 +988,25 @@ does. So what the game acts on is its own keepalive timeout, it neither shortens
 leave, and a host that simply goes away is as clean as one that announces itself.
 
 The host's own leave is that message with the host's ids and address, `--leave-after SECONDS`.
-`bin/pla_host.py` sends it to each station that has joined and ends the run. It has no capture
+`bin/pla_host.py` sends it to each station that has joined and ends the run, or with
+`--stay-after-leave` keeps the network up and answers that station nothing more. It has no capture
 behind it, because no reference session in hand ever ends: the pair capture stops mid-session and
 every emulated run so far was quit by the console. What is pinned is the shape, against the
 console's four, and that a scripted console reads the host's own leave and finds the host's
 location id in it.
+
+A retail console reads it no more than the emulated one does. Four runs over the air, the console on
+the box screen with nothing offered, timed by the capture on the host side and the clock on the
+console side:
+
+    leave, then the network down          "code d'erreur 2318-0006" within a second
+    no leave, network down                the same, within a second
+    leave, network up, host silent        "L'autre joueur a choisi d'annuler l'échange" 13 s later
+    no leave, network up, host silent     the same words, 13 s later
+
+The console keeps sending to the silent host for those thirteen seconds and stops with the dialog.
+What it acts on is the network vanishing, at once, or its own keepalive timeout; the four leaves
+change neither the words nor the delay.
 
 ## Unresolved
 
@@ -1003,5 +1017,3 @@ location id in it.
   leading eight bytes match neither game handler key and the handler dispatch never polls port 1;
   the body changes from `00 01` to `00 00` once the trade is written, and a host that answers none
   of them past the open completes the trade.
-- Whether a retail console reads the host's type-3 leave, and what it does with it. The emulated
-  console draws the same dialog at the same time with and without it.
