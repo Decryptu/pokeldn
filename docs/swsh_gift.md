@@ -1045,7 +1045,8 @@ asserts, it does not clear. A slot with an id outside the table is cleared only 
 
 For a console carrying such a row: never sort the pocket by category; sort it by name to put the
 row back at the end; every kind above the row that is used up moves the row one slot up, and the
-pocket cannot be opened once the row is among its first seven.
+pocket cannot be opened once the row is among its first seven. The retail Sword's Medicine pocket
+was sorted by name on 2026-09-19: no abort, the list alphabetical, the row at the end.
 
 ## The card's date
 
