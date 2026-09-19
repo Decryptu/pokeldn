@@ -999,14 +999,16 @@ its id is 0 and for the compaction when its count is 0.
 | `0x014201d0` | `FindSlot(bag, id)`: pointer to the slot holding the id, by pocket of the id |
 | `0x01420360` | `Compact(bag, pocket)`: clears the count of every id-0 slot, then moves every count-0 slot behind the last count-non-0 slot, order kept |
 | `0x01420630` | `FindIndex(bag, pocket, id)` |
-| `0x01420790` | `AddItem(bag, id, count, new)`: the slot holding the id, else the first id-0 slot |
+| `0x01420790` | `AddItem(bag, id, count, new)`: the slot holding the id, count 0 included, else the first id-0 slot |
 | `0x014209e0` | `CanAdd(bag, id, count)`: whether `AddItem` would fit under 999 |
-| `0x01420ba0` | `RemoveItem(bag, id, count)`: subtracts; at count 0 keeps the id, clears bits 30-31, then compacts the pocket inline |
+| `0x01420ba0` | `RemoveItem(bag, id, count)`: the pocket is the item table's, not where the row sits; subtracts; at count 0 keeps the id, clears bits 30-31, and swaps the slot to the end of the array |
 | `0x01420f20` | `HasAtLeast(bag, id, count)` |
 | `0x014210c0` | `GetCount(bag, id)` |
-| `0x01421250` | `MoveSlot(bag, pocket, from, to)`: the manual reorder |
-| `0x01421470` | new-flagged slots to the front of the pocket |
-| `0x01421e40`, `0x01421ee0` | `Compact` then a sort, comparators `0x01422bf0` (by item field 0x1d, `0x00788e60`) and `0x01423690` (by name, `0x007885c0`) |
+| `0x01421250` | `MoveSlot(bag, pocket, from, to)` |
+| `0x01421470`, `0x01421960` | reorders on the slot's own flag bits, no table lookup |
+| `0x01421f80` | the name sort: walks an id list in name order and pulls each id's slot forward by direct id comparison; a slot whose id is not in the list is never looked up and ends behind everything |
+| `0x01421ee0` | the category sort: `Compact`, then `0x01423690`, whose comparator reads each id through `0x007885c0` |
+| `0x01421e40` | a third sort, `Compact` then `0x01422bf0`, comparator through `0x00788e60`; the sort menu does not reach it |
 
 The pocket of an id comes from `0x00788c50(id, 14)`, which returns 0 for an id above 1607 and never
 aborts. The abort is in the table row getter `0x00787ec0`: it asserts when the id is at or beyond
@@ -1014,16 +1016,22 @@ the table count (halfword at table+2) and every unchecked getter (`0x007885c0`, 
 name lookup under a drawn row) goes through it. `AddItem`, `RemoveItem`, `GetCount` and `Compact`
 use only the checked lookup, so every one of them runs over id 16389 without aborting.
 
-Consequences for a poisoned pocket, read from the code:
+Measured on the Ryujinx Shield with the poisoned save, the row placed by RAM edit:
 
-- The row is where `AddItem` put it, the first id-0 slot at the time, and nothing sorts it to the end
-  on its own. A medicine kind picked up later lands behind it.
-- Using up a kind that sits before the row moves the row one slot toward the front:
-  `RemoveItem` compacts on reaching 0. Once the row is inside the window the bag draws on opening the
-  pocket, the pocket cannot be opened at all.
-- Sorting the pocket runs a comparator over every slot through the unchecked getter, so a sort of
-  the Medicine pocket aborts regardless of where the row is.
-- The box's item mode survives because it draws held items, never a pocket.
+| the pocket screen | result |
+|---|---|
+| opening the pocket | draws 7 rows and nothing beyond; aborts when the row's index is 6 or less, opens at 7 |
+| scrolling | aborts the moment the row enters the 7-row window, through the scroll redraw |
+| using up the one kind above the row | the row's index falls by one; the emptied slot keeps its id at count 0, bits 30-31 clear, and sits at slot 59 while the screen is up; closing the bag compacts it to just behind the last item |
+| the redraw after an item use | the same 7-row draw: an index of 6 aborts there too |
+| `X Trier` -> `Catégorie` | aborts wherever the row is, `0x00787ec0` under `0x01423690` |
+| `X Trier` -> `Nom` | survives and moves the row behind every real item, from any index |
+| buying a kind the pocket never held | lands in the first id-0 slot, behind the row and behind any count-0 slot, new-flag set |
+| buying a kind used up earlier | refills its count-0 slot in place, no new-flag |
+| using an item from a pocket the item table does not name for it | the effect applies and nothing is removed |
+
+A used-up kind never frees its slot; only a sort or the compaction moves it, and neither moves it
+past the row. In-battle bag and the `Y Favoris` list are unmeasured.
 
 Every remover of a slot was enumerated for an id that could reach 16389 without the row being drawn.
 `RemoveItem` has 32 callers in the binary: the item-use handlers (the id is the bag selection), the
@@ -1035,11 +1043,9 @@ two literals. No path removes an id the player did not select from a drawn list,
 sanitiser exists: the constructor's check `0x0141fd10` counts each pocket against its size and
 asserts, it does not clear. A slot with an id outside the table is cleared only by a save edit.
 
-A delivered Pokemon is flagged as nicknamed only when the record's name differs from the species
-name: a record carrying `PKCAMP` read back with the flag set, and one carrying `Pikachu` on a
-Pikachu read back with it clear, both through the trade party snapshot
-(`scratchpad/sw84_extract.py`). A record with empty name slots delivers a Pokemon carrying the
-species name in its name field with the flag clear, and the card is listed under the species name.
+For a console carrying such a row: never sort the pocket by category; sort it by name to put the
+row back at the end; every kind above the row that is used up moves the row one slot up, and the
+pocket cannot be opened once the row is among its first seven.
 
 ## The card's date
 
