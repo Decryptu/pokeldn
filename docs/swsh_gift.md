@@ -986,6 +986,55 @@ a slot whose count is already 999 refuses. One u32 per slot: id in bits 0-14, co
 bit 30 the new-item flag. The save block is registered by `0x0141fae0`, key `0x1177C2C4`, `0x12F8`
 bytes.
 
+### The bag's slot, and what can reach it
+
+The `Bag` object holds the save block at `bag+0x60`; the nine pocket arrays are laid out inside it
+and the pointer table at `bag+0x1358` is filled by the constructor `0x0141fe40`. One u32 per slot:
+id in bits 0-14, count in bits 15-29, bit 30 the new-item flag. A slot is empty for `AddItem` when
+its id is 0 and for the compaction when its count is 0.
+
+| function | what it does |
+|---|---|
+| `0x014200d0` | `GetPocket(bag, pocket, &size)`: the raw array and its slot count |
+| `0x014201d0` | `FindSlot(bag, id)`: pointer to the slot holding the id, by pocket of the id |
+| `0x01420360` | `Compact(bag, pocket)`: clears the count of every id-0 slot, then moves every count-0 slot behind the last count-non-0 slot, order kept |
+| `0x01420630` | `FindIndex(bag, pocket, id)` |
+| `0x01420790` | `AddItem(bag, id, count, new)`: the slot holding the id, else the first id-0 slot |
+| `0x014209e0` | `CanAdd(bag, id, count)`: whether `AddItem` would fit under 999 |
+| `0x01420ba0` | `RemoveItem(bag, id, count)`: subtracts; at count 0 keeps the id, clears bits 30-31, then compacts the pocket inline |
+| `0x01420f20` | `HasAtLeast(bag, id, count)` |
+| `0x014210c0` | `GetCount(bag, id)` |
+| `0x01421250` | `MoveSlot(bag, pocket, from, to)`: the manual reorder |
+| `0x01421470` | new-flagged slots to the front of the pocket |
+| `0x01421e40`, `0x01421ee0` | `Compact` then a sort, comparators `0x01422bf0` (by item field 0x1d, `0x00788e60`) and `0x01423690` (by name, `0x007885c0`) |
+
+The pocket of an id comes from `0x00788c50(id, 14)`, which returns 0 for an id above 1607 and never
+aborts. The abort is in the table row getter `0x00787ec0`: it asserts when the id is at or beyond
+the table count (halfword at table+2) and every unchecked getter (`0x007885c0`, `0x00788e60`, the
+name lookup under a drawn row) goes through it. `AddItem`, `RemoveItem`, `GetCount` and `Compact`
+use only the checked lookup, so every one of them runs over id 16389 without aborting.
+
+Consequences for a poisoned pocket, read from the code:
+
+- The row is where `AddItem` put it, the first id-0 slot at the time, and nothing sorts it to the end
+  on its own. A medicine kind picked up later lands behind it.
+- Using up a kind that sits before the row moves the row one slot toward the front:
+  `RemoveItem` compacts on reaching 0. Once the row is inside the window the bag draws on opening the
+  pocket, the pocket cannot be opened at all.
+- Sorting the pocket runs a comparator over every slot through the unchecked getter, so a sort of
+  the Medicine pocket aborts regardless of where the row is.
+- The box's item mode survives because it draws held items, never a pocket.
+
+Every remover of a slot was enumerated for an id that could reach 16389 without the row being drawn.
+`RemoveItem` has 32 callers in the binary: the item-use handlers (the id is the bag selection), the
+shops (fixed ids `4`, `0x469`, `0x644`), the bag's own toss, the party and box give screens, and the
+script native `ItemSub` (`0x014acf40`). `ItemSub` is called 44 times across the 953 field scripts:
+29 with a literal id, the rest from the script's own item tables, from `TempWork` values written by
+the Cram-o-matic and encounter-item selections (a bag list, drawn), or from a helper choosing between
+two literals. No path removes an id the player did not select from a drawn list, and no load-time
+sanitiser exists: the constructor's check `0x0141fd10` counts each pocket against its size and
+asserts, it does not clear. A slot with an id outside the table is cleared only by a save edit.
+
 A delivered Pokemon is flagged as nicknamed only when the record's name differs from the species
 name: a record carrying `PKCAMP` read back with the flag set, and one carrying `Pikachu` on a
 Pikachu read back with it clear, both through the trade party snapshot

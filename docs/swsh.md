@@ -39,6 +39,30 @@ Four published clients read this game's LAN mode and were found by searching its
 share the payload layouts from the Pia station handshake upward; the LDN link layer below is not
 covered by any of them, and none of them handles Pia host migration.
 
+## The field scripts
+
+The field events are Pawn scripts, `bin/script/amx/*.amx` in the RomFS (953 files in 1.3.2, the
+two expansions included), one per event or NPC group. The format is Pawn 3.x with 64-bit cells:
+magic `0xF1E1`, file version 10, flags `0x1C` (compact code, sleep, no checks). The code segment is
+stored in Pawn's compact encoding, 7 bits per byte, most significant group first, sign in bit 6 of
+the first byte. On top of the 3.x opcode set the compiler packs every one-parameter opcode that is
+not a branch into one cell, `(param << 32) | op`, numbered from 162 in the 3.x order (`LOAD.pri`
+162, `LOAD.S.pri` 164, `PUSH.C` 188, `PUSH.S` 190, `STACK` 191, `ADD.C` 197, `ZERO.S` 200,
+`EQ.C.pri` 201, `INC.S` 204, `HALT` 210, `PUSH.ADR` 212); `halt 0` at code offset 0 pins the table.
+
+Natives carry no names. A native entry is twelve bytes, `u64 address = 0` and a `u32` hash, and the
+game's `amx_Register` (`0x0066d970`) resolves it by hashing each name in its binding tables with
+
+    h = 0; for each byte c: h = (h * 0x83) ^ c        (32-bit)
+
+The binding tables are `(const char *name, function)` pairs in `.data`, one table per module,
+reached through getters such as `0x014aea00`; 777 names, 512 of the 513 hashes the scripts use.
+The item natives are `ItemAdd` (`0x014acea0`), `ItemSub` (`0x014acf40`), `ItemGetNum`,
+`ItemAddCheck`, `ItemGetCategory`, `GetPocketNumberFromItemNumber_`; script variables come through
+`WorkGet`/`WorkSet` (hashed 64-bit keys) and `TempWorkGet`/`TempWorkSet` (small indices the game's
+own UI writes into before the script resumes). A native call is `PUSH` per argument, right to left,
+then `SYSREQ.N native, bytes`.
+
 ## Unresolved
 
 - The two unnamed Pia header fields, the byte at 0x05 and the halfword at 0x06. Written by
