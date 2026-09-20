@@ -268,16 +268,32 @@ byte-aligned; three groups are bit-packed, least significant bit first.
                 8 bits     MyStatus+0xCC as a byte (17 on this save)
                 17 x 10    the model 0x0111dd60 unpacks from the MyStatus bitfield at +0x00
                 2, 2, 10   the last three of that unpacking
-    0x59  55  samples, bit-packed:
+    0x59  55  the position samples, bit-packed:
                 2, 2 bits  (2, 0 in every capture)
-                16 bits    a u16 (1795..2010 across captures, unread)
-                3 x 17     at 0x5C, 0x6D, 0x7E: a 5-bit counter 0x01123be0 steps once per push,
-                           a 3-bit state (2), three floats, one float
-                8 bits     at 0x8F (1)
+                8 bits     a generation byte: drawn from the game's random source when the ring
+                           is reset (0x00eb98a8), incremented by one on a re-seed; a listener tells
+                           a new run of samples from an old one by it (3..222 across captures)
+                8 bits     the player object's byte at +0x136 (7 in every capture)
+                3 x 17     at 0x5C, 0x6D, 0x7E: the player's last three positions, newest first.
+                           A 5-bit counter 0x01123be0 steps once per push; a 3-bit state the
+                           movement code sets through 0x00ebf570 (0 to 6; the bicycle's land and
+                           water transitions set 1 and 2; 2 in every capture); the world position
+                           x, y, z as three floats; the yaw in radians, component 1 of the Euler
+                           angles 0x006101c0 derives from the player's rotation quaternion.
+                           0x00ebf590 pushes one sample at most once a second (nn::os tick delta
+                           in ms >= 1000) from the field object at +0x60 (position) and +0x50
+                           (rotation); the copies at 0x00b4f140 and 0x00b54450 re-push the
+                           current sample three times, which is why one capture's three samples
+                           differ only by the counter.
+                8 bits     at 0x8F: the player object's byte at +0x140 (1 in every capture)
     0x90  37  activity, bit-packed: an 8-bit kind at 0x90 (13 in every trade capture and in the
               trade-screen beacon; 0x01026284 sets 29 elsewhere), an optional 28-byte part, a
-              24-byte field, a u16 at 0xB2 (170 in every trade capture, 188 in the beacon), a
-              bool. All zero in every capture except the kind and the u16.
+              24-byte field, a u16 at 0xB2, a bool. All zero in every capture except the kind
+              and the u16. The u16 is the player's location: 0x00f27d70 looks the current
+              field's name up in `script/place_name.dat` and returns its line, the met-location
+              id PKHeX prints (`text_swsh_00000_en.txt`): 170 Challenge Beach in every trade
+              capture, 188 Stepping-Stone Sea in the trade-screen beacon read; the set of the
+              value is 0x0111bc60, the readers 0x0111b8c8 and 0x0111b8f4.
     0xB5  37  two more groups (56 and 16 source bytes), zero in every capture
     0xDA  32  sixteen u16 records, `0x010f5060`: Record8 indexes 6, 32, 0, 33, 17, 27, 34, 24,
               12, 3, 10, 35, 38, 7, 36, 37, each clamped to 0xFFFF (PKHeX `RecordList_8`:
@@ -287,10 +303,13 @@ byte-aligned; three groups are bit-packed, least significant bit first.
     0xFA   8  an optional u64, zero in every capture
     0x102  8  zero
 
-The three samples in one capture were identical apart from the counter (11, 10, 9): floats
-50288.4, 99.3, 56730.4 and -0.643. Across thirty captures the first three moved by at most 70 and
-the fourth between -1.8 and 0.3; what they measure is unread. The records move with play: 50
-trades in the September captures, 66 a week later.
+The three samples in one capture were identical apart from the counter (11, 10, 9): position
+50288.4, 99.3, 56730.4 and yaw -0.643. Across thirty captures the position moved by at most 70
+units and the yaw between -1.8 and 0.3, on the same field (location 170). A receiver
+(0x00dd5e24) stores the position at its object's +0xB0 and the yaw, turned back into a quaternion
+with the other two angles zero (0x00992cd0), at +0xA0; 0x011a68a4 takes a sample only in
+states 1, 2, 3 and 6. The records move with play: 50 trades in the September captures, 66 a
+week later.
 
 The name field is the fourth copy of the trainer name in the snapshot, after MyStatus, the trainer
 card and the party records; `trade_payload.rewrite` moves all four. The trade screen draws the

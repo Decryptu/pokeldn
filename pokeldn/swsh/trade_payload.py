@@ -171,9 +171,12 @@ def read_tail(payload):
     """-> the player profile at TAIL_OFFSET, field by field.
 
     `appearance` is the 17 ten-bit values 0x0111dd60 unpacks from MyStatus, the player's model.
-    `samples` are the three 17-byte records: a 5-bit counter that steps once per push, a 3-bit
-    state, three floats and a fourth float; what the floats measure is unread. `records` are the
-    sixteen game records the profile carries, clamped to 0xFFFF, by their PKHeX names.
+    `samples` are the player's last three field positions, newest first: a 5-bit counter that
+    steps once per push, the 3-bit movement state, the world position and the yaw in radians
+    (docs/swsh_protocol.md, The player profile). `sample_generation` is the byte a listener tells
+    a new run of samples by; `location` is the met-location id of the field the player stands on.
+    `records` are the sixteen game records the profile carries, clamped to 0xFFFF, by their PKHeX
+    names.
     """
     if len(payload) != PAYLOAD_LENGTH:
         raise ValueError(f"{len(payload)} bytes, expected {PAYLOAD_LENGTH}")
@@ -191,8 +194,9 @@ def read_tail(payload):
     assert p == TAIL_SAMPLES * 8
     samples = []
     for at in (0x5C, 0x6D, 0x7E):
-        x, z, y, w = struct.unpack_from("<ffff", t, at + 1)
-        samples.append({"counter": t[at] & 0x1F, "state": t[at] >> 5, "floats": (x, z, y, w)})
+        x, y, z, yaw = struct.unpack_from("<ffff", t, at + 1)
+        samples.append({"counter": t[at] & 0x1F, "state": t[at] >> 5, "position": (x, y, z),
+                        "yaw": yaw})
     records = struct.unpack_from("<16H", t, TAIL_RECORDS)
     return {
         "device_id": t[TAIL_DEVICE_ID:TAIL_DEVICE_ID + DEVICE_ID_LENGTH],
@@ -202,11 +206,12 @@ def read_tail(payload):
         "gender": gender, "language": language, "unknown_bit": one, "my_status_cc": unknown_cc,
         "appearance": appearance, "appearance_tail": tail_bits,
         "sample_flags": (t[TAIL_SAMPLES] & 3, (t[TAIL_SAMPLES] >> 2) & 3),
-        "sample_u16": struct.unpack_from("<H", t, TAIL_SAMPLES + 1)[0],
+        "sample_generation": t[TAIL_SAMPLES + 1],
+        "sample_player_byte": t[TAIL_SAMPLES + 2],
         "samples": samples,
         "sample_end": t[0x8F],
         "activity": t[TAIL_ACTIVITY],
-        "activity_u16": struct.unpack_from("<H", t, 0xB2)[0],
+        "location": struct.unpack_from("<H", t, 0xB2)[0],
         "records": dict(zip(RECORD_NAMES, records)),
         "optional_u64": struct.unpack_from("<Q", t, TAIL_OPTIONAL_U64)[0],
         "extra_block": bytes(payload[EXTRA_BLOCK_OFFSET:EXTRA_BLOCK_OFFSET + EXTRA_BLOCK_LENGTH]),

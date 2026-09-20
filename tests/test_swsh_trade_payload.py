@@ -193,10 +193,12 @@ def test_the_profile_reads_back_field_by_field():
     assert t["appearance_tail"] == (0, 2, 8)
     assert [s["counter"] for s in t["samples"]] == [11, 10, 9]
     assert {s["state"] for s in t["samples"]} == {2}
-    x, z, y, w = t["samples"][0]["floats"]
-    assert (round(x, 1), round(z, 1), round(y, 1), round(w, 3)) == (50288.4, 99.3, 56730.4, -0.643)
-    assert t["sample_u16"] == 1990 and t["sample_flags"] == (2, 0) and t["sample_end"] == 1
-    assert (t["activity"], t["activity_u16"]) == (13, 170)
+    x, y, z = t["samples"][0]["position"]
+    assert (round(x, 1), round(y, 1), round(z, 1)) == (50288.4, 99.3, 56730.4)
+    assert round(t["samples"][0]["yaw"], 3) == -0.643
+    assert (t["sample_generation"], t["sample_player_byte"]) == (198, 7)
+    assert t["sample_flags"] == (2, 0) and t["sample_end"] == 1
+    assert (t["activity"], t["location"]) == (13, 170)                # Challenge Beach
     assert t["records"]["total_capture"] == 480
     assert t["records"]["egg_hatching"] == 1870
     assert t["records"]["trade"] == 50
