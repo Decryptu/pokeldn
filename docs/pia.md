@@ -47,13 +47,27 @@ Read out of the deserializer at `0x01774730`, which requires more than 0x1f byte
 
     0x00  4  magic 0x32AB9864, big-endian
     0x04  1  0x80 (encrypted) | version (0x7F) = 4
-    0x05  1  a station index
-    0x06  2  big-endian halfword, a session or protocol id
+    0x05  1  connection id
+    0x06  2  packet id, big-endian
     0x08  8  AES-GCM nonce, a monotonic counter
     0x10  16 AES-GCM tag, not truncated
     0x20     ciphertext
 
-The widths, the endianness, the 0x20 total and the version byte are measured. The initializer at
+The widths, the endianness, the 0x20 total and the version byte are measured. The two small
+fields are per destination station and both are 0 on a packet sent to no station in particular,
+which is every packet a retail Sword sent in 484 (`0x017beb14`, `0x017beb20`: no station object,
+both zero). Sent to one station (`0x017beb74`, `0x017beb78`):
+
+- The connection id is the sender's byte at station +0x78, set at connection to
+  `2 + (tick mod 254)` (`0x017c6a00`); the peer's id arrives in the connection setup and is kept
+  at +0x79. The receiver (`0x017bdbd0`) drops a packet whose connection id is 2 or more and
+  differs from the id it holds for that sender; 0 and 1 pass.
+- The packet id is a per-station counter `0x0185dd00` steps before each send, 1 to 0xFFFF and
+  never 0. The receiver (`0x0185dd20`) counts a 0 as unsequenced and passes it; a non-zero id not
+  above the last one seen from that station is dropped, and the gap above it is added to the
+  station's lost-packet count at +0x18.
+
+Sending 0 in both, as the console does, is accepted on every path. The initializer at
 `0x017748bc` writes magic and version as one 64-bit store, `0x00000004_32AB9864`, and zeroes exactly
 8 bytes at the nonce and 16 at the tag; three validators (`0x017749f0`, `0x01774b60`, `0x01774d00`)
 each check `(byte & 0x7f) == 4`. BDSP's binary carries the same three validators against 9 and the

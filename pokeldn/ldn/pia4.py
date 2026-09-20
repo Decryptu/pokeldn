@@ -7,8 +7,8 @@ Every one of them authenticated.
     off  size  field                            parser evidence
     0x00  4    magic 0x32AB9864, big-endian     the same magic as 5.27-6.32
     0x04  1    0x80 (encrypted) | version (4)   three validators check (byte & 0x7f) == 4
-    0x05  1    a station index
-    0x06  2    big-endian halfword              a session or protocol id
+    0x05  1    connection id                    0 on every console packet; docs/pia.md, Version 4
+    0x06  2    packet id, big-endian            0 = unsequenced, always accepted
     0x08  8    AES-GCM nonce, a counter
     0x10  16   AES-GCM tag, NOT truncated
     0x20  ...  ciphertext
@@ -267,9 +267,9 @@ def decrypt_payload(session_key, iv, ct, tag):
 def build_packet(session_key, iv, plaintext, station=0, session_id=0, nonce8=b"\0" * 8):
     """A whole version-4 packet: header, ciphertext, sixteen-byte tag in the header.
 
-    UNKNOWN, and the thing to sweep if the console ignores us: the byte at 0x05 and the halfword at
-    0x06. The console sends 0 in both on every packet, so 0 is what we send first, but a
-    field we have only ever seen one value of cannot be said to mean anything yet.
+    The byte at 0x05 (connection id) and the halfword at 0x06 (packet id) are per destination
+    station and the console sends 0 in both on every packet; 0 passes every receive check
+    (docs/pia.md, Version 4). `station` and `session_id` are the older names of those two fields.
     """
     ct, tag = encrypt_payload(session_key, iv, pad_payload(plaintext))
     return PiaHeader4(station=station, session_id=session_id, nonce8=nonce8, tag=tag,

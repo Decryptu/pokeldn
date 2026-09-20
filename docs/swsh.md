@@ -65,8 +65,6 @@ then `SYSREQ.N native, bytes`.
 
 ## Unresolved
 
-- The two unnamed Pia header fields, the byte at 0x05 and the halfword at 0x06. Written by
-  `0x017beb74`/`0x017beb78`; both were zero in every packet captured.
 - Inside the player profile ([the protocol page](swsh_protocol.md#the-player-profile)): what the
   seven position-sample states mean beyond the two the bicycle sets, and what the Battle
   Stadium's 0x118-byte block at 0xBF6 holds field by field.
