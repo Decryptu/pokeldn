@@ -457,3 +457,13 @@ Ball capsules run the same way ("Déco Capsule", state byte 7 while recruiting):
 A capsule with 19 stickers placed them all at a distance of 100 from the origin, slot 19 empty.
 45 s without an answer the console shows "quelqu'un a mis fin à la communication" and returns to
 the room.
+
+Answered with a `NetDataAttachSealNetData` of the client's own (`bin/bdsp_connect.py --answer-with
+0x15:FILE`, the 143-byte body), the console shows "Seuls les sceaux que vous possédez ont été
+collés" and returns to the room within five seconds, state byte 0. The message names the filter:
+a received design keeps the stickers the player owns and drops the others. A design of 19
+stickers on a ring at radius 100, every id taken from the console's own capsule, was answered
+this way twice; whether the applied capsule is then listed in the player's collection is
+unmeasured (the player looked once and did not find it; which capsule slot the exchange writes,
+and whether it needs a capsule of the player's own to attach to, is unread). The answer must be
+sent from a task of its own: sent from inside the receiver, the ack it waits for is never read.

@@ -135,7 +135,7 @@ async def main_async(args):
               "reserves_sent": 0, "reserve_results": 0, "match_wait_sent": 0,
               "reserve_accepted": False, "room_done": False, "their_traner": None,
               "requests_sent": 0, "requested_answers": {}, "rel_fragments": {}, "their_zone": None,
-              "their_poke": None, "their_pokes": 0, "our_poke": None, "trade_replies": 0, "check_oks": 0,
+              "their_poke": None, "their_pokes": 0, "our_poke": None, "answered_with": set(), "trade_replies": 0, "check_oks": 0,
               "their_ready_ok": None, "ready_oks_sent": 0, "their_security_state": None,
               "our_security_state": 0, "our_next_seq": 0, "return_selects": 0}
 
@@ -150,6 +150,18 @@ async def main_async(args):
             offered = pokemon.read(st["our_poke"])
             print(f"[cx] offering species {offered['species']}, {offered['nickname']!r}, "
                   f"OT {offered['ot_name']!r}, IVs {offered['ivs']}")
+
+        # --answer-with files are read now: a missing file must fail here, not while the console
+        # waits on us.
+        answer_with = {}
+        for spec in args.answer_with:
+            data_id, _, path = spec.partition(":")
+            body = pathlib.Path(path).read_bytes()
+            expected = room.NATIVE_SIZES.get(int(data_id, 0))
+            if expected and len(body) != expected:
+                raise SystemExit(f"--answer-with {spec}: {len(body)} bytes, "
+                                 f"{room.name(int(data_id, 0))} is {expected}")
+            answer_with[int(data_id, 0)] = path
 
         nonce = int.from_bytes(os.urandom(8), "big")
 
@@ -366,6 +378,21 @@ async def main_async(args):
                                 # reliable header, and passing that hands the parser nine bytes too
                                 # many and takes the station down mid-trade.
                                 await answer_the_trade(g, d["payload"], now)
+                            if g and g["data_id"] in answer_with and g["data_id"] not in st["answered_with"]:
+                                # Record mixing and ball capsules: the console sends its own
+                                # record, waits for ours, and applies the exchange only on
+                                # receiving it (docs/bdsp_protocol.md). One answer per id.
+                                st["answered_with"].add(g["data_id"])
+                                answer_body = pathlib.Path(answer_with[g["data_id"]]).read_bytes()
+                                reply = room.build(g["data_id"], answer_body)
+                                print(f"\n[tx] t={now:6.2f} *** ANSWERING {room.name(g['data_id'])} "
+                                      f"with {len(answer_body)} bytes from {answer_with[g['data_id']]} ***")
+                                record(rec="answer_with", t=now, data_id=g["data_id"],
+                                       payload=reply.hex())
+                                # As a task of its own: awaiting the acked send here would hold
+                                # the receiver, and the ack it waits for arrives through it.
+                                nursery.start_soon(send_on_the_window, reply,
+                                                   f"answer {room.name(g['data_id'])}")
                             if g and g["data_id"] == room.STATE and g.get("fields"):
                                 note_their_state(g["fields"], now)
                             if g and g["data_id"] == room.TALK_RESERVE_RESULT and g.get("fields"):
@@ -1717,6 +1744,10 @@ def build_parser():
                          "NetUgJoinData in its zone at its position plus --join-offset-x/z")
     ap.add_argument("--ug-join-delay", type=float, default=2.0, metavar="S",
                     help="seconds after the console's NetZoneData before the Underground join")
+    ap.add_argument("--answer-with", action="append", default=[], metavar="ID:FILE",
+                    help="when the console sends game message ID, answer once with the body in "
+                         "FILE (raw bytes, no header): 0x15:capsule.bin answers its ball capsule "
+                         "with ours, 0x14:record.bin its record")
     ap.add_argument("--inject-file", metavar="PATH",
                     help="poll this file and send each new `ID:HEX` line as a game message on the "
                          "reliable window, retransmitted until acked. Lines are sent once, in "
