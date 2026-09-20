@@ -30,7 +30,7 @@ sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 from pokeldn import config
 from pokeldn import pla
 from pokeldn.ldn import pia6, pia_connect, reliable5, rtt_protocol
-from pokeldn.pla import data_exchange, game_channel, trade_box
+from pokeldn.pla import channel_table, data_exchange, game_channel, trade_box
 from pokeldn.pla import pokemon as pla_pokemon
 from pokeldn.ldn.ldn_mitm_host import IpHostTransport
 from pokeldn.ldn.transport import HostTransport, find_ap_phy
@@ -423,6 +423,7 @@ def main():
         box_seq[(src_ip, port)] = seq + 1
         return seq
     channel_mirrored = set()    # (src_ip, port) of a console channel message we have answered
+    channel_announced = set()   # (src_ip, key) the host has announced open on port 1
     channel_opened = set()      # src_ip we have opened the host's own port-0 channel to
     atomic_sent = set()         # src_ip we have sent the Atomic kind-0 announce probe to
     station_ids = {}            # src_ip -> the ids that session named, for the leave the host owes
@@ -551,6 +552,7 @@ def main():
                             box_sent = {b for b in box_sent if b[0] != src_ip}
                             box_seq = {k: v for k, v in box_seq.items() if k[0] != src_ip}
                             channel_mirrored = {c for c in channel_mirrored if c[0] != src_ip}
+                            channel_announced = {c for c in channel_announced if c[0] != src_ip}
                             # Echo the console's own record of the host ids (what it wrote into the
                             # request's destination fields) so the four id compares cannot miss.
                             host_const = j["destination_constant_id"]
@@ -625,11 +627,14 @@ def main():
                                 record(rec="out", dst=src_ip, kind="game channel ack", hex=pkt.hex(),
                                        t=time.time())
                                 key, payload_body = game_channel.split_message(cm["payload"])
+                                announced = (msg.port == game_channel.JOINER_PORT
+                                             and channel_table.is_announcement(cm["payload"]))
                                 print(f"[pla] -> {src_ip}: game channel ack (port {msg.port}, "
-                                      f"seq {cm['sequence_id']}, key {key.hex()}, "
-                                      f"body {payload_body[:16].hex()}"
-                                      f"{'...' if len(payload_body) > 16 else ''} "
-                                      f"{len(payload_body)}B)")
+                                      f"seq {cm['sequence_id']}, "
+                                      + ("channel table)" if announced else
+                                         f"key {key.hex()}, body {payload_body[:16].hex()}"
+                                         f"{'...' if len(payload_body) > 16 else ''} "
+                                         f"{len(payload_body)}B)"))
                                 offered = trade_box.read_payload(cm["payload"])
                                 if offered is not None:
                                     print(f"[pla] <- {src_ip}: trade box, "
@@ -657,14 +662,37 @@ def main():
                                         with open(path, "wb") as fh:
                                             fh.write(offered["record"])
                                         print(f"[pla] wrote {path}")
+                                # Port 1 is the channel table: the console announces each handler
+                                # key it opens or closes, and sends on a key only once the peer has
+                                # announced it open (`pokeldn.pla.channel_table`). Announce back
+                                # every key the console opens, once; a close is read and left alone.
+                                if announced:
+                                    for ckey, opened in channel_table.parse(cm["payload"]):
+                                        print(f"[pla] <- {src_ip}: channel {ckey.hex()} "
+                                              f"{'open' if opened else 'closed'}")
+                                        if not opened or (src_ip, ckey) in channel_announced:
+                                            continue
+                                        channel_announced.add((src_ip, ckey))
+                                        announce = game_channel.build_payload_message(
+                                            channel_table.build([(ckey, True)]),
+                                            next_seq(src_ip, msg.port), flags=cm["flags"])
+                                        pkt = build_reply(keys, transport.our_ip, announce,
+                                                          header.src_var, os.urandom(8),
+                                                          protocol=game_channel.PROTOCOL,
+                                                          port=msg.port)
+                                        transport.send(pkt, src_ip)
+                                        record(rec="out", dst=src_ip, kind="channel table",
+                                               key=ckey.hex(), hex=pkt.hex(), t=time.time())
+                                        print(f"[pla] -> {src_ip}: channel {ckey.hex()} open "
+                                              f"announced (port {msg.port})")
                                 # A reference station answers the peer's channel message with the
                                 # same message on the same port, then opens its own on port 0. The
                                 # handler key is what a message is addressed to rather than the port,
                                 # and a station opens more than one key on a port, so a mirror is owed
                                 # once per key.
                                 mirror = (src_ip, msg.port, key)
-                                if (key != bytes(game_channel.KEY_SIZE)
-                                        or cm["flags"] & reliable5.FLAG_IS_INITIALIZED) \
+                                if not announced and (key != bytes(game_channel.KEY_SIZE)
+                                                      or cm["flags"] & reliable5.FLAG_IS_INITIALIZED) \
                                         and mirror not in channel_mirrored:
                                     channel_mirrored.add(mirror)
                                     mirrored = game_channel.build_message(

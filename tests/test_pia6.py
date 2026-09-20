@@ -186,6 +186,20 @@ def test_the_password_field_is_the_code_xored_into_one_constant():
     assert pla.user_password("\0" * 8) == pla.LINK_CODE_MASK
 
 
+def test_the_mask_is_gcm_under_the_game_key():
+    """Pia's password setter `0x6fc454`: AES-128-GCM, the game key, a four-byte IV out of the key."""
+    from Crypto.Cipher import AES
+    from pokeldn import pla
+
+    iv = bytes(pla.GAME_KEY[i] for i in pla.LINK_CODE_IV_BYTES)
+    assert iv == b"1emf"
+    for code, app in PLA_ADVERTISE.items():
+        cipher = AES.new(pla.GAME_KEY, AES.MODE_GCM, nonce=iv)
+        assert cipher.encrypt(code.encode().ljust(16, b"\0")) == app[0x05:0x15]
+    assert pla.link_code_keystream() == bytes.fromhex("e5ab19ed742b6d40885998bf968aa166")
+    assert pla.link_code_keystream(b"\0" * 16) != pla.LINK_CODE_MASK
+
+
 def test_the_advertisement_is_reproduced_byte_for_byte():
     """Both captures rebuild from the code alone, which is what hosting one needs."""
     from pokeldn import pla

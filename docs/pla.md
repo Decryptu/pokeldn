@@ -425,20 +425,77 @@ through `0x2bcb8c8`: key `00 00 00 00 00 00 00 00` for the trade box, created by
 
 Port 0 and port 1 are two Reliable protocol instances, registered one after the other in the game's
 protocol sequence at `0x2bba180` as `0x7c000000` and `0x7c000001` (the stream broadcast protocol
-gets the same pair, `0x80000000` and `0x80000001`). The dispatcher polls port 0 of 0x68, 0x7c and
-0x80 and nothing on port 1, and the port-1 protocol id is referenced by its registration and its
-teardown alone, so nothing a port-1 message carries reaches a game handler through this path. The
-code that sends on port 1 is not located.
+gets the same pair, `0x80000000` and `0x80000001`). The registration stores each protocol's handle
+in a table at `0x4308a80`, indexed by port: `0x4308a80` is 0x7c port 0, `0x4308a84` port 1. The
+handler dispatcher `0x2ca4a88` reads port 0 of 0x68, 0x7c and 0x80 directly; port 1 of 0x7c is
+read through the table by one object, the channel table below.
 
-Two channels open, each a `reliable5` stream with no destination bitmap, addressed to the peer's
+Two ports open, each a `reliable5` stream with no destination bitmap, addressed to the peer's
 variable id the way the session and clock messages are, at sequence 1 under the message-start,
 message-end and initialized flags:
 
-    port 0    key eight zero bytes      body 0100    the host opens it
-    port 1    key b90101b902b90200      body 0001    the joiner opens it
+    port 0    key eight zero bytes      body 0100        the host opens it
+    port 1    b9 01 01 b9 02 b9 02 00 00 01              the joiner announces the zero key open
 
 Each station answers its peer's channel message with a one-entry acknowledgement and with the same
 message back on the same port.
+
+## The channel table on port 1
+
+Port 1 of protocol 0x7c carries no game message. It carries the channel table: each station tells
+its peer which handler keys it has open, and a station sends on a key only after its peer has
+announced that key open. A host that never announces a key never receives a message on it.
+
+The dispatcher's initialisation `0x2ca36f0` builds one object of 0x298 bytes (vtable `0x41997d8`)
+with its port byte at `+0x70` set to 1, and keeps it at dispatcher `+0x20148`. Every frame the
+dispatcher calls its poll `0x2ca82d0`, which receives from 0x7c port 1 into `0x2ca9800` and then
+runs the sender `0x2ca83dc`. The object keeps two tables of 0x18-byte entries, each an eight-byte
+key at `+0x00` and a station bitmask at `+0x08`:
+
+| table | holds |
+|---|---|
+| `+0xa0` | the station's own channels, with the byte at entry `+0x10` set while the channel exists and the bitmask naming the stations already told |
+| `+0xd8` | the peer's channels as announced, the bitmask naming the stations that announced the key open |
+
+The sender walks the own table once per station bit. An existing channel whose bit for that station
+is clear gets the bit set and is announced open; a destroyed channel whose bit is still set gets the
+bit cleared and is announced closed. Nothing is sent when nothing changed. The receiver takes the
+sender's station index from the packet, requires it below 2, and on an open sets that station's bit
+in the peer table, adding the entry if the key is new; on a close it clears the bit and erases the
+entry once no bits remain.
+
+Creating a channel (`0x2bcb8c8` -> `0x2ca5264`) gives it a reference to the table object's
+interface at `+0x68`. Every channel sender asks that interface (`0x2ca92e0`, then `0x2ca9360`)
+whether the peer table holds the channel's key with the destination station's bit set, and sends
+only on yes; the selector-5 sender does so at `0x26d980c` through the channel's `+0xb8`. That is
+the wait the trade screen shows while a host is silent on port 1.
+
+A message is the game's tagged serialisation. An unsigned integer below 0x80 is its own byte; above
+it a tag names the width, little-endian: 0x80 and one byte, 0x81 and two, 0x82 and four, 0x83 and
+eight (`0x2661ec4`, `0x26619cc`, `0x2661f78` write a u32, a u64 and a u16 through the same rule).
+The size table at `0x397dfcc` gives 0x84 to 0x87 the same four widths, 0x88 four bytes, 0x89
+eight, and 0xb5 to 0xbf one byte. 0xb9 opens a tuple and the integer after it is the field count.
+
+    b9 01              a tuple of one field, the list
+    NN                 the number of entries
+    per entry:
+      b9 02            a tuple of two fields, the key and its state
+      b9 02 LO HI      the key as two u32, low word first
+      01 | 00          1 open, 0 closed
+
+The three messages a console sends during a trade are the two channels it creates and the one it
+destroys:
+
+| message | meaning | when |
+|---|---|---|
+| `b9 01 01 b9 02 b9 02 00 00 01` | the trade box key open | with the port-1 open, on reaching the trade step |
+| `b9 01 01 b9 02 b9 02 01 00 01` | the phase key open | after the confirmation, when `0x26d7aa0` creates the phase channel |
+| `b9 01 01 b9 02 b9 02 01 00 00` | the phase key closed | once the trade is written |
+
+`pokeldn.pla.channel_table` builds and parses these. The host answers each key a console announces
+open with its own announcement of that key open, once per key, and reads a close without
+answering. A close announced back would clear the console's bit for the host's phase key; the
+trade of 2026-09-18 completed with the close unanswered, so that is what the host keeps doing.
 
 ## The trade box
 
@@ -513,13 +570,11 @@ confirms second finds the state already 4 and goes on. A host that acknowledges 
 confirmation and sends none of its own leaves the console at state 4 with the phase never reaching
 4, which is the trade screen waiting.
 
-Past the confirmation the console sends a **second message on port 1**, `b90101b902b902` with a
-last byte of 01 where the port-1 open carries 00, and the same two-byte body, without the
-initialized flag. It waits for that message to come back the way it waits for the channel opens. A
-host that owes a mirror once per port rather than once per leading eight bytes answers the open and
-never this, and the trade screen waits with the phase already at 5 and nothing else on the wire.
-The leading eight bytes match neither game handler key, so what waits for the mirror is not the
-handler dispatch; where the game reads port 1 is unlocated.
+Past the confirmation the console announces the phase key open on port 1,
+`b9 01 01 b9 02 b9 02 01 00 01`, without the initialized flag, and sends nothing on that key until
+the host has announced it open too (the channel table, above). A host that answers the port-1 open
+and never this leaves the trade screen waiting with the phase already at 5 and nothing else on the
+wire.
 
 The counter is the halfword the handler reads before the switch, and selectors 5 and 7 check it
 against `[net+0xfa]` and drop a message carrying less. `0x26d9770` sends `[net+0xf8]` as it stands,
@@ -619,11 +674,10 @@ differ from the pre-run backup: `main`, `main2` and `backup` in both slots, and 
 files. It had been byte-identical through every earlier run.
 
 The console then sends a fresh selector 2 on the trade key, showing whatever the box cursor is on
-now, which the host answers with its own showing, and the port-1 message with its last byte 01 and
-a body of two zero bytes, where the two earlier port-1 bodies carried `00 01`. The host mirrors a
-port-1 message once, so it does not answer that third one, and the trade completes regardless: a
-retail console sent both after the trade of 2026-09-18 with the record already in its save and the
-player back on the field.
+now, which the host answers with its own showing, and the port-1 announcement that the phase key
+is closed, `b9 01 01 b9 02 b9 02 01 00 00`. The host does not answer that one, and the trade
+completes regardless: a retail console sent both after the trade of 2026-09-18 with the record
+already in its save and the player back on the field.
 
 ## What a trade rewrites
 
@@ -919,19 +973,33 @@ The game's 20 bytes carry the eight-digit code the player typed:
 A code of `0000 0000` gives `3030303030303030` followed by eight NULs and a length of 8. The code
 is in the clear, so a scan reads it off the air before anything is joined.
 
-The sixteen-byte user password in the system property block carries the same code, XORed into one
-constant:
+### The link code in the advertisement
 
-    password = LINK_CODE_MASK XOR (the code's ASCII, NUL-padded to 16)
-    LINK_CODE_MASK = e5ab19ed742b6d40885998bf968aa166
+The sixteen-byte user password in the system property block is the same code, encrypted. The game
+hands the code to Pia's password setter `0x6fc454` as the sixteen-byte NUL-padded buffer. With
+transport encryption on (session object `+0x230`) in mode 1 (`+0x234`), the setter fills a
+sixteen-byte buffer with 0xFE, copies the password over it, and encrypts it in place with
+`0x6e68d0`: AES-128-GCM, the sixteen-byte key at session `+0x238`, a four-byte IV, no
+additional data, the tag discarded. The IV is four bytes of the key itself, `key[1] key[8]
+key[7] key[2]` (`0x6fc4e4` to `0x6fc4fc`). The key at `+0x238` is the game key
+`p1frXqxmeCZWFv0X`, set through `0x6fc8a4` with the mode word beside it; the derivation
+reproduces both captured passwords with it, and its IV is `1emf`.
+
+One block of GCM is one XOR with a fixed keystream, so the field is the code XORed into a
+constant, and a code shorter than sixteen bytes leaves the keystream showing in the tail:
+
+    password = KEYSTREAM XOR (the code's ASCII, NUL-padded to 16)
+    KEYSTREAM = AES-128-GCM(key = p1frXqxmeCZWFv0X, iv = 1emf).encrypt(sixteen zero bytes)
+              = e5ab19ed742b6d40885998bf968aa166
 
 Five sessions with five different SSIDs, both channels, the codes `0000 0000` and `1234 5678`, and
-a full close and reopen of the game give the same mask byte for byte. The console recreates its
-network under a new SSID while the search screen stays up, and the password field does not follow
-the SSID. The mask is not a literal anywhere in `main`, so what produces it
-is unread. `pokeldn.pla.user_password` and `pokeldn.pla.link_code` are the two directions, and
+a full close and reopen of the game give the same keystream byte for byte. The console recreates
+its network under a new SSID while the search screen stays up, and the password field does not
+follow the SSID. `pokeldn.pla.link_code_keystream` computes the constant from the game key,
+`pokeldn.pla.user_password` and `pokeldn.pla.link_code` are the two directions, and
 `pokeldn.pla.parse_advertise_data` reads a whole advertisement, checking the code the game states
-against the code its password decodes to.
+against the code its password decodes to. The password setter is Pia's, so the same encryption
+covers every title of the band ([the wireless layer](ldn.md)).
 
 ## Retail
 
@@ -1010,10 +1078,6 @@ change neither the words nor the delay.
 
 ## Unresolved
 
-- What produces `LINK_CODE_MASK`. It survives a game restart, so it is not per-boot, and it is not
-  a literal in `main`. Whether it is per-title or per-console cannot be separated here: one console
-  runs this game.
-- The port-1 Reliable stream: which code sends its three messages and which reads them. The
-  leading eight bytes match neither game handler key and the handler dispatch never polls port 1;
-  the body changes from `00 01` to `00 00` once the trade is written, and a host that answers none
-  of them past the open completes the trade.
+- What a console does with a close announced back on port 1. The host reads the console's close of
+  the phase key and answers nothing, and the trade completes; a host announcing its own phase key
+  closed is unmeasured.

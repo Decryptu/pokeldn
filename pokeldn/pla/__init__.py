@@ -11,20 +11,20 @@ the advertisement is measured on a retail console; no Pia packet has been captur
 """
 
 from pokeldn.pla.session import (ADVERTISE_NAME, ADVERTISE_VERSION, APP_COMM_VERSION, COMM_ID,
-                                 GAME_KEY, LDN_PROTOCOL, LINK_CODE_LEN, LINK_CODE_MASK,
+                                 GAME_KEY, LDN_PROTOCOL, LINK_CODE_IV_BYTES, LINK_CODE_LEN, LINK_CODE_MASK,
                                  MAX_PARTICIPANTS, PASSPHRASE, PIA_HEADER_SIZE, PIA_PORT,
                                  PIA_TAG_SIZE, PIA_VERSION, SCENE_ID, SYS_COMM_VERSION,
                                  SessionKeys, build_advertise_data, build_game_data, link_code,
-                                 packet_iv, parse_advertise_data, session_keys, user_password)
+                                 link_code_keystream, packet_iv, parse_advertise_data, session_keys, user_password)
 
 __all__ = ["ADVERTISE_NAME", "ADVERTISE_VERSION", "APP_COMM_VERSION", "COMM_ID", "GAME_KEY",
-           "LDN_PROTOCOL", "LINK_CODE_LEN", "LINK_CODE_MASK", "MAX_PARTICIPANTS", "PASSPHRASE",
+           "LDN_PROTOCOL", "LINK_CODE_IV_BYTES", "LINK_CODE_LEN", "LINK_CODE_MASK", "MAX_PARTICIPANTS", "PASSPHRASE",
            "PIA_HEADER_SIZE", "PIA_PORT", "PIA_TAG_SIZE", "PIA_VERSION", "SCENE_ID",
            "SYS_COMM_VERSION", "SessionKeys", "build_advertise_data", "build_game_data",
-           "link_code", "packet_iv", "parse_advertise_data", "session_keys", "user_password"]
+           "link_code", "link_code_keystream", "packet_iv", "parse_advertise_data", "session_keys", "user_password"]
 
 __all__ = ["ADVERTISE_NAME", "ADVERTISE_VERSION", "APP_COMM_VERSION", "COMM_ID", "GAME_KEY",
-           "LDN_PROTOCOL", "LINK_CODE_LEN", "LINK_CODE_MASK", "MAX_PARTICIPANTS", "PASSPHRASE", "PIA_HEADER_SIZE", "PIA_PORT",
+           "LDN_PROTOCOL", "LINK_CODE_IV_BYTES", "LINK_CODE_LEN", "LINK_CODE_MASK", "MAX_PARTICIPANTS", "PASSPHRASE", "PIA_HEADER_SIZE", "PIA_PORT",
            "PIA_TAG_SIZE", "PIA_VERSION", "SCENE_ID", "SYS_COMM_VERSION", "SessionKeys",
-           "build_advertise_data", "build_game_data", "link_code", "packet_iv",
+           "build_advertise_data", "build_game_data", "link_code", "link_code_keystream", "packet_iv",
            "parse_advertise_data", "session_keys", "user_password"]

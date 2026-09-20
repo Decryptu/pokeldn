@@ -72,12 +72,25 @@ ADVERTISE_VERSION = 4             # the advertisement frame version; the GBA app
 SCENE_ID = 1
 MAX_PARTICIPANTS = 2
 
-# The eight-digit code the player types is XORed into the advertisement's sixteen-byte user
-# password field, and the game's own twenty bytes carry the code in the clear beside it. The mask
-# is the password a code of eight NULs would give. Identical across five sessions with five SSIDs,
-# two codes and a full close and reopen of the game. It is not a literal in `main`.
-LINK_CODE_MASK = bytes.fromhex("e5ab19ed742b6d40885998bf968aa166")
+# The eight-digit code the player types goes into the advertisement's sixteen-byte user password
+# field through Pia's password setter `0x6fc454`: the code, NUL-padded to sixteen bytes, encrypted
+# with AES-128-GCM under the game key and a four-byte IV read out of the key itself, tag discarded
+# (`0x6e68d0`). One block of GCM is one XOR with a fixed keystream, so the field is the code XORed
+# into this constant. `docs/pla.md`, The link code in the advertisement.
+LINK_CODE_IV_BYTES = (1, 8, 7, 2)     # `0x6fc4e4`..`0x6fc4fc`: key[1] key[8] key[7] key[2]
 LINK_CODE_LEN = 8
+
+
+def link_code_keystream(game_key=GAME_KEY):
+    """-> the sixteen bytes the game XORs the code into: GCM's first block under the game key."""
+    from Crypto.Cipher import AES
+    game_key = bytes(game_key)
+    iv = bytes(game_key[i] for i in LINK_CODE_IV_BYTES)
+    return AES.new(game_key, AES.MODE_GCM, nonce=iv).encrypt(bytes(16))
+
+
+LINK_CODE_MASK = link_code_keystream()
+assert LINK_CODE_MASK == bytes.fromhex("e5ab19ed742b6d40885998bf968aa166")   # five retail sessions
 
 # The game's application data, after the 0x5C system property block `ldn.beacon` already codes.
 GAME_DATA_SIZE = 20

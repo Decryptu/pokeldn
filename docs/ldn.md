@@ -85,6 +85,15 @@ SSID rather than a broadcast field.
     +0x1c  64 player name
     +0x5c     application data
 
+The user password field is encrypted when the session's transport encryption is on. Pia's password
+setter pads the password to sixteen bytes with 0xFE and encrypts the buffer in place with
+AES-128-GCM under the game key, the tag discarded and the IV four bytes of the key, `key[1] key[8]
+key[7] key[2]`; the block builder copies the sixteen bytes into the field as they stand (Legends
+Arceus 1.1.1: setter `0x6fc454`, cipher `0x6e68d0`, builder `0x6fac70`). One GCM block is one XOR
+with a keystream fixed by the key, so a password shorter than sixteen bytes leaves the keystream in
+the tail, and a scan reads a password off the air with the game key alone
+([Legends Arceus](pla.md#the-link-code-in-the-advertisement)).
+
 ## Hosting for an emulator
 
 An emulator in ldn_mitm mode has no radio. The association is an exchange on port 11452 and the

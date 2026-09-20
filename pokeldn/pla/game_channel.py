@@ -10,14 +10,16 @@ registered handler's own two words and passes the body through unexamined, so th
 routes and the body is the game's. The handler the game registers on reaching this step carries
 eight zero bytes, which is the key the port-0 channel uses.
 
-Two channels open, each a `pokeldn.ldn.reliable5` stream with no destination bitmap, addressed to
+Two ports open, each a `pokeldn.ldn.reliable5` stream with no destination bitmap, addressed to
 the peer's variable id the way the session and clock messages are:
 
-    port 0    key eight zero bytes, body `0100`      the host opens, the peer sends the same back
-    port 1    key `b90101b902b90200`, body `0001`    the joiner opens, the peer sends the same back
+    port 0    key eight zero bytes, body `0100`    the host opens, the peer sends the same back
+    port 1    `b90101b902b902000001`              the joiner announces the zero key open
 
-Each open is sequence 1 with the message-start, message-end and initialized flags, and is answered
-with a one-entry acknowledgement. `docs/pla.md`, The game's reliable channel.
+Port 1 carries no handler key: it is the channel table, `pokeldn.pla.channel_table`, and a station
+sends on a key only once its peer has announced that key open there. Each open is sequence 1 with
+the message-start, message-end and initialized flags, and is answered with a one-entry
+acknowledgement. `docs/pla.md`, The game's reliable channel.
 """
 
 from pokeldn.ldn import reliable5
@@ -60,15 +62,24 @@ def split_message(payload):
     return payload[:KEY_SIZE], payload[KEY_SIZE:]
 
 
+def build_payload_message(payload, sequence_id, flags=None):
+    """-> a reliable message carrying `payload` as it stands at `sequence_id`.
+
+    Port 0 payloads are a key and a body (`build_message`); port 1 payloads are the channel table
+    (`pokeldn.pla.channel_table`) and carry no key.
+    """
+    if flags is None:
+        flags = (reliable5.FLAG_APPLICATION_DATA | reliable5.FLAG_MESSAGE_START
+                 | reliable5.FLAG_MESSAGE_END
+                 | (reliable5.FLAG_IS_INITIALIZED if sequence_id == 1 else 0))
+    payload = bytes(payload)
+    return (reliable5.build_header(flags, sequence_id, len(payload), lowest_pending=sequence_id,
+                                   stream_id=0) + payload)
+
+
 def build_message(key, body, sequence_id, flags=None):
     """-> a channel message carrying `key` and `body` at `sequence_id`."""
     key = bytes(key)
     if len(key) != KEY_SIZE:
         raise ValueError(f"a handler key is {KEY_SIZE} bytes, not {len(key)}")
-    if flags is None:
-        flags = (reliable5.FLAG_APPLICATION_DATA | reliable5.FLAG_MESSAGE_START
-                 | reliable5.FLAG_MESSAGE_END
-                 | (reliable5.FLAG_IS_INITIALIZED if sequence_id == 1 else 0))
-    payload = key + bytes(body)
-    return (reliable5.build_header(flags, sequence_id, len(payload), lowest_pending=sequence_id,
-                                   stream_id=0) + payload)
+    return build_payload_message(key + bytes(body), sequence_id, flags)
