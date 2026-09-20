@@ -49,8 +49,10 @@ MESH_DESTINATION = 0x0001
 NET_CONN_STATUS = 0x11
 NET_CONN_STATUS_ACK = 0x12
 ESTABLISHING_FLAGS = pia6.MESSAGE_FLAG_SKIP_SOURCE_CHECK
-# Our own station's variable id. A joiner invents one and states it; the host learns it from what
-# we send. The same constant Arceus's joiner uses (`bin/pla_join.py`).
+# The variable id we send as our own until the host assigns one. A retail joiner does not invent
+# one: the host names the joiner's id in the plaintext footer of its first mesh-addressed packet,
+# 0.14 s after the association and before the joiner has sent anything, and the joiner then uses
+# that value as its own source id (`docs/sv.md`). This is the fallback for a host that never does.
 OUR_VAR = 0xC493
 OUR_STATION_INDEX = 1
 HOST_BITMAP = 0x01                # the destination mask a joiner writes: the host, station 0
@@ -106,7 +108,7 @@ def _describe_msg(msg):
             f"flags=0x{msg.message_flags:02x} len={len(msg.payload)}")
 
 
-def build_out(keys, our_ip, body, dst_var, *, protocol, port=0, flags=0):
+def build_out(keys, our_ip, body, dst_var, *, protocol, port=0, flags=0, src_var=OUR_VAR):
     """A version-11 packet from us to the host, addressed the way the band addresses that protocol.
 
     `dst_var` is 0 for an establishing message: the console has no station for us yet and its parser
@@ -117,7 +119,7 @@ def build_out(keys, our_ip, body, dst_var, *, protocol, port=0, flags=0):
     if protocol in MESH_ADDRESSED:
         footer_ids, dst_var = (dst_var,), MESH_DESTINATION
     return pia6.build_packet(keys.session_key, keys.network_id, our_ip, msg,
-                             dst_var=dst_var, src_var=OUR_VAR, packet_id=0, nonce8=os.urandom(8),
+                             dst_var=dst_var, src_var=src_var, packet_id=0, nonce8=os.urandom(8),
                              footer_ids=footer_ids)
 
 
@@ -303,6 +305,11 @@ async def run_session(args, keys, host_ip, host_mac, our_ip, our_mac, record):
     # /24 (sv11: 169.254.86.2 -> 169.254.86.255), never to the peer's address.
     dest_ip = host_ip if args.unicast else our_ip.rsplit(".", 1)[0] + ".255"
 
+    ours = {"var": OUR_VAR, "assigned": False}
+
+    def out(body, dst_var, **kw):
+        return build_out(keys, our_ip, body, dst_var, src_var=ours["var"], **kw)
+
     def send(pkt, what, **extra):
         sock.sendto(pkt, (dest_ip, sv.PIA_PORT))
         record(rec="out", dst=dest_ip, kind=what, hex=pkt.hex(), t=time.time(), **extra)
@@ -313,7 +320,7 @@ async def run_session(args, keys, host_ip, host_mac, our_ip, our_mac, record):
         body = pia6.build_session_join(
             our_const, OUR_VAR, our_ip, host_const, host_var or 0, args.name, os.urandom(4),
             app_ver=args.join_app_ver)
-        send(build_out(keys, our_ip, body, 0, protocol=PROTO_SESSION), "session join request")
+        send(out(body, 0, protocol=PROTO_SESSION), "session join request")
         print(f"[sv] -> {host_ip}: session join request (type 0), "
               f"host_var={host_var if host_var is None else hex(host_var)}, "
               f"host_const={host_const.hex()}")
@@ -323,14 +330,14 @@ async def run_session(args, keys, host_ip, host_mac, our_ip, our_mac, record):
         after it associates (sv11). Everything is one packet per message, as the console sends it."""
         for protocol, port in streams.every_stream():
             body = streams.build_ack({}, 1, streams.JOINER_INDEX, unknown0=1)
-            send(build_out(keys, our_ip, body, host_var or 0, protocol=protocol, port=port,
+            send(out(body, host_var or 0, protocol=protocol, port=port,
                            flags=streams.MESSAGE_FLAGS_ACK), "reliable ack", protocol=protocol,
                  port=port)
             last_ack[(protocol, port)] = time.time()
             if port in streams.OPEN_PORTS[streams.JOINER_INDEX] and protocol == streams.PROTOCOL_STREAM:
                 body = streams.build_open(port, streams.JOINER_INDEX)
                 our_seq[(protocol, port)] = 2
-                send(build_out(keys, our_ip, body, host_var or 0, protocol=protocol, port=port,
+                send(out(body, host_var or 0, protocol=protocol, port=port,
                                flags=streams.MESSAGE_FLAGS_DATA), "stream open",
                      protocol=protocol, port=port)
         print(f"[sv] -> {host_ip}: eleven acks and the two stream opens "
@@ -359,7 +366,7 @@ async def run_session(args, keys, host_ip, host_mac, our_ip, our_mac, record):
         if args.rtt_period and opened and now - last_rtt >= args.rtt_period:
             last_rtt = now
             clock = int(time.monotonic() * 1e6) & ((1 << 64) - 1)
-            send(build_out(keys, our_ip, streams.build_rtt_request(clock.to_bytes(8, "big")),
+            send(out(streams.build_rtt_request(clock.to_bytes(8, "big")),
                            host_var or 0, protocol=PROTO_RTT), "rtt request")
         if not args.no_ack:
             for key, at in list(last_ack.items()):
@@ -367,7 +374,7 @@ async def run_session(args, keys, host_ip, host_mac, our_ip, our_mac, record):
                     protocol, port = key
                     body = streams.build_ack({streams.HOST_INDEX: stream_high.get(key, 0)},
                                              our_seq.get(key, 1), streams.JOINER_INDEX)
-                    send(build_out(keys, our_ip, body, host_var or 0, protocol=protocol,
+                    send(out(body, host_var or 0, protocol=protocol,
                                    port=port, flags=streams.MESSAGE_FLAGS_ACK), "reliable ack",
                          protocol=protocol, port=port)
                     last_ack[key] = now
@@ -394,6 +401,14 @@ async def run_session(args, keys, host_ip, host_mac, our_ip, our_mac, record):
         if host_var is None:
             host_var = header.src_var
             print(f"[sv] the host's variable id is {host_var:#06x}")
+        # The footer of a mesh-addressed packet names its recipients. A host that has created a
+        # station for us names the id it gave us there, and that id is ours from then on.
+        if not ours["assigned"]:
+            for fid in ids:
+                if fid not in (0, host_var):
+                    ours.update(var=fid, assigned=True)
+                    print(f"[sv] the host assigned us variable id {fid:#06x}")
+                    break
         try:
             msgs = list(pia6.parse_messages(plain))
         except Exception as exc:
@@ -415,7 +430,7 @@ async def run_session(args, keys, host_ip, host_mac, our_ip, our_mac, record):
                         print(f"[sv] the console states host_var={host_var:#06x} "
                               f"host_const={host_const.hex()}")
                     if args.net_ack:
-                        send(build_out(keys, our_ip, pia_connect.build_net_response(seqid), 0,
+                        send(out(pia_connect.build_net_response(seqid), 0,
                                        protocol=PROTO_NET, flags=ESTABLISHING_FLAGS),
                              "net conn response", seqid=seqid)
                         print(f"[sv] -> {host_ip}: net 0x12 ack, seqid={seqid}")
@@ -424,9 +439,8 @@ async def run_session(args, keys, host_ip, host_mac, our_ip, our_mac, record):
                     joined = True
                 print(f"[sv] the host spoke Session: {SESSION_MESSAGE_NAMES.get(msg.payload[0], '?')}")
             if not args.no_rtt and msg.protocol == PROTO_RTT and msg.payload and msg.payload[0] == 0:
-                send(build_out(keys, our_ip,
-                               streams.build_rtt_response(msg.payload, header.src_var),
-                               header.src_var, protocol=PROTO_RTT), "rtt response")
+                send(out(streams.build_rtt_response(msg.payload, header.src_var),
+                         header.src_var, protocol=PROTO_RTT), "rtt response")
             if msg.protocol in RELIABLE_PROTOCOLS and len(msg.payload) >= reliable5.HEADER_SIZE:
                 try:
                     rm = reliable5.parse(msg.payload)
@@ -455,7 +469,7 @@ async def run_session(args, keys, host_ip, host_mac, our_ip, our_mac, record):
                     if not args.no_ack:
                         ack = streams.build_ack({streams.HOST_INDEX: stream_high[key]},
                                                 our_seq.get(key, 1), streams.JOINER_INDEX)
-                        send(build_out(keys, our_ip, ack, host_var or 0, protocol=msg.protocol,
+                        send(out(ack, host_var or 0, protocol=msg.protocol,
                                        port=msg.port, flags=streams.MESSAGE_FLAGS_ACK),
                              "reliable ack", protocol=msg.protocol, port=msg.port)
                         last_ack[key] = time.time()

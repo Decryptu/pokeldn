@@ -167,6 +167,22 @@ offset and the addresses read as fragments of a MAC. Unpacking the A-MSDU subfra
 readable traffic of one capture from 313 Pia packets to 3667. Any decoder pointed at these two
 consoles has to do it; `scratchpad/pia6_air_decode.py` does.
 
+## Where the code is
+
+Offsets into the decompressed `main` of 4.0.0. The RTTI names come out of the binary's own
+type_info records with `tools/switch/rtti_names.py`, which finds 208 `nn::pia` classes.
+
+| address | what |
+|---|---|
+| `0x697134` | the Pia header initializer: the magic, the version byte 0x0b, header size 0x1c |
+| `0x696f10` | the header parser, field by field, which fixes each field's width |
+| `0x697034` | the payload bound: a length above 0x5a3 returns null |
+| `0x3c0c8c0`, `0x44dfcfe` | the passphrase and the game key, rodata and data |
+| `0x6b43a8` | `LdnConnectionStatus::vfunc20`, which reads `nn::ldn::GetNetworkInfo` and turns the participant list into station addresses |
+| `0x6b45e0`..`0x6b4754` | its loop over the eight participant slots: a slot is 0x40 bytes with its address at `+0x108` and a present byte at `+0x113`, matched against the station array at object `+0x30` with its count at `+0x38` |
+| `0x6b3090` | `LdnProtocol::vfunc104`, another `GetNetworkInfo` reader |
+| `0x046ca878` | the GOT slot for `nn::ldn::GetNetworkInfo`; six call sites reach it |
+
 ## Unresolved
 
 A host built here is joined by a searching console, which then never opens its Pia socket: it
