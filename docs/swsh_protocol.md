@@ -199,7 +199,12 @@ each followed by `[sub+0x78] = clock` and `strh 0x0100 -> [sub+0x60]`, which set
 `sub+0x61`. Slot 7, the value the framework hashes, is `ldr x0,[x0,#0x78]; ret`: the clock.
 
 A sub-element is born with `0xfc18fc18` at `+0x88` (`0x006d6160`) and records its size as 0x90, the
-router's stride.
+router's stride. The three kinds are three classes with one constructor each, reached through
+three slots of one listener vtable (`0x2512b38`): slot 2 (`+0x10`) makes the 32-bit kind
+(`0x006d5c00`, vtable `0x2512bc8`), slot 3 (`+0x18`) the pair (`0x006d6160`, `0x2512c90`), slot 4
+(`+0x20`) the 16-bit kind (`0x006d66d0`, `0x2512d58`). Which content calls slot 4 is unread; the
+element's phase `+0xac` is a halfword and its shared-value holder at `+0xf0` is a 0x40-byte object
+of its own class (`0x006d29b0`), not one of the three.
 
 ### The quorum hash
 
