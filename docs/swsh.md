@@ -68,8 +68,6 @@ then `SYSREQ.N native, bytes`.
 - Inside the player profile ([the protocol page](swsh_protocol.md#the-player-profile)): what the
   seven position-sample states mean beyond the two the bicycle sets, and what the Battle
   Stadium's 0x118-byte block at 0xBF6 holds field by field.
-- Where a materialised Wonder Card is kept. The importer builds a `0x3A8` card object and the album
-  re-encodes it, since neither the 720-byte record nor any string in it appears in the save.
 - How a partner's command reaches a sub-element's body word. The receive handler `0x010dbc90` does
   not write it. That an arriving command lets the shared value move is inferred from a per-station
   flag and from every run so far.

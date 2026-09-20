@@ -1091,7 +1091,42 @@ builds no sub-object, and the identifier of what to give was zero. The save none
 regions totalling 671 bytes, clustered around `0x062000`, and gained a 789-byte `poke_trade` file.
 
 The album does not keep the wire record. Neither the 720 bytes nor any string in them appears in the
-save, so the card is re-encoded on the way in, and the stored form is its own question.
+save; the card is re-encoded on the way in, into the block below.
+
+## Where the album keeps a card
+
+The album is save block `0x112D5141` (PKHeX's `KMysteryGift`, "Mystery Gift Data"), `0x17C8` bytes,
+loaded by `0x01447eb0` into the album object at `+0x60` and written back by `0x01449d90`.
+`tools/switch/swsh_save.py` reads a `main` into its blocks (PKHeX's SwishCrypto: a static xorpad
+over the file, a XorShift32 stream per block seeded by its key, and a SHA-256 over the encrypted
+body between two constants); `--key 112d5141 --out FILE` writes this block out, and
+`--patch KEY OFF HEX --write OUT` rewrites bytes of a block in place and reseals the file. Read across seven saves of the emulated Shield taken between deliveries:
+
+    0x0000  50 slots of 0x68 bytes, the newest card in slot 0: an insert moves every slot down one
+            (`0x01449880` indexes them, `cmp w1, #0x31`; a slot is in use when its +0x0C is non-zero)
+    0x1450  0x378 bytes, zero in every save read
+
+A slot is the `0x68`-byte header the importer fills from the record, kept as it stands when the card
+is claimed:
+
+    +0x00  8    the record's first eight bytes, the date bitfield (a card built with no date reads
+                zero here, the 1 January 2070 the album draws)
+    +0x08  u16  card id
+    +0x0A  u16  the record's byte at +0x15 (0 on the Pokemon cards, 1 on the kind-3 cards, 3 on
+                the item card received)
+    +0x0C  u8   kind: 1 Pokemon, 2 item, 3 the empty kind
+    +0x0D  u8   3 on the item card, 0 on the others
+    +0x0F  u8   the record's byte at +0x1C (1 on the kind-3 cards)
+    +0x12  u16  level (kind 1)
+    +0x30  u32  species (kind 1); on a kind-2 card, the item pairs start here: u16 id, u16
+                quantity, repeated as the record carries them at +0x20 (the poisoned card's three
+                pairs read back `01 00 03 00 32 00 02 00 05 c0 05 00`)
+    +0x38  4 x u32  moves (kind 1)
+    +0x48  26   nickname, UTF-16 (kind 1)
+    +0x62  u8   3 on every Pokemon card
+
+Zeroing slot 0's +0x0C..+0x62 removes the poisoned card from the album; the bag row it created is a
+separate block (`MyItem`, `0x1177C2C4`) and stays.
 
 ## The store is not drained on the Mystery Gift screen
 
