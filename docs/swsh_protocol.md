@@ -242,9 +242,15 @@ MyStatus and TrainerCard are PKHeX save blocks (`Saves/Substructures/Gen8/SWSH/`
 
 The builder is `0x0110c180`: `0x00784f90` writes the party, `0x01424f10` MyStatus, a memcpy of
 0x1C8 from the trainer card block, `0x01124fa0` the profile into the 0x10A at 0xAEC, and a memcpy
-of 0x188 from an optional block into 0xBF6, or a memset when the session has none. Link Trade's
-session setup (`0x010967f0` calling `0x010fcff0`) passes no block; the caller at `0x00b2d7d0`
-passes one. The receiver `0x0110cff0` copies the two regions into per-station objects.
+of 0x188 from an optional block into 0xBF6, or a memset when the session has none. Three session
+setups call `0x010fcff0`: Link Trade (`0x010967f0`) and the password-matching session
+(`0x00bd80f4`, `ChikaMatchingStateSession`) pass no block; the Battle Stadium state
+(`0x00b2d7d0`, `StateBtlSpotCasualMatchBattle`, `StateBtlSpotRankMatchBattle`,
+`StateBtlSpotCompBattle`) passes one, so the block is the Battle Stadium's and a local
+session's snapshot carries 392 zero bytes there. The block is 0x180 bytes of data and a u64
+length of 0x118; `0x00b2eb60` fills the data: a u32 from `0x008ff9e0`, 0x100 bytes copied from
++0xCE of the current match object, a u64, a bool, and a u32, u16 and u8 taken from that object's
++0x98. The receiver `0x0110cff0` copies the two regions into per-station objects.
 
 ### The player profile
 
