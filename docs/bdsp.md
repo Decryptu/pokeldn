@@ -47,12 +47,7 @@ Proven on retail hardware, end to end:
   capture.
 - Whether the console reads a `NetCharacterStateData` answer. The answers are accepted by the
   transport, land on the right stream with the right bytes, and have no observable effect.
-- `NetDataReturnSelectData` (id 69) appears only after a completed trade and is repeated once a
-  second until the peer's station leaves. By its name it offers the select window again (a second
-  trade inside the same association). Nothing builds an answer.
 - The name the game shows for a talked-to character. No `NetPlayerNameData` and no trainer card
   went out in the run that produced it.
-- Whether the console sets `IsNicknamed` on every received Pokemon or only when the name differs
-  from the species name. One run with a name equal to the species name separates those.
 - `NetDataSelectData`'s index. The two runs that swept it declined the conversation before the index
   could matter; it is unmeasured.

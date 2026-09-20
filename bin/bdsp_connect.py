@@ -135,7 +135,7 @@ async def main_async(args):
               "reserves_sent": 0, "reserve_results": 0, "match_wait_sent": 0,
               "reserve_accepted": False, "room_done": False, "their_traner": None,
               "requests_sent": 0, "requested_answers": {}, "rel_fragments": {}, "their_zone": None,
-              "their_poke": None, "our_poke": None, "trade_replies": 0, "check_oks": 0,
+              "their_poke": None, "their_pokes": 0, "our_poke": None, "trade_replies": 0, "check_oks": 0,
               "their_ready_ok": None, "ready_oks_sent": 0, "their_security_state": None,
               "our_security_state": 0, "our_next_seq": 0, "return_selects": 0}
 
@@ -1166,8 +1166,14 @@ async def main_async(args):
                       f"{theirs['nickname']!r}, OT {theirs['ot_name']!r}, "
                       f"IVs {theirs['ivs']} ***")
                 record(rec="their_poke", t=now, fields=theirs)
-                pathlib.Path(args.trade_save_poke).write_bytes(payload[room.HEADER_SIZE:])
-                print(f"[cx]   saved their Pokemon -> {args.trade_save_poke}")
+                # One association carries as many trades as the player starts, so each offer
+                # also goes to a numbered copy; the plain path is always the latest.
+                st["their_pokes"] += 1
+                out = pathlib.Path(args.trade_save_poke)
+                numbered = out.with_name(f"{out.stem}_{st['their_pokes']}{out.suffix}")
+                out.write_bytes(payload[room.HEADER_SIZE:])
+                numbered.write_bytes(payload[room.HEADER_SIZE:])
+                print(f"[cx]   saved their Pokemon -> {out} and {numbered}")
                 if not st["our_poke"]:
                     print("[cx] no --trade-template, so nothing to offer back")
                     return
@@ -1627,7 +1633,8 @@ def build_parser():
     ap.add_argument("--trade-species", type=int, metavar="N", help="species for the offered Pokemon")
     ap.add_argument("--trade-nickname", metavar="TEXT", help="nickname for the offered Pokemon")
     ap.add_argument("--answer-return-select", action="store_true",
-                    help="answer the NetDataReturnSelectData a completed trade ends on, ONCE")
+                    help="answer the NetDataReturnSelectData a completed trade ends on, ONCE. "
+                         "It is an announcement; the answer has no measured effect")
     ap.add_argument("--return-select-value", type=int, default=1, metavar="N",
                     help="the byte to answer it with (default 1, opendpr's `received`)")
     ap.add_argument("--trade-ot", metavar="TEXT", help="OT name for the offered Pokemon")

@@ -330,15 +330,10 @@ TRADE_READY_OK = 0x21             # NetDataTradeReadyOkData: past this the conso
                                   # save. `build_trade_ready_ok` below.
 TRADE_TRANER = 0x24               # NetDataTradeTranerData: who the player trading with us is
 TRADE_POKE = 0x13                 # NetTradePokeData: a whole Pokemon, 328 bytes
-RETURN_SELECT = 0x45              # NetDataReturnSelectData, sent only after a completed trade:
-                                  # `45 00 01 00` once a second until our station leaves.
-                                  # `build_fields(RETURN_SELECT, 1)` answers it.
-                                  #
-                                  # The base game has no such type, method or string; it is one of
-                                  # the 41 messages 1.3.0 added. The byte's meaning rests on
-                                  # opendpr's signature
-                                  # `TradeSelectPokeModel$$SendReturnSelectPoke(bool received)`
-                                  # alone, which makes 1 the answer. Not checked against code.
+RETURN_SELECT = 0x45              # NetDataReturnSelectData: the console is back in its select
+                                  # window after a completed trade. `45 00 01 00` once a second
+                                  # until the player picks the next Pokemon. An announcement, not
+                                  # a question: answering 1 changes nothing (docs/bdsp_trade.md).
 
 
 def parse_trade_traner(body):

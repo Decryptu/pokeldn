@@ -110,12 +110,25 @@ Leaving WAIT_READYOK needs a message to arrive inside a window the console opens
 that the repeat is what trips it is inferred, not measured. The window was 28.9 s and 28.3 s in two
 completed trades.
 
-`NetDataReturnSelectData` (id 69) appears only after a completed trade and is repeated once a second
-until the peer's station leaves:
+`NetDataReturnSelectData` (id 69) announces the console's return to its select window after a
+completed trade:
 
     data_id 69 (0x45)   payload 45 00 01 00   {'isReturnSelect': 0}
 
-the same `<id> 00 01 <value>` shape as the check-ok. Nothing builds an answer.
+the same `<id> 00 01 <value>` shape as the check-ok. It is an announcement, not a question: an
+answer of 1 changes nothing, and it repeats once a second until the player picks the next Pokemon
+(78 and 50 repeats in runs where the peer sat still, 7 across three trades started back to back).
+
+One association carries as many trades as the player starts. The flow is a loop from the select
+window: no second approach, no second trainer record, and the same `NetTradePokeData` exchange,
+check-ok and security phase each round. Three trades back to back have completed in one
+association, and two trades in one association are the standard way to read back what the console
+stores: give it a Pokemon on the first, receive the same Pokemon on the second. The client's
+security-state repeater has to stop when a trade completes: in the select window a
+`NetDataTradeReadyOkData` goes to `TradeSelectPokeModel$$ReciveReadyOk`, which writes
+`targetTradeState`, and `WaitBoxWindowComplete` leaves only when that is WAIT(2). A repeater still
+sending SEND_READYOK(5) holds the next trade in the box window until the console reports the
+cancellation as the peer's.
 
 ## The Pokemon
 
@@ -163,6 +176,11 @@ Two bytes differ across a round trip of 328:
 
 The console set `IsNicknamed` itself; the name string is untouched. Everything else (handler,
 friendship, met date and location, moves, PP) survives byte for byte.
+
+The flag is set only when the name differs from the species name. The same Zubat sent with the
+flag clear and the name `Nosferapti`, its species name in the game's language, came back with all
+328 bytes unchanged. A name the flag does not enable is drawn anyway when it differs, because the
+console enables it on receipt; a species name stays a species name.
 
 ### When the receiver is not the original trainer
 
