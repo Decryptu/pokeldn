@@ -722,7 +722,7 @@ class HostTransport:
                  local_comm_id=None, scene_id=None, app_version=None, max_participants=2,
                  phyname="phy0", ifname="ldn-tap", ap_ifname="ldn", mon_ifname="ldn-mon",
                  channel=None, skip_encryption=False, accept_decrypted_ccmp=False,
-                 tracer=None, log=print, protocol=3, ssid=None):
+                 tracer=None, log=print, protocol=3, ssid=None, platform=None):
         self.info = getattr(log, "info", log)
         self.tracer = tracer
         # The LDN protocol version the advertisement is encrypted for: 3 (AES-GCM, master_key_12) is
@@ -744,6 +744,10 @@ class HostTransport:
         self.channel = channel
         self.skip_encryption = skip_encryption
         self.accept_decrypted_ccmp = accept_decrypted_ccmp
+        # The station platform byte the advertisement and the authentication response carry: 0 is a
+        # Switch, 1 a Switch 2. A retail Switch 2 advertises 1 (`docs/sv.md`). None keeps the LDN
+        # layer's own default.
+        self.platform = platform
         if local_comm_id is not None:
             self.LOCAL_COMMUNICATION_ID = local_comm_id
         if scene_id is not None:
@@ -838,6 +842,8 @@ class HostTransport:
             param.app_version = self.APPLICATION_VERSION
             param.max_participants = self.max_participants
             param.accept_policy = ldn.ACCEPT_ALL
+            if self.platform is not None:
+                param.platform = self.platform
             param.application_data = self.app_data
             param.password = self.password
             param.name = self.nickname.encode()
