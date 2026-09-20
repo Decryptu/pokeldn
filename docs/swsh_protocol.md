@@ -306,8 +306,9 @@ byte-aligned; three groups are bit-packed, least significant bit first.
               and the u16. The u16 is the player's location: 0x00f27d70 looks the current
               field's name up in `script/place_name.dat` and returns its line, the met-location
               id PKHeX prints (`text_swsh_00000_en.txt`): 170 Challenge Beach in every trade
-              capture, 188 Stepping-Stone Sea in the trade-screen beacon read; the set of the
-              value is 0x0111bc60, the readers 0x0111b8c8 and 0x0111b8f4.
+              capture, 188 Stepping-Stone Sea in the trade-screen beacon read, and the player
+              confirms the character stood on that beach of the Isle of Armor through the
+              trade runs; the setter is 0x0111bc60, the readers 0x0111b8c8 and 0x0111b8f4.
     0xB5  37  two more groups (56 and 16 source bytes), zero in every capture
     0xDA  32  sixteen u16 records, `0x010f5060`: Record8 indexes 6, 32, 0, 33, 17, 27, 34, 24,
               12, 3, 10, 35, 38, 7, 36, 37, each clamped to 0xFFFF (PKHeX `RecordList_8`:
