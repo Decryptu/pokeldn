@@ -72,12 +72,12 @@ then `SYSREQ.N native, bytes`.
   not write it. That an arriving command lets the shared value move is inferred from a per-station
   flag and from every run so far.
 - The elementId-10000 hash inputs. The formula is read (a CRC-32 quorum over the sub-elements'
-  clocks); an inversion search over every clock in the observed window finds no two-station
-  solution, so either the channel's list holds more than two stations or the hashed clock is not the
-  envelope clock.
+  clocks, the CRC verified under unicorn); an inversion search over every clock in the observed
+  window finds no two-station solution. The hashed list is a filtered copy of the element's
+  sub-element list (`0x006d48b0`), and how many entries a trade channel's copy holds is unread.
 - Sword against Shield. Everything read off the binary is Shield's; the console is Sword. The
   passphrase, the game key and the Pia version hold across the pair. The local communication id does
   not: `0x0100ABF008968000` is Sword's. Mystery Gift's state names are Shield-only readings.
-- A third sub-element kind takes two-byte bodies (`0x006d69f0`, `cmp x2,#2`). Which element field
-  carries it is unknown; the confirmation element's update touches only `+0xd0`, `+0xf0` and `+0x110`
-  and all three are accounted for.
+- A third sub-element kind takes two-byte bodies (`0x006d69f0`, `cmp x2,#2`; constructor
+  `0x006d66d0`, listener slot 4). Which content creates one is unknown; the confirmation element's
+  update touches only `+0xd0`, `+0xf0` and `+0x110` and none of the three is one.
