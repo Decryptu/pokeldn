@@ -183,6 +183,20 @@ type_info records with `tools/switch/rtti_names.py`, which finds 208 `nn::pia` c
 | `0x6b3090` | `LdnProtocol::vfunc104`, another `GetNetworkInfo` reader |
 | `0x046ca878` | the GOT slot for `nn::ldn::GetNetworkInfo`; six call sites reach it |
 
+## The Session protocol is there and is never in a capture
+
+The binary carries `nn::pia::session::SessionProtocol`, whose id vfunc at `0x6d9f3c` returns
+**0x98**, next to `JoinMeshJob`, `CreateMeshJob`, `LeaveMeshJob`, `JoinSessionJob` and
+`SessionPacketReader`/`Writer`. So the mesh join a joiner runs exists in Scarlet exactly as it does
+in Legends Arceus, and the reason no capture shows it is that it is addressed to one station: a
+Session message carries the peer's variable id in the packet header and no footer, so it goes out
+unicast, and the two consoles' unicast is 802.11ax. Everything a passive capture does show, Net,
+RTT and the eleven streams, is mesh-addressed and therefore broadcast.
+
+This also dates the host's assignment of the joiner's variable id: it names the id 0.14 s after the
+association, which is after a unicast join would have arrived and long before the joiner's first
+broadcast at 0.89 s.
+
 ## Unresolved
 
 A host built here is joined by a searching console, which then never opens its Pia socket: it
@@ -198,7 +212,11 @@ assigns it. Everything the joiner sent before it was assigned one is in the capt
 gratuitous ARPs and an IPv6 multicast listener report, so the host assigns the id from the LDN
 participant list alone, with no Pia input. Against a station this project brings, the host stops
 after its Net 0x11, repeats it, and about eight seconds later announces host migration: it never
-creates the station. What it reads to decide that is unread.
+creates the station. Seven things have been matched to a retail station without changing it: the
+advertisement field for field, the station platform byte, the Pia block's player count, the eleven
+acknowledgements and the two stream opens, the LDN broadcast address, the message flags each kind
+of message carries, and a Nintendo MAC on the adapter. What the host is waiting for is a Session
+message it never receives, and the layout Legends Arceus uses for that message draws no answer.
 
 Both consoles are Switch 2 and their unicast is 802.11ax, which neither the project's adapter nor a
 MacBook's Broadcom sniffer demodulates. Of a 74-second session the pair sent 388 and 387 readable
