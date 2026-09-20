@@ -78,6 +78,30 @@ def cleanup_stale():
                        stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
 
 
+def set_mac(phy, mac, log=print):
+    """Give the phy's own interface this MAC, so the vif the association creates inherits it.
+
+    An interface has to be down to take a new address. The driver reload every launcher runs puts
+    the adapter's own address back, so nothing here has to undo it.
+    """
+    import subprocess
+
+    base = os.path.join("/sys/class/ieee80211", phy, "device", "net")
+    try:
+        names = os.listdir(base)
+    except OSError:
+        log(f"[sv] no interface under {base}; the MAC is unchanged")
+        return False
+    for name in names:
+        subprocess.run(["ip", "link", "set", "dev", name, "down"], check=False)
+        r = subprocess.run(["ip", "link", "set", "dev", name, "address", mac], check=False)
+        if r.returncode:
+            log(f"[sv] {name} refused the address {mac}")
+            return False
+        log(f"[sv] {name} is now {mac}")
+    return True
+
+
 def make_socket(ifname):
     s = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
     s.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
@@ -153,6 +177,11 @@ def build_parser():
     ap.add_argument("--name", default="PkCamp", help="the LDN node name we publish")
     ap.add_argument("--platform", type=int, default=sv.PLATFORM,
                     help="the station platform byte we publish; 1 is what a Switch 2 sends")
+    ap.add_argument("--mac", default=None,
+                    help="set the adapter's MAC before associating, e.g. 48:f1:eb:11:22:33. Pia "
+                         "derives a station's constant id from its MAC, and the two consoles' are "
+                         "Nintendo OUIs where the adapter's is not. The driver reload in the "
+                         "launcher puts the adapter's own address back")
     ap.add_argument("--scan-only", action="store_true",
                     help="report what the console advertises and join nothing")
     ap.add_argument("--session-join", action="store_true",
@@ -202,6 +231,8 @@ def main(argv=None):
     print(f"[sv] phy={phy} channels={channels} dwell={args.dwell}s "
           f"comm_id={' or '.join(f'{c:#018x}' for c in sorted(want))}")
     cleanup_stale()
+    if args.mac:
+        set_mac(phy, args.mac)
     keys_file = ldn.load_keys(keys_path)
 
     cap = open(args.capture, "w") if args.capture else None
