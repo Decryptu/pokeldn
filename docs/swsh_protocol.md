@@ -214,8 +214,11 @@ built by `0x006d7b40` at `element+0xa8`:
 The hash is zero until every station's sub-element has taken a body; a non-zero hash is the console
 reporting that the peer's sub-element went ready. `0x0065de30` is a standard `zlib.crc32` (table
 generated from the non-reflected polynomial `0x04C11DB7` with index and value bit-reversed, the
-ordinary `0xEDB88320` table; init `0xFFFFFFFF`, `mvn` at the end). The CRC-16 generator two
-functions along (`0x0065df04`, poly `0x8005`) belongs to a different table.
+ordinary `0xEDB88320` table; init `0xFFFFFFFF`, `mvn` at the end); run under unicorn it returns
+`zlib.crc32` on every input tried (`scratchpad/swsh_emu_crc32.py`). The CRC-16 generator two
+functions along (`0x0065df04`, poly `0x8005`) belongs to a different table. The list the hash
+walks, `element+0x110`, is a copy `0x006d48b0` takes of the element's list at `+0x40`, keeping the
+entries whose `+0x68` is zero; how many entries a trade channel's copy holds has not been read.
 
 ## The party payload on protocol 0x84
 
