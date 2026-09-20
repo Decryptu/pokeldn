@@ -159,113 +159,83 @@ def test_a_short_session_58_payload_is_repaired_and_anything_else_is_refused():
         trade_payload.inflate_short(b"\x00" * 100)
 
 
-# --- The fourth copy of the name, session 60 ---------------------------------------------------
+# --- The player profile at the tail ------------------------------------------------------------
 #
-# A run's payload carries the trainer name a FOURTH time, at 0xB14, between two copies of an
-# eight-byte account token - the shape of a player record - inside the 660-byte tail this project
-# had never read. Every snapshot sent before session 60 therefore said PkCamp in MyStatus, the
-# trainer card and all six Pokemon, and Player in the tail. `party_matches_trainer` cannot see it:
-# it only compares the party against MyStatus.
+# A retail Sword's profile with the three ids at its front zeroed and the slack after the name's
+# terminator cleared. `docs/swsh_protocol.md`, "The player profile", is the layout; the values
+# below are what that console's profile said on the day.
 
-TAIL_NAME_AT = 0xB14                  # where it lands in one run's payload; searched for, not assumed
+PROFILE = bytes.fromhex(
+    "00" * 0x28
+    + "470075007200760061006e00" + "00" * 12                     # the name, 24 bytes
+    + "0c11011c610000040400801540dc80830e5c7450040203200202"     # appearance, bit-packed
+    + "c607"                                                     # sample header
+    + "4b607044478ba5c6425c9a5d477c7c24bf"                       # three samples, counters 11 10 9
+    + "4a607044478ba5c6425c9a5d477c7c24bf"
+    + "49607044478ba5c6425c9a5d477c7c24bf"
+    + "010d" + "00" * 33 + "aa" + "00" * 39                      # activity 13, its u16 170
+    + "e001e3004e070000320000001c000400ac00b80004003e00f60f0b009c05f702"   # sixteen records
+    + "00" * 16)
+assert len(PROFILE) == trade_payload.PROFILE_LENGTH
 
 
-def a_payload_with_a_tail_name(name="Player", **kw):
-    out = bytearray(a_payload(name=name, **kw))
-    planted = name.encode("utf-16-le") + b"\x00\x00"
-    out[TAIL_NAME_AT:TAIL_NAME_AT + len(planted)] = planted
+def a_payload_with_the_profile(**kw):
+    out = bytearray(a_payload(name="Gurvan", **kw))
+    out[trade_payload.TAIL_OFFSET:] = PROFILE.ljust(trade_payload.TAIL_LENGTH, b"\x00")
     return bytes(out)
 
 
-def test_the_tail_carries_a_fourth_copy_of_the_trainer_name():
-    payload = a_payload_with_a_tail_name()
-    was = trade_payload.read(payload)["trainer_name"]
-    assert payload.find(was.encode("utf-16-le"), trade_payload.TAIL_OFFSET) == TAIL_NAME_AT
+def test_the_profile_reads_back_field_by_field():
+    t = trade_payload.read_tail(a_payload_with_the_profile())
+    assert t["name"] == "Gurvan"
+    assert (t["gender"], t["language"]) == (0, 3)                 # male, French
+    assert t["appearance"] == [1, 71, 6, 0, 4, 1, 0, 86, 64, 55, 56, 58, 92, 29, 69, 8, 3]
+    assert t["appearance_tail"] == (0, 2, 8)
+    assert [s["counter"] for s in t["samples"]] == [11, 10, 9]
+    assert {s["state"] for s in t["samples"]} == {2}
+    x, z, y, w = t["samples"][0]["floats"]
+    assert (round(x, 1), round(z, 1), round(y, 1), round(w, 3)) == (50288.4, 99.3, 56730.4, -0.643)
+    assert t["sample_u16"] == 1990 and t["sample_flags"] == (2, 0) and t["sample_end"] == 1
+    assert (t["activity"], t["activity_u16"]) == (13, 170)
+    assert t["records"]["total_capture"] == 480
+    assert t["records"]["egg_hatching"] == 1870
+    assert t["records"]["trade"] == 50
+    assert t["records"]["bike_dash"] == 4086
+    assert t["optional_u64"] == 0
+    assert not any(t["extra_block"]) and len(t["extra_block"]) == 0x188
 
-    out = trade_payload.rewrite(payload, old_name=was, trainer_name="PkCamp",
-                                trainer_id=12345, secret_id=54321)
-    assert out.find(was.encode("utf-16-le")) < 0          # nowhere in the payload at all
-    assert out.count("PkCamp".encode("utf-16-le")) == 3   # status, card, and the tail
-    assert len(out) == len(payload)
+
+def test_the_profile_name_is_the_fourth_copy_and_moves_with_the_others():
+    payload = a_payload_with_the_profile()
+    at = trade_payload.TAIL_OFFSET + trade_payload.TAIL_NAME_OFFSET
+    assert at == 0xB14
+    out = trade_payload.rewrite(payload, trainer_name="PkCamp", trainer_id=12345, secret_id=54321)
+    assert out.find("Gurvan".encode("utf-16-le")) < 0            # nowhere in the payload at all
+    assert out.count("PkCamp".encode("utf-16-le")) == 3          # status, card, and the profile
+    assert out[at:at + 24] == "PkCamp".encode("utf-16-le") + b"\x00" * 12
+    assert trade_payload.read_tail(out)["name"] == "PkCamp"
     assert trade_payload.party_matches_trainer(trade_payload.read(out))
+    # nothing else in the profile moved
+    changed = {i for i in range(0xAEC, 0xD80) if payload[i] != out[i]}
+    assert changed <= set(range(at, at + 24))
 
 
-def test_the_tail_copy_is_written_in_place_and_takes_no_extra_bytes():
-    payload = a_payload_with_a_tail_name()
-    out = trade_payload.rewrite(payload, old_name="Player", trainer_name="PkCam")
-    # "Player\0" is 14 bytes and "PkCam\0" is 12, so the two spare bytes are zeroed rather than
-    # left holding the tail of the old name.
-    assert out[TAIL_NAME_AT:TAIL_NAME_AT + 14] == "PkCam".encode("utf-16-le") + b"\x00" * 4
-    assert out[TAIL_NAME_AT + 14:TAIL_NAME_AT + 22] == payload[TAIL_NAME_AT + 14:TAIL_NAME_AT + 22]
-
-
-def test_the_tail_is_left_alone_without_an_old_name():
-    payload = a_payload_with_a_tail_name()
-    out = trade_payload.rewrite(payload, trainer_name="PkCamp")
-    assert out.find("Player".encode("utf-16-le"), trade_payload.TAIL_OFFSET) == TAIL_NAME_AT
-
-
-def test_a_longer_name_cannot_overwrite_the_tail_record():
-    payload = a_payload_with_a_tail_name()
-    with pytest.raises(ValueError):
-        trade_payload.rewrite(payload, old_name="Player", trainer_name="Playerne")
-
-
-def a_payload_with_a_player_record(name="Player", account=bytes.fromhex("e04355a2d47b0410")):
-    """The tail record the LDN beacon frames: UID, id, UID, name, id - at TAIL_OFFSET + 0x00.
-
-    The beacon carries the same record as the snapshot's tail (90 bytes agree), starting at a
-    different offset, and that second framing is what gives the field boundaries.
-    """
-    out = bytearray(a_payload(name=name))
-    base = trade_payload.TAIL_OFFSET
-    out[base:base + 0x10] = bytes(range(0x10))                     # an account UID
-    at = base + trade_payload.ACCOUNT_ID_FIRST
-    out[at:at + 8] = account
-    out[base + 0x18:base + 0x28] = bytes(range(0x20, 0x30))        # a second UID
-    planted = name.encode("utf-16-le") + b"\x00\x00"
-    at = base + trade_payload.TAIL_NAME_OFFSET
-    out[at:at + len(planted)] = planted
-    at = base + trade_payload.ACCOUNT_ID_SECOND
-    out[at:at + 8] = account
-    return bytes(out)
-
-
-def test_the_record_holds_one_eight_byte_id_at_both_offsets():
-    payload = a_payload_with_a_player_record()
-    assert trade_payload.tail_account_id(payload) == bytes.fromhex("e04355a2d47b0410")
-
-
-def test_replacing_it_touches_only_the_two_id_fields():
-    """A run's ten-byte replacement took the end of the account UID and of the name field with it.
-
-    The two bytes before each copy match by coincidence - the UID's tail at +0x0E and the name
-    field's uninitialised slack at +0x36 are both `6a 95` in one run's payload - so the longest
-    repeated run is ten bytes and the FIELD is eight.
-    """
-    payload = a_payload_with_a_player_record()
-    theirs = trade_payload.tail_account_id(payload)
-    ours = bytes(a ^ 0x5A for a in theirs)
-    out = trade_payload.rewrite(payload, account_id=ours)
-    base = trade_payload.TAIL_OFFSET
+def test_the_three_ids_are_replaced_in_place_and_nowhere_else():
+    payload = a_payload_with_the_profile()
+    device, uid, nsa = bytes(range(1, 17)), bytes(range(0x20, 0x30)), bytes(range(0x40, 0x48))
+    out = trade_payload.rewrite(payload, device_id=device, account_uid=uid, nsa_id=nsa)
+    t = trade_payload.read_tail(out)
+    assert (t["device_id"], t["account_uid"], t["nsa_id"]) == (device, uid, nsa)
     changed = {i for i in range(len(payload)) if payload[i] != out[i]}
-    expected = set(range(base + trade_payload.ACCOUNT_ID_FIRST,
-                         base + trade_payload.ACCOUNT_ID_FIRST + 8))
-    expected |= set(range(base + trade_payload.ACCOUNT_ID_SECOND,
-                          base + trade_payload.ACCOUNT_ID_SECOND + 8))
-    assert changed == expected
-    assert out.count(theirs) == 0 and out.count(ours) == 2
+    assert changed == set(range(trade_payload.TAIL_OFFSET, trade_payload.TAIL_OFFSET + 0x28))
+    for bad in (dict(device_id=b"\x00" * 8), dict(account_uid=b"\x00" * 8), dict(nsa_id=b"\x00" * 16)):
+        with pytest.raises(ValueError):
+            trade_payload.rewrite(payload, **bad)
 
 
-def test_a_record_whose_two_copies_disagree_reads_as_none():
-    out = bytearray(a_payload_with_a_player_record())
-    out[trade_payload.TAIL_OFFSET + trade_payload.ACCOUNT_ID_SECOND] ^= 0xFF
-    assert trade_payload.tail_account_id(bytes(out)) is None
-    with pytest.raises(ValueError):
-        trade_payload.rewrite(bytes(out), account_id=bytes(8))
-
-
-def test_an_account_id_must_be_eight_bytes():
-    payload = a_payload_with_a_player_record()
-    with pytest.raises(ValueError):
-        trade_payload.rewrite(payload, account_id=bytes(10))
+def test_the_records_are_named_in_the_order_the_game_writes_them():
+    # 0x010f5060 reads sixteen Record8 indexes and clamps each to 0xFFFF
+    assert trade_payload.RECORD_INDEXES == (6, 32, 0, 33, 17, 27, 34, 24, 12, 3, 10, 35, 38, 7, 36, 37)
+    assert len(trade_payload.RECORD_NAMES) == 16
+    assert trade_payload.TAIL_RECORDS + 32 == trade_payload.TAIL_OPTIONAL_U64
+    assert trade_payload.EXTRA_BLOCK_OFFSET == 0xBF6

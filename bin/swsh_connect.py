@@ -1308,15 +1308,18 @@ async def main_async(args):
             if len(payload) != trade_payload.PAYLOAD_LENGTH:
                 payload = trade_payload.inflate_short(payload)
             was = trade_payload.read(payload)["trainer_name"]
-            # The tail repeats the console's own account id. The trade screen draws the partner
-            # from MyStatus, so this is not what the player sees.
-            theirs = trade_payload.tail_account_id(payload, was)
-            ours = (bytes(a ^ b for a, b in zip(theirs, b"\x5a" * len(theirs)))
-                    if theirs and args.snapshot_account else None)
-            payload = trade_payload.rewrite(payload, old_name=was, account_id=ours,
-                                            trainer_name=args.snapshot_name,
+            # The profile at the tail opens with the console's own three ids (docs/swsh_protocol.md,
+            # "The player profile"). The trade screen draws the partner from MyStatus, so they are
+            # not what the player sees.
+            profile = trade_payload.read_tail(payload)
+            theirs = profile["device_id"] + profile["account_uid"] + profile["nsa_id"]
+            ids = {}
+            if args.snapshot_account:
+                ids = {k: bytes(b ^ 0x5A for b in profile[k])
+                       for k in ("device_id", "account_uid", "nsa_id")}
+            payload = trade_payload.rewrite(payload, trainer_name=args.snapshot_name,
                                             trainer_id=args.snapshot_tid,
-                                            secret_id=args.snapshot_sid)
+                                            secret_id=args.snapshot_sid, **ids)
             edits = offer_edits(args)
             if args.offer_file:
                 # A WHOLE RECORD FROM DISK, e.g. a PKHeX .pk8, replaces the slot. Its original
@@ -1359,8 +1362,8 @@ async def main_async(args):
                     print(f"[tx]     saved to {args.save_offer}")
             left = payload.count(was.encode("utf-16-le")) if was else 0
             print(f"[tx] the snapshot was {was!r}; {left} copies of that name left in it, "
-                  f"and {payload.count(theirs) if theirs else '?'} of its account id "
-                  f"{theirs.hex() if theirs else '(not found)'}")
+                  f"and {payload.count(theirs)} of its device, account and service ids "
+                  f"{theirs.hex()}")
             print(f"\n[tx] our snapshot: trainer {fields['trainer_name']!r} "
                   f"{fields['trainer_id']}/{fields['secret_id']}, party "
                   f"{[p['nickname'] for p in fields['party'] if p]}, "
@@ -2068,9 +2071,9 @@ def build_parser():
                          "a BoxSyncStateDataHolder and its field 2 is a command enum; this project "
                          "1 offers and 2 withdraws; 4 confirms and 5 withdraws the confirmation")
     ap.add_argument("--snapshot-account", action="store_true",
-                    help="replace the ten-byte account id the snapshot's tail repeats either side "
-                         "of the trainer name. It is the console's own, handed back unchanged "
-                         "otherwise")
+                    help="replace the three ids at the front of the snapshot's profile (pseudo "
+                         "device id, account Uid, network service account id). They are the "
+                         "console's own, handed back unchanged otherwise")
     ap.add_argument("--selection-offer-data", action="store_true",
                     help="with --selection-offer, answer the console's selection status with our "
                          "PK8 in field 5 (`body`) of a 40050 Data carrying OUR ownerId, on the RPC "

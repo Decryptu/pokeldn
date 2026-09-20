@@ -149,7 +149,12 @@ version 5, and the game's own data starts at 0x18:
     0x0A  2  padding
     0x0C  4  session param, random per session
     0x10  8  zero
-    0x18     the game's application data
+    0x18  7  `9c 91 70 0d 00 00 01` on this console, unread
+    0x1F 266 the player profile, the record the trade snapshot carries at 0xAEC
+             ([the protocol page](swsh_protocol.md#the-player-profile)); zero to the end
+
+The beacon's profile and the snapshot's differ in the sample counters and floats, the activity
+u16 and the records: the same record, sampled at two moments.
 
 Association succeeds about one attempt in two; `ConnectionError: Connect failed with status code 1`
 is a retry. The console's advertisement disappears within about a minute of a seat being released;

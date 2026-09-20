@@ -8,8 +8,11 @@ it here is our own capture, field for field.
     0x810  u32   party count
     0x814  MyStatus, 272 bytes      TID/SID at 0xA0, trainer name at 0xB0
     0x924  TrainerCard, 456 bytes   trainer name at 0x00, start date at 0x170
-    0xAEC  660 bytes NOT named by any client read so far
-                                                            -> 0xD80 = 3456
+    0xAEC  the player profile, 266 bytes, the record the LDN beacon carries too
+    0xBF6  392 bytes another session kind fills; zero for Link Trade
+    0xD7E  2 bytes of padding                                -> 0xD80 = 3456
+
+The profile is read in `docs/swsh_protocol.md`, "The player profile"; `read_tail` decodes it.
 
 The payload is 3456 bytes. The third fragment is compressed under Pia's message flag 0x10, the
 version-4 zlib flag `docs/pia.md` documents for protocol 0x80. Concatenated raw the three give
@@ -39,7 +42,11 @@ MY_STATUS_OFFSET = PARTY_COUNT_OFFSET + 4                        # 0x814
 MY_STATUS_LENGTH = 272
 TRAINER_CARD_OFFSET = MY_STATUS_OFFSET + MY_STATUS_LENGTH        # 0x924
 TRAINER_CARD_LENGTH = 456
-TAIL_OFFSET = TRAINER_CARD_OFFSET + TRAINER_CARD_LENGTH          # 0xAEC, 660 bytes, UNNAMED
+TAIL_OFFSET = TRAINER_CARD_OFFSET + TRAINER_CARD_LENGTH          # 0xAEC, 660 bytes
+TAIL_LENGTH = PAYLOAD_LENGTH - TAIL_OFFSET
+PROFILE_LENGTH = 0x10A                                           # 0x01125080 writes this many
+EXTRA_BLOCK_OFFSET = TAIL_OFFSET + PROFILE_LENGTH                # 0xBF6
+EXTRA_BLOCK_LENGTH = 0x188                                       # zero for Link Trade
 
 # into MyStatus, from PKHeX `Saves/Substructures/Gen8/SWSH/MyStatus8.cs`
 MY_STATUS_TID = 0xA0
@@ -126,76 +133,110 @@ def read(payload):
         "card_name": _text(card, TRAINER_CARD_NAME),
         "card_language": card[TRAINER_CARD_LANGUAGE],
         "started": (year, month, day),
-        # 660 bytes nothing has named. Kept whole rather than guessed at.
-        "tail": payload[TAIL_OFFSET:],
+        "tail": payload[TAIL_OFFSET:],                    # `read_tail` decodes it
     }
 
 
-ACCOUNT_ID_LENGTH = 8                 # the id, at record +0x10 and +0x38
-ACCOUNT_ID_FIRST = 0x10               # both offsets are the beacon's framing, not a search
-ACCOUNT_ID_SECOND = 0x38
-TAIL_NAME_OFFSET = 0x28               # 16 bytes, UTF-16, null-terminated inside the field
+# The profile at TAIL_OFFSET, as 0x01125080 (Shield 1.3.2) writes it from the struct 0x01111970
+# copies out of the profile singleton. Raw fields first; the three bit-packed groups are decoded
+# by `read_tail`. docs/swsh_protocol.md, "The player profile".
+TAIL_DEVICE_ID = 0x00                 # 16 bytes, nn::oe::GetPseudoDeviceId
+TAIL_ACCOUNT_UID = 0x10               # 16 bytes, nn::account::GetUserId
+TAIL_NSA_ID = 0x20                    # 8 bytes, nn::account::GetNetworkServiceAccountId, or zero
+TAIL_NAME_OFFSET = 0x28               # 24 bytes, UTF-16, 12 units, MyStatus+0xB0; slack after the NUL
+TAIL_NAME_LENGTH = 24
+TAIL_APPEARANCE = 0x40                # 25 bytes, bit-packed, MyStatus fields
+TAIL_SAMPLES = 0x59                   # 55 bytes, bit-packed, three 17-byte samples at 0x5C
+TAIL_ACTIVITY = 0x90                  # 37 bytes, bit-packed
+TAIL_RECORDS = 0xDA                   # 16 u16, the game's records, PKHeX Record8 indexes below
+TAIL_OPTIONAL_U64 = 0xFA              # 8 bytes, zero in every capture
+DEVICE_ID_LENGTH = ACCOUNT_UID_LENGTH = 16
+NSA_ID_LENGTH = 8
+RECORD_INDEXES = (6, 32, 0, 33, 17, 27, 34, 24, 12, 3, 10, 35, 38, 7, 36, 37)
+RECORD_NAMES = ("total_capture", "evolution", "egg_hatching", "net_battle", "trade",
+                "license_trade", "cooking", "campin", "pretty", "capture_raid", "rotomu_circuit",
+                "poke_job_return", "bike_dash", "dress_up", "get_rare_item", "whistle")
 
 
-def tail_account_id(payload, name=None):
-    """-> the eight-byte id the tail's player record holds twice, or None if it does not.
+def _bits(data, pos, n):
+    """-> n bits of data starting at bit pos, least significant first, as the packer wrote them."""
+    v = 0
+    for i in range(n):
+        b = pos + i
+        v |= ((data[b >> 3] >> (b & 7)) & 1) << i
+    return v
 
-    BOTH OFFSETS, CHECKED AGAINST EACH OTHER. A record whose two copies disagree is not the shape
-    the beacon framed, and returning None is better than editing bytes on a guess. `name` is
-    accepted and ignored, so the older call site keeps working.
+
+def read_tail(payload):
+    """-> the player profile at TAIL_OFFSET, field by field.
+
+    `appearance` is the 17 ten-bit values 0x0111dd60 unpacks from MyStatus, the player's model.
+    `samples` are the three 17-byte records: a 5-bit counter that steps once per push, a 3-bit
+    state, three floats and a fourth float; what the floats measure is unread. `records` are the
+    sixteen game records the profile carries, clamped to 0xFFFF, by their PKHeX names.
     """
-    payload = bytes(payload)
-    first = payload[TAIL_OFFSET + ACCOUNT_ID_FIRST:][:ACCOUNT_ID_LENGTH]
-    second = payload[TAIL_OFFSET + ACCOUNT_ID_SECOND:][:ACCOUNT_ID_LENGTH]
-    if len(first) != ACCOUNT_ID_LENGTH or first != second:
-        return None
-    return first
+    if len(payload) != PAYLOAD_LENGTH:
+        raise ValueError(f"{len(payload)} bytes, expected {PAYLOAD_LENGTH}")
+    t = bytes(payload[TAIL_OFFSET:TAIL_OFFSET + PROFILE_LENGTH])
+    name = t[TAIL_NAME_OFFSET:TAIL_NAME_OFFSET + TAIL_NAME_LENGTH]
+    p = TAIL_APPEARANCE * 8
+    gender, one, language, _pad, unknown_cc = (_bits(t, p, 1), _bits(t, p + 1, 1),
+                                               _bits(t, p + 2, 4), _bits(t, p + 6, 2),
+                                               _bits(t, p + 8, 8))
+    p += 16
+    appearance = [_bits(t, p + 10 * i, 10) for i in range(17)]
+    p += 170
+    tail_bits = (_bits(t, p, 2), _bits(t, p + 2, 2), _bits(t, p + 4, 10))
+    p += 14
+    assert p == TAIL_SAMPLES * 8
+    samples = []
+    for at in (0x5C, 0x6D, 0x7E):
+        x, z, y, w = struct.unpack_from("<ffff", t, at + 1)
+        samples.append({"counter": t[at] & 0x1F, "state": t[at] >> 5, "floats": (x, z, y, w)})
+    records = struct.unpack_from("<16H", t, TAIL_RECORDS)
+    return {
+        "device_id": t[TAIL_DEVICE_ID:TAIL_DEVICE_ID + DEVICE_ID_LENGTH],
+        "account_uid": t[TAIL_ACCOUNT_UID:TAIL_ACCOUNT_UID + ACCOUNT_UID_LENGTH],
+        "nsa_id": t[TAIL_NSA_ID:TAIL_NSA_ID + NSA_ID_LENGTH],
+        "name": name.decode("utf-16-le", "replace").split("\x00")[0],
+        "gender": gender, "language": language, "unknown_bit": one, "my_status_cc": unknown_cc,
+        "appearance": appearance, "appearance_tail": tail_bits,
+        "sample_flags": (t[TAIL_SAMPLES] & 3, (t[TAIL_SAMPLES] >> 2) & 3),
+        "sample_u16": struct.unpack_from("<H", t, TAIL_SAMPLES + 1)[0],
+        "samples": samples,
+        "sample_end": t[0x8F],
+        "activity": t[TAIL_ACTIVITY],
+        "activity_u16": struct.unpack_from("<H", t, 0xB2)[0],
+        "records": dict(zip(RECORD_NAMES, records)),
+        "optional_u64": struct.unpack_from("<Q", t, TAIL_OPTIONAL_U64)[0],
+        "extra_block": bytes(payload[EXTRA_BLOCK_OFFSET:EXTRA_BLOCK_OFFSET + EXTRA_BLOCK_LENGTH]),
+    }
 
 
 def rewrite(payload, *, trainer_name=None, trainer_id=None, secret_id=None, old_name=None,
-            account_id=None):
+            account_uid=None, device_id=None, nsa_id=None):
     """-> the snapshot with a new trainer identity, and every other byte still the console's own.
 
     THE POINT OF THE PROJECT NEEDS ONE OF THESE AND IT MUST NOT BE THE CONSOLE'S OWN. 3456 bytes
-    hold a trainer card, a status block and six party records, and nearly all of it is fields this
-    project has never read. Building one from nothing would mean inventing every one of them, so
-    ours is the console's snapshot with the identity moved - the same method `swsh.pokemon.build_from`
-    and `bdsp.pokemon.build_from` use on a single Pokemon, for the same reason.
+    hold a trainer card, a status block, six party records and the player profile, and most of it
+    is fields this project has never built. Building one from nothing would mean inventing every
+    one of them, so ours is the console's snapshot with the identity moved - the same method
+    `swsh.pokemon.build_from` and `bdsp.pokemon.build_from` use on a single Pokemon, for the same
+    reason.
 
     The identity has to move in four places at once: MyStatus, the trainer card, every party
-    record, and a plain UTF-16 copy of the name inside the tail at 0xAEC. In one payload the tail
-    copy sits at 0xB14 between two copies of an eight-byte account token, the shape of a player
-    record; `nxldn-lab` builds one of those for its own connection response, with its own name in
-    it.
+    record, and the profile's name field at TAIL_OFFSET + 0x28. The trade screen draws the partner
+    from MyStatus, so a snapshot with the profile left alone reads correctly on screen while it
+    still names the console's own player, and `party_matches_trainer` cannot see that because it
+    only compares the party against MyStatus.
 
-    Leaving the tail alone makes a snapshot say two things at once: our trainer in MyStatus, the
-    trainer card and all six Pokemon, and the console's own player in the tail. The trade screen
-    draws the partner from MyStatus, so the screen reads correctly while the payload does not, and
-    `party_matches_trainer` cannot see it because it only compares the party against MyStatus.
+    The profile name field is 24 bytes and the console leaves whatever its buffer held after the
+    terminator; the replacement is padded with zeros. `old_name` is accepted for the older call
+    sites and ignored: the field is at a fixed offset.
 
-    The tail copy is found by searching for the name being replaced rather than by offset: 0xB14 is
-    where it lands in one payload and the record around it is not read well enough to promise it is
-    fixed. `old_name` is what to look for; without it the tail is left alone.
-
-    The tail is a player record whose fields the LDN beacon frames. The same record
-    rides in the console's own session advertisement (`scratchpad/swsh_net_facts.json`,
-    `application_data`), starting at byte 31 there and at TAIL_OFFSET here, and 90 bytes agree.
-    Two contexts, one record, and the second one gives the field boundaries the first could not:
-
-        +0x00   16 bytes, high entropy      an account UID
-        +0x10    8 bytes                    THE ID, and it is the field that repeats
-        +0x18   16 bytes, high entropy      a second UID, or a key
-        +0x28   16 bytes                    the trainer name, UTF-16, null-terminated
-        +0x38    8 bytes                    THE SAME ID again
-
-    The id is eight bytes, not ten. Searching for the longest repeated run finds ten, because the
-    two bytes before each copy happen to match: at +0x0E they are the tail of the account UID and
-    at +0x36 uninitialised slack after the name's terminator, both `6a 95` in this payload. A
-    ten-byte replacement clobbers the end of the UID and the end of the name field as well.
-
-    The id is the console's own in both places and is handed straight back unless replaced; the
-    trade screen never draws it. The UIDs at +0x00 and +0x18 are not understood and are left
-    alone.
+    The three ids at the front of the profile are the console's own (its pseudo device id, the
+    account's Uid and its network service account id) and are handed straight back unless
+    replaced; the trade screen never draws them.
     """
     if len(payload) != PAYLOAD_LENGTH:
         raise ValueError(f"{len(payload)} bytes, expected {PAYLOAD_LENGTH}")
@@ -210,30 +251,18 @@ def rewrite(payload, *, trainer_name=None, trainer_id=None, secret_id=None, old_
         out[ms:ms + NAME_LENGTH] = encoded
         tc = TRAINER_CARD_OFFSET + TRAINER_CARD_NAME
         out[tc:tc + NAME_LENGTH] = encoded
-        if old_name:
-            # The tail copy is null-terminated and not padded to NAME_LENGTH, so the replacement
-            # is written over exactly as many bytes as the old name occupied and the record around
-            # it keeps its length. Every occurrence: there may be more than one.
-            was = old_name.encode("utf-16-le") + b"\x00\x00"
-            now = trainer_name.encode("utf-16-le") + b"\x00\x00"
-            if len(now) > len(was):
-                raise ValueError(f"{trainer_name!r} does not fit where {old_name!r} was")
-            now = now.ljust(len(was), b"\x00")
-            at = out.find(was, TAIL_OFFSET)
-            while at >= 0:
-                out[at:at + len(was)] = now
-                at = out.find(was, at + len(was))
+        at = TAIL_OFFSET + TAIL_NAME_OFFSET
+        out[at:at + TAIL_NAME_LENGTH] = encoded[:TAIL_NAME_LENGTH]
 
-    if account_id is not None:
-        if tail_account_id(payload) is None:
-            raise ValueError("the tail's two account id copies disagree; not the known record")
-        account_id = bytes(account_id)
-        if len(account_id) != ACCOUNT_ID_LENGTH:
-            raise ValueError(f"an account id is {ACCOUNT_ID_LENGTH} bytes")
-        # At the two framed offsets, not wherever a search finds the bytes: a ten-byte run
-        # matches inside the account UID and inside the name field as well.
-        for at in (TAIL_OFFSET + ACCOUNT_ID_FIRST, TAIL_OFFSET + ACCOUNT_ID_SECOND):
-            out[at:at + ACCOUNT_ID_LENGTH] = account_id
+    for value, at, length, what in ((device_id, TAIL_DEVICE_ID, DEVICE_ID_LENGTH, "device id"),
+                                    (account_uid, TAIL_ACCOUNT_UID, ACCOUNT_UID_LENGTH, "account uid"),
+                                    (nsa_id, TAIL_NSA_ID, NSA_ID_LENGTH, "network service account id")):
+        if value is None:
+            continue
+        value = bytes(value)
+        if len(value) != length:
+            raise ValueError(f"a {what} is {length} bytes")
+        out[TAIL_OFFSET + at:TAIL_OFFSET + at + length] = value
 
     if trainer_id is not None:
         struct.pack_into("<H", out, MY_STATUS_OFFSET + MY_STATUS_TID, trainer_id)
@@ -263,5 +292,6 @@ def party_matches_trainer(fields):
                for p in fields["party"] if p is not None)
 
 
-assert TAIL_OFFSET == 0xAEC and PAYLOAD_LENGTH - TAIL_OFFSET == 660, "the layout must close"
+assert TAIL_OFFSET == 0xAEC and TAIL_LENGTH == 660, "the layout must close"
+assert EXTRA_BLOCK_OFFSET + EXTRA_BLOCK_LENGTH + 2 == PAYLOAD_LENGTH, "profile, block, two bytes"
 assert gen8.SIZE_PARTY * 6 == PARTY_COUNT_OFFSET, "the party block is six party-form records"

@@ -233,16 +233,74 @@ The layout, verified field for field against pokeldn's own capture and matching
     0x810  u32   party count
     0x814  MyStatus, 272 bytes      TID/SID at 0xA0, trainer name at 0xB0
     0x924  TrainerCard, 456 bytes   trainer name at 0x00, start date at 0x170
-    0xAEC  660 bytes not named by any published client       -> 0xD80 = 3456
+    0xAEC  the player profile, 266 bytes                     -> 0xBF6
+    0xBF6  392 bytes another session kind supplies; zero for Link Trade
+    0xD7E  2 bytes of padding                                -> 0xD80 = 3456
 
 MyStatus and TrainerCard are PKHeX save blocks (`Saves/Substructures/Gen8/SWSH/`). The date at
 `0x924 + 0x170` is the date the save was started.
 
+The builder is `0x0110c180`: `0x00784f90` writes the party, `0x01424f10` MyStatus, a memcpy of
+0x1C8 from the trainer card block, `0x01124fa0` the profile into the 0x10A at 0xAEC, and a memcpy
+of 0x188 from an optional block into 0xBF6, or a memset when the session has none. Link Trade's
+session setup (`0x010967f0` calling `0x010fcff0`) passes no block; the caller at `0x00b2d7d0`
+passes one. The receiver `0x0110cff0` copies the two regions into per-station objects.
+
+### The player profile
+
+The 266 bytes at 0xAEC are the record the LDN beacon carries at application-data 0x1F
+([the session page](swsh_session.md)). `0x01111970` copies it out of the profile singleton
+(`[0x2610958]`, fields at +0x310 to +0x564 under the mutex at +0x580) and `0x01125080` packs it;
+every group must be present or nothing is written, so the layout is fixed. Raw fields are
+byte-aligned; three groups are bit-packed, least significant bit first.
+`pokeldn.swsh.trade_payload.read_tail` decodes it.
+
+    0x00  16  nn::oe::GetPseudoDeviceId
+    0x10  16  nn::account::GetUserId, the account Uid
+    0x20   8  nn::account::GetNetworkServiceAccountId, zero when the account has none
+    0x28  24  trainer name, UTF-16, from MyStatus+0xB0; bytes after the terminator are whatever
+              the buffer held (in every capture, a stale copy of bytes 0x0E..0x17 of this record)
+    0x40  25  appearance, bit-packed:
+                bit 0      MyStatus+0xA5 (gender) != 0
+                bit 1      a flag 0x0111cfec sets to 1; 0 in every capture
+                bits 2-5   MyStatus+0xA7, the language (3, French)
+                bits 6-7   zero
+                8 bits     MyStatus+0xCC as a byte (17 on this save)
+                17 x 10    the model 0x0111dd60 unpacks from the MyStatus bitfield at +0x00
+                2, 2, 10   the last three of that unpacking
+    0x59  55  samples, bit-packed:
+                2, 2 bits  (2, 0 in every capture)
+                16 bits    a u16 (1795..2010 across captures, unread)
+                3 x 17     at 0x5C, 0x6D, 0x7E: a 5-bit counter 0x01123be0 steps once per push,
+                           a 3-bit state (2), three floats, one float
+                8 bits     at 0x8F (1)
+    0x90  37  activity, bit-packed: an 8-bit kind at 0x90 (13 in every trade capture and in the
+              trade-screen beacon; 0x01026284 sets 29 elsewhere), an optional 28-byte part, a
+              24-byte field, a u16 at 0xB2 (170 in every trade capture, 188 in the beacon), a
+              bool. All zero in every capture except the kind and the u16.
+    0xB5  37  two more groups (56 and 16 source bytes), zero in every capture
+    0xDA  32  sixteen u16 records, `0x010f5060`: Record8 indexes 6, 32, 0, 33, 17, 27, 34, 24,
+              12, 3, 10, 35, 38, 7, 36, 37, each clamped to 0xFFFF (PKHeX `RecordList_8`:
+              total_capture, evolution, egg_hatching, net_battle, trade, license_trade, cooking,
+              campin, pretty, capture_raid, rotomu_circuit, poke_job_return, bike_dash, dress_up,
+              get_rare_item, whistle)
+    0xFA   8  an optional u64, zero in every capture
+    0x102  8  zero
+
+The three samples in one capture were identical apart from the counter (11, 10, 9): floats
+50288.4, 99.3, 56730.4 and -0.643. Across thirty captures the first three moved by at most 70 and
+the fourth between -1.8 and 0.3; what they measure is unread. The records move with play: 50
+trades in the September captures, 66 a week later.
+
+The name field is the fourth copy of the trainer name in the snapshot, after MyStatus, the trainer
+card and the party records; `trade_payload.rewrite` moves all four. The trade screen draws the
+partner from MyStatus.
+
 The party is the first 0x810: six PK8 records at a 0x158 stride. Empty slots are zero-filled; an
 empty slot is an encryption constant of zero. The count at 0x810 agrees.
 
-`pokeldn/swsh/trade_payload.rewrite` moves the identity in MyStatus, the trainer card and every party
-record at once (57 bytes of 3456), and the trade screen names that trainer as the partner.
+`pokeldn/swsh/trade_payload.rewrite` moves the identity in MyStatus, the trainer card, every party
+record and the profile at once, and the trade screen names that trainer as the partner.
 `scratchpad/sw84_read.py <payload.bin>` is the viewer.
 
 ## The PK8

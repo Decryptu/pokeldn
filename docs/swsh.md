@@ -67,10 +67,10 @@ then `SYSREQ.N native, bytes`.
 
 - The two unnamed Pia header fields, the byte at 0x05 and the halfword at 0x06. Written by
   `0x017beb74`/`0x017beb78`; both were zero in every packet captured.
-- The 660-byte tail of the 0x84 party payload at offset 0xAEC. No published client names it. Three
-  bytes of it change between runs, one per 17-byte record in a run of three otherwise identical
-  ones; within a run the byte decrements by one down the three. Two captures 19 minutes apart differ
-  by 19 in that byte, consistent with a minute counter, on one data point.
+- Inside the player profile ([the protocol page](swsh_protocol.md#the-player-profile)): what the
+  four floats of a sample measure, the u16 before the samples, the u16 in the activity group (170
+  in every trade capture, 188 in the one trade-screen beacon read), and which session kind fills the 392-byte
+  block at 0xBF6 that Link Trade leaves zero.
 - Where a materialised Wonder Card is kept. The importer builds a `0x3A8` card object and the album
   re-encodes it, since neither the 720-byte record nor any string in it appears in the save.
 - How a partner's command reaches a sub-element's body word. The receive handler `0x010dbc90` does
