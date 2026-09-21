@@ -419,7 +419,9 @@ A retail console answers all of it exactly as the emulated one does, byte for by
 seat it sent 16 records, 19 sends in all and never more than two of any one, against 350 a second
 with up to seventy retransmits each before the acknowledgement flag was corrected. It answers the
 clone clock, sends its channel table, and opens its own 0x7C port 2 with the same `0db90101`. The
-emulated console is a faithful stand-in for this game at every layer measured so far.
+emulated console is a faithful stand-in for this game at every layer measured so far, including
+where it stops: the retail screen stays on "Searching for a trade partner" through the seat, as the
+emulated one does.
 
 Why a retail station's own 0xA0 acknowledgements are accepted between two consoles, when one sent
 here is dropped in the deserialiser, is unknown. The retail pair broadcasts them and this project
