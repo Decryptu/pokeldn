@@ -380,14 +380,40 @@ The `8001` messages run in pairs, a 01 and a 02 under the same fourth byte, whic
 Both instances ran from one save copied twice, and the game traded a Pokemon between two identical
 trainers without complaint.
 
+### What a joiner sends, in order
+
+Everything a pair's joiner puts on the wire before the game's first message, measured from its own
+log:
+
+| time | message |
+|---|---|
+| 0.17 | Net 0x12, echoing the sequence of the host's 0x11 |
+| 0.04 | the Session join request |
+| 0.38 | Net 0x51, echoing the sequence of the host's 0x50 |
+| 1.63 | the Session type 6, acknowledging the station update |
+| 1.82 | Clone Clock 0x77, eighteen zero bytes; the host answers with a one, sixteen bytes and a trailing byte |
+| 1.68 | the eleven bulk acknowledgements and the stream opens on 0x81 ports 0 and 4 |
+| 1.68 | the channel table on 0x7C port 1 |
+| 2.03 | its own 44 records on 0x81 port 1 |
+| 2.43 | the open on 0x7C port 2 |
+
+A host that receives all of it answers Net once rather than repeating: against a console that is
+sent the 0x12 and the 0x51, Net traffic falls from 212 messages a seat to 2.
+
 ## Unresolved
 
 What the two record kinds hold. The 238-byte zlib message under `80000100` and the 348 bytes under
 `80000200` are the identity and the offered Pokemon; neither field map is read. A Gen-9 box
 structure is 344 bytes, four short of that body.
 
-Driving it. `bin/sv_join.py --game-channel` announces the joiner's table and opens port 2, in bytes
-identical to the pair's, and has not yet been run against a console.
+What makes the host open the game. An emulated console answers every layer above, Net, the clock,
+the session, the streams, the identity in both directions and the channel table, and still does not
+open the game's channel: it announces nothing on 0x80 port 2, where a pair's host announces its
+handler keys in two messages, and never sends the port-1 table update that precedes the first game
+message. Instead it answers the joiner's port-2 open with a four-byte open of its own,
+`0db90101`, which a pair's host never sends. Its screen stays on the search. Replaying a real
+joiner's whole 44-record identity in place of the host's mirrored back changes none of it
+(`scratchpad/sv_extract_records.py` pulls a set out of a station's log).
 
 The same run on a retail console is untested; every retail seat so far sent 0xA0 acknowledgements
 and none carried INITIALIZED or a channel table.

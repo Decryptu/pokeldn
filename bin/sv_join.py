@@ -54,6 +54,9 @@ MESH_ADDRESSED = (PROTO_RTT, PROTO_BROADCAST_RELIABLE, PROTO_STREAM_BROADCAST_RE
 MESH_DESTINATION = 0x0001
 NET_CONN_STATUS = 0x11
 NET_CONN_STATUS_ACK = 0x12
+# The host's 0x50 and the answer a joiner sends it, alongside the 0x11 and its 0x12 (docs/sv.md).
+NET_0x50 = 0x50
+NET_0x51 = 0x51
 ESTABLISHING_FLAGS = pia6.MESSAGE_FLAG_SKIP_SOURCE_CHECK
 # The variable id we send as our own until the host assigns one. A retail joiner does not invent
 # one: the host names the joiner's id in the plaintext footer of its first mesh-addressed packet,
@@ -61,6 +64,10 @@ ESTABLISHING_FLAGS = pia6.MESSAGE_FLAG_SKIP_SOURCE_CHECK
 # that value as its own source id (`docs/sv.md`). This is the fallback for a host that never does.
 OUR_VAR = 0xC493
 OUR_STATION_INDEX = 1
+PROTO_CLOCK = 0x77
+# The Clone Clock request a joiner sends the moment it is seated: eighteen zero bytes. The host
+# answers with a one, sixteen bytes and a trailing byte (docs/sv.md).
+CLOCK_REQUEST = bytes(18)
 # The 15 bytes a joiner sends to open 0x7c port 2, from a pair trading (docs/sv.md).
 CHANNEL_PORT2_OPEN = bytes.fromhex("03b90200bc09000000000000000000")
 HOST_BITMAP = 0x01                # the destination mask a joiner writes: the host, station 0
@@ -252,11 +259,19 @@ def build_parser():
                     help="after the seat, send this 1395-byte identity record on 0x81 port 1 "
                          "(our station stream) as the game's data exchange, retransmitting until "
                          "the host acknowledges it. A retail joiner sends its own identity here")
+    ap.add_argument("--no-clock", action="store_true",
+                    help="do not send the Clone Clock request. A seated joiner sends eighteen "
+                         "zero bytes on 0x77 before anything else and the host answers")
     ap.add_argument("--game-channel", action="store_true",
                     help="announce our own channel table on 0x7c. A station opens the game's "
                          "channel by sending the same 31-byte table its peer sends on port 1, an "
                          "open on port 2, and a mirror of every later table update; the peer sends "
                          "the game on port 0 only once ours is announced (docs/sv.md)")
+    ap.add_argument("--record-set", metavar="DIR",
+                    help="send this directory's records as our own on 0x81 port 1, in sequence "
+                         "order, in place of --mirror-records. `scratchpad/sv_extract_records.py` "
+                         "writes one from a station's own log, so a whole real identity can be "
+                         "replayed rather than the host's mirrored back")
     ap.add_argument("--mirror-records", action="store_true",
                     help="send every record the host puts on 0x81 port 0 back on port 1 as our "
                          "own, in order. A retail joiner answers the host's records with a set of "
@@ -521,7 +536,16 @@ async def run_session(args, keys, host_ip, host_mac, our_ip, our_mac, record):
         identity = streams.compress(open(args.send_record, "rb").read())
     record_seq = 1
     # Our own 0x7c state: the next sequence on port 1, and whether the port-2 open has gone.
-    channel = {"seq": 1, "opened": False}
+    channel = {"seq": 1, "opened": False, "table": None}
+    record_set = []
+    if args.record_set:
+        for name in sorted(os.listdir(args.record_set)):
+            if name.endswith(".bin"):
+                record_set.append((int(name[:-4]), open(os.path.join(args.record_set, name),
+                                                        "rb").read()))
+        print(f"[sv] the record set holds {len(record_set)} record(s), "
+              f"sequence ids {record_set[0][0]}..{record_set[-1][0]}")
+    set_sent = False
     mirrored = set()            # host sequence ids already sent back under --mirror-records
     record_acked = False
     last_record_send = 0.0
@@ -658,6 +682,28 @@ async def run_session(args, keys, host_ip, host_mac, our_ip, our_mac, record):
             clock = int(time.monotonic() * 1e6) & ((1 << 64) - 1)
             send(out(streams.build_rtt_request(clock.to_bytes(8, "big")),
                            host_var or 0, protocol=PROTO_RTT), "rtt request")
+        # Our own channel table, once the opening has gone and the host's table is in hand.
+        if args.game_channel and opened and channel["table"] and not channel["opened"]:
+            channel["opened"] = True
+            send(out(game_channel.build_open(channel["table"], channel["seq"]),
+                     host_var or 0, protocol=PROTO_RELIABLE, port=1),
+                 "channel table", port=1, to=host_ip)
+            channel["seq"] += 1
+            send(out(game_channel.build_open(CHANNEL_PORT2_OPEN, 1),
+                     host_var or 0, protocol=PROTO_RELIABLE, port=2),
+                 "channel port 2 open", port=2, to=host_ip)
+            print(f"[sv] -> {host_ip}: our own channel table on 0x7c port 1 "
+                  f"({len(channel['table'])} bytes) and the port-2 open")
+        # Our own identity, as a whole set of records under their original sequence ids.
+        if record_set and joined and not set_sent and now - joined_at >= args.record_delay:
+            set_sent = True
+            for seq, payload in record_set:
+                body = streams.build_record_message(payload, seq, streams.JOINER_INDEX,
+                                                    initialized=(seq == record_set[0][0]))
+                send(out(body, host_var or 0, protocol=streams.PROTOCOL_STREAM,
+                         port=streams.JOINER_INDEX, flags=streams.MESSAGE_FLAGS_DATA),
+                     "record set", port=streams.JOINER_INDEX, seq=seq)
+            print(f"[sv] -> {host_ip}: our identity, {len(record_set)} records on 0x81 port 1")
         if not args.no_ack:
             for key, at in list(last_ack.items()):
                 if now - at >= args.ack_period:
@@ -729,6 +775,15 @@ async def run_session(args, keys, host_ip, host_mac, our_ip, our_mac, record):
                                        protocol=PROTO_NET, flags=ESTABLISHING_FLAGS),
                              "net conn response", seqid=seqid)
                         print(f"[sv] -> {host_ip}: net 0x12 ack, seqid={seqid}")
+                # The host's 0x50 carries its own sequence at [4:8], and a joiner answers it with a
+                # 0x51 of the same shape as the 0x12 (a pair: 0x50 sequence 1, 0x51 sequence 1).
+                if args.net_ack and len(msg.payload) >= 8 and msg.payload[0] == 1 \
+                        and msg.payload[1] == NET_0x50:
+                    seq50 = int.from_bytes(msg.payload[4:8], "big")
+                    body = bytes([0x01, NET_0x51, 0, 0]) + seq50.to_bytes(4, "big")
+                    send(out(body, 0, protocol=PROTO_NET, flags=ESTABLISHING_FLAGS),
+                         "net 0x51", seqid=seq50)
+                    print(f"[sv] -> {host_ip}: net 0x51 ack, seqid={seq50}")
             if msg.protocol == PROTO_SESSION and msg.payload:
                 kind = msg.payload[0]
                 print(f"[sv] the host spoke Session: {SESSION_MESSAGE_NAMES.get(kind, '?')}")
@@ -746,6 +801,10 @@ async def run_session(args, keys, host_ip, host_mac, our_ip, our_mac, record):
                         if resp["status"] == 1:
                             joined = True
                             joined_at = now
+                            if not args.no_clock:
+                                send(out(CLOCK_REQUEST, host_var or 0, protocol=PROTO_CLOCK),
+                                     "clock request")
+                                print(f"[sv] -> {host_ip}: the clone clock request")
                             join_sequence = resp["sequence_id"]
                             if pending_update is not None:
                                 send_update_ack(pending_update)
@@ -785,6 +844,8 @@ async def run_session(args, keys, host_ip, host_mac, our_ip, our_mac, record):
                         send(out(ack, host_var or 0, protocol=PROTO_SESSION),
                              "migration ack", to=host_ip)
                         print(f"[sv] -> {host_ip}: start-host-migration ack (type 8)")
+            if msg.protocol == PROTO_CLOCK:
+                print(f"[sv] <- the host answered the clone clock: {msg.payload.hex()}")
             if not args.no_rtt and msg.protocol == PROTO_RTT and msg.payload and msg.payload[0] == 0:
                 send(out(streams.build_rtt_response(msg.payload, header.src_var),
                          header.src_var, protocol=PROTO_RTT), "rtt response")
@@ -803,19 +864,11 @@ async def run_session(args, keys, host_ip, host_mac, our_ip, our_mac, record):
                     record(rec="channel", src=addr[0], port=msg.port, seq=cm["sequence_id"],
                            flags=cm["flags"], payload=cm["payload"].hex(), t=time.time())
                     if args.game_channel and cm["flags"] & reliable5.FLAG_IS_INITIALIZED \
-                            and msg.port == 1 and not channel["opened"]:
-                        # The joiner's table is byte-identical to the host's (a retail pair sends
-                        # the same 31 bytes each way), and its port-2 open follows it.
-                        channel["opened"] = True
-                        send(out(game_channel.build_open(cm["payload"], channel["seq"]),
-                                 host_var or 0, protocol=PROTO_RELIABLE, port=1),
-                             "channel table", port=1, to=host_ip)
-                        channel["seq"] += 1
-                        send(out(game_channel.build_open(CHANNEL_PORT2_OPEN, 1),
-                                 host_var or 0, protocol=PROTO_RELIABLE, port=2),
-                             "channel port 2 open", port=2, to=host_ip)
-                        print(f"[sv] -> {host_ip}: our own channel table on 0x7c port 1 "
-                              f"({len(cm['payload'])} bytes) and the port-2 open")
+                            and msg.port == 1 and channel["table"] is None:
+                        # Held until the eleven acks and the stream opens have gone: a pair's
+                        # joiner announces its table in the same breath as its opening, never
+                        # before it (docs/sv.md).
+                        channel["table"] = cm["payload"]
                     elif args.game_channel and msg.port == 1 and channel["opened"] \
                             and not (cm["flags"] & reliable5.FLAG_IS_INITIALIZED):
                         # Every later table update is mirrored back under our own sequence.
