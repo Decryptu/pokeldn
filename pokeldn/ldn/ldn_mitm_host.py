@@ -16,6 +16,7 @@ An emulated console's node carries its real LAN address, so every participant ad
 NetworkInfo is a LAN address and Pia is not tunnelled. docs/ldn.md.
 """
 
+import ipaddress
 import os
 import select
 import socket
@@ -239,22 +240,39 @@ class IpHostTransport:
             host_name=self.nickname.encode()[:0x20], channel=self.channel,
             local_comm_version=self.APPLICATION_VERSION)
 
+    def shares_this_machine(self):
+        """True when the peer runs here too, on another loopback alias.
+
+        A wildcard bind holds a port for every address on the machine, so the Pia socket on
+        0.0.0.0:12345 takes that port away from an emulator on 127.0.0.3. The guest's own bind then
+        fails with EADDRINUSE and it leaves the network inside a second: measured 2026-09-21, 49
+        joins with no Pia socket opened on any of them. Nothing is lost by dropping the wildcard
+        here, because a peer on loopback is reached by unicast and sends no subnet broadcast.
+        """
+        try:
+            return ipaddress.ip_address(self.our_ip).is_loopback
+        except ValueError:
+            return False
+
     def start(self, timeout=30, attempts=3, settle=1.5, preflight=True):
         self._info = self._build_info()
-        self._udp = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
-        self._udp.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
-        self._udp.setsockopt(socket.SOL_SOCKET, socket.SO_BROADCAST, 1)
-        self._udp.bind(("0.0.0.0", self.discovery_port))
+        shared = self.shares_this_machine()
+        if not shared:
+            self._udp = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
+            self._udp.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
+            self._udp.setsockopt(socket.SOL_SOCKET, socket.SO_BROADCAST, 1)
+            self._udp.bind(("0.0.0.0", self.discovery_port))
         self._udp_tx = self._bound_to_us(self.discovery_port)
         self._tcp = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
         self._tcp.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
-        self._tcp.bind(("0.0.0.0", self.discovery_port))
+        self._tcp.bind((self.our_ip if shared else "0.0.0.0", self.discovery_port))
         self._tcp.listen(4)
-        self._pia = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
-        self._pia.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
-        self._pia.setsockopt(socket.SOL_SOCKET, socket.SO_BROADCAST, 1)
-        self._pia.bind(("0.0.0.0", self.pia_port))
-        self._pia.setblocking(False)
+        if not shared:
+            self._pia = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
+            self._pia.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
+            self._pia.setsockopt(socket.SOL_SOCKET, socket.SO_BROADCAST, 1)
+            self._pia.bind(("0.0.0.0", self.pia_port))
+            self._pia.setblocking(False)
         self._pia_tx = self._bound_to_us(self.pia_port)
         self._pia_tx.setblocking(False)
         if self.tracer is not None:
@@ -453,10 +471,11 @@ class IpHostTransport:
 
     def recv(self):
         out = []
-        if self._pia is None:
+        if self._pia_tx is None:
             return out
         for sock in (self._pia_tx, self._pia):
-            self._drain(sock, out)
+            if sock is not None:
+                self._drain(sock, out)
         return out
 
     def _drain(self, sock, out):
@@ -478,11 +497,12 @@ class IpHostTransport:
 
     def wait_readable(self, timeout):
         timeout = max(0.0, float(timeout))
-        if self._pia is None:
+        socks = [s for s in (self._pia, self._pia_tx) if s is not None]
+        if not socks:
             self._stop.wait(timeout)
             return False
         try:
-            readable, _, _ = select.select([self._pia, self._pia_tx], [], [], timeout)
+            readable, _, _ = select.select(socks, [], [], timeout)
         except (OSError, ValueError):
             return False
         return bool(readable)
