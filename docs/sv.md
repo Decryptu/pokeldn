@@ -208,6 +208,15 @@ type_info records with `tools/switch/rtti_names.py`, which finds 208 `nn::pia` c
 | `0x6b45e0`..`0x6b4754` | its loop over the eight participant slots: a slot is 0x40 bytes with its address at `+0x108` and a present byte at `+0x113`, matched against the station array at object `+0x30` with its count at `+0x38` |
 | `0x6b3090` | `LdnProtocol::vfunc104`, another `GetNetworkInfo` reader |
 | `0x046ca878` | the GOT slot for `nn::ldn::GetNetworkInfo`; six call sites reach it |
+| `0x17ff030` | the game's protocol registration: it creates each protocol in turn and stores the handle it gets back |
+| `0x475ea68`, `0x475ea6c`, `0x475ea70` | the handles of Reliable 0x7C on ports 0, 1 and 2 |
+| `0x475ea74`, `0x475ea78`, `0x475ea7c` | the handles of BroadcastReliable 0x80 on ports 0, 1 and 2 |
+| `0xe45e9c` | the one send on 0x80 port 2: it loads the port-2 handle, resolves the protocol through `0xe21488`, and hands the composed buffer to `0x107e060` |
+| `0xe2246c` | the 0x5a0-byte application send under it, into `BroadcastReliableProtocol::vfunc12` at `0x6e6344` |
+| `0xe44cf0` | the drain that walks eight queues on its object and calls one composer per queue |
+| `0xe457cc`, `0xe45740`, `0xe460bc`, `0xe454ec`, `0xe46148`, `0xe461d4`, `0xe46260` | the composers, which write the message type byte 6, 7, 8, 9, 0x0A, 0x0B and 0x0C respectively and then call `0xe45e9c` |
+| `0xe45e1c`, `0xe46034` | the type-7 and type-8 field serializers, each writing the `0xb9` field marker the announcement's body carries |
+| `0x46d6ca0`, `0x46d6ca8` | the singleton the drain hangs off, set up at `0xe44ac0` |
 
 ## The Session protocol is there and is never in a capture
 
@@ -320,6 +329,13 @@ every record after it 0x17. A first record sent as 0x17 is never acknowledged: t
 for that station holds at 1 for as long as the record is repeated, 198 sends in one seat. Sent as
 0x1F the same record is acknowledged within 90 ms.
 
+Replayed from a pair's own log, the identity a joiner sends is byte-identical to what that pair's
+joiner sent, in the reliable header, the message flags and the record body alike, for all 44
+records; the packet header differs only in the source variable id and the nonce. Both an emulated
+and a retail host acknowledge the set to id 47 with the mask `feffffffff01` and their entry's
+`field_0x50` following, so nothing above the seat separates this project's station from a station
+that went on to trade.
+
 With both fixes an emulated host completes the whole exchange in both directions: it sends its 44
 records once each, acknowledges the joiner's, and issues a type-5 station update listing both
 stations with their player blocks. It then keeps searching. What a pair does after the exchange is
@@ -414,6 +430,14 @@ message. Instead it answers the joiner's port-2 open with a four-byte open of it
 `0db90101`, which a pair's host never sends. Its screen stays on the search. Replaying a real
 joiner's whole 44-record identity in place of the host's mirrored back changes none of it
 (`scratchpad/sv_extract_records.py` pulls a set out of a station's log).
+
+The send the console withholds has one path in the binary, and it is the game's rather than Pia's.
+`0xe45e9c` is the only code that sends on 0x80 port 2: it loads the port-2 handle from `0x475ea7c`,
+resolves the protocol and calls `0x107e060`. Seven composers call it, each writing one message type
+byte, 6 through 0x0C, and the announcement a pair's host sends at 2.33 s is the type its composer
+`0xe45740` writes. They run from one drain, `0xe44cf0`, which walks eight queues on the singleton at
+`0x46d6ca0` and composes whatever each holds. So the console withholding the announcement means the
+game never put it in that queue, and what fills the queue is above Pia entirely.
 
 A retail console answers all of it exactly as the emulated one does, byte for byte. In a 179-second
 seat it sent 16 records, 19 sends in all and never more than two of any one, against 350 a second
