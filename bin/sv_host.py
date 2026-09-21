@@ -79,12 +79,13 @@ def _describe(msg):
             f"flags=0x{msg.message_flags:02x} len={len(msg.payload)}")
 
 
-def build_net_probe(keys, our_ip, our_mac, station_ips, seqid, nonce8, max_stations):
+def build_net_probe(keys, our_ip, our_mac, station_ips, seqid, nonce8, max_stations,
+                    net_flags=ESTABLISHING_FLAGS):
     body = pia6.build_message(
         pia_connect.build_net_conn_request(seqid, PIA_HOST_VAR, our_mac, keys.network_id,
                                            station_ips, max_stations=max_stations,
                                            station_size=21),
-        protocol=PROTO_NET, port=0, message_flags=ESTABLISHING_FLAGS)
+        protocol=PROTO_NET, port=0, message_flags=net_flags)
     return pia6.build_packet(keys.session_key, keys.network_id, our_ip, body,
                              dst_var=0, src_var=PIA_HOST_VAR, packet_id=0, nonce8=nonce8)
 
@@ -147,6 +148,15 @@ def build_parser():
     ap.add_argument("--ack-period", type=float, default=1.0,
                     help="seconds between the periodic bulk acks on every port the console used")
     ap.add_argument("--clock", action="store_true", help="answer clone clock requests, if any")
+    ap.add_argument("--scarlet-response", action="store_true",
+                    help="the 41-byte Session join response a Scarlet host sends, with no route "
+                         "bytes, rather than Arceus's 43-byte one")
+    ap.add_argument("--net-flags", type=lambda v: int(v, 0), default=None,
+                    help="the message flags on the Net 0x11 opening; a retail host sends 0x31, "
+                         "this host's own default is 0x01")
+    ap.add_argument("--net-stations", type=int, default=None,
+                    help="how many 21-byte station slots the Net 0x11 carries; a retail host "
+                         "writes four whatever the game's participant limit is")
     ap.add_argument("--game-data", help="hex, the 40 game bytes of the advertisement; a searching "
                                         "console leaves them zero, a host that a joiner reached "
                                         "carried 648cf4 at +0x21")
@@ -267,9 +277,12 @@ def main():
                         continue
                     net_sent[ip] = now
                     net_seqid += 1
-                    probe = build_net_probe(keys, transport.our_ip, transport.our_mac,
-                                            [transport.our_ip, ip], net_seqid, os.urandom(8),
-                                            sv.MAX_PARTICIPANTS)
+                    probe = build_net_probe(
+                        keys, transport.our_ip, transport.our_mac, [transport.our_ip, ip],
+                        net_seqid, os.urandom(8),
+                        sv.MAX_PARTICIPANTS if args.net_stations is None else args.net_stations,
+                        net_flags=(ESTABLISHING_FLAGS if args.net_flags is None
+                                   else args.net_flags))
                     transport.send(probe, ip)
                     record(rec="out", dst=ip, kind="net conn request", seqid=net_seqid,
                            hex=probe.hex(), t=now)
@@ -338,7 +351,9 @@ def main():
                             if not args.no_session_response:
                                 resp = pia_connect.build_session_join_response_v11(
                                     host_const, host_var, console_const, console_var,
-                                    version=version, sequence_id=args.join_seq)
+                                    version=version, sequence_id=args.join_seq,
+                                    route=None if args.scarlet_response else (0, 1),
+                                    random4=os.urandom(4))
                                 pkt = build_reply(keys, transport.our_ip, resp, console_var, os.urandom(8))
                                 transport.send(pkt, src_ip)
                                 record(rec="out", dst=src_ip, kind="session join response",

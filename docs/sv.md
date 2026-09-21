@@ -118,6 +118,19 @@ The layout is Legends Arceus's, with four station slots of 21 bytes:
 other console at the end; a console that a host built here joins sends it about eight seconds after
 the association and then repeats it.
 
+**The four slots are the gate on the whole host direction.** The count is Pia's, not the game's, and
+a host that writes the game's own participant limit of two writes a message the joining game reads
+and never answers: it binds its Pia socket, receives the datagram ten times over five seconds, sends
+nothing, and calls Disconnect at exactly 5.00 s, which Ryujinx reports as DisconnectedByUser. Over
+49 such joins the hold was 4.98 to 5.01 s, so it is a fixed timer rather than a race. With four
+slots the same game answers the opening with Net 0x12 and sends its Session join request. The
+message flags carry 0x31 on a retail host's opening against this host's 0x01, and that difference
+alone changes nothing.
+
+This is what a retail console did against a host of this project's over the radio in sv05 and sv06,
+where it associated, sat about five seconds, left, and answered Net 0x11 with ICMP port 12345
+unreachable.
+
 ### The eleven streams
 
     0x80  BroadcastReliable         ports 0, 1, 2

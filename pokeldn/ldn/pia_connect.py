@@ -375,18 +375,28 @@ def build_session_join_ack_v11(host_constant_id, host_var, console_constant_id, 
 
 def build_session_join_response_v11(host_constant_id, host_var, console_constant_id, console_var,
                                     *, version=0, status=1, route=(0, 1), station_index=1,
-                                    join_order=1, sequence_id=1):
-    """Session type-2 join response, 43 bytes (`0x7379c0`). Status 1 is the accept path; the four
-    ids are compared, the random field (bytes +4..+0xc) is unread, and the assignment (route bytes,
-    station index, join order, sequence id) is stored without validation. The sequence id is what a
-    later type-5 update must reach to set `JoinMeshJob+0x7c`. The console's own writer puts
-    `(0, 1)`, index 1, join order 1 for a first joiner.
+                                    join_order=1, sequence_id=1, random4=b"\x00" * 4):
+    """Session type-2 join response (`0x7379c0`). Status 1 is the accept path; the four ids are
+    compared and the assignment (route bytes, station index, join order, sequence id) is stored
+    without validation. The sequence id is what a later type-5 update must reach to set
+    `JoinMeshJob+0x7c`.
+
+    `route=None` omits the two route bytes, which is the 41-byte form a Scarlet host sends: after
+    the two location ids it writes the station index, the join order and a sequence id of zero, and
+    nothing else. With a route the message is 43 bytes, which is what Arceus's host sends.
+
+    `random4` fills bytes +8..+0xC. A Scarlet host puts four random bytes there and the receiver
+    does not read them.
     """
+    random4 = bytes(random4)
+    if len(random4) != 4:
+        raise ValueError("Session join response random value must be four bytes")
+    assignment = bytes() if route is None else bytes([route[0] & 0xFF, route[1] & 0xFF])
     return (bytes([SESSION_JOIN_RESPONSE, WIRE_SESSION_PROTOCOL, version & 0xFF, status & 0xFF])
-            + b"\x00" * 8
+            + b"\x00" * 4 + random4
             + _location_id(host_constant_id, host_var)
             + _location_id(console_constant_id, console_var)
-            + bytes([route[0] & 0xFF, route[1] & 0xFF, station_index & 0xFF])
+            + assignment + bytes([station_index & 0xFF])
             + (join_order & 0xFFFF).to_bytes(2, "big")
             + (sequence_id & 0xFFFF).to_bytes(2, "big"))
 
