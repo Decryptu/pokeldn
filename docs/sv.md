@@ -488,6 +488,22 @@ sent the 0x12 and the 0x51, Net traffic falls from 212 messages a seat to 2.
 
 ## Unresolved
 
+What still keeps a station on its search screen against a host built here. Every layer a live
+emulated Scarlet host puts on the wire is now matched: the NetworkInfo byte for byte apart from the
+session id, Net 0x11 and 0x50, both station lists, the join response, RTT in both directions, the
+clone clock, the channel table, the two stream opens, the two announcements on 0x80 port 2, the
+whole 44-record identity with its gap accepted, and the port-1 channel update, each in the order and
+at the times a live host sends them. The station answers all of it, acknowledges the identity to 47
+with an empty mask and opens Reliable 0x7C port 2, and does not open the game's channel.
+
+The transport is not what stops it. With the receive function at `0x6efc2c` instrumented, the
+port-1 channel update from a host here walks exactly the path the same update from a real host walks
+in the same guest: the flag load, the length check, the station resolve, the byte gate, the window
+write and the flag at `0x6f0040`, message for message and site for site. What differs is above Pia,
+in the game's own trade flow, which reaches the step that opens the channel against a real host and
+not against this one. The seat lasts 23 seconds against this host where it lasted 19 before the
+identity was accepted.
+
 What the two record kinds hold. The 238-byte zlib message under `80000100` and the 348 bytes under
 `80000200` are the identity and the offered Pokemon; neither field map is read. A Gen-9 box
 structure is 344 bytes, four short of that body.
