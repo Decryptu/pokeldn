@@ -315,6 +315,12 @@ def build_parser():
 def main(argv=None):
     ap = build_parser()
     args = ap.parse_args(argv)
+    # A run that is killed rather than ended loses a block-buffered stdout, and with it the whole
+    # log of the seat (sv32). Line buffering costs nothing here.
+    try:
+        sys.stdout.reconfigure(line_buffering=True)
+    except (AttributeError, ValueError):
+        pass
     if args.ip_join:
         return main_ip(args)
     if os.geteuid() != 0:
