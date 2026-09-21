@@ -369,6 +369,21 @@ identity delivered once each. What it takes, beyond the four station slots in Ne
 | the player name in it | one space. A console advertises a single 0x20 and a longer name changes the message's length |
 | every Session reply's message flags | 0x00 |
 | the acknowledgement on Reliable 0x7C | the one-entry form with no destination bitmap, not the four-entry bulk form of 0x80 and 0x81. Unacknowledged, the console retransmits its channel table for the whole session, a thousand times in ninety seconds |
+| every data message on Reliable 0x7C | a nine-byte header with destination_bits 0 and no bitmap. A station acknowledges the bitmap form, so the sliding window takes it |
+| Net 0x11 | once. A real host never repeats it; a request every 500 ms is a fresh connection request at a station already seated |
+| Net 0x50, the update property | 0.2 s after the 0x11, retransmitted every 500 ms until the station's 0x51. It carries the forty game advertise bytes at +0x82. A host that never sends one is never sent a 0x51 |
+| the Session station list, again | twice in all: one in the same breath as the join response under sequence id 0, the second about two seconds later under the next id |
+| RTT | a request every 410 ms of the host's own, not only an answer. The message is eleven bytes in this band: a kind byte, a big-endian u64 timestamp and a big-endian u16 target. A response echoes the timestamp and names the REQUESTER where the request carried zero |
+| the whole opening | inside the first 0.3 s. A real host sends the join response, both station lists, the channel table, both stream opens, the clock answer, Net 0x50 and all 44 records before a third of a second has passed |
+
+The forty game advertise bytes are not a constant. Two sessions of one emulated host carried
+`648cf4` and `8170f0` at +0x21 of that block, the rest zero, so the value is per session and a
+replayed one is stale.
+
+With all of it, the NetworkInfo a host here advertises is byte for byte the one a live emulated
+Scarlet host advertises apart from the session id, given `--channel 6`, `--player-name RyuPlayer`
+and `--host-player-id 00000000000000010000000000000000`, and its Session station list matches apart
+from the variable ids.
 
 With those the console holds one join for as long as the host stays up, against the sixteen to
 fifty-seven joins a session that fails somewhere above the seat produces, and it answers RTT, the
