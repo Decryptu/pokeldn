@@ -354,6 +354,26 @@ records once each, acknowledges the joiner's, and issues a type-5 station update
 stations with their player blocks. It then keeps searching. What a pair does after the exchange is
 what the trade needs, and it is unicast, so only two consoles or two emulator instances can show it.
 
+## Hosting for a console
+
+A host that answers the layers below the game brings a Scarlet to the same place a pair's joiner
+reaches: seated in the mesh, its channel table sent, its two streams open and its whole 44-record
+identity delivered once each. What it takes, beyond the four station slots in Net 0x11:
+
+| the host sends | what it must be |
+|---|---|
+| the Session join response | the 41-byte form: no route bytes, station index 1, join order 1, sequence id 0, and four random bytes at +8. Arceus's 43-byte form, with the route bytes, is retransmitted against rather than accepted |
+| the Session type-1 join ack | nothing. A Scarlet host never sends one, and a console sent one leaves within two seconds |
+| the Session type-5 station list | about a second and a half after the response, never in the same breath. Sequence id 1 where the response sent 0 |
+| each station in that list | 79 bytes: the location id, the address and port, the station index, a big-endian u16 join order, a NAT byte, an IPv6 flag, the 32-byte token, the counts and the player records. No route bytes, which is what makes Arceus's station 81 |
+| the player name in it | one space. A console advertises a single 0x20 and a longer name changes the message's length |
+| every Session reply's message flags | 0x00 |
+| the acknowledgement on Reliable 0x7C | the one-entry form with no destination bitmap, not the four-entry bulk form of 0x80 and 0x81. Unacknowledged, the console retransmits its channel table for the whole session, a thousand times in ninety seconds |
+
+With those the console holds one join for as long as the host stays up, against the sixteen to
+fifty-seven joins a session that fails somewhere above the seat produces, and it answers RTT, the
+clone clock and every stream.
+
 ## The game's own protocol, from a pair
 
 Two emulated Scarlet 4.0.0 instances completed a trade, and each instance's log holds every

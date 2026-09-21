@@ -25,6 +25,7 @@ sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 from pokeldn import config
 from pokeldn import sv
 from pokeldn.ldn import pia6, pia_connect, reliable5
+from pokeldn.pla import game_channel
 from pokeldn.ldn.ldn_mitm_host import IpHostTransport
 from pokeldn.ldn.transport import HostTransport, find_ap_phy
 from pokeldn.host_support import resolve_keys
@@ -54,7 +55,10 @@ PROTO_RELIABLE = 0x7C
 PROTO_BROADCAST_RELIABLE = 0x80
 PROTO_STREAM_BROADCAST_RELIABLE = 0x81
 PROTO_SESSION = 0x98
-RELIABLE_PROTOCOLS = (PROTO_BROADCAST_RELIABLE, PROTO_STREAM_BROADCAST_RELIABLE)
+# Reliable 0x7C belongs here too: it is the channel the game's own messages run on, and a host that
+# leaves it out never acknowledges the joiner's channel table, which the console then retransmits
+# for the whole session.
+RELIABLE_PROTOCOLS = (PROTO_RELIABLE, PROTO_BROADCAST_RELIABLE, PROTO_STREAM_BROADCAST_RELIABLE)
 MESH_DESTINATION = 0x0001
 MESH_ADDRESSED = (PROTO_RTT, PROTO_BROADCAST_RELIABLE, PROTO_STREAM_BROADCAST_RELIABLE)
 PIA_HOST_VAR = 0x00C6
@@ -91,14 +95,14 @@ def build_net_probe(keys, our_ip, our_mac, station_ips, seqid, nonce8, max_stati
 
 
 def build_reply(keys, our_ip, body, dst_var, nonce8, *, protocol=PROTO_SESSION,
-                flags=ESTABLISHING_FLAGS, port=0):
+                flags=ESTABLISHING_FLAGS, port=0, packet_id=0):
     msg = pia6.build_message(body, protocol=protocol, port=port, message_flags=flags)
     footer_ids = ()
     if protocol in MESH_ADDRESSED:
         footer_ids, dst_var = (dst_var,), MESH_DESTINATION
     return pia6.build_packet(keys.session_key, keys.network_id, our_ip, msg,
-                             dst_var=dst_var, src_var=PIA_HOST_VAR, packet_id=0, nonce8=nonce8,
-                             footer_ids=footer_ids)
+                             dst_var=dst_var, src_var=PIA_HOST_VAR, packet_id=packet_id,
+                             nonce8=nonce8, footer_ids=footer_ids)
 
 
 def build_bulk_ack(port_high, host_next_seq, stream_id=0, unknown0=0):
@@ -148,6 +152,18 @@ def build_parser():
     ap.add_argument("--ack-period", type=float, default=1.0,
                     help="seconds between the periodic bulk acks on every port the console used")
     ap.add_argument("--clock", action="store_true", help="answer clone clock requests, if any")
+    ap.add_argument("--update-seq", type=int, default=1,
+                    help="the sequence id in the station-list update; a Scarlet host sends 1 where "
+                         "its join response sent 0")
+    ap.add_argument("--update-delay", type=float, default=0.0,
+                    help="seconds between the Session join response and the station-list update; a "
+                         "Scarlet host leaves about 1.5 s")
+    ap.add_argument("--session-flags", type=lambda v: int(v, 0), default=None,
+                    help="the message flags on the Session replies; a Scarlet host sends 0x00, "
+                         "this host's own default is 0x01")
+    ap.add_argument("--session-packet-id", type=int, default=0,
+                    help="the packet id in the Pia header of the Session replies; a Scarlet host's "
+                         "join response carries 1")
     ap.add_argument("--scarlet-response", action="store_true",
                     help="the 41-byte Session join response a Scarlet host sends, with no route "
                          "bytes, rather than Arceus's 43-byte one")
@@ -186,6 +202,8 @@ def main():
             print("[sv] no AP-capable phy")
             return 1
 
+    session_flags = (ESTABLISHING_FLAGS if args.session_flags is None else args.session_flags)
+    pending_update = {}
     game_data = binascii.unhexlify(args.game_data) if args.game_data else None
     app_data = sv.build_advertise_data(game_data=game_data)
     print(f"[sv] advertising comm id {comm_id:#018x}, {len(app_data)} bytes of application data, "
@@ -246,8 +264,15 @@ def main():
 
     def send_ack(src_ip, protocol, port, dst_var, why):
         high = stream_high.get((src_ip, protocol, port), 0)
-        body = build_bulk_ack({CONSOLE_STATION_INDEX: high},
-                              host_seq.get((src_ip, protocol, port), 1))
+        if protocol == PROTO_RELIABLE:
+            # Reliable 0x7C is addressed to one station, so its acknowledgement is the one-entry
+            # form with no destination bitmap. The four-entry broadcast form belongs to 0x80 and
+            # 0x81; sent on 0x7C the console never counts its channel table acknowledged and
+            # retransmits it for as long as the session lasts.
+            body = game_channel.build_ack(high + 1, lowest_pending=high + 1)
+        else:
+            body = build_bulk_ack({CONSOLE_STATION_INDEX: high},
+                                  host_seq.get((src_ip, protocol, port), 1))
         pkt = build_reply(keys, transport.our_ip, body, dst_var, os.urandom(8),
                           protocol=protocol, port=port, flags=0)
         transport.send(pkt, src_ip)
@@ -287,6 +312,12 @@ def main():
                     record(rec="out", dst=ip, kind="net conn request", seqid=net_seqid,
                            hex=probe.hex(), t=now)
                     print(f"[sv] -> {ip}: net 0x11 connection request, seqid={net_seqid}")
+            for ip, (due, pkt) in list(pending_update.items()):
+                if now >= due:
+                    del pending_update[ip]
+                    transport.send(pkt, ip)
+                    record(rec="out", dst=ip, kind="session update", hex=pkt.hex(), t=now)
+                    print(f"[sv] -> {ip}: session station-list update (type 5)")
             # The periodic bulk ack on every stream the console has used, as a retail station
             # sends one a second on every port it has open.
             if not args.no_ack:
@@ -343,7 +374,9 @@ def main():
                             if not args.no_session_ack:
                                 ack = pia_connect.build_session_join_ack_v11(
                                     host_const, host_var, console_const, console_var)
-                                pkt = build_reply(keys, transport.our_ip, ack, console_var, os.urandom(8))
+                                pkt = build_reply(keys, transport.our_ip, ack, console_var,
+                                                  os.urandom(8), flags=session_flags,
+                                                  packet_id=args.session_packet_id)
                                 transport.send(pkt, src_ip)
                                 record(rec="out", dst=src_ip, kind="session join ack", hex=pkt.hex(),
                                        t=time.time())
@@ -354,7 +387,9 @@ def main():
                                     version=version, sequence_id=args.join_seq,
                                     route=None if args.scarlet_response else (0, 1),
                                     random4=os.urandom(4))
-                                pkt = build_reply(keys, transport.our_ip, resp, console_var, os.urandom(8))
+                                pkt = build_reply(keys, transport.our_ip, resp, console_var,
+                                                  os.urandom(8), flags=session_flags,
+                                                  packet_id=args.session_packet_id)
                                 transport.send(pkt, src_ip)
                                 record(rec="out", dst=src_ip, kind="session join response",
                                        hex=pkt.hex(), t=time.time())
@@ -365,20 +400,24 @@ def main():
                                 stations = [
                                     dict(constant_id=host_const, variable_id=host_var,
                                          ip=transport.our_ip, port=12345, station_index=0,
-                                         route=(0, 0), join_order=0, token=b"\x00" * 32,
+                                         route=None if args.scarlet_response else (0, 0),
+                                         join_order=0, token=b"\x00" * 32,
                                          players=[host_player]),
                                     dict(constant_id=console_const, variable_id=console_var,
-                                         ip=src_ip, port=j["port"], station_index=1, route=(0, 1),
+                                         ip=src_ip, port=j["port"], station_index=1,
+                                         route=None if args.scarlet_response else (0, 1),
                                          join_order=1, token=j["identification_token"],
                                          players=[console_player]),
                                 ]
                                 upd = pia_connect.build_session_update_v11(
-                                    host_const, host_var, stations, sequence_id=args.join_seq)
-                                pkt = build_reply(keys, transport.our_ip, upd, console_var, os.urandom(8))
-                                transport.send(pkt, src_ip)
-                                record(rec="out", dst=src_ip, kind="session update", hex=pkt.hex(),
-                                       t=time.time())
-                                print(f"[sv] -> {src_ip}: session station-list update (type 5)")
+                                    host_const, host_var, stations, sequence_id=args.update_seq)
+                                pkt = build_reply(keys, transport.our_ip, upd, console_var,
+                                                  os.urandom(8), flags=session_flags,
+                                                  packet_id=args.session_packet_id)
+                                # A Scarlet host answers the join request with the type 2 alone and
+                                # sends the station list about a second and a half later; sent in
+                                # the same breath the console takes neither.
+                                pending_update[src_ip] = (time.time() + args.update_delay, pkt)
                         if (not args.no_rtt and msg.protocol == PROTO_RTT and msg.payload
                                 and msg.payload[0] == RTT_REQUEST):
                             echo = bytes([RTT_RESPONSE]) + msg.payload[1:]
@@ -437,11 +476,17 @@ def main():
                                         continue
                                     sent_once.add((src_ip, index))
                                     p, port, hx = spec.split(":", 2)
+                                    # A trailing ":z" marks a payload that is already zlib, which
+                                    # is how a host's announcement on 0x80 port 2 goes out.
+                                    zlib_flag = hx.endswith(":z")
+                                    if zlib_flag:
+                                        hx = hx[:-2]
                                     p, port, data = int(p, 0), int(port), bytes.fromhex(hx)
                                     s = next_seq(src_ip, p, port)
                                     flags = (reliable5.FLAG_APPLICATION_DATA | reliable5.FLAG_MESSAGE_START
                                              | reliable5.FLAG_MESSAGE_END
-                                             | (reliable5.FLAG_IS_INITIALIZED if s == 1 else 0))
+                                             | (reliable5.FLAG_IS_INITIALIZED if s == 1 else 0)
+                                             | (reliable5.FLAG_ZLIB if zlib_flag else 0))
                                     body = (reliable5.build_header(flags, s, len(data), lowest_pending=s,
                                                                    stream_id=0, destination_bits=3,
                                                                    bitmap=[JOINER_BITMAP]) + data)

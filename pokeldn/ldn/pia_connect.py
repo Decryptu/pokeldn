@@ -409,6 +409,9 @@ def _session_station_v11(constant_id, variable_id, ip, port, *, station_index, r
     six-byte IPv4 form, then route bytes A and B, the station index, a big-endian u16 join order, a
     NAT-mapping byte, a private-IPv6 flag, the 32-byte token, a player count, a participant count, and
     the 6.32-style player records. The caller clears this station's IPv6 bitmap bit to match.
+
+    `route=None` omits the two route bytes, giving the 79-byte station a Scarlet host writes; with
+    them the station is 81 bytes, which is Arceus's.
     """
     token = bytes(token)
     if len(token) != 32:
@@ -416,7 +419,9 @@ def _session_station_v11(constant_id, variable_id, ip, port, *, station_index, r
     out = bytearray(_constant_id8(constant_id))
     out += (_vid(variable_id) & 0xFFFF).to_bytes(4, "big")       # [0000 | var]
     out += _ip4(ip) + (port & 0xFFFF).to_bytes(2, "big")
-    out += bytes([route[0] & 0xFF, route[1] & 0xFF, station_index & 0xFF])
+    if route is not None:
+        out += bytes([route[0] & 0xFF, route[1] & 0xFF])
+    out += bytes([station_index & 0xFF])
     out += (join_order & 0xFFFF).to_bytes(2, "big")
     out += bytes([nat & 0xFF, 1 if private_ipv6 else 0])
     out += token
