@@ -16,6 +16,7 @@ import argparse
 import binascii
 import json
 import os
+import struct
 import sys
 import time
 import traceback
@@ -94,6 +95,50 @@ def build_net_probe(keys, our_ip, our_mac, station_ips, seqid, nonce8, max_stati
                              dst_var=0, src_var=PIA_HOST_VAR, packet_id=0, nonce8=nonce8)
 
 
+# The Net 0x50 update-property message, replayed from the emulated pair's host, which sends it
+# 0.37 s after its 0x11 and retransmits every 500 ms until the joiner's 0x51. Three fields are
+# patched rather than replayed: the sequence id at +4, the network id at +12, and the forty game
+# advertise bytes at +0x82, whose +0x21 carries 648cf4 on a host a joiner reached. The one space at
+# +0x42 is the host player name, the same single 0x20 the Session station list carries.
+NET_PROPERTY_BODY = bytes.fromhex(
+    "015000840000000100000000d3bb434200020004000000000000000402010000005c00000028"
+    "005c150015000000000000000000000000000000000102000000010120000000000000000000"
+    "0000000000000000000000000000000000000000000000000000000000000000000000000000"
+    "0000000000000000000000000000000000000000000000000000000000000000000000000000"
+    "0000000000000000000000648cf400000000")
+NET_PROPERTY = 0x50
+NET_PROPERTY_ACK = 0x51
+NET_PROPERTY_GAME_DATA = 0x82
+
+
+def build_net_property(keys, our_ip, seqid, nonce8, game_data=None,
+                       net_flags=ESTABLISHING_FLAGS):
+    body = bytearray(NET_PROPERTY_BODY)
+    body[4:8] = (seqid & 0xFFFFFFFF).to_bytes(4, "big")
+    body[12:16] = keys.network_id.to_bytes(4, "big")
+    if game_data is not None:
+        body[NET_PROPERTY_GAME_DATA:NET_PROPERTY_GAME_DATA + 40] = bytes(game_data)[:40].ljust(40, b"\0")
+    msg = pia6.build_message(bytes(body), protocol=PROTO_NET, port=0, message_flags=net_flags)
+    return pia6.build_packet(keys.session_key, keys.network_id, our_ip, msg,
+                             dst_var=0, src_var=PIA_HOST_VAR, packet_id=0, nonce8=nonce8)
+
+
+# This band's RTT message is eleven bytes, not the thirteen `rtt_protocol` documents for BDSP:
+# a kind byte, a big-endian u64 timestamp and a big-endian u16 target. Read off the emulated pair,
+# where a request carries target 0 and a response echoes the timestamp and names the REQUESTER:
+#   request  00 0000000002c7c60d1e 0000
+#   response 01 0000000000d08f4691 e73d
+# The host sends a request every 410 ms from the moment it opens the mesh, and the joiner answers
+# once it is registered. The timestamp is the sender's own 19.2 MHz system tick.
+RTT_TICKS_PER_SECOND = 19200000
+RTT_PROBE_SECONDS = 0.41
+
+
+def build_rtt(kind, timestamp, target=0):
+    return bytes([kind & 0xFF]) + struct.pack(">QH", timestamp & ((1 << 64) - 1),
+                                              target & 0xFFFF)
+
+
 def build_reply(keys, our_ip, body, dst_var, nonce8, *, protocol=PROTO_SESSION,
                 flags=ESTABLISHING_FLAGS, port=0, packet_id=0):
     msg = pia6.build_message(body, protocol=protocol, port=port, message_flags=flags)
@@ -117,6 +162,21 @@ def build_bulk_ack(port_high, host_next_seq, stream_id=0, unknown0=0):
                                     lowest_pending=host_next_seq, stream_id=stream_id,
                                     destination_bits=3, bitmap=[JOINER_BITMAP])
     return header + payload
+
+
+def build_reliable_body(protocol, flags, sequence_id, data, lowest_pending=None):
+    """A reliable message in the header shape its protocol uses.
+
+    0x80 and 0x81 are addressed to the mesh and carry a destination bitmap. Reliable 0x7C carries
+    none: every 0x7C message in the emulated pair, in both directions, has destination_bits 0 and a
+    nine-byte header, and both the sequence and the lowest pending are the message's own sequence.
+    A console acknowledges a 0x7C message that carries a bitmap, so the sliding window takes it,
+    and does not act on its contents.
+    """
+    low = sequence_id if lowest_pending is None else lowest_pending
+    bits, bitmap = ((0, []) if protocol == PROTO_RELIABLE else (3, [JOINER_BITMAP]))
+    return reliable5.build_header(flags, sequence_id, len(data), lowest_pending=low, stream_id=0,
+                                  destination_bits=bits, bitmap=bitmap) + data
 
 
 def build_parser():
@@ -170,6 +230,16 @@ def build_parser():
     ap.add_argument("--net-flags", type=lambda v: int(v, 0), default=None,
                     help="the message flags on the Net 0x11 opening; a retail host sends 0x31, "
                          "this host's own default is 0x01")
+    ap.add_argument("--rtt-probe", type=float, nargs="?", const=RTT_PROBE_SECONDS,
+                    default=0.0,
+                    help="send an RTT request this often, as a pair's host does every 410 ms; the "
+                         "host otherwise only answers them")
+    ap.add_argument("--net-property-flags", type=lambda v: int(v, 0), default=None,
+                    help="the message flags on the Net 0x50; a pair's host sends 0x31 on it and on "
+                         "its 0x11, and this host's 0x11 needs 0x01 to be answered at all")
+    ap.add_argument("--net-property", action="store_true",
+                    help="send the Net 0x50 update-property message a pair's host sends 0.37 s "
+                         "after its 0x11, retransmitting until the console's 0x51")
     ap.add_argument("--net-stations", type=int, default=None,
                     help="how many 21-byte station slots the Net 0x11 carries; a retail host "
                          "writes four whatever the game's participant limit is")
@@ -260,6 +330,9 @@ def main():
     deadline = time.time() + args.seconds
     seen, authed, failed = 0, 0, 0
     net_seqid, net_sent, seen_ips = 2, {}, set()
+    net_prop = {}              # src_ip -> [seqid, when it last went out, acknowledged]
+    rtt_sent = {}              # src_ip -> when the last RTT request went out
+
     station_ids = {}            # src_ip -> the ids session named
     # (src_ip, protocol, port) -> highest data sequence received from the console on that stream
     stream_high = {}
@@ -325,6 +398,32 @@ def main():
                     record(rec="out", dst=ip, kind="net conn request", seqid=net_seqid,
                            hex=probe.hex(), t=now)
                     print(f"[sv] -> {ip}: net 0x11 connection request, seqid={net_seqid}")
+            if args.rtt_probe:
+                for ip in list(seen_ips):
+                    if ip == transport.our_ip or now - rtt_sent.get(ip, 0) < args.rtt_probe:
+                        continue
+                    rtt_sent[ip] = now
+                    tick = int(time.monotonic() * RTT_TICKS_PER_SECOND)
+                    pkt = build_reply(keys, transport.our_ip,
+                                      build_rtt(RTT_REQUEST, tick),
+                                      station_ids.get(ip, {}).get("console_var", 0),
+                                      os.urandom(8), protocol=PROTO_RTT)
+                    transport.send(pkt, ip)
+                    record(rec="out", dst=ip, kind="rtt request", hex=pkt.hex(), t=now)
+            if args.net_property:
+                for ip, state in list(net_prop.items()):
+                    if state[2] or now - state[1] < NET_REPEAT_SECONDS:
+                        continue
+                    state[1] = now
+                    pkt = build_net_property(keys, transport.our_ip, state[0], os.urandom(8),
+                                             game_data=game_data,
+                                             net_flags=(ESTABLISHING_FLAGS
+                                                        if args.net_property_flags is None
+                                                        else args.net_property_flags))
+                    transport.send(pkt, ip)
+                    record(rec="out", dst=ip, kind="net property", seqid=state[0],
+                           hex=pkt.hex(), t=now)
+                    print(f"[sv] -> {ip}: net 0x50 update property, seqid={state[0]}")
             for (ip, index), (due, rest) in list(pending_late.items()):
                 if now < due or ip not in station_ids:
                     continue
@@ -339,9 +438,7 @@ def main():
                          | reliable5.FLAG_MESSAGE_END
                          | (reliable5.FLAG_IS_INITIALIZED if seq == 1 else 0)
                          | (reliable5.FLAG_ZLIB if zlib_flag else 0))
-                body = (reliable5.build_header(flags, seq, len(data), lowest_pending=seq,
-                                               stream_id=0, destination_bits=3,
-                                               bitmap=[JOINER_BITMAP]) + data)
+                body = build_reliable_body(p_, flags, seq, data)
                 pkt = build_reply(keys, transport.our_ip, body, station_ids[ip]["console_var"],
                                   os.urandom(8), protocol=p_, port=port_, flags=0)
                 transport.send(pkt, ip)
@@ -361,9 +458,8 @@ def main():
                     flags = (reliable5.FLAG_APPLICATION_DATA | reliable5.FLAG_MESSAGE_START
                              | reliable5.FLAG_MESSAGE_END | reliable5.FLAG_ZLIB
                              | (reliable5.FLAG_IS_INITIALIZED if seq == 1 else 0))
-                    body = (reliable5.build_header(flags, seq, len(payload), lowest_pending=1,
-                                                   stream_id=0, destination_bits=3,
-                                                   bitmap=[JOINER_BITMAP]) + payload)
+                    body = build_reliable_body(PROTO_STREAM_BROADCAST_RELIABLE, flags, seq,
+                                               payload, lowest_pending=1)
                     pkt = build_reply(keys, transport.our_ip, body,
                                       station_ids[ip]["console_var"], os.urandom(8),
                                       protocol=PROTO_STREAM_BROADCAST_RELIABLE, port=0, flags=0)
@@ -410,6 +506,22 @@ def main():
                            flags=msg.message_flags, src_var=header.src_var, dst_var=header.dst_var,
                            payload=msg.payload.hex(), t=time.time())
                     try:
+                        if (args.net_property and msg.protocol == PROTO_NET
+                                and len(msg.payload) >= 8):
+                            kind = msg.payload[1]
+                            if kind == pia_connect.NET_CONN_RESPONSE and src_ip not in net_prop:
+                                net_prop[src_ip] = [1, 0.0, False]
+                            elif kind == pia_connect.NET_CONN_RESPONSE and net_prop[src_ip][2]:
+                                # A rejoin is a new session and the property goes out again, under
+                                # the next sequence id, because the console acknowledges each one
+                                # by the id it was sent with.
+                                net_prop[src_ip] = [net_prop[src_ip][0] + 1, 0.0, False]
+                            elif kind == NET_PROPERTY_ACK and src_ip in net_prop:
+                                acked = int.from_bytes(msg.payload[4:8], "big")
+                                if acked == net_prop[src_ip][0]:
+                                    net_prop[src_ip][2] = True
+                                    print(f"[sv] {src_ip}: acknowledged net 0x50 with 0x51, "
+                                          f"seqid={acked}")
                         if (msg.protocol == PROTO_SESSION and msg.payload
                                 and msg.payload[0] == SESSION_JOIN_REQUEST):
                             j = pia_connect.parse_session_join_v11(msg.payload)
@@ -486,7 +598,13 @@ def main():
                                 pending_late[(src_ip, index)] = (time.time() + float(delay), rest)
                         if (not args.no_rtt and msg.protocol == PROTO_RTT and msg.payload
                                 and msg.payload[0] == RTT_REQUEST):
-                            echo = bytes([RTT_RESPONSE]) + msg.payload[1:]
+                            # A pair's host answers with the REQUESTER's variable id in the
+                            # target field, where the request itself carries zero.
+                            target = station_ids.get(src_ip, {}).get("console_var", 0)
+                            echo = (bytes([RTT_RESPONSE]) + msg.payload[1:9]
+                                    + struct.pack(">H", target & 0xFFFF)
+                                    if len(msg.payload) >= 11
+                                    else bytes([RTT_RESPONSE]) + msg.payload[1:])
                             pkt = build_reply(keys, transport.our_ip, echo, header.src_var,
                                               os.urandom(8), protocol=PROTO_RTT)
                             transport.send(pkt, src_ip)
@@ -553,9 +671,7 @@ def main():
                                              | reliable5.FLAG_MESSAGE_END
                                              | (reliable5.FLAG_IS_INITIALIZED if s == 1 else 0)
                                              | (reliable5.FLAG_ZLIB if zlib_flag else 0))
-                                    body = (reliable5.build_header(flags, s, len(data), lowest_pending=s,
-                                                                   stream_id=0, destination_bits=3,
-                                                                   bitmap=[JOINER_BITMAP]) + data)
+                                    body = build_reliable_body(p, flags, s, data)
                                     pkt = build_reply(keys, transport.our_ip, body, header.src_var,
                                                       os.urandom(8), protocol=p, port=port, flags=0)
                                     transport.send(pkt, src_ip)
