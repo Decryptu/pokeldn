@@ -286,6 +286,21 @@ def build_parser():
                     help="seconds between our own RTT requests (0 sends none)")
     ap.add_argument("--no-rtt", action="store_true", help="do not answer RTT requests")
     ap.add_argument("--no-ack", action="store_true", help="do not acknowledge reliable streams")
+    ap.add_argument("--ack-flags", type=lambda v: int(v, 0), default=streams.MESSAGE_FLAGS_ACK,
+                    help="the Pia message flags on our bulk acks; 0xa0 is what both retail "
+                         "stations send, and bit 5 is what routes a message to the guest's ack "
+                         "deserialiser")
+    ap.add_argument("--ack-entries", type=int, default=streams.ACK_ENTRIES,
+                    help="entries in the ack payload; a retail station sends four")
+    ap.add_argument("--ack-dest-bits", type=int, default=3,
+                    help="the reliable header's destination bits; 3 adds the four-byte bitmap a "
+                         "retail station sends, 0 leaves the nine-byte header")
+    ap.add_argument("--ack-sweep", action="store_true",
+                    help="rotate every combination of --ack-flags, --ack-entries and "
+                         "--ack-dest-bits through the seat, one per --ack-sweep-period, and print "
+                         "each as it goes live. One seat then says which shape the guest parses")
+    ap.add_argument("--ack-sweep-period", type=float, default=7.0,
+                    help="seconds each sweep variant stays live")
     ap.add_argument("--ack-period", type=float, default=1.0,
                     help="seconds between the periodic bulk acks on every stream the host uses")
     ap.add_argument("--unicast", action="store_true",
@@ -502,6 +517,33 @@ async def run_session(args, keys, host_ip, host_mac, our_ip, our_mac, record):
     dest_ip = host_ip if (args.unicast or args.ip_join) else our_ip.rsplit(".", 1)[0] + ".255"
 
     ours = {"var": OUR_VAR, "assigned": False}
+    # (flags, entries, destination bits). The first is what both retail stations send; the last is
+    # the one shape a Scarlet guest has been seen to parse on this path (docs/sv.md).
+    sweep = [(f, e, d) for f in (args.ack_flags, 0x00)
+             for e in (args.ack_entries, 1) for d in (args.ack_dest_bits, 0)]
+    sweep = list(dict.fromkeys(sweep))
+    ack_shape = {"i": -1, "flags": args.ack_flags, "entries": args.ack_entries,
+                 "dest": args.ack_dest_bits}
+
+    def ack_variant(elapsed):
+        """The shape our acks carry now, and a line when the sweep moves on."""
+        if not args.ack_sweep:
+            return
+        i = int(elapsed // args.ack_sweep_period) % len(sweep)
+        if i != ack_shape["i"]:
+            ack_shape.update(i=i, flags=sweep[i][0], entries=sweep[i][1], dest=sweep[i][2])
+            print(f"[sv] ack shape {i + 1}/{len(sweep)}: flags {sweep[i][0]:#04x}, "
+                  f"{sweep[i][1]} entr{'y' if sweep[i][1] == 1 else 'ies'}, "
+                  f"{sweep[i][2]} destination bits")
+            record(rec="ack_shape", index=i, flags=sweep[i][0], entries=sweep[i][1],
+                   dest_bits=sweep[i][2], t=time.time())
+
+    def our_ack(key):
+        """A bulk ack for one stream in the shape the sweep currently says."""
+        return streams.build_ack({streams.HOST_INDEX: stream_high.get(key, 0)},
+                                 our_seq.get(key, 1), streams.JOINER_INDEX,
+                                 entry_count=ack_shape["entries"],
+                                 destination_bits=ack_shape["dest"])
     player_id = {"arceus": pia6.DEFAULT_PLAYER_ID, "random": os.urandom(16),
                  "high": b"\xff" + os.urandom(15)}.get(args.join_player_id)
     if player_id is None:
@@ -541,9 +583,11 @@ async def run_session(args, keys, host_ip, host_mac, our_ip, our_mac, record):
         """The eleven bulk acks and the two stream opens a retail joiner sends at once, 0.9 s
         after it associates (sv11). Everything is one packet per message, as the console sends it."""
         for protocol, port in streams.every_stream():
-            body = streams.build_ack({}, 1, streams.JOINER_INDEX, unknown0=1)
+            body = streams.build_ack({}, 1, streams.JOINER_INDEX, unknown0=1,
+                                     entry_count=ack_shape["entries"],
+                                     destination_bits=ack_shape["dest"])
             send(out(body, host_var or 0, protocol=protocol, port=port,
-                           flags=streams.MESSAGE_FLAGS_ACK), "reliable ack", protocol=protocol,
+                           flags=ack_shape["flags"]), "reliable ack", protocol=protocol,
                  port=port)
             last_ack[(protocol, port)] = time.time()
             if port in streams.OPEN_PORTS[streams.JOINER_INDEX] and protocol == streams.PROTOCOL_STREAM:
@@ -562,6 +606,7 @@ async def run_session(args, keys, host_ip, host_mac, our_ip, our_mac, record):
     while time.monotonic() - t0 < args.hold:
         now = time.time()
         elapsed = time.monotonic() - t0
+        ack_variant(elapsed)
         # A retail joiner's opening follows its join by about 0.75 s (sv11: the join at 0.14 s, the
         # opening at 0.89 s). With --session-join the opening waits for the seat.
         if not opened and elapsed >= args.open_delay and (
@@ -596,10 +641,9 @@ async def run_session(args, keys, host_ip, host_mac, our_ip, our_mac, record):
             for key, at in list(last_ack.items()):
                 if now - at >= args.ack_period:
                     protocol, port = key
-                    body = streams.build_ack({streams.HOST_INDEX: stream_high.get(key, 0)},
-                                             our_seq.get(key, 1), streams.JOINER_INDEX)
+                    body = our_ack(key)
                     send(out(body, host_var or 0, protocol=protocol,
-                                   port=port, flags=streams.MESSAGE_FLAGS_ACK), "reliable ack",
+                                   port=port, flags=ack_shape["flags"]), "reliable ack",
                          protocol=protocol, port=port)
                     last_ack[key] = now
         ready = select.select([sock], [], [], 0.05)[0]
@@ -776,10 +820,9 @@ async def run_session(args, keys, host_ip, host_mac, our_ip, our_mac, record):
                            t=time.time())
                     stream_high[key] = max(stream_high.get(key, 0), rm["sequence_id"])
                     if not args.no_ack:
-                        ack = streams.build_ack({streams.HOST_INDEX: stream_high[key]},
-                                                our_seq.get(key, 1), streams.JOINER_INDEX)
+                        ack = our_ack(key)
                         send(out(ack, host_var or 0, protocol=msg.protocol,
-                                       port=msg.port, flags=streams.MESSAGE_FLAGS_ACK),
+                                       port=msg.port, flags=ack_shape["flags"]),
                              "reliable ack", protocol=msg.protocol, port=msg.port)
                         last_ack[key] = time.time()
                 if key not in last_ack:

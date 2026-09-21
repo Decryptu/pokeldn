@@ -61,18 +61,24 @@ def bitmap_for(station_index):
     return 1 << (1 - station_index)
 
 
-def build_ack(highest, our_next_seq, station_index, *, unknown0=0, stream_id=0):
+def build_ack(highest, our_next_seq, station_index, *, unknown0=0, stream_id=0,
+              entry_count=ACK_ENTRIES, destination_bits=3):
     """The bulk ack, in the shape both retail stations send.
 
     `highest` maps a station index to the highest sequence received from it on this stream; entry k
     acknowledges station k with one past that, and every entry's station byte is zero.
+
+    `entry_count` and `destination_bits` are sweep handles: a retail station sends four entries and
+    a three-bit destination bitmap, and the only message a Scarlet guest has been seen to accept on
+    this path carried one entry and no bitmap (`docs/sv.md`).
     """
     entries = [dict(stream_id=0, ack_id=highest.get(k, 0) + 1, field_0x50=highest.get(k, 0) + 1)
-               for k in range(ACK_ENTRIES)]
+               for k in range(entry_count)]
     payload = reliable5.build_ack_payload(entries, unknown0=unknown0)
     header = reliable5.build_header(0, reliable5.ACK_SEQUENCE, len(payload),
                                     lowest_pending=our_next_seq, stream_id=stream_id,
-                                    destination_bits=3, bitmap=[bitmap_for(station_index)])
+                                    destination_bits=destination_bits,
+                                    bitmap=[bitmap_for(station_index)] if destination_bits else ())
     return header + payload
 
 
