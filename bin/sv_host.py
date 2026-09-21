@@ -147,6 +147,9 @@ def build_parser():
     ap.add_argument("--ack-period", type=float, default=1.0,
                     help="seconds between the periodic bulk acks on every port the console used")
     ap.add_argument("--clock", action="store_true", help="answer clone clock requests, if any")
+    ap.add_argument("--game-data", help="hex, the 40 game bytes of the advertisement; a searching "
+                                        "console leaves them zero, a host that a joiner reached "
+                                        "carried 648cf4 at +0x21")
     ap.add_argument("--send", action="append", default=[],
                     help="PROTO:PORT:HEX, a reliable data message to send once the console has "
                          "joined (host seq 1 on that port, INITIALIZED); repeatable")
@@ -173,7 +176,8 @@ def main():
             print("[sv] no AP-capable phy")
             return 1
 
-    app_data = sv.build_advertise_data()
+    game_data = binascii.unhexlify(args.game_data) if args.game_data else None
+    app_data = sv.build_advertise_data(game_data=game_data)
     print(f"[sv] advertising comm id {comm_id:#018x}, {len(app_data)} bytes of application data, "
           f"platform {args.platform}")
     machine = config.load_project_host_file_config()
@@ -254,7 +258,8 @@ def main():
             players = 1 + len(transport.participants)
             if players != advertised_players[0]:
                 advertised_players[0] = players
-                transport.set_application_data(sv.build_advertise_data(num_players=players))
+                transport.set_application_data(
+                    sv.build_advertise_data(num_players=players, game_data=game_data))
                 print(f"[sv] advertising {players} player(s)")
             if not args.no_net_probe:
                 for ip in list(seen_ips):

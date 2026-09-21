@@ -103,6 +103,10 @@ def build_network_info(*, local_comm_id, scene_id, host_ip, host_mac, session_id
     node = build_node_info(host_ip, host_mac, host_name, node_id=0, connected=1,
                            local_comm_version=local_comm_version)
     info[OFF_NODES:OFF_NODES + ldn_mitm.NODE_INFO_SIZE] = node
+    # Every slot carries its own index at NodeInfo+0x0A, connected or not, which is what a
+    # NetworkInfo read off a running ldn_mitm host holds: slots 2..7 are zero apart from that id.
+    for index in range(1, 8):
+        info[OFF_NODES + index * ldn_mitm.NODE_INFO_SIZE + 0x0A] = index
     struct.pack_into("<H", info, ldn_mitm.OFF_ADVERTISE_SIZE, len(advertise_data))
     info[ldn_mitm.OFF_ADVERTISE_DATA:
          ldn_mitm.OFF_ADVERTISE_DATA + len(advertise_data)] = advertise_data
