@@ -176,6 +176,17 @@ def build_parser():
     ap.add_argument("--game-data", help="hex, the 40 game bytes of the advertisement; a searching "
                                         "console leaves them zero, a host that a joiner reached "
                                         "carried 648cf4 at +0x21")
+    ap.add_argument("--send-at", action="append", default=[],
+                    help="DELAY:PROTO:PORT:HEX[:z], a reliable data message sent that many seconds "
+                         "after the seat; the sequence follows the port's own. A pair's host sends "
+                         "its 0x7c port 1 table update at nine seconds this way")
+    ap.add_argument("--record-set", default=None,
+                    help="a directory of NNN.bin records to send on 0x81 port 0 as this host's own "
+                         "identity, the way a pair's host sends its 46; the first carries "
+                         "INITIALIZED and every one is already zlib "
+                         "(scratchpad/sv_extract_records.py writes such a set)")
+    ap.add_argument("--record-delay", type=float, default=0.0,
+                    help="seconds after the seat before the record set goes out")
     ap.add_argument("--send", action="append", default=[],
                     help="PROTO:PORT:HEX, a reliable data message to send once the console has "
                          "joined (host seq 1 on that port, INITIALIZED); repeatable")
@@ -204,6 +215,8 @@ def main():
 
     session_flags = (ESTABLISHING_FLAGS if args.session_flags is None else args.session_flags)
     pending_update = {}
+    pending_records = {}
+    pending_late = {}
     game_data = binascii.unhexlify(args.game_data) if args.game_data else None
     app_data = sv.build_advertise_data(game_data=game_data)
     print(f"[sv] advertising comm id {comm_id:#018x}, {len(app_data)} bytes of application data, "
@@ -312,6 +325,52 @@ def main():
                     record(rec="out", dst=ip, kind="net conn request", seqid=net_seqid,
                            hex=probe.hex(), t=now)
                     print(f"[sv] -> {ip}: net 0x11 connection request, seqid={net_seqid}")
+            for (ip, index), (due, rest) in list(pending_late.items()):
+                if now < due or ip not in station_ids:
+                    continue
+                del pending_late[(ip, index)]
+                p_, port_, hx = rest.split(":", 2)
+                zlib_flag = hx.endswith(":z")
+                if zlib_flag:
+                    hx = hx[:-2]
+                p_, port_, data = int(p_, 0), int(port_), bytes.fromhex(hx)
+                seq = next_seq(ip, p_, port_)
+                flags = (reliable5.FLAG_APPLICATION_DATA | reliable5.FLAG_MESSAGE_START
+                         | reliable5.FLAG_MESSAGE_END
+                         | (reliable5.FLAG_IS_INITIALIZED if seq == 1 else 0)
+                         | (reliable5.FLAG_ZLIB if zlib_flag else 0))
+                body = (reliable5.build_header(flags, seq, len(data), lowest_pending=seq,
+                                               stream_id=0, destination_bits=3,
+                                               bitmap=[JOINER_BITMAP]) + data)
+                pkt = build_reply(keys, transport.our_ip, body, station_ids[ip]["console_var"],
+                                  os.urandom(8), protocol=p_, port=port_, flags=0)
+                transport.send(pkt, ip)
+                record(rec="out", dst=ip, kind="send-at", protocol=p_, port=port_, seq=seq,
+                       hex=pkt.hex(), t=now)
+                print(f"[sv] -> {ip}: data 0x{p_:02x}:{port_} seq {seq} {len(data)}B (scheduled)")
+            for ip, due in list(pending_records.items()):
+                if now < due or ip not in station_ids:
+                    continue
+                del pending_records[ip]
+                names = sorted(os.listdir(args.record_set))
+                for name in names:
+                    if not name.endswith(".bin"):
+                        continue
+                    payload = open(os.path.join(args.record_set, name), "rb").read()
+                    seq = int(name.split(".")[0])
+                    flags = (reliable5.FLAG_APPLICATION_DATA | reliable5.FLAG_MESSAGE_START
+                             | reliable5.FLAG_MESSAGE_END | reliable5.FLAG_ZLIB
+                             | (reliable5.FLAG_IS_INITIALIZED if seq == 1 else 0))
+                    body = (reliable5.build_header(flags, seq, len(payload), lowest_pending=1,
+                                                   stream_id=0, destination_bits=3,
+                                                   bitmap=[JOINER_BITMAP]) + payload)
+                    pkt = build_reply(keys, transport.our_ip, body,
+                                      station_ids[ip]["console_var"], os.urandom(8),
+                                      protocol=PROTO_STREAM_BROADCAST_RELIABLE, port=0, flags=0)
+                    transport.send(pkt, ip)
+                    record(rec="out", dst=ip, kind="record set", protocol=0x81, port=0, seq=seq,
+                           hex=pkt.hex(), t=time.time())
+                print(f"[sv] -> {ip}: identity, {len(names)} record(s) on 0x81 port 0")
             for ip, (due, pkt) in list(pending_update.items()):
                 if now >= due:
                     del pending_update[ip]
@@ -418,6 +477,13 @@ def main():
                                 # sends the station list about a second and a half later; sent in
                                 # the same breath the console takes neither.
                                 pending_update[src_ip] = (time.time() + args.update_delay, pkt)
+                            if args.record_set and src_ip not in pending_records:
+                                pending_records[src_ip] = time.time() + args.record_delay
+                            for index, spec in enumerate(args.send_at):
+                                if (src_ip, index) in pending_late:
+                                    continue
+                                delay, rest = spec.split(":", 1)
+                                pending_late[(src_ip, index)] = (time.time() + float(delay), rest)
                         if (not args.no_rtt and msg.protocol == PROTO_RTT and msg.payload
                                 and msg.payload[0] == RTT_REQUEST):
                             echo = bytes([RTT_RESPONSE]) + msg.payload[1:]

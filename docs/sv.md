@@ -374,6 +374,19 @@ With those the console holds one join for as long as the host stays up, against 
 fifty-seven joins a session that fails somewhere above the seat produces, and it answers RTT, the
 clone clock and every stream.
 
+### The host's identity must be numbered without a gap
+
+Both stations of a pair skip sequence ids 5 and 6 on their record stream, and each one's peer still
+acknowledges the set to 47 with an empty mask. A set replayed with that gap is not: the console
+acknowledges id 5 with the mask `feffffffff01`, which is every record it holds, and goes no further.
+What lets a real station's peer treat 5 and 6 as not owed is unknown; the window fields do not carry
+it, since a reference record and a replayed one both declare `lowest_pending` 1, destination bits 3,
+bitmap `[2]` and stream id 0.
+
+Renumbered 1 to 44 in their own order, the same 44 records are acknowledged and the console then
+**opens Reliable 0x7C port 2** with `03b90200bc09000000000000000000`, the fifteen bytes a pair's
+joiner opens it with. That is the game's own channel.
+
 ## The game's own protocol, from a pair
 
 Two emulated Scarlet 4.0.0 instances completed a trade, and each instance's log holds every
