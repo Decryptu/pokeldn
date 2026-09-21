@@ -202,6 +202,9 @@ def build_parser():
                     help="seconds after the seat before the first identity record goes out")
     ap.add_argument("--no-channel-ack", action="store_true",
                     help="do not acknowledge the host's messages on the game's reliable channel 0x7c")
+    ap.add_argument("--answer-migration", action="store_true",
+                    help="answer the host's type-7 leave-with-host-migration with a type-8 ack, "
+                         "telling it we accept the host role it is handing over")
     ap.add_argument("--no-update-ack", action="store_true",
                     help="do not answer a Session type-5 station update with the type 6")
     ap.add_argument("--join-repeat", type=float, default=2.0,
@@ -578,8 +581,16 @@ async def run_session(args, keys, host_ip, host_mac, our_ip, our_mac, record):
                     print(f"[sv] the host acknowledged the join request; it now has 8 s to answer it")
                 elif kind == 7:
                     migration_sent += 1
+                    mig = pia_connect.parse_session_migration_v11(msg.payload)
                     print(f"[sv] the host is LEAVING WITH HOST MIGRATION to us ({migration_sent}x): "
-                          f"{msg.payload.hex()}")
+                          f"target var {mig['target_var']:#06x}" if mig else msg.payload.hex())
+                    if args.answer_migration and mig and mig["target_var"] == ours["var"]:
+                        ack = pia_connect.build_session_migration_ack_v11(
+                            mig["target_constant_id"], mig["target_var"],
+                            mig["host_constant_id"], mig["host_var"])
+                        send(out(ack, host_var or 0, protocol=PROTO_SESSION),
+                             "migration ack", to=host_ip)
+                        print(f"[sv] -> {host_ip}: start-host-migration ack (type 8)")
             if not args.no_rtt and msg.protocol == PROTO_RTT and msg.payload and msg.payload[0] == 0:
                 send(out(streams.build_rtt_response(msg.payload, header.src_var),
                          header.src_var, protocol=PROTO_RTT), "rtt response")

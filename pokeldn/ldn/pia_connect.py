@@ -559,6 +559,34 @@ def parse_session_update_v11(payload, *, route_bytes=2):
     return out
 
 
+SESSION_START_HOST_MIGRATION_ACK = 8
+
+
+def parse_session_migration_v11(payload):
+    """Session type 7, `LeaveMeshWithHostMigrationJob` (0x6d8de0), the host announcing it is
+    leaving and naming the station it hands the host role to. 34 bytes: type, the host location
+    id, a byte, the host IPv4 and port, the target's location id, two zero bytes."""
+    payload = bytes(payload)
+    if len(payload) < 32 or payload[0] != 7:
+        return None
+    return {
+        "host_constant_id": bytes(payload[1:9]),
+        "host_var": int.from_bytes(payload[11:13], "big"),
+        "host_ip": ".".join(str(x) for x in payload[14:18]),
+        "host_port": int.from_bytes(payload[18:20], "big"),
+        "target_constant_id": bytes(payload[20:28]),
+        "target_var": int.from_bytes(payload[30:32], "big"),
+    }
+
+
+def build_session_migration_ack_v11(self_constant_id, self_var, host_constant_id, host_var):
+    """Session type 8, 25 bytes, the migration target's answer to the host's type 7 (writer
+    0x6d917c). The self location id then the host's, the same two-location shape as the join ack."""
+    return (bytes([SESSION_START_HOST_MIGRATION_ACK])
+            + _location_id(self_constant_id, self_var)
+            + _location_id(host_constant_id, host_var))
+
+
 def build_session_update_ack_v11(console_constant_id, sequence_id):
     """Session type 6, 13 bytes, the joiner's answer to a type-5 update (Scarlet `0x6d80a4`, Arceus
     `0x738740`): the type, the joiner's own constant id, two zero bytes, the sequence applied."""
