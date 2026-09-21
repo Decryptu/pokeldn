@@ -135,12 +135,10 @@ def main():
     ap.add_argument("--swap-host-fields", action="store_true",
                     help="send the network id before the constant id in the host update")
     ap.add_argument("--join-address", choices=["kind", "band"], default="band",
-                    help="station address in the join request: 6.39's kind byte + IPv4 + port, "
-                         "or the band's 16 address bytes + port")
+                    help="which builder writes the join request: pia_connect's 6.32 layout, or "
+                         "pia6's, which reproduces a retail console's request byte for byte")
     ap.add_argument("--join-protocols", choices=["6.32", "band"], default="band",
                     help="the protocol list the join request states")
-    ap.add_argument("--join-app-ver", type=lambda v: int(v, 0), default=0,
-                    help="application communication version in the join request")
     ap.add_argument("--no-skip-source-check", dest="skip_source_check", action="store_false",
                     help="clear message flag 0x01; the unflagged path runs the station lookup and "
                          "can set the wake bit when the host has a station for us")
@@ -315,13 +313,11 @@ def build_join(args, keys, host_mac, host_var):
         body = pia_connect.build_session_join(
             our_cid, OUR_VAR.to_bytes(2, "big"), args.our_ip, host_mac,
             host_var.to_bytes(2, "big"), args.name, os.urandom(4),
-            app_ver=args.join_app_ver.to_bytes(2, "big"),
             protocols=(pia_connect.DEFAULT_PROTOCOLS if args.join_protocols == "6.32"
                        else pia6.BAND_PROTOCOLS))
     else:
         body = pia6.build_session_join(
             our_cid, OUR_VAR, args.our_ip, host_mac, host_var, args.name, os.urandom(4),
-            app_ver=args.join_app_ver,
             protocols=(pia_connect.DEFAULT_PROTOCOLS if args.join_protocols == "6.32"
                        else pia6.BAND_PROTOCOLS))
     return pia6.build_packet(

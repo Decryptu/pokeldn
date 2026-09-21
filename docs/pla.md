@@ -196,22 +196,28 @@ The console sends a 115-byte Session type-0 join request, written by `ClusterPac
 the type byte and a protocol count, then the ten `(id, version)` pairs above. Past the list, both
 constant ids decode against `ldn_constant_id`, which anchors the body:
 
-    +22  2   application version, 0x93b5
-    +24  2   nonce, echoed by the response (width past two bytes unconfirmed)
+    +22  4   random, fresh on every repeat of the request; Scarlet's writer seeds it from the
+             system tick (`docs/sv.md`, The Session join request)
     +26  8   source constant id, ldn_constant_id of the console
     +34  2   zero
-    +36  2   source variable id, fresh per session
-    +38  32  identification token, all zero on a codeless join
-    +70  3   zero
+    +36  2   source variable id, the joiner's own, fresh per session
+    +38  1   NAT mapping
+    +39  1   private-IPv6 flag
+    +40  32  identification token, all zero on a codeless join
+    +72  1   address kind, 0 for IPv4
     +73  4   source station address, IPv4
     +77  2   source station port, 12345
     +79  8   destination constant id, the host's
-    +87  2   destination variable id, zero for the host
-    +89  26  trailer, `00 c6 01 01 00..01 00..01 01 20`, unread
+    +87  2   zero
+    +89  2   destination variable id, the host's, `00c6`
+    +91  1   player count, 1
+    +92  1   a flag, 1
+    +93  22  one player record: id `00..01 00..00` (two big-endian u64, 1 and 0), a big-endian u32
+             name length of 1, a kind byte of 1, the name, a single space
 
 A location id on the wire is 12 bytes: a big-endian u64 constant id, two zero bytes, and a big-endian
-u16 variable id. The request's `0000` at +87 is the destination location id's two zero bytes; the
-host variable id is the `00c6` at +89, and the trailer starts at +91.
+u16 variable id. The message flags are `0x01` on every repeat. `pokeldn.ldn.pia6.build_session_join`
+reproduces the 115 bytes from their fields (`tests/test_pla_session_v11.py`).
 
 ### The Session join reply
 

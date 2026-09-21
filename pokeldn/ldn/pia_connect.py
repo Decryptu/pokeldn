@@ -468,6 +468,98 @@ def build_session_update_v11(host_constant_id, host_var, stations, *, sequence_i
     return fragment_header + bytes(payload)
 
 
+# The joiner's side of the same three messages, read from Scarlet's writers and parsers, which
+# lay them out as Legends Arceus does (docs/sv.md, The Session join request).
+JOIN_RESPONSE_STATUS = {1: "accepted", 3: "protocol version mismatch", 4: "denied by the host",
+                        5: "session not accepting"}
+
+
+def parse_session_join_response_v11(payload):
+    """Session type 2, 43 bytes, as the host `0x6d6390` writes it: type, protocol id, version,
+    status, a big-endian u32 the accept path fills, a four-byte random, the host location id, the
+    joiner's, route bytes A and B, the station index, the join order and the sequence id the
+    type-5 update must reach. On status 3 the protocol id and version at +1 and +2 are the
+    offending id and the host's version of it."""
+    payload = bytes(payload)
+    if len(payload) < 43 or payload[0] != SESSION_JOIN_RESPONSE:
+        return None
+    return {
+        "protocol": payload[1],
+        "version": payload[2],
+        "status": payload[3],
+        "status_name": JOIN_RESPONSE_STATUS.get(payload[3], "?"),
+        "value": int.from_bytes(payload[4:8], "big"),
+        "random": bytes(payload[8:12]),
+        "host_constant_id": bytes(payload[12:20]),
+        "host_var": int.from_bytes(payload[22:24], "big"),
+        "console_constant_id": bytes(payload[24:32]),
+        "console_var": int.from_bytes(payload[34:36], "big"),
+        "route": (payload[36], payload[37]),
+        "station_index": payload[38],
+        "join_order": int.from_bytes(payload[39:41], "big"),
+        "sequence_id": int.from_bytes(payload[41:43], "big"),
+    }
+
+
+def parse_session_update_v11(payload):
+    """A Session type-5 fragment, the reverse of `build_session_update_v11`: the seven-byte fragment
+    header, then the host location, the station count, the IPv6 bitmap and the IPv4 entries. A
+    fragment that is not the whole update returns its header only."""
+    payload = bytes(payload)
+    if len(payload) < 7 or payload[0] != SESSION_UPDATE:
+        return None
+    out = {
+        "sequence_id": int.from_bytes(payload[1:3], "big"),
+        "fragment_count": payload[3],
+        "fragment_index": payload[4],
+        "offset": int.from_bytes(payload[5:7], "big"),
+        "stations": [],
+    }
+    if out["fragment_count"] != 1 or out["offset"] != 3:
+        return out
+    body = payload[7:]
+    try:
+        out["host_constant_id"] = bytes(body[0:8])
+        out["host_var"] = int.from_bytes(body[10:12], "big")
+        count = body[12]
+        bitmap = body[13:13 + (count + 31) // 32 * 4]
+        p = 13 + len(bitmap)
+        for i in range(count):
+            ipv6 = bool(int.from_bytes(bitmap[i // 32 * 4:i // 32 * 4 + 4], "little") >> (i % 32) & 1)
+            st = {"constant_id": bytes(body[p:p + 8]),
+                  "variable_id": int.from_bytes(body[p + 10:p + 12], "big")}
+            p += 12
+            if ipv6:
+                st["ip"], st["port"] = bytes(body[p:p + 16]).hex(), int.from_bytes(body[p + 16:p + 18], "big")
+                p += 18
+            else:
+                st["ip"] = ".".join(str(x) for x in body[p:p + 4])
+                st["port"] = int.from_bytes(body[p + 4:p + 6], "big")
+                p += 6
+            st["route"] = (body[p], body[p + 1])
+            st["station_index"] = body[p + 2]
+            st["join_order"] = int.from_bytes(body[p + 3:p + 5], "big")
+            st["nat"], st["private_ipv6"] = body[p + 5], body[p + 6]
+            st["token"] = bytes(body[p + 7:p + 39])
+            nplayers, st["participants"] = body[p + 39], body[p + 40]
+            p += 41
+            st["players"] = []
+            for _ in range(nplayers):
+                player, p = _parse_player_info(body, p)
+                st["players"].append(player)
+            out["stations"].append(st)
+    except (IndexError, ValueError):
+        out["truncated"] = True
+    return out
+
+
+def build_session_update_ack_v11(console_constant_id, sequence_id):
+    """Session type 6, 13 bytes, the joiner's answer to a type-5 update (Scarlet `0x6d80a4`, Arceus
+    `0x738740`): the type, the joiner's own constant id, two zero bytes, the sequence applied."""
+    return (bytes([SESSION_UPDATE_ACK]) + _constant_id8(console_constant_id) + b"\x00\x00"
+            + (sequence_id & 0xFFFF).to_bytes(2, "big"))
+
+
 def parse_session(payload):
     if not payload:
         return None

@@ -147,3 +147,47 @@ def test_the_leave_carries_the_senders_own_location_and_address():
     assert built[18:22] == bytes([172, 16, 86, 128])
     assert built[22:24] == (12345).to_bytes(2, "big")
     assert len(built) == 24
+
+
+def test_builder_reproduces_the_retail_request():
+    """`pia6.build_session_join` writes the retail request byte for byte from its fields: the ten
+    (id, version) pairs, the four-byte nonce, both location ids, the seven-byte station address
+    and the one player record. Scarlet's own writer 0x6d5464 lays it out the same way."""
+    from pokeldn.ldn import pia6
+
+    j = pc.parse_session_join_v11(JOIN_REQUEST)
+    built = pia6.build_session_join(
+        j["source_constant_id"], j["source_var"], j["ip"],
+        j["destination_constant_id"], j["destination_var"], " ", j["app4"])
+    assert built == JOIN_REQUEST
+    assert len(built) == 115
+    assert j["protocols"] == pia6.BAND_PROTOCOLS
+
+
+def test_joiner_side_parsers_round_trip_the_host_builders():
+    j = pc.parse_session_join_v11(JOIN_REQUEST)
+    resp = pc.build_session_join_response_v11(
+        j["destination_constant_id"], j["destination_var"],
+        j["source_constant_id"], j["source_var"], sequence_id=7)
+    r = pc.parse_session_join_response_v11(resp)
+    assert r["status"] == 1 and r["status_name"] == "accepted"
+    assert r["host_var"] == 0x00c6 and r["console_var"] == 0x3dbe
+    assert r["station_index"] == 1 and r["route"] == (0, 1) and r["sequence_id"] == 7
+
+    update = pc.build_session_update_v11(
+        j["destination_constant_id"], j["destination_var"], [
+            dict(constant_id=j["destination_constant_id"], variable_id=j["destination_var"],
+                 ip="172.16.86.2", port=12345, station_index=0,
+                 players=[{"player_id": bytes(15) + b"\x01", "name": b" "}]),
+            dict(constant_id=j["source_constant_id"], variable_id=j["source_var"],
+                 ip=j["ip"], port=j["port"], station_index=1, route=(0, 1), join_order=1,
+                 players=[{"player_id": bytes(7) + b"\x01" + bytes(8), "name": b" "}]),
+        ], sequence_id=7)
+    u = pc.parse_session_update_v11(update)
+    assert u["sequence_id"] == 7 and "truncated" not in u
+    assert [st["ip"] for st in u["stations"]] == ["172.16.86.2", "172.16.86.1"]
+    assert u["stations"][1]["variable_id"] == 0x3dbe
+    assert u["stations"][1]["players"][0]["name"] == b" "
+
+    ack = pc.build_session_update_ack_v11(j["source_constant_id"], 7)
+    assert ack.hex() == "06" "ac56011000020000" "0000" "0007"

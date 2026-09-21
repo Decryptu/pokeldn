@@ -185,13 +185,23 @@ def build_parser():
     ap.add_argument("--scan-only", action="store_true",
                     help="report what the console advertises and join nothing")
     ap.add_argument("--session-join", action="store_true",
-                    help="send the Pia Session join request. A retail joiner sends none: Scarlet "
-                         "runs no Session protocol, and the host reads the ack as a host-migration "
-                         "cue (sv08). Kept as an instrument, off by default")
+                    help="send the Pia Session join request in the retail layout (docs/sv.md, The "
+                         "Session join request): ten protocols with their versions, a four-byte "
+                         "nonce, both location ids, a seven-byte station address and one player "
+                         "record. A mesh join is unicast, so no passive capture shows a retail one")
+    ap.add_argument("--no-update-ack", action="store_true",
+                    help="do not answer a Session type-5 station update with the type 6")
     ap.add_argument("--join-repeat", type=float, default=2.0,
                     help="with --session-join, re-send it every N seconds (0 sends it once)")
-    ap.add_argument("--join-app-ver", type=lambda v: int(v, 0), default=0,
-                    help="application communication version stated in the join request")
+    ap.add_argument("--join-player-name", default=" ",
+                    help="the player name in the join request's one player record; a retail "
+                         "console's is a single space")
+    ap.add_argument("--join-flags", type=lambda v: int(v, 0), default=ESTABLISHING_FLAGS,
+                    help="message flags on the join request; a joining Arceus sends 0x01, skip "
+                         "the source check, on every repeat of it")
+    ap.add_argument("--join-dst-var", choices=["zero", "host"], default="zero",
+                    help="the packet header's destination variable id on the join request: 0, "
+                         "which is what a joining Arceus uses, or the host's own")
     ap.add_argument("--net-ack", action="store_true",
                     help="answer the host's Net 0x11 with the 0x12 ack. A retail joiner does not, "
                          "and the ack makes the console ask for host migration instead (sv08)")
@@ -326,6 +336,7 @@ async def run_session(args, keys, host_ip, host_mac, our_ip, our_mac, record):
     our_const = pia_connect.ldn_constant_id(our_mac) if len(our_mac) == 6 else bytes(8)
     join_sent = 0.0
     joined = False
+    join_sequence = 0
     stream_high = {}            # (protocol, port) -> highest sequence received from the host
     our_seq = {}                # (protocol, port) -> our next send sequence on that stream
     last_ack = {}
@@ -341,20 +352,25 @@ async def run_session(args, keys, host_ip, host_mac, our_ip, our_mac, record):
     def out(body, dst_var, **kw):
         return build_out(keys, our_ip, body, dst_var, src_var=ours["var"], **kw)
 
-    def send(pkt, what, **extra):
-        sock.sendto(pkt, (dest_ip, sv.PIA_PORT))
-        record(rec="out", dst=dest_ip, kind=what, hex=pkt.hex(), t=time.time(), **extra)
+    def send(pkt, what, to=None, **extra):
+        to = to or dest_ip
+        sock.sendto(pkt, (to, sv.PIA_PORT))
+        record(rec="out", dst=to, kind=what, hex=pkt.hex(), t=time.time(), **extra)
 
     def send_join():
         # The host's constant id is the one its own Net 0x11 states, not the LDN MAC from the
         # participant list: on the GBA app those differ, and the join must address the stated one.
         body = pia6.build_session_join(
-            our_const, OUR_VAR, our_ip, host_const, host_var or 0, args.name, os.urandom(4),
-            app_ver=args.join_app_ver)
-        send(out(body, 0, protocol=PROTO_SESSION), "session join request")
-        print(f"[sv] -> {host_ip}: session join request (type 0), "
+            our_const, OUR_VAR, our_ip, host_const, host_var or 0, args.join_player_name,
+            os.urandom(4))
+        dst = (host_var or 0) if args.join_dst_var == "host" else 0
+        # A Session message is addressed to one station, so it goes to the host's own address
+        # whatever the mesh-addressed messages go to (a joining Arceus sent its to the host's IP).
+        send(out(body, dst, protocol=PROTO_SESSION, flags=args.join_flags), "session join request",
+             to=host_ip)
+        print(f"[sv] -> {host_ip}: session join request (type 0, {len(body)} bytes), "
               f"host_var={host_var if host_var is None else hex(host_var)}, "
-              f"host_const={host_const.hex()}")
+              f"host_const={host_const.hex()}, header dst_var={dst}")
 
     def send_opening():
         """The eleven bulk acks and the two stream opens a retail joiner sends at once, 0.9 s
@@ -466,9 +482,42 @@ async def run_session(args, keys, host_ip, host_mac, our_ip, our_mac, record):
                              "net conn response", seqid=seqid)
                         print(f"[sv] -> {host_ip}: net 0x12 ack, seqid={seqid}")
             if msg.protocol == PROTO_SESSION and msg.payload:
-                if msg.payload[0] in (1, 2, 5):
-                    joined = True
-                print(f"[sv] the host spoke Session: {SESSION_MESSAGE_NAMES.get(msg.payload[0], '?')}")
+                kind = msg.payload[0]
+                print(f"[sv] the host spoke Session: {SESSION_MESSAGE_NAMES.get(kind, '?')}")
+                if kind == pia_connect.SESSION_JOIN_RESPONSE:
+                    resp = pia_connect.parse_session_join_response_v11(msg.payload)
+                    if resp is None:
+                        print(f"[sv] join response did not parse: {msg.payload.hex()}")
+                    else:
+                        print(f"[sv] JOIN RESPONSE status {resp['status']} ({resp['status_name']}), "
+                              f"protocol {resp['protocol']:#04x} v{resp['version']}, "
+                              f"station index {resp['station_index']}, route {resp['route']}, "
+                              f"join order {resp['join_order']}, sequence {resp['sequence_id']}")
+                        record(rec="join_response", t=time.time(), **{
+                            k: (v.hex() if isinstance(v, bytes) else v) for k, v in resp.items()})
+                        if resp["status"] == 1:
+                            joined = True
+                            join_sequence = resp["sequence_id"]
+                elif kind == pia_connect.SESSION_UPDATE:
+                    upd = pia_connect.parse_session_update_v11(msg.payload)
+                    if upd is None:
+                        print(f"[sv] station update did not parse: {msg.payload.hex()}")
+                    else:
+                        print(f"[sv] STATION UPDATE sequence {upd['sequence_id']}, "
+                              f"{len(upd['stations'])} station(s): "
+                              + " ".join(f"{st['ip']}#{st['station_index']}/var {st['variable_id']:#06x}"
+                                         for st in upd["stations"]))
+                        # A joiner answers with the type 6 once the applied sequence reaches the
+                        # one its join response named (docs/pla.md, The type-5 station-list update).
+                        if not args.no_update_ack and upd["sequence_id"] >= join_sequence:
+                            ack = pia_connect.build_session_update_ack_v11(our_const, upd["sequence_id"])
+                            send(out(ack, host_var or 0, protocol=PROTO_SESSION), "session update ack",
+                                 to=host_ip)
+                            print(f"[sv] -> {host_ip}: session update ack (type 6), "
+                                  f"sequence {upd['sequence_id']}")
+                            joined = True
+                elif kind == pia_connect.SESSION_JOIN_ACK:
+                    print(f"[sv] the host acknowledged the join request; it now has 8 s to answer it")
             if not args.no_rtt and msg.protocol == PROTO_RTT and msg.payload and msg.payload[0] == 0:
                 send(out(streams.build_rtt_response(msg.payload, header.src_var),
                          header.src_var, protocol=PROTO_RTT), "rtt response")

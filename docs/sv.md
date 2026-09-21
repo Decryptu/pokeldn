@@ -7,8 +7,9 @@ has_children: false
 # Scarlet and Violet
 
 Pokemon Scarlet (`0100a3d008c5c000`) and Violet (`01008f6008c5e000`) are native Switch titles with
-Pia statically linked into `main`. The wireless layer and the mesh below the game are read; the
-game's own records are readable but not yet spoken to.
+Pia statically linked into `main`. The wireless layer and the mesh below the game are read, and the
+mesh join the host waits for is read out of the binary; the game's own records are readable but
+not yet spoken to.
 
 Addresses are offsets into the decompressed `main` of update 4.0.0, as `tools/switch/nso_read.py`
 lays it out: text `0x0..0x343fc90`, rodata from `0x3440000`, data from `0x4383000`.
@@ -59,11 +60,36 @@ reproduces both the 1-player and the 2-player beacon byte for byte.
 
 ## The protocols the game runs
 
-A retail pair, read from the moment the second console associated, runs four protocols and no
-others: Net `0x2C`, RTT `0x58`, BroadcastReliable `0x80` and StreamBroadcastReliable `0x81`. There
-is no Session protocol `0x98` in any capture, no Clone protocol and no Reliable `0x7C`. Every
-datagram goes to the link-local broadcast address of the session's own `/24`, never to the peer's
-address, and each carries the recipient's variable id in the plaintext footer.
+A retail pair, read from the moment the second console associated, shows four protocols in a
+passive capture: Net `0x2C`, RTT `0x58`, BroadcastReliable `0x80` and StreamBroadcastReliable
+`0x81`. Every one of those datagrams goes to the link-local broadcast address of the session's own
+`/24`, never to the peer's address, and each carries the recipient's variable id in the plaintext
+footer. The station registers ten protocols; the six the capture never shows are addressed to one
+station and are invisible to a capture of two Switch 2 consoles (The Session protocol is there and
+is never in a capture, below).
+
+The game's own setup, `0x17ff030`, creates its protocols in this order: Reliable `0x7C` on port 0,
+BroadcastReliable `0x80` on port 0, Unreliable `0x68`, Reliable and BroadcastReliable on port 1,
+then on port 2, `[0x44dfcd0]` StreamBroadcastReliable `0x81` ports (eight on the wire), Clone
+Clock `0x77` and Clone Atomic `0x74`. Pia's transport adds Net `0x2C`, RTT `0x58`, Session `0x98`
+and MonitoringData `0xA4`; NatTraversalResult `0xA0` is created only when the network factory
+says NAT traversal is on (`0x6d3138`), which a local network does not. The versions each class
+states (`scratchpad/sv_protocols.py`):
+
+| id | protocol | version |
+|---|---|---|
+| `0x2C` | Net | 0 |
+| `0x58` | RTT | 3 |
+| `0x68` | Unreliable | 1 |
+| `0x74` | Clone Atomic | 0 |
+| `0x77` | Clone Clock | 0 |
+| `0x7C` | Reliable | 2 |
+| `0x80` | BroadcastReliable | 3 |
+| `0x81` | StreamBroadcastReliable | 3 |
+| `0x98` | Session | 0 |
+| `0xA4` | MonitoringData | 0 |
+
+A retail Legends Arceus lists the same ten with the same versions in its join request.
 
     +0.00   the joiner associates
     +0.06   the host broadcasts Net 0x11, the station list, and 0.12 s later Net 0x50
@@ -187,15 +213,60 @@ type_info records with `tools/switch/rtti_names.py`, which finds 208 `nn::pia` c
 
 The binary carries `nn::pia::session::SessionProtocol`, whose id vfunc at `0x6d9f3c` returns
 **0x98**, next to `JoinMeshJob`, `CreateMeshJob`, `LeaveMeshJob`, `JoinSessionJob` and
-`SessionPacketReader`/`Writer`. So the mesh join a joiner runs exists in Scarlet exactly as it does
+`SessionPacketReader`/`Writer`. The mesh join a joiner runs exists in Scarlet exactly as it does
 in Legends Arceus, and the reason no capture shows it is that it is addressed to one station: a
 Session message carries the peer's variable id in the packet header and no footer, so it goes out
 unicast, and the two consoles' unicast is 802.11ax. Everything a passive capture does show, Net,
 RTT and the eleven streams, is mesh-addressed and therefore broadcast.
 
-This also dates the host's assignment of the joiner's variable id: it names the id 0.14 s after the
-association, which is after a unicast join would have arrived and long before the joiner's first
-broadcast at 0.89 s.
+A joiner's variable id is its own: it states it in the join request's source location id, and the
+host names it 0.14 s after the association because the unicast request has arrived by then.
+
+### The Session join request
+
+The joiner's writer is `0x6d5464` to `0x6d58b0` (a SessionProtocol method), the host's parser
+`0x6d5aa4`. The layout is the one a retail Legends Arceus sends (`docs/pla.md`, The Session join
+request; `tests/test_pla_session_v11.py` holds the 115 bytes) and
+`pokeldn.ldn.pia6.build_session_join` reproduces those bytes from their fields:
+
+    +0    1    type 0
+    +1    1    protocol count, ten
+    +2    2n   (id, version) pairs, walked from the protocol manager's list
+    +22   4    random, xorshift128 seeded from the system tick (`0x6c70a8`, `0x6c7184`)
+    +26   12   source location id: u64 constant id, two zero bytes, u16 variable id, big-endian
+    +38   1    NAT mapping, two bits
+    +39   1    private-IPv6 flag
+    +40   32   identification token
+    +72   1    address kind, 0 for IPv4 (1 puts an 18-byte IPv6 address in place of the six bytes)
+    +73   4    source IPv4 address
+    +77   2    source port, big-endian
+    +79   12   destination location id, the host's
+    +91   1    player count
+    +92   1    a flag the job sets to 1
+    +93   ..   player records: a 16-byte id (`1` then `0` as two big-endian u64), a big-endian u32
+               name length, a kind byte (1), the name
+
+A retail joiner's one player is named a single space, which is also the name in its advertisement.
+The packet header carries destination variable id 0 and the joiner's own id as source, and the
+message flags are `0x01`, skip the source check, on every repeat.
+
+What the host checks, in order, before it creates a station:
+
+1. The protocol count equals its own. A different count draws nothing.
+2. Every listed id's version equals the host's version of it (`0x6ed1b8`). A mismatch draws a
+   join response with status 3 carrying the offending id and the host's version.
+3. The destination location id equals the host's own constant and variable id. A mismatch is
+   dropped silently.
+4. The source constant id is not the host's, and the source address is not the host's own.
+5. A station already known by that constant id draws a status-1 response again; a closed session
+   draws status 5; a host-side listener can refuse with status 4.
+
+The join response (type 2, 43 bytes, `0x6d6390`) is the Arceus layout: type, protocol id, version,
+status, a big-endian u32 the accept path fills, a four-byte random, the host location id, the
+joiner's, route bytes A and B, the station index, the join order and the sequence id the station
+update must reach. The joiner answers the type-5 station update with a type 6 of 13 bytes
+(`0x6d80a4`): the type, its own constant id, two zero bytes and the applied sequence.
+`pokeldn.ldn.pia_connect` parses the response and the update and builds the type 6.
 
 ## Unresolved
 
@@ -206,17 +277,12 @@ byte and the player count in the Pia block.
 
 Joining the network the console puts up reaches its Pia: it sends Net 0x11 and repeats it, and about
 eight seconds later announces host migration. It sends nothing on RTT or on any of the eleven
-streams, so it never treats the station as seated. The host's own acknowledgements name the joiner's
-variable id 0.14 s after the association, and the joiner then adopts that id as its own: the host
-assigns it. Everything the joiner sent before it was assigned one is in the capture and is three
-gratuitous ARPs and an IPv6 multicast listener report, so the host assigns the id from the LDN
-participant list alone, with no Pia input. Against a station this project brings, the host stops
-after its Net 0x11, repeats it, and about eight seconds later announces host migration: it never
-creates the station. Seven things have been matched to a retail station without changing it: the
-advertisement field for field, the station platform byte, the Pia block's player count, the eleven
-acknowledgements and the two stream opens, the LDN broadcast address, the message flags each kind
-of message carries, and a Nintendo MAC on the adapter. What the host is waiting for is a Session
-message it never receives, and the layout Legends Arceus uses for that message draws no answer.
+streams, so it never treats the station as seated. Against a station this project brings, the host
+stops after its Net 0x11, repeats it, and about eight seconds later announces host migration: it
+never creates the station. What creates the station is the Session join request, and every request
+sent so far carried thirteen protocols with zero versions, a six-byte field where the four-byte
+random goes and an 18-byte station address, so the host dropped each at its first check. A request
+in the layout above has not yet been put on the air.
 
 Both consoles are Switch 2 and their unicast is 802.11ax, which neither the project's adapter nor a
 MacBook's Broadcom sniffer demodulates. Of a 74-second session the pair sent 388 and 387 readable

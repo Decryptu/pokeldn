@@ -259,21 +259,28 @@ def build_packet(session_key, network_id, src_ip, plaintext, dst_var=0, src_var=
     return header.pack() + ct + tail
 
 
-# Session Protocol at this band, protocol id 0x98 [wiki Session-Protocol-(new)]. The join request is
-# the 6.39 layout with one difference the wiki dates to 6.16-6.30 [wiki Pia-Types, StationAddress]:
-# a station address is sixteen address bytes then a big-endian port, with no IPv4/IPv6 kind byte in
-# front, which is how the console writes its own NetStation entries (docs/pla.md, The Net Protocol).
+# Session Protocol at this band, protocol id 0x98. The join request is what a retail Legends Arceus
+# sends (tests/test_pla_session_v11.py) and what Scarlet's own writer 0x6d5464 and parser 0x6d5aa4
+# lay out (docs/sv.md, The Session join request). A station address here is a kind byte (0 for
+# IPv4) then the four address bytes and the big-endian port, seven bytes; the sixteen-plus-two
+# form belongs to the Net protocol's station entries, not to this message.
 SESSION_JOIN_REQUEST = 0
 STATION_ADDRESS_SIZE = 18
 
-# The protocol ids the band defines above the packet layer [wiki Pia-Protocols, 6.16-6.30]; the
-# versions are unread here and are stated as zero until the console corrects one.
+# The protocols a station at this band registers, with the version each class states
+# (`scratchpad/sv_protocols.py`; a retail Arceus lists the same ten). A host compares the count
+# and every version against its own before it reads anything else.
 PROTO_NET, PROTO_RTT, PROTO_UNRELIABLE = 0x2C, 0x58, 0x68
 PROTO_CLONE = (0x74, 0x75, 0x76, 0x77)
 PROTO_RELIABLE, PROTO_BROADCAST_RELIABLE, PROTO_SESSION, PROTO_MONITORING = 0x7C, 0x80, 0x98, 0xA4
-BAND_PROTOCOLS = [(PROTO_NET, 0), (PROTO_RTT, 0), (PROTO_UNRELIABLE, 0)] \
-    + [(p, 0) for p in PROTO_CLONE] \
-    + [(PROTO_RELIABLE, 0), (PROTO_BROADCAST_RELIABLE, 0), (PROTO_SESSION, 0), (PROTO_MONITORING, 0)]
+PROTO_STREAM_BROADCAST_RELIABLE, PROTO_CLONE_ATOMIC, PROTO_CLONE_CLOCK = 0x81, 0x74, 0x77
+BAND_PROTOCOLS = [(PROTO_NET, 0), (PROTO_RTT, 3), (PROTO_UNRELIABLE, 1), (PROTO_CLONE_ATOMIC, 0),
+                  (PROTO_CLONE_CLOCK, 0), (PROTO_RELIABLE, 2), (PROTO_BROADCAST_RELIABLE, 3),
+                  (PROTO_STREAM_BROADCAST_RELIABLE, 3), (PROTO_SESSION, 0), (PROTO_MONITORING, 0)]
+
+# The player record a retail joiner puts in its request: id 1 then 0 as two big-endian u64, and a
+# name whose kind byte is 1.
+DEFAULT_PLAYER_ID = (1).to_bytes(8, "big") + bytes(8)
 
 
 def station_address(ip, port=12345):
@@ -282,28 +289,34 @@ def station_address(ip, port=12345):
     return ip_bytes(ip).ljust(16, b"\x00") + int(port).to_bytes(2, "big")
 
 
+def location_id(constant_id, var):
+    """A location id on the wire: the eight-byte constant id, two zero bytes, the variable id."""
+    cid = bytes(constant_id)
+    cid = cid + b"\x00\x00" if len(cid) == 6 else cid
+    var = var if isinstance(var, int) else int.from_bytes(var, "big")
+    return cid + b"\x00\x00" + var.to_bytes(2, "big")
+
+
 def build_session_join(src_constant_id, src_var, src_ip, dst_constant_id, dst_var, player_name,
-                       random4, *, src_port=12345, app_ver=0, protocols=BAND_PROTOCOLS,
-                       player_id=b"\x00" * 16, token=b"\x00" * 32, nat_mapping=0,
-                       private_ipv6=0, num_participants=1):
-    """A session join request for 0x98. Every field is the wiki's 6.39 join request except the
-    station address, which is the band's 18-byte form."""
-    def cid(v):
-        v = bytes(v)
-        return v + b"\x00\x00" if len(v) == 6 else v
-    def vid(v):
-        return (v if isinstance(v, int) else int.from_bytes(v, "big")).to_bytes(2, "big")
+                       random4, *, src_port=12345, protocols=BAND_PROTOCOLS,
+                       player_id=DEFAULT_PLAYER_ID, token=b"\x00" * 32, nat_mapping=0,
+                       private_ipv6=0, players=None, player_flag=1, name_kind=1):
+    """A session join request for 0x98, the retail layout. `players` is a list of (id, name);
+    without it the one player is `player_id` and `player_name`."""
     out = bytearray([SESSION_JOIN_REQUEST, len(protocols)])
     for pid, ver in protocols:
         out += bytes([pid & 0xFF, ver & 0xFF])
-    out += int(app_ver).to_bytes(2, "big")
     out += bytes(random4)[:4].rjust(4, b"\x00")
-    out += cid(src_constant_id) + vid(src_var)
+    out += location_id(src_constant_id, src_var)
     out += bytes([nat_mapping & 0xFF, private_ipv6 & 0xFF])
     out += bytes(token)[:32].ljust(32, b"\x00")
-    out += cid(dst_constant_id) + vid(dst_var)
-    out += bytes([1, num_participants & 0xFF])
-    out += station_address(src_ip, src_port)
-    name = player_name.encode()[:20]
-    out += bytes(player_id)[:16].ljust(16, b"\x00") + len(name).to_bytes(4, "big") + bytes([1]) + name
+    out += b"\x00" + ip_bytes(src_ip) + int(src_port).to_bytes(2, "big")
+    out += location_id(dst_constant_id, dst_var)
+    if players is None:
+        players = [(player_id, player_name)]
+    out += bytes([len(players) & 0xFF, player_flag & 0xFF])
+    for pid, name in players:
+        name = name.encode() if isinstance(name, str) else bytes(name)
+        out += bytes(pid)[:16].ljust(16, b"\x00")
+        out += len(name).to_bytes(4, "big") + bytes([name_kind]) + name
     return bytes(out)
