@@ -194,6 +194,12 @@ def build_parser():
                          "Session join request): ten protocols with their versions, a four-byte "
                          "nonce, both location ids, a seven-byte station address and one player "
                          "record. A mesh join is unicast, so no passive capture shows a retail one")
+    ap.add_argument("--send-record", metavar="FILE",
+                    help="after the seat, send this 1395-byte identity record on 0x81 port 1 "
+                         "(our station stream) as the game's data exchange, retransmitting until "
+                         "the host acknowledges it. A retail joiner sends its own identity here")
+    ap.add_argument("--record-delay", type=float, default=0.9,
+                    help="seconds after the seat before the first identity record goes out")
     ap.add_argument("--no-channel-ack", action="store_true",
                     help="do not acknowledge the host's messages on the game's reliable channel 0x7c")
     ap.add_argument("--no-update-ack", action="store_true",
@@ -353,6 +359,12 @@ async def run_session(args, keys, host_ip, host_mac, our_ip, our_mac, record):
     join_sequence = None
     pending_update = None       # a type-5 update that arrived before the join response
     migration_sent = 0
+    identity = None
+    if args.send_record:
+        identity = streams.compress(open(args.send_record, "rb").read())
+    record_seq = 1
+    record_acked = False
+    last_record_send = 0.0
     stream_high = {}            # (protocol, port) -> highest sequence received from the host
     our_seq = {}                # (protocol, port) -> our next send sequence on that stream
     last_ack = {}
@@ -438,6 +450,15 @@ async def run_session(args, keys, host_ip, host_mac, our_ip, our_mac, record):
                 join_sent == 0.0 or (args.join_repeat and now - join_sent >= args.join_repeat)):
             join_sent = now
             send_join()
+        # Our identity record on 0x81 port 1 (our station stream), retransmitted every 0.25 s
+        # until the host's bulk ack for port 1 names it. A retail joiner sends this at ~0.9 s.
+        if identity is not None and joined and not record_acked and (
+                now - joined_at >= args.record_delay) and (now - last_record_send >= 0.25):
+            last_record_send = now
+            body = streams.build_record_message(identity, record_seq, streams.JOINER_INDEX)
+            send(out(body, host_var or 0, protocol=streams.PROTOCOL_STREAM,
+                     port=streams.JOINER_INDEX, flags=streams.MESSAGE_FLAGS_DATA),
+                 "identity record", port=streams.JOINER_INDEX)
         # A retail joiner sends its own RTT request about twice a second from the moment it is
         # seated, and it is the first thing it puts on the wire.
         if args.rtt_period and opened and now - last_rtt >= args.rtt_period:
@@ -589,6 +610,13 @@ async def run_session(args, keys, host_ip, host_mac, our_ip, our_mac, record):
                     print(f"[sv] reliable did not parse: {exc}")
                     continue
                 key = (msg.protocol, msg.port)
+                if (identity is not None and not record_acked and rm.get("is_ack")
+                        and msg.protocol == streams.PROTOCOL_STREAM and msg.port == streams.JOINER_INDEX):
+                    e = reliable5.parse_ack_payload(rm["payload"])
+                    if len(e["entries"]) > streams.JOINER_INDEX and \
+                            e["entries"][streams.JOINER_INDEX]["ack_id"] > record_seq:
+                        record_acked = True
+                        print(f"[sv] the host ACKNOWLEDGED our identity record on port 1")
                 if rm["flags"] & reliable5.FLAG_APPLICATION_DATA:
                     body = rm["payload"]
                     note = ""
