@@ -511,11 +511,6 @@ def main():
                             kind = msg.payload[1]
                             if kind == pia_connect.NET_CONN_RESPONSE and src_ip not in net_prop:
                                 net_prop[src_ip] = [1, 0.0, False]
-                            elif kind == pia_connect.NET_CONN_RESPONSE and net_prop[src_ip][2]:
-                                # A rejoin is a new session and the property goes out again, under
-                                # the next sequence id, because the console acknowledges each one
-                                # by the id it was sent with.
-                                net_prop[src_ip] = [net_prop[src_ip][0] + 1, 0.0, False]
                             elif kind == NET_PROPERTY_ACK and src_ip in net_prop:
                                 acked = int.from_bytes(msg.payload[4:8], "big")
                                 if acked == net_prop[src_ip][0]:
@@ -524,6 +519,14 @@ def main():
                                           f"seqid={acked}")
                         if (msg.protocol == PROTO_SESSION and msg.payload
                                 and msg.payload[0] == SESSION_JOIN_REQUEST):
+                            if args.net_property:
+                                # A rejoin is a new session, so the property goes out again under
+                                # the next sequence id. Re-arming on the console's Net 0x12 instead
+                                # would re-arm on every one of them, and this host repeats its 0x11
+                                # every 500 ms, so the property would never stop.
+                                previous = net_prop.get(src_ip, [0, 0.0, True])
+                                if previous[2]:
+                                    net_prop[src_ip] = [previous[0] + 1, 0.0, False]
                             j = pia_connect.parse_session_join_v11(msg.payload)
                             if j is None:
                                 print(f"[sv] {src_ip}: join request did not parse")
