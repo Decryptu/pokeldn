@@ -288,8 +288,8 @@ ack_id 47, one past the host's highest, and the host ignores it.
 Airtime is not the cause. The same flood runs against an emulated Scarlet 4.0.0 over a LAN, where
 nothing is lost and the guest's own send log shows every datagram: 44 of its 46 records on 0x81
 port 0, each retransmitted 676 times in 59 seconds, every record declaring its window still at
-lowest_pending 1. Sequence ids 5 and 6 are never sent at all, so the hole is in the host's own
-window rather than in the path.
+lowest_pending 1. Sequence ids 5 and 6 are never sent at all, by either station of a pair that
+traded either, so the gap is how the game numbers its records and not a fault.
 
 ### The flag that makes the host count an acknowledgement
 
