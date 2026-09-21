@@ -215,6 +215,10 @@ def build_parser():
     ap.add_argument("--update-seq", type=int, default=1,
                     help="the sequence id in the station-list update; a Scarlet host sends 1 where "
                          "its join response sent 0")
+    ap.add_argument("--update-first-seq", type=int, default=None,
+                    help="also send a station list in the same breath as the join response, under "
+                         "this sequence id; an emulated Scarlet host sends one with id 0 there and "
+                         "the second about two seconds later")
     ap.add_argument("--update-delay", type=float, default=0.0,
                     help="seconds between the Session join response and the station-list update; a "
                          "Scarlet host leaves about 1.5 s")
@@ -332,6 +336,7 @@ def main():
     net_seqid, net_sent, seen_ips = 2, {}, set()
     net_prop = {}              # src_ip -> [seqid, when it last went out, acknowledged]
     rtt_sent = {}              # src_ip -> when the last RTT request went out
+    net_answered = set()       # src_ip that has answered the Net 0x11 with its 0x12
 
     station_ids = {}            # src_ip -> the ids session named
     # (src_ip, protocol, port) -> highest data sequence received from the console on that stream
@@ -370,12 +375,17 @@ def main():
     try:
         while time.time() < deadline:
             now = time.time()
+            current_ips = set()
             for entry in list(transport.participants):
                 seen_ips.add(entry[1])
+                current_ips.add(entry[1])
             # THE PIA BLOCK'S PLAYER COUNT IS THE GAME'S VIEW OF THE SESSION, and the LDN
             # participant list is not. A retail console advertises 2 the moment a station is
             # seated (sv02); a beacon left saying 1 while a station sits in it is a session the
             # joining game can see is not counting it.
+            # A station that has left has to be sent the opening Net 0x11 again when it comes
+            # back, so the set of stations that answered one is trimmed to those still seated.
+            net_answered.intersection_update(current_ips)
             players = 1 + len(transport.participants)
             if players != advertised_players[0]:
                 advertised_players[0] = players
@@ -384,6 +394,11 @@ def main():
                 print(f"[sv] advertising {players} player(s)")
             if not args.no_net_probe:
                 for ip in list(seen_ips):
+                    # A real Scarlet host sends its Net 0x11 ONCE and never repeats it. This host
+                    # sent one every 500 ms for the whole session, twenty a seat, each of which is
+                    # a fresh connection request at the station already seated.
+                    if ip in net_answered:
+                        continue
                     if ip == transport.our_ip or now - net_sent.get(ip, 0) < NET_REPEAT_SECONDS:
                         continue
                     net_sent[ip] = now
@@ -529,12 +544,15 @@ def main():
                            flags=msg.message_flags, src_var=header.src_var, dst_var=header.dst_var,
                            payload=msg.payload.hex(), t=time.time())
                     try:
-                        if (args.net_property and msg.protocol == PROTO_NET
-                                and len(msg.payload) >= 8):
+                        if msg.protocol == PROTO_NET and len(msg.payload) >= 8:
                             kind = msg.payload[1]
-                            if kind == pia_connect.NET_CONN_RESPONSE and src_ip not in net_prop:
+                            if kind == pia_connect.NET_CONN_RESPONSE:
+                                net_answered.add(src_ip)
+                            if (args.net_property and kind == pia_connect.NET_CONN_RESPONSE
+                                    and src_ip not in net_prop):
                                 net_prop[src_ip] = [1, 0.0, False]
-                            elif kind == NET_PROPERTY_ACK and src_ip in net_prop:
+                            elif (args.net_property and kind == NET_PROPERTY_ACK
+                                  and src_ip in net_prop):
                                 acked = int.from_bytes(msg.payload[4:8], "big")
                                 if acked == net_prop[src_ip][0]:
                                     net_prop[src_ip][2] = True
@@ -563,6 +581,7 @@ def main():
                                 for k in [k for k in d if k[0] == src_ip]:
                                     d.pop(k)
                             sent_once = {s for s in sent_once if s[0] != src_ip}
+                            net_answered.discard(src_ip)
                             host_const, host_var = j["destination_constant_id"], j["destination_var"]
                             console_const, console_var = j["source_constant_id"], j["source_var"]
                             station_ids[src_ip] = dict(host_const=host_const, host_var=host_var,
@@ -606,6 +625,23 @@ def main():
                                          join_order=1, token=j["identification_token"],
                                          players=[console_player]),
                                 ]
+                                # An emulated Scarlet host sends the station list TWICE: once in
+                                # the same breath as the join response, sequence id 0, and again
+                                # about two seconds later under the next id. A retail console is
+                                # known to leave when it is sent a type-1 join ack in that breath;
+                                # the list itself it takes.
+                                if args.update_first_seq is not None:
+                                    first = pia_connect.build_session_update_v11(
+                                        host_const, host_var, stations,
+                                        sequence_id=args.update_first_seq)
+                                    pkt0 = build_reply(keys, transport.our_ip, first, console_var,
+                                                       os.urandom(8), flags=session_flags,
+                                                       packet_id=args.session_packet_id)
+                                    transport.send(pkt0, src_ip)
+                                    record(rec="out", dst=src_ip, kind="session update",
+                                           seq=args.update_first_seq, hex=pkt0.hex(), t=time.time())
+                                    print(f"[sv] -> {src_ip}: session station list (type 5), "
+                                          f"sequence {args.update_first_seq}, in the same breath")
                                 upd = pia_connect.build_session_update_v11(
                                     host_const, host_var, stations, sequence_id=args.update_seq)
                                 pkt = build_reply(keys, transport.our_ip, upd, console_var,
