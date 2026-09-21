@@ -449,11 +449,24 @@ def main():
                 if now < due or ip not in station_ids:
                     continue
                 del pending_records[ip]
-                names = sorted(os.listdir(args.record_set))
+                # A station does not send its records in ascending order: the pair's host sends
+                # 1, 2, 3, 46, 4, 7, 8, 19, 9, 15 and so on, with the last id fourth. An `order`
+                # file in the set names that order, one sequence id a line; without one the files
+                # go out sorted.
+                sent_ids = []
+                order_path = os.path.join(args.record_set, "order")
+                if os.path.exists(order_path):
+                    names = [f"{int(line):03d}.bin" for line in open(order_path)
+                             if line.strip()]
+                else:
+                    names = sorted(os.listdir(args.record_set))
                 for name in names:
                     if not name.endswith(".bin"):
                         continue
-                    payload = open(os.path.join(args.record_set, name), "rb").read()
+                    path = os.path.join(args.record_set, name)
+                    if not os.path.exists(path):
+                        continue
+                    payload = open(path, "rb").read()
                     seq = int(name.split(".")[0])
                     flags = (reliable5.FLAG_APPLICATION_DATA | reliable5.FLAG_MESSAGE_START
                              | reliable5.FLAG_MESSAGE_END | reliable5.FLAG_ZLIB
@@ -464,9 +477,19 @@ def main():
                                       station_ids[ip]["console_var"], os.urandom(8),
                                       protocol=PROTO_STREAM_BROADCAST_RELIABLE, port=0, flags=0)
                     transport.send(pkt, ip)
+                    sent_ids.append(seq)
                     record(rec="out", dst=ip, kind="record set", protocol=0x81, port=0, seq=seq,
                            hex=pkt.hex(), t=time.time())
-                print(f"[sv] -> {ip}: identity, {len(names)} record(s) on 0x81 port 0")
+                # THE SENDER'S OWN LOWEST PENDING IS HOW THE PEER LEARNS A GAP WILL NEVER FILL.
+                # The pair's host skips sequence ids 5 and 6 on this stream, and its next bulk ack
+                # on it declares lowest pending 47, one past the last id it sent. Its peer then
+                # acknowledges the whole set to 47 with an empty mask. Left at 1, the console waits
+                # for 5 for the rest of the session and acknowledges nothing past it, which is what
+                # made the set look as though it had to be renumbered.
+                if sent_ids:
+                    host_seq[(ip, PROTO_STREAM_BROADCAST_RELIABLE, 0)] = max(sent_ids) + 1
+                print(f"[sv] -> {ip}: identity, {len(names)} record(s) on 0x81 port 0, "
+                      f"lowest pending now {max(sent_ids) + 1 if sent_ids else 1}")
             for ip, (due, pkt) in list(pending_update.items()):
                 if now >= due:
                     del pending_update[ip]

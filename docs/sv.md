@@ -374,18 +374,27 @@ With those the console holds one join for as long as the host stays up, against 
 fifty-seven joins a session that fails somewhere above the seat produces, and it answers RTT, the
 clone clock and every stream.
 
-### The host's identity must be numbered without a gap
+### The sender's own lowest pending is what closes the gap at 5 and 6
 
 Both stations of a pair skip sequence ids 5 and 6 on their record stream, and each one's peer still
-acknowledges the set to 47 with an empty mask. A set replayed with that gap is not: the console
-acknowledges id 5 with the mask `feffffffff01`, which is every record it holds, and goes no further.
-What lets a real station's peer treat 5 and 6 as not owed is unknown; the window fields do not carry
-it, since a reference record and a replayed one both declare `lowest_pending` 1, destination bits 3,
-bitmap `[2]` and stream id 0.
+acknowledges the set to 47 with an empty mask. What tells the peer those two will never arrive is
+not on the records: every one of them declares `lowest_pending` 1, destination bits 3, bitmap `[2]`
+and stream id 0. It is on the sender's next **bulk acknowledgement on the same stream**, whose own
+`lowest_pending` field steps from 1 to **47** once the set is out, one past the highest id sent. A
+station that reads that knows nothing below 47 is outstanding from its peer and releases the gap.
 
-Renumbered 1 to 44 in their own order, the same 44 records are acknowledged and the console then
-**opens Reliable 0x7C port 2** with `03b90200bc09000000000000000000`, the fifteen bytes a pair's
-joiner opens it with. That is the game's own channel.
+A host that leaves the field at 1 is answered with `ack_id` 5 and the mask `feffffffff01`, which is
+every record the station holds, for the rest of the session. Renumbering the set 1 to 44 also gets
+it acknowledged, at the cost of every record after the fourth carrying an id its sender never used.
+`bin/sv_host.py --record-set` sends the ids as they are and sets the field, and the station then
+acknowledges the whole gapped set to 47 with an empty mask, which is what a pair's joiner answers.
+
+Either way the station **opens Reliable 0x7C port 2** with `03b90200bc09000000000000000000`, the
+fifteen bytes a pair's joiner opens it with. That is the game's own channel.
+
+A record set is also not sent in ascending order. A pair's host sends 1, 2, 3, 46, 4, 7, 8, 19, 9,
+15, 10, 16 and so on, with the last id fourth; the order is in the `order` file
+`scratchpad/sv_extract_records.py` writes beside the records.
 
 ## The game's own protocol, from a pair
 
