@@ -9,6 +9,11 @@ we scan in a loop, take the seat the moment the network appears, and answer what
 
     (them) X -> Poke Portal -> Link Trade, offline, no code -> search
 
+Against an emulated console over the LAN (Ryujinx in ldn_mitm mode), no root and no radio:
+
+    ./.venv/bin/python bin/sv_join.py --ip-join --host-ip 172.16.86.1 --our-ip 172.16.86.128 \
+        --session-join --capture scratchpad/svNN_join.jsonl
+
 The band is Pia header version 11 (`pokeldn.ldn.pia6`), the same as Legends Arceus, so the Net,
 Session and RTT layouts are `pokeldn.ldn.pia_connect`'s v11 ones. Every datagram in and out goes to
 --capture as one JSON line. `docs/sv.md` has what the console sends.
@@ -31,7 +36,7 @@ import trio
 import ldn
 
 from pokeldn import sv
-from pokeldn.ldn import pia6, pia_connect, reliable5
+from pokeldn.ldn import ldn_mitm, pia6, pia_connect, reliable5
 from pokeldn.sv import streams
 from pokeldn.pla import game_channel
 from pokeldn.ldn.transport import find_ap_phy
@@ -107,17 +112,57 @@ def set_mac(phy, mac, log=print):
     return True
 
 
-def make_socket(ifname):
+def make_socket(ifname, our_ip=None):
+    """Over the radio the socket is bound to the LDN interface; over IP to our own address."""
     s = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
     s.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
     s.setsockopt(socket.SOL_SOCKET, socket.SO_BROADCAST, 1)
-    try:
-        s.setsockopt(socket.SOL_SOCKET, socket.SO_BINDTODEVICE, ifname.encode())
-    except (PermissionError, OSError):
-        pass
-    s.bind(("", sv.PIA_PORT))
+    if our_ip is None:
+        try:
+            s.setsockopt(socket.SOL_SOCKET, socket.SO_BINDTODEVICE, ifname.encode())
+        except (PermissionError, OSError):
+            pass
+    s.bind((our_ip or "", sv.PIA_PORT))
     s.setblocking(False)
     return s
+
+
+def ip_scan_once(our_ip, host_ip, timeout):
+    """-> the emulated host's NetworkInfo, or None. The scan leaves from our own address: ldn_mitm
+    drops one whose source is the host's own address, and answers to wherever it came from."""
+    with socket.socket(socket.AF_INET, socket.SOCK_DGRAM) as us:
+        us.settimeout(timeout)
+        us.bind((our_ip, 0))
+        try:
+            us.sendto(ldn_mitm.build(ldn_mitm.SCAN), (host_ip, ldn_mitm.PORT))
+            while True:
+                data, _ = us.recvfrom(4096)
+                kind, info = ldn_mitm.parse(data)
+                if kind == ldn_mitm.SCAN_RESP:
+                    return info
+        except (socket.timeout, OSError, ValueError):
+            return None
+
+
+def ip_associate(our_ip, host_ip, our_mac, name, timeout):
+    """-> (NetworkInfo, held TCP socket). The host keeps the connection open for the session."""
+    tcp = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+    tcp.settimeout(timeout)
+    tcp.bind((our_ip, 0))
+    tcp.connect((host_ip, ldn_mitm.PORT))
+    tcp.sendall(ldn_mitm.build(ldn_mitm.CONNECT,
+                               ldn_mitm.build_node_info(our_ip, our_mac, name.encode())))
+    kind, synced = ldn_mitm.parse(tcp.recv(8192))
+    if kind != ldn_mitm.SYNC_NETWORK:
+        tcp.close()
+        raise RuntimeError(f"the host answered our connect with type {kind}, not SyncNetwork")
+    tcp.settimeout(None)
+    return synced, tcp
+
+
+def ip_comm_id(network_info):
+    """The local communication id a NetworkInfo opens with (NetworkId.IntentId, u64 LE at 0)."""
+    return int.from_bytes(bytes(network_info[:8]), "little")
 
 
 def describe(net):
@@ -170,6 +215,13 @@ def build_parser():
     ap.add_argument("--comm-id", default=None,
                     help="local communication id to join, hex; default is either cartridge's")
     ap.add_argument("--keys", default="~/.switch/prod.keys")
+    ap.add_argument("--ip-join", action="store_true",
+                    help="join an emulated console over the LAN through ldn_mitm instead of the "
+                         "radio: no root, no phy, no prod.keys")
+    ap.add_argument("--host-ip", default="172.16.86.1", help="--ip-join: the emulator's address")
+    ap.add_argument("--our-ip", default="172.16.86.128", help="--ip-join: our own address")
+    ap.add_argument("--scan-timeout", type=float, default=1.0,
+                    help="--ip-join: seconds to wait for one ldn_mitm scan answer")
     ap.add_argument("--phy", default="auto")
     ap.add_argument("--ifname", default="ldnclient")
     ap.add_argument("--channels", default="1,6,11")
@@ -248,6 +300,8 @@ def build_parser():
 def main(argv=None):
     ap = build_parser()
     args = ap.parse_args(argv)
+    if args.ip_join:
+        return main_ip(args)
     if os.geteuid() != 0:
         ap.error("joining needs the raw radio; re-run under sudo")
     phy = find_ap_phy(log=print) if args.phy == "auto" else args.phy
@@ -349,9 +403,77 @@ def main(argv=None):
     return 0
 
 
+def main_ip(args):
+    """The same session against a Ryujinx host on the LAN: ldn_mitm scan, connect, then Pia on
+    12345 between our two real addresses. What the game does above the seat is what it does on
+    the radio; only the transport differs (`docs/ldn.md`, Hosting for an emulator)."""
+    want = {int(args.comm_id, 16)} if args.comm_id else {sv.COMM_ID_SCARLET, sv.COMM_ID_VIOLET}
+    our_mac = b"\x02\x00" + socket.inet_aton(args.our_ip)
+    print(f"[sv] ip-join: host {args.host_ip}, us {args.our_ip}, "
+          f"comm_id={' or '.join(f'{c:#018x}' for c in sorted(want))}")
+    cap = open(args.capture, "w") if args.capture else None
+
+    def record(**row):
+        if cap:
+            cap.write(json.dumps(row) + "\n")
+            cap.flush()
+
+    deadline = time.time() + args.seconds
+    scans = seats = 0
+    try:
+        while time.time() < deadline:
+            scans += 1
+            info = ip_scan_once(args.our_ip, args.host_ip, args.scan_timeout)
+            if info is None:
+                continue
+            comm_id = ip_comm_id(info)
+            ssid = ldn_mitm.session_id(info)
+            record(rec="scan", comm_id=comm_id, ssid=ssid.hex(), t=time.time(),
+                   app_data=bytes(ldn_mitm.advertise_data(info)).hex())
+            if comm_id not in want:
+                print(f"[sv] scan {scans}: comm_id={comm_id:#018x} is not Scarlet or Violet")
+                time.sleep(args.scan_timeout)
+                continue
+            keys = sv.session_keys(ssid)
+            print(f"[sv] scan {scans}: the emulator is hosting. ssid={ssid.hex()} "
+                  f"network_id={keys.network_id:#010x}")
+            if args.scan_only:
+                time.sleep(args.scan_timeout)
+                continue
+            try:
+                synced, tcp = ip_associate(args.our_ip, args.host_ip, our_mac, args.name,
+                                           args.scan_timeout * 4)
+            except (OSError, RuntimeError) as exc:
+                print(f"[sv] the association failed: {exc}")
+                continue
+            seats += 1
+            host_mac = bytes(ldn_mitm.host_mac(synced))
+            print(f"[sv] *** SEATED *** over IP, host mac={host_mac.hex()}")
+            record(rec="seat", ssid=ssid.hex(), host_ip=args.host_ip, host_mac=host_mac.hex(),
+                   our_ip=args.our_ip, our_mac=our_mac.hex(), network_info=synced.hex(),
+                   t=time.time())
+            try:
+                trio.run(run_session, args, keys, args.host_ip, host_mac, args.our_ip, our_mac,
+                         record)
+            except Exception as exc:
+                print(f"[sv] the seat ended: {type(exc).__name__}: {exc}")
+            finally:
+                try:
+                    tcp.close()
+                except OSError:
+                    pass
+    except KeyboardInterrupt:
+        print("\n[sv] interrupted")
+    finally:
+        if cap:
+            cap.close()
+    print(f"[sv] {scans} scan(s), {seats} seat(s)")
+    return 0
+
+
 async def run_session(args, keys, host_ip, host_mac, our_ip, our_mac, record):
     """Everything above the seat: answer the host's Net, join its session, hold the streams."""
-    sock = make_socket(args.ifname)
+    sock = make_socket(args.ifname, our_ip if args.ip_join else None)
     t0 = time.monotonic()
     host_var = None
     host_const = pia_connect.ldn_constant_id(host_mac) if len(host_mac) == 6 else bytes(8)
@@ -376,7 +498,8 @@ async def run_session(args, keys, host_ip, host_mac, our_ip, our_mac, record):
 
     # Both retail stations address every Pia datagram to the link-local broadcast of their own
     # /24 (sv11: 169.254.86.2 -> 169.254.86.255), never to the peer's address.
-    dest_ip = host_ip if args.unicast else our_ip.rsplit(".", 1)[0] + ".255"
+    # Over the LAN the emulated host is one address, and the IP host direction sends unicast too.
+    dest_ip = host_ip if (args.unicast or args.ip_join) else our_ip.rsplit(".", 1)[0] + ".255"
 
     ours = {"var": OUR_VAR, "assigned": False}
     player_id = {"arceus": pia6.DEFAULT_PLAYER_ID, "random": os.urandom(16),

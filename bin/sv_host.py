@@ -182,11 +182,13 @@ def main():
         app_data=app_data, password=sv.PASSPHRASE, nickname=args.player_name,
         keys_path=resolve_keys(args.keys), local_comm_id=comm_id, scene_id=sv.SCENE_ID,
         app_version=args.app_version, max_participants=sv.MAX_PARTICIPANTS, phyname=phy,
-        channel=args.channel, protocol=sv.LDN_PROTOCOL, platform=args.platform,
+        channel=args.channel, protocol=sv.LDN_PROTOCOL,
         ssid=binascii.unhexlify(args.ssid) if args.ssid else None,
+        # The platform byte and the radio profile belong to the air; ldn_mitm carries neither.
         **({"mirror_comm_version": True} if args.ip_host else {}),
         **({"our_ip": args.our_ip} if args.ip_host and args.our_ip else {}),
-        **({} if args.ip_host else dict(skip_encryption=machine.skip_encryption,
+        **({} if args.ip_host else dict(platform=args.platform,
+                                        skip_encryption=machine.skip_encryption,
                                         accept_decrypted_ccmp=machine.accept_decrypted_ccmp)))
     if not args.ip_host:
         print(f"[sv] radio profile: skip_encryption={machine.skip_encryption} "
