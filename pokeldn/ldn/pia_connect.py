@@ -481,8 +481,12 @@ def parse_session_join_response_v11(payload):
     type-5 update must reach. On status 3 the protocol id and version at +1 and +2 are the
     offending id and the host's version of it."""
     payload = bytes(payload)
-    if len(payload) < 43 or payload[0] != SESSION_JOIN_RESPONSE:
+    if len(payload) < 41 or payload[0] != SESSION_JOIN_RESPONSE:
         return None
+    # Scarlet's response is 41 bytes: no route bytes before the station index (its joiner reads
+    # the index at +0x24, the join order at +0x25 and the sequence at +0x27, `0x6d7460`).
+    routed = len(payload) >= 43
+    p = 38 if routed else 36
     return {
         "protocol": payload[1],
         "version": payload[2],
@@ -494,17 +498,18 @@ def parse_session_join_response_v11(payload):
         "host_var": int.from_bytes(payload[22:24], "big"),
         "console_constant_id": bytes(payload[24:32]),
         "console_var": int.from_bytes(payload[34:36], "big"),
-        "route": (payload[36], payload[37]),
-        "station_index": payload[38],
-        "join_order": int.from_bytes(payload[39:41], "big"),
-        "sequence_id": int.from_bytes(payload[41:43], "big"),
+        "route": (payload[36], payload[37]) if routed else None,
+        "station_index": payload[p],
+        "join_order": int.from_bytes(payload[p + 1:p + 3], "big"),
+        "sequence_id": int.from_bytes(payload[p + 3:p + 5], "big"),
     }
 
 
-def parse_session_update_v11(payload):
+def parse_session_update_v11(payload, *, route_bytes=2):
     """A Session type-5 fragment, the reverse of `build_session_update_v11`: the seven-byte fragment
     header, then the host location, the station count, the IPv6 bitmap and the IPv4 entries. A
-    fragment that is not the whole update returns its header only."""
+    fragment that is not the whole update returns its header only. Scarlet's entries carry no
+    route bytes (`route_bytes=0`): the station index follows the address directly."""
     payload = bytes(payload)
     if len(payload) < 7 or payload[0] != SESSION_UPDATE:
         return None
@@ -536,13 +541,14 @@ def parse_session_update_v11(payload):
                 st["ip"] = ".".join(str(x) for x in body[p:p + 4])
                 st["port"] = int.from_bytes(body[p + 4:p + 6], "big")
                 p += 6
-            st["route"] = (body[p], body[p + 1])
-            st["station_index"] = body[p + 2]
-            st["join_order"] = int.from_bytes(body[p + 3:p + 5], "big")
-            st["nat"], st["private_ipv6"] = body[p + 5], body[p + 6]
-            st["token"] = bytes(body[p + 7:p + 39])
-            nplayers, st["participants"] = body[p + 39], body[p + 40]
-            p += 41
+            st["route"] = (body[p], body[p + 1]) if route_bytes == 2 else None
+            p += route_bytes
+            st["station_index"] = body[p]
+            st["join_order"] = int.from_bytes(body[p + 1:p + 3], "big")
+            st["nat"], st["private_ipv6"] = body[p + 3], body[p + 4]
+            st["token"] = bytes(body[p + 5:p + 37])
+            nplayers, st["participants"] = body[p + 37], body[p + 38]
+            p += 39
             st["players"] = []
             for _ in range(nplayers):
                 player, p = _parse_player_info(body, p)

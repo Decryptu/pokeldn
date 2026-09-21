@@ -33,6 +33,7 @@ import ldn
 from pokeldn import sv
 from pokeldn.ldn import pia6, pia_connect, reliable5
 from pokeldn.sv import streams
+from pokeldn.pla import game_channel
 from pokeldn.ldn.transport import find_ap_phy
 from pokeldn.host_support import resolve_keys
 
@@ -65,9 +66,13 @@ PROTOCOL_NAMES = {
 }
 SESSION_MESSAGE_NAMES = {
     0: "join request", 1: "join request ack", 2: "join response", 3: "leave request",
-    5: "update session", 6: "update session ack", 7: "left station sync",
-    8: "left station sync ack", 9: "start host migration", 10: "start host migration ack",
+    5: "update session", 6: "update session ack", 7: "start host migration",
+    8: "start host migration ack",
 }
+# Type 7 at this band is written by LeaveMeshWithHostMigrationJob (0x6d8de0) and the job then waits
+# in "WaitStartHostMigrationAck" for a type 8, repeating every second: it is the host leaving the
+# mesh and handing the host role to the station it addresses (sv18), not the wiki's left-station sync.
+
 STALE_VIFS = ["ldn", "ldn-mon", "ldn-tap", "ldnclient"]
 
 
@@ -189,10 +194,17 @@ def build_parser():
                          "Session join request): ten protocols with their versions, a four-byte "
                          "nonce, both location ids, a seven-byte station address and one player "
                          "record. A mesh join is unicast, so no passive capture shows a retail one")
+    ap.add_argument("--no-channel-ack", action="store_true",
+                    help="do not acknowledge the host's messages on the game's reliable channel 0x7c")
     ap.add_argument("--no-update-ack", action="store_true",
                     help="do not answer a Session type-5 station update with the type 6")
     ap.add_argument("--join-repeat", type=float, default=2.0,
                     help="with --session-join, re-send it every N seconds (0 sends it once)")
+    ap.add_argument("--join-player-id", default="arceus",
+                    help="the 16-byte player id in the join request: 'arceus' (1 then 0 as two "
+                         "big-endian u64, what a retail Arceus states), 'random', 'high' (random "
+                         "with a leading 0xff) or 32 hex digits. A Scarlet host's own is "
+                         "10047bd4a25543e057cee5c71ab1f2a2 (sv18)")
     ap.add_argument("--join-player-name", default=" ",
                     help="the player name in the join request's one player record; a retail "
                          "console's is a single space")
@@ -205,9 +217,10 @@ def build_parser():
     ap.add_argument("--net-ack", action="store_true",
                     help="answer the host's Net 0x11 with the 0x12 ack. A retail joiner does not, "
                          "and the ack makes the console ask for host migration instead (sv08)")
-    ap.add_argument("--open-delay", type=float, default=0.8,
-                    help="seconds after the seat before the eleven acks and the two stream opens "
-                         "go out; a retail joiner waits about 0.9 s")
+    ap.add_argument("--open-delay", type=float, default=0.75,
+                    help="seconds after the join response (after the seat without --session-join) "
+                         "before the eleven acks and the two stream opens go out; a retail joiner "
+                         "opens 0.75 s after its join")
     ap.add_argument("--rtt-period", type=float, default=0.4,
                     help="seconds between our own RTT requests (0 sends none)")
     ap.add_argument("--no-rtt", action="store_true", help="do not answer RTT requests")
@@ -336,7 +349,10 @@ async def run_session(args, keys, host_ip, host_mac, our_ip, our_mac, record):
     our_const = pia_connect.ldn_constant_id(our_mac) if len(our_mac) == 6 else bytes(8)
     join_sent = 0.0
     joined = False
-    join_sequence = 0
+    joined_at = 0.0
+    join_sequence = None
+    pending_update = None       # a type-5 update that arrived before the join response
+    migration_sent = 0
     stream_high = {}            # (protocol, port) -> highest sequence received from the host
     our_seq = {}                # (protocol, port) -> our next send sequence on that stream
     last_ack = {}
@@ -348,6 +364,10 @@ async def run_session(args, keys, host_ip, host_mac, our_ip, our_mac, record):
     dest_ip = host_ip if args.unicast else our_ip.rsplit(".", 1)[0] + ".255"
 
     ours = {"var": OUR_VAR, "assigned": False}
+    player_id = {"arceus": pia6.DEFAULT_PLAYER_ID, "random": os.urandom(16),
+                 "high": b"\xff" + os.urandom(15)}.get(args.join_player_id)
+    if player_id is None:
+        player_id = bytes.fromhex(args.join_player_id)
 
     def out(body, dst_var, **kw):
         return build_out(keys, our_ip, body, dst_var, src_var=ours["var"], **kw)
@@ -362,7 +382,7 @@ async def run_session(args, keys, host_ip, host_mac, our_ip, our_mac, record):
         # participant list: on the GBA app those differ, and the join must address the stated one.
         body = pia6.build_session_join(
             our_const, OUR_VAR, our_ip, host_const, host_var or 0, args.join_player_name,
-            os.urandom(4))
+            os.urandom(4), player_id=player_id)
         dst = (host_var or 0) if args.join_dst_var == "host" else 0
         # A Session message is addressed to one station, so it goes to the host's own address
         # whatever the mesh-addressed messages go to (a joining Arceus sent its to the host's IP).
@@ -371,6 +391,13 @@ async def run_session(args, keys, host_ip, host_mac, our_ip, our_mac, record):
         print(f"[sv] -> {host_ip}: session join request (type 0, {len(body)} bytes), "
               f"host_var={host_var if host_var is None else hex(host_var)}, "
               f"host_const={host_const.hex()}, header dst_var={dst}")
+
+    def send_update_ack(upd):
+        if args.no_update_ack or upd["sequence_id"] < (join_sequence or 0):
+            return
+        ack = pia_connect.build_session_update_ack_v11(our_const, upd["sequence_id"])
+        send(out(ack, host_var or 0, protocol=PROTO_SESSION), "session update ack", to=host_ip)
+        print(f"[sv] -> {host_ip}: session update ack (type 6), sequence {upd['sequence_id']}")
 
     def send_opening():
         """The eleven bulk acks and the two stream opens a retail joiner sends at once, 0.9 s
@@ -397,7 +424,10 @@ async def run_session(args, keys, host_ip, host_mac, our_ip, our_mac, record):
     while time.monotonic() - t0 < args.hold:
         now = time.time()
         elapsed = time.monotonic() - t0
-        if not opened and elapsed >= args.open_delay:
+        # A retail joiner's opening follows its join by about 0.75 s (sv11: the join at 0.14 s, the
+        # opening at 0.89 s). With --session-join the opening waits for the seat.
+        if not opened and elapsed >= args.open_delay and (
+                not args.session_join or (joined_at and now - joined_at >= args.open_delay)):
             opened = True
             send_opening()
         # The host addresses the joiner by its variable id 0.14 s after the association, before the
@@ -497,30 +527,61 @@ async def run_session(args, keys, host_ip, host_mac, our_ip, our_mac, record):
                             k: (v.hex() if isinstance(v, bytes) else v) for k, v in resp.items()})
                         if resp["status"] == 1:
                             joined = True
+                            joined_at = now
                             join_sequence = resp["sequence_id"]
+                            if pending_update is not None:
+                                send_update_ack(pending_update)
+                                pending_update = None
                 elif kind == pia_connect.SESSION_UPDATE:
-                    upd = pia_connect.parse_session_update_v11(msg.payload)
+                    upd = pia_connect.parse_session_update_v11(msg.payload, route_bytes=0)
                     if upd is None:
                         print(f"[sv] station update did not parse: {msg.payload.hex()}")
                     else:
                         print(f"[sv] STATION UPDATE sequence {upd['sequence_id']}, "
                               f"{len(upd['stations'])} station(s): "
                               + " ".join(f"{st['ip']}#{st['station_index']}/var {st['variable_id']:#06x}"
+                                         f"/player {st['players'][0]['player_id'].hex() if st['players'] else '-'}"
                                          for st in upd["stations"]))
-                        # A joiner answers with the type 6 once the applied sequence reaches the
-                        # one its join response named (docs/pla.md, The type-5 station-list update).
-                        if not args.no_update_ack and upd["sequence_id"] >= join_sequence:
-                            ack = pia_connect.build_session_update_ack_v11(our_const, upd["sequence_id"])
-                            send(out(ack, host_var or 0, protocol=PROTO_SESSION), "session update ack",
-                                 to=host_ip)
-                            print(f"[sv] -> {host_ip}: session update ack (type 6), "
-                                  f"sequence {upd['sequence_id']}")
-                            joined = True
+                        record(rec="station_update", t=time.time(), sequence=upd["sequence_id"],
+                               stations=[{k: (v.hex() if isinstance(v, bytes) else v)
+                                          for k, v in st.items() if k != "players"}
+                                         for st in upd["stations"]])
+                        # A joiner answers with the type 6 once it holds the join response and an
+                        # update whose sequence reaches the one the response named (docs/pla.md,
+                        # The type-5 station-list update). The host sends the update first (sv18).
+                        if join_sequence is None:
+                            pending_update = upd
+                        else:
+                            send_update_ack(upd)
                 elif kind == pia_connect.SESSION_JOIN_ACK:
                     print(f"[sv] the host acknowledged the join request; it now has 8 s to answer it")
+                elif kind == 7:
+                    migration_sent += 1
+                    print(f"[sv] the host is LEAVING WITH HOST MIGRATION to us ({migration_sent}x): "
+                          f"{msg.payload.hex()}")
             if not args.no_rtt and msg.protocol == PROTO_RTT and msg.payload and msg.payload[0] == 0:
                 send(out(streams.build_rtt_response(msg.payload, header.src_var),
                          header.src_var, protocol=PROTO_RTT), "rtt response")
+            # The game's own unicast channel, Reliable 0x7c: the host opens its channel table on
+            # port 1 (sv18: `b90104b902b9027b0001...`, the Arceus form, pokeldn.pla.channel_table)
+            # and retransmits every 65 ms until the one-entry ack Arceus's host answers with.
+            if msg.protocol == PROTO_RELIABLE and len(msg.payload) >= reliable5.HEADER_SIZE:
+                try:
+                    cm = reliable5.parse(msg.payload)
+                except ValueError as exc:
+                    print(f"[sv] 0x7c did not parse: {exc}")
+                    continue
+                if cm["flags"] & reliable5.FLAG_APPLICATION_DATA:
+                    print(f"[sv] <- CHANNEL 0x7c:{msg.port} seq {cm['sequence_id']} "
+                          f"{reliable5.flag_names(cm['flags'])} {cm['payload'].hex()}")
+                    record(rec="channel", src=addr[0], port=msg.port, seq=cm["sequence_id"],
+                           flags=cm["flags"], payload=cm["payload"].hex(), t=time.time())
+                    if not args.no_channel_ack:
+                        ack = game_channel.build_ack(cm["sequence_id"] + 1,
+                                                     lowest_pending=cm["sequence_id"])
+                        send(out(ack, host_var or 0, protocol=PROTO_RELIABLE, port=msg.port),
+                             "channel ack", port=msg.port, to=host_ip)
+                continue
             if msg.protocol in RELIABLE_PROTOCOLS and len(msg.payload) >= reliable5.HEADER_SIZE:
                 try:
                     rm = reliable5.parse(msg.payload)
