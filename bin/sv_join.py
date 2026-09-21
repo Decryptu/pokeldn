@@ -519,7 +519,7 @@ async def run_session(args, keys, host_ip, host_mac, our_ip, our_mac, record):
         # The host's constant id is the one its own Net 0x11 states, not the LDN MAC from the
         # participant list: on the GBA app those differ, and the join must address the stated one.
         body = pia6.build_session_join(
-            our_const, OUR_VAR, our_ip, host_const, host_var or 0, args.join_player_name,
+            our_const, ours["var"], our_ip, host_const, host_var or 0, args.join_player_name,
             os.urandom(4), player_id=player_id)
         dst = (host_var or 0) if args.join_dst_var == "host" else 0
         # A Session message is addressed to one station, so it goes to the host's own address
@@ -625,6 +625,12 @@ async def run_session(args, keys, host_ip, host_mac, our_ip, our_mac, record):
         if host_var is None:
             host_var = header.src_var
             print(f"[sv] the host's variable id is {host_var:#06x}")
+            # A host that drew our fallback id for itself drops a join whose source id is its own
+            # (a Ryujinx host did, sv27). Draw another before anything states ours.
+            if not ours["assigned"] and ours["var"] == host_var:
+                while ours["var"] in (0, host_var):
+                    ours["var"] = int.from_bytes(os.urandom(2), "big")
+                print(f"[sv] the host holds our fallback id; ours is now {ours['var']:#06x}")
         # The footer of a mesh-addressed packet names its recipients. A host that has created a
         # station for us names the id it gave us there, and that id is ours from then on.
         if not ours["assigned"]:
