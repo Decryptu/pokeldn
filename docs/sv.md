@@ -268,21 +268,41 @@ update must reach. The joiner answers the type-5 station update with a type 6 of
 (`0x6d80a4`): the type, its own constant id, two zero bytes and the applied sequence.
 `pokeldn.ldn.pia_connect` parses the response and the update and builds the type 6.
 
+## The seat, and the identity flood above it
+
+Joining a searching console's network with the Session join request in the layout above seats the
+station: a retail Scarlet host accepts it in 16 ms, sends a 41-byte join response (status 1, no
+route bytes) and a route-less station update, and streams its own player identity on 0x81 port 0.
+The trade does not complete: the host floods that identity about 350 times a second, each record up
+to seventy retransmits, and never acknowledges the joiner's records or acks, where a retail host
+sends its identity once (a passive pair, 15 records, one send each).
+
+Ruled out as the cause: opening timing (the joiner's eleven-stream ack burst reaches the host before
+its first record and it still floods), the joiner's own identity record on port 1 (sent fifty times,
+never acknowledged), and the host-migration handshake. The host sends a Session type 7 on some seats,
+about 22 ms after the accept, `LeaveMeshWithHostMigrationJob` handing the host role to the joiner and
+repeating once a second until a type 8 answers it; the migration is intermittent and answering it is
+untested. The joiner's bulk ack is byte-identical in structure to a retail joiner's and reaches
+ack_id 47, one past the host's highest, and the host ignores it.
+
+The likely reason is airtime. A retail pair is two radios: the console can receive the joiner's ack
+between its own transmits. One adapter cannot, so once the console floods the channel the joiner's
+acks never reach a console that is transmitting continuously, and the console never counts its
+identity acknowledged.
+
 ## Unresolved
 
-A host built here is joined by a searching console, which then never opens its Pia socket: it
-answers the host's first Net 0x11 with ICMP port 12345 unreachable, and leaves about five seconds
-later. Matching a retail beacon field for field does not change it, including the station platform
-byte and the player count in the Pia block.
+The trade above the seat. The host direction, `bin/sv_host.py`, is the more promising path: the
+console the project joins keeps offering it the host role, so the console wants to be the joiner.
+Hosting puts the console in the sender role it wants and avoids the airtime fight; the join request
+a joining console sends is now known, so `bin/sv_host.py` can parse and answer it. The alternative
+is to read the host's `StreamBroadcastReliableProtocol` ack acceptance in the binary and find the
+field that makes it stop retransmitting.
 
-Joining the network the console puts up reaches its Pia: it sends Net 0x11 and repeats it, and about
-eight seconds later announces host migration. It sends nothing on RTT or on any of the eleven
-streams, so it never treats the station as seated. Against a station this project brings, the host
-stops after its Net 0x11, repeats it, and about eight seconds later announces host migration: it
-never creates the station. What creates the station is the Session join request, and every request
-sent so far carried thirteen protocols with zero versions, a six-byte field where the four-byte
-random goes and an 18-byte station address, so the host dropped each at its first check. A request
-in the layout above has not yet been put on the air.
+A host built here is also joined by a searching console, which then never opens its Pia socket: it
+answers the host's first Net 0x11 with ICMP port 12345 unreachable and leaves about five seconds
+later. That was measured before the join-request layout was known and before `bin/sv_host.py` could
+answer one.
 
 Both consoles are Switch 2 and their unicast is 802.11ax, which neither the project's adapter nor a
 MacBook's Broadcom sniffer demodulates. Of a 74-second session the pair sent 388 and 387 readable
