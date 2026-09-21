@@ -285,19 +285,42 @@ repeating once a second until a type 8 answers it; the migration is intermittent
 untested. The joiner's bulk ack is byte-identical in structure to a retail joiner's and reaches
 ack_id 47, one past the host's highest, and the host ignores it.
 
-The likely reason is airtime. A retail pair is two radios: the console can receive the joiner's ack
-between its own transmits. One adapter cannot, so once the console floods the channel the joiner's
-acks never reach a console that is transmitting continuously, and the console never counts its
-identity acknowledged.
+Airtime is not the cause. The same flood runs against an emulated Scarlet 4.0.0 over a LAN, where
+nothing is lost and the guest's own send log shows every datagram: 44 of its 46 records on 0x81
+port 0, each retransmitted 676 times in 59 seconds, every record declaring its window still at
+lowest_pending 1. Sequence ids 5 and 6 are never sent at all, so the hole is in the host's own
+window rather than in the path.
+
+### The flag that makes the host count an acknowledgement
+
+A bulk acknowledgement under message flags 0xA0 never reaches the host's window. Its receive
+function resolves the sending station, checks the length and compares a byte of the message
+against the station's own before applying anything, but a message whose flags carry bit 5 branches
+earlier into a second deserialiser and is dropped there with result 0x2C03. Measured on the
+emulated console: 600 of 600 acknowledgements under 0xA0, every one dropped at that instruction,
+the station resolve never reached.
+
+Under message flags 0x00 the same acknowledgement, the same 99 bytes with the same four entries
+and destination bitmap, takes the other path and the exchange completes. The host answered a
+sweep's fifth shape by sending each of its 44 records exactly once and stopping: 115 to 257
+records a second under 0xA0 in the four shapes before it, 6.3 a second during it, and none at all
+in the 26 seconds after, while its periodic bulk acks continued. That is what a retail host does
+with a retail joiner.
+
+Both retail stations flag their own bulk acknowledgements 0xA0 and address them to the LDN
+broadcast of their own /24. What separates that from a joiner's 0xA0 being dropped is unmeasured.
+`bin/sv_join.py --ack-flags`, `--ack-entries`, `--ack-dest-bits` and `--ack-sweep` are the handles.
 
 ## Unresolved
 
-The trade above the seat. The host direction, `bin/sv_host.py`, is the more promising path: the
-console the project joins keeps offering it the host role, so the console wants to be the joiner.
-Hosting puts the console in the sender role it wants and avoids the airtime fight; the join request
-a joining console sends is now known, so `bin/sv_host.py` can parse and answer it. The alternative
-is to read the host's `StreamBroadcastReliableProtocol` ack acceptance in the binary and find the
-field that makes it stop retransmitting.
+The trade above the identity exchange. The exchange itself completes against an emulated console
+under message flags 0x00; what the host does next, and whether it opens the game's own channel on
+0x7c once the joiner's identity is in, is the next measurement. The same flags on a retail console
+is untested: every retail seat so far sent 0xA0.
+
+Why a retail station's own 0xA0 acknowledgements are accepted between two consoles, when one sent
+here is dropped in the deserialiser, is unknown. The retail pair broadcasts them and this project
+unicasts them over the LAN.
 
 A host built here is also joined by a searching console, which then never opens its Pia socket: it
 answers the host's first Net 0x11 with ICMP port 12345 unreachable and leaves about five seconds
