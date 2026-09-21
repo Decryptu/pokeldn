@@ -93,10 +93,16 @@ def build_open(port, station_index, *, sequence_id=1):
     return header + payload
 
 
-def build_record_message(record, sequence_id, station_index, *, lowest_pending=1, stream_id=0):
-    """A compressed record as one reliable message: the retail flags are START, END and ZLIB."""
+def build_record_message(record, sequence_id, station_index, *, lowest_pending=1, stream_id=0,
+                         initialized=False):
+    """A compressed record as one reliable message: the retail flags are START, END and ZLIB.
+
+    A station's first record on a stream it sends on carries INITIALIZED as well: the host's own
+    sequence 1 on 0x81 port 0 is flags 0x1F and every record after it 0x17.
+    """
     flags = (reliable5.FLAG_APPLICATION_DATA | reliable5.FLAG_MESSAGE_START
-             | reliable5.FLAG_MESSAGE_END | reliable5.FLAG_ZLIB)
+             | reliable5.FLAG_MESSAGE_END | reliable5.FLAG_ZLIB
+             | (reliable5.FLAG_IS_INITIALIZED if initialized else 0))
     header = reliable5.build_header(flags, sequence_id, len(record), lowest_pending=lowest_pending,
                                     stream_id=stream_id, destination_bits=3,
                                     bitmap=[bitmap_for(station_index)])

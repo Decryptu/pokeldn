@@ -250,6 +250,10 @@ def build_parser():
                     help="after the seat, send this 1395-byte identity record on 0x81 port 1 "
                          "(our station stream) as the game's data exchange, retransmitting until "
                          "the host acknowledges it. A retail joiner sends its own identity here")
+    ap.add_argument("--mirror-records", action="store_true",
+                    help="send every record the host puts on 0x81 port 0 back on port 1 as our "
+                         "own, in order. A retail joiner answers the host's records with a set of "
+                         "its own; this fills that set with records the game itself composed")
     ap.add_argument("--record-delay", type=float, default=0.9,
                     help="seconds after the seat before the first identity record goes out")
     ap.add_argument("--no-channel-ack", action="store_true",
@@ -509,6 +513,7 @@ async def run_session(args, keys, host_ip, host_mac, our_ip, our_mac, record):
     if args.send_record:
         identity = streams.compress(open(args.send_record, "rb").read())
     record_seq = 1
+    mirrored = set()            # host sequence ids already sent back under --mirror-records
     record_acked = False
     last_record_send = 0.0
     stream_high = {}            # (protocol, port) -> highest sequence received from the host
@@ -632,7 +637,8 @@ async def run_session(args, keys, host_ip, host_mac, our_ip, our_mac, record):
         if identity is not None and joined and not record_acked and (
                 now - joined_at >= args.record_delay) and (now - last_record_send >= 0.25):
             last_record_send = now
-            body = streams.build_record_message(identity, record_seq, streams.JOINER_INDEX)
+            body = streams.build_record_message(identity, record_seq, streams.JOINER_INDEX,
+                                                initialized=(record_seq == 1))
             send(out(body, host_var or 0, protocol=streams.PROTOCOL_STREAM,
                      port=streams.JOINER_INDEX, flags=streams.MESSAGE_FLAGS_DATA),
                  "identity record", port=streams.JOINER_INDEX)
@@ -819,6 +825,16 @@ async def run_session(args, keys, host_ip, host_mac, our_ip, our_mac, record):
                     print(f"[sv] <- RECORD 0x{msg.protocol:02x}:{msg.port} seq {rm['sequence_id']} "
                           f"{reliable5.flag_names(rm['flags'])} {len(rm['payload'])}B{note}")
                     print(f"       {body.hex()[:400]}")
+                    if (args.mirror_records and joined and msg.protocol == streams.PROTOCOL_STREAM
+                            and msg.port == streams.HOST_INDEX and rm["sequence_id"] not in mirrored):
+                        mirrored.add(rm["sequence_id"])
+                        back = streams.build_record_message(
+                            rm["payload"], record_seq, streams.JOINER_INDEX,
+                            initialized=(record_seq == 1))
+                        send(out(back, host_var or 0, protocol=streams.PROTOCOL_STREAM,
+                                 port=streams.JOINER_INDEX, flags=streams.MESSAGE_FLAGS_DATA),
+                             "mirrored record", port=streams.JOINER_INDEX, seq=record_seq)
+                        record_seq += 1
                     record(rec="data", src=addr[0], protocol=msg.protocol, port=msg.port,
                            seq=rm["sequence_id"], flags=rm["flags"],
                            payload=rm["payload"].hex(),

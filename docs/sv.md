@@ -311,12 +311,26 @@ Both retail stations flag their own bulk acknowledgements 0xA0 and address them 
 broadcast of their own /24. What separates that from a joiner's 0xA0 being dropped is unmeasured.
 `bin/sv_join.py --ack-flags`, `--ack-entries`, `--ack-dest-bits` and `--ack-sweep` are the handles.
 
+### The first record on a stream carries INITIALIZED
+
+A station's own records go on 0x81 port 1 for a joiner and port 0 for a host, each station opening
+the two ports it receives on: the joiner opens 0 and 4, the host opens 1 and 5. The first record a
+station sends on its stream carries INITIALIZED with the usual START, END and ZLIB, flags 0x1F, and
+every record after it 0x17. A first record sent as 0x17 is never acknowledged: the host's bulk ack
+for that station holds at 1 for as long as the record is repeated, 198 sends in one seat. Sent as
+0x1F the same record is acknowledged within 90 ms.
+
+With both fixes an emulated host completes the whole exchange in both directions: it sends its 44
+records once each, acknowledges the joiner's, and issues a type-5 station update listing both
+stations with their player blocks. It then keeps searching. What a pair does after the exchange is
+what the trade needs, and it is unicast, so only two consoles or two emulator instances can show it.
+
 ## Unresolved
 
-The trade above the identity exchange. The exchange itself completes against an emulated console
-under message flags 0x00; what the host does next, and whether it opens the game's own channel on
-0x7c once the joiner's identity is in, is the next measurement. The same flags on a retail console
-is untested: every retail seat so far sent 0xA0.
+The trade above the identity exchange. Against an emulated console the exchange now completes in
+both directions and the host still searches: it sends nothing on 0x7c after its channel table, and
+no further records. The same run on a retail console is untested; every retail seat so far sent
+0xA0 and none carried INITIALIZED.
 
 Why a retail station's own 0xA0 acknowledgements are accepted between two consoles, when one sent
 here is dropped in the deserialiser, is unknown. The retail pair broadcasts them and this project
