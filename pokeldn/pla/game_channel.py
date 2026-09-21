@@ -36,10 +36,14 @@ HOST_OPEN_PAYLOAD = bytes.fromhex("00000000000000000100")
 JOINER_OPEN_PAYLOAD = bytes.fromhex("b90101b902b902000001")
 
 
-def build_open(payload, sequence_id=SEQUENCE_ID):
-    """-> the message that opens a channel: the payload under the initialized flags, sequence 1."""
+def build_open(payload, sequence_id=SEQUENCE_ID, initialized=True):
+    """-> the message that opens a channel: the payload under the initialized flags, sequence 1.
+
+    A later update on the same channel carries the same shape without INITIALIZED, flags 0x07.
+    """
     flags = (reliable5.FLAG_APPLICATION_DATA | reliable5.FLAG_MESSAGE_START
-             | reliable5.FLAG_MESSAGE_END | reliable5.FLAG_IS_INITIALIZED)
+             | reliable5.FLAG_MESSAGE_END
+             | (reliable5.FLAG_IS_INITIALIZED if initialized else 0))
     return (reliable5.build_header(flags, sequence_id, len(payload), lowest_pending=sequence_id,
                                    stream_id=0) + bytes(payload))
 

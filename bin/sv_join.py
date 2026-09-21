@@ -61,6 +61,8 @@ ESTABLISHING_FLAGS = pia6.MESSAGE_FLAG_SKIP_SOURCE_CHECK
 # that value as its own source id (`docs/sv.md`). This is the fallback for a host that never does.
 OUR_VAR = 0xC493
 OUR_STATION_INDEX = 1
+# The 15 bytes a joiner sends to open 0x7c port 2, from a pair trading (docs/sv.md).
+CHANNEL_PORT2_OPEN = bytes.fromhex("03b90200bc09000000000000000000")
 HOST_BITMAP = 0x01                # the destination mask a joiner writes: the host, station 0
 ACK_ENTRIES = 4                   # what a retail station's bulk ack carries (sv02)
 
@@ -250,6 +252,11 @@ def build_parser():
                     help="after the seat, send this 1395-byte identity record on 0x81 port 1 "
                          "(our station stream) as the game's data exchange, retransmitting until "
                          "the host acknowledges it. A retail joiner sends its own identity here")
+    ap.add_argument("--game-channel", action="store_true",
+                    help="announce our own channel table on 0x7c. A station opens the game's "
+                         "channel by sending the same 31-byte table its peer sends on port 1, an "
+                         "open on port 2, and a mirror of every later table update; the peer sends "
+                         "the game on port 0 only once ours is announced (docs/sv.md)")
     ap.add_argument("--mirror-records", action="store_true",
                     help="send every record the host puts on 0x81 port 0 back on port 1 as our "
                          "own, in order. A retail joiner answers the host's records with a set of "
@@ -513,6 +520,8 @@ async def run_session(args, keys, host_ip, host_mac, our_ip, our_mac, record):
     if args.send_record:
         identity = streams.compress(open(args.send_record, "rb").read())
     record_seq = 1
+    # Our own 0x7c state: the next sequence on port 1, and whether the port-2 open has gone.
+    channel = {"seq": 1, "opened": False}
     mirrored = set()            # host sequence ids already sent back under --mirror-records
     record_acked = False
     last_record_send = 0.0
@@ -793,6 +802,30 @@ async def run_session(args, keys, host_ip, host_mac, our_ip, our_mac, record):
                           f"{reliable5.flag_names(cm['flags'])} {cm['payload'].hex()}")
                     record(rec="channel", src=addr[0], port=msg.port, seq=cm["sequence_id"],
                            flags=cm["flags"], payload=cm["payload"].hex(), t=time.time())
+                    if args.game_channel and cm["flags"] & reliable5.FLAG_IS_INITIALIZED \
+                            and msg.port == 1 and not channel["opened"]:
+                        # The joiner's table is byte-identical to the host's (a retail pair sends
+                        # the same 31 bytes each way), and its port-2 open follows it.
+                        channel["opened"] = True
+                        send(out(game_channel.build_open(cm["payload"], channel["seq"]),
+                                 host_var or 0, protocol=PROTO_RELIABLE, port=1),
+                             "channel table", port=1, to=host_ip)
+                        channel["seq"] += 1
+                        send(out(game_channel.build_open(CHANNEL_PORT2_OPEN, 1),
+                                 host_var or 0, protocol=PROTO_RELIABLE, port=2),
+                             "channel port 2 open", port=2, to=host_ip)
+                        print(f"[sv] -> {host_ip}: our own channel table on 0x7c port 1 "
+                              f"({len(cm['payload'])} bytes) and the port-2 open")
+                    elif args.game_channel and msg.port == 1 and channel["opened"] \
+                            and not (cm["flags"] & reliable5.FLAG_IS_INITIALIZED):
+                        # Every later table update is mirrored back under our own sequence.
+                        send(out(game_channel.build_open(cm["payload"], channel["seq"],
+                                                         initialized=False),
+                                 host_var or 0, protocol=PROTO_RELIABLE, port=1),
+                             "channel table update", port=1, to=host_ip)
+                        print(f"[sv] -> {host_ip}: mirrored the channel table update "
+                              f"({len(cm['payload'])} bytes), our sequence {channel['seq']}")
+                        channel["seq"] += 1
                     if not args.no_channel_ack:
                         ack = game_channel.build_ack(cm["sequence_id"] + 1,
                                                      lowest_pending=cm["sequence_id"])

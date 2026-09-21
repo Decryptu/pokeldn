@@ -325,12 +325,72 @@ records once each, acknowledges the joiner's, and issues a type-5 station update
 stations with their player blocks. It then keeps searching. What a pair does after the exchange is
 what the trade needs, and it is unicast, so only two consoles or two emulator instances can show it.
 
+## The game's own protocol, from a pair
+
+Two emulated Scarlet 4.0.0 instances completed a trade, and each instance's log holds every
+datagram it sent, unicast included. The two logs are keyed on the session id from the host's
+NetworkInfo at +0x10; each instance's clock starts at its own launch, so they are aligned on a
+datagram both recorded (`scratchpad/sv_pair_timeline.py`).
+
+The trade runs on Reliable 0x7C, not on the broadcast streams. Those carry the identity exchange
+and nothing else.
+
+### Opening the channel
+
+| time | station | port | bytes | |
+|---|---|---|---|---|
+| 0.29 | host | 1 | 31, INITIALIZED | `b90104b902b9027b0001b902b902320101b902b902320201b902b902320301` |
+| 1.84 | joiner | 1 | 31, INITIALIZED | the same 31 bytes |
+| 2.43 | joiner | 2 | 15, INITIALIZED | `03b90200bc09000000000000000000` |
+| 9.00 | host | 1 | 11 | `b90101b902b90280800001`, and the joiner sends the same back |
+
+Port 1 is the channel table, the Arceus mechanism: a station announces the handler keys it opens
+and sends on a key only once its peer has announced it. A joiner's table is byte for byte the
+host's. Until the joiner announces its own, the host opens no channel and stays on its search
+screen however complete the identity exchange is.
+
+The reliable header on 0x7C carries no destination bitmap: nine bytes, the sequence and the lowest
+pending both the message's own sequence. An open is flags 0x0F and a later update on the same port
+0x07.
+
+### The trade
+
+Everything above the channel is on port 0. A message is a four-byte header and a body.
+
+| time | station | body | |
+|---|---|---|---|
+| 9.15 | joiner | `80000100` + 238 bytes, zlib, two fragments | the first game message, START then END |
+| 9.31 | host | the same | |
+| 58.2 | host | `80000200` + 348 bytes | the offered Pokemon |
+| 67.6 | joiner | `80000200` + 348 bytes | |
+| 112.7 | host | `80000300` | |
+| 116.0 | joiner | `80000300` | |
+| 117.5 | joiner | `80000500` | |
+| 117.5 | host | `80000500` | |
+| 117.6 | both | port 1, `b90101b902b90280800101` | a table update opening the next key |
+| 117.7 | both | `80010103`, `80010203` | |
+| 117.8 | both | `80010106`, `80010206` | |
+| 118.2 | both | `8001010b`, `8001020b` | |
+| 118.9 | both | `8001010e`, `8001020e` | |
+| 119.2 | both | port 1, `b90101b902b90280800100` | the table update that closes it |
+
+The `8001` messages run in pairs, a 01 and a 02 under the same fourth byte, which steps 03, 06, 0B,
+0E. The trade applies over those four steps and both screens return to the trade menu.
+
+Both instances ran from one save copied twice, and the game traded a Pokemon between two identical
+trainers without complaint.
+
 ## Unresolved
 
-The trade above the identity exchange. Against an emulated console the exchange now completes in
-both directions and the host still searches: it sends nothing on 0x7c after its channel table, and
-no further records. The same run on a retail console is untested; every retail seat so far sent
-0xA0 and none carried INITIALIZED.
+What the two record kinds hold. The 238-byte zlib message under `80000100` and the 348 bytes under
+`80000200` are the identity and the offered Pokemon; neither field map is read. A Gen-9 box
+structure is 344 bytes, four short of that body.
+
+Driving it. `bin/sv_join.py --game-channel` announces the joiner's table and opens port 2, in bytes
+identical to the pair's, and has not yet been run against a console.
+
+The same run on a retail console is untested; every retail seat so far sent 0xA0 acknowledgements
+and none carried INITIALIZED or a channel table.
 
 Why a retail station's own 0xA0 acknowledgements are accepted between two consoles, when one sent
 here is dropped in the deserialiser, is unknown. The retail pair broadcasts them and this project
