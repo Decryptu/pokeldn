@@ -298,6 +298,10 @@ def build_parser():
                          "answers the console's offer with its own, confirms, and follows the "
                          "console through the commit and the four exchange steps the way a pair's "
                          "host does (pokeldn.sv.trade)")
+    ap.add_argument("--offer-at", type=float, default=None,
+                    help="seconds after the seat at which the host offers first, before the "
+                         "console does, as a pair's host did; without it the host answers the "
+                         "console's offer")
     ap.add_argument("--confirm-delay", type=float, default=1.0,
                     help="seconds after the console's offer before the host's confirmation")
     ap.add_argument("--send", action="append", default=[],
@@ -730,6 +734,12 @@ def main():
                                     continue
                                 delay, rest = spec.split(":", 1)
                                 pending_late[(src_ip, index)] = (time.time() + float(delay), rest)
+                            if trade_offer is not None and args.offer_at is not None:
+                                stages[src_ip] = trade.TradeStage(
+                                    trade_offer, confirm_delay=args.confirm_delay)
+                                for delay, out_port, payload in stages[src_ip].offer_first():
+                                    pending_trade.append((time.time() + args.offer_at + delay,
+                                                          src_ip, out_port, payload))
                             if args.announce and (src_ip, "announce") not in pending_late:
                                 # The type 7 names THIS host's station: the constant id the
                                 # console addressed its join to, read big-endian (port2.py).

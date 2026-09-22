@@ -222,3 +222,13 @@ def test_the_trade_stage_ignores_what_is_not_the_next_step():
     assert stage.on_message(0, bytes.fromhex("80000200") + bytes(trade.OFFER_SIZE)) == []
     assert trade.table_update(trade.KEY_EXCHANGE, True).hex() == "b90101b902b90280800101"
     assert trade.table_update(trade.KEY_TRADE, True).hex() == "b90101b902b90280800001"
+
+
+def test_a_host_that_offers_first_still_confirms_on_the_joiner_offer():
+    from pokeldn.sv import trade
+    stage = trade.TradeStage(bytes(trade.OFFER_SIZE))
+    first = stage.offer_first()
+    assert [(p, d[:4].hex()) for _, p, d in first] == [(0, "80000200")]
+    assert stage.offer_first() == []
+    out = stage.on_message(0, bytes.fromhex("80000200") + bytes(trade.OFFER_SIZE))
+    assert [(p, d.hex()) for _, p, d in out] == [(0, "80000300")]

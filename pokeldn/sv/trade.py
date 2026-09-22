@@ -74,6 +74,14 @@ class TradeStage:
         self.step_index = None
         self.done = False
 
+    def offer_first(self):
+        """-> the host's offer, for a host that puts its Pokemon up before the joiner does, as the
+        pair's host did (its offer came 9 s before the joiner's)."""
+        if self.offered:
+            return []
+        self.offered = True
+        return [(0.0, 0, build(KEY_TRADE, KIND_OFFER, 0, self.offer))]
+
     def on_message(self, port, payload):
         """-> [(delay, port, payload), ...] to send in answer to what the joiner sent."""
         if port != 0 or self.done:
