@@ -2,7 +2,8 @@ title: pokeldn
 description: >-
   Reverse-engineering notes for speaking Nintendo Switch local wireless (LDN) to
   Pokemon games: the wireless layer every title shares, FireRed and LeafGreen end
-  to end, and Brilliant Diamond and Shining Pearl.
+  to end, and trades on retail hardware with Let's Go, Sword and Shield,
+  Brilliant Diamond and Shining Pearl, Legends Arceus, and Scarlet and Violet.
 
 url: https://decryptu.github.io
 baseurl: /pokeldn
