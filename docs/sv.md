@@ -563,12 +563,21 @@ sent the 0x12 and the 0x51, Net traffic falls from 212 messages a seat to 2.
 
 ## Unresolved
 
+**A trade is complete on a retail Scarlet (2026-09-22).** The console joins a network
+`bin/sv_host.py` puts up, takes the host's identity as four messages, draws the host's offer with
+its four-item menu, offers its own 348-byte record, confirms, commits, opens key 0x0180, runs the
+four exchange steps in both directions and closes the key, and the Pokemon the host composed is on
+the console. Its acknowledgement of the host's offer reads `ack_id` 6 and `lowest_pending` 5, the
+numbers a console answers a console with, where the seat before the correction read 6 and 6.
+
+The host's messages on the trade stream number 5 for the offer, 6 for the confirmation, 7 for the
+commit and 8 to 15 for the exchange steps, the console's 5, 6, 7 and 8 to 11, and the console's own
+key-0x180 open and close are its port-1 messages 3 and 4.
+
 An emulated Scarlet trades end to end against a host built here: it draws the host's offer, offers
 in answer, confirms, commits, opens key 0x0180, runs the four exchange steps and keeps the Pokemon
-the host sent. What is not measured is the same run against a retail console. The two corrections
-that made it work, four identity messages and the host's own next sequence in the `lowest_pending`
-field of its 0x7C acknowledgements, were both found after the last retail seat, and the retail
-symptom they would explain, an offer acknowledged and not drawn, was recorded before either.
+the host sent. Both corrections, four identity messages and the host's own next sequence in the `lowest_pending`
+field of its 0x7C acknowledgements, carry to retail unchanged.
 
 The paragraphs below record what was measured before that, on the emulator. Every layer a live
 emulated Scarlet host puts on the wire is now matched: the NetworkInfo byte for byte apart from the
