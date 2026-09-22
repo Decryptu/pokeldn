@@ -493,6 +493,16 @@ Everything above the channel is on port 0. A message is a four-byte header and a
 |---|---|---|---|
 | 9.15 | joiner | `80000100` + 238 bytes, zlib, two fragments | the first game message, START then END |
 | 9.31 | host | the same | |
+
+A station sends its own identity **four** times, the two fragments and then the same two again
+under the next two sequence ids, flags `0x1b`, `0x15`, `0x13`, `0x15`. A pair's host sends two
+because its peer is its own clone. A host here must send four, and only after the station has
+announced its key 0x80 on port 1. Sent before that announcement nothing on port 0 is dispatched at
+all; sent as two, the station acknowledges them, answers the next message with `ack_id` 5 and
+`lowest_pending` 5 where a pair's joiner answers 4 and 3, and the game never sees that message.
+With four, the identity is dispatched as kind 1, the offer that follows is parsed, stored and drawn
+on the station's screen, and the station offers, confirms and commits in answer
+(`bin/sv_host.py --send-on-open`, `--offer-after-open`).
 | 58.2 | host | `80000200` + 348 bytes | the offered Pokemon |
 | 67.6 | joiner | `80000200` + 348 bytes | |
 | | either | `8000040100` | the player backed out of the wait; the station leaves the network after it (retail) |
@@ -541,10 +551,15 @@ sent the 0x12 and the 0x51, Net traffic falls from 212 messages a seat to 2.
 
 ## Unresolved
 
-A retail Scarlet reaches its trade screen against a host built here, and its trade menu works,
-with the port-2 exchange built from the station ids and the host's key-0x80 open sent before the
-console's own. The host does not answer an offer yet. The paragraphs below record what was
-measured before that, on the emulator. Every layer a live
+An emulated Scarlet reaches its trade screen against a host built here, draws the host's offer,
+offers in answer, confirms and commits. It then does not open key 0x0180: the host's `80000500`
+is acknowledged by the station's transport, with the acknowledgement counter correct at 8, and is
+never dispatched to the game's receiver at `0x1e685a4`, where the offer and the confirmation on the
+same stream both were. Answering the commit 90 ms after the station's own, the way a pair's host
+does, rather than at once, does not change it. Every layer below is now known good, so what is
+missing is in the commit itself or in what a pair's host sends beside it.
+
+The paragraphs below record what was measured before that, on the emulator. Every layer a live
 emulated Scarlet host puts on the wire is now matched: the NetworkInfo byte for byte apart from the
 session id, Net 0x11 and 0x50, both station lists, the join response, RTT in both directions, the
 clone clock, the channel table, the two stream opens, the two announcements on 0x80 port 2, the

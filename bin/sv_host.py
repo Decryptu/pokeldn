@@ -298,6 +298,14 @@ def build_parser():
                          "answers the console's offer with its own, confirms, and follows the "
                          "console through the commit and the four exchange steps the way a pair's "
                          "host does (pokeldn.sv.trade)")
+    ap.add_argument("--send-on-open", action="append", default=[],
+                    help="DELAY:PROTO:PORT:HEX[:z][:start|:end], sent that many seconds after the "
+                         "console announces its own key 0x80 open on 0x7c port 1. A port-0 "
+                         "message sent before that open is acknowledged by the console and never "
+                         "reaches the game, and so is everything after it on that port; repeatable")
+    ap.add_argument("--offer-after-open", type=float, default=None,
+                    help="seconds after the console's key-0x80 open at which the host offers "
+                         "first; the same gate as --send-on-open")
     ap.add_argument("--offer-at", type=float, default=None,
                     help="seconds after the seat at which the host offers first, before the "
                          "console does, as a pair's host did; without it the host answers the "
@@ -800,6 +808,26 @@ def main():
                                             msg.port, rm["payload"]):
                                         pending_trade.append((time.time() + delay, src_ip,
                                                               out_port, payload))
+                                if (msg.protocol == PROTO_RELIABLE and msg.port == 1
+                                        and src_ip in station_ids
+                                        and rm["payload"] == trade.table_update(trade.KEY_TRADE, True)
+                                        and (src_ip, "open") not in sent_once):
+                                    # The console's own open of the trade key. Only after it does
+                                    # a port-0 message reach the game's receiver.
+                                    sent_once.add((src_ip, "open"))
+                                    print(f"[sv] {src_ip}: opened key 0x80, "
+                                          f"{len(args.send_on_open)} send(s) follow")
+                                    for index, spec in enumerate(args.send_on_open):
+                                        delay, rest = spec.split(":", 1)
+                                        pending_late[(src_ip, f"open{index}")] = (
+                                            time.time() + float(delay), rest)
+                                    if trade_offer is not None and args.offer_after_open is not None:
+                                        stages.setdefault(src_ip, trade.TradeStage(
+                                            trade_offer, confirm_delay=args.confirm_delay))
+                                        for delay, out_port, payload in stages[src_ip].offer_first():
+                                            pending_trade.append(
+                                                (time.time() + args.offer_after_open + delay,
+                                                 src_ip, out_port, payload))
                                 slot = (port2.parse_join(rm["payload"])
                                         if msg.protocol == PROTO_RELIABLE and msg.port == 2
                                         else None)

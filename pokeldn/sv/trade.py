@@ -84,7 +84,18 @@ class TradeStage:
 
     def on_message(self, port, payload):
         """-> [(delay, port, payload), ...] to send in answer to what the joiner sent."""
-        if port != 0 or self.done:
+        if self.done:
+            return []
+        if port == 1:
+            # A station sends on a key only once its peer has announced it, so the first
+            # exchange step waits for the joiner's own open of key 0x0180. A pair's host sends
+            # 80010103 twenty-five milliseconds after that echo, not before it.
+            if (self.committed and self.step_index is None
+                    and payload == table_update(KEY_EXCHANGE, True)):
+                self.step_index = 0
+                return [(0.025, 0, build(KEY_EXCHANGE, KIND_STEP_OPEN, STEPS[0]))]
+            return []
+        if port != 0:
             return []
         m = parse(payload)
         if m is None:
@@ -104,10 +115,10 @@ class TradeStage:
             return []
         if key == KEY_TRADE and kind == KIND_COMMIT and not self.committed:
             self.committed = True
-            self.step_index = 0
-            return [(0.0, 0, build(KEY_TRADE, KIND_COMMIT)),
-                    (0.1, 1, table_update(KEY_EXCHANGE, True)),
-                    (0.15, 0, build(KEY_EXCHANGE, KIND_STEP_OPEN, STEPS[0]))]
+            # A pair's host answers the commit 83 ms later, not in the same breath: sent at once
+            # the message is acknowledged by the station's transport and never dispatched.
+            return [(0.09, 0, build(KEY_TRADE, KIND_COMMIT)),
+                    (0.19, 1, table_update(KEY_EXCHANGE, True))]
         if (key == KEY_EXCHANGE and kind == KIND_STEP_OPEN and self.step_index is not None
                 and step == STEPS[self.step_index]):
             out = [(0.0, 0, build(KEY_EXCHANGE, KIND_STEP_CLOSE, step))]
