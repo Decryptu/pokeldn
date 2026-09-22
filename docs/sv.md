@@ -541,6 +541,144 @@ The `8001` messages run in pairs, a 01 and a 02 under the same fourth byte, whic
 Both instances ran from one save copied twice, and the game traded a Pokemon between two identical
 trainers without complaint.
 
+### The first game message, and what it carries
+
+The first message a station sends on 0x7C port 0 is `80 00 01 00` and 2557 bytes. It goes out as
+two reliable fragments, START then END, 238 compressed bytes between them for a pair's host and 195
+for a retail console. Each fragment is a zlib stream of its own, header `484b`, and the message is
+the two inflations concatenated: neither fragment alone is the record.
+
+The body is the game's tagged serialisation, the encoding `pokeldn.pla.channel_table` reads for the
+channel table. It is a tuple of two fields: a `0xbc` blob of 2550 bytes, and the byte `0x04`.
+
+    b9 02          a tuple of two fields
+    bc 81 f6 09    a blob, 0x9f6 = 2550 bytes
+    ...            2550 bytes
+    04
+
+The blob is 850 little-endian three-byte values. Most are 1; the others are bitmasks, among them
+`0x0fffff`, `0x0002ff`, `0x00003f` and 0. It is a station's own state rather than a table both
+carry: 38 of the 850 entries differ between a retail console's message and an emulated pair host's,
+and where the pair host carries `0x0fffff` at entry 36 the console carries `0x040000`. Seven
+entries are zero in both. What the index counts is unknown.
+
+`scratchpad/sv_identity_open.txt` replays a pair host's four fragments, which is what the retail
+trade ran with. `scratchpad/sv_identity_template.bin` is the first fragment's inflation alone, 1395
+bytes, and is half a record.
+
+### The record a trade message carries
+
+The 348-byte body of a `80 00 02 00` message is four bytes and a Pokemon. The four are the constant
+`bc 81 58 01`, the same on a retail console's offer and on an emulated pair host's. The 344 behind
+them are one Gen-9 party record, the structure PKHeX calls PK9, under the crypto Gen 8 already uses
+(`pokeldn/gen8.py`): four 0x50-byte blocks from 0x08 permuted by `(EC >> 13) & 31`, an LCG
+`seed = seed * 0x41C64E6D + 0x6073` over the 16-bit words, and a 16-bit checksum of the decrypted
+body up to 0x148. The party tail at 0x148 is outside the permutation and the checksum, and re-seeds
+the LCG from the same encryption constant.
+
+    0x000  u32  encryption constant, in the clear
+    0x004  u16  sanity, 0 on every record measured
+    0x006  u16  checksum, in the clear
+    0x008       four 0x50-byte blocks, encrypted and permuted        -> 0x148
+    0x148       level, a pad byte and the six stats, encrypted       -> 0x158
+
+The field map is PK9's [`PKHeX.Core/PKM/PK9.cs`], and `pokeldn/sv/pokemon.py` reads and writes it.
+
+| offset | field | | offset | field |
+|---|---|---|---|---|
+| 0x08 | species, the internal index | | 0x8A | current HP |
+| 0x0A | held item | | 0x8C | six 5-bit IVs, then the egg and nicknamed bits |
+| 0x0C | trainer id, secret id | | 0x90 | status condition |
+| 0x10 | experience | | 0x94 | tera type, original and override |
+| 0x14 | ability, then its number in bits 0-2 of 0x16 | | 0xA8 | handler name, 26 bytes |
+| 0x18 | markings | | 0xC2 | handler gender, language, current handler at 0xC4 |
+| 0x1C | personality value | | 0xC6 | handler id, friendship, memory |
+| 0x20 | nature, stat nature | | 0xCE | version, battle version |
+| 0x22 | fateful in bit 0, gender in bits 1-2 | | 0xD0 | form argument |
+| 0x24 | form | | 0xD4 | affixed ribbon, language at 0xD5 |
+| 0x26 | six EVs, hp atk def spe spa spd | | 0xF8 | original trainer name, 26 bytes |
+| 0x2C | six contest values | | 0x112 | trainer friendship and memory |
+| 0x32 | pokerus | | 0x119 | egg date, met date at 0x11C, obedience level at 0x11F |
+| 0x34 | the ribbon and mark flags | | 0x120 | egg location, met location |
+| 0x48 | height scalar, weight scalar, scale | | 0x124 | ball |
+| 0x4B | the DLC move-record flags | | 0x125 | met level in bits 0-6, trainer gender in bit 7 |
+| 0x58 | nickname, 26 bytes of UTF-16LE | | 0x126 | hyper training flags |
+| 0x72 | four moves, their PP at 0x7A, PP ups at 0x7E | | 0x127 | the HOME tracker |
+| 0x82 | four relearn moves | | 0x12F | the base-game move-record flags |
+
+The map leaves nothing unread. A record rebuilt from 344 zero bytes and the fields `read` reports
+of a console's own comes out that record byte for byte, checksum included
+(`tests/test_sv_pokemon.py`).
+
+The species field is the game's internal index, which parts from the National Dex at 917
+[`PKHeX.Core/PKM/Util/Conversion/SpeciesConverter.cs:92`]. Under that number the two agree.
+
+A retail Scarlet's own offer reads as species 50 at level 3, nickname `Taupiqueur`, trainer
+`Gurvan`, handler `Pauline`, Poke Ball, tera type 4, met on 2025-08-05 at location 64, language 3,
+version 50, moves 10 and 28, experience 27, which is level 3 on the Medium Fast curve, stats
+14/9/5/10/7/8 and a current HP equal to the first of them. The emulated pair's offer reads as
+species 906 at level 1, nickname `Sprigatito`, trainer `Mattia`, no handler, language 4. A wrong
+block order survives the checksum, so what pins the order is a record reading as a Pokemon.
+
+`bin/sv_host.py` prints what it offers and what the console offers, and `--offer-out FILE` writes
+the console's own message where a later read can take it. `--trade-offer` accepts a bare 344-byte
+record, plain or encrypted, as well as the 348-byte body and the 352-byte message.
+
+### A record composed here
+
+**A record built from 344 zero bytes is in a retail Scarlet save.** `pokemon.build` composed a
+shiny Imposter Ditto with no nickname, the host offered it, and the console keeps it. Every field
+the summary shows is the one composed, read off the screen: species 132 drawn as Métamorph, no
+nickname, original trainer POKELDN, id 993401, level 1, Transform as its only move, French as the
+record's language, the Normal Tera type, the ability Imposter, the Hardy nature, met at level 1 on
+2025-09-22 at location 64 drawn as Caverne de la Crique, no ribbons, male, and the shiny sparkle.
+The stats read 12 and 6 6 6 6 6, which the game computed; the record carried zero.
+
+The trainer id the summary shows is `(TID16 | SID16 << 16) % 1000000`: 12345 and 54321 draw as
+993401, and 8131 and 64817 draw as 855043. The characteristic line is drawn from the encryption
+constant and the individual values, so both are read.
+
+A retail Scarlet also keeps a record edited from one of its own. The host offered the pair host's Sprigatito
+with its nickname, its nicknamed flag, its personality value and its six individual values
+rewritten by `bin/sv_host.py --offer-set`, and the console drew it, offered in answer, confirmed,
+committed, ran the four exchange steps and kept it: a shiny called POKELDN with perfect individual
+values. The station's own messages are the same as against a replayed record, message for message,
+and it left with a Session leave request rather than a timeout.
+
+Nothing in the composed record is checked before the trade screen draws it. The offer's checksum
+covers the decrypted body and the host writes it, so a rewritten field costs nothing beyond
+re-sealing (`pokeldn/sv/pokemon.py`).
+
+The level is derived from the experience, not read from the level byte. A record built with the
+byte at 0x148 set to 100 and the experience at zero arrives on the console as a level 1 Pokemon
+with no experience. The same record with 1,000,000 experience arrives as level 100 with that
+experience, so composing a record at a chosen level means writing the experience its species'
+growth rate asks for, and the level follows.
+
+The six growth curves are in `PKHeX.Core/PKM/Util/Experience.cs`. Their level-100 requirements
+are 1,000,000, 600,000, 1,640,000, 1,059,860, 800,000 and 1,250,000. The game's own species table
+says which curve a species uses: `personal_sv`, one 0x50-byte entry per species and form, with the
+base stats at 0x00, the gender ratio at 0x0C, the growth curve at 0x0F and the three abilities at
+0x12, laid out by `PersonalInfo9SV.cs`. `scratchpad/sv_tables.py` reads it.
+
+The table and the console agree. Species 132 is curve 0, whose level 100 is 1,000,000, which is the
+experience the console drew as level 100; its abilities read 7, 7 and 150, and 150 is the one the
+summary showed as Imposter.
+
+The stats the game computes are the series' own arithmetic over the base stats in that table:
+
+    HP    = (2 * base + IV + EV/4) * level / 100 + level + 10
+    other = ((2 * base + IV + EV/4) * level / 100 + 5) * nature
+
+A Ditto with perfect individual values, no effort values and a neutral nature comes to 12 and
+6 6 6 6 6 at level 1 and 237 and 132 132 132 132 132 at level 100, and the console showed both for
+records whose own stat fields were zero.
+
+The receiving game recomputes the party stats. A record sent with a maximum HP of 99 and a current
+HP of 99 at level 1, against a species whose own value is 12, arrives on the console reading 12.
+Everything else the record carries is kept as sent: the nickname and its flag, the personality
+value and its shininess, the individual values, the trainer names, the level and the experience.
+
 ### What a joiner sends, in order
 
 Everything a pair's joiner puts on the wire before the game's first message, measured from its own
@@ -595,10 +733,10 @@ in the game's own trade flow, which reaches the step that opens the channel agai
 not against this one. The seat lasts 23 seconds against this host where it lasted 19 before the
 identity was accepted.
 
-What the two record kinds hold. The 238-byte zlib message under `80000100` and the 348 bytes under
-`80000200` are the identity and the offered Pokemon; neither field map is read. A Gen-9 box
-structure is 344 bytes, four short of that body. A retail console's own message under `80000200` is
-captured whole, from a Pokemon the player read off the screen, so the map has a labelled sample.
+What the two record kinds hold. The message under `80000100` is a tuple of an 850-entry mask array
+and a byte, read in "The first game message, and what it carries"; what the array indexes is
+unknown. The 348 bytes under `80000200` are four constant bytes and a Gen-9 party
+record, read field by field in "The record a trade message carries".
 
 What makes the host open the game. An emulated console answers every layer above, Net, the clock,
 the session, the streams, the identity in both directions and the channel table, and still does not

@@ -26,7 +26,7 @@ sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 from pokeldn import config
 from pokeldn import sv
 from pokeldn.ldn import pia6, pia_connect, reliable5
-from pokeldn.sv import port2, trade
+from pokeldn.sv import pokemon, port2, trade
 from pokeldn.pla import game_channel
 from pokeldn.ldn.ldn_mitm_host import IpHostTransport
 from pokeldn.ldn.transport import HostTransport, find_ap_phy
@@ -202,6 +202,30 @@ def parse_send_payload(hx):
     return bytes.fromhex(hx), flags | reliable5.FLAG_APPLICATION_DATA
 
 
+def apply_offer_fields(plain, settings):
+    """-> the record with each `FIELD=VALUE` written into it. `shiny` alone rolls the value.
+
+    A name field takes the text as it stands, a comma in the value makes a vector, and an integer
+    may be decimal or `0x`-prefixed. The field names are `pokeldn.sv.pokemon`'s.
+    """
+    for setting in settings:
+        if setting == "shiny":
+            fields = pokemon.read(plain)
+            plain = pokemon.write(plain, pid=pokemon.shiny_pid(fields["trainer_id"],
+                                                               fields["secret_id"]))
+            continue
+        if "=" not in setting:
+            raise ValueError(f"{setting!r} is not FIELD=VALUE")
+        key, value = setting.split("=", 1)
+        if key in pokemon.NAMES:
+            plain = pokemon.write(plain, **{key: value})
+        elif "," in value or key in pokemon.VECTORS or key in ("ivs", "stats"):
+            plain = pokemon.write(plain, **{key: tuple(int(v, 0) for v in value.split(","))})
+        else:
+            plain = pokemon.write(plain, **{key: int(value, 0)})
+    return plain
+
+
 def build_parser():
     ap = argparse.ArgumentParser(description=__doc__,
                                  formatter_class=argparse.RawDescriptionHelpFormatter)
@@ -298,6 +322,19 @@ def build_parser():
                          "answers the console's offer with its own, confirms, and follows the "
                          "console through the commit and the four exchange steps the way a pair's "
                          "host does (pokeldn.sv.trade)")
+    ap.add_argument("--offer-set", action="append", metavar="FIELD=VALUE", default=[],
+                    help="a field written into the offered record before it is sealed, by its "
+                         "pokeldn.sv.pokemon name: nickname=SHINY, species=906, level=50, "
+                         "ivs=31,31,31,31,31,31, pid=0x1234, trainer_id=12345, ball=4, "
+                         "moves=33,0,0,0. Repeatable, and `shiny` alone rolls a personality value "
+                         "shiny against the record's own ids")
+    ap.add_argument("--offer-dump", default=None,
+                    help="write the offered record's 348-byte body to this file as hex and exit, "
+                         "which needs no radio")
+    ap.add_argument("--offer-out", default=None,
+                    help="a file to write the console's own offer to, the 348-byte body of its "
+                         "80 00 02 00 message, as hex text. What it holds is read by "
+                         "pokeldn.sv.pokemon")
     ap.add_argument("--send-on-open", action="append", default=[],
                     help="DELAY:PROTO:PORT:HEX[:z][:start|:end], sent that many seconds after the "
                          "console announces its own key 0x80 open on 0x7c port 1. A port-0 "
@@ -327,7 +364,7 @@ def main():
         ap.error("--host-player-id must be hex")
     if len(host_player_id) != 16:
         ap.error("--host-player-id must be 16 bytes")
-    if not args.ip_host and os.geteuid() != 0:
+    if not args.ip_host and not args.offer_dump and os.geteuid() != 0:
         ap.error("hosting over the radio needs root; re-run under sudo, or pass --ip-host")
     comm_id = args.comm_id or (sv.COMM_ID_VIOLET if args.violet else sv.COMM_ID_SCARLET)
 
@@ -344,6 +381,7 @@ def main():
     pending_late = {}
     pending_trade = []          # (due, ip, port, payload) the trade stage asked to send
     stages = {}                 # ip -> trade.TradeStage
+    offers_seen = set()         # the stations whose own offer has been read out
     trade_offer = None
     if args.trade_offer:
         raw = open(args.trade_offer, "rb").read()
@@ -353,8 +391,35 @@ def main():
             pass
         if len(raw) == trade.OFFER_SIZE + 4:
             raw = raw[4:]
+        if len(raw) in (pokemon.SIZE_STORED, pokemon.SIZE_PARTY):
+            raw = pokemon.to_wire(pokemon.load(raw))     # a bare record, plain or encrypted
         trade_offer = raw
+        if args.offer_set:
+            trade_offer = pokemon.to_wire(
+                apply_offer_fields(pokemon.from_wire(trade_offer), args.offer_set))
         trade.TradeStage(trade_offer)           # rejects a wrong size before the radio is up
+        try:
+            print(f"[sv] offering {pokemon.describe(pokemon.from_wire(trade_offer))}")
+        except ValueError as exc:
+            print(f"[sv] offering {len(trade_offer)} bytes, which do not read as a record: {exc}")
+        if args.offer_dump:
+            with open(args.offer_dump, "w") as fh:
+                fh.write(trade_offer.hex() + "\n")
+            print(f"[sv] offer written to {args.offer_dump}")
+            return 0
+    elif args.offer_set or args.offer_dump:
+        ap.error("--offer-set and --offer-dump need --trade-offer")
+    def report_offer(ip, body):
+        """Print what the console offered, and write the body where `--offer-out` says."""
+        try:
+            print(f"[sv] {ip}: offers {pokemon.describe(pokemon.from_wire(body))}")
+        except ValueError as exc:
+            print(f"[sv] {ip}: offered {len(body)} bytes that do not read as a record: {exc}")
+        if args.offer_out:
+            with open(args.offer_out, "w") as fh:
+                fh.write(trade.build(trade.KEY_TRADE, trade.KIND_OFFER, 0, body).hex() + "\n")
+            print(f"[sv] {ip}: offer written to {args.offer_out}")
+
     game_data = binascii.unhexlify(args.game_data) if args.game_data else None
     app_data = sv.build_advertise_data(game_data=game_data)
     print(f"[sv] advertising comm id {comm_id:#018x}, {len(app_data)} bytes of application data, "
@@ -815,6 +880,10 @@ def main():
                                             msg.port, rm["payload"]):
                                         pending_trade.append((time.time() + delay, src_ip,
                                                               out_port, payload))
+                                    offer = stages[src_ip].joiner_offer
+                                    if offer is not None and src_ip not in offers_seen:
+                                        offers_seen.add(src_ip)
+                                        report_offer(src_ip, offer)
                                 if (msg.protocol == PROTO_RELIABLE and msg.port == 1
                                         and src_ip in station_ids
                                         and rm["payload"] == trade.table_update(trade.KEY_TRADE, True)
