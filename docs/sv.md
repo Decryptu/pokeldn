@@ -597,7 +597,8 @@ identity was accepted.
 
 What the two record kinds hold. The 238-byte zlib message under `80000100` and the 348 bytes under
 `80000200` are the identity and the offered Pokemon; neither field map is read. A Gen-9 box
-structure is 344 bytes, four short of that body.
+structure is 344 bytes, four short of that body. A retail console's own message under `80000200` is
+captured whole, from a Pokemon the player read off the screen, so the map has a labelled sample.
 
 What makes the host open the game. An emulated console answers every layer above, Net, the clock,
 the session, the streams, the identity in both directions and the channel table, and still does not
