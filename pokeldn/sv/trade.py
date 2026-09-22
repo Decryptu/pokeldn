@@ -12,10 +12,11 @@ on; each is announced open on port 1 before its first message and closed after i
     80 01 01 SS                the host starts step SS, the joiner echoes it
     80 01 02 SS                the host closes step SS; steps 03, 06, 0B, 0E
 
-`TradeStage` is the host's side as a pure state machine: `on_message(port, payload)` returns what
-to send, each entry `(delay, port, payload)`, and `tests/test_sv.py` runs it over the emulated
-pair's own message list. The delays are the pair host's: its confirmation came from a player and
-is sent here a second after the joiner's offer.
+`TradeStage` is the host's side as a pure state machine and `JoinerTradeStage` the joiner's:
+`on_message(port, payload)` returns what to send, each entry `(delay, port, payload)`, and
+`tests/test_sv.py` runs each of them over the emulated pair's own message list, in its own
+direction. The delays are the pair's: a confirmation came from a player and is sent here a second
+after the offer it answers.
 """
 
 import struct
@@ -130,3 +131,135 @@ class TradeStage:
                 out.append((0.2, 1, table_update(KEY_EXCHANGE, False)))
             return out
         return []
+
+
+class JoinerTradeStage:
+    """The joiner's side of one trade, `TradeStage` mirrored.
+
+    A joiner answers rather than leads: it opens key 0x0080 on port 1 once the host has announced
+    it, offers when the host's offer arrives, confirms and then commits on its own, opens key
+    0x0180 after the host opens it, echoes each step the host starts, and mirrors the close. The
+    pair's joiner committed first and its host answered in kind, so the commit is the joiner's to
+    send; `commit_delay` is how long after its own confirmation it goes.
+
+    The delays are the pair joiner's: the key-0x80 open after the last identity fragment, the
+    confirmation a second after the host's and the commit 1.5 s after that.
+    """
+
+    def __init__(self, offer, confirm_delay=1.0, commit_delay=1.5, open_delay=0.35):
+        offer = bytes(offer)
+        if len(offer) != OFFER_SIZE:
+            raise ValueError(f"an offer is {OFFER_SIZE} bytes, not {len(offer)}")
+        self.offer = offer
+        self.confirm_delay = confirm_delay
+        self.commit_delay = commit_delay
+        self.open_delay = open_delay
+        self.host_offer = None
+        self.opened = False
+        self.offered = False
+        self.confirmed = False
+        self.committed = False
+        self.step_index = None
+        self.done = False
+
+    def offer_first(self):
+        """-> the joiner's offer, for a run that puts its Pokemon up before the host does."""
+        if self.offered:
+            return []
+        self.offered = True
+        return [(0.0, 0, build(KEY_TRADE, KIND_OFFER, 0, self.offer))]
+
+    def on_message(self, port, payload):
+        """-> [(delay, port, payload), ...] to send in answer to what the host sent."""
+        if self.done:
+            return []
+        if port == 1:
+            if payload == table_update(KEY_TRADE, True) and not self.opened:
+                # The pair's joiner opened the key 206 ms after the host did, after all four
+                # of its identity fragments on port 0 rather than between them.
+                self.opened = True
+                return [(self.open_delay, 1, table_update(KEY_TRADE, True))]
+            if (self.committed and self.step_index is None
+                    and payload == table_update(KEY_EXCHANGE, True)):
+                self.step_index = 0
+                return [(0.0, 1, table_update(KEY_EXCHANGE, True))]
+            if (self.step_index is not None and self.step_index >= len(STEPS)
+                    and payload == table_update(KEY_EXCHANGE, False)):
+                self.done = True
+                return [(0.0, 1, table_update(KEY_EXCHANGE, False))]
+            return []
+        if port != 0:
+            return []
+        m = parse(payload)
+        if m is None:
+            return []
+        key, kind, step, body = m
+        if key == KEY_TRADE and kind == KIND_OFFER and len(body) == OFFER_SIZE:
+            self.host_offer = body
+            if self.offered:
+                return []
+            self.offered = True
+            return [(0.0, 0, build(KEY_TRADE, KIND_OFFER, 0, self.offer))]
+        if key == KEY_TRADE and kind == KIND_CONFIRM and not self.confirmed:
+            self.confirmed = True
+            self.committed = True
+            return [(self.confirm_delay, 0, build(KEY_TRADE, KIND_CONFIRM)),
+                    (self.commit_delay, 0, build(KEY_TRADE, KIND_COMMIT))]
+        if key == KEY_TRADE and kind == KIND_CANCEL:
+            self.done = True
+            return []
+        if (key == KEY_EXCHANGE and kind == KIND_STEP_OPEN and self.step_index is not None
+                and self.step_index < len(STEPS) and step == STEPS[self.step_index]):
+            self.step_index += 1
+            return [(0.0, 0, build(KEY_EXCHANGE, KIND_STEP_OPEN, step))]
+        return []
+
+
+def apply_fields(plain, settings):
+    """-> the record with each `FIELD=VALUE` written into it. `shiny` alone rolls the value.
+
+    A name field takes the text as it stands, a comma in the value makes a vector, and an integer
+    may be decimal or `0x`-prefixed. The field names are `pokeldn.sv.pokemon`'s.
+    """
+    from pokeldn.sv import pokemon
+
+    for setting in settings:
+        if setting == "shiny":
+            fields = pokemon.read(plain)
+            plain = pokemon.write(plain, pid=pokemon.shiny_pid(fields["trainer_id"],
+                                                               fields["secret_id"]))
+            continue
+        if "=" not in setting:
+            raise ValueError(f"{setting!r} is not FIELD=VALUE")
+        key, value = setting.split("=", 1)
+        if key in pokemon.NAMES:
+            plain = pokemon.write(plain, **{key: value})
+        elif "," in value or key in pokemon.VECTORS or key in ("ivs", "stats"):
+            plain = pokemon.write(plain, **{key: tuple(int(v, 0) for v in value.split(","))})
+        else:
+            plain = pokemon.write(plain, **{key: int(value, 0)})
+    return plain
+
+
+def load_offer(raw, settings=()):
+    """-> the 348-byte body to offer, from a file's bytes in any of the forms one is kept in.
+
+    Hex text, a 352-byte game message with its header, and a bare stored or party record, plain or
+    encrypted, all read; `settings` are `apply_fields`'s.
+    """
+    from pokeldn.sv import pokemon
+
+    raw = bytes(raw)
+    try:
+        raw = bytes.fromhex(raw.decode("ascii").strip())
+    except (UnicodeDecodeError, ValueError):
+        pass
+    if len(raw) == OFFER_SIZE + 4:
+        raw = raw[4:]
+    if len(raw) in (pokemon.SIZE_STORED, pokemon.SIZE_PARTY):
+        raw = pokemon.to_wire(pokemon.load(raw))
+    if settings:
+        raw = pokemon.to_wire(apply_fields(pokemon.from_wire(raw), settings))
+    if len(raw) != OFFER_SIZE:
+        raise ValueError(f"an offer is {OFFER_SIZE} bytes, not {len(raw)}")
+    return raw

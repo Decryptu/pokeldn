@@ -37,7 +37,7 @@ import ldn
 
 from pokeldn import sv
 from pokeldn.ldn import ldn_mitm, pia6, pia_connect, reliable5
-from pokeldn.sv import streams
+from pokeldn.sv import pokemon, port2, streams, trade
 from pokeldn.pla import game_channel
 from pokeldn.ldn.transport import find_ap_phy
 from pokeldn.host_support import resolve_keys
@@ -280,6 +280,42 @@ def build_parser():
                     help="seconds after the seat before the first identity record goes out")
     ap.add_argument("--no-channel-ack", action="store_true",
                     help="do not acknowledge the host's messages on the game's reliable channel 0x7c")
+    ap.add_argument("--port2-now", action="store_true",
+                    help="send the game's type-3 join on 0x7c port 2 with the channel table, "
+                         "rather than in answer to the console's type-7 announcement on 0x80 "
+                         "port 2. A pair's joiner answers the announcement (docs/sv.md, Port 2)")
+    ap.add_argument("--send-on-open", action="append", default=[],
+                    help="DELAY:PROTO:PORT:HEX[:z][:start|:end], sent that many seconds after the "
+                         "host announces key 0x80 open on 0x7c port 1. A station's identity is "
+                         "four messages on 0x7c port 0, the two fragments twice, and nothing sent "
+                         "on that port before the announcement reaches the game; repeatable")
+    ap.add_argument("--trade-offer", default=None,
+                    help="a file holding the 348-byte record this joiner offers (raw, or hex "
+                         "text; a 352-byte game message is stripped of its header). With it the "
+                         "joiner answers the host's offer with its own, confirms, commits, and "
+                         "echoes the four exchange steps the way a pair's joiner does "
+                         "(pokeldn.sv.trade)")
+    ap.add_argument("--offer-set", action="append", metavar="FIELD=VALUE", default=[],
+                    help="a field written into the offered record before it is sealed, by its "
+                         "pokeldn.sv.pokemon name: nickname=SHINY, species=906, ivs=31,31,31,31,"
+                         "31,31, trainer_id=12345, ball=4. Repeatable, and `shiny` alone rolls a "
+                         "personality value shiny against the record's own ids")
+    ap.add_argument("--offer-dump", default=None,
+                    help="write the offered record's 348-byte body to this file as hex and exit, "
+                         "which needs no radio")
+    ap.add_argument("--offer-out", default=None,
+                    help="a file to write the host's own offer to, the 348-byte body of its "
+                         "80 00 02 00 message, as hex text")
+    ap.add_argument("--offer-after-open", type=float, default=None,
+                    help="seconds after the host's key-0x80 open at which the joiner offers "
+                         "first, before the host does; without it the joiner answers the host's "
+                         "offer")
+    ap.add_argument("--confirm-delay", type=float, default=1.0,
+                    help="seconds after the host's confirmation before the joiner's own")
+    ap.add_argument("--commit-delay", type=float, default=1.5,
+                    help="seconds after the host's confirmation before the joiner commits; the "
+                         "pair's joiner committed 1.5 s after its own confirmation and its host "
+                         "answered in kind")
     ap.add_argument("--answer-migration", action="store_true",
                     help="answer the host's type-7 leave-with-host-migration with a type-8 ack, "
                          "telling it we accept the host role it is handing over")
@@ -304,6 +340,9 @@ def build_parser():
     ap.add_argument("--net-ack", action="store_true",
                     help="answer the host's Net 0x11 with the 0x12 ack. A retail joiner does not, "
                          "and the ack makes the console ask for host migration instead (sv08)")
+    ap.add_argument("--connect-timeout", type=float, default=8.0,
+                    help="seconds to allow the association itself; a console whose host phase "
+                         "ends mid-connect leaves ldn.connect blocked with no timeout of its own")
     ap.add_argument("--open-delay", type=float, default=0.75,
                     help="seconds after the join response (after the seat without --session-join) "
                          "before the eleven acks and the two stream opens go out; a retail joiner "
@@ -338,6 +377,14 @@ def build_parser():
     return ap
 
 
+def describe_offer(body):
+    """-> what a 348-byte offer holds, or why it does not read as a record."""
+    try:
+        return pokemon.describe(pokemon.from_wire(body))
+    except ValueError as exc:
+        return f"{len(body)} bytes that do not read as a record: {exc}"
+
+
 def main(argv=None):
     ap = build_parser()
     args = ap.parse_args(argv)
@@ -347,6 +394,16 @@ def main(argv=None):
         sys.stdout.reconfigure(line_buffering=True)
     except (AttributeError, ValueError):
         pass
+    if args.trade_offer and args.offer_dump:
+        offer = trade.load_offer(open(args.trade_offer, "rb").read(), args.offer_set)
+        with open(args.offer_dump, "w") as fh:
+            fh.write(offer.hex() + "\n")
+        print(f"[sv] offering {describe_offer(offer)}")
+        print(f"[sv] offer written to {args.offer_dump}")
+        return 0
+    if (args.offer_set or args.offer_dump or args.offer_after_open is not None) \
+            and not args.trade_offer:
+        ap.error("--offer-set, --offer-dump and --offer-after-open need --trade-offer")
     if args.ip_join:
         return main_ip(args)
     if os.geteuid() != 0:
@@ -415,32 +472,43 @@ def main(argv=None):
             param.phyname, param.ifname = phy, args.ifname
 
             async def seat():
-                async with ldn.connect(param) as network:
-                    info = network.info()
-                    parts = list(getattr(info, "participants", []) or [])
-                    print(f"[sv] *** SEATED *** ssid={info.ssid.hex()}")
-                    for i, p in enumerate(parts[:2]):
-                        name = bytes(getattr(p, "name", b"") or b"").split(b"\0")[0]
-                        print(f"[sv]   participant {i}: ip={getattr(p, 'ip_address', '?')} "
-                              f"mac={bytes(getattr(p, 'mac_address', b'')).hex()} "
-                              f"name={name!r} connected={getattr(p, 'connected', '?')}")
-                    host = parts[0] if parts else None
-                    host_ip = str(getattr(host, "ip_address", "") or "169.254.1.1")
-                    host_mac = bytes(getattr(host, "mac_address", b"") or b"")
-                    ours = parts[1] if len(parts) > 1 else None
-                    our_ip = str(getattr(ours, "ip_address", "")
-                                 or host_ip.rsplit(".", 1)[0] + ".2")
-                    our_mac = bytes(getattr(ours, "mac_address", b"") or b"")
-                    record(rec="seat", ssid=info.ssid.hex(), host_ip=host_ip,
-                           host_mac=host_mac.hex(), our_ip=our_ip, our_mac=our_mac.hex(),
-                           t=time.time())
-                    await run_session(args, keys, host_ip, host_mac, our_ip, our_mac, record)
+                # ldn.connect can block for minutes when the console's host phase ends under it
+                # (sv89: one attempt held the loop for six). The cancel scope bounds the
+                # association alone; once the session is running the scope is lifted.
+                with trio.move_on_after(args.connect_timeout) as scope:
+                    async with ldn.connect(param) as network:
+                        scope.deadline = float("inf")
+                        info = network.info()
+                        parts = list(getattr(info, "participants", []) or [])
+                        print(f"[sv] *** SEATED *** ssid={info.ssid.hex()}")
+                        for i, p in enumerate(parts[:2]):
+                            name = bytes(getattr(p, "name", b"") or b"").split(b"\0")[0]
+                            print(f"[sv]   participant {i}: ip={getattr(p, 'ip_address', '?')} "
+                                  f"mac={bytes(getattr(p, 'mac_address', b'')).hex()} "
+                                  f"name={name!r} connected={getattr(p, 'connected', '?')}")
+                        host = parts[0] if parts else None
+                        host_ip = str(getattr(host, "ip_address", "") or "169.254.1.1")
+                        host_mac = bytes(getattr(host, "mac_address", b"") or b"")
+                        ours = parts[1] if len(parts) > 1 else None
+                        our_ip = str(getattr(ours, "ip_address", "")
+                                     or host_ip.rsplit(".", 1)[0] + ".2")
+                        our_mac = bytes(getattr(ours, "mac_address", b"") or b"")
+                        record(rec="seat", ssid=info.ssid.hex(), host_ip=host_ip,
+                               host_mac=host_mac.hex(), our_ip=our_ip, our_mac=our_mac.hex(),
+                               t=time.time())
+                        await run_session(args, keys, host_ip, host_mac, our_ip, our_mac, record)
 
             try:
                 trio.run(seat)
                 seats += 1
             except Exception as exc:
-                print(f"[sv] the seat ended: {type(exc).__name__}: {exc}")
+                # Trio wraps what the association raised in a nursery group, sometimes twice over.
+                def leaves(e):
+                    inner = getattr(e, "exceptions", ())
+                    return [x for i in inner for x in leaves(i)] if inner else [e]
+                detail = "; ".join(f"{type(e).__name__}: {e}" for e in leaves(exc))
+                print(f"[sv] the seat ended: {detail}")
+                record(rec="seat_failed", detail=detail, t=time.time())
     except KeyboardInterrupt:
         print("\n[sv] interrupted")
     finally:
@@ -535,8 +603,17 @@ async def run_session(args, keys, host_ip, host_mac, our_ip, our_mac, record):
     if args.send_record:
         identity = streams.compress(open(args.send_record, "rb").read())
     record_seq = 1
-    # Our own 0x7c state: the next sequence on port 1, and whether the port-2 open has gone.
-    channel = {"seq": 1, "opened": False, "table": None}
+    # Our own 0x7c state: the host's table, whether ours has gone, and its key-0x80 open.
+    channel = {"opened": False, "table": None, "key80": False, "port2": False}
+    stage = None
+    if args.trade_offer:
+        stage = trade.JoinerTradeStage(
+            trade.load_offer(open(args.trade_offer, "rb").read(), args.offer_set),
+            confirm_delay=args.confirm_delay, commit_delay=args.commit_delay)
+        print(f"[sv] offering {describe_offer(stage.offer)}")
+    pending_trade = []          # (due, port, payload) the trade stage asked to send
+    pending_open = []           # (due, spec) hung on the host's own key-0x80 open
+    offer_seen = False
     record_set = []
     if args.record_set:
         for name in sorted(os.listdir(args.record_set)):
@@ -600,6 +677,29 @@ async def run_session(args, keys, host_ip, host_mac, our_ip, our_mac, record):
         to = to or dest_ip
         sock.sendto(pkt, (to, sv.PIA_PORT))
         record(rec="out", dst=to, kind=what, hex=pkt.hex(), t=time.time(), **extra)
+
+    def next_seq(protocol, port):
+        """-> our next sequence on one stream, stepping it. Every send goes through here, so the
+        bulk acks state the same number as their window's lowest pending: a sender's own lowest
+        pending is what drives its peer's receive base (docs/pia.md)."""
+        key = (protocol, port)
+        seq = our_seq.get(key, 1)
+        our_seq[key] = seq + 1
+        return seq
+
+    def send_channel(port, payload, what, flags=None):
+        """A 0x7c data message under our own next sequence on that port. 0x7c carries no
+        destination bitmap and states its own sequence as the lowest pending."""
+        seq = next_seq(PROTO_RELIABLE, port)
+        if flags is None:
+            body = game_channel.build_open(payload, seq, initialized=(seq == 1))
+        else:
+            body = game_channel.build_payload_message(
+                payload, seq,
+                flags=flags | (reliable5.FLAG_IS_INITIALIZED if seq == 1 else 0))
+        send(out(body, host_var or 0, protocol=PROTO_RELIABLE, port=port),
+             what, port=port, to=host_ip, seq=seq)
+        return seq
 
     def send_join():
         # The host's constant id is the one its own Net 0x11 states, not the LDN MAC from the
@@ -675,6 +775,7 @@ async def run_session(args, keys, host_ip, host_mac, our_ip, our_mac, record):
             send(out(body, host_var or 0, protocol=streams.PROTOCOL_STREAM,
                      port=streams.JOINER_INDEX, flags=streams.MESSAGE_FLAGS_DATA),
                  "identity record", port=streams.JOINER_INDEX)
+            our_seq[(streams.PROTOCOL_STREAM, streams.JOINER_INDEX)] = record_seq + 1
         # A retail joiner sends its own RTT request about twice a second from the moment it is
         # seated, and it is the first thing it puts on the wire.
         if args.rtt_period and opened and now - last_rtt >= args.rtt_period:
@@ -685,15 +786,13 @@ async def run_session(args, keys, host_ip, host_mac, our_ip, our_mac, record):
         # Our own channel table, once the opening has gone and the host's table is in hand.
         if args.game_channel and opened and channel["table"] and not channel["opened"]:
             channel["opened"] = True
-            send(out(game_channel.build_open(channel["table"], channel["seq"]),
-                     host_var or 0, protocol=PROTO_RELIABLE, port=1),
-                 "channel table", port=1, to=host_ip)
-            channel["seq"] += 1
-            send(out(game_channel.build_open(CHANNEL_PORT2_OPEN, 1),
-                     host_var or 0, protocol=PROTO_RELIABLE, port=2),
-                 "channel port 2 open", port=2, to=host_ip)
+            send_channel(1, channel["table"], "channel table")
             print(f"[sv] -> {host_ip}: our own channel table on 0x7c port 1 "
-                  f"({len(channel['table'])} bytes) and the port-2 open")
+                  f"({len(channel['table'])} bytes)")
+            if args.port2_now:
+                channel["port2"] = True
+                send_channel(2, CHANNEL_PORT2_OPEN, "channel port 2 open")
+                print(f"[sv] -> {host_ip}: the port-2 join, without waiting for an announcement")
         # Our own identity, as a whole set of records under their original sequence ids.
         if record_set and joined and not set_sent and now - joined_at >= args.record_delay:
             set_sent = True
@@ -703,7 +802,35 @@ async def run_session(args, keys, host_ip, host_mac, our_ip, our_mac, record):
                 send(out(body, host_var or 0, protocol=streams.PROTOCOL_STREAM,
                          port=streams.JOINER_INDEX, flags=streams.MESSAGE_FLAGS_DATA),
                      "record set", port=streams.JOINER_INDEX, seq=seq)
-            print(f"[sv] -> {host_ip}: our identity, {len(record_set)} records on 0x81 port 1")
+            # Our next bulk ack on our own stream declares one past the highest id we sent, which
+            # is what closes a set numbered with the reference's gap at 5 and 6: left at 1 the
+            # host acknowledges id 5 and waits for the rest of the set for the whole session
+            # (docs/sv.md, The sender's own lowest pending).
+            our_seq[(streams.PROTOCOL_STREAM, streams.JOINER_INDEX)] = max(
+                seq for seq, _ in record_set) + 1
+            print(f"[sv] -> {host_ip}: our identity, {len(record_set)} records on 0x81 port 1, "
+                  f"our next sequence there {our_seq[(streams.PROTOCOL_STREAM, streams.JOINER_INDEX)]}")
+        for due, spec in [e for e in pending_open if e[0] <= now]:
+            proto, port, hx = spec.split(":", 2)
+            proto, port = int(proto, 0), int(port)
+            data, flags = streams.parse_send_spec(hx)
+            if proto == PROTO_RELIABLE:
+                send_channel(port, data, "send-on-open", flags=flags)
+            else:
+                seq = next_seq(proto, port)
+                body = streams.build_record_message(data, seq, streams.JOINER_INDEX,
+                                                    initialized=(seq == 1))
+                send(out(body, host_var or 0, protocol=proto, port=port,
+                         flags=streams.MESSAGE_FLAGS_DATA), "send-on-open",
+                     protocol=proto, port=port, seq=seq)
+            print(f"[sv] -> {host_ip}: send-on-open {len(data)}B on "
+                  f"0x{proto:02x}:{port} {data.hex()[:48]}")
+        pending_open = [e for e in pending_open if e[0] > now]
+        for due, out_port, payload in [e for e in pending_trade if e[0] <= now]:
+            seq = send_channel(out_port, payload, "trade")
+            print(f"[sv] -> {host_ip}: trade {payload[:4].hex()} on 0x7c port {out_port}, "
+                  f"our sequence {seq}")
+        pending_trade = [e for e in pending_trade if e[0] > now]
         if not args.no_ack:
             for key, at in list(last_ack.items()):
                 if now - at >= args.ack_period:
@@ -823,6 +950,23 @@ async def run_session(args, keys, host_ip, host_mac, our_ip, our_mac, record):
                                stations=[{k: (v.hex() if isinstance(v, bytes) else v)
                                           for k, v in st.items() if k != "players"}
                                          for st in upd["stations"]])
+                        # A retail Scarlet seats a joiner with this update alone and sends no
+                        # join response at all: the update names our variable id and the player id
+                        # our request stated. That is the seat, and a joiner that waits for a type
+                        # 1 sends nothing for the rest of the session (sv83).
+                        if not joined and any(st["variable_id"] == ours["var"]
+                                              for st in upd["stations"]):
+                            joined = True
+                            joined_at = now
+                            join_sequence = upd["sequence_id"]
+                            print(f"[sv] the station update SEATS US at variable id "
+                                  f"{ours['var']:#06x}; no join response was sent")
+                            record(rec="seated_by_update", t=time.time(),
+                                   sequence=upd["sequence_id"], var=ours["var"])
+                            if not args.no_clock:
+                                send(out(CLOCK_REQUEST, host_var or 0, protocol=PROTO_CLOCK),
+                                     "clock request")
+                                print(f"[sv] -> {host_ip}: the clone clock request")
                         # A joiner answers with the type 6 once it holds the join response and an
                         # update whose sequence reaches the one the response named (docs/pla.md,
                         # The type-5 station-list update). The host sends the update first (sv18).
@@ -870,20 +1014,50 @@ async def run_session(args, keys, host_ip, host_mac, our_ip, our_mac, record):
                         # before it (docs/sv.md).
                         channel["table"] = cm["payload"]
                     elif args.game_channel and msg.port == 1 and channel["opened"] \
+                            and stage is None \
                             and not (cm["flags"] & reliable5.FLAG_IS_INITIALIZED):
-                        # Every later table update is mirrored back under our own sequence.
-                        send(out(game_channel.build_open(cm["payload"], channel["seq"],
-                                                         initialized=False),
-                                 host_var or 0, protocol=PROTO_RELIABLE, port=1),
-                             "channel table update", port=1, to=host_ip)
+                        # Every later table update is mirrored back under our own sequence. With a
+                        # trade stage the mirror is its own: it answers each open and close in the
+                        # order a pair's joiner does, and nothing else on port 1.
+                        seq = send_channel(1, cm["payload"], "channel table update")
                         print(f"[sv] -> {host_ip}: mirrored the channel table update "
-                              f"({len(cm['payload'])} bytes), our sequence {channel['seq']}")
-                        channel["seq"] += 1
+                              f"({len(cm['payload'])} bytes), our sequence {seq}")
                     if not args.no_channel_ack:
-                        ack = game_channel.build_ack(cm["sequence_id"] + 1,
-                                                     lowest_pending=cm["sequence_id"])
+                        # The lowest pending is OUR own next sequence on this port, not one drawn
+                        # from the host's numbering: the field is the peer's receive base, and a
+                        # station declaring a number above its own next sequence walks that base
+                        # past its own later messages, which then arrive below it and are
+                        # acknowledged and discarded at 0x6f03cc (docs/pia.md).
+                        ack = game_channel.build_ack(
+                            cm["sequence_id"] + 1,
+                            lowest_pending=our_seq.get((PROTO_RELIABLE, msg.port), 1))
                         send(out(ack, host_var or 0, protocol=PROTO_RELIABLE, port=msg.port),
                              "channel ack", port=msg.port, to=host_ip)
+                    if (msg.port == 1 and not channel["key80"]
+                            and cm["payload"] == trade.table_update(trade.KEY_TRADE, True)):
+                        # The host's own open of the trade key. Nothing sent on port 0 before it
+                        # reaches the game, and neither does anything sent after it on that port.
+                        channel["key80"] = True
+                        print(f"[sv] the host opened key 0x80, "
+                              f"{len(args.send_on_open)} send(s) follow")
+                        for spec in args.send_on_open:
+                            delay, rest = spec.split(":", 1)
+                            pending_open.append((time.time() + float(delay), rest))
+                        if stage is not None and args.offer_after_open is not None:
+                            for delay, out_port, payload in stage.offer_first():
+                                pending_trade.append((time.time() + args.offer_after_open + delay,
+                                                      out_port, payload))
+                    if stage is not None:
+                        for delay, out_port, payload in stage.on_message(msg.port, cm["payload"]):
+                            pending_trade.append((time.time() + delay, out_port, payload))
+                        if stage.host_offer is not None and not offer_seen:
+                            offer_seen = True
+                            print(f"[sv] {host_ip}: offers {describe_offer(stage.host_offer)}")
+                            if args.offer_out:
+                                with open(args.offer_out, "w") as fh:
+                                    fh.write(trade.build(trade.KEY_TRADE, trade.KIND_OFFER, 0,
+                                                         stage.host_offer).hex() + "\n")
+                                print(f"[sv] the host's offer written to {args.offer_out}")
                 continue
             if msg.protocol in RELIABLE_PROTOCOLS and len(msg.payload) >= reliable5.HEADER_SIZE:
                 try:
@@ -911,6 +1085,18 @@ async def run_session(args, keys, host_ip, host_mac, our_ip, our_mac, record):
                     print(f"[sv] <- RECORD 0x{msg.protocol:02x}:{msg.port} seq {rm['sequence_id']} "
                           f"{reliable5.flag_names(rm['flags'])} {len(rm['payload'])}B{note}")
                     print(f"       {body.hex()[:400]}")
+                    if (args.game_channel and msg.protocol == PROTO_BROADCAST_RELIABLE
+                            and msg.port == 2 and body[:1] == bytes([port2.TYPE_ANNOUNCE])
+                            and not channel["port2"]):
+                        # The console's own trade announcement. A pair's joiner answers it with the
+                        # type-3 join 0.09 s later, and the host then sends the type 9 carrying the
+                        # joiner's station id (docs/sv.md, Port 2).
+                        channel["port2"] = True
+                        station = body[-9:-1].hex() if len(body) > 9 else "?"
+                        print(f"[sv] the console ANNOUNCED on 0x80 port 2, station {station}")
+                        record(rec="announce", station=station, plain=body.hex(), t=time.time())
+                        send_channel(2, CHANNEL_PORT2_OPEN, "channel port 2 join")
+                        print(f"[sv] -> {host_ip}: the type-3 join on 0x7c port 2")
                     if (args.mirror_records and joined and msg.protocol == streams.PROTOCOL_STREAM
                             and msg.port == streams.HOST_INDEX and rm["sequence_id"] not in mirrored):
                         mirrored.add(rm["sequence_id"])

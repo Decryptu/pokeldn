@@ -699,6 +699,88 @@ log:
 A host that receives all of it answers Net once rather than repeating: against a console that is
 sent the 0x12 and the 0x51, Net traffic falls from 212 messages a seat to 2.
 
+### The joiner's side of the trade
+
+A joiner's whole 0x7C script, from the pair's own log, with the sequence each message carries on
+its port. Port 1 is the channel table, port 2 the game's join, port 0 the game itself.
+
+| port | sequence | message |
+|---|---|---|
+| 1 | 1 | the channel table, the same four keys the host announces, INITIALIZED |
+| 2 | 1 | the type-3 join, `03b90200bc09` and nine zero bytes |
+| 0 | 1 to 4 | the identity: the two zlib fragments, then the same two again |
+| 1 | 2 | `b90101b902b90280800001`, key 0x80 open, after the fourth fragment |
+| 0 | 5 | the offered Pokemon |
+| 0 | 6 | the confirmation |
+| 0 | 7 | the commit, which the joiner sends first and the host answers |
+| 1 | 3 | `b90101b902b90280800101`, key 0x0180 open, after the host's own |
+| 0 | 8 to 11 | one echo of each step the host opens, 03, 06, 0B and 0E |
+| 1 | 4 | `b90101b902b90280800100`, the close |
+
+The identity goes 0.15 s after the host's key-0x80 open and the key-0x80 open 0.21 s after it, so
+the four fragments precede it. The joiner echoes a step's `8001 01 SS` and sends nothing for the
+`8001 02 SS` that closes it.
+
+The rules a host owes its station hold in the other direction, since they are the receiver's.
+The `lowest_pending` field of a joiner's acknowledgements on 0x7C is the joiner's own next sequence
+on that port, and the field on the bulk acknowledgement of its own 0x81 stream is one past the
+highest record id it sent: left at 1, a host acknowledges record 5 and waits for the rest of the
+set for the whole session, which is what a station's own next acknowledgement declares instead
+(The sender's own lowest pending is what closes the gap at 5 and 6). A joiner declaring a number
+drawn from the host's numbering walks the host's receive base past its own later messages, which
+then arrive below it and are acknowledged and discarded at `0x6f03cc` without reaching the game
+(`docs/pia.md`, "What the receiver discards in silence").
+
+`pokeldn.sv.trade.JoinerTradeStage` is that side as a state machine and `bin/sv_join.py
+--trade-offer` runs it, with `--send-on-open` for the identity fragments the key-0x80 open gates.
+`tests/test_sv.py` drives the stage with the host's half of the pair's message list and pins what
+it answers to the joiner's half.
+
+### Joining a searching console: a trade, and what decides the seat
+
+**A trade is complete in the joiner direction on a retail Scarlet (2026-09-22).** The console
+hosts from its Link Trade search, `bin/sv_join.py` joins it, and the console reaches its trade
+screen, offers, takes the joiner's offer, confirms, commits, runs the four exchange steps and
+keeps the record the joiner composed. The joiner's side of the exchange is
+`pokeldn.sv.trade.JoinerTradeStage` and its numbering is a pair joiner's: port 0 messages 5 to 11
+and port 1 messages 2 to 4.
+
+What the run takes, beyond the opening below: the station update taken as the seat, the type-3
+join sent in answer to the console's own announcement, the four identity messages on 0x7C port 0
+after the console opens key 0x80, and the `lowest_pending` rules of the host direction applied to
+the joiner's own acknowledgements.
+
+#### What decides a seat
+
+A seat on a searching console's own network ends one of two ways, measured on a retail Scarlet
+with the joiner's whole opening delivered.
+
+Some seats end in host migration. About eight seconds in the console sends Session type 7, start
+host migration, naming the joiner's variable id as the target, and from then on it sends
+`01400000`, a bare NetStartHostMigration, about twice a second and nothing else. It answers
+nothing after that: not the joiner's identity records, not its channel table, not its
+acknowledgements. Host migration at the LDN level means the new host creates the network, which no
+Pia message does, and the same wall closed the joiner direction on Legends Arceus (`docs/pla.md`).
+
+The other seats run the game. In order, what the console sends:
+
+| | |
+|---|---|
+| the seat | a type-5 station update naming the joiner's variable id and the player id its request stated, then the 41-byte join response |
+| its opening | the bulk acknowledgements on all eleven streams, an 11-byte record on 0x81 port 1 and another on port 5 |
+| its identity | 46 records on 0x81 port 0, the same shape a host here sends, and it acknowledges the joiner's own 44 to 47 |
+| its channel table | on 0x7C port 1, the four keys `0x007b`, `0x0132`, `0x0232` and `0x0332` |
+| `0db90101` | on 0x7C port 2 |
+| the announcement | on 0x80 port 2, zlib, 167 bytes inflated: a type 7 carrying slot 1, kind 2, state 0 and the console's own station id, which is its constant id read big-endian |
+
+The announcement is the message no emulated instance ever composed and the one the host direction
+waits on a station to answer. A joiner answers it with the type-3 join on 0x7C port 2, as a pair's
+joiner does 0.09 s after its host's own type 7 (`bin/sv_join.py`, `--port2-now` for the join sent
+with the channel table instead).
+
+The station update seats a joiner on its own: it carries the joiner's variable id before any join
+response does, and a joiner that waits for the response sends nothing for the whole session.
+
 ## Unresolved
 
 **A trade is complete on a retail Scarlet (2026-09-22).** The console joins a network

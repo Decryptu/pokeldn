@@ -26,7 +26,7 @@ sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 from pokeldn import config
 from pokeldn import sv
 from pokeldn.ldn import pia6, pia_connect, reliable5
-from pokeldn.sv import pokemon, port2, trade
+from pokeldn.sv import pokemon, port2, streams, trade
 from pokeldn.pla import game_channel
 from pokeldn.ldn.ldn_mitm_host import IpHostTransport
 from pokeldn.ldn.transport import HostTransport, find_ap_phy
@@ -181,49 +181,13 @@ def build_reliable_body(protocol, flags, sequence_id, data, lowest_pending=None)
 
 
 def parse_send_payload(hx):
-    """-> (data, flags) of a HEX[:z][:start|:end] send spec. `:z` marks a payload already zlib,
-    `:start` a fragment that opens a message and `:end` one that closes it; without either the
-    message is whole. A pair's first game message goes out as two fragments, each deflated on its
-    own, 124 and 114 bytes (docs/sv.md, The trade)."""
-    flags = 0
-    parts = hx.split(":")
-    hx = parts[0]
-    for suffix in parts[1:]:
-        if suffix == "z":
-            flags |= reliable5.FLAG_ZLIB
-        elif suffix == "start":
-            flags |= reliable5.FLAG_MESSAGE_START
-        elif suffix == "end":
-            flags |= reliable5.FLAG_MESSAGE_END
-        else:
-            raise ValueError(f"unknown send suffix :{suffix}")
-    if not flags & (reliable5.FLAG_MESSAGE_START | reliable5.FLAG_MESSAGE_END):
-        flags |= reliable5.FLAG_MESSAGE_START | reliable5.FLAG_MESSAGE_END
-    return bytes.fromhex(hx), flags | reliable5.FLAG_APPLICATION_DATA
+    """-> (data, flags) of a HEX[:z][:start|:end] send spec (`pokeldn.sv.streams`)."""
+    return streams.parse_send_spec(hx)
 
 
 def apply_offer_fields(plain, settings):
-    """-> the record with each `FIELD=VALUE` written into it. `shiny` alone rolls the value.
-
-    A name field takes the text as it stands, a comma in the value makes a vector, and an integer
-    may be decimal or `0x`-prefixed. The field names are `pokeldn.sv.pokemon`'s.
-    """
-    for setting in settings:
-        if setting == "shiny":
-            fields = pokemon.read(plain)
-            plain = pokemon.write(plain, pid=pokemon.shiny_pid(fields["trainer_id"],
-                                                               fields["secret_id"]))
-            continue
-        if "=" not in setting:
-            raise ValueError(f"{setting!r} is not FIELD=VALUE")
-        key, value = setting.split("=", 1)
-        if key in pokemon.NAMES:
-            plain = pokemon.write(plain, **{key: value})
-        elif "," in value or key in pokemon.VECTORS or key in ("ivs", "stats"):
-            plain = pokemon.write(plain, **{key: tuple(int(v, 0) for v in value.split(","))})
-        else:
-            plain = pokemon.write(plain, **{key: int(value, 0)})
-    return plain
+    """-> the record with each `FIELD=VALUE` written into it (`pokeldn.sv.trade.apply_fields`)."""
+    return trade.apply_fields(plain, settings)
 
 
 def build_parser():
@@ -384,20 +348,9 @@ def main():
     offers_seen = set()         # the stations whose own offer has been read out
     trade_offer = None
     if args.trade_offer:
-        raw = open(args.trade_offer, "rb").read()
-        try:
-            raw = bytes.fromhex(raw.decode("ascii").strip())
-        except (UnicodeDecodeError, ValueError):
-            pass
-        if len(raw) == trade.OFFER_SIZE + 4:
-            raw = raw[4:]
-        if len(raw) in (pokemon.SIZE_STORED, pokemon.SIZE_PARTY):
-            raw = pokemon.to_wire(pokemon.load(raw))     # a bare record, plain or encrypted
-        trade_offer = raw
-        if args.offer_set:
-            trade_offer = pokemon.to_wire(
-                apply_offer_fields(pokemon.from_wire(trade_offer), args.offer_set))
-        trade.TradeStage(trade_offer)           # rejects a wrong size before the radio is up
+        # Hex text, a whole game message or a bare record, and every --offer-set written in;
+        # a wrong size raises here, before the radio is up.
+        trade_offer = trade.load_offer(open(args.trade_offer, "rb").read(), args.offer_set)
         try:
             print(f"[sv] offering {pokemon.describe(pokemon.from_wire(trade_offer))}")
         except ValueError as exc:

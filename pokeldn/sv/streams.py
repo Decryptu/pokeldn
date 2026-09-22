@@ -136,3 +136,25 @@ def build_rtt_request(timestamp8):
 def build_rtt_response(payload, peer_var):
     """The answer a retail station sends: kind 1, the requester's clock, target its variable id."""
     return bytes([1]) + bytes(payload)[1:9] + (peer_var & 0xFFFF).to_bytes(2, "big")
+
+
+def parse_send_spec(hx):
+    """-> (data, flags) of a HEX[:z][:start|:end] send spec. `:z` marks a payload already zlib,
+    `:start` a fragment that opens a message and `:end` one that closes it; without either the
+    message is whole. A station's first game message goes out as two fragments, each deflated on
+    its own, 124 and 114 bytes (`docs/sv.md`, The trade)."""
+    flags = 0
+    parts = hx.split(":")
+    hx = parts[0]
+    for suffix in parts[1:]:
+        if suffix == "z":
+            flags |= reliable5.FLAG_ZLIB
+        elif suffix == "start":
+            flags |= reliable5.FLAG_MESSAGE_START
+        elif suffix == "end":
+            flags |= reliable5.FLAG_MESSAGE_END
+        else:
+            raise ValueError(f"unknown send suffix :{suffix}")
+    if not flags & (reliable5.FLAG_MESSAGE_START | reliable5.FLAG_MESSAGE_END):
+        flags |= reliable5.FLAG_MESSAGE_START | reliable5.FLAG_MESSAGE_END
+    return bytes.fromhex(hx), flags | reliable5.FLAG_APPLICATION_DATA

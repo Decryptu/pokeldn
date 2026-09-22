@@ -232,3 +232,55 @@ def test_a_host_that_offers_first_still_confirms_on_the_joiner_offer():
     assert stage.offer_first() == []
     out = stage.on_message(0, bytes.fromhex("80000200") + bytes(trade.OFFER_SIZE))
     assert [(p, d.hex()) for _, p, d in out] == [(0, "80000300")]
+
+
+def test_the_joiner_stage_follows_the_pair_joiner_message_for_message():
+    """The same exchange from the other side: fed the host's messages in order, the joiner's state
+    machine must send the pair joiner's, in order, byte for byte, from its own key-0x80 open to
+    its mirror of the close of key 0x0180."""
+    from pokeldn.sv import trade
+    path = os.path.join(os.path.dirname(__file__), "data", "sv_pair_trade.txt")
+    rows = [line.split() for line in open(path) if line.strip()]
+    joiner_offer = bytes.fromhex(rows[3][2])[4:]
+    assert rows[3][0] == "RX" and len(joiner_offer) == trade.OFFER_SIZE
+    stage = trade.JoinerTradeStage(joiner_offer)
+    sent = []
+    for direction, port, hx in rows:
+        if direction != "TX":
+            continue
+        for _delay, out_port, payload in stage.on_message(int(port), bytes.fromhex(hx)):
+            sent.append((out_port, payload.hex()))
+    assert sent == [(int(port), hx) for direction, port, hx in rows if direction == "RX"]
+    assert stage.done
+    assert stage.host_offer == joiner_offer
+
+
+def test_the_joiner_stage_answers_nothing_before_the_host_opens_the_key():
+    from pokeldn.sv import trade
+    stage = trade.JoinerTradeStage(bytes(trade.OFFER_SIZE))
+    assert stage.on_message(0, bytes.fromhex("80010103")) == []
+    assert stage.on_message(1, trade.table_update(trade.KEY_EXCHANGE, True)) == []
+    assert [p for _, p, _ in stage.on_message(1, trade.table_update(trade.KEY_TRADE, True))] == [1]
+    assert stage.on_message(1, trade.table_update(trade.KEY_TRADE, True)) == []
+    out = stage.on_message(0, bytes.fromhex("80000200") + bytes(trade.OFFER_SIZE))
+    assert [(p, d[:4].hex()) for _, p, d in out] == [(0, "80000200")]
+    out = stage.on_message(0, bytes.fromhex("80000300"))
+    assert [(p, d.hex()) for _, p, d in out] == [(0, "80000300"), (0, "80000500")]
+
+
+def test_a_joiner_that_offers_first_does_not_offer_twice():
+    from pokeldn.sv import trade
+    stage = trade.JoinerTradeStage(bytes(trade.OFFER_SIZE))
+    assert [(p, d[:4].hex()) for _, p, d in stage.offer_first()] == [(0, "80000200")]
+    assert stage.offer_first() == []
+    assert stage.on_message(0, bytes.fromhex("80000200") + bytes(trade.OFFER_SIZE)) == []
+    assert stage.host_offer == bytes(trade.OFFER_SIZE)
+
+
+def test_a_cancelled_trade_stops_the_joiner_stage():
+    from pokeldn.sv import trade
+    stage = trade.JoinerTradeStage(bytes(trade.OFFER_SIZE))
+    stage.on_message(1, trade.table_update(trade.KEY_TRADE, True))
+    assert stage.on_message(0, bytes.fromhex("8000040100")) == []
+    assert stage.done
+    assert stage.on_message(0, bytes.fromhex("80000200") + bytes(trade.OFFER_SIZE)) == []
