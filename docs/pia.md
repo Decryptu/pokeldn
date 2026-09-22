@@ -596,8 +596,21 @@ payload size at `+4`, the payload from `+6`, a per-port handle at `+0x5a8` and a
 first slot whose end flag is set.
 
 A message acknowledged but never delivered therefore came through `0x6f03cc` or `0x6f0540`, and
-both mean the window base and the ring have moved apart from the sender's numbering. Tracing those
-two instructions separates them in one run.
+both mean the window base and the ring have moved apart from the sender's numbering. Traced through
+a trade on the emulator, the one that fires is `0x6f03cc`: every message of a host's identity, its
+offer and its confirmation passes with the base equal to its own sequence, and its commit, sequence
+7, arrives at a base of 8 and is discarded. `0x6f0540` never fires.
+
+What moves that base ahead of the sender is the `lowest_pending` field of the messages the sender
+itself sends. A host whose acknowledgements on 0x7C declare one past the station's last sequence,
+rather than its own next sequence, leaves the base at that number, and its own next message is
+below it. Correcting the field is enough for every message to be delivered.
+
+The base at window `+0x18` is written in three places. `0x6f03a8` sets it when the window is
+initialised, `0x6f0238` advances it by one for each message the delivery loop takes out of the
+ring, and `0x6f1734` and `0x6f176c` walk it forward over empty slots towards a target sequence held
+at window `+0x20`. That target is initialised to -1 at `0x6ef228` and the walk is skipped while it
+is negative; the walk also stops at the first occupied slot.
 
 ### Version 4
 

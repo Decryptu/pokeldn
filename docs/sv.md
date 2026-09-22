@@ -523,6 +523,18 @@ With four, the identity is dispatched as kind 1, the offer that follows is parse
 on the station's screen, and the station offers, confirms and commits in answer
 (`bin/sv_host.py --send-on-open`, `--offer-after-open`).
 
+The `lowest_pending` field of a host's acknowledgements on 0x7C carries the host's own next
+sequence, as it does on 0x81 (The sender's own lowest pending is what closes the gap at 5 and 6).
+Carrying one past the station's last sequence instead leaves the station's receive window waiting
+for that number, and the host's next message, which is below it, is acknowledged and discarded at
+`0x6f03cc` without reaching the game (`docs/pia.md`, "What the receiver discards in silence"). The
+two numberings run level up to the commit, where the station commits first: its `80000500` is its
+seventh message on the stream, the host acknowledges it as eight, and the host's own `80000500`,
+also a seventh, arrives at a window whose base is already eight. With the field set to the host's
+own next sequence the commit is dispatched, the station opens key 0x0180, the four exchange steps
+run in both directions, the station closes the key and the trade completes: the Pokemon the host
+offered is in the station's box and the one it offered is gone.
+
 The `8001` messages run in pairs, a 01 and a 02 under the same fourth byte, which steps 03, 06, 0B,
 0E. The trade applies over those four steps and both screens return to the trade menu.
 
@@ -551,23 +563,12 @@ sent the 0x12 and the 0x51, Net traffic falls from 212 messages a seat to 2.
 
 ## Unresolved
 
-An emulated Scarlet reaches its trade screen against a host built here, draws the host's offer,
-offers in answer, confirms and commits. It then does not open key 0x0180: the host's `80000500`
-is acknowledged by the station's transport, with the acknowledgement counter correct at 8, and is
-never dispatched to the game's receiver at `0x1e685a4`, where the offer and the confirmation on the
-same stream both were. Answering the commit 90 ms after the station's own, the way a pair's host
-does, rather than at once, does not change it. Every layer below is now known good, so what is
-missing is in the commit itself or in what a pair's host sends beside it.
-
-Read off the binary, a message that is acknowledged and never delivered came through one of two
-instructions. `0x6f03cc` discards a sequence id below the window base and `0x6f0540` discards one
-whose ring slot is already occupied, and both set the byte at protocol `+0x48` that owes the sender
-an acknowledgement; the other three silent discards on that path leave the byte alone, so a sender
-would see no ack at all (`docs/pia.md`, "What the receiver discards in silence"). Both mean the
-station's window base and its ring have moved apart from the host's numbering rather than that the
-commit is malformed. Tracing those two instructions through a commit separates them in one run, and
-the window base at `+0x18`, the ring head at `+0x14` and the slot count at `+0x10` read at the same
-moment say which sequence the window was waiting for.
+An emulated Scarlet trades end to end against a host built here: it draws the host's offer, offers
+in answer, confirms, commits, opens key 0x0180, runs the four exchange steps and keeps the Pokemon
+the host sent. What is not measured is the same run against a retail console. The two corrections
+that made it work, four identity messages and the host's own next sequence in the `lowest_pending`
+field of its 0x7C acknowledgements, were both found after the last retail seat, and the retail
+symptom they would explain, an offer acknowledged and not drawn, was recorded before either.
 
 The paragraphs below record what was measured before that, on the emulator. Every layer a live
 emulated Scarlet host puts on the wire is now matched: the NetworkInfo byte for byte apart from the

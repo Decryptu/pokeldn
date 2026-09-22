@@ -439,7 +439,14 @@ def main():
             # form with no destination bitmap. The four-entry broadcast form belongs to 0x80 and
             # 0x81; sent on 0x7C the console never counts its channel table acknowledged and
             # retransmits it for as long as the session lasts.
-            body = game_channel.build_ack(high + 1, lowest_pending=high + 1)
+            #
+            # The lowest pending is the HOST's own next sequence, not one past the station's last.
+            # Declaring the station's number leaves its receive window waiting for it, and the
+            # host's next message, below that base, is acknowledged and dropped at 0x6f03cc
+            # without reaching the game. It costs the trade its commit: the station commits first,
+            # so the host acknowledges 8 and then sends its own commit as 7.
+            body = game_channel.build_ack(
+                high + 1, lowest_pending=host_seq.get((src_ip, protocol, port), 1))
         else:
             body = build_bulk_ack({CONSOLE_STATION_INDEX: high},
                                   host_seq.get((src_ip, protocol, port), 1))
