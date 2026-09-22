@@ -451,11 +451,12 @@ class Reliable:
     ack: int
     payload: bytes
     raw_len: int = 0
+    recipients: int = 0
 
     def serialize(self):
         return (bytes([self.flagsA]) + len(self.payload).to_bytes(2, "big")
                 + self.seq.to_bytes(2, "big") + self.ack.to_bytes(2, "big")
-                + bytes([0x00]) + self.payload)
+                + bytes([self.recipients & 0xFF]) + self.payload)
 
 
 def parse_reliable(payload):
@@ -465,11 +466,14 @@ def parse_reliable(payload):
     return Reliable(flagsA=payload[0],
                     seq=int.from_bytes(payload[3:5], "big"),
                     ack=int.from_bytes(payload[5:7], "big"),
-                    payload=payload[8:8 + ln], raw_len=ln)
+                    payload=payload[8:8 + ln], raw_len=ln, recipients=payload[7])
 
 
-def build_reliable(seq, ack, inner, flagsA=FLAGSA_GBA):
-    return Reliable(flagsA=flagsA, seq=seq, ack=ack, payload=inner).serialize()
+def build_reliable(seq, ack, inner, flagsA=FLAGSA_GBA, recipients=0):
+    """`recipients` is the sub-header's last byte: zero on a unicast stream, three on every frame
+    a Legends Z-A station sends on Broadcast Reliable."""
+    return Reliable(flagsA=flagsA, seq=seq, ack=ack, payload=inner,
+                    recipients=recipients).serialize()
 
 
 def parse_app(data):

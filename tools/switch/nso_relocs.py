@@ -5,6 +5,12 @@ An NSO's vtables are empty in the static image - each slot is filled at load tim
 relocation whose ADDEND is the function address. So "who points at this function" is a question for
 the relocation table, not a pointer scan (the GCM pair had no pointers and no BL
 callers, which is what sent us here).
+
+Two encodings carry them. A RELA table (DT_RELA) spends 24 bytes on each. A RELR table (DT_RELR,
+tag 0x24) packs them: an even entry is the address of a relocated word, and each odd entry that
+follows is a bitmap of the next 63 words, bit k for the word at address + 8*(k+1). RELR carries no
+addend, so the addend is the value the linker already stored at the slot. Legends Z-A's `main` uses
+RELR for every one of its relative relocations and a reader that knows only RELA sees none.
 """
 import struct, sys
 
@@ -26,16 +32,42 @@ def dynamic(img, dyn_off):
     return tags
 
 def relatives(img):
-    """-> list of (slot_address, addend) for every R_AARCH64_RELATIVE."""
+    """-> list of (slot_address, addend) for every R_AARCH64_RELATIVE, from RELA and from RELR."""
     _, dyn = mod0(img)
     t = dynamic(img, dyn)
-    rela, sz, ent = t.get(7), t.get(8), t.get(9, 24)
-    if rela is None: return []
     out = []
-    for o in range(rela, rela + sz, ent):
-        off, info, add = struct.unpack_from('<QQq', img, o)
-        if (info & 0xFFFFFFFF) == 1027:            # R_AARCH64_RELATIVE
-            out.append((off, add))
+    rela, sz, ent = t.get(7), t.get(8), t.get(9, 24)
+    if rela is not None:
+        for o in range(rela, rela + sz, ent):
+            off, info, add = struct.unpack_from('<QQq', img, o)
+            if (info & 0xFFFFFFFF) == 1027:        # R_AARCH64_RELATIVE
+                out.append((off, add))
+    out += relr(img, t)
+    return out
+
+
+def relr(img, tags=None):
+    """-> list of (slot_address, addend) for a DT_RELR table; the addend is the stored value."""
+    if tags is None:
+        _, dyn = mod0(img)
+        tags = dynamic(img, dyn)
+    table, sz, ent = tags.get(0x24), tags.get(0x23), tags.get(0x25, 8)
+    if table is None or not sz:
+        return []
+    out, where = [], 0
+    for o in range(table, table + sz, ent):
+        entry = struct.unpack_from('<Q', img, o)[0]
+        if entry & 1:
+            bits, addr = entry >> 1, where
+            for k in range(63):
+                if bits & (1 << k):
+                    slot = addr + 8 * k
+                    out.append((slot, struct.unpack_from('<Q', img, slot)[0]))
+            where = addr + 8 * 63
+        else:
+            where = entry
+            out.append((where, struct.unpack_from('<Q', img, where)[0]))
+            where += 8
     return out
 
 if __name__ == "__main__":

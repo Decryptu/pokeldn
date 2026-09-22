@@ -208,6 +208,9 @@ All offline; none needs a console.
                                  NCA header in place and print the title id, key generation and each
                                  section's offset, counter and key; --exefs N lists the exefs and
                                  --extract pulls one file out without unpacking the image
+    tools/switch/nso_relocs.py   the relative relocations of an NSO, from a RELA table and from
+                                 a RELR one. A modern title packs them in RELR and a reader that
+                                 knows only RELA finds none, which leaves every vtable empty
     tools/switch/romfs_read.py   walk, grep and single-file-extract a RomFS in place, off the
                                  encrypted container
     tools/switch/nso_read.py     decompress an NSO's three segments (pure-Python LZ4 block decoder)

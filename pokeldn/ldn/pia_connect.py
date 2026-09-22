@@ -139,7 +139,10 @@ def build_rtt_request(template, systime):
 
 def build_session_join(src_mac, src_var, src_ip, dst_mac, dst_var, player_name,
                        random4, *, src_port=12345, app_ver=DEFAULT_APP_VER,
-                       protocols=DEFAULT_PROTOCOLS, player_id=DEFAULT_PLAYER_ID):
+                       protocols=DEFAULT_PROTOCOLS, player_id=DEFAULT_PLAYER_ID,
+                       token=b"\x00" * 32):
+    """`token` is the 32-byte identification token. The GBA application's host accepts zeroes;
+    a Legends Z-A joiner sends 0x06 in the first byte and zeroes after it."""
     out = bytearray([SESSION_JOIN_REQUEST, len(protocols)])
     for pid, ver in protocols:
         out += bytes([pid, ver])
@@ -148,7 +151,7 @@ def build_session_join(src_mac, src_var, src_ip, dst_mac, dst_var, player_name,
     out += bytes(src_mac) + b"\x00\x00"              # source constant id (8)
     out += bytes(src_var)                            # source variable id (2)
     out += bytes([0, 0])                             # NAT mapping, is-private-IPv6
-    out += b"\x00" * 32                              # identification token
+    out += bytes(token).ljust(32, b"\x00")[:32]      # identification token
     out += bytes(dst_mac) + b"\x00\x00"             # dest constant id (8)
     out += bytes(dst_var)                            # dest variable id (2)
     out += bytes([1, 1])                             # num players, num participants
