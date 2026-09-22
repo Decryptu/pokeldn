@@ -289,12 +289,13 @@ def build_parser():
                          "host announces key 0x80 open on 0x7c port 1. A station's identity is "
                          "four messages on 0x7c port 0, the two fragments twice, and nothing sent "
                          "on that port before the announcement reaches the game; repeatable")
-    ap.add_argument("--trade-offer", default=None,
+    ap.add_argument("--trade-offer", action="append", default=[],
                     help="a file holding the 348-byte record this joiner offers (raw, or hex "
                          "text; a 352-byte game message is stripped of its header). With it the "
                          "joiner answers the host's offer with its own, confirms, commits, and "
                          "echoes the four exchange steps the way a pair's joiner does "
-                         "(pokeldn.sv.trade)")
+                         "(pokeldn.sv.trade). Repeatable: the second and later records are "
+                         "offered in the same seat, one per trade, as each trade closes")
     ap.add_argument("--offer-set", action="append", metavar="FIELD=VALUE", default=[],
                     help="a field written into the offered record before it is sealed, by its "
                          "pokeldn.sv.pokemon name: nickname=SHINY, species=906, ivs=31,31,31,31,"
@@ -316,6 +317,17 @@ def build_parser():
                     help="seconds after the host's confirmation before the joiner commits; the "
                          "pair's joiner committed 1.5 s after its own confirmation and its host "
                          "answered in kind")
+    ap.add_argument("--quiet-seat", type=float, default=None, metavar="SECONDS",
+                    help="end a seat on which the console has sent nothing at all for this many "
+                         "seconds, and go back to scanning. An association taken outside the "
+                         "console's host phase carries no traffic; without this the run holds it "
+                         "for the whole --hold")
+    ap.add_argument("--leave-on-migration", type=float, default=None, metavar="SECONDS",
+                    help="end the seat this many seconds after the console asks us to take the "
+                         "host role, and go back to scanning. A console that sends Session type 7 "
+                         "was seated late in its five-second host phase and sends nothing but "
+                         "NetStartHostMigration afterwards, so the seat is spent; without this "
+                         "the run holds it for the whole --hold")
     ap.add_argument("--answer-migration", action="store_true",
                     help="answer the host's type-7 leave-with-host-migration with a type-8 ack, "
                          "telling it we accept the host role it is handing over")
@@ -395,10 +407,11 @@ def main(argv=None):
     except (AttributeError, ValueError):
         pass
     if args.trade_offer and args.offer_dump:
-        offer = trade.load_offer(open(args.trade_offer, "rb").read(), args.offer_set)
         with open(args.offer_dump, "w") as fh:
-            fh.write(offer.hex() + "\n")
-        print(f"[sv] offering {describe_offer(offer)}")
+            for path in args.trade_offer:
+                offer = trade.load_offer(open(path, "rb").read(), args.offer_set)
+                fh.write(offer.hex() + "\n")
+                print(f"[sv] offering {describe_offer(offer)}")
         print(f"[sv] offer written to {args.offer_dump}")
         return 0
     if (args.offer_set or args.offer_dump or args.offer_after_open is not None) \
@@ -599,6 +612,7 @@ async def run_session(args, keys, host_ip, host_mac, our_ip, our_mac, record):
     join_sequence = None
     pending_update = None       # a type-5 update that arrived before the join response
     migration_sent = 0
+    migration_at = None         # when the console first asked us to take the host role
     identity = None
     if args.send_record:
         identity = streams.compress(open(args.send_record, "rb").read())
@@ -608,12 +622,25 @@ async def run_session(args, keys, host_ip, host_mac, our_ip, our_mac, record):
     stage = None
     if args.trade_offer:
         stage = trade.JoinerTradeStage(
-            trade.load_offer(open(args.trade_offer, "rb").read(), args.offer_set),
+            [trade.load_offer(open(path, "rb").read(), args.offer_set)
+             for path in args.trade_offer],
             confirm_delay=args.confirm_delay, commit_delay=args.commit_delay)
-        print(f"[sv] offering {describe_offer(stage.offer)}")
+        for n, one in enumerate(stage.offers, 1):
+            print(f"[sv] offer {n} of {len(stage.offers)}: {describe_offer(one)}")
     pending_trade = []          # (due, port, payload) the trade stage asked to send
+
+    def schedule_trade(delay, port, payload):
+        """Queue a trade message, never before one already queued for the same port. The stage's
+        delays are gaps between messages, not positions on a clock, and a station that confirms a
+        trade whose own record is not yet on the wire crashes the game (sv97)."""
+        due = time.time() + delay
+        for other in pending_trade:
+            if other[1] == port:
+                due = max(due, other[0] + delay)
+        pending_trade.append((due, port, payload))
     pending_open = []           # (due, spec) hung on the host's own key-0x80 open
-    offer_seen = False
+    offers_seen = 0             # how many of the host's offers have been printed
+    trades_done = 0             # how many trades the stage has carried through the exchange
     record_set = []
     if args.record_set:
         for name in sorted(os.listdir(args.record_set)):
@@ -631,6 +658,7 @@ async def run_session(args, keys, host_ip, host_mac, our_ip, our_mac, record):
     last_ack = {}
     counts = {}
     seen = authed = 0
+    last_in = time.monotonic()  # when the console last sent anything, for --quiet-seat
 
     # Both retail stations address every Pia datagram to the link-local broadcast of their own
     # /24 (sv11: 169.254.86.2 -> 169.254.86.255), never to the peer's address.
@@ -750,6 +778,18 @@ async def run_session(args, keys, host_ip, host_mac, our_ip, our_mac, record):
     while time.monotonic() - t0 < args.hold:
         now = time.time()
         elapsed = time.monotonic() - t0
+        if (args.quiet_seat is not None and seen == 0
+                and time.monotonic() - last_in >= args.quiet_seat):
+            print(f"[sv] the seat is silent: nothing from the console in "
+                  f"{args.quiet_seat:.1f} s. Scanning again")
+            record(rec="left_silent_seat", t=time.time())
+            break
+        if (args.leave_on_migration is not None and migration_at is not None
+                and time.monotonic() - migration_at >= args.leave_on_migration):
+            print(f"[sv] the seat is spent: the console asked for the host role "
+                  f"{args.leave_on_migration:.1f} s ago. Scanning again")
+            record(rec="left_after_migration", t=time.time())
+            break
         ack_variant(elapsed)
         # A retail joiner's opening follows its join by about 0.75 s (sv11: the join at 0.14 s, the
         # opening at 0.89 s). With --session-join the opening waits for the seat.
@@ -851,6 +891,7 @@ async def run_session(args, keys, host_ip, host_mac, our_ip, our_mac, record):
         if addr[0] == our_ip:
             continue
         seen += 1
+        last_in = time.monotonic()
         record(rec="in", src=addr[0], hex=data.hex(), t=time.time())
         if not pia6.is_pia6(data):
             print(f"[sv] <- {addr[0]}: not a version-11 packet, {data[:8].hex()}")
@@ -978,6 +1019,8 @@ async def run_session(args, keys, host_ip, host_mac, our_ip, our_mac, record):
                     print(f"[sv] the host acknowledged the join request; it now has 8 s to answer it")
                 elif kind == 7:
                     migration_sent += 1
+                    if migration_at is None:
+                        migration_at = time.monotonic()
                     mig = pia_connect.parse_session_migration_v11(msg.payload)
                     print(f"[sv] the host is LEAVING WITH HOST MIGRATION to us ({migration_sent}x): "
                           f"target var {mig['target_var']:#06x}" if mig else msg.payload.hex())
@@ -1045,19 +1088,33 @@ async def run_session(args, keys, host_ip, host_mac, our_ip, our_mac, record):
                             pending_open.append((time.time() + float(delay), rest))
                         if stage is not None and args.offer_after_open is not None:
                             for delay, out_port, payload in stage.offer_first():
-                                pending_trade.append((time.time() + args.offer_after_open + delay,
-                                                      out_port, payload))
+                                schedule_trade(args.offer_after_open + delay, out_port, payload)
                     if stage is not None:
                         for delay, out_port, payload in stage.on_message(msg.port, cm["payload"]):
-                            pending_trade.append((time.time() + delay, out_port, payload))
-                        if stage.host_offer is not None and not offer_seen:
-                            offer_seen = True
-                            print(f"[sv] {host_ip}: offers {describe_offer(stage.host_offer)}")
+                            schedule_trade(delay, out_port, payload)
+                        while offers_seen < len(stage.host_offers):
+                            body = stage.host_offers[offers_seen]
+                            offers_seen += 1
+                            print(f"[sv] {host_ip}: offers {describe_offer(body)}")
                             if args.offer_out:
-                                with open(args.offer_out, "w") as fh:
+                                path = (args.offer_out if offers_seen == 1
+                                        else f"{args.offer_out}.{offers_seen}")
+                                with open(path, "w") as fh:
                                     fh.write(trade.build(trade.KEY_TRADE, trade.KIND_OFFER, 0,
-                                                         stage.host_offer).hex() + "\n")
-                                print(f"[sv] the host's offer written to {args.offer_out}")
+                                                         body).hex() + "\n")
+                                print(f"[sv] the host's offer written to {path}")
+                        if stage.trades > trades_done:
+                            trades_done = stage.trades
+                            record(rec="trade_done", n=trades_done, t=time.time())
+                            if stage.done:
+                                print(f"[sv] TRADE {trades_done} COMPLETE; no record left to offer")
+                            else:
+                                print(f"[sv] TRADE {trades_done} COMPLETE; offering "
+                                      f"{describe_offer(stage.offer)} next")
+                                if args.offer_after_open is not None:
+                                    for delay, out_port, payload in stage.offer_first():
+                                        schedule_trade(args.offer_after_open + delay,
+                                                       out_port, payload)
                 continue
             if msg.protocol in RELIABLE_PROTOCOLS and len(msg.payload) >= reliable5.HEADER_SIZE:
                 try:

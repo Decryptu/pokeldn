@@ -541,6 +541,33 @@ The `8001` messages run in pairs, a 01 and a 02 under the same fourth byte, whic
 Both instances ran from one save copied twice, and the game traded a Pokemon between two identical
 trainers without complaint.
 
+### A confirmation sent before the station's own offer
+
+A station confirms a trade only after its own record is on the wire. A host that sends `80000300`
+while its `80000200` is still queued crashes the game: the console's screen goes black and the
+system error dialog comes up, with the offer and the confirmation both acknowledged at the
+transport. The crash follows the confirmation, not the record, which the receiver stores without
+checking it.
+
+`bin/sv_host.py --offer-after-open` and `bin/sv_join.py --offer-after-open` hang the offer on the
+peer's key-0x80 announcement, and the stage answers the peer's own offer with a confirmation under
+its own delay. The two delays are gaps between messages rather than positions on a clock, so an
+offer hung eight seconds out and a confirmation answering a peer that offered after three go out
+in the wrong order. Both launchers queue a trade message no earlier than one already queued for
+the same station and port, which holds the order the stage produced.
+
+### Two trades in one seat
+
+A seat carries more than one trade. Key 0x0080 is announced open once and stays open; key 0x0180
+opens and closes once per trade, and the second trade is the same cycle again on the same stream,
+the sequence numbers running on: the host's offer at 16, its confirmation at 17, its commit at 18
+and the exchange steps at 19 to 26, against 5 to 15 for the first.
+
+Both screens return to the trade menu when the exchange key closes, and the console offers again
+there with no new association, no Session exchange and no identity. `TradeStage` and
+`JoinerTradeStage` take a list of records and start the cycle again at the next one, and
+`--trade-offer` is repeatable on both launchers.
+
 ### The first game message, and what it carries
 
 The first message a station sends on 0x7C port 0 is `80 00 01 00` and 2557 bytes. It goes out as

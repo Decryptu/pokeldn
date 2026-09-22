@@ -60,20 +60,38 @@ def table_update(key, opened):
 
 
 class TradeStage:
-    """The host's side of one trade. `offer` is the 348-byte record the host puts up."""
+    """The host's side of a trade. `offer` is the 348-byte record the host puts up, or a list of
+    them: with a list the cycle starts again at the next record when the exchange key closes, so
+    one seat carries more than one trade."""
 
     def __init__(self, offer, confirm_delay=1.0):
-        offer = bytes(offer)
-        if len(offer) != OFFER_SIZE:
-            raise ValueError(f"an offer is {OFFER_SIZE} bytes, not {len(offer)}")
-        self.offer = offer
+        offers = [offer] if isinstance(offer, (bytes, bytearray)) else list(offer)
+        if not offers:
+            raise ValueError("a host needs at least one offer")
+        self.offers = []
+        for one in offers:
+            one = bytes(one)
+            if len(one) != OFFER_SIZE:
+                raise ValueError(f"an offer is {OFFER_SIZE} bytes, not {len(one)}")
+            self.offers.append(one)
+        self.index = 0
+        self.trades = 0
+        self.joiner_offers = []
         self.confirm_delay = confirm_delay
+        self.done = False
+        self._start()
+
+    def _start(self):
+        """Clear what belongs to one trade."""
         self.joiner_offer = None
         self.offered = False
         self.confirmed = False
         self.committed = False
         self.step_index = None
-        self.done = False
+
+    @property
+    def offer(self):
+        return self.offers[self.index]
 
     def offer_first(self):
         """-> the host's offer, for a host that puts its Pokemon up before the joiner does, as the
@@ -103,6 +121,8 @@ class TradeStage:
             return []
         key, kind, step, body = m
         if key == KEY_TRADE and kind == KIND_OFFER and len(body) == OFFER_SIZE:
+            if self.joiner_offer != body:
+                self.joiner_offers.append(body)
             self.joiner_offer = body
             out = []
             if not self.offered:
@@ -127,14 +147,23 @@ class TradeStage:
             if self.step_index < len(STEPS):
                 out.append((0.05, 0, build(KEY_EXCHANGE, KIND_STEP_OPEN, STEPS[self.step_index])))
             else:
-                self.done = True
+                self.trades += 1
+                if self.index + 1 < len(self.offers):
+                    # A second trade in the same seat, at the next record.
+                    self.index += 1
+                    self._start()
+                else:
+                    self.done = True
                 out.append((0.2, 1, table_update(KEY_EXCHANGE, False)))
             return out
         return []
 
 
 class JoinerTradeStage:
-    """The joiner's side of one trade, `TradeStage` mirrored.
+    """The joiner's side of a trade, `TradeStage` mirrored.
+
+    `offer` is one 348-byte record or a list of them. With a list the stage runs the cycle again
+    at the next record when the exchange key closes, so one seat carries more than one trade.
 
     A joiner answers rather than leads: it opens key 0x0080 on port 1 once the host has announced
     it, offers when the host's offer arrives, confirms and then commits on its own, opens key
@@ -147,20 +176,36 @@ class JoinerTradeStage:
     """
 
     def __init__(self, offer, confirm_delay=1.0, commit_delay=1.5, open_delay=0.35):
-        offer = bytes(offer)
-        if len(offer) != OFFER_SIZE:
-            raise ValueError(f"an offer is {OFFER_SIZE} bytes, not {len(offer)}")
-        self.offer = offer
+        offers = [offer] if isinstance(offer, (bytes, bytearray)) else list(offer)
+        if not offers:
+            raise ValueError("a joiner needs at least one offer")
+        self.offers = []
+        for one in offers:
+            one = bytes(one)
+            if len(one) != OFFER_SIZE:
+                raise ValueError(f"an offer is {OFFER_SIZE} bytes, not {len(one)}")
+            self.offers.append(one)
+        self.index = 0
+        self.trades = 0
+        self.host_offers = []
         self.confirm_delay = confirm_delay
         self.commit_delay = commit_delay
         self.open_delay = open_delay
-        self.host_offer = None
         self.opened = False
+        self.done = False
+        self._start()
+
+    def _start(self):
+        """Clear what belongs to one trade. The key-0x80 open belongs to the seat, not to a trade."""
+        self.host_offer = None
         self.offered = False
         self.confirmed = False
         self.committed = False
         self.step_index = None
-        self.done = False
+
+    @property
+    def offer(self):
+        return self.offers[self.index]
 
     def offer_first(self):
         """-> the joiner's offer, for a run that puts its Pokemon up before the host does."""
@@ -185,8 +230,20 @@ class JoinerTradeStage:
                 return [(0.0, 1, table_update(KEY_EXCHANGE, True))]
             if (self.step_index is not None and self.step_index >= len(STEPS)
                     and payload == table_update(KEY_EXCHANGE, False)):
-                self.done = True
+                self.trades += 1
+                if self.index + 1 < len(self.offers):
+                    # A second trade in the same seat: the cycle starts again at the next offer,
+                    # with the trade key still open. What a console does after a trade closes is
+                    # unmeasured.
+                    self.index += 1
+                    self._start()
+                else:
+                    self.done = True
                 return [(0.0, 1, table_update(KEY_EXCHANGE, False))]
+            if payload == table_update(KEY_TRADE, False) and self.opened:
+                # The host closing the trade key, mirrored the way every other table update is.
+                self.opened = False
+                return [(self.open_delay, 1, table_update(KEY_TRADE, False))]
             return []
         if port != 0:
             return []
@@ -195,6 +252,10 @@ class JoinerTradeStage:
             return []
         key, kind, step, body = m
         if key == KEY_TRADE and kind == KIND_OFFER and len(body) == OFFER_SIZE:
+            if self.host_offer != body:
+                # Every record the host puts up, in order, one entry per selection it makes. A
+                # second trade in the seat starts a fresh entry even for the same record.
+                self.host_offers.append(body)
             self.host_offer = body
             if self.offered:
                 return []

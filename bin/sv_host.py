@@ -280,12 +280,13 @@ def build_parser():
     ap.add_argument("--announce-delay", type=float, default=2.3,
                     help="seconds after the seat before the type 7 goes out; a pair's host "
                          "sends it at about 2.3")
-    ap.add_argument("--trade-offer", default=None,
+    ap.add_argument("--trade-offer", action="append", default=[],
                     help="a file holding the 348-byte record this host offers (raw, or hex text; "
                          "a 352-byte game message is stripped of its header). With it the host "
                          "answers the console's offer with its own, confirms, and follows the "
                          "console through the commit and the four exchange steps the way a pair's "
-                         "host does (pokeldn.sv.trade)")
+                         "host does (pokeldn.sv.trade). Repeatable: the second and later records "
+                         "are offered in the same seat, one per trade, as each trade closes")
     ap.add_argument("--offer-set", action="append", metavar="FIELD=VALUE", default=[],
                     help="a field written into the offered record before it is sealed, by its "
                          "pokeldn.sv.pokemon name: nickname=SHINY, species=906, level=50, "
@@ -344,34 +345,53 @@ def main():
     pending_records = {}
     pending_late = {}
     pending_trade = []          # (due, ip, port, payload) the trade stage asked to send
+
+    def schedule_trade(delay, ip, port, payload):
+        """Queue a trade message, never before one already queued for the same station and port.
+
+        The stage's delays are gaps between messages, not positions on a clock. A confirmation
+        answering an offer that arrives while our own offer is still queued would otherwise go
+        first, and a station that confirms a trade whose record is not yet on the wire crashes
+        the game (sv97)."""
+        due = time.time() + delay
+        for other in pending_trade:
+            if other[1] == ip and other[2] == port:
+                due = max(due, other[0] + delay)
+        pending_trade.append((due, ip, port, payload))
     stages = {}                 # ip -> trade.TradeStage
-    offers_seen = set()         # the stations whose own offer has been read out
-    trade_offer = None
+    offers_seen = {}            # ip -> how many of that station's offers have been read out
+    trades_done = {}            # ip -> how many trades its stage has carried through
+    trade_offers = []
     if args.trade_offer:
         # Hex text, a whole game message or a bare record, and every --offer-set written in;
         # a wrong size raises here, before the radio is up.
-        trade_offer = trade.load_offer(open(args.trade_offer, "rb").read(), args.offer_set)
-        try:
-            print(f"[sv] offering {pokemon.describe(pokemon.from_wire(trade_offer))}")
-        except ValueError as exc:
-            print(f"[sv] offering {len(trade_offer)} bytes, which do not read as a record: {exc}")
+        for path in args.trade_offer:
+            one = trade.load_offer(open(path, "rb").read(), args.offer_set)
+            trade_offers.append(one)
+            try:
+                print(f"[sv] offer {len(trade_offers)} of {len(args.trade_offer)}: "
+                      f"{pokemon.describe(pokemon.from_wire(one))}")
+            except ValueError as exc:
+                print(f"[sv] offering {len(one)} bytes, which do not read as a record: {exc}")
         if args.offer_dump:
             with open(args.offer_dump, "w") as fh:
-                fh.write(trade_offer.hex() + "\n")
+                for one in trade_offers:
+                    fh.write(one.hex() + "\n")
             print(f"[sv] offer written to {args.offer_dump}")
             return 0
     elif args.offer_set or args.offer_dump:
         ap.error("--offer-set and --offer-dump need --trade-offer")
-    def report_offer(ip, body):
+    def report_offer(ip, body, n):
         """Print what the console offered, and write the body where `--offer-out` says."""
         try:
             print(f"[sv] {ip}: offers {pokemon.describe(pokemon.from_wire(body))}")
         except ValueError as exc:
             print(f"[sv] {ip}: offered {len(body)} bytes that do not read as a record: {exc}")
         if args.offer_out:
-            with open(args.offer_out, "w") as fh:
+            path = args.offer_out if n == 1 else f"{args.offer_out}.{n}"
+            with open(path, "w") as fh:
                 fh.write(trade.build(trade.KEY_TRADE, trade.KIND_OFFER, 0, body).hex() + "\n")
-            print(f"[sv] {ip}: offer written to {args.offer_out}")
+            print(f"[sv] {ip}: offer written to {path}")
 
     game_data = binascii.unhexlify(args.game_data) if args.game_data else None
     app_data = sv.build_advertise_data(game_data=game_data)
@@ -767,12 +787,12 @@ def main():
                                     continue
                                 delay, rest = spec.split(":", 1)
                                 pending_late[(src_ip, index)] = (time.time() + float(delay), rest)
-                            if trade_offer is not None and args.offer_at is not None:
+                            if trade_offers and args.offer_at is not None:
                                 stages[src_ip] = trade.TradeStage(
-                                    trade_offer, confirm_delay=args.confirm_delay)
+                                    trade_offers, confirm_delay=args.confirm_delay)
                                 for delay, out_port, payload in stages[src_ip].offer_first():
-                                    pending_trade.append((time.time() + args.offer_at + delay,
-                                                          src_ip, out_port, payload))
+                                    schedule_trade(args.offer_at + delay,
+                                                   src_ip, out_port, payload)
                             if args.announce and (src_ip, "announce") not in pending_late:
                                 # The type 7 names THIS host's station: the constant id the
                                 # console addressed its join to, read big-endian (port2.py).
@@ -824,19 +844,35 @@ def main():
                                     send_ack(src_ip, msg.protocol, msg.port,
                                              station_ids[src_ip]["console_var"],
                                              f"seq {rm['sequence_id']}")
-                                if (trade_offer is not None and msg.protocol == PROTO_RELIABLE
+                                if (trade_offers and msg.protocol == PROTO_RELIABLE
                                         and src_ip in station_ids):
                                     if src_ip not in stages:
                                         stages[src_ip] = trade.TradeStage(
-                                            trade_offer, confirm_delay=args.confirm_delay)
-                                    for delay, out_port, payload in stages[src_ip].on_message(
+                                            trade_offers, confirm_delay=args.confirm_delay)
+                                    st = stages[src_ip]
+                                    for delay, out_port, payload in st.on_message(
                                             msg.port, rm["payload"]):
-                                        pending_trade.append((time.time() + delay, src_ip,
-                                                              out_port, payload))
-                                    offer = stages[src_ip].joiner_offer
-                                    if offer is not None and src_ip not in offers_seen:
-                                        offers_seen.add(src_ip)
-                                        report_offer(src_ip, offer)
+                                        schedule_trade(delay, src_ip, out_port, payload)
+                                    while offers_seen.get(src_ip, 0) < len(st.joiner_offers):
+                                        n = offers_seen.get(src_ip, 0) + 1
+                                        offers_seen[src_ip] = n
+                                        report_offer(src_ip, st.joiner_offers[n - 1], n)
+                                    if st.trades > trades_done.get(src_ip, 0):
+                                        trades_done[src_ip] = st.trades
+                                        if st.done:
+                                            print(f"[sv] {src_ip}: TRADE {st.trades} COMPLETE; "
+                                                  f"no record left to offer")
+                                        else:
+                                            print(f"[sv] {src_ip}: TRADE {st.trades} COMPLETE; "
+                                                  f"offering the next record")
+                                            if args.offer_after_open is not None \
+                                                    or args.offer_at is not None:
+                                                lead = (args.offer_after_open
+                                                        if args.offer_after_open is not None
+                                                        else args.offer_at)
+                                                for delay, out_port, payload in st.offer_first():
+                                                    schedule_trade(lead + delay, src_ip,
+                                                                   out_port, payload)
                                 if (msg.protocol == PROTO_RELIABLE and msg.port == 1
                                         and src_ip in station_ids
                                         and rm["payload"] == trade.table_update(trade.KEY_TRADE, True)
@@ -850,13 +886,12 @@ def main():
                                         delay, rest = spec.split(":", 1)
                                         pending_late[(src_ip, f"open{index}")] = (
                                             time.time() + float(delay), rest)
-                                    if trade_offer is not None and args.offer_after_open is not None:
+                                    if trade_offers and args.offer_after_open is not None:
                                         stages.setdefault(src_ip, trade.TradeStage(
-                                            trade_offer, confirm_delay=args.confirm_delay))
+                                            trade_offers, confirm_delay=args.confirm_delay))
                                         for delay, out_port, payload in stages[src_ip].offer_first():
-                                            pending_trade.append(
-                                                (time.time() + args.offer_after_open + delay,
-                                                 src_ip, out_port, payload))
+                                            schedule_trade(args.offer_after_open + delay,
+                                                           src_ip, out_port, payload)
                                 slot = (port2.parse_join(rm["payload"])
                                         if msg.protocol == PROTO_RELIABLE and msg.port == 2
                                         else None)

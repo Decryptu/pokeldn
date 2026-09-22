@@ -284,3 +284,46 @@ def test_a_cancelled_trade_stops_the_joiner_stage():
     assert stage.on_message(0, bytes.fromhex("8000040100")) == []
     assert stage.done
     assert stage.on_message(0, bytes.fromhex("80000200") + bytes(trade.OFFER_SIZE)) == []
+
+
+def test_a_second_offer_runs_the_cycle_again_in_one_seat():
+    """With two records the joiner stage carries two trades in a seat: the second cycle is the
+    pair joiner's message list again, from the console's offer to the mirror of the exchange
+    close, with the trade key left open and the second record offered."""
+    from pokeldn.sv import trade
+    path = os.path.join(os.path.dirname(__file__), "data", "sv_pair_trade.txt")
+    rows = [line.split() for line in open(path) if line.strip()]
+    first = bytes.fromhex(rows[3][2])[4:]
+    second = bytes([0x5A]) + bytes(trade.OFFER_SIZE - 1)
+    stage = trade.JoinerTradeStage([first, second])
+
+    def replay(rows):
+        sent = []
+        for direction, port, hx in rows:
+            if direction != "TX":
+                continue
+            for _delay, out_port, payload in stage.on_message(int(port), bytes.fromhex(hx)):
+                sent.append((out_port, payload.hex()))
+        return sent
+
+    assert replay(rows) == [(int(p), h) for d, p, h in rows if d == "RX"]
+    assert stage.trades == 1 and not stage.done and stage.offer == second
+    # The trade key stays open, so the second cycle starts at the console's next offer.
+    again = rows[2:]
+    sent = replay(again)
+    expected = [(int(p), h) for d, p, h in again if d == "RX"]
+    expected[0] = (0, "80000200" + second.hex())
+    assert sent == expected
+    assert stage.trades == 2 and stage.done
+    assert stage.host_offers == [first, first]
+
+
+def test_the_joiner_stage_mirrors_a_close_of_the_trade_key():
+    from pokeldn.sv import trade
+    stage = trade.JoinerTradeStage(bytes(trade.OFFER_SIZE))
+    stage.on_message(1, trade.table_update(trade.KEY_TRADE, True))
+    out = stage.on_message(1, trade.table_update(trade.KEY_TRADE, False))
+    assert [(p, d.hex()) for _, p, d in out] == \
+        [(1, trade.table_update(trade.KEY_TRADE, False).hex())]
+    assert not stage.opened
+    assert [p for _, p, _ in stage.on_message(1, trade.table_update(trade.KEY_TRADE, True))] == [1]
