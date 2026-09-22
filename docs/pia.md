@@ -612,6 +612,18 @@ ring, and `0x6f1734` and `0x6f176c` walk it forward over empty slots towards a t
 at window `+0x20`. That target is initialised to -1 at `0x6ef228` and the walk is skipped while it
 is negative; the walk also stops at the first occupied slot.
 
+What writes that target from a message is `0x6eff28`, inside the receive function `0x6efc2c` and
+ahead of the window checks at `0x6f0330`. The header the message carries is deserialised onto the
+stack at `sp+0x18` (`0x6efdc8`, `MessageHeader` vfunc3), so its `lowest pending` field at header
+`+0x6` is `[sp+0x26]`; `0x6eff24` loads that halfword and `0x6eff28` stores it at window `+0x20`.
+The walk follows at `0x6eff2c` and runs in the same function: it advances the base by one slot at a
+time, up to `lowest pending - base` times, moving the ring head at `+0x14` with it and stopping at
+the first occupied slot.
+
+So a sender's own `lowest pending` drives its peer's receive base, and a sender that declares a
+number above its own next sequence id moves that base past messages it has not sent yet. Those
+messages then arrive below the base and are discarded at `0x6f03cc` with an acknowledgement.
+
 ### Version 4
 
 Version 4 uses one header class for both reliable protocols, 0x7C and 0x80:
