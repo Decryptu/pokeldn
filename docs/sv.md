@@ -493,16 +493,6 @@ Everything above the channel is on port 0. A message is a four-byte header and a
 |---|---|---|---|
 | 9.15 | joiner | `80000100` + 238 bytes, zlib, two fragments | the first game message, START then END |
 | 9.31 | host | the same | |
-
-A station sends its own identity **four** times, the two fragments and then the same two again
-under the next two sequence ids, flags `0x1b`, `0x15`, `0x13`, `0x15`. A pair's host sends two
-because its peer is its own clone. A host here must send four, and only after the station has
-announced its key 0x80 on port 1. Sent before that announcement nothing on port 0 is dispatched at
-all; sent as two, the station acknowledges them, answers the next message with `ack_id` 5 and
-`lowest_pending` 5 where a pair's joiner answers 4 and 3, and the game never sees that message.
-With four, the identity is dispatched as kind 1, the offer that follows is parsed, stored and drawn
-on the station's screen, and the station offers, confirms and commits in answer
-(`bin/sv_host.py --send-on-open`, `--offer-after-open`).
 | 58.2 | host | `80000200` + 348 bytes | the offered Pokemon |
 | 67.6 | joiner | `80000200` + 348 bytes | |
 | | either | `8000040100` | the player backed out of the wait; the station leaves the network after it (retail) |
@@ -522,6 +512,16 @@ in answer, byte for byte the pair host's message, is acknowledged and not taken:
 stays on "waiting for a response". Its acknowledgement after that offer reads ack 6, field 6,
 where the pair's joiner answered the same bytes with ack 4, field 3. The pair's host offered
 first; a host here has only offered second.
+
+A station sends its own identity **four** times, the two fragments and then the same two again
+under the next two sequence ids, flags `0x1b`, `0x15`, `0x13`, `0x15`. A pair's host sends two
+because its peer is its own clone. A host here must send four, and only after the station has
+announced its key 0x80 on port 1. Sent before that announcement nothing on port 0 is dispatched at
+all; sent as two, the station acknowledges them, answers the next message with `ack_id` 5 and
+`lowest_pending` 5 where a pair's joiner answers 4 and 3, and the game never sees that message.
+With four, the identity is dispatched as kind 1, the offer that follows is parsed, stored and drawn
+on the station's screen, and the station offers, confirms and commits in answer
+(`bin/sv_host.py --send-on-open`, `--offer-after-open`).
 
 The `8001` messages run in pairs, a 01 and a 02 under the same fourth byte, which steps 03, 06, 0B,
 0E. The trade applies over those four steps and both screens return to the trade menu.
@@ -558,6 +558,16 @@ never dispatched to the game's receiver at `0x1e685a4`, where the offer and the 
 same stream both were. Answering the commit 90 ms after the station's own, the way a pair's host
 does, rather than at once, does not change it. Every layer below is now known good, so what is
 missing is in the commit itself or in what a pair's host sends beside it.
+
+Read off the binary, a message that is acknowledged and never delivered came through one of two
+instructions. `0x6f03cc` discards a sequence id below the window base and `0x6f0540` discards one
+whose ring slot is already occupied, and both set the byte at protocol `+0x48` that owes the sender
+an acknowledgement; the other three silent discards on that path leave the byte alone, so a sender
+would see no ack at all (`docs/pia.md`, "What the receiver discards in silence"). Both mean the
+station's window base and its ring have moved apart from the host's numbering rather than that the
+commit is malformed. Tracing those two instructions through a commit separates them in one run, and
+the window base at `+0x18`, the ring head at `+0x14` and the slot count at `+0x10` read at the same
+moment say which sequence the window was waiting for.
 
 The paragraphs below record what was measured before that, on the emulator. Every layer a live
 emulated Scarlet host puts on the wire is now matched: the NetworkInfo byte for byte apart from the

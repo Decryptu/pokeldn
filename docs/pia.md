@@ -566,6 +566,39 @@ received. `pokeldn/ldn/reliable5.build_ack_message()` reproduces it byte for byt
 A window that accepts application data must acknowledge it, so sending data and sweeping only the
 sequence id measures the ack format. Sequence 0 draws nothing and sequence 1 draws the ack.
 
+### What the receiver discards in silence
+
+`0x006f0330` in Scarlet 4.0.0 `main.bin` is the version-9 receive path: it validates one message
+against the port's window and copies the payload into a slot. Five conditions make it discard the
+message and return success, so the caller cannot tell a discard from a delivery. Two of them also
+set the "an ack is owed" byte at protocol `+0x48`, and a sender then reads an acknowledgement for a
+message the application never receives.
+
+| address | the message is discarded when | ack still sent |
+|---|---|---|
+| `0x6f037c` | the port window is uninitialised and the flags lack `is initialized` (bit 3) | no |
+| `0x6f03cc` | the sequence id is below the window base at window `+0x18` | yes, `0x6f03d0` |
+| `0x6f0430` | the destination bitmap does not name this station | no |
+| `0x6f0454` | the stream id at header `+1` differs from the one the window was initialised with, kept at window `+0x1e` | no |
+| `0x6f0540` | the ring slot the sequence maps to is already occupied | yes, `0x6f0530` |
+
+Three further conditions return a result the caller can read: a sequence past the end of the window
+gives `0x4c0d` (`0x6f04a4`), a reassembly over `0x5a1` bytes gives `0x10407` (`0x6f05cc`), and a
+zlib payload that does not inflate gives `0x2c03` (`0x6f0580`).
+
+The window object carries the slot buffer at `+0x8`, the slot count at `+0x10`, the ring head at
+`+0x14`, the base sequence at `+0x18`, the stream id at `+0x1e` and the initialised flag at `+0x1f`.
+Slots are `0x5b8` bytes and the ring index wraps by subtraction rather than a modulo.
+
+A slot holds an occupied byte at `+0`, the message-end flag at `+1`, the zlib flag at `+2`, the
+payload size at `+4`, the payload from `+6`, a per-port handle at `+0x5a8` and a timestamp at
+`+0x5b0`. The message-start flag is not stored, so reassembly runs from the base forward to the
+first slot whose end flag is set.
+
+A message acknowledged but never delivered therefore came through `0x6f03cc` or `0x6f0540`, and
+both mean the window base and the ring have moved apart from the sender's numbering. Tracing those
+two instructions separates them in one run.
+
 ### Version 4
 
 Version 4 uses one header class for both reliable protocols, 0x7C and 0x80:
