@@ -230,6 +230,7 @@ type_info records with `tools/switch/rtti_names.py`, which finds 208 `nn::pia` c
 | `0xe457cc`, `0xe45740`, `0xe460bc`, `0xe454ec`, `0xe46148`, `0xe461d4`, `0xe46260` | the composers, which write the message type byte 6, 7, 8, 9, 0x0A, 0x0B and 0x0C respectively and then call `0xe45e9c` |
 | `0xe45e1c`, `0xe46034` | the type-7 and type-8 field serializers, each writing the `0xb9` field marker the announcement's body carries |
 | `0x46d6ca0`, `0x46d6ca8` | the singleton the drain hangs off, set up at `0xe44ac0` |
+| `0x1e685a4` | the receiver of the trade channel's port-0 messages: the kind as a tagged integer, the step, then kinds 0 to 5 through the table at `0x3c5bb82`; kind 1 the identity (`0x1e6864c`, parsed into the object at `+0xae0`), kind 2 the offer (`0x1e686cc`: the 344-byte blob parsed by `0x1db949c`, wrapped by `0xeee8fc` and `0xe13ad8`, stored at `+0xb8` by `0x1e684fc`, state `+0xc4` set to 3), kind 3 the confirmation (`0x1e68768`, the step against `+0xe2`), kind 4 the cancel (`0x1e68678`), kind 5 the commit (`0x1e68780`, state `+0xc0` masked to 4) |
 
 ## The Session protocol is there and is never in a capture
 
