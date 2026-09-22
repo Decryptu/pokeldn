@@ -14,22 +14,23 @@ Installation, the command-line reference and the code layout are in the
 
 ## Targets
 
-Four games, all on retail hardware, all over the same LDN and Pia layers:
+Six games, all on retail hardware, all over the same LDN and Pia layers:
 
-| | FRLG | LGPE | SwSh | BDSP |
-|---|:---:|:---:|:---:|:---:|
-| Trade | ✓ | ✓ | ✓ | ✓ |
-| Mystery Gift | ✓ | ∅ | ✓ | ∅ |
-| Link battle | ✓ | ✗ | ✗ | ✗ |
-| Code on the console, save read and write | ✓ | ✗ | ✗ | ✗ |
+| | FRLG | LGPE | SwSh | BDSP | PLA | SV |
+|---|:---:|:---:|:---:|:---:|:---:|:---:|
+| Trade | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ |
+| Mystery Gift | ✓ | ∅ | ✓ | ∅ | ∅ | ∅ |
+| Link battle | ✓ | ✗ | ✗ | ✗ | ∅ | ✗ |
+| Code on the console, save read and write | ✓ | ✗ | ✗ | ✗ | ✗ | ✗ |
 
 ✓ works on a retail console · ✗ not done · ∅ the game has no such feature over local wireless
-FRLG FireRed/LeafGreen · LGPE Let's Go Pikachu/Eevee · SwSh Sword/Shield · BDSP Brilliant Diamond/Shining Pearl
+FRLG FireRed/LeafGreen · LGPE Let's Go Pikachu/Eevee · SwSh Sword/Shield · BDSP Brilliant Diamond/Shining Pearl · PLA Legends Arceus · SV Scarlet/Violet
 
 FireRed and LeafGreen run as the original GBA ROM inside an emulator on the Switch, so the ROM's
-own GBA link protocol is stacked on the console's LDN and Pia. The three other games put their
-own code directly on Pia: Unity/IL2CPP in Brilliant Diamond and Shining Pearl, C++ with protocol
-buffers over `gflnet3` in Sword and Shield and in Let's Go.
+own GBA link protocol is stacked on the console's LDN and Pia. The five other games put their own
+code directly on Pia: Unity/IL2CPP in Brilliant Diamond and Shining Pearl, C++ with protocol
+buffers over `gflnet3` in Sword and Shield and in Let's Go, and C++ with Pia statically linked in
+Legends Arceus and in Scarlet and Violet.
 
 ## Sections
 
@@ -42,6 +43,7 @@ buffers over `gflnet3` in Sword and Shield and in Let's Go.
 | [Sword and Shield](swsh.md) | Pia 4, the sync framework, trading, and the Mystery Gift local branch. |
 | [Let's Go Pikachu and Eevee](lgpe.md) | Pia 3, the link code, and the trade flow. |
 | [Legends Arceus](pla.md) | Pia header version 11, the trade flow, and the record a host composes. |
+| [Scarlet and Violet](sv.md) | Pia header version 11, the reliable streams, and the trade a host runs. |
 | [Hardware and setup](hardware.md) | Adapters, Raspberry Pi deployment, Switch keys. |
 
 ## Credits

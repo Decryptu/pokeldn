@@ -7,9 +7,9 @@ has_children: false
 # Scarlet and Violet
 
 Pokemon Scarlet (`0100a3d008c5c000`) and Violet (`01008f6008c5e000`) are native Switch titles with
-Pia statically linked into `main`. The wireless layer and the mesh below the game are read, and the
-mesh join the host waits for is read out of the binary; the game's own records are readable but
-not yet spoken to.
+Pia statically linked into `main`. A trade is complete on a retail console: `bin/sv_host.py` puts up
+a network the console joins from its offline Link Trade search, and the console draws the host's
+offer, offers its own, confirms and commits.
 
 Addresses are offsets into the decompressed `main` of update 4.0.0, as `tools/switch/nso_read.py`
 lays it out: text `0x0..0x343fc90`, rodata from `0x3440000`, data from `0x4383000`.

@@ -2,28 +2,28 @@
 
 A Linux computer speaking Nintendo Switch local wireless (LDN) to Pokémon games on a real Switch or
 Switch 2. It hosts or joins the game's own wireless session and runs the game's protocol against a
-retail console, with nothing installed on the console. Five games so far:
+retail console, with nothing installed on the console. Six games so far:
 
-| | FRLG | LGPE | SwSh | BDSP | PLA |
-|---|:---:|:---:|:---:|:---:|:---:|
-| Trade | ✓ | ✓ | ✓ | ✓ | ✓ |
-| Mystery Gift | ✓ | ∅ | ✓ | ∅ | ∅ |
-| Link battle | ✓ | ✗ | ✗ | ✗ | ∅ |
-| Code on the console, save read and write | ✓ | ✗ | ✗ | ✗ | ✗ |
+| | FRLG | LGPE | SwSh | BDSP | PLA | SV |
+|---|:---:|:---:|:---:|:---:|:---:|:---:|
+| Trade | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ |
+| Mystery Gift | ✓ | ∅ | ✓ | ∅ | ∅ | ∅ |
+| Link battle | ✓ | ✗ | ✗ | ✗ | ∅ | ✗ |
+| Code on the console, save read and write | ✓ | ✗ | ✗ | ✗ | ✗ | ✗ |
 
 ✓ works on a retail console · ✗ not done · ∅ the game has no such feature over local wireless
-FRLG FireRed/LeafGreen · LGPE Let's Go Pikachu/Eevee · SwSh Sword/Shield · BDSP Brilliant Diamond/Shining Pearl · PLA Legends Arceus
+FRLG FireRed/LeafGreen · LGPE Let's Go Pikachu/Eevee · SwSh Sword/Shield · BDSP Brilliant Diamond/Shining Pearl · PLA Legends Arceus · SV Scarlet/Violet
 
 Everything runs on the same radio and the same LDN and Pia layers. FireRed and LeafGreen ship as
 the original GBA ROM inside an emulator, so their GBA link protocol rides on top of those layers
-where the three other games put their own code directly on Pia; nothing else about them is
+where the five other games put their own code directly on Pia; nothing else about them is
 different.
 
 The full protocol documentation is at [decryptu.github.io/pokeldn](https://decryptu.github.io/pokeldn/).
 
 The package is layered by what a module is true of: `pokeldn.ldn` is the wireless layer every Switch
 title shares, `pokeldn.gba` is the GBA wireless adapter's protocol above it, and `pokeldn.frlg`,
-`pokeldn.lgpe`, `pokeldn.swsh`, `pokeldn.bdsp` and `pokeldn.pla` are the games. Entry points are named for the game
+`pokeldn.lgpe`, `pokeldn.swsh`, `pokeldn.bdsp`, `pokeldn.pla` and `pokeldn.sv` are the games. Entry points are named for the game
 they drive.
 
 ---
@@ -123,11 +123,11 @@ See [Adapters](docs/hardware_adapters.md) for the configuration each one needs.
 
 | | |
 |---|---|
-| [`bin/`](bin) | what you run against a console. FireRed/LeafGreen: `frlg_mg_host.py` (Mystery Gift, Wonder News and native code), `frlg_mg_client.py` (receive a card from a console), `frlg_trade_host.py` (trade and Union Room host), `frlg_trade_join.py` (trade joiner). Let's Go: `lgpe_host.py`, `lgpe_join.py`. Sword/Shield: `swsh_connect.py` (trade), `swsh_gift_host.py` (Mystery Gift), `swsh_join.py` (scan). Brilliant Diamond/Shining Pearl: `bdsp_connect.py` (Union Room and trade), `bdsp_join.py`, `bdsp_pia_probe.py`. Legends Arceus: `pla_host.py` (trade), `pla_join.py` |
+| [`bin/`](bin) | what you run against a console. FireRed/LeafGreen: `frlg_mg_host.py` (Mystery Gift, Wonder News and native code), `frlg_mg_client.py` (receive a card from a console), `frlg_trade_host.py` (trade and Union Room host), `frlg_trade_join.py` (trade joiner). Let's Go: `lgpe_host.py`, `lgpe_join.py`. Sword/Shield: `swsh_connect.py` (trade), `swsh_gift_host.py` (Mystery Gift), `swsh_join.py` (scan). Brilliant Diamond/Shining Pearl: `bdsp_connect.py` (Union Room and trade), `bdsp_join.py`, `bdsp_pia_probe.py`. Legends Arceus: `pla_host.py` (trade), `pla_join.py`. Scarlet/Violet: `sv_host.py` (trade), `sv_join.py` |
 | [`tools/ldn/`](tools/ldn) | the radio, for any target: `ldn_scan.py`, `sniff.py`, `joyspot_probe.py`, `ldn_debug_report.sh` |
 | [`tools/frlg/`](tools/frlg) | reading what a FireRed console sent back, offline: `dump_read.py`, `script_read.py`, `rom_functions.py`, `cartridge_pair.py`, `game_data_read.py`, `english_build.py` |
 | [`tools/switch/`](tools/switch) | reading a retail Switch title's own code, offline: `xci_read.py`, `romfs_read.py`, `nso_read.py`, `nso_relocs.py`, `nso_imports.py`, `rtti_names.py`, `arm64_xref.py`, `arm64_dis.py` |
-| [`pokeldn/`](pokeldn) | the package everything above is made of: `ldn/` the wireless layer, `gba/` the GBA link above it, `frlg/` `lgpe/` `swsh/` `bdsp/` `pla/` the games, `gen8.py` the Pokémon format Sword/Shield and Brilliant Diamond/Shining Pearl share |
+| [`pokeldn/`](pokeldn) | the package everything above is made of: `ldn/` the wireless layer, `gba/` the GBA link above it, `frlg/` `lgpe/` `swsh/` `bdsp/` `pla/` `sv/` the games, `gen8.py` the Pokémon format Sword/Shield and Brilliant Diamond/Shining Pearl share |
 | [`asm/`](asm) | ARM sources for the payloads the console runs; `scripts/gen_buffer_scripts.py` assembles them into `pokeldn/frlg/rom/buffer_payloads.py` |
 | [`scripts/`](scripts) | setup, deployment and code generation; never pointed at a console |
 | [`config/`](config) | host profiles (`host.toml`, and `host.local.toml` for this machine) |
@@ -400,6 +400,31 @@ record the console shows to `--trade-box-collect`.
 `pokeldn.pla.pokemon` reads and writes the record, `build` composes one from 376 zero bytes, and
 `pokeldn.pla.stats` gives the stats and the size the game itself would compute. See
 [Legends Arceus](docs/pla.md).
+
+### Scarlet and Violet
+
+The console's offline Link Trade search alternates scanning and hosting, so pokeldn hosts and the
+console joins on its own.
+
+```bash
+sudo -E ./.venv/bin/python bin/sv_host.py --seconds 240 --player-name RyuPlayer \
+  --rtt-probe --net-property --clock --net-stations 4 --scarlet-response \
+  --record-set records/ --announce --announce-delay 5.25 \
+  --send-at 6.00:0x7c:1:b90101b902b90280800001 \
+  --send-on-open 0.15:0x7c:0:<identity fragment>:z:start \
+  --trade-offer offer.hex --offer-after-open 8
+```
+
+On the console: X → Poké Portal → Link Trade → offline, no code → search. It finds the host, joins,
+and its trade screen draws the offer with the usual menu.
+
+Two things the host has to get right, both of them silent when wrong. Its identity on the trade
+stream is four messages, the two zlib fragments and then the same two again, and it may not send
+them until the console has announced its own key 0x80. And the `lowest_pending` field of its
+acknowledgements is its own next sequence id: that field sets the peer's receive window base, so a
+host that declares one past the console's last sequence walks the console's base past its own next
+message, which then arrives below it and is acknowledged and thrown away without reaching the game.
+See [Scarlet and Violet](docs/sv.md).
 
 ### Diagnostics
 
