@@ -186,3 +186,39 @@ def test_the_join_parses_and_the_accept_reproduces_the_pair_host():
     assert port2.parse_join(PAIR_JOIN[:-1]) is None
     assert port2.parse_join(b"\x0d\xb9\x01\x01") is None
     assert port2.build_accept(port2.station_id(PAIR_HOST_CONSTANT_ID)) == PAIR_ACCEPT
+
+
+def test_the_trade_stage_follows_the_pair_host_message_for_message():
+    """The emulated pair's 0x7C exchange from the key-0x80 open to the close of key 0x0180, both
+    directions, drives the host's state machine: fed the joiner's messages in order it must send
+    the host's, in order, byte for byte."""
+    from pokeldn.sv import trade
+    path = os.path.join(os.path.dirname(__file__), "data", "sv_pair_trade.txt")
+    rows = [line.split() for line in open(path) if line.strip()]
+    rows = rows[2:]                                   # the key-0x80 opens belong to the seat
+    host_offer = bytes.fromhex(rows[0][2])[4:]
+    assert rows[0][0] == "TX" and len(host_offer) == trade.OFFER_SIZE
+    stage = trade.TradeStage(host_offer)
+    sent = []
+    for direction, port, hx in rows:
+        if direction != "RX":
+            continue
+        for _delay, out_port, payload in stage.on_message(int(port), bytes.fromhex(hx)):
+            sent.append((out_port, payload.hex()))
+    expected = [(int(port), hx) for direction, port, hx in rows if direction == "TX"]
+    assert sent == expected
+    assert stage.done
+    assert stage.joiner_offer == host_offer         # the pair traded a clone for itself
+
+
+def test_the_trade_stage_ignores_what_is_not_the_next_step():
+    from pokeldn.sv import trade
+    stage = trade.TradeStage(bytes(trade.OFFER_SIZE))
+    assert stage.on_message(1, bytes.fromhex("b90101b902b90280800001")) == []
+    assert stage.on_message(0, bytes.fromhex("80010103")) == []      # no commit yet
+    assert stage.on_message(0, bytes.fromhex("80000200") + bytes(10)) == []
+    out = stage.on_message(0, bytes.fromhex("80000200") + bytes(trade.OFFER_SIZE))
+    assert [(p, d[:4].hex()) for _, p, d in out] == [(0, "80000200"), (0, "80000300")]
+    assert stage.on_message(0, bytes.fromhex("80000200") + bytes(trade.OFFER_SIZE)) == []
+    assert trade.table_update(trade.KEY_EXCHANGE, True).hex() == "b90101b902b90280800101"
+    assert trade.table_update(trade.KEY_TRADE, True).hex() == "b90101b902b90280800001"

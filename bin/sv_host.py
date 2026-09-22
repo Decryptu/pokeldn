@@ -26,7 +26,7 @@ sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 from pokeldn import config
 from pokeldn import sv
 from pokeldn.ldn import pia6, pia_connect, reliable5
-from pokeldn.sv import port2
+from pokeldn.sv import port2, trade
 from pokeldn.pla import game_channel
 from pokeldn.ldn.ldn_mitm_host import IpHostTransport
 from pokeldn.ldn.transport import HostTransport, find_ap_phy
@@ -292,6 +292,14 @@ def build_parser():
     ap.add_argument("--announce-delay", type=float, default=2.3,
                     help="seconds after the seat before the type 7 goes out; a pair's host "
                          "sends it at about 2.3")
+    ap.add_argument("--trade-offer", default=None,
+                    help="a file holding the 348-byte record this host offers (raw, or hex text; "
+                         "a 352-byte game message is stripped of its header). With it the host "
+                         "answers the console's offer with its own, confirms, and follows the "
+                         "console through the commit and the four exchange steps the way a pair's "
+                         "host does (pokeldn.sv.trade)")
+    ap.add_argument("--confirm-delay", type=float, default=1.0,
+                    help="seconds after the console's offer before the host's confirmation")
     ap.add_argument("--send", action="append", default=[],
                     help="PROTO:PORT:HEX, a reliable data message to send once the console has "
                          "joined (host seq 1 on that port, INITIALIZED); repeatable")
@@ -322,6 +330,19 @@ def main():
     pending_update = {}
     pending_records = {}
     pending_late = {}
+    pending_trade = []          # (due, ip, port, payload) the trade stage asked to send
+    stages = {}                 # ip -> trade.TradeStage
+    trade_offer = None
+    if args.trade_offer:
+        raw = open(args.trade_offer, "rb").read()
+        try:
+            raw = bytes.fromhex(raw.decode("ascii").strip())
+        except (UnicodeDecodeError, ValueError):
+            pass
+        if len(raw) == trade.OFFER_SIZE + 4:
+            raw = raw[4:]
+        trade_offer = raw
+        trade.TradeStage(trade_offer)           # rejects a wrong size before the radio is up
     game_data = binascii.unhexlify(args.game_data) if args.game_data else None
     app_data = sv.build_advertise_data(game_data=game_data)
     print(f"[sv] advertising comm id {comm_id:#018x}, {len(app_data)} bytes of application data, "
@@ -383,6 +404,21 @@ def main():
         s = host_seq.get((src_ip, protocol, port), 1)
         host_seq[(src_ip, protocol, port)] = s + 1
         return s
+
+    def send_data(ip, protocol, port, data, why):
+        """One reliable data message, whole, on the host's own sequence for that port."""
+        seq = next_seq(ip, protocol, port)
+        flags = (reliable5.FLAG_APPLICATION_DATA | reliable5.FLAG_MESSAGE_START
+                 | reliable5.FLAG_MESSAGE_END
+                 | (reliable5.FLAG_IS_INITIALIZED if seq == 1 else 0))
+        body = build_reliable_body(protocol, flags, seq, data)
+        pkt = build_reply(keys, transport.our_ip, body, station_ids[ip]["console_var"],
+                          os.urandom(8), protocol=protocol, port=port, flags=0)
+        transport.send(pkt, ip)
+        record(rec="out", dst=ip, kind=why, protocol=protocol, port=port, seq=seq,
+               hex=pkt.hex(), t=time.time())
+        print(f"[sv] -> {ip}: data 0x{protocol:02x}:{port} seq {seq} {len(data)}B "
+              f"{data[:8].hex()} ({why})")
 
     def send_ack(src_ip, protocol, port, dst_var, why):
         high = stream_high.get((src_ip, protocol, port), 0)
@@ -470,6 +506,13 @@ def main():
                     record(rec="out", dst=ip, kind="net property", seqid=state[0],
                            hex=pkt.hex(), t=now)
                     print(f"[sv] -> {ip}: net 0x50 update property, seqid={state[0]}")
+            for entry in list(pending_trade):
+                due, ip, port, payload = entry
+                if now < due:
+                    continue
+                pending_trade.remove(entry)
+                if ip in station_ids:
+                    send_data(ip, PROTO_RELIABLE, port, payload, "trade")
             for (ip, index), (due, rest) in list(pending_late.items()):
                 if now < due or ip not in station_ids:
                     continue
@@ -607,6 +650,8 @@ def main():
                                 for k in [k for k in d if k[0] == src_ip]:
                                     d.pop(k)
                             sent_once = {s for s in sent_once if s[0] != src_ip}
+                            stages.pop(src_ip, None)
+                            pending_trade[:] = [e for e in pending_trade if e[1] != src_ip]
                             net_answered.discard(src_ip)
                             host_const, host_var = j["destination_constant_id"], j["destination_var"]
                             console_const, console_var = j["source_constant_id"], j["source_var"]
@@ -736,6 +781,15 @@ def main():
                                     send_ack(src_ip, msg.protocol, msg.port,
                                              station_ids[src_ip]["console_var"],
                                              f"seq {rm['sequence_id']}")
+                                if (trade_offer is not None and msg.protocol == PROTO_RELIABLE
+                                        and src_ip in station_ids):
+                                    if src_ip not in stages:
+                                        stages[src_ip] = trade.TradeStage(
+                                            trade_offer, confirm_delay=args.confirm_delay)
+                                    for delay, out_port, payload in stages[src_ip].on_message(
+                                            msg.port, rm["payload"]):
+                                        pending_trade.append((time.time() + delay, src_ip,
+                                                              out_port, payload))
                                 slot = (port2.parse_join(rm["payload"])
                                         if msg.protocol == PROTO_RELIABLE and msg.port == 2
                                         else None)

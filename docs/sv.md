@@ -494,6 +494,7 @@ Everything above the channel is on port 0. A message is a four-byte header and a
 | 9.31 | host | the same | |
 | 58.2 | host | `80000200` + 348 bytes | the offered Pokemon |
 | 67.6 | joiner | `80000200` + 348 bytes | |
+| | either | `8000040100` | the player backed out of the wait; the station leaves the network after it (retail) |
 | 112.7 | host | `80000300` | |
 | 116.0 | joiner | `80000300` | |
 | 117.5 | joiner | `80000500` | |
@@ -504,6 +505,12 @@ Everything above the channel is on port 0. A message is a four-byte header and a
 | 118.2 | both | `8001010b`, `8001020b` | |
 | 118.9 | both | `8001010e`, `8001020e` | |
 | 119.2 | both | port 1, `b90101b902b90280800100` | the table update that closes it |
+
+Against a host here the retail console's offer arrives as the pair's, and the host's offer sent
+in answer, byte for byte the pair host's message, is acknowledged and not taken: the console
+stays on "waiting for a response". Its acknowledgement after that offer reads ack 6, field 6,
+where the pair's joiner answered the same bytes with ack 4, field 3. The pair's host offered
+first; a host here has only offered second.
 
 The `8001` messages run in pairs, a 01 and a 02 under the same fourth byte, which steps 03, 06, 0B,
 0E. The trade applies over those four steps and both screens return to the trade menu.
