@@ -77,5 +77,8 @@ def build_from(template_raw, **fields):
     inconsistent Pokemon behind - and `read` on the result is the check that it did what was asked.
     `gen8.write` lists the fields; `level` and `stats` are not among them for a PB8, which is the
     stored form and has no party stats to set.
+
+    The template may be in any of the four shapes `gen8.load` reads, so a PKHeX export (344 bytes,
+    decrypted) works as it comes; the party tail is dropped, since a BDSP trade sends the stored form.
     """
-    return encrypt(gen8.write(decrypt(template_raw), **fields))
+    return encrypt(gen8.write(gen8.load(template_raw)[:SIZE_STORED], **fields))

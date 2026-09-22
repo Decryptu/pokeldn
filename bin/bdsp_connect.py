@@ -1653,7 +1653,7 @@ def build_parser():
                          "WAIT_READYOK only ends when a message ARRIVES inside it, and it enters "
                          "that state on its own countdown, so the answer has to keep coming")
     ap.add_argument("--trade-template", metavar="FILE",
-                    help="a 328-byte PB8 to offer, edited by --trade-species and friends. 328 "
+                    help="a PB8 to offer (328 or 344 bytes, encrypted or PKHeX's decrypted export), edited by --trade-species and friends. 328 "
                          "bytes hold much more than this project has identified, so what we send "
                          "is a real Pokemon with named fields changed rather than one invented "
                          "from nothing")
