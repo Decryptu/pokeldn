@@ -736,6 +736,28 @@ then arrive below it and are acknowledged and discarded at `0x6f03cc` without re
 `tests/test_sv.py` drives the stage with the host's half of the pair's message list and pins what
 it answers to the joiner's half.
 
+### What a trade rewrites, measured on a record that came back
+
+A record composed here was traded onto a console, kept in its save, and offered back in a later
+trade. The two wire records differ in 27 of their 344 bytes and in seven fields, and every one of
+them is a handler field or a derived value:
+
+| field | as sent | as it came back |
+|---|---|---|
+| `current_handler` | 0 | 1 |
+| `ht_name` | empty | the console player's name |
+| `ht_language` | 0 | 3 |
+| `ht_friendship` | 0 | 50 |
+| `nickname` | empty | the species name in the console's language |
+| `current_hp` | 0 | 237 |
+| `stats` | zero | the six the game computes |
+
+Everything else is stored as sent: the encryption constant, the personality value, the trainer
+identity, the moves and their PP, the individual, effort and growth values, the ball, the met
+data, the experience and the level byte, the size scalars and the tera type. An empty name slot
+comes back as the species name, which is the same rule the Sword Mystery Gift record follows
+(`docs/swsh_gift.md`).
+
 ### Joining a searching console: a trade, and what decides the seat
 
 **A trade is complete in the joiner direction on a retail Scarlet (2026-09-22).** The console
