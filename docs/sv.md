@@ -421,6 +421,45 @@ datagram both recorded (`scratchpad/sv_pair_timeline.py`).
 The trade runs on Reliable 0x7C, not on the broadcast streams. Those carry the identity exchange
 and nothing else.
 
+### Port 2: the announcement, the join and the answer
+
+Port 2 of Reliable 0x7C (one station) and of BroadcastReliable 0x80 (every station) carries the
+game's own session messages. One dispatcher reads both, `0x1954aec`, called from the receiver
+`0x1954978` that polls the two port-2 handles (`0x475ea70`, `0x475ea7c`): the first byte is the
+message type, 1 to 0xD, through the table at `0x3c68988`. Three of them open a trade:
+
+| time | station | wire | type | bytes |
+|---|---|---|---|---|
+| 0.00 | host | 0x80 port 2, zlib | 7 | 167 inflated: `07b901b905b906010200bc09`, nine zero bytes, `bc8080`, 128 zero bytes, `000000b90183`, the host's station id, `00` |
+| 0.09 | joiner | 0x7C port 2 | 3 | `03b90200bc09` and nine zero bytes |
+| 0.15 | host | 0x80 port 2 | 9 | `09b9030000b90183` and the joiner's station id |
+
+The encoding is the tagged one of the channel table (`pokeldn.pla.channel_table`) with one more
+tag, `0xbc`, a byte string: the tag, the length as an integer, the bytes. The type 7 is a tuple of
+one tuple of five: a tuple of six (1, 2, 0, the nine-byte string, the 128-byte string, 0), 0, 0, a
+tuple of one u64, and 0. The type 9 is a tuple of three: the slot byte the join named, a result
+byte, and a tuple of one u64.
+
+A type 7 is a relayed type 1. The type-1 handler `0x18ceb70` copies the 0x8e-byte body, steps two
+counters on the receiver (`+0x1c4`, and `+0x1c0` masked to seven bits), appends the sender's
+station id and queues the element for the type-7 composer (queue `+0x200`, stride 0xa8). A
+station sends a port-2 message to one station through `0x18d5a58`; when the target is its own
+station id it dispatches the message to itself through `0x1954aec` instead of the wire, which is
+how a host announcing alone relays its own type 1.
+
+The type-3 handler `0x1981e94` queues the type 9 (`+0x270`) when the join is accepted and an
+element carrying a code 1 to 4 (`+0x350`) when it is not. The type-9 receiver `0x18b65c8` selects
+an object by the slot byte, applies the message, and compares the u64 with the station's own id
+at `[[0x46d0a08]] + 0xb8`; any other id is dropped.
+
+A station id is the Pia constant id read as a big-endian u64. The 127.0.0.2 instance of the pair
+carries `7f00020000020000`, which is `ldn_constant_id` of the MAC `02:00:7f:00:00:02`, and both
+of its messages above carry that value because both stations of that pair were that instance's
+clones. Against a retail console the type 9 must carry the console's own constant id, the one in
+the source location id of its Session join request. `pokeldn.sv.port2` builds all three from the
+ids, `bin/sv_host.py --announce` sends the type 7 after the seat and answers the console's type 3
+with a type 9 carrying its id; `tests/test_sv.py` pins the three messages to the pair's bytes.
+
 ### Opening the channel
 
 | time | station | port | bytes | |
@@ -434,6 +473,12 @@ Port 1 is the channel table, the Arceus mechanism: a station announces the handl
 and sends on a key only once its peer has announced it. A joiner's table is byte for byte the
 host's. Until the joiner announces its own, the host opens no channel and stays on its search
 screen however complete the identity exchange is.
+
+The host's open of key 0x80 comes first, and a joiner that reaches its trade screen before it has
+seen the host's open never sends its first game message: its screen draws, and A on a Pokemon
+gives no menu. A retail console opens its own key 0x80 at 9.15 s after the seat. A host that opens
+at 11.0 s gets a trade screen with no menu; a host that opens at 6.0 s gets the console's first
+game message within a second of the console's own open, and the menu.
 
 The reliable header on 0x7C carries no destination bitmap: nine bytes, the sequence and the lowest
 pending both the message's own sequence. An open is flags 0x0F and a later update on the same port
@@ -488,7 +533,10 @@ sent the 0x12 and the 0x51, Net traffic falls from 212 messages a seat to 2.
 
 ## Unresolved
 
-What still keeps a station on its search screen against a host built here. Every layer a live
+A retail Scarlet reaches its trade screen against a host built here, and its trade menu works,
+with the port-2 exchange built from the station ids and the host's key-0x80 open sent before the
+console's own. The host does not answer an offer yet. The paragraphs below record what was
+measured before that, on the emulator. Every layer a live
 emulated Scarlet host puts on the wire is now matched: the NetworkInfo byte for byte apart from the
 session id, Net 0x11 and 0x50, both station lists, the join response, RTT in both directions, the
 clone clock, the channel table, the two stream opens, the two announcements on 0x80 port 2, the
@@ -523,7 +571,8 @@ resolves the protocol and calls `0x107e060`. Seven composers call it, each writi
 byte, 6 through 0x0C, and the announcement a pair's host sends at 2.33 s is the type its composer
 `0xe45740` writes. They run from one drain, `0xe44cf0`, which walks eight queues on the singleton at
 `0x46d6ca0` and composes whatever each holds. So the console withholding the announcement means the
-game never put it in that queue, and what fills the queue is above Pia entirely.
+game never put it in that queue. What fills it is the type-1 handler, a relay (Port 2 above):
+a station that announces nothing never relayed a type 1, its own or a peer's.
 
 A retail console answers all of it exactly as the emulated one does, byte for byte. In a 179-second
 seat it sent 16 records, 19 sends in all and never more than two of any one, against 350 a second

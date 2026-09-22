@@ -26,6 +26,7 @@ sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 from pokeldn import config
 from pokeldn import sv
 from pokeldn.ldn import pia6, pia_connect, reliable5
+from pokeldn.sv import port2
 from pokeldn.pla import game_channel
 from pokeldn.ldn.ldn_mitm_host import IpHostTransport
 from pokeldn.ldn.transport import HostTransport, find_ap_phy
@@ -179,6 +180,28 @@ def build_reliable_body(protocol, flags, sequence_id, data, lowest_pending=None)
                                   destination_bits=bits, bitmap=bitmap) + data
 
 
+def parse_send_payload(hx):
+    """-> (data, flags) of a HEX[:z][:start|:end] send spec. `:z` marks a payload already zlib,
+    `:start` a fragment that opens a message and `:end` one that closes it; without either the
+    message is whole. A pair's first game message goes out as two fragments, each deflated on its
+    own, 124 and 114 bytes (docs/sv.md, The trade)."""
+    flags = 0
+    parts = hx.split(":")
+    hx = parts[0]
+    for suffix in parts[1:]:
+        if suffix == "z":
+            flags |= reliable5.FLAG_ZLIB
+        elif suffix == "start":
+            flags |= reliable5.FLAG_MESSAGE_START
+        elif suffix == "end":
+            flags |= reliable5.FLAG_MESSAGE_END
+        else:
+            raise ValueError(f"unknown send suffix :{suffix}")
+    if not flags & (reliable5.FLAG_MESSAGE_START | reliable5.FLAG_MESSAGE_END):
+        flags |= reliable5.FLAG_MESSAGE_START | reliable5.FLAG_MESSAGE_END
+    return bytes.fromhex(hx), flags | reliable5.FLAG_APPLICATION_DATA
+
+
 def build_parser():
     ap = argparse.ArgumentParser(description=__doc__,
                                  formatter_class=argparse.RawDescriptionHelpFormatter)
@@ -251,7 +274,7 @@ def build_parser():
                                         "console leaves them zero, a host that a joiner reached "
                                         "carried 648cf4 at +0x21")
     ap.add_argument("--send-at", action="append", default=[],
-                    help="DELAY:PROTO:PORT:HEX[:z], a reliable data message sent that many seconds "
+                    help="DELAY:PROTO:PORT:HEX[:z][:start|:end], a reliable data message sent that many seconds "
                          "after the seat; the sequence follows the port's own. A pair's host sends "
                          "its 0x7c port 1 table update at nine seconds this way")
     ap.add_argument("--record-set", default=None,
@@ -261,6 +284,14 @@ def build_parser():
                          "(scratchpad/sv_extract_records.py writes such a set)")
     ap.add_argument("--record-delay", type=float, default=0.0,
                     help="seconds after the seat before the record set goes out")
+    ap.add_argument("--announce", action="store_true",
+                    help="run the game's port-2 opening from the station ids instead of a replay: "
+                         "the type-7 announcement on 0x80 port 2 carrying this host's own station "
+                         "id, and a type 9 carrying the console's in answer to its type-3 join on "
+                         "0x7c port 2 (pokeldn.sv.port2)")
+    ap.add_argument("--announce-delay", type=float, default=2.3,
+                    help="seconds after the seat before the type 7 goes out; a pair's host "
+                         "sends it at about 2.3")
     ap.add_argument("--send", action="append", default=[],
                     help="PROTO:PORT:HEX, a reliable data message to send once the console has "
                          "joined (host seq 1 on that port, INITIALIZED); repeatable")
@@ -444,15 +475,10 @@ def main():
                     continue
                 del pending_late[(ip, index)]
                 p_, port_, hx = rest.split(":", 2)
-                zlib_flag = hx.endswith(":z")
-                if zlib_flag:
-                    hx = hx[:-2]
-                p_, port_, data = int(p_, 0), int(port_), bytes.fromhex(hx)
+                data, flags = parse_send_payload(hx)
+                p_, port_ = int(p_, 0), int(port_)
                 seq = next_seq(ip, p_, port_)
-                flags = (reliable5.FLAG_APPLICATION_DATA | reliable5.FLAG_MESSAGE_START
-                         | reliable5.FLAG_MESSAGE_END
-                         | (reliable5.FLAG_IS_INITIALIZED if seq == 1 else 0)
-                         | (reliable5.FLAG_ZLIB if zlib_flag else 0))
+                flags |= reliable5.FLAG_IS_INITIALIZED if seq == 1 else 0
                 body = build_reliable_body(p_, flags, seq, data)
                 pkt = build_reply(keys, transport.our_ip, body, station_ids[ip]["console_var"],
                                   os.urandom(8), protocol=p_, port=port_, flags=0)
@@ -585,6 +611,7 @@ def main():
                             host_const, host_var = j["destination_constant_id"], j["destination_var"]
                             console_const, console_var = j["source_constant_id"], j["source_var"]
                             station_ids[src_ip] = dict(host_const=host_const, host_var=host_var,
+                                                       console_const=console_const,
                                                        console_var=console_var, at=time.time())
                             version = dict(j["protocols"]).get(PROTO_SESSION, 0)
                             if not args.no_session_ack:
@@ -658,6 +685,13 @@ def main():
                                     continue
                                 delay, rest = spec.split(":", 1)
                                 pending_late[(src_ip, index)] = (time.time() + float(delay), rest)
+                            if args.announce and (src_ip, "announce") not in pending_late:
+                                # The type 7 names THIS host's station: the constant id the
+                                # console addressed its join to, read big-endian (port2.py).
+                                body = port2.build_announce(port2.station_id(host_const))
+                                pending_late[(src_ip, "announce")] = (
+                                    time.time() + args.announce_delay,
+                                    f"0x80:2:{port2.deflate_announce(body).hex()}:z")
                         if (not args.no_rtt and msg.protocol == PROTO_RTT and msg.payload
                                 and msg.payload[0] == RTT_REQUEST):
                             # A pair's host answers with the REQUESTER's variable id in the
@@ -702,6 +736,31 @@ def main():
                                     send_ack(src_ip, msg.protocol, msg.port,
                                              station_ids[src_ip]["console_var"],
                                              f"seq {rm['sequence_id']}")
+                                slot = (port2.parse_join(rm["payload"])
+                                        if msg.protocol == PROTO_RELIABLE and msg.port == 2
+                                        else None)
+                                if (args.announce and slot is not None and src_ip in station_ids
+                                        and (src_ip, "accept") not in sent_once):
+                                    # The type 9 carries the JOINER's station id; its receiver
+                                    # compares it with the station's own and drops any other.
+                                    sent_once.add((src_ip, "accept"))
+                                    data = port2.build_accept(
+                                        port2.station_id(station_ids[src_ip]["console_const"]),
+                                        slot=slot)
+                                    s2 = next_seq(src_ip, 0x80, 2)
+                                    flags = (reliable5.FLAG_APPLICATION_DATA
+                                             | reliable5.FLAG_MESSAGE_START
+                                             | reliable5.FLAG_MESSAGE_END
+                                             | (reliable5.FLAG_IS_INITIALIZED if s2 == 1 else 0))
+                                    body = build_reliable_body(0x80, flags, s2, data)
+                                    pkt = build_reply(keys, transport.our_ip, body,
+                                                      station_ids[src_ip]["console_var"],
+                                                      os.urandom(8), protocol=0x80, port=2, flags=0)
+                                    transport.send(pkt, src_ip)
+                                    record(rec="out", dst=src_ip, kind="accept", protocol=0x80,
+                                           port=2, seq=s2, hex=pkt.hex(), t=time.time())
+                                    print(f"[sv] -> {src_ip}: type 9 accept on 0x80:2 seq {s2}, "
+                                          f"slot {slot}, station {data[-8:].hex()}")
                             elif rm:
                                 a = reliable5.parse_ack_payload(rm["payload"])
                                 print(f"[sv] <- {src_ip}: ACK 0x{msg.protocol:02x}:{msg.port} "
@@ -722,17 +781,10 @@ def main():
                                         continue
                                     sent_once.add((src_ip, index))
                                     p, port, hx = spec.split(":", 2)
-                                    # A trailing ":z" marks a payload that is already zlib, which
-                                    # is how a host's announcement on 0x80 port 2 goes out.
-                                    zlib_flag = hx.endswith(":z")
-                                    if zlib_flag:
-                                        hx = hx[:-2]
-                                    p, port, data = int(p, 0), int(port), bytes.fromhex(hx)
+                                    data, flags = parse_send_payload(hx)
+                                    p, port = int(p, 0), int(port)
                                     s = next_seq(src_ip, p, port)
-                                    flags = (reliable5.FLAG_APPLICATION_DATA | reliable5.FLAG_MESSAGE_START
-                                             | reliable5.FLAG_MESSAGE_END
-                                             | (reliable5.FLAG_IS_INITIALIZED if s == 1 else 0)
-                                             | (reliable5.FLAG_ZLIB if zlib_flag else 0))
+                                    flags |= reliable5.FLAG_IS_INITIALIZED if s == 1 else 0
                                     body = build_reliable_body(p, flags, s, data)
                                     pkt = build_reply(keys, transport.our_ip, body, header.src_var,
                                                       os.urandom(8), protocol=p, port=port, flags=0)

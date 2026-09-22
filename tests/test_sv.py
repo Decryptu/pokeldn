@@ -155,3 +155,34 @@ def test_the_rtt_pair_is_the_one_both_consoles_send():
     request = bytes.fromhex("000000002c0c6d4d700000")
     assert streams.build_rtt_request(bytes.fromhex("0000002c0c6d4d70")) == request
     assert streams.build_rtt_response(request, 0x28A3).hex() == "010000002c0c6d4d7028a3"
+
+
+# Port 2 of the game's own protocols, from the emulated pair that traded (docs/sv.md, Port 2).
+PAIR_HOST_CONSTANT_ID = bytes.fromhex("7f00020000020000")
+PAIR_ANNOUNCE_WIRE = bytes.fromhex("484b62dfc9b89375271b2313c31e4e0618d8d3d0c030f06027633303031308d5"
+                                   "3300000000ffff0300f5c30683")
+PAIR_JOIN = bytes.fromhex("03b90200bc09000000000000000000")
+PAIR_ACCEPT = bytes.fromhex("09b9030000b90183000002000002007f")
+
+
+def test_the_station_id_is_the_constant_id_read_big_endian():
+    from pokeldn.ldn.pia_connect import ldn_constant_id
+    from pokeldn.sv import port2
+    assert ldn_constant_id(bytes.fromhex("02007f000002")) == PAIR_HOST_CONSTANT_ID
+    assert port2.station_id(PAIR_HOST_CONSTANT_ID) == 0x7F00020000020000
+
+
+def test_the_announcement_reproduces_the_pair_host_inflated():
+    import zlib
+    from pokeldn.sv import port2
+    body = port2.build_announce(port2.station_id(PAIR_HOST_CONSTANT_ID))
+    assert body == zlib.decompress(PAIR_ANNOUNCE_WIRE)
+    assert zlib.decompress(port2.deflate_announce(body)) == body
+
+
+def test_the_join_parses_and_the_accept_reproduces_the_pair_host():
+    from pokeldn.sv import port2
+    assert port2.parse_join(PAIR_JOIN) == 0
+    assert port2.parse_join(PAIR_JOIN[:-1]) is None
+    assert port2.parse_join(b"\x0d\xb9\x01\x01") is None
+    assert port2.build_accept(port2.station_id(PAIR_HOST_CONSTANT_ID)) == PAIR_ACCEPT
