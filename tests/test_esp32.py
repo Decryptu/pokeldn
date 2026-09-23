@@ -261,3 +261,49 @@ def test_host_transport_uses_the_userspace_stack_that_owns_its_interface():
         assert sent[-1][:6] == b"\xff" * 6
     finally:
         userspace_ip._stacks.pop("ldn-tap", None)
+
+
+def test_first_contact_sees_and_decodes_a_simulated_host():
+    import threading
+
+    import esp32_first_contact
+
+    air = esp32_sim.Air()
+    host_radio = esp32.Radio(esp32_sim.SimulatedBoard(air).host_stream())
+    probe_radio = esp32.Radio(esp32_sim.SimulatedBoard(air).host_stream())
+    up, done = threading.Event(), threading.Event()
+
+    @contextlib.asynccontextmanager
+    async def host_factory():
+        esp = esp32_wlan.EspFactory(host_radio, port_factory=esp32_wlan.memory_port)
+        try:
+            yield esp
+        finally:
+            esp.router.close()
+
+    def host():
+        async def run():
+            param = ldn.CreateNetworkParam(
+                keys=KEYS, channel=6, local_communication_id=0x0100ABCD00000000,
+                name=b"PkCamp", app_version=1, application_data=b"first contact")
+            async with ldn.create_network(param):
+                up.set()
+                await trio.to_thread.run_sync(done.wait)
+        trio.run(run)
+
+    wlan.set_factory(host_factory)
+    thread = threading.Thread(target=host, daemon=True)
+    thread.start()
+    try:
+        assert up.wait(10)
+        lines = []
+        result = esp32_first_contact.first_contact(probe_radio, (1, 6), 0.4, KEYS, lines.append)
+    finally:
+        done.set()
+        thread.join(5)
+        wlan.set_factory(None)
+        host_radio.close()
+        probe_radio.close()
+    assert sum(result["seen"][6].values()) > 0 and not result["seen"][1]
+    assert [n.application_data for n in result["networks"]] == [b"first contact"]
+    assert lines[0].startswith("[hello] protocol 1")

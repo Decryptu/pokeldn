@@ -69,13 +69,39 @@ Anything before a `0x00`, including the ROM's boot text, is discarded by the che
 | `0x89` STATUS | board | text counters |
 
 EtherType `0x88B7` frames are LDN authentication; `esp32_wlan` turns them into the LDN
-library's `CustomFrameEvent`. Every other Ethernet frame goes to an L2 port: a kernel TAP named
-after the interface on Linux, so the launchers' sockets bound to it work unchanged, or a
-`MemoryPort` where there is no TAP.
+library's `CustomFrameEvent`. Every other Ethernet frame goes to an L2 port:
+
+| port | where | what the launchers' sockets are |
+|---|---|---|
+| kernel TAP named after the interface | Linux | kernel sockets, `SO_BINDTODEVICE` and `AF_PACKET` unchanged |
+| `userspace_ip` stack | every other host (macOS) | `userspace_ip.udp_socket` and `packet_socket` |
+| `MemoryPort` | tests | none |
+
+`POKELDN_L2=tap` or `POKELDN_L2=userspace` overrides the platform's choice.
+
+## The userspace stack
+
+`pokeldn.ldn.userspace_ip` carries IPv4, UDP and ARP inside the host process for an interface
+with no kernel behind it. A stack is registered under the interface name (`ldn` for a station,
+`ldn-tap` for an access point) while the port exists; `userspace_ip.lookup(name)` returns None
+for a kernel interface, which is how every launcher picks its path.
+
+- Addresses and neighbours come from the LDN library's `add_address` and `add_neighbor` calls.
+  A source address seen on any received frame is learned as a neighbour.
+- A destination ending in `.255` or equal to the broadcast address goes to `ff:ff:ff:ff:ff:ff`.
+  A unicast destination with no neighbour entry sends an ARP request and drops the datagram.
+- ARP requests for the stack's own address are answered.
+- Outgoing datagrams larger than 1472 bytes are fragmented; incoming fragments are reassembled
+  (five-second timeout). UDP checksums are computed.
+- `udp_socket(port)` stands in for a UDP socket bound to the interface, `packet_socket()` for an
+  `AF_PACKET` socket and delivers whole IPv4 Ethernet frames. Both have a real file descriptor
+  (a pipe with one byte per queued datagram), so `select` and `trio.lowlevel.wait_readable` work.
 
 ## Building and flashing
 
-ESP-IDF v6.1 (tag `v6.1`, commit `fff9895c82d744c7237be8847347bdd1b07c6643`), target `esp32`:
+ESP-IDF v6.1 (tag `v6.1`, commit `fff9895c82d744c7237be8847347bdd1b07c6643`), target `esp32`.
+Installing only the `esp32` target is enough (`install.sh esp32`); the same tree builds on
+Linux and on macOS (Apple silicon) to the same image size.
 
     cd firmware/esp32
     idf.py build
@@ -87,12 +113,23 @@ The console output is off (`CONFIG_ESP_CONSOLE_NONE`): UART0 is the host link. T
 ## Running
 
 `POKELDN_RADIO=esp32:<port>` in the environment puts every launcher's `ldn` calls on the board,
-for example `POKELDN_RADIO=esp32:/dev/ttyUSB0`. The port is opened once per process with DTR and
-RTS released, since an edge on either resets most boards.
+for example `POKELDN_RADIO=esp32:/dev/ttyUSB0` or `POKELDN_RADIO=esp32:/dev/cu.usbserial-0001`.
+The port is opened once per process with DTR and RTS released, since an edge on either resets
+most boards. Under it the launchers skip every nl80211 step: `--phy auto` resolves to `esp32`,
+no vif is deleted, no `iw`, `ip`, `nmcli` or `sysctl` runs, and a joiner's `--mac` becomes the
+board station's address. The FRLG hosts inject no beacons of their own, since the board's
+access point beacons itself. No root is needed on macOS.
+
+`tools/ldn/esp32_first_contact.py` is the first thing to run against a new board: `--flash`
+writes the build with esptool, then HELLO, STATUS, an idle scan that counts LDN action frames
+per channel and source, and with `--keys` the LDN library's own scan on the board, which
+decrypts and lists each network.
 
 `tests/test_esp32.py` runs the LDN library's host and station against each other on two
-simulated boards (`pokeldn.ldn.esp32_sim`): scan, association, authentication, the join event and
-a UDP frame from the station reaching the host's port.
+simulated boards (`pokeldn.ldn.esp32_sim`): scan, association, authentication, the join event, a
+UDP frame from the station reaching the host's port, UDP both ways through two userspace stacks
+including a fragmented datagram, `HostTransport` on a userspace stack, and the first-contact tool
+decoding a simulated host.
 
 ## Unresolved
 
@@ -104,6 +141,5 @@ a UDP frame from the station reaching the host's port.
 - Whether the console's LDN authentication frame reaches `RX_ETH` before or after the driver
   opens the port.
 - Serial latency at 921600 baud against the Scarlet and Z-A seat race.
-- A host with no TAP (macOS) needs a userspace IP and UDP layer on a `MemoryPort`.
 - easyworld reports that a classic ESP32 must be the ESP32-WROOM-32E module and that the older
   ESP32-WROOM-32 does not trade reliably.
