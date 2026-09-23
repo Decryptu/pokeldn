@@ -263,6 +263,13 @@ was drawn on the host's trade screen as PKLDN, traded, and kept that name, its s
 level 44 through the host's save. Scarlet's nicknamed bit and its individual values at 0x8C read
 correctly on Z-A records.
 
+The species at 0x08 is national. The same record with 95 written there traded as a shiny level-44
+Onix named PKLDN; the host's summary showed 98 HP, 58 Attack, 159 Defense, 45 Special Attack,
+58 Special Defense and 80 Speed, which is Onix's spread, so the receiving game recomputes the stats
+from the species. The moves were kept as sent (Hurricane, Screech, Super Fang, Air Slash, from
+Scarlet's move offsets), and so were the nature (Quirky), the ball and the empty held item. The
+summary screen shows no ability.
+
 The Net layer is answered in full as well: the host's connection status 0x11 with a 0x12, and its
 update property 0x50 with a 0x51, both of which a reference joiner sends.
 
