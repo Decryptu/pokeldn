@@ -233,6 +233,14 @@ address 0x0001 is a destination: the host broadcasts RTT and session traffic to 
 that sends from 0x0001 is heard by no one. With every packet sourced from its own id, the station
 stays seated for the whole 45 s hold and no type 13 is sent.
 
+Every protocol-11 message runs four bytes past the length its reliable sub-header declares: 16
+bytes for a 4-byte payload, 118 for 106, 21 for 9 and 86 for a 74-byte acknowledgement, from host
+and joiner alike. The four bytes are zero on an acknowledgement and vary on data (`feffffff`,
+`69fb308f`, `01b90103`), so they read as buffer contents. A host drops a protocol-11 message that
+lacks them: it never acknowledges the joiner's stream and resends its own opening about ten times
+a second. With the four bytes appended it acknowledges the joiner's stream and stops resending.
+Protocol 10 carries no such tail.
+
 The Net layer is answered in full as well: the host's connection status 0x11 with a 0x12, and its
 update property 0x50 with a 0x51, both of which a reference joiner sends.
 

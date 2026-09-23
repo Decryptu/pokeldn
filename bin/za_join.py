@@ -144,6 +144,8 @@ class GameStreams:
         broadcast = proto == GAME_BROADCAST
         body = reliable.build_reliable(seq, link.send_low(), inner, flagsA=flags_a,
                                        recipients=BROADCAST_RECIPIENTS if broadcast else 0)
+        if broadcast:
+            body += streams.BROADCAST_TAIL
         dst = MESH_DESTINATION if broadcast else self.dst_var
         # A pure acknowledgement rides message flags 0x40; application data carries none.
         msgflags = ACK_MESSAGE_FLAGS if flags_a == reliable.FLAGSA_CTRL else None
@@ -171,7 +173,8 @@ class GameStreams:
             seq = link.queue(inner, flags_a, now_ms)
             bundle.append((GAME_BROADCAST,
                            reliable.build_reliable(seq, link.send_low(), inner, flagsA=flags_a,
-                                                   recipients=BROADCAST_RECIPIENTS), None))
+                                                   recipients=BROADCAST_RECIPIENTS)
+                           + streams.BROADCAST_TAIL, None))
         if bundle:
             self.send_messages(bundle, dst_var=MESH_DESTINATION, src_var=self.src_var,
                                establishing=False, compress=True, footer_var=self.dst_var,

@@ -18,6 +18,7 @@ PREFIX_HOST = bytes.fromhex("00000002")
 
 ACK_STATIONS = 4                  # entries a broadcast acknowledgement carries
 ACK_SIZE = 74                     # and its total size, the last entry short of its mask
+BROADCAST_TAIL = bytes(4)         # every protocol-11 message runs 4 bytes past its declared length
 IDLE_NEXT = 0xFFF0                # the sequence base a station that has sent nothing reports
 
 
