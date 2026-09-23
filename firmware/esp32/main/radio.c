@@ -137,6 +137,14 @@ static bool ldn_ap_join(priv_join_param_t *join)
 
 static bool ldn_ap_rx_eapol(void *hapd, void *sm, uint8_t *data, size_t length) { return true; }
 
+/* The beacon and probe response take their RSN element from here; hostapd's own lacks the
+   Switch's capabilities 0x000c. */
+static uint8_t *ldn_ap_get_wpa_ie(size_t *length)
+{
+    *length = sizeof(s_rsn_ie);
+    return s_rsn_ie;
+}
+
 static void install_hooks(void)
 {
     struct wpa_funcs *table = malloc(sizeof(*table));
@@ -150,6 +158,7 @@ static void install_hooks(void)
     table->wpa_sta_in_4way_handshake = ldn_sta_in_handshake;
     table->wpa_ap_join = ldn_ap_join;
     table->wpa_ap_rx_eapol = ldn_ap_rx_eapol;
+    table->wpa_ap_get_wpa_ie = ldn_ap_get_wpa_ie;
     ESP_ERROR_CHECK(esp_wifi_register_wpa_cb_internal(table));
     wpa_cb = table;
 }
@@ -244,6 +253,8 @@ static esp_err_t ap_start(const uint8_t *p, size_t n)
     s_ap_flags = p[56];
     esp_err_t r = esp_wifi_set_mode(WIFI_MODE_AP);
     if (r == ESP_OK) r = esp_wifi_set_mac(WIFI_IF_AP, s_peer);
+    /* 11b/g: no HT elements, as a Switch host sends none. docs/hardware_esp32.md */
+    if (r == ESP_OK) r = esp_wifi_set_protocol(WIFI_IF_AP, WIFI_PROTOCOL_11B | WIFI_PROTOCOL_11G);
     if (r != ESP_OK) return r;
     wifi_config_t config = {0};
     memcpy(config.ap.ssid, p + 7, 32);

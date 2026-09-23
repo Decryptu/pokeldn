@@ -40,6 +40,27 @@ advertisement's server random. The firmware replaces four entries of ESP-IDF's p
 The table layout is the ESP-IDF v6.1 blob's ABI. The firmware refuses to build against another
 release.
 
+## The access point's frames
+
+The softAP's beacon, probe response and association response are built inside the closed
+`libnet80211.a`. Read statically from the v6.1 blob (`ieee80211_output.o` offsets), against what
+`vendor/LDN`'s access point sends a Switch:
+
+| field | Switch form | ESP32 softAP | settable |
+|---|---|---|---|
+| hidden SSID element | 32 zero bytes | length 0 (`ieee80211_beacon_construct` 0xc4) | no |
+| Supported Rates | `82 84 8B 96 0C 12 18 24` | `8B 96 82 84 0C 18 30 60` | no; same twelve rates and basic bits, 9 and 18 in Extended |
+| Extended Rates | `30 48 60 6C` | `6C 12 24 48` | no |
+| capability, beacon | `0x0511` | `0x0431` (short preamble constant, `ieee80211_getcapinfo` 0x7b) | no |
+| HT elements | none | present in 11b/g/n | removed: the firmware sets 11b/g |
+| RSN capabilities | `0x000c` | hostapd's own | set: `wpa_ap_get_wpa_ie` returns the Switch's element |
+| WMM | none | present in 11g | only 11b-only removes it |
+
+A hidden softAP answers directed probes only and puts the real SSID in the probe response. The
+association request must carry the configured SSID or it is dropped (0x9c6).
+`esp_wifi_80211_tx` accepts beacon frames and refuses association responses
+(`ieee80211_raw_frame_sanity_check` 0xf9), and the blob's own beacons cannot be stopped.
+
 ## Serial protocol
 
 A frame is `COBS(type | payload | crc32-le(type | payload))` followed by `0x00`. The CRC is
@@ -108,7 +129,7 @@ Linux and on macOS (Apple silicon) to the same image size.
     idf.py -p <port> flash
 
 The console output is off (`CONFIG_ESP_CONSOLE_NONE`): UART0 is the host link. The image is
-0x8f1b0 bytes.
+0x8f690 bytes.
 
 ## Running
 
@@ -135,9 +156,9 @@ decoding a simulated host.
 
 - No board has run this firmware yet. Every row above is read from the ESP-IDF source and
   exercised against the simulated board only.
-- Whether a console accepts the ESP32 access point's beacon and association response: the
-  hidden-SSID form, the rate set and the HT elements differ from `vendor/LDN`'s access point,
-  whose rate set had to match the Switch's.
+- Whether a console accepts the softAP's frames where they cannot match the Switch form: the
+  zero-length hidden SSID, the rate order, capability `0x0431` and the WMM element. The rates
+  6, 9 and 12 whose absence made a console leave after 3 s are all present.
 - Whether the console's LDN authentication frame reaches `RX_ETH` before or after the driver
   opens the port.
 - Serial latency at 921600 baud against the Scarlet and Z-A seat race.
