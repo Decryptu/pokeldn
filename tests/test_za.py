@@ -102,14 +102,27 @@ def test_the_offer_framing_is_the_measured_one():
 
 
 def test_the_broadcast_acknowledgement_is_the_reference_shape():
-    """A joiner's own acknowledgement on protocol 11, as a reference pair sends it."""
+    """A reference joiner's protocol-11 acknowledgement: the prefix and four whole entries."""
     from pokeldn.za import streams
 
     ack = streams.build_broadcast_ack(0xFFF2)
     assert ack.hex() == (
-        "000000010004fff2" + "00" * 16 + "fff0" + "00" * 16 + "fff0" + "00" * 16
-        + "fff0" + "00" * 12)
-    assert len(ack) == 74
+        "000000010004fff2" + "00" * 16 + ("fff0" + "00" * 16) * 3)
+    assert len(ack) == 78
+    frame = streams.frame(0xFFF0, 0xFFF3, ack, 0x00, 3)
+    assert frame.hex() == ("00004afff0fff303" + ack.hex())
+
+
+def test_a_broadcast_frame_declares_the_length_after_the_prefix():
+    """The reference joiner's protocol-11 opening, frame for frame."""
+    from pokeldn.za import streams
+
+    assert streams.frame(0xFFF0, 0xFFF0, bytes.fromhex("000000011402b900"), 0x0F, 3).hex() \
+        == "0f0004fff0fff003000000011402b900"
+    nine = bytes.fromhex("000000011403b9018269fb308f")
+    frame = streams.frame(0xFFF2, 0xFFF0, nine, 0x07, 3)
+    assert frame.hex() == "070009fff2fff003000000011403b9018269fb308f"
+    assert streams.frame_payload(frame) == nine
 
 
 def test_the_broadcast_prefixes():

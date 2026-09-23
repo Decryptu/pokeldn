@@ -142,10 +142,10 @@ class GameStreams:
         host's variable id in the footer and travel zstd-compressed, as a reference joiner's do."""
         link = self.links[proto]
         broadcast = proto == GAME_BROADCAST
-        body = reliable.build_reliable(seq, link.send_low(), inner, flagsA=flags_a,
-                                       recipients=BROADCAST_RECIPIENTS if broadcast else 0)
         if broadcast:
-            body += streams.BROADCAST_TAIL
+            body = streams.frame(seq, link.send_low(), inner, flags_a, BROADCAST_RECIPIENTS)
+        else:
+            body = reliable.build_reliable(seq, link.send_low(), inner, flagsA=flags_a)
         dst = MESH_DESTINATION if broadcast else self.dst_var
         # A pure acknowledgement rides message flags 0x40; application data carries none.
         msgflags = ACK_MESSAGE_FLAGS if flags_a == reliable.FLAGSA_CTRL else None
@@ -172,9 +172,8 @@ class GameStreams:
             inner = self.ref[name]
             seq = link.queue(inner, flags_a, now_ms)
             bundle.append((GAME_BROADCAST,
-                           reliable.build_reliable(seq, link.send_low(), inner, flagsA=flags_a,
-                                                   recipients=BROADCAST_RECIPIENTS)
-                           + streams.BROADCAST_TAIL, None))
+                           streams.frame(seq, link.send_low(), inner, flags_a,
+                                         BROADCAST_RECIPIENTS), None))
         if bundle:
             self.send_messages(bundle, dst_var=MESH_DESTINATION, src_var=self.src_var,
                                establishing=False, compress=True, footer_var=self.dst_var,
@@ -369,8 +368,11 @@ async def run_session(args, keys, host_ip, host_mac, our_ip, our_mac, record):
             footer_size = 2
         pad = (-len(body)) % 16
         if pktid is None:
-            pktid = pktid_by_dst.get(dst_var, 1)
-            pktid_by_dst[dst_var] = pktid + 1 if pktid < 0xFFFF else 1
+            # One counter for everything sent to the host (dst 0 included), one for the session
+            # address: the host drops a packet below the highest id it has seen. docs/za.md.
+            channel = dst_var if dst_var == pia_connect.SESSION_VAR else "host"
+            pktid = pktid_by_dst.get(channel, 1)
+            pktid_by_dst[channel] = pktid + 1 if pktid < 0xFFFF else 1
         extra = int(args.join_flags, 16) if proto == pia_connect.PROTO_SESSION else 0
         flags = (1 if zstd else 0) | (2 if establishing else 0) | extra
         header = crypto.PiaHeader(

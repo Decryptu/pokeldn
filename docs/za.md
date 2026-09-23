@@ -233,13 +233,22 @@ address 0x0001 is a destination: the host broadcasts RTT and session traffic to 
 that sends from 0x0001 is heard by no one. With every packet sourced from its own id, the station
 stays seated for the whole 45 s hold and no type 13 is sent.
 
-Every protocol-11 message runs four bytes past the length its reliable sub-header declares: 16
-bytes for a 4-byte payload, 118 for 106, 21 for 9 and 86 for a 74-byte acknowledgement, from host
-and joiner alike. The four bytes are zero on an acknowledgement and vary on data (`feffffff`,
-`69fb308f`, `01b90103`), so they read as buffer contents. A host drops a protocol-11 message that
-lacks them: it never acknowledges the joiner's stream and resends its own opening about ten times
-a second. With the four bytes appended it acknowledges the joiner's stream and stops resending.
-Protocol 10 carries no such tail.
+On protocol 11 the reliable sub-header's length counts the payload after the four-byte station
+prefix, so every frame carries four bytes more than it declares: the opening is `00000001` and
+message `1402 b900`, the identity is the prefix and the whole 106-byte protocol-10 identity, the
+nine-byte message is `1403b9018269fb308f`, and an acknowledgement is the prefix and four complete
+18-byte station entries. A frame cut at its declared length is dropped by the host, which then
+resends its own opening about ten times a second; a frame whose last four bytes are wrong is
+acknowledged but leaves the host's game on its search screen.
+
+Pia packet ids run on two counters: one for every packet addressed to the host, whatever the
+destination field (0 or the host's variable id), and one for the session address 0x0001. The host
+drops a packet whose id is below the highest it has seen from that sender, so a joiner that keeps
+a separate counter for destination 0 has every Net 0x51 dropped until that counter catches up. The
+host then repeats its Net 0x50 for about ten seconds and its Session update sequence 1 comes late.
+
+With both right, a host that accepts the Session update sequence 1 at about 1.2 s sends its own
+1211-byte selection record at 1.25 s and moves to its trade box screen.
 
 The Net layer is answered in full as well: the host's connection status 0x11 with a 0x12, and its
 update property 0x50 with a 0x51, both of which a reference joiner sends.
