@@ -14,23 +14,23 @@ Installation, the command-line reference and the code layout are in the
 
 ## Targets
 
-Six games, all on retail hardware, all over the same LDN and Pia layers:
+Seven games, all on retail hardware, all over the same LDN and Pia layers:
 
-| | FRLG | LGPE | SwSh | BDSP | PLA | SV |
-|---|:---:|:---:|:---:|:---:|:---:|:---:|
-| Trade | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ |
-| Mystery Gift | ✓ | ∅ | ✓ | ∅ | ∅ | ∅ |
-| Link battle | ✓ | ✗ | ✗ | ✗ | ∅ | ✗ |
-| Code on the console, save read and write | ✓ | ✗ | ✗ | ✗ | ✗ | ✗ |
+| | FRLG | LGPE | SwSh | BDSP | PLA | SV | PLZA |
+|---|:---:|:---:|:---:|:---:|:---:|:---:|:---:|
+| Trade | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ |
+| Mystery Gift | ✓ | ∅ | ✓ | ∅ | ∅ | ∅ | ✗ |
+| Link battle | ✓ | ✗ | ✗ | ✗ | ∅ | ✗ | ✗ |
+| Code on the console, save read and write | ✓ | ✗ | ✗ | ✗ | ✗ | ✗ | ✗ |
 
 ✓ works on a retail console · ✗ not done · ∅ the game has no such feature over local wireless
-FRLG FireRed/LeafGreen · LGPE Let's Go Pikachu/Eevee · SwSh Sword/Shield · BDSP Brilliant Diamond/Shining Pearl · PLA Legends Arceus · SV Scarlet/Violet
+FRLG FireRed/LeafGreen · LGPE Let's Go Pikachu/Eevee · SwSh Sword/Shield · BDSP Brilliant Diamond/Shining Pearl · PLA Legends Arceus · SV Scarlet/Violet · PLZA Legends Z-A
 
 FireRed and LeafGreen run as the original GBA ROM inside an emulator on the Switch, so the ROM's
-own GBA link protocol is stacked on the console's LDN and Pia. The five other games put their own
+own GBA link protocol is stacked on the console's LDN and Pia. The six other games put their own
 code directly on Pia: Unity/IL2CPP in Brilliant Diamond and Shining Pearl, C++ with protocol
 buffers over `gflnet3` in Sword and Shield and in Let's Go, and C++ with Pia statically linked in
-Legends Arceus and in Scarlet and Violet.
+Legends Arceus, in Scarlet and Violet and in Legends Z-A.
 
 ## Sections
 
@@ -44,6 +44,7 @@ Legends Arceus and in Scarlet and Violet.
 | [Let's Go Pikachu and Eevee](lgpe.md) | Pia 3, the link code, and the trade flow. |
 | [Legends Arceus](pla.md) | Pia header version 11, the trade flow, and the record a host composes. |
 | [Scarlet and Violet](sv.md) | Pia header version 11, the reliable streams, and the trade a host runs. |
+| [Legends Z-A](za.md) | Pia header version 16, the game's twenty trade messages, and the trade a joiner runs. |
 | [Hardware and setup](hardware.md) | Adapters, Raspberry Pi deployment, Switch keys. |
 
 ## Credits
