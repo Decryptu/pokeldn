@@ -497,8 +497,9 @@ async def run_session(args, keys, host_ip, host_mac, our_ip, our_mac, record):
         if conn is None:
             continue
         # The console names our variable id in the footer of a mesh-addressed packet; until it
-        # does, ours is the one we invented.
-        if header.footer == 2 and header.dst not in (0, 0xFFFF):
+        # does, ours is the one we invented. dst 0x0001 is the session address, never ours: taking it
+        # made our RTT unattributable and the host's liveness timeout kicked us. docs/za.md.
+        if header.footer == 2 and header.dst not in (0, pia_connect.SESSION_VAR, 0xFFFF):
             conn.learn_ids(header.dst, header.src)
         for m in messages:
             if m.proto == pia_connect.PROTO_SESSION and m.payload[:1] == b"\x05" and conn is not None:

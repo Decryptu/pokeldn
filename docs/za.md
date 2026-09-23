@@ -219,6 +219,20 @@ a one, and hands the buffer to the Session protocol's sender. Its only two calle
 and `0x255bd70`, are both inside `nn::pia::session::KickoutManageJob`, whose `vfunc6` is at
 `0x255bda0`. So type 13 is a kick request and the trailing byte is its reason.
 
+The kick is a liveness timeout. The path, read off main 2.0.2 and confirmed with breakpoints on an
+emulated host: `0x2547700` walks the stations in state 2 and asks for reason 1 on any whose
+last-heard time at +0xb8 is older than the session's timeout, through `0x2547dd0`, which records
+the station and reason in a map at session+0x1048. `0x2548b60` drains that map into
+`0x255b4a0`, which takes a slot in `KickoutManageJob`'s 24-entry table and sends the first type 13;
+the job's update at `0x255bc10` resends it every 501 ms while the station stays present. Last-heard
+is refreshed by `0x2567280` for every station whose bit (its byte at +0x30) is set in a mask that
+`0x2566740` builds from the received-data map, keyed by the packet header's source id.
+
+So a station is heard only through packets whose header source is its own variable id. The session
+address 0x0001 is a destination: the host broadcasts RTT and session traffic to it, and a joiner
+that sends from 0x0001 is heard by no one. With every packet sourced from its own id, the station
+stays seated for the whole 45 s hold and no type 13 is sent.
+
 The Net layer is answered in full as well: the host's connection status 0x11 with a 0x12, and its
 update property 0x50 with a 0x51, both of which a reference joiner sends.
 
