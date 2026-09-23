@@ -278,6 +278,16 @@ The level comes from the experience at 0x10. The Onix with experience 1,000,000 
 level byte left at 44 was drawn at level 100 on the trade screen and stored at level 100. Its
 original 85,184 is 44 cubed, the medium-fast curve.
 
+A record composed from 344 zero bytes by `pokeldn.sv.pokemon.build`, with nothing copied from a
+console's record, trades and is kept. Composed as a shiny female Glaceon, experience 125,000,
+nickname and trainer name PKLDN, trainer id 12345 and secret id 54321, Timid, version 52,
+language 3, met location 202 on 2025-10-16, ball 4, scale 128 and moves 247, 573, 423 and 58, with
+the stats and current HP left at zero. The host's summary showed PKLDN, shiny, female, level 50,
+Shadow Ball, Freeze-Dry, Ice Fang and Ice Beam, Timid, origin France, trainer id 993401 (the
+six-digit form of 54321 << 16 | 12345), first met 10/16/2025 in Wild Zone 18, size class M, and
+140 HP, 72 Attack, 130 Defense, 150 Special Attack, 115 Special Defense and 93 Speed: the game
+computes the stats and the current HP itself. Met location 202 is Wild Zone 18.
+
 The Net layer is answered in full as well: the host's connection status 0x11 with a 0x12, and its
 update property 0x50 with a 0x51, both of which a reference joiner sends.
 
