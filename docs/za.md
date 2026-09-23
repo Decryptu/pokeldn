@@ -322,12 +322,12 @@ trainer id 5071 and secret id 14217. The size scalars and the Tera types read ze
 
 ## Unresolved
 
-- The session key derivation has not been read out of this title. `pokeldn.ldn.crypto` derives it
-  as `AES_ECB(game_key, ssid)` for the band, and no packet has been decrypted yet to confirm it
-  holds here.
-- The game's own layer is read but not answered: nothing here yet sends an identity, a selection
-  record or an offer.
-- The record's string region: where the nickname, the handler name and the trainer name sit, and
-  what fills the bytes Scarlet spends on them.
-- The console's Session update session repeats every two seconds, so what a joiner owes it is not
-  yet right.
+- A trade with a retail console. Everything above was measured against an emulated host over the
+  LAN; the retail console has admitted the joiner and run a Pia session with it, but not since the
+  source id, the protocol-11 length and the packet-id counter were corrected.
+- The joiner direction only: hosting for a console is untried.
+- The Net 0x51 handler at `0x2504150` matches the packet's source address against its stations'
+  addresses; which of its earlier checks drops a packet whose id is below the sender's highest is
+  inferred from one breakpoint hit and the id counts, not traced.
+- The ability: Scarlet's ability field reads plausible values on Z-A records, and the summary screen
+  shows none.
