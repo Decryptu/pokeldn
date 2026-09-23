@@ -98,7 +98,8 @@ def test_the_offer_framing_is_the_measured_one():
 
     assert zp.OFFER_HEADER_SIZE == 9
     assert zp.SIZE_PARTY == 0x158
-    assert (zp.OFF_SPECIES, zp.OFF_NICKNAME, zp.OFF_OT_NAME, zp.OFF_LEVEL) == (8, 0x58, 0xA8, 0x148)
+    assert (zp.OFF_SPECIES, zp.OFF_NICKNAME, zp.OFF_HT_NAME, zp.OFF_OT_NAME, zp.OFF_LEVEL) \
+        == (8, 0x58, 0xA8, 0xF8, 0x148)
 
 
 def test_the_broadcast_acknowledgement_is_the_reference_shape():

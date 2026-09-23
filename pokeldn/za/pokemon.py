@@ -5,16 +5,13 @@ checksum, then four 0x50-byte blocks shuffled by the constant, 0x148 bytes store
 the party tail. `pokeldn.sv.pokemon` already codes that shell and Z-A's records validate under it
 unchanged, so the crypto, the block shuffle and the checksum are imported rather than restated.
 
-What differs from Scarlet is where the strings sit. Measured on six records out of two reference
-sessions, against the offering game's own screen:
+The layout is Scarlet's. Measured on nine records out of three reference sessions:
 
     0x008   species, national                714 Noibat, 716 Xerneas, 95 Onix
-    0x058   nickname, UTF-16LE               three nicknames at two, three and five characters
-    0x0a8   original trainer's name          "Player" in both saves
-    0x148   level, in the party tail         44, 100 and 72
-
-Scarlet puts the trainer's name at 0xF8 and Z-A at 0xA8, so every field Scarlet reads between the
-nickname and the trainer name is unverified here and is not exposed.
+    0x058   nickname, UTF-16LE               the species name in the save's language
+    0x0a8   handler's name                   "Player", only on a record whose handler is set
+    0x0f8   original trainer's name          "XS" on all nine
+    0x148   level, in the party tail         derived by the game from the experience
 
 `docs/za.md`, The offered Pokemon.
 """
@@ -31,7 +28,8 @@ OFFER_SIZE = OFFER_HEADER_SIZE + SIZE_PARTY + OFFER_TRAILER_SIZE       # 354
 
 OFF_SPECIES = 0x08
 OFF_NICKNAME = 0x58
-OFF_OT_NAME = 0xA8
+OFF_HT_NAME = 0xA8
+OFF_OT_NAME = 0xF8
 OFF_LEVEL = SIZE_STORED
 NAME_BYTES = 26                               # thirteen UTF-16 code units, NUL-terminated
 
@@ -53,6 +51,7 @@ def read(plain):
     out = {
         "species": int.from_bytes(plain[OFF_SPECIES:OFF_SPECIES + 2], "little"),
         "nickname": _string(plain, OFF_NICKNAME),
+        "ht_name": _string(plain, OFF_HT_NAME),
         "ot_name": _string(plain, OFF_OT_NAME),
     }
     if len(plain) == SIZE_PARTY:

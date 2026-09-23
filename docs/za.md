@@ -294,20 +294,21 @@ stored body. `pokeldn.sv.pokemon.decrypt` validates it unchanged and
 `pokeldn.sv.pokemon.read` reads its fields: the sample offer is a shiny Noibat at level 44 with
 perfect individual values, ball 22, ability 151 and moves 542, 103, 403 and 162.
 
-The strings are pinned on six records out of two reference sessions, each against the species and
-level the offering game showed:
+The layout is Scarlet's, measured on nine records out of three reference sessions and on the
+trades below:
 
 | offset | field |
 |---|---|
 | 0x008 | species, national: 714 Noibat, 716 Xerneas, 95 Onix |
+| 0x010 | experience; the game derives the level from it |
 | 0x058 | nickname, UTF-16LE, thirteen code units |
-| 0x0a8 | the original trainer's name |
+| 0x072 | four moves |
+| 0x0a8 | the handler's name, "Player" only on a record whose current handler is set |
+| 0x0f8 | the original trainer's name, "XS" on all nine |
 | 0x148 | level, in the party tail |
 
-Scarlet keeps the trainer's name at 0xF8 and Z-A at 0xA8, so what Scarlet reads between the
-nickname and that name does not apply here and `pokeldn.za.pokemon` does not expose it. The rest
-of Scarlet's map reads plausibly on these records (perfect individual values, ball 22, four moves)
-and is unverified against a screen.
+Every record reads version 52, language 10, met locations 200 to 212, met dates in October 2025,
+trainer id 5071 and secret id 14217. The size scalars and the Tera types read zero.
 
 ## Unresolved
 
