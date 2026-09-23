@@ -257,6 +257,12 @@ host confirms with the same, then both send `0104b90100` and the joiner sends fo
 `0200b901XX` steps, 03 and 06 at once and 0b and 0e about 14 s later, while the host sends
 `0000000202` on protocol 11. `bin/za_join.py --trade-offer` runs that side.
 
+A record edited and re-encrypted with `pokeldn.za.pokemon.build_offer` is taken as sent. The
+reference Noibat with the nickname "PKLDN" at 0x58 and Scarlet's nicknamed bit (0x8F bit 7) set
+was drawn on the host's trade screen as PKLDN, traded, and kept that name, its shininess and its
+level 44 through the host's save. Scarlet's nicknamed bit and its individual values at 0x8C read
+correctly on Z-A records.
+
 The Net layer is answered in full as well: the host's connection status 0x11 with a 0x12, and its
 update property 0x50 with a 0x51, both of which a reference joiner sends.
 
