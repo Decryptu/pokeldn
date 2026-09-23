@@ -320,11 +320,24 @@ trades below:
 Every record reads version 52, language 10, met locations 200 to 212, met dates in October 2025,
 trainer id 5071 and secret id 14217. The size scalars and the Tera types read zero.
 
+## A trade with a retail console
+
+A retail Legends Z-A on its Link Trade search, code 00000000, traded with `bin/za_join.py` and kept
+a Pokemon composed from zero bytes: the shiny Glaceon PKLDN of the section above,
+`scratchpad/za_offer_glaceon_built.bin`. Nothing changed from the emulated run. The console's
+selection record came 1.16 s after the seat, the previews at 3.74 s, the player's offer at 55 s,
+the console's `0102` at 88 s and `0104` at 89.6 s, and the joiner's four `0200` steps at 89.7 s and
+104 s. After the trade the console returns to its trade menu on the same seat and offers again.
+
+Most associations are refused with LDN status 1: 59 and 35 refusals before the two seats that
+formed, on one MAC. A seat that forms late in the console's host phase is handed over rather than
+run: the console's first datagram comes 1.4 s after the association instead of within 0.1 s, it
+sends no Session update sequence 1, and it repeats Session type 9 once a second (start host
+migration in the wiki's numbering; Z-A's kick request is 13 where the wiki lists 12, so the
+numbering is unconfirmed) until it restarts its Net at 6.5 s. Scarlet's search screen runs the same race.
+
 ## Unresolved
 
-- A trade with a retail console. Everything above was measured against an emulated host over the
-  LAN; the retail console has admitted the joiner and run a Pia session with it, but not since the
-  source id, the protocol-11 length and the packet-id counter were corrected.
 - The joiner direction only: hosting for a console is untried.
 - The Net 0x51 handler at `0x2504150` matches the packet's source address against its stations'
   addresses; which of its earlier checks drops a packet whose id is below the sender's highest is
