@@ -6,3 +6,4 @@
 pycryptodome==3.23.0
 trio==0.33.0
 zstandard==0.25.0
+pyserial==3.5

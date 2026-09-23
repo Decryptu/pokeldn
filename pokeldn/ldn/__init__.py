@@ -15,3 +15,10 @@ console discovers us by, and `joyspot_discovery`/`joyspot_probe` the discovery-o
 Read `docs/ldn.md` and `docs/pia.md` before changing anything here. Do NOT put a game's
 addresses or a game's payload shapes in this package - they go in that game's own.
 """
+
+import os as _os
+
+# POKELDN_RADIO=esp32:<serial port> puts every launcher's LDN calls on the ESP32 radio.
+if _os.environ.get("POKELDN_RADIO", "").startswith("esp32:"):
+    from pokeldn.ldn import esp32_wlan as _esp32_wlan
+    _esp32_wlan.use_from_environment(log=print)

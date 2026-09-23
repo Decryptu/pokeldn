@@ -11,6 +11,13 @@
 # pokeldn/frlg/rom/buffer_payloads.py and these are what they must still assemble to.
 !/asm/
 !/config/
+# ESP32 radio firmware sources; the ESP-IDF build output stays local.
+!/firmware/
+/firmware/**/build/
+/firmware/**/sdkconfig
+/firmware/**/sdkconfig.old
+/firmware/**/dependencies.lock
+/firmware/**/managed_components/
 !/config/host.toml
 
 # Machine-specific host settings can name local key locations and capture

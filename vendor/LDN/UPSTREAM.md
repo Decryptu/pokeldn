@@ -27,6 +27,9 @@ The vendored package incorporates the following project-specific fixes:
 - Mark a station authorized in mac80211 once custom LDN authentication has
   completed.
 - Emit useful receive-side exceptions instead of silently suppressing them.
+- `wlan.set_factory` replaces the nl80211 factory, and `connect` passes the host's BSSID to
+  `connect_network`, so a radio that is not an nl80211 device (`pokeldn.ldn.esp32_wlan`) can
+  stand in.
 
 Keep this file current whenever the vendored copy is rebased or modified.
 

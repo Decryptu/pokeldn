@@ -1784,7 +1784,7 @@ class Factory:
     @contextlib.asynccontextmanager
     async def connect_network(
         self, phyname: str, ifname: str, ssid: str, channel: int,
-        key: bytes | None
+        key: bytes | None, bssid: MACAddress | None = None
     ) -> AsyncIterator[Station]:
         async with self._create_interface(
             phyname, ifname, nl80211.NL80211_IFTYPE_STATION
@@ -1866,8 +1866,22 @@ class Factory:
         raise ValueError(f"No wiphy found with name '{name}'")
 
 
+_factory_override = None
+
+
+def set_factory(factory) -> None:
+    """Replaces the nl80211 factory for every later create_factory call; `factory` is a
+    callable returning an async context manager. None restores nl80211."""
+    global _factory_override
+    _factory_override = factory
+
+
 @contextlib.asynccontextmanager
 async def create_factory() -> AsyncIterator[Factory]:
+    if _factory_override is not None:
+        async with _factory_override() as factory:
+            yield factory
+        return
     async with nl80211.connect() as wlan:
         async with route.connect() as router:
             yield Factory(wlan, router)

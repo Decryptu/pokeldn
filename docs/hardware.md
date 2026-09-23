@@ -19,3 +19,4 @@ Speaking LDN needs an adapter the kernel will put into AP mode and keep there.
 - [Adapters](hardware_adapters.md): tested cards, the reference USB adapter, and its configuration.
 - [Raspberry Pi host](hardware_raspberry_pi.md): deployment and the supervised Mystery Gift runner.
 - [Switch keys](hardware_switch_keys.md): installing `prod.keys` safely.
+- [ESP32 radio](hardware_esp32.md): an ESP32 board on USB serial as the radio, its firmware and serial protocol.
