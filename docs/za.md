@@ -270,6 +270,10 @@ from the species. The moves were kept as sent (Hurricane, Screech, Super Fang, A
 Scarlet's move offsets), and so were the nature (Quirky), the ball and the empty held item. The
 summary screen shows no ability.
 
+The moves at Scarlet's offsets (0x72, four little-endian halfwords) are taken as sent: the Onix
+given 446, 328, 103 and 784 arrived with Stealth Rock, Sand Tomb, Screech and Breaking Swipe. The
+reference Onix a player offered carries that set.
+
 The Net layer is answered in full as well: the host's connection status 0x11 with a 0x12, and its
 update property 0x50 with a 0x51, both of which a reference joiner sends.
 
