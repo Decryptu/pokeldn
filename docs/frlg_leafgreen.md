@@ -127,10 +127,8 @@ point, anywhere in the ROM, needing no symbol, no decomp and no guess about cont
 
 Each scan returned exactly one match in a 2 MB window.
 
-Use two points and a control, never one. An earlier reading carried a single delta upward from two
-agreeing measurements and predicted a place; the dump came back empty. The two agreeing points sat above
-every difference, so they agreed with each other and said nothing about the range between them. Two
-agreeing measurements are one measurement repeated when they share a blind spot.
+Use two points and a control. Two agreeing points above every difference do not constrain the range
+between them; the control must cover that range.
 
 The five needle scans that mapped the script layer show what a control looks like:
 
@@ -183,12 +181,9 @@ addresses whose difference is the delta *at the target*. A 16 KB window of handl
 `tools/frlg/cartridge_pair.py` reads both kinds out of every window this project holds on both
 cartridges, 1592 points from dumps that were already on disk, taken for other reasons.
 
-What says the pairing is real is that every site pairs (734 of 734, 834 of 834) and the deltas come
-out quantised: four values per window, no outliers, nothing "nearly". A window placed wrongly does not do
-that, the first version of the tool computed the LeafGreen offsets off the FireRed base and answered
-with 64 different deltas, none of them repeated. Two further confirmations came from runs that knew
-nothing about the method: the pairing puts LeafGreen's `AddBagItem` exactly where a needle scan measured
-it, and `Random` where a literal-pool read did.
+Every site pairs (734 of 734, 834 of 834), and the deltas have four distinct values per window with
+no outliers. The pairing puts LeafGreen's `AddBagItem` at the needle scan's address and `Random` at
+the literal-pool address.
 
 ### Dumping both cartridges at the same address
 

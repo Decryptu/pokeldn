@@ -172,13 +172,9 @@ def test_get_lead_mon_index_is_the_body_four_lead_mon_specials_share():
 
 
 def test_the_high_leafgreen_segment_reaches_down_to_the_m4a_tables():
-    """Two runs. The -0x12D8 segment used to start at 0x086003E0; five paired literal-pool words
-    from the same m4a window on each console carried it down to 0x0847DCF8, which is a 3.5x
-    narrowing of the last big gap."""
+    """The -0x12D8 segment includes paired literal-pool words in the m4a tables."""
     low, high, delta, _evidence = [seg for seg in rom_map.LEAFGREEN_DELTA_SEGMENTS
                                    if seg[2] == -0x12D8][0]
-    # Session 48 carried the low end down 138 KB further, from a direction the m4a pools knew
-    # nothing about: -0x12D8 reads at four paired blocks, two of them 884 of 884 bytes.
     assert (low, high) == (0x0845F000, 0x086803FC)
     for firered, leafgreen in ((0x0847DCF8, 0x0847CA20), (0x0847DDAC, 0x0847CAD4),
                                (0x0847DF10, 0x0847CC38), (0x0849758C, 0x084962B4),
@@ -200,8 +196,6 @@ def test_the_gap_that_is_left_is_the_one_the_boundary_table_names():
     """A boundary that has been bracketed is not a boundary that has been found. The remaining span
     is where -0x1C4 becomes -0x12D8, and `leafgreen_guess` must still REFUSE inside it rather than
     interpolate."""
-    # Session 48 split this boundary in two: there is a -0x124C segment in the middle of it, which
-    # is the same lesson -0x20 taught. What is left is the span either side of it.
     boundary = [b for b in rom_map.LEAFGREEN_DELTA_BOUNDARIES if b[:2] == (-0x1C4, -0x124C)][0]
     _from, _to, low, high = boundary[:4]
     assert (low, high) == (0x0843AFFF, 0x08442800)
@@ -275,7 +269,6 @@ def test_there_is_a_minus_0x20_segment_between_the_species_table_and_easy_chat()
     assert high - low > 1024 * 1024, "one point pretending to be a segment"
     assert rom_map.leafgreen_guess(0x08265950) == 0x08265950 - 0x20
     assert rom_map.leafgreen_guess(0x0839F83C) == 0x0839F83C - 0x20
-    # The ends session 48 measured, 31 bytes and one block wide respectively.
     assert rom_map.leafgreen_guess(0x08251DAD) == 0x08251DAD - 0x20
     assert rom_map.leafgreen_guess(0x083B7B47) == 0x083B7B47 - 0x20
     # Both controls came out of the SAME pairing, on either side of the new segment.

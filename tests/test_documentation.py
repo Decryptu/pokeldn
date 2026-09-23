@@ -45,10 +45,7 @@ def test_readme_local_links_exist():
 
 # --- the published site -------------------------------------------------------------------
 #
-# `docs/` is a just-the-docs Jekyll site and its sidebar is built ENTIRELY from front matter:
-# `parent:` and `grand_parent:` match on another page's TITLE STRING, not on its filename. A
-# typo there does not fail a build - the page silently disappears from the navigation, which
-# is how the tree drifted before session 44. These tests are the check that it cannot again.
+# The sidebar matches `parent` and `grand_parent` against page titles; a mismatch hides the page.
 
 DOCS = Path("docs")
 MAX_NAV_DEPTH = 3  # just-the-docs supports title -> parent -> grand_parent and no deeper
@@ -126,17 +123,7 @@ def test_the_site_base_url_matches_the_repository():
 
 # --- the launchers ------------------------------------------------------------------------
 #
-# Every file in bin/, tools/ and scripts/ puts what it needs on sys.path ITSELF, derived from its
-# own __file__, so that it runs from anywhere without the venv or PYTHONPATH being set up. The
-# test suite cannot see a mistake there, because conftest.py has already put those paths on
-# sys.path for the tests - which is exactly how moving the tools one directory deeper left
-# all seven of them unable to import the package while 1088 tests passed.
-#
-# AND IT HAPPENED AGAIN, unnoticed until session 48: the same move left `scripts/` inserting
-# `tools` where `rom_functions` and `cartridge_pair` now live in `tools/frlg`, so the two
-# generators that WRITE committed tables - worker_names and leafgreen_twins - could not be run at
-# all. The check below is why it is caught now: it is not enough to look for the package, because
-# what broke was a sibling tool, so any repo module reported missing fails the test.
+# conftest.py sets sys.path, so launcher imports must be checked in a separate process.
 
 def _standalone(script):
     env = {k: v for k, v in os.environ.items() if k != "PYTHONPATH"}

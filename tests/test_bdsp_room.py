@@ -219,7 +219,6 @@ OPENDPR = [pathlib.Path("~/opendpr").expanduser(),
 
 
 def test_the_generator_still_reproduces_the_committed_table():
-    """A table nobody can regenerate is a table nobody can check - session 48's lesson, again."""
     checkout = next((p for p in OPENDPR if (p / "Assets" / "Scripts").is_dir()), None)
     if checkout is None:
         pytest.skip("no opendpr checkout to regenerate the table from")

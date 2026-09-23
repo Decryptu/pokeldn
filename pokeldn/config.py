@@ -240,10 +240,8 @@ class HostOptions:
     # offered party mon unless union_room_board_level overrides the level.
     union_room_board_type: int | None = None
     union_room_board_level: int | None = None
-    # Accept the room's "Tchat" instead of declining it, and the lines to send once the chat opens.
     union_room_chat: bool = False
     chat_messages: tuple = ()
-    # Accept the room's Combat instead of declining it, and whether to forfeit at the first prompt.
     union_room_battle: bool = False
     battle_forfeit: bool = True
     battle_move_slot: int = 0
@@ -251,7 +249,6 @@ class HostOptions:
     # trade centre: ACTIVITY_BATTLE_SINGLE on the air, then a link battle where the trade menu
     # would be. Only this path increments the console's Wonder Card battlesWon [cable_club.c:792].
     colosseum: bool = False
-    # A file the running host tails: every line appended to it is sent into a live chat.
     chat_file: str | None = None
 
     def __post_init__(self):

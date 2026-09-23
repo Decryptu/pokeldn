@@ -212,7 +212,7 @@ read its new PHY number from `iw dev`, then:
 Preflight confirms that the selected `mt7601u` module comes from
 `updates/dkms` and exposes both AP and monitor mode.
 
-## Later desktop changes
+## Deploying changes from the desktop
 
 For each committed change on the desktop:
 

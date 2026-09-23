@@ -396,22 +396,18 @@ by one anywhere desynchronises the walk and lands in the middle of an instructio
 
 ## The conditional macros
 
-The generator originally read each `.macro` as a flat list of directives, and eleven macros have
-conditional bodies, so a flat read concatenates every branch. 31 of the 214 commands were measured
-wrong and 4 were missing entirely:
+Eleven macros have conditional bodies. The generator walks each branch separately and raises on an
+unknown sub-macro so emitted bytes cannot be silently omitted.
 
-| command | read as | actually | why |
-|---|---|---|---|
-| `applymovement` | 14 bytes | 7 | the `.ifb \map` else-branch was appended, opcode byte and all |
-| `waitmovement`, `removeobject`, `addobject` | 6 | 3 | the same |
-| `applymovementat`, `waitmovementat`, `removeobjectat`, `addobjectat` | absent | 9, 5, 5, 5 | they are that else-branch: a second opcode the flat read never reached |
-| `warp` and the eight other warps | 1 | 8 | the operands are all in `formatwarp`, a sub-macro the read dropped |
-| the ten `buffer*` commands | 3 | 4 | the `stringvar` sub-macro's byte, dropped |
-| `showobjectat`, `hideobjectat`, `resetobjectsubpriority` | 3 | 5 | the two bytes of the `map` sub-macro, dropped |
-| `trainerbattle` | 114 | 6 + 4..16 | all ten type branches concatenated |
-
-The generator now walks each macro's branches separately, and an unknown sub-macro raises, because
-silently dropping emitted bytes is how the stream drifted in the first place.
+| command | width | structure |
+|---|---|---|
+| `applymovement` | 7 bytes | `.ifb \map` branch |
+| `waitmovement`, `removeobject`, `addobject` | 3 bytes | `.ifb \map` branch |
+| `applymovementat`, `waitmovementat`, `removeobjectat`, `addobjectat` | 9, 5, 5, 5 bytes | alternate branch |
+| `warp` and the eight other warps | 8 bytes | `formatwarp` sub-macro |
+| the ten `buffer*` commands | 4 bytes | `stringvar` sub-macro |
+| `showobjectat`, `hideobjectat`, `resetobjectsubpriority` | 5 bytes | `map` sub-macro |
+| `trainerbattle` | 6 + 4..16 bytes | type-dependent branch |
 
 Two shapes of macro have to be told apart. `warp` is `.byte 0x39` then `formatwarp`, one instruction
 whose operands live in the callee, so the callee must be inlined. `giveitem` is `loadword` then
@@ -609,15 +605,11 @@ two tables can be compared index for index. The 22 word arrays and their text sp
 0x083DE2C8..0x083E3700, 21560 bytes, contiguous, with each group's strings between its array and the
 next.
 
-The words were then read one group per run with `string-gather`. The first group read was self-verifying
-the moment it landed: index 42 came back STRESSE and index 60 FURAX, which two earlier runs had read off
-the console's own screen by a completely different route. Nine more slots were confirmed the same way as
-the sweep went on. `tests/test_easychat_french.py` requires the render evidence and the ROM evidence to
-agree wherever they overlap.
+`string-gather` reads the words one group at a time. ROM entries 42 and 60 are STRESSE and FURAX,
+matching the console's rendered text. `tests/test_easychat_french.py` requires the render and ROM
+evidence to agree wherever they overlap.
 
-It caught one error in the render evidence: `TRAINER/11` had been recorded as DRESSEURS from a phrase on
-screen; the ROM holds **DRESSEUR**, singular, and no DRESSEURS exists anywhere in the 1006. A phrase read
-by eye is weaker than the table the game indexes.
+`TRAINER/11` is **DRESSEUR**, singular; DRESSEURS does not occur in the 1006-word table.
 
 ## What the table says
 

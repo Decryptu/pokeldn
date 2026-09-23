@@ -244,7 +244,7 @@ def test_no_reader_raises_on_a_short_message():
         assert trade.next_answer(payload, station_id=OUR_STATION)[0] == payload
 
 
-# --- Opening a phase, session 60 ---------------------------------------------------------------
+# --- Opening a phase ---------------------------------------------------------------
 
 SW83_RPC_PAIR = (
     "5e9c00000a1a081e10904e188080a08a8fc4c8cdeb0120fef6012a0400000000",
@@ -322,7 +322,7 @@ def test_a_content_fifty_envelope_carries_the_pk8_in_field_five():
 
 
 def test_the_content_fifty_offer_carries_our_owner_id():
-    """Session 62, out of the binary: the envelope is `gflnet.p2p.sync.pb.Data` and field 3 is
+    """The envelope is `gflnet.p2p.sync.pb.Data` and field 3 is
     `ownerId`. Content 50's receive handler `0x010d5e40` resolves that sender to a station index
     before it looks at the body and returns silently when it cannot, where content 30's
     `0x010ce080` only checks the sender is not itself. An offer with no owner in it is the shape
@@ -379,9 +379,7 @@ def test_answer_rpc_refuses_a_member_with_no_base():
 
 
 def test_the_confirmation_content_takes_a_command_and_not_a_pokemon():
-    """Session 64, out of Shield 1.3.2's `main`, no run spent.
-
-    Content 40's 10000-base holder parses with `0x010df6d0`, which accepts tag 0x0a and nothing
+    """Content 40's 10000-base holder parses with `0x010df6d0`, which accepts tag 0x0a and nothing
     else, and its submessage's parser `0x010debc0` accepts tag 0x08 and nothing else - one
     length-delimited field carrying one varint. The game's own descriptors say the same thing:
     `SyncSaveDataHolder{1 SyncCommand syncCommand}` over `SyncCommand{1 int32 data}`. Two readings,

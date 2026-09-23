@@ -56,12 +56,7 @@ def test_a_bracketed_name_is_marked_as_the_weaker_reading_it_is():
         assert isinstance(name, str) and isinstance(offset, int)
 
 
-def test_the_three_division_helpers_are_what_session_42_said_would_be_left():
-    """The corroboration worth keeping. Session 42 named 183 workers by zipping a body's measured
-    calls against the decomp's, and said what the residue was: the 22 bodies where the compiler
-    changed the call list, `__umodsi3` among them - agbcc emitting a helper for a division nobody
-    wrote. Three call targets survived every later reading, reached from a dozen bodies each, and
-    the English build reads them as exactly those helpers. Neither reading knew about the other."""
+def test_the_three_division_helpers_have_independent_names():
     helpers = {english_names.bracketed_name(a) for a in (0x081E2694, 0x081E2770, 0x081E2D00)}
     assert helpers == {"__divsi3", "__modsi3", "__umodsi3"}
 

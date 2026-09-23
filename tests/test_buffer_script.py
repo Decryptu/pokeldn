@@ -620,7 +620,7 @@ def test_a_bursting_console_still_gets_every_fragment_of_its_dump_back():
     assert len(engine.server.buffer_dump) == 608
     assert console.result == mg_script.CLI_MSG_BUFFER_SUCCESS
     assert echo.dropped == 0
-    assert echo.coalesced > 0            # the repeats it folds away are what used to cause the lag
+    assert echo.coalesced > 0
     assert console.own_dropped_inits == 0
     assert console.own_resends == 0      # it never had to repair a block
 

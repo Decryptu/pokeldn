@@ -1,8 +1,7 @@
 # pokeldn
 
-A Linux computer speaking Nintendo Switch local wireless (LDN) to Pokémon games on a real Switch or
-Switch 2. It hosts or joins the game's own wireless session and runs the game's protocol against a
-retail console, with nothing installed on the console. Seven games so far:
+A Linux computer hosts or joins Nintendo Switch local wireless (LDN) sessions with retail Pokémon
+games. Nothing is installed on the Switch or Switch 2. Seven games are supported:
 
 | | FRLG | LGPE | SwSh | BDSP | PLA | SV | PLZA |
 |---|:---:|:---:|:---:|:---:|:---:|:---:|:---:|
@@ -14,23 +13,22 @@ retail console, with nothing installed on the console. Seven games so far:
 ✓ works on a retail console · ✗ not done · ∅ the game has no such feature over local wireless
 FRLG FireRed/LeafGreen · LGPE Let's Go Pikachu/Eevee · SwSh Sword/Shield · BDSP Brilliant Diamond/Shining Pearl · PLA Legends Arceus · SV Scarlet/Violet · PLZA Legends Z-A
 
-Everything runs on the same radio and the same LDN and Pia layers. FireRed and LeafGreen ship as
-the original GBA ROM inside an emulator, so their GBA link protocol rides on top of those layers
-where the six other games put their own code directly on Pia; nothing else about them is
-different.
+All games share the radio, LDN and Pia layers. FireRed and LeafGreen also run the GBA link protocol
+inside the Switch's emulator.
 
 The full protocol documentation is at [decryptu.github.io/pokeldn](https://decryptu.github.io/pokeldn/).
 
-The package is layered by what a module is true of: `pokeldn.ldn` is the wireless layer every Switch
-title shares, `pokeldn.gba` is the GBA wireless adapter's protocol above it, and `pokeldn.frlg`,
-`pokeldn.lgpe`, `pokeldn.swsh`, `pokeldn.bdsp`, `pokeldn.pla`, `pokeldn.sv` and `pokeldn.za` are the games. Entry points are named for the game
-they drive.
+`pokeldn.ldn` implements the shared wireless layer, `pokeldn.gba` the GBA adapter protocol, and
+the game packages their own protocols. Entry points are named for the game they drive.
 
 ---
 
 ## Why?
 
-This project basically exists to prove that it can be done. From here, I'm hoping the community takes notice so that we can get things like an unofficial GTS and online battling going. It should serve as a pretty good reference for anyone interested in pursuing these goals or anything else related to multiplayer within these games. AI tools were used to reverse engineer the protocol and to write parts of the code. If you'd like to contribute to the effort, join the [Discord!](https://discord.gg/PyvaVYnpXC)
+This project demonstrates direct local wireless communication with retail Pokémon games and
+documents the protocols for work such as an unofficial GTS or online battles. AI tools helped
+reverse engineer the protocols and write parts of the code. Contributors can join the
+[Discord](https://discord.gg/PyvaVYnpXC).
 
 ## Demonstration
 https://github.com/user-attachments/assets/b0df878e-67f0-483d-ae81-583cfc2a8692

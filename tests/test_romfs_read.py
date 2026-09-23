@@ -1,9 +1,8 @@
 """Reading a Switch title's RomFS in place, off the encrypted container.
 
 The reader never extracts: a RomFS section is AES-128-CTR, CTR is seekable, and the counter for any
-range is the section CTR's high half followed by (nca_relative_offset >> 4) big-endian. That is what
-lets a 4.2 GB RomFS be walked, searched and single-file extracted with no disk cost - session 45
-found BDSP's `cryptoKeyDataSeed` that way, and the same reader answers for any title.
+range is the section CTR's high half followed by (nca_relative_offset >> 4) big-endian. This lets
+a 4.2 GB RomFS be walked, searched and single-file extracted without extracting the full image.
 
 WHAT SAYS A READ IS REAL: the RomFS header's first word is its own size, 0x50. A wrong key, a wrong
 section offset or a wrong counter all land there first, and every one of them gives a header_size

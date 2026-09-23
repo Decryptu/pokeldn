@@ -1,15 +1,4 @@
-"""SEAD's RNG, and the Pia 5.x LDN session key that is built on it.
-
-The generator is the one input to BDSP's session key that is NOT in doubt: session 43 read it
-instruction by instruction off the console's ARM64 and session 45 found the NintendoClients wiki
-describing the same thing, down to the state rotation and the multiply-not-modulo range reduction.
-That agreement is load-bearing - it is what says a failed derivation is a wrong key or a wrong
-nonce rather than a wrong xorshift, and it is what makes a 2^32 sweep of the seed meaningful.
-
-So these tests re-derive the generator from its published formula rather than pinning bytes this
-project produced, and check the module against that. A pin of our own output would pass even if
-both readings had been mis-transcribed the same way.
-"""
+"""SEAD's RNG and the Pia 5.x LDN session key, checked against the published formula."""
 
 import os
 import struct
@@ -80,11 +69,6 @@ def test_a_state_can_be_given_directly():
     assert Sead(state=state).state == state
 
 
-def test_a_state_given_as_bytes_is_four_words():
-    seed = bytes.fromhex("9918bd0fdcfa65779918bd0fdcfa6577")
-    assert len(struct.unpack("<4I", seed)) == 4
-
-
 def test_a_seed_is_only_a_shorthand_for_the_state_it_builds():
     state = reference_state(7)
     assert Sead(seed=7).u32() == Sead(state=state).u32()
@@ -140,7 +124,7 @@ def test_enl_create_key_is_bytes_picked_out_of_the_table():
 
 def test_enl_create_key_is_deterministic_for_a_seed():
     table = [0x11223344, 0x55667788, 0xAABBCCDD, 0xEEFF0011]
-    assert create_key(Sead(seed=31), table) == create_key(Sead(seed=31), table)
+    assert create_key(Sead(seed=31), table) == bytes.fromhex("33bbcc337766dd88111122eebbff22bb")
     assert create_key(Sead(seed=31), table) != create_key(Sead(seed=0), table)
 
 

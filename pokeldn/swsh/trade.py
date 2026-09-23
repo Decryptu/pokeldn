@@ -370,7 +370,7 @@ def pokemon_offer(offset, pk8):
     port 0, not on the 20030 holder the offer phase uses. The offer phase and the selection phase
     each carry a Pokemon, on different messages and different windows.
 
-    **AND SESSION 63 CONFIRMED THE SHAPE OUT OF THE BINARY.** Content 50's 10000-base holder parses
+    Content 50's 10000-base holder parses
     its body with `0x010d9ee0`, which accepts tag 0x0a and nothing else, and the submessage's
     descriptor at `0x1bdb460` is `Pokemon { 1 bytes serializePokemonParam }`. This is the one
     message content 50's receive event can be fed. `docs/swsh.md`, "The whole path from the radio

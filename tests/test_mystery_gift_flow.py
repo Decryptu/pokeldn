@@ -979,12 +979,7 @@ def _send_child_link_player(engine, payload, *, owner=1):
 
 
 def test_link_player_opening_is_immediate_and_block_request_is_one_shot():
-    """The Switch child creates Task_PlayerExchange directly from CHILD_JOINED.
-
-    The former 150-frame quiet period was copied from the native distributor's
-    *parent* UI task.  Parent Task_PlayerExchange sends one request, and another
-    one can restart the child after its first transfer has completed.
-    """
+    """The Switch child creates Task_PlayerExchange directly from CHILD_JOINED."""
     engine = _new_link_player_engine()
     _drain_link_player_opening(engine)
     assert engine._link_player_requests == 1

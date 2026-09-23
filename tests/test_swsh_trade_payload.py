@@ -68,7 +68,6 @@ def test_the_third_fragment_is_compressed_and_the_whole_payload_is_3456():
 
 
 def test_concatenating_the_compressed_fragment_raw_is_refused():
-    """Session 58's bug, exactly: 1404 + 1404 + 157 gave 2965 and nothing said it was wrong."""
     frags = fragments_of(a_payload())
     short = b"".join(frags)
     assert len(short) < trade_payload.PAYLOAD_LENGTH
@@ -115,7 +114,6 @@ def test_the_named_blocks_tile_the_payload_without_overlapping():
     assert trade_payload.MY_STATUS_OFFSET == 0x814
     assert trade_payload.TRAINER_CARD_OFFSET == 0x924
     assert trade_payload.TAIL_OFFSET == 0xAEC
-    # session 58 read a date at 0xA94 and could not say what it was: it is the start date
     assert trade_payload.TRAINER_CARD_OFFSET + trade_payload.TRAINER_CARD_STARTED == 0xA94
     assert len(trade_payload.read(a_payload())["tail"]) == 660
 

@@ -11,9 +11,7 @@ from Crypto.Cipher import AES
 from pokeldn.ldn import pia4
 from pokeldn.swsh.session import packet_iv, session_keys
 
-# The advertisement the capture's own session carried. A DIFFERENT session from the two scans
-# earlier the same evening - the network id at 0 and the seed at 12 both move per session, which is
-# what made an earlier sweep of the wrong advertisement's values fail against these packets.
+# The advertisement paired with the captured packets; network id and seed vary by session.
 APP_DATA = bytes.fromhex("0330112400000000051800008b718ac6")
 CONSOLE_MAC = bytes.fromhex("48f1eb209b22")
 
@@ -95,7 +93,7 @@ def test_every_message_header_in_the_capture_held_the_same_constants():
         assert header[8:16] == b"\0" * 8           # destination, broadcast
 
 
-# --- What we send back. Session 56. ------------------------------------------------------------
+# --- What we send back ------------------------------------------------------------
 #
 # There is no capture of a version-4 packet LEAVING this machine, so the only offline checks
 # available are these two: our builder reproduces the console's own bytes when handed the console's

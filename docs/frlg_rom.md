@@ -1355,8 +1355,8 @@ Measured examples:
     read16 [prev]                -> 3
     call VarGet(0x4024)          -> 3        the game's own reader, same frame
 
-and, in a later session with a third `gSaveBlock1Ptr` base, the var behind that pointer still read 3,
-which is why a var write goes through `GetVarPointer` rather than a computed address.
+The variable still reads 3 when `gSaveBlock1Ptr` changes base, so a variable write uses
+`GetVarPointer`.
 
 Money is encrypted, `*moneyPtr ^ gSaveBlock2Ptr->encryptionKey` [money.c:14], and one chain reads both
 sides with an address the host cannot know and an offset added on the console:
@@ -1553,10 +1553,8 @@ Established with no step assumed, each one measured on the emulated console:
 6. the bytes are the live save data: the delivered pattern reads back in the running game's EWRAM,
    500 consecutive words at each of two sites.
 
-The delivered pattern differed from the one used to pre-test the loader, which is what makes step 6
-a measurement: the pre-test pattern appears at zero sites afterwards, so nothing being read is left
-over. Had both used the same bytes, a success and a no-op would have differed only in the four bytes
-of the counter field.
+The delivered pattern is distinct from the loader's pre-test pattern. The pre-test pattern appears at
+zero sites after the write, so step 6 reads the delivered bytes.
 
 # Reading the save
 

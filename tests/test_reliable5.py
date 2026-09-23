@@ -108,8 +108,7 @@ def test_build_ack_message_reproduces_it_byte_for_byte():
 
 
 # --------------------------------------------------------------------------- version 4
-# Sword/Shield. The header is this module's, unchanged; the ACK PAYLOAD is the fixed table 5.29
-# replaced. Read off the retail binary in session 57 after that run's 96 acks were refused by size.
+# Sword/Shield version 4 uses a fixed ACK payload table.
 
 def test_the_version_four_ack_payload_is_the_size_the_handler_demands():
     from pokeldn.ldn import reliable4 as r4
@@ -197,10 +196,7 @@ def test_the_console_fills_one_slot_per_STATION_and_zeroes_the_rest():
 
 
 # --- version 4's own header, and the first application data ---------------------------------
-# Session 58 read all three MessageHeader methods off the retail binary: GetSize 0x0184e480,
-# Deserialize 0x0184e390, Serialize 0x0184e230. The byte at 0x8 is a COUNT of eight-byte station
-# ids, not 5.29's bitmap width, and the two rules agree only at count 0 - which is every 0x7C
-# message either side has ever sent.
+# The byte at 0x8 counts eight-byte station ids; it is not a bitmap width.
 
 def test_the_version_four_header_grows_eight_bytes_per_destination_not_a_bitmap():
     from pokeldn.ldn import reliable4 as r4

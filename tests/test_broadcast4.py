@@ -1,9 +1,4 @@
-"""Protocol 0x84's framing, against the three messages our own console sent.
-
-Those three are the whole point: a builder that cannot reproduce a message the console sent is a
-builder we have no reason to trust, and every earlier layer of this project was settled the same
-way.
-"""
+"""Protocol 0x84 framing against three captured console messages."""
 import random
 import zlib
 
@@ -63,9 +58,9 @@ def test_a_body_that_does_not_shrink_is_sent_plain():
     """The console only sets the flag when compression paid, and so do we.
 
     The body has to be genuinely incompressible for this to mean anything - a repeating byte
-    pattern deflates to nothing and takes the other branch, which is what a first version of this
-    test did. Our console's own fragments 0 and 1 go out plain at 1404 bytes; they are party data
-    and stay out of the repository, so this uses a deterministic pseudo-random blob instead.
+    pattern deflates to nothing and takes the other branch. Our console's own fragments 0 and 1 go
+    out plain at 1404 bytes; they are party data and stay out of the repository, so this uses a
+    deterministic pseudo-random blob instead.
     """
     body = random.Random(SEED).randbytes(400)
     assert len(zlib.compress(body)) > len(body), "the fixture must be incompressible"

@@ -9,10 +9,8 @@ and together they disassemble any script the console holds.
 
     ./.venv/bin/python scripts/gen_scrcmd_args.py [~/pokefirered]
 
-Eleven macros have CONDITIONAL bodies and they cannot be read as a flat list of directives, which
-is what this generator used to do - it concatenated every branch, so `applymovement` came out 14
-bytes long instead of 7 and `trainerbattle` 114 instead of 6 plus a tail. Each branch is walked
-separately here, and a macro's branches resolve one of two ways:
+Eleven macros have CONDITIONAL bodies and cannot be read as a flat list of directives. Each branch
+is walked separately, and a macro's branches resolve one of two ways:
 
   - different opcodes, one per branch (`applymovement`/`applymovementat` are the two halves of one
     `.ifb \map`), which is two ordinary ARGS entries; or

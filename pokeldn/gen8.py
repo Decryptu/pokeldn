@@ -164,11 +164,7 @@ def decrypt(raw):
     out[HEADER_SIZE:SIZE_STORED] = crypt(raw[HEADER_SIZE:SIZE_STORED], ec)
     # The stream restarts here, seeded from the same constant. PokeCrypto.Decrypt8, two calls.
     out[SIZE_STORED:] = crypt(raw[SIZE_STORED:], ec)
-    # BLOCK_ORDER[sv] is the read order for decryption, applied directly. Inverting it here is
-    # wrong for any sv whose permutation is not its own inverse, which is 24 of the 32. PKHeX's
-    # decrypt path uses BlockPosition[sv] as it stands and
-    # only its ENCRYPT path goes through BlockPositionInvert. Both of this project's block-order
-    # bugs were that inversion, in two different modules, three sessions apart.
+    # Decryption uses the read order; only encryption inverts it.
     plain = permute(bytes(out), BLOCK_ORDER[(ec >> 13) & 31])
     want = struct.unpack_from("<H", raw, 6)[0]
     got = checksum(plain)

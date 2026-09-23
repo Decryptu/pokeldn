@@ -260,8 +260,8 @@ to 0 brings reason 1 back. The maximum is the whole gate.
 Its Pia is not silent. The moment a node joins at the LDN layer the console broadcasts a Local
 Protocol update session about six times a second, listing the joiner as seat 1; 238 of them decoded
 and authenticated in one run, against a control with no node joined that sends nothing on that port
-for five minutes. An earlier reading of silence here was a socket losing the race for broadcast
-delivery against the emulator's own wildcard socket on 12345, and only an external capture sees them.
+for five minutes. The emulator's wildcard socket on 12345 can take broadcast delivery from another
+listener, so an external capture is required to observe the updates reliably.
 The update session is acknowledged, and has been on every run. With the ack on, one arrives and the
 rebroadcast stops after 1.6 seconds; with `--no-ack-update` against the same screen and the same
 patch, 612 arrive and are still coming at six a second after 100 seconds. A run reporting one update
@@ -291,8 +291,7 @@ Four measurements put the console on the joining side of a distribution, not the
 - forced into its mesh with that maximum patched, it registers no message listener and sends no
   application data.
 
-Zero probe requests over the air, which this page previously read as "it hosts and does not scan",
-is what a passive scan looks like and does not decide the question.
+Zero probe requests over the air are consistent with a passive scan and do not decide the question.
 
 Its scan filter asks only for the local communication id and network type, both `SessionId` and
 `SceneId` unfiltered, so a network carrying `0x0100ABF008968000` is returned to the game whatever
@@ -507,11 +506,9 @@ A gift payload is *n* records of 0x2D0 bytes. The same app allocates a 0x2D0 obj
 
 ## The card arrives as gflnet3 application data
 
-The card transfer is a gflnet3 message flow, the same library that carries trade and battle. There
-is no bespoke Mystery Gift network module because the app reuses gflnet3, reached through the global
-gfl net manager at `0x0261CBA8` (`read_u64` of it is the manager; a null there is the no-session
-guard on every send stub). This resolves the earlier "no Mystery Gift protobuf module": the module
-is gflnet3.
+The card transfer is a gflnet3 message flow, the same library that carries trade and battle. The app
+uses the global gfl net manager at `0x0261CBA8` (`read_u64` of it is the manager; a null there is the
+no-session guard on every send stub).
 
 `StateReceiveLocal`'s driver `0x01004C80` (a case machine on `state+0x2A0`) does two things when it
 enters the local-wireless case:
@@ -529,8 +526,8 @@ the sink at `receiver+0x60`, which reaches `0x01005BC0`.
 `0x01005BC0` tail-calls `0x00FF0E00 -> 0x00FF1FB0 -> 0x00FF2170`, the card importer. `0x00FF2170`
 requires the body be a whole multiple of `0x2D0` (720, the Wonder Card size; the reciprocal-multiply
 gate above), then loops over the *n* records: it filters each through `0x01449820` and materialises it
-with `0x00FF3EC0`. Where the materialised card is kept is unresolved; `manager+0x80`, named here in an
-earlier revision, is the per-frame update's clock stamp.
+with `0x00FF3EC0`. Where the materialised card is kept is unresolved; `manager+0x80` is the per-frame
+update's clock stamp.
 
 The send half hands the message to the gflnet3 core (`0x006C2840`, queue at `core+0xF8`); the core
 manager is `read_u64(read_u64(main+0x02616B80))`. A distributor is a joiner: it seats on the console's
@@ -883,7 +880,7 @@ built to it on a retail console produced every field as the map says:
 
 A record with zero ribbon bytes names ribbon 0 thirty-two times; fill the list with `0xFF`.
 
-Every field on this page has now been confirmed on a console: species, form, the four moves, the
+Console measurements confirm these fields: species, form, the four moves, the
 nickname, the original trainer, the gift kind, the region mask, the card id, both checksums, the level
 and the met level.
 
@@ -1139,12 +1136,11 @@ A session can reach a state where it does neither. In one, three bodies accepted
 sat in the store with its count climbing 1, 2, 3 and never falling, the first still in place 27
 minutes later through 24,651 consecutive samples, while `manager+0x80` held one constant value and
 `job+0x160` stayed null. Nothing measured on such a session says anything about the payload, since the
-type byte is never read there. Two later sessions drained normally, so the condition is a property of
-the session rather than of the screen, and what causes it is unresolved. Check that the update is live
+type byte is never read there. Other sessions drain normally, so the condition varies by session and
+its cause is unresolved. Check that the update is live
 before reading any beacon result: `manager+0x80` advancing is the cheapest proof.
 
-This also settles what `manager+0x80` is. It is where the update stamps its clock reading, not the
-Wonder Card list an earlier revision of this page called it; the `+0x80` accesses around the importer
+The update stamps its clock reading at `manager+0x80`. The `+0x80` accesses around the importer
 `0x00ff2170` are the thread-local guard stack that `nn::os::GetTlsValue` returns, the same push and
 pop that surrounds the store append at `0x006c54a4`.
 
@@ -1157,6 +1153,5 @@ spans several beacons. How the header's `+6` and `+7` bytes index the pieces is 
 
 Unresolved: the layout of the payload a distributor sends, the gflnet3 message header inside it (10
 bytes at `0x010F7C08` on the send path: u32 id at 0, u16 at 4, u8 at 6, u8 at 7, u16 at 8), and how a
-720-byte record fragments across beacons when the payload holds at most 355 bytes. `0x136`, named a
-channel in an earlier revision, is a `memset` length at `0x010F7E00`; the message id comes from the
-getter `0x010F7050`.
+720-byte record fragments across beacons when the payload holds at most 355 bytes. `0x136` is a
+`memset` length at `0x010F7E00`; the message id comes from the getter `0x010F7050`.

@@ -498,7 +498,7 @@ class Participant:
 
     def _owned_answer(self, cid, now):
         """What the announcer of a clone sends when the peer announces its own copy of it. The
-        first time, in the reference session 27 ms after the peer's take-over burst: an a2 on clone
+        first time: an a2 on clone
         type 4 and one on clone type 2 carrying the peer's announcement clock, an a1 on clone type
         1 carrying that clock and our content, and the clone type 4 data with the peer's bit as its
         participants. On the peer's re-announcement after that: a request (82) on clone type 1

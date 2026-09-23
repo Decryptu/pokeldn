@@ -676,8 +676,7 @@ third pair and moves the job on:
 240 ms after the first `02 03` is dispatched the third pair reads 1 and 3, and that was the whole
 stall. The animation plays, the console says to take good care of the Pokemon, and the box comes
 back with the panel reading the host's player name as the original partner. Eight files in the save
-differ from the pre-run backup: `main`, `main2` and `backup` in both slots, and both ExtraData
-files. It had been byte-identical through every earlier run.
+differ from the backup: `main`, `main2` and `backup` in both slots, and both ExtraData files.
 
 The console then sends a fresh selector 2 on the trade key, showing whatever the box cursor is on
 now, which the host answers with its own showing, and the port-1 announcement that the phase key

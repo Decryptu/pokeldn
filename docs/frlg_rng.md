@@ -75,10 +75,9 @@ The probe measures the rate while a field script is *delaying*, with the player 
 measures the unlocked case. Four independent press trials (below) give turn counts that are all even,
 which extends the result to ordinary overworld play.
 
-Nothing here may rest on a hand-timed elapsed. One turn is about 8 ms. Earlier figures on this
-subject were wrong because they divided an exact turn count by a hand-timed elapsed, and one of them
-divided by a number the tool had itself computed by assuming the answer. The two clocks that need no
-seconds at all are two seed readings (`distance`) and the mon that appears (`recover_wild_state`).
+Turn counts come from two seed readings (`distance`) or the resulting Pokémon
+(`recover_wild_state`). One turn is about 8 ms; hand-timed elapsed seconds do not determine the
+count.
 
 ## Where the seed comes from, and why it cannot be carried
 
@@ -521,9 +520,8 @@ point:
 The console used Method 1 that run, so it did not itself exercise a stray draw; what it shows is that the
 search accepts only states that are correct whichever method fires.
 
-A later run with the logging stub caught one in the act. The console wrote the state it found into the
-save and a dump read it back; the logged state predicts the caught mon's PID exactly, with no brute force
-and no candidate ambiguity, and the IVs came from Method 4:
+The console's logged state predicts the caught Pokémon's PID exactly, with no brute force or candidate
+ambiguity, and the IVs come from Method 4:
 
     logged found state 0x4FB97B07
       Method 1 (clean)  25/10/30/20/ 9/25

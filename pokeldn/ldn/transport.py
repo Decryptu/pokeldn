@@ -858,8 +858,7 @@ class HostTransport:
         """Swap the advertisement's application data from another thread.
 
         The host loop owns the trio task, so the new bytes are parked here and applied on its next
-        pass; advertisements go out every 0.1 s, so a swap is live within a frame or two. Used to walk
-        a gift's fragments across successive beacons (docs/swsh_gift.md).
+        pass; advertisements go out every 0.1 s, so a swap is live within a frame or two.
         """
         self.app_data = bytes(data)
         self._pending_app_data = self.app_data

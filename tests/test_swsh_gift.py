@@ -17,7 +17,6 @@ def test_record_checksum_is_ccitt_false_over_the_zeroed_field():
     probe = bytearray(0x2D0)
     probe[:9] = b"123456789"
     assert wc8.record_crc(probe) != 0x29B1     # the 0x2C7 trailing zeros are part of the sum
-    assert wc8.record_crc(b"123456789" + bytes(0x2D0 - 9)) == wc8.record_crc(probe)
 
 
 def test_names_go_where_the_console_read_them():

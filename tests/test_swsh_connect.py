@@ -169,12 +169,7 @@ def test_neither_answer_happens_unless_it_is_asked_for():
     assert args.answer_rtt is False and args.ack_reliable is False
 
 
-# --- The post-offer queue, session 60 ----------------------------------------------------------
-#
-# A run died in the middle of a trade because this queue held two different kinds of thing: built
-# payloads for --open-content and plain ints for --box-commands, drained through a builder that
-# assumed ints. The second entry raised, the nursery went down, and the player saw the console
-# report the communication as interrupted seconds after our Pokemon reached their screen.
+# --- The post-offer queue ----------------------------------------------------------
 
 from pokeldn.swsh import trade as swsh_trade                          # noqa: E402
 
@@ -234,14 +229,7 @@ def test_a_spaced_queue_drains_every_entry_and_not_just_the_first():
     assert all(g >= 5.0 for g in gaps), gaps
 
 
-# --- The two moves nxldn-lab makes and we never have, session 63 -------------------------------
-#
-# `0x006d59f0` routes a 40000-family `Data` on (elementId, ownerId) and hands the sub-element that
-# owns the pair its body AND its clock. The console's own selection pair goes out three times with
-# the clock advanced by 2 each burst (sx45r1_6, t=31.60: b41c, b61c, b81c); every answer this
-# project has sent carries ONE clock and is then retransmitted unchanged. And nxldn-lab's client
-# OPENS the selection phase on `820000001a00` - id 130, pingSynced - which our own captures carry
-# 0.3 s before the console's burst and which nothing here has ever acted on.
+# --- Selection phase messages -------------------------------
 
 def test_the_two_missing_selection_moves_are_off_unless_they_are_asked_for():
     args = swsh_connect.build_parser().parse_args([])

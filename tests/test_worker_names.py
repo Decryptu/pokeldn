@@ -162,8 +162,6 @@ def test_no_worker_contradicts_an_address_a_run_measured():
 
 
 def test_the_decomp_names_this_project_coined_are_the_ones_the_bodies_agreed_on():
-    # Session 42, from the alignment: four addresses this project had named itself, each confirmed
-    # by every body that reaches it. `SetupNativeScript` is eleven of them.
     assert rom_map.DECOMP_NAMES[rom_map.SCRIPT_CONTEXT_SET_NATIVE] == "SetupNativeScript"
     assert rom_map.DECOMP_NAMES[rom_map.GET_MON_DATA] == "GetMonData3"
     assert rom_map.DECOMP_NAMES[rom_map.SET_RESPAWN] == "SetLastHealLocationWarp"

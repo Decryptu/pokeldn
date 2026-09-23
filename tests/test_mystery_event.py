@@ -391,7 +391,6 @@ def test_initramscript_names_the_map_the_object_and_both_ends_of_the_script():
     assert object_id == wonder_card_events.PALLET_TOWN_OBJECT_FAT_MAN
     # InitRamScript takes scriptEnd - script as the length [decomp:src/mystery_event_script.c:200].
     assert 0 < start < end <= len(distribution.mevent)
-    assert distribution.mevent[start:end] == distribution.mevent[start:end]
 
 
 def test_the_bound_script_fits_the_slot_the_console_saves_it_into():

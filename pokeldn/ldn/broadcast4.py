@@ -1,11 +1,7 @@
-"""Protocol 0x84, `nn::pia::transport::ReliableBroadcastProtocol` - the version-4 bulk channel.
+"""Protocol 0x84, `nn::pia::transport::ReliableBroadcastProtocol`, the version-4 bulk channel.
 
-NOT protocol 0x80. `reliable4.py` carries the warning at length: `BroadcastReliableProtocol` is
-0x80 and is the ack window, and the similarly named `ReliableBroadcastProtocol` is this. Confusing
-them took two sessions of reading.
-
-This is where a Sword sends its 3456-byte trade snapshot, and every field below is read off our own
-console's own messages rather than from any other implementation:
+`BroadcastReliableProtocol` is protocol 0x80 and uses the ACK window. Sword sends its 3456-byte
+trade snapshot on 0x84 with these fields:
 
     11 000000 0000 ffff  00000d80 057c 0005 00000000     control, 20 bytes
     12 000000 0001 ffff  00000000 <1404 bytes>           fragment 0
@@ -18,11 +14,9 @@ console's own messages rather than from any other implementation:
     0x08        control: u32be total size, u16be chunk size, u16be 5, four zero bytes
                 data:    u32be fragment index, then the fragment body
 
-**THE BODY MAY BE DEFLATED AND THE HEADER NEVER IS.** Pia's message flag 0x10 - version 4's zlib
-flag, the same one that hid protocol 0x80 for two sessions - says the bytes AFTER the twelve-byte
-prefix are a zlib stream. Concatenating a compressed fragment raw loses 491 bytes of
-the snapshot without noticing, which is why `swsh.trade_payload.reassemble` refuses a total it does
-not recognise.
+Pia's version-4 zlib flag 0x10 applies only to bytes after the twelve-byte prefix. Concatenating a
+compressed fragment raw loses bytes from the snapshot, so `swsh.trade_payload.reassemble` refuses
+an unrecognised total.
 
 `kwsch/PokePiaSWSH` splits at the same twelve bytes and `andyjusa/nxldn-lab` builds the same eight
 byte header; where they and our console differ is the CHUNK SIZE, 1244 against our console's 1404,
@@ -36,8 +30,6 @@ HEADER_SIZE = 8
 PREFIX_SIZE = 12                      # header + the fragment index: never compressed
 KIND_CONTROL = 0x11
 KIND_DATA = 0x12
-# THE THREE KINDS SESSION 58 AND 59 NEVER SAW, because nothing here ever acked this protocol and
-# the console therefore never got past retransmitting. Read off `andyjusa/nxldn-lab`'s receiver.
 KIND_ACK = 0x21                       # base index + a bitmask of what arrived out of order
 KIND_DONE = 0x19                      # a transfer is complete
 KIND_DONE_ACK = 0x28                  # and its answer

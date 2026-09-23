@@ -207,37 +207,20 @@ The rest of the emulator's RFU surface:
 
 ## The advertised rate set
 
-The console, as the host's station, used to deauthenticate (802.11 reason 3) 3.0-3.8 s after its LDN
-association on 40-60% of runs, on both consoles and in every activity, whatever handshake phase the
-run was in. The clock ran from the association rather than from any Pia milestone. Two real consoles
-never do this.
+`host_pia` unicasts the Pia type 5 Update Session to each joined station because the console receives
+about one in five broadcast data frames. The host advertises the Switch rate set (1B 2B 5.5B 11B 6 9
+12 18 with extended rates 24 36 48 54). The rate set alone is sufficient; the Switch's other beacon
+and association elements (DTIM 2, ERP, capability 0x411, the Nintendo vendor element, HT/HE, WMM)
+are not needed.
 
-Two causes were found, in order:
+The console builds its association request's rate set from the beacon, not the probe response. The
+beacon head carries elements 0 (SSID), 1 (Supported Rates) and 3 (DS Params) so the association
+request includes rates 6, 9 and 12.
 
-1. The Pia type 5 Update Session was broadcast only. The console receives about one in five
-   broadcast data frames, so it often never finalized its Pia session in time. `host_pia` now also
-   unicasts it to each joined station. This removed one trigger without closing the failure.
-2. The probe and association responses omitted the mandatory OFDM rates. The bare set was
-   1B 2B 5.5B 11B 18 24 36 54. Advertising the Switch host's set (1B 2B 5.5B 11B 6 9 12 18 with
-   extended rates 24 36 48 54) passed 20/20 across both consoles against 3-4/8 for the bare set, one
-   variable at a time. The rate set alone is sufficient; the Switch's other beacon and association
-   elements (DTIM 2, ERP, capability 0x411, the Nintendo vendor element, HT/HE, WMM) are not needed.
+The working beacon uses a 41-byte subset. A full 208-byte element set stalls Mystery Gift traffic.
 
-The console builds the rate set it advertises from the beacon, not from the probe response. With
-the correct set in the probe response and the beacon still carrying three elements, the console's
-association request read `Rates: 1 2 5.5 11 18 24 36 54` with no extended-rates element: 6, 9 and 12
-missing, exactly the three whose absence caused the failure. Adding elements 0 (SSID), 1 (Supported
-Rates) and 3 (DS Params) to the beacon head made the association request byte-identical to what the
-console sends a real Switch.
-
-Do not extend the beacon further without a regression check. A full 208-byte element set copied
-from a real host made Mystery Gift worse (0/5 completions against a ~50% baseline; the heavier
-management frames stalled transmission). The working change is a 41-byte subset.
-
-The trigger lives inside the console's wlan/LDN layer, takes the advertised rate set as its input, and
-is not visible on the wire: the console accepted every reliable Pia frame sent before it left, with
-zero Pia-level retransmits in either direction and zero decode failures inside the first 2.9 s of every
-failing run. Which of 6, 9 and 12 is required is unknown.
+The console's wlan/LDN layer uses the advertised rate set. Which of 6, 9 and 12 is required is
+unknown.
 
 Counted over every run log on disk, the failure signature disappeared: 78 occurrences in 215
 associations before the fix window, and 0 in the 232 since. 26 of those clean associations ran on the

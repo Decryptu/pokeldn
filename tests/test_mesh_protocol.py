@@ -147,8 +147,7 @@ def test_a_wrong_type_is_refused():
 
 
 # --------------------------------------------------------------------------- version 4
-# Sword/Shield. Read off the retail binary in session 57 (scratchpad/swsh/main.bin); the addresses
-# are in mesh_protocol's own comments. Synthetic, like everything above.
+# Sword/Shield version 4 fixtures are synthetic.
 
 def _success_v4(stations=2, our_index=1, fragments=1, fragment_entries=None, base=0):
     """A version-4 join response: the same 16-byte header, 64-byte entries, index at 0x3E."""
@@ -245,13 +244,7 @@ def test_the_real_version_four_join_response_reads_back_as_the_mesh_the_console_
     assert mp.ack_for(raw) == (stp.PROTOCOL, bytes.fromhex("050000003e3b1c08"))
 
 
-# --- Host migration, session 60 ----------------------------------------------------------------
-#
-# `440001` on 0x18 port 1 is the last thing a retail Sword ever says. Every run where the player
-# accepted carries it
-# byte-identical, they appear only in runs where the player pressed accept, and no other run in
-# the project has one. It is a MESH message riding the mesh protocol's own reliable port, which is
-# what session 59 missed when it read the three bytes as an application payload and raised on them.
+# --- Host migration ----------------------------------------------------------------
 
 SW83_MIGRATION_START = bytes.fromhex("440001")     # host 0 names station 1 - us - as the next host
 
@@ -301,11 +294,11 @@ SW83_MIGRATION_WIRE = bytes.fromhex("0f0000030001000100" "440001")
 
 
 def test_the_twelve_bytes_off_the_wire_decode_to_the_answer():
-    """Two runs' own bytes, end to end: reliable header, mesh message, our response.
+    """Reliable header, mesh message, and response from a captured packet.
 
     The header is version 4's - flags 0x0f (application data, start, end, initialized), stream 0,
     payload size 3, sequence 1, lowest pending 1, no destinations - and the mesh message is what is
-    inside it. Both layers, because reading only the outer one is what session 59 did.
+    inside it.
     """
     from pokeldn.ldn import reliable4
 

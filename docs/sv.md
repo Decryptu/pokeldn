@@ -899,10 +899,8 @@ Why a retail station's own 0xA0 acknowledgements are accepted between two consol
 here is dropped in the deserialiser, is unknown. The retail pair broadcasts them and this project
 unicasts them over the LAN.
 
-A host built here is also joined by a searching console, which then never opens its Pia socket: it
-answers the host's first Net 0x11 with ICMP port 12345 unreachable and leaves about five seconds
-later. That was measured before the join-request layout was known and before `bin/sv_host.py` could
-answer one.
+A searching console can join the host but never open its Pia socket: it answers the host's first
+Net 0x11 with ICMP port 12345 unreachable and leaves about five seconds later.
 
 Both consoles are Switch 2 and their unicast is 802.11ax, which neither the project's adapter nor a
 MacBook's Broadcom sniffer demodulates. Of a 74-second session the pair sent 388 and 387 readable

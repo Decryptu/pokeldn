@@ -221,11 +221,7 @@ def test_the_leafgreen_delta_is_four_measured_segments_and_refuses_the_gaps():
                                (0x080EBA14, 0x080EB9EC), (0x0813E8CC, 0x0813E8A4),
                                (0x0815A3F4, 0x0815A3D0), (0x0815A630, 0x0815A60C)):
         assert rom_map.leafgreen_guess(firered) == leafgreen
-    # A boundary is known to be in here and its position is not. Session 42's paired call sites
-    # moved all three brackets inward, and session 48's paired scattered blocks closed the five code
-    # boundaries to their divergent region - 31 bytes at the narrowest. What is left to refuse is
-    # that region itself, where the two cartridges hold DIFFERENT bytes and no delta describes
-    # anything, plus the two spans in the graphics that do not correspond at all.
+    # Divergent regions have no measured delta, so guesses inside them must be refused.
     for gap in (0x0807D000, 0x080DE300, 0x08148100, 0x08251D9A, 0x083B7D00, 0x08440000,
                 0x08444000, 0x08455000):
         with pytest.raises(ValueError, match="gap between measured segments"):
@@ -348,4 +344,3 @@ def test_a_special_resolves_by_name_to_a_thumb_pointer():
         special_names.index("NullFieldSpecial")        # 171 of them: the caller must say which
     with pytest.raises(KeyError):
         rom_map.special_function("NoSuchSpecial")
-

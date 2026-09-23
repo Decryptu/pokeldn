@@ -1,20 +1,4 @@
-"""Pairing the two cartridges' copies of one window, and the delta map that comes out of it.
-
-A run made this measurement without naming it: a POINTER dumped off both consoles is a delta point
-at wherever it points. `tools/frlg/cartridge_pair.py` reads both kinds out of a window held on both
-cartridges - the literal-pool words, which sessions 40 and 41 paired by hand, and the `bl` targets,
-which nothing had. A `bl` is a RELATIVE call, so the same instruction resolves to a different
-address on each cartridge and the pair is two measurements rather than one plus an assumed delta.
-
-WHAT SAYS THE PAIRING IS REAL: every site pairs, and the deltas come out quantised. 734 of 734 and
-834 of 834 across the two 16 KB pairs, four delta values each, no outliers. The first version of the
-tool computed the LeafGreen offsets off the FireRed base and answered with 64 deltas, none repeated -
-which is what a misplaced window looks like and why the count is checked.
-
-TWO INDEPENDENT CONFIRMATIONS, from runs that knew nothing about this: the pairing puts LeafGreen's
-`AddBagItem` at 0x0809DA44 and `Random` at 0x080486B0, both where they were measured
-independently.
-"""
+"""Pair cartridge windows by literal-pool words and relative `bl` targets."""
 
 import os
 import sys
@@ -61,9 +45,7 @@ def test_the_same_call_on_both_cartridges_is_two_measurements():
 
 
 def test_a_window_is_paired_by_code_offset_not_by_base():
-    # The LeafGreen run is aimed at the twin of the FireRed window, so offset N is offset N whatever
-    # the bases are. Reading the LeafGreen sites off the FireRed base shifts every pair by the code
-    # delta and invents deltas - it is what 64 unrepeated values looked like.
+    # Pair by offset because the cartridge windows have different base addresses.
     calls = {4: 0x08040000, 12: 0x08090000}
     firered = ("bs", "firered", 0x08081CC8, window(0x08081CC8, calls))
     leafgreen = ("lg", "leafgreen", 0x08081C9C,
@@ -156,8 +138,6 @@ def test_a_leafgreen_view_of_a_table_is_moved_to_where_leafgreen_keeps_it():
     from rom_functions import deduplicate, known_names, on_leafgreen, tables
     entries = deduplicate(tables()["specials"])
     moved, names = on_leafgreen(entries, known_names())
-    # Session 48: EVERY special moves now. The boundaries used to be kilobytes wide and swallowed
-    # entries; measured to between 31 and 644 bytes, not one of the 272 falls inside one.
     assert len(moved) == len(entries)
     with pytest.raises(ValueError, match="gap between measured segments"):
         rom_map.leafgreen_guess(0x08148100)               # inside the -0x28 -> -0x24 divergence

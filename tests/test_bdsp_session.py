@@ -1,9 +1,4 @@
-"""The BDSP session's own constants, and the derivation that turns an advertisement into keys.
-
-The values pinned here are the ones session 45 measured offline and session 46 confirmed against a
-LIVE session with a different SSID, network id and session parameter - 42 of 42 packets
-authenticated - which is what says the derivation is general rather than fitted to one capture.
-"""
+"""BDSP session constants and advertisement key derivation."""
 
 import pytest
 
