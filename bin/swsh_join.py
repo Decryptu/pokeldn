@@ -32,7 +32,7 @@ if os.path.isdir(BUNDLED_LDN):
 
 import trio
 import ldn
-from pokeldn.ldn.transport import find_ap_phy
+from pokeldn.ldn.transport import board_radio, find_ap_phy
 from pokeldn.host_support import resolve_keys
 from pokeldn.swsh import PASSPHRASE
 
@@ -43,6 +43,8 @@ KNOWN = {0x0100000011D90000: "BDSP"}
 
 
 def cleanup_stale():
+    if board_radio():
+        return
     for name in STALE_VIFS:
         subprocess.run(["iw", "dev", name, "del"],
                        stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)

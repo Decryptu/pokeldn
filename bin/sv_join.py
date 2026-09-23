@@ -39,7 +39,7 @@ from pokeldn import sv
 from pokeldn.ldn import ldn_mitm, pia6, pia_connect, reliable5
 from pokeldn.sv import pokemon, port2, streams, trade
 from pokeldn.pla import game_channel
-from pokeldn.ldn.transport import find_ap_phy
+from pokeldn.ldn.transport import board_radio, find_ap_phy
 from pokeldn.host_support import resolve_keys
 
 PROTO_NET = 0x2C
@@ -91,6 +91,8 @@ STALE_VIFS = ["ldn", "ldn-mon", "ldn-tap", "ldnclient"]
 
 
 def cleanup_stale():
+    if board_radio():
+        return
     import subprocess
     for name in STALE_VIFS:
         subprocess.run(["iw", "dev", name, "del"],
@@ -105,6 +107,11 @@ def set_mac(phy, mac, log=print):
     """
     import subprocess
 
+    if board_radio():
+        from pokeldn.ldn import esp32_wlan
+        esp32_wlan.set_station_mac(mac)
+        log(f"[sv] the board's station joins as {mac}")
+        return True
     base = os.path.join("/sys/class/ieee80211", phy, "device", "net")
     try:
         names = os.listdir(base)
@@ -123,6 +130,10 @@ def set_mac(phy, mac, log=print):
 
 def make_socket(ifname, our_ip=None):
     """Over the radio the socket is bound to the LDN interface; over IP to our own address."""
+    from pokeldn.ldn import userspace_ip  # no kernel interface (ESP32 on macOS)
+    if our_ip is None and (user := userspace_ip.udp_socket(ifname, sv.PIA_PORT)) is not None:
+        user.setblocking(False)
+        return user
     s = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
     s.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
     s.setsockopt(socket.SOL_SOCKET, socket.SO_BROADCAST, 1)

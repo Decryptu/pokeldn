@@ -4,6 +4,8 @@ import os
 import sys
 from unittest import mock
 
+import pytest
+
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
 from pokeldn.ldn import transport
@@ -31,6 +33,7 @@ def test_wait_readable_timeout_and_negative_clamp():
     assert select.call_args.args[3] == 0.0
 
 
+@pytest.mark.skipif(not hasattr(transport.socket, "AF_PACKET"), reason="SO_BINDTODEVICE and AF_PACKET are Linux-only")
 def test_host_udp_tx_is_pinned_to_ldn_tap():
     tx = mock.Mock()
     rx = mock.Mock()

@@ -19,7 +19,7 @@ if os.path.isdir(BUNDLED): sys.path.insert(0, BUNDLED)
 
 import trio, ldn
 from pokeldn.ldn.pia5 import PiaHeader5, is_pia5, HEADER_SIZE, CT_OFF
-from pokeldn.ldn.transport import find_ap_phy
+from pokeldn.ldn.transport import board_radio, find_ap_phy
 from pokeldn.host_support import resolve_keys
 
 BDSP_PASSPHRASE = b"WirelessStrongCryptoKey2021"
@@ -27,6 +27,8 @@ PIA_PORT = 12345
 
 
 def cleanup():
+    if board_radio():
+        return
     import subprocess
     for v in ("ldn", "ldn-mon", "ldn-tap", "ldnclient"):
         subprocess.run(["iw", "dev", v, "del"],
@@ -34,6 +36,10 @@ def cleanup():
 
 
 def make_socket(ifname, our_ip):
+    from pokeldn.ldn import userspace_ip  # no kernel interface (ESP32 on macOS)
+    if (user := userspace_ip.udp_socket(ifname, PIA_PORT)) is not None:
+        user.setblocking(False)
+        return user
     s = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
     s.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
     s.setsockopt(socket.SOL_SOCKET, socket.SO_BROADCAST, 1)

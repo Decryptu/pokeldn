@@ -14,6 +14,8 @@ import time
 import traceback
 from pathlib import Path
 
+from pokeldn.ldn import userspace_ip
+
 ETH_P_IP = 0x0800
 PROTO_UDP = 17
 PIA_PORT = 12345
@@ -134,6 +136,8 @@ def disable_power_save(iface, log=print):
     """rtw88 defaults a new managed vif to power save ON; a dozing station wakes only on the console's 100 TU beacons,
     pinning the link at ~11-15 exchanges/s. An AP vif never dozes, which is why hosting never had this.
     """
+    if board_radio():
+        return True
     before = get_power_save(iface)
     _run(["iw", "dev", iface, "set", "power_save", "off"])
     after = get_power_save(iface)
@@ -163,6 +167,8 @@ def list_phy_ifaces():
 
 def free_radio(phys, log=print):
     """Delete stale LDN vifs and take other interfaces off the radio (SET_CHANNEL -> EBUSY otherwise). Needs root."""
+    if board_radio():
+        return
     mapping = list_phy_ifaces()
     for phy in {p for p in phys if p}:
         for iface in mapping.get(phy, []):
@@ -193,6 +199,8 @@ def _iface_exists(iface):
 
 
 def light_cleanup(log=print):
+    if board_radio():
+        return
     for iface in sorted(LDN_VIFS):
         _iw_del(iface)
     time.sleep(0.3)
@@ -202,6 +210,8 @@ def tune_iface(iface, keep_ip, broadcast_ip, log=print):
     """Make the iface deliver the host's link-local subnet broadcasts: rp_filter off, the broadcast route in the local
     table, stray zeroconf addresses removed. Needs root.
     """
+    if board_radio():
+        return
     _run(["nmcli", "device", "set", iface, "managed", "no"])
     _run(["pkill", "-f", f"avahi-autoipd.*{iface}"])
     for key in (f"net.ipv4.conf.{iface}.rp_filter", "net.ipv4.conf.all.rp_filter",
@@ -439,6 +449,9 @@ class LiveTransport:
             return ""
 
     def _iface_mac(self):
+        stack = userspace_ip.lookup(self.ifname)
+        if stack is not None:
+            return stack.mac
         try:
             with open(f"/sys/class/net/{self.ifname}/address") as f:
                 return bytes.fromhex(f.read().strip().replace(":", ""))
@@ -446,6 +459,9 @@ class LiveTransport:
             return None
 
     def _iface_ip(self):
+        stack = userspace_ip.lookup(self.ifname)
+        if stack is not None:
+            return stack.ip
         try:
             out = subprocess.check_output(["ip", "-4", "-o", "addr", "show", "dev", self.ifname],
                                           text=True, stderr=subprocess.DEVNULL)
@@ -460,6 +476,8 @@ class LiveTransport:
         return None
 
     def _setup_sockets(self):
+        if self._setup_userspace_sockets():
+            return
         tx = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
         tx.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
         tx.setsockopt(socket.SOL_SOCKET, socket.SO_BROADCAST, 1)
@@ -479,6 +497,18 @@ class LiveTransport:
             self.log(f"[live] could not enlarge rx SO_RCVBUF: {e}")
         self._rx = rx
         self._pinned_neighbours = set()
+
+    def _setup_userspace_sockets(self):
+        """With no kernel interface (the ESP32 board on macOS) both sockets come from the
+        userspace stack that owns `self.iface` (pokeldn.ldn.userspace_ip)."""
+        stack = userspace_ip.lookup(self.iface)
+        if stack is None:
+            return False
+        self._tx = stack.udp_socket(PIA_PORT, receive=False)
+        self._rx = stack.packet_socket()
+        self._rx.setblocking(False)
+        self._pinned_neighbours = set()
+        return True
 
     def send(self, datagram, dst_ip):
         dst = self.broadcast if dst_ip in (self.broadcast, "255.255.255.255") else dst_ip
@@ -574,8 +604,16 @@ def list_phys():
         return []
 
 
+def board_radio():
+    """True when POKELDN_RADIO puts the LDN calls on the ESP32 board: no phy, no vif, no iw."""
+    return os.environ.get("POKELDN_RADIO", "").startswith("esp32:")
+
+
 def find_ap_phy(log=print):
     """First phy advertising AP mode (for `--phy auto`; phy numbering changes when the adapter is reloaded)."""
+    if board_radio():
+        log("[host] --phy auto -> esp32 (POKELDN_RADIO)")
+        return "esp32"
     for phy in list_phys():
         try:
             out = subprocess.check_output(["iw", "phy", phy, "info"],
@@ -637,6 +675,8 @@ def describe_phys():
 
 def find_adapter_phy(adapter, log=print):
     """Refuses to guess: a missing or duplicated adapter raises; a literal phyN via --phy is handled by the caller."""
+    if board_radio():
+        return find_ap_phy(log)
     profile = HOST_ADAPTER_PROFILES.get(adapter)
     if profile is None:
         choices = ", ".join(sorted(HOST_ADAPTER_PROFILES))
@@ -686,6 +726,9 @@ def preflight_host(phyname, log=print, _iw_output=None):
     """`iw phy` 'Supported interface modes' is the driver's registered capability, not a setting (MT7601U: managed+monitor
     only -> IFTYPE_AP is EOPNOTSUPP). Raises RuntimeError with the verdict; `_iw_output` injects canned output for tests.
     """
+    if _iw_output is None and board_radio():
+        log("[host] preflight: the ESP32 board hosts (POKELDN_RADIO)")
+        return True
     if _iw_output is None:
         try:
             _iw_output = subprocess.check_output(["iw", "phy", phyname, "info"],
@@ -922,6 +965,8 @@ class HostTransport:
         """Three vifs must exist: AP (mgmt/auth), monitor (advertisements + data frames incl. broadcast), tap (the kernel data
         plane); a missing monitor means the console never sees an advertisement.
         """
+        if board_radio():
+            return
         missing = []
         for name, want in ((self.ap_ifname, "AP"), (self.mon_ifname, "monitor"), (self.ifname, "tap")):
             if not _iface_exists(name):
@@ -950,6 +995,8 @@ class HostTransport:
                 self.log(f"[host] set_application_data failed: {e}")
 
     def _setup_sockets(self):
+        if LiveTransport._setup_userspace_sockets(self):
+            return
         tx = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
         tx.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
         tx.setsockopt(socket.SOL_SOCKET, socket.SO_BROADCAST, 1)
@@ -1018,6 +1065,10 @@ class HostTransport:
         A permanent entry never expires, so the kernel never probes and never queues.
         """
         self._pinned_neighbours.add(ip)
+        stack = userspace_ip.lookup(self.iface)
+        if stack is not None:
+            stack.add_neighbor(ip, mac)
+            return
         mac_s = ":".join(f"{b:02x}" for b in mac)
         cmd = ["ip", "neigh", "replace", ip, "lladdr", mac_s, "dev", self.iface, "nud", "permanent"]
         try:

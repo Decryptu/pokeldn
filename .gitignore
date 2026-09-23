@@ -54,7 +54,7 @@ __pycache__/
 host-tap-*.txt
 logs/
 # Nested standalone clone (kinnay/LDN), a reference copy of the vendored package.
-LDN/
+/LDN/
 
 # Saves and ROM for testing wonder cards on emulation.
 pokeldn/POKEMON_FIRE_BPRE01.gba

@@ -24,7 +24,7 @@ from pokeldn.host_support import resolve_keys
 from pokeldn.ldn import (broadcast4, local_protocol as lp, mesh_protocol as mesh, pia4, reliable4,
                         reliable5, rtt_protocol as rtt, station4,
                         station_protocol as stp)
-from pokeldn.ldn.transport import find_ap_phy
+from pokeldn.ldn.transport import board_radio, find_ap_phy
 from pokeldn.swsh import COMM_ID, PASSPHRASE, PIA_PORT, packet_iv, session_keys
 from pokeldn.swsh import trade as swsh_trade
 from pokeldn import gen8
@@ -48,6 +48,8 @@ def _expand(spec):
 
 
 def cleanup():
+    if board_radio():
+        return
     import subprocess
     for v in ("ldn", "ldn-mon", "ldn-tap", "ldnclient"):
         subprocess.run(["iw", "dev", v, "del"],
@@ -55,6 +57,10 @@ def cleanup():
 
 
 def make_socket(ifname):
+    from pokeldn.ldn import userspace_ip  # no kernel interface (ESP32 on macOS)
+    if (user := userspace_ip.udp_socket(ifname, PIA_PORT)) is not None:
+        user.setblocking(False)
+        return user
     s = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
     s.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
     s.setsockopt(socket.SOL_SOCKET, socket.SO_BROADCAST, 1)

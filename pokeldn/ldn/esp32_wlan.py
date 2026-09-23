@@ -3,8 +3,8 @@
 
 The board hands over Ethernet frames. LDN's authentication frames (EtherType 0x88B7) become the
 interface events the LDN library expects; everything else goes to an L2 port: a kernel TAP on
-Linux, so sockets bound to the interface keep working, or a `MemoryPort` for tests and for a
-host without TAP. `use()` installs the backend for every later `ldn` call in the process.
+Linux, so sockets bound to the interface keep working, or a userspace IP stack
+(`userspace_ip`) where there is no TAP, or a `MemoryPort` for tests. `use()` installs the backend for every later `ldn` call in the process.
 """
 
 import contextlib
@@ -12,12 +12,13 @@ import math
 import os
 import random
 import struct
+import sys
 
 import trio
 
 from ldn import wlan
 
-from pokeldn.ldn import esp32
+from pokeldn.ldn import esp32, userspace_ip
 
 ETH_P_LDN = 0x88B7
 BROADCAST = wlan.MACAddress("ff:ff:ff:ff:ff:ff")
@@ -363,13 +364,14 @@ class EspAccessPoint:
 
 class EspFactory:
     """Stands in for `wlan.Factory`. `port_factory(name, address)` returns an async context
-    manager yielding the L2 port; the default is a kernel TAP."""
+    manager yielding the L2 port; the default is a kernel TAP on Linux and a userspace IP stack
+    elsewhere."""
 
     def __init__(self, radio: esp32.Radio, port_factory=None, join_timeout: float = 20.0,
                  ap_flags: int = 0):
         self.radio = radio
         self.router = _Router(radio)
-        self.port_factory = port_factory or kernel_tap
+        self.port_factory = port_factory or default_port_factory()
         self.join_timeout = join_timeout
         self.ap_flags = ap_flags
         self.tap = None
@@ -389,7 +391,7 @@ class EspFactory:
                               key: bytes | None, bssid: wlan.MACAddress | None = None):
         if key is None or bssid is None:
             raise NotImplementedError("the ESP32 station joins protected networks by BSSID")
-        address = _random_mac()
+        address = station_mac or _random_mac()
         async with self.port_factory(ifname, address) as port:
             station = EspStation(self, port, address, ssid, channel, key, bssid)
             async with station.connect():
@@ -432,7 +434,20 @@ async def kernel_tap(name: str, address: wlan.MACAddress):
             yield tap
 
 
+def default_port_factory():
+    """`POKELDN_L2=tap|userspace` overrides the platform's choice."""
+    choice = os.environ.get("POKELDN_L2") or ("tap" if sys.platform.startswith("linux") else "userspace")
+    return kernel_tap if choice == "tap" else userspace_ip.userspace_port
+
+
 _radio: esp32.Radio | None = None
+station_mac: wlan.MACAddress | None = None
+
+
+def set_station_mac(mac) -> None:
+    """The address the board's station joins with, in place of a random one (`--mac`)."""
+    global station_mac
+    station_mac = None if mac is None else wlan.MACAddress(mac)
 
 
 def use(port: str | None = None, *, radio: esp32.Radio | None = None, port_factory=None,

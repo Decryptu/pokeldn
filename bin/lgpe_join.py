@@ -40,7 +40,7 @@ from pokeldn.ldn import rtt_protocol as rtt
 from pokeldn.ldn import reliable3
 from pokeldn.ldn import local_protocol as lp
 from pokeldn.ldn.station_protocol import ldn_constant_id, ldn_service_variable_id, station_location
-from pokeldn.ldn.transport import find_ap_phy
+from pokeldn.ldn.transport import board_radio, find_ap_phy
 from pokeldn.host_support import resolve_keys
 from pokeldn.lgpe import (COMM_ID_PIKACHU, PASSPHRASE, PIA_PORT, PIA_VERSION, packet_iv,
                           session_keys)
@@ -94,6 +94,8 @@ KNOWN = {0x0100000011D90000: "BDSP", 0x0100ABF008968000: "Sword",
 
 
 def cleanup_stale():
+    if board_radio():
+        return
     import subprocess
     for name in STALE_VIFS:
         subprocess.run(["iw", "dev", name, "del"],
@@ -199,6 +201,10 @@ def _blob(text):
 
 
 def make_socket(ifname, bind_ip=None):
+    from pokeldn.ldn import userspace_ip  # no kernel interface (ESP32 on macOS)
+    if bind_ip is None and (user := userspace_ip.udp_socket(ifname, PIA_PORT)) is not None:
+        user.setblocking(False)
+        return user
     s = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
     s.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
     s.setsockopt(socket.SOL_SOCKET, socket.SO_BROADCAST, 1)

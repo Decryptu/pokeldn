@@ -37,7 +37,7 @@ import ldn
 from pokeldn import za
 from pokeldn.za import streams
 from pokeldn.ldn import crypto, host_pia, ldn_mitm, pia_connect, reliable
-from pokeldn.ldn.transport import find_ap_phy
+from pokeldn.ldn.transport import board_radio, find_ap_phy
 from pokeldn.host_support import resolve_keys
 
 # The variable id we send as our own until the host names one. A retail joiner takes the id the
@@ -53,6 +53,8 @@ PROTOCOL_NAMES = {
 
 
 def cleanup_stale():
+    if board_radio():
+        return
     import subprocess
     for name in STALE_VIFS:
         subprocess.run(["iw", "dev", name, "del"],
@@ -60,6 +62,10 @@ def cleanup_stale():
 
 
 def make_socket(ifname, our_ip=None):
+    from pokeldn.ldn import userspace_ip  # no kernel interface (ESP32 on macOS)
+    if our_ip is None and (user := userspace_ip.udp_socket(ifname, za.PIA_PORT)) is not None:
+        user.setblocking(False)
+        return user
     s = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
     s.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
     s.setsockopt(socket.SOL_SOCKET, socket.SO_BROADCAST, 1)
@@ -708,7 +714,10 @@ def main(argv=None):
     channels = [int(c) for c in args.channels.split(",") if c.strip()]
     print(f"[za] phy={phy} channels={channels} dwell={args.dwell}s comm_id={want:#018x}")
     cleanup_stale()
-    if args.mac:
+    if args.mac and board_radio():
+        from pokeldn.ldn import esp32_wlan
+        esp32_wlan.set_station_mac(args.mac)
+    elif args.mac:
         import subprocess
         base = os.path.join("/sys/class/ieee80211", phy, "device", "net")
         for name in os.listdir(base):
