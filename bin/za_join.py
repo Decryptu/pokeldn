@@ -123,6 +123,9 @@ class GameStreams:
         self.opened = False
         self.opened_at = None
         self.offer_sent = False
+        self.host_offers = 0
+        self.acted = set()
+        self.scheduled = []
         self.selections = 0
         self.last_selection = 0.0
         self.ref = {}
@@ -208,6 +211,23 @@ class GameStreams:
             self.offer_sent = True
             self._queue(GAME_RELIABLE, self.offer, reliable.FLAGSA_GBA, now_ms)
             print(f"[za] offered {len(self.offer)} bytes")
+        for item in [x for x in self.scheduled if x[0] <= elapsed]:
+            self.scheduled.remove(item)
+            self._queue(GAME_RELIABLE, item[1], reliable.FLAGSA_GBA, now_ms)
+            print(f"[za] sent {item[1][:2].hex()} ({len(item[1])} bytes) at {elapsed:.2f}s")
+
+    def _answer_trade(self, head, elapsed):
+        """A reference joiner's side of the trade: the first 0101 each way is a preview, the second
+        is the offer; then 0102 confirm, 0104 each way and four 0200 steps. docs/za.md."""
+        if head == "0101":
+            self.host_offers += 1
+            if self.host_offers >= 2 and self.offer:
+                self.scheduled.append((elapsed + 1.5, self.offer))
+                self.scheduled.append((elapsed + 3.0, bytes.fromhex("0102b90100")))
+        elif head == "0104":
+            self.scheduled.append((elapsed + 0.03, bytes.fromhex("0104b90100")))
+            for delay, step in ((0.09, "03"), (0.2, "06"), (14.4, "0b"), (14.6, "0e")):
+                self.scheduled.append((elapsed + delay, bytes.fromhex("0200b901" + step)))
 
     def on_message(self, proto, payload, elapsed):
         link = self.links.get(proto)
@@ -222,6 +242,10 @@ class GameStreams:
             return
         link.note_received(r.seq)
         head = r.payload[4:8] if proto == GAME_BROADCAST else r.payload[:4]
+        if proto == GAME_RELIABLE and r.seq not in self.acted:
+            self.acted.add(r.seq)
+            print(f"[za] host {head[:2].hex()} ({len(r.payload)} bytes) at {elapsed:.2f}s")
+            self._answer_trade(head[:2].hex(), elapsed)
         key = (proto, head[:2].hex(), len(r.payload))
         if key not in self.seen:
             self.seen[key] = elapsed

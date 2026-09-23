@@ -250,6 +250,13 @@ host then repeats its Net 0x50 for about ten seconds and its Session update sequ
 With both right, a host that accepts the Session update sequence 1 at about 1.2 s sends its own
 1211-byte selection record at 1.25 s and moves to its trade box screen.
 
+The trade on protocol 10, as a joiner runs it against a host: each side sends one 354-byte `0101`
+about 2.5 s after the selection records, a preview that no player chose. A player's offer is the
+next `0101`. The joiner answers the host's offer with its own and confirms with `0102b90100`; the
+host confirms with the same, then both send `0104b90100` and the joiner sends four
+`0200b901XX` steps, 03 and 06 at once and 0b and 0e about 14 s later, while the host sends
+`0000000202` on protocol 11. `bin/za_join.py --trade-offer` runs that side.
+
 The Net layer is answered in full as well: the host's connection status 0x11 with a 0x12, and its
 update property 0x50 with a 0x51, both of which a reference joiner sends.
 
