@@ -248,7 +248,18 @@ class Radio:
             s.flush()
             s.baudrate = fast_baud
             radio.hello()
+        if radio._trace:
+            # The board's counters (tx_eth_failed, wire_dropped) land in the trace every 5 s.
+            threading.Thread(target=radio._poll_status, name="esp32-status", daemon=True).start()
         return radio
+
+    def _poll_status(self) -> None:
+        while not self._closed:
+            time.sleep(5)
+            try:
+                self.send(CMD_STATUS)
+            except Exception:
+                return
 
     def close(self) -> None:
         self._closed = True

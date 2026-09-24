@@ -80,7 +80,7 @@ Anything before a `0x00`, including the ROM's boot text, is discarded by the che
 | `0x05` STOP | host | none; back to idle, keys cleared |
 | `0x06` AP_START | host | u8 channel, 6 BSSID, 32 SSID, 16 key, u8 max stations, u8 flags |
 | `0x07` AP_KICK | host | 6 MAC, u16 reason; deauthenticates |
-| `0x08` ETH_TX | host | an Ethernet frame; the driver encrypts it with the station's or the group key |
+| `0x08` ETH_TX | host | an Ethernet frame; the driver encrypts it with the station's or the group key. A full driver queue is retried every 1 ms for up to 100 ms before the frame counts as failed |
 | `0x09` RAW_TX | host | an 802.11 frame without FCS (`esp_wifi_80211_tx`); used for advertisements |
 | `0x0A` SNIFF | host | u8 channel, 6 MAC; every management and data frame to or from it, whole, as RX_MGMT |
 | `0x0B` STATUS | host | none; answered by STATUS |
@@ -92,7 +92,7 @@ Anything before a `0x00`, including the ROM's boot text, is discarded by the che
 | `0x86` LINK | board | u8 up, u16 reason, 6 MAC; reason `0xFFFF` no association in 15 s, `0xFFFE` keys refused |
 | `0x87` STA_JOINED | board | 6 MAC, u8 AID, i8 key install result, u8 port opened |
 | `0x88` STA_LEFT | board | 6 MAC, u16 reason |
-| `0x89` STATUS | board | text counters, including the driver's TX-done `tx_acked` and `tx_unacked`; sent unasked every 2 s while hosting |
+| `0x89` STATUS | board | text counters, including the driver's TX-done `tx_acked` and `tx_unacked`, `tx_eth_retried` (ETH_TX calls that found the driver's queue full) and `wire_dropped` (board-to-host messages lost to a full queue of 128); sent unasked every 2 s while hosting, and polled every 5 s by a host that writes a trace |
 
 EtherType `0x88B7` frames are LDN authentication; `esp32_wlan` turns them into the LDN
 library's `CustomFrameEvent`. Every other Ethernet frame goes to an L2 port:
@@ -108,8 +108,8 @@ library's `CustomFrameEvent`. Every other Ethernet frame goes to an L2 port:
 ## The userspace stack
 
 `pokeldn.ldn.userspace_ip` carries IPv4, UDP and ARP inside the host process for an interface
-with no kernel behind it. A stack is registered under the interface name (`ldn` for a station,
-`ldn-tap` for an access point) while the port exists; `userspace_ip.lookup(name)` returns None
+with no kernel behind it. A stack is registered under the interface name the caller passes
+(`ldnclient` for the joiners, `ldn-tap` for an access point) while the port exists; `userspace_ip.lookup(name)` returns None
 for a kernel interface, which is how every launcher picks its path.
 
 - Addresses and neighbours come from the LDN library's `add_address` and `add_neighbor` calls.
@@ -122,6 +122,11 @@ for a kernel interface, which is how every launcher picks its path.
 - `udp_socket(port)` stands in for a UDP socket bound to the interface, `packet_socket()` for an
   `AF_PACKET` socket and delivers whole IPv4 Ethernet frames. Both have a real file descriptor
   (a pipe with one byte per queued datagram), so `select` and `trio.lowlevel.wait_readable` work.
+- The board's frames reach the stack through trio tasks in the launcher's own trio loop. A
+  launcher that waits for its socket with a blocking `select` inside that loop starves them: each
+  datagram then waits out the full timeout. Wait with `trio.lowlevel.wait_readable` under
+  `trio.move_on_after`. A Scarlet joiner blocking in `select(0.05)` handled one message per 50 ms
+  and the console re-sent its records for 50 to 70 s.
 
 ## Building and flashing
 
@@ -201,8 +206,9 @@ As a station it has completed a Scarlet trade as the joiner, a retail Switch 2 h
 |---|---|
 | seat | the first association attempt, 0.35 s from `STA_JOIN` to `LINK`; the rtw88 adapter needs 30 to 60 refused attempts against the same host phase |
 | Pia | the session join answered at 0.93 s after the seat, the station update names the board's station |
-| announcement | at 71.8 s after the seat, against 1.7 s on the rtw88 adapter; before it the console re-sent its `0x81` port 0 records 1 to 24 and session update 1 |
-| trade | the joiner's offer taken, the console's record received (species 25), then host migration to the joiner as on the adapter |
+| announcement | 7.7 s and 5.8 s after the seat once the joiner waits in trio (1.7 s on the rtw88 adapter); 52 s and 72 s while it blocked in `select`, the console re-sending its `0x81` port 0 records 1 to 24 and session update 1 |
+| trade | the joiner's offer taken, the console's record received, then host migration to the joiner as on the adapter; four trades in three runs |
+| serial | the console's first burst of 46 records (about 50 KB) saturates board-to-host at 92 KB/s; 337 messages dropped in the first 5 s of one seat, none after |
 
 `tools/ldn/esp32_sniff.py` makes a second board an air sniffer: `SNIFF` (`0x0A`, u8 channel and
 6 MAC) forwards every management and data frame to or from that MAC, whole, as `RX_MGMT`.
@@ -211,8 +217,10 @@ As a station it has completed a Scarlet trade as the joiner, a retail Switch 2 h
 
 - The softAP negotiates WMM, which a Switch host does not; a trade completes with it.
   `AP_FLAG_NO_QOS` (`POKELDN_ESP32_AP_FLAGS=2`) clears the station's QoS flag after association.
-- What delays Scarlet's announcement by 70 s on the board. The console's re-sends mean it
-  missed acknowledgements; which frames were lost is unmeasured.
+- One Scarlet seat with the joiner waiting in trio never announced in 200 s, the console
+  re-sending its `0x81` port 0 record 1 throughout. Its STATUS counters were not recorded.
+- A sniffer board's counts of another board's frames undercount while the sniffer's own serial
+  link is saturated; they are not evidence of loss on the air.
 - Serial latency at 921600 baud against the Z-A seat race.
 - easyworld reports that a classic ESP32 must be the ESP32-WROOM-32E module and that the older
   ESP32-WROOM-32 does not trade reliably.

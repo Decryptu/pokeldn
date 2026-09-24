@@ -21,7 +21,6 @@ Session and RTT layouts are `pokeldn.ldn.pia_connect`'s v11 ones. Every datagram
 import argparse
 import json
 import os
-import select
 import socket
 import sys
 import time
@@ -891,9 +890,13 @@ async def run_session(args, keys, host_ip, host_mac, our_ip, our_mac, record):
                                    port=port, flags=ack_shape["flags"]), "reliable ack",
                          protocol=protocol, port=port)
                     last_ack[key] = now
-        ready = select.select([sock], [], [], 0.05)[0]
+        # Wait in trio, never in select(): on the ESP32 board the frames reach this socket through
+        # trio tasks, and a blocking wait starves them, 50 ms per packet (docs/hardware_esp32.md).
+        ready = False
+        with trio.move_on_after(0.05):
+            await trio.lowlevel.wait_readable(sock)
+            ready = True
         if not ready:
-            await trio.sleep(0)
             continue
         try:
             data, addr = sock.recvfrom(4096)

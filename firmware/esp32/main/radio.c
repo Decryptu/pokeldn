@@ -53,6 +53,8 @@ static int64_t s_join_started;
 static atomic_bool s_assoc_seen;
 static atomic_uint s_rx_mgmt, s_rx_eth, s_tx_eth, s_tx_eth_failed, s_tx_raw, s_tx_raw_failed;
 static atomic_uint s_tx_acked, s_tx_unacked;   /* the driver's TX-done status */
+static atomic_uint s_tx_eth_retried;   /* ETH_TX calls that found the driver's queue full */
+static atomic_int s_tx_eth_last_err;
 static QueueHandle_t s_ap_joins;   /* station MACs whose association response went out */
 static int s_ap_pairwise;
 static int (*s_stock_sta_connect)(uint8_t *bssid);
@@ -377,14 +379,15 @@ static void wifi_event(void *arg, esp_event_base_t base, int32_t id, void *data)
 
 static void send_status(void)
 {
-    char text[256];
+    char text[384];
     const int len = snprintf(text, sizeof(text),
         "mode=%d rx_mgmt=%u rx_eth=%u tx_eth=%u tx_eth_failed=%u tx_raw=%u tx_raw_failed=%u "
-        "wire_dropped=%u heap=%u tx_acked=%u tx_unacked=%u",
+        "wire_dropped=%u heap=%u tx_acked=%u tx_unacked=%u tx_eth_retried=%u tx_eth_last_err=%#x",
         (int)atomic_load(&s_mode), atomic_load(&s_rx_mgmt), atomic_load(&s_rx_eth),
         atomic_load(&s_tx_eth), atomic_load(&s_tx_eth_failed), atomic_load(&s_tx_raw),
         atomic_load(&s_tx_raw_failed), (unsigned)wire_dropped(),
-        (unsigned)esp_get_free_heap_size(), atomic_load(&s_tx_acked), atomic_load(&s_tx_unacked));
+        (unsigned)esp_get_free_heap_size(), atomic_load(&s_tx_acked), atomic_load(&s_tx_unacked),
+        atomic_load(&s_tx_eth_retried), (unsigned)atomic_load(&s_tx_eth_last_err));
     wire_send(MSG_STATUS, text, len, NULL, 0);
 }
 
@@ -446,7 +449,16 @@ static void command(uint8_t type, const uint8_t *p, size_t n)
         if ((mode == MODE_STA || mode == MODE_AP) && n >= 14 && n <= sizeof(frame)) {
             memcpy(frame, p, n);
             r = esp_wifi_internal_tx(current_interface(), frame, n);
+            /* A burst from the host fills the driver's TX buffers; wait for them to drain rather
+               than drop the frame (a Scarlet joiner's 44-record burst lost 28). The UART
+               buffer holds the host's next commands meanwhile. docs/hardware_esp32.md. */
+            for (int tries = 0; r != ESP_OK && tries < 100; ++tries) {
+                if (tries == 0) atomic_fetch_add(&s_tx_eth_retried, 1);
+                vTaskDelay(1);
+                r = esp_wifi_internal_tx(current_interface(), frame, n);
+            }
         }
+        if (r != ESP_OK) atomic_store(&s_tx_eth_last_err, r);
         atomic_fetch_add(r == ESP_OK ? &s_tx_eth : &s_tx_eth_failed, 1);
         break;
     }
