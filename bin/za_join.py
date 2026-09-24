@@ -700,7 +700,7 @@ def main(argv=None):
         pass
     if args.ip_join:
         return main_ip(args)
-    if os.geteuid() != 0:
+    if os.geteuid() != 0 and not board_radio():
         ap.error("joining needs the raw radio; re-run under sudo")
     phy = find_ap_phy(log=print) if args.phy == "auto" else args.phy
     if phy is None:

@@ -152,6 +152,10 @@ class EspMonitor:
         self._filter = wlan.MACAddress(filter) if isinstance(filter, str) else filter
 
     async def set_channel(self, channel: int) -> None:
+        # The ESP32 is 2.4 GHz only and refuses 36-165, which would fail the whole scan; a 5 GHz
+        # dwell stays on the previous channel instead (docs/hardware_esp32.md, Running).
+        if channel > 14:
+            return
         await trio.to_thread.run_sync(self._factory.radio.set_channel, channel)
 
     async def recv(self) -> wlan.RadiotapFrame:

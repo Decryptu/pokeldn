@@ -1815,8 +1815,9 @@ def build_parser():
 
 
 def main():
-    args = build_parser().parse_args()
-    if os.geteuid() != 0:
+    ap = build_parser()
+    args = ap.parse_args()
+    if os.geteuid() != 0 and not board_radio():
         ap.error("must run as root")
     if args.complete_trade and not args.trade_reply:
         # --complete-trade answers the last trade message; without --trade-reply the console

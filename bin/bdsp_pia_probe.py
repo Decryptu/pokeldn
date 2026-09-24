@@ -162,7 +162,7 @@ def main():
     ap.add_argument("--listen-first", type=float, default=5.0)
     ap.add_argument("--gap", type=float, default=1.5)
     args = ap.parse_args()
-    if os.geteuid() != 0:
+    if os.geteuid() != 0 and not board_radio():
         ap.error("must run as root")
     return trio.run(main_async, args)
 

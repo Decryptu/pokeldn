@@ -80,7 +80,7 @@ def main():
                     help="where to write everything the advertisement tells us")
     args = ap.parse_args()
 
-    if os.geteuid() != 0:
+    if os.geteuid() != 0 and not board_radio():
         ap.error("must run as root (LDN needs the raw radio)")
 
     phy = find_ap_phy(log=print) if args.phy == "auto" else args.phy

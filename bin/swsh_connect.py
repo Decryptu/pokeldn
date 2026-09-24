@@ -2222,7 +2222,7 @@ def main(argv=None):
         offer_edits(args)
     except ValueError as e:
         build_parser().error(str(e))
-    if os.geteuid() != 0:
+    if os.geteuid() != 0 and not board_radio():
         build_parser().error("must run as root (LDN needs the raw radio)")
     try:
         return trio.run(main_async, args)

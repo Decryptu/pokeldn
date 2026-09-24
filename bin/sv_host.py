@@ -29,7 +29,7 @@ from pokeldn.ldn import pia6, pia_connect, reliable5
 from pokeldn.sv import pokemon, port2, streams, trade
 from pokeldn.pla import game_channel
 from pokeldn.ldn.ldn_mitm_host import IpHostTransport
-from pokeldn.ldn.transport import HostTransport, find_ap_phy
+from pokeldn.ldn.transport import HostTransport, board_radio, find_ap_phy
 from pokeldn.host_support import resolve_keys
 
 PROTOCOL_NAMES = {
@@ -329,7 +329,7 @@ def main():
         ap.error("--host-player-id must be hex")
     if len(host_player_id) != 16:
         ap.error("--host-player-id must be 16 bytes")
-    if not args.ip_host and not args.offer_dump and os.geteuid() != 0:
+    if not args.ip_host and not args.offer_dump and os.geteuid() != 0 and not board_radio():
         ap.error("hosting over the radio needs root; re-run under sudo, or pass --ip-host")
     comm_id = args.comm_id or (sv.COMM_ID_VIOLET if args.violet else sv.COMM_ID_SCARLET)
 

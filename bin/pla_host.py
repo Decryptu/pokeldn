@@ -33,7 +33,7 @@ from pokeldn.ldn import pia6, pia_connect, reliable5, rtt_protocol
 from pokeldn.pla import channel_table, data_exchange, game_channel, trade_box
 from pokeldn.pla import pokemon as pla_pokemon
 from pokeldn.ldn.ldn_mitm_host import IpHostTransport
-from pokeldn.ldn.transport import HostTransport, find_ap_phy
+from pokeldn.ldn.transport import HostTransport, board_radio, find_ap_phy
 from pokeldn.host_support import resolve_keys
 
 # The 6.16-6.30 protocol ids, from docs/pla.md. A name makes a capture readable at a glance.
@@ -305,7 +305,7 @@ def main():
         ap.error("--host-player-id must be hex")
     if len(host_player_id) != 16:
         ap.error("--host-player-id must be 16 bytes")
-    if not args.ip_host and os.geteuid() != 0:
+    if not args.ip_host and os.geteuid() != 0 and not board_radio():
         ap.error("hosting over the radio needs root; re-run under sudo, or pass --ip-host")
 
     phy = None

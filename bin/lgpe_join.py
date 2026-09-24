@@ -19,7 +19,6 @@ Nothing is sent. `docs/lgpe_session.md` has the constants and their addresses.
 import argparse
 import json
 import os
-import select
 import socket
 import struct
 import sys
@@ -366,7 +365,7 @@ def main(argv=None):
         if args.app_data and not args.host_mac:
             ap.error("--app-data replaces the scan, so it needs --host-mac with it")
         return _main_over_ip(args)
-    if os.geteuid() != 0:
+    if os.geteuid() != 0 and not board_radio():
         ap.error("must run as root (LDN needs the raw radio)")
     phy = find_ap_phy(log=print) if args.phy == "auto" else args.phy
     if phy is None:
@@ -705,9 +704,13 @@ def _run(args, net, keys, facts, opener):
                     state["mesh_join_sent"] = True
                     state["our_ack"][0] += 1
                     next_tx += 0.5
-                r, _, _ = select.select([sock], [], [], 0.1)
+                # Wait in trio, never in select(): the ESP32 board's frames reach this socket
+                # through trio tasks (docs/hardware_esp32.md, The userspace stack).
+                r = False
+                with trio.move_on_after(0.1):
+                    await trio.lowlevel.wait_readable(sock)
+                    r = True
                 if not r:
-                    await trio.sleep(0)
                     continue
                 data, addr = sock.recvfrom(4096)
                 n_rx += 1

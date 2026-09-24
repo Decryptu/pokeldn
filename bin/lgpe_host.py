@@ -35,7 +35,7 @@ from pokeldn.ldn import rtt_protocol as rtt
 from pokeldn.ldn.station_protocol import (DISCONNECTION_REQUEST, DISCONNECTION_RESPONSE,
                                           ldn_constant_id, ldn_service_variable_id,
                                           station_location)
-from pokeldn.ldn.transport import HostTransport, find_ap_phy
+from pokeldn.ldn.transport import HostTransport, board_radio, find_ap_phy
 from pokeldn.host_support import resolve_keys
 from pokeldn.lgpe import (APPLICATION_VERSION, COMM_ID_PIKACHU, MAX_PARTICIPANTS, PASSPHRASE,
                           PIA_PORT, SCENE_ID, SSID, build_advertise_data, packet_iv, session_keys)
@@ -122,7 +122,7 @@ def build_parser():
 
 def main(argv=None):
     args = build_parser().parse_args(argv)
-    if os.geteuid() != 0:
+    if os.geteuid() != 0 and not board_radio():
         print("[lgh] must run as root (LDN needs the raw radio)"); return 1
     phy = find_ap_phy(log=print) if args.phy == "auto" else args.phy
     if phy is None:

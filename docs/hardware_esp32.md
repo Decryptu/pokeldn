@@ -152,7 +152,8 @@ The port is opened once per process with DTR and RTS released, since an edge on 
 most boards. A CP2102 board on macOS resets on open regardless, so the host retries HELLO for
 five seconds before switching to 921600. Under it the launchers skip every nl80211 step: `--phy auto` resolves to `esp32`,
 no vif is deleted, no `iw`, `ip`, `nmcli` or `sysctl` runs, and a joiner's `--mac` becomes the
-board station's address. The FRLG hosts inject no beacons of their own, since the board's
+board station's address. A scan's 5 GHz channels (36 and up) are skipped, since the board is
+2.4 GHz only; a console hosting on 5 GHz cannot be reached. The FRLG hosts inject no beacons of their own, since the board's
 access point beacons itself. No root is needed on macOS.
 
 `POKELDN_ESP32_TRACE=FILE` appends every serial message in both directions to FILE, one line

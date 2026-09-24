@@ -293,7 +293,7 @@ def main():
                     help="override the MAC the IV is built from, hex or colon-separated")
     ap.add_argument("--capture", default=None, help="jsonl of every packet, both directions")
     args = ap.parse_args()
-    if os.geteuid() != 0:
+    if os.geteuid() != 0 and not board_radio():
         ap.error("must run as root")
     return trio.run(main_async, args)
 
