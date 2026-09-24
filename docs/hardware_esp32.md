@@ -195,6 +195,15 @@ Without the broadcast forwarding every host frame reaches the console and decryp
 board sniffing verified each MIC), yet the console's ARP goes unanswered, it transmits nothing
 more, deauthenticates with reason 3 after 7.3 s and shows "l'autre dresseur est indisponible".
 
+As a station it has completed a Scarlet trade as the joiner, a retail Switch 2 hosting Link Trade:
+
+| stage | measurement |
+|---|---|
+| seat | the first association attempt, 0.35 s from `STA_JOIN` to `LINK`; the rtw88 adapter needs 30 to 60 refused attempts against the same host phase |
+| Pia | the session join answered at 0.93 s after the seat, the station update names the board's station |
+| announcement | at 71.8 s after the seat, against 1.7 s on the rtw88 adapter; before it the console re-sent its `0x81` port 0 records 1 to 24 and session update 1 |
+| trade | the joiner's offer taken, the console's record received (species 25), then host migration to the joiner as on the adapter |
+
 `tools/ldn/esp32_sniff.py` makes a second board an air sniffer: `SNIFF` (`0x0A`, u8 channel and
 6 MAC) forwards every management and data frame to or from that MAC, whole, as `RX_MGMT`.
 
@@ -202,6 +211,8 @@ more, deauthenticates with reason 3 after 7.3 s and shows "l'autre dresseur est 
 
 - The softAP negotiates WMM, which a Switch host does not; a trade completes with it.
   `AP_FLAG_NO_QOS` (`POKELDN_ESP32_AP_FLAGS=2`) clears the station's QoS flag after association.
-- Serial latency at 921600 baud against the Scarlet and Z-A seat race.
+- What delays Scarlet's announcement by 70 s on the board. The console's re-sends mean it
+  missed acknowledgements; which frames were lost is unmeasured.
+- Serial latency at 921600 baud against the Z-A seat race.
 - easyworld reports that a classic ESP32 must be the ESP32-WROOM-32E module and that the older
   ESP32-WROOM-32 does not trade reliably.
