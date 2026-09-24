@@ -224,6 +224,9 @@ As an access point it has hosted a completed Let's Go trade: the console joined 
 commits went through, its kind 4 record came back and it left cleanly, with no failed transmit
 and no serial drop.
 
+As an access point it has hosted a completed Legends Arceus trade through the four host
+phases (3, 6, 11, 14).
+
 `tools/ldn/esp32_sniff.py` makes a second board an air sniffer: `SNIFF` (`0x0A`, u8 channel and
 6 MAC) forwards every management and data frame to or from that MAC, whole, as `RX_MGMT`.
 
