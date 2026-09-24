@@ -80,7 +80,7 @@ Anything before a `0x00`, including the ROM's boot text, is discarded by the che
 | `0x05` STOP | host | none; back to idle, keys cleared |
 | `0x06` AP_START | host | u8 channel, 6 BSSID, 32 SSID, 16 key, u8 max stations, u8 flags |
 | `0x07` AP_KICK | host | 6 MAC, u16 reason; deauthenticates |
-| `0x08` ETH_TX | host | an Ethernet frame; the driver encrypts it with the station's or the group key. A full driver queue is retried every 1 ms for up to 100 ms before the frame counts as failed |
+| `0x08` ETH_TX | host | an Ethernet frame; the driver encrypts it with the station's or the group key. A full driver queue (`ESP_ERR_NO_MEM`) is retried every 1 ms for up to 100 ms before the frame counts as failed; a frame to a station that has left fails at once with `0x3015` (`ESP_ERR_WIFI_NOT_ASSOC`) |
 | `0x09` RAW_TX | host | an 802.11 frame without FCS (`esp_wifi_80211_tx`); used for advertisements |
 | `0x0A` SNIFF | host | u8 channel, 6 MAC; every management and data frame to or from it, whole, as RX_MGMT |
 | `0x0B` STATUS | host | none; answered by STATUS |
@@ -210,6 +210,11 @@ As a station it has completed a Scarlet trade as the joiner, a retail Switch 2 h
 | announcement | 7.7 s and 5.8 s after the seat once the joiner waits in trio (1.7 s on the rtw88 adapter); 52 s and 72 s while it blocked in `select`, the console re-sending its `0x81` port 0 records 1 to 24 and session update 1 |
 | trade | the joiner's offer taken, the console's record received, then host migration to the joiner as on the adapter; four trades in three runs |
 | serial | the console's first burst of 46 records (about 50 KB) saturates board-to-host at 92 KB/s; 337 messages dropped in the first 5 s of one seat, none after |
+
+As an access point it has hosted a completed Scarlet trade, the console joining from its Link
+Trade search: join request, the console's type-3 join answered with the type 9 accept, key `0x80`
+opened and the host's offer sent 11.4 s after the join. In one of two runs the console
+acknowledged the announcement and never sent its port 2 join; re-entering the search cleared it.
 
 `tools/ldn/esp32_sniff.py` makes a second board an air sniffer: `SNIFF` (`0x0A`, u8 channel and
 6 MAC) forwards every management and data frame to or from that MAC, whole, as `RX_MGMT`.

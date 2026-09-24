@@ -451,8 +451,9 @@ static void command(uint8_t type, const uint8_t *p, size_t n)
             r = esp_wifi_internal_tx(current_interface(), frame, n);
             /* A burst from the host fills the driver's TX buffers; wait for them to drain rather
                than drop the frame (a Scarlet joiner's 44-record burst lost 28). The UART
-               buffer holds the host's next commands meanwhile. docs/hardware_esp32.md. */
-            for (int tries = 0; r != ESP_OK && tries < 100; ++tries) {
+               buffer holds the host's next commands meanwhile. Only NO_MEM is retried: a
+               station that left gives 0x3015 at once. docs/hardware_esp32.md. */
+            for (int tries = 0; r == ESP_ERR_NO_MEM && tries < 100; ++tries) {
                 if (tries == 0) atomic_fetch_add(&s_tx_eth_retried, 1);
                 vTaskDelay(1);
                 r = esp_wifi_internal_tx(current_interface(), frame, n);
