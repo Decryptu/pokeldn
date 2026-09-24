@@ -374,3 +374,117 @@ def test_userspace_socket_queue_survives_a_concurrent_reader():
     thread.join()
     queue.close()
     assert got == list(range(count))
+
+
+def test_the_arceus_joiner_seats_across_simulated_boards():
+    """bin/pla_join.py's radio path, unchanged: it scans, picks the Legends Arceus network by its
+    communication id and code, associates with the passphrase, and its session reaches the
+    console's Net request, join and station list over the userspace stack."""
+    import argparse
+
+    import pla_join
+    from pokeldn import pla
+    from pokeldn.ldn import pia6, pia_connect, userspace_ip
+    from pokeldn.pla import data_exchange, trade_box
+
+    air = esp32_sim.Air()
+    boards = esp32_sim.SimulatedBoard(air), esp32_sim.SimulatedBoard(air)
+    radios = tuple(esp32.Radio(b.host_stream()) for b in boards)
+
+    @contextlib.asynccontextmanager
+    async def factory():
+        esp = esp32_wlan.EspFactory(_radio.get(), port_factory=userspace_ip.userspace_port,
+                                    join_timeout=5)
+        try:
+            yield esp
+        finally:
+            esp.router.close()
+
+    args = pla_join.build_parser().parse_args(["--hold", "4", "--connect-timeout", "10"])
+    exchange = data_exchange.build_record(player_id=bytes.fromhex(args.player_id),
+                                          name=args.player_name)
+    offer = trade_box.build_our_record(**data_exchange.read_record(exchange))
+    got = {}
+
+    async def main():
+        host_up = trio.Event()
+
+        async def console():
+            _radio.set(radios[0])
+            param = ldn.CreateNetworkParam(
+                keys=KEYS, channel=6, local_communication_id=pla.COMM_ID, name=b"console",
+                app_version=0, application_data=pla.build_advertise_data("00000000"),
+                password=pla.PASSPHRASE, protocol=pla.LDN_PROTOCOL)
+            async with ldn.create_network(param) as network:
+                keys = pla.session_keys(network.info().ssid)
+                sock = userspace_ip.udp_socket("ldn-tap", pla.PIA_PORT)
+                sock.setblocking(False)
+                host_ip = str(network.participant().ip_address)
+                host_mac = esp32.mac_bytes(network.participant().mac_address)
+                host_cid = pia_connect.ldn_constant_id(host_mac)
+                host_up.set()
+                event = await network.next_event()
+                station = str(event.participant.ip_address)
+
+                def send(body, protocol, dst_var, flags=0x01):
+                    msg = pia6.build_message(body, protocol=protocol, message_flags=flags)
+                    sock.sendto(pia6.build_packet(keys.session_key, keys.network_id, host_ip,
+                                                  msg, dst_var=dst_var, src_var=0x2FEE,
+                                                  nonce8=os.urandom(8)), (station, pla.PIA_PORT))
+
+                with trio.move_on_after(8):
+                    while "stream" not in got:
+                        send(pia_connect.build_net_conn_request(
+                            2, 0x2FEE, host_mac, keys.network_id, [host_ip, station],
+                            max_stations=2, station_size=21), 0x2C, 0, flags=0x31)
+                        with trio.move_on_after(0.3):
+                            await trio.lowlevel.wait_readable(sock)
+                        while True:
+                            try:
+                                data, (src, _) = sock.recvfrom(4096)
+                            except BlockingIOError:
+                                break
+                            _, plain, _ = pia6.parse_packet(keys.session_key, src,
+                                                            keys.network_id, data)
+                            for m in pia6.parse_messages(plain):
+                                if m.protocol == 0x98 and m.payload[0] == 0:
+                                    j = pia_connect.parse_session_join_v11(m.payload)
+                                    got["join"] = j
+                                    ids = (host_cid, 0x2FEE, j["source_constant_id"],
+                                           j["source_var"])
+                                    send(pia_connect.build_session_join_response_v11(*ids),
+                                         0x98, j["source_var"])
+                                    send(bytes([5, 0, 1]) + host_cid, 0x98, j["source_var"])
+                                elif m.protocol == 0x98 and m.payload[0] == 6:
+                                    got["seated"] = m.payload
+                                elif m.protocol == 0x81:
+                                    got["stream"] = m.payload
+                sock.close()
+
+        async def joiner():
+            _radio.set(radios[1])
+            await host_up.wait()
+            nets = await ldn.scan(KEYS, channels=[6], dwell_time=0.5)
+            target = pla_join.pick(args, nets, lambda **row: None)
+            got["picked"] = target is not None
+            got["session"] = await pla_join.seat(args, KEYS, target, None, offer, exchange,
+                                                 lambda **row: None)
+
+        with trio.fail_after(30):
+            async with trio.open_nursery() as nursery:
+                nursery.start_soon(console)
+                nursery.start_soon(joiner)
+
+    wlan.set_factory(factory)
+    try:
+        trio.run(main)
+    finally:
+        wlan.set_factory(None)
+        for radio in radios:
+            radio.close()
+
+    assert got["picked"]
+    assert got["join"]["destination_var"] == 0x2FEE
+    assert got["seated"][0] == 6 and got["seated"][-2:] == b"\x00\x01"
+    assert got["stream"] == bytes.fromhex("0f00000b0001000101000000010000000000008000000000")
+    assert got["session"].seated

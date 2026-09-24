@@ -7,8 +7,8 @@ has_children: true
 # Legends Arceus
 
 Pokemon Legends: Arceus (2022, title id `01001f5010dfa000`) is a native Switch title with Pia
-statically linked into `main`. The packet layer is read end to end, header and crypto; nothing
-above it has been, and no packet from a console has been captured.
+statically linked into `main`. A host built here has completed trades with a retail console, and
+every message of those sessions is read below.
 
 Addresses below are offsets into the decompressed `main` of update 1.1.1, as
 `tools/switch/nso_read.py` lays it out (text `0x0..0x32a5690`, rodata from `0x32a6000`, data from
@@ -937,6 +937,39 @@ The console advertises `app_version` 0 and `security_mode` 1, which is what the 
 advertisement is not what it rejects.
 
 
+## Joining a console's network
+
+A station that joins a hosting console owes it the messages below, in this order. The order is the
+one a retail console sent as the joiner of a completed trade with `bin/pla_host.py`, and the
+emulated reference host's for the Net 0x50. `pokeldn.pla.joiner` sends them and `bin/pla_join.py`
+runs it on a seat, over the radio or over ldn_mitm.
+
+| the host sends | the joiner answers |
+|---|---|
+| Net 0x11 | Net 0x12 echoing the sequence id, message flags `0x11`; the first time, the Session join request (type 0), flags `0x01` |
+| Net 0x50 | Net 0x51 echoing the sequence id |
+| Session type 5 | type 6: its own constant id, two zero bytes, the update's sequence |
+| the first type 5 | the 0x81 stream open on port 0, `0f00000b 0001 0001 01 00000001 0000000000008000000000` |
+| its 0x81 record on port 0 | the 0x81 acknowledgement, its own record on port 1 (flags `0x1f`, sequence 1, bitmap `0x01`), then the key-zero open on 0x7c port 1 under the initialized flags |
+| the 0x7c port-0 open, `0000000000000000 0100` | the same message back as its own port-0 sequence 1 |
+| a showing or an offer | its own, under the same selector and counter |
+| selectors 5 and 7 | the same two bytes back; after 7, the phase key open on port 1 |
+| the phase key open | selector-1 phases 3, 6, 11 and 14, each after the host's answer to the one before, then the phase key closed |
+| RTT kind 0 | kind 1 with the timestamp echoed and the requester's variable id in the last two bytes |
+
+The retail joiner waited 0.1, 0.3, 8.1 and 0.2 s between the host's answer and its next phase; the
+8.1 s is its trade animation. It repeats its 0x81 acknowledgement on ports 0 and 1 about once a
+second:
+
+    0000002c ffff 0002 01 00000001       header: size 0x2c, lowest pending 2, bitmap 1
+    00 02                                type 0 on the first, 1 on every later one; two entries
+    00 0002 0001 00*16                   the host's stream: one past its sequence, then its sequence
+    00 0001 0001 00*16                   its own stream
+
+On every later acknowledgement the first entry's second field is one past the sequence as well.
+`tests/test_pla_joiner.py` plays a scripted host against the joiner, and
+`tests/test_esp32.py` runs the radio path across two simulated boards.
+
 ## Reaching local trade on the console
 
     title screen, A -> Jubilife Village, the trading post -> talk to Simona (Trado in French), A
@@ -1082,6 +1115,10 @@ What it acts on is the network vanishing, at once, or its own keepalive timeout;
 change neither the words nor the delay.
 
 ## Unresolved
+
+- What a retail console sends as the host past its station list. No capture of one exists: the
+  joiner's order above is a retail joiner's toward a host of ours. Whether a console host answers
+  each selector-1 phase with selector 2, as `bin/pla_host.py` does, is unmeasured.
 
 - What a console does with a close announced back on port 1. The host reads the console's close of
   the phase key and answers nothing, and the trade completes; a host announcing its own phase key
