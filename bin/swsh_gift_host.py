@@ -118,29 +118,42 @@ def main():
     if phy is None:
         print("no AP-capable phy found", file=sys.stderr)
         return 1
-    host = HostTransport(
-        app_data=fragments[0], password=PASSPHRASE, nickname=args.nickname_host,
-        keys_path=os.path.expanduser(args.keys or machine.keys_path), local_comm_id=COMM_ID,
-        scene_id=args.scene_id, app_version=args.app_version, max_participants=8,
-        protocol=args.protocol,
-        phyname=phy, channel=args.channel,
-        skip_encryption=machine.skip_encryption,
-        accept_decrypted_ccmp=machine.accept_decrypted_ccmp)
+    host = make_host(args, fragments, os.path.expanduser(args.keys or machine.keys_path), phy,
+                     machine)
     host.start()          # raises when the AP does not come up
     print(f"advertising comm id {COMM_ID:#018x}, scene {args.scene_id}, protocol {args.protocol}, "
           f"walking {len(fragments)} fragments every {args.dwell}s")
+    i = 0
     try:
-        deadline, i = time.time() + args.seconds, 0
-        while time.time() < deadline:
-            host.set_app_data_later(fragments[i % len(fragments)])
-            i += 1
-            time.sleep(args.dwell)
+        i = walk(host, fragments, args.dwell, time.time() + args.seconds)
     except KeyboardInterrupt:
         print("\nstopping")
     finally:
         host.stop()
     print(f"served {i} advertisements")
     return 0
+
+
+def make_host(args, fragments, keys_path, phy, machine):
+    """-> the network that carries the card: the gift screen's title, protocol 1, eight seats."""
+    return HostTransport(
+        app_data=fragments[0], password=PASSPHRASE, nickname=args.nickname_host,
+        keys_path=keys_path, local_comm_id=COMM_ID,
+        scene_id=args.scene_id, app_version=args.app_version, max_participants=8,
+        protocol=args.protocol,
+        phyname=phy, channel=args.channel,
+        skip_encryption=machine.skip_encryption,
+        accept_decrypted_ccmp=machine.accept_decrypted_ccmp)
+
+
+def walk(host, fragments, dwell, deadline, stop=None):
+    """Put each fragment in the advertisement in turn, `dwell` seconds each. -> how many."""
+    i = 0
+    while time.time() < deadline and not (stop is not None and stop.is_set()):
+        host.set_app_data_later(fragments[i % len(fragments)])
+        i += 1
+        time.sleep(dwell)
+    return i
 
 
 if __name__ == "__main__":

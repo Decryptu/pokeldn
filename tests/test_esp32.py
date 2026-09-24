@@ -5,6 +5,7 @@ import contextlib
 import contextvars
 import os
 import struct
+import time
 
 import pytest
 import trio
@@ -488,3 +489,66 @@ def test_the_arceus_joiner_seats_across_simulated_boards():
     assert got["seated"][0] == 6 and got["seated"][-2:] == b"\x00\x01"
     assert got["stream"] == bytes.fromhex("0f00000b0001000101000000010000000000008000000000")
     assert got["session"].seated
+
+
+def test_the_sword_gift_walks_its_fragments_on_a_simulated_board(tmp_path, monkeypatch):
+    """bin/swsh_gift_host.py's own network and fragment walk on a board: a protocol-1
+    advertisement whose application data changes while it is up, read back by a scan on a
+    second board and reassembled the way the console does."""
+    import threading
+    import types
+
+    import swsh_gift_host
+    from pokeldn.ldn import userspace_ip
+    from pokeldn.swsh import COMM_ID, beacon
+
+    monkeypatch.setenv("POKELDN_RADIO", "esp32:simulated")
+    keys_file = tmp_path / "prod.keys"
+    keys_file.write_text("".join(f"{k} = {v.hex()}\n" for k, v in KEYS.items()))
+    args = swsh_gift_host.build_parser().parse_args(
+        ["--species", "25", "--level", "25", "--nickname", "PKCAMP", "--ot", "POKELDN",
+         "--channel", "6"])
+    record = swsh_gift_host.build_record(args)
+    fragments = beacon.build_message(record)
+    assert len(fragments) == 3
+
+    air = esp32_sim.Air()
+    host_radio = esp32.Radio(esp32_sim.SimulatedBoard(air).host_stream())
+    probe_radio = esp32.Radio(esp32_sim.SimulatedBoard(air).host_stream())
+
+    @contextlib.asynccontextmanager
+    async def host_factory():
+        esp = esp32_wlan.EspFactory(host_radio, port_factory=userspace_ip.userspace_port)
+        try:
+            yield esp
+        finally:
+            esp.router.close()
+
+    wlan.set_factory(host_factory)
+    machine = types.SimpleNamespace(skip_encryption=False, accept_decrypted_ccmp=False)
+    host = swsh_gift_host.make_host(args, fragments, str(keys_file), "esp32", machine)
+    stop = threading.Event()
+    walker = None
+    try:
+        host.start(timeout=10, attempts=1)
+        walker = threading.Thread(target=swsh_gift_host.walk,
+                                  args=(host, fragments, 0.2, time.time() + 30, stop),
+                                  daemon=True)
+        walker.start()
+        esp32_wlan.use(radio=probe_radio)
+        seen = {}
+        deadline = time.time() + 20
+        while len(seen) < 3 and time.time() < deadline:
+            for net in trio.run(lambda: ldn.scan(KEYS, channels=[6], dwell_time=0.3)):
+                assert net.local_communication_id == COMM_ID and net.max_participants == 8
+                seen[bytes(net.application_data)] = True
+    finally:
+        stop.set()
+        if walker is not None:
+            walker.join(5)
+        host.stop()
+        wlan.set_factory(None)
+        host_radio.close()
+        probe_radio.close()
+    assert sorted(seen) == sorted(fragments)
+    assert beacon.reassemble(list(seen)) == record
