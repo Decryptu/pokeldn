@@ -216,6 +216,10 @@ Trade search: join request, the console's type-3 join answered with the type 9 a
 opened and the host's offer sent 11.4 s after the join. In one of two runs the console
 acknowledged the announcement and never sent its port 2 join; re-entering the search cleared it.
 
+As a station it has completed a Legends Z-A trade as the joiner: seated on the first scan, the
+console's selection record (`0100`) at 1.75 s, the offer at 11.9 s and the close (`0104`, `0200`)
+at 15 s.
+
 `tools/ldn/esp32_sniff.py` makes a second board an air sniffer: `SNIFF` (`0x0A`, u8 channel and
 6 MAC) forwards every management and data frame to or from that MAC, whole, as `RX_MGMT`.
 
