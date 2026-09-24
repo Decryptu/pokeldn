@@ -86,9 +86,9 @@ Every game
 
 ## Requirements
 
-- Linux
+- Linux with a compatible Wi-Fi card (see below), or any host (macOS included, no root) with an
+  ESP32 board on USB serial as the radio ([ESP32 radio](docs/hardware_esp32.md))
 - Python 3.11+, and a venv with `requirements.txt` installed
-- A compatible Wi-Fi card (see below)
 - A Switch or Switch 2 with one of the games above. FireRed / LeafGreen needs the Direct Corner
   unlocked (about 20 to 40 minutes of play) and at least two `.pk3` files as party members
 - Switch `prod.keys` (default location `~/.switch/prod.keys`)
@@ -108,6 +108,12 @@ The PyPI `ldn` package of the same version lacks the adapter compatibility fixes
 Known problematic: Intel AX200 (`iwlwifi`) and Atheros AR9271 (`ath9k_htc`) cannot be assigned an IP.
 
 See [Adapters](docs/hardware_adapters.md) for the configuration each one needs.
+
+### ESP32 board
+
+A classic ESP32 (tested: ESP32-D0WD-V3 on a CP2102 board) running `firmware/esp32` replaces the
+Wi-Fi card. Every launcher runs on it unchanged with `POKELDN_RADIO=esp32:<serial port>` in the
+environment, and every game above has completed a trade through it. It is 2.4 GHz only.
 
 ## Setup
 

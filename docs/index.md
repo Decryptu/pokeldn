@@ -45,7 +45,7 @@ Legends Arceus, in Scarlet and Violet and in Legends Z-A.
 | [Legends Arceus](pla.md) | Pia header version 11, the trade flow, and the record a host composes. |
 | [Scarlet and Violet](sv.md) | Pia header version 11, the reliable streams, and the trade a host runs. |
 | [Legends Z-A](za.md) | Pia header version 16, the game's twenty trade messages, and the trade a joiner runs. |
-| [Hardware and setup](hardware.md) | Adapters, Raspberry Pi deployment, Switch keys. |
+| [Hardware and setup](hardware.md) | Adapters, the ESP32 radio, Raspberry Pi deployment, Switch keys. |
 
 ## Credits
 

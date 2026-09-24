@@ -74,7 +74,7 @@ Anything before a `0x00`, including the ROM's boot text, is discarded by the che
 | type | direction | payload |
 |---|---|---|
 | `0x01` HELLO | host | none; answered by INFO |
-| `0x02` BAUD | host | u32 baud; RESULT at the old rate, then the switch |
+| `0x02` BAUD | host | u32 baud; RESULT at the old rate, then the switch. The switch is a queue entry behind the RESULT and waits up to 3 s for the UART to drain: at 115200 the ring can hold more than a second of RX_MGMT from a console advertising nearby, and a 100 ms wait switched with the RESULT still in it |
 | `0x03` CHANNEL | host | u8 channel; idle only |
 | `0x04` STA_JOIN | host | u8 channel, 6 BSSID, 32 SSID (the LDN SSID's hex text), 16 key, 6 station MAC (zero = random) |
 | `0x05` STOP | host | none; back to idle, keys cleared |
@@ -231,6 +231,11 @@ As a station it has completed a Sword trade as the client: the busiest-channel s
 channel 6, the first association held, the party snapshots crossed and the confirmation ladder
 finished 34 s after the seat. The console's late-ack resends reach the client out of order on the
 board ([Sword session](swsh_session.md)).
+
+As a station it has completed a Brilliant Diamond Union Room trade: accepted into the mesh on the
+first request, the character walked in, the trade ran to `NetDataReturnSelectData` and the console
+saved. A killed client leaves its station in the Union Room; the next seat with the same MAC is
+never answered until the player leaves and re-enters the room.
 
 `tools/ldn/esp32_sniff.py` makes a second board an air sniffer: `SNIFF` (`0x0A`, u8 channel and
 6 MAC) forwards every management and data frame to or from that MAC, whole, as `RX_MGMT`.

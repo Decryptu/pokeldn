@@ -22,7 +22,6 @@ typedef struct {
 static QueueHandle_t s_out;
 static wire_handler_t s_handler;
 static atomic_uint s_dropped;
-static volatile uint32_t s_pending_baud;
 
 static uint32_t crc32(const uint8_t *p, size_t n)
 {
@@ -61,8 +60,17 @@ void wire_log(const char *format, ...)
 
 uint32_t wire_dropped(void) { return atomic_load(&s_dropped); }
 
-/* Applied by the writer after every queued message ahead of it has left at the old rate. */
-void wire_set_baud(uint32_t baud) { s_pending_baud = baud; }
+/* A zero-length queue entry carrying the rate: the writer switches when it reaches it, so every
+   message queued before it (the BAUD RESULT above all) leaves at the old rate. A flag checked on
+   an empty queue raced the RESULT while RX_MGMT kept the writer busy. */
+void wire_set_baud(uint32_t baud)
+{
+    message_t *m = malloc(sizeof(*m) + 4);
+    if (!m) return;
+    m->length = 0;
+    memcpy(m->bytes, &baud, 4);
+    if (xQueueSend(s_out, &m, portMAX_DELAY) != pdTRUE) free(m);
+}
 
 static void writer(void *arg)
 {
@@ -71,6 +79,16 @@ static void writer(void *arg)
         message_t *m;
         if (xQueueReceive(s_out, &m, portMAX_DELAY) != pdTRUE) continue;
         const size_t n = m->length;
+        if (!n) {
+            uint32_t baud;
+            memcpy(&baud, m->bytes, 4);
+            free(m);
+            /* The 16 KB TX ring can hold a second and more at 115200; a 100 ms wait switched
+               the rate with the RESULT still in it. */
+            uart_wait_tx_done(WIRE_UART, pdMS_TO_TICKS(3000));
+            uart_set_baudrate(WIRE_UART, baud);
+            continue;
+        }
         memcpy(frame, m->bytes, n);
         free(m);
         const uint32_t crc = crc32(frame, n);
@@ -85,11 +103,6 @@ static void writer(void *arg)
         encoded[code_at] = code;
         encoded[out++] = 0;
         uart_write_bytes(WIRE_UART, encoded, out);
-        if (s_pending_baud && uxQueueMessagesWaiting(s_out) == 0) {
-            uart_wait_tx_done(WIRE_UART, pdMS_TO_TICKS(100));
-            uart_set_baudrate(WIRE_UART, s_pending_baud);
-            s_pending_baud = 0;
-        }
     }
 }
 
