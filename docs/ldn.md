@@ -168,6 +168,12 @@ before a run:
 
     sudo iw dev <managed iface> scan | grep -A3 <console MAC>
 
+A receiver next to a console also hears a few of its advertisements while tuned to a neighbouring
+channel: an ESP32 at 2.5 s per channel caught a Sword host 2 times on channel 1, about 30 times on
+channel 6 and 2 times on 11, all at the same RSSI. Joining on channel 1 associates, then the next
+advertisement arrives on 6 and the LDN library drops the link as an incompatible network. The
+scan reports each console on the channel that carried the most of its advertisements.
+
 ## Pages
 
 - [The Pia layer](pia.md): packet header formats by version, message framing, the transport

@@ -1178,20 +1178,31 @@ class Scanner:
     async def scan(
         self, channels: list[int], dwell_time: float
     ) -> list[NetworkInfo]:
-        networks = []
+        # A console heard on several channels (an ESP32 next to a Sword host catches 2 of its
+        # advertisements on channel 1 against 30 on 6) is reported on the channel that carried
+        # the most; the first one heard can be the wrong one (docs/ldn.md).
+        best: dict = {}
+        counts: dict = {}
+        order: list = []
         async def scan_frames():
-            addresses = []
             while True:
                 network = await self.receive()
-                if network.address not in addresses:
-                    addresses.append(network.address)
-                    networks.append(network)
+                key = (network.address, network.channel)
+                counts[key] = counts.get(key, 0) + 1
+                if network.address not in best:
+                    order.append(network.address)
+                    best[network.address] = network
+                elif counts[key] > counts.get(
+                        (network.address, best[network.address].channel), 0):
+                    best[network.address] = network
+                elif network.channel == best[network.address].channel:
+                    best[network.address] = network
         
         async with util.background_task(scan_frames):
             for channel in channels:
                 await self._monitor.set_channel(channel)
                 await trio.sleep(dwell_time)
-        return networks
+        return [best[address] for address in order]
 
         
 class STANetwork:

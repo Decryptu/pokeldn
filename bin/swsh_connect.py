@@ -282,9 +282,12 @@ async def main_async(args):
                     st["data_acked"] = now
                     print(f"[rx]     *** IT ANSWERED OUR DATA, t={now:.2f} ***")
                 return
-            st["their_payload"] = got["payload"]
-            st["said_by_proto"][protocol] = got["payload"]
-            st["said_by_port"][(protocol, port)] = got["payload"]
+            # A resend of an older sequence must not replace what the console says now: on the
+            # ESP32 board pingReply (9) came back after pingSynced (10) and stalled the sync.
+            if not (w["seqs"] and got["sequence_id"] <= max(w["seqs"])):
+                st["their_payload"] = got["payload"]
+                st["said_by_proto"][protocol] = got["payload"]
+                st["said_by_port"][(protocol, port)] = got["payload"]
             # id 130 pingSynced (`820000001a00`) arrives about 0.3 s ahead of the console's own
             # burst and is the cue to open the selection phase. `open_phase` latches.
             if args.selection_start and got["payload"] == swsh_trade.sync(

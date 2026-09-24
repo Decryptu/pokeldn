@@ -227,6 +227,11 @@ and no serial drop.
 As an access point it has hosted a completed Legends Arceus trade through the four host
 phases (3, 6, 11, 14).
 
+As a station it has completed a Sword trade as the client: the busiest-channel scan picked
+channel 6, the first association held, the party snapshots crossed and the confirmation ladder
+finished 34 s after the seat. The console's late-ack resends reach the client out of order on the
+board ([Sword session](swsh_session.md)).
+
 `tools/ldn/esp32_sniff.py` makes a second board an air sniffer: `SNIFF` (`0x0A`, u8 channel and
 6 MAC) forwards every management and data frame to or from that MAC, whole, as `RX_MGMT`.
 

@@ -247,6 +247,11 @@ Across a whole such run a console sent five distinct application payloads and no
     0x7C  id 60000  0a00        result{}         x2
     0x80  id 60000  12020801    imReady{true}    x2
 
+The console resends a message whose ack is late, and a resend can arrive after the newer message
+that followed it (`pingReply` at sequence 9 after `pingSynced` at 10). A client that takes the
+resend as what the console says now answers `pingReply` forever and `imReady` never comes; only a
+sequence above the newest seen replaces it.
+
 `bin/swsh_connect.py --sync-answers` answers `trade.SYNC_ANSWERS` where it has a rule, keeps the
 proven per-protocol echo everywhere else, and prints every distinct payload it has no rule for.
 
