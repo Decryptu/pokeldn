@@ -116,6 +116,9 @@ both offers were ordinary species and the console, the recruiting side, was PARE
 a species rarer than the console's own offer (a legendary or a mythical against an ordinary one)
 makes the console CHILD. `room.mirror_trade_state` answers WAIT_POKE with SEND_READYOK, which a
 console in either role accepts. The CHILD path has not yet completed on hardware.
+`tests/test_bdsp_trade_states.py` runs the two functions above as a model against the client's
+policy under random latencies: echoing WAIT_POKE leaves a CHILD console in SEND_READYOK every time,
+and the mirror reaches START_WRITE_SAVE in both roles.
 
 `BoxWindow.NetTradePhase.WaitSave` writes nothing. The phase enum reads `None, WaitSave,
 PlayerSelecting, ...` and `ToNextPhase(0)` walks it by increment; the coroutine that phase runs,
