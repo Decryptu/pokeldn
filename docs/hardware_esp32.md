@@ -32,10 +32,14 @@ advertisement's server random. The firmware replaces four entries of ESP-IDF's p
 - `wpa_ap_join` adds the station to hostapd's table and sends the association response
   (`esp_send_assoc_resp`) without creating an authenticator state machine, so no EAPOL-Key
   message 1 goes out. The stock join stays selectable with the `AP_START` flag bit 0.
-- On `WIFI_EVENT_AP_STACONNECTED` the pairwise key goes in with
-  `esp_wifi_set_ap_key_internal(CCMP, mac, 0, key)` and the port opens with
-  `esp_wifi_wpa_ptk_init_done_internal(mac)`, the call hostapd's `PTKINITDONE` state makes
-  (`wpa_auth.c:2284`). The group key goes in at `WIFI_EVENT_AP_START` with index 1.
+- `wpa_ap_join` also queues the station's MAC. The main loop then installs the pairwise key with
+  `esp_wifi_set_ap_key_internal(CCMP, mac, 0, key)` and opens the port with
+  `esp_wifi_wpa_ptk_init_done_internal(mac)`, the order hostapd's `PTKINITDONE` state uses
+  (`wpa_auth.c:2290-2332`). The group key goes in at `WIFI_EVENT_AP_START` with index 1.
+- `esp_wifi_wpa_ptk_init_done_internal` is what posts `WIFI_EVENT_AP_STACONNECTED` (event 14,
+  `ieee80211_supplicant.o`); the blob posts no other connect event for a WPA2 station. Never
+  wait for that event to install the key: with no 4-way handshake it never comes, and the
+  console's first encrypted frame is dropped.
 
 The table layout is the ESP-IDF v6.1 blob's ABI. The firmware refuses to build against another
 release.
@@ -78,16 +82,17 @@ Anything before a `0x00`, including the ROM's boot text, is discarded by the che
 | `0x07` AP_KICK | host | 6 MAC, u16 reason; deauthenticates |
 | `0x08` ETH_TX | host | an Ethernet frame; the driver encrypts it with the station's or the group key |
 | `0x09` RAW_TX | host | an 802.11 frame without FCS (`esp_wifi_80211_tx`); used for advertisements |
+| `0x0A` SNIFF | host | u8 channel, 6 MAC; every management and data frame to or from it, whole, as RX_MGMT |
 | `0x0B` STATUS | host | none; answered by STATUS |
 | `0x81` INFO | board | u8 protocol version (1), 6 station MAC, 6 AP MAC, u8 chip revision, text |
 | `0x82` RESULT | board | u8 command, i32 `esp_err_t` |
 | `0x83` LOG | board | text |
-| `0x84` RX_MGMT | board | u8 channel, i8 RSSI, the action frame without FCS |
+| `0x84` RX_MGMT | board | u8 channel, i8 RSSI, a frame without FCS: an LDN action frame; while hosting also a management frame to our BSSID, the first 40 bytes of a data frame to it, and a station's no-DS broadcast whole |
 | `0x85` RX_ETH | board | an Ethernet frame the driver decrypted |
 | `0x86` LINK | board | u8 up, u16 reason, 6 MAC; reason `0xFFFF` no association in 15 s, `0xFFFE` keys refused |
 | `0x87` STA_JOINED | board | 6 MAC, u8 AID, i8 key install result, u8 port opened |
 | `0x88` STA_LEFT | board | 6 MAC, u16 reason |
-| `0x89` STATUS | board | text counters |
+| `0x89` STATUS | board | text counters, including the driver's TX-done `tx_acked` and `tx_unacked`; sent unasked every 2 s while hosting |
 
 EtherType `0x88B7` frames are LDN authentication; `esp32_wlan` turns them into the LDN
 library's `CustomFrameEvent`. Every other Ethernet frame goes to an L2 port:
@@ -145,6 +150,9 @@ no vif is deleted, no `iw`, `ip`, `nmcli` or `sysctl` runs, and a joiner's `--ma
 board station's address. The FRLG hosts inject no beacons of their own, since the board's
 access point beacons itself. No root is needed on macOS.
 
+`POKELDN_ESP32_TRACE=FILE` appends every serial message in both directions to FILE, one line
+each: Unix time, `>` (host) or `<` (board), the type in hex, the payload in hex.
+
 `tools/ldn/esp32_first_contact.py` is the first thing to run against a new board: `--flash`
 writes the build with esptool, then HELLO, STATUS, an idle scan that counts LDN action frames
 per channel and source, and with `--keys` the LDN library's own scan on the board, which
@@ -171,14 +179,29 @@ completed a FireRed trade as the joiner against a retail Switch 2 hosting:
 
 The ESP32-WROOM-32E module is built on the ESP32-D0WD-V3.
 
+As an access point it has hosted a completed FireRed trade, a retail Switch 2 joining:
+
+| stage | measurement |
+|---|---|
+| discovery | the console lists the network, so it accepts the zero-length hidden SSID, the rate order, capability `0x0431` and the WMM element |
+| association | open authentication, then one association request 24 ms later, not retried |
+| association request | capability `0x0431`, listen interval 10, the SSID as 32 hex characters, rates `02 04 0b 16 0c 12 18 24` and `30 48 60 6c`, power capability `00 14`, RSN capabilities `0x0000`, a WMM information element and the vendor element `00 22 aa 10 01 02` |
+| LDN authentication | the console's request reaches `RX_ETH` 40 ms after `STA_JOINED`; the host answers it |
+| the console's broadcasts | no DS bits, group key, first an ARP request for the host ([A station's broadcasts](ldn.md#a-stations-broadcasts)); the driver drops them, the firmware forwards them whole and the LDN library decrypts them |
+| link | Pia session join, RTT, RFU handshake, trade room, party exchange |
+| trade | the console's Pokemon received (species 113); both cancelled, left the room and closed the link |
+
+Without the broadcast forwarding every host frame reaches the console and decrypts (a second
+board sniffing verified each MIC), yet the console's ARP goes unanswered, it transmits nothing
+more, deauthenticates with reason 3 after 7.3 s and shows "l'autre dresseur est indisponible".
+
+`tools/ldn/esp32_sniff.py` makes a second board an air sniffer: `SNIFF` (`0x0A`, u8 channel and
+6 MAC) forwards every management and data frame to or from that MAC, whole, as `RX_MGMT`.
+
 ## Unresolved
 
-- Hosting on a board: the console associating to the softAP.
-- Whether a console accepts the softAP's frames where they cannot match the Switch form: the
-  zero-length hidden SSID, the rate order, capability `0x0431` and the WMM element. The rates
-  6, 9 and 12 whose absence made a console leave after 3 s are all present.
-- Whether the console's LDN authentication frame reaches `RX_ETH` before or after the driver
-  opens the port.
+- The softAP negotiates WMM, which a Switch host does not; a trade completes with it.
+  `AP_FLAG_NO_QOS` (`POKELDN_ESP32_AP_FLAGS=2`) clears the station's QoS flag after association.
 - Serial latency at 921600 baud against the Scarlet and Z-A seat race.
 - easyworld reports that a classic ESP32 must be the ESP32-WROOM-32E module and that the older
   ESP32-WROOM-32 does not trade reliably.

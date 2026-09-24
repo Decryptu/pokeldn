@@ -104,7 +104,13 @@ class _Router:
 
     def _callback(self, msg_type: int, payload: bytes) -> None:
         if msg_type == esp32.MSG_RX_MGMT:
-            target = self.mgmt_send
+            # A whole data frame with no DS bits is a station's broadcast to the BSS; it goes to
+            # the monitor's data path. A to-DS data frame here is a 40-byte header for the trace.
+            frame = payload[2:]
+            is_data = len(frame) >= 24 and (frame[0] >> 2) & 3 == 2
+            if is_data and frame[1] & 3:
+                return
+            target = self.data_send if is_data else self.mgmt_send
         elif msg_type == esp32.MSG_RX_ETH:
             is_control = len(payload) >= 14 and payload[12:14] == b"\x88\xb7"
             target = self.control_send if is_control else self.data_send
@@ -160,7 +166,15 @@ class EspMonitor:
 
     async def recv_frame(self):
         while True:
-            _, payload = await self._factory.router.data.receive()
+            msg_type, payload = await self._factory.router.data.receive()
+            if msg_type == esp32.MSG_RX_MGMT:
+                # Still encrypted with the group key; the LDN library decrypts it.
+                frame = wlan.DataFrame()
+                try:
+                    frame.decode(esp32.ManagementFrame.parse(payload).frame)
+                except ValueError:
+                    continue
+                return frame
             ethernet = wlan.EthernetFrame()
             ethernet.decode(payload)
             snap = wlan.SNAPHeader()
@@ -479,4 +493,6 @@ def use_from_environment(log=None) -> esp32.Radio | None:
     spec = os.environ.get("POKELDN_RADIO", "")
     if not spec.startswith("esp32:"):
         return None
-    return use(spec[len("esp32:"):], log=log)
+    # POKELDN_ESP32_AP_FLAGS: the AP_START flag byte (esp32.AP_FLAG_*), for bisecting the softAP.
+    ap_flags = int(os.environ.get("POKELDN_ESP32_AP_FLAGS", "0"), 0)
+    return use(spec[len("esp32:"):], ap_flags=ap_flags, log=log)

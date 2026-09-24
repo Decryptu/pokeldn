@@ -147,6 +147,19 @@ for field, so nothing between the ScanResp and the game rewrites any of it.
 A scan filter names which fields the game compares. FireRed's filters on `localCommunicationId` and
 `networkType` alone, with `sceneId` 0xFFFF and `ssidLength` 0, so only those two have to match.
 
+## A station's broadcasts
+
+A console joined to a network sends its broadcast and multicast frames straight to the BSS, not
+through the access point: no DS bits, address 1 the group address, address 2 the console,
+address 3 the BSSID, CCMP with the group key (key id 1). Its unicast frames to the host are to-DS
+with the pairwise key (key id 0). FireRed's first broadcasts after LDN authentication are an ARP
+request for the host's address and IPv6 multicast. A standard access point drops a data frame with
+no DS bits, so a host that reads only its AP interface never sees the ARP; the console cannot reach
+the host, sends nothing more, and deauthenticates with reason 3 about 7 s later. The Linux host
+reads these frames on its monitor interface and decrypts them in software
+(`vendor/LDN/ldn/__init__.py` `_process_data_frame`); the ESP32 radio forwards them whole
+([ESP32 radio](hardware_esp32.md)).
+
 ## Channels
 
 LDN allows 5 GHz channels 36/40/44/48 and a host may use them; the FireRed/LeafGreen application

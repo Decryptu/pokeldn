@@ -6,8 +6,10 @@ carries Ethernet frames and LDN vendor action frames; everything above them runs
 set is the one `firmware/esp32/main/radio.c` implements, documented in `docs/hardware_esp32.md`.
 """
 
+import os
 import struct
 import threading
+import time
 import zlib
 from dataclasses import dataclass
 
@@ -22,6 +24,7 @@ CMD_AP_START = 0x06
 CMD_AP_KICK = 0x07
 CMD_ETH_TX = 0x08
 CMD_RAW_TX = 0x09
+CMD_SNIFF = 0x0A
 CMD_STATUS = 0x0B
 
 MSG_INFO = 0x81
@@ -35,6 +38,7 @@ MSG_STA_LEFT = 0x88
 MSG_STATUS = 0x89
 
 AP_FLAG_STOCK_JOIN = 1      # let the stock hostapd answer the association and start its 4-way handshake
+AP_FLAG_NO_QOS = 2          # clear the station node's QoS flag: non-QoS data frames to it
 
 LINK_TIMEOUT = 0xFFFF       # MSG_LINK reason: no association within 15 s
 LINK_KEY_FAILED = 0xFFFE    # MSG_LINK reason: the driver refused the CCMP keys
@@ -211,6 +215,9 @@ class Radio:
         self._replies: dict[int, list] = {}
         self._reply_cv = threading.Condition()
         self._closed = False
+        # POKELDN_ESP32_TRACE=FILE records every message both ways: time, direction, type, hex.
+        trace = os.environ.get("POKELDN_ESP32_TRACE")
+        self._trace = open(trace, "a", buffering=1) if trace else None
         self._thread = threading.Thread(target=self._read_loop, name="esp32-radio", daemon=True)
         self._thread.start()
 
@@ -263,6 +270,7 @@ class Radio:
 
     def send(self, msg_type: int, payload: bytes = b"") -> None:
         frame = encode_frame(msg_type, payload)
+        self._record(">", msg_type, payload)
         with self._write_lock:
             self._stream.write(frame)
 
@@ -308,7 +316,12 @@ class Radio:
             for msg_type, payload in self._reader.feed(data):
                 self._dispatch(msg_type, payload)
 
+    def _record(self, direction: str, msg_type: int, payload: bytes) -> None:
+        if self._trace:
+            self._trace.write(f"{time.time():.6f} {direction} {msg_type:02x} {payload.hex()}\n")
+
     def _dispatch(self, msg_type: int, payload: bytes) -> None:
+        self._record("<", msg_type, payload)
         if msg_type == MSG_LOG and self._log:
             self._log(f"[esp32] {payload.decode(errors='replace')}")
         with self._reply_cv:
@@ -350,6 +363,10 @@ class Radio:
 
     def send_raw(self, frame: bytes) -> None:
         self.send(CMD_RAW_TX, frame)
+
+    def sniff(self, channel: int, mac) -> None:
+        """Every management and data frame to or from `mac` on `channel`, whole, as RX_MGMT."""
+        self.request(CMD_SNIFF, bytes([channel]) + mac_bytes(mac), MSG_RESULT, timeout=5.0)
 
     def status(self) -> str:
         return self.request(CMD_STATUS, b"", MSG_STATUS).decode(errors="replace")

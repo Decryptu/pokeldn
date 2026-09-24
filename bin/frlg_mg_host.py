@@ -715,7 +715,7 @@ def main(argv=None):
         factory = functools.partial(ldn_mitm_host.IpHostTransport, our_ip=our_ip)
         # functools.partial hides the class attribute the phy resolution reads.
         factory.NEEDS_RADIO = False
-    elif os.geteuid() != 0:
+    elif os.geteuid() != 0 and not transport.board_radio():
         parser.error("live LDN hosting requires root; run with sudo -E")
     application = (WonderNewsHostApplication if args.news is not None
                    else BufferScriptHostApplication if args.buffer_script is not None

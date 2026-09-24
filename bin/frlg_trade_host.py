@@ -19,7 +19,7 @@ if os.path.isdir(os.path.join(BUNDLED_LDN, "ldn")):
 
 from pokeldn import config as configmod, host_cli  # noqa: E402
 from pokeldn.frlg.link import trade_runtime  # noqa: E402
-from pokeldn.ldn import beacon as beaconmod  # noqa: E402
+from pokeldn.ldn import beacon as beaconmod, transport  # noqa: E402
 from pokeldn.frlg.link.host_app import HostApplication  # noqa: E402
 
 
@@ -175,7 +175,7 @@ def main(argv=None):
         parser.error("the following arguments are required: MON")
     if not args.live:
         parser.error("hosting only supports live mode; omit --no-live")
-    if os.geteuid() != 0:
+    if os.geteuid() != 0 and not transport.board_radio():
         parser.error("live LDN hosting requires root; run with sudo -E")
     run_config = build_run_config(parser, args)
     joined = HostApplication(

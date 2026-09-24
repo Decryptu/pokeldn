@@ -307,3 +307,70 @@ def test_first_contact_sees_and_decodes_a_simulated_host():
     assert sum(result["seen"][6].values()) > 0 and not result["seen"][1]
     assert [n.application_data for n in result["networks"]] == [b"first contact"]
     assert lines[0].startswith("[hello] protocol 1")
+
+
+def test_station_broadcast_with_no_ds_bits_reaches_the_ldn_data_path():
+    """A console on the softAP sends its broadcasts (ARP first) straight to the BSS with no DS bits
+    and the group key; the board forwards them whole and the monitor hands them to the LDN library
+    still protected. docs/hardware_esp32.md"""
+    key = os.urandom(16)
+    bssid, station = wlan.MACAddress("1a:ff:86:ca:35:1f"), wlan.MACAddress("48:f1:eb:20:9b:22")
+    arp = wlan.SNAPHeader()
+    arp.protocol, arp.payload = 0x0806, os.urandom(28)
+
+    def frame(tods, target):
+        data = wlan.DataFrame()
+        data.target, data.source, data.bssid, data.tods = target, station, bssid, tods
+        data.payload = arp.encode()
+        data.encrypt(key, 61647690794114, 0 if tods else 1)
+        return data.encode()
+
+    class StubRadio:
+        def subscribe(self, callback):
+            self.callback = callback
+
+    async def main():
+        radio = StubRadio()
+        router = esp32_wlan._Router(radio)
+        monitor = esp32_wlan.EspMonitor(type("Factory", (), {"router": router})(), bssid)
+        head = bytes([1, 0xC8])
+        radio.callback(esp32.MSG_RX_MGMT, head + frame(True, bssid)[:40])   # a trace header only
+        radio.callback(esp32.MSG_RX_MGMT, head + frame(False, wlan.MACAddress("ff:ff:ff:ff:ff:ff")))
+        with trio.fail_after(1):
+            received = await monitor.recv_frame()
+        assert received.protected and received.keyid == 1 and not received.tods
+        assert received.source == station
+        received.decrypt(key)
+        assert received.payload == arp.encode()
+        assert router.mgmt.statistics().current_buffer_used == 0
+
+    trio.run(main)
+
+
+def test_userspace_socket_queue_survives_a_concurrent_reader():
+    """The radio's thread pushes while the host polls non-blocking; a pipe byte seen before its item
+    once raised IndexError in the FRLG host and the console showed 2318-0006."""
+    import threading
+    from pokeldn.ldn import userspace_ip
+    queue = userspace_ip._Readable()
+    queue.setblocking(False)
+    count, got = 20000, []
+
+    def produce():
+        for i in range(count):
+            while True:
+                before = queue.dropped
+                queue._push(i)
+                if queue.dropped == before:
+                    break
+
+    thread = threading.Thread(target=produce)
+    thread.start()
+    while len(got) < count:
+        try:
+            got.append(queue._pop())
+        except BlockingIOError:
+            pass
+    thread.join()
+    queue.close()
+    assert got == list(range(count))

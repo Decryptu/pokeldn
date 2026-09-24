@@ -9,6 +9,7 @@ with it. `lookup(name)` answers None when the interface is a kernel one.
 
 import collections
 import contextlib
+import errno
 import math
 import os
 import socket
@@ -84,6 +85,9 @@ class _Readable:
 
     def __init__(self):
         self._queue = collections.deque()
+        # The pipe byte and the queued item change together under this lock: the radio's thread
+        # pushes while the reader pops, and a byte seen before its item made popleft raise.
+        self._lock = threading.Lock()
         self._r, self._w = os.pipe()
         os.set_blocking(self._r, False)
         os.set_blocking(self._w, False)
@@ -95,27 +99,30 @@ class _Readable:
         return self._r
 
     def _push(self, item) -> None:
-        if self.closed:
-            return
-        try:
-            os.write(self._w, b"\x00")
-        except BlockingIOError:
-            self.dropped += 1
-            return
-        self._queue.append(item)
+        with self._lock:
+            if self.closed:
+                return
+            self._queue.append(item)
+            try:
+                os.write(self._w, b"\x00")
+            except BlockingIOError:
+                self._queue.pop()
+                self.dropped += 1
 
     def _pop(self):
         while True:
-            try:
-                os.read(self._r, 1)
-                return self._queue.popleft()
-            except BlockingIOError:
-                if self._timeout == 0:
-                    raise
-                import select
-                ready = select.select([self._r], [], [], self._timeout)[0]
-                if not ready:
-                    raise socket.timeout("timed out")
+            with self._lock:
+                try:
+                    os.read(self._r, 1)
+                    return self._queue.popleft()
+                except BlockingIOError:
+                    pass
+            if self._timeout == 0:
+                raise BlockingIOError(errno.EAGAIN, "no datagram queued")
+            import select
+            ready = select.select([self._r], [], [], self._timeout)[0]
+            if not ready:
+                raise socket.timeout("timed out")
 
     def setblocking(self, flag: bool) -> None:
         self._timeout = None if flag else 0
