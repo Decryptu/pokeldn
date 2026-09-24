@@ -142,6 +142,8 @@ void wire_start(wire_handler_t handler)
     };
     ESP_ERROR_CHECK(uart_driver_install(WIRE_UART, 16384, 16384, 0, NULL, 0));
     ESP_ERROR_CHECK(uart_param_config(WIRE_UART, &config));
+    /* With CONFIG_ESP_CONSOLE_NONE nothing routes UART0 to GPIO1/3; the board stays mute without this. */
+    ESP_ERROR_CHECK(uart_set_pin(WIRE_UART, 1, 3, UART_PIN_NO_CHANGE, UART_PIN_NO_CHANGE));
     s_out = xQueueCreate(128, sizeof(message_t *));
     xTaskCreatePinnedToCore(writer, "wire_tx", 4096, NULL, 20, NULL, 1);
     xTaskCreatePinnedToCore(reader, "wire_rx", 6144, NULL, 19, NULL, 1);

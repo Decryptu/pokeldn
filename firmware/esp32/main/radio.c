@@ -337,8 +337,8 @@ static void command(uint8_t type, const uint8_t *p, size_t n)
         uint32_t baud;
         if (n != 4) { result(type, ESP_ERR_INVALID_SIZE); break; }
         memcpy(&baud, p, 4);
+        wire_set_baud(baud);   /* before the RESULT: the writer switches once that frame is out */
         result(type, 0);
-        wire_set_baud(baud);
         break;
     }
     case CMD_CHANNEL:

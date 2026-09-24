@@ -129,14 +129,18 @@ Linux and on macOS (Apple silicon) to the same image size.
     idf.py -p <port> flash
 
 The console output is off (`CONFIG_ESP_CONSOLE_NONE`): UART0 is the host link. The image is
-0x8f690 bytes.
+0x8ff30 bytes.
+
+The release build runs with `CONFIG_ESP_CONSOLE_NONE`, which leaves UART0 unrouted: the
+firmware assigns GPIO1 and GPIO3 itself (`uart_set_pin`), or the board boots and never answers.
 
 ## Running
 
 `POKELDN_RADIO=esp32:<port>` in the environment puts every launcher's `ldn` calls on the board,
 for example `POKELDN_RADIO=esp32:/dev/ttyUSB0` or `POKELDN_RADIO=esp32:/dev/cu.usbserial-0001`.
 The port is opened once per process with DTR and RTS released, since an edge on either resets
-most boards. Under it the launchers skip every nl80211 step: `--phy auto` resolves to `esp32`,
+most boards. A CP2102 board on macOS resets on open regardless, so the host retries HELLO for
+five seconds before switching to 921600. Under it the launchers skip every nl80211 step: `--phy auto` resolves to `esp32`,
 no vif is deleted, no `iw`, `ip`, `nmcli` or `sysctl` runs, and a joiner's `--mac` becomes the
 board station's address. The FRLG hosts inject no beacons of their own, since the board's
 access point beacons itself. No root is needed on macOS.
@@ -154,8 +158,9 @@ decoding a simulated host.
 
 ## Unresolved
 
-- No board has run this firmware yet. Every row above is read from the ESP-IDF source and
-  exercised against the simulated board only.
+- An ESP32-D0WD-V3 (revision 3.1, CP2102 bridge) runs the firmware: HELLO, BAUD to 921600,
+  STATUS and the idle scan answer. Joining, hosting and receiving a console's advertisements
+  are untested on a board.
 - Whether a console accepts the softAP's frames where they cannot match the Switch form: the
   zero-length hidden SSID, the rate order, capability `0x0431` and the WMM element. The rates
   6, 9 and 12 whose absence made a console leave after 3 s are all present.

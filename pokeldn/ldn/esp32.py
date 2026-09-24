@@ -226,6 +226,15 @@ class Radio:
         s.rts = False
         s.open()
         radio = cls(s, log=log)
+        # Opening the port still resets some boards (a CP2102 on macOS); a HELLO sent during the
+        # boot is lost, so retry past it.
+        for attempt in range(5):
+            try:
+                radio.request(CMD_HELLO, b"", MSG_INFO, timeout=1.0)
+                break
+            except RadioError:
+                if attempt == 4:
+                    raise
         radio.hello()
         if fast_baud and fast_baud != baud:
             radio.request(CMD_BAUD, struct.pack("<I", fast_baud), MSG_RESULT)
