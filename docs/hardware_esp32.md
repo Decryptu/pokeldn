@@ -156,11 +156,24 @@ UDP frame from the station reaching the host's port, UDP both ways through two u
 including a fragmented datagram, `HostTransport` on a userspace stack, and the first-contact tool
 decoding a simulated host.
 
+## Measured on a board
+
+An ELEGOO ESP32 board (ESP32-D0WD-V3 revision 3.1, CP2102 bridge, macOS, 921600 baud) has
+completed a FireRed trade as the joiner against a retail Switch 2 hosting:
+
+| stage | measurement |
+|---|---|
+| advertisements | 19 LDN action frames in 2 s on channel 11 from the console's BSSID, decoded to comm id `0x01006fa0233f8000`, 1 of 6 players |
+| LDN join | scan to association in 1.9 s, joined at 2.5 s |
+| Pia | connection established at 3.3 s, the GBA link accepted at 3.4 s |
+| FRLG link loop | 38 to 42 'T' slots per second each way, the rate the rtw88 adapter reaches |
+| trade | the console's Pokemon received intact (species 244, OT id `0xE5BBDF65`); cancel-to-leave, room exit and link close all completed |
+
+The ESP32-WROOM-32E module is built on the ESP32-D0WD-V3.
+
 ## Unresolved
 
-- An ESP32-D0WD-V3 (revision 3.1, CP2102 bridge) runs the firmware: HELLO, BAUD to 921600,
-  STATUS and the idle scan answer. Joining, hosting and receiving a console's advertisements
-  are untested on a board.
+- Hosting on a board: the console associating to the softAP.
 - Whether a console accepts the softAP's frames where they cannot match the Switch form: the
   zero-length hidden SSID, the rate order, capability `0x0431` and the WMM element. The rates
   6, 9 and 12 whose absence made a console leave after 3 s are all present.
