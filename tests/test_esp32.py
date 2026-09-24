@@ -552,3 +552,49 @@ def test_the_sword_gift_walks_its_fragments_on_a_simulated_board(tmp_path, monke
         probe_radio.close()
     assert sorted(seen) == sorted(fragments)
     assert beacon.reassemble(list(seen)) == record
+
+
+def test_the_firered_gift_host_comes_up_and_advertises_on_a_simulated_board(tmp_path, monkeypatch):
+    """bin/frlg_mg_host.py as launched, on a board: no root, the host transport on the board, and
+    its Wonder Card network read back by a scan on a second board."""
+    import threading
+
+    import frlg_mg_host
+    from pokeldn.ldn import transport, userspace_ip
+
+    monkeypatch.setenv("POKELDN_RADIO", "esp32:simulated")
+    keys_file = tmp_path / "prod.keys"
+    keys_file.write_text("".join(f"{k} = {v.hex()}\n" for k, v in KEYS.items()))
+    air = esp32_sim.Air()
+    host_radio = esp32.Radio(esp32_sim.SimulatedBoard(air).host_stream())
+    probe_radio = esp32.Radio(esp32_sim.SimulatedBoard(air).host_stream())
+
+    @contextlib.asynccontextmanager
+    async def host_factory():
+        esp = esp32_wlan.EspFactory(host_radio, port_factory=userspace_ip.userspace_port)
+        try:
+            yield esp
+        finally:
+            esp.router.close()
+
+    wlan.set_factory(host_factory)
+    result = {}
+    host = threading.Thread(target=lambda: result.setdefault("code", frlg_mg_host.main(
+        ["--live", "--keys", str(keys_file), "--channel", "6", "--idle-timeout", "6"])),
+        daemon=True)
+    networks = []
+    try:
+        host.start()
+        time.sleep(3)
+        esp32_wlan.use(radio=probe_radio)
+        deadline = time.time() + 10
+        while not networks and time.time() < deadline:
+            networks = [n for n in trio.run(lambda: ldn.scan(KEYS, channels=[6], dwell_time=0.4))
+                        if n.local_communication_id == transport.HostTransport.LOCAL_COMMUNICATION_ID]
+        host.join(15)
+    finally:
+        wlan.set_factory(None)
+        host_radio.close()
+        probe_radio.close()
+    assert networks and networks[0].application_data
+    assert result.get("code") == 124           # idle timeout: nothing joined, as expected
