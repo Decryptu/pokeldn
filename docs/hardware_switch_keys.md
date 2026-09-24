@@ -1,7 +1,7 @@
 ---
 title: Switch keys on the Pi
 parent: Hardware and setup
-nav_order: 3
+nav_order: 2
 ---
 
 # Installing Switch keys on the Raspberry Pi

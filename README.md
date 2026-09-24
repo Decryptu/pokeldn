@@ -1,7 +1,8 @@
 # pokeldn
 
-A Linux computer hosts or joins Nintendo Switch local wireless (LDN) sessions with retail Pokémon
-games. Nothing is installed on the Switch or Switch 2. Seven games are supported:
+An ESP32 board on USB serial is the radio: pokeldn hosts or joins Nintendo Switch local wireless
+(LDN) sessions with retail Pokémon games through it, from any computer that runs Python. Nothing is
+installed on the Switch or Switch 2. Seven games are supported:
 
 | | FRLG | LGPE | SwSh | BDSP | PLA | SV | PLZA |
 |---|:---:|:---:|:---:|:---:|:---:|:---:|:---:|
@@ -13,7 +14,8 @@ games. Nothing is installed on the Switch or Switch 2. Seven games are supported
 ✓ works on a retail console · ✗ not done · ∅ the game has no such feature over local wireless
 FRLG FireRed/LeafGreen · LGPE Let's Go Pikachu/Eevee · SwSh Sword/Shield · BDSP Brilliant Diamond/Shining Pearl · PLA Legends Arceus · SV Scarlet/Violet · PLZA Legends Z-A
 
-All games share the radio, LDN and Pia layers. FireRed and LeafGreen also run the GBA link protocol
+All games share the radio, LDN and Pia layers, and every one has completed a trade through the
+ESP32 board. FireRed and LeafGreen also run the GBA link protocol
 inside the Switch's emulator.
 
 The full protocol documentation is at [decryptu.github.io/pokeldn](https://decryptu.github.io/pokeldn/).
@@ -33,7 +35,7 @@ reverse engineer the protocols and write parts of the code. Contributors can joi
 ## Demonstration
 https://github.com/user-attachments/assets/b0df878e-67f0-483d-ae81-583cfc2a8692
 
-This demo was recorded using the **ALFA AWUS036ACHM**. The RZ616 is half as fast on average and sometimes deadlocks before gracefully exiting.
+This demo was recorded before the ESP32 radio, with a Linux Wi-Fi card (ALFA AWUS036ACHM).
 
 ## Features
 
@@ -86,60 +88,51 @@ Every game
 
 ## Requirements
 
-- Linux with a compatible Wi-Fi card (see below), or any host (macOS included, no root) with an
-  ESP32 board on USB serial as the radio ([ESP32 radio](docs/hardware_esp32.md))
-- Python 3.11+, and a venv with `requirements.txt` installed
+- A classic ESP32 board on USB (tested: ESP32-D0WD-V3 on an ELEGOO board with a CP2102 bridge),
+  flashed with [`firmware/esp32`](firmware/esp32). It is 2.4 GHz only.
+- Python 3.11+, and a venv with `requirements.txt` installed. No root.
 - A Switch or Switch 2 with one of the games above. FireRed / LeafGreen needs the Direct Corner
   unlocked (about 20 to 40 minutes of play) and at least two `.pk3` files as party members
-- Switch `prod.keys` (default location `~/.switch/prod.keys`)
+- Switch `prod.keys` (default location `~/.switch/prod.keys`; `--keys PATH` elsewhere)
 
 The LDN implementation in [`vendor/LDN`](vendor/LDN) is installed by `pip install -r requirements.txt`.
-The PyPI `ldn` package of the same version lacks the adapter compatibility fixes; do not substitute it.
-
-### Wi-Fi cards
-
-| model | type | driver | reliability |
-|---|---|---|---|
-| TP-Link Archer T3U (`2357:012d`) | external | `rtw88_8822bu` | high |
-| ALFA AWUS036ACHM | external | `mt76x0u` | high |
-| Realtek RTL8821CE | internal PCIe | `rtw88_8821ce` | high |
-| AMD RZ616 | internal M.2 | `mt7921e` | low |
-
-Known problematic: Intel AX200 (`iwlwifi`) and Atheros AR9271 (`ath9k_htc`) cannot be assigned an IP.
-
-See [Adapters](docs/hardware_adapters.md) for the configuration each one needs.
-
-### ESP32 board
-
-A classic ESP32 (tested: ESP32-D0WD-V3 on a CP2102 board) running `firmware/esp32` replaces the
-Wi-Fi card. Every launcher runs on it unchanged with `POKELDN_RADIO=esp32:<serial port>` in the
-environment, and every game above has completed a trade through it. It is 2.4 GHz only.
+The PyPI `ldn` package of the same version lacks the compatibility fixes; do not substitute it.
 
 ## Setup
 
 1. Create a Python venv and install `requirements.txt`.
-2. Keep NetworkManager away from the LDN interfaces. Marking the Wi-Fi card unmanaged is not
-   enough: a join creates a fresh `ldnclient` interface mid-run, NetworkManager grabs it and points
-   wpa_supplicant at it, and the join fails with `[Errno 114] Match already configured`. Exclude the
-   LDN interfaces by name:
+2. Build and flash the firmware with ESP-IDF v6.1 ([ESP32 radio](docs/hardware_esp32.md) has the
+   exact version), then check the board:
 
-   ```
-   # /etc/NetworkManager/conf.d/zz-ldn-unmanaged.conf
-   [keyfile]
-   unmanaged-devices=interface-name:ldnclient;interface-name:ldn;interface-name:ldn-mon;interface-name:ldn-tap
+   ```bash
+   cd firmware/esp32 && idf.py build && idf.py -p /dev/cu.usbserial-0001 flash && cd ../..
+   ./.venv/bin/python tools/ldn/esp32_first_contact.py --port /dev/cu.usbserial-0001
    ```
 
-   then `sudo systemctl restart NetworkManager`. The file must sort last (`zz-*`): some distros ship
-   a later-sorting file that sets `unmanaged-devices=none` and overrides it. Verify with
-   `NetworkManager --print-config | grep unmanaged`.
-3. Ensure you can become root. The entry points require it.
+   It prints the board's HELLO, its counters, and the LDN networks it hears on channels 1, 6 and 11.
+3. Point every entry point at the board:
+
+   ```bash
+   export POKELDN_RADIO=esp32:/dev/cu.usbserial-0001
+   ```
+
+   `POKELDN_ESP32_TRACE=FILE` records every serial message both ways, with the board's counters
+   every 5 s.
+
+### Linux Wi-Fi cards
+
+Before the ESP32, a Linux host drove an AP-capable Wi-Fi card directly (TP-Link Archer T3U, ALFA
+AWUS036ACHM, Realtek RTL8821CE), as root, with NetworkManager kept off the LDN interfaces. That path
+still works without `POKELDN_RADIO` and is no longer developed; [Adapters](docs/hardware_adapters.md)
+has the cards and their configuration.
 
 ## Layout
 
 | | |
 |---|---|
 | [`bin/`](bin) | what you run against a console. FireRed/LeafGreen: `frlg_mg_host.py` (Mystery Gift, Wonder News and native code), `frlg_mg_client.py` (receive a card from a console), `frlg_trade_host.py` (trade and Union Room host), `frlg_trade_join.py` (trade joiner). Let's Go: `lgpe_host.py`, `lgpe_join.py`. Sword/Shield: `swsh_connect.py` (trade), `swsh_gift_host.py` (Mystery Gift), `swsh_join.py` (scan). Brilliant Diamond/Shining Pearl: `bdsp_connect.py` (Union Room and trade), `bdsp_join.py`, `bdsp_pia_probe.py`. Legends Arceus: `pla_host.py` (trade), `pla_join.py`. Scarlet/Violet: `sv_host.py` (trade), `sv_join.py` (trade). Legends Z-A: `za_join.py` (trade) |
-| [`tools/ldn/`](tools/ldn) | the radio, for any target: `ldn_scan.py`, `sniff.py`, `joyspot_probe.py`, `ldn_debug_report.sh` |
+| [`tools/ldn/`](tools/ldn) | the radio, for any target: `esp32_first_contact.py`, `esp32_sniff.py` (a second board as an air sniffer), `ldn_scan.py`; for a Linux card, `sniff.py`, `joyspot_probe.py`, `ldn_debug_report.sh` |
+| [`firmware/esp32/`](firmware/esp32) | the ESP32 radio's firmware (ESP-IDF v6.1) |
 | [`tools/frlg/`](tools/frlg) | reading what a FireRed console sent back, offline: `dump_read.py`, `script_read.py`, `rom_functions.py`, `cartridge_pair.py`, `game_data_read.py`, `english_build.py` |
 | [`tools/switch/`](tools/switch) | reading a retail Switch title's own code, offline: `xci_read.py`, `romfs_read.py`, `nso_read.py`, `nso_relocs.py`, `nso_imports.py`, `rtti_names.py`, `arm64_xref.py`, `arm64_dis.py` |
 | [`pokeldn/`](pokeldn) | the package everything above is made of: `ldn/` the wireless layer, `gba/` the GBA link above it, `frlg/` `lgpe/` `swsh/` `bdsp/` `pla/` `sv/` `za/` the games, `gen8.py` the Pokémon format Sword/Shield and Brilliant Diamond/Shining Pearl share |
@@ -150,9 +143,9 @@ environment, and every game above has completed a trade through it. It is 2.4 GH
 | [`tests/`](tests) | `python -m pytest tests/ -q` |
 | [`vendor/`](vendor) | the bundled LDN implementation and the mt7601u AP-mode driver |
 
-Run the entry points from the repo root: `sudo -E ./.venv/bin/python -u bin/frlg_mg_host.py ...`. They
-put the root on `sys.path` themselves; config files and default output paths resolve against the
-working directory.
+Run the entry points from the repo root with `POKELDN_RADIO` set: `./.venv/bin/python -u
+bin/frlg_mg_host.py ...`. They put the root on `sys.path` themselves; config files and default output
+paths resolve against the working directory.
 
 ## Usage
 
@@ -161,27 +154,26 @@ working directory.
 #### Join a Switch-hosted trade
 
 ```bash
-sudo -E ./.venv/bin/python bin/frlg_trade_join.py --live -o output.pk3 PARTY1.pk3 PARTY2.pk3
+./.venv/bin/python bin/frlg_trade_join.py --live -o output.pk3 PARTY1.pk3 PARTY2.pk3
 ```
 
 #### Host a Direct Corner trade
 
 ```bash
-sudo -E ./.venv/bin/python bin/frlg_trade_host.py -o output.pk3 PARTY1.pk3 PARTY2.pk3
+./.venv/bin/python bin/frlg_trade_host.py -o output.pk3 PARTY1.pk3 PARTY2.pk3
 ```
 
-Linux advertises the group and acts as the trade leader. With the default settings it offers the
+pokeldn advertises the group and acts as the trade leader. With the default settings it offers the
 second supplied party member (`PARTY2.pk3`) and writes the Pokémon received from the Switch to
 `output.pk3`. Host defaults come from `config/host.toml`, then the optional ignored
 `config/host.local.toml`; command-line flags override both.
-`bin/frlg_trade_host.py --print-effective-config` inspects the resolved profile without root or Wi-Fi
-hardware.
+`bin/frlg_trade_host.py --print-effective-config` inspects the resolved profile without a radio.
 
 Then:
 
 1. Run the host command and wait for `Hosting Direct Corner`.
 2. On the Switch, enter the Direct Corner and choose Join Group.
-3. Select the Linux trainer and join. The leader performs its room-entry route automatically; wait
+3. Select pokeldn's trainer and join. The leader performs its room-entry route automatically; wait
    until the host reports that trade selection is active.
 4. On the Switch, select the Pokémon to trade away and accept the confirmation.
 5. After the trade and save sequence returns to the trade menu, wait for the host prompt, then select
@@ -194,15 +186,12 @@ Some optional flags:
 | flag | options | purpose |
 |---|---|---|
 | `--verbose` | | per-packet protocol output; for `--replay` of a capture only, on a live link it stalls the console |
-| `--phy` | phy name, e.g. `phy1` | Wi-Fi PHY selection |
 | `--keys` | `/path/to/prod.keys` | non-default `prod.keys` location |
 | `--slot` | zero-based party index | host party member offered in the trade |
 | `--capture` | output path | JSONL diagnostic capture |
 | `--config` | TOML path | replace the tracked shared host profile |
 | `--local-config` / `--no-local-config` | TOML path / | select or disable the machine-local layer |
 | `--print-effective-config` | | print the redacted resolved profile and exit |
-| `--skip-encryption` | | delegate transmit CCMP to mac80211/hardware; traffic stays encrypted over the air |
-| `--accept-decrypted-ccmp` | | accept driver-decrypted RX plaintext with retained CCMP metadata |
 | `--ot` | Gen III trainer name | override the default trainer name for this run |
 | `--version` | `firered` or `leafgreen` | override the configured game version |
 | `--id` | decimal `TID[:SID]` | override the trainer ID, and optionally the secret ID |
@@ -215,7 +204,7 @@ Some optional flags:
 a different accept list.
 
 ```bash
-sudo -E ./.venv/bin/python bin/frlg_trade_host.py --union-room --union-room-keepalive 120 \
+./.venv/bin/python bin/frlg_trade_host.py --union-room --union-room-keepalive 120 \
   PARTY1.pk3 PARTY2.pk3
 ```
 
@@ -239,7 +228,7 @@ All three entry points start from `DEFAULT_TRAINER` in [`pokeldn/config.py`](pok
 ./.venv/bin/python bin/frlg_trade_join.py --live --id=12345 PARTY1.pk3 PARTY2.pk3
 
 # Set TID to 12345 and SID to 34567 while hosting
-sudo -E ./.venv/bin/python bin/frlg_trade_host.py --live --id=12345:34567 PARTY1.pk3 PARTY2.pk3
+./.venv/bin/python bin/frlg_trade_host.py --live --id=12345:34567 PARTY1.pk3 PARTY2.pk3
 ```
 
 Each component must be between 0 and 65535, and the resulting 32-bit LinkPlayer ID is
@@ -253,12 +242,12 @@ or game-completion defaults that have no CLI flag.
 script. The default payload is the repeatable legendary-beast cutscene.
 
 ```bash
-sudo -E ./.venv/bin/python -u bin/frlg_mg_host.py \
+./.venv/bin/python -u bin/frlg_mg_host.py \
   --gift beast-cutscene --flag-id 1005 \
   --capture mystery-gift.jsonl
 ```
 
-On the Switch choose **Mystery Gift → Wonder Cards → Friend**, then select the Linux host. The save
+On the Switch choose **Mystery Gift → Wonder Cards → Friend**, then select pokeldn's host. The save
 must already have Mystery Gift unlocked. `--make-artifact` writes a `.ram.lst` audit listing of the
 exact card and delivery-script bytes a run sent.
 
@@ -277,8 +266,8 @@ the man in the house in Cerulean City. On the Switch choose **Mystery Gift → W
 Wonder Card host is not listed on that screen, and vice versa.
 
 ```bash
-sudo -E ./.venv/bin/python -u bin/frlg_mg_host.py --news
-sudo -E ./.venv/bin/python -u bin/frlg_mg_host.py --news berry --news-id 7
+./.venv/bin/python -u bin/frlg_mg_host.py --news
+./.venv/bin/python -u bin/frlg_mg_host.py --news berry --news-id 7
 ```
 
 A console keeps news only when it differs from what it already holds; `--news-id N` makes the same
@@ -290,7 +279,7 @@ A Mystery Gift session can run native ARM code on the console and read its live 
 the secret ID and every party Pokémon's PID, IVs and nature.
 
 ```bash
-sudo -E ./.venv/bin/python -u bin/frlg_mg_host.py \
+./.venv/bin/python -u bin/frlg_mg_host.py \
   --buffer-script save-dump --dump-block sav2 --dump-size 64 --dump-file dump.bin
 
 ./.venv/bin/python tools/frlg/dump_read.py dump.bin --block sav2
@@ -306,7 +295,7 @@ field lives in off the flash chip, changes the bytes it means to, recomputes the
 writes the sector back, then bumps one counter so the game loads the edited slot.
 
 ```bash
-sudo -E ./.venv/bin/python -u bin/frlg_mg_host.py \
+./.venv/bin/python -u bin/frlg_mg_host.py \
   --buffer-script flash-patch --flash-id 0 --flash-patch-offset 0x00 \
   --flash-patch-hex cac9c5bfc6bec8ff --write-unsafe
 ```
@@ -325,11 +314,11 @@ one; `--offer echo` hands the console its own back).
 
 ```bash
 # host: the console finds PkCamp and joins
-sudo -E ./.venv/bin/python bin/lgpe_host.py --seconds 600 --player-name PkCamp \
+./.venv/bin/python bin/lgpe_host.py --seconds 600 --player-name PkCamp \
   --first identity.bin --our-trainer 41234:12345 --offer offer.pb7
 
 # join the console's session, trade, and leave the way a console does
-sudo -E ./.venv/bin/python bin/lgpe_join.py --connect --connect-seconds 300 \
+./.venv/bin/python bin/lgpe_join.py --connect --connect-seconds 300 \
   --reliable-payload identity.bin --ack-peer-clock --ack-re-announce \
   --our-trainer 41234:12345 --offer offer.pb7 --leave-after 15
 ```
@@ -343,7 +332,7 @@ Trading joins the console's Link Trade session. The console hosts on Y-Comm → 
 local communication; its local communication id is filled at runtime, so the first run is a scan:
 
 ```bash
-sudo -E ./.venv/bin/python bin/swsh_join.py --scan-only
+./.venv/bin/python bin/swsh_join.py --scan-only
 ```
 
 Everything each advertisement carries is written to `scratchpad/swsh_net_facts.json`. The trade
@@ -355,9 +344,9 @@ Mystery Gift needs no session: the gift screen scans, and a distributor advertis
 advertise data carries the card.
 
 ```bash
-sudo -E ./.venv/bin/python bin/swsh_gift_host.py --species 25 --level 25 \
+./.venv/bin/python bin/swsh_gift_host.py --species 25 --level 25 \
   --move1 84 --move2 45 --move3 86 --move4 98 --nickname PKCAMP --ot POKELDN --seconds 300
-sudo -E ./.venv/bin/python bin/swsh_gift_host.py --record card.wc8 --seconds 300
+./.venv/bin/python bin/swsh_gift_host.py --record card.wc8 --seconds 300
 ```
 
 On the console: Mystery Gift → receive a gift → via local wireless. `--set FIELD=VALUE`
@@ -375,19 +364,22 @@ in the Union Room, standing clear of the walls.
 
 ```bash
 # see the session without joining it
-sudo -E ./.venv/bin/python tools/ldn/ldn_scan.py --channels 1,6,11,36,40,44,48 --dwell 0.8
+./.venv/bin/python tools/ldn/ldn_scan.py --channels 1,6,11 --dwell 0.8
 
 # walk in, greet the player, and trade
-sudo -E ./.venv/bin/python bin/bdsp_connect.py --channels 1,6,11 --count 9 --connect 5 --join 6 \
+./.venv/bin/python bin/bdsp_connect.py --channels 1,6,11 --count 9 --connect 5 --join 6 \
   --hold 420 --reliable-ack --reliable-sweep 3 --room-walk 15 --room-pattern fixed \
   --room-walk-steps 8 --join-avatar 0 --answer-requests --state 0 --recruiting 0 \
   --answer-talk --can-talk 0 --initiate-talk --initiate-delay 3 \
-  --after-approach 0x06:0001000000 --trade-reply \
+  --after-approach 0x06:0001000000 --trade-reply --complete-trade \
   --trade-template offer.pb8 --trade-nickname PKCAMP --src-var 0x2B7F4C12
 ```
 
 A join is about a one-in-eight shot per attempt and `--room-pattern fixed` bursts fifteen. Use a
-fresh `--src-var` on every run: the console keeps an id it has seen as one of its stations. When the character has appeared and finished walking, the player
+fresh `--src-var` on every run: the console keeps an id it has seen as one of its stations. After a
+run is stopped by hand, the player leaves and re-enters the Union Room before the next one.
+`--complete-trade` lets the console write its save; without it the trade stops at the last
+confirmation. When the character has appeared and finished walking, the player
 opens Y → the communication menu → trade Pokémon, and the greeting comes up on its own. See
 [Brilliant Diamond and Shining Pearl](docs/bdsp.md).
 
@@ -398,7 +390,7 @@ while it hosts, so pokeldn hosts and the console joins by link code.
 
 ```bash
 # host, offering a record built from nothing
-sudo -E ./.venv/bin/python bin/pla_host.py --code 00000000 --channel 6 --seconds 1800 \
+./.venv/bin/python bin/pla_host.py --code 00000000 --channel 6 --seconds 1800 \
   --session-update --sustain --clock --data-exchange --data-exchange-name POKELDN \
   --data-exchange-id 11223344 --game-channel --trade-box --trade-box-record offer.pa8 \
   --trade-box-collect records/
@@ -422,7 +414,7 @@ The console's offline Link Trade search alternates scanning and hosting, so poke
 console joins on its own.
 
 ```bash
-sudo -E ./.venv/bin/python bin/sv_host.py --seconds 240 --player-name RyuPlayer \
+./.venv/bin/python bin/sv_host.py --seconds 240 --player-name RyuPlayer \
   --rtt-probe --net-property --clock --net-stations 4 --scarlet-response \
   --record-set records/ --announce --announce-delay 5.25 \
   --send-at 6.00:0x7c:1:b90101b902b90280800001 \
@@ -446,7 +438,7 @@ See [Scarlet and Violet](docs/sv.md).
 The console's Link Trade search hosts a network of its own, so pokeldn joins it.
 
 ```bash
-sudo -E ./.venv/bin/python bin/za_join.py --channels 1,6,11 --dwell 0.35 --seconds 900 \
+./.venv/bin/python bin/za_join.py --channels 1,6,11 --dwell 0.35 --seconds 900 \
   --hold 450 --quiet-seat 25 --connect-timeout 6 --game --trade-offer offer.bin --offer-delay 4
 
 # the same joiner against an emulated console over the LAN, no radio and no root
@@ -454,9 +446,9 @@ sudo -E ./.venv/bin/python bin/za_join.py --channels 1,6,11 --dwell 0.35 --secon
   --comm-id ffffffffffffffff --seconds 480 --hold 450 --game --trade-offer offer.bin --offer-delay 4
 ```
 
-On the console: Link Trade → local communication → search with code 00000000. The console refuses
-most associations while its search alternates between scanning and hosting, and the joiner keeps
-rescanning until one seats, which can take several minutes. Once the trade box appears, offer a
+On the console: Link Trade → local communication → search with code 00000000. The console's search
+alternates between scanning and hosting; the ESP32 board usually seats on the first scan, and the
+joiner rescans until one seats. Once the trade box appears, offer a
 Pokémon and confirm when the joiner's shows. The joiner stays seated after a trade and answers the
 next offer; back out with B.
 
@@ -467,9 +459,9 @@ See [Legends Z-A](docs/za.md).
 ### Diagnostics
 
 - `tools/ldn/ldn_scan.py` prints discoverable LDN networks and decoded FRLG application data.
-- `tools/ldn/sniff.py` captures advertisement and management traffic from a monitor-capable radio.
-- `tools/ldn/ldn_debug_report.sh` records local radio, interface, route and NetworkManager state.
-- `--capture FILE` on either host writes the protocol trace as JSONL.
+- `tools/ldn/esp32_sniff.py` makes a second ESP32 board an air sniffer for one MAC on one channel.
+- `POKELDN_ESP32_TRACE=FILE` records the board's serial traffic and counters.
+- `--capture FILE` on every entry point writes the protocol trace as JSONL.
 
 See [Host implementation](docs/frlg_host.md) for the component boundaries, protocol flow, timing
 ownership and shutdown sequence.

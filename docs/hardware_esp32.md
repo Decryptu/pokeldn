@@ -1,7 +1,7 @@
 ---
 title: ESP32 radio
 parent: Hardware and setup
-nav_order: 4
+nav_order: 1
 ---
 
 # ESP32 radio

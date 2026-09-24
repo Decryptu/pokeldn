@@ -1,10 +1,19 @@
 ---
 title: Adapters
 parent: Hardware and setup
-nav_order: 1
+nav_order: 3
 ---
 
 # Wi-Fi adapters
+
+A Linux host can drive an AP-capable Wi-Fi card directly, as root, in place of the
+[ESP32 radio](hardware_esp32.md). This path is no longer developed.
+
+| symptom | cause |
+|---|---|
+| a hypervisor-style USB disconnect at AP start | the USB mode switch (below) |
+| a silent host | `accept_decrypted_ccmp` unset |
+| `failed to get tx report from firmware` in `dmesg` | the host's own teardown |
 
 ## Tested cards
 

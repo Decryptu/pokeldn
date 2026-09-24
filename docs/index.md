@@ -5,8 +5,8 @@ nav_order: 1
 
 # pokeldn
 
-pokeldn is a Linux implementation of Nintendo Switch local wireless (LDN) that speaks to Pokemon
-games running on retail Switch hardware. These pages document the protocols involved, with the
+pokeldn is an implementation of Nintendo Switch local wireless (LDN) that speaks to Pokemon games
+running on retail Switch hardware, through an ESP32 board on USB serial as its radio. These pages document the protocols involved, with the
 decompilation citations, disassembly addresses and hardware measurements behind each finding.
 
 Installation, the command-line reference and the code layout are in the
@@ -45,7 +45,7 @@ Legends Arceus, in Scarlet and Violet and in Legends Z-A.
 | [Legends Arceus](pla.md) | Pia header version 11, the trade flow, and the record a host composes. |
 | [Scarlet and Violet](sv.md) | Pia header version 11, the reliable streams, and the trade a host runs. |
 | [Legends Z-A](za.md) | Pia header version 16, the game's twenty trade messages, and the trade a joiner runs. |
-| [Hardware and setup](hardware.md) | Adapters, the ESP32 radio, Raspberry Pi deployment, Switch keys. |
+| [Hardware and setup](hardware.md) | The ESP32 radio, Switch keys, and the older Linux Wi-Fi cards. |
 
 ## Credits
 
