@@ -289,9 +289,10 @@ def test_the_security_phase_answer_mirrors_the_state_that_advances_theirs():
     assert m(room.TRADE_STATE_INIT) == room.TRADE_STATE_WAIT
     assert m(room.TRADE_STATE_WAIT) == room.TRADE_STATE_WAIT
     assert m(room.TRADE_STATE_SEND_POKE) == room.TRADE_STATE_SEND_POKE
-    assert m(room.TRADE_STATE_WAIT_POKE) == room.TRADE_STATE_WAIT_POKE
+    # a console that is CHILD (our offer the rarer, e.g. a legendary) says WAIT_POKE last and then
+    # waits in SEND_READYOK for a peer state of 5 or 6; an echoed WAIT_POKE deadlocks it
     # from SEND_READYOK on only the arrival matters, so it stops chasing
-    for theirs in (5, 6, 7, 8, 9, 10):
+    for theirs in (4, 5, 6, 7, 8, 9, 10):
         assert m(theirs) == room.TRADE_STATE_SEND_READYOK
     # and the security answer sets the byte the console's receiver gates on
     assert room.build_trade_ready_ok(room.TRADE_STATE_WAIT, is_trade_ok=1) \

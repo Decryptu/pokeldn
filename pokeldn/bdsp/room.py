@@ -435,27 +435,35 @@ TRADE_STATE_NAMES = {
 def mirror_trade_state(their_state):
     """-> the state to claim back, so that THEIR machine advances.
 
-    `TradeParentStateModel$$StateProc` [main.bin 0x1cd1790] switches on `currentState - 2` through
-    a ten-entry table at 0x3b8d50b, and every case advances on something WE control:
+    `TradeParentStateModel$$StateProc` [1.3.0 main.bin 0x1c23350] switches on `currentState - 2`
+    through a ten-entry table at 0x3d80f2f. `CreateTradeStateModel` [0x1c24620] builds this class
+    for both roles; `TradeChildStateModel` is dead code (its overrides are bare `ret`s).
 
         2 WAIT          targetState == WAIT          -> 3 SEND_POKE
-        3 SEND_POKE     sends its own Pokemon        -> 4 WAIT_POKE
+        3 SEND_POKE     waitRndTime runs out, sends its own Pokemon     -> 4 WAIT_POKE
         4 WAIT_POKE     targetPokeData is non-null   -> 5 SEND_READYOK   (our NetTradePokeData)
-        5 SEND_READYOK  tradeParent == PARENT        -> 6 WAIT_READYOK
-        6 WAIT_READYOK  waitRndTime runs out AND targetIsTradeReadyOk   -> 7 START_WRITE_SAVE
+        5 SEND_READYOK  tradeParent == PARENT: send its state           -> 6 WAIT_READYOK
+        6 WAIT_READYOK  targetIsTradeReadyOk         -> 7 START_WRITE_SAVE
         7 START_WRITE_SAVE  WriteSaveData -> ReplacePoke                -> 8 WRITEING_SAVE
         8 WRITEING_SAVE     CheckReplacePokeData                        -> 10 END
        10 END          PlayerSave, close the window, currentState = 0
 
-    So INIT is answered with WAIT rather than echoed: `ReciveState`'s INIT case sets their state to
-    WAIT and records ours as `targetState` in the same call, so a WAIT here saves the round trip
-    that an echo would cost. From SEND_READYOK on, the value stops mattering and only the ARRIVAL
-    does - state 6 sets `targetIsTradeReadyOk` for any message that reaches it - so it is held at
-    SEND_READYOK rather than chasing states we cannot be in.
+    `tradeParent` comes from `TradeSecurityController$$CheckPokeRarity` [0x1c25060], run when our
+    Pokemon arrives: the side offering the rarer Pokemon (very rare 3, legendary 2, sub-legendary 1,
+    else 0) is PARENT, a tie goes to the recruiting side. A console that is CHILD sits in
+    SEND_READYOK, silent, until `ReciveState` [0x1c24f10] sees a peer state of 5 or 6. Its last word
+    is the WAIT_POKE that `SetTragetPokeData` sends, so WAIT_POKE is answered with SEND_READYOK:
+    echoing it deadlocks every trade where our offer is the rarer one. docs/bdsp_trade.md.
+
+    INIT is answered with WAIT rather than echoed: `ReciveState`'s INIT case sets their state to
+    WAIT and records ours as `targetState` in the same call. From SEND_READYOK on only the arrival
+    matters (state 6 sets `targetIsTradeReadyOk` for any message), so it is held at SEND_READYOK.
+    A SEND_READYOK that reaches a console still in WAIT_POKE or a PARENT in SEND_READYOK is stored
+    and ignored; the once-a-second repeat lands the next one.
     """
     if their_state <= TRADE_STATE_INIT:
         return TRADE_STATE_WAIT
-    if their_state >= TRADE_STATE_SEND_READYOK:
+    if their_state >= TRADE_STATE_WAIT_POKE:
         return TRADE_STATE_SEND_READYOK
     return their_state
 

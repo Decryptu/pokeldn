@@ -1240,8 +1240,8 @@ async def main_async(args):
             ONE ANSWER PER MESSAGE IS NOT ENOUGH. `TradeParentStateModel$$StateProc`'s
             WAIT_READYOK case only leaves that state when `targetIsTradeReadyOk` is set, and
             `TradeSecurityController$$ReciveState` sets it when a message ARRIVES while the console
-            is in state 6 - a window it enters on its own clock (`waitRndTime` counts down first).
-            Nothing we send in reply to something else is guaranteed to land inside it.
+            is in state 6; a CHILD console likewise leaves SEND_READYOK only on a message arriving
+            there. Nothing we send in reply to something else is guaranteed to land inside either.
             """
             while True:
                 await trio.sleep(args.security_repeat)

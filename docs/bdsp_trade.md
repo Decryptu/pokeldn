@@ -77,6 +77,46 @@ arguments, which feeds `manager.targetPokemonParam` (+0x48, set when the player 
 full-screen view) into the security controller. If the player has not confirmed, the field is null
 and WAIT_POKE never ends whatever is sent.
 
+### Who leads: the rarer Pokemon
+
+`CreateTradeStateModel` [1.3.0 main.bin 0x1c24620] builds a `TradeParentStateModel` for both roles;
+`TradeChildStateModel`'s overrides are bare `ret`s. The role is the model's `tradeParent` (+0x94),
+`TradeParent {NONE 0, PARENT 1, CHILD 2}`, written by `TradeSecurityController$$CheckPokeRarity`
+[0x1c25060] when the peer's Pokemon arrives (`UnionTradeManager$$SetSecurityTradeParam`
+[0x1c34750]). It compares `Dpr.SubContents.Utils$$GetPokeRarityNum` [0x1cbe560] of the two species:
+
+    POKE_RARITY_VERY_RARE 3, POKE_RARITY_LEGEND_RARE 2, POKE_RARITY_SUB_LEGEND_RARE 1, anything else 0
+    mine > theirs   PARENT
+    mine < theirs   CHILD
+    equal           PARENT if isRecruiment (+0x38), else CHILD
+
+`TradeParentStateModel$$StateProc` [0x1c23350], table at 0x3d80f2f:
+
+    2 WAIT            targetState == WAIT                    -> 3
+    3 SEND_POKE       waitRndTime runs out; SendPokeData     -> 4
+    4 WAIT_POKE       targetPokeData non-null                -> 5
+    5 SEND_READYOK    PARENT only: send own state            -> 6
+    6 WAIT_READYOK    targetIsTradeReadyOk; PARENT sends     -> 7
+    7 START_WRITE_SAVE  WriteSaveData                        -> 8
+    8 WRITEING_SAVE     CheckReplacePokeData                 -> 10
+
+`TradeSecurityController$$ReciveState` [0x1c24f10] switches on the console's own state, table at
+0x3d80f39:
+
+    1 INIT            -> WAIT, send own state
+    3 SEND_POKE       send own state
+    5 SEND_READYOK    CHILD only: peer 5 -> send, go to 6; peer 6 -> send, go to 6, set targetIsTradeReadyOk
+    6 WAIT_READYOK    set targetIsTradeReadyOk
+    every case        targetState = the peer's byte
+
+`TradeStateModel$$SetTragetPokeData` [0x1c24d70] ends by sending the console's state, which is
+WAIT_POKE at that moment. A CHILD console then moves to SEND_READYOK and says nothing more until a
+peer state of 5 or 6 arrives. A client that echoes WAIT_POKE deadlocks there. In the completed trades
+both offers were ordinary species and the console, the recruiting side, was PARENT; a client offering
+a species rarer than the console's own offer (a legendary or a mythical against an ordinary one)
+makes the console CHILD. `room.mirror_trade_state` answers WAIT_POKE with SEND_READYOK, which a
+console in either role accepts. The CHILD path has not yet completed on hardware.
+
 `BoxWindow.NetTradePhase.WaitSave` writes nothing. The phase enum reads `None, WaitSave,
 PlayerSelecting, ...` and `ToNextPhase(0)` walks it by increment; the coroutine that phase runs,
 `BoxWindow.<WaitTradeSave>d__203$$MoveNext`, reads `FieldCommonParam[0xEB]`, multiplies it by 0.001f
@@ -105,9 +145,9 @@ peer in them. The console sends fifteen game messages across that window, every 
 console-side. The station must not leave: a drop in this window lands the console between
 `FirstSave` and `SecondSave`, the state the penalty punishes.
 
-Leaving WAIT_READYOK needs a message to arrive inside a window the console opens on its own clock
-(`waitRndTime` counts down first). The once-a-second repeat of the client's own state covers it;
-that the repeat is what trips it is inferred, not measured. The window was 28.9 s and 28.3 s in two
+Leaving WAIT_READYOK needs one more message from the peer after the console reaches it; the
+once-a-second repeat of the client's own state supplies it. `waitRndTime` counts down in SEND_POKE,
+before the console sends its Pokemon. The window was 28.9 s and 28.3 s in two
 completed trades.
 
 `NetDataReturnSelectData` (id 69) announces the console's return to its select window after a
