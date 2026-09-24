@@ -2,6 +2,7 @@
    The message set is in docs/hardware_esp32.md and pokeldn/ldn/esp32.py. */
 #pragma once
 
+#include <stdbool.h>
 #include <stddef.h>
 #include <stdint.h>
 
@@ -13,6 +14,9 @@ void wire_start(wire_handler_t handler);
 /* Queues one message; safe from any task and from Wi-Fi callbacks. Drops (and counts) when the
    queue is full rather than blocking the caller. */
 void wire_send(uint8_t type, const void *head, size_t head_len, const void *body, size_t body_len);
+/* The same, waiting up to `ticks` for room in the queue; false if there was none. */
+bool wire_send_wait(uint8_t type, const void *head, size_t head_len, const void *body,
+                    size_t body_len, uint32_t ticks);
 void wire_log(const char *format, ...) __attribute__((format(printf, 1, 2)));
 void wire_set_baud(uint32_t baud);
 uint32_t wire_dropped(void);

@@ -28,13 +28,13 @@
 enum {
     CMD_HELLO = 0x01, CMD_BAUD = 0x02, CMD_CHANNEL = 0x03, CMD_STA_JOIN = 0x04, CMD_STOP = 0x05,
     CMD_AP_START = 0x06, CMD_AP_KICK = 0x07, CMD_ETH_TX = 0x08, CMD_RAW_TX = 0x09,
-    CMD_SNIFF = 0x0A, CMD_STATUS = 0x0B,
+    CMD_SNIFF = 0x0A, CMD_STATUS = 0x0B, CMD_BENCH = 0x0C,
 };
 enum {
     MSG_INFO = 0x81, MSG_RESULT = 0x82, MSG_RX_MGMT = 0x84, MSG_RX_ETH = 0x85, MSG_LINK = 0x86,
-    MSG_STA_JOINED = 0x87, MSG_STA_LEFT = 0x88, MSG_STATUS = 0x89,
+    MSG_STA_JOINED = 0x87, MSG_STA_LEFT = 0x88, MSG_STATUS = 0x89, MSG_BENCH = 0x8A,
 };
-enum { AP_FLAG_STOCK_JOIN = 1, AP_FLAG_NO_QOS = 2 };
+enum { AP_FLAG_STOCK_JOIN = 1, AP_FLAG_NO_QOS = 2, AP_FLAG_NO_DATA_TRACE = 4 };
 enum mode { MODE_IDLE, MODE_STA_JOINING, MODE_STA, MODE_AP, MODE_SNIFF };
 
 static const uint8_t BROADCAST[6] = {0xff, 0xff, 0xff, 0xff, 0xff, 0xff};
@@ -96,7 +96,8 @@ static void promiscuous_rx(void *buffer, wifi_promiscuous_pkt_type_t type)
         if (!memcmp(frame + 4, s_peer, 6)) {
             /* A station's frame to our BSSID: its first 40 bytes (802.11 and CCMP headers), for
                the trace; the driver delivers the frame itself through RX_ETH. */
-            wire_send(MSG_RX_MGMT, head, 2, frame, length < 40 ? length : 40);
+            if (!(s_ap_flags & AP_FLAG_NO_DATA_TRACE))
+                wire_send(MSG_RX_MGMT, head, 2, frame, length < 40 ? length : 40);
         } else if ((frame[1] & 3) == 0 && !memcmp(frame + 16, s_peer, 6) &&
                    memcmp(frame + 10, s_peer, 6) && length <= 1600) {
             /* A station's broadcast sent straight to the BSS (no DS bits, group key): an AP drops
@@ -391,6 +392,27 @@ static void send_status(void)
     wire_send(MSG_STATUS, text, len, NULL, 0);
 }
 
+/* BENCH: u32 bytes, u16 message size. Random payloads (like the ciphertext a run carries, for the
+   same COBS overhead) as fast as the UART takes them, each led by a u32 sequence, then one led by
+   0xffffffff carrying the microseconds the board spent. Nothing is dropped: the task waits for the
+   queue. docs/hardware_esp32.md, The serial ceiling. */
+static void bench_task(void *arg)
+{
+    const uint32_t total = ((uint32_t *)arg)[0], size = ((uint32_t *)arg)[1];
+    free(arg);
+    static uint8_t body[WIRE_MAX_PAYLOAD];
+    const int64_t started = esp_timer_get_time();
+    uint32_t seq = 0;
+    for (uint32_t sent = 0; sent < total; sent += size, ++seq) {
+        memcpy(body, &seq, 4);
+        esp_fill_random(body + 4, size - 4);
+        while (!wire_send_wait(MSG_BENCH, NULL, 0, body, size, pdMS_TO_TICKS(100))) {}
+    }
+    const uint32_t done[2] = {UINT32_MAX, (uint32_t)(esp_timer_get_time() - started)};
+    while (!wire_send_wait(MSG_BENCH, NULL, 0, done, sizeof(done), pdMS_TO_TICKS(100))) {}
+    vTaskDelete(NULL);
+}
+
 static void send_info(void)
 {
     uint8_t head[1 + 6 + 6 + 1];
@@ -470,6 +492,18 @@ static void command(uint8_t type, const uint8_t *p, size_t n)
         break;
     }
     case CMD_STATUS: send_status(); break;
+    case CMD_BENCH: {
+        uint32_t *arg = malloc(8);
+        uint16_t size;
+        if (n != 6 || !arg) { free(arg); result(type, ESP_ERR_INVALID_SIZE); break; }
+        memcpy(&arg[0], p, 4);
+        memcpy(&size, p + 4, 2);
+        arg[1] = size;
+        if (size < 8 || size > WIRE_MAX_PAYLOAD) { free(arg); result(type, ESP_ERR_INVALID_ARG); break; }
+        result(type, 0);
+        xTaskCreatePinnedToCore(bench_task, "bench", 3072, arg, 5, NULL, 0);
+        break;
+    }
     default: result(type, ESP_ERR_NOT_SUPPORTED);
     }
 }

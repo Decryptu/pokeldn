@@ -598,3 +598,50 @@ def test_the_firered_gift_host_comes_up_and_advertises_on_a_simulated_board(tmp_
         probe_radio.close()
     assert networks and networks[0].application_data
     assert result.get("code") == 124           # idle timeout: nothing joined, as expected
+
+
+def test_the_bench_counts_every_message_from_a_simulated_board():
+    radio = esp32.Radio(esp32_sim.SimulatedBoard(esp32_sim.Air()).host_stream())
+    try:
+        r = radio.bench(100_000, 1400, timeout=10)
+    finally:
+        radio.close()
+    assert r["messages"] == 72 and r["missing"] == 0 and r["rejected"] == 0
+    assert r["bytes"] == 72 * 1400
+
+
+def test_the_fast_rate_comes_from_the_environment(monkeypatch):
+    """POKELDN_ESP32_BAUD picks the rate open_serial switches to; the default is 921600."""
+    import serial
+
+    rates = []
+
+    class Port:
+        def __init__(self):
+            self.board = esp32_sim.SimulatedBoard(esp32_sim.Air()).host_stream()
+            self._baud = 115200
+
+        baudrate = property(lambda self: self._baud,
+                            lambda self, v: (setattr(self, "_baud", v), rates.append(v)))
+
+        def open(self):
+            pass
+
+        def read(self, n):
+            return self.board.read(n)
+
+        def write(self, data):
+            self.board.write(data)
+
+        def flush(self):
+            pass
+
+        def close(self):
+            self.board.close()
+
+    monkeypatch.setattr(serial, "Serial", Port)
+    monkeypatch.setenv("POKELDN_ESP32_BAUD", "2000000")
+    esp32.Radio.open_serial("sim").close()
+    monkeypatch.delenv("POKELDN_ESP32_BAUD")
+    esp32.Radio.open_serial("sim").close()
+    assert rates[-1] == 921600 and 2000000 in rates

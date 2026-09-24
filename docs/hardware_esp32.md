@@ -78,12 +78,13 @@ Anything before a `0x00`, including the ROM's boot text, is discarded by the che
 | `0x03` CHANNEL | host | u8 channel; idle only |
 | `0x04` STA_JOIN | host | u8 channel, 6 BSSID, 32 SSID (the LDN SSID's hex text), 16 key, 6 station MAC (zero = random) |
 | `0x05` STOP | host | none; back to idle, keys cleared |
-| `0x06` AP_START | host | u8 channel, 6 BSSID, 32 SSID, 16 key, u8 max stations, u8 flags |
+| `0x06` AP_START | host | u8 channel, 6 BSSID, 32 SSID, 16 key, u8 max stations, u8 flags: 1 the stock association and 4-way handshake, 2 no QoS for the station, 4 no 40-byte copy of each station data frame |
 | `0x07` AP_KICK | host | 6 MAC, u16 reason; deauthenticates |
 | `0x08` ETH_TX | host | an Ethernet frame; the driver encrypts it with the station's or the group key. A full driver queue (`ESP_ERR_NO_MEM`) is retried every 1 ms for up to 100 ms before the frame counts as failed; a frame to a station that has left fails at once with `0x3015` (`ESP_ERR_WIFI_NOT_ASSOC`) |
 | `0x09` RAW_TX | host | an 802.11 frame without FCS (`esp_wifi_80211_tx`); used for advertisements |
 | `0x0A` SNIFF | host | u8 channel, 6 MAC; every management and data frame to or from it, whole, as RX_MGMT |
 | `0x0B` STATUS | host | none; answered by STATUS |
+| `0x0C` BENCH | host | u32 bytes, u16 message size (8 to 1600); RESULT, then BENCH messages as fast as the UART takes them |
 | `0x81` INFO | board | u8 protocol version (1), 6 station MAC, 6 AP MAC, u8 chip revision, text |
 | `0x82` RESULT | board | u8 command, i32 `esp_err_t` |
 | `0x83` LOG | board | text |
@@ -92,7 +93,8 @@ Anything before a `0x00`, including the ROM's boot text, is discarded by the che
 | `0x86` LINK | board | u8 up, u16 reason, 6 MAC; reason `0xFFFF` no association in 15 s, `0xFFFE` keys refused |
 | `0x87` STA_JOINED | board | 6 MAC, u8 AID, i8 key install result, u8 port opened |
 | `0x88` STA_LEFT | board | 6 MAC, u16 reason |
-| `0x89` STATUS | board | text counters, including the driver's TX-done `tx_acked` and `tx_unacked`, `tx_eth_retried` (ETH_TX calls that found the driver's queue full) and `wire_dropped` (board-to-host messages lost to a full queue of 128); sent unasked every 2 s while hosting, and polled every 5 s by a host that writes a trace |
+| `0x89` STATUS | board | text counters, including the driver's TX-done `tx_acked` and `tx_unacked`, `tx_eth_retried` (ETH_TX calls that found the driver's queue full) and `wire_dropped` (board-to-host messages dropped: 384 queued, or free heap under 64 KB); sent unasked every 2 s while hosting, and polled every 5 s by a host that writes a trace |
+| `0x8A` BENCH | board | u32 sequence and random bytes; the last carries sequence `0xFFFFFFFF` and the u32 microseconds the board spent |
 
 EtherType `0x88B7` frames are LDN authentication; `esp32_wlan` turns them into the LDN
 library's `CustomFrameEvent`. Every other Ethernet frame goes to an L2 port:
@@ -104,6 +106,30 @@ library's `CustomFrameEvent`. Every other Ethernet frame goes to an L2 port:
 | `MemoryPort` | tests | none |
 
 `POKELDN_L2=tap` or `POKELDN_L2=userspace` overrides the platform's choice.
+
+## The serial ceiling
+
+At 921600 baud, 8N1, the board-to-host line carries 92.16 KB/s. A message costs its payload
+plus a type byte, a four-byte CRC, the COBS overhead (one byte per 254 and the delimiter) and,
+for RX_MGMT, two bytes of channel and RSSI. Pia payloads are AES-GCM ciphertext and do not
+compress.
+
+| traffic | what it costs the line |
+|---|---|
+| a station's data frame, hosting | the frame as RX_ETH, and 48 bytes for the 40-byte RX_MGMT copy unless AP flag 4 is set (`POKELDN_ESP32_AP_FLAGS=4`) |
+| a station's data frame, joined | the frame as RX_ETH only; the sniffer passes management frames alone in station mode |
+| an LDN advertisement nearby | the whole action frame, about ten a second per network |
+
+A Scarlet host's opening burst, as the board's station, took free heap from 171 KB to 96 KB with
+128 messages queued and dropped 337 more. The queue now holds 384 and drops only below 64 KB of
+free heap.
+
+`POKELDN_ESP32_BAUD` sets the rate `open_serial` switches to, 921600 by default. The ESP32 UART
+runs to 5 Mbaud; the USB bridge sets the limit. `tools/ldn/esp32_bench.py --port PORT --bauds
+921600,1500000,2000000,3000000` measures it with the board alone: BENCH streams random payloads,
+and the tool prints the rate, the messages lost and the frames that failed their checksum at each
+rate. Which bridge chip the ELEGOO board carries (CP2102 or CP2102N) and the rate it reaches are
+unmeasured.
 
 ## The userspace stack
 
@@ -139,7 +165,7 @@ Linux and on macOS (Apple silicon) to the same image size.
     idf.py -p <port> flash
 
 The console output is off (`CONFIG_ESP_CONSOLE_NONE`): UART0 is the host link. The image is
-0x8ff30 bytes.
+0x90540 bytes.
 
 The release build runs with `CONFIG_ESP_CONSOLE_NONE`, which leaves UART0 unrouted: the
 firmware assigns GPIO1 and GPIO3 itself (`uart_set_pin`), or the board boots and never answers.
@@ -249,5 +275,6 @@ never answered until the player leaves and re-enters the room.
 - A sniffer board's counts of another board's frames undercount while the sniffer's own serial
   link is saturated; they are not evidence of loss on the air.
 - Serial latency at 921600 baud against the Z-A seat race.
+- The highest rate the board's USB bridge carries without checksum failures (`esp32_bench.py`).
 - easyworld reports that a classic ESP32 must be the ESP32-WROOM-32E module and that the older
   ESP32-WROOM-32 does not trade reliably.

@@ -7,6 +7,7 @@
 #include <string.h>
 
 #include "driver/uart.h"
+#include "esp_system.h"
 #include "freertos/FreeRTOS.h"
 #include "freertos/queue.h"
 #include "freertos/task.h"
@@ -18,6 +19,12 @@ typedef struct {
     uint16_t length;
     uint8_t bytes[];   /* type, payload */
 } message_t;
+
+/* The queue drops on memory, not on count: 128 entries filled at 96 KB of free heap during a
+   Scarlet burst and dropped 337 messages. The floor keeps room for the driver's RX buffers.
+   docs/hardware_esp32.md, The serial ceiling. */
+#define WIRE_QUEUE_LENGTH 384
+#define WIRE_HEAP_FLOOR (64 * 1024)
 
 static QueueHandle_t s_out;
 static wire_handler_t s_handler;
@@ -33,17 +40,25 @@ static uint32_t crc32(const uint8_t *p, size_t n)
     return ~crc;
 }
 
-void wire_send(uint8_t type, const void *head, size_t head_len, const void *body, size_t body_len)
+bool wire_send_wait(uint8_t type, const void *head, size_t head_len, const void *body,
+                    size_t body_len, uint32_t ticks)
 {
     const size_t length = 1 + head_len + body_len;
-    if (length > WIRE_MAX_PAYLOAD + 1) { atomic_fetch_add(&s_dropped, 1); return; }
+    if (length > WIRE_MAX_PAYLOAD + 1) return false;
+    if (esp_get_free_heap_size() < WIRE_HEAP_FLOOR + length) return false;
     message_t *m = malloc(sizeof(*m) + length);
-    if (!m) { atomic_fetch_add(&s_dropped, 1); return; }
+    if (!m) return false;
     m->length = length;
     m->bytes[0] = type;
     if (head_len) memcpy(m->bytes + 1, head, head_len);
     if (body_len) memcpy(m->bytes + 1 + head_len, body, body_len);
-    if (xQueueSend(s_out, &m, 0) != pdTRUE) { free(m); atomic_fetch_add(&s_dropped, 1); }
+    if (xQueueSend(s_out, &m, ticks) != pdTRUE) { free(m); return false; }
+    return true;
+}
+
+void wire_send(uint8_t type, const void *head, size_t head_len, const void *body, size_t body_len)
+{
+    if (!wire_send_wait(type, head, head_len, body, body_len, 0)) atomic_fetch_add(&s_dropped, 1);
 }
 
 void wire_log(const char *format, ...)
@@ -157,7 +172,7 @@ void wire_start(wire_handler_t handler)
     ESP_ERROR_CHECK(uart_param_config(WIRE_UART, &config));
     /* With CONFIG_ESP_CONSOLE_NONE nothing routes UART0 to GPIO1/3; the board stays mute without this. */
     ESP_ERROR_CHECK(uart_set_pin(WIRE_UART, 1, 3, UART_PIN_NO_CHANGE, UART_PIN_NO_CHANGE));
-    s_out = xQueueCreate(128, sizeof(message_t *));
+    s_out = xQueueCreate(WIRE_QUEUE_LENGTH, sizeof(message_t *));
     xTaskCreatePinnedToCore(writer, "wire_tx", 4096, NULL, 20, NULL, 1);
     xTaskCreatePinnedToCore(reader, "wire_rx", 6144, NULL, 19, NULL, 1);
 }

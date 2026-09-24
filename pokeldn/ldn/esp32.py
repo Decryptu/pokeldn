@@ -26,6 +26,7 @@ CMD_ETH_TX = 0x08
 CMD_RAW_TX = 0x09
 CMD_SNIFF = 0x0A
 CMD_STATUS = 0x0B
+CMD_BENCH = 0x0C
 
 MSG_INFO = 0x81
 MSG_RESULT = 0x82
@@ -36,9 +37,11 @@ MSG_LINK = 0x86
 MSG_STA_JOINED = 0x87
 MSG_STA_LEFT = 0x88
 MSG_STATUS = 0x89
+MSG_BENCH = 0x8A
 
 AP_FLAG_STOCK_JOIN = 1      # let the stock hostapd answer the association and start its 4-way handshake
 AP_FLAG_NO_QOS = 2          # clear the station node's QoS flag: non-QoS data frames to it
+AP_FLAG_NO_DATA_TRACE = 4   # skip the 40-byte copy of each station data frame (serial bandwidth)
 
 LINK_TIMEOUT = 0xFFFF       # MSG_LINK reason: no association within 15 s
 LINK_KEY_FAILED = 0xFFFE    # MSG_LINK reason: the driver refused the CCMP keys
@@ -222,8 +225,11 @@ class Radio:
         self._thread.start()
 
     @classmethod
-    def open_serial(cls, port: str, baud: int = 115200, fast_baud: int | None = 921600, log=None):
+    def open_serial(cls, port: str, baud: int = 115200, fast_baud: int | None = None, log=None):
+        """`fast_baud` defaults to POKELDN_ESP32_BAUD, else 921600, the rate every run so far used."""
         import serial
+        if fast_baud is None:
+            fast_baud = int(os.environ.get("POKELDN_ESP32_BAUD", "921600"))
         s = serial.Serial()
         s.port = port
         s.baudrate = baud
@@ -378,6 +384,41 @@ class Radio:
     def sniff(self, channel: int, mac) -> None:
         """Every management and data frame to or from `mac` on `channel`, whole, as RX_MGMT."""
         self.request(CMD_SNIFF, bytes([channel]) + mac_bytes(mac), MSG_RESULT, timeout=5.0)
+
+    def bench(self, total: int, size: int = 1400, timeout: float = 60.0) -> dict:
+        """Asks the board for `total` bytes in `size`-byte messages as fast as the link carries
+        them. -> {bytes, messages, missing, rejected, seconds, board_seconds, rate}."""
+        got, done = [], threading.Event()
+        state = {"first": None, "last": None, "board_us": None}
+        rejected = self._reader.rejected
+
+        def on_message(msg_type, payload):
+            if msg_type != MSG_BENCH:
+                return
+            now = time.monotonic()
+            seq = struct.unpack_from("<I", payload)[0]
+            if seq == 0xFFFFFFFF:
+                state["board_us"] = struct.unpack_from("<I", payload, 4)[0]
+                done.set()
+                return
+            state["first"] = state["first"] or now
+            state["last"] = now
+            got.append((seq, len(payload)))
+
+        self.subscribe(on_message)
+        try:
+            self.request(CMD_BENCH, struct.pack("<IH", total, size), MSG_RESULT)
+            done.wait(timeout)
+        finally:
+            self.unsubscribe(on_message)
+        received = sum(n for _, n in got)
+        expected = -(-total // size)
+        seconds = (state["last"] - state["first"]) if len(got) > 1 else 0.0
+        return {"bytes": received, "messages": len(got),
+                "missing": expected - len({seq for seq, _ in got}),
+                "rejected": self._reader.rejected - rejected, "seconds": seconds,
+                "board_seconds": (state["board_us"] or 0) / 1e6,
+                "rate": received / seconds if seconds else 0.0}
 
     def status(self) -> str:
         return self.request(CMD_STATUS, b"", MSG_STATUS).decode(errors="replace")

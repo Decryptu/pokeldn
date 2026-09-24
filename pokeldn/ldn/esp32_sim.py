@@ -145,6 +145,12 @@ class SimulatedBoard:
             self._raw_tx(p)
         elif t == esp32.CMD_STATUS:
             self._emit(esp32.MSG_STATUS, f"mode={self.mode} simulated".encode())
+        elif t == esp32.CMD_BENCH:
+            total, size = struct.unpack("<IH", p)
+            self._result(t)
+            for seq in range(-(-total // size)):
+                self._emit(esp32.MSG_BENCH, struct.pack("<I", seq) + random.randbytes(size - 4))
+            self._emit(esp32.MSG_BENCH, struct.pack("<II", 0xFFFFFFFF, 0))
         else:
             self._result(t, 0x106)
 
