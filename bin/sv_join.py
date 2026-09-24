@@ -338,6 +338,11 @@ def build_parser():
                          "was seated late in its five-second host phase and sends nothing but "
                          "NetStartHostMigration afterwards, so the seat is spent; without this "
                          "the run holds it for the whole --hold")
+    ap.add_argument("--announce-timeout", type=float, default=None, metavar="SECONDS",
+                    help="end a seat whose console has not announced on 0x80 port 2 this many "
+                         "seconds after the seat, and go back to scanning. A seat can carry every "
+                         "stream to completion and never be announced (docs/sv.md, Unresolved); "
+                         "board seats that traded announced at 5.8 and 7.7 s")
     ap.add_argument("--answer-migration", action="store_true",
                     help="answer the host's type-7 leave-with-host-migration with a type-8 ack, "
                          "telling it we accept the host role it is handing over")
@@ -793,6 +798,12 @@ async def run_session(args, keys, host_ip, host_mac, our_ip, our_mac, record):
             print(f"[sv] the seat is silent: nothing from the console in "
                   f"{args.quiet_seat:.1f} s. Scanning again")
             record(rec="left_silent_seat", t=time.time())
+            break
+        if (args.announce_timeout is not None and args.game_channel and not channel["port2"]
+                and elapsed >= args.announce_timeout):
+            print(f"[sv] the seat was never announced in {args.announce_timeout:.1f} s. "
+                  f"Scanning again")
+            record(rec="left_unannounced", t=time.time())
             break
         if (args.leave_on_migration is not None and migration_at is not None
                 and time.monotonic() - migration_at >= args.leave_on_migration):

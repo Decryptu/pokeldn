@@ -383,12 +383,14 @@ static void send_status(void)
     char text[384];
     const int len = snprintf(text, sizeof(text),
         "mode=%d rx_mgmt=%u rx_eth=%u tx_eth=%u tx_eth_failed=%u tx_raw=%u tx_raw_failed=%u "
-        "wire_dropped=%u heap=%u tx_acked=%u tx_unacked=%u tx_eth_retried=%u tx_eth_last_err=%#x",
+        "wire_dropped=%u heap=%u tx_acked=%u tx_unacked=%u tx_eth_retried=%u tx_eth_last_err=%#x "
+        "wire_rx_bad=%u uart_overflow=%u",
         (int)atomic_load(&s_mode), atomic_load(&s_rx_mgmt), atomic_load(&s_rx_eth),
         atomic_load(&s_tx_eth), atomic_load(&s_tx_eth_failed), atomic_load(&s_tx_raw),
         atomic_load(&s_tx_raw_failed), (unsigned)wire_dropped(),
         (unsigned)esp_get_free_heap_size(), atomic_load(&s_tx_acked), atomic_load(&s_tx_unacked),
-        atomic_load(&s_tx_eth_retried), (unsigned)atomic_load(&s_tx_eth_last_err));
+        atomic_load(&s_tx_eth_retried), (unsigned)atomic_load(&s_tx_eth_last_err),
+        (unsigned)wire_rx_bad(), (unsigned)wire_rx_overflow());
     wire_send(MSG_STATUS, text, len, NULL, 0);
 }
 

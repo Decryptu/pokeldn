@@ -20,3 +20,6 @@ bool wire_send_wait(uint8_t type, const void *head, size_t head_len, const void 
 void wire_log(const char *format, ...) __attribute__((format(printf, 1, 2)));
 void wire_set_baud(uint32_t baud);
 uint32_t wire_dropped(void);
+/* Host commands lost: frames that failed COBS or their CRC, and UART FIFO or ring overflows. */
+uint32_t wire_rx_bad(void);
+uint32_t wire_rx_overflow(void);

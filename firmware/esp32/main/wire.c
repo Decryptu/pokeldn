@@ -26,9 +26,9 @@ typedef struct {
 #define WIRE_QUEUE_LENGTH 384
 #define WIRE_HEAP_FLOOR (64 * 1024)
 
-static QueueHandle_t s_out;
+static QueueHandle_t s_out, s_uart_events;
 static wire_handler_t s_handler;
-static atomic_uint s_dropped;
+static atomic_uint s_dropped, s_rx_bad, s_rx_overflow;
 
 static uint32_t crc32(const uint8_t *p, size_t n)
 {
@@ -74,6 +74,8 @@ void wire_log(const char *format, ...)
 }
 
 uint32_t wire_dropped(void) { return atomic_load(&s_dropped); }
+uint32_t wire_rx_bad(void) { return atomic_load(&s_rx_bad); }
+uint32_t wire_rx_overflow(void) { return atomic_load(&s_rx_overflow); }
 
 /* A zero-length queue entry carrying the rate: the writer switches when it reaches it, so every
    message queued before it (the BAUD RESULT above all) leaves at the old rate. A flag checked on
@@ -121,35 +123,62 @@ static void writer(void *arg)
     }
 }
 
+/* A frame that fails here is a command lost between host and board; wire_rx_bad counts them. */
 static void deliver(const uint8_t *encoded, size_t used)
 {
     static uint8_t frame[WIRE_MAX_PAYLOAD + 8];
     size_t read = 0, out = 0;
     while (read < used) {
         const uint8_t code = encoded[read++];
-        if (!code || read + code - 1 > used || out + code > sizeof(frame)) return;
+        if (!code || read + code - 1 > used || out + code > sizeof(frame)) {
+            atomic_fetch_add(&s_rx_bad, 1);
+            return;
+        }
         for (int i = 1; i < code; ++i) frame[out++] = encoded[read++];
         if (code != 255 && read < used) frame[out++] = 0;
     }
-    if (out < 5) return;
     uint32_t crc;
-    memcpy(&crc, frame + out - 4, 4);
-    if (crc != crc32(frame, out - 4)) return;
+    if (out < 5 || (memcpy(&crc, frame + out - 4, 4), crc != crc32(frame, out - 4))) {
+        atomic_fetch_add(&s_rx_bad, 1);
+        return;
+    }
     s_handler(frame[0], frame + 1, out - 5);
 }
 
+/* The UART driver is installed here, on core 1, because its interrupt is allocated on the core
+   that installs it. On core 0, with the Wi-Fi task, a console's receive flood lost 500 host
+   commands in 7 s and none after. docs/hardware_esp32.md, The serial ceiling. */
 static void reader(void *arg)
 {
+    const uart_config_t config = {
+        .baud_rate = 115200,
+        .data_bits = UART_DATA_8_BITS,
+        .parity = UART_PARITY_DISABLE,
+        .stop_bits = UART_STOP_BITS_1,
+        .flow_ctrl = UART_HW_FLOWCTRL_DISABLE,
+        .source_clk = UART_SCLK_DEFAULT,
+    };
+    ESP_ERROR_CHECK(uart_driver_install(WIRE_UART, 16384, 16384, 16, &s_uart_events, 0));
+    ESP_ERROR_CHECK(uart_param_config(WIRE_UART, &config));
+    /* With CONFIG_ESP_CONSOLE_NONE nothing routes UART0 to GPIO1/3; the board stays mute without this. */
+    ESP_ERROR_CHECK(uart_set_pin(WIRE_UART, 1, 3, UART_PIN_NO_CHANGE, UART_PIN_NO_CHANGE));
+    xTaskCreatePinnedToCore(writer, "wire_tx", 4096, NULL, 20, NULL, 1);
     static uint8_t chunk[512], encoded[WIRE_MAX_PAYLOAD + 32];
     size_t used = 0;
     bool overflow = false;
     for (;;) {
+        uart_event_t event;
+        while (xQueueReceive(s_uart_events, &event, 0) == pdTRUE) {
+            if (event.type == UART_FIFO_OVF || event.type == UART_BUFFER_FULL)
+                atomic_fetch_add(&s_rx_overflow, 1);
+        }
         const int n = uart_read_bytes(WIRE_UART, chunk, sizeof(chunk), pdMS_TO_TICKS(20));
         for (int i = 0; i < n; ++i) {
             if (chunk[i]) {
                 if (used < sizeof(encoded)) encoded[used++] = chunk[i]; else overflow = true;
                 continue;
             }
+            if (used && overflow) atomic_fetch_add(&s_rx_bad, 1);
             if (used && !overflow) deliver(encoded, used);
             used = 0;
             overflow = false;
@@ -160,19 +189,6 @@ static void reader(void *arg)
 void wire_start(wire_handler_t handler)
 {
     s_handler = handler;
-    const uart_config_t config = {
-        .baud_rate = 115200,
-        .data_bits = UART_DATA_8_BITS,
-        .parity = UART_PARITY_DISABLE,
-        .stop_bits = UART_STOP_BITS_1,
-        .flow_ctrl = UART_HW_FLOWCTRL_DISABLE,
-        .source_clk = UART_SCLK_DEFAULT,
-    };
-    ESP_ERROR_CHECK(uart_driver_install(WIRE_UART, 16384, 16384, 0, NULL, 0));
-    ESP_ERROR_CHECK(uart_param_config(WIRE_UART, &config));
-    /* With CONFIG_ESP_CONSOLE_NONE nothing routes UART0 to GPIO1/3; the board stays mute without this. */
-    ESP_ERROR_CHECK(uart_set_pin(WIRE_UART, 1, 3, UART_PIN_NO_CHANGE, UART_PIN_NO_CHANGE));
     s_out = xQueueCreate(WIRE_QUEUE_LENGTH, sizeof(message_t *));
-    xTaskCreatePinnedToCore(writer, "wire_tx", 4096, NULL, 20, NULL, 1);
     xTaskCreatePinnedToCore(reader, "wire_rx", 6144, NULL, 19, NULL, 1);
 }

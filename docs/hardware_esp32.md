@@ -93,7 +93,7 @@ Anything before a `0x00`, including the ROM's boot text, is discarded by the che
 | `0x86` LINK | board | u8 up, u16 reason, 6 MAC; reason `0xFFFF` no association in 15 s, `0xFFFE` keys refused |
 | `0x87` STA_JOINED | board | 6 MAC, u8 AID, i8 key install result, u8 port opened |
 | `0x88` STA_LEFT | board | 6 MAC, u16 reason |
-| `0x89` STATUS | board | text counters, including the driver's TX-done `tx_acked` and `tx_unacked`, `tx_eth_retried` (ETH_TX calls that found the driver's queue full) and `wire_dropped` (board-to-host messages dropped: 384 queued, or free heap under 64 KB); sent unasked every 2 s while hosting, and polled every 5 s by a host that writes a trace |
+| `0x89` STATUS | board | text counters, including the driver's TX-done `tx_acked` and `tx_unacked`, `tx_eth_retried` (ETH_TX calls that found the driver's queue full) and `wire_dropped` (board-to-host messages dropped: 384 queued, or free heap under 64 KB), `wire_rx_bad` (host commands that failed COBS or their CRC) and `uart_overflow` (UART FIFO or ring overflows); sent unasked every 2 s while hosting, and polled every 5 s by a host that writes a trace |
 | `0x8A` BENCH | board | u32 sequence and random bytes; the last carries sequence `0xFFFFFFFF` and the u32 microseconds the board spent |
 
 EtherType `0x88B7` frames are LDN authentication; `esp32_wlan` turns them into the LDN
@@ -123,6 +123,16 @@ compress.
 A Scarlet host's opening burst, as the board's station, took free heap from 171 KB to 96 KB with
 128 messages queued and dropped 337 more. The queue now holds 384 and drops only below 64 KB of
 free heap.
+
+The same burst costs the other direction too. In the first 7.5 s of a seat the joiner handed the
+board 660 ETH_TX commands and the board counted 92 (`tx_eth` plus `tx_eth_failed`); from then on
+the two counts moved together, 500 apart, for the rest of the run. A second board sniffing the air
+saw no CCMP packet number spent on the missing frames, and the driver never reported a full queue
+(`tx_eth_retried` 0). The commands were lost between the host and the command handler, only while
+the console flooded the board's receive path, in both a seat that traded and one that did not. The
+UART driver was installed from the main task, so its interrupt shared core 0 with the Wi-Fi task;
+it is now installed from the reader task on core 1, and STATUS counts `wire_rx_bad` and
+`uart_overflow`. Whether the interrupt was the loss point is unmeasured.
 
 `POKELDN_ESP32_BAUD` sets the rate `open_serial` switches to, 921600 by default. The ESP32 UART
 runs to 5 Mbaud; the USB bridge sets the limit. `tools/ldn/esp32_bench.py --port PORT --bauds
@@ -165,7 +175,7 @@ Linux and on macOS (Apple silicon) to the same image size.
     idf.py -p <port> flash
 
 The console output is off (`CONFIG_ESP_CONSOLE_NONE`): UART0 is the host link. The image is
-0x90540 bytes.
+0x90650 bytes.
 
 The release build runs with `CONFIG_ESP_CONSOLE_NONE`, which leaves UART0 unrouted: the
 firmware assigns GPIO1 and GPIO3 itself (`uart_set_pin`), or the board boots and never answers.
@@ -270,8 +280,8 @@ never answered until the player leaves and re-enters the room.
 
 - The softAP negotiates WMM, which a Switch host does not; a trade completes with it.
   `AP_FLAG_NO_QOS` (`POKELDN_ESP32_AP_FLAGS=2`) clears the station's QoS flag after association.
-- One Scarlet seat with the joiner waiting in trio never announced in 200 s, the console
-  re-sending its `0x81` port 0 record 1 throughout. Its STATUS counters were not recorded.
+- Whether the UART interrupt on core 0 is where a receive flood loses host commands (The serial
+  ceiling): `wire_rx_bad` and `uart_overflow` on the next Scarlet seat answer it.
 - A sniffer board's counts of another board's frames undercount while the sniffer's own serial
   link is saturated; they are not evidence of loss on the air.
 - Serial latency at 921600 baud against the Z-A seat race.
