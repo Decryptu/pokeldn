@@ -403,7 +403,7 @@ Which of the three stages holds the frame is unknown. It has not reproduced acro
 including a 23-minute 51-second link battle with the trap armed throughout: no hold of 150 ms or more,
 `g_py` never left 0, `ps_buf` never returned TX_QUEUED, and `echo_gaps` found a fragment the host failed
 to mirror in 0 of 494 blocks. A run is a trap set rather than a search:
-`scratchpad/txpath_trace.bt` partitions the path into g_tap (the tap ring), g_py (inside Python) and
+`scratchpad/legacy_linux/txpath_trace.bt` partitions the path into g_tap (the tap ring), g_py (inside Python) and
 g_mon (mac80211/rtw88), and `scratchpad/txpath.py` names the growing gauge at a hold.
 
 That long run also retired a generalisation: the acknowledgement-lag *size* does grow with run length
@@ -758,7 +758,7 @@ not what the hardware link does.
 ## What two real consoles put on the air
 
 `cc6_air.pcap` is a passive capture of a trade between two real consoles (FireRed hosting through the
-third NPC, LeafGreen joining) recorded with `scratchpad/run_air.sh` while this project took no part in
+third NPC, LeafGreen joining) recorded with `scratchpad/legacy_linux/run_air.sh` while this project took no part in
 the session.
 
 Frame counts off a monitor interface are a floor, not a rate. The capture holds 9.5 data frames a

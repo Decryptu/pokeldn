@@ -201,7 +201,9 @@ firmware assigns GPIO1 and GPIO3 itself (`uart_set_pin`), or the board boots and
 ## Running
 
 `POKELDN_RADIO=esp32:<port>` in the environment puts every launcher's `ldn` calls on the board,
-for example `POKELDN_RADIO=esp32:/dev/ttyUSB0` or `POKELDN_RADIO=esp32:/dev/cu.usbserial-0001`.
+for example `POKELDN_RADIO=esp32:/dev/ttyUSB0`. `esp32:auto` takes the only USB serial port present
+(`/dev/cu.usbserial-*`, `/dev/cu.SLAB_USBtoUART*`, `/dev/ttyUSB*`) and refuses to choose between
+several, since opening a port resets its board.
 The port is opened once per process with DTR and RTS released, since an edge on either resets
 most boards. A CP2102 board on macOS resets on open regardless, so the host retries HELLO for
 five seconds before switching to 921600. Under it the launchers skip every nl80211 step: `--phy auto` resolves to `esp32`,

@@ -426,7 +426,7 @@ counter resets [`MAX_REWARD`, `WonderNews_IncrementStepCounter`]. The four-berry
 
 Running it:
 
-    ./scratchpad/run_mg_news.sh wnNN            # or: run_mg_fast.sh wnNN --news --version firered
+    ./scratchpad/run_mg_board.sh wnNN --news --version firered
     (them) Mystery Gift -> the SECOND menu entry (Wonder News) -> "input one?" -> Friend (Ami)
     (them) pick the host from the list
 

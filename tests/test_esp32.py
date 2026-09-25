@@ -797,3 +797,14 @@ def test_the_fast_rate_comes_from_the_environment(monkeypatch):
     monkeypatch.delenv("POKELDN_ESP32_BAUD")
     esp32.Radio.open_serial("sim").close()
     assert rates[-1] == 921600 and 2000000 in rates
+
+
+def test_auto_port_takes_the_one_serial_port_and_refuses_to_guess():
+    from pokeldn.ldn import esp32_wlan
+    assert esp32_wlan.auto_port(["/dev/cu.usbserial-7"]) == "/dev/cu.usbserial-7"
+    for ports in ([], ["/dev/cu.usbserial-1", "/dev/cu.usbserial-2"]):
+        try:
+            esp32_wlan.auto_port(ports)
+        except RuntimeError:
+            continue
+        raise AssertionError(f"chose a port out of {ports}")

@@ -280,7 +280,7 @@ is the revision the Switch release runs:
     make leafgreen_switch   -> pokeleafgreen_switch.gba  62b9fc77549dbc67032eb6cbd0ea6ad3b825690f
 
 Both come out byte-identical to the sha1 the decomp pins, on a machine with binutils and `pret/agbcc`.
-`scratchpad/build_decomp.sh` does it in about two minutes. The sha1 is the only reason any of this is
+`scratchpad/legacy_linux/build_decomp.sh` does it in about two minutes. The sha1 is the only reason any of this is
 usable: a build that does not match is a build of something else. The ROM is never committed.
 
 It is the English release, and at the same address a French console and the English build agree on

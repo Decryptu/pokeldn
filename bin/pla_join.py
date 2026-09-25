@@ -7,7 +7,7 @@ it is hosting, so the session is entered from that side: scan in a loop and join
 network appears. `pokeldn.pla.joiner` then answers the console the way a retail joiner does, from
 the Net answer through the phase protocol.
 
-    POKELDN_RADIO=esp32:/dev/cu.usbserial-0001 ./.venv/bin/python -u bin/pla_join.py \\
+    POKELDN_RADIO=esp32:auto ./.venv/bin/python -u bin/pla_join.py \\
         --keys ~/Documents/Switch/prod.keys --code 00000000 --capture scratchpad/pjNN.jsonl
 
     (them) Jubilife Village, the trading post, Simona -> echanger des pokemon ! -> local

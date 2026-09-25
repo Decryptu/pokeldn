@@ -492,11 +492,31 @@ def use(port: str | None = None, *, radio: esp32.Radio | None = None, port_facto
     return radio
 
 
+SERIAL_PORT_GLOBS = ("/dev/cu.usbserial-*", "/dev/cu.SLAB_USBtoUART*", "/dev/ttyUSB*")
+
+
+def auto_port(candidates=None):
+    """-> the one USB serial port present. The name follows the USB socket, so it is never fixed.
+
+    Refuses to choose between several: opening a port resets its board, so a guess can cost a run.
+    """
+    import glob
+    if candidates is None:
+        candidates = sorted({p for g in SERIAL_PORT_GLOBS for p in glob.glob(g)})
+    if len(candidates) != 1:
+        raise RuntimeError(f"POKELDN_RADIO=esp32:auto needs exactly one USB serial port, found "
+                           f"{candidates or 'none'}; name the radio's port instead")
+    return candidates[0]
+
+
 def use_from_environment(log=None) -> esp32.Radio | None:
-    """`POKELDN_RADIO=esp32:/dev/cu.usbserial-0001` selects the board for the whole process."""
+    """`POKELDN_RADIO=esp32:PORT` selects the board for the whole process; `esp32:auto` finds it."""
     spec = os.environ.get("POKELDN_RADIO", "")
     if not spec.startswith("esp32:"):
         return None
+    port = spec[len("esp32:"):]
+    if port == "auto":
+        port = auto_port()
     # POKELDN_ESP32_AP_FLAGS: the AP_START flag byte (esp32.AP_FLAG_*), for bisecting the softAP.
     ap_flags = int(os.environ.get("POKELDN_ESP32_AP_FLAGS", "0"), 0)
-    return use(spec[len("esp32:"):], ap_flags=ap_flags, log=log)
+    return use(port, ap_flags=ap_flags, log=log)

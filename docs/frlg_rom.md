@@ -289,7 +289,7 @@ Offline first, every time:
 On hardware there is no replace-card prompt and no card: a console holding any Wonder Card keeps it.
 
     (them) Mystery Gift -> Wonder Cards (Recevoir) -> Friend (Ami), wait on the search screen
-    (you)  ./scratchpad/run_mg_fast.sh bsNN --buffer-script --version firered
+    (you)  ./scratchpad/run_mg_board.sh bsNN --buffer-script --version firered
     (them) join the host when it appears
 
 Never SIGTERM the Mystery Gift host until the dump file exists. The host writes
@@ -893,9 +893,9 @@ save read is unaffected.
 `gSaveBlock2Ptr` in r1 and `gSaveBlock1Ptr` in r2, so it reads either save block at any offset on any
 console and any build. Up to 1024 bytes a run, `MGL_Receive` rejects more [mystery_gift_link.c:102].
 
-    ./scratchpad/run_mg_fast.sh bsNN --buffer-script save-dump --dump-block sav2 \
+    ./scratchpad/run_mg_board.sh bsNN --buffer-script save-dump --dump-block sav2 \
         --dump-size 256 --version firered
-    ./scratchpad/run_mg_fast.sh bsNN --buffer-script memory-dump --dump-address 0x0201C000 \
+    ./scratchpad/run_mg_board.sh bsNN --buffer-script memory-dump --dump-address 0x0201C000 \
         --version firered
 
 What this reaches that nothing else does: `SaveBlock1.playerParty` at 0x0038, `money` at 0x0290 XORed
@@ -981,7 +981,7 @@ what comes back over the air is what is now in the console's save rather than a 
 for. One run writes and proves the write. The session ends in `CLI_MSG_BUFFER_SUCCESS`, which sends the
 console to `MG_STATE_SAVE_LOAD_GIFT`, so the write reaches flash.
 
-    ./scratchpad/run_mg_fast.sh bsNN --buffer-script save-write --dump-block sav2 \
+    ./scratchpad/run_mg_board.sh bsNN --buffer-script save-write --dump-block sav2 \
         --dump-offset 0xB20 --write-text "some text" --version firered
 
 The guard is the important part. `build_save_write` refuses by default any span that is not inside a
@@ -1059,7 +1059,7 @@ each sit exactly 2 above the one before.
 predecessor, and answers with where the run starts and what value it starts with, which for
 `gSpecialVars` *is* `&gSpecialVar_0x8000`, so locating and reading are one run.
 
-    ./scratchpad/run_mg_fast.sh bsNN --buffer-script table-scan --table-delta 2 \
+    ./scratchpad/run_mg_board.sh bsNN --buffer-script table-scan --table-delta 2 \
         --table-runlen 12 --table-start 0x08140000 --table-end 0x08400000 --version firered
 
 The run is exactly twelve. `gSpecialVars` continues past entry 11, but entry 12 is
@@ -1092,7 +1092,7 @@ nothing: `--table-delta 0x358` (856 = 214 entries) finds the field script contex
 
 Samples a word once a frame and, between the two reads of each sample, calls a ROM function.
 
-    ./scratchpad/run_mg_fast.sh bsNN --buffer-script rng-trace --trace-address 0x03004220 \
+    ./scratchpad/run_mg_board.sh bsNN --buffer-script rng-trace --trace-address 0x03004220 \
         --trace-call 0x080486B1 --trace-samples 96 --version firered
 
 The call is `mov lr, pc; bx r2`, pc reads as that instruction + 8, which is the instruction after the
@@ -1106,7 +1106,7 @@ Dereferences a table of pointers. Given the address of the first pointer, a stri
 copies each string pointed at, bytes up to and including the 0xFF terminator, into one contiguous
 answer, and reports where a following run should resume.
 
-    ./scratchpad/run_mg_fast.sh bsNN --buffer-script string-gather \
+    ./scratchpad/run_mg_board.sh bsNN --buffer-script string-gather \
         --gather-address 0x083E0D54 --gather-count 69 --gather-stride 12 --version firered
 
 `--gather-stride` is 12 for `struct EasyChatWordInfo`, whose `text` is at offset 0; a plain array of
@@ -1146,7 +1146,7 @@ the only interesting address on the console is the player's live save, so the mo
 read back from there. `--create-mon-destination ADDR` copies the finished 100 bytes onward afterwards
 and needs `--write-unsafe`.
 
-    ./scratchpad/run_mg_fast.sh bsNN --buffer-script create-mon \
+    ./scratchpad/run_mg_board.sh bsNN --buffer-script create-mon \
         --create-mon-species 151 --create-mon-level 30 --create-mon-iv 31 \
         --create-mon-personality 0x3ADE0000 --version firered
 
@@ -1209,9 +1209,9 @@ to the same question, and an append with `--create-mon-call 0` would put a hundr
 party.
 
     # dry run first: the same code with the two stores left out
-    ./scratchpad/run_mg_fast.sh bsNN --buffer-script create-mon --create-mon-append-dry-run \
+    ./scratchpad/run_mg_board.sh bsNN --buffer-script create-mon --create-mon-append-dry-run \
         --create-mon-species 59 --create-mon-level 30 --version firered
-    ./scratchpad/run_mg_fast.sh bsNN --buffer-script create-mon --create-mon-append \
+    ./scratchpad/run_mg_board.sh bsNN --buffer-script create-mon --create-mon-append \
         --write-unsafe --create-mon-species 59 --create-mon-level 30 --version firered
 
 The dry run reports the party count and the address it *would* write, and reads that slot's current 100
@@ -1243,7 +1243,7 @@ the species, level, nickname and OT in it were things only the player's console 
 The general form: an address, up to eight argument words, the `r0` that comes back, and one address
 read either side of the call.
 
-    ./scratchpad/run_mg_fast.sh bsNN --buffer-script call \
+    ./scratchpad/run_mg_board.sh bsNN --buffer-script call \
         --call-address 0x080486D1 --call-arg 0xC0DE --call-watch 0x03004220 --version firered
 
     0x000  b .Lcode
@@ -1298,7 +1298,7 @@ Up to sixteen steps in order in a single frame, one answer word per step. Every 
 console's game state is *read it, change it, read it back*, and the expensive thing is the run rather
 than the call.
 
-    ./scratchpad/run_mg_fast.sh bsNN --buffer-script call-chain \
+    ./scratchpad/run_mg_board.sh bsNN --buffer-script call-chain \
         --chain-step call:FlagGet,0x828 \
         --chain-step call:FlagSet,0x828 \
         --chain-step call:FlagGet,0x828 --version firered

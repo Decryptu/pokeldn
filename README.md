@@ -105,16 +105,22 @@ The PyPI `ldn` package of the same version lacks the compatibility fixes; do not
    exact version), then check the board:
 
    ```bash
-   cd firmware/esp32 && idf.py build && idf.py -p /dev/cu.usbserial-0001 flash && cd ../..
-   ./.venv/bin/python tools/ldn/esp32_first_contact.py --port /dev/cu.usbserial-0001
+   cd firmware/esp32 && idf.py build && idf.py -p PORT flash && cd ../..
+   ./.venv/bin/python tools/ldn/esp32_first_contact.py --port PORT
    ```
+
+   `PORT` is the board's serial device (`/dev/cu.usbserial-*` on macOS, `/dev/ttyUSB*` on Linux); its
+   name follows the USB socket.
 
    It prints the board's HELLO, its counters, and the LDN networks it hears on channels 1, 6 and 11.
 3. Point every entry point at the board:
 
    ```bash
-   export POKELDN_RADIO=esp32:/dev/cu.usbserial-0001
+   export POKELDN_RADIO=esp32:auto
    ```
+
+   `auto` takes the only USB serial port present and refuses to guess between several;
+   `esp32:PORT` names one.
 
    `POKELDN_ESP32_TRACE=FILE` records every serial message both ways, with the board's counters
    every 5 s.

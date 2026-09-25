@@ -4,7 +4,7 @@ scan that counts the LDN advertisements arriving per channel and, given prod.key
 with the LDN library running on the board. docs/hardware_esp32.md.
 
     ./.venv/bin/python tools/ldn/esp32_first_contact.py --flash
-    ./.venv/bin/python tools/ldn/esp32_first_contact.py --port /dev/cu.usbserial-0001 --keys ~/prod.keys
+    ./.venv/bin/python tools/ldn/esp32_first_contact.py --port PORT --keys ~/prod.keys
 """
 import argparse
 import collections

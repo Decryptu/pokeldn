@@ -39,7 +39,7 @@ again), and byte comparison brackets each one to a few hundred bytes. Carried ac
 map, that predicts where the French boundary is. A prediction, not a measurement - see --plan for
 what to dump to settle it, and docs/frlg_leafgreen.md for what it is worth.
 
-The build is not in this repository and never will be: it is a ROM. `scratchpad/build_decomp.sh`
+The build is not in this repository and never will be: it is a ROM. `scratchpad/legacy_linux/build_decomp.sh`
 makes it from the decomp in about two minutes, and both sha1s must match the decomp's own before any
 of this is worth reading.
 """
@@ -72,7 +72,7 @@ def check_build(console):
     """-> None, or the reason this build cannot be trusted. The sha1 the decomp pins is the check."""
     rom = build_path(console, ".gba")
     if not os.path.exists(rom):
-        return f"{rom} does not exist - run scratchpad/build_decomp.sh"
+        return f"{rom} does not exist - run scratchpad/legacy_linux/build_decomp.sh"
     want = open(os.path.join(BUILD, BUILDS[console][1])).read().split()[0]
     got = subprocess.run(["sha1sum", rom], capture_output=True, text=True).stdout.split()[0]
     return None if got == want else f"{rom} is {got}, the decomp pins {want}"

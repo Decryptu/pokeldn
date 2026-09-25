@@ -163,7 +163,7 @@ the player re-opens the trade screen between runs.
 `Connect failed with status code 1` with no auth frame in dmesg is cfg80211 refusing a BSS it has
 never seen: the LDN scan reads beacons in monitor mode, CONNECT needs the kernel's own table, and the
 console re-hosts under a new SSID whenever the player re-enters the search.
-`scratchpad/run_swsh_retry.sh <tag> <tries> [flags]` primes the table with an `iw scan` and retries.
+`scratchpad/legacy_linux/run_swsh_retry.sh <tag> <tries> [flags]` primes the table with an `iw scan` and retries.
 Use `--dwell 2.5`; a lower dwell finds nothing where `tools/ldn/ldn_scan.py --dwell 2.0` finds the
 console in the same minute.
 
@@ -273,7 +273,7 @@ proven per-protocol echo everywhere else, and prints every distinct payload it h
   console refusing the connection. `./scratchpad/kill_swsh.sh` must report clean before any launch
   and must leave the base interface down: an interface that is up holds the radio's channel and the
   next scan fails with `Errno 16 Device or resource busy`.
-- Launch through `scratchpad/run_swsh_retry.sh`, which reads the console's real channel from a kernel
+- Launch through `scratchpad/legacy_linux/run_swsh_retry.sh`, which reads the console's real channel from a kernel
   scan; the console has moved between channels 1 and 6 three times in one session.
 - The launcher prints the answer before the "no rule" line for the same received payload, so a `.out`
   file reads as if a transmission preceded the reception that caused it. Read the ownerId, not the

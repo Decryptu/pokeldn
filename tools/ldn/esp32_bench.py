@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """Measure the board-to-host serial ceiling at one or more baud rates. No console, no radio traffic.
 
-    ./.venv/bin/python tools/ldn/esp32_bench.py --port /dev/cu.usbserial-0001 \\
+    ./.venv/bin/python tools/ldn/esp32_bench.py --port PORT \\
         --bauds 921600,1500000,2000000,3000000 --bytes 2000000
 
 For each rate the board streams random payloads (the COBS overhead of ciphertext) through CMD_BENCH
