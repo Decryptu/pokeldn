@@ -378,6 +378,9 @@ def build_parser():
                     help="seconds between our own RTT requests (0 sends none)")
     ap.add_argument("--no-rtt", action="store_true", help="do not answer RTT requests")
     ap.add_argument("--no-ack", action="store_true", help="do not acknowledge reliable streams")
+    ap.add_argument("--ack-highest", action="store_true",
+                    help="ack one past the highest id received, with no mask, instead of the "
+                         "contiguous run and a mask as a retail station does (docs/sv.md)")
     ap.add_argument("--ack-flags", type=lambda v: int(v, 0), default=streams.MESSAGE_FLAGS_ACK,
                     help="the Pia message flags on our bulk acks; 0xa0 is what both retail "
                          "stations send, and bit 5 is what routes a message to the guest's ack "
@@ -669,6 +672,8 @@ async def run_session(args, keys, host_ip, host_mac, our_ip, our_mac, record):
     record_acked = False
     last_record_send = 0.0
     stream_high = {}            # (protocol, port) -> highest sequence received from the host
+    stream_got = {}             # (protocol, port) -> every sequence received from the host
+    peer_lowest = {}            # (protocol, port) -> the host's own lowest pending on that stream
     our_seq = {}                # (protocol, port) -> our next send sequence on that stream
     last_ack = {}
     counts = {}
@@ -704,10 +709,15 @@ async def run_session(args, keys, host_ip, host_mac, our_ip, our_mac, record):
 
     def our_ack(key):
         """A bulk ack for one stream in the shape the sweep currently says."""
-        return streams.build_ack({streams.HOST_INDEX: stream_high.get(key, 0)},
+        if args.ack_highest:
+            through, masks = stream_high.get(key, 0), None
+        else:
+            through, mask = streams.ack_position(stream_got.get(key, ()), peer_lowest.get(key, 1))
+            masks = {streams.HOST_INDEX: mask}
+        return streams.build_ack({streams.HOST_INDEX: through},
                                  our_seq.get(key, 1), streams.JOINER_INDEX,
                                  entry_count=ack_shape["entries"],
-                                 destination_bits=ack_shape["dest"])
+                                 destination_bits=ack_shape["dest"], masks=masks)
     player_id = {"arceus": pia6.DEFAULT_PLAYER_ID, "random": os.urandom(16),
                  "high": b"\xff" + os.urandom(15)}.get(args.join_player_id)
     if player_id is None:
@@ -1148,6 +1158,7 @@ async def run_session(args, keys, host_ip, host_mac, our_ip, our_mac, record):
                     print(f"[sv] reliable did not parse: {exc}")
                     continue
                 key = (msg.protocol, msg.port)
+                peer_lowest[key] = max(peer_lowest.get(key, 1), rm["lowest_pending"])
                 if (identity is not None and not record_acked and rm.get("is_ack")
                         and msg.protocol == streams.PROTOCOL_STREAM and msg.port == streams.JOINER_INDEX):
                     e = reliable5.parse_ack_payload(rm["payload"])
@@ -1195,6 +1206,7 @@ async def run_session(args, keys, host_ip, host_mac, our_ip, our_mac, record):
                            plain=body.hex() if note.startswith(" zlib ->") else None,
                            t=time.time())
                     stream_high[key] = max(stream_high.get(key, 0), rm["sequence_id"])
+                    stream_got.setdefault(key, set()).add(rm["sequence_id"])
                     if not args.no_ack:
                         ack = our_ack(key)
                         send(out(ack, host_var or 0, protocol=msg.protocol,

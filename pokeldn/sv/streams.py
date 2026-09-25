@@ -61,19 +61,40 @@ def bitmap_for(station_index):
     return 1 << (1 - station_index)
 
 
+def ack_position(received, peer_lowest_pending=1):
+    """-> (through, mask): what a retail station acknowledges of one peer's stream.
+
+    `through` is the end of the contiguous run from 1, counting every id below the peer's own
+    lowest pending as held (the peer has declared those will never come); the entry's ack id is
+    one past it. The mask's bit b of byte k is id `through + 2 + 8k + b`, an id that arrived early.
+    A Scarlet holding 1..4 and 7..38 acked `0005 0005 feffffff01` (sv.md, The acknowledgement).
+    """
+    have = set(received) | set(range(1, peer_lowest_pending))
+    through = reliable5.contiguous_through(have)
+    mask = bytearray(16)
+    for seq in have:
+        bit = seq - through - 2
+        if 0 <= bit < 128:
+            mask[bit // 8] |= 1 << (bit % 8)
+    return through, bytes(mask)
+
+
 def build_ack(highest, our_next_seq, station_index, *, unknown0=0, stream_id=0,
-              entry_count=ACK_ENTRIES, destination_bits=3):
+              entry_count=ACK_ENTRIES, destination_bits=3, masks=None):
     """The bulk ack, in the shape both retail stations send.
 
     `highest` maps a station index to the highest sequence received from it on this stream; entry k
-    acknowledges station k with one past that, and every entry's station byte is zero.
+    acknowledges station k with one past that, and every entry's station byte is zero. `masks`
+    maps a station index to its entry's mask; with `ack_position` the two are what a retail
+    station sends.
 
     `entry_count` and `destination_bits` are sweep handles: a retail station sends four entries and
     a three-bit destination bitmap, and the only message a Scarlet guest has been seen to accept on
     this path carried one entry and no bitmap (`docs/sv.md`).
     """
-    entries = [dict(stream_id=0, ack_id=highest.get(k, 0) + 1, field_0x50=highest.get(k, 0) + 1)
-               for k in range(entry_count)]
+    masks = masks or {}
+    entries = [dict(stream_id=0, ack_id=highest.get(k, 0) + 1, field_0x50=highest.get(k, 0) + 1,
+                    mask=masks.get(k, b"")) for k in range(entry_count)]
     payload = reliable5.build_ack_payload(entries, unknown0=unknown0)
     header = reliable5.build_header(0, reliable5.ACK_SEQUENCE, len(payload),
                                     lowest_pending=our_next_seq, stream_id=stream_id,

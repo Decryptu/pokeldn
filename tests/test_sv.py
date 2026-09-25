@@ -113,6 +113,40 @@ def test_the_host_ack_reproduces_the_retail_message():
     assert sv_host.build_bulk_ack({1: 46}, 2) == SV02_HOST_ACK_81_1
 
 
+# A retail Scarlet host's bulk acks of a joiner's gapped record set (ids 1..4, 7..46) on 0x81 port 1,
+# as the console sent them while the set was arriving: what it held, then the message.
+RETAIL_GAPPED_ACKS = [
+    (list(range(1, 5)) + list(range(7, 17)),
+     "00000056ffff0002030000000200040000010001000000000000000000000000000000000000050005fe07000000"
+     "0000000000000000000000000001000100000000000000000000000000000000000001000100000000000000000000"
+     "000000000000"),
+    (list(range(1, 5)) + list(range(7, 39)),
+     "00000056ffff0002030000000200040000010001000000000000000000000000000000000000050005feffffff01"
+     "0000000000000000000000000001000100000000000000000000000000000000000001000100000000000000000000"
+     "000000000000"),
+]
+
+
+@pytest.mark.parametrize("held, console", RETAIL_GAPPED_ACKS)
+def test_a_gapped_set_is_acknowledged_as_the_console_does(held, console):
+    """The ack names the end of the contiguous run and masks what came early. Acking one past the
+    highest id instead claims ids the sender has not sent, and a console holding id 26 back
+    retransmitted 1..25 for 3.5 s against it."""
+    from pokeldn.sv import streams
+    through, mask = streams.ack_position(held)
+    assert streams.build_ack({streams.JOINER_INDEX: through}, 2, streams.HOST_INDEX,
+                             masks={streams.JOINER_INDEX: mask}).hex() == console
+
+
+def test_the_peers_lowest_pending_closes_a_gap():
+    """Once the sender declares nothing below 47 is outstanding, the set is acked to 47 with an
+    empty mask, as the retail host did 5.3 s into a seat."""
+    from pokeldn.sv import streams
+    held = list(range(1, 5)) + list(range(7, 47))
+    assert streams.ack_position(held, 47) == (46, bytes(16))
+    assert streams.ack_position(held, 1)[0] == 4
+
+
 def test_the_streams_module_reproduces_the_retail_opening():
     """Every byte here is a message from the retail pair's first second (sv11)."""
     from pokeldn.sv import streams
