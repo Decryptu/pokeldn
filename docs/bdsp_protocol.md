@@ -201,7 +201,8 @@ every one: over seven runs of fifteen joins 0.4 s apart, the console answered 12
 a request for `NetCharacterStateData`, the first 0.10 to 0.57 s after the first join. Fifteen such
 joins put two characters on the player's screen, one standing where it spawned and one following
 the walk. `--room-pattern fixed` therefore stops at the console's first request and gives each join
-`--join-wait` seconds (default 1.0) to draw it.
+`--join-wait` seconds (default 1.0) to draw it; one join, answered 0.3 s later, puts one character
+on the screen.
 
 One avatar appears per join message: `UnionOpcManager` calls `CreateCharacter(joinData)` on each.
 Forty joins are forty arrivals.
