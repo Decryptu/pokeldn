@@ -122,11 +122,9 @@ Both entries carry port 12345, ranking 0 for the console and 1 for the joiner.
 Answering with the 0x12 ack advances it: the console re-sends 0x11 with a fresh sequence id and
 `is migrating host` set to 1, and then repeats `01 40 00 00`, a bare
 `NetStartHostMigrationMessage`, roughly twice a second for as long as the session lasts.
-Across eight retail seats in one search the console never sent a Session (0x98) message: the
-joiner's join request goes unanswered while the migration request repeats, and the console drops
-the network and hosts a new one 3 to 6 s later. A console hosting a trade hands the Pia session
-host role to the station that joined; a joiner that does not take it over never gets past the
-join.
+A console hosting a trade hands the Pia session host role to the station that joins. It sends no
+Session (0x98) message and leaves the station's join request unanswered while the migration
+request repeats, then drops the network and hosts a new one 3 to 6 s later.
 
 Answering that does not advance it further. A `NetUpdateNetworkHostMessage` built from the console's
 own serializer, 26 of them, leaves it repeating 0x40, and sending its two u64 fields in the other

@@ -274,22 +274,13 @@ As a station it has completed a Legends Z-A trade as the joiner: seated on the f
 console's selection record (`0100`) at 1.75 s, the offer at 11.9 s and the close (`0104`, `0200`)
 at 15 s.
 
-As an access point at 1500000 baud it has delivered a FireRed Wonder Card: the console joined
-12 s after the host came up, sent its identity and questionnaire, received the card and its RAM
-script, and closed the link normally. A console already holding a card of the same flag id ends
-the same session with "already had this card".
-
-As an access point at 1500000 baud it has delivered a Sword Mystery Gift: the three fragments of a
-720-byte Pokemon record walked across successive advertisements every 0.5 s, the console listed
-the card and received the Pokemon without joining.
+As an access point it has delivered a FireRed Wonder Card and a Sword Mystery Gift.
 
 As an access point it has hosted a completed Let's Go trade: the console joined the mesh, both
 commits went through, its kind 4 record came back and it left cleanly, with no failed transmit
 and no serial drop.
 
-As a station at 1500000 baud it has completed a Let's Go trade as the joiner: associated on the
-first scan, the mesh, the clone session, seven offers as the console's player browsed and both
-commits, with no serial drop and 9 failed transmits of 1702.
+As a station it has completed a Let's Go trade as the joiner.
 
 As an access point it has hosted a completed Legends Arceus trade through the four host
 phases (3, 6, 11, 14).
