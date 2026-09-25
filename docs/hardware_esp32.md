@@ -273,6 +273,10 @@ As an access point at 1500000 baud it has delivered a FireRed Wonder Card: the c
 script, and closed the link normally. A console already holding a card of the same flag id ends
 the same session with "already had this card".
 
+As an access point at 1500000 baud it has delivered a Sword Mystery Gift: the three fragments of a
+720-byte Pokemon record walked across successive advertisements every 0.5 s, the console listed
+the card and received the Pokemon without joining.
+
 As an access point it has hosted a completed Let's Go trade: the console joined the mesh, both
 commits went through, its kind 4 record came back and it left cleanly, with no failed transmit
 and no serial drop.
