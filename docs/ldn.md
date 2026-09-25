@@ -163,10 +163,13 @@ reads these frames on its monitor interface and decrypts them in software
 ## Channels
 
 LDN allows 5 GHz channels 36/40/44/48 and a host may use them; the FireRed/LeafGreen application
-scans 2.4 GHz only. A console re-hosting picks a new channel. Read the frequency out of the kernel
-before a run:
+scans 2.4 GHz only. A console re-hosting picks a new channel. Read it before a run with the board's
+own scan, which prints each network with its channel:
 
-    sudo iw dev <managed iface> scan | grep -A3 <console MAC>
+    POKELDN_RADIO=esp32:auto ./.venv/bin/python tools/ldn/ldn_scan.py --keys PROD_KEYS --dwell 2.5
+
+The ESP32 is 2.4 GHz only, so a host on channel 36 to 48 needs a Linux card, where the kernel's own
+scan gives the frequency: `sudo iw dev <managed iface> scan | grep -A3 <console MAC>`.
 
 A receiver next to a console also hears a few of its advertisements while tuned to a neighbouring
 channel: an ESP32 at 2.5 s per channel caught a Sword host 2 times on channel 1, about 30 times on

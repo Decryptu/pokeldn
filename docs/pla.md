@@ -912,7 +912,8 @@ captured advertisement byte for byte, which is what makes the console recognise 
 host authenticates every inbound packet with the session key derived from its own SSID and prints
 each Pia message by protocol id.
 
-    sudo ./.venv/bin/python bin/pla_host.py --code 00000000 --seconds 240
+    POKELDN_RADIO=esp32:auto ./.venv/bin/python -u bin/pla_host.py --keys PROD_KEYS \
+        --code 00000000 --seconds 240
 
 A console waiting on the search screen alternates on a five-second cycle: it opens a station and
 scans for one second, tears the station down, hosts its own network for two to four seconds,

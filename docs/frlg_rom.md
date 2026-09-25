@@ -1568,7 +1568,7 @@ SaveBlock2 offset 0 holds the player name, gender, the 32-bit trainer id and the
 [global.h:327]. The low half is the TID printed on the trainer card; the high half is the secret ID,
 which appears nowhere in the game and travels in no link message.
 
-    sudo -E ./.venv/bin/python -u bin/frlg_mg_host.py \
+    POKELDN_RADIO=esp32:auto ./.venv/bin/python -u bin/frlg_mg_host.py --live --keys PROD_KEYS \
         --buffer-script save-dump --dump-block sav2 --dump-size 64 --dump-file dump.bin
 
     ./.venv/bin/python tools/frlg/dump_read.py dump.bin --block sav2
@@ -1587,7 +1587,7 @@ is a bad read, whatever else it says.
 SaveBlock1 0x34 is `playerPartyCount`, then `playerParty[6]` at 0x38, 100 bytes each [global.h:772]. Six
 slots is 604 bytes, inside the 1024-byte per-run limit.
 
-    sudo -E ./.venv/bin/python -u bin/frlg_mg_host.py \
+    POKELDN_RADIO=esp32:auto ./.venv/bin/python -u bin/frlg_mg_host.py --live --keys PROD_KEYS \
         --buffer-script save-dump --dump-block sav1 --dump-offset 0x34 \
         --dump-size 608 --dump-file party.bin
 
