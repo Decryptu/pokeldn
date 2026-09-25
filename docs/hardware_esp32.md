@@ -138,8 +138,8 @@ The loss is in the board's UART receive path. With the UART on core 1 at 1500000
 seat loses about 150 ETH_TX commands in its first 11 s, with 34 `uart_overflow` events and 9
 `wire_rx_bad` frames, and none after. `uart_overflow` is the sum of `uart_fifo_ovf` (`UART_FIFO_OVF`,
 the 128-byte hardware FIFO, 0.85 ms at this rate) and `uart_buffer_full` (`UART_BUFFER_FULL`, the
-driver's 16 KB ring); which one overflows is unresolved until a seat is run on firmware that reports
-the two apart.
+driver's 16 KB ring). At 921600 baud the same seat lost 6 of 2333 ETH_TX commands, all between 11
+and 16 s, with one `wire_rx_bad` frame, `uart_fifo_ovf` 0 and `uart_buffer_full` 0, and traded.
 
 `POKELDN_ESP32_BAUD` sets the rate `open_serial` switches to, 921600 by default. The ESP32 UART
 runs to 5 Mbaud; the USB bridge sets the limit. `tools/ldn/esp32_bench.py --port PORT --bauds
@@ -309,8 +309,8 @@ entered: the handshake finished 0.46 s after the association, and a trade ran to
 
 - The softAP negotiates WMM, which a Switch host does not; a trade completes with it.
   `AP_FLAG_NO_QOS` (`POKELDN_ESP32_AP_FLAGS=2`) clears the station's QoS flag after association.
-- Whether the UART interrupt on core 0 is where a receive flood loses host commands (The serial
-  ceiling): `wire_rx_bad` and `uart_overflow` on the next Scarlet seat answer it.
+- What loses the six commands at 921600 baud with neither UART overflow counter moving: one
+  `wire_rx_bad` frame accounts for at most the commands merged into it.
 - A sniffer board's counts of another board's frames undercount while the sniffer's own serial
   link is saturated; they are not evidence of loss on the air.
 - Serial latency at 921600 baud against the Z-A seat race.
