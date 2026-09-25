@@ -34,6 +34,81 @@ def test_reader_resynchronises_after_boot_text():
     assert reader.rejected == 2
 
 
+class _RingBoard:
+    """The firmware's receive side as measured on a board: a 16 KB ring the UART fills, emptied
+    only as fast as the command handler's Wi-Fi queue drains, bytes past a full ring lost, and a
+    CREDIT per 1024 bytes read. A flood at 1500000 baud lost 429 of 5000 ETH_TX this way."""
+
+    RING, RATE = 16384, 2_000_000   # bytes, bytes per second the handler takes
+
+    def __init__(self):
+        import threading
+        self.ring = bytearray()
+        self.lock = threading.Lock()
+        self.inbox = []
+        self.reader = esp32.FrameReader()
+        self.frames = self.consumed = self.credited = 0
+        self.closed = False
+        self.thread = threading.Thread(target=self._handle, daemon=True)
+        self.thread.start()
+
+    def write(self, data):
+        with self.lock:
+            self.ring += data[:max(0, self.RING - len(self.ring))]
+
+    def read(self, n):
+        time.sleep(0.001)
+        with self.lock:
+            out, self.inbox = b"".join(self.inbox), []
+        return out
+
+    def close(self):
+        self.closed = True
+
+    def _handle(self):
+        while not self.closed:
+            time.sleep(0.002)
+            with self.lock:
+                take, self.ring = bytes(self.ring[:int(self.RATE * 0.002)]), self.ring[int(self.RATE * 0.002):]
+            for b in take:
+                self.consumed += 1
+                for msg_type, _ in self.reader.feed(bytes([b])):
+                    if msg_type == esp32.CMD_HELLO:
+                        self.consumed = 0
+                        with self.lock:
+                            self.inbox.append(esp32.encode_frame(esp32.MSG_CREDIT, bytes(4)))
+                    elif msg_type == esp32.CMD_ETH_TX:
+                        self.frames += 1
+            if take:
+                with self.lock:
+                    self.inbox.append(esp32.encode_frame(esp32.MSG_CREDIT,
+                                                         struct.pack("<I", self.consumed)))
+
+
+def test_a_flood_of_eth_tx_never_overflows_the_boards_ring():
+    """2000 ETH_TX handed over at once, as a Scarlet seat's opening does; every one reaches the
+    handler because the host keeps under the window the board's CREDIT leaves."""
+    board = _RingBoard()
+    radio = esp32.Radio(board)
+    try:
+        radio.send(esp32.CMD_HELLO)
+        time.sleep(0.1)
+        frame = b"\xff" * 6 + bytes(6) + b"\x08\x00" + bytes(range(200))
+        for i in range(2000):
+            radio.send_ethernet(frame)
+            if i % 200 == 199:                      # a caller that keeps within the host's queue
+                radio.drain(30)
+        radio.drain(30)
+        deadline = time.monotonic() + 5
+        while board.frames < 2000 and time.monotonic() < deadline:
+            time.sleep(0.01)
+    finally:
+        radio.close()
+        board.close()
+    assert board.frames == 2000
+    assert (radio.tx_dropped, radio.flow_resyncs) == (0, 0)
+
+
 def test_radio_commands_against_the_simulated_board():
     board = esp32_sim.SimulatedBoard(esp32_sim.Air())
     radio = esp32.Radio(board.host_stream())

@@ -73,8 +73,8 @@ Anything before a `0x00`, including the ROM's boot text, is discarded by the che
 
 | type | direction | payload |
 |---|---|---|
-| `0x01` HELLO | host | none; answered by INFO |
-| `0x02` BAUD | host | u32 baud; RESULT at the old rate, then the switch. The switch is a queue entry behind the RESULT and waits up to 3 s for the UART to drain: at 115200 the ring can hold more than a second of RX_MGMT from a console advertising nearby, and a 100 ms wait switched with the RESULT still in it |
+| `0x01` HELLO | host | none; answered by CREDIT 0, then INFO |
+| `0x02` BAUD | host | u32 baud; RESULT at the old rate, then the switch. The switch is a queue entry behind the RESULT and waits up to 3 s for the UART to drain: at 115200 the ring can hold more than a second of RX_MGMT from a console advertising nearby, and a 100 ms wait switched with the RESULT still in it. The host's first HELLO at the new rate is lost in about one open of four at 1500000, so `open_serial` retries it |
 | `0x03` CHANNEL | host | u8 channel; idle only |
 | `0x04` STA_JOIN | host | u8 channel, 6 BSSID, 32 SSID (the LDN SSID's hex text), 16 key, 6 station MAC (zero = random) |
 | `0x05` STOP | host | none; back to idle, keys cleared |
@@ -95,6 +95,7 @@ Anything before a `0x00`, including the ROM's boot text, is discarded by the che
 | `0x88` STA_LEFT | board | 6 MAC, u16 reason |
 | `0x89` STATUS | board | text counters, including the driver's TX-done `tx_acked` and `tx_unacked`, `tx_eth_retried` (ETH_TX calls that found the driver's queue full) and `wire_dropped` (board-to-host messages dropped: 384 queued, or free heap under 64 KB), `wire_rx_bad` (host commands that failed COBS or their CRC), `uart_fifo_ovf` and `uart_buffer_full` (UART hardware FIFO and driver ring overflows) and their sum `uart_overflow`; sent unasked every 2 s while hosting, and polled every 5 s by a host that writes a trace |
 | `0x8A` BENCH | board | u32 sequence and random bytes; the last carries sequence `0xFFFFFFFF` and the u32 microseconds the board spent |
+| `0x8B` CREDIT | board | u32 host bytes read and handled since the last HELLO, counting from the byte after its delimiter; sent on HELLO, every 1024 bytes and when the line falls idle |
 
 EtherType `0x88B7` frames are LDN authentication; `esp32_wlan` turns them into the LDN
 library's `CustomFrameEvent`. Every other Ethernet frame goes to an L2 port:
@@ -140,6 +141,22 @@ seat loses about 150 ETH_TX commands in its first 11 s, with 34 `uart_overflow` 
 the 128-byte hardware FIFO, 0.85 ms at this rate) and `uart_buffer_full` (`UART_BUFFER_FULL`, the
 driver's 16 KB ring). At 921600 baud the same seat lost 6 of 2333 ETH_TX commands, all between 11
 and 16 s, with one `wire_rx_bad` frame, `uart_fifo_ovf` 0 and `uart_buffer_full` 0, and traded.
+
+The board handles each command on the task that reads the UART, and an ETH_TX that finds the Wi-Fi
+driver's queue full waits there for it to drain. While it waits, the 16 KB ring fills at line rate;
+once it is full the driver stops draining the 128-byte FIFO, which overflows, and the bytes lost
+cut frames. `tools/ldn/esp32_bench.py --uplink 5000` reproduces it with no console: the board hosts
+an empty network, the host writes 5000 broadcast ETH_TX of 100 to 300 bytes in bursts of 11, and
+broadcasts leave at the lowest rate. At 1500000 baud the board lost 369 to 429, with
+`tx_eth_retried` 4059, `uart_buffer_full` 294, `uart_fifo_ovf` 305 and `wire_rx_bad` 169. At 921600
+the line is slower than the air and nothing was lost.
+
+CREDIT closes it. Once the board has sent one, the host keeps under 8 KB written and not yet
+reported (`esp32.FLOW_WINDOW`), from a writer thread, so a launcher's trio loop only queues. The
+host drops ETH_TX and RAW_TX past 512 queued frames (`Radio.tx_dropped`), and if no CREDIT moves
+for 0.5 s with the window shut it assumes bytes were lost and reopens it (`Radio.flow_resyncs`).
+With CREDIT the same flood lost 0 of 5000 at 921600 and at 1500000, both counters 0. A board on
+firmware without CREDIT never opens the window and the host writes unthrottled, as before.
 
 `POKELDN_ESP32_BAUD` sets the rate `open_serial` switches to, 921600 by default. The ESP32 UART
 runs to 5 Mbaud; the USB bridge sets the limit. `tools/ldn/esp32_bench.py --port PORT --bauds
@@ -309,8 +326,7 @@ entered: the handshake finished 0.46 s after the association, and a trade ran to
 
 - The softAP negotiates WMM, which a Switch host does not; a trade completes with it.
   `AP_FLAG_NO_QOS` (`POKELDN_ESP32_AP_FLAGS=2`) clears the station's QoS flag after association.
-- What loses the six commands at 921600 baud with neither UART overflow counter moving: one
-  `wire_rx_bad` frame accounts for at most the commands merged into it.
+- Whether CREDIT removes the loss on a console seat; it is measured against an empty network only.
 - A sniffer board's counts of another board's frames undercount while the sniffer's own serial
   link is saturated; they are not evidence of loss on the air.
 - Serial latency at 921600 baud against the Z-A seat race.

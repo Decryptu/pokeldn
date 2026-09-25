@@ -434,7 +434,7 @@ static void send_info(void)
 static void command(uint8_t type, const uint8_t *p, size_t n)
 {
     switch (type) {
-    case CMD_HELLO: send_info(); break;
+    case CMD_HELLO: wire_credit_reset(); send_info(); break;
     case CMD_BAUD: {
         uint32_t baud;
         if (n != 4) { result(type, ESP_ERR_INVALID_SIZE); break; }

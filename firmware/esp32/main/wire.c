@@ -14,6 +14,11 @@
 
 #define WIRE_UART UART_NUM_0
 #define MSG_LOG 0x83
+#define MSG_CREDIT 0x8B
+/* A CREDIT goes out every CREDIT_STEP bytes read, and when the line falls idle. The host keeps
+   under half the 16 KB RX ring in flight, so a command waiting on a full Wi-Fi queue stalls the
+   host and never overflows the ring. docs/hardware_esp32.md, The serial ceiling. */
+#define CREDIT_STEP 1024
 
 typedef struct {
     uint16_t length;
@@ -29,6 +34,7 @@ typedef struct {
 static QueueHandle_t s_out, s_uart_events;
 static wire_handler_t s_handler;
 static atomic_uint s_dropped, s_rx_bad, s_rx_fifo_ovf, s_rx_buffer_full;
+static uint32_t s_consumed, s_credited;   /* the reader task's own; the handler runs on it */
 
 static uint32_t crc32(const uint8_t *p, size_t n)
 {
@@ -77,6 +83,19 @@ uint32_t wire_dropped(void) { return atomic_load(&s_dropped); }
 uint32_t wire_rx_bad(void) { return atomic_load(&s_rx_bad); }
 uint32_t wire_rx_fifo_ovf(void) { return atomic_load(&s_rx_fifo_ovf); }
 uint32_t wire_rx_buffer_full(void) { return atomic_load(&s_rx_buffer_full); }
+
+static void send_credit(void)
+{
+    s_credited = s_consumed;
+    wire_send(MSG_CREDIT, &s_credited, 4, NULL, 0);
+}
+
+/* A CREDIT of 0 at once, so the host's window is shut from the first byte after the HELLO. */
+void wire_credit_reset(void)
+{
+    s_consumed = 0;
+    send_credit();
+}
 
 /* A zero-length queue entry carrying the rate: the writer switches when it reaches it, so every
    message queued before it (the BAUD RESULT above all) leaves at the old rate. A flag checked on
@@ -159,7 +178,8 @@ static void reader(void *arg)
         .flow_ctrl = UART_HW_FLOWCTRL_DISABLE,
         .source_clk = UART_SCLK_DEFAULT,
     };
-    ESP_ERROR_CHECK(uart_driver_install(WIRE_UART, 16384, 16384, 16, &s_uart_events, 0));
+    /* 64 events: a queue that fills with UART_DATA drops the overflow events that count a loss. */
+    ESP_ERROR_CHECK(uart_driver_install(WIRE_UART, 16384, 16384, 64, &s_uart_events, 0));
     ESP_ERROR_CHECK(uart_param_config(WIRE_UART, &config));
     /* With CONFIG_ESP_CONSOLE_NONE nothing routes UART0 to GPIO1/3; the board stays mute without this. */
     ESP_ERROR_CHECK(uart_set_pin(WIRE_UART, 1, 3, UART_PIN_NO_CHANGE, UART_PIN_NO_CHANGE));
@@ -174,7 +194,9 @@ static void reader(void *arg)
             else if (event.type == UART_BUFFER_FULL) atomic_fetch_add(&s_rx_buffer_full, 1);
         }
         const int n = uart_read_bytes(WIRE_UART, chunk, sizeof(chunk), pdMS_TO_TICKS(20));
+        if (n <= 0 && s_consumed != s_credited) send_credit();
         for (int i = 0; i < n; ++i) {
+            ++s_consumed;   /* before the handler, so a HELLO's reset excludes its own delimiter */
             if (chunk[i]) {
                 if (used < sizeof(encoded)) encoded[used++] = chunk[i]; else overflow = true;
                 continue;
@@ -184,6 +206,7 @@ static void reader(void *arg)
             used = 0;
             overflow = false;
         }
+        if (s_consumed - s_credited >= CREDIT_STEP) send_credit();
     }
 }
 

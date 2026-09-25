@@ -6,6 +6,7 @@ carries Ethernet frames and LDN vendor action frames; everything above them runs
 set is the one `firmware/esp32/main/radio.c` implements, documented in `docs/hardware_esp32.md`.
 """
 
+import collections
 import os
 import struct
 import threading
@@ -38,6 +39,14 @@ MSG_STA_JOINED = 0x87
 MSG_STA_LEFT = 0x88
 MSG_STATUS = 0x89
 MSG_BENCH = 0x8A
+MSG_CREDIT = 0x8B   # u32: host bytes the board has read and handled since the last HELLO
+
+# The board handles a command on the task that reads the UART, so an ETH_TX waiting on a full Wi-Fi
+# queue stops the reading; past 16 KB its RX ring overflows and commands are lost. Once the board
+# reports CREDIT the host keeps under FLOW_WINDOW bytes in flight. docs/hardware_esp32.md.
+FLOW_WINDOW = 8192
+FLOW_STALL = 0.5        # seconds without CREDIT before the host assumes bytes were lost and resyncs
+QUEUE_LIMIT = 512       # frames waiting on the host; ETH_TX and RAW_TX beyond it are dropped here
 
 AP_FLAG_STOCK_JOIN = 1      # let the stock hostapd answer the association and start its 4-way handshake
 AP_FLAG_NO_QOS = 2          # clear the station node's QoS flag: non-QoS data frames to it
@@ -218,11 +227,18 @@ class Radio:
         self._replies: dict[int, list] = {}
         self._reply_cv = threading.Condition()
         self._closed = False
+        self._out: collections.deque = collections.deque()
+        self._out_cv = threading.Condition()
+        self._written = self._credited = 0
+        self._flow = False
+        self.tx_dropped = self.flow_resyncs = 0
         # POKELDN_ESP32_TRACE=FILE records every message both ways: time, direction, type, hex.
         trace = os.environ.get("POKELDN_ESP32_TRACE")
         self._trace = open(trace, "a", buffering=1) if trace else None
         self._thread = threading.Thread(target=self._read_loop, name="esp32-radio", daemon=True)
         self._thread.start()
+        self._writer = threading.Thread(target=self._write_loop, name="esp32-writer", daemon=True)
+        self._writer.start()
 
     @classmethod
     def open_serial(cls, port: str, baud: int = 115200, fast_baud: int | None = None, log=None):
@@ -251,8 +267,18 @@ class Radio:
         radio.hello()
         if fast_baud and fast_baud != baud:
             radio.request(CMD_BAUD, struct.pack("<I", fast_baud), MSG_RESULT)
+            radio.drain()
             s.flush()
             s.baudrate = fast_baud
+            # A HELLO that reaches the board while it is still switching is lost (one open in four
+            # at 1500000), so retry it as the first one is.
+            for attempt in range(5):
+                try:
+                    radio.request(CMD_HELLO, b"", MSG_INFO, timeout=0.5)
+                    break
+                except RadioError:
+                    if attempt == 4:
+                        raise
             radio.hello()
         if radio._trace:
             # The board's counters (tx_eth_failed, wire_dropped) land in the trace every 5 s.
@@ -269,6 +295,9 @@ class Radio:
 
     def close(self) -> None:
         self._closed = True
+        with self._out_cv:
+            self._out_cv.notify_all()
+        self._writer.join(timeout=1)
         self._thread.join(timeout=1)
         close = getattr(self._stream, "close", None)
         if close:
@@ -286,10 +315,64 @@ class Radio:
                 self._subscribers.remove(callback)
 
     def send(self, msg_type: int, payload: bytes = b"") -> None:
+        """Queues one command; the writer thread sends it in order. Never blocks the caller."""
         frame = encode_frame(msg_type, payload)
-        self._record(">", msg_type, payload)
-        with self._write_lock:
-            self._stream.write(frame)
+        with self._out_cv:
+            if len(self._out) >= QUEUE_LIMIT and msg_type in (CMD_ETH_TX, CMD_RAW_TX):
+                self.tx_dropped += 1
+                return
+            self._out.append((msg_type, payload, frame))
+            self._out_cv.notify_all()
+
+    def drain(self, timeout: float = 5.0) -> bool:
+        """Waits until every queued command has been written to the port."""
+        deadline = time.monotonic() + timeout
+        with self._out_cv:
+            while self._out or self._writing:
+                left = deadline - time.monotonic()
+                if left <= 0 or self._closed:
+                    return False
+                self._out_cv.wait(left)
+        return True
+
+    _writing = False
+
+    def _write_loop(self) -> None:
+        while True:
+            with self._out_cv:
+                while not self._out and not self._closed:
+                    self._out_cv.wait()
+                if self._closed:
+                    return
+                msg_type, payload, frame = self._out.popleft()
+                self._writing = True
+                last, since = self._credited, time.monotonic()
+                while (self._flow and not self._closed
+                       and self._written - self._credited + len(frame) > FLOW_WINDOW):
+                    if self._credited != last:
+                        last, since = self._credited, time.monotonic()
+                    elif time.monotonic() - since > FLOW_STALL:
+                        # Bytes the board never counted (lost on the line) would hold the window
+                        # shut for good.
+                        self.flow_resyncs += 1
+                        self._credited = self._written
+                        break
+                    self._out_cv.wait(0.05)
+            self._record(">", msg_type, payload)
+            try:
+                with self._write_lock:
+                    self._stream.write(frame)
+            except Exception as e:
+                if self._log:
+                    self._log(f"[esp32] write failed: {e}")
+            with self._out_cv:
+                self._written += len(frame)
+                if msg_type == CMD_HELLO:
+                    # The board restarts its count after a HELLO's delimiter; so does the host.
+                    self._written = self._credited = 0
+                    self._flow = False
+                self._writing = False
+                self._out_cv.notify_all()
 
     def request(self, msg_type: int, payload: bytes, reply_type: int, timeout: float = 3.0) -> bytes:
         """Sends a command and returns the payload of the next `reply_type` message. A MSG_RESULT
@@ -338,6 +421,15 @@ class Radio:
             self._trace.write(f"{time.time():.6f} {direction} {msg_type:02x} {payload.hex()}\n")
 
     def _dispatch(self, msg_type: int, payload: bytes) -> None:
+        if msg_type == MSG_CREDIT and len(payload) == 4:
+            credit = struct.unpack("<I", payload)[0]
+            with self._out_cv:
+                # More than was written since the HELLO is a count from before it.
+                if credit <= self._written:
+                    self._credited = credit
+                    self._flow = True
+                    self._out_cv.notify_all()
+            return
         self._record("<", msg_type, payload)
         if msg_type == MSG_LOG and self._log:
             self._log(f"[esp32] {payload.decode(errors='replace')}")

@@ -9,10 +9,16 @@ and this prints what arrived, what was lost or failed its checksum, and the rate
 own limit of baud / 10. The port is reopened per rate, which resets the board. A rate the USB
 bridge does not take shows as a HELLO that never answers. docs/hardware_esp32.md, The serial
 ceiling.
+
+    --uplink N   the other direction: the board hosts an empty network and the host sends N ETH_TX
+                 commands in bursts of --burst, 100 to 300 bytes each as a seat's are; the board's
+                 tx_eth + tx_eth_failed against N is what the host-to-board path lost.
 """
 import argparse
 import os
+import random
 import sys
+import time
 
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__)))))
 
@@ -25,7 +31,14 @@ def main(argv=None):
     ap.add_argument("--bauds", default="921600,1500000,2000000,3000000")
     ap.add_argument("--bytes", type=int, default=2_000_000)
     ap.add_argument("--size", type=int, default=1400, help="bytes per message, 8..1600")
+    ap.add_argument("--uplink", type=int, default=0, metavar="N")
+    ap.add_argument("--burst", type=int, default=11, help="--uplink: commands written back to back")
+    ap.add_argument("--gap", type=float, default=0.02, help="--uplink: seconds between bursts")
     args = ap.parse_args(argv)
+    if args.uplink:
+        for baud in [int(b) for b in args.bauds.split(",") if b.strip()]:
+            uplink(args.port, baud, args.uplink, args.burst, args.gap)
+        return 0
     for baud in [int(b) for b in args.bauds.split(",") if b.strip()]:
         try:
             radio = esp32.Radio.open_serial(args.port, fast_baud=baud)
@@ -41,6 +54,44 @@ def main(argv=None):
               f"{r['messages']} messages, {r['missing']} missing, {r['rejected']} bad checksums, "
               f"board {r['board_seconds']:.2f}s host {r['seconds']:.2f}s")
     return 0
+
+
+def board_sent(radio):
+    fields = dict(kv.split("=", 1) for kv in radio.status().split() if "=" in kv)
+    return int(fields["tx_eth"]) + int(fields["tx_eth_failed"]), fields
+
+
+def uplink(port, baud, total, burst, gap):
+    try:
+        radio = esp32.Radio.open_serial(port, fast_baud=baud)
+    except Exception as exc:
+        print(f"{baud:>8}  did not come up at this rate: {exc}")
+        return
+    try:
+        radio.ap_start(11, "02:00:00:be:4c:01", "pokeldn-bench".ljust(32, "x"), os.urandom(16))
+        before, _ = board_sent(radio)
+        rng = random.Random(1)
+        t0 = time.monotonic()
+        for i in range(total):
+            body = rng.randbytes(rng.randrange(86, 286))
+            radio.send_ethernet(b"\xff" * 6 + bytes.fromhex("0200000000be") + b"\x08\x00" + body)
+            if (i + 1) % burst == 0:
+                time.sleep(gap)
+                while len(radio._out) > esp32.QUEUE_LIMIT // 2:   # the host's queue, not the board's
+                    time.sleep(0.005)
+        radio.drain(60)
+        seconds = time.monotonic() - t0
+        time.sleep(1.0)
+        after, fields = board_sent(radio)
+        radio.stop()
+    finally:
+        radio.close()
+    counted = after - before
+    sent = total - radio.tx_dropped
+    print(f"{baud:>8}  uplink {sent} of {total} written in {seconds:.1f}s, board counted {counted}, "
+          f"lost {sent - counted}, flow resyncs {radio.flow_resyncs}; wire_rx_bad {fields['wire_rx_bad']} uart_fifo_ovf "
+          f"{fields.get('uart_fifo_ovf')} uart_buffer_full {fields.get('uart_buffer_full')} "
+          f"tx_eth_failed {fields['tx_eth_failed']} tx_eth_retried {fields['tx_eth_retried']}")
 
 
 if __name__ == "__main__":

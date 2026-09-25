@@ -88,9 +88,17 @@ class SimulatedBoard:
         self._emit(esp32.MSG_RESULT, bytes([command]) + struct.pack("<i", code))
 
     def _from_host(self, data: bytes) -> None:
-        for msg_type, payload in self._reader.feed(data):
-            with self.air.lock:
-                self._command(msg_type, payload)
+        # The firmware's CREDIT: host bytes read since the last HELLO, counted up to each frame's
+        # delimiter so a HELLO's reset excludes its own bytes.
+        for b in data:
+            self._consumed = getattr(self, "_consumed", 0) + 1
+            for msg_type, payload in self._reader.feed(bytes([b])):
+                with self.air.lock:
+                    if msg_type == esp32.CMD_HELLO:
+                        self._consumed = 0
+                        self._emit(esp32.MSG_CREDIT, struct.pack("<I", 0))
+                    self._command(msg_type, payload)
+        self._emit(esp32.MSG_CREDIT, struct.pack("<I", self._consumed))
 
     # ---- the firmware's commands ----
 

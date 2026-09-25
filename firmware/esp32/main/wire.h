@@ -19,6 +19,9 @@ bool wire_send_wait(uint8_t type, const void *head, size_t head_len, const void 
                     size_t body_len, uint32_t ticks);
 void wire_log(const char *format, ...) __attribute__((format(printf, 1, 2)));
 void wire_set_baud(uint32_t baud);
+/* Restarts the count of host bytes read that CREDIT (0x8B, u32) reports; called on HELLO, from the
+   handler, so the count starts after the HELLO frame on both sides. */
+void wire_credit_reset(void);
 uint32_t wire_dropped(void);
 /* Host commands lost: frames that failed COBS or their CRC; the 128-byte hardware FIFO
    overflowing before the driver drained it; the driver's 16 KB ring full. */
