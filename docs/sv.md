@@ -198,6 +198,28 @@ sends one kind-1 record and then a run of kind-2 records in the same tenth of a 
 fifteen and the joiner seven in the session measured. `pokeldn.sv.streams.decompress` reads them and
 `scratchpad/pia6_air_decode.py` writes each one out.
 
+### The retail acknowledgement, and a flood of retransmits
+
+A retail station acknowledges a peer's record stream with the end of the contiguous run and a mask
+of what arrived early: ack id one past the run, field 0x50 equal to it, and mask bit *b* of byte *k*
+the id `ack_id + 1 + 8k + b`. A Scarlet host holding a joiner's ids 1 to 4 and 7 to 38 sent
+`0005 0005 feffffff01`. Ids below the peer's own `lowest_pending` count as held: once the joiner's
+bulk ack declared 47, the same host acked 47 with an empty mask. `pokeldn.sv.streams.ack_position`
+builds this, and `tests/test_sv.py` pins it to two of the host's acks. `bin/sv_join.py` sends it;
+`--ack-highest` sends one past the highest id seen instead.
+
+A host's own record set on 0x81 port 0 varies by seat. It sends ids 1 to 25 and 37 at once. In some
+seats the set skips 26 to 36 and the host's `lowest_pending` goes from 1 to 38; in others the set
+holds 26, which the host sends only once 1 to 25 are acknowledged, and `lowest_pending` goes 1, 26,
+38. Unacknowledged, the host retransmits all 26 records about every 100 ms at HT MCS3, 130 to 150
+records a second, about 3% of the air and the whole 150 KB/s of a board's line to its host.
+
+Every seat that flooded this way was one whose board could not send while its line was full
+([the serial ceiling](hardware_esp32.md#the-serial-ceiling)): the joiner's acks waited up to
+seconds, the host kept `lowest_pending` at 1 for 3.5 to 13 s, and the flood kept the line full. With
+that fixed, a seat holding 26 moved to 27 at 1.9 s and repeated records for one second. The form of
+the ack alone decided nothing: a seat with the retail form still flooded 6 s.
+
 ### What a passive capture misses
 
 Both consoles pack several MSDUs into one frame. Read as a single MSDU, the payload begins six
