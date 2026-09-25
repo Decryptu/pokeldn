@@ -41,10 +41,13 @@ def main(argv=None):
     ap.add_argument("--gap", type=float, default=0.02, help="--uplink: seconds between bursts")
     ap.add_argument("--trickle", type=float, default=0, metavar="SECONDS")
     ap.add_argument("--flood", action="store_true", help="--trickle: BENCH the other way meanwhile")
+    ap.add_argument("--ap", action="store_true",
+                    help="--trickle: host an empty network, so each ETH_TX goes to the air")
+    ap.add_argument("--body", type=int, default=0, help="--trickle: bytes after the Ethernet header")
     args = ap.parse_args(argv)
     if args.trickle:
         for baud in [int(b) for b in args.bauds.split(",") if b.strip()]:
-            trickle(args.port, baud, args.trickle, args.flood)
+            trickle(args.port, baud, args.trickle, args.flood, args.ap, args.body)
         return 0
     if args.uplink:
         for baud in [int(b) for b in args.bauds.split(",") if b.strip()]:
@@ -105,11 +108,13 @@ def uplink(port, baud, total, burst, gap):
           f"tx_eth_failed {fields['tx_eth_failed']} tx_eth_retried {fields['tx_eth_retried']}")
 
 
-def trickle(port, baud, seconds, flood):
+def trickle(port, baud, seconds, flood, ap=False, body=0):
     radio = esp32.Radio.open_serial(port, fast_baud=baud)
     try:
+        if ap:
+            radio.ap_start(11, "02:00:00:be:4c:01", "pokeldn-bench".ljust(32, "x"), os.urandom(16))
         before, _ = board_sent(radio)
-        frame = b"\xff" * 6 + bytes.fromhex("0200000000be") + b"\x08\x00"
+        frame = b"\xff" * 6 + bytes.fromhex("0200000000be") + b"\x08\x00" + bytes(body)
         stop, sent = threading.Event(), [0]
 
         def writer():
@@ -136,7 +141,8 @@ def trickle(port, baud, seconds, flood):
         radio.close()
     print(f"{baud:>8}  trickle {sent[0]} written, board counted {after - before}; read_max_us "
           f"{fields.get('read_max_us')} handler_max_us {fields.get('handler_max_us')} write_max_us "
-          f"{fields.get('write_max_us')} uart_fifo_ovf {fields.get('uart_fifo_ovf')}")
+          f"{fields.get('write_max_us')} uart_fifo_ovf {fields.get('uart_fifo_ovf')} heap_min "
+          f"{fields.get('heap_min')} tx_eth_retried {fields.get('tx_eth_retried')}")
 
 
 if __name__ == "__main__":

@@ -33,6 +33,7 @@ enum {
 enum {
     MSG_INFO = 0x81, MSG_RESULT = 0x82, MSG_RX_MGMT = 0x84, MSG_RX_ETH = 0x85, MSG_LINK = 0x86,
     MSG_STA_JOINED = 0x87, MSG_STA_LEFT = 0x88, MSG_STATUS = 0x89, MSG_BENCH = 0x8A,
+    MSG_RX_SNIFF = 0x8C,
 };
 enum { AP_FLAG_STOCK_JOIN = 1, AP_FLAG_NO_QOS = 2, AP_FLAG_NO_DATA_TRACE = 4 };
 enum mode { MODE_IDLE, MODE_STA_JOINING, MODE_STA, MODE_AP, MODE_SNIFF };
@@ -83,8 +84,11 @@ static void promiscuous_rx(void *buffer, wifi_promiscuous_pkt_type_t type)
         const uint8_t *frame = packet->payload;
         if ((type == WIFI_PKT_DATA || type == WIFI_PKT_MGMT) && length >= 24 && length <= 1600 &&
             (!memcmp(frame + 4, s_sniff_mac, 6) || !memcmp(frame + 10, s_sniff_mac, 6))) {
-            const uint8_t head[2] = {packet->rx_ctrl.channel, (uint8_t)packet->rx_ctrl.rssi};
-            wire_send(MSG_RX_MGMT, head, 2, frame, length);
+            /* The PHY fields: a flood's airtime is its bytes over its rate. */
+            const uint8_t head[5] = {packet->rx_ctrl.channel, (uint8_t)packet->rx_ctrl.rssi,
+                                     packet->rx_ctrl.sig_mode, packet->rx_ctrl.rate,
+                                     packet->rx_ctrl.mcs | (packet->rx_ctrl.cwb << 7)};
+            wire_send(MSG_RX_SNIFF, head, sizeof(head), frame, length);
         }
         return;
     }
@@ -413,9 +417,11 @@ static void bench_task(void *arg)
     static uint8_t body[WIRE_MAX_PAYLOAD];
     const int64_t started = esp_timer_get_time();
     uint32_t seq = 0;
+    /* Filled once: a fill per message held BENCH under the 1500000 line's rate, so its queue never
+       backed up the way a console's flood backs it up. */
+    esp_fill_random(body, sizeof(body));
     for (uint32_t sent = 0; sent < total; sent += size, ++seq) {
         memcpy(body, &seq, 4);
-        esp_fill_random(body + 4, size - 4);
         while (!wire_send_wait(MSG_BENCH, NULL, 0, body, size, pdMS_TO_TICKS(100))) {}
     }
     const uint32_t done[2] = {UINT32_MAX, (uint32_t)(esp_timer_get_time() - started)};

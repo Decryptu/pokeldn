@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 """A second ESP32 board as an air sniffer: every management and data frame to or from one MAC on
-one channel, recorded whole in a POKELDN_ESP32_TRACE file. docs/hardware_esp32.md.
+one channel, recorded whole with its PHY rate in a POKELDN_ESP32_TRACE file. docs/hardware_esp32.md.
 
     ./.venv/bin/python tools/ldn/esp32_sniff.py --port /dev/cu.usbserial-XXXX --channel 1 \\
         --mac 48:f1:eb:20:9b:22 --seconds 120 --trace scratchpad/ehNN_sniff.trace
@@ -27,7 +27,7 @@ def main() -> int:
     from pokeldn.ldn import esp32
     radio = esp32.Radio.open_serial(args.port, log=print)
     count = [0]
-    radio.subscribe(lambda t, p: count.__setitem__(0, count[0] + (t == esp32.MSG_RX_MGMT)))
+    radio.subscribe(lambda t, p: count.__setitem__(0, count[0] + (t in (esp32.MSG_RX_MGMT, esp32.MSG_RX_SNIFF))))
     radio.sniff(args.channel, args.mac)
     print(f"[sniff] channel {args.channel}, frames to or from {args.mac}, {args.seconds:.0f} s -> {args.trace}")
     end = time.time() + args.seconds

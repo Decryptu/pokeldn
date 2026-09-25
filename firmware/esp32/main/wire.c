@@ -179,6 +179,15 @@ static void writer(void *arg)
         }
         memcpy(frame, m->bytes, n);
         free(m);
+        /* uart_write_bytes spins on a full TX ring (IDF 6.1 uart.c:1662) and this task outranks
+           the reader on its core, which it starved in the middle of esp_wifi_internal_tx: 111 ms
+           sends under a line-rate flood. Sleep until the frame fits. docs/hardware_esp32.md */
+        const size_t need = n + 4 + (n + 4) / 254 + 2 + 32;
+        const int64_t waited = esp_timer_get_time();
+        for (size_t free_size = 0;
+             uart_get_tx_buffer_free_size(WIRE_UART, &free_size) == ESP_OK && free_size < need;)
+            vTaskDelay(1);
+        raise_max(&s_write_max_us, esp_timer_get_time() - waited);
         if (frame[0] == MSG_CREDIT && n == 5) {
             atomic_store(&s_credit_queued, false);
             const uint32_t credit = atomic_load(&s_credit_value);
@@ -195,9 +204,7 @@ static void writer(void *arg)
         }
         encoded[code_at] = code;
         encoded[out++] = 0;
-        const int64_t started = esp_timer_get_time();
         uart_write_bytes(WIRE_UART, encoded, out);
-        raise_max(&s_write_max_us, esp_timer_get_time() - started);
     }
 }
 
