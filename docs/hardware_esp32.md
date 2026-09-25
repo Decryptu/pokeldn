@@ -93,7 +93,7 @@ Anything before a `0x00`, including the ROM's boot text, is discarded by the che
 | `0x86` LINK | board | u8 up, u16 reason, 6 MAC; reason `0xFFFF` no association in 15 s, `0xFFFE` keys refused |
 | `0x87` STA_JOINED | board | 6 MAC, u8 AID, i8 key install result, u8 port opened |
 | `0x88` STA_LEFT | board | 6 MAC, u16 reason |
-| `0x89` STATUS | board | text counters, including the driver's TX-done `tx_acked` and `tx_unacked`, `tx_eth_retried` (ETH_TX calls that found the driver's queue full) and `wire_dropped` (board-to-host messages dropped: 384 queued, or free heap under 64 KB), `wire_rx_bad` (host commands that failed COBS or their CRC) and `uart_overflow` (UART FIFO or ring overflows); sent unasked every 2 s while hosting, and polled every 5 s by a host that writes a trace |
+| `0x89` STATUS | board | text counters, including the driver's TX-done `tx_acked` and `tx_unacked`, `tx_eth_retried` (ETH_TX calls that found the driver's queue full) and `wire_dropped` (board-to-host messages dropped: 384 queued, or free heap under 64 KB), `wire_rx_bad` (host commands that failed COBS or their CRC), `uart_fifo_ovf` and `uart_buffer_full` (UART hardware FIFO and driver ring overflows) and their sum `uart_overflow`; sent unasked every 2 s while hosting, and polled every 5 s by a host that writes a trace |
 | `0x8A` BENCH | board | u32 sequence and random bytes; the last carries sequence `0xFFFFFFFF` and the u32 microseconds the board spent |
 
 EtherType `0x88B7` frames are LDN authentication; `esp32_wlan` turns them into the LDN
@@ -136,9 +136,10 @@ it is now installed from the reader task on core 1, and STATUS counts `wire_rx_b
 
 The loss is in the board's UART receive path. With the UART on core 1 at 1500000 baud, a Scarlet
 seat loses about 150 ETH_TX commands in its first 11 s, with 34 `uart_overflow` events and 9
-`wire_rx_bad` frames, and none after. `uart_overflow` counts `UART_FIFO_OVF` (the 128-byte hardware
-FIFO, 0.85 ms at this rate) and `UART_BUFFER_FULL` (the driver's 16 KB ring) together; which one
-overflows is unresolved.
+`wire_rx_bad` frames, and none after. `uart_overflow` is the sum of `uart_fifo_ovf` (`UART_FIFO_OVF`,
+the 128-byte hardware FIFO, 0.85 ms at this rate) and `uart_buffer_full` (`UART_BUFFER_FULL`, the
+driver's 16 KB ring); which one overflows is unresolved until a seat is run on firmware that reports
+the two apart.
 
 `POKELDN_ESP32_BAUD` sets the rate `open_serial` switches to, 921600 by default. The ESP32 UART
 runs to 5 Mbaud; the USB bridge sets the limit. `tools/ldn/esp32_bench.py --port PORT --bauds

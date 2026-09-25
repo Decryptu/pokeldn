@@ -20,6 +20,8 @@ bool wire_send_wait(uint8_t type, const void *head, size_t head_len, const void 
 void wire_log(const char *format, ...) __attribute__((format(printf, 1, 2)));
 void wire_set_baud(uint32_t baud);
 uint32_t wire_dropped(void);
-/* Host commands lost: frames that failed COBS or their CRC, and UART FIFO or ring overflows. */
+/* Host commands lost: frames that failed COBS or their CRC; the 128-byte hardware FIFO
+   overflowing before the driver drained it; the driver's 16 KB ring full. */
 uint32_t wire_rx_bad(void);
-uint32_t wire_rx_overflow(void);
+uint32_t wire_rx_fifo_ovf(void);
+uint32_t wire_rx_buffer_full(void);

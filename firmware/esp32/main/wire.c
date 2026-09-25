@@ -28,7 +28,7 @@ typedef struct {
 
 static QueueHandle_t s_out, s_uart_events;
 static wire_handler_t s_handler;
-static atomic_uint s_dropped, s_rx_bad, s_rx_overflow;
+static atomic_uint s_dropped, s_rx_bad, s_rx_fifo_ovf, s_rx_buffer_full;
 
 static uint32_t crc32(const uint8_t *p, size_t n)
 {
@@ -75,7 +75,8 @@ void wire_log(const char *format, ...)
 
 uint32_t wire_dropped(void) { return atomic_load(&s_dropped); }
 uint32_t wire_rx_bad(void) { return atomic_load(&s_rx_bad); }
-uint32_t wire_rx_overflow(void) { return atomic_load(&s_rx_overflow); }
+uint32_t wire_rx_fifo_ovf(void) { return atomic_load(&s_rx_fifo_ovf); }
+uint32_t wire_rx_buffer_full(void) { return atomic_load(&s_rx_buffer_full); }
 
 /* A zero-length queue entry carrying the rate: the writer switches when it reaches it, so every
    message queued before it (the BAUD RESULT above all) leaves at the old rate. A flag checked on
@@ -169,8 +170,8 @@ static void reader(void *arg)
     for (;;) {
         uart_event_t event;
         while (xQueueReceive(s_uart_events, &event, 0) == pdTRUE) {
-            if (event.type == UART_FIFO_OVF || event.type == UART_BUFFER_FULL)
-                atomic_fetch_add(&s_rx_overflow, 1);
+            if (event.type == UART_FIFO_OVF) atomic_fetch_add(&s_rx_fifo_ovf, 1);
+            else if (event.type == UART_BUFFER_FULL) atomic_fetch_add(&s_rx_buffer_full, 1);
         }
         const int n = uart_read_bytes(WIRE_UART, chunk, sizeof(chunk), pdMS_TO_TICKS(20));
         for (int i = 0; i < n; ++i) {
