@@ -41,8 +41,10 @@ class _RingBoard:
 
     RING, RATE = 16384, 2_000_000   # bytes, bytes per second the handler takes
 
-    def __init__(self):
+    def __init__(self, losses=()):
         import threading
+        self.losses = sorted(losses)    # (at byte N received, lose the next M bytes)
+        self.received = self.losing = 0
         self.ring = bytearray()
         self.lock = threading.Lock()
         self.inbox = []
@@ -54,6 +56,12 @@ class _RingBoard:
 
     def write(self, data):
         with self.lock:
+            self.received += len(data)
+            if self.losses and self.received >= self.losses[0][0]:
+                self.losing += self.losses.pop(0)[1]
+            if self.losing > 0:
+                self.losing -= len(data)
+                return
             self.ring += data[:max(0, self.RING - len(self.ring))]
 
     def read(self, n):
@@ -107,6 +115,29 @@ def test_a_flood_of_eth_tx_never_overflows_the_boards_ring():
         board.close()
     assert board.frames == 2000
     assert (radio.tx_dropped, radio.flow_resyncs) == (0, 0)
+
+
+def test_bytes_lost_on_the_line_close_the_window_once_each():
+    """Three losses of 3 KB, 9 KB together, more than the 8 KB window: the window shuts once, one
+    resync writes the loss off for good, and the rest of the flood reaches the handler."""
+    board = _RingBoard(losses=[(100_000, 3000), (200_000, 3000), (300_000, 3000)])
+    radio = esp32.Radio(board)
+    try:
+        radio.send(esp32.CMD_HELLO)
+        time.sleep(0.1)
+        frame = b"\xff" * 6 + bytes(6) + b"\x08\x00" + bytes(range(200))
+        for i in range(2000):
+            radio.send_ethernet(frame)
+            if i % 200 == 199:
+                assert radio.drain(10)
+        assert radio.drain(10)
+        while board.ring:
+            time.sleep(0.01)
+    finally:
+        radio.close()
+        board.close()
+    assert (radio.flow_resyncs, radio.tx_dropped) == (1, 0)
+    assert board.frames >= 2000 - 3 * (3000 // len(frame) + 2)
 
 
 def test_radio_commands_against_the_simulated_board():

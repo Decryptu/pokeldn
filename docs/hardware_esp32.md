@@ -95,7 +95,7 @@ Anything before a `0x00`, including the ROM's boot text, is discarded by the che
 | `0x88` STA_LEFT | board | 6 MAC, u16 reason |
 | `0x89` STATUS | board | text counters, including the driver's TX-done `tx_acked` and `tx_unacked`, `tx_eth_retried` (ETH_TX calls that found the driver's queue full) and `wire_dropped` (board-to-host messages dropped: 384 queued, or free heap under 64 KB), `wire_rx_bad` (host commands that failed COBS or their CRC), `uart_fifo_ovf` and `uart_buffer_full` (UART hardware FIFO and driver ring overflows) and their sum `uart_overflow`; sent unasked every 2 s while hosting, and polled every 5 s by a host that writes a trace |
 | `0x8A` BENCH | board | u32 sequence and random bytes; the last carries sequence `0xFFFFFFFF` and the u32 microseconds the board spent |
-| `0x8B` CREDIT | board | u32 host bytes read and handled since the last HELLO, counting from the byte after its delimiter; sent on HELLO, every 1024 bytes and when the line falls idle |
+| `0x8B` CREDIT | board | u32 host bytes read and handled since the last HELLO, counting from the byte after its delimiter; sent on HELLO, every 1024 bytes and when the line falls idle, ahead of any queued message |
 
 EtherType `0x88B7` frames are LDN authentication; `esp32_wlan` turns them into the LDN
 library's `CustomFrameEvent`. Every other Ethernet frame goes to an L2 port:
@@ -155,8 +155,15 @@ CREDIT closes it. Once the board has sent one, the host keeps under 8 KB written
 reported (`esp32.FLOW_WINDOW`), from a writer thread, so a launcher's trio loop only queues. The
 host drops ETH_TX and RAW_TX past 512 queued frames (`Radio.tx_dropped`), and if no CREDIT moves
 for 0.5 s with the window shut it assumes bytes were lost and reopens it (`Radio.flow_resyncs`).
+The bytes a resync writes off stay written off: the board's count never includes them, so each later
+CREDIT is read as that count plus the loss, and a CREDIT past what the loss allows shrinks it.
 With CREDIT the same flood lost 0 of 5000 at 921600 and at 1500000, both counters 0. A board on
 firmware without CREDIT never opens the window and the host writes unthrottled, as before.
+
+A CREDIT jumps the board's outgoing queue and carries the count current when the writer reaches it;
+at most one is queued. Queued behind other messages, a CREDIT waited out a console burst: a Scarlet
+seat put 73 KB of RX_ETH on the board-to-host line in 0.51 s, no CREDIT reached the host, and it
+resynced over 8119 bytes the board then counted. That seat lost 0 of 1195 ETH_TX at 1500000.
 
 A console seat loses commands the other way. A Scarlet seat at 1500000 with CREDIT lost about 210
 of 1901 ETH_TX, all in its first 13 s, with `uart_fifo_ovf` 235, `uart_buffer_full` 5 and

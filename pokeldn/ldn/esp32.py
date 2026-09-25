@@ -230,6 +230,7 @@ class Radio:
         self._out: collections.deque = collections.deque()
         self._out_cv = threading.Condition()
         self._written = self._credited = 0
+        self._lost = 0      # bytes a resync wrote off; the board's count stays behind by them
         self._flow = False
         self.tx_dropped = self.flow_resyncs = 0
         # POKELDN_ESP32_TRACE=FILE records every message both ways: time, direction, type, hex.
@@ -356,6 +357,7 @@ class Radio:
                         # shut for good.
                         self.flow_resyncs += 1
                         self._record("!", MSG_CREDIT, struct.pack("<II", self._written, self._credited))
+                        self._lost += self._written - self._credited
                         self._credited = self._written
                         break
                     self._out_cv.wait(0.05)
@@ -370,7 +372,7 @@ class Radio:
                 self._written += len(frame)
                 if msg_type == CMD_HELLO:
                     # The board restarts its count after a HELLO's delimiter; so does the host.
-                    self._written = self._credited = 0
+                    self._written = self._credited = self._lost = 0
                     self._flow = False
                 self._writing = False
                 self._out_cv.notify_all()
@@ -426,9 +428,11 @@ class Radio:
             credit = struct.unpack("<I", payload)[0]
             self._record("<", msg_type, payload)
             with self._out_cv:
-                # More than was written since the HELLO is a count from before it.
+                # More than was written since the HELLO is a count from before it. A count past
+                # what the written-off bytes allow means a resync wrote off bytes the board had.
                 if credit <= self._written:
-                    self._credited = credit
+                    self._lost = min(self._lost, self._written - credit)
+                    self._credited = max(self._credited, credit + self._lost)
                     self._flow = True
                     self._out_cv.notify_all()
             return

@@ -84,10 +84,26 @@ uint32_t wire_rx_bad(void) { return atomic_load(&s_rx_bad); }
 uint32_t wire_rx_fifo_ovf(void) { return atomic_load(&s_rx_fifo_ovf); }
 uint32_t wire_rx_buffer_full(void) { return atomic_load(&s_rx_buffer_full); }
 
+/* A CREDIT jumps the queue and carries the count current when the writer reaches it: behind a
+   console burst's RX_ETH it arrived 0.51 s late and the host resynced over no loss.
+   docs/hardware_esp32.md, The serial ceiling. */
+static atomic_uint s_credit_value;
+static atomic_bool s_credit_queued;
+
 static void send_credit(void)
 {
     s_credited = s_consumed;
-    wire_send(MSG_CREDIT, &s_credited, 4, NULL, 0);
+    atomic_store(&s_credit_value, s_credited);
+    if (atomic_exchange(&s_credit_queued, true)) return;
+    message_t *m = malloc(sizeof(*m) + 5);
+    if (m) {
+        m->length = 5;
+        m->bytes[0] = MSG_CREDIT;
+        if (xQueueSendToFront(s_out, &m, 0) == pdTRUE) return;
+        free(m);
+    }
+    atomic_store(&s_credit_queued, false);
+    atomic_fetch_add(&s_dropped, 1);
 }
 
 /* A CREDIT of 0 at once, so the host's window is shut from the first byte after the HELLO. */
@@ -128,6 +144,11 @@ static void writer(void *arg)
         }
         memcpy(frame, m->bytes, n);
         free(m);
+        if (frame[0] == MSG_CREDIT && n == 5) {
+            atomic_store(&s_credit_queued, false);
+            const uint32_t credit = atomic_load(&s_credit_value);
+            memcpy(frame + 1, &credit, 4);
+        }
         const uint32_t crc = crc32(frame, n);
         memcpy(frame + n, &crc, 4);
         size_t out = 1, code_at = 0;
