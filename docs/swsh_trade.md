@@ -374,7 +374,8 @@ Sword 1.3.2, the client joining the console's Link Trade session; `SNAPSHOT` is 
 snapshot, the 0x84 payload of an earlier session against the same console, whose identity is
 rewritten to the client's trainer before it is sent back.
 
-    sudo -E ./.venv/bin/python bin/swsh_connect.py --channels 1,6,11 --dwell 2.5 --listen-first 6 \
+    POKELDN_RADIO=esp32:auto ./.venv/bin/python -u bin/swsh_connect.py --keys PROD_KEYS \
+        --channels 1,6,11 --dwell 2.5 --listen-first 6 \
         --station-sweep 0 --ack-seconds 12 --connect --no-variable-id --request-platform 9 \
         --request-flags 0x09 --connect-station 0 --nat-flags 0 --nat-location 0 --respond \
         --respond-with theirs --join --answer-rtt --ack-reliable --send-data 610000000a00 \
@@ -387,9 +388,8 @@ rewritten to the client's trainer before it is sent back.
         --confirm-commands 0,1,2,3,0,1,2,3,0,1,2,3 --confirm-final-delta 9 --abort-on-stall 15 \
         --hold 240 --capture trade.jsonl
 
-`--offer-file FILE` in place of `--offer-slot` puts a `.pk8` on the wire. The console moves between
-channels 1 and 6 within a session and `cfg80211` refuses a BSS it has never seen, so a kernel scan
-(`iw dev IFACE scan`) before the run primes its table
+`--offer-file FILE` in place of `--offer-slot` puts a `.pk8` on the wire. On a Linux card, drop
+`POKELDN_RADIO` and prime the kernel's BSS table with `iw dev IFACE scan` before the run
 ([The cartridge and the session](swsh_session.md)).
 
 ## The penalty, and ending a run cleanly

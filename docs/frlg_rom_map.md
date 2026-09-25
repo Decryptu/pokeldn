@@ -651,7 +651,8 @@ index past the end of its group.
 
 Reproducing or extending:
 
-    ./scratchpad/ec_sweep.sh <tag> GREETINGS 0x083DF5C0 42        # chain runs without prompting
+    ./scratchpad/run_mg_board.sh <tag> --buffer-script string-gather --gather-address 0x083DF5C0 \
+        --gather-count 42 --gather-stride 12 --version firered    # one group per run
     ./.venv/bin/python scratchpad/ec_words.py --group 4 --tag <tag> scratchpad/<tag>_dump.bin
     ./.venv/bin/python scratchpad/ec_words.py --report
 

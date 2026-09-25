@@ -125,7 +125,7 @@ advertisement is sufficient.
 `bin/swsh_join.py` scans, reports and associates. It carries the passphrase; the local communication
 id is filled at runtime:
 
-    sudo -E ./.venv/bin/python bin/swsh_join.py --scan-only
+    POKELDN_RADIO=esp32:auto ./.venv/bin/python bin/swsh_join.py --keys PROD_KEYS --scan-only
 
 writes every advertisement seen to `scratchpad/swsh_net_facts.json`.
 
@@ -160,10 +160,10 @@ Association succeeds about one attempt in two; `ConnectionError: Connect failed 
 is a retry. The console's advertisement disappears within about a minute of a seat being released;
 the player re-opens the trade screen between runs.
 
-`Connect failed with status code 1` with no auth frame in dmesg is cfg80211 refusing a BSS it has
-never seen: the LDN scan reads beacons in monitor mode, CONNECT needs the kernel's own table, and the
-console re-hosts under a new SSID whenever the player re-enters the search.
-`scratchpad/legacy_linux/run_swsh_retry.sh <tag> <tries> [flags]` primes the table with an `iw scan` and retries.
+On a Linux card, `Connect failed with status code 1` with no auth frame in dmesg is cfg80211
+refusing a BSS it has never seen: the LDN scan reads beacons in monitor mode, CONNECT needs the
+kernel's own table, and the console re-hosts under a new SSID whenever the player re-enters the
+search. An `iw dev IFACE scan` before the connect primes the table.
 Use `--dwell 2.5`; a lower dwell finds nothing where `tools/ldn/ldn_scan.py --dwell 2.0` finds the
 console in the same minute.
 
@@ -266,15 +266,15 @@ proven per-protocol echo everywhere else, and prints every distinct payload it h
 
 ## Operational notes
 
-- Never pass `--verbose` to a live run. Its synchronous per-packet logging runs inside the
-  frame-timed loop, floods the reliable window and the console deauthenticates. Use `--capture FILE`.
-- `kill -9` as the normal user does not kill a client running under `sudo`, and a hard-killed run
-  leaves the `ldnclient` vif behind, after which every attempt fails in a way that reads like the
-  console refusing the connection. `./scratchpad/kill_swsh.sh` must report clean before any launch
-  and must leave the base interface down: an interface that is up holds the radio's channel and the
-  next scan fails with `Errno 16 Device or resource busy`.
-- Launch through `scratchpad/legacy_linux/run_swsh_retry.sh`, which reads the console's real channel from a kernel
-  scan; the console has moved between channels 1 and 6 three times in one session.
+- Never pass `--verbose` to a live run. It logs every packet synchronously inside the frame-timed
+  loop; on a Linux card that starved the loop until the console deauthenticated. Use `--capture FILE`.
+- The console has moved between channels 1 and 6 three times in one session. The scan keeps the
+  channel that carried most of its advertisements ([The wireless layer](ldn.md#channels)).
+- The full command line of a completed trade is on
+  [Trading](swsh_trade.md#the-command-line-of-a-completed-trade).
+- On a Linux card, a hard-killed run leaves the `ldnclient` vif behind, after which every attempt
+  fails in a way that reads like the console refusing the connection, and an interface left up
+  holds the radio's channel (`Errno 16 Device or resource busy` on the next scan).
 - The launcher prints the answer before the "no rule" line for the same received payload, so a `.out`
   file reads as if a transmission preceded the reception that caused it. Read the ownerId, not the
   order.
