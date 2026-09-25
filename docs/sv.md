@@ -224,6 +224,26 @@ the ack alone decided nothing: a seat with the retail form still flooded 6 s.
 (`--repeat-ack-gap`): in a one-second burst of 91 repeats it sent 38 packets, against about 150 with
 an ack per repeat. The host's `lowest_pending` moved at the same point either way.
 
+With the board fixed, the host's own processing sets the pace. Its radio acknowledged every one of
+the joiner's frames within 7 ms of it entering the board's driver, and the joiner acked each host
+record within 1 ms of reading it, yet the host's `lowest_pending` left 1 between 0.73 and 0.81 s
+after its set on every seat, calm or flooding, and its ack masks for the joiner's records advance in
+steps about 0.19 s apart. The host sends its set about 0.1 s after the joiner's stream open and
+record set, so `--open-delay` and `--record-delay` place it.
+
+Whether the set floods depends on the RTT answers the host holds when it sends it:
+
+| RTT answers before the set | answer delay | seats | repeated records | `lowest_pending` left 1 after |
+|---|---|---|---|---|
+| 0 or 1 | 0 | 6 | 0 | 0.79 to 1.01 s |
+| 2 to 7 | 0 | 5 | 91 to 106, every 0.16 to 0.20 s | 0.73 to 0.80 s |
+| 3 and 7 | 0.3 s | 2 | 0 | 0.50 and 0.52 s |
+
+The retransmit interval follows the measured RTT: a few prompt answers bring it under the host's own
+0.8 s ack latency. `--rtt-delay 0.3` answers each RTT request 0.3 s late; the host announces the
+station and the trade completes. A station that never answers RTT is never announced (four seats of
+four), so `--no-rtt` cannot remove the flood.
+
 ### What a passive capture misses
 
 Both consoles pack several MSDUs into one frame. Read as a single MSDU, the payload begins six

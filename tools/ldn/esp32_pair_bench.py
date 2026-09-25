@@ -74,6 +74,9 @@ b.drain(60); time.sleep(1)
 f = dict(kv.split("=", 1) for kv in b.request(esp32.CMD_STATUS, b"", esp32.MSG_STATUS, timeout=30)
          .decode(errors="replace").split() if "=" in kv)
 print(f"B handed {sent[0]} ETH_TX, board counted tx_eth {f.get('tx_eth')} failed {f.get('tx_eth_failed')}")
+print(f"A received {sum(got_from_b.values())} of B's frames; B's driver: tx_acked {f.get('tx_acked')} "
+      f"tx_unacked {f.get('tx_unacked')}, queued max {f.get('tx_queued_max_us')} us, total "
+      f"{f.get('tx_queued_total_us')} us over {f.get('tx_queued_n')}")
 print(f"B: handler_max_us {f.get('handler_max_us')} type {f.get('handler_max_type')} heap_min "
       f"{f.get('heap_min')} wire_dropped {f.get('wire_dropped')} rx_eth {f.get('rx_eth')} "
       f"tx_eth_retried {f.get('tx_eth_retried')} resyncs {b.flow_resyncs} write_max_us {f.get('write_max_us')} tx_eth_max_us {f.get('tx_eth_max_us')} tx_eth_total_us {f.get('tx_eth_total_us')} tx_eth_slow {f.get('tx_eth_slow')} read_max_us {f.get('read_max_us')} queue_max {f.get('queue_max')}")

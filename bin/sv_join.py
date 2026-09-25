@@ -377,6 +377,9 @@ def build_parser():
     ap.add_argument("--rtt-period", type=float, default=0.4,
                     help="seconds between our own RTT requests (0 sends none)")
     ap.add_argument("--no-rtt", action="store_true", help="do not answer RTT requests")
+    ap.add_argument("--rtt-delay", type=float, default=0.0, metavar="SECONDS",
+                    help="answer each RTT request SECONDS late; a host that never gets an answer "
+                         "never announces the station (docs/sv.md)")
     ap.add_argument("--no-ack", action="store_true", help="do not acknowledge reliable streams")
     ap.add_argument("--repeat-ack-gap", type=float, default=0.05, metavar="SECONDS",
                     help="acknowledge a record already held at most once per SECONDS per stream; "
@@ -803,8 +806,13 @@ async def run_session(args, keys, host_ip, host_mac, our_ip, our_mac, record):
           f"sending to {dest_ip}; listening on {sv.PIA_PORT} for {args.hold}s")
     opened = False
     last_rtt = 0.0
+    pending_rtt = []            # (due, request payload, requester var)
     while time.monotonic() - t0 < args.hold:
         now = time.time()
+        for due, request, requester in [e for e in pending_rtt if e[0] <= now]:
+            send(out(streams.build_rtt_response(request, requester), requester,
+                     protocol=PROTO_RTT), "rtt response")
+        pending_rtt = [e for e in pending_rtt if e[0] > now]
         elapsed = time.monotonic() - t0
         if (args.quiet_seat is not None and seen == 0
                 and time.monotonic() - last_in >= args.quiet_seat):
@@ -1072,8 +1080,11 @@ async def run_session(args, keys, host_ip, host_mac, our_ip, our_mac, record):
             if msg.protocol == PROTO_CLOCK:
                 print(f"[sv] <- the host answered the clone clock: {msg.payload.hex()}")
             if not args.no_rtt and msg.protocol == PROTO_RTT and msg.payload and msg.payload[0] == 0:
-                send(out(streams.build_rtt_response(msg.payload, header.src_var),
-                         header.src_var, protocol=PROTO_RTT), "rtt response")
+                if args.rtt_delay > 0:
+                    pending_rtt.append((time.time() + args.rtt_delay, msg.payload, header.src_var))
+                else:
+                    send(out(streams.build_rtt_response(msg.payload, header.src_var),
+                             header.src_var, protocol=PROTO_RTT), "rtt response")
             # The game's own unicast channel, Reliable 0x7c: the host opens its channel table on
             # port 1 (sv18: `b90104b902b9027b0001...`, the Arceus form, pokeldn.pla.channel_table)
             # and retransmits every 65 ms until the one-entry ack Arceus's host answers with.

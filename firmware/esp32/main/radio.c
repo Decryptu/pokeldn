@@ -33,7 +33,7 @@ enum {
 enum {
     MSG_INFO = 0x81, MSG_RESULT = 0x82, MSG_RX_MGMT = 0x84, MSG_RX_ETH = 0x85, MSG_LINK = 0x86,
     MSG_STA_JOINED = 0x87, MSG_STA_LEFT = 0x88, MSG_STATUS = 0x89, MSG_BENCH = 0x8A,
-    MSG_RX_SNIFF = 0x8C,
+    MSG_RX_SNIFF = 0x8C, MSG_TX_DONE = 0x8D,
 };
 enum { AP_FLAG_STOCK_JOIN = 1, AP_FLAG_NO_QOS = 2, AP_FLAG_NO_DATA_TRACE = 4 };
 enum mode { MODE_IDLE, MODE_STA_JOINING, MODE_STA, MODE_AP, MODE_SNIFF };
@@ -58,6 +58,12 @@ static atomic_uint s_tx_eth_retried;   /* ETH_TX calls that found the driver's q
 static atomic_int s_tx_eth_last_err;
 /* ETH_TX's own time in the driver: the handler maximum in STATUS covers every command type. */
 static atomic_uint s_tx_eth_max_us, s_tx_eth_total_us, s_tx_eth_slow;
+/* When each accepted ETH_TX entered the driver, matched in order to the driver's TX-done of a data
+   frame: the time a frame waits in the Wi-Fi queue and on the air. docs/hardware_esp32.md. */
+#define TX_RING 256
+static uint32_t s_tx_handed[TX_RING];
+static atomic_uint s_tx_handed_head, s_tx_handed_tail;
+static atomic_uint s_tx_queued_max_us, s_tx_queued_total_us, s_tx_queued_n;
 static QueueHandle_t s_ap_joins;   /* station MACs whose association response went out */
 static int s_ap_pairwise;
 static int (*s_stock_sta_connect)(uint8_t *bssid);
@@ -153,7 +159,28 @@ static esp_err_t ethernet_rx(void *buffer, uint16_t length, void *eb)
 
 static void tx_done(uint8_t ifidx, uint8_t *data, uint16_t *length, bool acked)
 {
+    const uint32_t now = (uint32_t)esp_timer_get_time();
     atomic_fetch_add(acked ? &s_tx_acked : &s_tx_unacked, 1);
+    const uint16_t n = length ? *length : 0;
+    uint32_t queued = UINT32_MAX;
+    /* A data frame with a body (not a null function) is one of the host's ETH_TX, in order. */
+    if (data && n >= 24 && (data[0] & 0x0c) == 0x08 && !(data[0] & 0x40)) {
+        const unsigned tail = atomic_load(&s_tx_handed_tail);
+        if (tail != atomic_load(&s_tx_handed_head)) {
+            queued = now - s_tx_handed[tail % TX_RING];
+            atomic_store(&s_tx_handed_tail, tail + 1);
+            if (queued > atomic_load(&s_tx_queued_max_us)) atomic_store(&s_tx_queued_max_us, queued);
+            atomic_fetch_add(&s_tx_queued_total_us, queued);
+            atomic_fetch_add(&s_tx_queued_n, 1);
+        }
+    }
+    uint8_t head[12];
+    memcpy(head, &now, 4);
+    memcpy(head + 4, &queued, 4);
+    head[8] = acked;
+    head[9] = ifidx;
+    memcpy(head + 10, &n, 2);
+    wire_send(MSG_TX_DONE, head, sizeof(head), data, data ? (n < 24 ? n : 24) : 0);
 }
 
 /* ---- WPA hooks: LDN has no 4-way handshake; the key comes from the host ---- */
@@ -222,6 +249,7 @@ static void install_hooks(void)
 static void go_idle(void)
 {
     atomic_store(&s_mode, MODE_IDLE);
+    atomic_store(&s_tx_handed_tail, atomic_load(&s_tx_handed_head));   /* a new link's frames only */
     esp_wifi_disconnect();
     esp_wifi_stop();
     memset(s_key, 0, sizeof(s_key));
@@ -248,6 +276,7 @@ static esp_err_t sta_join(const uint8_t *p, size_t n)
     esp_err_t r = esp_wifi_set_mac(WIFI_IF_STA, s_sta_mac);
     if (r != ESP_OK) return r;
     esp_wifi_start();
+    esp_wifi_set_tx_done_cb(tx_done);
     esp_wifi_set_ps(WIFI_PS_NONE);
     start_sniffer();
     wifi_config_t config = {0};
@@ -391,7 +420,8 @@ static void send_status(void)
         "mode=%d rx_mgmt=%u rx_eth=%u tx_eth=%u tx_eth_failed=%u tx_raw=%u tx_raw_failed=%u "
         "wire_dropped=%u heap=%u tx_acked=%u tx_unacked=%u tx_eth_retried=%u tx_eth_last_err=%#x "
         "wire_rx_bad=%u uart_overflow=%u uart_fifo_ovf=%u uart_buffer_full=%u "
-        "tx_eth_max_us=%u tx_eth_total_us=%u tx_eth_slow=%u",
+        "tx_eth_max_us=%u tx_eth_total_us=%u tx_eth_slow=%u "
+        "tx_queued_max_us=%u tx_queued_total_us=%u tx_queued_n=%u tx_queued_pending=%u",
         (int)atomic_load(&s_mode), atomic_load(&s_rx_mgmt), atomic_load(&s_rx_eth),
         atomic_load(&s_tx_eth), atomic_load(&s_tx_eth_failed), atomic_load(&s_tx_raw),
         atomic_load(&s_tx_raw_failed), (unsigned)wire_dropped(),
@@ -399,7 +429,10 @@ static void send_status(void)
         atomic_load(&s_tx_eth_retried), (unsigned)atomic_load(&s_tx_eth_last_err),
         (unsigned)wire_rx_bad(), (unsigned)(wire_rx_fifo_ovf() + wire_rx_buffer_full()),
         (unsigned)wire_rx_fifo_ovf(), (unsigned)wire_rx_buffer_full(),
-        atomic_load(&s_tx_eth_max_us), atomic_load(&s_tx_eth_total_us), atomic_load(&s_tx_eth_slow));
+        atomic_load(&s_tx_eth_max_us), atomic_load(&s_tx_eth_total_us), atomic_load(&s_tx_eth_slow),
+        atomic_load(&s_tx_queued_max_us), atomic_load(&s_tx_queued_total_us),
+        atomic_load(&s_tx_queued_n),
+        atomic_load(&s_tx_handed_head) - atomic_load(&s_tx_handed_tail));
     if (len < 0) return;
     if (len < (int)sizeof(text) - 1) {
         text[len++] = ' ';
@@ -491,6 +524,9 @@ static void command(uint8_t type, const uint8_t *p, size_t n)
         if ((mode == MODE_STA || mode == MODE_AP) && n >= 14 && n <= sizeof(frame)) {
             memcpy(frame, p, n);
             const int64_t started = esp_timer_get_time();
+            /* Published before the call: its TX-done can run on the other core before it returns. */
+            s_tx_handed[atomic_load(&s_tx_handed_head) % TX_RING] = (uint32_t)started;
+            atomic_fetch_add(&s_tx_handed_head, 1);
             r = esp_wifi_internal_tx(current_interface(), frame, n);
             /* A burst from the host fills the driver's TX buffers; wait for them to drain rather
                than drop the frame (a Scarlet joiner's 44-record burst lost 28). The UART
@@ -505,6 +541,7 @@ static void command(uint8_t type, const uint8_t *p, size_t n)
             if (took > atomic_load(&s_tx_eth_max_us)) atomic_store(&s_tx_eth_max_us, took);
             atomic_fetch_add(&s_tx_eth_total_us, took);   /* wraps after 71 min */
             if (took > 5000) atomic_fetch_add(&s_tx_eth_slow, 1);
+            if (r != ESP_OK) atomic_fetch_sub(&s_tx_handed_head, 1);   /* no TX-done will come */
         }
         if (r != ESP_OK) atomic_store(&s_tx_eth_last_err, r);
         atomic_fetch_add(r == ESP_OK ? &s_tx_eth : &s_tx_eth_failed, 1);

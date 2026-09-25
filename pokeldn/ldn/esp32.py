@@ -41,6 +41,7 @@ MSG_STATUS = 0x89
 MSG_BENCH = 0x8A
 MSG_RX_SNIFF = 0x8C   # u8 channel, i8 RSSI, u8 sig mode, u8 rate code, u8 MCS | 40 MHz << 7, frame
 MSG_CREDIT = 0x8B   # u32: host bytes the board has read and handled since the last HELLO
+MSG_TX_DONE = 0x8D  # u32 board us, u32 us since its ETH_TX (all ones: not one), u8 acked, u8 if, u16 len, 24 frame bytes
 
 # The board handles a command on the task that reads the UART, so an ETH_TX waiting on a full Wi-Fi
 # queue stops the reading; past 16 KB its RX ring overflows and commands are lost. Once the board
