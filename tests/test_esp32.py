@@ -41,9 +41,12 @@ class _RingBoard:
 
     RING, RATE = 16384, 2_000_000   # bytes, bytes per second the handler takes
 
-    def __init__(self, losses=()):
+    def __init__(self, losses=(), holds=()):
         import threading
         self.losses = sorted(losses)    # (at byte N received, lose the next M bytes)
+        self.holds = sorted(holds)      # (at byte N read, the reader stops for S seconds)
+        self.credit_at = 0.0
+        self.overflowed = 0
         self.received = self.losing = 0
         self.ring = bytearray()
         self.lock = threading.Lock()
@@ -62,7 +65,9 @@ class _RingBoard:
             if self.losing > 0:
                 self.losing -= len(data)
                 return
-            self.ring += data[:max(0, self.RING - len(self.ring))]
+            room = max(0, self.RING - len(self.ring))
+            self.overflowed += max(0, len(data) - room)
+            self.ring += data[:room]
 
     def read(self, n):
         time.sleep(0.001)
@@ -76,6 +81,8 @@ class _RingBoard:
     def _handle(self):
         while not self.closed:
             time.sleep(0.002)
+            if self.holds and self.consumed >= self.holds[0][0]:
+                time.sleep(self.holds.pop(0)[1])
             with self.lock:
                 take, self.ring = bytes(self.ring[:int(self.RATE * 0.002)]), self.ring[int(self.RATE * 0.002):]
             for b in take:
@@ -87,7 +94,8 @@ class _RingBoard:
                             self.inbox.append(esp32.encode_frame(esp32.MSG_CREDIT, bytes(4)))
                     elif msg_type == esp32.CMD_ETH_TX:
                         self.frames += 1
-            if take:
+            if take or time.monotonic() - self.credit_at > 0.1:    # idle, it repeats its count
+                self.credit_at = time.monotonic()
                 with self.lock:
                     self.inbox.append(esp32.encode_frame(esp32.MSG_CREDIT,
                                                          struct.pack("<I", self.consumed)))
@@ -138,6 +146,28 @@ def test_bytes_lost_on_the_line_close_the_window_once_each():
         board.close()
     assert (radio.flow_resyncs, radio.tx_dropped) == (1, 0)
     assert board.frames >= 2000 - 3 * (3000 // len(frame) + 2)
+
+
+def test_a_reader_held_silent_is_waited_for_not_overrun():
+    """The board stops reading for 1.2 s with the window full, as a Scarlet seat's reader did for
+    0.7 s: the host waits instead of resyncing, and the 16 KB ring never overflows."""
+    board = _RingBoard(holds=[(60_000, 1.2)])
+    radio = esp32.Radio(board)
+    try:
+        radio.send(esp32.CMD_HELLO)
+        time.sleep(0.1)
+        frame = b"\xff" * 6 + bytes(6) + b"\x08\x00" + bytes(range(200))
+        for i in range(600):
+            radio.send_ethernet(frame)
+            if i % 200 == 199:
+                assert radio.drain(10)
+        assert radio.drain(10)
+        while board.ring:
+            time.sleep(0.01)
+    finally:
+        radio.close()
+        board.close()
+    assert (board.overflowed, radio.flow_resyncs, board.frames) == (0, 0, 600)
 
 
 def test_radio_commands_against_the_simulated_board():

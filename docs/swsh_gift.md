@@ -1028,7 +1028,8 @@ Measured on the Ryujinx Shield with the poisoned save, the row placed by RAM edi
 | using an item from a pocket the item table does not name for it | the effect applies and nothing is removed |
 
 A used-up kind never frees its slot; only a sort or the compaction moves it, and neither moves it
-past the row. In-battle bag and the `Y Favoris` list are unmeasured.
+past the row. On the retail Sword, opening the bag in battle aborts at once, before a pocket is
+chosen, and the row cannot be marked for `Y Favoris` because the pocket aborts when it draws the row.
 
 Every remover of a slot was enumerated for an id that could reach 16389 without the row being drawn.
 `RemoveItem` has 32 callers in the binary: the item-use handlers (the id is the bag selection), the

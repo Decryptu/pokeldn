@@ -95,7 +95,7 @@ Anything before a `0x00`, including the ROM's boot text, is discarded by the che
 | `0x88` STA_LEFT | board | 6 MAC, u16 reason |
 | `0x89` STATUS | board | text counters, including the driver's TX-done `tx_acked` and `tx_unacked`, `tx_eth_retried` (ETH_TX calls that found the driver's queue full) and `wire_dropped` (board-to-host messages dropped: 384 queued, or free heap under 64 KB), `wire_rx_bad` (host commands that failed COBS or their CRC), `uart_fifo_ovf` and `uart_buffer_full` (UART hardware FIFO and driver ring overflows) and their sum `uart_overflow`; sent unasked every 2 s while hosting, and polled every 5 s by a host that writes a trace |
 | `0x8A` BENCH | board | u32 sequence and random bytes; the last carries sequence `0xFFFFFFFF` and the u32 microseconds the board spent |
-| `0x8B` CREDIT | board | u32 host bytes read and handled since the last HELLO, counting from the byte after its delimiter; sent on HELLO, every 1024 bytes and when the line falls idle, ahead of any queued message |
+| `0x8B` CREDIT | board | u32 host bytes read and handled since the last HELLO, counting from the byte after its delimiter; sent on HELLO, every 1024 bytes, when the line falls idle and every 100 ms while it stays idle, ahead of any queued message |
 
 EtherType `0x88B7` frames are LDN authentication; `esp32_wlan` turns them into the LDN
 library's `CustomFrameEvent`. Every other Ethernet frame goes to an L2 port:
@@ -154,7 +154,12 @@ the line is slower than the air and nothing was lost.
 CREDIT closes it. Once the board has sent one, the host keeps under 8 KB written and not yet
 reported (`esp32.FLOW_WINDOW`), from a writer thread, so a launcher's trio loop only queues. The
 host drops ETH_TX and RAW_TX past 512 queued frames (`Radio.tx_dropped`), and if no CREDIT moves
-for 0.5 s with the window shut it assumes bytes were lost and reopens it (`Radio.flow_resyncs`).
+while the window is shut, the host tells a lossy line from a busy board by what the board sends. An
+idle reader repeats its count every 100 ms: a count repeated unchanged for 0.3 s means the rest was
+lost on the line, and the host reopens the window (`Radio.flow_resyncs`). A board that sends no
+count at all is busy and gets 5 s: a Scarlet seat held its reader 0.7 s, a host that resynced after
+0.5 s put 16 KB in flight, and the ring overflowed; 34 of 1165 ETH_TX were lost. The board logs a
+command that takes over 50 ms (`slow command`) and a reader turn over 100 ms (`reader held`).
 The bytes a resync writes off stay written off: the board's count never includes them, so each later
 CREDIT is read as that count plus the loss, and a CREDIT past what the loss allows shrinks it.
 With CREDIT the same flood lost 0 of 5000 at 921600 and at 1500000, both counters 0. A board on

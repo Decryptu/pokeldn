@@ -8,6 +8,7 @@
 
 #include "driver/uart.h"
 #include "esp_system.h"
+#include "esp_timer.h"
 #include "freertos/FreeRTOS.h"
 #include "freertos/queue.h"
 #include "freertos/task.h"
@@ -89,6 +90,7 @@ uint32_t wire_rx_buffer_full(void) { return atomic_load(&s_rx_buffer_full); }
    docs/hardware_esp32.md, The serial ceiling. */
 static atomic_uint s_credit_value;
 static atomic_bool s_credit_queued;
+static int64_t s_credit_at;   /* the reader's own: when it last repeated an idle count */
 
 static void send_credit(void)
 {
@@ -183,7 +185,10 @@ static void deliver(const uint8_t *encoded, size_t used)
         atomic_fetch_add(&s_rx_bad, 1);
         return;
     }
+    const int64_t started = esp_timer_get_time();
     s_handler(frame[0], frame + 1, out - 5);
+    const int64_t took = esp_timer_get_time() - started;
+    if (took > 50000) wire_log("slow command 0x%02x: %u ms", frame[0], (unsigned)(took / 1000));
 }
 
 /* The UART driver is installed here, on core 1, because its interrupt is allocated on the core
@@ -218,8 +223,14 @@ static void reader(void *arg)
             if (event.type == UART_FIFO_OVF) atomic_fetch_add(&s_rx_fifo_ovf, 1);
             else if (event.type == UART_BUFFER_FULL) atomic_fetch_add(&s_rx_buffer_full, 1);
         }
+        const int64_t turn = esp_timer_get_time();
         const int n = uart_read_bytes(WIRE_UART, chunk, sizeof(chunk), pdMS_TO_TICKS(20));
-        if (n <= 0 && s_consumed != s_credited) send_credit();
+        /* Idle, the reader repeats its count every 100 ms: a host whose window stays shut under
+           a repeated count knows the rest was lost on the line, and a silent board is busy. */
+        if (n <= 0 && (s_consumed != s_credited || turn - s_credit_at > 100000)) {
+            s_credit_at = turn;
+            send_credit();
+        }
         for (int i = 0; i < n; ++i) {
             ++s_consumed;   /* before the handler, so a HELLO's reset excludes its own delimiter */
             if (chunk[i]) {
@@ -232,6 +243,8 @@ static void reader(void *arg)
             overflow = false;
         }
         if (s_consumed - s_credited >= CREDIT_STEP) send_credit();
+        const int64_t held = esp_timer_get_time() - turn;
+        if (held > 100000) wire_log("reader held %u ms", (unsigned)(held / 1000));
     }
 }
 

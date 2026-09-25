@@ -45,7 +45,10 @@ MSG_CREDIT = 0x8B   # u32: host bytes the board has read and handled since the l
 # queue stops the reading; past 16 KB its RX ring overflows and commands are lost. Once the board
 # reports CREDIT the host keeps under FLOW_WINDOW bytes in flight. docs/hardware_esp32.md.
 FLOW_WINDOW = 8192
-FLOW_STALL = 0.5        # seconds without CREDIT before the host assumes bytes were lost and resyncs
+# The window stays shut: a board repeating one count past FLOW_STALL is idle and the rest was lost on
+# the line; a silent one is busy (a Scarlet seat held its reader 0.7 s) and gets FLOW_BLIND.
+FLOW_STALL = 0.3
+FLOW_BLIND = 5.0
 QUEUE_LIMIT = 512       # frames waiting on the host; ETH_TX and RAW_TX beyond it are dropped here
 
 AP_FLAG_STOCK_JOIN = 1      # let the stock hostapd answer the association and start its 4-way handshake
@@ -230,6 +233,7 @@ class Radio:
         self._out: collections.deque = collections.deque()
         self._out_cv = threading.Condition()
         self._written = self._credited = 0
+        self._credit_seen = 0.0     # monotonic time of the last CREDIT, moved or not
         self._lost = 0      # bytes a resync wrote off; the board's count stays behind by them
         self._flow = False
         self.tx_dropped = self.flow_resyncs = 0
@@ -350,9 +354,11 @@ class Radio:
                 last, since = self._credited, time.monotonic()
                 while (self._flow and not self._closed
                        and self._written - self._credited + len(frame) > FLOW_WINDOW):
+                    quiet = time.monotonic() - since
                     if self._credited != last:
                         last, since = self._credited, time.monotonic()
-                    elif time.monotonic() - since > FLOW_STALL:
+                    elif ((quiet > FLOW_STALL and self._credit_seen > since + FLOW_STALL * 2 / 3)
+                          or quiet > FLOW_BLIND):
                         # Bytes the board never counted (lost on the line) would hold the window
                         # shut for good.
                         self.flow_resyncs += 1
@@ -428,6 +434,7 @@ class Radio:
             credit = struct.unpack("<I", payload)[0]
             self._record("<", msg_type, payload)
             with self._out_cv:
+                self._credit_seen = time.monotonic()
                 # More than was written since the HELLO is a count from before it. A count past
                 # what the written-off bytes allow means a resync wrote off bytes the board had.
                 if credit <= self._written:
