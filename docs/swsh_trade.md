@@ -90,9 +90,9 @@ the operation `nn::pia::mesh::LeaveWithHostMigrationJob`.
 
 ## Hosting a trade
 
-`bin/swsh_host.py` hosts, and `pokeldn/swsh/host_trade.py` leads the trade as a hosting Sword does. It
-completed a trade with an emulated Shield 1.3.2: the joiner's save holds the offered Pokemon with
-its original trainer. The session and handshake details below were read off a trade between two
+`bin/swsh_host.py` hosts, and `pokeldn/swsh/host_trade.py` leads the trade as a hosting Sword does. A
+French Sword 1.3.2 joined it over the ESP32 board, traded, received the offered Ectoplasma and saved;
+an emulated Shield 1.3.2 did the same over the LAN. The session and handshake details below were read off a trade between two
 emulated Shields and reproduced by the host.
 
 The station handshake, host side:
@@ -126,8 +126,9 @@ The application layer, as the emulated pair ran it:
     40   the ladder, one rung per command: host commands as element 0, the joiner's 10040 as
          element 1, phases 0 to 4
 
-After phase 4 the host keeps the session and both players return to the trade screen with a League
-Card offer. A retail Sword leading a pokeldn joiner instead sent box command 3 and MIGRATION_START; a
+After phase 4 the host keeps the session. An emulated joiner returns to the trade screen with a
+League Card offer; the retail Sword sent box command 3 and left the network by deauthentication,
+with its save written. A retail Sword leading a pokeldn joiner instead sent box command 3 and MIGRATION_START; a
 host that migrates after the save leaves the joiner with an interrupted-communication error.
 
 ## The box state machine

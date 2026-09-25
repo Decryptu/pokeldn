@@ -14,8 +14,8 @@ NCA, SDK 7.7.0.0). Hardware measurements are against a French Sword 1.3.2. The t
 their network code; where a finding differs between the pair it is marked.
 
 A retail Sword has completed a trade with pokeldn: it accepted a Pokemon, gave one of its own, wrote
-its save and returned the player to the overworld. pokeldn has also hosted a trade that an emulated
-Shield joined and saved ([Hosting a trade](swsh_trade.md#hosting-a-trade)).
+its save and returned the player to the overworld. pokeldn has also hosted a trade that a retail Sword
+joined and saved, over the ESP32 board ([Hosting a trade](swsh_trade.md#hosting-a-trade)).
 
 ## Pages
 
@@ -72,8 +72,8 @@ then `SYSREQ.N native, bytes`.
 - How a partner's command reaches a sub-element's body word. The receive handler `0x010dbc90` does
   not write it. That an arriving command lets the shared value move is inferred from a per-station
   flag and from every run so far.
-- Hosting a retail Sword. The host has traded with an emulated Shield only; the retail console has
-  not yet joined it.
+- The League Card exchange a hosting Shield offers after a trade: its messages are unread and the
+  host does not answer it.
 - Sword against Shield. Everything read off the binary is Shield's; the console is Sword. The
   passphrase, the game key and the Pia version hold across the pair. The local communication id does
   not: `0x0100ABF008968000` is Sword's. Mystery Gift's state names are Shield-only readings.

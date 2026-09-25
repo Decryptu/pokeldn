@@ -206,15 +206,16 @@ def main():
                                              migrate=args.migrate)
         print(f"[sw] {st.ip}: the trade starts")
 
-    host = host4.Pia4Host(keys.network_id_le, keys.session_key, transport.our_ip,
-                          transport.our_mac, transport.send, on_data=on_data,
-                          on_other=on_other, on_broadcast=on_broadcast,
-                          name=args.player_name, capture=record)
     try:
         transport.start()
     except RuntimeError as exc:
         print(f"[sw] the network did not come up: {exc}")
         return 2
+    # The board's MAC and address exist only once the transport is up.
+    host = host4.Pia4Host(keys.network_id_le, keys.session_key, transport.our_ip,
+                          transport.our_mac, transport.send, on_data=on_data,
+                          on_other=on_other, on_broadcast=on_broadcast,
+                          name=args.player_name, capture=record)
     print(f"[sw] up at {transport.our_ip}; waiting for a console")
     deadline = time.time() + args.seconds
     try:

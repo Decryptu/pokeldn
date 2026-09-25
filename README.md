@@ -54,7 +54,8 @@ Let's Go Pikachu / Eevee
 
 Sword / Shield
 
-- Trading a PKHeX `.pk8` into the console's game
+- Trading in both directions: joining the console's Link Trade, or hosting one it joins; a PKHeX
+  `.pk8` goes into the console's game
 - Mystery Gift: Wonder Cards built from the command line or served from a published `.wc8`
   (Pokémon, eggs, items, Battle Points, clothing)
 
@@ -136,7 +137,7 @@ has the cards and their configuration.
 
 | | |
 |---|---|
-| [`bin/`](bin) | what you run against a console. FireRed/LeafGreen: `frlg_mg_host.py` (Mystery Gift, Wonder News and native code), `frlg_mg_client.py` (receive a card from a console), `frlg_trade_host.py` (trade and Union Room host), `frlg_trade_join.py` (trade joiner). Let's Go: `lgpe_host.py`, `lgpe_join.py`. Sword/Shield: `swsh_connect.py` (trade), `swsh_gift_host.py` (Mystery Gift), `swsh_join.py` (scan). Brilliant Diamond/Shining Pearl: `bdsp_connect.py` (Union Room and trade), `bdsp_join.py`, `bdsp_pia_probe.py`. Legends Arceus: `pla_host.py` (trade), `pla_join.py`. Scarlet/Violet: `sv_host.py` (trade), `sv_join.py` (trade). Legends Z-A: `za_join.py` (trade) |
+| [`bin/`](bin) | what you run against a console. FireRed/LeafGreen: `frlg_mg_host.py` (Mystery Gift, Wonder News and native code), `frlg_mg_client.py` (receive a card from a console), `frlg_trade_host.py` (trade and Union Room host), `frlg_trade_join.py` (trade joiner). Let's Go: `lgpe_host.py`, `lgpe_join.py`. Sword/Shield: `swsh_connect.py` (trade, joining), `swsh_host.py` (trade, hosting), `swsh_gift_host.py` (Mystery Gift), `swsh_join.py` (scan). Brilliant Diamond/Shining Pearl: `bdsp_connect.py` (Union Room and trade), `bdsp_join.py`, `bdsp_pia_probe.py`. Legends Arceus: `pla_host.py` (trade), `pla_join.py`. Scarlet/Violet: `sv_host.py` (trade), `sv_join.py` (trade). Legends Z-A: `za_join.py` (trade) |
 | [`tools/ldn/`](tools/ldn) | the radio, for any target: `esp32_first_contact.py`, `esp32_sniff.py` (a second board as an air sniffer), `ldn_scan.py`; for a Linux card, `sniff.py`, `joyspot_probe.py`, `ldn_debug_report.sh` |
 | [`firmware/esp32/`](firmware/esp32) | the ESP32 radio's firmware (ESP-IDF v6.1) |
 | [`tools/frlg/`](tools/frlg) | reading what a FireRed console sent back, offline: `dump_read.py`, `script_read.py`, `rom_functions.py`, `cartridge_pair.py`, `game_data_read.py`, `english_build.py` |
@@ -345,6 +346,17 @@ Everything each advertisement carries is written to `scratchpad/swsh_net_facts.j
 itself is `bin/swsh_connect.py`, which walks the station handshake, the mesh join, the party
 snapshot exchange and the confirmation ladder; `--offer-file FILE` puts a PKHeX `.pk8` on the wire
 in place of a party slot. The flags a completed trade takes are on [Trading](docs/swsh_trade.md).
+
+Hosting is `bin/swsh_host.py`; the console joins it from Y-Comm → Link Trade → trade, after A on
+both messages that follow (the search starts only after the second):
+
+```bash
+POKELDN_RADIO=esp32:auto ./.venv/bin/python bin/swsh_host.py --keys PROD_KEYS \
+  --advert scratchpad/swsh_net_facts.json --scene-id 60001 --channel 6 --seconds 900
+```
+
+It offers party slot 1 of `--snapshot` under the trainer `--trainer-name` and writes the Pokémon it
+receives to `--received FILE`.
 
 Mystery Gift needs no session: the gift screen scans, and a distributor advertises a network whose
 advertise data carries the card.
