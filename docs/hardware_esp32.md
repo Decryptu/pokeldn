@@ -159,7 +159,28 @@ idle reader repeats its count every 100 ms: a count repeated unchanged for 0.3 s
 lost on the line, and the host reopens the window (`Radio.flow_resyncs`). A board that sends no
 count at all is busy and gets 5 s. Never resync on silence alone: a busy reader holds up to 0.7 s,
 and a resync then puts 16 KB in flight against a 16 KB ring. The board logs a command that takes
-over 50 ms (`slow command`) and a reader turn over 100 ms (`reader held`).
+over 50 ms (`slow command`) and a reader turn over 100 ms (`reader held`). A LOG line is refused at
+the heap floor like any message, so STATUS also carries maxima since boot:
+
+| field | what it is |
+|---|---|
+| `read_max_us` | the longest `uart_read_bytes` call, its 20 ms timeout included |
+| `handler_max_us`, `handler_max_type` | the longest command and its type |
+| `write_max_us` | the longest `uart_write_bytes` call |
+| `heap_min`, `queue_max` | the least free heap and the deepest outgoing queue a send saw |
+| `refused_heap`, `refused_queue` | messages refused at the heap floor, and on a full queue |
+
+`uart_read_bytes` (ESP-IDF 6.1, `uart.c:1738`) waits its whole timeout again for every ring item
+until it has `length` bytes. With `length` 512, a host writing a 21-byte command every 15 ms was
+read 461 ms late (`tools/ldn/esp32_bench.py --port PORT --bauds 1500000 --trickle 5`), and every
+command in that read waited with it. A Scarlet seat measured `read_max_us` 311644. The reader now
+waits for one byte, then takes what `uart_get_buffered_data_len` reports with no timeout:
+`read_max_us` is 20.3 ms on the same trickle, and 20.5 ms with BENCH filling the other direction at
+150 KB/s.
+
+In the same Scarlet seat an ETH_TX took 141 ms inside `esp_wifi_internal_tx` with `tx_eth_retried`
+0, while the console's traffic held free heap at the 64 KB floor (`heap_min` 63976, `queue_max` 95,
+`refused_heap` 219): the heap floor, not the queue's 384 entries, is what refuses RX_ETH.
 The bytes a resync writes off stay written off: the board's count never includes them, so each later
 CREDIT is read as that count plus the loss, and a CREDIT past what the loss allows shrinks it.
 With CREDIT the same flood lost 0 of 5000 at 921600 and at 1500000, both counters 0. A board on
@@ -347,6 +368,7 @@ entered: the handshake finished 0.46 s after the association, and a trade ran to
 
 - The softAP negotiates WMM, which a Switch host does not; a trade completes with it.
   `AP_FLAG_NO_QOS` (`POKELDN_ESP32_AP_FLAGS=2`) clears the station's QoS flag after association.
+- What holds `esp_wifi_internal_tx` for 141 ms as a station while free heap sits at the floor.
 - What loses the last few commands at the start of a seat, with neither overflow counter moving.
   The overflow events travel a 64-entry queue the reader drains only between commands, so a
   reader held in `sta_join` can miss them. A trace records every CREDIT (`< 8b`) and each host

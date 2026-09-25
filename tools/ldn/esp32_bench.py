@@ -13,11 +13,16 @@ ceiling.
     --uplink N   the other direction: the board hosts an empty network and the host sends N ETH_TX
                  commands in bursts of --burst, 100 to 300 bytes each as a seat's are; the board's
                  tx_eth + tx_eth_failed against N is what the host-to-board path lost.
+    --trickle S  command latency: for S seconds the host writes a 14-byte ETH_TX (21 bytes on the
+                 line) every 15 ms to an idle board, with --flood also streaming BENCH the other
+                 way; prints the board's read_max_us, which stays near its 20 ms read timeout
+                 unless a read waits for more than the bytes that arrived.
 """
 import argparse
 import os
 import random
 import sys
+import threading
 import time
 
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__)))))
@@ -34,7 +39,13 @@ def main(argv=None):
     ap.add_argument("--uplink", type=int, default=0, metavar="N")
     ap.add_argument("--burst", type=int, default=11, help="--uplink: commands written back to back")
     ap.add_argument("--gap", type=float, default=0.02, help="--uplink: seconds between bursts")
+    ap.add_argument("--trickle", type=float, default=0, metavar="SECONDS")
+    ap.add_argument("--flood", action="store_true", help="--trickle: BENCH the other way meanwhile")
     args = ap.parse_args(argv)
+    if args.trickle:
+        for baud in [int(b) for b in args.bauds.split(",") if b.strip()]:
+            trickle(args.port, baud, args.trickle, args.flood)
+        return 0
     if args.uplink:
         for baud in [int(b) for b in args.bauds.split(",") if b.strip()]:
             uplink(args.port, baud, args.uplink, args.burst, args.gap)
@@ -92,6 +103,40 @@ def uplink(port, baud, total, burst, gap):
           f"lost {sent - counted}, flow resyncs {radio.flow_resyncs}; wire_rx_bad {fields['wire_rx_bad']} uart_fifo_ovf "
           f"{fields.get('uart_fifo_ovf')} uart_buffer_full {fields.get('uart_buffer_full')} "
           f"tx_eth_failed {fields['tx_eth_failed']} tx_eth_retried {fields['tx_eth_retried']}")
+
+
+def trickle(port, baud, seconds, flood):
+    radio = esp32.Radio.open_serial(port, fast_baud=baud)
+    try:
+        before, _ = board_sent(radio)
+        frame = b"\xff" * 6 + bytes.fromhex("0200000000be") + b"\x08\x00"
+        stop, sent = threading.Event(), [0]
+
+        def writer():
+            while not stop.is_set():
+                radio.send_ethernet(frame)
+                sent[0] += 1
+                time.sleep(0.015)
+
+        thread = threading.Thread(target=writer)
+        thread.start()
+        try:
+            if flood:
+                r = radio.bench(int(160_000 * seconds), 1400, timeout=seconds * 4 + 10)
+                print(f"{baud:>8}  BENCH {r['rate'] / 1000:.1f} KB/s, {r['missing']} missing")
+            else:
+                time.sleep(seconds)
+        finally:
+            stop.set()
+            thread.join()
+        radio.drain(30)
+        time.sleep(1.0)
+        after, fields = board_sent(radio)
+    finally:
+        radio.close()
+    print(f"{baud:>8}  trickle {sent[0]} written, board counted {after - before}; read_max_us "
+          f"{fields.get('read_max_us')} handler_max_us {fields.get('handler_max_us')} write_max_us "
+          f"{fields.get('write_max_us')} uart_fifo_ovf {fields.get('uart_fifo_ovf')}")
 
 
 if __name__ == "__main__":

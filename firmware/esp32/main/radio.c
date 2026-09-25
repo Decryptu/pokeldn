@@ -380,7 +380,7 @@ static void wifi_event(void *arg, esp_event_base_t base, int32_t id, void *data)
 
 static void send_status(void)
 {
-    char text[512];
+    char text[768];
     int len = snprintf(text, sizeof(text),
         "mode=%d rx_mgmt=%u rx_eth=%u tx_eth=%u tx_eth_failed=%u tx_raw=%u tx_raw_failed=%u "
         "wire_dropped=%u heap=%u tx_acked=%u tx_unacked=%u tx_eth_retried=%u tx_eth_last_err=%#x "
@@ -393,6 +393,11 @@ static void send_status(void)
         (unsigned)wire_rx_bad(), (unsigned)(wire_rx_fifo_ovf() + wire_rx_buffer_full()),
         (unsigned)wire_rx_fifo_ovf(), (unsigned)wire_rx_buffer_full());
     if (len < 0) return;
+    if (len < (int)sizeof(text) - 1) {
+        text[len++] = ' ';
+        const int more = wire_stats(text + len, sizeof(text) - len);
+        if (more > 0) len += more;
+    }
     if (len >= (int)sizeof(text)) len = sizeof(text) - 1;
     wire_send(MSG_STATUS, text, len, NULL, 0);
 }

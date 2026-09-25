@@ -28,3 +28,5 @@ uint32_t wire_dropped(void);
 uint32_t wire_rx_bad(void);
 uint32_t wire_rx_fifo_ovf(void);
 uint32_t wire_rx_buffer_full(void);
+/* The link's maxima since boot as `key=value` text for STATUS; snprintf's return. */
+int wire_stats(char *text, size_t size);

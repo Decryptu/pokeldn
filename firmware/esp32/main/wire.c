@@ -36,6 +36,22 @@ static QueueHandle_t s_out, s_uart_events;
 static wire_handler_t s_handler;
 static atomic_uint s_dropped, s_rx_bad, s_rx_fifo_ovf, s_rx_buffer_full;
 static uint32_t s_consumed, s_credited;   /* the reader task's own; the handler runs on it */
+/* Maxima for STATUS: a LOG line is refused at the heap floor, which is when the reader stalls.
+   docs/hardware_esp32.md, The serial ceiling. */
+static atomic_uint s_refused_heap, s_refused_queue, s_heap_min = UINT32_MAX, s_queue_max;
+static atomic_uint s_read_max_us, s_handler_max_us, s_handler_max_type, s_write_max_us;
+
+static void raise_max(atomic_uint *max, uint32_t value)
+{
+    uint32_t seen = atomic_load(max);
+    while (value > seen && !atomic_compare_exchange_weak(max, &seen, value)) {}
+}
+
+static void lower_min(atomic_uint *min, uint32_t value)
+{
+    uint32_t seen = atomic_load(min);
+    while (value < seen && !atomic_compare_exchange_weak(min, &seen, value)) {}
+}
 
 static uint32_t crc32(const uint8_t *p, size_t n)
 {
@@ -52,14 +68,21 @@ bool wire_send_wait(uint8_t type, const void *head, size_t head_len, const void 
 {
     const size_t length = 1 + head_len + body_len;
     if (length > WIRE_MAX_PAYLOAD + 1) return false;
-    if (esp_get_free_heap_size() < WIRE_HEAP_FLOOR + length) return false;
+    const uint32_t heap = esp_get_free_heap_size();
+    lower_min(&s_heap_min, heap);
+    if (heap < WIRE_HEAP_FLOOR + length) { atomic_fetch_add(&s_refused_heap, 1); return false; }
     message_t *m = malloc(sizeof(*m) + length);
-    if (!m) return false;
+    if (!m) { atomic_fetch_add(&s_refused_heap, 1); return false; }
     m->length = length;
     m->bytes[0] = type;
     if (head_len) memcpy(m->bytes + 1, head, head_len);
     if (body_len) memcpy(m->bytes + 1 + head_len, body, body_len);
-    if (xQueueSend(s_out, &m, ticks) != pdTRUE) { free(m); return false; }
+    if (xQueueSend(s_out, &m, ticks) != pdTRUE) {
+        free(m);
+        atomic_fetch_add(&s_refused_queue, 1);
+        return false;
+    }
+    raise_max(&s_queue_max, uxQueueMessagesWaiting(s_out));
     return true;
 }
 
@@ -84,6 +107,16 @@ uint32_t wire_dropped(void) { return atomic_load(&s_dropped); }
 uint32_t wire_rx_bad(void) { return atomic_load(&s_rx_bad); }
 uint32_t wire_rx_fifo_ovf(void) { return atomic_load(&s_rx_fifo_ovf); }
 uint32_t wire_rx_buffer_full(void) { return atomic_load(&s_rx_buffer_full); }
+
+int wire_stats(char *text, size_t size)
+{
+    return snprintf(text, size,
+        "refused_heap=%u refused_queue=%u heap_min=%u queue_max=%u read_max_us=%u "
+        "handler_max_us=%u handler_max_type=%#x write_max_us=%u",
+        atomic_load(&s_refused_heap), atomic_load(&s_refused_queue), atomic_load(&s_heap_min),
+        atomic_load(&s_queue_max), atomic_load(&s_read_max_us), atomic_load(&s_handler_max_us),
+        atomic_load(&s_handler_max_type), atomic_load(&s_write_max_us));
+}
 
 /* A CREDIT jumps the queue and carries the count current when the writer reaches it: behind a
    console burst's RX_ETH it arrived 0.51 s late and the host resynced over no loss.
@@ -162,7 +195,9 @@ static void writer(void *arg)
         }
         encoded[code_at] = code;
         encoded[out++] = 0;
+        const int64_t started = esp_timer_get_time();
         uart_write_bytes(WIRE_UART, encoded, out);
+        raise_max(&s_write_max_us, esp_timer_get_time() - started);
     }
 }
 
@@ -188,6 +223,10 @@ static void deliver(const uint8_t *encoded, size_t used)
     const int64_t started = esp_timer_get_time();
     s_handler(frame[0], frame + 1, out - 5);
     const int64_t took = esp_timer_get_time() - started;
+    if (took > atomic_load(&s_handler_max_us)) {
+        atomic_store(&s_handler_max_us, took);
+        atomic_store(&s_handler_max_type, frame[0]);
+    }
     if (took > 50000) wire_log("slow command 0x%02x: %u ms", frame[0], (unsigned)(took / 1000));
 }
 
@@ -224,7 +263,15 @@ static void reader(void *arg)
             else if (event.type == UART_BUFFER_FULL) atomic_fetch_add(&s_rx_buffer_full, 1);
         }
         const int64_t turn = esp_timer_get_time();
-        const int n = uart_read_bytes(WIRE_UART, chunk, sizeof(chunk), pdMS_TO_TICKS(20));
+        /* uart_read_bytes waits its timeout again for every ring item until `length` is met: a
+           host trickling 21-byte commands every 15 ms was read 461 ms late. Wait for one byte,
+           then take what is buffered. docs/hardware_esp32.md, The serial ceiling. */
+        size_t buffered = 0;
+        uart_get_buffered_data_len(WIRE_UART, &buffered);
+        const int n = buffered
+            ? uart_read_bytes(WIRE_UART, chunk, buffered < sizeof(chunk) ? buffered : sizeof(chunk), 0)
+            : uart_read_bytes(WIRE_UART, chunk, 1, pdMS_TO_TICKS(20));
+        raise_max(&s_read_max_us, esp_timer_get_time() - turn);
         /* Idle, the reader repeats its count every 100 ms: a host whose window stays shut under
            a repeated count knows the rest was lost on the line, and a silent board is busy. */
         if (n <= 0 && (s_consumed != s_credited || turn - s_credit_at > 100000)) {
