@@ -477,7 +477,9 @@ the base game) clears the slot, including an attached Pokemon, stores `Is3DEditM
     else:                            drop it
 
 Each placed seal consumes one from the player's stock, so a seal used three times needs three.
-Seals already on the player's capsules were paid for when placed and are not in the stock. The slot
+Seals already on the player's capsules were paid for when placed and are not in the stock; taking a
+seal off a capsule returns it (`CapsuleInfo$$RemoveAffixSeal` `0x01e940d0` calls
+`BallDecoWork$$ReturnSealCount`). When no seal of the design is in stock, nothing is written. The slot
 stores the number placed, compacted. The result is true when at least one seal was placed and none
 was dropped, and it picks the closing message (`0x021c9f80`): `DLP_net_union_room_090` when true,
 `_114` otherwise. "Seuls les sceaux que vous possédez ont été collés" is the false branch.
