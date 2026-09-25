@@ -281,6 +281,10 @@ As an access point it has hosted a completed Let's Go trade: the console joined 
 commits went through, its kind 4 record came back and it left cleanly, with no failed transmit
 and no serial drop.
 
+As a station at 1500000 baud it has completed a Let's Go trade as the joiner: associated on the
+first scan, the mesh, the clone session, seven offers as the console's player browsed and both
+commits, with no serial drop and 9 failed transmits of 1702.
+
 As an access point it has hosted a completed Legends Arceus trade through the four host
 phases (3, 6, 11, 14).
 
