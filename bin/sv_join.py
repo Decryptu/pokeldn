@@ -378,6 +378,9 @@ def build_parser():
                     help="seconds between our own RTT requests (0 sends none)")
     ap.add_argument("--no-rtt", action="store_true", help="do not answer RTT requests")
     ap.add_argument("--no-ack", action="store_true", help="do not acknowledge reliable streams")
+    ap.add_argument("--repeat-ack-gap", type=float, default=0.05, metavar="SECONDS",
+                    help="acknowledge a record already held at most once per SECONDS per stream; "
+                         "a new record is acked at once. 0 acks every repeat (docs/sv.md)")
     ap.add_argument("--ack-highest", action="store_true",
                     help="ack one past the highest id received, with no mask, instead of the "
                          "contiguous run and a mask as a retail station does (docs/sv.md)")
@@ -1206,8 +1209,13 @@ async def run_session(args, keys, host_ip, host_mac, our_ip, our_mac, record):
                            plain=body.hex() if note.startswith(" zlib ->") else None,
                            t=time.time())
                     stream_high[key] = max(stream_high.get(key, 0), rm["sequence_id"])
-                    stream_got.setdefault(key, set()).add(rm["sequence_id"])
-                    if not args.no_ack:
+                    got = stream_got.setdefault(key, set())
+                    repeat = rm["sequence_id"] in got
+                    got.add(rm["sequence_id"])
+                    # A host retransmitting its set sends ~140 repeats a second, and one ack each
+                    # nearly fills what the board transmits (docs/sv.md).
+                    held_off = repeat and time.time() - last_ack.get(key, 0.0) < args.repeat_ack_gap
+                    if not args.no_ack and not held_off:
                         ack = our_ack(key)
                         send(out(ack, host_var or 0, protocol=msg.protocol,
                                        port=msg.port, flags=ack_shape["flags"]),
