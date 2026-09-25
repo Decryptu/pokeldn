@@ -138,8 +138,20 @@ it is now installed from the reader task on core 1, and STATUS counts `wire_rx_b
 runs to 5 Mbaud; the USB bridge sets the limit. `tools/ldn/esp32_bench.py --port PORT --bauds
 921600,1500000,2000000,3000000` measures it with the board alone: BENCH streams random payloads,
 and the tool prints the rate, the messages lost and the frames that failed their checksum at each
-rate. Which bridge chip the ELEGOO board carries (CP2102 or CP2102N) and the rate it reaches are
-unmeasured.
+rate.
+
+The ELEGOO board's bridge reports itself as "CP2102 USB to UART Bridge Controller" (idProduct
+60000, bcdDevice 0x100) on macOS:
+
+| baud | measured | messages | lost | bad checksums |
+|---|---|---|---|---|
+| 921600 | 91.7 KB/s | 1429 of 1400 bytes | 0 | 0 |
+| 1000000 | 99.4 KB/s | 1429 of 1400 bytes | 0 | 0 |
+| 1500000 | 149.1 KB/s | 4286 of 1400 bytes | 0 | 0 |
+| 1500000 | 140.2 KB/s | 20000 of 100 bytes | 0 | 0 |
+| 2000000, 3000000 | the board never answers HELLO at the new rate | | | |
+
+`POKELDN_ESP32_BAUD=1500000` gives the board-to-host line 1.6 times the 921600 budget.
 
 ## The userspace stack
 
@@ -285,6 +297,5 @@ never answered until the player leaves and re-enters the room.
 - A sniffer board's counts of another board's frames undercount while the sniffer's own serial
   link is saturated; they are not evidence of loss on the air.
 - Serial latency at 921600 baud against the Z-A seat race.
-- The highest rate the board's USB bridge carries without checksum failures (`esp32_bench.py`).
 - easyworld reports that a classic ESP32 must be the ESP32-WROOM-32E module and that the older
   ESP32-WROOM-32 does not trade reliably.
