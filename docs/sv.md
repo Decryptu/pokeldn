@@ -237,7 +237,7 @@ Whether the set floods depends on the RTT answers the host holds when it sends i
 |---|---|---|---|---|
 | 0 or 1 | 0 | 6 | 0 | 0.79 to 1.01 s |
 | 2 to 7 | 0 | 5 | 91 to 106, every 0.16 to 0.20 s | 0.73 to 0.80 s |
-| 3 and 7 | 0.3 s | 2 | 0 | 0.50 and 0.52 s |
+| 3 to 7 | 0.3 s | 3 | 0 | 0.50 to 0.52 s |
 
 The retransmit interval follows the measured RTT: a few prompt answers bring it under the host's own
 0.8 s ack latency. `--rtt-delay 0.3` answers each RTT request 0.3 s late; the host announces the
