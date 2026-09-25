@@ -494,7 +494,9 @@ position equals a grid cell's `BallDecoWork$$Convert2DPosition` (`0x01f24da0`): 
 columns 28 degrees apart on the front (+z) and 25 on the back, each component rounded to 0.01. A
 console's own 2D capsule has all 19 seals on front cells with column and row in -3..3. A 2D design
 of 19 seals on a ring at z = 44, sent twice, filled capsule slots 2 and 3 of a retail console, each
-marked as decorated and showing nothing. `scratchpad/bdsp_capsule_grid.py FILE` checks a design
+marked as decorated and showing nothing. A 2D design of eight different seals on front cells,
+sent after those slots were cleared, filled slot 2 with four visible seals, the ones the player had
+in stock, and closed on the same message. `scratchpad/bdsp_capsule_grid.py FILE` checks a design
 against the grid.
 
 The answer must be

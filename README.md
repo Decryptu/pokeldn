@@ -64,7 +64,8 @@ Brilliant Diamond / Shining Pearl
 - Trading in both directions: joining the console's Union Room, or hosting a Union Room the
   console walks into; a character of pokeldn's own greets the player and trades through the game's
   own flow
-- Record mixing, ball capsules and the battle lobby, up to the console sending its own records
+- Ball capsule exchange: a capsule composed by pokeldn lands in the console's collection
+- Record mixing and the battle lobby, up to the console sending its own records
 
 Legends Arceus
 

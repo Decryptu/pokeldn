@@ -27,8 +27,10 @@ Proven on retail hardware, end to end:
   accepted one pokeldn assembled, wrote its save, and offered the select window again.
 - Hosting: a console entering the Union Room joins a room pokeldn hosts, draws its character, and
   completes a trade with it ([Hosting](bdsp_session.md#hosting)).
-- Record mixing, ball capsules and a battle lobby driven to the point where the console sends its
-  record, its capsule and its six chosen Pokemon.
+- A ball capsule composed by pokeldn exchanged in the Union Room: the console stores it in its
+  collection with the seals the player has in stock ([the protocol page](bdsp_protocol.md)).
+- Record mixing and a battle lobby driven to the point where the console sends its record and its
+  six chosen Pokemon.
 - A character walking on the Grand Underground floor, and the console's secret base read out.
 
 ## Pages
