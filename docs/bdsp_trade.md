@@ -90,6 +90,19 @@ and WAIT_POKE never ends whatever is sent.
     mine < theirs   CHILD
     equal           PARENT if isRecruiment (+0x38), else CHILD
 
+The function walks three static `int[]` species lists (the class's static fields +0x78, +0x80 and
+the one after) and returns 3, 2 or 1 for the first list holding the species. Their initialisers
+are in 1.3.0's `global-metadata.dat`:
+
+| offset | species | count |
+|---|---|---|
+| `0x666aa6` | 151, 251, 385, 386, 489, 490, 491, 492, 493 (the mythicals) | 9 |
+| `0x666b06` | 150, 249, 250, 382, 383, 384, 483, 484, 487 (the box legendaries) | 9 |
+| `0x667c39` | 144, 145, 146, 243, 244, 245, 377-381, 480, 481, 482, 485, 486, 488 | 17 |
+
+Which list backs which field is unread; the enum names match mythical 3, legendary 2,
+sub-legendary 1. Any species in any list outranks an ordinary one.
+
 `TradeParentStateModel$$StateProc` [0x1c23350], table at 0x3d80f2f:
 
     2 WAIT            targetState == WAIT                    -> 3
