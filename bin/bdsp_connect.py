@@ -148,8 +148,9 @@ async def main_async(args):
         # Build the offer before the radio is touched: a template that will not load, or a
         # nickname that will not fit, must fail here and not mid-trade.
         if args.trade_template:
-            edits = {k: v for k, v in (("species", args.trade_species),
-                                       ("nickname", args.trade_nickname),
+            # No species edit: the species word alone leaves the template's gender, ability, moves
+            # and level, and the game crashes drawing such an offer. Offer a complete, legal PB8.
+            edits = {k: v for k, v in (("nickname", args.trade_nickname),
                                        ("ot_name", args.trade_ot)) if v is not None}
             st["our_poke"] = pokemon.build_from(
                 pathlib.Path(args.trade_template).read_bytes(), **edits)
@@ -1659,11 +1660,10 @@ def build_parser():
                          "WAIT_READYOK only ends when a message ARRIVES inside it, and it enters "
                          "that state on its own countdown, so the answer has to keep coming")
     ap.add_argument("--trade-template", metavar="FILE",
-                    help="a PB8 to offer (328 or 344 bytes, encrypted or PKHeX's decrypted export), edited by --trade-species and friends. 328 "
+                    help="a PB8 to offer (328 or 344 bytes, encrypted or PKHeX's decrypted export), edited by --trade-nickname and --trade-ot. 328 "
                          "bytes hold much more than this project has identified, so what we send "
                          "is a real Pokemon with named fields changed rather than one invented "
                          "from nothing")
-    ap.add_argument("--trade-species", type=int, metavar="N", help="species for the offered Pokemon")
     ap.add_argument("--trade-nickname", metavar="TEXT", help="nickname for the offered Pokemon")
     ap.add_argument("--answer-return-select", action="store_true",
                     help="answer the NetDataReturnSelectData a completed trade ends on, ONCE. "
