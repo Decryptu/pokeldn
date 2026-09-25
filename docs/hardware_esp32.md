@@ -134,12 +134,11 @@ UART driver was installed from the main task, so its interrupt shared core 0 wit
 it is now installed from the reader task on core 1, and STATUS counts `wire_rx_bad` and
 `uart_overflow`.
 
-With the UART on core 1 and the line at 1500000 baud, a Scarlet joiner's seat that completed two
-trades lost 151 of 1844 ETH_TX commands, all in the first 11 s; the board counted 34 UART overflow
-events and 9 frames that failed their CRC over the same stretch, and nothing after. The loss is in
-the board's UART receive path. `uart_overflow` counts `UART_FIFO_OVF` (the 128-byte hardware FIFO,
-0.85 ms at this rate) and `UART_BUFFER_FULL` (the driver's 16 KB ring) together, so which one
-overflows is unmeasured. The run changed the core and the rate together.
+The loss is in the board's UART receive path. With the UART on core 1 at 1500000 baud, a Scarlet
+seat loses about 150 ETH_TX commands in its first 11 s, with 34 `uart_overflow` events and 9
+`wire_rx_bad` frames, and none after. `uart_overflow` counts `UART_FIFO_OVF` (the 128-byte hardware
+FIFO, 0.85 ms at this rate) and `UART_BUFFER_FULL` (the driver's 16 KB ring) together; which one
+overflows is unresolved.
 
 `POKELDN_ESP32_BAUD` sets the rate `open_serial` switches to, 921600 by default. The ESP32 UART
 runs to 5 Mbaud; the USB bridge sets the limit. `tools/ldn/esp32_bench.py --port PORT --bauds

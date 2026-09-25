@@ -133,12 +133,6 @@ console in either role accepts. The CHILD path has not yet completed on hardware
 policy under random latencies: echoing WAIT_POKE leaves a CHILD console in SEND_READYOK every time,
 and the mirror reaches START_WRITE_SAVE in both roles.
 
-A Zubat PB8 with its species word set to 483 (Dialga) and every other field left as it was crashed
-the retail game at the moment the player picked their own Pokemon, in SELECT_WINDOW, where the
-partner's offer is drawn; the offer had been received and acknowledged 0.1 s earlier. The role is
-written later, in SECURIY_TRADE, so the crash precedes it. The same template with its species
-unchanged completes. Which field of the edited record the game trips on is unread.
-
 `BoxWindow.NetTradePhase.WaitSave` writes nothing. The phase enum reads `None, WaitSave,
 PlayerSelecting, ...` and `ToNextPhase(0)` walks it by increment; the coroutine that phase runs,
 `BoxWindow.<WaitTradeSave>d__203$$MoveNext`, reads `FieldCommonParam[0xEB]`, multiplies it by 0.001f
