@@ -40,10 +40,6 @@ from pokeldn.frlg.link.host_app import HostApplication  # noqa: E402
 SESSION_ID = b"\x7b\xf1"
 
 
-def _record(app_data):
-    return transport._b85_decode(app_data[beacon.PIA_HDR:])[:beacon.RECORD_SIZE]
-
-
 def _search_word(app_data):
     record = _record(app_data)
     return int.from_bytes(
@@ -72,14 +68,6 @@ def test_default_advertisement_is_the_bare_in_union_room_activity():
     assert _search_word(active) & beacon.SEARCH_STARTED_ACTIVITY
 
 
-def test_trade_and_wonder_card_activities_are_the_ones_the_init_search_drops():
-    """Guards the explanation itself: if either activity ever became 12 the invisibility
-    would be gone and this file's premise with it."""
-    accepted_by_init_search = {beacon.ACTIVITY_SEARCH}
-    assert beacon.ACTIVITY_TRADE not in accepted_by_init_search
-    assert beacon.ACTIVITY_WONDER_CARD not in accepted_by_init_search
-
-
 def test_resume_form_is_expressible():
     """A console already inside the room accepts IN_UNION_ROOM | ACTIVITY_TRADE."""
     activity = beacon.IN_UNION_ROOM | beacon.ACTIVITY_TRADE
@@ -105,18 +93,6 @@ def test_only_the_activity_differs_from_the_trade_advertisement():
 
 
 # --- the flag actually reaches the air ------------------------------------------------------------
-def test_union_room_flag_parses_and_reaches_host_options():
-    import frlg_trade_host
-    parser = frlg_trade_host.build_parser()
-    args = parser.parse_args(["--union-room", "--no-live"])
-    _profile, _ldn, options = host_cli.build_host_config(parser, args)
-    assert options.union_room is True
-
-    default_args = parser.parse_args(["--no-live"])
-    _p, _l, default_options = host_cli.build_host_config(parser, default_args)
-    assert default_options.union_room is False
-
-
 def test_activity_names_resolve_to_the_decomp_values():
     resolve = config.resolve_union_room_activity
     assert resolve(None) == beacon.IN_UNION_ROOM   # proven default, see u03

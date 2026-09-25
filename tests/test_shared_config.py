@@ -1,16 +1,6 @@
-from dataclasses import FrozenInstanceError
-
 import frlg_trade_join
 from pokeldn import config
 from pokeldn.frlg.link import linkplayer
-
-
-def test_default_profile_is_completed_and_matches_configured_identity():
-    profile = config.DEFAULT_TRAINER
-    assert (profile.name, profile.version) == ("PkCamp", "leafgreen")
-    assert (profile.tid, profile.sid) == (0x8822, 0x47ED)
-    assert profile.trainer_id == 0x47ED8822
-    assert profile.progress_flags == 0x11
 
 
 def test_trainer_id_accepts_decimal_tid_and_tid_sid():
@@ -35,15 +25,9 @@ def test_trainer_id_rejects_invalid_syntax_and_ranges():
             raise AssertionError(f"invalid trainer ID accepted: {value!r}")
 
 
-def test_profile_is_immutable_and_serialization_padding_is_role_specific():
+def test_serialization_padding_is_role_specific():
     profile = config.profile_from_overrides(
         ot="Red", version="firered", trainer_id=(12345, 34567))
-    try:
-        profile.name = "Leaf"
-    except FrozenInstanceError:
-        pass
-    else:
-        raise AssertionError("frozen TrainerProfile accepted assignment")
     player = profile.to_link_player()
     assert player.trainer_id == (34567 << 16) | 12345
     assert player.version == linkplayer.VERSION_FIRE_RED

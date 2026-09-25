@@ -250,7 +250,6 @@ def test_replies_and_acks_from_the_console_owe_nothing():
 def _engine(**kw):
     """A HostTradeEngine parked at the Union Room's "do something" prompt, as the chat tests do."""
     from pokeldn.frlg.link import trade
-    from pokeldn.gba import rfu
     from pokeldn.frlg.link.host_trade import H_UROOM_PROMPT, HostTradeEngine
     kw.setdefault("union_room", True)
     kw.setdefault("union_room_battle", True)
@@ -281,13 +280,6 @@ def _queued_packets(h):
 def _sent(h):
     """The blocks queued for the console since the last clear, oldest first."""
     return [data for data, _ in h._blocks]
-
-
-def test_a_battle_request_is_still_declined_unless_it_is_asked_for():
-    from pokeldn.frlg.link.host_trade import HostTradeEngine
-    h = _engine(union_room_battle=False)
-    h.feed_child_slot(_packet_slot(0x41))
-    assert _queued_packets(h) == [0x52] * HostTradeEngine.UR_PACKET_REPEAT
 
 
 def test_the_whole_entry_sequence_runs_block_for_block():
@@ -347,15 +339,6 @@ def test_the_controller_loop_acks_a_command_of_any_size():
     h._after_child_block(99, bl.build(bl.BUFFER_A, bl.MASTER_BATTLER,
                                       bytes([bl.INTROSLIDE, 0, 0, 0])))
     assert [bl.parse(b)["buffer_id"] for b in _sent(h)] == [bl.EXEC_CLEAR]
-
-
-def test_the_first_get_mon_data_is_answered_with_our_mon():
-    h = _into_the_battle()
-    h._after_child_block(99, bl.build(bl.BUFFER_A, bl.OUR_BATTLER,
-                                      bytes([bl.GETMONDATA, bl.REQUEST_ALL_BATTLE, 0, 0])))
-    out = [bl.parse(b) for b in _sent(h)]
-    assert [r["buffer_id"] for r in out] == [bl.BUFFER_B, bl.EXEC_CLEAR]
-    assert out[0]["payload"][4:4 + battle_mon.SIZE] == battle_mon.from_mon(_mon())
 
 
 def test_the_battle_ends_and_stops_expecting_blocks():

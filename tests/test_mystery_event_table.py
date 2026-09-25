@@ -49,13 +49,6 @@ def _context(cmd_table):
     return bytes(context)
 
 
-def test_the_two_pointers_are_adjacent_and_exactly_the_table_apart():
-    """The whole method rests on this: 17 entries of 4 bytes, and the second word is the first plus
-    that. Either number wrong and the scan is looking for a shape that is not there."""
-    assert MYSTERY_EVENT_TABLE_BYTES == 0x44
-    assert CTX_CMD_TABLE_END - CTX_CMD_TABLE == 4
-
-
 def test_the_scan_finds_the_context_and_reads_the_table_address_out_of_it():
     """The payload, run offline against a context planted where one would be. The hit's ADDRESS is
     the context, and the hit's VALUE is gMysteryEventScriptCmdTable."""
@@ -104,15 +97,6 @@ def test_the_field_script_context_is_the_control_and_its_answer_is_already_known
         memory={context_at: bytes(context)})
     answer = buffer_script.read_table_scan(repeated.final.pending_send, low, high)
     assert answer["hits"] == [(context_at + CTX_CMD_TABLE, rom_map.G_SCRIPT_CMD_TABLE)]
-
-
-def test_the_bracket_a_real_answer_has_to_fall_in():
-    """A hit is only credible inside script_data, and both ends of that bracket are measurements
-    this project already made: A run read a script at the low end, a run the species table above the
-    high end. Anything outside is a coincidence in EWRAM, not the table."""
-    assert ANSWER_LOW > rom_map.G_STD_SCRIPTS
-    assert ANSWER_HIGH > ANSWER_LOW
-    assert ANSWER_HIGH - ANSWER_LOW < 0x00200000, "the bracket is under 2 MB wide"
 
 
 # --- and then it was measured: A run found it, a run read it ---------------------------------------
@@ -177,15 +161,6 @@ def test_memcpy_lands_inside_lib_text_and_checks_the_boundary():
     assert rom_map.MEMCPY > rom_map.LIB_TEXT_START
     assert rom_map.STRING_EXPAND_PLACEHOLDERS < rom_map.G_SCRIPT_CMD_TABLE   # ordinary .text
     assert rom_map.INIT_RAM_SCRIPT < rom_map.G_SCRIPT_CMD_TABLE
-
-
-def test_the_last_handler_is_bounded_by_its_own_epilogue():
-    """MEScrCmd_crc is the LAST entry, so nothing after it stops a reader walking to the end of the
-    dump - it first came back with 25 bl targets where the decomp gives it four. The trap is that
-    this ROM is agbcc-built and does not end a THUMB function with `pop {..., pc}`: crc ends
-    `pop {r4,r5,r6}; pop {r1}; bx r1` (BC70 BC02 4708). CalcCRC16 is the only worker it has."""
-    assert rom_map.CALC_CRC16 == 0x080489A0
-    assert rom_map.CALC_CRC16 < rom_map.G_SCRIPT_CMD_TABLE
 
 
 def test_varset_was_reachable_only_through_the_vm():

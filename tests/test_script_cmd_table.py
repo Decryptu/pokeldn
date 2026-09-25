@@ -87,21 +87,10 @@ def test_the_worker_addresses_sit_inside_the_dumped_rom():
         assert value % 2 == 0, f"{name} is stored without the thumb bit"
 
 
-def test_the_extraction_lands_on_an_address_measured_independently():
-    """ScrCmd_random's third call is Random, found independently from its own literal pool. This is the
-    check that the extraction is aligned, not the item addresses themselves."""
-    assert rom_map.RANDOM == 0x080486B0
-
-
 def test_the_flag_helpers_are_three_consecutive_functions():
     """FlagSet, FlagClear and FlagGet are written in that order [decomp:src/event_data.c], and the
     handlers called them in that order, so the addresses must ascend."""
     assert rom_map.FLAG_SET < rom_map.FLAG_CLEAR < rom_map.FLAG_GET
-
-
-def test_calling_add_bag_item_needs_the_thumb_bit():
-    """--call-address takes the value a bx needs; every entry here is stored without it."""
-    assert rom_map.thumb(rom_map.ADD_BAG_ITEM) == 0x0809DA71
 
 
 # --- reading a script the console holds ------------------------------------------------

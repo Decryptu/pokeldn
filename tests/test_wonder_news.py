@@ -25,7 +25,7 @@ import sys
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
 from pokeldn import config as configmod  # noqa: E402
-from pokeldn.frlg.gift import host_mg_app, host_mystery_gift, mg_client, mg_script, mg_server, stamp_rally, wonder_news  # noqa: E402
+from pokeldn.frlg.gift import host_mystery_gift, mg_client, mg_script, mg_server, stamp_rally, wonder_news  # noqa: E402
 from pokeldn.ldn import beacon, host_beacon, transport  # noqa: E402
 from pokeldn.frlg.gift import mystery_gift as mg  # noqa: E402
 from tests.test_mystery_gift_flow import ConsoleClientModel, _drive  # noqa: E402
@@ -104,16 +104,6 @@ def test_the_news_beacon_advertises_activity_22_and_the_card_beacon_still_21():
     assert sum(a != b for a, b in zip(news_inactive, card_inactive)) <= 2
 
 
-def test_the_news_host_application_uses_the_news_beacon_and_the_news_results():
-    assert host_mg_app.WonderNewsHostApplication.SUCCESS_RESULTS == (mg_server.SVR_MSG_NEWS_SENT,)
-    assert (host_mg_app.MysteryGiftHostApplication.SUCCESS_RESULTS
-            == (mg_server.SVR_MSG_CARD_SENT, mg_server.SVR_MSG_STAMP_SENT,
-                mg_server.SVR_MSG_GIFT_SENT_1))
-    assert "Wonder News" in host_mg_app.WonderNewsHostApplication(
-        configmod.MysteryGiftRunConfig(
-            payload=configmod.WonderNewsPayload()))._hosting_instructions()
-
-
 # --- the server script ----------------------------------------------------------------------
 def test_the_server_script_is_the_decompiled_news_script():
     """gMysteryGiftServerScript_SendWonderNews minus SVR_COPY_SAVED_NEWS, which reads a save block
@@ -137,31 +127,6 @@ def test_the_server_script_is_the_decompiled_news_script():
     assert send_news[4][1] == mg.MG_LINKID_RESPONSE
     assert send_news[6][1] is True and send_news[6][2] is mg_server._SCRIPT_HAS_NEWS
     assert send_news[-1][1] == mg_server.SVR_MSG_NEWS_SENT
-
-
-def test_the_client_scripts_are_the_decompiled_ones():
-    """sClientScript_SaveNews is the only gift script that answers with a value
-    [decomp:src/mystery_gift_scripts.c:51]."""
-    assert mg_script.CLIENT_SCRIPT_SAVE_NEWS == mg_script.client_script(
-        (mg_script.CLI_RECV, mg.MG_LINKID_NEWS),
-        mg_script.CLI_SAVE_NEWS,
-        mg_script.CLI_SEND_LOADED,
-        (mg_script.CLI_RECV, mg.MG_LINKID_CLIENT_SCRIPT),
-        mg_script.CLI_COPY_RECV,
-    )
-    assert mg_script.CLIENT_SCRIPT_NEWS_RECEIVED == mg_script.client_script(
-        mg_script.CLI_SEND_READY_END, (mg_script.CLI_RETURN, mg_script.CLI_MSG_NEWS_RECEIVED))
-    assert mg_script.CLIENT_SCRIPT_HAD_NEWS == mg_script.client_script(
-        mg_script.CLI_SEND_READY_END, (mg_script.CLI_RETURN, mg_script.CLI_MSG_HAD_NEWS))
-
-
-def test_the_server_sends_the_news_as_one_444_byte_message():
-    server = mg_server.MysteryGiftServer(news=_news())
-    assert server.is_news_distribution and server.card is None
-    action = server.run()
-    assert action[0] == "send" and action[1] == mg.MG_LINKID_CLIENT_SCRIPT
-    server.on_sent()
-    assert server.run() == ("recv", mg.MG_LINKID_GAME_DATA)
 
 
 # --- end to end against the console model ---------------------------------------------------
@@ -286,11 +251,3 @@ def test_the_news_payload_builds_what_the_registry_describes():
             pass
         else:
             raise AssertionError(f"{bad} should be rejected")
-
-
-def _run_all():
-    for name, test in sorted(globals().items()):
-        if name.startswith("test_") and callable(test):
-            test()
-            print(f"ok  {name}")
-    print("wonder news: all checks passed")

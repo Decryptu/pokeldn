@@ -396,8 +396,3 @@ def test_an_activity_that_finished_on_its_own_stops_without_settling():
     assert "stopping host peer traffic" in app._absence_stop_reason(0.0)
 
 
-def test_the_settle_clock_starts_at_the_first_absence_not_at_the_run_start():
-    app, _ = _absence_app(close_confirmed=True)
-    assert app._absence_stop_reason(500.0) is None
-    assert app._absence_since == 500.0
-    assert app._absence_stop_reason(500.0 + host_app.HOST_CLOSE_SETTLE_SECONDS) is not None

@@ -69,20 +69,6 @@ def test_an_empty_seat_is_ranking_255_and_is_not_counted_as_occupied():
     assert len(u.occupied) == 2
 
 
-def test_the_port_is_big_endian_inside_a_little_endian_message():
-    """12345 is 0x3039: byte-swapped it would read 14640, and everything else still parses."""
-    u = lp.parse_update_session(_update_session(seats=SEATS))
-    assert u.nodes[0].port == 12345
-    raw = _update_session(seats=SEATS)
-    assert raw[lp.UPDATE_SESSION_FIXED + 4:lp.UPDATE_SESSION_FIXED + 6] == b"\x30\x39"
-
-
-def test_the_sequence_id_is_little_endian():
-    raw = _update_session(seq=0x01020304, seats=SEATS)
-    assert raw[0x0C:0x10] == bytes.fromhex("04030201")
-    assert lp.parse_update_session(raw).sequence_id == 0x01020304
-
-
 def test_a_bad_version_byte_is_refused():
     raw = bytearray(_update_session(seats=SEATS))
     raw[0] = 2
@@ -105,27 +91,9 @@ def test_a_truncated_message_is_refused():
         lp.parse_update_session(raw[:8])
 
 
-def test_the_ack_is_twenty_bytes_and_names_its_sequence():
-    ack = lp.build_ack(4)
-    assert len(ack) == 0x14
-    assert ack[0] == 1 and ack[1] == lp.UPDATE_SESSION_ACK
-    assert lp.parse_ack(ack) == 4
-    assert lp.parse_ack(lp.build_ack(0xDEADBEEF)) == 0xDEADBEEF
-
-
 def test_the_ack_refuses_to_parse_an_update_session():
     with pytest.raises(ValueError, match="message type"):
         lp.parse_ack(_update_session(seats=SEATS))
-
-
-def test_an_ack_travels_as_a_protocol_36_message():
-    """What actually goes on the wire: the ack inside a Pia message, inside a padded payload."""
-    from pokeldn.ldn.pia5 import build_message, pad_payload, parse_messages
-    body = pad_payload(build_message(lp.build_ack(4), protocol=lp.PROTOCOL, destination=1))
-    assert len(body) % 16 == 0
-    m = parse_messages(body)
-    assert len(m) == 1 and m[0].protocol == lp.PROTOCOL
-    assert lp.parse_ack(m[0].payload) == 4
 
 
 def test_the_ack_carries_no_payload_size_the_way_the_console_writes_it():

@@ -9,11 +9,6 @@ fails. It is read instruction by instruction off BDSP's own ARM64: the init at
 main.bin 0x15691c8 and the draw at 0x1569250, checked against the
 NintendoClients wiki's "SEAD RNG" page. Identical, down to the state rotation and the order the
 draws are packed in.
-
-`create_key` is ENL's key generator (the wiki's "ENL Key Generation"). ENL is NOT Pia and no Pokemon
-title uses it, but the routine is here because it is what says a sixteen-byte "seed" is not
-necessarily a key: ENL runs the generator over a game-supplied table to MAKE one, and SEAD takes a
-four-integer state as readily as an integer seed.
 """
 
 import struct
@@ -52,32 +47,9 @@ class Sead:
         self.state = [self.state[1], self.state[2], s3, t]
         return t
 
-    def u64(self):
-        return (self.u32() << 32) | self.u32()
-
-    def uint(self, maximum):
-        """A draw in [0, maximum), the way SEAD reduces it - a multiply, not a modulo."""
-        return (self.u32() * maximum) >> 32
-
     def bytes(self, size):
         """`size` bytes of output, each draw packed little-endian, as Pia consumes them."""
         if size % 4:
             raise ValueError(f"{size} is not a multiple of 4")
         return b"".join(struct.pack("<I", self.u32()) for _ in range(size // 4))
 
-
-def create_key(rand, table, size=16):
-    """ENL's key generator: `size` bytes assembled a byte at a time out of `table`.
-
-    Each byte is two draws - which word of the table, and which of its four bytes.
-    """
-    if size % 4:
-        raise ValueError(f"{size} is not a multiple of 4")
-    out = b""
-    for _ in range(size // 4):
-        value = 0
-        for _ in range(4):
-            word = table[rand.uint(len(table))]
-            value = (value << 8) | ((word >> (rand.uint(4) * 8)) & 0xFF)
-        out += struct.pack("<I", value)
-    return out

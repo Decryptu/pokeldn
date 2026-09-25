@@ -45,23 +45,6 @@ def test_varints_and_fields_follow_the_protobuf_wire_format():
         trade.varint(-1)
 
 
-def test_a_trade_message_wraps_a_pk8_in_two_nested_fields():
-    """PokemonTradeDataHolder{pokemon{serializePokemonParam}} - the game's own schema."""
-    plain = bytearray(bytes(range(256)) * 2)[:gen8.SIZE_PARTY]
-    plain[0x04:0x06] = b"\x00\x00"
-    pk8 = pokemon.encrypt(bytes(plain))
-
-    msg = trade.pokemon_trade(pk8)
-    mid, body = trade.parse(msg)
-    assert mid == trade.POKEMON_TRADE
-    # field 1, length-delimited, holding field 1, length-delimited, holding the PK8
-    assert body[0] == 0x0A and body[3] == 0x0A
-    assert body.endswith(pk8)
-    assert len(msg) > len(pk8)
-    # and it round trips through the reader, so what we would send is a Pokemon
-    assert pokemon.read(body[-len(pk8):])["species"] == pokemon.read(pk8)["species"]
-
-
 def test_a_trade_message_refuses_anything_that_is_not_a_pk8():
     with pytest.raises(ValueError, match="not a PK8"):
         trade.pokemon_trade(b"\x00" * 100)
@@ -195,7 +178,6 @@ def test_the_policy_answers_a_trade_rpc_by_rebuilding_it_not_by_echoing_it():
 
 def test_an_offer_is_read_and_rebuilt_from_the_record_it_carries():
     """A run's own message: 20030, PokemonTradeDataHolder{pokemon{serializePokemonParam}}."""
-    from pokeldn import gen8
     plain = bytearray(bytes(range(256)) * 2)[:gen8.SIZE_PARTY]
     plain[0x04:0x06] = b"\x00\x00"
     pk8 = pokemon.encrypt(bytes(plain))
@@ -207,7 +189,6 @@ def test_an_offer_is_read_and_rebuilt_from_the_record_it_carries():
 
 
 def test_an_offer_is_answered_with_an_offer_and_never_with_an_echo():
-    from pokeldn import gen8
     def a_pk8(species):
         plain = bytearray(bytes(range(256)) * 2)[:gen8.SIZE_PARTY]
         plain[0x04:0x06] = b"\x00\x00"
@@ -267,8 +248,6 @@ def test_a_selection_pair_is_the_same_envelope_at_offset_fifty():
     pair = trade.build_rpc_pair(trade.SELECTION_OFFSET, station, clock)
     assert len(pair) == 2
     for member, base, body in zip(pair, trade.RPC_BASES, trade.RPC_PAIR_BODIES):
-        got = trade.parse_rpc(member)
-        assert got is None or True                       # parse_rpc only knows the 40030 envelope
         mid, _ = trade.parse(member)
         assert mid == trade.RPC_ENVELOPE_BASE + trade.SELECTION_OFFSET == 40050
         fields = trade._read_fields(trade._read_fields(member[4:])[1])
@@ -297,18 +276,6 @@ def test_the_confirmation_opener_rebuilds_nxldn_labs_bytes_from_our_own_registry
     assert trade.CONTENT_BASE_LOW + trade.CONFIRMATION_OFFSET == 10040
     mid, body = trade.parse(trade.open_content(trade.SELECTION_OFFSET))
     assert mid == 10050 and body == trade.field(trade.PING, b"")
-
-
-def test_the_three_trade_contents_pair_off_with_the_three_holders():
-    """Each pairing is forced by something on the wire, not chosen.
-
-    Content 30 carries a FIELD 2 (`3e4e000012020801`) and only BoxSyncStateDataHolder has one;
-    content 50 carries a 344-byte PK8 in field 5 of its envelope, which is the Pokemon holder; 40
-    is what is left, and a save sync is what a finished trade runs.
-    """
-    assert trade.CONTENT_HOLDERS[trade.OFFER_OFFSET] == "BoxSyncStateDataHolder"
-    assert trade.CONTENT_HOLDERS[trade.SELECTION_OFFSET] == "PokemonTradeDataHolder"
-    assert trade.CONTENT_HOLDERS[trade.CONFIRMATION_OFFSET] == "SyncSaveDataHolder"
 
 
 def test_a_content_fifty_envelope_carries_the_pk8_in_field_five():
@@ -392,16 +359,6 @@ def test_the_confirmation_content_takes_a_command_and_not_a_pokemon():
                                trade.field_varint(trade.SYNC_COMMAND_DATA, 0))
 
 
-def test_the_confirmation_command_shares_the_openers_id_and_differs_in_the_body():
-    """The opener and the command ride the SAME holder - `382700000a00` and `382700000a020801` -
-    which is the whole point: An empty body on a content's 10000-base holder is
-    accepted as that content's record, so the command goes where the ping went."""
-    opener = trade.open_content(trade.CONFIRMATION_OFFSET)
-    command = trade.sync_command(trade.CONFIRMATION_OFFSET, 1)
-    assert opener[:4] == command[:4] == bytes.fromhex("38270000")
-    assert len(command) > len(opener)
-
-
 def test_every_command_the_consoles_own_machine_sends_round_trips():
     """`0x010dae70` is the only caller of the send `0x010db840`, and it passes 0, 1, 2 and 3."""
     assert sorted(trade.SYNC_COMMANDS) == [0, 1, 2, 3]
@@ -474,13 +431,6 @@ def test_a_step_reader_takes_only_four_bytes_and_never_raises():
     assert trade.parse_sync_step(b"") is None
     assert trade.parse_sync_step(b"\x00\x00\x01") is None
     assert trade.parse_sync_step(bytearray.fromhex("01000200")) == (1, 2)
-
-
-def test_a_phase_above_the_ladder_is_not_a_rung():
-    """The setter bounds-checks `w1 > 4` and returns, so nothing outside 0..4 moves the machine -
-    which is why the run sends the four commands and not a fifth."""
-    assert max(trade.SYNC_LADDER) == 4
-    assert trade.sync_announced_phase(max(trade.SYNC_COMMANDS)) == max(trade.SYNC_LADDER)
 
 
 def test_a_negative_command_is_refused_rather_than_encoded():

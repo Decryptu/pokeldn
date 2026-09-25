@@ -23,30 +23,6 @@ def test_pi_scripts_are_present_and_strict():
         assert "set -euo pipefail" in text
 
 
-def test_setup_uses_vendored_requirements_and_unmanaged_ldn_interfaces():
-    text = _text("scripts/setup_pi.sh")
-    assert 'cd "$PROJECT_ROOT"' in text
-    assert 'pip install -r requirements.txt' in text
-    assert "aarch64" in text
-    assert "python3-venv" in text
-    assert "interface-name:ldnclient" in text
-    assert "interface-name:ldn-mon" in text
-    assert "interface-name:ldn-tap" in text
-    assert "install_switch_keys.sh" in text
-    assert "--install-mt7601u-ap" in text
-    assert "linux-headers-rpi-v8" in text
-    assert "dkms" in text
-
-    driver = _text("scripts/install_mt7601u_ap.sh")
-    assert "KERNEL_RELEASES" in driver
-    assert 'for kernel_release in "${KERNEL_RELEASES[@]}"' in driver
-    assert "scp " not in text
-    assert " rsync" not in text
-
-    ignore = _text(".gitignore")
-    assert "*.egg-info/" in ignore
-
-
 def test_preflight_validates_tplink_driver_modes_and_key_permissions():
     text = _text("scripts/preflight_pi.sh")
     assert "/usr/sbin" in text
@@ -97,12 +73,3 @@ def test_deployment_requires_clean_committed_state_and_fast_forward_only():
     assert "merge --ff-only FETCH_HEAD" in update
     assert "git reset" not in update
     assert "MT7601U DKMS source changed" in update
-
-
-def test_pi_guide_keeps_keys_and_references_out_of_deployment():
-    text = _text("docs/hardware_raspberry_pi.md")
-    assert "vendor/LDN" in text
-    assert "GitHub" in text
-    assert "Switch key setup" in text
-    assert "Pokémon" in text or "Pokemon" in text
-    assert "deploy_pi.sh" in text

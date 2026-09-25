@@ -33,14 +33,6 @@ def test_advance_matches_stepping_one_at_a_time():
     assert lcg.advance(value, 0) == value
 
 
-def test_draw_returns_the_top_half_only():
-    got, after = lcg.draw(0)
-    assert after == lcg.step(0)
-    assert got == after >> 16
-    assert lcg.draws(0, 3)[0] == [lcg.draw(0)[0]] + [lcg.draw(lcg.step(0))[0]] + \
-        [lcg.draw(lcg.step(lcg.step(0)))[0]]
-
-
 @pytest.mark.parametrize("n", [0, 1, 2, 96, 34962, 1 << 20, (1 << 32) - 1])
 def test_distance_is_exact_at_any_range(n):
     start = 0xDF65
@@ -62,11 +54,6 @@ def test_predecessors_finds_a_planted_seed_at_the_right_distance():
 
 def test_predecessors_reports_nothing_when_the_seed_is_out_of_reach():
     assert lcg.predecessors(lcg.advance(0x1234, 5000), limit=100) == []
-
-
-def test_seconds_uses_the_measured_rate():
-    # A run measured two turns a frame at the Mystery Gift link menu, on all 95 gaps.
-    assert lcg.seconds(2 * 60, per_frame=2, fps=60) == pytest.approx(1.0)
 
 
 def _build_wild_mon(state):

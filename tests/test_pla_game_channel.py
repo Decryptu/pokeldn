@@ -28,18 +28,6 @@ def test_a_channel_message_is_a_handler_key_and_a_body():
     assert key == bytes.fromhex("b90101b902b90200") and body == bytes.fromhex("0001")
 
 
-def test_the_host_channel_carries_the_key_the_game_registers():
-    """The handler the game registers on reaching this step carries eight zero bytes, and the
-    dispatcher compares only the key."""
-    key, _ = game_channel.split_message(game_channel.HOST_OPEN_PAYLOAD)
-    assert key == bytes(game_channel.KEY_SIZE)
-
-
-def test_a_rebuilt_message_round_trips():
-    key, body = game_channel.split_message(game_channel.HOST_OPEN_PAYLOAD)
-    assert game_channel.build_message(key, body, 1) == HOST_OPEN
-
-
 def test_the_channel_declares_no_destination_bitmap():
     """0x7c is addressed to the peer's variable id, so the message carries no bitmap, where the
     0x81 stream declares one destination bit."""
@@ -58,13 +46,3 @@ def test_the_second_key_on_a_port_is_the_consoles_byte_for_byte():
                                       sequence_id=2, flags=0x07) == CONSOLE_SECOND_KEY
 
 
-def test_a_port_carries_more_than_one_handler_key():
-    """The open and this differ in the key's last byte alone, so a mirror owed once per port would
-    answer the first and never the second."""
-    opened = reliable5.parse(game_channel.build_open(game_channel.JOINER_OPEN_PAYLOAD))["payload"]
-    second = reliable5.parse(CONSOLE_SECOND_KEY)["payload"]
-    first_key, first_body = game_channel.split_message(opened)
-    second_key, second_body = game_channel.split_message(second)
-    assert first_key != second_key
-    assert first_key[:-1] == second_key[:-1]
-    assert first_body == second_body

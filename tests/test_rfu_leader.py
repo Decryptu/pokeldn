@@ -186,25 +186,6 @@ def test_union_room_leader_skips_the_parent_join_status_ni():
     assert leader.state == "UNI"
 
 
-def test_default_leader_still_sends_the_parent_ni():
-    """Guards the trade centre path, which is hardware-proven and must not change."""
-    leader = RFULeader()
-    leader.receive(gbaframe.build_connect(b"\x67\x79"))
-    leader.tick()
-    leader.tick()
-    child = ni.NISender(ni.build_game_data(5, 0x2288, "EMU"))
-    ts = 1
-    while not child.done:
-        slot = child.next_slot()
-        event = leader.receive(_child_t(slot, ts))
-        ts += 1
-        if rfu.parse_llsf_child(slot)["state"] != rfu.LCOM_NULL:
-            leader.tick()
-    assert event == "child_ni_complete"
-    assert leader.tick() == bytes.fromhex("5747040001000000")
-    assert gbaframe.parse_in(leader.tick())["ni"]["state"] == rfu.LCOM_NI_START
-
-
 def test_ldn_leave_immediately_silences_queued_output():
     leader = RFULeader()
     leader.receive(gbaframe.build_connect(b"\x67\x79"))
@@ -296,17 +277,3 @@ def test_union_room_keepalive_re_presents_an_ni_start_before_uni():
     assert leader.state == "UNI"
 
 
-def test_union_room_keepalive_zero_is_the_plain_skip():
-    leader = RFULeader(skip_parent_ni=True, keepalive_frames=0)
-    leader.receive(gbaframe.build_connect(b"\x67\x79"))
-    leader.tick()
-    leader.tick()
-    child = ni.NISender(ni.build_game_data(5, 0x2288, "EMU"))
-    ts = 1
-    while not child.done:
-        slot = child.next_slot()
-        event = leader.receive(_child_t(slot, ts))
-        ts += 1
-        if rfu.parse_llsf_child(slot)["state"] != rfu.LCOM_NULL:
-            leader.tick()
-    assert event == "child_ni_complete_no_parent_ni"

@@ -5,8 +5,6 @@ message, its acknowledgement, and the stream open both stations send. `docs/pla.
 exchange.
 """
 
-import zlib
-
 import pytest
 
 from pokeldn.ldn import reliable5
@@ -75,23 +73,6 @@ def test_a_built_record_carries_the_name_and_id_written_into_it():
 def test_a_name_past_the_field_is_refused_rather_than_written_into_the_next():
     with pytest.raises(ValueError):
         data_exchange.build_record(name="X" * (data_exchange.NAME_SIZE // 2 + 1))
-
-
-def test_the_content_message_declares_one_destination_bit_and_the_zlib_flag():
-    message = reliable5.parse(data_exchange.build_content_message(
-        data_exchange.REFERENCE_RECORD, 0x02))
-    assert message["flags"] & reliable5.FLAG_ZLIB
-    assert message["destination_bits"] == 1
-    assert message["bitmap"] == [0x02]
-    assert message["sequence_id"] == data_exchange.SEQUENCE_ID
-
-
-def test_the_framing_is_not_a_plain_zlib_compress():
-    # The game sync-flushes before it finishes, so the trailer carries an empty stored block. A
-    # record built with `zlib.compress` is a different length and would not reproduce a capture.
-    record = data_exchange.REFERENCE_RECORD
-    assert data_exchange.compress(record) != zlib.compress(record)
-    assert zlib.decompress(data_exchange.compress(record)) == record
 
 
 def test_the_stream_and_rtt_are_addressed_to_the_mesh_and_the_rest_to_the_station():

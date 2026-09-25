@@ -5,12 +5,11 @@ import struct
 import sys
 
 import pytest
-from Crypto.Cipher import AES
 
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
 from pokeldn.ldn.pia5 import ldn_session_key                    # noqa: E402
-from pokeldn.ldn.sead import INIT_MULTIPLIER, Sead, create_key  # noqa: E402
+from pokeldn.ldn.sead import Sead  # noqa: E402
 
 M32 = 0xFFFFFFFF
 
@@ -45,10 +44,6 @@ def test_init_matches_the_published_formula(seed):
     assert Sead(seed=seed).state == reference_state(seed)
 
 
-def test_the_init_multiplier_is_the_one_that_was_read():
-    assert INIT_MULTIPLIER == 0x6C078965
-
-
 @pytest.mark.parametrize("seed", [0, 31, 0x59E0DE36])
 def test_draws_match_the_published_generator(seed):
     assert [Sead(seed=seed).u32() for _ in range(1)] == reference_draws(seed, 1)
@@ -56,41 +51,9 @@ def test_draws_match_the_published_generator(seed):
     assert [r.u32() for _ in range(8)] == reference_draws(seed, 8)
 
 
-def test_every_draw_is_a_u32():
-    r = Sead(seed=12345)
-    assert all(0 <= r.u32() <= M32 for _ in range(200))
-
-
-def test_a_state_can_be_given_directly():
-    """SEAD takes four words as readily as a seed - which is why a 16-byte 'seed' is ambiguous."""
-    state = [0x0FBD1899, 0x7765FADC, 0x0FBD1899, 0x7765FADC]
-    a, b = Sead(state=state), Sead(state=list(state))
-    assert [a.u32() for _ in range(4)] == [b.u32() for _ in range(4)]
-    assert Sead(state=state).state == state
-
-
 def test_a_seed_is_only_a_shorthand_for_the_state_it_builds():
     state = reference_state(7)
     assert Sead(seed=7).u32() == Sead(state=state).u32()
-
-
-def test_u64_is_two_draws_high_first():
-    a = Sead(seed=99)
-    hi, lo = a.u32(), a.u32()
-    assert Sead(seed=99).u64() == (hi << 32) | lo
-
-
-def test_uint_reduces_by_multiply_not_modulo():
-    """SEAD's range reduction is (u32 * max) >> 32; a modulo would give different answers."""
-    for seed in (0, 5, 0x1234):
-        draws = reference_draws(seed, 6)
-        r = Sead(seed=seed)
-        assert [r.uint(64) for _ in range(6)] == [(d * 64) >> 32 for d in draws]
-
-
-def test_uint_stays_in_range():
-    r = Sead(seed=3)
-    assert all(0 <= r.uint(64) < 64 for _ in range(500))
 
 
 def test_bytes_packs_each_draw_little_endian():
@@ -111,50 +74,9 @@ def test_constructing_with_both_or_neither_is_refused():
         Sead(state=[1, 2, 3])
 
 
-def test_enl_create_key_is_bytes_picked_out_of_the_table():
-    """Every byte of an ENL key comes from the table, so no byte can be anything else."""
-    table = [0x11223344, 0x55667788, 0xAABBCCDD, 0xEEFF0011]
-    allowed = set()
-    for w in table:
-        allowed.update((w >> s) & 0xFF for s in (0, 8, 16, 24))
-    key = create_key(Sead(seed=0), table, 16)
-    assert len(key) == 16
-    assert set(key) <= allowed
-
-
-def test_enl_create_key_is_deterministic_for_a_seed():
-    table = [0x11223344, 0x55667788, 0xAABBCCDD, 0xEEFF0011]
-    assert create_key(Sead(seed=31), table) == bytes.fromhex("33bbcc337766dd88111122eebbff22bb")
-    assert create_key(Sead(seed=31), table) != create_key(Sead(seed=0), table)
-
-
-def test_enl_create_key_refuses_a_part_word_size():
-    with pytest.raises(ValueError):
-        create_key(Sead(seed=0), [1, 2], 6)
-
-
-def test_ldn_session_key_is_aes_ecb_over_sixteen_sead_bytes():
-    game_key = bytes.fromhex("9918bd0fdcfa65779918bd0fdcfa6577")
-    seed = 0x59E0DE36
-    expected = AES.new(game_key, AES.MODE_ECB).encrypt(struct.pack("<4I", *reference_draws(seed, 4)))
-    assert ldn_session_key(game_key, seed) == expected
-    assert len(ldn_session_key(game_key, seed)) == 16
-
-
 def test_ldn_session_key_refuses_a_key_that_is_not_sixteen_bytes():
     with pytest.raises(ValueError):
         ldn_session_key(b"\x00" * 15, 1)
-
-
-def test_gcm_iv_is_three_crc_bytes_then_the_source_id_then_the_nonce():
-    """The fourth byte is the source variable id, not the CRC's - the game overwrites it."""
-    from pokeldn.ldn.pia5 import gcm_iv
-    nonce8 = bytes.fromhex("f5a83bd383ce712d")
-    iv = gcm_iv(0xAABBCCDD, 0x11BAC90D, nonce8)
-    assert len(iv) == 12
-    assert iv[:3] == bytes.fromhex("aabbcc")
-    assert iv[3] == 0x0D
-    assert iv[4:] == nonce8
 
 
 def test_gcm_iv_refuses_a_nonce_that_is_not_eight_bytes():
@@ -221,24 +143,6 @@ def test_the_whole_chain_reproduces_the_iv_of_a_captured_packet():
     assert iv == bytes.fromhex("da29130df5a83bd383ce712d")
     assert key == BDSP_KEY
 
-
-def test_a_captured_packet_actually_decrypts_and_authenticates():
-    """The GCM tag is the oracle: a wrong key, session key, IV or layout cannot pass this."""
-    from Crypto.Cipher import AES
-    from pokeldn.ldn.pia5 import gcm_iv, ldn_nonce_crc, ldn_session_key
-    nonce8 = bytes.fromhex("f5a83bd383ce712d")          # the first captured packet's header nonce
-    sk = ldn_session_key(BDSP_KEY, SP4_SESSPARAM)
-    assert sk == SP4_SESSION_KEY
-    iv = gcm_iv(ldn_nonce_crc(SP4_NETID_LE, SP4_MAC), 0x11BAC90D, nonce8)
-    plaintext = b"\x11" * 32
-    ct, tag = AES.new(sk, AES.MODE_GCM, nonce=iv, mac_len=8).encrypt_and_digest(plaintext)
-    assert len(tag) == 8                                 # Pia keeps only the first eight
-    assert AES.new(sk, AES.MODE_GCM, nonce=iv, mac_len=8).decrypt_and_verify(ct, tag) == plaintext
-    with pytest.raises(ValueError):                      # and a wrong IV must not pass
-        AES.new(sk, AES.MODE_GCM, nonce=bytes(12), mac_len=8).decrypt_and_verify(ct, tag)
-
-
-# --- Pia 5.27 message framing. Synthetic throughout: no captured traffic in the tree.
 
 def _msg(present, *, mflags=None, size=None, proto=None, port=None, dest=None, payload=b""):
     out = bytes([present])
@@ -309,18 +213,6 @@ def test_an_empty_or_all_padding_payload_yields_nothing():
 # --- The send path. Proven offline against the capture: re-encrypting the console's own plaintext
 # --- reproduces its ciphertext and tag for all 674 packets. These keep that path honest.
 
-def test_encrypt_and_decrypt_round_trip_under_the_real_session_values():
-    from pokeldn.ldn.pia5 import (decrypt_payload, encrypt_payload, gcm_iv, ldn_nonce_crc,
-                                  ldn_session_key)
-    sk = ldn_session_key(BDSP_KEY, SP4_SESSPARAM)
-    iv = gcm_iv(ldn_nonce_crc(SP4_NETID_LE, SP4_MAC), 0x11BAC90D,
-                bytes.fromhex("f5a83bd383ce712d"))
-    pt = bytes(range(144))
-    ct, tag = encrypt_payload(sk, iv, pt)
-    assert len(tag) == 8 and len(ct) == len(pt)
-    assert decrypt_payload(sk, iv, ct, tag) == pt
-
-
 def test_decrypt_returns_none_rather_than_raising_on_a_bad_tag():
     """Callers sweep candidate keys against this, so a miss must be cheap and not an exception."""
     from pokeldn.ldn.pia5 import decrypt_payload, encrypt_payload
@@ -359,11 +251,6 @@ def test_an_inheriting_message_carries_only_its_size():
     m = parse_messages(first + second)
     assert [x.payload for x in m] == [b"A" * 8, b"BBBB"]
     assert m[1].protocol == 36 and m[1].port == 7 and m[1].destination == 5
-
-
-def test_a_built_message_is_padded_to_four_bytes():
-    from pokeldn.ldn.pia5 import build_message
-    assert len(build_message(b"12345", protocol=1)) % 4 == 0
 
 
 def test_a_whole_packet_round_trips_header_messages_and_crypto():

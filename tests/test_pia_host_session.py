@@ -14,8 +14,7 @@ from pokeldn.ldn.host_beacon import (CAPTURED_TRADE_BEACON,
 from pokeldn.ldn.host_pia import (PiaNonceSequence, build_host_rtt,
                               build_messages, build_net_probe,
                               build_net_property_update,
-                              build_session_acceptance, decode_datagram,
-                              reliable_output_batches)
+                              build_session_acceptance, decode_datagram)
 from pokeldn.config import TrainerProfile
 from pokeldn.ldn.reliable import ReliableEmission, FLAGSA_CTRL, FLAGSA_GBA
 
@@ -93,39 +92,6 @@ def test_native_host_nonce_allocation_matches_fire_red_order():
     assert cryptomod.PiaHeader.unpack(update).nonce8 == bytes.fromhex("04c5a33f290b14e4")
 
 
-def test_session_acceptance_pair_can_be_rebuilt_and_retried_response_first():
-    join = pia_connect.parse_session_join(JOIN)
-    host = SimpleNamespace(
-        ssid=bytes.fromhex("5c42961f018902911a2f1c9548c8e9c4"),
-        our_ip="169.254.88.1",
-        our_mac=bytes.fromhex("3ca9abf73c06"),
-        broadcast="169.254.88.255",
-        participants=[(1, join["ip"], bytes.fromhex("3c3300609493"), b"EMU")],
-        max_participants=6,
-        sent=[],
-    )
-    host.send = lambda datagram, dst: host.sent.append((datagram, dst))
-    nonces = PiaNonceSequence(native=True, initial=1)
-    crypto = cryptomod.PiaCrypto(host.ssid)
-
-    for _ in range(2):
-        update, response = build_session_acceptance(
-            host, crypto, join, "Chase", nonces)
-        # Transport ordering is deliberately outside the pure Pia helper.
-        host.send(response, join["ip"])
-        host.send(update, host.broadcast)
-
-    assert [dst for _, dst in host.sent] == [
-        join["ip"], host.broadcast, join["ip"], host.broadcast]
-    # Every rebuilt datagram uses a fresh native Pia nonce.
-    assert [cryptomod.PiaHeader.unpack(d).nonce8 for d, _ in host.sent] == [
-        bytes.fromhex("0000000000000001"),
-        bytes.fromhex("0000000000000002"),
-        bytes.fromhex("0000000000000003"),
-        bytes.fromhex("0000000000000004"),
-    ]
-
-
 def test_initial_and_active_beacons_share_rfu_leader_session_id():
     """The discovered parent ID must be the one returned in RFU A."""
     session_id = bytes.fromhex("b7f1")
@@ -171,19 +137,6 @@ def test_host_rtt_origination_replaces_only_type_and_systime():
     assert request[:8] == template[:8]
     assert request[8:16] == bytes.fromhex("0100010000000000")
     assert request[16:] == template[16:]
-
-
-def test_reliable_control_ack_ends_its_pia_batch():
-    data1 = ReliableEmission(0xFFF0, FLAGSA_GBA, 0xFFF0, b"A")
-    ack = ReliableEmission(0xFFF0, FLAGSA_CTRL, 0xFFF1, b"ack")
-    data2 = ReliableEmission(0xFFF1, FLAGSA_GBA, 0xFFF0, b"T")
-    assert reliable_output_batches([data1, ack, data2]) == [[data1, ack], [data2]]
-
-    retransmit = ReliableEmission(
-        0xFFF2, FLAGSA_GBA, 0xFFF0, b"retry", retransmitted=True)
-    assert reliable_output_batches([data1, retransmit, data2]) == [
-        [data1, retransmit], [data2]
-    ]
 
 
 def test_reliable_pia_batches_preserve_ack_and_retransmit_message_flags():

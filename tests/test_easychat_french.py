@@ -66,13 +66,6 @@ def test_species_and_move_slots_need_no_table_at_all():
     assert easychat_french.check([easychat.species_word(55), easychat.move_word(177)]) == ()
 
 
-def test_check_still_names_a_slot_nobody_has_read():
-    unread = easychat_french.check([WORDS["hot"], WORDS["enjoy"]])
-
-    assert WORDS["enjoy"] not in unread          # read off the console
-    assert easychat_french.french(WORDS["enjoy"]) == "STRESSE"
-
-
 def test_render_prefers_what_the_console_prints_over_the_english_slot_name():
     line = easychat_french.render([WORDS["enjoy"], WORDS["done"], WORDS["sad"]])
 

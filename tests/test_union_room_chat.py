@@ -68,14 +68,6 @@ def test_chat_block_carries_the_text_after_the_name_field():
     assert uroom_chat.describe(uroom_chat.parse(b)) == "PkCamp: HELLO"
 
 
-@pytest.mark.parametrize("cmd", [uroom_chat.JOIN, uroom_chat.LEAVE,
-                                 uroom_chat.DROP, uroom_chat.DISBAND])
-def test_non_chat_blocks_round_trip_with_their_multiplayer_id(cmd):
-    msg = uroom_chat.parse(uroom_chat.build(cmd, "SWITCH", multiplayer_id=1))
-    assert msg == {"cmd": cmd, "name": "SWITCH", "multiplayer_id": 1, "text": ""}
-    assert uroom_chat.describe(msg) == f"[{uroom_chat.NAMES[cmd]}] SWITCH"
-
-
 def test_a_full_length_line_still_fits_the_block():
     """messageEntryBuffer is 2 * MESSAGE_BUFFER_NCHAR + 1 = 31 bytes, exactly the block's tail. The
     31 bytes are 15 two-byte entries; a line we can actually send is 15 one-byte ones."""

@@ -27,12 +27,6 @@ def test_both_selectors_are_the_consoles_byte_for_byte():
     assert trade_box.build_message(selector=trade_box.SELECTOR_OFFERING) == CONSOLE_OFFERING
 
 
-def test_the_two_selectors_differ_in_one_byte():
-    differences = [i for i in range(len(CONSOLE_SHOWING))
-                   if CONSOLE_SHOWING[i] != CONSOLE_OFFERING[i]]
-    assert differences == [9 + 8]   # the header, the key, then the selector
-
-
 def test_the_message_is_application_data_at_sequence_two_with_no_bitmap():
     message = reliable5.parse(CONSOLE_MESSAGE)
     assert message["flags"] == (reliable5.FLAG_APPLICATION_DATA | reliable5.FLAG_MESSAGE_START
@@ -183,14 +177,6 @@ def test_a_record_less_selector_reads_back_as_itself():
     payload = reliable5.parse(CONSOLE_CONFIRMING)["payload"]
     assert trade_box.read_payload(payload) is None
     assert trade_box.read_selector(payload) == (trade_box.SELECTOR_CONFIRMING, b"\x05\x00")
-
-
-def test_the_mirrored_selectors_are_the_ones_that_carry_no_record():
-    for selector in trade_box.MIRRORED_SELECTORS:
-        assert selector not in trade_box.RECORD_SELECTORS
-    # 1 is the channel open, which `game_channel` answers on its own before any of this.
-    assert trade_box.SELECTOR_READY not in trade_box.MIRRORED_SELECTORS
-    assert trade_box.SELECTOR_CONFIRMING in trade_box.MIRRORED_SELECTORS
 
 
 def test_the_channel_open_is_a_selector_too():

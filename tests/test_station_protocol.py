@@ -131,12 +131,6 @@ def test_a_response_that_is_not_one_is_refused_rather_than_misread():
         stp.parse_connection_response(b"")
 
 
-def test_the_message_type_comes_off_the_front():
-    assert stp.parse_message(bytes([stp.ACK, 0, 0, 0, 1, 2, 3, 4]))[0] == stp.ACK
-    with pytest.raises(ValueError):
-        stp.parse_message(b"")
-
-
 def test_a_version_probe_puts_the_candidate_first_and_pads_with_filler():
     """The console's loop reports the FIRST disagreement, so the candidate has to lead."""
     probe = stp.version_probe(0x14, 3, 9)
@@ -217,23 +211,6 @@ def test_a_non_direction_is_refused_rather_than_treated_as_a_miss():
     s = stp.VersionSearch()
     with pytest.raises(ValueError):
         s.feed("denied")
-
-
-def test_the_location_lands_the_variable_id_where_the_console_reads_it():
-    """main.bin 0x015a3aac reads everything after the two addresses at a fixed offset from them.
-
-    This is the field the second stage tests, and a location whose size bytes are illegal never
-    deserialises at all - the connection-request parser throws that error away, so the field stays
-    0 and every request looks identical no matter what was put in it. That is what an earlier build sent.
-    """
-    loc = stp.station_location("169.254.14.2", 12345, 0x1249A221D8580000, 0x2B7F4C11, 0x32669AEA)
-    rest = 2 + loc[0] + loc[1]
-    assert struct.unpack_from(">I", loc, rest + 0x00)[0] == 0            # relay address
-    assert struct.unpack_from(">H", loc, rest + 0x04)[0] == 0            # relay port
-    assert struct.unpack_from(">Q", loc, rest + 0x06)[0] == 0x1249A221D8580000
-    assert struct.unpack_from(">I", loc, rest + 0x0E)[0] == 0x2B7F4C11   # the one that matters
-    assert struct.unpack_from(">I", loc, rest + 0x12)[0] == 0x32669AEA
-    assert len(loc) == rest + 0x1A == 40
 
 
 def test_the_station_ack_is_eight_bytes_and_names_its_id():

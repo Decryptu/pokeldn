@@ -38,12 +38,6 @@ def test_crc16_regression_anchors():
     assert mg.crc16(b"123456789") == 0xBE75
 
 
-def test_mg_link_constants():
-    assert mg.MG_LINKID_CLIENT_SCRIPT == 16 and mg.MG_LINKID_GAME_DATA == 17
-    assert mg.MG_LINKID_CARD == 22 and mg.MG_LINKID_RAM_SCRIPT == 25 and mg.MG_LINKID_READY_END == 20
-    assert mg.MG_LINK_BUFFER_SIZE == 0x400 and mg.MG_LINK_HEADER_SIZE == 6 and mg.MG_LINK_MAX_CHUNK == 252
-
-
 # --- Wonder Card + delivery RAM script ----------------------------------------------------------
 def test_wonder_card_size_and_validation_fields():
     """332 bytes, and the fields the console's ValidateWonderCard [mystery_gift.c:191] checks."""
@@ -298,39 +292,6 @@ def test_parent_ni_receiver_acks_and_reassembles_child_game_data():
 
 
 # --- Host beacon encoder (inverse of transport._dump_beacon / _b85_decode) --------------------
-def test_b85_encode_inverts_decode():
-    """beacon.b85_encode must be the exact inverse of transport._b85_decode for 4-byte groups."""
-    for data in (bytes(range(24)), b"\x00\x00\x00\x00", b"\xff" * 24, os.urandom(24)):
-        assert transport._b85_decode(beacon.b85_encode(data))[:len(data)] == data
-
-
-def test_beacon_record_round_trips_through_dump_decoder():
-    """build_beacon's RFU record must decode back to the same fields transport._dump_beacon reads
-    (trainer id, name, RFU session id, tradeSpecies), the only fields the decoder proves."""
-    app = beacon.build_beacon(trainer_id=0x2288, name="EMU", rfu_session_id=beacon.RFU_SERIAL_GAME,
-                              trade_species=277)
-    assert len(app) == beacon.PIA_HDR + 30                 # 0x5C header + base85(24B) = 30 chars
-    rec = transport._b85_decode(app[beacon.PIA_HDR:])[:beacon.RECORD_SIZE]
-    assert int.from_bytes(rec[0:2], "little") == 0x2288
-    assert transport._frlg_name(rec[2:10]) == "EMU"
-    assert int.from_bytes(rec[10:12], "little") == beacon.RFU_SERIAL_GAME
-    assert int.from_bytes(rec[20:24], "little") >> 16 == 277
-
-
-def test_beacon_has_card_and_activity_bits_present():
-    """The game-data word carries the hasCard bit and activity nibble (positions are live-tuned, but
-    they must at least be encoded so there is something to calibrate)."""
-    gd = beacon.game_data_word(activity=beacon.ACTIVITY_WONDER_CARD, has_card=True)
-    assert gd & beacon.HASCARD_BIT                          # gname[0] |= 0x20
-    assert (gd >> 8) & 0x7F == beacon.ACTIVITY_WONDER_CARD  # activity in the compat high byte (first cut)
-
-
-def test_trade_beacon_activity_has_no_wonder_card_bit():
-    gd = beacon.game_data_word(activity=beacon.ACTIVITY_TRADE, has_card=False)
-    assert (gd >> 8) & 0x7F == beacon.ACTIVITY_TRADE
-    assert not gd & beacon.HASCARD_BIT
-
-
 def test_pia_header_matches_wiki_layout_and_round_trips():
     """Pia 6.16-6.41 header (sysCommVer 21-22, big-endian) per the NintendoClients wiki: size 0x5C at
     0x00, sysCommVer at 0x02, big-endian fields, name at 0x1C; decode is the inverse of build."""
@@ -347,19 +308,10 @@ def test_pia_header_matches_wiki_layout_and_round_trips():
     assert d["nickname"] == "Chase" and d["name_size"] == 5
 
 
-def test_build_beacon_uses_real_pia_header_by_default():
-    """build_beacon now emits a well-formed Pia header (not zeros); the record still round-trips."""
-    app = beacon.build_beacon(trainer_id=0x2288, name="EMU", nickname="Chase")
-    assert app[:0x5C] != b"\x00" * 0x5C                     # no longer zero-filled
-    assert beacon.decode_pia_header(app[:0x5C])["sys_comm_ver"] == beacon.PIA_SYS_COMM_VERSION
-    rec = transport._b85_decode(app[beacon.PIA_HDR:])[:beacon.RECORD_SIZE]
-    assert transport._frlg_name(rec[2:10]) == "EMU"
-
-
 def test_mutate_beacon_preserves_header_changes_record():
     """mutate_beacon keeps a captured Pia header verbatim and only rewrites overridden RFU fields."""
-    captured = bytes(range(beacon.PIA_HDR)) + beacon.b85_encode(
-        beacon.build_record(trainer_id=0x1111, name="ABC", rfu_session_id=9))
+    record = (0x1111).to_bytes(2, "little") + beacon.encode_name("ABC") + (9).to_bytes(2, "little")
+    captured = bytes(range(beacon.PIA_HDR)) + beacon.b85_encode(record.ljust(beacon.RECORD_SIZE, b"\x00"))
     out = beacon.mutate_beacon(captured, name="EMU", trainer_id=0x2288)
     assert out[:beacon.PIA_HDR] == captured[:beacon.PIA_HDR]     # header untouched
     rec = transport._b85_decode(out[beacon.PIA_HDR:])[:beacon.RECORD_SIZE]

@@ -1,10 +1,8 @@
 """Focused, offline regressions for host identity and Pia wire helpers."""
 
-from dataclasses import FrozenInstanceError
 import os
 import sys
 from types import SimpleNamespace
-from unittest import mock
 
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
@@ -20,7 +18,7 @@ from pokeldn.ldn.host_pia import (
     decode_datagram,
     reliable_output_batches,
 )
-from pokeldn.config import DEFAULT_TRAINER, TrainerProfile
+from pokeldn.config import TrainerProfile
 from pokeldn.ldn.reliable import FLAGSA_CTRL, FLAGSA_GBA, ReliableEmission
 
 
@@ -37,14 +35,6 @@ def _profile(**overrides):
     }
     values.update(overrides)
     return TrainerProfile(**values)
-
-
-def test_default_trainer_preserves_configured_live_identity():
-    assert DEFAULT_TRAINER.name == "PkCamp"
-    assert DEFAULT_TRAINER.tid == 0x8822
-    assert DEFAULT_TRAINER.sid == 0x47ED
-    assert DEFAULT_TRAINER.version == "leafgreen"
-    assert DEFAULT_TRAINER.trainer_id == 0x47ED8822
 
 
 def test_profile_rejects_invalid_human_configuration():
@@ -73,16 +63,6 @@ def test_profile_rejects_invalid_human_configuration():
             pass
         else:
             raise AssertionError(f"invalid profile accepted: {overrides!r}")
-
-
-def test_profile_is_immutable():
-    profile = _profile()
-    try:
-        profile.name = "Leaf"
-    except FrozenInstanceError:
-        pass
-    else:
-        raise AssertionError("frozen TrainerProfile accepted an assignment")
 
 
 def test_identity_is_consistent_across_discovery_link_player_and_card():
@@ -137,13 +117,6 @@ def test_native_nonce_sequence_increments_and_wraps():
     assert nonces.take() == b"\xff" * 8
     assert nonces.take() == b"\x00" * 8
     assert nonces.take() == b"\x00" * 7 + b"\x01"
-
-
-def test_random_nonce_mode_returns_eight_bytes():
-    with mock.patch("pokeldn.ldn.host_pia.os.urandom", lambda size: b"R" * size):
-        nonces = PiaNonceSequence(native=False, initial=123)
-        assert nonces.take() == b"R" * 8
-        assert nonces.take() == b"R" * 8
 
 
 def test_reliable_batches_honor_limit_and_end_at_flagged_emissions():

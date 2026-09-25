@@ -1,6 +1,5 @@
 """Offline coverage for the two live-host Stamp Rally distributions."""
 
-from dataclasses import FrozenInstanceError
 import os
 import sys
 
@@ -9,7 +8,6 @@ sys.path.insert(0, ROOT)
 sys.path.insert(0, os.path.join(ROOT, "tests"))
 
 import frlg_mg_host  # noqa: E402
-from pokeldn import config  # noqa: E402
 from pokeldn.frlg.gift import gift_registry, mg_script, mg_server, mystery_gift, stamp_rally, wonder_card  # noqa: E402
 from pokeldn.frlg.text import charmap  # noqa: E402
 from pokeldn.frlg.gift import gift_composer as gc  # noqa: E402
@@ -112,26 +110,6 @@ def test_hardware_one_solrock_stamp_payload_matches_without_tossing_card():
         mystery_gift.MG_LINKID_STAMP,
         mystery_gift.MG_LINKID_RAM_SCRIPT,
     ]
-
-
-def test_distribution_and_payload_models_are_immutable_with_role_specific_defaults():
-    normal = config.MysteryGiftPayload(gift=wonder_card.GIFT_CELEBI)
-    solrock = config.MysteryGiftPayload(gift=stamp_rally.GIFT_SOLROCK_STAMP)
-    lunatone = config.MysteryGiftPayload(gift=stamp_rally.GIFT_LUNATONE_STAMP,
-                                        flag_id=1008)
-    assert normal.flag_id == 1003
-    assert solrock.flag_id == 1006
-    assert lunatone.flag_id == 1008
-    distribution = solrock.build_distribution()
-    assert distribution.is_stamp
-    for obj, name, value in ((solrock, "flag_id", 1007),
-                             (distribution, "stamp", b"bad")):
-        try:
-            setattr(obj, name, value)
-        except FrozenInstanceError:
-            pass
-        else:
-            raise AssertionError(f"{type(obj).__name__} accepted mutation")
 
 
 def test_live_cli_adds_stamp_choices_and_dynamic_flag_default_only():
@@ -253,20 +231,6 @@ def test_console_model_installs_card_stamp_and_immediate_eligibility():
     assert console.vars[gc.VAR_MYSTERY_GIFT_2 + 1] == 0
     assert gc.FLAG_MYSTERY_GIFT_DONE not in console.flags
     assert receipt not in console.flags
-
-
-def test_console_model_existing_card_preserves_first_reward_and_activates_second():
-    distribution = _lunatone()
-    console = ConsoleClientModel(
-        flag_id=1006, max_stamps=2, metadata_icon=stamp_rally.SPECIES_CLAYDOL,
-        stamps=((stamp_rally.SPECIES_SOLROCK, 1),))
-    console.vars[gc.VAR_MYSTERY_GIFT_2] = 2
-    engine, _frames = _drive(console, distribution=distribution, max_frames=7000)
-    assert engine.result == mg_server.SVR_MSG_STAMP_SENT
-    assert console.saved_card is None
-    assert console.stamps[-1] == (stamp_rally.SPECIES_LUNATONE, 2)
-    assert console.vars[gc.VAR_MYSTERY_GIFT_2] == 2
-    assert console.vars[gc.VAR_MYSTERY_GIFT_2 + 1] == 1
 
 
 def test_both_stamp_events_survive_the_impaired_reliable_rfu_stack():

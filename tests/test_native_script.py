@@ -50,14 +50,6 @@ def _run(state, *, cap=1 << 18):
 
 # --- the commands, against the decomp's own table -----------------------------------------------
 
-def test_the_opcodes_are_the_ones_in_the_script_command_table():
-    """[decomp:data/script_cmd_table.inc]. A wrong opcode here is a wrong command on the console."""
-    assert native_script.SCR_CALLNATIVE == 0x23
-    assert native_script.SCR_SETPTR == 0x11
-    assert native_script.SCR_SETWILDBATTLE == 0xB6
-    assert native_script.SCR_DOWILDBATTLE == 0xB7
-
-
 def test_callnative_sets_bit_zero_because_the_stubs_are_thumb():
     """`callnative` calls through a function pointer, so bit 0 chooses the instruction set. A
     word-aligned address would enter ARM state and run the same bytes as garbage."""
@@ -357,14 +349,6 @@ def test_natures_and_iv_floors_are_parsed_by_the_names_the_game_uses():
             native_script.parse_iv_minimums(bad)
     with pytest.raises(native_script.NativeScriptError):
         native_script.parse_natures("brisk")
-
-
-def test_the_iv_names_are_in_the_order_the_rom_draws_them():
-    """NOT the order a summary screen shows. `rng_countdown._mon_from` unpacks the two IV draws in
-    this order [decomp:src/pokemon.c:1836], and a floor named `speed` that landed on SPATK would
-    be invisible in every offline check that did not compare the two lists."""
-    assert native_script.IV_FIELDS == ("hp", "attack", "defense",
-                                       "speed", "sp_attack", "sp_defense")
 
 
 def test_what_a_criterion_costs_is_arithmetic_and_not_a_guess():

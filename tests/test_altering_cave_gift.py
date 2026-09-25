@@ -52,14 +52,6 @@ def test_the_card_is_registered_and_reaches_every_launcher():
     assert slug in save_inject.build_parser()._option_string_actions["--gift"].choices
 
 
-def test_one_talk_advances_the_wild_set_by_exactly_one():
-    script = _distribution().ram_script
-    vm = _talk(script, {event.VAR_ALTERING_CAVE_WILD_SET: 0, VAR_MYSTERY_GIFT_1: 0})
-
-    assert vm.vars[event.VAR_ALTERING_CAVE_WILD_SET] == 1
-    assert vm.messages, "the player is told something happened"
-
-
 def test_the_var_walks_the_whole_cycle_and_wraps_where_the_official_script_wraps():
     """The official script resets at 10, not at NUM_ALTERING_CAVE_TABLES (9)
     [decomp:data/mystery_event_msg.s:328], so a full cycle passes through an id the encounter

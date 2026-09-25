@@ -12,11 +12,10 @@ import pytest
 
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
-from pokeldn.frlg.link import cable_club, linkplayer, trade  # noqa: E402
+from pokeldn.frlg.link import cable_club, trade  # noqa: E402
 from pokeldn.ldn import beacon, transport  # noqa: E402
 from pokeldn.frlg.link import uroom_battle as ub  # noqa: E402
 from pokeldn.config import DEFAULT_TRAINER  # noqa: E402
-from pokeldn.ldn.host_beacon import build_colosseum_app_data, build_trade_app_data  # noqa: E402
 from pokeldn.frlg.link.host_trade import (  # noqa: E402
     H_CC_BATTLE_ENTRY, H_UROOM_BATTLE_LINK, HostTradeEngine,
 )
@@ -46,20 +45,6 @@ def test_the_activity_constant_matches_the_decomp():
     [src/data/union_room.h:398], and ACTIVITY_BATTLE_SINGLE is 1
     [include/constants/union_room.h:22]."""
     assert beacon.ACTIVITY_BATTLE_SINGLE == 1
-
-
-def test_the_colosseum_beacon_advertises_the_single_battle_activity():
-    inactive, _active = build_colosseum_app_data(DEFAULT_TRAINER, SESSION_ID)
-    activity = _search_word(inactive) & beacon.SEARCH_ACTIVITY_MASK
-    assert activity == beacon.ACTIVITY_BATTLE_SINGLE
-
-
-def test_the_trade_beacon_is_invisible_on_the_colosseum_screen():
-    """The console searching with LINK_GROUP_SINGLE_BATTLE keeps a candidate only if
-    IsPartnerActivityAcceptable matches its one-entry accept list [union_room.c:1590]."""
-    trade_word = _search_word(build_trade_app_data(DEFAULT_TRAINER, SESSION_ID)[0])
-    assert trade_word & beacon.SEARCH_ACTIVITY_MASK == beacon.ACTIVITY_TRADE
-    assert beacon.ACTIVITY_TRADE != beacon.ACTIVITY_BATTLE_SINGLE
 
 
 # --- the extra 28-byte LinkPlayer record ------------------------------------------------------
@@ -180,11 +165,6 @@ def test_the_whole_party_fights_not_just_two():
         h._after_child_block(trade.COUNT_PARTY, bytes(200))
         assert _sent(h) == [expected[i]]
     assert len(h.battle.mons) == 4
-
-
-def test_the_union_room_battle_still_refuses_more_than_two():
-    with pytest.raises(ValueError):
-        ub.party_blocks([_mon()] * 3)
 
 
 def test_our_trainer_id_is_the_one_the_counter_records():

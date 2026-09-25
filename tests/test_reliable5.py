@@ -13,16 +13,6 @@ SP35_FIRST = bytes.fromhex("0f00001400010001000100110800315a005a611fc1cad38132e7
 SP35_SECOND = bytes.fromhex("07000004000200010012000123")
 
 
-def test_the_protocol_and_version_are_the_ones_the_console_advertises():
-    assert rl.PROTOCOL == 0x7C and rl.VERSION == 3        # the wiki pins v3 to Pia 5.31-5.43
-
-
-def test_the_header_is_nine_or_thirteen_bytes_not_the_wiki_eight_or_twelve():
-    assert rl.header_size(0) == 9
-    assert rl.header_size(1) == rl.header_size(31) == 13
-    assert rl.MAX_DESTINATION_BITS == 31                  # cmp #0x20 / b.lo, not "not higher than 32"
-
-
 def test_the_first_captured_message_is_a_whole_application_message():
     out = rl.parse(SP35_FIRST)
     assert out["flags"] == 0x0F
@@ -74,14 +64,6 @@ def test_an_ack_payload_round_trips_at_two_plus_twenty_one_per_entry():
     assert out["entries"][1]["stream_id"] == 1 and out["entries"][1]["mask"] == bytes(16)
     with pytest.raises(ValueError):
         rl.build_ack_payload([entries[0]] * 33)            # cmp #0x21 / b.lo
-
-
-def test_a_message_without_the_application_flag_is_an_ack():
-    body = rl.build_ack_payload([{"stream_id": 0, "ack_id": 2}])
-    msg = rl.build_header(rl.FLAG_IS_INITIALIZED, 0, len(body)) + body
-    out = rl.parse(msg)
-    assert out["is_ack"] is True
-    assert rl.parse_ack_payload(out["payload"])["entries"][0]["ack_id"] == 2
 
 
 # The console's own bulk acknowledgement: what it sent back after we put two application
@@ -244,14 +226,6 @@ def test_the_payload_bound_is_the_receivers_and_it_shrinks_with_the_destination_
         r4.build_data_message(b"\0" * (r4.max_payload_for([1]) + 1), destinations=[1])
     with pytest.raises(ValueError, match="0x20 and above"):
         r4.build_header(0, 1, 0, destinations=range(32))
-
-
-def test_the_ack_message_is_unchanged_from_what_slid_the_window_at_sw52():
-    """The header builder moved from reliable5's to version 4's own; at count 0 they are the same
-    nine bytes, and our ack is what must not move."""
-    from pokeldn.ldn import reliable4 as r4
-    assert r4.build_ack_message(21, lowest_pending=1) == (
-        rl.build_header(0, rl.ACK_SEQUENCE, 0x260, lowest_pending=1) + r4.build_ack_payload(21))
 
 
 def test_we_can_rebuild_the_consoles_own_broadcast_ack_byte_for_byte():

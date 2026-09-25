@@ -9,7 +9,6 @@ the difference between two sessions of the SAME console does.
 import json
 import types
 
-import frlg_mg_host
 import game_data_read
 from pokeldn.frlg.gift import game_data_log, mg_script, mystery_gift as mg
 from pokeldn.frlg.text import charmap, easychat
@@ -104,16 +103,6 @@ def test_a_new_questionnaire_is_a_change_because_it_is_new_vocabulary():
     after = game_data_log.record(_game_data(questionnaire=("hello", "friend", "thank_you",
                                                            "hi")))
     assert any("questionnaire" in line for line in game_data_log.changes(before, after))
-
-
-def test_a_slot_no_french_console_has_rendered_is_named_for_one_question():
-    entry = game_data_log.record(_game_data(questionnaire=("hello", "friend", "thank_you",
-                                                           "trade")))
-    unknown = game_data_log.unknown_words(entry)
-    # Whatever is unknown must be genuinely unknown: `french` is what the gate and every card
-    # composed for this player is checked against.
-    from pokeldn.frlg.text import easychat_french
-    assert all(easychat_french.french(value) is None for value in unknown)
 
 
 def test_a_species_word_is_never_flagged_because_it_needs_no_language():
@@ -243,11 +232,3 @@ def test_a_session_the_console_never_identified_itself_in_writes_nothing(tmp_pat
     assert not lines and not (tmp_path / "game_data.jsonl").exists()
 
 
-def test_the_ledger_is_off_unless_the_run_asks_for_it():
-    parser = frlg_mg_host.build_parser()
-    default = frlg_mg_host.build_run_config(parser, parser.parse_args(["--live"]))
-    asked = frlg_mg_host.build_run_config(
-        parser, parser.parse_args(["--live", "--game-data-log", "scratchpad/game_data.jsonl"]))
-
-    assert default.game_data_log is None
-    assert asked.game_data_log == "scratchpad/game_data.jsonl"

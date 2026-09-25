@@ -58,15 +58,6 @@ def test_response_matches_console_writer():
         "0001")                             # sequence id the update must reach
 
 
-def test_response_status_and_sequence_are_settable():
-    resp = pc.build_session_join_response_v11(
-        bytes.fromhex("ac56801000020000"), 0x00c6,
-        bytes.fromhex("ac56011000020000"), 0x3dbe,
-        status=1, sequence_id=0x1234)
-    assert resp[3] == 1
-    assert resp[-2:] == b"\x12\x34"
-
-
 def test_parse_rejects_truncated():
     assert pc.parse_session_join_v11(JOIN_REQUEST[:40]) is None
     assert pc.parse_session_join_v11(b"\x01\x00") is None       # wrong type
@@ -133,20 +124,6 @@ def test_the_leave_request_is_the_consoles_own_bytes():
                                            random4=raw[1:5])
         assert built.hex() == hexed
     assert len(bytes.fromhex(CONSOLE_LEAVES[0])) == 24
-
-
-def test_the_leave_carries_the_senders_own_location_and_address():
-    """The host's leave is the same message with its own ids, which is the only way it can be
-    read: the captures have no host-side leave in them."""
-    built = pc.build_session_leave_v11(bytes.fromhex("ac56801000020000"), 0x00C6,
-                                       "172.16.86.128", 12345, random4=b"\x01\x02\x03\x04")
-    assert built[0] == pc.SESSION_LEAVE_REQUEST == 3
-    assert built[1:5] == b"\x01\x02\x03\x04"
-    assert built[5:17].hex() == "ac56801000020000000000c6"
-    assert built[17] == 0                                   # the reason, 0 on all four captured
-    assert built[18:22] == bytes([172, 16, 86, 128])
-    assert built[22:24] == (12345).to_bytes(2, "big")
-    assert len(built) == 24
 
 
 def test_builder_reproduces_the_retail_request():

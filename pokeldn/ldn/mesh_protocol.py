@@ -91,8 +91,6 @@ MESH_TYPES_V4 = frozenset([
 ])
 STATION_INFO_SIZE_V4 = 0x40
 INDEX_FIELD_V4 = 0x3E
-MAX_STATIONS_V4 = 32
-JOIN_RESPONSE_MAX_V4 = 0x810      # 0x10 + MAX_STATIONS_V4 * STATION_INFO_SIZE_V4, checked inline
 
 # Confirmed on the wire by length alone. A retail Sword's join response is 148 bytes for two
 # stations (0x10 + 2 * 0x40 + 4) where a 68-byte entry would give 156, and its update mesh is 524

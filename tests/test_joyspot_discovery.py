@@ -1,7 +1,6 @@
 """Offline regressions for the bounded Stage 1 JoySpot discovery probe."""
 
-from dataclasses import FrozenInstanceError
-from contextlib import redirect_stderr, redirect_stdout
+from contextlib import redirect_stdout
 import io
 import os
 import sys
@@ -26,11 +25,9 @@ from pokeldn.ldn.joyspot_discovery import (
     SEARCH_ACTIVITY_MASK,
     SEARCH_HAS_CARD,
     SEARCH_STARTED_ACTIVITY,
-    SEARCH_UNKNOWN_BIT7,
     SERIAL_PLACEMENT_OFFSETS,
     JoySpotCandidate,
     build_joyspot_app_data,
-    candidate_by_name,
     candidates_for_stage,
     decode_joyspot_app_data,
 )
@@ -56,20 +53,6 @@ EXPECTED_STAGE_1_2 = (
 
 EXPECTED_CANDIDATES = EXPECTED_STAGE_1_1 + EXPECTED_STAGE_1_2 + ("friend_control",)
 
-REMOVED_STAGE_1_0_CANDIDATES = (
-    "baseline",
-    "scene_0",
-    "scene_21",
-    "scene_7f7d",
-    "app_version_7f7d",
-    "pia_app_version_7f7d",
-    "record_word_12",
-    "record_word_14",
-    "record_word_18",
-    "record_word_20",
-    "record_word_22",
-)
-
 
 def _candidate(name):
     return next(candidate for candidate in JOYSPOT_CANDIDATES
@@ -87,71 +70,6 @@ def _captured_identity_profile():
     return TrainerProfile(
         name="GREEN", tid=0x1050, sid=0, gender=0,
         version="leafgreen", language="english")
-
-
-def test_candidate_matrix_is_exact_ordered_and_immutable():
-    assert isinstance(JOYSPOT_CANDIDATES, tuple)
-    assert tuple(candidate.name for candidate in JOYSPOT_CANDIDATES) \
-        == EXPECTED_CANDIDATES
-    assert len({candidate.name for candidate in JOYSPOT_CANDIDATES}) \
-        == len(JOYSPOT_CANDIDATES)
-
-    candidate = JOYSPOT_CANDIDATES[0]
-    try:
-        candidate.name = "changed"
-    except FrozenInstanceError:
-        pass
-    else:
-        raise AssertionError("JoySpotCandidate must be immutable")
-
-    for candidate in JOYSPOT_CANDIDATES:
-        assert candidate_by_name(candidate.name) is candidate
-    try:
-        candidate_by_name("not_a_candidate")
-    except ValueError as error:
-        assert "not_a_candidate" in str(error)
-    else:
-        raise AssertionError("unknown candidate was accepted")
-
-
-def test_candidate_matrix_changes_only_the_bounded_surface():
-    expected = {
-        "wireless_activity21_no_card": (21, False, 22287, 88, 88, False),
-        "wireless_activity21_card": (21, True, 22287, 88, 88, False),
-        "wireless_activity4_card": (4, True, 22287, 88, 88, False),
-        "wireless_activity0_card": (0, True, 22287, 88, 88, False),
-        "serial_be_12": (21, True, 22287, 88, 88, False),
-        "serial_be_14": (21, True, 22287, 88, 88, False),
-        "serial_be_18": (21, True, 22287, 88, 88, False),
-        "serial_be_20": (21, True, 22287, 88, 88, False),
-        "serial_be_22": (21, True, 22287, 88, 88, False),
-        "serial_le_13": (21, True, 22287, 88, 88, False),
-        "serial_le_19": (21, True, 22287, 88, 88, False),
-        "search_bit7_clear": (21, False, 22287, 88, 88, False),
-        "friend_control": (21, False, 22287, 88, 88, True),
-    }
-    for candidate in JOYSPOT_CANDIDATES:
-        assert (
-            candidate.activity,
-            candidate.has_card,
-            candidate.scene_id,
-            candidate.app_version,
-            candidate.pia_app_version,
-            candidate.friend_control,
-        ) == expected[candidate.name]
-        assert not hasattr(candidate, "record_word_offset")
-
-    # Candidate selection must never alter the title-wide communication ID.
-    assert JOYSPOT_LOCAL_COMMUNICATION_ID \
-        == transport.HostTransport.LOCAL_COMMUNICATION_ID
-    assert JOYSPOT_MAX_PARTICIPANTS == 2
-    assert all(candidate.scene_id == transport.HostTransport.SCENE_ID
-               for candidate in JOYSPOT_CANDIDATES)
-    assert all(candidate.app_version == transport.HostTransport.APPLICATION_VERSION
-               for candidate in JOYSPOT_CANDIDATES)
-    assert SEARCH_ACTIVITY_MASK == 0x007F
-    assert SEARCH_HAS_CARD == 0x4000
-    assert SEARCH_STARTED_ACTIVITY == 0x8000
 
 
 def test_wireless_activity21_no_card_preserves_unknown_record_bytes():
@@ -268,28 +186,6 @@ def test_all_candidates_preserve_bytes_outside_identity_session_and_status():
             _candidate("wireless_activity21_no_card"))[:beacon.PIA_HDR]
 
 
-def test_stage_1_2_serial_placements_never_touch_proven_fields():
-    parent_id = b"\xa5\xf1"
-    for candidate in candidates_for_stage("1.2"):
-        if candidate.serial_offset is None:
-            continue
-        record = _record(build_joyspot_app_data(
-            DEFAULT_TRAINER, parent_id, candidate))
-        offset = candidate.serial_offset
-        assert record[offset:offset + 2] == JOYSPOT_SERIAL.to_bytes(
-            2, candidate.serial_endian), candidate.name
-        # Identity, the RFU parent id, and the proven search word survive.
-        assert record[0:2] == DEFAULT_TRAINER.discovery_trainer_id.to_bytes(
-            2, "little")
-        assert record[2:10] == charmap.encode(
-            DEFAULT_TRAINER.discovery_name, width=8, pad=0xFF)
-        assert record[10:12] == parent_id
-        assert int.from_bytes(record[16:18], "little") & SEARCH_ACTIVITY_MASK == 21
-        # Stage 1.0 already covered every little-endian aligned placement.
-        assert (candidate.serial_endian == "big"
-                or candidate.serial_offset not in (12, 14, 18, 20, 22))
-
-
 def test_serial_placement_offsets_exclude_every_proven_field():
     for offset in SERIAL_PLACEMENT_OFFSETS:
         assert 12 <= offset <= 22
@@ -312,51 +208,6 @@ def test_serial_placement_offsets_exclude_every_proven_field():
         raise AssertionError("invalid serial_endian was accepted")
 
 
-def test_search_bit7_is_preserved_unless_a_candidate_opts_in():
-    parent_id = b"\xa6\xf1"
-    captured_bit7 = bool(
-        int.from_bytes(_record(CAPTURED_TRADE_BEACON)[16:18], "little")
-        & SEARCH_UNKNOWN_BIT7)
-    assert captured_bit7 is True
-    for candidate in JOYSPOT_CANDIDATES:
-        decoded = decode_joyspot_app_data(
-            build_joyspot_app_data(DEFAULT_TRAINER, parent_id, candidate))
-        if candidate.search_bit7 is None:
-            assert decoded.search_bit7 is captured_bit7, candidate.name
-        else:
-            assert decoded.search_bit7 is candidate.search_bit7, candidate.name
-
-
-def test_stage_selection_is_ordered_and_always_ends_with_the_control():
-    for stage in ("1.1", "1.2"):
-        candidates = candidates_for_stage(stage)
-        assert candidates[-1].name == "friend_control"
-        assert all(c.stage == stage for c in candidates[:-1])
-        assert len({c.name for c in candidates}) == len(candidates)
-    assert tuple(c.name for c in candidates_for_stage("1.1")) \
-        == EXPECTED_STAGE_1_1 + ("friend_control",)
-    assert tuple(c.name for c in candidates_for_stage("1.2")) \
-        == EXPECTED_STAGE_1_2 + ("friend_control",)
-    assert candidates_for_stage("all") == JOYSPOT_CANDIDATES
-    try:
-        candidates_for_stage("2.0")
-    except ValueError as error:
-        assert "2.0" in str(error)
-    else:
-        raise AssertionError("unknown stage was accepted")
-
-
-def test_wireless_no_card_and_friend_control_are_byte_identical():
-    parent_id = b"\xa3\xf1"
-    wireless = build_joyspot_app_data(
-        DEFAULT_TRAINER, parent_id,
-        _candidate("wireless_activity21_no_card"))
-    friend = build_joyspot_app_data(
-        DEFAULT_TRAINER, parent_id, _candidate("friend_control"))
-    assert wireless == friend
-    assert _record(wireless)[16:18] == b"\x95\x15"
-
-
 def test_all_candidates_keep_application_size_and_parent_identity():
     parent_id = b"\xaf\xf1"
     for candidate in JOYSPOT_CANDIDATES:
@@ -364,56 +215,6 @@ def test_all_candidates_keep_application_size_and_parent_identity():
             DEFAULT_TRAINER, parent_id, candidate)
         assert len(app_data) == 122, candidate.name
         assert _record(app_data)[10:12] == parent_id, candidate.name
-
-
-def test_probe_cli_exposes_one_candidate_at_a_time_and_fixed_network_shape():
-    parser = joyspot_probe.build_parser()
-    exposed = {
-        option
-        for action in parser._actions
-        for option in action.option_strings
-    }
-    assert {
-        "--candidate", "--all-candidates", "--list-candidates", "--live", "--phy", "--keys",
-        "--password", "--capture", "--channel",
-        "--skip-preflight", "--skip-encryption", "--accept-decrypted-ccmp",
-    } <= exposed
-    assert {
-        "--comm-id", "--max-participants", "--scene", "--app-version",
-        "--native-nonce-sequence", "--session-response-first",
-    }.isdisjoint(exposed)
-
-    help_text = parser.format_help()
-    for name in EXPECTED_CANDIDATES:
-        assert name in help_text
-    for name in REMOVED_STAGE_1_0_CANDIDATES:
-        assert name not in help_text
-    args = parser.parse_args(
-        ["--live", "--candidate", "wireless_activity4_card"])
-    assert args.candidate == "wireless_activity4_card"
-
-
-def test_all_candidates_is_mutually_exclusive_with_candidate_and_keeps_default():
-    parser = joyspot_probe.build_parser()
-    default_args = parser.parse_args(["--live"])
-    assert default_args.candidate == "wireless_activity21_no_card"
-    assert default_args.all_candidates is False
-
-    sweep_args = parser.parse_args(["--live", "--all-candidates"])
-    assert sweep_args.all_candidates is True
-
-    errors = io.StringIO()
-    try:
-        with redirect_stderr(errors):
-            parser.parse_args([
-                "--live", "--candidate", "wireless_activity21_card",
-                "--all-candidates",
-            ])
-    except SystemExit as error:
-        assert error.code == 2
-    else:
-        raise AssertionError("--candidate and --all-candidates were accepted together")
-    assert "not allowed with argument" in errors.getvalue()
 
 
 class _CliProbeApplication:

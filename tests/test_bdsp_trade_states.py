@@ -121,4 +121,3 @@ def test_echoing_wait_poke_deadlocks_a_child_console(seed):
 def test_echoing_still_completes_as_parent(seed):
     """Every completed retail trade had the console as PARENT, which is why the echo worked."""
     assert run(PARENT, echo, seed) is not None
-

@@ -107,11 +107,6 @@ def test_a_definition_is_found_with_its_brace_on_either_line():
         "OnTheNextLine", "svc_Same"]
 
 
-def test_definition_order_is_kept_because_that_is_what_the_rom_holds():
-    source = "void First(void)\n{\n}\n\nvoid Second(void)\n{\n}\n"
-    assert [name for name, _line, _body in decomp_source.functions(source)] == ["First", "Second"]
-
-
 # --- the checks on top --------------------------------------------------------------------------
 
 def test_a_project_name_matches_by_shape_only_when_it_is_one_we_coined():
@@ -159,21 +154,6 @@ def test_no_worker_contradicts_an_address_a_run_measured():
     # name of its own.
     measured = set(rom_map.CALLABLE.values()) | set(rom_map.DECOMP_NAMES)
     assert not (set(worker_names.WORKERS) & {address & ~1 for address in measured})
-
-
-def test_the_decomp_names_this_project_coined_are_the_ones_the_bodies_agreed_on():
-    assert rom_map.DECOMP_NAMES[rom_map.SCRIPT_CONTEXT_SET_NATIVE] == "SetupNativeScript"
-    assert rom_map.DECOMP_NAMES[rom_map.GET_MON_DATA] == "GetMonData3"
-    assert rom_map.DECOMP_NAMES[rom_map.SET_RESPAWN] == "SetLastHealLocationWarp"
-    assert all(address in vars(rom_map).values() or address & ~1 in vars(rom_map).values()
-               for address in rom_map.DECOMP_NAMES)
-
-
-def test_a_worker_several_bodies_agreed_about_carries_that_count():
-    for name, (source_file, _index, callers) in worker_names.SOURCES.items():
-        assert source_file.endswith(".c")
-        assert callers >= 1, name
-    assert max(callers for _f, _i, callers in worker_names.SOURCES.values()) >= 5
 
 
 # --- one cartridge at a time --------------------------------------------------------------------

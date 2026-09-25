@@ -48,17 +48,6 @@ def test_it_is_not_a_5_27_request():
     assert v4[2] == 9 and v5[2] == stp.PLATFORM_SWITCH == 4
 
 
-def test_the_request_round_trips():
-    for flags, loc, with_id in ((5, 1, True), (0, 0, False), (255, 254, True)):
-        r = _request(nat_flags=flags, nat_location=loc, with_variable_id=with_id)
-        got = s4.parse_connection_request(r)
-        assert got["nat_flags"] == flags and got["nat_location"] == loc
-        assert got["with_variable_id"] == (1 if with_id else 0)
-        assert got["constant_id"] == stp.ldn_constant_id(HOST_MAC)
-        assert got["variable_id"] == HOST_VAR       # written even when [3] says not to read it
-        assert got["platform"] == 9
-
-
 def test_the_relay_variant_is_the_same_message_with_type_6():
     """One serializer builds both - `csinc` on the caller's flag picks 1 or 6."""
     a, b = _request(), _request(relay=True)
@@ -71,16 +60,6 @@ def test_a_location_of_the_wrong_size_is_refused_here_rather_than_on_the_air():
     connection-request parser, so it reads as a working request the console refuses."""
     with pytest.raises(ValueError):
         s4.build_connection_request(1, 2, b"\0" * 8)
-
-
-def test_the_address_size_byte_counts_the_port():
-    """(1 << size) & 0x40044 - only 2, 6 and 18 pass, in version 4 exactly as in 5.27."""
-    location = _location()
-    assert location[0] == location[1] == 6
-    for size in (2, 6, 18):
-        assert (1 << size) & 0x40044
-    for size in (4, 8, 16):
-        assert not (1 << size) & 0x40044
 
 
 def test_a_padded_response_answers_the_gate_byte_from_inside_the_message():

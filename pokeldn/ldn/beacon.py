@@ -1,8 +1,7 @@
 """Encoder for the host's advertisement application_data = <Pia system header, 0x5C> <custom-base85(24-byte RFU record)>,
 the inverse of transport._dump_beacon / _b85_decode. Record (LE): [0:2] trainer id, [2:10] name (FRLG charset,
-0xFF-padded), [10:12] RFU session id, [12:20] partnerInfo, [20:24] game data (high u16 tradeSpecies, low u16 the
-RfuGameData compatibility word). Only trainer id, name, session id and tradeSpecies are proven by the decoder; the
-activity/hasCard bit positions are inferred.
+0xFF-padded), [10:12] RFU session id, [12:20] partnerInfo, [20:24] game data. A beacon is always a captured one
+with fields rewritten (`mutate_beacon`).
 """
 
 from pokeldn.frlg.text import charmap
@@ -27,7 +26,6 @@ ACTIVITY_WONDER_NEWS = 22
 IN_UNION_ROOM = 1 << 6
 LANGUAGE_ENGLISH = 2
 VERSION_FIRE_RED = 4
-HASCARD_BIT = 0x20                 # gname[0] |= 0x20 [union_room]
 
 # Packed search-word positions in the record; hardware-proven.
 SEARCH_WORD_OFFSET = 16
@@ -147,45 +145,7 @@ def encode_name(name, width=8):
     return charmap.encode(name or "", width=width, pad=0xFF)
 
 
-def game_data_word(*, trade_species=0, activity=ACTIVITY_WONDER_CARD, has_card=True,
-                   language=LANGUAGE_ENGLISH, version=VERSION_FIRE_RED):
-    """[20:24]: high u16 = tradeSpecies, low u16 = language:4 | version:4 | activity<<8 | hasCard. The low-u16 bit packing
-    is inferred, not proven.
-    """
-    compat = (language & 0xF) | ((version & 0xF) << 4) | ((activity & 0x7F) << 8)
-    if has_card:
-        compat |= HASCARD_BIT
-    return ((trade_species & 0xFFFF) << 16) | (compat & 0xFFFF)
-
-
-def build_record(*, trainer_id, name, rfu_session_id, partner_info=b"", **game_data_kwargs):
-    rec = bytearray(RECORD_SIZE)
-    rec[0:2] = (trainer_id & 0xFFFF).to_bytes(2, "little")
-    rec[2:10] = encode_name(name, width=8)
-    rec[10:12] = (rfu_session_id & 0xFFFF).to_bytes(2, "little")
-    rec[12:20] = bytes(partner_info)[:8].ljust(8, b"\x00")
-    rec[20:24] = game_data_word(**game_data_kwargs).to_bytes(4, "little")
-    return bytes(rec)
-
-
-def build_beacon(*, trainer_id=0x2288, name="EMU", rfu_session_id=0x0002, pia_header=None,
-                 partner_info=b"", nickname="EMU", sys_comm_ver=PIA_SYS_COMM_VERSION,
-                 app_comm_ver=PIA_APP_COMM_VERSION, user_password=b"", name_encoding=PIA_NAME_UTF8,
-                 **game_data_kwargs):
-    """`pia_header` overrides the built header with a captured real one verbatim (the surest option)."""
-    if pia_header is not None:
-        header = bytes(pia_header)[:PIA_HDR].ljust(PIA_HDR, b"\x00")
-    else:
-        header = build_pia_header(sys_comm_ver=sys_comm_ver, app_comm_ver=app_comm_ver,
-                                  user_password=user_password, nickname=nickname,
-                                  name_encoding=name_encoding)
-    record = build_record(trainer_id=trainer_id, name=name, rfu_session_id=rfu_session_id,
-                          partner_info=partner_info, **game_data_kwargs)
-    return header + b85_encode(record)
-
-
-def mutate_beacon(captured_app_data, *, name=None, trainer_id=None, rfu_session_id=None,
-                  **game_data_kwargs):
+def mutate_beacon(captured_app_data, *, name=None, trainer_id=None, rfu_session_id=None):
     """Clone a captured real host application_data, keeping its Pia header verbatim, and re-encode only the overridden
     record fields.
     """
@@ -199,6 +159,4 @@ def mutate_beacon(captured_app_data, *, name=None, trainer_id=None, rfu_session_
         rec[2:10] = encode_name(name, width=8)
     if rfu_session_id is not None:
         rec[10:12] = (rfu_session_id & 0xFFFF).to_bytes(2, "little")
-    if game_data_kwargs:
-        rec[20:24] = game_data_word(**game_data_kwargs).to_bytes(4, "little")
     return header + b85_encode(bytes(rec))

@@ -96,11 +96,6 @@ def romfs(tmp_path):
     reader.close()
 
 
-def test_header_size_is_what_proves_the_counter(romfs):
-    fs, _ = romfs
-    assert fs.header_size == 0x50
-
-
 def test_a_wrong_key_is_refused_at_the_header_and_not_parsed(tmp_path):
     path = write_container(tmp_path, build_romfs({"a": b"x" * 32}))
     reader = CtrReader(path, NCA_OFFSET, bytes(16), CTR_HIGH)

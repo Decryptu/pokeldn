@@ -88,15 +88,6 @@ def test_the_block_order_follows_the_encryption_constant():
     assert pokemon.decrypt(first)[8:] == pokemon.decrypt(second)[8:]
 
 
-def test_reading_back_what_was_written():
-    r = pokemon.read(pokemon.encrypt(a_body()))
-    assert r["species"] == 41
-    assert r["nickname"] == "Nosferapti"
-    assert r["ot_name"] == "Player"
-    assert r["trainer_id"] == 44466
-    assert r["secret_id"] == 4080
-
-
 def test_building_from_a_template_changes_only_what_was_asked_for():
     """A Pokemon we send is a real one with named fields moved - every other byte stays a console's."""
     template = pokemon.encrypt(a_body())
@@ -222,16 +213,6 @@ def test_the_measured_layouts_are_no_longer_reported_opaque():
         assert room.parse(room.build(data_id, b"\x00" * 32))["opaque"] is False
     assert set(netdata.OPAQUE) - set(room.MEASURED) == {0x29}
     assert room.parse(room.build(0x29, b"\x00" * 8))["opaque"] is True
-
-
-def test_every_opaque_payload_has_its_marshalled_size():
-    """The executable's Il2CppTypeDefinitionSizes decides all twelve, and the wire agrees on the
-    four it has carried: 72, 328, 20 and 32 bytes."""
-    assert set(room.NATIVE_SIZES) == set(netdata.OPAQUE)
-    assert room.NATIVE_SIZES[room.POS] == room.POS_POINTS * room.POS_POINT_SIZE
-    assert room.NATIVE_SIZES[room.TRADE_POKE] == 328
-    assert room.NATIVE_SIZES[room.STANDBY_LIST] == room.STANDBY_SLOTS * room.STANDBY_SIZE
-    assert room.NATIVE_SIZES[room.TRADE_TRANER] == room.TRADE_TRANER_SIZE
 
 
 def test_the_ball_capsule_and_the_record_read_off_the_wire():

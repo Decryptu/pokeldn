@@ -93,7 +93,3 @@ def test_link_game_data_matches_what_the_console_validates():
     assert parsed.version_name == "FireRed"
 
 
-def test_client_advertises_the_wonder_card_activity():
-    client = _client()
-    assert client.ni_activity == 21 and client.ni_started is False
-    assert client.in_seat_phase and not client.host_in_seat

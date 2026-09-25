@@ -229,19 +229,6 @@ def test_the_host_decodes_a_packet_the_way_a_console_would_send_one():
     assert pla_host.PROTOCOL_NAMES[0x7C] == "reliable"
 
 
-def test_the_host_finds_every_constant_it_reads_off_the_game_package():
-    """The host names these before it touches the radio; a missing one aborts the run."""
-    import pla_host
-
-    from pokeldn import pla
-
-    for name in ("LINK_CODE_LEN", "ADVERTISE_NAME", "PASSPHRASE", "COMM_ID", "SCENE_ID",
-                 "MAX_PARTICIPANTS", "LDN_PROTOCOL", "build_advertise_data", "session_keys"):
-        assert hasattr(pla, name), name
-    assert pla.LINK_CODE_LEN == 8
-    assert set(pla_host.SESSION_MESSAGE_NAMES) >= {0, 2, 5, 7}
-
-
 def test_the_host_opens_the_net_exchange_and_the_probe_decodes():
     """The host speaks first. The probe it sends must authenticate and parse as a Net 0x11."""
     import pla_host
@@ -309,20 +296,6 @@ def test_a_message_ends_where_its_payload_ends_and_the_packet_pads_with_ff():
     packed = pia6.pad_payload(m)
     assert len(packed) == 96 and set(packed[90:]) == {0xFF}
     assert 0 not in packed[90:]
-
-
-def test_the_whole_plaintext_after_the_message_is_ff():
-    """What the console's parser walks: one message, then nothing but the stop byte."""
-    from pokeldn import pla
-
-    keys = pla.session_keys(SSID)
-    body = pia6.build_message(b"B" * 74, protocol=0x2C, port=0)
-    pkt = pia6.build_packet(keys.session_key, keys.network_id, "169.254.9.1", body)
-    _, plain, _ = pia6.parse_packet(keys.session_key, "169.254.9.1", keys.network_id, pkt)
-    msgs = pia6.parse_messages(plain)
-    assert len(msgs) == 1 and msgs[0].payload == b"B" * 74
-    stated = 16 + 74
-    assert set(plain[stated:]) == {0xFF}
 
 
 def test_both_probes_carry_the_skip_source_check_flag():

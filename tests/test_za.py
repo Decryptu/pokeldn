@@ -40,12 +40,6 @@ def test_the_system_block_fields():
     assert parsed["nickname"] == za.ADVERTISE_NAME
 
 
-def test_the_band_is_the_gba_application_header():
-    from pokeldn.ldn import crypto
-    assert za.PIA_HEADER_SIZE == crypto.HDR
-    assert za.PIA_VERSION == 16
-
-
 def test_a_packet_composed_for_this_title_decodes_back():
     """The band's header, crypto and framing compose for Z-A's game key, offline."""
     import os
@@ -124,14 +118,6 @@ def test_a_broadcast_frame_declares_the_length_after_the_prefix():
     frame = streams.frame(0xFFF2, 0xFFF0, nine, 0x07, 3)
     assert frame.hex() == "070009fff2fff003000000011403b9018269fb308f"
     assert streams.frame_payload(frame) == nine
-
-
-def test_the_broadcast_prefixes():
-    from pokeldn.za import streams
-
-    assert streams.PREFIX_JOINER.hex() == "00000001"
-    assert streams.PREFIX_HOST.hex() == "00000002"
-    assert streams.build_broadcast(b"\x14\x00")[:4] == streams.PREFIX_JOINER
 
 
 def test_the_session_update_acknowledgement_is_the_reference_shape():

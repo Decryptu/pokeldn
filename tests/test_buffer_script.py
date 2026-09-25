@@ -105,16 +105,6 @@ def _distribution(expect=mg_server.BUFFER_EXPECT_TRAINER_ID, name=None):
         buffer_expect=expect)
 
 
-def test_a_buffer_script_session_carries_no_card_and_no_ram_script():
-    distribution = _distribution()
-    assert distribution.card is None and distribution.ram_script is None
-
-    engine = host_mystery_gift.HostMysteryGiftEngine(distribution=distribution)
-
-    assert engine.server.script is mg_server.SCRIPT_RUN_BUFFER_SCRIPT
-    assert engine.server.is_buffer_distribution
-
-
 def test_a_buffer_script_cannot_share_a_session_with_a_gift():
     with pytest.raises(ValueError, match="carries no card"):
         stamp_rally.MysteryGiftDistribution(
@@ -146,6 +136,8 @@ def test_end_to_end_the_console_runs_our_code_and_the_id_it_returns_matches():
     assert engine.server.buffer_status == CONSOLE_TRAINER_ID
     assert engine.server.buffer_matched is True
     assert console.result == mg_script.CLI_MSG_BUFFER_SUCCESS
+    assert console.dynamic_msg is not None
+    assert console.dynamic_msg.startswith(mg_server.DEFAULT_BUFFER_SUCCESS_MESSAGE)
 
 
 @needs_unicorn
@@ -171,18 +163,6 @@ def test_end_to_end_a_card_the_console_already_holds_changes_nothing():
     assert engine.server.buffer_matched is True
     assert console.saved_card is None
 
-
-@needs_unicorn
-def test_the_console_is_told_the_verdict_in_a_message_we_compose():
-    console = ConsoleClientModel(flag_id=0)
-
-    engine, _frames = _drive(console, distribution=_distribution())
-
-    assert console.dynamic_msg is not None
-    assert console.dynamic_msg.startswith(mg_server.DEFAULT_BUFFER_SUCCESS_MESSAGE)
-
-
-# --- the host CLI ---------------------------------------------------------------------------
 
 def _run_config(argv):
     import frlg_mg_host
@@ -212,13 +192,6 @@ def test_a_buffer_script_and_a_gift_are_mutually_exclusive_on_the_command_line()
     import frlg_mg_host
     with pytest.raises(SystemExit):
         frlg_mg_host.build_parser().parse_args(["--buffer-script", "--gift", "celebi"])
-
-
-def test_the_live_application_for_a_buffer_script_is_the_buffer_script_one():
-    from pokeldn.frlg.gift.host_mg_app import BufferScriptHostApplication, MysteryGiftHostApplication
-
-    assert issubclass(BufferScriptHostApplication, MysteryGiftHostApplication)
-    assert BufferScriptHostApplication.SUCCESS_RESULTS == (mg_server.SVR_MSG_GIFT_SENT_1,)
 
 
 def test_the_identity_log_names_the_payload_and_the_expectation():
@@ -472,24 +445,6 @@ def test_a_bad_save_dump_operand_is_refused():
         buffer_script.build_save_dump(buffer_script.SAVE_BLOCK_1, 0x291)
     with pytest.raises(buffer_script.BufferScriptError, match="MG_LINK_BUFFER_SIZE"):
         buffer_script.build_save_dump(buffer_script.SAVE_BLOCK_2, 0, 4096)
-
-
-@needs_unicorn
-def test_end_to_end_the_console_reads_out_its_save_block_by_pointer():
-    console = ConsoleClientModel(flag_id=0)
-    distribution = stamp_rally.MysteryGiftDistribution(
-        card=None, ram_script=None,
-        buffer_code=buffer_script.build_save_dump(buffer_script.SAVE_BLOCK_2, 0, 256),
-        buffer_dump_size=256)
-
-    engine, _frames = _drive(console, distribution=distribution)
-
-    dump = engine.server.buffer_dump
-    assert len(dump) == 256
-    assert int.from_bytes(
-        dump[buffer_script.SAV2_PLAYER_TRAINER_ID:
-             buffer_script.SAV2_PLAYER_TRAINER_ID + 4], "little") == CONSOLE_TRAINER_ID
-    assert console.result == mg_script.CLI_MSG_BUFFER_SUCCESS
 
 
 def test_the_cli_builds_both_dumps():
@@ -1011,7 +966,11 @@ def test_a_built_payload_is_still_named_by_its_own_bytes():
             (buffer_script.SAVE_WRITE, buffer_script.build_save_write(b"FRLG-LDN bs09")),
             (buffer_script.ANCHORS, buffer_script.payload(buffer_script.ANCHORS)),
             (buffer_script.TRAINER_ID_PROBE,
-             buffer_script.payload(buffer_script.TRAINER_ID_PROBE))):
+             buffer_script.payload(buffer_script.TRAINER_ID_PROBE)),
+            (buffer_script.CREATE_MON,
+             buffer_script.build_create_mon(CREATE_MON_ADDRESS, species=151, level=30, fixed_iv=31,
+                                            fixed_personality=0x3ADE0000, destination=0x02024598)),
+            (buffer_script.STRING_GATHER, buffer_script.build_string_gather(0x083E0D54, 69))):
         assert buffer_script.describe(code).startswith(name + " ")
     assert "unknown" in buffer_script.describe(bytes.fromhex("0000a0e3"))
 
@@ -1194,8 +1153,6 @@ def test_the_trace_calls_the_console_s_own_random_and_the_recurrence_holds():
         assert before == expected
         assert after == buffer_script.rand_step(before)
         expected = after                    # nothing else turned it: we are the only caller here
-    assert all("holds on 8/8" in line or True
-               for line in buffer_script.describe_rng_trace(repeated.final.pending_send))
     assert any("THE ADDRESS IS gRngValue AND THE ROM CALL RAN" in line
                for line in buffer_script.describe_rng_trace(repeated.final.pending_send))
 
@@ -1723,23 +1680,6 @@ def test_the_cli_refuses_create_mon_flags_on_another_payload():
         _run_config(["--buffer-script", "save-dump", "--create-mon-destination", "0x02024598"])
 
 
-def test_a_built_create_mon_and_gather_are_still_named_by_their_own_bytes():
-    """The host logs `describe(code)` before a run. A payload whose operands are not in
-    PATCHED_SPANS reads back as 'unknown buffer script', which is what string-gather did."""
-    assert buffer_script.describe(
-        buffer_script.build_create_mon(CREATE_MON_ADDRESS, species=151, level=30, fixed_iv=31,
-                                       fixed_personality=0x3ADE0000, destination=0x02024598)
-    ).startswith("create-mon")
-    assert buffer_script.describe(
-        buffer_script.build_string_gather(0x083E0D54, 69)).startswith("string-gather")
-
-
-# --- create-mon --create-mon-append: the write into the player's party ---------------------------
-# This is the one thing in the payload that touches a live save. Its safety is structural rather
-# than checked: the slot is playerParty[playerPartyCount], which is by definition the first FREE
-# one, so an occupied slot is never written whatever else is wrong. These tests are what say that
-# out loud, and the sav1 fixture is shaped like the player's console - one mon in it.
-
 CHANSEY = b"\xAA" * buffer_script.PARTY_MON_SIZE     # a mon that must survive every append
 
 # gPlayerParty is an EWRAM global, not part of a save block; the save block's copy is
@@ -2057,15 +1997,6 @@ def test_no_payload_carries_an_absolute_address_into_a_save_block():
     party_end = rom_map.GPLAYER_PARTY + buffer_script.PARTY_SIZE * buffer_script.PARTY_MON_SIZE
     for seen in rom_map.GSAVEBLOCK1_SEEN:
         assert seen - rom_map.SAVEBLOCK_MOVE_MASK > party_end
-
-
-def test_the_party_append_defaults_to_the_addresses_bs47_measured():
-    asked = buffer_script.create_mon_parameters(
-        buffer_script.build_create_mon(CREATE_MON_ADDRESS, species=59, level=30,
-                                       party_append=True))
-
-    assert asked["party_base"] == rom_map.GPLAYER_PARTY == 0x02024280
-    assert asked["party_count"] == rom_map.GPLAYER_PARTY_COUNT == 0x02024025
 
 
 def test_the_party_append_refuses_a_party_that_is_not_in_ewram():

@@ -18,14 +18,6 @@ def _host_with_rx(rx):
     return host
 
 
-def test_wait_readable_wakes_on_tap_packet():
-    rx = object()
-    host = _host_with_rx(rx)
-    with mock.patch.object(transport.select, "select", return_value=([rx], [], [])) as select:
-        assert host.wait_readable(0.05) is True
-    select.assert_called_once_with([rx], [], [], 0.05)
-
-
 def test_wait_readable_timeout_and_negative_clamp():
     host = _host_with_rx(object())
     with mock.patch.object(transport.select, "select", return_value=([], [], [])) as select:

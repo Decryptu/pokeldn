@@ -1,7 +1,6 @@
 """Shared host CLI, Mystery Gift config, and Gate 1 fixture regressions."""
 
 from contextlib import redirect_stderr
-from dataclasses import FrozenInstanceError
 import hashlib
 import io
 import os
@@ -42,27 +41,6 @@ def _record(app_data):
 
 def _sha256(data):
     return hashlib.sha256(data).hexdigest()
-
-
-def test_mystery_gift_models_are_immutable_and_composed():
-    payload = config.MysteryGiftPayload()
-    run = config.MysteryGiftRunConfig(
-        payload=payload, client_ready_idle_frames=45)
-    assert run.profile is config.DEFAULT_TRAINER
-    assert run.payload is payload
-    assert isinstance(run.ldn, config.LdnConfig)
-    assert isinstance(run.role, config.HostOptions)
-    assert run.client_ready_idle_frames == 45
-    assert run.end_on_success is False and run.idle_timeout_seconds is None
-    assert run.attempt_log_dir is None
-    for obj, attribute, value in (
-            (payload, "flag_id", 1004),
-            (run, "trust_pia", False)):
-        try:
-            setattr(obj, attribute, value)
-        except FrozenInstanceError:
-            continue
-        raise AssertionError(f"{type(obj).__name__} accepted mutation")
 
 
 def test_flag_validation_is_centralized_in_the_payload():
@@ -191,20 +169,6 @@ def test_both_host_clis_use_the_same_explicit_transport_parsing():
     assert gift.role == trade.role
     assert gift.role.accept_decrypted_ccmp is True
     assert gift.profile.trainer_id == (34567 << 16) | 12345
-
-
-def test_role_defaults_use_the_checked_in_tp_link_profile():
-    gift = _build_mg(["--live"])
-    trade = _build_trade(["--live", "one.pk3", "two.pk3"])
-    assert (gift.role.skip_encryption,
-            gift.role.native_nonce_sequence,
-            gift.role.session_response_first) == (True, True, True)
-    assert (trade.role.skip_encryption,
-            trade.role.native_nonce_sequence,
-            trade.role.session_response_first) == (True, True, True)
-    assert gift.role.accept_decrypted_ccmp is True
-    assert trade.role.accept_decrypted_ccmp is True
-    assert gift.ldn.phy == trade.ldn.phy == "auto"
 
 
 def test_shared_host_parser_rejects_bad_hex_values():

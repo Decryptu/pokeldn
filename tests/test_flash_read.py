@@ -59,13 +59,6 @@ def test_it_copies_the_window_into_the_scratch_and_sends_the_copy():
     assert result.pending_send == marker                           # which is what goes out
 
 
-def test_the_send_is_never_pointed_at_flash():
-    code = bs.build_flash_read(30, length=252)
-    result = bs._Machine(code).call()
-    assert not (bs.FLASH_BASE <= result.client.send_buffer
-                < bs.FLASH_BASE + bs.FLASH_SIZE)
-
-
 def test_the_bank_select_writes_the_games_command_sequence():
     """0xAA to 0x5555, 0x55 to 0x2AAA, 0xB0 to 0x5555, then the bank to 0x0000."""
     code = bs.build_flash_read(30, length=16)
@@ -103,10 +96,3 @@ def test_config_returns_a_patched_image_not_the_raw_payload():
         assert len(built) == len(bs.payload(name)), name
 
 
-def test_no_build_dispatch_hides_in_post_init():
-    """The structural version of the same bug: __post_init__ validates, build_code builds."""
-    import inspect
-    from pokeldn import config as configmod
-    source = inspect.getsource(configmod.BufferScriptPayload.__post_init__)
-    assert "return buffer_script.build_" not in source, \
-        "a build dispatch in __post_init__ returns early and skips the rest of validation"

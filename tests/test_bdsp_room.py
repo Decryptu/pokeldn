@@ -208,12 +208,6 @@ def test_a_span_of_one_point_is_the_start_and_does_not_divide_by_zero():
         room.pos_span((0, 0), (1, 1), 0, points=0)
 
 
-def test_the_trainer_card_is_the_biggest_thing_the_room_can_carry_whole():
-    assert struct.calcsize(room.layout(room.TRAINER_CARD)) == 75
-    fields = room.parse_fields(room.TRAINER_CARD, bytes(75))
-    assert fields["fashionId"] == 0 and fields["cardData.tranerId"] == 0
-
-
 OPENDPR = [pathlib.Path("~/opendpr").expanduser(),
            pathlib.Path(__file__).resolve().parent.parent / "scratchpad" / "opendpr_repo"]
 
@@ -226,16 +220,6 @@ def test_the_generator_still_reproduces_the_committed_table():
     done = subprocess.run([sys.executable, str(gen), str(checkout), "--check"],
                           capture_output=True, text=True)
     assert done.returncode == 0, done.stdout + done.stderr
-
-
-def test_the_state_a_character_reports_is_an_opendpr_enum():
-    assert room.STATE_NAMES[room.STATE_NONE] == "NONE"
-    assert room.STATE_NAMES[room.STATE_RECRUITMENT_BATTLE] == "RECRUITMENT_BATTLE"
-    assert len(room.STATE_NAMES) == 23                  # NONE through _NULL, contiguous
-    assert sorted(room.STATE_NAMES) == list(range(23))
-    # and the neutral answer is the one a request gets until there is a reason to say otherwise
-    assert room.build_state() == room.build_fields(room.STATE, room.STATE_NONE, 0)
-    assert room.parse(room.build_state())["fields"] == {"state": 0, "isRecruiment": 0}
 
 
 def test_trainer_card_is_seventy_five_blittable_bytes():

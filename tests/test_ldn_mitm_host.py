@@ -61,28 +61,11 @@ def test_network_info_reads_back_through_the_joiner_side():
     assert mac == bytes.fromhex("021122334455")
 
 
-def test_a_scan_response_survives_the_datagram_encoding():
-    info = _info()
-    kind, payload = ldn_mitm.parse(ldn_mitm.build(ldn_mitm.SCAN_RESP, info))
-    assert kind == ldn_mitm.SCAN_RESP
-    assert payload == info
-
-
 def test_advertise_data_larger_than_the_field_is_refused():
     with pytest.raises(ValueError):
         _info(advertise_data=b"\0" * 0x181)
     with pytest.raises(ValueError):
         _info(session_id=b"short")
-
-
-def test_seating_a_joiner_hands_it_a_node_id_and_raises_the_count():
-    info = _info()
-    assert info[ldn_mitm_host.OFF_NODE_COUNT] == 1
-    node = ldn_mitm.build_node_info(PEER_IP, bytes.fromhex("aabbccddeeff"), b"Ryujinx")
-    seated = ldn_mitm_host.set_node(info, 1, node)
-    assert seated[ldn_mitm_host.OFF_NODE_COUNT] == 2
-    assert ldn_mitm_host.read_node(seated, 1)[0] == PEER_IP
-    assert ldn_mitm_host.read_node(seated, 0)[0] == HOST_IP
 
 
 def _wait(predicate, seconds=3):

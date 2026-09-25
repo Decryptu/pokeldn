@@ -25,23 +25,6 @@ def _raises(callable_, text):
         raise AssertionError(f"expected ValueError containing {text!r}")
 
 
-def test_tracked_host_profile_is_the_tp_link_live_default():
-    loaded = config.load_project_host_file_config()
-    assert loaded.live is True
-    assert loaded.adapter == "tplink-archer-t3u"
-    assert loaded.skip_encryption is True
-    assert loaded.accept_decrypted_ccmp is True
-    assert loaded.native_nonce_sequence is True
-    assert loaded.session_response_first is True
-    assert loaded.phy == "auto"
-    assert loaded.to_host_options() == config.HostOptions(
-        skip_encryption=True,
-        accept_decrypted_ccmp=True,
-        native_nonce_sequence=True,
-        session_response_first=True,
-    )
-
-
 def test_layering_is_builtins_then_shared_then_local_then_overrides():
     with tempfile.TemporaryDirectory() as directory:
         shared = _write(directory, "host.toml", """

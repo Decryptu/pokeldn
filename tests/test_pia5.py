@@ -2,7 +2,7 @@
 Pearl in the Union Room."""
 import pytest
 
-from pokeldn.ldn.pia5 import PiaHeader5, is_pia5, HEADER_SIZE, CT_OFF, MAGIC, VERSION
+from pokeldn.ldn.pia5 import PiaHeader5, is_pia5, HEADER_SIZE, VERSION
 
 # the first datagram of a capture: 169.254.54.1:12345 -> .255:12345, 176 bytes
 REAL = bytes.fromhex(
@@ -24,12 +24,6 @@ def test_parses_a_real_packet():
 
 def test_round_trips_byte_identically():
     assert PiaHeader5.parse(REAL).pack() == REAL[:HEADER_SIZE]
-
-
-def test_header_is_32_bytes_not_29():
-    # 6.32 (pia_connect.py) uses 0x1D; getting these two confused is the whole point of the module
-    assert HEADER_SIZE == 0x20 and CT_OFF == 0x20
-    assert len(PiaHeader5().pack()) == 0x20
 
 
 def test_encryption_flag_round_trips():

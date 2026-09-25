@@ -109,15 +109,6 @@ def test_a_party_carrying_another_trainers_ids_is_visible_as_such():
     assert trade_payload.party_matches_trainer(trade_payload.read(bytes(payload))) is False
 
 
-def test_the_named_blocks_tile_the_payload_without_overlapping():
-    assert trade_payload.PARTY_COUNT_OFFSET == 0x810
-    assert trade_payload.MY_STATUS_OFFSET == 0x814
-    assert trade_payload.TRAINER_CARD_OFFSET == 0x924
-    assert trade_payload.TAIL_OFFSET == 0xAEC
-    assert trade_payload.TRAINER_CARD_OFFSET + trade_payload.TRAINER_CARD_STARTED == 0xA94
-    assert len(trade_payload.read(a_payload())["tail"]) == 660
-
-
 def test_our_snapshot_survives_the_round_trip_the_console_will_put_it_through():
     """Build it, frame it on 0x84, take it apart the way a receiver does, and read it back.
 

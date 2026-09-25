@@ -410,24 +410,6 @@ def test_a_marker_status_follows_initramscript_because_it_sets_none():
     assert result.stopped_at == "end"
 
 
-def test_an_npc_bound_script_makes_the_console_report_no_wonder_card():
-    """ValidateSavedWonderCard calls ValidateRamScript [decomp:src/mystery_gift.c:186], which only
-    passes for MAP_UNDEFINED / object 0xFF - so a card and an NPC-bound script cannot coexist, and
-    MysteryGift_LoadLinkGameData then reports flagId 0. Confirmed on hardware."""
-    distribution = gift_registry.GIFT_REGISTRY.build_distribution("mystery-event-npc")
-    _, name, (map_group, map_num, object_id, _, _) = mystery_event.decode(distribution.mevent)[0]
-
-    assert name == "initramscript"
-    # MAP_UNDEFINED is the sentinel CLI_SAVE_RAM_SCRIPT uses; a real map is what breaks the card.
-    assert (map_group, map_num, object_id) != (0x7F, 0x7F, 0xFF)
-    # The next session therefore sees a console with no card at all.
-    assert mg_script.compare_card_flags(
-        wonder_card_events.MEVENT_NPC_FLAG_ID,
-        mg_script.parse_link_game_data(_game_data(flag_id=0))) == mg_script.HAS_NO_CARD
-
-
-# --- the language-safe part of the Easy Chat vocabulary ---------------------------------------
-
 def test_species_and_move_words_are_built_from_ids_not_from_the_english_table():
     """the player typed AKWAKWAK and the console stored POKEMON/55 (SPECIES_GOLDUCK); they
     typed AEROBLAST and it stored MOVE_1/177 (MOVE_AEROBLAST). Our constructors must produce

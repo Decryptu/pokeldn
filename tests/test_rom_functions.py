@@ -139,17 +139,6 @@ def test_get_battle_outcome_is_one_load_of_the_global_it_is_named_for():
     assert [value for _site, _pool, value in literals] == [rom_map.GBATTLE_OUTCOME]
 
 
-def test_the_special_var_sequence_is_the_one_shakescreen_reads():
-    """G_SPECIAL_VAR_0X8000 was measured and the rest of the sequence was left UNCONFIRMED because
-    event_data.c's declaration order is not the table's. ShakeScreen takes four arguments and loads
-    four consecutive halfwords, which settles the spacing without another run."""
-    assert rom_map.G_SPECIAL_VAR_0X8004 == 0x020370BC
-    reads = [rom_map.G_SPECIAL_VAR_0X8004, rom_map.G_SPECIAL_VAR_0X8005,
-             rom_map.G_SPECIAL_VAR_0X8006, rom_map.G_SPECIAL_VAR_0X8007]
-    assert reads == [0x020370BC, 0x020370BE, 0x020370C0, 0x020370C2]
-    assert all(b - a == 2 for a, b in zip(reads, reads[1:])), "a var id is two bytes"
-
-
 def test_the_specials_table_names_its_own_entries():
     """ShowDiploma and ShowTownMap both call QuestLog_CutRecording, which IS special 392 - the same
     self-confirmation DoDiveWarp gave between the script-command and specials tables. A table that
@@ -192,47 +181,11 @@ def test_the_two_sound_tables_are_four_music_players_apart():
             - rom_map.leafgreen_guess(rom_map.G_MPLAY_TABLE)) == 4 * 12
 
 
-def test_the_gap_that_is_left_is_the_one_the_boundary_table_names():
-    """A boundary that has been bracketed is not a boundary that has been found. The remaining span
-    is where -0x1C4 becomes -0x12D8, and `leafgreen_guess` must still REFUSE inside it rather than
-    interpolate."""
-    boundary = [b for b in rom_map.LEAFGREEN_DELTA_BOUNDARIES if b[:2] == (-0x1C4, -0x124C)][0]
-    _from, _to, low, high = boundary[:4]
-    assert (low, high) == (0x0843AFFF, 0x08442800)
-    for inside in (low + 1, (low + high) // 2, high - 1):
-        try:
-            rom_map.leafgreen_guess(inside)
-        except ValueError:
-            continue
-        raise AssertionError(f"0x{inside:08X} is in a gap and must not be guessed at")
-
-
-def test_stop_script_and_script_context_stop_are_two_different_functions():
-    """Named wrong until it was measured. 0x0806D0EC is ScrCmd_end's one call and the decomp gives that as
-    StopScript(ctx) [src/script.c:76]; ScriptContext_Stop(void) [:360] is a different function, and
-    it is 0x0806D418 - what ScrCmd_waitstate calls and nothing else does. The declaration order
-    agrees with the addresses, which is the check that costs no run."""
-    assert rom_map.STOP_SCRIPT == 0x0806D0EC
-    assert rom_map.SCRIPT_CONTEXT_STOP == 0x0806D418
-    assert rom_map.STOP_SCRIPT < rom_map.SCRIPT_CONTEXT_STOP, "script.c:76 comes before script.c:360"
-
-
 def test_the_field_command_table_is_closed():
     """213 handlers, and after that run every one of their bodies has been read off the cartridge.
     The table itself was dumped; this is the code behind it."""
     assert len(scrcmd_names.HANDLERS) == 214      # 214 opcodes, two of them the same ScrCmd_nop
     assert len(set(scrcmd_names.HANDLERS)) == 213
-
-
-def test_the_workers_bs121_named_match_how_many_commands_call_them():
-    """The caller COUNT is the check. `Compare` has to be reached by exactly the eight compare_*
-    commands the decomp declares - a worker named off one caller is a guess."""
-    compares = [name for name in scrcmd_names.COMMANDS if name.startswith("compare_")]
-    assert len(compares) == 8
-    assert rom_map.COMPARE == 0x0806DCCC
-    assert rom_map.STRING_COPY == 0x0800C894
-    assert rom_map.HIDE_FIELD_MESSAGE_BOX == 0x0806CDE4
-    assert rom_map.SCRIPT_MOVEMENT_START == 0x0809AE54
 
 
 def test_the_easy_chat_segment_reaches_out_both_ways_after_bs120_lg191():

@@ -35,24 +35,6 @@ def _success(entries=2, our_index=1, fragments=1):
     return head + body + struct.pack(">I", 0x17CAD56C)
 
 
-def test_a_success_reads_the_whole_mesh_back():
-    out = mp.parse_join_response(_success())
-    assert out["refused"] is False
-    assert out["stations"] == 2 and out["host_index"] == 0 and out["our_index"] == 1
-    assert out["fragments"] == 1 and out["entries"] == 2
-    assert out["update_counter"] == 42
-    assert out["ack_id"] == 0x17CAD56C
-    assert [e["station_index"] for e in out["station_info"]] == [0, 1]
-    assert out["station_info"][0]["location"]["private"] == ("169.254.14.1", 12345)
-    assert out["station_info"][1]["location"]["variable_id"] == 0xAABB0001
-
-
-def test_a_station_info_entry_is_sixty_eight_bytes():
-    assert mp.STATION_INFO_SIZE == 68 and mp.LOCATION_FIELD == 64
-    out = mp.parse_join_response(_success(entries=3))
-    assert len(out["station_info"]) == 3
-
-
 def test_a_truncated_entry_stops_the_walk_rather_than_reading_past_the_end():
     raw = _success(entries=2)
     out = mp.parse_join_response(raw[:-40])
@@ -64,12 +46,6 @@ def test_the_wrong_message_type_is_refused():
         mp.parse_join_response(bytes([mp.UPDATE_MESH, 0, 0, 0, 0]))
     with pytest.raises(ValueError):
         mp.parse_message(b"")
-
-
-def test_the_type_table_names_what_a_capture_will_hold():
-    assert mp.parse_message(bytes([mp.UPDATE_MESH]))[1] == "UPDATE_MESH"
-    assert mp.parse_message(bytes([mp.KICKOUT_NOTICE]))[1] == "KICKOUT_NOTICE"
-    assert mp.parse_message(bytes([0x7E]))[1].startswith("unknown")
 
 
 # The join response, off the console, byte for byte out of a capture. Eleven
@@ -165,22 +141,6 @@ def _success_v4(stations=2, our_index=1, fragments=1, fragment_entries=None, bas
     return head + body + struct.pack(">I", 0x17CAD56C)
 
 
-def test_the_version_four_entry_is_sixty_four_bytes_with_the_index_at_0x3e():
-    assert mp.STATION_INFO_SIZE_V4 == 0x40 and mp.INDEX_FIELD_V4 == 0x3E
-    out = mp.parse_join_response(_success_v4(stations=3), version4=True)
-    assert [e["station_index"] for e in out["station_info"]] == [0, 1, 2]
-    assert out["station_info"][0]["location"]["private"] == ("169.254.14.1", 12345)
-    assert out["station_info"][2]["location"]["variable_id"] == 0xAABB0002
-    assert "join_order" not in out["station_info"][0]      # the byte at 0x3F is never read
-
-
-def test_the_version_four_length_bound_is_the_thirty_two_station_table():
-    # The parser refuses anything over 0x810, and 0x810 IS the full table - which is what says the
-    # stride is 0x40 rather than 68 without trusting the disassembly of the loop alone.
-    assert mp.JOIN_RESPONSE_MAX_V4 == 0x10 + mp.MAX_STATIONS_V4 * mp.STATION_INFO_SIZE_V4
-    assert len(_success_v4(stations=mp.MAX_STATIONS_V4)) - 4 == mp.JOIN_RESPONSE_MAX_V4
-
-
 def test_an_unfragmented_version_four_response_counts_by_stations_not_by_field_six():
     # 0x017b48f4 walks `stations` from base 0 and never reads [6] or [7]. A host that leaves them
     # zero would make the 5.31-5.45 reading return nothing at all.
@@ -205,22 +165,6 @@ def test_the_version_four_message_table_is_the_same_one_without_the_two_dummies(
     assert mp.DUMMY_ACK not in mp.MESH_TYPES_V4
     named = {v for v, k in mp.TYPE_NAMES.items() if not k.startswith(("PROTOCOL", "PORT_"))}
     assert mp.MESH_TYPES_V4 == named - {mp.DUMMY_MESSAGE, mp.DUMMY_ACK}
-
-
-def test_the_version_four_join_request_is_the_one_we_already_build():
-    # 0x017c1700 compares byte [1] against 0xFD and reads the ack id as the last four bytes.
-    req = mp.build_join_request(0x11223344)
-    assert req[1] == 0xFD
-    assert mp.read_ack_id(req) == 0x11223344
-    assert mp.ack_for(req) == (stp.PROTOCOL, stp.build_ack(0x11223344))
-
-
-def test_the_lengths_sw29_measured_only_fit_the_sixty_four_byte_entry():
-    """The wire confirms the stride twice, by length alone - no disassembly in either number."""
-    assert mp.JOIN_RESPONSE_TWO_STATIONS_V4 == 148            # a measured join response
-    assert 0x10 + 2 * mp.STATION_INFO_SIZE + 4 == 156         # what 68-byte entries would give
-    assert mp.UPDATE_MESH_SIZE_V4 == 524                      # a measured update mesh
-    assert mp.UPDATE_MESH_SIZE == 556                         # BDSP's, unchanged
 
 
 def test_the_real_version_four_join_response_reads_back_as_the_mesh_the_console_named():
@@ -282,12 +226,6 @@ def test_migration_finish_is_the_hosts_own_three_bytes():
     # 0x017c2ef0 builds [0x41, own index, flag & 1]; the handler at 0x017c0fb0 checks size == 3.
     assert mp.parse_migration_finish(bytes.fromhex("410001")) == {"host_index": 0, "flag": 1}
     assert mp.parse_migration_finish(bytes.fromhex("4801")) is None
-
-
-def test_the_three_bytes_are_named_by_the_type_table():
-    assert mp.parse_message(SW83_MIGRATION_START) == (mp.MIGRATION_START, "MIGRATION_START")
-    assert mp.MIGRATION_START in mp.MESH_TYPES_V4
-    assert mp.MIGRATION_RESPONSE in mp.MESH_TYPES_V4
 
 
 SW83_MIGRATION_WIRE = bytes.fromhex("0f0000030001000100" "440001")

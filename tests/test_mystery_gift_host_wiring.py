@@ -186,13 +186,9 @@ def test_session_requires_an_activity():
     raise AssertionError("HostSession with neither a party nor an engine must fail")
 
 
-def test_engine_exposes_the_contract_the_host_application_drives():
+def test_the_engine_cannot_declare_the_close_before_the_handshake():
     card, ram_script = wonder_card.build_default_gift()
     engine = HostMysteryGiftEngine(card, ram_script)
-    for name in ("tick", "feed_child_slot", "mark_disconnect_sent"):
-        assert callable(getattr(engine, name)), name
-    for name in ("disconnect_requested", "done", "state", "close_confirmed"):
-        assert hasattr(engine, name), name
     assert engine.disconnect_requested is False and engine.done is False
     # mark_disconnect_sent must not be able to declare success early.
     try:

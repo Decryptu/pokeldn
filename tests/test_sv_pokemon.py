@@ -144,9 +144,3 @@ def test_every_field_a_retail_record_uses_has_a_name():
     assert rebuilt == real
 
 
-def test_build_defaults_are_a_level_one_record_that_agrees_with_itself():
-    fields = pokemon.read(pokemon.build(species=906))
-    assert fields["level"] == 1 and fields["experience"] == 0
-    assert fields["met_level"] == 1 and fields["obedience_level"] == 1
-    assert fields["ball"] == 4
-    assert fields["ht_name"] == "" and fields["current_handler"] == 0

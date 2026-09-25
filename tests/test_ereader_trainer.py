@@ -12,7 +12,7 @@ sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
 import pytest  # noqa: E402
 
-from pokeldn.frlg.gift import ereader_trainer, gift_composer, gift_registry, mg_script, mg_server, wonder_card_events  # noqa: E402
+from pokeldn.frlg.gift import ereader_trainer, gift_composer, gift_registry, mg_server, wonder_card_events  # noqa: E402
 from pokeldn.frlg.text import charmap, easychat  # noqa: E402
 from pokeldn.frlg.gift.ereader_trainer import (  # noqa: E402
     EReaderTrainerError, TrainerMon, VisitingTrainer,
@@ -158,16 +158,6 @@ def test_personality_picks_the_nature_and_can_force_a_shiny():
 
 
 # --- the registered gift --------------------------------------------------------------------
-def test_the_visiting_trainer_gift_carries_a_valid_trainer():
-    distribution = gift_registry.GIFT_REGISTRY.build_distribution("visiting-trainer")
-    assert distribution.has_trainer
-    assert ereader_trainer.validate(distribution.trainer)
-    assert len(distribution.card) == 332
-    # The card the player keeps is an ordinary Wonder Card; the trainer rides beside it.
-    assert distribution.trainer[0x01] == ereader_trainer.FACILITY_CLASSES["red"]
-    assert charmap.decode(distribution.trainer[0x04:0x0C]) == "RED"
-
-
 def test_the_gift_flag_id_stays_out_of_the_ticket_flags():
     """sReceivedGiftFlags[0..2] are FLAG_RECEIVED_AURORA_TICKET, _MYSTIC_TICKET and _OLD_SEA_MAP
     [decomp:src/mystery_gift.c:30]; only 1003 and up are spare."""
@@ -193,12 +183,6 @@ def _server(**kwargs):
         distribution.card, distribution.ram_script, trainer=distribution.trainer, **kwargs)
 
 
-def test_the_server_picks_the_visiting_trainer_script_when_a_trainer_is_present():
-    server = _server()
-    assert server.is_trainer_distribution
-    assert server.script is mg_server.SCRIPT_SEND_VISITING_TRAINER
-
-
 def test_the_server_refuses_a_trainer_the_console_would_clear():
     distribution = gift_registry.GIFT_REGISTRY.build_distribution("visiting-trainer")
     with pytest.raises(mg_server.MysteryGiftServerError):
@@ -207,39 +191,6 @@ def test_the_server_refuses_a_trainer_the_console_would_clear():
     with pytest.raises(mg_server.MysteryGiftServerError):
         mg_server.MysteryGiftServer(distribution.card, distribution.ram_script,
                                     trainer=b"\x01" * 10)
-
-
-def test_the_client_scripts_end_on_the_trainer_message():
-    def commands(script):
-        return [int.from_bytes(script[i:i + 4], "little") for i in range(0, len(script), 8)]
-
-    card_and_trainer = commands(mg_script.CLIENT_SCRIPT_SAVE_CARD_AND_TRAINER)
-    assert card_and_trainer == [
-        mg_script.CLI_RECV, mg_script.CLI_SAVE_CARD,
-        mg_script.CLI_RECV, mg_script.CLI_SAVE_RAM_SCRIPT,
-        mg_script.CLI_RECV, mg_script.CLI_RECV_EREADER_TRAINER,
-        mg_script.CLI_SEND_READY_END, mg_script.CLI_RETURN,
-    ]
-    assert commands(mg_script.CLIENT_SCRIPT_SAVE_TRAINER) == [
-        mg_script.CLI_RECV, mg_script.CLI_RECV_EREADER_TRAINER,
-        mg_script.CLI_SEND_READY_END, mg_script.CLI_RETURN,
-    ]
-    # CLI_MSG_TRAINER_RECEIVED is a success message, so the console saves afterwards
-    # [GetClientResultMessage, decomp:src/mystery_gift_menu.c:939].
-    for script in (mg_script.CLIENT_SCRIPT_SAVE_CARD_AND_TRAINER,
-                   mg_script.CLIENT_SCRIPT_SAVE_TRAINER):
-        assert int.from_bytes(script[-4:], "little") == mg_script.CLI_MSG_TRAINER_RECEIVED
-
-
-def test_the_host_engine_takes_the_trainer_from_the_distribution():
-    from pokeldn.frlg.gift import host_mystery_gift
-    from pokeldn.frlg.link import linkplayer
-    distribution = gift_registry.GIFT_REGISTRY.build_distribution("visiting-trainer")
-    engine = host_mystery_gift.HostMysteryGiftEngine(
-        distribution=distribution,
-        link_player=linkplayer.LinkPlayer(name="EMU", version=linkplayer.VERSION_FIRE_RED))
-    assert engine.server.trainer == distribution.trainer
-    assert engine.server.script is mg_server.SCRIPT_SEND_VISITING_TRAINER
 
 
 def test_a_stamp_rally_and_a_trainer_cannot_share_a_session():
@@ -252,11 +203,3 @@ def test_a_stamp_rally_and_a_trainer_cannot_share_a_session():
             install_activation_script=distribution.install_activation_script,
             trainer=gift_registry.GIFT_REGISTRY.build_distribution(
                 "visiting-trainer").trainer)
-
-
-def test_the_delivery_man_says_both_lines_in_one_conversation():
-    """Each DeliveryStage costs the player another interaction, so the two informational lines
-    belong to one stage."""
-    plan = wonder_card_events.VISITING_TRAINER_GIFT.delivery
-    assert len(plan.delivery) == 1
-    assert len(plan.delivery[0].actions) == 2

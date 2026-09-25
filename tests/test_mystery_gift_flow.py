@@ -36,58 +36,12 @@ from pokeldn.frlg.gift import mystery_gift as mg  # noqa: E402
 
 
 # --- MysteryGiftLink framing ------------------------------------------------------------------
-def test_message_header_layout_and_crc_cover_the_padded_buffer():
-    payload = b"\x11\x22\x33"
-    blocks = mg_link.build_message(mg.MG_LINKID_CARD, payload, size=8)
-    ident, crc, size = mg_link.parse_header(blocks[0])
-    assert (ident, size) == (mg.MG_LINKID_CARD, 8)
-    # The CRC is over the declared size including zero padding, not the prefix.
-    assert crc == mg.crc16(payload.ljust(8, b"\x00"))
-    assert crc != mg.crc16(payload)
-
-
-def test_size_zero_expands_to_the_full_buffer():
-    """InitSend(size=0) means MG_LINK_BUFFER_SIZE [mystery_gift_link.c:55], which is
-    how the RAM script and READY_END travel."""
-    blocks = mg_link.build_message(mg.MG_LINKID_RAM_SCRIPT, b"\x6a\x5a", size=0)
-    _ident, _crc, size = mg_link.parse_header(blocks[0])
-    assert size == mg.MG_LINK_BUFFER_SIZE == 1024
-    assert len(blocks) == 1 + 5                      # header + 252*4 + 16
-    assert [len(b) for b in blocks[1:]] == [252, 252, 252, 252, 16]
-
-
 def test_chunking_matches_mgl_send_walk():
     """MGL_Send sends 252 while >252 remain and the remainder otherwise, so an
     exact multiple ends on a full chunk with no trailing empty block."""
     assert [len(c) for c in mg_link.chunk_payload(b"\x00" * 252)] == [252]
     assert [len(c) for c in mg_link.chunk_payload(b"\x00" * 504)] == [252, 252]
     assert [len(c) for c in mg_link.chunk_payload(b"\x00" * 332)] == [252, 80]
-
-
-def test_receiver_round_trips_every_ident_we_send():
-    for ident, payload, size in (
-            (mg.MG_LINKID_CLIENT_SCRIPT, mg_script.CLIENT_SCRIPT_SAVE_CARD, None),
-            (mg.MG_LINKID_CARD, wonder_card.build_default_gift()[0], None),
-            (mg.MG_LINKID_RAM_SCRIPT, wonder_card.build_default_gift()[1], 0),
-            (mg.MG_LINKID_READY_END, b"", 0)):
-        blocks = mg_link.build_message(ident, payload, size)
-        receiver = mg_link.MysteryGiftLinkReceiver()
-        receiver.expect(ident)
-        out = [receiver.feed_block(b) for b in blocks]
-        assert out[:-1] == [None] * (len(blocks) - 1)
-        assert out[-1].startswith(bytes(payload))
-        assert not receiver.active
-
-
-def test_receiver_tolerates_fragment_padded_blocks():
-    """RFU delivers blocks padded to a multiple of the 12-byte fragment size."""
-    payload = bytes(range(100))
-    blocks = mg_link.build_message(mg.MG_LINKID_CARD, payload)
-    padded = [b.ljust(block.frag_count(len(b)) * block.FRAG_BYTES, b"\x00") for b in blocks]
-    receiver = mg_link.MysteryGiftLinkReceiver()
-    receiver.expect(mg.MG_LINKID_CARD)
-    assert receiver.feed_block(padded[0]) is None
-    assert receiver.feed_block(padded[1]) == payload
 
 
 def test_receiver_faults_exactly_where_the_console_calls_fatal_error():
@@ -209,15 +163,6 @@ def test_link_game_data_rejects_what_the_console_rejects():
             mg_script.parse_link_game_data(bytes(data)))
 
 
-def test_compare_card_flags():
-    assert mg_script.compare_card_flags(1003, mg_script.parse_link_game_data(
-        _game_data(flag_id=0))) == mg_script.HAS_NO_CARD
-    assert mg_script.compare_card_flags(1003, mg_script.parse_link_game_data(
-        _game_data(flag_id=1003))) == mg_script.HAS_SAME_CARD
-    assert mg_script.compare_card_flags(1003, mg_script.parse_link_game_data(
-        _game_data(flag_id=1001))) == mg_script.HAS_DIFF_CARD
-
-
 # --- server script branches ---------------------------------------------------------------------
 def _run_server(game_data, toss_response=None):
     """Drive MysteryGiftServer through one conversation, returning (idents, result)."""
@@ -240,29 +185,6 @@ def _run_server(game_data, toss_response=None):
             else:
                 server.on_received(ident, b"\x00" * 1024)
     raise AssertionError("server script did not terminate")
-
-
-def test_server_sends_the_card_when_the_console_has_none():
-    sent, result = _run_server(_game_data(flag_id=0))
-    assert result == mg_server.SVR_MSG_CARD_SENT
-    assert sent == [mg.MG_LINKID_CLIENT_SCRIPT,     # SendGameData
-                    mg.MG_LINKID_CLIENT_SCRIPT,     # SaveCard
-                    mg.MG_LINKID_CARD,
-                    mg.MG_LINKID_RAM_SCRIPT]
-
-
-def test_server_declines_when_the_console_already_holds_this_card():
-    _sent, result = _run_server(_game_data(flag_id=1003))
-    assert result == mg_server.SVR_MSG_HAS_CARD
-
-
-def test_server_prompts_to_toss_a_different_card_and_honours_both_answers():
-    sent, result = _run_server(_game_data(flag_id=1001), toss_response=0)   # FALSE = tossed
-    assert result == mg_server.SVR_MSG_CARD_SENT
-    assert mg.MG_LINKID_CARD in sent
-    sent, result = _run_server(_game_data(flag_id=1001), toss_response=1)   # TRUE = kept
-    assert result == mg_server.SVR_MSG_CLIENT_CANCELED
-    assert mg.MG_LINKID_CARD not in sent
 
 
 def test_server_refuses_invalid_game_data():

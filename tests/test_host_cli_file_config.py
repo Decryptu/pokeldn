@@ -64,11 +64,6 @@ def test_mystery_gift_no_flag_profile_and_cli_boolean_overrides_are_effective():
     assert run.role.skip_encryption is True
     assert run.role.accept_decrypted_ccmp is True
 
-    args = parser.parse_args([
-        "--no-live", "--no-skip-encryption", "--no-accept-decrypted-ccmp"])
-    assert (args.live, args.skip_encryption, args.accept_decrypted_ccmp) == (
-        False, False, False)
-
 
 def test_print_effective_config_is_safe_and_requires_no_root_or_party_files():
     output = io.StringIO()

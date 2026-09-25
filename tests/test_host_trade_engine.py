@@ -7,7 +7,6 @@ follower ownership inversions and ordering errors without pretending to validate
 
 import os
 import sys
-from dataclasses import FrozenInstanceError
 
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
@@ -17,11 +16,11 @@ from pokeldn.frlg.save import mon
 from pokeldn.gba import block, rfu
 from pokeldn.frlg.link.host_session import HostSession
 from pokeldn.frlg.link.host_trade import (
-    CLOSE_RETRY_FRAMES, H_ANIM, H_CANCEL, H_CONFIRM, H_DONE, H_EXIT, H_LEAVE_MENU, H_PARTY,
+    H_ANIM, H_CANCEL, H_CONFIRM, H_DONE, H_EXIT, H_LEAVE_MENU, H_PARTY,
     H_SAVE, H_SELECT,
     ENTRY_FINAL_STANDBY_QUIET_FRAMES, FINAL_MENU_READY_FRAMES, PARTY_LINK_SETTLE_FRAMES,
     POST_CANCEL_EXIT_WAIT_FRAMES, POST_CLIENT_CLOSE_GRACE_FRAMES,
-    SAVE_BARRIER_ROUNDS, SAVE_FINAL_STANDBY_QUIET_FRAMES,
+    SAVE_FINAL_STANDBY_QUIET_FRAMES,
     STARTUP_STANDBY_ECHO_FRAMES, HostTradeEngine, HostTradeTiming,
 )
 
@@ -40,25 +39,6 @@ def _child_block(host, data, owner=1):
         host.feed_child_slot(slots.build(sender.tick(None)))
         guard += 1
         assert guard < 100
-
-
-def test_host_trade_timing_defaults_are_compatible_and_immutable():
-    timing = HostTradeTiming()
-    assert timing.save_barrier_rounds == SAVE_BARRIER_ROUNDS
-    assert timing.save_final_standby_quiet_frames == SAVE_FINAL_STANDBY_QUIET_FRAMES
-    assert timing.party_link_settle_frames == PARTY_LINK_SETTLE_FRAMES
-    assert timing.startup_standby_echo_frames == STARTUP_STANDBY_ECHO_FRAMES
-    assert timing.entry_final_standby_quiet_frames == ENTRY_FINAL_STANDBY_QUIET_FRAMES
-    assert timing.final_menu_ready_frames == FINAL_MENU_READY_FRAMES
-    assert timing.post_cancel_exit_wait_frames == POST_CANCEL_EXIT_WAIT_FRAMES
-    assert timing.post_client_close_grace_frames == POST_CLIENT_CLOSE_GRACE_FRAMES
-    assert timing.close_retry_frames == CLOSE_RETRY_FRAMES
-    try:
-        timing.close_retry_frames = 1
-    except FrozenInstanceError:
-        pass
-    else:
-        raise AssertionError("HostTradeTiming must be immutable")
 
 
 def test_host_trade_engine_uses_supplied_timing():

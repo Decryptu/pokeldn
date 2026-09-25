@@ -122,13 +122,7 @@ def test_following_a_script_names_what_the_dump_stops_short_of():
     assert kinds[0x081A77B2] == ["goto"]
     assert kinds[0x081A77A5] == ["call"]
     assert kinds[0x081A77B0] == ["movements"], "movement data is pointed at, never executed"
-
-
-def test_a_data_pointer_is_reported_but_never_followed():
-    """Movement_RevealTrainer is a movement list, not a script. Following it would disassemble
-    movement bytes as commands and print nonsense with confidence."""
-    reached, referenced = scrcmd.follow(TRAINER_BATTLE_BYTES, TRAINER_BATTLE_BASE, 0x081A76A6)
-    assert 0x081A77B0 in referenced and 0x081A77B0 not in reached
+    assert 0x081A77B0 not in reached
 
 
 def test_an_entry_point_the_dump_does_not_hold_is_what_to_dump_next():

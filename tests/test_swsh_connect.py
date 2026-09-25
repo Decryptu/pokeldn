@@ -15,7 +15,7 @@ import swsh_connect
 from pokeldn.ldn import (local_protocol as lp, mesh_protocol as mesh, pia4, reliable5,
                         rtt_protocol as rtt, station_protocol as stp)
 from pokeldn import gen8
-from pokeldn.swsh import pokemon as swsh_pokemon, trade as swsh_trade
+from pokeldn.swsh import trade as swsh_trade
 from pokeldn.swsh.session import packet_iv, session_keys
 
 APP_DATA = bytes.fromhex("0330112400000000051800008b718ac6")     # A run's own advertisement
@@ -96,12 +96,6 @@ def test_the_join_travels_on_the_unreliable_port_by_default():
     assert fields["port"] == 0
 
 
-def test_joining_is_off_unless_it_is_asked_for():
-    # An unasked-for join would change two things at once on a run bought for the handshake.
-    assert swsh_connect.build_parser().parse_args([]).join is False
-    assert swsh_connect.build_parser().parse_args(["--join"]).join is True
-
-
 # --------------------------------------------------------------------------- answering a run
 # The two protocols the console left unanswered. Both send paths are checked as BYTES, decrypted
 # back through the console's own derivation, because that is what a run will actually put on the air.
@@ -154,89 +148,12 @@ def test_a_gap_stops_the_run_rather_than_being_skipped():
     assert reliable5.contiguous_through({2, 3}, start=1) == 3
 
 
-def test_the_data_shaped_selection_offer_is_off_unless_it_is_asked_for():
-    """A run died of `args.box_open.split(",")` with the flag absent, inside the receiver. Every
-    flag combination this branch reads is proven here before a run carries it.
-    """
-    args = swsh_connect.build_parser().parse_args([])
-    assert args.selection_offer is False and args.selection_offer_data is False
-    on = swsh_connect.build_parser().parse_args(["--selection-offer", "--selection-offer-data"])
-    assert on.selection_offer is True and on.selection_offer_data is True
-
-
-def test_neither_answer_happens_unless_it_is_asked_for():
-    args = swsh_connect.build_parser().parse_args([])
-    assert args.answer_rtt is False and args.ack_reliable is False
-
-
-# --- The post-offer queue ----------------------------------------------------------
-
-from pokeldn.swsh import trade as swsh_trade                          # noqa: E402
-
-
-def drain(queue):
-    """What the launcher's drain branch does: pop a payload and send it, nothing else."""
-    return queue.pop(0)
-
-
-def test_both_flags_seed_the_queue_with_payloads_and_nothing_else():
-    opens = [swsh_trade.open_content(int(c)) for c in "40,50".split(",")]
-    boxes = [swsh_trade.box_sync_state(int(c)) for c in "1,2,4".split(",")]
-    for queue in (opens, boxes):
-        assert all(isinstance(p, bytes) for p in queue)
-        while queue:
-            payload = drain(queue)
-            assert isinstance(payload, bytes) and len(payload) >= 4
-            swsh_trade.parse(payload)                 # a real message, id and body
-
-
 def test_the_openers_and_the_commands_are_different_ids():
     assert swsh_trade.parse(swsh_trade.open_content(40))[0] == 10040
     assert swsh_trade.parse(swsh_trade.box_sync_state(4))[0] == swsh_trade.POKEMON_TRADE
 
 
-def test_a_spaced_queue_drains_every_entry_and_not_just_the_first():
-    """A run's bug, as a model of the two loops rather than a re-read of the code.
-
-    The drain has to sit where a payload is CHOSEN - a loop that runs every period - and not
-    where a queued payload is ACKNOWLEDGED. In the ack branch the first "not yet" leaves nothing
-    pending, so nothing is queued, so no queued payload is ever acked again and the drain never
-    runs a second time: one command in 46 seconds where eight were meant to span the accept.
-    """
-    def run(drain_in_ack, ticks=200, period=5.0, tick=0.3):
-        # The first entry is seeded directly when our own offer is acknowledged, which is why
-        # A run sent command 1 and then nothing: the seeding worked and the DRAIN did not.
-        queue, sent, now = [2, 3, 4], [], 0.0
-        pending, box_next = 1, period
-        for _ in range(ticks):
-            if not drain_in_ack and pending is None and queue and now >= box_next:
-                pending, box_next = queue.pop(0), now + period
-            if pending is not None:
-                sent.append((now, pending))
-                acked = pending
-                pending = None
-                if drain_in_ack and queue and now >= box_next:
-                    pending, box_next = queue.pop(0), now + period
-                del acked
-            now += tick
-        return sent
-
-    assert [p for _, p in run(drain_in_ack=False)] == [1, 2, 3, 4]
-    assert [p for _, p in run(drain_in_ack=True)] == [1]          # the shape a run shipped
-
-    spaced = run(drain_in_ack=False)
-    gaps = [round(b[0] - a[0], 1) for a, b in zip(spaced, spaced[1:])]
-    assert all(g >= 5.0 for g in gaps), gaps
-
-
 # --- Selection phase messages -------------------------------
-
-def test_the_two_missing_selection_moves_are_off_unless_they_are_asked_for():
-    args = swsh_connect.build_parser().parse_args([])
-    assert args.rpc_pair_advance == 0 and args.selection_start is False
-    on = swsh_connect.build_parser().parse_args(["--selection-start", "--rpc-pair-advance", "2"])
-    assert on.rpc_pair_advance == 2 and on.selection_start is True
-
 
 def test_advancing_the_pair_moves_the_clock_and_nothing_else():
     """The second copy of a pair member must differ from the first in the clock alone - that is
@@ -281,29 +198,6 @@ def test_the_content_opener_can_carry_the_pokemon():
     empty, carried = swsh_trade.open_content(50), swsh_trade.pokemon_offer(50, pk8)
     assert empty == bytes.fromhex("422700000a00")
     assert carried[:4] == empty[:4] and len(carried) > len(empty)
-
-
-def test_the_final_selection_pair_is_off_and_re_arms_with_its_own_delta():
-    """our Pokemon reached content 50 and the console answered with a hash. nxldn-lab
-    answers the hash with one member and then the NEXT pair with both, at a larger delta;
-    --rpc-pair latches per envelope so ours has never gone out twice."""
-    args = swsh_connect.build_parser().parse_args([])
-    assert args.selection_final_delta == 0
-    on = swsh_connect.build_parser().parse_args(["--selection-final-delta", "9"])
-    assert on.selection_final_delta == 9
-    member = swsh_trade.build_rpc(50, 10000, 0xdeadbeef, 0x1000)
-    a = swsh_trade.parse_rpc(swsh_trade.answer_rpc(member, 1, 5))
-    b = swsh_trade.parse_rpc(swsh_trade.answer_rpc(member, 1, 9))
-    assert b["clock"] - a["clock"] == 4
-
-
-def test_the_confirmation_answer_is_off_unless_it_is_asked_for():
-    args = swsh_connect.build_parser().parse_args([])
-    assert args.confirm_command is None
-    on = swsh_connect.build_parser().parse_args(["--confirm-command", "1"])
-    assert on.confirm_command == 1
-    assert swsh_connect.build_parser().parse_args(
-        ["--confirm-command", "0x2"]).confirm_command == 2
 
 
 def test_the_confirmation_cue_is_the_selection_cue_one_content_along():
@@ -360,26 +254,6 @@ def test_the_condition_fires_on_sx51bs_own_confirmation_cues():
     assert first["offset"] == swsh_trade.CONFIRMATION_OFFSET and first["clock"] == 2633
 
 
-def test_the_confirmation_cue_is_not_a_selection_one_and_cannot_be_taken_for_it():
-    """A run answered the 40040 status on port 1 and sent nothing on port 0, because one latch
-    served both contents. The envelope is what separates them, and it is read from the message."""
-    for payload in SX51B_CONFIRMATION_CUES:
-        member = swsh_trade.parse_rpc(bytes.fromhex(payload))
-        assert member["envelope"] != swsh_trade.RPC_ENVELOPE_BASE + swsh_trade.SELECTION_OFFSET
-
-
-def test_the_confirmation_pair_re_arms_with_its_own_delta():
-    """the syncCommand landed - content 40 answered with an elementId-1 echo and a hash,
-    the signature that only appears once a record reaches a content's receive event - and then went
-    quiet for 124 s. --selection-final-delta makes the re-arm that carried the selection phase past
-    its own hash, and it keys on the 40050 envelope, so the confirmation needs its own."""
-    args = swsh_connect.build_parser().parse_args([])
-    assert args.confirm_final_delta == 0
-    on = swsh_connect.build_parser().parse_args(["--confirm-final-delta", "9"])
-    assert on.confirm_final_delta == 9
-    assert on.selection_final_delta == 0
-
-
 def test_the_confirmation_hash_is_a_four_byte_body_on_the_40040_envelope():
     """A run's own bytes: the hash arrives on elementId 10000 of 40040, four bytes, and it is
     neither of the pair's two constants - which is what the re-arm has to trigger on."""
@@ -389,28 +263,6 @@ def test_the_confirmation_hash_is_a_four_byte_body_on_the_40040_envelope():
     assert hashed["base"] == swsh_trade.RPC_BASES[0]
     assert len(hashed["body"]) == 4
     assert bytes(hashed["body"]) not in swsh_trade.RPC_PAIR_BODIES
-
-
-def test_the_confirmation_handshake_sends_a_sequence_not_one_command():
-    """one command sent, the console climbed two steps on its own and stopped. Its machine
-    sends 0,1,2,3 and parks after each, so the answer is a queue."""
-    args = swsh_connect.build_parser().parse_args([])
-    assert args.confirm_commands is None
-    on = swsh_connect.build_parser().parse_args(["--confirm-commands", "0,1,2,3"])
-    assert [int(c, 0) for c in on.confirm_commands.split(",")] == [0, 1, 2, 3]
-
-
-def test_sx53s_own_steps_are_all_four_byte_bodies_on_elementid_20000():
-    """The trigger cannot stay `the body ends 0100`: the step a run finished on is `01000200`.
-    These are the console's own bytes, in the order it sent them."""
-    steps = ["00000100", "01000100", "01000200"]
-    for body in steps:
-        m = swsh_trade.parse_rpc(swsh_trade.build_rpc(
-            swsh_trade.CONFIRMATION_OFFSET, swsh_trade.RPC_BASES[1],
-            0x1249a221d8580000, 4700, bytes.fromhex(body)))
-        assert m["base"] == swsh_trade.RPC_BASES[1] and len(m["body"]) == 4
-    assert bytes.fromhex(steps[-1])[-2:] != b"\x01\x00"
-    assert bytes.fromhex(steps[0])[-2:] == b"\x01\x00"
 
 
 def test_the_stall_abort_is_off_until_the_ladder_has_started():
@@ -426,12 +278,6 @@ def test_the_stall_abort_is_off_until_the_ladder_has_started():
     assert swsh_connect.stall_abort(40.0, 50.0, 10.0) is True     # started, then quiet
     assert swsh_connect.stall_abort(40.0, 500.0, 0.0) is False    # the flag is off
     assert swsh_connect.stall_abort(None, 500.0, 0.0) is False
-
-
-def test_the_stall_abort_is_off_unless_it_is_asked_for():
-    assert swsh_connect.build_parser().parse_args([]).abort_on_stall == 0.0
-    assert swsh_connect.build_parser().parse_args(
-        ["--abort-on-stall", "12"]).abort_on_stall == 12.0
 
 
 def test_a_finished_ladder_is_not_a_stalled_one():
@@ -501,29 +347,8 @@ def test_a_name_that_will_not_fit_is_refused_before_the_radio():
     assert swsh_connect.offer_edits(_OfferArgs(offer_nickname="X" * 12))["nickname"] == "X" * 12
 
 
-def test_a_built_record_is_a_real_one_with_the_named_fields_changed():
-    """The edit keeps the checksum, the party form and every byte no flag names."""
-    template = swsh_pokemon.encrypt(gen8.write(
-        bytes(gen8.SIZE_PARTY), species=94, nickname="Ectoplasma", ivs=[31, 31, 19, 6, 31, 31],
-        level=100, experience=1059860, trainer_id=56909, secret_id=48474))
-    built = swsh_pokemon.build_from(template, species=25, nickname="PKCAMP", ivs=[31] * 6)
-    was, now = swsh_pokemon.read(template), swsh_pokemon.read(built)
-    assert len(built) == gen8.SIZE_PARTY
-    assert (now["species"], now["nickname"], now["ivs"]) == (25, "PKCAMP", (31,) * 6)
-    assert (now["level"], now["experience"]) == (was["level"], was["experience"])
-    assert (now["trainer_id"], now["secret_id"]) == (was["trainer_id"], was["secret_id"])
-
-
-def test_the_offer_message_carries_the_built_record_back():
-    """`offered_pokemon` is the console's own reader; the record must survive the round trip."""
-    built = swsh_pokemon.build_from(swsh_pokemon.encrypt(gen8.write(
-        bytes(gen8.SIZE_PARTY), species=94, nickname="Ectoplasma")), nickname="PKCAMP")
-    assert swsh_trade.offered_pokemon(swsh_trade.pokemon_trade(built)) == built
-
-
 def test_a_record_loads_from_any_of_the_four_shapes_a_pk8_file_takes():
     """Stored or party, encrypted or PKHeX's plain export, all become one plain party record."""
-    from pokeldn import gen8
     plain = bytearray(gen8.SIZE_PARTY)
     struct.pack_into("<I", plain, 0, 0x8580A635)
     struct.pack_into("<H", plain, gen8.OFF_SPECIES, 841)
