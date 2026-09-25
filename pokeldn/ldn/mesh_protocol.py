@@ -231,6 +231,36 @@ def rewrite_update_mesh(data, host_index, update_counter=None):
     return bytes(out)
 
 
+def station_entry_v4(location, station_index):
+    """One 64-byte version-4 mesh table entry: the location zero-padded to 0x3E, the index, a pad."""
+    location = bytes(location)
+    if len(location) > INDEX_FIELD_V4:
+        raise ValueError(f"a location is at most {INDEX_FIELD_V4} bytes here, got {len(location)}")
+    return location.ljust(INDEX_FIELD_V4, b"\0") + bytes([station_index & 0xFF, 0])
+
+
+def build_join_response_v4(host_index, joiner_index, entries, ack_id, update_counter=0,
+                           max_active=2, max_buffer=0, max_total=8):
+    """A version-4 unfragmented join response, the inverse of `parse_join_response(version4=True)`.
+
+    `entries` is a list of (location, station index), host first. A retail Sword's two-station
+    response rebuilds byte for byte: `02 02 00 01 01 00 02 00 02 00 08 00`, the counter, two entries,
+    then the ack id the joiner acknowledges on 0x14.
+    """
+    head = bytes([JOIN_RESPONSE, len(entries), host_index, joiner_index, 1, 0, len(entries), 0,
+                  max_active, max_buffer, max_total, 0]) + struct.pack(">I", update_counter)
+    body = b"".join(station_entry_v4(loc, idx) for loc, idx in entries)
+    return head + body + struct.pack(">I", ack_id & 0xFFFFFFFF)
+
+
+def build_update_mesh_v4(host_index, entries, update_counter):
+    """The host's periodic version-4 update mesh: 12 bytes of header and all eight 64-byte seats."""
+    head = bytes([UPDATE_MESH, len(entries), host_index, 0]) + struct.pack(">I", update_counter)
+    head += bytes([1, 0, len(entries), 0])
+    body = b"".join(station_entry_v4(loc, idx) for loc, idx in entries)
+    return (head + body).ljust(UPDATE_MESH_SIZE_V4, b"\0")
+
+
 def _station_info(data, off, count, version4=False):
     """The mesh table's entries. Two geometries, and the stride is the whole difference.
 

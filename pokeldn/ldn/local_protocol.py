@@ -103,6 +103,33 @@ def parse_update_session(data):
     return UpdateSession(seq, network_id, host_var, host_svc, constant_id, allow, nodes, state)
 
 
+def build_update_session(sequence_id, network_id, host_variable_id, host_service_variable_id,
+                         host_constant_id, nodes, allow_participating=True,
+                         host_migration_state=0):
+    """The host's 0x11 message, the inverse of `parse_update_session`: 121 bytes for eight seats.
+
+    `host_constant_id` is the int `station_protocol.ldn_constant_id` returns; it goes on the wire
+    little-endian. `nodes` is up to eight (ip, port, ranking); the rest are empty seats. A retail
+    Sword's own update session rebuilds from its parsed fields byte for byte.
+    """
+    nodes = list(nodes)[:NODE_COUNT]
+    body = bytearray(UPDATE_SESSION_FIXED)
+    size = NODE_COUNT * NODE_SIZE + 1
+    struct.pack_into("<BBH", body, 0, 1, UPDATE_SESSION, size)
+    struct.pack_into("<4I", body, 0x0C, sequence_id & 0xFFFFFFFF, network_id & 0xFFFFFFFF,
+                     host_variable_id & 0xFFFFFFFF, host_service_variable_id & 0xFFFFFFFF)
+    struct.pack_into("<Q", body, 0x20, host_constant_id & 0xFFFFFFFFFFFFFFFF)
+    body[0x28] = 1 if allow_participating else 0
+    for i in range(NODE_COUNT):
+        if i < len(nodes):
+            ip, port, ranking = nodes[i]
+            body += bytes(int(p) for p in ip.split(".")) + struct.pack(">H", port)
+            body += b"\0\0" + bytes([ranking & 0xFF])
+        else:
+            body += b"\0" * 8 + bytes([RANKING_EMPTY])
+    return bytes(body) + bytes([host_migration_state & 0xFF])
+
+
 def build_ack(sequence_id):
     """The 0x21 acknowledgement of an update session, 20 bytes.
 

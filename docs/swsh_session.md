@@ -170,6 +170,15 @@ console in the same minute.
 Nothing appears on the console's screen. From the moment of association the console broadcasts Pia
 to `169.254.x.255:12345` about ten times a second.
 
+## Searching as well as hosting
+
+The game's own network code builds Pia's `nn::pia::local::LdnSessionSearchCriteria` (vtable
+`0x25d4458`, reached through the GOT slot `0x2616bb0`) in two functions, `0x006c4564` (at
+`0x006c476c`) and `0x006c9e70` (at `0x006c9eb0`). In the first, the criteria takes a u64 from
+`0x006a9d00` at +0x20 and a u16 from `0x006a9de0` at +0x28, is passed through its own slot 2
+`0x01848800(criteria, 0, 0x18)`, and is handed to `0x0183fac0`. A Sword therefore has a path that
+browses for a session to join, next to the one that creates one.
+
 ## What the console says first
 
 The console's broadcast is Pia's Local Protocol, protocol 0x24, the same one BDSP speaks, read field
