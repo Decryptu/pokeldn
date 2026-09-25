@@ -6,9 +6,9 @@
 
 The layers below the game are `pokeldn.ldn.host4`: the Local Protocol, the station handshake, the
 mesh, RTT and both reliable windows, answered as a retail Sword answers them while it hosts. Above
-them this host speaks the sync framework the way the console spoke it to our joiner: it opens with
-`ping` on 0x7C and answers what the joiner sends. Every datagram goes to --capture as JSON lines.
-docs/swsh_session.md, docs/swsh_trade.md.
+them `pokeldn.swsh.host_trade` runs the trade the way a hosting Sword leads it: ping rounds, both
+snapshots, the box, the exchange, the confirmation ladder and the host migration. Every datagram
+goes to --capture as JSON lines. docs/swsh_session.md, docs/swsh_trade.md.
 """
 import argparse
 import binascii
@@ -22,10 +22,10 @@ sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
 from pokeldn import config
 from pokeldn.host_support import resolve_keys
-from pokeldn.ldn import host4, reliable4
+from pokeldn.ldn import host4, mesh_protocol as mesh, reliable4
 from pokeldn.ldn.ldn_mitm_host import IpHostTransport
 from pokeldn.ldn.transport import HostTransport, board_radio, find_ap_phy
-from pokeldn.swsh import trade
+from pokeldn.swsh import host_trade, pokemon as swsh_pokemon, trade_payload
 from pokeldn.swsh.session import COMM_ID, PASSPHRASE, session_keys
 
 SCENE_ID = 60001                  # a retail Sword's Link Trade network
@@ -34,7 +34,8 @@ LDN_PROTOCOL = 1
 MAX_PARTICIPANTS = 2
 ADVERT_SIZE = 0x180
 GAME_DATA_OFF = 0x18
-PING_PERIOD = 0.5                 # the console's own ping cadence before the joiner answers
+ROTATE_VALUE_PERIOD = 0.8         # a searching Shield redraws the u16 at 0x18 this often
+ROTATE_PHASE_PERIOD = 2.5         # and flips the byte at 0x1E between 1 and 2 this often
 
 
 def build_advert(template, network_id=None, session_param=None):
@@ -50,6 +51,15 @@ def build_advert(template, network_id=None, session_param=None):
     out[12:16] = struct.pack("<I", session_param if session_param is not None
                              else struct.unpack("<I", os.urandom(4))[0])
     out[16:24] = bytes(8)
+    return bytes(out)
+
+
+def rotate_advert(app_data, now, t0):
+    """-> the advertisement a searching console would show at `now`: a fresh u16 at 0x18 and the
+    phase byte at 0x1E, 1 then 2, as sampled off an emulated Shield on its search screen."""
+    out = bytearray(app_data)
+    out[GAME_DATA_OFF:GAME_DATA_OFF + 2] = os.urandom(2)
+    out[GAME_DATA_OFF + 6] = 1 + int((now - t0) // ROTATE_PHASE_PERIOD) % 2
     return bytes(out)
 
 
@@ -81,7 +91,17 @@ def build_parser():
                     help="a Sword's own advertisement (hex, raw, or swsh_net_facts.json); its "
                          "game record from 0x18 is kept and the Pia header rebuilt")
     ap.add_argument("--player-name", default="PkCamp")
-    ap.add_argument("--no-ping", action="store_true", help="never open with ping")
+    ap.add_argument("--snapshot", default="scratchpad/sw70_0x84_payload.bin",
+                    help="a Sword's 3456-byte 0x84 snapshot; its identity is moved to ours")
+    ap.add_argument("--trainer-name", default="PkCamp")
+    ap.add_argument("--trainer-tid", type=lambda s: int(s, 0), default=12345)
+    ap.add_argument("--trainer-sid", type=lambda s: int(s, 0), default=54321)
+    ap.add_argument("--offer-slot", type=int, default=1, help="the party slot we offer")
+    ap.add_argument("--end-delay", type=float, default=host_trade.END_DELAY,
+                    help="ladder done to box command 3 and the migration")
+    ap.add_argument("--received", default=None, help="write the joiner's Pokemon here")
+    ap.add_argument("--rotate-advert", action="store_true",
+                    help="redraw 0x18 and flip the phase byte 0x1E while no station is seated")
     ap.add_argument("--seconds", type=float, default=300)
     ap.add_argument("--capture", default=None)
     return ap
@@ -96,6 +116,17 @@ def main():
     if not args.ip_host:
         phy = find_ap_phy(log=print) if args.phy == "auto" else args.phy
     app_data = build_advert(load_advert(args.advert))
+    snapshot = open(args.snapshot, "rb").read()
+    if len(snapshot) != trade_payload.PAYLOAD_LENGTH:
+        snapshot = trade_payload.inflate_short(snapshot)
+    snapshot = trade_payload.rewrite(snapshot, trainer_name=args.trainer_name,
+                                     trainer_id=args.trainer_tid, secret_id=args.trainer_sid)
+    at = (args.offer_slot - 1) * swsh_pokemon.SIZE_PARTY
+    offer = snapshot[at:at + swsh_pokemon.SIZE_PARTY]
+    mon = swsh_pokemon.read(offer)
+    print(f"[sw] our trainer {args.trainer_name} {args.trainer_tid}/{args.trainer_sid}; "
+          f"offering slot {args.offer_slot}: species {mon['species']} {mon['nickname']!r} "
+          f"level {mon['level']}")
 
     class Net:
         application_data = app_data
@@ -123,27 +154,51 @@ def main():
     record({"rec": "host", "comm_id": args.comm_id, "app_data": app_data.hex(),
             "session_key": keys.session_key.hex()})
 
-    said = {}                     # (ip, protocol, port) -> the joiner's newest payload
-    queues = {}
-    ping_state = {}               # ip -> [pings sent, when last, answered]
+    trades = {}                   # ip -> HostTrade
 
     def on_data(st, protocol, port, payload):
-        key = (st.ip, protocol, port)
-        said[key] = payload
-        print(f"[sw] <- {st.ip} {protocol:#04x}/{port} {payload.hex()[:96]}")
-        if protocol == reliable4.PROTOCOL and port == 0 and payload[:4] == b"\x61\0\0\0":
-            ping_state.setdefault(st.ip, [0, 0.0, False])[2] = True
-        answer, queues[key] = trade.next_answer(payload, queues.get(key, ()))
-        if answer is not None and answer != payload:
-            host.send_data(st.ip, protocol, port, answer)
-            print(f"[sw] -> {st.ip} {protocol:#04x}/{port} {answer.hex()[:96]}")
+        record({"rec": "app_rx", "src": st.ip, "protocol": protocol, "port": port,
+                "payload": payload.hex()})
+        if protocol == mesh.PROTOCOL:
+            print(f"[sw] <- {st.ip} mesh {payload.hex()}")
+            return
+        if st.ip in trades:
+            trades[st.ip].on_data(protocol, port, payload)
+
+    def on_broadcast(st, port, payload, flags):
+        if st.ip in trades:
+            trades[st.ip].on_broadcast(port, payload, bool(flags & 0x10))
 
     def on_other(st, protocol, port, payload):
         print(f"[sw] <- {st.ip} {protocol:#04x}/{port} (unhandled) {payload.hex()[:96]}")
 
+    def start_trade(st):
+        def send(protocol, port, payload):
+            host.send_data(st.ip, protocol, port, payload)
+            record({"rec": "app_tx", "dst": st.ip, "protocol": protocol, "port": port,
+                    "payload": payload.hex()})
+
+        def send_broadcast(port, message, compressed):
+            host.send_broadcast(st.ip, port, message, compressed)
+
+        def send_mesh(payload):
+            host.send_data(st.ip, mesh.PROTOCOL, mesh.PORT_RELIABLE, payload)
+
+        def on_record(**row):
+            record(dict(rec="trade", **row))
+            if row.get("rec") == "peer_exchange" and args.received:
+                open(args.received, "wb").write(bytes.fromhex(row["pk8"]))
+                print(f"[sw] the joiner's Pokemon written to {args.received}")
+
+        trades[st.ip] = host_trade.HostTrade(host.constant, st.constant, snapshot, offer, send,
+                                             send_broadcast, send_mesh,
+                                             end_delay=args.end_delay, record=on_record)
+        print(f"[sw] {st.ip}: the trade starts")
+
     host = host4.Pia4Host(keys.network_id_le, keys.session_key, transport.our_ip,
                           transport.our_mac, transport.send, on_data=on_data,
-                          on_other=on_other, name=args.player_name, capture=record)
+                          on_other=on_other, on_broadcast=on_broadcast,
+                          name=args.player_name, capture=record)
     try:
         transport.start()
     except RuntimeError as exc:
@@ -151,9 +206,13 @@ def main():
         return 2
     print(f"[sw] up at {transport.our_ip}; waiting for a console")
     deadline = time.time() + args.seconds
+    t_up = last_rotate = time.time()
     try:
         while time.time() < deadline:
             now = time.time()
+            if args.rotate_advert and not host.stations and now - last_rotate >= ROTATE_VALUE_PERIOD:
+                transport.set_application_data(rotate_advert(app_data, now, t_up))
+                last_rotate = now
             present = {p[1]: p for p in transport.participants}
             for ip, (index, _ip, mac, name) in present.items():
                 if ip not in host.stations:
@@ -162,19 +221,15 @@ def main():
             for ip in list(host.stations):
                 if ip not in present:
                     host.unseat(ip)
-                    ping_state.pop(ip, None)
+                    trades.pop(ip, None)
             for payload, src_ip in transport.recv():
                 host.on_packet(payload, src_ip, now)
             host.tick(now)
             for ip, st in host.stations.items():
-                if args.no_ping or st.state != "joined":
-                    continue
-                ps = ping_state.setdefault(ip, [0, 0.0, False])
-                if not ps[2] and now - ps[1] >= PING_PERIOD:
-                    host.send_data(ip, reliable4.PROTOCOL, 0, trade.sync(trade.SYNC_PING,
-                                                                         trade.PING))
-                    ps[0] += 1
-                    ps[1] = now
+                if st.state == "joined" and ip not in trades:
+                    start_trade(st)
+            for tr in list(trades.values()):
+                tr.tick(now)
             transport.wait_readable(0.02)
     except KeyboardInterrupt:
         print("\n[sw] stopping")

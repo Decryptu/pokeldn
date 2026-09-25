@@ -225,6 +225,19 @@ functions along (`0x0065df04`, poly `0x8005`) belongs to a different table. The 
 walks, `element+0x110`, is a copy `0x006d48b0` takes of the element's list at `+0x40`, keeping the
 entries whose `+0x68` is zero; how many entries a trade channel's copy holds has not been read.
 
+On the wire the chain covers three clocks, in this order: the sender's elementId-0 value with no
+owner, its elementId-1 value with no owner, and its own elementId-20000 sub-element. Every non-zero
+hash a hosting Sword sent in a completed trade matches, for example on content 50:
+
+    elementId 0, no owner      clock 2304   the host's own Pokemon (344 bytes)
+    elementId 1, no owner      clock 2313   the partner's Pokemon, sent back
+    elementId 20000, host      clock 2278   then 2338 after its pair moved
+    crc32 chain                8ffa0f2e     then b3615e90, the 10000 bodies both sides sent
+
+A value can change without a message: an elementId-1 clock the chain used went out on the wire only
+in a later envelope. A joiner that echoed the host's hash completed the trade. `scratchpad/sw_quorum_check.py` finds the
+clocks behind each hash in a capture.
+
 ## The party payload on protocol 0x84
 
 Protocol 0x84 is `nn::pia::transport::ReliableBroadcastProtocol`. It carries the trade snapshot:

@@ -13,8 +13,9 @@ byte for byte against the console's own (`tests/test_host4.py`). The order a joi
 The Local Protocol update session goes to the subnet broadcast every 100 ms until each seated
 station acknowledges the current sequence. docs/pia.md, docs/swsh_session.md.
 
-Nothing here knows a game. Application data on 0x7C and 0x80 is handed up through `on_data`;
-every other message the layer does not consume goes to `on_other`.
+Nothing here knows a game. Application data on 0x7C, 0x80 and the mesh's reliable port is handed
+up through `on_data`; 0x84 goes to `on_broadcast` with the message flags (0x10 is zlib); every
+other message the layer does not consume goes to `on_other`.
 """
 
 import os
@@ -30,6 +31,7 @@ from pokeldn.ldn import station_protocol as stp
 from pokeldn.ldn.pia5 import gcm_iv, ldn_nonce_crc
 
 PIA_PORT = 12345
+BROADCAST_STREAM = 0x84           # nn::pia::transport::ReliableBroadcastProtocol
 UPDATE_SESSION_PERIOD = 0.1       # the console's own rebroadcast rate until acked
 UPDATE_MESH_PERIOD = 2.0
 RTT_PERIOD = 0.4
@@ -113,7 +115,7 @@ class Pia4Host:
 
     def __init__(self, network_id_le, session_key, our_ip, our_mac, send, log=print,
                  on_data=None, on_other=None, name="PkCamp", account=None, token=None,
-                 session=None, capture=None):
+                 session=None, capture=None, on_broadcast=None):
         self.network_id_le = bytes(network_id_le)
         self.session_key = bytes(session_key)
         self.our_ip, self.our_mac = our_ip, bytes(our_mac)
@@ -128,6 +130,7 @@ class Pia4Host:
         self.log = log
         self.on_data = on_data or (lambda st, proto, port, payload: None)
         self.on_other = on_other or (lambda st, proto, port, payload: None)
+        self.on_broadcast = on_broadcast
         self.name, self.account, self.token, self.session = name, account, token, session
         self.capture = capture
         self.stations = {}            # ip -> Station
@@ -246,6 +249,13 @@ class Pia4Host:
         self.send_message(st.ip, body, protocol, port=port, flags=flags & ~0x10,
                           destination=st.bitmap)
 
+    def send_broadcast(self, ip, port, message, compressed=False):
+        """One 0x84 message; `compressed` sets Pia's zlib flag over a body already deflated."""
+        st = self.stations[ip]
+        self.send_message(ip, message, BROADCAST_STREAM, port=port,
+                          flags=STATION_FLAGS | (pia4.MESSAGE_FLAG_ZLIB if compressed else 0),
+                          destination=st.bitmap)
+
     def send_data(self, ip, protocol, port, payload):
         """Queue one application message on 0x7C or 0x80 and put it on the wire now."""
         st = self.stations[ip]
@@ -326,8 +336,11 @@ class Pia4Host:
             if len(body) == rtt.SIZE_V4 and body[0] == rtt.REQUEST:
                 self.send_message(st.ip, rtt.response_for_v4(body), rtt.PROTOCOL,
                                   destination=st.bitmap)
-        elif protocol in (reliable4.PROTOCOL, reliable4.BROADCAST_PROTOCOL):
+        elif protocol in (reliable4.PROTOCOL, reliable4.BROADCAST_PROTOCOL) or (
+                protocol == mesh.PROTOCOL and port == mesh.PORT_RELIABLE):
             self._reliable_in(st, protocol, port, body, now)
+        elif protocol == BROADCAST_STREAM and self.on_broadcast is not None:
+            self.on_broadcast(st, port, body, m["flags"])
         else:
             self.on_other(st, protocol, port, body)
 
