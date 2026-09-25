@@ -129,6 +129,12 @@ both offers were ordinary species and the console, the recruiting side, was PARE
 a species rarer than the console's own offer (a legendary or a mythical against an ordinary one)
 makes the console CHILD. `room.mirror_trade_state` answers WAIT_POKE with SEND_READYOK, which a
 console in either role accepts. The CHILD path has not yet completed on hardware.
+
+A Zubat PB8 with its species word set to 483 (Dialga) and every other field left as it was crashed
+the retail game at the moment the player picked their own Pokemon, where the partner's offer is
+drawn; the offer had been received and acknowledged 0.1 s earlier. The same template with its
+species unchanged completes. Whether the species edit or the CHILD role causes the crash is
+unmeasured.
 `tests/test_bdsp_trade_states.py` runs the two functions above as a model against the client's
 policy under random latencies: echoing WAIT_POKE leaves a CHILD console in SEND_READYOK every time,
 and the mirror reaches START_WRITE_SAVE in both roles.
