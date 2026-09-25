@@ -15,6 +15,7 @@ import lgpe_join
 import pla_host
 import swsh_connect
 import swsh_gift_host
+import swsh_host
 import swsh_join
 
 
@@ -31,7 +32,7 @@ def test_readme_options_exist_in_an_entry_point():
     documented = set(re.findall(r"`(--[a-z][a-z0-9-]*)", readme))
     available = set()
     for module in (frlg_trade_join, frlg_trade_host, frlg_mg_host, lgpe_host, lgpe_join,
-                   swsh_connect, swsh_gift_host, swsh_join, bdsp_connect, pla_host):
+                   swsh_connect, swsh_gift_host, swsh_host, swsh_join, bdsp_connect, pla_host):
         available |= _options(module.build_parser())
     assert documented <= available, sorted(documented - available)
 
