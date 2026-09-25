@@ -7,7 +7,7 @@ installed on the Switch or Switch 2. Seven games are supported:
 | | FRLG | LGPE | SwSh | BDSP | PLA | SV | PLZA |
 |---|:---:|:---:|:---:|:---:|:---:|:---:|:---:|
 | Trade | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ |
-| Mystery Gift | ✓ | ∅ | ✓ | ∅ | ∅ | ∅ | ✗ |
+| Mystery Gift | ✓ | ∅ | ✓ | ∅ | ∅ | ∅ | ∅ |
 | Link battle | ✓ | ✗ | ✗ | ✗ | ∅ | ✗ | ✗ |
 | Code on the console, save read and write | ✓ | ✗ | ✗ | ✗ | ✗ | ✗ | ✗ |
 

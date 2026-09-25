@@ -378,6 +378,11 @@ console sends a preview `0101`, marked 1, each time its cursor moves on the trad
 its pick in that session. Its pick is the one marked 0, so a host keys on that byte and not on a
 count. An emulated Legends Z-A trades with the same host over ldn_mitm.
 
+## Mystery Gift
+
+Mystery Gift in version 2.0.2 offers three entries: Get via Internet, Get with Code/Password and
+Check Mystery Gifts. It has no local-wireless path, so a gift cannot be served over LDN.
+
 ## Unresolved
 
 - What the property update's `02` byte means.

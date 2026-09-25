@@ -19,7 +19,7 @@ Seven games, all on retail hardware, all over the same LDN and Pia layers:
 | | FRLG | LGPE | SwSh | BDSP | PLA | SV | PLZA |
 |---|:---:|:---:|:---:|:---:|:---:|:---:|:---:|
 | Trade | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ |
-| Mystery Gift | ✓ | ∅ | ✓ | ∅ | ∅ | ∅ | ✗ |
+| Mystery Gift | ✓ | ∅ | ✓ | ∅ | ∅ | ∅ | ∅ |
 | Link battle | ✓ | ✗ | ✗ | ✗ | ∅ | ✗ | ✗ |
 | Code on the console, save read and write | ✓ | ✗ | ✗ | ✗ | ✗ | ✗ | ✗ |
 
