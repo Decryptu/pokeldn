@@ -220,6 +220,10 @@ seconds, the host kept `lowest_pending` at 1 for 3.5 to 13 s, and the flood kept
 that fixed, a seat holding 26 moved to 27 at 1.9 s and repeated records for one second. The form of
 the ack alone decided nothing: a seat with the retail form still flooded 6 s.
 
+`bin/sv_join.py` acks a new record at once and a repeat at most once per 50 ms per stream
+(`--repeat-ack-gap`): in a one-second burst of 91 repeats it sent 38 packets, against about 150 with
+an ack per repeat. The host's `lowest_pending` moved at the same point either way.
+
 ### What a passive capture misses
 
 Both consoles pack several MSDUs into one frame. Read as a single MSDU, the payload begins six
