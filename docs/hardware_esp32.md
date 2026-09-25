@@ -158,6 +158,15 @@ for 0.5 s with the window shut it assumes bytes were lost and reopens it (`Radio
 With CREDIT the same flood lost 0 of 5000 at 921600 and at 1500000, both counters 0. A board on
 firmware without CREDIT never opens the window and the host writes unthrottled, as before.
 
+A console seat loses commands the other way. A Scarlet seat at 1500000 with CREDIT lost about 210
+of 1901 ETH_TX, all in its first 13 s, with `uart_fifo_ovf` 235, `uart_buffer_full` 5 and
+`tx_eth_retried` 0: the hardware FIFO overflowing with the ring nearly empty. The driver drains the
+FIFO when it holds 120 bytes (`UART_FULL_THRESH_DEFAULT`), 8 bytes short of full: 53 us at 1500000
+and 87 us at 921600 before a late interrupt loses data. The firmware now sets the threshold to 32
+(`uart_set_rx_full_threshold`), 640 us at 1500000. The board alone does not reproduce the seat's
+overflow: both directions flooded at once lost 2 of 3000 once and 0 in three more runs on the same
+firmware.
+
 `POKELDN_ESP32_BAUD` sets the rate `open_serial` switches to, 921600 by default. The ESP32 UART
 runs to 5 Mbaud; the USB bridge sets the limit. `tools/ldn/esp32_bench.py --port PORT --bauds
 921600,1500000,2000000,3000000` measures it with the board alone: BENCH streams random payloads,
@@ -326,7 +335,7 @@ entered: the handshake finished 0.46 s after the association, and a trade ran to
 
 - The softAP negotiates WMM, which a Switch host does not; a trade completes with it.
   `AP_FLAG_NO_QOS` (`POKELDN_ESP32_AP_FLAGS=2`) clears the station's QoS flag after association.
-- Whether CREDIT removes the loss on a console seat; it is measured against an empty network only.
+- Whether the RX FIFO threshold of 32 removes the FIFO overflow on a console seat.
 - A sniffer board's counts of another board's frames undercount while the sniffer's own serial
   link is saturated; they are not evidence of loss on the air.
 - Serial latency at 921600 baud against the Z-A seat race.
