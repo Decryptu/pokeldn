@@ -491,6 +491,101 @@ def test_the_arceus_joiner_seats_across_simulated_boards():
     assert got["session"].seated
 
 
+def test_the_arceus_joiner_takes_the_host_role_a_console_hands_it(tmp_path, monkeypatch):
+    """bin/pla_join.py's radio path against a console that answers the joiner's Net ack with a
+    NetStartHostMigration, as a retail Legends Arceus hosting a trade does: the joiner leaves the
+    seat and hands its caller the channel to host on."""
+    import threading
+
+    import pla_join
+    from pokeldn import pla
+    from pokeldn.ldn import pia6, pia_connect, userspace_ip
+    from pokeldn.pla import data_exchange, trade_box
+
+    monkeypatch.setenv("POKELDN_RADIO", "esp32:simulated")
+    keys_file = tmp_path / "prod.keys"
+    keys_file.write_text("".join(f"{k} = {v.hex()}\n" for k, v in KEYS.items()))
+    air = esp32_sim.Air()
+    console_radio = esp32.Radio(esp32_sim.SimulatedBoard(air).host_stream())
+    join_radio = esp32.Radio(esp32_sim.SimulatedBoard(air).host_stream())
+    console_thread = {}
+
+    @contextlib.asynccontextmanager
+    async def factory():
+        mine = threading.current_thread() is console_thread.get("t")
+        esp = esp32_wlan.EspFactory(console_radio if mine else join_radio,
+                                    port_factory=userspace_ip.userspace_port, join_timeout=5)
+        try:
+            yield esp
+        finally:
+            esp.router.close()
+
+    got = {"asked": 0}
+    stop = threading.Event()
+
+    async def console():
+        param = ldn.CreateNetworkParam(
+            keys=KEYS, channel=6, local_communication_id=pla.COMM_ID, name=b"console",
+            app_version=0, application_data=pla.build_advertise_data("00000000"),
+            password=pla.PASSPHRASE, protocol=pla.LDN_PROTOCOL)
+        async with ldn.create_network(param) as network:
+            keys = pla.session_keys(network.info().ssid)
+            sock = userspace_ip.udp_socket("ldn-tap", pla.PIA_PORT)
+            sock.setblocking(False)
+            host_ip = str(network.participant().ip_address)
+            host_mac = esp32.mac_bytes(network.participant().mac_address)
+            event = await network.next_event()
+            station = str(event.participant.ip_address)
+            answered = False
+
+            def send(body):
+                msg = pia6.build_message(body, protocol=0x2C, message_flags=0x31)
+                sock.sendto(pia6.build_packet(keys.session_key, keys.network_id, host_ip, msg,
+                                              dst_var=0, src_var=0x2FEE, nonce8=os.urandom(8)),
+                            (station, pla.PIA_PORT))
+
+            while not stop.is_set():
+                if answered:
+                    send(bytes.fromhex("01400000"))
+                    got["asked"] += 1
+                else:
+                    send(pia_connect.build_net_conn_request(
+                        2, 0x2FEE, host_mac, keys.network_id, [host_ip, station],
+                        max_stations=2, station_size=21))
+                with trio.move_on_after(0.3):
+                    await trio.lowlevel.wait_readable(sock)
+                while True:
+                    try:
+                        sock.recvfrom(4096)
+                        answered = True
+                    except BlockingIOError:
+                        break
+            sock.close()
+
+    console_thread["t"] = threading.Thread(target=lambda: trio.run(console), daemon=True)
+    args = pla_join.build_parser().parse_args(
+        ["--keys", str(keys_file), "--channels", "6", "--dwell", "0.5", "--seconds", "25",
+         "--connect-timeout", "10"])
+    exchange = data_exchange.build_record(player_id=bytes.fromhex(args.player_id),
+                                          name=args.player_name)
+    offer = trade_box.build_our_record(**data_exchange.read_record(exchange))
+    wlan.set_factory(factory)
+    try:
+        console_thread["t"].start()
+        time.sleep(1)
+        result = pla_join.main_radio(args, offer, exchange, lambda **row: None)
+    finally:
+        stop.set()
+        console_thread["t"].join(10)
+        wlan.set_factory(None)
+        console_radio.close()
+        join_radio.close()
+    assert got["asked"] >= 1
+    assert result["take_host"] == 6 and 0 < result["remaining"] < 25
+    argv = pla_join.host_argv(args, result["take_host"], result["remaining"])
+    assert argv[argv.index("--channel") + 1] == "6" and argv[argv.index("--code") + 1] == "00000000"
+
+
 def test_the_sword_gift_walks_its_fragments_on_a_simulated_board(tmp_path, monkeypatch):
     """bin/swsh_gift_host.py's own network and fragment walk on a board: a protocol-1
     advertisement whose application data changes while it is up, read back by a scan on a

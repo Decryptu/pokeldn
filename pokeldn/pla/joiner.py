@@ -67,6 +67,7 @@ class JoinerSession:
         self.host_var = self.host_cid = None
         self.join_sent_at = None
         self.accepted = self.seated = self.host_left = False
+        self.migration_asked = None    # when the host first sent NetStartHostMigration
         self.last_rtt = self.last_clock = self.last_stream_ack = 0.0
         self.clock_seq = 0
         self.stream_high = {}          # 0x81 port -> the host's highest sequence
@@ -142,6 +143,13 @@ class JoinerSession:
 
     def _net(self, msg):
         p = msg.payload
+        if len(p) < 2:
+            return []
+        if p[1] == NET_START_HOST_MIGRATION and self.migration_asked is None:
+            # A console hosting a trade hands the host role to the station that joins; the new
+            # host creates the network (docs/pla.md, The Net Protocol). The message is 4 bytes.
+            self.migration_asked = self.clock()
+            self.log("[pla] the host asked for host migration")
         if len(p) < 8:
             return []
         if p[1] == NET_CONN_REQUEST:
@@ -161,8 +169,6 @@ class JoinerSession:
             seq = int.from_bytes(p[4:8], "big")
             return [self._packet(pia_connect.build_net_property_ack(seq), PROTO_NET,
                                  flags=NET_ANSWER_FLAGS)]
-        if p[1] == NET_START_HOST_MIGRATION:
-            self.log("[pla] the host asked for host migration")
         return []
 
     def _session(self, msg):

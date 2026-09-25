@@ -153,6 +153,9 @@ async def run_session(args, keys, sock, host_ip, our_ip, our_mac, offer, exchang
 
     try:
         while time.monotonic() < end and not session.host_left:
+            if args.take_host and session.migration_asked is not None:
+                print("[pla] leaving the seat to take the host role")
+                break
             with trio.move_on_after(0.05):
                 await trio.lowlevel.wait_readable(sock)
             while True:
@@ -322,6 +325,9 @@ def main_radio(args, offer, exchange, record):
             record(rec="seat_failed", detail=detail, t=time.time())
         if outcome.get("session") is not None and outcome["session"].traded:
             break
+        if args.take_host and outcome.get("session") is not None \
+                and outcome["session"].migration_asked is not None:
+            return {"take_host": target.channel, "remaining": deadline - time.time()}
     print(f"[pla] {scans} scan(s), {seats} seat(s)")
     return 0
 
@@ -417,7 +423,28 @@ def build_parser():
                     help="act as the player too: offer once the host shows, confirm once it "
                          "offers, then selector 7; without it the console's player leads")
     ap.add_argument("--capture", default=None, help="every datagram as one JSON line")
+    ap.add_argument("--take-host", action=argparse.BooleanOptionalAction, default=True,
+                    help="when the console hands us the host role, leave its network and become "
+                         "the host with bin/pla_host.py on the same code and channel")
     return ap
+
+
+def host_argv(args, channel, seconds):
+    """-> bin/pla_host.py's command line for the host role a console handed over: the retail
+    host line, on the joiner's code, channel, keys and offer."""
+    host = os.path.join(os.path.dirname(os.path.abspath(__file__)), "pla_host.py")
+    argv = [sys.executable, "-u", host, "--keys", args.keys, "--code", args.code,
+            "--channel", str(channel), "--seconds", str(int(max(seconds, 60))),
+            "--player-name", args.player_name, "--session-update", "--sustain", "--clock",
+            "--data-exchange", "--game-channel", "--trade-box"]
+    if args.offer:
+        argv += ["--trade-box-record", args.offer]
+    if args.collect:
+        argv += ["--trade-box-collect", args.collect]
+    if args.capture:
+        root, ext = os.path.splitext(args.capture)
+        argv += ["--capture", f"{root}_host{ext or '.jsonl'}"]
+    return argv
 
 
 def main(argv=None):
@@ -441,7 +468,16 @@ def main(argv=None):
     try:
         if args.ip_join:
             return main_ip(args, offer, exchange, record)
-        return main_radio(args, offer, exchange, record)
+        result = main_radio(args, offer, exchange, record)
+        if isinstance(result, dict) and "take_host" in result:
+            argv = host_argv(args, result["take_host"], result["remaining"])
+            print("[pla] *** TAKING THE HOST ROLE *** " + " ".join(argv[2:]))
+            if cap:
+                cap.close()
+                cap = None
+            sys.stdout.flush()
+            os.execv(argv[0], argv)
+        return result
     except KeyboardInterrupt:
         print("\n[pla] interrupted")
         return 0

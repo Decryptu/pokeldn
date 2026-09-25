@@ -225,3 +225,25 @@ def test_driving_offers_once_and_confirms_after_the_host_offers():
     fresh = [m for m in _data(sent, 0x7C, 0) if m["sequence_id"] > 5]   # past the resends
     assert [game_channel.split_message(m["payload"])[1] for m in fresh] == [b"\x07\x00"]
     assert channel_table.parse(_data(sent, 0x7C, 1)[-1]["payload"]) == [(trade_box.PHASE_KEY, True)]
+
+
+def test_the_console_s_migration_request_is_noted_and_left_unanswered():
+    """The retail console's Net request, then after our ack the same request with is-migrating set
+    and a bare NetStartHostMigration: the joiner notes the request once and answers only the Net
+    request, as a console that is handed the host role owes the old host nothing."""
+    keys, clock, s = _session()
+    req = pia_connect.build_net_conn_request(2, HOST_VAR, HOST_MAC, keys.network_id,
+                                             [HOST_IP, OUR_IP], max_stations=2, station_size=21)
+    s.receive([_msg(req, joiner.PROTO_NET, flags=0x31)])
+    assert s.migration_asked is None
+    migrating = bytearray(pia_connect.build_net_conn_request(
+        3, HOST_VAR, HOST_MAC, keys.network_id, [HOST_IP, OUR_IP], max_stations=2,
+        station_size=21))
+    clock.t += 0.5
+    sent = _open(keys, s.receive([_msg(bytes(migrating), joiner.PROTO_NET, flags=0x31),
+                                  _msg(bytes.fromhex("01400000"), joiner.PROTO_NET, flags=0x31)]))
+    assert s.migration_asked == clock.t
+    assert [m[0] for m in sent] == [0x2C]
+    clock.t += 0.5
+    s.receive([_msg(bytes.fromhex("01400000"), joiner.PROTO_NET, flags=0x31)])
+    assert s.migration_asked == clock.t - 0.5
