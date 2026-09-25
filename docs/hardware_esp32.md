@@ -163,7 +163,8 @@ firmware without CREDIT never opens the window and the host writes unthrottled, 
 A CREDIT jumps the board's outgoing queue and carries the count current when the writer reaches it;
 at most one is queued. Queued behind other messages, a CREDIT waited out a console burst: a Scarlet
 seat put 73 KB of RX_ETH on the board-to-host line in 0.51 s, no CREDIT reached the host, and it
-resynced over 8119 bytes the board then counted. That seat lost 0 of 1195 ETH_TX at 1500000.
+resynced over 8119 bytes the board then counted. That seat lost 0 of 1195 ETH_TX at 1500000; the
+next, with CREDIT ahead of the queue, lost 0 of 769 with no resync.
 
 A console seat loses commands the other way. A Scarlet seat at 1500000 with CREDIT lost about 210
 of 1901 ETH_TX, all in its first 13 s, with `uart_fifo_ovf` 235, `uart_buffer_full` 5 and
