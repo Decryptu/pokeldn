@@ -83,12 +83,13 @@ The mirror rule that governs every stall while the console is sending is on
 ## Running it
 
     (them) Mystery Gift -> Wonder Cards (Recevoir) -> Friend (Ami), wait on the search screen
-    (you)  sudo -E ./.venv/bin/python -u bin/frlg_mg_host.py --live --gift beast-cutscene --flag-id 1005
+    (you)  POKELDN_RADIO=esp32:auto ./.venv/bin/python -u bin/frlg_mg_host.py --live --phy auto \
+               --keys PROD_KEYS --gift beast-cutscene --flag-id 1005
     (them) join the host when it appears; YES on the replace-card prompt if one shows
 
-Adapter profiles and flags are on [Hardware and setup](hardware.md). The checked-in `config/host.toml`
-is the TP-Link Archer T3U profile, so the command above needs no Wi-Fi flags; the ALFA needs
-`--phy phyN --skip-encryption --no-accept-decrypted-ccmp`.
+The radio is the ESP32 board ([The ESP32 radio](hardware_esp32.md)). On a Linux card, drop
+`POKELDN_RADIO` and run under `sudo -E`; adapter profiles and flags are on
+[Hardware and setup](hardware.md).
 
 Have the player back out of the search screen between runs or the console may join a stale SSID. After
 two or three mixed failures on one console, restart the game.
