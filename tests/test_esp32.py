@@ -600,6 +600,63 @@ def test_the_firered_gift_host_comes_up_and_advertises_on_a_simulated_board(tmp_
     assert result.get("code") == 124           # idle timeout: nothing joined, as expected
 
 
+def test_the_lets_go_joiner_reaches_the_game_on_simulated_boards(tmp_path, monkeypatch):
+    """bin/lgpe_join.py with the retail trade's flags against bin/lgpe_host.py, each on its own
+    board: association, the station handshake, the mesh, the clone session, and the kind-1 identity
+    carried both ways on the Reliable Protocol (the host echoes ours)."""
+    import threading
+
+    import lgpe_host
+    import lgpe_join
+    from pokeldn.ldn import userspace_ip
+    from pokeldn.lgpe import pb7
+
+    monkeypatch.setenv("POKELDN_RADIO", "esp32:simulated")
+    keys_file = tmp_path / "prod.keys"
+    keys_file.write_text("".join(f"{k} = {v.hex()}\n" for k, v in KEYS.items()))
+    identity = pb7.build_message(pb7.FIRST_MESSAGE, pb7.set_trainer_id(bytes(360), 41234, 12345))
+    (tmp_path / "identity.bin").write_bytes(identity)
+    air = esp32_sim.Air()
+    host_radio = esp32.Radio(esp32_sim.SimulatedBoard(air).host_stream())
+    join_radio = esp32.Radio(esp32_sim.SimulatedBoard(air).host_stream())
+    threads = {}
+
+    @contextlib.asynccontextmanager
+    async def factory():
+        radio = join_radio if threading.current_thread() is threads.get("join") else host_radio
+        esp = esp32_wlan.EspFactory(radio, port_factory=userspace_ip.userspace_port,
+                                    join_timeout=5)
+        try:
+            yield esp
+        finally:
+            esp.router.close()
+
+    result = {}
+    threads["host"] = threading.Thread(target=lambda: result.setdefault("host", lgpe_host.main(
+        ["--keys", str(keys_file), "--channel", "6", "--seconds", "14", "--grace", "0",
+         "--first", "echo", "--capture", str(tmp_path / "host.jsonl")])), daemon=True)
+    threads["join"] = threading.Thread(target=lambda: result.setdefault("join", lgpe_join.main(
+        ["--keys", str(keys_file), "--channels", "6", "--dwell", "0.5", "--connect",
+         "--connect-seconds", "10", "--facts", str(tmp_path / "facts.json"),
+         "--capture", str(tmp_path / "join.jsonl"),
+         "--reliable-payload", str(tmp_path / "identity.bin"),
+         "--ack-peer-clock", "--ack-re-announce"])), daemon=True)
+    wlan.set_factory(factory)
+    try:
+        threads["host"].start()
+        time.sleep(2)
+        threads["join"].start()
+        threads["join"].join(40)
+        threads["host"].join(40)
+    finally:
+        wlan.set_factory(None)
+        host_radio.close()
+        join_radio.close()
+    assert result == {"host": 0, "join": 0}
+    assert (tmp_path / "host.jsonl.payload1.bin").read_bytes() == identity
+    assert (tmp_path / "join.jsonl.payload1.bin").read_bytes() == identity
+
+
 def test_the_bench_counts_every_message_from_a_simulated_board():
     radio = esp32.Radio(esp32_sim.SimulatedBoard(esp32_sim.Air()).host_stream())
     try:
