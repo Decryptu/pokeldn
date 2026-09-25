@@ -56,6 +56,8 @@ static atomic_uint s_rx_mgmt, s_rx_eth, s_tx_eth, s_tx_eth_failed, s_tx_raw, s_t
 static atomic_uint s_tx_acked, s_tx_unacked;   /* the driver's TX-done status */
 static atomic_uint s_tx_eth_retried;   /* ETH_TX calls that found the driver's queue full */
 static atomic_int s_tx_eth_last_err;
+/* ETH_TX's own time in the driver: the handler maximum in STATUS covers every command type. */
+static atomic_uint s_tx_eth_max_us, s_tx_eth_total_us, s_tx_eth_slow;
 static QueueHandle_t s_ap_joins;   /* station MACs whose association response went out */
 static int s_ap_pairwise;
 static int (*s_stock_sta_connect)(uint8_t *bssid);
@@ -388,14 +390,16 @@ static void send_status(void)
     int len = snprintf(text, sizeof(text),
         "mode=%d rx_mgmt=%u rx_eth=%u tx_eth=%u tx_eth_failed=%u tx_raw=%u tx_raw_failed=%u "
         "wire_dropped=%u heap=%u tx_acked=%u tx_unacked=%u tx_eth_retried=%u tx_eth_last_err=%#x "
-        "wire_rx_bad=%u uart_overflow=%u uart_fifo_ovf=%u uart_buffer_full=%u",
+        "wire_rx_bad=%u uart_overflow=%u uart_fifo_ovf=%u uart_buffer_full=%u "
+        "tx_eth_max_us=%u tx_eth_total_us=%u tx_eth_slow=%u",
         (int)atomic_load(&s_mode), atomic_load(&s_rx_mgmt), atomic_load(&s_rx_eth),
         atomic_load(&s_tx_eth), atomic_load(&s_tx_eth_failed), atomic_load(&s_tx_raw),
         atomic_load(&s_tx_raw_failed), (unsigned)wire_dropped(),
         (unsigned)esp_get_free_heap_size(), atomic_load(&s_tx_acked), atomic_load(&s_tx_unacked),
         atomic_load(&s_tx_eth_retried), (unsigned)atomic_load(&s_tx_eth_last_err),
         (unsigned)wire_rx_bad(), (unsigned)(wire_rx_fifo_ovf() + wire_rx_buffer_full()),
-        (unsigned)wire_rx_fifo_ovf(), (unsigned)wire_rx_buffer_full());
+        (unsigned)wire_rx_fifo_ovf(), (unsigned)wire_rx_buffer_full(),
+        atomic_load(&s_tx_eth_max_us), atomic_load(&s_tx_eth_total_us), atomic_load(&s_tx_eth_slow));
     if (len < 0) return;
     if (len < (int)sizeof(text) - 1) {
         text[len++] = ' ';
@@ -486,6 +490,7 @@ static void command(uint8_t type, const uint8_t *p, size_t n)
         int r = ESP_ERR_INVALID_STATE;
         if ((mode == MODE_STA || mode == MODE_AP) && n >= 14 && n <= sizeof(frame)) {
             memcpy(frame, p, n);
+            const int64_t started = esp_timer_get_time();
             r = esp_wifi_internal_tx(current_interface(), frame, n);
             /* A burst from the host fills the driver's TX buffers; wait for them to drain rather
                than drop the frame (a Scarlet joiner's 44-record burst lost 28). The UART
@@ -496,6 +501,10 @@ static void command(uint8_t type, const uint8_t *p, size_t n)
                 vTaskDelay(1);
                 r = esp_wifi_internal_tx(current_interface(), frame, n);
             }
+            const uint32_t took = esp_timer_get_time() - started;
+            if (took > atomic_load(&s_tx_eth_max_us)) atomic_store(&s_tx_eth_max_us, took);
+            atomic_fetch_add(&s_tx_eth_total_us, took);   /* wraps after 71 min */
+            if (took > 5000) atomic_fetch_add(&s_tx_eth_slow, 1);
         }
         if (r != ESP_OK) atomic_store(&s_tx_eth_last_err, r);
         atomic_fetch_add(r == ESP_OK ? &s_tx_eth : &s_tx_eth_failed, 1);

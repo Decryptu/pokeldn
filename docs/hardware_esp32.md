@@ -170,6 +170,7 @@ the heap floor like any message, so STATUS also carries maxima since boot:
 | `write_max_us` | the longest `uart_write_bytes` call |
 | `heap_min`, `queue_max` | the least free heap and the deepest outgoing queue a send saw |
 | `refused_heap`, `refused_queue` | messages refused at the heap floor, and on a full queue |
+| `tx_eth_max_us`, `tx_eth_total_us`, `tx_eth_slow` | ETH_TX's own time in `esp_wifi_internal_tx`, retries included: the longest, the sum, and the count over 5 ms |
 
 `uart_read_bytes` (ESP-IDF 6.1, `uart.c:1738`) waits its whole timeout again for every ring item
 until it has `length` bytes. With `length` 512, a host writing a 21-byte command every 15 ms was
@@ -194,9 +195,16 @@ sleeping until the frame fits (`uart_get_tx_buffer_free_size`), `read_max_us` 30
 The next Scarlet seat that flooded stopped after one second instead of four to thirteen
 ([Scarlet and Violet](sv.md#the-retail-acknowledgement-and-a-flood-of-retransmits)).
 
-Two traps in measuring this. BENCH filled each payload from the RNG, which held it under the line's
-rate so its queue never backed up; it now fills once. And a flood the board sends as an access point
-is broadcast, which goes out at 1 Mbit/s and fills the air past about 90 frames a second.
+On a calm Scarlet seat ETH_TX spent 0.12 ms on average in the driver and at most 1.57 ms, and the
+console held all 44 of the joiner's records 0.35 s after they were sent.
+
+Three traps in measuring this. A sniffer board's line backs up in a burst like any board's, so a
+frame it reports reached the host up to a second after it was on the air; run it at 1500000
+(`POKELDN_ESP32_BAUD`) and time delivery by the peer's acknowledgements, not by the sniffer. BENCH
+filled each payload from the RNG, which held it under the line's rate so its queue never backed up;
+it now fills once. And a flood the board sends as an access point is broadcast, which goes out at
+1 Mbit/s and fills the air past about 90 frames a second.
+
 The bytes a resync writes off stay written off: the board's count never includes them, so each later
 CREDIT is read as that count plus the loss, and a CREDIT past what the loss allows shrinks it.
 With CREDIT the same flood lost 0 of 5000 at 921600 and at 1500000, both counters 0. A board on
