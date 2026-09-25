@@ -132,7 +132,14 @@ saw no CCMP packet number spent on the missing frames, and the driver never repo
 the console flooded the board's receive path, in both a seat that traded and one that did not. The
 UART driver was installed from the main task, so its interrupt shared core 0 with the Wi-Fi task;
 it is now installed from the reader task on core 1, and STATUS counts `wire_rx_bad` and
-`uart_overflow`. Whether the interrupt was the loss point is unmeasured.
+`uart_overflow`.
+
+With the UART on core 1 and the line at 1500000 baud, a Scarlet joiner's seat that completed two
+trades lost 151 of 1844 ETH_TX commands, all in the first 11 s; the board counted 34 UART overflow
+events and 9 frames that failed their CRC over the same stretch, and nothing after. The loss is in
+the board's UART receive path. `uart_overflow` counts `UART_FIFO_OVF` (the 128-byte hardware FIFO,
+0.85 ms at this rate) and `UART_BUFFER_FULL` (the driver's 16 KB ring) together, so which one
+overflows is unmeasured. The run changed the core and the rate together.
 
 `POKELDN_ESP32_BAUD` sets the rate `open_serial` switches to, 921600 by default. The ESP32 UART
 runs to 5 Mbaud; the USB bridge sets the limit. `tools/ldn/esp32_bench.py --port PORT --bauds
