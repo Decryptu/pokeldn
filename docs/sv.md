@@ -809,7 +809,7 @@ host migration, naming the joiner's variable id as the target, and from then on 
 `01400000`, a bare NetStartHostMigration, about twice a second and nothing else. It answers
 nothing after that: not the joiner's identity records, not its channel table, not its
 acknowledgements. Host migration at the LDN level means the new host creates the network, which no
-Pia message does, and the same wall closed the joiner direction on Legends Arceus (`docs/pla.md`).
+Pia message does; Legends Arceus completes the same migration when the joiner hosts a network on the same code (`docs/pla.md`).
 
 The other seats run the game. In order, what the console sends:
 

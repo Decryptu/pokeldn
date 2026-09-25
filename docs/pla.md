@@ -122,15 +122,14 @@ Both entries carry port 12345, ranking 0 for the console and 1 for the joiner.
 Answering with the 0x12 ack advances it: the console re-sends 0x11 with a fresh sequence id and
 `is migrating host` set to 1, and then repeats `01 40 00 00`, a bare
 `NetStartHostMigrationMessage`, roughly twice a second for as long as the session lasts.
-A console hosting a trade hands the Pia session host role to the station that joins. It sends no
-Session (0x98) message and leaves the station's join request unanswered while the migration
-request repeats, then drops the network and hosts a new one 3 to 6 s later.
 
-Answering that does not advance it further. A `NetUpdateNetworkHostMessage` built from the console's
-own serializer, 26 of them, leaves it repeating 0x40, and sending its two u64 fields in the other
-order changes nothing, so the field order is not what it rejects. Host migration at the LDN level means the new
-host creates the network, which a Pia message alone cannot do, so the message may not be what
-completes it.
+A console hosting a trade hands the host role to the station that joins. It sends no Session (0x98)
+message and leaves the station's join request unanswered while the migration request repeats. A
+`NetUpdateNetworkHostMessage` in answer, in either field order, leaves it repeating 0x40. The new
+host completes the migration by creating the network: the console drops its own 3 to 6 s after
+asking, searches, joins a network hosted on the same code, and runs the trade there as the joiner.
+`bin/pla_join.py` does this by leaving the seat on the first 0x40 and running `bin/pla_host.py`
+on the same code and channel.
 
 The binary names every Net message and gives each a header class with its own serializer, so any
 layout at this band is readable without a trace. `NetUpdateNetworkHostMessageHeader::serialize` is
