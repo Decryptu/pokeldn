@@ -36,6 +36,7 @@ import ldn
 
 from pokeldn import za
 from pokeldn.za import streams
+from pokeldn.za.host import MSG_COMMIT, MSG_CONFIRM, OFFER_PICK, OFFER_PREVIEW
 from pokeldn.ldn import crypto, host_pia, ldn_mitm, pia_connect, reliable
 from pokeldn.ldn.transport import board_radio, find_ap_phy
 from pokeldn.host_support import resolve_keys
@@ -129,6 +130,7 @@ class GameStreams:
         self.opened = False
         self.opened_at = None
         self.offer_sent = False
+        self.picked = False
         self.host_offers = 0
         self.acted = set()
         self.scheduled = []
@@ -139,9 +141,12 @@ class GameStreams:
             path = os.path.join(args.game_dir, f"za_ref_{name}.bin")
             if os.path.exists(path):
                 self.ref[name] = open(path, "rb").read()
-        self.offer = None
+        # The same record twice: the preview marked 1, the pick marked 0 (docs/za.md, Hosting).
+        self.offer = self.preview = None
         if args.trade_offer:
-            self.offer = open(args.trade_offer, "rb").read()
+            record = open(args.trade_offer, "rb").read()
+            self.preview = record[:-1] + bytes([OFFER_PREVIEW])
+            self.offer = record[:-1] + bytes([OFFER_PICK])
         self.seen = {}
         self.dst_var = 0
         self.src_var = 0
@@ -215,23 +220,26 @@ class GameStreams:
         if (self.offer and not self.offer_sent
                 and elapsed - self.opened_at >= self.args.offer_delay):
             self.offer_sent = True
-            self._queue(GAME_RELIABLE, self.offer, reliable.FLAGSA_GBA, now_ms)
-            print(f"[za] offered {len(self.offer)} bytes")
+            self._queue(GAME_RELIABLE, self.preview, reliable.FLAGSA_GBA, now_ms)
+            print(f"[za] sent the preview, {len(self.preview)} bytes")
         for item in [x for x in self.scheduled if x[0] <= elapsed]:
             self.scheduled.remove(item)
             self._queue(GAME_RELIABLE, item[1], reliable.FLAGSA_GBA, now_ms)
             print(f"[za] sent {item[1][:2].hex()} ({len(item[1])} bytes) at {elapsed:.2f}s")
 
-    def _answer_trade(self, head, elapsed):
-        """A reference joiner's side of the trade: the first 0101 each way is a preview, the second
-        is the offer; then 0102 confirm, 0104 each way and four 0200 steps. docs/za.md."""
+    def _answer_trade(self, inner, elapsed):
+        """A reference joiner's side of the trade: previews marked 1 each way, then the host's pick
+        marked 0, answered with ours and 0102; then 0104 each way and four 0200 steps. A console
+        sends a preview each time its cursor moves, so the pick is keyed on the mark. docs/za.md."""
+        head = inner[:2].hex()
         if head == "0101":
             self.host_offers += 1
-            if self.host_offers >= 2 and self.offer:
+            if inner[-1:] == bytes([OFFER_PICK]) and self.offer and not self.picked:
+                self.picked = True
                 self.scheduled.append((elapsed + 1.5, self.offer))
-                self.scheduled.append((elapsed + 3.0, bytes.fromhex("0102b90100")))
+                self.scheduled.append((elapsed + 3.0, MSG_CONFIRM))
         elif head == "0104":
-            self.scheduled.append((elapsed + 0.03, bytes.fromhex("0104b90100")))
+            self.scheduled.append((elapsed + 0.03, MSG_COMMIT))
             for delay, step in ((0.09, "03"), (0.2, "06"), (14.4, "0b"), (14.6, "0e")):
                 self.scheduled.append((elapsed + delay, bytes.fromhex("0200b901" + step)))
 
@@ -251,7 +259,7 @@ class GameStreams:
         if proto == GAME_RELIABLE and r.seq not in self.acted:
             self.acted.add(r.seq)
             print(f"[za] host {head[:2].hex()} ({len(r.payload)} bytes) at {elapsed:.2f}s")
-            self._answer_trade(head[:2].hex(), elapsed)
+            self._answer_trade(r.payload, elapsed)
         key = (proto, head[:2].hex(), len(r.payload))
         if key not in self.seen:
             self.seen[key] = elapsed

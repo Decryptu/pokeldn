@@ -251,11 +251,11 @@ With both right, a host that accepts the Session update sequence 1 at about 1.2 
 1211-byte selection record at 1.25 s and moves to its trade box screen.
 
 The trade on protocol 10, as a joiner runs it against a host: each side sends one 354-byte `0101`
-about 2.5 s after the selection records, a preview that no player chose. A player's offer is the
-next `0101`. The joiner answers the host's offer with its own and confirms with `0102b90100`; the
-host confirms with the same, then both send `0104b90100` and the joiner sends four
-`0200b901XX` steps, 03 and 06 at once and 0b and 0e about 14 s later, while the host sends
-`0000000202` on protocol 11. `bin/za_join.py --trade-offer` runs that side.
+about 2.5 s after the selection records, a preview that no player chose, marked 1. A player's
+pick is the `0101` marked 0 (see Hosting). The joiner answers the host's pick with its own and
+confirms with `0102b90100`; the host confirms with the same, then both send `0104b90100` and the
+joiner sends four `0200b901XX` steps, 03 and 06 at once and 0b and 0e about 14 s later, while the
+host sends `0000000202` on protocol 11. `bin/za_join.py --trade-offer` runs that side.
 
 A record edited and re-encrypted with `pokeldn.za.pokemon.build_offer` is taken as sent. The
 reference Noibat with the nickname "PKLDN" at 0x58 and Scarlet's nicknamed bit (0x8F bit 7) set

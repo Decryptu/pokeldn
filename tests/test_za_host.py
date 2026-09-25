@@ -150,3 +150,42 @@ def test_a_whole_trade_against_a_scripted_joiner():
                and x[2][4:6] == b"\x02\x01"]
     assert answers == ["000000020201b901" + s for s in ("03", "06", "0b", "0e")]
     assert host.trade_complete
+
+
+def test_the_joiner_answers_the_hosts_pick_and_not_its_cursor(tmp_path):
+    """`bin/za_join.py` against a scripted host that previews three cursor moves before its pick:
+    the joiner's preview goes out marked 1, and its pick, marked 0, only after the host's pick."""
+    import argparse
+
+    import za_join
+    offer = bytes.fromhex("0101b90300bc815801") + bytes(344) + b"\x01"
+    (tmp_path / "offer.bin").write_bytes(offer)
+    args = argparse.Namespace(game_dir=str(tmp_path), trade_offer=str(tmp_path / "offer.bin"),
+                              selection_count=0,
+                              selection_delay=0.0, selection_period=1.0, offer_delay=1.0)
+    sent = []
+    game = za_join.GameStreams(args, lambda proto, body, **kw: sent.append((proto, body)),
+                               lambda *a, **kw: None, None)
+
+    def offers():
+        out = []
+        for proto, body in sent:
+            r = reliable.parse_reliable(body)
+            if proto == za_join.GAME_RELIABLE and r.flagsA != reliable.FLAGSA_CTRL \
+                    and r.payload[:2] == b"\x01\x01":
+                out.append(r.payload)
+        return out
+
+    t, seq = 0.0, 1
+    for mark in (1, 1, 1, 0):
+        if mark == 0:
+            assert [o[-1] for o in offers()] == [za_host.OFFER_PREVIEW]
+        host_offer = offer[:-1] + bytes([mark])
+        game.on_message(za_join.GAME_RELIABLE,
+                        reliable.build_reliable(seq, seq, host_offer, flagsA=reliable.FLAGSA_GBA), t)
+        seq += 1
+        for _ in range(100):
+            t += 0.02
+            game.pump(HOST_VAR, JOINER_VAR, t)
+    assert [o[-1] for o in offers()] == [za_host.OFFER_PREVIEW, za_host.OFFER_PICK]
+    assert offers()[1][:-1] == offer[:-1]
