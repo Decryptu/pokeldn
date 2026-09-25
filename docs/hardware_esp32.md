@@ -157,19 +157,17 @@ host drops ETH_TX and RAW_TX past 512 queued frames (`Radio.tx_dropped`), and if
 while the window is shut, the host tells a lossy line from a busy board by what the board sends. An
 idle reader repeats its count every 100 ms: a count repeated unchanged for 0.3 s means the rest was
 lost on the line, and the host reopens the window (`Radio.flow_resyncs`). A board that sends no
-count at all is busy and gets 5 s: a Scarlet seat held its reader 0.7 s, a host that resynced after
-0.5 s put 16 KB in flight, and the ring overflowed; 34 of 1165 ETH_TX were lost. The board logs a
-command that takes over 50 ms (`slow command`) and a reader turn over 100 ms (`reader held`).
+count at all is busy and gets 5 s. Never resync on silence alone: a busy reader holds up to 0.7 s,
+and a resync then puts 16 KB in flight against a 16 KB ring. The board logs a command that takes
+over 50 ms (`slow command`) and a reader turn over 100 ms (`reader held`).
 The bytes a resync writes off stay written off: the board's count never includes them, so each later
 CREDIT is read as that count plus the loss, and a CREDIT past what the loss allows shrinks it.
 With CREDIT the same flood lost 0 of 5000 at 921600 and at 1500000, both counters 0. A board on
 firmware without CREDIT never opens the window and the host writes unthrottled, as before.
 
 A CREDIT jumps the board's outgoing queue and carries the count current when the writer reaches it;
-at most one is queued. Queued behind other messages, a CREDIT waited out a console burst: a Scarlet
-seat put 73 KB of RX_ETH on the board-to-host line in 0.51 s, no CREDIT reached the host, and it
-resynced over 8119 bytes the board then counted. That seat lost 0 of 1195 ETH_TX at 1500000; the
-next, with CREDIT ahead of the queue, lost 0 of 769 with no resync.
+at most one is queued. A Scarlet seat's opening fills the board-to-host line at 1500000 (150 KB/s of
+RX_ETH); a CREDIT queued behind that traffic arrives about 0.5 s late.
 
 A console seat loses commands the other way. A Scarlet seat at 1500000 with CREDIT lost about 210
 of 1901 ETH_TX, all in its first 13 s, with `uart_fifo_ovf` 235, `uart_buffer_full` 5 and

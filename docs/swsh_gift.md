@@ -962,19 +962,13 @@ and title index 1 was listed as "Oeuf de Pokemon" and an egg went to the party.
 
 A kind-2 record built here needs only the kind at `+0x11`, the item id at `+0x20` and the quantity
 at `+0x22`: `01 00 03 00` with title index 3 was listed as "Master Ball" and put three in the bag.
-The pairs repeat every four bytes: `01 00 03 00 32 00 02 00 05 c0 05 00` was received as three lines,
-"Master Ball x 3", "Super Bonbon x 2" and " x 5". The third id, `0xC005` = 49157, is above the item
-table (1607 entries in 1.3.2); the console lists it with an empty name, the receive completes, and
-the bag keeps the low 15 bits, 16389, at count 5. Every screen that draws a bag row of it, the bag,
-the party's give screen, the Mart's sell screen and the battle bag, aborts the game
-(`nn::diag::detail::Abort`, error 2162-0001, raised from `0x007885f0` under the item lookup
-`0x00788c50(id, 14)`, which cannot resolve an id above 1607); the abort comes when the row is drawn,
-not when it is selected. The box's item mode survives because it draws held items only. Clearing the
-one u32 of the slot restores the bag; no in-game action reaches the slot. Never serve an item id
-above 1607, and never one whose name in `bin/message/<lang>/common/itemname.dat` starts with `★`
-(dummy entries, 1279 to 1578 among them).
+The pairs repeat every four bytes, one received line per pair. An id above the item table (1607
+entries in 1.3.2) is listed with an empty name and stored as its low 15 bits, and every screen that
+draws its bag row aborts the game (error 2162-0001, the table row getter `0x00787ec0`). Never serve
+an item id above 1607, and never one whose name in `bin/message/<lang>/common/itemname.dat` starts
+with `★` (dummy entries, 1279 to 1578 among them).
 
-A card cannot take an item back. `Bag::AddItem` (`0x01420790`, arguments bag, id, count, new-flag)
+`Bag::AddItem` (`0x01420790`, arguments bag, id, count, new-flag)
 takes the pocket from item field 14 (`0x00788c50(id, 14)`, record byte `+0x11 & 0xF`; 0 Medicine,
 1 Balls, 2 Battle, 3 Berries, 4 Items, 5 TMs, 6 Treasures, 7 Ingredients, 8 Key, with 60, 30, 20,
 80, 550, 210, 100, 100 and 64 slots at `bag+0x1358` onward; an id above 1607 gets 0, Medicine),
@@ -982,69 +976,6 @@ finds the slot holding the id or the first empty one, and writes `id | min(count
 a slot whose count is already 999 refuses. One u32 per slot: id in bits 0-14, count in bits 15-29,
 bit 30 the new-item flag. The save block is registered by `0x0141fae0`, key `0x1177C2C4`, `0x12F8`
 bytes.
-
-### The bag's slot, and what can reach it
-
-The `Bag` object holds the save block at `bag+0x60`; the nine pocket arrays are laid out inside it
-and the pointer table at `bag+0x1358` is filled by the constructor `0x0141fe40`. One u32 per slot:
-id in bits 0-14, count in bits 15-29, bit 30 the new-item flag. A slot is empty for `AddItem` when
-its id is 0 and for the compaction when its count is 0.
-
-| function | what it does |
-|---|---|
-| `0x014200d0` | `GetPocket(bag, pocket, &size)`: the raw array and its slot count |
-| `0x014201d0` | `FindSlot(bag, id)`: pointer to the slot holding the id, by pocket of the id |
-| `0x01420360` | `Compact(bag, pocket)`: clears the count of every id-0 slot, then moves every count-0 slot behind the last count-non-0 slot, order kept |
-| `0x01420630` | `FindIndex(bag, pocket, id)` |
-| `0x01420790` | `AddItem(bag, id, count, new)`: the slot holding the id, count 0 included, else the first id-0 slot |
-| `0x014209e0` | `CanAdd(bag, id, count)`: whether `AddItem` would fit under 999 |
-| `0x01420ba0` | `RemoveItem(bag, id, count)`: the pocket is the item table's, not where the row sits; subtracts; at count 0 keeps the id, clears bits 30-31, and swaps the slot to the end of the array |
-| `0x01420f20` | `HasAtLeast(bag, id, count)` |
-| `0x014210c0` | `GetCount(bag, id)` |
-| `0x01421250` | `MoveSlot(bag, pocket, from, to)` |
-| `0x01421470`, `0x01421960` | reorders on the slot's own flag bits, no table lookup |
-| `0x01421f80` | the name sort: walks an id list in name order and pulls each id's slot forward by direct id comparison; a slot whose id is not in the list is never looked up and ends behind everything |
-| `0x01421ee0` | the category sort: `Compact`, then `0x01423690`, whose comparator reads each id through `0x007885c0` |
-| `0x01421e40` | a third sort, `Compact` then `0x01422bf0`, comparator through `0x00788e60`; the sort menu does not reach it |
-
-The pocket of an id comes from `0x00788c50(id, 14)`, which returns 0 for an id above 1607 and never
-aborts. The abort is in the table row getter `0x00787ec0`: it asserts when the id is at or beyond
-the table count (halfword at table+2) and every unchecked getter (`0x007885c0`, `0x00788e60`, the
-name lookup under a drawn row) goes through it. `AddItem`, `RemoveItem`, `GetCount` and `Compact`
-use only the checked lookup, so every one of them runs over id 16389 without aborting.
-
-Measured on the Ryujinx Shield with the poisoned save, the row placed by RAM edit:
-
-| the pocket screen | result |
-|---|---|
-| opening the pocket | draws 7 rows and nothing beyond; aborts when the row's index is 6 or less, opens at 7 |
-| scrolling | aborts the moment the row enters the 7-row window, through the scroll redraw |
-| using up the one kind above the row | the row's index falls by one; the emptied slot keeps its id at count 0, bits 30-31 clear, and sits at slot 59 while the screen is up; closing the bag compacts it to just behind the last item |
-| the redraw after an item use | the same 7-row draw: an index of 6 aborts there too |
-| `X Trier` -> `Catégorie` | aborts wherever the row is, `0x00787ec0` under `0x01423690` |
-| `X Trier` -> `Nom` | survives and moves the row behind every real item, from any index |
-| buying a kind the pocket never held | lands in the first id-0 slot, behind the row and behind any count-0 slot, new-flag set |
-| buying a kind used up earlier | refills its count-0 slot in place, no new-flag |
-| using an item from a pocket the item table does not name for it | the effect applies and nothing is removed |
-
-A used-up kind never frees its slot; only a sort or the compaction moves it, and neither moves it
-past the row. On the retail Sword, opening the bag in battle aborts at once, before a pocket is
-chosen, and the row cannot be marked for `Y Favoris` because the pocket aborts when it draws the row.
-
-Every remover of a slot was enumerated for an id that could reach 16389 without the row being drawn.
-`RemoveItem` has 32 callers in the binary: the item-use handlers (the id is the bag selection), the
-shops (fixed ids `4`, `0x469`, `0x644`), the bag's own toss, the party and box give screens, and the
-script native `ItemSub` (`0x014acf40`). `ItemSub` is called 44 times across the 953 field scripts:
-29 with a literal id, the rest from the script's own item tables, from `TempWork` values written by
-the Cram-o-matic and encounter-item selections (a bag list, drawn), or from a helper choosing between
-two literals. No path removes an id the player did not select from a drawn list, and no load-time
-sanitiser exists: the constructor's check `0x0141fd10` counts each pocket against its size and
-asserts, it does not clear. A slot with an id outside the table is cleared only by a save edit.
-
-For a console carrying such a row: never sort the pocket by category; sort it by name to put the
-row back at the end; every kind above the row that is used up moves the row one slot up, and the
-pocket cannot be opened once the row is among its first seven. The retail Sword's Medicine pocket
-was sorted by name on 2026-09-19: no abort, the list alphabetical, the row at the end.
 
 ## The card's date
 
@@ -1117,14 +1048,13 @@ is claimed:
     +0x0F  u8   the record's byte at +0x1C (1 on the kind-3 cards)
     +0x12  u16  level (kind 1)
     +0x30  u32  species (kind 1); on a kind-2 card, the item pairs start here: u16 id, u16
-                quantity, repeated as the record carries them at +0x20 (the poisoned card's three
-                pairs read back `01 00 03 00 32 00 02 00 05 c0 05 00`)
+                quantity, repeated as the record carries them at +0x20
     +0x38  4 x u32  moves (kind 1)
     +0x48  26   nickname, UTF-16 (kind 1)
     +0x62  u8   3 on every Pokemon card
 
-Zeroing slot 0's +0x0C..+0x62 removes the poisoned card from the album; the bag row it created is a
-separate block (`MyItem`, `0x1177C2C4`) and stays.
+Zeroing a slot's +0x0C..+0x62 removes the card from the album; the items it delivered are in a
+separate block (`MyItem`, `0x1177C2C4`) and stay.
 
 ## The store is not drained on the Mystery Gift screen
 
