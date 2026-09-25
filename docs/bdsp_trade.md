@@ -128,7 +128,9 @@ peer state of 5 or 6 arrives. A client that echoes WAIT_POKE deadlocks there. In
 both offers were ordinary species and the console, the recruiting side, was PARENT; a client offering
 a species rarer than the console's own offer (a legendary or a mythical against an ordinary one)
 makes the console CHILD. `room.mirror_trade_state` answers WAIT_POKE with SEND_READYOK, which a
-console in either role accepts. The CHILD path has not yet completed on hardware.
+console in either role accepts. Offered a Dialga against an ordinary species, a retail console
+walks INIT, WAIT, SEND_POKE, WAIT_POKE and SEND_READYOK, stays silent in SEND_READYOK, and on the
+client's repeated SEND_READYOK completes the trade and saves.
 `tests/test_bdsp_trade_states.py` runs the two functions above as a model against the client's
 policy under random latencies: echoing WAIT_POKE leaves a CHILD console in SEND_READYOK every time,
 and the mirror reaches START_WRITE_SAVE in both roles.
