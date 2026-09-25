@@ -235,8 +235,8 @@ Whether the set floods depends on the RTT answers the host holds when it sends i
 
 | RTT answers before the set | answer delay | seats | repeated records | `lowest_pending` left 1 after |
 |---|---|---|---|---|
-| 0 or 1 | 0 | 6 | 0 | 0.79 to 1.01 s |
-| 2 to 7 | 0 | 5 | 91 to 106, every 0.16 to 0.20 s | 0.73 to 0.80 s |
+| 0 or 1 | any | 6 | 0 | 0.79 to 1.01 s |
+| 2 to 6 | 0 | 5 | 91 to 106, every 0.16 to 0.20 s | 0.73 to 0.80 s |
 | 3 to 7 | 0.3 s | 3 | 0 | 0.50 to 0.52 s |
 
 The retransmit interval follows the measured RTT: a few prompt answers bring it under the host's own
