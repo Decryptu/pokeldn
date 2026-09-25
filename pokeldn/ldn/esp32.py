@@ -355,6 +355,7 @@ class Radio:
                         # Bytes the board never counted (lost on the line) would hold the window
                         # shut for good.
                         self.flow_resyncs += 1
+                        self._record("!", MSG_CREDIT, struct.pack("<II", self._written, self._credited))
                         self._credited = self._written
                         break
                     self._out_cv.wait(0.05)
@@ -423,6 +424,7 @@ class Radio:
     def _dispatch(self, msg_type: int, payload: bytes) -> None:
         if msg_type == MSG_CREDIT and len(payload) == 4:
             credit = struct.unpack("<I", payload)[0]
+            self._record("<", msg_type, payload)
             with self._out_cv:
                 # More than was written since the HELLO is a count from before it.
                 if credit <= self._written:

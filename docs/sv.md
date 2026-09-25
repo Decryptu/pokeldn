@@ -837,7 +837,9 @@ response does, and a joiner that waits for the response sends nothing for the wh
   table, the session update, the clock) and was never announced in 200 s. The seat before it in the
   same search had ended with the console's host migration 0.5 s in. No seat that followed a migrated
   seat has been announced, four of four, but three of those migrated themselves. `bin/sv_join.py
-  --announce-timeout SECONDS` leaves such a seat and scans again.
+  --announce-timeout SECONDS` leaves such a seat and scans again. With `--announce-timeout 20` a board seat that followed a failed
+  association (LDN reason `0xc9`) went unannounced for 20 s over 473 authenticated datagrams; the
+  joiner left it, and the next seat in the same search was announced and traded.
 
 **A trade is complete on a retail Scarlet (2026-09-22).** The console joins a network
 `bin/sv_host.py` puts up, takes the host's identity as four messages, draws the host's offer with

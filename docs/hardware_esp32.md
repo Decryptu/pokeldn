@@ -163,7 +163,8 @@ of 1901 ETH_TX, all in its first 13 s, with `uart_fifo_ovf` 235, `uart_buffer_fu
 `tx_eth_retried` 0: the hardware FIFO overflowing with the ring nearly empty. The driver drains the
 FIFO when it holds 120 bytes (`UART_FULL_THRESH_DEFAULT`), 8 bytes short of full: 53 us at 1500000
 and 87 us at 921600 before a late interrupt loses data. The firmware now sets the threshold to 32
-(`uart_set_rx_full_threshold`), 640 us at 1500000. The board alone does not reproduce the seat's
+(`uart_set_rx_full_threshold`), 640 us at 1500000; the next Scarlet seat at 1500000 lost 10 of
+1691, with `uart_fifo_ovf` 0 and one `wire_rx_bad` frame, all in its first 11 s. The board alone does not reproduce the seat's
 overflow: both directions flooded at once lost 2 of 3000 once and 0 in three more runs on the same
 firmware.
 
@@ -335,7 +336,10 @@ entered: the handshake finished 0.46 s after the association, and a trade ran to
 
 - The softAP negotiates WMM, which a Switch host does not; a trade completes with it.
   `AP_FLAG_NO_QOS` (`POKELDN_ESP32_AP_FLAGS=2`) clears the station's QoS flag after association.
-- Whether the RX FIFO threshold of 32 removes the FIFO overflow on a console seat.
+- What loses the last few commands at the start of a seat, with neither overflow counter moving.
+  The overflow events travel a 64-entry queue the reader drains only between commands, so a
+  reader held in `sta_join` can miss them. A trace records every CREDIT (`< 8b`) and each host
+  resync (`! 8b`); bytes the board never read show there.
 - A sniffer board's counts of another board's frames undercount while the sniffer's own serial
   link is saturated; they are not evidence of loss on the air.
 - Serial latency at 921600 baud against the Z-A seat race.
