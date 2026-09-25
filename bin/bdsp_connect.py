@@ -703,9 +703,15 @@ async def main_async(args):
                 # GetNpcColorId read the same value.
                 join = room.build_join(x0, 0.0, z0, rot_y=90,
                                        avatar_id=args.join_avatar, color_id=args.join_color)
-                print(f"[tx]   {args.room_walk} joins, ALL at ({x0:.2f}, {z0:.2f}), "
-                      f"avatar {args.join_avatar} colour {args.join_color}")
+                print(f"[tx]   up to {args.room_walk} joins at ({x0:.2f}, {z0:.2f}), "
+                      f"avatar {args.join_avatar} colour {args.join_color}, until one is made")
+                # Each join the game acts on is one more character: the console answers every one
+                # with a request for NetCharacterStateData, 0.1 to 0.6 s later. Stop at the first.
+                created = st["state_requests"]
                 for i in range(args.room_walk):
+                    if st["state_requests"] > created:
+                        print(f"[tx]     the game made the character after {i} join(s)")
+                        break
                     seq = st["their_ack_id"]
                     if not seq:
                         await trio.sleep(0.4)
@@ -718,9 +724,10 @@ async def main_async(args):
                                      rl.PROTOCOL, port=rl.PORT), (st["dst_ip"], PIA_PORT))
                     record(rec="tx_reliable_data", t=time.monotonic() - t0, label="burst", seq=seq,
                            attempt=i, message=msg.hex())
-                    if i % 4 == 0:
-                        print(f"[tx]     join {i} at seq {seq}")
-                    await trio.sleep(0.4)
+                    print(f"[tx]     join {i} at seq {seq}")
+                    deadline = trio.current_time() + args.join_wait
+                    while st["state_requests"] == created and trio.current_time() < deadline:
+                        await trio.sleep(0.05)
                 print(f"\n[tx]   --- now moving whatever is standing there, to the RIGHT")
                 # A walk has to end inside the room to be watched. Sixty steps of 0.93 is 55.8
                 # units: the character crosses the floor, is pushed back by the game's collision
@@ -1620,6 +1627,9 @@ def build_parser():
                     help="after the reliable handshake, send N position messages of our own and "
                          "watch the console's screen")
     ap.add_argument("--room-walk-gap", type=float, default=1.0)
+    ap.add_argument("--join-wait", type=float, default=1.0, metavar="S",
+                    help="--room-pattern fixed: seconds a join has to draw the console's request "
+                         "for NetCharacterStateData before the next goes out")
     ap.add_argument("--room-walk-steps", type=int, default=60, metavar="N",
                     help="position messages in the burst pattern's walk. At the console's own "
                          "stride, 60 is 55.8 units and leaves the Union Room entirely; "

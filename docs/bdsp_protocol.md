@@ -196,9 +196,12 @@ acknowledgement names is discarded in silence. One run's ack sat at 13, twenty m
 numbered 1 to 20, and exactly the eight from 13 up became avatars. Read the id immediately before
 each send.
 
-A join the transport acknowledges is not always a join the game acts on. Four runs sent one join
-each, all acknowledged on the first try; one produced a character. Fifteen joins in one run produced
-two characters; a single join is roughly a one-in-eight shot. `--room-pattern fixed` bursts them.
+With each join sent at the sequence the console's acknowledgement names, the game acts on nearly
+every one: over seven runs of fifteen joins 0.4 s apart, the console answered 12 to 15 of them with
+a request for `NetCharacterStateData`, the first 0.10 to 0.57 s after the first join. Fifteen such
+joins put two characters on the player's screen, one standing where it spawned and one following
+the walk. `--room-pattern fixed` therefore stops at the console's first request and gives each join
+`--join-wait` seconds (default 1.0) to draw it.
 
 One avatar appears per join message: `UnionOpcManager` calls `CreateCharacter(joinData)` on each.
 Forty joins are forty arrivals.
