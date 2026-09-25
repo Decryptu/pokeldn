@@ -27,13 +27,18 @@ def build_ack(next_expected, mask=b"\x00" * 16):
     return reliable.build_bulk_ack(next_expected, mask)
 
 
-def build_broadcast_ack(next_expected, mask=b"\x00" * 16, *, prefix=PREFIX_JOINER):
-    """The acknowledgement of protocol 11: the prefix, then four 18-byte station entries, 78 bytes."""
+def build_broadcast_ack(next_expected, mask=b"\x00" * 16, *, prefix=PREFIX_JOINER, entry=0):
+    """The acknowledgement of protocol 11: the prefix, then four 18-byte station entries, 78 bytes.
+
+    Entry 0 is the host's stream and entry 1 the joiner's: a joiner acknowledges in entry 0, a host
+    in entry 1, and every other entry reports the idle base."""
     out = bytearray(prefix)
     out += bytes([0x00, ACK_STATIONS])
-    out += (next_expected & 0xFFFF).to_bytes(2, "big") + bytes(mask).ljust(16, b"\x00")[:16]
-    for _ in range(ACK_STATIONS - 1):
-        out += IDLE_NEXT.to_bytes(2, "big") + bytes(16)
+    for i in range(ACK_STATIONS):
+        if i == entry:
+            out += (next_expected & 0xFFFF).to_bytes(2, "big") + bytes(mask).ljust(16, b"\x00")[:16]
+        else:
+            out += IDLE_NEXT.to_bytes(2, "big") + bytes(16)
     return bytes(out)
 
 

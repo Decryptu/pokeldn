@@ -336,9 +336,51 @@ sends no Session update sequence 1, and it repeats Session type 9 once a second 
 migration in the wiki's numbering; Z-A's kick request is 13 where the wiki lists 12, so the
 numbering is unconfirmed) until it restarts its Net at 6.5 s. Scarlet's search screen runs the same race.
 
+## Hosting
+
+A searching console also scans, and joins a network that carries the title's advertisement and its
+link code. `bin/za_host.py` hosts one; `pokeldn.za.host` is the host's side, read off an emulated
+pair's trade and pinned byte for byte against it.
+
+| from the seat | what the host sends |
+|---|---|
+| 0 s, every 0.46 s until answered | Net connection status 0x11: sequence 2, four slots, host and joiner on 12345 |
+| on the Session join | join response (type 2, 37 bytes) to the joiner's id, update session (type 5, sequence 0) to 0x0001 |
+| with it | the identity on protocol 10 under INIT; the identity and `1403b9018269fb308f` bundled on protocol 11, prefix `00000002` |
+| with it | Net update property 0x50, repeated every 0.5 s until 0x51 |
+| from 0.2 s | RTT requests to 0x0001 about three a second, and a response to each of the joiner's |
+| 1.15 s after update 0 is acknowledged | update session sequence 1 |
+| once update 1 is acknowledged | the 1211-byte selection record twice, 60 ms apart |
+| 2.7 s later | the preview `0101` |
+
+Four details differ from the GBA application's host:
+
+- the host's station entry in the update session carries the identification token `0x06`, as the
+  joiner's does;
+- the update's sequence is written twice, at +1 and at +21;
+- the property update carries `02` in the byte after the scene id, where the GBA application
+  writes `01`;
+- a broadcast acknowledgement from the host reports the joiner's stream in entry 1 and the idle
+  base 0xfff0 in the other three.
+
+The trade: the joiner's pick is its second `0101`. The host answers with its own, then `0102b90100`
+after the joiner's `0102` and `0104b90100` 1.5 s later; each of the joiner's four `0200b901XX`
+steps is answered on protocol 11 with `0201b901XX` under the host's prefix.
+
+An offer's last byte marks what it is: 1 on the preview a station sends unasked, 0 on a player's
+pick. A pick sent with 1 is acknowledged and drawn as nothing, and the partner waits on
+"Communicating" with an empty slot. With 0 the partner shows the record, asks to confirm and
+completes the trade.
+
+A retail Legends Z-A on its Link Trade search, code 00000000, joined `bin/za_host.py` over the ESP32
+board 0.6 s after the host came up, traded a Klefki for a composed shiny Glaceon and kept it. The
+console sends a preview `0101`, marked 1, each time its cursor moves on the trade box: five before
+its pick in that session. Its pick is the one marked 0, so a host keys on that byte and not on a
+count. An emulated Legends Z-A trades with the same host over ldn_mitm.
+
 ## Unresolved
 
-- The joiner direction only: hosting for a console is untried.
+- What the property update's `02` byte means.
 - The Net 0x51 handler at `0x2504150` matches the packet's source address against its stations'
   addresses; which of its earlier checks drops a packet whose id is below the sender's highest is
   inferred from one breakpoint hit and the id counts, not traced.

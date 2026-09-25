@@ -364,7 +364,9 @@ async def run_session(args, keys, host_ip, host_mac, our_ip, our_mac, record):
     from our own id to destination 0, and everything after it addressed to the host with the
     two-byte recipient footer.
     """
-    sock = make_socket(args.ifname)
+    # Over ldn_mitm the socket is bound to our own address: a wildcard one sends from whatever
+    # address the kernel picks, which on a host sharing this machine is the host's own.
+    sock = make_socket(args.ifname, our_ip if args.ip_join else None)
     pia = crypto.PiaCrypto(keys.ssid, za.GAME_KEY)
     broadcast_ip = our_ip.rsplit(".", 1)[0] + ".255"
     our_var = int(args.our_var, 16)

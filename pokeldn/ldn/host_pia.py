@@ -120,7 +120,7 @@ def build_net_probe(network, sequence_id=2, nonce_source=None, pia_crypto=None):
     return pia_crypto.encrypt(plaintext, network.our_ip, header)
 
 
-def build_net_property_update(network, app_data, sequence_id=1):
+def build_net_property_update(network, app_data, sequence_id=1, property_byte=1):
     app_data = bytes(app_data)
     network_id = zlib.crc32(bytes(network.ssid)[1:16]) & 0xFFFFFFFF
     system_len = min(PIA_APPLICATION_HEADER_SIZE, len(app_data))
@@ -132,7 +132,8 @@ def build_net_property_update(network, app_data, sequence_id=1):
     body += network.max_participants.to_bytes(2, "big")
     body += b"\x00" * 6
     body += (network.SCENE_ID & 0xFFFF).to_bytes(2, "big")
-    body += b"\x01\x01"
+    # The GBA application writes 01 here and a Legends Z-A host 02; what the byte means is unread.
+    body += bytes([property_byte & 0xFF, 0x01])
     body += system_len.to_bytes(4, "big") + game_len.to_bytes(4, "big")
     body += app_data
     return (bytes([0x01, pia_connect.NET_UPDATE_PROPERTY])

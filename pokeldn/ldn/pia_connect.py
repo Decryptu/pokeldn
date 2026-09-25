@@ -272,7 +272,8 @@ def _build_session_station(constant_id, variable_id, ip, port, station_index,
 
 
 def build_session_update(join, host_constant_id, host_var, host_ip, host_name,
-                         *, host_player_id=DEFAULT_PLAYER_ID, sequence_id=1):
+                         *, host_player_id=DEFAULT_PLAYER_ID, sequence_id=1,
+                         host_token=b"\x00" * 32, update_sequence=0):
     """Leader's fragmented Session type-5 update, the two-station Pia 6.39 layout: 7-byte fragment header (one fragment),
     leader first, requester second.
     """
@@ -282,19 +283,23 @@ def build_session_update(join, host_constant_id, host_var, host_ip, host_name,
     host_var = _vid(host_var)
     host_player = {"player_id": bytes(host_player_id), "name": host_name, "encoding": 1}
     host_station = _build_session_station(
-        host_constant_id, host_var, host_ip, 12345, 0, 0, b"\x00" * 32, 1, 1,
-        [host_player])
+        host_constant_id, host_var, host_ip, 12345, 0, 0, bytes(host_token).ljust(32, b"\x00"),
+        1, 1, [host_player])
     guest_station = _build_session_station(
         join["source_constant_id"], join["source_var"], join["ip"], join["port"], 1, 1,
         join["identification_token"], join["num_players"], join["num_participants"],
         join["players"])
     # [type, unknown:u16, fragment-count, fragment-index, fragment-offset:u16]
+    # The update's own sequence rides at +1 and again at +21: a Legends Z-A host's second update
+    # differs from its first in those two bytes alone (docs/za.md, Hosting).
     out = bytearray.fromhex("05000001000003")
+    out[1:3] = (update_sequence & 0xFFFF).to_bytes(2, "big")
     out += host_constant_id
     out += host_var.to_bytes(2, "big")
     out += bytes([2, 0])                            # two stations, no departed stations
     out += (sequence_id & 0xFFFF).to_bytes(2, "big")
-    out += b"\x00" * 6                            # two documented + four 6.39 reserved bytes
+    out += (update_sequence & 0xFFFF).to_bytes(2, "big")
+    out += b"\x00" * 4                            # four 6.39 reserved bytes
     out += host_station + guest_station
     return bytes(out)
 

@@ -80,7 +80,8 @@ Scarlet / Violet
 
 Legends Z-A
 
-- Trading into the console's save, joining the session the console hosts on its Link Trade search
+- Trading in both directions: joining the session the console hosts on its Link Trade search, and
+  hosting the session the console joins
 - A record composed from nothing goes into the console's save; the game computes the level, the
   stats and the current HP itself
 
@@ -138,7 +139,7 @@ has the cards and their configuration.
 
 | | |
 |---|---|
-| [`bin/`](bin) | what you run against a console. FireRed/LeafGreen: `frlg_mg_host.py` (Mystery Gift, Wonder News and native code), `frlg_mg_client.py` (receive a card from a console), `frlg_trade_host.py` (trade and Union Room host), `frlg_trade_join.py` (trade joiner). Let's Go: `lgpe_host.py`, `lgpe_join.py`. Sword/Shield: `swsh_connect.py` (trade, joining), `swsh_host.py` (trade, hosting), `swsh_gift_host.py` (Mystery Gift), `swsh_join.py` (scan). Brilliant Diamond/Shining Pearl: `bdsp_connect.py` (Union Room and trade, joining), `bdsp_host.py` (Union Room and trade, hosting), `bdsp_join.py`, `bdsp_pia_probe.py`. Legends Arceus: `pla_host.py` (trade), `pla_join.py`. Scarlet/Violet: `sv_host.py` (trade), `sv_join.py` (trade). Legends Z-A: `za_join.py` (trade) |
+| [`bin/`](bin) | what you run against a console. FireRed/LeafGreen: `frlg_mg_host.py` (Mystery Gift, Wonder News and native code), `frlg_mg_client.py` (receive a card from a console), `frlg_trade_host.py` (trade and Union Room host), `frlg_trade_join.py` (trade joiner). Let's Go: `lgpe_host.py`, `lgpe_join.py`. Sword/Shield: `swsh_connect.py` (trade, joining), `swsh_host.py` (trade, hosting), `swsh_gift_host.py` (Mystery Gift), `swsh_join.py` (scan). Brilliant Diamond/Shining Pearl: `bdsp_connect.py` (Union Room and trade, joining), `bdsp_host.py` (Union Room and trade, hosting), `bdsp_join.py`, `bdsp_pia_probe.py`. Legends Arceus: `pla_host.py` (trade), `pla_join.py`. Scarlet/Violet: `sv_host.py` (trade), `sv_join.py` (trade). Legends Z-A: `za_host.py` (trade, hosting), `za_join.py` (trade, joining) |
 | [`tools/ldn/`](tools/ldn) | the radio, for any target: `esp32_first_contact.py`, `esp32_sniff.py` (a second board as an air sniffer), `ldn_scan.py`; for a Linux card, `sniff.py`, `joyspot_probe.py`, `ldn_debug_report.sh` |
 | [`firmware/esp32/`](firmware/esp32) | the ESP32 radio's firmware (ESP-IDF v6.1) |
 | [`tools/frlg/`](tools/frlg) | reading what a FireRed console sent back, offline: `dump_read.py`, `script_read.py`, `rom_functions.py`, `cartridge_pair.py`, `game_data_read.py`, `english_build.py` |
@@ -465,7 +466,23 @@ See [Scarlet and Violet](docs/sv.md).
 
 ### Legends Z-A
 
-The console's Link Trade search hosts a network of its own, so pokeldn joins it.
+The console's Link Trade search alternates between hosting a network and scanning for one, so
+pokeldn either joins it or hosts one the console joins.
+
+```bash
+# host: start it first, then search on the console
+POKELDN_RADIO=esp32:auto ./.venv/bin/python -u bin/za_host.py --keys prod.keys \
+  --trade-offer offer.bin --capture zh.jsonl
+
+# the same host for an emulated console over ldn_mitm, no radio
+./.venv/bin/python -u bin/za_host.py --ip-host --our-ip 127.0.0.2 --comm-id ffffffffffffffff \
+  --trade-offer offer.bin
+```
+
+Hosting: pick a Pokémon on the console's trade box; the host answers with its own and confirms
+when the console does. `--offer-out FILE` keeps what the console offered.
+
+Joining:
 
 ```bash
 ./.venv/bin/python bin/za_join.py --channels 1,6,11 --dwell 0.35 --seconds 900 \

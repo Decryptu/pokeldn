@@ -44,7 +44,7 @@ Legends Arceus, in Scarlet and Violet and in Legends Z-A.
 | [Let's Go Pikachu and Eevee](lgpe.md) | Pia 3, the link code, and the trade flow. |
 | [Legends Arceus](pla.md) | Pia header version 11, the trade flow, and the record a host composes. |
 | [Scarlet and Violet](sv.md) | Pia header version 11, the reliable streams, and the trade a host runs. |
-| [Legends Z-A](za.md) | Pia header version 16, the game's twenty trade messages, and the trade a joiner runs. |
+| [Legends Z-A](za.md) | Pia header version 16, the game's twenty trade messages, and the trade in both roles. |
 | [Hardware and setup](hardware.md) | The ESP32 radio, Switch keys, and the older Linux Wi-Fi cards. |
 
 ## Credits
