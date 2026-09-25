@@ -255,6 +255,51 @@ Use a fresh `--src-var` every run. Result 7 means "this variable id is already o
 re-using the previous run's id minutes later is refused, and changing one digit is accepted. Leaving
 and re-entering the room also clears them.
 
+## Hosting
+
+A console entering the Union Room looks for a room before it opens one of its own. The session
+setting's `matchingMode` defaults to `IlcaNetSessionInitMode.Random`, with
+`localRandomMatchmakeHostWaitTime` 25 and `localRandomMatchmakeTimeUp` 270 in the same constructor.
+A console that finds a room with a free seat joins it, whoever hosts it. `bin/bdsp_host.py` hosts
+one and a retail Shining Pearl walks into it; `pokeldn/bdsp/host.py` holds the host side.
+
+The advertisement a retail room carries, read off the console's own:
+
+    LDN protocol         1 (AES-CTR advertisement)
+    frame version        4
+    security mode        1
+    scene_id             4352 (0x1100)
+    app_version          199
+    accept policy        ALL, 1/8
+    application_data     17 bytes, the Pia header above with a fresh network id and session
+                         parameter, then one zero byte
+
+What a host sends, in order, each one rebuilt byte for byte from a retail host's own
+(`tests/test_bdsp_host.py`):
+
+| step | message | framing |
+|---|---|---|
+| a station associates | Local Protocol update session, every 100 ms until acknowledged, the joiner as node 1 with ranking 1 | broadcast, `dst_var` 0 |
+| its connection request | an accepted connection response, 949 bytes: the request layout with type 2, the host's nine protocols, its station location, the advertised network id, one PlayerInfo, zero-filled, the ack id last | `dst_var` 0, flags 0x01 |
+| its mesh join request | the station ack of the request's ack id, then the join response (two stations, `max_active` 8, the joiner's own location bytes in its entry) | `dst_var` 0 |
+| the join response acknowledged | `NetJoinData` on the reliable window, sequence 1, flags 0x0F | `dst_var` the joiner's |
+| from then on | update mesh (556 bytes) every second, RTT requests, `NetCharacterStateData{0, 0}` on 0x68 | `dst_var` 1, destination 0xFFFFFFFF |
+
+The host's station location has no public address and zero NAT fields, 36 bytes; the joiner's has
+both and is 40. A host station entry carries index 0 and join order 0, the joiner index 1 and join
+order 1.
+
+A joiner sends Sync Clock (0x1C) requests to the host about once a second from the moment the join
+response is acknowledged, and answering is the host's job: the reply is the request's tick and the
+mesh clock in milliseconds. A joiner whose requests go unanswered deauthenticates about ten
+seconds after its first one and re-associates, over and over, with its screen on "communication en
+cours". Answered, it sends `NetJoinData`, requests 0x04 and 0x23, and the player sees the host's
+character.
+
+A retail joiner's first reliable messages are its `NetJoinData` and a request for 0x23, the same
+two a retail host sends. From there the room is symmetric: the approach, the greeting and the trade
+on [The Union Room trade](bdsp_trade.md) run unchanged with the console as the joiner.
+
 ## Measurement methods
 
 - A check that refuses is an instrument. The console compares the protocol count against its own

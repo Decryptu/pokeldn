@@ -298,6 +298,10 @@ first request, the character walked in, the trade ran to `NetDataReturnSelectDat
 saved. A killed client leaves its station in the Union Room; the next seat with the same MAC is
 never answered until the player leaves and re-enters the room.
 
+As an access point it has hosted a Brilliant Diamond Union Room that a retail Shining Pearl
+entered: the handshake finished 0.46 s after the association, and a trade ran to
+`NetDataReturnSelectData` and the console's save ([Hosting](bdsp_session.md#hosting)).
+
 `tools/ldn/esp32_sniff.py` makes a second board an air sniffer: `SNIFF` (`0x0A`, u8 channel and
 6 MAC) forwards every management and data frame to or from that MAC, whole, as `RX_MGMT`.
 

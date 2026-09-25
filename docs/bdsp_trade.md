@@ -23,6 +23,18 @@ Getting to the trade screen (the emote, the approach and the greeting) is on
 Each is answered with one of the client's own. `NetDataTradePokeCheckOkData` is the console reporting
 that it looked at a Pokemon the client built and found it acceptable.
 
+The peer's Pokemon reaches the screen through `TradeSelectPokeModel$$PokeSelectWait` [1.3.0 main.bin
+0x1c26070]: once the box's trade phase is past 2, the received flag (+0x78, set by
+`UnionTradeManager$$RecivePokeData` 0x1c33e80) and the own-pick flag (+0x79) are both set, it calls
+`BoxWindow$$SetOtherPokeParam` and advances the box. Nothing on the receive path checks the Pokemon.
+`TradePokeCheckOkWait` [0x1c25f50] moves on when both check states (+0x80 own, +0x84 peer) are 6. A
+Pokemon the reliable window acknowledges and never delivers leaves the player on "en attente d'une
+réponse" with no error; [The Pia layer](pia.md#what-the-receiver-discards-in-silence) has the cause.
+
+In local wireless the player's own pick is checked only for the save's illegal flag
+(`CoreParam$$GetDprIllegalFlag`); the server validation (`NetworkManager$$RequestValidateTrade`)
+runs when `UnionFrontDeskStateController.isGlobal` is set.
+
 ## The trade state machine
 
 `UnionTradeManager.currentState` is
@@ -139,6 +151,10 @@ and the mirror reaches START_WRITE_SAVE in both roles.
 PlayerSelecting, ...` and `ToNextPhase(0)` walks it by increment; the coroutine that phase runs,
 `BoxWindow.<WaitTradeSave>d__203$$MoveNext`, reads `FieldCommonParam[0xEB]`, multiplies it by 0.001f
 and counts it down against `Time.deltaTime`: a timed on-screen wait.
+
+The same sequence runs with the console as the room's joiner and pokeldn as its host. The console
+sent its check-ok 8 s after the two Pokemon crossed, walked the security states 1 to 6 in 0.4 s as
+PARENT, and announced its return 29.2 s after WAIT_READYOK.
 
 Send one message per reliable sequence id. `their_ack_id` only moves when the console acknowledges,
 so several messages under one sequence id make all but the first look like retransmits and be

@@ -25,6 +25,8 @@ Proven on retail hardware, end to end:
   running the game's own greeting dialogue with the player.
 - A complete trade: the console opened its trade screen for that character, offered a Pokemon,
   accepted one pokeldn assembled, wrote its save, and offered the select window again.
+- Hosting: a console entering the Union Room joins a room pokeldn hosts, draws its character, and
+  completes a trade with it ([Hosting](bdsp_session.md#hosting)).
 - Record mixing, ball capsules and a battle lobby driven to the point where the console sends its
   record, its capsule and its six chosen Pokemon.
 - A character walking on the Grand Underground floor, and the console's secret base read out.
@@ -33,7 +35,7 @@ Proven on retail hardware, end to end:
 
 | page | contents |
 |---|---|
-| [Joining and the Pia layer](bdsp_session.md) | the advertisement, the passphrase, the seat, the packet format, the key hierarchy, and the mesh handshakes |
+| [Joining and the Pia layer](bdsp_session.md) | the advertisement, the passphrase, the seat, the packet format, the key hierarchy, the mesh handshakes, and hosting |
 | [The game protocol](bdsp_protocol.md) | the 65 messages BDSP speaks, the Union Room, and controlling a character |
 | [Trading](bdsp_trade.md) | the trade flow, the PB8, the save, and the disconnect penalty |
 

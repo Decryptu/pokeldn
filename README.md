@@ -61,7 +61,8 @@ Sword / Shield
 
 Brilliant Diamond / Shining Pearl
 
-- A character of pokeldn's own in the Union Room: walking, greeting, and trading through the game's
+- Trading in both directions: joining the console's Union Room, or hosting a Union Room the
+  console walks into; a character of pokeldn's own greets the player and trades through the game's
   own flow
 - Record mixing, ball capsules and the battle lobby, up to the console sending its own records
 
@@ -137,7 +138,7 @@ has the cards and their configuration.
 
 | | |
 |---|---|
-| [`bin/`](bin) | what you run against a console. FireRed/LeafGreen: `frlg_mg_host.py` (Mystery Gift, Wonder News and native code), `frlg_mg_client.py` (receive a card from a console), `frlg_trade_host.py` (trade and Union Room host), `frlg_trade_join.py` (trade joiner). Let's Go: `lgpe_host.py`, `lgpe_join.py`. Sword/Shield: `swsh_connect.py` (trade, joining), `swsh_host.py` (trade, hosting), `swsh_gift_host.py` (Mystery Gift), `swsh_join.py` (scan). Brilliant Diamond/Shining Pearl: `bdsp_connect.py` (Union Room and trade), `bdsp_join.py`, `bdsp_pia_probe.py`. Legends Arceus: `pla_host.py` (trade), `pla_join.py`. Scarlet/Violet: `sv_host.py` (trade), `sv_join.py` (trade). Legends Z-A: `za_join.py` (trade) |
+| [`bin/`](bin) | what you run against a console. FireRed/LeafGreen: `frlg_mg_host.py` (Mystery Gift, Wonder News and native code), `frlg_mg_client.py` (receive a card from a console), `frlg_trade_host.py` (trade and Union Room host), `frlg_trade_join.py` (trade joiner). Let's Go: `lgpe_host.py`, `lgpe_join.py`. Sword/Shield: `swsh_connect.py` (trade, joining), `swsh_host.py` (trade, hosting), `swsh_gift_host.py` (Mystery Gift), `swsh_join.py` (scan). Brilliant Diamond/Shining Pearl: `bdsp_connect.py` (Union Room and trade, joining), `bdsp_host.py` (Union Room and trade, hosting), `bdsp_join.py`, `bdsp_pia_probe.py`. Legends Arceus: `pla_host.py` (trade), `pla_join.py`. Scarlet/Violet: `sv_host.py` (trade), `sv_join.py` (trade). Legends Z-A: `za_join.py` (trade) |
 | [`tools/ldn/`](tools/ldn) | the radio, for any target: `esp32_first_contact.py`, `esp32_sniff.py` (a second board as an air sniffer), `ldn_scan.py`; for a Linux card, `sniff.py`, `joyspot_probe.py`, `ldn_debug_report.sh` |
 | [`firmware/esp32/`](firmware/esp32) | the ESP32 radio's firmware (ESP-IDF v6.1) |
 | [`tools/frlg/`](tools/frlg) | reading what a FireRed console sent back, offline: `dump_read.py`, `script_read.py`, `rom_functions.py`, `cartridge_pair.py`, `game_data_read.py`, `english_build.py` |
@@ -398,7 +399,18 @@ fresh `--src-var` on every run: the console keeps an id it has seen as one of it
 run is stopped by hand, the player leaves and re-enters the Union Room before the next one.
 `--complete-trade` lets the console write its save; without it the trade stops at the last
 confirmation. When the character has appeared and finished walking, the player
-opens Y → the communication menu → trade Pokémon, and the greeting comes up on its own. See
+opens Y → the communication menu → trade Pokémon, and the greeting comes up on its own.
+
+A console entering the Union Room looks for a room before it opens its own, so pokeldn can host
+one instead. Start the host first, then the player enters the Union Room the same way:
+
+```bash
+./.venv/bin/python bin/bdsp_host.py --offer offer.pb8 --complete-trade --capture bh01.jsonl
+```
+
+pokeldn's character appears in the room. The player raises the trade emote (Y → the communication
+menu → trade Pokémon); the character walks up, and the trade runs as above. `--offer` must be a
+legal PB8 whose PID the console's save does not already hold: the game refuses a duplicate. See
 [Brilliant Diamond and Shining Pearl](docs/bdsp.md).
 
 ### Legends Arceus

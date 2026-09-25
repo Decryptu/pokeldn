@@ -189,6 +189,9 @@ def build_ack_message(ack_id, stream_id=0, field_0x50=None, mask=b"", lowest_pen
     `ack_id` is one MORE than the highest sequence id received - the console answered our sequence 0
     and 1 with an ack id of 2. The halfword before the mask carried `ack_id - 1` in that same
     message, so it defaults here to exactly that.
+
+    Trap: both defaults stand in for the SENDER's own lowest unacknowledged sequence. The peer
+    advances its receive window to it, so pass your own; docs/pia.md, the receiver's discards.
     """
     if field_0x50 is None:
         field_0x50 = max(0, ack_id - 1)

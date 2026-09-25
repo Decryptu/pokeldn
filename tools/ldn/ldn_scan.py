@@ -27,6 +27,8 @@ ACCEPT = {ldn.ACCEPT_ALL: "ALL", ldn.ACCEPT_NONE: "NONE",
 
 
 def _cleanup_stale():
+    if board_radio():
+        return                    # the ESP32 board has no kernel interfaces to remove
     for name in STALE_VIFS:
         subprocess.run(["iw", "dev", name, "del"],
                        stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)

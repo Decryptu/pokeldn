@@ -624,6 +624,12 @@ So a sender's own `lowest pending` drives its peer's receive base, and a sender 
 number above its own next sequence id moves that base past messages it has not sent yet. Those
 messages then arrive below the base and are discarded at `0x6f03cc` with an acknowledgement.
 
+BDSP does the same. A host whose bulk acks carried the console's next id as their lowest pending
+had its trainer record and its Pokemon acknowledged and never delivered: the console's acks read
+`(7, 7)` and `(8, 8)` against the host's sequences 5 and 6, and the trade screen never showed the
+offer. An ack carries the sender's own lowest unacknowledged sequence, in the header and in the
+entry's second halfword.
+
 ### Version 4
 
 Version 4 uses one header class for both reliable protocols, 0x7C and 0x80:
