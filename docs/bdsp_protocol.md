@@ -463,11 +463,37 @@ A capsule with 19 stickers placed them all at a distance of 100 from the origin,
 the room.
 
 Answered with a `NetDataAttachSealNetData` of the client's own (`bin/bdsp_connect.py --answer-with
-0x15:FILE`, the 143-byte body), the console shows "Seuls les sceaux que vous possédez ont été
-collés" and returns to the room within five seconds, state byte 0. The message names the filter:
-a received design keeps the stickers the player owns and drops the others. A design of 19
-stickers on a ring at radius 100, every id taken from the console's own capsule, was answered
-this way twice; whether the applied capsule is then listed in the player's collection is
-unmeasured (the player looked once and did not find it; which capsule slot the exchange writes,
-and whether it needs a capsule of the player's own to attach to, is unread). The answer must be
+0x15:FILE`, the 143-byte body), the console applies it and returns to the room within five seconds,
+state byte 0. Addresses below are the 1.3.0 image.
+
+`BallDecoMatching$$ReceiveBallDecoData` (`0x021ca5e0`) runs once the console has sent its own design;
+one received earlier is held and applied right after that send. It writes the first of the 99
+capsule slots holding no seals (`0x021ca674`), and does nothing if every slot has seals; the console
+sends its first slot that has seals. `BallDecoWork$$CopyTradeCapsuleData` (`0x01f23eb0`, absent from
+the base game) clears the slot, including an attached Pokemon, stores `Is3DEditMode` and
+`IsAppliedTemplate` as `byte == 1`, and walks the received `affixSealCount` seals:
+
+    if SaveSealData[id].Count >= 1:  place it at (x, y, z) / 100, then SubSealCount(id, 1)
+    else:                            drop it
+
+Each placed seal consumes one from the player's stock, so a seal used three times needs three.
+Seals already on the player's capsules were paid for when placed and are not in the stock. The slot
+stores the number placed, compacted. The result is true when at least one seal was placed and none
+was dropped, and it picks the closing message (`0x021c9f80`): `DLP_net_union_room_090` when true,
+`_114` otherwise. "Seuls les sceaux que vous possédez ont été collés" is the false branch.
+
+A count above 20 or a seal id of 200 or more indexes past an array (`0x01f24254`, `0x0238b7b0`) and
+throws on the console.
+
+Positions are hundredths of the capsule radius: the surface is at magnitude 100 in both modes. The
+"has seals" mark is `AffixSealCount != 0` (`0x01e93630`). In 3D mode every seal is drawn where it
+is. In 2D mode `Capsule2DViewController$$UpdateGridCells` (`0x01e90de0`) draws a seal only when its
+position equals a grid cell's `BallDecoWork$$Convert2DPosition` (`0x01f24da0`): radius 1, rows and
+columns 28 degrees apart on the front (+z) and 25 on the back, each component rounded to 0.01. A
+console's own 2D capsule has all 19 seals on front cells with column and row in -3..3. A 2D design
+of 19 seals on a ring at z = 44, sent twice, filled capsule slots 2 and 3 of a retail console, each
+marked as decorated and showing nothing. `scratchpad/bdsp_capsule_grid.py FILE` checks a design
+against the grid.
+
+The answer must be
 sent from a task of its own: sent from inside the receiver, the ack it waits for is never read.

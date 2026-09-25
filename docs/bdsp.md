@@ -51,8 +51,7 @@ Proven on retail hardware, end to end:
   transport, land on the right stream with the right bytes, and have no observable effect.
 - The name the game shows for a talked-to character. No `NetPlayerNameData` and no trainer card
   went out in the run that produced it.
-- Where a ball capsule received in the exchange goes. The console applies it ("Seuls les sceaux
-  que vous possédez ont été collés") and leaves the exchange; the player's collection did not
-  show it on one look ([the protocol page](bdsp_protocol.md)).
+- The ball-capsule 2D grid's extent beyond columns and rows -3..3 on the front; it comes from the
+  UI layout ([the protocol page](bdsp_protocol.md)).
 - `NetDataSelectData`'s index. The two runs that swept it declined the conversation before the index
   could matter; it is unmeasured.
