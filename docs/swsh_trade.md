@@ -88,6 +88,48 @@ reliable port, so the mesh message rides inside the reliable window. Both handle
 The console sends it once and never retransmits; one transport ack satisfies it. Pia's RTTI names
 the operation `nn::pia::mesh::LeaveWithHostMigrationJob`.
 
+## Hosting a trade
+
+`bin/swsh_host.py` hosts, and `pokeldn/swsh/host_trade.py` leads the trade as a hosting Sword does. It
+completed a trade with an emulated Shield 1.3.2: the joiner's save holds the offered Pokemon with
+its original trainer. The session and handshake details below were read off a trade between two
+emulated Shields and reproduced by the host.
+
+The station handshake, host side:
+
+    joiner -> host   connection request, [1] a byte it draws per request
+    host   -> joiner ack of that request (05 000000 and the request's trailing id)
+    host   -> joiner its own request, with the joiner's [1] copied into [0x10]
+    joiner -> host   ack, then its connection response
+    host   -> joiner ack, then the host's response
+
+Left unacked, the joiner repeats its request and never answers the host's. A request whose [0x10]
+does not match is ignored.
+
+After the mesh join the joiner sends Sync Clock (0x1C) every two seconds and one Clone Clock (0x77);
+the host answers both, the first with the request's tick and the mesh clock in milliseconds, the
+second with 01, bytes 1 to 9 of the request and the clone clock in milliseconds. Both precede any
+application data.
+
+The application layer, as the emulated pair ran it:
+
+    97   the host pings; the joiner answers and pings back; pingSynced both ways
+    60000 result{} on 0x7C and imReady on 0x80, both ways
+    0x84  the joiner's snapshot on port 1, then the host's on port 0 (a retail host sent first)
+    110  the joiner pings first, once its trade screen is up; the host answers with its own ping
+         and the reply. A host ping sent before that screen is acknowledged and dropped
+    30   the host opens content 30; each side offers on 20030 and sends box command 1; each
+         player's acceptance is box command 4
+    130  the joiner pings first
+    50   the host publishes its Pokemon as element 0 and relays the joiner's 10050 as element 1
+    120  the host pings first
+    40   the ladder, one rung per command: host commands as element 0, the joiner's 10040 as
+         element 1, phases 0 to 4
+
+After phase 4 the host keeps the session and both players return to the trade screen with a League
+Card offer. A retail Sword leading a pokeldn joiner instead sent box command 3 and MIGRATION_START; a
+host that migrates after the save leaves the joiner with an interrupted-communication error.
+
 ## The box state machine
 
 Everything from the trade screen to the offer runs on content 30, the box exchange.

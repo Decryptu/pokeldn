@@ -4,7 +4,8 @@ Every message here is the one a retail Sword sends while it hosts, rebuilt from 
 byte for byte against the console's own (`tests/test_host4.py`). The order a joiner is answered in:
 
     joiner -> host   0x14 connection request, carrying its location
-    host   -> joiner 0x14 connection request of our own, addressed to the ids in that location
+    host   -> joiner 0x14 ack of it, then a connection request of our own, addressed to the ids in
+                     that location
     joiner -> host   0x14 connection response (17 bytes)
     host   -> joiner 0x14 ack of it, then our 840-byte connection response
     joiner -> host   0x14 ack, and 0x18 join request
@@ -32,12 +33,13 @@ from pokeldn.ldn.pia5 import gcm_iv, ldn_nonce_crc
 
 PIA_PORT = 12345
 BROADCAST_STREAM = 0x84           # nn::pia::transport::ReliableBroadcastProtocol
+SYNC_CLOCK = 0x1C                 # u64 tick in, the tick and the mesh clock in ms out
+CLONE_CLOCK = 0x77                # 18 bytes in; 01, bytes 1..9 echoed, the clone clock in ms out
 UPDATE_SESSION_PERIOD = 0.1       # the console's own rebroadcast rate until acked
 UPDATE_MESH_PERIOD = 2.0
 RTT_PERIOD = 0.4
 WINDOW_ACK_PERIOD = 1.0           # the host acks both 0x80 ports once a second, data or not
 RETRANSMIT_AFTER = 0.3
-REQUEST_NAT_FLAGS = 0xDE          # the byte a retail Sword writes at [1] of its own request
 STATION_FLAGS = 0x01              # message flags on 0x14, 0x18, 0x58 and 0x7C
 BROADCAST_FLAGS = 0x11            # 0x24 and 0x80: flags 0x01 plus the no-bundle bit
 
@@ -101,6 +103,7 @@ class Station:
         self.last_rtt = 0.0
         self.last_window_ack = 0.0
         self.last_update_mesh = 0.0
+        self.seated_at = time.time()
 
     def window(self, protocol, port):
         return self.windows.setdefault((protocol, port), Window())
@@ -332,6 +335,15 @@ class Pia4Host:
         elif protocol == mesh.PROTOCOL and port == mesh.PORT_UNRELIABLE and body[:1] == bytes(
                 [mesh.JOIN_REQUEST]):
             self._join(st, body)
+        elif protocol == SYNC_CLOCK and len(body) == 16:
+            # A joining Shield asks every two seconds and holds its game until it is answered.
+            ms = int((now - self.t0) * 1000)
+            self.send_message(st.ip, body[:8] + struct.pack(">Q", ms), SYNC_CLOCK,
+                              destination=st.bitmap)
+        elif protocol == CLONE_CLOCK and len(body) >= 18 and body[0] == 0:
+            ms = int((now - st.seated_at) * 1000)
+            self.send_message(st.ip, b"\x01" + body[1:10] + struct.pack(">Q", ms), CLONE_CLOCK,
+                              destination=st.bitmap)
         elif protocol == rtt.PROTOCOL:
             if len(body) == rtt.SIZE_V4 and body[0] == rtt.REQUEST:
                 self.send_message(st.ip, rtt.response_for_v4(body), rtt.PROTOCOL,
@@ -347,6 +359,9 @@ class Pia4Host:
     def _station(self, st, body):
         kind = body[0] if body else None
         if kind == stp.CONNECTION_REQUEST:
+            # A hosting Shield acks the joiner's request before it sends its own; unacked, the
+            # joiner repeats the request and never answers ours.
+            self.send_message(st.ip, station4.build_ack(station4.ack_id_of(body)), stp.PROTOCOL)
             got = station4.parse_incoming_request(body)
             if got["constant_id"] != self.constant:
                 self.log(f"[pia4] {st.ip}: a request for {got['constant_id']:#x}, not us")
@@ -356,8 +371,11 @@ class Pia4Host:
             st.location = got["location"][:loc["size"]]
             st.state = "requested"
             ack_id = self.next_ack_id()
+            # [0x10] of ours echoes [1] of theirs, which a joining Shield draws per request and
+            # checks; [1] of ours is our own draw (emulated Shield pair, docs/swsh_session.md).
             req = station4.build_connection_request(st.constant, st.variable, self.location,
-                                                    nat_flags=REQUEST_NAT_FLAGS, nat_location=0)
+                                                    nat_flags=os.urandom(1)[0],
+                                                    nat_location=body[1])
             self.send_message(st.ip, req + struct.pack(">I", ack_id), stp.PROTOCOL)
             self.log(f"[pia4] {st.ip}: connection request, variable {st.variable:#010x}; "
                      f"sent ours")

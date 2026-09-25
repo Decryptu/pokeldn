@@ -124,7 +124,7 @@ def test_a_scripted_joiner_walks_the_host_to_the_end(monkeypatch):
         send_broadcast=lambda port, msg, packed: to_joiner.append(("bcast", 0x84, port, msg,
                                                                    packed)),
         send_mesh=lambda payload: to_joiner.append(("mesh", 0x18, 1, payload)),
-        log=lambda *a: None, end_delay=1.0)
+        log=lambda *a: None, end_delay=1.0, migrate=True)
     for _ in range(4000):
         host.tick(now[0])
         for item in to_joiner:
@@ -146,3 +146,11 @@ def test_a_scripted_joiner_walks_the_host_to_the_end(monkeypatch):
     assert host.elements[50].values[1][0] == pk8
     assert host.elements[40].phase == host_trade.LADDER_LAST
     assert reliable4.PROTOCOL == 0x7C
+
+
+def test_without_migrate_the_host_holds_after_the_ladder():
+    host = host_trade.HostTrade(HOST, JOINER, bytes(3456), bytes(0x158), lambda *a: None,
+                                lambda *a: None, lambda *a: None, log=lambda *a: None)
+    host.stage, host.stage_since = "saving", 0.0
+    host.tick(10_000.0)
+    assert host.stage == "saving"

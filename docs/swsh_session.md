@@ -149,7 +149,11 @@ version 5, and the game's own data starts at 0x18:
     0x0A  2  padding
     0x0C  4  session param, random per session
     0x10  8  zero
-    0x18  7  `9c 91 70 0d 00 00 01` on this console, unread
+    0x18  2  CRC16 over the record from 0x1A to 0x180 (`0x0065dcb0`, `pokeldn.swsh.beacon.crc16`)
+    0x1A  2  the network version word, 12 bits, 0x0D70 (`0x006c17c0` from `0x02068848`)
+    0x1C  1  bit 0 from `0x006b5c10`; a record with it set is refused
+    0x1D  1  payload type, 0 for station info
+    0x1E  1  a page byte, 1 and 2 in turn every third publish (`0x0111aac0`)
     0x1F 266 the player profile, the record the trade snapshot carries at 0xAEC
              ([the protocol page](swsh_protocol.md#the-player-profile)); zero to the end
 
@@ -170,14 +174,39 @@ console in the same minute.
 Nothing appears on the console's screen. From the moment of association the console broadcasts Pia
 to `169.254.x.255:12345` about ten times a second.
 
-## Searching as well as hosting
+## How a searching Sword finds a partner
 
-The game's own network code builds Pia's `nn::pia::local::LdnSessionSearchCriteria` (vtable
-`0x25d4458`, reached through the GOT slot `0x2616bb0`) in two functions, `0x006c4564` (at
-`0x006c476c`) and `0x006c9e70` (at `0x006c9eb0`). In the first, the criteria takes a u64 from
-`0x006a9d00` at +0x20 and a u16 from `0x006a9de0` at +0x28, is passed through its own slot 2
-`0x01848800(criteria, 0, 0x18)`, and is handed to `0x0183fac0`. A Sword therefore has a path that
-browses for a session to join, next to the one that creates one.
+Link Trade over local communication runs in two phases on two networks.
+
+On the Y-Comm screen every Sword and Shield hosts a beacon network at scene 65535 and browses for
+others about once a second (`0x006c3630`: `0x006c3840` hosts, `0x006c3770` browses with criteria
+built in `0x006c4550`, `0x0183fac0`). The criteria filters on local communication id and network
+type only, so the scene is not compared there. Each result whose record passes the CRC and version
+gate (`0x006c1be0`) goes into a store, and from the store into the nearby-player registry
+(`0x0110f270`). The registry drops a record whose device id (advertise 0x1F) and account uid
+(0x2F) both equal the console's own (`0x0111b160`), and drops a record whose store entry lacks the
+network id and scene pair (`0x0110f2d4`). Nothing on this path joins a network.
+
+Choosing Link Trade, then the plain trade, puts two messages on screen: the search notice and "you
+can cancel the search by choosing another option". Each waits for A. Only after the second does the
+Y-Comm handler `0x00fba940` call `SetMode(comm, 2)` (`0x01096d10`); the communication state machine
+`0x01095f10` walks states 0, 5, 3, 4 and 6 within a second, and state 6 calls `StartRandomMatching`
+(`0x010fcff0`) with scene 60001, the scene `0x01096730` maps mode 2 to. The player sees "Recherche..."
+in the overworld from then on. A console left on the first message beacons indefinitely and never
+matches.
+
+The matching session layer then picks a network to join (`0x006c9e70`, `0x006cb8e0`, join at
+`0x006ca1c0`):
+
+    scene 60001, equal to its own
+    node count 1, below its maximum of 2; network type 2; node count maximum 8 or less
+    advertise 0x04 zero: a search without a link code refuses a password
+    advertise 0x00, a u32, greater than the searcher's own
+    advertise 0x00 not on the list of ids whose join failed during this search (0x80 entries)
+
+A searcher with the larger id hosts and waits. Two consoles searching at once therefore pair in one
+direction only, and a host that must be joined advertises an id near 0xFFFFFFFF. A failed join
+blacklists that id until the player searches again.
 
 ## What the console says first
 

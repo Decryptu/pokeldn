@@ -8,7 +8,8 @@ completed trade (docs/swsh_trade.md, docs/swsh_protocol.md):
     3  ping round on 110, then content 30 (the box): both offers and box commands on 20030
     4  ping round on 130, then content 50 (the exchange): each side's Pokemon
     5  ping round on 120, then content 40 (the confirmation ladder), phases 0..4
-    6  box command 3, then MIGRATION_START on the mesh's reliable port
+    6  the host keeps the session and both players return to the trade screen; the retail
+       Sword that led our joiner instead sent box command 3 and MIGRATION_START (`migrate=True`)
 
 Per content N the joiner talks to the host on holder 10000+N (port 0) and the host publishes the
 element on 40000+N (port 1): element 0 is the host's own value, element 1 relays the joiner's,
@@ -35,7 +36,7 @@ STATE_KEEPALIVE = 2.0                 # republish an element no one has answered
 BROADCAST_PERIOD = 0.1
 SENTINEL = 0xFC18                     # a pair's announced half before any announcement
 LADDER_LAST = 4                       # content 40's teardown phase
-END_DELAY = 26.0                      # ladder done to box command 3, as the retail host waited
+END_DELAY = 26.0                      # ladder done to box command 3, with migrate=True
 MIGRATION_DELAY = 0.75
 MESH_MIGRATION_START = 0x44
 
@@ -71,6 +72,10 @@ class PingRound:
 
     def feed(self, which, send):
         if which == trade.PING:
+            # A ping of ours sent before the joiner's screen held this holder was dropped there;
+            # a hosting Shield answers the joiner's ping with its own ping, then the reply.
+            if not self.got_reply:
+                send(PORT_CONTENT, trade.sync(self.id, trade.PING))
             self.got_ping = True
             send(PORT_CONTENT, trade.sync(self.id, trade.PING_REPLY))
         elif which == trade.PING_REPLY:
@@ -157,13 +162,13 @@ class HostTrade:
               "confirm", "saving", "migrate", "done")
 
     def __init__(self, self_id, peer_id, snapshot, offer_pk8, send, send_broadcast, send_mesh,
-                 log=print, end_delay=END_DELAY, auto_accept=True, record=None):
+                 log=print, end_delay=END_DELAY, auto_accept=True, record=None, migrate=False):
         self.self_id, self.peer_id = self_id, peer_id
         self.snapshot = bytes(snapshot)
         self.offer_pk8 = bytes(offer_pk8)
         self._send, self._send_broadcast, self._send_mesh = send, send_broadcast, send_mesh
         self.log, self.record = log, record or (lambda **row: None)
-        self.end_delay, self.auto_accept = end_delay, auto_accept
+        self.end_delay, self.auto_accept, self.migrate = end_delay, auto_accept, migrate
         self.t0 = time.time()
         self.last_clock = CLOCK_BASE
         self.stage = "ping97"
@@ -412,6 +417,10 @@ class HostTrade:
         el.advance_if_quorum(self.send, now)
 
     def _stage_saving(self, now):
+        # An emulated Shield host holds the mesh here and the pair goes back to the trade screen;
+        # a migration after a trade reads as an interruption on the joiner, after its save.
+        if not self.migrate:
+            return
         if now - self.stage_since >= self.end_delay:
             self.send(PORT_CONTENT, trade.box_sync_state(3))
             self.log("[trade] -> box command 3")

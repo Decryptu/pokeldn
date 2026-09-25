@@ -47,8 +47,7 @@ def test_update_session_rebuilds():
 
 def test_host_request_rebuilds():
     got = station4.build_connection_request(stp.ldn_constant_id(JOINER_MAC), JOINER_VAR,
-                                            host_location(), nat_flags=host4.REQUEST_NAT_FLAGS,
-                                            nat_location=0)
+                                            host_location(), nat_flags=0xDE, nat_location=0)
     assert got + struct.pack(">I", 0x6980253F) == HOST_REQUEST
 
 
@@ -110,7 +109,9 @@ def test_a_scripted_joiner_is_seated_and_heard():
     req = s4.build_connection_request(host.constant, host.variable, joiner_location(),
                                       nat_flags=0, nat_location=0, with_variable_id=False)
     from_joiner(req, s4.PROTOCOL)
-    (proto, ours), = replies()
+    ack, (proto, ours) = replies()
+    assert ack == (s4.PROTOCOL, s4.build_ack(s4.ack_id_of(req)))    # acked before ours, as Shield does
+    assert ours[0x10] == req[1]                                     # their challenge echoed
     got = s4.parse_incoming_request(ours)
     assert proto == s4.PROTOCOL and got["constant_id"] == st.constant
     assert got["variable_id"] == JOINER_VAR and got["station"]["variable_id"] == host.variable

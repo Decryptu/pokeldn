@@ -12,6 +12,7 @@ goes to --capture as JSON lines. docs/swsh_session.md, docs/swsh_trade.md.
 """
 import argparse
 import binascii
+import traceback
 import json
 import os
 import struct
@@ -25,7 +26,7 @@ from pokeldn.host_support import resolve_keys
 from pokeldn.ldn import host4, mesh_protocol as mesh, reliable4
 from pokeldn.ldn.ldn_mitm_host import IpHostTransport
 from pokeldn.ldn.transport import HostTransport, board_radio, find_ap_phy
-from pokeldn.swsh import host_trade, pokemon as swsh_pokemon, trade_payload
+from pokeldn.swsh import beacon, host_trade, pokemon as swsh_pokemon, trade_payload
 from pokeldn.swsh.session import COMM_ID, PASSPHRASE, session_keys
 
 SCENE_ID = 60001                  # a retail Sword's Link Trade network
@@ -34,8 +35,10 @@ LDN_PROTOCOL = 1
 MAX_PARTICIPANTS = 2
 ADVERT_SIZE = 0x180
 GAME_DATA_OFF = 0x18
-ROTATE_VALUE_PERIOD = 0.8         # a searching Shield redraws the u16 at 0x18 this often
-ROTATE_PHASE_PERIOD = 2.5         # and flips the byte at 0x1E between 1 and 2 this often
+RECORD_LEN = 0x168
+# A searcher joins only a larger advertise-0x00 id than its own (0x006cba8c) and blacklists an id
+# whose join failed for the rest of its search, so each run draws a fresh one near the top.
+NETWORK_ID_HIGH = b"\xff\xff"
 
 
 def build_advert(template, network_id=None, session_param=None):
@@ -51,15 +54,8 @@ def build_advert(template, network_id=None, session_param=None):
     out[12:16] = struct.pack("<I", session_param if session_param is not None
                              else struct.unpack("<I", os.urandom(4))[0])
     out[16:24] = bytes(8)
-    return bytes(out)
-
-
-def rotate_advert(app_data, now, t0):
-    """-> the advertisement a searching console would show at `now`: a fresh u16 at 0x18 and the
-    phase byte at 0x1E, 1 then 2, as sampled off an emulated Shield on its search screen."""
-    out = bytearray(app_data)
-    out[GAME_DATA_OFF:GAME_DATA_OFF + 2] = os.urandom(2)
-    out[GAME_DATA_OFF + 6] = 1 + int((now - t0) // ROTATE_PHASE_PERIOD) % 2
+    record = out[GAME_DATA_OFF:GAME_DATA_OFF + RECORD_LEN]
+    struct.pack_into("<H", out, GAME_DATA_OFF, beacon.crc16(record[2:]))
     return bytes(out)
 
 
@@ -98,10 +94,14 @@ def build_parser():
     ap.add_argument("--trainer-sid", type=lambda s: int(s, 0), default=54321)
     ap.add_argument("--offer-slot", type=int, default=1, help="the party slot we offer")
     ap.add_argument("--end-delay", type=float, default=host_trade.END_DELAY,
-                    help="ladder done to box command 3 and the migration")
+                    help="with --migrate, ladder done to box command 3 and the migration")
+    ap.add_argument("--migrate", action="store_true",
+                    help="end with box command 3 and MIGRATION_START, as the retail Sword that "
+                         "led our joiner did; by default the host keeps the session")
     ap.add_argument("--received", default=None, help="write the joiner's Pokemon here")
-    ap.add_argument("--rotate-advert", action="store_true",
-                    help="redraw 0x18 and flip the phase byte 0x1E while no station is seated")
+    ap.add_argument("--network-id", default=None,
+                    help="advertise 0x00, hex; a searching Sword joins only a larger one than its "
+                         "own; default 0xFFFF and two random bytes")
     ap.add_argument("--seconds", type=float, default=300)
     ap.add_argument("--capture", default=None)
     return ap
@@ -115,7 +115,9 @@ def main():
     phy = None
     if not args.ip_host:
         phy = find_ap_phy(log=print) if args.phy == "auto" else args.phy
-    app_data = build_advert(load_advert(args.advert))
+    network_id = (bytes.fromhex(args.network_id) if args.network_id
+                  else os.urandom(2) + NETWORK_ID_HIGH)       # little-endian: the high half last
+    app_data = build_advert(load_advert(args.advert), network_id=network_id)
     snapshot = open(args.snapshot, "rb").read()
     if len(snapshot) != trade_payload.PAYLOAD_LENGTH:
         snapshot = trade_payload.inflate_short(snapshot)
@@ -156,6 +158,13 @@ def main():
 
     trades = {}                   # ip -> HostTrade
 
+    def guarded(fn, *a):
+        # A reader that raises stops the host mid-trade; the console calls that an interruption.
+        try:
+            fn(*a)
+        except Exception:
+            traceback.print_exc()
+
     def on_data(st, protocol, port, payload):
         record({"rec": "app_rx", "src": st.ip, "protocol": protocol, "port": port,
                 "payload": payload.hex()})
@@ -163,11 +172,11 @@ def main():
             print(f"[sw] <- {st.ip} mesh {payload.hex()}")
             return
         if st.ip in trades:
-            trades[st.ip].on_data(protocol, port, payload)
+            guarded(trades[st.ip].on_data, protocol, port, payload)
 
     def on_broadcast(st, port, payload, flags):
         if st.ip in trades:
-            trades[st.ip].on_broadcast(port, payload, bool(flags & 0x10))
+            guarded(trades[st.ip].on_broadcast, port, payload, bool(flags & 0x10))
 
     def on_other(st, protocol, port, payload):
         print(f"[sw] <- {st.ip} {protocol:#04x}/{port} (unhandled) {payload.hex()[:96]}")
@@ -185,14 +194,16 @@ def main():
             host.send_data(st.ip, mesh.PROTOCOL, mesh.PORT_RELIABLE, payload)
 
         def on_record(**row):
-            record(dict(rec="trade", **row))
-            if row.get("rec") == "peer_exchange" and args.received:
+            kind = row.pop("rec", None)
+            record({"rec": "trade", "kind": kind, **row})
+            if kind == "peer_exchange" and args.received:
                 open(args.received, "wb").write(bytes.fromhex(row["pk8"]))
                 print(f"[sw] the joiner's Pokemon written to {args.received}")
 
         trades[st.ip] = host_trade.HostTrade(host.constant, st.constant, snapshot, offer, send,
                                              send_broadcast, send_mesh,
-                                             end_delay=args.end_delay, record=on_record)
+                                             end_delay=args.end_delay, record=on_record,
+                                             migrate=args.migrate)
         print(f"[sw] {st.ip}: the trade starts")
 
     host = host4.Pia4Host(keys.network_id_le, keys.session_key, transport.our_ip,
@@ -206,13 +217,9 @@ def main():
         return 2
     print(f"[sw] up at {transport.our_ip}; waiting for a console")
     deadline = time.time() + args.seconds
-    t_up = last_rotate = time.time()
     try:
         while time.time() < deadline:
             now = time.time()
-            if args.rotate_advert and not host.stations and now - last_rotate >= ROTATE_VALUE_PERIOD:
-                transport.set_application_data(rotate_advert(app_data, now, t_up))
-                last_rotate = now
             present = {p[1]: p for p in transport.participants}
             for ip, (index, _ip, mac, name) in present.items():
                 if ip not in host.stations:
@@ -229,7 +236,7 @@ def main():
                 if st.state == "joined" and ip not in trades:
                     start_trade(st)
             for tr in list(trades.values()):
-                tr.tick(now)
+                guarded(tr.tick, now)
             transport.wait_readable(0.02)
     except KeyboardInterrupt:
         print("\n[sw] stopping")
