@@ -27,6 +27,7 @@ sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
 from pokeldn.ldn import clone, pia3, pia4, reliable3, station4, station9, sync_clock
 from pokeldn.lgpe import pb7
+from pokeldn.lgpe.trade import fresh_offer
 from pokeldn.lgpe.trade import (TRADE_IN_PROGRESS, _answer_offer, _send_step,
                                 _warn_if_mid_trade)
 from pokeldn.ldn import local_protocol as lp
@@ -96,6 +97,9 @@ def build_parser():
                          "376-byte message, header included, or echo for the console's own back")
     ap.add_argument("--our-trainer", metavar="TID:SID",
                     help="the trainer id pair written over the identity's")
+    ap.add_argument("--fresh-pid", action="store_true",
+                    help="offer the --offer structure under a new PID and encryption constant, "
+                         "shiny state kept, so a save that took it before takes it again")
     ap.add_argument("--offer", metavar="echo|PATH",
                     help="answer the console's offer with this 232-byte box structure (echo: "
                          "its own back), and its commits with commits")
@@ -122,6 +126,7 @@ def build_parser():
 
 def main(argv=None):
     args = build_parser().parse_args(argv)
+    fresh_offer(args, "[lgh]")
     if os.geteuid() != 0 and not board_radio():
         print("[lgh] must run as root (LDN needs the raw radio)"); return 1
     phy = find_ap_phy(log=print) if args.phy == "auto" else args.phy

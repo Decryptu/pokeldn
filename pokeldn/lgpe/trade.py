@@ -9,6 +9,20 @@ from pokeldn.lgpe import pb7
 TRADE_IN_PROGRESS = {"offer": False, "commit": False}
 
 
+def fresh_offer(args, tag="[lg]"):
+    """`--fresh-pid`: write the offer under a new PID and constant beside the original and point
+    `args.offer` at it, so the offer and the result message carry the same record."""
+    if not getattr(args, "fresh_pid", False) or args.offer in (None, "echo"):
+        return
+    body = pb7.fresh(open(args.offer, "rb").read())
+    path = args.offer.rsplit(".", 1)[0] + "_fresh.pb7"
+    with open(path, "wb") as fh:
+        fh.write(body)
+    pid = int.from_bytes(pb7.decrypt(body)[pb7.OFF_PID:pb7.OFF_PID + 4], "little")
+    print(f"{tag} offer: {args.offer} under pid {pid:08x}, written to {path}")
+    args.offer = path
+
+
 def _warn_if_mid_trade(tag="[lg]"):
     """Say plainly that the link died with a trade half done.
 

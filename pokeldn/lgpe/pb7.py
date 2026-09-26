@@ -39,6 +39,7 @@ __all__ = ["BOX_SIZE", "HEADER_SIZE", "FIRST_MESSAGE", "OFFER_MESSAGE", "COMMIT_
 # the trainer id pair a first message opens with, and the same pair inside a box structure
 TRAINER_ID = 0x00
 BOX_TRAINER_ID = 0x0C
+OFF_PID = 0x18                      # PKHeX PB7.cs; the encryption constant is at 0x00
 
 
 def shuffle_value(ec):
@@ -132,3 +133,16 @@ def set_trainer_id(body, tid, sid, offset=TRAINER_ID):
     out = bytearray(body)
     struct.pack_into("<HH", out, offset, tid & 0xFFFF, sid & 0xFFFF)
     return bytes(out)
+
+
+def fresh(raw, rand=None):
+    """-> the structure, encrypted, under a new encryption constant and PID. The PID keeps
+    `hi ^ lo`, so the shiny xor against the same trainer, and the shiny state, carry over."""
+    import os
+    rand = rand or os.urandom
+    plain = bytearray(decrypt(raw) if valid(raw) else raw)
+    pid = struct.unpack_from("<I", plain, OFF_PID)[0]
+    high = int.from_bytes(rand(2), "little")
+    struct.pack_into("<I", plain, OFF_PID, (high << 16) | (high ^ (pid >> 16) ^ (pid & 0xFFFF)))
+    struct.pack_into("<I", plain, 0, int.from_bytes(rand(4), "little"))
+    return encrypt(bytes(plain))

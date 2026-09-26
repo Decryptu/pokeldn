@@ -46,6 +46,7 @@ from pokeldn.lgpe import (COMM_ID_PIKACHU, PASSPHRASE, PIA_PORT, PIA_VERSION, pa
 from pokeldn.lgpe.session import APP_HEADER_SIZE
 from pokeldn.lgpe import pb7
 from pokeldn.lgpe.leave import Leaver
+from pokeldn.lgpe.trade import fresh_offer
 from pokeldn.lgpe.trade import (TRADE_IN_PROGRESS, _answer_commit, _answer_offer,  # noqa: F401
                                 _send_step, _warn_if_mid_trade)
 
@@ -309,6 +310,9 @@ def build_parser():
     ap.add_argument("--leave-after", type=float, default=None, metavar="SECONDS",
                     help="leave the session the way a console backs out of its trade screen, "
                          "this long after our offer went out (docs/lgpe_session.md)")
+    ap.add_argument("--fresh-pid", action="store_true",
+                    help="offer the --offer structure under a new PID and encryption constant, "
+                         "shiny state kept, so a save that took it before takes it again")
     ap.add_argument("--offer", metavar="echo|PATH",
                     help="answer the host's type 2 message with a box structure of our own. "
                          "'echo' returns the host's own, which the game accepts by construction; "
@@ -361,6 +365,7 @@ def pick(nets, want):
 def main(argv=None):
     ap = build_parser()
     args = ap.parse_args(argv)
+    fresh_offer(args, "[lg]")
     if args.over_ip:
         if not args.our_mac:
             ap.error("--over-ip needs --our-mac")

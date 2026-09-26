@@ -205,3 +205,26 @@ def test_a_run_that_ends_mid_trade_says_so(capsys):
     mod.TRADE_IN_PROGRESS["commit"] = True
     mod._warn_if_mid_trade()
     assert "after the commit" in capsys.readouterr().out
+
+
+def test_a_fresh_offer_moves_only_its_pid_and_constant(message, tmp_path):
+    """`--fresh-pid` on a console's own structure: the game's sanity check still passes, every byte
+    but the two ids and the checksum decodes back, and the shiny xor is unchanged."""
+    import argparse
+    from pokeldn.lgpe import trade
+
+    body = pb7.parse_message(message)["body"]
+    (tmp_path / "offer.pb7").write_bytes(body)
+    args = argparse.Namespace(offer=str(tmp_path / "offer.pb7"), fresh_pid=True)
+    trade.fresh_offer(args)
+    made = open(args.offer, "rb").read()
+    assert args.offer.endswith("_fresh.pb7") and pb7.valid(made)
+    before, after = pb7.decrypt(body), pb7.decrypt(made)
+    changed = {i for i in range(pb7.BOX_SIZE) if before[i] != after[i]}
+    assert changed <= {0, 1, 2, 3, 6, 7, 0x18, 0x19, 0x1A, 0x1B} and {0, 0x18} & changed
+
+    def shiny(p):
+        pid = struct.unpack_from("<I", p, pb7.OFF_PID)[0]
+        tid, sid = struct.unpack_from("<HH", p, pb7.BOX_TRAINER_ID)
+        return tid ^ sid ^ (pid >> 16) ^ (pid & 0xFFFF)
+    assert shiny(after) == shiny(before)
