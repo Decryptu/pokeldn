@@ -85,6 +85,7 @@ Anything before a `0x00`, including the ROM's boot text, is discarded by the che
 | `0x0A` SNIFF | host | u8 channel, 6 MAC; every management and data frame to or from it, whole, as RX_SNIFF |
 | `0x0B` STATUS | host | none; answered by STATUS |
 | `0x0C` BENCH | host | u32 bytes, u16 message size (8 to 1600); RESULT, then BENCH messages as fast as the UART takes them |
+| `0x0D` LED | host | u8 pattern, u8 peak brightness, u16 period ms (0: the pattern's default), u16 duration ms (0: until the next LED); RESULT. A board flashed before it answers `0x106` |
 | `0x81` INFO | board | u8 protocol version (1), 6 station MAC, 6 AP MAC, u8 chip revision, text |
 | `0x82` RESULT | board | u8 command, i32 `esp_err_t` |
 | `0x83` LOG | board | text |
@@ -321,6 +322,54 @@ for a kernel interface, which is how every launcher picks its path.
   datagram then waits out the full timeout. Wait with `trio.lowlevel.wait_readable` under
   `trio.move_on_after`. A Scarlet joiner blocking in `select(0.05)` handled one message per 50 ms
   and the console re-sent its records for 50 to 70 s.
+
+## The board's LED and buttons
+
+The ELEGOO ESP-32 Type-C board (CP2102, ESP32-D0WD-V3) carries two LEDs and two buttons:
+
+| part | wired to | controllable |
+|---|---|---|
+| red LED | the 3.3 V rail | no, lit whenever the board has power |
+| blue LED | GPIO2, lit when the pin is high | yes |
+| EN button | the chip's reset | no |
+| BOOT button | GPIO0 | readable as an input after boot |
+
+GPIO2 and GPIO0 are strapping pins: both must be low or floating at reset for the ROM to enter
+download mode, so the firmware drives GPIO2 only after boot. The blue LED was found from the ROM
+bootloader with no firmware change, by writing GPIO2's IO_MUX register (`0x3FF49040`, `MCU_SEL` 2),
+its output select (`0x3FF44538` = `0x100`), `GPIO_ENABLE_W1TS` and `GPIO_OUT_W1TS` (bit 2); the
+next reset returns the pin to its default.
+
+The firmware drives the blue LED with LEDC PWM (13 bits, 5 kHz) from a priority-1 task on core 1
+that recomputes it every 10 ms. Brightness is perceptual: the duty is the level to the power 2.2.
+A change of look crossfades over 150 ms. The task reads counters the radio already keeps and adds
+no work to the frame paths.
+
+| pattern | id | default period | shape |
+|---|---|---|---|
+| auto | 0 | | the radio's own look, below |
+| off, on | 1, 2 | | |
+| breathe | 3 | 3000 ms | raised cosine |
+| blink | 4 | 1000 ms | on for half the period, 80 ms eased edges |
+| flash3 | 5 | 1000 ms | three flashes in the first 60 % of the period |
+| ramp-up, ramp-down | 6, 7 | 1000 ms | once, cubic ease-in-out, then held |
+| pulse | 8 | 1200 ms | a quick swell, a slow cubic fall |
+
+The automatic look follows the board's mode:
+
+| mode | look |
+|---|---|
+| boot | one pulse, 900 ms |
+| idle | breathe, dim, 4 s |
+| joining a console | fast blink, 250 ms |
+| hosting, no station | breathe, brighter, 1.5 s |
+| joined, or hosting a station | on, dim |
+| sniffing | off |
+
+On top of it every frame received or completed flickers the LED, retriggered once the previous
+flicker has faded, so a flood shows as a shimmer. A failed join (LINK reasons `0xFFFF`, `0xFFFE`),
+a refused key, a dropped board-to-host message or a lost host command plays flash3 for 1.5 s.
+`tools/ldn/esp32_led.py --port PORT PATTERN` sets a look; `--demo` shows each.
 
 ## Building and flashing
 

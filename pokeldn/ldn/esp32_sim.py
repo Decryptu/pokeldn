@@ -153,6 +153,8 @@ class SimulatedBoard:
             self._raw_tx(p)
         elif t == esp32.CMD_STATUS:
             self._emit(esp32.MSG_STATUS, f"mode={self.mode} simulated".encode())
+        elif t == esp32.CMD_LED:
+            self._result(t, 0 if len(p) == 6 and p[0] < len(esp32.LED_PATTERNS) else 0x102)
         elif t == esp32.CMD_BENCH:
             total, size = struct.unpack("<IH", p)
             self._result(t)

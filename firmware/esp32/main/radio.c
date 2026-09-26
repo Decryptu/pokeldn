@@ -20,6 +20,7 @@
 #include "freertos/task.h"
 #include "nvs_flash.h"
 
+#include "led.h"
 #include "private_wifi.h"
 #include "wire.h"
 
@@ -28,7 +29,7 @@
 enum {
     CMD_HELLO = 0x01, CMD_BAUD = 0x02, CMD_CHANNEL = 0x03, CMD_STA_JOIN = 0x04, CMD_STOP = 0x05,
     CMD_AP_START = 0x06, CMD_AP_KICK = 0x07, CMD_ETH_TX = 0x08, CMD_RAW_TX = 0x09,
-    CMD_SNIFF = 0x0A, CMD_STATUS = 0x0B, CMD_BENCH = 0x0C,
+    CMD_SNIFF = 0x0A, CMD_STATUS = 0x0B, CMD_BENCH = 0x0C, CMD_LED = 0x0D,
 };
 enum {
     MSG_INFO = 0x81, MSG_RESULT = 0x82, MSG_RX_MGMT = 0x84, MSG_RX_ETH = 0x85, MSG_LINK = 0x86,
@@ -54,6 +55,9 @@ static int64_t s_join_started;
 static atomic_bool s_assoc_seen;
 static atomic_uint s_rx_mgmt, s_rx_eth, s_tx_eth, s_tx_eth_failed, s_tx_raw, s_tx_raw_failed;
 static atomic_uint s_tx_acked, s_tx_unacked;   /* the driver's TX-done status */
+static atomic_uint s_rx_sniff;   /* frames RX_SNIFF carried: the LED's activity while sniffing */
+static atomic_int s_ap_stations;   /* stations whose port is open */
+static atomic_uint s_led_alarm;   /* a join that failed or a key refused: the LED's warning */
 static atomic_uint s_tx_eth_retried;   /* ETH_TX calls that found the driver's queue full */
 static atomic_int s_tx_eth_last_err;
 /* ETH_TX's own time in the driver: the handler maximum in STATUS covers every command type. */
@@ -96,6 +100,7 @@ static void promiscuous_rx(void *buffer, wifi_promiscuous_pkt_type_t type)
             const uint8_t head[5] = {packet->rx_ctrl.channel, (uint8_t)packet->rx_ctrl.rssi,
                                      packet->rx_ctrl.sig_mode, packet->rx_ctrl.rate,
                                      packet->rx_ctrl.mcs | (packet->rx_ctrl.cwb << 7)};
+            atomic_fetch_add(&s_rx_sniff, 1);
             wire_send(MSG_RX_SNIFF, head, sizeof(head), frame, length);
         }
         return;
@@ -249,6 +254,7 @@ static void install_hooks(void)
 static void go_idle(void)
 {
     atomic_store(&s_mode, MODE_IDLE);
+    atomic_store(&s_ap_stations, 0);
     atomic_store(&s_tx_handed_tail, atomic_load(&s_tx_handed_head));   /* a new link's frames only */
     esp_wifi_disconnect();
     esp_wifi_stop();
@@ -299,6 +305,7 @@ static esp_err_t sta_join(const uint8_t *p, size_t n)
 
 static void sta_link(bool up, uint16_t reason)
 {
+    if (!up && reason >= 0xfffe) atomic_fetch_add(&s_led_alarm, 1);
     uint8_t head[9] = {up};
     memcpy(head + 1, &reason, 2);
     memcpy(head + 3, s_sta_mac, 6);
@@ -374,6 +381,7 @@ static void ap_open_station(const uint8_t *mac)
     wire_log("ap station node %p flags %08lx", node, flags ? (unsigned long)*flags : 0UL);
     if (flags && (s_ap_flags & AP_FLAG_NO_QOS)) *flags &= ~2u;   /* plain data frames, as a Switch host sends */
     s_ap_pairwise = esp_wifi_set_ap_key_internal(WPA_ALG_CCMP, mac, 0, s_key, 16);
+    if (s_ap_pairwise) atomic_fetch_add(&s_led_alarm, 1);
     if (s_ap_pairwise) wire_log("ap pairwise key install failed %d", s_ap_pairwise);
     esp_wifi_wpa_ptk_init_done_internal((uint8_t *)mac);
 }
@@ -392,7 +400,7 @@ static void wifi_event(void *arg, esp_event_base_t base, int32_t id, void *data)
         esp_wifi_internal_reg_rxcb(WIFI_IF_AP, ethernet_rx);
         uint8_t head[9] = {1};
         memcpy(head + 3, s_peer, 6);
-        if (group) { head[0] = 0; wire_log("ap group key install failed %d", group); }
+        if (group) { head[0] = 0; atomic_fetch_add(&s_led_alarm, 1); wire_log("ap group key install failed %d", group); }
         wire_send(MSG_LINK, head, sizeof(head), NULL, 0);
     } else if (id == WIFI_EVENT_AP_STACONNECTED) {
         const wifi_event_ap_staconnected_t *event = data;
@@ -401,14 +409,36 @@ static void wifi_event(void *arg, esp_event_base_t base, int32_t id, void *data)
         head[6] = event->aid;
         head[7] = (uint8_t)s_ap_pairwise;
         head[8] = 1;
+        atomic_fetch_add(&s_ap_stations, 1);
         wire_send(MSG_STA_JOINED, head, sizeof(head), NULL, 0);
     } else if (id == WIFI_EVENT_AP_STADISCONNECTED) {
         const wifi_event_ap_stadisconnected_t *event = data;
         uint8_t head[8];
         memcpy(head, event->mac, 6);
         memcpy(head + 6, &event->reason, 2);
+        if (atomic_fetch_sub(&s_ap_stations, 1) <= 0) atomic_store(&s_ap_stations, 0);
         wire_send(MSG_STA_LEFT, head, sizeof(head), NULL, 0);
     }
+}
+
+/* ---- the LED ---- */
+
+/* The automatic look by mode: docs/hardware_esp32.md, The board's LED and buttons. */
+static void led_state(led_look_t *look, uint32_t *activity, uint32_t *alarm)
+{
+    switch (atomic_load(&s_mode)) {
+    case MODE_IDLE: *look = (led_look_t){LED_BREATHE, 50, 4000}; break;
+    case MODE_STA_JOINING: *look = (led_look_t){LED_BLINK, 255, 250}; break;
+    case MODE_AP:
+        if (atomic_load(&s_ap_stations) <= 0) { *look = (led_look_t){LED_BREATHE, 110, 1500}; break; }
+        __attribute__((fallthrough));   /* a seated console looks like a joined one */
+    case MODE_STA: *look = (led_look_t){LED_ON, 25, 0}; break;
+    case MODE_SNIFF: *look = (led_look_t){LED_OFF, 0, 0}; break;
+    }
+    *activity = atomic_load(&s_rx_eth) + atomic_load(&s_tx_acked) + atomic_load(&s_tx_unacked) +
+                atomic_load(&s_rx_sniff);
+    *alarm = atomic_load(&s_led_alarm) + wire_dropped() + wire_rx_bad() + wire_rx_fifo_ovf() +
+             wire_rx_buffer_full();
 }
 
 /* ---- host commands ---- */
@@ -568,6 +598,14 @@ static void command(uint8_t type, const uint8_t *p, size_t n)
         xTaskCreatePinnedToCore(bench_task, "bench", 3072, arg, 5, NULL, 0);
         break;
     }
+    case CMD_LED: {   /* u8 pattern, u8 peak, u16 period ms, u16 duration ms */
+        uint16_t period, duration;
+        if (n != 6) { result(type, ESP_ERR_INVALID_SIZE); break; }
+        memcpy(&period, p + 2, 2);
+        memcpy(&duration, p + 4, 2);
+        result(type, led_set(p[0], p[1], period, duration) ? 0 : ESP_ERR_INVALID_ARG);
+        break;
+    }
     default: result(type, ESP_ERR_NOT_SUPPORTED);
     }
 }
@@ -592,6 +630,7 @@ void app_main(void)
     esp_wifi_set_ps(WIFI_PS_NONE);
     start_sniffer();
     wire_start(command);
+    led_start(led_state);
     send_info();
 
     int64_t last_status = 0;
