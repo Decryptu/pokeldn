@@ -259,6 +259,42 @@ def _two_boards():
             radio.close()
 
 
+@pytest.mark.parametrize("console_scene, found", [(2321, 11), (2341, None)])
+def test_the_lets_go_host_finds_the_channel_a_console_searches_on(console_scene, found):
+    """`lgpe_host.py --channel auto` for the code Bulbasaur, Charmander, Bulbasaur (2321): a
+    console searching under it on channel 11 is found there; one under another code is not."""
+    import lgpe_host
+    from pokeldn.lgpe import COMM_ID_PIKACHU
+
+    async def main():
+        with _two_boards() as ((console_radio, host_radio), ports, console_board):
+            up = trio.Event()
+            result = []
+
+            async def console():
+                _radio.set(console_radio)
+                param = ldn.CreateNetworkParam(
+                    keys=KEYS, channel=11, local_communication_id=COMM_ID_PIKACHU,
+                    scene_id=console_scene, name=b"GURVAN", app_version=0)
+                async with ldn.create_network(param):
+                    up.set()
+                    while not result:
+                        await trio.sleep(0.05)
+
+            async def host():
+                _radio.set(host_radio)
+                await up.wait()
+                result.append(await lgpe_host.find_console_channel(KEYS, None, 2321, seconds=2))
+
+            with trio.fail_after(20):
+                async with trio.open_nursery() as nursery:
+                    nursery.start_soon(console)
+                    nursery.start_soon(host)
+            assert result == [found]
+
+    trio.run(main)
+
+
 def _udp_frame(target: bytes, source: bytes, payload: bytes) -> bytes:
     ip = struct.pack(">BBHHHBBH4s4s", 0x45, 0, 28 + len(payload), 0, 0, 64, 17, 0,
                      bytes([169, 254, 1, 2]), bytes([169, 254, 1, 1]))

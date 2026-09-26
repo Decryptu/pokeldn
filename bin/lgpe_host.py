@@ -133,22 +133,24 @@ def build_parser():
     return ap
 
 
-def console_channel(keys_path, phy, scene, seconds, channels=(1, 6, 11), dwell=0.5):
+async def find_console_channel(keys, phy, scene, seconds, channels=(1, 6, 11), dwell=0.5):
     """The channel of a searching console's own network under `scene`, or None within `seconds`.
     A searching console joins only a host on its own channel (docs/lgpe_session.md, The link code)."""
     import trio
     import ldn
-    keys = ldn.load_keys(keys_path)
+    deadline = trio.current_time() + seconds
+    while trio.current_time() < deadline:
+        for net in await ldn.scan(keys, phyname=phy, channels=list(channels), dwell_time=dwell):
+            if net.local_communication_id == COMM_ID_PIKACHU and net.scene_id == scene:
+                print(f"[lgh] the console searches on channel {net.channel} ({net.address})")
+                return net.channel
+    return None
 
-    async def find():
-        deadline = trio.current_time() + seconds
-        while trio.current_time() < deadline:
-            for net in await ldn.scan(keys, phyname=phy, channels=list(channels), dwell_time=dwell):
-                if net.local_communication_id == COMM_ID_PIKACHU and net.scene_id == scene:
-                    print(f"[lgh] the console searches on channel {net.channel} ({net.address})")
-                    return net.channel
-        return None
-    return trio.run(find)
+
+def console_channel(keys_path, phy, scene, seconds):
+    import trio
+    import ldn
+    return trio.run(find_console_channel, ldn.load_keys(keys_path), phy, scene, seconds)
 
 
 def main(argv=None):
