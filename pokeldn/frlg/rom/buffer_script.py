@@ -2120,6 +2120,7 @@ RESIDENT_HOOKS = {
                              "overlay": 0x0203FF98}),
     "ivs": ("ivs_hook", {"mon": 0x02024280, "words": 0x0203FF80, "overlay": 0x0203FF80,
                          "overlay2": 0x0203FF84}),
+    "noencounter": ("noencounter_hook", {"flag": 0x020386D8}),
 }
 # The data a hook keeps past its code, by parameter, and its size in bytes.
 RESIDENT_DATA = {"p_frames": 20, "p_ring": 140, "p_state": 36, "p_words": 12}

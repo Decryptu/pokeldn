@@ -1572,6 +1572,15 @@ five-bit IVs HP lowest [pokemon.c:3250]; `GetBoxMonData` decrypts the Pokemon in
 it again [pokemon.c:2992, 3327], so the call is made only in an idle overworld frame. On the emulator
 both rows matched the lead decrypted from `gPlayerParty` (`0x02024280`) for two different leads.
 
+`noencounter` (`asm/resident/noencounter.s`) stores 1 every frame into `sWildEncountersDisabled`
+(`0x020386D8`), the byte `StandardWildEncounter` (`0x08086528`) tests first and returns `FALSE` on
+[wild_encounter.c:360]; `DisableWildEncounters` (`0x08085FAC`) is its only other writer. Grass, water
+and roamer encounters stop; fishing and Sweet Scent take their own paths. On the emulator no wild
+Pokemon appeared in grass, and encounters came back after a soft reset.
+
+One hook is resident at a time: each install replaces the last, and all of them share the 1 KB at
+`0x0203FC00`.
+
 ### `call-chain`
 
 Up to sixteen steps in order in a single frame, one answer word per step. Every question about the
