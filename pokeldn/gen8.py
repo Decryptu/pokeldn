@@ -27,6 +27,7 @@ one); `sw84_read.py` reintroduced the same inversion independently and called si
 verifying checksums self-proving while reporting an empty slot that held a Dragonite. What catches
 a wrong order is reading fields and seeing whether a Pokemon comes out.
 """
+import os
 import struct
 
 HEADER_SIZE = 8
@@ -260,6 +261,18 @@ def read(plain):
         fields["level"] = plain[OFF_STAT_LEVEL]
         fields["stats"] = dict(zip(STAT_NAMES, struct.unpack_from("<6H", plain, OFF_STATS)))
     return fields
+
+
+def fresh_identity(plain, rand=os.urandom):
+    """-> the decrypted record under a new encryption constant and PID. The PID keeps `hi ^ lo`, so
+    the shiny xor against the same trainer, and with it the shiny state, carries over. The layout
+    is shared by PB8, PK8, PK9 and Z-A's record; the checksum is `encrypt`'s to rewrite."""
+    out = bytearray(plain)
+    pid = struct.unpack_from("<I", out, OFF_PID)[0]
+    high = int.from_bytes(rand(2), "little")
+    struct.pack_into("<I", out, OFF_PID, (high << 16) | (high ^ (pid >> 16) ^ (pid & 0xFFFF)))
+    struct.pack_into("<I", out, 0, int.from_bytes(rand(4), "little"))
+    return bytes(out)
 
 
 def write(plain, **fields):

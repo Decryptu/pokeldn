@@ -82,3 +82,9 @@ def build_from(template_raw, **fields):
     decrypted) works as it comes; the party tail is dropped, since a BDSP trade sends the stored form.
     """
     return encrypt(gen8.write(gen8.load(template_raw)[:SIZE_STORED], **fields))
+
+
+def fresh(raw):
+    """-> the encrypted PB8 under a new PID and encryption constant, shiny state kept, for a save
+    that already holds this one (`gen8.fresh_identity`)."""
+    return encrypt(gen8.fresh_identity(gen8.load(raw)[:SIZE_STORED]))

@@ -60,6 +60,9 @@ def build_parser():
     ap.add_argument("--state", type=int, default=room.STATE_NONE,
                     help="the OnlineState we report when asked; 4 raises the trade bubble")
     ap.add_argument("--recruiting", type=int, default=0)
+    ap.add_argument("--fresh-pid", action="store_true",
+                    help="offer it under a new PID and encryption constant, shiny state kept, so a "
+                         "save that took it before takes it again")
     ap.add_argument("--offer", metavar="PB8",
                     help="the Pokemon we trade: a complete, legal, encrypted 328-byte PB8 whose PID "
                          "the console's save does not already hold")
@@ -113,8 +116,11 @@ def main(argv=None):
     offer = None
     if args.offer:
         offer = pathlib.Path(args.offer).read_bytes()[:0x148]
+        if args.fresh_pid:
+            offer = pokemon.fresh(offer)
         o = pokemon.read(offer)
-        print(f"[bh] offering species {o['species']} {o['nickname']!r} OT {o['ot_name']!r}")
+        print(f"[bh] offering species {o['species']} {o['nickname']!r} OT {o['ot_name']!r} "
+              f"pid {o['pid']:08x}")
     if args.complete_trade:
         print("[bh] *** --complete-trade: the console WRITES ITS SAVE and the Pokemon the player "
               "picks LEAVES THEIR BOX ***")

@@ -26,7 +26,6 @@ offer: species 50 at level 3, nickname `Taupiqueur`, trainer `Gurvan`, handler `
 is a record reading as a Pokemon: both do (`pokeldn/gen8.py`, the warning at the top).
 """
 
-import os
 import struct
 
 from pokeldn import gen8
@@ -448,13 +447,7 @@ def shiny_pid(trainer_id, secret_id, high=0x0000):
     return (high << 16) | (trainer_id ^ secret_id ^ high)
 
 
-def fresh_identity(plain, rand=os.urandom):
-    """-> the record under a new encryption constant and PID. The PID keeps `hi ^ lo`, so the shiny
-    xor against the same trainer, and with it the shiny state, carries over."""
-    pid = struct.unpack_from("<I", plain, OFF_PID)[0]
-    high = int.from_bytes(rand(2), "little")
-    return write(plain, pid=(high << 16) | (high ^ (pid >> 16) ^ (pid & 0xFFFF)),
-                 encryption_constant=int.from_bytes(rand(4), "little"))
+fresh_identity = gen8.fresh_identity
 
 
 def describe(plain):

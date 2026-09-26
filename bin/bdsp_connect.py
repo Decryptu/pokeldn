@@ -154,9 +154,11 @@ async def main_async(args):
                                        ("ot_name", args.trade_ot)) if v is not None}
             st["our_poke"] = pokemon.build_from(
                 pathlib.Path(args.trade_template).read_bytes(), **edits)
+            if args.fresh_pid:
+                st["our_poke"] = pokemon.fresh(st["our_poke"])
             offered = pokemon.read(st["our_poke"])
             print(f"[cx] offering species {offered['species']}, {offered['nickname']!r}, "
-                  f"OT {offered['ot_name']!r}, IVs {offered['ivs']}")
+                  f"OT {offered['ot_name']!r}, IVs {offered['ivs']}, pid {offered['pid']:08x}")
 
         # --answer-with files are read now: a missing file must fail here, not while the console
         # waits on us.
@@ -1669,6 +1671,9 @@ def build_parser():
                     help="seconds between repeats of our security-phase state. The console's "
                          "WAIT_READYOK only ends when a message ARRIVES inside it, and it enters "
                          "that state on its own countdown, so the answer has to keep coming")
+    ap.add_argument("--fresh-pid", action="store_true",
+                    help="offer it under a new PID and encryption constant, shiny state kept, so a "
+                         "save that took it before takes it again")
     ap.add_argument("--trade-template", metavar="FILE",
                     help="a PB8 to offer (328 or 344 bytes, encrypted or PKHeX's decrypted export), edited by --trade-nickname and --trade-ot. 328 "
                          "bytes hold much more than this project has identified, so what we send "

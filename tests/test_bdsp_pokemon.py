@@ -105,6 +105,19 @@ def test_building_from_a_template_changes_only_what_was_asked_for():
         pokemon.build_from(template, sparkly=1)
 
 
+def test_a_fresh_pb8_moves_only_its_pid_and_constant():
+    """`--fresh-pid`: under the new constant every byte but the two ids and the checksum decodes back
+    to the template's, and the shiny xor against the same trainer is unchanged."""
+    template = pokemon.encrypt(a_body())
+    made = pokemon.fresh(template)
+    before, after = pokemon.decrypt(template), pokemon.decrypt(made)
+    changed = [i for i in range(len(before)) if before[i] != after[i]]
+    assert set(changed) <= {0, 1, 2, 3, 6, 7, 0x1C, 0x1D, 0x1E, 0x1F}
+    assert after[:4] != before[:4] and after[0x1C:0x20] != before[0x1C:0x20]
+    shiny = lambda r: r["trainer_id"] ^ r["secret_id"] ^ (r["pid"] >> 16) ^ (r["pid"] & 0xFFFF)
+    assert shiny(pokemon.read(made)) == shiny(pokemon.read(template))
+
+
 def test_a_nickname_sets_the_flag_that_makes_the_console_draw_it():
     """A run's whole visible edit was lost to this: the name field is only shown when IV32 bit 31 is
     set, and a PB8 always carries a name string, so a nickname with the flag clear is invisible."""
