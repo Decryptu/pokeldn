@@ -831,6 +831,10 @@ is chosen through the table at `0x02067650`, which maps the game's language to a
 A delivered Pokemon carried the string from `0x030` as its displayed name and the string from `0x12C`
 as its original trainer.
 
+The Pokémon builder `0x010b6110` receives a fixed length of 0x2D0 at each of its three direct call
+sites (`0x00fe3a50`, `0x00fe4b60`, `0x01015a0c`). Ribbon bytes in the record are passed to
+`0x00775d50`; indices above 127 leave its ribbon bitfield unchanged.
+
 The Pokemon itself follows:
 
 | record offset | size | field |
@@ -962,29 +966,27 @@ and title index 1 was listed as "Oeuf de Pokemon" and an egg went to the party.
 
 A kind-2 record built here needs only the kind at `+0x11`, the item id at `+0x20` and the quantity
 at `+0x22`: `01 00 03 00` with title index 3 was listed as "Master Ball" and put three in the bag.
-The pairs repeat every four bytes, one received line per pair. An id above the item table (1607
-entries in 1.3.2) is listed with an empty name and stored as its low 15 bits, and every screen that
-draws its bag row aborts the game (error 2162-0001, the table row getter `0x00787ec0`). Never serve
-an item id above 1607, and never one whose name in `bin/message/<lang>/common/itemname.dat` starts
-with `★` (dummy entries, 1279 to 1578 among them).
+The pairs repeat every four bytes, one received line per pair. The item table has 1607 entries in
+1.3.2. Entries whose name in `bin/message/<lang>/common/itemname.dat` starts with `★` are dummy
+entries (1279 to 1578 among them).
+
+The parser copies exactly six item-id and quantity pairs from record `+0x20..+0x37` into the card
+header `+0x30..+0x47` (`0x010b6024..0x010b6080`). The redemption handler calls `Bag::AddItem` for
+each pair whose quantity is nonzero (`0x01015d00..0x01015dd0`).
+
+The kind-4 clothing handler passes up to twelve category and index pairs to `0x0143a450`
+(`0x01015eb0..0x010160a8`). That setter accepts categories 0..14 and indices 0..1023 before
+writing one bit in the clothing block. Kinds 3 and 5 add to scalar counters
+(`0x01015e00..0x01015eac`, `0x010160b0..0x01016144`).
 
 `Bag::AddItem` (`0x01420790`, arguments bag, id, count, new-flag)
 takes the pocket from item field 14 (`0x00788c50(id, 14)`, record byte `+0x11 & 0xF`; 0 Medicine,
 1 Balls, 2 Battle, 3 Berries, 4 Items, 5 TMs, 6 Treasures, 7 Ingredients, 8 Key, with 60, 30, 20,
-80, 550, 210, 100, 100 and 64 slots at `bag+0x1358` onward; an id above 1607 gets 0, Medicine),
+80, 550, 210, 100, 100 and 64 slots at `bag+0x1358` onward),
 finds the slot holding the id or the first empty one, and writes `id | min(count + n, 999) << 15`;
 a slot whose count is already 999 refuses. One u32 per slot: id in bits 0-14, count in bits 15-29,
 bit 30 the new-item flag. The save block is registered by `0x0141fae0`, key `0x1177C2C4`, `0x12F8`
 bytes.
-
-No action in the game removes a row whose id is above 1607. `Bag::RemoveItem` (`0x01420ba0`) is the
-only writer that lowers a count, and each of its callers takes the id from a literal, a script
-table, or a row the player selected on a drawn list, and drawing the row aborts. Using up a kind
-above the row moves it up one place; the name sort (`0x01421f80`) survives and puts it last; the
-category sort (`0x01423690`) and the battle bag abort. A save edit clears it:
-`tools/switch/swsh_save.py MAIN --drop-invalid-items --write OUT` removes every slot above 1607,
-packs its pocket and reseals the file. An emulated Shield loaded the result, scrolled the Medicine
-pocket to its end and sorted it by category.
 
 ## The card's date
 
