@@ -87,6 +87,30 @@ def test_the_record_round_trips_through_an_offer():
     assert info["ot_name"] == "Player"
 
 
+@pytest.mark.parametrize("pid", [0x12345678, 0xE5BBDF65 ^ 0x0000FFFF])
+def test_a_fresh_offer_changes_the_identity_and_nothing_else(pid):
+    """New PID and constant, the same Pokemon: a stale shuffle would garble the species and names,
+    a lost `hi ^ lo` would change the shiny state against the same trainer."""
+    from pokeldn.sv import pokemon as svp
+    from pokeldn.za import pokemon as zp
+
+    plain = bytearray(svp.build(species=716, trainer_id=57189, secret_id=58811, pid=pid,
+                                encryption_constant=0x9C96AA87))
+    plain[zp.OFF_NICKNAME:zp.OFF_NICKNAME + 12] = "PKHOST".encode("utf-16-le")
+    offer = zp.build_offer(bytes.fromhex("0101b90300bc815801"), bytes(plain), b"\x01")
+    fresh = zp.fresh_offer(offer)
+    header, back, trailer = zp.parse_offer(fresh)
+    before, after = svp.read(bytes(plain)), svp.read(back)
+    assert (header, trailer) == (offer[:9], b"\x01")
+    assert after["pid"] != before["pid"]
+    assert after["encryption_constant"] != before["encryption_constant"]
+    assert svp.shiny_xor(after) == svp.shiny_xor(before)
+    for key in ("species", "nickname", "ot_name"):
+        assert zp.read(back)[key] == zp.read(bytes(plain))[key]
+    restored = svp.write(back, pid=before["pid"], encryption_constant=before["encryption_constant"])
+    assert restored[:6] + restored[8:] == bytes(plain[:6] + plain[8:])     # all but the checksum
+
+
 def test_the_offer_framing_is_the_measured_one():
     from pokeldn.za import pokemon as zp
 

@@ -73,3 +73,11 @@ def build_offer(header, plain, trailer=b"\x00"):
     if len(plain) != SIZE_PARTY:
         raise ValueError(f"a party record is {SIZE_PARTY} bytes, not {len(plain)}")
     return bytes(header) + encrypt(plain) + bytes(trailer)
+
+
+def fresh_offer(offer, rand=None):
+    """-> the offer with its record under a new encryption constant and PID, shiny state kept. A
+    save that already holds that PID and constant takes the Pokemon as a duplicate."""
+    header, plain, trailer = parse_offer(offer)
+    plain = _sv.fresh_identity(plain, **({"rand": rand} if rand else {}))
+    return build_offer(header, plain, trailer)

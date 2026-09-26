@@ -148,6 +148,10 @@ class GameStreams:
         self.offer = self.preview = None
         if args.trade_offer:
             record = open(args.trade_offer, "rb").read()
+            if getattr(args, "fresh_pid", False):
+                record = za.pokemon.fresh_offer(record)
+                plain = za.pokemon.parse_offer(record)[1]
+                print(f"[za] offering pid {plain[0x1C:0x20][::-1].hex()} ec {plain[:4][::-1].hex()}")
             self.preview = record[:-1] + bytes([OFFER_PREVIEW])
             self.offer = record[:-1] + bytes([OFFER_PICK])
         self.seen = {}
@@ -338,6 +342,9 @@ def build_parser():
                          "identity, the selection record and, with --trade-offer, an offer")
     ap.add_argument("--game-dir", default="scratchpad",
                     help="where the reference payloads za_ref_*.bin live")
+    ap.add_argument("--fresh-pid", action="store_true",
+                    help="send the offer under a new PID and encryption constant, shiny state kept, "
+                         "so a save that took this record before takes it again")
     ap.add_argument("--trade-offer", default=None,
                     help="a 354-byte offer message to send once the streams are open")
     ap.add_argument("--selection-delay", type=float, default=0.5,

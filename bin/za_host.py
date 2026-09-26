@@ -46,6 +46,9 @@ def build_parser():
                          "za_ref_identity11b.bin and za_ref_selection.bin live")
     ap.add_argument("--trade-offer", default=None,
                     help="the 354-byte offer message: the preview, then our pick")
+    ap.add_argument("--fresh-pid", action="store_true",
+                    help="send the offer under a new PID and encryption constant, shiny state kept, "
+                         "so a save that took this record before takes it again")
     ap.add_argument("--offer-at", type=float, default=None,
                     help="make our pick this many seconds after the preview, without waiting for "
                          "the console's; the default answers the console's pick")
@@ -79,8 +82,11 @@ def load_payloads(args):
         if len(offer) != za.pokemon.OFFER_SIZE:
             raise SystemExit(f"--trade-offer is {len(offer)} bytes, an offer is "
                              f"{za.pokemon.OFFER_SIZE}")
+        if args.fresh_pid:
+            offer = za.pokemon.fresh_offer(offer)
         _hdr, plain, _tr = za.pokemon.parse_offer(offer)
-        print(f"[za-host] offering {za.pokemon.read(plain)}")
+        print(f"[za-host] offering {za.pokemon.read(plain)}, pid {plain[0x1C:0x20][::-1].hex()} "
+              f"ec {plain[:4][::-1].hex()}")
     return identity, tail, selection, offer
 
 
