@@ -183,7 +183,7 @@ def test_the_completed_trade_sends_the_pokemon_we_built_back_to_us():
     assert plain[0xB0:0xBE].decode("utf-16le") == "POKELDN"
 
 
-def test_a_run_that_ends_mid_trade_says_so(capsys):
+def test_a_run_that_ends_mid_trade_says_so(capsys, monkeypatch):
     """A run that stops after the peer has offered leaves it mid-exchange, which a console answers
     by refusing the next trade for about half an hour. Reading a run's end as one's own doing rather
     than checking why it ended is what made that cost a lockout."""
@@ -205,6 +205,15 @@ def test_a_run_that_ends_mid_trade_says_so(capsys):
     mod.TRADE_IN_PROGRESS["commit"] = True
     mod._warn_if_mid_trade()
     assert "after the commit" in capsys.readouterr().out
+
+    # the console's kind 4 ends the trade: once, whatever copies follow, and the exit is clean
+    import pokeldn.lgpe.trade as trade_mod
+    done = []
+    monkeypatch.setattr(trade_mod, "show_done", lambda: done.append(1))
+    assert mod._note_result() and not mod._note_result()
+    assert done == [1]
+    mod._warn_if_mid_trade()
+    assert "MID-TRADE" not in capsys.readouterr().out
 
 
 def test_a_fresh_offer_moves_only_its_pid_and_constant(message, tmp_path):

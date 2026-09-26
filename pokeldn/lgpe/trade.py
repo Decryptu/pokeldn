@@ -1,7 +1,7 @@
 """The trade above the reliable protocol, the same for a joiner and a host: the answer owed to a
 peer's offer and to its commit, under this station's own step counter (docs/lgpe_session.md, "The
 game's messages on the reliable protocol")."""
-from pokeldn.ldn import reliable3
+from pokeldn.ldn import reliable3, show_done
 from pokeldn.lgpe import pb7
 
 # set once the peer has offered: a run that ends abnormally after this point has left a trade half
@@ -42,6 +42,17 @@ def _send_step(state, send, kind, body):
     state["step"] = step = state.get("step", 1) + 1
     send(state["window"].send(pb7.build_message(kind, body, step=step)), reliable3.PROTOCOL)
     return step
+
+
+def _note_result(tag="[lg]"):
+    """The peer's kind 4: the trade has gone through on its side. The first copy after a commit
+    ends the trade; a republished copy changes nothing."""
+    if not TRADE_IN_PROGRESS["commit"]:
+        return False
+    TRADE_IN_PROGRESS["offer"] = TRADE_IN_PROGRESS["commit"] = False
+    show_done()
+    print(f"{tag} game: *** THE RESULT *** the trade has gone through on the console")
+    return True
 
 
 def _answer_commit(args, state, msg, send, tag="[lg]"):

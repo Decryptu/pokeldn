@@ -48,7 +48,7 @@ from pokeldn.lgpe import pb7
 from pokeldn.lgpe.leave import Leaver
 from pokeldn.lgpe.trade import fresh_offer
 from pokeldn.lgpe.trade import (TRADE_IN_PROGRESS, _answer_commit, _answer_offer,  # noqa: F401
-                                _send_step, _warn_if_mid_trade)
+                                _note_result, _send_step, _warn_if_mid_trade)
 
 
 def _survive_netlink_overflow():
@@ -805,6 +805,8 @@ def _run(args, net, keys, facts, opener):
                                         elif msg and msg["kind"] == pb7.COMMIT_MESSAGE:
                                             _answer_commit(args, state, msg,
                                                            to_host_bitmap)
+                                        elif msg and msg["kind"] == pb7.RESULT_MESSAGE:
+                                            _note_result()
                                     else:
                                         print(f"[lg] reliable: acked, expects "
                                               f"{r['expected']:#x}")

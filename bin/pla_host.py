@@ -29,7 +29,7 @@ sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
 from pokeldn import config
 from pokeldn import gen8, pla
-from pokeldn.ldn import pia6, pia_connect, reliable5, rtt_protocol
+from pokeldn.ldn import pia6, pia_connect, reliable5, rtt_protocol, show_done
 from pokeldn.pla import channel_table, data_exchange, game_channel, trade_box
 from pokeldn.pla import pokemon as pla_pokemon
 from pokeldn.ldn.ldn_mitm_host import IpHostTransport
@@ -680,6 +680,13 @@ def main():
                                     for ckey, opened in channel_table.parse(cm["payload"]):
                                         print(f"[pla] <- {src_ip}: channel {ckey.hex()} "
                                               f"{'open' if opened else 'closed'}")
+                                        # the phase key closes once the trade is written (docs/pla.md)
+                                        if (not opened and ckey == trade_box.PHASE_KEY
+                                                and (src_ip, "traded") not in box_sent):
+                                            box_sent.add((src_ip, "traded"))
+                                            show_done()
+                                            print(f"[pla] {src_ip}: trade complete, the phase key "
+                                                  "closed")
                                         if not opened or (src_ip, ckey) in channel_announced:
                                             continue
                                         channel_announced.add((src_ip, ckey))
