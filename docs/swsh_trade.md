@@ -410,6 +410,11 @@ identity rewrite runs first and the offer flags do not touch the trainer ids.
 encryption constant, and keeps every byte no flag names. The 0x158 party form carries ribbons,
 memories, met data and handler records that nothing here reads.
 
+A retail Sword takes a record its save already holds: the same Gengar, under the same PID and
+encryption constant, traded into one save four times from `bin/swsh_host.py`. The Sword launchers
+have no `--fresh-pid`; Brilliant Diamond flags a duplicate of a record its save holds as illegal
+([the BDSP trade page](bdsp_trade.md)).
+
     --offer-slot 1 --offer-nickname PKCAMP --offer-ivs 31,31,31,31,31,31
 
 | flag | effect |
