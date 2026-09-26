@@ -977,6 +977,15 @@ a slot whose count is already 999 refuses. One u32 per slot: id in bits 0-14, co
 bit 30 the new-item flag. The save block is registered by `0x0141fae0`, key `0x1177C2C4`, `0x12F8`
 bytes.
 
+No action in the game removes a row whose id is above 1607. `Bag::RemoveItem` (`0x01420ba0`) is the
+only writer that lowers a count, and each of its callers takes the id from a literal, a script
+table, or a row the player selected on a drawn list, and drawing the row aborts. Using up a kind
+above the row moves it up one place; the name sort (`0x01421f80`) survives and puts it last; the
+category sort (`0x01423690`) and the battle bag abort. A save edit clears it:
+`tools/switch/swsh_save.py MAIN --drop-invalid-items --write OUT` removes every slot above 1607,
+packs its pocket and reseals the file. An emulated Shield loaded the result, scrolled the Medicine
+pocket to its end and sorted it by category.
+
 ## The card's date
 
 The album shows a date for every card. It is the first eight bytes of the record, a little-endian

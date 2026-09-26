@@ -2,10 +2,13 @@
 """Read a Sword/Shield save (`main`) into its blocks: the xorpad and per-block XorShift PKHeX's
 SwishCrypto/SCBlock describe. Keys are PKHeX's SaveBlockAccessor8SWSH names where known.
 Usage: swsh_save.py <main> [--key HEX] [--out FILE] [--grep HEX] [--patch KEY OFF HEX --write OUT]
+                    [--drop-invalid-items --write OUT]
     no flag     every block: key, type, size, and whether the file's SHA-256 checks
     --key       hexdump that block (or --out FILE to write it)
     --grep      the blocks and offsets holding those bytes
-    --patch     write HEX over that block at OFF, in place, and reseal the hash into OUT"""
+    --patch     write HEX over that block at OFF, in place, and reseal the hash into OUT
+    --drop-invalid-items  remove every bag slot whose item id is past the table (1607), close the
+                gap in its pocket, and reseal into OUT (docs/swsh_gift.md, A card delivered to a retail console)"""
 import struct, sys, hashlib
 
 INTRO = bytes.fromhex("9EC99CD70ED33C44FB9303DCEB39B42A1947E9634BA2334416BF82A2BA6355B6"
@@ -107,6 +110,24 @@ def encrypt(blocks):
     return bytes(body) + file_hash(bytes(body))
 
 
+MY_ITEM = 0x1177c2c4
+# Bag constructor 0x0141fe40: nine u32 pockets back to back in MyItem, in this order.
+POCKETS = [("Medicine", 60), ("Balls", 30), ("Battle", 20), ("Berries", 80), ("Items", 550),
+           ("TMs", 210), ("Treasures", 100), ("Ingredients", 100), ("Key", 64)]
+LAST_ITEM = 1607          # 0x00788c50 answers pocket 0 above it; the row getter 0x00787ec0 aborts
+
+
+def drop_invalid_items(block):
+    """-> (MyItem with every slot whose id > LAST_ITEM removed, its pocket packed, [(pocket, word)])."""
+    out, dropped, at = bytearray(), [], 0
+    for name, n in POCKETS:
+        words = struct.unpack_from(f"<{n}I", block, at); at += 4 * n
+        keep = [w for w in words if (w & 0x7FFF) <= LAST_ITEM]
+        dropped += [(name, w) for w in words if (w & 0x7FFF) > LAST_ITEM]
+        out += struct.pack(f"<{n}I", *keep, *[0] * (n - len(keep)))
+    return bytes(out + block[at:]), dropped
+
+
 def patch(data, key, at, new):
     """-> the file with `new` written over block `key` at `at`, the two XOR layers kept, resealed."""
     where = {}
@@ -127,7 +148,14 @@ if __name__ == "__main__":
     raw = open(args[0], "rb").read()
     blocks = decrypt(raw)
     by_key = {b[0]: b for b in blocks}
-    if "--patch" in args:
+    if "--drop-invalid-items" in args:
+        fixed, dropped = drop_invalid_items(by_key[MY_ITEM][3])
+        for name, w in dropped:
+            print(f"{name}: item {w & 0x7FFF} x{(w >> 15) & 0x7FFF} removed")
+        out = patch(raw, MY_ITEM, 0, fixed)
+        open(args[args.index("--write") + 1], "wb").write(out)
+        print(len(dropped), "slots removed; hash", "ok" if hash_ok(out) else "BAD")
+    elif "--patch" in args:
         i = args.index("--patch")
         key, at, new = int(args[i + 1], 16), int(args[i + 2], 0), bytes.fromhex(args[i + 3])
         out = patch(raw, key, at, new)
