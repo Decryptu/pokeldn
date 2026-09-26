@@ -29,7 +29,8 @@ def test_a_patch_changes_only_the_bytes_named_and_reseals():
 
 
 def test_the_shield_save_on_the_share_decrypts_when_present():
-    path = ("scratchpad/hgfs/Switch/save_backups/POST_245_20260919_102440/0000000000000001/0/main")
+    path = os.path.expanduser("~/Documents/Switch/save_backups/POST_245_20260919_102440/"
+                              "0000000000000001/0/main")
     if not os.path.exists(path):
         return
     raw = open(path, "rb").read()
