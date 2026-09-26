@@ -212,6 +212,28 @@ acknowledged, 1.6 ms average from ETH_TX to TX-done, 10.7 ms at most. Under a fl
 which at 1 Mbit/s takes about 96% of the air: 1227 of 1227, 26.8 ms average, 218 ms at most, and the
 station received 794 of the flood.
 
+Four FireRed trades hosted as an access point, the same line with the channel changed; the console
+acknowledged every frame in all four. Wait is ETH_TX to TX-done; retries are the share of data
+frames the sniffer saw with the retry bit, from the access point and from the console.
+
+| channel | frames | wait median | wait p99 | wait max | holds over 100 ms | retries AP / console |
+|---|---|---|---|---|---|---|
+| 1 | 7489 | 1.24 ms | 116 ms | 261 ms | 5 | 13.3% / 12.8% |
+| 6 | 13670 | 0.85 ms | 18 ms | 108 ms | 1 | 10.5% / 7.7% |
+| 11 | 7069 | 0.86 ms | 9 ms | 46 ms | 0 | 15.0% / 5.7% |
+| 1 | 7332 | 1.03 ms | 25 ms | 88 ms | 0 | 20.6% / 9.4% |
+
+Host to board adds 0.12 to 0.47 ms median (socket to ETH_TX written) and 3.1 to 3.4 ms (ETH_TX to
+the board). Every wait over 100 ms is head-of-line: one frame the console has not acknowledged
+holds for 108 to 261 ms, the frames queued behind it then complete in a burst (up to 10 within
+5 ms), and the access point's own action frames keep going meanwhile. The sniffer saw one to three
+copies of such a head frame, retries at 54 or 48 Mbit/s. The channel does not decide it (channel 1
+held five times, then none), nor does the retry share. A foreign station associating for 4 s every
+20 to 25 s coincided with none of the 81 frames over 100 ms. What makes the console leave a frame
+unacknowledged for 100 ms or more is unknown. TX-dones complete out of order and the board's
+receive times can swap two frames written 0.1 ms apart; `tools/ldn/esp32_hold.py CAPTURE TRACE`
+pairs them by length and splits these stages.
+
 Three traps in measuring this. A sniffer board's line backs up in a burst like any board's, so a
 frame it reports reached the host up to a second after it was on the air; run it at 1500000
 (`POKELDN_ESP32_BAUD`) and time delivery by the peer's acknowledgements, not by the sniffer. BENCH

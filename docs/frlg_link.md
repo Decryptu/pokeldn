@@ -406,6 +406,11 @@ to mirror in 0 of 494 blocks. A run is a trap set rather than a search:
 `scratchpad/legacy_linux/txpath_trace.bt` partitions the path into g_tap (the tap ring), g_py (inside Python) and
 g_mon (mac80211/rtw88), and `scratchpad/txpath.py` names the growing gauge at a hold.
 
+The measurements above are the Linux card's. On the ESP32 board a FireRed trade's longest wait
+between the socket and the peer's acknowledgement over four trades was 265 ms, all of it in the board's transmit
+queue behind one unacknowledged frame, and every trade completed
+([ESP32 radio](hardware_esp32.md), TX_DONE).
+
 That long run also retired a generalisation: the acknowledgement-lag *size* does grow with run length
 (the worst inbound gap went 44 ms to 90 ms, with the three worst gaps in the last eight seconds), two
 orders of magnitude below what a hold means.
