@@ -96,3 +96,26 @@ def test_two_records_are_five_fragments():
     blobs = beacon.build_message(wc8.build() + wc8.build(card_id=2))
     assert len(blobs) == 5
     assert len(beacon.reassemble(blobs)) == 2 * 0x2D0
+
+
+SWORD_IMAGE = "scratchpad/swsh/main.bin"
+
+
+@pytest.mark.skipif(not __import__("os").path.exists(SWORD_IMAGE),
+                    reason="needs Sword's extracted main NSO")
+def test_the_host_sends_only_what_the_games_own_validator_accepts(tmp_path, monkeypatch, capsys):
+    """The game's validator 0x010b5de0 runs under unicorn: a built card passes, one flipped byte
+    returns the checksum error, and the host then refuses before it writes or sends anything."""
+    import swsh_gift_host
+    rec = wc8.pokemon_card(25, level=25, nickname="PKCAMP", ot="POKELDN")
+    assert swsh_gift_host.validate(rec, SWORD_IMAGE) == 0
+    bad = bytearray(rec)
+    bad[0x10] ^= 1
+    assert swsh_gift_host.validate(bytes(bad), SWORD_IMAGE) == 0x80000001
+
+    (tmp_path / "bad.bin").write_bytes(bad)
+    out = tmp_path / "out.bin"
+    monkeypatch.setattr("sys.argv", ["swsh_gift_host.py", "--record", str(tmp_path / "bad.bin"),
+                                     "--image", SWORD_IMAGE, "--dump", str(out)])
+    assert swsh_gift_host.main() == 1
+    assert not out.exists()
