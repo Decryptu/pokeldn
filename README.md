@@ -50,7 +50,8 @@ FireRed / LeafGreen
 
 Let's Go Pikachu / Eevee
 
-- Trading in both directions; a box structure built here goes into the console's save as sent
+- Trading in both directions under any link code, with Let's Go Pikachu or Eevee; a box structure
+  built here goes into the console's save as sent
 
 Sword / Shield
 
@@ -71,20 +72,22 @@ Brilliant Diamond / Shining Pearl
 
 Legends Arceus
 
-- Trading into the console's save, hosting the session the console joins
+- Trading in both directions under any link code: hosting the session the console joins, and
+  joining its search, which hands the host role over
 - Any Pokémon the game has, composed from nothing: species, level, nature, ability, moves and their
   PP, mastered moves, alpha, shininess, nickname, individual and growth values, size, ball and met
   data, all from the game's own tables, and the stats the game itself would compute
 
 Scarlet / Violet
 
-- Trading in both directions: hosting the session the console joins, and joining the one it hosts
+- Trading in both directions with Scarlet or Violet: hosting the session the console joins, and
+  joining the one it hosts, with or without a Link Code
 - A party record composed from nothing goes into the console's save as sent
 
 Legends Z-A
 
-- Trading in both directions: joining the session the console hosts on its Link Trade search, and
-  hosting the session the console joins
+- Trading in both directions under any link code: joining the session the console hosts on its
+  Link Trade search, and hosting the session the console joins
 - A record composed from nothing goes into the console's save; the game computes the level, the
   stats and the current HP itself
 
