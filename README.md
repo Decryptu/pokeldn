@@ -58,6 +58,8 @@ Sword / Shield
   `.pk8` goes into the console's game
 - Mystery Gift: Wonder Cards built from the command line or served from a published `.wc8`
   (Pokémon, eggs, items, Battle Points, clothing)
+- League Card: after a hosted trade the console keeps the host's card; `bin/swsh_host.py
+  --card-set FIELD=VALUE` edits it
 
 Brilliant Diamond / Shining Pearl
 

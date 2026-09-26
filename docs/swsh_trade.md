@@ -391,6 +391,10 @@ The console skips the question when a card it holds carries the partner card's t
 | Pokédex count 400 -> 401 | no |
 | name PkCamp -> PkCampX | no |
 
+A retail Sword hosted over the board asked and kept the host's card (id 993401): its League Card
+list shows PkCamp dated the day received, the Sword logo top left (`game` 0), "3" bottom left (the
+three ASCII bytes at 0x39 read `3`), a crown top right and five stars.
+
 `bin/swsh_host.py --card-set FIELD=VALUE` edits the card it sends (`pokeldn.swsh.league_card`
 names the fields), so a fresh `trainer_id` makes the console offer to keep it.
 

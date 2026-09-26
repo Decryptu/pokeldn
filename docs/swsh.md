@@ -72,6 +72,8 @@ then `SYSREQ.N native, bytes`.
 - How a partner's command reaches a sub-element's body word. The receive handler `0x010dbc90` does
   not write it. That an arriving command lets the shared value move is inferred from a per-station
   flag and from every run so far.
+- Which card fields set the crown and the five stars a Sword draws on a received League Card. The
+  card carried `dex_complete` 1, 0x31 = 1, 400 owned, 7 shiny, 380 caught.
 - Whether fields other than the trainer id also take part in the League Card match
   ([the trade page](swsh_trade.md#the-league-card)); a new name or Pokédex count does not.
 - Sword against Shield. Everything read off the binary is Shield's; the console is Sword. The
