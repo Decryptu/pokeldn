@@ -6,7 +6,7 @@ import types
 import pytest
 
 from pokeldn.ldn import pia4
-from pokeldn.lgpe import (GAME_KEY, PASSPHRASE, PIA_VERSION, link_code, packet_iv, session_key,
+from pokeldn.lgpe import (GAME_KEY, PASSPHRASE, PIA_VERSION, packet_iv, scene_id, session_key,
                           session_keys)
 from pokeldn.lgpe.session import APP_HEADER_SIZE
 import lgpe_join
@@ -16,7 +16,20 @@ def test_constants_are_the_literals_read_off_main():
     assert PASSPHRASE == b"W3GoSMEn7RIIUQ89rzqBHGhGferRNb7K18ZBq2aNuj8Us9RO9Q9JYyGOZlLy8MYL"
     assert GAME_KEY == b"p1frXqxmeCZWFv0X"
     assert PIA_VERSION == 3
-    assert link_code() == "pikachu pikachu pikachu"
+
+
+@pytest.mark.parametrize("code, advertised", [
+    (("pikachu", "pikachu", "pikachu"), 1),          # every retail Pikachu x3 session
+    (("bulbizarre", "salam\u00e8che", "carapuce"), 2341),  # a retail console's advertisement
+    (("2", "3", "2"), 2321),                          # the same console, third pick changed
+])
+def test_the_link_code_is_the_scene_id_a_console_advertised(code, advertised):
+    assert scene_id(code) == advertised
+
+
+def test_a_name_outside_the_picker_is_refused():
+    with pytest.raises(ValueError):
+        scene_id(("pikachu", "mewtwo", "pikachu"))
 
 
 def _net(app):

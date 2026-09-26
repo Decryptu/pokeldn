@@ -40,15 +40,37 @@ PIA_PORT = 12345
 # the scan is expected to report, by analogy with BDSP and Sword whose comm ids are their title ids.
 COMM_ID_PIKACHU = 0x010003F003A34000
 
-# The link code is three Pokemon chosen in order. It moves the advertised scene id and leaves the
-# password CRC at 0 (docs/lgpe_session.md, The link code). Most sessions here use Pikachu x3.
+# The link code is three Pokemon chosen in order from a picker of ten; it sets the advertised scene
+# id and leaves the password CRC at 0 (docs/lgpe_session.md, The link code).
 CODE_POKEMON = ("pikachu", "pikachu", "pikachu")
+CODE_PICKER = ("pikachu", "eevee", "bulbasaur", "charmander", "squirtle",
+               "pidgey", "caterpie", "rattata", "jigglypuff", "diglett")
+CODE_PICKER_FR = ("pikachu", "evoli", "bulbizarre", "salameche", "carapuce",
+                  "roucool", "chenipan", "rattata", "rondoudou", "taupiqueur")
 
 
-def link_code(names=CODE_POKEMON):
-    """The three chosen names, lower-cased and joined with spaces. A placeholder for the password
-    string until the binary or a capture says how the game encodes the choice."""
-    return " ".join(n.lower() for n in names)
+def code_picks(code):
+    """-> the three picker indices of a code given as names (English or French) or digits."""
+    picks = []
+    for name in code:
+        name = str(name).strip().lower().replace("\u00e8", "e").replace("\u00e9", "e")
+        if name.isdigit() and int(name) < len(CODE_PICKER):
+            picks.append(int(name))
+        elif name in CODE_PICKER:
+            picks.append(CODE_PICKER.index(name))
+        elif name in CODE_PICKER_FR:
+            picks.append(CODE_PICKER_FR.index(name))
+        else:
+            raise ValueError(f"{name!r} is not in the link code picker: {', '.join(CODE_PICKER)}")
+    if len(picks) != 3:
+        raise ValueError(f"a link code is three Pokemon, got {len(picks)}")
+    return picks
+
+
+def scene_id(code=CODE_POKEMON):
+    """The scene id a session advertises for a link code: the picks as decimal digits, then 1."""
+    a, b, c = code_picks(code)
+    return 1000 * a + 100 * b + 10 * c + 1
 
 
 def session_key(seed, game_key=GAME_KEY):
@@ -68,7 +90,7 @@ SYSTEM_COMM_VERSION = 4
 # What a Let's Go trade session advertises, measured on a retail console and on two emulator
 # sessions: scene id 1 in every CreateNetworkPrivate (the advertised NetworkInfo reports 0), no
 # application version, two seats, and a fixed SSID.
-SCENE_ID = 1
+SCENE_ID = scene_id()
 APPLICATION_VERSION = 0
 MAX_PARTICIPANTS = 2
 SSID = bytes.fromhex("01000000000000000000000000000000")

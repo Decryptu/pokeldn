@@ -129,15 +129,23 @@ nonce). Header version 3, tag sixteen bytes, not truncated.
 The link code reaches the advertisement as the NetworkInfo scene id; the password CRC32 at
 application-data +4 stays 0 and the SSID stays `01000000000000000000000000000000`.
 
+The scene id is the three picks as decimal digits followed by a 1: `1000a + 100b + 10c + 1`, each
+pick its index in the picker (Pikachu 0, Eevee 1, Bulbasaur 2, Charmander 3, Squirtle 4, Pidgey 5,
+Caterpie 6, Rattata 7, Jigglypuff 8, Diglett 9).
+
 | code a console searched with | scene id advertised |
 |---|---|
 | Pikachu, Pikachu, Pikachu | 1 |
 | Bulbasaur, Charmander, Squirtle | 2341 |
-| Bulbasaur, Charmander, Bulbasaur | 2341 |
+| Bulbasaur, Charmander, Bulbasaur | 2321 |
 
-A retail console searching under Bulbasaur, Charmander, Bulbasaur hosted, and `bin/lgpe_join.py`,
-which advertises and sends no code, joined it and completed a trade: the host checks no code on a
-joiner.
+A searching console hosts its own network and joins another only when that network advertises its
+scene id on its own channel. Under Bulbasaur, Charmander, Bulbasaur it ignored `bin/lgpe_host.py`
+advertising scene id 1 or 2321 on channel 6 while its own network was on channel 11, and joined at
+once on channel 11 with 2321, then traded.
+
+The host side checks no code on a joiner: a console hosting under Bulbasaur, Charmander, Squirtle
+traded with `bin/lgpe_join.py`, which sends none.
 
 ## The Local Protocol, measured
 

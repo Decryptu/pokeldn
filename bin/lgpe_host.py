@@ -39,7 +39,8 @@ from pokeldn.ldn.station_protocol import (DISCONNECTION_REQUEST, DISCONNECTION_R
 from pokeldn.ldn.transport import HostTransport, board_radio, find_ap_phy
 from pokeldn.host_support import resolve_keys
 from pokeldn.lgpe import (APPLICATION_VERSION, COMM_ID_PIKACHU, MAX_PARTICIPANTS, PASSPHRASE,
-                          PIA_PORT, SCENE_ID, SSID, build_advertise_data, packet_iv, session_keys)
+                          PIA_PORT, SSID, build_advertise_data, packet_iv, scene_id,
+                          session_keys)
 from pokeldn.lgpe import local_host, mesh_host
 from pokeldn.ldn import show_done
 
@@ -75,7 +76,12 @@ def build_parser():
     ap.add_argument("--ifname", default="ldn-tap")
     ap.add_argument("--ap-ifname", default="ldn")
     ap.add_argument("--mon-ifname", default="ldn-mon")
-    ap.add_argument("--channel", type=int, default=6)
+    ap.add_argument("--channel", default="6",
+                    help="1, 6, 11, or auto: scan for the searching console's own network under our "
+                         "scene id and host on its channel, the only one it joins on")
+    ap.add_argument("--code", default="pikachu,pikachu,pikachu",
+                    help="the link code the player enters: three picker names (English or French) "
+                         "or indices 0-9, comma-separated")
     ap.add_argument("--no-skip-encryption", action="store_true",
                     help="let the LDN layer encrypt in software. The Archer T3U wants the "
                          "hardware path, which is the default here")
@@ -98,9 +104,8 @@ def build_parser():
                          "376-byte message, header included, or echo for the console's own back")
     ap.add_argument("--our-trainer", metavar="TID:SID",
                     help="the trainer id pair written over the identity's")
-    ap.add_argument("--scene-id", type=int, default=SCENE_ID,
-                    help="the advertised scene id; the link code moves it (Pikachu x3: 1, "
-                         "docs/lgpe_session.md, The link code)")
+    ap.add_argument("--scene-id", type=int, default=None,
+                    help="the advertised scene id, in place of the one --code gives")
     ap.add_argument("--fresh-pid", action="store_true",
                     help="offer the --offer structure under a new PID and encryption constant, "
                          "shiny state kept, so a save that took it before takes it again")
@@ -128,6 +133,24 @@ def build_parser():
     return ap
 
 
+def console_channel(keys_path, phy, scene, seconds, channels=(1, 6, 11), dwell=0.5):
+    """The channel of a searching console's own network under `scene`, or None within `seconds`.
+    A searching console joins only a host on its own channel (docs/lgpe_session.md, The link code)."""
+    import trio
+    import ldn
+    keys = ldn.load_keys(keys_path)
+
+    async def find():
+        deadline = trio.current_time() + seconds
+        while trio.current_time() < deadline:
+            for net in await ldn.scan(keys, phyname=phy, channels=list(channels), dwell_time=dwell):
+                if net.local_communication_id == COMM_ID_PIKACHU and net.scene_id == scene:
+                    print(f"[lgh] the console searches on channel {net.channel} ({net.address})")
+                    return net.channel
+        return None
+    return trio.run(find)
+
+
 def main(argv=None):
     args = build_parser().parse_args(argv)
     fresh_offer(args, "[lgh]")
@@ -140,6 +163,13 @@ def main(argv=None):
     if not os.path.exists(keys_path):
         print(f"[lgh] prod.keys not found at {keys_path!r}"); return 2
 
+    scene = args.scene_id if args.scene_id is not None else scene_id(args.code.split(","))
+    channel = (console_channel(keys_path, phy, scene, args.seconds) if args.channel == "auto"
+               else int(args.channel))
+    if channel is None:
+        print(f"[lgh] no console advertised scene id {scene}: is it searching with that code?")
+        return 3
+    print(f"[lgh] link code {args.code} -> scene id {scene}, channel {channel}")
     adv = Advertisement(args.network_id, args.session_param)
     print(f"[lgh] advertising network id {adv.network_id:#010x} session param "
           f"{adv.session_param:#010x}")
@@ -152,10 +182,10 @@ def main(argv=None):
             cap.write(json.dumps(kw) + "\n"); cap.flush()
 
     host = HostTransport(app_data=adv.data, password=PASSPHRASE, nickname=args.player_name,
-                         keys_path=keys_path, local_comm_id=COMM_ID_PIKACHU, scene_id=args.scene_id,
+                         keys_path=keys_path, local_comm_id=COMM_ID_PIKACHU, scene_id=scene,
                          app_version=APPLICATION_VERSION, max_participants=MAX_PARTICIPANTS,
                          phyname=phy, ifname=args.ifname, ap_ifname=args.ap_ifname,
-                         mon_ifname=args.mon_ifname, channel=args.channel,
+                         mon_ifname=args.mon_ifname, channel=channel,
                          skip_encryption=not args.no_skip_encryption,
                          accept_decrypted_ccmp=not args.no_accept_decrypted_ccmp,
                          ssid=None if args.random_ssid else SSID, protocol=args.protocol)

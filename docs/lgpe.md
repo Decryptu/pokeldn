@@ -17,8 +17,9 @@ The static reading is taken from Let's Go Pikachu 1.0.2 (`010003f003a34000`, upd
 Local trading and battling ask both players for a link code: three Pokemon chosen in order from a
 fixed set of ten, shown in two rows: Pikachu, Eevee, Bulbasaur, Charmander, Squirtle; Pidgey,
 Caterpie, Rattata, Jigglypuff, Diglett. Most sessions here use Pikachu, Pikachu, Pikachu. The code
-changes the advertisement's scene id ([the session page](lgpe_session.md#the-link-code)); a
-console hosting under another code trades with a joiner that knows nothing of it.
+sets the advertisement's scene id ([the session page](lgpe_session.md#the-link-code)); a
+console hosting under any code trades with a joiner, and a searching console joins a host that
+advertises its scene id on its channel.
 
 ## Pages
 
@@ -47,9 +48,8 @@ for half an hour. `docs/lgpe_session.md` has every layout.
 
 ## Unresolved
 
-- How the link code becomes the scene id: two codes that differ in the third Pokemon both
-  advertised 2341, and 0x925 appears as no immediate in `main`. Whether a searching console
-  filters hosts by the scene id is unmeasured.
+- Where the game computes the scene id from the code; 0x925 appears as no immediate in `main`.
+- How a searching console picks its channel: 6 and 11 on successive searches.
 - The three-byte value after the count in the `0xaN` clone messages. For a clone both stations hold
   it is the same on both sides; for clone type 3 id 0 the two stations send different values that
   match neither announcement, and what it is computed from is unread.
