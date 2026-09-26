@@ -1565,6 +1565,13 @@ waited V-blank and clears that V-blank in `REG_IF` so the handler is not entered
 is 36 bytes at `0x0203FF80`. On the emulator the followed seed matched `gRngValue` and the Python model
 agreed the target rolls a shiny.
 
+`ivs` (`asm/resident/ivs.s`) shows the lead's six IVs and nature on two rows (`OVERLAY_TWO_ROWS`, the
+second in `gMain.oamBuffer[112..117]` at y 10): HP, Attack, Defense, Speed, then Sp. Atk, Sp. Def and
+`personality % 25`. It calls `GetMonData(mon, MON_DATA_IVS)` (66, `0x080432E5`), which returns the six
+five-bit IVs HP lowest [pokemon.c:3250]; `GetBoxMonData` decrypts the Pokemon in place and encrypts
+it again [pokemon.c:2992, 3327], so the call is made only in an idle overworld frame. On the emulator
+both rows matched the lead decrypted from `gPlayerParty` (`0x02024280`) for two different leads.
+
 ### `call-chain`
 
 Up to sixteen steps in order in a single frame, one answer word per step. Every question about the

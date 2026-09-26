@@ -52,6 +52,28 @@
     add     r4, #1
     cmp     r4, #8
     bne     .Ldigit
+.ifdef OVERLAY_TWO_ROWS                 @ the top six digits of the word at p_overlay2, at y 10, in
+    ldr     r0, p_overlay2          @ gMain.oamBuffer[112..117]
+    ldr     r0, [r0]
+    ldr     r5, p_overlay_oam
+    sub     r5, #64
+    mov     r4, #0
+.Ldigit2:
+    lsr     r1, r0, #28
+    ldr     r2, .Lattr2
+    add     r2, r1
+    mov     r3, #10
+    strh    r3, [r5]                @ attr0: y 10
+    lsl     r3, r4, #3
+    add     r3, #174
+    strh    r3, [r5, #2]
+    strh    r2, [r5, #4]
+    lsl     r0, r0, #4
+    add     r5, #8
+    add     r4, #1
+    cmp     r4, #6
+    bne     .Ldigit2
+.endif
     b       .Lov_done
 
 .Loverlay_tiles:

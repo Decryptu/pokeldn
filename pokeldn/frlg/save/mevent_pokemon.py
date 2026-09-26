@@ -168,8 +168,8 @@ def build_party_mon(species, level, *, moves=(), pp=(), nickname=None, ot_name="
                | ((poke_ball & 0x0F) << 11))
     misc[2:4] = origins.to_bytes(2, "little")
     iv_word = 0
-    for index in range(6):
-        iv_word |= (ivs & 0x1F) << (5 * index)
+    for index, value in enumerate((ivs,) * 6 if isinstance(ivs, int) else tuple(ivs)):
+        iv_word |= (value & 0x1F) << (5 * index)    # HP, Atk, Def, Spe, SpA, SpD
     misc[4:8] = iv_word.to_bytes(4, "little")
 
     canon[32:44], canon[44:56] = growth, attacks

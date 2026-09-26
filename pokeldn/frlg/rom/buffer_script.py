@@ -2118,9 +2118,11 @@ RESIDENT_HOOKS = {
     "shiny": ("shiny_hook", {"method": 0, "offset": 4, "search": 16, "slow": 0x100,
                              "slow_frames": 3, "help": 0x0203F171, "state": 0x0203FF80,
                              "overlay": 0x0203FF98}),
+    "ivs": ("ivs_hook", {"mon": 0x02024280, "words": 0x0203FF80, "overlay": 0x0203FF80,
+                         "overlay2": 0x0203FF84}),
 }
 # The data a hook keeps past its code, by parameter, and its size in bytes.
-RESIDENT_DATA = {"p_frames": 20, "p_ring": 140, "p_state": 36}
+RESIDENT_DATA = {"p_frames": 20, "p_ring": 140, "p_state": 36, "p_words": 12}
 R_BUTTON = 0x100
 # gHelpSystemToggleWithRButtonDisabled, French FireRed: RunHelpSystemCallback's literal at 0x0813F6FC.
 HELP_R_DISABLED = 0x0203F171
@@ -2142,6 +2144,8 @@ def resident_blob(name, **params):
         params["help"] = HELP_R_DISABLED            # held R would open the Help System
     if name == "shiny" and "state" in explicit and "overlay" not in explicit:
         params["overlay"] = params["state"] + 24    # the word the hook shows
+    if name == "ivs" and "words" in explicit:
+        params["overlay"], params["overlay2"] = params["words"], params["words"] + 4
     words = native_script.resident_words(name, **params)
     symbols = STUBS[name][2]
     return (b"".join(w.to_bytes(4, "little") for w in words), symbols[entry],
