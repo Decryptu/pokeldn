@@ -57,6 +57,7 @@ MY_STATUS_NAME = 0xB0
 # into TrainerCard, from `TrainerCard8.cs`
 TRAINER_CARD_NAME = 0x00
 TRAINER_CARD_LANGUAGE = 0x1B
+TRAINER_CARD_ID = 0x1C                                           # u32, (SID << 16 | TID) mod 10**6
 TRAINER_CARD_STARTED = 0x170                                     # u16 year, then month, day
 NAME_LENGTH = 0x1A
 
@@ -273,6 +274,10 @@ def rewrite(payload, *, trainer_name=None, trainer_id=None, secret_id=None, old_
         struct.pack_into("<H", out, MY_STATUS_OFFSET + MY_STATUS_TID, trainer_id)
     if secret_id is not None:
         struct.pack_into("<H", out, MY_STATUS_OFFSET + MY_STATUS_SID, secret_id)
+    if trainer_id is not None or secret_id is not None:
+        # The League Card's id: a console keeps a partner's card unless it holds one with this id.
+        tid, sid = struct.unpack_from("<HH", out, MY_STATUS_OFFSET + MY_STATUS_TID)
+        struct.pack_into("<I", out, TRAINER_CARD_OFFSET + TRAINER_CARD_ID, ((sid << 16) | tid) % 10**6)
 
     edits = {k: v for k, v in (("ot_name", trainer_name), ("trainer_id", trainer_id),
                                ("secret_id", secret_id)) if v is not None}

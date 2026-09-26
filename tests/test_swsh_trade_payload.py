@@ -211,6 +211,18 @@ def test_the_profile_name_is_the_fourth_copy_and_moves_with_the_others():
     assert changed <= set(range(at, at + 24))
 
 
+@pytest.mark.parametrize("tid, sid, shown", [
+    (56909, 48474, 848973),     # a retail Sword's MyStatus and the id its League Card carried
+    (56983, 22788, 491351),     # an emulated Shield save, the same pair read out of its blocks
+])
+def test_the_league_card_id_follows_the_identity_it_is_derived_from(tid, sid, shown):
+    """TrainerCard+0x1C is (SID << 16 | TID) mod 10**6 on both saves; a console keeps a partner's
+    card unless it holds one with that id (docs/swsh_trade.md, The League Card)."""
+    at = trade_payload.TRAINER_CARD_OFFSET + 0x1C
+    out = trade_payload.rewrite(a_payload(), trainer_id=tid, secret_id=sid)
+    assert struct.unpack_from("<I", out, at)[0] == shown
+
+
 def test_the_three_ids_are_replaced_in_place_and_nowhere_else():
     payload = a_payload_with_the_profile()
     device, uid, nsa = bytes(range(1, 17)), bytes(range(0x20, 0x30)), bytes(range(0x40, 0x48))

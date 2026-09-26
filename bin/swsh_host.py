@@ -26,7 +26,7 @@ from pokeldn.host_support import resolve_keys
 from pokeldn.ldn import host4, mesh_protocol as mesh, reliable4
 from pokeldn.ldn.ldn_mitm_host import IpHostTransport
 from pokeldn.ldn.transport import HostTransport, board_radio, find_ap_phy
-from pokeldn.swsh import beacon, host_trade, pokemon as swsh_pokemon, trade_payload
+from pokeldn.swsh import beacon, host_trade, league_card, pokemon as swsh_pokemon, trade_payload
 from pokeldn.swsh.session import COMM_ID, PASSPHRASE, session_keys
 
 SCENE_ID = 60001                  # a retail Sword's Link Trade network
@@ -93,6 +93,9 @@ def build_parser():
     ap.add_argument("--trainer-tid", type=lambda s: int(s, 0), default=12345)
     ap.add_argument("--trainer-sid", type=lambda s: int(s, 0), default=54321)
     ap.add_argument("--offer-slot", type=int, default=1, help="the party slot we offer")
+    ap.add_argument("--card-set", action="append", default=[], metavar="FIELD=VALUE",
+                    help="set a field of the League Card the console may keep after the trade "
+                         "(pokeldn.swsh.league_card: name, trainer_id, dex_owned, poke1_species, ...)")
     ap.add_argument("--end-delay", type=float, default=host_trade.END_DELAY,
                     help="with --migrate, ladder done to box command 3 and the migration")
     ap.add_argument("--migrate", action="store_true",
@@ -123,6 +126,15 @@ def main():
         snapshot = trade_payload.inflate_short(snapshot)
     snapshot = trade_payload.rewrite(snapshot, trainer_name=args.trainer_name,
                                      trainer_id=args.trainer_tid, secret_id=args.trainer_sid)
+    if args.card_set:
+        edits = {}
+        for item in args.card_set:
+            name, value = item.split("=", 1)
+            edits[name] = value if name == "name" else int(value, 0)
+        tc = trade_payload.TRAINER_CARD_OFFSET
+        card = league_card.set_fields(snapshot[tc:tc + league_card.LENGTH], **edits)
+        snapshot = snapshot[:tc] + card + snapshot[tc + league_card.LENGTH:]
+        print(f"[sw] League Card: {league_card.read(card)}")
     at = (args.offer_slot - 1) * swsh_pokemon.SIZE_PARTY
     offer = snapshot[at:at + swsh_pokemon.SIZE_PARTY]
     mon = swsh_pokemon.read(offer)

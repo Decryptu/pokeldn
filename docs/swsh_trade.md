@@ -360,6 +360,40 @@ bytes:
 The two-byte ones are dropped by `0x006d6490`'s `cmp x2,#4` and belong to the two-byte sub-element
 kind, whose owning element field is unknown.
 
+## The League Card
+
+After the trade each console asks on the trade box whether to receive the partner's League Card
+("Voulez-vous recevoir la carte de Ligue de votre partenaire d'échange ?", Oui / Non). The answer
+sends nothing: between the end of the ladder and 80 s later, across both players answering Oui,
+an emulated pair exchanged only Sync Clock, reliable acknowledgements and mesh keepalives. The card
+is the TrainerCard both sides already sent at 0x924 of the 0x84 snapshot
+([the protocol page](swsh_protocol.md#the-party-payload-on-protocol-0x84)).
+
+A Oui files it in save block `0x28e707f5`: 139200 bytes, 300 slots of 464. The first free slot
+takes the snapshot's 456 bytes byte for byte, then eight bytes: `00 00`, the year as a u16, the
+month, the day, `02`, `00` (`00 00 ea 07 09 1a 02 00` on 2026-09-26). A console already holding
+the partner's card does not ask: two sessions between the same two saves asked once, and emptying
+that slot brought the question back.
+
+The card a console files is whatever the partner's snapshot carries. An emulated Shield joining
+`bin/swsh_host.py` asked, and filed the host's 456 bytes (the Sword snapshot renamed to PkCamp)
+unchanged in its next free slot, with the save written at once.
+
+The console skips the question when a card it holds carries the partner card's trainer id (u32 at
+0x1C, PKHeX `TrainerCard8.TrainerID`). The id is the six-digit one derived from MyStatus, `(SID << 16 | TID) mod
+10**6`: 848973 for a retail Sword at 56909/48474, 491351 for an emulated Shield at 56983/22788.
+`trade_payload.rewrite` sets it with the other identity fields. Measured against one emulated Shield holding the host's card:
+
+| the host's card | asked |
+|---|---|
+| unchanged | no |
+| trainer id 848973 -> 111111 | yes; filed in a new slot beside the first |
+| Pokédex count 400 -> 401 | no |
+| name PkCamp -> PkCampX | no |
+
+`bin/swsh_host.py --card-set FIELD=VALUE` edits the card it sends (`pokeldn.swsh.league_card`
+names the fields), so a fresh `trainer_id` makes the console offer to keep it.
+
 ## The record we offer
 
 The Pokemon offered on 20030 is a party record out of the 0x84 snapshot the client sends, selected

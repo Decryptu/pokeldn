@@ -72,8 +72,8 @@ then `SYSREQ.N native, bytes`.
 - How a partner's command reaches a sub-element's body word. The receive handler `0x010dbc90` does
   not write it. That an arriving command lets the shared value move is inferred from a per-station
   flag and from every run so far.
-- The League Card exchange a hosting Shield offers after a trade: its messages are unread and the
-  host does not answer it.
+- Whether fields other than the trainer id also take part in the League Card match
+  ([the trade page](swsh_trade.md#the-league-card)); a new name or Pokédex count does not.
 - Sword against Shield. Everything read off the binary is Shield's; the console is Sword. The
   passphrase, the game key and the Pia version hold across the pair. The local communication id does
   not: `0x0100ABF008968000` is Sword's. Mystery Gift's state names are Shield-only readings.
