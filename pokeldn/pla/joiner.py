@@ -57,7 +57,8 @@ class JoinerSession:
 
     def __init__(self, keys, our_ip, our_mac, offer, exchange, *, name=" ",
                  player_id=pia6.DEFAULT_PLAYER_ID, our_var=None, phase_waits=PHASE_WAITS,
-                 drive=False, log=print, clock=time.monotonic):
+                 drive=False, net_answer=True, log=print, clock=time.monotonic):
+        self.net_answer = net_answer   # False sends the join with no Net 0x12 (docs/pla.md, Unresolved)
         self.keys, self.our_ip, self.offer, self.exchange = keys, our_ip, bytes(offer), exchange
         self.our_cid = pia_connect.ldn_constant_id(our_mac)
         self.name, self.player_id, self.phase_waits = name, player_id, tuple(phase_waits)
@@ -158,7 +159,7 @@ class JoinerSession:
                 return []
             host_var, host_cid, seq = req
             out = [self._packet(pia_connect.build_net_response(seq), PROTO_NET,
-                                flags=NET_ANSWER_FLAGS)]
+                                flags=NET_ANSWER_FLAGS)] if self.net_answer else []
             if self.host_var is None:
                 self.host_var, self.host_cid = host_var, host_cid
                 self.log(f"[pla] the host is var {host_var:#06x}, constant id {host_cid.hex()}; "

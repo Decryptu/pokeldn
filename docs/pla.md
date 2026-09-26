@@ -124,7 +124,12 @@ Answering with the 0x12 ack advances it: the console re-sends 0x11 with a fresh 
 `NetStartHostMigrationMessage`, roughly twice a second for as long as the session lasts.
 
 A console hosting a trade hands the host role to the station that joins. It sends no Session (0x98)
-message and leaves the station's join request unanswered while the migration request repeats. A
+message and leaves the station's join request unanswered while the migration request repeats.
+The 0x12 ack only brings the handover forward. A station that sends the join request and never
+answers 0x11 gets the same 0x11, sequence id unchanged, every 0.5 s; the console sets `is migrating
+host` 8.6 to 10.1 s after the association, sends `01 40 00 00` from 13.5 to 14.1 s and drops its
+network at 16.8 to 17.5 s, with no Session message in between (three seats of three). A console
+searching on a code never runs the session as host: nothing it sends as host goes past Net. A
 `NetUpdateNetworkHostMessage` in answer, in either field order, leaves it repeating 0x40. The new
 host completes the migration by creating the network: the console drops its own 3 to 6 s after
 asking, searches, joins a network hosted on the same code, and runs the trade there as the joiner.
@@ -1118,10 +1123,6 @@ What it acts on is the network vanishing, at once, or its own keepalive timeout;
 change neither the words nor the delay.
 
 ## Unresolved
-
-- What a retail console sends as the host past its station list. No capture of one exists: the
-  joiner's order above is a retail joiner's toward a host of ours. Whether a console host answers
-  each selector-1 phase with selector 2, as `bin/pla_host.py` does, is unmeasured.
 
 - What a console does with a close announced back on port 1. The host reads the console's close of
   the phase key and answers nothing, and the trade completes; a host announcing its own phase key

@@ -141,7 +141,7 @@ async def run_session(args, keys, sock, host_ip, our_ip, our_mac, offer, exchang
     """
     session = joiner.JoinerSession(keys, our_ip, our_mac, offer, exchange,
                                    player_id=bytes.fromhex(args.join_player_id),
-                                   drive=args.drive, log=print)
+                                   drive=args.drive, net_answer=not args.no_net_answer, log=print)
     end = time.monotonic() + args.hold
     traded_at = None
     seen = authed = 0
@@ -423,6 +423,9 @@ def build_parser():
                     help="act as the player too: offer once the host shows, confirm once it "
                          "offers, then selector 7; without it the console's player leads")
     ap.add_argument("--capture", default=None, help="every datagram as one JSON line")
+    ap.add_argument("--no-net-answer", action="store_true",
+                    help="send the Session join request with no Net 0x12 answer to the host's 0x11; "
+                         "the 0x12 is what a console answers by asking for host migration")
     ap.add_argument("--take-host", action=argparse.BooleanOptionalAction, default=True,
                     help="when the console hands us the host role, leave its network and become "
                          "the host with bin/pla_host.py on the same code and channel")
