@@ -858,6 +858,12 @@ LDN, and after the soft reset that error returns to, Mystery Gift answers "L'ada
 n'est pas connecté": `AgbRFU_checkID` no longer receives `0x8001`. The byte belongs to the wrapper, so
 the game's soft reset keeps it cleared; relaunching the application, or `swi 0x40` from code that
 runs without the link, restores it.
+`swi 0x41` followed by `swi 0x40` in the same payload leaves the session untouched, so the byte is
+read per frame.
+
+`swi 0x42`, which `rfu_REQ_startSearchChild` issues [sloopsvc.c:49], sets the wrapper's network
+manager to mode 2 (`main + 0x0588A0`). Issued from the Mystery Gift client, a station, it ends the
+session: the game shows its link error and the station closes, and no access point is opened.
 
 The component that owns `bkpt #0x52` also owns the syscall dispatcher (`main + 0x057014` is slot 21
 of the same vtable) and a table of 2324 species names, six languages per species, hashed with djb2
