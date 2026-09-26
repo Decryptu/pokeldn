@@ -27,7 +27,11 @@ typedef struct {
    sent or received, and a counter that moves on every fault worth a warning. */
 typedef void (*led_state_t)(led_look_t *look, uint32_t *activity, uint32_t *alarm);
 
-void led_start(led_state_t state);
+/* Called from the LED task once per press of the BOOT button (GPIO0), debounced over 30 ms: the
+   press count since boot and the board time in µs of the press. */
+typedef void (*led_button_t)(uint32_t count, int64_t press_us);
+
+void led_start(led_state_t state, led_button_t button);
 /* The host's look for duration_ms (0: until the next call); LED_AUTO hands the LED back. A period
    of 0 is the pattern's default. False for an unknown pattern. */
 bool led_set(uint8_t pattern, uint8_t peak, uint16_t period_ms, uint16_t duration_ms);

@@ -98,6 +98,7 @@ Anything before a `0x00`, including the ROM's boot text, is discarded by the che
 | `0x8A` BENCH | board | u32 sequence and random bytes; the last carries sequence `0xFFFFFFFF` and the u32 microseconds the board spent |
 | `0x8C` RX_SNIFF | board | u8 channel, i8 RSSI, u8 `sig_mode` (0 legacy, 1 HT), u8 legacy rate code (`wifi_phy_rate_t`), u8 HT MCS with bit 7 set for 40 MHz, a frame without FCS |
 | `0x8D` TX_DONE | board | the driver's TX-done of one frame, as a station or an access point: u32 board time in µs, u32 µs since the ETH_TX it completes (all ones for a frame that is not one), u8 acked by the peer's radio, u8 interface, u16 length, then the frame's first 24 bytes (its 802.11 header). STATUS sums the matched ones in `tx_queued_max_us`, `tx_queued_total_us`, `tx_queued_n` and `tx_queued_pending` |
+| `0x8E` BUTTON | board | a press of the BOOT button, debounced over 30 ms: u32 board time in µs, u16 press count since boot. The host prints `BOOT button, mark N` and the trace keeps it, so the player marks a moment on the screen |
 | `0x8B` CREDIT | board | u32 host bytes read and handled since the last HELLO, counting from the byte after its delimiter; sent on HELLO, every 1024 bytes, when the line falls idle and every 100 ms while it stays idle, ahead of any queued message |
 
 EtherType `0x88B7` frames are LDN authentication; `esp32_wlan` turns them into the LDN
@@ -332,7 +333,7 @@ The ELEGOO ESP-32 Type-C board (CP2102, ESP32-D0WD-V3) carries two LEDs and two 
 | red LED | the 3.3 V rail | no, lit whenever the board has power |
 | blue LED | GPIO2, lit when the pin is high | yes |
 | EN button | the chip's reset | no |
-| BOOT button | GPIO0 | readable as an input after boot |
+| BOOT button | GPIO0 | yes: each press sends BUTTON (`0x8E`) and flashes the LED |
 
 GPIO2 and GPIO0 are strapping pins: both must be low or floating at reset for the ROM to enter
 download mode, so the firmware drives GPIO2 only after boot. The blue LED was found from the ROM

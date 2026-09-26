@@ -34,7 +34,7 @@ enum {
 enum {
     MSG_INFO = 0x81, MSG_RESULT = 0x82, MSG_RX_MGMT = 0x84, MSG_RX_ETH = 0x85, MSG_LINK = 0x86,
     MSG_STA_JOINED = 0x87, MSG_STA_LEFT = 0x88, MSG_STATUS = 0x89, MSG_BENCH = 0x8A,
-    MSG_RX_SNIFF = 0x8C, MSG_TX_DONE = 0x8D,
+    MSG_RX_SNIFF = 0x8C, MSG_TX_DONE = 0x8D, MSG_BUTTON = 0x8E,
 };
 enum { AP_FLAG_STOCK_JOIN = 1, AP_FLAG_NO_QOS = 2, AP_FLAG_NO_DATA_TRACE = 4 };
 enum mode { MODE_IDLE, MODE_STA_JOINING, MODE_STA, MODE_AP, MODE_SNIFF };
@@ -423,6 +423,17 @@ static void wifi_event(void *arg, esp_event_base_t base, int32_t id, void *data)
 
 /* ---- the LED ---- */
 
+/* A BOOT press: u32 board time in µs, u16 press count, for the host's trace. */
+static void button_pressed(uint32_t count, int64_t press_us)
+{
+    uint8_t head[6];
+    const uint32_t us = (uint32_t)press_us;
+    const uint16_t n = (uint16_t)count;
+    memcpy(head, &us, 4);
+    memcpy(head + 4, &n, 2);
+    wire_send(MSG_BUTTON, head, sizeof(head), NULL, 0);
+}
+
 /* The automatic look by mode: docs/hardware_esp32.md, The board's LED and buttons. */
 static void led_state(led_look_t *look, uint32_t *activity, uint32_t *alarm)
 {
@@ -630,7 +641,7 @@ void app_main(void)
     esp_wifi_set_ps(WIFI_PS_NONE);
     start_sniffer();
     wire_start(command);
-    led_start(led_state);
+    led_start(led_state, button_pressed);
     send_info();
 
     int64_t last_status = 0;

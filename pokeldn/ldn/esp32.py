@@ -49,6 +49,7 @@ MSG_STATUS = 0x89
 MSG_BENCH = 0x8A
 MSG_RX_SNIFF = 0x8C   # u8 channel, i8 RSSI, u8 sig mode, u8 rate code, u8 MCS | 40 MHz << 7, frame
 MSG_CREDIT = 0x8B   # u32: host bytes the board has read and handled since the last HELLO
+MSG_BUTTON = 0x8E   # u32 board us, u16 press count: the BOOT button, a marker for the trace
 MSG_TX_DONE = 0x8D  # u32 board us, u32 us since its ETH_TX (all ones: not one), u8 acked, u8 if, u16 len, 24 frame bytes
 
 # The board handles a command on the task that reads the UART, so an ETH_TX waiting on a full Wi-Fi
@@ -456,6 +457,8 @@ class Radio:
         self._record("<", msg_type, payload)
         if msg_type == MSG_LOG and self._log:
             self._log(f"[esp32] {payload.decode(errors='replace')}")
+        if msg_type == MSG_BUTTON and len(payload) == 6 and self._log:
+            self._log(f"[esp32] BOOT button, mark {struct.unpack_from('<H', payload, 4)[0]}")
         with self._reply_cv:
             if msg_type in self._replies:
                 self._replies[msg_type].append(payload)

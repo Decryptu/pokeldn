@@ -4,6 +4,7 @@
 #include <math.h>
 #include <stdbool.h>
 
+#include "driver/gpio.h"
 #include "driver/ledc.h"
 #include "esp_timer.h"
 #include "freertos/FreeRTOS.h"
@@ -12,6 +13,8 @@
 #include "led.h"
 
 #define LED_GPIO 2
+#define BUTTON_GPIO 0   /* BOOT: low while pressed, pulled up */
+#define BUTTON_TICKS 3  /* 30 ms of one level makes it the button's state */
 #define DUTY_MAX 8191   /* 13 bits at 5 kHz */
 #define TICK_MS 10
 #define CROSSFADE_MS 150
@@ -26,6 +29,7 @@ static led_look_t s_host = {LED_PULSE, 255, 900};   /* the boot pulse */
 static int64_t s_host_until_ms = 900;               /* 0: held until the next command */
 static uint32_t s_host_serial = 1;                  /* restarts the look when the host resends it */
 static led_state_t s_state;
+static led_button_t s_button;
 
 static int64_t now_ms(void) { return esp_timer_get_time() / 1000; }
 
@@ -73,12 +77,25 @@ static void led_task(void *arg)
 {
     led_look_t shown = {LED_OFF, 0, 0};
     int64_t look_started = now_ms(), fade_started = look_started;
-    float fade_from = 0, output = 0, flash = 0;
+    float fade_from = 0, output = 0, flash = 0, press_flash = 0;
+    bool pressed = false;
+    int same_level = 0, last_level = 1;
+    uint32_t presses = 0;
     uint32_t last_activity = 0, last_alarm = 0, last_serial = 0;
     int64_t alarm_until = 0;
     TickType_t wake = xTaskGetTickCount();
     for (;;) {
         const int64_t now = now_ms();
+        const int button_level = gpio_get_level(BUTTON_GPIO);
+        same_level = button_level == last_level ? same_level + 1 : 0;
+        last_level = button_level;
+        if (same_level == BUTTON_TICKS && pressed != (button_level == 0)) {
+            pressed = button_level == 0;
+            if (pressed) {
+                press_flash = 1;
+                if (s_button) s_button(++presses, esp_timer_get_time());
+            }
+        }
         led_look_t look, host;
         uint32_t serial;
         taskENTER_CRITICAL(&s_lock);
@@ -112,8 +129,10 @@ static void led_task(void *arg)
            shimmer rather than a steady light. */
         if (is_auto && activity != last_activity && flash < 0.25f) flash = 1;
         last_activity = activity;
-        const float shown_level = fmaxf(output, is_auto ? flash * 0.7f : 0);
+        /* A press answers with a full flash over any look, so the player sees it was taken. */
+        const float shown_level = fmaxf(fmaxf(output, is_auto ? flash * 0.7f : 0), press_flash);
         flash *= 0.8f;
+        press_flash *= 0.9f;
 
         ledc_set_duty(LEDC_LOW_SPEED_MODE, LEDC_CHANNEL_0,
                       (uint32_t)lroundf(powf(clamp01(shown_level), 2.2f) * DUTY_MAX));
@@ -134,9 +153,16 @@ bool led_set(uint8_t pattern, uint8_t peak, uint16_t period_ms, uint16_t duratio
     return true;
 }
 
-void led_start(led_state_t state)
+void led_start(led_state_t state, led_button_t button)
 {
     s_state = state;
+    s_button = button;
+    const gpio_config_t input = {
+        .pin_bit_mask = 1ULL << BUTTON_GPIO, .mode = GPIO_MODE_INPUT,
+        .pull_up_en = GPIO_PULLUP_ENABLE, .pull_down_en = GPIO_PULLDOWN_DISABLE,
+        .intr_type = GPIO_INTR_DISABLE,
+    };
+    gpio_config(&input);
     const ledc_timer_config_t timer = {
         .speed_mode = LEDC_LOW_SPEED_MODE, .duty_resolution = LEDC_TIMER_13_BIT,
         .timer_num = LEDC_TIMER_0, .freq_hz = 5000, .clk_cfg = LEDC_AUTO_CLK,
