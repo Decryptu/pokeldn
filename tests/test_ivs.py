@@ -78,13 +78,15 @@ def test_no_read_in_a_lag_frame_or_outside_the_overworld(lag, cb2):
     assert (read(WORDS), read(WORDS + 8)) == (0, 0)
 
 
-def test_the_cartridge_getmondata_reads_a_mon_this_project_encrypted_and_leaves_it_intact():
-    if not ROM.exists():
+@pytest.mark.parametrize("cartridge", ["scratchpad/FireRed_f.gba", "scratchpad/LeafGreen_f.gba"])
+def test_the_cartridge_getmondata_reads_a_mon_this_project_encrypted_and_leaves_it_intact(cartridge):
+    rom_path = pathlib.Path(cartridge)
+    if not rom_path.exists():
         pytest.skip("no cartridge image on this machine")
     ivs = (31, 30, 20, 19, 10, 9)
     mon = mevent_pokemon.build_party_mon(25, 50, nickname="PIKA", ivs=ivs,
                                          personality=0xA437A624).raw
-    rom = bytearray(ROM.read_bytes())
+    rom = bytearray(rom_path.read_bytes())
     at = VBLANK_INTR - 0x08000000
     rom[at:at + 4] = bytes.fromhex("70470000")          # VBlankIntr's sound needs a live mixer
     uc, read = _run({0x08000000: bytes(rom), PARTY: mon})

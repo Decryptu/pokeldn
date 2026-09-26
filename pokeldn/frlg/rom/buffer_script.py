@@ -2122,6 +2122,12 @@ RESIDENT_HOOKS = {
                          "overlay2": 0x0203FF84}),
     "noencounter": ("noencounter_hook", {"flag": 0x020386D8}),
 }
+# What differs on LeafGreen, measured by mapping every FireRed reference to each hook constant onto
+# the LeafGreen cartridge [scratchpad/lg_hook_addresses.py]: only m4aSoundMain moves (its VBlankIntr's
+# call at 0x08000772 reads 0x081DF518); every RAM address and every other function is where FireRed
+# has it.
+RESIDENT_VERSIONS = ("firered", "leafgreen")
+RESIDENT_LEAFGREEN = {"shiny": {"sound_main": 0x081DF519}}
 # The data a hook keeps past its code, by parameter, and its size in bytes.
 RESIDENT_DATA = {"p_frames": 20, "p_ring": 140, "p_state": 36, "p_words": 12}
 R_BUTTON = 0x100
@@ -2129,7 +2135,7 @@ R_BUTTON = 0x100
 HELP_R_DISABLED = 0x0203F171
 
 
-def resident_blob(name, **params):
+def resident_blob(name, *, version="firered", **params):
     """-> (THUMB bytes, entry offset, p_original offset) for one of RESIDENT_HOOKS."""
     from pokeldn.frlg.rom import native_script
     from pokeldn.frlg.rom.resident_stubs import STUBS
@@ -2147,18 +2153,21 @@ def resident_blob(name, **params):
         params["overlay"] = params["state"] + 24    # the word the hook shows
     if name == "ivs" and "words" in explicit:
         params["overlay"], params["overlay2"] = params["words"], params["words"] + 4
-    words = native_script.resident_words(name, **params)
+    if version not in RESIDENT_VERSIONS:
+        raise BufferScriptError(f"a resident hook is built for one of {RESIDENT_VERSIONS}")
+    moved = RESIDENT_LEAFGREEN.get(name, {}) if version == "leafgreen" else {}
+    words = native_script.resident_words(name, **params, **moved)
     symbols = STUBS[name][2]
     return (b"".join(w.to_bytes(4, "little") for w in words), symbols[entry],
             symbols["p_original"])
 
 
-def build_install_resident(name, *, dest=None, table=None, **params):
+def build_install_resident(name, *, dest=None, table=None, version="firered", **params):
     """The install-resident payload carrying resident hook `name`, parameters patched."""
     from pokeldn.frlg.rom import native_script
     dest = native_script.RESIDENT_BASE if dest is None else dest
     table = native_script.GINTRTABLE_VBLANK if table is None else table
-    blob, entry, original = resident_blob(name, **params)
+    blob, entry, original = resident_blob(name, version=version, **params)
     code = bytearray(payload(INSTALL_RESIDENT))
     if len(code) + len(blob) > MAX_BUFFER_SCRIPT_SIZE:
         raise BufferScriptError(
@@ -2198,13 +2207,13 @@ RESIDENT_SAVE_STAGING = 0x0201C400      # gDecompressionBuffer + 0x400, above th
 RESIDENT_SAVE_SIZE = 0x400              # filler_B20, all of which the loader copies
 
 
-def build_resident_save_blob(name, **params):
+def build_resident_save_blob(name, *, version="firered", **params):
     """-> the bytes save-write puts at SaveBlock2 + 0xB20 so that MOM's loader installs hook `name`."""
     from pokeldn.frlg.rom.resident_stubs import STUBS
     head, _digest, symbols = STUBS["save-head"]
     if symbols["p_image"] != len(head):
         raise BufferScriptError("save-head must end at its image")
-    blob = bytearray(head) + build_install_resident(name, **params)
+    blob = bytearray(head) + build_install_resident(name, version=version, **params)
     blob += bytes(-len(blob) % 4)
     blob[symbols["p_length"]:symbols["p_length"] + 4] = len(blob).to_bytes(4, "little")
     checksum = sum(int.from_bytes(blob[i:i + 4], "little") for i in range(0, len(blob), 4))

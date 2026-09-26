@@ -624,6 +624,7 @@ class BufferScriptPayload:
     # install-resident: which resident hook, and its parameters.
     resident_name: str | None = None
     resident_params: tuple = ()
+    resident_version: str = "firered"
     # string-gather: an array of pointers to follow, and how far apart they are. This is the one
     # payload that dereferences, so the answer is the strings rather than a window around them.
     gather_address: int | None = None
@@ -875,7 +876,7 @@ class BufferScriptPayload:
                 unsafe=self.write_unsafe)
         if self.script == buffer_script.INSTALL_RESIDENT:
             return buffer_script.build_install_resident(
-                self.resident_name, **dict(self.resident_params))
+                self.resident_name, version=self.resident_version, **dict(self.resident_params))
         if self.script == buffer_script.SLOOP_SVC:
             return buffer_script.build_sloop_svc(
                 self.svc_numbers, self.svc_args, self.svc_data, flags=self.svc_data_in,

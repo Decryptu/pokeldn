@@ -40,15 +40,20 @@ def test_every_frame_sets_the_flag_and_runs_the_game_handler_once():
     assert int.from_bytes(uc.mem_read(counter, 4), "little") == 2
 
 
+@pytest.mark.parametrize("cartridge, encounter, header", [
+    ("scratchpad/FireRed_f.gba", STANDARD_WILD_ENCOUNTER, GET_HEADER_ID),
+    ("scratchpad/LeafGreen_f.gba", 0x080864FC, 0x08086174)])
 @pytest.mark.parametrize("flag, reaches_header", [(1, False), (0, True)])
-def test_the_cartridge_standardwildencounter_stops_on_this_flag(flag, reaches_header):
-    """The real StandardWildEncounter: with the byte at 1 it returns FALSE before looking at the
-    map; at 0 it goes on to GetCurrentMapWildMonHeaderId."""
-    if not ROM.exists():
+def test_the_cartridge_standardwildencounter_stops_on_this_flag(flag, reaches_header, cartridge,
+                                                                encounter, header):
+    """The real StandardWildEncounter, on either cartridge: with the byte at 1 it returns FALSE
+    before looking at the map; at 0 it goes on to GetCurrentMapWildMonHeaderId."""
+    rom = pathlib.Path(cartridge)
+    if not rom.exists():
         pytest.skip("no cartridge image on this machine")
     from unicorn import UC_HOOK_CODE
     from unicorn import arm_const as a
-    machine = bs._Machine(b"\x00" * 4, memory={0x08000000: ROM.read_bytes(),
+    machine = bs._Machine(b"\x00" * 4, memory={0x08000000: rom.read_bytes(),
                                                 FLAG: bytes([flag])})
     uc = machine.uc
     seen = []
@@ -57,13 +62,13 @@ def test_the_cartridge_standardwildencounter_stops_on_this_flag(flag, reaches_he
         seen.append(address)
         uc.emu_stop()                                   # past here it reads the save; enough
 
-    uc.hook_add(UC_HOOK_CODE, reached, begin=GET_HEADER_ID, end=GET_HEADER_ID)
+    uc.hook_add(UC_HOOK_CODE, reached, begin=header, end=header)
     uc.reg_write(a.UC_ARM_REG_SP, 0x03007D00)
     uc.reg_write(a.UC_ARM_REG_LR, STOP | 1)
     uc.reg_write(a.UC_ARM_REG_R0, 0)
     uc.reg_write(a.UC_ARM_REG_R1, 0)
     uc.reg_write(a.UC_ARM_REG_CPSR, uc.reg_read(a.UC_ARM_REG_CPSR) | (1 << 5))
-    uc.emu_start(STANDARD_WILD_ENCOUNTER | 1, STOP, count=40)
+    uc.emu_start(encounter | 1, STOP, count=40)
     assert bool(seen) == reaches_header
     if not reaches_header:
         assert uc.reg_read(a.UC_ARM_REG_PC) == STOP and uc.reg_read(a.UC_ARM_REG_R0) == 0

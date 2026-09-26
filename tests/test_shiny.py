@@ -205,3 +205,23 @@ def test_the_committed_resident_stubs_are_what_the_sources_assemble_to():
     result = subprocess.run([sys.executable, os.path.join(root, "scripts", "gen_resident_stubs.py"),
                              "--check"], capture_output=True, text=True)
     assert result.returncode == 0, result.stderr
+
+
+@pytest.mark.parametrize("version, cartridge", [("firered", "scratchpad/FireRed_f.gba"),
+                                                 ("leafgreen", "scratchpad/LeafGreen_f.gba")])
+def test_the_sound_mixer_is_the_one_each_cartridges_vblankintr_calls(version, cartridge):
+    """m4aSoundMain is the one address the hooks carry that moves on LeafGreen. The call at
+    0x08000772 inside VBlankIntr is a bl; decode it on the cartridge itself."""
+    import pathlib
+    import struct
+    rom = pathlib.Path(cartridge)
+    if not rom.exists():
+        pytest.skip("no cartridge image on this machine")
+    hi, lo = struct.unpack_from("<HH", rom.read_bytes(), 0x772)
+    offset = ((hi & 0x7FF) << 12 | (lo & 0x7FF) << 1)
+    offset -= (1 << 23) if offset & (1 << 22) else 0
+    target = 0x08000772 + 4 + offset
+    from pokeldn.frlg.rom.resident_stubs import STUBS
+    blob, _, _ = bs.resident_blob("shiny", version=version)
+    at = STUBS["shiny"][2]["p_sound_main"]
+    assert int.from_bytes(blob[at:at + 4], "little") == target | 1

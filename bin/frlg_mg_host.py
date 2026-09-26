@@ -649,13 +649,14 @@ def build_run_config(parser, args):
                 if not sep:
                     parser.error(f"--resident-param takes KEY=VALUE, got {item!r}")
                 resident_params.append((key, int(value, 0)))
+            resident_version = args.version or configmod.DEFAULT_TRAINER.version
             if args.buffer_script == buffer_script.SAVE_WRITE and args.resident:
                 # the hook kept in the save, for MOM's loader (--gift resident-save)
                 if write_data is not None:
                     parser.error("--resident is what save-write writes; drop --write-*")
                 try:
                     write_data = buffer_script.build_resident_save_blob(
-                        args.resident, **dict(resident_params))
+                        args.resident, version=resident_version, **dict(resident_params))
                 except buffer_script.BufferScriptError as exc:
                     parser.error(str(exc))
                 args.resident, resident_params = None, []
@@ -697,6 +698,7 @@ def build_run_config(parser, args):
                 svc_numbers=tuple(args.svc_number or ()), svc_args=tuple(args.svc_arg or ()),
                 svc_data=svc_data, svc_bkpt=args.svc_bkpt,
                 resident_name=args.resident, resident_params=tuple(resident_params),
+                resident_version=resident_version,
                 svc_data_in={"none": 0, "r0": 1, "r1": 2}[args.svc_data_in],
                 gather_address=args.gather_address, gather_count=args.gather_count,
                 gather_stride=args.gather_stride, gather_maxlen=args.gather_maxlen,
