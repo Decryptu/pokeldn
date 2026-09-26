@@ -124,6 +124,21 @@ datagrams while a seat was held in its session; every one authenticated under
 `crc32(network id little-endian || the host MAC)`, a source-id byte of 0, the eight-byte header
 nonce). Header version 3, tag sixteen bytes, not truncated.
 
+## The link code
+
+The link code reaches the advertisement as the NetworkInfo scene id; the password CRC32 at
+application-data +4 stays 0 and the SSID stays `01000000000000000000000000000000`.
+
+| code a console searched with | scene id advertised |
+|---|---|
+| Pikachu, Pikachu, Pikachu | 1 |
+| Bulbasaur, Charmander, Squirtle | 2341 |
+| Bulbasaur, Charmander, Bulbasaur | 2341 |
+
+A retail console searching under Bulbasaur, Charmander, Bulbasaur hosted, and `bin/lgpe_join.py`,
+which advertises and sends no code, joined it and completed a trade: the host checks no code on a
+joiner.
+
 ## The Local Protocol, measured
 
 The console broadcasts its session state on Pia protocol 0x24 (Local Protocol, 36), port 0, the same

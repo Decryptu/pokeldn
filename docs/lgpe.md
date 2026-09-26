@@ -15,7 +15,10 @@ The static reading is taken from Let's Go Pikachu 1.0.2 (`010003f003a34000`, upd
 `v131072`, SDK 5.4.151.0). Hardware measurements are against a French Let's Go Pikachu.
 
 Local trading and battling ask both players for a link code: three Pokemon chosen in order from a
-fixed set. The sessions here use Pikachu, Pikachu, Pikachu.
+fixed set of ten, shown in two rows: Pikachu, Eevee, Bulbasaur, Charmander, Squirtle; Pidgey,
+Caterpie, Rattata, Jigglypuff, Diglett. Most sessions here use Pikachu, Pikachu, Pikachu. The code
+changes the advertisement's scene id ([the session page](lgpe_session.md#the-link-code)); a
+console hosting under another code trades with a joiner that knows nothing of it.
 
 ## Pages
 
@@ -44,9 +47,9 @@ for half an hour. `docs/lgpe_session.md` has every layout.
 
 ## Unresolved
 
-- How the three-Pokemon link code becomes the password. Its CRC32 at application-data +4 was 0 on a
-  session hosted with the code Pikachu, Pikachu, Pikachu, so the code does not reach the Pia
-  password field. Where the game checks it is unread.
+- How the link code becomes the scene id: two codes that differ in the third Pokemon both
+  advertised 2341, and 0x925 appears as no immediate in `main`. Whether a searching console
+  filters hosts by the scene id is unmeasured.
 - The three-byte value after the count in the `0xaN` clone messages. For a clone both stations hold
   it is the same on both sides; for clone type 3 id 0 the two stations send different values that
   match neither announcement, and what it is computed from is unread.

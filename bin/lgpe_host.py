@@ -98,6 +98,9 @@ def build_parser():
                          "376-byte message, header included, or echo for the console's own back")
     ap.add_argument("--our-trainer", metavar="TID:SID",
                     help="the trainer id pair written over the identity's")
+    ap.add_argument("--scene-id", type=int, default=SCENE_ID,
+                    help="the advertised scene id; the link code moves it (Pikachu x3: 1, "
+                         "docs/lgpe_session.md, The link code)")
     ap.add_argument("--fresh-pid", action="store_true",
                     help="offer the --offer structure under a new PID and encryption constant, "
                          "shiny state kept, so a save that took it before takes it again")
@@ -149,7 +152,7 @@ def main(argv=None):
             cap.write(json.dumps(kw) + "\n"); cap.flush()
 
     host = HostTransport(app_data=adv.data, password=PASSPHRASE, nickname=args.player_name,
-                         keys_path=keys_path, local_comm_id=COMM_ID_PIKACHU, scene_id=SCENE_ID,
+                         keys_path=keys_path, local_comm_id=COMM_ID_PIKACHU, scene_id=args.scene_id,
                          app_version=APPLICATION_VERSION, max_participants=MAX_PARTICIPANTS,
                          phyname=phy, ifname=args.ifname, ap_ifname=args.ap_ifname,
                          mon_ifname=args.mon_ifname, channel=args.channel,

@@ -40,9 +40,8 @@ PIA_PORT = 12345
 # the scan is expected to report, by analogy with BDSP and Sword whose comm ids are their title ids.
 COMM_ID_PIKACHU = 0x010003F003A34000
 
-# The link code is three Pokemon chosen in order. The in-game picker's order, and how the choice
-# becomes the password hashed into the advertisement, are open on docs/lgpe.md. The sessions this
-# project runs use Pikachu three times.
+# The link code is three Pokemon chosen in order. It moves the advertised scene id and leaves the
+# password CRC at 0 (docs/lgpe_session.md, The link code). Most sessions here use Pikachu x3.
 CODE_POKEMON = ("pikachu", "pikachu", "pikachu")
 
 
