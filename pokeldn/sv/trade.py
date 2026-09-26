@@ -302,11 +302,12 @@ def apply_fields(plain, settings):
     return plain
 
 
-def load_offer(raw, settings=()):
+def load_offer(raw, settings=(), fresh=False):
     """-> the 348-byte body to offer, from a file's bytes in any of the forms one is kept in.
 
     Hex text, a 352-byte game message with its header, and a bare stored or party record, plain or
-    encrypted, all read; `settings` are `apply_fields`'s.
+    encrypted, all read; `settings` are `apply_fields`'s. `fresh` then draws a new PID and
+    encryption constant, shiny state kept (`pokemon.fresh_identity`).
     """
     from pokeldn.sv import pokemon
 
@@ -321,6 +322,8 @@ def load_offer(raw, settings=()):
         raw = pokemon.to_wire(pokemon.load(raw))
     if settings:
         raw = pokemon.to_wire(apply_fields(pokemon.from_wire(raw), settings))
+    if fresh:
+        raw = pokemon.to_wire(pokemon.fresh_identity(pokemon.from_wire(raw)))
     if len(raw) != OFFER_SIZE:
         raise ValueError(f"an offer is {OFFER_SIZE} bytes, not {len(raw)}")
     return raw

@@ -299,6 +299,9 @@ def build_parser():
                          "host announces key 0x80 open on 0x7c port 1. A station's identity is "
                          "four messages on 0x7c port 0, the two fragments twice, and nothing sent "
                          "on that port before the announcement reaches the game; repeatable")
+    ap.add_argument("--fresh-pid", action="store_true",
+                    help="offer each record under a new PID and encryption constant, shiny state "
+                         "kept, so a save that took it before takes it again")
     ap.add_argument("--trade-offer", action="append", default=[],
                     help="a file holding the 348-byte record this joiner offers (raw, or hex "
                          "text; a 352-byte game message is stripped of its header). With it the "
@@ -433,7 +436,8 @@ def main(argv=None):
     if args.trade_offer and args.offer_dump:
         with open(args.offer_dump, "w") as fh:
             for path in args.trade_offer:
-                offer = trade.load_offer(open(path, "rb").read(), args.offer_set)
+                offer = trade.load_offer(open(path, "rb").read(), args.offer_set,
+                                         fresh=args.fresh_pid)
                 fh.write(offer.hex() + "\n")
                 print(f"[sv] offering {describe_offer(offer)}")
         print(f"[sv] offer written to {args.offer_dump}")
@@ -646,7 +650,8 @@ async def run_session(args, keys, host_ip, host_mac, our_ip, our_mac, record):
     stage = None
     if args.trade_offer:
         stage = trade.JoinerTradeStage(
-            [trade.load_offer(open(path, "rb").read(), args.offer_set)
+            [trade.load_offer(open(path, "rb").read(), args.offer_set,
+                              fresh=args.fresh_pid)
              for path in args.trade_offer],
             confirm_delay=args.confirm_delay, commit_delay=args.commit_delay)
         for n, one in enumerate(stage.offers, 1):

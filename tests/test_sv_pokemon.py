@@ -144,3 +144,16 @@ def test_every_field_a_retail_record_uses_has_a_name():
     assert rebuilt == real
 
 
+
+
+def test_a_fresh_offer_is_drawn_after_the_settings_and_keeps_them():
+    """`--offer-set shiny --fresh-pid`: the new PID must keep the square the setting rolled, and
+    the named fields must survive the reshuffle under the new constant."""
+    base = pokemon.to_wire(pokemon.build(species=132, trainer_id=57189, secret_id=58811,
+                                         pid=0x12345678, encryption_constant=0x9C96AA87))
+    one = pokemon.read(pokemon.from_wire(trade.load_offer(base, ["shiny", "nickname=PKJOIN"])))
+    two = pokemon.read(pokemon.from_wire(trade.load_offer(base, ["shiny", "nickname=PKJOIN"],
+                                                          fresh=True)))
+    assert pokemon.shiny_xor(one) == pokemon.shiny_xor(two) == 0
+    assert (two["species"], two["nickname"]) == (132, "PKJOIN")
+    assert (two["pid"], two["encryption_constant"]) != (one["pid"], one["encryption_constant"])

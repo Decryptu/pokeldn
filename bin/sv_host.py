@@ -280,6 +280,9 @@ def build_parser():
     ap.add_argument("--announce-delay", type=float, default=2.3,
                     help="seconds after the seat before the type 7 goes out; a pair's host "
                          "sends it at about 2.3")
+    ap.add_argument("--fresh-pid", action="store_true",
+                    help="offer each record under a new PID and encryption constant, shiny state "
+                         "kept, so a save that took it before takes it again")
     ap.add_argument("--trade-offer", action="append", default=[],
                     help="a file holding the 348-byte record this host offers (raw, or hex text; "
                          "a 352-byte game message is stripped of its header). With it the host "
@@ -366,7 +369,8 @@ def main():
         # Hex text, a whole game message or a bare record, and every --offer-set written in;
         # a wrong size raises here, before the radio is up.
         for path in args.trade_offer:
-            one = trade.load_offer(open(path, "rb").read(), args.offer_set)
+            one = trade.load_offer(open(path, "rb").read(), args.offer_set,
+                                   fresh=args.fresh_pid)
             trade_offers.append(one)
             try:
                 print(f"[sv] offer {len(trade_offers)} of {len(args.trade_offer)}: "
