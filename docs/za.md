@@ -329,8 +329,8 @@ selection record came 1.16 s after the seat, the previews at 3.74 s, the player'
 the console's `0102` at 88 s and `0104` at 89.6 s, and the joiner's four `0200` steps at 89.7 s and
 104 s. After the trade the console returns to its trade menu on the same seat and offers again.
 
-Most associations are refused with LDN status 1: 59 and 35 refusals before the two seats that
-formed, on one MAC. A seat that forms late in the console's host phase is handed over rather than
+Through a Linux Wi-Fi card most associations were refused with LDN status 1: 59 and 35 refusals
+before the two seats that formed, on one MAC. Through the ESP32 board the first association seated. A seat that forms late in the console's host phase is handed over rather than
 run: the console's first datagram comes 1.4 s after the association instead of within 0.1 s, it
 sends no Session update sequence 1, and it repeats Session type 9 once a second (start host
 migration in the wiki's numbering; Z-A's kick request is 13 where the wiki lists 12, so the
