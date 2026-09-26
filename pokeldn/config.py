@@ -621,6 +621,9 @@ class BufferScriptPayload:
     svc_data: bytes = b""
     svc_data_in: int = 0
     svc_bkpt: bool = False
+    # install-resident: which resident hook, and its parameters.
+    resident_name: str | None = None
+    resident_params: tuple = ()
     # string-gather: an array of pointers to follow, and how far apart they are. This is the one
     # payload that dereferences, so the answer is the strings rather than a window around them.
     gather_address: int | None = None
@@ -762,6 +765,15 @@ class BufferScriptPayload:
                                buffer_script.sloop_svc_answer_size(len(self.svc_data)))
         elif self.svc_numbers or self.svc_args or self.svc_data or self.svc_data_in:
             raise ValueError(f"--svc-* is only meaningful with {buffer_script.SLOOP_SVC}")
+        if self.script == buffer_script.INSTALL_RESIDENT:
+            if not self.resident_name:
+                raise ValueError(f"{buffer_script.INSTALL_RESIDENT} needs the hook (--resident)")
+            if not self.write_unsafe:
+                raise ValueError(
+                    f"{buffer_script.INSTALL_RESIDENT} replaces the console's V-blank handler until "
+                    "the next reset; that needs --write-unsafe")
+        elif self.resident_name or self.resident_params:
+            raise ValueError(f"--resident is only meaningful with {buffer_script.INSTALL_RESIDENT}")
         if self.script == buffer_script.STRING_GATHER:
             if self.gather_address is None:
                 raise ValueError(
@@ -861,6 +873,9 @@ class BufferScriptPayload:
             return buffer_script.build_save_write(
                 self.write_data, self.dump_block, self.dump_offset,
                 unsafe=self.write_unsafe)
+        if self.script == buffer_script.INSTALL_RESIDENT:
+            return buffer_script.build_install_resident(
+                self.resident_name, **dict(self.resident_params))
         if self.script == buffer_script.SLOOP_SVC:
             return buffer_script.build_sloop_svc(
                 self.svc_numbers, self.svc_args, self.svc_data, flags=self.svc_data_in,

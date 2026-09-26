@@ -2160,6 +2160,7 @@ _MINIMAL_ARGS = {
     "save-write": {"write_data": b"X", "dump_offset": 0xB20},
     "flash-read": {"flash_sector": 30},
     "sloop-svc": {"svc_numbers": (0x54,)},
+    "install-resident": {"resident_name": "turbo", "write_unsafe": True},
 }
 
 

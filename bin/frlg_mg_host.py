@@ -326,6 +326,12 @@ def build_parser(file_config=None, *, shared_path=None, local_path=None):
         "--svc-hex", default=None, metavar="hex",
         help="with --buffer-script sloop-svc: the data as hex instead")
     parser.add_argument(
+        "--resident", default=None, metavar="NAME",
+        help="with --buffer-script install-resident: the hook to install (turbo)")
+    parser.add_argument(
+        "--resident-param", action="append", default=None, metavar="KEY=VALUE",
+        help="with --buffer-script install-resident: a hook parameter, e.g. extra=6")
+    parser.add_argument(
         "--svc-bkpt", action="store_true",
         help="with --buffer-script sloop-svc: issue THUMB `bkpt N` instead of `swi N` (0xFF is the "
              "one the game never issues; needs --write-unsafe)")
@@ -597,7 +603,8 @@ def build_run_config(parser, args):
             if args.write_unsafe and args.buffer_script not in (
                     buffer_script.SAVE_WRITE, buffer_script.CREATE_MON,
                     buffer_script.CALL_CHAIN, buffer_script.FLASH_WRITE,
-                    buffer_script.FLASH_PATCH, buffer_script.SLOOP_SVC):
+                    buffer_script.FLASH_PATCH, buffer_script.SLOOP_SVC,
+                    buffer_script.INSTALL_RESIDENT):
                 parser.error(
                     f"--write-unsafe belongs to --buffer-script {buffer_script.SAVE_WRITE}, "
                     f"{buffer_script.CREATE_MON}, {buffer_script.CALL_CHAIN} and "
@@ -632,6 +639,15 @@ def build_run_config(parser, args):
             svc_data = (args.svc_text.encode("utf-8") if args.svc_text is not None
                         else bytes.fromhex(args.svc_hex.replace(" ", "")) if args.svc_hex
                         else b"")
+            if args.buffer_script != buffer_script.INSTALL_RESIDENT and (
+                    args.resident or args.resident_param):
+                parser.error(f"--resident* belongs to --buffer-script {buffer_script.INSTALL_RESIDENT}")
+            resident_params = []
+            for item in args.resident_param or ():
+                key, sep, value = item.partition("=")
+                if not sep:
+                    parser.error(f"--resident-param takes KEY=VALUE, got {item!r}")
+                resident_params.append((key, int(value, 0)))
             chain_steps = tuple(buffer_script.parse_chain_step(step)
                                 for step in (args.chain_step or ()))
             if args.buffer_script != buffer_script.STRING_GATHER \
@@ -667,6 +683,7 @@ def build_run_config(parser, args):
                 call_watch=args.call_watch, chain_steps=chain_steps,
                 svc_numbers=tuple(args.svc_number or ()), svc_args=tuple(args.svc_arg or ()),
                 svc_data=svc_data, svc_bkpt=args.svc_bkpt,
+                resident_name=args.resident, resident_params=tuple(resident_params),
                 svc_data_in={"none": 0, "r0": 1, "r1": 2}[args.svc_data_in],
                 gather_address=args.gather_address, gather_count=args.gather_count,
                 gather_stride=args.gather_stride, gather_maxlen=args.gather_maxlen,

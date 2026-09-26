@@ -108,6 +108,7 @@ FLASH_WRITE = "flash-write"
 FLASH_PATCH = "flash-patch"
 FLASH_READ = "flash-read"
 SLOOP_SVC = "sloop-svc"
+INSTALL_RESIDENT = "install-resident"
 
 # Save flash, the destination of the Sloop sector syscalls. 128 KiB, 32 sectors of 0x1000
 # [decomp:include/save.h: SECTOR_SIZE, SECTORS_COUNT]. The CPU cannot write it with a store; only
@@ -1649,6 +1650,12 @@ SCRIPT_REGISTRY = {
         "left them (--svc-number, --svc-arg, --svc-text/--svc-hex, --svc-data-in; a number outside "
         "the read-only set needs --write-unsafe)",
         None),
+    INSTALL_RESIDENT: BufferScriptSpec(
+        INSTALL_RESIDENT,
+        "copy a resident hook into the top of EWRAM and install it in gIntrTable[4], where it runs "
+        "every frame until a soft reset; answers with the V-blank handler it found "
+        "(--resident turbo, --resident-param extra=N field=N battle=N; needs --write-unsafe)",
+        None),
 }
 
 
@@ -2095,6 +2102,63 @@ def parse_sloop_svc(answer):
             "data": answer[SLOOP_HEADER_SIZE:SLOOP_HEADER_SIZE + length]}
 
 
+# install-resident: copy a resident THUMB hook into the top of EWRAM and put it in gIntrTable[4]
+# [asm/install-resident.s, docs/frlg_rom.md, Code that outlives the session].
+INSTALL_DEST_OFFSET = 0x04
+INSTALL_LENGTH_OFFSET = 0x08
+INSTALL_TABLE_OFFSET = 0x0C
+INSTALL_ENTRY_OFFSET = 0x10
+INSTALL_ORIGINAL_OFFSET = 0x14
+INSTALL_BLOB_OFFSET = 0x18
+# The resident hooks this can install, each by its entry symbol and its tunable parameters.
+RESIDENT_HOOKS = {
+    "turbo": ("turbo_hook", {"extra": 4, "field": 0, "battle": 0, "overlay": 0}),
+}
+
+
+def resident_blob(name, **params):
+    """-> (THUMB bytes, entry offset, p_original offset) for one of RESIDENT_HOOKS."""
+    from pokeldn.frlg.rom import native_script
+    from pokeldn.frlg.rom.resident_stubs import STUBS
+    if name not in RESIDENT_HOOKS:
+        raise BufferScriptError(f"unknown resident hook {name!r}; have {sorted(RESIDENT_HOOKS)}")
+    entry, defaults = RESIDENT_HOOKS[name]
+    unknown = set(params) - set(defaults)
+    if unknown:
+        raise BufferScriptError(f"{name} takes {sorted(defaults)}, not {sorted(unknown)}")
+    words = native_script.resident_words(name, **{**defaults, **params})
+    symbols = STUBS[name][2]
+    return (b"".join(w.to_bytes(4, "little") for w in words), symbols[entry],
+            symbols["p_original"])
+
+
+def build_install_resident(name, *, dest=None, table=None, **params):
+    """The install-resident payload carrying resident hook `name`, parameters patched."""
+    from pokeldn.frlg.rom import native_script
+    dest = native_script.RESIDENT_BASE if dest is None else dest
+    table = native_script.GINTRTABLE_VBLANK if table is None else table
+    blob, entry, original = resident_blob(name, **params)
+    code = bytearray(payload(INSTALL_RESIDENT))
+    if len(code) + len(blob) > MAX_BUFFER_SCRIPT_SIZE:
+        raise BufferScriptError(
+            f"{name} is {len(blob)} bytes; with the installer that is past the "
+            f"{MAX_BUFFER_SCRIPT_SIZE}-byte receive buffer")
+    if dest % 4 or not (0x0203FC00 <= dest and dest + len(blob) <= 0x02040000):
+        raise BufferScriptError(
+            f"0x{dest:08X} is not word-aligned space inside 0x0203FC00..0x02040000, the only EWRAM "
+            "no symbol claims")
+
+    def put(at, value):
+        code[at:at + 4] = (int(value) & 0xFFFFFFFF).to_bytes(4, "little")
+    put(INSTALL_DEST_OFFSET, dest)
+    put(INSTALL_LENGTH_OFFSET, len(blob))
+    put(INSTALL_TABLE_OFFSET, table)
+    put(INSTALL_ENTRY_OFFSET, entry)
+    put(INSTALL_ORIGINAL_OFFSET, original)
+    put(INSTALL_BLOB_OFFSET, len(code))
+    return bytes(code) + blob
+
+
 def build_flash_patch(sector_id, patch_offset, data, *, scratch=FLASH_WRITE_SCRATCH,
                       counter_bias=2, unsafe=False):
     """The flash-patch payload: read the id's sector out of flash, change `data` at `patch_offset`,
@@ -2336,6 +2400,7 @@ PATCHED_SPANS = {
     FLASH_WRITE: ((FLASH_WRITE_SECTOR_OFFSET,
                    FLASH_WRITE_THUNK_OFFSET + 4 - FLASH_WRITE_SECTOR_OFFSET),),
     SLOOP_SVC: ((SLOOP_FLAGS_OFFSET, SLOOP_DATA_OFFSET + SLOOP_DATA_MAX - SLOOP_FLAGS_OFFSET),),
+    INSTALL_RESIDENT: ((INSTALL_DEST_OFFSET, INSTALL_BLOB_OFFSET + 4 - INSTALL_DEST_OFFSET),),
 }
 
 
@@ -2343,8 +2408,8 @@ def describe(code):
     """Name a payload from its bytes, operands and all."""
     code = bytes(code)
     for name, (committed, _) in PAYLOADS.items():
-        # save-write is the one payload whose length varies: the bytes it writes are its tail.
-        longer_is_fine = name == SAVE_WRITE
+        # save-write and install-resident vary in length: what they write is their tail.
+        longer_is_fine = name in (SAVE_WRITE, INSTALL_RESIDENT)
         if len(code) != len(committed) and not (longer_is_fine and len(code) > len(committed)):
             continue
         image, reference = bytearray(code[:len(committed)]), bytearray(committed)
@@ -2459,6 +2524,7 @@ class BufferScriptRun:
         return self.returned == BUFFER_SCRIPT_DONE
 
 
+IO_BASE, IO_SIZE = 0x04000000, 0x1000
 _UC_EXCP_BKPT = 7                   # unicorn's ARM EXCP_BKPT, the intno a bkpt raises
 
 
@@ -2540,6 +2606,10 @@ class _Machine:
         uc.mem_map(EWRAM_BASE, EWRAM_SIZE)
         uc.mem_map(IWRAM_BASE, IWRAM_SIZE)
         uc.mem_map(ROM_BASE, ROM_SIZE)
+        uc.mem_map(IO_BASE, IO_SIZE)          # plain memory: REG_IME and friends read back what they hold
+        uc.mem_map(0x05000000, 0x400)         # palette
+        uc.mem_map(0x06000000, 0x18000)       # VRAM
+        uc.mem_map(0x07000000, 0x400)         # OAM
         uc.mem_write(ROM_BASE, bytes(rom if rom is not None else _DEFAULT_ROM_HEADER))
         uc.mem_map(_RETURN_ADDRESS, 0x1000)
         # The chip is 128 KiB and starts erased. The CPU does not see it that way: it sees a 64 KiB

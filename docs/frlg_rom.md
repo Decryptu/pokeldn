@@ -1456,6 +1456,66 @@ the data as the last call left it. Numbers that only return a value (0x46, 0x49.
 0x50..0x54, 0x58..0x60) go out as they are; 0x48, 0x56, 0x4C and 0x55 are refused, and the rest need
 `--write-unsafe`. `--svc-bkpt` needs `--write-unsafe` and refuses `#0x52`.
 
+### `install-resident`
+
+Copies a resident THUMB hook into `0x0203FC00` and installs it in `gIntrTable[4]`, from the Mystery Gift
+menu, in one session. The hook runs every frame after the session, through CONTINUER and in the
+overworld, until a soft reset.
+
+    ./scratchpad/run_mg_ip.sh svcNN --buffer-script install-resident --resident turbo \
+        --resident-param extra=4 --resident-param field=1 --resident-param battle=1 \
+        --resident-param overlay=0x03004220 --write-unsafe --version firered
+
+    0x000  b .Lcode
+    0x004  dest          0x0203FC00
+    0x008  length        of the hook, whole words
+    0x00C  table         &gIntrTable[4], 0x03002730
+    0x010  entry_off     the hook's entry inside it
+    0x014  original_off  its p_original word
+    0x018  blob_off      where the hook starts in this image, after the installer's code
+
+REG_IME is cleared around the copy and the table write. The first install keeps the handler it
+replaces at `0x0203FBFC`; a later install over any resident hook chains to that word rather than to
+an offset of the old hook's layout, and refuses with `0xBAD0BAD0` when the word is empty. The answer
+is the handler found in the table: `0x0800071D`, `VBlankIntr`, on a clean install.
+
+`turbo` (`asm/resident/turbo.s`) runs `VBlankIntr`, then, in an idle frame, the overworld's callbacks
+`field` more times, the battle's `battle` more times and `RunTextPrinters` (`0x08002D51`) `extra` more
+times: the field and battles at `1 + N` speed and a printer at the fast option drawing `1 + extra`
+glyphs a frame. A callback pass runs only while `callback1` and `callback2` are exactly its pair,
+`CB1_Overworld` (`0x08059E49`) and `CB2_Overworld` (`0x08059EC9`), or `BattleMainCB1` (`0x08015B6D`,
+stored by the battle init at `0x08013FDE`) and `BattleMainCB2` (`0x08014889`). The pair is checked
+again between the two calls, so a warp or a battle CB1 starts is not followed by the old CB2, and
+`newKeys` and `newAndRepeatedKeys` are cleared first so a press is handled once while held keys keep
+walking. No pass runs while `gPaletteFade.active` (`0x02037AB4`) is set: a hardware fade ends only when
+`UpdatePaletteFade` sets the one-bit `hardwareFadeFinishing` and the next V-blank sees it [palette.c:701,
+743], and a second update in the same frame wraps that bit back to 0. With `battle=1` and no fade
+check, closing the bag in a battle left `CompleteWhenChoseItem` waiting on that fade for good.
+Two gates keep the extra work out of the game's way:
+
+- `gMain.intrCheck` (`0x030022EC`) bit 0, read before `VBlankIntr` runs: clear means the main loop is
+  parked in `WaitForVBlank` [main.c:462], so the extra calls cannot interleave with its own. Set is a
+  lag frame and the frame runs as the game wrote it.
+- No active printer in `sTextPrinters` (`0x02020034`, 32 of 0x24 bytes) may still be at its origin
+  (`currentX == x`, `currentY == y`). A field message adds its printer before its box is drawn and runs
+  it only in its print state [field_message_box.c:44]; printing it earlier drew the speaker's name and
+  the start of the line into a window the box then cleared.
+
+Measured on an emulator: 60 frames a second, 97% of them idle; field and battle text at five glyphs a
+frame with every glyph present.
+With `field=1` the overworld runs at double speed, the player, NPCs and animations alike; with
+`battle=1` a battle does, and its bag and party menus open and close.
+
+`overlay=ADDRESS` shows the word at `ADDRESS` as eight hex digits in the top-right corner of the
+overworld, every frame; `0x03004220` is `gRngValue`. The eight entries go into `gMain.oamBuffer[120..127]`
+(`0x030026C8`) and the two colours into OBJ palette 15 of `gPlttBufferFaded` (`0x020375F4`) and
+`gPlttBufferUnfaded` (`0x020371F4`), before `VBlankIntr`, whose `LoadOam` and `TransferPlttBuffer` copy
+them with the game's own. Written to OAM after `VBlankIntr` instead, they landed once the screen had
+started drawing and the digits' top rows showed the previous frame. A 1bpp font of 128 bytes is
+expanded into OBJ tiles 1008 to 1023 after `VBlankIntr`, and only when two sentinel words of those
+tiles differ from what the expansion writes. OBJ palette 15 and those tiles are the game's to use as
+well; while the overlay is on, anything it keeps there is overwritten.
+
 ### `call-chain`
 
 Up to sixteen steps in order in a single frame, one answer word per step. Every question about the
