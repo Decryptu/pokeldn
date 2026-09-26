@@ -19,7 +19,7 @@ FIELDS = {
     "curry_types": (0x26, "<H"),
     "roto_rally_score": (0x28, "<i"),
     "caught": (0x2C, "<i"),
-    "dex_complete": (0x30, "B"),
+    "dex_complete": (0x30, "B"),    # the Rotom-Dex icon top right of a received card
     "gender": (0x38, "B"),
     "started_year": (0x170, "<H"),
     "started_month": (0x172, "B"),
@@ -34,7 +34,10 @@ POKE_FIELDS = {"species": (0x00, "<I"), "form": (0x04, "<I"), "gender": (0x08, "
 
 
 def field(name):
-    """-> (offset, format) for a card field; `pokeN_FIELD` (N 1..6) names a showcase Pokemon's."""
+    """-> (offset, format) for a card field; `pokeN_FIELD` (N 1..6) names a showcase Pokemon's, and
+    a hex offset (`0x31`) names that one byte."""
+    if name.startswith("0x") and int(name, 16) < LENGTH:
+        return int(name, 16), "B"
     if name in FIELDS:
         return FIELDS[name]
     if name.startswith("poke") and "_" in name:
