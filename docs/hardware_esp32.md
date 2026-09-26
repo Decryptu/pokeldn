@@ -231,8 +231,31 @@ holds for 108 to 261 ms, the frames queued behind it then complete in a burst (u
 5 ms), and the access point's own action frames keep going meanwhile. The sniffer saw one to three
 copies of such a head frame, retries at 54 or 48 Mbit/s. The channel does not decide it (channel 1
 held five times, then none), nor does the retry share. A foreign station associating for 4 s every
-20 to 25 s coincided with none of the 81 frames over 100 ms. What makes the console leave a frame
-unacknowledged for 100 ms or more is unknown. TX-dones complete out of order and the board's
+20 to 25 s coincided with none of the 81 frames over 100 ms.
+
+The console stays awake and on the channel through a hold. Through each of the five holds on
+channel 1, the sniffer shows the console's data frames to the board between the head frame's
+copies, all with the power-management bit clear; the one hold on channel 6 shows a single copy. In four trades the console never set that bit
+toward the board. It set it only toward its infrastructure access point, which shares channel 1,
+and sent that access point nothing while the session ran. The board's copies of a held frame are
+spread across the hold with the console's frames between them, not sent back to back. The two sides
+also pick rates differently:
+
+| sender | first tries at 54 Mbit/s | retries |
+|---|---|---|
+| board (access point) | 91 to 100% | 54 Mbit/s for 77 to 92%, then 48, rarely 6 or 36 |
+| console | 92 to 99% | 48, 36, 24, 18, down to 1 Mbit/s |
+
+What makes the board wait about 100 ms between copies of a frame, and why a retry at 54 Mbit/s
+fails where the console's own frames get through, are unknown. Bits 3 to 5 of the access point's
+flag byte pin its data rate (`esp_wifi_internal_set_fix_rate`); 0 leaves rate control on:
+
+| bits 3..5 | 1 | 2 | 3 | 4 | 5 | 6 | 7 |
+|---|---|---|---|---|---|---|---|
+| rate, Mbit/s | 1 | 11 | 6 | 12 | 24 | 36 | 54 |
+
+`POKELDN_ESP32_AP_FLAGS=0x28` pins 24 Mbit/s. `tools/ldn/esp32_hold_air.py` lists what the sniffer saw
+during each hold. TX-dones complete out of order and the board's
 receive times can swap two frames written 0.1 ms apart; `tools/ldn/esp32_hold.py CAPTURE TRACE`
 pairs them by length and splits these stages.
 

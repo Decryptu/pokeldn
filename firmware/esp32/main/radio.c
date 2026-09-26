@@ -37,6 +37,12 @@ enum {
     MSG_RX_SNIFF = 0x8C, MSG_TX_DONE = 0x8D, MSG_BUTTON = 0x8E,
 };
 enum { AP_FLAG_STOCK_JOIN = 1, AP_FLAG_NO_QOS = 2, AP_FLAG_NO_DATA_TRACE = 4 };
+/* Flag bits 3..5 pin the AP's data rate: 0 leaves rate control on. docs/hardware_esp32.md */
+#define AP_FLAG_RATE(flags) (((flags) >> 3) & 7)
+static const wifi_phy_rate_t AP_FIXED_RATES[8] = {
+    0, WIFI_PHY_RATE_1M_L, WIFI_PHY_RATE_11M_L, WIFI_PHY_RATE_6M, WIFI_PHY_RATE_12M,
+    WIFI_PHY_RATE_24M, WIFI_PHY_RATE_36M, WIFI_PHY_RATE_54M,
+};
 enum mode { MODE_IDLE, MODE_STA_JOINING, MODE_STA, MODE_AP, MODE_SNIFF };
 
 static const uint8_t BROADCAST[6] = {0xff, 0xff, 0xff, 0xff, 0xff, 0xff};
@@ -363,6 +369,11 @@ static esp_err_t ap_start(const uint8_t *p, size_t n)
     esp_wifi_set_tx_done_cb(tx_done);
     esp_wifi_set_ps(WIFI_PS_NONE);
     esp_wifi_set_inactive_time(WIFI_IF_AP, 3600);
+    if (AP_FLAG_RATE(s_ap_flags)) {
+        const esp_err_t fixed = esp_wifi_internal_set_fix_rate(WIFI_IF_AP, true,
+                                                               AP_FIXED_RATES[AP_FLAG_RATE(s_ap_flags)]);
+        wire_log("ap fixed rate %u: %d", AP_FLAG_RATE(s_ap_flags), fixed);
+    }
     atomic_store(&s_mode, MODE_AP);
     start_sniffer();
     return ESP_OK;

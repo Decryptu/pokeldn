@@ -62,6 +62,27 @@ one span no symbol claims:
 
 `nm -S pokefirered_switch.elf` and `scratchpad/ram_survey.py` do it.
 
+## The BIOS wrappers
+
+`libagbsyscall.s` links as one block of THUMB `svc N ; bx lr` pairs, in the decomp's order
+[src/libagbsyscall.s]. The block reads the same on both cartridges and starts 0x24 lower on
+LeafGreen:
+
+| wrapper | svc | FireRed | LeafGreen |
+|---|---|---|---|
+| `ArcTan2` | 0x0A | 0x081E21D4 | 0x081E21B0 |
+| `BgAffineSet` | 0x0E | 0x081E21D8 | 0x081E21B4 |
+| `CpuFastSet` | 0x0C | 0x081E21DC | 0x081E21B8 |
+| `CpuSet` | 0x0B | 0x081E21E0 | 0x081E21BC |
+| `Div` | 0x06 | 0x081E21E4 | 0x081E21C0 |
+| `LZ77UnCompVram` | 0x12 | 0x081E21E8 | 0x081E21C4 |
+| `LZ77UnCompWram` | 0x11 | 0x081E21EC | 0x081E21C8 |
+
+The game's LZ77 streams are VRAM-safe (no copy distance of 1): Bulbasaur's front sprite at
+0x08D2FBD4 (676 bytes) and palette at 0x08D2FE78 (40 bytes) on FireRed are, byte for byte, what the
+decomp's `gbagfx` writes from its PNG and JASC sources. LZ77 does not shrink payload code: the
+resident hooks come out as large or larger, so it carries more than 1024 bytes only of data.
+
 ## The first anchor
 
 The `anchors` payload returns the ROM address of the instruction after
