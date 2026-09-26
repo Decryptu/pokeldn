@@ -242,6 +242,8 @@ def build_parser():
     ap.add_argument("--ifname", default="ldnclient")
     ap.add_argument("--channels", default="1,6,11,36,40,44,48")
     ap.add_argument("--dwell", type=float, default=0.8)
+    ap.add_argument("--scan-seconds", type=float, default=300.0,
+                    help="keep scanning this long for a console before giving up")
     ap.add_argument("--name", default="PkCamp")
     ap.add_argument("--passphrase", default=None, help="override, as ASCII")
     ap.add_argument("--hold", type=float, default=60.0)
@@ -383,10 +385,14 @@ def main(argv=None):
     keys_file = ldn.load_keys(keys_path)
 
     async def find():
-        nets = await ldn.scan(keys_file, phyname=phy, channels=channels, dwell_time=args.dwell)
-        for n in nets:
-            print(f"[lg] saw {describe(n)}")
-        return nets
+        # A console on the search screen advertises only while it hosts; scan until it appears.
+        deadline = trio.current_time() + args.scan_seconds
+        while True:
+            nets = await ldn.scan(keys_file, phyname=phy, channels=channels, dwell_time=args.dwell)
+            for n in nets:
+                print(f"[lg] saw {describe(n)}")
+            if nets or trio.current_time() >= deadline:
+                return nets
 
     nets = trio.run(find)
     if not nets:
