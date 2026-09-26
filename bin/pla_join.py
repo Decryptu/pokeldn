@@ -34,7 +34,7 @@ if os.path.isdir(BUNDLED_LDN):
 
 import trio
 
-from pokeldn import pla
+from pokeldn import gen8, pla
 from pokeldn.host_support import resolve_keys
 from pokeldn.ldn import ldn_mitm, pia6
 from pokeldn.ldn.transport import board_radio, find_ap_phy
@@ -128,9 +128,13 @@ def make_socket(ifname, our_ip=None):
 def build_offer(args, exchange):
     """-> the encrypted party record to trade away: a file, or the reference under our name."""
     if args.offer:
-        return pla_pokemon.encrypt(pla_pokemon.load(open(os.path.expanduser(args.offer),
-                                                         "rb").read()))
-    return trade_box.build_our_record(**data_exchange.read_record(exchange))
+        offer = pla_pokemon.encrypt(pla_pokemon.load(open(os.path.expanduser(args.offer),
+                                                          "rb").read()))
+    else:
+        offer = trade_box.build_our_record(**data_exchange.read_record(exchange))
+    if args.fresh_pid:
+        offer = pla_pokemon.encrypt(gen8.fresh_identity(pla_pokemon.decrypt(offer)))
+    return offer
 
 
 async def run_session(args, keys, sock, host_ip, our_ip, our_mac, offer, exchange, record):
@@ -410,6 +414,9 @@ def build_parser():
                     help="hex, four bytes: the player id in our data exchange record")
     ap.add_argument("--join-player-id", default=pia6.DEFAULT_PLAYER_ID.hex(),
                     help="hex, sixteen bytes: the player id in the session join request")
+    ap.add_argument("--fresh-pid", action="store_true",
+                    help="offer the record under a new PID and encryption constant, drawn once per "
+                         "run, shiny state kept, so a save that took it before takes it again")
     ap.add_argument("--offer", default=None,
                     help="the record to trade away, stored or party, encrypted or not; the "
                          "default is the reference Azelf under our player name")
@@ -442,6 +449,8 @@ def host_argv(args, channel, seconds):
             "--data-exchange", "--game-channel", "--trade-box"]
     if args.offer:
         argv += ["--trade-box-record", args.offer]
+    if args.fresh_pid:
+        argv += ["--fresh-pid"]
     if args.collect:
         argv += ["--trade-box-collect", args.collect]
     if args.capture:

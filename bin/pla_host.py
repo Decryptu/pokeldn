@@ -28,7 +28,7 @@ import traceback
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
 from pokeldn import config
-from pokeldn import pla
+from pokeldn import gen8, pla
 from pokeldn.ldn import pia6, pia_connect, reliable5, rtt_protocol
 from pokeldn.pla import channel_table, data_exchange, game_channel, trade_box
 from pokeldn.pla import pokemon as pla_pokemon
@@ -267,6 +267,9 @@ def build_parser():
     ap.add_argument("--trade-box-collect", default=None,
                     help="write every record the console shows or offers to this directory, one "
                          "file per distinct record, named by species and nickname")
+    ap.add_argument("--fresh-pid", action="store_true",
+                    help="offer the record under a new PID and encryption constant, drawn once per "
+                         "run, shiny state kept, so a save that took it before takes it again")
     ap.add_argument("--trade-box-record", default=None,
                     help="offer this record file instead of the reference one; stored or party, "
                          "encrypted or decrypted")
@@ -378,8 +381,11 @@ def main():
         if v is not None}
     box_file = os.path.expanduser(args.trade_box_record) if args.trade_box_record else None
 
+    fresh_draw = os.urandom(6) if args.fresh_pid else None
+
     def build_offer():
-        """-> the encrypted record to offer, from the file if one was named."""
+        """-> the encrypted record to offer, from the file if one was named. A rebuild after the
+        file changes keeps the run's one --fresh-pid draw."""
         template = (pla_pokemon.encrypt(pla_pokemon.load(open(box_file, "rb").read()))
                     if box_file else trade_box.REFERENCE_RECORD)
         if args.trade_box_ours:
@@ -388,6 +394,10 @@ def main():
         if box_edits:
             template = pla_pokemon.encrypt(
                 pla_pokemon.write(pla_pokemon.decrypt(template), **box_edits))
+        if fresh_draw:
+            draw = iter((fresh_draw[:2], fresh_draw[2:]))
+            template = pla_pokemon.encrypt(gen8.fresh_identity(
+                pla_pokemon.decrypt(template), rand=lambda n: next(draw)))
         return template
 
     # THE OFFER IS RE-READ WHEN THE FILE CHANGES. A console in the box screen offers over and over,
