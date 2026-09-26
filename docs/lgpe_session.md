@@ -555,21 +555,33 @@ carry it.
 The clone type 2 copy's 20-byte data is five words, written by `0x11bc00` and its siblings:
 
 ```
-+0x00  4  the state, 1 from 0x11bc00 and 4 from 0x11bcf0
++0x00  4  the state: 1 a vote (0x11bc00), 2 a vote withdrawn (0x11b4e0), 4 a forced leave (0x11bcf0)
 +0x04  4  that call's argument, 1 on selection and 2 on confirmation
 +0x08  4  a counter, incremented on each call
 +0x0c  4  the station's own step, the number of game messages it has sent
 +0x10  4  the trailing word
 ```
 
-The clone type 4 copy's 32-byte data carries three of the same values:
+The clone type 4 copy's 32-byte data is the session host's, the authority's, view:
 
 ```
-+0x00  4  the clone type 2 record's argument
-+0x04 20  zero
++0x00  4  A, the agreed argument
++0x04  4  B
++0x08 16  one counter per station index (host 0, joiner 1): the counter of the vote it last saw withdrawn
 +0x18  4  the station's step
 +0x1c  4  the trailing word
 ```
+
+The authority `0x11b6c0` runs every tick on the session host. It moves A to X only when every
+station publishes state 1 with argument X on the current trailing word, and then publishes A and
+the trailing word on by one together; a state 4 moves A at once. For a station in state 2 whose
+argument differs from A it writes that station's counter into its slot, moves the trailing word on
+by one, keeps A and B, and republishes its own type 2 under the new trailing word. The screens read
+a status `0x3488b0` from A and the local state (tables `0xf4e920..0xf4e980`): with A 1, states 0 to
+4 give 2, 3, 3, 8, 2; with A 2, they give 4, 5, 8, 8, 4. 8 is the error value.
+
+State 2 comes only from state 1, through `0x348ab0`: the confirmation screen calls it at `0x9c2064`
+when its menu returns 0 (Retour) while the status is 3, the player's vote pending.
 
 `0x11b688` stages an arriving clone type 4 record into the trade object at `+0x1638`, and `0x11ba20`
 compares it field for field against the object's own: `+0x1638` against `obj+0x04`, `+0x163c`
@@ -603,10 +615,14 @@ gets 0 1 1 with the trailing word 2 and no kind 3, and the console sits on its c
 screen.
 
 A console whose player pressed A again as the confirmation greyed the buttons (the cursor then
-sits on Retour) published a fourth record on the offered clone, `2 2 3` (state 2, argument 2,
-counter 3), after its `1 2 2`, answered the host's trailing word 2 with `0 2 3`, never answered the
-commit clone and held a warning screen. The save could not trade for 30 minutes afterwards. What
-state 2 means to the game is unread; the host has no answer for it.
+sits on Retour) withdrew its vote: `2 2 3` (state 2, argument 2, counter 3) after its `1 2 2`. A host
+that answered with A 2 took it to status 4, which the confirmation loop at `0x9c3300` has no case
+for: the console republished `0 2 3`, never answered the commit clone, held a warning screen, and
+the save could not trade for 30 minutes afterwards. The authority's answer, type 4 `1 0 0 3 0 0 step
+T+1`, takes the same console record to status 2, the screen's exit, under the game's own
+`0x11ba20`. `bin/lgpe_host.py` answers that way and agrees a second vote in one publish;
+`tests/test_lgpe_host_withdraw.py` runs both through the game's code. Where the game sets the
+30-minute lock is unread; the trade record code holds no time value.
 
 Publishing no clone data on clone types 4 and 1 at all, which is what two retail consoles exchange,
 leaves a console that joins short of the gate at `0x11b080` and on its search screen.

@@ -280,6 +280,9 @@ class Participant:
         # the first word of a clone type 4 copy when it is not the second word of our flags: the
         # peer's own argument, echoed when its state word is 4 (docs/lgpe_session.md)
         self.arg = {}
+        # a clone type 4 copy's words 1 to 5: B, then one counter per station index, the counter of
+        # the vote the authority last saw withdrawn (Let's Go main 0x11b6c0; docs/lgpe_session.md)
+        self.votes = {}
         self.queue = []
         self.log = []
 
@@ -470,7 +473,7 @@ class Participant:
         (docs/lgpe_session.md)."""
         flags = self.flags.get(clone_id) or self.shared.get(clone_id, SHARED_CLONE_DATA)[:12]
         arg = self.arg.get(clone_id) or (flags[4:8] if len(flags) >= 8 else bytes(4))
-        return arg + bytes(0x14) + struct.pack("<I", self.state_word) + \
+        return arg + self.votes.get(clone_id, bytes(0x14)) + struct.pack("<I", self.state_word) + \
             struct.pack("<I", self.tail.get(clone_id, 0))
 
     def advance_state(self, now, state_word):
@@ -704,6 +707,7 @@ class Participant:
             self.tail.pop(cid, None)
             self.flags.pop(cid, None)
             self.arg.pop(cid, None)
+            self.votes.pop(cid, None)
             return [self._command(COMMAND_END_ACK, 1 if c["ctype"] == 2 else c["ctype"],
                                   0xFD, cid, now)]
         if kind == COMMAND_REQUEST and c["ctype"] == 1:

@@ -53,8 +53,8 @@ for half an hour. `docs/lgpe_session.md` has every layout.
 - The three-byte value after the count in the `0xaN` clone messages. For a clone both stations hold
   it is the same on both sides; for clone type 3 id 0 the two stations send different values that
   match neither announcement, and what it is computed from is unread.
-- The clone state 2 a console publishes after a second A press on its confirmation, and the
-  answer that would let the trade go on ([the session page](lgpe_session.md)).
+- Where the game sets the 30-minute trade lock after a held confirmation, and what a console does
+  after the authority acknowledges its withdrawn vote ([the session page](lgpe_session.md)).
 - The flag halfword in the game message header, `0x0000ff00` on every message seen. Nothing has
   varied it.
 - The console sent fourteen kind-4 results, one per party slot, after one trade and a single one

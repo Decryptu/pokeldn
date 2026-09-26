@@ -285,6 +285,8 @@ class Session:
         self.result_at = None
         self.result_sent = False
         self.leaving = set()
+        self.withdrawn = {}
+        self.revoted = set()
         self.peer_left = False
         self.released = set()
         self.release_at = []
@@ -452,7 +454,9 @@ class Session:
                                      struct.pack(">II", c.ms(now), HOST_BIT)), clone.PROTOCOL)
                 print("[lgh] clone: clone 0 participants: ourselves alone")
             while self.drive and now >= self.drive[0][0]:
-                _, cid, flags, tail = self.drive.pop(0)
+                _, cid, flags, tail, *then = self.drive.pop(0)
+                for step in then:
+                    step()
                 self.clone.flags[cid] = flags
                 self.clone.tail[cid] = tail
                 self.publish_step()
@@ -759,6 +763,47 @@ class Session:
                 # it with a zero first word (docs/lgpe_session.md, "The two clone records")
                 self.commit_clone = d["clone_id"]
             print(f"[lgh] clone: clone {d['clone_id']} offered on both sides; driving it on")
+        # state 2 withdraws a vote not yet agreed (main 0x11b4e0). As the authority 0x11b6c0 does:
+        # keep the agreed word, the counter in the joiner's slot, the trailing word on by one.
+        # Answering it with the vote agreed held the console and locked the save (docs/lgpe_session.md)
+        rec = (d["record"].get("data", b"") if d and d["type"] == clone.STATE_DATA
+               and d["ctype"] == 2 and d["record"] else b"")
+        cid = d["clone_id"] if rec else None
+        if (len(rec) >= 20 and rec[:4] == b"\x02\0\0\0" and cid in self.clone.flags
+                and self.withdrawn.get(cid) != rec[8:12]):
+            agreed = self.clone.type4_data(cid)[:4]
+            if rec[4:8] != agreed:
+                self.withdrawn[cid] = rec[8:12]
+                self.drive = [step for step in self.drive if step[1] != cid]
+                votes = bytearray(self.clone.votes.get(cid, bytes(20)))
+                votes[8:12] = rec[8:12]          # the station index of the joiner is 1
+                c = self.clone
+
+                def hold(cid=cid, agreed=agreed, votes=bytes(votes)):
+                    c.arg[cid] = agreed
+                    c.votes[cid] = votes
+                self.drive.append((now + 0.03, cid, self.clone.flags[cid],
+                                   (self.clone.tail.get(cid) or 0) + 1, hold))
+                self.drive.sort(key=lambda step: step[0])
+                print(f"[lgh] clone: the console withdrew its vote {int.from_bytes(rec[4:8], 'little')}"
+                      f" on clone {cid} (counter {int.from_bytes(rec[8:12], 'little')}); "
+                      f"holding {int.from_bytes(agreed, 'little')}")
+        # a vote after a withdrawal, on the current trailing word: vote the same and move the agreed
+        # word with the trailing word, in one publish (main 0x11b6c0)
+        if (len(rec) >= 20 and cid in self.withdrawn and rec[:4] == b"\x01\0\0\0"
+                and rec[16:20] == struct.pack("<I", self.clone.tail.get(cid) or 0)
+                and rec[4:8] != self.clone.type4_data(cid)[:4]
+                and (cid, rec[8:12]) not in self.revoted):
+            self.revoted.add((cid, rec[8:12]))
+            ours = self.clone.flags[cid]
+            vote = b"\x01\0\0\0" + rec[4:8] + struct.pack("<I", int.from_bytes(ours[8:12], "little") + 1)
+            c = self.clone
+            self.drive = [step for step in self.drive if step[1] != cid]
+            self.drive.append((now + 0.03, cid, vote, (self.clone.tail.get(cid) or 0) + 1,
+                               lambda cid=cid: c.arg.pop(cid, None)))
+            self.drive.sort(key=lambda step: step[0])
+            print(f"[lgh] clone: the console voted {int.from_bytes(rec[4:8], 'little')} again on "
+                  f"clone {cid}; agreeing")
         # the peer's state word 4 is its player leaving. The emulated host answered it 29 ms
         # later with zeros in the first three words, the trailing word moved on by one, and the
         # peer's own argument in the type 4 copy's first word; the peer then released its clones
