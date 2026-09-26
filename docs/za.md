@@ -329,6 +329,10 @@ selection record came 1.16 s after the seat, the previews at 3.74 s, the player'
 the console's `0102` at 88 s and `0104` at 89.6 s, and the joiner's four `0200` steps at 89.7 s and
 104 s. After the trade the console returns to its trade menu on the same seat and offers again.
 
+A record the save already holds trades again under a new encryption constant and PID with the
+same `hi ^ lo` (the shiny state): the Glaceon above, re-sent as EC `172f7a2b` PID `bd5f5957`
+(`--fresh-pid`), completed its trade 24 s after the seat.
+
 Through a Linux Wi-Fi card most associations were refused with LDN status 1: 59 and 35 refusals
 before the two seats that formed, on one MAC. Through the ESP32 board the first association seated. A seat that forms late in the console's host phase is handed over rather than
 run: the console's first datagram comes 1.4 s after the association instead of within 0.1 s, it

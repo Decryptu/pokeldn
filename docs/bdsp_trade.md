@@ -290,6 +290,10 @@ flagged Pokemon cannot be traded. The player can release it; `ClearIllegalFlagAl
 
 Never build an offer from a capture of the same console's own Pokemon without changing the PID.
 
+The same record under a new PID and encryption constant, shiny state kept, trades into a save
+that holds the original: a hosted trade completed with it (`bin/bdsp_host.py --fresh-pid`). Whether
+the received copy carries the illegal flag is unmeasured.
+
 ## The disconnect penalty
 
 Dropping out mid-trade earns *"vous ne pouvez pas faire d'echange en reseau pour le moment"*, and the
