@@ -824,6 +824,138 @@ from the filler, so forty words were written and ten identical rows are a measur
 absence of one.
 
 
+### The breakpoint hooks
+
+The wrapper's GBA CPU object carries 256 hook slots at `cpu + 0x170`, one per `bkpt` immediate.
+The ARM decode tests `(insn & 0xFFF000FF) == 0xE1200070` and the THUMB decode `(insn & 0xFF00) ==
+0xBE00` at `main + 0x01FCE4`; the THUMB handler at `main + 0x01EFC0` calls
+vtable slot 2 of the hook in slot `imm8`, with the hook, `&insn`, the `bkpt`'s address and the CPU, through `main + 0x01F820`. A hook returning 1 has the
+core execute the instruction it stored in `insn` in place of the `bkpt`; a hook returning 0, or an
+empty slot, makes the `bkpt` a no-op to the guest. `main + 0x022A2C` registers a hook and refuses a
+slot that is already filled.
+
+Read from the running emulator, two slots are filled:
+
+| slot | owner | hook | what it does |
+| --- | --- | --- | --- |
+| `bkpt #0x52` | the Sloop component, vtable `main + 0x1C3878` | `main + 0x05499C` -> `main + 0x056368` -> `main + 0x03E850` | the librfu patches below |
+| `bkpt #0xFF` | the application object, vtable `main + 0x1B4078` | `main + 0x001140` | posts event `0x82EF0054` with argument 1, which quits the application |
+
+`bkpt #0x52` is keyed by address. Its hook holds two records `{u32 pc, u32 original insn, ..., u32
+hits at +0x0C}` at `+0x120` and `+0x148`, and `main + 0x0546C0` matches the `bkpt`'s address
+against one and hands back the original instruction to execute. At the `Sio32IDMain` patch
+(`0x081E1696`) it resolves the guest's `r0`, `&gRfuSIO32Id`, and stores `0x8001` at `+0x0A`, the
+adapter id `AgbRFU_checkID` waits for [librfu_sio32id.c]. A `bkpt #0x52` at any other address
+rewrites the second record's address to its own before matching, so it re-keys the hook that
+serves the patch at `0x081E187C` for the rest of the session.
+
+The hook only acts while a byte of the RFU object is set, the byte at `[component + 0x40] -> [+0xA8]
++ 0x170`, and that byte is what `swi 0x40` sets and `swi 0x41` clears (their shared handler at
+`main + 0x05706C` stores `number == 0x40`). The decomp calls them unreferenced flag setters
+[sloopsvc.c:23]; they are the virtual wireless adapter's power switch. `swi 0x41` issued from the
+Mystery Gift menu stops the console's RFU frames at once, the game shows its link error and leaves
+LDN, and after the soft reset that error returns to, Mystery Gift answers "L'adaptateur sans fil GBA
+n'est pas connecté": `AgbRFU_checkID` no longer receives `0x8001`. The byte belongs to the wrapper, so
+the game's soft reset keeps it cleared; relaunching the application, or `swi 0x40` from code that
+runs without the link, restores it.
+
+The component that owns `bkpt #0x52` also owns the syscall dispatcher (`main + 0x057014` is slot 21
+of the same vtable) and a table of 2324 species names, six languages per species, hashed with djb2
+at construction (`main + 0x056540`, the strings at `main + 0x1C4470`).
+
+`bkpt #0xFF` from a Mystery Gift payload ends the session and closes the game. The wrapper files
+the session's play report, finalizes LDN, stops audio, files a second play report built from the
+save, and exits the application; the save is committed on the way out and loads afterwards. No
+answer reaches the host. The two reports, as Ryujinx's `prepo` service prints them:
+
+| room | fields |
+| --- | --- |
+| `network`, one per link session | `Flavor` 66, `Trainer` (the 32-bit trainer id), `Zone` (the link activity, 21 `ACTIVITY_WONDER_CARD` for Mystery Gift), `Duration`, `Players`, `Slot`, `Rtt` |
+| `game`, at exit | `Flavor`, `TimeStamp`, `Trainer`, `Gender`, `Duration`, `Badges` (a bitmask), `TotalBadges`, `HallOfFame`, `TotalHallOfFame`, `CompleteRegionalPokedex`, `RegionalPokedexCnt`, `RegionalPokedexCap`, `CompleteNationalPokedex`, `NationalPokedexCnt`, `NationalPokedexCap`, `Distributed`, `LinkExchange`, `LinkBattle`, `MonsNo1..5` and `MonsNoNLevel`, `Money`, `CommsError` |
+
+### What the play reports are built from
+
+The game report is parsed out of the flash image, not read from RAM. `main + 0x05A280` finds the
+newest save slot through the sector footers (signature `0x08012025`), copies its 14 sectors, 0xE000
+bytes, into the report object at `component + 0x140 + 0x70`, and `main + 0x05A370` walks it with a
+per-game description table: badge flag bits, Hall of Fame and Pokedex flags, and money XORed with the
+save's encryption key. `swi 0x57` fills `MonsSelect` (the starter, through the internal-to-national
+species table at `main + 0x17DA8C`), and `swi 0x62`
+increments `component + 0xE1B0`, which becomes `CommsError`. The one reader of the SaveBlock2
+pointer `swi 0x55` stores at `component + 0xE1BC` is `main + 0x0577D8`, which tests
+`optionsButtonMode == 2` (L=A).
+
+`main + 0x059CE4` picks the description table from the cartridge's game code, and it has five:
+
+| game code | table | `Flavor` base |
+| --- | --- | --- |
+| `AXV?` | Ruby | 0x10 |
+| `AXP?` | Sapphire | 0x20 |
+| `BPE?` | Emerald | 0x30 |
+| `BPR?` | FireRed | 0x40 |
+| `BPG?` | LeafGreen | 0x50 |
+
+The table addresses the 14 sectors in id order, 0x1000 each, so a byte offset `o` is SaveBlock1
+offset `((o >> 12) - 1) * 0xF80 + (o & 0xFFF)` for the SaveBlock1 sectors. A flag is a `(bit, byte)`
+pair and a bit above 7 means absent. Decoded against the three decomps, every entry lands on the
+field its report key names:
+
+| field | Ruby / Sapphire | Emerald | FireRed / LeafGreen |
+| --- | --- | --- | --- |
+| badges, 8 flags from | byte `0x23A0` bit 7, `FLAG_BADGE01_GET` 0x807 | `0x23FC` bit 7, 0x867 | `0x2064` bit 0, 0x820 |
+| `HallOfFame` | `0x23A0` bit 4, `FLAG_SYS_GAME_CLEAR` 0x804 | `0x23FC` bit 4, 0x864 | `0x2065` bit 4, 0x82C |
+| `Money` | `0x1490` (SaveBlock1 + 0x490), no key | `0x1490`, XOR `0x00AC` (SaveBlock2 `encryptionKey`) | `0x1290` (+0x290), XOR `0x0F20` |
+| party count, party | `0x1234`, `0x1238` | `0x1234`, `0x1238` | `0x1034`, `0x1038` |
+| `TotalHallOfFame` | `0x25E8`, `GAME_STAT_ENTERED_HOF` | `0x2644` | `0x22A8` |
+| `LinkExchange` | `0x2614`, `GAME_STAT_POKEMON_TRADES` | `0x2670` | `0x22D4` |
+| `LinkBattle`, the sum of | `0x261C..0x2624`, link wins, losses, draws | `0x2678..0x2680` | `0x22DC..0x22E4` |
+| regional Pokedex size | 202 | 202 | 151 |
+
+The game stats are XORed with the same key as money wherever the game has one.
+
+`Distributed` is four bits with one meaning across all five games, each the flag that opens a ferry
+to an island only a distributed ticket reaches:
+
+| bit | flag | Ruby / Sapphire | Emerald | FireRed / LeafGreen |
+| --- | --- | --- | --- | --- |
+| 0 | Navel Rock (Mystic Ticket) | absent | `0x240C` bit 0, `FLAG_ENABLE_SHIP_NAVEL_ROCK` 0x8E0 | `0x2069` bit 2, 0x84A |
+| 1 | Birth Island (Aurora Ticket) | absent | absent | `0x2069` bit 3, 0x84B |
+| 2 | Southern Island (Eon Ticket) | `0x23AA` bit 3, `FLAG_SYS_HAS_EON_TICKET` 0x853 | `0x2406` bit 3, `FLAG_ENABLE_SHIP_SOUTHERN_ISLAND` 0x8B3 | absent |
+| 3 | Faraway Island (Old Sea Map) | absent | `0x240A` bit 6, `FLAG_ENABLE_SHIP_FARAWAY_ISLAND` 0x8D6 | absent |
+
+In FireRed and LeafGreen both flags are set by the tickets' Mystery Event scripts
+[mystery_event_msg.s:222,281] and by the Switch release's Hall of Fame grant
+[post_battle_event_funcs.c:58]. A save carried over from a cartridge with its Hall of Fame entries
+already made reports 0.
+
+`Flavor` adds the language's index in `JEFIDS` to the base, so a French FireRed reports `0x42`
+(66). The FireRed and LeafGreen application carries the save layouts of all five Generation III
+games.
+
+### The bad-word filter
+
+`swi 0x4D` is the platform's profanity filter. Its handler at `main + 0x0571FC` resolves `r0` as a
+GBA address, requires 256 bytes behind it, converts the ASCII string to UTF-16 and runs the check;
+`r1` non-zero selects a second mode the game never uses. It rewrites the string in place and
+returns in `r0`:
+
+| string sent | `r0` | string after |
+| --- | --- | --- |
+| `hello world` | 0 | `hello world` |
+| `hello fuck` | 1 | `hello ` then four `0xA1` bytes |
+
+So `r0` is 1 when something was masked, and the mask byte is `0xA1`. `r1` = 1 masked the same string the same way.
+
+Issued from the Mystery Gift menu with a pointer in `r0`, the syscalls that only answer wrote:
+
+| number | `r0` after |
+| --- | --- |
+| 0x49, 0x4A, 0x4B, 0x51, 0x53 | 0 |
+| 0x50, 0x54 | 1 |
+
+`r1` to `r3` came back as passed from every one. The game reaches it through
+`svc_BadWordCheck`, which converts the name to ASCII and back around the call [sloopsvc.c:211].
+
 ## Repointing the console's outgoing message
 
 `r0` is `&client->param`, so the whole of `struct MysteryGiftClient`
@@ -1291,6 +1423,32 @@ the host's.
 time. Nothing about placement may be decided when the payload is built: both variables advance on
 every save, and a gift session saves at the end, so a position computed an hour earlier addresses a
 sector the id no longer occupies.
+
+### `sloop-svc`
+
+Up to eight Sloop syscalls in one session, with operands chosen by the host, answered through a
+result block instead of the 4-byte channel.
+
+    ./scratchpad/run_mg_ip.sh svcNN --buffer-script sloop-svc --svc-number 0x4d \
+        --svc-text "hello fuck" --svc-data-in r0 --dump-file scratchpad/svcNN_dump.bin \
+        --version firered
+
+    0x000  b .Lcode
+    0x004  flags       bit 0: r0 = &copy, bit 1: r1 = &copy
+    0x008  r0..r3
+    0x018  scratch     gDecompressionBuffer + 0x400
+    0x01C  length      of the data, at most 256
+    0x020  thunk       swi N ; bx lr (THUMB), or bkpt N ; bx lr with --svc-bkpt
+    0x024  count       1..8
+    0x028  numbers     eight bytes, one per call
+    0x030  data
+
+Before each call the payload copies the data afresh and writes the call's number into the thunk's
+low byte. The result block is a reached marker `0x53565331`, the count, a returned marker
+`0x53565332`, the length, eight 20-byte records (the thunk word, then `r0..r3` after the call) and
+the data as the last call left it. Numbers that only return a value (0x46, 0x49..0x4B, 0x4D, 0x4E,
+0x50..0x54, 0x58..0x60) go out as they are; 0x48, 0x56, 0x4C and 0x55 are refused, and the rest need
+`--write-unsafe`. `--svc-bkpt` needs `--write-unsafe` and refuses `#0x52`.
 
 ### `call-chain`
 

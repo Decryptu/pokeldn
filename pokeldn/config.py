@@ -614,6 +614,13 @@ class BufferScriptPayload:
     # covers every write step here, because a chain has no scratch region to be safe in: its
     # targets are wherever the game keeps the thing being changed.
     chain_steps: tuple = ()
+    # sloop-svc: one Sloop syscall. `svc_data` is copied to the result block and `svc_data_in`
+    # points r0 (1) or r1 (2) at that copy.
+    svc_numbers: tuple = ()
+    svc_args: tuple = ()
+    svc_data: bytes = b""
+    svc_data_in: int = 0
+    svc_bkpt: bool = False
     # string-gather: an array of pointers to follow, and how far apart they are. This is the one
     # payload that dereferences, so the answer is the strings rather than a window around them.
     gather_address: int | None = None
@@ -748,6 +755,13 @@ class BufferScriptPayload:
         elif self.chain_steps:
             raise ValueError(
                 f"a list of steps is only meaningful with {buffer_script.CALL_CHAIN}")
+        if self.script == buffer_script.SLOOP_SVC:
+            if not self.svc_numbers:
+                raise ValueError(f"{buffer_script.SLOOP_SVC} needs the syscall (--svc-number)")
+            object.__setattr__(self, "dump_size",
+                               buffer_script.sloop_svc_answer_size(len(self.svc_data)))
+        elif self.svc_numbers or self.svc_args or self.svc_data or self.svc_data_in:
+            raise ValueError(f"--svc-* is only meaningful with {buffer_script.SLOOP_SVC}")
         if self.script == buffer_script.STRING_GATHER:
             if self.gather_address is None:
                 raise ValueError(
@@ -847,6 +861,10 @@ class BufferScriptPayload:
             return buffer_script.build_save_write(
                 self.write_data, self.dump_block, self.dump_offset,
                 unsafe=self.write_unsafe)
+        if self.script == buffer_script.SLOOP_SVC:
+            return buffer_script.build_sloop_svc(
+                self.svc_numbers, self.svc_args, self.svc_data, flags=self.svc_data_in,
+                unsafe=self.write_unsafe, bkpt=self.svc_bkpt)
         if self.script == buffer_script.FLASH_READ:
             return buffer_script.build_flash_read(
                 self.flash_sector, offset=self.flash_read_offset, length=self.dump_size)

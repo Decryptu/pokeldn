@@ -1058,6 +1058,15 @@ class MysteryGiftServer:
             chained = buffer_script.read_call_chain(self.buffer_dump)
             self.trace.append(("buffer_chain", chained["executed"], chained["refused"]))
             return
+        if self.buffer_decode == buffer_script.SLOOP_SVC:
+            got = buffer_script.parse_sloop_svc(self.buffer_dump)
+            for number, regs in got["calls"]:
+                self.info(f"  0x{number:02X}: r0..r3 " + " ".join(f"{v:08X}" for v in regs))
+            if not got["returned"]:
+                self.info(f"  the calls stopped after {len(got['calls'])}")
+            self.info(f"  data after the last call: {got['data']!r}")
+            self.trace.append(("buffer_sloop_svc", got["calls"], got["data"]))
+            return
         if self.buffer_decode == buffer_script.CREATE_MON:
             asked = buffer_script.create_mon_parameters(self.buffer_code)
             for line in buffer_script.describe_create_mon(self.buffer_dump, asked):

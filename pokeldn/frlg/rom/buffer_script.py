@@ -107,6 +107,7 @@ SAVE_WRITE = "save-write"
 FLASH_WRITE = "flash-write"
 FLASH_PATCH = "flash-patch"
 FLASH_READ = "flash-read"
+SLOOP_SVC = "sloop-svc"
 
 # Save flash, the destination of the Sloop sector syscalls. 128 KiB, 32 sectors of 0x1000
 # [decomp:include/save.h: SECTOR_SIZE, SECTORS_COUNT]. The CPU cannot write it with a store; only
@@ -1641,6 +1642,13 @@ SCRIPT_REGISTRY = {
         "that returns a pointer (GetVarPointer) becomes a write (--chain-step, repeatable; a write "
         "step needs --write-unsafe)",
         None),
+    SLOOP_SVC: BufferScriptSpec(
+        SLOOP_SVC,
+        "issue one Sloop syscall (swi 0x40..0x62) with r0..r3 we choose, optionally pointing r0 or "
+        "r1 at up to 256 bytes we send, and send back the registers and the bytes as the syscall "
+        "left them (--svc-number, --svc-arg, --svc-text/--svc-hex, --svc-data-in; a number outside "
+        "the read-only set needs --write-unsafe)",
+        None),
 }
 
 
@@ -1964,6 +1972,129 @@ def build_flash_read(sector, *, offset=0, length=252, scratch=FLASH_WRITE_SCRATC
     return bytes(code)
 
 
+# sloop-svc: up to eight Sloop syscalls with operands we choose, answered through a result block
+# [asm/sloop-svc.s, docs/frlg_rom.md, Calling the wrapper].
+SLOOP_FLAGS_OFFSET = 0x04
+SLOOP_REGS_OFFSET = 0x08
+SLOOP_SCRATCH_OFFSET = 0x18
+SLOOP_LENGTH_OFFSET = 0x1C
+SLOOP_THUNK_OFFSET = 0x20
+SLOOP_COUNT_OFFSET = 0x24
+SLOOP_NUMBERS_OFFSET = 0x28
+SLOOP_DATA_OFFSET = 0x30
+SLOOP_DATA_MAX = 256
+SLOOP_MAX_CALLS = 8
+SLOOP_R0_IS_DATA, SLOOP_R1_IS_DATA = 1, 2
+SLOOP_REACHED, SLOOP_RETURNED = 0x53565331, 0x53565332
+SLOOP_RECORD_SIZE = 20
+SLOOP_HEADER_SIZE = 0x10 + SLOOP_MAX_CALLS * SLOOP_RECORD_SIZE      # where the data comes back
+# [decomp:src/sloopsvc.c:194] r0 = an ASCII string, r1 = 0 from the game.
+SWI_BAD_WORD_CHECK = 0x4D
+# The two filled slots of the wrapper's 256 bkpt hooks: 0x52 is its librfu patches', 0xFF posts
+# event 0x82EF0054 to the app object, which quits the application [docs/frlg_rom.md].
+SLOOP_BKPT_RFU, SLOOP_BKPT_APP = 0x52, 0xFF
+# Numbers read out of the wrapper's jump table [main+0x17D7F6] and safe to issue with any operands:
+# they return a value or nothing, or share the inert default. Everything else takes a pointer the
+# wrapper writes through, changes link or save state, or files telemetry, and needs --write-unsafe.
+SLOOP_SAFE_NUMBERS = frozenset({0x46, 0x49, 0x4A, 0x4B, 0x4D, 0x4E, 0x50, 0x51, 0x52, 0x53,
+                                0x54, 0x58, 0x59, 0x5A, 0x5B, 0x5C, 0x5D, 0x5E, 0x5F, 0x60})
+# Never through this payload: flash-write owns the sector writes, and a wrong SaveBlock2 pointer
+# (0x55) or a finished save (0x4C) outlives the session.
+SLOOP_REFUSED_NUMBERS = frozenset({SWI_WRITE_SECTOR, SWI_REPLACE_SECTOR, 0x4C, 0x55})
+
+
+def _check_sloop_number(number, *, flags, unsafe, bkpt):
+    if bkpt:
+        if number == SLOOP_BKPT_RFU:
+            raise BufferScriptError(
+                "bkpt #0x52 from any other address re-keys the wrapper's second RFU hook to it "
+                "[main+0x3e8d0], which outlives the session")
+        if not 0 <= number <= 0xFF or not unsafe:
+            raise BufferScriptError("a bkpt is 0..0xFF and needs --write-unsafe")
+        return
+    if not 0x40 <= number <= 0x62:
+        raise BufferScriptError(
+            f"swi 0x{number:02X} is not a Sloop syscall; the wrapper dispatches 0x40..0x62 and "
+            "below 0x2B is the BIOS")
+    if number in SLOOP_REFUSED_NUMBERS:
+        raise BufferScriptError(
+            f"swi 0x{number:02X} writes the save or re-points SaveBlock2; flash-write is the "
+            "payload for sectors and nothing here needs the other two")
+    if number not in SLOOP_SAFE_NUMBERS and not unsafe:
+        raise BufferScriptError(
+            f"swi 0x{number:02X} takes a pointer or changes link or telemetry state; "
+            "pass --write-unsafe to issue it")
+    if number == SWI_BAD_WORD_CHECK and not flags & SLOOP_R0_IS_DATA and not unsafe:
+        raise BufferScriptError(
+            "swi 0x4D rewrites the string r0 points at, 256 bytes of it; point r0 at the copy "
+            "(--svc-data-in r0) or pass --write-unsafe")
+
+
+def build_sloop_svc(numbers, args=(), data=b"", *, flags=0, scratch=FLASH_WRITE_SCRATCH,
+                    unsafe=False, bkpt=False):
+    """The sloop-svc payload: `swi N` for each N in `numbers`, in order, with r0..r3 = `args` and
+    `data` copied fresh to the result block's data area before each call.
+
+    `flags` bit 0 points r0 at the copy and bit 1 points r1 at it. The answer is the result block,
+    sloop_svc_answer_size(len(data)) bytes (read it with parse_sloop_svc). With `bkpt` the thunk is
+    `bkpt N` instead, which reaches the wrapper's hook table at cpu+0x170.
+    """
+    numbers = [int(numbers)] if isinstance(numbers, int) else [int(n) for n in numbers]
+    if not 1 <= len(numbers) <= SLOOP_MAX_CALLS:
+        raise BufferScriptError(f"1..{SLOOP_MAX_CALLS} numbers per session, got {len(numbers)}")
+    if flags & ~(SLOOP_R0_IS_DATA | SLOOP_R1_IS_DATA):
+        raise BufferScriptError(f"flags are bits 0 and 1, got {flags:#x}")
+    for number in numbers:
+        _check_sloop_number(number, flags=flags, unsafe=unsafe, bkpt=bkpt)
+    args = [int(a) & 0xFFFFFFFF for a in args]
+    if len(args) > 4:
+        raise BufferScriptError(f"a syscall takes r0..r3, got {len(args)} words")
+    data = bytes(data)
+    if len(data) > SLOOP_DATA_MAX:
+        raise BufferScriptError(f"at most {SLOOP_DATA_MAX} bytes of data, got {len(data)}")
+    code = bytearray(payload(SLOOP_SVC))
+
+    def put(at, value):
+        code[at:at + 4] = (int(value) & 0xFFFFFFFF).to_bytes(4, "little")
+    put(SLOOP_FLAGS_OFFSET, flags)
+    for index, value in enumerate(args + [0] * (4 - len(args))):
+        put(SLOOP_REGS_OFFSET + 4 * index, value)
+    put(SLOOP_SCRATCH_OFFSET, scratch)
+    put(SLOOP_LENGTH_OFFSET, len(data))
+    if bkpt:
+        code[SLOOP_THUNK_OFFSET + 1] = 0xBE
+    put(SLOOP_COUNT_OFFSET, len(numbers))
+    code[SLOOP_NUMBERS_OFFSET:SLOOP_NUMBERS_OFFSET + len(numbers)] = bytes(numbers)
+    code[SLOOP_DATA_OFFSET:SLOOP_DATA_OFFSET + len(data)] = data
+    return bytes(code)
+
+
+def sloop_svc_answer_size(data_length):
+    return SLOOP_HEADER_SIZE + data_length + 1
+
+
+def parse_sloop_svc(answer):
+    """-> dict(returned, calls=[(number, (r0, r1, r2, r3))], data) from a sloop-svc result block."""
+    answer = bytes(answer)
+    if len(answer) < SLOOP_HEADER_SIZE:
+        raise BufferScriptError(f"a sloop-svc answer is at least {SLOOP_HEADER_SIZE} bytes")
+
+    def word(at):
+        return int.from_bytes(answer[at:at + 4], "little")
+    if word(0) != SLOOP_REACHED:
+        raise BufferScriptError(f"no reached marker: 0x{word(0):08X}")
+    count, length = min(word(4), SLOOP_MAX_CALLS), word(12)
+    calls = []
+    for index in range(count):
+        at = 0x10 + SLOOP_RECORD_SIZE * index
+        thunk = word(at)
+        if not thunk:
+            break                       # the calls stopped here
+        calls.append((thunk & 0xFF, tuple(word(at + 4 + 4 * r) for r in range(4))))
+    return {"returned": word(8) == SLOOP_RETURNED, "calls": calls,
+            "data": answer[SLOOP_HEADER_SIZE:SLOOP_HEADER_SIZE + length]}
+
+
 def build_flash_patch(sector_id, patch_offset, data, *, scratch=FLASH_WRITE_SCRATCH,
                       counter_bias=2, unsafe=False):
     """The flash-patch payload: read the id's sector out of flash, change `data` at `patch_offset`,
@@ -2151,10 +2282,10 @@ def script_choices():
 DUMP_SCRIPTS = frozenset({
     MEMORY_DUMP, MEMORY_DUMP_MULTI, MEMORY_DUMP_SCATTER, SAVE_DUMP, ANCHORS, SAVE_WRITE,
     MEMORY_SCAN, TABLE_SCAN, RNG_TRACE, STRING_GATHER, CREATE_MON, CALL, CALL_CHAIN,
-    FLASH_READ,
+    FLASH_READ, SLOOP_SVC,
 })
 DECODED_SCRIPTS = frozenset({
-    MEMORY_SCAN, TABLE_SCAN, RNG_TRACE, STRING_GATHER, CREATE_MON, CALL, CALL_CHAIN,
+    MEMORY_SCAN, TABLE_SCAN, RNG_TRACE, STRING_GATHER, CREATE_MON, CALL, CALL_CHAIN, SLOOP_SVC,
 })
 # A payload whose answer the log decodes must first be one whose answer comes back as bytes.
 assert DECODED_SCRIPTS <= DUMP_SCRIPTS
@@ -2204,6 +2335,7 @@ PATCHED_SPANS = {
                    - FLASH_PATCH_SCRATCH_OFFSET),),
     FLASH_WRITE: ((FLASH_WRITE_SECTOR_OFFSET,
                    FLASH_WRITE_THUNK_OFFSET + 4 - FLASH_WRITE_SECTOR_OFFSET),),
+    SLOOP_SVC: ((SLOOP_FLAGS_OFFSET, SLOOP_DATA_OFFSET + SLOOP_DATA_MAX - SLOOP_FLAGS_OFFSET),),
 }
 
 
@@ -2327,6 +2459,9 @@ class BufferScriptRun:
         return self.returned == BUFFER_SCRIPT_DONE
 
 
+_UC_EXCP_BKPT = 7                   # unicorn's ARM EXCP_BKPT, the intno a bkpt raises
+
+
 def emulation_available():
     try:
         import unicorn  # noqa: F401
@@ -2417,6 +2552,7 @@ class _Machine:
         uc.mem_map(FLASH_WINDOW_BASE, FLASH_WINDOW_SIZE)
         self.flash_writes = []          # (number, sector, source, accepted, why)
         self.flash_reads = []           # (sector, offset, dest, length)
+        self.bkpts = []                 # the immediate of each bkpt executed
         uc.hook_add(unicorn.UC_HOOK_MEM_WRITE, self._on_flash_store,
                     begin=FLASH_WINDOW_BASE, end=FLASH_WINDOW_BASE + FLASH_WINDOW_SIZE - 1)
         uc.hook_add(unicorn.UC_HOOK_INTR, self._on_swi)
@@ -2508,6 +2644,12 @@ class _Machine:
         arm = self._arm
         cpsr = uc.reg_read(arm.UC_ARM_REG_CPSR)
         pc = uc.reg_read(arm.UC_ARM_REG_PC)
+        if intno == _UC_EXCP_BKPT:
+            # The wrapper's THUMB bkpt handler [main+0x1efc0] runs the hook in slot N and, when it
+            # substitutes nothing (0xFF's never does), returns: the bkpt is a NOP to the guest.
+            self.bkpts.append(int.from_bytes(uc.mem_read(pc, 2), "little") & 0xFF)
+            uc.reg_write(arm.UC_ARM_REG_PC, (pc + 2) | 1 if cpsr & (1 << 5) else pc + 4)
+            return
         if cpsr & (1 << 5):             # THUMB: the swi is the halfword just executed
             number = int.from_bytes(uc.mem_read(pc - 2, 2), "little") & 0xFF
         else:

@@ -313,6 +313,26 @@ def build_parser(file_config=None, *, shared_path=None, local_path=None):
               "write the sector the --flash-id actually occupies right now, rather than a "
               "position computed when the payload was built. Needs --write-unsafe"))
     parser.add_argument(
+        "--svc-number", type=lambda v: int(v, 0), action="append", metavar="N",
+        help="with --buffer-script sloop-svc: a syscall, 0x40..0x62 (0x4D is the bad-word check); "
+             "repeat for up to eight, issued in order in one session")
+    parser.add_argument(
+        "--svc-arg", type=lambda v: int(v, 0), action="append", metavar="WORD",
+        help="with --buffer-script sloop-svc: r0, r1, r2, r3 in order (repeatable)")
+    parser.add_argument(
+        "--svc-text", default=None, metavar="TEXT",
+        help="with --buffer-script sloop-svc: up to 256 bytes of UTF-8 data to send")
+    parser.add_argument(
+        "--svc-hex", default=None, metavar="hex",
+        help="with --buffer-script sloop-svc: the data as hex instead")
+    parser.add_argument(
+        "--svc-bkpt", action="store_true",
+        help="with --buffer-script sloop-svc: issue THUMB `bkpt N` instead of `swi N` (0xFF is the "
+             "one the game never issues; needs --write-unsafe)")
+    parser.add_argument(
+        "--svc-data-in", choices=("none", "r0", "r1"), default="none",
+        help="with --buffer-script sloop-svc: point this register at the console's copy of the data")
+    parser.add_argument(
         "--flash-read-offset", type=lambda v: int(v, 0), default=0, metavar="N",
         help="with --buffer-script flash-read: byte offset into the sector to start reading at")
     parser.add_argument(
@@ -577,7 +597,7 @@ def build_run_config(parser, args):
             if args.write_unsafe and args.buffer_script not in (
                     buffer_script.SAVE_WRITE, buffer_script.CREATE_MON,
                     buffer_script.CALL_CHAIN, buffer_script.FLASH_WRITE,
-                    buffer_script.FLASH_PATCH):
+                    buffer_script.FLASH_PATCH, buffer_script.SLOOP_SVC):
                 parser.error(
                     f"--write-unsafe belongs to --buffer-script {buffer_script.SAVE_WRITE}, "
                     f"{buffer_script.CREATE_MON}, {buffer_script.CALL_CHAIN} and "
@@ -603,6 +623,15 @@ def build_run_config(parser, args):
                 parser.error(f"--call-* belongs to --buffer-script {buffer_script.CALL}")
             if args.buffer_script != buffer_script.CALL_CHAIN and args.chain_step:
                 parser.error(f"--chain-step belongs to --buffer-script {buffer_script.CALL_CHAIN}")
+            if args.buffer_script != buffer_script.SLOOP_SVC and (
+                    args.svc_number or args.svc_arg or args.svc_text is not None
+                    or args.svc_hex is not None or args.svc_data_in != "none"):
+                parser.error(f"--svc-* belongs to --buffer-script {buffer_script.SLOOP_SVC}")
+            if args.svc_text is not None and args.svc_hex is not None:
+                parser.error("--svc-text and --svc-hex are two ways to say the same thing")
+            svc_data = (args.svc_text.encode("utf-8") if args.svc_text is not None
+                        else bytes.fromhex(args.svc_hex.replace(" ", "")) if args.svc_hex
+                        else b"")
             chain_steps = tuple(buffer_script.parse_chain_step(step)
                                 for step in (args.chain_step or ()))
             if args.buffer_script != buffer_script.STRING_GATHER \
@@ -636,6 +665,9 @@ def build_run_config(parser, args):
                 trace_samples=args.trace_samples,
                 call_address=args.call_address, call_args=tuple(args.call_arg or ()),
                 call_watch=args.call_watch, chain_steps=chain_steps,
+                svc_numbers=tuple(args.svc_number or ()), svc_args=tuple(args.svc_arg or ()),
+                svc_data=svc_data, svc_bkpt=args.svc_bkpt,
+                svc_data_in={"none": 0, "r0": 1, "r1": 2}[args.svc_data_in],
                 gather_address=args.gather_address, gather_count=args.gather_count,
                 gather_stride=args.gather_stride, gather_maxlen=args.gather_maxlen,
                 create_mon_call=args.create_mon_call,
