@@ -80,7 +80,7 @@ Anything before a `0x00`, including the ROM's boot text, is discarded by the che
 | `0x05` STOP | host | none; back to idle, keys cleared |
 | `0x06` AP_START | host | u8 channel, 6 BSSID, 32 SSID, 16 key, u8 max stations, u8 flags: 1 the stock association and 4-way handshake, 2 no QoS for the station, 4 no 40-byte copy of each station data frame |
 | `0x07` AP_KICK | host | 6 MAC, u16 reason; deauthenticates |
-| `0x08` ETH_TX | host | an Ethernet frame; the driver encrypts it with the station's or the group key. A full driver queue (`ESP_ERR_NO_MEM`) is retried every 1 ms for up to 100 ms before the frame counts as failed; a frame to a station that has left fails at once with `0x3015` (`ESP_ERR_WIFI_NOT_ASSOC`) |
+| `0x08` ETH_TX | host | an Ethernet frame; the driver encrypts it with the station's or the group key. A full driver queue (`ESP_ERR_NO_MEM`) is retried every 1 ms for up to 100 ms before the frame counts as failed; a frame to a station that has left fails at once with `0x3015` (`ESP_ERR_WIFI_NOT_ASSOC`). A station sends the frame's Ethernet source as its 802.11 transmitter address: a source other than the MAC in LINK is never acknowledged (49 of 49 unacked, none seen by the access point) |
 | `0x09` RAW_TX | host | an 802.11 frame without FCS (`esp_wifi_80211_tx`); used for advertisements |
 | `0x0A` SNIFF | host | u8 channel, 6 MAC; every management and data frame to or from it, whole, as RX_SNIFF |
 | `0x0B` STATUS | host | none; answered by STATUS |
@@ -205,6 +205,12 @@ The same seat's TX_DONE messages reached the host 15 ms after their board time w
 (590 ms at most) in the flood's worst second: the board-to-host line backs up under the console's
 flood, and a host reading arrival times reads that lag. Board time minus the smallest arrival offset
 gives a message's lag on the line.
+
+The two-board bench (`tools/ldn/esp32_pair_bench.py`, 1200-byte broadcasts from the access point,
+200-byte frames from the station) delivers every station frame. Calm, 20 a second: 187 of 187
+acknowledged, 1.6 ms average from ETH_TX to TX-done, 10.7 ms at most. Under a flood of 100 a second,
+which at 1 Mbit/s takes about 96% of the air: 1227 of 1227, 26.8 ms average, 218 ms at most, and the
+station received 794 of the flood.
 
 Three traps in measuring this. A sniffer board's line backs up in a burst like any board's, so a
 frame it reports reached the host up to a second after it was on the air; run it at 1500000

@@ -22,7 +22,6 @@ ap_.add_argument("--baud", type=int, default=1500000)
 ap_.add_argument("--bench", action="store_true",
                  help="fill B's board-to-host line with BENCH meanwhile, with the air left free")
 ap_.add_argument("--channel", type=int, default=6)
-ap_.add_argument("--sta-mac", default="8c:94:df:58:cd:b8", help="board B's station MAC (esptool read-mac)")
 args = ap_.parse_args()
 
 key, ssid = os.urandom(16), os.urandom(16).hex()
@@ -30,8 +29,11 @@ a = esp32.Radio.open_serial(args.ap_port, fast_baud=args.baud)
 b = esp32.Radio.open_serial(args.sta_port, fast_baud=args.baud)
 bssid = bytes.fromhex("020000be4c01")
 link, joined = threading.Event(), threading.Event()
-got_from_b = collections.Counter(); t0 = [None]
-b.subscribe(lambda t, p: link.set() if t == esp32.MSG_LINK and p[:1] == b"\x01" else None)
+got_from_b = collections.Counter(); t0 = [None]; sta_mac = [bytes(6)]
+def on_b(t, p):
+    if t == esp32.MSG_LINK and p[:1] == b"\x01":
+        sta_mac[0] = p[3:9]; link.set()
+b.subscribe(on_b)
 
 def on_a(t, p):
     if t == esp32.MSG_STA_JOINED:
@@ -44,7 +46,6 @@ b.sta_join(args.channel, bssid, ssid, key)
 if not link.wait(20) or not joined.wait(5):
     b.close(); a.close()
     sys.exit(f"no association: link {link.is_set()} joined {joined.is_set()}")
-sta_mac = bytes.fromhex(args.sta_mac.replace(":", ""))
 print(f"associated; A floods {args.flood:.0f}/s, B sends {args.send:.0f}/s for {args.seconds:.0f} s")
 
 def fields(r):
@@ -57,7 +58,9 @@ def flood():
         a.send_ethernet(frame); time.sleep(1 / args.flood)
 sent = [0]
 def send():
-    frame = b"\xff" * 6 + (sta_mac or bytes(6)) + b"\x88\xb6" + os.urandom(186)
+    # The source must be the station MAC LINK reported: the driver sends it as addr2, and the AP
+    # acknowledges no frame from another transmitter. docs/hardware_esp32.md
+    frame = b"\xff" * 6 + sta_mac[0] + b"\x88\xb6" + os.urandom(186)
     while not stop.is_set():
         b.send_ethernet(frame); sent[0] += 1; time.sleep(1 / args.send)
 t0[0] = time.monotonic()
