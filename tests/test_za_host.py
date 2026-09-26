@@ -189,3 +189,14 @@ def test_the_joiner_answers_the_hosts_pick_and_not_its_cursor(tmp_path):
             game.pump(HOST_VAR, JOINER_VAR, t)
     assert [o[-1] for o in offers()] == [za_host.OFFER_PREVIEW, za_host.OFFER_PICK]
     assert offers()[1][:-1] == offer[:-1]
+
+    # The host's commit starts the four steps; the joiner marks the trade done on the last one.
+    assert game.traded_at is None
+    commit_at = t
+    game.on_message(za_join.GAME_RELIABLE,
+                    reliable.build_reliable(seq, seq, bytes.fromhex("0104b90100"),
+                                            flagsA=reliable.FLAGSA_GBA), t)
+    while t < commit_at + 16.0:
+        t += 0.02
+        game.pump(HOST_VAR, JOINER_VAR, t)
+    assert game.traded_at is not None and abs(game.traded_at - (commit_at + 14.6)) < 0.05

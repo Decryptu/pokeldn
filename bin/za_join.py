@@ -108,6 +108,8 @@ BROADCAST_RECIPIENTS = 3
 ACK_MESSAGE_FLAGS = 0x40
 # The station index a Broadcast Reliable payload is prefixed with: the joiner is 1, the host 2.
 BROADCAST_PREFIX_JOINER = bytes.fromhex("00000001")
+# The fourth trade step; once it is out the trade is saved on both sides (docs/za.md).
+LAST_STEP = bytes.fromhex("0200b9010e")
 
 
 class GameStreams:
@@ -136,6 +138,7 @@ class GameStreams:
         self.scheduled = []
         self.selections = 0
         self.last_selection = 0.0
+        self.traded_at = None
         self.ref = {}
         for name in ("identity10", "open11", "identity11", "identity11b", "selection"):
             path = os.path.join(args.game_dir, f"za_ref_{name}.bin")
@@ -226,6 +229,9 @@ class GameStreams:
             self.scheduled.remove(item)
             self._queue(GAME_RELIABLE, item[1], reliable.FLAGSA_GBA, now_ms)
             print(f"[za] sent {item[1][:2].hex()} ({len(item[1])} bytes) at {elapsed:.2f}s")
+            if item[1] == LAST_STEP:
+                self.traded_at = elapsed
+                print(f"[za] trade_complete at {elapsed:.2f}s")
 
     def _answer_trade(self, inner, elapsed):
         """A reference joiner's side of the trade: previews marked 1 each way, then the host's pick
@@ -285,6 +291,8 @@ def build_parser():
     ap.add_argument("--dwell", type=float, default=1.0, help="seconds per channel in a scan")
     ap.add_argument("--seconds", type=float, default=600.0, help="the whole run")
     ap.add_argument("--hold", type=float, default=120.0, help="how long to hold one seat")
+    ap.add_argument("--after-trade", type=float, default=90.0,
+                    help="seconds to keep the seat after the fourth step, then exit the run")
     ap.add_argument("--quiet-seat", type=float, default=0.0,
                     help="end a seat on which the console has sent nothing for this long")
     ap.add_argument("--connect-timeout", type=float, default=12.0,
@@ -490,6 +498,10 @@ async def run_session(args, keys, host_ip, host_mac, our_ip, our_mac, record):
         if now - t0 >= args.hold:
             print(f"[za] the hold ended after {now - t0:.1f}s")
             break
+        if game is not None and game.traded_at is not None \
+                and now - t0 >= game.traded_at + args.after_trade:
+            print(f"[za] leaving the seat {args.after_trade:.0f}s after the trade")
+            break
         if args.quiet_seat and first_in is None and now - t0 >= args.quiet_seat:
             print(f"[za] nothing from the console in {args.quiet_seat:.0f}s; ending the seat")
             break
@@ -569,6 +581,7 @@ async def run_session(args, keys, host_ip, host_mac, our_ip, our_mac, record):
     record(rec="seat_end", seen=seen, authed=authed, sent=sent,
            state=(conn.state if conn is not None else None),
            counts={str(k): v for k, v in counts.items()}, t=time.time())
+    return game is not None and game.traded_at is not None
 
 
 def ip_scan_once(our_ip, host_ip, timeout):
@@ -683,7 +696,9 @@ def main_ip(args):
                    host_mac=host_mac.hex(), our_ip=our_ip, our_mac=our_mac.hex(),
                    network_info=bytes(synced).hex(), t=time.time())
             try:
-                trio.run(run_session, args, keys, args.host_ip, host_mac, our_ip, our_mac, record)
+                if trio.run(run_session, args, keys, args.host_ip, host_mac, our_ip, our_mac,
+                            record):
+                    break
             except Exception as exc:
                 print(f"[za] the seat ended: {type(exc).__name__}: {exc}")
             finally:
@@ -813,11 +828,14 @@ def main(argv=None):
                         record(rec="seat", ssid=info.ssid.hex(), host_ip=host_ip,
                                host_mac=host_mac.hex(), our_ip=our_ip, our_mac=our_mac.hex(),
                                t=time.time())
-                        await run_session(args, keys, host_ip, host_mac, our_ip, our_mac, record)
+                        return await run_session(args, keys, host_ip, host_mac, our_ip, our_mac,
+                                                 record)
 
             try:
-                trio.run(seat)
+                traded = trio.run(seat)
                 seats += 1
+                if traded:
+                    break
             except Exception as exc:
                 def leaves(e):
                     inner = getattr(e, "exceptions", ())
