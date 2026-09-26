@@ -639,15 +639,28 @@ def build_run_config(parser, args):
             svc_data = (args.svc_text.encode("utf-8") if args.svc_text is not None
                         else bytes.fromhex(args.svc_hex.replace(" ", "")) if args.svc_hex
                         else b"")
-            if args.buffer_script != buffer_script.INSTALL_RESIDENT and (
-                    args.resident or args.resident_param):
-                parser.error(f"--resident* belongs to --buffer-script {buffer_script.INSTALL_RESIDENT}")
+            if args.buffer_script not in (buffer_script.INSTALL_RESIDENT, buffer_script.SAVE_WRITE) \
+                    and (args.resident or args.resident_param):
+                parser.error(f"--resident* belongs to --buffer-script {buffer_script.INSTALL_RESIDENT} "
+                             f"or {buffer_script.SAVE_WRITE}")
             resident_params = []
             for item in args.resident_param or ():
                 key, sep, value = item.partition("=")
                 if not sep:
                     parser.error(f"--resident-param takes KEY=VALUE, got {item!r}")
                 resident_params.append((key, int(value, 0)))
+            if args.buffer_script == buffer_script.SAVE_WRITE and args.resident:
+                # the hook kept in the save, for MOM's loader (--gift resident-save)
+                if write_data is not None:
+                    parser.error("--resident is what save-write writes; drop --write-*")
+                try:
+                    write_data = buffer_script.build_resident_save_blob(
+                        args.resident, **dict(resident_params))
+                except buffer_script.BufferScriptError as exc:
+                    parser.error(str(exc))
+                args.resident, resident_params = None, []
+                args.dump_block = buffer_script.SAVE_BLOCK_2         # filler_B20
+                args.dump_offset = native_script.SAVE_PAYLOAD_OFFSET
             chain_steps = tuple(buffer_script.parse_chain_step(step)
                                 for step in (args.chain_step or ()))
             if args.buffer_script != buffer_script.STRING_GATHER \

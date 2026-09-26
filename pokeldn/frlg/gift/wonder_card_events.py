@@ -1119,6 +1119,52 @@ SAVE_LOADER_GIFT = WonderGift(
 )
 
 
+GIFT_RESIDENT_SAVE = "resident-save"
+
+# The loader again, pointed at a resident hook kept in the save: it stages filler_B20 in the
+# decompression buffer and runs its head, which checks the blob and runs install-resident. The hook
+# itself goes into the save with `--buffer-script save-write --resident NAME`. Same flag id as
+# save-loader: one bound script at a time. docs/frlg_rom.md, A resident hook kept in the save.
+
+
+def build_resident_save_script(**kwargs):
+    from pokeldn.frlg.rom import buffer_script
+    return build_mevent_npc_script(
+        field_script=native_script.build_loader_script(
+            base=buffer_script.RESIDENT_SAVE_STAGING, size=buffer_script.RESIDENT_SAVE_SIZE,
+            magic=buffer_script.RESIDENT_SAVE_MAGIC), **_at_mom(kwargs))
+
+
+RESIDENT_SAVE_GIFT = WonderGift(
+    slug=GIFT_RESIDENT_SAVE,
+    card=WonderCardSpec(
+        icon_species=SPECIES_CLEFAIRY_MEVENT,
+        title="MYSTERY EVENT",
+        subtitle="A helper at home",
+        body=(
+            "Your MOM keeps something for",
+            "you. Talk to her after you",
+            "switch on, and it is back.",
+        ),
+        footer1="pokeldn",
+        default_flag_id=SAVE_LOADER_FLAG_ID,
+    ),
+    intro_message=(
+        "Thank you for using the MYSTERY\n"
+        "GIFT System."),
+    event=GiftSpec(repeatable=True),
+    delivery=DeliveryPlan(delivery=(
+        DeliveryStage(
+            Message(
+                "Someone in PALLET TOWN is holding\n"
+                "a key for you."),
+        ),
+    )),
+    completed_message="Talk to your MOM at home.",
+    mevent=build_resident_save_script(),
+)
+
+
 GIFT_RNG_SHINY_HUNT = "rng-shiny-hunt"
 RNG_SHINY_HUNT_FLAG_ID = 1012
 

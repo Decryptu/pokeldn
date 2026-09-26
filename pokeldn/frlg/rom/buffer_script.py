@@ -2190,6 +2190,32 @@ def build_install_resident(name, *, dest=None, table=None, **params):
     return bytes(code) + blob
 
 
+# A resident hook kept in the save: save-head, then the install-resident image, then a checksum, written
+# into filler_B20 by save-write and run by the loader a Wonder Card binds to MOM
+# [asm/resident/save-head.s, docs/frlg_rom.md, A resident hook kept in the save].
+RESIDENT_SAVE_MAGIC = 0x53524B50        # "PKRS"; the older save payload's "PKLD" loader refuses it
+RESIDENT_SAVE_STAGING = 0x0201C400      # gDecompressionBuffer + 0x400, above the staged loader
+RESIDENT_SAVE_SIZE = 0x400              # filler_B20, all of which the loader copies
+
+
+def build_resident_save_blob(name, **params):
+    """-> the bytes save-write puts at SaveBlock2 + 0xB20 so that MOM's loader installs hook `name`."""
+    from pokeldn.frlg.rom.resident_stubs import STUBS
+    head, _digest, symbols = STUBS["save-head"]
+    if symbols["p_image"] != len(head):
+        raise BufferScriptError("save-head must end at its image")
+    blob = bytearray(head) + build_install_resident(name, **params)
+    blob += bytes(-len(blob) % 4)
+    blob[symbols["p_length"]:symbols["p_length"] + 4] = len(blob).to_bytes(4, "little")
+    checksum = sum(int.from_bytes(blob[i:i + 4], "little") for i in range(0, len(blob), 4))
+    blob += (checksum & 0xFFFFFFFF).to_bytes(4, "little")
+    if len(blob) > MAX_SAVE_WRITE_BYTES:
+        raise BufferScriptError(
+            f"{name} in the save is {len(blob)} bytes; one save-write carries "
+            f"{MAX_SAVE_WRITE_BYTES}")
+    return bytes(blob)
+
+
 def build_flash_patch(sector_id, patch_offset, data, *, scratch=FLASH_WRITE_SCRATCH,
                       counter_bias=2, unsafe=False):
     """The flash-patch payload: read the id's sector out of flash, change `data` at `patch_offset`,

@@ -1581,6 +1581,35 @@ Pokemon appeared in grass, and encounters came back after a soft reset.
 One hook is resident at a time: each install replaces the last, and all of them share the 1 KB at
 `0x0203FC00`.
 
+### A resident hook kept in the save
+
+Any resident hook can be carried in `filler_B20` and installed by talking to MOM after a boot, with no
+link and no host. Two gift sessions set it up:
+
+    ./scratchpad/run_mg_ip.sh svcNN --buffer-script save-write --resident turbo \
+        --resident-param field=3 --resident-param hold=0x100 --resident-param budget=228 --version firered
+    ./scratchpad/run_mg_ip.sh svcNN --gift resident-save --version firered
+
+The first writes this blob at `SaveBlock2 + 0xB20` (`asm/resident/save-head.s`):
+
+    +0x00  magic     0x53524B50, "PKRS"
+    +0x04  entry     THUMB: base = r0 - 5, sum the words, run the image if the sum matches
+    +0x34  length    bytes summed
+    +0x38  answer    where the installer writes the handler it found
+    +0x3C  image     the install-resident payload, ARM entry and THUMB body, then the hook
+    +length          checksum
+
+The second binds [the save loader](#a-payload-larger-than-a-script-body) to MOM with staging at
+`0x0201C400` (`gDecompressionBuffer + 0x400`, above the 64 bytes the script stages the loader into) and
+magic `PKRS`, so a save still carrying the older `PKLD` payload is left alone. The head calls the
+installer, which copies the hook to `0x0203FC00` exactly as a gift session does, keeps the game's
+handler at `0x0203FBFC`, and on a second visit chains to that kept handler. Turbo, `ivs` and
+`noencounter` fit one `save-write` (908 bytes for turbo); `shiny` does not.
+
+Measured on an emulator with turbo: the console read the 908 bytes back headed `PKRS`; after the card,
+talking to MOM played the jingle and R fast-forwarded; after a soft reset R did nothing until she was
+talked to again.
+
 ### `call-chain`
 
 Up to sixteen steps in order in a single frame, one answer word per step. Every question about the
