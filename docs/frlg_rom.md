@@ -1464,7 +1464,8 @@ overworld, until a soft reset.
 
     ./scratchpad/run_mg_ip.sh svcNN --buffer-script install-resident --resident turbo \
         --resident-param extra=4 --resident-param field=1 --resident-param battle=1 \
-        --resident-param overlay=0x03004220 --write-unsafe --version firered
+        --resident-param overlay=0x03004220 --resident-param hold=0x100 \
+        --resident-param budget=228 --write-unsafe --version firered
 
     0x000  b .Lcode
     0x004  dest          0x0203FC00
@@ -1505,6 +1506,27 @@ Measured on an emulator: 60 frames a second, 97% of them idle; field and battle 
 frame with every glyph present.
 With `field=1` the overworld runs at double speed, the player, NPCs and animations alike; with
 `battle=1` a battle does, and its bag and party menus open and close.
+
+`hold=MASK` runs the callback passes only while `gMain.heldKeys` (`gMain + 0x2C`) holds every button in
+the mask; the text extras run either way. With `hold=0x100` (R) the installer also sets `help` to
+`gHelpSystemToggleWithRButtonDisabled` (`0x0203F171`, the literal at `0x0813F6FC` in
+`RunHelpSystemCallback`, `0x0813F65C`), a byte the hook stores 1 every frame, so a new R press does not
+open the Help System [help_system_util.c:50]; L still does.
+
+`budget=LINES` bounds the passes by time. The hook reads `REG_VCOUNT` (lines 0 to 227, V-blank from 160)
+before each pass and starts one only if the lines since V-blank began plus twice the last pass's cost
+fit in `LINES`: the pass itself, then the game's own frame. It keeps the last cost at counter `+0x0C` and
+counts held-back passes at `+0x10`; each held-back pass shrinks the kept cost by an eighth, so one slow
+pass cannot stop every later one.
+
+| setting, R held | extra passes a frame | note |
+|---|---|---|
+| `field=2 battle=2` | 1.70 to 1.90 of 2 | about 2.9x, no visible lag |
+| `field=3 battle=3` | at most 2.38 of 3 | about a quarter of frames lag; visible stutter |
+| `field=3 battle=3 budget=228` | up to 2.48 | smooth; a pass costs 36 to 42 lines walking, 100 to 108 in battle |
+
+The Switch release's emulator advances `REG_VCOUNT` while a frame's code runs, so a pass can be timed
+in scanlines from inside the game.
 
 `overlay=ADDRESS` shows the word at `ADDRESS` as eight hex digits in the top-right corner of the
 overworld, every frame; `0x03004220` is `gRngValue`. The eight entries go into `gMain.oamBuffer[120..127]`

@@ -58,13 +58,14 @@ def test_a_second_install_keeps_chaining_to_the_game_not_to_itself():
 
 
 def _run_hook(intr_check, extra, printers=b"", field=0, callbacks=None, cb1_stub=None,
-              battle=0, cb_addresses=None, fade=b"", overlay=0, watched=None, vblank=None):
+              battle=0, cb_addresses=None, fade=b"", overlay=0, watched=None, vblank=None,
+              held=0, cb2_stub=None, more=None, **extra_params):
     """Install, then enter the hook the way IntrMain does, with lr at a stop address."""
     from unicorn import UC_HOOK_CODE
     from unicorn import arm_const as a
     counters = 0x0203FFA0
     code = bs.build_install_resident("turbo", extra=extra, field=field, battle=battle,
-                                     overlay=overlay)
+                                     overlay=overlay, **extra_params)
     memory = {ns.GINTRTABLE_VBLANK: (VBLANK_INTR | 1).to_bytes(4, "little"),
               VBLANK_INTR: vblank or _counting_stub(counters),
               RUN_TEXT_PRINTERS: _counting_stub(counters + 4),
@@ -78,10 +79,11 @@ def _run_hook(intr_check, extra, printers=b"", field=0, callbacks=None, cb1_stub
     if callbacks is not None:
         cb1, cb2, new_keys = callbacks
         memory[GMAIN] = cb1.to_bytes(4, "little") + cb2.to_bytes(4, "little")
-        memory[GMAIN + 0x2E] = new_keys.to_bytes(2, "little") * 2
+        memory[GMAIN + 0x2C] = held.to_bytes(2, "little") + new_keys.to_bytes(2, "little") * 2
         stub1, stub2 = cb_addresses or (CB1_OVERWORLD, CB2_OVERWORLD)
         memory[stub1] = cb1_stub or _counting_stub(counters + 8)
-        memory[stub2] = _counting_stub(counters + 12)
+        memory[stub2] = cb2_stub or _counting_stub(counters + 12)
+    memory.update(more or {})
     machine = bs._Machine(code, memory=memory)
     machine.call()
     uc = machine.uc
@@ -174,6 +176,81 @@ def test_the_field_pass_runs_both_overworld_callbacks_with_the_new_presses_clear
     keys = bytes(m.uc.mem_read(GMAIN + 0x2E, 4))
     assert keys == b"\x00\x00\x00\x00"                        # newKeys, newAndRepeatedKeys
 
+
+HELP_R_DISABLED = 0x0203F171
+
+
+@pytest.mark.parametrize("held, passes", [(0x0000, 0), (0x0100, 2), (0x0101, 2), (0x0200, 0)])
+def test_with_hold_r_the_passes_run_only_while_r_is_held_and_the_text_extras_always(held, passes):
+    """heldKeys is gMain + 0x2C; newKeys, two bytes on, is cleared by a pass and must not be what is
+    tested."""
+    _, printers, _, _ = _run_hook(0, 3, field=2, hold=0x100, held=held,
+                                  callbacks=(CB1_OVERWORLD | 1, CB2_OVERWORLD | 1, 0x0100))
+    m = _run_hook.last
+    assert (m.read(0x0203FFA8), m.read(0x0203FFAC), printers) == (passes, passes, 3)
+
+
+def test_a_two_button_hold_needs_both():
+    for held, passes in ((0x0100, 0), (0x0200, 0), (0x0300, 1)):
+        _run_hook(0, 0, battle=1, hold=0x300, held=held, cb_addresses=(0x08015B6C, 0x08014888),
+                  callbacks=(0x08015B6D, 0x08014889, 0))
+        assert _run_hook.last.read(0x0203FFAC) == passes
+
+
+def test_hold_r_keeps_the_help_system_off_r():
+    """RunHelpSystemCallback opens Help on a new R press unless this byte is 1 [0x0813F6BE]."""
+    for params, byte in (({"hold": 0x100}, 1), ({}, 0), ({"hold": 0x100, "help": 0}, 0)):
+        _run_hook(1, 0, **params)
+        assert _run_hook.last.uc.mem_read(HELP_R_DISABLED, 1)[0] == byte
+
+
+REG_VCOUNT = 0x04000006
+
+
+def _vcount_stub(lines):
+    """THUMB: REG_VCOUNT += lines; bx lr. A callback that takes `lines` scanlines."""
+    return (bytes.fromhex("02480188") + bytes([lines, 0x31]) + bytes.fromhex("018070470000")
+            + REG_VCOUNT.to_bytes(4, "little"))
+
+
+@pytest.mark.parametrize("budget, start, last_cost, passes, held_back", [
+    (0, 160, 0, 3, 0),          # off: the fixed count, however late
+    (228, 160, 0, 2, 1),        # 60 lines a pass: 0+120, 60+120 fit; 120+120 does not
+    (180, 160, 0, 2, 1),        # 60+120 = 180 still fits
+    (179, 160, 0, 1, 1),
+    (228, 10, 80, 0, 1),        # line 10 is 78 lines into the frame: 78+160 does not fit
+    (228, 200, 80, 2, 1),       # line 200 is 40 in: 40+160, then 100+120 fit; 160+120 does not
+])
+def test_the_budget_starts_a_pass_only_when_it_and_the_game_frame_fit(
+        budget, start, last_cost, passes, held_back):
+    """Fixed passes past what a frame holds lagged one frame in four at field=3; the budget measures
+    each pass in scanlines and stops before the game's own frame would miss V-blank."""
+    counters = 0x0203FF00
+    _run_hook(0, 0, field=3, budget=budget, callbacks=(CB1_OVERWORLD | 1, CB2_OVERWORLD | 1, 0),
+              cb2_stub=_vcount_stub(60),
+              more={REG_VCOUNT: start.to_bytes(2, "little"),
+                    counters + 12: last_cost.to_bytes(4, "little")})
+    m = _run_hook.last
+    assert (m.read(counters + 8), m.read(counters + 16)) == (passes, held_back)
+    if passes:
+        assert m.read(counters + 12) == 60 - 8 * held_back   # measured, then any held-back decay
+
+
+def test_a_held_back_frame_shrinks_the_kept_cost_until_a_pass_fits_again():
+    """One slow pass (101 lines, read off the emulator) kept as it was stopped every later pass: 30
+    lines of the game's VBlankIntr plus 202 is past 228 forever."""
+    counters = 0x0203FF00
+    cost = 101
+    for frame in range(10):
+        _run_hook(0, 0, field=1, budget=228, callbacks=(CB1_OVERWORLD | 1, CB2_OVERWORLD | 1, 0),
+                  cb2_stub=_vcount_stub(60),
+                  more={REG_VCOUNT: (160 + 30).to_bytes(2, "little"),
+                        counters + 12: cost.to_bytes(4, "little")})
+        m = _run_hook.last
+        cost = m.read(counters + 12)
+        if m.read(counters + 8):
+            break
+    assert m.read(counters + 8) == 1 and cost == 60 and frame == 1      # 101 held, 88 ran
 
 def test_no_field_pass_outside_the_overworld():
     _run_hook(0, 0, field=2, callbacks=(CB1_OVERWORLD | 1, 0x08011001, 0x0001))   # a battle CB2

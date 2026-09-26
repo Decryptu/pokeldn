@@ -10,6 +10,16 @@
 @ newAndRepeatedKeys are cleared first, so a press the frame already handled is not handled twice;
 @ heldKeys stays, so walking continues [src/overworld.c:1449, src/battle_main.c:1447].
 @
+@ A LINE BUDGET, when p_budget is non-zero: a pass starts only if the scanlines since V-blank plus twice
+@ the last pass's cost (this pass, then the game's own frame) fit in p_budget; 228 is one whole frame.
+@ Fixed passes past what a frame holds make lag frames: three a frame lagged one frame in four. A
+@ held-back frame shrinks the kept cost by an eighth: one 101-line pass kept as it was stopped every pass.
+@
+@ HELD TO FAST-FORWARD, when p_hold is a button mask: a callback pass runs only while gMain.heldKeys
+@ holds every button in it; the text extras run either way. p_help names a byte stored 1 every frame:
+@ gHelpSystemToggleWithRButtonDisabled, so holding R does not open the Help System
+@ [src/help_system_util.c:50].
+@
 @ NO CALLBACK PASS DURING A PALETTE FADE. A hardware fade ends only when UpdatePaletteFade sets the
 @ one-bit hardwareFadeFinishing and the next V-blank's TransferPlttBuffer sees it [src/palette.c:701,
 @ 743]. A second UpdatePaletteFade in the same frame increments that bit back to 0, every frame, and
@@ -48,6 +58,12 @@ turbo_hook:
     ldr     r1, [r0]
     add     r1, #1
     str     r1, [r0]
+    ldr     r0, p_help
+    cmp     r0, #0
+    beq     .Lhelp_done
+    mov     r1, #1
+    strb    r1, [r0]                @ R stays off the Help System
+.Lhelp_done:
     bl      .Loverlay_oam           @ into the game's buffers, before it copies them
     ldr     r3, p_original
     bl      .Lcall                  @ the game's VBlankIntr, unchanged
@@ -98,10 +114,18 @@ turbo_hook:
     pop     {r0}
     bx      r0
 
-@ r4 passes, r5 = &{cb1, cb2}. Each pass: both callbacks still the pair, presses cleared, CB1, the
-@ pair checked again, CB2.
+@ r4 passes, r5 = &{cb1, cb2}. None unless p_hold is 0 or all held. Each pass: both callbacks still
+@ the pair, presses cleared, CB1, the pair checked again, CB2.
 .Lpasses:
     push    {lr}
+    ldr     r1, p_hold
+    cmp     r1, #0
+    beq     .Lpass
+    ldr     r0, p_gmain
+    ldrh    r0, [r0, #0x2C]         @ heldKeys
+    and     r0, r1
+    cmp     r0, r1
+    bne     .Lpassed                @ the fast-forward buttons are not all held
 .Lpass:
     cmp     r4, #0
     beq     .Lpassed
@@ -118,6 +142,31 @@ turbo_hook:
     ldrh    r1, [r1, #6]            @ blendColor:15, active:1
     lsr     r1, r1, #15
     bne     .Lpassed                @ a fade is running: leave it to the game's own pace
+    bl      .Lline
+    ldr     r1, p_budget
+    cmp     r1, #0
+    beq     .Lgo
+    ldr     r2, p_frames
+    ldr     r2, [r2, #12]           @ the last pass's cost in lines
+    lsl     r3, r2, #1
+    add     r3, r0
+    cmp     r3, r1
+    bls     .Lgo
+    ldr     r0, p_frames            @ no room for this pass and the game's own frame after it
+    ldr     r1, [r0, #16]
+    add     r1, #1
+    str     r1, [r0, #16]           @ passes the budget held back
+    lsr     r1, r2, #3
+    add     r1, #1
+    sub     r2, r2, r1
+    bpl     .Ldecayed
+    mov     r2, #0
+.Ldecayed:
+    str     r2, [r0, #12]           @ the cost shrinks by an eighth, so one slow pass cannot latch
+    b       .Lpassed
+.Lgo:
+    push    {r0}                    @ the line this pass starts on
+    ldr     r0, p_gmain
     mov     r1, #0
     strh    r1, [r0, #0x2E]         @ newKeys: already handled this frame
     strh    r1, [r0, #0x30]         @ newAndRepeatedKeys
@@ -127,14 +176,23 @@ turbo_hook:
     ldr     r1, [r0, #4]
     ldr     r3, [r5, #4]
     cmp     r1, r3
-    bne     .Lpassed                @ CB1 left this state (a warp, a battle, its end): stop here
+    bne     .Lpass_left             @ CB1 left this state (a warp, a battle, its end): stop here
     bl      .Lcall                  @ CB2
-    ldr     r0, p_frames
-    ldr     r1, [r0, #8]
+    bl      .Lline
+    pop     {r1}
+    sub     r0, r0, r1
+    bpl     .Lcost
+    add     r0, #228
+.Lcost:
+    ldr     r2, p_frames
+    str     r0, [r2, #12]           @ this pass's cost in lines
+    ldr     r1, [r2, #8]
     add     r1, #1
-    str     r1, [r0, #8]            @ extra callback passes run
+    str     r1, [r2, #8]            @ extra callback passes run
     sub     r4, #1
     b       .Lpass
+.Lpass_left:
+    add     sp, #4
 .Lpassed:
     pop     {r0}
     bx      r0
@@ -239,6 +297,16 @@ turbo_hook:
 .Lcall:
     bx      r3
 
+@ -> r0 = scanlines since V-blank began: REG_VCOUNT runs 0..227 and V-blank starts at 160.
+.Lline:
+    ldr     r0, p_vcount
+    ldrh    r0, [r0]
+    sub     r0, #160
+    bpl     .Lline_done
+    add     r0, #228
+.Lline_done:
+    bx      lr
+
     .align 2
 .Lwhite:
     .word   0x7FFF
@@ -274,6 +342,7 @@ turbo_hook:
     .global p_original, p_intr_check, p_run_text, p_extra, p_frames, p_printers
     .global p_field, p_battle, p_gmain, p_cb1_overworld, p_cb2_overworld, p_cb1_battle, p_cb2_battle
     .global p_palette_fade, p_overlay, p_overlay_tiles, p_overlay_pal, p_overlay_oam
+    .global p_hold, p_help, p_budget, p_vcount
 p_original:
     .word   0x0800071D              @ patched by the installer: the handler this one replaced
 p_intr_check:
@@ -283,7 +352,7 @@ p_run_text:
 p_extra:
     .word   4                       @ patched: extra RunTextPrinters calls per idle frame
 p_frames:
-    .word   0x0203FF00              @ patched: counters: frames, frames that ran text extras, passes
+    .word   0x0203FF00              @ patched: counters: frames, text-extra frames, passes, last pass cost, held back
 p_printers:
     .word   0x02020034              @ sTextPrinters (French FireRed, RunTextPrinters' literal)
 p_field:
@@ -310,3 +379,11 @@ p_overlay_pal:
     .word   0x020379D6              @ gPlttBufferFaded (0x020375F4) + OBJ palette 15 colour 1
 p_overlay_oam:
     .word   0x030026C8              @ gMain.oamBuffer[120] (gMain + 0x38 + 120 * 8)
+p_hold:
+    .word   0                       @ patched: buttons held to run the passes (R 0x100), 0 for always
+p_help:
+    .word   0                       @ patched: byte kept 1 every frame, 0 for none
+p_budget:
+    .word   0                       @ patched: scanlines a frame's passes and the game may use, 0 for off
+p_vcount:
+    .word   0x04000006              @ REG_VCOUNT

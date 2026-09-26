@@ -1654,7 +1654,7 @@ SCRIPT_REGISTRY = {
         INSTALL_RESIDENT,
         "copy a resident hook into the top of EWRAM and install it in gIntrTable[4], where it runs "
         "every frame until a soft reset; answers with the V-blank handler it found "
-        "(--resident turbo, --resident-param extra=N field=N battle=N; needs --write-unsafe)",
+        "(--resident turbo, --resident-param extra=N field=N battle=N hold=0x100 budget=228; needs --write-unsafe)",
         None),
 }
 
@@ -2112,8 +2112,12 @@ INSTALL_ORIGINAL_OFFSET = 0x14
 INSTALL_BLOB_OFFSET = 0x18
 # The resident hooks this can install, each by its entry symbol and its tunable parameters.
 RESIDENT_HOOKS = {
-    "turbo": ("turbo_hook", {"extra": 4, "field": 0, "battle": 0, "overlay": 0}),
+    "turbo": ("turbo_hook", {"extra": 4, "field": 0, "battle": 0, "overlay": 0, "hold": 0,
+                             "help": 0, "budget": 0}),
 }
+R_BUTTON = 0x100
+# gHelpSystemToggleWithRButtonDisabled, French FireRed: RunHelpSystemCallback's literal at 0x0813F6FC.
+HELP_R_DISABLED = 0x0203F171
 
 
 def resident_blob(name, **params):
@@ -2123,10 +2127,14 @@ def resident_blob(name, **params):
     if name not in RESIDENT_HOOKS:
         raise BufferScriptError(f"unknown resident hook {name!r}; have {sorted(RESIDENT_HOOKS)}")
     entry, defaults = RESIDENT_HOOKS[name]
+    explicit = set(params)
     unknown = set(params) - set(defaults)
     if unknown:
         raise BufferScriptError(f"{name} takes {sorted(defaults)}, not {sorted(unknown)}")
-    words = native_script.resident_words(name, **{**defaults, **params})
+    params = {**defaults, **params}
+    if name == "turbo" and params["hold"] & R_BUTTON and "help" not in explicit:
+        params["help"] = HELP_R_DISABLED            # held R would open the Help System
+    words = native_script.resident_words(name, **params)
     symbols = STUBS[name][2]
     return (b"".join(w.to_bytes(4, "little") for w in words), symbols[entry],
             symbols["p_original"])
