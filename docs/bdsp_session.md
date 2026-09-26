@@ -33,6 +33,23 @@ A room entered with a password carries the CRC32 of the password's ASCII digits 
 room and trades with no change; `bin/bdsp_host.py --password 00000000` advertises both and a console
 entering with that password joins it and trades.
 
+A console entering with a password checks both fields, at three stages (1.3.0 `main`):
+
+| stage | code | check |
+|---|---|---|
+| scan | `NetworkHelper.CreateUnionGameMode` `0x224e630`; `nn::ldn::Scan` `0x16be184` | the scene id is the game mode (0x1100 plain, 0x1200 group, 0x1400 password) and a scan filter (flag 0x25: comm id, network type, scene id); another scene never reaches the game |
+| browse | `LdnMatchmakeSession` `0x16c1abc`; `GameState_BrowseSessionAfter_LocalRandom2` `0x273f804` | a room is password-protected when the u32 at +0x04 is non-zero; a console with a password skips an unprotected room and one without skips a protected room |
+| connect | `LocalMatchJoinSessionJob` `0x16c36c8`; the check `0x16b8890` | the joiner computes `crc32` of its typed password (`0x1719204`); +0x08 must be 8, and a CRC other than the advertised u32 at +0x04 fails with 0x6c51 before `nn::ldn::Connect` |
+
+The host writes that header in `LdnProtocol` `0x16b6a14`: network id, the password's CRC32, the
+byte 8, the session parameter. No message carries the joiner's CRC to the host. A password longer
+than eight characters keeps eight for Pia and moves the rest into application data behind `INL1`
+(`IlcaNetSession.SettingSet` `0x2735f14`).
+
+A retail console typing 00000000 against `bin/bdsp_host.py --password 11111111` (scene 5120, the
+wrong CRC) sent no frame to the host and opened an empty room of its own; the same console typing
+11111111 joined and traded. The CRC value decides the join.
+
 ## The passphrase
 
     WirelessStrongCryptoKey2021

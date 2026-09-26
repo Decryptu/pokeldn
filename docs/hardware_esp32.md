@@ -506,8 +506,10 @@ entered: the handshake finished 0.46 s after the association, and a trade ran to
   it. `AP_FLAG_NO_QOS` (`POKELDN_ESP32_AP_FLAGS=2`) clears the station's QoS flag after
   association: on a retail Legends Z-A trade the board sent 446 plain data frames and no QoS data,
   while the console kept sending QoS data (113 frames), since the association still negotiated
-  WMM. A retail Legends Arceus trade also completed with it. Whether either setting changes loss
-  or retries is unmeasured.
+  WMM. Retail Legends Arceus, Let's Go and LeafGreen trades also completed with it. Whether
+  either setting changes loss or retries is unresolved: a LeafGreen trade without QoS data saw
+  14.5% of the board's frames retried, a FireRed trade with it 20.6%, on another console and
+  another channel.
 - A sniffer board's counts of another board's frames undercount while the sniffer's own serial
   link is saturated; they are not evidence of loss on the air.
 - easyworld reports that a classic ESP32 must be the ESP32-WROOM-32E module and that the older

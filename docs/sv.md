@@ -10,6 +10,9 @@ Pokemon Scarlet (`0100a3d008c5c000`) and Violet (`01008f6008c5e000`) are native 
 Pia statically linked into `main`. A trade is complete on a retail console: `bin/sv_host.py` puts up
 a network the console joins from its offline Link Trade search, and the console draws the host's
 offer, offers its own, confirms and commits.
+A retail Violet trades in both roles the same way: it joins a host advertising Scarlet's local
+communication id, and its own search network advertises Scarlet's id too (`0x0100a3d008c5c000`,
+application version 21, scene 4), not Violet's `0x01008f6008c5e000`.
 
 Addresses are offsets into the decompressed `main` of update 4.0.0, as `tools/switch/nso_read.py`
 lays it out: text `0x0..0x343fc90`, rodata from `0x3440000`, data from `0x4383000`.

@@ -17,8 +17,8 @@ assert len(PASSPHRASE) == 64
 GAME_KEY = b"p1frXqxmeCZWFv0X"
 assert len(GAME_KEY) == 16
 
-# The local communication ids: the NACP lists both, each cartridge advertises its own title id
-# (measured: a retail Scarlet advertises 0x0100a3d008c5c000). Neither is a constant in the image.
+# The local communication ids: the NACP lists both. A retail Scarlet and a retail Violet both
+# advertise Scarlet's (docs/sv.md). Neither is a constant in the image.
 COMM_ID_SCARLET = 0x0100A3D008C5C000
 COMM_ID_VIOLET = 0x01008F6008C5E000
 

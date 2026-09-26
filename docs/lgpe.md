@@ -12,7 +12,9 @@ code sits on it in C++ with protocol-buffer messages through `gflnet3`, the same
 Shield use a year later.
 
 The static reading is taken from Let's Go Pikachu 1.0.2 (`010003f003a34000`, update NSP
-`v131072`, SDK 5.4.151.0). Hardware measurements are against a French Let's Go Pikachu.
+`v131072`, SDK 5.4.151.0). Hardware measurements are against a French Let's Go Pikachu and a
+Let's Go Eevee. A searching Let's Go Eevee advertises Let's Go Pikachu's local communication id,
+`010003f003a34000`, and joins a host advertising it; both roles trade with an Eevee unchanged.
 
 Local trading and battling ask both players for a link code: three Pokemon chosen in order from a
 fixed set of ten, shown in two rows: Pikachu, Eevee, Bulbasaur, Charmander, Squirtle; Pidgey,
