@@ -621,7 +621,10 @@ for: the console republished `0 2 3`, never answered the commit clone, held a wa
 the save could not trade for 30 minutes afterwards. The authority's answer, type 4 `1 0 0 3 0 0 step
 T+1`, takes the same console record to status 2, the screen's exit, under the game's own
 `0x11ba20`. `bin/lgpe_host.py` answers that way and agrees a second vote in one publish;
-`tests/test_lgpe_host_withdraw.py` runs both through the game's code. Where the game sets the
+`tests/test_lgpe_host_withdraw.py` runs both through the game's code. On a retail Let's Go Pikachu
+a withdrawn selection, `2 1 4` with A 0, took the answer `0 0 0 4 0 0 step T+1`: the console
+republished `0 1 4` and stayed on the trade screen, then voted 1 and 2 again, each agreed in one
+publish, and the trade went through. Where the game sets the
 30-minute lock is unread; the trade record code holds no time value.
 
 Publishing no clone data on clone types 4 and 1 at all, which is what two retail consoles exchange,
