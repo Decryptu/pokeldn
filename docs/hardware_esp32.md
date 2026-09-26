@@ -299,7 +299,10 @@ The ELEGOO board's bridge reports itself as "CP2102 USB to UART Bridge Controlle
 | 1500000 | 140.2 KB/s | 20000 of 100 bytes | 0 | 0 |
 | 2000000, 3000000 | the board never answers HELLO at the new rate | | | |
 
-`POKELDN_ESP32_BAUD=1500000` gives the board-to-host line 1.6 times the 921600 budget.
+`POKELDN_ESP32_BAUD=1500000` gives the board-to-host line 1.6 times the 921600 budget. A retail Legends
+Z-A seat at 921600 with CREDIT flow control seated with no refused association, the host's first
+message at 1.68 s (1.7 s at 1500000), 695 of 695 ETH_TX and a completed trade: the default rate
+wins Z-A's seat race.
 
 ## The userspace stack
 
@@ -499,10 +502,13 @@ entered: the handshake finished 0.46 s after the association, and a trade ran to
 
 ## Unresolved
 
-- The softAP negotiates WMM, which a Switch host does not; a trade completes with it.
-  `AP_FLAG_NO_QOS` (`POKELDN_ESP32_AP_FLAGS=2`) clears the station's QoS flag after association.
+- The softAP negotiates WMM, which a Switch host does not; a trade completes with it and without
+  it. `AP_FLAG_NO_QOS` (`POKELDN_ESP32_AP_FLAGS=2`) clears the station's QoS flag after
+  association: on a retail Legends Z-A trade the board sent 446 plain data frames and no QoS data,
+  while the console kept sending QoS data (113 frames), since the association still negotiated
+  WMM. A retail Legends Arceus trade also completed with it. Whether either setting changes loss
+  or retries is unmeasured.
 - A sniffer board's counts of another board's frames undercount while the sniffer's own serial
   link is saturated; they are not evidence of loss on the air.
-- Serial latency at 921600 baud against the Z-A seat race.
 - easyworld reports that a classic ESP32 must be the ESP32-WROOM-32E module and that the older
   ESP32-WROOM-32 does not trade reliably.

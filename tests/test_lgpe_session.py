@@ -6,8 +6,8 @@ import types
 import pytest
 
 from pokeldn.ldn import pia4
-from pokeldn.lgpe import (GAME_KEY, PASSPHRASE, PIA_VERSION, packet_iv, scene_id, session_key,
-                          session_keys)
+from pokeldn.lgpe import (GAME_KEY, PASSPHRASE, PIA_VERSION, packet_iv, scene_id, search_channel,
+                          session_key, session_keys)
 from pokeldn.lgpe.session import APP_HEADER_SIZE
 import lgpe_join
 
@@ -18,13 +18,15 @@ def test_constants_are_the_literals_read_off_main():
     assert PIA_VERSION == 3
 
 
-@pytest.mark.parametrize("code, advertised", [
-    (("pikachu", "pikachu", "pikachu"), 1),          # every retail Pikachu x3 session
-    (("bulbizarre", "salam\u00e8che", "carapuce"), 2341),  # a retail console's advertisement
-    (("2", "3", "2"), 2321),                          # the same console, third pick changed
+@pytest.mark.parametrize("code, advertised, channel", [
+    (("pikachu", "pikachu", "pikachu"), 1, 6),          # every retail Pikachu x3 session
+    (("bulbizarre", "salam\u00e8che", "carapuce"), 2341, 6),  # a retail console's advertisement
+    (("2", "3", "2"), 2321, 11),                         # the same console, third pick changed
+    (("evoli", "pikachu", "taupiqueur"), 1091, 11),      # a retail console hosted with it
 ])
-def test_the_link_code_is_the_scene_id_a_console_advertised(code, advertised):
+def test_the_link_code_is_the_scene_id_and_channel_a_console_advertised(code, advertised, channel):
     assert scene_id(code) == advertised
+    assert search_channel(code) == channel
 
 
 def test_a_name_outside_the_picker_is_refused():

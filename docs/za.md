@@ -380,7 +380,9 @@ A retail Legends Z-A on its Link Trade search, code 00000000, joined `bin/za_hos
 board 0.6 s after the host came up, traded a Klefki for a composed shiny Glaceon and kept it. The
 console sends a preview `0101`, marked 1, each time its cursor moves on the trade box: five before
 its pick in that session. Its pick is the one marked 0, so a host keys on that byte and not on a
-count. An emulated Legends Z-A trades with the same host over ldn_mitm.
+count. A retail console searching with the code 1234 5678 joined `bin/za_host.py --code 12345678`
+and traded the same way, and `bin/za_join.py --code 12345678` joined a console searching on that
+code and traded. An emulated Legends Z-A trades with the same host over ldn_mitm.
 
 ## Mystery Gift
 

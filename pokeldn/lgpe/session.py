@@ -73,6 +73,15 @@ def scene_id(code=CODE_POKEMON):
     return 1000 * a + 100 * b + 10 * c + 1
 
 
+# main.bin 0xf73a44, indexed at 0x4db248 by scene % 3; docs/lgpe_session.md, The link code.
+SEARCH_CHANNELS = (1, 6, 11)
+
+
+def search_channel(code=CODE_POKEMON):
+    """The channel a console searching on `code` hosts its own network on, the only one it joins."""
+    return SEARCH_CHANNELS[scene_id(code) % 3]
+
+
 def session_key(seed, game_key=GAME_KEY):
     """The LDN session key: AES-128-ECB(game key) over sixteen bytes of SEAD output, seeded from
     `seed`. main.bin 0x5cd560; the same derivation `pokeldn.ldn.pia5.ldn_session_key` implements."""

@@ -133,18 +133,33 @@ The scene id is the three picks as decimal digits followed by a 1: `1000a + 100b
 pick its index in the picker (Pikachu 0, Eevee 1, Bulbasaur 2, Charmander 3, Squirtle 4, Pidgey 5,
 Caterpie 6, Rattata 7, Jigglypuff 8, Diglett 9).
 
-| code a console searched with | scene id advertised |
-|---|---|
-| Pikachu, Pikachu, Pikachu | 1 |
-| Bulbasaur, Charmander, Squirtle | 2341 |
-| Bulbasaur, Charmander, Bulbasaur | 2321 |
+The game builds it at runtime, so 0x925 is no immediate in `main` (Let's Go Pikachu 1.0.2):
+`0x891580` folds the three pick bytes into `100a + 10b + c`, `0x978080` computes `10 * number +
+mode` with mode 1 for a trade (modes 2 and 3 come from the switch at `0x9765f4`; which features
+they are is unread), and the value travels through `0x349010` and `0x4da710` to the session
+constructor `0x4db1e0`, which stores it as a `u16` at `+0x302`. `0x4db6ac` puts it into
+`LdnCreateSessionSetting` at `+0x60`, and Pia copies it into `NetworkConfig.intentId.sceneId`
+before `nn::ldn::CreateNetwork` (`0x5ce988`).
+
+The same constructor picks the channel of the network a searching console hosts:
+`{1, 6, 11}[scene % 3]`, the table at `0xf73a44`, indexed at `0x4db248`..`0x4db254`.
+`pokeldn.lgpe.search_channel(code)` computes it.
+
+| code a console searched with | scene id advertised | channel |
+|---|---|---|
+| Pikachu, Pikachu, Pikachu | 1 | 6 |
+| Bulbasaur, Charmander, Squirtle | 2341 | 6 |
+| Bulbasaur, Charmander, Bulbasaur | 2321 | 11 |
+| Eevee, Pikachu, Diglett | 1091 | 11 |
+| Pikachu, Pikachu, Bulbasaur | 21 | 1 |
 
 A searching console hosts its own network and joins another only when that network advertises its
 scene id on its own channel. Under Bulbasaur, Charmander, Bulbasaur it ignored `bin/lgpe_host.py`
 advertising scene id 1 or 2321 on channel 6 while its own network was on channel 11, and joined at
 once on channel 11 with 2321, then traded.
-`bin/lgpe_host.py --code NAMES --channel auto` scans for that network and hosts beside it; a code
-never measured before, Eevee, Pikachu, Diglett (1091), traded that way.
+`bin/lgpe_host.py --code NAMES` hosts on the channel the code gives (`--channel auto` scans for
+the console's network instead); a retail Let's Go Pikachu and a Let's Go Eevee joined it on
+channel 1 under Pikachu, Pikachu, Bulbasaur, and the Eevee traded.
 
 The host side checks no code on a joiner: a console hosting under Bulbasaur, Charmander, Squirtle
 traded with `bin/lgpe_join.py`, which sends none.
@@ -586,6 +601,12 @@ publishes the type 4 copy off the record it held before the peer's 1 1 1 landed 
 there, and the console mirrors 1 1 1 and waits. A host that walks the commit clone on to 1 2 2
 gets 0 1 1 with the trailing word 2 and no kind 3, and the console sits on its confirmation
 screen.
+
+A console whose player pressed A again as the confirmation greyed the buttons (the cursor then
+sits on Retour) published a fourth record on the offered clone, `2 2 3` (state 2, argument 2,
+counter 3), after its `1 2 2`, answered the host's trailing word 2 with `0 2 3`, never answered the
+commit clone and held a warning screen. The save could not trade for 30 minutes afterwards. What
+state 2 means to the game is unread; the host has no answer for it.
 
 Publishing no clone data on clone types 4 and 1 at all, which is what two retail consoles exchange,
 leaves a console that joins short of the gate at `0x11b080` and on its search screen.

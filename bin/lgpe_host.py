@@ -41,6 +41,7 @@ from pokeldn.host_support import resolve_keys
 from pokeldn.lgpe import (APPLICATION_VERSION, COMM_ID_PIKACHU, MAX_PARTICIPANTS, PASSPHRASE,
                           PIA_PORT, SSID, build_advertise_data, packet_iv, scene_id,
                           session_keys)
+from pokeldn.lgpe.session import SEARCH_CHANNELS
 from pokeldn.lgpe import local_host, mesh_host
 from pokeldn.ldn import show_done
 
@@ -76,9 +77,10 @@ def build_parser():
     ap.add_argument("--ifname", default="ldn-tap")
     ap.add_argument("--ap-ifname", default="ldn")
     ap.add_argument("--mon-ifname", default="ldn-mon")
-    ap.add_argument("--channel", default="6",
-                    help="1, 6, 11, or auto: scan for the searching console's own network under our "
-                         "scene id and host on its channel, the only one it joins on")
+    ap.add_argument("--channel", default="code",
+                    help="1, 6, 11; code (default): the channel the link code puts a searching "
+                         "console on, the only one it joins on; auto: scan for the console's own "
+                         "network under our scene id and host on its channel")
     ap.add_argument("--code", default="pikachu,pikachu,pikachu",
                     help="the link code the player enters: three picker names (English or French) "
                          "or indices 0-9, comma-separated")
@@ -166,8 +168,12 @@ def main(argv=None):
         print(f"[lgh] prod.keys not found at {keys_path!r}"); return 2
 
     scene = args.scene_id if args.scene_id is not None else scene_id(args.code.split(","))
-    channel = (console_channel(keys_path, phy, scene, args.seconds) if args.channel == "auto"
-               else int(args.channel))
+    if args.channel == "auto":
+        channel = console_channel(keys_path, phy, scene, args.seconds)
+    elif args.channel == "code":
+        channel = SEARCH_CHANNELS[scene % 3]
+    else:
+        channel = int(args.channel)
     if channel is None:
         print(f"[lgh] no console advertised scene id {scene}: is it searching with that code?")
         return 3

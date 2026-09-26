@@ -48,11 +48,11 @@ for half an hour. `docs/lgpe_session.md` has every layout.
 
 ## Unresolved
 
-- Where the game computes the scene id from the code; 0x925 appears as no immediate in `main`.
-- How a searching console picks its channel: 6 and 11 on successive searches.
 - The three-byte value after the count in the `0xaN` clone messages. For a clone both stations hold
   it is the same on both sides; for clone type 3 id 0 the two stations send different values that
   match neither announcement, and what it is computed from is unread.
+- The clone state 2 a console publishes after a second A press on its confirmation, and the
+  answer that would let the trade go on ([the session page](lgpe_session.md)).
 - The flag halfword in the game message header, `0x0000ff00` on every message seen. Nothing has
   varied it.
 - The console sent fourteen kind-4 results, one per party slot, after one trade and a single one

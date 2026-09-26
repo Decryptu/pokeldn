@@ -1062,6 +1062,11 @@ was sent in nine byte runs: the checksum, the handling trainer's name, its langu
 flag and its friendship. The stats were untouched, because the tail sent is what the game computes.
 The handler language it wrote is 3 for a French save where an English one wrote 2.
 
+A retail console searching with the code 1234 5678 joined `bin/pla_host.py --code 12345678` and
+traded the same way, and `bin/pla_join.py --code 12345678` seated on that console's search, took
+the host role it handed over and traded. A save that already held the reference Azelf took it again under a new PID
+and encryption constant (`--fresh-pid`).
+
 WHAT THE RADIO NEEDS. The host over the air is `bin/pla_host.py` without `--ip-host`, as root, with
 an AP-capable phy. Two flags that do not exist over IP decide whether it reads anything at all: this
 machine's TP-Link Archer T3U hands its monitor interface already-decrypted frames that still carry
