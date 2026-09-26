@@ -143,6 +143,8 @@ A searching console hosts its own network and joins another only when that netwo
 scene id on its own channel. Under Bulbasaur, Charmander, Bulbasaur it ignored `bin/lgpe_host.py`
 advertising scene id 1 or 2321 on channel 6 while its own network was on channel 11, and joined at
 once on channel 11 with 2321, then traded.
+`bin/lgpe_host.py --code NAMES --channel auto` scans for that network and hosts beside it; a code
+never measured before, Eevee, Pikachu, Diglett (1091), traded that way.
 
 The host side checks no code on a joiner: a console hosting under Bulbasaur, Charmander, Squirtle
 traded with `bin/lgpe_join.py`, which sends none.
