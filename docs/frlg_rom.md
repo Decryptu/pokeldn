@@ -1581,6 +1581,12 @@ Pokemon appeared in grass, and encounters came back after a soft reset.
 One hook is resident at a time: each install replaces the last, and all of them share the 1 KB at
 `0x0203FC00`.
 
+Every hook runs on LeafGreen with one address changed. Each constant was mapped onto the LeafGreen
+cartridge through FireRed's own references to it, and every RAM address and every called function is
+identical except `m4aSoundMain`, `0x081DF518` on LeafGreen (the `bl` inside its `VBlankIntr` at
+`0x08000772`). The builders take `version=`, the host `--version leafgreen`. On an emulated LeafGreen,
+turbo fast-forwarded with R and `shiny` counted down and slowed the game with the music intact.
+
 ### A resident hook kept in the save
 
 Any resident hook can be carried in `filler_B20` and installed by talking to MOM after a boot, with no
