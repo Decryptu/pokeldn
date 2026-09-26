@@ -15,6 +15,7 @@ from pokeldn.ldn.host_beacon import (
 )
 from pokeldn.ldn.host_pia import HostPeerProtocol
 from pokeldn.host_support import resolve_keys
+from pokeldn.ldn import show_done
 
 
 HOST_CONTROL_POLL_SECONDS = 0.05
@@ -322,6 +323,7 @@ class HostApplication:
                     self.info("child slot stream (op x run-length):\n" + slots)
         if activity.commits > self._saved_commits:
             self._saved_commits = activity.commits
+            show_done()
             self._save_received()
 
     def _save_received(self):

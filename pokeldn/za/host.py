@@ -13,7 +13,7 @@ import zlib
 from types import SimpleNamespace
 
 from pokeldn import za
-from pokeldn.ldn import crypto, host_pia, pia_connect, reliable
+from pokeldn.ldn import crypto, host_pia, pia_connect, reliable, show_done
 from pokeldn.za import streams
 
 NET_REPEAT = 0.456                # a reference host re-sends its connection status this often
@@ -328,6 +328,7 @@ class HostSession:
                            proto=streams.PROTO_BROADCAST)
             if self.steps >= 4 and not self.trade_complete:
                 self.trade_complete = True
+                show_done()
                 self.log("[za-host] trade_complete: the console sent its four steps")
 
     # -- the loop's two entry points -------------------------------------------------------------

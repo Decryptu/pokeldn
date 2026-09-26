@@ -34,6 +34,7 @@ from pokeldn.ldn import transport as tmod  # noqa: E402
 from pokeldn.gba import barrier as lsmod_barrier  # noqa: E402
 from pokeldn.ldn import pia_connect  # noqa: E402
 from pokeldn.frlg.link import trade_runtime as runtime  # noqa: E402
+from pokeldn.ldn import show_done  # noqa: E402
 
 
 def make_engine(run_config, lg, *, default_anim_delay=None):
@@ -177,6 +178,7 @@ class _LiveJoiner:
         engine, lg = self.engine, self.lg
         if engine.commits > self.saved_commits:
             self.saved_commits = engine.commits
+            show_done()
             try:
                 n = save_received(engine, self.run_config, lg)
                 lg(f"[live] trade committed -> saved {n} received mon(s) to disk now "

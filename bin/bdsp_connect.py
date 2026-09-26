@@ -35,6 +35,7 @@ from pokeldn.ldn.transport import board_radio, find_ap_phy
 
 UNRELIABLE_PROTOCOL = 0x68        # the console's own list; its payload is the game's live state
 from pokeldn.host_support import resolve_keys
+from pokeldn.ldn import show_done
 
 
 def cleanup():
@@ -1144,6 +1145,7 @@ async def main_async(args):
                 # until the console reports the cancellation as ours.
                 if st["our_security_state"] or st["their_security_state"] is not None:
                     print(f"[cx]   trade complete - security phase over, repeater quiet")
+                    show_done()
                     record(rec="security_phase_end", t=now)
                 st["our_security_state"] = 0
                 st["their_security_state"] = None

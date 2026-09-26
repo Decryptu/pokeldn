@@ -509,6 +509,25 @@ def auto_port(candidates=None):
     return candidates[0]
 
 
+# A completed trade or delivery: a rise to full brightness held 3 s, then the radio's own look.
+# flash3 is the error look.
+DONE_LOOK = ("ramp-up", 255, 800, 3000)
+
+
+def led(pattern: str, peak: int = 255, period_ms: int = 0, duration_ms: int = 0) -> bool:
+    """Queues an LED look on this process's board and never waits for the reply, so a trio loop
+    can call it. False when the process has no board."""
+    if _radio is None:
+        return False
+    _radio.send(esp32.CMD_LED, esp32.led_payload(pattern, peak, period_ms, duration_ms))
+    return True
+
+
+def show_done() -> bool:
+    """Flashes the board's LED for a completed trade or delivery (docs/hardware_esp32.md)."""
+    return led(*DONE_LOOK)
+
+
 def use_from_environment(log=None) -> esp32.Radio | None:
     """`POKELDN_RADIO=esp32:PORT` selects the board for the whole process; `esp32:auto` finds it."""
     spec = os.environ.get("POKELDN_RADIO", "")

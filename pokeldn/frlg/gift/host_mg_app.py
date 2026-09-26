@@ -20,6 +20,7 @@ from pokeldn.frlg.link.linkplayer import HOST_NAME_PAD
 from pokeldn.frlg.gift.mg_server import (
     BUFFER_EXPECT_TRAINER_ID, SERVER_RESULT_NAMES, SVR_MSG_CARD_SENT, SVR_MSG_GIFT_SENT_1,
     SVR_MSG_NEWS_SENT, SVR_MSG_STAMP_SENT)
+from pokeldn.ldn import show_done
 
 MysteryGiftPayload = configmod.MysteryGiftPayload
 MysteryGiftDistribution = configmod.MysteryGiftDistribution
@@ -208,6 +209,7 @@ class MysteryGiftHostApplication(HostApplication):
         self.delivery_succeeded = bool(
             engine is not None and engine.result in self.SUCCESS_RESULTS)
         if self.delivery_succeeded:
+            show_done()
             print(self._success_message(engine.result))
         elif engine is not None and engine.result is not None:
             print("Session finished without delivering anything: "

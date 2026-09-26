@@ -40,6 +40,7 @@ from pokeldn.za.host import MSG_COMMIT, MSG_CONFIRM, OFFER_PICK, OFFER_PREVIEW
 from pokeldn.ldn import crypto, host_pia, ldn_mitm, pia_connect, reliable
 from pokeldn.ldn.transport import board_radio, find_ap_phy
 from pokeldn.host_support import resolve_keys
+from pokeldn.ldn import show_done
 
 # The variable id we send as our own until the host names one. A retail joiner takes the id the
 # host writes in the footer of its first mesh-addressed packet; this is the fallback.
@@ -235,6 +236,7 @@ class GameStreams:
             print(f"[za] sent {item[1][:2].hex()} ({len(item[1])} bytes) at {elapsed:.2f}s")
             if item[1] == LAST_STEP:
                 self.traded_at = elapsed
+                show_done()
                 print(f"[za] trade_complete at {elapsed:.2f}s")
 
     def _answer_trade(self, inner, elapsed):

@@ -30,6 +30,7 @@ from pokeldn.swsh import trade as swsh_trade
 from pokeldn import gen8
 from pokeldn.swsh import pokemon as swsh_pokemon
 from pokeldn.swsh import trade_payload
+from pokeldn.ldn import show_done
 
 SCENE_ACCEPTING = 60001           # logged, never a gate
 
@@ -317,6 +318,7 @@ async def main_async(args):
                         step = swsh_trade.parse_sync_step(member["body"])
                         if step is not None and step[0] >= LADDER_FINAL_PHASE:
                             if not st["ladder_finished"]:
+                                show_done()
                                 print(f"\n[rx] *** THE LADDER IS FINISHED - phase {step[0]} is the "
                                       f"teardown rung, THE ABORT STANDS DOWN *** "
                                       f"{member['body'].hex()} at t={now:.2f}")

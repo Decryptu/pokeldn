@@ -6,7 +6,7 @@ session id 9e9c14c2238b018697293395cba1e6d2, host 127.0.0.2 id 0xefb0, joiner 12
 import pytest
 
 from pokeldn import za
-from pokeldn.ldn import crypto, host_pia, pia_connect, reliable
+from pokeldn.ldn import crypto, esp32, esp32_sim, esp32_wlan, host_pia, pia_connect, reliable
 from pokeldn.za import host as za_host
 from pokeldn.za import streams
 
@@ -106,9 +106,14 @@ class ScriptedJoiner:
         return out
 
 
-def test_a_whole_trade_against_a_scripted_joiner():
+def test_a_whole_trade_against_a_scripted_joiner(monkeypatch):
     """The preview goes out marked 1, the pick marked 0 and only after the joiner's own pick, the
-    confirmation and commit after the joiner's, and every step is answered with its own byte."""
+    confirmation and commit after the joiner's, and every step is answered with its own byte. The
+    board's LED shows the done look once, on the fourth step."""
+    board = esp32_sim.SimulatedBoard(esp32_sim.Air())
+    radio = esp32.Radio(board.host_stream())
+    monkeypatch.setenv("POKELDN_RADIO", "esp32:simulated")
+    monkeypatch.setattr(esp32_wlan, "_radio", radio)
     offer = bytes.fromhex("0101b90300bc815801") + bytes(range(256)) + bytes(88) + b"\x01"
     host = za_host.HostSession(
         ssid=SSID, our_ip=HOST_IP, our_mac=HOST_MAC, guest_ip=JOINER_IP, code="00000000",
@@ -144,12 +149,18 @@ def test_a_whole_trade_against_a_scripted_joiner():
     assert tail == ["0102b90100", "0104b90100"]
     joiner.game(bytes.fromhex("0104b90100"), t)
     for step in ("03", "06", "0b", "0e"):
+        radio.drain()
+        assert board.led_looks == []
         joiner.game(bytes.fromhex("0200b901" + step), t)
         t = joiner.run(t + 0.2, t)
     answers = [x[2].hex() for x in joiner.game_heard() if x[1] == streams.PROTO_BROADCAST
                and x[2][4:6] == b"\x02\x01"]
     assert answers == ["000000020201b901" + s for s in ("03", "06", "0b", "0e")]
     assert host.trade_complete
+    t = joiner.run(t + 1.0, t)
+    radio.drain()
+    radio.close()
+    assert board.led_looks == [bytes.fromhex("06ff2003b80b")]   # ramp-up, peak 255, 800 ms, 3000 ms
 
 
 def test_the_joiner_answers_the_hosts_pick_and_not_its_cursor(tmp_path):

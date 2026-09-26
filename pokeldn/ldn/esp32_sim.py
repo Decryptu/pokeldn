@@ -74,6 +74,7 @@ class SimulatedBoard:
         self.stream = _HostStream(self)
         self._reader = esp32.FrameReader()
         self.sent_raw: list[bytes] = []
+        self.led_looks: list[bytes] = []
         air.attach(self)
 
     # ---- host link ----
@@ -154,6 +155,7 @@ class SimulatedBoard:
         elif t == esp32.CMD_STATUS:
             self._emit(esp32.MSG_STATUS, f"mode={self.mode} simulated".encode())
         elif t == esp32.CMD_LED:
+            self.led_looks.append(p)
             self._result(t, 0 if len(p) == 6 and p[0] < len(esp32.LED_PATTERNS) else 0x102)
         elif t == esp32.CMD_BENCH:
             total, size = struct.unpack("<IH", p)

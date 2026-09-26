@@ -22,3 +22,11 @@ import os as _os
 if _os.environ.get("POKELDN_RADIO", "").startswith("esp32:"):
     from pokeldn.ldn import esp32_wlan as _esp32_wlan
     _esp32_wlan.use_from_environment(log=print)
+
+
+def show_done() -> bool:
+    """Flashes the ESP32 board's LED for a completed trade or delivery; False with no board."""
+    if not _os.environ.get("POKELDN_RADIO", "").startswith("esp32:"):
+        return False
+    from pokeldn.ldn import esp32_wlan
+    return esp32_wlan.show_done()

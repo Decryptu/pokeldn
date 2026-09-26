@@ -20,6 +20,7 @@ from pokeldn.ldn import sync_clock
 from pokeldn.ldn.pia5 import (PiaHeader5, build_message, ciphertext, decrypt_payload,
                               encrypt_payload, gcm_iv, is_pia5, ldn_nonce_crc, pad_payload,
                               parse_messages)
+from pokeldn.ldn import show_done
 
 SCENE_UNION_ROOM = 0x1100
 APP_VERSION = 199                 # 1.3.0's local communication version
@@ -578,6 +579,7 @@ class TradePartner:
             if self.our_security or self.their_security is not None:
                 self.trades += 1
                 self.record(rec="trade_complete", t=now, trades=self.trades)
+                show_done()
             self.our_security, self.their_security = 0, None
             return []
         return []

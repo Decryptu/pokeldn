@@ -31,6 +31,7 @@ from pokeldn.pla import game_channel
 from pokeldn.ldn.ldn_mitm_host import IpHostTransport
 from pokeldn.ldn.transport import HostTransport, board_radio, find_ap_phy
 from pokeldn.host_support import resolve_keys
+from pokeldn.ldn import show_done
 
 PROTOCOL_NAMES = {
     0x08: "keep alive", 0x2C: "net", 0x30: "turn", 0x58: "rtt", 0x65: "sync",
@@ -863,6 +864,7 @@ def main():
                                         report_offer(src_ip, st.joiner_offers[n - 1], n)
                                     if st.trades > trades_done.get(src_ip, 0):
                                         trades_done[src_ip] = st.trades
+                                        show_done()
                                         if st.done:
                                             print(f"[sv] {src_ip}: TRADE {st.trades} COMPLETE; "
                                                   f"no record left to offer")

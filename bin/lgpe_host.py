@@ -41,6 +41,7 @@ from pokeldn.host_support import resolve_keys
 from pokeldn.lgpe import (APPLICATION_VERSION, COMM_ID_PIKACHU, MAX_PARTICIPANTS, PASSPHRASE,
                           PIA_PORT, SCENE_ID, SSID, build_advertise_data, packet_iv, session_keys)
 from pokeldn.lgpe import local_host, mesh_host
+from pokeldn.ldn import show_done
 
 HOST_INDEX = 0
 JOINER_INDEX = 1
@@ -640,6 +641,7 @@ class Session:
                 self.peer_committed = True
         elif msg["kind"] == pb7.RESULT_MESSAGE:
             self.trade["done"] = True
+            show_done()
             TRADE_IN_PROGRESS["offer"] = TRADE_IN_PROGRESS["commit"] = False
             print("[lgh] game: *** THE RESULT *** the trade has gone through on the console")
             self.send_result()

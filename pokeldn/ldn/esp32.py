@@ -33,6 +33,10 @@ CMD_LED = 0x0D      # u8 pattern, u8 peak, u16 period ms, u16 duration ms: the b
 # The LED's patterns (firmware/esp32/main/led.h); "auto" hands the LED back to the radio's state.
 LED_PATTERNS = ("auto", "off", "on", "breathe", "blink", "flash3", "ramp-up", "ramp-down", "pulse")
 
+
+def led_payload(pattern: str, peak: int = 255, period_ms: int = 0, duration_ms: int = 0) -> bytes:
+    return struct.pack("<BBHH", LED_PATTERNS.index(pattern), peak, period_ms, duration_ms)
+
 MSG_INFO = 0x81
 MSG_RESULT = 0x82
 MSG_LOG = 0x83
@@ -534,8 +538,7 @@ class Radio:
     def led(self, pattern: str, peak: int = 255, period_ms: int = 0, duration_ms: int = 0) -> None:
         """Shows `pattern` for duration_ms (0: until the next call); a period of 0 is the pattern's
         default. A board flashed before the LED command answers RadioError 0x106."""
-        self.request(CMD_LED, struct.pack("<BBHH", LED_PATTERNS.index(pattern), peak, period_ms,
-                                          duration_ms), MSG_RESULT)
+        self.request(CMD_LED, led_payload(pattern, peak, period_ms, duration_ms), MSG_RESULT)
 
     def status(self) -> str:
         return self.request(CMD_STATUS, b"", MSG_STATUS).decode(errors="replace")

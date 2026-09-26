@@ -40,6 +40,7 @@ from pokeldn.sv import pokemon, port2, streams, trade
 from pokeldn.pla import game_channel
 from pokeldn.ldn.transport import board_radio, find_ap_phy
 from pokeldn.host_support import resolve_keys
+from pokeldn.ldn import show_done
 
 PROTO_NET = 0x2C
 PROTO_RTT = 0x58
@@ -1159,6 +1160,7 @@ async def run_session(args, keys, host_ip, host_mac, our_ip, our_mac, record):
                                 print(f"[sv] the host's offer written to {path}")
                         if stage.trades > trades_done:
                             trades_done = stage.trades
+                            show_done()
                             record(rec="trade_done", n=trades_done, t=time.time())
                             if stage.done:
                                 print(f"[sv] TRADE {trades_done} COMPLETE; no record left to offer")

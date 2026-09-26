@@ -26,6 +26,7 @@ import zlib
 
 from pokeldn.ldn import broadcast4, reliable4
 from pokeldn.swsh import trade
+from pokeldn.ldn import show_done
 
 PORT_CONTENT = 0                      # holders, pings, box commands
 PORT_ELEMENT = 1                      # the 40000-family envelopes
@@ -406,6 +407,7 @@ class HostTrade:
         if el.phase >= LADDER_LAST:
             self.ladder_done_at = now
             self.log("[trade] the ladder reached phase 4")
+            show_done()
             self.goto("saving")
             return
         # At phase p we send command p (element 0) and announce p + 1, once.

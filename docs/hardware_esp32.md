@@ -369,6 +369,9 @@ The automatic look follows the board's mode:
 On top of it every frame received or completed flickers the LED, retriggered once the previous
 flicker has faded, so a flood shows as a shimmer. A failed join (LINK reasons `0xFFFF`, `0xFFFE`),
 a refused key, a dropped board-to-host message or a lost host command plays flash3 for 1.5 s.
+A launcher on the board marks a completed trade or Mystery Gift delivery with ramp-up to full
+brightness over 800 ms, held until 3 s (`pokeldn.ldn.show_done`); the Sword gift host, a beacon
+with no read-back, has no such moment.
 `tools/ldn/esp32_led.py --port PORT PATTERN` sets a look; `--demo` shows each.
 
 ## Building and flashing
