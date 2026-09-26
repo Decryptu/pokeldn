@@ -232,6 +232,8 @@ def build_bulk_ack(high, our_next_seq, stream_id=0):
 def build_parser():
     ap = argparse.ArgumentParser(description=__doc__,
                                  formatter_class=argparse.RawDescriptionHelpFormatter)
+    ap.add_argument("--code", default="",
+                    help="join only a console searching with this Link Code; empty takes any")
     ap.add_argument("--comm-id", default=None,
                     help="local communication id to join, hex; default is either cartridge's")
     ap.add_argument("--keys", default="~/.switch/prod.keys")
@@ -497,6 +499,9 @@ def main(argv=None):
                            channel=n.channel, participants=n.num_participants,
                            max_participants=n.max_participants,
                            app_data=bytes(n.application_data).hex(), t=time.time())
+                    if args.code and sv.link_code(n.application_data) != args.code:
+                        print(f"[sv] scan {scans}: its code is not {args.code}")
+                        continue
                     if n.num_participants < n.max_participants:
                         target = n
             if target is None:

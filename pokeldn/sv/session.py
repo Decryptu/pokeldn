@@ -69,12 +69,44 @@ GAME_DATA_SIZE = 40               # the game's bytes after the 0x5c system block
 PLATFORM = 1
 
 
-def build_advertise_data(*, password=b"", num_players=1, game_data=None):
+# A Link Code rides the advertisement twice: NUL-padded into the user password under the mask
+# Legends Arceus uses (the same game key), and in clear at game byte +0x00 with its length at +0x24
+# (docs/sv.md, The link code).
+LINK_CODE_MASK = bytes.fromhex("e5ab19ed742b6d40885998bf968aa166")
+CODE_LEN_OFF = 0x24
+
+
+def user_password(code):
+    """-> the sixteen password bytes a console searching with this code advertises."""
+    return bytes(m ^ c for m, c in zip(LINK_CODE_MASK, code.encode().ljust(16, b"\x00")))
+
+
+def build_game_data(code):
+    """-> the 40 game bytes for a code: the code, zeros, its length as a u32 at +0x24."""
+    raw = code.encode()
+    if len(raw) > 16:
+        raise ValueError(f"a link code is at most 16 bytes, not {len(raw)}")
+    return raw.ljust(CODE_LEN_OFF, b"\x00") + len(raw).to_bytes(4, "little")
+
+
+def link_code(app_data):
+    """-> the code a network advertises, or "" when it carries none."""
+    game = bytes(app_data)[0x5C:0x5C + GAME_DATA_SIZE]
+    if len(game) < GAME_DATA_SIZE:
+        return ""
+    size = int.from_bytes(game[CODE_LEN_OFF:CODE_LEN_OFF + 4], "little")
+    return game[:min(size, 16)].decode("ascii", "replace")
+
+
+def build_advertise_data(*, password=b"", num_players=1, game_data=None, code=None):
     """-> the 132 bytes a searching console advertises: the 0x5C Pia system block and 40 game bytes.
 
     Reproduces the three sv01 scans and the sv02 session beacon byte for byte with the defaults
     (one pass carried `fb149700` at game byte +0x20; what writes it is unknown).
     """
+    if code:
+        password = user_password(code)
+        game_data = build_game_data(code) if game_data is None else game_data
     header = build_pia_header(sys_comm_ver=SYS_COMM_VERSION, app_comm_ver=APP_COMM_VERSION,
                               user_password=password, player_limit_enabled=True,
                               num_players=num_players, nickname=ADVERTISE_NAME, name_encoding=1)

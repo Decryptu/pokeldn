@@ -252,6 +252,23 @@ offset and the addresses read as fragments of a MAC. Unpacking the A-MSDU subfra
 readable traffic of one capture from 313 Pia packets to 3667. Any decoder pointed at these two
 consoles has to do it; `scratchpad/pia6_air_decode.py` does.
 
+## The link code
+
+A Link Code rides the advertisement twice; the scene id stays 4. The user password is the code,
+NUL-padded to sixteen bytes, XORed with `e5ab19ed742b6d40885998bf968aa166`, the mask Legends Arceus
+uses under the same game key ([docs/pla.md](pla.md)). The game bytes carry the code in clear at
++0x00 and its length as a u32 at +0x24. `pokeldn.sv.build_advertise_data(code=...)` reproduces a
+retail console searching with 12345678 byte for byte.
+
+| run | result |
+|---|---|
+| the console searching with 12345678, hosting; `bin/sv_join.py` advertising no code joins | traded |
+| `bin/sv_host.py --code 12345678`, the console searching with 12345678 | joined, traded |
+| `bin/sv_host.py` with no code, the console searching with 12345678 | never joined |
+
+A searching console joins only a host advertising its code; a console hosting under a code takes a
+joiner that carries none. `bin/sv_join.py --code` joins only a console searching with that code.
+
 ## Where the code is
 
 Offsets into the decompressed `main` of 4.0.0. The RTTI names come out of the binary's own

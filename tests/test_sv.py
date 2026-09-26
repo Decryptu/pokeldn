@@ -45,6 +45,21 @@ def test_the_advertisement_reproduces_a_searching_console():
     assert sv.build_advertise_data() == SV01_APP_DATA
 
 
+# A retail Scarlet searching with the Link Code 12345678, off the board's scan.
+SV_CODE_APP_DATA = bytes.fromhex(
+    "005c150015d4992ad9411d5a78885998bf968aa1660101000000010120000000"
+    "0000000000000000000000000000000000000000000000000000000000000000"
+    "0000000000000000000000000000000000000000000000000000000031323334"
+    "3536373800000000000000000000000000000000000000000000000000000000"
+    "08000000")
+
+
+def test_the_advertisement_reproduces_a_console_searching_with_a_code():
+    assert sv.build_advertise_data(code="12345678") == SV_CODE_APP_DATA
+    assert sv.link_code(SV_CODE_APP_DATA) == "12345678"
+    assert sv.link_code(SV01_APP_DATA) == ""
+
+
 def test_the_advertisement_reproduces_a_full_session():
     assert sv.build_advertise_data(num_players=2) == SV02_APP_DATA
 

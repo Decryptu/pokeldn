@@ -259,6 +259,8 @@ def build_parser():
     ap.add_argument("--net-stations", type=int, default=None,
                     help="how many 21-byte station slots the Net 0x11 carries; a retail host "
                          "writes four whatever the game's participant limit is")
+    ap.add_argument("--code", default="",
+                    help="the Link Code the player sets, e.g. 12345678; empty for none")
     ap.add_argument("--game-data", help="hex, the 40 game bytes of the advertisement; a searching "
                                         "console leaves them zero, a host that a joiner reached "
                                         "carried 648cf4 at +0x21")
@@ -399,7 +401,9 @@ def main():
             print(f"[sv] {ip}: offer written to {path}")
 
     game_data = binascii.unhexlify(args.game_data) if args.game_data else None
-    app_data = sv.build_advertise_data(game_data=game_data)
+    if args.code and game_data is None:
+        game_data = sv.build_game_data(args.code)   # the Net property carries it too
+    app_data = sv.build_advertise_data(game_data=game_data, code=args.code)
     print(f"[sv] advertising comm id {comm_id:#018x}, {len(app_data)} bytes of application data, "
           f"platform {args.platform}")
     machine = config.load_project_host_file_config()
@@ -519,7 +523,8 @@ def main():
             if players != advertised_players[0]:
                 advertised_players[0] = players
                 transport.set_application_data(
-                    sv.build_advertise_data(num_players=players, game_data=game_data))
+                    sv.build_advertise_data(num_players=players, game_data=game_data,
+                                            code=args.code))
                 print(f"[sv] advertising {players} player(s)")
             if not args.no_net_probe:
                 for ip in list(seen_ips):
