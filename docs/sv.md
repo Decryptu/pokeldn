@@ -878,14 +878,15 @@ response does, and a joiner that waits for the response sends nothing for the wh
 
 ## Unresolved
 
-- What keeps a console from announcing a seat that carried everything else. One board seat had
-  every stream acknowledged as in seats that traded (the 47 identity records at 7.65 s, the channel
-  table, the session update, the clock) and was never announced in 200 s. The seat before it in the
-  same search had ended with the console's host migration 0.5 s in. No seat that followed a migrated
-  seat has been announced, four of four, but three of those migrated themselves. `bin/sv_join.py
-  --announce-timeout SECONDS` leaves such a seat and scans again. With `--announce-timeout 20` a board seat that followed a failed
-  association (LDN reason `0xc9`) went unannounced for 20 s over 473 authenticated datagrams; the
-  joiner left it, and the next seat in the same search was announced and traded.
+- What keeps a console from announcing a seat that carried everything else. Every unannounced seat
+  on record had RTT answered at once: one board seat carried every stream (the 47 identity records
+  at 7.65 s, the channel table, the session update, the clock) and was never announced in 200 s
+  after a seat that ended in host migration 0.5 s in; two were seats the console flooded with
+  repeats; one followed a failed association (LDN reason `0xc9`). No seat that followed a migrated
+  seat was announced, four of four, with prompt answers. With RTT answered 0.3 s late (`--rtt-delay
+  0.3`) twelve seats of twelve were announced, two of them the next seat after the console's
+  post-trade host migration (`--leave-on-migration 3`, the player searching again), each traded.
+  `bin/sv_join.py --announce-timeout SECONDS` leaves an unannounced seat and scans again.
 
 **A trade is complete on a retail Scarlet (2026-09-22).** The console joins a network
 `bin/sv_host.py` puts up, takes the host's identity as four messages, draws the host's offer with
