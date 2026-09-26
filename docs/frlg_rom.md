@@ -1475,6 +1475,10 @@ overworld, until a soft reset.
     0x014  original_off  its p_original word
     0x018  blob_off      where the hook starts in this image, after the installer's code
 
+The installer body is THUMB (148 bytes with the header), which leaves 876 bytes of the 1024-byte
+receive buffer for a hook. It refuses a hook whose data (`p_frames`, `p_ring`, `p_state`) overlaps its
+own code or runs past `0x02040000`.
+
 REG_IME is cleared around the copy and the table write. The first install keeps the handler it
 replaces at `0x0203FBFC`; a later install over any resident hook chains to that word rather than to
 an offset of the old hook's layout, and refuses with `0xBAD0BAD0` when the word is empty. The answer
@@ -1537,6 +1541,29 @@ started drawing and the digits' top rows showed the previous frame. A 1bpp font 
 expanded into OBJ tiles 1008 to 1023 after `VBlankIntr`, and only when two sentinel words of those
 tiles differ from what the expansion writes. OBJ palette 15 and those tiles are the game's to use as
 well; while the overlay is on, anything it keeps there is overwritten.
+The font is sixteen 3x5 digits, three bits a row, drawn at pixels 2 to 4 of rows 1 to 5 of each tile
+(`asm/resident/overlay.inc`, shared by both hooks).
+
+`ring=ADDRESS` (140 bytes, `0x0203FF74` ends at the top of EWRAM) keeps `gRngValue` as `VBlankIntr` finds
+it, one word a frame for 32 frames, and freezes when the word at `watch` (`gEnemyParty[0]`'s
+personality, `0x02024028`) changes. On the emulator a grass encounter's personality is reached from
+every kept seed: walking spends two `Random` calls a frame, and from the seed of the frame before the
+encounter frame the nature roll is the fifth call (`VBlankIntr`'s, the frame's own, slot, level,
+nature).
+
+`shiny` (`asm/resident/shiny.s`) counts down to the next shiny wild roll. The model: `VBlankIntr` calls
+`Random` once a frame [main.c:412]; a wild Pokemon rolls `Random() % 25` for its nature, then draws
+`Random() | Random() << 16` until the nature matches [wild_encounter.c:233, pokemon.c:1864]; `method=1`
+takes the first pair (a scripted `CreateMon`). Shiny is `TID ^ SID ^ high ^ low < 8`, TID and SID from
+`gSaveBlock2Ptr` (`0x0300422C`) `+0x0A`. The hook follows `gRngValue` from frame to frame (up to 64 steps,
+else it restarts), searches `search` candidates ahead per idle frame, and shows the target's nature and
+`target - current - offset` as decimal digits (`offset=4`, the grass case above), or `FF` and the search
+distance. While `slow` (R) is held it waits out `slow_frames` more V-blanks per frame: `IntrMain` leaves
+VCount enabled inside a handler [crt0.s], so `m4aSoundVSync` keeps running, and the hook calls
+`m4aSoundMain` (`0x081DF53D`, with `gPcmDmaCounter` `0x03002F68` from `gSoundInfo` `0x03005F80`) once per
+waited V-blank and clears that V-blank in `REG_IF` so the handler is not entered again at once. State
+is 36 bytes at `0x0203FF80`. On the emulator the followed seed matched `gRngValue` and the Python model
+agreed the target rolls a shiny.
 
 ### `call-chain`
 

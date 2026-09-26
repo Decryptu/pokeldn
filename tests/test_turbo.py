@@ -98,7 +98,7 @@ def _run_hook(intr_check, extra, printers=b"", field=0, callbacks=None, cb1_stub
     read = lambda at: int.from_bytes(uc.mem_read(at, 4), "little")
     machine.read = read
     _run_hook.last = machine
-    return read(counters), read(counters + 4), read(0x0203FF00), read(0x0203FF04)
+    return read(counters), read(counters + 4), read(0x0203FF60), read(0x0203FF64)
 
 
 def test_an_idle_frame_runs_the_game_then_the_extra_printers():
@@ -116,6 +116,10 @@ def test_a_hook_that_does_not_fit_or_does_not_exist_is_refused():
         bs.build_install_resident("no-such-hook")
     with pytest.raises(bs.BufferScriptError, match="takes"):
         bs.build_install_resident("turbo", speed=3)
+    with pytest.raises(bs.BufferScriptError, match="runs into its frames"):
+        bs.build_install_resident("turbo", frames=0x0203FE00)     # under the code
+    with pytest.raises(bs.BufferScriptError, match="runs into its ring"):
+        bs.build_install_resident("turbo", ring=0x0203FE00)
 
 
 def _printer(x, y, current_x, current_y, active=1):
@@ -172,7 +176,7 @@ def test_the_field_pass_runs_both_overworld_callbacks_with_the_new_presses_clear
     _run_hook(0, 0, field=2, callbacks=(CB1_OVERWORLD | 1, CB2_OVERWORLD | 1, 0x0001))
     m = _run_hook.last
     counters = 0x0203FFA0
-    assert (m.read(counters + 8), m.read(counters + 12), m.read(0x0203FF08)) == (2, 2, 2)
+    assert (m.read(counters + 8), m.read(counters + 12), m.read(0x0203FF68)) == (2, 2, 2)
     keys = bytes(m.uc.mem_read(GMAIN + 0x2E, 4))
     assert keys == b"\x00\x00\x00\x00"                        # newKeys, newAndRepeatedKeys
 
@@ -225,7 +229,7 @@ def test_the_budget_starts_a_pass_only_when_it_and_the_game_frame_fit(
         budget, start, last_cost, passes, held_back):
     """Fixed passes past what a frame holds lagged one frame in four at field=3; the budget measures
     each pass in scanlines and stops before the game's own frame would miss V-blank."""
-    counters = 0x0203FF00
+    counters = 0x0203FF60
     _run_hook(0, 0, field=3, budget=budget, callbacks=(CB1_OVERWORLD | 1, CB2_OVERWORLD | 1, 0),
               cb2_stub=_vcount_stub(60),
               more={REG_VCOUNT: start.to_bytes(2, "little"),
@@ -239,7 +243,7 @@ def test_the_budget_starts_a_pass_only_when_it_and_the_game_frame_fit(
 def test_a_held_back_frame_shrinks_the_kept_cost_until_a_pass_fits_again():
     """One slow pass (101 lines, read off the emulator) kept as it was stopped every later pass: 30
     lines of the game's VBlankIntr plus 202 is past 228 forever."""
-    counters = 0x0203FF00
+    counters = 0x0203FF60
     cost = 101
     for frame in range(10):
         _run_hook(0, 0, field=1, budget=228, callbacks=(CB1_OVERWORLD | 1, CB2_OVERWORLD | 1, 0),
@@ -274,7 +278,7 @@ def test_the_battle_pass_runs_the_battle_callbacks_and_not_the_field_ones():
     _run_hook(0, 0, field=3, battle=1, callbacks=(battle[0] | 1, battle[1] | 1, 0x0002),
               cb_addresses=battle)
     m = _run_hook.last
-    assert (m.read(0x0203FFA8), m.read(0x0203FFAC), m.read(0x0203FF08)) == (1, 1, 1)
+    assert (m.read(0x0203FFA8), m.read(0x0203FFAC), m.read(0x0203FF68)) == (1, 1, 1)
 
 
 def test_no_callback_pass_while_a_palette_fade_runs():
@@ -316,7 +320,7 @@ def test_the_overlay_spells_the_watched_word_in_the_overworld():
     assert all(t >> 12 == 15 for t in tiles)                     # OBJ palette 15
     assert [int.from_bytes(e[2:4], "little") for e in entries] == [174 + 8 * i for i in range(8)]
     assert _tile_picture(m, 1) == ["........", "...#....", "..##....", "...#....",
-                                   "...#....", "...#....", "...#....", "..###..."]
+                                   "...#....", "..###...", "........", "........"]
     assert int.from_bytes(m.uc.mem_read(PLTT_OBJ15, 2), "little") == 0x7FFF
     assert int.from_bytes(m.uc.mem_read(PLTT_OBJ15 - 0x400, 2), "little") == 0x7FFF
 
@@ -347,6 +351,33 @@ def test_the_expanded_font_matches_the_sentinels_the_skip_compares():
     from unicorn import arm_const as a
     _run_hook(1, 0, overlay=0x03004220, watched=0, callbacks=(CB1_OVERWORLD | 1, CB2_OVERWORLD | 1, 0))
     m = _run_hook.last
-    assert _tile_picture(m, 0xF)[7] == ".#......"
+    assert _tile_picture(m, 0xF)[5] == "..#....."
     assert int.from_bytes(m.uc.mem_read(TILE_1008 + 4, 4), "little") == 0x22211122
-    assert int.from_bytes(m.uc.mem_read(TILE_1008 + 15 * 32 + 28, 4), "little") == 0x22222212
+    assert int.from_bytes(m.uc.mem_read(TILE_1008 + 15 * 32 + 20, 4), "little") == 0x22222122
+
+
+def test_the_rng_history_keeps_the_frames_up_to_the_encounter_and_then_freezes():
+    """The instrument that measures how many Random calls an encounter spends before its nature roll.
+    It must keep the seed of every frame up to the one where gEnemyParty[0]'s personality changed,
+    wrap at 32, and stop there so the transition that follows cannot overwrite the frames that
+    matter."""
+    from unicorn import arm_const as a
+    ring, watch, rng = 0x0203FF74, 0x02024028, 0x03004220
+    code = bs.build_install_resident("turbo", extra=0, ring=ring)
+    machine = bs._Machine(code, memory={ns.GINTRTABLE_VBLANK: (VBLANK_INTR | 1).to_bytes(4, "little"),
+                                        VBLANK_INTR: _counting_stub(0x02030010),
+                                        INTR_CHECK: (1).to_bytes(2, "little")})
+    machine.call()
+    uc = machine.uc
+    stop = 0x02030000
+    entry = int.from_bytes(uc.mem_read(ns.GINTRTABLE_VBLANK, 4), "little")
+    read = lambda at: int.from_bytes(uc.mem_read(at, 4), "little")
+    for frame in range(40):
+        uc.mem_write(rng, (0x1000 + frame).to_bytes(4, "little"))
+        uc.mem_write(watch, (0xAAAA0000 if frame < 37 else 0x12345678).to_bytes(4, "little"))
+        uc.reg_write(a.UC_ARM_REG_SP, 0x03007D00)
+        uc.reg_write(a.UC_ARM_REG_LR, stop)
+        uc.emu_start(entry, stop, count=100000)
+    assert (read(ring), read(ring + 4), read(ring + 8)) == (2, 0xAAAA0000, 38)
+    seeds = [read(ring + 12 + 4 * (n & 31)) for n in range(38 - 32, 38)]
+    assert seeds == [0x1000 + n for n in range(6, 38)]          # the last 32, the change's frame last

@@ -40,7 +40,8 @@ def assemble(source_path):
     with tempfile.TemporaryDirectory() as tmp:
         tmp = pathlib.Path(tmp)
         obj, binary = tmp / "a.o", tmp / "a.bin"
-        subprocess.run([AS, *AS_FLAGS, "-o", str(obj), str(source_path)], check=True)
+        subprocess.run([AS, *AS_FLAGS, "-I", str(pathlib.Path(source_path).parent), "-o", str(obj),
+                        str(source_path)], check=True)
         subprocess.run([OBJCOPY, "-O", "binary", str(obj), str(binary)], check=True)
         listing = subprocess.run([NM, "--defined-only", str(obj)],
                                  check=True, capture_output=True, text=True).stdout

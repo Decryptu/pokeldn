@@ -9,6 +9,7 @@
 @ the hook already there had; otherwise a reinstall would chain the new hook to itself, or to a stale
 @ offset of the old one, and spin or jump to garbage inside the interrupt.
 @ IME is cleared around the copy and the table write, so no V-blank runs a half-written hook.
+@ The body is THUMB, half the size of ARM, so a hook has that much more of the 1024-byte buffer.
 @
 @ Image, offsets from _start, patched by buffer_script.build_install_resident:
 @   0x000  b .Lcode
@@ -32,59 +33,77 @@ _start:
 .Lblobof:   .word 0                 @ 0x018
 
 .Lcode:
+    add     r3, pc, #1              @ pc reads .Lcode + 8: .Lthumb, THUMB bit set
+    bx      r3
+
+    .thumb
+.Lthumb:
     push    {r4, r5, r6, r7, lr}
     mov     r7, r0                  @ &client->param
-    adr     r4, _start
+.Lhere:
+    mov     r4, pc                  @ .Lhere + 4
+    sub     r4, #.Lhere + 4 - _start
     ldr     r5, [r4, #0x04]         @ dest
 
-    mov     r3, #0x04000000
-    add     r3, r3, #0x200          @ REG_IE
-    ldrh    r6, [r3, #0x08]         @ REG_IME, kept
+    bl      .Lime_address
+    ldrh    r6, [r3]                @ REG_IME, kept
     mov     r0, #0
-    strh    r0, [r3, #0x08]         @ no interrupts while the hook is half written
+    strh    r0, [r3]                @ no interrupts while the hook is half written
 
     ldr     r0, [r4, #0x0C]
     ldr     r1, [r0]                @ what handles V-blank now
     str     r1, [r7]                @ the answer: the handler found in the table
-    ldr     r2, [r4, #0x10]
-    add     r2, r5, r2
-    add     r2, r2, #1              @ our entry, THUMB bit set
+    sub     r2, r5, #4              @ the word the game's handler is kept in
     sub     r3, r1, r5              @ how far into the resident area the table points
-    cmp     r3, #0x400
-    ldrlo   r1, [r5, #-4]           @ a resident hook already: the game's handler it kept
-    strhs   r1, [r5, #-4]           @ the game's own handler: keep it for the next install
+    lsr     r3, r3, #10
+    bne     .Lgame
+    ldr     r1, [r2]                @ a resident hook already: the game's handler it kept
+    b       .Lkept
+.Lgame:
+    str     r1, [r2]                @ the game's own handler: keep it for the next install
+.Lkept:
     cmp     r1, #0
     beq     .Lrefuse                @ a hook with no kept handler: chaining it would jump to 0
 
-    ldr     r0, [r4, #0x08]         @ length
-    ldr     lr, [r4, #0x18]
-    add     lr, r4, lr              @ the blob
-    mov     ip, #0
+    ldr     r0, [r4, #0x08]         @ length, a multiple of 4
+    ldr     r3, [r4, #0x18]
+    add     r3, r4                  @ the blob
 .Lcopy:
-    cmp     ip, r0
-    bhs     .Lcopied
-    ldr     r3, [lr, ip]
-    str     r3, [r5, ip]
-    add     ip, ip, #4
+    sub     r0, #4
+    bmi     .Lcopied
+    ldr     r2, [r3, r0]
+    str     r2, [r5, r0]
     b       .Lcopy
 .Lcopied:
-    ldr     ip, [r4, #0x14]
-    str     r1, [r5, ip]            @ p_original
+    ldr     r0, [r4, #0x14]
+    str     r1, [r5, r0]            @ p_original
+    ldr     r2, [r4, #0x10]
+    add     r2, r5
+    add     r2, #1                  @ our entry, THUMB bit set
     ldr     r0, [r4, #0x0C]
     str     r2, [r0]                @ gIntrTable[4], last
 
 .Lime:
-    mov     r3, #0x04000000
-    add     r3, r3, #0x200
-    strh    r6, [r3, #0x08]         @ REG_IME back
-
+    bl      .Lime_address
+    strh    r6, [r3]                @ REG_IME back
     mov     r0, #1                  @ done
-    pop     {r4, r5, r6, r7, lr}
-    bx      lr
+    pop     {r4, r5, r6, r7}
+    pop     {r3}
+    bx      r3                      @ to the ARM caller
 
 .Lrefuse:
     ldr     r0, .Lrefused
     str     r0, [r7]                @ the answer says nothing was written
     b       .Lime
+
+.Lime_address:                      @ r3 = REG_IME, 0x04000208
+    mov     r3, #0x82
+    lsl     r3, r3, #2
+    mov     r2, #4
+    lsl     r2, r2, #24
+    add     r3, r2
+    bx      lr
+
+    .align 2
 .Lrefused:
     .word   0xBAD0BAD0

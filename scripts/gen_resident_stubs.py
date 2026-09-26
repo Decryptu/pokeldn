@@ -12,7 +12,7 @@ those words somewhere and patches the two addresses it needs, which is why the s
 recorded here the way the field generator records them.
 
 The committed bytes are the source of truth at run time: a live host must not need a GBA toolchain.
-`tests/test_resident_stubs.py` re-assembles and compares whenever arm-none-eabi-as is installed.
+`tests/test_shiny.py` re-assembles and compares whenever arm-none-eabi-as is installed.
 
     ./scripts/gen_resident_stubs.py [--check]
 """
@@ -44,7 +44,8 @@ def render():
         if len(code) % 4:
             raise SystemExit(f"{source.name}: {len(code)} bytes is not a whole number of words, "
                              f"and an installer writes words")
-        digest = hashlib.sha256(source.read_bytes()).hexdigest()
+        digest = hashlib.sha256(source.read_bytes() + b"".join(
+            inc.read_bytes() for inc in sorted(ASM_DIR.glob("*.inc")))).hexdigest()
         lines.append(f"    {source.stem!r}: (")
         lines.append(f"        bytes.fromhex({code.hex()!r}),")
         lines.append(f"        {digest!r},")

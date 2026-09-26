@@ -2113,8 +2113,14 @@ INSTALL_BLOB_OFFSET = 0x18
 # The resident hooks this can install, each by its entry symbol and its tunable parameters.
 RESIDENT_HOOKS = {
     "turbo": ("turbo_hook", {"extra": 4, "field": 0, "battle": 0, "overlay": 0, "hold": 0,
-                             "help": 0, "budget": 0}),
+                             "help": 0, "budget": 0, "ring": 0,
+                             "watch": 0x02024028, "frames": 0x0203FF60}),
+    "shiny": ("shiny_hook", {"method": 0, "offset": 4, "search": 16, "slow": 0x100,
+                             "slow_frames": 3, "help": 0x0203F171, "state": 0x0203FF80,
+                             "overlay": 0x0203FF98}),
 }
+# The data a hook keeps past its code, by parameter, and its size in bytes.
+RESIDENT_DATA = {"p_frames": 20, "p_ring": 140, "p_state": 36}
 R_BUTTON = 0x100
 # gHelpSystemToggleWithRButtonDisabled, French FireRed: RunHelpSystemCallback's literal at 0x0813F6FC.
 HELP_R_DISABLED = 0x0203F171
@@ -2134,6 +2140,8 @@ def resident_blob(name, **params):
     params = {**defaults, **params}
     if name == "turbo" and params["hold"] & R_BUTTON and "help" not in explicit:
         params["help"] = HELP_R_DISABLED            # held R would open the Help System
+    if name == "shiny" and "state" in explicit and "overlay" not in explicit:
+        params["overlay"] = params["state"] + 24    # the word the hook shows
     words = native_script.resident_words(name, **params)
     symbols = STUBS[name][2]
     return (b"".join(w.to_bytes(4, "little") for w in words), symbols[entry],
@@ -2155,6 +2163,16 @@ def build_install_resident(name, *, dest=None, table=None, **params):
         raise BufferScriptError(
             f"0x{dest:08X} is not word-aligned space inside 0x0203FC00..0x02040000, the only EWRAM "
             "no symbol claims")
+
+    from pokeldn.frlg.rom.resident_stubs import STUBS
+    for data, size in RESIDENT_DATA.items():      # the hook's own data must lie past its code
+        at = STUBS[name][2].get(data)
+        address = int.from_bytes(blob[at:at + 4], "little") if at is not None else 0
+        if address and (dest < address + size and address < dest + len(blob)
+                        or address + size > 0x02040000):
+            raise BufferScriptError(
+                f"{name} is {len(blob)} bytes from 0x{dest:08X} and runs into its {data[2:]} "
+                f"at 0x{address:08X}, or that runs past EWRAM")
 
     def put(at, value):
         code[at:at + 4] = (int(value) & 0xFFFFFFFF).to_bytes(4, "little")
