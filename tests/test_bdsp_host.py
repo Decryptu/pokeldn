@@ -7,6 +7,8 @@ import base64
 import struct
 import zlib
 
+import pytest
+
 from pokeldn.bdsp import host, room
 from pokeldn.ldn import local_protocol as lp
 from pokeldn.ldn import mesh_protocol as mp
@@ -65,9 +67,13 @@ def test_join_response_and_update_mesh_are_the_retail_hosts():
     assert host.build_update_mesh(entries, 1) == UPDATE_MESH
 
 
-def test_advertisement_layout():
-    data = host.build_advertise_data(0xF85CC8B4, 0x36DEE059)
-    assert data == bytes.fromhex("b4c85cf8000000000810000059e0de3600")
+@pytest.mark.parametrize("network_id, param, password, retail", [
+    (0xF85CC8B4, 0x36DEE059, "", "b4c85cf8000000000810000059e0de3600"),
+    # a retail Brilliant Diamond in the Union Room entered with password 00000000
+    (0xAF1972A4, 0xD86D45D5, "00000000", "a47219af038d08c008100000d5456dd800"),
+])
+def test_advertisement_layout(network_id, param, password, retail):
+    assert host.build_advertise_data(network_id, param, password=password) == bytes.fromhex(retail)
 
 
 def test_connection_request_parses():

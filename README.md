@@ -54,8 +54,8 @@ Let's Go Pikachu / Eevee
 
 Sword / Shield
 
-- Trading in both directions: joining the console's Link Trade, or hosting one it joins; a PKHeX
-  `.pk8` goes into the console's game
+- Trading in both directions: joining the console's Link Trade, or hosting one it joins, with or
+  without a Link Code; a PKHeX `.pk8` goes into the console's game
 - Mystery Gift: Wonder Cards built from the command line or served from a published `.wc8`
   (Pokémon, eggs, items, Battle Points, clothing)
 - League Card: after a hosted trade the console keeps the host's card; `bin/swsh_host.py
@@ -64,8 +64,8 @@ Sword / Shield
 Brilliant Diamond / Shining Pearl
 
 - Trading in both directions: joining the console's Union Room, or hosting a Union Room the
-  console walks into; a character of pokeldn's own greets the player and trades through the game's
-  own flow
+  console walks into, the plain room or one entered with a password; a character of pokeldn's own
+  greets the player and trades through the game's own flow
 - Ball capsule exchange: a capsule composed by pokeldn lands in the console's collection
 - Record mixing and the battle lobby, up to the console sending its own records
 
@@ -361,7 +361,8 @@ POKELDN_RADIO=esp32:auto ./.venv/bin/python bin/swsh_host.py --keys PROD_KEYS \
 ```
 
 It offers party slot 1 of `--snapshot` under the trainer `--trainer-name` and writes the Pokémon it
-receives to `--received FILE`.
+receives to `--received FILE`. `--code 12345678` hosts for a console searching with that Link
+Code; the joiner needs no flag for a coded search.
 
 Mystery Gift needs no session: the gift screen scans, and a distributor advertises a network whose
 advertise data carries the card.
@@ -414,8 +415,9 @@ one instead. Start the host first, then the player enters the Union Room the sam
 
 pokeldn's character appears in the room. The player raises the trade emote (Y → the communication
 menu → trade Pokémon); the character walks up, and the trade runs as above. `--offer` must be a
-legal PB8 whose PID the console's save does not already hold: the game refuses a duplicate. See
-[Brilliant Diamond and Shining Pearl](docs/bdsp.md).
+legal PB8 whose PID the console's save does not already hold: the game refuses a duplicate.
+`--password 00000000` hosts the room a player enters with that password; the joiner needs no flag.
+See [Brilliant Diamond and Shining Pearl](docs/bdsp.md).
 
 ### Legends Arceus
 

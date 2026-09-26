@@ -9,7 +9,8 @@ nav_order: 1
 ## The advertisement
 
     local_communication_id  0100000011d90000
-    scene_id                4352  (0x1100) in the Union Room; 12608 (0x3140) in the Grand Underground
+    scene_id                4352  (0x1100) in the Union Room; 5120 (0x1400) in the Union Room
+                            entered with a password; 12608 (0x3140) in the Grand Underground
     version                 4
     channel                 6, band 2 (2.4 GHz)
     accept_policy           ALL
@@ -26,6 +27,11 @@ anything about the game is known.
 The 17 bytes of application data parse against Pia's LDN advertisement layout
 ([The wireless layer](ldn.md)), with the CRC32 field reading 0 (the room was opened with no password)
 and the header size reading 16 against a 17-byte blob, so one byte is application data.
+
+A room entered with a password carries the CRC32 of the password's ASCII digits there, little-endian
+(00000000 -> `0xC0088D03`), and scene id 5120 in place of 4352. `bin/bdsp_connect.py` joins such a
+room and trades with no change; `bin/bdsp_host.py --password 00000000` advertises both and a console
+entering with that password joins it and trades.
 
 ## The passphrase
 

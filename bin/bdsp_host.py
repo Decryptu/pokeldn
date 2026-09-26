@@ -25,7 +25,8 @@ sys.path.insert(0, PROJECT_ROOT)
 import pathlib
 
 from pokeldn.bdsp import pokemon, room
-from pokeldn.bdsp.host import (APP_VERSION, MAX_PARTICIPANTS, SCENE_UNION_ROOM, Advertisement,
+from pokeldn.bdsp.host import (APP_VERSION, MAX_PARTICIPANTS, SCENE_UNION_ROOM,
+                               SCENE_UNION_ROOM_PASSWORD, Advertisement,
                                HostSession, TradePartner)
 from pokeldn.bdsp.session import COMM_ID, PASSPHRASE
 from pokeldn.host_support import resolve_keys
@@ -46,7 +47,10 @@ def build_parser():
     ap.add_argument("--channel", type=int, default=6)
     ap.add_argument("--ldn-protocol", type=int, default=1, choices=(1, 3),
                     help="the LDN protocol the advertisement is encrypted for")
-    ap.add_argument("--scene-id", type=lambda s: int(s, 0), default=SCENE_UNION_ROOM)
+    ap.add_argument("--scene-id", type=lambda s: int(s, 0), default=None,
+                    help="default the Union Room's, or the password room's with --password")
+    ap.add_argument("--password", default="",
+                    help="host the room the player enters with this password, e.g. 00000000")
     ap.add_argument("--app-version", type=int, default=APP_VERSION)
     ap.add_argument("--name", default="PkCamp", help="the player name our side carries")
     ap.add_argument("--language", type=int, default=3, help="3 is French")
@@ -94,7 +98,9 @@ def main(argv=None):
 
     adv = Advertisement(args.network_id if args.network_id is not None else random.getrandbits(32),
                         args.session_param if args.session_param is not None
-                        else random.getrandbits(32), args.app_version)
+                        else random.getrandbits(32), args.app_version, args.password)
+    if args.scene_id is None:
+        args.scene_id = SCENE_UNION_ROOM_PASSWORD if args.password else SCENE_UNION_ROOM
     keys = adv.keys
     variable_id = args.variable_id if args.variable_id is not None else random.getrandbits(32) | 1
     x, y, z, rot = (float(v) for v in args.at.split(","))

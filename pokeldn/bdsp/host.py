@@ -13,6 +13,7 @@ from pokeldn.bdsp import room
 from pokeldn.bdsp.session import PIA_PORT, session_keys
 from pokeldn.ldn import local_protocol as lp
 from pokeldn.ldn import mesh_protocol as mp
+from pokeldn.ldn.pia5 import password_crc
 from pokeldn.ldn import reliable5 as rl
 from pokeldn.ldn import rtt_protocol as rtt
 from pokeldn.ldn import station_protocol as stp
@@ -23,6 +24,7 @@ from pokeldn.ldn.pia5 import (PiaHeader5, build_message, ciphertext, decrypt_pay
 from pokeldn.ldn import show_done
 
 SCENE_UNION_ROOM = 0x1100
+SCENE_UNION_ROOM_PASSWORD = 0x1400    # the room entered "avec un mot de passe"
 APP_VERSION = 199                 # 1.3.0's local communication version
 MAX_PARTICIPANTS = 8
 SYSTEM_COMM_VERSION = 8
@@ -52,14 +54,14 @@ RELIABLE_RETRY = 0.2
 STATE_PERIOD = 1.0
 
 
-def build_advertise_data(network_id, session_param, application_data=b"\0"):
+def build_advertise_data(network_id, session_param, application_data=b"\0", password=""):
     """The 17 bytes a retail room advertises: Pia's 16-byte LDN header, then one byte of the game's.
 
         +0x00  network id, little-endian     +0x08  system communication version 8
         +0x04  password CRC32, 0 = none      +0x09  header size 16
         +0x0c  session parameter, little-endian; it seeds the session key
     """
-    return (struct.pack("<II", network_id & 0xFFFFFFFF, 0)
+    return (struct.pack("<I", network_id & 0xFFFFFFFF) + password_crc(password)
             + bytes([SYSTEM_COMM_VERSION, ADVERTISE_HEADER_SIZE, 0, 0])
             + struct.pack("<I", session_param & 0xFFFFFFFF) + bytes(application_data))
 
@@ -69,10 +71,11 @@ class Advertisement:
     network_id: int
     session_param: int
     app_version: int = APP_VERSION
+    password: str = ""
 
     @property
     def application_data(self):
-        return build_advertise_data(self.network_id, self.session_param)
+        return build_advertise_data(self.network_id, self.session_param, password=self.password)
 
     @property
     def keys(self):

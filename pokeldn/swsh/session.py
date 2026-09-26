@@ -21,7 +21,7 @@ it, twelve bytes into the application data, little-endian: 484 packets, all auth
 import struct
 from dataclasses import dataclass
 
-from pokeldn.ldn.pia5 import gcm_iv, ldn_nonce_crc, ldn_session_key
+from pokeldn.ldn.pia5 import gcm_iv, ldn_nonce_crc, ldn_session_key, password_crc
 
 # The LDN passphrase, 64 bytes used RAW. main.bin 0x203ff04, handed to Pia's
 # LdnCreateSessionSetting with a literal `mov w2, #0x40` at 0x006c3ec8 - so the length is the
@@ -75,6 +75,8 @@ COMM_ID = 0x0100ABF008968000
 # 0 is what makes their IVs come out right.
 NETWORK_ID_OFF = 0
 SESSION_PARAM_OFF = 12
+PASSWORD_CRC_OFF = 4
+
 
 
 @dataclass

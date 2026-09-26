@@ -143,7 +143,8 @@ The 384 bytes of application data open with the Pia header the wiki records for 
 version 5, and the game's own data starts at 0x18:
 
     0x00  4  network id, random per session
-    0x04  4  CRC32 of the user password; 0 on both scenes, so neither is password-gated
+    0x04  4  CRC32 of the Link Code's ASCII digits, little-endian; 0 with no code
+             (12345678 -> 0x9AE0DAAF, a retail Sword searching; scene id stays 60001)
     0x08  1  system communication version, 5
     0x09  1  header size, 0x18
     0x0A  2  padding
@@ -203,6 +204,12 @@ The matching session layer then picks a network to join (`0x006c9e70`, `0x006cb8
     advertise 0x04 zero: a search without a link code refuses a password
     advertise 0x00, a u32, greater than the searcher's own
     advertise 0x00 not on the list of ids whose join failed during this search (0x80 entries)
+
+A console searching with a Link Code advertises the code's CRC32 at 0x04 and nothing else changes:
+scene, passphrase and session key are those of a search without one. `bin/swsh_connect.py`, which
+sends no code, associates with it and trades. `bin/swsh_host.py --code 12345678` advertises that
+CRC; the searching console joins it and trades. The same host with no code is never joined by a
+console searching with one.
 
 A searcher with the larger id hosts and waits. Two consoles searching at once therefore pair in one
 direction only, and a host that must be joined advertises an id near 0xFFFFFFFF. A failed join

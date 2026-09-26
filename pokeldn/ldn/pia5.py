@@ -116,6 +116,12 @@ def gcm_iv(station_crc, src_variable_id, nonce8):
             + bytes(nonce8))
 
 
+def password_crc(password):
+    """-> advertise 0x04 of Pia's LDN header: CRC32 of the password's ASCII, little-endian; zero with
+    none. A Sword searching with Link Code 12345678 and a BDSP room entered with 00000000 both carry it."""
+    return struct.pack("<I", zlib.crc32(password.encode("ascii")) if password else 0)
+
+
 def ldn_session_key(game_key, seed):
     """Pia 5.x's LDN session key: AES-128-ECB(game_key) over sixteen bytes of SEAD output.
 

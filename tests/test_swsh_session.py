@@ -48,3 +48,25 @@ def test_the_local_communication_id_is_swords_not_shields():
     # Read off the advertisement. The binary this project reads is a SHIELD image, so
     # nothing about this id can be assumed to hold for the other cartridge.
     assert COMM_ID == 0x0100ABF008968000
+
+
+# A retail Sword searching for a Link Trade with code 12345678, read off the air with ldn_scan.py.
+SWORD_CODE_ADVERT = bytes.fromhex(
+    "85a74f37afdae09a05180000a63e7a2a00000000000000000f2d700d000002c8536f0b06a95bcb953b778dba186a95e0"
+    "4355a2d47b0410a2f2b11ac7e5ce57733612624ec1cbda470075007200760061006e0000006a95e04355a2d47b04100c"
+    "11011c610000040400801540dc80830e5c745004020320020250074d20b64447d35cd84294025e472ccdb6bf4c20b644"
+    "47d35cd84294025e472ccdb6bf4b20b64447d35cd84294025e472ccdb6bf010d00000000000000000000000000000000"
+    "0000000000000000000000000000000000aa000100000000000000000000000000000000000000000000000000000000"
+    "000000000000000000e001e4004e070000460000001c000400ac00b80004003e00f60f0b009c05f80200000000000000"
+    "000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000"
+    "000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000")
+
+
+def test_the_host_rebuilds_a_retail_advert_under_a_link_code():
+    import struct
+    import swsh_host
+    adv = SWORD_CODE_ADVERT
+    rebuilt = swsh_host.build_advert(adv, network_id=adv[0:4],
+                                     session_param=struct.unpack("<I", adv[12:16])[0], code="12345678")
+    assert rebuilt == adv
+    assert swsh_host.build_advert(adv, network_id=adv[0:4])[4:8] == bytes(4)

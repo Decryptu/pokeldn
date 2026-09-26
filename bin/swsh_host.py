@@ -2,7 +2,7 @@
 """Host a Sword/Shield Link Trade network, so a console searching for a partner joins it.
 
     ./.venv/bin/python bin/swsh_host.py --ip-host --our-ip 127.0.0.2 --advert FILE --seconds 300
-    (them) Y-Comm -> Link Trade -> local communication, no code -> search
+    (them) Y-Comm -> Link Trade -> local communication, no code (or --code) -> search
 
 The layers below the game are `pokeldn.ldn.host4`: the Local Protocol, the station handshake, the
 mesh, RTT and both reliable windows, answered as a retail Sword answers them while it hosts. Above
@@ -27,6 +27,7 @@ from pokeldn.ldn import host4, mesh_protocol as mesh, reliable4
 from pokeldn.ldn.ldn_mitm_host import IpHostTransport
 from pokeldn.ldn.transport import HostTransport, board_radio, find_ap_phy
 from pokeldn.swsh import beacon, host_trade, league_card, pokemon as swsh_pokemon, trade_payload
+from pokeldn.ldn.pia5 import password_crc
 from pokeldn.swsh.session import COMM_ID, PASSPHRASE, session_keys
 
 SCENE_ID = 60001                  # a retail Sword's Link Trade network
@@ -41,15 +42,15 @@ RECORD_LEN = 0x168
 NETWORK_ID_HIGH = b"\xff\xff"
 
 
-def build_advert(template, network_id=None, session_param=None):
+def build_advert(template, network_id=None, session_param=None, code=""):
     """-> the 384 bytes of application data: the Pia header rebuilt, the game's record kept.
 
-        0x00 network id, 0x04 CRC of the user password (0), 0x08 05, 0x09 0x18 (header size),
+        0x00 network id, 0x04 CRC32 of the Link Code (0 with none), 0x08 05, 0x09 0x18 (header size),
         0x0C session parameter, 0x10 eight zero bytes, 0x18 the game's own record
     """
     out = bytearray(bytes(template).ljust(ADVERT_SIZE, b"\0")[:ADVERT_SIZE])
     out[0:4] = network_id or os.urandom(4)
-    out[4:8] = bytes(4)
+    out[4:8] = password_crc(code)
     out[8:12] = bytes([5, GAME_DATA_OFF, 0, 0])
     out[12:16] = struct.pack("<I", session_param if session_param is not None
                              else struct.unpack("<I", os.urandom(4))[0])
@@ -102,6 +103,8 @@ def build_parser():
                     help="end with box command 3 and MIGRATION_START, as the retail Sword that "
                          "led our joiner did; by default the host keeps the session")
     ap.add_argument("--received", default=None, help="write the joiner's Pokemon here")
+    ap.add_argument("--code", default="",
+                    help="the Link Code the player searches with, e.g. 12345678; none by default")
     ap.add_argument("--network-id", default=None,
                     help="advertise 0x00, hex; a searching Sword joins only a larger one than its "
                          "own; default 0xFFFF and two random bytes")
@@ -120,7 +123,7 @@ def main():
         phy = find_ap_phy(log=print) if args.phy == "auto" else args.phy
     network_id = (bytes.fromhex(args.network_id) if args.network_id
                   else os.urandom(2) + NETWORK_ID_HIGH)       # little-endian: the high half last
-    app_data = build_advert(load_advert(args.advert), network_id=network_id)
+    app_data = build_advert(load_advert(args.advert), network_id=network_id, code=args.code)
     snapshot = open(args.snapshot, "rb").read()
     if len(snapshot) != trade_payload.PAYLOAD_LENGTH:
         snapshot = trade_payload.inflate_short(snapshot)
