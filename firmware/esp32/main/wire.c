@@ -31,10 +31,11 @@ typedef struct {
    docs/hardware_esp32.md, The serial ceiling. */
 #define WIRE_QUEUE_LENGTH 384
 #define WIRE_HEAP_FLOOR (64 * 1024)
+#define WIRE_UART_EVENTS 64
 
 static QueueHandle_t s_out, s_uart_events;
 static wire_handler_t s_handler;
-static atomic_uint s_dropped, s_rx_bad, s_rx_fifo_ovf, s_rx_buffer_full;
+static atomic_uint s_dropped, s_rx_bad, s_rx_fifo_ovf, s_rx_buffer_full, s_rx_frame_err, s_events_full;
 static uint32_t s_consumed, s_credited;   /* the reader task's own; the handler runs on it */
 /* Maxima for STATUS: a LOG line is refused at the heap floor, which is when the reader stalls.
    docs/hardware_esp32.md, The serial ceiling. */
@@ -107,6 +108,8 @@ uint32_t wire_dropped(void) { return atomic_load(&s_dropped); }
 uint32_t wire_rx_bad(void) { return atomic_load(&s_rx_bad); }
 uint32_t wire_rx_fifo_ovf(void) { return atomic_load(&s_rx_fifo_ovf); }
 uint32_t wire_rx_buffer_full(void) { return atomic_load(&s_rx_buffer_full); }
+uint32_t wire_rx_frame_err(void) { return atomic_load(&s_rx_frame_err); }
+uint32_t wire_events_full(void) { return atomic_load(&s_events_full); }
 
 int wire_stats(char *text, size_t size)
 {
@@ -208,6 +211,24 @@ static void writer(void *arg)
     }
 }
 
+/* The ISR posts UART_DATA every 32 bytes into the queue that carries the overflow events (IDF 6.1
+   uart.c:1369, 1543): 64 entries fill in 14 ms at 1500000 and the ISR drops the rest. Counted on a
+   task above the reader, every tick. docs/hardware_esp32.md, The serial ceiling. */
+static void events(void *arg)
+{
+    for (;;) {
+        if (uxQueueMessagesWaiting(s_uart_events) >= WIRE_UART_EVENTS) atomic_fetch_add(&s_events_full, 1);
+        uart_event_t event;
+        while (xQueueReceive(s_uart_events, &event, 0) == pdTRUE) {
+            if (event.type == UART_FIFO_OVF) atomic_fetch_add(&s_rx_fifo_ovf, 1);
+            else if (event.type == UART_BUFFER_FULL) atomic_fetch_add(&s_rx_buffer_full, 1);
+            else if (event.type == UART_FRAME_ERR || event.type == UART_PARITY_ERR ||
+                     event.type == UART_BREAK) atomic_fetch_add(&s_rx_frame_err, 1);
+        }
+        vTaskDelay(1);
+    }
+}
+
 /* A frame that fails here is a command lost between host and board; wire_rx_bad counts them. */
 static void deliver(const uint8_t *encoded, size_t used)
 {
@@ -250,8 +271,7 @@ static void reader(void *arg)
         .flow_ctrl = UART_HW_FLOWCTRL_DISABLE,
         .source_clk = UART_SCLK_DEFAULT,
     };
-    /* 64 events: a queue that fills with UART_DATA drops the overflow events that count a loss. */
-    ESP_ERROR_CHECK(uart_driver_install(WIRE_UART, 16384, 16384, 64, &s_uart_events, 0));
+    ESP_ERROR_CHECK(uart_driver_install(WIRE_UART, 16384, 16384, WIRE_UART_EVENTS, &s_uart_events, 0));
     ESP_ERROR_CHECK(uart_param_config(WIRE_UART, &config));
     /* With CONFIG_ESP_CONSOLE_NONE nothing routes UART0 to GPIO1/3; the board stays mute without this. */
     ESP_ERROR_CHECK(uart_set_pin(WIRE_UART, 1, 3, UART_PIN_NO_CHANGE, UART_PIN_NO_CHANGE));
@@ -260,15 +280,11 @@ static void reader(void *arg)
        docs/hardware_esp32.md, The serial ceiling. */
     ESP_ERROR_CHECK(uart_set_rx_full_threshold(WIRE_UART, 32));
     xTaskCreatePinnedToCore(writer, "wire_tx", 4096, NULL, 20, NULL, 1);
+    xTaskCreatePinnedToCore(events, "wire_ev", 2048, NULL, 21, NULL, 1);
     static uint8_t chunk[512], encoded[WIRE_MAX_PAYLOAD + 32];
     size_t used = 0;
     bool overflow = false;
     for (;;) {
-        uart_event_t event;
-        while (xQueueReceive(s_uart_events, &event, 0) == pdTRUE) {
-            if (event.type == UART_FIFO_OVF) atomic_fetch_add(&s_rx_fifo_ovf, 1);
-            else if (event.type == UART_BUFFER_FULL) atomic_fetch_add(&s_rx_buffer_full, 1);
-        }
         const int64_t turn = esp_timer_get_time();
         /* uart_read_bytes waits its timeout again for every ring item until `length` is met: a
            host trickling 21-byte commands every 15 ms was read 461 ms late. Wait for one byte,

@@ -47,7 +47,7 @@ class _RingBoard:
         self.holds = sorted(holds)      # (at byte N read, the reader stops for S seconds)
         self.credit_at = 0.0
         self.overflowed = 0
-        self.received = self.losing = 0
+        self.received = self.losing = self.lost = 0
         self.ring = bytearray()
         self.lock = threading.Lock()
         self.inbox = []
@@ -64,6 +64,7 @@ class _RingBoard:
                 self.losing += self.losses.pop(0)[1]
             if self.losing > 0:
                 self.losing -= len(data)
+                self.lost += len(data)
                 return
             room = max(0, self.RING - len(self.ring))
             self.overflowed += max(0, len(data) - room)
@@ -94,6 +95,10 @@ class _RingBoard:
                             self.inbox.append(esp32.encode_frame(esp32.MSG_CREDIT, bytes(4)))
                     elif msg_type == esp32.CMD_ETH_TX:
                         self.frames += 1
+                    elif msg_type == esp32.CMD_STATUS:
+                        with self.lock:
+                            self.inbox.append(esp32.encode_frame(
+                                esp32.MSG_STATUS, f"mode=3 tx_eth={self.frames} tx_eth_failed=0".encode()))
             if take or time.monotonic() - self.credit_at > 0.1:    # idle, it repeats its count
                 self.credit_at = time.monotonic()
                 with self.lock:
@@ -146,6 +151,40 @@ def test_bytes_lost_on_the_line_close_the_window_once_each():
         board.close()
     assert (radio.flow_resyncs, radio.tx_dropped) == (1, 0)
     assert board.frames >= 2000 - 3 * (3000 // len(frame) + 2)
+
+
+def test_a_trace_reconciles_the_commands_and_bytes_the_line_lost(tmp_path, monkeypatch):
+    """3 KB lost on the line, under the window: tools/ldn/esp32_cmd_loss.py reads the trace and
+    names exactly the commands the board never handled and the bytes it never read."""
+    import esp32_cmd_loss
+    trace = tmp_path / "loss_esp32.trace"
+    monkeypatch.setenv("POKELDN_ESP32_TRACE", str(trace))
+    board = _RingBoard(losses=[(50_000, 3000)])
+    radio = esp32.Radio(board)
+    try:
+        radio.send(esp32.CMD_HELLO)
+        time.sleep(0.1)
+        frame = b"\xff" * 6 + bytes(6) + b"\x08\x00" + bytes(range(200))
+        for i in range(600):
+            radio.send_ethernet(frame)
+            if i == 299:
+                radio.send(esp32.CMD_STATUS)    # one STATUS mid-flood, the reply counts in order
+            if i % 200 == 199:
+                assert radio.drain(10)
+        radio.send(esp32.CMD_STATUS)
+        assert radio.drain(10)
+        deadline = time.monotonic() + 5
+        while (board.ring or radio._credited + 3000 > radio._written) and time.monotonic() < deadline:
+            time.sleep(0.01)
+        time.sleep(0.2)
+    finally:
+        radio.close()
+        board.close()
+    rows, resyncs, _, written, credit = esp32_cmd_loss.read(str(trace), False)
+    lost = [sent - counted for _, sent, counted, _ in rows]
+    assert 600 - board.frames > 0
+    assert lost == [lost[0], 600 - board.frames] and 0 < lost[0] <= lost[1]
+    assert (resyncs, written - credit) == (0, board.lost)
 
 
 def test_a_reader_held_silent_is_waited_for_not_overrun():

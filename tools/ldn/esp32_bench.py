@@ -13,6 +13,8 @@ ceiling.
     --uplink N   the other direction: the board hosts an empty network and the host sends N ETH_TX
                  commands in bursts of --burst, 100 to 300 bytes each as a seat's are; the board's
                  tx_eth + tx_eth_failed against N is what the host-to-board path lost.
+                 --no-flow writes past the board's CREDIT window, to overrun its UART on purpose
+                 and check that every command lost shows in the board's error counters.
     --trickle S  command latency: for S seconds the host writes a 14-byte ETH_TX (21 bytes on the
                  line) every 15 ms to an idle board, with --flood also streaming BENCH the other
                  way; prints the board's read_max_us, which stays near its 20 ms read timeout
@@ -39,6 +41,7 @@ def main(argv=None):
     ap.add_argument("--uplink", type=int, default=0, metavar="N")
     ap.add_argument("--burst", type=int, default=11, help="--uplink: commands written back to back")
     ap.add_argument("--gap", type=float, default=0.02, help="--uplink: seconds between bursts")
+    ap.add_argument("--no-flow", action="store_true", help="--uplink: ignore the board's CREDIT")
     ap.add_argument("--trickle", type=float, default=0, metavar="SECONDS")
     ap.add_argument("--flood", action="store_true", help="--trickle: BENCH the other way meanwhile")
     ap.add_argument("--ap", action="store_true",
@@ -51,7 +54,7 @@ def main(argv=None):
         return 0
     if args.uplink:
         for baud in [int(b) for b in args.bauds.split(",") if b.strip()]:
-            uplink(args.port, baud, args.uplink, args.burst, args.gap)
+            uplink(args.port, baud, args.uplink, args.burst, args.gap, args.no_flow)
         return 0
     for baud in [int(b) for b in args.bauds.split(",") if b.strip()]:
         try:
@@ -75,7 +78,9 @@ def board_sent(radio):
     return int(fields["tx_eth"]) + int(fields["tx_eth_failed"]), fields
 
 
-def uplink(port, baud, total, burst, gap):
+def uplink(port, baud, total, burst, gap, no_flow=False):
+    if no_flow:
+        esp32.FLOW_WINDOW = 1 << 40
     try:
         radio = esp32.Radio.open_serial(port, fast_baud=baud)
     except Exception as exc:
@@ -97,14 +102,16 @@ def uplink(port, baud, total, burst, gap):
         seconds = time.monotonic() - t0
         time.sleep(1.0)
         after, fields = board_sent(radio)
+        behind = radio._written - radio._credited   # bytes the board's reader never took
         radio.stop()
     finally:
         radio.close()
     counted = after - before
     sent = total - radio.tx_dropped
     print(f"{baud:>8}  uplink {sent} of {total} written in {seconds:.1f}s, board counted {counted}, "
-          f"lost {sent - counted}, flow resyncs {radio.flow_resyncs}; wire_rx_bad {fields['wire_rx_bad']} uart_fifo_ovf "
+          f"lost {sent - counted}, bytes never read {behind}, flow resyncs {radio.flow_resyncs}; wire_rx_bad {fields['wire_rx_bad']} uart_fifo_ovf "
           f"{fields.get('uart_fifo_ovf')} uart_buffer_full {fields.get('uart_buffer_full')} "
+          f"uart_frame_err {fields.get('uart_frame_err')} uart_events_full {fields.get('uart_events_full')} "
           f"tx_eth_failed {fields['tx_eth_failed']} tx_eth_retried {fields['tx_eth_retried']}")
 
 

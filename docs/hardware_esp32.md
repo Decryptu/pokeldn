@@ -93,7 +93,7 @@ Anything before a `0x00`, including the ROM's boot text, is discarded by the che
 | `0x86` LINK | board | u8 up, u16 reason, 6 MAC; reason `0xFFFF` no association in 15 s, `0xFFFE` keys refused |
 | `0x87` STA_JOINED | board | 6 MAC, u8 AID, i8 key install result, u8 port opened |
 | `0x88` STA_LEFT | board | 6 MAC, u16 reason |
-| `0x89` STATUS | board | text counters, including the driver's TX-done `tx_acked` and `tx_unacked`, `tx_eth_retried` (ETH_TX calls that found the driver's queue full) and `wire_dropped` (board-to-host messages dropped: 384 queued, or free heap under 64 KB), `wire_rx_bad` (host commands that failed COBS or their CRC), `uart_fifo_ovf` and `uart_buffer_full` (UART hardware FIFO and driver ring overflows) and their sum `uart_overflow`; sent unasked every 2 s while hosting, and polled every 5 s by a host that writes a trace |
+| `0x89` STATUS | board | text counters, including the driver's TX-done `tx_acked` and `tx_unacked`, `tx_eth_retried` (ETH_TX calls that found the driver's queue full) and `wire_dropped` (board-to-host messages dropped: 384 queued, or free heap under 64 KB), `wire_rx_bad` (host commands that failed COBS or their CRC), `uart_fifo_ovf` and `uart_buffer_full` (UART hardware FIFO and driver ring overflows) and their sum `uart_overflow`, `uart_frame_err` (framing, parity and break events), `uart_events_full` (ticks that found the UART event queue full, when the counters before it may undercount); sent unasked every 2 s while hosting, and polled every 5 s by a host that writes a trace |
 | `0x8A` BENCH | board | u32 sequence and random bytes; the last carries sequence `0xFFFFFFFF` and the u32 microseconds the board spent |
 | `0x8C` RX_SNIFF | board | u8 channel, i8 RSSI, u8 `sig_mode` (0 legacy, 1 HT), u8 legacy rate code (`wifi_phy_rate_t`), u8 HT MCS with bit 7 set for 40 MHz, a frame without FCS |
 | `0x8D` TX_DONE | board | the driver's TX-done of one frame, as a station or an access point: u32 board time in µs, u32 µs since the ETH_TX it completes (all ones for a frame that is not one), u8 acked by the peer's radio, u8 interface, u16 length, then the frame's first 24 bytes (its 802.11 header). STATUS sums the matched ones in `tx_queued_max_us`, `tx_queued_total_us`, `tx_queued_n` and `tx_queued_pending` |
@@ -237,6 +237,26 @@ and 87 us at 921600 before a late interrupt loses data. The firmware now sets th
 1691, with `uart_fifo_ovf` 0 and one `wire_rx_bad` frame, all in its first 11 s. The board alone does not reproduce the seat's
 overflow: both directions flooded at once lost 2 of 3000 once and 0 in three more runs on the same
 firmware.
+
+Since the idle count and the CREDIT ahead of the queue, 26 seats (Scarlet as joiner and host, Sword
+as host) handed the board 35514 ETH_TX and it counted 35514, every overflow counter 0.
+`tools/ldn/esp32_cmd_loss.py TRACE` reconciles a trace: the ETH_TX written before each STATUS
+request against the board's `tx_eth + tx_eth_failed`, and the bytes written since the HELLO against
+the last CREDIT. The earlier seats that lost a few commands with no overflow counted (6 of 2333 at
+921600, 10 of 1691 at 1500000, one of 836 on a Sword seat) lost them in the host's first burst after
+the link came up, 112 and 306 ETH_TX in one second; their traces carry no byte count, and what lost
+them is unmeasured.
+
+The UART interrupt posts a `UART_DATA` event for every 32 bytes it moves into the ring, into the
+same 64-entry queue as the overflow events (IDF 6.1 `uart.c:1369`, `1543`); at 1500000 the queue
+fills in 14 ms and the interrupt drops what does not fit. The reader drained it once per turn, so an
+overflow during a command held over 14 ms could go uncounted. A task above the reader on core 1
+now drains it every tick, and STATUS carries `uart_frame_err` (framing, parity and break events) and
+`uart_events_full` (ticks that found the queue full). An overrun with the window ignored
+(`tools/ldn/esp32_bench.py --uplink 5000 --no-flow` at 1500000) loses 136.5 bytes per
+`uart_fifo_ovf` on both the old reader and the new task, about one 128-byte FIFO each, and
+`uart_events_full` stays 0: with the ring full the interrupt stops posting `UART_DATA`, so an
+overrun never floods the queue.
 
 `POKELDN_ESP32_BAUD` sets the rate `open_serial` switches to, 921600 by default. The ESP32 UART
 runs to 5 Mbaud; the USB bridge sets the limit. `tools/ldn/esp32_bench.py --port PORT --bauds
@@ -406,10 +426,6 @@ entered: the handshake finished 0.46 s after the association, and a trade ran to
 
 - The softAP negotiates WMM, which a Switch host does not; a trade completes with it.
   `AP_FLAG_NO_QOS` (`POKELDN_ESP32_AP_FLAGS=2`) clears the station's QoS flag after association.
-- What loses the last few commands at the start of a seat, with neither overflow counter moving.
-  The overflow events travel a 64-entry queue the reader drains only between commands, so a
-  reader held in `sta_join` can miss them. A trace records every CREDIT (`< 8b`) and each host
-  resync (`! 8b`); bytes the board never read show there.
 - A sniffer board's counts of another board's frames undercount while the sniffer's own serial
   link is saturated; they are not evidence of loss on the air.
 - Serial latency at 921600 baud against the Z-A seat race.

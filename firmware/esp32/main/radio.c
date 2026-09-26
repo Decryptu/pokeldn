@@ -419,7 +419,8 @@ static void send_status(void)
     int len = snprintf(text, sizeof(text),
         "mode=%d rx_mgmt=%u rx_eth=%u tx_eth=%u tx_eth_failed=%u tx_raw=%u tx_raw_failed=%u "
         "wire_dropped=%u heap=%u tx_acked=%u tx_unacked=%u tx_eth_retried=%u tx_eth_last_err=%#x "
-        "wire_rx_bad=%u uart_overflow=%u uart_fifo_ovf=%u uart_buffer_full=%u "
+        "wire_rx_bad=%u uart_overflow=%u uart_fifo_ovf=%u uart_buffer_full=%u uart_frame_err=%u "
+        "uart_events_full=%u "
         "tx_eth_max_us=%u tx_eth_total_us=%u tx_eth_slow=%u "
         "tx_queued_max_us=%u tx_queued_total_us=%u tx_queued_n=%u tx_queued_pending=%u",
         (int)atomic_load(&s_mode), atomic_load(&s_rx_mgmt), atomic_load(&s_rx_eth),
@@ -429,6 +430,7 @@ static void send_status(void)
         atomic_load(&s_tx_eth_retried), (unsigned)atomic_load(&s_tx_eth_last_err),
         (unsigned)wire_rx_bad(), (unsigned)(wire_rx_fifo_ovf() + wire_rx_buffer_full()),
         (unsigned)wire_rx_fifo_ovf(), (unsigned)wire_rx_buffer_full(),
+        (unsigned)wire_rx_frame_err(), (unsigned)wire_events_full(),
         atomic_load(&s_tx_eth_max_us), atomic_load(&s_tx_eth_total_us), atomic_load(&s_tx_eth_slow),
         atomic_load(&s_tx_queued_max_us), atomic_load(&s_tx_queued_total_us),
         atomic_load(&s_tx_queued_n),
