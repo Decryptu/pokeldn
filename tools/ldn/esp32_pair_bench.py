@@ -25,6 +25,7 @@ ap_.add_argument("--bench", action="store_true",
                  help="fill B's board-to-host line with BENCH meanwhile, with the air left free")
 ap_.add_argument("--channel", type=int, default=6)
 ap_.add_argument("--burst", type=int, default=1)
+ap_.add_argument("--unicast", action="store_true", help="A's flood goes to B's MAC, acknowledged, not broadcast")
 ap_.add_argument("--ap-flags", type=lambda v: int(v, 0), default=0, help="the AP_START flag byte")
 ap_.add_argument("--ap-flags2", type=lambda v: int(v, 0), default=0, help="the second AP_START flag byte")
 ap_.add_argument("--done-out", help="write B's TX-dones as 'board_us since_us host_time' lines, "
@@ -47,7 +48,7 @@ def on_b(t, p):
         sta_mac[0] = p[3:9]; link.set()
 b.subscribe(on_b)
 
-a_rx = []; a_done = []; heard = {}; a_copies = collections.Counter(); a_rssi = collections.Counter()
+a_since = []; a_rx = []; a_done = []; heard = {}; a_copies = collections.Counter(); a_rssi = collections.Counter()
 def on_a(t, p):
     if t == esp32.MSG_RX_MGMT and t0[0] and args.ap_flags2 & 4 and len(p) >= 30:
         stamp, p = int.from_bytes(p[2:6], "little"), p[:2] + p[6:]   # RX_TIME: the head carries it
@@ -61,8 +62,10 @@ def on_a(t, p):
         if stamp is not None: a_rx.append((stamp, int(new and retry)))
         if new and retry: a_copies["missed first copy"] += 1
         heard[seq] = time.monotonic(); a_rssi[p[1] - 256 if p[1] > 127 else p[1]] += 1
-    elif t == esp32.MSG_TX_DONE and t0[0] and len(p) >= 4:
+    elif t == esp32.MSG_TX_DONE and t0[0] and len(p) >= 8:
         a_done.append((int.from_bytes(p[:4], "little"), time.time()))
+        since = int.from_bytes(p[4:8], "little")
+        if since != 0xFFFFFFFF: a_since.append(since); a_copies["A unacked"] += len(p) > 8 and not p[8]
     elif t == esp32.MSG_STA_JOINED:
         joined.set()
     elif t == esp32.MSG_RX_ETH and t0[0] and p[12:14] == b"\x88\xb6":
@@ -80,7 +83,7 @@ def fields(r):
 
 stop = threading.Event(); handed = collections.Counter()
 def flood():
-    frame = b"\xff" * 6 + bssid + b"\x88\xb5" + os.urandom(1186)
+    frame = (sta_mac[0] if args.unicast else b"\xff" * 6) + bssid + b"\x88\xb5" + os.urandom(1186)
     while not stop.is_set():
         a.send_ethernet(frame); time.sleep(1 / args.flood)
 sent = [0]
@@ -124,6 +127,10 @@ if b_done:
     d = sorted(s for s, _, _ in b_done); q = lambda f: d[min(len(d) - 1, int(f * len(d)))]
     print(f"B's ETH_TX to TX-done, us: median {q(0.5)} p90 {q(0.9)} p99 {q(0.99)}; over 1 ms "
           f"{100 * sum(x > 1000 for x in d) / len(d):.1f}%, over 3 ms {100 * sum(x > 3000 for x in d) / len(d):.1f}%")
+if a_since:
+    d = sorted(a_since); q = lambda f: d[min(len(d) - 1, int(f * len(d)))]
+    print(f"A's ETH_TX to TX-done, us: n {len(d)} median {q(0.5)} p99 {q(0.99)} max {d[-1]}; "
+          f"over 20 ms {sum(x > 20000 for x in d)}, over 50 ms {sum(x > 50000 for x in d)}")
 print(f"B: handler_max_us {f.get('handler_max_us')} type {f.get('handler_max_type')} heap_min "
       f"{f.get('heap_min')} wire_dropped {f.get('wire_dropped')} rx_eth {f.get('rx_eth')} "
       f"tx_eth_retried {f.get('tx_eth_retried')} resyncs {b.flow_resyncs} write_max_us {f.get('write_max_us')} tx_eth_max_us {f.get('tx_eth_max_us')} tx_eth_total_us {f.get('tx_eth_total_us')} tx_eth_slow {f.get('tx_eth_slow')} read_max_us {f.get('read_max_us')} queue_max {f.get('queue_max')}")

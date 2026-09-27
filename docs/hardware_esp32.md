@@ -78,7 +78,7 @@ Anything before a `0x00`, including the ROM's boot text, is discarded by the che
 | `0x03` CHANNEL | host | u8 channel; idle only |
 | `0x04` STA_JOIN | host | u8 channel, 6 BSSID, 32 SSID (the LDN SSID's hex text), 16 key, 6 station MAC (zero = random) |
 | `0x05` STOP | host | none; back to idle, keys cleared |
-| `0x06` AP_START | host | u8 channel, 6 BSSID, 32 SSID, 16 key, u8 max stations, u8 flags: 1 the stock association and 4-way handshake, 2 no QoS for the station, 4 no 40-byte copy of each station data frame, bits 3..5 a fixed data rate, `0x40` a beacon every 1000 TU, `0x80` no promiscuous receive; an optional second flag byte: 1 the driver's noise-floor check off, 2 its interval 250, 4 the receive time in each 40-byte data copy's head |
+| `0x06` AP_START | host | u8 channel, 6 BSSID, 32 SSID, 16 key, u8 max stations, u8 flags: 1 the stock association and 4-way handshake, 2 no QoS for the station, 4 no 40-byte copy of each station data frame, bits 3..5 a fixed data rate, `0x40` a beacon every 1000 TU, `0x80` no promiscuous receive; an optional second flag byte: 1 the driver's noise-floor check off, 2 its interval 250, 4 the receive time in each 40-byte data copy's head, 8 retry limits 7 and 4 |
 | `0x07` AP_KICK | host | 6 MAC, u16 reason; deauthenticates |
 | `0x08` ETH_TX | host | an Ethernet frame; the driver encrypts it with the station's or the group key. A full driver queue (`ESP_ERR_NO_MEM`) is retried every 1 ms for up to 100 ms before the frame counts as failed; a frame to a station that has left fails at once with `0x3015` (`ESP_ERR_WIFI_NOT_ASSOC`). A station sends the frame's Ethernet source as its 802.11 transmitter address: a source other than the MAC in LINK is never acknowledged (49 of 49 unacked, none seen by the access point) |
 | `0x09` RAW_TX | host | an 802.11 frame without FCS (`esp_wifi_80211_tx`); used for advertisements |
@@ -328,6 +328,14 @@ Ruled out as the cause, each by a bench with one flag changed:
 | AP `0x80` | promiscuous receive off; the station's acks took as long (6.8%, 9.0% of frames over 3 ms, against 6.1%, 13.6%) | not countable |
 | second byte bit 0 | `pm_noise_check_disable`: clears `g_pm+21`, after which libpp's `pm_noise_check` returns before measuring | 7.5, 13.2, 8.1% against 7.0, 5.9, 7.9% |
 | second byte bit 1 | libpp's `NoiseTimerInterval` (`pp.o` `.data`, u16 100) set to 250 | 6.6% against 5.5% |
+
+The driver retries in software: `lmacRetryTxFrame` (libpp `lmac.o`) sends each copy again through
+`lmacTxFrame`, up to limits kept in `lmacConfMib` (short at +21, long at +20, both 32 by default);
+`esp_wifi_internal_set_retry_counter(short, long)` sets them. With the access point sending 100
+unicast 1200-byte frames a second to the station board (`--flood 100 --unicast`, 40 s), its frames
+waited at most 18.6 and 23.9 ms from ETH_TX to TX-done with the limits at 32, and 23.4 ms and one
+over 50 ms with 7 and 4 (second byte bit 3), which also left one frame unacknowledged in each run.
+Two boards do not reproduce a 100 ms hold in that direction.
 
 The one foreign access point beaconing on channel 11 during the bench (-79 dBm) beacons every 110 TU
 (TSF gaps 112638 us). What the access point's radio is doing when it misses a frame is unknown.

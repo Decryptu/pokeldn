@@ -38,7 +38,7 @@ enum {
 };
 enum { AP_FLAG_STOCK_JOIN = 1, AP_FLAG_NO_QOS = 2, AP_FLAG_NO_DATA_TRACE = 4, AP_FLAG_LONG_BEACON = 0x40,
        AP_FLAG_NO_PROMISC = 0x80 };
-enum { AP_FLAG2_NO_NOISE_CHECK = 1, AP_FLAG2_NOISE_250 = 2, AP_FLAG2_RX_TIME = 4 };
+enum { AP_FLAG2_NO_NOISE_CHECK = 1, AP_FLAG2_NOISE_250 = 2, AP_FLAG2_RX_TIME = 4, AP_FLAG2_RETRY_7_4 = 8 };
 static uint8_t s_ap_flags2;
 /* Flag bits 3..5 pin the AP's data rate: 0 leaves rate control on. docs/hardware_esp32.md */
 #define AP_FLAG_RATE(flags) (((flags) >> 3) & 7)
@@ -364,6 +364,9 @@ static void sta_install_keys(void)
    NoiseTimerInterval (100) and the receiver misses frames on that cycle. docs/hardware_esp32.md */
 extern void pm_noise_check_disable(void);
 extern uint16_t NoiseTimerInterval;   /* libpp pp.o .data, 100 */
+/* libpp lmac.o: esp_wifi_internal_set_retry_counter(a, b) stores a at +21 and b at +20. */
+extern uint8_t lmacConfMib[];
+extern int esp_wifi_internal_set_retry_counter(int src, int lrc);
 
 static esp_err_t ap_start(const uint8_t *p, size_t n)
 {
@@ -406,7 +409,12 @@ static esp_err_t ap_start(const uint8_t *p, size_t n)
         pm_noise_check_disable();
         wire_log("ap noise check off");
     }
+    if (flags2 & AP_FLAG2_RETRY_7_4) esp_wifi_internal_set_retry_counter(7, 4);   /* 802.11 defaults */
     wire_log("ap noise interval %u", (unsigned)NoiseTimerInterval);
+    wire_log("ap lmacConfMib 16..27: %02x %02x %02x %02x %02x %02x %02x %02x %02x %02x %02x %02x",
+             lmacConfMib[16], lmacConfMib[17], lmacConfMib[18], lmacConfMib[19], lmacConfMib[20],
+             lmacConfMib[21], lmacConfMib[22], lmacConfMib[23], lmacConfMib[24], lmacConfMib[25],
+             lmacConfMib[26], lmacConfMib[27]);
     if (AP_FLAG_RATE(s_ap_flags)) {
         const esp_err_t fixed = esp_wifi_internal_set_fix_rate(WIFI_IF_AP, true,
                                                                AP_FIXED_RATES[AP_FLAG_RATE(s_ap_flags)]);
