@@ -7,6 +7,8 @@ counted, and B's STATUS maxima (read_max_us is the one a starved reader moves).
         [--send N] [--bench]
 --bench fills the station board's board-to-host line with BENCH while it sends, with the air free:
 the condition in which a writer that spins on a full UART ring starved the reader.
+--burst N sends N frames back to back per tick. A's RX_MGMT header copies count B's frames it
+received and its misses: a sequence number first seen with the retry bit (docs/hardware_esp32.md).
 --flood is broadcast from the access point, which an ESP32 sends at 1 Mbit/s: past about 90 a second
 it fills the air itself. docs/hardware_esp32.md, The serial ceiling."""
 import argparse, collections, os, sys, threading, time
@@ -22,6 +24,8 @@ ap_.add_argument("--baud", type=int, default=1500000)
 ap_.add_argument("--bench", action="store_true",
                  help="fill B's board-to-host line with BENCH meanwhile, with the air left free")
 ap_.add_argument("--channel", type=int, default=6)
+ap_.add_argument("--burst", type=int, default=1)
+ap_.add_argument("--size", type=int, default=200, help="B's frame length")
 args = ap_.parse_args()
 
 key, ssid = os.urandom(16), os.urandom(16).hex()
@@ -35,8 +39,16 @@ def on_b(t, p):
         sta_mac[0] = p[3:9]; link.set()
 b.subscribe(on_b)
 
+heard = {}; a_copies = collections.Counter()
 def on_a(t, p):
-    if t == esp32.MSG_STA_JOINED:
+    if t == esp32.MSG_RX_MGMT and t0[0] and len(p) >= 26 and p[12:18] == sta_mac[0] and (p[2] >> 2) & 3 == 2:
+        seq, retry = int.from_bytes(p[24:26], "little") >> 4, bool(p[3] & 8)
+        # a gap over 1 s is the sequence number wrapping: a new frame
+        new = seq not in heard or time.monotonic() - heard[seq] > 1.0
+        a_copies["frames" if new else "duplicates"] += 1
+        if new and retry: a_copies["missed first copy"] += 1
+        heard[seq] = time.monotonic()
+    elif t == esp32.MSG_STA_JOINED:
         joined.set()
     elif t == esp32.MSG_RX_ETH and t0[0] and p[12:14] == b"\x88\xb6":
         got_from_b[int(time.monotonic() - t0[0])] += 1
@@ -60,9 +72,11 @@ sent = [0]
 def send():
     # The source must be the station MAC LINK reported: the driver sends it as addr2, and the AP
     # acknowledges no frame from another transmitter. docs/hardware_esp32.md
-    frame = b"\xff" * 6 + sta_mac[0] + b"\x88\xb6" + os.urandom(186)
+    frame = b"\xff" * 6 + sta_mac[0] + b"\x88\xb6" + os.urandom(args.size - 14)
     while not stop.is_set():
-        b.send_ethernet(frame); sent[0] += 1; time.sleep(1 / args.send)
+        for _ in range(args.burst):
+            b.send_ethernet(frame); sent[0] += 1
+        time.sleep(1 / args.send)
 t0[0] = time.monotonic()
 def bench():
     r = b.bench(int(150_000 * args.seconds), 1400, timeout=args.seconds * 4 + 10)
@@ -80,6 +94,8 @@ print(f"B handed {sent[0]} ETH_TX, board counted tx_eth {f.get('tx_eth')} failed
 print(f"A received {sum(got_from_b.values())} of B's frames; B's driver: tx_acked {f.get('tx_acked')} "
       f"tx_unacked {f.get('tx_unacked')}, queued max {f.get('tx_queued_max_us')} us, total "
       f"{f.get('tx_queued_total_us')} us over {f.get('tx_queued_n')}")
+print(f"A's header copies of B's frames: {dict(a_copies)}; missed first copies "
+      f"{100 * a_copies['missed first copy'] / max(1, a_copies['frames']):.1f}%")
 print(f"B: handler_max_us {f.get('handler_max_us')} type {f.get('handler_max_type')} heap_min "
       f"{f.get('heap_min')} wire_dropped {f.get('wire_dropped')} rx_eth {f.get('rx_eth')} "
       f"tx_eth_retried {f.get('tx_eth_retried')} resyncs {b.flow_resyncs} write_max_us {f.get('write_max_us')} tx_eth_max_us {f.get('tx_eth_max_us')} tx_eth_total_us {f.get('tx_eth_total_us')} tx_eth_slow {f.get('tx_eth_slow')} read_max_us {f.get('read_max_us')} queue_max {f.get('queue_max')}")

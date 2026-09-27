@@ -273,7 +273,22 @@ first copy the sniffer heard. The board missed 5.7 to 8.5% of the console's firs
 the board's radio was doing when it missed a copy is unknown. In sniffer order, a missed first copy
 follows another console frame 46 to 52% of the time (two trades) and 37% (a third), against 28 to
 32% for a first copy the board heard. A board copy that carries the retry bit, with no earlier
-copy of its sequence number, marks a miss from the board's trace alone. `tools/ldn/esp32_rx_copies.py HOST_TRACE
+copy of its sequence number, marks a miss from the board's trace alone. 
+
+Two boards reproduce the misses with no console. `tools/ldn/esp32_pair_bench.py AP STA --flood 0
+--burst N --send R` has the station board send 200-byte frames and counts, from the access point's
+own header copies, the frames whose first copy it missed:
+
+| access point | channel | station sends | first copies missed | station's longest wait for an ack |
+|---|---|---|---|---|
+| board 2 | 1 | 50 pairs a second | 11.1% | 89 ms |
+| board 1 | 1 | 50 pairs a second | 14.2% | 100 ms |
+| board 2 | 11 | 50 pairs a second | 22.2% | 17 ms |
+| board 2 | 11 | 100 single frames a second | 5.5% | 22 ms |
+| board 2 | 11 | 20 single frames a second | 7.5% | 8 ms |
+
+Either board misses as an access point, on either channel, on an otherwise idle air; a frame sent
+right after another is missed about twice as often. `tools/ldn/esp32_rx_copies.py HOST_TRACE
 SNIFF_TRACE --ap BSSID --sta MAC` makes the count.
 
 `tools/ldn/esp32_hold_air.py` lists what the sniffer saw
