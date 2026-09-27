@@ -446,6 +446,16 @@ The access point's own transmit power does not set it (AP_START's power byte, ch
 
 The third frame of a burst is the most missed in all six runs and in the run above.
 
+The Wi-Fi driver of ESP-IDF v5.5.5 misses more than v6.1's. The same firmware built on v5.5.5 (its
+`wpa_ap_join` takes nine arguments where v6.1 passes one struct; the esp32 `libphy.a` is
+byte-identical in both, `libpp`'s `hal_mac_rx.o` too), both boards, channel 3, bursts of 4, 120 s,
+two passes each, v6.1 run after v5.5.5:
+
+| driver | 1st | 2nd | 3rd | 4th | all |
+|---|---|---|---|---|---|
+| v5.5.5 | 1.0, 1.1% | 3.2, 2.8% | 8.5, 8.7% | 7.3, 7.6% | 5.0, 5.0% |
+| v6.1 | 1.0, 1.4% | 4.6, 4.6% | 6.9, 6.4% | 4.0, 4.1% | 4.1, 4.1% |
+
 The driver retries in software: `lmacRetryTxFrame` (libpp `lmac.o`) sends each copy again through
 `lmacTxFrame`, up to limits kept in `lmacConfMib` (short at +21, long at +20, both 32 by default);
 `esp_wifi_internal_set_retry_counter(short, long)` sets them. With the access point sending 100
