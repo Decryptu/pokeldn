@@ -31,11 +31,14 @@ ap_.add_argument("--ap-flags2", type=lambda v: int(v, 0), default=0, help="the s
 ap_.add_argument("--done-out", help="write B's TX-dones as 'board_us since_us host_time' lines, "
                  "and A's as 'board_us host_time' to FILE.ap")
 ap_.add_argument("--size", type=int, default=200, help="B's frame length")
+ap_.add_argument("--sta-rate", type=int, default=0, choices=range(8),
+                 help="pin B's data rate: 1 1M, 2 11M, 3 6M, 4 12M, 5 24M, 6 36M, 7 54M; 0 rate control")
+ap_.add_argument("--sta-power", type=int, default=0, help="B's maximum TX power, 0.25 dBm units (8..84)")
 args = ap_.parse_args()
 
 key, ssid = os.urandom(16), os.urandom(16).hex()
-a = esp32.Radio.open_serial(args.ap_port, fast_baud=args.baud)
-b = esp32.Radio.open_serial(args.sta_port, fast_baud=args.baud)
+a = esp32.Radio.open_serial(args.ap_port, fast_baud=args.baud, log=lambda s: print("A", s))
+b = esp32.Radio.open_serial(args.sta_port, fast_baud=args.baud, log=lambda s: print("B", s))
 bssid = bytes.fromhex("020000be4c01")
 link, joined = threading.Event(), threading.Event()
 got_from_b = collections.Counter(); t0 = [None]; sta_mac = [bytes(6)]
@@ -72,7 +75,7 @@ def on_a(t, p):
         got_from_b[int(time.monotonic() - t0[0])] += 1
 a.subscribe(on_a)
 a.ap_start(args.channel, bssid, ssid, key, flags=args.ap_flags, flags2=args.ap_flags2)
-b.sta_join(args.channel, bssid, ssid, key)
+b.sta_join(args.channel, bssid, ssid, key, rate=args.sta_rate, power=args.sta_power)
 if not link.wait(20) or not joined.wait(5):
     b.close(); a.close()
     sys.exit(f"no association: link {link.is_set()} joined {joined.is_set()}")

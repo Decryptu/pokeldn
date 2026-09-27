@@ -76,7 +76,7 @@ Anything before a `0x00`, including the ROM's boot text, is discarded by the che
 | `0x01` HELLO | host | none; answered by CREDIT 0, then INFO |
 | `0x02` BAUD | host | u32 baud; RESULT at the old rate, then the switch. The switch is a queue entry behind the RESULT and waits up to 3 s for the UART to drain: at 115200 the ring can hold more than a second of RX_MGMT from a console advertising nearby, and a 100 ms wait switched with the RESULT still in it. The host's first HELLO at the new rate is lost in about one open of four at 1500000, so `open_serial` retries it |
 | `0x03` CHANNEL | host | u8 channel; idle only |
-| `0x04` STA_JOIN | host | u8 channel, 6 BSSID, 32 SSID (the LDN SSID's hex text), 16 key, 6 station MAC (zero = random) |
+| `0x04` STA_JOIN | host | u8 channel, 6 BSSID, 32 SSID (the LDN SSID's hex text), 16 key, 6 station MAC (zero = random); optional: u8 a fixed data rate (the AP_START bits 3..5 table), then u8 a maximum TX power in 0.25 dBm (`esp_wifi_set_max_tx_power`, 8 to 84; the driver caps it at 61) |
 | `0x05` STOP | host | none; back to idle, keys cleared |
 | `0x06` AP_START | host | u8 channel, 6 BSSID, 32 SSID, 16 key, u8 max stations, u8 flags: 1 the stock association and 4-way handshake, 2 no QoS for the station, 4 no 40-byte copy of each station data frame, bits 3..5 a fixed data rate, `0x40` a beacon every 1000 TU, `0x80` no promiscuous receive; an optional second flag byte: 1 the driver's noise-floor check off, 2 its interval 250, 4 the receive time in each 40-byte data copy's head, 8 retry limits 7 and 4 |
 | `0x07` AP_KICK | host | 6 MAC, u16 reason; deauthenticates |
@@ -375,6 +375,37 @@ A FireRed trade on channel 1 with 25 buffers had one hold of 105 ms, and the boa
 of the console's first copies (6.8%), the range it missed with 16.
 With the CPU at 240 MHz (`CONFIG_ESP_DEFAULT_CPU_FREQ_MHZ_240`, was 160) on top of 25 buffers, the
 same benches missed 4.6, 5.4, 5.2% (pairs, channel 1) and 5.5, 6.1, 6.4% (single frames, channel 11).
+
+The misses depend on the modulation, not the signal margin. With the station's rate pinned (STA_JOIN's
+rate byte, `esp32_pair_bench.py --sta-rate N`), 50 single frames a second for 60 s on channel 11,
+about 2520 frames a run, board 2 the access point:
+
+| station rate | first copies missed | ETH_TX to TX-done, median |
+|---|---|---|
+| 54 Mbit/s OFDM | 2.3, 4.0, 2.4, 2.9% | 707 us |
+| 6 Mbit/s OFDM | 3.7, 5.4, 3.1, 3.1% | 956 us |
+| 1 Mbit/s DSSS | 1, 2, 1 and 1 frames (0.04 to 0.08%) | 2960 us |
+
+With the boards' roles swapped the same runs missed 3.1, 2.6% (54), 4.3, 1.9% (6) and 0.2, 0.2% (1).
+6 Mbit/s needs far less signal than 54 and misses as many; DSSS, spread over 11 chips a bit, almost
+never misses. The Switch asleep, its controllers' Bluetooth off, changed nothing (the third and
+fourth runs above).
+
+Less transmit power means more misses (STA_JOIN's power byte, `--sta-power`, 54 Mbit/s, two passes of
+60 s): the driver's default 78 (19.5 dBm, read back) 1.5, 3.1%; 60: 1.9, 3.7%; 40: 2.3, 5.2%; 28: 4.5,
+12.9%; 20: 3.5, 4.0%; 12: 20.8, 15.3%; 8 (read back 3): 16.2, 14.3%. The access point reports the
+station at -33 to -35 dBm from 17 up to 61 alike: its RSSI does not follow the station's power this
+close. Receiver overload is not the cause.
+
+The misses depend on the channel. 54 Mbit/s, 50 frames a second, 60 s, two passes:
+
+| channel | 1 | 3 | 5 | 7 | 9 | 11 |
+|---|---|---|---|---|---|---|
+| first copies missed | 9.7, 3.7% | 0.8, 0.8% | 1.6, 1.9% | 2.3, 2.1% | 0.8, 1.8% | 2.1, 5.7% |
+
+Folded on the access point's receive clock at 19900 to 20100 us and 9950 to 10050 us in 30 s windows,
+the misses show no 50 Hz or 100 Hz rhythm. The two boards are the only USB devices on the host, each at
+12 Mbit/s. AP_START refuses channel 13 (`0x102`).
 
 The driver retries in software: `lmacRetryTxFrame` (libpp `lmac.o`) sends each copy again through
 `lmacTxFrame`, up to limits kept in `lmacConfMib` (short at +21, long at +20, both 32 by default);
@@ -680,10 +711,12 @@ entered: the handshake finished 0.46 s after the association, and a trade ran to
   measurement attributes a difference to the setting.
 - A sniffer board's counts of another board's frames undercount while the sniffer's own serial
   link is saturated; they are not evidence of loss on the air.
-- The access point board misses 5 to 22% of a station's first copies at -20 to -48 dBm, evenly in
-  time, and misses ACKs during a FireRed hold; the cause is unknown. Ruled out: the beacon interval,
-  promiscuous receive, the driver's noise-floor check, the channel, the board unit, the CPU clock
-  (160 or 240 MHz), the static receive buffer count (16 or 25).
+- The access point board misses 1 to 22% of a station's OFDM first copies at -20 to -48 dBm, evenly in
+  time, and misses ACKs during a FireRed hold; DSSS frames almost never; the share varies by channel
+  (channel 3 lowest, channel 1 highest here); the cause is unknown. Ruled out: the beacon interval,
+  promiscuous receive, the driver's noise-floor check, the board unit, the CPU clock (160 or
+  240 MHz), the static receive buffer count (16 or 25), receiver overload, the signal margin, the
+  Switch's Bluetooth, a 50 or 100 Hz source.
 - Whether an Espressif ESP32-WROOM-32E module misses fewer frames as an access point than the
   unbranded module on the ELEGOO board is unmeasured.
 - easyworld reports that a classic ESP32 must be the ESP32-WROOM-32E module and that the older

@@ -294,9 +294,16 @@ static void go_idle(void)
     start_sniffer();
 }
 
+static uint8_t s_sta_rate;   /* an index into AP_FIXED_RATES; 0 leaves rate control on */
+static uint8_t s_sta_power;  /* esp_wifi_set_max_tx_power units (0.25 dBm, 8..84); 0 leaves it */
+
 static esp_err_t sta_join(const uint8_t *p, size_t n)
 {
-    if (n != 1 + 6 + 32 + 16 + 6) return ESP_ERR_INVALID_SIZE;
+    /* Optional: a byte pinning the station's data rate (the AP flag bits 3..5 table), then its
+       maximum TX power. docs/hardware_esp32.md */
+    if (n < 1 + 6 + 32 + 16 + 6 || n > 1 + 6 + 32 + 16 + 6 + 2) return ESP_ERR_INVALID_SIZE;
+    s_sta_rate = n > 61 ? p[61] & 7 : 0;
+    s_sta_power = n > 62 ? p[62] : 0;
     const uint8_t channel = p[0];
     if (channel < 1 || channel > 13 || (p[1] & 1)) return ESP_ERR_INVALID_ARG;
     go_idle();
@@ -357,6 +364,16 @@ static void sta_install_keys(void)
     esp_wifi_auth_done_internal();
     esp_wifi_internal_reg_rxcb(WIFI_IF_STA, ethernet_rx);
     atomic_store(&s_mode, MODE_STA);
+    if (s_sta_power) {
+        int8_t before = 0, after = 0;
+        esp_wifi_get_max_tx_power(&before);
+        const esp_err_t set = esp_wifi_set_max_tx_power((int8_t)s_sta_power);
+        esp_wifi_get_max_tx_power(&after);
+        wire_log("sta max tx power %u: %d, %d -> %d", s_sta_power, set, before, after);
+    }
+    if (s_sta_rate)
+        wire_log("sta fixed rate %u: %d", s_sta_rate,
+                 esp_wifi_internal_set_fix_rate(WIFI_IF_STA, true, AP_FIXED_RATES[s_sta_rate]));
     sta_link(true, 0);
 }
 
