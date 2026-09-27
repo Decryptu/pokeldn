@@ -25,6 +25,7 @@ ap_.add_argument("--bench", action="store_true",
                  help="fill B's board-to-host line with BENCH meanwhile, with the air left free")
 ap_.add_argument("--channel", type=int, default=6)
 ap_.add_argument("--burst", type=int, default=1)
+ap_.add_argument("--ap-flags", type=lambda v: int(v, 0), default=0, help="the AP_START flag byte")
 ap_.add_argument("--size", type=int, default=200, help="B's frame length")
 args = ap_.parse_args()
 
@@ -34,12 +35,16 @@ b = esp32.Radio.open_serial(args.sta_port, fast_baud=args.baud)
 bssid = bytes.fromhex("020000be4c01")
 link, joined = threading.Event(), threading.Event()
 got_from_b = collections.Counter(); t0 = [None]; sta_mac = [bytes(6)]
+b_done = []
 def on_b(t, p):
-    if t == esp32.MSG_LINK and p[:1] == b"\x01":
+    if t == esp32.MSG_TX_DONE and t0[0] and len(p) >= 8:
+        since = int.from_bytes(p[4:8], "little")
+        if since != 0xFFFFFFFF: b_done.append(since)
+    elif t == esp32.MSG_LINK and p[:1] == b"\x01":
         sta_mac[0] = p[3:9]; link.set()
 b.subscribe(on_b)
 
-heard = {}; a_copies = collections.Counter()
+heard = {}; a_copies = collections.Counter(); a_rssi = collections.Counter()
 def on_a(t, p):
     if t == esp32.MSG_RX_MGMT and t0[0] and len(p) >= 26 and p[12:18] == sta_mac[0] and (p[2] >> 2) & 3 == 2:
         seq, retry = int.from_bytes(p[24:26], "little") >> 4, bool(p[3] & 8)
@@ -47,13 +52,13 @@ def on_a(t, p):
         new = seq not in heard or time.monotonic() - heard[seq] > 1.0
         a_copies["frames" if new else "duplicates"] += 1
         if new and retry: a_copies["missed first copy"] += 1
-        heard[seq] = time.monotonic()
+        heard[seq] = time.monotonic(); a_rssi[p[1] - 256 if p[1] > 127 else p[1]] += 1
     elif t == esp32.MSG_STA_JOINED:
         joined.set()
     elif t == esp32.MSG_RX_ETH and t0[0] and p[12:14] == b"\x88\xb6":
         got_from_b[int(time.monotonic() - t0[0])] += 1
 a.subscribe(on_a)
-a.ap_start(args.channel, bssid, ssid, key)
+a.ap_start(args.channel, bssid, ssid, key, flags=args.ap_flags)
 b.sta_join(args.channel, bssid, ssid, key)
 if not link.wait(20) or not joined.wait(5):
     b.close(); a.close()
@@ -95,7 +100,11 @@ print(f"A received {sum(got_from_b.values())} of B's frames; B's driver: tx_acke
       f"tx_unacked {f.get('tx_unacked')}, queued max {f.get('tx_queued_max_us')} us, total "
       f"{f.get('tx_queued_total_us')} us over {f.get('tx_queued_n')}")
 print(f"A's header copies of B's frames: {dict(a_copies)}; missed first copies "
-      f"{100 * a_copies['missed first copy'] / max(1, a_copies['frames']):.1f}%")
+      f"{100 * a_copies['missed first copy'] / max(1, a_copies['frames']):.1f}%; A's RSSI {sorted(a_rssi.items())}")
+if b_done:
+    d = sorted(b_done); q = lambda f: d[min(len(d) - 1, int(f * len(d)))]
+    print(f"B's ETH_TX to TX-done, us: median {q(0.5)} p90 {q(0.9)} p99 {q(0.99)}; over 1 ms "
+          f"{100 * sum(x > 1000 for x in d) / len(d):.1f}%, over 3 ms {100 * sum(x > 3000 for x in d) / len(d):.1f}%")
 print(f"B: handler_max_us {f.get('handler_max_us')} type {f.get('handler_max_type')} heap_min "
       f"{f.get('heap_min')} wire_dropped {f.get('wire_dropped')} rx_eth {f.get('rx_eth')} "
       f"tx_eth_retried {f.get('tx_eth_retried')} resyncs {b.flow_resyncs} write_max_us {f.get('write_max_us')} tx_eth_max_us {f.get('tx_eth_max_us')} tx_eth_total_us {f.get('tx_eth_total_us')} tx_eth_slow {f.get('tx_eth_slow')} read_max_us {f.get('read_max_us')} queue_max {f.get('queue_max')}")

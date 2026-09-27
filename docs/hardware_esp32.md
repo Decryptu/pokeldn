@@ -288,7 +288,12 @@ own header copies, the frames whose first copy it missed:
 | board 2 | 11 | 20 single frames a second | 7.5% | 8 ms |
 
 Either board misses as an access point, on either channel, on an otherwise idle air; a frame sent
-right after another is missed about twice as often. `tools/ldn/esp32_rx_copies.py HOST_TRACE
+right after another is missed about twice as often. The access point hears the station at -43 to -48 dBm. Identical runs
+(channel 11, 20 single frames a second, 30 s) missed 6.1, 9.3, 9.8, 11.3, 16.9, 17.9, 43.6 and 43.7%.
+A beacon every 1000 TU (AP flag `0x40`) missed 43.6% and 10.0%. With promiscuous receive off (AP flag
+`0x80`, which also stops the header copies) the station's frames took as long to be acknowledged as
+with it on: 6.8% and 9.0% of them over 3 ms from ETH_TX to TX-done, against 6.1% and 13.6%. The
+beacon and the promiscuous callback do not cause the misses. `tools/ldn/esp32_rx_copies.py HOST_TRACE
 SNIFF_TRACE --ap BSSID --sta MAC` makes the count.
 
 `tools/ldn/esp32_hold_air.py` lists what the sniffer saw

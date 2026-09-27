@@ -65,6 +65,8 @@ QUEUE_LIMIT = 512       # frames waiting on the host; ETH_TX and RAW_TX beyond i
 AP_FLAG_STOCK_JOIN = 1      # let the stock hostapd answer the association and start its 4-way handshake
 AP_FLAG_NO_QOS = 2          # clear the station node's QoS flag: non-QoS data frames to it
 AP_FLAG_NO_DATA_TRACE = 4   # skip the 40-byte copy of each station data frame (serial bandwidth)
+AP_FLAG_LONG_BEACON = 0x40  # beacon every 1000 TU instead of 100
+AP_FLAG_NO_PROMISC = 0x80   # no promiscuous receive: no RX_MGMT copies, a bisection only
 # Bits 3..5 pin the AP's data rate (AP_FLAG_RATE_* << 3); 0 leaves the driver's rate control on.
 AP_FLAG_RATE_SHIFT = 3
 AP_FLAG_RATES = {1: "1M", 2: "11M", 3: "6M", 4: "12M", 5: "24M", 6: "36M", 7: "54M"}

@@ -36,7 +36,8 @@ enum {
     MSG_STA_JOINED = 0x87, MSG_STA_LEFT = 0x88, MSG_STATUS = 0x89, MSG_BENCH = 0x8A,
     MSG_RX_SNIFF = 0x8C, MSG_TX_DONE = 0x8D, MSG_BUTTON = 0x8E,
 };
-enum { AP_FLAG_STOCK_JOIN = 1, AP_FLAG_NO_QOS = 2, AP_FLAG_NO_DATA_TRACE = 4 };
+enum { AP_FLAG_STOCK_JOIN = 1, AP_FLAG_NO_QOS = 2, AP_FLAG_NO_DATA_TRACE = 4, AP_FLAG_LONG_BEACON = 0x40,
+       AP_FLAG_NO_PROMISC = 0x80 };
 /* Flag bits 3..5 pin the AP's data rate: 0 leaves rate control on. docs/hardware_esp32.md */
 #define AP_FLAG_RATE(flags) (((flags) >> 3) & 7)
 static const wifi_phy_rate_t AP_FIXED_RATES[8] = {
@@ -361,7 +362,8 @@ static esp_err_t ap_start(const uint8_t *p, size_t n)
     config.ap.pairwise_cipher = WIFI_CIPHER_TYPE_CCMP;
     config.ap.ssid_hidden = 1;
     config.ap.max_connection = p[55] ? p[55] : 7;
-    config.ap.beacon_interval = 100;
+    /* 1000 TU bisects the receive misses against the beacon. docs/hardware_esp32.md */
+    config.ap.beacon_interval = (s_ap_flags & AP_FLAG_LONG_BEACON) ? 1000 : 100;
     config.ap.pmf_cfg.required = false;
     r = esp_wifi_set_config(WIFI_IF_AP, &config);
     if (r == ESP_OK) r = esp_wifi_start();
@@ -375,7 +377,9 @@ static esp_err_t ap_start(const uint8_t *p, size_t n)
         wire_log("ap fixed rate %u: %d", AP_FLAG_RATE(s_ap_flags), fixed);
     }
     atomic_store(&s_mode, MODE_AP);
-    start_sniffer();
+    /* NO_PROMISC bisects the receive misses; no RX_MGMT copies then. docs/hardware_esp32.md */
+    if (s_ap_flags & AP_FLAG_NO_PROMISC) esp_wifi_set_promiscuous(false);
+    else start_sniffer();
     return ESP_OK;
 }
 
