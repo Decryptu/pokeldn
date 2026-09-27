@@ -260,23 +260,25 @@ on:
 `POKELDN_ESP32_AP_FLAGS=0x28` pins 24 Mbit/s. Pinned, the board's retry share fell to 2.8% and the
 holds stayed: five of 102 to 185 ms. The rate the board picks does not decide a hold.
 
-### The CPU clock sets the wait
+### The CPU clock
 
-The firmware runs the CPU at 240 MHz (`CONFIG_ESP_DEFAULT_CPU_FREQ_MHZ_240`); at IDF's default of
-160 MHz the board's ETH_TX to TX-done wait is about twice as long at every percentile. Five FireRed
-trades on channel 1, rate control on, 16 or 25 static receive buffers, each clock alternated:
+The firmware runs the CPU at 240 MHz (`CONFIG_ESP_DEFAULT_CPU_FREQ_MHZ_240`; IDF's default is 160).
+Six FireRed trades on channel 1, rate control on, in this order; wait is ETH_TX to TX-done, missed is
+the share of the console's first copies the board did not hear, retries the console's on the sniffer:
 
-| CPU | RX buffers | frames | p90 | p99 | p99.9 | over 5 ms | over 40 ms | over 80 ms | holds |
-|---|---|---|---|---|---|---|---|---|---|
-| 160 MHz | 16 | 6744 | 4.7 ms | 30.4 ms | 91.7 ms | 605 | 41 | 10 | 1 |
-| 160 MHz | 25 | 6999 | 4.6 ms | 34.4 ms | 106.5 ms | 615 | 57 | 19 | 1 |
-| 240 MHz | 25 | 7425 | 3.1 ms | 13.5 ms | 34.3 ms | 322 | 5 | 0 | 0 |
-| 240 MHz | 25 | 7235 | 3.0 ms | 15.7 ms | 66.3 ms | 242 | 16 | 3 | 0 |
-| 160 MHz | 25 | 8349 | 4.3 ms | 27.5 ms | 82.3 ms | 666 | 41 | 9 | 0 |
+| CPU | RX buffers | frames | p90 | p99 | p99.9 | over 5 ms | over 40 ms | over 80 ms | holds | missed | console retries |
+|---|---|---|---|---|---|---|---|---|---|---|---|
+| 160 MHz | 16 | 6744 | 4.7 ms | 30.4 ms | 91.7 ms | 605 | 41 | 10 | 1 | | 8.8% |
+| 160 MHz | 25 | 6999 | 4.6 ms | 34.4 ms | 106.5 ms | 615 | 57 | 19 | 1 | 6.8% | 13.0% |
+| 240 MHz | 25 | 7425 | 3.1 ms | 13.5 ms | 34.3 ms | 322 | 5 | 0 | 0 | 5.2% | 12.4% |
+| 240 MHz | 25 | 7235 | 3.0 ms | 15.7 ms | 66.3 ms | 242 | 16 | 3 | 0 | 4.9% | 11.9% |
+| 160 MHz | 25 | 8349 | 4.3 ms | 27.5 ms | 82.3 ms | 666 | 41 | 9 | 0 | 5.3% | 10.2% |
+| 240 MHz | 25 | 7021 | 5.0 ms | 31.7 ms | 109.6 ms | 708 | 57 | 16 | 1 | 8.5% | 18.9% |
 
-The board's share of the console's first copies it missed did not follow the clock: 4.9% and 5.2% at
-240 MHz, 5.3% and 6.8% at 160 MHz. The clock shortens the board's own send and resend path, not its
-receiver. `tools/ldn/esp32_hold.py CAPTURE TRACE` prints the wait on its `board queue -> TX-done` line.
+The two shortest waits measured on channel 1 were at 240 MHz, and the third 240 MHz trade matched the
+160 MHz ones. The clock does not decide the wait on its own; the spread between runs of one setting is
+as large as the difference. `tools/ldn/esp32_hold.py CAPTURE TRACE` prints the wait on its `board
+queue -> TX-done` line.
 
 ### The board is the deaf side
 
