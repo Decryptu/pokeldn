@@ -76,7 +76,7 @@ Anything before a `0x00`, including the ROM's boot text, is discarded by the che
 | `0x01` HELLO | host | none; answered by CREDIT 0, then INFO |
 | `0x02` BAUD | host | u32 baud; RESULT at the old rate, then the switch. The switch is a queue entry behind the RESULT and waits up to 3 s for the UART to drain: at 115200 the ring can hold more than a second of RX_MGMT from a console advertising nearby, and a 100 ms wait switched with the RESULT still in it. The host's first HELLO at the new rate is lost in about one open of four at 1500000, so `open_serial` retries it |
 | `0x03` CHANNEL | host | u8 channel; idle only |
-| `0x04` STA_JOIN | host | u8 channel, 6 BSSID, 32 SSID (the LDN SSID's hex text), 16 key, 6 station MAC (zero = random); optional: u8 a fixed data rate (the AP_START bits 3..5 table), then u8 a maximum TX power in 0.25 dBm (`esp_wifi_set_max_tx_power`, 8 to 84; the driver caps it at 61) |
+| `0x04` STA_JOIN | host | u8 channel, 6 BSSID, 32 SSID (the LDN SSID's hex text), 16 key, 6 station MAC (zero = random); optional: u8 a fixed data rate (the AP_START bits 3..5 table), then u8 a maximum TX power in 0.25 dBm (`esp_wifi_set_max_tx_power`, 8 to 84; the driver caps it at 61), then u8 flags: 1 RTS before every frame, 2 no RTS before a retry (`esp_wifi_internal_set_rts`) |
 | `0x05` STOP | host | none; back to idle, keys cleared |
 | `0x06` AP_START | host | u8 channel, 6 BSSID, 32 SSID, 16 key, u8 max stations, u8 flags: 1 the stock association and 4-way handshake, 2 no QoS for the station, 4 no 40-byte copy of each station data frame, bits 3..5 a fixed data rate, `0x40` a beacon every 1000 TU, `0x80` no promiscuous receive; an optional second flag byte: 1 the driver's noise-floor check off, 2 its interval 250, 4 the receive time in each 40-byte data copy's head, 8 retry limits 7 and 4, `0x10` a RX_CENSUS for every frame but its stations' good data frames to it; then an optional maximum TX power in 0.25 dBm |
 | `0x07` AP_KICK | host | 6 MAC, u16 reason; deauthenticates |
@@ -455,6 +455,32 @@ two passes each, v6.1 run after v5.5.5:
 |---|---|---|---|---|---|
 | v5.5.5 | 1.0, 1.1% | 3.2, 2.8% | 8.5, 8.7% | 7.3, 7.6% | 5.0, 5.0% |
 | v6.1 | 1.0, 1.4% | 4.6, 4.6% | 6.9, 6.4% | 4.0, 4.1% | 4.1, 4.1% |
+
+The two drivers write the same MAC and PHY registers for a station and an access point and share the
+receive interrupt, buffer recycling and transmit-done code; v6.1 adds `wifi_assert` calls on the
+per-frame paths. The gap between them is timing or spread. With `CONFIG_ESP_WIFI_EXTRA_IRAM_OPT=y` on
+v6.1 the same bench missed 4.6 and 5.1% (0.9, 1.3 / 5.4, 7.2 / 5.4, 5.3 / 6.7, 6.6% by position): no
+gain, and the most missed position moved.
+
+An ESP32 station sends every retry behind RTS (`lmacConfMib` byte 42, retries before RTS, 0), with
+its RTS threshold at 2346 (`lmacConfMib` +22); `esp_wifi_internal_get_rts` and
+`esp_wifi_internal_set_rts` read and write both through a packed `{u16 threshold, u8 retries before
+RTS, u8 long, u8 short}`.
+
+With the station's RTS threshold at 0 (STA_JOIN flag 1), every data frame reaches the access point
+SIFS after its CTS, as a FireRed console's does. On channel 3, bursts of 4, 120 s, alternated:
+
+| station | missed | 1st | 2nd | 3rd | 4th |
+|---|---|---|---|---|---|
+| defaults | 4.6, 4.8% | 0.9, 2.0% | 3.4, 4.1% | 6.6, 5.6% | 7.5, 7.6% |
+| RTS before every frame | 2.3, 2.1% | 0.8, 1.0% | 2.8, 2.7% | 3.6, 3.3% | 2.1, 1.5% |
+| no RTS before a retry | 3.7, 4.9% | 0.8, 1.1% | 3.1, 6.3% | 5.2, 5.0% | 5.6, 7.3% |
+
+The count leaves out a missed RTS, which the station sends again before the data. With the access
+point's census on, over 90 s it heard 8527 of the station's RTS and 8216 data copies: 311 RTS
+(3.6%) were answered and the data after the CTS was missed; the RTS gaps after a data frame bunch at
+175 to 300 us, with a second group at 375 to 600 us, the timing of an RTS sent again. RTS before
+every frame moves part of the misses onto the RTS; no gain overall is shown.
 
 The driver retries in software: `lmacRetryTxFrame` (libpp `lmac.o`) sends each copy again through
 `lmacTxFrame`, up to limits kept in `lmacConfMib` (short at +21, long at +20, both 32 by default);

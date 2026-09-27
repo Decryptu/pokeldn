@@ -330,14 +330,21 @@ static void go_idle(void)
 
 static uint8_t s_sta_rate;   /* an index into AP_FIXED_RATES; 0 leaves rate control on */
 static uint8_t s_sta_power;  /* esp_wifi_set_max_tx_power units (0.25 dBm, 8..84); 0 leaves it */
+static uint8_t s_sta_flags;  /* 1 RTS on every frame, 2 no RTS before a retry */
+/* libpp: exported, not in the headers; both read and write lmacConfMib +22 (u16 RTS threshold, 2346)
+   and +42 (retries before RTS, 0). docs/hardware_esp32.md */
+typedef struct __attribute__((packed)) { uint16_t thr; uint8_t retries_before_rts, cnt_long, cnt_short; } rts_cfg_t;
+extern int esp_wifi_internal_set_rts(const void *p);
+extern int esp_wifi_internal_get_rts(void *p);
 
 static esp_err_t sta_join(const uint8_t *p, size_t n)
 {
     /* Optional: a byte pinning the station's data rate (the AP flag bits 3..5 table), then its
        maximum TX power. docs/hardware_esp32.md */
-    if (n < 1 + 6 + 32 + 16 + 6 || n > 1 + 6 + 32 + 16 + 6 + 2) return ESP_ERR_INVALID_SIZE;
+    if (n < 1 + 6 + 32 + 16 + 6 || n > 1 + 6 + 32 + 16 + 6 + 3) return ESP_ERR_INVALID_SIZE;
     s_sta_rate = n > 61 ? p[61] & 7 : 0;
     s_sta_power = n > 62 ? p[62] : 0;
+    s_sta_flags = n > 63 ? p[63] : 0;
     const uint8_t channel = p[0];
     if (channel < 1 || channel > 13 || (p[1] & 1)) return ESP_ERR_INVALID_ARG;
     go_idle();
@@ -398,6 +405,17 @@ static void sta_install_keys(void)
     esp_wifi_auth_done_internal();
     esp_wifi_internal_reg_rxcb(WIFI_IF_STA, ethernet_rx);
     atomic_store(&s_mode, MODE_STA);
+    if (s_sta_flags) {
+        rts_cfg_t rts = {0};
+        const int got = esp_wifi_internal_get_rts(&rts);
+        wire_log("sta rts before: %d thr %u retries %u long %u short %u", got, rts.thr, rts.retries_before_rts,
+                 rts.cnt_long, rts.cnt_short);
+        if (s_sta_flags & 1) rts.thr = 0;
+        if (s_sta_flags & 2) rts.retries_before_rts = 255;
+        const int set = esp_wifi_internal_set_rts(&rts);
+        esp_wifi_internal_get_rts(&rts);
+        wire_log("sta rts after: %d thr %u retries %u", set, rts.thr, rts.retries_before_rts);
+    }
     if (s_sta_power) {
         int8_t before = 0, after = 0;
         esp_wifi_get_max_tx_power(&before);

@@ -156,13 +156,14 @@ def mac_bytes(mac) -> bytes:
 
 
 def sta_join_payload(channel: int, bssid, ssid: str, key: bytes, mac=bytes(6), rate: int = 0,
-                     power: int = 0) -> bytes:
+                     power: int = 0, flags: int = 0) -> bytes:
     ssid_bytes = ssid.encode("ascii")
     if len(ssid_bytes) != 32 or len(key) != 16:
         raise ValueError("an LDN SSID is 32 hex characters and the key 16 bytes")
     # The rate byte (the AP flag byte's bits 3..5 table) and the TX power byte (0.25 dBm units)
     # go only when set, as flags2 does.
-    tail = bytes([rate, power]) if power else bytes([rate]) if rate else b""
+    tail = (bytes([rate, power, flags]) if flags else bytes([rate, power]) if power
+            else bytes([rate]) if rate else b"")
     return bytes([channel]) + mac_bytes(bssid) + ssid_bytes + key + mac_bytes(mac) + tail
 
 
@@ -495,8 +496,9 @@ class Radio:
         self.request(CMD_CHANNEL, bytes([channel]), MSG_RESULT)
 
     def sta_join(self, channel: int, bssid, ssid: str, key: bytes, mac=bytes(6), rate: int = 0,
-                 power: int = 0) -> None:
-        self.request(CMD_STA_JOIN, sta_join_payload(channel, bssid, ssid, key, mac, rate, power), MSG_RESULT)
+                 power: int = 0, flags: int = 0) -> None:
+        self.request(CMD_STA_JOIN, sta_join_payload(channel, bssid, ssid, key, mac, rate, power, flags),
+                     MSG_RESULT)
 
     def ap_start(self, channel: int, bssid, ssid: str, key: bytes, max_stations: int = 7,
                  flags: int = 0, flags2: int = 0, power: int = 0) -> None:
