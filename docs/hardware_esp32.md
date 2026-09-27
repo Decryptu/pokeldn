@@ -78,7 +78,7 @@ Anything before a `0x00`, including the ROM's boot text, is discarded by the che
 | `0x03` CHANNEL | host | u8 channel; idle only |
 | `0x04` STA_JOIN | host | u8 channel, 6 BSSID, 32 SSID (the LDN SSID's hex text), 16 key, 6 station MAC (zero = random) |
 | `0x05` STOP | host | none; back to idle, keys cleared |
-| `0x06` AP_START | host | u8 channel, 6 BSSID, 32 SSID, 16 key, u8 max stations, u8 flags: 1 the stock association and 4-way handshake, 2 no QoS for the station, 4 no 40-byte copy of each station data frame, bits 3..5 a fixed data rate, `0x40` a beacon every 1000 TU, `0x80` no promiscuous receive |
+| `0x06` AP_START | host | u8 channel, 6 BSSID, 32 SSID, 16 key, u8 max stations, u8 flags: 1 the stock association and 4-way handshake, 2 no QoS for the station, 4 no 40-byte copy of each station data frame, bits 3..5 a fixed data rate, `0x40` a beacon every 1000 TU, `0x80` no promiscuous receive; an optional second flag byte: 1 the driver's noise-floor check off, 2 its interval 250 |
 | `0x07` AP_KICK | host | 6 MAC, u16 reason; deauthenticates |
 | `0x08` ETH_TX | host | an Ethernet frame; the driver encrypts it with the station's or the group key. A full driver queue (`ESP_ERR_NO_MEM`) is retried every 1 ms for up to 100 ms before the frame counts as failed; a frame to a station that has left fails at once with `0x3015` (`ESP_ERR_WIFI_NOT_ASSOC`). A station sends the frame's Ethernet source as its 802.11 transmitter address: a source other than the MAC in LINK is never acknowledged (49 of 49 unacked, none seen by the access point) |
 | `0x09` RAW_TX | host | an 802.11 frame without FCS (`esp_wifi_80211_tx`); used for advertisements |
@@ -333,7 +333,14 @@ station keeps its timing in step with the access point's TSF. The fold was sharp
 off the station's clock and its phase held through all four quarters of the run. The one foreign
 access point beaconing on channel 11 during that bench (-79 dBm) beacons every 110 TU (TSF gaps
 112638 us), so it does not set a 100 TU cycle. In the FireRed trades the sniffer shows the access
-point board as the deaf side. `tools/ldn/esp32_rx_copies.py HOST_TRACE
+point board as the deaf side. 
+
+The driver's periodic noise-floor check does not set the cycle. `libpp`'s `NoiseTimerInterval`
+(`pp.o` `.data`, u16 100) paces `pm_noise_check`, and `pm_noise_check_disable` clears `g_pm+21`, after
+which `pm_noise_check` returns before measuring. With the check disabled (second AP_START flag byte,
+bit 0) the bench missed 7.5, 13.2 and 8.1% of first copies against 7.0, 5.9 and 7.9% with it on, and
+the slow frames still bunched at 102.4 ms. With `NoiseTimerInterval` set to 250 (bit 1) they still
+bunched at 102.4 ms and folded flat at 250 ms. `tools/ldn/esp32_rx_copies.py HOST_TRACE
 SNIFF_TRACE --ap BSSID --sta MAC` makes the count.
 
 `tools/ldn/esp32_hold_air.py` lists what the sniffer saw

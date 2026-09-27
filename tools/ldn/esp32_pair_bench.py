@@ -26,6 +26,7 @@ ap_.add_argument("--bench", action="store_true",
 ap_.add_argument("--channel", type=int, default=6)
 ap_.add_argument("--burst", type=int, default=1)
 ap_.add_argument("--ap-flags", type=lambda v: int(v, 0), default=0, help="the AP_START flag byte")
+ap_.add_argument("--ap-flags2", type=lambda v: int(v, 0), default=0, help="the second AP_START flag byte")
 ap_.add_argument("--done-out", help="write B's TX-dones as 'board_us since_us host_time' lines, "
                  "and A's as 'board_us host_time' to FILE.ap")
 ap_.add_argument("--size", type=int, default=200, help="B's frame length")
@@ -62,7 +63,7 @@ def on_a(t, p):
     elif t == esp32.MSG_RX_ETH and t0[0] and p[12:14] == b"\x88\xb6":
         got_from_b[int(time.monotonic() - t0[0])] += 1
 a.subscribe(on_a)
-a.ap_start(args.channel, bssid, ssid, key, flags=args.ap_flags)
+a.ap_start(args.channel, bssid, ssid, key, flags=args.ap_flags, flags2=args.ap_flags2)
 b.sta_join(args.channel, bssid, ssid, key)
 if not link.wait(20) or not joined.wait(5):
     b.close(); a.close()

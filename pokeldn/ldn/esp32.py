@@ -67,6 +67,7 @@ AP_FLAG_NO_QOS = 2          # clear the station node's QoS flag: non-QoS data fr
 AP_FLAG_NO_DATA_TRACE = 4   # skip the 40-byte copy of each station data frame (serial bandwidth)
 AP_FLAG_LONG_BEACON = 0x40  # beacon every 1000 TU instead of 100
 AP_FLAG_NO_PROMISC = 0x80   # no promiscuous receive: no RX_MGMT copies, a bisection only
+AP_FLAG2_NO_NOISE_CHECK = 1  # the second flag byte: stop the driver's periodic noise-floor check
 # Bits 3..5 pin the AP's data rate (AP_FLAG_RATE_* << 3); 0 leaves the driver's rate control on.
 AP_FLAG_RATE_SHIFT = 3
 AP_FLAG_RATES = {1: "1M", 2: "11M", 3: "6M", 4: "12M", 5: "24M", 6: "36M", 7: "54M"}
@@ -160,11 +161,13 @@ def sta_join_payload(channel: int, bssid, ssid: str, key: bytes, mac=bytes(6)) -
 
 
 def ap_start_payload(channel: int, bssid, ssid: str, key: bytes, max_stations: int = 7,
-                     flags: int = 0) -> bytes:
+                     flags: int = 0, flags2: int = 0) -> bytes:
     ssid_bytes = ssid.encode("ascii")
     if len(ssid_bytes) != 32 or len(key) != 16:
         raise ValueError("an LDN SSID is 32 hex characters and the key 16 bytes")
-    return bytes([channel]) + mac_bytes(bssid) + ssid_bytes + key + bytes([max_stations, flags])
+    # The second flag byte goes only when set, so firmware without it still accepts the rest.
+    return (bytes([channel]) + mac_bytes(bssid) + ssid_bytes + key + bytes([max_stations, flags])
+            + (bytes([flags2]) if flags2 else b""))
 
 
 @dataclass
@@ -488,8 +491,8 @@ class Radio:
         self.request(CMD_STA_JOIN, sta_join_payload(channel, bssid, ssid, key, mac), MSG_RESULT)
 
     def ap_start(self, channel: int, bssid, ssid: str, key: bytes, max_stations: int = 7,
-                 flags: int = 0) -> None:
-        self.request(CMD_AP_START, ap_start_payload(channel, bssid, ssid, key, max_stations, flags),
+                 flags: int = 0, flags2: int = 0) -> None:
+        self.request(CMD_AP_START, ap_start_payload(channel, bssid, ssid, key, max_stations, flags, flags2),
                      MSG_RESULT, timeout=5.0)
 
     def stop(self) -> None:

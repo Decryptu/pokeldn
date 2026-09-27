@@ -38,6 +38,7 @@ enum {
 };
 enum { AP_FLAG_STOCK_JOIN = 1, AP_FLAG_NO_QOS = 2, AP_FLAG_NO_DATA_TRACE = 4, AP_FLAG_LONG_BEACON = 0x40,
        AP_FLAG_NO_PROMISC = 0x80 };
+enum { AP_FLAG2_NO_NOISE_CHECK = 1, AP_FLAG2_NOISE_250 = 2 };
 /* Flag bits 3..5 pin the AP's data rate: 0 leaves rate control on. docs/hardware_esp32.md */
 #define AP_FLAG_RATE(flags) (((flags) >> 3) & 7)
 static const wifi_phy_rate_t AP_FIXED_RATES[8] = {
@@ -352,9 +353,17 @@ static void sta_install_keys(void)
     sta_link(true, 0);
 }
 
+/* libpp: clears g_pm+21, after which pm_noise_check returns before measuring. The check runs every
+   NoiseTimerInterval (100) and the receiver misses frames on that cycle. docs/hardware_esp32.md */
+extern void pm_noise_check_disable(void);
+extern uint16_t NoiseTimerInterval;   /* libpp pp.o .data, 100 */
+
 static esp_err_t ap_start(const uint8_t *p, size_t n)
 {
-    if (n != 1 + 6 + 32 + 16 + 1 + 1) return ESP_ERR_INVALID_SIZE;
+    /* A second flag byte is optional: AP_FLAG2_NO_NOISE_CHECK. */
+    if (n != 1 + 6 + 32 + 16 + 1 + 1 && n != 1 + 6 + 32 + 16 + 1 + 1 + 1) return ESP_ERR_INVALID_SIZE;
+    const uint8_t flags2 = n > 57 ? p[57] : 0;
+    if (flags2 & AP_FLAG2_NOISE_250) NoiseTimerInterval = 250;   /* before the driver arms it */
     const uint8_t channel = p[0];
     if (channel < 1 || channel > 13 || (p[1] & 1)) return ESP_ERR_INVALID_ARG;
     go_idle();
@@ -385,6 +394,11 @@ static esp_err_t ap_start(const uint8_t *p, size_t n)
     esp_wifi_set_tx_done_cb(tx_done);
     esp_wifi_set_ps(WIFI_PS_NONE);
     esp_wifi_set_inactive_time(WIFI_IF_AP, 3600);
+    if (flags2 & AP_FLAG2_NO_NOISE_CHECK) {
+        pm_noise_check_disable();
+        wire_log("ap noise check off");
+    }
+    wire_log("ap noise interval %u", (unsigned)NoiseTimerInterval);
     if (AP_FLAG_RATE(s_ap_flags)) {
         const esp_err_t fixed = esp_wifi_internal_set_fix_rate(WIFI_IF_AP, true,
                                                                AP_FIXED_RATES[AP_FLAG_RATE(s_ap_flags)]);
