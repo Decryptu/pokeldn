@@ -141,7 +141,8 @@ async def main_async(args):
               "state_requests": 0, "their_state": None, "their_recruiting": 0,
               "reserves_sent": 0, "reserve_results": 0, "match_wait_sent": 0,
               "reserve_accepted": False, "room_done": False, "their_traner": None,
-              "requests_sent": 0, "requested_answers": {}, "rel_fragments": {}, "their_zone": None,
+              "requests_sent": 0, "requested_answers": {}, "rel_rx": rl.Reassembler(), "their_zone": None,
+              "rel_repeats": 0,
               "their_poke": None, "their_pokes": 0, "our_poke": None, "answered_with": set(), "trade_replies": 0, "check_oks": 0,
               "their_ready_ok": None, "ready_oks_sent": 0, "their_security_state": None,
               "our_security_state": 0, "our_next_seq": 0, "return_selects": 0}
@@ -312,24 +313,29 @@ async def main_async(args):
                             st["rel_streams"].add(d["stream_id"])
                             # A message may span packets: every one captured so far (331 bytes at
                             # most) arrived START|END in one, but a 697-byte record need not.
-                            # Fragments are joined per stream in sequence order; a repeat of a seen
-                            # sequence is dropped.
-                            frag = st["rel_fragments"].setdefault(d["stream_id"], {})
-                            if d["flags"] & rl.FLAG_MESSAGE_START:
-                                frag.clear()
-                            if d["sequence_id"] in frag:
+                            kind, payload = st["rel_rx"].take(d)
+                            if kind == "repeat":
+                                # a copy resent because our ack was lost: acked, never acted on
+                                # twice. A second check-ok answer after the console's last
+                                # confirmation resets its round (docs/bdsp_trade.md)
+                                st["rel_repeats"] += 1
                                 record(rec="reliable_repeat", t=now, seq=d["sequence_id"])
-                            frag[d["sequence_id"]] = d["payload"]
-                            if not d["flags"] & rl.FLAG_MESSAGE_END:
+                                if args.reliable_auto_ack and st["rel_handshaken"]:
+                                    ack = rl.build_ack_message(st["rel_max_seq"] + 1,
+                                                               stream_id=d["stream_id"])
+                                    sock.sendto(wrap(keys, our_mac, args.src_var, st["dst_var"],
+                                                     next_nonce(), ack, rl.PROTOCOL, port=rl.PORT),
+                                                (st["dst_ip"], PIA_PORT))
+                                    st["rel_acks"] += 1
+                                continue
+                            if kind == "partial":
                                 record(rec="reliable_fragment", t=now, seq=d["sequence_id"],
                                        flags=d["flags"], stream=d["stream_id"],
                                        payload=d["payload"].hex())
                                 continue
-                            if len(frag) > 1:
-                                d["payload"] = b"".join(frag[k] for k in sorted(frag))
-                                print(f"[rx] t={now:6.2f} reassembled {len(frag)} fragments, "
-                                      f"{len(d['payload'])} B")
-                            frag.clear()
+                            if len(payload) != len(d["payload"]):
+                                print(f"[rx] t={now:6.2f} reassembled {len(payload)} B")
+                            d["payload"] = payload
                             if d["flags"] & rl.FLAG_ZLIB:
                                 # the reliable header's own compression: the 23-byte standby list
                                 # arrives as a 20-byte zlib stream and read raw it is a 0x48
@@ -428,6 +434,8 @@ async def main_async(args):
                         else:
                             # a control message: reset, reset ack or a bulk ack
                             st["rel_control"].append((now, d["flags"], m.payload.hex()))
+                            if d["flags"] & rl.FLAG_RESET:
+                                st["rel_rx"].reset()
                             if len(d["payload"]) >= 2:
                                 try:
                                     body = rl.parse_ack_payload(d["payload"])
@@ -1556,7 +1564,8 @@ async def main_async(args):
         print(f"[cx] their advertising state seen {st['their_recruiting']} time(s), "
               f"approaches sent {st['reserves_sent']}, answered {st['reserve_results']}")
         print(f"[cx] reliable messages {st['reliable']} "
-              f"(a repeat means it is still waiting to be acked)")
+              f"(a repeat means it is still waiting to be acked), "
+              f"{st['rel_repeats']} repeat(s) acked and not acted on")
         print(f"[cx] unreliable messages {st['unreliable']} - the game's live state")
         print(f"[cx] reliable acks sent {st['rel_acks']}, their last position "
               f"{st['their_position']}")

@@ -236,6 +236,51 @@ and compared the sequence id. `bin/swsh_connect.py --seq-delta` is the control.
 The station byte at header 0x05 and the IV's source-id byte were both 0, mirroring the console's own;
 `--station-sweep` walks other readings.
 
+## The Pia session object
+
+`[[0x02616a30]]`, the object the trade code reads its station ids from, is Pia's session object: 0x270
+bytes with no vtable, allocated once by `0x0183ddb0` (`0x0183dfd4`) from the game's network start
+(`0x006a8644`) and also stored in the global `[0x02630f40]`. Its backends come from the network
+factory the game passes in (`[x20+0x60]`, `0x006a8600`): `+0x178` from factory slot `0x240/8`,
+`+0x188` from `0x290/8`, `+0x168` from `0x248/8` (`0x0183e074`), and `+0x170` from `0x248/8` only
+when slot `0x1b8/8` returns true; the byte at `+0x162`, zeroed at creation, selects among them. On
+LDN the factory is `nn::pia::local::LdnNetworkFactory`, whose slot 73 (`0x01791080`) builds a
+0x7220-byte `nn::pia::local::LdnMatchmakeSession` (vtable from GOT `0x0262fbd0`).
+
+Two station ids sit in it:
+
+| field | written by | value |
+|---|---|---|
+| `+0xf0` | `0x018418a0` (`0x01841918`) | this console's own station id |
+| `+0xf8` | `0x018418a0` (`0x01841990`) | the id of the station at the mesh's host index, the byte `[[0x0262f7b0]]+0xab` (`0x017bbfe0`); skipped when `[obj+0xd4] == 4` |
+
+`0x018418a0` runs right after `0x018410e0` on the create path (`0x018394d8`) and on the join path
+(`0x0183d9b0`). The mesh's host index `+0xab` (its own index is `+0xac`) is written by the mesh
+creation (`0x017b092c`, from the same value as `+0xac`: the creator is host), the join (`0x017b4e4c`,
+from the join response), a reset to `0xfe` (`0x017bb820`), a reset of both bytes to `0xfd`
+(`0x017b99a0`), and two host-migration steps: `0x017ca454`, reached from
+`nn::pia::lan::LanProcessHostMigrationJob`, `nn::pia::local::LocalProcessHostMigrationJobNew` and the
+Nex code, and `0x017caf48`.
+
+The mesh event handler `0x01843580` (slot 2 of `nn::pia::session::MeshEventListener`, a switch on the
+event type at `[x1]`, table `0x02083fe8`) also writes `+0xf8`:
+
+| event | store |
+|---|---|
+| 1 | the backend's slot 30 (`0x01844bc4`), then `0x018412a0(obj, 2, id)` on a change |
+| 2 | the id `0x017d6080` returns (`0x01844a74`); the backend's slot 30 (`0x01844edc`); `0x01844f60` |
+| 3 | zero, with `+0x100` (`0x0184415c`, `stp xzr,xzr`), when `[obj+0xd4] != 3` |
+
+`LdnMatchmakeSession`'s slot 30 (`0x017a23d0`) returns `0xff` when `[this+0x18]` is null, and
+otherwise what `0x017672d0` makes of the 16-byte address at `[[this+0x18]+0x18]+0x2c0+8`: 0 when it is
+all zero, its first four bytes when the last twelve are zero, error `0x10c07` otherwise. Slot 28
+(`0x017a23b0`) is the virtual call `0x018407f0` makes.
+
+`0x018407f0` is true when `+0xf0` is non-zero and equals `+0xf8` and the backend's slot 28 agrees.
+With the values the create and join paths write it is true on the console that hosts Pia's mesh. A
+console hosting a trade climbs the confirmation ladder on commands, and one that joined pokeldn's host
+follows the shared value ([the trade page](swsh_trade.md#the-pump)).
+
 ## Reaching the game layer
 
 Every layer beneath the game works in both directions: LDN association, Local Protocol 0x24, the

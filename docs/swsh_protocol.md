@@ -63,6 +63,46 @@ in the 30/40/50 band:
 Nothing writes the 20000-base holder's `+0x168` in content 40 or 50, so 20040 and 20050 are inert.
 A message addressed at either is dropped.
 
+### The 30000 holder
+
+The 30000+offset holder (`0x010d0980`, vtable GOT `0x02618620` = `0x02528100`, no RTTI) carries the
+framework's `SequenceDataHolder`, `sequence_data_holder.proto` in package `gflnet.p2p.framework.pb`:
+
+    SequenceDataHolder    oneof message {
+                            1 CancelAccepted        cancelAccepted
+                            2 RequestCancel         requestCancel
+                            3 RequestCancelAll      requestCancelAll
+                            4 RequestForcedProceed  requestForcedProceed }
+    CancelAccepted        { 1 int32 currentSeqNo; 2 bool  isForced    }
+    RequestCancel         { 1 int32 currentSeqNo }
+    RequestCancelAll      { 1 int32 currentSeqNo }
+    RequestForcedProceed  { 1 int32 currentSeqNo; 2 int32 targetSeqNo }
+
+The parser `0x006a7580` compares tags `0x0a`, `0x12`, `0x1a` and `0x22` (`0x006a761c..0x006a77a8`);
+RequestForcedProceed's parser `0x006a65c0` stores field 1 at `+0x14` and field 2 at `+0x18`
+(`0x006a6608`, `0x006a66f4`). The holder's receive, vtable slot 8 `0x008b9590`, reads the oneof case
+at `msg+0x24` and calls the listener at `[holder+0x168]` through the table at `0x0204c430`: case 1
+listener slot 0, case 2 slot 1, case 3 slot 2, case 4 slot 3.
+
+Shield 1.3.2 builds only CancelAccepted. Nothing outside the generated protobuf code
+(`0x006a3000..0x006a8400`) calls the RequestCancel, RequestCancelAll or RequestForcedProceed
+constructors (`0x006a4b50`, `0x006a5730`, `0x006a6330`) or any of their mutable accessors. The
+CancelAccepted constructor `0x006a3db0` has 21 callers outside it: the holder's send wrapper
+`0x008b7420` and twenty reply jobs, two in each of ten sync contents (`0x008b71a0`, `0x008b7700`,
+`0x008cfb10`, `0x008cfbe0`, `0x00c06420`, `0x00c064f0`, `0x010763a0`, `0x01076470`, `0x010a2090`,
+`0x010a2160`, `0x010cf460`, `0x010cf530`, `0x010d7760`, `0x010d7830`, `0x010dd0c0`, `0x010dd190`,
+`0x012a8390`, `0x012a8460`, `0x012bec80`, `0x012bed50`). A trade between two retail consoles
+therefore never carries fields 2, 3 or 4; a console acts on them when a partner sends them
+([content 40's handlers](swsh_trade.md#the-cancel-and-proceed-messages)).
+
+Content 40's instance is message 30040, registered like every content holder on port 0:
+
+    RequestForcedProceed{currentSeqNo: c, targetSeqNo: c+1}
+      c=0  58750000 2204 0800 1001
+      c=1  58750000 2204 0801 1002
+      c=2  58750000 2204 0802 1003
+      c=3  58750000 2204 0803 1004
+
 ### The three trade contents
 
 One function, `0x010c9280`, constructs all three and stores them in the trade session object:
@@ -114,7 +154,8 @@ assembles to `61 00 00 00 0a 00`, the ping the console repeats. `0x006db840` bui
 
 and `0x006db620` takes it apart the same way. The discriminator is a generation counter,
 `[content+0x370] = ([content+0x370] + 1) mod 255` (`0x008b6670`), pushed into `[manager+0x480f0]`.
-Every content's registrar sets it to zero on its way out (`0x010d53a0`). All 107 application
+A CancelAccepted with `isForced` set steps the same counter on content 40 and hands it to
+`0x006db470` on the manager (`0x010dcea4..0x010dcec8`). Every content's registrar sets it to zero on its way out (`0x010d53a0`). All 107 application
 payloads in one whole run carried zero there, on every id.
 
 ### Reading the registrations live
@@ -415,7 +456,15 @@ slot also starts an activity record of kind 11 (`0x0111b660`), hands it to `[0x2
 The group's first byte packs `a` in bits 0-1 and `b` in bits 2-3 (`0x01123710`; the unpacker
 `0x01123760` reads a `b` of 3 as 0). `a` is the sample object's `+0x47`, set by the reset
 `0x00eb97b0` in its mode 0 from a 64-bit key: `0x5742865396e549d0` -> 1, `0x5ea5c3539ab81c81` -> 2,
-`0x674edc539f9f74a6` -> 3, anything else 0 (`0x00eb97d0..0x00eb9848`). `b` is `+0x1c9`, set by
+`0x674edc539f9f74a6` -> 3, anything else 0 (`0x00eb97d0..0x00eb9848`). The three keys stand for the
+areas `wr0101`, `wr0201` and `wr0301`: they are also the data array at `0x02061f98`, looped over at `0x00ecd418`, and
+`0x00ec51b4..0x00ec5218` maps them in that order to the nest-hole emitter names
+`a_wr0101_nest_hole_emitter_%d` (`0x01c25bbb`), `a_wr0201_...` (`0x01be5bad`) and `a_wr0301_...`
+(`0x01c2d3a5`); `0x00de19c0` copies the name `a_wr0101` (`0x01c0ae67`) when the current area key
+`[[[0x2617c48]]+0x180]` equals the first. `a` is 1 in `wr0101`, 2 in `wr0201`, 3 in `wr0301`, 0
+elsewhere. The keys are FNV-1a 64 of three strings that differ only in the area digit: running
+FNV-1a backwards over `1`, `0` and the digit brings all three to the one state `0xb8123d750dc24af8`.
+`a_wr0101` itself hashes to `0x6515d05043abef70`. `b` is `+0x1c9`, set by
 `0x00ebf580` from slot 8 of vtable `0x259add8` (`b = 0x0110e850(...) < 4`, `0x012dfaec`) and from
 slot 11 (`b = 2`, `0x012dfca8`), each followed by a push.
 

@@ -193,11 +193,23 @@ payload is a `b9` struct whose first member is a u16 round.
 | `0103` | CommandCancelTrade | `0x2dc51ac` | round, u32 reason | +0xab4 = reason with 1 and 2 swapped, else 0; +0x152 = round; +0x150 += 1; then `0x2dc41f8` |
 | `0104` | CommandFinalAgreement | `0x2dc52b4` | round | ignored when +0x152 is above the round or own state +0x130 is not 4 or 5; else partner state 5 |
 
-The cancel sender `0x964a78` sends round +0x150 + 1, then sets +0x130 = 2, advances +0x150 and
-+0x152, and drops the partner's state from 3..5 back to 2 (3 when the reason is 0). A ConfirmTrade
-or FinalAgreement still carrying the round before a cancel is ignored after it. SelectPokemon reads
-no round. A session's first `0102` and `0104` are `b90100`, round 0; what initialises +0x150 and
-+0x152 was not read.
+The cancel sender `0x964a60` sends nothing while own state +0x130 is 2 or 5. Otherwise it sends
+round +0x150 + 1, then sets +0x130 = 2, advances +0x150 and +0x152, and drops the partner's state
+from 3..5 back to 2 (3 when the reason is 0). A ConfirmTrade or FinalAgreement still carrying the
+round before a cancel is ignored after it; one carrying a round above +0x152 is accepted, since the
+handlers reject only a round strictly below it. SelectPokemon reads no round.
+
+The session object is 0xab8 bytes, allocated by `0xca2658` (its one caller `0xca20f4` stores it at
+owner+0x130) and built by `0xca2704`: vtable `0x3e3a6e8`, then `0xca2794` copies a configuration
+into +0x40 (a u16, 0x201, whose low byte `0xca28c8` passes to `0xca2928` as the channel argument)
+and two 0x40-byte callables into +0x48 and +0x88, and a memset zeroes +0x150..+0xab7. Both rounds
+therefore start at 0, and a session's first `0102` and `0104` are `b90100`. `0x964568`, which runs
+only when own state +0x130 is 6 and whose one caller is `0x9601dc` in the live trade path
+`0x95f8f4`, clears the own offer (+0x120) and the partner's PokemonParam (+0x128), sets both states
++0x130 and +0x134 to 2 (calling `0x964fa0(obj+0x128)` first when +0x134 was 3 or more), clears
++0x118, +0x11a and +0xd0, and zeroes +0x150 and +0x152 with one 32-bit store. A console that
+completes a trade starts the next one on the same seat at round 0, and an answer that stays at
+round 1 after it is still accepted.
 
 An emulated Z-A choosing Cancel on the trade prompt sends `0103b9020100`, round 1 and reason 0, and
 redraws the prompt with the host's earlier offer once its player picks again; the host need not
@@ -250,7 +262,22 @@ and `0x255bd70`, are both inside `nn::pia::session::KickoutManageJob`, whose `vf
 The kick is a liveness timeout. The path, read off main 2.0.2 and confirmed with breakpoints on an
 emulated host: `0x2547700` walks the stations in state 2 and asks for reason 1 on any whose
 last-heard time at +0xb8 is older than the session's timeout, through `0x2547dd0`, which records
-the station and reason in a map at session+0x1048. `0x2548b60` drains that map into
+the station and reason in a map at session+0x1048. The timeout is 10 s:
+
+    0x2547700   called from SessionProtocol vfunc 10 (0x2547170); returns at once when +0x1b0 is 0
+                and runs only while the local station's byte +0x48 is 2; kicks when
+                now > last_heard + ticks_per_ms * (s32)[+0x1b0]
+    0x24f5f08   ticks per millisecond: GetSystemTickFrequency() / 1000, computed once
+    0x25504c8   writes +0x1b0 on the object at session+0x18, and the same value at +0x338 of the
+                object 0x24f11f0 returns
+    0x253d9d4   in the session start 0x253d4f0: passes max([setting+0x28c], 4000) to 0x25504c8,
+                and [setting+0x290] to 0x257d12c just before
+    0x199eb48   the game's setting constructors store (+0x28c, +0x290) = (10000, 1000) as one
+                u64; the same at 0x199edf0, 0x199f07c, 0x199f2f8, 0x19a0494, 0x19a0a4c
+
+A station whose own variable id sources no packet for more than 10 s is kicked, whatever screen its
+player is on. The scan also kicks with reason 1 a station whose byte in the one-shot table
+`[0x3ee51d8][station id]` is set (`0x255c990` reads and clears it). `0x2548b60` drains that map into
 `0x255b4a0`, which takes a slot in `KickoutManageJob`'s 24-entry table and sends the first type 13;
 the job's update at `0x255bc10` resends it every 501 ms while the station stays present. Last-heard
 is refreshed by `0x2567280` for every station whose bit (its byte at +0x30) is set in a mask that
@@ -308,7 +335,8 @@ was drawn on the host's trade screen as PKLDN, traded, and kept that name, its s
 level 44 through the host's save. Scarlet's nicknamed bit and its individual values at 0x8C read
 correctly on Z-A records.
 
-The species at 0x08 is national. The same record with 95 written there traded as a shiny level-44
+The species at 0x08 is national below 917 and, from 917, the generation 9 internal index Scarlet
+uses (`pokeldn.sv.pokemon.internal_index` and `national` convert). The same record with 95 written there traded as a shiny level-44
 Onix named PKLDN; the host's summary showed 98 HP, 58 Attack, 159 Defense, 45 Special Attack,
 58 Special Defense and 80 Speed, which is Onix's spread, so the receiving game recomputes the stats
 from the species. The moves were kept as sent (Hurricane, Screech, Super Fang, Air Slash, from
@@ -396,7 +424,7 @@ does not show is PKHeX's (`PKM/PA9.cs`).
 | 0x00 | 4 | every accessor | `0xe514d0` | encryption constant |
 | 0x04 | 2 | `0xe485f0` | `0xe51698` | flags; bit 2 Bad Egg |
 | 0x06 | 2 | load path | `0xe48250` | checksum |
-| 0x08 | 2 | `0xe49940` | `0xe52aa0` | species, national |
+| 0x08 | 2 | `0xe49940` | `0xe52aa0` | species: national below 917, generation 9 internal index from 917 |
 | 0x0a | 2 | `0xe49b40` | `0xe52cc0` | held item |
 | 0x0c | 4 | `0xe49d50` | `0xe52ee0` | trainer id and secret id as one u32 |
 | 0x10 | 4 | `0xe49f60` | `0xe53100` | experience; level = `0xe5ce70(species, form, exp)` |
@@ -471,13 +499,46 @@ The per-move flag array is PA9.cs's plus move record: 360 bits, bit k in 0xd6 + 
 264 and in 0x94 + (k - 264)/8 above. A move's index is its position in the 340 u16 move ids at
 rodata `0x3303fb0`, found by the linear search `0xe669e0`, which returns -1 for a move not in the
 list; every caller then skips the flag. `0x631834` sets a flag, `0x673448` clears one, `0xe438e4`
-clears the array, `0xe43068` reads one, and `0x699308` asks `0xe343a0(species, form, move)` for a
-level, compares it with the Pokemon's level and falls back to the flag. Scarlet's Tera types at
-0x94/0x95 do not exist in this layout: those bytes are flags 264..279. On console-made records the
-set flags hold the current moves and earlier level-up moves: an Onix with moves 446, 328, 103 and
-784 flags 33 38 88 91 103 106 157 174 225 231 328 444 446 457 784. Not every current move is
-flagged (542 on a Noibat, 583 on a Xerneas). Every move traded so far (58, 103, 162, 247, 328, 403,
+clears the array, `0xe43068` reads one. Scarlet's Tera types at 0x94/0x95 do not exist in this
+layout: those bytes are flags 264..279. An Onix with moves 446, 328, 103 and 784 flags 33 38 88 91
+103 106 157 174 225 231 328 444 446 457 784. Every move traded so far (58, 103, 162, 247, 328, 403,
 423, 446, 542, 573, 784) is in the list.
+
+The flag unlocks a move that the learnset's level rule does not. `0xe343a0(species, form, move)` reads field 25 of the
+personal entry (vtable +0x36, through `0xe3cb88` and `0xe36850`), a vector of four-byte entries
+{u16 move, u8 level, u8 unlock level}, and returns the unlock level of the matching move, or 0. The
+learn level is 1..100, 253 or 254. In the 2.0.2 table the unlock level is 10 for all 4,803 level-1
+entries, the learn level plus 3 for 14,717 entries at levels 3..100 (nine exceptions: 99 gives 100
+six times and 102 once, 33 gives 37 twice), 10 on 266 of 274 level-254 entries of present species
+(19, 20 or 22 on the rest) and 10 on only 48 of 192 level-253 entries (39, 15, 12, 33, 38 and others
+on the rest). The PokemonParam wrapper with vtable `0x3e28e58` (321 slots, each a thunk to the
+PokemonParam at +0x50) uses it three ways:
+
+| slot | function | what it does |
+|---|---|---|
+| 135 | `0x6a30b0` | lists the moves whose unlock level is non-zero and equal to its level argument |
+| 145 | `0x631834` | sets a move's flag, skipping a move `0xe669e0` does not find |
+| 150 | `0x699308` | true when the unlock level is non-zero and the level (`0xe49760`, or `0xe5ce70` from the experience on a stored record) is at least it; otherwise the flag |
+
+`0x52fff0`, `0x824eb0` and `0x28eec70` each call slot 135 and set the flag of every move it lists;
+`0x6568b0` writes one move into move slot 0 through slot +0x110 and `0x6568c4` sets its flag. A
+record whose flags are all zero still has every learnset move at or below its level unlocked.
+Nothing on the receive path reads the array. Slot 150 is called at `0x8d1a18` inside `0x8d0610`,
+beside the pane names "/plus_on" and "/plus_off".
+
+The six species of console-made records, against the table:
+
+| record | level | flags against {unlock level <= level} | extra flags | unflagged |
+|---|---|---|---|---|
+| Noibat 714 | 44 | equal | | held 542 (unlock level 47) |
+| Swablu 333 | 44 | equal | | held 297 (unlock level 47) |
+| Xerneas 716 | 100 | equal | | held 583 (not in its learnset) |
+| Onix 95 | 72 | 350 missing (level 254) | | |
+| Roserade 407 | 63 | 866 missing (level 254) | held 605, in neither learnset | |
+| Glaceon 471 | 63 | equal | held 247, in neither learnset | |
+
+Glaceon also carries Eevee's level-up moves 36, 38, 129, 204 and 273, which are 254 entries in its
+own learnset, and Roserade carries 40, a 253 entry of Roselia (315).
 
 The ability is Scarlet's u16 at 0x14 with the slot bits at 0x16. GetAbility `0xe43bec`, reached
 only through the thunk `0x288d894` (vtable slot `0x3d1a918`, a wrapper holding the PokemonParam at
@@ -487,6 +548,15 @@ are the type getters `0x99c84` and `0xa4354`: species 493 with ability 121 and s
 ability 225 take their type from the held item (`0xe5d528`, `0xe5d5a0`). The creation routines
 `0xe3eb34` and `0xbb8f04` write it from `0xe5d368`. Every console-made record stores an ability
 below 299 (5, 30, 38, 81, 151, 187).
+
+The thunk is slot 42 of the vtable whose address point is `0x3d1a7c8` (GOT `0x3ec5b48`, constructor
+`0x2890cb8`, which allocates the PokemonParam at +0x48); slots 43, 45, 48 and 49 thunk to
+`0xe43f84`, IsEgg `0x18e4c` and the type getters `0xa4354` and `0x99c84`. From the 321 slots of the
+`0x3e28e58` wrapper, a call walk four levels deep reaches the ability getter `0xe4a3c0` only
+through slots 48 and 49, the type getters, and never reaches `0xe43bec`. The label prefix
+"TOKUSEI_" (`0x32ca5cf`) has no code reference; its one relocation is in the battle string table at
+`0x3e25b10`. The message archive name "tokusei" (`0x31e3d5f`) is referenced from `0x2923560`,
+`0x2d630b8`, `0x83cd08`, `0x83ccc8` and `0x849120`.
 
 ### What loading a received record checks
 
@@ -502,27 +572,111 @@ called (`0xb4e1c8`). The handler allocates a PokemonParam (`0x82713c`) and loads
    fast mode, so every load ends by rewriting the checksum and re-encrypting: a record received with
    a bad checksum is kept with a corrected checksum and the Bad Egg bit set.
 2. `0xe3f18c`: for a non-zero species, `0x2901a4(species, form)` looks the pair up in the personal
-   table (`0xe366b0`, a map keyed `species * 10000 + form`) and reads the entry's first FlatBuffers
-   field (vtable +6). Zero sets the Bad Egg bit (`0xe51698(acc, 1)`). A key missing from the map falls
-   back to the entry at map+0x80.
+   table (`0xe366b0`, a map keyed `species * 10000 + form`) and reads the byte of the entry's
+   FlatBuffers field index 1 (vtable +6, `0xe3bbfc`), 0 when the field is absent. Zero sets the Bad
+   Egg bit (`0xe51698(acc, 1)`). A key missing from the map falls back to the entry at map+0x80, the
+   species-0 entry, which has no field 1.
 3. `0xe41750(pp, 1)` writes the level from the experience into the party tail and recomputes max HP
    and the five stats from species, form, stat level, IVs, hyper training bits, EVs and the stat
    nature. In this step current HP stays 0 when it was 0 and otherwise rises by the max-HP gain.
 4. `0xe42584` counts the non-zero moves from slot 0 and clamps the PP of that many slots to the
    move's maximum with its PP ups (`0xe6646c`); an egg or a Bad Egg is skipped.
-5. `0xb2a4a4` calls an optional callable the session holds with the new PokemonParam, moves it into
-   session+0x128, and sets the partner state +0x134 to 3 (a pick) when bit 0 of the third member is
-   clear.
+5. `0xb2a4a4` calls the callable at session+0x88 with the new PokemonParam and ignores its result,
+   moves the PokemonParam into session+0x128, and sets the partner state +0x134 to 3 (a pick) when
+   bit 0 of the third member is clear. The callable is always `0xad2c68`, the name check below:
+   `0xca20a4` builds the session's configuration with it (`0xca2520`, `0xca25d8`), and nothing else
+   references it.
 
 No step reads the moves against a learnset, the ball, the met data, the trainer ids, the ability or
 the party tail's level; the tail and the stats are overwritten. On this path a composed record fails
 in two ways, a wrong checksum and a personal-table flag of zero, and both make a Bad Egg rather than
-a refusal.
+a refusal. A name the check rejects is rewritten, never refused.
+
+### The name check on a received Pokemon
+
+`0xad2c68` returns at once for an empty record (IsEmpty `0x13778`) and otherwise runs `0x89f250`,
+which opens an `nn::ngc::ProfanityFilter` into the global `0x612d3d0` with a 0x20000-byte work
+buffer (`0x912e10`), checks three names with `0x9138d4(str, len, language)` and finalizes the filter
+(`0x912d80`). `0x89f250` has one other caller, `0x89de34`.
+
+| name | language passed | on failure |
+|---|---|---|
+| nickname, 0x58 | the record's, 0xd5 | `0x8a0370`: the species name in that language (`0xe33ca0`) is written as the nickname and the nicknamed bit (0x8c bit 31) cleared |
+| original trainer's, 0xf8 | the record's, 0xd5 | replaced by `0x3d8a248[language]` and written back with `0xe579a0` |
+| handler's, 0xa8 | the handler's, 0xc3 | replaced by `0x3d8a248[language]` and written back with `0xe5a190` |
+
+A language of 12 or more indexes the table as 0. `0x8a0370` writes nothing for an egg or a Bad Egg
+(`0xe4c950`, `0xe485f0`) when the byte at `[0x3f0784()]+0x380` and accessor+0x1a are both 0. The
+replacement table `0x3d8a248` holds twelve UTF-16 strings:
+
+| index | string |
+|---|---|
+| 0, 1, 6 | `ゼット.` |
+| 2 | `Z` |
+| 3 | `Zed` |
+| 4, 7, 11 | `Zeta` |
+| 5 | `Zett` |
+| 8 | `제트.` |
+| 9, 10 | `Z.` |
+
+`0x9138d4` fails a name when:
+
+- its length is 0 or its first unit is 0;
+- it is 7 units or longer and any unit is in 0x3041..0x3090, 0x30a1..0x30fa, 0x4e00..0x9fcc or
+  0xac00..0xd7a3 (the lanes at `0x3308840` and `0x33087b8`);
+- the language is 1..5, 7 or 11 and any unit before the first 0 is in 0x4e00..0x9fa0 other than
+  0x4edd;
+- L, the value `0x444330` returns, is 0, 6 or above 11, whatever the name;
+- the filter's vfunc +0x28, called by `0x913ad0` as `(&result, pattern, &str, 1)` with pattern
+  `0x339f650[L - 1]` = 0x13, 0x12, 0x36, 0x92, 0x52, 0, 0x11a, 0x412, 0x8813, 0x8813, 0x11a,
+  leaves a non-zero result.
+
+A string that the length scan `0x913a80` (which skips 0x10-tagged runs) measures as 0 passes without
+the filter, and a filter call that returns an error passes too (`0x913b08`). A composed record with
+an empty handler name and handler language 0 has that name replaced by `ゼット.` on receipt, and an
+empty original trainer's name becomes the string of the record's language. The traded nickname and
+trainer name PKLDN and the names of the reference records pass.
+
+### The personal table
+
+`0xe380c0` loads `personal_array.bin` from the directory `0x7961b0` configures as "avalon/data"
+(`[[0x3f7f038]]`); `waza_array.bin`, `tokusei_array.bin` and `growTable.bin` load the same way. The
+RomFS keeps it in the pack archive:
+
+| | |
+|---|---|
+| `/arc/data.trpfd` | 9,877,520 bytes: 238,546 file hashes, 13,181 packs |
+| `/arc/data.trpfs` | 4,753,821,072 bytes, magic `ONEPACK` |
+| name hash | FNV-1a 64 with offset basis `0xcbf29ce484222645` (`0xe38438`) |
+| `avalon/data/personal_array.bin` | hash `0x68ab38e2cf1281ed`, file index 97074 |
+| its pack | 169, `arc/avalondatatokusei_array.bin.trpak`, at trpfs `+0x4bc1840`, 131,488 bytes, 4 files |
+| its entry | compression type 3, 110,132 bytes, 384,260 decompressed by `OodleLZ_Decompress` `0x1a9c9e0` |
+
+The file is a FlatBuffers vector of 1445 tables with 1445 distinct keys. Field 0 is a struct opening
+with the species and form halfwords, which the map builder `0xe36170` keys as `species * 10000 +
+form`, keeping the key-0 entry at map+0x80. Species keys run 0..1010 with every value present, and
+434 entries have a form above 0. Keys from 917 are the generation 9 internal index. Field 1 is 1 on
+594 (species, form) pairs over 364 species and absent on the other 851 entries.
+
+A received record whose (species at 0x08, form at 0x24) pair has field 1 clear or no entry loads as
+a Bad Egg. Converted to national numbers, the 594 pairs equal PKHeX's `personal_za` presence list
+species for species and form for form up to 1010. PKHeX also lists 1011..1016 (14 pairs), which have
+no entry in the 2.0.2 table and so arrive as Bad Eggs. The Mega Dimension DLC ships no personal
+table: its one PublicData NCA (101,376 bytes) holds a 692-byte RomFS. Every species traded so far
+(95, 333, 407, 471, 707, 714, 716) is present in form 0.
 
 `0x13778` (IsEmpty: false for a Bad Egg, else species == 0) and `0x18e4c` (IsEgg: mode 0 egg and not
 bad, 1 bad, 2 either) gate `0x962388`, which boxes a Pokemon (`0x961964`) only when it is neither
 empty nor egg-or-bad. The live trade path `0x95f8f4` boxes the partner's pick through `0x961964`
-after `0x962e70` finds a free slot, with no direct call to either test.
+(`0x960000`) after `0x962e70` finds a free slot (`0x95ffec`), with no direct call to either test.
+It reaches `0x962388` only through `0x95ffc0`, when the flow object's byte +0x35 is 0, and
+`0x961c9c`, which calls it on the object at +0x90; `0x962388`'s other callers are `0x261178` and
+`0x55a554`. In its state 0 it loads a stored 0x158-byte record with `0x270994` and tests it
+(`0x962538`, `0x962548`) only when the stack byte at sp+0x2e0 is clear. Inside `0x961964` the egg
+and Bad Egg tests appear only as a skip: `0x962be0` builds the `0x3e28e58` wrapper (0x68 bytes,
+constructor `0x962ccc`), which reaches the PP clamp `0xe42584`, and that returns early for an egg
+or a Bad Egg. For a Bad Egg pick the name check runs, and its nickname fix writes nothing while both its gate
+bytes are 0.
 
 ## A trade with a retail console
 
@@ -608,6 +762,58 @@ keeps +0xa6 across the network info refresh (`0x251f808`). So 1 means the proper
 set and the network accepts all stations; 2 means it is clear. A 2 on the wire comes only from the
 job, facade and host-migration paths or a received 0x50.
 
+The facade entries are shared: `0x25183bc` is index 19 of `NetFacade`, `LocalFacade`, `LanFacade`,
+`WanFacade` and `NplndFacade` (slots `0x3c8a290`, `0x3c8b7a0`, `0x3c8c5f8`, `0x3c8f818`,
+`0x3c90d68`), and starts asynchronous operation 0xa through `0x2507828`; index 17 (`0x251826c`)
+starts operation 9 through `0x250758c`. Neither has a direct caller. `0x2507828` passes 2 to
+`0x2515220`, which stores it at the `NetNetworkStateJob`'s byte +0xc0 for `0x2515434` to write into
+NetProtocol+0x340. Host migration calls `0x250758c` and `0x2507828` directly (`0x250b098`,
+`0x250b0f8`).
+
+`nn::pia::session::OpenCloseParticipationJob` makes the facade calls. Its start `0x255c118` stores
+the object it is given (the session's +0x30) at job+0xc8 and picks its step from its boolean
+argument: "OpenCloseParticipationJob::OpenParticipation", step `0x255c264`, calls index 17 of that
+object (`0x255c34c`); "OpenCloseParticipationJob::CloseParticipation", step `0x255c404`, calls index
+19 (`0x255c484`). The chain above it has one caller at each level:
+
+    0x255c118   <- 0x254703c in 0x2546fe8
+    0x2546fe8   <- 0x253e870 in 0x253e7bc, argument 0: close. 0x253e7bc returns 0x10408 while the
+                   session's state object (+0xd0) reads 1 or its byte +0x528 is 0
+    0x253e7bc   <- 0x253e780 in 0x253e744
+    0x253e744   <- 0x1a25454, game code
+
+`0x1a25454` is slot 13 of a game task (vtable address point `0x3c17cc0`, constructor `0x1a25390`,
+0x58 bytes from `0x1a22ca0`). It reads the Pia session singleton `[[0x3edc128]]`, returns when
+`0x253da70` finds the state object reading 1, and calls `0x253e744` only when the session's
+(u64, u16) at +0xe0/+0xe8 is non-zero and equal to the one at +0xf0/+0xf8. `0x9157d0` makes the same
+comparison and is the game's host test (`0x965660` stores it at +0x14, `0x965864` at +0xb8), so the
+game closes participation only while it is the session host.
+
+The task builder `0x1a228f0` takes a name hashed with FNV-1a 64 under the basis
+`0xcbf29ce484222645`. All four of its callers pass "CloseSession" (`0x32f8d4a`, length 12, hash
+`0x0dd344f64c81e84d`):
+
+| call | in | what that is |
+|---|---|---|
+| `0x19a7614` | `0x19a7590` | index 19 of the local session driver (address point `0x3c16dc8`, GOT `0x3edd130`), whose other slots name "InitializeLdn", "StartupSession", "CreateSession" (14), "BrowseSession" (15, 17), "JoinSession" (16), "LeaveSession", "CleanupSession", "TerminateLdn" (18) and "UpdateSessionSetting" (20) |
+| `0x1a2ab94` | `0x1a2ab10` | index 19 of a second driver (slot `0x3c17fa8`) with no Ldn names; its slot 13 names "JoinRandomSession", "WaitMember" and "CloseSession", slot 14 "RandomMatchingCancel" |
+| `0x19d7ac8` | the callable `0x19d7a70` (`adr` at `0x19d6de4`) | owner not identified |
+| `0x1a35768` | the callable `0x1a35710` (`adr` at `0x1a34a84`) | owner not identified |
+
+The network manager forwards to its driver's index 19 at `0x199dec4` (the driver at +0x38, slot
++0x98). Its one caller, `0x2a49c38` in the request constructor `0x2a49bc4`, is reached through
+`0x2a49630`, `0x2a48ea0` and the entry `0x2a49218`, which returns an empty request while the
+network system flag `[0x6133ec0]` is clear. `0x2a49218` has three callers: `0x915734` in
+`0x915630`, `0x2cb5254` in `0x2cb5238` (called at `0x911f48` right after the host test at
+`0x911f14`), both in the net battle flow, and `0xae0fac` in `0xae0eb8`, reached only when the host
+test `0x915770` passes; `0xae0afc` calls `0xae0eb8` when its owner's byte +0x121 is set, then sets
++0x122. The local driver's slot 13 (`0x19a1310`) interns, in address order, "RandomMatchingSeq",
+"RetryBody", "CloseSession" (`0x19a208c`, the same hash), "StoreSessionInfo" and
+"RandomMatchingCancel".
+
+`LdnBackgroundProcessJob` vfunc 37 (`0x2513ccc`, shared with the Lan and Nplnd jobs) calls index 23
+of the LDN protocol when its byte +0x9b is 1 and index 24 otherwise.
+
 The trade: the joiner's pick is its second `0101`. The host answers with its own, then `0102b90100`
 after the joiner's `0102` and `0104b90100` 1.5 s later; each of the joiner's four `0200b901XX`
 steps is answered on protocol 11 with `0201b901XX` under the host's prefix.
@@ -632,16 +838,30 @@ Check Mystery Gifts. It has no local-wireless path, so a gift cannot be served o
 
 ## Unresolved
 
-- Which game call puts a Z-A host on the path that writes `02` into its property update before its
-  first 0x50, the caller of `NetFacade` vfunc 19 (`0x2507828`) or a change of accept policy. Its
-  advertisement on the search screen reads accept policy ALL.
-- Whether the summary screen reads the ability: `0xe43bec` and `0xe4a3c0` have no caller known to
-  belong to it, and the screen shows none.
-- What the per-move flag array records. On console-made records it holds current and earlier
-  level-up moves; a relearn list is one reading.
-- Whether PKHeX's `personal_za` presence flag (entry +0x1c, 370 national species present, every
-  species traded so far among them) is the field `0x2901a4` reads, and so which species and forms a
-  receiving game turns into Bad Eggs.
-- What the optional callable `0xb2a4a4` runs on every received `0101` does.
-- What a console does on screen with a Bad Egg pick; the live boxing path `0x95f8f4` makes no direct
-  egg or Bad Egg test, and its virtual calls were not followed.
+- Whether the Link Trade flow runs the "CloseSession" task, and so whether CloseParticipation is
+  what writes `02` into a Z-A host's first 0x50. The local driver's random-matching sequence names a
+  CloseSession step between "RetryBody" and "StoreSessionInfo"; the call it makes into the task
+  system was not traced, and neither were the owners of `0x19d7a70` and `0x1a35710`. Breakpoints on
+  an emulated host at `0x1a228f0` (caller in x30), `0x255c118` (w1), `0x2500a9c` (w1) and
+  `0x2515434` separate CloseParticipation from the create and inquire steps; a `0x2500a9c` hit with
+  w1 = 2 before any `0x255c118` hit points at the accept policy (NetworkInfo +0x62) at that moment.
+- Whether any other virtual call reaches facade index 19: `0x24e0000..0x2600000` holds 13 calls
+  through a vtable offset of 0x98, and which of them can hold a facade is not settled.
+- Whether CloseParticipation also sets the LDN accept policy to 1 through `LdnBackgroundProcessJob`
+  byte +0x9b, which would refuse a third station.
+- Whether any screen uses the `0x3d1a7c8` wrapper, the one that carries GetAbility `0xe43bec`, and
+  which screens load the "tokusei" archive. Breakpoints on `0xe43bec`, `0xe4a3c0` and `0x288d894`
+  while paging through a summary and then in a battle separate the two.
+- Which moves outside the level rule a console flags: held moves 605 (Roserade) and 247 (Glaceon)
+  are flagged and 583 (Xerneas) is not. Whether slot 150 drives the move screen's "/plus_on" and
+  "/plus_off" panes; the call sits beside those names and was not traced through its object.
+- What the receiving save keeps as the handler's name after the trade makes its own player the
+  current handler, for a record whose handler name the name check replaced.
+- What L (`0x444330`, through `0x410a20`) is. It selects the filter pattern, and a value of 0, 6 or
+  above 11 fails every name.
+- What writes own state 6, the state `0x964568` requires.
+- Whether the object at session+0x18 that `0x25504c8` writes is the session protocol the kick scan
+  reads (the offset +0x1b0 matches), and what the setting's +0x290 (1000) means.
+- What a console does on screen with a Bad Egg pick. `0x961964` has no refusing test; what the trade
+  screen draws goes through virtual calls not followed. A record with a checksum off by one, offered
+  to an emulated host with breakpoints on `0xe51698` (x1 = 1), `0x961964` and `0x962388`, shows it.

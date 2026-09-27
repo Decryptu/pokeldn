@@ -43,22 +43,26 @@ Proven on retail hardware, end to end:
 
 ## Unresolved
 
-- Whether a console acknowledges a reliable Session Protocol (0x94) message on its per-station
-  window before the handler drops it. That an LDN session's joint-session job stays null rests on
-  the two writers of session+0x70 found (`0x157c618`, `0x157cb54`); others were not enumerated
-  ([Joining and the Pia layer](bdsp_session.md#joining-the-mesh)).
-- Whether anything other than a received `NetCharacterStateData` writes a remote character's
-  state, and the character's state before its first one.
-- The console-initiated approach (a character at `{4, 1}`, the player pressing A facing it, the
-  console's 0x63 answered with `64 0003 00 01 04`) has not been run against a retail console.
-- Which PlayerInfo byte becomes the greeting name's language. If it is the byte at offset 122,
-  `bin/bdsp_connect.py`'s default of 1 reads as Japanese, with a name limit of 6 and the Japanese
-  font. Which station's cassette version `UnionWork.nowTargetCassetVersion` holds, and so which
-  substitute name replaces a refused one, is unread. The replacement has not been measured on a
-  console.
-- Whether a `NetDataSelectData` (0x08) arriving with no battle recruitment model faults the
-  console; the receiver does not test the model for null.
-- Whether a console that is not the Grand Underground session host adopts a `NetDigTableData`
-  (0x61) sent by pokeldn before its own table is ready.
-- The ball-capsule 2D grid's extent beyond columns and rows -3..3 on the front; it comes from the
-  UI layout ([the protocol page](bdsp_protocol.md)).
+- Whether a console acknowledges a reliable Session Protocol (0x94) message before the handler
+  drops it. Its windows run the same receive and update functions as the game stream's, which a
+  console acknowledges ([Joining and the Pia layer](bdsp_session.md#joining-the-mesh)); the ack
+  emission itself is untraced and no 0x94 has been sent.
+- Whether `07 0002 12 00`, sent after the console's greeting when the console's player approached
+  the client's character, opens the trade. The greeting and its park on "one second!" have run on a
+  retail console; the recruiter's yes has not been sent
+  ([the protocol page](bdsp_protocol.md#the-console-approaching)).
+- The texts of `DP_CHARACTERS_247` and `DP_CHARACTERS_206`, and a substituted greeting name on a
+  console's screen. The path from a console's `IlcaNetSessionSetting.nameStringLanguage` into the
+  PlayerInfo byte it transmits is untraced.
+- Whether a 0x08 to a console that has never recruited a battle faults it on hardware. The code
+  writes through a null model, yet the runs in
+  [Being talked to](bdsp_protocol.md#being-talked-to) that sent `NetDataSelectData` did not crash:
+  either that player had recruited a battle earlier in the visit, or the 0x08 arrived under a stale
+  sequence id and was dropped. When a `UnionStateController` is recreated is unread.
+- Whether a retail console that is not the Grand Underground session host adopts a 0x61 from
+  pokeldn. Every Underground session measured had the console as host. Whether `UgNetworkManager`
+  is recreated per Underground visit is unread.
+- The 2D grid positions assume the grid's world scale is 1: `Initialize` divides world-space
+  position differences by a local-space step, and the canvas scale was not read.
+- Whether a console that backed out of a round (`NetDataReturnSelectData{1}`) waits for the
+  partner's `{0}` before its player can pick again.

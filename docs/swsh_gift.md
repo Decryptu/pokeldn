@@ -804,8 +804,14 @@ down one, appends `{card id, +0x13}` at `+0x1724`, and counts this id's entries 
 when the count reaches `+0x12` it zeroes this id's entries among the first 49, so the entry just
 appended survives. A card is therefore imported every time when `+0x13` is zero, when `+0x12` is zero,
 or when bit 0 of `+0x10` is set; otherwise the same card id with the same `+0x13` is refused while
-its entry is among the fifty. Bit 2 of `+0x10` calls `0x01449560`, a second per-id table at album
-`+0x15c8` with a 0x10-byte stride.
+its entry is among the fifty.
+
+Bit 2 of `+0x10` makes the keep path call `0x01449560(album, record)` (`0x00ff1548`, `0x00ff1558`),
+which keeps the last receipt date of up to ten card ids: ten 16-byte entries at album `+0x15c0`, a
+u64 date at `+0` and the u16 card id at `+8`. An entry holding the record's id takes the record's
+date, its first eight bytes (`0x01449650`); otherwise the first entry whose date is older than the
+record's (`0x016cc1f0`, an unsigned compare) takes the id and the date (`0x01449804`, `0x0144980c`).
+There is no free-entry search: an empty entry is taken because its zero date is older.
 
 An accepted record is copied into a `0x338`-byte structure whose leading `0x68` bytes the importer
 zeroes, the record following at `+0x68` (`0x00ff2380`), and that structure and the record are handed
@@ -930,12 +936,21 @@ two disagree in those cards, which is what separates them as independent fields.
 A record leaving `+0x244` at zero has its level rolled at claim time, and the same record claimed
 twice gave level 20 and then level 35. The builder `0x010b6110` draws `r = random & 0x7f` until
 `r <= 99` and takes level `r + 1`, uniform over 1..100 (`0x010b6218`); an egg (`+0x245` = 1) gets
-level 1 whatever `+0x244` holds (`0x010b6400`). Of the six IV bytes at `+0x26C`, the first one in
-`0xFC..0xFE` stores `byte - 0xFB` (1 to 3) at the builder's `[sp+0x110]` and the per-IV path is
-skipped (`0x010b6300`); with none, each byte of 32 or more is passed on as `0xFFFF` and each byte
-below 32 is kept. Such a Pokemon is reported as met at level 0, which is the
-empty `+0x249` showing through. The experience always matches the species' own growth group: a
-cube-curve species arrived with 8000 at level 20, and a slower-curve species with 96 at level 4.
+level 1 whatever `+0x244` holds (`0x010b6400`). Such a Pokemon is reported as met at level 0, which
+is the empty `+0x249` showing through. The experience always matches the species' own growth group:
+a cube-curve species arrived with 8000 at level 20, and a slower-curve species with 96 at level 4.
+
+The six IV bytes at `+0x26C` are tested in the order HP, Atk, Def, SpA, SpD, Spe; the first in
+`0xFC..0xFE` stores a flawless count of `byte - 0xFB` (1 to 3) at the builder's `[sp+0x110]` and
+sets all six spec IVs to `0xFFFF`, discarding the other bytes (`0x010b6300..0x010b63c4`). With none,
+each byte of 32 or more is passed on as `0xFFFF` and each byte below 32 is kept. The spec reaches
+`0x007667a0` through `0x007662a0`, `0x00777f40` and `0x00766660`, which caps the level at 100
+(`0x00766a14`), and for a count of 1 to 5 sets all six IVs to `0xFFFF` and writes 31 to that many
+distinct random positions (`0x00766a50..0x00766b04`); a count of 6 or more (out of a card's reach)
+gives six `0xFFFF` and no 31 (`0x00766a2c..0x00766a44`). Every IV still `0xFFFF` is then rolled
+0..31 (`0x00766de8`, `0x007660d0(0x20)`, the game's random below `n`). A card with `0xFC`, `0xFD` or
+`0xFE` in any IV byte therefore gives exactly 1, 2 or 3 IVs of 31 at random positions and the others
+random.
 
 The trainer id is the word at `+0x20` (trainer id, then secret id); zero gives the player's own.
 
@@ -1020,6 +1035,17 @@ counters in the status object `[[0x2610798]+0x208]`:
     kind 5  0x010160b0   [status+0x64]: an amount above 9,999,999 sets 9,999,999;
                          otherwise old + amount, clamped to 9,999,999              0x01438f2c
 
+`status+0x64` is the player's money: the script native `AddPocketMoney_` (`0x014ad5e0`) calls the
+same `0x01438f20` on the same object (`0x014ad624`), and `GetPocketMoney_` (`0x014ad700`) reads
+`+0x64` through `0x01438ef0`. A kind-5 card is pocket money.
+
+The kind-1 redemption `0x010159d0` builds the Pokemon (`0x010b6110`; a null result returns 0) and
+offers it to the party (`0x01015b78`, virtual `+0x28`). When the party refuses it asks the box store
+`[[0x2610798]+0x220]` for a free slot (`0x01408000`, `0x01015bd0`) and places the Pokemon only when
+one exists (`0x01406b00`, `0x01015c08`). It returns `{1, 0}` for a party placement, `{1, 1}` for a
+box, and `{0, 1}` when the Pokemon was not placed (`0x01015cd0`, `0x01015cf4`). Its caller stores that
+result at `+0x78` of the object `0x00feb610` returns (`0x01014fe4`) and does not test it.
+
 `Bag::AddItem` (`0x01420790`, arguments bag, id, count, new-flag)
 takes the pocket from item field 14 (`0x00788c50(id, 14)`, record byte `+0x11 & 0xF`; 0 Medicine,
 1 Balls, 2 Battle, 3 Berries, 4 Items, 5 TMs, 6 Treasures, 7 Ingredients, 8 Key, with 60, 30, 20,
@@ -1090,8 +1116,8 @@ body between two constants); `--key 112d5141 --out FILE` writes this block out, 
 
     0x0000  50 slots of 0x68 bytes, the newest card in slot 0: an insert moves every slot down one
             (`0x01449880` indexes them, `cmp w1, #0x31`; a slot is in use when its +0x0C is non-zero)
-    0x1450  0x378 bytes, zero in every save read; the second per-id table starts at 0x1568
-            (album +0x15c8) and the once-per-card table is 0x1600..0x16C8 (album +0x1660)
+    0x1450  0x378 bytes, zero in every save read; the last-receipt table is 0x1560..0x15FF
+            (album +0x15c0) and the once-per-card table is 0x1600..0x16C8 (album +0x1660)
 
 A slot is the `0x68`-byte header the importer fills from the record, kept as it stands when the card
 is claimed:

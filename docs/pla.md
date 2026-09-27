@@ -320,7 +320,8 @@ ack of `2 + 21 * count` bytes. The ack's leading byte is a type whose only read 
 mask. The consumer `0x742740` reads the entry at the receiver's own station index and requires that
 entry's station byte to equal the sender's index, so a host acking a joiner at index 1 sends at least
 two entries and sets every station byte to 0, the host's index. The acknowledgement id is one past the
-highest sequence received. `0x74f0ec` applies the mask.
+last sequence received in order, and the mask names the messages held beyond it
+([Acknowledgement](#acknowledgement)).
 
 Answering RTT and acking the reliable stream stops the console's retransmissions but does not hold the
 session: the game leaves about ten seconds after the join unless the host itself sends reliable data.
@@ -412,6 +413,9 @@ the protocol and the port and inherits the message flags. Only the packet pads, 
 sixteen and with 0xFF, where a zero byte would be read as a message header. A parser that aligns
 walks past the second message and reads the packet as carrying one.
 
+`bin/pla_host.py` sends that bundle once per join. Lost on the air, it leaves the Matching child
+waiting out the 10.2 s timeout, and the console shows Error 7 before the trade screen.
+
 The protocols split two ways in how a packet is addressed. The session, clone clock and reliable
 protocols carry the peer's variable id in the packet header with no footer. RTT and Stream Broadcast
 Reliable carry the mesh destination 0x0001 in the header and name the recipient's variable id in the
@@ -427,8 +431,8 @@ per-player is not yet separable.
 Once the data exchange completes, the trade flow leaves the step that waits on it and reaches the
 step that ticks the game's own network object, `0x13d5cac`, which tests `[net+0xb8] > 1`. The object
 advances on what the game reads on protocol 0x7c rather than on anything the transport does: state 0
-to 1 through `0x26d9170`, and 1 to 2 on `[net+0x78]`, which the receive handler `0x26da310` sets in
-its case 0.
+to 1 through `0x26d9170`, and 1 to 2 on `[net+0x78]`, which the receive handler `0x26da310` sets on
+selector 1 (jump table index 1, `0x26da3a4`).
 
 A message on this protocol is an eight-byte handler key and a body. The dispatcher `0x2ca4a88`
 compares the key against each registered channel's own eight bytes at `+0x6c` and hands the body to
@@ -453,6 +457,40 @@ message-end and initialized flags:
 Each station answers its peer's channel message with a one-entry acknowledgement and with the same
 message back on the same port.
 
+### Acknowledgement
+
+`ReliableSlidingWindow` (vtable `0xc5b4d98`) builds its acknowledgement in vf12 `0x74ee1c` and
+applies a received one in vf13 `0x74efbc`. The builder writes the receive window's `+0x50` as the
+acknowledgement id and ORs one bit per entry held past it into a sixteen-byte mask
+(`0x74ef18..0x74efb8`), leaving the mask empty while `[window+0x54]` is set.
+
+The receiver parses the AckMessage (`0x742da0`), drops it unless the payload is `2 + 21 * count`
+bytes and the entry's stream byte equals the window's `+0x36`, and calls `0x74f0ec(window, station,
+ack_id, mask)` at `0x74f09c`. Each outstanding send entry is 0x5d0 bytes, its sequence at `+0x24`
+and a per-station pending bitmap at `+0x2c`:
+
+| entry sequence | the acknowledging station's pending bit |
+|---|---|
+| below `ack_id` | cleared (`0x74f274`) |
+| equal to `ack_id` | kept |
+| above `ack_id` | cleared when mask bit `seq - ack_id - 1` is set, for offsets up to 0x7f (`0x74f280..0x74f2a8`) |
+
+An `ack_id` of 0 applies nothing (`0x74f0fc`). One below the window base sets `[window+0x4b8]` and
+returns (`0x74f17c`, `0x74f2d0`). An id beyond `base + count`, count being the entries in the window
+(`[window+0x32]`), is reported through `[vt+0x30]` with `0x20000000` and ignored (`0x74f18c`); `base + count` itself,
+one past the last sent, releases everything.
+
+An acknowledgement id is cumulative. Acknowledging n+2 releases n and n+1 together whether or not n
+arrived, so a receiver that acknowledges each message as its own sequence plus one loses message n
+for good when n is lost on the air and n+1 arrives: the sender never resends it. The console's own
+rule is the id one past the contiguous run with the held entries in the mask, which
+`pokeldn.ldn.reliable5.contiguous_through` computes. `bin/pla_host.py` acknowledges each 0x7c
+message as its sequence plus one with an empty mask, and sends each of its own 0x7c messages once
+without reading the console's acknowledgements of them.
+
+A retransmission carries its original sequence id and a new nonce, so the sequence id is what tells
+a copy from a new message with the same body.
+
 ## The channel table on port 1
 
 Port 1 of protocol 0x7c carries no game message. It carries the channel table: each station tells
@@ -472,16 +510,48 @@ key at `+0x00` and a station bitmask at `+0x08`:
 
 The sender walks the own table once per station bit. An existing channel whose bit for that station
 is clear gets the bit set and is announced open; a destroyed channel whose bit is still set gets the
-bit cleared and is announced closed. Nothing is sent when nothing changed. The receiver takes the
-sender's station index from the packet, requires it below 2, and on an open sets that station's bit
-in the peer table, adding the entry if the key is new; on a close it clears the bit and erases the
-entry once no bits remain.
+bit cleared and is announced closed. Nothing is sent when nothing changed. The sender runs first in
+each poll (`0x2ca8310`) and only while the dirty flag `[obj+0x90]` is set (`0x2ca83fc`). A channel's
+destructor calls the interface's slot 1 `0x2caa0d4` with its own key (`0x2ca3168..0x2ca3178`),
+which clears the own-table entry's byte `+0x10` and sets the dirty flag; the sender then finds the
+entry gone with the station's bit still set (`0x2ca86c4`) and announces the close.
+
+The receiver is `0x2ca9800`, called only from the poll at `0x2ca83a8`, once per pending port-1
+message (`0x2ca8398..0x2ca83d4`). It resolves the sender's station index through the session's
+`[vt+0x38]` (`0x2ca9854`), drops the message on 0xfd, and aborts on an index of 2 or more
+(`0x2ca9df0`). Per announced key:
+
+| peer table | open | close |
+|---|---|---|
+| holds the key | the station's bit ORed into the mask (`0x2ca9a6c`); a repeated open changes nothing | the bit ANDed out (`0x2ca9ae4`); with neither station bit left, the entry erased by moving the tail down and `[obj+0xe0] -= 0x18` (`0x2ca9b14`) |
+| lacks the key | an entry appended with the station's bit | an entry appended with a zero mask |
+
+No arm calls back into the game or writes outside the peer table. A close from a station that never
+opened the key leaves the other station's bit standing. The collector `0x2ca8f58`, run every poll at
+`0x2ca8318`, erases zero-mask entries (`0x2ca9060..0x2ca90c8`) and empties the table when no
+station bit is set in `[obj+0x98]`. The station-leaving path `0x2ca90e0` (from `0x2ca4a48`) clears
+the station's bit in `[obj+0x98]` and in every mask of both tables. A peer entry is cleared by these
+and by a received close alone.
 
 Creating a channel (`0x2bcb8c8` -> `0x2ca5264`) gives it a reference to the table object's
-interface at `+0x68`. Every channel sender asks that interface (`0x2ca92e0`, then `0x2ca9360`)
-whether the peer table holds the channel's key with the destination station's bit set, and sends
-only on yes; the selector-5 sender does so at `0x26d980c` through the channel's `+0xb8`. That is
-the wait the trade screen shows while a host is silent on port 1.
+interface at `+0x68` (vtable `0x41998c8`, offset-to-top `-0x68`). The queries on the peer table:
+
+| function | slot | answers |
+|---|---|---|
+| `0x2ca9218` | interface 2 | the own table holds key K |
+| `0x2ca92e0` | interface 3 | slot 10's test, the station given by handle and resolved through `[vt+0x38]` |
+| `0x2ca93d4` | interface 4 | slot 10's test, by station index |
+| `0x2ca958c` | interface 5 | `0x2ca9448` on the table object |
+| `0x2ca9360` | table vtable `0x41997d8` slot 10 | the peer table holds K with station bit i |
+| `0x2ca9448` | table slot 11 | the stations that announced K are every station but this one |
+
+Every channel sender calls interface slot 3 through the channel's `+0xb8` with the channel's key at
+`+0x6c`, and sends only on yes. The phase senders do so through `0x2ca34e0` (`0x26d7e00` in
+`0x26d7d8c`, `0x26d7ef8` in `0x26d7e84`, its only callers); the trade-box senders inline it at
+`0x26d9200`, `0x26d92f0`, `0x26d950c`, `0x26d9688`, `0x26d980c` (selector 5) and `0x26d9a1c`. So
+the peer table gates port-0 sends as well as the phase channel's, each on its own key. Slots 4 and 5
+have no call site through a channel's `+0xb8`. That wait is the one the trade screen shows while a
+host is silent on port 1.
 
 A message is the game's tagged serialisation. An unsigned integer below 0x80 is its own byte; above
 it a tag names the width, little-endian: 0x80 and one byte, 0x81 and two, 0x82 and four, 0x83 and
@@ -507,8 +577,13 @@ destroys:
 
 `pokeldn.pla.channel_table` builds and parses these. The host answers each key a console announces
 open with its own announcement of that key open, once per key, and reads a close without
-answering. A close announced back would clear the console's bit for the host's phase key; the
-trade of 2026-09-18 completed with the close unanswered, so that is what the host keeps doing.
+answering; the trade of 2026-09-18 completed with the close unanswered.
+
+A close announced back erases the console's peer entry for the phase key. Within a trade that
+entry's only readers are the two phase senders, and the console closes the key only after the phase
+channel that holds them is destroyed; nothing polls the peer table for a change, so the close draws
+no dialog, cancel or error. Left unanswered, the entry for the host's open survives into the next
+trade of the session ([A second trade in one session](#a-second-trade-in-one-session)).
 
 ## The trade box
 
@@ -517,17 +592,39 @@ the eight-zero-byte handler key. The receive handler is `0x26da310`. It reads a 
 counter, switches on the selector through the byte table at `0x397e388`, and drops anything above 7.
 
     1   the station is ready       0x26da3a4   sets [net+0x78], which is what step 0x20 waits on
-    2   the Pokemon it is SHOWING  0x26da3f0   stored at [net+0x98] by 0x26da1d8, nothing else
-    3                              0x26da430   -> 0x26d93c8
-    4   the Pokemon it is OFFERING 0x26da3b0   stored at [net+0xb0] by 0x26da23c, phase 0xbc := 3
+    2   the Pokemon it is showing  0x26da3f0   stored at [net+0x98] by 0x26da1d8, nothing else
+    3   showing no record          0x26da430   -> 0x26d93c8
+    4   the Pokemon it is offering 0x26da3b0   stored at [net+0xb0] by 0x26da23c, phase 0xbc := 3
     5   the trade is confirmed     0x26da43c   behind a counter check -> 0x26da2c0
-    6   the offer is made          0x26da458   phase 0xbc := 2, bumps the counter at [net+0xf8]
+    6   the offer is withdrawn     0x26da458   state 4|5 := 3, phase 0xbc := 2, counters moved
     7                              0x26da49c   behind the same counter check, phase 0xbc := 5
 
 Before the switch the handler compares its fourth argument against `[net+0x88]` and aborts on a
 mismatch, so a message from a station the game is not in a trade with never reaches a case.
 
-**SELECTORS 2 AND 4 ARE THE SAME MESSAGE AND DIFFERENT EVENTS.** A station entering the box sends 2
+The port-0 open body `01 00` is selector 1 with counter 0, the ready. The reset between two trades
+leaves `[net+0x78]` set, so the ready is owed once per session.
+
+`0x26d9458` sends selector 3 with no record when its record argument is null or `0x2b5d3a4` returns
+true (`[pk+0x98]` through `0x2b6849c` compared with 0, `0x26d94a4`), and selector 2 with the
+0x178-byte record otherwise (`0x26d9554..0x26d9570`). Receiving 3, `0x26d93c8` replaces the
+partner-shown slot `[net+0x98]` with a freshly allocated 0xb8-byte object from `0x151dc70`. The tick
+`0x26d9094` never reads `[net+0x98]`, so a 3 changes what the screen shows and nothing in the state
+machine.
+
+Selector 6 takes back an offer or a confirmation. Its sender `0x26d9898` refuses in states 2 and 5
+(`0x26d98ac`: `cmp w8,#2; ccmp w8,#5,#4,ne`); the states a station reaches with something offered
+are 3, after its own selector 4 (`0x26d95d4` requires 2, `0x26d9718` writes 3), and 4, after its own
+selector 5 (`0x26d9788` requires 3, `0x26d9838` writes 4). It writes 6 with the counter `[net+0xf8] +
+1` (`0x26d9918`), and after a successful send clears `[net+0xc0]`, sets the state to 2
+(`0x26d9a54`), raises `[net+0xf8]` and `[net+0xfa]` by one and puts a phase of 4 or 5 back to 3. The
+receive arm `0x26da458` stores the counter to `[net+0xfa]`, raises `[net+0xf8]`, clears `[net+0xc0]`,
+sets the phase to 2, puts a state of 4 or 5 back to 3 and sends nothing. A console receiving its
+partner's 6 therefore un-confirms itself, and answers a 6 with nothing. A 6 sent back as an echo is a
+withdrawal of the echoing station's own side: it puts a console that has already re-offered and
+confirmed back from state 4 to 3.
+
+Selectors 2 and 4 are the same message and different events. A station entering the box sends 2
 on its own; it sends 4 when the player offers the Pokemon up. The two land in different slots, and
 only 4 moves the phase. An answer therefore has to carry the selector it is answering: a host that
 answers an offer with a showing fills the wrong slot, and the console sits on the trade screen with
@@ -590,8 +687,8 @@ and never this leaves the trade screen waiting with the phase already at 5 and n
 wire.
 
 The counter is the halfword the handler reads before the switch, and selectors 5 and 7 check it
-against `[net+0xfa]` and drop a message carrying less. `0x26d9770` sends `[net+0xf8]` as it stands,
-where the selector-6 sender at `0x26d98ac` sends it plus one.
+against `[net+0xfa]` and drop a message carrying less (`0x26da440`, `0x26da4a0`). `0x26d9770` sends
+`[net+0xf8]` as it stands, where the selector-6 sender `0x26d9898` sends it plus one.
 
 ## The trade object's own state machine
 
@@ -631,6 +728,18 @@ and `0x26d7e5c(obj, n)` is not a wait on the peer. It reads `[obj+0x70]`, which 
 [obj+0x88])`, sends through `[obj+0x70]`'s vtable at +0x40 addressed to `[obj+0x88]`, and then
 records the phase at `+0x92` and sets `+0x90`.
 
+A gate that fails is retried on the next update. Every phase send in `0x26dc71c` is `bl 0x26d7d8c;
+tbz w0,#0,0x26dc908`, and `0x26dc908` returns with the job's step `[job+0x10]` unchanged; the state-2
+arm likewise returns without moving when the third pair does not read 3. The update keeps one
+countdown, `[job+0x20]` (`0x26dc85c`), a frame delay between its two phase-0xb sends. The job's only
+other exit is the cancel request `0x26dc640`, which sets `[job+0x14]` and `[job+0x18]` to 1 and is
+reached only through `0x26d9e90`, from the scene at `0x1109ef4` and `0x110b7ac`; the second starts a
+stopwatch at `[scene+0x278]` (`0x110b794..0x110b79c`) just before cancelling. So a phase answer lost
+on the air holds the job where it is until the player cancels, unless the answering station resends
+it: the console, acknowledged, has nothing outstanding to resend. The same holds for each of the
+eleven answers a host owes in a trade: the port-0 open, two channel opens, the showing, the offer,
+selectors 5 and 7, and four phases. A lost `02 03` leaves a started job at state 2.
+
 ## The phase protocol, and the message only a host sends
 
 The job announces phases on a handler key of its own, `01 00 00 00 00 00 00 00`, which the game
@@ -649,7 +758,7 @@ is under 0x80.
 The job's state 2 arm asks `0x26d7e5c(obj, 3)`, which is the third pair holding 3, so a station
 leaves state 2 only once its peer has announced selector 2 with that phase.
 
-**SELECTOR 2 IS THE HOST'S TO SEND.** `0x26d7e84` is reached only behind `[obj+0x78]`, written once
+Selector 2 is the host's to send. `0x26d7e84` is reached only behind `[obj+0x78]`, written once
 at job creation by `0x26d7aa0` from a predicate that ignores its argument and compares the station
 against the session's host station. On a joiner it is zero and is never revisited, so a joiner never
 sends selector 2 and its own job cannot leave state 2 by itself. The host owes the message. A host
@@ -690,6 +799,43 @@ now, which the host answers with its own showing, and the port-1 announcement th
 is closed, `b9 01 01 b9 02 b9 02 01 00 00`. The host does not answer that one, and the trade
 completes regardless: a retail console sent both after the trade of 2026-09-18 with the record
 already in its save and the player back on the field.
+
+## A second trade in one session
+
+After a completed trade the scene calls `0x26d8fd0(net)` at `0x110aa04` and sets its own step
+`[scene+0xb4]` to 0xc. `0x26d8fd0` runs only when `[net+0xb8]` is 6, the state the job's success
+callback `0x26db864` writes, and resets the trade object:
+
+    0x26d8fec  [net+0xa0] and [net+0xa2] cleared        the job inputs
+    0x26d8ff4  [net+0xa8] and [net+0xb0] released       the shown and offered records
+    0x26d903c  one store of 0x200000002 to [net+0xb8]   state 2 and phase 2
+    0x26d9044  [net+0xc0] cleared                       the stopwatch flag
+    0x26d9050  [net+0xd8] released through 0x26dade4    the job
+    0x26d9064  a 32-bit zero to [net+0xf8]              both counters, [net+0xf8] and [net+0xfa]
+
+`[net+0x78]`, the peer's ready, and `[net+0x88]`, the partner station, are left alone, so the next
+round starts at state 2 with no new selector 1.
+
+The counter `[net+0xf8]` is zeroed only there and at `0x26d8c04`, and raised only by a selector 6
+sent (`0x26d9a60`) or received (`0x26da468`). Every sender serialises it through `0x26d81fc`, one
+byte while it is under 0x80: `0x26d91c8` for selector 1, `0x26d92b8` for 7, `0x26d94d4` for 2 and 3,
+`0x26d9640` for 4, `0x26d97d4` for 5. A second trade with no withdrawal in it confirms with `05 00`
+and sends `07 00`, the same bytes as the first.
+
+The next job is built by `0x26d9a90` from scene step 7 (`0x110ad34`, when `0x26d9354` returns 4) and
+creates its phase channel with key 1 again (`bl 0x26d7aa0` at `0x26dc398`). Its phases are
+immediates in the job update `0x26dc71c`: 3 at `0x26dc978`, 6 at `0x26dc7ec`, 0xb at `0x26dc848` and
+`0x26dc874`, 0xe at `0x26dc8ac`. The chain `01 03`, `01 06`, `01 0b`, `01 0e` and the port-1 phase
+key open repeat byte for byte. Only the sender's sequence ids differ from the first trade's, so a
+peer that answers each distinct message body once answers none of the second trade's confirmation,
+selector 7 or phases.
+
+The console's peer entry for the host's phase key survives the first trade unless the host closes
+it: the console's close touches only its own table, and a peer entry is cleared only by a received
+close, a station leaving or the collector (The channel table on port 1). With the host's open
+standing, the second job's selector-1 sender finds the key open at once. A host that answered the
+console's close with its own has erased that entry, and the second job's `01 03` waits in the gate,
+retried every update, until the host announces the key open again.
 
 ## What a trade rewrites
 
@@ -764,14 +910,17 @@ triple. The packed individual values at 0x94 carry the egg and nickname bits cle
 with six values in range. Every record carries version 47 and language 2, the sanity halfword 0 and
 the affixed ribbon 0xff.
 
-ANSWERING EVERY MESSAGE. A console in the box screen sends a showing on every cursor move, and a
-player who cancels an offer sends the mirrored selector with its round byte advanced and then offers
-again. A host that answers one message per selector per station leaves all of those unanswered: a
-run where twelve Pokemon were shown before the offer had one showing answered, eleven cursor moves
-stale by the time the offer arrived, and the second offer, `04 01`, drew nothing at all. The three
-trades that completed each had a single showing before the offer, which is why it took a long box
-session to surface. The host answers each distinct (selector, round, record) once, which answers
-every new message and drops a retransmission.
+Answering every message. A console in the box screen sends a showing on every cursor move, and a
+player who cancels an offer sends selector 6 with the counter one higher and then offers again. A
+host that answers one message per selector per station leaves all of those unanswered: a run where
+twelve Pokemon were shown before the offer had one showing answered, eleven cursor moves stale by
+the time the offer arrived, and the second offer, `04 01`, drew nothing at all. The three trades
+that completed each had a single showing before the offer. `bin/pla_host.py` answers each distinct
+(selector, counter, record) once per join for selectors 2 and 4, each distinct body for 3, 5, 6 and
+7, and each phase and channel key once. That drops a retransmission, and it drops a second trade in
+the same session as well, whose `05 00`, `07 00` and phases repeat the first trade's bytes
+([A second trade in one session](#a-second-trade-in-one-session)); the console's own
+`(port, sequence id)` separates the two cases.
 
 A record built from zeros with the field map here reproduces a console's own record byte for byte
 apart from the fields chosen: against the console's own level-68 Gengar, the only differences were
@@ -990,6 +1139,14 @@ The eight-digit code is entered before the search begins, so the session is gate
 the way Let's Go's is. Both consoles enter the same one, and the search screen is where the
 advertisement is.
 
+The table of minutes at `0x397e1b8`, `30 30 60 60 120 120 180 180 240 240 360 360 480 480 960 960
+1440 1440 2160 2160`, is the lost satchel's, not the trade restriction's. `0x2686a0c` returns
+`max(0, table[count % 20] - elapsed)` in minutes, elapsed from the network clock (`0x265d180` ->
+`nn::time::StandardNetworkSystemClock::GetCurrentTime`), and its only callers, `0x266c740` and
+`0x266d580`, sit with the strings of the lost-bag DataStore (`CreateLBData`, `ScanOtherData`,
+`ReturnLB`, `0x266d8dc..0x266dec8`). `0x129751c`, another caller of the network-clock wrapper,
+compares elapsed seconds against 21600, six hours.
+
 ## The advertisement
 
 A console waiting on the search screen creates the network and advertises it. Scanned values:
@@ -1129,6 +1286,25 @@ change neither the words nor the delay.
 
 ## Unresolved
 
-- What a console does with a close announced back on port 1. The host reads the console's close of
-  the phase key and answers nothing, and the trade completes; a host announcing its own phase key
-  closed is unmeasured.
+- What screen a retail console shows when its second job's `01 03` waits in the gate after a host
+  closed the phase key, and whether a job held at state 2 draws the trade restriction. The callees of
+  the job update `0x26dc71c` have not been checked for a time read. No console has seen a host close.
+- Whether the peer table has a reader outside `0x2ca6000..0x2cab000`, or one reaching the table
+  vtable's slots 9 to 11 through another indirect call.
+- Where a channel's `+0xb8` is assigned. The constructor `0x2ca3c6c` zeroes it; that it holds the
+  interface at table object `+0x68` rests on slot 3's signature.
+- The scene's path from step 13 (`0x110abac`, which tail-calls `0x110b9f0`) back to the box. The
+  retail console's fresh selector 2 after a trade is the evidence that it returns with the session up;
+  a second trade in one session has not run on a console.
+- What the 0x81 consumer `0x742740` does with an acknowledgement id beyond the last message sent on
+  its port. `bin/pla_host.py` keeps one Stream Broadcast Reliable acknowledgement counter per station
+  across both ports.
+- Whether the game refuses or flags a traded record whose personality value and encryption constant
+  a save already holds. `--fresh-pid` draws once per run, so a second trade in the session offers the
+  record the console has just stored.
+- Whether a selector 3 is the box cursor on an empty slot.
+- Where the trade restriction's timer lives. No RTTI name or string (`penalt`, `restrict`,
+  `cooldown`) names it; none of the 18 `StandardUserSystemClock::GetCurrentTime` call sites is in the
+  trade code; eleven callers of the network-clock wrapper `0x265d180` (`0x12972dc`, `0x129742c`,
+  `0x129773c`, `0x1297a20`, `0x1298690`, `0x12bc750`, `0x2686fc0`, `0x2687170`, `0x268740c`,
+  `0x2687574`, `0x26881c8`) and the direct network-clock call at `0x31ba150` are unread.

@@ -7,7 +7,8 @@ unchanged, so the crypto, the block shuffle and the checksum are imported rather
 
 The layout is Scarlet's. Measured on nine records out of three reference sessions:
 
-    0x008   species, national                714 Noibat, 716 Xerneas, 95 Onix
+    0x008   species, Scarlet's index         714 Noibat, 716 Xerneas, 95 Onix; from 917 up it is
+                                             the generation 9 internal index (docs/za.md)
     0x058   nickname, UTF-16LE               the species name in the save's language
     0x0a8   handler's name                   "Player", only on a record whose handler is set
     0x0f8   original trainer's name          "XS" on all nine
@@ -49,7 +50,7 @@ def read(plain):
     if len(plain) not in (SIZE_STORED, SIZE_PARTY):
         raise ValueError(f"{len(plain)} bytes, expected {SIZE_STORED} or {SIZE_PARTY}")
     out = {
-        "species": int.from_bytes(plain[OFF_SPECIES:OFF_SPECIES + 2], "little"),
+        "species": _sv.national(int.from_bytes(plain[OFF_SPECIES:OFF_SPECIES + 2], "little")),
         "nickname": _string(plain, OFF_NICKNAME),
         "ht_name": _string(plain, OFF_HT_NAME),
         "ot_name": _string(plain, OFF_OT_NAME),

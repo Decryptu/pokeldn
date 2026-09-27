@@ -68,33 +68,48 @@ then `SYSREQ.N native, bytes`.
 
 - Inside the player profile ([the protocol page](swsh_protocol.md#the-player-profile)): the sample
   states 3, 4 and 6 are named only by the code that sets them (`StateCreateSession`, `StateConnect`,
-  `CallRaidBattleMatchingEvent_`); what the three 64-bit keys behind the first sample bits name; what
-  the Battle Stadium team descriptor's `+0`, `+4` and `+6` and match type 3 are. That the 0x100 bytes
-  at 0xBF6+4 are an RSA-2048 signature over the stored-form party is inferred from the `ModExp` call
-  and its 0x148 stride.
-- Which station `+0xf8` of the station object names. `0x018407f0` treats the station whose own id
-  equals it as the one that writes the shared value, and content 40 addresses its pending body to it.
-  It is stored from slot `0xf0/8` of the network backend (`0x01844ebc`, `0x01844b3c`, the latter
-  followed by `0x018412a0(obj, 2, id)` on a change), which reads as the session host re-read on host
-  migration; whether the backend returns Pia's host or an election of its own is unread.
-- The measured two rungs per command fit the path command, flag, pump states 8 to 10, the shared
-  value, adoption into the phase, then the next command
-  ([the trade page](swsh_trade.md#the-pump)). Two links are inferred: that the commit follows the
-  adoption, and that the delegate's slot 0 is `0x010dbf40`. The order of a commit and a command
-  arriving in the same frame is unread, and so is which message reaches content 40's interface at
-  `content+0x68` (`0x010dc920`, `0x010dcaa0`). That the writing station reads its own shared value
-  back only once its message returns through the loopback sender is inferred.
-- Which card fields set the five stars a Sword draws on a received League Card; `dex_complete` does
-  not. The card carried 0x31 = 1, 400 owned, 7 shiny, 380 caught.
-- Whether fields other than the trainer id also take part in the League Card match
-  ([the trade page](swsh_trade.md#the-league-card)); a new name or Pokédex count does not.
+  `CallRaidBattleMatchingEvent_`); what the Battle Stadium team descriptor's `+0`, `+4` and `+6` and
+  match type 3 are. That the 0x100 bytes at 0xBF6+4 are an RSA-2048 signature over the stored-form
+  party is inferred from the `ModExp` call and its 0x148 stride. That `wr0201` and `wr0301` are the
+  Isle of Armor's and the Crown Tundra's wild areas is read from the numbering and from every capture
+  on Challenge Beach carrying 2; the strings the three area keys hash are unrecovered.
+- What the Pia session's `+0xf8` holds after mesh events 1 and 2
+  ([the session page](swsh_session.md#the-pia-session-object)). They store `LdnMatchmakeSession`'s
+  slot 30, a 32-bit value or `0xff`, which cannot equal a 64-bit LDN station id, so either those
+  paths do not run in an LDN session or `0x018407f0` turns false after one; event 3 zeroes `+0xf8`.
+  A breakpoint on `0x01844bc4`, `0x01844edc`, `0x0184415c` and `0x018407f0` through a hosted ladder
+  separates them.
+- The order of the network update's message drain (`0x006a9a20`, called from `0x00ef4a9c`,
+  `0x01109250`, `0x01109308`) against content 40's tick (`0x010dae70`, from `0x010c5f40` and
+  `0x010c9c34`) inside one frame is unread ([the trade page](swsh_trade.md#the-pump)). By the pump's
+  order, a command reaching the master between its state-10 write of the shared value and the commit
+  that follows the adoption is cleared by that commit. That the writing station reads its own shared
+  value back only once its message returns through the loopback sender is inferred.
+- What spends the first `syncCommand` a joiner sends. The registrar sets the committed phase to 0
+  before any pump runs, so a tail commit of phase 0 does not.
+- What a console does with a partner's `RequestForcedProceed{c, c+1}`
+  ([the trade page](swsh_trade.md#the-cancel-and-proceed-messages)). By the handler it writes `c+1`
+  as the shared value; on the master the adoption and the commit would then send its next command
+  with no `syncCommand` received, and a target other than the announced phase would be committed
+  through slot 7 with no command. No retail console sends the message, and none has been sent to one.
+- The five stars a retail Sword drew on a received League Card. The card carried 4 at 0x177 and
+  zero at 0x1B6 and 0x1B7, which the front's formula draws as four
+  ([the trade page](swsh_trade.md#the-league-card)); which view the player read, or whether the card
+  sent differed, is unmeasured, and setting 0x177, 0x1B6 and 0x1B7 one per run separates them. The
+  flags behind 0x177's grade 4 and behind 0x1B3, 0x1B6 and 0x1B7 are unnamed; none of the four
+  hashes is FNV-1a 64 of a printable string in rodata. That grade 4 marks the Champion title is
+  inferred from its outranking eight badges.
+- That a partner card differing from a filed one only in the u64 at 0x1A8 brings the League Card
+  question back follows from `0x013fbc40` and is unmeasured.
 - Sword against Shield. Everything read off the binary is Shield's; the console is Sword. The
   passphrase, the game key and the Pia version hold across the pair. The local communication id does
-  not: `0x0100ABF008968000` is Sword's. Mystery Gift's state names are Shield-only readings, and so is
-  `0x007d4270` returning `0x2D`: which bit of a card's version mask a Sword tests is unread.
-- Mystery Gift redemption ([the gift page](swsh_gift.md)): whether a kind-1 card is refused with the
-  party and boxes full (`0x010159d0` calls `0x013b4900` and `0x013af4a0`; no error return was found in
-  the part read); what the kind-5 counter at `status+0x64` is; what the kind-1 builder's IV count at
-  `[sp+0x110]` and its `0xFFFF` IVs become; what the second per-id table (`0x01449560`) records. The
+  not: `0x0100ABF008968000` is Sword's. Mystery Gift's state names are Shield-only readings. That a
+  Sword tests bit 0 of a card's version mask follows from Shield's code with Sword's version 44
+  (`0x2C`) in place of `0x007d4270`'s `0x2D`, and from PKHeX's `RestrictVersion` (1 Sword, 2 Shield,
+  3 both); no Sword instruction has been read.
+- Mystery Gift redemption ([the gift page](swsh_gift.md)): what the console shows, and whether the
+  card counts as received, when a kind-1 Pokemon finds no room (`0x010159d0` returns `{0, 1}` and its
+  caller stores it untested); whether anything reads the last-receipt table at album `+0x15c0`
+  (accesses at those offsets elsewhere in `0x00fe0000..0x01460000` were not tied to the album). The
   keep path `0x00ff14c0` and redemption have not been read in full for legality checks; illegal moves
   were accepted on a retail console.

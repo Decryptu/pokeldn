@@ -217,3 +217,106 @@ def build_ack_payload(entries, unknown0=0):
                 + struct.pack(">H", e["ack_id"] & 0xFFFF)
                 + struct.pack(">H", e.get("field_0x50", 0) & 0xFFFF) + mask)
     return out
+
+
+class Reassembler:
+    """A receiver's message layer: fragments joined per stream in sequence order, and a sequence id
+    already delivered refused. A console resends a message whose ack it did not get; acting on the
+    copy answers it twice (docs/bdsp_trade.md, the check-ok)."""
+
+    def __init__(self):
+        self.fragments, self.delivered = {}, {}
+
+    def reset(self):
+        self.fragments.clear()
+        self.delivered.clear()
+
+    def take(self, d):
+        """`d` from `parse`, application data. -> ("repeat", None), ("partial", None) or
+        ("message", payload)."""
+        stream, seq = d["stream_id"], d["sequence_id"]
+        delivered = self.delivered.setdefault(stream, set())
+        if seq in delivered:
+            return "repeat", None
+        frag = self.fragments.setdefault(stream, {})
+        if d["flags"] & FLAG_MESSAGE_START:
+            frag.clear()
+        frag[seq] = d["payload"]
+        if not d["flags"] & FLAG_MESSAGE_END:
+            return "partial", None
+        payload = b"".join(frag[k] for k in sorted(frag))
+        delivered.update(frag)
+        frag.clear()
+        return "message", payload
+
+
+MASK_BITS = 128                   # 0x74f284: offsets past 0x7f are never released by the mask
+
+
+def build_mask(held, ack_id):
+    """-> the sixteen-byte acknowledgement mask: bit `seq - ack_id - 1` for each held sequence.
+    Four little-endian words: Arceus copies the bytes as stored (`0x742da0`) and reads a word at a
+    time (`0x74f2a0`). docs/pla.md, Acknowledgement."""
+    bits = 0
+    for seq in held:
+        if 0 <= seq - ack_id - 1 < MASK_BITS:
+            bits |= 1 << (seq - ack_id - 1)
+    return bits.to_bytes(16, "little")
+
+
+class ReceiveWindow:
+    """One peer stream as the console's own window receives it: messages handed over in sequence
+    order, a gap holding everything behind it, a sequence already taken refused. The acknowledgement
+    is `next` with the held ones in `mask()` (`0x74ee1c`, docs/pla.md, Acknowledgement)."""
+
+    def __init__(self, start=1):
+        self.next, self.held = start, {}
+
+    def take(self, seq, message):
+        """-> the messages now deliverable, in order; empty for a repeat or one behind a gap."""
+        if seq >= self.next:
+            self.held.setdefault(seq, message)
+        out = []
+        while self.next in self.held:
+            out.append(self.held.pop(self.next))
+            self.next += 1
+        return out
+
+    def mask(self):
+        return build_mask(self.held, self.next)
+
+
+class SendWindow:
+    """A sender's data messages, each kept until the peer's acknowledgement releases it and due again
+    every `interval` seconds until then. The release rule is the console's (`0x74f0ec`): below the
+    ack id, or above it with its mask bit set. Trap: a resend keeps its sequence id."""
+
+    def __init__(self, interval):
+        self.interval, self.pending = interval, {}     # (stream, seq) -> [item, last sent]
+
+    def sent(self, stream, seq, item, now):
+        self.pending[(stream, seq)] = [item, now]
+
+    def acked(self, stream, ack_id, mask=b""):
+        """-> the sequences released on `stream`. An id of 0 applies nothing (`0x74f0fc`)."""
+        if not ack_id:
+            return []
+        bits = int.from_bytes(bytes(mask).ljust(16, b"\0")[:16], "little")
+        gone = sorted(seq for s, seq in self.pending if s == stream and (
+            seq < ack_id or (0 <= seq - ack_id - 1 < MASK_BITS and bits >> (seq - ack_id - 1) & 1)))
+        for seq in gone:
+            del self.pending[(stream, seq)]
+        return gone
+
+    def due(self, now):
+        """-> [(stream, seq, item)] unacknowledged for `interval`, in order; each is due again later."""
+        out = []
+        for (stream, seq), entry in sorted(self.pending.items(), key=lambda kv: kv[0]):
+            if now - entry[1] >= self.interval:
+                entry[1] = now
+                out.append((stream, seq, entry[0]))
+        return out
+
+    def forget(self, drop):
+        """Drop every stream `drop(stream)` is true of: a peer that rejoined restarts at 1."""
+        self.pending = {k: v for k, v in self.pending.items() if not drop(k[0])}

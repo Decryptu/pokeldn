@@ -23,6 +23,16 @@ Getting to the trade screen (the emote, the approach and the greeting) is on
 Each is answered with one of the client's own. `NetDataTradePokeCheckOkData` is the console reporting
 that it looked at a Pokemon the client built and found it acceptable.
 
+The console's only live check-ok sender is `TradeSelectPokeModel.<OpenTradeBoxWindow>b__54_2`
+[1.3.0 main 0x1c28520], the box window's `onDecide` (`BoxWindow$$Open(otherName, msgLangId,
+onSelected, onDecide, onConfirm, onComplete, onCancelSelect, ...)`, lambdas `b__54_1` to `b__54_5`
+passed in order at 0x1c27610..0x1c2762c). It sets its own check state (+0x80) to 6, sends
+`{isCheckOk: 1}` to `tradeTargetIndex` (+0x48), then sets `isWaitingOK` (+0x7b) to 1 and
+`isWaitingSelect` (+0x7c) to 0 [0x1c285a4]. `isCheckOk` is always 1: the console never refuses a
+Pokemon through this message. `TradeSelectPokeModel$$SendTradePokeCheckOk` [0x1c27cb0] builds the
+same message and has no caller. `BoxWindow$$OnTradeContextMenu` invokes `onDecide` [0x212e99c] and
+then advances the box's trade phase by one [0x212e9dc..0x212e9ec].
+
 The peer's Pokemon reaches the screen through `TradeSelectPokeModel$$PokeSelectWait` [1.3.0 main.bin
 0x1c26070]: once the box's trade phase is past 2, the received flag (+0x78, set by
 `UnionTradeManager$$RecivePokeData` 0x1c33e80) and the own-pick flag (+0x79) are both set, it calls
@@ -47,14 +57,22 @@ that every handler reads:
 
 A Pokemon is taken only in SELECT_WINDOW, stored as `tradeSelectModel.targetPokemonParam` with
 `isRecivePokeParam` set. A `NetDataTradeReadyOkData` (0x21) is routed in SELECT_WINDOW to
-`TradeSelectPokeModel$$ReciveReadyOk`, in SECURIY_TRADE to `TradeSecurityController$$ReciveState`
-(creating the controller if it is null), and dropped anywhere else.
+`TradeSelectPokeModel$$ReciveReadyOk` (under the conditions in
+[Box phases](#box-phases-and-the-messages-that-reset-a-round)), in SECURIY_TRADE to
+`TradeSecurityController$$ReciveState` (creating the controller if it is null), and dropped anywhere
+else. In 1.3.0 `UnionTradeManager$$ReciveTradeReadyOkData` [0x1c34290] reads `currentState` at
++0x80, and in SECURIY_TRADE calls `ReciveState` only when the controller's `GetCurrentState` is
+non-zero; at 0 it calls `SettingSecurityControllerParam` [0x1c343f4] and drops the message
+[0x1c34378].
 
 `ReciveReadyOk` is three instructions:
 
     ldrb w8, [x1, #0x11]      the message's SECOND byte, tradeState
     str  w8, [x0, #0x78]      TradeSelectPokeModel.targetTradeState
     ret                       isTradeOk is never read
+
+In 1.3.0 it sits at 0x1c27d40 and writes +0x84, the peer state a received check-ok sets to 6
+(`TradeSelectPokeModel$$ReciveTradePokeCheckOk` 0x1c28170).
 
 The console then runs `UnionTradeManager.<WaitBoxWindowComplete>d__24`, whose whole condition is that
 both trade states are `WAIT`:
@@ -68,6 +86,54 @@ both trade states are `WAIT`:
 `myTradeState` is set to `WAIT` by the player's own `MyReadyOk`. `targetTradeState` has exactly one
 source in the game, the peer's 0x21. The console cannot leave SELECT_WINDOW on its own; that byte
 moves it into the security phase.
+
+### Box phases, and the messages that reset a round
+
+`BoxWindow.NetTradePhase`:
+
+    None 0, WaitSave 1, PlayerSelecting 2, WaitSend 3, OtherPokeConfirm 4, WaitOtherDecide 5,
+    LastConfirm 6, WaitTrading 7, Complete 8, WaitClose 9, CancelOther 10, Error 11
+
+Three messages from the peer reset the round in the select window. The reset is
+`TradeSelectPokeModel$$ReciveReturnSelectPoke` [1.3.0 main 0x1c27f00]: for `isReturnSelect` 1 it
+answers `NetDataReturnSelectData{0}` to the partner [0x1c27fa4]; in every case it clears
+`isWaitingOK`/`isWaitingSelect` [0x1c27fb0], `isRecivePokeParam`/`isSendPokeParam` [0x1c2803c] and
+both trade states (+0x80, +0x84) [0x1c28040], sets `UnionWork` static +0x50 (`boxState`) to 6, and
+takes the box window back unless a box exists at a phase below 3. The player is back to picking,
+with no error on screen.
+
+| message from the peer | box phase | what the console does |
+|---|---|---|
+| check-ok (0x46) | no box, or below 6 | peer check state (+0x84) = 6 (`UnionTradeManager$$ReciveTradePokeCheckOk` 0x1c34630, test 0x1c346c4) |
+| check-ok (0x46) | 6 `LastConfirm` or later | the reset as for `{1}` [0x1c34718], then `securityController?.ResetTradeState()` |
+| ready-ok (0x21), SELECT_WINDOW | latch +0x71 set | dropped [0x1c342e4] |
+| ready-ok (0x21), SELECT_WINDOW | box present, phase 5 or below | the reset as for `{1}` [0x1c3440c..0x1c3443c], then `ResetTradeState()` |
+| ready-ok (0x21), SELECT_WINDOW | phase 6 or later, or no box | `ReciveReadyOk`, latch +0x71 = 1 [0x1c3435c] |
+| return-select (0x45) | any | the reset; `UnionTradeManager$$ReciveReturnSelectPoke` [0x1c345c0] only clears `targetDemoPokemonParam` in PLAY_DEMO |
+
+The latch (+0x71, `<isLoadingBox>k__BackingField`) is cleared by `UnionTradeManager$$Init`
+[0x1c331c4], `WaitBoxWindowComplete` [0x1c3331c], `Cancel` [0x1c33850], `RecivePokeData`
+[0x1c33ec0] and `ReciveCancelData` [0x1c33fb4]; its setter [0x1c33040] has no caller. The select
+window takes one ready-ok per round, and only once the box has reached `LastConfirm`. The console
+sends its own ready-ok when its box closes after the last confirmation (`onComplete` `b__54_4` ->
+`BoxCloseComplete` -> `MyReadyOk` 0x1c26d90 -> `SendReadyOk` 0x1c26f14).
+
+In a normal round the console's check-ok comes at the decide step, the client's answers it, both
+check states reach 6 and the box moves on. A second check-ok in the same round, arriving after the
+box reached `LastConfirm`, cancels the round.
+
+The console's own back-out, `onCancelSelect` (`b__54_5` 0x1c28620), calls `BoxWindow$$ToNextPhase`
+[0x1c28640], sends `NetDataReturnSelectData{1}` [0x1c286a4] and clears both trade states. A partner
+console answers it with `{0}` and resets its own round.
+
+- Answer each console check-ok once. A retransmitted copy of it, answered again after the first
+  answer has moved the box to `LastConfirm`, resets the round.
+  Within one seat a console never reused a reliable sequence id for different content (0 of 11004
+  messages over 89 retail captures), so a receiver can drop an id it has already delivered;
+  `pokeldn.ldn.reliable5.Reassembler` does, and `bin/bdsp_connect.py` uses it.
+- In the select window a 0x21 before the console's last confirmation is a cancel, and after it only
+  the first counts. Stop a security-state repeater before the console can be back in its select
+  window.
 
 ## The security phase
 
@@ -102,18 +168,19 @@ and WAIT_POKE never ends whatever is sent.
     mine < theirs   CHILD
     equal           PARENT if isRecruiment (+0x38), else CHILD
 
-The function walks three static `int[]` species lists (the class's static fields +0x78, +0x80 and
-the one after) and returns 3, 2 or 1 for the first list holding the species. Their initialisers
-are in 1.3.0's `global-metadata.dat`:
+The function walks three static `MonsNo[]` species lists in order and returns a constant per list
+(0x1cbe614, 0x1cbe698, 0x1cbe71c; none 0x1cbe730). `Utils$$.cctor` [0x1cbe9a0] fills them from
+1.3.0's `global-metadata.dat` (stores 0x1cbedd8, 0x1cbee10, 0x1cbee48):
 
-| offset | species | count |
-|---|---|---|
-| `0x666aa6` | 151, 251, 385, 386, 489, 490, 491, 492, 493 (the mythicals) | 9 |
-| `0x666b06` | 150, 249, 250, 382, 383, 384, 483, 484, 487 (the box legendaries) | 9 |
-| `0x667c39` | 144, 145, 146, 243, 244, 245, 377-381, 480, 481, 482, 485, 486, 488 | 17 |
+| static field | rarity | metadata | species |
+|---|---|---|---|
+| `very_rare_monsno` +0x78 | 3 | `0x666aa6` | 151, 251, 385, 386, 489, 490, 491, 492, 493 (the mythicals) |
+| `legend_rare_monsno` +0x80 | 2 | `0x666b06` | 150, 249, 250, 382, 383, 384, 483, 484, 487 (the box legendaries) |
+| `sub_legend_rare_monsno` +0x88 | 1 | `0x667c39` | 144, 145, 146, 243, 244, 245, 377-381, 480, 481, 482, 485, 486, 488 |
 
-Which list backs which field is unread; the enum names match mythical 3, legendary 2,
-sub-legendary 1. Any species in any list outranks an ordinary one.
+A mythical outranks a box legendary: a Dialga offered against a console's Mew leaves the console
+PARENT. Two species of one list, or two on no list, tie and fall to `isRecruiment`. A species of -1
+on either side returns without setting a role (`cmn w20, #1` in `CheckPokeRarity`, to 0x1c25120).
 
 `TradeParentStateModel$$StateProc` [0x1c23350], table at 0x3d80f2f:
 
@@ -190,7 +257,9 @@ completed trade:
     data_id 69 (0x45)   payload 45 00 01 00   {'isReturnSelect': 0}
 
 the same `<id> 00 01 <value>` shape as the check-ok. It is an announcement, not a question: an
-answer of 1 changes nothing, and it repeats once a second until the player picks the next Pokemon
+answer of 1 draws a `{0}` back and runs the reset on a round that is already clear, so the screen
+shows nothing ([Box phases](#box-phases-and-the-messages-that-reset-a-round)). It repeats once a
+second until the player picks the next Pokemon
 (78 and 50 repeats in runs where the peer sat still, 7 across three trades started back to back).
 
 One association carries as many trades as the player starts. The flow is a loop from the select
@@ -202,7 +271,8 @@ security-state repeater has to stop when a trade completes: in the select window
 `NetDataTradeReadyOkData` goes to `TradeSelectPokeModel$$ReciveReadyOk`, which writes
 `targetTradeState`, and `WaitBoxWindowComplete` leaves only when that is WAIT(2). A repeater still
 sending SEND_READYOK(5) holds the next trade in the box window until the console reports the
-cancellation as the peer's.
+cancellation as the peer's: a 0x21 landing while the player picks, box phase 5 or below, resets the
+round.
 
 ## The Pokemon
 

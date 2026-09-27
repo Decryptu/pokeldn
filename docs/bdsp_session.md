@@ -277,6 +277,30 @@ from the network factory's slot 61 [`0x157cb48`]: `local::LdnNetworkFactory`'s [
 null, `lan::LanNetworkFactory`'s builds a `LanMatchJointSessionJob` and `nex::NexNetworkFactory`'s a
 `NexMatchJointSessionJob`. No capture has carried a byte of 0x94.
 
+Three stores in Pia's text reach session+0x70 (the session object is `*0x50457f8`, GOT
+`0x4c4b848`), so on LDN the job stays null for the life of the session:
+
+| store | value | where |
+|---|---|---|
+| `0x157c618` `str xzr, [x8, #0x70]` | null | session start-up |
+| `0x157cb54` `str x0, [x8, #0x70]` | the factory's slot 61 (`blr [x8, #0x1e8]` at `0x157cb4c`) | the same function |
+| `0x157d0e8` `str xzr, [x19, #0x70]` | null, after destroying the job through factory slot 69 (`0x157d0e0`) | session teardown `0x157cf5c` |
+
+The Session Protocol's per-station windows are the same `ReliableSlidingWindow` the game stream
+uses, driven by the same functions:
+
+| step | Session Protocol | the window function | its callers |
+|---|---|---|---|
+| a station joins (event 0) | slot 11 `0x15821fc`: window reset `0x159e59c`, then add-peer with the station's constant id and index `0x158232c` | `0x159e5f8` | five: `MeshProtocol` `0x1549dbc`, `SessionProtocol` `0x158232c`, `BroadcastReliableProtocol` `0x1595598`, `ReliableProtocol` `0x159d07c`, one in clone code `0x167b730` |
+| a station leaves (event 1) | remove-peer `0x159e7c8`, then window slot 4 | `0x159e7c8` | |
+| a packet arrives | slot 10 `0x1581c98`: index above 0x1f or its own rejected (`0x1581dc0`, `0x1581dd4`), then the window's receive `0x1581e10` when the window has a peer (`0x159ef30`) | `0x159f1e4` | the same five protocols (`ReliableProtocol` slot 18 `0x159d814`) |
+| delivery | for stations whose state (+0x4c) is 5 or 6, pop into the 0x12C-byte buffer at +0x12A (`0x15a0a6c`) and hand each message to the dispatcher `0x15820b8` (`0x1581f50`) | `0x15a0a6c` | |
+| resend and ack timers | `0x159fea8(window, NULL, -1)`, no send budget (`0x1582014`, `0x158207c`) | `0x159fea8` | `ReliableProtocol` slot 19 `0x159d90c`, `0x159d988`, with a counter and a budget |
+
+The window is initialised at `0x15819d8` with `(2, 2, 0x94000001)`. Every handler behind the
+dispatcher's jump table (`0x3e6b986`) tests session+0x70 first (type 3 at `0x15823a4`, type 0x14 at
+`0x1582188`), after the window has taken the packet.
+
 The join response for a two-station mesh:
 
     stations 2, host index 0, our index 1, max_active 8, update counter 0

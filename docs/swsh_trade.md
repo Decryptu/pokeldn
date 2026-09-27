@@ -253,27 +253,52 @@ instead of `+0x58`/`+0x5c` (the thunk for a `this` adjusted by 8). The init inst
     0x010da6bc   add x9, x19, #8       ->  [content+0x2c0] = delegate + 8     the second interface
     0x010da6d0   str x19, [x8, #0x168] ->  the 10040 holder's listener        the first
 
+`0x010dbfd0` and `0x010dbf40` are 36 instructions each, identical but for the field offsets and the
+branch targets; `0x010dbfd0`'s own jump table at `0x02067f60` holds the same five offsets from its
+function as `0x02067f4c` (`0x70 0x38 0x40 0x48 0x6c`). Both write `delegate+0x5c`. The secondary
+vtable's other slots: 4 is `0x010dc070`, which tail-calls `0x010f8e30`; 1, 2, 3, 5, 6 and 7 are each
+a single `ret`.
+
 ### The pump
 
 `0x010db3e0`, called by content 40's per-frame tick before it runs the machine, is a 17-state machine
 on `[content+0x80]`. Its shared tail:
 
     w1 = [content+0x17c]                    the content's PHASE
-    if (w1 == [content+0x84]) skip          already committed to it
-    else if (w1 == [content+0x86]) { 0x010de310(content, w1); B->slot7(w1); }
+    if (w1 != [content+0x84] && w1 != [content+0x86])                     0x010db758..0x010db778
+        { 0x010de310(content, w1); B->slot7(w1); }                        slot 7 is a ret
     w1 = [content+0x17c]
-    if (w1 == [content+0x84]) done
-    else if (w1 == [content+0x86]) { 0x010de310(content, w1); B->slot0(w1); }   <- the state setter
+    if (w1 != [content+0x84] && w1 == [content+0x86])                     0x010db794..0x010db7b4
+        { 0x010de310(content, w1); B->slot0(w1); }   <- the state setter
+    0x010ddf40(content)                     the queued jobs                0x010db7d4
+    0x006d4b80(content+0xd0)                the element update, last       0x010db7e8
 
-`0x010de310(content, phase)` writes `[content+0x84] = phase` and drops the content's pending body:
-`+0x84` is the phase the content has committed to. `+0x86` is written in exactly one place in the
-band, `0x010dbab0`, with the `flag` argument, which is `data + 1` at all five send sites: `+0x86` is
+`B` is `[content+0x2c0]`, `delegate+8`, whose slot 0 is `0x010dbfd0`. The state switch runs before
+the tail; state 0 (`0x010db740`) returns without the tail, and state 16 (`0x010db730`) returns early
+when `0x006d4b30` is false. A phase that reaches a value neither committed nor announced is committed
+silently: the flags and the job queue are cleared, the pump goes to state 2, and the machine does not
+move.
+
+`0x010de310(content, phase)` writes `[content+0x84] = phase`, drops the content's pending body and
+empties the job queue at `content+0x310` (`0x010de348..0x010de3a0`): `+0x84` is the phase the
+content has committed to. It has three callers, all in the pump and all gated on the phase differing
+from `+0x84`: the tail's two blocks (`0x010db778`, `0x010db7b4`) and state 14 (`0x010db6ac`, under the
+second block's gate and followed by slot 0). Once the element is minted, the phase the gate compares
+moves only by the element update's adoption: the only halfword stores to `element+0xac` in
+`0x006c8000..0x006de000` are the element constructor (`0x006d3ff8`), the mint (`0x006d4500`) and the
+adoption (`0x006d4ccc`).
+
+`+0x86` is written in exactly one place in the band, `0x010dbab0`, with the `flag` argument, which is `data + 1` at all five send sites: `+0x86` is
 the phase the console announced when it sent its last command. The ladder climbs when the content's
 phase reaches it.
 
 The console's opening move is the pump's: the registrar leaves `[content+0x80] = 1` and pump state 1
 (`0x010db418`, table `0x2067f08`) calls the state setter with the phase unconditionally, outside the
-`+0x84`/`+0x86` gate. Phase 0 -> state 1 -> command 0, announcing 1.
+`+0x84`/`+0x86` gate. Phase 0 -> state 1 -> command 0, announcing 1. The constructor writes `0xfc18`
+to `+0x84` (`0x010dc228`, `0x010dc260`) and zeroes `+0x86` (`0x010dc25c`); the registrar replaces
+`+0x84` with its `w1`, 0, before any pump runs (`0x010da810`, `0x010daa78`), and mints the element
+with the same 0 (`0x010daa7c`). After registration the phase, the committed phase and the announced
+phase are all 0, and the tail does nothing until the phase moves.
 
 The pump's states (jump table `0x2067f08`, 17 entries; `[content+0x1c0]` is the element's `+0xf0`
 channel, `[content+0x2a0]` the command flags of [The command](#the-command)):
@@ -284,7 +309,8 @@ channel, `[content+0x2a0]` the command flags of [The command](#the-command)):
                     (0x010de080) to the station [[0x2616a30]+0xf8] -> 4
     4   0x010db4dc  0x006d3690([+0x1c0], [+0x86]) publishes the station's high half, must return 1;
                     then 0x018407f0 ? 8 : 7                                      cinc 0x010db514
-    5   0x010db51c  the same through [+0x2b8] (0x008b7300) with [+0xa8] -> 6
+    5   0x010db51c  the same through [+0x2b8] (0x008b7300) with [+0xa8] -> 6; unreachable in
+                    content 40, below
     8   0x010db594  0x006a2840([+0x2a0]): every station has sent a command -> 9
     9   0x010db5b4  0x006d4fb0 == 0: no sub-element still has its resend byte set -> 10
     10  0x010db5d4  0x006d4da0 && 0x006d3060([+0x1c0], [+0x86]) (every pair's high half == the
@@ -295,7 +321,10 @@ channel, `[content+0x2a0]` the command flags of [The command](#the-command)):
 
 States 8 to 10 run only on the station `0x018407f0` accepts; any other station goes from 4 to 7 and
 its phase moves when the shared value moves. State 13 follows `0x010dc6c0` and 16 the teardown
-(table below); states 13 to 16 themselves are unread.
+(table below); state 14 (`0x010db68c`) is the gated commit above, and states 13, 15 and 16
+themselves are unread. Nothing in `0x010d9000..0x010df000` stores 5 to `[content+0x80]` or a
+non-zero value to `[content+0xa8]` (the only stores there are the clears at `0x010db9ec`,
+`0x010dc530` and `0x010de3a4`), so state 5 and its send are dead in content 40.
 
 The other writers of `[content+0x80]`:
 
@@ -308,6 +337,7 @@ The other writers of `[content+0x80]`:
 | `0x010dc7a0` | `0x010dc720` (slot `0x257ff70`), a station leaving: with `[+0x374]` set the delegate's slot 4 is told, otherwise the station is removed from the element (`0x006d50e0`) and the flags (`0x006a2140`) | 11 |
 | `0x010dc6f4` | `0x010dc6c0` (slot `0x257ff68`), requires `[+0x374]` and `0x006a2a80([+0x2a0])` | 13 |
 | `0x010dccec` | slot `0x257ff90` | 2 |
+| `0x010dcee8` | `0x010dce70`, CancelAccepted on 30040 (`str w8,[x19,#0x18]` with `x19 = content+0x68`), unless the state is 16 | 2 |
 | `0x010db998` | `0x010db970`, the teardown | 16 |
 
 Content 40's registrar is called with `w2 = 1` (`0x010da6a8`), stored at `[+0x374]` (`0x010da800`),
@@ -341,8 +371,11 @@ every station is ready it takes another branch:
     }
 
 `0x018407f0(station)` is true when the station's own id `+0xf0` is non-zero and equals `+0xf8`, and a
-virtual call (`+0xe0`) on the network backend at `[x0 + 0x168 + [x0+0x162]*8]` agrees. Only that
-station seeds the shared value with its own phase; every station adopts the shared value.
+virtual call (`+0xe0`) on the network backend at `[x0 + 0x168 + [x0+0x162]*8]` agrees. The station
+object is Pia's session object, the backend Pia's `nn::pia::local::LdnMatchmakeSession`, and `+0xf8`
+the id of Pia's mesh host ([the session page](swsh_session.md#the-pia-session-object)): the test
+picks the console that hosts the mesh. Only that station seeds the shared value with its own phase;
+every station adopts the shared value.
 
 The shared value is the 16-bit sub-element the `+0xf0` channel owns
 ([Sub-element kinds](swsh_protocol.md#sub-element-kinds)). The channel's methods:
@@ -420,16 +453,13 @@ passes the content's own phase. A rung advances because a command arrives, not b
     0x006a2480(obj)             obj+0xc0, the station list the registrar walks
 
 Pump state 8 waits on `0x006a2840`, and both the commit `0x010de310` and state 11 clear the map, so a
-flag set before the commit does not count towards the next state 8.
+flag set before the commit does not count towards the next state 8. The flag is set inside the
+network update's message drain, outside the pump: `0x006a9a20` calls Pia's dispatch `0x006a8380`
+(`0x006a9a54`) and then the manager's drain `0x006db3b0` (`0x006a9a90`), which drains every
+registered port ([the routing path](swsh_protocol.md#the-routing-path)).
 
-Two more content-40 handlers read the map: `0x010dc920` and `0x010dcaa0`, listener slots
-`0x257ff80` and `0x257ff88`, reached through an interface at `content+0x68` (thunks `0x010dcf20`,
-`0x010dcf30`). Each acts only when not every station is flagged and the message's int32 at `+0x14`
-equals the committed phase `(s16)[content+0x84]`, and queues a job that answers the sender through
-`[content+0x2b8]` (`0x008b7230`):
-
-    0x010dd0c0   sends {int32 [+0x84], bool 0}, then map[sender] = 0    0x010dd114
-    0x010dd190   sends {int32 [+0x84], bool 1}, then clears the map     0x010dd208
+Two more content-40 handlers read the map, RequestCancel and RequestCancelAll on 30040
+([below](#the-cancel-and-proceed-messages)).
 
 Measured with the command count as the only variable: one command bought two rungs (to `01000200`);
 four commands bought four (to `02000300`). The queue must not run dry: the trigger pops on any
@@ -439,6 +469,45 @@ is the working line.
 
 `answer_rpc` copies the body it was handed, so an answer that echoes a step carries the console's own
 two u16s back and moves neither half. `--confirm-phase N` writes the low half and keeps the high one.
+
+### The cancel and proceed messages
+
+Content 40's third holder is message 30040, the framework's `SequenceDataHolder`
+([the protocol page](swsh_protocol.md#the-30000-holder)). The registrar stores it at
+`[content+0x2b8]` (`0x010da9b8`) and makes `content+0x68` its listener (`0x010da9b4`,
+`0x010da9bc`); the constructor puts the listener vtable `0x02580030` there (`0x010dc238`):
+
+| case | message | handler |
+|---|---|---|
+| 1 | CancelAccepted | `0x010dce70` |
+| 2 | RequestCancel | `0x010dc920`, through the thunk `0x010dcf20` |
+| 3 | RequestCancelAll | `0x010dcaa0`, through `0x010dcf30` |
+| 4 | RequestForcedProceed | `0x010dc7b0`, through `0x010dcf40` |
+
+Each acts only when the message's `currentSeqNo` equals the committed phase `(s16)[content+0x84]`.
+
+- RequestCancel, also only when not every station is flagged (`0x006a2840`, `0x010dc954`): queues a
+  job, `0x010dd0c0`, that sends `CancelAccepted{currentSeqNo: [+0x84], isForced: 0}` to the sender
+  through `[content+0x2b8]` (`0x008b7230`) and then clears the sender's flag, `map[sender] = 0`
+  (`0x010dd114`).
+- RequestCancelAll, under the same two guards: walks the flag object's station list
+  (`0x010dcaf4..0x010dcb1c`) and queues one job, `0x010dd190`, per station. Each sends
+  `CancelAccepted{[+0x84], isForced: 1}` to its station while that station is still listed, then
+  clears every flag (`0x010dd208`).
+- CancelAccepted: with `isForced` set, steps the generation counter `[content+0x370]` modulo 255 and
+  hands it to `0x006db470` on the message manager; then sets pump state 2 unless the state is 16
+  (`0x010dcee8`) and calls the delegate's slot 6, a `ret`. The phase does not move, and the pump
+  re-runs states 2 to 4 with any pending body.
+- RequestForcedProceed: builds a job `{content, u16 targetSeqNo, sender index}` with code
+  `0x010dd040` and runs it at once (`0x010dc8a8`); a job that returns false is queued
+  (`0x010dc8bc`). The job requires `0x006d4da0(content+0xd0)`, the element's hash current or
+  republished, and then calls `0x006d33b0([content+0x1c0], targetSeqNo)`, the write pump state 10
+  performs with the announced phase. It skips pump states 8 and 9, the `0x006d3060` and `0x006d4f50`
+  tests and the master test `0x018407f0`; the sender index is kept in the job and not read.
+
+The job queue at `content+0x310` (entries at `+0x350`, count at `+0x358`) is run by `0x010ddf40`
+from the pump (`0x010db7d4`): every queued job is tried once per pump call, a job that returns true is
+removed and one that returns false stays. The commit empties it.
 
 ### Shapes the confirmation content also sends
 
@@ -471,8 +540,20 @@ The card a console files is whatever the partner's snapshot carries. An emulated
 `bin/swsh_host.py` asked, and filed the host's 456 bytes (the Sword snapshot renamed to PkCamp)
 unchanged in its next free slot, with the save written at once.
 
-The console skips the question when a card it holds carries the partner card's trainer id (u32 at
-0x1C, PKHeX `TrainerCard8.TrainerID`). The id is the six-digit one derived from MyStatus, `(SID << 16 | TID) mod
+The album keeps 300 slots of 0x1d0 bytes from `album+0x230`, loaded as one block of `0x21fc0` bytes
+(`0x013fad4c`); a slot is free while its byte `+0x1c8` is non-zero. `0x013fbab0` files a card in the
+first free slot: a `memcpy` of 0x1c4 bytes, then `+0x1c8` and `+0x1c9` zeroed, the year at `+0x1ca`
+(`tm_year + 0x76c`), the month plus one at `+0x1cc`, the day at `+0x1cd`, and `+0x1ce`, `+0x1cf`
+from its arguments. `0x013fbc00` returns 1 when all 300 slots are used.
+
+The console skips the question when a card it holds matches the partner's on two fields.
+`0x013fbc40(album, card)` (callers `0x00aa6414`, `0x0106612c`, `0x015253f0`, `0x01543868`) walks the
+300 slots and returns 1 on the first used slot whose u32 at 0x1C equals the card's (`0x013fbc4c`)
+and whose eight bytes at 0x1A8 equal the card's (`0x013fbc5c`, one 64-bit compare). 0x1C is the
+trainer id (PKHeX `TrainerCard8.TrainerID`); 0x1A8 is PKHeX's `TimestampPrinted`, a Unix time:
+`9bc62a5e00000000` (2020-01-24) in a retail Sword's card, `04b4a26a00000000` (2026-09-10, the same
+day as its start date at 0x170) in an emulated Shield's. The game compares all eight bytes;
+`pokeldn.swsh.league_card` maps the field as a u32. The trainer id is the six-digit one derived from MyStatus, `(SID << 16 | TID) mod
 10**6`: 848973 for a retail Sword at 56909/48474, 491351 for an emulated Shield at 56983/22788.
 `trade_payload.rewrite` sets it with the other identity fields. Measured against one emulated Shield holding the host's card:
 
@@ -487,6 +568,25 @@ A retail Sword hosted over the board asked and kept the host's card (id 993401):
 list shows PkCamp dated the day received, the Sword logo top left (`game` 0), "3" bottom left (the
 three ASCII bytes at 0x39 read `3`), a crown top right and five stars. The crown, a Rotom-Dex
 icon, is `dex_complete` at 0x30: a second card with it cleared kept its five stars and lost the icon.
+
+The card view `0x01592e70` copies the card it holds (`view+0x3c0`) and draws the front's stars with
+`0x015a52f0(view, count)`, which lights the first `count` of seven panes (`view+0x618..+0x648`):
+
+    count = card[0x177] + (card[0x1b6] != 0) + (card[0x1b7] != 0)      0x015930bc..0x015930dc
+
+The same function passes `card[0x24]`, the game, to `0x015a5260` and `card[0x1b3] != 0` to
+`0x015a50d0`. The card builder `0x0158eef0` (callers `0x00c77830`, `0x014be578`, `0x0156167c`,
+`0x01561b0c`, `0x01568f4c`, `0x015691bc`) fills those bytes from the save:
+
+| byte | value | site |
+|---|---|---|
+| 0x177 | 4 when flag `0x7d0b1ced4dbe8a87` is set; otherwise 3, 2, 1 or 0 for a badge count above 6, above 3, non-zero, zero | `0x0158f084`, `0x0158f484..0x0158f4dc`, stored `0x0158f0c4` |
+| 0x1B3 | flag `0xe44b16771524b07e` | `0x0158f0fc` |
+| 0x1B6 | flag `0x8f1a133dff5c0ecf` | `0x0158f11c` |
+| 0x1B7 | flag `0xd450875d834cfc30` | `0x0158f12c` |
+
+The badge count is `0x01438fb0`, a popcount of `[status+0x60]`; the flags are read by `0x01410f30`.
+The retail Sword card pokeldn sends carries `04` at 0x177 and zero at 0x1B6 and 0x1B7.
 
 `bin/swsh_host.py --card-set FIELD=VALUE` edits the card it sends (`pokeldn.swsh.league_card`
 names the fields), so a fresh `trainer_id` makes the console offer to keep it.
