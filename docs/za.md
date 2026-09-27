@@ -196,8 +196,15 @@ payload is a `b9` struct whose first member is a u16 round.
 The cancel sender `0x964a78` sends round +0x150 + 1, then sets +0x130 = 2, advances +0x150 and
 +0x152, and drops the partner's state from 3..5 back to 2 (3 when the reason is 0). A ConfirmTrade
 or FinalAgreement still carrying the round before a cancel is ignored after it. SelectPokemon reads
-no round. Every observed `0102` and `0104` is `b90100`, round 0; what initialises +0x150 and +0x152
-was not read.
+no round. A session's first `0102` and `0104` are `b90100`, round 0; what initialises +0x150 and
++0x152 was not read.
+
+An emulated Z-A choosing Cancel on the trade prompt sends `0103b9020100`, round 1 and reason 0, and
+redraws the prompt with the host's earlier offer once its player picks again; the host need not
+resend it. Its next confirmation is `0102b90101` and `0104b90101`. A host that answers under round 0
+is ignored and the console waits on "Communicating" with no timeout; one answering under round 1
+completes the trade. `pokeldn.za.host` takes the round from the console's own `0102`, `0103` and
+`0104`.
 
 ### What a joiner owes on those streams
 

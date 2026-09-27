@@ -147,7 +147,7 @@ def test_a_whole_trade_against_a_scripted_joiner(monkeypatch, cancel):
 
     rnd = "00"
     if cancel:
-        joiner.game(bytes.fromhex("0103b9020100"), t)   # round 1, reason 0: back to the selection
+        joiner.game(bytes.fromhex("0103b9020100"), t)   # an emulated Z-A's Cancel: round 1, reason 0
         t = joiner.run(t + 1.0, t)
         joiner.game(offer[:-1] + b"\x00", t)            # the joiner picks again
         t = joiner.run(t + 2.0, t)
