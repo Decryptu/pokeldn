@@ -1529,6 +1529,9 @@ pass cannot stop every later one.
 | `field=3 battle=3` | at most 2.38 of 3 | about a quarter of frames lag; visible stutter |
 | `field=3 battle=3 budget=228` | up to 2.48 | smooth; a pass costs 36 to 42 lines walking, 100 to 108 in battle |
 
+On a retail console (French FireRed, the gift link over the ESP32 radio), `extra=4 field=3 battle=3
+hold=0x100 budget=228` answered `0x0800071D` and holding R fast-forwarded the game.
+
 The Switch release's emulator advances `REG_VCOUNT` while a frame's code runs, so a pass can be timed
 in scanlines from inside the game.
 

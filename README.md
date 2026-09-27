@@ -47,7 +47,8 @@ FireRed / LeafGreen
 - Union Room: greetings, trading-board trades, live chat, and full link battles
 - Native code on the console through the gift link: reading and writing its save, mapping its ROM,
   calling its own functions, and building a Pokémon with its own `CreateMon`
-- Per-frame hooks installed through the gift link, measured on an emulator of the Switch release:
+- Per-frame hooks installed through the gift link, measured on an emulator of the Switch release
+  and, for fast-forward, on a retail Switch:
   fast-forward while R is held, a countdown to the next shiny with slow motion, the lead's IVs on
   screen, no wild encounters; any of them kept in the save and reinstalled by talking to MOM
 
