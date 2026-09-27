@@ -214,8 +214,8 @@ acknowledged, 1.6 ms average from ETH_TX to TX-done, 10.7 ms at most. Under a fl
 which at 1 Mbit/s takes about 96% of the air: 1227 of 1227, 26.8 ms average, 218 ms at most, and the
 station received 794 of the flood.
 
-Four FireRed trades hosted as an access point, the same line with the channel changed; the console
-acknowledged every frame in all four. Wait is ETH_TX to TX-done; retries are the share of data
+Five FireRed trades hosted as an access point, the same line with the channel changed, the last with
+the access point's rate pinned at 24 Mbit/s; the console acknowledged every frame in all five. Wait is ETH_TX to TX-done; retries are the share of data
 frames the sniffer saw with the retry bit, from the access point and from the console.
 
 | channel | frames | wait median | wait p99 | wait max | holds over 100 ms | retries AP / console |
@@ -224,6 +224,7 @@ frames the sniffer saw with the retry bit, from the access point and from the co
 | 6 | 13670 | 0.85 ms | 18 ms | 108 ms | 1 | 10.5% / 7.7% |
 | 11 | 7069 | 0.86 ms | 9 ms | 46 ms | 0 | 15.0% / 5.7% |
 | 1 | 7332 | 1.03 ms | 25 ms | 88 ms | 0 | 20.6% / 9.4% |
+| 1, 24 Mbit/s pinned | 6892 | 0.73 ms | 69 ms | 185 ms | 5 | 2.8% / 14.3% |
 
 Host to board adds 0.12 to 0.47 ms median (socket to ETH_TX written) and 3.1 to 3.4 ms (ETH_TX to
 the board). Every wait over 100 ms is head-of-line: one frame the console has not acknowledged
@@ -254,7 +255,16 @@ flag byte pin its data rate (`esp_wifi_internal_set_fix_rate`); 0 leaves rate co
 |---|---|---|---|---|---|---|---|
 | rate, Mbit/s | 1 | 11 | 6 | 12 | 24 | 36 | 54 |
 
-`POKELDN_ESP32_AP_FLAGS=0x28` pins 24 Mbit/s. `tools/ldn/esp32_hold_air.py` lists what the sniffer saw
+`POKELDN_ESP32_AP_FLAGS=0x28` pins 24 Mbit/s. Pinned, the board's retry share fell to 2.8% and the
+holds stayed: five of 102 to 185 ms. The rate the board picks does not decide a hold.
+
+Both directions fail together during a hold. Between the first and last copy of a held frame, the
+console's data frames to the board carry the retry bit on 8 of 19 (42%, rate control on) and 19 of 29
+(66%, pinned), against 11% and 14% over the whole session; one console frame went out six times at
+six rates. The sniffer receives both sides at -19 to -21 dBm throughout. What stops each side from
+acknowledging the other in that window is unknown.
+
+`tools/ldn/esp32_hold_air.py` lists what the sniffer saw
 during each hold. TX-dones complete out of order and the board's
 receive times can swap two frames written 0.1 ms apart; `tools/ldn/esp32_hold.py CAPTURE TRACE`
 pairs them by length and splits these stages.

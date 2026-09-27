@@ -65,8 +65,10 @@ for seq, waited, t in holds:
     print(f"\nseq {seq} held {waited:.0f} ms: {len(idx)} copies seen, sniff span {lo}..{hi}")
     for i in range(max(0, lo - a.context), min(len(sn), hi + a.context + 1)):
         x = sn[i]
-        who = "AP " if x["a2"] == a.ap else "STA" if x["a2"] == a.sta else x["a2"]
+        who = "AP " if x["a2"] == a.ap else x["a2"]
+        if x["a2"] == a.sta:  # the console also talks to its home access point on the same channel
+            who = "STA" if x["a1"] == a.ap else "STA>" + ("bcast" if x["a1"].startswith(("ff", "33")) else x["a1"])
         kind = {0: "mgmt", 1: "ctrl", 2: "data"}.get(x["type"], "?") + f"/{x['sub']}"
         mark = "*" if i in idx else " "
-        print(f"  {mark}{i:6d} {who} {kind:8s} seq {x['seq']:4d} {'R' if x['retry'] else ' '}"
+        print(f"  {mark}{i:6d} {who:21s} {kind:8s} seq {x['seq']:4d} {'R' if x['retry'] else ' '}"
               f"{'PM' if x['pm'] else '  '} rate {x['rate']} rssi {x['rssi']} t {x['t']:.3f}")
