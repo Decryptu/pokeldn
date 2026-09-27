@@ -264,6 +264,18 @@ console's data frames to the board carry the retry bit on 8 of 19 (42%, rate con
 six rates. The sniffer receives both sides at -19 to -21 dBm throughout. What stops each side from
 acknowledging the other in that window is unknown.
 
+The console's retries toward the board are the board's receive misses. The board's promiscuous
+receive path copies the 802.11 header of every frame the console sends it (RX_MGMT, 40 bytes);
+matched by sequence number against the sniffer, a frame the console sent more than once reached the
+board as one copy carrying the retry bit in 1008 of 1027 over three trades: the board never heard the
+first copy the sniffer heard. The board missed 5.7 to 8.5% of the console's first copies at
+54 Mbit/s and 4.5 to 12.1% at 48 Mbit/s, while its own RSSI for the console was -20 to -21 dBm. What
+the board's radio was doing when it missed a copy is unknown. In sniffer order, a missed first copy
+follows another console frame 46 to 52% of the time (two trades) and 37% (a third), against 28 to
+32% for a first copy the board heard. A board copy that carries the retry bit, with no earlier
+copy of its sequence number, marks a miss from the board's trace alone. `tools/ldn/esp32_rx_copies.py HOST_TRACE
+SNIFF_TRACE --ap BSSID --sta MAC` makes the count.
+
 `tools/ldn/esp32_hold_air.py` lists what the sniffer saw
 during each hold. TX-dones complete out of order and the board's
 receive times can swap two frames written 0.1 ms apart; `tools/ldn/esp32_hold.py CAPTURE TRACE`
