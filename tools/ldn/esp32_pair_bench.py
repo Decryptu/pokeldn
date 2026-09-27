@@ -65,7 +65,7 @@ def on_a(t, p):
         # a gap over 1 s is the sequence number wrapping: a new frame
         new = seq not in heard or time.monotonic() - heard[seq] > 1.0
         a_copies["frames" if new else "duplicates"] += 1
-        if stamp is not None: a_rx.append((stamp, int(new and retry)))
+        if stamp is not None: a_rx.append((stamp, int(new and retry), seq, int(new)))
         if new and retry: a_copies["missed first copy"] += 1
         heard[seq] = time.monotonic(); a_rssi[p[1] - 256 if p[1] > 127 else p[1]] += 1
     elif t == esp32.MSG_TX_DONE and t0[0] and len(p) >= 8:
@@ -129,7 +129,7 @@ if b_done:
             out.writelines(p.hex() + "\n" for p in a_census)
     if args.done_out and a_rx:
         with open(args.done_out + ".rx", "w") as out:   # A's receive time, 1 when a first copy was missed
-            out.writelines(f"{u} {m}\n" for u, m in a_rx)
+            out.writelines(" ".join(map(str, r)) + "\n" for r in a_rx)   # board_us missed seq first-seen
     if args.done_out:
         with open(args.done_out, "w") as out:
             out.writelines(f"{u} {s} {h:.6f}\n" for s, u, h in b_done)

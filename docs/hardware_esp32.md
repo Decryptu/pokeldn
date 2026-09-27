@@ -418,6 +418,15 @@ misses on channel 1, a neighbour frame was on the air in the 300 us, 1 ms and 3 
 leave no trace at the access point, not even a frame failing its FCS; 6 to 13% arrive as a strong frame
 failing it. An ESP32 station sends every retry behind an RTS, 128 us before the data frame.
 
+The board misses most often the frame that follows its own transmission. A FireRed console sends
+every data frame to the board behind RTS/CTS, although the board's beacon carries ERP byte 0 and no
+HT operation element: the board answers the RTS with a CTS at 6 Mbit/s and the data follows it 60 us
+later on a third board's clock, the CTS's 44 us plus SIFS. Over one trade on channel 1 the board
+acknowledged 3705 of 4034 such data frames; the 329 it missed followed its CTS by the same 60 us.
+On the bench, a station sending pairs (`--burst 2`), the second frame, which follows the access
+point's ACK of the first, was missed at 5.0% against 2.3% for the first on channel 3, and at 5.2%
+against 5.2% on channel 1 (`--ap-flags2 4`, BASE.rx with sequence numbers).
+
 The driver retries in software: `lmacRetryTxFrame` (libpp `lmac.o`) sends each copy again through
 `lmacTxFrame`, up to limits kept in `lmacConfMib` (short at +21, long at +20, both 32 by default);
 `esp_wifi_internal_set_retry_counter(short, long)` sets them. With the access point sending 100
@@ -724,7 +733,8 @@ entered: the handshake finished 0.46 s after the association, and a trade ran to
   link is saturated; they are not evidence of loss on the air.
 - The access point board misses 1 to 22% of a station's OFDM first copies at -20 to -48 dBm, evenly in
   time, and misses ACKs during a FireRed hold; DSSS frames almost never; the share varies by channel
-  (channel 3 lowest, channel 1 highest here); the cause is unknown. Ruled out: the beacon interval,
+  (channel 3 lowest, channel 1 highest here) and is highest for a frame that follows the board's own
+  CTS or ACK by SIFS; what in the board's receive path causes it is unknown. Ruled out: the beacon interval,
   promiscuous receive, the driver's noise-floor check, the board unit, the CPU clock (160 or
   240 MHz), the static receive buffer count (16 or 25), receiver overload, the signal margin, the
   Switch's Bluetooth, a 50 or 100 Hz source.

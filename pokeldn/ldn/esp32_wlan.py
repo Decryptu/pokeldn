@@ -345,7 +345,7 @@ class EspAccessPoint:
         self._factory.ap_key = self._key
         await trio.to_thread.run_sync(
             radio.ap_start, self._channel, self._address, self._ssid, self._key,
-            self._max_stations, self._factory.ap_flags)
+            self._max_stations, self._factory.ap_flags, self._factory.ap_flags2)
         with trio.fail_after(5):
             while True:
                 msg_type, payload = await router.control.receive()
@@ -386,12 +386,13 @@ class EspFactory:
     elsewhere."""
 
     def __init__(self, radio: esp32.Radio, port_factory=None, join_timeout: float = 20.0,
-                 ap_flags: int = 0):
+                 ap_flags: int = 0, ap_flags2: int = 0):
         self.radio = radio
         self.router = _Router(radio)
         self.port_factory = port_factory or default_port_factory()
         self.join_timeout = join_timeout
         self.ap_flags = ap_flags
+        self.ap_flags2 = ap_flags2
         self.tap = None
         self.ap_key = None
         self._ap_address = None
@@ -469,7 +470,7 @@ def set_station_mac(mac) -> None:
 
 
 def use(port: str | None = None, *, radio: esp32.Radio | None = None, port_factory=None,
-        ap_flags: int = 0, log=None) -> esp32.Radio:
+        ap_flags: int = 0, ap_flags2: int = 0, log=None) -> esp32.Radio:
     """Routes every later `ldn.scan` / `ldn.connect` / `ldn.create_network` through the board.
     The serial port is opened once and kept, since opening it can reset the board."""
     global _radio
@@ -482,7 +483,7 @@ def use(port: str | None = None, *, radio: esp32.Radio | None = None, port_facto
 
     @contextlib.asynccontextmanager
     async def factory():
-        esp = EspFactory(radio, port_factory=port_factory, ap_flags=ap_flags)
+        esp = EspFactory(radio, port_factory=port_factory, ap_flags=ap_flags, ap_flags2=ap_flags2)
         try:
             yield esp
         finally:
@@ -536,6 +537,7 @@ def use_from_environment(log=None) -> esp32.Radio | None:
     port = spec[len("esp32:"):]
     if port == "auto":
         port = auto_port()
-    # POKELDN_ESP32_AP_FLAGS: the AP_START flag byte (esp32.AP_FLAG_*), for bisecting the softAP.
+    # POKELDN_ESP32_AP_FLAGS / _AP_FLAGS2: AP_START's two flag bytes, for bisecting the softAP.
     ap_flags = int(os.environ.get("POKELDN_ESP32_AP_FLAGS", "0"), 0)
-    return use(port, ap_flags=ap_flags, log=log)
+    ap_flags2 = int(os.environ.get("POKELDN_ESP32_AP_FLAGS2", "0"), 0)
+    return use(port, ap_flags=ap_flags, ap_flags2=ap_flags2, log=log)
