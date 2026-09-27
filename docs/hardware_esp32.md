@@ -298,7 +298,21 @@ beacon and the promiscuous callback do not cause the misses.
 A sniffing board keeps every ACK on its channel as a 10-byte RX_SNIFF frame (the promiscuous control
 filter, ACK only). An ACK names only its receiver, so `tools/ldn/esp32_hold_air.py` reads one as the
 answer to the data copy just before it and counts copies acknowledged on the air and sent again anyway.
-Such a copy means its sender missed the ACK. `tools/ldn/esp32_rx_copies.py HOST_TRACE
+Such a copy means its sender missed the ACK. 
+
+With ACKs sniffed, one FireRed trade on channel 1 (rate control on, 6744 frames, one hold over 100 ms):
+
+| sender | first copies | no ACK on the air after it | copies acknowledged and sent again |
+|---|---|---|---|
+| board | 6514 | 490 (7.5%) | 56 |
+| console | 4517 | 428 (9.5%) | 2 |
+
+Each receiver leaves a similar share of first copies unacknowledged; only the board misses ACKs.
+In the 119 ms hold the board's first copy went unacknowledged, the console acknowledged the second,
+and the board sent a third, which was acknowledged; the console meanwhile sent one frame five times
+before the board acknowledged it. In a 61 ms wait the console acknowledged the first copy and the
+board sent it again. The board's copies of a held frame are about 40 ms apart in sniffer order.
+During a hold the board hears neither the console's data frames nor its ACKs. Why is unknown. `tools/ldn/esp32_rx_copies.py HOST_TRACE
 SNIFF_TRACE --ap BSSID --sta MAC` makes the count.
 
 `tools/ldn/esp32_hold_air.py` lists what the sniffer saw
