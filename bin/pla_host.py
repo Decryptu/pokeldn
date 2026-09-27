@@ -18,7 +18,6 @@ with the session key derived from our own SSID, and every message inside is prin
 """
 import argparse
 import binascii
-import hashlib
 import json
 import os
 import sys
@@ -71,6 +70,7 @@ PIA_PORT_DEFAULT = 12345        # the port the station list advertises the host 
 HOST_STATION_INDEX = 0
 CONSOLE_STATION_INDEX = 1
 NET_REPEAT_SECONDS = 0.5
+GAME_CHANNEL_RESEND = 0.4       # seconds a 0x7c message waits for its acknowledgement
 SESSION_JOIN_REQUEST = 0
 RTT_REQUEST = 0
 RTT_RESPONSE = 1
@@ -420,7 +420,8 @@ def main():
     if args.trade_box_collect:
         os.makedirs(os.path.expanduser(args.trade_box_collect), exist_ok=True)
     collected = set()           # records already written, so a retransmit is not written twice
-    box_sent = set()            # (src_ip, selector) of a trade box message we have answered
+    rx_windows = {}             # (src_ip, port) -> the console's game channel stream, as received
+    tx_window = reliable5.SendWindow(GAME_CHANNEL_RESEND)   # the host's, by (src_ip, port)
     # ONE SEND SEQUENCE PER STREAM. Each station's sliding window on a port is its own, so every
     # message the host originates on a port takes the next id in the host's own sequence, mirrors
     # included. Numbering a mirror with the id the console used collides as soon as the host sends
@@ -432,8 +433,23 @@ def main():
         seq = box_seq.get((src_ip, port), 1)
         box_seq[(src_ip, port)] = seq + 1
         return seq
+
+    def own_lowest(src_ip, port):
+        """-> the host's lowest unacknowledged sequence on a port, else its next: the most any host
+        message may declare lowest pending, or the console skips a message still to be resent."""
+        return tx_window.lowest((src_ip, port), box_seq.get((src_ip, port), 1))
+
+    def send_reliable(src_ip, dst_var, body, *, protocol, port):
+        """Send one game channel data message and keep it until the console acknowledges it."""
+        seq = reliable5.parse(body)["sequence_id"]
+        body = reliable5.set_lowest_pending(body, min(seq, own_lowest(src_ip, port)))
+        pkt = build_reply(keys, transport.our_ip, body, dst_var, os.urandom(8), protocol=protocol,
+                          port=port)
+        transport.send(pkt, src_ip)
+        tx_window.sent((src_ip, port), seq, (body, dst_var, protocol), time.time())
+        return pkt
+
     channel_mirrored = set()    # (src_ip, port) of a console channel message we have answered
-    channel_announced = set()   # (src_ip, key) the host has announced open on port 1
     channel_opened = set()      # src_ip we have opened the host's own port-0 channel to
     atomic_sent = set()         # src_ip we have sent the Atomic kind-0 announce probe to
     station_ids = {}            # src_ip -> the ids that session named, for the leave the host owes
@@ -511,6 +527,17 @@ def main():
                         transport.send(rtt, ip)
                         record(rec="out", dst=ip, kind="rtt request", hex=rtt.hex(), t=now)
                         print(f"[pla] -> {ip}: rtt request, version {args.rtt_version}")
+            # A lost host message is a silent stall: the console, acknowledged, never asks again.
+            # A resend keeps its sequence id under a new nonce (docs/pla.md, Acknowledgement).
+            for (ip, port), seq, (body, dst_var, protocol) in tx_window.due(now):
+                if ip in left:
+                    continue
+                pkt = build_reply(keys, transport.our_ip, body, dst_var, os.urandom(8),
+                                  protocol=protocol, port=port)
+                transport.send(pkt, ip)
+                record(rec="out", dst=ip, kind="game channel resend", port=port, seq=seq,
+                       hex=pkt.hex(), t=now)
+                print(f"[pla] -> {ip}: game channel resend (port {port}, seq {seq})")
             transport.wait_readable(0.05)
             for payload, src_ip in transport.recv():
                 seen += 1
@@ -559,10 +586,10 @@ def main():
                             atomic_sent.discard(src_ip)
                             exchange_sent.discard(src_ip)
                             channel_opened.discard(src_ip)
-                            box_sent = {b for b in box_sent if b[0] != src_ip}
                             box_seq = {k: v for k, v in box_seq.items() if k[0] != src_ip}
+                            rx_windows = {k: v for k, v in rx_windows.items() if k[0] != src_ip}
+                            tx_window.forget(lambda stream: stream[0] == src_ip)
                             channel_mirrored = {c for c in channel_mirrored if c[0] != src_ip}
-                            channel_announced = {c for c in channel_announced if c[0] != src_ip}
                             # Echo the console's own record of the host ids (what it wrote into the
                             # request's destination fields) so the four id compares cannot miss.
                             host_const = j["destination_constant_id"]
@@ -627,15 +654,39 @@ def main():
                                 cm = reliable5.parse(msg.payload)
                             except ValueError:
                                 cm = None
+                            # The console's acknowledgement releases the host's messages below its
+                            # id and those its mask names (0x74f0ec); the rest are resent.
+                            if cm and not cm["flags"] & reliable5.FLAG_APPLICATION_DATA:
+                                try:
+                                    entries = reliable5.parse_ack_payload(cm["payload"])["entries"]
+                                except ValueError:
+                                    entries = []
+                                if entries:
+                                    tx_window.acked((src_ip, msg.port), entries[0]["ack_id"],
+                                                    entries[0]["mask"])
+                            # The console's own receive rule: one past the contiguous run, the held
+                            # ones in the mask, each sequence handled once and in order. A second
+                            # trade repeats 05 00, 07 00 and every phase byte for byte (docs/pla.md).
+                            ready = []
                             if cm and (cm["flags"] & reliable5.FLAG_APPLICATION_DATA):
-                                body = game_channel.build_ack(cm["sequence_id"] + 1,
-                                                              lowest_pending=cm["sequence_id"])
+                                window = rx_windows.setdefault((src_ip, msg.port),
+                                                               reliable5.ReceiveWindow())
+                                ready = window.take(cm["sequence_id"], cm)
+                                lowest = min(max(1, window.next - 1), own_lowest(src_ip, msg.port))
+                                body = game_channel.build_ack(window.next, lowest_pending=lowest,
+                                                              mask=window.mask())
                                 pkt = build_reply(keys, transport.our_ip, body, header.src_var,
                                                   os.urandom(8), protocol=game_channel.PROTOCOL,
                                                   port=msg.port)
                                 transport.send(pkt, src_ip)
-                                record(rec="out", dst=src_ip, kind="game channel ack", hex=pkt.hex(),
-                                       t=time.time())
+                                record(rec="out", dst=src_ip, kind="game channel ack",
+                                       ack_id=window.next, hex=pkt.hex(), t=time.time())
+                                if not ready:
+                                    print(f"[pla] -> {src_ip}: game channel ack (port {msg.port}, "
+                                          f"seq {cm['sequence_id']}, "
+                                          + ("a repeat)" if cm["sequence_id"] < window.next
+                                             else f"held behind {window.next})"))
+                            for cm in ready:
                                 key, payload_body = game_channel.split_message(cm["payload"])
                                 announced = (msg.port == game_channel.JOINER_PORT
                                              and channel_table.is_announcement(cm["payload"]))
@@ -675,29 +726,25 @@ def main():
                                 # Port 1 is the channel table: the console announces each handler
                                 # key it opens or closes, and sends on a key only once the peer has
                                 # announced it open (`pokeldn.pla.channel_table`). Announce back
-                                # every key the console opens, once; a close is read and left alone.
+                                # every key the console opens; a close is read and left alone. A
+                                # repeated open is an OR on the console (docs/pla.md).
                                 if announced:
                                     for ckey, opened in channel_table.parse(cm["payload"]):
                                         print(f"[pla] <- {src_ip}: channel {ckey.hex()} "
                                               f"{'open' if opened else 'closed'}")
                                         # the phase key closes once the trade is written (docs/pla.md)
-                                        if (not opened and ckey == trade_box.PHASE_KEY
-                                                and (src_ip, "traded") not in box_sent):
-                                            box_sent.add((src_ip, "traded"))
+                                        if not opened and ckey == trade_box.PHASE_KEY:
                                             show_done()
                                             print(f"[pla] {src_ip}: trade complete, the phase key "
                                                   "closed")
-                                        if not opened or (src_ip, ckey) in channel_announced:
+                                        if not opened:
                                             continue
-                                        channel_announced.add((src_ip, ckey))
                                         announce = game_channel.build_payload_message(
                                             channel_table.build([(ckey, True)]),
                                             next_seq(src_ip, msg.port), flags=cm["flags"])
-                                        pkt = build_reply(keys, transport.our_ip, announce,
-                                                          header.src_var, os.urandom(8),
-                                                          protocol=game_channel.PROTOCOL,
-                                                          port=msg.port)
-                                        transport.send(pkt, src_ip)
+                                        pkt = send_reliable(src_ip, header.src_var, announce,
+                                                            protocol=game_channel.PROTOCOL,
+                                                            port=msg.port)
                                         record(rec="out", dst=src_ip, kind="channel table",
                                                key=ckey.hex(), hex=pkt.hex(), t=time.time())
                                         print(f"[pla] -> {src_ip}: channel {ckey.hex()} open "
@@ -715,10 +762,8 @@ def main():
                                     mirrored = game_channel.build_message(
                                         key, payload_body, next_seq(src_ip, msg.port),
                                         flags=cm["flags"])
-                                    pkt = build_reply(keys, transport.our_ip, mirrored,
-                                                      header.src_var, os.urandom(8),
-                                                      protocol=game_channel.PROTOCOL, port=msg.port)
-                                    transport.send(pkt, src_ip)
+                                    pkt = send_reliable(src_ip, header.src_var, mirrored,
+                                                        protocol=game_channel.PROTOCOL, port=msg.port)
                                     record(rec="out", dst=src_ip, kind="game channel mirror",
                                            hex=pkt.hex(), t=time.time())
                                     print(f"[pla] -> {src_ip}: game channel message back "
@@ -729,16 +774,13 @@ def main():
                                 # completes, so mirroring it is what closes the rendezvous.
                                 selector = trade_box.read_selector(cm["payload"])
                                 if (args.trade_box and offered is None and selector is not None
-                                        and selector[0] in trade_box.MIRRORED_SELECTORS
-                                        and (src_ip, selector[1]) not in box_sent):
-                                    box_sent.add((src_ip, selector[1]))
+                                        and selector[0] in trade_box.MIRRORED_SELECTORS):
                                     seq = next_seq(src_ip, msg.port)
                                     body = game_channel.build_message(
                                         bytes(game_channel.KEY_SIZE), selector[1], seq)
-                                    pkt = build_reply(keys, transport.our_ip, body, header.src_var,
-                                                      os.urandom(8), protocol=trade_box.PROTOCOL,
-                                                      port=trade_box.PORT)
-                                    transport.send(pkt, src_ip)
+                                    pkt = send_reliable(src_ip, header.src_var, body,
+                                                        protocol=trade_box.PROTOCOL,
+                                                        port=trade_box.PORT)
                                     record(rec="out", dst=src_ip, kind="trade step",
                                            selector=selector[0], hex=pkt.hex(), t=time.time())
                                     print(f"[pla] -> {src_ip}: trade step "
@@ -749,17 +791,13 @@ def main():
                                 # job cannot leave state 2 until the host announces the phase.
                                 phase = trade_box.read_phase(cm["payload"])
                                 if (args.trade_box and phase is not None
-                                        and phase[0] == trade_box.PHASE_SELECTOR_MINE
-                                        and (src_ip, "phase", phase[1]) not in box_sent):
-                                    box_sent.add((src_ip, "phase", phase[1]))
+                                        and phase[0] == trade_box.PHASE_SELECTOR_MINE):
                                     seq = next_seq(src_ip, msg.port)
                                     body = trade_box.build_phase(
                                         trade_box.PHASE_SELECTOR_HOST, phase[1], seq,
                                         flags=cm["flags"])
-                                    pkt = build_reply(keys, transport.our_ip, body, header.src_var,
-                                                      os.urandom(8), protocol=trade_box.PROTOCOL,
-                                                      port=msg.port)
-                                    transport.send(pkt, src_ip)
+                                    pkt = send_reliable(src_ip, header.src_var, body,
+                                                        protocol=trade_box.PROTOCOL, port=msg.port)
                                     record(rec="out", dst=src_ip, kind="trade phase",
                                            phase=phase[1], hex=pkt.hex(), t=time.time())
                                     print(f"[pla] -> {src_ip}: trade phase {phase[1]} as the host "
@@ -769,10 +807,9 @@ def main():
                                     opened = game_channel.build_open(
                                         game_channel.HOST_OPEN_PAYLOAD,
                                         next_seq(src_ip, game_channel.HOST_PORT))
-                                    pkt = build_reply(keys, transport.our_ip, opened, header.src_var,
-                                                      os.urandom(8), protocol=game_channel.PROTOCOL,
-                                                      port=game_channel.HOST_PORT)
-                                    transport.send(pkt, src_ip)
+                                    pkt = send_reliable(src_ip, header.src_var, opened,
+                                                        protocol=game_channel.PROTOCOL,
+                                                        port=game_channel.HOST_PORT)
                                     record(rec="out", dst=src_ip, kind="game channel open",
                                            hex=pkt.hex(), t=time.time())
                                     print(f"[pla] -> {src_ip}: game channel open "
@@ -783,22 +820,15 @@ def main():
                                 # offering it, and the two land in different slots on its side. Answer
                                 # with the selector we were sent: a showing answered with an offer, or
                                 # an offer answered with a showing, leaves the other slot empty.
-                                # One answer per distinct message: a retransmission carries the same
-                                # selector, round and record and is already answered.
-                                box_key = (src_ip, offered["selector"], offered["counter"],
-                                           hashlib.sha256(offered["record"]).digest()) \
-                                    if offered is not None else None
-                                if args.trade_box and offered is not None and box_key not in box_sent:
-                                    box_sent.add(box_key)
+                                if args.trade_box and offered is not None:
                                     box_record = offer_record()
                                     seq = next_seq(src_ip, msg.port)
                                     body = trade_box.build_message(
                                         box_record, sequence_id=seq,
                                         selector=offered["selector"], counter=offered["counter"])
-                                    pkt = build_reply(keys, transport.our_ip, body, header.src_var,
-                                                      os.urandom(8), protocol=trade_box.PROTOCOL,
-                                                      port=trade_box.PORT)
-                                    transport.send(pkt, src_ip)
+                                    pkt = send_reliable(src_ip, header.src_var, body,
+                                                        protocol=trade_box.PROTOCOL,
+                                                        port=trade_box.PORT)
                                     record(rec="out", dst=src_ip, kind="trade box", hex=pkt.hex(),
                                            t=time.time())
                                     print(f"[pla] -> {src_ip}: trade box (port {trade_box.PORT}, "

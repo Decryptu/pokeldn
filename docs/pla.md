@@ -483,10 +483,25 @@ one past the last sent, releases everything.
 An acknowledgement id is cumulative. Acknowledging n+2 releases n and n+1 together whether or not n
 arrived, so a receiver that acknowledges each message as its own sequence plus one loses message n
 for good when n is lost on the air and n+1 arrives: the sender never resends it. The console's own
-rule is the id one past the contiguous run with the held entries in the mask, which
-`pokeldn.ldn.reliable5.contiguous_through` computes. `bin/pla_host.py` acknowledges each 0x7c
-message as its sequence plus one with an empty mask, and sends each of its own 0x7c messages once
-without reading the console's acknowledgements of them.
+rule is the id one past the contiguous run with the held entries in the mask. The mask is four
+little-endian words as stored: the parser copies the bytes (`0x742da0`, memcpy at `0x742f00`) and
+`0x74f2a0` reads one word at a time, so bit `seq - ack_id - 1` is bit n of the 128-bit little-endian
+integer (`pokeldn.ldn.reliable5.build_mask`). A retail console acknowledged host 0x7c data within
+17 to 67 ms over 66 messages in four trades.
+
+The receiver moves its window base on every message's lowest-pending field, acknowledgements
+included, before it reads the flags (`0x74c250` stores it at `[x0+0x20]`; the base at `+0x18` walks
+over empty slots up to the first occupied one, `0x74c2f0..0x74c2f8`; the flag dispatch follows at
+`0x74c3ac`). A lower value moves nothing (`0x74c25c`). A message declaring its own sequence while an
+earlier one of the sender's is still unacknowledged pushes the base past the earlier one, and that
+message's resend then arrives below the base and is dropped. A retail console's own acknowledgements
+declare less than their id (ack 8 with lowest pending 6).
+
+`bin/pla_host.py` keeps each of its 0x7c messages until the console's acknowledgement passes it,
+resends one unacknowledged for 0.4 s under the same sequence id, declares at most its own lowest
+unacknowledged sequence as lowest pending, acknowledges one past the contiguous run with the mask,
+and hands the console's messages over once each in sequence order (`pokeldn.ldn.reliable5`,
+`SendWindow` and `ReceiveWindow`).
 
 A retransmission carries its original sequence id and a new nonce, so the sequence id is what tells
 a copy from a new message with the same body.
@@ -736,7 +751,7 @@ other exit is the cancel request `0x26dc640`, which sets `[job+0x14]` and `[job+
 reached only through `0x26d9e90`, from the scene at `0x1109ef4` and `0x110b7ac`; the second starts a
 stopwatch at `[scene+0x278]` (`0x110b794..0x110b79c`) just before cancelling. So a phase answer lost
 on the air holds the job where it is until the player cancels, unless the answering station resends
-it: the console, acknowledged, has nothing outstanding to resend. The same holds for each of the
+it: the console has nothing outstanding to resend. The same holds for each of the
 eleven answers a host owes in a trade: the port-0 open, two channel opens, the showing, the offer,
 selectors 5 and 7, and four phases. A lost `02 03` leaves a started job at state 2.
 

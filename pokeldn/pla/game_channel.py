@@ -48,14 +48,15 @@ def build_open(payload, sequence_id=SEQUENCE_ID, initialized=True):
                                    stream_id=0) + bytes(payload))
 
 
-def build_ack(ack_id, lowest_pending=1, station_index=0):
+def build_ack(ack_id, lowest_pending=1, station_index=0, mask=b""):
     """-> the one-entry acknowledgement a station answers a channel message with.
 
     The reference acknowledges the id one past the sequence received, with the window's own field at
     the lowest pending id and an empty mask, under a nine-byte header with no destination bitmap.
+    `mask` names what is held past a gap (`reliable5.build_mask`).
     """
     payload = reliable5.build_ack_payload(
-        [dict(stream_id=station_index, ack_id=ack_id, field_0x50=lowest_pending)])
+        [dict(stream_id=station_index, ack_id=ack_id, field_0x50=lowest_pending, mask=mask)])
     return (reliable5.build_header(0, reliable5.ACK_SEQUENCE, len(payload),
                                    lowest_pending=lowest_pending, stream_id=0) + payload)
 

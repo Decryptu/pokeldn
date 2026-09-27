@@ -250,6 +250,13 @@ class Reassembler:
         return "message", payload
 
 
+def set_lowest_pending(message, lowest):
+    """-> `message` with its header's lowest-pending field replaced. The receiver walks its base up
+    to it over empty slots and then discards what arrives below (Arceus `0x74c250`, Scarlet
+    `0x6eff28`), so a sender never declares more than its own lowest unacknowledged sequence."""
+    return bytes(message[:6]) + struct.pack(">H", lowest & 0xFFFF) + bytes(message[8:])
+
+
 MASK_BITS = 128                   # 0x74f284: offsets past 0x7f are never released by the mask
 
 
@@ -287,9 +294,9 @@ class ReceiveWindow:
 
 
 class SendWindow:
-    """A sender's data messages, each kept until the peer's acknowledgement releases it and due again
-    every `interval` seconds until then. The release rule is the console's (`0x74f0ec`): below the
-    ack id, or above it with its mask bit set. Trap: a resend keeps its sequence id."""
+    """A sender's data messages, each kept until the peer's acknowledgement releases it and due
+    again every `interval` seconds until then. The release rule is the console's (`0x74f0ec`):
+    below the ack id, or above it with its mask bit set. Trap: a resend keeps its sequence id."""
 
     def __init__(self, interval):
         self.interval, self.pending = interval, {}     # (stream, seq) -> [item, last sent]
@@ -308,8 +315,13 @@ class SendWindow:
             del self.pending[(stream, seq)]
         return gone
 
+    def lowest(self, stream, default):
+        """-> the lowest sequence unacknowledged on `stream`, else `default`: the most a message's
+        lowest-pending field may declare (docs/pia.md, What the receiver discards in silence)."""
+        return min((seq for s, seq in self.pending if s == stream), default=default)
+
     def due(self, now):
-        """-> [(stream, seq, item)] unacknowledged for `interval`, in order; each is due again later."""
+        """-> [(stream, seq, item)] unacknowledged for `interval`, in order; each is due again."""
         out = []
         for (stream, seq), entry in sorted(self.pending.items(), key=lambda kv: kv[0]):
             if now - entry[1] >= self.interval:
