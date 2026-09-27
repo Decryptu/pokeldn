@@ -448,7 +448,9 @@ for a kernel interface, which is how every launcher picks its path.
 
 ## The board's LED and buttons
 
-The ELEGOO ESP-32 Type-C board (CP2102, ESP32-D0WD-V3) carries two LEDs and two buttons:
+The ELEGOO ESP-32 Type-C board (CP2102, ESP32-D0WD-V3) carries an unbranded module: its shield reads
+"ESP-32 / WIFI+BT SoC Inside / ISM2.4G 802.11/b/g/n" with FCC and CE marks, over a PCB antenna, with
+no Espressif module name. The board carries two LEDs and two buttons:
 
 | part | wired to | controllable |
 |---|---|---|
@@ -554,7 +556,8 @@ completed a FireRed trade as the joiner against a retail Switch 2 hosting:
 | FRLG link loop | 38 to 42 'T' slots per second each way, the rate the rtw88 adapter reaches |
 | trade | the console's Pokemon received intact (species 244, OT id `0xE5BBDF65`); cancel-to-leave, room exit and link close all completed |
 
-The ESP32-WROOM-32E module is built on the ESP32-D0WD-V3.
+These measurements are on the ELEGOO board's unbranded module (ESP32-D0WD-V3 chip), not an Espressif
+WROOM module.
 
 As an access point it has hosted a completed FireRed trade, a retail Switch 2 joining:
 
@@ -635,5 +638,7 @@ entered: the handshake finished 0.46 s after the association, and a trade ran to
 - The access point board misses 5 to 22% of a station's first copies at -20 to -48 dBm, evenly in
   time, and misses ACKs during a FireRed hold; the cause is unknown. Ruled out: the beacon interval,
   promiscuous receive, the driver's noise-floor check, the channel, the board unit.
+- Whether an Espressif ESP32-WROOM-32E module misses fewer frames as an access point than the
+  unbranded module on the ELEGOO board is unmeasured.
 - easyworld reports that a classic ESP32 must be the ESP32-WROOM-32E module and that the older
   ESP32-WROOM-32 does not trade reliably.
