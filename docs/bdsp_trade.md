@@ -229,6 +229,13 @@ tranerId; byte cassetVersion; byte langId`, 26 + 4 + 1 + 1 = 32 bytes.
 Check against the encrypted Pokemon of the same trade: 0x1a is 0x0FF0ADB2, that Pokemon's trainer
 id 44466 and secret id 4080; 0x1e is 49, its `version`; 0x1f is 3, its `language`.
 
+The trade screen names the partner from this record, not from the Pia player name the greeting uses
+([the protocol page](bdsp_protocol.md#the-name-in-the-greeting)). The 0x24 branch of
+`UnionRoomManager$$SetNetData` [1.3.0 main.bin 0x1e51940] takes `tranerName`, `tranerId`,
+`cassetVersion` and `langId` from the message and only the font language from the sending station's
+`GetGamerData(...).nameStringLanguage`, wraps the name in `MessageHelper$$SurroundFontTag` and hands
+it to `UnionTradeManager$$SetTargetTranerParam` [0x1c33330].
+
 The ten bytes between the name's terminator and the id are heap residue: `AllocHGlobal` does not
 clear its block and marshalling a string into a fixed field writes the characters and one
 terminator. The word at 0x14 was 107540 in nine runs, 44 in one and 60 in another while every

@@ -14,6 +14,7 @@ from types import SimpleNamespace
 
 from pokeldn import za
 from pokeldn.ldn import crypto, host_pia, pia_connect, reliable, show_done
+from pokeldn.pla.channel_table import TUPLE, decode_uint, encode_uint
 from pokeldn.za import streams
 
 NET_REPEAT = 0.456                # a reference host re-sends its connection status this often
@@ -41,11 +42,28 @@ MSG_SELECTION = "0100"
 MSG_OFFER = "0101"
 MSG_CONFIRM = bytes.fromhex("0102b90100")
 MSG_COMMIT = bytes.fromhex("0104b90100")
+MSG_CANCEL = "0103"
 MSG_STEP = "0200"
 # An offer's last byte: 1 on the preview a station sends unasked, 0 on the player's pick. A pick
 # sent with 1 is drawn as nothing and the partner waits on "Communicating" (docs/za.md).
 OFFER_PREVIEW, OFFER_PICK = 1, 0
 STEP_ANSWER = bytes.fromhex("0201")   # a host answers each 0200 step on protocol 11 with 0201
+
+
+def command_round(inner):
+    """-> the round a 0102, 0103 or 0104 carries, the first integer of its tuple, or None."""
+    try:
+        if len(inner) < 4 or inner[2] != TUPLE:
+            return None
+        return decode_uint(inner, decode_uint(inner, 3)[1])[0]
+    except (ValueError, IndexError):
+        return None
+
+
+def build_command(head, round_):
+    """-> a 0102 or 0104 under `round_`. The console ignores a ConfirmTrade or FinalAgreement whose
+    round is below the one its last CommandCancelTrade set (`0xc8dda0`, `0x2dc52b4`; docs/za.md)."""
+    return bytes.fromhex(head) + bytes([TUPLE]) + encode_uint(1) + encode_uint(round_)
 
 
 def build_rtt_request(tick, micros, host_var):
@@ -117,6 +135,7 @@ class HostSession:
         self.console_offers = 0
         self.offer_sent = False
         self.confirmed = self.committed = False
+        self.round = 0
         self.steps = 0
         self.console_offer = None
         self.trade_complete = False
@@ -312,14 +331,21 @@ class HostSession:
             if inner[-1] == OFFER_PICK and self.offer and not self.offer_sent:
                 self.offer_sent = True
                 self._schedule(now, OFFER_DELAY, self.offer, "our offer")
-        elif inner[:5] == MSG_CONFIRM and not self.confirmed:
+        elif head == MSG_CANCEL:
+            # a cancel moves both stations to the next round and back to the selection
+            self.round = max(self.round, command_round(inner) or 0)
+            self.offer_sent = self.confirmed = self.committed = False
+            self.log(f"[za-host] console cancelled; round {self.round}")
+        elif head == MSG_CONFIRM[:2].hex() and not self.confirmed:
+            self.round = max(self.round, command_round(inner) or 0)
             self.confirmed = True
-            self._schedule(now, CONFIRM_DELAY, MSG_CONFIRM, "confirm 0102")
-            self._schedule(now, COMMIT_DELAY, MSG_COMMIT, "commit 0104")
+            self._schedule(now, CONFIRM_DELAY, build_command("0102", self.round), "confirm 0102")
+            self._schedule(now, COMMIT_DELAY, build_command("0104", self.round), "commit 0104")
             self.committed = True
-        elif inner[:5] == MSG_COMMIT and not self.committed:
+        elif head == MSG_COMMIT[:2].hex() and not self.committed:
+            self.round = max(self.round, command_round(inner) or 0)
             self.committed = True
-            self._schedule(now, 0.03, MSG_COMMIT, "commit 0104")
+            self._schedule(now, 0.03, build_command("0104", self.round), "commit 0104")
         elif head == MSG_STEP:
             self.steps += 1
             answer = streams.build_broadcast(STEP_ANSWER + bytes(inner[2:]),

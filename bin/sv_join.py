@@ -69,7 +69,7 @@ PROTO_CLOCK = 0x77
 # answers with a one, sixteen bytes and a trailing byte (docs/sv.md).
 CLOCK_REQUEST = bytes(18)
 # The 15 bytes a joiner sends to open 0x7c port 2, from a pair trading (docs/sv.md).
-CHANNEL_PORT2_OPEN = bytes.fromhex("03b90200bc09000000000000000000")
+CHANNEL_PORT2_OPEN = port2.build_join(0)
 HOST_BITMAP = 0x01                # the destination mask a joiner writes: the host, station 0
 ACK_ENTRIES = 4                   # what a retail station's bulk ack carries (sv02)
 
@@ -1214,8 +1214,9 @@ async def run_session(args, keys, host_ip, host_mac, our_ip, our_mac, record):
                         station = body[-9:-1].hex() if len(body) > 9 else "?"
                         print(f"[sv] the console ANNOUNCED on 0x80 port 2, station {station}")
                         record(rec="announce", station=station, plain=body.hex(), t=time.time())
-                        send_channel(2, CHANNEL_PORT2_OPEN, "channel port 2 join")
-                        print(f"[sv] -> {host_ip}: the type-3 join on 0x7c port 2")
+                        join_key = port2.announce_key(body) or 0
+                        send_channel(2, port2.build_join(join_key), "channel port 2 join")
+                        print(f"[sv] -> {host_ip}: the type-3 join on 0x7c port 2, key {join_key}")
                     if (args.mirror_records and joined and msg.protocol == streams.PROTOCOL_STREAM
                             and msg.port == streams.HOST_INDEX and rm["sequence_id"] not in mirrored):
                         mirrored.add(rm["sequence_id"])

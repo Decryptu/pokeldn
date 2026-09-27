@@ -43,17 +43,22 @@ Proven on retail hardware, end to end:
 
 ## Unresolved
 
-- One payload never on the wire. Twelve of the 65 message structs hold a C# string, an array or a
-  list; `netdata.OPAQUE` names them. The executable's `Il2CppTypeDefinitionSizes` decides the size
-  and packing of all twelve; eleven have been on the wire and match (`room.MEASURED`). The twelfth,
-  `NetDigGroupIdData` (0x29), has no sender in 1.3.0 ([the protocol page](bdsp_protocol.md)).
-- The Session Protocol (0x94) sits above the reliable transport and has never carried a byte in any
-  capture.
-- Whether the console reads a `NetCharacterStateData` answer. The answers are accepted by the
-  transport, land on the right stream with the right bytes, and have no observable effect.
-- The name the game shows for a talked-to character. No `NetPlayerNameData` and no trainer card
-  went out in the run that produced it.
+- Whether a console acknowledges a reliable Session Protocol (0x94) message on its per-station
+  window before the handler drops it. That an LDN session's joint-session job stays null rests on
+  the two writers of session+0x70 found (`0x157c618`, `0x157cb54`); others were not enumerated
+  ([Joining and the Pia layer](bdsp_session.md#joining-the-mesh)).
+- Whether anything other than a received `NetCharacterStateData` writes a remote character's
+  state, and the character's state before its first one.
+- The console-initiated approach (a character at `{4, 1}`, the player pressing A facing it, the
+  console's 0x63 answered with `64 0003 00 01 04`) has not been run against a retail console.
+- Which PlayerInfo byte becomes the greeting name's language. If it is the byte at offset 122,
+  `bin/bdsp_connect.py`'s default of 1 reads as Japanese, with a name limit of 6 and the Japanese
+  font. Which station's cassette version `UnionWork.nowTargetCassetVersion` holds, and so which
+  substitute name replaces a refused one, is unread. The replacement has not been measured on a
+  console.
+- Whether a `NetDataSelectData` (0x08) arriving with no battle recruitment model faults the
+  console; the receiver does not test the model for null.
+- Whether a console that is not the Grand Underground session host adopts a `NetDigTableData`
+  (0x61) sent by pokeldn before its own table is ready.
 - The ball-capsule 2D grid's extent beyond columns and rows -3..3 on the front; it comes from the
   UI layout ([the protocol page](bdsp_protocol.md)).
-- `NetDataSelectData`'s index. The two runs that swept it declined the conversation before the index
-  could matter; it is unmeasured.

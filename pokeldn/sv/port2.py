@@ -4,7 +4,7 @@ The game's messages on 0x7C port 2 (one station) and 0x80 port 2 (every station)
 dispatcher, `0x1954aec`, keyed on the first byte, types 1 to 0xD. Three of them open a trade:
 
     type 7   host -> all, 0x80 port 2, zlib     the host's announcement: a relayed type 1
-    type 3   joiner -> host, 0x7C port 2        the join, a slot byte and nine zero bytes
+    type 3   joiner -> host, 0x7C port 2        the join, the announcement's key and nine zero bytes
     type 9   host -> all, 0x80 port 2           the answer, carrying the joiner's station id
 
 The type-1 handler `0x18ceb70` copies the 0x8e-byte body, appends the sender's station id and
@@ -48,15 +48,49 @@ def encode_u64(value):
     return bytes([0x83]) + struct.pack("<Q", value)
 
 
-def build_announce(host_station_id, slot=1, kind=2, state=0):
-    """-> the inflated type-7 body a pair's host broadcasts first, 167 bytes."""
-    inner = (encode_uint(slot) + encode_uint(kind) + encode_uint(state)
+def build_announce(host_station_id, kind=1, capacity=2, zero=0, key=0):
+    """-> the inflated type-7 body a pair's host broadcasts first, 167 bytes. `key` is the relay's
+    count of type 1s relayed since its queues were reset (`0x12fbef0`); a join must name it."""
+    inner = (encode_uint(kind) + encode_uint(capacity) + encode_uint(zero)
              + encode_bytes(bytes(JOIN_BLOB_SIZE)) + encode_bytes(bytes(ANNOUNCE_BLOB_SIZE))
              + encode_uint(0))
-    outer = (bytes([TUPLE]) + encode_uint(6) + inner + encode_uint(0) + encode_uint(0)
+    outer = (bytes([TUPLE]) + encode_uint(6) + inner + encode_uint(key) + encode_uint(0)
              + bytes([TUPLE]) + encode_uint(1) + encode_u64(host_station_id) + encode_uint(0))
     return (bytes([TYPE_ANNOUNCE, TUPLE]) + encode_uint(1)
             + bytes([TUPLE]) + encode_uint(5) + outer)
+
+
+def _skip_field(data, pos):
+    if data[pos] == BYTES:
+        size, pos = decode_uint(data, pos + 1)
+        return pos + size
+    return decode_uint(data, pos)[1]
+
+
+def announce_key(body):
+    """-> the key of an inflated type 7, the first integer after its six-tuple, or None. The type-3
+    handler `0x1981ed4` compares the join's first field with it and refuses a mismatch with code 1."""
+    try:
+        if body[0] != TYPE_ANNOUNCE:
+            return None
+        pos = 1
+        for count in (1, 5, 6):
+            if body[pos] != TUPLE:
+                return None
+            n, pos = decode_uint(body, pos + 1)
+            if n != count:
+                return None
+        for _ in range(6):
+            pos = _skip_field(body, pos)
+        return decode_uint(body, pos)[0]
+    except (ValueError, IndexError):
+        return None
+
+
+def build_join(key=0):
+    """-> the type-3 join answering an announcement under `key`."""
+    return (bytes([TYPE_JOIN, TUPLE]) + encode_uint(2) + encode_uint(key)
+            + encode_bytes(bytes(JOIN_BLOB_SIZE)))
 
 
 def deflate_announce(body):

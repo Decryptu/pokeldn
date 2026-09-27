@@ -106,10 +106,12 @@ class ScriptedJoiner:
         return out
 
 
-def test_a_whole_trade_against_a_scripted_joiner(monkeypatch):
+@pytest.mark.parametrize("cancel", [False, True])
+def test_a_whole_trade_against_a_scripted_joiner(monkeypatch, cancel):
     """The preview goes out marked 1, the pick marked 0 and only after the joiner's own pick, the
     confirmation and commit after the joiner's, and every step is answered with its own byte. The
-    board's LED shows the done look once, on the fourth step."""
+    board's LED shows the done look once, on the fourth step. A CommandCancelTrade (0103) moves the
+    round on: the console ignores a later 0102 or 0104 under the old one (0xc8dda0, 0x2dc52b4)."""
     board = esp32_sim.SimulatedBoard(esp32_sim.Air())
     radio = esp32.Radio(board.host_stream())
     monkeypatch.setenv("POKELDN_RADIO", "esp32:simulated")
@@ -143,11 +145,20 @@ def test_a_whole_trade_against_a_scripted_joiner(monkeypatch):
     assert len(offers) == 2 and offers[1][-1] == za_host.OFFER_PICK
     assert offers[1][:-1] == offer[:-1]
 
-    joiner.game(bytes.fromhex("0102b90100"), t)
+    rnd = "00"
+    if cancel:
+        joiner.game(bytes.fromhex("0103b9020100"), t)   # round 1, reason 0: back to the selection
+        t = joiner.run(t + 1.0, t)
+        joiner.game(offer[:-1] + b"\x00", t)            # the joiner picks again
+        t = joiner.run(t + 2.0, t)
+        offers = [x[2] for x in joiner.game_heard() if x[2][:2] == b"\x01\x01"]
+        assert len(offers) == 3 and offers[2][-1] == za_host.OFFER_PICK
+        rnd = "01"
+    joiner.game(bytes.fromhex("0102b901" + rnd), t)
     t = joiner.run(t + 3.0, t)
     tail = [x[2].hex() for x in joiner.game_heard() if x[2][:1] == b"\x01"][-2:]
-    assert tail == ["0102b90100", "0104b90100"]
-    joiner.game(bytes.fromhex("0104b90100"), t)
+    assert tail == ["0102b901" + rnd, "0104b901" + rnd]
+    joiner.game(bytes.fromhex("0104b901" + rnd), t)
     for step in ("03", "06", "0b", "0e"):
         radio.drain()
         assert board.led_looks == []

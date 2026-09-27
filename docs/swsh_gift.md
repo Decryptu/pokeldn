@@ -545,11 +545,28 @@ it to that list, and dispatches, so the list is empty only because nothing has a
 two `std::function` slots instead: the data sink at `job+0x60`, whose target is `0x01005BC0` (the
 importer path), and a progress callback at `job+0xE0` (`0x01005C70`).
 
-Each `0x2D0` record the importer walks (`0x00FF2354`) carries a region mask at record `+0x0E` (u16,
-tested against a region bit the game derives at entry; `0xFFFF` intersects any) and a flag at record
-`+0x13`. When `+0x13` is zero the importer imports the record unconditionally; when it is non-zero it
-first calls `0x01449820`, which walks the player's held-card table (0x1662-byte stride) and skips a
-duplicate. Where an accepted record is kept is unresolved.
+Each `0x2D0` record the importer walks (`0x00FF2354`) passes the version mask and the once-per-card
+table of [What a record must carry](#what-a-record-must-carry) before it is built.
+
+The importer's second argument is the route the card came by. It passes unchanged from `0x00FF0E00`
+through `0x00FF1FB0` to `0x00FF2170`, which keeps it at `[sp+0x35c]`; it becomes the card object's
+`+0x64` (`0x00FF3F5C`) and, as `route != 0`, header byte `+0x0E` (`0x010B5FAC`). Each caller is a
+lambda in slot 16 of a receive state's vtable, tied to its state by the name that state's code
+references:
+
+| state | route | call sites |
+|---|---|---|
+| `StateReceiveLocal` | 0 | `0x01005bf8` |
+| `StateReceiveInternet` | 1 | `0x01011588`, `0x010115f0` |
+| `StateReceiveSerial` | 2 | `0x0100a268`, `0x0100a2d0` |
+| `StateReceiveFromBall` | 2 | `0x0100fc78`, `0x0100fce0` |
+| `StateReceiveRankMatch` | 3, 4 | `0x01012458`, `0x010124c0` |
+
+Any route but 0 overwrites the record's date ([The card's date](#the-cards-date)). Routes 3 and 4
+also set bytes from 2 to 4 in blocks `0xa83021c1` (0x268 bytes) and `0xce07d358` (0x1c bytes) after
+the import (`0x00ff24e0..0x00ff26d4`): route 3 at an index taken from record `+0x1c` (at most
+0x2f), in the half chosen by `+0x1e` and the group chosen by the kind at `+0x11`; route 4 when the
+u32 at record `+0x18` equals the block's first word. Route 0 touches neither block.
 
 Confirmed from the consuming end. Forcing `StateConfirmGift` (12) crashes on entry reading `+0x1AC`
 of a null card object (`0x015C9230 ldrb w8,[x0,#0x1AC]`, x0 = 0, from the confirm controller
@@ -771,16 +788,24 @@ that completes and is thrown away rather than one that refuses a fragment.
 
 ## What a record must carry
 
-The region bit is one of two. The importer calls `0x007d4270` at entry and forms `1 << 1` when the
-byte it returns is `0x2D` and `1 << 0` otherwise (`0x00ff2330`), so a record whose mask at `+0x0E` has
-both low bits set, `0xFFFF` among them, intersects either console, and a record whose mask is zero is
-skipped.
+The u16 at record `+0x0E` is a game-version mask. The importer calls `0x007d4270`, which in Shield is
+`mov w0,#0x2d; ret`, and tests `1 << 1` against the mask when the value is `0x2D` and `1 << 0`
+otherwise (`0x00ff2330..0x00ff2358`). A Shield takes a record with bit 1 set; a record with both low
+bits set, `0xFFFF` among them, intersects either version, and a record whose mask is zero is skipped.
 
-A record that passes the mask is filtered again when its byte at `+0x13` is non-zero: `0x01449820`
-walks fifty four-byte entries in the save from `0x1660`, each a halfword card id and a byte, and
-reports a match when the id equals the record's halfword at `+8` and the byte equals the record's
-`+0x13`. So `+8` is the card id, `+0x13` selects both whether the duplicate check runs and which table
-entry it matches, and a record with `+0x13` zero is imported every time.
+A record that passes the mask is filtered again when its byte at `+0x13` is non-zero (`0x00ff236c`):
+`0x01449820` walks the once-per-card table, fifty four-byte entries at album `+0x1660` (block
+`0x112D5141` offset `0x1600`), each a halfword card id and a byte, and refuses the record when an
+entry's id equals the record's halfword at `+8` and its byte equals the record's `+0x13`.
+
+The table grows when a card is kept. `0x00ff1544` calls `0x014494a0(album, record)` only when record
+`+0x12` is non-zero and bit 0 of record `+0x10` is clear (`0x00ff152c`). It shifts the fifty entries
+down one, appends `{card id, +0x13}` at `+0x1724`, and counts this id's entries with a non-zero byte;
+when the count reaches `+0x12` it zeroes this id's entries among the first 49, so the entry just
+appended survives. A card is therefore imported every time when `+0x13` is zero, when `+0x12` is zero,
+or when bit 0 of `+0x10` is set; otherwise the same card id with the same `+0x13` is refused while
+its entry is among the fifty. Bit 2 of `+0x10` calls `0x01449560`, a second per-id table at album
+`+0x15c8` with a 0x10-byte stride.
 
 An accepted record is copied into a `0x338`-byte structure whose leading `0x68` bytes the importer
 zeroes, the record following at `+0x68` (`0x00ff2380`), and that structure and the record are handed
@@ -795,9 +820,12 @@ A record whose stored halfword differs returns `0x80000001`, which the importer 
 (`0x00ff23d0`) and reports as 1. **So `+0x2CC` is the record's own checksum over itself with that
 field zeroed.**
 
-Past the checksum the routine fills the `0x68`-byte header from the record: the card id at `+0x08`
-goes to header `+8`, the byte at `+0x15` to header `+0xa`, the byte at `+0x11` to header `+0xc`, and
-the byte at `+0x1C` to header `+0xf`.
+The validator returns `0x80000000` for a null pointer or a length other than `0x2D0`, `0x80000001`
+for a checksum mismatch, and 0 on every other path, kinds outside 1..5 included (`0x010b6004`); the
+kind-1 and kind-4 builders' results are discarded. Past the checksum it fills the `0x68`-byte header
+from the record (`0x010b5f98..0x010b5fbc`): the card id at `+0x08` goes to header `+8`, the byte at
+`+0x15` to header `+0xa`, the byte at `+0x11` to header `+0xc`, `route != 0` to header `+0xe`, and the
+byte at `+0x1C` to header `+0xf`.
 
 The word at `+0x08` is compared whole. After the import loop, `0x00ff2760` collects the cards whose
 id matches the one being received: `0x00ff2f50` reads the u32 at record `+0x08` (`0x00ff30c0`,
@@ -820,7 +848,8 @@ card is accepted.
 The byte at `+0x11` is the gift kind. One through five dispatch through the table at `0x02067620`;
 anything else returns success with nothing built. Kinds 3 and 5 take the shortest path
 (`0x010b5fd8`), which keeps the word at record `+0x20` in header `+0x30` and returns, building no
-sub-object. Kind 1 goes to `0x010b58f0` and kinds 2 and 4 to routines of their own.
+sub-object. Kind 1 goes to `0x010b58f0`, kind 2 copies its item pairs (below), and kind 4 goes to
+`0x010b5bb0`.
 
 ## The Pokemon a kind-1 record carries
 
@@ -885,7 +914,7 @@ built to it on a retail console produced every field as the map says:
 A record with zero ribbon bytes names ribbon 0 thirty-two times; fill the list with `0xFF`.
 
 Console measurements confirm these fields: species, form, the four moves, the
-nickname, the original trainer, the gift kind, the region mask, the card id, both checksums, the level
+nickname, the original trainer, the gift kind, the version mask, the card id, both checksums, the level
 and the met level.
 
 A record carrying species 25 was delivered to a console and the Pokemon it produced was species 25, so
@@ -899,7 +928,12 @@ offset whose value predicted both runs, 28 then 63 for the level and 32 then 59 
 two disagree in those cards, which is what separates them as independent fields.
 
 A record leaving `+0x244` at zero has its level rolled at claim time, and the same record claimed
-twice gave level 20 and then level 35. Such a Pokemon is reported as met at level 0, which is the
+twice gave level 20 and then level 35. The builder `0x010b6110` draws `r = random & 0x7f` until
+`r <= 99` and takes level `r + 1`, uniform over 1..100 (`0x010b6218`); an egg (`+0x245` = 1) gets
+level 1 whatever `+0x244` holds (`0x010b6400`). Of the six IV bytes at `+0x26C`, the first one in
+`0xFC..0xFE` stores `byte - 0xFB` (1 to 3) at the builder's `[sp+0x110]` and the per-IV path is
+skipped (`0x010b6300`); with none, each byte of 32 or more is passed on as `0xFFFF` and each byte
+below 32 is kept. Such a Pokemon is reported as met at level 0, which is the
 empty `+0x249` showing through. The experience always matches the species' own growth group: a
 cube-curve species arrived with 8000 at level 20, and a slower-curve species with 96 at level 4.
 
@@ -916,19 +950,21 @@ zeroed, and an all-zero record, both return `0x80000001`.
 
 A 720-byte record built here, split into three fragments and served from a synthesised beacon, reaches
 the importer on an unmodified console with no memory patch and no code patch. Two records differing
-only in their region mask produced two different verdicts, in the result at `bound+0x2C0` and on the
+only in their version mask produced two different verdicts, in the result at `bound+0x2C0` and on the
 screen:
 
-| region mask | result | the console's message |
+| version mask | result | the console's message |
 |---|---|---|
 | `0x0000` | 2 | a gift was received but cannot be obtained in this game |
 | `0xFFFF` | 1 | receiving the gift failed |
 
 Those match the two paths. `0x00ff1fb0` returns the importer's value when it is non-zero, and
-otherwise returns 2 when the card list is left empty. A record filtered out by the region mask is the
+otherwise returns 2 when the card list is left empty. A record filtered out by the version mask is the
 second case: the importer ran and succeeded, and nothing was materialised. A record the mask accepts
 goes on to `0x010b5de0`, which refused to build a card from a record whose fields beyond the card id,
-the region mask and the flag at `+0x13` are all zero, and the importer passed that refusal back as 1.
+the version mask and the flag at `+0x13` are all zero, and the importer passed that refusal back as 1.
+The validator refuses only a bad length or a bad checksum, so that record failed its checksum at
+`+0x2CC`.
 
 The refusal is clean. Nothing faulted, no crash, no save prompt and no new error line from the
 emulator, so the importer validates a record before materialising it and a malformed record is
@@ -971,13 +1007,18 @@ The pairs repeat every four bytes, one received line per pair. The item table ha
 entries (1279 to 1578 among them).
 
 The parser copies exactly six item-id and quantity pairs from record `+0x20..+0x37` into the card
-header `+0x30..+0x47` (`0x010b6024..0x010b6080`). The redemption handler calls `Bag::AddItem` for
+header `+0x30..+0x47` (`0x010b6024..0x010b6080`) and sets header `+0x0D` to the number of the six
+quantities that are non-zero (`0x010b6084..0x010b60e4`). The redemption handler calls `Bag::AddItem` for
 each pair whose quantity is nonzero (`0x01015d00..0x01015dd0`).
 
 The kind-4 clothing handler passes up to twelve category and index pairs to `0x0143a450`
 (`0x01015eb0..0x010160a8`). That setter accepts categories 0..14 and indices 0..1023 before
-writing one bit in the clothing block. Kinds 3 and 5 add to scalar counters
-(`0x01015e00..0x01015eac`, `0x010160b0..0x01016144`).
+writing one bit in the clothing block. Kinds 3 and 5 add the record's word at `+0x20` to clamped
+counters in the status object `[[0x2610798]+0x208]`:
+
+    kind 3  0x01015e00   [status+0x17c] = min(old + amount, 9999)                  0x014390fc
+    kind 5  0x010160b0   [status+0x64]: an amount above 9,999,999 sets 9,999,999;
+                         otherwise old + amount, clamped to 9,999,999              0x01438f2c
 
 `Bag::AddItem` (`0x01420790`, arguments bag, id, count, new-flag)
 takes the pocket from item field 14 (`0x00788c50(id, 14)`, record byte `+0x11 & 0xF`; 0 Medicine,
@@ -1014,11 +1055,16 @@ Measured on a retail console with three cards: zero bytes show 01/01/2070 01:00;
 month 0 of year 321, shows 01/12/2020 15:53, the algorithm's December of the year before. No
 published map names this field: PKHeX's `WC8.cs` starts at the card id at `+0x08`.
 
+Only a card received over local wireless keeps the date its record carries. For any other route the
+materialiser overwrites the eight bytes with `nn::time::StandardNetworkSystemClock::GetCurrentTime`
+(`0x00ff3f8c` -> `0x01449ca0`; PLT `0x01900050`, GOT `0x0260fbb8`), packed by `0x016cbfd0` and
+`0x016cc1d0`.
+
 ## The first card the game kept
 
 A sealed record of kind 3 was accepted, shown in the gift list, confirmed, and written to the save.
 The whole envelope works: the beacon, the body checksum, the type byte, the fragmentation and its
-300-byte seams, the message checksum, the reassembly, the sink, the record checksum, the region mask,
+300-byte seams, the message checksum, the reassembly, the sink, the record checksum, the version mask,
 the gift kind, the importer, the gift list, the confirmation screen and the save write, from a beacon
 built here against an unmodified console.
 
@@ -1044,7 +1090,8 @@ body between two constants); `--key 112d5141 --out FILE` writes this block out, 
 
     0x0000  50 slots of 0x68 bytes, the newest card in slot 0: an insert moves every slot down one
             (`0x01449880` indexes them, `cmp w1, #0x31`; a slot is in use when its +0x0C is non-zero)
-    0x1450  0x378 bytes, zero in every save read
+    0x1450  0x378 bytes, zero in every save read; the second per-id table starts at 0x1568
+            (album +0x15c8) and the once-per-card table is 0x1600..0x16C8 (album +0x1660)
 
 A slot is the `0x68`-byte header the importer fills from the record, kept as it stands when the card
 is claimed:
@@ -1055,7 +1102,8 @@ is claimed:
     +0x0A  u16  the record's byte at +0x15 (0 on the Pokemon cards, 1 on the kind-3 cards, 3 on
                 the item card received)
     +0x0C  u8   kind: 1 Pokemon, 2 item, 3 the empty kind
-    +0x0D  u8   3 on the item card, 0 on the others
+    +0x0D  u8   kind 2: how many of the six item quantities are non-zero; 0 on the others
+    +0x0E  u8   1 when the card came by any route but local wireless
     +0x0F  u8   the record's byte at +0x1C (1 on the kind-3 cards)
     +0x12  u16  level (kind 1)
     +0x30  u32  species (kind 1); on a kind-2 card, the item pairs start here: u16 id, u16

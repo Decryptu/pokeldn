@@ -31,9 +31,11 @@ The binary decides those twelve. A payload is the marshalled struct: `ANetData<T
 and the size of every struct is its `native_size` in the executable's `Il2CppTypeDefinitionSizes`
 table (`MetadataRegistration.typeDefinitionsSizes`, one entry per type definition). A string's
 character count is in `global-metadata.dat`'s `fieldMarshaledSizes`; an array's count is derived by
-subtracting the other fields from the native size. Every struct is packed, and the four payloads a
-capture holds match the layout read this way byte for byte. `scratchpad/bdsp_native_layout.py`
-prints them; `room.NATIVE_SIZES` holds the twelve sizes.
+subtracting the other fields from the native size. The generated marshal functions of every struct
+that is not blittable sit in `CodeRegistration.interopData` [1.3.0 main 0x4acd0c8, 0x255 entries of
+56 bytes], and an entry's `marshalToNative` writes the struct's exact bytes. Every struct is
+packed, and the four payloads a capture holds match the layout read this way byte for byte.
+`scratchpad/bdsp_native_layout.py` prints them; `room.NATIVE_SIZES` holds the twelve sizes.
 
 | id | payload | bytes | layout |
 |---|---|---|---|
@@ -44,7 +46,7 @@ prints them; `room.NATIVE_SIZES` holds the twelve sizes.
 | 0x18, 0x54 | `UgSecretBase` | 616 | short zoneID, posX, posY; byte direction, expansionStatus; int goodCount; 30 x `UgStoneStatue` 20; bool isEnable (4) |
 | 0x22 | `StanbyListData` | 20 | 5 x `StandbyData` (isAddPlayer, hostIndex, myIndex, langId) |
 | 0x24 | `TradeTranerData` | 32 | 13 UTF-16 chars, uint tranerId, byte cassetVersion, byte langId |
-| 0x29, 0x61 | `UgStationID_to_DigFossilIDList` | 8 | 8 bytes of dig-fossil ids |
+| 0x29, 0x61 | `UgStationID_to_DigFossilIDList` | 8 | `byte DigFossilIDs[8]`, a permutation of 0..7 |
 | 0x38 | `BattleMatchingPokeData` | 481 | a 328-byte PB8, 20 x `SealParam` 7, uint attachPokemonId, uint attachPersonalRnd, byte index, num, is3DEditMode, isAppliedTemplate, affixSealCount |
 | 0x42 | `NetPlayerName` | 28 | 13 UTF-16 chars, byte genderid, byte languageId |
 
@@ -161,7 +163,7 @@ Senders of the other opaque messages, from the callers of each `ANetData<T>.Send
 | 0x14 | `NetDataRecodeData` | `RecodeMatching$$SendRecodeData`, `UnionStateController$$SendRecodeData` |
 | 0x15 | `NetDataAttachSealNetData` | `BallDecoMatching$$SendBallDecoData` |
 | 0x18 | `NetSecretBaseData` | `UgNetworkManager$$SendMySecretBaseData`, and on request in `UgNetworkManager$$OnReceiveRequestData` |
-| 0x29, 0x61 | the dig-fossil lists | `UgNetworkManager$$OnReceiveRequestData` |
+| 0x61 | `NetDigTableData` | on request in `UgNetworkManager$$OnReceiveRequestData`, once the console's own table is ready |
 | 0x38 | `NetDataBattleMatchingSelectPokemon` | `BattleMatchingManager$$SendSelectPokemonData` |
 | 0x42 | `NetPlayerNameData` | `UgNetworkManager$$SendOnJoinNewPlayer`, `UgNetworkManager$$SendPlayerNameData` |
 | 0x54 | `NetSecretBaseUpdate` | no reliable sender; `netdata.py` names it |
@@ -247,12 +249,35 @@ is acknowledged and changes nothing on screen.
 | 3 | `RECRUITMENT_BATTLE` | 8 | `COMMUNICATE` |
 | 4 | `RECRUITMENT_TRADE` | | |
 
+Values 17 to 21 are the `NOW_*` states, one per activity (the transitionType table below).
+
 `OpcController.ShowEmoticon(OnlineState)` and `GetEmoticonType(state)` read it, and the
 `RECRUITMENT_*` values raise the speech bubble over a player advertising what they want. Answering
 the console's standing request with `StateData{RECRUITMENT_TRADE, 1}` puts a trade bubble on a retail
 console's screen.
 
 Answering with `StateData{NONE, 0}` changes nothing on screen.
+
+The console applies a received 0x04 in `UnionOpcController$$SetNetData` [1.3.0 main 0x01e48c50],
+reached through `UnionRoomManager$$OnReceiveData` [0x01e506c0] and `OpcManager$$SetNetData`
+[0x02279450], which drops a message from a station that has no character.
+`UnionRoomManager$$SetNetData` returns on id 4 [0x01e5270c]; the character controller is the only
+consumer:
+
+    if state != GetOpcOnlineState():      SetOpcOnlineState(state)                 0x02277be0
+                                          isRecruiment == 1 ? SetEmoticonHost()    0x022779b0
+                                                            : SetEmoticonNormal()  0x02277a50
+    if state != 0:                        AnimationPlayer.Play(animation 0)
+
+`SetOpcOnlineState` stores the state in the character's `OpcState` (+0x18) and, when it changed,
+invokes the `Action<OnlineState>` at `OpcState`+0x20. `GetOpcOnlineState` returns 0 for a character
+with no `OpcState` [0x02277dcc]. A requested answer and the two-second broadcast are the same message
+through the same handler; the receiver tests only the id. The Underground twin is
+`UgOpcController$$SetNetData` [0x01f7f820].
+
+The stored state decides whether the console's player can talk to the character.
+`OnlinePlayerCharacter$$IsCanTalkState` [0x02277af0] is true for states 1, 3 to 8 and 17 to 21, and
+false for 0, 2 and 9 to 16: a character at `NONE` is never a talk target.
 
 ### Walking
 
@@ -307,11 +332,81 @@ each:
 | 1 | `NetDataSelectData{0}` | the same refusal |
 | 1 | `NetDataSelectData{1}` | the same refusal |
 
-The two runs that swept the select index were refusing before the index could matter.
+The receiver never reads the select index (0x08, under the battle ladder below).
 
 A parked conversation is not reliably escapable. B released the player in one run and did nothing
 in another; killing the run (dropping the station) is the first lever and a reboot the fallback.
 Say so before a run that parks the talk.
+
+### The console approaching
+
+`UnionRoomManager$$MyUpdate` [1.3.0 main 0x01e49fb0] handles the player's A press [0x01e4a644]. It
+does nothing unless the console player's own state is 0, `UnionWork.isTalking` (static +0x85) is 0,
+the player's menu is closed, no message window is open and the player is outside every
+`EnterCollision` circle. It then walks the characters within 10.0 units and within the player's
+`talkDistance` (+0x38) whose state passes `IsCanTalkState`:
+
+| the character's state | what A does |
+|---|---|
+| 0, 2, 9 to 16 | nothing |
+| 8, 17 to 21 | after the walk, `UnionRoomManager$$StartTalk(opc, 0, 0, 0)` [0x01e4c2d0] on the nearest; no message |
+| 4 | `UnionSystemController$$CheckErrorMessageTrade` [0x01c2e8d0]; with no error, as the last row |
+| 7 | `UnionSystemController$$CheckBallDeco` [0x01c2ec20]; when it passes, as the last row |
+| 1, 3, 5, 6 | `NetDataTalkReserveData` (0x63) to the character's station [0x01e4ac94], the state stored in `nowTalkReserveState` (+0x188), `isTalking` set, `UnionStateController$$CreateSelectStateModel(state, 1)` [0x01e4b620] |
+
+For states 1 and 3 to 7 the walk acts at once on the first qualifying character closer than every
+earlier one.
+
+The console answering a 0x63, in `UnionRoomManager$$SetNetData` [0x01e50c3c]:
+
+    r.IsCanTalk = UnionWork.isTalking
+    if stateController._currentModel (+0x88) is null:
+        r.IsCanTalk = 1; SendOpcStateData(requester)
+    r.IsRecruitment = 1
+    r.emoticonStateType = the console player's own state
+    send r (0x64) to the requester                           0x01e5110c
+    if isTalking was 0 and r.IsCanTalk is 0: isTalking = 1
+
+The console reading a 0x64 after its own 0x63 [0x01e50dec]:
+
+    canTalk = IsCanTalk == 0 and not isCancelStock (+0x183, cleared here)
+    if emoticonStateType != nowTalkReserveState:
+        send NetDataTalkCancelEndData{0, 0}                  0x01e50f24
+    else:
+        nowTalkReserveState = 0
+        canTalk ? StartTalk(opc, IsRecruitment == 0, 1, 0)
+                : the refusal path 0x01e512f0 (the character's state against 3 to 7)
+
+A character advertising `{4, 1}` therefore draws `63 0001 00` when the player presses A facing it,
+and `64 0003 00 01 04` opens the talk. Any other `emoticonStateType` draws a
+`NetDataTalkCancelEndData{0, 0}`.
+
+### The name in the greeting
+
+The greeting, its speaker label and the battle ladder's "is choosing" line name a character by its
+station's Pia player name. `UnionBaseMsgWindow$$SetTargetDataMessage` [1.3.0 main 0x01f86810] and
+`UnionBaseMsgWindow$$GetSpeakerName` [0x01f87050] read `NetworkManager$$GetGamerData(station)`
+[0x02250e50], an entry of `IlcaNetSession.NetGamer` (sixteen `IlcaNetGamer`, `gamerName` at +0x30,
+`nameStringLanguage` at +0x38). `gamerName` is written on the Pia join event:
+`IlcaNetSession$$CallBackExtensionCoreEventJoin` [0x02742760] calls `NetGamerNameGet` [0x0273a9a0],
+which takes an 80-byte name buffer from `INLpiaSessionGetPlayerInfo` [0x01e15cd0], decodes
+`length - 1` bytes as UTF-8, and stores an empty string when the length is under 2. The language is
+one byte copied raw.
+
+`Utils$$CheckNGTrainerName` [0x01cbdc30] replaces the name with
+`Utils$$GetReplacedNGName(UnionWork.nowTargetCassetVersion)` [0x01cbde20] when it is empty, when
+`CheckNgWords` [0x01c99220] flags it, or when it is longer in UTF-16 units than
+`SoftwareKeyboard$$LanguageMaxLength(6, lang)` [0x01c995b0]:
+
+| `lang` | limit |
+|---|---|
+| 1, 8, 9, 10 | 6 |
+| any other positive value | 12 |
+| 0 or below | the UI's current language decides |
+
+`station_protocol.player_info` puts the 80-byte UTF-8 name at offset 1 of the 195-byte PlayerInfo and
+a language byte at offset 122. `bin/bdsp_connect.py --name` (default `PkCamp`) sends `--language`,
+default 1; `pokeldn/bdsp/host.py` sends 3.
 
 ### talkState, and the value that crashes the game
 
@@ -333,10 +428,9 @@ window. `pokeldn/bdsp/room.py` refuses to send CHECK.
 
 A state value read out of a sender is not safe to send until the receiver's handler has been read.
 
-The messages that advance a parked greeting are `NetDataSelectData{index}` (0x08) and
-`NetDataTransitionData{transitionType, isRecruitment}` (0x07). Both are sent by the game as tail
-calls, so a BL-only caller scan reports them as never sent; see
-[finding callers](switch_re.md#finding-callers).
+The message that advances a parked greeting into an activity is
+`NetDataTransitionData{transitionType, isRecruitment}` (0x07). The game sends it as a tail call, so
+a BL-only caller scan reports it as never sent; see [finding callers](switch_re.md#finding-callers).
 
 `transitionType` is an `OpcState.OnlineState`, and `UnionStateTransitionController$$SwitchTransition`
 [1.3.0 main 0x01e5ba70] dispatches on it through a 19-entry table, the same activity reachable
@@ -404,6 +498,20 @@ None 0, Initialize 1, Load 2, RecruitmentMember 3, SelectTeamMember 4, SelectRul
 SelectBattleTeam 6, SelectPokemon 7, GoBattle 8, Result 9, Resume 10, Closing 11,
 LeavedOtherMembers 12.
 
+`NetDataSelectData` (0x08) is `{byte index}` and has one receiver in 1.3.0, in
+`UnionRoomManager$$SetNetData` [main 0x01e52a30]. It reads the sender's station and never the index:
+
+    m = stateController.battleRecruitmentModel                  UnionStateController +0x38
+    m.ChangeBattleRecruitmentState(BATTLE_RULE_SELECT_WAIT 4)   0x01d2aab0
+    m.currentCancelModel = {SelectCancel 0, station}
+    m.CloseWindow()
+    if m.unionMsgBattleWindow != null:
+        SetTargetDataMessage(window, station, 1, 1); OpenMsgWindow(window, 3, 2)   0x01f86fa0
+
+Any index behaves as 0, and a 0x08 drives the battle recruitment model whatever conversation is
+open. Both senders write index 0: `UnionBattleContextMenu$$SendRuleSelectState` [0x01f87c60], a tail
+call, and the yes branch of `UnionBattleContextMenu.<ShowBattleJoinYesNoWindow>b__0` [0x01f8800c].
+
 ### The Grand Underground
 
 The Underground advertises the same `local_communication_id` under scene id 12608 and the same
@@ -444,8 +552,25 @@ five statues (ids 12, 20, 22, 32, 35, each `pedestalId` -1) in the thirty slots,
 Before the console's reliable window has carried anything, a request lands at sequence 1 and is
 not answered; the same request later is.
 
-0x29 `NetDigGroupIdData` has no caller of its constructor or its id anywhere in 1.3.0, so nothing
-sends it, and a request for it or for 0x42 draws nothing.
+The eight bytes of 0x61 are `UgFieldManager.ugDigGroupList`, built by
+`UgStationID_to_DigFossilIDList$$Init` [0x02031830]: bytes 0 to 7 ordered by `Guid.NewGuid()`, so a
+valid table is a permutation of 0..7.
+The marshaller [0x002498c0] throws on an array shorter than eight and copies elements 0 to 7, with no
+length prefix. The console answers a request for 0x61 only once its own table is ready
+(`UgNetworkManager.IsDigTableReady`, +0xA8, tested at 0x01f7c440).
+
+The Underground session host builds its table and sets the flag in `UgNetworkManager$$OnSessionEvent`
+[0x01f77510]. A console that is not the host sends `NetRequestData{0x61}` to every station, and
+`UgNetworkManager$$OnReceiveDigTableData` [0x01f7dad0] adopts the first 0x61 that arrives while the
+flag is 0: it replaces `ugDigGroupList` with the sender's bytes, deletes every dig point
+[0x01cfd6d0], rebuilds them [0x01cfdab0] and sets the flag. A later session event sets the flag
+without a table when none arrived. A 0x61 reaching a console whose flag is set is ignored.
+
+0x29 `NetDigGroupIdData` shares the payload struct, its marshaller and every `ANetData<T>` method
+with 0x61. `NetDataParser`'s constructor [0x0224a420] instantiates it, the 29th of its 65 inlined
+registrations, and nothing else references it: no code sends it, and
+`UgNetworkManager$$OnReceiveData` [0x01f7a880], which tests 22 ids, has no branch for it. A request
+for it or for 0x42 draws nothing.
 
 `--inject-file PATH` on `bin/bdsp_connect.py` sends each new `ID:HEX` line of the file on the
 reliable window while the association stands.

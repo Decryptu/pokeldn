@@ -7,8 +7,8 @@ has_children: false
 # Legends Z-A
 
 Pokemon Legends: Z-A (title id `0100f43008c44000`) is a native Switch title with Pia statically
-linked into `main`. Its packet header is version 16, the header this project already writes for the
-GBA application, so the transport below the game is the one `pokeldn.ldn.crypto` speaks.
+linked into `main`. Its packet header is version 16, the header `pokeldn.ldn.crypto` already writes
+for the GBA application, so the transport below the game is the one that module speaks.
 
 ## The dump
 
@@ -178,6 +178,27 @@ with:
 
 Both stations send the same set; the host's and the joiner's differ only in the station id inside.
 
+### The trade commands
+
+The trade session setup `0xca2928` subscribes five command types, named by their ctti strings, on
+the session's command channel (session+0xc8). The two-byte id is `0x100 | index`, the type's
+position in the channel's list at +0x60 (`0x96129c`, a `strcmp` walk), in subscription order. Each
+payload is a `b9` struct whose first member is a u16 round.
+
+| id | command | handler | payload as the handler reads it | what the handler does |
+|---|---|---|---|---|
+| `0100` | CommandReady | `0x2dc4c7c` | round, 1200 bytes | copies the 1200 bytes to session+0x604, sets session+0xf0 |
+| `0101` | CommandSelectPokemon | `0xb2a44c` | round, 344-byte record, one byte | loads the record (The offered Pokemon); bit 0 of the byte clear makes it a pick |
+| `0102` | CommandConfirmTrade | `0xc8dda0` | round | ignored when session+0x152 is above the round; else partner state +0x134 = 4 |
+| `0103` | CommandCancelTrade | `0x2dc51ac` | round, u32 reason | +0xab4 = reason with 1 and 2 swapped, else 0; +0x152 = round; +0x150 += 1; then `0x2dc41f8` |
+| `0104` | CommandFinalAgreement | `0x2dc52b4` | round | ignored when +0x152 is above the round or own state +0x130 is not 4 or 5; else partner state 5 |
+
+The cancel sender `0x964a78` sends round +0x150 + 1, then sets +0x130 = 2, advances +0x150 and
++0x152, and drops the partner's state from 3..5 back to 2 (3 when the reason is 0). A ConfirmTrade
+or FinalAgreement still carrying the round before a cancel is ignored after it. SelectPokemon reads
+no round. Every observed `0102` and `0104` is `b90100`, round 0; what initialises +0x150 and +0x152
+was not read.
+
 ### What a joiner owes on those streams
 
 Measured against a reference pair and confirmed by an emulated host's acknowledgements:
@@ -241,11 +262,28 @@ nine-byte message is `1403b9018269fb308f`, and an acknowledgement is the prefix 
 resends its own opening about ten times a second; a frame whose last four bytes are wrong is
 acknowledged but leaves the host's game on its search screen.
 
-Pia packet ids run on two counters: one for every packet addressed to the host, whatever the
-destination field (0 or the host's variable id), and one for the session address 0x0001. The host
-drops a packet whose id is below the highest it has seen from that sender, so a joiner that keeps
-a separate counter for destination 0 has every Net 0x51 dropped until that counter catches up. The
-host then repeats its Net 0x50 for about ten seconds and its Session update sequence 1 comes late.
+Pia packet ids run on two counters per sender: one for the session address 0x0001 and one for
+every other destination (0 and the host's variable id share it). The check runs before any protocol
+sees the packet, in `nn::pia::session::SessionPacketReader::vfunc11` at `0x2566920`: a packet from
+an unknown source address or from no station is accepted; otherwise the destination selects a
+controller, station+0x78 for 0x0001 and station+0x50 for the rest, and `0x2576ad0` checks the
+packet id (wire 0x0a) and the big-endian nonce (wire 0x0d) against it:
+
+    id == 0                                         accept, nothing recorded
+    last id == 0                                    last id = id - 1
+    last nonce == 0 and nonce != 0                  last nonce = nonce - 1
+    (s16)(id - last id) < 1                         reject
+    nonce != 0 and (s64)(nonce - last nonce) < 1    reject
+    otherwise                                       last id = id, last nonce = nonce if non-zero
+
+A rejected packet goes to `0x25655d8` and is dropped. An id equal to the last accepted one is
+dropped, and the 16-bit wrap makes an id 0x8000 or more ahead count as behind. A joiner that keeps a
+separate counter for destination 0 has every Net 0x51 dropped until that counter passes the
+host-id counter. The host then repeats its Net 0x50 for about ten seconds and its Session update
+sequence 1 comes late. The Net 0x51 handler itself (`0x2504100`) reads no packet header field: it
+deserializes the message (`0x250f930`), checks its length and the type byte 0x51 (`0x2504150`),
+matches the source address against its stations (`0x250c60c`, `0x24fba00`) and passes the station
+and the acknowledged sequence id at message +4 to `0x250daa8`.
 
 With both right, a host that accepts the Session update sequence 1 at about 1.2 s sends its own
 1211-byte selection record at 1.25 s and moves to its trade box screen.
@@ -304,21 +342,180 @@ stored body. `pokeldn.sv.pokemon.decrypt` validates it unchanged and
 `pokeldn.sv.pokemon.read` reads its fields: the sample offer is a shiny Noibat at level 44 with
 perfect individual values, ball 22, ability 151 and moves 542, 103, 403 and 162.
 
-The layout is Scarlet's, measured on nine records out of three reference sessions and on the
-trades below:
+Measured on nine records out of three reference sessions, every record reads version 52, language
+10, met locations 200 to 212, met dates in October 2025, trainer id 5071 and secret id 14217; the
+species include 714 Noibat, 716 Xerneas and 95 Onix. The handler's name reads "Player" only on a
+record whose current handler is set, and the original trainer's name reads "XS" on all nine. The
+height and weight scalars read zero.
 
-| offset | field |
+### The record in memory
+
+In main 2.0.2 a record sits behind an accessor object, which every field accessor takes in `x0`:
+
+| offset | what |
 |---|---|
-| 0x008 | species, national: 714 Noibat, 716 Xerneas, 95 Onix |
-| 0x010 | experience; the game derives the level from it |
-| 0x058 | nickname, UTF-16LE, thirteen code units |
-| 0x072 | four moves |
-| 0x0a8 | the handler's name, "Player" only on a record whose current handler is set |
-| 0x0f8 | the original trainer's name, "XS" on all nine |
-| 0x148 | level, in the party tail |
+| +0x08 | pointer to the 0x10-byte party tail, null for a stored record |
+| +0x10 | pointer to the 0x148-byte core |
+| +0x18 | 1 while the core is encrypted |
+| +0x19 | fast mode: 1 keeps the core decrypted between accessor calls |
+| +0x1c | an `nn::os::LightEventType`, signalled on release when a waiter is counted |
+| +0x1e | spin-lock owner byte, 0x5f when free |
+| +0x1f | waiter count |
 
-Every record reads version 52, language 10, met locations 200 to 212, met dates in October 2025,
-trainer id 5071 and secret id 14217. The size scalars and the Tera types read zero.
+    0xe5d810             16-bit word sum over the 0x140 bytes at core+8; the checksum at core+6
+    0xe5d8c0, 0xe5d940   the crypt: seed = seed * 0x41c64e6d + 0x6073, XOR with seed >> 16, seeded
+                         by the encryption constant at core+0 over core+8..+0x147, then re-seeded
+                         with it over the party tail
+    0x3303ab0            block order, 32 rows of four bytes indexed by (EC >> 13) & 31, byte k for
+                         block k; rows 0..23 are PKHeX's BlockPosition order, rows 24..31 repeat
+                         rows 0..7; blocks are 0x50 bytes
+
+The table has 141 code references, all inside `0xe48000..0xe5d000`, the accessor range. An accessor
+locks, decrypts when +0x18 is set, recomputes the checksum and ORs 4 into the halfword at core+4 on a
+mismatch. Bit 2 of core+4 is the Bad Egg bit: a getter that finds it set reads the field from a
+default record at `0x3f7eda0` in .bss (block A at `0x3f7eda8`) instead of the core; 23 getters of
+block A carry that branch. Unless fast mode is on, the
+accessor then rewrites the checksum and re-encrypts. `0xe485f0` tests bit 2 without decrypting;
+core+4 lies outside the encrypted range. The serializers `0xe47a20` (0x158 bytes) and `0xe47c60`
+(0x148) write the encrypted, shuffled form.
+
+### The fields main 2.0.2 reads and writes
+
+Offsets in the decrypted, unshuffled record, with each field's getter and setter. A name the code
+does not show is PKHeX's (`PKM/PA9.cs`).
+
+| offset | size | getter | setter | field |
+|---|---|---|---|---|
+| 0x00 | 4 | every accessor | `0xe514d0` | encryption constant |
+| 0x04 | 2 | `0xe485f0` | `0xe51698` | flags; bit 2 Bad Egg |
+| 0x06 | 2 | load path | `0xe48250` | checksum |
+| 0x08 | 2 | `0xe49940` | `0xe52aa0` | species, national |
+| 0x0a | 2 | `0xe49b40` | `0xe52cc0` | held item |
+| 0x0c | 4 | `0xe49d50` | `0xe52ee0` | trainer id and secret id as one u32 |
+| 0x10 | 4 | `0xe49f60` | `0xe53100` | experience; level = `0xe5ce70(species, form, exp)` |
+| 0x14 | 2 | `0xe4a3c0` | `0xe535b0` | ability |
+| 0x16 | 2 | `0xe4d7c0` bit 1, `0xe4d9d0` bit 2 | `0xe56ad0..0xe57130` | ability slot: bit 2 hidden, bit 1 second |
+| 0x18 | 2 | `0xe4a5d0` | `0xe537d0` | markings |
+| 0x1c | 4 | `0xe4dbe0` | `0xe57350` | PID |
+| 0x20 | 1 | `0xe4d3a0` | `0xe56690` | nature |
+| 0x21 | 1 | `0xe4d5b0` | `0xe568b0` | stat nature, the one the stat routine reads |
+| 0x22 | 1 | `0xe4cd70` bit 0, `0xe4cf80` bits 1-2 | `0xe56030`, `0xe56250` | fateful encounter, gender |
+| 0x23 | 1 | `0xe5bcf0` | `0xe5bf00` | IsAlpha in PKHeX (below) |
+| 0x24 | 2 | `0xe4d190` | `0xe56470` | form |
+| 0x26..0x2b | 6 | `0xe4aa30..0xe4b480` | `0xe53c10..0xe546b0` | EVs |
+| 0x48, 0x49 | 2 | none | `0xe5a7e0`, `0xe5aa00` | height and weight scalars, written only |
+| 0x4a | 1 | `0xe512c0` | `0xe5ac20` | scale |
+| 0x4b | 1 | `0xe5c120` | `0xe5c330` | level bonus, LevelBoost in PKHeX (below) |
+| 0x58..0x71 | 26 | `0xe4ddf0` | `0xe57570` | nickname, 13 UTF-16 units |
+| 0x72..0x79 | 8 | `0xe4b690(i)` | `0xe548d0(i)` | four moves |
+| 0x7a..0x7d | 4 | `0xe4b8b0(i)` | `0xe54b10(i)` | PP |
+| 0x7e..0x81 | 4 | `0xe4bad0(i)` | `0xe54d50(i)` | PP ups |
+| 0x8a | 2 | `0xe48820` | `0xe51ec0` | current HP |
+| 0x8c | 4 | `0xe4bcf0..0xe4cb60` | `0xe54f90..0xe55e10` | six 5-bit IVs from bit 0, egg bit 30, nicknamed bit 31 |
+| 0x90 | 4 | `0xe48600` | `0xe516c0` | status condition |
+| 0x94..0x9f | 12 | `0xe5cb00(i)` | `0xe5c550(i)` | per-move flags 264..359 |
+| 0xa8..0xc1 | 26 | `0xe50840`, `0xe50a70` | `0xe5a190` | handler's name |
+| 0xc2 | 1 | `0xe50ca0` | `0xe5a3a0` | handler's gender |
+| 0xc3 | 1 | `0xe50eb0` | `0xe5a5c0` | handler's language |
+| 0xc4 | 1 | `0xe4f780`, as `!= 0` | `0xe58a70` | current handler |
+| 0xc6 | 2 | `0xe4f990` | none | handler's id ("unused?" in PKHeX) |
+| 0xc8 | 1 | `0xe4fdb0` | `0xe58eb0` | handler's friendship; `0xe4a170` returns it when 0xc4 is 1, else 0x112 |
+| 0xc9..0xcd | 5 | none | `0xe59910`, `0xe59b30`, `0xe59f70`, `0xe59d50` (u16 at 0xcc) | handler's memory, written only |
+| 0xce | 1 | `0xe4e2a0` | `0xe57780` | version |
+| 0xd0 | 4 | `0xe5b280` | `0xe5b060` | form argument |
+| 0xd4 | 1 | none | `0xe5ae40` | affixed ribbon, written only |
+| 0xd5 | 1 | `0xe4a7e0` | `0xe539f0` | language |
+| 0xd6..0xf6 | 33 | `0xe5cb00(i)` | `0xe5c550(i)` | per-move flags 0..263 |
+| 0xf8..0x111 | 26 | `0xe4e4b0` | `0xe579a0` | original trainer's name |
+| 0x112 | 1 | `0xe4fba0` | `0xe58c90` | original trainer's friendship |
+| 0x113..0x118 | 6 | `0xe590d0`, `0xe592e0`, `0xe594f0`, `0xe59700` | `0xe4ffc0`, `0xe501e0`, `0xe50400`, `0xe50620` | original trainer's memory: 0x113, 0x114, u16 at 0x116, 0x118 |
+| 0x11c..0x11e | 3 | `0xe4e910`, `0xe4eb20`, `0xe4ed30` | `0xe57bb0..0xe57ff0` | met date |
+| 0x11f | 1 | `0xe5bae0` | `0xe5b8c0` | obedience level |
+| 0x122 | 2 | `0xe4ef40` | `0xe58210` | met location |
+| 0x124 | 1 | `0xe4f150` | `0xe58430` | ball |
+| 0x125 | 1 | `0xe4f360` bits 0-6, `0xe4f570` bit 7 | `0xe58650`, `0xe58860` | met level, original trainer's gender |
+| 0x126 | 1 | `0xe5b6b0` | `0xe5b490` | hyper training bits |
+| 0x148 | 1 | `0xe49760` | `0xe518f0` | level, party tail |
+| 0x14a..0x155 | 12 | `0xe48a40` and five more | `0xe51ae0..0xe528b0` | max HP and the five stats |
+| 0x156 | 2 | `0xe48c20` | `0xe51cd0` | signed max-HP offset |
+
+No function in the accessor range touches these bytes:
+
+    0x1a..0x1b  0x2c..0x47  0x4c..0x57  0x82..0x89  0xa0..0xa7  0xc5  0xcf  0xf7
+    0x115  0x119..0x11b  0x120..0x121  0x127..0x147
+
+In Scarlet's layout, which PA9.cs keeps, they hold the contest stats, Pokerus, ribbons and marks
+(0x2c..0x47), the relearn moves (0x82), the battle version (0xcf), the egg date and location, the
+HOME tracker (0x127) and the TM record (0x12f). PA9.cs maps 0x4b..0x57 as a DLC TM record in code
+while its comment calls 0x4c..0x57 unused; main reads 0x4b only as the level bonus and never reads
+0x4c..0x57. All of these bytes are zero on every console-made record read.
+
+Byte 0x4b is added to the level for the stats: the stat level is `level + [0x4b]`, capped at 200
+(`0x10f558`). The halfword at 0x156, which PA9.cs does not map, is a signed max-HP offset:
+`0xe4163c` uses `max(1, maxhp + (s16)[0x156])`, and the load path never writes it, so a composed
+value persists. Both are zero on every console-made record.
+
+Byte 0x23 reaches the model descriptor built at `0x106a48` as `[0x23] != 0` (`0x106ba0`), at +0x13,
+next to egg-or-bad at +0x12 and the scale mapped to `(scale / 255) * 2 - 1`. Its only setter is
+called from `0xe3f140`. It is 1 on exactly the two console-made records whose scale is 255, a
+Roserade (407) and a Glaceon (471), and 0 on the others.
+
+The per-move flag array is PA9.cs's plus move record: 360 bits, bit k in 0xd6 + k/8 for k below
+264 and in 0x94 + (k - 264)/8 above. A move's index is its position in the 340 u16 move ids at
+rodata `0x3303fb0`, found by the linear search `0xe669e0`, which returns -1 for a move not in the
+list; every caller then skips the flag. `0x631834` sets a flag, `0x673448` clears one, `0xe438e4`
+clears the array, `0xe43068` reads one, and `0x699308` asks `0xe343a0(species, form, move)` for a
+level, compares it with the Pokemon's level and falls back to the flag. Scarlet's Tera types at
+0x94/0x95 do not exist in this layout: those bytes are flags 264..279. On console-made records the
+set flags hold the current moves and earlier level-up moves: an Onix with moves 446, 328, 103 and
+784 flags 33 38 88 91 103 106 157 174 225 231 328 444 446 457 784. Not every current move is
+flagged (542 on a Noibat, 583 on a Xerneas). Every move traded so far (58, 103, 162, 247, 328, 403,
+423, 446, 542, 573, 784) is in the list.
+
+The ability is Scarlet's u16 at 0x14 with the slot bits at 0x16. GetAbility `0xe43bec`, reached
+only through the thunk `0x288d894` (vtable slot `0x3d1a918`, a wrapper holding the PokemonParam at
++0x48), returns the stored value when it is below 299 (0x12b) and otherwise the personal table's
+ability for the slot, `0xe5d368(species, form, bit 2 ? 2 : bit 1)`. The only other readers of 0x14
+are the type getters `0x99c84` and `0xa4354`: species 493 with ability 121 and species 773 with
+ability 225 take their type from the held item (`0xe5d528`, `0xe5d5a0`). The creation routines
+`0xe3eb34` and `0xbb8f04` write it from `0xe5d368`. Every console-made record stores an ability
+below 299 (5, 30, 38, 81, 151, 187).
+
+### What loading a received record checks
+
+A partner's `0101` reaches `0xb2a44c`, the handler registered for CommandSelectPokemon
+(`0xca33d8`, called from `0xca2928`). Its deserializer `0xb4e248` requires tag 0xb9 with three
+members (`0xb4e33c`), reads the first into a u16 (`0xa91178`), requires the second to be tag 0xbc of
+exactly 0x158 bytes (`0xb4e4b8`) and keeps the third at struct+0x15a. On any error the handler is not
+called (`0xb4e1c8`). The handler allocates a PokemonParam (`0x82713c`) and loads the 344 bytes with
+`0x270994`:
+
+1. `0xe47e94` copies 0x148 bytes into the core and 16 into the party tail, decrypts both and
+   compares the checksum at core+6 with the word sum; a mismatch sets the Bad Egg bit. It also clears
+   fast mode, so every load ends by rewriting the checksum and re-encrypting: a record received with
+   a bad checksum is kept with a corrected checksum and the Bad Egg bit set.
+2. `0xe3f18c`: for a non-zero species, `0x2901a4(species, form)` looks the pair up in the personal
+   table (`0xe366b0`, a map keyed `species * 10000 + form`) and reads the entry's first FlatBuffers
+   field (vtable +6). Zero sets the Bad Egg bit (`0xe51698(acc, 1)`). A key missing from the map falls
+   back to the entry at map+0x80.
+3. `0xe41750(pp, 1)` writes the level from the experience into the party tail and recomputes max HP
+   and the five stats from species, form, stat level, IVs, hyper training bits, EVs and the stat
+   nature. In this step current HP stays 0 when it was 0 and otherwise rises by the max-HP gain.
+4. `0xe42584` counts the non-zero moves from slot 0 and clamps the PP of that many slots to the
+   move's maximum with its PP ups (`0xe6646c`); an egg or a Bad Egg is skipped.
+5. `0xb2a4a4` calls an optional callable the session holds with the new PokemonParam, moves it into
+   session+0x128, and sets the partner state +0x134 to 3 (a pick) when bit 0 of the third member is
+   clear.
+
+No step reads the moves against a learnset, the ball, the met data, the trainer ids, the ability or
+the party tail's level; the tail and the stats are overwritten. On this path a composed record fails
+in two ways, a wrong checksum and a personal-table flag of zero, and both make a Bad Egg rather than
+a refusal.
+
+`0x13778` (IsEmpty: false for a Bad Egg, else species == 0) and `0x18e4c` (IsEgg: mode 0 egg and not
+bad, 1 bad, 2 either) gate `0x962388`, which boxes a Pokemon (`0x961964`) only when it is neither
+empty nor egg-or-bad. The live trade path `0x95f8f4` boxes the partner's pick through `0x961964`
+after `0x962e70` finds a free slot, with no direct call to either test.
 
 ## A trade with a retail console
 
@@ -367,6 +564,43 @@ Four details differ from the GBA application's host:
 - a broadcast acknowledgement from the host reports the joiner's stream in entry 1 and the idle
   base 0xfff0 in the other three.
 
+### The property update
+
+The Net update property (type 0x50) is built by `0x2502960`, which increments the sequence at
+NetProtocol+0x160, through `0x250f5d0`, and serialized big-endian by `0x250e414`. Offsets from the
+start of the Net message, 0x26 bytes in all:
+
+| wire | size | field |
+|---|---|---|
+| 0x04 | 4 | sequence id, NetProtocol+0x160 |
+| 0x08 | 8 | network id, session property +0x90 |
+| 0x10 | 2 | participant count (`0x25050dc`) |
+| 0x12 | 2 | station slots, NetProtocol+0x1216 |
+| 0x14 | 8 | session property value (`vfunc +0x10`); the LDN property keeps the scene id, NetworkInfo +0x0a, at +0x98 |
+| 0x1c | 1 | accept state (`0x2505ec0`) |
+| 0x1d | 1 | session property `vfunc +0x80`, bit 0 |
+| 0x1e | 4 | system property size (`0x24fe4dc`) |
+| 0x22 | 4 | game data size (`vfunc +0x50`) |
+
+`0x2505ec0` returns the byte at NetProtocol+0x340 once the host address (+0x1280) and the station's
+own address (+0x1260) are both set, or when +0x12d0 is non-zero, and 0 otherwise. The byte is
+written:
+
+| writer | value |
+|---|---|
+| the network create and auto-connect jobs (`0x2511b94`, `0x2511658`) and a third job site `0x2515714` | 1 when the session property's byte +0xa6 is set, 2 when clear |
+| `0x2515434`, from the job's byte +0xc0 (stored by `0x2515220`) | 1 through `0x250758c` (from `NetFacade` vfunc 17), 2 through `0x2507828` (from vfunc 19) |
+| host migration `0x250b060` | re-runs the 1 path when the byte is 1, the 2 path otherwise |
+| the setter `0x2500a9c` | 1 from its callers `0x25fdc90` and `0x25fe1ec` |
+| a station receiving a 0x50 (`0x25035bc`) | the message's byte; `0x2502e70` then sets its own +0xa6 to `byte != 2` |
+
+The LDN session property sets +0xa6 to `stationAcceptPolicy == 0` (NetworkInfo +0x62, `0x25234b8`).
+`LdnProtocol` vfunc 23 (`0x251f18c`) calls `nn::ldn::SetStationAcceptPolicy(0)`, accept all; vfunc
+24 (`0x251f110`) sets policy 1; vfunc 21 (`0x251f208`) adds accept filter entries, sets policy 3 and
+keeps +0xa6 across the network info refresh (`0x251f808`). So 1 means the property's accept flag is
+set and the network accepts all stations; 2 means it is clear. A 2 on the wire comes only from the
+job, facade and host-migration paths or a received 0x50.
+
 The trade: the joiner's pick is its second `0101`. The host answers with its own, then `0102b90100`
 after the joiner's `0102` and `0104b90100` 1.5 s later; each of the joiner's four `0200b901XX`
 steps is answered on protocol 11 with `0201b901XX` under the host's prefix.
@@ -391,9 +625,16 @@ Check Mystery Gifts. It has no local-wireless path, so a gift cannot be served o
 
 ## Unresolved
 
-- What the property update's `02` byte means.
-- The Net 0x51 handler at `0x2504150` matches the packet's source address against its stations'
-  addresses; which of its earlier checks drops a packet whose id is below the sender's highest is
-  inferred from one breakpoint hit and the id counts, not traced.
-- The ability: Scarlet's ability field reads plausible values on Z-A records, and the summary screen
-  shows none.
+- Which game call puts a Z-A host on the path that writes `02` into its property update before its
+  first 0x50, the caller of `NetFacade` vfunc 19 (`0x2507828`) or a change of accept policy. Its
+  advertisement on the search screen reads accept policy ALL.
+- Whether the summary screen reads the ability: `0xe43bec` and `0xe4a3c0` have no caller known to
+  belong to it, and the screen shows none.
+- What the per-move flag array records. On console-made records it holds current and earlier
+  level-up moves; a relearn list is one reading.
+- Whether PKHeX's `personal_za` presence flag (entry +0x1c, 370 national species present, every
+  species traded so far among them) is the field `0x2901a4` reads, and so which species and forms a
+  receiving game turns into Bad Eggs.
+- What the optional callable `0xb2a4a4` runs on every received `0101` does.
+- What a console does on screen with a Bad Egg pick; the live boxing path `0x95f8f4` makes no direct
+  egg or Bad Egg test, and its virtual calls were not followed.

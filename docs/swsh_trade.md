@@ -275,6 +275,44 @@ The console's opening move is the pump's: the registrar leaves `[content+0x80] =
 (`0x010db418`, table `0x2067f08`) calls the state setter with the phase unconditionally, outside the
 `+0x84`/`+0x86` gate. Phase 0 -> state 1 -> command 0, announcing 1.
 
+The pump's states (jump table `0x2067f08`, 17 entries; `[content+0x1c0]` is the element's `+0xf0`
+channel, `[content+0x2a0]` the command flags of [The command](#the-command)):
+
+    1   0x010db418  element ready (0x006d4e70) -> 2; delegate slot 1, then slot 0 with the phase
+    2   0x010db47c  a pending body at +0x88 -> 3
+    3   0x010db48c  0x006d4f10: all ready and every pair's low half == the phase; send the body
+                    (0x010de080) to the station [[0x2616a30]+0xf8] -> 4
+    4   0x010db4dc  0x006d3690([+0x1c0], [+0x86]) publishes the station's high half, must return 1;
+                    then 0x018407f0 ? 8 : 7                                      cinc 0x010db514
+    5   0x010db51c  the same through [+0x2b8] (0x008b7300) with [+0xa8] -> 6
+    8   0x010db594  0x006a2840([+0x2a0]): every station has sent a command -> 9
+    9   0x010db5b4  0x006d4fb0 == 0: no sub-element still has its resend byte set -> 10
+    10  0x010db5d4  0x006d4da0 && 0x006d3060([+0x1c0], [+0x86]) (every pair's high half == the
+                    announced phase) && 0x006d4f50; then 0x006d33b0([+0x1c0], [+0x86]) writes the
+                    shared value = the announced phase, and on success -> 7
+    11  0x010db62c  0x006a2760([+0x2a0]) clears every flag; [+0x374] ? 12 : 2
+    6, 7, 12        the table's default, the shared tail at 0x010db758
+
+States 8 to 10 run only on the station `0x018407f0` accepts; any other station goes from 4 to 7 and
+its phase moves when the shared value moves. State 13 follows `0x010dc6c0` and 16 the teardown
+(table below); states 13 to 16 themselves are unread.
+
+The other writers of `[content+0x80]`:
+
+| site | function | state |
+|---|---|---|
+| `0x010dc234` | the constructor | 0 |
+| `0x010daa9c` | the registrar | 1 |
+| `0x010dbc70` | `0x010dbab0`, the command send (requires state 2; writes `+0x86`) | 3 |
+| `0x010de3c4` | `0x010de310`, the commit: `+0x84` = phase, then `0x006a2760([+0x2a0])` at `0x010de344` clears every station's flag | 2 |
+| `0x010dc7a0` | `0x010dc720` (slot `0x257ff70`), a station leaving: with `[+0x374]` set the delegate's slot 4 is told, otherwise the station is removed from the element (`0x006d50e0`) and the flags (`0x006a2140`) | 11 |
+| `0x010dc6f4` | `0x010dc6c0` (slot `0x257ff68`), requires `[+0x374]` and `0x006a2a80([+0x2a0])` | 13 |
+| `0x010dccec` | slot `0x257ff90` | 2 |
+| `0x010db998` | `0x010db970`, the teardown | 16 |
+
+Content 40's registrar is called with `w2 = 1` (`0x010da6a8`), stored at `[+0x374]` (`0x010da800`),
+so a station leaving sends state 11 on to 12 and ends the ladder.
+
 ### The phase is the element's field
 
 Nothing between `0x010c0000` and `0x010e0000` stores to `content+0x17c`. The registrar builds the
@@ -291,6 +329,39 @@ The element advances it in one place, `0x006d4ca0`, with the mesh's permission:
         [element+0xac] = w0                 the phase moves
         [element+0xa0]->vtable[0]()         and the content is told
     }
+
+That block is the tail of the element update `0x006d4b80`, which every sync content's pump calls last
+(content 40 at `0x010db7e8`) and which runs only when `0x006ce5a0([element+0xb0])` returns 1. Before
+every station is ready it takes another branch:
+
+    if (!0x006d2e20(shared) && !0x006da180(hash channel)) {        nothing is ready yet
+        if (0x018407f0([[0x2616a30]]))  0x006d33b0(shared, [element+0xac])
+        0x006da3d0(hash channel, element+0xa8); 0x006d3980(shared, [element+0xac])
+        return
+    }
+
+`0x018407f0(station)` is true when the station's own id `+0xf0` is non-zero and equals `+0xf8`, and a
+virtual call (`+0xe0`) on the network backend at `[x0 + 0x168 + [x0+0x162]*8]` agrees. Only that
+station seeds the shared value with its own phase; every station adopts the shared value.
+
+The shared value is the 16-bit sub-element the `+0xf0` channel owns
+([Sub-element kinds](swsh_protocol.md#sub-element-kinds)). The channel's methods:
+
+    0x006d3260  read            ready byte [sub+0x61] ? [sub+0x88] : 0xfc18
+    0x006d33b0  write(v)        calls 0x006d3570 when the sub-element is not ready or its body != v
+    0x006d3570  publish         body [sub+0x88] = v; clock from 0x01766740 (-1 records error
+                                0x2c27); [sub+0x80]->vtable[0] with (sub+0x88, 2, clock, [sub+0x62],
+                                [sub+0x68]) when [sub+0x80]->vtable[1]() or [sub+0x70] allows,
+                                and the resend byte [sub+0x60] = !sent; otherwise [sub+0x60] = 1
+    0x006d2e20  all ready       the shared value and every station's pair are ready
+    0x006d2c20  all low == v    all ready, and every pair's low half [sub+0x88] == v
+    0x006d3060  all high == v   all ready, and every pair's high half [sub+0x8a] == v
+
+A station's own write sets the body and the resend byte and leaves the ready byte alone: the only
+halfword store to `+0x60` in the 16-bit class is its receive handler (`0x006d6a08`). `0x006d3260`
+therefore reads `0xfc18` on a station that has only written it, until a message for that
+sub-element arrives. The publish reaches the element's primary slot 0 (`0x006d5730`), which queues the body once per
+station in `[element+0x70..+0x78]`.
 
 ### The step body
 
@@ -329,7 +400,7 @@ indexes the subscriber slots at `+0x38` by the station index; hands the int32 to
 
     0x010dbdf8  ldr  x8, [x20, #0x18]
     0x010dbdfc  ldr  x0, [x8, #0x2a0]
-    0x010dbe00  mov  w2, #1          <- the value recorded for this station is a CONSTANT
+    0x010dbe00  mov  w2, #1          <- the value recorded for this station is a constant
     0x010dbe04  mov  x1, x19         <- keyed by the sender
     0x010dbe08  bl   #0x6a24a0
 
@@ -338,6 +409,27 @@ an elementId-1 body of `00000000` appears right after a `syncCommand{data:0}`, t
 The only thing that moves the content's state is `0x010dbf40`, whose sole caller is the pump, which
 passes the content's own phase. A rung advances because a command arrives, not because of which of
 0..3 it carries.
+
+`[content+0x2a0]` is a per-station flag object; `0x006a24a0` has 44 call sites across the image.
+
+    0x006a24a0(obj, id, flag)   map[id] = flag & 1; the map is at obj+0x1c0, find-or-insert
+                                0x006a24d0 hashes by udiv/msub against the bucket count at +0x10
+    0x006a2840(obj)             1 when every station in the list at obj+0x100 (count +0x108) has a
+                                non-zero value; an absent id reads 0
+    0x006a2760(obj)             clear(): frees the nodes, zeroes the buckets and the size at +0x270
+    0x006a2480(obj)             obj+0xc0, the station list the registrar walks
+
+Pump state 8 waits on `0x006a2840`, and both the commit `0x010de310` and state 11 clear the map, so a
+flag set before the commit does not count towards the next state 8.
+
+Two more content-40 handlers read the map: `0x010dc920` and `0x010dcaa0`, listener slots
+`0x257ff80` and `0x257ff88`, reached through an interface at `content+0x68` (thunks `0x010dcf20`,
+`0x010dcf30`). Each acts only when not every station is flagged and the message's int32 at `+0x14`
+equals the committed phase `(s16)[content+0x84]`, and queues a job that answers the sender through
+`[content+0x2b8]` (`0x008b7230`):
+
+    0x010dd0c0   sends {int32 [+0x84], bool 0}, then map[sender] = 0    0x010dd114
+    0x010dd190   sends {int32 [+0x84], bool 1}, then clears the map     0x010dd208
 
 Measured with the command count as the only variable: one command bought two rungs (to `01000200`);
 four commands bought four (to `02000300`). The queue must not run dry: the trigger pops on any
@@ -357,8 +449,8 @@ bytes:
     elementId 1,     no owner, 4 bytes   00000000        after a syncCommand{data:0}
     no elementId,    no owner, 4 bytes   00000000  then  01000000
 
-The two-byte ones are dropped by `0x006d6490`'s `cmp x2,#4` and belong to the two-byte sub-element
-kind, whose owning element field is unknown.
+The pair's receive handler `0x006d6490` drops the two-byte ones (`cmp x2,#4`); they match the shared
+value, the element's 16-bit sub-element ([The phase is the element's field](#the-phase-is-the-elements-field)).
 
 ## The League Card
 

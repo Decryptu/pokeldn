@@ -229,6 +229,19 @@ def test_the_announcement_reproduces_the_pair_host_inflated():
     assert zlib.decompress(port2.deflate_announce(body)) == body
 
 
+def test_the_join_names_the_key_the_announcement_carries():
+    """The type-3 handler `0x1981ed4` refuses a join whose first field is not the announcement's
+    key, the relay's count at +0x1c4. A pair's host announced key 0 and its joiner joined with 0."""
+    import zlib
+    from pokeldn.sv import port2
+    assert port2.announce_key(zlib.decompress(PAIR_ANNOUNCE_WIRE)) == 0
+    assert port2.build_join(port2.announce_key(zlib.decompress(PAIR_ANNOUNCE_WIRE))) == PAIR_JOIN
+    later = port2.build_announce(port2.station_id(PAIR_HOST_CONSTANT_ID), key=3)
+    assert port2.announce_key(later) == 3
+    assert port2.parse_join(port2.build_join(3)) == 3
+    assert port2.announce_key(PAIR_JOIN) is None
+
+
 def test_the_join_parses_and_the_accept_reproduces_the_pair_host():
     from pokeldn.sv import port2
     assert port2.parse_join(PAIR_JOIN) == 0

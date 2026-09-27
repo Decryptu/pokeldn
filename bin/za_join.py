@@ -36,7 +36,8 @@ import ldn
 
 from pokeldn import za
 from pokeldn.za import streams
-from pokeldn.za.host import MSG_COMMIT, MSG_CONFIRM, OFFER_PICK, OFFER_PREVIEW
+from pokeldn.za.host import (MSG_CANCEL, OFFER_PICK, OFFER_PREVIEW,  # noqa: F401
+                             build_command, command_round)
 from pokeldn.ldn import crypto, host_pia, ldn_mitm, pia_connect, reliable
 from pokeldn.ldn.transport import board_radio, find_ap_phy
 from pokeldn.host_support import resolve_keys
@@ -134,6 +135,7 @@ class GameStreams:
         self.opened_at = None
         self.offer_sent = False
         self.picked = False
+        self.round = 0
         self.host_offers = 0
         self.acted = set()
         self.scheduled = []
@@ -244,14 +246,20 @@ class GameStreams:
         marked 0, answered with ours and 0102; then 0104 each way and four 0200 steps. A console
         sends a preview each time its cursor moves, so the pick is keyed on the mark. docs/za.md."""
         head = inner[:2].hex()
-        if head == "0101":
+        if head in (MSG_CANCEL, "0102", "0104"):
+            # a cancel moves both stations to the next round; a round-0 confirm is then ignored
+            self.round = max(self.round, command_round(inner) or 0)
+        if head == MSG_CANCEL:
+            self.picked = False
+            print(f"[za] the console cancelled; round {self.round}")
+        elif head == "0101":
             self.host_offers += 1
             if inner[-1:] == bytes([OFFER_PICK]) and self.offer and not self.picked:
                 self.picked = True
                 self.scheduled.append((elapsed + 1.5, self.offer))
-                self.scheduled.append((elapsed + 3.0, MSG_CONFIRM))
+                self.scheduled.append((elapsed + 3.0, build_command("0102", self.round)))
         elif head == "0104":
-            self.scheduled.append((elapsed + 0.03, MSG_COMMIT))
+            self.scheduled.append((elapsed + 0.03, build_command("0104", self.round)))
             for delay, step in ((0.09, "03"), (0.2, "06"), (14.4, "0b"), (14.6, "0e")):
                 self.scheduled.append((elapsed + delay, bytes.fromhex("0200b901" + step)))
 

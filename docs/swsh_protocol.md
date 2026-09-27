@@ -198,13 +198,37 @@ constant changed:
 each followed by `[sub+0x78] = clock` and `strh 0x0100 -> [sub+0x60]`, which sets the ready byte at
 `sub+0x61`. Slot 7, the value the framework hashes, is `ldr x0,[x0,#0x78]; ret`: the clock.
 
-A sub-element is born with `0xfc18fc18` at `+0x88` (`0x006d6160`) and records its size as 0x90, the
-router's stride. The three kinds are three classes with one constructor each, reached through
-three slots of one listener vtable (`0x2512b38`): slot 2 (`+0x10`) makes the 32-bit kind
-(`0x006d5c00`, vtable `0x2512bc8`), slot 3 (`+0x18`) the pair (`0x006d6160`, `0x2512c90`), slot 4
-(`+0x20`) the 16-bit kind (`0x006d66d0`, `0x2512d58`). Which content calls slot 4 is unread; the
-element's phase `+0xac` is a halfword and its shared-value holder at `+0xf0` is a 0x40-byte object
-of its own class (`0x006d29b0`), not one of the three.
+A sub-element records its size as 0x90, the router's stride. The pair is born with `0xfc18fc18` at
+`+0x88` (`0x006d6230`); the 32-bit and 16-bit kinds are born with zero there (`0x006d5ce0`,
+`0x006d67b0`). The three kinds are three classes with one constructor each: the 32-bit kind
+(`0x006d5c00`, vtable `0x2512bc8`), the pair (`0x006d6160`, `0x2512c90`) and the 16-bit kind
+(`0x006d66d0`, `0x2512d58`). A constructor takes the element in `x0`, the elementId in `w1` (kept at
+`+0x62`), the ownerId in `x2` (`+0x68`), a flag in `w3` (`+0x70`), and returns the sub-element
+through `x8`; it stores the element at `+0x80`.
+
+The sync element is one class (constructor `0x006d3f80`, ten construction sites, one per sync
+content: `0x008b5c60`, `0x008cecb0`, `0x00c05690`, `0x01075610`, `0x010a1230`, `0x010ce604`
+content 30, `0x010d6904` content 50, `0x010dc264` content 40, `0x012a7530`, `0x012bdef0`). It
+installs four vtables from the group at `0x2512b28`:
+
+    element+0x00  0x2512b38   primary, 6 slots; slots 2, 3, 4 are the three constructors with w3 = 1
+    element+0x08  0x2512b78   interface A, 1 slot: the 32-bit kind (thunk 0x006d5ab0)
+    element+0x10  0x2512b90   interface B, 2 slots: the pair (0x006d5ac0), the 16-bit kind (0x006d5ad0)
+    element+0x18  0x2512bb0   the router listener, slot 0 = 0x006d59f0
+
+The element's mint `0x006d44e0` builds four channels and gives two of them an interface:
+
+| field | built by | size | holds |
+|---|---|---|---|
+| `+0xb0` | `0x006cd890` | 0x130 | |
+| `+0xd0` | `0x006d9ca0`, interface A | 0x38 | one 32-bit sub-element per station, elementId 10000, owner the station (`0x006d9d90`): the quorum hash |
+| `+0xf0` | `0x006d29b0`, interface B | 0x40 | one 16-bit sub-element, elementId 20000, owner 0, at `+0x38`, made by the channel's constructor; one pair per station, elementId 20000, owner the station (`0x006d2aa0`), in a vector of 16-byte `{stationId, sub}` entries |
+| `+0x110` | `0x006d7980` | 0x30 | the list the quorum hash walks |
+
+The mint calls both add-station functions for every station in `[element+0x70..+0x78]`. Every sync
+element therefore owns one 16-bit sub-element, the shared value
+([the trade page](swsh_trade.md#the-phase-is-the-elements-field)). The two-byte envelope with
+elementId 20000 and no owner that the confirmation content sends has its id, owner and size.
 
 ### The quorum hash
 
@@ -268,10 +292,37 @@ setups call `0x010fcff0`: Link Trade (`0x010967f0`) and the password-matching se
 (`0x00bd80f4`, `ChikaMatchingStateSession`) pass no block; the Battle Stadium state
 (`0x00b2d7d0`, `StateBtlSpotCasualMatchBattle`, `StateBtlSpotRankMatchBattle`,
 `StateBtlSpotCompBattle`) passes one, so the block is the Battle Stadium's and a local
-session's snapshot carries 392 zero bytes there. The block is 0x180 bytes of data and a u64
-length of 0x118; `0x00b2eb60` fills the data: a u32 from `0x008ff9e0`, 0x100 bytes copied from
-+0xCE of the current match object, a u64, a bool, and a u32, u16 and u8 taken from that object's
-+0x98. The receiver `0x0110cff0` copies the two regions into per-station objects.
+session's snapshot carries 392 zero bytes there. The receiver `0x0110cff0` copies the two regions
+into per-station objects.
+
+### The Battle Stadium block
+
+The 392 bytes at 0xBF6 are 0x180 bytes of data and a u64 length. The producer `0x00b2eb60` fills an
+optional whose flag is at `+0`, data at `+8`; the snapshot copies 0x188 bytes from its holder's
+`+0x60` (`0x0110c378`), and the reader `0x00b2d9fc` requires the length to be 0x118. Offsets from
+0xBF6:
+
+| off | size | value | source |
+|---|---|---|---|
+| 0x000 | u32 | CRC-16 of the 0x22fc-byte regulation core, zero-extended | `0x008ff9e0`: `0x0065dd70([reg+0x180]+0x60, 0x22fc) & 0xffff`, a table CRC over polynomial `0x8005`; the regulation class references `regulation_preset_core_%d.bin` (`0x008feb34`) |
+| 0x004 | 0x100 | the battle team's signature | `+0x36` of a 0x136-byte team descriptor at `match+0x98` (`0x00b2ef24`) |
+| 0x104 | 4 | zero | |
+| 0x108 | u64 | an optional u64 of the Battle Stadium manager, value `+0x1ab8`, flag `+0x1ab0` (`0x00adc8d0`); zero unless the match type (`vtable+0x40`) is 3 | `0x00b2f100` |
+| 0x110 | u8 | the manager's byte at `+0x191c` (`0x00adbbe0`), when `0x00adb920` yields an object and `0x00b1ce10(0) == 2` | `0x00b2efc4` |
+| 0x111 | u32 | team descriptor `+0` | |
+| 0x115 | u16 | team descriptor `+4` | |
+| 0x117 | u8 | team descriptor `+6` | |
+| 0x118 | 0x68 | zero | |
+| 0x180 | u64 | length, 0x118 | |
+
+The receiver `0x00b2e590` recomputes its own regulation CRC (`0x00b2e760`) and compares it with the
+partner's; with `0x008fc470` the result is 9 when both hold and 10 otherwise (`cinc` at
+`0x00b2e778`). `0x010719f0`, `0x01071a98` and `0x01071c00` compare the same CRC and a second one over
+0x640 bytes at `+0x188` (`0x008ffa10`). The partner's signature goes with its party to `0x011aedf0`,
+the only caller of `nn::crypto::detail::BigNum::ModExp` (PLT `0x018fff50`, GOT `0x0260fb38`), which
+sizes its buffer as `count * 0x148 + 4`, 0x148 being the stored PK8 size. The 0x136-byte descriptor
+is copied whole at 18 sites, four of them in `StateDownloadTeamMenu`'s code (`0x013e660c` to
+`0x013e7c58`).
 
 ### The player profile
 
@@ -296,15 +347,14 @@ byte-aligned; three groups are bit-packed, least significant bit first.
                 17 x 10    the model 0x0111dd60 unpacks from the MyStatus bitfield at +0x00
                 2, 2, 10   the last three of that unpacking
     0x59  55  the position samples, bit-packed:
-                2, 2 bits  (2, 0 in every capture)
+                2, 2 bits  the sample object's +0x47 and +0x1c9 (2, 0 in every capture; below)
                 8 bits     a generation byte: drawn from the game's random source when the ring
                            is reset (0x00eb98a8), incremented by one on a re-seed; a listener tells
                            a new run of samples from an old one by it (3..222 across captures)
                 8 bits     the player object's byte at +0x136 (7 in every capture)
                 3 x 17     at 0x5C, 0x6D, 0x7E: the player's last three positions, newest first.
-                           A 5-bit counter 0x01123be0 steps once per push; a 3-bit state the
-                           movement code sets through 0x00ebf570 (0 to 6; the bicycle's land and
-                           water transitions set 1 and 2; 2 in every capture); the world position
+                           A 5-bit counter 0x01123be0 steps once per push; a 3-bit state, the
+                           sample object's +0x1c8 (table below; 2 in every capture); the world position
                            x, y, z as three floats; the yaw in radians, component 1 of the Euler
                            angles 0x006101c0 derives from the player's rotation quaternion.
                            0x00ebf590 pushes one sample at most once a second (nn::os tick delta
@@ -313,8 +363,8 @@ byte-aligned; three groups are bit-packed, least significant bit first.
                            current sample three times, which is why one capture's three samples
                            differ only by the counter.
                 8 bits     at 0x8F: the player object's byte at +0x140 (1 in every capture)
-    0x90  37  activity, bit-packed: an 8-bit kind at 0x90 (13 in every trade capture and in the
-              trade-screen beacon; 0x01026284 sets 29 elsewhere), an optional 28-byte part, a
+    0x90  37  activity, bit-packed: an 8-bit kind at 0x90 (table below; 13 in every trade
+              capture and in the trade-screen beacon), an optional 28-byte part, a
               24-byte field, a u16 at 0xB2, a bool. All zero in every capture except the kind
               and the u16. The u16 is the player's location: 0x00f27d70 looks the current
               field's name up in `script/place_name.dat` and returns its line, the met-location
@@ -338,6 +388,60 @@ units and the yaw between -1.8 and 0.3, on the same field (location 170). A rece
 with the other two angles zero (0x00992cd0), at +0xA0; 0x011a68a4 takes a sample only in
 states 1, 2, 3 and 6. The records move with play: 50 trades in the September captures, 66 a
 week later.
+
+The sample state is the byte at `+0x1c8` of the sample object `[[0x261bd18]]`. `0x00ebf570`
+(`strb w1,[x0,#0x1c8]`) is its only setter; the reset `0x00eb97b0` (sole caller `0x00dd2e00`)
+zeroes it with the word at `0x00eb986c`. The push `0x00ebf590` returns at once while it is 0
+(`0x00ebf5a8`). Every value set:
+
+| state | set by |
+|---|---|
+| 0 | `0x00dfd1d4`, slot 9 of vtable `0x2561ec8` |
+| 1 | the field player class: slots 13 (`0x00d98f28`), 30 (`0x00d9d2a8`), 76 (`0x00da0188`), and `0x00d97730` with motion 0 |
+| 2 | the field player class: `0x00d97730` with motion 1 or 2; slot 7 (`0x00d97644`), which sets motion 1 when `[+0x5b8]` becomes 1 or 2 during motion 2; slot 75 (`0x00d9fcc4`) |
+| 3 | slot 15 of vtable `0x253e358` (`0x00b4f028`), the class whose slot 7 loads `StateCreateSession`; slot 8 of vtable `0x25614c0` (`0x00dedf80`) when `[[obj+0x98]+0x58]` is set |
+| 4 | slot 16 of vtable `0x253e8d0` (`0x00b54338`), the class whose slot 7 loads `StateConnect`; the same `0x25614c0` slot when that byte is clear |
+| 5 | nothing |
+| 6 | `0x00da09a0` (`0x00da0a04`), called from `0x00cebe00`, `0x00cebea4` and `0x01466d90`, the last in the script native `CallRaidBattleMatchingEvent_` (`0x01466d30`, named in the table at `0x25aac68`) |
+
+`0x00d97730(player, motion)` stores the motion through `player->vtable[0x190]` under the key
+`[0x261e8a0]`, then sets state 1 for motion 0 and state 2 for motions 1 and 2. The script native
+`IsPlayerRideBicycleType` (`0x0148b960` -> `0x00da0210`) compares its argument with the value under
+the same key, and the Lua enum registered at `0x00e57940` names the motions `NORMAL`,
+`BICYCLE_GROUND` and `BICYCLE_WATER` (`1 | 2<<32` at `0x00e5793c` for the last two). The `0x25614c0`
+slot also starts an activity record of kind 11 (`0x0111b660`), hands it to `[0x26108d8]`
+(`0x00fa13c0`), and pushes a sample at once.
+
+The group's first byte packs `a` in bits 0-1 and `b` in bits 2-3 (`0x01123710`; the unpacker
+`0x01123760` reads a `b` of 3 as 0). `a` is the sample object's `+0x47`, set by the reset
+`0x00eb97b0` in its mode 0 from a 64-bit key: `0x5742865396e549d0` -> 1, `0x5ea5c3539ab81c81` -> 2,
+`0x674edc539f9f74a6` -> 3, anything else 0 (`0x00eb97d0..0x00eb9848`). `b` is `+0x1c9`, set by
+`0x00ebf580` from slot 8 of vtable `0x259add8` (`b = 0x0110e850(...) < 4`, `0x012dfaec`) and from
+slot 11 (`b = 2`, `0x012dfca8`), each followed by a push.
+
+The activity record at 0x90 is `0x49` bytes, initialised by `0x0111b660(rec, kind)`: the kind at
+`+0`, zeroes at `+4`, `+0x24..+0x3e`, `+0x40` and `+0x48`. The kinds its callers pass:
+
+| kind | site |
+|---|---|
+| 9 | `0x0102437c` |
+| 11 | `0x00dedf3c`, `0x0126e37c` |
+| 12 | `0x01272120` |
+| 18; 19, 21, 23, 25 | `0x01027d38`; `0x01027d2c` as `0x13 + 2n`, n < 4 |
+| 27 | `0x00de7a0c` |
+| 28 | `0x00de727c` |
+| 29 | `0x01026290` |
+| 30 | `0x0109659c` |
+| 31 | `0x015d595c` |
+| 255 | `0x01027fac`, `0x010962b8`, `0x01097990`, `0x01097bc4` |
+| by mode | `0x010961b0`: the 7-entry table at `0x2066c40` indexed by the communication mode `[obj+0x70]` |
+
+    mode   0    1  2   3   4   5   6
+    kind   255  1  13  14  15  16  30
+
+The mode is set by `SetMode` (`0x01096d10`, `str w1,[x0,#0x70]`), which Link Trade calls with 2
+([the session page](swsh_session.md#how-a-searching-sword-finds-a-partner)); its other constant
+callers pass 0, 1 and 6.
 
 The name field is the fourth copy of the trainer name in the snapshot, after MyStatus, the trainer
 card and the party records; `trade_payload.rewrite` moves all four. The trade screen draws the

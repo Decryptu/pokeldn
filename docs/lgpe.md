@@ -39,23 +39,32 @@ game checks none of its fields on receipt. Every layer runs: association with th
 passphrase, the session key, the version-3 Pia header, the 22-byte message framing, the version-9
 station connection handshake, the mesh join, the Sync Clock and RTT protocols, the Clone Protocol
 through the take-over exchange that passes the game's `0x11b080` gate, and the Reliable Protocol
-carrying the game's four message kinds: identity, offer, commit and result. `pokeldn.lgpe.pb7`
-reads and writes the 232-byte box structure the offer and the result carry.
+carrying the game's messages: identity, offer, commit, and the kind 4 that follows the trade.
+`pokeldn.lgpe.pb7` reads and writes the 232-byte box structure the offer and kind 4 carry.
 
 Leaving is clean both ways. A joiner backs out with `--leave-after` the way a console does, and a
 host answers the console's Retour, so the player lands on the menu with no error. The commit stage
 of the host is pinned against a scripted console by `tests/test_lgpe_host_commit.py`, because a
-host that gets it wrong leaves the console on its confirmation screen and its save refusing trades
-for half an hour. `docs/lgpe_session.md` has every layout.
+host that gets it wrong leaves the console on its confirmation screen and its save's trade lock
+set, refusing trades for 600 seconds of foreground play. `docs/lgpe_session.md` has every layout.
 
 ## Unresolved
 
-- The three-byte value after the count in the `0xaN` clone messages. For a clone both stations hold
-  it is the same on both sides; for clone type 3 id 0 the two stations send different values that
-  match neither announcement, and what it is computed from is unread.
-- Where the game sets the 30-minute trade lock after a held confirmation, and what a console does
-  after the authority acknowledges its withdrawn vote ([the session page](lgpe_session.md)).
-- The flag halfword in the game message header, `0x0000ff00` on every message seen. Nothing has
-  varied it.
-- The console sent fourteen kind-4 results, one per party slot, after one trade and a single one
-  after another; what decides the count is unread.
+- Whether any code outside the clone protocol reads a received `ClockAndCount` message's bytes
+  `+0x21..+0x23` with a wider load; within `0x516000..0x526000` nothing does.
+- Whether a sync save aborted with result 2 always reaches the fatal error sequence and a restart
+  of the software; the link from the parent's result to that sequence is untraced. A later save of
+  the running game would commit the counter's 0.
+- The call rate of `0x13c944`, which the 600-second reading of the lock assumes is at least once a
+  second through the 20-call gate; the lock's wall-clock length has not been timed on a console.
+- That the console which refused a trade after a host answered its withdrawn vote with A 2 had
+  started its sync save on status 4 is consistent with the code and unchecked against the capture.
+- Which of `[parent+0x88]+8` and `+0x10` is the station's own Pokemon in `0x838660`'s species rule
+  rests on `0x838800` applying `+0x10` as the arriving one, and `mgr+0x128c` meaning the session host
+  on a reading of `0x59e920`.
+- Whether kind 4 is the offer channel of a next trade round, the re-created party-offer object's
+  channel, which would put a second trade in one session on kind 4 for offers and kind 5 for the
+  commit; which of `0x8869f0` and `0x886c70` destroys the object after a trade is unread.
+- Which feature the senders in `0x9dce94..0x9dede8` belong to, the only code that sends a non-zero
+  tag; it registers a channel of its own (`0x9dce1c`), which shifts the numbering in a session where
+  it runs first.

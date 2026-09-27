@@ -304,8 +304,8 @@ The game's own messages ride on protocol 0x7C. Pia 5.11's header is 24 bytes, wh
 
 An acknowledgement is the header alone with the stream and the size zero. `pokeldn.ldn.reliable3`.
 
-The payload is framed by the game: a 16-byte header of kind, body length, step and a constant, then
-the body ("The game's messages on the reliable protocol" below). The kind 1 body carries the two
+The payload is framed by the game: a 16-byte header of channel id, body length, step, tag and
+destination station, then the body ("The game's messages on the reliable protocol" below). The kind 1 body carries the two
 stations' names in the clear; the kind 2 and kind 4 bodies are encrypted box structures. A retail
 console acknowledges a kind 1 message replayed from another session on the reliable window and sends
 no message of its own.
@@ -404,9 +404,7 @@ it acknowledges.
 
 A host announces the clone it owns with an 0xa1 and an 0xb1 carrying the participant bitmap, and
 the other station answers with an 0xa2 and an 0xc1 before the data is published. An 0xa2 carries
-the mesh clock, a flag byte (1 on clone type 4, 0 on clone type 2), a zero, and the element's own
-clock: two milliseconds into an emulator's clone session it is 2, and on a console fifty-five
-seconds into one it is 0xd858.
+the mesh clock and the count byte, 1 on clone type 4 and 0 on clone type 2.
 
 A station announces a clone with 0xa1 and the other answers 0x91; the owner then sends its data in
 an 0xf3 and the other acknowledges with an 0xe3 carrying the same clock. 0x83 releases a clone and
@@ -414,11 +412,22 @@ an 0xf3 and the other acknowledges with an 0xe3 carrying the same clock. 0x83 re
 0x41 is its 14-byte acknowledgement, carrying the answering station's own bitmap at [0xA]; a host
 whose 0x32 is never answered repeats it until the game gives up.
 
-What the 0xaN messages carry after the clock is a u8 count and a three-byte value. For a clone
-both stations hold, both sides send the same value (`01 2808ab` for clone type 4 id 1) and an
-answering 0xa2 carries `01 000002`. For clone type 3 id 0 the two stations send different values
-and neither matches its own announcement, so what the three bytes are computed from is
-unresolved.
+`ClockAndCountCloneCommandMessage` (vtable `0x158ac58`, serializer `0x51f4c0`, deserializer
+`0x51d2b0`, size 0x1a) writes object `+0x1c` as the clock at [0x12], `+0x20` as the count at
+[0x16], the byte at `+0x21` at [0x17] and the halfword at `+0x22` at [0x18], big-endian. The count
+is the clone's vfunc 16 (`vtable+0x80`): 0 for a SendClone (`0x519290`), the byte at `+0x112` for a
+ReceiveClone (`0x520de0`), the byte at `+0x188` for an AtomicSharingClone (`0x517800`).
+
+No builder writes the byte and the halfword after the count. The 0xa2 builders in
+`0x51c110..0x51cf6c` build the message on the stack and store nothing past the count, so an 0xa2
+carries what the stack held: `01 000002` two milliseconds into an emulator's clone session, 0xd858
+in the halfword on a console fifty-five seconds into one. The sweeper `0x51b380` reuses one buffer
+at `sp+0x28` for every clone it announces, and its 0xbN path stores a u32 at `sp+0x48` (`0x51b7a0`),
+so an 0xa1 built after an 0xb1 on clone type 3 in the same sweep carries bytes 1 to 3 of that
+participant word, and otherwise earlier residue. Two stations whose call paths leave the same
+bytes send the same value (`01 2808ab` on clone type 4 id 1 from both); clone type 3 id 0 differs.
+Within `0x516000..0x526000` only the serializers and the deserializer access `+0x21` and `+0x22`, so
+a sender may put any value there.
 
 The full decode of a real session is `scratchpad/037_clone_parsed.txt`, its data messages
 `scratchpad/lgpe_clone_data.py`. The decoders: `scratchpad/lgpe_pcap_decode.py` for an ldn_mitm
@@ -430,16 +439,42 @@ The trade's own traffic is protocol `0x7c`, `reliable3`, sequences starting at `
 message is a 16-byte header and a body of the stated length:
 
 ```
-+0x00  4  kind, 1 to 4
++0x00  4  kind: the channel id, 1 to 4 in a trade
 +0x04  4  body length: 0x168 for kind 1, 0xe8 for kinds 2 and 4, 4 for kind 3
 +0x08  4  step, counting every message a station sends from 1
-+0x0c  4  0x0000ff00
++0x0c  1  tag, 0 on every trade message
++0x0d  1  destination station index, 0xff for every station
++0x0e  2  zero
 +0x10     the body
 ```
 
+`0x116f30(mgr, kind, buf, len, tag, dest)` builds the header at `mgr+0x288`, the step being
+`mgr+0x274` plus one. Every trade sender goes through `0x4d94e0`, which passes tag 0 and destination
+0xff: `0x34945c` (kind 1), `0x34a24c` (the offer), `0x838300` and `0x83838c` (the commit).
+`0x4d9520` passes both from its caller; its callers all sit in `0x9dce94..0x9dede8`, another
+feature on the same transport, and one of them sends tag 3.
+
+The receive `0x1171d0` takes the first queued message, across all stations, whose step is its
+station's next (`mgr+0x278[station] + 1`, `0x117334..0x117354`), and bumps that counter for every
+message it takes or drops. It drops, counted and erased (`0x11722c`), a message whose destination is
+neither 0xff nor the local station index at `mgr+0x1288` (0xfd before a session, set at
+`0x116a3c`), and a message whose kind is no registered channel (the 16-entry table at `mgr+0x110`,
+`0x117398..0x1173f8`), whichever receiver is polling. A message of another registered kind, or with
+a tag other than the one asked for, makes the receive return 0 with the message left queued, and
+every message behind it, from any station, waits. The tag is compared only when the caller passes no
+tag pointer (`0x11746c..0x117478`); every trade receiver calls `0x4d9570` with none and asks for
+tag 0, so a trade message carries tag 0.
+
+The kind is a channel id. `0x116e80` hands out ids from a per-session counter at `mgr+0x270`,
+starting at 1 and zeroed with the step counter at session start (`0x116a10`), and `0x4d9450` stores
+the id at `chan+0x60` when a channel registers. The trade session object registers at `0x3492f8`,
+the party-offer object at `0x349d88` and the sync save at `0x8382a8`: 1, 2 and 3 in every captured
+trade. `0x3481fc` (the `0x347e10` class) and `0x9dce1c` (the `0x9dc...` feature) also register.
+
 **Kind 1**, body 0x168 bytes, is the identity, sent from state 6 by both stations before either has
-received anything. Its length is the 0x168 the state-6 sender copies from `obj+0x450`, so the header
-is prepended to that buffer. Names are UTF-16LE, at body offsets:
+received anything. The body is the save's MyStatus block, copied from the block's data into
+`obj+0x450` (`0x3493f4`), and the header is prepended to that buffer. Names are UTF-16LE, at body
+offsets:
 
 ```
 +0x34  2  0x0002
@@ -450,20 +485,33 @@ is prepended to that buffer. Names are UTF-16LE, at body offsets:
 **Kind 2**, body 0xe8 bytes, is the offer, sent the instant the station's published state word
 reaches 2 and again under the next step every time the station's player changes the Pokemon it is
 offering. A station moving its cursor over a party of three sent steps 2 through 7 in a minute,
-carrying its first Pokemon twice and its second four times. A new step is answered; a repeated step
-is a retransmit and is not.
+carrying its first Pokemon twice and its second four times. The selection browses the box: one
+console offered nine different structures in a row. A new step is answered; a repeated step is a
+retransmit and is not.
 
-**Kind 3**, body 4 bytes, is the commit: one u32. The host sends it twice, carrying 1 and then 2,
-63 to 66 ms apart; the joiner sends one, carrying 1, within a frame of the host's first, and the
-host's second follows the joiner's. A joiner that also answers the second with a 2 is tolerated. A
-station that has sent a commit shows a spinner with no button prompt and waits for the peer's. A
-commit that is not answered aborts the trade and leaves the save in an interrupted-trade lockout
-that refuses the next attempt for about half an hour.
+The offer is sent by the party-offer object (constructor `0x349bf0`, 0x278 bytes), which
+`0x344510` creates at `mgr+0x68` unless one exists. Its update `0x34a210` sends the 0xe8 structure
+at `+0xa0` whenever `+0x270` is set and `+0x272` clear, and clears `+0x270` once sent. `0x34a3d0`
+packs a Pokemon into `+0xa0` (`0x7294e0`) and sets `+0x270` when the status allows it (A 0: local
+state other than 1 or 2; A 1: local state 3 or above 4; A 2: never; A 3: the partner leaving,
+`0x3490c0`). The trade UI calls it on a selection change (`0x8f0c04`, `0x8f0c38`, `0x8f8fb0`,
+`0x90b87c`, `0x90b8c0`). `0x344620` destroys the object (called from `0x8869f0` and `0x886c70` in
+`0x886530`), and `0x886f30` and the normal save's update (`0x8375a4`) create it again, each
+construction registering a new channel id.
 
-**Kind 4**, body 0xe8 bytes, is the result, sent once the trade animation has run: the station's
-own first party slot, unchanged, which is the structure it offered under step 2. A retail host sent
-it 26.8 s after its second commit and an emulated host 29.9 s; the emulated joiner's followed the
-host's by 34 ms. A joiner that sends none leaves a retail host's trade complete.
+**Kind 3**, body 4 bytes, is the commit: one u32, sent by the sync save ("The commit and the trade
+lock" below). Each station sends a 1, and one station sends a 2 after the peer's 1. In the captured
+trades the host sends its 1 and its 2 63 to 66 ms apart; the joiner sends its 1 within a frame of
+the host's first, and the host's 2 follows the joiner's 1. A joiner that also answers the 2 with a 2
+is tolerated. A station that has sent a commit shows a spinner with no button prompt and waits for
+the peer's. A commit exchange that does not complete leaves the save's trade lock set.
+
+**Kind 4**, body 0xe8 bytes, a box structure, follows the trade animation. A retail host sent its
+first 26.8 s after its second commit and an emulated host 29.9 s; the emulated joiner's followed the
+host's by 34 ms. The first carries the station's first slot, the structure it offered under step 2,
+and a new one follows each selection: one console sent fourteen, under steps 13 to 26, species 1,
+150, 143, 138, 118, 126, 132, 126, 113, 105, 106, 107, 108 and 16, and others sent one. A joiner
+that sends none leaves a retail host's trade complete.
 
 A complete trade, both stations counting their own steps:
 
@@ -472,7 +520,7 @@ step 1  kind 1   identity
 step 2  kind 2   the offer, again under a fresh step per selection
 step 5  kind 3   commit, body 1
 step 6  kind 3   commit, body 2
-step 7  kind 4   the result, one message per slot
+step 7  kind 4   the first slot, again under a fresh step per selection
 ```
 
 The body of kinds 2 and 4 is one 232-byte box structure: the generation 7 layout under the
@@ -576,12 +624,30 @@ The authority `0x11b6c0` runs every tick on the session host. It moves A to X on
 station publishes state 1 with argument X on the current trailing word, and then publishes A and
 the trailing word on by one together; a state 4 moves A at once. For a station in state 2 whose
 argument differs from A it writes that station's counter into its slot, moves the trailing word on
-by one, keeps A and B, and republishes its own type 2 under the new trailing word. The screens read
-a status `0x3488b0` from A and the local state (tables `0xf4e920..0xf4e980`): with A 1, states 0 to
-4 give 2, 3, 3, 8, 2; with A 2, they give 4, 5, 8, 8, 4. 8 is the error value.
+by one, keeps A and B, and republishes its own type 2 under the new trailing word.
 
-State 2 comes only from state 1, through `0x348ab0`: the confirmation screen calls it at `0x9c2064`
-when its menu returns 0 (Retour) while the status is 3, the player's vote pending.
+The trade screen reads a status from A and its own record's state through the party-offer object's
+`0x34a300` (jump table `0xf4e9b0` on A). Before any table, `+0x271` set with `+0x272` clear gives 1.
+
+| A | local state 0 | 1 | 2 | 3 | 4 |
+|---|---|---|---|---|---|
+| 0 (table `0xf4e9d0`) | 0 | 1 | 1 | 0 | 0 |
+| 1 (table `0xf4e9f0`) | 2 | 3 | 3 | 0 | 2 |
+
+A 2 gives 4 whatever the local state, and A 3 gives 5, the partner leaving (`0x3490c0`).
+
+The status function `0x3488b0`, its tables `0xf4e920..0xf4e980` and the loop at `0x9c3300` belong to
+another class, `0x347e10` (0x718 bytes at `mgr+0x70`, record at `+0x70`, created by `0x344690`).
+`0x886530` creates that object when its mode word `+0x8C` is 1 or 2 and the party-offer object when
+it is 3 (`0x886ed0..0x886f30`).
+
+The trade UI's update (`0x756a20`, sub-state `[ui+0xa8]`) works off the party-offer object
+(`0x7568ec`). On confirmation it votes 2 (`0x756e34` -> `0x34a4e0` -> `0x11bc00`) and moves to
+sub-state 2 (`0x757058`). In sub-state 2, status 4 writes 5 at `[[x21+0x78]+0x60]`, calls
+`0x74a590(ui, 2)`, and the trade proceeds (`0x756c0c..0x756c38`); status 2 returns to the selection
+(`0x756cb4`); a menu result of 3 under status 1 or 3 withdraws the vote (`0x756d94` -> `0x34a500` ->
+`0x11b4e0`, record state 2). In sub-state 0, status 1 with `[x22+0x258]` zero calls `0x34a4a0`
+(`0x756b94`), the other withdrawal.
 
 `0x11b688` stages an arriving clone type 4 record into the trade object at `+0x1638`, and `0x11ba20`
 compares it field for field against the object's own: `+0x1638` against `obj+0x04`, `+0x163c`
@@ -616,19 +682,102 @@ screen.
 
 A console whose player pressed A again as the confirmation greyed the buttons (the cursor then
 sits on Retour) withdrew its vote: `2 2 3` (state 2, argument 2, counter 3) after its `1 2 2`. A host
-that answered with A 2 took it to status 4, which the confirmation loop at `0x9c3300` has no case
-for: the console republished `0 2 3`, never answered the commit clone, held a warning screen, and
-the save could not trade for 30 minutes afterwards. The authority's answer, type 4 `1 0 0 3 0 0 step
-T+1`, takes the same console record to status 2, the screen's exit, under the game's own
-`0x11ba20`. `bin/lgpe_host.py` answers that way and agrees a second vote in one publish;
+that answered with A 2 gave it status 4, which in the confirmation sub-state proceeds to the trade:
+the console republished `0 2 3`, never answered the commit clone, held a warning screen, and its
+save refused the next trade. The authority's answer, type 4 `1 0 0 3 0 0 step T+1`, takes the same
+console record to state 0 under the game's own `0x11ba20`, and with A 1 that is status 2
+(`0xf4e9f0[0]`), which returns the screen to the selection. `bin/lgpe_host.py` answers that way and agrees a second vote in one publish;
 `tests/test_lgpe_host_withdraw.py` runs both through the game's code. On a retail Let's Go Pikachu
 a withdrawn selection, `2 1 4` with A 0, took the answer `0 0 0 4 0 0 step T+1`: the console
 republished `0 1 4` and stayed on the trade screen, then voted 1 and 2 again, each agreed in one
-publish, and the trade went through. Where the game sets the
-30-minute lock is unread; the trade record code holds no time value.
+publish, and the trade went through.
 
 Publishing no clone data on clone types 4 and 1 at all, which is what two retail consoles exchange,
 leaves a console that joins short of the gate at `0x11b080` and on its search screen.
+
+### The commit and the trade lock
+
+The trade lock is a u32 countdown in seconds in the save's MyStatus block. A trade's save sets it to
+600 and commits that before the commit exchange; the exchange completing commits it back to 0.
+
+The MyStatus block object is `[[[0x15fad08]]+0x98]+0x58` -> `+0x78`, its data `obj+0x58`, 0x168
+bytes (`0x1c9ff0`, `0x1ca000`, slots 5 and 6 of vtable `0x153e0b0`), the body of the kind 1
+message. The counter is `obj+0xe8`, MyStatus `+0x90` (setter `0x1c9d40`, getter `0x1c9d50`). In
+`savedata.bin` the block is `0x1000..0x1168` and the counter `0x1090`: a save kept after an
+interrupted trade holds `58 02 00 00` there and differs from the clean save in no other byte of the
+block, whose trainer name at `0x1038` places it. Every captured kind 1 body carries 0 at `+0x90`.
+
+The setter is called with 600 by the sync save (`0x837f90`), with 0 when the received Pokemon is
+applied (`0x838bec`), and by the countdown (`0x1ca54c`); the getter by the countdown and by the
+link menu's check. That check, `0x9765f4`, switches on the link mode: mode 1, trade, reads the
+counter (`0x976634`), and a non-zero value stores the refusal message `0x0248810f825b1fee` and
+returns -1 (`0x97663c`); zero goes on to a count check (message `0x0248800f825b1e3b`). Mode 3
+refuses when `[x22+0x62] <= 1` (message `0x02487f0f825b1c88`).
+
+`0x1ca450(playtime, seconds)` is the play-time tick. It returns at once when `seconds > 1`
+(`0x1ca46c`) or when `playtime+0x100` is clear (`0x1ca474`); otherwise it subtracts `seconds` from
+the counter, floored at 0 (`0x1ca500`), and adds them to the play time (`+0x54` hours as a u16,
+`+0x56` minutes, `+0x57` seconds, capped at 999:59:59). `0x1ca7e0` writes `playtime+0x100` as
+`nn::oe::GetCurrentFocusState() != 3`, 3 being the SDK's Background. Its only caller, `0x1462a0`
+(called from `0x13c944`), runs it once every 20 calls (`cmp w8, #0x14`), while its enable byte
+`+0x54` is set and no save thread exists (`0x1ce8f0`, save manager `[0x15fd9d8]+0x58`), passing the
+change in whole seconds of `GetSystemTick` since a base it moves on at every call (`0x14637c`),
+dropped gaps included. The lock runs down over 600 seconds of foreground play: it does not move
+while the game is closed or in the background, across a gap of more than one second, or while a save
+is written.
+
+`0x347190` builds one of three save sequences: 0 "normal save" (`0x3474d0`), 1 "sync save"
+(`0x347670` -> `0x347ae0`, 0xc8 bytes), 2 "fatal error" (`0x347810`); the names are the strings at
+`0xf04ca7`, `0xf04cb3`, `0xf04cbd`. A trade saves through the sync save. Its init `0x837c70` (vtable
+slot 17, `0x15aa770`) creates the commit channel object (`0x4d9030`) at `seq+0xb8`, sets the counter
+to 600 (`0x837f88`), and starts `SaveThread` (`0x1cdc80`, at `0x83803c`), which serializes the save
+on the calling thread before it starts (`0x1cdd84` -> `0x1cc990`) and commits as soon as it has
+written (`0x1cedd4..0x1cede0`, `nn::fs::CommitSaveData`). Its update `0x838070` (slot 18,
+`0x15aa778`) runs on the state word `seq+0xa8` through the jump table `0xf867c4`:
+
+| state | address | what it does |
+|---|---|---|
+| 0 | `0x8380ac` | any recorded network error (`0x4d8a70`) writes result 2 and leaves (`0x8383c8`); otherwise waits for `SaveThread` (`0x1cdf40`), stores whether this station sends the 2 (`0x838660`) at `seq+0xc0`, applies the received Pokemon and zeroes the counter in memory (`0x838800`, `0x838bec`), sets `netmgr+0x121` (`0x4d8b10`) and starts `FirstSaveThread` (`0x1ce050`) |
+| 1 | `0x8380d8` | waits for `FirstSaveThread` to write (`0x1ce310`), then draws a delay of `2000 + r % 6000` ms from an MT19937-64 seeded with `GetSystemTick` (`0x838180`, `0x8381d8`) |
+| 2 | `0x838234` | after the delay, registers the commit channel (`0x8382a8`) |
+| 3 | `0x8382b4` | votes 1 on the commit clone on its first pass (`0x4d9690`: `chan+0x64 = 1`, `0x11bc00`), then waits for the channel's gate (`0x4d94d0`) and for the clone to be idle with `[chan+0x74]` equal to 1 |
+| 4 | `0x8382ec` | sends a kind 3 carrying 1 |
+| 5 | `0x838310` | takes a kind 3 from the other station, skipping its own loopback (`0x838360`); a body other than 1 is the error path (`0x83836c`); if `seq+0xc0` is set, sends a kind 3 carrying 2, and a failed send stays in state 5 with the peer's 1 consumed |
+| 6 | `0x83839c` | takes a kind 3 from any station: a 2 clears `netmgr+0x121` (`0x4d8b20`) and signals the commit (`0x1ce3f0`); any other body is consumed and ignored |
+| 7 | `0x8383e8` | waits for `FirstSaveThread` to commit (`0x1ce410`) and ends with result 0 |
+
+`FirstSaveThread` serializes the save as it starts (`0x1ce154`), after the counter was zeroed,
+signals `mgr+0x78` once written, waits on `mgr+0x84`, and commits only if the abort byte
+`mgr+0x100090` is clear (`0x1cedf4..0x1cee18`). The error path of states 2, 3, 5 and 6 (`0x8383b0`)
+and of state 5's wrong body (`0x838520`) writes result 2 into the parent (`[x0+0x88]+4`) and calls
+`0x1ce520`, which sets the abort byte, signals `mgr+0x84` and sleeps in 1 ms steps until the thread
+has ended. The second save is dropped, and the save on disk keeps 600 until the running game saves
+again. The fatal error sequence (vtable `0x15aa3b8`, init `0x836320`) has a bare `ret` for its update
+(`0x836780`).
+
+While `netmgr+0x121` is set, `0x4d8750` records every network error at severity 4
+(`0x4d8760..0x4d877c`), and states 2, 3, 5 and 6 test for exactly that (`0x4d8a80`: an error
+recorded, at severity 4). A recorded error is replaced only by one of higher severity (`0x4d879c`),
+so an error above 4 recorded before `+0x121` was set fails that test. No state has a timeout: a peer
+that goes quiet leaves the sequence waiting until the link fails.
+
+`0x838660` decides who sends the 2. With S = {144, 145, 146, 150, 151} (`species - 0x90` in the
+mask `0xc7`) and M = {808, 809}: a station whose offered species is in S or M and whose received
+species is in neither sends it; a station in the reverse case does not; otherwise the station for
+which `0x4d9720` returns true sends it (`mgr+0x128c`, set at session start at `0x116a48` from
+`0x59e920`), the session host in every captured trade. A station giving Mewtwo, Mew, Articuno,
+Zapdos, Moltres, Meltan or Melmetal for an ordinary Pokemon sends the 2 whether it hosts or joins,
+and its partner sends none.
+
+For a peer this means:
+
+- The console's record reading A 2 in the confirmation sub-state gives status 4, which starts the
+  sync save and commits 600. An authority that publishes A 2 owes the whole commit exchange.
+- A first kind 3 from the peer carrying anything but 1 aborts with the lock set; the 2 follows the 1.
+- A kind 3 sent before the receiver's state 2 has registered the commit channel is dropped as an
+  unregistered kind. The vote in state 3 is agreed only once both stations vote, and each votes only
+  after registering, so it holds each station's kind 3 until the other has registered.
+- The delay of state 1 moves a console's kind 3 by up to six seconds from one trade to the next.
 
 ### What a hosted trade puts in the save
 
@@ -700,8 +849,8 @@ own and the peer's, compared with `b.ne` rather than a bound. It stops receiving
 the count cannot overshoot. The host's screen reads that a player has been found.
 
 The game's first message is the 376 bytes a joiner sends on the Reliable Protocol: a 16-byte header
-and the 0x168-byte body state 6 transmits. The header's length and flags are the arguments of the
-`0x116f30` call in state 6:
+and the 0x168-byte body state 6 transmits. The header's length, tag and destination are the
+arguments of the `0x116f30` call in state 6:
 
     01000000 68010000 01000000 00ff0000    kind 1, 0x168 bytes, step 1
     02000000 e8000000 02000000 00ff0000    kind 2, 0xe8 bytes, step 2

@@ -265,6 +265,18 @@ Five of the nine answer a version probe; the other four are registered at versio
 cannot tell from unregistered (both expect 0). The wiki gives the Local Protocol version 0 for
 5.19-5.45.
 
+The Session Protocol (0x94) is `nn::pia::session::SessionProtocol` (1.3.0 `main`, vtable
+`0x4b5da50`; slot 4 returns 0x94, slot 5 returns 1). Pia's session start-up constructs it on every
+session [`0x157c66c`] unless a settings byte (+0x38 of the object behind GOT `0x4c4b850`) is set,
+registers it under 0x94, stores it at session+0xC8 and gives it one
+`transport::ReliableSlidingWindow` per other station [`0x1581938`]. It carries the joint-session
+feature: every call into `SessionProtocol` from outside it comes from
+`nex::NexMatchJointSessionJob`, and every handler of its receive dispatcher [`0x15820b8`, a switch on
+the first byte] returns when the session's joint-session job (session+0x70) is null. The job comes
+from the network factory's slot 61 [`0x157cb48`]: `local::LdnNetworkFactory`'s [`0x16b30ac`] returns
+null, `lan::LanNetworkFactory`'s builds a `LanMatchJointSessionJob` and `nex::NexNetworkFactory`'s a
+`NexMatchJointSessionJob`. No capture has carried a byte of 0x94.
+
 The join response for a two-station mesh:
 
     stations 2, host index 0, our index 1, max_active 8, update counter 0

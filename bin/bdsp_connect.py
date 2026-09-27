@@ -901,7 +901,7 @@ async def main_async(args):
             st["dst_ip"], st["dst_var"] = dst_ip, dst_var
             location = stp.station_location(our_ip, PIA_PORT, our_constant, args.src_var,
                                             our_service)
-            infos = [stp.player_info(args.name)]
+            infos = [stp.player_info(args.name, language=args.language)]
 
             count = args.count
             if count is None:
@@ -1611,6 +1611,9 @@ def build_parser():
     ap.add_argument("--dwell", type=float, default=1.5,
                     help="seconds per channel in the scan; 0.8 missed a live network twice")
     ap.add_argument("--name", default="PkCamp")
+    ap.add_argument("--language", type=int, default=1,
+                    help="the PlayerInfo language byte; 1, 8, 9 and 10 cap the greeting's name at 6 "
+                         "characters, any other positive value at 12 (docs/bdsp_protocol.md)")
     ap.add_argument("--hold", type=float, default=300.0)
     ap.add_argument("--listen-first", type=float, default=5.0)
     ap.add_argument("--ack-seconds", type=float, default=6.0)
