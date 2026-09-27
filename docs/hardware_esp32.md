@@ -294,7 +294,9 @@ sniffer heard. The board missed 5.7 to 8.5% of the console's first copies at 54 
 12.1% at 48 Mbit/s, while its own RSSI for the console was -20 to -21 dBm. In sniffer order a missed
 first copy follows another console frame 46 to 52% of the time (two trades) and 37% (a third),
 against 28 to 32% for a first copy the board heard. A board copy that carries the retry bit, with no
-earlier copy of its sequence number, marks a miss from the board's trace alone.
+earlier copy of its sequence number, marks a miss from the board's trace alone. The console's first copies that
+no ACK followed and those that one did are alike: 414 of 428 against 3995 of 4089 at 54 Mbit/s,
+sniffer RSSI median -17 against -16 dBm, length median 203 bytes both.
 
 ### Two boards reproduce the misses
 
