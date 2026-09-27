@@ -109,6 +109,14 @@ static void promiscuous_rx(void *buffer, wifi_promiscuous_pkt_type_t type)
                                      packet->rx_ctrl.mcs | (packet->rx_ctrl.cwb << 7)};
             atomic_fetch_add(&s_rx_sniff, 1);
             wire_send(MSG_RX_SNIFF, head, sizeof(head), frame, length);
+        } else if (type == WIFI_PKT_CTRL && length == 10 && frame[0] == 0xD4) {
+            /* Every ACK on the channel: it names only its receiver. Whether a data frame was
+               acknowledged is read off the one that follows it. docs/hardware_esp32.md */
+            const uint8_t head[5] = {packet->rx_ctrl.channel, (uint8_t)packet->rx_ctrl.rssi,
+                                     packet->rx_ctrl.sig_mode, packet->rx_ctrl.rate,
+                                     packet->rx_ctrl.mcs | (packet->rx_ctrl.cwb << 7)};
+            atomic_fetch_add(&s_rx_sniff, 1);
+            wire_send(MSG_RX_SNIFF, head, sizeof(head), frame, length);
         }
         return;
     }
@@ -153,10 +161,16 @@ static void promiscuous_rx(void *buffer, wifi_promiscuous_pkt_type_t type)
 
 static void start_sniffer(void)
 {
+    const bool sniff = atomic_load(&s_mode) == MODE_SNIFF;
     const wifi_promiscuous_filter_t filter = {
         .filter_mask = WIFI_PROMIS_FILTER_MASK_MGMT |
-                       (atomic_load(&s_mode) >= MODE_AP ? WIFI_PROMIS_FILTER_MASK_DATA : 0)};
+                       (atomic_load(&s_mode) >= MODE_AP ? WIFI_PROMIS_FILTER_MASK_DATA : 0) |
+                       (sniff ? WIFI_PROMIS_FILTER_MASK_CTRL : 0)};
     ESP_ERROR_CHECK(esp_wifi_set_promiscuous_filter(&filter));
+    if (sniff) {
+        const wifi_promiscuous_filter_t ctrl = {.filter_mask = WIFI_PROMIS_CTRL_FILTER_MASK_ACK};
+        ESP_ERROR_CHECK(esp_wifi_set_promiscuous_ctrl_filter(&ctrl));
+    }
     ESP_ERROR_CHECK(esp_wifi_set_promiscuous_rx_cb(promiscuous_rx));
     ESP_ERROR_CHECK(esp_wifi_set_promiscuous(true));
 }
