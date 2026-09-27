@@ -237,3 +237,46 @@ def test_a_fresh_offer_moves_only_its_pid_and_constant(message, tmp_path):
         tid, sid = struct.unpack_from("<HH", p, pb7.BOX_TRAINER_ID)
         return tid ^ sid ^ (pid >> 16) ^ (pid & 0xFFFF)
     assert shiny(after) == shiny(before)
+
+
+@pytest.mark.parametrize("ours, theirs, expected", [
+    (150, 16, [1, 2]),    # the joiner gives Mewtwo for a Pidgey: the console host never sends a 2
+    (16, 151, [1, 2]),    # the host gives Mew: a 2 behind our 1 is the echoed 2 a host tolerates
+    (16, 25, [1]),        # an ordinary trade: the host's own 2 closes it
+])
+def test_a_trade_giving_a_special_species_sends_the_second_commit(ours, theirs, expected, tmp_path):
+    """`0x838660` hands the kind 3 carrying 2 to the station giving Mewtwo, Mew, a legendary bird,
+    Meltan or Melmetal for an ordinary Pokemon. A joiner that only echoes would leave the console in
+    its state 6 with the lock armed."""
+    import types
+    import importlib.util
+    spec = importlib.util.spec_from_file_location(
+        "lgpe_join", os.path.join(os.path.dirname(__file__), "..", "bin", "lgpe_join.py"))
+    mod = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(mod)
+
+    def box(species, ec):
+        plain = bytearray(pb7.BOX_SIZE)
+        struct.pack_into("<I", plain, 0, ec)
+        struct.pack_into("<H", plain, 8, species)
+        return pb7.encrypt(bytes(plain))
+
+    offer = tmp_path / "offer.pb7"
+    offer.write_bytes(box(ours, 0x12345678))
+    args = types.SimpleNamespace(offer=str(offer))
+
+    class Window:
+        def send(self, body):
+            return body
+
+    sent = []
+    state = {"window": Window()}
+    peer_offer = pb7.parse_message(pb7.build_message(pb7.OFFER_MESSAGE, box(theirs, 0x9abcdef0),
+                                                     step=2))
+    mod._answer_offer(args, state, peer_offer, lambda b, p: sent.append(b))
+    commit = pb7.parse_message(pb7.build_message(pb7.COMMIT_MESSAGE, b"\1\0\0\0", step=5))
+    mod._answer_commit(args, state, commit, lambda b, p: sent.append(b))
+    commits = [pb7.parse_message(m) for m in sent[1:]]
+    assert [c["kind"] for c in commits] == [pb7.COMMIT_MESSAGE] * len(expected)
+    assert [int.from_bytes(c["body"], "little") for c in commits] == expected
+    assert [c["step"] for c in commits] == list(range(3, 3 + len(expected)))

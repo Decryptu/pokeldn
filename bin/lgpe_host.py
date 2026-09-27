@@ -210,7 +210,7 @@ def main(argv=None):
         while True:
             if time.monotonic() - t0 >= args.seconds:
                 # a run that stops between the offer and the result leaves the console waiting on
-                # a peer that is gone, and it refuses the next trade for about half an hour. Hold
+                # a peer that is gone, and it refuses the next trade for 600 s of play. Hold
                 # the session until the exchange is settled or the console has left.
                 if not TRADE_IN_PROGRESS["offer"] or session.trade.get("done"):
                     break
@@ -252,7 +252,7 @@ class Session:
         self.seen = {}
         self.window = reliable3.Window()
         # an unacknowledged game message goes again: a commit that never arrives leaves the
-        # console on its confirmation screen and its save refusing trades for half an hour
+        # console on its confirmation screen and its save refusing trades for 600 s of play
         self.window.clock = time.monotonic
         self.trade = {"window": self.window, "step": 1}
         self.payloads = []

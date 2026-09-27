@@ -5,8 +5,12 @@ from pokeldn.ldn import reliable3, show_done
 from pokeldn.lgpe import pb7
 
 # set once the peer has offered: a run that ends abnormally after this point has left a trade half
-# done, which on a retail console locks the save out of the next one for about half an hour
+# done, which on a retail console locks the save out of the next one for 600 s of play
 TRADE_IN_PROGRESS = {"offer": False, "commit": False}
+
+# a trade giving one of these away for an ordinary Pokemon is closed by the giver's kind 3 carrying
+# 2, not the host's (0x838660; docs/lgpe_session.md, "The game's messages on the reliable protocol")
+SECOND_COMMIT_SPECIES = frozenset({144, 145, 146, 150, 151, 808, 809})
 
 
 def fresh_offer(args, tag="[lg]"):
@@ -27,14 +31,14 @@ def _warn_if_mid_trade(tag="[lg]"):
     """Say plainly that the link died with a trade half done.
 
     A run that ends here has left the peer waiting, and a retail console answers that by refusing the
-    next trade for about half an hour with no save restore available. Reading a run's end as one's
+    next trade for 600 s of play with no save restore available. Reading a run's end as one's
     own doing rather than checking why it ended is what made this cost a lockout once already.
     """
     if not TRADE_IN_PROGRESS["offer"]:
         return
     stage = "after the commit" if TRADE_IN_PROGRESS["commit"] else "during the offers"
     print(f"{tag} *** THE LINK ENDED MID-TRADE, {stage} *** the peer was mid-exchange when this "
-          "run stopped. A console will refuse the next trade for about half an hour.")
+          "run stopped. A console will refuse the next trade for 600 s of play.")
 
 
 def _send_step(state, send, kind, body):
@@ -68,6 +72,13 @@ def _answer_commit(args, state, msg, send, tag="[lg]"):
     TRADE_IN_PROGRESS["commit"] = True
     step = _send_step(state, send, pb7.COMMIT_MESSAGE, msg["body"])
     print(f"{tag} offer: *** COMMITTED step {step} *** answering the peer's step {msg['step']}")
+    # a console host giving an ordinary Pokemon for one of these never sends the 2. A 2 of ours
+    # behind our 1 is what an echoed 2 already was, so it goes whichever side gives the special one.
+    if (msg["body"][:4] == b"\1\0\0\0" and not state.get("sent_second_commit")
+            and SECOND_COMMIT_SPECIES & set(state.get("offer_species", ()))):
+        state["sent_second_commit"] = True
+        step = _send_step(state, send, pb7.COMMIT_MESSAGE, b"\2\0\0\0")
+        print(f"{tag} offer: *** COMMITTED 2 step {step} *** a special species is in the trade")
 
 
 def _answer_offer(args, state, msg, send, tag="[lg]"):
@@ -83,8 +94,9 @@ def _answer_offer(args, state, msg, send, tag="[lg]"):
         print(f"{tag} offer: the peer's structure did not verify; not answering")
         return
     plain = pb7.decrypt(msg["body"])
+    peer_species = int.from_bytes(plain[8:10], "little")
     print(f"{tag} offer: the peer holds species "
-          f"{int.from_bytes(plain[8:10], 'little')} "
+          f"{peer_species} "
           f"{plain[0x40:0x5A].decode('utf-16le').split(chr(0))[0]!r}")
     if args.offer == "echo":
         body = msg["body"]
@@ -94,6 +106,7 @@ def _answer_offer(args, state, msg, send, tag="[lg]"):
             print(f"{tag} offer: {args.offer} is {len(raw)} bytes, not {pb7.BOX_SIZE}")
             return
         body = raw if pb7.valid(raw) else pb7.encrypt(raw)
+    state["offer_species"] = (int.from_bytes(pb7.decrypt(body)[8:10], "little"), peer_species)
     # the peer sends a fresh message under the next step every time its player changes what it is
     # offering, so an answer is owed per step rather than once per session
     state["answered_step"] = msg["step"]

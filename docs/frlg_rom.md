@@ -1885,9 +1885,9 @@ counter:
 
 The bias of 2 is a property of the ordering rather than of any particular state. A full save
 increments the counter and then writes the band the incremented value selects [decomp:src/save.c:144-153],
-so the band we write (`C % 2`) and the band the session's own save writes (`(C+1) % 2`) are opposite
-by construction, and ours lands exactly one counter above. The band is then a mixture — twelve
-sectors at the old counter and two at the new — which the loader takes because all fourteen ids are
+so the band the payload writes (`C % 2`) and the band the session's own save writes (`(C+1) % 2`) are opposite
+by construction, and the payload's lands exactly one counter above. The band is then a mixture of twelve
+sectors at the old counter and two at the new, which the loader takes because all fourteen ids are
 present and valid and the last valid sector carries the higher counter.
 
 Measured end to end: a player name changed to POKELDN through a Wonder Card link, physical 4

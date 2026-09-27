@@ -130,9 +130,8 @@ slots the same game answers the opening with Net 0x12 and sends its Session join
 message flags carry 0x31 on a retail host's opening against this host's 0x01, and that difference
 alone changes nothing.
 
-This is what a retail console did against a host of this project's over the radio in sv05 and sv06,
-where it associated, sat about five seconds, left, and answered Net 0x11 with ICMP port 12345
-unreachable.
+A retail console did this against `bin/sv_host.py` over the radio: it associated, sat about five
+seconds, left, and answered Net 0x11 with ICMP port 12345 unreachable.
 
 ### The eleven streams
 
