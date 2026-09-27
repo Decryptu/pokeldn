@@ -232,8 +232,8 @@ Host to board adds 0.12 to 0.47 ms median (socket to ETH_TX written) and 3.1 to 
 the board). Every wait over 100 ms is head-of-line: one frame the console has not acknowledged
 holds for 108 to 261 ms, the frames queued behind it then complete in a burst (up to 10 within
 5 ms), and the access point's own action frames keep going meanwhile. The sniffer saw one to three
-copies of such a head frame, retries at 54 or 48 Mbit/s. The channel does not decide it (channel 1
-held five times, then none), nor does the retry share. A foreign station associating for 4 s every
+copies of such a head frame, retries at 54 or 48 Mbit/s. The retry share does not decide it; the
+channel does (below, The channel). A foreign station associating for 4 s every
 20 to 25 s coincided with none of the 81 frames over 100 ms.
 
 The console stays awake and on the channel through a hold. Through each of the five holds on
@@ -279,6 +279,23 @@ The two shortest waits measured on channel 1 were at 240 MHz, and the third 240 
 160 MHz ones. The clock does not decide the wait on its own; the spread between runs of one setting is
 as large as the difference. `tools/ldn/esp32_hold.py CAPTURE TRACE` prints the wait on its `board
 queue -> TX-done` line.
+
+### The channel
+
+The long waits belong to channel 1 in this room, which also carries the console's home access point.
+Every FireRed trade on channel 11 had its p99 wait under 12 ms and no frame over 50 ms; channel 1
+ranged from 13.5 to 116 ms:
+
+| channel | trades | wait p99 | wait max | trades with a hold over 100 ms | board missed, console first copies |
+|---|---|---|---|---|---|
+| 1 | 9 | 13.5 to 116 ms | 65 to 261 ms | 5 | 4.9 to 8.5% |
+| 6 | 1 | 18 ms | 108 ms | 1 | |
+| 11 | 3 | 9 to 11.2 ms | 26 to 46 ms | 0 | 5.5%, 6.0% |
+
+On channel 11 the board misses as large a share of the console's first copies as on channel 1, and
+its p90 wait is the same (4.5 ms); only the tail differs (over 20 ms: 8 and 9 frames, against 42 to
+137 in the six channel-1 trades counted). The receive misses do not make the holds. `config/host.local.toml` takes a
+`[host] channel`; the console joins a host on 1, 6 or 11.
 
 ### The board is the deaf side
 
