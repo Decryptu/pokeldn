@@ -78,7 +78,7 @@ Anything before a `0x00`, including the ROM's boot text, is discarded by the che
 | `0x03` CHANNEL | host | u8 channel; idle only |
 | `0x04` STA_JOIN | host | u8 channel, 6 BSSID, 32 SSID (the LDN SSID's hex text), 16 key, 6 station MAC (zero = random); optional: u8 a fixed data rate (the AP_START bits 3..5 table), then u8 a maximum TX power in 0.25 dBm (`esp_wifi_set_max_tx_power`, 8 to 84; the driver caps it at 61) |
 | `0x05` STOP | host | none; back to idle, keys cleared |
-| `0x06` AP_START | host | u8 channel, 6 BSSID, 32 SSID, 16 key, u8 max stations, u8 flags: 1 the stock association and 4-way handshake, 2 no QoS for the station, 4 no 40-byte copy of each station data frame, bits 3..5 a fixed data rate, `0x40` a beacon every 1000 TU, `0x80` no promiscuous receive; an optional second flag byte: 1 the driver's noise-floor check off, 2 its interval 250, 4 the receive time in each 40-byte data copy's head, 8 retry limits 7 and 4, `0x10` a RX_CENSUS for every frame but its stations' good data frames to it |
+| `0x06` AP_START | host | u8 channel, 6 BSSID, 32 SSID, 16 key, u8 max stations, u8 flags: 1 the stock association and 4-way handshake, 2 no QoS for the station, 4 no 40-byte copy of each station data frame, bits 3..5 a fixed data rate, `0x40` a beacon every 1000 TU, `0x80` no promiscuous receive; an optional second flag byte: 1 the driver's noise-floor check off, 2 its interval 250, 4 the receive time in each 40-byte data copy's head, 8 retry limits 7 and 4, `0x10` a RX_CENSUS for every frame but its stations' good data frames to it; then an optional maximum TX power in 0.25 dBm |
 | `0x07` AP_KICK | host | 6 MAC, u16 reason; deauthenticates |
 | `0x08` ETH_TX | host | an Ethernet frame; the driver encrypts it with the station's or the group key. A full driver queue (`ESP_ERR_NO_MEM`) is retried every 1 ms for up to 100 ms before the frame counts as failed; a frame to a station that has left fails at once with `0x3015` (`ESP_ERR_WIFI_NOT_ASSOC`). A station sends the frame's Ethernet source as its 802.11 transmitter address: a source other than the MAC in LINK is never acknowledged (49 of 49 unacked, none seen by the access point) |
 | `0x09` RAW_TX | host | an 802.11 frame without FCS (`esp_wifi_80211_tx`); used for advertisements |
@@ -423,9 +423,28 @@ every data frame to the board behind RTS/CTS, although the board's beacon carrie
 HT operation element: the board answers the RTS with a CTS at 6 Mbit/s and the data follows it 60 us
 later on a third board's clock, the CTS's 44 us plus SIFS. Over one trade on channel 1 the board
 acknowledged 3705 of 4034 such data frames; the 329 it missed followed its CTS by the same 60 us.
-On the bench, a station sending pairs (`--burst 2`), the second frame, which follows the access
-point's ACK of the first, was missed at 5.0% against 2.3% for the first on channel 3, and at 5.2%
-against 5.2% on channel 1 (`--ap-flags2 4`, BASE.rx with sequence numbers).
+On the bench, by a frame's place in its station's burst (bursts 40 ms apart, 54 Mbit/s, grouped by
+receive time and ranked by sequence number, since a missed frame is only timed at its retry):
+
+| channel | burst | 1st | 2nd | 3rd | 4th |
+|---|---|---|---|---|---|
+| 3 | 2 | 2.3% | 5.0% | | |
+| 1 | 2 | 4.9% | 7.5% | | |
+| 3 | 4 | 3.0% | 3.1% | 5.9% | 4.6% |
+
+A frame after 40 ms of quiet is missed at a rate set by the channel; one that follows the access
+point's own ACKs is missed 1.5 to 2 times as often.
+
+The access point's own transmit power does not set it (AP_START's power byte, channel 3, bursts of
+4, 120 s, two passes; the driver read the power back):
+
+| access point power | 1st | 2nd | 3rd | 4th |
+|---|---|---|---|---|
+| 19.5 dBm (default) | 1.4, 1.0% | 3.6, 3.1% | 6.5, 5.8% | 3.3, 2.7% |
+| 10 dBm | 0.7, 0.5% | 4.5, 3.2% | 6.5, 4.7% | 4.1, 3.6% |
+| 3.5 dBm | 0.6, 0.6% | 3.1, 2.4% | 6.1, 7.0% | 3.0, 2.6% |
+
+The third frame of a burst is the most missed in all six runs and in the run above.
 
 The driver retries in software: `lmacRetryTxFrame` (libpp `lmac.o`) sends each copy again through
 `lmacTxFrame`, up to limits kept in `lmacConfMib` (short at +21, long at +20, both 32 by default);

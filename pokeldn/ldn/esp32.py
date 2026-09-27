@@ -167,13 +167,14 @@ def sta_join_payload(channel: int, bssid, ssid: str, key: bytes, mac=bytes(6), r
 
 
 def ap_start_payload(channel: int, bssid, ssid: str, key: bytes, max_stations: int = 7,
-                     flags: int = 0, flags2: int = 0) -> bytes:
+                     flags: int = 0, flags2: int = 0, power: int = 0) -> bytes:
     ssid_bytes = ssid.encode("ascii")
     if len(ssid_bytes) != 32 or len(key) != 16:
         raise ValueError("an LDN SSID is 32 hex characters and the key 16 bytes")
-    # The second flag byte goes only when set, so firmware without it still accepts the rest.
-    return (bytes([channel]) + mac_bytes(bssid) + ssid_bytes + key + bytes([max_stations, flags])
-            + (bytes([flags2]) if flags2 else b""))
+    # The second flag byte and the TX power byte (0.25 dBm) go only when set, so firmware without
+    # them still accepts the rest.
+    tail = bytes([flags2, power]) if power else bytes([flags2]) if flags2 else b""
+    return bytes([channel]) + mac_bytes(bssid) + ssid_bytes + key + bytes([max_stations, flags]) + tail
 
 
 @dataclass
@@ -498,9 +499,9 @@ class Radio:
         self.request(CMD_STA_JOIN, sta_join_payload(channel, bssid, ssid, key, mac, rate, power), MSG_RESULT)
 
     def ap_start(self, channel: int, bssid, ssid: str, key: bytes, max_stations: int = 7,
-                 flags: int = 0, flags2: int = 0) -> None:
-        self.request(CMD_AP_START, ap_start_payload(channel, bssid, ssid, key, max_stations, flags, flags2),
-                     MSG_RESULT, timeout=5.0)
+                 flags: int = 0, flags2: int = 0, power: int = 0) -> None:
+        self.request(CMD_AP_START, ap_start_payload(channel, bssid, ssid, key, max_stations, flags, flags2,
+                                                    power), MSG_RESULT, timeout=5.0)
 
     def stop(self) -> None:
         self.request(CMD_STOP, b"", MSG_RESULT, timeout=5.0)

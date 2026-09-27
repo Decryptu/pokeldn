@@ -421,9 +421,10 @@ extern int esp_wifi_internal_set_retry_counter(int src, int lrc);
 
 static esp_err_t ap_start(const uint8_t *p, size_t n)
 {
-    /* A second flag byte is optional: AP_FLAG2_NO_NOISE_CHECK. */
-    if (n != 1 + 6 + 32 + 16 + 1 + 1 && n != 1 + 6 + 32 + 16 + 1 + 1 + 1) return ESP_ERR_INVALID_SIZE;
+    /* Optional: a second flag byte (AP_FLAG2_*), then a maximum TX power in 0.25 dBm. */
+    if (n < 1 + 6 + 32 + 16 + 1 + 1 || n > 1 + 6 + 32 + 16 + 1 + 1 + 2) return ESP_ERR_INVALID_SIZE;
     const uint8_t flags2 = n > 57 ? p[57] : 0;
+    const uint8_t ap_power = n > 58 ? p[58] : 0;
     s_ap_flags2 = flags2;
     if (flags2 & AP_FLAG2_NOISE_250) NoiseTimerInterval = 250;   /* before the driver arms it */
     const uint8_t channel = p[0];
@@ -470,6 +471,13 @@ static esp_err_t ap_start(const uint8_t *p, size_t n)
         const esp_err_t fixed = esp_wifi_internal_set_fix_rate(WIFI_IF_AP, true,
                                                                AP_FIXED_RATES[AP_FLAG_RATE(s_ap_flags)]);
         wire_log("ap fixed rate %u: %d", AP_FLAG_RATE(s_ap_flags), fixed);
+    }
+    if (ap_power) {
+        int8_t before = 0, after = 0;
+        esp_wifi_get_max_tx_power(&before);
+        const esp_err_t set = esp_wifi_set_max_tx_power((int8_t)ap_power);
+        esp_wifi_get_max_tx_power(&after);
+        wire_log("ap max tx power %u: %d, %d -> %d", ap_power, set, before, after);
     }
     atomic_store(&s_mode, MODE_AP);
     /* NO_PROMISC bisects the receive misses; no RX_MGMT copies then. docs/hardware_esp32.md */
