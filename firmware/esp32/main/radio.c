@@ -34,11 +34,12 @@ enum {
 enum {
     MSG_INFO = 0x81, MSG_RESULT = 0x82, MSG_RX_MGMT = 0x84, MSG_RX_ETH = 0x85, MSG_LINK = 0x86,
     MSG_STA_JOINED = 0x87, MSG_STA_LEFT = 0x88, MSG_STATUS = 0x89, MSG_BENCH = 0x8A,
-    MSG_RX_SNIFF = 0x8C, MSG_TX_DONE = 0x8D, MSG_BUTTON = 0x8E,
+    MSG_RX_SNIFF = 0x8C, MSG_TX_DONE = 0x8D, MSG_BUTTON = 0x8E, MSG_RX_CENSUS = 0x8F,
 };
 enum { AP_FLAG_STOCK_JOIN = 1, AP_FLAG_NO_QOS = 2, AP_FLAG_NO_DATA_TRACE = 4, AP_FLAG_LONG_BEACON = 0x40,
        AP_FLAG_NO_PROMISC = 0x80 };
-enum { AP_FLAG2_NO_NOISE_CHECK = 1, AP_FLAG2_NOISE_250 = 2, AP_FLAG2_RX_TIME = 4, AP_FLAG2_RETRY_7_4 = 8 };
+enum { AP_FLAG2_NO_NOISE_CHECK = 1, AP_FLAG2_NOISE_250 = 2, AP_FLAG2_RX_TIME = 4, AP_FLAG2_RETRY_7_4 = 8,
+       AP_FLAG2_CENSUS = 0x10 };
 static uint8_t s_ap_flags2;
 /* Flag bits 3..5 pin the AP's data rate: 0 leaves rate control on. docs/hardware_esp32.md */
 #define AP_FLAG_RATE(flags) (((flags) >> 3) & 7)
@@ -59,6 +60,7 @@ static uint8_t s_rsn_ie[] = {
 
 static _Atomic enum mode s_mode = MODE_IDLE;
 static uint8_t s_key[16], s_peer[6], s_sta_mac[6], s_sniff_mac[6];
+static bool s_census;   /* SNIFF with MAC ff:ff:ff:ff:ff:ff: every frame, FCS failures too */
 static uint8_t s_ap_flags;
 static int64_t s_join_started;
 static atomic_bool s_assoc_seen;
@@ -96,9 +98,37 @@ static wifi_interface_t current_interface(void)
 
 /* ---- receive paths ---- */
 
+/* Census: u32 receive time, i8 RSSI, i8 noise floor, u8 rx_state (0 good), u8 packet type,
+   u8 sig_mode, u8 rate, u8 mcs|cwb<<7, u16 sig_len, then the frame's first 16 bytes. */
+static void census_send(const wifi_promiscuous_pkt_t *packet, wifi_promiscuous_pkt_type_t type)
+{
+    const wifi_pkt_rx_ctrl_t *c = &packet->rx_ctrl;
+    const uint32_t stamp = c->timestamp;
+    const uint16_t sig_len = c->sig_len;
+    uint8_t head[13];
+    memcpy(head, &stamp, 4);
+    head[4] = (uint8_t)c->rssi; head[5] = (uint8_t)c->noise_floor; head[6] = c->rx_state;
+    head[7] = (uint8_t)type; head[8] = c->sig_mode; head[9] = c->rate;
+    head[10] = c->mcs | (c->cwb << 7);
+    memcpy(head + 11, &sig_len, 2);
+    atomic_fetch_add(&s_rx_sniff, 1);
+    wire_send(MSG_RX_CENSUS, head, sizeof(head), packet->payload, sig_len < 16 ? sig_len : 16);
+}
+
 static void promiscuous_rx(void *buffer, wifi_promiscuous_pkt_type_t type)
 {
     const wifi_promiscuous_pkt_t *packet = buffer;
+    if (atomic_load(&s_mode) == MODE_SNIFF && s_census) {
+        census_send(packet, type);
+        return;
+    }
+    if (atomic_load(&s_mode) == MODE_AP && (s_ap_flags2 & AP_FLAG2_CENSUS) &&
+        (packet->rx_ctrl.rx_state || type != WIFI_PKT_DATA || packet->rx_ctrl.sig_len < 28 ||
+         memcmp(packet->payload + 4, s_peer, 6))) {
+        /* The access point's census: everything but its stations' good data frames to it. */
+        census_send(packet, type);
+        if (packet->rx_ctrl.rx_state || type == WIFI_PKT_CTRL || type == WIFI_PKT_MISC) return;
+    }
     if (atomic_load(&s_mode) == MODE_SNIFF) {
         /* Sniff: every management or data frame to or from one MAC, whole, without FCS. */
         const int length = (int)packet->rx_ctrl.sig_len - 4;
@@ -173,10 +203,14 @@ static void start_sniffer(void)
     const wifi_promiscuous_filter_t filter = {
         .filter_mask = WIFI_PROMIS_FILTER_MASK_MGMT |
                        (atomic_load(&s_mode) >= MODE_AP ? WIFI_PROMIS_FILTER_MASK_DATA : 0) |
-                       (sniff ? WIFI_PROMIS_FILTER_MASK_CTRL : 0)};
+                       (sniff ? WIFI_PROMIS_FILTER_MASK_CTRL : 0) |
+                       ((sniff && s_census) || (atomic_load(&s_mode) == MODE_AP && (s_ap_flags2 & AP_FLAG2_CENSUS))
+                            ? WIFI_PROMIS_FILTER_MASK_MISC | WIFI_PROMIS_FILTER_MASK_FCSFAIL |
+                              WIFI_PROMIS_FILTER_MASK_CTRL : 0)};
     ESP_ERROR_CHECK(esp_wifi_set_promiscuous_filter(&filter));
-    if (sniff) {
-        const wifi_promiscuous_filter_t ctrl = {.filter_mask = WIFI_PROMIS_CTRL_FILTER_MASK_ACK};
+    if (sniff || (s_ap_flags2 & AP_FLAG2_CENSUS)) {
+        const wifi_promiscuous_filter_t ctrl = {
+            .filter_mask = (s_census || !sniff) ? WIFI_PROMIS_CTRL_FILTER_MASK_ALL : WIFI_PROMIS_CTRL_FILTER_MASK_ACK};
         ESP_ERROR_CHECK(esp_wifi_set_promiscuous_ctrl_filter(&ctrl));
     }
     ESP_ERROR_CHECK(esp_wifi_set_promiscuous_rx_cb(promiscuous_rx));
@@ -618,6 +652,7 @@ static void command(uint8_t type, const uint8_t *p, size_t n)
         if (n != 7) { result(type, ESP_ERR_INVALID_SIZE); break; }
         go_idle();
         memcpy(s_sniff_mac, p + 1, 6);
+        s_census = !memcmp(s_sniff_mac, "\xff\xff\xff\xff\xff\xff", 6);
         {
             const esp_err_t r = esp_wifi_set_channel(p[0], WIFI_SECOND_CHAN_NONE);
             if (r == ESP_OK) { atomic_store(&s_mode, MODE_SNIFF); start_sniffer(); }

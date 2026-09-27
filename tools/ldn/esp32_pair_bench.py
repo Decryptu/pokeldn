@@ -52,7 +52,10 @@ def on_b(t, p):
 b.subscribe(on_b)
 
 a_since = []; a_rx = []; a_done = []; heard = {}; a_copies = collections.Counter(); a_rssi = collections.Counter()
+a_census = []
 def on_a(t, p):
+    if t == esp32.MSG_RX_CENSUS and t0[0]:   # --ap-flags2 0x10: what else A received
+        a_census.append(p); return
     if t == esp32.MSG_RX_MGMT and t0[0] and args.ap_flags2 & 4 and len(p) >= 30:
         stamp, p = int.from_bytes(p[2:6], "little"), p[:2] + p[6:]   # RX_TIME: the head carries it
     else:
@@ -121,6 +124,9 @@ if b_done:
     if args.done_out and a_done:
         with open(args.done_out + ".ap", "w") as out:   # A's clock against the host's
             out.writelines(f"{u} {h:.6f}\n" for u, h in a_done)
+    if args.done_out and a_census:
+        with open(args.done_out + ".census", "w") as out:   # A's census records, hex
+            out.writelines(p.hex() + "\n" for p in a_census)
     if args.done_out and a_rx:
         with open(args.done_out + ".rx", "w") as out:   # A's receive time, 1 when a first copy was missed
             out.writelines(f"{u} {m}\n" for u, m in a_rx)

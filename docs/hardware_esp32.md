@@ -78,11 +78,11 @@ Anything before a `0x00`, including the ROM's boot text, is discarded by the che
 | `0x03` CHANNEL | host | u8 channel; idle only |
 | `0x04` STA_JOIN | host | u8 channel, 6 BSSID, 32 SSID (the LDN SSID's hex text), 16 key, 6 station MAC (zero = random); optional: u8 a fixed data rate (the AP_START bits 3..5 table), then u8 a maximum TX power in 0.25 dBm (`esp_wifi_set_max_tx_power`, 8 to 84; the driver caps it at 61) |
 | `0x05` STOP | host | none; back to idle, keys cleared |
-| `0x06` AP_START | host | u8 channel, 6 BSSID, 32 SSID, 16 key, u8 max stations, u8 flags: 1 the stock association and 4-way handshake, 2 no QoS for the station, 4 no 40-byte copy of each station data frame, bits 3..5 a fixed data rate, `0x40` a beacon every 1000 TU, `0x80` no promiscuous receive; an optional second flag byte: 1 the driver's noise-floor check off, 2 its interval 250, 4 the receive time in each 40-byte data copy's head, 8 retry limits 7 and 4 |
+| `0x06` AP_START | host | u8 channel, 6 BSSID, 32 SSID, 16 key, u8 max stations, u8 flags: 1 the stock association and 4-way handshake, 2 no QoS for the station, 4 no 40-byte copy of each station data frame, bits 3..5 a fixed data rate, `0x40` a beacon every 1000 TU, `0x80` no promiscuous receive; an optional second flag byte: 1 the driver's noise-floor check off, 2 its interval 250, 4 the receive time in each 40-byte data copy's head, 8 retry limits 7 and 4, `0x10` a RX_CENSUS for every frame but its stations' good data frames to it |
 | `0x07` AP_KICK | host | 6 MAC, u16 reason; deauthenticates |
 | `0x08` ETH_TX | host | an Ethernet frame; the driver encrypts it with the station's or the group key. A full driver queue (`ESP_ERR_NO_MEM`) is retried every 1 ms for up to 100 ms before the frame counts as failed; a frame to a station that has left fails at once with `0x3015` (`ESP_ERR_WIFI_NOT_ASSOC`). A station sends the frame's Ethernet source as its 802.11 transmitter address: a source other than the MAC in LINK is never acknowledged (49 of 49 unacked, none seen by the access point) |
 | `0x09` RAW_TX | host | an 802.11 frame without FCS (`esp_wifi_80211_tx`); used for advertisements |
-| `0x0A` SNIFF | host | u8 channel, 6 MAC; every management and data frame to or from it, whole, as RX_SNIFF |
+| `0x0A` SNIFF | host | u8 channel, 6 MAC; every management and data frame to or from it, whole, as RX_SNIFF; the MAC ff:ff:ff:ff:ff:ff sends every frame on the channel as RX_CENSUS instead |
 | `0x0B` STATUS | host | none; answered by STATUS |
 | `0x0C` BENCH | host | u32 bytes, u16 message size (8 to 1600); RESULT, then BENCH messages as fast as the UART takes them |
 | `0x0D` LED | host | u8 pattern, u8 peak brightness, u16 period ms (0: the pattern's default), u16 duration ms (0: until the next LED); RESULT. A board flashed before it answers `0x106` |
@@ -99,6 +99,7 @@ Anything before a `0x00`, including the ROM's boot text, is discarded by the che
 | `0x8C` RX_SNIFF | board | u8 channel, i8 RSSI, u8 `sig_mode` (0 legacy, 1 HT), u8 legacy rate code (`wifi_phy_rate_t`), u8 HT MCS with bit 7 set for 40 MHz, a frame without FCS; in sniff mode also every 10-byte ACK on the channel |
 | `0x8D` TX_DONE | board | the driver's TX-done of one frame, as a station or an access point: u32 board time in µs, u32 µs since the ETH_TX it completes (all ones for a frame that is not one), u8 acked by the peer's radio, u8 interface, u16 length, then the frame's first 24 bytes (its 802.11 header). STATUS sums the matched ones in `tx_queued_max_us`, `tx_queued_total_us`, `tx_queued_n` and `tx_queued_pending` |
 | `0x8E` BUTTON | board | a press of the BOOT button, debounced over 30 ms: u32 board time in µs, u16 press count since boot. The host prints `BOOT button, mark N` and the trace keeps it, so the player marks a moment on the screen |
+| `0x8F` RX_CENSUS | board | SNIFF with MAC ff:ff:ff:ff:ff:ff, or AP_START's `0x10`: every frame received, FCS failures and control frames included: u32 receive time in µs, i8 RSSI, i8 noise floor, u8 `rx_state` (0 good), u8 packet type (0 management, 1 control, 2 data, 3 other), u8 `sig_mode`, u8 rate code, u8 MCS with bit 7 for 40 MHz, u16 `sig_len` with FCS, the frame's first 16 bytes |
 | `0x8B` CREDIT | board | u32 host bytes read and handled since the last HELLO, counting from the byte after its delimiter; sent on HELLO, every 1024 bytes, when the line falls idle and every 100 ms while it stays idle, ahead of any queued message |
 
 EtherType `0x88B7` frames are LDN authentication; `esp32_wlan` turns them into the LDN
@@ -406,6 +407,16 @@ The misses depend on the channel. 54 Mbit/s, 50 frames a second, 60 s, two passe
 Folded on the access point's receive clock at 19900 to 20100 us and 9950 to 10050 us in 30 s windows,
 the misses show no 50 Hz or 100 Hz rhythm. The two boards are the only USB devices on the host, each at
 12 Mbit/s. AP_START refuses channel 13 (`0x102`).
+
+The channels with the most misses carry the most neighbouring traffic (`tools/ldn/esp32_census.py`,
+every frame a board receives on a channel, FCS failures included, 30 s per channel, two passes): channels
+1 and 11 were busy 8.7 to 13% of the time with 44 to 107 good frames a second at -65 to -92 dBm,
+channels 3, 5, 6, 7 and 9 were busy 0.3 to 1.7%, and the noise floor read -96 dBm on all of them. The
+access point's own census (AP_START second flag byte `0x10`) shows no link to those frames: over 175
+misses on channel 1, a neighbour frame was on the air in the 300 us, 1 ms and 3 ms before a miss 1.7,
+4.6 and 13.1% of the time, against 1.5, 4.3 and 11.0% before a copy it heard. 85 to 91% of the misses
+leave no trace at the access point, not even a frame failing its FCS; 6 to 13% arrive as a strong frame
+failing it. An ESP32 station sends every retry behind an RTS, 128 us before the data frame.
 
 The driver retries in software: `lmacRetryTxFrame` (libpp `lmac.o`) sends each copy again through
 `lmacTxFrame`, up to limits kept in `lmacConfMib` (short at +21, long at +20, both 32 by default);

@@ -50,6 +50,8 @@ MSG_BENCH = 0x8A
 MSG_RX_SNIFF = 0x8C   # u8 channel, i8 RSSI, u8 sig mode, u8 rate code, u8 MCS | 40 MHz << 7, frame
 MSG_CREDIT = 0x8B   # u32: host bytes the board has read and handled since the last HELLO
 MSG_BUTTON = 0x8E   # u32 board us, u16 press count: the BOOT button, a marker for the trace
+MSG_RX_CENSUS = 0x8F   # SNIFF to ff:ff:ff:ff:ff:ff: u32 board us, i8 RSSI, i8 noise floor, u8 rx_state,
+                       # u8 packet type, u8 sig mode, u8 rate, u8 MCS | 40 MHz << 7, u16 sig_len, 16 bytes
 MSG_TX_DONE = 0x8D  # u32 board us, u32 us since its ETH_TX (all ones: not one), u8 acked, u8 if, u16 len, 24 frame bytes
 
 # The board handles a command on the task that reads the UART, so an ETH_TX waiting on a full Wi-Fi
