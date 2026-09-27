@@ -312,7 +312,22 @@ In the 119 ms hold the board's first copy went unacknowledged, the console ackno
 and the board sent a third, which was acknowledged; the console meanwhile sent one frame five times
 before the board acknowledged it. In a 61 ms wait the console acknowledged the first copy and the
 board sent it again. The board's copies of a held frame are about 40 ms apart in sniffer order.
-During a hold the board hears neither the console's data frames nor its ACKs. Why is unknown. `tools/ldn/esp32_rx_copies.py HOST_TRACE
+During a hold the board hears neither the console's data frames nor its ACKs. Why is unknown. 
+
+The station's slow frames follow a 102.4 ms (100 TU) cycle. On the pair bench (200 single frames a
+second, 30 s, `--done-out`), frames that took over 3 ms from ETH_TX to TX-done, folded by their send
+time on the station's clock into twentieths of 102.4 ms:
+
+| beacon interval | slow frames in the worst two twentieths | elsewhere |
+|---|---|---|
+| 100 TU | 29%, 30% | 2 to 12%, one of 23% |
+| 1000 TU (AP flag `0x40`; a sniffing board counted 9 beacons in 10 s, 1024 ms apart) | 43%, 29% | 2 to 9%, one of 24% |
+
+Folded at 1024 ms or 1000 ms the share is flat. A 100 TU cycle that outlives the configured beacon
+interval sets when frames are lost; which board runs it, and what runs on it, are unknown. The FireRed
+trades show the same unevenness in the access point's own TX-dones folded at 102.4 ms on its clock
+(30 to 62% in the worst twentieth against about 10%). `tools/ldn/esp32_bench_fold.py FILE PERIOD_US`
+folds a `--done-out` file. `tools/ldn/esp32_rx_copies.py HOST_TRACE
 SNIFF_TRACE --ap BSSID --sta MAC` makes the count.
 
 `tools/ldn/esp32_hold_air.py` lists what the sniffer saw

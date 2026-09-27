@@ -26,6 +26,7 @@ ap_.add_argument("--bench", action="store_true",
 ap_.add_argument("--channel", type=int, default=6)
 ap_.add_argument("--burst", type=int, default=1)
 ap_.add_argument("--ap-flags", type=lambda v: int(v, 0), default=0, help="the AP_START flag byte")
+ap_.add_argument("--done-out", help="write B's TX-dones as 'board_us since_us' lines")
 ap_.add_argument("--size", type=int, default=200, help="B's frame length")
 args = ap_.parse_args()
 
@@ -38,8 +39,8 @@ got_from_b = collections.Counter(); t0 = [None]; sta_mac = [bytes(6)]
 b_done = []
 def on_b(t, p):
     if t == esp32.MSG_TX_DONE and t0[0] and len(p) >= 8:
-        since = int.from_bytes(p[4:8], "little")
-        if since != 0xFFFFFFFF: b_done.append(since)
+        board_us, since = int.from_bytes(p[:4], "little"), int.from_bytes(p[4:8], "little")
+        if since != 0xFFFFFFFF: b_done.append((since, board_us))
     elif t == esp32.MSG_LINK and p[:1] == b"\x01":
         sta_mac[0] = p[3:9]; link.set()
 b.subscribe(on_b)
@@ -102,7 +103,10 @@ print(f"A received {sum(got_from_b.values())} of B's frames; B's driver: tx_acke
 print(f"A's header copies of B's frames: {dict(a_copies)}; missed first copies "
       f"{100 * a_copies['missed first copy'] / max(1, a_copies['frames']):.1f}%; A's RSSI {sorted(a_rssi.items())}")
 if b_done:
-    d = sorted(b_done); q = lambda f: d[min(len(d) - 1, int(f * len(d)))]
+    if args.done_out:
+        with open(args.done_out, "w") as out:
+            out.writelines(f"{u} {s}\n" for s, u in b_done)
+    d = sorted(s for s, _ in b_done); q = lambda f: d[min(len(d) - 1, int(f * len(d)))]
     print(f"B's ETH_TX to TX-done, us: median {q(0.5)} p90 {q(0.9)} p99 {q(0.99)}; over 1 ms "
           f"{100 * sum(x > 1000 for x in d) / len(d):.1f}%, over 3 ms {100 * sum(x > 3000 for x in d) / len(d):.1f}%")
 print(f"B: handler_max_us {f.get('handler_max_us')} type {f.get('handler_max_type')} heap_min "
