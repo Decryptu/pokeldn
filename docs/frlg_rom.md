@@ -1590,6 +1590,11 @@ identical except `m4aSoundMain`, `0x081DF518` on LeafGreen (the `bl` inside its 
 `0x08000772`). The builders take `version=`, the host `--version leafgreen`. On an emulated LeafGreen,
 turbo fast-forwarded with R and `shiny` counted down and slowed the game with the music intact.
 
+On a retail French FireRed over the ESP32 radio, each hook answered `0x0800071D`: `noencounter` gave no
+wild Pokemon in 30 s of grass; `ivs` showed `26 22 03 24` / `11 05 14`, equal to the lead's IV word and
+`personality % 25` decrypted from a `save-dump` of `SaveBlock1 + 0x34`; `shiny` counted down in grass
+and R slowed it.
+
 ### A resident hook kept in the save
 
 Any resident hook can be carried in `filler_B20` and installed by talking to MOM after a boot, with no
@@ -1617,7 +1622,11 @@ handler at `0x0203FBFC`, and on a second visit chains to that kept handler. Turb
 
 Measured on an emulator with turbo: the console read the 908 bytes back headed `PKRS`; after the card,
 talking to MOM played the jingle and R fast-forwarded; after a soft reset R did nothing until she was
-talked to again.
+talked to again. The same holds on a retail FireRed.
+
+A new Wonder Card undoes the binding: `SaveWonderCard` calls `ClearSavedWonderCardAndRelated`, which
+calls `ClearRamScript` [mystery_gift.c:172, 160], and MOM speaks her own lines again. `filler_B20` is
+left as written; the game never reads it.
 
 ### `call-chain`
 
