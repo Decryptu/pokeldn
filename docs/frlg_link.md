@@ -207,26 +207,39 @@ The rest of the emulator's RFU surface:
 
 ## The advertised rate set
 
-`host_pia` unicasts the Pia type 5 Update Session to each joined station because the console receives
-about one in five broadcast data frames. The host advertises the Switch rate set (1B 2B 5.5B 11B 6 9
-12 18 with extended rates 24 36 48 54). The rate set alone is sufficient; the Switch's other beacon
-and association elements (DTIM 2, ERP, capability 0x411, the Nintendo vendor element, HT/HE, WMM)
-are not needed.
+The **three-second disconnection** is the console leaving the LDN network 2.9 to 3.9 s after it
+associates, after the Pia session has finalized, in whatever phase the link was in. The association
+response's rate set decides it. Read off 360 air captures of hosted FireRed and LeafGreen sessions,
+each run's first association against whether the console left inside 6 s:
+
+| association response | beacon | console's association request | left at 3 s | stayed |
+|---|---|---|---|---|
+| with 6, 9, 12 | with | with | 0 | 139 |
+| with 6, 9, 12 | with | without | 0 | 84 |
+| with 6, 9, 12 | without | with | 0 | 26 |
+| with 6, 9, 12 | without | without | 0 | 35 |
+| without | without | without | 42 | 34 |
+
+With the rates in the association response, 0 of 284 runs disconnected; without them, 42 of 76. A
+beacon or an association request lacking them never disconnected once the response carried them (0 of
+61 and 0 of 119). Interleaved in one sitting on one build, on both cartridges, alternating only the
+response's rate set: 0 of 20 with, 4 of 8 without. The failing set was `1B 2B 5.5B 11B 18 24 36 54`,
+which lacks 6, 9, 12 and 48; which of the four the console needs is unknown. The ESP32 softAP's
+association response carries all twelve rates ([hardware_esp32.md](hardware_esp32.md), The access point's frames).
+
+The host advertises the Switch rate set (1B 2B 5.5B 11B 6 9 12 18 with extended rates 24 36 48 54).
+The Switch's other beacon and association elements (DTIM 2, ERP, capability 0x411, the Nintendo
+vendor element, HT/HE, WMM) are not needed.
 
 The console builds its association request's rate set from the beacon, not the probe response. The
 beacon head carries elements 0 (SSID), 1 (Supported Rates) and 3 (DS Params) so the association
-request includes rates 6, 9 and 12.
+request includes rates 6, 9 and 12, byte-identical to its request to a real Switch. The working
+beacon uses a 41-byte subset. A full 208-byte element set stalls Mystery Gift traffic.
 
-The working beacon uses a 41-byte subset. A full 208-byte element set stalls Mystery Gift traffic.
+`host_pia` unicasts the Pia type 5 Update Session to each joined station because the console receives
+about one in five broadcast data frames; that change left the disconnection rate where it was.
 
-The console's wlan/LDN layer uses the advertised rate set. Which of 6, 9 and 12 is required is
-unknown.
-
-Counted over every run log on disk, the failure signature disappeared: 78 occurrences in 215
-associations before the fix window, and 0 in the 232 since. 26 of those clean associations ran on the
-*old* beacon, so the beacon change is not what stopped it, and which change did is unsettled.
-
-Two unrelated faults with the same signature: WMM (the console switches to QoS data frames once the
+Two unrelated faults end a session early too: WMM (the console switches to QoS data frames once the
 AP advertises it, and a vendored decoder rejected subtype 8), and a probe response that dropped its
 RSN element while the capability word advertised privacy.
 

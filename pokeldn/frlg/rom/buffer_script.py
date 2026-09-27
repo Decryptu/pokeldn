@@ -2311,6 +2311,16 @@ def _refuse_a_moving_region(address, size):
                 "channel instead of the block.")
 
 
+def _refuse_the_save_window(address, size):
+    # The header CRC reads the window a byte at a time and sees flash; memcpy's word loads do not
+    # [decomp:src/link_rfu_2.c:1357]. docs/frlg_rom.md, Reading flash.
+    if address < FLASH_WINDOW_BASE + 0x02000000 and FLASH_WINDOW_BASE < address + size:
+        raise BufferScriptError(
+            f"0x{address:X}..0x{address + size - 1:X} is in the save flash window. The console "
+            "sends a body that fails its own header CRC and the gift menu waits forever. Use "
+            "flash-read, which byte-copies a sector into EWRAM and sends the copy.")
+
+
 def build_memory_dump_multi(address, size=MAX_BUFFER_SCRIPT_SIZE, blocks=1):
     """The multi-block dump payload, patched with the BASE address and the per-block length.
 
@@ -2331,6 +2341,7 @@ def build_memory_dump_multi(address, size=MAX_BUFFER_SCRIPT_SIZE, blocks=1):
     if address % 2:
         raise BufferScriptError(f"0x{address:X} is not halfword aligned")
     _refuse_a_moving_region(address, size * blocks)
+    _refuse_the_save_window(address, size * blocks)
     code = bytearray(payload(MEMORY_DUMP_MULTI))
     code[DUMP_MULTI_BASE_OFFSET:DUMP_MULTI_BASE_OFFSET + 4] = address.to_bytes(4, "little")
     code[DUMP_MULTI_SIZE_OFFSET:DUMP_MULTI_SIZE_OFFSET + 4] = size.to_bytes(4, "little")
@@ -2367,6 +2378,7 @@ def build_memory_dump_scatter(addresses, size=MAX_BUFFER_SCRIPT_SIZE):
             raise BufferScriptError(f"0x{address:X} is not halfword aligned")
         # The guard is per BLOCK here, not over one span: the blocks are unrelated regions.
         _refuse_a_moving_region(address, size)
+        _refuse_the_save_window(address, size)
     code = bytearray(payload(MEMORY_DUMP_SCATTER))
     code[DUMP_SCATTER_SIZE_OFFSET:DUMP_SCATTER_SIZE_OFFSET + 4] = size.to_bytes(4, "little")
     table = addresses + [addresses[-1]] * (DUMP_SCATTER_TABLE_SLOTS - len(addresses))
@@ -2395,6 +2407,7 @@ def build_memory_dump(address, size=MAX_BUFFER_SCRIPT_SIZE):
         # would also make every later offset calculation lie about what was read.
         raise BufferScriptError(f"0x{address:X} is not halfword aligned")
     _refuse_a_moving_region(address, size)
+    _refuse_the_save_window(address, size)
     code = bytearray(payload(MEMORY_DUMP))
     code[DUMP_TARGET_OFFSET:DUMP_TARGET_OFFSET + 4] = address.to_bytes(4, "little")
     code[DUMP_SIZE_OFFSET:DUMP_SIZE_OFFSET + 4] = size.to_bytes(4, "little")

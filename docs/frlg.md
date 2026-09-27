@@ -18,7 +18,8 @@ two link layers are stacked:
 protocol at `REVISION >= 0xA`. Cartridge header, read off both consoles: software version `0x0A`,
 game code `BPRF` (FireRed, French) and `BPGF` (LeafGreen, French).
 
-The three-second disconnection was an 802.11 rate set; a stall in the transmit path crosses a
+The three-second disconnection was a rate set missing 6, 9 and 12 Mbit/s in the association response
+([frlg_link.md](frlg_link.md), The advertised rate set); a stall in the transmit path crosses a
 userspace hop.
 
 ## Status

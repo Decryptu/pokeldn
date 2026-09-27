@@ -2481,6 +2481,21 @@ def test_a_dump_that_overlaps_grngvalue_is_refused_offline():
     buffer_script.build_memory_dump(rom_map.GRNG_VALUE - 32, 32)
 
 
+
+@pytest.mark.parametrize("build", [
+    lambda a, n: buffer_script.build_memory_dump(a, n),
+    lambda a, n: buffer_script.build_memory_dump_multi(a, n),
+    lambda a, n: buffer_script.build_memory_dump_scatter([0x02000000, a], n),
+])
+@pytest.mark.parametrize("address, size", [(0x0E01BC00, 1024), (0x0E01E000, 252), (0x0DFFFF00, 512)])
+def test_a_dump_of_the_save_flash_window_is_refused_offline(build, address, size):
+    """Both flash dumps on the emulated FireRed sent a header whose CRC equals the real sector
+    (0xDEC2 over physical 0x1BC00, 0x5907 over 0x1E000) and a body that does not match it; the host
+    discarded the body and the menu waited forever."""
+    with pytest.raises(buffer_script.BufferScriptError, match="flash-read"):
+        build(address, size)
+    build(0x0DFFFF00, 256)   # ends at the window's first byte, exclusive
+
 # --- memory-dump-multi: several blocks in one session ---------------------------------------------
 
 def test_the_multi_dump_operands_are_where_we_patch_them():

@@ -1826,16 +1826,34 @@ Selecting the bank is the game's own four stores [decomp:src/agb_flash.c SwitchF
 
     strb 0xAA -> 0x0E005555 ; strb 0x55 -> 0x0E002AAA ; strb 0xB0 -> 0x0E005555 ; strb bank -> 0x0E000000
 
-Inlining them keeps a payload free of ROM calls entirely, so nothing executes off the stack,
-`REG_WAITCNT` is never modified and no ROM function runs while the RFU link is live. Reads are
-byte-wide: the flash bus is 8 bits and a wider load does not return more flash bytes.
+Inlining them keeps a payload free of ROM calls entirely. Reads are byte-wide: the flash bus is 8
+bits and a wider load does not return more flash bytes.
+
+No run has called `ReadFlash` on the link; the decomp says it would change nothing there. ROM
+functions already run on the live link on retail FireRed: `rng-trace` called `Random` 96 times in one
+session, 96 of 96 on the LCG, and `create-mon` called `CreateMon` with eight arguments; both answers
+came back over the same link. `ReadFlash`'s one lasting side effect is `REG_WAITCNT`'s SRAM field
+set to 3, `WAITCNT_SRAM_8` [decomp:src/agb_flash.c:149], never restored. That value is already in
+the register before any link menu: `AgbMain` clears the field once at boot [main.c:143], the save
+load at boot [intro.c:1006] reads flash through `ReadFlash` before the title screen, and every other
+flash routine writes 3 too, either `WAITCNT_SRAM_8` or `gFlash->wait[0]`, which is 3 for every chip
+the game supports [agb_flash_mx.c:28, agb_flash_le.c:28]. The call rewrites the value the register
+holds.
 
 **The console's outgoing message cannot be pointed at flash.** `memory-dump` repoints
-`client->link.sendBuffer` and lets the console send the region; aimed at flash it sends something
-else. Asked for `0x0E01BC00` at 1024 bytes and `0x0E01E000` at 252, the console returned identical
-content belonging to neither sector. The content does not depend on the address requested, so it is
-not aliasing, not banking and not size. Unexplained. A payload that wants flash copies it into EWRAM
-and points the send at the copy.
+`client->link.sendBuffer` and lets the console send the region. Aimed at the window, the header and
+the body read it at different widths:
+
+| step | code | load | what it read |
+|---|---|---|---|
+| header CRC | `CalcCRC16WithTable` [mystery_gift_link.c:166] | `ldrb` | flash: `0xDEC2` is the CRC of physical `0x1BC00..0x1BFFF`, `0x5907` of `0x1E000..0x1E0FB` (bank 1 selected) |
+| body | `Rfu_InitBlockSend` copies each chunk of 252 bytes or fewer into `gBlockSendBuffer` [link_rfu_2.c:1357] with `memcpy` `0x081E44F4` | `ldm`, one word, when source and destination are word-aligned and 16 bytes or more remain | other bytes: runs of the byte pairs `01 cb`, `10 3a` and `04 3a`, identical for `0x0E01BC00` and `0x0E01E000` |
+
+The receiver's CRC over the body fails, the host discards the message, and both sides then wait on
+each other with the RFU link still running: the gift menu never leaves. Where the body's bytes come
+from inside the emulator is unknown. `build_memory_dump` and its two siblings refuse any span that
+touches `0x0E000000..0x0FFFFFFF`. `flash-read` copies the sector into EWRAM with `ldrb` and points the
+send at the copy; 252 of 252 bytes came back exact.
 
 ### Changing one field of a real save
 
