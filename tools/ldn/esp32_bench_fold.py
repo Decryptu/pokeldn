@@ -7,7 +7,7 @@ slow_us = 3000
 if "--slow" in args:
     i = args.index("--slow"); slow_us = int(args[i + 1]); del args[i:i + 2]
 path, periods = args[0], [int(x) for x in args[1:]] or [102_400, 1_024_000, 1_000_000]
-rows = [tuple(map(int, l.split())) for l in open(path)]
+rows = [tuple(int(float(x)) for x in l.split()[:2]) for l in open(path)]
 sent = [(u - s, s > slow_us) for u, s in rows]
 print(f"{len(rows)} frames, {sum(x for _, x in sent)} over {slow_us} us")
 for period in periods:

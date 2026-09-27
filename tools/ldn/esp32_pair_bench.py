@@ -26,7 +26,8 @@ ap_.add_argument("--bench", action="store_true",
 ap_.add_argument("--channel", type=int, default=6)
 ap_.add_argument("--burst", type=int, default=1)
 ap_.add_argument("--ap-flags", type=lambda v: int(v, 0), default=0, help="the AP_START flag byte")
-ap_.add_argument("--done-out", help="write B's TX-dones as 'board_us since_us' lines")
+ap_.add_argument("--done-out", help="write B's TX-dones as 'board_us since_us host_time' lines, "
+                 "and A's as 'board_us host_time' to FILE.ap")
 ap_.add_argument("--size", type=int, default=200, help="B's frame length")
 args = ap_.parse_args()
 
@@ -40,12 +41,12 @@ b_done = []
 def on_b(t, p):
     if t == esp32.MSG_TX_DONE and t0[0] and len(p) >= 8:
         board_us, since = int.from_bytes(p[:4], "little"), int.from_bytes(p[4:8], "little")
-        if since != 0xFFFFFFFF: b_done.append((since, board_us))
+        if since != 0xFFFFFFFF: b_done.append((since, board_us, time.time()))
     elif t == esp32.MSG_LINK and p[:1] == b"\x01":
         sta_mac[0] = p[3:9]; link.set()
 b.subscribe(on_b)
 
-heard = {}; a_copies = collections.Counter(); a_rssi = collections.Counter()
+a_done = []; heard = {}; a_copies = collections.Counter(); a_rssi = collections.Counter()
 def on_a(t, p):
     if t == esp32.MSG_RX_MGMT and t0[0] and len(p) >= 26 and p[12:18] == sta_mac[0] and (p[2] >> 2) & 3 == 2:
         seq, retry = int.from_bytes(p[24:26], "little") >> 4, bool(p[3] & 8)
@@ -54,6 +55,8 @@ def on_a(t, p):
         a_copies["frames" if new else "duplicates"] += 1
         if new and retry: a_copies["missed first copy"] += 1
         heard[seq] = time.monotonic(); a_rssi[p[1] - 256 if p[1] > 127 else p[1]] += 1
+    elif t == esp32.MSG_TX_DONE and t0[0] and len(p) >= 4:
+        a_done.append((int.from_bytes(p[:4], "little"), time.time()))
     elif t == esp32.MSG_STA_JOINED:
         joined.set()
     elif t == esp32.MSG_RX_ETH and t0[0] and p[12:14] == b"\x88\xb6":
@@ -103,10 +106,13 @@ print(f"A received {sum(got_from_b.values())} of B's frames; B's driver: tx_acke
 print(f"A's header copies of B's frames: {dict(a_copies)}; missed first copies "
       f"{100 * a_copies['missed first copy'] / max(1, a_copies['frames']):.1f}%; A's RSSI {sorted(a_rssi.items())}")
 if b_done:
+    if args.done_out and a_done:
+        with open(args.done_out + ".ap", "w") as out:   # A's clock against the host's
+            out.writelines(f"{u} {h:.6f}\n" for u, h in a_done)
     if args.done_out:
         with open(args.done_out, "w") as out:
-            out.writelines(f"{u} {s}\n" for s, u in b_done)
-    d = sorted(s for s, _ in b_done); q = lambda f: d[min(len(d) - 1, int(f * len(d)))]
+            out.writelines(f"{u} {s} {h:.6f}\n" for s, u, h in b_done)
+    d = sorted(s for s, _, _ in b_done); q = lambda f: d[min(len(d) - 1, int(f * len(d)))]
     print(f"B's ETH_TX to TX-done, us: median {q(0.5)} p90 {q(0.9)} p99 {q(0.99)}; over 1 ms "
           f"{100 * sum(x > 1000 for x in d) / len(d):.1f}%, over 3 ms {100 * sum(x > 3000 for x in d) / len(d):.1f}%")
 print(f"B: handler_max_us {f.get('handler_max_us')} type {f.get('handler_max_type')} heap_min "

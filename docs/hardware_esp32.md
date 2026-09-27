@@ -327,7 +327,13 @@ Folded at 1024 ms or 1000 ms the share is flat. A 100 TU cycle that outlives the
 interval sets when frames are lost; which board runs it, and what runs on it, are unknown. The FireRed
 trades show the same unevenness in the access point's own TX-dones folded at 102.4 ms on its clock
 (30 to 62% in the worst twentieth against about 10%). `tools/ldn/esp32_bench_fold.py FILE PERIOD_US`
-folds a `--done-out` file. `tools/ldn/esp32_rx_copies.py HOST_TRACE
+folds a `--done-out` file. The fold cannot say which board runs the cycle: over a 600 s bench the two
+boards' clocks differed by 1.9 ppm against the host (`tools/ldn/esp32_bench_drift.py`), and a
+station keeps its timing in step with the access point's TSF. The fold was sharpest 10 to 20 ppm
+off the station's clock and its phase held through all four quarters of the run. The one foreign
+access point beaconing on channel 11 during that bench (-79 dBm) beacons every 110 TU (TSF gaps
+112638 us), so it does not set a 100 TU cycle. In the FireRed trades the sniffer shows the access
+point board as the deaf side. `tools/ldn/esp32_rx_copies.py HOST_TRACE
 SNIFF_TRACE --ap BSSID --sta MAC` makes the count.
 
 `tools/ldn/esp32_hold_air.py` lists what the sniffer saw
