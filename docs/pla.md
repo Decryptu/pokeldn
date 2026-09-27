@@ -497,11 +497,18 @@ earlier one of the sender's is still unacknowledged pushes the base past the ear
 message's resend then arrives below the base and is dropped. A retail console's own acknowledgements
 declare less than their id (ack 8 with lowest pending 6).
 
-`bin/pla_host.py` keeps each of its 0x7c messages until the console's acknowledgement passes it,
-resends one unacknowledged for 0.4 s under the same sequence id, declares at most its own lowest
-unacknowledged sequence as lowest pending, acknowledges one past the contiguous run with the mask,
-and hands the console's messages over once each in sequence order (`pokeldn.ldn.reliable5`,
-`SendWindow` and `ReceiveWindow`).
+`bin/pla_host.py` and the joiner `pokeldn.pla.joiner` (run by `bin/pla_join.py`) each keep their
+0x7c messages until the peer's acknowledgement passes it, resend one unacknowledged for 0.4 s under
+the same sequence id, declare at most their own lowest unacknowledged sequence on that port as
+lowest pending, in data messages and acknowledgements alike, acknowledge one past the contiguous
+run with the mask, and hand the peer's messages over once each in sequence order
+(`pokeldn.ldn.reliable5`, `SendWindow` and `ReceiveWindow`). The cap matters on the joiner's
+acknowledgements when the two stations' numbering on a port differs: `bin/pla_host.py` mirrors the
+joiner's port-0 mirror back, so its port-0 sequence runs one ahead of the joiner's, and an
+acknowledgement of its phase-3 answer that declared that answer's sequence would walk a hosting
+console's base past the joiner's phase 6 before it was sent. The joiner's 0x81 messages keep a
+1 s resend released by the acknowledgement id alone. A retail console's first 0x7c message on each
+port carried sequence 1 on all 66 ports of the recorded sessions, the receive window's start.
 
 A retransmission carries its original sequence id and a new nonce, so the sequence id is what tells
 a copy from a new message with the same body.

@@ -180,7 +180,7 @@ def test_unacknowledged_messages_are_sent_again_and_acknowledged_ones_are_not():
     assert any(reliable5.parse(m[3])["sequence_id"] == 1 for m in again)
     host_ack = data_exchange.build_ack_message([2, 2], 0x02)
     s.receive([_msg(host_ack, joiner.PROTO_STREAM, port=0)])
-    assert not [k for k in s.outstanding if k[0] == 0x81]
+    assert not s.stream_tx.pending
 
 
 def test_the_rtt_answer_names_the_requester():
@@ -247,3 +247,36 @@ def test_the_console_s_migration_request_is_noted_and_left_unanswered():
     clock.t += 0.5
     s.receive([_msg(bytes.fromhex("01400000"), joiner.PROTO_NET, flags=0x31)])
     assert s.migration_asked == clock.t - 0.5
+
+
+def test_a_host_message_lost_ahead_of_another_is_held_for_and_handled_in_order():
+    """A console host shows and then offers; the showing is lost on the air. Its window releases a
+    message below the acknowledgement id or named in the mask (0x74f0ec, `reliable5.SendWindow`).
+    The joiner acknowledged the offer as its sequence plus one, which released the showing
+    unseen, so it never offered and never confirmed. It acknowledges the showing's sequence with
+    the offer in the mask, takes the resent showing, and hands both over in order."""
+    keys, clock, s = _session()
+    s.drive = True
+    _seat(keys, s)
+    s.receive([_msg(data_exchange.build_content_message(data_exchange.REFERENCE_RECORD, 0x02),
+                    joiner.PROTO_STREAM, port=0)])
+    zero = bytes(game_channel.KEY_SIZE)
+    s.receive([_game(channel_table.build([(zero, True)]), 1, 1)])
+    s.receive([_msg(game_channel.build_open(game_channel.HOST_OPEN_PAYLOAD), 0x7C, 0)])
+    theirs = pokemon.encrypt(pokemon.write(pokemon.decrypt(trade_box.REFERENCE_RECORD), level=33))
+    host = reliable5.SendWindow(0.4)
+    for seq, selector in ((2, trade_box.SELECTOR_SHOWING), (3, trade_box.SELECTOR_OFFERING)):
+        host.sent(0, seq, trade_box.build_message(theirs, sequence_id=seq, selector=selector), 0)
+    sent = _open(keys, s.receive([_msg(host.pending[(0, 3)][0], 0x7C, 0)]))   # 2 lost on the air
+    for proto, port, _, payload, _, _ in sent:
+        if proto == 0x7C and port == 0 and reliable5.parse(payload)["is_ack"]:
+            entry = reliable5.parse_ack_payload(reliable5.parse(payload)["payload"])["entries"][0]
+            host.acked(0, entry["ack_id"], entry["mask"])
+    assert sorted(host.pending) == [(0, 2)]
+    assert not _data(sent, 0x7C, 0)                     # the offer waits behind the showing
+    sent = _open(keys, s.receive([_msg(m, 0x7C, 0) for _, _, m in host.due(1.0)]))
+    answers = [(trade_box.read_payload(m["payload"]) or {}).get("selector") for m in
+               _data(sent, 0x7C, 0)]
+    confirms = [m for m in _data(sent, 0x7C, 0) if m["payload"] == zero + b"\x05\x00"]
+    assert answers[:2] == [trade_box.SELECTOR_SHOWING, trade_box.SELECTOR_OFFERING]
+    assert s.received == theirs and len(confirms) == 1

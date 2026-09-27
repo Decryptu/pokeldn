@@ -48,7 +48,8 @@ PHASE_WAITS = (0.1, 0.3, 8.1, 0.2)
 RTT_INTERVAL = 0.5
 CLOCK_INTERVAL = 1.0
 STREAM_ACK_INTERVAL = 1.0
-RETRANSMIT_INTERVAL = 1.0
+RETRANSMIT_INTERVAL = 1.0      # a 0x81 message's resend
+GAME_CHANNEL_RESEND = 0.4      # a 0x7c message's resend, as bin/pla_host.py's
 JOIN_REPEAT = 0.5
 
 
@@ -76,7 +77,9 @@ class JoinerSession:
         self.host_record = None        # the host's data exchange record
         self.content_sent = False
         self.seq = {}                  # (protocol, port) -> our next sequence
-        self.outstanding = {}          # (protocol, port, seq) -> [body, sent_at]
+        self.stream_tx = reliable5.SendWindow(RETRANSMIT_INTERVAL)   # ours on 0x81, by port
+        self.game_tx = reliable5.SendWindow(GAME_CHANNEL_RESEND)     # ours on 0x7c, by port
+        self.game_rx = {}              # 0x7c port -> the host's stream, as received
         self.host_keys = set()         # handler keys the host has announced open
         self.our_keys = set()          # handler keys we have announced open
         self.host_opened = False       # the host's port-0 open has arrived and been mirrored
@@ -112,9 +115,19 @@ class JoinerSession:
         self.seq[(protocol, port)] = seq + 1
         return seq
 
+    def _own_lowest(self, port):
+        """-> our lowest unacknowledged 0x7c sequence on a port, else our next: the most any message
+        of ours may declare lowest pending, or the host's base walk skips one still to be resent
+        (docs/pla.md, Acknowledgement)."""
+        return self.game_tx.lowest(port, self.seq.get((PROTO_GAME, port), 1))
+
     def _reliable(self, body, protocol, port, seq):
         """A data message we originate: kept until the host acknowledges it."""
-        self.outstanding[(protocol, port, seq)] = [body, self.clock()]
+        if protocol == PROTO_GAME:
+            body = reliable5.set_lowest_pending(body, min(seq, self._own_lowest(port)))
+            self.game_tx.sent(port, seq, body, self.clock())
+        else:
+            self.stream_tx.sent(port, seq, body, self.clock())
         return self._packet(body, protocol, port)
 
     def _join_request(self):
@@ -216,7 +229,8 @@ class JoinerSession:
         return [self._packet(bytes([1]) + p[1:10] + ours.to_bytes(8, "big"), PROTO_CLOCK)]
 
     def _acked(self, protocol, port, rm, entry_index):
-        """Retire what an acknowledgement covers. Entry i acknowledges station i's stream."""
+        """Retire what an acknowledgement covers. Entry i acknowledges station i's stream. On 0x7c
+        the mask releases what it names as well (0x74f0ec); on 0x81 only the id is read."""
         try:
             entries = reliable5.parse_ack_payload(rm["payload"])["entries"]
         except ValueError:
@@ -224,9 +238,10 @@ class JoinerSession:
         if not entries:
             return
         entry = entries[min(entry_index, len(entries) - 1)]
-        for key in [k for k in self.outstanding if k[:2] == (protocol, port)
-                    and k[2] < entry["ack_id"]]:
-            del self.outstanding[key]
+        if protocol == PROTO_GAME:
+            self.game_tx.acked(port, entry["ack_id"], entry["mask"])
+        else:
+            self.stream_tx.acked(port, entry["ack_id"])
 
     def _stream_ack(self, port, first):
         """The 0x81 acknowledgement, as the retail joiner sends it on both ports: entry 0 for the
@@ -302,15 +317,26 @@ class JoinerSession:
         if not cm["flags"] & reliable5.FLAG_APPLICATION_DATA:
             self._acked(PROTO_GAME, msg.port, cm, 0)
             return []
-        seq = cm["sequence_id"]
-        out = [self._packet(game_channel.build_ack(seq + 1, lowest_pending=seq,
-                                                   station_index=0), PROTO_GAME, msg.port)]
-        seen = (msg.port, seq)
-        if seen in self.answered:
-            return out                 # a retransmission, already answered
-        self.answered.add(seen)
+        # The console's own receive rule: one past the contiguous run, the held ones in the mask,
+        # each sequence handed over once and in order (docs/pla.md, Acknowledgement).
+        window = self.game_rx.setdefault(msg.port, reliable5.ReceiveWindow())
+        ready = window.take(cm["sequence_id"], cm)
+        lowest = min(max(1, window.next - 1), self._own_lowest(msg.port))
+        out = [self._packet(game_channel.build_ack(window.next, lowest_pending=lowest,
+                                                   station_index=0, mask=window.mask()),
+                            PROTO_GAME, msg.port)]
+        if not ready and cm["sequence_id"] >= window.next:
+            self.log(f"[pla] <- game channel port {msg.port} seq {cm['sequence_id']} held behind "
+                     f"{window.next}")
+        for cm in ready:
+            out += self._game_message(msg.port, cm)
+        return out
+
+    def _game_message(self, port, cm):
+        """-> what one host 0x7c data message, handed over in order, is owed."""
+        out = []
         payload = cm["payload"]
-        if msg.port == game_channel.JOINER_PORT:
+        if port == game_channel.JOINER_PORT:
             for key, opened in channel_table.parse(payload):
                 self.log(f"[pla] <- the host announced key {key.hex()} "
                          f"{'open' if opened else 'closed'}")
@@ -371,7 +397,7 @@ class JoinerSession:
             self.host_phase = max(self.host_phase, phase[1])
             self.log(f"[pla] <- the host's phase, selector {phase[0]}, phase {phase[1]}")
             return out + self._advance()
-        self.log(f"[pla] <- game channel port {msg.port} key {key.hex()} body {body.hex()}")
+        self.log(f"[pla] <- game channel port {port} key {key.hex()} body {body.hex()}")
         return out
 
     # -- the trade, driven by state and time -----------------------------------------------------
@@ -459,8 +485,10 @@ class JoinerSession:
             self.last_stream_ack = now
             out += [self._stream_ack(port, first=False) for port in (data_exchange.HOST_PORT,
                                                                      data_exchange.JOINER_PORT)]
-        for (protocol, port, _), entry in sorted(self.outstanding.items()):
-            if now - entry[1] >= RETRANSMIT_INTERVAL:
-                entry[1] = now
-                out.append(self._packet(entry[0], protocol, port))
+        # A resend keeps its sequence id under a new nonce (docs/pla.md, Acknowledgement).
+        for port, seq, body in self.game_tx.due(now):
+            out.append(self._packet(body, PROTO_GAME, port))
+            self.log(f"[pla] -> game channel resend (port {port}, seq {seq})")
+        for port, _, body in self.stream_tx.due(now):
+            out.append(self._packet(body, PROTO_STREAM, port))
         return out + self._advance()

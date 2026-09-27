@@ -77,12 +77,9 @@ class Console(joiner.JoinerSession):
         out = []
         while window[0] in window[1]:
             self.delivered.append((msg.port, window[0]))
-            out += super()._game(window[1].pop(window[0]))[1:]   # not its per-message ack
+            out += self._game_message(msg.port, reliable5.parse(window[1].pop(window[0]).payload))
             window[0] += 1
-        lowest = min((s for p, port, s in self.outstanding if (p, port) == (joiner.PROTO_GAME,
-                                                                           msg.port)),
-                     default=self.seq.get((joiner.PROTO_GAME, msg.port), 1))
-        ack = game_channel.build_ack(window[0], lowest_pending=lowest,
+        ack = game_channel.build_ack(window[0], lowest_pending=self._own_lowest(msg.port),
                                      mask=reliable5.build_mask(window[1], window[0]))
         return [self._packet(ack, joiner.PROTO_GAME, msg.port)] + out
 
