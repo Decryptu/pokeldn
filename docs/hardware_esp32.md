@@ -260,6 +260,24 @@ on:
 `POKELDN_ESP32_AP_FLAGS=0x28` pins 24 Mbit/s. Pinned, the board's retry share fell to 2.8% and the
 holds stayed: five of 102 to 185 ms. The rate the board picks does not decide a hold.
 
+### The CPU clock sets the wait
+
+The firmware runs the CPU at 240 MHz (`CONFIG_ESP_DEFAULT_CPU_FREQ_MHZ_240`); at IDF's default of
+160 MHz the board's ETH_TX to TX-done wait is about twice as long at every percentile. Five FireRed
+trades on channel 1, rate control on, 16 or 25 static receive buffers, each clock alternated:
+
+| CPU | RX buffers | frames | p90 | p99 | p99.9 | over 5 ms | over 40 ms | over 80 ms | holds |
+|---|---|---|---|---|---|---|---|---|---|
+| 160 MHz | 16 | 6744 | 4.7 ms | 30.4 ms | 91.7 ms | 605 | 41 | 10 | 1 |
+| 160 MHz | 25 | 6999 | 4.6 ms | 34.4 ms | 106.5 ms | 615 | 57 | 19 | 1 |
+| 240 MHz | 25 | 7425 | 3.1 ms | 13.5 ms | 34.3 ms | 322 | 5 | 0 | 0 |
+| 240 MHz | 25 | 7235 | 3.0 ms | 15.7 ms | 66.3 ms | 242 | 16 | 3 | 0 |
+| 160 MHz | 25 | 8349 | 4.3 ms | 27.5 ms | 82.3 ms | 666 | 41 | 9 | 0 |
+
+The board's share of the console's first copies it missed did not follow the clock: 4.9% and 5.2% at
+240 MHz, 5.3% and 6.8% at 160 MHz. The clock shortens the board's own send and resend path, not its
+receiver. `tools/ldn/esp32_hold.py CAPTURE TRACE` prints the wait on its `board queue -> TX-done` line.
+
 ### The board is the deaf side
 
 A sniffing board keeps every ACK on its channel as a 10-byte RX_SNIFF frame (the promiscuous control
@@ -330,6 +348,14 @@ Ruled out as the cause, each by a bench with one flag changed:
 | AP `0x80` | promiscuous receive off; the station's acks took as long (6.8%, 9.0% of frames over 3 ms, against 6.1%, 13.6%) | not countable |
 | second byte bit 0 | `pm_noise_check_disable`: clears `g_pm+21`, after which libpp's `pm_noise_check` returns before measuring | 7.5, 13.2, 8.1% against 7.0, 5.9, 7.9% |
 | second byte bit 1 | libpp's `NoiseTimerInterval` (`pp.o` `.data`, u16 100) set to 250 | 6.6% against 5.5% |
+
+Static receive buffers raised from 16 to 25 (`CONFIG_ESP_WIFI_STATIC_RX_BUFFER_NUM`, the ESP32's
+maximum) on the access point: 50 pairs a second on channel 1 missed 9.6, 8.2, 9.0% against 10.7,
+11.6, 11.8%; 20 single frames a second on channel 11 missed 3.4, 2.7, 5.2% against 3.0, 2.5, 3.8%.
+A FireRed trade on channel 1 with 25 buffers had one hold of 105 ms, and the board missed 316 of 4637
+of the console's first copies (6.8%), the range it missed with 16.
+With the CPU at 240 MHz (`CONFIG_ESP_DEFAULT_CPU_FREQ_MHZ_240`, was 160) on top of 25 buffers, the
+same benches missed 4.6, 5.4, 5.2% (pairs, channel 1) and 5.5, 6.1, 6.4% (single frames, channel 11).
 
 The driver retries in software: `lmacRetryTxFrame` (libpp `lmac.o`) sends each copy again through
 `lmacTxFrame`, up to limits kept in `lmacConfMib` (short at +21, long at +20, both 32 by default);
@@ -637,7 +663,8 @@ entered: the handshake finished 0.46 s after the association, and a trade ran to
   link is saturated; they are not evidence of loss on the air.
 - The access point board misses 5 to 22% of a station's first copies at -20 to -48 dBm, evenly in
   time, and misses ACKs during a FireRed hold; the cause is unknown. Ruled out: the beacon interval,
-  promiscuous receive, the driver's noise-floor check, the channel, the board unit.
+  promiscuous receive, the driver's noise-floor check, the channel, the board unit, the CPU clock
+  (160 or 240 MHz), the static receive buffer count (16 or 25).
 - Whether an Espressif ESP32-WROOM-32E module misses fewer frames as an access point than the
   unbranded module on the ELEGOO board is unmeasured.
 - easyworld reports that a classic ESP32 must be the ESP32-WROOM-32E module and that the older
