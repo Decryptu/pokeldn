@@ -47,13 +47,18 @@ def on_b(t, p):
         sta_mac[0] = p[3:9]; link.set()
 b.subscribe(on_b)
 
-a_done = []; heard = {}; a_copies = collections.Counter(); a_rssi = collections.Counter()
+a_rx = []; a_done = []; heard = {}; a_copies = collections.Counter(); a_rssi = collections.Counter()
 def on_a(t, p):
+    if t == esp32.MSG_RX_MGMT and t0[0] and args.ap_flags2 & 4 and len(p) >= 30:
+        stamp, p = int.from_bytes(p[2:6], "little"), p[:2] + p[6:]   # RX_TIME: the head carries it
+    else:
+        stamp = None
     if t == esp32.MSG_RX_MGMT and t0[0] and len(p) >= 26 and p[12:18] == sta_mac[0] and (p[2] >> 2) & 3 == 2:
         seq, retry = int.from_bytes(p[24:26], "little") >> 4, bool(p[3] & 8)
         # a gap over 1 s is the sequence number wrapping: a new frame
         new = seq not in heard or time.monotonic() - heard[seq] > 1.0
         a_copies["frames" if new else "duplicates"] += 1
+        if stamp is not None: a_rx.append((stamp, int(new and retry)))
         if new and retry: a_copies["missed first copy"] += 1
         heard[seq] = time.monotonic(); a_rssi[p[1] - 256 if p[1] > 127 else p[1]] += 1
     elif t == esp32.MSG_TX_DONE and t0[0] and len(p) >= 4:
@@ -110,6 +115,9 @@ if b_done:
     if args.done_out and a_done:
         with open(args.done_out + ".ap", "w") as out:   # A's clock against the host's
             out.writelines(f"{u} {h:.6f}\n" for u, h in a_done)
+    if args.done_out and a_rx:
+        with open(args.done_out + ".rx", "w") as out:   # A's receive time, 1 when a first copy was missed
+            out.writelines(f"{u} {m}\n" for u, m in a_rx)
     if args.done_out:
         with open(args.done_out, "w") as out:
             out.writelines(f"{u} {s} {h:.6f}\n" for s, u, h in b_done)

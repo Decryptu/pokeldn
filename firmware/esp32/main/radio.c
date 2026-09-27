@@ -38,7 +38,8 @@ enum {
 };
 enum { AP_FLAG_STOCK_JOIN = 1, AP_FLAG_NO_QOS = 2, AP_FLAG_NO_DATA_TRACE = 4, AP_FLAG_LONG_BEACON = 0x40,
        AP_FLAG_NO_PROMISC = 0x80 };
-enum { AP_FLAG2_NO_NOISE_CHECK = 1, AP_FLAG2_NOISE_250 = 2 };
+enum { AP_FLAG2_NO_NOISE_CHECK = 1, AP_FLAG2_NOISE_250 = 2, AP_FLAG2_RX_TIME = 4 };
+static uint8_t s_ap_flags2;
 /* Flag bits 3..5 pin the AP's data rate: 0 leaves rate control on. docs/hardware_esp32.md */
 #define AP_FLAG_RATE(flags) (((flags) >> 3) & 7)
 static const wifi_phy_rate_t AP_FIXED_RATES[8] = {
@@ -129,7 +130,13 @@ static void promiscuous_rx(void *buffer, wifi_promiscuous_pkt_type_t type)
         if (!memcmp(frame + 4, s_peer, 6)) {
             /* A station's frame to our BSSID: its first 40 bytes (802.11 and CCMP headers), for
                the trace; the driver delivers the frame itself through RX_ETH. */
-            if (!(s_ap_flags & AP_FLAG_NO_DATA_TRACE))
+            if (s_ap_flags2 & AP_FLAG2_RX_TIME) {
+                /* RX_TIME: the head grows by the MAC's u32 receive time in us. */
+                uint8_t stamped[6] = {head[0], head[1]};
+                const uint32_t stamp = packet->rx_ctrl.timestamp;   /* a bit-field */
+                memcpy(stamped + 2, &stamp, 4);
+                wire_send(MSG_RX_MGMT, stamped, 6, frame, length < 40 ? length : 40);
+            } else if (!(s_ap_flags & AP_FLAG_NO_DATA_TRACE))
                 wire_send(MSG_RX_MGMT, head, 2, frame, length < 40 ? length : 40);
         } else if ((frame[1] & 3) == 0 && !memcmp(frame + 16, s_peer, 6) &&
                    memcmp(frame + 10, s_peer, 6) && length <= 1600) {
@@ -363,6 +370,7 @@ static esp_err_t ap_start(const uint8_t *p, size_t n)
     /* A second flag byte is optional: AP_FLAG2_NO_NOISE_CHECK. */
     if (n != 1 + 6 + 32 + 16 + 1 + 1 && n != 1 + 6 + 32 + 16 + 1 + 1 + 1) return ESP_ERR_INVALID_SIZE;
     const uint8_t flags2 = n > 57 ? p[57] : 0;
+    s_ap_flags2 = flags2;
     if (flags2 & AP_FLAG2_NOISE_250) NoiseTimerInterval = 250;   /* before the driver arms it */
     const uint8_t channel = p[0];
     if (channel < 1 || channel > 13 || (p[1] & 1)) return ESP_ERR_INVALID_ARG;

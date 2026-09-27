@@ -78,7 +78,7 @@ Anything before a `0x00`, including the ROM's boot text, is discarded by the che
 | `0x03` CHANNEL | host | u8 channel; idle only |
 | `0x04` STA_JOIN | host | u8 channel, 6 BSSID, 32 SSID (the LDN SSID's hex text), 16 key, 6 station MAC (zero = random) |
 | `0x05` STOP | host | none; back to idle, keys cleared |
-| `0x06` AP_START | host | u8 channel, 6 BSSID, 32 SSID, 16 key, u8 max stations, u8 flags: 1 the stock association and 4-way handshake, 2 no QoS for the station, 4 no 40-byte copy of each station data frame, bits 3..5 a fixed data rate, `0x40` a beacon every 1000 TU, `0x80` no promiscuous receive; an optional second flag byte: 1 the driver's noise-floor check off, 2 its interval 250 |
+| `0x06` AP_START | host | u8 channel, 6 BSSID, 32 SSID, 16 key, u8 max stations, u8 flags: 1 the stock association and 4-way handshake, 2 no QoS for the station, 4 no 40-byte copy of each station data frame, bits 3..5 a fixed data rate, `0x40` a beacon every 1000 TU, `0x80` no promiscuous receive; an optional second flag byte: 1 the driver's noise-floor check off, 2 its interval 250, 4 the receive time in each 40-byte data copy's head |
 | `0x07` AP_KICK | host | 6 MAC, u16 reason; deauthenticates |
 | `0x08` ETH_TX | host | an Ethernet frame; the driver encrypts it with the station's or the group key. A full driver queue (`ESP_ERR_NO_MEM`) is retried every 1 ms for up to 100 ms before the frame counts as failed; a frame to a station that has left fails at once with `0x3015` (`ESP_ERR_WIFI_NOT_ASSOC`). A station sends the frame's Ethernet source as its 802.11 transmitter address: a source other than the MAC in LINK is never acknowledged (49 of 49 unacked, none seen by the access point) |
 | `0x09` RAW_TX | host | an 802.11 frame without FCS (`esp_wifi_80211_tx`); used for advertisements |
@@ -214,6 +214,8 @@ acknowledged, 1.6 ms average from ETH_TX to TX-done, 10.7 ms at most. Under a fl
 which at 1 Mbit/s takes about 96% of the air: 1227 of 1227, 26.8 ms average, 218 ms at most, and the
 station received 794 of the flood.
 
+### The FireRed hold
+
 Five FireRed trades hosted as an access point, the same line with the channel changed, the last with
 the access point's rate pinned at 24 Mbit/s; the console acknowledged every frame in all five. Wait is ETH_TX to TX-done; retries are the share of data
 frames the sniffer saw with the retry bit, from the access point and from the console.
@@ -247,9 +249,9 @@ also pick rates differently:
 | board (access point) | 91 to 100% | 54 Mbit/s for 77 to 92%, then 48, rarely 6 or 36 |
 | console | 92 to 99% | 48, 36, 24, 18, down to 1 Mbit/s |
 
-What makes the board wait about 100 ms between copies of a frame, and why a retry at 54 Mbit/s
-fails where the console's own frames get through, are unknown. Bits 3 to 5 of the access point's
-flag byte pin its data rate (`esp_wifi_internal_set_fix_rate`); 0 leaves rate control on:
+What makes the board wait about 100 ms between copies of a frame is unknown. Bits 3 to 5 of the
+access point's flag byte pin its data rate (`esp_wifi_internal_set_fix_rate`); 0 leaves rate control
+on:
 
 | bits 3..5 | 1 | 2 | 3 | 4 | 5 | 6 | 7 |
 |---|---|---|---|---|---|---|---|
@@ -258,26 +260,47 @@ flag byte pin its data rate (`esp_wifi_internal_set_fix_rate`); 0 leaves rate co
 `POKELDN_ESP32_AP_FLAGS=0x28` pins 24 Mbit/s. Pinned, the board's retry share fell to 2.8% and the
 holds stayed: five of 102 to 185 ms. The rate the board picks does not decide a hold.
 
-Both directions fail together during a hold. Between the first and last copy of a held frame, the
-console's data frames to the board carry the retry bit on 8 of 19 (42%, rate control on) and 19 of 29
-(66%, pinned), against 11% and 14% over the whole session; one console frame went out six times at
-six rates. The sniffer receives both sides at -19 to -21 dBm throughout. What stops each side from
-acknowledging the other in that window is unknown.
+### The board is the deaf side
+
+A sniffing board keeps every ACK on its channel as a 10-byte RX_SNIFF frame (the promiscuous control
+filter, ACK only). An ACK names only its receiver, so `tools/ldn/esp32_hold_air.py` reads one as the
+answer to the data copy just before it and counts copies acknowledged on the air and sent again
+anyway: such a copy means its sender missed the ACK. One FireRed trade on channel 1 (rate control
+on, 6744 frames, one hold over 100 ms):
+
+| sender | first copies | no ACK on the air after it | copies acknowledged and sent again |
+|---|---|---|---|
+| board | 6514 | 490 (7.5%) | 56 |
+| console | 4517 | 428 (9.5%) | 2 |
+
+Each receiver leaves a similar share of first copies unacknowledged; only the board misses ACKs. In
+the 119 ms hold the board's first copy went unacknowledged, the console acknowledged the second, and
+the board sent a third, which was acknowledged; the console meanwhile sent one frame five times
+before the board acknowledged it. In a 61 ms wait the console acknowledged the first copy and the
+board sent it again. The board's copies of a held frame are about 40 ms apart in sniffer order.
+During a hold the board hears neither the console's data frames nor its ACKs.
+
+Between the first and last copy of a held frame, the console's data frames to the board carry the
+retry bit on 8 of 19 (42%, rate control on) and 19 of 29 (66%, pinned), against 11% and 14% over the
+whole session; one console frame went out six times at six rates. The sniffer receives both sides at
+-19 to -21 dBm throughout.
 
 The console's retries toward the board are the board's receive misses. The board's promiscuous
 receive path copies the 802.11 header of every frame the console sends it (RX_MGMT, 40 bytes);
-matched by sequence number against the sniffer, a frame the console sent more than once reached the
-board as one copy carrying the retry bit in 1008 of 1027 over three trades: the board never heard the
-first copy the sniffer heard. The board missed 5.7 to 8.5% of the console's first copies at
-54 Mbit/s and 4.5 to 12.1% at 48 Mbit/s, while its own RSSI for the console was -20 to -21 dBm. What
-the board's radio was doing when it missed a copy is unknown. In sniffer order, a missed first copy
-follows another console frame 46 to 52% of the time (two trades) and 37% (a third), against 28 to
-32% for a first copy the board heard. A board copy that carries the retry bit, with no earlier
-copy of its sequence number, marks a miss from the board's trace alone. 
+matched by sequence number against the sniffer (`tools/ldn/esp32_rx_copies.py HOST_TRACE SNIFF_TRACE
+--ap BSSID --sta MAC`), a frame the console sent more than once reached the board as one copy
+carrying the retry bit in 1008 of 1027 over three trades: the board never heard the first copy the
+sniffer heard. The board missed 5.7 to 8.5% of the console's first copies at 54 Mbit/s and 4.5 to
+12.1% at 48 Mbit/s, while its own RSSI for the console was -20 to -21 dBm. In sniffer order a missed
+first copy follows another console frame 46 to 52% of the time (two trades) and 37% (a third),
+against 28 to 32% for a first copy the board heard. A board copy that carries the retry bit, with no
+earlier copy of its sequence number, marks a miss from the board's trace alone.
 
-Two boards reproduce the misses with no console. `tools/ldn/esp32_pair_bench.py AP STA --flood 0
---burst N --send R` has the station board send 200-byte frames and counts, from the access point's
-own header copies, the frames whose first copy it missed:
+### Two boards reproduce the misses
+
+`tools/ldn/esp32_pair_bench.py AP STA --flood 0 --burst N --send R` has the station board send
+200-byte frames and counts, from the access point's own header copies, the frames whose first copy
+it missed:
 
 | access point | channel | station sends | first copies missed | station's longest wait for an ack |
 |---|---|---|---|---|
@@ -288,65 +311,39 @@ own header copies, the frames whose first copy it missed:
 | board 2 | 11 | 20 single frames a second | 7.5% | 8 ms |
 
 Either board misses as an access point, on either channel, on an otherwise idle air; a frame sent
-right after another is missed about twice as often. The access point hears the station at -43 to -48 dBm. Identical runs
-(channel 11, 20 single frames a second, 30 s) missed 6.1, 9.3, 9.8, 11.3, 16.9, 17.9, 43.6 and 43.7%.
-A beacon every 1000 TU (AP flag `0x40`) missed 43.6% and 10.0%. With promiscuous receive off (AP flag
-`0x80`, which also stops the header copies) the station's frames took as long to be acknowledged as
-with it on: 6.8% and 9.0% of them over 3 ms from ETH_TX to TX-done, against 6.1% and 13.6%. The
-beacon and the promiscuous callback do not cause the misses. 
+right after another is missed about twice as often. The access point hears the station at -43 to
+-48 dBm. Identical runs (channel 11, 20 single frames a second, 30 s) missed 6.1, 9.3, 9.8, 11.3,
+16.9, 17.9, 43.6 and 43.7%.
 
-A sniffing board keeps every ACK on its channel as a 10-byte RX_SNIFF frame (the promiscuous control
-filter, ACK only). An ACK names only its receiver, so `tools/ldn/esp32_hold_air.py` reads one as the
-answer to the data copy just before it and counts copies acknowledged on the air and sent again anyway.
-Such a copy means its sender missed the ACK. 
+The misses are spread evenly in time. With the second AP_START flag byte's bit 2 the header copies
+carry the access point's receive time (`rx_ctrl.timestamp`, u32 us, after the RSSI); folded on that
+clock, 595 misses among 10511 frames over 60 s fall at 4 to 9% of frames in every twentieth of
+102.4, 51.2, 25.6 and 1024 ms.
 
-With ACKs sniffed, one FireRed trade on channel 1 (rate control on, 6744 frames, one hold over 100 ms):
+Ruled out as the cause, each by a bench with one flag changed:
 
-| sender | first copies | no ACK on the air after it | copies acknowledged and sent again |
-|---|---|---|---|
-| board | 6514 | 490 (7.5%) | 56 |
-| console | 4517 | 428 (9.5%) | 2 |
-
-Each receiver leaves a similar share of first copies unacknowledged; only the board misses ACKs.
-In the 119 ms hold the board's first copy went unacknowledged, the console acknowledged the second,
-and the board sent a third, which was acknowledged; the console meanwhile sent one frame five times
-before the board acknowledged it. In a 61 ms wait the console acknowledged the first copy and the
-board sent it again. The board's copies of a held frame are about 40 ms apart in sniffer order.
-During a hold the board hears neither the console's data frames nor its ACKs. Why is unknown. 
-
-The station's slow frames follow a 102.4 ms (100 TU) cycle. On the pair bench (200 single frames a
-second, 30 s, `--done-out`), frames that took over 3 ms from ETH_TX to TX-done, folded by their send
-time on the station's clock into twentieths of 102.4 ms:
-
-| beacon interval | slow frames in the worst two twentieths | elsewhere |
+| flag | change | first copies missed |
 |---|---|---|
-| 100 TU | 29%, 30% | 2 to 12%, one of 23% |
-| 1000 TU (AP flag `0x40`; a sniffing board counted 9 beacons in 10 s, 1024 ms apart) | 43%, 29% | 2 to 9%, one of 24% |
+| AP `0x40` | a beacon every 1000 TU (a sniffing board counted 9 in 10 s) | 43.6%, 10.0% |
+| AP `0x80` | promiscuous receive off; the station's acks took as long (6.8%, 9.0% of frames over 3 ms, against 6.1%, 13.6%) | not countable |
+| second byte bit 0 | `pm_noise_check_disable`: clears `g_pm+21`, after which libpp's `pm_noise_check` returns before measuring | 7.5, 13.2, 8.1% against 7.0, 5.9, 7.9% |
+| second byte bit 1 | libpp's `NoiseTimerInterval` (`pp.o` `.data`, u16 100) set to 250 | 6.6% against 5.5% |
 
-Folded at 1024 ms or 1000 ms the share is flat. A 100 TU cycle that outlives the configured beacon
-interval sets when frames are lost; which board runs it, and what runs on it, are unknown. The FireRed
-trades show the same unevenness in the access point's own TX-dones folded at 102.4 ms on its clock
-(30 to 62% in the worst twentieth against about 10%). `tools/ldn/esp32_bench_fold.py FILE PERIOD_US`
-folds a `--done-out` file. The fold cannot say which board runs the cycle: over a 600 s bench the two
-boards' clocks differed by 1.9 ppm against the host (`tools/ldn/esp32_bench_drift.py`), and a
-station keeps its timing in step with the access point's TSF. The fold was sharpest 10 to 20 ppm
-off the station's clock and its phase held through all four quarters of the run. The one foreign
-access point beaconing on channel 11 during that bench (-79 dBm) beacons every 110 TU (TSF gaps
-112638 us), so it does not set a 100 TU cycle. In the FireRed trades the sniffer shows the access
-point board as the deaf side. 
+The one foreign access point beaconing on channel 11 during the bench (-79 dBm) beacons every 110 TU
+(TSF gaps 112638 us). What the access point's radio is doing when it misses a frame is unknown.
 
-The driver's periodic noise-floor check does not set the cycle. `libpp`'s `NoiseTimerInterval`
-(`pp.o` `.data`, u16 100) paces `pm_noise_check`, and `pm_noise_check_disable` clears `g_pm+21`, after
-which `pm_noise_check` returns before measuring. With the check disabled (second AP_START flag byte,
-bit 0) the bench missed 7.5, 13.2 and 8.1% of first copies against 7.0, 5.9 and 7.9% with it on, and
-the slow frames still bunched at 102.4 ms. With `NoiseTimerInterval` set to 250 (bit 1) they still
-bunched at 102.4 ms and folded flat at 250 ms. `tools/ldn/esp32_rx_copies.py HOST_TRACE
-SNIFF_TRACE --ap BSSID --sta MAC` makes the count.
+The station board's sends slow down on a 102.4 ms (100 TU) cycle, a separate effect of the station
+side. Frames that took over 3 ms from ETH_TX to TX-done (`--done-out`), folded by send time on the
+station's clock (`tools/ldn/esp32_bench_fold.py FILE PERIOD_US`), bunch into two twentieths of
+102.4 ms (29 to 43% against 2 to 12% elsewhere) with the beacon at 100 TU or 1000 TU, with the noise
+check off or at 250, and fold flat at 250, 1000 and 1024 ms; the access point's misses do not follow
+it. The measure includes a frame's wait behind the one before it, so a sender's own rhythm shows in a
+fold: the FireRed trades' TX-dones fold unevenly at 25.6 ms. `tools/ldn/esp32_bench_drift.py`
+measures both boards' clocks against the host (1.9 ppm apart over 600 s) and scans the fold period.
 
-`tools/ldn/esp32_hold_air.py` lists what the sniffer saw
-during each hold. TX-dones complete out of order and the board's
-receive times can swap two frames written 0.1 ms apart; `tools/ldn/esp32_hold.py CAPTURE TRACE`
-pairs them by length and splits these stages.
+`tools/ldn/esp32_hold_air.py` lists what the sniffer saw during each hold. TX-dones complete out of
+order and the board's receive times can swap two frames written 0.1 ms apart; `tools/ldn/esp32_hold.py
+CAPTURE TRACE` pairs them by length and splits these stages.
 
 Three traps in measuring this. A sniffer board's line backs up in a burst like any board's, so a
 frame it reports reached the host up to a second after it was on the air; run it at 1500000
@@ -625,5 +622,8 @@ entered: the handshake finished 0.46 s after the association, and a trade ran to
   measurement attributes a difference to the setting.
 - A sniffer board's counts of another board's frames undercount while the sniffer's own serial
   link is saturated; they are not evidence of loss on the air.
+- The access point board misses 5 to 22% of a station's first copies at -20 to -48 dBm, evenly in
+  time, and misses ACKs during a FireRed hold; the cause is unknown. Ruled out: the beacon interval,
+  promiscuous receive, the driver's noise-floor check, the channel, the board unit.
 - easyworld reports that a classic ESP32 must be the ESP32-WROOM-32E module and that the older
   ESP32-WROOM-32 does not trade reliably.
