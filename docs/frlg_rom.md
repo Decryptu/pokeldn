@@ -1235,10 +1235,13 @@ the repointed send are `memory-scan`'s.
 
 The sum of a block is taken over its words in ascending address order, starting from 0:
 
-    acc = w XOR ror(acc, 31)        one `eor r0, rN, r0, ror #31` per word
+    acc = w + ror(acc, 31)          one `add r0, rN, r0, ror #31` per word, mod 2^32
 
-It is linear over XOR, so a block of n words sums to the XOR of `rol(w_i, n-1-i)`, and the host computes
-the reference sums from a ROM file in closed form (`rom_checksum_reference`).
+The host computes the reference sums from a ROM file the same way (`rom_checksum_reference`). An XOR
+in place of the add cancels: a block holding one repeated word sums to 0 whatever the word, and two
+equal changes 32 words apart leave the sum unchanged. A block past the end of the reference image is
+named by what it sums to: zero-filled, 0xFF-filled, the GBA's open bus (each halfword its own address
+halved), a mirror of the image, or CONTENT.
 
 | offset | |
 |---|---|
@@ -1258,7 +1261,7 @@ The answer is a fixed 528 bytes from 0x020. The builder refuses a start not alig
 a range that is not a whole number of blocks, more than 128 blocks, and a block that is not a power of
 two from 32 bytes; the payload finds a block boundary as `cursor & (block - 1) == 0` after each chunk.
 
-The inner loop is an `ldmia` of eight words, eight `eor`s, a boundary test and the budget compare: 13
+The inner loop is an `ldmia` of eight words, eight `add`s, a boundary test and the budget compare: 13
 ARM instructions per eight words. The default 512 chunks is 6688 instructions a call, measured under
 unicorn, below `memory-scan`'s 7703. The default range 0x08000000..0x09000000 in 128 KiB blocks is 1024
 calls, about 17 seconds.

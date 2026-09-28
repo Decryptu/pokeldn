@@ -8,9 +8,9 @@
 @ [mystery_gift_link.c:59,166].
 @
 @ The checksum of one block, over its words w in ascending address order:
-@     acc = 0;  for each w: acc = w XOR ror(acc, 31)
-@ which is one `eor` per word. It is linear over XOR, so the host computes the same value from a
-@ ROM file in closed form. At each block boundary the sum is stored and acc starts again at 0.
+@     acc = 0;  for each w: acc = w + ror(acc, 31)   (mod 2^32)
+@ which is one `add` per word. An XOR here cancels: a one-value fill and two equal changes 32 words
+@ apart sum to 0. At each block boundary the sum is stored and acc starts again at 0.
 @
 @ The image, all offsets from _start, and every one of them a constant this file and
 @ buffer_script.py both name:
@@ -92,14 +92,14 @@ _start:
 
 .Lloop:
     ldmia   r10!, {r2-r9}           @ eight words, one sequential burst
-    eor     r0, r2, r0, ror #31
-    eor     r0, r3, r0, ror #31
-    eor     r0, r4, r0, ror #31
-    eor     r0, r5, r0, ror #31
-    eor     r0, r6, r0, ror #31
-    eor     r0, r7, r0, ror #31
-    eor     r0, r8, r0, ror #31
-    eor     r0, r9, r0, ror #31
+    add     r0, r2, r0, ror #31
+    add     r0, r3, r0, ror #31
+    add     r0, r4, r0, ror #31
+    add     r0, r5, r0, ror #31
+    add     r0, r6, r0, ror #31
+    add     r0, r7, r0, ror #31
+    add     r0, r8, r0, ror #31
+    add     r0, r9, r0, ror #31
     tst     r10, lr
     beq     .Lboundary              @ a block just ended
 .Lnext:

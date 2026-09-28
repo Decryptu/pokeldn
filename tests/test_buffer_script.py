@@ -1098,19 +1098,19 @@ def test_the_log_says_where_the_table_is_and_what_it_starts_with():
 
 # --- rom-checksum: which blocks of the cartridge differ from an image we hold -------------------
 # The sums are checked against a reference written here, word by word as the recurrence reads,
-# independently of buffer_script.rom_checksum_reference's closed form.
+# independently of buffer_script.rom_checksum_reference.
 
 FRENCH_FIRERED = os.path.join(ROOT, "scratchpad", "FireRed_f.gba")
 
 
 def _sequential_sums(image, start, end, block, base=0x08000000):
-    """acc = w ^ rol(acc, 1) over each block's little-endian words, from 0 at every block."""
+    """acc = w + rol(acc, 1) mod 2^32 over each block's little-endian words, from 0 at every block."""
     sums = []
     for low in range(start, end, block):
         acc = 0
         for at in range(low - base, low - base + block, 4):
             word = image[at] | image[at + 1] << 8 | image[at + 2] << 16 | image[at + 3] << 24
-            acc = word ^ (((acc << 1) | (acc >> 31)) & 0xFFFFFFFF)
+            acc = (word + (((acc << 1) | (acc >> 31)) & 0xFFFFFFFF)) & 0xFFFFFFFF
         sums.append(acc)
     return sums
 
@@ -1118,6 +1118,27 @@ def _sequential_sums(image, start, end, block, base=0x08000000):
 def _noise_cartridge(size=0x40000, seed=0x0A):
     import random
     return random.Random(seed).randbytes(size)
+
+
+def test_a_block_past_the_reference_image_is_named_by_what_it_holds():
+    """A cartridge larger than the reference image, or an emulator's fill past it: each block
+    beyond the image is named a fill, the GBA's open bus, a mirror of the image, or CONTENT."""
+    base, block = 0x08000000, 0x400
+    image = _noise_cartridge(0x1000, seed=1)
+    open_bus = b"".join(((a >> 1) & 0xFFFF).to_bytes(2, "little")
+                        for a in range(base + 0x1000, base + 0x1400, 2))
+    memory = (image + open_bus + image[0x400:0x800] + _noise_cartridge(block, seed=2)
+              + bytes(block) + b"\xff" * block)
+    end = base + len(memory)
+    sums = _sequential_sums(memory, base, end, block)
+    dump = b"".join(v.to_bytes(4, "little") for v in (end, 9, len(sums), 10, *sums))
+    dump = dump.ljust(buffer_script.ROM_CHECKSUM_ANSWER_SIZE, b"\0")
+
+    lines = buffer_script.describe_rom_checksum(dump, base, end, block, image, "v0")
+
+    past = [line.split("no reference, ")[1] for line in lines if "no reference" in line]
+    assert past == ["open bus", "a mirror of 0x08000400", "CONTENT", "zero-filled", "0xFF-filled"]
+    assert lines[-1] == "rom-checksum: 0 of 4 blocks differ from v0"
 
 
 @needs_unicorn
@@ -1134,7 +1155,7 @@ def test_the_console_sums_are_the_recurrence_over_its_own_cartridge():
     assert got["cursor"] == end and got["shift"] == 11
     assert got["sums"] == _sequential_sums(rom, start, end, block)
     assert repeated.final.param == got["stored"] == 64
-    # The host's closed form, against the same bytes: it is what a hardware answer is judged by.
+    # The host's reference, against the same bytes: it is what a hardware answer is judged by.
     assert buffer_script.rom_checksum_reference(rom, start, end, block) == got["sums"]
 
 

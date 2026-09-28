@@ -606,13 +606,7 @@ def read_rom_checksum(dump):
 
 def rom_checksum_reference(image, start, end, block, base=None):
     """-> the sums the payload computes over [start, end) of `image` loaded at `base`, one per
-    block; None for a block the image does not wholly cover.
-
-    Closed form: the recurrence acc = w ^ rol(acc, 1) is linear over XOR, so a block of n words
-    sums to XOR_i rol(w_i, n-1-i), and words 32 apart share a rotation.
-    """
-    import functools
-    import operator
+    block; None for a block the image does not wholly cover. acc = w + ror(acc, 31), from 0."""
     import sys
     from array import array
     image = memoryview(bytes(image))
@@ -629,13 +623,30 @@ def rom_checksum_reference(image, start, end, block, base=None):
         words.frombytes(image[offset:offset + block])
         if sys.byteorder != "little":
             words.byteswap()
-        n, acc = len(words), 0
-        for j in range(min(32, n)):
-            group = functools.reduce(operator.xor, words[j::32], 0)
-            r = (n - 1 - j) % 32
-            acc ^= ((group << r) | (group >> (32 - r))) & 0xFFFFFFFF if r else group
+        acc = 0
+        for w in words:
+            acc = (w + (((acc << 1) | (acc >> 31)) & 0xFFFFFFFF)) & 0xFFFFFFFF
         sums.append(acc)
     return sums
+
+
+def _open_bus_block(low, block):
+    """What a GBA reads past the end of its cartridge: each halfword is its own address / 2."""
+    return b"".join(((a >> 1) & 0xFFFF).to_bytes(2, "little") for a in range(low, low + block, 2))
+
+
+def _past_image(console, low, block, reference):
+    """Names a sum taken past the reference image: a known fill, a mirror of the image, or content."""
+    fills = {"zero-filled": bytes(block), "0xFF-filled": b"\xff" * block,
+             "open bus": _open_bus_block(low, block)}
+    for name, data in fills.items():
+        if rom_checksum_reference(data, low, low + block, block, base=low)[0] == console:
+            return name
+    if len(reference) and (low - ROM_BASE) % len(reference) + block <= len(reference):
+        mirror = ROM_BASE + (low - ROM_BASE) % len(reference)
+        if rom_checksum_reference(reference, mirror, mirror + block, block)[0] == console:
+            return f"a mirror of 0x{mirror:08X}"
+    return "CONTENT"
 
 
 def describe_rom_checksum(dump, start=None, end=None, block=None, reference=None,
@@ -667,7 +678,8 @@ def describe_rom_checksum(dump, start=None, end=None, block=None, reference=None
     for i, (console, ours) in enumerate(zip(got["sums"], expected)):
         low = int(start) + i * block
         if ours is None:
-            verdict, ours_text = ("" if reference is None else "no reference"), "-" * 10
+            verdict, ours_text = ("" if reference is None else
+                                  "no reference, " + _past_image(console, low, block, reference)), "-" * 10
         else:
             compared += 1
             same = console == ours
