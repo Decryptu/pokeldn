@@ -973,7 +973,8 @@ mask `0xc7`) and M = {808, 809}: a station whose offered species is in S or M an
 species is in neither sends it; a station in the reverse case does not; otherwise the station for
 which `0x4d9720` returns true sends it (`[mgr+0x128c] != 0`). A station giving Mewtwo, Mew,
 Articuno, Zapdos, Moltres, Meltan or Melmetal for an ordinary Pokemon sends the 2 whether it hosts
-or joins, and its partner sends none.
+or joins, and its partner sends none. A joiner giving Mewtwo to a retail console host sent the 2
+right after its 1, and the console completed the trade.
 
 The parent block (`[parent+0x88]`, "The trade dispatcher" below) carries the box index of the
 station's own offered Pokemon at `+8` and the arriving Pokemon at `+0x10`. `0x838660` takes the own
