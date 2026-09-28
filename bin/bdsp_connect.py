@@ -1714,8 +1714,10 @@ def build_parser():
     ap.add_argument("--answer-return-select", action="store_true",
                     help="answer the NetDataReturnSelectData a completed trade ends on, ONCE. "
                          "It is an announcement; the answer has no measured effect")
-    ap.add_argument("--return-select-value", type=int, default=1, metavar="N",
-                    help="the byte to answer it with (default 1, opendpr's `received`)")
+    ap.add_argument("--return-select-value", type=int, default=0, metavar="N",
+                    help="the byte to answer it with (default 0, what a console answers a {1} "
+                         "with [0x1c27f48]; a {1} reads as our back-out and, past phase 2, shows "
+                         "'the partner canceled the trade')")
     ap.add_argument("--trade-ot", metavar="TEXT", help="OT name for the offered Pokemon")
     ap.add_argument("--trade-name", default="PkCamp", metavar="TEXT",
                     help="the name in OUR trainer record")
