@@ -875,6 +875,94 @@ read per frame.
 manager to mode 2 (`main + 0x0588A0`). Issued from the Mystery Gift client, a station, it ends the
 session: the game shows its link error and the station closes, and no access point is opened.
 
+Four more numbers in the jump table [main + 0x17D7F6] have a named caller in the decomp but no
+disassembled handler until now, `target_offset = main + 0x05706C + entry * 4`:
+
+`swi 0x43`, which `rfu_REQ_startConnectParent` issues with a 16-bit PID in `r0` [sloopsvc.c:91],
+and `swi 0x44`, which `rfu_REQ_stopMode` issues with no arguments [sloopsvc.c:102], drive the same
+network-manager mode switch as `swi 0x40`/`swi 0x41`/`swi 0x42`. Their handlers are
+`main + 0x0570EC` and `main + 0x057100`; each branches into a shared routine, `main + 0x058AD0` for
+0x43 and `main + 0x058B0C` for 0x44. Issued from the Mystery Gift client (`sloop-svc`, `r0` = 0x41
+for both, `swi 0x43` first): the buffer script still ran to completion and returned its answer, but
+the console then failed to close the link normally and showed "Erreur de connexion", the same screen
+`swi 0x41`/`swi 0x42` produce. `swi 0x44` immediately after did not visibly change that outcome.
+
+`swi 0x45`, handler `main + 0x057110`, is what `rfu_REQ_startSearchParent` and
+`rfu_STC_readParentCandidateList` issue with `&gRfuLinkStatus` in `r0` [sloopsvc.c:67-75]. It
+resolves `r0` as a GBA address through the region table (the same fold `swi 0x52` uses) and writes
+through it, at `main + 0x058900`: unlike 0x52, which only reads the guest CPU state, 0x45 copies the
+wrapper's own network-scan result into `struct RfuLinkStatus` at that address, `findParentCount`
+[include/librfu.h] landing at offset 8 first. The exact per-candidate layout the copy writes is not
+yet settled: a byte count taken from the copy loop does not match `sizeof(struct RfuTgtData)`
+computed from the header, so a live read is needed before code depends on the field offsets inside
+one candidate record. Issued from the Mystery Gift client with a 220-byte zeroed buffer in `r0`: the
+call neither faulted nor disturbed the session, and the buffer read back all zero. `swi 0x45` is
+only ever called by a parent search, which a Mystery Gift session never starts, so an empty
+candidate list is the expected state to find rather than a sign the write did not happen.
+
+`swi 0x47`, handler `main + 0x05715C`, callee `main + 0x058680`, is what `rfu_REQ_configGameData`
+issues with a pointer in `r0` to a packed 24-byte record: 16 bytes mirroring `struct RfuGameData`
+plus 8 bytes of username, `RFU_USER_NAME_LENGTH` [sloopsvc.c:34-46; include/link_rfu.h:103-115,232].
+It is 0x45's write counterpart: it reads from the address it is given into the wrapper's own
+advertised game data and username, rather than answering with fixed host state. The callee copies
+all 24 bytes verbatim to `component + 0x6050D8`, then extracts bits 16-22 of the record's second
+64-bit word, the `activity` bitfield [include/link_rfu.h:103-115], and writes it to
+`component + 0x605360` if it differs from what is stored there, the same field `swi 0x61` targets.
+Issued from the Mystery Gift client with a crafted record (`activity` 0x41, a French `language`,
+`playerTrainerId` and `username` set to distinct marker bytes): the call neither faulted nor
+disturbed the session, and the read-back buffer matched what was sent unchanged, the syscall having
+only read from it.
+
+Both destinations are confirmed against the running process. A software breakpoint at
+`main + 0x0586B4`, the instruction after the conditional `activity` store, reads `component +
+0x605360` through `x8 + 0x280` and `component + 0x6050D8` directly. A crafted record with `activity`
+0x30 landed at both addresses byte for byte, the full 24 bytes matching what was sent. The console's
+own Mystery Gift AMI search issues `swi 0x47` before any buffer script runs, advertising `activity`
+0x15 (`ACTIVITY_WONDER_CARD` [include/constants/union_room.h:46]); a buffer script's call overwrites
+that value. **The object this handler writes to is not the one `bkpt #0x52`'s hook table resolves**:
+the two live addresses differ by exactly `0x100000000`, and their first eight bytes, each object's
+vtable pointer, differ too. `bkpt #0x52`'s hook table resolves `main + 0x1C3878`, the vtable this
+page already names for the Sloop component that owns the breakpoint and the region table; the object
+`swi 0x47` writes `activity` and the game-data record to carries a different vtable, `main +
+0x1C3B30`, 696 bytes along from the first. These are two distinct objects of two distinct classes,
+not one component read at two offsets: `bkpt #0x52`'s hook table resolves the region-table-bearing
+CPU/bus object the address-folding syscalls (0x45, 0x48, 0x52, 0x55, 0x62) operate on, and the
+game-data object is a sibling, reached only through the live `x0` a breakpoint on the callee
+observes, not through the CPU object's hook table.
+
+`swi 0x61`, `svc_SetActivity`, handler `main + 0x057340`, callee `main + 0x058B2C`, writes `r0` into
+a fixed field of the same component, `component + 0x605360`, only when `r0` is 0x41 to 0x48
+inclusive, eight Union Room activity codes; any other value leaves the field unchanged. Issued from
+the Mystery Gift client with `r0` = 0x41, chained before `swi 0x43`: the call returned normally as
+part of the same answered session as 0x43/0x44 above.
+
+Isolated from that chain (`r0` = 0x45, `swi 0x61` alone, nothing else in the session), a breakpoint on
+the callee's `ret` at `main + 0x058B50` caught the call with `w1` = 0x45 and read `component +
+0x605360` back as `0x45` at the same instant, confirming the write independent of the disassembly.
+The session then closed normally, "Sauvegarde terminee" and the RFU disconnect frame in the ordinary
+`MG_CLOSE` sequence: the "Erreur de connexion" the chained session showed belongs to `swi 0x43` and
+`swi 0x44`, not to `swi 0x61`.
+
+`swi 0x4D`, `svc_BadWordCheck`, handler `main + 0x0571FC`, is what the naming screen, a Union Room
+chat entry and a Union Room board text all call with `r0` an ASCII string and `r1` a second argument
+every caller in the decomp passes as 0 [sloopsvc.c:194-217]. The wrapper's own GBA-side wrapper
+converts the game's own text encoding to ASCII before the call and back after; the syscall's contract
+is ASCII in. Issued from the Mystery Gift client with a raw ASCII string in `r0`, `r1` = 0, across
+three separate sessions: a clean word (`POKELDN`), an English word containing a blocked substring by
+naive matching (`ASSASSIN`) and Nintendo's own name (`NINTENDO`). All three returned `r0` = 0 and the
+read-back buffer unchanged, byte for byte, from what was sent. Whether 0 means clean, the check never
+ran against any of the three, or `r1` selects a mode this session left disabled is unresolved; the
+decomp's own comment on the return value is itself a guess [sloopsvc.c:210]. `swi 0x52`'s handler
+sets the guest's `r0` to a hardcoded zero regardless of what its callee computes (above), so a
+syscall returning zero across every input tried is not new to this one.
+
+`swi 0x4B`, handler `main + 0x0572C4`, takes no argument. `RfuMain1` reseeds the RNG from
+`gHostRfuGameData->compatibility.playerTrainerId` when bit 1 of the return is set, and
+`SpawnGroupLeaderAndMembers` exits early in the leader case when bit 0 is clear [sloopsvc.c:132-145].
+Issued from the Mystery Gift client: `r0` came back 0, both bits clear. Neither caller runs during a
+Mystery Gift session, so this reads the syscall's answer with no Union Room group being spawned,
+consistent with "nothing to report" rather than a broken call.
+
 The component that owns `bkpt #0x52` also owns the syscall dispatcher (`main + 0x057014` is slot 21
 of the same vtable) and a table of 2324 species names, six languages per species, hashed with djb2
 at construction (`main + 0x056540`, the strings at `main + 0x1C4470`).
@@ -1606,6 +1694,14 @@ tiles differ from what the expansion writes. OBJ palette 15 and those tiles are 
 well; while the overlay is on, anything it keeps there is overwritten.
 The font is sixteen 3x5 digits, three bits a row, drawn at pixels 2 to 4 of rows 1 to 5 of each tile
 (`asm/resident/overlay.inc`, shared by both hooks).
+
+On a retail console all eight digits were confirmed fully drawn and changing every frame during
+interactive play. On the emulator, this session, the overlay rendered during the automatic recap
+("Precedemment dans votre quete") that plays right after CONTINUER but not during interactive play,
+walking a character indoors or outdoors, tried right after a fresh install and confirmed twice; the
+same hook's `field` speed-up was visibly faster there over the same span, so the hook keeps running
+and the overlay draw specifically is what stopped. Whether this is a retail/emulator difference or
+particular to this session's console state is unresolved.
 
 `ring=ADDRESS` (140 bytes, `0x0203FF74` ends at the top of EWRAM) keeps `gRngValue` as `VBlankIntr` finds
 it, one word a frame for 32 frames, and freezes when the word at `watch` (`gEnemyParty[0]`'s
