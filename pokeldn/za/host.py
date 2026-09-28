@@ -91,7 +91,7 @@ class HostSession:
 
     def __init__(self, *, ssid, our_ip, our_mac, guest_ip, code, identity, identity_tail,
                  selection, offer, host_var=None, offer_at=None, log=print, record=None,
-                 clock=time.monotonic):
+                 clock=time.monotonic, renew_offer=None):
         self.ssid = bytes(ssid)
         self.our_ip, self.our_mac, self.guest_ip = our_ip, bytes(our_mac), guest_ip
         self.code = code
@@ -139,6 +139,10 @@ class HostSession:
         self.steps = 0
         self.console_offer = None
         self.trade_complete = False
+        self.trades = 0
+        self.trade_steps = 0
+        # called on our offer after each trade; a console refuses a PID its save already holds
+        self.renew_offer = renew_offer
         self.counts = {}
 
     # -- framing -------------------------------------------------------------------------------
@@ -352,10 +356,19 @@ class HostSession:
                                              prefix=streams.PREFIX_HOST)
             self._schedule(now, 0.05, answer, f"step answer {inner[-1]:#04x}",
                            proto=streams.PROTO_BROADCAST)
-            if self.steps >= 4 and not self.trade_complete:
+            self.trade_steps += 1
+            if self.trade_steps == 4:
+                # the console returns to its box in the same seat: the next trade starts clean
                 self.trade_complete = True
+                self.trades += 1
+                self.trade_steps = 0
+                self.round = 0      # a console's next trade in the seat confirms under round 0 (zh06)
+                self.offer_sent = self.confirmed = self.committed = False
+                if self.renew_offer and self.offer:
+                    self.offer = bytes(self.renew_offer(self.offer)[:-1]) + bytes([OFFER_PICK])
+                    self.preview = self.offer[:-1] + bytes([OFFER_PREVIEW])
                 show_done()
-                self.log("[za-host] trade_complete: the console sent its four steps")
+                self.log(f"[za-host] trade_complete: the console sent its four steps (trade {self.trades})")
 
     # -- the loop's two entry points -------------------------------------------------------------
 

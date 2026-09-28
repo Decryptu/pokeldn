@@ -209,7 +209,8 @@ only when own state +0x130 is 6 and whose one caller is `0x9601dc` in the live t
 +0x130 and +0x134 to 2 (calling `0x964fa0(obj+0x128)` first when +0x134 was 3 or more), clears
 +0x118, +0x11a and +0xd0, and zeroes +0x150 and +0x152 with one 32-bit store. A console that
 completes a trade starts the next one on the same seat at round 0, and an answer that stays at
-round 1 after it is still accepted.
+round 1 after it is still accepted. A retail Z-A that cancelled once in its first trade confirms the
+second on the same seat with `0102b90100`; `pokeldn.za.host` resets its round to 0 with each trade.
 
 Own state 5 is written by the session update `0x95f600` (`0x95f680`) when own state is 3 or 4, byte
 +0x148 is set, the timer at +0x138 reads at least 1.5 s, the partner state is 4 or 5 and `0x963710` is

@@ -144,6 +144,7 @@ def main(argv=None):
 
     sessions = {}
     done_at = None
+    trades_seen = 0
     deadline = time.time() + args.seconds
     try:
         while time.time() < deadline:
@@ -155,7 +156,8 @@ def main(argv=None):
                     ssid=transport.ssid, our_ip=transport.our_ip, our_mac=transport.our_mac,
                     guest_ip=ip, code=args.code, identity=identity, identity_tail=tail,
                     selection=selection, offer=offer, offer_at=args.offer_at,
-                    log=print, record=record)
+                    log=print, record=record,
+                    renew_offer=za.pokemon.fresh_offer if args.fresh_pid else None)
             for ip in set(sessions) - seated:
                 s = sessions.pop(ip)
                 print(f"[za-host] the console at {ip} left; {s.console_offers} offer(s), "
@@ -175,8 +177,8 @@ def main(argv=None):
             for s in list(sessions.values()):
                 for data, ip in s.tick():
                     transport.send(data, ip)
-                if s.trade_complete and done_at is None:
-                    done_at = time.time()
+                if s.trades != trades_seen:
+                    trades_seen, done_at = s.trades, time.time()
             if done_at is not None and time.time() - done_at > args.hold_after_trade:
                 print("[za-host] the trade is complete; closing")
                 break
@@ -188,7 +190,7 @@ def main(argv=None):
             cap.close()
     for ip, s in sessions.items():
         print(f"[za-host] {ip}: {s.console_offers} console offer(s), {s.steps} step(s), "
-              f"trade_complete={s.trade_complete}")
+              f"trade_complete={s.trade_complete}, trades={s.trades}")
     return 0
 
 

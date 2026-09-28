@@ -121,7 +121,7 @@ def test_a_whole_trade_against_a_scripted_joiner(monkeypatch, cancel):
         ssid=SSID, our_ip=HOST_IP, our_mac=HOST_MAC, guest_ip=JOINER_IP, code="00000000",
         identity=bytes.fromhex("1400") + bytes(104), identity_tail=bytes.fromhex("1403b9018269fb308f"),
         selection=bytes.fromhex("0100") + bytes(1209), offer=offer, host_var=HOST_VAR,
-        clock=lambda: 0.0)
+        clock=lambda: 0.0, renew_offer=lambda o: o[:9] + bytes([o[9] ^ 0xFF]) + o[10:])
     joiner = ScriptedJoiner(host)
     t = joiner.run(0.1, 0.0)
     assert any(p == pia_connect.PROTO_NET and m[:2] == b"\x01\x11" for _, p, m in joiner.heard)
@@ -172,6 +172,14 @@ def test_a_whole_trade_against_a_scripted_joiner(monkeypatch, cancel):
     radio.drain()
     radio.close()
     assert board.led_looks == [bytes.fromhex("06ff2003b80b")]   # ramp-up, peak 255, 800 ms, 3000 ms
+
+    # A retail Z-A returns to its box in the same seat (zh05): its next pick draws our offer again,
+    # renewed, since the console's save now holds the first one's PID.
+    joiner.game(offer[:-1] + b"\x00", t)
+    t = joiner.run(t + 2.0, t)
+    offers = [x[2] for x in joiner.game_heard() if x[2][:2] == b"\x01\x01"]
+    assert offers[-1][-1] == za_host.OFFER_PICK and offers[-1][9] == offer[9] ^ 0xFF
+    assert host.trades == 1
 
 
 def test_the_joiner_answers_the_hosts_pick_and_not_its_cursor(tmp_path):
