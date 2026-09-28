@@ -204,6 +204,10 @@ def parse_messages(plaintext, align=4):
     a single byte of flags and a payload. Messages are padded to a multiple of four bytes, and the
     packet's tail is 0xFF padding, which is where the walk stops.
 
+    A presence byte of 0x00 is a message with every field inherited, size included: each game's
+    reader stops on 0xFF alone (BDSP `0x159b9d4`, Arceus `0x748520`, Scarlet `0x6ed324`). Scarlet
+    bundles runs of equal-sized records that way. docs/pia.md "Message framing".
+
     Sizes and ids here are BIG-endian, like the packet header and unlike the wiki's note about the
     advertisement. docs/bdsp_session.md "What the console is saying".
 
@@ -216,8 +220,8 @@ def parse_messages(plaintext, align=4):
     destination = 0
     while off < len(plaintext):
         present = plaintext[off]
-        if present == 0xFF or present == 0:
-            break                                   # padding, or an empty flags byte
+        if present == 0xFF or (present == 0 and not out):
+            break                                   # padding, or nothing to inherit from
         off += 1
         if present & 1:
             if off >= len(plaintext):

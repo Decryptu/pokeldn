@@ -165,12 +165,17 @@ stations send:
 
 | message | flags |
 |---|---|
-| RTT, stream opens, records | 0x00 |
+| RTT, stream opens, a record's first transmission | 0x00 |
+| a record sent again | 0x40 |
 | the bulk acknowledgements | 0xA0 |
 | the host's Net 0x11 and 0x50 | 0x31 |
 | NetStartHostMigration | 0x11 |
 
-The message destination field is zero on every message either station sends.
+The message destination field is zero on every message either station sends. Flag 0x40 is the
+`ReliableSlidingWindow` send loop `0x6f0638` passing `w4 = 1` to the window's send vfunc: `w4 = 0`
+for a slot whose send count `[slot+0x14]` is zero (`0x6f0908`), 1 for a resend (`0x6f0a9c`) and an
+early send (`0x6f0c38`); `0x6e7250` stores it as byte 0 of the option block it hands the packet
+writer.
 
 ### RTT
 
@@ -199,10 +204,18 @@ With no sample for any destination `0x6f0d14` returns the window's unscheduled m
 `[window+0x5c]`. A message is sent once when queued (`0x6f1bbc`..`0x6f1bd4` set its time to now),
 then parked at the marker and skipped at `0x6f0a18` on every pass until a sample exists, when it is
 re-armed to the deadline (`0x6f09f4`..`0x6f0a08`). A reliable window with no RTT sample never
-retransmits. `[window+0x80]` is written only at `0x6f1fc8` in `0x6f1f98`, as milliseconds converted
-to ticks, from `ReliableProtocol::vfunc17` (`0x6eebbc`) and `BroadcastReliableProtocol::vfunc17`
-(`0x6e6818`). No call site passes it a constant. The console's tail pacing bounds it from above
-(The retail acknowledgement, below).
+retransmits.
+
+`[window+0x80]` is 33 ms. The `ReliableSlidingWindow` constructor `0x6eeea8` (callers `0x6e69f8`,
+`0x1800038`) stores `ticks_per_second * 33 / 1000` there (`0x6eef34`..`0x6eef74`: `x8 + (x8 << 5)`,
+then the division by 1000); run under unicorn it leaves 633,600 ticks, 33.0 ms at 19.2 MHz. The same
+constructor sets the unscheduled marker `[+0x5c]` to 0, the base sequence `[+0x30]` to 1, the own
+index `[+0x10]` to 0xfd, compression `[+0xa4]` to 1 and the early-send limits `[+0x88]` and
+`[+0x89]` to 0. The only later writer is `0x6f1fc8` in vfunc17 `0x6f1f98`, reached from
+`ReliableProtocol::vfunc17` (`0x6eebbc`) and `BroadcastReliableProtocol::vfunc17` (`0x6e6818`); no
+caller of either was found. The send loop runs once per 16.7 ms frame, so a resend leaves on the
+first frame at or after `33 + int(1.4 * RTT)` ms: 83 ms at an RTT of 34 ms, 550 ms at 358 ms, the
+intervals measured below.
 
 ### The records
 
@@ -229,8 +242,12 @@ The first chunk carries the player the game shows as the partner:
     +0x53  1   5
 
 Chunks 2 to 24 are high-entropy and carry no readable string; chunks 25 to 46 are zero in the sets
-read. A station sends its first chunk and then a run of later chunks in the same tenth of a second:
-the host fifteen and the joiner seven in the passive capture measured. `pokeldn.sv.streams.decompress` reads them and
+read. A station sends its whole set at once, in first-send order 1 to 46: the first packet carries
+ids 1, 25, 26 to 36 and 46, the second 2, 37 and 38 to 45, then 3 to 24 one per packet (41 of 48
+retail sets, as host and as joiner). The zero chunks compress to one size, so 26 to 36 and 38 to 45
+travel behind a presence byte of 0x00, every header field inherited
+([Message framing](pia.md#message-framing)). Of 52 retail sets, 46 went out within 0.19 s, and 22 of
+the 25 that arrived whole within 0.164 to 0.190 s. `pokeldn.sv.streams.decompress` reads them and
 `scratchpad/pia6_air_decode.py` writes each one out.
 
 ### The retail acknowledgement, and a flood of retransmits
@@ -243,85 +260,92 @@ bulk ack declared 47, the same host acked 47 with an empty mask. `pokeldn.sv.str
 builds this, and `tests/test_sv.py` pins it to two of the host's acks. `bin/sv_join.py` sends it;
 `--ack-highest` sends one past the highest id seen instead.
 
-A host's own record set on 0x81 port 0 leaves in two parts. Ids 1 to 25 and 37 go at once, in the
-order 1, 25, 2, 37, 3, then 4 to 24 over about 0.17 s. The tail, ids 26 to 36 and 38 to 46, goes
-one record at a time: in 19 of 20 first arrivals of a tail record, the host's `lowest_pending` in
-that header equals the record's own id, so each is first sent once the one before it is
-acknowledged. An acknowledgement that declares one past the highest id seen (38 after the burst)
-makes the host count 26 to 36 acknowledged: they are never sent, its `lowest_pending` goes from 1
-to 38, and only 38 to 46 form a tail. Unacknowledged, the host retransmits all 26 records of the
-burst about every 100 ms at HT MCS3, 130 to 150 records a second, about 3% of the air and the whole
+A host resends every record of its set not yet acknowledged, on the retransmit deadline of RTT
+above, with message flag 0x40. A round carries the outstanding records in one packet, the lowest
+first, with the host's `lowest_pending` equal to that id, and shrinks as acknowledgements arrive: 20,
+19, 18 and so on after a burst whose zero chunks went unacknowledged. A message walk that stops at a
+presence byte of 0x00 reads only the first record of each round, acknowledges one record per round,
+and takes 19 rounds to finish the set. Against such a walk, an acknowledgement declaring one past
+the highest id read (`--ack-highest`, 38 after the first two packets) moves the host's
+`lowest_pending` from 1 to 38 at once.
+
+Unacknowledged, a host retransmits every record of its set, each on its own deadline, at HT MCS3:
+435 to 494 records a second at the peak of the long floods, about 3% of the air and the whole
 150 KB/s of a board's line to its host.
 
-The interval between tail records grows with the RTT the host holds for the station, with a slope
-of 1.41 x RTT, the 1.4 of the retransmit deadline in RTT above. Against the host's RTT estimate
-(the joiner's answer delay plus the joiner's own RTT to the host), per seat:
+The interval between rounds is `[window+0x80] + 1.4 x RTT`, rounded up to the send loop's frame
+(RTT above). Against the host's RTT estimate (the joiner's answer delay plus the joiner's own RTT to
+the host), per seat:
 
-| answer delay | estimated RTT | tail gap, seat medians |
+| answer delay | estimated RTT | round interval, seat medians |
 |---|---|---|
-| 0.000 s | 0.033 to 0.038 s | 0.086 to 0.116 s |
+| 0.000 s | 0.013 to 0.017 s | 0.065 to 0.069 s |
+| 0.000 s | 0.033 to 0.038 s | 0.078 to 0.116 s |
+| 0.000 s | 0.053 to 0.059 s | 0.115 to 0.221 s |
 | 0.318 to 0.328 s | 0.354 to 0.363 s | 0.532 to 0.555 s |
 
-The per-seat intercept, the gap less 1.4 x RTT, is 0.030 to 0.059 s, and up to 0.066 s in three of
-the prompt seats. The send loop runs once per frame, and `GetRtt` and `1.4 * rtt` are truncated to
-milliseconds, so the intercept is an upper bound on `[window+0x80]`, not its value.
-
-The retransmit interval of a repeated burst id converges on the tail gap in the same seat: one seat
-repeated at 0.19 to 0.20 s with 4 to 5 RTT answers held, 0.10 s with 8 to 18 and 0.082 s with 20,
-against a tail gap of 0.084 s. With answers 0.3 s late the tail's 19 gaps take about 10.3 s, and
-those seats were announced 10.23 to 13.66 s in. What holds a tail record already queued until the
-deadline is not traced: the enqueue `0x6f1994` stamps a new slot with now (`0x6f1bd4`), and ids 25
-and 37 leave in the first datagram with 1 and 2.
+The retransmit interval of one record converges on the round interval as the host's RTT ring fills:
+one seat resent at 0.19 to 0.20 s with 4 to 5 RTT answers held, 0.10 s with 8 to 18 and 0.082 s
+with 20, and its later rounds came 0.089 s apart. With answers 0.3 s late the host's set stood
+acknowledged 9.06 to 12.10 s after it was sent, and those seats were announced 10.23 to 13.66 s in.
+Nothing on the console holds a queued record back: the window's constructor `0x6eeea8`, send buffer
+`0x6e6e94`, enqueue `0x6f1994` and send loop `0x6f0638`, run under unicorn with only the clock, the
+deadline and the window's send vfuncs intercepted, send 46 records of the measured sizes in one pass
+with `w4 = 0` and nothing more before the deadline.
 
 Every seat that flooded this way was one whose board could not send while its line was full
 ([the serial ceiling](hardware_esp32.md#the-serial-ceiling)): the joiner's acks waited up to
-seconds, the host kept `lowest_pending` at 1 for 3.5 to 13 s, and the flood kept the line full. With
+seconds, the host kept `lowest_pending` at 1 for 3.2 to 12.4 s, and the flood kept the line full. With
 that fixed, a seat holding 26 moved to 27 at 1.9 s and repeated records for one second. The form of
 the ack alone decided nothing: a seat with the retail form still flooded 6 s.
 
 `bin/sv_join.py` acks a new record at once and a repeat at most once per 50 ms per stream
-(`--repeat-ack-gap`): in a one-second burst of 91 repeats it sent 38 packets, against about 150 with
-an ack per repeat. The host's `lowest_pending` moved at the same point either way.
+(`--repeat-ack-gap`): in a one-second burst of 91 repeats read it sent 38 packets, against about 150
+with an ack per repeat. The host's `lowest_pending` moved at the same point either way.
 
 With the board fixed, the host's own processing sets the pace. Its radio acknowledged every one of
 the joiner's frames within 7 ms of it entering the board's driver, and the joiner acked each host
 record within 1 ms of reading it, yet the host's `lowest_pending` left 1 between 0.73 and 0.81 s
-after its set on every seat, calm or flooding, and its ack masks for the joiner's records advance in
-steps about 0.19 s apart. The host sends its set about 0.1 s after the joiner's stream open and
-record set, so `--open-delay` and `--record-delay` place it.
+after its set on every seat with prompt answers, calm or flooding, and its ack masks for the
+joiner's records advance in steps about 0.19 s apart. The host sends its set about 0.1 s after the
+joiner's stream open and record set, so `--open-delay` and `--record-delay` place it.
 
 Whether the set floods depends on the RTT answers the host holds when it sends it:
 
-| RTT answers before the set | answer delay | seats | repeated records | `lowest_pending` left 1 after |
+| RTT answers before the set | answer delay | seats | records resent before `lowest_pending` left 1 | `lowest_pending` left 1 after |
 |---|---|---|---|---|
-| 0 or 1 | any | 6 | 0 | 0.79 to 1.01 s |
-| 2 to 6 | 0 | 5 | 91 to 106, every 0.16 to 0.20 s | 0.73 to 0.80 s |
-| 3 to 7 | 0.3 s | 5 | 0 | 0.50 to 0.54 s |
+| 0 or 1 | 0 | 3 | none in two, 138 in one | 0.78 to 0.81 s |
+| 3 to 6 | 0 | 4 | 122 to 137, each id every 0.18 to 0.20 s | 0.73 to 0.80 s |
+| 0 | 0.3 s | 4 | none | 0.91 to 1.01 s |
+| 1 to 7 | 0.3 s | 9 | none | 0.50 to 0.58 s |
+
+In every one of these seats the rounds that followed resent 158 to 272 records, the ones a walk
+stopping at presence 0x00 had left unacknowledged.
 
 The retransmit interval follows the measured RTT through the deadline in RTT above: a few prompt
 answers bring it under the host's own 0.8 s ack latency. `--rtt-delay 0.3` answers each RTT request 0.3 s late; the host announces the
 station and the trade completes: twelve seats of twelve were announced, two of them the next seat
 after the console's post-trade host migration (`--leave-on-migration 3`, the player searching
 again), each traded. `bin/sv_join.py --announce-timeout SECONDS` leaves a seat not announced within
-that time and scans again. A station that never answers RTT is never announced (four seats of
-four), so `--no-rtt` cannot remove the flood.
+that time and scans again.
 
-Such a seat is held by the host's own unfinished transfer. The 0x81 streams send through the
-`ReliableSlidingWindow` send loop, so with no RTT sample nothing is retransmitted
-([Protocol 0x81](pia.md#protocol-0x81-the-stream-broadcast-reliable-transfer-pia-6)). In the four
-seats with no answer, no id was sent twice, the joiner's own set was acknowledged to 47, and the
-host answered 40 to 46 of the joiner's RTT requests:
+With no RTT sample the 0x81 streams never retransmit
+([Protocol 0x81](pia.md#protocol-0x81-the-stream-broadcast-reliable-transfer-pia-6)). In four seats
+whose joiner answered no RTT request, no id was sent twice, the joiner's own set was acknowledged to
+47, and the host answered 43 to 47 of the joiner's RTT requests. Each host sent its whole set in the
+first burst; the joiner, stopping its walk at presence 0x00, read none of 26 to 36 and 38 to 46, and
+a record lost on the air stayed lost:
 
-| seat | host ids that never arrived | host `lowest_pending` | seat ended |
+| seat | host ids lost on the air | host `lowest_pending` | seat ended |
 |---|---|---|---|
-| 0 | 11, 26 to 36, 38 to 46 | 11 from 1.51 s | 22.72 s |
-| 1 | 26 to 36, 38 to 46 | 26 from 2.86 s | 22.68 s |
-| 2 | 19, 26 to 36, 38 to 46 | 19 from 2.86 s | 20.49 s |
-| 3 | 18, 23, 26 to 36, 38 to 46 | 18 from 1.46 s | 20.02 s |
+| 0 | 11 | 11 from 1.51 s | 22.72 s |
+| 1 | none | 26 from 2.86 s | 22.68 s |
+| 2 | 19 | 19 from 2.86 s | 20.49 s |
+| 3 | 18, 23 | 18 from 1.46 s | 20.02 s |
 
-A record lost in the burst held the host's `lowest_pending` at its id for the rest of the seat and
-was never resent. With nothing lost (seat 1), 1 to 25 stood acknowledged from 2.86 s and record 26
-was never sent in 20 s.
+The lowest record left unacknowledged held the host's `lowest_pending` at its id for the rest of the
+seat and was never resent. In seat 1 that record was 26, which had arrived in the first packet
+behind a presence byte of 0x00.
 
 ### What a passive capture misses
 
@@ -1174,10 +1198,11 @@ response does, and a joiner that waits for the response sends nothing for the wh
 - Why two seats that completed both 0x81 transfers were never announced. Of the eight
   unannounced seats since the identity fixes (three more ended when the association dropped before
   the console sent a record), six ended with the console's own transfer unfinished: the four
-  `--no-rtt` seats, and two seats the joiner left at 20 s while the console was still sending its
-  tail, whose sibling seats were announced at 13.26 and 17.81 s. In the other two, RTT answered at
-  once, the console's set stood acknowledged at 7.65 and 7.88 s and the joiner's at 7.65 and 4.56 s,
-  and the console sent nothing on 0x80 port 2 or 0x7C port 2 in 200 and 24 s. Its 0x80 port-2 bulk
+  `--no-rtt` seats, and two seats the joiner left at 20 s while the console was still resending
+  records the joiner's walk had dropped, whose sibling seats were announced at 13.26 and 17.81 s. In
+  the other two, RTT answered at once, the console's set stood acknowledged at 7.65 and 7.88 s and
+  the joiner's at 7.65 and 4.56 s, and the console sent nothing on 0x80 port 2 or 0x7C port 2 in 200
+  and 24 s, presence-0x00 messages included. Its 0x80 port-2 bulk
   acks carried the destination bitmap `[2]` and a payload byte-identical to an announced seat's;
   whether that bitmap is built from `[window+0x40]` is unknown. One followed a seat that ended in
   host migration 0.5 s in, the other a failed association (LDN reason `0xc9`). A migration before
@@ -1191,14 +1216,6 @@ response does, and a joiner that waits for the response sends nothing for the wh
   object's vtable `[x21]` (`0x4455ec0` or a sibling of the 0xF388 class confirms the attribution
   above); at `0xe45fb0`, the vfunc20 result `w8`; at `0x18ab8e8`, the pending request's type
   `[x8+0x40]` and done byte `[x8+0x42]`.
-- What holds a queued tail record back until the retransmit deadline. The enqueue stamps a new slot
-  with now, and ids 25 and 37 leave in the first datagram, yet each tail record waits one interval.
-  Candidates in the send loop: the per-call byte budget `[proto+0x64]` (refilled by `0x6ee498` from
-  `[proto+0x60]`), the early-send buckets by send count `[slot+0x14]` against `[w+0x88]`
-  (`0x6f0aac`..`0x6f0c98`), and the INITIALIZED stop at `0x6f0990`..`0x6f0998`. A breakpoint in
-  `0x6f0638` on the console's first send of id 26 reads which test held it.
-- The value the game gives `[window+0x80]`. No call site of vfunc17 (slot 0x88) in Pia's range
-  passes a constant, and its callers were not identified. A breakpoint at `0x6f1fc8` reads it.
 - Which path creates a type-2 request, and whether a stale one holds later seats. A client's type-2
   join request (`0x2799b10`) uses the same `+0xb8` and the same refusal; if its master leaves, the
   event runs `0x12fbef0` alone, the job ends at 15 s and nothing clears `+0xb8`, and the relay
@@ -1207,11 +1224,9 @@ response does, and a joiner that waits for the response sends nothing for the wh
   console joins another station's slot as a client is unknown. The check: a `bin/sv_host.py`
   session in which the console joins as a client and the host stops before its type 9, then
   `bin/sv_join.py` without restarting the game, and once more after a restart.
-- What the receiving side of a StreamData kind 0 does (the send side is `0xe224f8`..`0xe22520`,
-  through BroadcastReliable vfunc12), whether it is what sets a station's `[proto+0x98]` byte, and
-  what the control kinds 4 and 5 carry. The wire order suggests the kind 0 sets the byte: the
-  console's set follows the joiner's kind 0 on port 0 by about 0.1 s in every seat. Reading the
-  kind switch in StreamBroadcastReliable's receive path settles both.
+- Whether a seat whose joiner answers no RTT request, reads every message and loses none of the
+  host's records is announced. The four seats measured each lost a record on the air or ran with a
+  walk that stopped at presence 0x00 (The retail acknowledgement, and a flood of retransmits).
 
 **A trade is complete on a retail Scarlet (2026-09-22).** The console joins a network
 `bin/sv_host.py` puts up, takes the host's identity as four messages, draws the host's offer with

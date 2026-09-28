@@ -83,11 +83,33 @@ same message framing with one extra field. `pokeldn/ldn/pia4.py` implements the 
 ## Message framing
 
 A Pia payload carries one or more messages. Each opens with a presence byte saying which header
-fields follow. The walk stops at `0xFF` and at nothing else (`0x01852da0`); `0x00` is a legal
-one-byte header stating no field at all. A field the presence byte omits is inherited from the
-previous message in the same packet (`0x01853050`, bit by bit): flags at +9, size at +0xA,
-protocol|port at +0xC, destination at +0x10 and source at +0x18. An inherited size is bounds-checked
-against 0x589.
+fields follow. The walk stops at `0xFF` and at nothing else; `0x00` is a legal one-byte header
+stating no field at all, a message whose flags, size, protocol, port and destination are all the
+previous message's. A field the presence byte omits is inherited from the previous message in the
+same packet (`0x01853050`, bit by bit): flags at +9, size at +0xA, protocol|port at +0xC,
+destination at +0x10 and source at +0x18. An inherited size is bounds-checked against 0x589.
+
+Each band's own reader copies the previous header forward, then deserialises the new one, reading a
+field only when its bit is set:
+
+| header version | title read | reader | stop test | next message starts |
+|---|---|---|---|---|
+| 4 | Sword | `0x01852da0` | `0xFF` | on a multiple of four |
+| 9 (5.27-5.45) | Shining Pearl 1.3.0 | `0x159b980`, copy `0x159b9ec`..`0x159ba10`, fields `0x159bb60` | `cmp w8, #0xff` at `0x159b9d4` | on a multiple of four (`0x15abf68`..`0x15abf70`, all seven callers) |
+| 11 (6.16-6.30) | Legends Arceus 1.1.1 | `0x7484cc`, copy `0x748538`..`0x74855c`, fields `0x7486a8` | `0x748520` | where the payload ends (`0x743f14`..`0x743f18`) |
+| 11 | Scarlet 4.0.0 | `0x6ed2d0`, copy `0x6ed348`..`0x6ed360`, fields `0x6ed4b4` | `0x6ed324` | where the payload ends (`0x6e9054`..`0x6e905c`) |
+| 16 (6.39-7.2) | Legends Z-A | `0x256e088`, copy `0x256dac4`, fields `0x256de5c` | none: the packet header states its padding | where the payload ends |
+
+A station bundles runs of equal-sized messages this way: Scarlet sends its zero-filled record chunks
+behind presence 0x00, a Shining Pearl a reliable message that follows one of the same size, and
+an Arceus its second 24-byte record. Across every decrypted retail and emulated capture of the
+three version-9 and version-11 titles, a walk that treats 0x00 as a message ends exactly on the
+`0xFF` padding in every packet (5,866 Shining Pearl, 11,501 Arceus, 38,350 Scarlet); a walk that
+stops at 0x00 leaves bytes unread in 3,444 of them and drops everything after the first such
+message, of any protocol. `tests/test_pia_bundled.py` pins one packet of each title.
+
+Version 3 (Let's Go 1.0.2) has no presence byte: a fixed 0x16-byte header whose second byte must be
+1 (`0x5ae7d0`), the walk stopping at `0xFF` (`0x5ae790`).
 
 The header size is computed inline at eighteen sites in the version-4 Pia band, always as the same
 five conditional adds over a base of one:
@@ -103,7 +125,8 @@ nothing past 0x0F. Version 9's header is 16 bytes; version 4 adds the eight-byte
 id is `station_protocol.ldn_constant_id` over the sender's MAC, the same integer the Local Protocol's
 `host_constant_id` carries: big-endian in the Pia header, little-endian in the Local Protocol body.
 
-Each message is padded to a multiple of four, and the packet tail is `0xFF`.
+In versions 4 and 9 each message is padded to a multiple of four, and the reader steps over the
+padding without reading it: a Shining Pearl pads with 0x00. The packet tail is `0xFF`.
 
 `pia4.parse_packet()` resolves the inheritance; `pia4.parse_messages()` returns each header as sent.
 The check that a walk is correct is that consumed bytes plus `0xFF` padding account for the whole
@@ -783,7 +806,7 @@ any destination it never retransmits.
 
 Each message carries an eleven-byte StreamData header, written by `0x6f60e8`:
 
-    +0  1  kind: 0 a receive posted, 1 the first chunk, 2 a later chunk; 4 and 5 are control kinds
+    +0  1  kind: 0 a receive posted, 1 the first chunk, 2 a later chunk, 3 to 6 control
     +1  1  transfer id
     +2  1  percent of the block delivered after this chunk
     +3  4  big-endian u32: the receive capacity in a kind 0, zero in a chunk
@@ -797,6 +820,30 @@ byte equals the id. The chunk loop (`0x6f5b54`..`0x6f5c58`, in `0x6f5560`) enque
 `0x6f1ef8` finds a free slot, chunks of `[window+0x70] - 11` bytes, kind `(offset != 0) + 1`
 (`0x6f5bb0`..`0x6f5bbc`), the id from `+0xa4`, and the percent `(offset + chunk) * 100 / size`
 (`0x6f5b78`..`0x6f5b98`), also kept at `+0xba`.
+
+The receive loop `0x6f5cdc`, called from the update `0x6f5360` after `0x6f5560`, pulls each message
+with BroadcastReliableProtocol vfunc13 (`0x6e644c`, the sender at `sp+0xb80`), decodes the header
+with StreamData vfunc3 (`0x6f635c`), resolves the sender's index with `0xe42ddc`, and switches on the
+kind through the byte table at `0x3c0d5e5`; a kind above 6 is ignored:
+
+| kind | target | what the receiver does |
+|---|---|---|
+| 0, receive posted | `0x6f5e5c` | in its own state 1, 2, 4, 5, 8, 9 or 10 (mask 0x736), flags the sender in `[+0xc0]`; otherwise (`0x6f6094`) `[+0x98][sender] = id` and `[+0xa0] = min([+0xa0], capacity)` |
+| 1, first chunk | `0x6f5e90` | clears the received count `+0xac` and `+0xba`, state 4 to 5, then as kind 2 |
+| 2, chunk | `0x6f5eb4` | in state 5 only, for id `+0xa5` from sender `+0xb0`: copies the data to `[+0x88] + [+0xac]` if it fits `+0x90`, adds its length, keeps the percent at `+0xba` |
+| 3 | `0x6f5f2c` | in state 4 only: resets the transfer, every `[+0x98]` to 0xff, state 7 |
+| 4 | `0x6f5f9c` | resets the transfer, every `[+0x98]` to 0xff, state 0xC |
+| 5 | `0x6f6000` | `[+0x98][sender] = 0xff`, flags the sender in `[+0xc8]` |
+| 6 | `0x6f6024` | in state 0xA only: resets, state 0xB |
+
+The control kinds carry id 0xff. The update `0x6f5560` sends kind 3 to every station flagged in
+`[+0xc0]` (`0x6f6268` with `w2 = 3`, `0x6f5750`) and kind 6 to every station flagged in `[+0xc8]`
+(`0x6f57d8`); in state 9 it sends kind 5 to the expected sender `[+0xb0]` (`0x6f5904`, unicast
+through `0x6f1de8`) and goes to state 0xA; in state 8 it sends kind 4 to its destinations
+(`0x6f5984`). Kind 3 is a busy sender refusing a receive posted during its transfer, kind 4 a sender
+cancelling its transfer, kind 5 a receiver cancelling its receive, kind 6 the sender's
+acknowledgement of that cancel. A station's kind 0 is what sets its `[+0x98]` byte to the transfer id
+on an idle sender, and the smallest capacity posted bounds the block the send API accepts.
 
 The protocol's state at `+0x78` (`0x6f53b0`): a receive goes from 5 to 6 when `+0xba` reaches 0x64
 (`0x6f5460`); a send goes from 2 to 3 when an entry of `[+0x98]` equals `+0xa4` and the window
