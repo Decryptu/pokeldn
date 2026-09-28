@@ -393,7 +393,11 @@ The shared value is the 16-bit sub-element the `+0xf0` channel owns
 A station's own write sets the body and the resend byte and leaves the ready byte alone: the only
 halfword store to `+0x60` in the 16-bit class is its receive handler (`0x006d6a08`). `0x006d3260`
 therefore reads `0xfc18` on a station that has only written it, until a message for that
-sub-element arrives. The publish reaches the element's primary slot 0 (`0x006d5730`), which queues the body once per
+sub-element arrives. On the master that message is its own: the receive slot `0x006d69f0` (`cmp
+x2,#2`, then `strh [x0+0x88]`, `str x3,[x0+0x78]`, `strh [x0+0x60]`) sets the ready byte, and the
+write path stores only the body (`0x006d35b8 strh w8,[x20,#0x88]!`). In a completed trade with the
+client as joiner, all 149 of the client's messages on 40040 carried a four-byte body, none a
+two-byte one, and the console's step body's low half followed each of its own shared values. The publish reaches the element's primary slot 0 (`0x006d5730`), which queues the body once per
 station in `[element+0x70..+0x78]`.
 
 ### The step body
@@ -456,16 +460,36 @@ Pump state 8 waits on `0x006a2840`, and both the commit `0x010de310` and state 1
 flag set before the commit does not count towards the next state 8. The flag is set inside the
 network update's message drain, outside the pump: `0x006a9a20` calls Pia's dispatch `0x006a8380`
 (`0x006a9a54`) and then the manager's drain `0x006db3b0` (`0x006a9a90`), which drains every
-registered port ([the routing path](swsh_protocol.md#the-routing-path)).
+registered port ([the routing path](swsh_protocol.md#the-routing-path)). The drain has three
+callers, `0x00ef4a9c`, `0x01109250` and `0x01109308`; the frame function `0x00f1df30` runs two of
+them, one on each side of the game update:
+
+    0x00f1df30  bl 0x01109240     network update: 0x01109250 bl 0x006a9a20, the drain
+                bl 0x00fa09a0
+                bl 0x00f1cc60     the game update
+                bl 0x00793ec0
+                bl 0x011092f0     0x01109304 bl 0x01111db0, 0x01109308 bl 0x006a9a20, the drain again
 
 Two more content-40 handlers read the map, RequestCancel and RequestCancelAll on 30040
 ([below](#the-cancel-and-proceed-messages)).
 
-Measured with the command count as the only variable: one command bought two rungs (to `01000200`);
-four commands bought four (to `02000300`). The queue must not run dry: the trigger pops on any
-four-byte body not seen before, and the first such body is the birth sentinel `000018fc`, so the
-first command is spent on something that is not a rung. `--confirm-commands 0,1,2,3,0,1,2,3,0,1,2,3`
-is the working line.
+A rung takes one command that reaches the master after the previous commit: the flag is a boolean
+and the commit clears it. In rung 0 no commit precedes state 8, so any command received after the
+registrar counts, the one sent on the cue `00000100` included. In later rungs the command sent on
+the cue (`01000200`, `02000300`, `03000400`) arrives before the commit that follows the adoption and
+is cleared; the one sent when the low half catches up (`01000100`, `02000200`, `03000300`) serves
+the rung. Measured with the command count as the only variable, each command sent on the body just
+received:
+
+| commands | sent on | last body |
+|---|---|---|
+| 1 | `00000100` | `01000200`: rung 0 |
+| 4 | `000018fc`, `00000100`, `01000100`, `01000200` | `02000300`: rungs 0 and 1; the command on `01000200` cleared |
+| 9 | every new body from `000018fc` to `04000400` | `04000400`: the trade |
+
+The trigger pops a command on every four-byte body not seen before, the birth sentinel `000018fc`
+included, so the queue must not run dry. `--confirm-commands 0,1,2,3,0,1,2,3,0,1,2,3` is the
+working line.
 
 `answer_rpc` copies the body it was handed, so an answer that echoes a step carries the console's own
 two u16s back and moves neither half. `--confirm-phase N` writes the low half and keeps the high one.
@@ -570,23 +594,35 @@ three ASCII bytes at 0x39 read `3`), a crown top right and five stars. The crown
 icon, is `dex_complete` at 0x30: a second card with it cleared kept its five stars and lost the icon.
 
 The card view `0x01592e70` copies the card it holds (`view+0x3c0`) and draws the front's stars with
-`0x015a52f0(view, count)`, which lights the first `count` of seven panes (`view+0x618..+0x648`):
+`0x015a52f0(view, count)`, which clears seven panes (`view+0x618..+0x648`) and lights `count + 1`
+of them, the first even for count 0:
 
     count = card[0x177] + (card[0x1b6] != 0) + (card[0x1b7] != 0)      0x015930bc..0x015930dc
 
-The same function passes `card[0x24]`, the game, to `0x015a5260` and `card[0x1b3] != 0` to
+A card with 4 at 0x177 and zero at 0x1B6 and 0x1B7 draws five stars. The validator below caps the
+count at 6; a count of 7 would light `view+0x650`, outside the seven panes. The same function passes `card[0x24]`, the game, to `0x015a5260` and `card[0x1b3] != 0` to
 `0x015a50d0`. The card builder `0x0158eef0` (callers `0x00c77830`, `0x014be578`, `0x0156167c`,
 `0x01561b0c`, `0x01568f4c`, `0x015691bc`) fills those bytes from the save:
 
 | byte | value | site |
 |---|---|---|
-| 0x177 | 4 when flag `0x7d0b1ced4dbe8a87` is set; otherwise 3, 2, 1 or 0 for a badge count above 6, above 3, non-zero, zero | `0x0158f084`, `0x0158f484..0x0158f4dc`, stored `0x0158f0c4` |
-| 0x1B3 | flag `0xe44b16771524b07e` | `0x0158f0fc` |
-| 0x1B6 | flag `0x8f1a133dff5c0ecf` | `0x0158f11c` |
-| 0x1B7 | flag `0xd450875d834cfc30` | `0x0158f12c` |
+| 0x177 | `DesignLevel`: 4 when `FSYS_GAME_CLEAR` (`0x7d0b1ced4dbe8a87`) is set; otherwise 3, 2, 1 or 0 for a badge count above 6, above 3, non-zero, zero | `0x0158f084`, `0x0158f484..0x0158f4dc`, stored `0x0158f0c4` |
+| 0x1B1 | `FSYS_SEED_CHALLENGE` (`0xbd07c2b80232e9b0`) | `0x0158f564..0x0158f5a0` |
+| 0x1B3 | `FSYS_INPUT_SHIRT_NUMBER` (`0xe44b16771524b07e`) | `0x0158f0fc` |
+| 0x1B6 | `FSYS_R1_GAME_CLEAR` (`0x8f1a133dff5c0ecf`), one more star | `0x0158f11c` |
+| 0x1B7 | `FSYS_R2_GAME_CLEAR` (`0xd450875d834cfc30`), one more star | `0x0158f12c` |
 
-The badge count is `0x01438fb0`, a popcount of `[status+0x60]`; the flags are read by `0x01410f30`.
+The flag names hash to these values under the game's FNV-1a 64 basis `0xcbf29ce484222645`
+([the protocol page](swsh_protocol.md#the-player-profile)). The badge count is `0x01438fb0`, a
+popcount of `[status+0x60]`; the flags are read by `0x01410f30`. The name `DesignLevel` is the
+`capture_data.prmb` column the reader at `0x0158ead4..0x0158eb30` stores at 0x177 (hash
+`0x3bc4598485d2a2ef`, string `0x01c2a2e9`, `strb w0,[x22,#0x177]`); `GlossIndex` follows at 0x178.
 The retail Sword card pokeldn sends carries `04` at 0x177 and zero at 0x1B6 and 0x1B7.
+
+The game checks a card with `0x0158f5e0` before showing it and replaces one it rejects with a
+default; it returns 1 to reject. Run under unicorn on the card pokeldn sends (0x177 = 4, 0x1B3 = 1,
+language 3) it accepts; DesignLevel 5, language 6 or GlossIndex 9 are rejected, DesignLevel 4 and
+0x1B6 or 0x1B7 set to 1 accepted. A `--card-set` edit must stay inside those ranges.
 
 `bin/swsh_host.py --card-set FIELD=VALUE` edits the card it sends (`pokeldn.swsh.league_card`
 names the fields), so a fresh `trainer_id` makes the console offer to keep it.

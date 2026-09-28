@@ -26,9 +26,15 @@ The Switch release carries the GBA ROM as the only file in its RomFS.
 |---|---|---|---|
 | 01004B3023412000 | `/FireRed_f.gba` | 16777216 | `07566b82dbd2a91321698f730f6400ae4c56ddf1` |
 | 010087C02342E000 | `/LeafGreen_f.gba` | 16777216 | `9f774956dfbad7f69ddb91fb91d2c26e54408f75` |
+| 0100554023408000 | `/FireRed_e.gba` | 16777216 | `baa452d0b24629dd7782cfc07a8984085dde1311` |
+| 010034D02340E000 | `/LeafGreen_e.gba` | 16777216 | `62b9fc77549dbc67032eb6cbd0ea6ad3b825690f` |
 
 Header at 0xA0 reads `POKEMON FIRE` `BPRF` and `POKEMON LEAF` `BPGF`, software version 0x0A: the two
 cartridges the consoles run, and the builds every address on this page was measured against.
+
+The English pair (`BPRE`, `BPGE`, version 0x0A, from the base v0 packages) is byte-identical to
+`pokefirered_switch.gba` and `pokeleafgreen_switch.gba` as `pret/pokefirered` pins them, so the decomp
+is an exact map of the English release.
 
 The Program NCA has one CTR RomFS section and no update, so there is no BKTR layer over it and
 `bktr_read.py` refuses it. `scratchpad/base_romfs.py` opens the same section with the same reader:

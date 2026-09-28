@@ -139,6 +139,13 @@ The advertisement reports local communication id `0x0100ABF008968000` (Sword's),
 60001, app version 7. The Mystery Gift local-wireless screen advertises the same comm id and version
 under scene id 65535.
 
+Shield uses Sword's local communication id. Shield 1.3.2 builds `0x0100ABF008968000` as a constant
+(`0x011083e0 mov x8,#0x8000`, `movk #0x896,lsl16`, `0x011083ec movk #0xabf0,lsl32`, `0x011083f0
+movk #0x100,lsl48`, stored at `sp+0x88` by `0x01108404`), and Shield's `control.nacp`, in the 1.0.0
+base and the 1.3.2 update alike, lists `LocalCommunicationId[0] = 0x0100ABF008968000` and `[1..7] =
+0x01008DB008C2C000`, its own id. Neither id occurs as data in `main`. That the u64 at `sp+0x88`
+becomes the LDN intent is not traced.
+
 The 384 bytes of application data open with the Pia header the wiki records for system communication
 version 5, and the game's own data starts at 0x18:
 
@@ -270,6 +277,16 @@ event type at `[x1]`, table `0x02083fe8`) also writes `+0xf8`:
 | 1 | the backend's slot 30 (`0x01844bc4`), then `0x018412a0(obj, 2, id)` on a change |
 | 2 | the id `0x017d6080` returns (`0x01844a74`); the backend's slot 30 (`0x01844edc`); `0x01844f60` |
 | 3 | zero, with `+0x100` (`0x0184415c`, `stp xzr,xzr`), when `[obj+0xd4] != 3` |
+
+The stores to `+0xd4` in `0x01837000..0x01850000`:
+
+| value | site |
+|---|---|
+| 0 | `0x018399c8` |
+| 1 | `0x01837c1c`, `0x018396ac`, `0x0183dbbc` |
+| 2 | `0x01837a8c`, `0x01839474`, `0x0183cda8`, `0x0183d94c` |
+| 3 | `0x01839f7c`, in `0x01839cc0`, whose callers are `0x0177d8a0`, `0x0180afe0` and `0x0180bd0c` |
+| 4, else 2 | `0x0183a2cc`, in `0x0183a040`: 4 when `w8 - 6 < 3` (`0x0183a2b8..0x0183a2c8`); callers `0x0177e8a8` and `0x01818b68` |
 
 `LdnMatchmakeSession`'s slot 30 (`0x017a23d0`) returns `0xff` when `[this+0x18]` is null, and
 otherwise what `0x017672d0` makes of the 16-byte address at `[[this+0x18]+0x18]+0x2c0+8`: 0 when it is

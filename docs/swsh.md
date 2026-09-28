@@ -66,50 +66,44 @@ then `SYSREQ.N native, bytes`.
 
 ## Unresolved
 
-- Inside the player profile ([the protocol page](swsh_protocol.md#the-player-profile)): the sample
-  states 3, 4 and 6 are named only by the code that sets them (`StateCreateSession`, `StateConnect`,
-  `CallRaidBattleMatchingEvent_`); what the Battle Stadium team descriptor's `+0`, `+4` and `+6` and
-  match type 3 are. That the 0x100 bytes at 0xBF6+4 are an RSA-2048 signature over the stored-form
-  party is inferred from the `ModExp` call and its 0x148 stride. That `wr0201` and `wr0301` are the
-  Isle of Armor's and the Crown Tundra's wild areas is read from the numbering and from every capture
-  on Challenge Beach carrying 2; the strings the three area keys hash are unrecovered.
-- What the Pia session's `+0xf8` holds after mesh events 1 and 2
-  ([the session page](swsh_session.md#the-pia-session-object)). They store `LdnMatchmakeSession`'s
-  slot 30, a 32-bit value or `0xff`, which cannot equal a 64-bit LDN station id, so either those
-  paths do not run in an LDN session or `0x018407f0` turns false after one; event 3 zeroes `+0xf8`.
-  A breakpoint on `0x01844bc4`, `0x01844edc`, `0x0184415c` and `0x018407f0` through a hosted ladder
-  separates them.
-- The order of the network update's message drain (`0x006a9a20`, called from `0x00ef4a9c`,
-  `0x01109250`, `0x01109308`) against content 40's tick (`0x010dae70`, from `0x010c5f40` and
-  `0x010c9c34`) inside one frame is unread ([the trade page](swsh_trade.md#the-pump)). By the pump's
-  order, a command reaching the master between its state-10 write of the shared value and the commit
-  that follows the adoption is cleared by that commit. That the writing station reads its own shared
-  value back only once its message returns through the loopback sender is inferred.
-- What spends the first `syncCommand` a joiner sends. The registrar sets the committed phase to 0
-  before any pump runs, so a tail commit of phase 0 does not.
+- Inside the player profile ([the protocol page](swsh_protocol.md#the-player-profile)): which
+  feature the class of vtable `0x25614c0` serves (it starts activity record kind 11, `0x00dedf3c`, and
+  sets sample state 3 or 4); sample states 3, 4 and 6 are named only by the code that sets them
+  (`StateCreateSession`, `StateConnect`, `CallRaidBattleMatchingEvent_`). That `a_wr0301` is the
+  Crown Tundra's wild area is read from the numbering; one beacon taken there settles it.
+- What writes the Battle Stadium team descriptor's `+0`, `+4` and `+6`
+  ([the protocol page](swsh_protocol.md#the-battle-stadium-block)). A save holding a registered,
+  validated team shows it: dump its blocks and look for the 0x100-byte signature.
+- Whether the u16 the Battle Stadium signature covers is the team owner's game version, and whether
+  the signature is the one `v1/validate` returns. The request builder `0x011a2a70` and the reply
+  parser `0x011a2870` settle both.
+- Whether mesh events 1 and 2 store `LdnMatchmakeSession`'s slot 30, a 32-bit value or `0xff`, into
+  the Pia session's `+0xf8` in an LDN session ([the session page](swsh_session.md#the-pia-session-object)).
+  `+0xd4` is 3 or 4 only through `0x01839cc0` and `0x0183a040`; whether their callers are the
+  joint-session jobs alone, and which `+0xd4` each event branch needs, is unchecked. A breakpoint on
+  `0x01844bc4`, `0x01844edc`, `0x0184415c` and `0x018407f0` through a hosted ladder with a host
+  migration settles it.
+- Where content 40's tick (`0x010dae70`, from `0x010c5f40` and `0x010c9c34`) runs against the two
+  message drains of a frame, one before and one after the game update `0x00f1cc60`
+  ([the trade page](swsh_trade.md#the-command)). A backtrace at `0x010dae70` during a ladder on an
+  emulated console settles it.
 - What a console does with a partner's `RequestForcedProceed{c, c+1}`
   ([the trade page](swsh_trade.md#the-cancel-and-proceed-messages)). By the handler it writes `c+1`
-  as the shared value; on the master the adoption and the commit would then send its next command
-  with no `syncCommand` received, and a target other than the announced phase would be committed
-  through slot 7 with no command. No retail console sends the message, and none has been sent to one.
-- The five stars a retail Sword drew on a received League Card. The card carried 4 at 0x177 and
-  zero at 0x1B6 and 0x1B7, which the front's formula draws as four
-  ([the trade page](swsh_trade.md#the-league-card)); which view the player read, or whether the card
-  sent differed, is unmeasured, and setting 0x177, 0x1B6 and 0x1B7 one per run separates them. The
-  flags behind 0x177's grade 4 and behind 0x1B3, 0x1B6 and 0x1B7 are unnamed; none of the four
-  hashes is FNV-1a 64 of a printable string in rodata. That grade 4 marks the Champion title is
-  inferred from its outranking eight badges.
+  as the shared value, skipping pump states 8 to 10 but not state 3 of the next rung. No retail
+  console sends the message, and none has been sent to one. A joiner that keeps rung 0's
+  `syncCommand` and sends `RequestForcedProceed{c, c+1}` on 30040 in place of each later one settles
+  it: accepted if the shared value moves with no `syncCommand` in that rung.
 - That a partner card differing from a filed one only in the u64 at 0x1A8 brings the League Card
-  question back follows from `0x013fbc40` and is unmeasured.
+  question back follows from `0x013fbc40` and is unmeasured. A hosted trade whose card differs from
+  one the Sword holds only in 0x1A8 settles it.
 - Sword against Shield. Everything read off the binary is Shield's; the console is Sword. The
-  passphrase, the game key and the Pia version hold across the pair. The local communication id does
-  not: `0x0100ABF008968000` is Sword's. Mystery Gift's state names are Shield-only readings. That a
-  Sword tests bit 0 of a card's version mask follows from Shield's code with Sword's version 44
-  (`0x2C`) in place of `0x007d4270`'s `0x2D`, and from PKHeX's `RestrictVersion` (1 Sword, 2 Shield,
-  3 both); no Sword instruction has been read.
-- Mystery Gift redemption ([the gift page](swsh_gift.md)): what the console shows, and whether the
-  card counts as received, when a kind-1 Pokemon finds no room (`0x010159d0` returns `{0, 1}` and its
-  caller stores it untested); whether anything reads the last-receipt table at album `+0x15c0`
-  (accesses at those offsets elsewhere in `0x00fe0000..0x01460000` were not tied to the album). The
-  keep path `0x00ff14c0` and redemption have not been read in full for legality checks; illegal moves
-  were accepted on a retail console.
+  passphrase, the game key, the Pia version and the local communication id hold across the pair
+  ([the session page](swsh_session.md#taking-a-seat)). Mystery Gift's state names are Shield-only
+  readings. That a Sword tests bit 0 of a card's version mask follows from Shield's code with Sword's
+  version 44 (`0x2C`) in place of `0x007d4270`'s `0x2D`, and from PKHeX's `RestrictVersion` (1
+  Sword, 2 Shield, 3 both); no Sword instruction has been read.
+- Mystery Gift redemption ([the gift page](swsh_gift.md#what-the-menu-refuses)): whether the kind-1
+  builder `0x010b6110` or the placement `0x010159d0` checks legality (illegal moves were accepted on
+  a retail console); which texts messages 7, 8, 0xF, 0x10 and 0x11 of the array at `0x02064f80`
+  show, read so far only from the label order of `mystery.tbl`. A kind-1 card offered to a console
+  with a full party and full boxes puts message 8 on the screen.

@@ -1044,7 +1044,8 @@ offers it to the party (`0x01015b78`, virtual `+0x28`). When the party refuses i
 `[[0x2610798]+0x220]` for a free slot (`0x01408000`, `0x01015bd0`) and places the Pokemon only when
 one exists (`0x01406b00`, `0x01015c08`). It returns `{1, 0}` for a party placement, `{1, 1}` for a
 box, and `{0, 1}` when the Pokemon was not placed (`0x01015cd0`, `0x01015cf4`). Its caller stores that
-result at `+0x78` of the object `0x00feb610` returns (`0x01014fe4`) and does not test it.
+result at `+0x78` of the object `0x00feb610` returns (`0x01014fe4`) and does not test it. A card that
+fails the room test never reaches it ([What the menu refuses](#what-the-menu-refuses)).
 
 `Bag::AddItem` (`0x01420790`, arguments bag, id, count, new-flag)
 takes the pocket from item field 14 (`0x00788c50(id, 14)`, record byte `+0x11 & 0xF`; 0 Medicine,
@@ -1054,6 +1055,51 @@ finds the slot holding the id or the first empty one, and writes `id | min(count
 a slot whose count is already 999 refuses. One u32 per slot: id in bits 0-14, count in bits 15-29,
 bit 30 the new-item flag. The save block is registered by `0x0141fae0`, key `0x1177C2C4`, `0x12F8`
 bytes.
+
+## What the menu refuses
+
+Before redeeming a selected card, `0x01014a60` reads it: the kind `card[+0x7c]` (`0x01014bcc ldrb
+w22,[x21,#0x7c]`), `w25 = 0x00ff1750(card) - 1` (`0x01014bd4`, `0x01014be4`) and bit 2 of the record's
+flags `[card+0xe8]` (`0x01014be8 ubfx w24,w8,#2,#1`). For a kind-1 card it also runs the room test
+`0x013adee0` (`0x01014d68`). In order:
+
+    0x00ff1750 returned 1, 2 or 3    message 7, 0x10 or 0x11     0x01014d9c cmp w25,#3; table 0x02065360 = 7, 16, 17
+    kind 1 and no room               message 8                   0x01014c14 mov w21,#8
+    flag bit 2 set                   message 0xF, then state 3   0x01014d38 mov w1,#0xf; continuation 0x010156f0
+    otherwise                        state 3, the redemption     0x01014e70
+
+A refusal's continuation `0x01015740` stores 0 at `+0x80`, the menu's first state. A refused card is
+neither placed nor kept, so it can be claimed again once the cause is gone.
+
+`0x013adee0` returns 1, no room, when the box store has no free slot (`0x013adfb4 cset w20,eq`) and
+the party reports full (party vtable `+0x60`, slot 12, at `0x013adfc4`; `0x013adfd0 and`).
+
+`0x00ff1750(card)`, whose only caller is `0x01014bd4`, is the receipt check. It returns 1 at once
+when `[card+0x60]` or `[card+0x68]` is zero (`0x00ff1750..0x00ff1770`); for routes 0 to 2 it goes
+on through the tail branch `0x00ff17b4` to `0x00ff1a30`:
+
+    data = album+0x60 (0x014480e0)
+    record flag bit 0, and the card id's bit set in the bitmap at data+0x1450 (album +0x14b0)   -> 1
+    record flag bit 2 clear (0x00ff1ab0)                                                       -> 0
+    the record's day invalid (0x00ff1b84)                                                      -> 3
+    ten entries of 0x10 bytes from data+0x1560 (album +0x15c0), 0x00ff1b88..0x00ff1c70:
+        entry id == card id and card day <= entry day (0x016cc210, cset ls)                   -> 2
+        card day > entry day (0x016cc1f0, cset hi): a free entry
+    a free entry                                                                               -> 0
+    none                                                                                       -> 3
+
+The entries are written only by `0x01449560` ([What a record must carry](#what-a-record-must-carry)),
+whose only caller `0x00ff1558` is behind `0x00ff154c tbz w8,#2` on `[card+0xe8]`; it stores the
+record's own date (`0x01449570`, `0x01449648`), not the time of receipt. A card with flag bit 2 is
+therefore taken once per card date and at most ten a day: a card resent with an unchanged date is
+refused with message 0x10 on any later day while its entry survives.
+
+The keep path `0x00ff13f0` has one caller, `0x01014f74` in the redemption `0x01014eb0`, before the
+Pokemon is placed (`0x01014fb0 bl 0x010159d0`). Its body `0x00ff14c0` (sole caller `0x00ff1404`)
+calls `0x01449470`, `0x014494a0`, `0x01449560`, `0x01444f80`, `0x018fdc60`, `0x01444d60`, `0x01445000`
+and `0x01444de0`, none of which reads the Pokemon; `0x00ff13f0` then writes the current time
+(`0x01449ca0`, which calls `0x01900050`) to `card+0x70` for routes 1 to 4, or copies `card+0xd8` there
+for route 0, and files the card (`0x014480f0`). The keep path checks no legality.
 
 ## The card's date
 

@@ -348,7 +348,7 @@ optional whose flag is at `+0`, data at `+8`; the snapshot copies 0x188 bytes fr
 | 0x000 | u32 | CRC-16 of the 0x22fc-byte regulation core, zero-extended | `0x008ff9e0`: `0x0065dd70([reg+0x180]+0x60, 0x22fc) & 0xffff`, a table CRC over polynomial `0x8005`; the regulation class references `regulation_preset_core_%d.bin` (`0x008feb34`) |
 | 0x004 | 0x100 | the battle team's signature | `+0x36` of a 0x136-byte team descriptor at `match+0x98` (`0x00b2ef24`) |
 | 0x104 | 4 | zero | |
-| 0x108 | u64 | an optional u64 of the Battle Stadium manager, value `+0x1ab8`, flag `+0x1ab0` (`0x00adc8d0`); zero unless the match type (`vtable+0x40`) is 3 | `0x00b2f100` |
+| 0x108 | u64 | an optional u64 of the Battle Stadium manager, value `+0x1ab8`, flag `+0x1ab0` (`0x00adc8d0`); zero unless the match type (`vtable+0x40`) is 3, the online competition (below) | `0x00b2f100` |
 | 0x110 | u8 | the manager's byte at `+0x191c` (`0x00adbbe0`), when `0x00adb920` yields an object and `0x00b1ce10(0) == 2` | `0x00b2efc4` |
 | 0x111 | u32 | team descriptor `+0` | |
 | 0x115 | u16 | team descriptor `+4` | |
@@ -359,11 +359,40 @@ optional whose flag is at `+0`, data at `+8`; the snapshot copies 0x188 bytes fr
 The receiver `0x00b2e590` recomputes its own regulation CRC (`0x00b2e760`) and compares it with the
 partner's; with `0x008fc470` the result is 9 when both hold and 10 otherwise (`cinc` at
 `0x00b2e778`). `0x010719f0`, `0x01071a98` and `0x01071c00` compare the same CRC and a second one over
-0x640 bytes at `+0x188` (`0x008ffa10`). The partner's signature goes with its party to `0x011aedf0`,
-the only caller of `nn::crypto::detail::BigNum::ModExp` (PLT `0x018fff50`, GOT `0x0260fb38`), which
-sizes its buffer as `count * 0x148 + 4`, 0x148 being the stored PK8 size. The 0x136-byte descriptor
-is copied whole at 18 sites, four of them in `StateDownloadTeamMenu`'s code (`0x013e660c` to
-`0x013e7c58`).
+0x640 bytes at `+0x188` (`0x008ffa10`). The 0x136-byte descriptor is copied whole at 18 sites, four
+of them in `StateDownloadTeamMenu`'s code (`0x013e660c` to `0x013e7c58`).
+
+The signature is RSA-2048 with PKCS#1 v1.5 padding over SHA-256. The partner's signature goes with
+its party to `0x011aedf0(team, v, sig)`, the only caller of `nn::crypto::detail::BigNum::ModExp`
+(PLT `0x018fff50`, GOT `0x0260fb38`), with the signature as the third argument (`0x011aee2c mov
+x23,x2`). Its callers are `0x00b2f19c`, `0x00b2f1e0`, `0x00b2f2e0` and `0x0109eb68`.
+
+    0x011aee90  count records of 0x148 bytes, the stored PK8s        bl 0x7664c0, add w26,#0x148
+    0x011aeeac  v as a big-endian u16, then 00 01                    rev w8,w22; lsr #16; strh 0x100
+    0x011aef98  Sha256Impl::Initialize
+    0x011aefa8  BigNum::Set(modulus, .., 0x100), then Set(exponent, ..)
+    0x011aeffc  Sha256Impl::Update(message)
+    0x011af01c  BigNum::ModExp(out, sig, exponent, 0x100, ..)
+    0x011af06c  cmp x8,#0xca: the 00 01 FF..FF 00 padding
+    0x011af090  memcmp(.., Sha256Generator::Asn1ObjectIdentifier, 0x13)
+    0x011af128  Sha256Impl::GetHash, memcmp(.., 0x20)
+
+The console holds only the public key. The image carries the URLs
+`https://v3-lp1.vp.n.srv.nintendo.net/v1/public_key` (`0x01bd7d41`) and `.../v1/validate`
+(`0x01c11a93`); that a Nintendo server signs this message is deduced from the layout. A Link Trade
+snapshot carries 392 zero bytes there and never reaches the check.
+
+The match type is the constant the match object's virtual `+0x40` returns: the three match classes'
+vtables `0x2538238`, `0x2538358` and `0x2538478` hold at slot 8 `0x00adda60` (1), `0x00adde60` (2)
+and `0x00ade340` (3). Their constructors are reached from `0x00adcfb0(obj, mode)`, itself reached
+only through `0x00b1cdd0`, whose six callers are all in `StateBtlSpotTop` (`0x00b23080`, name at
+`0x01c21cd7`). That state sets mode 1, 2 or 3 and moves to `StateBtlSpotCasualMatchEntrance`
+(`0x01c21dae`), `StateBtlSpotRankMatchEntrance` (`0x01c257b1`) or `StateBtlSpotCompTop`
+(`0x01bfd817`): 1 is a casual battle, 2 a ranked battle, 3 an online competition. The u64 at
+`+0x108` is written by `0x00adc8b0` (`str x1,[x0,#0x1ab8]`, flag byte `+0x1ab0 = 1`), whose only
+caller `0x00b41b7c` is in `StateBtlSpotCompTop`'s code. It passes the u64 at offset 0x33C0 of save
+block `0x88F6D6AE` (0x33D0 bytes, key at `0x02072fac`, read by `0x01444ac0`); the key before it in the
+same table, `0xEEE5A3F8`, is PKHeX's `KOfficialCompetition`, also 0x33D0 bytes.
 
 ### The player profile
 
@@ -462,9 +491,12 @@ areas `wr0101`, `wr0201` and `wr0301`: they are also the data array at `0x02061f
 `a_wr0101_nest_hole_emitter_%d` (`0x01c25bbb`), `a_wr0201_...` (`0x01be5bad`) and `a_wr0301_...`
 (`0x01c2d3a5`); `0x00de19c0` copies the name `a_wr0101` (`0x01c0ae67`) when the current area key
 `[[[0x2617c48]]+0x180]` equals the first. `a` is 1 in `wr0101`, 2 in `wr0201`, 3 in `wr0301`, 0
-elsewhere. The keys are FNV-1a 64 of three strings that differ only in the area digit: running
-FNV-1a backwards over `1`, `0` and the digit brings all three to the one state `0xb8123d750dc24af8`.
-`a_wr0101` itself hashes to `0x6515d05043abef70`. `b` is `+0x1c9`, set by
+elsewhere. Every capture on Challenge Beach (location 170, the Isle of Armor) carried 2, so `wr0201`
+is the Isle of Armor's wild area. The keys are the game's FNV-1a 64 (offset basis `0xcbf29ce484222645`, built at
+`0x01369700..0x01369724`) of `a_wr0101`, `a_wr0201` and `a_wr0301`: running FNV-1a backwards over
+`1`, `0` and the digit brings all three to the one state `0xb8123d750dc24af8`, the state after
+`a_wr0`. `a_wr0201` and `a_wr0301` are not strings in main; the romfs holds them as the sound banks
+`bin/sound/NX64/wwise/bank/a_wr0201.bnk` and `a_wr0301.bnk`. `b` is `+0x1c9`, set by
 `0x00ebf580` from slot 8 of vtable `0x259add8` (`b = 0x0110e850(...) < 4`, `0x012dfaec`) and from
 slot 11 (`b = 2`, `0x012dfca8`), each followed by a push.
 
