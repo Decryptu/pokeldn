@@ -678,6 +678,12 @@ component's vtable; in the PokemonParam wrappers it is IsEmpty (`0x13770`). The 
 function, `0x2d63130` (`0x2d63190`, one caller `0x2b2fe6c`). No path found reads the stored ability
 into any screen.
 
+Measured on an emulated 2.0.2 with breakpoints on `0x288d894`, `0x2d52468` and `0x2d6fd88`: paging
+through every summary page of two Pokemon hits none of them; entering a Wild Zone and battling with
+Mewtwo in the party hits only `0x2d6fd88`, called from `0xdc68c` in `0xdc5a0`, which
+copies the wrapper's getters into a structure and stores that slot 42 (0) at +0x60. The component's
+slot 42 and the ability window never run, and no ability is announced on screen.
+
 ### What loading a received record checks
 
 A partner's `0101` reaches `0xb2a44c`, the handler registered for CommandSelectPokemon
@@ -712,6 +718,11 @@ No step reads the moves against a learnset, the ball, the met data, the trainer 
 the party tail's level; the tail and the stats are overwritten. On this path a composed record fails
 in two ways, a wrong checksum and a personal-table flag of zero, and both make a Bad Egg rather than
 a refusal. A name the check rejects is rewritten, never refused.
+
+An emulated Z-A offered a record whose checksum at +6 is off by one draws it on the trade prompt as
+an egg icon, level 0, the male symbol, under the nickname the offer carries, and offers "Trade it".
+Confirmed, the four steps run and the record lands in the box as "Egg" with an empty summary panel;
+the game keeps running.
 
 ### The name check on a received Pokemon
 
@@ -1112,11 +1123,6 @@ Check Mystery Gifts. It has no local-wireless path, so a gift cannot be served o
 - Whether game code reaches facade index 19 other than through session+0x30, through
   framework+0xb8 or a facade getter. A scan of the loads of framework+0xb8, or a breakpoint on
   `0x25183bc` with x30 on an emulated host, settles it.
-- Whether the `0x3d1a7c8` component's slot 42 is ever called, and what the battle ability window
-  shows. Breakpoints on `0x288d894` (caller in x30), `0x2d52468` (the vtable of the object at x1+8)
-  and `0x2d6fd88`, on an emulated console opening a summary and then in a battle where an ability
-  announces itself, answer it: a hit on `0x2d52468` with a 321-slot wrapper vtable means the window
-  draws ability 0 whatever the record holds.
 - Whether the generic lookups `0xd8a04` (`0xd8dd4`) and `0x15dc1c` (`0x15dd34`) compare the
   component's type id `0xfb63b93a`, and what they hand the component to. Reading both functions
   settles it.
@@ -1131,7 +1137,3 @@ Check Mystery Gifts. It has no local-wireless path, so a gift cannot be served o
 - What the extra packet `0x25688d0` sends to a station it has been silent to for a second carries,
   and which stations have byte +0xa0 set. Reading `0x256da8c` and `0x256a89c`, and a capture of a
   seated station the console has nothing else to send to, settle it.
-- What a console draws for a Bad Egg pick and whether it offers Confirm. An emulated host joined by
-  `bin/za_join.py` offering a record whose checksum at +6 is off by one (without `--fresh-pid`,
-  which stops on such a record), with breakpoints on `0xe51698` (x1 = 1), `0xcbc7fc` and `0xcbcbec`, shows it;
-  the capture's `0102`, `0104` and `0201b901XX` answers say whether the console confirmed.

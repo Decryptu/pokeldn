@@ -84,9 +84,14 @@ def load_payloads(args):
                              f"{za.pokemon.OFFER_SIZE}")
         if args.fresh_pid:
             offer = za.pokemon.fresh_offer(offer)
-        _hdr, plain, _tr = za.pokemon.parse_offer(offer)
-        print(f"[za-host] offering {za.pokemon.read(plain)}, pid {plain[0x1C:0x20][::-1].hex()} "
-              f"ec {plain[:4][::-1].hex()}")
+        try:
+            _hdr, plain, _tr = za.pokemon.parse_offer(offer)
+        except ValueError as e:
+            # a record whose checksum fails is a Bad Egg to the game; sent as it is
+            print(f"[za-host] offering a record that does not decrypt ({e}): a Bad Egg")
+        else:
+            print(f"[za-host] offering {za.pokemon.read(plain)}, pid {plain[0x1C:0x20][::-1].hex()} "
+                  f"ec {plain[:4][::-1].hex()}")
     return identity, tail, selection, offer
 
 
