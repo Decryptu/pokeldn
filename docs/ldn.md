@@ -50,6 +50,12 @@ protocol (`HostTransport(protocol=...)`).
 | Sword Mystery Gift screen, comm id `0x0100abf008968000` | 1 | 2, AES-CTR |
 | Legends Arceus local trade, comm id `0x01001f5010dfa000` | 1 | 4 |
 
+A hosting console sends its beacons at 11 Mbit/s DSSS and its LDN advertisement action frames at HT
+MCS 3, 20 MHz, an OFDM rate: 8908 beacons and 8679 action frames over fifteen sniffed Scarlet
+sessions, every one at those rates. Sword on its Mystery Gift local-wireless screen does the same:
+beacons at 11 Mbit/s on the channel it hosts, advertisements at HT MCS 3 on 1, 6 and 11. A receiver
+that decodes only DSSS sees the console's beacons and none of its advertisements.
+
 Association is the first step that needs a title secret. The passphrase is used verbatim, neither
 padded nor hashed. `nn::pia::local::LdnBackgroundProcessJob` validates the length as 16-64 before
 use.
