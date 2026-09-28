@@ -366,6 +366,10 @@ Everything each advertisement carries is written to `scratchpad/swsh_net_facts.j
 itself is `bin/swsh_connect.py`, which walks the station handshake, the mesh join, the party
 snapshot exchange and the confirmation ladder; `--offer-file FILE` puts a PKHeX `.pk8` on the wire
 in place of a party slot. The flags a completed trade takes are on [Trading](docs/swsh_trade.md).
+The scan facts are not a party snapshot. For a first join, capture the console's 0x84 fragments
+with `swsh_connect.py --capture FILE`, then extract them with
+`./.venv/bin/python tools/switch/swsh_snapshot.py FILE SNAPSHOT.bin`; the trading page gives the
+capture command.
 
 Hosting is `bin/swsh_host.py`; the console joins it from Y-Comm → Link Trade → trade, after A on
 both messages that follow (the search starts only after the second):

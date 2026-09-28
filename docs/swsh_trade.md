@@ -684,6 +684,27 @@ identity consistency.
 
 ## The command line of a completed trade
 
+`swsh_join.py --scan-only` records the network advertisement, not the party snapshot. To obtain
+the snapshot for the first trade, let the console search for a local Link Trade and run the
+connector through the snapshot receive stage. This uses the working transport flags without
+sending a party or an offer:
+
+    POKELDN_RADIO=esp32:auto ./.venv/bin/python -u bin/swsh_connect.py --keys PROD_KEYS \
+        --channels 1,6,11 --dwell 2.5 --listen-first 6 \
+        --station-sweep 0 --ack-seconds 12 --connect --no-variable-id --request-platform 9 \
+        --request-flags 0x09 --connect-station 0 --nat-flags 0 --nat-location 0 --respond \
+        --respond-with theirs --join --answer-rtt --ack-reliable --send-data 610000000a00 \
+        --sync-answers --send-protocol 0x7c --send-after 4 --send-count 1200 --send-period 0.3 \
+        --send-seconds 350 --send2-data 60ea000012020801 --send2-trigger 60ea000012020801 \
+        --send2-protocol 0x80 --ack-snapshot --hold 90 --capture scratchpad/swsh_first.jsonl
+
+After the log shows fragments 0, 1 and 2, extract the 3456-byte payload:
+
+    ./.venv/bin/python tools/switch/swsh_snapshot.py scratchpad/swsh_first.jsonl scratchpad/swsh_snapshot.bin
+
+Use that file for `--send-snapshot` in the completed-trade line below. The console must be the
+same one that supplied the snapshot.
+
 `bin/swsh_connect.py` runs every layer of a trade. The line below completed one against a French
 Sword 1.3.2, the client joining the console's Link Trade session; `SNAPSHOT` is a 3456-byte party
 snapshot, the 0x84 payload of an earlier session against the same console, whose identity is
