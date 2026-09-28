@@ -105,6 +105,11 @@ FireRed's; of the addresses a resident hook carries only `m4aSoundMain` moves (0
 `tests/test_frlg_english_cartridges.py` runs the English payloads on both retail images through each
 cartridge's own `Client_RunBufferScript`; it skips when `scratchpad/frlg_en/` holds no image.
 
+An emulated English FireRed (the USA v0 package, `0100554023408000`) reports `BPRE`, takes a Wonder
+Card and shows it, and runs an English-built `call-chain`: `SpeciesToNationalPokedexNum` at
+`0x08046A41` returned 252 for species 277, and `VarGet` at `0x08071CD5` returned. The game saves
+after both.
+
 ## The BIOS wrappers
 
 `libagbsyscall.s` links as one block of THUMB `svc N ; bx lr` pairs, in the decomp's order
