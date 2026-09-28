@@ -724,6 +724,12 @@ A window's destination list is therefore empty for a station only before its joi
 after its leave, while the protocol has no station index (0xfd), or when `0x6ef588` refused the
 registration.
 
+The bulk-acknowledgement composer `0x6f2138` also reads this list. It skips null entries at
+`0x6f2324`..`0x6f232c` and sets a station's header destination bit at `0x6f22f8`..`0x6f230c`
+after checking that station's acknowledgement state, with a fallback to the caller's mask at
+`0x6f2360`..`0x6f2370`. A bit in an acknowledgement therefore establishes that the window has
+registered the station; it does not establish that an application message was sent to it.
+
 ### Version 4
 
 Version 4 uses one header class for both reliable protocols, 0x7C and 0x80:

@@ -40,6 +40,13 @@ SV02_HOST_ACK_81_1 = bytes.fromhex(
     "0000000000000000000000000000000001000100000000000000000000000000"
     "000000")
 
+# The first 0x80 port-0 bulk acknowledgement from the retail Scarlet in sv131, measured before
+# the Pia parser inflates it. The plain bytes are the independently decoded acknowledgement.
+SV131_ACK_80_0 = bytes.fromhex(
+    "00000056ffff000103000000020104000001000100000000000000000000000000000000000001000100000000000000000000000000000000000001000100000000000000000000000000000000000001000100000000000000000000000000000000")
+SV131_ACK_ZLIB = bytes.fromhex(
+    "484b62606008fbff9f819199818181899185818111083100458200000000ffff0300e2370268")
+
 
 def test_the_advertisement_reproduces_a_searching_console():
     assert sv.build_advertise_data() == SV01_APP_DATA
@@ -119,6 +126,20 @@ def test_the_joiner_ack_reproduces_the_retail_message():
                                     "bin"))
     import sv_join
     assert sv_join.build_bulk_ack(1, 0x2F) == SV02_JOINER_ACK_81_1
+
+
+def test_joiner_compresses_a_zlib_flagged_ack_as_the_retail_console_did():
+    sys.path.insert(0, os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))),
+                                    "bin"))
+    import sv_join
+    keys = sv.session_keys(bytes.fromhex("7b744617795970bb6882b24ded4cae15"))
+    packet = sv_join.build_out(keys, "169.254.10.2", SV131_ACK_80_0, 1,
+                               protocol=0x80, flags=0xA0)
+    _, plaintext, _ = pia6.parse_packet(keys.session_key, "169.254.10.2", keys.network_id,
+                                        packet)
+    assert plaintext[16:16 + len(SV131_ACK_ZLIB)] == SV131_ACK_ZLIB
+    (message,) = pia6.parse_messages(plaintext)
+    assert message.compressed and message.payload == SV131_ACK_80_0
 
 
 def test_the_host_ack_reproduces_the_retail_message():

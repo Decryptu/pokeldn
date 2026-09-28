@@ -991,8 +991,15 @@ slot 14 code 0x11.
 
 At `0x4da294` slot 10's two out-arguments are built. For the result `0xa46e` out1 is the u32 at
 `+0x40` of the object in global `0x163ce00` (`0x4da2a4..0x4da2c4`), the object whose `+0x48` the pump
-compares with 5 at `0x11c560`; with that global null the path calls slot 9 instead (`0x4da3bc`). Any
-other result goes through `0x5298a0` into an `nn::err::ErrorCode` in out2 (for `0xe437` a stored code
+compares with 5 at `0x11c560`; with that global null the path calls slot 9 instead (`0x4da3bc`).
+The writer is `LoginJob::Logout` at `0x5de42c`. When the job's transport at `+0x60` returns
+`0xa46e` from virtual `+0x50` with argument `0x7530`, `LoginJob` calls the transport's virtual
+`+0xb0` and stores its u32 return in the global object's `+0x40` (`0x5de3ac`..`0x5de42c`).
+The result `0xa46e` decodes to module 110 (`0xa46e & 0x1ff`) and description 82
+(`0xa46e >> 9`); module 110 is NIFM, Nintendo's network interface manager
+([libnx's NIFM implementation](https://github.com/switchbrew/libnx/blob/master/nx/source/services/nifm.c)).
+
+Any other result goes through `0x5298a0` into an `nn::err::ErrorCode` in out2 (for `0xe437` a stored code
 from `0x1601e38`, otherwise N / 10000 and N % 10000 of `0x529940(result)`). Slot 10 records a
 non-zero out1 through `0x345860` and otherwise the ErrorCode through `0x345900`. The manager repeats
 the same test at `0x3443f4..0x34443c`.

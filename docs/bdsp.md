@@ -53,7 +53,8 @@ Proven on retail hardware, end to end:
   known).
 - Whether a retail console that is not the Grand Underground session host adopts a 0x61 from
   pokeldn. Every Underground session measured had the console as host, and pokeldn does not host an
-  Underground session. A sender filter in the shared `NetUseManager` receive path was not searched.
+  Underground session. The common dispatch and the `UgNetworkManager` handler have no sender filter
+  ([the protocol page](bdsp_protocol.md#the-grand-underground)); a non-host retail run is still needed.
 - Where the Unity player takes `Screen.width` from. The 2D grid positions rest on it being the
   1280 x 720 default that `0x6062e8` keeps when `/Data/rawsettings` +0x1c is 0
   ([the protocol page](bdsp_protocol.md#the-grand-underground)); another source, such as the

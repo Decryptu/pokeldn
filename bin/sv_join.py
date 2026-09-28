@@ -208,6 +208,8 @@ def build_out(keys, our_ip, body, dst_var, *, protocol, port=0, flags=0, src_var
     `dst_var` is 0 for an establishing message: the console has no station for us yet and its parser
     dispatches on the destination variable id, so a message addressed to the host's own id before it
     knows us is unroutable (`docs/pla.md`, and `bin/pla_join.py` sends both of its openers to 0)."""
+    if flags & pia6.MESSAGE_FLAG_ZLIB:
+        body = streams.compress(body)
     msg = pia6.build_message(body, protocol=protocol, port=port, message_flags=flags)
     footer_ids = ()
     if protocol in MESH_ADDRESSED:
@@ -395,8 +397,7 @@ def build_parser():
                          "contiguous run and a mask as a retail station does (docs/sv.md)")
     ap.add_argument("--ack-flags", type=lambda v: int(v, 0), default=streams.MESSAGE_FLAGS_ACK,
                     help="the Pia message flags on our bulk acks; 0xa0 is what both retail "
-                         "stations send, and bit 5 is what routes a message to the guest's ack "
-                         "deserialiser")
+                         "stations send, and bit 5 compresses the message body")
     ap.add_argument("--ack-entries", type=int, default=streams.ACK_ENTRIES,
                     help="entries in the ack payload; a retail station sends four")
     ap.add_argument("--ack-dest-bits", type=int, default=3,

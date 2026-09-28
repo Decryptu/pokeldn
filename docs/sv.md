@@ -484,13 +484,18 @@ traded either, so the gap is how the game numbers its records and not a fault.
 
 ### The flag that makes the host count an acknowledgement
 
-A bulk acknowledgement under message flags 0xA0 never reaches the host's window. Its receive
-function resolves the sending station, checks the length and compares a byte of the message
-against the station's own before applying anything, but a message whose flags carry bit 5, the ZLIB
-flag (`[msg+0x29]`, `0x6efc80`), branches earlier into `0x6e9984`, which inflates the payload
+A plain bulk acknowledgement under message flags 0xA0 never reached the emulated host's window.
+Its receive function resolves the sending station, checks the length and compares a byte of the
+message against the station's own before applying anything, but a message whose flags carry bit 5,
+the ZLIB flag (`[msg+0x29]`, `0x6efc80`), branches earlier into `0x6e9984`, which inflates the payload
 (`0x69804c`, zlib inflate at `0x2801d0`). Any failure there returns 0x2C03 (`0x6efd5c`), and a plain
-payload fails the inflate. Measured on the emulated console: 600 of 600 acknowledgements under 0xA0, every one dropped at that instruction,
-the station resolve never reached.
+payload fails the inflate. Measured on the emulated console: 600 of 600 plain acknowledgements under
+0xA0 dropped at that instruction; the station resolve never ran.
+
+The retail 0xA0 acknowledgements do carry zlib message bodies. Across three retail Scarlet/Violet
+joiner captures, all 1,774 acknowledgements on 0x80 and 0x81 inflated to 99 bytes. One 38-byte
+body starts `484b62606008` and reproduces exactly with the 4 KB window, level-5 sync-flush framing
+used for records. `bin/sv_join.py` compresses the body when it sets bit 5.
 
 Under message flags 0x00 the same acknowledgement, the same 99 bytes with the same four entries
 and destination bitmap, takes the other path and the exchange completes. The host answered a
@@ -1210,9 +1215,13 @@ response does, and a joiner that waits for the response sends nothing for the wh
   the other two, RTT answered at once, the console's set stood acknowledged at 7.65 and 7.88 s and
   the joiner's at 7.65 and 4.56 s, and the console sent nothing on 0x80 port 2 or 0x7C port 2 in 200
   and 24 s, presence-0x00 messages included. Its 0x80 port-2 bulk
-  acks carried the destination bitmap `[2]` and a payload byte-identical to an announced seat's;
-  whether that bitmap is built from `[window+0x40]` is unknown. One followed a seat that ended in
-  host migration 0.5 s in, the other a failed association (LDN reason `0xc9`). A migration before
+  acks carried the destination bitmap `[2]` and a payload byte-identical to an announced seat's.
+  The acknowledgement composer `0x6f2138` builds that bitmap from the registered-station pointers
+  at `[window+0x40]`: it skips null entries at `0x6f2324`..`0x6f232c` and sets a station's bit at
+  `0x6f22f8`..`0x6f230c` only after its acknowledgement-state checks, which may also consult the
+  caller's mask at `0x6f2360`..`0x6f2370`. The bitmap therefore confirms a registered destination,
+  but does not show that the trade job reached its announcement state. One followed a seat that ended
+  in host migration 0.5 s in, the other a failed association (LDN reason `0xc9`). A migration before
   the seat does not decide it: of the seats that followed a migrated seat, two of three with prompt
   answers and three of three with answers 0.3 s late were announced. The candidates are no trade
   job running in the seat, the job in state 1 on a slot whose `+0xd9`/`+0xda` were never set for
@@ -1238,6 +1247,3 @@ response does, and a joiner that waits for the response sends nothing for the wh
 - Whether a seat whose joiner answers no RTT request, reads every message and loses none of the
   host's records is announced. The four seats measured each lost a record on the air or ran with a
   walk that stopped at presence 0x00 (The retail acknowledgement, and a flood of retransmits).
-- Whether a retail station's own 0xA0 acknowledgements carry a zlib payload, which bit 5 requires
-  to pass the inflate. A retail pair broadcasts them; `bin/sv_join.py` has only unicast its own,
-  over the LAN.

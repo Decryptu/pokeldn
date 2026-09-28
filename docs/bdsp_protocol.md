@@ -797,6 +797,17 @@ flag is 0: it replaces `ugDigGroupList` with the sender's bytes, deletes every d
 [0x01cfd6d0], rebuilds them [0x01cfdab0] and sets the flag. A later session event sets the flag
 without a table when none arrived. A 0x61 reaching a console whose flag is set is ignored.
 
+The common receive dispatch has no sender filter. `SessionManager$$OnReceivePacket` (`0x1df8ac0`)
+reads the data id, obtains its `INetData` from `NetDataParser` (`0x224d650`), deserializes it, and
+invokes the `OnReceiveData` delegate at `0x1df8b44`..`0x1df8b60`. The concrete 0x61
+`ReceivePacket` stores the packet's station index at `INetData+0x18` (`0x26cd5ac`) and continues to
+deserialize without comparing it.
+`NetUseManager<T>.<Start>d__8.MoveNext` registers its virtual `OnReceiveData` as that delegate at
+`0x26cf8b0`..`0x26cf8dc`. The 0x61 branch in `UgNetworkManager$$OnReceiveData` reaches
+`OnReceiveDigTableData` without consulting `INetData.FromStationIndex`. The code therefore accepts
+the first table from an associated peer while `IsDigTableReady` is clear; a retail non-host run has
+not tested it.
+
 `OnSessionEvent` switches on `SessionEventType` through the byte table 0x03db8970:
 
 | event | target | effect |
