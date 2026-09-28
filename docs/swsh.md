@@ -74,9 +74,10 @@ then `SYSREQ.N native, bytes`.
 - What writes the Battle Stadium team descriptor's `+0`, `+4` and `+6`
   ([the protocol page](swsh_protocol.md#the-battle-stadium-block)). A save holding a registered,
   validated team shows it: dump its blocks and look for the 0x100-byte signature.
-- Whether the u16 the Battle Stadium signature covers is the team owner's game version, and whether
-  the signature is the one `v1/validate` returns. The request builder `0x011a2a70` and the reply
-  parser `0x011a2870` settle both.
+- Whether the `v1/validate` reply's 0x100 bytes reach the team descriptor at `match+0x98`: the copy
+  `0x014f808c` writes them into a descriptor-shaped run at `[x19+0xb0]+0x76`, and the path from there
+  is untraced ([the protocol page](swsh_protocol.md#the-battle-stadium-block)). What the reply's status
+  1 and its up to six u32 mean is unknown.
 - Whether mesh events 1 and 2 store `LdnMatchmakeSession`'s slot 30, a 32-bit value or `0xff`, into
   the Pia session's `+0xf8` in an LDN session ([the session page](swsh_session.md#the-pia-session-object)).
   `+0xd4` is 3 or 4 only through `0x01839cc0` and `0x0183a040`; whether their callers are the
@@ -104,6 +105,4 @@ then `SYSREQ.N native, bytes`.
   Sword, 2 Shield, 3 both); no Sword instruction has been read.
 - Mystery Gift redemption ([the gift page](swsh_gift.md#what-the-menu-refuses)): whether the kind-1
   builder `0x010b6110` or the placement `0x010159d0` checks legality (illegal moves were accepted on
-  a retail console); which texts messages 7, 8, 0xF, 0x10 and 0x11 of the array at `0x02064f80`
-  show, read so far only from the label order of `mystery.tbl`. A kind-1 card offered to a console
-  with a full party and full boxes puts message 8 on the screen.
+  a retail console).

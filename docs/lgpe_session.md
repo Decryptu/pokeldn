@@ -927,7 +927,7 @@ state 0 (`0x4d8b10` at `0x8384f8`) and cleared by state 6 on a received 2 (`0x4d
 link fails.
 
 The recorders are `0x345790` (code 0xe), `0x3457d0` (0x11), `0x345810` (0xf), `0x345860`,
-`0x3458a0`, `0x345900` (an `nn::Result`), `0x345940` (the online serial-code client `0x94fa00`),
+`0x3458a0`, `0x345900` (an `nn::err::ErrorCode`, two u32, `0x34591c..0x345920`), `0x345940` (the online serial-code client `0x94fa00`),
 `0x3459f0`, `0x345a50` and `0x345aa0`. The listener at `mgr+0x60` (built at `0x343d34..0x343d70`,
 vtable `0x154f068`) routes its seven slots `0x154f0b0..0x154f0e0` to three of them: `0x344c30`,
 `0x344c60`, `0x344c70` and `0x344c80` to `0x345790`, `0x344c40` to `0x345900`, `0x344c50` to
@@ -960,13 +960,33 @@ from `[x19+0x10]`:
 | `+0x38` | `0x349600` | `0x4d9f2c` | matching succeeded, before `0x116890` |
 | `+0x40` | `0x349620` | in `0x4da5e0`, whose one caller is `0x4d9e24` | state 9 to 10 (`0x4d9e28`) |
 | `+0x48`, slot 9 | `0x349650` | `0x4da084` in `0x4d9fb0` (one caller, `0x4d9bc8`); `0x4da0e0` (one caller, `0x4d9ee0`) | a pump failure; a failed match with `[job+0x300]` clear (`0x4d9e30 cbz w20`, `w20` loaded at `0x4d9c04`), for a zero result or one whose bits 10 to 12 are not 1 or 2 (`0x4da114..0x4da128`) |
-| `+0x50`, slot 10 | `0x3497d0` | `0x4da38c` in `0x4da294`, two out-arguments (`0x4da378..0x4da38c`) | a failed match with `[job+0x300]` clear whose result has bits 10 to 12 equal to 1 or 2 |
+| `+0x50`, slot 10 | `0x3497d0` | `0x4da38c` in `0x4da0e0`, entered at `0x4da294` (`0x4da128 b.lo`), two out-arguments (`0x4da378..0x4da38c`) | a failed match with `[job+0x300]` clear whose result has bits 10 to 12 equal to 1 or 2 |
 | `+0x70`, slot 14 | `0x3499a0` | `0x4d9efc` | a failed match with `[job+0x300]` set (`0x4d9e30..0x4d9efc`) |
 
 Both failed-match paths then set state 6 (`0x4d9ee4`, `0x4d9f14`). The indirect call at `0x4d9d14`
 is `+0x48` on the job `[x19+0x20]`. Slots 9, 10 and 14 forward to a delegate
 that `0x3496b0` fetches, through its `+0x38` (`0x349680`), `+0x48`/`+0x40` (`0x349814`, `0x34984c`)
 and `+0x68` (`0x3499d0`).
+
+The delegate is the listener at `mgr+0x60`. The manager's constructor stores the listener there
+(`0x343d70`) and hands its control block to the session's setter `0x349540` (`0x343ebc`, the setter's
+only caller), which keeps it at `+0x98`; `0x3496b0` locks that block and returns `[block+0x60] - 0x50`
+(`0x3497b0..0x3497c0`), the listener. Its type id `0x1615ed0` belongs to the listener's class alone
+(one construction site, vtable `0x154f068`, no RTTI name). Slot 9 therefore records code 0xe and
+slot 14 code 0x11.
+
+At `0x4da294` slot 10's two out-arguments are built. For the result `0xa46e` out1 is the u32 at
+`+0x40` of the object in global `0x163ce00` (`0x4da2a4..0x4da2c4`), the object whose `+0x48` the pump
+compares with 5 at `0x11c560`; with that global null the path calls slot 9 instead (`0x4da3bc`). Any
+other result goes through `0x5298a0` into an `nn::err::ErrorCode` in out2 (for `0xe437` a stored code
+from `0x1601e38`, otherwise N / 10000 and N % 10000 of `0x529940(result)`). Slot 10 records a
+non-zero out1 through `0x345860` and otherwise the ErrorCode through `0x345900`. The manager repeats
+the same test at `0x3443f4..0x34443c`.
+
+Slots 11 to 13 (`0x349880`, `0x3498e0`, `0x349940`, listener `0x344c60..0x344c80`, code 0xe) have no
+caller found: no branch reaches them, the session's own type id (`0x1616100`) is used only by its
+class, and the link state machine, the one weak holder, calls the session at `+0x30` to `+0x50` and
+`+0x70` only. A raw session pointer passed into other code is not excluded.
 
 `0x838660` decides who sends the 2. With S = {144, 145, 146, 150, 151} (`species - 0x90` in the
 mask `0xc7`) and M = {808, 809}: a station whose offered species is in S or M and whose received

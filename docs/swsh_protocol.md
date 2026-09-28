@@ -382,6 +382,21 @@ The console holds only the public key. The image carries the URLs
 (`0x01c11a93`); that a Nintendo server signs this message is deduced from the layout. A Link Trade
 snapshot carries 392 zero bytes there and never reaches the check.
 
+The `v1/validate` request, built by `0x011a2a70`, is a NUL-terminated string (the whole body of the
+`v1/public_key` request too), the public key version as a big-endian u16 (key holder `+0x68`, set
+from the `v1/public_key` reply by `0x0144fb90`), the console's own version `0x007d4270() = 0x2D`
+(Shield) as a big-endian u16, `00 01`, a big-endian record count and the records of 0x148 bytes
+(`0x007664c0`). The signed message holds the same records, version and `00 01`. On the checking side
+`v` is the partner's player-status byte at block offset `0xA4` (`obj+0x104`, `0x01424bf0`), which
+the constructors default to `0x2D` (`0x014245f0`); PKHeX's `MyStatus8` names it `Game`.
+
+The reply parser `0x011a2870` reads byte 0 as a status (2: the key is stale, `v1/public_key` is sent
+again; `R+0x70` = status equal to 1), bytes 5 and 6 as a big-endian count n clamped to 6, n
+big-endian u32 into `R+0x74`, and, when the status is 0, the next 0x100 bytes into `R+0x8c`
+(`0x011a29e4`). Of the validate API's five callers only `0x014f8c00` keeps those bytes: it copies
+them to `obj+0x183`, and `0x014f808c` writes them at `+0x36` of a 0x136-byte run laid out as the team
+descriptor above.
+
 The match type is the constant the match object's virtual `+0x40` returns: the three match classes'
 vtables `0x2538238`, `0x2538358` and `0x2538478` hold at slot 8 `0x00adda60` (1), `0x00adde60` (2)
 and `0x00ade340` (3). Their constructors are reached from `0x00adcfb0(obj, mode)`, itself reached

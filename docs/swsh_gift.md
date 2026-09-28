@@ -1068,6 +1068,18 @@ flags `[card+0xe8]` (`0x01014be8 ubfx w24,w8,#2,#1`). For a kind-1 card it also 
     flag bit 2 set                   message 0xF, then state 3   0x01014d38 mov w1,#0xf; continuation 0x010156f0
     otherwise                        state 3, the redemption     0x01014e70
 
+The array at `0x02064f80` holds `mystery.tbl` label hashes, one u64 per message index; the table
+initializer from `0x01000718` resolves entry k into `owner+0x5f8+8k`, which `0x01002da0` reads back
+by index. The texts, from the 1.3.2 English `mystery.dat`:
+
+| message | label | text |
+|---|---|---|
+| 7 | `msg_o_mystery_win_13` | You can't get that gift, since you've already received the same gift before. |
+| 8 | `msg_o_mystery_win_14` | There's no room for another Pokémon. Make room in your party or Pokémon Boxes, and then try again. |
+| 0xF | `msg_o_mystery_win_34` | You can receive this gift just once a day. Once you've received it, you can't claim another one until the next day. |
+| 0x10 | `msg_o_mystery_win_35` | You can only receive this gift once per day. You've already claimed the one for today, so check in tomorrow for your next chance. |
+| 0x11 | `msg_o_mystery_win_36` | You can only receive 10 gifts per day. You've already claimed 10 gifts today, so check in tomorrow to be able to claim more. |
+
 A refusal's continuation `0x01015740` stores 0 at `+0x80`, the menu's first state. A refused card is
 neither placed nor kept, so it can be claimed again once the cause is gone.
 

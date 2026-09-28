@@ -353,6 +353,14 @@ stations through vfunc +0x68. The game's settings store (+0x28c, +0x290) = (1000
 therefore that a seated station whose byte +0xa0 is clear is sent a packet whenever nothing has gone
 to it for more than a second. No capture has been checked against that rule.
 
+The extra packet is one Pia message with protocol 0, bit-0x10 byte 0xfd (absent), port 0, flags 0
+and an empty payload (`0x2568934`..`0x256898c`; `0x256a89c(p, 0, 0)` writes the id, descriptor
++0x18 is the payload size). No other caller of `0x256a89c` passes protocol 0. Byte +0xa0 marks a
+station whose kick has started: the only non-zero store is the setter `0x2577094`, called from the
+host's `KickoutManageJob` start `0x255b4a0` (`0x255bab0`, before the first Session type 13) and from
+a non-host's drain of the kick map `0x2548b60` (`0x2548fe8`, `0x2549234`); the constructor, the seat,
+the release and `0x2576ca4` clear it. The keepalive therefore skips stations being kicked.
+
 So a station is heard only through packets whose header source is its own variable id. The session
 address 0x0001 is a destination: the host broadcasts RTT and session traffic to it, and a joiner
 that sends from 0x0001 is heard by no one. With every packet sourced from its own id, the station
@@ -615,7 +623,11 @@ FNV-1a. Unless bit 0 of the word at [x29-8] is set (`0x8d1a08`), it calls slot 1
 four-moves getter (`0x8d163c`). When slot 150 returns true (`0x8d1c3c`), "/plus_on" is looked up
 with `0xf510` and passed to `0x168f70`, then "/plus_off" to `0xf510` and `0x14248`; when it returns
 false, or the bit is set, the two names swap. The bit is the return of `0x393b8(x21, frame-0xf0)`,
-stored at `0x8d1438`.
+stored at `0x8d1438`: the game flag `flag_megaevo_disable`. `0x393b8` is the generic named-flag read
+(108 call sites): it looks the key's 64-bit hash up in three hash maps of the flag store (+0x48,
++0x80, +0xb8) and returns the node's value byte, 0 when absent (`0x3944c`). The key record
+`0x3db5548` is `{0x5d0f3c74b46a0ff5, 0x32ea666, 20}`, the hash being FNV-1a-64 of the string with
+the basis `0xcbf29ce484222645` (`0x8d1444`).
 
 The six species of console-made records, against the table:
 
@@ -652,7 +664,7 @@ calls are nine: `0x3d1a918` (slot 42 of `0x3d1a7c8`), `0x3d1a948`/`0x3d1a950` (i
 wrappers) and GOT `0x3ec4f60`/`0x3ec4f68`, the type getters. The raw getter's direct callers are
 `0x99cac`, `0xa437c` and `0xe43c04`, and `0xe43bec` is entered only by `b` from `0x288d894`. Slot 42
 of the `0x3d1a7c8` class is the one way to a stored ability outside the type getters. That class is
-an engine component: slot 13 (`0x288db10`) returns the type id `0xfb63b93a`, slot 14 returns 0x158,
+an engine component: slot 13 (`0x288db10`) returns the type id `0xfb63b93a`, slot 67 (`0x288db1c`, the last) returns 0x158,
 and the factory `0x2890d80` builds it through `0x2890a6c` and `0x2890c10` (0x50 bytes) with the
 constructor `0x2890cb8`, which stores four vtable pointers from `0x3d1a7b8` (+0x10, +0x240, +0x290,
 +0x2e8). Its primary vtable runs 68 code slots.
@@ -683,6 +695,16 @@ through every summary page of two Pokemon hits none of them; entering a Wild Zon
 Mewtwo in the party hits only `0x2d6fd88`, called from `0xdc68c` in `0xdc5a0`, which
 copies the wrapper's getters into a structure and stores that slot 42 (0) at +0x60. The component's
 slot 42 and the ability window never run, and no ability is announced on screen.
+
+One more reader of slot 42 exists. The component registry `0xd8a04(manager, key, component)` asks
+the component for its type id (slot 13, `0xd8a38`) and the manager's factory (+0x38) for a handler
+(factory slot 6, `0xd8a54`); with no factory it builds one itself for `0xfb63b93a` alone (`0xd8dd4`).
+The factory's slot 6, `0x15dc1c`, builds the same 0xf0-byte handler (vtable `0x3d1b0a0`, `0x15dd78`)
+for `0x83b8bf86`, `0x66345205`, `0x603b99d7` and `0xfb63b93a`, and null for any other id. The handler
+receives a clone of the component (slot 56, `0x288d9c0`) and its slot 5 (`0x2ae810`) caches the
+clone's getters, slot 42 among them as a u16 at handler+0x4c (`0x2ae8f4`), before the handler is
+filed in the hash map at manager+0x40 under the key. The breakpoint on `0x288d894` not firing means
+no registration ran during that paging and battle. Who reads handler+0x4c is untraced.
 
 ### What loading a received record checks
 
@@ -1123,17 +1145,12 @@ Check Mystery Gifts. It has no local-wireless path, so a gift cannot be served o
 - Whether game code reaches facade index 19 other than through session+0x30, through
   framework+0xb8 or a facade getter. A scan of the loads of framework+0xb8, or a breakpoint on
   `0x25183bc` with x30 on an emulated host, settles it.
-- Whether the generic lookups `0xd8a04` (`0xd8dd4`) and `0x15dc1c` (`0x15dd34`) compare the
-  component's type id `0xfb63b93a`, and what they hand the component to. Reading both functions
-  settles it.
-- What `0x393b8` computes, the value `0x8d1438` stores as the summary screen's bypass bit. Reading it,
-  or a breakpoint on `0x8d1438` while paging through a summary, settles it.
 - Whether a shipped script calls the binding `0x1673170` that stores any integer into L, and what the
   language-select view's table `[x0+0x50]` holds. A breakpoint on `0x16734c0` over a play session, and
   the table read at `0x2c204ac`, settle both.
 - What writes the exchange worker's error word +0x10, which selects own state 7. A watchpoint on
   worker+0x10 during an emulated trade, with one trade cancelled after the steps start, names the
   writer.
-- What the extra packet `0x25688d0` sends to a station it has been silent to for a second carries,
-  and which stations have byte +0xa0 set. Reading `0x256da8c` and `0x256a89c`, and a capture of a
-  seated station the console has nothing else to send to, settle it.
+- What a station does with a protocol-0 message, and the exact header bytes of the keepalive
+  (`04 00` by the header diff, the conversion unread). A capture of a seated station the console has
+  nothing else to send to settles both.

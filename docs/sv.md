@@ -903,6 +903,11 @@ offered is in the station's box and the one it offered is gone.
 The `8001` messages run in pairs, a 01 and a 02 under the same fourth byte, which steps 03, 06, 0B,
 0E. The trade applies over those four steps and both screens return to the trade menu.
 
+On a retail trade against `bin/sv_host.py` the host's messages on the trade stream number 5 for the
+offer, 6 for the confirmation, 7 for the commit and 8 to 15 for the exchange steps; the console's
+are 5, 6, 7 and 8 to 11, and its key-0x180 open and close are its port-1 messages 3 and 4. Its
+acknowledgement of the host's offer reads `ack_id` 6 and `lowest_pending` 5.
+
 Both instances ran from one save copied twice, and the game traded a Pokemon between two identical
 trainers without complaint.
 
@@ -1233,72 +1238,6 @@ response does, and a joiner that waits for the response sends nothing for the wh
 - Whether a seat whose joiner answers no RTT request, reads every message and loses none of the
   host's records is announced. The four seats measured each lost a record on the air or ran with a
   walk that stopped at presence 0x00 (The retail acknowledgement, and a flood of retransmits).
-
-**A trade is complete on a retail Scarlet (2026-09-22).** The console joins a network
-`bin/sv_host.py` puts up, takes the host's identity as four messages, draws the host's offer with
-its four-item menu, offers its own 348-byte record, confirms, commits, opens key 0x0180, runs the
-four exchange steps in both directions and closes the key, and the Pokemon the host composed is on
-the console. Its acknowledgement of the host's offer reads `ack_id` 6 and `lowest_pending` 5, the
-numbers a console answers a console with, where the seat before the correction read 6 and 6.
-
-The host's messages on the trade stream number 5 for the offer, 6 for the confirmation, 7 for the
-commit and 8 to 15 for the exchange steps, the console's 5, 6, 7 and 8 to 11, and the console's own
-key-0x180 open and close are its port-1 messages 3 and 4.
-
-An emulated Scarlet trades end to end against a host built here: it draws the host's offer, offers
-in answer, confirms, commits, opens key 0x0180, runs the four exchange steps and keeps the Pokemon
-the host sent. Both corrections, four identity messages and the host's own next sequence in the `lowest_pending`
-field of its 0x7C acknowledgements, carry to retail unchanged.
-
-The paragraphs below record what was measured before that, on the emulator. Every layer a live
-emulated Scarlet host puts on the wire is now matched: the NetworkInfo byte for byte apart from the
-session id, Net 0x11 and 0x50, both station lists, the join response, RTT in both directions, the
-clone clock, the channel table, the two stream opens, the two announcements on 0x80 port 2, the
-whole 44-record identity with its gap accepted, and the port-1 channel update, each in the order and
-at the times a live host sends them. The station answers all of it, acknowledges the identity to 47
-with an empty mask and opens Reliable 0x7C port 2, and does not open the game's channel.
-
-The transport is not what stops it. With the receive function at `0x6efc2c` instrumented, the
-port-1 channel update from a host here walks exactly the path the same update from a real host walks
-in the same guest: the flag load, the length check, the station resolve, the byte gate, the window
-write and the flag at `0x6f0040`, message for message and site for site. What differs is above Pia,
-in the game's own trade flow, which reaches the step that opens the channel against a real host and
-not against this one. The seat lasts 23 seconds against this host where it lasted 19 before the
-identity was accepted.
-
-What the two record kinds hold. The message under `80000100` is a tuple of an 850-entry mask array
-and a byte, read in "The first game message, and what it carries"; what the array indexes is
-unknown. The 348 bytes under `80000200` are four constant bytes and a Gen-9 party
-record, read field by field in "The record a trade message carries".
-
-What makes the host open the game. An emulated console answers every layer above, Net, the clock,
-the session, the streams, the identity in both directions and the channel table, and still does not
-open the game's channel: it announces nothing on 0x80 port 2, where a pair's host announces its
-handler keys in two messages, and never sends the port-1 table update that precedes the first game
-message. Instead it answers the joiner's port-2 open with a four-byte open of its own,
-`0db90101`, which a pair's host never sends. Its screen stays on the search. Replaying a real
-joiner's whole 44-record identity in place of the host's mirrored back changes none of it
-(`scratchpad/sv_extract_records.py` pulls a set out of a station's log).
-
-The send the console withholds has one path in the binary, the game's type-7 composer `0xe45740`
-over `0xe45e9c` (The trade job that sends the announcement). A console that announces nothing
-either never relayed a type 1 or holds a type 7 its composer cannot send.
-
-A retail console answers all of it exactly as the emulated one does, byte for byte. In a 179-second
-seat it sent 16 records, 19 sends in all and never more than two of any one, against 350 a second
-with up to seventy retransmits each before the acknowledgement flag was corrected. It answers the
-clone clock, sends its channel table, and opens its own 0x7C port 2 with the same `0db90101`. The
-emulated console is a faithful stand-in for this game at every layer measured so far, including
-where it stops: the retail screen stays on "Searching for a trade partner" through the seat, as the
-emulated one does.
-
-Whether a retail station's own 0xA0 acknowledgements carry a zlib payload, which bit 5 requires to
-pass the inflate, is unmeasured. The retail pair broadcasts them; `bin/sv_join.py` unicast its own
-over the LAN.
-
-A searching console can join the host but never open its Pia socket: it answers the host's first
-Net 0x11 with ICMP port 12345 unreachable and leaves about five seconds later.
-
-Both consoles are Switch 2 and their unicast is 802.11ax, which neither the project's adapter nor a
-MacBook's Broadcom sniffer demodulates. Of a 74-second session the pair sent 388 and 387 readable
-data frames and 9 and 2 unicast ones, so anything sent to one station alone is invisible.
+- Whether a retail station's own 0xA0 acknowledgements carry a zlib payload, which bit 5 requires
+  to pass the inflate. A retail pair broadcasts them; `bin/sv_join.py` has only unicast its own,
+  over the LAN.

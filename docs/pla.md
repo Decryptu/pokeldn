@@ -532,6 +532,19 @@ port carried sequence 1 on all 66 ports of the recorded sessions, the receive wi
 A retransmission carries its original sequence id and a new nonce, so the sequence id is what tells
 a copy from a new message with the same body.
 
+The console resends 0x7c and 0x81 data the same way: both protocols' ticks (0x81's is
+`BroadcastReliableProtocol` `0x7419ec`, 0x7c's `0x74a27c`/`0x74a2f8`) call the window's send routine
+`0x74c9c8`. It resends every entry up to 127 ahead of the base whose pending-station bitmap `+0x2c`
+is non-zero and whose deadline has passed (`0x74cd10..0x74cd80`; for 0x81 through `0x742194`, to the
+stations still pending), then sets the deadline to now plus 33 ms plus 1.4 times the largest
+round-trip value over the window's stations (`0x74d06c`, float `0x3fb33333`; the 33 ms stored at init,
+`0x74a784`). The send count `+0x14` is compared against no limit. A pending bit clears only on an
+acknowledgement inside the window (`0x74f0ec`, `0x74f1f4..0x74f204`) or when the station leaves
+(event 1, `0x7411cc` to `0x74b528`); an id past the window returns at `0x74f1c0` with nothing
+cleared. A station joining zeroes every outstanding deadline (`0x74b358`), so the next tick resends
+everything. A console therefore resends a port's message for as long as a peer answers it only with
+ids past the window.
+
 ## The channel table on port 1
 
 Port 1 of protocol 0x7c carries no game message. It carries the channel table: each station tells
@@ -1585,6 +1598,3 @@ change neither the words nor the delay.
   `0x42eced0`; the decrement needs `0x26bd430` to run. A console run that stops a trade between the
   host's `02 03` and `02 06` and times the refusal from its first showing to Link Trade opening again,
   with the game left on the field, settles both.
-- How the 0x81 window resends its own data. The acknowledgement sender `0x74ea00` is read; the data
-  resend path is not, so whether a console resends a port's message for as long as a host answers it
-  with an id past the window is unknown.
