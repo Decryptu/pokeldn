@@ -291,7 +291,7 @@ ranged from 13.5 to 116 ms:
 |---|---|---|---|---|---|
 | 1 | 9 | 13.5 to 116 ms | 65 to 261 ms | 5 | 4.9 to 8.5% |
 | 6 | 1 | 18 ms | 108 ms | 1 | |
-| 11 | 3 | 9 to 11.2 ms | 26 to 46 ms | 0 | 5.5%, 6.0% |
+| 11 | 4 | 9 to 11.2 ms | 19 to 46 ms | 0 | 3.3%, 5.5%, 6.0% |
 
 On channel 11 the board misses as large a share of the console's first copies as on channel 1, and
 its p90 wait is the same (4.5 ms); only the tail differs (over 20 ms: 8 and 9 frames, against 42 to
