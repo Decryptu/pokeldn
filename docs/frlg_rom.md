@@ -943,18 +943,11 @@ The session then closed normally, "Sauvegarde terminee" and the RFU disconnect f
 `MG_CLOSE` sequence: the "Erreur de connexion" the chained session showed belongs to `swi 0x43` and
 `swi 0x44`, not to `swi 0x61`.
 
-`swi 0x4D`, `svc_BadWordCheck`, handler `main + 0x0571FC`, is what the naming screen, a Union Room
-chat entry and a Union Room board text all call with `r0` an ASCII string and `r1` a second argument
-every caller in the decomp passes as 0 [sloopsvc.c:194-217]. The wrapper's own GBA-side wrapper
-converts the game's own text encoding to ASCII before the call and back after; the syscall's contract
-is ASCII in. Issued from the Mystery Gift client with a raw ASCII string in `r0`, `r1` = 0, across
-three separate sessions: a clean word (`POKELDN`), an English word containing a blocked substring by
-naive matching (`ASSASSIN`) and Nintendo's own name (`NINTENDO`). All three returned `r0` = 0 and the
-read-back buffer unchanged, byte for byte, from what was sent. Whether 0 means clean, the check never
-ran against any of the three, or `r1` selects a mode this session left disabled is unresolved; the
-decomp's own comment on the return value is itself a guess [sloopsvc.c:210]. `swi 0x52`'s handler
-sets the guest's `r0` to a hardcoded zero regardless of what its callee computes (above), so a
-syscall returning zero across every input tried is not new to this one.
+`swi 0x4D` is the bad-word filter; its full behaviour, including the mask byte and the two
+non-flagged and flagged test strings, is under "The bad-word filter" below. Three more strings
+issued from the Mystery Gift client the same way (`r0` a raw ASCII pointer, `r1` = 0) join the
+non-flagged row: `POKELDN`, `ASSASSIN` (an English word containing a blocked substring by naive
+matching) and `NINTENDO`. All three came back with `r0` = 0 and the buffer unchanged.
 
 `swi 0x4B`, handler `main + 0x0572C4`, takes no argument. `RfuMain1` reseeds the RNG from
 `gHostRfuGameData->compatibility.playerTrainerId` when bit 1 of the return is set, and
@@ -963,9 +956,38 @@ Issued from the Mystery Gift client: `r0` came back 0, both bits clear. Neither 
 Mystery Gift session, so this reads the syscall's answer with no Union Room group being spawned,
 consistent with "nothing to report" rather than a broken call.
 
+`swi 0x4F`, handler `main + 0x057248`, callee `main + 0x058B54`, writes guest `r0` unvalidated to
+`component + 0x6052A0` through a small tagged-property dispatcher (`main + 0x4EBD0`): the callee
+builds an 8-byte `{u16 tag; u32 value}` record on its own stack with the tag hardcoded to `0x4757`
+and the value copied from guest `r0`, and the dispatcher's matching setter
+(`main + 0x058BB4`) stores only the 4-byte value at that fixed offset, leaving the rest of the field
+untouched. Live, `component + 0x6052A0` is a 16-byte record: a 4-byte count, 4 bytes unused, then an
+8-byte pointer into `main`'s own image. Freshly launched it read count 1, pointer `main + 0x1E8D20`,
+an array of pointers with two null entries right after the one populated slot. `swi 0x50`'s handler
+(`main + 0x058BA4`) is the matching getter, reading the same 4-byte count back. Writing 3 and
+`0x7FFFFFFF` to it, each followed by `swi 0x49` and `swi 0x4A` in the same session, changed nothing
+observable: the session answered and closed exactly as any other, so neither syscall reads this
+count as a bound on the array beside it. The dispatcher's mismatch path (`main + 0x50618`) checks a
+second tag, `0x59`, taking a third argument (`x2`) no syscall found so far supplies; what it reaches
+past that point is unknown.
+
+`swi 0x51`, handler `main + 0x057270`, callee `main + 0x0511BC`, reads `component + 0x3404` into an
+out-parameter and clears it. The dispatcher always passes its own local stack slot as that
+out-parameter, never a guest-resolved address, so this syscall cannot be made to write anywhere
+guest-chosen.
+
+`component + 0x2770` (through `[component + 0xD0]`) is read in three places: `swi 0x53`'s handler,
+a plain boolean check with no write, and two functions with no `sloop-svc` number leading to them,
+`main + 0x0511F4` and `main + 0x0511CC`. `main + 0x0511F4` compares the field against 10 and, at or
+past it, atomically loads a second flag at `component + 0x2790`; a set flag leads into
+`main + 0x057250`'s continuation, which starts by testing whether a third argument, not one `swi
+0x53` supplies, is null. What calls `main + 0x0511F4`, and with what, is unidentified.
+
 The component that owns `bkpt #0x52` also owns the syscall dispatcher (`main + 0x057014` is slot 21
 of the same vtable) and a table of 2324 species names, six languages per species, hashed with djb2
-at construction (`main + 0x056540`, the strings at `main + 0x1C4470`).
+at construction (`main + 0x056540`, the strings at `main + 0x1C4470`). The dispatcher's own frame is
+`main + 0x057014`: `0x40` bytes for the saved registers, then a further `sub sp, sp, #0x310` for
+locals, one frame shared by every `swi 0x40..0x62` handler branched to from its jump table.
 
 `bkpt #0xFF` from a Mystery Gift payload ends the session and closes the game. The wrapper files
 the session's play report, finalizes LDN, stops audio, files a second play report built from the
@@ -1057,6 +1079,9 @@ returns in `r0`:
 | --- | --- | --- |
 | `hello world` | 0 | `hello world` |
 | `hello fuck` | 1 | `hello ` then four `0xA1` bytes |
+| `POKELDN` | 0 | unchanged |
+| `ASSASSIN` | 0 | unchanged |
+| `NINTENDO` | 0 | unchanged |
 
 So `r0` is 1 when something was masked, and the mask byte is `0xA1`. `r1` = 1 masked the same string the same way.
 
