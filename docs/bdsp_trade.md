@@ -155,8 +155,10 @@ phase 2, shows the partner's cancel.
 
 - Answer each console check-ok once. A retransmitted copy of it, answered again after the first
   answer has moved the box to `LastConfirm`, resets the round.
-  Within one seat a console never reused a reliable sequence id for different content (0 of 11004
-  messages over 89 retail captures), so a receiver can drop an id it has already delivered;
+  Within one seat a console never reused a reliable sequence id for different content: over 76
+  retail captures, 12858 reliable data messages decrypted from the packets and walked with 0x00
+  presence read, 322 ids arrived more than once and every copy carried the same payload and flags.
+  A receiver can drop an id it has already delivered;
   `pokeldn.ldn.reliable5.Reassembler` does, and `bin/bdsp_connect.py` uses it.
 - Answer a console's `45 0001 01` with `45 0001 00`, as a console does; a `{1}` back is a back-out
   of the peer's own. Never send a 0x45 of either value after the replacement Pokemon has gone out or

@@ -125,6 +125,13 @@ nothing past 0x0F. Version 9's header is 16 bytes; version 4 adds the eight-byte
 id is `station_protocol.ldn_constant_id` over the sender's MAC, the same integer the Local Protocol's
 `host_constant_id` carries: big-endian in the Pia header, little-endian in the Local Protocol body.
 
+Version 16 (Z-A) narrows the fields: its header size `0x256dfc8` is one byte plus one for flags,
+two for the size, and one each for bits 0x04 (protocol), 0x08 (port) and 0x10. The bit-0x10 byte is
+stored between the protocol and the port (`0x256df54`, setter `0x256a8e8`); a fresh header holds
+protocol 0xFF, 0xFD there and port 0 (`0x256a8c0`). The reader ignores bits 0x20 to 0x80 and
+rejects a size of 0x590 or more (`0x256df04`). Bit 0x10 has not been seen on the air.
+`pokeldn.ldn.reliable.parse_messages` reads it.
+
 In versions 4 and 9 each message is padded to a multiple of four, and the reader steps over the
 padding without reading it: a Shining Pearl pads with 0x00. The packet tail is `0xFF`.
 

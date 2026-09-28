@@ -301,7 +301,9 @@ the ack alone decided nothing: a seat with the retail form still flooded 6 s.
 
 `bin/sv_join.py` acks a new record at once and a repeat at most once per 50 ms per stream
 (`--repeat-ack-gap`): in a one-second burst of 91 repeats read it sent 38 packets, against about 150
-with an ack per repeat. The host's `lowest_pending` moved at the same point either way.
+with an ack per repeat. The host's `lowest_pending` moved at the same point either way. It sends
+one ack per stream per packet, after every message in the packet is read: a round of 14 records
+draws one ack whose mask covers all 14.
 
 With the board fixed, the host's own processing sets the pace. Its radio acknowledged every one of
 the joiner's frames within 7 ms of it entering the board's driver, and the joiner acked each host

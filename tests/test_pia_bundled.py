@@ -61,3 +61,14 @@ def test_a_presence_byte_of_zero_is_a_message(case, expected):
     got = [(m.protocol, m.port, _sequence(m)) for m in _messages(case)]
     assert got == expected
 
+
+
+def test_the_version_16_walk_reads_the_byte_bit_0x10_states():
+    """Z-A's header size `0x256dfc8` is 1 + flags + 2 * size + one byte each for bits 4, 8 and
+    0x10; a walk that stops on 0x10 loses the message and every one behind it."""
+    from pokeldn.ldn import reliable
+    first = bytes([0x1F, 0x00, 0x00, 0x03, 0x81, 0xFD, 0x02]) + b"abc"
+    second = bytes([0x00]) + b"xyz"
+    msgs, end = reliable.parse_messages(first + second + b"\xff")
+    assert [(m.proto, m.payload) for m in msgs] == [(0x81, b"abc"), (0x81, b"xyz")]
+    assert end == len(first + second)

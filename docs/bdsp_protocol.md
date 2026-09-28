@@ -83,14 +83,17 @@ looped-back broadcasts before recording, so all of these are the console talking
 | 0x01 | `NetJoinData` | 2070 | 0 | 17 | 19 |
 | 0x02 | `NetPosData` | 0 | 60 | 72 | 5 |
 | 0x12 | `NetRequestData` | 4333 | 55 | 1 | 19 |
-| 0x23 | `NetDataIsMatchWaitData` | 229 | 0 | 1 | 13 |
+| 0x23 | `NetDataIsMatchWaitData` | 1734 | 0 | 1 | 13 |
 
 Two more come only when asked for (below): `NetDataBattleTypeData` (0x09), one byte, 0 on a console
 with no battle set up, and `NetDataStandbyWaitListData` (0x22), twenty bytes. Two come when the
 player picks the activity (the transitionType table below): `NetDataRecodeData` (0x14) and
 `NetDataAttachSealNetData` (0x15). The trade messages are on [the trading page](bdsp_trade.md).
 
-Every payload in the archive (over six thousand messages, nineteen runs) is a well-formed game
+1505 of the 1734 `NetDataIsMatchWaitData` copies, all in two captures, sit behind a presence byte of
+0x00 and are read only by a walk that takes 0x00 as a message ([Message framing](pia.md#message-framing)).
+
+Every payload in the archive (over eight thousand messages, nineteen runs) is a well-formed game
 message declaring a length that exactly accounts for its bytes.
 
 `NetPosData`'s struct is an array, one of the twelve; 72 bytes is 12 points of 6 and nothing else

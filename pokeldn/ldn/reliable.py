@@ -393,7 +393,7 @@ def parse_messages(data):
     mf, size, proto = 0, None, None
     while i < n:
         fl = data[i]
-        if fl == 0xff or (fl & 0xF0):
+        if fl == 0xff or (fl & 0xE0):
             break
         if fl == 0 and size is None:
             break
@@ -416,6 +416,11 @@ def parse_messages(data):
             j += 1
         if fl & 8:
             # 6.32-6.40 format: bit 0x8 is a 1-byte port (the older format had an 8-byte u64 here and mis-tiles the stream).
+            if j + 1 > n:
+                break
+            j += 1
+        if fl & 0x10:
+            # Z-A reads one byte, stored between protocol and port, at 0x256df54 (docs/pia.md).
             if j + 1 > n:
                 break
             j += 1

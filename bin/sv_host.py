@@ -275,6 +275,9 @@ def build_parser():
                          "(scratchpad/sv_extract_records.py writes such a set)")
     ap.add_argument("--record-delay", type=float, default=0.0,
                     help="seconds after the seat before the record set goes out")
+    ap.add_argument("--records-per-packet", type=int, default=1, metavar="N",
+                    help="bundle the record set N to a packet, each after the first with its "
+                         "header inherited, as a retail host's retransmit round does (docs/sv.md)")
     ap.add_argument("--announce", action="store_true",
                     help="run the game's port-2 opening from the station ids instead of a replay: "
                          "the type-7 announcement on 0x80 port 2 carrying this host's own station "
@@ -479,6 +482,19 @@ def main():
         print(f"[sv] -> {ip}: data 0x{protocol:02x}:{port} seq {seq} {len(data)}B "
               f"{data[:8].hex()} ({why})")
 
+    def send_record_bundle(ip, bundle):
+        """Records on 0x81 port 0 in one packet, the first message whole, the rest inheriting it."""
+        msgs = pia6.build_message(bundle[0][1], PROTO_STREAM_BROADCAST_RELIABLE)
+        msgs += b"".join(pia6.build_message(body, PROTO_STREAM_BROADCAST_RELIABLE, inherit=True)
+                         for _, body in bundle[1:])
+        pkt = pia6.build_packet(keys.session_key, keys.network_id, transport.our_ip, msgs,
+                                dst_var=MESH_DESTINATION, src_var=PIA_HOST_VAR,
+                                nonce8=os.urandom(8), footer_ids=(station_ids[ip]["console_var"],))
+        transport.send(pkt, ip)
+        for seq, _ in bundle:
+            record(rec="out", dst=ip, kind="record set", protocol=0x81, port=0, seq=seq,
+                   hex=pkt.hex(), t=time.time())
+
     def send_ack(src_ip, protocol, port, dst_var, why):
         high = stream_high.get((src_ip, protocol, port), 0)
         if protocol == PROTO_RELIABLE:
@@ -604,7 +620,7 @@ def main():
                 # 1, 2, 3, 46, 4, 7, 8, 19, 9, 15 and so on, with the last id fourth. An `order`
                 # file in the set names that order, one sequence id a line; without one the files
                 # go out sorted.
-                sent_ids = []
+                sent_ids, bundle = [], []
                 order_path = os.path.join(args.record_set, "order")
                 if os.path.exists(order_path):
                     names = [f"{int(line):03d}.bin" for line in open(order_path)
@@ -624,13 +640,15 @@ def main():
                              | (reliable5.FLAG_IS_INITIALIZED if seq == 1 else 0))
                     body = build_reliable_body(PROTO_STREAM_BROADCAST_RELIABLE, flags, seq,
                                                payload, lowest_pending=1)
-                    pkt = build_reply(keys, transport.our_ip, body,
-                                      station_ids[ip]["console_var"], os.urandom(8),
-                                      protocol=PROTO_STREAM_BROADCAST_RELIABLE, port=0, flags=0)
-                    transport.send(pkt, ip)
+                    # A bundle stays under the console's receive limit, as a retail round does.
+                    if bundle and (len(bundle) >= args.records_per_packet or sum(
+                            len(b) + 3 for _, b in bundle) + len(body) + 3 > pia6.MAX_PAYLOAD - 48):
+                        send_record_bundle(ip, bundle)
+                        bundle = []
+                    bundle.append((seq, body))
                     sent_ids.append(seq)
-                    record(rec="out", dst=ip, kind="record set", protocol=0x81, port=0, seq=seq,
-                           hex=pkt.hex(), t=time.time())
+                if bundle:
+                    send_record_bundle(ip, bundle)
                 # THE SENDER'S OWN LOWEST PENDING IS HOW THE PEER LEARNS A GAP WILL NEVER FILL.
                 # The pair's host skips sequence ids 5 and 6 on this stream, and its next bulk ack
                 # on it declares lowest pending 47, one past the last id it sent. Its peer then

@@ -980,6 +980,7 @@ async def run_session(args, keys, host_ip, host_mac, our_ip, our_mac, record):
         except Exception as exc:
             print(f"[sv] <- {addr[0]}: messages did not parse: {exc} {plain.hex()}")
             continue
+        ack_due = {}
         for msg in msgs:
             counts[msg.protocol] = counts.get(msg.protocol, 0) + 1
             record(rec="msg", src=addr[0], protocol=msg.protocol, port=msg.port,
@@ -1240,13 +1241,16 @@ async def run_session(args, keys, host_ip, host_mac, our_ip, our_mac, record):
                     # nearly fills what the board transmits (docs/sv.md).
                     held_off = repeat and time.time() - last_ack.get(key, 0.0) < args.repeat_ack_gap
                     if not args.no_ack and not held_off:
-                        ack = our_ack(key)
-                        send(out(ack, host_var or 0, protocol=msg.protocol,
-                                       port=msg.port, flags=ack_shape["flags"]),
-                             "reliable ack", protocol=msg.protocol, port=msg.port)
-                        last_ack[key] = time.time()
+                        ack_due[key] = None
                 if key not in last_ack:
                     last_ack[key] = 0.0
+        # One ack per stream per packet, sent once every message is taken: a packet can carry 14
+        # records, and the ack's mask covers them all (docs/sv.md).
+        for key in ack_due:
+            protocol, port = key
+            send(out(our_ack(key), host_var or 0, protocol=protocol, port=port,
+                     flags=ack_shape["flags"]), "reliable ack", protocol=protocol, port=port)
+            last_ack[key] = time.time()
     sock.close()
     print(f"[sv] seat over: {seen} datagram(s) in, {authed} authenticated. messages by protocol: "
           + " ".join(f"0x{p:02x}={n}" for p, n in sorted(counts.items())))
