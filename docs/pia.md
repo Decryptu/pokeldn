@@ -661,6 +661,39 @@ had its trainer record and its Pokemon acknowledged and never delivered: the con
 offer. An ack carries the sender's own lowest unacknowledged sequence, in the header and in the
 entry's second halfword.
 
+### Who a window sends to (Pia 6)
+
+A `ReliableSlidingWindow` keeps its destinations at window `+0x40`, an array of station pointers,
+one per station index, sized by `[[0x46d0860]]+0x50` (Scarlet 4.0.0 `main`). Pia fills it itself on
+the station events, with no game code involved. The only store of a non-null element is `0x6ef69c`
+(`str x23, [x8, x25, lsl #3]`) in `0x6ef588`, which registers a station at an index; nulls are
+stored at `0x6ef3dc`, `0x6ef4e0` and `0x6ef9b4`.
+
+`0x6ef588` refuses when:
+
+| refusal | code |
+|---|---|
+| the window has no capacity, `[w+0x28]` zero | 0x1040c |
+| the station is null, is the window's own `[w+8]`, or the index is the window's own `[w+0x10]` | not read |
+| the index is already taken | 0x10407 |
+| the index's per-station record (window vfunc `0x40`) has byte `+0x1f` set (`0x6ef650`..`0x6ef664`) | 0x10408 |
+| the station is already registered at another index | 0x10408 |
+
+On success it resets that record (vfunc `0x10`), writes the index at `+0x24` and a u16 from `w3` at
+`+0x26`, and sets the index's bit in `[w+0x74]`.
+
+Its two callers are a protocol's slot-11 station-event method: `0x6e6288`, BroadcastReliableProtocol
+(0x80), `bl` at `0x6e630c`, which StreamBroadcastReliableProtocol's slot 11 `0x6f51a8` calls first
+(`0x6f51bc`); and `0x6ee528`, ReliableProtocol (0x7C), call site `0x6ee5d4`. `0x6e6288` looks the
+event's station up by the id at event `+8` (`[[0x46d0860]]` -> `0x1e7c4e8` -> vfunc `+0x38`) and
+returns when the protocol's own station index is 0xfd (`0x6ec4f0`) or the station is the protocol's
+own (`0x6ec4a8`, against `[station+0x30]`). Event 0 registers `[station+0x30]` at index
+`[station+0x28]` with `[station+0x38]`; event 1 removes the index (`0x6ef75c`).
+
+A window's destination list is therefore empty for a station only before its join event is handled,
+after its leave, while the protocol has no station index (0xfd), or when `0x6ef588` refused the
+registration.
+
 ### Version 4
 
 Version 4 uses one header class for both reliable protocols, 0x7C and 0x80:
@@ -735,6 +768,40 @@ bitmap rule gives 621; the message is 625.
 The ack names its own 32 slots: a console fills 0..7 with the real ack id and leaves 8..31 at zero,
 and 8 is `max_total` from the join response. One entry per station the mesh can hold, indexed by
 station index.
+
+## Protocol 0x81, the stream broadcast reliable transfer (Pia 6)
+
+`StreamBroadcastReliableProtocol` moves one block of a fixed size from a station to every station
+that asked for it, in chunks. Its slot 10 is its own update `0x6f5360`, slot 11 `0x6f51a8`, slot 17
+`0x6e6818`, and slot 19 is BroadcastReliableProtocol's `0x6e69a0` (Scarlet 4.0.0 `main`). `0x6e69a0`
+loads the window from `[proto+0x70]` and runs the `ReliableSlidingWindow` send loop `0x6f0638`
+(`bl` at `0x6e69c0`) with the byte budget `[proto+0x64]`; the send loop takes every slot's next time
+from the retransmit deadline `0x6f0d14` (`bl` at `0x6f073c`). The stream enqueues its chunks through
+`0x6f1994` (`0x6f5c2c`, `x0 = [proto+0x70]`), which stamps a slot with now (`0x6f1bd4`). A 0x81
+transfer therefore retransmits on the same deadline as 0x7C and 0x80, and with no RTT sample for
+any destination it never retransmits.
+
+Each message carries an eleven-byte StreamData header, written by `0x6f60e8`:
+
+    +0  1  kind: 0 a receive posted, 1 the first chunk, 2 a later chunk; 4 and 5 are control kinds
+    +1  1  transfer id
+    +2  1  percent of the block delivered after this chunk
+    +3  4  big-endian u32: the receive capacity in a kind 0, zero in a chunk
+    +7  4  big-endian u32: the length of the data that follows
+    +11    the data
+
+The game calls a send API with a buffer, a size and a transfer id, and a receive API with a sender,
+a buffer, a capacity and an id. A posted receive sends a kind 0 carrying the capacity. The send
+refuses a size above `[proto+0xa0]`, an id of 0xff, and a send when no station's `[proto+0x98]`
+byte equals the id. The chunk loop (`0x6f5b54`..`0x6f5c58`, in `0x6f5560`) enqueues while
+`0x6f1ef8` finds a free slot, chunks of `[window+0x70] - 11` bytes, kind `(offset != 0) + 1`
+(`0x6f5bb0`..`0x6f5bbc`), the id from `+0xa4`, and the percent `(offset + chunk) * 100 / size`
+(`0x6f5b78`..`0x6f5b98`), also kept at `+0xba`.
+
+The protocol's state at `+0x78` (`0x6f53b0`): a receive goes from 5 to 6 when `+0xba` reaches 0x64
+(`0x6f5460`); a send goes from 2 to 3 when an entry of `[+0x98]` equals `+0xa4` and the window
+reports the sequence `+0xb8` acknowledged (`0x6e7128`, `0x6f54e4`), and resets to 0xC with no
+matching entry.
 
 ## Protocol 0x84, the reliable broadcast transfer
 

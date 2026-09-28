@@ -153,7 +153,9 @@ its records on the port that is its own station index, which is the convention
 | joiner, index 1 | 0x81 ports 0 and 4 | 0x81 port 1 |
 
 The open payload is `0000000000f38800000000` on ports 0 and 1, and `00 <port> 00 00 0ff0 0800000000`
-on ports 4 and 5. `pokeldn.sv.streams` builds all of it and `tests/test_sv.py` pins every message
+on ports 4 and 5: a StreamData kind 0, a receive posted with its capacity, 0xF388 for transfer id 0
+and 0xFF008 for ids 4 and 5. Of 124 kind-0 messages in 47 Scarlet captures, 62 carry 0xF388 and 62
+carry 0xFF008. The 0xFF008 transfer is posted by both sides and never sent in a trade. `pokeldn.sv.streams` builds all of it and `tests/test_sv.py` pins every message
 to the bytes a retail station sent.
 
 ### The Pia message flags
@@ -197,32 +199,38 @@ With no sample for any destination `0x6f0d14` returns the window's unscheduled m
 `[window+0x5c]`. A message is sent once when queued (`0x6f1bbc`..`0x6f1bd4` set its time to now),
 then parked at the marker and skipped at `0x6f0a18` on every pass until a sample exists, when it is
 re-armed to the deadline (`0x6f09f4`..`0x6f0a08`). A reliable window with no RTT sample never
-retransmits. `[window+0x80]` is written only through `0x6f1f98`, from `ReliableProtocol::vfunc17`
-(`0x6eebbc`) and `BroadcastReliableProtocol::vfunc17` (`0x6e6818`); the value the game gives it is
-unknown.
+retransmits. `[window+0x80]` is written only at `0x6f1fc8` in `0x6f1f98`, as milliseconds converted
+to ticks, from `ReliableProtocol::vfunc17` (`0x6eebbc`) and `BroadcastReliableProtocol::vfunc17`
+(`0x6e6818`). No call site passes it a constant. The console's tail pacing bounds it from above
+(The retail acknowledgement, below).
 
 ### The records
 
 A record is one reliable message with the ZLIB flag, and its payload is a zlib stream with a 4 KB
-window, so it begins `484b`. Every record measured decompresses to 1395 bytes and opens the same
-way:
+window, so it begins `484b`. Every record measured decompresses to 1395 bytes, `[window+0x70]`: one
+chunk of a 0x81 transfer under Pia's eleven-byte StreamData header
+([Protocol 0x81](pia.md#protocol-0x81-the-stream-broadcast-reliable-transfer-pia-6)):
 
-    +0x00  1   kind: 1 the station's identity, 2 a body record
-    +0x01  1   zero
-    +0x02  1   an index that rises by two per record within a station's burst
-    +0x03  6   zero
-    +0x09  2   0x0568, the 1384 bytes that follow
+    +0x00  1   StreamData kind: 1 the first chunk of the block, 2 a later chunk
+    +0x01  1   transfer id, 0
+    +0x02  1   percent of the block delivered after this chunk
+    +0x03  4   zero, the capacity field of a kind 0
+    +0x07  4   big-endian u32 0x00000568, the 1384 bytes that follow
 
-A kind-1 record carries the player the game shows as the partner:
+The block a station sends on its own port is 0xF388 (62,344) bytes: 45 chunks of 1384 bytes and
+one of 64, ids 1 to 46. The percent byte of chunk *k* is `floor(k * 1384 * 100 / 62344)`: 2, 4, 6,
+8, 0x0b, ..., 0x37 at chunk 25, 0x52 at 37, 0x64 at 46.
+
+The first chunk carries the player the game shows as the partner:
 
     +0x0b  5   unread
     +0x13  26  the player name, UTF-16 little-endian, NUL-padded
     +0x2d  22  the account identifier, ASCII, `u-` and twenty characters
     +0x53  1   5
 
-The kind-2 records are high-entropy for their whole length and carry no readable string. A station
-sends one kind-1 record and then a run of kind-2 records in the same tenth of a second: the host
-fifteen and the joiner seven in the session measured. `pokeldn.sv.streams.decompress` reads them and
+Chunks 2 to 24 are high-entropy and carry no readable string; chunks 25 to 46 are zero in the sets
+read. A station sends its first chunk and then a run of later chunks in the same tenth of a second:
+the host fifteen and the joiner seven in the passive capture measured. `pokeldn.sv.streams.decompress` reads them and
 `scratchpad/pia6_air_decode.py` writes each one out.
 
 ### The retail acknowledgement, and a flood of retransmits
@@ -235,11 +243,35 @@ bulk ack declared 47, the same host acked 47 with an empty mask. `pokeldn.sv.str
 builds this, and `tests/test_sv.py` pins it to two of the host's acks. `bin/sv_join.py` sends it;
 `--ack-highest` sends one past the highest id seen instead.
 
-A host's own record set on 0x81 port 0 varies by seat. It sends ids 1 to 25 and 37 at once. In some
-seats the set skips 26 to 36 and the host's `lowest_pending` goes from 1 to 38; in others the set
-holds 26, which the host sends only once 1 to 25 are acknowledged, and `lowest_pending` goes 1, 26,
-38. Unacknowledged, the host retransmits all 26 records about every 100 ms at HT MCS3, 130 to 150
-records a second, about 3% of the air and the whole 150 KB/s of a board's line to its host.
+A host's own record set on 0x81 port 0 leaves in two parts. Ids 1 to 25 and 37 go at once, in the
+order 1, 25, 2, 37, 3, then 4 to 24 over about 0.17 s. The tail, ids 26 to 36 and 38 to 46, goes
+one record at a time: in 19 of 20 first arrivals of a tail record, the host's `lowest_pending` in
+that header equals the record's own id, so each is first sent once the one before it is
+acknowledged. An acknowledgement that declares one past the highest id seen (38 after the burst)
+makes the host count 26 to 36 acknowledged: they are never sent, its `lowest_pending` goes from 1
+to 38, and only 38 to 46 form a tail. Unacknowledged, the host retransmits all 26 records of the
+burst about every 100 ms at HT MCS3, 130 to 150 records a second, about 3% of the air and the whole
+150 KB/s of a board's line to its host.
+
+The interval between tail records grows with the RTT the host holds for the station, with a slope
+of 1.41 x RTT, the 1.4 of the retransmit deadline in RTT above. Against the host's RTT estimate
+(the joiner's answer delay plus the joiner's own RTT to the host), per seat:
+
+| answer delay | estimated RTT | tail gap, seat medians |
+|---|---|---|
+| 0.000 s | 0.033 to 0.038 s | 0.086 to 0.116 s |
+| 0.318 to 0.328 s | 0.354 to 0.363 s | 0.532 to 0.555 s |
+
+The per-seat intercept, the gap less 1.4 x RTT, is 0.030 to 0.059 s, and up to 0.066 s in three of
+the prompt seats. The send loop runs once per frame, and `GetRtt` and `1.4 * rtt` are truncated to
+milliseconds, so the intercept is an upper bound on `[window+0x80]`, not its value.
+
+The retransmit interval of a repeated burst id converges on the tail gap in the same seat: one seat
+repeated at 0.19 to 0.20 s with 4 to 5 RTT answers held, 0.10 s with 8 to 18 and 0.082 s with 20,
+against a tail gap of 0.084 s. With answers 0.3 s late the tail's 19 gaps take about 10.3 s, and
+those seats were announced 10.23 to 13.66 s in. What holds a tail record already queued until the
+deadline is not traced: the enqueue `0x6f1994` stamps a new slot with now (`0x6f1bd4`), and ids 25
+and 37 leave in the first datagram with 1 and 2.
 
 Every seat that flooded this way was one whose board could not send while its line was full
 ([the serial ceiling](hardware_esp32.md#the-serial-ceiling)): the joiner's acks waited up to
@@ -268,8 +300,28 @@ Whether the set floods depends on the RTT answers the host holds when it sends i
 
 The retransmit interval follows the measured RTT through the deadline in RTT above: a few prompt
 answers bring it under the host's own 0.8 s ack latency. `--rtt-delay 0.3` answers each RTT request 0.3 s late; the host announces the
-station and the trade completes. A station that never answers RTT is never announced (four seats of
+station and the trade completes: twelve seats of twelve were announced, two of them the next seat
+after the console's post-trade host migration (`--leave-on-migration 3`, the player searching
+again), each traded. `bin/sv_join.py --announce-timeout SECONDS` leaves a seat not announced within
+that time and scans again. A station that never answers RTT is never announced (four seats of
 four), so `--no-rtt` cannot remove the flood.
+
+Such a seat is held by the host's own unfinished transfer. The 0x81 streams send through the
+`ReliableSlidingWindow` send loop, so with no RTT sample nothing is retransmitted
+([Protocol 0x81](pia.md#protocol-0x81-the-stream-broadcast-reliable-transfer-pia-6)). In the four
+seats with no answer, no id was sent twice, the joiner's own set was acknowledged to 47, and the
+host answered 40 to 46 of the joiner's RTT requests:
+
+| seat | host ids that never arrived | host `lowest_pending` | seat ended |
+|---|---|---|---|
+| 0 | 11, 26 to 36, 38 to 46 | 11 from 1.51 s | 22.72 s |
+| 1 | 26 to 36, 38 to 46 | 26 from 2.86 s | 22.68 s |
+| 2 | 19, 26 to 36, 38 to 46 | 19 from 2.86 s | 20.49 s |
+| 3 | 18, 23, 26 to 36, 38 to 46 | 18 from 1.46 s | 20.02 s |
+
+A record lost in the burst held the host's `lowest_pending` at its id for the rest of the seat and
+was never resent. With nothing lost (seat 1), 1 to 25 stood acknowledged from 2.86 s and record 26
+was never sent in 20 s.
 
 ### What a passive capture misses
 
@@ -571,10 +623,21 @@ and a code, on `+0x350`:
 | 3 | the FNV-1a 64 hash of the join's name differs from the slot's (`0x1e648a0`) |
 | 4 | the slot is closed (`0x1e64924`, slot `+0x160`, cleared when the slot is created) |
 
-`0db90101` is code 1, the answer to a join that names no slot the console holds. The type-0x0D
-receiver `0x279c1ac` writes the code as the pending request's result (`+0x43`) and marks it done
-(`+0x42`), checking neither the request's type nor the sender; the port-2 poller `0x1954978` and
-the dispatcher filter no sender either. The type-9 receiver `0x18b65c8` selects
+`0db90101` is code 1, the answer to a join that names no slot the console holds. The port-2 poller
+`0x1954978` reads the handle `[0x475ea70]` on 0x7C (`0x19549e4`) and `[0x475ea7c]` on 0x80
+(`0x1954a54`) and hands both to the dispatcher `0x1954aec`, which switches on the first byte through
+the table at `0x3c68988`. Type 0x0D goes to `0x1954f3c`, which requires `0xb9`, decodes a
+one-element tuple with `0x279c0e8` and calls the receiver `0x279c1ac` (`0x1954f78`):
+
+    0x279c1b8  ldr  x8, [x0, #0xb8]     the pending request
+    0x279c1bc  cbz  x8, ret             none: nothing happens
+    0x279c1d0  strb w9, [x8, #0x43]     result = the code
+    0x279c1d8  strb #1, [x8, #0x42]     done
+    0x279c1dc  bl   0xc8e6c4            wakes the request's waiter at +0x48
+
+No sender reaches it, and it reads neither the request type `+0x40` nor the done byte `+0x42`
+before writing. A 0x0D from a joiner takes the path its type 3 takes and completes whatever request
+the console holds, with the code it carries. The type-9 receiver `0x18b65c8` selects
 an object by the slot byte, applies the message, and compares the u64 with the station's own id
 at `[[0x46d0a08]] + 0xb8`; any other id is dropped.
 
@@ -589,14 +652,16 @@ with a type 9 carrying its id; `tests/test_sv.py` pins the three messages to the
 ### The trade job that sends the announcement
 
 The Link Trade flow creates the job at `0x1e2ea54`: the config named `BoxTrade` (`0x3aefac8`) goes
-to the job factory `0x1e2f3d4` with mode 4 and need 2. The job (constructor `0x1e3bd10`, vtable
+to the job factory `0x1e2f3d4` with mode 4 and need 2. Two script bindings reach `0x1e2ea54`:
+`0x1e2e9bc` (GOT `0x46d6608`, stored by `0x1b9c8c4` into the static `0x4717068`), which tail-calls
+it, and `0x1e2ec84` (GOT `0x46d6610`, `bl` at `0x1e2ee40`). The job (constructor `0x1e3bd10`, vtable
 `0x44568a8`, Update `0x1e51a04`) keeps its result at `+0x40`, its state at `+0xb8`, the session
-handle at `+0xc0`, the mode and the need as u16 at `+0xc8` and `+0xca`, the player-slot object at
+handle at `+0xc0`, the mode and the need as u16 at `+0xc8` and `+0xca`, the slot object at
 `+0xd0` and the request handle at `+0xf8`.
 
 | state | address | what it does |
 |---|---|---|
-| 1 | `0x1e51a84` | ends with result 3 if the Pia station count `[[0x46d0a08]]+0xe0` is below need, and with result 1 if `0x18ab520` rejects the mode (0, 5, above 8). Otherwise waits, with no timeout, until the player-slot object counts `need` finished identity blocks (`0x1e52004`), then goes to 2 on the master (`0x1639910`: own id `+0xb8` equal to the master id `+0xc0`) and to 4 on a client |
+| 1 | `0x1e51a84` | ends with result 3 if the Pia station count `[[0x46d0a08]]+0xe0` is below need, and with result 1 if `0x18ab520` rejects the mode (0, 5, above 8). Otherwise waits, with no timeout, until the slot object counts `need` finished identity blocks (`0x1e52004`, over `[[job+0xd0]+0x10] - 0x28`), then goes to 2 on the master (`0x1639910`: own id `+0xb8` equal to the master id `+0xc0`) and to 4 on a client |
 | 2, master | `0x1e51b2c` | the kind `0x18ab550(mode)` (modes 1 to 8 give 2, 3, 4, 1, 0, 5, 5, 8), then the request `0x18ab658`; a null handle ends the job with result 8 |
 | 3, master | `0x1e51ca8` | waits on the request with no timeout; result 0 goes to state 6, anything else ends the job through `0x1e5086c` |
 | 4, 5, client | `0x1e51b8c`, `0x1e51c74` | the same wait bounded by 15 s |
@@ -611,9 +676,26 @@ handle at `+0xc0`, the mode and the need as u16 at `+0xc8` and `+0xca`, the play
 
 The request `0x18ab658` builds the type-1 body and sends it through `0x18ab83c`, which returns a
 null handle while the relay's pending request `[relay+0xb8]` exists with its done byte `+0x42`
-still 0, and also when the send fails. Otherwise it stores a new request object at `+0xb8`
-(`0x18abec0`: `+0x40` the request type, 0 for the announcement, `+0x42` done, `+0x43` result) and
-sends the type 1 to the master id (`0x18d58b8`), which on the master is itself.
+still 0 (`0x18ab860`, `0x18ab8e8`), and also when the send fails. Otherwise it clears `+0xb8`
+(`0x18ab894`), stores a new request object there (`0x18ab8a8`; `0x18abec0`: `+0x40` the request
+type, 0 for the announcement, `+0x42` done, `+0x43` result) and sends the type 1 to the master id
+(`0x18d58b8`), which on the master is itself; a failed send clears `+0xb8` again (`0x18ab900`).
+
+`0x18ab658` has four callers: `0x1e51b68`, the BoxTrade job's state 2; `0x18ab34c`, the same state-2
+sequence in a sibling job class (vtable `0x4456490`); `0xa188f0` (vtable `0x4452e68`); and
+`0x1d99568` (vtable `0x44536d8`). A type-0 request can come from any of those features. `+0xb8` is
+written only by the four request creators; `0x18ab83c` and `0x2799b10` refuse while a request is
+pending and not done:
+
+| creator | request type | store | sole caller |
+|---|---|---|---|
+| `0x18ab83c` | 0, the announcement | `0x18ab8a8` | `0x18ab6bc`, in `0x18ab658` |
+| `0x2799b10` | 2, a client's join | `0x2799bd8` (guard `0x2799b2c`..`0x2799b40`) | `0x1e635fc` |
+| `0x2799c44` | | `0x2799cfc` | `0x1e639ec` |
+| `0x2799d6c` | | `0x2799e30` | `0x1e63c88` |
+
+The last three callers each sit in a function whose sole caller is in `0x1d98xxx` (`0x1d986d8`,
+`0x1d98990`, `0x1d98c20`).
 
 The relay queues the type 7 on `+0x200`. The drain `0xe44cf0` walks its eight queues in order,
 `+0x1c8`, `+0x200`, `+0x238`, `+0x270`, `+0x2a8`, `+0x2e0`, `+0x318`, `+0x350`; a composer that
@@ -623,27 +705,47 @@ alone when the station count is 1. Otherwise it asks `BroadcastReliableProtocol:
 (`0x6e6638`) whether 0x80 port 2 can send, sends with `0x107e060`, and dispatches the same type 7
 locally only when both succeed. vfunc20 refuses with 0x2c27 when no entry of the window's
 destination list `[window+0x40]` is set (`0x6efb98`), with 0x4c0d when the window has no room for
-the fragments (`0x6f1ef8`), and with 0x10408 when there is no session or window.
+the fragments (`0x6f1ef8`), and with 0x10408 when there is no session or window. Pia fills the
+destination list itself on the station-join event
+([Who a window sends to](pia.md#who-a-window-sends-to-pia-6)), so on the master a joiner is a
+destination from the moment its join event is handled.
 
 The type-7 receiver `0x18b566c` creates and applies the slot, and when the pending request is type
 0 and the type 7's station id (body `+0x90`) is the console's own, it completes the request, done
 with result 0. A master whose job reaches state 2 therefore stays in state 3 until its own type 7
 has left on the wire. Nothing between the relay and the wire reads RTT, a timer or a sample count.
 
-The player-slot object (Update `0x1e5f87c`, vtable near `0x44586a0`) owns the identity exchange on
-0x81, one port per station index (handles `0x475ea48 + 4*index`). `0x1e52004` counts, over four
-slots at `+0xd0 + 0x30*k`, those holding a peer pointer with the byte `+0xd8` set. The console's own
-slot gets `+0xd8` in `0x1e60284`, which copies the console's own 0x97e08-byte block from `[+0x90]`.
-A peer's slot gets it in `0x1e615e8` only when all of these hold:
+The identity on 0x81 is one block per station, one port per station index (handles
+`0x475ea48 + 4*index`), moved by the stream send API `0xe22188` and receive API `0xe22458`. Three
+objects of one layout call them, each with its own block size:
 
-- the send to that peer has started (`+0xda`, `0x1e617a8` into `0xe22188`, length 0x97e08)
-- the receive from it has started (`+0xd9`, `0x1e61a74` into `0xe22458`, length 0x97e08)
-- the console's own 0x81 stream is in state 3
-- the peer's 0x81 stream is in state 6; state 7 clears `+0xd9`
+| object: Update, vtable | send | receive | block |
+|---|---|---|---|
+| `0xe21104`, slot 13 of `0x4455ec0` | `0xe21a44`, `bl` at `0xe21dc4`, `w2 = 0xf388` at `0xe21db8` | `0xe2150c`, `0xe2170c`, `w3 = 0xf388` at `0xe21708` | 0xF388 = 62,344 |
+| | `0xa62c5c`, `w2 = 0xff008` | `0xa64ddc`, `w3 = 0xff008` | 0xFF008 = 1,044,488 |
+| `0x1e5f87c`, slot 13 of `0x4458698` | `0x1e617a8`, `0x1e61980`, `w2 = 0x97e08` | `0x1e61a74`, `0x1e61c0c`, `w3 = 0x97e08` | 0x97E08 = 622,088 |
 
-The StreamBroadcastReliable state `+0x78` (`0x6f5360`, `0x6f53b0`) goes from 5 to 6 when `+0xba`
-reaches 0x64, and from 2 to 3 when an entry of `[+0x98]` equals `+0xa4` and the window reports the
-sequence `+0xb8` acknowledged (`0x6e7128`); with no matching entry it resets to 0xC.
+Only the 0xF388 block goes on the wire in a trade: every capacity a Scarlet posted is 0xF388 or
+0xFF008 (The eleven streams), and a station's set is 0xF388 bytes (The records). The 0x97E08-byte
+object never transfers in a trade. The object at the job's `+0xd0` is therefore of the 0xF388
+class; which instance it is was not traced (the factory builds it through `0x1e34b6c` ->
+`0x1e35e88`).
+
+`0x1e52004` counts, over four slots at `+0xd0 + 0x30*k`, those holding a peer pointer with the byte
+`+0xd8` set. The console's own slot gets `+0xd8` in `0xe21154` (`memcpy(slot, [+0x90], 0xf388)` at
+`0xe21248`, then `+0xd8 = 1` at `0xe21258`); `0xe21154` is called from `0xa536e0`, `0xd6dc88`,
+`0xe21128` and `0x195160c`. A peer's slot gets it in `0xe212b8` (called from `0xa536f0`, `0xd6dc98`,
+`0xe21138`) only when the send to that peer has started (`+0xda`), the receive from it has started
+(`+0xd9`), the console's own 0x81 stream is in state 3 (`0xe2144c`) and the peer's is in state 6
+(`0xe21404`); state 7 clears a flag. The stream states are Pia's
+([Protocol 0x81](pia.md#protocol-0x81-the-stream-broadcast-reliable-transfer-pia-6)): own state 3
+is every chunk of the console's set acknowledged, peer state 6 every chunk of the peer's received.
+The 0x97E08 class has the same pair, `0x1e60284` and `0x1e615e8`.
+
+On the wire the announcement follows the end of the console's own transfer. In 37 of 40 announced
+seats the type 7 on 0x80 port 2 came 0.020 to 0.106 s after the console's last send of its own set
+on 0x81 port 0. The other three came 0.545, 0.864 and 3.902 s after it; in each, the announcement
+preceded the next periodic console header that showed the set acknowledged.
 
 The relay is an object of 0x388 bytes (vtable `0x44e56f8`), the singleton `[0x46da9c0]` =
 `0x4739430`, created by `0x165a200` from `0x1659b70` only when none exists (`0x1659b18`). Its
@@ -662,6 +764,41 @@ leaves the pending request at `+0xb8`. A pending type-0 request, the announcemen
 only by the type-7 receiver, the type-0x0D receiver and the own-leave event. The other types have
 their own: the type-9 receiver `0x18b6710` completes type 2, the type-0xA receiver `0x1945404` type
 3, the type-0xB receiver `0x279be18` type 4.
+
+The relay lives until the application exits. Three functions write its holder `0x4739430` (GOT
+`0x46da9c0`, guard `0x4739440` through GOT `0x46da9b8`):
+
+| function | what it does |
+|---|---|
+| `0x165a2b4` | the assignment, called only by the creator `0x165a200` (`bl` at `0x165a230`) |
+| `0x279d610` | the reset (`str xzr` at `0x279d62c`), then the destructor and a free; called only from `0x279d5d0` in `0x279d5ac` and `0x2b71684` in `0x2b71660`, the relay's own destroy slots, which have no direct callers |
+| `0xa15f74` | the holder's static destructor (`str xzr` at `0xa15f90`), registered through `__cxa_atexit` by every guarded initialisation of the holder |
+
+The relay's vtable group (relocations at `0x44e56f8`):
+
+| entry | slot | function |
+|---|---|---|
+| `0x44e56f8` | 0 | `0x279a7b0`, destructor |
+| `0x44e5700` | 1 | `0x2b7164c`, `b 0x279a7b0` |
+| `0x44e5710` | 3 | `0x279d5ac`, destroy the singleton |
+| `0x44e5718` | 4 | `0x12fbb90`, the station-event handler |
+| `0x44e5730`, `0x44e5738` | interface at `+0x20`, slots 0 and 1 | `0x2b7165c` (`ret`), `0x2b71660` (destroy the singleton) |
+| `0x44e5750` | interface at `+0x28` | `0x2b71650`, the listener thunk to `0x12fbb90` |
+
+The base constructor `0x165b0c8` (`bl` at `0x165a9b8` in the constructor `0x165a998`) installs a
+second vtable `0x44e5768` with the same slot 3 and `+0x20` slot 1 (`0x44e5780`, `0x44e57a0`), and
+sets `[holder+8] = 1`.
+
+The creator registers the `+0x20` interface with `0xf0ba9c` (`bl` at `0x165a244`), which appends it
+to a finalizer list of up to 0x400 entries at `0x4763a18`, count at `0x4765a18`. Of the 55 code
+references to the list, 53 are registrations and two are its walkers: `0x27aff48` calls slot 0 of
+every entry and `0x27b0054` slot 1, both in reverse order, the second then zeroing the count
+(`0x27b00ac`). Both are called only from `0x20e9c78` (`0x20e9cec`, `0x20e9d00`), slot 5 of vtable
+`0x44e6be0`, reached from `0x20e9bdc` (slot 5 of `0x44a89a0`) and `0x92d648` (slot 5 of
+`0x443ffd0`), which ends in `b 0x343e6c0`, `nn::account::CloseUser`: the application's finalize.
+Leaving the Link Trade search or the Poke Portal does not destroy the relay; a generic virtual call
+on its slot 3 cannot be excluded statically. A request pending at `+0xb8` survives every seat,
+search and menu until one of its completers runs.
 
 ### Opening the channel
 
@@ -1021,7 +1158,7 @@ The other seats run the game. In order, what the console sends:
 | its opening | the bulk acknowledgements on all eleven streams, an 11-byte record on 0x81 port 1 and another on port 5 |
 | its identity | 46 records on 0x81 port 0, the same shape a host here sends, and it acknowledges the joiner's own 44 to 47 |
 | its channel table | on 0x7C port 1, the four keys `0x007b`, `0x0132`, `0x0232` and `0x0332` |
-| `0db90101` | on 0x7C port 2, a type 0x0D with code 1 |
+| `0db90101` | on 0x7C port 2, a type 0x0D with code 1, only in answer to a type-3 join sent before the announcement (one seat, 0.03 s after the join); the console's normal sequence has none |
 | the announcement | on 0x80 port 2, zlib, 167 bytes inflated: a type 7 carrying kind 1, capacity 2 and the console's own station id, which is its constant id read big-endian |
 
 The announcement is the message no emulated instance ever composed and the one the host direction
@@ -1034,32 +1171,47 @@ response does, and a joiner that waits for the response sends nothing for the wh
 
 ## Unresolved
 
-- What keeps a console from announcing a seat that carried everything else. Every unannounced seat
-  on record had RTT answered at once: one board seat carried every stream (the 47 identity records
-  at 7.65 s, the channel table, the session update, the clock) and was never announced in 200 s
-  after a seat that ended in host migration 0.5 s in; two were seats the console flooded with
-  repeats; one followed a failed association (LDN reason `0xc9`). No seat that followed a migrated
-  seat was announced, four of four, with prompt answers. With RTT answered 0.3 s late (`--rtt-delay
-  0.3`) twelve seats of twelve were announced, two of them the next seat after the console's
-  post-trade host migration (`--leave-on-migration 3`, the player searching again), each traded.
-  `bin/sv_join.py --announce-timeout SECONDS` leaves an unannounced seat and scans again. The
-  trade job leaves three ways to never announce: state 1 waiting for an identity block that never
-  finishes, state 3 waiting on a type 7 that vfunc20 refuses, and a request refused because an
-  earlier one is still pending (result 8). Which one holds an unannounced seat is unknown; the
-  job's state `+0xb8` and result `+0x40`, read at its Update `0x1e51a04`, separate them.
-- Whether a missing RTT sample is what holds a `--no-rtt` seat. A reliable window with no sample
-  never retransmits; if the 0x81 streams use that window class, one lost frame leaves an identity
-  block unfinished and the job in state 1.
-- Whether a stale pending request follows a migrated seat. A client's type-2 join request
-  (`0x2799b10`) uses the same `+0xb8` and the same refusal; if its master leaves, the event runs
-  `0x12fbef0` alone, the job ends at 15 s and nothing clears `+0xb8`, so every later request on
-  that console would be refused. Whether the relay object is ever destroyed, for example when the
-  player leaves the Link Trade search, is unknown.
-- Whether a joiner's `0d b9 01 NN` on 0x7C port 2 completes a console's pending request on a real
-  console. No receiver on that path filters the sender.
-- What registers a station in the 0x80 port-2 window's destination list `[window+0x40]`.
-- How the 0x97e08-byte identity block the player-slot object sends and receives maps onto the
-  records on 0x81.
+- Why two seats that completed both 0x81 transfers were never announced. Of the eight
+  unannounced seats since the identity fixes (three more ended when the association dropped before
+  the console sent a record), six ended with the console's own transfer unfinished: the four
+  `--no-rtt` seats, and two seats the joiner left at 20 s while the console was still sending its
+  tail, whose sibling seats were announced at 13.26 and 17.81 s. In the other two, RTT answered at
+  once, the console's set stood acknowledged at 7.65 and 7.88 s and the joiner's at 7.65 and 4.56 s,
+  and the console sent nothing on 0x80 port 2 or 0x7C port 2 in 200 and 24 s. Its 0x80 port-2 bulk
+  acks carried the destination bitmap `[2]` and a payload byte-identical to an announced seat's;
+  whether that bitmap is built from `[window+0x40]` is unknown. One followed a seat that ended in
+  host migration 0.5 s in, the other a failed association (LDN reason `0xc9`). A migration before
+  the seat does not decide it: of the seats that followed a migrated seat, two of three with prompt
+  answers and three of three with answers 0.3 s late were announced. The candidates are no trade
+  job running in the seat, the job in state 1 on a slot whose `+0xd9`/`+0xda` were never set for
+  this peer, a request refused because an earlier one is still pending (result 8), and a type 7
+  held in state 3 by vfunc20. On the patched Ryujinx with the GDB stub, on a seat not announced 3 s
+  after the console's own set is acknowledged: whether the job Update `0x1e51a04` is hit at all, and
+  its state `+0xb8` and result `+0x40`; at `0x1e51ae8`, the finished-slot count `x0` and the slot
+  object's vtable `[x21]` (`0x4455ec0` or a sibling of the 0xF388 class confirms the attribution
+  above); at `0xe45fb0`, the vfunc20 result `w8`; at `0x18ab8e8`, the pending request's type
+  `[x8+0x40]` and done byte `[x8+0x42]`.
+- What holds a queued tail record back until the retransmit deadline. The enqueue stamps a new slot
+  with now, and ids 25 and 37 leave in the first datagram, yet each tail record waits one interval.
+  Candidates in the send loop: the per-call byte budget `[proto+0x64]` (refilled by `0x6ee498` from
+  `[proto+0x60]`), the early-send buckets by send count `[slot+0x14]` against `[w+0x88]`
+  (`0x6f0aac`..`0x6f0c98`), and the INITIALIZED stop at `0x6f0990`..`0x6f0998`. A breakpoint in
+  `0x6f0638` on the console's first send of id 26 reads which test held it.
+- The value the game gives `[window+0x80]`. No call site of vfunc17 (slot 0x88) in Pia's range
+  passes a constant, and its callers were not identified. A breakpoint at `0x6f1fc8` reads it.
+- Which path creates a type-2 request, and whether a stale one holds later seats. A client's type-2
+  join request (`0x2799b10`) uses the same `+0xb8` and the same refusal; if its master leaves, the
+  event runs `0x12fbef0` alone, the job ends at 15 s and nothing clears `+0xb8`, and the relay
+  outlives every seat, so every later request on that console would be refused. The creator's sole
+  caller `0x1e635fc` is reached from `0x1d986d8`, which was not read; whether it runs only when the
+  console joins another station's slot as a client is unknown. The check: a `bin/sv_host.py`
+  session in which the console joins as a client and the host stops before its type 9, then
+  `bin/sv_join.py` without restarting the game, and once more after a restart.
+- What the receiving side of a StreamData kind 0 does (the send side is `0xe224f8`..`0xe22520`,
+  through BroadcastReliable vfunc12), whether it is what sets a station's `[proto+0x98]` byte, and
+  what the control kinds 4 and 5 carry. The wire order suggests the kind 0 sets the byte: the
+  console's set follows the joiner's kind 0 on port 0 by about 0.1 s in every seat. Reading the
+  kind switch in StreamBroadcastReliable's receive path settles both.
 
 **A trade is complete on a retail Scarlet (2026-09-22).** The console joins a network
 `bin/sv_host.py` puts up, takes the host's identity as four messages, draws the host's offer with
