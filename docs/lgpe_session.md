@@ -899,6 +899,14 @@ nothing that leaves the sequence (`0x838540`, `0x11ce20`), and its update (`0x83
 screen with message `0x191615296121e064`, nothing in that sequence returns to the game, and no later
 save of the running game follows it: the save on disk holds 600 at the next boot.
 
+Both ids are labels of `common/message_error.dat` (the string at `0xf22dfc`), hashed FNV-1a-64 with
+the basis `0xcbf29ce484222645`, the same in all ten languages of update v131072:
+
+| id | label | English | French |
+|---|---|---|---|
+| `0x191615296121e064` | `error_fatal_save` | An error occurred. You couldn't trade Pokémon. Press the HOME Button to end the game. | Une erreur s'est produite. L'échange de Pokémon n'a pas pu être effectué. Veuillez appuyer sur le bouton HOME et fermer le jeu. |
+| `0x977c18bf4135ff42` | `erro_fatal_storage` (sic) | Save data in the Nintendo Switch couldn't be recognized. Please turn off the system, and then try again. | L'identification des données de sauvegarde de la console Nintendo Switch a échoué. Veuillez éteindre votre console, la rallumer, puis réessayer. |
+
 The game has one process stack, rooted at `[G+0x68]` (`G = [0x160d310]`): its only constructor
 `0x13a4e0` is called once, from `0x13b978` in the setup `0x13b650`, and stores `G` at `root+0x60`.
 The dispatcher and the fatal-error wrapper are pushed on that same root (`0x8860e4`, `0x345e80`).

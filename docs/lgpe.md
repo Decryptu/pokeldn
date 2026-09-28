@@ -51,9 +51,6 @@ error screen. `docs/lgpe_session.md` has every layout.
 
 ## Unresolved
 
-- The text of the fatal error message `0x191615296121e064` an aborted trade commit shows. It lives in
-  the romfs message archives; extracting them from the Let's Go Pikachu NSP and finding the label
-  whose FNV-1a-64 is that id settles it.
 - How counted play time relates to wall time, and so how long the lock lasts on a clock. The rate of
   the gated call `0x13c944` and whether the frame period stays at 33.3 ms are unread. After an
   aborted commit, noting the play time P and trying Link Trade at P + 9 and P + 11 minutes with a

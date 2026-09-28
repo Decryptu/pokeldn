@@ -969,10 +969,23 @@ starts its stopwatch again from the saved count.
 `0x500000001` while the count is non-zero and `0x300000001` otherwise, and `0x400000001` when
 `0x13d65c0` is false. They sit in `0x13d55dc` (one caller, `0x13d53c0`), which asserts
 `[x0+0xa4] == 3`, and `0x13d5648` (callers `0x13d53dc` and `0x13d5808`), both in one menu's state
-code. The trade job is the only writer of a non-zero count, so the item they gate is a trade item;
-that it is Link Trade is a deduction. No string, message label or RTTI name in
-`0x13d4000..0x13d7200` names it: the strings there are layout pane names, `common/net.dat`,
-`TradeMatchmakingConfig` and `PLAY_UI_COMMON_MATCHING`.
+code. That menu is Link Trade's partner choice. Its update `0x13d5344` switches on `[obj+0xa0]`
+(byte table `0x397c105`), and a result `(n << 32) | 1` moves it to state n (`0x13d5404`). The decide
+callback `0x13ddcb4` writes 2 for the pane `button_00` and 3 for `button_01` (FNV-1a-64 of the names
+with basis `0xcbf29ce484222645`), and state 0 routes them to `0x13d55dc` and `0x13d5648`
+(`0x13d5590..0x13d55a0`); that `button_00` is "Someone nearby" and `button_01` "Someone far away"
+follows from the pane names and is not read from the layout. Each state's text is a `common/net`
+label from the table `0x397c158`, set on `pane_T_info_00` by `0x13dbe68`:
+
+| result | state | label | text (English) |
+|---|---|---|---|
+| `0x500000001` | 5 (`0x13d59a4`), then back to 0 | `matching_win_03` | You cannot link trade right now because the last time you attempted to link trade, your connection was interrupted. This may have been because you experienced an error or powered off your system. Please wait awhile before attempting to connect again. |
+| `0x300000001` | 3, then matchmaking in 6 | `matching_win_06` | If your system gets turned off or becomes unable to communicate while you're trading, you won't be able to trade Pokémon for a while... |
+| `0x400000001` | 4 | `matching_win_02` | You must have at least two tradeable Pokémon in order to carry out a Link Trade... |
+
+The French of `matching_win_03` reads "Votre connexion a été interrompue lors de votre dernier
+échange à cause d'une erreur de connexion, ou parce que votre console s'est éteinte. Vous ne pouvez
+donc pas faire d'échange en réseau pour le moment. Veuillez réessayer ultérieurement."
 
 ## The phase protocol, and the message only a host sends
 
@@ -1122,6 +1135,15 @@ console's close with its own has erased that entry, and the second job's `01 03`
 retried every update, until the host announces the key open again. The job stays at state 1 and the
 scene at step 9, the step a job held at state 2 showed as Communicating, with no timeout of its own
 and no restriction drawn ([The job that carries the trade out](#the-job-that-carries-the-trade-out)).
+
+The words on that screen are `common/box` `msg_ui_box_p2ptrd_09`, "Communicating. Please stand by..."
+("Communication en cours... Veuillez patienter."), whether the job is held at state 1 or 2. The
+confirm prompt's "Trade it" callback `0x110c3d8` shows it through the scene's message helper
+(`[scene+0xc0]`, `bl 0x26bcc14` at `0x110c424`, label hash built at `0x110c408..0x110c418`) and sets
+step 6; steps 6, 7 and 9 never close it (the helper's close `0x26bcfc0` is called only at
+`0x110a84c`, `0x110ac5c` and `0x110ace4`). `0x1128184(ui, 1)` shows no text: it turns on the cancel
+prompt (animation `InputCancel`, `0x11281bc`), whose press is read only at steps 2 and 7
+(`0x110ac00`, `0x110ad4c`), so at step 9 it does nothing.
 
 ## What a trade rewrites
 
@@ -1580,20 +1602,11 @@ change neither the words nor the delay.
 
 ## Unresolved
 
-- What words the step-9 screen shows while a job is held at state 1, a second job's `01 03` refused
-  by the gate after a host closed the phase key. They are the UI object's `[scene+0xa0]` message
-  after `0x1128184(ui, 1)` (`0x110ad14`), in the RomFS message archive. A console run settles it: the
-  host answers the console's
-  phase-key close with its own, the player trades once, then offers and confirms a second trade and
-  reads the screen at 30 s and at 2 minutes.
 - Whether a console's `03 00` is the box cursor on an empty slot. The code sends it for a record
   whose species reads 0, which an empty slot copied into the scratch record would give, and fourteen
   of them through one box walk fit that without proving it. A console run on the trade box that
   moves the cursor onto an empty box slot and back settles it: one `03 00` per move onto the slot and
   a selector 2 on the move back.
-- Whether the item `0x13d55dc` and `0x13d5648` gate is Link Trade, and what text goes with their
-  result `0x500000001` while the restriction count is non-zero. Both the label and the text are in
-  the RomFS message archive.
 - Whether a restriction lasts ten minutes on a console, and which screens tick the system list
   `0x42eced0`; the decrement needs `0x26bd430` to run. A console run that stops a trade between the
   host's `02 03` and `02 06` and times the refusal from its first showing to Link Trade opening again,
