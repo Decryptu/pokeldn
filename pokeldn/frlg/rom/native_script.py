@@ -11,7 +11,7 @@ from the numbers rather than from a comment.
 import math
 from dataclasses import dataclass, field
 
-from pokeldn.frlg.rom import rom_map
+from pokeldn.frlg.rom import builds, rom_map
 from pokeldn.frlg.rom.field_stubs import STUBS
 from pokeldn.frlg.rom.resident_stubs import STUBS as RESIDENT_STUBS
 from pokeldn.frlg.rom.rng_countdown import NATURE_NAMES, NUM_NATURES
@@ -97,7 +97,7 @@ def stub(name, **params):
 
 
 def build_shiny_hunt_script(species, level, *, item=0, cap=1 << 18, scratch=SCRATCH,
-                            rng_address=None, sav2_pointer=None):
+                            rng_address=None, sav2_pointer=None, build=None):
     """The RAM script that makes the NEXT scripted encounter shiny, from any state, no aiming.
 
     Stage `shiny-seek`, call it, then `setwildbattle` + `dowildbattle`. Every command before
@@ -109,13 +109,15 @@ def build_shiny_hunt_script(species, level, *, item=0, cap=1 << 18, scratch=SCRA
     NO TRAINER ID IS PASSED, and that is deliberate. The stub dereferences gSaveBlock2Ptr and reads
     playerTrainerId itself, so the same bytes are correct on FireRed and on LeafGreen and nothing
     here has to know, or be kept in step with, whose console it is [asm/field/shiny-seek.s].
+    The two IWRAM addresses are `build`'s [builds.py].
     """
+    build = builds.resolve(build)
     cap = int(cap)
     if not 1 <= cap <= 1 << 24:
         raise NativeScriptError(f"the iteration cap is 1..{1 << 24}, got {cap}")
     code = stub("shiny-seek",
-                rng=rom_map.GRNG_VALUE if rng_address is None else int(rng_address),
-                sav2ptr=rom_map.GSAVEBLOCK2PTR if sav2_pointer is None else int(sav2_pointer),
+                rng=build.rng if rng_address is None else int(rng_address),
+                sav2ptr=build.sb2ptr if sav2_pointer is None else int(sav2_pointer),
                 cap=cap)
     return _stage_and_battle(code, species, level, item=item, scratch=scratch)
 
@@ -125,7 +127,7 @@ def build_shiny_hunt_script(species, level, *, item=0, cap=1 << 18, scratch=SCRA
 # that is not a reset [docs/frlg_rom.md, Where a payload can live].
 RESIDENT_BASE = 0x0203FC00
 RESIDENT_COUNTER = 0x0203FC40
-GINTRTABLE_VBLANK = 0x03002730      # gIntrTable[4] [docs/frlg_rom.md, The per-frame hook]
+GINTRTABLE_VBLANK = 0x03002730      # gIntrTable[4], French [docs/frlg_rom.md, The per-frame hook]
 
 
 def resident_words(name="vblank-hook", **params):
@@ -191,21 +193,25 @@ PROBE_THUNK_OFFSET = 0x3C0              # `swi N ; bx lr`, assembled into the bl
 # between the copy and the install, and on the second visit to the object the installer takes its
 # already-installed path and never patches it at all. So the save's copy carries the measured handler
 # rather than zero, and a second visit re-writes a hook that already works.
-VBLANK_HANDLER = 0x0800071D             # VBlankIntr [docs/frlg_rom.md, The per-frame hook]
+VBLANK_HANDLER = 0x0800071D             # VBlankIntr, French; a build's is Build.vblank_intr
 
 
 def build_save_payload(*, base=RESIDENT_BASE, size=SAVE_PAYLOAD_SIZE,
-                       counter=SAVE_PAYLOAD_COUNTER, table_entry=GINTRTABLE_VBLANK,
-                       magic=SAVE_PAYLOAD_MAGIC, filler_byte=None, original=VBLANK_HANDLER,
+                       counter=SAVE_PAYLOAD_COUNTER, table_entry=None,
+                       magic=SAVE_PAYLOAD_MAGIC, filler_byte=None, original=None,
                        probe=0, probe_args=(), probe_count=1, burst=0, probe_a0_step=0,
-                       probe_num_step=1, probe_store=True):
+                       probe_num_step=1, probe_store=True, build=None):
     """-> the blob to park in the save: magic, installer, the V-blank hook, filler, checksum.
 
     The checksum is the point of the filler. A branch that lands proves the jump and says nothing
     about the size, and the blob travels through a save write, flash, a slot rotation and a copy loop
     before anything runs it. The installer sums the filler and installs nothing unless the sum
     matches, so a short or truncated arrival is a miss rather than a wrong answer.
+    `table_entry` and `original` default to `build`'s gIntrTable[4] and VBlankIntr.
     """
+    build = builds.resolve(build)
+    table_entry = build.intr_vblank if table_entry is None else table_entry
+    original = build.vblank_intr | 1 if original is None else original
     head, _digest, symbols = RESIDENT_STUBS["save-payload"]
     hook_params = {"counter": counter, "original": original, "burst": int(burst or 0),
                    "thunk": (base + PROBE_THUNK_OFFSET) | 1, "lrsave": base + LRSAVE_OFFSET}
@@ -349,7 +355,7 @@ def save_write_chunks(blob, *, offset=SAVE_PAYLOAD_OFFSET, limit=None):
 
 def build_loader_script(*, base=RESIDENT_BASE, size=SAVE_PAYLOAD_SIZE,
                         offset=SAVE_PAYLOAD_OFFSET, magic=SAVE_PAYLOAD_MAGIC,
-                        sav2_pointer=None, scratch=SCRATCH, sound=SE_SUCCESS):
+                        sav2_pointer=None, scratch=SCRATCH, sound=SE_SUCCESS, build=None):
     """The RAM script that copies the payload out of the save and runs it.
 
     About fifty bytes of staged code whatever the payload's size, where staging the payload itself
@@ -359,7 +365,8 @@ def build_loader_script(*, base=RESIDENT_BASE, size=SAVE_PAYLOAD_SIZE,
     if size % 4:
         raise NativeScriptError(f"{size} bytes is not a whole number of words")
     code = stub("save-loader",
-                sav2ptr=rom_map.GSAVEBLOCK2PTR if sav2_pointer is None else int(sav2_pointer),
+                sav2ptr=(builds.resolve(build).sb2ptr if sav2_pointer is None
+                         else int(sav2_pointer)),
                 offset=offset, dest=base, words=size // 4, magic=magic)
     tail = b""
     if sound is not None:
@@ -373,7 +380,7 @@ def build_loader_script(*, base=RESIDENT_BASE, size=SAVE_PAYLOAD_SIZE,
 
 
 def build_install_hook_script(*, base=RESIDENT_BASE, counter=RESIDENT_COUNTER,
-                              table_entry=GINTRTABLE_VBLANK, scratch=SCRATCH, sound=SE_SUCCESS):
+                              table_entry=None, scratch=SCRATCH, sound=SE_SUCCESS, build=None):
     """The RAM script that installs the resident V-blank hook, and survives a reset to do it again.
 
     A buffer script can install the hook directly and the console then runs it every frame until
@@ -389,7 +396,9 @@ def build_install_hook_script(*, base=RESIDENT_BASE, counter=RESIDENT_COUNTER,
     # The hook travels with the installer as data, so its size is a number rather than a shape the
     # installer has to know. `original` is left at the measured handler for the same reason the
     # save-carried copy does: the installer patches it, but a second visit re-copies this one.
-    words = resident_words("vblank-hook", counter=counter, original=VBLANK_HANDLER)
+    build = builds.resolve(build)
+    table_entry = build.intr_vblank if table_entry is None else table_entry
+    words = resident_words("vblank-hook", counter=counter, original=build.vblank_intr | 1)
     original_at = base + RESIDENT_STUBS["vblank-hook"][2]["p_original"]
     code = stub("install-vblank-hook",
                 table_entry=table_entry, hook_ptr=base | 1, resident=base, counter=counter,
@@ -628,7 +637,7 @@ def search_cost(criteria, cap, placements=1):
 
 def build_mon_hunt_script(species, level, *, criteria=None, item=0, cap=None,
                           max_freeze_frames=MAX_FREEZE_FRAMES, scratch=SCRATCH,
-                          rng_address=None, sav2_pointer=None):
+                          rng_address=None, sav2_pointer=None, build=None):
     """The RAM script that makes the next scripted encounter a mon we described, from any state.
 
     build_shiny_hunt_script with three tests instead of one, and the same one-frame guarantee:
@@ -655,9 +664,10 @@ def build_mon_hunt_script(species, level, *, criteria=None, item=0, cap=None,
             f"for less, or raise max_freeze_frames deliberately.")
     if not 1 <= chosen_cap <= 1 << 24:
         raise NativeScriptError(f"the iteration cap is 1..{1 << 24}, got {chosen_cap}")
+    build = builds.resolve(build)
     code = stub("mon-seek",
-                rng=rom_map.GRNG_VALUE if rng_address is None else int(rng_address),
-                sav2ptr=rom_map.GSAVEBLOCK2PTR if sav2_pointer is None else int(sav2_pointer),
+                rng=build.rng if rng_address is None else int(rng_address),
+                sav2ptr=build.sb2ptr if sav2_pointer is None else int(sav2_pointer),
                 cap=chosen_cap, nature=criteria.nature_mask, ivmin=criteria.iv_word)
     return _stage_and_battle(code, species, level, item=item, scratch=scratch)
 
@@ -837,7 +847,8 @@ TRAMPOLINE_STUB = "ram-jump"
 BODY_ALIGNMENT = 4
 
 
-def ram_jump_stub(payload_offset, *, sb1_pointer=None, magic_offset=RAMSCRIPT_MAGIC_OFFSET):
+def ram_jump_stub(payload_offset, *, sb1_pointer=None, magic_offset=RAMSCRIPT_MAGIC_OFFSET,
+                  build=None):
     """-> the trampoline, patched to branch at the payload `payload_offset` bytes into the body.
 
     `p_entry` is measured from the MAGIC BYTE rather than from the block base so the stub can add
@@ -851,7 +862,8 @@ def ram_jump_stub(payload_offset, *, sb1_pointer=None, magic_offset=RAMSCRIPT_MA
             f"the payload must start at a MULTIPLE OF FOUR, got {offset}; see BODY_ALIGNMENT")
     entry = (RAMSCRIPT_BODY_OFFSET - int(magic_offset)) + offset
     return stub(TRAMPOLINE_STUB,
-                sb1ptr=rom_map.GSAVEBLOCK1PTR if sb1_pointer is None else int(sb1_pointer),
+                sb1ptr=(builds.resolve(build).sb1ptr if sb1_pointer is None
+                        else int(sb1_pointer)),
                 magic=int(magic_offset), entry=entry | 1)
 
 
@@ -874,7 +886,7 @@ def body_capacity(tail_size):
             "staged_equivalent": staged, "limit": MAX_RAM_SCRIPT_SIZE}
 
 
-def build_body_script(payload, tail=b"", *, scratch=SCRATCH, sb1_pointer=None):
+def build_body_script(payload, tail=b"", *, scratch=SCRATCH, sb1_pointer=None, build=None):
     """-> the RAM script that stages the trampoline, calls it, runs `tail`, and carries `payload`.
 
     The layout, and the order is the argument:
@@ -893,7 +905,7 @@ def build_body_script(payload, tail=b"", *, scratch=SCRATCH, sb1_pointer=None):
     if not payload:
         raise NativeScriptError("nothing to run")
     prefix = body_prefix_size(len(tail))
-    code = ram_jump_stub(prefix, sb1_pointer=sb1_pointer)
+    code = ram_jump_stub(prefix, sb1_pointer=sb1_pointer, build=build)
     body = (stage(code, scratch) + callnative_at(scratch) + tail
             + b"\x00" * (prefix - len(stage(code, scratch)) - CALLNATIVE_SIZE - len(tail))
             + payload)
@@ -934,7 +946,7 @@ def build_mon_hunt_far_script(species, level, *, criteria=None, item=0, cap=None
                               rng_address=None, sav2_pointer=None, sb1_pointer=None,
                               payload_bytes=None, seed=FILLER_SEED,
                               stub_name="mon-seek-far", placements=1,
-                              confidence=SEARCH_CONFIDENCE):
+                              confidence=SEARCH_CONFIDENCE, build=None):
     """build_mon_hunt_script, with the code RUN OUT OF THE BODY and the body FILLED to prove it.
 
     One variable changes against the control card: where the search code lives. Same criteria, same
@@ -975,12 +987,17 @@ def build_mon_hunt_far_script(species, level, *, criteria=None, item=0, cap=None
         raise NativeScriptError(
             f"the payload is {bare}..{room} bytes here; asked for {total}")
     filler = filler_bytes(total - bare, seed)
+    build = builds.resolve(build)
+    sb1 = build.sb1ptr if sb1_pointer is None else int(sb1_pointer)
+    # mon-seek-log carries gSaveBlock1Ptr for its log as well as the trampoline does.
+    own_sb1 = {"sb1ptr": sb1} if "p_sb1ptr" in STUBS[stub_name][2] else {}
     code = stub(stub_name,
-                rng=rom_map.GRNG_VALUE if rng_address is None else int(rng_address),
-                sav2ptr=rom_map.GSAVEBLOCK2PTR if sav2_pointer is None else int(sav2_pointer),
+                rng=build.rng if rng_address is None else int(rng_address),
+                sav2ptr=build.sb2ptr if sav2_pointer is None else int(sav2_pointer),
                 cap=chosen_cap, nature=criteria.nature_mask, ivmin=criteria.iv_word,
-                padlen=len(filler), padsum=sum(filler) & 0xFFFFFFFF)
-    return build_body_script(code + filler, tail, scratch=scratch, sb1_pointer=sb1_pointer)
+                padlen=len(filler), padsum=sum(filler) & 0xFFFFFFFF, **own_sb1)
+    return build_body_script(code + filler, tail, scratch=scratch, sb1_pointer=sb1,
+                             build=build)
 
 
 # --- running the WHOLE script offline, not just the stub ----------------------------------------
@@ -993,7 +1010,7 @@ def build_mon_hunt_far_script(species, level, *, criteria=None, item=0, cap=None
 
 def emulate_body_script(script, *, sb1_base=0x02025734, rng_state=0, trainer_id=0, secret_id=0,
                         sav2_base=0x02024588, instruction_limit=1 << 26,
-                        magic=RAM_SCRIPT_MAGIC):
+                        magic=RAM_SCRIPT_MAGIC, build=None):
     """Execute `script` the way the field engine would, and return what it left behind.
 
     Only the four commands these scripts use are interpreted - `setptr`, `callnative`, and enough
@@ -1046,17 +1063,18 @@ def emulate_body_script(script, *, sb1_base=0x02025734, rng_state=0, trainer_id=
     if entry & ~1 != low:
         raise NativeScriptError(
             f"callnative goes to 0x{entry & ~1:08X}, the staged bytes start at 0x{low:08X}")
+    build = builds.resolve(build)
     regions = {
-        rom_map.GRNG_VALUE: int(rng_state).to_bytes(4, "little"),
-        rom_map.GSAVEBLOCK1PTR: int(sb1_base).to_bytes(4, "little"),
-        rom_map.GSAVEBLOCK2PTR: int(sav2_base).to_bytes(4, "little"),
+        build.rng: int(rng_state).to_bytes(4, "little"),
+        build.sb1ptr: int(sb1_base).to_bytes(4, "little"),
+        build.sb2ptr: int(sav2_base).to_bytes(4, "little"),
         int(sav2_base): bytes(save2),
         int(sb1_base) + RAMSCRIPT_MAGIC_OFFSET: ram_script,
         int(sb1_base) + HUNT_LOG_OFFSET: bytes(HUNT_LOG_SIZE),
     }
     result = emulate(blob, base=low, memory=regions, instruction_limit=instruction_limit)
     executed.append(entry)
-    return {"rng": int.from_bytes(result["memory"][rom_map.GRNG_VALUE], "little"),
+    return {"rng": int.from_bytes(result["memory"][build.rng], "little"),
             "instructions": result["instructions"],
             "staged_bytes": len(blob), "staged_at": low, "entry": entry,
             "payload_at": int(sb1_base) + RAMSCRIPT_BODY_OFFSET,

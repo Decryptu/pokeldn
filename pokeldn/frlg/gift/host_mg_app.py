@@ -6,7 +6,7 @@ import os
 from pokeldn import config as configmod
 from pokeldn.frlg.gift import game_data_log, gift_registry, mystery_gift_attempts, wonder_news
 from pokeldn.frlg.link import host_session
-from pokeldn.frlg.rom import buffer_script, mystery_event
+from pokeldn.frlg.rom import buffer_script, builds, mystery_event
 from pokeldn.frlg.text import charmap, easychat
 from pokeldn.ldn import ldntrace
 from pokeldn.frlg.link.host_app import HostApplication
@@ -28,31 +28,56 @@ MysteryGiftRunConfig = configmod.MysteryGiftRunConfig
 WonderNewsPayload = configmod.WonderNewsPayload
 
 
+def _log_build_plan(app):
+    """Which cartridges the run serves, and with what [config.plan_builds]."""
+    plan = getattr(app, "plan", None)
+    if plan is None or plan.per_build is None:
+        app.info("Cartridge: these bytes carry no build address, so any console is served.")
+        return
+    for code, chosen in plan.per_build.items():
+        app.info(f"Cartridge {code} ({builds.BUILDS[code].name}): "
+                 + (f"REFUSED, {chosen}" if isinstance(chosen, str) else "its own bytes"))
+    app.info("The console's game code picks one at SVR_COPY_GAME_DATA, before anything "
+             "build-dependent is sent; any other code is refused with nothing sent.")
+
+
 class MysteryGiftHostApplication(HostApplication):
     # The server results that mean the console actually kept something.
     SUCCESS_RESULTS = (SVR_MSG_CARD_SENT, SVR_MSG_STAMP_SENT, SVR_MSG_GIFT_SENT_1)
     ACTIVITY_NOUN = "Wonder Card"
 
-    def __init__(self, config, *, distribution=None, **kwargs):
+    def __init__(self, config, *, distribution=None, plan=None, **kwargs):
         super().__init__(config, **kwargs)
         self.card = None
         self.ram_script = None
         self.distribution = None
+        self.plan = None
         self._prepared_distribution = distribution
+        self._prepared_plan = plan
         self._last_state = None
         self._result_logged = False
 
     def _build_payload(self):
         return self.config.payload.build()
 
+    def _build_plan(self):
+        """-> what each cartridge is sent [config.plan_builds]."""
+        if self._prepared_plan is not None:
+            return self._prepared_plan
+        if self._prepared_distribution is not None:
+            return configmod.BuildPlan(self._prepared_distribution, None)
+        return configmod.plan_builds(
+            self.config.payload, getattr(self.config, "console_build", "auto"),
+            getattr(self.config, "console_version", None))
+
     def _build_distribution(self):
-        return (self._prepared_distribution if self._prepared_distribution is not None
-                else self.config.payload.build_distribution())
+        return self._build_plan().distribution
 
     def _build_components(self):
         phy, keys = self._resolve_phy_and_keys()
         link_player = self.profile.to_link_player()
-        self.distribution = self._build_distribution()
+        self.plan = self._build_plan()
+        self.distribution = self.plan.distribution
         self.card = self.distribution.card
         self.ram_script = self.distribution.ram_script
         timing = None
@@ -70,7 +95,8 @@ class MysteryGiftHostApplication(HostApplication):
         engine = HostMysteryGiftEngine(
             distribution=self.distribution, link_player=link_player,
             trust_pia=self.config.trust_pia, timing=timing,
-            expect_console=getattr(self.config, "expect_console", None), log=self.log)
+            expect_console=getattr(self.config, "expect_console", None),
+            per_build=self.plan.per_build, log=self.log)
         self.session = host_session.HostSession(engine=engine, log=self.log)
         inactive, active = self._build_app_data()
         self.tracer = (ldntrace.Tracer(self.ldn.capture_path, log=self.log)
@@ -146,6 +172,7 @@ class MysteryGiftHostApplication(HostApplication):
         if self.config.block_repeat is not None:
             self.info("Mystery Gift timing override: "
                       f"block_repeat={self.config.block_repeat}")
+        _log_build_plan(self)
         self.info("Advertising ACTIVITY_WONDER_CARD. On the Switch choose "
                   "Mystery Gift -> Wonder Cards -> Friend.")
 
@@ -282,6 +309,7 @@ class WonderNewsHostApplication(MysteryGiftHostApplication):
         self.info("A console that already holds these exact 444 bytes answers "
                   "MG_LINKID_RESPONSE with TRUE and keeps what it has; pass --news-id to make the "
                   "same text new again.")
+        _log_build_plan(self)
         self.info("Advertising ACTIVITY_WONDER_NEWS. On the Switch choose "
                   "Mystery Gift -> Wonder News -> Friend.")
 
@@ -384,6 +412,7 @@ class BufferScriptHostApplication(MysteryGiftHostApplication):
                   + ("the trainer id the console's own game data carried"
                      if expect == BUFFER_EXPECT_TRAINER_ID else
                      "any answer at all" if expect is None else f"0x{int(expect):08X}"))
+        _log_build_plan(self)
         self.info("Advertising ACTIVITY_WONDER_CARDS. On the Switch choose "
                   "Mystery Gift -> Wonder Cards -> Friend.")
 

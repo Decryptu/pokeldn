@@ -2,7 +2,7 @@
 VAR_MYSTERY_GIFT_2..7 = stamp-slot cursors (0 absent, 1 activated, +1 per stage), FLAG_MYSTERY_GIFT_DONE = one-shot."""
 
 import re
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from typing import TypeAlias
 
 from pokeldn.frlg.gift import ereader_trainer
@@ -358,6 +358,9 @@ class WonderGift:
     # Assembled Mystery Event bytecode [mystery_event.py], run by the console at the Mystery Gift
     # menu right after the card is saved. Its status comes back to us as MG_LINKID_RESPONSE.
     mevent: bytes | None = None
+    # build -> this gift for that cartridge, when its bytes carry a build address [builds.py];
+    # None when they are the same on every build.
+    for_build: object = field(default=None, compare=False, repr=False)
 
 
 def _fail(path, message):
@@ -1510,8 +1513,14 @@ def build_draw_count_script(*, species, level, item=0, address=None, var_address
     return script
 
 
-def compile_definition(definition, *, flag_id=None):
-    """Returns one MysteryGiftDistribution for a GiftSpec, or ``{slot_slug: distribution}`` for a rally."""
+def compile_definition(definition, *, flag_id=None, build=None):
+    """Returns one MysteryGiftDistribution for a GiftSpec, or ``{slot_slug: distribution}`` for a rally.
+
+    `build` is the cartridge the bytes are for [builds.py]; None is French FireRed.
+    """
+    if build is not None and definition.for_build is not None:
+        from pokeldn.frlg.rom import builds
+        definition = definition.for_build(builds.resolve(build))
     validate_definition(definition, flag_id=flag_id)
     actual_flag_id = definition.card.default_flag_id if flag_id is None else flag_id
     if isinstance(definition.event, GiftSpec):

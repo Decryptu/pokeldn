@@ -3,7 +3,7 @@ run() advances until it blocks and publishes ``action`` as ("send", ident, paylo
 or ("done", server_msg_id); the caller acknowledges with on_sent()/on_received()."""
 
 from pokeldn.frlg.gift import ereader_trainer, mg_script, wonder_news
-from pokeldn.frlg.rom import buffer_script, mystery_event, rom_map
+from pokeldn.frlg.rom import buffer_script, builds, mystery_event
 from pokeldn.frlg.text import charmap, easychat
 from pokeldn.frlg.gift.mystery_gift import (
     MG_LINKID_CARD, MG_LINKID_CLIENT_SCRIPT, MG_LINKID_DYNAMIC_MSG,
@@ -530,7 +530,7 @@ class MysteryGiftServer:
                  buffer_decode=None,
                  buffer_success_message=None, buffer_failure_message=None,
                  questionnaire=None, denied_message=None, expect_console=None,
-                 script=None, log=lambda *a: None):
+                 script=None, per_build=None, log=lambda *a: None):
         # Which cartridge this run is for. The console names its own version in the game data it
         # sends before anything else [MysteryGiftLinkGameData], so a mismatch is refused there.
         self.expect_console = None if expect_console is None else str(expect_console).lower()
@@ -724,6 +724,24 @@ class MysteryGiftServer:
             self.script = SCRIPT_SEND_WONDER_CARD
         if self.questionnaire is not None and script is None:
             self.script = gate_on_questionnaire(self.script)
+        # One payload per cartridge, {game code: server keywords, or why it could not be built},
+        # chosen at SVR_COPY_GAME_DATA, before anything build-dependent is sent [builds.py].
+        # None: these bytes go to any console.
+        self.build = None
+        self.build_refused = None
+        self._build_servers = None
+        if per_build is not None:
+            self._build_servers = {}
+            for code, chosen in dict(per_build).items():
+                if isinstance(chosen, str):
+                    self._build_servers[str(code)] = chosen
+                    continue
+                other = MysteryGiftServer(**chosen, script=script)
+                if other.script != self.script:
+                    raise MysteryGiftServerError(
+                        f"the {code} payload runs another server script; one session is one kind "
+                        "of payload")
+                self._build_servers[str(code)] = other
         self.cmdidx = 0
         self.param = None
         self.action = None
@@ -810,6 +828,7 @@ class MysteryGiftServer:
         self.game_data = mg_script.parse_link_game_data(self._received)
         self.info("Console identified itself: " + self.game_data.describe())
         self._check_expected_console()
+        self._select_build()
         for line in self.game_data.describe_extras():
             # Free every session: the console volunteers all of this and nothing in the game ever
             # reads it back. On a French console the word ids are the only ground truth for what a
@@ -829,6 +848,32 @@ class MysteryGiftServer:
             f"THIS RUN IS FOR {self.expect_console.upper()} AND THE CONSOLE THAT JOINED IS "
             f"{got.upper()}. Nothing was sent. Put the other cartridge on the Mystery Gift "
             "search screen and launch again, or drop --expect-console if the run does not care.")
+
+    # What differs between two builds' servers: the bytes and what the log decodes them with.
+    BUILD_FIELDS = ("card", "ram_script", "news", "stamp", "activation_script",
+                    "install_activation_script", "trainer", "mevent", "buffer_code",
+                    "buffer_expect", "buffer_dump_size", "buffer_dump_blocks",
+                    "buffer_dump_address", "buffer_dump_addresses", "buffer_decode")
+
+    def _select_build(self):
+        """Take the payload built for the console's own game code. Raises rather than logs, before
+        anything is sent: another build's addresses land on other variables [builds.py]."""
+        if self._build_servers is None:
+            return
+        raw = bytes(self.game_data.game_code)
+        code = raw.decode("ascii", "replace")
+        chosen = self._build_servers.get(code)
+        if not isinstance(chosen, MysteryGiftServer):
+            self.build_refused = code
+            why = (chosen if isinstance(chosen, str) else
+                   f"this run was built for {', '.join(sorted(self._build_servers))}")
+            raise MysteryGiftServerError(
+                f"THE CONSOLE IS {code!r} AND NOTHING WAS SENT: {why}. The payload names "
+                "cartridge addresses, and another build's land on other variables.")
+        for name in self.BUILD_FIELDS:
+            setattr(self, name, getattr(chosen, name))
+        self.build = builds.for_game_code(raw)
+        self.info(f"Console build {code} ({self.build.name}): sending the bytes built for it.")
 
     def _do_svr_check_game_data(self):
         self.param = mg_script.validate_link_game_data(self.game_data)
@@ -953,6 +998,10 @@ class MysteryGiftServer:
         CLI_LOAD_TOSS_RESPONSE at all, which already means the payload returned 1.
         """
         self.buffer_status = int.from_bytes(self._received[:4], "little")
+        refusal = buffer_script.flash_refusal(self.buffer_status)
+        if refusal and buffer_script.describe(self.buffer_code).startswith(
+                (buffer_script.FLASH_WRITE, buffer_script.FLASH_PATCH)):
+            self.info(f"Buffer script status: 0x{self.buffer_status:08X}, {refusal}")
         expected, mask, why = self._expected_buffer_status()
         if expected is None:
             self.buffer_matched = True
@@ -1042,7 +1091,8 @@ class MysteryGiftServer:
             # so nothing else is claimed.
             asked = buffer_script.call_parameters(self.buffer_code)
             expected = (asked["args"][0] & 0xFFFF
-                        if asked["function"] == rom_map.thumb(rom_map.SEED_RNG) and asked["args"]
+                        if asked["function"] == ((self.build or builds.DEFAULT).seed_rng | 1)
+                        and asked["args"]
                         else None)
             for line in buffer_script.describe_call(self.buffer_dump, expected):
                 self.info(f"  {line}")

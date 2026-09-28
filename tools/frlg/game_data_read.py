@@ -39,10 +39,11 @@ def main(argv=None):
         print(f"session {args.session} ({entry.get('tag') or entry['time']}): {data.describe()}")
         for line in data.describe_extras():
             print("  " + line)
+        french = game_data_log.language(entry.get("game_code")) == "french"
         for label, words in (("questionnaire", data.questionnaire_words),
                              ("battle profile", data.easy_chat_profile)):
             words = [word for word in words if word not in (0, easychat.UNDEFINED)]
-            if words:
+            if words and french:        # the English names above are the English console's
                 print(f"  {label} in French: {easychat_french.render(words)}")
         unknown = game_data_log.unknown_words(entry)
         if unknown:

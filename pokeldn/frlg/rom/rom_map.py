@@ -462,7 +462,9 @@ def thumb(address):
 
 
 def describe_header(dump, offset=0):
-    """-> lines describing a dump that starts at 0x08000000, and whether it is the build above."""
+    """-> lines describing a dump that starts at 0x08000000, and whether it is the build above or
+    another one builds.py holds addresses for."""
+    from pokeldn.frlg.rom import builds
     title = bytes(dump[0xA0 - offset:0xAC - offset])
     code = bytes(dump[0xAC - offset:0xB0 - offset])
     version = dump[0xBC - offset]
@@ -471,6 +473,9 @@ def describe_header(dump, offset=0):
     for byte in dump[0xA0 - offset:0xBD - offset]:
         computed = (computed - byte) & 0xFF
     computed = (computed - 0x19) & 0xFF
+    known = builds.BUILDS.get(code.decode("ascii", "replace"))
+    other = (f"builds.py holds {known.name}'s" if known is not None and version == SOFTWARE_VERSION
+             else "none of its addresses apply")
     return [
         f"title      {title!r}",
         f"game code  {code!r}",
@@ -479,7 +484,7 @@ def describe_header(dump, offset=0):
         + ("VALID" if computed == checksum else "MISMATCH: this is not a whole header"),
         ("-> the build rom_map.py describes" if (code, version) == (GAME_CODE, SOFTWARE_VERSION)
          else f"-> NOT the build rom_map.py describes ({GAME_CODE!r} version "
-              f"0x{SOFTWARE_VERSION:02X}); none of its addresses apply"),
+              f"0x{SOFTWARE_VERSION:02X}); {other}"),
     ]
 
 

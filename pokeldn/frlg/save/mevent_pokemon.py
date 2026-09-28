@@ -50,7 +50,8 @@ MAIL_NONE = 0xFF
 PLAYER_NAME_LENGTH = 7
 TRAINER_ID_LENGTH = 4
 
-LANGUAGE_FRENCH = 3             # [decomp:include/constants/global.h:22]
+LANGUAGE_ENGLISH = 2            # [decomp:include/constants/global.h:21-22]
+LANGUAGE_FRENCH = 3
 VERSION_FIRE_RED = 4            # [decomp:include/constants/global.h:11]
 VERSION_LEAF_GREEN = 5
 POKE_BALL = 4                   # ITEM_POKE_BALL's ball index
@@ -108,9 +109,12 @@ def exp_for_level(species, level):
 
 def build_party_mon(species, level, *, moves=(), pp=(), nickname=None, ot_name="PkCamp",
                     ot_id=0x47ED8822, personality=None, held_item=0, friendship=70,
-                    ivs=31, evs=(0,) * 6, language=LANGUAGE_FRENCH, met_location=0xFF,
+                    ivs=31, evs=(0,) * 6, language, met_location=0xFF,
                     met_level=None, poke_ball=POKE_BALL, met_game=VERSION_FIRE_RED):
     """A 100-byte encrypted party mon, built from nothing but these arguments.
+
+    `language` is the cartridge's gGameLanguage (Build.language_id): the byte CreateMon would
+    write on that console.
 
     Deliberately not derived from a stored .pk3: those are gitignored, and a payload the console
     executes should be reproducible from the source alone.

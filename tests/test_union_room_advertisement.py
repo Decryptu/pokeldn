@@ -137,7 +137,8 @@ def _party_files():
         path = os.path.join(directory, name)
         with open(path, "wb") as handle:
             handle.write(mevent_pokemon.build_party_mon(
-                species, level, nickname="FODDER").party_bytes())
+                species, level, nickname="FODDER",
+                language=mevent_pokemon.LANGUAGE_FRENCH).party_bytes())
         paths.append(path)
     return tuple(paths)
 

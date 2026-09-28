@@ -22,9 +22,10 @@ position independent, and the deduction is recorded only because a later payload
 is proven before it is ever put on the air.
 """
 
+import dataclasses
 from dataclasses import dataclass
 
-from pokeldn.frlg.rom import rom_map
+from pokeldn.frlg.rom import builds
 from pokeldn.frlg.rom.buffer_payloads import PAYLOADS
 
 # MG_LINK_BUFFER_SIZE [decomp:include/mystery_gift_link.h:4]. Client_Run memcpys exactly this many
@@ -908,6 +909,8 @@ class ChainStep:
     target_from_prev: bool = False
     arg_from_prev: bool = False
     keep_prev: bool = False
+    # A call named by function: build_call_chain resolves it on the build the chain is for.
+    function_name: str | None = dataclasses.field(default=None, compare=False)
 
     @property
     def op_word(self):
@@ -943,7 +946,7 @@ class ChainStep:
 
 
 def chain_call(function, args=(), *, arg_from_prev=False):
-    """A CALL step. `function` is a THUMB pointer - rom_map.callable_function(name) gives one."""
+    """A CALL step. `function` is a THUMB pointer - Build.callable_function(name) gives one."""
     return ChainStep(CHAIN_CALL, int(function), tuple(int(a) & 0xFFFFFFFF for a in args),
                      arg_from_prev=bool(arg_from_prev))
 
@@ -974,9 +977,10 @@ def parse_chain_step(text, resolve=None):
     `prev` is the previous step's result and `prev+N` is N bytes past it; a FIRST argument of
     `prev`/`prev+N` is the same thing, which is how `AddMoney(&money, n)` is reached when only the
     console knows the base. `resolve` turns a name into a THUMB pointer and defaults to
-    rom_map.callable_function, so only the functions this project has MEASURED are nameable.
+    French FireRed's `Build.callable_function`; a named call keeps its name, so
+    build_call_chain re-resolves it on the build it is sent to.
     """
-    resolve = rom_map.callable_function if resolve is None else resolve
+    resolve = builds.DEFAULT.callable_function if resolve is None else resolve
     head, _, rest = str(text).strip().partition(":")
     head = head.strip().lower()
     keep_prev = head.endswith("+keep")
@@ -998,7 +1002,7 @@ def parse_chain_step(text, resolve=None):
             raise BufferScriptError(f"{text!r}: {field!r} is not a number") from None
 
     target_text, args_text = fields[0], fields[1:]
-    target_from_prev, target = False, 0
+    target_from_prev, target, function_name = False, 0, None
     if target_text.lower().startswith("prev"):
         target_from_prev = True
         tail = target_text[4:].strip()
@@ -1010,6 +1014,7 @@ def parse_chain_step(text, resolve=None):
     elif op == CHAIN_CALL:
         try:
             target = resolve(target_text)
+            function_name = target_text
         except KeyError:
             target = number(target_text)
     else:
@@ -1032,16 +1037,26 @@ def parse_chain_step(text, resolve=None):
         else:
             args.append(number(field))
     return ChainStep(op, target, tuple(args), target_from_prev=target_from_prev,
-                     arg_from_prev=arg_from_prev, keep_prev=keep_prev)
+                     arg_from_prev=arg_from_prev, keep_prev=keep_prev,
+                     function_name=function_name)
 
 
-def build_call_chain(steps, *, unsafe=False):
+def build_call_chain(steps, *, unsafe=False, build=None):
     """The `call-chain` payload: up to CHAIN_MAX_STEPS steps, executed in order in one frame.
 
     Every write needs `unsafe`: unlike save-write there is no scratch region here to be safe in,
-    because the target is wherever the game keeps the thing we are changing.
+    because the target is wherever the game keeps the thing we are changing. A call step named by
+    function is resolved on `build` [builds.py].
     """
-    steps = list(steps)
+    build = builds.resolve(build)
+    try:
+        steps = [step if step.function_name is None else
+                 ChainStep(step.op, build.callable_function(step.function_name), step.args,
+                           step.target_from_prev, step.arg_from_prev, step.keep_prev,
+                           step.function_name)
+                 for step in steps]
+    except KeyError as exc:
+        raise BufferScriptError(str(exc.args[0])) from None
     if not steps:
         raise BufferScriptError(
             "a chain needs at least one step; an empty one would send back sixteen zeroes")
@@ -1743,13 +1758,35 @@ FLASH_WRITE_ID_RESULT_OFFSET = 0x44
 FLASH_WRITE_POSITION_OFFSET = 0x48
 FLASH_WRITE_THUNK_OFFSET = 0x4C
 # The save globals, measured live in IWRAM on the French build and confirmed across three
-# consecutive save generations (NOTES.local.md, the save globals).
+# consecutive save generations. The builders patch the build's own [builds.py].
 GLASTWRITTENSECTOR = 0x030045A0
 GLASTSAVECOUNTER = 0x030045A4
 GLASTKNOWNGOODSECTOR = 0x030045A8
 GDAMAGEDSAVESECTORS = 0x030045AC
 GSAVECOUNTER = 0x030045B0
 SECTORS_PER_BAND = 14
+# What flash-write and flash-patch answer when the derived globals are not a save's, with nothing
+# written: gLastWrittenSector past 13, gSaveCounter 0, or sector A carrying another id.
+FLASH_REFUSED_LWS = 0xBAE00000
+FLASH_REFUSED_SC = 0xBAE10000
+FLASH_REFUSED_ID = 0xBAE20000
+
+
+def flash_refusal(status):
+    """-> why a derived flash payload wrote nothing, or None if `status` is not a refusal."""
+    mark, low = status & 0xFFFF0000, status & 0xFFFF
+    if mark == FLASH_REFUSED_LWS:
+        return (f"refused, nothing written: gLastWrittenSector read {low}, not a band position "
+                "0..13; the payload was built for another cartridge")
+    if mark == FLASH_REFUSED_SC:
+        return ("refused, nothing written: gSaveCounter read 0, which no saved game holds; the "
+                "payload was built for another cartridge")
+    if mark == FLASH_REFUSED_ID:
+        return (f"refused, nothing written: sector {low >> 8} carries id {low & 0xFF}, not the "
+                "one the rotation named")
+    return None
+
+
 # The band position whose sector supplies the slot's counter to GetSaveValidStatus: the last one.
 COUNTER_BEARING_POSITION = SECTORS_PER_BAND - 1
 # struct SaveSector [decomp:include/save.h]: data[3968], unused[116], then the footer.
@@ -1798,14 +1835,16 @@ SAVE_BAND_SECTORS = 28
 def build_flash_write(sector, *, source=FLASH_WRITE_SCRATCH, fill_base=0x46570000, fill_step=1,
                       words=FLASH_WRITE_WORDS, number=SWI_WRITE_SECTOR, unsafe=False,
                       footer=False, sector_id=0, counter=0, signature=SECTOR_SIGNATURE,
-                      derive=False, counter_bias=0, position=None):
+                      derive=False, counter_bias=0, position=None, build=None):
     """The flash-write payload: fill `words` words at `source`, then swi `number` into `sector`.
 
     This writes the console's save flash directly, with none of the game's save code in the way: no
     counter, no checksum, no signature. The default refuses a sector inside the two save bands,
     because a sector there is a live save block and the write bypasses every consistency the loader
     relies on. 28..31 are outside both bands and are the sectors an experiment belongs in.
+    `derive` reads `build`'s save globals.
     """
+    build = builds.resolve(build)
     sector = int(sector)
     if not 0 <= sector < FLASH_SIZE // FLASH_SECTOR_SIZE:
         raise BufferScriptError(
@@ -1892,8 +1931,9 @@ def build_flash_write(sector, *, source=FLASH_WRITE_SCRATCH, fill_base=0x4657000
                           (FLASH_WRITE_ID_OFFSET, sector_id),
                           (FLASH_WRITE_COUNTER_OFFSET, counter),
                           (FLASH_WRITE_SIGNATURE_OFFSET, signature if footer else 0),
-                          (FLASH_WRITE_DERIVE_LWS_OFFSET, GLASTWRITTENSECTOR if derive else 0),
-                          (FLASH_WRITE_DERIVE_SC_OFFSET, GSAVECOUNTER if derive else 0),
+                          (FLASH_WRITE_DERIVE_LWS_OFFSET,
+                           build.last_written_sector if derive else 0),
+                          (FLASH_WRITE_DERIVE_SC_OFFSET, build.save_counter if derive else 0),
                           (FLASH_WRITE_BIAS_OFFSET, counter_bias),
                           (FLASH_WRITE_POSITION_OFFSET,
                            0xFFFFFFFF if position is None else position)):
@@ -2122,12 +2162,8 @@ RESIDENT_HOOKS = {
                          "overlay2": 0x0203FF84}),
     "noencounter": ("noencounter_hook", {"flag": 0x020386D8}),
 }
-# What differs on LeafGreen, measured by mapping every FireRed reference to each hook constant onto
-# the LeafGreen cartridge [scratchpad/lg_hook_addresses.py]: only m4aSoundMain moves (its VBlankIntr's
-# call at 0x08000772 reads 0x081DF518); every RAM address and every other function is where FireRed
-# has it.
-RESIDENT_VERSIONS = ("firered", "leafgreen")
-RESIDENT_LEAFGREEN = {"shiny": {"sound_main": 0x081DF519}}
+# The IWRAM and ROM words a hook carries are the build's own [Build.hook_literals]. On French
+# LeafGreen only m4aSoundMain moves; on English every one of them does.
 # The data a hook keeps past its code, by parameter, and its size in bytes.
 RESIDENT_DATA = {"p_frames": 20, "p_ring": 140, "p_state": 36, "p_words": 12}
 R_BUTTON = 0x100
@@ -2135,8 +2171,8 @@ R_BUTTON = 0x100
 HELP_R_DISABLED = 0x0203F171
 
 
-def resident_blob(name, *, version="firered", **params):
-    """-> (THUMB bytes, entry offset, p_original offset) for one of RESIDENT_HOOKS."""
+def resident_blob(name, *, build=None, **params):
+    """-> (THUMB bytes, entry offset, p_original offset) for one of RESIDENT_HOOKS, on `build`."""
     from pokeldn.frlg.rom import native_script
     from pokeldn.frlg.rom.resident_stubs import STUBS
     if name not in RESIDENT_HOOKS:
@@ -2153,21 +2189,21 @@ def resident_blob(name, *, version="firered", **params):
         params["overlay"] = params["state"] + 24    # the word the hook shows
     if name == "ivs" and "words" in explicit:
         params["overlay"], params["overlay2"] = params["words"], params["words"] + 4
-    if version not in RESIDENT_VERSIONS:
-        raise BufferScriptError(f"a resident hook is built for one of {RESIDENT_VERSIONS}")
-    moved = RESIDENT_LEAFGREEN.get(name, {}) if version == "leafgreen" else {}
-    words = native_script.resident_words(name, **params, **moved)
     symbols = STUBS[name][2]
+    literals = {key: value for key, value in builds.resolve(build).hook_literals().items()
+                if f"p_{key}" in symbols}
+    words = native_script.resident_words(name, **params, **literals)
     return (b"".join(w.to_bytes(4, "little") for w in words), symbols[entry],
             symbols["p_original"])
 
 
-def build_install_resident(name, *, dest=None, table=None, version="firered", **params):
-    """The install-resident payload carrying resident hook `name`, parameters patched."""
+def build_install_resident(name, *, dest=None, table=None, build=None, **params):
+    """The install-resident payload carrying resident hook `name` for `build`, parameters patched."""
     from pokeldn.frlg.rom import native_script
+    build = builds.resolve(build)
     dest = native_script.RESIDENT_BASE if dest is None else dest
-    table = native_script.GINTRTABLE_VBLANK if table is None else table
-    blob, entry, original = resident_blob(name, version=version, **params)
+    table = build.intr_vblank if table is None else table
+    blob, entry, original = resident_blob(name, build=build, **params)
     code = bytearray(payload(INSTALL_RESIDENT))
     if len(code) + len(blob) > MAX_BUFFER_SCRIPT_SIZE:
         raise BufferScriptError(
@@ -2207,13 +2243,13 @@ RESIDENT_SAVE_STAGING = 0x0201C400      # gDecompressionBuffer + 0x400, above th
 RESIDENT_SAVE_SIZE = 0x400              # filler_B20, all of which the loader copies
 
 
-def build_resident_save_blob(name, *, version="firered", **params):
+def build_resident_save_blob(name, *, build=None, **params):
     """-> the bytes save-write puts at SaveBlock2 + 0xB20 so that MOM's loader installs hook `name`."""
     from pokeldn.frlg.rom.resident_stubs import STUBS
     head, _digest, symbols = STUBS["save-head"]
     if symbols["p_image"] != len(head):
         raise BufferScriptError("save-head must end at its image")
-    blob = bytearray(head) + build_install_resident(name, version=version, **params)
+    blob = bytearray(head) + build_install_resident(name, build=build, **params)
     blob += bytes(-len(blob) % 4)
     blob[symbols["p_length"]:symbols["p_length"] + 4] = len(blob).to_bytes(4, "little")
     checksum = sum(int.from_bytes(blob[i:i + 4], "little") for i in range(0, len(blob), 4))
@@ -2226,14 +2262,15 @@ def build_resident_save_blob(name, *, version="firered", **params):
 
 
 def build_flash_patch(sector_id, patch_offset, data, *, scratch=FLASH_WRITE_SCRATCH,
-                      counter_bias=2, unsafe=False):
+                      counter_bias=2, unsafe=False, build=None):
     """The flash-patch payload: read the id's sector out of flash, change `data` at `patch_offset`,
     recompute the checksum and write it back, then bump the counter-bearing sector.
 
     Nothing is reconstructed from RAM. A sector composed from a live save block is not what the save
     routine writes, because the routine serializes at save time; every byte this does not patch is
-    the byte a real save put there.
+    the byte a real save put there. The save globals are `build`'s.
     """
+    build = builds.resolve(build)
     data = bytes(data)
     sector_id = int(sector_id)
     patch_offset = int(patch_offset)
@@ -2253,8 +2290,8 @@ def build_flash_patch(sector_id, patch_offset, data, *, scratch=FLASH_WRITE_SCRA
             "written and not accounted for")
     code = bytearray(payload(FLASH_PATCH))
     for offset, value in ((FLASH_PATCH_SCRATCH_OFFSET, scratch),
-                          (FLASH_PATCH_LWS_OFFSET, GLASTWRITTENSECTOR),
-                          (FLASH_PATCH_SC_OFFSET, GSAVECOUNTER),
+                          (FLASH_PATCH_LWS_OFFSET, build.last_written_sector),
+                          (FLASH_PATCH_SC_OFFSET, build.save_counter),
                           (FLASH_PATCH_ID_OFFSET, sector_id),
                           (FLASH_PATCH_OFF_OFFSET, patch_offset),
                           (FLASH_PATCH_LEN_OFFSET, len(data)),
@@ -2294,13 +2331,12 @@ def flash_write_source(fill_base=0x46570000, fill_step=1, words=FLASH_WRITE_WORD
 #
 # gRngValue is the only address guaranteed to move every frame, so it is the only one named here.
 # Anything else volatile has to be found the way this was. docs/frlg_leafgreen.md.
-MOVING_REGIONS = (
-    (rom_map.GRNG_VALUE, 4, "gRngValue, which advances two turns every frame"),
-)
+def moving_regions(build=None):
+    return ((builds.resolve(build).rng, 4, "gRngValue, which advances two turns every frame"),)
 
 
-def _refuse_a_moving_region(address, size):
-    for base, length, what in MOVING_REGIONS:
+def _refuse_a_moving_region(address, size, build=None):
+    for base, length, what in moving_regions(build):
         if address < base + length and base < address + size:
             raise BufferScriptError(
                 f"0x{address:X}..0x{address + size - 1:X} overlaps {what}. MGL_Send takes the "
@@ -2321,7 +2357,7 @@ def _refuse_the_save_window(address, size):
             "flash-read, which byte-copies a sector into EWRAM and sends the copy.")
 
 
-def build_memory_dump_multi(address, size=MAX_BUFFER_SCRIPT_SIZE, blocks=1):
+def build_memory_dump_multi(address, size=MAX_BUFFER_SCRIPT_SIZE, blocks=1, *, build=None):
     """The multi-block dump payload, patched with the BASE address and the per-block length.
 
     How many blocks come back is the CLIENT SCRIPT's business, not the payload's: the payload sends
@@ -2340,7 +2376,7 @@ def build_memory_dump_multi(address, size=MAX_BUFFER_SCRIPT_SIZE, blocks=1):
         raise BufferScriptError(f"0x{address:X} is not a 32-bit address")
     if address % 2:
         raise BufferScriptError(f"0x{address:X} is not halfword aligned")
-    _refuse_a_moving_region(address, size * blocks)
+    _refuse_a_moving_region(address, size * blocks, build)
     _refuse_the_save_window(address, size * blocks)
     code = bytearray(payload(MEMORY_DUMP_MULTI))
     code[DUMP_MULTI_BASE_OFFSET:DUMP_MULTI_BASE_OFFSET + 4] = address.to_bytes(4, "little")
@@ -2348,7 +2384,7 @@ def build_memory_dump_multi(address, size=MAX_BUFFER_SCRIPT_SIZE, blocks=1):
     return bytes(code)
 
 
-def build_memory_dump_scatter(addresses, size=MAX_BUFFER_SCRIPT_SIZE):
+def build_memory_dump_scatter(addresses, size=MAX_BUFFER_SCRIPT_SIZE, *, build=None):
     """The scattered dump payload: one block per address in `addresses`, in that order.
 
     WHY IT EXISTS. `memory-dump-multi` reads N CONSECUTIVE blocks, which is what a long region
@@ -2377,7 +2413,7 @@ def build_memory_dump_scatter(addresses, size=MAX_BUFFER_SCRIPT_SIZE):
         if address % 2:
             raise BufferScriptError(f"0x{address:X} is not halfword aligned")
         # The guard is per BLOCK here, not over one span: the blocks are unrelated regions.
-        _refuse_a_moving_region(address, size)
+        _refuse_a_moving_region(address, size, build)
         _refuse_the_save_window(address, size)
     code = bytearray(payload(MEMORY_DUMP_SCATTER))
     code[DUMP_SCATTER_SIZE_OFFSET:DUMP_SCATTER_SIZE_OFFSET + 4] = size.to_bytes(4, "little")
@@ -2388,7 +2424,7 @@ def build_memory_dump_scatter(addresses, size=MAX_BUFFER_SCRIPT_SIZE):
     return bytes(code)
 
 
-def build_memory_dump(address, size=MAX_BUFFER_SCRIPT_SIZE):
+def build_memory_dump(address, size=MAX_BUFFER_SCRIPT_SIZE, *, build=None):
     """The memory-dump payload with its target address and length patched in.
 
     `size` is what link->sendSize becomes, so it is bounded by what the receiving side will accept:
@@ -2406,7 +2442,7 @@ def build_memory_dump(address, size=MAX_BUFFER_SCRIPT_SIZE):
         # CalcCRC16WithTable walks the region and the link sends it in halfwords; an odd base
         # would also make every later offset calculation lie about what was read.
         raise BufferScriptError(f"0x{address:X} is not halfword aligned")
-    _refuse_a_moving_region(address, size)
+    _refuse_a_moving_region(address, size, build)
     _refuse_the_save_window(address, size)
     code = bytearray(payload(MEMORY_DUMP))
     code[DUMP_TARGET_OFFSET:DUMP_TARGET_OFFSET + 4] = address.to_bytes(4, "little")
@@ -2617,11 +2653,13 @@ def emulation_available():
 
 # Enough of a cartridge header for a dump aimed at ROM to come back with something to identify. The
 # real console's is whatever the Switch release ships; that is exactly what a hardware dump answers.
-_DEFAULT_ROM_HEADER = (b"\x00" * 0xA0
-                       + b"POKEMON FIRE"            # 0xA0 game title, 12 bytes
-                       + b"BPRF"                    # 0xAC game code: BPR = FireRed, F = French
-                       + b"01"                      # 0xB0 maker code
-                       + b"\x96")                   # 0xB2 fixed value
+def _default_rom_header(build):
+    return (b"\x00" * 0xA0
+            + (b"POKEMON FIRE" if build.version == "firered" else b"POKEMON LEAF")  # 0xA0 title
+            + build.game_code.encode()                                           # 0xAC game code
+            + b"01"                                                              # 0xB0 maker code
+            + b"\x96")                                                           # 0xB2 fixed value
+
 
 
 # --- models of CreateMon, for running a calling payload offline ----------------------------------
@@ -2670,7 +2708,7 @@ class _Machine:
     """
 
     def __init__(self, code, *, param=0, sav2=b"", sav1=b"", memory=None, send_size=4,
-                 send_ident=0, rom=None):
+                 send_ident=0, rom=None, build=None):
         try:
             import unicorn
             from unicorn import arm_const
@@ -2689,7 +2727,8 @@ class _Machine:
         uc.mem_map(0x05000000, 0x400)         # palette
         uc.mem_map(0x06000000, 0x18000)       # VRAM
         uc.mem_map(0x07000000, 0x400)         # OAM
-        uc.mem_write(ROM_BASE, bytes(rom if rom is not None else _DEFAULT_ROM_HEADER))
+        build = builds.resolve(build)
+        uc.mem_write(ROM_BASE, bytes(rom if rom is not None else _default_rom_header(build)))
         uc.mem_map(_RETURN_ADDRESS, 0x1000)
         # The chip is 128 KiB and starts erased. The CPU does not see it that way: it sees a 64 KiB
         # aperture, one bank at a time, which is why `self.flash` is the chip and the mapped region
@@ -2705,8 +2744,7 @@ class _Machine:
         uc.hook_add(unicorn.UC_HOOK_MEM_WRITE, self._on_flash_store,
                     begin=FLASH_WINDOW_BASE, end=FLASH_WINDOW_BASE + FLASH_WINDOW_SIZE - 1)
         uc.hook_add(unicorn.UC_HOOK_INTR, self._on_swi)
-        from pokeldn.frlg.rom import rom_map as _rom_map
-        entry = _rom_map.READ_FLASH & ~1
+        entry = build.read_flash
         uc.hook_add(unicorn.UC_HOOK_CODE, self._on_readflash, begin=entry, end=entry)
 
         def word(offset, value):
@@ -2891,7 +2929,7 @@ class _Machine:
 
 
 def emulate(code, *, param=0, sav2=b"", sav1=b"", memory=None, send_size=4,
-            send_ident=0, rom=None, instruction_limit=_INSTRUCTION_LIMIT):
+            send_ident=0, rom=None, build=None, instruction_limit=_INSTRUCTION_LIMIT):
     """Run a payload the way Client_RunBufferScript does, on a model of the console's memory.
 
     `send_size`/`send_ident` are the send a preceding client-script command already set up (4 bytes
@@ -2909,7 +2947,7 @@ def emulate(code, *, param=0, sav2=b"", sav1=b"", memory=None, send_size=4,
     """
     return _Machine(code, param=param, sav2=sav2, sav1=sav1, memory=memory,
                     send_size=send_size, send_ident=send_ident,
-                    rom=rom).call(instruction_limit=instruction_limit)
+                    rom=rom, build=build).call(instruction_limit=instruction_limit)
 
 
 @dataclass

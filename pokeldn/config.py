@@ -7,7 +7,7 @@ from typing import Any, Mapping
 
 from pokeldn.frlg.gift import gift_composer, gift_registry, mg_script, stamp_rally, wonder_card, wonder_news
 from pokeldn.frlg.link import linkplayer, uroom_chat
-from pokeldn.frlg.rom import buffer_script, rom_map
+from pokeldn.frlg.rom import buffer_script, builds, rng_script
 from pokeldn.frlg.text import charmap
 from pokeldn.gba import ni
 from pokeldn.ldn import beacon
@@ -522,17 +522,18 @@ class MysteryGiftPayload:
     def receipt_flag(self):
         return wonder_card.flag_for_flag_id(self.flag_id)
 
-    def build(self):
-        distribution = self.build_distribution()
+    def build(self, build=None):
+        distribution = self.build_distribution(build)
         return distribution.card, distribution.ram_script
 
-    def build_distribution(self):
+    def build_distribution(self, build=None):
+        """`build` is the cartridge the bytes are for [builds.py]; None is French FireRed."""
         if self.definition is not None:
             distribution = gift_composer.compile_definition(
-                self.definition, flag_id=self.flag_id)
+                self.definition, flag_id=self.flag_id, build=build)
         else:
             distribution = gift_registry.GIFT_REGISTRY.build_distribution(
-                self.gift, flag_id=self.flag_id)
+                self.gift, flag_id=self.flag_id, build=build)
         if self.questionnaire is None:
             return distribution
         return dataclasses.replace(
@@ -566,6 +567,9 @@ class BufferScriptPayload:
     # keeps a write inside the region the game never reads.
     write_data: bytes | None = None
     write_unsafe: bool = False
+    # save-write of a resident hook for MOM's loader, (name, params): its bytes are built per
+    # build, so `write_data` holds French FireRed's only for the checks below.
+    write_resident: tuple | None = None
     # flash-write: the sector the syscall writes and the pattern the console composes for it. The
     # write goes straight into save flash with none of the game's save code in the way, so
     # `write_unsafe` is what allows a sector inside the two save bands.
@@ -624,7 +628,6 @@ class BufferScriptPayload:
     # install-resident: which resident hook, and its parameters.
     resident_name: str | None = None
     resident_params: tuple = ()
-    resident_version: str = "firered"
     # string-gather: an array of pointers to follow, and how far apart they are. This is the one
     # payload that dereferences, so the answer is the strings rather than a window around them.
     gather_address: int | None = None
@@ -685,6 +688,13 @@ class BufferScriptPayload:
             raise ValueError(
                 f"an offset into a save block is only meaningful with {buffer_script.SAVE_DUMP} "
                 f"and {buffer_script.SAVE_WRITE}")
+        if self.write_resident is not None:
+            if self.script != buffer_script.SAVE_WRITE or self.write_data is not None:
+                raise ValueError(
+                    f"a resident hook is written by {buffer_script.SAVE_WRITE}, as its only data")
+            name, params = self.write_resident
+            object.__setattr__(self, "write_data",
+                               buffer_script.build_resident_save_blob(name, **dict(params)))
         if self.script == buffer_script.SAVE_WRITE:
             if not self.write_data:
                 raise ValueError(
@@ -823,14 +833,17 @@ class BufferScriptPayload:
     def spec(self):
         return buffer_script.SCRIPT_REGISTRY[self.script]
 
-    def build_code(self):
+    def build_code(self, build=None):
+        """The payload for `build` [builds.py]; None is French FireRed."""
+        build = builds.resolve(build)
         if self.script == buffer_script.MEMORY_DUMP:
-            return buffer_script.build_memory_dump(self.dump_address, self.dump_size)
+            return buffer_script.build_memory_dump(self.dump_address, self.dump_size, build=build)
         if self.script == buffer_script.MEMORY_DUMP_MULTI:
             return buffer_script.build_memory_dump_multi(
-                self.dump_address, self.dump_size, self.dump_blocks)
+                self.dump_address, self.dump_size, self.dump_blocks, build=build)
         if self.script == buffer_script.MEMORY_DUMP_SCATTER:
-            return buffer_script.build_memory_dump_scatter(self.dump_addresses, self.dump_size)
+            return buffer_script.build_memory_dump_scatter(
+                self.dump_addresses, self.dump_size, build=build)
         if self.script == buffer_script.SAVE_DUMP:
             return buffer_script.build_save_dump(
                 self.dump_block, self.dump_offset, self.dump_size)
@@ -850,7 +863,7 @@ class BufferScriptPayload:
                 self.call_address, self.call_args, self.call_watch)
         if self.script == buffer_script.CALL_CHAIN:
             return buffer_script.build_call_chain(
-                self.chain_steps, unsafe=self.write_unsafe)
+                self.chain_steps, unsafe=self.write_unsafe, build=build)
         if self.script == buffer_script.STRING_GATHER:
             return buffer_script.build_string_gather(
                 self.gather_address, self.gather_count, self.gather_stride,
@@ -858,7 +871,7 @@ class BufferScriptPayload:
         if self.script == buffer_script.CREATE_MON:
             has_fixed = self.create_mon_personality is not None
             return buffer_script.build_create_mon(
-                rom_map.thumb(rom_map.CREATE_MON) if self.create_mon_call is None
+                build.create_mon | 1 if self.create_mon_call is None
                 else self.create_mon_call,
                 self.create_mon_species, self.create_mon_level,
                 fixed_iv=self.create_mon_fixed_iv,
@@ -871,12 +884,15 @@ class BufferScriptPayload:
                               else buffer_script.PARTY_APPEND_WRITE if self.create_mon_append
                               else buffer_script.PARTY_APPEND_NO))
         if self.script == buffer_script.SAVE_WRITE:
+            data = self.write_data
+            if self.write_resident is not None:
+                name, params = self.write_resident
+                data = buffer_script.build_resident_save_blob(name, build=build, **dict(params))
             return buffer_script.build_save_write(
-                self.write_data, self.dump_block, self.dump_offset,
-                unsafe=self.write_unsafe)
+                data, self.dump_block, self.dump_offset, unsafe=self.write_unsafe)
         if self.script == buffer_script.INSTALL_RESIDENT:
             return buffer_script.build_install_resident(
-                self.resident_name, version=self.resident_version, **dict(self.resident_params))
+                self.resident_name, build=build, **dict(self.resident_params))
         if self.script == buffer_script.SLOOP_SVC:
             return buffer_script.build_sloop_svc(
                 self.svc_numbers, self.svc_args, self.svc_data, flags=self.svc_data_in,
@@ -887,7 +903,7 @@ class BufferScriptPayload:
         if self.script == buffer_script.FLASH_PATCH:
             return buffer_script.build_flash_patch(
                 self.flash_id, self.flash_patch_offset, self.flash_patch_data,
-                counter_bias=self.flash_counter_bias, unsafe=self.write_unsafe)
+                counter_bias=self.flash_counter_bias, unsafe=self.write_unsafe, build=build)
         if self.script == buffer_script.FLASH_WRITE:
             return buffer_script.build_flash_write(
                 self.flash_sector, fill_base=self.flash_fill_base,
@@ -895,12 +911,13 @@ class BufferScriptPayload:
                 number=self.flash_swi, unsafe=self.write_unsafe,
                 footer=self.flash_footer, sector_id=self.flash_id,
                 counter=self.flash_counter, derive=self.flash_derive,
-                counter_bias=self.flash_counter_bias, position=self.flash_position)
+                counter_bias=self.flash_counter_bias, position=self.flash_position,
+                build=build)
         return buffer_script.payload(self.script)
 
-    def build_distribution(self):
+    def build_distribution(self, build=None):
         return MysteryGiftDistribution(
-            None, None, buffer_code=self.build_code(), buffer_expect=self.expect,
+            None, None, buffer_code=self.build_code(build), buffer_expect=self.expect,
             buffer_dump_size=self.dump_size if self.is_dump else None,
             buffer_dump_blocks=self.dump_blocks,
             buffer_dump_address=(self.dump_address or
@@ -938,7 +955,8 @@ class WonderNewsPayload:
     def build_news(self):
         return wonder_news.build_news(self.news, news_id=self.news_id)
 
-    def build_distribution(self):
+    def build_distribution(self, build=None):
+        """Text only: the same bytes for every build."""
         return MysteryGiftDistribution(None, None, news=self.build_news())
 
 
@@ -956,6 +974,11 @@ class MysteryGiftRunConfig:
     payload: MysteryGiftPayload = field(default_factory=MysteryGiftPayload)
     # Which cartridge the run is for, checked against the console's game data. None: do not check.
     expect_console: str | None = None
+    # Which build's addresses to send: a game code, or "auto" for the one the console names in its
+    # game data. `console_version` is an explicit --version, which a build-dependent payload is
+    # held to [plan_builds].
+    console_build: str = "auto"
+    console_version: str | None = None
     ldn: LdnConfig = field(default_factory=lambda: LdnConfig(phy="auto"))
     role: HostOptions = field(default_factory=_mystery_gift_host_defaults)
     trust_pia: bool = True
@@ -1009,6 +1032,63 @@ class MysteryGiftRunConfig:
             raise ValueError("attempt_log_dir must be a string or None")
         if self.game_data_log is not None and not isinstance(self.game_data_log, str):
             raise ValueError("game_data_log must be a string or None")
+        if self.console_build not in CONSOLE_BUILD_CHOICES:
+            raise ValueError(f"console_build must be one of {', '.join(CONSOLE_BUILD_CHOICES)}")
+        if self.console_version not in (None, *VERSIONS):
+            raise ValueError(f"console_version must be one of {', '.join(VERSIONS)} or None")
+
+
+CONSOLE_BUILD_AUTO = "auto"
+CONSOLE_BUILD_CHOICES = (CONSOLE_BUILD_AUTO, *builds.GAME_CODES)
+
+
+@dataclass(frozen=True)
+class BuildPlan:
+    """What each cartridge a run may meet is sent.
+
+    `per_build` is {game code: distribution, or why that cartridge is refused}, for the server to
+    choose from at SVR_COPY_GAME_DATA. None when every build gets the same bytes: those go to any
+    console, German and Spanish included, as they always have.
+    """
+    distribution: MysteryGiftDistribution
+    per_build: Mapping | None
+    build: object = None            # the Build `distribution` is for, when there is only one
+
+    @property
+    def codes(self):
+        return tuple(code for code, chosen in (self.per_build or {}).items()
+                     if not isinstance(chosen, str))
+
+
+def plan_builds(payload, console_build=CONSOLE_BUILD_AUTO, version=None):
+    """-> the BuildPlan for `payload`. An explicit `version` holds a build-dependent payload to
+    that version's cartridges; `console_build` names the only one to serve."""
+    if console_build not in CONSOLE_BUILD_CHOICES:
+        raise ValueError(f"console_build must be one of {', '.join(CONSOLE_BUILD_CHOICES)}")
+    codes = builds.GAME_CODES if console_build == CONSOLE_BUILD_AUTO else (console_build,)
+    built = {}
+    for code in codes:
+        try:
+            built[code] = payload.build_distribution(builds.BUILDS[code])
+        except (ValueError, rng_script.RngScriptError) as exc:
+            built[code] = f"its payload cannot be built for {code}: {exc}"
+    usable = [chosen for chosen in built.values() if not isinstance(chosen, str)]
+    if not usable:
+        raise ValueError(next(iter(built.values())))
+    if console_build == CONSOLE_BUILD_AUTO and len(usable) == len(built) \
+            and all(chosen == usable[0] for chosen in usable):
+        return BuildPlan(usable[0], None)
+    if version is not None:
+        for code in built:
+            if builds.BUILDS[code].version != version and not isinstance(built[code], str):
+                built[code] = (f"--version {version} holds this build-dependent payload to "
+                               f"{version} cartridges")
+        usable = [chosen for chosen in built.values() if not isinstance(chosen, str)]
+        if not usable:
+            raise ValueError(f"--console-build {console_build} is not a {version} cartridge; "
+                             f"drop --version or name a {version} build")
+    only = builds.BUILDS[console_build] if console_build != CONSOLE_BUILD_AUTO else None
+    return BuildPlan(usable[0], built, only)
 
 
 def parse_trainer_id(value):

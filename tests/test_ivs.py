@@ -85,6 +85,7 @@ def test_the_cartridge_getmondata_reads_a_mon_this_project_encrypted_and_leaves_
         pytest.skip("no cartridge image on this machine")
     ivs = (31, 30, 20, 19, 10, 9)
     mon = mevent_pokemon.build_party_mon(25, 50, nickname="PIKA", ivs=ivs,
+                                         language=mevent_pokemon.LANGUAGE_FRENCH,
                                          personality=0xA437A624).raw
     rom = bytearray(rom_path.read_bytes())
     at = VBLANK_INTR - 0x08000000

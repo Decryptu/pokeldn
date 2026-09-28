@@ -21,6 +21,7 @@ from pokeldn.frlg.text import charmap, easychat  # noqa: E402
 
 def _celebi(**kwargs):
     kwargs.setdefault("nickname", "CELEBI")
+    kwargs.setdefault("language", mp.LANGUAGE_FRENCH)
     return mp.build_party_mon(251, 30, **kwargs)
 
 
@@ -68,12 +69,12 @@ def test_the_origins_halfword_packs_met_level_game_and_ball():
 
 def test_a_nameless_mon_is_refused():
     with pytest.raises(mp.MysteryEventPokemonError, match="nickname"):
-        mp.build_party_mon(251, 30)
+        mp.build_party_mon(251, 30, language=mp.LANGUAGE_FRENCH)
 
 
 def test_a_species_with_no_base_stats_is_refused_rather_than_shipped_flat():
     with pytest.raises(mp.MysteryEventPokemonError):
-        mp.build_party_mon(0xFFF, 30, nickname="NOPE")
+        mp.build_party_mon(0xFFF, 30, nickname="NOPE", language=mp.LANGUAGE_FRENCH)
 
 
 # --- the mail ------------------------------------------------------------------------------

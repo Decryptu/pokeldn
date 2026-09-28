@@ -37,13 +37,20 @@ from pokeldn.frlg.gift.gift_composer import (
 )
 import dataclasses
 
-from pokeldn.frlg.rom import native_script
+from pokeldn.frlg.rom import builds, native_script
 from pokeldn.frlg.rom import rng_script
 from pokeldn.frlg.gift import ereader_trainer, stamp_rally, wonder_card
 from pokeldn.frlg.rom import mystery_event
 from pokeldn.frlg.save import mevent_pokemon
 from pokeldn.frlg.text import charmap
 from pokeldn.frlg.rom.scrcmd import VAR_0x8008, VAR_RESULT
+
+
+def _per_build(definition, script):
+    """-> `definition`, rebuilt for each cartridge by `script(build)`, its Mystery Event script,
+    which carries a build address [builds.py]. `definition.mevent` is French FireRed's."""
+    return dataclasses.replace(definition, for_build=lambda build: dataclasses.replace(
+        definition, mevent=script(build), for_build=None))
 
 
 # pokefirered/include/constants/{items,species,event_objects}.h
@@ -545,7 +552,7 @@ MEVENT_CELEBI_MAIL_WORDS = (
 )
 
 
-def build_mevent_celebi_script(*, nickname="CELEBI", level=30):
+def build_mevent_celebi_script(*, nickname="CELEBI", level=30, build=None):
     """`givepokemon`: a whole struct Pokemon plus the struct Mail that follows it.
 
     The only route on this link to a Pokemon carrying Mail, and the only one that writes the
@@ -558,7 +565,8 @@ def build_mevent_celebi_script(*, nickname="CELEBI", level=30):
         pp=(25, 20, 5, 5),
         nickname=nickname,
         ot_name="PkCamp",
-        held_item=mevent_pokemon.ITEM_ORANGE_MAIL)
+        held_item=mevent_pokemon.ITEM_ORANGE_MAIL,
+        language=builds.resolve(build).language_id)
     mail = mevent_pokemon.build_mail(
         MEVENT_CELEBI_MAIL_WORDS, player_name="PkCamp",
         species=SPECIES_CELEBI_MEVENT, item_id=mevent_pokemon.ITEM_ORANGE_MAIL)
@@ -603,6 +611,8 @@ MEVENT_CELEBI_GIFT = WonderGift(
         "party."),
     mevent=build_mevent_celebi_script(),
 )
+MEVENT_CELEBI_GIFT = _per_build(MEVENT_CELEBI_GIFT,
+                                lambda build: build_mevent_celebi_script(build=build))
 
 
 GIFT_MEVENT_NPC = "mystery-event-npc"
@@ -746,7 +756,7 @@ RNG_DITTO_SEED = 0x81F6816D
 
 
 def build_rng_shiny_ditto_script(seed=RNG_DITTO_SEED, species=SPECIES_DITTO,
-                                 level=RNG_DITTO_LEVEL, **kwargs):
+                                 level=RNG_DITTO_LEVEL, build=None, **kwargs):
     """The Mystery Event that installs "talk to this man and fight a Pokemon we chose".
 
     The field script sets gRngValue and calls setwildbattle in the SAME FRAME, so the four draws
@@ -754,7 +764,8 @@ def build_rng_shiny_ditto_script(seed=RNG_DITTO_SEED, species=SPECIES_DITTO,
     asked of the player but to talk to an NPC. See pokeldn/frlg/rom/rng_script.py for why there is no drift.
     """
     return build_mevent_npc_script(
-        field_script=rng_script.build_wild_battle_script(seed, species, level), **kwargs)
+        field_script=rng_script.build_wild_battle_script(
+            seed, species, level, address=builds.resolve(build).rng), **kwargs)
 
 
 RNG_SHINY_DITTO_GIFT = WonderGift(
@@ -788,13 +799,15 @@ RNG_SHINY_DITTO_GIFT = WonderGift(
         "PALLET TOWN."),
     mevent=build_rng_shiny_ditto_script(),
 )
+RNG_SHINY_DITTO_GIFT = _per_build(RNG_SHINY_DITTO_GIFT,
+                                  lambda build: build_rng_shiny_ditto_script(build=build))
 
 
 GIFT_RNG_SEED_READER = "rng-seed-reader"
 RNG_SEED_READER_FLAG_ID = 1015
 
 
-def build_rng_seed_reader_script(**kwargs):
+def build_rng_seed_reader_script(build=None, **kwargs):
     """The Mystery Event that installs "talk to this man and he tells you the RNG seed".
 
     The other direction from rng-shiny-ditto, and the one that matters for READ-ONLY work: the
@@ -806,7 +819,8 @@ def build_rng_seed_reader_script(**kwargs):
     script also confirms it: `rng_script.check_two_readings` on two visits to the NPC.
     """
     return build_mevent_npc_script(
-        field_script=build_seed_read_script(), **_at_mom(kwargs))
+        field_script=build_seed_read_script(address=builds.resolve(build).rng),
+        **_at_mom(kwargs))
 
 
 RNG_SEED_READER_GIFT = WonderGift(
@@ -838,22 +852,25 @@ RNG_SEED_READER_GIFT = WonderGift(
     completed_message="Talk to your MOM at home.",
     mevent=build_rng_seed_reader_script(),
 )
+RNG_SEED_READER_GIFT = _per_build(RNG_SEED_READER_GIFT,
+                                  lambda build: build_rng_seed_reader_script(build=build))
 
 
 GIFT_RNG_RATE_PROBE = "rng-rate-probe"
 RNG_RATE_PROBE_FLAG_ID = 1016
 
 
-def build_rng_rate_probe_script(frames=None, **kwargs):
+def build_rng_rate_probe_script(frames=None, build=None, **kwargs):
     """The Mystery Event that installs "talk to this man and he times the RNG for you".
 
     The field script reads gRngValue, waits an EXACT number of frames with `delay`, and reads it
     again. Both numbers that go into turns-per-frame are then exact - there is no stopwatch and no
     hand-timed elapsed anywhere, which is what every previous attempt at this rate had in it.
     """
-    build = ({} if frames is None else {"frames": frames})
-    return build_mevent_npc_script(field_script=build_seed_rate_script(**build),
-                                   **_at_mom(kwargs))
+    asked = ({} if frames is None else {"frames": frames})
+    return build_mevent_npc_script(
+        field_script=build_seed_rate_script(address=builds.resolve(build).rng, **asked),
+        **_at_mom(kwargs))
 
 
 RNG_RATE_PROBE_GIFT = WonderGift(
@@ -885,6 +902,8 @@ RNG_RATE_PROBE_GIFT = WonderGift(
     completed_message="Talk to your MOM at home.",
     mevent=build_rng_rate_probe_script(),
 )
+RNG_RATE_PROBE_GIFT = _per_build(RNG_RATE_PROBE_GIFT,
+                                 lambda build: build_rng_rate_probe_script(build=build))
 
 
 GIFT_RNG_RATE_PROBE_LONG = "rng-rate-probe-3000"
@@ -932,6 +951,9 @@ RNG_RATE_PROBE_LONG_GIFT = WonderGift(
     completed_message="Talk to your MOM at home.",
     mevent=build_rng_rate_probe_script(frames=RNG_RATE_PROBE_LONG_FRAMES),
 )
+RNG_RATE_PROBE_LONG_GIFT = _per_build(
+    RNG_RATE_PROBE_LONG_GIFT,
+    lambda build: build_rng_rate_probe_script(frames=RNG_RATE_PROBE_LONG_FRAMES, build=build))
 
 
 GIFT_MEVENT_SWEEP = "mevent-opcode-sweep"
@@ -948,37 +970,37 @@ MEVENT_SWEEP_FLAG_ID = 1005
 #     status 42  addtrainer ran, setenigmaberry did not
 #     status 41  addrareword ran, addtrainer did not
 #
-# The two description pointers are the console's own, read off it: struct Berry2 keeps them in the
-# save for ever and the Berry Pouch dereferences them, so an invented pointer renders garbage on
-# every future look at the berry. docs/frlg_gift.md.
-MEVENT_SWEEP_BERRY_DESC1 = 0x083D5CE8       # off the cartridge
-MEVENT_SWEEP_BERRY_DESC2 = 0x083D5CF8
+# The two description pointers are the cartridge's own sBerryDescriptionPart{1,2}_Enigma
+# [Build.enigma_desc]: struct Berry2 keeps them in the save for ever and the Berry Pouch
+# dereferences them, so another build's pointer renders garbage on every look. docs/frlg_gift.md.
+MEVENT_SWEEP_BERRY_DESC1, MEVENT_SWEEP_BERRY_DESC2 = builds.DEFAULT.enigma_desc
 MEVENT_SWEEP_RARE_WORD = 0
 MEVENT_SWEEP_MARK_RAREWORD = 41
 MEVENT_SWEEP_MARK_TRAINER = 42
 
 
-def build_sweep_berry(name="PKCAMP"):
+def build_sweep_berry(name="PKCAMP", build=None):
     """struct Berry2, 28 bytes: the console's own growth data with a name that is unmistakably ours."""
+    desc1, desc2 = builds.resolve(build).enigma_desc
     encoded = charmap.encode(name).ljust(6, b"\x00")[:6] + b"\xFF"
     return (encoded
             + bytes([0])                                    # firmness
             + (0).to_bytes(2, "little")                     # size
             + bytes([2, 1])                                 # maxYield, minYield - both nonzero
-            + MEVENT_SWEEP_BERRY_DESC1.to_bytes(4, "little")
-            + MEVENT_SWEEP_BERRY_DESC2.to_bytes(4, "little")
+            + desc1.to_bytes(4, "little")
+            + desc2.to_bytes(4, "little")
             + bytes([24])                                   # stageDuration - nonzero, so it VALIDATES
             + bytes([40, 40, 40, 40, 40, 40])               # spicy dry sweet bitter sour smoothness
             + bytes([0]))                                   # pad to 28
 
 
-def build_mevent_sweep_script():
+def build_mevent_sweep_script(build=None):
     script = mystery_event.MysteryEventScript()
     script.addrareword(MEVENT_SWEEP_RARE_WORD)
     script.setstatus(MEVENT_SWEEP_MARK_RAREWORD)
     script.addtrainer(script.blob(ereader_trainer.build("red")))
     script.setstatus(MEVENT_SWEEP_MARK_TRAINER)
-    script.setenigmaberry(script.blob(build_sweep_berry()))
+    script.setenigmaberry(script.blob(build_sweep_berry(build=build)))
     script.end()
     return script.assemble()
 
@@ -1012,6 +1034,7 @@ MEVENT_SWEEP_GIFT = WonderGift(
     completed_message="Look in your BERRY POUCH.",
     mevent=build_mevent_sweep_script(),
 )
+MEVENT_SWEEP_GIFT = _per_build(MEVENT_SWEEP_GIFT, build_mevent_sweep_script)
 
 
 GIFT_RESIDENT_HOOK = "resident-hook"
@@ -1029,9 +1052,9 @@ RESIDENT_HOOK_FLAG_ID = 1003
 # docs/frlg_rom.md, Code that outlives the session.
 
 
-def build_resident_hook_script(**kwargs):
+def build_resident_hook_script(build=None, **kwargs):
     return build_mevent_npc_script(
-        field_script=native_script.build_install_hook_script(), **_at_mom(kwargs))
+        field_script=native_script.build_install_hook_script(build=build), **_at_mom(kwargs))
 
 
 RESIDENT_HOOK_GIFT = WonderGift(
@@ -1063,6 +1086,8 @@ RESIDENT_HOOK_GIFT = WonderGift(
     completed_message="Talk to your MOM at home.",
     mevent=build_resident_hook_script(),
 )
+RESIDENT_HOOK_GIFT = _per_build(RESIDENT_HOOK_GIFT,
+                                lambda build: build_resident_hook_script(build=build))
 
 
 GIFT_SAVE_LOADER = "save-loader"
@@ -1083,9 +1108,9 @@ SAVE_LOADER_FLAG_ID = 1003
 # docs/frlg_rom.md, Code that outlives the session.
 
 
-def build_save_loader_script(**kwargs):
+def build_save_loader_script(build=None, **kwargs):
     return build_mevent_npc_script(
-        field_script=native_script.build_loader_script(), **_at_mom(kwargs))
+        field_script=native_script.build_loader_script(build=build), **_at_mom(kwargs))
 
 
 SAVE_LOADER_GIFT = WonderGift(
@@ -1117,6 +1142,8 @@ SAVE_LOADER_GIFT = WonderGift(
     completed_message="Talk to your MOM at home.",
     mevent=build_save_loader_script(),
 )
+SAVE_LOADER_GIFT = _per_build(SAVE_LOADER_GIFT,
+                              lambda build: build_save_loader_script(build=build))
 
 
 GIFT_RESIDENT_SAVE = "resident-save"
@@ -1127,12 +1154,12 @@ GIFT_RESIDENT_SAVE = "resident-save"
 # save-loader: one bound script at a time. docs/frlg_rom.md, A resident hook kept in the save.
 
 
-def build_resident_save_script(**kwargs):
+def build_resident_save_script(build=None, **kwargs):
     from pokeldn.frlg.rom import buffer_script
     return build_mevent_npc_script(
         field_script=native_script.build_loader_script(
             base=buffer_script.RESIDENT_SAVE_STAGING, size=buffer_script.RESIDENT_SAVE_SIZE,
-            magic=buffer_script.RESIDENT_SAVE_MAGIC), **_at_mom(kwargs))
+            magic=buffer_script.RESIDENT_SAVE_MAGIC, build=build), **_at_mom(kwargs))
 
 
 RESIDENT_SAVE_GIFT = WonderGift(
@@ -1163,6 +1190,8 @@ RESIDENT_SAVE_GIFT = WonderGift(
     completed_message="Talk to your MOM at home.",
     mevent=build_resident_save_script(),
 )
+RESIDENT_SAVE_GIFT = _per_build(RESIDENT_SAVE_GIFT,
+                                lambda build: build_resident_save_script(build=build))
 
 
 GIFT_RNG_SHINY_HUNT = "rng-shiny-hunt"
@@ -1179,10 +1208,10 @@ RNG_SHINY_HUNT_SPECIES = 132
 RNG_SHINY_HUNT_LEVEL = 50
 
 
-def build_rng_shiny_hunt_script(**kwargs):
+def build_rng_shiny_hunt_script(build=None, **kwargs):
     return build_mevent_npc_script(
         field_script=native_script.build_shiny_hunt_script(
-            RNG_SHINY_HUNT_SPECIES, RNG_SHINY_HUNT_LEVEL), **_at_mom(kwargs))
+            RNG_SHINY_HUNT_SPECIES, RNG_SHINY_HUNT_LEVEL, build=build), **_at_mom(kwargs))
 
 
 RNG_SHINY_HUNT_GIFT = WonderGift(
@@ -1214,6 +1243,8 @@ RNG_SHINY_HUNT_GIFT = WonderGift(
     completed_message="Talk to your MOM at home.",
     mevent=build_rng_shiny_hunt_script(),
 )
+RNG_SHINY_HUNT_GIFT = _per_build(RNG_SHINY_HUNT_GIFT,
+                                 lambda build: build_rng_shiny_hunt_script(build=build))
 
 
 GIFT_RNG_MON_HUNT = "rng-mon-hunt"
@@ -1239,13 +1270,14 @@ RNG_MON_HUNT_CRITERIA = native_script.MonCriteria(
 
 
 def build_rng_mon_hunt_script(criteria=None, *, species=None, level=None, cap=None,
-                              max_freeze_frames=native_script.MAX_FREEZE_FRAMES, **kwargs):
+                              max_freeze_frames=native_script.MAX_FREEZE_FRAMES, build=None,
+                              **kwargs):
     return build_mevent_npc_script(
         field_script=native_script.build_mon_hunt_script(
             RNG_MON_HUNT_SPECIES if species is None else species,
             RNG_MON_HUNT_LEVEL if level is None else level,
             criteria=RNG_MON_HUNT_CRITERIA if criteria is None else criteria,
-            cap=cap, max_freeze_frames=max_freeze_frames), **_at_mom(kwargs))
+            cap=cap, max_freeze_frames=max_freeze_frames, build=build), **_at_mom(kwargs))
 
 
 def build_rng_mon_hunt_gift(criteria=None, *, species=None, level=None, cap=None,
@@ -1256,10 +1288,11 @@ def build_rng_mon_hunt_gift(criteria=None, *, species=None, level=None, cap=None
     the command line composes another one here rather than mutating that. Same slug, same flagId,
     same card - only the staged stub's two parameter words differ.
     """
-    return dataclasses.replace(
-        RNG_MON_HUNT_GIFT,
-        mevent=build_rng_mon_hunt_script(criteria, species=species, level=level, cap=cap,
-                                         max_freeze_frames=max_freeze_frames, **kwargs))
+    def script(build):
+        return build_rng_mon_hunt_script(criteria, species=species, level=level, cap=cap,
+                                         max_freeze_frames=max_freeze_frames, build=build,
+                                         **kwargs)
+    return _per_build(dataclasses.replace(RNG_MON_HUNT_GIFT, mevent=script(None)), script)
 
 
 RNG_MON_HUNT_GIFT = WonderGift(
@@ -1291,6 +1324,8 @@ RNG_MON_HUNT_GIFT = WonderGift(
     completed_message="Talk to your MOM at home.",
     mevent=build_rng_mon_hunt_script(),
 )
+RNG_MON_HUNT_GIFT = _per_build(RNG_MON_HUNT_GIFT,
+                               lambda build: build_rng_mon_hunt_script(build=build))
 
 
 GIFT_RNG_MON_HUNT_FAR = "rng-mon-hunt-far"
@@ -1310,14 +1345,14 @@ RNG_MON_HUNT_FAR_FILLER = "the far end of the body, summed before the search wil
 
 def build_rng_mon_hunt_far_script(criteria=None, *, species=None, level=None, cap=None,
                                   max_freeze_frames=native_script.MAX_FREEZE_FRAMES,
-                                  payload_bytes=None, **kwargs):
+                                  payload_bytes=None, build=None, **kwargs):
     return build_mevent_npc_script(
         field_script=native_script.build_mon_hunt_far_script(
             RNG_MON_HUNT_SPECIES if species is None else species,
             RNG_MON_HUNT_LEVEL if level is None else level,
             criteria=RNG_MON_HUNT_CRITERIA if criteria is None else criteria,
             cap=cap, max_freeze_frames=max_freeze_frames,
-            payload_bytes=payload_bytes), **_at_mom(kwargs))
+            payload_bytes=payload_bytes, build=build), **_at_mom(kwargs))
 
 
 def build_rng_mon_hunt_far_gift(criteria=None, *, species=None, level=None, cap=None,
@@ -1328,11 +1363,12 @@ def build_rng_mon_hunt_far_gift(criteria=None, *, species=None, level=None, cap=
     `payload_bytes` shortens the payload without changing anything else, which is how a partial
     delivery would be bisected if the first run comes back with an ordinary Magikarp.
     """
-    return dataclasses.replace(
-        RNG_MON_HUNT_FAR_GIFT,
-        mevent=build_rng_mon_hunt_far_script(criteria, species=species, level=level, cap=cap,
-                                             max_freeze_frames=max_freeze_frames,
-                                             payload_bytes=payload_bytes, **kwargs))
+    def script(build):
+        return build_rng_mon_hunt_far_script(
+            criteria, species=species, level=level, cap=cap,
+            max_freeze_frames=max_freeze_frames, payload_bytes=payload_bytes, build=build,
+            **kwargs)
+    return _per_build(dataclasses.replace(RNG_MON_HUNT_FAR_GIFT, mevent=script(None)), script)
 
 
 RNG_MON_HUNT_FAR_GIFT = WonderGift(
@@ -1364,6 +1400,8 @@ RNG_MON_HUNT_FAR_GIFT = WonderGift(
     completed_message="Talk to your MOM at home.",
     mevent=build_rng_mon_hunt_far_script(),
 )
+RNG_MON_HUNT_FAR_GIFT = _per_build(RNG_MON_HUNT_FAR_GIFT,
+                                   lambda build: build_rng_mon_hunt_far_script(build=build))
 
 
 GIFT_RNG_MON_HUNT_BOTH = "rng-mon-hunt-both"
@@ -1382,25 +1420,26 @@ RNG_MON_HUNT_BOTH_FLAG_ID = 1001
 
 def build_rng_mon_hunt_both_script(criteria=None, *, species=None, level=None, cap=None,
                                    max_freeze_frames=native_script.MAX_FREEZE_FRAMES,
-                                   payload_bytes=None, **kwargs):
+                                   payload_bytes=None, build=None, **kwargs):
     return build_mevent_npc_script(
         field_script=native_script.build_mon_hunt_both_script(
             RNG_MON_HUNT_SPECIES if species is None else species,
             RNG_MON_HUNT_LEVEL if level is None else level,
             criteria=RNG_MON_HUNT_CRITERIA if criteria is None else criteria,
             cap=cap, max_freeze_frames=max_freeze_frames,
-            payload_bytes=payload_bytes), **_at_mom(kwargs))
+            payload_bytes=payload_bytes, build=build), **_at_mom(kwargs))
 
 
 def build_rng_mon_hunt_both_gift(criteria=None, *, species=None, level=None, cap=None,
                                  max_freeze_frames=native_script.MAX_FREEZE_FRAMES,
                                  payload_bytes=None, **kwargs):
     """-> the card carrying the stray-draw-proof search, with whatever was asked for on the line."""
-    return dataclasses.replace(
-        RNG_MON_HUNT_BOTH_GIFT,
-        mevent=build_rng_mon_hunt_both_script(criteria, species=species, level=level, cap=cap,
-                                              max_freeze_frames=max_freeze_frames,
-                                              payload_bytes=payload_bytes, **kwargs))
+    def script(build):
+        return build_rng_mon_hunt_both_script(
+            criteria, species=species, level=level, cap=cap,
+            max_freeze_frames=max_freeze_frames, payload_bytes=payload_bytes, build=build,
+            **kwargs)
+    return _per_build(dataclasses.replace(RNG_MON_HUNT_BOTH_GIFT, mevent=script(None)), script)
 
 
 RNG_MON_HUNT_BOTH_GIFT = WonderGift(
@@ -1432,6 +1471,8 @@ RNG_MON_HUNT_BOTH_GIFT = WonderGift(
     completed_message="Talk to your MOM at home.",
     mevent=build_rng_mon_hunt_both_script(),
 )
+RNG_MON_HUNT_BOTH_GIFT = _per_build(RNG_MON_HUNT_BOTH_GIFT,
+                                    lambda build: build_rng_mon_hunt_both_script(build=build))
 
 
 GIFT_RNG_MON_HUNT_LOG = "rng-mon-hunt-log"
@@ -1447,25 +1488,26 @@ RNG_MON_HUNT_LOG_FLAG_ID = 1002
 
 def build_rng_mon_hunt_log_script(criteria=None, *, species=None, level=None, cap=None,
                                   max_freeze_frames=native_script.MAX_FREEZE_FRAMES,
-                                  payload_bytes=None, **kwargs):
+                                  payload_bytes=None, build=None, **kwargs):
     return build_mevent_npc_script(
         field_script=native_script.build_mon_hunt_log_script(
             RNG_MON_HUNT_SPECIES if species is None else species,
             RNG_MON_HUNT_LEVEL if level is None else level,
             criteria=RNG_MON_HUNT_CRITERIA if criteria is None else criteria,
             cap=cap, max_freeze_frames=max_freeze_frames,
-            payload_bytes=payload_bytes), **_at_mom(kwargs))
+            payload_bytes=payload_bytes, build=build), **_at_mom(kwargs))
 
 
 def build_rng_mon_hunt_log_gift(criteria=None, *, species=None, level=None, cap=None,
                                 max_freeze_frames=native_script.MAX_FREEZE_FRAMES,
                                 payload_bytes=None, **kwargs):
     """-> the card carrying the self-measuring search."""
-    return dataclasses.replace(
-        RNG_MON_HUNT_LOG_GIFT,
-        mevent=build_rng_mon_hunt_log_script(criteria, species=species, level=level, cap=cap,
-                                             max_freeze_frames=max_freeze_frames,
-                                             payload_bytes=payload_bytes, **kwargs))
+    def script(build):
+        return build_rng_mon_hunt_log_script(
+            criteria, species=species, level=level, cap=cap,
+            max_freeze_frames=max_freeze_frames, payload_bytes=payload_bytes, build=build,
+            **kwargs)
+    return _per_build(dataclasses.replace(RNG_MON_HUNT_LOG_GIFT, mevent=script(None)), script)
 
 
 RNG_MON_HUNT_LOG_GIFT = WonderGift(
@@ -1497,6 +1539,8 @@ RNG_MON_HUNT_LOG_GIFT = WonderGift(
     completed_message="Talk to your MOM at home.",
     mevent=build_rng_mon_hunt_log_script(),
 )
+RNG_MON_HUNT_LOG_GIFT = _per_build(RNG_MON_HUNT_LOG_GIFT,
+                                   lambda build: build_rng_mon_hunt_log_script(build=build))
 
 
 GIFT_RNG_DRAW_COUNT = "rng-draw-count"
@@ -1510,10 +1554,12 @@ RNG_DRAW_COUNT_LEVEL = 50
 RNG_DRAW_COUNT_PREDICTION = 4
 
 
-def build_rng_draw_count_script(**kwargs):
+def build_rng_draw_count_script(build=None, **kwargs):
     return build_mevent_npc_script(
         field_script=build_draw_count_script(species=RNG_DRAW_COUNT_SPECIES,
-                                             level=RNG_DRAW_COUNT_LEVEL), **_at_mom(kwargs))
+                                             level=RNG_DRAW_COUNT_LEVEL,
+                                             address=builds.resolve(build).rng),
+        **_at_mom(kwargs))
 
 
 RNG_DRAW_COUNT_GIFT = WonderGift(
@@ -1545,6 +1591,8 @@ RNG_DRAW_COUNT_GIFT = WonderGift(
     completed_message="Talk to your MOM at home.",
     mevent=build_rng_draw_count_script(),
 )
+RNG_DRAW_COUNT_GIFT = _per_build(RNG_DRAW_COUNT_GIFT,
+                                 lambda build: build_rng_draw_count_script(build=build))
 
 
 GIFT_BATTLE_COUNT = "battle-count-card"

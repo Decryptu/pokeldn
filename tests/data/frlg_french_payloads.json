@@ -1,0 +1,294 @@
+{
+ "buffer:anchors": {
+  "BPGF": "84:90a227c6e662272ba650b5953fe791ef3473a513ce5a51be9ba0ca5ebf565bb1",
+  "BPRF": "84:90a227c6e662272ba650b5953fe791ef3473a513ce5a51be9ba0ca5ebf565bb1"
+ },
+ "buffer:call": {
+  "BPGF": "280:0c788e23396dab8e82fc438fddfcd9440a629f0e79e26a02d62bacb341824542",
+  "BPRF": "280:0c788e23396dab8e82fc438fddfcd9440a629f0e79e26a02d62bacb341824542"
+ },
+ "buffer:call-chain": {
+  "BPGF": "820:5c7c093ecfed9f60c21951826a5cec456e27ac92d8643ab4542ba30d1fcadba6",
+  "BPRF": "820:5c7c093ecfed9f60c21951826a5cec456e27ac92d8643ab4542ba30d1fcadba6"
+ },
+ "buffer:call-chain-addbagitem": {
+  "BPGF": "820:a4f9062fd6662f21947011ea6e4d5c4f6dafdac5c123c48b4abc6ece74a29186",
+  "BPRF": "820:a4f9062fd6662f21947011ea6e4d5c4f6dafdac5c123c48b4abc6ece74a29186"
+ },
+ "buffer:create-mon": {
+  "BPGF": "540:dfa14c9e95a230901b352d68c6661ed8fb013eaf8bbe88a12440b3998ced228d",
+  "BPRF": "540:dfa14c9e95a230901b352d68c6661ed8fb013eaf8bbe88a12440b3998ced228d"
+ },
+ "buffer:create-mon-append": {
+  "BPGF": "540:b7b27acbfb24c0eed0ca3ba4614b8d0906a773b7472b3f4a36f7f8335ba77f5b",
+  "BPRF": "540:b7b27acbfb24c0eed0ca3ba4614b8d0906a773b7472b3f4a36f7f8335ba77f5b"
+ },
+ "buffer:flash-patch": {
+  "BPGF": "596:9b3d60b7762acc184527f985cbbb58cdc2d9364c86ee640d025933bceb2c1d97",
+  "BPRF": "596:9b3d60b7762acc184527f985cbbb58cdc2d9364c86ee640d025933bceb2c1d97"
+ },
+ "buffer:flash-read": {
+  "BPGF": "160:e755d0a5582e74f9ddd8620f4c33a071cf3b2413ae9f1bc95e4b84184df2c9a3",
+  "BPRF": "160:e755d0a5582e74f9ddd8620f4c33a071cf3b2413ae9f1bc95e4b84184df2c9a3"
+ },
+ "buffer:flash-write": {
+  "BPGF": "492:025f8f4fe0035874cbdd3ce2733b1b5cf156a22b3949a2f30a6909bd5118a71a",
+  "BPRF": "492:025f8f4fe0035874cbdd3ce2733b1b5cf156a22b3949a2f30a6909bd5118a71a"
+ },
+ "buffer:flash-write-derive": {
+  "BPGF": "492:4d4faeac2f6d08ed5cae26b47ae21ed25d216946e4770e99c950347f004eb8c9",
+  "BPRF": "492:4d4faeac2f6d08ed5cae26b47ae21ed25d216946e4770e99c950347f004eb8c9"
+ },
+ "buffer:flash-write-derive-position": {
+  "BPGF": "492:31592d7a6b133a685a7571d7437a2922ef73c78a4734a908ff61d40260d33a06",
+  "BPRF": "492:31592d7a6b133a685a7571d7437a2922ef73c78a4734a908ff61d40260d33a06"
+ },
+ "buffer:install-resident:ivs": {
+  "BPGF": "648:6a90089d3e7919fffabe3e12b98eb0eb00d755b24890d1c068d61e963fbf350d",
+  "BPRF": "648:6a90089d3e7919fffabe3e12b98eb0eb00d755b24890d1c068d61e963fbf350d"
+ },
+ "buffer:install-resident:noencounter": {
+  "BPGF": "176:8ee805f356c114bd37bd4d08bef045e0d3f6b9331bce416709849dd9581cc44b",
+  "BPRF": "176:8ee805f356c114bd37bd4d08bef045e0d3f6b9331bce416709849dd9581cc44b"
+ },
+ "buffer:install-resident:shiny": {
+  "BPGF": "1016:e0e44718d6f6045b82acd6a4c6df504e5d21fbc04ea1476c0e3aa5a959a675ed",
+  "BPRF": "1016:2fe230cdcfcab69f637a63e9e1174065eae5b004690753064ec9e033f3ce03f6"
+ },
+ "buffer:install-resident:turbo": {
+  "BPGF": "844:2f07b3bf6f889782d74aaac7a400bab5a18a1ffc9784af545c9f7fdc90c941d3",
+  "BPRF": "844:2f07b3bf6f889782d74aaac7a400bab5a18a1ffc9784af545c9f7fdc90c941d3"
+ },
+ "buffer:install-resident:turbo,field=1,hold=256,budget=228": {
+  "BPGF": "844:4584ce23c26a5576e5e853eddf5969b4243c68a0a5aecaa3afd81edd39335354",
+  "BPRF": "844:4584ce23c26a5576e5e853eddf5969b4243c68a0a5aecaa3afd81edd39335354"
+ },
+ "buffer:memory-dump": {
+  "BPGF": "32:f09ce637083ea73eebaed39541562ee69ba7814f1ea12c95cf14e4c91a249fca",
+  "BPRF": "32:f09ce637083ea73eebaed39541562ee69ba7814f1ea12c95cf14e4c91a249fca"
+ },
+ "buffer:memory-dump-multi": {
+  "BPGF": "80:646d0f3b4657c4fdbcbdea6b698a9da07a9b5333055b1fe3713b922055af9942",
+  "BPRF": "80:646d0f3b4657c4fdbcbdea6b698a9da07a9b5333055b1fe3713b922055af9942"
+ },
+ "buffer:memory-dump-scatter": {
+  "BPGF": "204:c3b162a540b89173f61748638f462eab30e2d9e8f6c192dbaa9f4e2ec91f8622",
+  "BPRF": "204:c3b162a540b89173f61748638f462eab30e2d9e8f6c192dbaa9f4e2ec91f8622"
+ },
+ "buffer:memory-scan": {
+  "BPGF": "824:2deb1a619741fff647853b1473cfa115bb12dee2c9320a08de9a5bf44b10e80b",
+  "BPRF": "824:2deb1a619741fff647853b1473cfa115bb12dee2c9320a08de9a5bf44b10e80b"
+ },
+ "buffer:rng-trace": {
+  "BPGF": "1012:fc0802af58b5f86c9584ab7d5c9f6192a4e9a1b1ab5e0d90fcc712747c8087e7",
+  "BPRF": "1012:fc0802af58b5f86c9584ab7d5c9f6192a4e9a1b1ab5e0d90fcc712747c8087e7"
+ },
+ "buffer:save-dump": {
+  "BPGF": "56:b84c042d3501b277eb31ff6bcd9b89c59b039ce63a4845a823ddc241606e0b99",
+  "BPRF": "56:b84c042d3501b277eb31ff6bcd9b89c59b039ce63a4845a823ddc241606e0b99"
+ },
+ "buffer:save-write": {
+  "BPGF": "92:4ea12ab6ad34c9d1b932b2ef290ef97291f1de818a6377d300d5ab87869e8481",
+  "BPRF": "92:4ea12ab6ad34c9d1b932b2ef290ef97291f1de818a6377d300d5ab87869e8481"
+ },
+ "buffer:sloop-svc": {
+  "BPGF": "556:b9a10910e6abc0f89f0c54103e869ae35c4898b27d28466b55843a7039505448",
+  "BPRF": "556:b9a10910e6abc0f89f0c54103e869ae35c4898b27d28466b55843a7039505448"
+ },
+ "buffer:string-gather": {
+  "BPGF": "1024:c3a2d1211d8acefa4d355f60eb9429ece57db7477cc14087f40a3679853506d4",
+  "BPRF": "1024:c3a2d1211d8acefa4d355f60eb9429ece57db7477cc14087f40a3679853506d4"
+ },
+ "buffer:table-scan": {
+  "BPGF": "940:0c5492378d349d88b2b1b01f4cf7a64d4d81805714a6dfd8477356f118a23ae3",
+  "BPRF": "940:0c5492378d349d88b2b1b01f4cf7a64d4d81805714a6dfd8477356f118a23ae3"
+ },
+ "buffer:trainer-id-probe": {
+  "BPGF": "24:822515224051c466515aab36c567b8005a4a8eb33fa3357c982a81e8dcb26d24",
+  "BPRF": "24:822515224051c466515aab36c567b8005a4a8eb33fa3357c982a81e8dcb26d24"
+ },
+ "composed:rng-mon-hunt": {
+  "BPGF": "1828:7f4855ff76facfb3e51c42efea1172b9369ff6249be6e170f90b5d1caffc93cd",
+  "BPRF": "1828:7f4855ff76facfb3e51c42efea1172b9369ff6249be6e170f90b5d1caffc93cd"
+ },
+ "composed:rng-mon-hunt-both": {
+  "BPGF": "1842:1e2ce3b3621468bbbc3dc3579e46df34bdca9ec2316a1a9c73302484d35dde2a",
+  "BPRF": "1842:1e2ce3b3621468bbbc3dc3579e46df34bdca9ec2316a1a9c73302484d35dde2a"
+ },
+ "composed:rng-mon-hunt-far": {
+  "BPGF": "1842:e4b3ab3b8b349c049271046176bc9040132391b6e5db9a0e07f7bdf9907247eb",
+  "BPRF": "1842:e4b3ab3b8b349c049271046176bc9040132391b6e5db9a0e07f7bdf9907247eb"
+ },
+ "composed:rng-mon-hunt-log": {
+  "BPGF": "1842:49d7d62ea70430daa082a6a21147ac4069856023e2dc73e3194c8b869aa0bde5",
+  "BPRF": "1842:49d7d62ea70430daa082a6a21147ac4069856023e2dc73e3194c8b869aa0bde5"
+ },
+ "gift:altering-cave": {
+  "BPGF": "867:864b615d65592f253df0acf442a2ed2fa84076676333fff992852fa89b371151",
+  "BPRF": "867:864b615d65592f253df0acf442a2ed2fa84076676333fff992852fa89b371151"
+ },
+ "gift:battle-count-card": {
+  "BPGF": "1048:a0bfa32c4a823586658c96799061d9c21afa77540d7e9cdbf0cf3c17ee7322e2",
+  "BPRF": "1048:a0bfa32c4a823586658c96799061d9c21afa77540d7e9cdbf0cf3c17ee7322e2"
+ },
+ "gift:beast-cutscene": {
+  "BPGF": "1436:a7ff569435fa98c963f64126320a63fa536a2368e6254acd96eee108e519816f",
+  "BPRF": "1436:a7ff569435fa98c963f64126320a63fa536a2368e6254acd96eee108e519816f"
+ },
+ "gift:beast-cutscene-share": {
+  "BPGF": "1436:9b031a682b5d1fc2ab632d5b65e0345a864767e329b35850f2c7b2230d990952",
+  "BPRF": "1436:9b031a682b5d1fc2ab632d5b65e0345a864767e329b35850f2c7b2230d990952"
+ },
+ "gift:celebi": {
+  "BPGF": "1000:c8ce1e300dbc0f5be6e4873c17aaa267ae55a2f670e3e3381f2b5ecb72653d15",
+  "BPRF": "1000:c8ce1e300dbc0f5be6e4873c17aaa267ae55a2f670e3e3381f2b5ecb72653d15"
+ },
+ "gift:lunatone-stamp": {
+  "BPGF": "1414:8cfd595729ff6b385991284f86247b965ddc205691772e705ce327812163e2ae",
+  "BPRF": "1414:8cfd595729ff6b385991284f86247b965ddc205691772e705ce327812163e2ae"
+ },
+ "gift:master-ball": {
+  "BPGF": "901:52c8f2c03d6b0c3e7440b7e5a4800a3dd6413bb4d3495b52b132b1c36419eb8d",
+  "BPRF": "901:52c8f2c03d6b0c3e7440b7e5a4800a3dd6413bb4d3495b52b132b1c36419eb8d"
+ },
+ "gift:mevent-opcode-sweep": {
+  "BPGF": "1060:8604ddd2dcc8b4dbf49cf17eafb4752ef9083092bbe07b6bd8af8da1cbbeb033",
+  "BPRF": "1060:8604ddd2dcc8b4dbf49cf17eafb4752ef9083092bbe07b6bd8af8da1cbbeb033"
+ },
+ "gift:mystery-event-celebi": {
+  "BPGF": "1060:3c484e61545dc78432376b18a6c78a58440616a8938845b318dd54591bab3861",
+  "BPRF": "1060:3c484e61545dc78432376b18a6c78a58440616a8938845b318dd54591bab3861"
+ },
+ "gift:mystery-event-npc": {
+  "BPGF": "1011:b5c4eb7558a5a8bc9d5660781be3d1d932063af96216b92e38445e9326d80fd5",
+  "BPRF": "1011:b5c4eb7558a5a8bc9d5660781be3d1d932063af96216b92e38445e9326d80fd5"
+ },
+ "gift:mystery-event-probe": {
+  "BPGF": "893:54204dedd9ef1cb08fdeb1e3174903e8ba4d9c8ecb7dbf529536b6b6088d0245",
+  "BPRF": "893:54204dedd9ef1cb08fdeb1e3174903e8ba4d9c8ecb7dbf529536b6b6088d0245"
+ },
+ "gift:porygon-tm-gift": {
+  "BPGF": "1066:7ff19e278de37feb463ab745659f59cb04afa3016065a51ae90eed1a4311a703",
+  "BPRF": "1066:7ff19e278de37feb463ab745659f59cb04afa3016065a51ae90eed1a4311a703"
+ },
+ "gift:resident-hook": {
+  "BPGF": "1627:7ebc49f9c87325661329dcaf3a4a193b96b2f1882437a7b2b0517b1886bf1808",
+  "BPRF": "1627:7ebc49f9c87325661329dcaf3a4a193b96b2f1882437a7b2b0517b1886bf1808"
+ },
+ "gift:resident-save": {
+  "BPGF": "1239:cfb2f232b117736a3b2a4bc89b628d9cbec71089e9276c1f4cef9cd047e17787",
+  "BPRF": "1239:cfb2f232b117736a3b2a4bc89b628d9cbec71089e9276c1f4cef9cd047e17787"
+ },
+ "gift:rng-draw-count": {
+  "BPGF": "1025:07ef435cce7022014180a5f2f400b9347d30397f17db151e44adaef318e6d068",
+  "BPRF": "1025:07ef435cce7022014180a5f2f400b9347d30397f17db151e44adaef318e6d068"
+ },
+ "gift:rng-mon-hunt": {
+  "BPGF": "1828:2174753a6f1e275a6fe334d6e95538f88263270a8d80b2bea63903881f0dd258",
+  "BPRF": "1828:2174753a6f1e275a6fe334d6e95538f88263270a8d80b2bea63903881f0dd258"
+ },
+ "gift:rng-mon-hunt-both": {
+  "BPGF": "1842:3af98f2608f49e31986387dd8223d1292008c4d802bd987981cac2b864b0b15a",
+  "BPRF": "1842:3af98f2608f49e31986387dd8223d1292008c4d802bd987981cac2b864b0b15a"
+ },
+ "gift:rng-mon-hunt-far": {
+  "BPGF": "1842:a68a06973b606e5652828fda20dc79f3c70a285c89eccbfe96d809773efadb47",
+  "BPRF": "1842:a68a06973b606e5652828fda20dc79f3c70a285c89eccbfe96d809773efadb47"
+ },
+ "gift:rng-mon-hunt-log": {
+  "BPGF": "1842:1fdae5c6c52a0dcef03cdca746133d84fe7eb47a1974c8364084f96ab3dd4d65",
+  "BPRF": "1842:1fdae5c6c52a0dcef03cdca746133d84fe7eb47a1974c8364084f96ab3dd4d65"
+ },
+ "gift:rng-rate-probe": {
+  "BPGF": "1014:5949c62e6dd97295654d733ecd85b233fb563daa6c0e9ffdeebbb401bd590383",
+  "BPRF": "1014:5949c62e6dd97295654d733ecd85b233fb563daa6c0e9ffdeebbb401bd590383"
+ },
+ "gift:rng-rate-probe-3000": {
+  "BPGF": "1016:523bee166cf4203249686be6d672125d59a2308c1e55a2f5caf5f93cf53b23de",
+  "BPRF": "1016:523bee166cf4203249686be6d672125d59a2308c1e55a2f5caf5f93cf53b23de"
+ },
+ "gift:rng-seed-reader": {
+  "BPGF": "924:742931c8571d8ed6ff33c1fc93216dde15f6a001f1e049d49cc7f7616240dddc",
+  "BPRF": "924:742931c8571d8ed6ff33c1fc93216dde15f6a001f1e049d49cc7f7616240dddc"
+ },
+ "gift:rng-shiny-ditto": {
+  "BPGF": "911:b2b592e7ee60c1e8ca5b947465113d464fd92b0667340ec2939dcd34c1cd0dc0",
+  "BPRF": "911:b2b592e7ee60c1e8ca5b947465113d464fd92b0667340ec2939dcd34c1cd0dc0"
+ },
+ "gift:rng-shiny-hunt": {
+  "BPGF": "1353:c6cf27ae815a3bcf26b02cf6325de342b536a0eed5c0b02f4b94eb2e9ac61d03",
+  "BPRF": "1353:c6cf27ae815a3bcf26b02cf6325de342b536a0eed5c0b02f4b94eb2e9ac61d03"
+ },
+ "gift:save-loader": {
+  "BPGF": "1239:3763e9bae3ee75bda8a882af7a1881c1d08a9a49cd7c5debebe48eabf98ff149",
+  "BPRF": "1239:3763e9bae3ee75bda8a882af7a1881c1d08a9a49cd7c5debebe48eabf98ff149"
+ },
+ "gift:solrock-stamp": {
+  "BPGF": "1414:da205928d21287ff5813ed0f232d7027abc1a06d4b329bca33edc33af514df2d",
+  "BPRF": "1414:da205928d21287ff5813ed0f232d7027abc1a06d4b329bca33edc33af514df2d"
+ },
+ "gift:visiting-trainer": {
+  "BPGF": "1121:81dd029a698392825d00575b08844232995032e0fb3115ef0cf57b60dac1535f",
+  "BPRF": "1121:81dd029a698392825d00575b08844232995032e0fb3115ef0cf57b60dac1535f"
+ },
+ "gift:worlds-xp": {
+  "BPGF": "1594:f3029ac2c621aa66b89a650b035ad8f6490150883bc69d3fcc289b51e13a57ff",
+  "BPRF": "1594:f3029ac2c621aa66b89a650b035ad8f6490150883bc69d3fcc289b51e13a57ff"
+ },
+ "native:install-hook-script": {
+  "BPGF": "778:f529c5a2353732005321d66041e2110ef7c4abdff4c5a25958af6dbf956e200e",
+  "BPRF": "778:f529c5a2353732005321d66041e2110ef7c4abdff4c5a25958af6dbf956e200e"
+ },
+ "native:loader-script": {
+  "BPGF": "394:a5c0e333bff71cbc7e418a6bc8f792c27044396a1d42066d7c60a45c2f8cc7b2",
+  "BPRF": "394:a5c0e333bff71cbc7e418a6bc8f792c27044396a1d42066d7c60a45c2f8cc7b2"
+ },
+ "native:save-payload": {
+  "BPGF": "1024:54721cd5df1b8c93a5722d2ad2b98714bd83fe0ec8106ffce89df208ae5f16c4",
+  "BPRF": "1024:54721cd5df1b8c93a5722d2ad2b98714bd83fe0ec8106ffce89df208ae5f16c4"
+ },
+ "native:shiny-hunt": {
+  "BPGF": "501:f089e73fc49bee5bc9a7ed5c57f50206e38bf7f6791e883bde26764b6fde9792",
+  "BPRF": "501:f089e73fc49bee5bc9a7ed5c57f50206e38bf7f6791e883bde26764b6fde9792"
+ },
+ "news:berry": {
+  "BPGF": "444:e12881c9554bb016628c1aa29ae8211b3acda7c323b972546c23324181c06ef3",
+  "BPRF": "444:e12881c9554bb016628c1aa29ae8211b3acda7c323b972546c23324181c06ef3"
+ },
+ "news:pkcamp": {
+  "BPGF": "444:4c2dc21bf7f3e0d6fe0413fc50f9d661ca8bb24c1b65616f72b200f3655a04e1",
+  "BPRF": "444:4c2dc21bf7f3e0d6fe0413fc50f9d661ca8bb24c1b65616f72b200f3655a04e1"
+ },
+ "operands:buffer:flash-patch": {
+  "BPGF": "68:d726d986c671b7e0acd2e732cd92436764035d56c56f22dfd8d464e9235e7ffb",
+  "BPRF": "68:d726d986c671b7e0acd2e732cd92436764035d56c56f22dfd8d464e9235e7ffb"
+ },
+ "operands:buffer:flash-write": {
+  "BPGF": "76:7e449abed4f5e63b4a2d42cf8c6ef127ea75dfd3eabca233ce9588e2f5ca8d51",
+  "BPRF": "76:7e449abed4f5e63b4a2d42cf8c6ef127ea75dfd3eabca233ce9588e2f5ca8d51"
+ },
+ "operands:buffer:flash-write-derive": {
+  "BPGF": "76:7f2ed9aa36e6bb889a3ca132ccf2963e8ec5e715f689397e4c97ee43447a1b1e",
+  "BPRF": "76:7f2ed9aa36e6bb889a3ca132ccf2963e8ec5e715f689397e4c97ee43447a1b1e"
+ },
+ "operands:buffer:flash-write-derive-position": {
+  "BPGF": "76:426470baf933a8d84a00dce117155c4eb49d384933263844e345c4820b5273fa",
+  "BPRF": "76:426470baf933a8d84a00dce117155c4eb49d384933263844e345c4820b5273fa"
+ },
+ "save-blob:ivs": {
+  "BPGF": "712:3385e6cb66a979e877dd90bb2fedea86bbba21a5f573255ebabb6335bf6de8f8",
+  "BPRF": "712:3385e6cb66a979e877dd90bb2fedea86bbba21a5f573255ebabb6335bf6de8f8"
+ },
+ "save-blob:noencounter": {
+  "BPGF": "240:194ffc9bc2ccd30e19fe0b813d19620eb177bdda54f398270af14b196c14987c",
+  "BPRF": "240:194ffc9bc2ccd30e19fe0b813d19620eb177bdda54f398270af14b196c14987c"
+ },
+ "save-blob:turbo": {
+  "BPGF": "908:747805c25e465edeb9dadf63f0aa1398132c428acdafdd1c2f1319aa17bfe9ef",
+  "BPRF": "908:747805c25e465edeb9dadf63f0aa1398132c428acdafdd1c2f1319aa17bfe9ef"
+ },
+ "save-blob:turbo,field=1,hold=256,budget=228": {
+  "BPGF": "908:3c728dff0b28b5c9328be4629711492bb9c370fb3421b385bd0fdeed10c9471c",
+  "BPRF": "908:3c728dff0b28b5c9328be4629711492bb9c370fb3421b385bd0fdeed10c9471c"
+ }
+}

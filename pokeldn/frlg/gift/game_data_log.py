@@ -130,24 +130,37 @@ def changes(before, after):
     return tuple(lines)
 
 
+def language(game_code):
+    """-> "french", "english", or None for a cartridge whose Easy Chat table is not here."""
+    return {"F": "french", "E": "english"}.get(str(game_code or "")[3:4])
+
+
 def unknown_words(entry):
     """-> the word ids in this record that no French console has been seen to render.
 
     These are the ones a single question to the player converts into ground truth, and they cost
-    nothing to collect: the console sends them whether or not anything reads them.
+    nothing to collect: the console sends them whether or not anything reads them. Only a French
+    console's: the English table is the decomp's own.
     """
+    if language(entry.get("game_code")) != "french":
+        return ()
     words = tuple(entry.get("questionnaire") or ()) + tuple(entry.get("easy_chat_profile") or ())
     return easychat_french.check(w for w in words if w)
 
 
-def _describe_words(values):
+def _describe_words(values, game_code=None):
     # Word 0 is EC_GROUP_POKEMON_2 index 0, which the console rejects and prints as "???"
     # [IsECWordInvalid, decomp:src/easy_chat.c:118]: an all-zero profile is empty, not six words.
     values = [value for value in values or () if value not in (0, easychat.UNDEFINED)]
     if not values:
         return "(none)"
-    rendered = easychat_french.render(values)
-    return f"{rendered} [{easychat.describe_words(values)}]"
+    spoken = language(game_code)
+    if spoken == "english":
+        return easychat.describe_words(values)      # the decomp's names are the English words
+    if spoken == "french":
+        return f"{easychat_french.render(values)} [{easychat.describe_words(values)}]"
+    return (f"{easychat.describe_words(values)} (no Easy Chat table for {game_code}: the names "
+            "are the English decomp's)")
 
 
 def summary(entries):
@@ -167,8 +180,10 @@ def summary(entries):
         lines.append(f"  card flagId {latest['flag_id']}, {latest['battles_won']} battles won, "
                      f"{latest['battles_lost']} lost, {latest['num_trades']} trades, "
                      f"{latest['num_stamps']}/{latest['max_stamps']} stamps")
-        lines.append(f"  questionnaire: {_describe_words(latest.get('questionnaire'))}")
-        lines.append(f"  battle profile: {_describe_words(latest.get('easy_chat_profile'))}")
+        lines.append("  questionnaire: "
+                     + _describe_words(latest.get("questionnaire"), game_code))
+        lines.append("  battle profile: "
+                     + _describe_words(latest.get("easy_chat_profile"), game_code))
         quiet = 0
         for before, after in zip(records, records[1:]):
             moved = changes(before, after)

@@ -215,7 +215,8 @@ def _advertised_activity(**options):
     directory = tempfile.mkdtemp()
     path = os.path.join(directory, "PARTY1.pk3")
     with open(path, "wb") as handle:
-        handle.write(mevent_pokemon.build_party_mon(129, 5, nickname="CARPY").party_bytes())
+        handle.write(mevent_pokemon.build_party_mon(
+            129, 5, nickname="CARPY", language=mevent_pokemon.LANGUAGE_FRENCH).party_bytes())
     run = configmod.TradeRunConfig(
         DEFAULT_TRAINER,
         configmod.TradePlan(party_paths=(path,), trade_slot=0, offered_slots=(0,),

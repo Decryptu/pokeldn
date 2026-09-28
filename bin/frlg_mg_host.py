@@ -28,7 +28,7 @@ if os.path.isdir(os.path.join(BUNDLED_LDN, "ldn")):
 from pokeldn import config as configmod, host_cli  # noqa: E402
 from pokeldn.frlg.gift import gift_artifact, gift_registry, wonder_news  # noqa: E402
 from pokeldn.frlg.link import trade_runtime  # noqa: E402
-from pokeldn.frlg.rom import buffer_script, native_script, rom_map  # noqa: E402
+from pokeldn.frlg.rom import buffer_script, builds, native_script  # noqa: E402
 from pokeldn.frlg.text import easychat  # noqa: E402
 from pokeldn.frlg.gift.host_mg_app import (  # noqa: E402
     BufferScriptHostApplication, MysteryGiftHostApplication, WonderNewsHostApplication)
@@ -180,13 +180,15 @@ def build_parser(file_config=None, *, shared_path=None, local_path=None):
     parser.add_argument(
         "--trace-address", type=lambda v: int(v, 0), default=None, metavar="ADDR",
         help=("with --buffer-script rng-trace: the word to sample once a frame. "
-              "0x03004220 is gRngValue on this build [rom_map.py]. Accepts 0x hex"))
+              "gRngValue is 0x%08X on the French cartridges and 0x%08X on the English ones "
+              "[builds.py]. Accepts 0x hex" % (builds.BPRF.rng, builds.BPRE.rng)))
     parser.add_argument(
         "--trace-call", type=lambda v: int(v, 0), default=0, metavar="ADDR",
         help=("with --buffer-script rng-trace: a ROM function to call between the two reads of "
-              "each sample, as a THUMB pointer (bit 0 set), or 0 for none. 0x080486B1 is Random; "
+              "each sample, as a THUMB pointer (bit 0 set), or 0 for none. Random is 0x%08X "
+              "French, 0x%08X English; "
               "the recurrence between the two reads is then the proof that both addresses are "
-              "what we say they are"))
+              "what we say they are" % (builds.BPRF.random | 1, builds.BPRE.random | 1)))
     parser.add_argument(
         "--trace-samples", type=int, default=buffer_script.TRACE_SAMPLE_CAPACITY, metavar="N",
         help=("with --buffer-script rng-trace: how many frames to sample, 1..%d"
@@ -194,9 +196,11 @@ def build_parser(file_config=None, *, shared_path=None, local_path=None):
     parser.add_argument(
         "--call-address", type=lambda v: int(v, 0), default=None, metavar="ADDR",
         help=("with --buffer-script call: the ROM function to call, as a THUMB pointer (bit 0 "
-              "set). 0x%08X is SeedRng and 0x%08X is Random [rom_map.py, read off this console in "
-              "0x080486B0]. 0 calls nothing, which checks the send path with the ROM left out"
-              % (rom_map.thumb(rom_map.SEED_RNG), rom_map.thumb(rom_map.RANDOM))))
+              "set). SeedRng is 0x%08X and Random 0x%08X on the French cartridges, 0x%08X and "
+              "0x%08X on the English ones [builds.py]. The address is sent as given, so pair it "
+              "with --console-build. 0 calls nothing, which checks the send path with the ROM "
+              "left out" % (builds.BPRF.seed_rng | 1, builds.BPRF.random | 1,
+                            builds.BPRE.seed_rng | 1, builds.BPRE.random | 1)))
     parser.add_argument(
         "--call-arg", type=lambda v: int(v, 0), action="append", default=None, metavar="VALUE",
         help=("with --buffer-script call: one argument word, repeatable, up to eight. The first "
@@ -205,13 +209,21 @@ def build_parser(file_config=None, *, shared_path=None, local_path=None):
     parser.add_argument(
         "--call-watch", type=lambda v: int(v, 0), default=0, metavar="ADDR",
         help=("with --buffer-script call: one word read immediately before and immediately after "
-              "the call, both returned. 0x%08X is gRngValue. For a function that returns nothing, "
-              "such as SeedRng, this is the only evidence the call did what it was called for"
-              % rom_map.GRNG_VALUE))
+              "the call, both returned. gRngValue is 0x%08X French, 0x%08X English. For a "
+              "function that returns nothing, such as SeedRng, this is the only evidence the call "
+              "did what it was called for" % (builds.BPRF.rng, builds.BPRE.rng)))
     parser.add_argument(
         "--expect-console", choices=("firered", "leafgreen"), default=None,
         help=("refuse the session unless the console that joins is this cartridge, checked "
               "against the version in its game data. Nothing is sent on a mismatch"))
+    parser.add_argument(
+        "--console-build", choices=configmod.CONSOLE_BUILD_CHOICES,
+        default=configmod.CONSOLE_BUILD_AUTO, metavar="CODE",
+        help=("whose addresses a hook, a stub or a ROM call is built with: %s. auto (the "
+              "default) builds for each and sends the one the console's game code names, before "
+              "anything address-dependent is sent; another code is refused. A game code serves "
+              "only that cartridge. Bytes with no build address go to any console either way"
+              % ", ".join(builds.GAME_CODES)))
     parser.add_argument(
         "--chain-step", action="append", default=None, metavar="STEP",
         help=("with --buffer-script call-chain: one step, repeatable, up to %d, run in order in "
@@ -220,14 +232,15 @@ def build_parser(file_config=None, *, shared_path=None, local_path=None):
               "writes and reads itself back, and needs --write-unsafe. A target of `prev` is the "
               "PREVIOUS step's result and `prev+N` is N bytes past it, which is how a function "
               "that returns a pointer becomes a write; an op may carry +keep to leave prev alone. "
-              "Example: --chain-step call:GetVarPointer,0x4024 --chain-step write16:prev,7"
-              % (buffer_script.CHAIN_MAX_STEPS, ", ".join(sorted(rom_map.CALLABLE)))))
+              "Example: --chain-step call:GetVarPointer,0x4024 --chain-step write16:prev,7. A "
+              "named function is resolved on the console's build"
+              % (buffer_script.CHAIN_MAX_STEPS, ", ".join(sorted(builds.DEFAULT.callable)))))
     parser.add_argument(
         "--create-mon-call", type=lambda v: int(v, 0), default=None, metavar="ADDR",
         help=("with --buffer-script create-mon: the ROM function to call with eight arguments, a "
-              "THUMB pointer. The default is CreateMon at 0x%08X, read off this console; "
-              "0 calls nothing, which checks the send path with the ROM left out"
-              % rom_map.thumb(rom_map.CREATE_MON)))
+              "THUMB pointer. The default is the console build's CreateMon (0x%08X French, "
+              "0x%08X English); 0 calls nothing, which checks the send path with the ROM left out"
+              % (builds.BPRF.create_mon | 1, builds.BPRE.create_mon | 1)))
     parser.add_argument(
         "--create-mon-species", type=lambda v: int(v, 0), default=1, metavar="N",
         help=("with --buffer-script create-mon: the species number, 1..%d (internal numbering, "
@@ -649,16 +662,12 @@ def build_run_config(parser, args):
                 if not sep:
                     parser.error(f"--resident-param takes KEY=VALUE, got {item!r}")
                 resident_params.append((key, int(value, 0)))
-            resident_version = args.version or configmod.DEFAULT_TRAINER.version
+            write_resident = None
             if args.buffer_script == buffer_script.SAVE_WRITE and args.resident:
-                # the hook kept in the save, for MOM's loader (--gift resident-save)
+                # the hook kept in the save, for MOM's loader (--gift resident-save), built per build
                 if write_data is not None:
                     parser.error("--resident is what save-write writes; drop --write-*")
-                try:
-                    write_data = buffer_script.build_resident_save_blob(
-                        args.resident, version=resident_version, **dict(resident_params))
-                except buffer_script.BufferScriptError as exc:
-                    parser.error(str(exc))
+                write_resident = (args.resident, tuple(resident_params))
                 args.resident, resident_params = None, []
                 args.dump_block = buffer_script.SAVE_BLOCK_2         # filler_B20
                 args.dump_offset = native_script.SAVE_PAYLOAD_OFFSET
@@ -674,7 +683,8 @@ def build_run_config(parser, args):
                 dump_size=args.dump_size, dump_blocks=args.dump_blocks,
                 dump_addresses=_scatter_addresses(parser, args.dump_scatter),
                 dump_file=args.dump_file,
-                write_data=write_data, write_unsafe=args.write_unsafe,
+                write_data=write_data, write_resident=write_resident,
+                write_unsafe=args.write_unsafe,
                 flash_sector=args.flash_sector, flash_fill_base=args.flash_fill_base,
                 flash_fill_step=args.flash_fill_step, flash_words=args.flash_words,
                 flash_footer=args.flash_footer, flash_id=args.flash_id,
@@ -698,7 +708,6 @@ def build_run_config(parser, args):
                 svc_numbers=tuple(args.svc_number or ()), svc_args=tuple(args.svc_arg or ()),
                 svc_data=svc_data, svc_bkpt=args.svc_bkpt,
                 resident_name=args.resident, resident_params=tuple(resident_params),
-                resident_version=resident_version,
                 svc_data_in={"none": 0, "r0": 1, "r1": 2}[args.svc_data_in],
                 gather_address=args.gather_address, gather_count=args.gather_count,
                 gather_stride=args.gather_stride, gather_maxlen=args.gather_maxlen,
@@ -724,6 +733,7 @@ def build_run_config(parser, args):
         return configmod.MysteryGiftRunConfig(
             profile=profile, ldn=ldn, role=role,
             payload=payload, expect_console=args.expect_console,
+            console_build=args.console_build, console_version=args.version,
             trust_pia=args.trust_pia,
             client_ready_idle_frames=args.client_ready_idle_frames,
             inter_block_gap_frames=args.inter_block_gap_frames,
@@ -754,6 +764,10 @@ def main(argv=None):
     if not args.live:
         parser.error("hosting only supports live mode; omit --no-live")
     config = build_run_config(parser, args)
+    try:
+        plan = configmod.plan_builds(config.payload, config.console_build, config.console_version)
+    except ValueError as exc:
+        parser.error(str(exc))
     distribution = None
     if args.make_artifact and args.news is not None:
         parser.error("--make-artifact disassembles a delivery RAM script; Wonder News has none")
@@ -761,7 +775,10 @@ def main(argv=None):
         parser.error(
             "--make-artifact disassembles a delivery RAM script; a buffer script has none")
     if args.make_artifact:
-        distribution = config.payload.build_distribution()
+        if plan.per_build is not None and plan.build is None:
+            parser.error("--make-artifact describes one cartridge's bytes and these differ by "
+                         "build; name it with --console-build")
+        distribution = plan.distribution
         # The artifact must describe what is actually sent: a run given --hunt-* carries its own
         # composed definition, and the registry still holds the one built with the defaults.
         definition = (config.payload.definition
@@ -785,7 +802,7 @@ def main(argv=None):
                    else BufferScriptHostApplication if args.buffer_script is not None
                    else MysteryGiftHostApplication)
     app = application(
-        config, distribution=distribution, transport_factory=factory,
+        config, plan=plan, transport_factory=factory,
         log=trade_runtime.ConsoleLog(args.verbose))
     joined = app.run()
     if app.interrupted:

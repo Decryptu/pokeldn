@@ -37,6 +37,9 @@
 @
 @   both signatures seen  ->  physA << 24 | physB << 16 | (sector B's OLD counter & 0xFFFF)
 @   a signature missing   ->  0xBAD00000 | physA << 8 | physB
+@   refused, nothing written: gLastWrittenSector not 0..13 (0xBAE00000 | lws), gSaveCounter 0
+@   (0xBAE10000 | lws), or sector A carries another id (0xBAE20000 | physA << 8 | id). The globals
+@   then belong to another build [docs/frlg_rom_map.md].
 @
 @ Image, offsets from _start, patched by buffer_script.build_flash_patch:
 @   0x000  b .Lcode
@@ -88,6 +91,10 @@ _start:
     ldrh    r5, [r0]                    @ gLastWrittenSector
     ldr     r0, [r4, #0x0C]
     ldr     r6, [r0]                    @ gSaveCounter
+    cmp     r5, #14
+    bhs     .Lrefuse_lws                @ not a band position: not this build's globals
+    cmp     r6, #0
+    beq     .Lrefuse_sc                 @ a saved game's counter is at least 1
     ldr     r1, [r4, #0x10]
     add     r0, r5, r1
     cmp     r0, #14
@@ -103,6 +110,11 @@ _start:
     @ --- A: read, patch, re-checksum, set counter, write ------------------------------------------
     ldr     r0, [r4, #0x28]
     bl      .Lread                      @ r7 = scratch, holding the sector
+    ldr     r2, .Lfooter
+    ldrh    r0, [r7, r2]                @ the id the sector itself carries
+    ldr     r1, [r4, #0x10]
+    cmp     r0, r1
+    bne     .Lrefuse_id                 @ the rotation named another sector: write nothing
     ldr     r0, [r4, #0x14]             @ patch_off
     add     r0, r7, r0
     add     r1, r4, #0x38               @ the replacement bytes
@@ -176,6 +188,25 @@ _start:
     pop     {r2, r4, r5, r6, r7, lr}
     bx      lr
 
+@ Refused before any write. *param = mark | gLastWrittenSector, or for a wrong id
+@ mark | physA << 8 | the id found (low byte).
+.Lrefuse_id:
+    and     r0, r0, #0xFF
+    ldr     r1, [r4, #0x28]
+    orr     r0, r0, r1, lsl #8
+    ldr     r2, .Lrefused_id
+    b       .Lrefuse
+.Lrefuse_sc:
+    mov     r0, r5
+    ldr     r2, .Lrefused_sc
+    b       .Lrefuse
+.Lrefuse_lws:
+    mov     r0, r5
+    ldr     r2, .Lrefused_lws
+.Lrefuse:
+    orr     r0, r2, r0
+    b       .Lreport
+
 @ Select the bank the sector in r0 lives in, byte-copy its 4 KB out of the window into the scratch,
 @ and note a missing signature. Leaves the scratch in r7 for the caller.
 .Lread:
@@ -233,3 +264,6 @@ _start:
 .Lwindow:      .word 0x0E000000
 .Lsectorsize:  .word 0x1000
 .Lbadmark:     .word 0xBAD00000
+.Lrefused_lws: .word 0xBAE00000        @ buffer_script.FLASH_REFUSED_LWS
+.Lrefused_sc:  .word 0xBAE10000        @ buffer_script.FLASH_REFUSED_SC
+.Lrefused_id:  .word 0xBAE20000        @ buffer_script.FLASH_REFUSED_ID

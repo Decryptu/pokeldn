@@ -207,21 +207,25 @@ def test_the_committed_resident_stubs_are_what_the_sources_assemble_to():
     assert result.returncode == 0, result.stderr
 
 
-@pytest.mark.parametrize("version, cartridge", [("firered", "scratchpad/FireRed_f.gba"),
-                                                 ("leafgreen", "scratchpad/LeafGreen_f.gba")])
-def test_the_sound_mixer_is_the_one_each_cartridges_vblankintr_calls(version, cartridge):
-    """m4aSoundMain is the one address the hooks carry that moves on LeafGreen. The call at
-    0x08000772 inside VBlankIntr is a bl; decode it on the cartridge itself."""
+@pytest.mark.parametrize("code, cartridge", [("BPRF", "scratchpad/FireRed_f.gba"),
+                                              ("BPGF", "scratchpad/LeafGreen_f.gba"),
+                                              ("BPRE", "scratchpad/frlg_en/FireRed_e.gba"),
+                                              ("BPGE", "scratchpad/frlg_en/LeafGreen_e.gba")])
+def test_the_sound_mixer_is_the_one_each_cartridges_vblankintr_calls(code, cartridge):
+    """m4aSoundMain is the one address the hooks carry that moves on French LeafGreen. The call
+    0x56 bytes into VBlankIntr is a bl; decode it on the cartridge itself."""
     import pathlib
     import struct
+    from pokeldn.frlg.rom import builds
     rom = pathlib.Path(cartridge)
     if not rom.exists():
         pytest.skip("no cartridge image on this machine")
-    hi, lo = struct.unpack_from("<HH", rom.read_bytes(), 0x772)
+    call = builds.BUILDS[code].vblank_intr + 0x56
+    hi, lo = struct.unpack_from("<HH", rom.read_bytes(), call - 0x08000000)
     offset = ((hi & 0x7FF) << 12 | (lo & 0x7FF) << 1)
     offset -= (1 << 23) if offset & (1 << 22) else 0
-    target = 0x08000772 + 4 + offset
+    target = call + 4 + offset
     from pokeldn.frlg.rom.resident_stubs import STUBS
-    blob, _, _ = bs.resident_blob("shiny", version=version)
+    blob, _, _ = bs.resident_blob("shiny", build=code)
     at = STUBS["shiny"][2]["p_sound_main"]
     assert int.from_bytes(blob[at:at + 4], "little") == target | 1

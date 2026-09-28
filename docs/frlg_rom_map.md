@@ -68,6 +68,43 @@ one span no symbol claims:
 
 `nm -S pokefirered_switch.elf` and `scratchpad/ram_survey.py` do it.
 
+## The English cartridges
+
+The Mystery Gift host sends English FireRed (`BPRE`) and English LeafGreen (`BPGE`) code built on
+their own addresses. `pokeldn/frlg/rom/builds.py` holds one table per cartridge, `BPRF`, `BPGF`,
+`BPRE` and `BPGE`: the IWRAM globals, the ROM functions a payload, a hook or a field stub calls, the
+functions `call-chain` names, and the few ROM data pointers a gift carries.
+
+The host picks the table from the game code in the console's `MysteryGiftLinkGameData`
+[mystery_gift.c:369], which arrives before anything address-dependent is sent. A payload whose bytes
+differ between builds is built for each; a console whose game code has no table, or one the run
+excludes (`--console-build CODE`, or `--version` against the other version), is refused with nothing
+sent. A payload whose bytes are the same for every build goes to any console.
+
+The English addresses come from the decomp's English Switch build, `pokefirered_switch.elf` and
+`pokeleafgreen_switch.elf`, whose images are byte-identical to the retail cartridges (see
+[The cartridge image](#the-cartridge-image)). Each value was checked against the retail image: a
+function by its bytes at that address, an IWRAM global by the literal pools of the functions that
+use it, paired with the same pool on the French cartridge.
+
+| region | French to English |
+|---|---|
+| EWRAM | unchanged |
+| IWRAM 0x03000000..0x03001B6F | unchanged |
+| IWRAM 0x03002370..0x0300602F English, from `gMain` (0x030022D0 French, 0x03002380 English) | +0xB0 |
+| IWRAM 0x03006090..0x03007583 English, `gSoundInfo` (0x03005F80 French) to `gFlash` | +0x110 |
+| IWRAM 0x03007590 and up: the stack, the interrupt vector | unchanged |
+| ROM | no single offset; every function is looked up |
+
+Every IWRAM constant the code uses sits in one of the two shifted ranges: `gRngValue` 0x030042D0,
+`gSaveBlock1Ptr` 0x030042D8, `gSaveBlock2Ptr` 0x030042DC, `gIntrTable[4]` 0x030027E0,
+`gLastWrittenSector` 0x03004650, `gSaveCounter` 0x03004660. English LeafGreen's RAM is English
+FireRed's; of the addresses a resident hook carries only `m4aSoundMain` moves (0x081E07C4 against
+0x081E07E8).
+
+`tests/test_frlg_english_cartridges.py` runs the English payloads on both retail images through each
+cartridge's own `Client_RunBufferScript`; it skips when `scratchpad/frlg_en/` holds no image.
+
 ## The BIOS wrappers
 
 `libagbsyscall.s` links as one block of THUMB `svc N ; bx lr` pairs, in the decomp's order

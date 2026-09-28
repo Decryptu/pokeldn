@@ -48,10 +48,35 @@ class MysteryGiftTiming:
 DEFAULT_MYSTERY_GIFT_TIMING = MysteryGiftTiming()
 
 
+def server_keywords(distribution):
+    """-> the MysteryGiftServer keywords that carry one distribution's bytes."""
+    return {
+        "card": distribution.card,
+        "ram_script": distribution.ram_script,
+        "stamp": distribution.stamp,
+        "activation_script": distribution.activation_script,
+        "install_activation_script": distribution.install_activation_script,
+        "trainer": distribution.trainer,
+        "news": distribution.news,
+        "mevent": distribution.mevent,
+        "questionnaire": distribution.questionnaire,
+        "denied_message": distribution.denied_message,
+        "buffer_code": distribution.buffer_code,
+        "buffer_expect": distribution.buffer_expect,
+        "buffer_dump_size": distribution.buffer_dump_size,
+        "buffer_dump_blocks": distribution.buffer_dump_blocks,
+        "buffer_dump_address": distribution.buffer_dump_address,
+        "buffer_dump_addresses": distribution.buffer_dump_addresses,
+        "buffer_decode": distribution.buffer_decode,
+    }
+
+
 class HostMysteryGiftEngine:
     def __init__(self, card=None, ram_script=None, *, distribution=None,
                  link_player=None, trust_pia=True, timing=None, expect_console=None,
-                 log=lambda *a: None):
+                 per_build=None, log=lambda *a: None):
+        """`per_build` is {game code: distribution, or why none could be built}: the server
+        sends the one the console's game code names [mg_server._select_build]."""
         self.lp = link_player or linkplayer.LinkPlayer(
             name="EMU", version=linkplayer.VERSION_FIRE_RED)
         self.trust_pia = trust_pia
@@ -61,28 +86,16 @@ class HostMysteryGiftEngine:
         if distribution is not None:
             if card is not None or ram_script is not None:
                 raise ValueError("pass either distribution or card/ram_script")
-            card, ram_script = distribution.card, distribution.ram_script
-            server_extras = {
-                "stamp": distribution.stamp,
-                "activation_script": distribution.activation_script,
-                "install_activation_script": distribution.install_activation_script,
-                "trainer": distribution.trainer,
-                "news": distribution.news,
-                "mevent": distribution.mevent,
-                "questionnaire": distribution.questionnaire,
-                "denied_message": distribution.denied_message,
-                "buffer_code": distribution.buffer_code,
-                "buffer_expect": distribution.buffer_expect,
-                "buffer_dump_size": distribution.buffer_dump_size,
-                "buffer_dump_blocks": distribution.buffer_dump_blocks,
-                "buffer_dump_address": distribution.buffer_dump_address,
-                "buffer_dump_addresses": distribution.buffer_dump_addresses,
-                "buffer_decode": distribution.buffer_decode,
-            }
+            server_extras = server_keywords(distribution)
+            card, ram_script = server_extras.pop("card"), server_extras.pop("ram_script")
         else:
             if card is None or ram_script is None:
                 raise ValueError("card and ram_script are required")
             server_extras = {}
+        if per_build is not None:
+            server_extras["per_build"] = {
+                code: chosen if isinstance(chosen, str) else server_keywords(chosen)
+                for code, chosen in per_build.items()}
         self.server = MysteryGiftServer(
             card, ram_script, log=log, expect_console=expect_console, **server_extras)
 

@@ -57,6 +57,9 @@
 @ was built is stale by the time it runs. Reading them here makes the write address the sector the id
 @ actually occupies. The chosen sector is reported back, so a null result can be told from a
 @ mis-aimed one.
+@
+@ A derived write is refused, with nothing written, when gLastWrittenSector is not 0..13 or
+@ gSaveCounter is 0: the two addresses then belong to another build [docs/frlg_rom_map.md].
 
     .arm
     .text
@@ -109,6 +112,12 @@ _start:
     cmp     r7, #0
     beq     .Lliteral
     ldrh    r0, [r7]                @ gLastWrittenSector
+    cmp     r0, #14
+    bhs     .Lrefuse_lws            @ not a band position: these are not this build's globals
+    ldr     r7, [r4, #0x2C]
+    ldr     r1, [r7]                @ gSaveCounter
+    cmp     r1, #0
+    beq     .Lrefuse_sc             @ a saved game's counter is at least 1
     ldr     r2, [r4, #0x48]         @ position, or -1
     cmp     r2, #0
     blt     .Lbyid
@@ -218,8 +227,28 @@ _start:
     pop     {r2, r4, r5, r6, r7, lr}
     bx      lr
 
+@ Refused: nothing composed is written. *param = mark | gLastWrittenSector, the sector -1.
+.Lrefuse_sc:
+    ldr     r2, .Lrefused_sc
+    b       .Lrefuse
+.Lrefuse_lws:
+    ldr     r2, .Lrefused_lws
+.Lrefuse:
+    orr     r0, r2, r0
+    mvn     r1, #0
+    str     r1, [r4, #0x40]         @ RESULT: no sector
+    ldr     r3, [sp]
+    str     r0, [r3, #0x00]
+    mov     r0, #1
+    pop     {r2, r4, r5, r6, r7, lr}
+    bx      lr
+
 .Lcodeoff:
     .word   .Lcode - _start
+.Lrefused_lws:
+    .word   0xBAE00000              @ buffer_script.FLASH_REFUSED_LWS
+.Lrefused_sc:
+    .word   0xBAE10000              @ buffer_script.FLASH_REFUSED_SC
 .Lfooter_off:
     .word   0xFF4                   @ where the footer starts inside the sector
 .Ldata_bytes:

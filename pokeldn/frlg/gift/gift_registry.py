@@ -17,9 +17,11 @@ class GiftCatalogEntry:
     builder: object
     definition: WonderGift | None = None
 
-    def build_distribution(self, *, flag_id=None):
+    def build_distribution(self, *, flag_id=None, build=None):
         selected_flag = self.default_flag_id if flag_id is None else flag_id
-        return self.builder(selected_flag)
+        if build is None:
+            return self.builder(selected_flag)
+        return self.builder(selected_flag, build=build)
 
 
 class _FlagIdAction(argparse.Action):
@@ -65,8 +67,8 @@ class GiftRegistry:
                 default_flag_id=definition.card.default_flag_id,
                 live=True, static=True,
                 description=f"composed gift {definition.card.title!r}",
-                builder=lambda flag_id, definition=definition:
-                    compile_definition(definition, flag_id=flag_id),
+                builder=lambda flag_id, build=None, definition=definition:
+                    compile_definition(definition, flag_id=flag_id, build=build),
                 definition=definition),)
         else:
             rally = definition.event
@@ -78,8 +80,8 @@ class GiftRegistry:
                     live=True, static=False,
                     description=(f"{slot.slug} for "
                                  f"{definition.card.title!r}"),
-                    builder=lambda flag_id, definition=definition, slug=slot.slug:
-                        compile_definition(definition, flag_id=flag_id)[slug],
+                    builder=lambda flag_id, build=None, definition=definition, slug=slot.slug:
+                        compile_definition(definition, flag_id=flag_id, build=build)[slug],
                     definition=definition)
                 for slot in rally.slots)
             for candidate in candidates:
@@ -111,11 +113,12 @@ class GiftRegistry:
     def default_flag_id(self, slug):
         return self.entry(slug).default_flag_id
 
-    def build_distribution(self, slug, *, flag_id=None):
+    def build_distribution(self, slug, *, flag_id=None, build=None):
+        """`build` is the cartridge the bytes are for [builds.py]; None is French FireRed."""
         entry = self.entry(slug)
         if not entry.live:
             raise ValueError(f"Mystery Gift {slug!r} is not available to the live host")
-        return entry.build_distribution(flag_id=flag_id)
+        return entry.build_distribution(flag_id=flag_id, build=build)
 
     def build_static(self, slug, *, flag_id=None):
         entry = self.entry(slug)
