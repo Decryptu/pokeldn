@@ -157,3 +157,14 @@ def test_a_full_party_is_reported_rather_than_overwritten():
     assert result.status == mystery_event.STATUS_INCOMPATIBLE
     assert result.effect("givepokemon") is None
     assert result.effect("givepokemon_full_party") is not None
+
+
+@pytest.mark.parametrize("nickname", ["CELEBI", "CHARMELEON"])
+def test_a_nickname_up_to_ten_characters_arrives_whole(nickname):
+    """`u8 nickname[POKEMON_NAME_LENGTH]` holds ten characters with no terminator slot [pokemon.h]."""
+    assert _celebi(nickname=nickname).decode()["nickname"] == nickname
+
+
+def test_an_eleven_character_nickname_is_refused():
+    with pytest.raises(mp.MysteryEventPokemonError, match="10 characters"):
+        _celebi(nickname="CHARMELEONS")

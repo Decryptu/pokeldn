@@ -136,7 +136,11 @@ def build_party_mon(species, level, *, moves=(), pp=(), nickname=None, ot_name="
         raise MysteryEventPokemonError(
             "give the mon a nickname: the console never fills the field in, and a blank one shows "
             "as an empty name everywhere")
-    canon[8:18] = charmap.encode(nickname, width=10)
+    name = charmap.encode(nickname)
+    if len(name) > 10:
+        raise MysteryEventPokemonError("a nickname is at most 10 characters")
+    # nickname[POKEMON_NAME_LENGTH] has no terminator slot: a 10-character name fills it [pokemon.h].
+    canon[8:18] = name.ljust(10, b"\xff")
     canon[18] = language
     canon[19] = HAS_SPECIES
     ot = charmap.encode(ot_name)

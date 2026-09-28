@@ -325,8 +325,8 @@ class LinkGameData:
     @property
     def trainer_id_is_reliable(self):
         """A full 7-character name's 0xFF terminator overwrites playerTrainerId[0] [decomp:src/mystery_gift.c:364]."""
-        return len(self.raw[GD_OFF_PLAYER_NAME:GD_OFF_PLAYER_NAME + PLAYER_NAME_FIELD_SIZE]
-                   .rstrip(b"\xff")) < PLAYER_NAME_FIELD_SIZE
+        # The struct is zero-filled first, so a short name reads `name FF 00 ..` [mystery_gift.c:339].
+        return b"\xff" in self.raw[GD_OFF_PLAYER_NAME:GD_OFF_PLAYER_NAME + PLAYER_NAME_FIELD_SIZE]
 
     @property
     def has_questionnaire(self):

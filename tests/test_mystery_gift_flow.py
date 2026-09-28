@@ -25,6 +25,8 @@ Run standalone (no pytest needed):   python tests/test_mystery_gift_flow.py
 import os
 import sys
 
+import pytest
+
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
 from pokeldn.frlg.gift import ereader_trainer, host_mystery_gift, mg_link, mg_script, mg_server, wonder_card, wonder_news  # noqa: E402
@@ -148,6 +150,27 @@ def test_link_game_data_offsets_and_validation():
     assert parsed.player_name == "EMU"
     assert parsed.trainer_id & 0xFFFF == 0x8822
     assert mg_script.validate_link_game_data(parsed)
+
+
+# A retail French LeafGreen's game data, player PAU: `cabbcf ff 000000` then the trainer id.
+_RETAIL_PAU = bytes.fromhex(
+    "0101000001000000010000000100000002000000ed03090230100c0e0b02000000000000000023000000000000"
+    "000000000000000000000000000000000000000000000000cabbcfff00000020665eec28120c0e0e02ffff0000"
+    "0000425047460a000000")
+
+
+@pytest.mark.parametrize("name_bytes, reliable", [
+    (_RETAIL_PAU[0x45:0x4C], True),                 # a short name arrives zero-padded
+    (bytes.fromhex("c1cfccd0bbc8ff"), True),        # six characters, the terminator fits
+    (bytes.fromhex("c1cfccd0bbc8bb"), False),       # seven: the terminator lands on the id
+])
+def test_the_trainer_id_is_trusted_whenever_the_name_terminator_fits(name_bytes, reliable):
+    data = bytearray(_RETAIL_PAU)
+    data[0x45:0x4C] = name_bytes
+    parsed = mg_script.parse_link_game_data(bytes(data))
+    assert parsed.trainer_id_is_reliable is reliable
+    if name_bytes == _RETAIL_PAU[0x45:0x4C]:
+        assert parsed.player_name == "PAU" and parsed.trainer_id & 0xFFFF == 26144
 
 
 def test_link_game_data_rejects_what_the_console_rejects():
