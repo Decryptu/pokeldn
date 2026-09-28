@@ -75,6 +75,24 @@ def wrap(keys, our_mac, src_var, dst_var, nonce8, payload, protocol, port=0,
                       nonce8=nonce8, tag=tag[:8], encrypted=True).pack() + ct
 
 
+async def send_acked(st, send_at, payload, *, tries=12, retry=0.4):
+    """One reliable message under a sequence id of its own, resent under THAT id until the console's
+    ack passes it. -> the id, or None. Two messages under one id: the second is dropped as a repeat
+    (docs/bdsp_protocol.md). `send_at(seq, payload)` puts it on the air."""
+    seq = max(st["their_ack_id"], st["our_next_seq"])
+    if not seq:
+        return None
+    st["our_next_seq"] = seq + 1
+    for _ in range(tries):
+        send_at(seq, payload)
+        with trio.move_on_after(retry):
+            while st["their_ack_id"] <= seq:
+                await trio.sleep(0.01)
+        if st["their_ack_id"] > seq:
+            return seq
+    return None
+
+
 async def main_async(args):
     keys_file = ldn.load_keys(resolve_keys(args.keys))
     phy = find_ap_phy(log=print) if args.phy == "auto" else args.phy
@@ -423,7 +441,7 @@ async def main_async(args):
                                 # The player pressed A on our character. The talk is a
                                 # request/response and the console blocks on the answer: unanswered,
                                 # the player's own character freezes until the game is rebooted.
-                                await answer_the_talk(now)
+                                nursery.start_soon(answer_the_talk, now)
                             if args.reliable_auto_ack and st["rel_handshaken"]:
                                 ack = rl.build_ack_message(st["rel_max_seq"] + 1,
                                                            stream_id=d["stream_id"])
@@ -561,41 +579,40 @@ async def main_async(args):
 
             print("[cx] the data probe was never answered; not acking blind")
 
+        def send_reliable_at(seq, payload):
+            msg = (rl.build_header(rl.FLAG_APPLICATION_DATA | rl.FLAG_MESSAGE_START
+                                   | rl.FLAG_MESSAGE_END | rl.FLAG_IS_INITIALIZED,
+                                   seq, len(payload), lowest_pending=seq) + payload)
+            sock.sendto(wrap(keys, our_mac, args.src_var, st["dst_var"], next_nonce(), msg,
+                             rl.PROTOCOL, port=rl.PORT), (st["dst_ip"], PIA_PORT))
+
         async def answer_the_talk(now):
-            """Answer a NetDataTalkReserveData, on the reliable stream it arrived on."""
+            """Answer a NetDataTalkReserveData, on the reliable stream it arrived on.
+
+            Runs as a task: awaited inside the receiver it held the acks the next id depends on,
+            and every --after-talk message went out under the answer's own id and was dropped."""
             reply = room.build_talk_reserve_result(can_talk=args.can_talk,
                                                    is_recruitment=args.recruiting,
                                                    emoticon_state=args.state)
-            seq = st["their_ack_id"]
-            if not seq:
+            st["talk_answers"] += 1
+            seq = await send_acked(st, send_reliable_at, reply)
+            if seq is None:
                 record(rec="talk_unanswered_no_seq", t=now)
                 return
-            msg = (rl.build_header(rl.FLAG_APPLICATION_DATA | rl.FLAG_MESSAGE_START
-                                   | rl.FLAG_MESSAGE_END | rl.FLAG_IS_INITIALIZED,
-                                   seq, len(reply), lowest_pending=seq) + reply)
-            sock.sendto(wrap(keys, our_mac, args.src_var, st["dst_var"], next_nonce(), msg,
-                             rl.PROTOCOL, port=rl.PORT), (st["dst_ip"], PIA_PORT))
-            st["talk_answers"] += 1
             print(f"\n[tx] t={now:6.2f} *** IT ASKED TO TALK - answered "
                   f"NetDataTalkReserveResultData at seq {seq}: {reply.hex(' ')} ***\n")
             record(rec="talk_answered", t=now, seq=seq, reply=reply.hex())
             # The console parks in TalkState GREETING and waits to be advanced. One --after-talk
-            # is one message, in order, on the reliable stream, at the sequence id the console is
-            # asking for at the time.
+            # is one message, in order, each acknowledged before the next.
             for spec in args.after_talk:
                 await trio.sleep(args.after_talk_gap)
                 data_id, _, body_hex = spec.partition(":")
                 payload = room.build(int(data_id, 0), bytes.fromhex(body_hex))
-                seq = st["their_ack_id"]
-                if not seq:
-                    record(rec="after_talk_no_seq", t=now, spec=spec)
-                    continue
-                m = (rl.build_header(rl.FLAG_APPLICATION_DATA | rl.FLAG_MESSAGE_START
-                                     | rl.FLAG_MESSAGE_END | rl.FLAG_IS_INITIALIZED,
-                                     seq, len(payload), lowest_pending=seq) + payload)
-                sock.sendto(wrap(keys, our_mac, args.src_var, st["dst_var"], next_nonce(), m,
-                                 rl.PROTOCOL, port=rl.PORT), (st["dst_ip"], PIA_PORT))
+                seq = await send_acked(st, send_reliable_at, payload)
                 now2 = time.monotonic() - t0
+                if seq is None:
+                    record(rec="after_talk_no_seq", t=now2, spec=spec)
+                    continue
                 print(f"[tx] t={now2:6.2f}   after-talk {room.name(payload[0])} at seq {seq}: "
                       f"{payload.hex(' ')}")
                 record(rec="after_talk_sent", t=now2, spec=spec, seq=seq, message=payload.hex())
