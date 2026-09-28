@@ -35,6 +35,11 @@ REFERENCE = json.loads(
 FRENCH = (builds.BPRF, builds.BPGF)
 
 
+# Distribution fields added after the recording. At their default they send what the recorded code
+# sent, so the digest leaves them out; set, they are digested like any other field.
+NEWER_FIELDS = {"buffer_reference": None}
+
+
 def digest(value):
     """The recorder's digest: a byte string, or a dataclass's fields in order."""
     if isinstance(value, (bytes, bytearray)):
@@ -43,7 +48,8 @@ def digest(value):
         blob = b"\x00".join(
             f.name.encode() + b"=" + (bytes(v) if isinstance(v, (bytes, bytearray))
                                       else repr(v).encode())
-            for f in dataclasses.fields(value) for v in (getattr(value, f.name),))
+            for f in dataclasses.fields(value) for v in (getattr(value, f.name),)
+            if not (f.name in NEWER_FIELDS and v == NEWER_FIELDS[f.name]))
     else:
         raise TypeError(type(value))
     return f"{len(blob)}:{hashlib.sha256(blob).hexdigest()}"

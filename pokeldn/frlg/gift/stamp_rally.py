@@ -82,6 +82,8 @@ class MysteryGiftDistribution:
     # The payloads whose answer is a structure rather than a region (memory-scan's hit table,
     # rng-trace's samples): the script's name, so the log decodes what came back.
     buffer_decode: str | None = None
+    # rom-checksum only: the path of the ROM image its sums are compared with, per build.
+    buffer_reference: str | None = None
 
     def __post_init__(self):
         if self.buffer_code is not None:

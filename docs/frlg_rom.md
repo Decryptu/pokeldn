@@ -1226,6 +1226,53 @@ address and, as its value, the table's. The context is zero until a script has r
 nothing: `--table-delta 0x358` (856 = 214 entries) finds the field script context instead, whose
 `cmdTable` is `gScriptCmdTable`, an address already measured.
 
+### `rom-checksum`
+
+Checksums a range in up to 128 blocks and answers with one sum per block, so the host can name the
+blocks of the console's cartridge that differ from a ROM image it holds. A second run over one
+differing block with a smaller block size narrows it down. The frame loop, the budget, the watchdog and
+the repointed send are `memory-scan`'s.
+
+The sum of a block is taken over its words in ascending address order, starting from 0:
+
+    acc = w XOR ror(acc, 31)        one `eor r0, rN, r0, ror #31` per word
+
+It is linear over XOR, so a block of n words sums to the XOR of `rol(w_i, n-1-i)`, and the host computes
+the reference sums from a ROM file in closed form (`rom_checksum_reference`).
+
+| offset | |
+|---|---|
+| 0x000 | `b .Lcode` |
+| 0x004 | cursor: the start address, advanced by the payload |
+| 0x008 | end |
+| 0x00C | start |
+| 0x010 | 32-byte chunks per call |
+| 0x014 | max_calls, the watchdog |
+| 0x018 | shift: log2 of the block size, 5 to 25 |
+| 0x01C | the running sum of the block in progress, carried across calls |
+| 0x020 | result: final cursor, calls used, sums stored, the shift echoed |
+| 0x030 | result: 128 × u32 block sums |
+| 0x230 | the code |
+
+The answer is a fixed 528 bytes from 0x020. The builder refuses a start not aligned to the block size,
+a range that is not a whole number of blocks, more than 128 blocks, and a block that is not a power of
+two from 32 bytes; the payload finds a block boundary as `cursor & (block - 1) == 0` after each chunk.
+
+The inner loop is an `ldmia` of eight words, eight `eor`s, a boundary test and the budget compare: 13
+ARM instructions per eight words. The default 512 chunks is 6688 instructions a call, measured under
+unicorn, below `memory-scan`'s 7703. The default range 0x08000000..0x09000000 in 128 KiB blocks is 1024
+calls, about 17 seconds.
+
+    ./scratchpad/run_mg_board.sh rcNN --buffer-script rom-checksum --version firered
+    ./scratchpad/run_mg_board.sh rcNN --buffer-script rom-checksum --sum-start 0x08120000 \
+        --sum-end 0x08140000 --sum-block 0x400 --version firered
+
+The host reads the reference image when the answer lands and logs each block's range, the console's
+sum, the reference's and `SAME` or `DIFF`, then `rom-checksum: N of M blocks differ from <image>`.
+The image is `config.REFERENCE_ROMS[game code]` for the build the console names, or `--sum-reference`
+for every build. A block past the end of the image is listed with no reference and not counted. A
+watchdog stop answers with the blocks completed before the cursor and says where to resume.
+
 ### `rng-trace`
 
 Samples a word once a frame and, between the two reads of each sample, calls a ROM function.

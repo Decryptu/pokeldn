@@ -527,7 +527,7 @@ class MysteryGiftServer:
                  activation_script=None, install_activation_script=None, trainer=None,
                  mevent=None, buffer_code=None, buffer_expect=None, buffer_dump_size=None,
                  buffer_dump_blocks=1, buffer_dump_address=0, buffer_dump_addresses=(),
-                 buffer_decode=None,
+                 buffer_decode=None, buffer_reference=None,
                  buffer_success_message=None, buffer_failure_message=None,
                  questionnaire=None, denied_message=None, expect_console=None,
                  script=None, per_build=None, log=lambda *a: None):
@@ -651,6 +651,13 @@ class MysteryGiftServer:
             raise MysteryGiftServerError(
                 f"a memory scan answers with exactly {buffer_script.SCAN_ANSWER_SIZE} bytes, "
                 f"got {self.buffer_dump_size}")
+        if self.buffer_decode == buffer_script.ROM_CHECKSUM \
+                and self.buffer_dump_size != buffer_script.ROM_CHECKSUM_ANSWER_SIZE:
+            raise MysteryGiftServerError(
+                f"a rom checksum answers with exactly {buffer_script.ROM_CHECKSUM_ANSWER_SIZE} "
+                f"bytes, got {self.buffer_dump_size}")
+        # rom-checksum: the ROM image its sums are set beside, a path read when the answer lands.
+        self.buffer_reference = buffer_reference
         if self.buffer_decode == buffer_script.STRING_GATHER \
                 and self.buffer_dump_size != buffer_script.GATHER_ANSWER_SIZE:
             raise MysteryGiftServerError(
@@ -853,7 +860,8 @@ class MysteryGiftServer:
     BUILD_FIELDS = ("card", "ram_script", "news", "stamp", "activation_script",
                     "install_activation_script", "trainer", "mevent", "buffer_code",
                     "buffer_expect", "buffer_dump_size", "buffer_dump_blocks",
-                    "buffer_dump_address", "buffer_dump_addresses", "buffer_decode")
+                    "buffer_dump_address", "buffer_dump_addresses", "buffer_decode",
+                    "buffer_reference")
 
     def _select_build(self):
         """Take the payload built for the console's own game code. Raises rather than logs, before
@@ -1144,6 +1152,23 @@ class MysteryGiftServer:
                 self.info(f"  {line}")
             self.trace.append(("buffer_table_scan", table["found"], table["cursor"],
                                table["calls"]))
+            return
+        if self.buffer_decode == buffer_script.ROM_CHECKSUM:
+            asked = buffer_script.rom_checksum_parameters(self.buffer_code)
+            reference = None
+            if self.buffer_reference is not None:
+                try:
+                    with open(self.buffer_reference, "rb") as handle:
+                        reference = handle.read()
+                except OSError as exc:
+                    self.info(f"  no reference ROM to compare with: {exc}")
+            for line in buffer_script.describe_rom_checksum(
+                    self.buffer_dump, asked["start"], asked["end"], asked["block"],
+                    reference, self.buffer_reference):
+                self.info(f"  {line}")
+            got = buffer_script.read_rom_checksum(self.buffer_dump)
+            self.trace.append(("buffer_rom_checksum", got["stored"], got["cursor"],
+                               got["calls"]))
             return
         if self.buffer_decode == buffer_script.MEMORY_SCAN:
             scan = buffer_script.read_scan(self.buffer_dump)

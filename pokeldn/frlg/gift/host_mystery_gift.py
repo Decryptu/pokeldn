@@ -68,6 +68,7 @@ def server_keywords(distribution):
         "buffer_dump_address": distribution.buffer_dump_address,
         "buffer_dump_addresses": distribution.buffer_dump_addresses,
         "buffer_decode": distribution.buffer_decode,
+        "buffer_reference": distribution.buffer_reference,
     }
 
 

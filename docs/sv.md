@@ -1222,8 +1222,12 @@ response does, and a joiner that waits for the response sends nothing for the wh
   join request (`0x2799b10`) uses the same `+0xb8` and the same refusal; if its master leaves, the
   event runs `0x12fbef0` alone, the job ends at 15 s and nothing clears `+0xb8`, and the relay
   outlives every seat, so every later request on that console would be refused. The creator's sole
-  caller `0x1e635fc` is reached from `0x1d986d8`, which was not read; whether it runs only when the
-  console joins another station's slot as a client is unknown. The check: a `bin/sv_host.py`
+  caller `0x1e635fc` is reached only from `0x1d986d8` in `0x1d98698`, which has six callers:
+  `0x1d96c38`, `0x1d9973c`, `0x1e50eec`, `0x1e51c40`, `0x1e638ac` and `0x1e63904`. The BoxTrade
+  job's, `0x1e51c40`, is in its state 4 (jump table `0x3c5baf0`, handler `0x1e51b8c`, which gives
+  up 15 s after entering it); `0x1e51b04`..`0x1e51b18` set state 2 when `0x1639910` says the
+  console is the master and 4 otherwise, so that job builds a type-2 request only as a client.
+  Whether the other five run in a Link Trade is unknown. The check: a `bin/sv_host.py`
   session in which the console joins as a client and the host stops before its type 9, then
   `bin/sv_join.py` without restarting the game, and once more after a restart.
 - Whether a seat whose joiner answers no RTT request, reads every message and loses none of the

@@ -603,6 +603,14 @@ class BufferScriptPayload:
     table_end: int = buffer_script.SCAN_ROM_END
     table_blocks: int = buffer_script.TABLE_SCAN_DEFAULT_BLOCKS
     table_max_calls: int | None = None
+    # rom-checksum: the range, the block size and the frame budget, and the ROM image the sums are
+    # compared with. None picks REFERENCE_ROMS' image for the console's own build.
+    sum_start: int = buffer_script.SCAN_ROM_START
+    sum_end: int = buffer_script.SCAN_ROM_END
+    sum_block: int = buffer_script.ROM_CHECKSUM_DEFAULT_BLOCK
+    sum_budget: int = buffer_script.ROM_CHECKSUM_DEFAULT_BUDGET
+    sum_max_calls: int | None = None
+    sum_reference: str | None = None
     # rng-trace: the word to sample once a frame, and what to call between the two reads of it.
     trace_address: int | None = None
     trace_call: int = 0
@@ -741,6 +749,11 @@ class BufferScriptPayload:
         elif self.table_delta is not None:
             raise ValueError(
                 f"a table shape is only meaningful with {buffer_script.TABLE_SCAN}")
+        if self.script == buffer_script.ROM_CHECKSUM:
+            object.__setattr__(self, "dump_size", buffer_script.ROM_CHECKSUM_ANSWER_SIZE)
+        elif self.sum_reference is not None:
+            raise ValueError(
+                f"a reference ROM is only meaningful with {buffer_script.ROM_CHECKSUM}")
         if self.script == buffer_script.RNG_TRACE:
             if self.trace_address is None:
                 raise ValueError(f"{buffer_script.RNG_TRACE} needs an address to sample")
@@ -854,6 +867,10 @@ class BufferScriptPayload:
             return buffer_script.build_memory_scan(
                 self.scan_word, self.scan_start, self.scan_end,
                 self.scan_blocks, self.scan_max_calls)
+        if self.script == buffer_script.ROM_CHECKSUM:
+            return buffer_script.build_rom_checksum(
+                self.sum_start, self.sum_end, self.sum_block, self.sum_budget,
+                self.sum_max_calls)
         if self.script == buffer_script.TABLE_SCAN:
             return buffer_script.build_table_scan(
                 self.table_delta, self.table_runlen, self.table_start, self.table_end,
@@ -924,7 +941,26 @@ class BufferScriptPayload:
                                  (self.dump_addresses[0] if self.dump_addresses else 0)),
             buffer_dump_addresses=tuple(self.dump_addresses or ()),
             buffer_decode=(self.script if self.script in buffer_script.DECODED_SCRIPTS
-                           else None))
+                           else None),
+            buffer_reference=(self.reference_rom(build)
+                              if self.script == buffer_script.ROM_CHECKSUM else None))
+
+    def reference_rom(self, build=None):
+        """The ROM image rom-checksum's sums are compared with: --sum-reference, else the image
+        REFERENCE_ROMS names for `build`."""
+        if self.sum_reference is not None:
+            return self.sum_reference
+        return REFERENCE_ROMS.get(builds.resolve(build).game_code)
+
+
+# The retail images each build's v0 cartridge is extracted to, relative to the repository root
+# the launchers run from. rom-checksum compares the console's sums with the one its build names.
+REFERENCE_ROMS = {
+    "BPRF": "scratchpad/FireRed_f.gba",
+    "BPGF": "scratchpad/LeafGreen_f.gba",
+    "BPRE": "scratchpad/frlg_en/FireRed_e.gba",
+    "BPGE": "scratchpad/frlg_en/LeafGreen_e.gba",
+}
 
 
 @dataclass(frozen=True)

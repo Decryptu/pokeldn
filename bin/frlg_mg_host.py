@@ -135,6 +135,32 @@ def build_parser(file_config=None, *, shared_path=None, local_path=None):
         "--table-max-calls", type=int, default=None, metavar="N",
         help="with --buffer-script table-scan: the watchdog, in calls (= frames)")
     parser.add_argument(
+        "--sum-start", type=lambda v: int(v, 0), default=None, metavar="ADDR",
+        help=("with --buffer-script rom-checksum: where to start, aligned to --sum-block "
+              "(default 0x%08X, the cartridge)" % buffer_script.SCAN_ROM_START))
+    parser.add_argument(
+        "--sum-end", type=lambda v: int(v, 0), default=None, metavar="ADDR",
+        help=("with --buffer-script rom-checksum: one past the last address to sum, a whole "
+              "number of blocks after --sum-start (default 0x%08X)" % buffer_script.SCAN_ROM_END))
+    parser.add_argument(
+        "--sum-block", type=lambda v: int(v, 0), default=None, metavar="BYTES",
+        help=("with --buffer-script rom-checksum: the block size, a power of two from 32; the "
+              "range holds at most %d blocks (default 0x%X)"
+              % (buffer_script.ROM_CHECKSUM_CAPACITY, buffer_script.ROM_CHECKSUM_DEFAULT_BLOCK)))
+    parser.add_argument(
+        "--sum-budget", type=int, default=None, metavar="N",
+        help=("with --buffer-script rom-checksum: 32-byte chunks summed per frame (default %d, "
+              "no more load on the frame than memory-scan's 512)"
+              % buffer_script.ROM_CHECKSUM_DEFAULT_BUDGET))
+    parser.add_argument(
+        "--sum-max-calls", type=int, default=None, metavar="N",
+        help=("with --buffer-script rom-checksum: the watchdog, in calls (= frames) "
+              "(default: what the range needs, plus two)"))
+    parser.add_argument(
+        "--sum-reference", default=None, metavar="ROM",
+        help=("with --buffer-script rom-checksum: the ROM image to compare the sums with "
+              "(default: the image config.REFERENCE_ROMS names for the console's build)"))
+    parser.add_argument(
         "--scan-word", type=lambda v: int(v, 0), default=None, metavar="VALUE",
         help=("with --buffer-script memory-scan: the 32-bit value to search for. The payload "
               "returns 0 to be called again next frame, so one run scans a whole range instead "
@@ -633,6 +659,11 @@ def build_run_config(parser, args):
                     f"--create-mon-* belongs to --buffer-script {buffer_script.CREATE_MON}")
             if args.buffer_script != buffer_script.MEMORY_SCAN and args.scan_word is not None:
                 parser.error(f"--scan-* belongs to --buffer-script {buffer_script.MEMORY_SCAN}")
+            sum_args = (args.sum_start, args.sum_end, args.sum_block, args.sum_budget,
+                        args.sum_max_calls, args.sum_reference)
+            if args.buffer_script != buffer_script.ROM_CHECKSUM \
+                    and any(value is not None for value in sum_args):
+                parser.error(f"--sum-* belongs to --buffer-script {buffer_script.ROM_CHECKSUM}")
             if args.buffer_script != buffer_script.TABLE_SCAN and args.table_delta is not None:
                 parser.error(f"--table-* belongs to --buffer-script {buffer_script.TABLE_SCAN}")
             if args.buffer_script != buffer_script.RNG_TRACE \
@@ -701,6 +732,14 @@ def build_run_config(parser, args):
                 table_delta=args.table_delta, table_runlen=args.table_runlen,
                 table_start=args.table_start, table_end=args.table_end,
                 table_blocks=args.table_blocks, table_max_calls=args.table_max_calls,
+                sum_start=(buffer_script.SCAN_ROM_START if args.sum_start is None
+                           else args.sum_start),
+                sum_end=buffer_script.SCAN_ROM_END if args.sum_end is None else args.sum_end,
+                sum_block=(buffer_script.ROM_CHECKSUM_DEFAULT_BLOCK if args.sum_block is None
+                           else args.sum_block),
+                sum_budget=(buffer_script.ROM_CHECKSUM_DEFAULT_BUDGET if args.sum_budget is None
+                            else args.sum_budget),
+                sum_max_calls=args.sum_max_calls, sum_reference=args.sum_reference,
                 trace_address=args.trace_address, trace_call=args.trace_call,
                 trace_samples=args.trace_samples,
                 call_address=args.call_address, call_args=tuple(args.call_arg or ()),

@@ -711,7 +711,7 @@ class ConsoleClientModel:
 
 def _drive(console, *, max_frames=4000, card=None, ram_script=None,
            distribution=None, timing=None, require_completion=True,
-           echo=None, child_burst=1, burst_every=120):
+           echo=None, child_burst=1, burst_every=120, log=None):
     """Run the engine against the console model until both sides are finished.
 
     The parent's table has two live rows and the console reads both: row 0 is the host's own
@@ -735,6 +735,8 @@ def _drive(console, *, max_frames=4000, card=None, ram_script=None,
         link_player=linkplayer.LinkPlayer(
             name="EMU", version=linkplayer.VERSION_FIRE_RED),
         timing=timing)
+    if log is not None:
+        kwargs["log"] = log
     engine = (host_mystery_gift.HostMysteryGiftEngine(
                   distribution=distribution, **kwargs)
               if distribution is not None else

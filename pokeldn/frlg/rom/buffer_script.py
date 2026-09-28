@@ -499,6 +499,188 @@ def describe_table_scan(dump, delta=None, runlen=None, start=None, end=None):
     return lines
 
 
+# --- rom-checksum: which blocks of the cartridge differ from an image we hold --------------------
+# memory-scan's frame loop around a per-block sum: acc = w ^ ror(acc, 31) over each block's words,
+# stored at every block boundary. The host computes the same sums from a ROM file and names the
+# blocks that differ; a narrower range with smaller blocks zooms in. docs/frlg_rom.md, rom-checksum.
+ROM_CHECKSUM = "rom-checksum"
+ROM_CHECKSUM_CURSOR_OFFSET = 0x04     # patched to the start address; the payload advances it
+ROM_CHECKSUM_END_OFFSET = 0x08
+ROM_CHECKSUM_START_OFFSET = 0x0C
+ROM_CHECKSUM_BUDGET_OFFSET = 0x10     # 32-byte chunks per call: the frame budget
+ROM_CHECKSUM_MAX_CALLS_OFFSET = 0x14  # watchdog; a payload that never returns 1 hangs the menu
+ROM_CHECKSUM_SHIFT_OFFSET = 0x18      # log2 of the block size in bytes
+ROM_CHECKSUM_ACC_OFFSET = 0x1C        # the block in progress, carried across calls
+ROM_CHECKSUM_RESULT_OFFSET = 0x20
+ROM_CHECKSUM_SUMS_OFFSET = 0x30
+ROM_CHECKSUM_CAPACITY = 128
+ROM_CHECKSUM_CHUNK_BYTES = 32         # one ldmia of eight words
+ROM_CHECKSUM_ANSWER_SIZE = 4 * 4 + 4 * ROM_CHECKSUM_CAPACITY
+ROM_CHECKSUM_MIN_SHIFT = 5            # a block is at least one chunk
+ROM_CHECKSUM_MAX_SHIFT = 25           # and at most the 32 MB cartridge window
+ROM_CHECKSUM_DEFAULT_BLOCK = 0x20000  # 128 KiB: 128 sums cover the 16 MB FireRed fills
+# 13 ARM instructions per 8 words against memory-scan's 15, so its proven 512 is the same load.
+ROM_CHECKSUM_DEFAULT_BUDGET = 512
+
+
+def rom_checksum_call_count(start, end, budget):
+    """How many frames a checksum of this range takes at this budget."""
+    chunks = (int(end) - int(start)) // ROM_CHECKSUM_CHUNK_BYTES
+    return -(-chunks // int(budget))
+
+
+def build_rom_checksum(start=SCAN_ROM_START, end=SCAN_ROM_END, block=ROM_CHECKSUM_DEFAULT_BLOCK,
+                       budget=ROM_CHECKSUM_DEFAULT_BUDGET, max_calls=None):
+    """The rom-checksum payload, patched with a range, a block size and a frame budget.
+
+    `max_calls` defaults to what the range needs plus two, as memory-scan's does.
+    """
+    start, end, block, budget = int(start), int(end), int(block), int(budget)
+    shift = block.bit_length() - 1
+    if block <= 0 or block != 1 << shift \
+            or not ROM_CHECKSUM_MIN_SHIFT <= shift <= ROM_CHECKSUM_MAX_SHIFT:
+        raise BufferScriptError(
+            f"a block is a power of two from {1 << ROM_CHECKSUM_MIN_SHIFT} to "
+            f"0x{1 << ROM_CHECKSUM_MAX_SHIFT:X} bytes, got {block}")
+    if not 0 < budget <= MAX_SCAN_BLOCKS:
+        raise BufferScriptError(
+            f"a call sums 1..{MAX_SCAN_BLOCKS} chunks of {ROM_CHECKSUM_CHUNK_BYTES} bytes, "
+            f"got {budget}")
+    if not start < end:
+        raise BufferScriptError(f"0x{start:X}..0x{end:X} is not a range")
+    if start % block:
+        raise BufferScriptError(
+            f"0x{start:X} is not aligned to the 0x{block:X}-byte block; the payload finds a "
+            "block boundary by the address alone")
+    if (end - start) % block:
+        raise BufferScriptError(
+            f"0x{start:X}..0x{end:X} is not a whole number of 0x{block:X}-byte blocks; the last "
+            "block would be partial and its sum never stored")
+    if start < SCAN_MIN_ADDRESS or end > SCAN_MAX_ADDRESS:
+        raise BufferScriptError(
+            f"0x{start:X}..0x{end:X} leaves the memory the CPU can read: "
+            f"0x{SCAN_MIN_ADDRESS:X}..0x{SCAN_MAX_ADDRESS:X}")
+    if (end - start) >> shift > ROM_CHECKSUM_CAPACITY:
+        raise BufferScriptError(
+            f"0x{start:X}..0x{end:X} is {(end - start) >> shift} blocks of 0x{block:X} bytes; "
+            f"the answer holds {ROM_CHECKSUM_CAPACITY}. Use a larger block or a narrower range")
+    needed = rom_checksum_call_count(start, end, budget)
+    max_calls = needed + 2 if max_calls is None else int(max_calls)
+    if not 0 < max_calls <= MAX_SCAN_CALLS:
+        raise BufferScriptError(
+            f"the watchdog allows 1..{MAX_SCAN_CALLS} calls, got {max_calls}")
+    code = bytearray(payload(ROM_CHECKSUM))
+    for offset, value in ((ROM_CHECKSUM_CURSOR_OFFSET, start), (ROM_CHECKSUM_END_OFFSET, end),
+                          (ROM_CHECKSUM_START_OFFSET, start),
+                          (ROM_CHECKSUM_BUDGET_OFFSET, budget),
+                          (ROM_CHECKSUM_MAX_CALLS_OFFSET, max_calls),
+                          (ROM_CHECKSUM_SHIFT_OFFSET, shift)):
+        code[offset:offset + 4] = (value & 0xFFFFFFFF).to_bytes(4, "little")
+    return bytes(code)
+
+
+def rom_checksum_parameters(code):
+    """-> {start, end, block, budget, max_calls} read back out of a built payload."""
+    code = bytes(code)
+    def word(offset):
+        return int.from_bytes(code[offset:offset + 4], "little")
+    return {"start": word(ROM_CHECKSUM_START_OFFSET), "end": word(ROM_CHECKSUM_END_OFFSET),
+            "block": 1 << word(ROM_CHECKSUM_SHIFT_OFFSET),
+            "budget": word(ROM_CHECKSUM_BUDGET_OFFSET),
+            "max_calls": word(ROM_CHECKSUM_MAX_CALLS_OFFSET)}
+
+
+def read_rom_checksum(dump):
+    """-> {cursor, calls, stored, shift, sums} from the bytes the payload sent back."""
+    dump = bytes(dump)
+    if len(dump) < ROM_CHECKSUM_ANSWER_SIZE:
+        raise BufferScriptError(
+            f"a rom checksum answers with {ROM_CHECKSUM_ANSWER_SIZE} bytes, got {len(dump)}")
+    words = [int.from_bytes(dump[i:i + 4], "little")
+             for i in range(0, ROM_CHECKSUM_ANSWER_SIZE, 4)]
+    cursor, calls, stored, shift = words[:4]
+    stored = min(stored, ROM_CHECKSUM_CAPACITY)
+    return {"cursor": cursor, "calls": calls, "stored": stored, "shift": shift,
+            "sums": words[4:4 + stored]}
+
+
+def rom_checksum_reference(image, start, end, block, base=None):
+    """-> the sums the payload computes over [start, end) of `image` loaded at `base`, one per
+    block; None for a block the image does not wholly cover.
+
+    Closed form: the recurrence acc = w ^ rol(acc, 1) is linear over XOR, so a block of n words
+    sums to XOR_i rol(w_i, n-1-i), and words 32 apart share a rotation.
+    """
+    import functools
+    import operator
+    import sys
+    from array import array
+    image = memoryview(bytes(image))
+    start, end, block = int(start), int(end), int(block)
+    base = ROM_BASE if base is None else int(base)
+    sums = []
+    for address in range(start, end, block):
+        offset = address - base
+        if offset < 0 or offset + block > len(image):
+            sums.append(None)
+            continue
+        words = array("I")
+        assert words.itemsize == 4
+        words.frombytes(image[offset:offset + block])
+        if sys.byteorder != "little":
+            words.byteswap()
+        n, acc = len(words), 0
+        for j in range(min(32, n)):
+            group = functools.reduce(operator.xor, words[j::32], 0)
+            r = (n - 1 - j) % 32
+            acc ^= ((group << r) | (group >> (32 - r))) & 0xFFFFFFFF if r else group
+        sums.append(acc)
+    return sums
+
+
+def describe_rom_checksum(dump, start=None, end=None, block=None, reference=None,
+                          reference_name=None):
+    """The answer as lines to log: each block's range, the console's sum, the reference's, and
+    whether they agree, then 'N of M blocks differ from <reference_name>'. `reference` is the ROM
+    image's bytes, or None to list the console's sums alone."""
+    got = read_rom_checksum(dump)
+    block = (1 << got["shift"]) if block is None else int(block)
+    lines = [f"rom-checksum: {got['stored']} block sum(s) of 0x{block:X} bytes, "
+             f"{got['calls']} call(s) = frames, stopped at 0x{got['cursor']:08X}"]
+    if got["shift"] != block.bit_length() - 1:
+        lines.append(f"   the answer names 0x{1 << got['shift']:X}-byte blocks, not the "
+                     f"0x{block:X} asked for; this is not the payload that was sent")
+        return lines
+    if start is None:
+        start = got["cursor"] - got["stored"] * block
+    if end is not None:
+        if got["cursor"] >= int(end):
+            lines.append(f"   the whole range 0x{int(start):08X}..0x{int(end):08X} was summed")
+        else:
+            lines.append(
+                f"   STOPPED EARLY: {got['cursor'] - int(start)} of {int(end) - int(start)} "
+                f"bytes. The watchdog (max_calls) ended it; re-run from 0x{got['cursor']:08X}")
+    expected = ([None] * got["stored"] if reference is None else
+                rom_checksum_reference(reference, start, int(start) + got["stored"] * block,
+                                       block))
+    compared = differ = 0
+    for i, (console, ours) in enumerate(zip(got["sums"], expected)):
+        low = int(start) + i * block
+        if ours is None:
+            verdict, ours_text = ("" if reference is None else "no reference"), "-" * 10
+        else:
+            compared += 1
+            same = console == ours
+            differ += not same
+            verdict, ours_text = ("SAME" if same else "DIFF"), f"0x{ours:08X}"
+        lines.append(f"   0x{low:08X}..0x{low + block:08X}  console 0x{console:08X}  "
+                     f"reference {ours_text}  {verdict}".rstrip())
+    if reference is not None:
+        lines.append(f"rom-checksum: {differ} of {compared} blocks differ from "
+                     f"{reference_name or 'the reference image'}")
+    return lines
+
+
 # --- string-gather: following a pointer array instead of reading a window ------------------------
 # A dump reads a window, so a table of pointers costs one run for the pointers and another for every
 # kilobyte they point at, two thirds of it struct EasyChatWordInfo's alphabeticalOrder and enabled
@@ -1605,6 +1787,13 @@ SCRIPT_REGISTRY = {
         "of pointers is found when no constant in it is known (--table-delta, --table-runlen, "
         "--table-start, --table-end, --table-blocks; reads only, writes nothing)",
         None),
+    ROM_CHECKSUM: BufferScriptSpec(
+        ROM_CHECKSUM,
+        "checksum a range of memory in up to 128 blocks and send back one sum per block; the host "
+        "sets them beside the same sums over a ROM image and names the blocks that differ "
+        "(--sum-start, --sum-end, --sum-block, --sum-budget, --sum-reference; reads only, writes "
+        "nothing)",
+        None),
     ANCHORS: BufferScriptSpec(
         ANCHORS,
         "ask the machine where it is: our own load address, the return address into ROM, the stack "
@@ -2461,10 +2650,11 @@ def script_choices():
 DUMP_SCRIPTS = frozenset({
     MEMORY_DUMP, MEMORY_DUMP_MULTI, MEMORY_DUMP_SCATTER, SAVE_DUMP, ANCHORS, SAVE_WRITE,
     MEMORY_SCAN, TABLE_SCAN, RNG_TRACE, STRING_GATHER, CREATE_MON, CALL, CALL_CHAIN,
-    FLASH_READ, SLOOP_SVC,
+    FLASH_READ, SLOOP_SVC, ROM_CHECKSUM,
 })
 DECODED_SCRIPTS = frozenset({
     MEMORY_SCAN, TABLE_SCAN, RNG_TRACE, STRING_GATHER, CREATE_MON, CALL, CALL_CHAIN, SLOOP_SVC,
+    ROM_CHECKSUM,
 })
 # A payload whose answer the log decodes must first be one whose answer comes back as bytes.
 assert DECODED_SCRIPTS <= DUMP_SCRIPTS
@@ -2493,6 +2683,10 @@ PATCHED_SPANS = {
                    SCAN_HITS_OFFSET - SCAN_CURSOR_OFFSET + 8 * SCAN_HIT_CAPACITY),),
     # The parameters and the results and the run state: everything ahead of the code.
     TABLE_SCAN: ((TABLE_CURSOR_OFFSET, TABLE_EXPECT_OFFSET + 4 - TABLE_CURSOR_OFFSET),),
+    # The parameters, the running sum and the answer: everything ahead of the code.
+    ROM_CHECKSUM: ((ROM_CHECKSUM_CURSOR_OFFSET,
+                    ROM_CHECKSUM_SUMS_OFFSET + 4 * ROM_CHECKSUM_CAPACITY
+                    - ROM_CHECKSUM_CURSOR_OFFSET),),
     STRING_GATHER: ((GATHER_SRC_OFFSET,
                      GATHER_STRINGS_OFFSET - GATHER_SRC_OFFSET + GATHER_STRING_AREA),),
     # Everything from the first operand to the end of the mon: the parameters, the four result

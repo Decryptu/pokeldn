@@ -1096,6 +1096,199 @@ def test_the_log_says_where_the_table_is_and_what_it_starts_with():
     assert any("the whole range" in line for line in lines)
 
 
+# --- rom-checksum: which blocks of the cartridge differ from an image we hold -------------------
+# The sums are checked against a reference written here, word by word as the recurrence reads,
+# independently of buffer_script.rom_checksum_reference's closed form.
+
+FRENCH_FIRERED = os.path.join(ROOT, "scratchpad", "FireRed_f.gba")
+
+
+def _sequential_sums(image, start, end, block, base=0x08000000):
+    """acc = w ^ rol(acc, 1) over each block's little-endian words, from 0 at every block."""
+    sums = []
+    for low in range(start, end, block):
+        acc = 0
+        for at in range(low - base, low - base + block, 4):
+            word = image[at] | image[at + 1] << 8 | image[at + 2] << 16 | image[at + 3] << 24
+            acc = word ^ (((acc << 1) | (acc >> 31)) & 0xFFFFFFFF)
+        sums.append(acc)
+    return sums
+
+
+def _noise_cartridge(size=0x40000, seed=0x0A):
+    import random
+    return random.Random(seed).randbytes(size)
+
+
+@needs_unicorn
+def test_the_console_sums_are_the_recurrence_over_its_own_cartridge():
+    rom = _noise_cartridge()
+    start, end, block = 0x08010000, 0x08030000, 0x800
+
+    repeated = buffer_script.emulate_repeating(
+        buffer_script.build_rom_checksum(start, end, block, budget=16), rom=rom)
+    got = buffer_script.read_rom_checksum(repeated.final.pending_send)
+
+    assert repeated.done and repeated.final.client.send_repointed
+    assert repeated.final.client.send_size == buffer_script.ROM_CHECKSUM_ANSWER_SIZE
+    assert got["cursor"] == end and got["shift"] == 11
+    assert got["sums"] == _sequential_sums(rom, start, end, block)
+    assert repeated.final.param == got["stored"] == 64
+    # The host's closed form, against the same bytes: it is what a hardware answer is judged by.
+    assert buffer_script.rom_checksum_reference(rom, start, end, block) == got["sums"]
+
+
+@needs_unicorn
+@pytest.mark.skipif(not os.path.exists(FRENCH_FIRERED), reason="no French FireRed image")
+def test_the_default_run_over_french_firered_answers_what_the_image_sums_to():
+    """The run line's own range and blocks, 16 MB in 128 sums, over the retail image."""
+    rom = open(FRENCH_FIRERED, "rb").read()
+    code = buffer_script.build_rom_checksum()
+
+    repeated = buffer_script.emulate_repeating(code, rom=rom)
+    got = buffer_script.read_rom_checksum(repeated.final.pending_send)
+
+    assert repeated.calls == 1024 and got["cursor"] == 0x09000000
+    assert got["sums"] == _sequential_sums(rom, 0x08000000, 0x09000000, 0x20000)
+    lines = buffer_script.describe_rom_checksum(
+        repeated.final.pending_send, 0x08000000, 0x09000000, 0x20000, rom, "v0")
+    assert lines[-1] == "rom-checksum: 0 of 128 blocks differ from v0"
+
+
+@needs_unicorn
+def test_a_changed_word_is_named_by_its_block_and_by_no_other():
+    rom = _noise_cartridge()
+    changed = bytearray(rom)
+    changed[0x12344] ^= 0x01
+    start, end, block = 0x08000000, 0x08040000, 0x1000
+
+    repeated = buffer_script.emulate_repeating(
+        buffer_script.build_rom_checksum(start, end, block), rom=bytes(changed))
+    lines = buffer_script.describe_rom_checksum(
+        repeated.final.pending_send, start, end, block, rom, "noise")
+
+    assert [line.split()[0] for line in lines if line.endswith("DIFF")] == [
+        "0x08012000..0x08013000"]
+    assert lines[-1] == "rom-checksum: 1 of 64 blocks differ from noise"
+
+
+@needs_unicorn
+def test_a_block_split_across_frames_sums_as_it_does_in_one_frame():
+    """The running sum crosses the frame boundary in the image. A budget of 3 chunks against
+    8-chunk blocks puts a frame boundary inside most blocks."""
+    rom = _noise_cartridge()
+    start, end, block = 0x08020000, 0x08024000, 0x100
+
+    split = buffer_script.emulate_repeating(
+        buffer_script.build_rom_checksum(start, end, block, budget=3), rom=rom)
+    whole = buffer_script.emulate_repeating(
+        buffer_script.build_rom_checksum(start, end, block, budget=0x200), rom=rom,
+        instruction_limit=20000)
+
+    assert whole.calls == 1 and split.calls == -(-(end - start) // (3 * 32)) == 171
+    assert (buffer_script.read_rom_checksum(split.final.pending_send)["sums"]
+            == buffer_script.read_rom_checksum(whole.final.pending_send)["sums"]
+            == _sequential_sums(rom, start, end, block))
+
+
+@needs_unicorn
+def test_the_rom_checksum_watchdog_answers_with_the_blocks_it_finished():
+    rom = _noise_cartridge()
+    start, end, block = 0x08000000, 0x08008000, 0x100
+    code = buffer_script.build_rom_checksum(start, end, block, budget=5, max_calls=4)
+
+    repeated = buffer_script.emulate_repeating(code, rom=rom)
+    got = buffer_script.read_rom_checksum(repeated.final.pending_send)
+
+    assert repeated.done and repeated.calls == 5     # the call that trips the watchdog answers
+    assert got["cursor"] == start + 4 * 5 * 32
+    assert got["sums"] == _sequential_sums(rom, start, start + 2 * block, block)
+    lines = buffer_script.describe_rom_checksum(
+        repeated.final.pending_send, start, end, block, rom, "noise")
+    assert any("STOPPED EARLY" in line and "0x08000280" in line for line in lines)
+    assert lines[-1] == "rom-checksum: 0 of 2 blocks differ from noise"
+
+
+@needs_unicorn
+def test_one_call_of_the_default_rom_checksum_budget_fits_in_a_frame():
+    """The same bound memory-scan's 512 blocks are held to."""
+    run = buffer_script.emulate(buffer_script.build_rom_checksum(), instruction_limit=20000)
+
+    assert not run.done
+    assert run.instructions < 10000
+
+
+def test_a_range_the_rom_checksum_cannot_sum_whole_is_refused():
+    buffer_script.build_rom_checksum(0x08000000, 0x08040000, 0x1000)
+    with pytest.raises(buffer_script.BufferScriptError, match="partial"):
+        buffer_script.build_rom_checksum(0x08000000, 0x08030000, 0x20000)
+    with pytest.raises(buffer_script.BufferScriptError, match="not aligned"):
+        buffer_script.build_rom_checksum(0x08001000, 0x08041000, 0x2000)
+    with pytest.raises(buffer_script.BufferScriptError, match="holds 128"):
+        buffer_script.build_rom_checksum(0x08000000, 0x09000000, 0x10000)
+    with pytest.raises(buffer_script.BufferScriptError, match="power of two"):
+        buffer_script.build_rom_checksum(0x08000000, 0x08001000, 16)
+    with pytest.raises(buffer_script.BufferScriptError, match="power of two"):
+        buffer_script.build_rom_checksum(0x08000000, 0x08003000, 0x3000)
+    with pytest.raises(buffer_script.BufferScriptError, match="not a range"):
+        buffer_script.build_rom_checksum(0x08040000, 0x08000000, 0x1000)
+    with pytest.raises(buffer_script.BufferScriptError, match="the CPU can read"):
+        buffer_script.build_rom_checksum(0x00000000, 0x00001000, 0x100)
+
+
+@needs_unicorn
+def test_end_to_end_the_console_sums_its_cartridge_and_the_host_names_the_block(tmp_path):
+    """Through the independently written console model and the host's own decode, which reads
+    the reference image from the path the distribution carries."""
+    rom = _noise_cartridge()
+    reference = tmp_path / "v0.gba"
+    reference.write_bytes(rom)
+    changed = bytearray(rom)
+    changed[0x21000] ^= 0x80
+    start, end, block = 0x08000000, 0x08040000, 0x2000
+    console = ConsoleClientModel(flag_id=0, rom_stubs={0x08000000: bytes(changed)})
+    lines = []
+
+    engine, _frames = _drive(console, distribution=stamp_rally.MysteryGiftDistribution(
+        card=None, ram_script=None,
+        buffer_code=buffer_script.build_rom_checksum(start, end, block),
+        buffer_dump_size=buffer_script.ROM_CHECKSUM_ANSWER_SIZE,
+        buffer_decode=buffer_script.ROM_CHECKSUM, buffer_reference=str(reference)),
+        log=lines.append)
+
+    assert engine.server.buffer_matched is True
+    assert console.result == mg_script.CLI_MSG_BUFFER_SUCCESS
+    assert any(line.strip().startswith("0x08020000..0x08022000") and line.endswith("DIFF")
+               for line in lines)
+    assert f"  rom-checksum: 1 of 32 blocks differ from {reference}" in lines
+
+
+def test_the_server_refuses_a_rom_checksum_whose_answer_is_not_its_size():
+    with pytest.raises(mg_server.MysteryGiftServerError, match="rom checksum answers"):
+        mg_server.MysteryGiftServer(
+            None, None, buffer_code=buffer_script.build_rom_checksum(),
+            buffer_dump_size=1024, buffer_decode=buffer_script.ROM_CHECKSUM)
+
+
+def test_each_console_build_is_compared_with_its_own_image():
+    """A LeafGreen summed against FireRed would be all DIFF. --sum-reference names one image for
+    every build."""
+    run = _run_config(["--buffer-script", "rom-checksum", "--sum-start", "0x08120000",
+                       "--sum-end", "0x08140000", "--sum-block", "0x400"])
+    plan = configmod.plan_builds(run.payload)
+
+    assert {code: chosen.buffer_reference for code, chosen in plan.per_build.items()} \
+        == configmod.REFERENCE_ROMS
+    assert buffer_script.rom_checksum_parameters(plan.distribution.buffer_code) == {
+        "start": 0x08120000, "end": 0x08140000, "block": 0x400,
+        "budget": buffer_script.ROM_CHECKSUM_DEFAULT_BUDGET, "max_calls": 10}
+    assert plan.distribution.buffer_decode == buffer_script.ROM_CHECKSUM
+    one = _run_config(["--buffer-script", "rom-checksum", "--sum-reference", "x.gba"])
+    assert configmod.plan_builds(one.payload).distribution.buffer_reference == "x.gba"
+    with pytest.raises(SystemExit):
+        _run_config(["--buffer-script", "memory-scan", "--scan-word", "1", "--sum-block", "0x400"])
+
+
 # --- rng-trace: a word once a frame, and the first call into the ROM ---------------------------
 # The fixture is the console's OWN code: the twenty bytes of Random and its literal pool, read off
 # the cartridge. Executing those under unicorn is what proved the payload before it ran on hardware.

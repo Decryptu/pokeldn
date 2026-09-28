@@ -28,6 +28,15 @@ MysteryGiftRunConfig = configmod.MysteryGiftRunConfig
 WonderNewsPayload = configmod.WonderNewsPayload
 
 
+def _reference_roms(app):
+    """rom-checksum: the image each served build's sums are compared with."""
+    plan = getattr(app, "plan", None)
+    if plan is None or plan.per_build is None:
+        return app.distribution.buffer_reference or "nothing"
+    return ", ".join(f"{code}: {chosen.buffer_reference or 'nothing'}"
+                     for code, chosen in plan.per_build.items() if not isinstance(chosen, str))
+
+
 def _log_build_plan(app):
     """Which cartridges the run serves, and with what [config.plan_builds]."""
     plan = getattr(app, "plan", None)
@@ -362,6 +371,18 @@ class BufferScriptHostApplication(MysteryGiftHostApplication):
                 "called again next frame [mystery_gift_client.c:277], so this takes about "
                 f"{frames} frames, {frames / 60:.1f} s, with the link held open throughout; the "
                 f"watchdog ends it after {asked['max_calls']}. The evidence line is 'scan:'.")
+        if payload.script == buffer_script.ROM_CHECKSUM:
+            asked = buffer_script.rom_checksum_parameters(code)
+            frames = buffer_script.rom_checksum_call_count(
+                asked["start"], asked["end"], asked["budget"])
+            self.info(
+                f"Checksumming 0x{asked['start']:08X}..0x{asked['end']:08X} in "
+                f"{(asked['end'] - asked['start']) // asked['block']} blocks of "
+                f"0x{asked['block']:X} bytes, {asked['budget']} chunks of "
+                f"{buffer_script.ROM_CHECKSUM_CHUNK_BYTES} bytes a frame: about {frames} frames, "
+                f"{frames / 60:.1f} s; the watchdog ends it after {asked['max_calls']}. The sums "
+                f"are compared with {_reference_roms(self)}. The evidence line is "
+                "'rom-checksum:'.")
         if payload.script == buffer_script.STRING_GATHER:
             asked = buffer_script.gather_parameters(code)
             self.info(
