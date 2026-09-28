@@ -87,9 +87,9 @@ def stage(tmp_path, monkeypatch):
         s.handle(clone.PROTOCOL, clone.build_data_message(
             clone.STATE_DATA, 2, JOINER, cid, s.clone.frame(clk()), rec, flags=3))
 
-    def console_says(kind, body):
+    def console_says(kind, body, step=12):
         seq = s.window.expected
-        s.handle(reliable3.PROTOCOL, reliable3.build(pb7.build_message(kind, body, step=12),
+        s.handle(reliable3.PROTOCOL, reliable3.build(pb7.build_message(kind, body, step=step),
                                                      seq, reliable3.FIRST_SEQUENCE))
 
     def published(cid, ctype=2):
@@ -262,6 +262,39 @@ def test_the_result_carries_our_own_structure(stage, tmp_path):
             for r in [reliable3.parse(payload)] if r["size"]][-1]["payload"][16:]
     assert body == open(stage["s"].args.offer, "rb").read()
     assert pb7.valid(body)
+
+
+def test_second_trade_uses_new_offer_commit_clones_and_result(stage):
+    """The kind-4 channel and clones 5/6 opened after the first result; the next commit uses
+    kind 5 and clone 7, and the second completion uses kind 6."""
+    s = stage["s"]
+    s.args.next_offer = s.args.offer
+    commit(stage)
+    stage["run"](27.1)
+    stage["console_says"](pb7.RESULT_MESSAGE, open(s.args.offer, "rb").read(), step=13)
+    assert s.round == 1
+    assert s.trade["done"]
+    assert s.commit_clone is None
+    stage["sent"].clear()
+    stage["console_says"](4, open(s.args.offer, "rb").read(), step=14)
+    assert stage["game"]()[-1][:2] == (4, 14)
+    assert not s.trade["done"]
+    stage["console_publishes"](6, ONES)
+    stage["run"](0.04)
+    assert s.commit_clone is None
+    stage["console_publishes"](7, ONES)
+    stage["run"](0.04)
+    assert s.commit_clone == 7
+    stage["console_publishes"](7, b"\0\0\0\0" + b"\x01\0\0\0" * 2 +
+                               struct.pack("<I", 15) + b"\x01\0\0\0")
+    assert stage["game"]()[-1][0] == 5
+    stage["console_says"](5, b"\x01\0\0\0", step=15)
+    stage["run"](0.1)
+    assert stage["game"]()[-1] == (5, 16, b"\x02\0\0\0")
+    stage["run"](27.1)
+    assert stage["game"]()[-1][0] == 6
+    stage["console_says"](6, open(s.args.offer, "rb").read(), step=16)
+    assert s.trade["done"]
 
 
 def test_the_offered_clone_walks_on_to_01_02_02_and_the_trailing_word_2(stage):

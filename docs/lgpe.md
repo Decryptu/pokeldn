@@ -41,6 +41,8 @@ station connection handshake, the mesh join, the Sync Clock and RTT protocols, t
 through the take-over exchange that passes the game's `0x11b080` gate, and the Reliable Protocol
 carrying the game's messages: identity, offer, commit, and kind 4, which follows the trade.
 `pokeldn.lgpe.pb7` reads and writes the 232-byte box structure the offer and kind 4 carry.
+Two consecutive trades also complete in one hosted session, with a fresh offer and commit channel
+for the second trade.
 
 Leaving is clean both ways. A joiner backs out with `--leave-after` the way a console does, and a
 host answers the console's Retour, so the player lands on the menu with no error. The commit stage
@@ -65,14 +67,6 @@ error screen. `docs/lgpe_session.md` has every layout.
   separates a pending mask (a later copy answered) from a message that never reaches the clone
   protocol (none answered); a second board sniffing the air records what arrived independently of
   the host's radio.
-- A second trade in one session has not been run. By registration order its offers ride kind 4 and
-  its commit kind 5, a third trade's kinds 6 and 7. The party-offer object that owned kind 2 is
-  destroyed before the trade demo, so a peer that keeps offering on kind 2 and committing on kind 3
-  after a first trade addresses channels the console has dropped. After a first trade a retail
-  console published its state record (`4 3 1`, backing out) on the second clone of the host's next
-  pair, clone 6 after clones 5 and 6 were announced, as the first round's votes rode clone 3. The
-  captures end 4.6 to 11.4 s after the console's kind 4, so no second-round offer has been seen. A session kept after a first trade, with
-  the player picking again, settles it: the console's offers on kind 4 and a kind 5 exchange.
 - Whether a partner leaving during the sync save reaches the code 0xe abort. The pump fails when
   `+0x1e6` is 1 or less, but the recount runs only under the guards on `[s+0xd8]`, `[s+0xd4]` and
   `0x52abf0`, whose values in a trade are unread, and the local station's own record (the other

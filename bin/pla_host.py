@@ -273,6 +273,10 @@ def build_parser():
     ap.add_argument("--trade-box-record", default=None,
                     help="offer this record file instead of the reference one; stored or party, "
                          "encrypted or decrypted")
+    ap.add_argument("--interrupt-before-phase-6", action="store_true",
+                    help="after answering phase 3, wait for the console's phase 6, then leave "
+                         "without answering it; this deliberately triggers the game's trade "
+                         "restriction")
     ap.add_argument("--leave-after", type=float, default=None,
                     help="seconds after a station's session join to send it the type-3 leave and "
                          "end the run; the one direction no capture shows")
@@ -454,6 +458,7 @@ def main():
     atomic_sent = set()         # src_ip we have sent the Atomic kind-0 announce probe to
     station_ids = {}            # src_ip -> the ids that session named, for the leave the host owes
     left = set()                # src_ip the host has told it is going
+    phase3_sent = set()         # src_ip whose phase 3 the host answered in the interruption run
 
     def leave(src_ip):
         """Send the station the type-3 leave a console sends when it quits.
@@ -560,6 +565,8 @@ def main():
                 # what it hit and keeps answering.
                 try:
                     for msg in pia6.parse_messages(plain):
+                        if src_ip in left:
+                            break
                         print(f"       {_describe(msg)}  {msg.payload.hex()}")
                         record(rec="msg", src=src_ip, protocol=msg.protocol, port=msg.port,
                                flags=msg.message_flags, payload=msg.payload.hex())
@@ -590,6 +597,7 @@ def main():
                             rx_windows = {k: v for k, v in rx_windows.items() if k[0] != src_ip}
                             tx_window.forget(lambda stream: stream[0] == src_ip)
                             channel_mirrored = {c for c in channel_mirrored if c[0] != src_ip}
+                            phase3_sent.discard(src_ip)
                             # Echo the console's own record of the host ids (what it wrote into the
                             # request's destination fields) so the four id compares cannot miss.
                             host_const = j["destination_constant_id"]
@@ -792,6 +800,16 @@ def main():
                                 phase = trade_box.read_phase(cm["payload"])
                                 if (args.trade_box and phase is not None
                                         and phase[0] == trade_box.PHASE_SELECTOR_MINE):
+                                    if (args.interrupt_before_phase_6 and phase[1] == 6
+                                            and src_ip in phase3_sent):
+                                        record(rec="phase6_interrupted", src=src_ip,
+                                               t=time.time())
+                                        print(f"[pla] {src_ip}: console reached phase 6 after "
+                                              "our phase 3; leaving without phase 6 reply")
+                                        leave(src_ip)
+                                        if not args.stay_after_leave:
+                                            deadline = time.time()
+                                        break
                                     seq = next_seq(src_ip, msg.port)
                                     body = trade_box.build_phase(
                                         trade_box.PHASE_SELECTOR_HOST, phase[1], seq,
@@ -802,6 +820,8 @@ def main():
                                            phase=phase[1], hex=pkt.hex(), t=time.time())
                                     print(f"[pla] -> {src_ip}: trade phase {phase[1]} as the host "
                                           f"(port {msg.port}, seq {seq})")
+                                    if args.interrupt_before_phase_6 and phase[1] == 3:
+                                        phase3_sent.add(src_ip)
                                 if src_ip not in channel_opened:
                                     channel_opened.add(src_ip)
                                     opened = game_channel.build_open(

@@ -43,14 +43,6 @@ Proven on retail hardware, end to end:
 
 ## Unresolved
 
-- Whether `07 0002 12 00`, sent after the console's greeting when the console's player approached
-  the client's character, opens the trade. The talker's receive path has no state test and leads to
-  `TransitionTradePoke` ([the protocol page](bdsp_protocol.md#the-console-approaching)); the
-  recruiter's yes has not been sent. Unread: whether anything between the 0x64 and the 0x07 writes
-  `onlinePlayerSelectState` or `targetStationIndex`, and whether trade message 9 or 10 closes by
-  itself or waits for A. The capture that settles it shows the console's ack moving past the 0x07's
-  own sequence id (the 0x07 under the id after the 0x64's, never the 0x64's), then its
-  `NetDataTradeTranerData` (0x24).
 - A substituted greeting name on a console's screen
   ([The name in the greeting](bdsp_protocol.md#the-name-in-the-greeting)). How `StartupSessionJob`
   fills the own station's record at +0x480 from the startup setting is untraced.

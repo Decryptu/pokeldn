@@ -707,6 +707,10 @@ partner-shown slot `[net+0x98]` with a freshly allocated 0xb8-byte object from `
 `0x26d9094` never reads `[net+0x98]`, so a 3 changes what the screen shows and nothing in the state
 machine.
 
+On a retail console, two moves from an occupied Pokémon to an empty box slot each sent `03 00`.
+Moving back to an occupied Pokémon sent selector 2 each time. The four cursor moves were marked on
+the radio board as they happened.
+
 Selector 6 takes back an offer or a confirmation. Its sender `0x26d9898` refuses in states 2 and 5
 (`0x26d98ac`: `cmp w8,#2; ccmp w8,#5,#4,ne`); the states a station reaches with something offered
 are 3, after its own selector 4 (`0x26d95d4` requires 2, `0x26d9718` writes 3), and 4, after its own
@@ -963,6 +967,13 @@ constructor `0x26bd300`; vtable
 So 10 is ten minutes of the game running this ticker, measured on the OS tick, and the console's
 clock settings play no part. Time with the game closed is not counted: on the next boot the ticker
 starts its stopwatch again from the saved count.
+
+On a retail console, a host answered phase 3 and disconnected after receiving the console's phase
+6, without answering it. The player first saw the Link Trade refusal 23.774 s after phase 6, then
+left the game running in the field between attempts. Link Trade opened again 643.314 s after that
+first refusal, 667.088 s after phase 6. The field therefore runs the ticker. The observed interval
+is an upper bound on the actual release because the player retried periodically; it agrees with
+ten 60 s decrements.
 
 `0x13d67b0` returns the non-zero method of the same object (`0x13d67e8..0x13d67f0`); its call at
 `0x13d67f0` is that method's only caller. Its callers `0x13d55fc` and `0x13d56ac` return
@@ -1599,15 +1610,3 @@ console side:
 The console keeps sending to the silent host for those thirteen seconds and stops with the dialog.
 What it acts on is the network vanishing, at once, or its own keepalive timeout; the four leaves
 change neither the words nor the delay.
-
-## Unresolved
-
-- Whether a console's `03 00` is the box cursor on an empty slot. The code sends it for a record
-  whose species reads 0, which an empty slot copied into the scratch record would give, and fourteen
-  of them through one box walk fit that without proving it. A console run on the trade box that
-  moves the cursor onto an empty box slot and back settles it: one `03 00` per move onto the slot and
-  a selector 2 on the move back.
-- Whether a restriction lasts ten minutes on a console, and which screens tick the system list
-  `0x42eced0`; the decrement needs `0x26bd430` to run. A console run that stops a trade between the
-  host's `02 03` and `02 06` and times the refusal from its first showing to Link Trade opening again,
-  with the game left on the field, settles both.

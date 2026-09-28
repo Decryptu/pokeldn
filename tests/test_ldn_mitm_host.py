@@ -1,6 +1,7 @@
 """The ldn_mitm host side: what an emulated console reads out of our scan answer, and what a join
 does to the network. Both ends are ours, so the two modules check each other."""
 
+import errno
 import socket
 import time
 
@@ -118,7 +119,13 @@ def test_the_host_answers_a_scan_and_seats_a_join(host):
 
 def test_the_pia_port_carries_a_datagram_from_the_console(host):
     peer = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
-    peer.bind((PEER_IP, 0))
+    try:
+        peer.bind((PEER_IP, 0))
+    except OSError as exc:
+        peer.close()
+        if exc.errno == errno.EADDRNOTAVAIL:
+            pytest.skip(f"loopback address {PEER_IP} is unavailable")
+        raise
     peer.sendto(b"\x01\x02\x03\x04payload", (HOST_IP, PIA_PORT))
     assert _wait(lambda: host.recv() or host._rx_seen)
     peer.close()

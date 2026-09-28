@@ -452,6 +452,11 @@ called from the constructors of `TradeRecruitmentStateModel` [0x01c23d28] and `T
 [0x01c22b78]. The recruiter's yes is `07 0002 12 00`, the message a recruiting console sends when the
 client approaches it ([the trading page](bdsp_trade.md#the-message-sequence)).
 
+On a retail console approaching the client's state-4 character, the client answered the 0x63 at
+reliable sequence 5 and sent `07 0002 12 00` at sequence 6. The console acknowledged sequence 6,
+sent `NetDataTradeTranerData` (0x24), opened the trade box and completed the trade. The client's
+transition opens the trade without a recruiter's yes from the console.
+
 On the talking console, the A press on a state-4 character ends in
 `CreateSelectStateModel(4, 1)` (tail call at 0x01e4ad38): the halfword table 0x03db863e sends state
 4 to 0x01e4b7ec, which builds a `TradeJoinStateModel` and stores it at `UnionStateController+0x50`

@@ -21,7 +21,7 @@ FLAGS = 0x0000FF00
 FIRST_MESSAGE = 1
 OFFER_MESSAGE = 2
 COMMIT_MESSAGE = 3   # body is one u32; both stations send it twice, carrying 1 and then 2
-RESULT_MESSAGE = 4   # a box structure per slot, the party as it stands once the trade has gone
+RESULT_MESSAGE = 4   # the next round's party-offer channel, first sent after the trade animation
 
 # block b of a shuffled structure holds block BLOCK_ORDER[sv][b] of an unshuffled one
 BLOCK_ORDER = [

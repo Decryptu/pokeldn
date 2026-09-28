@@ -580,10 +580,10 @@ the peer's. A commit exchange that does not complete leaves the save's trade loc
 normal save re-creates about 3 s after its own save, the fourth registration of the session. It
 follows the trade animation. In every completed hosted trade the console's kind 4 is byte-identical,
 over all 232 bytes, to the first kind 2 it sent in the session, while the Pokemon it traded differs
-from that first offer. The body is one structure, so the comment on `RESULT_MESSAGE` in
-`pokeldn/lgpe/pb7.py` ("a box structure per slot, the party as it stands once the trade has gone")
-does not describe it. That kind 4 opens the next round's offers is a reading from the registration
-order; no capture shows a second round's offer after it. A retail host sent its
+from that first offer. The body is one box structure for one slot. One retail capture kept the
+session after the first trade: moving through the
+box sent 17 more valid kind-4 structures under steps 15–31, with species changing across slots.
+Kind 4 therefore carries the next round's selection. A retail host sent its
 first 26.8 s after its second commit and an emulated host 29.9 s; the emulated joiner's followed the
 host's by 34 ms. The first carries the station's first slot, the structure it offered under step 2,
 and a new one follows each selection: one console sent fourteen, under steps 13 to 26, species 1,
@@ -591,6 +591,12 @@ and a new one follows each selection: one console sent fourteen, under steps 13 
 that sends none leaves a retail host's trade complete. A retail console joining a hosted trade
 announced the two clones of its new party-offer object 30.5 s after the last kind 3 and sent its
 kind 4 31.2 s after it.
+
+Another retail capture completed that next round on the same seat. After kind-4 selection
+messages, the console voted on party clone 6 and commit clone 7. The host sent kind 5 carrying 1 and 2 under
+steps 31 and 32, the console sent kind 5 carrying 1 under step 30, and the next animation ended
+with the host's kind 6 under step 33 and the console's kind 6 under step 31. The host announced
+result clones 8 and 9 before kind 6. Both result messages arrived and the second trade completed.
 
 A complete trade, both stations counting their own steps:
 

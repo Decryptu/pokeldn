@@ -81,7 +81,7 @@ def _answer_commit(args, state, msg, send, tag="[lg]"):
         print(f"{tag} offer: *** COMMITTED 2 step {step} *** a special species is in the trade")
 
 
-def _answer_offer(args, state, msg, send, tag="[lg]"):
+def _answer_offer(args, state, msg, send, tag="[lg]", kind=pb7.OFFER_MESSAGE):
     """The host has offered a Pokemon. Answer with ours, once.
 
     Its offer is a box structure whose checksum we can verify, so `--offer echo` returns exactly the
@@ -111,7 +111,7 @@ def _answer_offer(args, state, msg, send, tag="[lg]"):
     # offering, so an answer is owed per step rather than once per session
     state["answered_step"] = msg["step"]
     TRADE_IN_PROGRESS["offer"] = True
-    step = _send_step(state, send, pb7.OFFER_MESSAGE, body)
+    step = _send_step(state, send, kind, body)
     what = "the peer's own structure" if args.offer == "echo" else args.offer
     print(f"{tag} offer: *** SENT {len(body)} B step {step} *** {what} "
           f"(answering the peer's step {msg['step']})")
