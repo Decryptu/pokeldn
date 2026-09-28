@@ -841,6 +841,16 @@ Read from the running emulator, two slots are filled:
 | `bkpt #0x52` | the Sloop component, vtable `main + 0x1C3878` | `main + 0x05499C` -> `main + 0x056368` -> `main + 0x03E850` | the librfu patches below |
 | `bkpt #0xFF` | the application object, vtable `main + 0x1B4078` | `main + 0x001140` | posts event `0x82EF0054` with argument 1, which quits the application |
 
+The wrapper writes three patches into the guest's copy of the ROM at load, the only ten bytes over
+`0x08000000..0x09000000` where it differs from the cartridge image, on the v0 and 1.0.1 releases alike
+(a block checksum and a read of the bytes through the Mystery Gift client, retail and emulated):
+
+| address | cartridge | guest |
+| --- | --- | --- |
+| `0x081E1696` | THUMB `mov ip, r1` (`468c`) | `bkpt #0x52` (`be52`) |
+| `0x081E187C` | ARM `ldr r3, [pc, #0x50]` (`e59f3050`) | `bkpt #0x52` (`e1200572`) |
+| `0x081E1F90` | ARM `mov lr, r0, lsr #14` (`e1a0e720`) | `b 0x081E1FB8` (`ea000008`) |
+
 `bkpt #0x52` is keyed by address. Its hook holds two records `{u32 pc, u32 original insn, ..., u32
 hits at +0x0C}` at `+0x120` and `+0x148`, and `main + 0x0546C0` matches the `bkpt`'s address
 against one and hands back the original instruction to execute. At the `Sio32IDMain` patch

@@ -32,6 +32,13 @@ The Switch release carries the GBA ROM as the only file in its RomFS.
 Header at 0xA0 reads `POKEMON FIRE` `BPRF` and `POKEMON LEAF` `BPGF`, software version 0x0A: the two
 cartridges the consoles run, and the builds every address on this page was measured against.
 
+The French FireRed 1.0.1 update leaves the cartridge as it was. Its guest ROM, read on a retail
+console through `rom-checksum` and a byte read of the one differing stretch, equals the emulated v0's
+across the GBA's whole 32 MB cartridge space: `0x08000000..0x09000000` matches `FireRed_f.gba` apart
+from the wrapper's three load-time patches ([frlg_rom.md](frlg_rom.md), The breakpoint hooks), and
+`0x09000000..0x0A000000` reads the open bus (each halfword its own address halved) on both. Whatever
+1.0.1 changes is outside the ROM.
+
 The English pair (`BPRE`, `BPGE`, version 0x0A, from the base v0 packages) is byte-identical to
 `pokefirered_switch.gba` and `pokeleafgreen_switch.gba` as `pret/pokefirered` pins them, so the decomp
 is an exact map of the English release.
