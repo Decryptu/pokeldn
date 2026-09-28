@@ -297,9 +297,31 @@ uses, driven by the same functions:
 | delivery | for stations whose state (+0x4c) is 5 or 6, pop into the 0x12C-byte buffer at +0x12A (`0x15a0a6c`) and hand each message to the dispatcher `0x15820b8` (`0x1581f50`) | `0x15a0a6c` | |
 | resend and ack timers | `0x159fea8(window, NULL, -1)`, no send budget (`0x1582014`, `0x158207c`) | `0x159fea8` | `ReliableProtocol` slot 19 `0x159d90c`, `0x159d988`, with a counter and a budget |
 
-The window is initialised at `0x15819d8` with `(2, 2, 0x94000001)`. Every handler behind the
-dispatcher's jump table (`0x3e6b986`) tests session+0x70 first (type 3 at `0x15823a4`, type 0x14 at
-`0x1582188`), after the window has taken the packet.
+Slot 10 also returns at once while its own station index is 0xFD, not joined (`0x1581cc0`). It
+reads its packets under the key `{u16 1, u8 0, u8 0x94}` (`0x1581d0c..0x1581d24`).
+
+The window is initialised at `0x15819d8` through `0x159de54(window, 2, 2, 0x94000001)`: both slot
+rings (window +0x18 and +0x38) are sized 2 (`0x159ded8`, `0x159df08`), and +0x748 holds
+`1 | 0x94 << 24` (`0x159deac`; slot 4 of the `SessionProtocol` vtable is `mov w0, #0x94; ret`,
+`0x1583d8c`), protocol 0x94 and port 1. `ReliableSlidingWindow` has one constructor
+[`0x159dab4`] and one vtable [`0x4b5eac8`, GOT `0x4c4e470`, read only in the constructor and the
+destructor], and the constructor's four callers are `MeshProtocol` [`0x154990c`], `SessionProtocol`
+[`0x1581984`], `BroadcastReliableProtocol` [`0x1595e7c`] and `ReliableProtocol` [`0x159cc18`].
+`SessionProtocol` and `ReliableProtocol` give their windows a packet writer through the same call,
+`0x159e59c` (`0x1582314` on a station's join, `0x159ce74`), which stores it at window +0x750 and
++0x758.
+
+The ack does not depend on the joint-session job. The window's data receive sets the ack-owed byte
+and its update sends the ack, as for the game stream
+([the Pia page](pia.md#what-the-receiver-discards-in-silence)); nothing on the path from slot 10 to
+the window's receive reads session+0x70. The ack leaves on protocol 0x94, port 1. A reliable 0x94
+message whose destination bitmap names the console (or is empty), whose stream id matches the
+stream's first message, and whose sequence id is less than the base plus two (the ring's slot
+count, on a fresh stream) is therefore acknowledged
+and then dropped by its handler: every handler behind the dispatcher's jump table (`0x3e6b986`)
+tests session+0x70 first (type 3 at `0x15823a4`, type 0x14 at `0x1582188`), after the window has
+taken the packet and `0x15a0a6c` has popped it. The first message on the stream must carry
+`is initialized` (flag bit 3). No 0x94 message has been sent to a console.
 
 The join response for a two-station mesh:
 

@@ -428,7 +428,10 @@ The console reading a 0x64 after its own 0x63 [0x01e50dec]:
 
 A character advertising `{4, 1}` therefore draws `63 0001 00` when the player presses A facing it,
 and `64 0003 00 01 04` opens the talk. Any other `emoticonStateType` draws a
-`NetDataTalkCancelEndData{0, 0}`.
+`NetDataTalkCancelEndData{0, 0}`, and so does a second 0x64 for the same 0x63: the first answer
+cleared `nowTalkReserveState` (+0x188) [0x01e50ea0], so a repeated answer carrying 4 no longer
+matches [0x01e50e94..0x01e50e9c] and the console sends `{0, 0}` [0x01e50f40, 0x01e512e8] and falls
+into the refusal path [0x01e512f0]. Answer each 0x63 once, not each retransmitted copy of it.
 
 With the console as the talker the client's character is the recruiter, and the greeting parks on
 "one second!". The recruiter's answer to the trade offer is
@@ -445,6 +448,55 @@ reliable stream, and `UnionTradeContextMenu$$SetTransitionType` [0x01c32ef0] set
 called from the constructors of `TradeRecruitmentStateModel` [0x01c23d28] and `TradeJoinStateModel`
 [0x01c22b78]. The recruiter's yes is `07 0002 12 00`, the message a recruiting console sends when the
 client approaches it ([the trading page](bdsp_trade.md#the-message-sequence)).
+
+On the talking console, the A press on a state-4 character ends in
+`CreateSelectStateModel(4, 1)` (tail call at 0x01e4ad38): the halfword table 0x03db863e sends state
+4 to 0x01e4b7ec, which builds a `TradeJoinStateModel` and stores it at `UnionStateController+0x50`
+[0x01e4b814] with the controller's `TradeMsgWindow` (+0x18) at the model's +0x48 [0x01e4b828]. That
+is the only store at +0x50 through the controller in any of its methods, so the model is never
+cleared. On the 0x64 answer, `StartTalk` calls `SwitchTalkStateMine` [0x01e4c41c], whose table
+0x03db86ae sends state 4 to 0x01e546c8: `CheckErrorMessageTrade`, then 18 into
+`UnionSystemController.onlinePlayerSelectState` (+0x28) [0x01e54ab0] and `fadeAfterSelectState`
+(+0x2C) [0x01e54ab8], `SetTargetStationIndex(station, cassetVersion, 1)` [0x01e54ae8] and
+`MessageEndSpokenData` [0x01e54af0].
+
+A received `NetDataTransitionData` goes from `SetNetData`'s 0x07 branch (id compare
+0x01e52610..0x01e52618, class check 0x01e5261c..0x01e52650) with no state test to
+`UnionStateController$$SwitchTransitionMessage(type, sexId, -, isRecruitment == 1)` [tail call
+0x01e52698]. `SwitchTransitionMessage` [0x01e53bf0] stores the type in `transitionController+0x10`
+[0x01e53c00], then picks a model through the byte table 0x03db869b (base 0x01e53c2c):
+
+| transitionType | the model read, at `UnionStateController` + |
+|---|---|
+| 3, 17 | +0x38 or +0x40, by `isRecruitment` (`tbz w4`) |
+| 4, 18 | +0x50, `tradeJoinStateModel` |
+| 5, 19 | +0x60 |
+| 6, 20 | +0x70 |
+| 7, 21 | +0x80 |
+| 8 to 16 | none; returns |
+
+For a trade it calls `TradeJoinStateModel$$OpenSwitchFadeMsg` [0x01c22f50], which opens trade
+message 9 or 10 by the sender's sex (`cinc w1, #9, ne`) with `OpenMsgWindow(index, SpeakerID 1)`
+[0x01c22f60], spoken as `OPPONENT` (`UnionTextData.SpeakerID`: `MINE` 0, `OPPONENT` 1, `SYSTEM` 2),
+and stores `StartFadeOut` [0x01e53cc0] as that message's close action [0x01e53cc4]. `isRecruitment`
+is read only by the battle rows.
+
+After the fade, `UnionStateTransitionController$$MyUpdate` calls `SwitchTransition` [0x01e5ba70,
+from 0x01e5b9cc], which returns at once when `[this+0x90]` is set [0x01e5ba80] or when
+`systemController` is null, and otherwise switches on `onlinePlayerSelectState` (0x01e5ba98..0x01e5baa4,
+byte table 0x03db8733): 18 goes to `TransitionTradePoke` [0x01e5c1c0]. It reads and clears the target
+station (`ldr w20, [x0, #0x68]` 0x01e5c200, `SetTargetStationIndex(-1, -1, 1)` 0x01e5c214), returns
+when that is -1 or the trade manager (+0x60) is null, checks `NetworkManager$$IsGamerActive`
+[0x01e5c270], sets the trade target [0x01e5c29c] and sends the console's `NetDataTradeTranerData`
+(0x24) [`SendTranerData` 0x01e5c2b0]. A console that pressed A on a trade recruiter and got
+`64 0003 00 01 04` therefore holds the model, state 18 and the recruiter's station, and a
+`07 0002 12 xx` from that station leads to its 0x24, the start of the trade in the joiner direction.
+No 0x07 has been sent to a talker.
+
+`SwitchTransitionMessage` reads the model with no test (`ldr x0, [x19, #0x50]` 0x01e53c4c, then
+`ldr x0, [x0, #0x48]` 0x01c22f50). A `07 0002 12 xx` to a console that has not pressed A on a trade
+recruiter since its `UnionStateController` was built reads through null; the other transition types
+have the same shape on their own models.
 
 ### The name in the greeting
 
@@ -492,7 +544,25 @@ The field offsets are fixed whatever the encodings. `INLpiaSessionGetPlayerInfo`
 
 A console's own session setting takes `nameStringLanguage` (+0x40) from
 `MessageManager$$get_UserLanguageID` and `playerName` (+0x38) from `CheckNGTrainerName` in
-`SessionConnector$$ResetParam` [0x0202f050, stores 0x0202f130 and 0x0202f158].
+`SessionConnector$$ResetParam` [0x0202f050, stores 0x0202f130 and 0x0202f158;
+`SessionConnector.sessionSetting` is +0x48]. From there the byte reaches Pia:
+
+    IlcaNetSession$$SettingSet               0x02735c08  DeepClone(setting), stored in IlcaNetBase statics +0x28 (0x02735c34)
+    IlcaNetBase$$PlatformInitialize2         0x01e13ce0  setting+0x40 -> PiaPlugin.PlayerInfo.nameStringLanguage (+0x10)
+                                             0x01e13d20  playerName -> PlayerInfo +0x18
+                                             0x01e13ec4  bl PiaPlugin$$RegisterStartupSessionSetting
+    PiaPlugin$$RegisterStartupSessionSetting 0x0227d5a0  byte 0 of a native entry, stride 0x28 (0x0227d5c8)
+                                             0x0227d6a4  bl 0x0156c450, x1 = that array
+    0x0156c450 -> 0x0156f918                 0x0156fa08  +0x80 of a startup-setting player entry (entries
+                                                         from +0x18, stride 0x98)
+    0x0168d4c8                               0x0168d528  entry 0's language into the plugin object at +0x3220;
+                                                         returns without copying when [plugin+0x4c] > 3
+
+The station protocol's PlayerInfo writer puts a station record's +0x480 at PlayerInfo byte 0x7A
+[`ldrb w8, [x8, #0x480]` 0x01550e98, store 0x01550ea0], followed by the 64 bytes [0x01550eb8] and the
+u64 [0x01550ecc]; `0x01545308` hands the same +0x480 back to `INLpiaSessionGetPlayerInfo`
+[0x015453fc]. A French console's connection response (station protocol kind 2) carries one
+195-byte PlayerInfo with encoding 1, its name, byte 0x79 0 and byte 0x7A 3 (FRA).
 
 `station_protocol.player_info` puts the 80-byte UTF-8 name at offset 1 of the 195-byte PlayerInfo and
 the language byte at offset 122. `bin/bdsp_connect.py --name` (default `PkCamp`) sends `--language`,
@@ -507,12 +577,23 @@ fourth]. The greeting's two callers pass the character's `CharaData.cassetVersio
 `MessageEndSpokenData` (`ldp w2, w3, [x0, #0xa8]` 0x01e57ab8). That value is byte 2 of the
 character's `NetJoinData`. `SetTargetDataMessage` reads it back (0x01f868e4) and passes it to
 `CheckNGTrainerName` (0x01f86910) with the language from `GetGamerData(station)+0x38`.
-`Utils$$GetReplacedNGName` picks from the `dp_characters` message file (0x01cbdecc):
+`Utils$$GetReplacedNGName` [0x01cbde20] takes label 247 of the `dp_characters` message file when
+that value is 0x31 and label 206 otherwise (`cmp w19, #0x31; csel` 0x01cbdecc), reads it through
+`MessageMsgFile$$GetNameStr` [0x01cbdee0] and appends a full stop (`ConvertUnicodeToChar(0x2e)`
+0x01cbdf14, `StringBuilder$$Append(char)` 0x01cbdf2c). The texts are the 1.3.0 RomFS
+`Message/<language>` bundles, `<language>_dp_characters`:
 
-| the character's `cassetVersion` | substitute |
-|---|---|
-| 0x31 (Shining Pearl) | `DP_CHARACTERS_247` |
-| anything else | `DP_CHARACTERS_206` |
+| bundle | 0x31 (Shining Pearl), `DP_CHARACTERS_247` | anything else, `DP_CHARACTERS_206` |
+|---|---|---|
+| english | `Pearl.` | `Diamond.` |
+| french | `Perlo.` | `Diamant.` |
+| german | `Perl.` | `Diamant.` |
+| italian | `Perl.` | `Diaman.` |
+| spanish | `Perla.` | `Diamant.` |
+| jpn, jpn_kanji | `パール.` | `ダイヤ.` |
+| korean | `펄.` | `다이아몬드.` |
+| simp_chinese | `帕尔.` | `戴亚.` |
+| trad_chinese | `帕爾.` | `戴亞.` |
 
 ### talkState, and the value that crashes the game
 
@@ -629,6 +710,28 @@ site: `UnionStateController$$CreateSelectStateModel` [0x01e4b620] constructs a
 [0x01f8b7b8]. The A press passes 1 and builds a `BattleJoinStateModel`. No store clears +0x38. A 0x08
 reaching a `UnionStateController` whose player has never recruited a battle writes through null.
 
+No 0x08 has reached `SetNetData` on a console. In the runs of [Being talked to](#being-talked-to)
+that sent `NetDataSelectData` after a talk, all 22 copies went out under a sequence id one of the
+client's own 0x64 answers already held. The reliable window keeps the first message for an id and
+drops a later one, below the base or on an occupied slot, with an ack either way
+([the Pia page](pia.md#what-the-receiver-discards-in-silence)), so a 0x08 sent under an id the
+console already holds is dropped. The console's reply identifies the message it kept: its ack of
+the id alone for a 0x64 it had already taken, or with `NetDataTalkCancelEndData{0, 0}` for a
+repeated 0x64.
+
+`UnionStateController` is built once per `UnionRoomManager`. Its one `new` is in
+`UnionRoomManager$$SetUp` (TypeInfo load 0x01e4cfb4, `.ctor` called at 0x01e4d01c,
+`CreateTransitionController` 0x01e4d038), called directly only from the manager's `Start`
+coroutine (`<Start>d__52$$MoveNext`, 0x01e566cc). The event-script command
+`EvDataManager$$EvCmdUnionProc` builds the manager (`GameObject("UnionRoomManager")`,
+`AddComponent<UnionRoomManager>`, `SetZoneData`, 0x01b36080..0x01b36100), the only
+`AddComponent<UnionRoomManager>` in code. A link battle keeps it:
+`EvDataManager$$UpdateStart` finds the existing instance [0x01b02a20] and, when `isBattle`, calls
+`UnionRoomManager$$ReturnBattle` [0x01b02a78], which reinitialises the player state without a
+constructor. `battleRecruitmentModel` (+0x38) is stored only by `CreateSelectStateModel`
+[0x01e4bb08], so it stays null until that player first recruits a battle in that visit and is
+never cleared after.
+
 Never send 0x08 unless the console's own 0x04 says state 3 with `isRecruiment` 1.
 
 ### The Grand Underground
@@ -701,10 +804,22 @@ nothing clears it. The adoption tests the flag [0x01f7db0c] and the message clas
 so a manager whose flag is 0 takes the first 0x61 from any station, before its own `JoinIn_Mine` as
 well as after, and ignores every later one for its life. It stores the array as `ugDigGroupList`
 [0x01f7db94] with no length or value check. `CreateDigPoints` reads element `[MyStationIndex]`
-[0x01cfdc7c, out of range throws at 0x01cfdf84], finds the `UgDigFossilePosGroup` whose `ID` equals
-that byte (`List.Find` 0x01cfdcd8, null when none does) and hands it to `CreateDigPointModel`
-[0x01cfe470], which reads `group.Grids` (`ldr x1, [x20, #0x18]` 0x01cfe4d8) with no null test. A
-byte that names no dig group in the zone faults the console; send only permutations of 0..7.
+[0x01cfdc7c]; a station index of 8 or more throws at the bounds check (`cmp w9, w20; b.ls` 0x01cfdc70,
+throw at 0x01cfdf84). It finds the `UgDigFossilePosGroup` whose `ID` equals that byte (`List.Find`
+0x01cfdcd8, null when none does) and hands it to `CreateDigPointModel` [0x01cfe470], which reads
+`group.Grids` (`ldr x1, [x20, #0x18]` 0x01cfe4d8) with no null test. In the 1.3.0 `ugdata` bundle's
+`UgDigFossilePosGroups`, each of the 35 zones (508 to 542) has exactly eight groups with IDs 0 to 7,
+of 6 to 26 cells each, so any byte 0 to 7 is valid in any zone and a larger byte finds no group and
+faults the console; send only permutations of 0..7.
+
+A console builds a new `UgNetworkManager` with each `UgFieldManager`, the object of that name in the
+`ugdata` bundle (matched by name in `UgResManager.<>c.<DataLoad>b__82_0`, 0x01f84d74..0x01f84d88).
+`UgFieldManager$$StartSession` [0x01cfebb0], called only from the `UgFieldManager` `Start` coroutine
+(`<Start>d__101$$MoveNext`, 0x01d0b95c), creates it only when `ugNetManager` (+0x58) is null:
+`GameObject("UgNetworkManager")`, `AddComponent<UgNetworkManager>` [0x01cfed54], the only one in
+code, and the store [0x01cfed5c]. `UgFieldManager$$OnDestroy` destroys it [0x01cff530] and stores
+null at +0x58 [0x01cff53c], the only null store there. A new manager's `IsDigTableReady` is 0, so
+each new `UgFieldManager` adopts a table afresh.
 
 0x29 `NetDigGroupIdData` shares the payload struct, its marshaller and every `ANetData<T>` method
 with 0x61. `NetDataParser`'s constructor [0x0224a420] instantiates it, the 29th of its 65 inlined

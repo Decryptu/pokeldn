@@ -586,6 +586,37 @@ Three further conditions return a result the caller can read: a sequence past th
 gives `0x4c0d` (`0x6f04a4`), a reassembly over `0x5a1` bytes gives `0x10407` (`0x6f05cc`), and a
 zlib payload that does not inflate gives `0x2c03` (`0x6f0580`).
 
+Pia 5 has the same receive. In Brilliant Diamond 1.3.0 `main` it is `0x159fb98`, reached from the
+`ReliableSlidingWindow` receive `0x159f1e4` for a message with flag bit 0 (bit 5 is a reset, bit 6 a
+reset ack, anything else an ack handled by window slot 13; `0x159f88c..0x159f8b8`). It works on the
+window's receive ring at window `+0x38`, which holds the base sequence at `+0x18`, the stream id at
+`+0x1e` and the initialised flag at `+0x1f`; the "an ack is owed" byte is window `+0x738`.
+
+| address | the message is discarded when | ack still sent |
+|---|---|---|
+| `0x159fbd8..0x159fbe4` | the ring is uninitialised and the flags lack `is initialized` (bit 3) | no |
+| `0x159fc30..0x159fc3c` | the sequence id is below the base | yes, `0x159fc3c` |
+| `0x159fc7c..0x159fca4` | the destination count (parsed header `+0x10`) is non-zero and the bitmap lacks the receiver's own bit | no |
+| `0x159fcc0..0x159fcc8` | the stream id (wire byte 1, parsed header `+9`) differs from the one latched at initialisation (`strb w26, [x24, #0x1e]` `0x159fc14`) | no |
+| `0x159fdb0..0x159fdb4` | the ring slot is already occupied | yes, set at `0x159fda4` before the test |
+
+The first message on a stream sets the base to its own sequence id (`strh w25, [x24, #0x18]`
+`0x159fc10`); the initialised flag is set only after the destination and stream-id tests pass
+(`0x159fce4`). A sequence id is refused with `0x4c0d` when `seq - base + [ring+0x1c] >= [ring+0x10]`
+(`0x159fc60..0x159fc78`): `+0x10` is the slot count and `+0x1c` a ring head offset, 0 on a fresh
+stream.
+
+The window's update `0x159fea8` sends the owed ack. When the ack timer (window `+0x740` plus the
+period at `+0x778`) has run out (`0x15a003c..0x15a005c`), it calls window slot 11 `0x15a1c78` with the
+packet writer held at `+0x750` (`0x15a0318`, `0x15a0354..0x15a0364`). Slot 11 returns when `+0x738`
+is 0 (`0x15a1cb8`), builds a control message with sequence id 0xFFFF (`0x15a1de4`) under the same
+optional compression as data (`+0x7ac`, `0x15a1f70`), sends it through slot 10 (`0x15a203c..0x15a2044`),
+clears `+0x738` (`0x15a1fe8`) and restarts the timer (`0x15a1ff8`). Slot 10 writes the window's
+protocol-and-port word at `+0x748` into the header (`0x15a1be8`) and hands the packet to the writer
+(`0x15a1c0c`, `0x15a1c20`). The ack goes to every peer held at window `+0x638` whose station is live;
+with none, the byte is cleared and nothing is sent (`0x15a1eb4`, `0x15a1fd8..0x15a1ff8`). Slot 11 is
+also called on the data path (`0x15a0298..0x15a02b8`), so an ack also rides along with data.
+
 The window object carries the slot buffer at `+0x8`, the slot count at `+0x10`, the ring head at
 `+0x14`, the base sequence at `+0x18`, the stream id at `+0x1e` and the initialised flag at `+0x1f`.
 Slots are `0x5b8` bytes and the ring index wraps by subtraction rather than a modulo.
