@@ -989,6 +989,16 @@ increments `component + 0xE1B0`, which becomes `CommsError`. The one reader of t
 pointer `swi 0x55` stores at `component + 0xE1BC` is `main + 0x0577D8`, which tests
 `optionsButtonMode == 2` (L=A).
 
+`CommsError` is measured end to end. Five `swi 0x62` calls from a Mystery Gift session, then
+`bkpt #0xFF` to force the game report: the field read 6, one more than the value a prior session had
+already left at 1, an exact match for the count issued. The report itself is printed by Ryujinx's own
+`ServicePrepo ProcessPlayReport` handler to the launcher's own log, on the host, outside the emulated
+console entirely: a syscall count chosen inside a Mystery Gift buffer script reaches text in the
+emulator's own process output, the same route any real disconnect counts through. A `swi 0x57`
+(`SetStarter`) call issued the same way, filling `MonsSelect` directly, left no matching field in
+either printed report; the report's JSON only carries a fixed subset of `main + 0x05A370`'s table,
+and `MonsSelect` is not one of the fields it selects.
+
 `main + 0x059CE4` picks the description table from the cartridge's game code, and it has five:
 
 | game code | table | `Flavor` base |
