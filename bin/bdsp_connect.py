@@ -16,7 +16,7 @@ silence otherwise. Sweeping N measures that count without knowing any of its pro
 The Local Protocol ack goes first, so the console falls silent and any packet afterwards is an
 answer to us. docs/bdsp_session.md. Never pass --verbose to a live run; use --capture.
 """
-import argparse, json, os, pathlib, socket, struct, sys, time, zlib
+import argparse, json, os, pathlib, signal, socket, struct, sys, time, zlib
 
 PROJECT_ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 sys.path.insert(0, PROJECT_ROOT)
@@ -1554,8 +1554,17 @@ async def main_async(args):
                               f"at seq {seq}")
                 await trio.sleep(args.match_wait_period)
 
-        with trio.move_on_after(args.hold):
+        async def stop_on_signal(scope):
+            # a run stopped by PID still prints its summary below
+            with trio.open_signal_receiver(signal.SIGINT, signal.SIGTERM) as signals:
+                async for _ in signals:
+                    print("\n[cx] stopped by signal")
+                    scope.cancel()
+                    return
+
+        with trio.move_on_after(args.hold) as hold_scope:
             async with trio.open_nursery() as nursery:
+                nursery.start_soon(stop_on_signal, hold_scope)
                 nursery.start_soon(receiver)
                 nursery.start_soon(sender)
                 if args.match_wait and args.match_wait_period > 0:

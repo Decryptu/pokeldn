@@ -567,6 +567,7 @@ u64 [0x01550ecc]; `0x01545308` hands the same +0x480 back to `INLpiaSessionGetPl
 `station_protocol.player_info` puts the 80-byte UTF-8 name at offset 1 of the 195-byte PlayerInfo and
 the language byte at offset 122. `bin/bdsp_connect.py --name` (default `PkCamp`) sends `--language`,
 default 1, `JPN`: a 6-unit limit and the Japanese font. `pokeldn/bdsp/host.py` sends 3.
+Under language 3 a retail Shining Pearl's greeting shows an 11-character name whole.
 
 The substitute depends on the talked-to character. `UnionWork.nowTargetCassetVersion` (static
 +0x8C) has two writers, `UnionSystemController$$SetTargetStationIndex` [0x01c2cf9c, its third
