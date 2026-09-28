@@ -1,3 +1,13 @@
+<p align="center">
+  <img src=".github/assets/banner.png" alt="pokeldn: ESP32-powered local wireless toolkit for Pokémon on Nintendo Switch" width="100%">
+</p>
+
+<p align="center">
+  <a href="https://discord.gg/PyvaVYnpXC"><img alt="Discord" src="https://img.shields.io/discord/1519228837240508446?style=flat-square&label=discord&logo=discord&logoColor=white&color=5865F2"></a>
+  <a href="https://decryptu.github.io/pokeldn/"><img alt="Documentation" src="https://img.shields.io/badge/docs-decryptu.github.io%2Fpokeldn-3fa9f5?style=flat-square&logo=readthedocs&logoColor=white"></a>
+  <img alt="Python 3.13" src="https://img.shields.io/badge/python-3.13-3fa9f5?style=flat-square&logo=python&logoColor=white">
+</p>
+
 # pokeldn
 
 An ESP32 board on USB serial is the radio: pokeldn hosts or joins Nintendo Switch local wireless
@@ -29,8 +39,7 @@ the game packages their own protocols. Entry points are named for the game they 
 
 This project demonstrates direct local wireless communication with retail Pokémon games and
 documents the protocols for work such as an unofficial GTS or online battles. AI tools helped
-reverse engineer the protocols and write parts of the code. Contributors can join the
-[Discord](https://discord.gg/PyvaVYnpXC).
+reverse engineer the protocols and write parts of the code.
 
 ## Demonstration
 https://github.com/user-attachments/assets/b0df878e-67f0-483d-ae81-583cfc2a8692

@@ -11,6 +11,8 @@
 # pokeldn/frlg/rom/buffer_payloads.py and these are what they must still assemble to.
 !/asm/
 !/config/
+# README banner and other repository assets.
+!/.github/
 # ESP32 radio firmware sources; the ESP-IDF build output stays local.
 !/firmware/
 /firmware/**/build/
