@@ -460,6 +460,34 @@ clone, the station and the clock and none the buffer:
 The only onward calls carrying the buffer, `0x51c268`, `0x51c2fc`, `0x51c32c` and `0x51c784`
 (`mov x3,x22; b 0x51d450`), are reached from other message types.
 
+`0x522a60`, the 0xa1 handler of clone types 3 and 4 (called from `0x51cbd0` and `0x51cc0c`), returns
+1 when the element's state `[x0+0x38]` is not 1, 2 when the sender's station bit is set in the mask
+`[[x0+0x30]+0xc0]`, and otherwise records the station and returns 0 (`0x522a70..0x522b10`). The
+caller answers 0 with an 0xa2 of type `0xfd04` (`0x51cbd8 cbz w22,0x51cce0`, `0x51cd00`), 1 with an
+0x91 (`0x51cbe4..0x51cbf8`), and 2 with nothing (`0x51cbe0 b.ne 0x51c3b8`); clone type 3
+(`0x51cc00..0x51cc34`, type `0xfd03`) has the same three outcomes. `0x51c110` also drops a message
+silently before that handler: at the destination check `0x51ce80` (`0x51c170`), at the per-sender
+count filter (`0x51c1e0..0x51c1f0`: dropped when the count stored at `proto+0x714+4*station` is at
+least the message's `[0xC]`), and at its length and type range checks. An 0xa1 for an unknown clone
+draws an 0x91 without reaching `0x522a60` (`0x51c494`, `0x51c8c0`).
+
+The mask at `+0xc0` belongs to the clone protocol object, beside its station mask `+0x38` and its
+state word `+0x40`:
+
+| event | effect on `+0xc0` | address |
+|---|---|---|
+| the state becomes `0x22` (when `[[proto+0x48]+0x24]` is 2 to 4) | the whole station mask `+0x38` copied in | `0x51b060..0x51b06c` |
+| the state becomes `0x42` | the same copy | `0x51b140..0x51b150` |
+| a station joins in state `0x22` or `0x31` | its bit set | `0x51bc64..0x51bc88` |
+| a 10-byte 0x33 (the participate acknowledgement) in state `0x31` or `0x22` | the sender's bit cleared | `0x51c354..0x51c3b4` |
+| a 14-byte 0x41 whose bytes `[0xa..0xd]` equal `[proto+0x3c]`, in state `0x42` | the sender's bit cleared | `0x51c380..0x51c3b4` |
+| a station leaves | its bit cleared | `0x51bce0..0x51bce8` |
+| a station leaves in state `0x42` | the whole mask re-copied from `+0x38` | `0x51bd04..0x51bd18` |
+| other paths | zeroed | `0x519a1c`, `0x519ccc`, `0x51a2d4`, `0x51a7d0`, `0x51a9c0` |
+
+In state `0x22` the protocol waits for the mask to empty before it moves to `0x31`
+(`0x51b074..0x51b084`).
+
 The full decode of a real session is `scratchpad/037_clone_parsed.txt`, its data messages
 `scratchpad/lgpe_clone_data.py`. The decoders: `scratchpad/lgpe_pcap_decode.py` for an ldn_mitm
 pcap, `scratchpad/lgpe_jsonl_clone.py` for a `--capture` log.
@@ -548,9 +576,14 @@ the host's first, and the host's 2 follows the joiner's 1. A joiner that also an
 is tolerated. A station that has sent a commit shows a spinner with no button prompt and waits for
 the peer's. A commit exchange that does not complete leaves the save's trade lock set.
 
-**Kind 4**, body 0xe8 bytes, a box structure, is the next round's offer: the channel of the
-party-offer object the normal save re-creates about 3 s after its own save, the fourth registration
-of the session. It follows the trade animation. A retail host sent its
+**Kind 4**, body 0xe8 bytes, a box structure, rides the channel of the party-offer object the
+normal save re-creates about 3 s after its own save, the fourth registration of the session. It
+follows the trade animation. In every completed hosted trade the console's kind 4 is byte-identical,
+over all 232 bytes, to the first kind 2 it sent in the session, while the Pokemon it traded differs
+from that first offer. The body is one structure, so the comment on `RESULT_MESSAGE` in
+`pokeldn/lgpe/pb7.py` ("a box structure per slot, the party as it stands once the trade has gone")
+does not describe it. That kind 4 opens the next round's offers is a reading from the registration
+order; no capture shows a second round's offer after it. A retail host sent its
 first 26.8 s after its second commit and an emulated host 29.9 s; the emulated joiner's followed the
 host's by 34 ms. The first carries the station's first slot, the structure it offered under step 2,
 and a new one follows each selection: one console sent fourteen, under steps 13 to 26, species 1,
@@ -736,7 +769,10 @@ after the host's A 2) it announced a new clone, id 4, with the usual `0x81` on c
 announcement the sync save's state 2 makes when it registers the commit channel, which runs only
 after the 600 was committed. It then sent nothing more on clone 4 for the 214 s the capture ran,
 neither the `0xa2`s nor the vote a completing console sends there, while it kept its clones 1, 2
-and 3 and its link protocols (0x1c, 0x58) alive. The authority's answer, type 4 `1 0 0 3 0 0 step T+1`, takes the same
+and 3 and its link protocols (0x1c, 0x58) alive. The console never answered the host's `0xa1` on
+clone type 4, which a completing console answers with an `0xa2` 19 ms later. Every unicast frame
+the host's radio sent in that session, the seven packets of the host's answer among them, was
+acknowledged by the console's radio (9672 TX_DONE records, all acknowledged). The authority's answer, type 4 `1 0 0 3 0 0 step T+1`, takes the same
 console record to state 0 under the game's own `0x11ba20`, and with A 1 that is status 2
 (`0xf4e9f0[0]`), which returns the screen to the selection. `bin/lgpe_host.py` answers that way and agrees a second vote in one publish;
 `tests/test_lgpe_host_withdraw.py` runs both through the game's code. On a retail Let's Go Pikachu
@@ -759,8 +795,11 @@ message. The counter is `obj+0xe8`, MyStatus `+0x90` (setter `0x1c9d40`, getter 
 interrupted trade holds `58 02 00 00` there and differs from the clean save in no other byte of the
 block, whose trainer name at `0x1038` places it. Every captured kind 1 body carries 0 at `+0x90`.
 
-The setter is called with 600 by the sync save (`0x837f90`), with 0 when the received Pokemon is
-applied (`0x838bec`), and by the countdown (`0x1ca54c`); the getter by the countdown and by the
+The setter `0x1c9d40` has six callers: the sync save with 600 (`0x837f90`, `0x837fb0`), the
+application of the received Pokemon with 0 (`0x838bec`, `0x838c0c`), and the countdown (`0x1ca54c`,
+`0x1ca56c`). No relocation reaches it, and no store to `+0xe8` through a base loaded from `+0x78`
+within 12 instructions appears anywhere in `.text`; that search does not exclude an inline write by
+another path or a block copy. Loading the save writes the block. The getter is called by the countdown and by the
 link menu's check. That check, `0x9765f4`, switches on the link mode: mode 1, trade, reads the
 counter (`0x976634`), and a non-zero value stores the refusal message `0x0248810f825b1fee` and
 returns -1 (`0x97663c`); zero goes on to a count check (message `0x0248800f825b1e3b`). Mode 3
@@ -778,11 +817,18 @@ skips the whole function and the counter). It keeps three u64 fields: `+0x58` th
 the gated call it converts `tick - base` to whole seconds (`0x146314..0x146354`) and, when that
 exceeds `+0x60`, passes the difference to `0x1ca450` (`0x146358..0x14636c`) and stores the new total
 in `+0x60` (`0x14637c`). The base moves only when the tick reads lower than the last value
-(`0x146384..0x1463c0`). Seconds are counted from a fixed base, so no fraction is lost between calls,
-and a call that sees two or more new seconds passes them to a tick that ignores them. The lock runs
-down over at least 600 seconds of foreground play, exactly 600 when the gated call comes at least
-once a second: it does not move while the game is closed or in the background, across a gap of two
-seconds or more between gated calls, or while a save is written.
+(`0x146384..0x1463c0`). The seconds are system-tick seconds (`nn::os::GetSystemTick` at `0x1462e8`,
+`nn::os::ConvertToTimeSpan` at `0x146324`), not frames. Seconds are counted from a fixed base, so no
+fraction is lost between calls, and a call that sees two or more new seconds passes them to a tick
+that ignores them: the clock adds at most one second per gated call.
+
+The lock and the play time move in the same call, by the same one second: while the lock is
+non-zero, every second added to the play time takes one second off it. A lock of 600 therefore
+lasts ten minutes of counted play time, whatever the call rate; a second the clock drops, the lock
+drops too. The two part only at the 999:59:59 cap, which stops the play time (`0x1ca5a0 b.eq
+0x1ca610`) after the lock has been written. The clock runs in focus states 1 and 2, in focus and out
+of focus, and stops only in state 3, the background; it does not run while the game is closed (the
+base tick is re-read at start, `0x14628c`) or while the gated call is skipped.
 
 `0x13c944` sits in `0x13c850`, which also runs `0x145560`, `0x13f0d0`, `0x142cd0` and `0x1427a0` on
 each call and is reached only from `0x13c5a0` (`ldr x1,[x0,#0x208]; b 0x13c850`), slot `0x1537a28`
@@ -790,6 +836,13 @@ of the vtable `0x15379d8`. That object is a 0x210-byte job built by `0x13c440` (
 its done byte) from `0x13bfa0`, in the game's setup `0x13b650`. The job executor `0x231a0`, reached
 from the worker loop at `0x20f30`, calls its slot `+0x40` (`0x23278..0x23288`) while `+0x204` is
 clear (`0x23264`).
+
+The frame period is chosen at run time from the table `0xf7eeb8` (GOT `0x15fb438`): 16666667,
+33333334, 50000000, 66666667 and 83333334 ns, indexed by `0x39600` (`0x39610`). `0x29e80..0x29eb4`
+turns the current period into a present interval `clamp(period / 16666666, 1, 5)` for `0x358b0`. The
+class at vtable `0x1529968` (GOT `0x15fb6c8`) starts both of its entries at table entry 1,
+33333334 ns (`0x38ba0..0x38bb8`), so the frame loop starts at a 33.3 ms period. Whether anything
+changes that period during a session, and how often the job `0x13c5a0` runs, is unread.
 
 `0x347190` builds one of three save sequences: 0 "normal save" (`0x3474d0`), 1 "sync save"
 (`0x347670` -> `0x347ae0`, 0xc8 bytes), 2 "fatal error" (`0x347810`); the names are the strings at
@@ -834,6 +887,25 @@ nothing that leaves the sequence (`0x838540`, `0x11ce20`), and its update (`0x83
 screen with message `0x191615296121e064`, nothing in that sequence returns to the game, and no later
 save of the running game follows it: the save on disk holds 600 at the next boot.
 
+The game has one process stack, rooted at `[G+0x68]` (`G = [0x160d310]`): its only constructor
+`0x13a4e0` is called once, from `0x13b978` in the setup `0x13b650`, and stores `G` at `root+0x60`.
+The dispatcher and the fatal-error wrapper are pushed on that same root (`0x8860e4`, `0x345e80`).
+The runner `0x13a780` (one caller, `0x13b0f4`) updates only the top process `[root+0x78]`, through
+`0x13a160`: a return of 3 runs the new top in the same frame, 1 pops the top or swaps in the pending
+`[root+0x80]`, anything else returns. The wrapper's vfuncs are `+0x38 = 0x346130` (returns 1),
+`+0x40 = 0x346140`, which hands the fatal save process to the manager at `[G+0x60]` through
+`0x39c20`, `+0x48 = 0x346210` (returns 0) and `+0x50 = 0x346220`. Its update never returns 1, so the
+runner never pops it, and the dispatcher below it, whose state 3 returns 0 right after the push
+(`0x886694`), is never updated again: one fatal process per aborted commit.
+
+The link menu's three refusal ids, `0x02487f0f825b1c88`, `0x0248800f825b1e3b` and
+`0x0248810f825b1fee`, are consistent with FNV-1a-64 hashes of three strings that differ only in their
+last byte: adjacent ids differ by the 64-bit FNV prime `0x100000001b3`, the outer pair by twice it,
+and multiplying each by the prime's inverse modulo 2^64 gives values ending `dd58`, `dd59`, `dd5a`.
+That the strings are message label names is a reading. The fatal init stores only the id
+(`0x8366ac`, at `+0x58`) in the object it hands to `0x7ed60` and references no archive name; the
+text is in the romfs message archives.
+
 While `netmgr+0x121` is set, `0x4d8750` records every network error at severity 4
 (`0x4d8760..0x4d877c`), and states 2, 3, 5 and 6 test for exactly that (`0x4d8a80`: an error
 recorded, at severity 4). A recorded error is replaced only by one of higher severity (`0x4d879c`),
@@ -858,6 +930,18 @@ less, no operation is pending (`[x19+0x20]` null) and the per-frame pump `0x1175
 (`0x1176b0..0x1176bc`). The same machine's state `0x4d9ef0` calls slot 14, code 0x11, then enters
 state 6.
 
+Only `0x59eab0` writes `+0x1e6` (`0x59eb58`, `0x59ebb0`). It sums, over the stations in the
+session's list at `s+0x178`, the byte `0x5b5900` returns for each (`0x59eafc..0x59eb58`): byte
+`+0x415` of that station's record (`0x5a9cd0`, a record in state 3, none found adding nothing), which
+the connection-response parser fills from wire byte `0x35` (`0x5b962c..0x5b9658`, `0x5a9430`). A
+retail Let's Go sends 1 there, so with retail peers the value is the number of stations in the list.
+`+0x1e8` is the same sum over `0x5b5960`. The recount runs from `0x59dfc4`, `0x59f08c`, `0x59f158`
+and `0x59f21c`, and only when `[s+0xd8]` is outside 2 to 6, `[s+0xd4]` is 2 or 4 and
+`0x52abf0(s+0x38)` is false (`0x59eacc..0x59eaf8`).
+
+The link machine also calls the session's slot 10 (`+0x50`, `0x3497d0`) at `0x4da38c`, in
+`0x4da294`, with two out-arguments (`0x4da378..0x4da38c`).
+
 `0x838660` decides who sends the 2. With S = {144, 145, 146, 150, 151} (`species - 0x90` in the
 mask `0xc7`) and M = {808, 809}: a station whose offered species is in S or M and whose received
 species is in neither sends it; a station in the reverse case does not; otherwise the station for
@@ -874,8 +958,36 @@ copies `[block+0x10]` into a new Pokemon object (`0x8389fc`, `0x838a38`) and wri
 box slot (`0x838af0 ldr w2,[x25,#8]; 0x838afc bl 0x1c0f30`), so the slot still holds the own
 Pokemon when the species are compared.
 
+`0x838800` also runs the trade's side effects on the arriving copy:
+
+- `0x1cfe80` registers it in the Pokedex (`0x83897c`), and the evolved copy again when it evolves
+  (`0x838ab0`), on the object `[[[[0x15fad08]]+0x98]+0x58]+0x88`. It builds a record of species,
+  form, `0x727ab0`, `0x728b00 & 1`, the egg flag `0x727fb0(pkm, 2)` and `0x728b50`, and `0x1cff60`
+  returns on an egg, on species 0 or above 809, and otherwise sets bits in per-species arrays at
+  `obj+0xdc` indexed by `species - 1`. The form is zeroed when `0x1760a0(species, form)` is true.
+- `0x728250(pkm, partner, &species, &index)` is the trade-evolution check. `0x723220` returns the
+  species unchanged for an egg or, for any species but 64 (Kadabra), when the held item passes the
+  manager's vfunc `+0x28`; otherwise it walks the species' evolution list and returns the first
+  entry `0x723340` accepts: method 5 always, method 6 when the held item equals the entry's
+  parameter, method 7 when the two Pokemon are species 616 and 588 (Shelmet and Karrablast) in
+  either order. `0x838800` passes the arriving copy as both Pokemon (`0x838a44..0x838a4c`), so
+  method 7 never matches.
+- `0x7282c0` applies a match: it changes the species through `0x7283c0` (`0x728338`), adds one to
+  the form for method `0x22` (`0x728328`), and clears the held item for methods 6, 19 and 20 (mask
+  `0x180040`, `0x7318f0(.., 0)` at `0x728364`).
+- `0x1ca840(id, 1)` adds to game record 477 when `0x115860` is true and 476 otherwise
+  (`0x838828..0x838840`). It adds `n` to the u32 at `obj+0x54+4*id`, capped by
+  `0xf48368[0xf4b760[id]]`, on the object `[[[[0x15fad08]]+0x98]+0x58]+0xc8`; while the byte
+  `obj+0x10f8` is set it writes nothing for any id (`0x1ca8f8`), and an id above 999 writes nothing
+  there.
+
 `mgr+0x128c` is written only by the session-start function `0x116890` (one caller, `0x4d9f54`): 0
 at `0x116a14`, then `0x59e920(session) & 1` at `0x116a48`; `0x4d9730` and `0x4da860` read it.
+`0x116890` runs only on the link machine `0x4d9b70`'s step from state 2 to state 4 (jump table
+`0xf73a0c`; state 3 at `0x4d9f48`, the call, state 4 at `0x4d9f5c`), after the matching job has
+finished with success and the transport's `+0x48` is 5. State 2 is written only at `0x4da7fc`, in
+`0x4da710`, which starts `MatchingThread`. A host migration is Pia's own job and does not re-run
+`0x116890`.
 `0x59e920` returns 1 when `[s+0xe0]` is non-null, equals `[s+0xe8]`, and the station
 `[s + 0x148 + 8*[s+0x142]]` answers true to its vfunc `+0xe0`. `[s+0xe0]` is the local station and
 `[s+0xe8]` the session host: creating a session (`0x59f810`, from `CreateSessionJob` at `0x582a2c`
@@ -961,6 +1073,16 @@ references `Pop_BGM_battle_to_field` (`0x28d6cc`) and `vs_wild` (`0x28c9fc`), th
 `0x15bed08` of the process `0x95c5c0` builds; `0x95c5c0` is called only by `0x95c470`, and
 `0x95c470` only by the dispatcher's state 1 in modes 1 and 2 (`0x886f18`). The dispatcher never
 builds the battle scene in mode 3, so its channel never registers in a trade session.
+
+`0x9d2c30` is a stepped setup (jump table `0xf92c1c`, the step incremented at `0x9d3054..0x9d3060`).
+Step 0 creates the channel object in `0x9dc5c0` (from `0x9d2f90`) and stores it at `0x1640eb0`
+(`0x9dc6f4`, the only store of a channel there) only when the link session object
+`[[[0x15faec8]]+0x50]` is in state 8 (`0x349090`, `0x9dc61c..0x9dc634`). Step 1 registers it with
+no condition (`0x9d2d90 bl 0x9dce10`), and `0x9dce10` registers nothing while `0x1640eb0` is null;
+the channel's readiness test `0x9dce30` returns 1 with no channel. A wild battle outside a link session
+therefore registers no channel. The byte `[ctx+0x64]` read at `0x9d2d80` belongs to step 0 and gates
+the setup's network-error test in step 2 (`0x9d2d9c..0x9d2da8`). The battle's teardown (`0x9d3df0` ->
+`0x9dcce0`, `0x9dccf8`) clears the pointer.
 
 ### What a hosted trade puts in the save
 
