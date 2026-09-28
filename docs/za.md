@@ -211,6 +211,47 @@ only when own state +0x130 is 6 and whose one caller is `0x9601dc` in the live t
 completes a trade starts the next one on the same seat at round 0, and an answer that stays at
 round 1 after it is still accepted.
 
+Own state 5 is written by the session update `0x95f600` (`0x95f680`) when own state is 3 or 4, byte
++0x148 is set, the timer at +0x138 reads at least 1.5 s, the partner state is 4 or 5 and `0x963710` is
+true. Own state 6 is written by `0xdfda8c` (`0xdfda9c`, `0xdfdaa0`), the only immediate store of 6 to
++0x130 in the text: a delegate invoke, referenced only from `0x964e78` (`0x964ea0`), which fills a
+0x40-byte delegate with it (managers `0x2dc4b78`, `0x2dc4b7c`, `0x2dc4b88`). Own state 7 is written by
+`0x2dc4b94`, installed by `0x964f0c` (the only reference, `0x964f20`); the one other immediate store of
+7 to +0x130, `0xf721b8` in `0xf72138`, is on an object nothing ties to the trade session. `0x9610a4`
+(one caller, `0x95fdbc`) runs when own state is 5 or more and the worker at +0xd0 is absent or its
+byte +9 is 0 or 0x10. It calls the callable at session+0x48 with (+0x118, +0x120, +0x128), builds the
+exchange worker (`0x966af0`, 0xb0 bytes) into +0xd0 and hands it both delegates (`0x9649e0` at
+`0x96116c`, `0x964a20` at `0x96117c`), which `0x9655a4` stores at worker+0x20 (state 6, `0x965f54`)
+and +0x60 (state 7, `0x4177c8`). `0xc8ad1c`, the one function referenced by the `adr` at `0xca2578`,
+builds the trade object (`0xc8ad94`, constructor `0xc8ae70`, vtable `0x3d8a0d0`: +0x68 `0xdd07cc`,
++0x78 `0x2a67168`, +0x80 `0xcbc68c`); that it is the callable at session+0x48 was not traced to the
+store.
+
+The worker's start `0x965660` stores the host test `0x9157d0` at +0x14, clears +0x15, stores
+`0x34f2b0(rng, 0x12c) + 2` at +0x18 (a draw of 0..300, so 2..302), zeroes +0xc and +0x10 and sets +9
+to 1. Its update `0x960c20` (one caller, `0x95f750`) switches on +9 through the table `0x33a360d`.
+`0x962ac0(peer, step)` stores `0x100 | step` at peer+0x48 and sends it; a wait compares the partner's
+step at +0x70, valid when +0x71 is set.
+
+| +9 | handler | what it does | next |
+|---|---|---|---|
+| 1 | `0x960d20` | trade object vfunc +0x68; result 1: +0x15 = (+0x14 != 0), result 0: +0x15 = 1 (`0x960e50`, `0x960e90`), else +0x15 = 0; send step 3 | 2 |
+| 2 | `0x960cc0` | wait for the partner's 3 | 3 |
+| 3 | `0x960d64` | trade object vfunc +0x78; false: state 4, send step 6 | 5 |
+| 5 | `0x960ce0` | wait for the partner's 6 | 6 |
+| 6 | `0x960da0` | `0x9628e8`: trade object +0x40 = 1, then vfunc +0x80 (`0xcbc68c`, the handler update in What the trade writes into a received record) | 7 |
+| 7 | `0x960c84` | wait for trade object +0x40 == 3; +0x15 set: send 0xb | 8, else 9 |
+| 9 | `0x960c40` | count +0x18 down once per update, then send 0xb | 10 |
+| 8, 10 | `0x960ca0` | wait for the partner's 0xb | 11 |
+| 11 | `0x960db0` | trade object +0x40 = 4 (`0x961098`) | 12 |
+| 12 | `0x960dc0` | wait for trade object +0x40 == 5 (`0x9626e4`), send 0xe | 13 |
+| 13 | `0x960d00` | wait for the partner's 0xe | 14 |
+| 14 | `0x960de8` | +0x10 == 0: the state-6 delegate (`0x963810`); else the state-7 delegate (`0x9a0b00`); then `0x9637b8` | 0x10 |
+
+Own state 6 is the exchange completed with no error at worker+0x10, after both stations have passed
+steps 3, 6, 0x0b and 0x0e, the `0200b901XX` steps below. A station whose +0x15 is clear waits the
+random 2..302 updates before its 0x0b. What `0xdd07cc` returns and how the stored halfword maps onto the `b901XX` bytes were not traced.
+
 An emulated Z-A choosing Cancel on the trade prompt sends `0103b9020100`, round 1 and reason 0, and
 redraws the prompt with the host's earlier offer once its player picks again; the host need not
 resend it. Its next confirmation is `0102b90101` and `0104b90101`. A host that answers under round 0
@@ -282,6 +323,34 @@ player is on. The scan also kicks with reason 1 a station whose byte in the one-
 the job's update at `0x255bc10` resends it every 501 ms while the station stays present. Last-heard
 is refreshed by `0x2567280` for every station whose bit (its byte at +0x30) is set in a mask that
 `0x2566740` builds from the received-data map, keyed by the packet header's source id.
+
+The object at session+0x18 is the session's `SessionProtocol`, so the kick scan and `0x25504c8` act
+on one object. The Session's initialisation `0x253c880` (one caller, `0x253c66c`; it loads the
+`nn::pia::session::Session` vtable through GOT `0x3ee5400`) calls `0x253f284(framework+0xc8, 0,
+0xfd)` at `0x253cacc`, which allocates 0xd8e8 bytes, constructs them with `0x25450ec` (vtable
+`0x3c8db18`, `nn::pia::session::SessionProtocol`, through GOT `0x3ee5428`), makes a handle of
+protocol type 0xd and registers the object. The session keeps the handle at +0x12/+0x14
+(`0x253cae0`), looks it up with `0x256b4b0` and stores the result at +0x18 (`0x253cb8c`); its other
+stores to +0x18 (`0x253c8c8`, `0x253d084`) write zero. The same function stores framework+0xb8 at
+session+0x30 (`0x253caf8`, `0x253cb00`). The session start passes the timeout on with `0x253d9cc
+ldr x0,[x20,#0x18]; bl 0x25504c8`.
+
+The setting's +0x290 is a send-silence limit in milliseconds. `0x253d9b8` passes it to `0x257d12c`,
+which takes the object at framework+0xf8 and calls `0x256a238` on its member at +0x750: a negative
+value fails with 0x10407, 0 becomes 1000, and the value is stored at member+8 and at +0x28c of the
+object `0x24f11f0` returns. What stores framework+0xf8 was not traced; the +0x750 member belongs to
+the `PacketWriter` methods, and the only derived `PacketWriter` is `SessionPacketWriter` (vtable
+`0x3c8da30`, installed by `0x2543e08`), whose vfunc 7 `0x2544004` is `b 0x25688d0`. That vfunc 7
+calls `0x256a2d0` with the send's station mask and the current time (`0x2568924`). For each station
+in state 2 other than the local one, with id at most 0x17 and byte +0xa0 clear (`0x25770d8`), it
+stamps station+0xb0 with the time when the station is in the mask, and otherwise sets the station's
+bit in an output mask when +0xb0 is older than the limit, which includes a station never sent to
+(+0xb0 = 0). It records the largest gap in ms at `[0x24f3560()]+0x98`. When the output mask is not
+empty (`0x2568928`), vfunc 7 builds an extra packet (`0x256da8c`, `0x256a89c`) and sends it to those
+stations through vfunc +0x68. The game's settings store (+0x28c, +0x290) = (10000, 1000) as one u64
+(`0x199eb58`, `0x199ee04`, `0x199f08c`), as does Pia's default (`0x251a4c8`). The code's rule is
+therefore that a seated station whose byte +0xa0 is clear is sent a packet whenever nothing has gone
+to it for more than a second. No capture has been checked against that rule.
 
 So a station is heard only through packets whose header source is its own variable id. The session
 address 0x0001 is a destination: the host broadcasts RTT and session traffic to it, and a joiner
@@ -409,8 +478,11 @@ The table has 141 code references, all inside `0xe48000..0xe5d000`, the accessor
 locks, decrypts when +0x18 is set, recomputes the checksum and ORs 4 into the halfword at core+4 on a
 mismatch. Bit 2 of core+4 is the Bad Egg bit: a getter that finds it set reads the field from a
 default record at `0x3f7eda0` in .bss (block A at `0x3f7eda8`) instead of the core; 23 getters of
-block A carry that branch. Unless fast mode is on, the
-accessor then rewrites the checksum and re-encrypts. `0xe485f0` tests bit 2 without decrypting;
+block A carry that branch, the species getter `0xe49940` among them (`tbnz w9,#2,0xe49a98`). The
+default record's one initializer, `0xe5cdb4` (one caller, `0xe629b4`), zeroes the 0x10 bytes at
+`0x3f7ed98` and the four blocks at `0x3f7eda8`, `0x3f7edf8`, `0x3f7ee48` and `0x3f7ee98`, then writes 1
+to the halfword at `0x3f7ed98`+2, `[0x3f0784()+0x378]` to the language (record 0xd5) and 4 to the ball
+(record 0x124). Unless fast mode is on, the accessor then rewrites the checksum and re-encrypts. `0xe485f0` tests bit 2 without decrypting;
 core+4 lies outside the encrypted range. The serializers `0xe47a20` (0x158 bytes) and `0xe47c60`
 (0x148) write the encrypted, shuffled form.
 
@@ -520,11 +592,29 @@ PokemonParam at +0x50) uses it three ways:
 | 145 | `0x631834` | sets a move's flag, skipping a move `0xe669e0` does not find |
 | 150 | `0x699308` | true when the unlock level is non-zero and the level (`0xe49760`, or `0xe5ce70` from the experience on a stored record) is at least it; otherwise the flag |
 
-`0x52fff0`, `0x824eb0` and `0x28eec70` each call slot 135 and set the flag of every move it lists;
-`0x6568b0` writes one move into move slot 0 through slot +0x110 and `0x6568c4` sets its flag. A
-record whose flags are all zero still has every learnset move at or below its level unlocked.
-Nothing on the receive path reads the array. Slot 150 is called at `0x8d1a18` inside `0x8d0610`,
-beside the pane names "/plus_on" and "/plus_off".
+`0xe669e0` has four callers: `0x631848` (slot 145, set), `0x67345c` (clear), `0x6993c8` (slot 150)
+and `0xe4307c` (read). The bit writer `0xe5c550` is entered only by `b` from `0x631864` (set) and
+`0x673478` (clear), and slot 145 (`0x63182c`, +0x488 of both wrapper vtables) is called at four
+sites, so a console sets a flag in two ways. `0x52fff0`, `0x824eb0` and `0x28eec70` each call slot
+135 and set the flag of every move it lists for the level passed. `0x6568c4`, in the construction
+routine `0x656060` (five callers), runs only when wrapper slot +0x8b8 (`0xdf5488`, `0x106ba0`, the
+getter of byte 0x23) is true: it looks a move up by species (slot +0x1b0) and form (slot +0x1b8) in
+`0x657ae0` (a map from GOT `0x3eca658` = `0x6137848`, through `0x511f90`), checks it with `0x41ea50`,
+writes it into move slot 0 through slot +0x110 (`0x6568a4`) and sets its flag. The two console-made
+records with byte 0x23 = 1 carry that move: Roserade 605 and Glaceon 247, each in slot 0 and flagged
+(move indices 227 and 112). Xerneas's 583 (index 214), held another way, is unflagged. A record
+received or loaded brings its flags whole. The map's source file was not found. A record whose
+flags are all zero still has every learnset move at or below its level unlocked. Nothing on the
+receive path reads the array.
+
+The summary screen `0x8d0610` (one caller, `0x8cc5a8`) formats `"%s%s"` (`0x31c6db3`) with
+"/plus_on" (`0x3247096`) and with "/plus_off" (`0x31d992e`) for each move and hashes both with
+FNV-1a. Unless bit 0 of the word at [x29-8] is set (`0x8d1a08`), it calls slot 150 (`0x8d1a18`,
+`0x699300` in both wrapper vtables) with the move id, the result of wrapper slot +0x100, the
+four-moves getter (`0x8d163c`). When slot 150 returns true (`0x8d1c3c`), "/plus_on" is looked up
+with `0xf510` and passed to `0x168f70`, then "/plus_off" to `0xf510` and `0x14248`; when it returns
+false, or the bit is set, the two names swap. The bit is the return of `0x393b8(x21, frame-0xf0)`,
+stored at `0x8d1438`.
 
 The six species of console-made records, against the table:
 
@@ -534,8 +624,8 @@ The six species of console-made records, against the table:
 | Swablu 333 | 44 | equal | | held 297 (unlock level 47) |
 | Xerneas 716 | 100 | equal | | held 583 (not in its learnset) |
 | Onix 95 | 72 | 350 missing (level 254) | | |
-| Roserade 407 | 63 | 866 missing (level 254) | held 605, in neither learnset | |
-| Glaceon 471 | 63 | equal | held 247, in neither learnset | |
+| Roserade 407 | 63 | 866 missing (level 254) | 605, in neither learnset: the byte-0x23 move in slot 0 | |
+| Glaceon 471 | 63 | equal | 247, in neither learnset: the byte-0x23 move in slot 0 | |
 
 Glaceon also carries Eevee's level-up moves 36, 38, 129, 204 and 273, which are 254 entries in its
 own learnset, and Roserade carries 40, a 253 entry of Roselia (315).
@@ -553,10 +643,39 @@ The thunk is slot 42 of the vtable whose address point is `0x3d1a7c8` (GOT `0x3e
 `0x2890cb8`, which allocates the PokemonParam at +0x48); slots 43, 45, 48 and 49 thunk to
 `0xe43f84`, IsEgg `0x18e4c` and the type getters `0xa4354` and `0x99c84`. From the 321 slots of the
 `0x3e28e58` wrapper, a call walk four levels deep reaches the ability getter `0xe4a3c0` only
-through slots 48 and 49, the type getters, and never reaches `0xe43bec`. The label prefix
-"TOKUSEI_" (`0x32ca5cf`) has no code reference; its one relocation is in the battle string table at
-`0x3e25b10`. The message archive name "tokusei" (`0x31e3d5f`) is referenced from `0x2923560`,
-`0x2d630b8`, `0x83cd08`, `0x83ccc8` and `0x849120`.
+through slots 48 and 49, the type getters, and never reaches `0xe43bec`.
+
+Over the whole image, the relocated slots whose function reaches `0xe43bec` or `0xe4a3c0` within two
+calls are nine: `0x3d1a918` (slot 42 of `0x3d1a7c8`), `0x3d1a948`/`0x3d1a950` (its slots 48 and
+49), `0x3e28fd8`/`0x3e28fe0` and `0x3e2a5b8`/`0x3e2a5c0` (slots 48 and 49 of the two PokemonParam
+wrappers) and GOT `0x3ec4f60`/`0x3ec4f68`, the type getters. The raw getter's direct callers are
+`0x99cac`, `0xa437c` and `0xe43c04`, and `0xe43bec` is entered only by `b` from `0x288d894`. Slot 42
+of the `0x3d1a7c8` class is the one way to a stored ability outside the type getters. That class is
+an engine component: slot 13 (`0x288db10`) returns the type id `0xfb63b93a`, slot 14 returns 0x158,
+and the factory `0x2890d80` builds it through `0x2890a6c` and `0x2890c10` (0x50 bytes) with the
+constructor `0x2890cb8`, which stores four vtable pointers from `0x3d1a7b8` (+0x10, +0x240, +0x290,
++0x2e8). Its primary vtable runs 68 code slots.
+
+The message archive name "tokusei" (`0x31e3d5f`) has four code references:
+
+| reference | in | what it is |
+|---|---|---|
+| `0x2d630b8` | `0x2d6307c`, one caller `0x2d5257c` in `0x2d52468` | the battle ability window |
+| `0x2923560` | `0x2923544` | a message-archive loader, beside "wazaname" |
+| `0x83cd08` | `0x83c55c` | a field name in a Pokemon creation spec reader, beside "tokuseiIndex" |
+| `0x849120` | `0x848934` | a field name in an encounter table reader |
+
+`0x2d52468` (one caller, `0x116bd4`) loads "btl_std" (`0x3e256b8`) and "BTL_STRID_STD_TokWin"
+(`0x3e25af0`) and builds a "TOKUSEI_" label from the record at `0x3e25b08` (its string relocation at
+`0x3e25b10`; the string `0x32ca5cf` has no code reference) and `0x886240(value, 3)`. The value is
+slot 42 of the object at its argument's +8 (`0x2d524f4`, `ldr x8,[x8,#0x150]`); the same object goes
+to `0x9062c0` (`0x2d52558`), which calls its slot 284 (+0x8e0, `0x906304`). Slot 284 lies beyond the
+component's vtable; in the PokemonParam wrappers it is IsEmpty (`0x13770`). The image holds seven
+321-slot vtables of that wrapper interface (`0x3e28e58`, `0x3e29950`, `0x3e2a438`, `0x3e2af50`,
+`0x3e2ba38`, `0x3e2c520`, `0x3e2d360`), and slot 42 is `mov w0,wzr; ret` in every one (`0x2d6fd88`,
+`0x2d71464`, `0x2d72714`, `0x2d753e0`). The name "statusname" (`0x329488c`) is loaded by the next
+function, `0x2d63130` (`0x2d63190`, one caller `0x2b2fe6c`). No path found reads the stored ability
+into any screen.
 
 ### What loading a received record checks
 
@@ -580,7 +699,8 @@ called (`0xb4e1c8`). The handler allocates a PokemonParam (`0x82713c`) and loads
    and the five stats from species, form, stat level, IVs, hyper training bits, EVs and the stat
    nature. In this step current HP stays 0 when it was 0 and otherwise rises by the max-HP gain.
 4. `0xe42584` counts the non-zero moves from slot 0 and clamps the PP of that many slots to the
-   move's maximum with its PP ups (`0xe6646c`); an egg or a Bad Egg is skipped.
+   move's maximum with its PP ups (`0xe6646c`); an egg or a Bad Egg (`0xe4c950`, `0xe485f0`) is
+   skipped unless `[0x3f0784()+0x380]` is set or `0xe483b4` is true.
 5. `0xb2a4a4` calls the callable at session+0x88 with the new PokemonParam and ignores its result,
    moves the PokemonParam into session+0x128, and sets the partner state +0x134 to 3 (a pick) when
    bit 0 of the third member is clear. The callable is always `0xad2c68`, the name check below:
@@ -634,8 +754,72 @@ replacement table `0x3d8a248` holds twelve UTF-16 strings:
 A string that the length scan `0x913a80` (which skips 0x10-tagged runs) measures as 0 passes without
 the filter, and a filter call that returns an error passes too (`0x913b08`). A composed record with
 an empty handler name and handler language 0 has that name replaced by `ゼット.` on receipt, and an
-empty original trainer's name becomes the string of the record's language. The traded nickname and
-trainer name PKLDN and the names of the reference records pass.
+empty original trainer's name becomes the string of the record's language; a completed trade then
+overwrites the handler's name (What the trade writes into a received record). The traded nickname
+and trainer name PKLDN and the names of the reference records pass.
+
+L is byte +0x14 of the singleton at `0x6131800` (GOT `0x3ec7800`): `0x444330` reads it through
+`0x410a20` once the word at +0x80 marks the object constructed. It is the game's text language,
+numbered as the record's language byte, and indexes the message directory table `0x3e278b8` (stride
+0x18, `0x940dd8`): 0 "jpn", 1 "jpn", 2 "English", 3 "French", 4 "Italian", 5 "German", 6 "jpn",
+7 "Spanish", 8 "Korean", 9 "Simp_Chinese", 10 "Trad_Chinese", 11 "Latam", 12 "item". The message
+loader `0x410a30` uses L when its own language argument is 0 (`0x410a68`, `0x410a70`).
+
+The constructor `0xaa1340` (callers `0xaa1320`, `0x118ad60`, `0x1b29070`) stores 0 at +0x14 and, at
++0x10, the index `0x17d6368` makes of `nn::oe::GetDesiredLanguage()` (PLT `0x3161b10`): ja 0, en-US 1,
+fr 2, de 3, it 4, es 5, zh-Hans 6, ko 7, nl 8, pt 9, ru 10, zh-Hant 11, en-GB 12, fr-CA 13, es-419 14,
+anything else 15. `0x741760` maps that index through the 15 bytes at `0x330f728`, `1 2 3 5 4 7 9 8 2
+2 2 10 2 3 11`, and gives 2 above 14. The one writer of +0x14 is the setter `0x17d62ec`, called at
+`0x2c204ac` in the language-select view `0x2c2047c` (a byte from the view's table `[x0+0x50]`, indexed
+by the menu position) and by `b` from the wrapper `0x741740`, which has four callers:
+
+| call | in | value |
+|---|---|---|
+| `0x741710` | `0x7416b4`, from the boot sequence at `0x73bdb0` | the desired language through `0x741760` |
+| `0x118adac` | `0x118ad10` (slot `0x3be5460`) | the same |
+| `0xbb9d30` | `0xbb9ccc` | the player's trainer record +0x47, the language `0x882104` copies (`0x505c30`, `0x23c398`) |
+| `0x16734c0` | `0x1673170` (slot `0x3c01cc0`), at `0x1673198` and `0x16731dc` | `0x8a8a10(x, 1, 0)`, which checks its argument against -1001000 and a type byte 3: a script binding that stores any integer |
+
+The boot table gives 1..5 and 7..11. The name check's pattern `0x339f650[L - 1]` is a set of
+`nn::ngc` pattern lists, so the receiving console's language picks the word lists, whatever the
+record's language:
+
+| L | pattern | lists |
+|---|---|---|
+| 1 Japanese | 0x13 | Japanese, American and British English |
+| 2 English | 0x12 | American and British English |
+| 3 French | 0x36 | American and British English, Canadian French, French |
+| 4 Italian | 0x92 | American and British English, Italian |
+| 5 German | 0x52 | American and British English, German |
+| 6 | 0 | none; the check has already failed the name |
+| 7 Spanish, 11 Latin American Spanish | 0x11a | American and British English, Latin American Spanish, Spanish |
+| 8 Korean | 0x412 | American and British English, Korean |
+| 9, 10 Chinese | 0x8813 | Japanese, American and British English, Chinese, Taiwanese |
+
+### What the trade writes into a received record
+
+Step 6 of the exchange calls the trade object's vfunc +0x80, `0xcbc68c`, which calls `0xcbc7fc`.
+Unless `0xcbc9e8` returns null (`0xcbc854`, which skips the whole update), `0xcbc7fc` takes the
+player's trainer record (`0x505c30` on the singleton from GOT `0x3ec28d8`) and fills a struct with
+`0x882104`: the u32 at +0x40 (trainer id and secret id), the gender at +0x45, the language at +0x47
+and 13 units of name from +0x50. It wraps the partner's PokemonParam (trade object +0x78) with
+`0x825358` and calls wrapper slot 167 (`0xcbc888`, +0x538; `0xcebfe0` in both wrapper vtables),
+which thunks to `0xcebfe8`:
+
+- when the original trainer's gender (`0xe4f570`, 0x125 bit 7), the u32 at 0x0c (`0xe49d50`) and the
+  original trainer's name (`0xe510c0`) all match the struct, it sets the current handler 0xc4 to 0
+  (`0xe58a70`), calls `0xe3f900` and returns 1;
+- otherwise it sets 0xc4 to 1, writes the struct's name (`0xe5a190`), gender to 0xc2 (`0xe5a3a0`)
+  and language to 0xc3 (`0xe5a5c0`), writes 0 to the handler's memory 0xc9, 0xca, 0xcb and the
+  halfword 0xcc (`0xe59910`, `0xe59b30`, `0xe59f70`, `0xe59d50`), writes `0xe340ac(species, form)` to
+  the handler's friendship 0xc8 (`0xe58eb0`), calls `0xe3f900` and returns 0.
+
+So a received Pokemon the player did not originate carries the receiving player as its handler, and
+a handler name the name check replaced does not survive. When the receiving player is the original
+trainer, only 0xc4 changes. Each of these setters, on a record still marked encrypted (accessor
++0x18), sums the 0x140 bytes from core+8 (`0xe5d810`) and sets bit 2 of core+4 when the sum differs
+from the checksum at core+6 (`0xe58b60..0xe58b80`); on a record with bit 2 set it writes into a sink
+at `0x3f7ef98` instead of the record (`0xe58bcc`).
 
 ### The personal table
 
@@ -677,6 +861,16 @@ and Bad Egg tests appear only as a skip: `0x962be0` builds the `0x3e28e58` wrapp
 constructor `0x962ccc`), which reaches the PP clamp `0xe42584`, and that returns early for an egg
 or a Bad Egg. For a Bad Egg pick the name check runs, and its nickname fix writes nothing while both its gate
 bytes are 0.
+
+On the exchange that follows a pick (`0x9610a4`, the worker `0x960c20`, `0xc8ad1c`, `0xcbc68c`,
+`0xcbc7fc`, the store `0xcbcbec`), only `0xcbc7fc` reaches an egg or Bad Egg test (`0x13778`,
+`0x18e4c`, `0xe485f0`, `0xe4c950`) within three direct calls, through `0xcbca60` and `0x8270d0`. The
+tests there skip work rather than refuse: the PP clamp `0xe42584` guards its body at entry, and
+`0xc34b5c` (wrapper slot +0x8f0) skips the stat recomputation `0xe41750`, both for an egg or a Bad
+Egg unless `[0x3f0784()+0x380]` is set or `0xe483b4` is true. The constructor `0xe3e570` (vtable from
+GOT `0x3ec2660`) has no such test. The handler update writes a Bad Egg's handler fields into its
+sink. No refusal of a Bad Egg was found on that path; the virtual calls it makes were not all
+followed.
 
 ## A trade with a retail console
 
@@ -721,7 +915,7 @@ Four details differ from the GBA application's host:
   joiner's does;
 - the update's sequence is written twice, at +1 and at +21;
 - the property update carries `02` in the byte after the scene id, where the GBA application
-  writes `01`;
+  writes `01`; a retail Z-A host writes it through CloseParticipation (The property update);
 - a broadcast acknowledgement from the host reports the joiner's stream in entry 1 and the idle
   base 0xfff0 in the other three.
 
@@ -765,10 +959,10 @@ job, facade and host-migration paths or a received 0x50.
 The facade entries are shared: `0x25183bc` is index 19 of `NetFacade`, `LocalFacade`, `LanFacade`,
 `WanFacade` and `NplndFacade` (slots `0x3c8a290`, `0x3c8b7a0`, `0x3c8c5f8`, `0x3c8f818`,
 `0x3c90d68`), and starts asynchronous operation 0xa through `0x2507828`; index 17 (`0x251826c`)
-starts operation 9 through `0x250758c`. Neither has a direct caller. `0x2507828` passes 2 to
-`0x2515220`, which stores it at the `NetNetworkStateJob`'s byte +0xc0 for `0x2515434` to write into
-NetProtocol+0x340. Host migration calls `0x250758c` and `0x2507828` directly (`0x250b098`,
-`0x250b0f8`).
+starts operation 9 through `0x250758c`. Neither has a direct caller. Both reach `0x2515220`, which
+keeps the value at the `NetNetworkStateJob`'s byte +0xc0 for `0x2515434` to write into
+NetProtocol+0x340 (below). Host migration calls `0x250758c` and `0x2507828` directly (`0x250b098`,
+`0x250b0f8`); `0x2507828`'s only other caller is `0x25183f4`, in facade index 19.
 
 `nn::pia::session::OpenCloseParticipationJob` makes the facade calls. Its start `0x255c118` stores
 the object it is given (the session's +0x30) at job+0xc8 and picks its step from its boolean
@@ -797,8 +991,8 @@ The task builder `0x1a228f0` takes a name hashed with FNV-1a 64 under the basis
 |---|---|---|
 | `0x19a7614` | `0x19a7590` | index 19 of the local session driver (address point `0x3c16dc8`, GOT `0x3edd130`), whose other slots name "InitializeLdn", "StartupSession", "CreateSession" (14), "BrowseSession" (15, 17), "JoinSession" (16), "LeaveSession", "CleanupSession", "TerminateLdn" (18) and "UpdateSessionSetting" (20) |
 | `0x1a2ab94` | `0x1a2ab10` | index 19 of a second driver (slot `0x3c17fa8`) with no Ldn names; its slot 13 names "JoinRandomSession", "WaitMember" and "CloseSession", slot 14 "RandomMatchingCancel" |
-| `0x19d7ac8` | the callable `0x19d7a70` (`adr` at `0x19d6de4`) | owner not identified |
-| `0x1a35768` | the callable `0x1a35710` (`adr` at `0x1a34a84`) | owner not identified |
+| `0x19d7ac8` | the callable `0x19d7a70` (`adr` at `0x19d6de4`) | the CloseSession step of the local driver's random-matching sequence (below) |
+| `0x1a35768` | the callable `0x1a35710` (`adr` at `0x1a34a84`) | the same step in the second driver's code |
 
 The network manager forwards to its driver's index 19 at `0x199dec4` (the driver at +0x38, slot
 +0x98). Its one caller, `0x2a49c38` in the request constructor `0x2a49bc4`, is reached through
@@ -807,12 +1001,84 @@ network system flag `[0x6133ec0]` is clear. `0x2a49218` has three callers: `0x91
 `0x915630`, `0x2cb5254` in `0x2cb5238` (called at `0x911f48` right after the host test at
 `0x911f14`), both in the net battle flow, and `0xae0fac` in `0xae0eb8`, reached only when the host
 test `0x915770` passes; `0xae0afc` calls `0xae0eb8` when its owner's byte +0x121 is set, then sets
-+0x122. The local driver's slot 13 (`0x19a1310`) interns, in address order, "RandomMatchingSeq",
-"RetryBody", "CloseSession" (`0x19a208c`, the same hash), "StoreSessionInfo" and
-"RandomMatchingCancel".
++0x122. The local driver's slot 13 (`0x19a1310`, slot `0x3c16e30`) interns, in address order,
+"RandomMatchingSeq", "RetryBody", "CloseSession" (`0x19a208c`, the same hash), "StoreSessionInfo" and
+"RandomMatchingCancel". It calls the sequence `0x19a1470` (`0x19a1388`), whose CloseSession step
+builds a delegate with invoke `0x19d6890` and managers `0x19d8440`, `0x19d72c0`, `0x19d84e0` (`adr` at
+`0x19a2180`, `0x19a2190`, `0x19a21b8`, `0x19a21c4`, each the only reference to its target), stores a
+flag byte in its capture (`0x19a2178 and w8,w26,#1`) and hands it to `0x990678`. The invoke copies the
+flag into the capture of the delegate it installs with `0x19d7a70` (`0x19d6b38..0x19d6b4c`,
+`0x19d6d20..0x19d6d2c`, `adr` at `0x19d6de4`). `0x19d7a70` reads it at +8 (`0x19d7a84`): set, it calls
+`0x1a228f0` with "CloseSession" (`0x19d7ac8`); clear, it names "NoNeedToClose" (`0x31c713c`, length
+0xd) and builds no task. `0x1a35710` is the same test (`0x1a35724`), "CloseSession" at `0x1a35738` and
+"NoNeedToClose" at `0x1a357b0`.
+
+The flag is bit 0 of slot 13's fourth argument and nothing else: `0x19a1374 and w3,w24,#1`, then
+`0x19a1498 mov w27,w3`, `0x19a1a00 mov w28,w27` and `0x19a1f94`/`0x19a2044 mov w26,w28` are its only
+definitions over the whole of `0x19a1470..0x19a3788`. The `mov w27,#1` at `0x19a1c30`, on the path
+that names "RetryBody", feeds only the tests at `0x19a1cf0`, `0x19a1d1c` and `0x19a1f58`. The network
+manager forwards only its driver's slots 14 and 19 (`0x199dea8`, `0x199dec4`); no thunk in
+`0x1980000..0x19a1000` reaches slot 13.
+
+Within Pia, `0x255c484` is the only virtual call to facade index 19. Fourteen loads through offset
+0x98 feed a branch in `0x24e0000..0x2600000`: twelve through a vtable, on session properties
+(`0x24fe354`, `0x24fe36c`, `0x24fe5e0`, `0x24fe5f8` on the property itself; `0x250144c` on
+NetProtocol+0x200), the LDN and LAN protocols from their background jobs (`0x2522704`, `0x252b650`),
+`pead::ExpHeap` (`0x252dfb0`), the two reliable protocols on themselves (`0x2563268`, `0x256f4d8`),
+`ThreadStreamManager` (`0x257de84`) and the facade at job+0xc8 (`0x255c484`); `0x253f100` through a
+function pointer its object holds (stored at `0x253f0f0`); and `0x25b554c` from the stack. Outside
+Pia, the sequence load +0x30, load the vtable, load +0x98, branch occurs once, at `0x1b49684` in
+`0x1b48fd0`, on an object unrelated to the session. The 20 functions that load the Pia session
+singleton (GOT `0x3edc128`) make no virtual call through 0x98.
+
+`0x2515220` has two callers: `0x250758c` (operation 9) passes 1 (`0x25076bc`, `0x25076c4`) and
+`0x2507828` (operation 0xa) passes 2 (`0x2507958`, `0x2507960`); the job is `[NetProtocol+0x248]`.
+When `[[job+0xe0]+0x344]` is 1 it calls `0x2513c0c`, and when that returns 0 it stores the value at
+the job's +0xc0 (`0x25152c0`); otherwise it fails with 0x10408 and stores nothing. `0x2513c0c` (one
+caller, `0x251525c`) runs `0x2512b60(x0, x1, 8)` and, when that returns 0, stores the value at
+`LdnBackgroundProcessJob`+0x9b (`0x2513c6c`) and schedules the member at vtable offset 0x128
+(`0x2513c88`, the only `mov #0x128` in `0x24e0000..0x2600000`), vfunc 37. `0x2513c0c` is the only
+writer of that byte; the other `strb` to +0x9b in Pia, `0x24f0df4` inside `0x24f0c30`, is the Pia
+settings' language index, 0xff when `nn::oe::GetDesiredLanguage()` matches no entry.
 
 `LdnBackgroundProcessJob` vfunc 37 (`0x2513ccc`, shared with the Lan and Nplnd jobs) calls index 23
-of the LDN protocol when its byte +0x9b is 1 and index 24 otherwise.
+of the LDN protocol when its byte +0x9b is 1 and index 24 otherwise (`0x2513cf8`, the call at
+`0x2513d1c`). `nn::ldn::SetStationAcceptPolicy` (PLT `0x3163b60`, GOT `0x3ee9ab0`) has three callers,
+all in `LdnProtocol` (vtable address point `0x3c8aef8`):
+
+| call | in | policy |
+|---|---|---|
+| `0x251f19c` | index 23, `0x251f18c` | 0, accept all |
+| `0x251f120` | index 24, `0x251f110` | 1, reject |
+| `0x251f474` | index 21, `0x251f208`, after `AddAcceptFilterEntry` (`0x3163b70`) | 3, whitelist |
+
+Of the virtual calls through offset 0xc0 in `0x24e0000..0x2600000`, `0x2513d1c` is the only one on
+the LDN protocol; game code outside Pia was not scanned for one. Within Pia, policy 1 therefore
+follows only from +0x9b holding 2, which only operation 0xa writes. `0x2515434` then copies the job's
++0xc0 into the accept state (`0x2500a9c`) and builds the Net 0x50 at once (`0x2502960`).
+
+A retail console on its Link Trade search shows the transition. The joiner board records its
+advertisements while seated; decrypted (LDN protocol 1, AES-CTR, every one of 725, 703, 664 and 673
+advertisements read), four seated sessions give, in seconds from the seat as the host timestamps
+them:
+
+| policy 0, 2 of 2 nodes | Pia player count 2 first advertised | policy 1 first advertised | the Net 0x50 |
+|---|---|---|---|
+| -0.001 | 0.590 | 0.613 | 0.638 |
+| 0.000 | 0.563 | 0.583 | 0.606 |
+| -0.002 | 0.065 | 0.067 | 0.094 |
+| -0.001 | 0.553 | 0.573 | 0.575 |
+
+The only application-data byte that changes is the system property's number of players (advertise
+data +0x16, `e1 01 01 00` to `e1 01 02 00`). The policy changed between the advertisement before the
+one first showing 1 and that one, so 2 to 48 ms before the Net 0x50. Each session carries exactly one
+Net 0x50, 150 bytes, sequence id 1, accept-state byte `02`, and the policy stays 1 to the end of each
+trace, 68 to 74 s after the seat. No host migration was running: the console's first Net 0x40 came
+65.7 to 71.4 s after the seat. The `02` a retail Z-A host writes is therefore CloseParticipation's,
+operation 0xa through facade index 19, which the retail bytes show ran; which of the four task
+builders above started it they do not show. Every advertisement from the seat on reads 2 of 2
+participants, so the policy change refuses no station the network's capacity did not already
+refuse.
 
 The trade: the joiner's pick is its second `0101`. The host answers with its own, then `0102b90100`
 after the joiner's `0102` and `0104b90100` 1.5 s later; each of the joiner's four `0200b901XX`
@@ -838,30 +1104,33 @@ Check Mystery Gifts. It has no local-wireless path, so a gift cannot be served o
 
 ## Unresolved
 
-- Whether the Link Trade flow runs the "CloseSession" task, and so whether CloseParticipation is
-  what writes `02` into a Z-A host's first 0x50. The local driver's random-matching sequence names a
-  CloseSession step between "RetryBody" and "StoreSessionInfo"; the call it makes into the task
-  system was not traced, and neither were the owners of `0x19d7a70` and `0x1a35710`. Breakpoints on
-  an emulated host at `0x1a228f0` (caller in x30), `0x255c118` (w1), `0x2500a9c` (w1) and
-  `0x2515434` separate CloseParticipation from the create and inquire steps; a `0x2500a9c` hit with
-  w1 = 2 before any `0x255c118` hit points at the accept policy (NetworkInfo +0x62) at that moment.
-- Whether any other virtual call reaches facade index 19: `0x24e0000..0x2600000` holds 13 calls
-  through a vtable offset of 0x98, and which of them can hold a facade is not settled.
-- Whether CloseParticipation also sets the LDN accept policy to 1 through `LdnBackgroundProcessJob`
-  byte +0x9b, which would refuse a third station.
-- Whether any screen uses the `0x3d1a7c8` wrapper, the one that carries GetAbility `0xe43bec`, and
-  which screens load the "tokusei" archive. Breakpoints on `0xe43bec`, `0xe4a3c0` and `0x288d894`
-  while paging through a summary and then in a battle separate the two.
-- Which moves outside the level rule a console flags: held moves 605 (Roserade) and 247 (Glaceon)
-  are flagged and 583 (Xerneas) is not. Whether slot 150 drives the move screen's "/plus_on" and
-  "/plus_off" panes; the call sits beside those names and was not traced through its object.
-- What the receiving save keeps as the handler's name after the trade makes its own player the
-  current handler, for a record whose handler name the name check replaced.
-- What L (`0x444330`, through `0x410a20`) is. It selects the filter pattern, and a value of 0, 6 or
-  above 11 fails every name.
-- What writes own state 6, the state `0x964568` requires.
-- Whether the object at session+0x18 that `0x25504c8` writes is the session protocol the kick scan
-  reads (the offset +0x1b0 matches), and what the setting's +0x290 (1000) means.
-- What a console does on screen with a Bad Egg pick. `0x961964` has no refusing test; what the trade
-  screen draws goes through virtual calls not followed. A record with a checksum off by one, offered
-  to an emulated host with breakpoints on `0xe51698` (x1 = 1), `0x961964` and `0x962388`, shows it.
+- Which of the four builders of the "CloseSession" task (`0x19a7590`, `0x1a2ab10`, `0x19d7a70`,
+  `0x1a35710`) a Link Trade search runs, and with which fourth argument slot 13 (`0x19a1310`) enters
+  the random-matching sequence. Breakpoints on an emulated host at `0x1a228f0` (caller in x30) and
+  `0x19a1310` (w3) name both.
+- Whether game code reaches facade index 19 other than through session+0x30, through
+  framework+0xb8 or a facade getter. A scan of the loads of framework+0xb8, or a breakpoint on
+  `0x25183bc` with x30 on an emulated host, settles it.
+- Whether the `0x3d1a7c8` component's slot 42 is ever called, and what the battle ability window
+  shows. Breakpoints on `0x288d894` (caller in x30), `0x2d52468` (the vtable of the object at x1+8)
+  and `0x2d6fd88`, on an emulated console opening a summary and then in a battle where an ability
+  announces itself, answer it: a hit on `0x2d52468` with a 321-slot wrapper vtable means the window
+  draws ability 0 whatever the record holds.
+- Whether the generic lookups `0xd8a04` (`0xd8dd4`) and `0x15dc1c` (`0x15dd34`) compare the
+  component's type id `0xfb63b93a`, and what they hand the component to. Reading both functions
+  settles it.
+- What `0x393b8` computes, the value `0x8d1438` stores as the summary screen's bypass bit. Reading it,
+  or a breakpoint on `0x8d1438` while paging through a summary, settles it.
+- Whether a shipped script calls the binding `0x1673170` that stores any integer into L, and what the
+  language-select view's table `[x0+0x50]` holds. A breakpoint on `0x16734c0` over a play session, and
+  the table read at `0x2c204ac`, settle both.
+- What writes the exchange worker's error word +0x10, which selects own state 7. A watchpoint on
+  worker+0x10 during an emulated trade, with one trade cancelled after the steps start, names the
+  writer.
+- What the extra packet `0x25688d0` sends to a station it has been silent to for a second carries,
+  and which stations have byte +0xa0 set. Reading `0x256da8c` and `0x256a89c`, and a capture of a
+  seated station the console has nothing else to send to, settle it.
+- What a console draws for a Bad Egg pick and whether it offers Confirm. An emulated host joined by
+  `bin/za_join.py` offering a record whose checksum at +6 is off by one (without `--fresh-pid`,
+  which stops on such a record), with breakpoints on `0xe51698` (x1 = 1), `0xcbc7fc` and `0xcbcbec`, shows it;
+  the capture's `0102`, `0104` and `0201b901XX` answers say whether the console confirmed.
