@@ -62,18 +62,9 @@ Proven on retail hardware, end to end:
 - Whether a retail console that is not the Grand Underground session host adopts a 0x61 from
   pokeldn. Every Underground session measured had the console as host, and pokeldn does not host an
   Underground session. A sender filter in the shared `NetUseManager` receive path was not searched.
-- The 2D grid positions assume the grid's world scale is 1: `Initialize` [`0x1e909b0`] divides
-  world-space position differences by a local-space step. The 1.3.0 `/Data/rawsettings` u32 at +0x1c
-  is 0. Unread: the Unity player's read of that file (`0x2c16f8..0x2c1758`, into `0x4eed08c`) and its
-  default-resolution switch (`0x6062e8`, byte table `0x3deab6c`, handlers `0x2c2a1c` and `0x2c2af0`);
-  the `Canvas` and `CanvasScaler` fields above each grid in the `uiresidentwindow` prefabs (`Seal`,
-  `SealTemplate`); `UIManager$$ScreenScaled` `0x1bf7c40`; and which of `Initialize`'s two step
-  branches a retail view takes (cell size plus spacing, or `Rect$$get_size` at `0x1e90b40`).
-- Whether a console that backed out of a round (`NetDataReturnSelectData{1}`) waits for the
-  partner's `{0}` before its player can pick again, and what a `{0}` arriving after the re-pick
-  does. The reading that settles it: `onCancelSelect` `0x1c28620` and `BoxWindow$$ToNextPhase`
-  `0x2125020`, the phase test in `ReciveReturnSelectPoke` (`0x1c280fc`), and what
-  `PokeSelectWait` `0x1c26070` and `UnionTradeManager$$RecivePokeData` `0x1c33e80` wait on. On a
-  console: a hosted trade in which the player backs out with B on the full-screen view and picks
-  again, with no `{0}` sent; the capture shows its `45 0001 01`, then whether a second
-  `NetTradePokeData` follows.
+- Where the Unity player takes `Screen.width` from. The 2D grid positions rest on it being the
+  1280 x 720 default that `0x6062e8` keeps when `/Data/rawsettings` +0x1c is 0
+  ([the protocol page](bdsp_protocol.md#the-grand-underground)); another source, such as the
+  player settings in `globalgamemanagers`, has not been excluded.
+- Whether any scene places a `UnionRoomManager` or a `UgNetworkManager` as a component. The code's
+  only `AddComponent` of each is read; a scene-placed instance would live outside those paths.

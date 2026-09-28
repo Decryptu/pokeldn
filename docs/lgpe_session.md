@@ -837,6 +837,18 @@ its done byte) from `0x13bfa0`, in the game's setup `0x13b650`. The job executor
 from the worker loop at `0x20f30`, calls its slot `+0x40` (`0x23278..0x23288`) while `+0x204` is
 clear (`0x23264`).
 
+`0x13bfa0` (one caller, `0x13bf70`) builds the job at `0x13bfd0` and stores it at `G+0x50`
+(`0x13c00c`). `0x13c440` installs the vptr `0x15379e8`, whose slot `+0x40` is `0x13c5a0`, and stores
+its argument at `[job+0x208]` (`0x13c4d4`), the shape of the root's own job (`+0x40 = 0x13b0f0`,
+`[job+0x208]` the root). `0x13bfa0` then chains jobs with `0x1ca00`, each call under its first
+argument's mutex at `+0x148` (`0x13c02c..0x13c120`). With A and B at `[[G+0x60]+0x128]` and
+`+0x130`, C and D at `[[G+0x68]+0x68]` and `+0x70`, and E the object `0x2af80` returns (stored at
+`G+0x58`), the seven calls are `(E, D)`, `(E, B)`, `(B, A)`, `(D, A)`, `(A, C)`,
+`(A, 0, [[[0x15fb408]]+0x50])` and `(C, job)`: the new job enters the graph only beside C. Which
+direction an edge runs is unread. The worker loop `0x20f30` takes jobs from a queue at `+0x2e0` and
+`+0x2e8` between `nn::os::LockMutex` (`0x20fb8`) and `nn::os::UnlockMutex` (`0x20ff0`, `0x21054`).
+The code that submits the graph each frame has not been found.
+
 The frame period is chosen at run time from the table `0xf7eeb8` (GOT `0x15fb438`): 16666667,
 33333334, 50000000, 66666667 and 83333334 ns, indexed by `0x39600` (`0x39610`). `0x29e80..0x29eb4`
 turns the current period into a present interval `clamp(period / 16666666, 1, 5)` for `0x358b0`. The
@@ -939,8 +951,22 @@ retail Let's Go sends 1 there, so with retail peers the value is the number of s
 and `0x59f21c`, and only when `[s+0xd8]` is outside 2 to 6, `[s+0xd4]` is 2 or 4 and
 `0x52abf0(s+0x38)` is false (`0x59eacc..0x59eaf8`).
 
-The link machine also calls the session's slot 10 (`+0x50`, `0x3497d0`) at `0x4da38c`, in
-`0x4da294`, with two out-arguments (`0x4da378..0x4da38c`).
+The link machine calls the trade session object (vtable `0x154f618`) at six offsets, each fetched
+from `[x19+0x10]`:
+
+| offset | function | call | when |
+|---|---|---|---|
+| `+0x30` | `0x3495e0` | `0x4da584` in `0x4da4b0`, whose one caller is `0x4d9cf0` | state 4 to 5 (`0x4d9cf4`) |
+| `+0x38` | `0x349600` | `0x4d9f2c` | matching succeeded, before `0x116890` |
+| `+0x40` | `0x349620` | in `0x4da5e0`, whose one caller is `0x4d9e24` | state 9 to 10 (`0x4d9e28`) |
+| `+0x48`, slot 9 | `0x349650` | `0x4da084` in `0x4d9fb0` (one caller, `0x4d9bc8`); `0x4da0e0` (one caller, `0x4d9ee0`) | a pump failure; a failed match with `[job+0x300]` clear (`0x4d9e30 cbz w20`, `w20` loaded at `0x4d9c04`), for a zero result or one whose bits 10 to 12 are not 1 or 2 (`0x4da114..0x4da128`) |
+| `+0x50`, slot 10 | `0x3497d0` | `0x4da38c` in `0x4da294`, two out-arguments (`0x4da378..0x4da38c`) | a failed match with `[job+0x300]` clear whose result has bits 10 to 12 equal to 1 or 2 |
+| `+0x70`, slot 14 | `0x3499a0` | `0x4d9efc` | a failed match with `[job+0x300]` set (`0x4d9e30..0x4d9efc`) |
+
+Both failed-match paths then set state 6 (`0x4d9ee4`, `0x4d9f14`). The indirect call at `0x4d9d14`
+is `+0x48` on the job `[x19+0x20]`. Slots 9, 10 and 14 forward to a delegate
+that `0x3496b0` fetches, through its `+0x38` (`0x349680`), `+0x48`/`+0x40` (`0x349814`, `0x34984c`)
+and `+0x68` (`0x3499d0`).
 
 `0x838660` decides who sends the 2. With S = {144, 145, 146, 150, 151} (`species - 0x90` in the
 mask `0xc7`) and M = {808, 809}: a station whose offered species is in S or M and whose received
@@ -980,6 +1006,19 @@ Pokemon when the species are compared.
   `0xf48368[0xf4b760[id]]`, on the object `[[[[0x15fad08]]+0x98]+0x58]+0xc8`; while the byte
   `obj+0x10f8` is set it writes nothing for any id (`0x1ca8f8`), and an id above 999 writes nothing
   there.
+
+`0x115860` returns the byte `0x1614076` (`0x115864`). Only `0x1157f0` sets it (`0x115800`,
+`0x11581c`), after `0x119a90` with mode 1 (`0x115818`), and only `0x115830` clears it (`0x115840`,
+`0x115850`), after `0x119e60` and only when it is 1; no relocation and no store through an address
+register reaches it. `0x1157f0` has one caller, `0xb2ea98` in `0xb2ea70`, the run slot
+(`[job+0x2e0]`, stored at `0xb2e534`) of the thread named `InternetConnectThread` (started at
+`0xb2e568`). `0x115830` is called from that body's exit when `[[0x15fc918]]` is null (`0xb2eaa8`,
+`0xb2eb74`) and from the two `InternetDisconnectThread` bodies, `0xb2ebf8` in `0xb2ebd0` and
+`0xb2f178` in `0xb2f150`. `0x119a90` has two other callers: the local link at `0x4dac9c` with its own
+mode, skipped when that mode is 1 (`0x4dac84..0x4dac9c`), and `0x4db2bc`, which passes `[x19+0x2e8]`
+with no mode test (`0x4db2ac..0x4db2bc`). The byte is therefore set while the internet connection is
+up. Reading record 476 as local trades and 477 as internet trades is a deduction from that: a local
+trade made while the internet connection is up counts under 477.
 
 `mgr+0x128c` is written only by the session-start function `0x116890` (one caller, `0x4d9f54`): 0
 at `0x116a14`, then `0x59e920(session) & 1` at `0x116a48`; `0x4d9730` and `0x4da860` read it.
@@ -1028,6 +1067,14 @@ For a peer this means:
 | 6 | `0x886ee8` | state 8 |
 | 7 | `0x886908` | waits for its child; result 1 goes to 8, any other to 1 (`0x88691c..0x886928`) |
 | 8 | `0x8869cc` | destroys the party-offer object (`0x8869f0`) and the `mgr+0x70` object (`0x8869f8 bl 0x3447a0`) and leaves |
+
+The child is held at `[obj+0x90]` as a weak reference: the block it points to carries the strong
+count at `+0x54` and the object at `+0x58`, the layout `0x4da344..0x4da354` locks with
+`ldxr`/`stxr`. State 3 returns 0 while the pointer is non-null and that count is non-zero
+(`0x886670 ldr x8,[x19,#0x90]`, `0x88667c ldar w8,[x8,#0x54]`, `cbnz` to `0x8870ac`), and reads the
+result and pushes the fatal wrapper only once the count is 0. The child, installed at `0x886e64` and
+`0x886e80`, has therefore been destroyed when the wrapper goes on the stack; only its pointer stays
+stored.
 
 `0x344510`, when the party-offer object already exists, creates nothing and returns
 `0x4d94d0([mgr+0x68]) & 0x11b4d0(mgr+0x70)`, the channel's and the clone set's readiness

@@ -328,7 +328,13 @@ Before it applies the id, the consumer stores the entry's second halfword per st
 set; it then applies the id through the 0x7c window's own `0x74f0ec` (`0x742880`), so an id past the
 window is ignored the same way. The send path vf11 `0x742304` reads the stored halfwords and drops
 from its destination bitmap every station whose value is `0xffff`, whose station slot is empty, or
-whose value is at or above the window base (`0x74238c..0x74242c`). Across 30 recorded sessions,
+whose value is at or above the window base (`0x74238c..0x74242c`). vf11 hands the filtered bitmap to
+`0x74ea00`, the acknowledgement sender. It does nothing unless `[window+0x4b8]` is set; with an empty
+bitmap it clears `[window+0x4b8]` and stamps `[window+0x4c0]`; otherwise it builds an AckMessage
+whose header carries sequence `0xffff` and a length of `2 + 21 * count` (`0x74eb64..0x74eb94`), one
+entry per occupied station (`0x74eba0..0x74ec2c`), serialises it (`0x74ec80`, `0x743160`) and sends
+it. A station dropped from the bitmap therefore stops receiving the console's acknowledgements; the
+stored halfword plays no part in data retransmission. Across 30 recorded sessions,
 emulated and retail, a console sent at most one 0x81 application message per port per join, sequence
 1 on each port it opened, and every host acknowledgement named `ack_id 2`.
 
@@ -672,9 +678,18 @@ mismatch, so a message from a station the game is not in a trade with never reac
 The port-0 open body `01 00` is selector 1 with counter 0, the ready. The reset between two trades
 leaves `[net+0x78]` set, so the ready is owed once per session.
 
-`0x26d9458` sends selector 3 with no record when its record argument is null or `0x2b5d3a4` returns
-true (`[pk+0x98]` through `0x2b6849c` compared with 0, `0x26d94a4`), and selector 2 with the
-0x178-byte record otherwise (`0x26d9554..0x26d9570`). Receiving 3, `0x26d93c8` replaces the
+`0x26d9458` has one caller, `0x10fb200` in `0x10fb198`, which has one caller, `0x110a010` in the
+scene's box mode; neither address sits in a pointer slot. It sends selector 3 with no body when its
+record argument is null (`0x26d94a0`) or `0x2b5d3a4` returns true, and selector 2 otherwise, with a
+0x178-byte body zeroed and filled by `0x2b65514` (`0x26d9554..0x26d9570`). `0x2b5d3a4` passes
+`[pk+0x98]` to `0x2b6849c`, which returns the first halfword of the block the order table
+`0x3984e57` puts first, the species, and returns true when it is 0. The record argument is
+`0x11207f8(ui, box, slot)` (`0x1109fa0..0x1109fac`): it copies the slot into the UI's scratch record
+`[ui+0x1660]` through `0x111da04` and returns that object (`0x11208e4..0x1120910`,
+`0x111fc18..0x111fc4c`), so the pointer is null only when the scratch object is absent and an empty
+slot reaches selector 3 through the species test. In the recorded sessions a console sent `03 00` once
+in one session, as its first trade-box message after the joins, fourteen times through a long box
+walk interleaved with about fifty showings in another, and in no other. Receiving 3, `0x26d93c8` replaces the
 partner-shown slot `[net+0x98]` with a freshly allocated 0xb8-byte object from `0x151dc70`. The tick
 `0x26d9094` never reads `[net+0x98]`, so a 3 changes what the screen shows and nothing in the state
 machine.
@@ -830,12 +845,16 @@ only tick read under the job is `0x265d420` (`nn::os::GetSystemTick` at `0x265d4
 state 3. A job at state 1 or 2 therefore waits without a limit of its own.
 
 The job's only other exit is the cancel request `0x26dc640`, which sets `[job+0x14]` and
-`[job+0x18]` to 1 and is reached only through `0x26d9e90`, from the scene at `0x1109ef4` and
-`0x110b7ac`; the second, in the scene's leaving mode, starts a stopwatch at `[scene+0x278]`
+`[job+0x18]` to 1 and is reached only through `0x26d9e90`, whose two callers are the scene's monitor
+at `0x1109ef4` and its leaving mode 9 at `0x110b7ac`; the second starts a stopwatch at `[scene+0x278]`
 (`0x110b794..0x110b79c`) just before cancelling. The scene is in mode 5 at step 9 for the whole life
 of a job (step 7 starts it at `0x110ad34` and sets step 9 at `0x110ad3c`), and the step-9 arm
 `0x110abb8` reads only `0x26d9354`, the trade object's `[+0xb8]` mapped through `0x397e380` (6 to 5,
-7 to 0), and waits for 5: only the success callback moves the scene off step 9. What cancels a held
+7 to 0), and waits for 5: only the success callback moves the scene off step 9. The calls the scene
+update makes before the mode switch cannot end the wait whatever they read: `0x26bc6c4` is handed
+`[scene+0xc0]`, a message helper that switches on its own `[+0x1a0]`; `0x10fb234` is `0x26d93b4`, the
+getter of the partner's shown record; `0x1126408` displays that record on `[scene+0x90]`. None is
+handed the scene, so none can store to `[scene+0xb0]` or `[scene+0xb4]`. What cancels a held
 job is the scene's monitor `0x1109d00`, run before the mode switch in every update (`0x1109a98`),
 mode 5 only, dispatching on the step through `0x3979c68` (base `0x1109d20`):
 
@@ -933,9 +952,14 @@ clock settings play no part. Time with the game closed is not counted: on the ne
 starts its stopwatch again from the saved count.
 
 `0x13d67b0` returns the non-zero method of the same object (`0x13d67e8..0x13d67f0`); its call at
-`0x13d67f0` is that method's only caller. Its callers `0x13d55fc` and `0x13d56ac`, in functions that switch on `[x0+0xa4] == 3`, return
+`0x13d67f0` is that method's only caller. Its callers `0x13d55fc` and `0x13d56ac` return
 `0x500000001` while the count is non-zero and `0x300000001` otherwise, and `0x400000001` when
-`0x13d65c0` is false.
+`0x13d65c0` is false. They sit in `0x13d55dc` (one caller, `0x13d53c0`), which asserts
+`[x0+0xa4] == 3`, and `0x13d5648` (callers `0x13d53dc` and `0x13d5808`), both in one menu's state
+code. The trade job is the only writer of a non-zero count, so the item they gate is a trade item;
+that it is Link Trade is a deduction. No string, message label or RTTI name in
+`0x13d4000..0x13d7200` names it: the strings there are layout pane names, `common/net.dat`,
+`TradeMatchmakingConfig` and `PLAY_UI_COMMON_MATCHING`.
 
 ## The phase protocol, and the message only a host sends
 
@@ -1545,21 +1569,22 @@ change neither the words nor the delay.
 
 - What words the step-9 screen shows while a job is held at state 1, a second job's `01 03` refused
   by the gate after a host closed the phase key. They are the UI object's `[scene+0xa0]` message
-  after `0x1128184(ui, 1)` (`0x110ad14`), in the RomFS message archive. The per-frame calls the scene
-  update makes before the mode switch (`0x26bc6c4`, `0x10fb234` and `0x1126408` on `[scene+0x90]`)
-  have not been read for input handling. A console run settles both: the host answers the console's
+  after `0x1128184(ui, 1)` (`0x110ad14`), in the RomFS message archive. A console run settles it: the
+  host answers the console's
   phase-key close with its own, the player trades once, then offers and confirms a second trade and
   reads the screen at 30 s and at 2 minutes.
-- Is a console's `03 00` the box cursor on no record? The sender `0x26d9458` and its single caller
-  `0x10fb198` have been read once and not checked a second time. A console run on the trade box that
+- Whether a console's `03 00` is the box cursor on an empty slot. The code sends it for a record
+  whose species reads 0, which an empty slot copied into the scratch record would give, and fourteen
+  of them through one box walk fit that without proving it. A console run on the trade box that
   moves the cursor onto an empty box slot and back settles it: one `03 00` per move onto the slot and
   a selector 2 on the move back.
-- Whether `0x13d55e0` and `0x13d5648` (called from `0x13d52c0`) are the Link Trade menu item, and
-  what text goes with their result `0x500000001` while the restriction count is non-zero. No string or
-  RTTI name ties them to the item; the text is in the RomFS message archive.
+- Whether the item `0x13d55dc` and `0x13d5648` gate is Link Trade, and what text goes with their
+  result `0x500000001` while the restriction count is non-zero. Both the label and the text are in
+  the RomFS message archive.
 - Whether a restriction lasts ten minutes on a console, and which screens tick the system list
   `0x42eced0`; the decrement needs `0x26bd430` to run. A console run that stops a trade between the
   host's `02 03` and `02 06` and times the refusal from its first showing to Link Trade opening again,
   with the game left on the field, settles both.
-- What the 0x81 send path does after vf11 `0x742304` drops a station from its destination bitmap
-  (`0x74ea00` unread): whether that stops a port's resends or only its first sends.
+- How the 0x81 window resends its own data. The acknowledgement sender `0x74ea00` is read; the data
+  resend path is not, so whether a console resends a port's message for as long as a host answers it
+  with an id past the window is unknown.

@@ -96,11 +96,21 @@ moves it into the security phase.
 
 Three messages from the peer reset the round in the select window. The reset is
 `TradeSelectPokeModel$$ReciveReturnSelectPoke` [1.3.0 main 0x1c27f00]: for `isReturnSelect` 1 it
-answers `NetDataReturnSelectData{0}` to the partner [0x1c27fa4]; in every case it clears
-`isWaitingOK`/`isWaitingSelect` [0x1c27fb0], `isRecivePokeParam`/`isSendPokeParam` [0x1c2803c] and
-both trade states (+0x80, +0x84) [0x1c28040], sets `UnionWork` static +0x50 (`boxState`) to 6, and
-takes the box window back unless a box exists at a phase below 3. The player is back to picking,
-with no error on screen.
+answers `NetDataReturnSelectData{0}` to the partner [0x1c27f48..0x1c27fa4], so a console answers
+every `{1}` with a `{0}` of its own; in every case it clears `isWaitingOK`/`isWaitingSelect`
+[0x1c27fb0], `isRecivePokeParam`/`isSendPokeParam` [0x1c2803c] and both trade states (+0x80, +0x84)
+[0x1c28040], and sets `UnionWork` static +0x50 (`boxState`) to 6, `CANCEL_SELECT`
+[0x1c28030..0x1c28038]. With a box at phase 3 or later, or no box window found, it then calls
+`CloseOverUIWindows` [0x1c28168]; below phase 3 it returns [0x1c280f8..0x1c28100].
+
+`BoxWindow$$UpdateNetworkTrade` [0x2121628], run from `BoxWindow$$OnUpdate` while
+`[[box+0x2f0]+0x24]` is 3 [0x2121840..0x212184c], switches on `boxState` (table 0x3db9e3e) and
+takes `CANCEL_SELECT` at 0x2121c64: it clears it, and at phase 2 calls
+`BoxWindow$$ClearTradeSelected` [0x2121cd0..0x2121cd8], which drops a highlight the player has made
+and not confirmed. At any other phase [0x21225b0..0x21225f4] it closes the box's sub-windows
+(`CloseOverBoxWindows`), clears the selection, hides +0x1f8, closes the message window, sets the
+phase back to 2 and shows `SS_box_588`, "The communication partner canceled the trade." (French
+"L'autre joueur a choisi d'annuler l'échange."). The player is back to picking.
 
 | message from the peer | box phase | what the console does |
 |---|---|---|
@@ -109,7 +119,9 @@ with no error on screen.
 | ready-ok (0x21), SELECT_WINDOW | latch +0x71 set | dropped [0x1c342e4] |
 | ready-ok (0x21), SELECT_WINDOW | box present, phase 5 or below | the reset as for `{1}` [0x1c3440c..0x1c3443c], then `ResetTradeState()` |
 | ready-ok (0x21), SELECT_WINDOW | phase 6 or later, or no box | `ReciveReadyOk`, latch +0x71 = 1 [0x1c3435c] |
-| return-select (0x45) | any | the reset; `UnionTradeManager$$ReciveReturnSelectPoke` [0x1c345c0] only clears `targetDemoPokemonParam` in PLAY_DEMO |
+| return-select (0x45), either value | 2 `PlayerSelecting` | the reset; the box drops an unconfirmed highlight |
+| return-select (0x45), either value | 3 or later | the reset; the box closes its sub-windows, returns to phase 2 and shows `SS_box_588`, the partner's cancel |
+| return-select (0x45) | any, with `currentState` PLAY_DEMO | no reset: `UnionTradeManager$$ReciveReturnSelectPoke` [0x1c345c0] only clears `targetDemoPokemonParam` |
 
 The latch (+0x71, `<isLoadingBox>k__BackingField`) is cleared by `UnionTradeManager$$Init`
 [0x1c331c4], `WaitBoxWindowComplete` [0x1c3331c], `Cancel` [0x1c33850], `RecivePokeData`
@@ -122,15 +134,34 @@ In a normal round the console's check-ok comes at the decide step, the client's 
 check states reach 6 and the box moves on. A second check-ok in the same round, arriving after the
 box reached `LastConfirm`, cancels the round.
 
-The console's own back-out, `onCancelSelect` (`b__54_5` 0x1c28620), calls `BoxWindow$$ToNextPhase`
-[0x1c28640], sends `NetDataReturnSelectData{1}` [0x1c286a4] and clears both trade states. A partner
-console answers it with `{0}` and resets its own round.
+The console's own back-out, `onCancelSelect` (`b__54_5` 0x1c28620, the seventh delegate passed to
+`BoxWindow$$Open` [0x1c2762c]), clears `isWaitingOK`/`isWaitingSelect` [0x1c28630], calls
+`BoxWindow$$ToNextPhase(box, 2)` [0x1c28638..0x1c28640], sends `NetDataReturnSelectData{1}`
+[0x1c286a4], and clears `isRecivePokeParam`/`isSendPokeParam` [0x1c286a8] and both trade states
+[0x1c286ac]. `ToNextPhase` stores a non-zero argument as the phase at `[[box+0x390]+0x50]`
+[0x212505c], the word `get_TradePhase` reads, and adds one for 0; the box is back at 2,
+`PlayerSelecting`. The back-out never sets `CANCEL_SELECT`. A partner console answers it with `{0}`
+and resets its own round.
+
+After backing out, the console waits for a fresh `NetTradePokeData`; the `{0}` does not release it.
+`PokeSelectWait` moves on only past phase 2 with `isRecivePokeParam` and `isSendPokeParam` both set
+[0x1c2615c..0x1c2616c], and `isRecivePokeParam` is set only by `UnionTradeManager$$RecivePokeData`,
+in `currentState` SELECT_WINDOW with no phase test [0x1c33e9c..0x1c33ebc]. Two other setters,
+`TradeSelectPokeModel$$SetIsRecivePokeParam` [0x1c264b4] and `UnionTradeManager$$SetTargetTradePoke`
+[0x1c33f18], have no caller outside the IL2CPP method tables, and every other store to +0x78
+clears it. A `{0}` that arrives while the box is still at 2 clears an unconfirmed highlight; one that
+arrives after the partner's replacement Pokemon or the player's re-pick wipes the new round and, past
+phase 2, shows the partner's cancel.
 
 - Answer each console check-ok once. A retransmitted copy of it, answered again after the first
   answer has moved the box to `LastConfirm`, resets the round.
   Within one seat a console never reused a reliable sequence id for different content (0 of 11004
   messages over 89 retail captures), so a receiver can drop an id it has already delivered;
   `pokeldn.ldn.reliable5.Reassembler` does, and `bin/bdsp_connect.py` uses it.
+- Answer a console's `45 0001 01` with `45 0001 00`, as a console does; a `{1}` back is a back-out
+  of the peer's own. Never send a 0x45 of either value after the replacement Pokemon has gone out or
+  after the console's re-pick: it clears `isRecivePokeParam` and sets `CANCEL_SELECT`, wiping the
+  round.
 - In the select window a 0x21 before the console's last confirmation is a cancel, and after it only
   the first counts. Stop a security-state repeater before the console can be back in its select
   window.
@@ -256,9 +287,10 @@ completed trade:
 
     data_id 69 (0x45)   payload 45 00 01 00   {'isReturnSelect': 0}
 
-the same `<id> 00 01 <value>` shape as the check-ok. It is an announcement, not a question: an
-answer of 1 draws a `{0}` back and runs the reset on a round that is already clear, so the screen
-shows nothing ([Box phases](#box-phases-and-the-messages-that-reset-a-round)). It repeats once a
+the same `<id> 00 01 <value>` shape as the check-ok. It asks for no answer. An answer of 1 draws a
+`{0}` back and runs the reset on a round that is already clear: at phase 2 the box drops any
+unconfirmed highlight and shows no message
+([Box phases](#box-phases-and-the-messages-that-reset-a-round)). It repeats once a
 second until the player picks the next Pokemon
 (78 and 50 repeats in runs where the peer sat still, 7 across three trades started back to back).
 

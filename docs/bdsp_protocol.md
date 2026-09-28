@@ -901,5 +901,27 @@ sent after those slots were cleared, filled slot 2 with four visible seals, the 
 in stock, and closed on the same message. `scratchpad/bdsp_capsule_grid.py FILE` checks a design
 against the grid.
 
+The grid positions hold at a world scale of 1, and a retail view is at that scale. `Initialize`
+measures the centre and the cells with `Transform$$get_position`, in world space (`0x01e90bd0`,
+`0x01e90c70`, `0x01e90cb4`), and divides their difference by the step, which is local
+(`0x01e90b7c..0x01e90b8c`, `fdiv` at `0x01e90c10` and `0x01e90c1c`). The centre is the middle cell,
+`gridCells[count / 2]` (`0x01e90a98..0x01e90ac4`), stored at +0x78. A grid root without a
+`GridLayoutGroup` would take the first cell's `rect.size` as the step (`0x01e90ad8..0x01e90b40`);
+all three retail roots have one, so the step is 72 + 3 = 75 on both axes. Every ancestor of each
+grid, up to the root `Seal` or `SealTemplate`, has local scale 1, and no `Canvas` is nested below the
+root. Each root `Canvas` has render mode 0 (screen-space overlay) and a `CanvasScaler` that scales
+with screen size from 1280 x 720, matched on the width (match mode 0, match 0). Each `Window` above a
+grid carries an `Animator` whose clips bind only `m_AnchoredPosition.x`, `m_AnchoredPosition.y` and
+a `CanvasGroup` value, never a scale; a translation cancels in the subtraction.
+
+The scaler's factor is `Screen.width / 1280`, the quotient `UIManager$$ScreenScaled` (`0x01bf7c40`)
+also computes. The Unity player reads 0x40 bytes of `/Data/rawsettings` into `0x04eed08c`
+(`0x002c16f8..0x002c1758`), and the 1.3.0 file's u32 at +0x1c is 0. The default-resolution switch
+`0x006062e8` sets 1280 x 720 and switches on that word through the byte table `0x03deab6c`: 0 keeps
+it, 1 follows the operation mode (1920 x 1080 docked), 2 the performance mode, 3 both. The
+mode-change handlers act only on 1 or 3 (`0x002c2a48..0x002c2a64`) and on 2 or 3
+(`0x002c2b1c..0x002c2b38`), and no managed code calls `SetResolution` or a `Screen` setter. With 0
+the default stays 1280 x 720 docked and handheld, and the factor is 1.
+
 The answer must be
 sent from a task of its own: sent from inside the receiver, the ack it waits for is never read.

@@ -80,12 +80,12 @@ error screen. `docs/lgpe_session.md` has every layout.
   `+0x1e6` is 1 or less, but the recount runs only under the guards on `[s+0xd8]`, `[s+0xd4]` and
   `0x52abf0`, whose values in a trade are unread, and the local station's own record (the other
   callers of `0x5a9430`, `0x581f20` and `0x583b90`) is untraced.
-- What calls the session's slots 11 to 13 (`0x349880`, `0x3498e0`, `0x349940`), and which results
-  reach slot 10 at `0x4da38c` inside `0x4da294`.
+- What calls the session's slots 11 to 13 (`0x349880`, `0x3498e0`, `0x349940`), and what `0x4da294`
+  tests before its slot-10 call at `0x4da38c`.
+- Whether the delegate `0x3496b0` fetches for the session's slots 9, 10 and 14 is the listener at
+  `mgr+0x60`. The codes 0xe for slot 9 and 0x11 for slot 14 rest on that; the delegate's class has
+  not been resolved.
+- Which process the trade dispatcher's child is, and whether the sync save's commit channel at
+  `seq+0xb8` is released after an aborted commit.
 - Whether the dispatcher's modes 1 and 2 are link battles. The reading rests on the scene they build;
   a capture of a link battle's session, with the mode word `+0x8c`, settles it.
-- Whether game record 476 counts local trades and 477 trades made while the internet connection is
-  up. `0x838800` picks 477 when `0x115860` is true; the chain that sets its byte `0x1614076`
-  (`0x1157f0`, `0x115830`, `0x119a90`) and its callers beside `InternetConnectThread` are unread.
-  Reading them settles it offline; the record's value in a save before and after a local trade
-  settles it on a console.
