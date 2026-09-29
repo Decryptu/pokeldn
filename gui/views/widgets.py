@@ -1,4 +1,5 @@
 import os
+import re
 import threading
 from collections import deque
 from typing import Callable
@@ -6,6 +7,69 @@ from typing import Callable
 import flet as ft
 
 from gui import theme as t
+
+
+class CodeBlock:
+    def __init__(self, app, value: str = "", content: ft.Control | None = None):
+        self.app = app
+        self.text = t.text(value, 12, t.MUTED, font_family=t.MONO, selectable=True)
+        self.control = ft.Container(ft.Row([
+            ft.Container(content if content is not None else self.text, expand=True,
+                         padding=ft.Padding(0, 6, 0, 6)),
+            t.icon_button("copy", self._copy, "Copy code"),
+        ], spacing=8, vertical_alignment=ft.CrossAxisAlignment.START),
+            bgcolor=t.BG, border_radius=8, padding=10, border=ft.Border.all(1, t.BORDER))
+
+    async def _copy(self, e) -> None:
+        await self.app.copy(self.text.value)
+
+
+def fenced_blocks(source: str):
+    """Keep Markdown around top-level fenced examples and copy their literal contents."""
+    opening = re.compile(r"(?m)^ {0,3}(`{3,}|~{3,})[^\n]*\n")
+    cursor = 0
+    while match := opening.search(source, cursor):
+        fence = match[1]
+        closing = re.compile(r"(?m)^ {0,3}" + re.escape(fence[0]) +
+                             "{" + str(len(fence)) + r",}[ \t]*(?:\n|$)").search(source, match.end())
+        if closing is None:
+            break
+        if match.start() > cursor:
+            yield source[cursor:match.start()], None
+        yield source[match.start():closing.end()], source[match.end():closing.start()]
+        cursor = closing.end()
+    if cursor < len(source):
+        yield source[cursor:], None
+
+
+class MarkdownDocument:
+    def __init__(self, app, on_link):
+        self.app, self.on_link = app, on_link
+        self.control = ft.Column(spacing=14, horizontal_alignment=ft.CrossAxisAlignment.STRETCH)
+
+    def set_value(self, value: str) -> None:
+        self.control.controls = [self._markdown(source) if code is None else
+                                 CodeBlock(self.app, code, self._markdown(source)).control
+                                 for source, code in fenced_blocks(value)]
+
+    def _markdown(self, value: str) -> ft.Markdown:
+        return ft.Markdown(
+            value, selectable=True, extension_set=ft.MarkdownExtensionSet.GITHUB_WEB,
+            code_theme=ft.MarkdownCodeTheme.ATOM_ONE_DARK, on_tap_link=self.on_link,
+            md_style_sheet=ft.MarkdownStyleSheet(
+                p_text_style=ft.TextStyle(size=14, color="#D4D6DB", height=1.55),
+                h1_text_style=ft.TextStyle(size=26, weight=ft.FontWeight.W_700, color=t.TEXT),
+                h2_text_style=ft.TextStyle(size=19, weight=ft.FontWeight.W_600, color=t.TEXT),
+                h3_text_style=ft.TextStyle(size=16, weight=ft.FontWeight.W_600, color=t.TEXT),
+                a_text_style=ft.TextStyle(color=t.BLUE),
+                code_text_style=ft.TextStyle(font_family=t.MONO, size=12.5, color=t.TEXT, bgcolor=t.FIELD),
+                codeblock_decoration=ft.BoxDecoration(bgcolor=t.BG, border_radius=8),
+                codeblock_padding=0,
+                table_head_text_style=ft.TextStyle(size=13, weight=ft.FontWeight.W_600, color=t.TEXT),
+                table_body_text_style=ft.TextStyle(size=13, color="#D4D6DB"),
+                table_cells_padding=ft.Padding(8, 6, 8, 6),
+                block_spacing=14,
+            ))
 
 
 def on_ui(page: ft.Page, fn: Callable[[], None]) -> None:

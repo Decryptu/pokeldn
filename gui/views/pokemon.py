@@ -30,8 +30,7 @@ class PokemonPicker:
                    spacing=10, vertical_alignment=ft.CrossAxisAlignment.END),
             ft.Row([self.nickname, self.build_button], spacing=10),
             self.result,
-            ft.TextButton("Or use a Pokemon file", on_click=self._use_file,
-                          style=ft.ButtonStyle(color=t.MUTED, padding=0)),
+            t.secondary_button("Or use a Pokemon file", self._use_file, "file"),
         ], spacing=10)
         self._show_result()
         threading.Thread(target=self._load_species, daemon=True).start()
@@ -119,7 +118,7 @@ class PokemonPicker:
             return
         legal = self.value.get("legal", False)
         lines = [ft.Row([
-            t.pixel_icon("shield" if legal else "warning-diamond", size=24,
+            t.pixel_icon("shield" if legal else "warning-diamond",
                     color=t.GREEN if legal else t.RED),
             t.text(self.value.get("summary", ""), 13, weight=ft.FontWeight.W_600, expand=True),
             t.pill("Legal" if legal else "Not legal", t.GREEN if legal else t.RED),

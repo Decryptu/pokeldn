@@ -64,7 +64,7 @@ def main(page: ft.Page) -> None:
         color = t.RED if active else t.MUTED
         return ft.Container(ft.Stack([
             ft.Container(ft.Column([
-                t.pixel_icon(icon, color=color),
+                t.pixel_icon(icon, size=24, color=color),
                 t.text(label, 10.5, color, weight=ft.FontWeight.W_600),
             ], spacing=3, horizontal_alignment=ft.CrossAxisAlignment.CENTER),
                 width=70, padding=ft.Padding(0, 9, 0, 9)),
@@ -124,8 +124,7 @@ def welcome(app: App) -> None:
                    "local wireless messages and never leaves this computer.", 13, t.MUTED),
             t.text("Everything else is included.", 13, t.MUTED),
         ], spacing=10, tight=True), width=420),
-        actions=[ft.TextButton("Later", on_click=lambda e: app.page.pop_dialog(),
-                               style=ft.ButtonStyle(color=t.MUTED)),
+        actions=[t.secondary_button("Later", lambda e: app.page.pop_dialog()),
                  t.button("Choose prod.keys", choose, "key")],
     ))
 

@@ -5,6 +5,7 @@ from dataclasses import dataclass, field
 import flet as ft
 
 from gui import theme as t
+from gui.views.widgets import MarkdownDocument
 from pokeldn.app.paths import ROOT
 
 DOCS = os.path.join(ROOT, "docs")
@@ -52,25 +53,8 @@ class DocsView:
         self.file = "guide"
         self.open_parents: set[str] = set()
         self.nav = ft.ListView(spacing=1, padding=8, expand=True)
-        self.markdown = ft.Markdown(
-            "", selectable=True, extension_set=ft.MarkdownExtensionSet.GITHUB_WEB,
-            code_theme=ft.MarkdownCodeTheme.ATOM_ONE_DARK, on_tap_link=self._link,
-            md_style_sheet=ft.MarkdownStyleSheet(
-                p_text_style=ft.TextStyle(size=14, color="#D4D6DB", height=1.55),
-                h1_text_style=ft.TextStyle(size=26, weight=ft.FontWeight.W_700, color=t.TEXT),
-                h2_text_style=ft.TextStyle(size=19, weight=ft.FontWeight.W_600, color=t.TEXT),
-                h3_text_style=ft.TextStyle(size=16, weight=ft.FontWeight.W_600, color=t.TEXT),
-                a_text_style=ft.TextStyle(color=t.BLUE),
-                code_text_style=ft.TextStyle(font_family=t.MONO, size=12.5, color=t.TEXT,
-                                             bgcolor=t.FIELD),
-                codeblock_decoration=ft.BoxDecoration(bgcolor=t.BG, border_radius=8),
-                codeblock_padding=12,
-                table_head_text_style=ft.TextStyle(size=13, weight=ft.FontWeight.W_600, color=t.TEXT),
-                table_body_text_style=ft.TextStyle(size=13, color="#D4D6DB"),
-                table_cells_padding=ft.Padding(8, 6, 8, 6),
-                block_spacing=14,
-            ))
-        self.scroll = ft.ListView([ft.Container(self.markdown, width=860)], padding=ft.Padding(32, 24, 32, 32),
+        self.markdown = MarkdownDocument(app, self._link)
+        self.scroll = ft.ListView([ft.Container(self.markdown.control, width=860)], padding=ft.Padding(32, 24, 32, 32),
                                   expand=True)
         self.control = ft.Row([
             t.panel(ft.Column([
@@ -92,7 +76,7 @@ class DocsView:
         path = GUIDE if file == "guide" else os.path.join(DOCS, file)
         with open(path, encoding="utf-8") as f:
             _, body = split_front_matter(f.read())
-        self.markdown.value = body
+        self.markdown.set_value(body)
         for root in self.tree:
             if file == root.file or any(file == c.file or any(file == g.file for g in c.children)
                                         for c in root.children):
@@ -120,7 +104,7 @@ class DocsView:
         return ft.Container(ft.Row([
             t.text(title, 13 if depth == 0 else 12.5, t.TEXT if active else (t.MUTED if depth else "#C5C7CD"),
                    weight=ft.FontWeight.W_600 if depth == 0 else None, expand=True),
-            t.pixel_icon("chevron-down" if expanded else "chevron-right", size=24,
+            t.pixel_icon("chevron-down" if expanded else "chevron-right",
                     color=t.FAINT) if folder else ft.Container(),
         ]), padding=ft.Padding(10 + depth * 14, 7, 8, 7), border_radius=8,
             bgcolor=t.HOVER if active else None, on_click=lambda e: self._pick(file, folder))

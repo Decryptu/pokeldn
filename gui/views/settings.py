@@ -67,11 +67,10 @@ class SettingsView:
                           trailing=t.switch(getattr(s, name), lambda e: self.save(name, e.control.value)))
 
         def link(label, url):
-            return ft.TextButton(label, on_click=lambda e: self.app.page.run_task(self.app.open_url, url),
-                                 style=ft.ButtonStyle(color=t.BLUE))
+            return t.link_button(label, lambda e: self.app.page.run_task(self.app.open_url, url))
 
         self.column.controls = [
-            t.notch(ft.Row([t.pixel_icon("gear", size=24, color=t.RED),
+            t.notch(ft.Row([t.pixel_icon("gear", color=t.RED),
                             t.text("Settings", 13, weight=ft.FontWeight.W_600)], spacing=8, tight=True)),
             t.card("Switch keys", ft.Column([keys.control, self.keys_state], spacing=8),
                    "prod.keys from your own console. It decrypts the local wireless advertisements and never "
@@ -100,7 +99,7 @@ class SettingsView:
         self.save("keys", value)
         ok = keys_found(value)
         self.keys_state.content = ft.Row([
-            t.pixel_icon("checkbox-on" if ok else "warning-diamond", size=24,
+            t.pixel_icon("checkbox-on" if ok else "warning-diamond",
                     color=t.GREEN if ok else t.RED),
             t.text("Found" if ok else "No file at this path", 12, t.GREEN if ok else t.RED)], spacing=6)
         if update:

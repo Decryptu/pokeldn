@@ -11,7 +11,7 @@ from pokeldn.app.catalog import GAMES, Field, Game, Tool
 from pokeldn.app.introspect import flags_of
 from pokeldn.app.paths import SESSION
 from gui.views.pokemon import NAME_LISTS, NamePicker, PokemonPicker
-from gui.views.widgets import Log, PathField, open_folder
+from gui.views.widgets import CodeBlock, Log, PathField, open_folder
 
 TOOL_ICONS = {"Trade": "arrows-horizontal", "Mystery Gift": "gift",
               "Console code": "cpu"}
@@ -101,7 +101,7 @@ class GamesView:
                 for tool in game.tools:
                     active = tool is self.tool
                     rows.append(ft.Container(ft.Row([
-                        t.pixel_icon(tool_icon(tool), size=24, color=t.BLUE if active else t.FAINT),
+                        t.pixel_icon(tool_icon(tool), color=t.BLUE if active else t.FAINT),
                         t.text(tool.name, 13, t.TEXT if active else (t.FAINT if tool.unavailable else t.MUTED),
                                expand=True),
                         t.pill("Soon", t.FAINT) if tool.unavailable else ft.Container(),
@@ -270,9 +270,10 @@ class SessionPanel:
         self.board_line = ft.Container()
         self.steps = ft.Container()
         self.action = ft.Container()
-        self.command_text = ft.Text("", size=11, color=t.MUTED, font_family=t.MONO, selectable=True)
-        self.command_box = ft.Container(self.command_text, bgcolor=t.BG, border_radius=8, padding=10,
-                                        visible=False)
+        command_block = CodeBlock(app)
+        self.command_text = command_block.text
+        self.command_box = command_block.control
+        self.command_box.visible = False
         self.log = Log(app.page, "The session's output appears here.")
         tools = ft.Row([
             t.icon_button("code", self._toggle_command, "Show the command"),
@@ -306,11 +307,10 @@ class SessionPanel:
         running = self.app.process and self.app.process.running
         port = self.app.radio_port()
         self.board_line.content = ft.Row([
-            t.pixel_icon("cpu", size=24, color=t.GREEN if port else t.RED),
+            t.pixel_icon("cpu", color=t.GREEN if port else t.RED),
             t.text(f"Radio on {port}" if port else "No board selected", 12,
                    t.TEXT if port else t.RED, expand=True),
-            ft.TextButton("Board", on_click=lambda e: self.app.navigate("board"),
-                          style=ft.ButtonStyle(color=t.BLUE)),
+            t.secondary_button("Board", lambda e: self.app.navigate("board")),
         ], spacing=8)
         if running:
             action = t.button("Stop", self._stop, "stop", t.RED, expand=True)

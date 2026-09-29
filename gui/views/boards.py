@@ -10,7 +10,7 @@ from gui import board
 from pokeldn.app import runner
 from pokeldn.app.paths import SESSION
 from gui import theme as t
-from gui.views.widgets import Log
+from gui.views.widgets import CodeBlock, Log
 
 PERCENT = re.compile(r"(\d{1,3}(?:\.\d)?)\s?%")
 
@@ -86,7 +86,7 @@ class BoardView:
             active = p.device == self.selected
             radio = p.device == self.app.settings.radio_port
             rows.append(ft.Container(ft.Row([
-                t.pixel_icon("cpu", size=24, color=t.BLUE if active else t.FAINT),
+                t.pixel_icon("cpu", color=t.BLUE if active else t.FAINT),
                 ft.Column([
                     t.text(self.name_of(p.device) or os.path.basename(p.device), 13,
                            t.TEXT if active else "#C5C7CD", weight=ft.FontWeight.W_600),
@@ -98,7 +98,7 @@ class BoardView:
                 on_click=lambda e, d=p.device: self._select(d)))
         if not rows:
             rows.append(ft.Container(ft.Column([
-                t.pixel_icon("usb", size=24, color=t.FAINT),
+                t.pixel_icon("usb", color=t.FAINT),
                 t.text("No board found", 13, t.MUTED, weight=ft.FontWeight.W_600),
                 t.text("Plug it in with a data cable. It shows up here on its own.", 12, t.FAINT,
                        text_align=ft.TextAlign.CENTER),
@@ -219,10 +219,10 @@ class BoardView:
         image = self.firmware()
         p = self.port()
         source = ft.Row([
-            t.pixel_icon("package", size=24, color=t.MUTED),
+            t.pixel_icon("package", color=t.MUTED),
             t.text(("pokeldn firmware, included with the app" if image == board.FIRMWARE else image) if image else
                    "This copy of the app has no firmware image.", 12, t.MUTED if image else t.RED, expand=True),
-            ft.TextButton("Use another file", on_click=self._choose_file, style=ft.ButtonStyle(color=t.MUTED)),
+            t.secondary_button("Use another file", self._choose_file, "file"),
         ], spacing=6)
         flashing = bool(self.app.process and self.app.process.running and self.app.process_label == "flash")
         return t.card("Flash the firmware", ft.Column([
@@ -287,8 +287,7 @@ class BoardView:
 
     def help_card(self) -> ft.Control:
         def link(label, url):
-            return ft.TextButton(label, on_click=lambda e: self.app.page.run_task(self.app.open_url, url),
-                                 style=ft.ButtonStyle(color=t.BLUE, padding=0))
+            return t.link_button(label, lambda e: self.app.page.run_task(self.app.open_url, url))
 
         return t.card("Board not listed?", ft.Column([
             t.text("Try another cable or USB port. Many cables only charge.", 12.5),
@@ -296,8 +295,7 @@ class BoardView:
                     link("CP210x", board.DRIVERS["Silicon Labs CP210x"]),
                     link("CH340", board.DRIVERS["WCH CH340"])], spacing=6, wrap=True),
             t.text("Linux: allow serial ports, then log out and back in:", 12.5),
-            ft.Container(t.text("sudo usermod -aG dialout $USER", 12, font_family=t.MONO, selectable=True),
-                         bgcolor=t.BG, border_radius=8, padding=10),
+            CodeBlock(self.app, "sudo usermod -aG dialout $USER").control,
             t.text("pokeldn needs a classic ESP32 (ESP32-D0WD, WROOM-32E). S3, C3 and C6 boards are not "
                    "supported.", 12.5, t.MUTED),
         ], spacing=8))
