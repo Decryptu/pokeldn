@@ -1,11 +1,7 @@
-"""The game's RNG as arithmetic: where a state came from, and how far.
+"""The game's RNG as arithmetic: where a state came from, and how far. docs/frlg_rng.md.
 
-`Random` is a full-period affine map on 32 bits [decomp:include/random.h:18], measured on the
-console. Being affine makes `distance` exact at any range by baby-step/giant-step,
-where `buffer_script.lcg_distance` only walks the near neighbourhood; being a permutation of all
-2**32 states means a distance ALWAYS exists, so one is evidence only when it is small. `SeedRng`
-takes a u16 [decomp:src/random.c:15], which is what lets `predecessors` walk a state back to the
-seed the console booted with. docs/frlg_rng.md.
+`Random` is a full-period affine map on 32 bits [decomp:include/random.h:18]: a distance always
+exists, so one is evidence only when it is small.
 """
 
 RAND_MULT = 1103515245                  # 0x41C64E6D [decomp:include/random.h:18]
@@ -18,12 +14,10 @@ _INV_MULT = pow(RAND_MULT, -1, STATES)  # RAND_MULT is odd, so it is invertible 
 
 
 def step(value):
-    """One turn of the LCG: the state after a single Random() call."""
     return (value * RAND_MULT + RAND_ADD) & MASK
 
 
 def unstep(value):
-    """The state BEFORE a single Random() call - the map is a permutation, so this always exists."""
     return ((value - RAND_ADD) * _INV_MULT) & MASK
 
 
@@ -42,9 +36,7 @@ def draws(value, count):
     return out, value
 
 
-# --- composing the map with itself ---------------------------------------------------------------
-# f(x) = a*x + c is closed under composition, so f**n is one (a, c) pair reachable by squaring
-# rather than by n applications. Everything below rests on that.
+# f(x) = a*x + c is closed under composition, so f**n is one (a, c) pair reachable by squaring.
 
 def _compose(first, second):
     """The pair for `first` then `second`."""
@@ -73,7 +65,7 @@ _STEP = (RAND_MULT, RAND_ADD)
 
 
 def advance(value, n):
-    """The state `n` turns after `value`. `n` may be negative, and is taken modulo the period."""
+    """`n` may be negative and is taken modulo the period."""
     a, c = _power(_STEP, int(n) % STATES)
     return (a * (value & MASK) + c) & MASK
 
@@ -82,11 +74,7 @@ _GIANT = 1 << 16                        # 2**16 baby steps and at most 2**16 gia
 
 
 def distance(start, target):
-    """How many turns of the LCG take `start` to `target`. Exact, and always an answer.
-
-    0 <= distance < 2**32. The map is a permutation of every 32-bit state, so this NEVER fails and
-    a large answer is not an error - it is the finding that the two states are unrelated.
-    """
+    """Turns from `start` to `target`, 0 <= d < 2**32, by baby-step/giant-step; never fails."""
     start, target = start & MASK, target & MASK
     seen = {}
     value = start
@@ -104,16 +92,12 @@ def distance(start, target):
     raise AssertionError("the LCG is a permutation of 2**32 states; a distance always exists")
 
 
-# --- reading a state backwards to the seed it came from ------------------------------------------
+# Reading a state back to its seed.
 
 def predecessors(value, limit=1 << 20, count=1):
-    """[(steps, seed), ...]: states under 0x10000 within `limit` turns BEFORE `value`.
-
-    A state below 0x10000 is what SeedRng leaves [decomp:src/random.c:15], so the first entry is
-    the candidate for the seed the console is running on and `steps` is what the game consumed
-    since. Values arrive at random, so one turns up every ~65536 steps BY CHANCE: a candidate is
-    only evidence when its `steps` matches an independently measured elapsed time.
-    """
+    """[(steps, seed), ...]: states under 0x10000 (SeedRng [decomp:src/random.c:15]) within `limit`
+    turns BEFORE `value`. One turns up every ~65536 steps by chance; a candidate is evidence
+    only when `steps` matches an independently measured elapsed time."""
     found = []
     current = value & MASK
     for steps in range(1, int(limit) + 1):
@@ -126,37 +110,18 @@ def predecessors(value, limit=1 << 20, count=1):
 
 
 def seconds(turns, per_frame=2, fps=59.7275):
-    """`turns` of the LCG as wall-clock seconds, at a measured consumption rate.
-
-    per_frame = 2 is measured at the Mystery Gift link menu, on all 95 gaps. It is not a
-    constant of the game - it is what that ONE screen consumes - so any use of it outside a menu
-    is a hypothesis that the run has to check, not an assumption it may make.
-    """
+    """`turns` as seconds. per_frame = 2 is measured at the Mystery Gift link menu only."""
     return turns / float(per_frame) / float(fps)
 
 
-# --- the four draws a wild Pokemon is made of ----------------------------------------------------
-# GenerateWildMon calls CreateMonWithNature(..., USE_RANDOM_IVS, Random() % NUM_NATURES)
-# [decomp:src/wild_encounter.c:233], which rolls the personality until it matches that nature, and
-# because hasFixedPersonality is then TRUE and the OT is the player, CreateBoxMon draws nothing more
-# until the IVs:
-#
-#     d1, d2  the personality      d3  HP / ATK / DEF        d4  SPEED / SPATK / SPDEF
-#
-# That is why a caught Pokemon is a reading of gRngValue: the personality alone leaves 2**16
-# candidate states (only the top half of each state is returned), and the IVs are 30 more bits over
-# the two draws that follow, which leaves one.
-#
-# The order of the personality's two halves is not assumed. Random32() is
-# `(Random() | (Random() << 16))` [decomp:include/random.h:15] and C does not order the operands of
-# `|`, so both are tried and the IVs decide. docs/frlg_rng.md.
+# A wild Pokemon is four draws: personality (d1, d2), HP/ATK/DEF (d3), SPEED/SPATK/SPDEF (d4)
+# [decomp:src/wild_encounter.c:233]. docs/frlg_rng.md, Reading a Pokemon back.
 
 MAX_IV_MASK = 31                        # [decomp:include/constants/pokemon.h]
 NUM_NATURES = 25
 
 
 def iv_word(first, second, third):
-    """The 15 bits of one IV draw: three stats, five bits each, low to high."""
     for value in (first, second, third):
         if not 0 <= value <= MAX_IV_MASK:
             raise ValueError(f"an IV is 0..{MAX_IV_MASK}, got {value}")
@@ -164,38 +129,14 @@ def iv_word(first, second, third):
 
 
 def nature_of(personality):
-    """GetNatureFromPersonality: the personality modulo the number of natures."""
     return (personality & MASK) % NUM_NATURES
 
 
 def recover_wild_state(personality, ivs, max_gap=32):
-    """[{...}]: the RNG states that would build this Pokemon, from its personality and IVs.
+    """[{...}]: the RNG states that would build this Pokemon; `ivs` in stored order (hp..spdef).
 
-    `ivs` is (hp, atk, def, speed, spatk, spdef) as the mon stores them.
-
-    The gap is searched, not assumed. One measured Weedle had a
-    personality and IVs are certain - the six stats it produces match what the console printed on
-    its own summary screen, 6/6, and the nature reads DOUX = MILD = 16 - and NO state builds it
-    with the IV draws immediately after the personality. Exactly one does with ONE draw in
-    between. That extra advance is in no line of CreateBoxMon [decomp:src/pokemon.c]; it comes
-    from outside the generation, and it is the Gen 3 "Method 2" spread, MEASURED here rather than
-    taken from lore. Since the game produces more than one such layout, assuming any single one
-    turns a wrong model into a silent wrong answer, so the answer decides the gap, the way a
-    needle was built to let the answer decide the stride.
-
-    There are two gaps, not one, and both are searched. One Weedle put its blank draw before the
-    IVs (`gap` 1, `iv_gap` 0), the Gen 3 "Method 2" spread; a Caterpie and a second Weedle
-    put it BETWEEN the two IV draws instead (`gap` 0, `iv_gap` 1) - "Method 4". Searching only the
-    first gap finds the one and misses the other two, which is exactly what happened: those two mons
-    came back empty until the second gap was searched as well.
-
-    `before` is gRngValue as it stood immediately BEFORE the first personality draw; that is the
-    state a distance is measured to. `gap` is how many draws sat between the personality and the
-    IVs. In practice one candidate survives: the personality alone allows 2**16 states, and the
-    two IV draws are 30 more bits of check, so over the whole search of
-    2 orders x 2**16 states x (max_gap + 1) gaps x 2 IV orders a false positive is expected
-    about once in 2**30 / (that count) - report the count when more than one comes back.
-    """
+    Both half-orders, both IV orders, and a stray draw before (`gap`, Method 2) or between (`iv_gap`,
+    Method 4) the IV draws are searched [docs/frlg_rng.md]. `before` is gRngValue before the PID draw."""
     personality &= MASK
     if len(ivs) != 6:
         raise ValueError(f"six IVs, got {len(ivs)}")
@@ -212,8 +153,8 @@ def recover_wild_state(personality, ivs, max_gap=32):
             after_personality = step(state)
             if after_personality >> 16 != second:
                 continue
-            # The PID pair alone leaves ~1 candidate in 2**16, so the two gaps below are searched
-            # over a handful of states, not over the whole space.
+            # The PID pair leaves ~1 candidate in 2**16, so the gap loops run over a handful of
+            # states.
             walked = after_personality
             for gap in range(int(max_gap) + 1):
                 one = step(walked)
@@ -231,13 +172,8 @@ def recover_wild_state(personality, ivs, max_gap=32):
 
 
 def nature_draw_before(state, nature, limit=4096):
-    """How many turns before `state` the `Random() % NUM_NATURES` that chose `nature` was drawn.
-
-    CreateMonWithNature rejects whole PAIRS of draws, so the nature draw sits an EVEN number of
-    turns before the accepted personality; a hit at an odd offset is a coincidence and is not
-    reported. This is a free extra check on a recovered state - the nature is read off the
-    Pokemon, and the draw that chose it has to be there.
-    """
+    """Turns before `state` that `Random() % NUM_NATURES` chose `nature`. CreateMonWithNature
+    rejects whole pairs of draws, so only even offsets count."""
     current = state & MASK
     for steps in range(1, int(limit) + 1):
         current = unstep(current)

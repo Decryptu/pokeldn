@@ -1,29 +1,5 @@
-"""The payload `MEScrCmd_givepokemon` reads: a whole `struct Pokemon`, immediately followed by the
-`struct Mail` that goes with it [decomp:src/mystery_event_script.c:234].
-
-    u32 data = ScriptReadWord(ctx) - ctx->data[1] + ctx->data[0];
-    void *pokemonPtr = (void *)data;
-    void *mailPtr    = (void *)(data + sizeof(struct Pokemon));
-
-This is the only route in the whole gift link to a Pokemon with **attached Mail**: the field-script
-`givemon` our delivery scripts compile to cannot carry any, and neither can a Wonder Card. It is
-also the only one that writes the Pokedex itself -- `GetSetPokedexFlag(..., FLAG_SET_SEEN)` and
-`FLAG_SET_CAUGHT` on the national number, before the mon is ever seen in the party.
-
-What the console does with it, in order:
-
-1. `GetMonData(&pokemon, MON_DATA_SPECIES_OR_EGG)` on a local copy, so the 100 bytes must be a
-   genuine encrypted party mon: substructs shuffled by `personality % 24` and XORed with
-   `personality ^ otId`, with a matching checksum. `pokeldn.frlg.save.mon` already speaks that wire form.
-2. If `gPlayerPartyCount == PARTY_SIZE` it stops, sets status 3 and writes nothing. Our host reads
-   that status back, so a full party is reported rather than silently lost.
-3. Otherwise `memcpy(&gPlayerParty[5], pokemonPtr, sizeof(struct Pokemon))` -- slot six, whatever is
-   there -- then the dex flags, then the mail, then `CompactPartySlots()` shuffles it down into the
-   first free slot and `CalculatePlayerPartyCount()` re-counts. Status 2.
-4. The mail is taken only when the mon's held item passes `ItemIsMail`
-   [decomp:src/mail_data.c:167]; `GiveMailToMon2` then finds a free slot in `gSaveBlock1Ptr->mail`
-   and copies our struct into it verbatim [decomp:src/mail_data.c:100]. With no free mail slot it
-   returns 0xFF and the mon simply arrives without mail.
+"""The payload `MEScrCmd_givepokemon` reads: a whole `struct Pokemon` followed by its `struct Mail`
+[decomp:src/mystery_event_script.c:234]. docs/frlg_rom.md, `givepokemon`.
 """
 
 from pokeldn.frlg.save import basestats, mon as monmod, stats
@@ -68,11 +44,7 @@ class MysteryEventPokemonError(Exception):
 
 def build_mail(words=(), *, player_name="PkCamp", trainer_id=0, species=0,
                item_id=ITEM_ORANGE_MAIL):
-    """A `struct Mail`. `words` is anything easychat.resolve_words accepts, up to nine.
-
-    `GiveMailToMon` fills these fields from the *player's* data first and `GiveMailToMon2` then
-    overwrites the whole struct with ours, so every field here is what the player reads.
-    """
+    """A `struct Mail`; GiveMailToMon2 copies all of it over the player's defaults."""
     if item_id not in MAIL_ITEMS:
         raise MysteryEventPokemonError(
             f"item {item_id} is not mail; ItemIsMail accepts {min(MAIL_ITEMS)}..{max(MAIL_ITEMS)}")
@@ -93,8 +65,7 @@ def build_mail(words=(), *, player_name="PkCamp", trainer_id=0, species=0,
 
 
 def exp_for_level(species, level):
-    """The lowest experience that reads back as `level` through the growth-rate table; the party
-    tail is derived from experience, not stored beside it."""
+    """The lowest experience that reads back as `level`; the party tail is derived from it."""
     low, high = 0, 1_640_000
     while low < high:
         middle = (low + high) // 2
@@ -111,14 +82,7 @@ def build_party_mon(species, level, *, moves=(), pp=(), nickname=None, ot_name="
                     ot_id=0x47ED8822, personality=None, held_item=0, friendship=70,
                     ivs=31, evs=(0,) * 6, language, met_location=0xFF,
                     met_level=None, poke_ball=POKE_BALL, met_game=VERSION_FIRE_RED):
-    """A 100-byte encrypted party mon, built from nothing but these arguments.
-
-    `language` is the cartridge's gGameLanguage (Build.language_id): the byte CreateMon would
-    write on that console.
-
-    Deliberately not derived from a stored .pk3: those are gitignored, and a payload the console
-    executes should be reproducible from the source alone.
-    """
+    """A 100-byte encrypted party mon; `language` is the cartridge's gGameLanguage."""
     if species not in basestats.BASE_STATS:
         raise MysteryEventPokemonError(
             f"species {species} has no base-stat entry, so neither its growth rate nor its party "
@@ -129,8 +93,7 @@ def build_party_mon(species, level, *, moves=(), pp=(), nickname=None, ot_name="
         raise MysteryEventPokemonError("a mon holds at most four moves")
     personality = ot_id if personality is None else personality
     if personality == (ot_id & 0xFFFFFFFF):
-        # key == 0 leaves the secure region in the clear, and Mon.from_pk3 then cannot tell an
-        # encrypted mon from a decrypted one.
+        # key == 0 leaves the secure region in the clear; Mon.from_pk3 cannot tell it from a .pk3.
         personality = (personality ^ 0x9E3779B9) & 0xFFFFFFFF
 
     canon = bytearray(monmod.PARTY_MON_SIZE)
@@ -182,8 +145,7 @@ def build_party_mon(species, level, *, moves=(), pp=(), nickname=None, ot_name="
 
     canon[32:44], canon[44:56] = growth, attacks
     canon[56:68], canon[68:80] = effort, misc
-    # The checksum is the u16 sum of the canonical secure region, which is why it survives the
-    # substruct shuffle unchanged [pokeldn.frlg.save.mon.decode_mon].
+    # The u16 sum of the canonical secure region survives the substruct shuffle.
     checksum = sum(int.from_bytes(canon[32 + i * 2:34 + i * 2], "little")
                    for i in range(24)) & 0xFFFF
     canon[28:30] = checksum.to_bytes(2, "little")

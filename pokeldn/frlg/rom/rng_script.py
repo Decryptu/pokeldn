@@ -1,10 +1,7 @@
 """A field script that sets gRngValue with `setptr` [decomp:src/scrcmd.c:300], in the OVERWORLD.
 
-The Mystery Gift link is the wrong place to seed from: every route out of the menu re-runs
-`SeedRng` on the title screen. A RAM script runs after that reseed, and
-gRngValue is a link-time IWRAM global at 0x03004220, so `setptr` needs no address read and no sled
-- unlike `callnative`, which would have to aim at a save block that moves. The script ends with
-`end` (0x02), not `endram`, so the binding survives and can be re-triggered. docs/frlg_rng.md.
+The Mystery Gift link cannot seed: every route out of the menu re-runs `SeedRng`. The script ends
+with `end` (0x02), not `endram`, so the binding survives. docs/frlg_rng.md.
 """
 
 from pokeldn.frlg.rom import rom_map
@@ -24,7 +21,6 @@ class RngScriptError(Exception):
 
 
 def setptr(value, address):
-    """One `setptr`: write an immediate byte to an absolute address."""
     value, address = int(value), int(address)
     if not 0 <= value <= 0xFF:
         raise RngScriptError(f"setptr writes ONE byte, got {value}")
@@ -34,12 +30,7 @@ def setptr(value, address):
 
 
 def build_seed_script(value, address=None, sound=SE_SUCCESS):
-    """The field script that sets a 32-bit word - gRngValue by default - and says it did.
-
-    `sound` is played so the player knows the script ran: talking to an object whose script does
-    nothing looks the same as talking to one whose script did not run. Pass sound=None to write in
-    silence.
-    """
+    """Set a 32-bit word (gRngValue by default); `sound` says it ran, None for silence."""
     address = rom_map.GRNG_VALUE if address is None else int(address)
     value = int(value) & 0xFFFFFFFF
     if address % 4:
@@ -54,7 +45,7 @@ def build_seed_script(value, address=None, sound=SE_SUCCESS):
 
 
 def describe_seed_script(script):
-    """-> lines: what the bytes do, decoded back out of them rather than from what we meant."""
+    """-> lines: what the bytes do, decoded back out of them."""
     lines, i, writes = [], 0, {}
     while i < len(script):
         op = script[i]
@@ -84,16 +75,8 @@ def describe_seed_script(script):
     return lines
 
 
-# --- seed the RNG and generate the mon in the SAME frame -----------------------------------------
-# `setwildbattle` (0xB6) calls CreateScriptedWildMon -> CreateMon(&gEnemyParty[0], species, level,
-# 32, 0, 0, OT_ID_PLAYER_ID, 0) [decomp:src/scrcmd.c:1935, src/script_pokemon_util.c:128]: fixedIV
-# 32 is USE_RANDOM_IVS and hasFixedPersonality 0, so the PID and the IVs are rolled right there in
-# four draws with no nature rejection loop.
-#
-# `setptr` and `setwildbattle` both return FALSE and the field engine runs commands until one
-# returns TRUE, so the seed writes and the generation happen back to back in one frame and the four
-# draws are a pure function of the seed just written. Nothing that yields may go between them - a
-# `playse` would break it silently. docs/frlg_rng.md.
+# `setwildbattle` rolls PID and IVs in four draws with no nature loop [decomp:src/scrcmd.c:1935];
+# nothing that yields may sit between the seed and it (a `playse` breaks it). docs/frlg_rng.md.
 
 SCR_SETWILDBATTLE = 0xB6
 SCR_DOWILDBATTLE = 0xB7
@@ -103,36 +86,18 @@ SCR_GOTO = 0x05
 SCR_SETVAR = 0x16
 VAR_0x8000 = 0x8000
 
-# A RAM SCRIPT MAY NOT COME BACK FROM A BATTLE, and nothing placed after `dowildbattle` can be
-# relied on. CB2_InitBattle and InitOverworldBgs both call MoveSaveBlocks_ResetHeap
-# [decomp:src/battle_main.c:614, src/overworld.c:1337], which re-rolls gSaveBlock1's address by a
-# multiple of 4 in 0..124 [src/load_save.c:75]; the engine keeps its pointer INTO that block
-# [GetRamScript, src/script.c:514] and so resumes where the script no longer is. One mechanism,
-# three symptoms: a stray second battle, a clean walk away, and a dead overworld. `releaseall` +
-# `end` is not a fix; those bytes are not at the address the engine returns to.
-#
-# The fix is to start the battle from outside the save block. `goto` (0x05) takes an absolute
-# address and gSpecialVar_0x8000 is a fixed EWRAM u16 [rom_map] that `setvar` (0x16) writes:
-#
-#     setvar 0x8000, 0x02B7      ->  0x020370B4: B7 02   =   dowildbattle ; end
-#     goto   0x020370B4
-#
-# ScriptContext_RunScript calls UnlockPlayerFieldControls() the moment a script stops
-# [decomp:src/script.c:335], so the `end` alone gives the player back. Nothing in the battle or
-# overworld code writes gSpecialVar_0x8000. docs/frlg_rng.md.
-BATTLE_TAIL = bytes([SCR_RELEASEALL, SCR_END])      # kept for the disassemblers only
+# Trap: a RAM script never comes back from a battle; MoveSaveBlocks_ResetHeap moves gSaveBlock1
+# [decomp:src/battle_main.c:614]. `dowildbattle; end` runs from gSpecialVar_0x8000 via `goto`.
+# docs/frlg_rng.md.
+BATTLE_TAIL = bytes([SCR_RELEASEALL, SCR_END])      # disassemblers only
 
-# The two bytes the trampoline holds, as the u16 `setvar` writes: dowildbattle, then end.
+# dowildbattle, then end, as the u16 `setvar` writes.
 TRAMPOLINE_ADDRESS = rom_map.G_SPECIAL_VAR_0X8000
 TRAMPOLINE_WORD = SCR_DOWILDBATTLE | (SCR_END << 8)
 
 
 def battle_and_exit(species, level, item=0, *, trampoline=None):
-    """-> setwildbattle, then the battle itself from an address the save block cannot move.
-
-    Every builder that starts a wild battle from a RAM script ends this way, and the reason is
-    the block above: bytes written after `dowildbattle` are not where the engine comes back to.
-    """
+    """-> setwildbattle, then the battle from an address the save block cannot move."""
     species, level, item = int(species), int(level), int(item)
     if not 1 <= species <= MAX_SPECIES:
         raise RngScriptError(f"species is 1..{MAX_SPECIES}, got {species}")
@@ -154,12 +119,8 @@ MAX_LEVEL = 100
 
 
 def build_wild_battle_script(seed, species, level, item=0, address=None):
-    """Set gRngValue, then have the ROM roll a wild Pokemon from it and start the battle.
-
-    The four draws that follow the seed are exactly PID-low, PID-high, IV word 1, IV word 2, so the
-    mon is decided in advance - species, level, shininess, nature, ability, gender and all six IVs.
-    Use `pokeldn.frlg.rom.lcg.draws(seed, 4)` to say what it will be, and check it rather than trusting it.
-    """
+    """Set gRngValue, then roll a wild Pokemon from it and start the battle; `lcg.draws(seed, 4)`
+    predicts the mon."""
     address = rom_map.GRNG_VALUE if address is None else int(address)
     species, level, item = int(species), int(level), int(item)
     if not 1 <= species <= MAX_SPECIES:
@@ -179,14 +140,8 @@ def build_wild_battle_script(seed, species, level, item=0, address=None):
 
 
 def predict_wild_mon(seed, tid, sid):
-    """-> {personality, ivs, shiny, ...}: what build_wild_battle_script's four draws will make.
-
-    Both personality half-orders are reported: `Random32()` is `Random() | (Random() << 16)` and C
-    does not order the operands of `|`. Measured mons read low-half-first at CreateMonWithNature's
-    call site; this is CreateBoxMon's. The shiny test TID ^ SID ^ PIDhigh ^ PIDlow is symmetric
-    under swapping the halves and the IVs come from the two draws after, so shininess and every IV
-    are the same either way and only the nature, ability and gender differ.
-    """
+    """-> {personality, ivs, shiny, ...} for build_wild_battle_script's four draws. Both PID
+    half-orders are reported; shininess and IVs agree either way."""
     from pokeldn.frlg.rom import lcg
     (first, second, third, fourth), _ = lcg.draws(int(seed), 4)
     ivs = (third & 31, (third >> 5) & 31, (third >> 10) & 31,
@@ -202,27 +157,14 @@ def predict_wild_mon(seed, tid, sid):
     return out
 
 
-# --- reading the seed back out --------------------------------------------------------------------
-# Reading gRngValue in the overworld is what a countdown needs, and it needs the absolute address
-# of gSpecialVar_0x8000: `copybyte` takes a destination address where `buffernumberstring` takes a
-# var id. It is at 0x020370B4, found by scanning the cartridge for the shape of gSpecialVars
-# (pokeldn/frlg/rom/buffer_script.py, `table-scan`).
-#
-# The script is `gift_composer.build_seed_read_script`; it lives there because that is where the
-# field-script builder and its relocatable-text machinery are. It READS gRngValue and writes
-# nothing.
+# Reading the seed back: `gift_composer.build_seed_read_script` copies gRngValue into
+# gSpecialVar_0x8000/0x8001 (0x020370B4) and prints them.
 
 from pokeldn.frlg.gift.gift_composer import build_seed_read_script     # noqa: E402,F401  (re-exported here)
 
 
 def seed_from_printed(low, high):
-    """-> gRngValue, from the two decimal numbers the NPC prints.
-
-    gRngValue is a u32 at 0x03004220, little-endian, so its bytes 0..1 are the LOW half and 2..3
-    the HIGH half. The script copies them into gSpecialVar_0x8000 and 0x8001 in that order, and
-    prints 0x8000 as STR_VAR_1 and 0x8001 as STR_VAR_2 - so the screen reads "RNG HI <high>" and
-    "RNG LO <low>".
-    """
+    """-> gRngValue from the NPC's "RNG LO" (bytes 0..1) and "RNG HI" (bytes 2..3) readings."""
     low, high = int(low), int(high)
     for name, value in (("low", low), ("high", high)):
         if not 0 <= value <= 0xFFFF:
@@ -231,26 +173,14 @@ def seed_from_printed(low, high):
 
 
 def check_two_readings(first, second, *, seconds=None):
-    """-> lines: what two readings of the NPC say, and whether they can both be gRngValue.
-
-    THIS IS THE PROOF THAT THE ADDRESS IS RIGHT, and it needs no extra hardware run. Two readings
-    of a real gRngValue are related by the LCG: the second is some number of turns after the first,
-    and `lcg.distance` finds that number exactly. A distance ALWAYS exists - the map is a
-    permutation of all 2**32 states - so the distance alone proves nothing. What proves it is the
-    distance being SMALL and consistent with the time between the readings: the RNG advances on the
-    order of 10**2 turns a second, so seconds apart means a distance of thousands, not billions.
-    A wrong address prints two unrelated numbers, whose distance is ~2**31 on average.
-
-    `seconds` is optional and deliberately not required: it sharpens the statement, it does not
-    make it. The order-of-magnitude test stands without any clock, which is the point - see
-    docs/frlg_rng.md on why nothing here may depend on a hand-timed elapsed.
-    """
+    """-> lines: whether two readings can both be gRngValue. A distance always exists; only a small
+    one (thousands of turns, not ~2**31) says the address is right. `seconds` is optional."""
     from pokeldn.frlg.rom import lcg
     turns = lcg.distance(first, second)
     lines = [f"reading 1  0x{first:08X}",
              f"reading 2  0x{second:08X}",
              f"distance   {turns:,} turns"]
-    # A uniformly random pair sits ~2**31 apart; anything a human waited through is far below it.
+    # A uniformly random pair sits ~2**31 apart.
     plausible = turns < 10 ** 7
     if seconds is not None:
         lines.append(f"           = {turns / float(seconds):,.0f} turns/second over the "
@@ -269,18 +199,8 @@ from pokeldn.frlg.gift.gift_composer import build_seed_rate_script      # noqa: 
 
 
 def measure_rate(first, second, frames):
-    """-> lines: turns per frame, from two readings and an EXACT frame count.
-
-    This is the measurement docs/frlg_rng.md says had never been made outside the Mystery Gift menu.
-    Both inputs are exact - `lcg.distance` is exact arithmetic and `frames` is what `delay` was
-    told to wait - so unlike every earlier attempt there is no clock in it and no rounding to argue
-    about. 600 frames at ~2 turns each is ~1200 turns, twenty million times below the 2**32 point
-    where the distance would stop being unique, so the answer is not an alias.
-
-    It says nothing about the rate while the player is WALKING. It is the rate while a field script
-    is delaying, which is a different situation and the one that matters for a script that waits
-    for a target state.
-    """
+    """-> lines: turns per frame from two readings and an exact `delay` frame count; no clock.
+    This is the rate while a field script delays, not while the player walks."""
     from pokeldn.frlg.rom import lcg
     frames = int(frames)
     if frames <= 0:

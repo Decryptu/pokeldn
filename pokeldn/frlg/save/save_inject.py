@@ -1,11 +1,9 @@
-"""Save-format facts [decomp:src/save.c, include/save.h, include/global.h:759]: 32 sectors x 4096 B (3968 data +
-footer: id @0xFF4 u16, checksum @0xFF6 u16, signature 0x08012025 @0xFF8, counter @0xFFC); two slots of 14 sectors;
-sector roles rotate, so the footer id, not the physical index, says what a sector holds, and the live slot has the
-greatest counter [decomp:src/save.c:466]. SaveBlock1 (0x3D68 B) spans ids 1..4; mysteryGift @0x3120 and ramScript
-@0x361C both lie in id 4 (checksummed size 3816 B); cardCrc is at +448 and the card at +452 of MysteryGiftSave.
-The deliveryman runs the script iff cardCrc == crc16(card), ValidateWonderCard passes, and the RamScript has magic 51,
-map 0xFF/0xFF, objectId 0xFF and checksum == crc16(RamScriptData[999]) [decomp:src/script.c:554]. The save must
-already have Mystery Gift enabled; injection does not unlock it."""
+"""FRLG flash save format [decomp:src/save.c, include/save.h, include/global.h:759].
+
+Sector roles rotate: the footer id says what a sector holds and the live slot has the greatest counter
+[save.c:466]. The deliveryman runs the RamScript iff cardCrc == crc16(card), ValidateWonderCard passes,
+and magic 51, map 0xFF/0xFF, objectId 0xFF, checksum == crc16(RamScriptData[999]) [script.c:554].
+Injection does not enable Mystery Gift; the save must already have it."""
 
 from pokeldn.frlg.gift.gift_registry import GIFT_REGISTRY, add_flag_id_argument, resolve_flag_id
 from pokeldn.frlg.gift.mystery_gift import crc16, CARD_TYPE_COUNT, NUM_WONDER_BGS, SEND_TYPE_DISALLOWED, \
@@ -88,8 +86,7 @@ def _footer(sav, phys):
 
 
 def find_saveblock1_end_sector(sav):
-    """Physical index of the active slot's id-4 sector (greatest counter among signed sectors); returns
-    (phys_index, counter)."""
+    """-> (phys_index, counter) of the live slot's id-4 sector."""
     if len(sav) < SECTORS_COUNT * SECTOR_SIZE:
         raise ValueError(f"save is {len(sav)} B; need >= {SECTORS_COUNT * SECTOR_SIZE} B "
                          "(a 128 KiB FLASH1M FireRed/LeafGreen save)")
@@ -107,7 +104,6 @@ def find_saveblock1_end_sector(sav):
 
 
 def inject_gift(sav_bytes, card, script):
-    """Returns (new_save_bytes, metadata); the input is not modified."""
     if len(card) != WONDER_CARD_SIZE:
         raise ValueError(f"card is {len(card)} B; must be {WONDER_CARD_SIZE}")
     phys, counter = find_saveblock1_end_sector(sav_bytes)
@@ -141,7 +137,6 @@ def inject_gift(sav_bytes, card, script):
 def inject_selected_gift(sav_bytes, gift=GIFT_BEAST_CUTSCENE, *, flag_id=1003):
     card, script = GIFT_REGISTRY.build_static(gift, flag_id=flag_id)
     return inject_gift(sav_bytes, card, script)
-
 
 
 def read_saved_wonder_card(sav):

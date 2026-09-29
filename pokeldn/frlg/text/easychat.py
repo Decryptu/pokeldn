@@ -1,11 +1,8 @@
 """Easy-chat phrases: the trainer card's profile quote and the visiting trainer's three lines.
 
-A word is `(group & 0x7F) << 9 | (index & 0x1FF)` [EC_WORD, easy_chat.h:1089]. `easychat_words.WORDS`
-holds every printable word, generated from the decomp; `CopyEasyChatWord` prints "???" for any word
-its group rejects [easy_chat.c:166], and word 0 is group EC_GROUP_POKEMON_2 index 0 (SPECIES_NONE),
-which is rejected -- so an all-zero profile is the "??? ???" the console showed for our card in
-u08-u11. The trainer card holds four words [TrainerCardRSE.easyChatProfile, trainer_card.h:28] drawn
-as two lines of two; a BattleTowerEReaderTrainer holds three six-word lines [global.h:293].
+A word is `(group & 0x7F) << 9 | (index & 0x1FF)` [EC_WORD, easy_chat.h:1089]. Word 0 (SPECIES_NONE)
+is rejected and prints "???" [easy_chat.c:166]. A trainer card holds four words [trainer_card.h:28],
+a BattleTowerEReaderTrainer three six-word lines [global.h:293].
 """
 
 from pokeldn.frlg.text.easychat_values import (
@@ -21,14 +18,13 @@ def word(group, index):
     return ((group & 0x7F) << 9) | (index & 0x1FF)
 
 
-# "HELLO FRIEND / LET'S TRADE" as close as the word list allows; anything is better than "???".
+# Anything is better than "???".
 DEFAULT_QUOTE = ("hello", "friend", "trade", "pokemon")
 
 
 def resolve_words(names, length):
-    """-> `length` word ids. `names` is a comma-separated string or a sequence of keys from WORDS;
-    short lists are padded with UNDEFINED, which prints as nothing rather than as "???". An empty
-    name is an explicit UNDEFINED, so a word can be skipped mid-line."""
+    """-> `length` word ids from WORDS keys, padded with UNDEFINED (prints nothing, not "???").
+    An empty name is an explicit UNDEFINED."""
     if isinstance(names, str):
         names = [n.strip() for n in names.split(",")]
     names = list(names)
@@ -73,10 +69,8 @@ EC_GROUP_MOVE_1 = 0x12
 EC_GROUP_MOVE_2 = 0x13
 EC_GROUP_POKEMON = 0x15
 
-# The four groups CopyEasyChatWord prints from gSpeciesNames / gMoveNames rather than from a
-# per-language word table [decomp:src/easy_chat.c:155]. Their index is the species number or the
-# move id, so the console prints its own localized name and the word means the same thing in every
-# language. Everything else in WORDS is an English guess until a console has been seen to render it.
+# Printed from gSpeciesNames / gMoveNames, so language-safe [decomp:src/easy_chat.c:155]; every
+# other word in WORDS is an English guess until a console renders it.
 _VALUE_GROUPS = {
     EC_GROUP_POKEMON: POKEMON_VALUES, EC_GROUP_POKEMON_2: POKEMON_2_VALUES,
     EC_GROUP_MOVE_1: MOVE_1_VALUES, EC_GROUP_MOVE_2: MOVE_2_VALUES,
@@ -84,11 +78,7 @@ _VALUE_GROUPS = {
 
 
 def species_word(species):
-    """-> the Easy Chat word for a species, printed as that console's own name for it.
-
-    Language-safe by construction. Proven on a French console: the player typed AKWAKWAK
-    and the console stored POKEMON/55, and SPECIES_GOLDUCK is 55.
-    """
+    """-> the Easy Chat word for a species, printed as that console's own name for it."""
     species = int(species)
     if species not in POKEMON_VALUES:
         raise ValueError(
@@ -98,11 +88,7 @@ def species_word(species):
 
 
 def move_word(move):
-    """-> the Easy Chat word for a move, printed as that console's own name for it.
-
-    Language-safe by construction. Proven on a French console: AEROBLAST came back as
-    MOVE_1/177, and MOVE_AEROBLAST is 177.
-    """
+    """-> the Easy Chat word for a move, printed as that console's own name for it."""
     move = int(move)
     if move in MOVE_1_VALUES:
         return word(EC_GROUP_MOVE_1, move)
@@ -113,13 +99,7 @@ def move_word(move):
 
 
 def parse_word(spec):
-    """One Easy Chat word from a command line.
-
-    Accepts an English word name (`hello`), a language-safe id by concept (`species:55`,
-    `move:177`), a group/index pair (`FEELINGS/60`), or a raw number (`0x123c`). The last three
-    exist because the English names are only a guess outside the species and move groups, and a
-    phrase read off a real console arrives as ids.
-    """
+    """One Easy Chat word: a name (`hello`), `species:55`, `move:177`, `FEELINGS/60` or `0x123c`."""
     text = str(spec).strip()
     if not text:
         return UNDEFINED
@@ -162,11 +142,7 @@ def is_language_safe(value):
 
 
 def describe_word(value):
-    """A word id as the console holds it, named as far as the ENGLISH table can name it.
-
-    The localized ROMs carry their own group tables, so an id is only a reliable *slot*; what a
-    French console prints there is a separate question. See `easychat_french.CONFIRMED`.
-    """
+    """A word id named as far as the ENGLISH table can; a localized ROM may print another word."""
     value = int(value) & 0xFFFF
     if value == UNDEFINED:
         return "-"

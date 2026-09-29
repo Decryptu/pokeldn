@@ -35,11 +35,8 @@ DECOMP_PATHS = ("~/pokefirered", "~/Git/pokefirered")
 
 
 def load_species(decomp=None):
-    """Internal species index -> name; not the National Dex number: 252-276 are OLD_UNOWN, Hoenn starts at 277.
-
-    The decomp is not vendored, so try where it actually lives before falling back to a stub. With
-    only the stub every dumped or traded mon prints as `#N`, which is legible but not readable.
-    """
+    """Internal species index -> name, from the decomp's species.h; not the National Dex number:
+    252-276 are OLD_UNOWN, Hoenn starts at 277."""
     import os
     import re
     for candidate in ((decomp,) if decomp is not None else DECOMP_PATHS):
@@ -77,12 +74,9 @@ def decode_mon(mon):
     attacks = sec[order.index("A") * 12:][:12]
     misc = sec[order.index("M") * 12:][:12]
     species = int.from_bytes(growth[0:2], "little")
-    # struct PokemonSubstruct3 [decomp:include/pokemon.h:40]. The ribbons fill the u32 at 0x08 and
-    # modernFatefulEncounter is the bit above them - bit 31, not a byte of its own. In FRLG it
-    # controls Mew and Deoxys obedience and whether they can be traded, and it makes a HATCHED mon
-    # read as a fateful encounter on the summary screen; a met location of METLOC_FATEFUL_ENCOUNTER
-    # (0xFF) is what makes an unhatched one read that way, which is why the official scripts set
-    # both [`:78-82`, src/pokemon_summary_screen.c:2665].
+    # PokemonSubstruct3 [decomp:include/pokemon.h:40]: modernFatefulEncounter is bit 31 of the
+    # ribbon word. Mew/Deoxys obedience and tradability; an unhatched mon also needs met location
+    # 0xFF [src/pokemon_summary_screen.c:2665].
     ribbon_word = int.from_bytes(misc[8:12], "little")
     return {
         "pid": pid, "otid": otid,
@@ -113,8 +107,8 @@ SECURE_OFF = 32                 # 48-byte encrypted+shuffled substruct region
 SECURE_END = 80
 
 
-# .ek3 (wire/save) = secure region XOR PID^OTID with the substructs shuffled by PID%24; .pk3 = decrypted,
-# canonical G,A,E,M order. Header (incl. checksum) and party tail are plaintext in both.
+# .ek3 = secure region XOR PID^OTID, shuffled by PID%24; .pk3 = decrypted, G,A,E,M order. Header and
+# party tail are plaintext in both.
 def _xor_secure(buf, key):
     out = bytearray(buf)
     for i in range(12):

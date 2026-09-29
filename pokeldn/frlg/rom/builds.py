@@ -1,13 +1,6 @@
-"""The build-dependent addresses of the four FireRed/LeafGreen cartridges the host sends code to.
-
-A payload, a hook or a field stub that names an IWRAM or ROM address is built for one cartridge,
-chosen by the game code the console sends in its Mystery Gift game data [mystery_gift.c:369].
-EWRAM is the same on all four and stays a module constant where it is used.
-
-French values are the ones `rom_map` records off the consoles; French LeafGreen's are its measured
-twins [leafgreen_twins, rom_map.LEAFGREEN]. English values are the decomp's symbols, checked
-against the retail English images by bytes and by literal pools. docs/frlg_rom_map.md, The
-English cartridges.
+"""The build-dependent addresses of the four FireRed/LeafGreen cartridges the host sends code to,
+chosen by the game code in the console's Mystery Gift game data [mystery_gift.c:369]. EWRAM is the
+same on all four. docs/frlg_rom_map.md, The English cartridges.
 """
 
 from dataclasses import dataclass, field
@@ -114,8 +107,7 @@ BPRF = Build(
     save_slot_layout=0x083F58C4, enigma_desc=(0x083D5CE8, 0x083D5CF8),
     callable=MappingProxyType(dict(rom_map.CALLABLE)))
 
-# French LeafGreen: FireRed's RAM; ROM past 0x0807CF68 moves by the measured segment deltas
-# [rom_map.LEAFGREEN_DELTA_SEGMENTS]. Every value below is FireRed's bytes found at that address.
+# French LeafGreen: FireRed's RAM; ROM past 0x0807CF68 moves by rom_map.LEAFGREEN_DELTA_SEGMENTS.
 BPGF = Build(
     game_code="BPGF", version="leafgreen", language="french", language_id=LANGUAGE_FRENCH,
     rng=BPRF.rng, sb1ptr=BPRF.sb1ptr, sb2ptr=BPRF.sb2ptr, intr_vblank=BPRF.intr_vblank,
@@ -139,8 +131,8 @@ BPGF = Build(
         CompactPartySlots=0x080971D0, ItemIsMail=0x0809BAEC, StringCompare=0x0800C938,
         InitRamScript=0x0806D5F0, RunScriptImmediately=0x0806D438))
 
-# English FireRed: the decomp's pokefirered_switch.elf, which rebuilds the retail image byte for
-# byte. IWRAM from gMain up moves +0xB0 against French, +0x110 from gSoundInfo up.
+# English FireRed: pokefirered_switch.elf rebuilds the retail image byte for byte. IWRAM from gMain
+# up moves +0xB0 against French, +0x110 from gSoundInfo up.
 BPRE = Build(
     game_code="BPRE", version="firered", language="english", language_id=LANGUAGE_ENGLISH,
     rng=0x030042D0, sb1ptr=0x030042D8, sb2ptr=0x030042DC, intr_vblank=0x030027E0,
@@ -215,7 +207,6 @@ def resolve(build):
 
 
 def for_version(version, language="french"):
-    """-> the Build of `version` in `language`."""
     for build in BUILDS.values():
         if build.version == version and build.language == language:
             return build

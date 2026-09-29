@@ -1,30 +1,17 @@
 """When to press A, and how far off the last press was.
 
-Everything this needs was settled on hardware and none of it rests on a clock:
-
-- `gRngValue` can be read in the overworld (`gSpecialVar_0x8000` = 0x020370B4).
-- The state advances exactly 2 turns per frame (1202/600 and 6002/3000, both `2N+2`).
-- The offset between the reading and the generation is **zero**, and the mon is the next four
-  draws (PID, nature, shininess and all six IVs predicted from a state the console
-  chose for itself).
-
-So the states a press can land on are `advance(S, 2k)` for whole frames k, and the mon each one
-would produce is computable. This module walks that list and says which k are shiny.
-
-THE MISS IS THE MEASUREMENT. The script prints the state it generated from, so a press that missed
-reports exactly which state it hit - `press_error` turns two readings into a signed frame count.
-No catching, no Poke Ball, no stopwatch: aim, read, correct, repeat, at a few seconds an attempt.
+The state advances exactly 2 turns per frame and the mon is the next four draws after the state the
+script prints, so a press lands on `advance(S, 2k)` and a miss is a signed frame count. docs/frlg_rng.md.
 """
 
 from pokeldn.frlg.rom import lcg
 
 SHINY_ODDS = 8
-FPS = 59.7275                   # for turning frames into a spoken countdown, and nothing else
-TURNS_PER_FRAME = 2             # MEASURED; not assumed
+FPS = 59.7275                   # for a spoken countdown only
+TURNS_PER_FRAME = 2             # measured [docs/frlg_rng.md]
 
-# In the game's own order, so that index == the value `personality % NUM_NATURES` produces
-# [decomp:include/constants/pokemon.h, NATURE_HARDY..NATURE_QUIRKY]. ONE list: native_script's
-# criteria parse against this one rather than carrying a second copy.
+# Index == `personality % NUM_NATURES` [decomp:include/constants/pokemon.h]; native_script parses
+# criteria against this list.
 NATURE_NAMES = ("Hardy Lonely Brave Adamant Naughty Bold Docile Relaxed Impish Lax Timid Hasty "
                 "Serious Jolly Naive Modest Mild Quiet Bashful Rash Calm Gentle Sassy Careful "
                 "Quirky").split()
@@ -44,11 +31,7 @@ def _mon_from(state, tid, sid):
 
 
 def scan(state, tid, sid, frames=20000, want=None):
-    """-> every frame within `frames` whose press would produce a shiny.
-
-    `want(mon) -> bool` narrows it further - a nature, an IV floor - at no extra cost, because the
-    whole mon is computed anyway.
-    """
+    """-> every frame within `frames` whose press would produce a shiny, narrowed by `want(mon)`."""
     out, current = [], int(state)
     for k in range(int(frames) + 1):
         mon = _mon_from(current, tid, sid)
@@ -60,13 +43,8 @@ def scan(state, tid, sid, frames=20000, want=None):
 
 
 def press_error(target, actual):
-    """-> how far a press missed, signed, in turns and frames.
-
-    Positive means LATE - the console had already moved past the target when the script read it.
-    `lcg.distance` only ever answers forwards, so a distance past the halfway mark is read as a
-    negative one; a miss of a few frames is unambiguous, a miss of a billion turns is not a miss
-    but a different seed.
-    """
+    """-> how far a press missed, signed (positive = late), in turns and frames. A miss past half
+    the period reads negative; a miss of millions of turns is a different seed."""
     turns = lcg.distance(int(target), int(actual))
     if turns > lcg.STATES // 2:
         turns -= lcg.STATES

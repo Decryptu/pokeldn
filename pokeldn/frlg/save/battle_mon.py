@@ -1,13 +1,6 @@
-"""struct BattlePokemon [include/pokemon.h:170], the reply to GETMONDATA REQUEST_ALL_BATTLE.
-
-The first command of every link battle is GETMONDATA with REQUEST_ALL_BATTLE, emitted to each
-battler in turn [BattleIntroGetMonsData, battle_main.c:2519]. CopyPlayerMonData builds the answer
-field by field [battle_controller_player.c:1519]; this rebuilds the same 0x58 bytes from one of our
-party mons.
-
-Note what CopyPlayerMonData does NOT write: statStages, ability, type1, type2, unknown and status2
-are left as whatever was on the stack, because the receiver recomputes them from the species. We
-send zeros there rather than garbage.
+"""struct BattlePokemon [include/pokemon.h:170], the reply to GETMONDATA REQUEST_ALL_BATTLE, as
+CopyPlayerMonData builds it [battle_controller_player.c:1519]. That function leaves statStages,
+ability, types, unknown and status2 unwritten (the receiver recomputes them); we send zeros.
 """
 
 import struct
@@ -43,8 +36,8 @@ def from_mon(m):
 
     iv_word = int.from_bytes(misc[4:8], "little")
 
-    # The party tail is plaintext in both .pk3 and .ek3 [mon.py]: status, level and the six stats
-    # the game already computed. Trust it, and fall back to our own calculator when it is absent.
+    # The party tail is plaintext in .pk3 and .ek3 [mon.py]; fall back to our calculator when level
+    # is 0.
     status1 = int.from_bytes(raw[80:84], "little")
     level = raw[84]
     hp = int.from_bytes(raw[86:88], "little")
@@ -85,7 +78,6 @@ def from_mon(m):
 
 
 def describe(data):
-    """One line for the operator's log."""
     if len(data) < SIZE:
         return f"<{len(data)} bytes, not a BattlePokemon>"
     species, attack, defense, speed, sp_attack, sp_defense = struct.unpack_from("<6H", data, 0)

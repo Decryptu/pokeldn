@@ -1,50 +1,16 @@
-"""Read the decompilation's C sources the way the compiler did: definition order, and CALL order.
+"""Read the decompilation's C sources the way the compiler did: definition order, and call order.
 
-The offline half of the worker-naming method. A dump gives a body's `bl` targets in address order
-(`thumb.bl_targets`); the decomp gives the same function's calls in the order agbcc has to emit
-them; zipping the two names every worker behind a table entry without spending a run. The same
-zip done by eye named every worker in two tables, and every name it
-produced held up. What is here is that reading, mechanised, so it can be run over all 500-odd
-bodies this project holds instead of the handful a session has time for.
-
-THREE THINGS DECIDE WHETHER THE ZIP IS EVIDENCE OR A GUESS.
-
-1. EVALUATION ORDER, NOT TOKEN ORDER. `VarGet(ScriptReadHalfword(ctx))` compiles to
-   `bl ScriptReadHalfword` then `bl VarGet`: the argument is computed before the call that consumes
-   it. So the call list is built POST-ORDER - an inner call is emitted before the one it feeds.
-   Reading left to right instead would misalign nearly every ScrCmd body, because that is their
-   shape.
-
-2. THE RIGHT BUILD. The Switch release is `firered_switch`: GAME_VERSION=FIRERED,
-   GAME_REVISION=10, MODERN=0 [decomp:Makefile:227], so `#if REVISION >= 0xA` is LIVE code and
-   `#if defined(LEAFGREEN)` is not. Reading both branches of 203 conditionals would add calls no
-   `bl` corresponds to. `NDEBUG` is a MEASUREMENT rather than a build flag: ScrCmd_special's body
-   on the cartridge makes exactly two calls, and the assert branch would add a third, so
-   the asserts compile to nothing.
-
-3. A LENGTH MATCH IS THE ALIGNMENT PROOF, and anything else is rejected. agbcc inlines, emits
-   `__divsi3` and friends for arithmetic the source does not name, and expands macros this parser
-   reads as calls. Every one of those changes the COUNT, so a body whose two lists are the same
-   length is one where none of it happened; a body where they differ is dropped rather than guessed
-   at. `scripts/gen_worker_names.py` adds the checks on top - a name already measured must land
-   back on its own address, two callers of the same address must agree, and a file's names must
-   come back in the order the file defines them.
-
-The parser is deliberately small and syntactic: no types, no scope, and only the preprocessor it
-takes to pick the right branch. It only has to be right about which identifiers are called and in
-what order, and it says so by refusing to guess - an indirect call through a table becomes
-`INDIRECT` (a `bl` to a veneer on this ROM, so it holds a slot) rather than being dropped, which
-keeps the count honest.
+A dump gives a body's `bl` targets in address order (`thumb.bl_targets`); this gives the calls in
+the order agbcc emits them (post-order, `firered_switch` branches only). A body is aligned only when
+the two lists have the same length. docs/frlg_rom_map.md, Reading the source.
 """
 import re
 
-# A call through a pointer - `gSpecials[index]()`, or `(*specialPtr)()`. agbcc turns it into `bl` a
-# veneer (0x081E2224 on this cartridge, `CALL_VIA_R0`), so it occupies one slot in the measured
-# list; what it does not do is name anything, and the caller skips that slot.
+# A call through a pointer: agbcc emits `bl` to a veneer (0x081E2224, `CALL_VIA_R0`), so it holds
+# one slot in the measured list and names nothing.
 INDIRECT = "*indirect*"
 
-# The `firered_switch` build [decomp:Makefile:227]. An identifier not in here is 0, which is what C
-# does with an undefined name in `#if`. LIBRFU_VERSION only gates librfu, which no table reaches.
+# The `firered_switch` build [decomp:Makefile:227]; an identifier not in here is 0 in `#if`.
 BUILD = {
     "REVISION": 0xA,
     "FIRERED": 1,
@@ -54,36 +20,27 @@ BUILD = {
     "__STDC_VERSION__": 199409,
 }
 
-# Macros that emit no call at all, so whatever a body appended from inside their parentheses is
-# dropped with them. The asserts expand to NOTHING in this build [decomp:include/gba/isagbprint.h:
-# 53-57 under NDEBUG]; NELEMS and ARRAY_COUNT expand to a pair of `sizeof`s, which does not evaluate
-# its argument either.
+# Macros that emit no call, and drop what was appended inside them: the asserts under NDEBUG
+# [decomp:include/gba/isagbprint.h:53-57]; NELEMS/ARRAY_COUNT are `sizeof`s.
 EMPTY_MACROS = frozenset({"AGB_ASSERT", "AGB_WARNING", "AGB_ASSERT_EX", "AGB_WARNING_EX",
                           "NELEMS", "ARRAY_COUNT"})
 
-# Macros that look like a call and expand to arithmetic, so they emit no `bl` - but whatever is
-# inside their parentheses IS evaluated and keeps its slot. `ScriptReadByte` is the one that
-# mattered: `#define ScriptReadByte(ctx) (*(ctx->scriptPtr++))` [decomp:include/script.h:24], and
-# reading it as a call put a phantom `bl` in 151 bodies, nearly half of everything that failed to
-# align.
+# Macros that look like a call and expand to arithmetic: no `bl`, but their arguments keep their
+# slots. `ScriptReadByte` [decomp:include/script.h:24] put a phantom `bl` in 151 bodies.
 NO_CALL_MACROS = frozenset({"ScriptReadByte", "MAP_GROUP", "MAP_NUM", "BG_PLTT_ID", "OBJ_PLTT_ID",
                             "PLTT_SIZEOF"})
 
-# Macros that dispatch on their argument COUNT to functions that are one symbol in the ROM:
-# `#define GetMonData(...) CAT(GetMonData, NARG_8(__VA_ARGS__))(__VA_ARGS__)`
-# [decomp:include/pokemon.h:343], and GetMonData2 is `__attribute__((alias("GetMonData3")))`
-# [decomp:src/pokemon.c:2970] - one address, two names, and the source calls it by a third.
+# Argument-count dispatch to one ROM symbol [decomp:include/pokemon.h:343]; GetMonData2 is an alias
+# of GetMonData3 [decomp:src/pokemon.c:2970].
 ALIASES = {"GetMonData": "GetMonData3", "GetBoxMonData": "GetBoxMonData3"}
 
-# Keywords that take a parenthesised group without being a call. `sizeof` is the one that would
-# otherwise produce a plausible-looking name.
+# Keywords that take a parenthesised group without being a call.
 NOT_CALLS = frozenset("""
 if else while for switch return sizeof do case break continue goto default typedef struct union
 enum static const volatile unsigned signed void register extern inline __attribute__ asm
 """.split())
 
-# Enough of the decomp's type vocabulary to tell a cast and a function-pointer declarator from a
-# call: `(u8)(x)` and `u16 (*const *p)(void)` both put a `(` where a call through a pointer does.
+# Enough type vocabulary to tell a cast `(u8)(x)` and a declarator `u16 (*p)(void)` from a call.
 TYPE_WORDS = frozenset("""
 void bool8 bool16 bool32 char short int long float double signed unsigned
 u8 u16 u32 u64 s8 s16 s32 s64 vu8 vu16 vu32 vs8 vs16 vs32 size_t
@@ -92,9 +49,8 @@ struct union enum const volatile
 
 _TOKEN = re.compile(r"[A-Za-z_]\w*|0[xX][0-9a-fA-F]+|\d+|->|\+\+|--|\S")
 
-# A definition in this decomp is a signature at column 0 with its brace on the next line or the same
-# one, which is what separates it from a call, a declaration (`;`) and an initialiser (`= {`). The
-# same-line form is rare and is how `sloopsvc.c` - the Switch build's own hypercalls - is written.
+# A definition is a signature at column 0 with its brace on the next or the same line (the same-line
+# form is `sloopsvc.c`).
 _DEFINITION = re.compile(
     r"(?m)^(?P<sig>[A-Za-z_][A-Za-z0-9_ \t*]*?)(?P<name>[A-Za-z_]\w*)[ \t]*"
     r"\((?P<args>[^;{}]*)\)[ \t]*\n?\{",
@@ -104,10 +60,7 @@ _DIRECTIVE = re.compile(r"^[ \t]*#[ \t]*(\w+)[ \t]*(.*)$")
 
 
 def strip_comments(text):
-    """-> the source with comments and string/char literals blanked, newlines preserved.
-
-    Blanked rather than deleted so a definition's line number survives: a name reported at the wrong
-    line is a citation nobody can check."""
+    """-> the source with comments and literals blanked; newlines kept so line numbers hold."""
     out, i, n = [], 0, len(text)
     while i < n:
         two = text[i:i + 2]
@@ -135,11 +88,8 @@ def strip_comments(text):
 
 
 def evaluate(expression, build=None):
-    """-> the truth of one `#if` expression under `build`, C's rules for an undefined name.
-
-    Small on purpose: `defined`, the comparisons, `&&`, `||`, `!`, and integer literals. That covers
-    every conditional in the decomp's C sources - `REVISION >= 0xA`, `defined(FIRERED)`,
-    `!defined(NDEBUG) || REVISION >= 0xA`, `LOG_HANDLER == LOG_HANDLER_MGBA_PRINT`."""
+    """-> the truth of one `#if` expression under `build`: `defined`, comparisons, `&&`, `||`, `!`,
+    integer literals; an undefined name is 0."""
     values = BUILD if build is None else build
     text = re.sub(r"defined\s*\(\s*(\w+)\s*\)", lambda m: str(int(m.group(1) in values)), expression)
     text = re.sub(r"defined\s+(\w+)", lambda m: str(int(m.group(1) in values)), text)
@@ -155,11 +105,7 @@ def evaluate(expression, build=None):
 
 
 def preprocess(text, build=None):
-    """-> the source with the branches this build does NOT compile blanked, line count preserved.
-
-    203 `#if REVISION >= 0xA` blocks in the decomp's C sources are LIVE on the Switch cartridge and
-    the `#else` beside them is not; reading both is how a call list ends up longer than the body it
-    is meant to describe."""
+    """-> the source with the branches this build does not compile blanked, line count preserved."""
     out, stack = [], []          # stack of [active here, some branch already taken]
     continuing = False
     for line in text.split("\n"):
@@ -201,10 +147,7 @@ def outer_of(stack):
 
 
 def _is_type_list(tokens, open_index, close_index):
-    """-> True if the parentheses hold a type rather than an expression.
-
-    `(u8)(x)` is a cast and `u16 (*const *p)(void)` is a declarator; both put `(` after `)` the way
-    a call through a pointer does, and only what is INSIDE tells them apart."""
+    """-> True if the parentheses hold a type (a cast or declarator) rather than an expression."""
     inside = tokens[open_index + 1:close_index]
     if not inside:
         return False
@@ -216,12 +159,8 @@ def _is_type_list(tokens, open_index, close_index):
 
 
 def _is_indirect_call(tokens, open_index):
-    """-> True if the `(` at open_index calls through what the group before it evaluated to.
-
-    Three things put a `(` straight after a `)`, and only one of them is a call:
-    `(*fn)()` is, `(u8)(x)` is a cast, `u16 (*p)(void)` is a declarator, and
-    `if (a < b)\\n    f();` is a CONDITION with a statement after it - which is the one that cost a
-    spurious slot in ScrCmd_special until the keyword before the group was checked."""
+    """-> True if the `(` at open_index calls through what the group before it evaluated to; a cast,
+    a declarator and `if (a < b) f();` also put `(` after `)`."""
     if tokens[open_index - 1] == "]":
         return True
     if tokens[open_index - 1] != ")":
@@ -242,12 +181,8 @@ def _is_indirect_call(tokens, open_index):
 
 
 def call_sequence(body):
-    """-> [called name] in the order agbcc has to emit the `bl`s, INDIRECT for a call by pointer.
-
-    Post-order: a call is appended when its closing parenthesis is reached, so every call in its
-    arguments is already in the list. That is evaluation order, and it is what the measured `bl`
-    order is. An `EMPTY_MACROS` call takes whatever was appended inside it back out again, because
-    the compiler never saw any of it."""
+    """-> [called name] in `bl` order, INDIRECT for a call by pointer. Post-order: a call is
+    appended at its closing parenthesis; an `EMPTY_MACROS` call removes what was appended in it."""
     tokens = _TOKEN.findall(body)
     calls, stack = [], []
     for index, token in enumerate(tokens):
@@ -271,12 +206,7 @@ def call_sequence(body):
 
 
 def functions(text, build=None):
-    """-> [(name, line, body)] for the definitions in one C source, IN DEFINITION ORDER.
-
-    The order is a check on every name this method proposes: agbcc emits a translation unit's
-    functions in the order they are written, so two names proposed out of the same file must come
-    back with addresses in the same order. That is how `VarSet` was checked without a run -
-    event_data.c defines GetVarPointer, VarGet, VarSet and the three addresses ascend."""
+    """-> [(name, line, body)] in definition order, which agbcc keeps in the ROM."""
     source = preprocess(strip_comments(text), build)
     out = []
     for match in _DEFINITION.finditer(source):
@@ -292,10 +222,7 @@ def functions(text, build=None):
 
 
 def read_tree(paths, build=None):
-    """-> ({name: [calls]}, {name: (file, index in file)}) over a list of C sources.
-
-    A name defined in two translation units (the decomp has a few) is dropped from both maps: which
-    one a `bl` reached is exactly what this method cannot tell from the source."""
+    """-> ({name: [calls]}, {name: (file, index)}); a name defined in two files is dropped."""
     calls, where, duplicates = {}, {}, set()
     for path in paths:
         try:

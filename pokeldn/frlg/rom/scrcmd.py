@@ -1,10 +1,5 @@
 """The field-script command table: one opcode number per command, and the event var ids the
 commands take [asm/macros/event.inc, data/script_cmd_table.inc; decomp:src/scrcmd.c].
-
-Every RAM script this project builds is assembled out of these bytes, whether the builder is
-`gift_composer`, `wonder_card` or `stamp_rally`, so they are stated once here rather than once
-per builder. `native_script` adds the two commands that stage and run code (`setptr` 0x11,
-`callnative` 0x23); docs/frlg_gift.md is the composer that emits the rest.
 """
 
 OP_END = 0x02
@@ -62,32 +57,21 @@ VAR_STARTER_MON = 0x4031        # 0 Bulbasaur, 1 Squirtle, 2 Charmander
 
 STD_OBTAIN_ITEM = 0             # gStdScripts index [event_scripts.s:78]
 
-# A saved RAM script is copied to a fixed EWRAM address and run from there, but its vgoto/vmessage
-# operands are relocated against this base [setvaddress, src/scrcmd.c].
+# A saved RAM script runs from a fixed EWRAM address, but vgoto/vmessage operands are relocated
+# against this base [setvaddress, src/scrcmd.c].
 RAM_SCRIPT_VIRTUAL_BASE = 0x08000000
 
 
-# --- reading a script the console holds -----------------------------------------------------------
-# The opcode table is measured (scrcmd_names.COMMANDS) and the operand widths are the decomp's own
-# macros (scrcmd_args.ARGS, generated). Together they turn a dump into the script it is - which is
-# the only way to check a pointer into script data is really a script. docs/frlg_rom.md.
+# Opcodes from scrcmd_names.COMMANDS, operand widths from scrcmd_args.ARGS. docs/frlg_rom.md.
 
-# Control never falls through these, so a linear walk stops: they are where one script ends and the
-# next begins. `goto` is in the set because the decomp's own labels sit right behind one -
-# EventScript_TryDoNormalTrainerBattle ends `goto EventScript_DoTrainerBattle` and
-# EventScript_NoTrainerBattle is the next byte [data/scripts/trainer_battle.inc:17].
+# A linear walk stops at these. `goto` is included because the decomp's labels sit right behind one
+# [data/scripts/trainer_battle.inc:17].
 TERMINATORS = (OP_END, OP_RETURN, OP_GOTO, OP_GOTOSTD)
 
 
 def shape(data, base, cursor):
-    """-> (name, operands, length) for the instruction at offset `cursor`, or None if there is not
-    one there. An operand is (width, value). `length` counts the opcode byte.
-
-    Most commands have one fixed shape [scrcmd_args.ARGS]. The trainerbattle family has a fixed
-    head and a tail chosen by the head's own type byte [scrcmd_args.VARIABLE]: a type outside that
-    table is not a trainerbattle at all, so this answers None rather than walk on at a guessed
-    length - which is the whole point, since every byte after a mis-measured instruction is noise.
-    """
+    """-> (name, [(width, value)], length incl. opcode) at `cursor`, or None. A trainerbattle type
+    outside scrcmd_args.VARIABLE answers None rather than walk on at a guessed length."""
     from pokeldn.frlg.rom import scrcmd_args, scrcmd_names
     if not 0 <= cursor < len(data):
         return None
@@ -122,16 +106,10 @@ def shape(data, base, cursor):
     return None if tail is None else (name, head + tail, at - cursor)
 
 
-# --- naming the operands ---------------------------------------------------------------------------
-# A field script's operands are bare numbers, and three things turn them back into meaning: the
-# decomp's per-operand parameter names (scrcmd_args.PARAMS), the tables an index reaches
-# (special_names, scrcmd_names, symbol_names), and one rule that needs no table at all - an operand
-# of VARS_START or more is a variable reference, because every ScrCmd body passes its arguments
-# through VarGet [decomp:src/event_data.c:235]. That rule comes FIRST: `additem 0x8004` is not item
-# 0x8004, it is the item id held in VAR_0x8004.
+# An operand >= VARS_START is a var reference whatever it names: every ScrCmd body passes its
+# arguments through VarGet [decomp:src/event_data.c:235].
 
-# sScriptConditionTable's row order [decomp:src/scrcmd.c:65]. goto_if/call_if and the std variants
-# spend one byte on it.
+# sScriptConditionTable's row order [decomp:src/scrcmd.c:65].
 CONDITIONS = ("<", "=", ">", "<=", ">=", "!=")
 
 
@@ -140,16 +118,15 @@ def name_operand(opcode, index, width, value):
     from pokeldn.frlg.rom import scrcmd_args, scrcmd_names, special_names, symbol_names
 
     if width == 2 and symbol_names.is_var(value):
-        return symbol_names.var_name(value)       # VarGet reads it: a reference, whatever it names
+        return symbol_names.var_name(value)       # VarGet reads it
 
     params = scrcmd_args.PARAMS.get(opcode) or ()
     param = params[index] if index < len(params) else None
     if param == "condition" and width == 1 and value < len(CONDITIONS):
         return CONDITIONS[value]
     if param == "function":
-        # Two tables share the name. ScrCmd_special reads a u16 index into gSpecials
-        # [decomp:src/scrcmd.c:101]; ScrCmd_callstd reads a u8 index into gStdScripts, so the width
-        # is what says which - and the decomp gives no command that could be read either way.
+        # ScrCmd_special reads a u16 into gSpecials [decomp:src/scrcmd.c:101]; ScrCmd_callstd a u8
+        # into gStdScripts. The width says which.
         if width == 2 and value < len(special_names.SPECIALS):
             return special_names.SPECIALS[value]
         if width == 1:
@@ -180,10 +157,7 @@ def render_operands(opcode, operands, symbols=True):
 
 def disassemble(data, base, start=None, limit=64, symbols=False):
     """-> lines of `ADDRESS  opcode  name  operands` for the script at `start` in a dump loaded at
-    `base`. Stops at a TERMINATOR, at an opcode it cannot measure, or when the dump runs out.
-
-    `symbols=True` names what each operand means beside it - the var, the flag, the special, the
-    comparison - which is the difference between reading a script and reading its bytes."""
+    `base`, stopping at a TERMINATOR, an unmeasurable opcode or the dump's end."""
     from pokeldn.frlg.rom import scrcmd_names
     data = bytes(data)
     cursor = (base if start is None else start) - base
@@ -198,9 +172,8 @@ def disassemble(data, base, start=None, limit=64, symbols=False):
             from pokeldn.frlg.rom import scrcmd_args
             name = (scrcmd_names.COMMANDS[opcode] if opcode < scrcmd_names.SCRIPT_CMD_COUNT
                     else "?")
-            # Two different answers wear the same None. A command with a known shape whose operands
-            # run off the end of the dump means the DUMP is short; anything else means these bytes
-            # are not a script. Saying "no shape here" for the first sends you looking for a bug.
+            # A known shape running off the end means the dump is short, not that these bytes are no
+            # script.
             widths = scrcmd_args.ARGS.get(opcode)
             known = widths is not None or opcode in scrcmd_args.VARIABLE
             why = ("truncated: the dump ends mid-command" if known and
@@ -218,9 +191,7 @@ def disassemble(data, base, start=None, limit=64, symbols=False):
 
 
 def looks_like_a_script(data, base, start, steps=6):
-    """-> whether `steps` instructions decode with known shapes and stay inside the dump. A pointer
-    into script data answers True; a pointer into code or a table does not, which is what makes
-    this a check on gStdScripts rather than a rendering of it."""
+    """-> whether `steps` instructions decode with known shapes and stay inside the dump."""
     data, cursor = bytes(data), start - base
     for _ in range(steps):
         measured = shape(data, base, cursor)
@@ -232,14 +203,8 @@ def looks_like_a_script(data, base, start, steps=6):
     return True
 
 
-# --- many dumps at once -----------------------------------------------------------------------
-# 127 memory-dumps are on disk and a script does not care which run happened to catch the block it
-# jumps to. A plan built from one dump proposes runs for bytes another dump already holds, which is
-# the whole cost this is here to avoid.
-
 class Memory:
-    """Several dumps as one address space. `segments` is [(base, data)]; overlapping and adjacent
-    ones are merged, so a block that straddles two dumps still disassembles."""
+    """Several dumps as one address space; overlapping and adjacent segments are merged."""
 
     def __init__(self, segments):
         merged = []
@@ -254,7 +219,6 @@ class Memory:
         self.segments = merged
 
     def segment(self, address):
-        """-> the (base, data) holding `address`, or None."""
         for base, data in self.segments:
             if base <= address < base + len(data):
                 return base, data
@@ -267,16 +231,12 @@ class Memory:
         return sum(len(data) for _base, data in self.segments)
 
 
-# --- following a script where it goes ---------------------------------------------------------
-# The commands that transfer control, and where each one's target is. `ScriptJump`/`ScriptCall`
-# take the 4-byte `destination` [decomp:src/scrcmd.c:118-176]; `setptrbyte` and `copybyte` also
-# spend a 4-byte operand the macro calls `destination`, but they are memory, not control, so the
-# set is named here rather than read off the parameter name.
+# Control transfers take the 4-byte `destination` [decomp:src/scrcmd.c:118-176]; `setptrbyte` and
+# `copybyte` share the operand name but are memory, so the set is explicit.
 JUMPS = {OP_GOTO: "goto", 0x04: "call", 0x06: "goto_if", 0x07: "call_if",
          0xB9: "vgoto", 0xBA: "vcall", 0xBB: "vgoto_if", 0xBC: "vcall_if"}
 
-# The data a script points at but does not execute: text, movement sequences, the multichoice
-# lists. Worth reporting, because a dump that lands on one reads as gibberish through this module.
+# Data a script points at but does not execute.
 DATA_PARAMS = {"text", "msg", "movements", "products", "ptr", "ptr1", "ptr2", "pointer", "source"}
 
 ROM_START, ROM_END = 0x08000000, 0x0A000000
@@ -285,12 +245,8 @@ ROM_START, ROM_END = 0x08000000, 0x0A000000
 def follow(data, base, starts=None, limit=64, blocks=256):
     """-> (reached, referenced) for the script(s) at `starts`, chasing every goto and call.
 
-    `data` is a dump with its `base`, or a `Memory` of several (pass `starts` second then). `starts`
-    is one address or many. `reached` is {address: disassembly} for every block that lies inside the
-    memory. `referenced` is {address: set of (what it is, which address named it)} for everything
-    the scripts point at that is NOT held - which is the list of addresses a `memory-dump` should
-    aim at next, and the reason this is worth doing offline: a run is spent on an address the
-    scripts themselves asked for, not on a guess."""
+    `data` is a dump with its `base`, or a `Memory` (then `starts` goes second). `reached` is
+    {address: disassembly}; `referenced` is {address: {(kind, site)}} for targets not held."""
     from pokeldn.frlg.rom import scrcmd_args
     if isinstance(data, Memory):
         memory, starts = data, base
@@ -304,7 +260,6 @@ def follow(data, base, starts=None, limit=64, blocks=256):
             continue
         found = memory.segment(address)
         if found is None:
-            # An entry point the dumps do not hold is the plainest thing there is to want next.
             referenced.setdefault(address, set()).add(("entry point", address))
             continue
         segment_base, segment = found
@@ -318,10 +273,7 @@ def follow(data, base, starts=None, limit=64, blocks=256):
 
 
 def references(memory, address, limit=64):
-    """-> (kind, value, the command that named it, whether it transfers control) for one block.
-
-    The operand walk that `follow` and `data_pointers` both need. A `destination` in a JUMPS command
-    is control; anything in DATA_PARAMS is data the script points at but never executes."""
+    """-> (kind, value, site, is_jump) for each pointer operand of one block."""
     found = memory.segment(address)
     if found is None:
         return
@@ -347,12 +299,7 @@ def references(memory, address, limit=64):
 
 
 def data_pointers(memory, blocks, limit=64):
-    """-> {address: {(kind, the command that named it)}} for the data those blocks point at and the
-    memory DOES hold - the other half of `follow`'s answer.
-
-    `follow` reports what is missing, because that is what a run is spent on. This reports what has
-    already arrived: a `msgbox` operand inside a dump is a string that can be read out and printed
-    rather than an address to want. `charmap.decode` turns one into the words on the screen."""
+    """-> {address: {(kind, site)}} for the data those blocks point at that the memory holds."""
     out = {}
     for block in blocks:
         for kind, value, site, is_jump in references(memory, block, limit=limit):
@@ -362,10 +309,7 @@ def data_pointers(memory, blocks, limit=64):
 
 
 def read_string(memory, address, limit=1024):
-    """-> the game string at `address`, decoded, or None if the memory does not hold its end.
-
-    Terminator 0xFF [pokeldn/frlg/text/charmap.py]. A string that runs off the end of the dump is NOT
-    returned: the tail that is missing is exactly the part worth reading."""
+    """-> the game string at `address`, decoded, or None if its 0xFF end is not held."""
     from pokeldn.frlg.text import charmap
     found = memory.segment(address)
     if found is None:
@@ -379,11 +323,8 @@ def read_string(memory, address, limit=1024):
 
 
 def dump_plan(referenced, window=1024):
-    """-> lines naming the `window`-sized dumps that would cover every address a script reached
-    for and the dump did not hold, biggest catch first. One line is one `memory-dump` run.
-
-    The point of the ordering: several unknowns usually share a window, and a run that catches four
-    of them costs exactly what a run that catches one does."""
+    """-> lines naming the `window`-sized `memory-dump` runs covering `referenced`, most addresses
+    first."""
     wanted = sorted(referenced)
     windows = {}
     for address in wanted:

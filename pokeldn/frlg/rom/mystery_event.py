@@ -1,26 +1,9 @@
 """The Mystery Event VM: the second bytecode the Mystery Gift link can execute, reached through
 CLI_RUN_MEVENT_SCRIPT [decomp:src/mystery_event_script.c, data/mystery_event_script_cmd_table.s].
 
-Three facts shape everything here.
-
-1. **No ``checkcompat``.** ``RunScriptCommand`` [decomp:src/script.c:107] chains commands inside one
-   call until one returns TRUE, and ``MEventScript_Run`` keeps looping only while ``ctx->data[3]`` is
-   set -- which only ``checkcompat`` ever sets. So a script without ``checkcompat`` still executes
-   every command up to the first TRUE-returning one, in a single pass. That first TRUE-returning
-   command is the end of the script, whatever follows it. It also means the unknown French
-   ``LANGUAGE_MASK`` never has to be solved.
-
-2. **Pointer operands are plain offsets into our own buffer.** Every pointer is relocated as
-   ``operand - ctx->data[1] + ctx->data[0]``; ``data[1]`` is set only by ``checkcompat`` (0 otherwise)
-   and ``data[0]`` is the address of the script itself, i.e. the console's 1024-byte
-   ``client->recvBuffer``. Omit ``checkcompat`` and an operand of N means "N bytes from the start of
-   what we sent".
-
-3. **The console answers.** ``Client_RunMysteryEventScript`` [decomp:src/mystery_gift_client.c:257]
-   passes ``&client->param`` to ``MEventScript_Run``, which stores ``ctx->data[2]`` -- the script
-   status -- there. ``CLI_LOAD_TOSS_RESPONSE`` then loads exactly ``client->param`` into
-   MG_LINKID_RESPONSE, so ``CLI_RUN_MEVENT_SCRIPT`` + ``CLI_LOAD_TOSS_RESPONSE`` + ``CLI_SEND_LOADED``
-   ships the status back to us. ``setstatus`` makes that an arbitrary u8 of our choosing.
+Without `checkcompat` the script runs to its first TRUE-returning command in one pass, and a pointer
+operand is an offset into the sent buffer. The status comes back through CLI_LOAD_TOSS_RESPONSE.
+docs/frlg_rom.md.
 """
 
 from dataclasses import dataclass, field
@@ -54,8 +37,7 @@ OPCODE_NAMES = {
     ME_CHECKSUM: "checksum", ME_CRC: "crc",
 }
 
-# Commands whose handler returns TRUE: they yield out of RunScriptCommand, and with data[3] == 0
-# (no checkcompat) yielding ends the script. Nothing after one of these runs.
+# Handlers returning TRUE: with data[3] == 0 (no checkcompat) nothing after one runs.
 TERMINAL_OPCODES = frozenset({
     ME_CHECKCOMPAT, ME_END, ME_SETRECORDMIXINGGIFT, ME_ENABLERESETRTC, ME_CHECKSUM, ME_CRC,
 })
@@ -63,18 +45,16 @@ TERMINAL_OPCODES = frozenset({
 # Both call SetIncompatible in FRLG and do nothing else [decomp:src/mystery_event_script.c:227,:291].
 DEAD_OPCODES = frozenset({ME_SETRECORDMIXINGGIFT, ME_ENABLERESETRTC})
 
-# client->recvBuffer is AllocZeroed(MG_LINK_BUFFER_SIZE) [decomp:include/mystery_gift_link.h:4] and
-# the script runs in place out of it.
+# client->recvBuffer is AllocZeroed(MG_LINK_BUFFER_SIZE) [decomp:include/mystery_gift_link.h:4].
 MAX_SCRIPT_SIZE = 0x400
 
-# Statuses the stock opcodes leave in ctx->data[2]; ours are free to be anything a u8 holds.
+# Stock statuses in ctx->data[2]; setstatus may write any u8.
 STATUS_INCOMPATIBLE = 3         # SetIncompatible, and givepokemon's "party is full"
 STATUS_FAILED = 1               # setenigmaberry could not validate; checksum/crc mismatch
 STATUS_SUCCESS = 2              # every opcode that did its job
 
-# sGiftRibbonsMonDataIds has seven entries but GiveGiftRibbonToParty accepts index < 11 and copies
-# it into a u8[8]; 7..10 read uninitialised stack and SetMonData a garbage field
-# [decomp:src/pokemon_size_record.c:193]. Never emit those.
+# GiveGiftRibbonToParty accepts index < 11 into a u8[8]; 7..10 write a garbage field
+# [decomp:src/pokemon_size_record.c:193].
 MAX_RIBBON_INDEX = 6
 MAX_RIBBON_ID = 64
 MAX_RARE_WORD_ID = 32           # EnableRareWord ignores >= 33 [decomp:src/easy_chat.c:332]
@@ -91,7 +71,7 @@ class MysteryEventError(Exception):
 
 @dataclass
 class Blob:
-    """A run of data placed after the code; its offset from the start of the buffer is the operand."""
+    """Data placed after the code; its offset from the buffer start is the operand."""
     data: bytes
     align: int = 4
     offset: int | None = field(default=None, compare=False)
@@ -126,11 +106,8 @@ def _u32(value):
 
 
 class MysteryEventScript:
-    """Emits Mystery Event bytecode. Data goes in blobs; the assembler resolves their offsets.
-
-    Every script must end in a terminal command. Without one the console keeps decoding whatever
-    happens to sit in the rest of its 1024-byte receive buffer.
-    """
+    """Emits Mystery Event bytecode; blobs hold data and the assembler resolves their offsets. A
+    script must end in a terminal command or the console decodes the rest of its receive buffer."""
 
     def __init__(self, *, max_size=MAX_SCRIPT_SIZE):
         self.max_size = max_size
@@ -138,16 +115,14 @@ class MysteryEventScript:
         self._blobs = []
         self._fixups = []           # (code offset, Blob, extra) -> operand = blob.offset + extra
         self._terminated = False
-        self._resumable = False     # only checkcompat sets data[3], which lets execution continue
+        self._resumable = False     # only checkcompat sets data[3]
 
-    # -- data ----------------------------------------------------------------
 
     def blob(self, data, *, align=4):
         handle = Blob(bytes(data), align)
         self._blobs.append(handle)
         return handle
 
-    # -- emission ------------------------------------------------------------
 
     def _emit(self, opcode, payload=b"", *, refs=()):
         if self._terminated and not self._resumable:
@@ -182,35 +157,22 @@ class MysteryEventScript:
         return self._emit(ME_SETSTATUS, _u8(value, "status"))
 
     def setmsg(self, value, text):
-        """StringExpandPlaceholders(gStringVar4, text) when value is 0xFF or the current status.
-
-        FRLG's Mystery Gift menu prints its own result text, so gStringVar4 is not displayed on this
-        path; the command is here for completeness and because it is a harmless pointer exercise.
-        """
+        """StringExpandPlaceholders(gStringVar4, text) when value is 0xFF or the status; FRLG's menu
+        never displays it."""
         handle = self._own(text)
         return self._emit(ME_SETMSG, _u8(value, "message selector") + _u32(0),
                           refs=((1, handle, 0),))
 
     def runscript(self, script):
-        """RunScriptImmediately on a field script -- the same VM our delivery scripts use, but run
-        now, inside the Mystery Gift menu, rather than saved for an NPC."""
+        """RunScriptImmediately on a field script, inside the Mystery Gift menu."""
         handle = self._own(script)
         return self._emit(ME_RUNSCRIPT, _u32(0), refs=((0, handle, 0),))
 
     def initramscript(self, map_group, map_num, object_id, script):
-        """InitRamScript bound to any map and object, not just the Mystery Gift delivery man
-        [decomp:src/mystery_event_script.c:200].
-
-        TRAP, confirmed on hardware: this makes the console's Wonder Card read as ABSENT.
-        `ValidateSavedWonderCard` requires `ValidateRamScript` [decomp:src/mystery_gift.c:186],
-        which insists the single RAM script slot is bound to MAP_UNDEFINED / object 0xFF
-        [`src/script.c:539`] - the coordinates `CLI_SAVE_RAM_SCRIPT` writes. Bind real coordinates
-        and the card is still in the save, byte for byte with a good CRC, but the Mystery Gift menu
-        says the player has none and `MysteryGift_LoadLinkGameData` reports flagId 0 [`:349`].
-
-        So a Wonder Card and an NPC-bound script are MUTUALLY EXCLUSIVE: one slot, one occupant.
-        It is fully reversible - any later Wonder Card rebinds the slot and the card comes back.
-        """
+        """InitRamScript bound to any map and object [decomp:src/mystery_event_script.c:200].
+    
+        Trap: the Wonder Card then reads as absent until a later card rebinds the slot
+        [mystery_gift.c:186]. docs/frlg_gift.md."""
         handle = script if isinstance(script, Blob) else self.blob(script)
         payload = (_u8(map_group, "map group") + _u8(map_num, "map number")
                    + _u8(object_id, "object id") + _u32(0) + _u32(0))
@@ -218,16 +180,12 @@ class MysteryEventScript:
                           refs=((3, handle, 0), (7, handle, len(handle))))
 
     def setenigmaberry(self, berry):
-        """SetEnigmaBerry [decomp:src/berry.c:953]. The berry travels as struct ReceivedEnigmaBerry:
-        a 28-byte Berry2 at offset 0 and itemEffect/holdEffect/holdEffectParam at 0x516, past the end
-        of the console's 1024-byte buffer -- see build_enigma_berry_blob."""
+        """SetEnigmaBerry [decomp:src/berry.c:953]; see build_enigma_berry_blob."""
         handle = self._own(berry)
         return self._emit(ME_SETENIGMABERRY, _u32(0), refs=((0, handle, 0),))
 
     def giveribbon(self, index, ribbon_id):
-        """GiveGiftRibbonToParty: sets ribbon `index` on every non-egg party mon and records
-        `ribbon_id` as its description. FRLG has no ribbon UI; the effect shows up in Emerald or
-        Colosseum, not on this console."""
+        """GiveGiftRibbonToParty: ribbon `index` on every non-egg party mon (no ribbon UI in FRLG)."""
         return self._emit(ME_GIVERIBBON,
                           _u8(index, "ribbon index", MAX_RIBBON_INDEX)
                           + _u8(ribbon_id, "ribbon id", MAX_RIBBON_ID))
@@ -239,21 +197,17 @@ class MysteryEventScript:
         return self._emit(ME_ADDRAREWORD, _u8(phrase_id, "rare word id", MAX_RARE_WORD_ID))
 
     def givepokemon(self, mon):
-        """A whole struct Pokemon plus the struct Mail that follows it, straight into party slot 6;
-        it sets the seen and caught dex flags itself [decomp:src/mystery_event_script.c:234].
-        Status 2 on success, 3 when the party is already full."""
+        """struct Pokemon + struct Mail into party slot 6 [mystery_event_script.c:234]."""
         handle = self._own(mon)
         return self._emit(ME_GIVEPOKEMON, _u32(0), refs=((0, handle, 0),))
 
     def addtrainer(self, trainer):
-        """The visiting trainer by the other route: memcpy into battleTower.ereaderTrainer."""
+        """memcpy into battleTower.ereaderTrainer."""
         handle = self._own(trainer)
         return self._emit(ME_ADDTRAINER, _u32(0), refs=((0, handle, 0),))
 
     def checksum(self, data, *, expected=None):
-        """Terminal. Leaves the status alone when CalcByteArraySum over the relocated range matches,
-        and sets it to 1 when it does not -- a read-only oracle for whether pointer operands land
-        where we think they do."""
+        """Terminal. Status unchanged when CalcByteArraySum over the range matches, 1 when not."""
         handle = data if isinstance(data, Blob) else self.blob(data)
         value = calc_byte_array_sum(handle.data) if expected is None else expected
         return self._emit(ME_CHECKSUM, _u32(value) + _u32(0) + _u32(0),
@@ -267,15 +221,12 @@ class MysteryEventScript:
                           refs=((4, handle, 0), (8, handle, len(handle))))
 
     def checkcompat(self, base, language, language2, unk, version):
-        """Terminal, but the one command that sets data[3] so execution resumes after it. It also
-        sets data[1] = base, which turns every later pointer operand into an address relative to
-        that virtual base instead of an offset into our buffer. We do not use it: LANGUAGE_MASK is
-        the English decomp's value and both consoles here are French."""
+        """Terminal, but sets data[3] so execution resumes, and data[1] = base for later pointers.
+        Unused: LANGUAGE_MASK is the English decomp's value."""
         payload = (_u32(base) + int(language).to_bytes(2, "little") + _u32(language2)
                    + int(unk).to_bytes(2, "little") + _u32(version))
         return self._emit(ME_CHECKCOMPAT, payload)
 
-    # -- assembly ------------------------------------------------------------
 
     def assemble(self):
         if not self._terminated:
@@ -297,7 +248,7 @@ class MysteryEventScript:
         return bytes(out)
 
 
-# Operand widths after the opcode byte, for the disassembler; None means "not a fixed-width command".
+# Operand widths after the opcode byte.
 _OPERAND_LAYOUT = {
     ME_NOP: (), ME_END: (), ME_GIVENATIONALDEX: (),
     ME_SETSTATUS: ("u8",), ME_ADDRAREWORD: ("u8",),
@@ -313,7 +264,7 @@ _OPERAND_LAYOUT = {
 
 
 def decode(script):
-    """Walks the command chain the console would actually execute, and stops where it would stop."""
+    """Walks the command chain the console would execute, stopping where it would."""
     out = []
     position = 0
     while position < len(script):
@@ -341,10 +292,8 @@ def describe(script):
     return "; ".join(parts)
 
 
-
 @dataclass
 class MysteryEventResult:
-    """What the console would do with a script, and the status it would hand back to us."""
     status: int
     effects: tuple
     stopped_at: str
@@ -358,13 +307,8 @@ class MysteryEventResult:
 
 
 def run(script, *, party_count=1, enigma_berry_valid=False, buffer_size=MAX_SCRIPT_SIZE):
-    """Execute a script the way Client_RunMysteryEventScript would, and report the status.
-
-    The console runs the bytecode in place inside client->recvBuffer, which is AllocZeroed, so a
-    pointer operand is an index into a zero-padded 1024-byte image of what we sent. Reads past the
-    end of that buffer are the console's own heap and cannot be modelled; they are reported as an
-    effect rather than guessed at.
-    """
+    """Execute a script as Client_RunMysteryEventScript would, in a zero-padded image of the buffer;
+    a read past the buffer is the console's heap and is reported as an effect."""
     image = bytes(script).ljust(buffer_size, b"\x00")
     status = 0
     effects = []
@@ -415,8 +359,8 @@ def run(script, *, party_count=1, enigma_berry_valid=False, buffer_size=MAX_SCRI
             pointer = read(4)
             effects.append(("setenigmaberry", blob(pointer, 28),
                             blob(pointer + ENIGMA_BERRY_ITEM_EFFECT_OFFSET, 20)))
-            # SetEnigmaBerry always writes a matching checksum, so IsEnigmaBerryValid then turns on
-            # stageDuration and maxYield alone [decomp:src/berry.c:984].
+            # SetEnigmaBerry writes a matching checksum, so validity rests on stageDuration and
+            # maxYield [decomp:src/berry.c:984].
             berry = blob(pointer, 28)
             status = STATUS_SUCCESS if berry[20] and berry[10] else STATUS_FAILED
         elif opcode == ME_GIVERIBBON:
@@ -458,8 +402,6 @@ def run(script, *, party_count=1, enigma_berry_valid=False, buffer_size=MAX_SCRI
             stopped_at = name
             break
         elif opcode == ME_CHECKCOMPAT:
-            # data[1] would become the virtual base and data[3] would let the chain resume; we never
-            # emit this, and simulating the French LANGUAGE_MASK is exactly what we cannot do.
             stopped_at = "checkcompat"
             effects.append(("checkcompat",))
             break
@@ -471,15 +413,8 @@ def run(script, *, party_count=1, enigma_berry_valid=False, buffer_size=MAX_SCRI
 
 
 def build_enigma_berry_blob(berry, item_effect=b"", hold_effect=0, hold_effect_param=0):
-    """Lay a berry out as struct ReceivedEnigmaBerry [decomp:src/berry.c:944].
-
-    The struct is 1322 bytes: the 28-byte Berry2 the console copies wholesale, then 0x4FA of
-    padding, then itemEffect[18], holdEffect and holdEffectParam. That tail sits 1302 bytes into a
-    buffer that is only 1024 bytes long, so on this link the console reads it out of whatever
-    follows recvBuffer on its heap and the item effect cannot be set from here. The name, flavours
-    and growth data -- everything GetBerryInfo returns for ITEM_ENIGMA_BERRY -- are inside the
-    28 bytes and do land.
-    """
+    """Lay a berry out as struct ReceivedEnigmaBerry [decomp:src/berry.c:944]. The effect tail at
+    0x516 lies past the 1024-byte buffer, so only the 28-byte Berry2 lands. docs/frlg_rom.md."""
     if len(berry) != 28:
         raise MysteryEventError(f"struct Berry2 is 28 bytes, got {len(berry)}")
     if len(item_effect) > 18:

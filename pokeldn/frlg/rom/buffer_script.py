@@ -1,25 +1,9 @@
 """CLI_RUN_BUFFER_SCRIPT: native ARM code the console executes out of gDecompressionBuffer.
 
-The last unopened door in the Mystery Gift client. Client_Run copies our whole 1024-byte receive
-buffer into gDecompressionBuffer and then calls it every frame until it returns 1
-[decomp:src/mystery_gift_client.c:237,276]:
-
-    u32 (*func)(u32 *, struct SaveBlock2 *, struct SaveBlock1 *) = (void *)gDecompressionBuffer;
-    if (func(&client->param, gSaveBlock2Ptr, gSaveBlock1Ptr) == 1)
-
-so a payload gets r0 = &client->param, r1 = gSaveBlock2Ptr, r2 = gSaveBlock1Ptr, and whatever it
-leaves in *param comes back to us through the CLI_LOAD_TOSS_RESPONSE + CLI_SEND_LOADED return
-channel already proven by the Mystery Event VM [mg_script.py, docs/frlg_rom.md].
-
-FACT: the payload is ARM, not THUMB. The console reaches it with a bx through a function pointer,
-which selects the state from bit 0 of the address, and gDecompressionBuffer is word aligned.
-DEDUCTION: it sits at 0x0201C000 - ld_script.ld puts ewram at 0x2000000 under ALIGN(4), reserves
-gHeap 0x1C000, then links src/main.o(ewram_data) first, whose first EWRAM_DATA is
-gDecompressionBuffer [src/main.c:87]. Nothing here depends on that address: every payload is
-position independent, and the deduction is recorded only because a later payload may want it.
-
-`emulate` runs a payload against a model of the GBA memory map (unicorn), which is how a payload
-is proven before it is ever put on the air.
+Client_Run copies the 1024-byte receive buffer there and calls it every frame until it returns 1,
+with r0 = &client->param, r1 = gSaveBlock2Ptr, r2 = gSaveBlock1Ptr [mystery_gift_client.c:237,276];
+*param comes back through CLI_LOAD_TOSS_RESPONSE. ARM state. `emulate` proves a payload under
+unicorn before it is sent. docs/frlg_rom.md.
 """
 
 import dataclasses
@@ -28,15 +12,14 @@ from dataclasses import dataclass
 from pokeldn.frlg.rom import builds
 from pokeldn.frlg.rom.buffer_payloads import PAYLOADS
 
-# MG_LINK_BUFFER_SIZE [decomp:include/mystery_gift_link.h:4]. Client_Run memcpys exactly this many
-# bytes, but the link only fills what we actually send, so a payload must be self-contained.
+# MG_LINK_BUFFER_SIZE [decomp:include/mystery_gift_link.h:4]: the whole buffer is copied but only
+# what we send is fresh, so a payload must be self-contained.
 MAX_BUFFER_SCRIPT_SIZE = 0x400
 
-# Where the console runs it from (see the deduction above). Documentation, not a dependency.
+# Measured by `anchors`; payloads are position independent.
 GDECOMPRESSION_BUFFER = 0x0201C000
 
-# The value a payload returns to end the call. Anything else means "call me again next frame"
-# [decomp:src/mystery_gift_client.c:279], which is a hang if the payload never changes its mind.
+# Anything else means "call me again next frame" [decomp:src/mystery_gift_client.c:279].
 BUFFER_SCRIPT_DONE = 1
 
 # struct SaveBlock2 [decomp:include/global.h:327].
@@ -46,24 +29,17 @@ SAV2_PLAYER_TRAINER_ID = 0x0A
 
 TRAINER_ID_PROBE = "trainer-id-probe"
 
-# What the host checks the returned u32 against. The trainer id is the one oracle the console can
-# be asked for twice by two different routes: our ARM code reads gSaveBlock2Ptr directly, and the
-# ROM had already assembled the same field into the MysteryGiftLinkGameData we read seconds
-# earlier. Agreement is proof the payload ran, with the arguments the decomp promises, on the real
-# save - not a coincidence and not an echo of anything we sent.
+# The payload's trainer id must match the one in MysteryGiftLinkGameData, read by another route.
 EXPECT_TRAINER_ID = "trainer-id"
 
 
 class BufferScriptError(ValueError):
-    """A payload that the console could not safely be asked to run.
-
-    A ValueError so that the config layer and the host CLI, which turn ValueError into
-    parser.error, report a bad operand as a refusal rather than a traceback.
-    """
+    """A payload the console could not safely be asked to run. A ValueError so the CLI reports a
+    refusal rather than a traceback."""
 
 
 def payload(name):
-    """The committed machine code for one asm/<name>.s."""
+    """The committed machine code for asm/<name>.s."""
     try:
         code = PAYLOADS[name][0]
     except KeyError:
@@ -83,20 +59,17 @@ def validate(code):
         raise BufferScriptError(
             f"a buffer script is at most {MAX_BUFFER_SCRIPT_SIZE} bytes, got {len(code)}")
     if len(code) % 4:
-        # The console enters in ARM state; a payload that is not a whole number of ARM words
-        # either has a data tail it never reaches or was assembled for the wrong state.
+        # The console enters in ARM state.
         raise BufferScriptError(
             f"ARM code is a multiple of 4 bytes, got {len(code)}")
     return code
 
 
-
 @dataclass(frozen=True)
 class BufferScriptSpec:
-    """One payload: what it does, and what its answer should be checked against."""
     name: str
     description: str
-    expect: object          # EXPECT_TRAINER_ID, a u32 we demanded, or None for "any answer"
+    expect: object          # EXPECT_TRAINER_ID, a demanded u32, or None
 
 
 MEMORY_DUMP = "memory-dump"
@@ -111,20 +84,17 @@ FLASH_READ = "flash-read"
 SLOOP_SVC = "sloop-svc"
 INSTALL_RESIDENT = "install-resident"
 
-# Save flash, the destination of the Sloop sector syscalls. 128 KiB, 32 sectors of 0x1000
-# [decomp:include/save.h: SECTOR_SIZE, SECTORS_COUNT]. The CPU cannot write it with a store; only
-# swi 0x48 and swi 0x56 reach it [docs/frlg_rom.md, the Sloop syscall boundary].
+# Save flash: 32 sectors of 0x1000 [decomp:include/save.h]. Only swi 0x48 and swi 0x56 write it
+# [docs/frlg_rom.md, the Sloop syscall boundary].
 FLASH_BASE, FLASH_SIZE = 0x0E000000, 0x00020000
 FLASH_SECTOR_SIZE = 0x1000
-# The two syscalls that copy a sector. 0x48 writes and leaves; 0x56 writes and then voids the
-# destination's signature at +0xFF8, which is what makes it ReplaceSector rather than WriteSector.
+# 0x48 writes a sector; 0x56 writes and then voids the destination's signature at +0xFF8.
 SWI_WRITE_SECTOR = 0x48
 SWI_REPLACE_SECTOR = 0x56
 SECTOR_SIGNATURE_OFFSET_IN_SECTOR = 0xFF8
 
 
-# save-write's operands, from its disassembly (ldr [pc,#0x44] -> 0x4C, [pc,#0x38] -> 0x50,
-# [pc,#0x30] -> 0x54, add r1,pc,#0x2C -> 0x58). Proven by emulating a patched payload.
+# save-write's operands, from its literal pool; tests emulate a patched payload.
 SAVE_WRITE_WHICH_OFFSET = 0x4C
 SAVE_WRITE_OFFSET_OFFSET = 0x50
 SAVE_WRITE_SIZE_OFFSET = 0x54
@@ -132,10 +102,10 @@ SAVE_WRITE_DATA_OFFSET = 0x58
 MAX_SAVE_WRITE_BYTES = MAX_BUFFER_SCRIPT_SIZE - SAVE_WRITE_DATA_OFFSET
 
 
-# The eleven words `anchors` sends back, in order. The first four cannot be obtained any other way.
+# The eleven words `anchors` sends back, in order.
 ANCHORS_FIELDS = (
-    "code",             # where the console put our payload: gDecompressionBuffer, measured
-    "return_address",   # into ROM, after the call in Client_RunBufferScript; THUMB, so bit 0 set
+    "code",             # gDecompressionBuffer, measured
+    "return_address",   # after the call in Client_RunBufferScript; THUMB
     "stack_pointer",
     "client_param",     # r0
     "save_block_2",     # r1
@@ -144,7 +114,7 @@ ANCHORS_FIELDS = (
     "client_recv_buffer",
     "client_script",
     "client_msg",
-    "link_send_buffer",  # as MysteryGiftLink_InitSend left it; must equal client_send_buffer
+    "link_send_buffer",  # must equal client_send_buffer
 )
 ANCHORS_SIZE = 4 * len(ANCHORS_FIELDS)
 
@@ -160,8 +130,7 @@ def read_anchors(dump):
 
 
 def describe_anchors(dump):
-    """The same, as lines to log. Every consistency check this can make, it makes: an answer that
-    looks plausible but is not self-consistent is worse than no answer."""
+    """The anchors as log lines, with every consistency check they allow."""
     a = read_anchors(dump)
     lines = [f"{name:<19} 0x{a[name]:08X}" for name in ANCHORS_FIELDS]
     rom = a["return_address"]
@@ -179,8 +148,7 @@ def describe_anchors(dump):
                      "the struct offsets this project computes from r0 are wrong")
     return lines
 
-# save-dump's operands, from its disassembly: ldr [pc,#36] -> 0x2C, [pc,#24] -> 0x30,
-# [pc,#16] -> 0x34. Proven by emulating a patched payload, not by trusting these.
+# save-dump's operands, from its literal pool; tests emulate a patched payload.
 SAVE_DUMP_WHICH_OFFSET = 0x2C
 SAVE_DUMP_OFFSET_OFFSET = 0x30
 SAVE_DUMP_SIZE_OFFSET = 0x34
@@ -188,78 +156,57 @@ SAVE_DUMP_SIZE_OFFSET = 0x34
 SAVE_BLOCK_2 = "sav2"       # r1, struct SaveBlock2: name, trainer id, pokedex, battle tower
 SAVE_BLOCK_1 = "sav1"       # r2, struct SaveBlock1: party, bag, money, flags, vars
 SAVE_BLOCKS = (SAVE_BLOCK_2, SAVE_BLOCK_1)
-# Regions of the save the GAME NEVER READS, so a write there cannot break the player's game. Both
-# are `u8 filler[]` in struct SaveBlock2 [decomp:include/global.h:345,357] and neither is referenced
-# anywhere in src/. They are still saved to flash with the rest of the block, which is what makes
-# them the right place to prove that a write lands and survives.
+# Save regions the game never reads: `u8 filler[]` in SaveBlock2 [decomp:include/global.h:345,357],
+# unreferenced in src/ but still saved to flash.
 SAVE_SCRATCH = {
     SAVE_BLOCK_2: ((0x090, 0x008),      # filler_90
-                   (0xB20, 0x400)),     # filler_B20, a kilobyte
+                   (0xB20, 0x400)),     # filler_B20
     SAVE_BLOCK_1: (),
 }
 
-# Where build_memory_dump patches its two operands. The payload is six ARM instructions followed by
-# a two-word literal pool; the disassembly reads `ldr r3, [pc, #16]` -> 0x18 and
-# `ldr r3, [pc, #12]` -> 0x1C, and test_the_dump_payload_operands_are_where_we_patch_them proves it
-# by emulating a patched payload rather than by trusting these numbers.
+# memory-dump's literal pool; tests emulate a patched payload.
 DUMP_TARGET_OFFSET = 0x18
 DUMP_SIZE_OFFSET = 0x1C
 
-# --- memory-dump-multi: several blocks in one session ---------------------------------------------
-# MG_LINK_BUFFER_SIZE caps a message, not a session. The client runs a script of commands, and
-# CLI_LOAD_TOSS_RESPONSE -> CLI_RUN_BUFFER_SCRIPT -> CLI_SEND_LOADED can appear in it repeatedly
-# [decomp:src/mystery_gift_client.c:140]; each pass sends another block. The payload cannot keep the
-# block index itself, because CLI_RUN_BUFFER_SCRIPT memcpys recvBuffer over gDecompressionBuffer on
-# EVERY pass [:238] and restores our image; it keeps it in client->param, which we are handed a
-# pointer to. asm/memory-dump-multi.s. The three offsets are the literal pool after 17 instructions,
-# and test_the_multi_dump_operands_are_where_we_patch_them EMULATES a patched payload rather than
-# trusting that count - which is what caught them being written down 0x10 too low.
+# memory-dump-multi: CLI_RUN_BUFFER_SCRIPT re-copies the image every pass
+# [mystery_gift_client.c:238], so the block index lives in client->param [asm/memory-dump-multi.s].
+# Offsets are the literal pool, checked by emulation (a count was once 0x10 off).
 DUMP_MULTI_MAGIC_OFFSET = 0x44
 DUMP_MULTI_BASE_OFFSET = 0x48
 DUMP_MULTI_SIZE_OFFSET = 0x4C
 DUMP_MULTI_MAGIC = 0x5A5A0000
-# The cursor is one byte of param and each block is MAX_BUFFER_SCRIPT_SIZE, so this is the ceiling
-# the PAYLOAD imposes. The client script imposes a smaller one; see mg_script.MAX_DUMP_BLOCKS.
+# The payload's ceiling (a one-byte cursor); mg_script.MAX_DUMP_BLOCKS is lower.
 MAX_DUMP_MULTI_BLOCKS = 0x100
 
-# memory-dump-scatter: the same cursor, but it indexes a TABLE of bases carried in the payload
-# rather than multiplying by 1024. From its disassembly: `ldr [pc,#28] -> 0x48` is the size and
-# `add r3, pc, #44 -> 0x4C` is the table, 32 words of it (mg_script.MAX_DUMP_BLOCKS).
+# memory-dump-scatter: the cursor indexes a table of 32 bases carried in the payload.
 DUMP_SCATTER_SIZE_OFFSET = 0x48
 DUMP_SCATTER_TABLE_OFFSET = 0x4C
 DUMP_SCATTER_TABLE_SLOTS = 32
 
-# --- memory-scan: searching instead of reading ---------------------------------------------------
-# Client_RunBufferScript ends the call only when the payload returns 1 and is reached once a frame
-# from Task_MysteryGift [decomp:src/mystery_gift_client.c:276-280], and the memcpy that loads us
-# runs once, at CLI_RUN_BUFFER_SCRIPT [:239], not per call. So a payload that returns 0 is called
-# again next frame with its own image intact, and a search over 16 MB becomes a loop across frames
-# instead of 16384 runs of 1024 bytes. The offsets below are fixed BY CONSTRUCTION - the payload
-# opens with a branch over its own parameter block - so none is recovered from a disassembly.
-SCAN_CURSOR_OFFSET = 0x04       # patched to the start address; the payload advances it
+# memory-scan: a payload returning 0 is called again next frame with its image intact
+# [decomp:src/mystery_gift_client.c:239,276-280], so a 16 MB search loops across frames. The offsets
+# are fixed by construction: the payload branches over its parameter block.
+SCAN_CURSOR_OFFSET = 0x04       # the start address; the payload advances it
 SCAN_END_OFFSET = 0x08
 SCAN_NEEDLE_OFFSET = 0x0C
-SCAN_BLOCKS_OFFSET = 0x10       # 32-byte blocks per call: the frame budget
+SCAN_BLOCKS_OFFSET = 0x10       # 32-byte blocks per call
 SCAN_MAX_CALLS_OFFSET = 0x14    # watchdog; a payload that never returns 1 hangs the menu
 SCAN_RESULT_OFFSET = 0x18
 SCAN_HITS_OFFSET = 0x28
 SCAN_HIT_CAPACITY = 64
 SCAN_BLOCK_BYTES = 32           # one ldmia of eight words
-# What comes back, always, hits or no hits: four header words then the whole hit table. Fixed so
-# that the host's length check stays the proof that the payload repointed the send.
+# Fixed size, hits or not, so the host's length check proves the payload repointed the send.
 SCAN_ANSWER_SIZE = 4 * 4 + 8 * SCAN_HIT_CAPACITY
 
-# The cartridge, which is what this was built for. FireRed fills the first 16 MB of the window.
+# FireRed fills the first 16 MB of the cartridge window.
 SCAN_ROM_START = 0x08000000
 SCAN_ROM_END = 0x09000000
-# One call scans this many blocks by default: 4096 words, ~14 ARM instructions per 8 words out of
-# EWRAM, so single-digit milliseconds. The console is holding an RFU link open while we run.
+# ~14 ARM instructions per 8 words from EWRAM: milliseconds, while the console holds the link open.
 SCAN_DEFAULT_BLOCKS = 512
 MAX_SCAN_BLOCKS = 0x10000
 MAX_SCAN_CALLS = 0x8000
-# Everything the CPU can be asked to read without a bus abort it would notice: EWRAM, IWRAM, I/O,
-# palette, VRAM, OAM and the cartridge window. Below EWRAM is the BIOS, which reads as garbage from
-# outside it, and past 0x0A000000 is the second wait-state mirror of the same cartridge.
+# Readable without a bus abort: EWRAM up to the cartridge window. Below is the BIOS, above the
+# second wait-state mirror.
 SCAN_MIN_ADDRESS = 0x02000000
 SCAN_MAX_ADDRESS = 0x0A000000
 
@@ -274,11 +221,8 @@ def scan_call_count(start, end, blocks):
 
 def build_memory_scan(needle, start=SCAN_ROM_START, end=SCAN_ROM_END,
                       blocks=SCAN_DEFAULT_BLOCKS, max_calls=None):
-    """The memory-scan payload, patched with a needle, a range and a frame budget.
-
-    `max_calls` defaults to what the range needs plus a margin: the watchdog exists so that a
-    payload cannot sit in the Mystery Gift menu for ever, not to cut a scan short.
-    """
+    """The memory-scan payload, patched; `max_calls` is a watchdog, defaulting to what the range
+    needs plus two."""
     needle = int(needle) & 0xFFFFFFFF
     start, end, blocks = int(start), int(end), int(blocks)
     if not 0 < blocks <= MAX_SCAN_BLOCKS:
@@ -308,12 +252,7 @@ def build_memory_scan(needle, start=SCAN_ROM_START, end=SCAN_ROM_END,
 
 
 def scan_parameters(code):
-    """-> {needle, start, end, blocks, max_calls} read back out of a built payload.
-
-    The parameters are in the image at fixed offsets, so whoever holds the code can say what was
-    asked for without being told a second time - which is what lets the log report whether the
-    range was finished.
-    """
+    """-> {needle, start, end, blocks, max_calls} read back out of a built payload."""
     code = bytes(code)
     def word(offset):
         return int.from_bytes(code[offset:offset + 4], "little")
@@ -336,8 +275,7 @@ def read_scan(dump):
 
 
 def describe_scan(dump, needle=None, start=None, end=None):
-    """The same, as lines to log. A scan that answers 0 hits is a result; a scan that stopped
-    early is not, and the difference is the cursor against the end of the range."""
+    """The scan as log lines; a cursor short of `end` means the watchdog stopped it early."""
     scan = read_scan(dump)
     lines = [f"scan: {scan['found']} match(es) for "
              + ("the needle" if needle is None else f"0x{int(needle):08X}")
@@ -358,37 +296,29 @@ def describe_scan(dump, needle=None, start=None, end=None):
     return lines
 
 
-# --- table-scan: finding a table by its shape ----------------------------------------------------
-# memory-scan answers "where is this word", which needs the word first. A table of pointers carries
-# no such constant - its entries ARE the addresses being looked for - so this searches for a
-# RELATION instead: a run of N words each exactly D above the one before. gSpecialVars' first twelve
-# entries point at twelve consecutive u16s, so D is 2. The answer carries the run's first value
-# beside its address, so locating and reading are one run. docs/frlg_rom.md.
-TABLE_CURSOR_OFFSET = 0x04       # patched to the start address; the payload advances it
+# table-scan: a run of N words each exactly D above the one before. gSpecialVars' first twelve
+# entries point at consecutive u16s, so D is 2. docs/frlg_rom.md.
+TABLE_CURSOR_OFFSET = 0x04       # the start address; the payload advances it
 TABLE_END_OFFSET = 0x08
 TABLE_DELTA_OFFSET = 0x0C        # what each word must exceed its predecessor by
-TABLE_BLOCKS_OFFSET = 0x10       # 16-byte blocks per call: the frame budget
-TABLE_MAX_CALLS_OFFSET = 0x14    # watchdog; a payload that never returns 1 hangs the menu
+TABLE_BLOCKS_OFFSET = 0x10       # 16-byte blocks per call
+TABLE_MAX_CALLS_OFFSET = 0x14    # watchdog
 TABLE_RESULT_OFFSET = 0x18
 TABLE_HITS_OFFSET = 0x28
 TABLE_HIT_CAPACITY = 64
 TABLE_RUNLEN_OFFSET = 0x228      # how many words in a row make a run worth reporting
-TABLE_RUN_OFFSET = 0x22C         # state, carried across the ldmia AND the frame boundary
+TABLE_RUN_OFFSET = 0x22C         # carried across the ldmia and the frame boundary
 TABLE_RUNSTART_OFFSET = 0x230
 TABLE_EXPECT_OFFSET = 0x234
 TABLE_BLOCK_BYTES = 16           # one ldmia of four words
 TABLE_ANSWER_SIZE = 4 * 4 + 8 * TABLE_HIT_CAPACITY
 MAX_TABLE_RUN_LENGTH = 0x1000
-# A shape test is ~7 ARM instructions a word where memory-scan's is ~1.75, so the block count that
-# keeps the SAME load on the frame is smaller, not the same. 192 blocks is 768 words, ~6.7k
-# instructions a call, which is what memory-scan's 512 blocks cost - and the console is holding an
-# RFU link open while we run, so matching the proven budget matters more than covering ground.
+# ~7 ARM instructions a word against memory-scan's ~1.75: 192 blocks is the same load per frame as
+# memory-scan's 512, while the console holds the link open.
 TABLE_SCAN_DEFAULT_BLOCKS = 192
 
-# The fingerprint this was built for. Twelve is gSpecialVar_0x8000 .. gSpecialVar_0x800B; the
-# entries past those are the named vars, which event_data.c declares in a DIFFERENT order from the
-# one gSpecialVars lists them in, so the ascending run stops at twelve and asking for more finds
-# nothing. Two is sizeof(u16).
+# gSpecialVar_0x8000..0x800B; the named vars after them are declared in a different order, so the
+# ascending run stops at twelve.
 SPECIAL_VARS_DELTA = 2
 SPECIAL_VARS_RUN_LENGTH = 12
 
@@ -451,12 +381,8 @@ def table_scan_parameters(code):
 
 
 def read_table_scan(dump, start=None, end=None):
-    """-> what the shape search found, from the bytes it sent back.
-
-    A hit whose address falls outside the range asked for is dropped: that is the payload's one
-    documented edge, a run credited to the very first word of the range when that word happens to
-    equal the expectation the state starts at, whose `runstart` was never written.
-    """
+    """-> what the shape search found. A hit outside the range asked for is dropped: the payload
+    can credit a run to the range's first word, whose `runstart` was never written."""
     dump = bytes(dump)
     if len(dump) < TABLE_ANSWER_SIZE:
         raise BufferScriptError(
@@ -474,9 +400,7 @@ def read_table_scan(dump, start=None, end=None):
 
 
 def describe_table_scan(dump, delta=None, runlen=None, start=None, end=None):
-    """The same, as lines to log. A run reported here is self-verifying: its address and its
-    first value are two independent readings of the same table, and for gSpecialVars the value
-    IS the answer - &gSpecialVar_0x8000."""
+    """The table scan as log lines; for gSpecialVars the first value is &gSpecialVar_0x8000."""
     scan = read_table_scan(dump, start, end)
     shape = ("a run" if runlen is None or delta is None
              else f"a run of {runlen} words rising by {delta}")
@@ -499,27 +423,25 @@ def describe_table_scan(dump, delta=None, runlen=None, start=None, end=None):
     return lines
 
 
-# --- rom-checksum: which blocks of the cartridge differ from an image we hold --------------------
-# memory-scan's frame loop around a per-block sum: acc = w ^ ror(acc, 31) over each block's words,
-# stored at every block boundary. The host computes the same sums from a ROM file and names the
-# blocks that differ; a narrower range with smaller blocks zooms in. docs/frlg_rom.md, rom-checksum.
+# rom-checksum: memory-scan's frame loop around a per-block sum; the host sums a ROM file the same
+# way and names the blocks that differ. docs/frlg_rom.md, rom-checksum.
 ROM_CHECKSUM = "rom-checksum"
-ROM_CHECKSUM_CURSOR_OFFSET = 0x04     # patched to the start address; the payload advances it
+ROM_CHECKSUM_CURSOR_OFFSET = 0x04     # the start address; the payload advances it
 ROM_CHECKSUM_END_OFFSET = 0x08
 ROM_CHECKSUM_START_OFFSET = 0x0C
-ROM_CHECKSUM_BUDGET_OFFSET = 0x10     # 32-byte chunks per call: the frame budget
-ROM_CHECKSUM_MAX_CALLS_OFFSET = 0x14  # watchdog; a payload that never returns 1 hangs the menu
+ROM_CHECKSUM_BUDGET_OFFSET = 0x10     # 32-byte chunks per call
+ROM_CHECKSUM_MAX_CALLS_OFFSET = 0x14  # watchdog
 ROM_CHECKSUM_SHIFT_OFFSET = 0x18      # log2 of the block size in bytes
-ROM_CHECKSUM_ACC_OFFSET = 0x1C        # the block in progress, carried across calls
+ROM_CHECKSUM_ACC_OFFSET = 0x1C        # the block in progress, across calls
 ROM_CHECKSUM_RESULT_OFFSET = 0x20
 ROM_CHECKSUM_SUMS_OFFSET = 0x30
 ROM_CHECKSUM_CAPACITY = 128
 ROM_CHECKSUM_CHUNK_BYTES = 32         # one ldmia of eight words
 ROM_CHECKSUM_ANSWER_SIZE = 4 * 4 + 4 * ROM_CHECKSUM_CAPACITY
 ROM_CHECKSUM_MIN_SHIFT = 5            # a block is at least one chunk
-ROM_CHECKSUM_MAX_SHIFT = 25           # and at most the 32 MB cartridge window
+ROM_CHECKSUM_MAX_SHIFT = 25           # the 32 MB cartridge window
 ROM_CHECKSUM_DEFAULT_BLOCK = 0x20000  # 128 KiB: 128 sums cover the 16 MB FireRed fills
-# 13 ARM instructions per 8 words against memory-scan's 15, so its proven 512 is the same load.
+# 13 ARM instructions per 8 words against memory-scan's 15: the same load.
 ROM_CHECKSUM_DEFAULT_BUDGET = 512
 
 
@@ -531,10 +453,7 @@ def rom_checksum_call_count(start, end, budget):
 
 def build_rom_checksum(start=SCAN_ROM_START, end=SCAN_ROM_END, block=ROM_CHECKSUM_DEFAULT_BLOCK,
                        budget=ROM_CHECKSUM_DEFAULT_BUDGET, max_calls=None):
-    """The rom-checksum payload, patched with a range, a block size and a frame budget.
-
-    `max_calls` defaults to what the range needs plus two, as memory-scan's does.
-    """
+    """The rom-checksum payload, patched; `max_calls` defaults to what the range needs plus two."""
     start, end, block, budget = int(start), int(end), int(block), int(budget)
     shift = block.bit_length() - 1
     if block <= 0 or block != 1 << shift \
@@ -636,7 +555,7 @@ def _open_bus_block(low, block):
 
 
 def _past_image(console, low, block, reference):
-    """Names a sum taken past the reference image: a known fill, a mirror of the image, or content."""
+    """Names a sum past the reference image: a known fill, a mirror of the image, or content."""
     fills = {"zero-filled": bytes(block), "0xFF-filled": b"\xff" * block,
              "open bus": _open_bus_block(low, block)}
     for name, data in fills.items():
@@ -651,9 +570,8 @@ def _past_image(console, low, block, reference):
 
 def describe_rom_checksum(dump, start=None, end=None, block=None, reference=None,
                           reference_name=None):
-    """The answer as lines to log: each block's range, the console's sum, the reference's, and
-    whether they agree, then 'N of M blocks differ from <reference_name>'. `reference` is the ROM
-    image's bytes, or None to list the console's sums alone."""
+    """The answer as log lines, each block's sum against `reference` (the ROM image's bytes, or None
+    to list the console's sums alone)."""
     got = read_rom_checksum(dump)
     block = (1 << got["shift"]) if block is None else int(block)
     lines = [f"rom-checksum: {got['stored']} block sum(s) of 0x{block:X} bytes, "
@@ -693,30 +611,21 @@ def describe_rom_checksum(dump, start=None, end=None, block=None, reference=None
     return lines
 
 
-# --- string-gather: following a pointer array instead of reading a window ------------------------
-# A dump reads a window, so a table of pointers costs one run for the pointers and another for every
-# kilobyte they point at, two thirds of it struct EasyChatWordInfo's alphabeticalOrder and enabled
-# [decomp:include/easy_chat.h:11]. This payload dereferences and sends back the strings themselves,
-# a whole Easy Chat group a run.
-#
-# It never truncates: a string that does not fit ends the run before it and `next` names where to
-# resume, because a half-copied word would be indistinguishable from a French word that short.
-# `maxlen` bounds the walk so a pointer that is not a string stops the run instead of copying until
-# it meets an 0xFF. docs/frlg_rom.md.
+# string-gather: dereferences a pointer array and sends back the strings, a whole Easy Chat group a
+# run. It never truncates (a half word reads as a short French word); `next` names where to resume,
+# and `maxlen` stops a pointer that is no string. docs/frlg_rom.md.
 STRING_GATHER = "string-gather"
-GATHER_SRC_OFFSET = 0x04        # the address of the first pointer; the payload advances it
-GATHER_STRIDE_OFFSET = 0x08     # 12 for struct EasyChatWordInfo, whose `text` is at offset 0
+GATHER_SRC_OFFSET = 0x04        # the first pointer; the payload advances it
+GATHER_STRIDE_OFFSET = 0x08     # 12 for struct EasyChatWordInfo, `text` at offset 0
 GATHER_COUNT_OFFSET = 0x0C
 GATHER_BUDGET_OFFSET = 0x10
 GATHER_MAXLEN_OFFSET = 0x14
 GATHER_RESULT_OFFSET = 0x18
 GATHER_STRINGS_OFFSET = 0x28
-# Fixed in asm/string-gather.s so that the whole image is exactly MAX_BUFFER_SCRIPT_SIZE.
+# Fixed in asm/string-gather.s so the image is exactly MAX_BUFFER_SCRIPT_SIZE.
 GATHER_STRING_AREA = 760
 GATHER_ANSWER_SIZE = 4 * 4 + GATHER_STRING_AREA
-# Longest string accepted, terminator included. The longest word in the English tables is 15
-# characters, and a French one will not be four times that; anything longer means the pointer was
-# not a string.
+# Terminator included; the longest English word is 15 characters.
 GATHER_DEFAULT_MAXLEN = 64
 GATHER_STOP = {0: "followed every pointer asked for",
                1: "the budget ran out - re-run from `next`",
@@ -725,11 +634,8 @@ EOS = 0xFF                      # [decomp:include/characters.h]
 
 
 def build_string_gather(src, count, stride=12, budget=None, maxlen=GATHER_DEFAULT_MAXLEN):
-    """The string-gather payload, patched with an array of pointers to follow.
-
-    `src` is the address of the FIRST POINTER, not of the string; `stride` is how far apart the
-    pointers are, so an array of plain `const u8 *` is stride 4 and struct EasyChatWordInfo is 12.
-    """
+    """The string-gather payload. `src` is the address of the first pointer; `stride` is 4 for
+    `const u8 *[]`, 12 for struct EasyChatWordInfo."""
     src, count, stride = int(src), int(count), int(stride)
     budget = GATHER_STRING_AREA if budget is None else int(budget)
     maxlen = int(maxlen)
@@ -764,10 +670,7 @@ def gather_parameters(code):
 
 
 def read_gather(dump):
-    """-> what the walk collected, from the bytes it sent back.
-
-    `strings` are still in the game's own encoding, terminators stripped; charmap decodes them.
-    """
+    """-> what the walk collected; `strings` are in the game's encoding, terminators stripped."""
     dump = bytes(dump)
     if len(dump) < GATHER_ANSWER_SIZE:
         raise BufferScriptError(
@@ -782,8 +685,7 @@ def read_gather(dump):
 
 
 def describe_gather(dump, src=None, stride=None, count=None):
-    """The same, as lines to log. A short run is not a failure - it is the budget, and `next` is
-    where the following run starts."""
+    """The gather as log lines; a short run is the budget; `next` is where the next starts."""
     from pokeldn.frlg.text import charmap
     gathered = read_gather(dump)
     lines = [f"gather: {gathered['copied']} string(s), {gathered['written']} bytes"
@@ -796,20 +698,15 @@ def describe_gather(dump, src=None, stride=None, count=None):
     return lines
 
 
-# --- rng-trace: a word sampled once a frame, and the first call into the ROM ---------------------
-# gRngValue is at 0x03004220, from Random's own literal pool [rom_map.py]. A word that changes
-# proves nothing, and at the Mystery Gift menu the game may not call Random at all, so this payload
-# proves the address by the LCG's own recurrence: read the word, call the function, read it again,
-# and check
-#     after == before * RAND_MULT + RAND_ADD   [decomp:include/random.h:18-19]
-# which settles the address, the ROM call and what was called, in one run.
+# rng-trace: read the word, call the function, read again, and check after == before * RAND_MULT +
+# RAND_ADD [decomp:include/random.h:18-19]: address and call in one run.
 RNG_TRACE = "rng-trace"
 TRACE_ADDRESS_OFFSET = 0x04
 TRACE_FUNCTION_OFFSET = 0x08
 TRACE_SAMPLES_OFFSET = 0x0C
 TRACE_MAX_CALLS_OFFSET = 0x10
 TRACE_RESULT_OFFSET = 0x14
-TRACE_SAMPLE_CAPACITY = 96          # 2 words each; the image is 1012 bytes of the 1024
+TRACE_SAMPLE_CAPACITY = 96          # 2 words each; the image is 1012 bytes
 TRACE_HEADER_SIZE = 16
 
 RAND_MULT = 1103515245              # 0x41C64E6D [decomp:include/random.h:18]
@@ -826,12 +723,8 @@ def trace_answer_size(samples):
 
 
 def build_rng_trace(address, function=0, samples=TRACE_SAMPLE_CAPACITY, max_calls=None):
-    """The rng-trace payload, patched with what to sample and what to call between the two reads.
-
-    `function` is a THUMB pointer (bit 0 set), or 0 for a plain per-frame sampler. It is called with
-    our own lr, so it must be an ordinary function that returns - the addresses that qualify are the
-    ones read out of the console in rom_map.py.
-    """
+    """The rng-trace payload. `function` is a THUMB pointer to an ordinary returning function, or 0
+    for a plain per-frame sampler."""
     address, function, samples = int(address), int(function), int(samples)
     if address % 4:
         raise BufferScriptError(f"0x{address:X} is not word aligned")
@@ -884,11 +777,7 @@ def read_rng_trace(dump):
 
 
 def lcg_distance(start, target, limit=1 << 16):
-    """How many turns of the LCG take `start` to `target`, or None within `limit`.
-
-    The frame-to-frame gaps are what say how often the GAME called Random while we watched, which
-    is a measurement of the console's own behaviour that nothing else here can make.
-    """
+    """Turns of the LCG from `start` to `target`, or None within `limit`."""
     value = start & 0xFFFFFFFF
     for steps in range(int(limit)):
         if value == (target & 0xFFFFFFFF):
@@ -898,7 +787,7 @@ def lcg_distance(start, target, limit=1 << 16):
 
 
 def describe_rng_trace(dump):
-    """The same, as lines to log, with the recurrence CHECKED rather than displayed."""
+    """The trace as log lines, with the recurrence checked."""
     trace = read_rng_trace(dump)
     lines = [f"rng-trace: {trace['taken']} sample(s) of 0x{trace['address']:08X} over "
              f"{trace['calls']} call(s) = frames"
@@ -927,16 +816,9 @@ def describe_rng_trace(dump):
     return lines
 
 
-# --- call: any function in the ROM, with arguments we choose --------------------------------------
-# The general form of what rng-trace and create-mon each do specially: an address, up to eight
-# argument words, the r0 that comes back, and one address watched either side of the call.
-#
-# The convention is CreateMon's own prologue, proven on hardware: r0..r3 then [sp+0..12] at the
-# moment of the call, and the callee does not pop them. asm/call.s
-# pushes the sixteen bytes for every call; a function taking fewer never reads them.
-#
-# `watch` is what makes an answer evidence: SeedRng returns nothing at all [decomp:src/random.c:15],
-# so only reading gRngValue before and after says whether the seed took. docs/frlg_rom.md.
+# call: an address, up to eight argument words (r0..r3, then [sp+0..12], not popped by the callee,
+# as CreateMon's prologue shows), the r0 back, and one watched word either side: SeedRng returns
+# nothing [decomp:src/random.c:15]. asm/call.s, docs/frlg_rom.md.
 
 CALL = "call"
 CALL_FUNCTION_OFFSET = 0x04
@@ -949,11 +831,8 @@ CALL_ANSWER_SIZE = 24
 
 
 def build_call(function, args=(), watch=0):
-    """The `call` payload: a THUMB function pointer, up to eight argument words, a watched address.
-
-    `function` 0 calls nothing, which reads `watch` twice and is how the send path is checked with
-    the ROM left out. `watch` 0 watches nothing.
-    """
+    """The `call` payload. `function` 0 calls nothing and reads `watch` twice; `watch` 0 watches
+    nothing."""
     function, watch = int(function), int(watch)
     args = [int(a) & 0xFFFFFFFF for a in args]
     if len(args) > CALL_MAX_ARGS:
@@ -1008,7 +887,7 @@ def read_call(dump):
 
 
 def describe_call(dump, expected=None):
-    """The same, as lines to log, with `expected` CHECKED against the watched word after the call."""
+    """The call as log lines, with `expected` checked against the watched word after it."""
     got = read_call(dump)
     lines = [f"call: 0x{got['function']:08X} with {got['argc']} argument(s) in {got['calls']} "
              f"call(s), returned 0x{got['returned']:08X} ({got['returned'] & 0xFFFF} as a u16)"]
@@ -1026,27 +905,16 @@ def describe_call(dump, expected=None):
     return lines
 
 
-# --- call-chain: a list of calls and memory accesses, in one frame -------------------------------
-# `call` makes one call. This makes up to CHAIN_MAX_STEPS, in order, in a single frame, and sends
-# back one word per step. The reason is not convenience: every question about the console's game
-# state is read-change-read, and twenty-four named workers are there to ask them of. A run is the
-# expensive thing, not a call.
-#
-# The one new mechanism is PREV - a step can take its target or its first argument from the
-# previous step's result - and it exists for exactly one shape:
-#
-#     call GetVarPointer(0x4024); write16 [prev] = 7; read16 [prev]
-#
-# There is no VarSet among the workers: ScrCmd_setvar writes through GetVarPointer's return
-# [decomp:src/scrcmd.c:472], so setting a var the game's own way IS a call followed by an indirect
-# store, and no single-call payload can do it. asm/call-chain.s has the step layout.
+# call-chain: up to CHAIN_MAX_STEPS calls and accesses in one frame, one word back per step. PREV
+# exists for `call GetVarPointer; write16 [prev]`: ScrCmd_setvar writes through GetVarPointer's
+# return [decomp:src/scrcmd.c:472]. asm/call-chain.s has the step layout.
 
 CALL_CHAIN = "call-chain"
 CHAIN_COUNT_OFFSET = 0x04
 CHAIN_STEPS_OFFSET = 0x10
 CHAIN_STEP_SIZE = 24
 CHAIN_MAX_STEPS = 16
-CHAIN_MAX_ARGS = 4                  # r0..r3; the stack arguments are `call`'s business
+CHAIN_MAX_ARGS = 4                  # r0..r3
 CHAIN_RESULT_OFFSET = 0x190
 CHAIN_VALUES_OFFSET = 0x1A0
 CHAIN_ANSWER_SIZE = 16 + 4 * CHAIN_MAX_STEPS
@@ -1060,12 +928,10 @@ CHAIN_READ8 = 4
 CHAIN_WRITE32 = 5
 CHAIN_WRITE16 = 6
 CHAIN_WRITE8 = 7
-# The two modifier bits in the op word, and the argument count above them. The payload does not
-# read the count - it loads all four argument words every time, exactly as call.s pushes all four
-# stack words whatever `argc` says, because a callee that takes fewer never reads them. It is here
-# so that a BUILT payload still says what it was asked for, which is what the log prints.
+# Modifier bits and the argument count. The payload loads all four argument words regardless; the
+# count is for the log.
 CHAIN_TARGET_FROM_PREV = 0x100
-CHAIN_ARG_FROM_PREV = 0x200      # the first argument is PREV + a0, so a0 is an offset
+CHAIN_ARG_FROM_PREV = 0x200      # the first argument is PREV + a0
 CHAIN_KEEP_PREV = 0x400
 CHAIN_ARGC_SHIFT = 16
 CHAIN_ARGC_MASK = 0xF
@@ -1082,28 +948,23 @@ CHAIN_OPS = {
 CHAIN_OP_NAMES = {value: name for name, value in CHAIN_OPS.items()}
 CHAIN_READS = (CHAIN_READ32, CHAIN_READ16, CHAIN_READ8)
 CHAIN_WRITES = (CHAIN_WRITE32, CHAIN_WRITE16, CHAIN_WRITE8)
-# How wide each access is, which is also what its target must be aligned to.
+# Access width, which is also the target's alignment.
 CHAIN_WIDTH = {CHAIN_READ32: 4, CHAIN_READ16: 2, CHAIN_READ8: 1,
                CHAIN_WRITE32: 4, CHAIN_WRITE16: 2, CHAIN_WRITE8: 1}
 
 
 @dataclass(frozen=True)
 class ChainStep:
-    """One step: an opcode, a target, and up to four argument words.
-
-    `target_from_prev` makes the target the previous result plus `target` (so 0 is the pointer
-    itself and 4 is the word after it); `arg_from_prev` does the same to the first argument, which
-    is how a ROM function is handed an address inside a block whose base only the console knows -
-    `AddMoney(&gSaveBlock1Ptr->money, ...)` is prev + 0x290. Both are the payload's op-word bits,
-    not a builder convenience: the console resolves them, which is the whole point.
-    """
+    """One step: an opcode, a target, and up to four argument words. `target_from_prev` makes the
+    target prev + `target`; `arg_from_prev` does the same to the first argument
+    (`AddMoney(&money)` is prev + 0x290). The console resolves both."""
     op: int
     target: int = 0
     args: tuple = ()
     target_from_prev: bool = False
     arg_from_prev: bool = False
     keep_prev: bool = False
-    # A call named by function: build_call_chain resolves it on the build the chain is for.
+    # A named call: build_call_chain resolves it on the build the chain is for.
     function_name: str | None = dataclasses.field(default=None, compare=False)
 
     @property
@@ -1140,14 +1001,13 @@ class ChainStep:
 
 
 def chain_call(function, args=(), *, arg_from_prev=False):
-    """A CALL step. `function` is a THUMB pointer - Build.callable_function(name) gives one."""
+    """A CALL step; `function` is a THUMB pointer (Build.callable_function)."""
     return ChainStep(CHAIN_CALL, int(function), tuple(int(a) & 0xFFFFFFFF for a in args),
                      arg_from_prev=bool(arg_from_prev))
 
 
 def chain_read(address, size=4, *, from_prev=False, keep_prev=False):
-    """A READ step of 1, 2 or 4 bytes. `from_prev` reads through the previous result, and
-    `keep_prev` leaves that pointer in place instead of replacing it with what was read."""
+    """A READ step of 1, 2 or 4 bytes; `keep_prev` leaves the pointer as prev."""
     op = {4: CHAIN_READ32, 2: CHAIN_READ16, 1: CHAIN_READ8}.get(int(size))
     if op is None:
         raise BufferScriptError(f"a read is 1, 2 or 4 bytes, got {size}")
@@ -1165,15 +1025,9 @@ def chain_write(address, value=0, size=2, *, from_prev=False, value_from_prev=Fa
 
 
 def parse_chain_step(text, resolve=None):
-    """-> a ChainStep from `OP:TARGET[,ARG]...`, which is how the CLI takes one.
-
-    `call:FlagSet,0x828`, `read16:0x02024EA4`, `write16:prev,7`, `read32:prev+4`. A target of
-    `prev` is the previous step's result and `prev+N` is N bytes past it; a FIRST argument of
-    `prev`/`prev+N` is the same thing, which is how `AddMoney(&money, n)` is reached when only the
-    console knows the base. `resolve` turns a name into a THUMB pointer and defaults to
-    French FireRed's `Build.callable_function`; a named call keeps its name, so
-    build_call_chain re-resolves it on the build it is sent to.
-    """
+    """-> a ChainStep from `OP[+keep]:TARGET[,ARG]...`: `call:FlagSet,0x828`, `write16:prev,7`,
+    `read32:prev+4`. Only the first argument may be `prev[+N]`. A named call keeps its name so
+    build_call_chain resolves it on the build it is sent to."""
     resolve = builds.DEFAULT.callable_function if resolve is None else resolve
     head, _, rest = str(text).strip().partition(":")
     head = head.strip().lower()
@@ -1236,12 +1090,8 @@ def parse_chain_step(text, resolve=None):
 
 
 def build_call_chain(steps, *, unsafe=False, build=None):
-    """The `call-chain` payload: up to CHAIN_MAX_STEPS steps, executed in order in one frame.
-
-    Every write needs `unsafe`: unlike save-write there is no scratch region here to be safe in,
-    because the target is wherever the game keeps the thing we are changing. A call step named by
-    function is resolved on `build` [builds.py].
-    """
+    """The `call-chain` payload, steps executed in order in one frame. Every write needs `unsafe`:
+    there is no scratch region here."""
     build = builds.resolve(build)
     try:
         steps = [step if step.function_name is None else
@@ -1309,7 +1159,7 @@ def build_call_chain(steps, *, unsafe=False, build=None):
 
 
 def chain_parameters(code):
-    """-> {count, steps} read back out of a built payload, as ChainSteps."""
+    """-> {count, steps} read back out of a built payload."""
     code = bytes(code)
     def word(offset):
         return int.from_bytes(code[offset:offset + 4], "little")
@@ -1341,7 +1191,7 @@ def read_call_chain(dump):
 
 
 def describe_call_chain(dump, steps=None):
-    """The same, as lines to log, each result beside the step that produced it."""
+    """The chain as log lines, each result beside its step."""
     got = read_call_chain(dump)
     lines = [f"call-chain: {got['executed']} of {got['count']} step(s) ran in {got['calls']} "
              "call(s) = frames"]
@@ -1359,17 +1209,8 @@ def describe_call_chain(dump, steps=None):
     return lines
 
 
-# --- create-mon: a ROM call that takes eight arguments -------------------------------------------
-#   void CreateMon(struct Pokemon *mon, u16 species, u8 level, u8 fixedIV,
-#                  u8 hasFixedPersonality, u32 fixedPersonality, u8 otIdType, u32 fixedOtId)
-#
-# Four in r0..r3 and four at entry sp + 0, 4, 8 and 12, which is where the console's own prologue
-# reads them [its prologue: push of five registers, then r8, then `sub sp,#28`, then [sp,#52..64]].
-#
-# The mon is always built inside our own 1024 bytes, where nothing but the payload can be hurt, and
-# read back from there. `destination` copies the finished 100 bytes on afterwards and is a live-save
-# write when it names the party, so it is guarded like build_save_write's offsets.
-# docs/frlg_rom.md.
+# create-mon: CreateMon's eight arguments, four in r0..r3 and four at entry sp+0..12. The mon is
+# built inside our image; `destination` copies it on and is a live write. docs/frlg_rom.md.
 CREATE_MON = "create-mon"
 CREATE_MON_FUNCTION_OFFSET = 0x04
 CREATE_MON_DESTINATION_OFFSET = 0x08
@@ -1390,21 +1231,17 @@ CREATE_MON_PARTY_OFFSET = 0xA8
 PARTY_MON_SIZE = 100
 PARTY_SIZE = 6                      # [decomp:include/constants/party_menu.h]
 CREATE_MON_HEADER_SIZE = 16
-# The first 116 bytes are header then mon; the party word is an addendum past them, so an older
-# 116-byte answer still reads.
+# The party word is an addendum past header and mon, so a 116-byte answer still reads.
 CREATE_MON_ANSWER_SIZE = CREATE_MON_HEADER_SIZE + PARTY_MON_SIZE + 4
 
-# struct SaveBlock1 [decomp:include/global.h:772]. A party write does not go here: this is only
-# where SavePlayerParty copies to [decomp:src/load_save.c:160], so an append here is erased by the
-# console's own save seconds later. The offsets stay for reading it.
+# struct SaveBlock1 [decomp:include/global.h:772]. For reading only: SavePlayerParty overwrites it
+# from gPlayerParty [decomp:src/load_save.c:160].
 SAV1_PARTY_COUNT = 0x34
 SAV1_PARTY = 0x38
-SAV1_VARS = 0x1000                  # u16 vars[VARS_COUNT], indexed by (id - VARS_START)
+SAV1_VARS = 0x1000                  # u16 vars[], indexed by id - VARS_START
 
-# struct MysteryGiftSave [decomp:include/global.h:681], at SaveBlock1 + 0x3120: newsCrc, 444 B of
-# WonderNews, cardCrc, 332 B of WonderCard, cardMetadataCrc, then the metadata. The counters a
-# Battle Count Card reads live here, and MysteryGift_GetCardStat reads them with no CRC check
-# [decomp:src/mystery_gift.c:490] - only the CARD is CRC-guarded.
+# struct MysteryGiftSave at SaveBlock1 + 0x3120 [decomp:include/global.h:681]. The card metadata
+# counters are read with no CRC check [decomp:src/mystery_gift.c:490].
 SAV1_MYSTERY_GIFT = 0x3120
 SAV1_CARD_METADATA = SAV1_MYSTERY_GIFT + 0x314
 SAV1_CARD_BATTLES_WON = SAV1_CARD_METADATA + 0
@@ -1414,28 +1251,24 @@ SAV1_CARD_ICON_SPECIES = SAV1_CARD_METADATA + 6
 
 
 def sav1_var_offset(var_id):
-    """-> where a saved var sits in SaveBlock1, for `save-dump --dump-block sav1 --dump-offset`.
-    `GetVarPointer` is `gSaveBlock1Ptr->vars[idx - VARS_START]` [decomp:src/event_data.c:186]."""
+    """-> a saved var's offset in SaveBlock1 [decomp:src/event_data.c:186]."""
     if not 0x4000 <= int(var_id) <= 0x40FF:
         raise ValueError(f"0x{int(var_id):04X} is not a saved var (0x4000..0x40FF)")
     return SAV1_VARS + 2 * (int(var_id) - 0x4000)
 
 # The status half of the party word the payload sends back.
 PARTY_WRITE_NONE = 0                # no party write was asked for
-PARTY_WRITE_APPENDED = 1            # written at slot == the count that was there, count raised
+PARTY_WRITE_APPENDED = 1            # written at slot == count, count raised
 PARTY_WRITE_FULL = 2                # six mons already: nothing written, nothing changed
-PARTY_WRITE_DRY_RUN = 3             # nothing written, and the 100 bytes are the SLOT'S contents
+PARTY_WRITE_DRY_RUN = 3             # nothing written; the bytes are the slot's contents
 
-# What an EMPTY party slot actually looks like, which is NOT a hundred zero bytes. ZeroMonData
-# zeroes everything and then ends `arg = MAIL_NONE; SetMonData(mon, MON_DATA_MAIL, &arg)`
-# [decomp:src/pokemon.c:1737], and mail is at offset 0x55 of struct Pokemon. So byte 85 is 0xFF and
-# every other byte is 0, which is what the console reads back. Unclaimed memory does not look like
-# this; a slot the game itself zeroed does.
+# An empty slot is not all zeros: ZeroMonData sets mail (0x55) to MAIL_NONE
+# [decomp:src/pokemon.c:1737].
 EMPTY_PARTY_SLOT = bytes(85) + b"\xFF" + bytes(PARTY_MON_SIZE - 86)
 
 
 def is_empty_party_slot(raw):
-    """-> whether these 100 bytes are a slot the game zeroed, and so hold no Pokemon."""
+    """-> whether these 100 bytes are a slot the game zeroed."""
     return bytes(raw) == EMPTY_PARTY_SLOT or bytes(raw) == bytes(PARTY_MON_SIZE)
 PARTY_WRITE_STATUS = {
     PARTY_WRITE_NONE: "no party write was asked for",
@@ -1444,19 +1277,17 @@ PARTY_WRITE_STATUS = {
     PARTY_WRITE_DRY_RUN: "DRY RUN - nothing was written; the 100 bytes are what is in that slot",
 }
 
-# The value that goes in the image, by what was asked for.
 PARTY_APPEND_NO = 0
 PARTY_APPEND_WRITE = 1
 PARTY_APPEND_DRY_RUN = 2
 
-# NUM_SPECIES [decomp:include/constants/species.h]: 412 slots with SPECIES_EGG at 411, and 0 is
-# SPECIES_NONE. CreateBoxMon indexes gSpeciesInfo AND gLevelUpLearnsets by this, and the second is
-# a table of POINTERS - an out-of-range species is a dereference of whatever follows it.
+# NUM_SPECIES [decomp:include/constants/species.h]; out of range indexes gLevelUpLearnsets, a table
+# of pointers.
 MAX_SPECIES = 411
 MAX_LEVEL = 100
-# fixedIV at or above this rolls the IVs instead of setting them [USE_RANDOM_IVS, pokemon.h:232].
+# fixedIV >= this rolls the IVs [USE_RANDOM_IVS, pokemon.h:232].
 USE_RANDOM_IVS = 32
-OT_ID_PLAYER_ID = 0                 # the OT is the player, and the id comes off the real save
+OT_ID_PLAYER_ID = 0                 # the id comes off the real save
 OT_ID_PRESET = 1                    # fixedOtId is used verbatim
 OT_ID_RANDOM_NO_SHINY = 2           # rolled until GET_SHINY_VALUE fails [pokemon.c:1783]
 OT_ID_TYPES = (OT_ID_PLAYER_ID, OT_ID_PRESET, OT_ID_RANDOM_NO_SHINY)
@@ -1475,11 +1306,7 @@ def is_shiny(ot_id, personality):
 
 
 def shiny_personality(tid, sid, low=0):
-    """A personality that is shiny for this trainer, with `low` as its bottom half.
-
-    The check is symmetric in the two halves, so the top half is whatever makes the four XOR to
-    zero. The secret id is required: without it there is no way to aim this.
-    """
+    """A personality shiny for this trainer, with `low` as its bottom half; needs the secret id."""
     ot_id = (int(sid) << 16 | int(tid)) & 0xFFFFFFFF
     low = int(low) & 0xFFFF
     return (((ot_id >> 16) ^ (ot_id & 0xFFFF) ^ low) << 16 | low) & 0xFFFFFFFF
@@ -1489,21 +1316,11 @@ def build_create_mon(function, species, level, *, fixed_iv=USE_RANDOM_IVS,
                      has_fixed_personality=1, fixed_personality=0,
                      ot_id_type=OT_ID_PLAYER_ID, fixed_ot_id=0, destination=0,
                      party_append=False, party_base=None, party_count=None):
-    """The create-mon payload, patched with the eight arguments and where to put the result.
+    """The create-mon payload. `function` 0 calls nothing and answers the zeroed buffer.
 
-    `function` is a THUMB pointer (bit 0 set), or 0 to call nothing and answer the zeroed buffer -
-    which is how the send path is checked with the ROM left out of it.
-
-    `party_append` APPENDS the finished mon to gPlayerParty - the array the GAME uses - at slot ==
-    the current gPlayerPartyCount, and raises the count, which is what the game does when a mon is
-    caught, so an occupied slot is never touched. NOT the save block's party: SavePlayerParty
-    copies gPlayerParty over that when the console saves [decomp:src/load_save.c:160].
-    `party_base` and `party_count` default to the measured addresses.
-
-    `destination` is the general form: an absolute address, which touches no count. Either one is
-    a write to the console's live memory and the config layer gates both behind the same override
-    as an unsafe save-write.
-    """
+    `party_append` appends to gPlayerParty at slot == gPlayerPartyCount and raises the count, never
+    the save block's party [decomp:src/load_save.c:160]; `destination` is an absolute address. Both
+    are live writes, gated like an unsafe save-write."""
     from pokeldn.frlg.rom import rom_map
     party_base = rom_map.GPLAYER_PARTY if party_base is None else int(party_base)
     party_count = rom_map.GPLAYER_PARTY_COUNT if party_count is None else int(party_count)
@@ -1607,11 +1424,7 @@ def create_mon_parameters(code):
 
 
 def read_create_mon(dump):
-    """-> what the call left, from the bytes it sent back.
-
-    An answer of only header + mon predates the party word; it reads the same and reports `party`
-    as None rather than inventing one.
-    """
+    """-> what the call left; `party` is None for a pre-party-word answer."""
     dump = bytes(dump)
     body = CREATE_MON_HEADER_SIZE + PARTY_MON_SIZE
     if len(dump) < body:
@@ -1631,13 +1444,9 @@ def read_create_mon(dump):
 
 
 def describe_create_mon(dump, expected=None):
-    """The same, as lines to log, with the mon DECODED rather than shown as hex.
-
-    `expected` is create_mon_parameters of the payload that was sent: every field of it that the
-    ROM stores in the mon is checked against what came back, so the log says whether the eight
-    arguments arrived rather than that something arrived.
-    """
-    from pokeldn.frlg.save import mon as monlib  # here: it reads the decomp at import
+    """The create-mon answer as log lines, the mon decoded and checked against `expected`
+    (create_mon_parameters of the payload sent)."""
+    from pokeldn.frlg.save import mon as monlib  # reads the decomp at import
     result = read_create_mon(dump)
     raw = result["mon"]
     party = result["party"]
@@ -1693,7 +1502,7 @@ def describe_create_mon(dump, expected=None):
 
 
 def create_mon_substructs(raw):
-    """The decrypted, unshuffled 48 bytes as {G,A,E,M} - the same decode a party dump gets."""
+    """The decrypted, unshuffled 48 bytes as {G,A,E,M}."""
     from pokeldn.frlg.save import mon as monlib
     raw = bytes(raw)
     if len(raw) < monlib.BOX_SIZE:
@@ -1718,13 +1527,7 @@ def create_mon_ivs(raw):
 
 
 def check_create_mon(raw, expected):
-    """-> lines saying, field by field, whether the eight arguments reached the ROM.
-
-    This is what makes one run evidence instead of an observation: species, level and the IVs come
-    back out of the mon's own encrypted substructs, and the personality and OT id out of the two
-    words the key is made of - so a mon that decodes at all already agrees with two of the
-    arguments, and the rest are checked one by one.
-    """
+    """-> lines saying, field by field, whether the eight arguments reached the ROM."""
     from pokeldn.frlg.save import mon as monlib
     raw = bytes(raw)
     info = monlib.decode_mon(raw)
@@ -1876,11 +1679,8 @@ SCRIPT_REGISTRY = {
 
 
 def build_save_dump(block=SAVE_BLOCK_2, offset=0, size=MAX_BUFFER_SCRIPT_SIZE):
-    """The save-dump payload, patched to read `size` bytes at `offset` into one save block.
-
-    Needs no absolute address: Client_RunBufferScript passes gSaveBlock2Ptr and gSaveBlock1Ptr
-    [decomp:src/mystery_gift_client.c:276], so the payload works on any console and any build.
-    """
+    """The save-dump payload, reading `size` bytes at `offset` of one save block through the
+    pointers Client_RunBufferScript passes [decomp:src/mystery_gift_client.c:276]."""
     if block not in SAVE_BLOCKS:
         raise BufferScriptError(f"block is one of {SAVE_BLOCKS}, got {block!r}")
     offset, size = int(offset), int(size)
@@ -1908,13 +1708,8 @@ def is_scratch(block, offset, size):
 
 
 def build_save_write(data, block=SAVE_BLOCK_2, offset=0xB20, *, unsafe=False):
-    """The save-write payload, patched to write `data` at `offset` into one save block.
-
-    Refuses, by default, anything the game actually reads. This is the player's live save, the
-    console writes it to flash at the end of the session, and a wrong offset here is not a failed
-    run but a damaged game. `unsafe=True` is the deliberate override, and the caller that passes it
-    is saying it knows which field it is editing.
-    """
+    """The save-write payload. Refuses anything outside the scratch regions unless `unsafe`: this is
+    the player's live save and the console commits it to flash."""
     if block not in SAVE_BLOCKS:
         raise BufferScriptError(f"block is one of {SAVE_BLOCKS}, got {block!r}")
     data = bytes(data)
@@ -1941,7 +1736,7 @@ def build_save_write(data, block=SAVE_BLOCK_2, offset=0xB20, *, unsafe=False):
     return bytes(code)
 
 
-# asm/flash-write.s's image, offsets from _start and fixed by construction.
+# asm/flash-write.s's image; offsets fixed by construction.
 FLASH_WRITE_SECTOR_OFFSET = 0x04
 FLASH_WRITE_SOURCE_OFFSET = 0x08
 FLASH_WRITE_FILL_BASE_OFFSET = 0x0C
@@ -1958,16 +1753,15 @@ FLASH_WRITE_PHYS_RESULT_OFFSET = 0x40
 FLASH_WRITE_ID_RESULT_OFFSET = 0x44
 FLASH_WRITE_POSITION_OFFSET = 0x48
 FLASH_WRITE_THUNK_OFFSET = 0x4C
-# The save globals, measured live in IWRAM on the French build and confirmed across three
-# consecutive save generations. The builders patch the build's own [builds.py].
+# Save globals in IWRAM, French build; the builders patch the build's own [builds.py].
 GLASTWRITTENSECTOR = 0x030045A0
 GLASTSAVECOUNTER = 0x030045A4
 GLASTKNOWNGOODSECTOR = 0x030045A8
 GDAMAGEDSAVESECTORS = 0x030045AC
 GSAVECOUNTER = 0x030045B0
 SECTORS_PER_BAND = 14
-# What flash-write and flash-patch answer when the derived globals are not a save's, with nothing
-# written: gLastWrittenSector past 13, gSaveCounter 0, or sector A carrying another id.
+# flash-write/flash-patch refusals, nothing written: gLastWrittenSector past 13, gSaveCounter 0, or
+# sector A carrying another id.
 FLASH_REFUSED_LWS = 0xBAE00000
 FLASH_REFUSED_SC = 0xBAE10000
 FLASH_REFUSED_ID = 0xBAE20000
@@ -1988,31 +1782,21 @@ def flash_refusal(status):
     return None
 
 
-# The band position whose sector supplies the slot's counter to GetSaveValidStatus: the last one.
+# The last band position supplies the slot's counter to GetSaveValidStatus.
 COUNTER_BEARING_POSITION = SECTORS_PER_BAND - 1
 # struct SaveSector [decomp:include/save.h]: data[3968], unused[116], then the footer.
 SECTOR_DATA_SIZE = 3968
 SECTOR_FOOTER_AT = 0xFF4
 SECTOR_SIGNATURE = 0x08012025
 SECTOR_DATA_WORDS = SECTOR_DATA_SIZE // 4
-# How many bytes of each sector the game actually checksums. Read out of sSaveSlotLayout at
-# 0x083F58C4 in the French cartridge, the const table SAVEBLOCK_CHUNK builds [decomp:src/save.c:43]:
-# 14 entries of {u16 offset, u16 size}, one per sector id. Two of them pin the table exactly against
-# a real save, where the last non-zero data byte is the last byte of the chunk: id 0 size 3876 with
-# byte 3875 the last non-zero, id 13 size 2000 with byte 1999.
-#
-# THIS IS NOT SECTOR_DATA_SIZE FOR EVERY ID, and the difference is invisible in a real save: the
-# game zeroes the whole sector buffer and copies only `size` bytes, so summing the full 3968 gives
-# the same answer as summing `size` and the shortcut looks correct against any save on disk. It
-# stops being correct the moment a sector is composed with data past its chunk size, which is
-# exactly what a synthetic sector does.
+# Bytes each sector id checksums, from sSaveSlotLayout at 0x083F58C4 [decomp:src/save.c:43]. Trap: a
+# real save zero-fills past the chunk, so summing all 3968 bytes agrees there and fails on a
+# composed sector. docs/frlg_rom.md.
 SECTOR_CHUNK_SIZES = {0: 3876, 1: 3968, 2: 3968, 3: 3968, 4: 3816, 5: 3968, 6: 3968,
                       7: 3968, 8: 3968, 9: 3968, 10: 3968, 11: 3968, 12: 3968, 13: 2000}
 SAVE_SLOT_LAYOUT_ADDRESS = 0x083F58C4
-# The smallest chunk any id carries. A sector whose pattern stops here and is zero afterwards
-# checksums identically under EVERY id's chunk size, because the bytes past the pattern are zero and
-# zeros add nothing to the sum. That is what makes a sector composable when the id is only decided
-# on the console, as it is when the position is what was aimed at.
+# A pattern stopping here, zero after, checksums the same under every id's chunk size: composable
+# when the id is decided on the console.
 SECTOR_CHUNK_MIN = 2000
 
 
@@ -2024,12 +1808,11 @@ def sector_chunk_size(sector_id):
         raise BufferScriptError(
             f"sector id {sector_id} is not one of the {len(SECTOR_CHUNK_SIZES)} a save slot "
             "carries") from None
-# The scratch the payload fills and hands the syscall: inside gDecompressionBuffer, a full 0x400
-# above the payload's own image so the fill can never overwrite the code doing the filling.
+# Scratch for the fill: 0x400 above the payload's own image.
 FLASH_WRITE_SCRATCH = GDECOMPRESSION_BUFFER + 0x400
 FLASH_WRITE_WORDS = FLASH_SECTOR_SIZE // 4
-# Sectors 0..27 are the two 14-sector save bands; 28..31 are Hall of Fame and Trainer Tower and sit
-# outside both, so a write there cannot move what the loader reads [decomp:include/save.h].
+# Sectors 0..27 are the two save bands; 28..31 (Hall of Fame, Trainer Tower) sit outside
+# [decomp:include/save.h].
 SAVE_BAND_SECTORS = 28
 
 
@@ -2037,14 +1820,9 @@ def build_flash_write(sector, *, source=FLASH_WRITE_SCRATCH, fill_base=0x4657000
                       words=FLASH_WRITE_WORDS, number=SWI_WRITE_SECTOR, unsafe=False,
                       footer=False, sector_id=0, counter=0, signature=SECTOR_SIGNATURE,
                       derive=False, counter_bias=0, position=None, build=None):
-    """The flash-write payload: fill `words` words at `source`, then swi `number` into `sector`.
-
-    This writes the console's save flash directly, with none of the game's save code in the way: no
-    counter, no checksum, no signature. The default refuses a sector inside the two save bands,
-    because a sector there is a live save block and the write bypasses every consistency the loader
-    relies on. 28..31 are outside both bands and are the sectors an experiment belongs in.
-    `derive` reads `build`'s save globals.
-    """
+    """The flash-write payload: fill `words` words at `source`, then swi `number` into `sector`,
+    bypassing the game's save code. Refuses a save-band sector unless `unsafe`. `derive` reads
+    `build`'s save globals."""
     build = builds.resolve(build)
     sector = int(sector)
     if not 0 <= sector < FLASH_SIZE // FLASH_SECTOR_SIZE:
@@ -2066,11 +1844,8 @@ def build_flash_write(sector, *, source=FLASH_WRITE_SCRATCH, fill_base=0x4657000
             "aborts outright if the destination is rejected. Pass unsafe=True to mean it.")
     words = int(words)
     if footer and words == FLASH_WRITE_WORDS:
-        # A composed sector fills its id's OWN chunk and leaves the rest zero, which is what the
-        # game leaves. Filling the whole data area instead would make the sum over 3968 disagree
-        # with the sum over the chunk, and the game checksums the chunk: it would reject the
-        # sector, and the run would read as "the game refuses foreign sectors" when it refused
-        # this sector's arithmetic.
+        # Fill the id's own chunk and leave the rest zero, as the game does; a full fill would fail
+        # the game's chunk checksum.
         words = (sector_chunk_size(sector_id) if position is None
                  else SECTOR_CHUNK_MIN) // 4
     if not 1 <= words <= FLASH_WRITE_WORDS:
@@ -2139,20 +1914,14 @@ def build_flash_write(sector, *, source=FLASH_WRITE_SCRATCH, fill_base=0x4657000
                           (FLASH_WRITE_POSITION_OFFSET,
                            0xFFFFFFFF if position is None else position)):
         code[offset:offset + 4] = (int(value) & 0xFFFFFFFF).to_bytes(4, "little")
-    # The thunk is `swi N ; bx lr` in THUMB; the number is the low byte of the first halfword.
+    # The thunk is THUMB `swi N ; bx lr`; N is the first byte.
     code[FLASH_WRITE_THUNK_OFFSET] = int(number) & 0xFF
     return bytes(code)
 
 
 def sector_checksum(data, size=SECTOR_DATA_SIZE):
-    """The game's own checksum [decomp:src/save.c CalculateChecksum], over `size` bytes.
-
-    `size` is the id's own chunk size, not SECTOR_DATA_SIZE: the game sums
-    `gRamSaveSectorLocations[id].size` bytes and ids 0, 4 and 13 carry less than a full chunk. For a
-    sector the GAME wrote the two agree, because everything past the chunk is zero, so a default of
-    SECTOR_DATA_SIZE validates any real save and hides the difference. Pass the id's own size, or
-    use `sector_chunk_size`, whenever the data past the chunk might not be zero.
-    """
+    """CalculateChecksum [decomp:src/save.c] over `size` bytes. Pass the id's own
+    chunk size (`sector_chunk_size`) when data past the chunk might be non-zero."""
     total = 0
     for i in range(int(size) // 4):
         total = (total + int.from_bytes(data[i * 4:i * 4 + 4], "little")) & 0xFFFFFFFF
@@ -2179,8 +1948,8 @@ FLASH_READ_BANK_OFFSET = 0x04
 FLASH_READ_WINDOW_OFFSET = 0x08
 FLASH_READ_LENGTH_OFFSET = 0x0C
 FLASH_READ_SCRATCH_OFFSET = 0x10
-# The SRAM/flash aperture. 64 KiB, and a 1 Mbit chip reaches it as two banks; an address above it
-# aliases rather than faulting, which is how a read of the wrong bank returns a plausible answer.
+# The 64 KiB flash aperture; a 1 Mbit chip is two banks. A wrong-bank address aliases rather than
+# faulting.
 FLASH_WINDOW_BASE = 0x0E000000
 FLASH_WINDOW_SIZE = 0x10000
 FLASH_SECTORS_PER_BANK = FLASH_WINDOW_SIZE // FLASH_SECTOR_SIZE
@@ -2197,10 +1966,7 @@ def flash_window_address(sector):
 
 def build_flash_read(sector, *, offset=0, length=252, scratch=FLASH_WRITE_SCRATCH):
     """The flash-read payload: select the bank, byte-copy the window into EWRAM, send the copy.
-
-    The send is pointed at the EWRAM copy and never at flash: pointing it at the flash region does
-    not send flash, measured at two addresses and two lengths.
-    """
+    The send cannot be pointed at flash itself (measured)."""
     bank, window = flash_window_address(sector)
     offset, length = int(offset), int(length)
     if not 0 <= offset < FLASH_SECTOR_SIZE:
@@ -2220,8 +1986,7 @@ def build_flash_read(sector, *, offset=0, length=252, scratch=FLASH_WRITE_SCRATC
     return bytes(code)
 
 
-# sloop-svc: up to eight Sloop syscalls with operands we choose, answered through a result block
-# [asm/sloop-svc.s, docs/frlg_rom.md, Calling the wrapper].
+# sloop-svc: up to eight Sloop syscalls [asm/sloop-svc.s, docs/frlg_rom.md, Calling the wrapper].
 SLOOP_FLAGS_OFFSET = 0x04
 SLOOP_REGS_OFFSET = 0x08
 SLOOP_SCRATCH_OFFSET = 0x18
@@ -2236,18 +2001,16 @@ SLOOP_R0_IS_DATA, SLOOP_R1_IS_DATA = 1, 2
 SLOOP_REACHED, SLOOP_RETURNED = 0x53565331, 0x53565332
 SLOOP_RECORD_SIZE = 20
 SLOOP_HEADER_SIZE = 0x10 + SLOOP_MAX_CALLS * SLOOP_RECORD_SIZE      # where the data comes back
-# [decomp:src/sloopsvc.c:194] r0 = an ASCII string, r1 = 0 from the game.
+# [decomp:src/sloopsvc.c:194] r0 = an ASCII string, r1 = 0.
 SWI_BAD_WORD_CHECK = 0x4D
-# The two filled slots of the wrapper's 256 bkpt hooks: 0x52 is its librfu patches', 0xFF posts
-# event 0x82EF0054 to the app object, which quits the application [docs/frlg_rom.md].
+# Filled bkpt hook slots: 0x52 the librfu patches, 0xFF quits the application [docs/frlg_rom.md].
 SLOOP_BKPT_RFU, SLOOP_BKPT_APP = 0x52, 0xFF
-# Numbers read out of the wrapper's jump table [main+0x17D7F6] and safe to issue with any operands:
-# they return a value or nothing, or share the inert default. Everything else takes a pointer the
-# wrapper writes through, changes link or save state, or files telemetry, and needs --write-unsafe.
+# From the wrapper's jump table [main+0x17D7F6]: safe with any operands. The rest take a pointer or
+# change link, save or telemetry state and need --write-unsafe.
 SLOOP_SAFE_NUMBERS = frozenset({0x46, 0x49, 0x4A, 0x4B, 0x4D, 0x4E, 0x50, 0x51, 0x52, 0x53,
                                 0x54, 0x58, 0x59, 0x5A, 0x5B, 0x5C, 0x5D, 0x5E, 0x5F, 0x60})
-# Never through this payload: flash-write owns the sector writes, and a wrong SaveBlock2 pointer
-# (0x55) or a finished save (0x4C) outlives the session.
+# Never: flash-write owns sector writes; 0x55 (SaveBlock2 pointer) and 0x4C (finished save) outlive
+# the session.
 SLOOP_REFUSED_NUMBERS = frozenset({SWI_WRITE_SECTOR, SWI_REPLACE_SECTOR, 0x4C, 0x55})
 
 
@@ -2280,13 +2043,9 @@ def _check_sloop_number(number, *, flags, unsafe, bkpt):
 
 def build_sloop_svc(numbers, args=(), data=b"", *, flags=0, scratch=FLASH_WRITE_SCRATCH,
                     unsafe=False, bkpt=False):
-    """The sloop-svc payload: `swi N` for each N in `numbers`, in order, with r0..r3 = `args` and
-    `data` copied fresh to the result block's data area before each call.
-
-    `flags` bit 0 points r0 at the copy and bit 1 points r1 at it. The answer is the result block,
-    sloop_svc_answer_size(len(data)) bytes (read it with parse_sloop_svc). With `bkpt` the thunk is
-    `bkpt N` instead, which reaches the wrapper's hook table at cpu+0x170.
-    """
+    """The sloop-svc payload: `swi N` for each of `numbers` with r0..r3 = `args`, `data` re-copied
+    before each call (`flags` bit 0/1 points r0/r1 at it). With `bkpt` the thunk is `bkpt N`, the
+    wrapper's hook table at cpu+0x170."""
     numbers = [int(numbers)] if isinstance(numbers, int) else [int(n) for n in numbers]
     if not 1 <= len(numbers) <= SLOOP_MAX_CALLS:
         raise BufferScriptError(f"1..{SLOOP_MAX_CALLS} numbers per session, got {len(numbers)}")
@@ -2337,21 +2096,20 @@ def parse_sloop_svc(answer):
         at = 0x10 + SLOOP_RECORD_SIZE * index
         thunk = word(at)
         if not thunk:
-            break                       # the calls stopped here
+            break
         calls.append((thunk & 0xFF, tuple(word(at + 4 + 4 * r) for r in range(4))))
     return {"returned": word(8) == SLOOP_RETURNED, "calls": calls,
             "data": answer[SLOOP_HEADER_SIZE:SLOOP_HEADER_SIZE + length]}
 
 
-# install-resident: copy a resident THUMB hook into the top of EWRAM and put it in gIntrTable[4]
-# [asm/install-resident.s, docs/frlg_rom.md, Code that outlives the session].
+# install-resident [asm/install-resident.s, docs/frlg_rom.md, Code that outlives the session].
 INSTALL_DEST_OFFSET = 0x04
 INSTALL_LENGTH_OFFSET = 0x08
 INSTALL_TABLE_OFFSET = 0x0C
 INSTALL_ENTRY_OFFSET = 0x10
 INSTALL_ORIGINAL_OFFSET = 0x14
 INSTALL_BLOB_OFFSET = 0x18
-# The resident hooks this can install, each by its entry symbol and its tunable parameters.
+# Entry symbol and tunable parameters per hook.
 RESIDENT_HOOKS = {
     "turbo": ("turbo_hook", {"extra": 4, "field": 0, "battle": 0, "overlay": 0, "hold": 0,
                              "help": 0, "budget": 0, "ring": 0,
@@ -2363,12 +2121,11 @@ RESIDENT_HOOKS = {
                          "overlay2": 0x0203FF84}),
     "noencounter": ("noencounter_hook", {"flag": 0x020386D8}),
 }
-# The IWRAM and ROM words a hook carries are the build's own [Build.hook_literals]. On French
-# LeafGreen only m4aSoundMain moves; on English every one of them does.
-# The data a hook keeps past its code, by parameter, and its size in bytes.
+# A hook's IWRAM and ROM words are the build's [Build.hook_literals]. RESIDENT_DATA: the data a hook
+# keeps past its code, in bytes.
 RESIDENT_DATA = {"p_frames": 20, "p_ring": 140, "p_state": 36, "p_words": 12}
 R_BUTTON = 0x100
-# gHelpSystemToggleWithRButtonDisabled, French FireRed: RunHelpSystemCallback's literal at 0x0813F6FC.
+# gHelpSystemToggleWithRButtonDisabled, French [RunHelpSystemCallback's literal, 0x0813F6FC].
 HELP_R_DISABLED = 0x0203F171
 
 
@@ -2385,9 +2142,9 @@ def resident_blob(name, *, build=None, **params):
         raise BufferScriptError(f"{name} takes {sorted(defaults)}, not {sorted(unknown)}")
     params = {**defaults, **params}
     if name == "turbo" and params["hold"] & R_BUTTON and "help" not in explicit:
-        params["help"] = HELP_R_DISABLED            # held R would open the Help System
+        params["help"] = HELP_R_DISABLED  # held R would open the Help System
     if name == "shiny" and "state" in explicit and "overlay" not in explicit:
-        params["overlay"] = params["state"] + 24    # the word the hook shows
+        params["overlay"] = params["state"] + 24  # the word the hook shows
     if name == "ivs" and "words" in explicit:
         params["overlay"], params["overlay2"] = params["words"], params["words"] + 4
     symbols = STUBS[name][2]
@@ -2399,7 +2156,7 @@ def resident_blob(name, *, build=None, **params):
 
 
 def build_install_resident(name, *, dest=None, table=None, build=None, **params):
-    """The install-resident payload carrying resident hook `name` for `build`, parameters patched."""
+    """The install-resident payload carrying hook `name` for `build`, parameters patched."""
     from pokeldn.frlg.rom import native_script
     build = builds.resolve(build)
     dest = native_script.RESIDENT_BASE if dest is None else dest
@@ -2416,7 +2173,7 @@ def build_install_resident(name, *, dest=None, table=None, build=None, **params)
             "no symbol claims")
 
     from pokeldn.frlg.rom.resident_stubs import STUBS
-    for data, size in RESIDENT_DATA.items():      # the hook's own data must lie past its code
+    for data, size in RESIDENT_DATA.items():  # the hook's data lies past its code
         at = STUBS[name][2].get(data)
         address = int.from_bytes(blob[at:at + 4], "little") if at is not None else 0
         if address and (dest < address + size and address < dest + len(blob)
@@ -2436,16 +2193,15 @@ def build_install_resident(name, *, dest=None, table=None, build=None, **params)
     return bytes(code) + blob
 
 
-# A resident hook kept in the save: save-head, then the install-resident image, then a checksum, written
-# into filler_B20 by save-write and run by the loader a Wonder Card binds to MOM
-# [asm/resident/save-head.s, docs/frlg_rom.md, A resident hook kept in the save].
-RESIDENT_SAVE_MAGIC = 0x53524B50        # "PKRS"; the older save payload's "PKLD" loader refuses it
+# A resident hook kept in the save: save-head, install-resident image, checksum, in filler_B20, run
+# by MOM's loader [asm/resident/save-head.s, docs/frlg_rom.md].
+RESIDENT_SAVE_MAGIC = 0x53524B50  # "PKRS"; the older "PKLD" loader refuses it
 RESIDENT_SAVE_STAGING = 0x0201C400      # gDecompressionBuffer + 0x400, above the staged loader
 RESIDENT_SAVE_SIZE = 0x400              # filler_B20, all of which the loader copies
 
 
 def build_resident_save_blob(name, *, build=None, **params):
-    """-> the bytes save-write puts at SaveBlock2 + 0xB20 so that MOM's loader installs hook `name`."""
+    """-> the bytes save-write puts at SaveBlock2 + 0xB20 for MOM's loader to install `name`."""
     from pokeldn.frlg.rom.resident_stubs import STUBS
     head, _digest, symbols = STUBS["save-head"]
     if symbols["p_image"] != len(head):
@@ -2464,13 +2220,9 @@ def build_resident_save_blob(name, *, build=None, **params):
 
 def build_flash_patch(sector_id, patch_offset, data, *, scratch=FLASH_WRITE_SCRATCH,
                       counter_bias=2, unsafe=False, build=None):
-    """The flash-patch payload: read the id's sector out of flash, change `data` at `patch_offset`,
-    recompute the checksum and write it back, then bump the counter-bearing sector.
-
-    Nothing is reconstructed from RAM. A sector composed from a live save block is not what the save
-    routine writes, because the routine serializes at save time; every byte this does not patch is
-    the byte a real save put there. The save globals are `build`'s.
-    """
+    """The flash-patch payload: read the id's sector out of flash, patch `data` at `patch_offset`,
+    fix the checksum, write it back, bump the counter-bearing sector. Nothing is rebuilt from
+    RAM."""
     build = builds.resolve(build)
     data = bytes(data)
     sector_id = int(sector_id)
@@ -2514,7 +2266,7 @@ def flash_write_source(fill_base=0x46570000, fill_step=1, words=FLASH_WRITE_WORD
                        for i in range(int(words)))
     if not footer:
         return pattern
-    out = bytearray(FLASH_SECTOR_SIZE)          # zeroed, as the game zeroes its buffer
+    out = bytearray(FLASH_SECTOR_SIZE)  # zeroed, as the game zeroes its buffer
     out[0:len(pattern)] = pattern
     out[SECTOR_FOOTER_AT:SECTOR_FOOTER_AT + 2] = (int(sector_id) & 0xFFFF).to_bytes(2, "little")
     out[SECTOR_FOOTER_AT + 2:SECTOR_FOOTER_AT + 4] = sector_checksum(
@@ -2524,14 +2276,9 @@ def flash_write_source(fill_base=0x46570000, fill_step=1, words=FLASH_WRITE_WORD
     return bytes(out)
 
 
-# A dumped region must not change while the block is being sent. MGL_Send takes the header CRC in
-# one frame, sends the payload in the next and re-checks the CRC in the one after
-# [decomp:src/mystery_gift_link.c:155], so a region that changes in between produces a header CRC
-# the payload cannot match and the console calls LinkRfu_FatalError, which the player reads as
-# "erreur de connexion" mid transmission.
-#
-# gRngValue is the only address guaranteed to move every frame, so it is the only one named here.
-# Anything else volatile has to be found the way this was. docs/frlg_leafgreen.md.
+# Trap: never dump a region that moves between frames. MGL_Send takes the header CRC one frame and
+# sends the next [decomp:src/mystery_gift_link.c:155]; a mismatch is LinkRfu_FatalError, "erreur de
+# connexion". gRngValue is the only known mover. docs/frlg_leafgreen.md.
 def moving_regions(build=None):
     return ((builds.resolve(build).rng, 4, "gRngValue, which advances two turns every frame"),)
 
@@ -2559,14 +2306,8 @@ def _refuse_the_save_window(address, size):
 
 
 def build_memory_dump_multi(address, size=MAX_BUFFER_SCRIPT_SIZE, blocks=1, *, build=None):
-    """The multi-block dump payload, patched with the BASE address and the per-block length.
-
-    How many blocks come back is the CLIENT SCRIPT's business, not the payload's: the payload sends
-    whichever block the cursor in `client->param` names and advances it, so the same image serves
-    every pass. `mg_script.client_script_dump_memory(blocks)` is what decides the count. `blocks`
-    is passed here only so the readability guard covers the WHOLE span - a base that is readable
-    says nothing about the kilobyte sixteen blocks later, and CalcCRC16WithTable would walk it.
-    """
+    """The multi-block dump payload, patched with the base and the per-block length. The client
+    script decides the count; `blocks` only widens the readability guard to the whole span."""
     address = int(address)
     size = int(size)
     blocks = int(blocks)
@@ -2586,18 +2327,8 @@ def build_memory_dump_multi(address, size=MAX_BUFFER_SCRIPT_SIZE, blocks=1, *, b
 
 
 def build_memory_dump_scatter(addresses, size=MAX_BUFFER_SCRIPT_SIZE, *, build=None):
-    """The scattered dump payload: one block per address in `addresses`, in that order.
-
-    WHY IT EXISTS. `memory-dump-multi` reads N CONSECUTIVE blocks, which is what a long region
-    needs. A plan does not ask for a long region: the gSpecials bodies still unread are spread over
-    a megabyte, and the densest 16 KB window catches 22 of them where sixteen 1 KB windows aimed
-    where the entries actually are catch about sixty. Same session, same 16 KB, three times the
-    catch.
-
-    EVERY slot in the table is filled - the unused ones with the last address - so a pass beyond
-    what the client script promised re-sends a block we already hold rather than pointing the
-    console's outgoing message at 0x00000000.
-    """
+    """The scattered dump payload: one block per address, in order. Unused table slots repeat the
+    last address, so an extra pass re-sends a held block rather than reading 0x00000000."""
     addresses = [int(address) for address in addresses]
     size = int(size)
     if not addresses:
@@ -2613,7 +2344,7 @@ def build_memory_dump_scatter(addresses, size=MAX_BUFFER_SCRIPT_SIZE, *, build=N
             raise BufferScriptError(f"0x{address:X} is not a 32-bit address")
         if address % 2:
             raise BufferScriptError(f"0x{address:X} is not halfword aligned")
-        # The guard is per BLOCK here, not over one span: the blocks are unrelated regions.
+        # Guarded per block: the blocks are unrelated regions.
         _refuse_a_moving_region(address, size, build)
         _refuse_the_save_window(address, size)
     code = bytearray(payload(MEMORY_DUMP_SCATTER))
@@ -2626,12 +2357,8 @@ def build_memory_dump_scatter(addresses, size=MAX_BUFFER_SCRIPT_SIZE, *, build=N
 
 
 def build_memory_dump(address, size=MAX_BUFFER_SCRIPT_SIZE, *, build=None):
-    """The memory-dump payload with its target address and length patched in.
-
-    `size` is what link->sendSize becomes, so it is bounded by what the receiving side will accept:
-    MGL_Receive rejects anything past MG_LINK_BUFFER_SIZE outright
-    [decomp:src/mystery_gift_link.c:102].
-    """
+    """The memory-dump payload. `size` becomes link->sendSize; MGL_Receive rejects anything past
+    MG_LINK_BUFFER_SIZE [decomp:src/mystery_gift_link.c:102]."""
     address = int(address)
     size = int(size)
     if not 0 < size <= MAX_BUFFER_SCRIPT_SIZE:
@@ -2640,8 +2367,6 @@ def build_memory_dump(address, size=MAX_BUFFER_SCRIPT_SIZE, *, build=None):
     if not 0 <= address <= 0xFFFFFFFF:
         raise BufferScriptError(f"0x{address:X} is not a 32-bit address")
     if address % 2:
-        # CalcCRC16WithTable walks the region and the link sends it in halfwords; an odd base
-        # would also make every later offset calculation lie about what was read.
         raise BufferScriptError(f"0x{address:X} is not halfword aligned")
     _refuse_a_moving_region(address, size, build)
     _refuse_the_save_window(address, size)
@@ -2655,10 +2380,8 @@ def script_choices():
     return tuple(sorted(SCRIPT_REGISTRY))
 
 
-# Which payloads answer with BYTES on ident 19 rather than the 4-byte channel, and which of those
-# have a structure the log can decode rather than a region to hex-dump. These live here, beside the
-# payloads. Duplicated as hand-maintained tuples elsewhere they go stale, and a payload missing
-# from them runs on the console while the host asks for 4 bytes. A new payload goes in here.
+# Payloads answering with bytes on ident 19 rather than the 4-byte channel, and those the log
+# decodes. A new payload goes in here, or the host asks it for 4 bytes.
 DUMP_SCRIPTS = frozenset({
     MEMORY_DUMP, MEMORY_DUMP_MULTI, MEMORY_DUMP_SCATTER, SAVE_DUMP, ANCHORS, SAVE_WRITE,
     MEMORY_SCAN, TABLE_SCAN, RNG_TRACE, STRING_GATHER, CREATE_MON, CALL, CALL_CHAIN,
@@ -2668,9 +2391,7 @@ DECODED_SCRIPTS = frozenset({
     MEMORY_SCAN, TABLE_SCAN, RNG_TRACE, STRING_GATHER, CREATE_MON, CALL, CALL_CHAIN, SLOOP_SVC,
     ROM_CHECKSUM,
 })
-# A payload whose answer the log decodes must first be one whose answer comes back as bytes.
 assert DECODED_SCRIPTS <= DUMP_SCRIPTS
-# And neither may name a payload that does not exist.
 assert DUMP_SCRIPTS <= set(SCRIPT_REGISTRY)
 
 
@@ -2678,9 +2399,7 @@ def format_script_help():
     return "; ".join(f"{spec.name}: {spec.description}"
                      for spec in SCRIPT_REGISTRY.values())
 
-# The spans each builder patches, so that a BUILT payload is still recognisable as the payload it
-# was built from. Without this every dump, write and scan logs as "unknown buffer script" - the
-# operands are the only thing that differs, and they are exactly what the builders change.
+# The spans each builder patches, so a built payload is still recognised by `describe`.
 PATCHED_SPANS = {
     MEMORY_DUMP: ((DUMP_TARGET_OFFSET, 8),),
     MEMORY_DUMP_MULTI: ((DUMP_MULTI_BASE_OFFSET, 8),),
@@ -2693,26 +2412,19 @@ PATCHED_SPANS = {
                  + 8 * TRACE_SAMPLE_CAPACITY),),
     MEMORY_SCAN: ((SCAN_CURSOR_OFFSET,
                    SCAN_HITS_OFFSET - SCAN_CURSOR_OFFSET + 8 * SCAN_HIT_CAPACITY),),
-    # The parameters and the results and the run state: everything ahead of the code.
     TABLE_SCAN: ((TABLE_CURSOR_OFFSET, TABLE_EXPECT_OFFSET + 4 - TABLE_CURSOR_OFFSET),),
-    # The parameters, the running sum and the answer: everything ahead of the code.
     ROM_CHECKSUM: ((ROM_CHECKSUM_CURSOR_OFFSET,
                     ROM_CHECKSUM_SUMS_OFFSET + 4 * ROM_CHECKSUM_CAPACITY
                     - ROM_CHECKSUM_CURSOR_OFFSET),),
     STRING_GATHER: ((GATHER_SRC_OFFSET,
                      GATHER_STRINGS_OFFSET - GATHER_SRC_OFFSET + GATHER_STRING_AREA),),
-    # Everything from the first operand to the end of the mon: the parameters, the four result
-    # words and the 100 bytes CreateMon writes into the image itself.
+    # Includes the 100 bytes CreateMon writes into the image itself.
     CREATE_MON: ((CREATE_MON_FUNCTION_OFFSET,
                   CREATE_MON_PARTY_OFFSET - CREATE_MON_FUNCTION_OFFSET + 4),),
-    # The operands and the six result words: everything a built call differs from the payload by.
     CALL: ((CALL_FUNCTION_OFFSET,
             CALL_RESULT_OFFSET - CALL_FUNCTION_OFFSET + CALL_ANSWER_SIZE),),
-    # The count, the sixteen steps and the answer: everything ahead of the code.
     CALL_CHAIN: ((CHAIN_COUNT_OFFSET,
                   CHAIN_RESULT_OFFSET - CHAIN_COUNT_OFFSET + CHAIN_ANSWER_SIZE),),
-    # The five operands, the two result words, and the thunk whose low byte carries the syscall
-    # number: everything ahead of the code.
     FLASH_READ: ((FLASH_READ_BANK_OFFSET,
                   FLASH_READ_SCRATCH_OFFSET + 4 - FLASH_READ_BANK_OFFSET),),
     FLASH_PATCH: ((FLASH_PATCH_SCRATCH_OFFSET,
@@ -2729,7 +2441,7 @@ def describe(code):
     """Name a payload from its bytes, operands and all."""
     code = bytes(code)
     for name, (committed, _) in PAYLOADS.items():
-        # save-write and install-resident vary in length: what they write is their tail.
+        # save-write and install-resident vary in length.
         longer_is_fine = name in (SAVE_WRITE, INSTALL_RESIDENT)
         if len(code) != len(committed) and not (longer_is_fine and len(code) > len(committed)):
             continue
@@ -2741,14 +2453,9 @@ def describe(code):
     return f"unknown buffer script ({len(code)} bytes of ARM, head {bytes(code[:8]).hex()})"
 
 
-# --- The client the payload is called from -------------------------------------------------------
-# r0 is &client->param, and everything else in struct MysteryGiftClient
-# [decomp:include/mystery_gift_client.h:71] is at a fixed offset from it. That makes the console's
-# own outgoing message reachable: MysteryGiftLink_InitSend stores the POINTER
-# [decomp:src/mystery_gift_link.c:59] and the CRC is taken later, at send time, over
-# link->sendBuffer for link->sendSize bytes [mystery_gift_link.c:166]. A payload that repoints
-# those two fields between the InitSend and the send makes the console read out any address it
-# likes, with a CRC the console computes for us.
+# struct MysteryGiftClient [decomp:include/mystery_gift_client.h:71], offsets from r0 =
+# &client->param. MysteryGiftLink_InitSend stores the pointer and the CRC is taken at send time
+# [mystery_gift_link.c:59,166], so repointing sendBuffer/sendSize reads out any address.
 CLIENT_UNUSED = 0x00
 CLIENT_PARAM = 0x04                 # what r0 points at
 CLIENT_FUNC_ID = 0x08
@@ -2769,28 +2476,23 @@ LINK_SEND_SIZE = 0x14
 LINK_RECV_BUFFER = 0x18
 LINK_SEND_BUFFER = 0x1C
 
-# Offsets a payload uses, measured from r0 rather than from the struct base.
+# Offsets measured from r0.
 FROM_PARAM_SEND_BUFFER = CLIENT_SEND_BUFFER - CLIENT_PARAM            # 0x10
 FROM_PARAM_LINK_SEND_SIZE = CLIENT_LINK + LINK_SEND_SIZE - CLIENT_PARAM    # 0x34
 FROM_PARAM_LINK_SEND_BUFFER = CLIENT_LINK + LINK_SEND_BUFFER - CLIENT_PARAM  # 0x3C
 
 
-# --- Offline execution ----------------------------------------------------------------------------
-# The GBA map, only as much of it as a payload can touch. Addresses are the real ones so that a
-# payload which ever does use an absolute address is tested against the layout it will meet.
+# The GBA map, as much as a payload can touch, at the real addresses.
 EWRAM_BASE, EWRAM_SIZE = 0x02000000, 0x00040000
 IWRAM_BASE, IWRAM_SIZE = 0x03000000, 0x00008000
-# The cartridge, readable by the CPU like any other region, so a dump aimed at it is legal and the
-# CRC walk over it cannot fault. 32 MB is the GBA's window; FireRed fills the first 16.
+# The 32 MB cartridge window; FireRed fills the first 16.
 ROM_BASE, ROM_SIZE = 0x08000000, 0x02000000
-# [GBA cartridge header] 0xA0 game title, 0xAC game code, 0xB0 maker, 0xBC software version. This is
-# how a dump names the build the console is running, which is the prerequisite for calling into it.
+# [GBA cartridge header] 0xA0 title, 0xAC game code, 0xB0 maker, 0xBC software version.
 ROM_HEADER_TITLE = ROM_BASE + 0xA0
 ROM_HEADER_GAME_CODE = ROM_BASE + 0xAC
 STACK_POINTER = 0x03007F00          # SP_usr as the BIOS leaves it
-_RETURN_ADDRESS = 0x0F000000        # our own sentinel: where bx lr lands and emulation stops
-# The client and its buffers are AllocZeroed [mystery_gift_client.c:72], so they live in gHeap,
-# which is EWRAM 0x02000000..0x0201C000 - below the code buffer, as on the console.
+_RETURN_ADDRESS = 0x0F000000  # sentinel: where bx lr lands and emulation stops
+# The client is AllocZeroed in gHeap, below the code buffer [mystery_gift_client.c:72].
 _CLIENT_ADDRESS = 0x02001000
 _SEND_BUFFER_ADDRESS = 0x02002000
 _RECV_BUFFER_ADDRESS = 0x02003000
@@ -2808,24 +2510,22 @@ class ClientState:
     send_buffer: int
     send_size: int
     send_ident: int
-    armed_buffer: int = _SEND_BUFFER_ADDRESS    # what CLI_LOAD_TOSS_RESPONSE's InitSend left
+    armed_buffer: int = _SEND_BUFFER_ADDRESS  # what CLI_LOAD_TOSS_RESPONSE's InitSend left
     armed_size: int = 4
 
     @property
     def send_repointed(self):
-        """The payload aimed the console's outgoing message at another address."""
+        """The payload aimed the outgoing message at another address."""
         return self.send_buffer != self.armed_buffer
 
     @property
     def send_resized(self):
-        """It kept the address and changed how much goes out - `anchors` fills client->sendBuffer
-        itself, so it only has to widen the size."""
+        """It changed the size only; `anchors` fills client->sendBuffer itself."""
         return self.send_size != self.armed_size
 
     @property
     def send_changed(self):
-        """MGL_Send reads BOTH fields at send time [mystery_gift_link.c:166], so either one makes
-        what goes out different from the 4-byte response that was armed."""
+        """MGL_Send reads both fields at send time [mystery_gift_link.c:166]."""
         return self.send_repointed or self.send_resized
 
 
@@ -2833,12 +2533,12 @@ class ClientState:
 class BufferScriptRun:
     """What one call of a payload did."""
     returned: int           # r0: BUFFER_SCRIPT_DONE ends the call
-    param: int              # *param, which CLI_LOAD_TOSS_RESPONSE ships back to us
+    param: int  # *param, which CLI_LOAD_TOSS_RESPONSE ships back
     sav2: bytes             # the save blocks as the payload left them
     sav1: bytes
     instructions: int
     client: ClientState
-    pending_send: bytes     # what a following CLI_SEND_LOADED would actually put on the wire
+    pending_send: bytes  # what a following CLI_SEND_LOADED would put on the wire
 
     @property
     def done(self):
@@ -2857,8 +2557,7 @@ def emulation_available():
     return True
 
 
-# Enough of a cartridge header for a dump aimed at ROM to come back with something to identify. The
-# real console's is whatever the Switch release ships; that is exactly what a hardware dump answers.
+# Enough of a cartridge header for a ROM dump to identify.
 def _default_rom_header(build):
     return (b"\x00" * 0xA0
             + (b"POKEMON FIRE" if build.version == "firered" else b"POKEMON LEAF")  # 0xA0 title
@@ -2867,35 +2566,19 @@ def _default_rom_header(build):
             + b"\x96")                                                           # 0xB2 fixed value
 
 
-
-# --- models of CreateMon, for running a calling payload offline ----------------------------------
-# The emulated cartridge is a header and zeros, so a payload that calls a ROM function would execute
-# the zeros. These two THUMB stubs stand in for CreateMon at whatever address the payload was built
-# to call, placed with `memory={address: stub}`.
-#
-# CREATE_MON_ARG_MODEL checks that eight arguments arrive in the order the console's own prologue
-# reads them, by writing r0..r3 and the four stack arguments into the destination as eight words.
-# It pushes nothing, so [sp,#0] IS the caller's first stack argument. Assembled from:
-#
-#     str r1,[r0,#4]   str r2,[r0,#8]   str r3,[r0,#12]
-#     ldr r1,[sp,#0]   str r1,[r0,#16]  ldr r1,[sp,#4]   str r1,[r0,#20]
-#     ldr r1,[sp,#8]   str r1,[r0,#24]  ldr r1,[sp,#12]  str r1,[r0,#28]
-#     str r0,[r0,#0]   bx lr
+# Offline stand-ins for CreateMon, placed with `memory={address: stub}`. CREATE_MON_ARG_MODEL writes
+# r0..r3 and the four stack arguments into the destination as eight words: str r1..r3,[r0,#4..12];
+# ldr/str [sp,#0..12] -> [r0,#16..28]; str r0,[r0]; bx lr.
 CREATE_MON_ARG_MODEL = bytes.fromhex(
     "41608260c3600099016101994161029981610399c16100607047")
 CREATE_MON_ARG_FIELDS = ("mon", "species", "level", "fixedIV", "hasFixedPersonality",
                          "fixedPersonality", "otIdType", "fixedOtId")
 
-# create_mon_copy_model answers the other question - does the answer decode as a struct Pokemon all
-# the way through? - by copying 100 bytes a caller prepared over the destination. Assembled from:
-#
-#     push {r4, lr}    ldr r1,.Lsource   movs r2,#100
-#   1: ldrb r4,[r1]    strb r4,[r0]      adds r1,#1   adds r0,#1   subs r2,#1   bne 1b
-#     pop {r4}         pop {r0}          bx r0
-#     .Lsource: .word 0
+# create_mon_copy_model copies 100 prepared bytes over the destination: a byte loop, then pop {r4};
+# pop {r0}; bx r0, then .Lsource.
 _CREATE_MON_COPY_MODEL = bytes.fromhex(
     "10b5054964220c78047001310130013af9d110bc01bc0047")
-CREATE_MON_COPY_MODEL_SOURCE = len(_CREATE_MON_COPY_MODEL)      # where the .word goes
+CREATE_MON_COPY_MODEL_SOURCE = len(_CREATE_MON_COPY_MODEL)  # where the .word goes
 
 
 def create_mon_copy_model(source):
@@ -2904,14 +2587,9 @@ def create_mon_copy_model(source):
 
 
 class _Machine:
-    """The console's memory across a whole CLI_RUN_BUFFER_SCRIPT, not just one call.
-
-    The copy into gDecompressionBuffer happens ONCE, at the CLI_RUN_BUFFER_SCRIPT command
-    [decomp:src/mystery_gift_client.c:239]; after that Client_RunBufferScript calls the payload
-    every frame until it returns 1 [:276]. So a payload that returns anything else is called again
-    with its own image - code and data - exactly as it left it. One instance of this class is one
-    such session, and `call` is one frame.
-    """
+    """The console's memory across a whole CLI_RUN_BUFFER_SCRIPT: the image is copied once
+    [decomp:src/mystery_gift_client.c:239] and then called every frame until it returns 1. `call`
+    is one frame."""
 
     def __init__(self, code, *, param=0, sav2=b"", sav1=b"", memory=None, send_size=4,
                  send_ident=0, rom=None, build=None):
@@ -2929,18 +2607,16 @@ class _Machine:
         uc.mem_map(EWRAM_BASE, EWRAM_SIZE)
         uc.mem_map(IWRAM_BASE, IWRAM_SIZE)
         uc.mem_map(ROM_BASE, ROM_SIZE)
-        uc.mem_map(IO_BASE, IO_SIZE)          # plain memory: REG_IME and friends read back what they hold
+        uc.mem_map(IO_BASE, IO_SIZE)  # plain memory: REG_IME and friends read back
         uc.mem_map(0x05000000, 0x400)         # palette
         uc.mem_map(0x06000000, 0x18000)       # VRAM
         uc.mem_map(0x07000000, 0x400)         # OAM
         build = builds.resolve(build)
         uc.mem_write(ROM_BASE, bytes(rom if rom is not None else _default_rom_header(build)))
         uc.mem_map(_RETURN_ADDRESS, 0x1000)
-        # The chip is 128 KiB and starts erased. The CPU does not see it that way: it sees a 64 KiB
-        # aperture, one bank at a time, which is why `self.flash` is the chip and the mapped region
-        # is only the window onto it. swi 0x48 addresses the chip linearly; a guest load addresses
-        # the window. Modelling one shape would make one of the two payload families untestable.
-        self.uc = uc                    # _show_bank needs it before the rest of the wiring
+        # The chip is 128 KiB, erased; the CPU sees a 64 KiB window one bank at a time. swi 0x48
+        # addresses the chip linearly, a guest load the window, so both are modelled.
+        self.uc = uc  # _show_bank needs it before the rest
         self.flash = bytearray(b"\xFF" * FLASH_SIZE)
         self.flash_bank = 0
         uc.mem_map(FLASH_WINDOW_BASE, FLASH_WINDOW_SIZE)
@@ -2963,8 +2639,8 @@ class _Machine:
         word(CLIENT_PARAM, int(param))
         word(CLIENT_SEND_BUFFER, _SEND_BUFFER_ADDRESS)
         word(CLIENT_RECV_BUFFER, _RECV_BUFFER_ADDRESS)
-        uc.mem_write(_RECV_BUFFER_ADDRESS, bytes(code))     # the console's copy is made FROM here
-        # As CLI_LOAD_TOSS_RESPONSE leaves it: the send is armed and points at client->sendBuffer.
+        uc.mem_write(_RECV_BUFFER_ADDRESS, bytes(code))  # the console copies from here
+        # As CLI_LOAD_TOSS_RESPONSE leaves it: the send armed at client->sendBuffer.
         word(CLIENT_LINK + LINK_SEND_BUFFER, _SEND_BUFFER_ADDRESS)
         half(CLIENT_LINK + LINK_SEND_SIZE, send_size)
         half(CLIENT_LINK + LINK_SEND_IDENT, send_ident)
@@ -2989,25 +2665,20 @@ class _Machine:
         self.calls = 0
 
     def _show_bank(self):
-        """Put the selected bank in the aperture. Stores never reach the chip, so this also undoes
-        the command bytes a bank select writes into 0x5555 and 0x2AAA."""
+        """Put the selected bank in the aperture, undoing the command bytes a bank select stores."""
         at = self.flash_bank * FLASH_WINDOW_SIZE
         self.uc.mem_write(FLASH_WINDOW_BASE, bytes(self.flash[at:at + FLASH_WINDOW_SIZE]))
 
     def _on_flash_store(self, uc, access, address, size, value, user_data=None):
-        """A store into the aperture is a command, not data. The only one modelled is the bank
-        select [decomp:src/agb_flash.c SwitchFlashBank], whose last store carries the bank."""
+        """A store into the aperture is a command. Only the bank select is modelled
+        [decomp:src/agb_flash.c SwitchFlashBank]."""
         if address == FLASH_WINDOW_BASE and size == 1 and value in (0, 1):
             self.flash_bank = value
         self._show_bank()
 
     def _on_readflash(self, uc, address, size, user_data=None):
-        """Model the game's ReadFlash so a payload that calls it can be vetted offline.
-
-        The real one copies `size` bytes from flash sector `sectorNum` (switching bank itself) into
-        `dest`. Only the copy is modelled; the REG_WAITCNT write it also performs has no meaning in
-        a memory model and is the one effect only the console can be asked about.
-        """
+        """Model ReadFlash: copy `size` bytes of sector `sectorNum` into `dest`. Its REG_WAITCNT
+        write is not modelled."""
         arm = self._arm
         sector = uc.reg_read(arm.UC_ARM_REG_R0) & 0xFFFF
         offset = uc.reg_read(arm.UC_ARM_REG_R1)
@@ -3022,28 +2693,19 @@ class _Machine:
         uc.reg_write(arm.UC_ARM_REG_PC, link & ~1)
 
     def _on_swi(self, uc, intno, user_data=None):
-        """Model the Sloop sector syscalls so a payload that issues one can be vetted offline.
-
-        Measured on the FR emulator: swi 0x48 copies 0x1000 bytes from r1 into the sector r0 names
-        (0x0E000000 + r0 * 0x1000) and modifies no guest register; each side is rejected
-        independently and a rejected call writes nothing and says nothing. swi 0x56 does the same
-        and then stores 0xFF over the destination's signature at +0xFF8, with no null check, so a
-        rejected destination aborts there rather than returning [docs/frlg_rom.md].
-
-        Only the numbers this project has measured are modelled. Any other `swi` is left alone,
-        which is the honest behaviour: the harness must not invent a result for a syscall nobody
-        has read.
-        """
+        """Model the Sloop sector syscalls, as measured on the FR emulator: swi 0x48 copies 0x1000
+        bytes from r1 into sector r0 and touches no register; a rejected side writes nothing.
+        swi 0x56 also stores 0xFF at +0xFF8 with no null check [docs/frlg_rom.md]. Other numbers
+        are left alone."""
         arm = self._arm
         cpsr = uc.reg_read(arm.UC_ARM_REG_CPSR)
         pc = uc.reg_read(arm.UC_ARM_REG_PC)
         if intno == _UC_EXCP_BKPT:
-            # The wrapper's THUMB bkpt handler [main+0x1efc0] runs the hook in slot N and, when it
-            # substitutes nothing (0xFF's never does), returns: the bkpt is a NOP to the guest.
+            # The wrapper's bkpt handler [main+0x1efc0] runs slot N and returns: a NOP to the guest.
             self.bkpts.append(int.from_bytes(uc.mem_read(pc, 2), "little") & 0xFF)
             uc.reg_write(arm.UC_ARM_REG_PC, (pc + 2) | 1 if cpsr & (1 << 5) else pc + 4)
             return
-        if cpsr & (1 << 5):             # THUMB: the swi is the halfword just executed
+        if cpsr & (1 << 5):  # THUMB: the swi is the halfword just executed
             number = int.from_bytes(uc.mem_read(pc - 2, 2), "little") & 0xFF
         else:
             number = int.from_bytes(uc.mem_read(pc - 4, 4), "little") & 0xFFFFFF
@@ -3067,14 +2729,13 @@ class _Machine:
                 self.flash[offset + SECTOR_SIGNATURE_OFFSET_IN_SECTOR] = 0xFF
             self._show_bank()
         elif number == SWI_REPLACE_SECTOR:
-            # The signature store has no null check, so a rejected destination faults at 0xFF8.
             raise BufferScriptError(
                 f"swi 0x56 with a rejected destination aborts: {why}. On the console that is the "
                 "strb at main+0x573F8 going to a null pointer.")
         self.flash_writes.append((number, sector, source, why is None, why))
 
     def call(self, instruction_limit=_INSTRUCTION_LIMIT):
-        """One frame: what Client_RunBufferScript does with our payload, once."""
+        """One frame: Client_RunBufferScript calling the payload once."""
         uc, unicorn, arm_const = self.uc, self._unicorn, self._arm
         uc.reg_write(arm_const.UC_ARM_REG_R0, _CLIENT_ADDRESS + CLIENT_PARAM)
         uc.reg_write(arm_const.UC_ARM_REG_R1, _SAV2_ADDRESS)
@@ -3136,21 +2797,11 @@ class _Machine:
 
 def emulate(code, *, param=0, sav2=b"", sav1=b"", memory=None, send_size=4,
             send_ident=0, rom=None, build=None, instruction_limit=_INSTRUCTION_LIMIT):
-    """Run a payload the way Client_RunBufferScript does, on a model of the console's memory.
+    """Run a payload once, as Client_RunBufferScript does, on a model of the console's memory.
 
-    `send_size`/`send_ident` are the send a preceding client-script command already set up (4 bytes
-    of MG_LINKID_RESPONSE after CLI_LOAD_TOSS_RESPONSE); `memory` places extra regions the payload
-    may read, as {address: bytes}; `rom` seeds the cartridge at 0x08000000. The result's
-    `pending_send` is what a following CLI_SEND_LOADED would actually transmit - the bytes at
-    link->sendBuffer, wherever the payload left it pointing.
-
-    ONE call. A payload that returns anything but 1 is called again on the console, so use
-    `emulate_repeating` for those; this reports what a single frame did.
-
-    The caller is a THUMB function, so lr carries bit 0 set; a payload that returns with anything
-    but `bx lr` (a `mov pc, lr`, say) would leave the console in ARM state and crash, and this
-    reproduces that faithfully.
-    """
+    `send_size`/`send_ident` are the armed send (4 bytes after CLI_LOAD_TOSS_RESPONSE); `memory` is
+    {address: bytes}; `rom` seeds 0x08000000. `pending_send` is what CLI_SEND_LOADED would transmit.
+    lr has bit 0 set, so a return other than `bx lr` crashes here as on the console."""
     return _Machine(code, param=param, sav2=sav2, sav1=sav1, memory=memory,
                     send_size=send_size, send_ident=send_ident,
                     rom=rom, build=build).call(instruction_limit=instruction_limit)
@@ -3161,7 +2812,7 @@ class RepeatedRun:
     """A whole multi-frame payload: every call it took, and what the last one left."""
     calls: int
     final: BufferScriptRun
-    instructions: int       # summed over the calls, which is what a frame budget is spent on
+    instructions: int  # summed over the calls
 
     @property
     def done(self):
@@ -3170,12 +2821,8 @@ class RepeatedRun:
 
 def emulate_repeating(code, *, max_calls=MAX_SCAN_CALLS + 2,
                       instruction_limit=_INSTRUCTION_LIMIT, **kwargs):
-    """Call a payload until it returns 1, as the console does, once a frame.
-
-    `max_calls` is this side's own bound, not the payload's watchdog: a payload that would hang the
-    Mystery Gift menu with no way out is a BufferScriptError here instead, which is the whole
-    reason to run it offline first.
-    """
+    """Call a payload until it returns 1, once a frame; `max_calls` is this side's bound, so a hang
+    is a BufferScriptError here."""
     machine = _Machine(code, **kwargs)
     instructions = 0
     for _ in range(int(max_calls)):

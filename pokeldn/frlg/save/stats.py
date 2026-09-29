@@ -10,8 +10,7 @@ DEOXYS_FORME = {"atk": 180, "def": 20, "spe": 150, "spa": 180, "spd": 20}
 
 
 def _build_exp_tables():
-    """EXP_TABLES[growthRate][level] = total exp; growthRate 0=MediumFast 1=Erratic 2=Fluctuating 3=MediumSlow
-    4=Fast 5=Slow."""
+    """EXP_TABLES[growthRate][level] = total exp, growthRate numbered as in basestats."""
     def medium_fast(n):
         return n ** 3
 

@@ -49,9 +49,8 @@ def decode(b, stop_at_eos=True):
     return "".join(out)
 
 
-# The text control codes [decomp:include/characters.h:177]. A NAME field never holds one, so they
-# are decoded only by `decode_message`: a message string is the one place they appear, and rendering
-# them as "." is what made the first script string read off the console come back as 'Obtenu: .A!'.
+# Text control codes [decomp:include/characters.h:177]: only in message strings, never in a NAME, so
+# only `decode_message` renders them.
 CHAR_PROMPT_SCROLL = 0xFA       # wait for a press, then scroll
 CHAR_PROMPT_CLEAR = 0xFB        # wait for a press, then clear
 EXT_CTRL_CODE_BEGIN = 0xFC      # one argument byte follows, sometimes more
@@ -70,11 +69,7 @@ _EXT_CTRL_ARGS = {0x01: 1, 0x02: 1, 0x03: 1, 0x04: 3, 0x05: 1, 0x06: 1, 0x07: 0,
 
 
 def decode_message(b):
-    """-> a message string with its control codes rendered, not swallowed.
-
-    `decode` is for a NAME: fixed width, no control codes, unknown bytes become '.'. A string a
-    script points at is dialogue, and its placeholders and line breaks are most of its meaning -
-    "{PLAYER} a obtenu\n{STR_VAR_2}!" says what the box will read; "..a obtenu..!" says nothing."""
+    """-> a message string with its placeholders, line breaks and control codes rendered."""
     out, index = [], 0
     while index < len(b):
         byte = b[index]
