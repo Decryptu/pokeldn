@@ -486,7 +486,9 @@ def use(port: str | None = None, *, radio: esp32.Radio | None = None, port_facto
     return radio
 
 
-SERIAL_PORT_GLOBS = ("/dev/cu.usbserial-*", "/dev/cu.SLAB_USBtoUART*", "/dev/ttyUSB*")
+# A CH9102 or CH343 bridge enumerates as CDC ACM: /dev/ttyACM* on Linux, cu.usbmodem* on macOS.
+SERIAL_PORT_GLOBS = ("/dev/cu.usbserial-*", "/dev/cu.SLAB_USBtoUART*", "/dev/cu.wchusbserial*",
+                     "/dev/cu.usbmodem*", "/dev/ttyUSB*", "/dev/ttyACM*")
 
 
 def auto_port(candidates=None):

@@ -19,15 +19,13 @@ PROJECT_ROOT = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(_
 sys.path.insert(0, PROJECT_ROOT)
 sys.path.insert(0, os.path.join(PROJECT_ROOT, "vendor", "LDN"))
 
-from pokeldn.ldn import esp32  # noqa: E402
+from pokeldn.ldn import esp32, esp32_wlan  # noqa: E402
 
 BUILD_DIR = os.path.join(PROJECT_ROOT, "scratchpad", "esp", "build-radio")
-PORT_PATTERNS = ("/dev/cu.usbserial-*", "/dev/cu.SLAB_USBtoUART*", "/dev/cu.wchusbserial*",
-                 "/dev/ttyUSB*", "/dev/ttyACM*")
 
 
 def find_port() -> str | None:
-    ports = sorted(p for pattern in PORT_PATTERNS for p in glob.glob(pattern))
+    ports = sorted(p for pattern in esp32_wlan.SERIAL_PORT_GLOBS for p in glob.glob(pattern))
     return ports[0] if len(ports) == 1 else None
 
 
@@ -77,8 +75,6 @@ def decode_networks(radio: esp32.Radio, keys: dict, channels, dwell: float, log=
     """The LDN library's own scan, on the board: the advertisements decrypted and parsed."""
     import trio
     import ldn
-    from pokeldn.ldn import esp32_wlan
-
     esp32_wlan.use(radio=radio)
     networks = trio.run(lambda: ldn.scan(keys, channels=list(channels), dwell_time=dwell))
     for net in networks:

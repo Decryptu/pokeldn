@@ -73,8 +73,9 @@ cd firmware/esp32 && idf.py build && idf.py -p PORT flash && cd ../..   # ESP-ID
 export POKELDN_RADIO=esp32:auto
 ```
 
-`PORT` is the board's serial device (`/dev/cu.usbserial-*` on macOS, `/dev/ttyUSB*` on Linux) and
-follows the USB socket. `esp32:auto` takes the only USB serial port present; `esp32:PORT` names one.
+`PORT` is the board's serial device (`/dev/cu.usbserial-*` or `/dev/cu.usbmodem*` on macOS,
+`/dev/ttyUSB*` or `/dev/ttyACM*` on Linux) and follows the USB socket. `esp32:auto` takes the only USB
+serial port present; `esp32:PORT` names one.
 `POKELDN_ESP32_TRACE=FILE` records every serial message and the board's counters. The exact IDF
 version is on [ESP32 radio](docs/hardware_esp32.md).
 
