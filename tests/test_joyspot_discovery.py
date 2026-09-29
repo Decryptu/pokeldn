@@ -13,11 +13,12 @@ sys.path.insert(0, ROOT)
 
 import joyspot_probe
 from pokeldn.frlg.text import charmap
-from pokeldn.ldn import beacon, transport
-from pokeldn.ldn.host_beacon import CAPTURED_TRADE_BEACON
+from pokeldn.frlg.link import beacon
+from pokeldn.ldn import transport
+from pokeldn.frlg.link.host_beacon import CAPTURED_TRADE_BEACON
 from pokeldn.config import DEFAULT_TRAINER, TrainerProfile
-from pokeldn.ldn.joyspot_probe import JoySpotProbeApplication, JoySpotProbeConfig
-from pokeldn.ldn.joyspot_discovery import (
+from pokeldn.frlg.link.joyspot_probe import JoySpotProbeApplication, JoySpotProbeConfig
+from pokeldn.frlg.link.joyspot_discovery import (
     JOYSPOT_CANDIDATES,
     JOYSPOT_LOCAL_COMMUNICATION_ID,
     JOYSPOT_MAX_PARTICIPANTS,
@@ -60,7 +61,7 @@ def _candidate(name):
 
 
 def _record(app_data):
-    return transport._b85_decode(
+    return beacon.b85_decode(
         app_data[beacon.PIA_HDR:])[:beacon.RECORD_SIZE]
 
 

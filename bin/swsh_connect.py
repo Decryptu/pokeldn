@@ -3,6 +3,7 @@
 
 Never pass --verbose to a live run; use --capture. docs/swsh_session.md, docs/pia.md.
 """
+from pathlib import Path
 import argparse, json, os, shlex, socket, struct, sys, time, traceback, zlib
 
 PROJECT_ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
@@ -12,7 +13,9 @@ if os.path.isdir(BUNDLED):
     sys.path.insert(0, BUNDLED)
 
 import trio, ldn
-from pokeldn.host_support import resolve_keys
+from pokeldn.host_support import open_output
+from pokeldn import pokemon as pokemon_service
+from pokeldn.host_support import resolve_keys, needs_root
 from pokeldn.ldn import (broadcast4, local_protocol as lp, mesh_protocol as mesh, pia4, reliable4,
                         reliable5, rtt_protocol as rtt, station4,
                         station_protocol as stp)
@@ -111,7 +114,7 @@ async def main_async(args):
     param.name, param.app_version = args.name.encode(), net.app_version
     param.phyname, param.ifname = phy, args.ifname
 
-    cap = open(args.capture, "w") if args.capture else None
+    cap = open_output(args.capture, "w") if args.capture else None
 
     def record(**kw):
         if cap:
@@ -539,7 +542,7 @@ async def main_async(args):
                       f"{read['species']} {read['nickname']!r} level {read['level']} "
                       f"OT {read['ot_name']!r} ({read['trainer_id']}/{read['secret_id']})")
                 if args.save_offered:
-                    open(args.save_offered, "wb").write(offered)
+                    write_file(args.save_offered, offered)
                     print(f"[rx]     saved to {args.save_offered}")
                 # One-shot, and it outranks the mirror, which answers the RPC pair the console
                 # repeats.
@@ -1181,9 +1184,10 @@ async def main_async(args):
                 payload = trade_payload.reassemble([st["snapshot_bodies"][i] for i in wanted])
                 print(f"[tx] the console's own snapshot, {len(payload)} bytes, is ours to rewrite")
             else:
-                payload = open(args.send_snapshot, "rb").read()
+                payload = Path(args.send_snapshot).read_bytes()
             if len(payload) != trade_payload.PAYLOAD_LENGTH:
                 payload = trade_payload.inflate_short(payload)
+            original_party = payload
             was = trade_payload.read(payload)["trainer_name"]
             # The tail's three ids are not drawn on the trade screen (docs/swsh_protocol.md).
             profile = trade_payload.read_tail(payload)
@@ -1195,21 +1199,19 @@ async def main_async(args):
             payload = trade_payload.rewrite(payload, trainer_name=args.snapshot_name,
                                             trainer_id=args.snapshot_tid,
                                             secret_id=args.snapshot_sid, **ids)
+            payload = original_party[:swsh_pokemon.PARTY_BLOCK] + payload[swsh_pokemon.PARTY_BLOCK:]
             edits = offer_edits(args)
             if args.offer_file:
                 if not args.offer_slot:
                     raise ValueError("--offer-file needs --offer-slot")
-                identity = {} if args.offer_file_as_is else dict(
-                    ot_name=args.snapshot_name, trainer_id=args.snapshot_tid,
-                    secret_id=args.snapshot_sid)
-                edits = {**identity, **edits}
+
             if edits or args.offer_file:
                 at = (args.offer_slot - 1) * swsh_pokemon.SIZE_PARTY
                 if args.offer_file:
-                    raw = swsh_pokemon.encrypt(gen8.load(open(args.offer_file, "rb").read()))
+                    raw = swsh_pokemon.encrypt(gen8.load(Path(args.offer_file).read_bytes()))
                     print(f"[tx] slot {args.offer_slot} is {args.offer_file}")
                 else:
-                    raw = payload[at:at + swsh_pokemon.SIZE_PARTY]
+                    raw = original_party[at:at + swsh_pokemon.SIZE_PARTY]
                 if struct.unpack_from("<I", raw, 0)[0] == 0:
                     raise ValueError(f"slot {args.offer_slot} of the snapshot is empty")
                 built = swsh_pokemon.build_from(raw, **edits) if edits else raw
@@ -1222,12 +1224,16 @@ async def main_async(args):
             fields = trade_payload.read(payload)
             if args.offer_slot:
                 at = (args.offer_slot - 1) * swsh_pokemon.SIZE_PARTY
-                st["our_pk8"] = payload[at:at + swsh_pokemon.SIZE_PARTY]
+                raw = payload[at:at + swsh_pokemon.SIZE_PARTY]
+                if getattr(args, "validate_offer", False):
+                    raw = swsh_pokemon.encrypt(gen8.load(pokemon_service.prepare("swsh", raw)))
+                    payload = payload[:at] + raw + payload[at + swsh_pokemon.SIZE_PARTY:]
+                st["our_pk8"] = raw
                 ours = swsh_pokemon.read(st["our_pk8"])
                 print(f"[tx] we will offer slot {args.offer_slot}: species {ours['species']} "
                       f"{ours['nickname']!r} level {ours['level']}")
                 if args.save_offer:
-                    open(args.save_offer, "wb").write(st["our_pk8"])
+                    write_file(args.save_offer, st['our_pk8'])
                     print(f"[tx]     saved to {args.save_offer}")
             left = payload.count(was.encode("utf-16-le")) if was else 0
             print(f"[tx] the snapshot was {was!r}; {left} copies of that name left in it, "
@@ -2053,7 +2059,15 @@ def main(argv=None):
         offer_edits(args)
     except ValueError as e:
         build_parser().error(str(e))
-    if os.geteuid() != 0 and not board_radio():
+    if args.offer_file:
+        edits = offer_edits(args)
+        args.offer_file = pokemon_service.prepare_file("swsh", args.offer_file,
+            transform=lambda raw: swsh_pokemon.build_from(raw, **edits))
+        args.offer_file_as_is = True
+        for key in ("species", "ability", "level", "experience", "nickname", "ot", "ivs", "moves"):
+            setattr(args, "offer_" + key, None)
+    args.validate_offer = True
+    if needs_root():
         build_parser().error("must run as root (LDN needs the raw radio)")
     try:
         return trio.run(main_async, args)

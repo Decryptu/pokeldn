@@ -7,6 +7,7 @@
 Below the game `pokeldn.ldn.host4`, above it `pokeldn.swsh.host_trade`. docs/swsh_session.md,
 docs/swsh_trade.md.
 """
+from pathlib import Path
 import argparse
 import binascii
 import traceback
@@ -18,8 +19,11 @@ import time
 
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
+from pokeldn.host_support import open_output
+from pokeldn import pokemon as pokemon_service
+from pokeldn.host_support import write_file
 from pokeldn import config, gen8
-from pokeldn.host_support import resolve_keys
+from pokeldn.host_support import resolve_keys, needs_root
 from pokeldn.ldn import host4, mesh_protocol as mesh, reliable4
 from pokeldn.ldn.ldn_mitm_host import IpHostTransport
 from pokeldn.ldn.transport import HostTransport, board_radio, find_ap_phy
@@ -76,7 +80,7 @@ def build_advert(template=None, network_id=None, session_param=None, code="", pl
 
 def load_advert(path):
     """A file of hex (one advertisement) or 384 raw bytes, or a swsh_net_facts.json list."""
-    raw = open(path, "rb").read()
+    raw = Path(path).read_bytes()
     if path.endswith(".json"):
         return bytes.fromhex(json.loads(raw)[0]["application_data"])
     try:
@@ -88,6 +92,7 @@ def load_advert(path):
 def prepare_snapshot(source, args, app_data):
     """Build this host's trade payload from a saved or joining console's 0x84 snapshot."""
     snapshot = trade_payload.inflate_short(source)
+    original = snapshot
     identity = {}
     if args.advert is None or args.snapshot is None:
         profile = app_data[STATION_PROFILE_OFF:STATION_PROFILE_OFF + trade_payload.PROFILE_LENGTH]
@@ -101,18 +106,19 @@ def prepare_snapshot(source, args, app_data):
     snapshot = trade_payload.rewrite(snapshot, trainer_name=args.trainer_name,
                                      trainer_id=args.trainer_tid, secret_id=args.trainer_sid,
                                      **identity)
+    snapshot = original[:swsh_pokemon.PARTY_BLOCK] + snapshot[swsh_pokemon.PARTY_BLOCK:]
     at = (args.offer_slot - 1) * swsh_pokemon.SIZE_PARTY
     if args.offer_file:
-        raw = swsh_pokemon.encrypt(gen8.load(open(args.offer_file, "rb").read()))
-        raw = swsh_pokemon.build_from(raw, ot_name=args.trainer_name,
-                                      trainer_id=args.trainer_tid,
-                                      secret_id=args.trainer_sid)
+        raw = swsh_pokemon.encrypt(gen8.load(Path(args.offer_file).read_bytes()))
     else:
-        raw = snapshot[at:at + swsh_pokemon.SIZE_PARTY]
+        raw = original[at:at + swsh_pokemon.SIZE_PARTY]
     if struct.unpack_from("<I", raw)[0] == 0:
         raise ValueError(f"offer slot {args.offer_slot} is empty; pass --offer-file")
     if args.fresh_pid:
         raw = swsh_pokemon.encrypt(gen8.fresh_identity(gen8.decrypt(raw)))
+    if getattr(args, "validate_offer", False):
+        raw = pokemon_service.prepare("swsh", raw)
+        raw = swsh_pokemon.encrypt(gen8.load(raw))
     snapshot = snapshot[:at] + raw + snapshot[at + swsh_pokemon.SIZE_PARTY:]
     if args.card_set:
         edits = {}
@@ -179,7 +185,10 @@ def build_parser():
 
 def main():
     args = build_parser().parse_args()
-    if not args.ip_host and os.geteuid() != 0 and not board_radio():
+    if args.offer_file:
+        args.offer_file = pokemon_service.prepare_file("swsh", args.offer_file, fresh=args.fresh_pid)
+        args.fresh_pid = False
+    if not args.ip_host and needs_root():
         print("[sw] hosting over the radio needs root, a board (POKELDN_RADIO), or --ip-host")
         return 1
     phy = None
@@ -193,12 +202,12 @@ def main():
         raise ValueError(f"offer slot must be 1..{swsh_pokemon.PARTY_SLOTS}")
     snapshot = offer = None
     if args.snapshot:
-        snapshot, offer = prepare_snapshot(open(args.snapshot, "rb").read(), args, app_data)
+        snapshot, offer = prepare_snapshot(Path(args.snapshot).read_bytes(), args, app_data)
 
     class Net:
         application_data = app_data
     keys = session_keys(Net())
-    cap = open(args.capture, "w") if args.capture else None
+    cap = open_output(args.capture, "w") if args.capture else None
 
     def record(row):
         if cap:
@@ -262,7 +271,7 @@ def main():
             kind = row.pop("rec", None)
             record({"rec": "trade", "kind": kind, **row})
             if kind == "peer_exchange" and args.received:
-                open(args.received, "wb").write(bytes.fromhex(row["pk8"]))
+                write_file(args.received, bytes.fromhex(row['pk8']))
                 print(f"[sw] the joiner's Pokemon written to {args.received}")
 
         trades[st.ip] = host_trade.HostTrade(host.constant, st.constant, snapshot, offer, send,

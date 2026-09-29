@@ -3,8 +3,8 @@ import os
 import flet as ft
 
 from gui import theme as t
-from gui.paths import SESSION
-from gui.settings import LANGUAGES
+from pokeldn.app.paths import SESSION
+from pokeldn.app.settings import LANGUAGES
 from gui.views.widgets import PathField, open_folder
 
 LINKS = (("Documentation", "https://decryptu.github.io/pokeldn/"),

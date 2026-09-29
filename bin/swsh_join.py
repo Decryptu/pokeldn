@@ -19,8 +19,9 @@ if os.path.isdir(BUNDLED_LDN):
 
 import trio
 import ldn
+from pokeldn.host_support import open_output
 from pokeldn.ldn.transport import board_radio, find_ap_phy
-from pokeldn.host_support import resolve_keys
+from pokeldn.host_support import resolve_keys, needs_root
 from pokeldn.swsh import PASSPHRASE
 
 STALE_VIFS = ["ldn", "ldn-mon", "ldn-tap", "ldnclient"]
@@ -81,7 +82,7 @@ def build_parser():
                     help="seconds to stay in the session once joined")
     ap.add_argument("--scan-only", action="store_true",
                     help="report what is on the air and stop - the first hardware step")
-    ap.add_argument("--facts", default="scratchpad/swsh_net_facts.json",
+    ap.add_argument("--facts", default="swsh_net_facts.json",
                     help="where to write everything the advertisement tells us")
     return ap
 
@@ -99,7 +100,7 @@ def main(argv=None):
     ap = build_parser()
     args = ap.parse_args(argv)
 
-    if os.geteuid() != 0 and not board_radio():
+    if needs_root():
         ap.error("must run as root (LDN needs the raw radio)")
 
     phy = find_ap_phy(log=print) if args.phy == "auto" else args.phy
@@ -127,7 +128,7 @@ def main(argv=None):
     if not nets:
         print("[swsh] nothing on the air - is the console on the screen under test right now?")
         return 3
-    with open(args.facts, "w") as fh:
+    with open_output(args.facts, "w") as fh:
         json.dump([facts_of(n) for n in nets], fh, indent=2)
     print(f"[swsh] {len(nets)} network(s) -> {args.facts}")
 

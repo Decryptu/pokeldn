@@ -6,9 +6,10 @@ from types import SimpleNamespace
 
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
-from pokeldn.ldn import beacon, pia_connect, transport
+from pokeldn.frlg.link import beacon
+from pokeldn.ldn import pia_connect, transport
 from pokeldn.ldn import crypto as cryptomod
-from pokeldn.ldn.host_beacon import (CAPTURED_TRADE_BEACON,
+from pokeldn.frlg.link.host_beacon import (CAPTURED_TRADE_BEACON,
                                  activate_trade_app_data,
                                  build_trade_app_data)
 from pokeldn.ldn.host_pia import (PiaNonceSequence, build_host_rtt,
@@ -97,13 +98,13 @@ def test_initial_and_active_beacons_share_rfu_leader_session_id():
     session_id = bytes.fromhex("b7f1")
     profile = TrainerProfile("EMU", tid=0x5678, sid=0x1234)
     initial, active = build_trade_app_data(profile, session_id)
-    initial_record = transport._b85_decode(initial[beacon.PIA_HDR:])[:beacon.RECORD_SIZE]
+    initial_record = beacon.b85_decode(initial[beacon.PIA_HDR:])[:beacon.RECORD_SIZE]
 
     assert initial_record[10:12] == session_id
     assert initial[0x16] == 1
     assert not initial_record[17] & 0x80
 
-    active_record = transport._b85_decode(active[beacon.PIA_HDR:])[:beacon.RECORD_SIZE]
+    active_record = beacon.b85_decode(active[beacon.PIA_HDR:])[:beacon.RECORD_SIZE]
     assert active_record[10:12] == session_id
     assert active[0x16] == 2
     assert active_record[17] & 0x80

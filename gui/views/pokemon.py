@@ -2,7 +2,7 @@ import threading
 
 import flet as ft
 
-from gui import builder
+from pokeldn import pokemon as builder
 from gui import theme as t
 
 VERSIONS = {"firered": "FR", "leafgreen": "LG"}
@@ -92,18 +92,18 @@ class PokemonPicker:
 
     async def _use_file(self, e) -> None:
         files = await self.app.picker.pick_files(
-            allowed_extensions=[builder.EXTENSIONS[self.game], "bin", "ek3"],
+            allowed_extensions=[builder.EXTENSIONS[self.game], "bin", "hex", "ek3"],
             file_type=ft.FilePickerFileType.CUSTOM)
         if not files or not files[0].path:
             return
         path = files[0].path
         try:
-            info = builder.SERVICE.check(self.game, path)
+            info = builder.SERVICE.import_file(self.game, path)
         except Exception as exc:
             self._message(f"Not a Pokemon this game can take: {exc}", t.RED)
             self.control.update()
             return
-        self.value.update(file=path, summary=builder.summary(info), legal=info["legal"],
+        self.value.update(file=info["file"], summary=builder.summary(info), legal=info["legal"],
                           encounter=info["encounter"], moves=info["moves"],
                           report="" if info["legal"] else info["report"])
         self.on_change(dict(self.value))

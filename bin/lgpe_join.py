@@ -7,6 +7,7 @@
 
 docs/lgpe_session.md has the constants and their addresses.
 """
+from pathlib import Path
 import argparse
 import json
 import os
@@ -23,6 +24,8 @@ if os.path.isdir(BUNDLED_LDN):
 
 import trio
 import ldn
+from pokeldn.host_support import open_output
+from pokeldn import pokemon as pokemon_service
 from pokeldn.ldn import pia3, pia4, station9, station4
 from pokeldn.ldn import mesh_protocol as mp
 from pokeldn.ldn import clone, sync_clock, ldn_mitm
@@ -31,7 +34,7 @@ from pokeldn.ldn import reliable3
 from pokeldn.ldn import local_protocol as lp
 from pokeldn.ldn.station_protocol import ldn_constant_id, ldn_service_variable_id, station_location
 from pokeldn.ldn.transport import board_radio, find_ap_phy
-from pokeldn.host_support import resolve_keys
+from pokeldn.host_support import resolve_keys, needs_root, write_file
 from pokeldn.lgpe import (COMM_ID_PIKACHU, PASSPHRASE, PIA_PORT, PIA_VERSION, packet_iv,
                           session_keys)
 from pokeldn.lgpe.session import APP_HEADER_SIZE
@@ -178,7 +181,7 @@ def _mac(text):
 
 def _blob(text):
     if text.startswith("@"):
-        return open(text[1:], "rb").read()
+        return Path(text[1:]).read_bytes()
     return bytes.fromhex(text)
 
 
@@ -230,7 +233,7 @@ def build_parser():
     ap.add_argument("--passphrase", default=None, help="override, as ASCII")
     ap.add_argument("--hold", type=float, default=60.0)
     ap.add_argument("--scan-only", action="store_true")
-    ap.add_argument("--facts", default="scratchpad/lgpe_net_facts.json")
+    ap.add_argument("--facts", default="lgpe_net_facts.json")
     ap.add_argument("--capture", default=None,
                     help="jsonl of every datagram seen while seated, hex, with its verdict")
     ap.add_argument("--connect", action="store_true",
@@ -293,6 +296,7 @@ def build_parser():
     ap.add_argument("--leave-after", type=float, default=None, metavar="SECONDS",
                     help="leave the session the way a console backs out of its trade screen, "
                          "this long after our offer went out (docs/lgpe_session.md)")
+    ap.add_argument("--received", help="write the peer's offered PB7 here")
     ap.add_argument("--fresh-pid", action="store_true",
                     help="offer the --offer structure under a new PID and encryption constant, "
                          "shiny state kept, so a save that took it before takes it again")
@@ -348,6 +352,10 @@ def pick(nets, want):
 def main(argv=None):
     ap = build_parser()
     args = ap.parse_args(argv)
+    if args.offer and args.offer != "echo":
+        args.offer = pokemon_service.prepare_file("lgpe", args.offer, fresh=getattr(args, "fresh_pid", False))
+        if hasattr(args, "fresh_pid"):
+            args.fresh_pid = False
     fresh_offer(args, "[lg]")
     if args.over_ip:
         if not args.our_mac:
@@ -355,7 +363,7 @@ def main(argv=None):
         if args.app_data and not args.host_mac:
             ap.error("--app-data replaces the scan, so it needs --host-mac with it")
         return _main_over_ip(args)
-    if os.geteuid() != 0 and not board_radio():
+    if needs_root():
         ap.error("must run as root (LDN needs the raw radio)")
     phy = find_ap_phy(log=print) if args.phy == "auto" else args.phy
     if phy is None:
@@ -386,7 +394,7 @@ def main(argv=None):
     if not nets:
         print("[lg] nothing on the air - is the console on the link-trade search screen right now?")
         return 3
-    with open(args.facts, "w") as fh:
+    with open_output(args.facts, "w") as fh:
         json.dump([facts_of(n) for n in nets], fh, indent=2)
     print(f"[lg] {len(nets)} network(s) -> {args.facts}")
 
@@ -468,7 +476,7 @@ def _main_over_ip(args):
 
 
 def _run(args, net, keys, facts, opener):
-    cap = open(args.capture, "w") if args.capture else None
+    cap = open_output(args.capture, "w") if args.capture else None
 
     def record(**kw):
         if cap:
@@ -630,7 +638,7 @@ def _run(args, net, keys, facts, opener):
                 if state.get("payloads") and time.monotonic() >= state.get("next_payload", 0):
                     path = state["payloads"].pop(0)
                     state["next_payload"] = time.monotonic() + args.reliable_interval
-                    body = open(path, "rb").read()
+                    body = Path(path).read_bytes()
                     if args.our_trainer:
                         # A capture between two emulators sharing a save carries the host's own
                         # trainer id.
@@ -767,8 +775,8 @@ def _run(args, net, keys, facts, opener):
                                               f"{r['size']}B seq={r['sequence']:#x} "
                                               f"{r['payload'][:32].hex()}")
                                         n = len(w.received)
-                                        open(f"{args.capture or 'scratchpad/lgpe'}"
-                                             f".payload{n}.bin", "wb").write(r["payload"])
+                                        if args.capture:
+                                            write_file(f"{args.capture}.payload{n}.bin", r["payload"])
                                         msg = pb7.parse_message(r["payload"])
                                         if msg and msg["kind"] == pb7.OFFER_MESSAGE:
                                             _answer_offer(args, state, msg,
@@ -866,6 +874,9 @@ def _run(args, net, keys, facts, opener):
         cleanup_stale()
         _warn_if_mid_trade()
         return 6
+    finally:
+        if cap:
+            cap.close()
 
 
 if __name__ == "__main__":

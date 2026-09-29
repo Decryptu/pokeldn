@@ -13,6 +13,8 @@ if os.path.isdir(BUNDLED):
     sys.path.insert(0, BUNDLED)
 
 import trio, ldn
+from pokeldn.host_support import open_output
+from pokeldn import pokemon as pokemon_service
 from pokeldn.bdsp import COMM_ID, PASSPHRASE, PIA_PORT, pokemon, room, session_keys
 from pokeldn.ldn import (local_protocol as lp, mesh_protocol as mp, reliable5 as rl,
                         rtt_protocol as rtt, station_protocol as stp)
@@ -22,7 +24,7 @@ from pokeldn.ldn.pia5 import (PiaHeader5, is_pia5, ciphertext, gcm_iv, ldn_nonce
 from pokeldn.ldn.transport import board_radio, find_ap_phy
 
 UNRELIABLE_PROTOCOL = 0x68  # its payload is the game's live state
-from pokeldn.host_support import resolve_keys
+from pokeldn.host_support import resolve_keys, needs_root
 from pokeldn.ldn import show_done
 
 
@@ -102,7 +104,7 @@ async def main_async(args):
     param.name, param.app_version = args.name.encode(), net.app_version
     param.phyname, param.ifname = phy, args.ifname
 
-    cap = open(args.capture, "w") if args.capture else None
+    cap = open_output(args.capture, "w") if args.capture else None
 
     def record(**kw):
         if cap:
@@ -1554,7 +1556,7 @@ def build_parser():
                     help="the name in OUR trainer record")
     ap.add_argument("--trade-tid", type=int, default=44466, metavar="N")
     ap.add_argument("--trade-sid", type=int, default=4080, metavar="N")
-    ap.add_argument("--trade-save-poke", default="scratchpad/their_poke.pb8", metavar="FILE",
+    ap.add_argument("--trade-save-poke", default="received.pb8", metavar="FILE",
                     help="where to write the Pokemon the console offers")
     ap.add_argument("--join-offset-x", type=float, default=2.0, metavar="U",
                     help="where our character spawns relative to the console's own, on x. The "
@@ -1696,7 +1698,14 @@ def build_parser():
 def main():
     ap = build_parser()
     args = ap.parse_args()
-    if os.geteuid() != 0 and not board_radio():
+    if args.trade_template:
+        fields = {k: v for k, v in (("nickname", args.trade_nickname), ("ot_name", args.trade_ot))
+                  if v is not None}
+        args.trade_template = pokemon_service.prepare_file("bdsp", args.trade_template,
+            fresh=args.fresh_pid, fields=fields)
+        args.trade_nickname = args.trade_ot = None
+        args.fresh_pid = False
+    if needs_root():
         ap.error("must run as root")
     if args.complete_trade and not args.trade_reply:
         # --complete-trade answers the last trade message; those before it need --trade-reply.

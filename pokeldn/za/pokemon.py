@@ -1,7 +1,7 @@
 """The Pokemon record a Legends Z-A offer carries: Scarlet's layout and crypto, imported from
 `pokeldn.sv.pokemon` (docs/za.md, The offered Pokemon).
 """
-from pokeldn.sv import pokemon as _sv
+from pokeldn import gen9 as _sv
 
 SIZE_STORED = _sv.SIZE_STORED                 # 0x148
 SIZE_PARTY = _sv.SIZE_PARTY                   # 0x158

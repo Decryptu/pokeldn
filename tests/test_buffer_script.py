@@ -1,5 +1,6 @@
 """CLI_RUN_BUFFER_SCRIPT payloads, executed under unicorn and through ConsoleClientModel."""
 
+from pathlib import Path
 import os
 import shutil
 import subprocess
@@ -1046,7 +1047,7 @@ def test_the_console_sums_are_the_recurrence_over_its_own_cartridge():
 @pytest.mark.skipif(not os.path.exists(FRENCH_FIRERED), reason="no French FireRed image")
 def test_the_default_run_over_french_firered_answers_what_the_image_sums_to():
     """The run line's range: 16 MB in 128 sums over the retail image."""
-    rom = open(FRENCH_FIRERED, "rb").read()
+    rom = Path(FRENCH_FIRERED).read_bytes()
     code = buffer_script.build_rom_checksum()
 
     repeated = buffer_script.emulate_repeating(code, rom=rom)
@@ -1170,13 +1171,13 @@ def test_the_server_refuses_a_rom_checksum_whose_answer_is_not_its_size():
             buffer_dump_size=1024, buffer_decode=buffer_script.ROM_CHECKSUM)
 
 
-def test_each_console_build_is_compared_with_its_own_image():
+def test_rom_comparison_requires_an_explicit_reference():
     run = _run_config(["--buffer-script", "rom-checksum", "--sum-start", "0x08120000",
                        "--sum-end", "0x08140000", "--sum-block", "0x400"])
     plan = configmod.plan_builds(run.payload)
 
-    assert {code: chosen.buffer_reference for code, chosen in plan.per_build.items()} \
-        == configmod.REFERENCE_ROMS
+    assert plan.distribution.buffer_reference is None
+    assert plan.per_build is None
     assert buffer_script.rom_checksum_parameters(plan.distribution.buffer_code) == {
         "start": 0x08120000, "end": 0x08140000, "block": 0x400,
         "budget": buffer_script.ROM_CHECKSUM_DEFAULT_BUDGET, "max_calls": 10}

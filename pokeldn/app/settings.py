@@ -4,7 +4,7 @@ import random
 from dataclasses import asdict, dataclass, field
 from pathlib import Path
 
-from gui.paths import DATA, RECEIVED
+from pokeldn.app.paths import DATA, RECEIVED
 
 PATH = DATA / "settings.json"
 LANGUAGES = (("2", "English"), ("3", "French"), ("5", "German"), ("4", "Italian"), ("7", "Spanish"),
@@ -20,7 +20,7 @@ class Settings:
     capture: bool = True
     board_trace: bool = False
     firmware: str = ""
-    # The trainer every built Pokemon belongs to.
+    # Trainer used for generated encounters.
     ot: str = "PkCamp"
     tid: int = field(default_factory=lambda: random.randint(1, 65535))
     sid: int = field(default_factory=lambda: random.randint(1, 65535))
@@ -31,7 +31,7 @@ class Settings:
     def save(self) -> None:
         PATH.parent.mkdir(parents=True, exist_ok=True)
         tmp = PATH.with_suffix(".tmp")
-        tmp.write_text(json.dumps(asdict(self), indent=2))
+        tmp.write_text(json.dumps(asdict(self), indent=2), encoding="utf-8")
         os.replace(tmp, PATH)
 
     def trainer(self) -> dict:
@@ -40,7 +40,9 @@ class Settings:
 
 def load() -> Settings:
     try:
-        data = json.loads(PATH.read_text())
+        data = json.loads(PATH.read_text(encoding="utf-8"))
+        if not isinstance(data, dict):
+            raise ValueError("settings must be an object")
     except (OSError, ValueError):
         settings = Settings()
         settings.save()   # keeps the trainer ids drawn above

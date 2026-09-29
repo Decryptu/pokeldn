@@ -5,7 +5,7 @@ from dataclasses import dataclass, field
 import flet as ft
 
 from gui import theme as t
-from gui.paths import ROOT
+from pokeldn.app.paths import ROOT
 
 DOCS = os.path.join(ROOT, "docs")
 GUIDE = os.path.join(ROOT, "gui", "guide.md")

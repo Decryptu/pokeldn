@@ -1,60 +1,6 @@
-"""FRLG advertisement application data: the 0x5C Pia system header (docs/ldn.md), then a custom
-base85 of the 24-byte RFU record (LE): [0:2] trainer id, [2:10] name (0xFF-padded), [10:12] RFU
-session id, [12:20] partnerInfo, [20:24] game data. Inverse of transport._b85_decode.
-"""
-
-from pokeldn.frlg.text import charmap
+"""Pia system advertisement header (docs/ldn.md)."""
 
 PIA_HDR = 0x5C
-RECORD_SIZE = 24
-
-RFU_SERIAL_GAME = 0x0002
-# Colosseum Single Battle searches with LINK_GROUP_SINGLE_BATTLE, which accepts this activity alone
-# [sAcceptedActivityIds_SingleBattle, src/data/union_room.h:398].
-ACTIVITY_BATTLE_SINGLE = 1
-ACTIVITY_TRADE = 4
-ACTIVITY_SEARCH = 12
-ACTIVITY_WONDER_CARD = 21
-ACTIVITY_WONDER_NEWS = 22
-# Union Room search activities: docs/frlg_link.md, Getting listed.
-IN_UNION_ROOM = 1 << 6
-LANGUAGE_ENGLISH = 2
-VERSION_FIRE_RED = 4
-
-# The search word at record[16:18] (docs/frlg_gift.md).
-SEARCH_WORD_OFFSET = 16
-SEARCH_ACTIVITY_MASK = 0x007F
-SEARCH_UNKNOWN_BIT7 = 0x0080
-SEARCH_VERSION_MASK = 0x0700
-SEARCH_VERSION_SHIFT = 8
-SEARCH_LANGUAGE_MASK = 0x3800
-SEARCH_LANGUAGE_SHIFT = 11
-SEARCH_HAS_CARD = 0x4000
-SEARCH_STARTED_ACTIVITY = 1 << 15
-
-# Trading-board fields (docs/frlg_link.md, The trading board); bits 0-1 of byte 18 are unknown and
-# kept.
-TRADE_BOARD_TYPE_OFFSET = 18
-TRADE_BOARD_LEVEL_OFFSET = 19
-TRADE_BOARD_SPECIES_OFFSET = 22
-# include/constants/pokemon.h; 9 is TYPE_MYSTERY, unused for a request.
-TYPE_NAMES = {
-    "normal": 0, "fighting": 1, "flying": 2, "poison": 3, "ground": 4, "rock": 5, "bug": 6,
-    "ghost": 7, "steel": 8, "fire": 10, "water": 11, "grass": 12, "electric": 13, "psychic": 14,
-    "ice": 15, "dragon": 16, "dark": 17,
-}
-
-
-def set_trade_board(record, species, level, wanted_type):
-    """Register (species, level) on the trading board, asking for wanted_type in return."""
-    rec = bytearray(record)
-    if not 0 <= species < 1024 or not 0 <= level < 128 or not 0 <= wanted_type < 64:
-        raise ValueError("trade board fields out of range")
-    rec[TRADE_BOARD_SPECIES_OFFSET:TRADE_BOARD_SPECIES_OFFSET + 2] = species.to_bytes(2, "little")
-    rec[TRADE_BOARD_LEVEL_OFFSET] = (rec[TRADE_BOARD_LEVEL_OFFSET] & 0x01) | ((level & 0x7F) << 1)
-    rec[TRADE_BOARD_TYPE_OFFSET] = (rec[TRADE_BOARD_TYPE_OFFSET] & 0x03) | ((wanted_type & 0x3F) << 2)
-    return bytes(rec)
-
 
 # Pia 6.16-6.41 system header (docs/ldn.md), values from a real FRLG beacon. The console's Pia layer
 # rejects a zero-filled header.
@@ -107,43 +53,3 @@ def decode_pia_header(header):
         "name_encoding": enc,
         "nickname": name,
     }
-
-
-def _b85_char(digit):
-    """Digit 0..84 -> alphabet byte 0x23.., skipping 0x5C."""
-    c = 0x23 + (digit % 85)
-    return c + 1 if c >= 0x5C else c
-
-
-def b85_encode(data):
-    """4-byte LE groups -> 5 base85 chars each, low digit first."""
-    data = bytes(data)
-    if len(data) % 4:
-        data = data.ljust(len(data) + (4 - len(data) % 4), b"\x00")
-    out = bytearray()
-    for i in range(0, len(data), 4):
-        v = int.from_bytes(data[i:i + 4], "little")
-        for _ in range(5):
-            out.append(_b85_char(v % 85))
-            v //= 85
-    return bytes(out)
-
-
-def encode_name(name, width=8):
-    return charmap.encode(name or "", width=width, pad=0xFF)
-
-
-def mutate_beacon(captured_app_data, *, name=None, trainer_id=None, rfu_session_id=None):
-    """Clone a captured host's application data, Pia header verbatim, re-encoding only the
-    overridden record fields."""
-    from pokeldn.ldn.transport import _b85_decode
-    captured = bytes(captured_app_data)
-    header = captured[:PIA_HDR]
-    rec = bytearray(_b85_decode(captured[PIA_HDR:])[:RECORD_SIZE].ljust(RECORD_SIZE, b"\x00"))
-    if trainer_id is not None:
-        rec[0:2] = (trainer_id & 0xFFFF).to_bytes(2, "little")
-    if name is not None:
-        rec[2:10] = encode_name(name, width=8)
-    if rfu_session_id is not None:
-        rec[10:12] = (rfu_session_id & 0xFFFF).to_bytes(2, "little")
-    return header + b85_encode(bytes(rec))

@@ -20,12 +20,14 @@ sys.path.insert(0, PROJECT_ROOT)
 
 import pathlib
 
+from pokeldn.host_support import open_output
+from pokeldn import pokemon as pokemon_service
 from pokeldn.bdsp import pokemon, room
 from pokeldn.bdsp.host import (APP_VERSION, MAX_PARTICIPANTS, SCENE_UNION_ROOM,
                                SCENE_UNION_ROOM_PASSWORD, Advertisement,
                                HostSession, TradePartner)
 from pokeldn.bdsp.session import COMM_ID, PASSPHRASE
-from pokeldn.host_support import resolve_keys
+from pokeldn.host_support import resolve_keys, needs_root
 from pokeldn.ldn.transport import HostTransport, board_radio, find_ap_phy
 
 SHOWN = {"seat", "left", "session_ack", "connection_request", "request_not_ours",
@@ -83,7 +85,11 @@ def build_parser():
 
 def main(argv=None):
     args = build_parser().parse_args(argv)
-    if os.geteuid() != 0 and not board_radio():
+    if args.offer and args.offer != "echo":
+        args.offer = pokemon_service.prepare_file("bdsp", args.offer, fresh=getattr(args, "fresh_pid", False))
+        if hasattr(args, "fresh_pid"):
+            args.fresh_pid = False
+    if needs_root():
         print("[bh] needs the ESP32 board (POKELDN_RADIO) or root"); return 1
     phy = find_ap_phy(log=print) if args.phy == "auto" else args.phy
     if phy is None:
@@ -102,7 +108,7 @@ def main(argv=None):
     x, y, z, rot = (float(v) for v in args.at.split(","))
     join = room.build_join(x, y, z, rot_y=int(rot), avatar_id=args.avatar)
 
-    cap = open(args.capture, "w") if args.capture else None
+    cap = open_output(args.capture, "w") if args.capture else None
     t0 = time.monotonic()
 
     def record(**kw):
@@ -117,7 +123,7 @@ def main(argv=None):
 
     offer = None
     if args.offer:
-        offer = pathlib.Path(args.offer).read_bytes()[:0x148]
+        offer = pokemon.build_from(pathlib.Path(args.offer).read_bytes())
         if args.fresh_pid:
             offer = pokemon.fresh(offer)
         o = pokemon.read(offer)
@@ -132,7 +138,7 @@ def main(argv=None):
 
     def save_theirs(n, raw):
         if prefix:
-            pathlib.Path(f"{prefix}_{n}.pb8").write_bytes(raw)
+            write_file(f'{prefix}_{n}.pb8', raw)
 
     partner = TradePartner(offer, tname, int(tid), int(sid), complete=args.complete_trade,
                            approach_delay=args.approach_delay, state=args.state,

@@ -6,6 +6,7 @@
     (them) Jubilife Village, the trading post, Simona (Trado) -> echanger des pokemon !
            -> local -> the warning -> the SAME eight digits -> wait on the search screen
 """
+from pathlib import Path
 import argparse
 import binascii
 import json
@@ -16,14 +17,17 @@ import traceback
 
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
+from pokeldn.host_support import open_output
+from pokeldn import pokemon as pokemon_service
 from pokeldn import config
 from pokeldn import gen8, pla
 from pokeldn.ldn import pia6, pia_connect, reliable5, rtt_protocol, show_done
-from pokeldn.pla import channel_table, data_exchange, game_channel, trade_box
+from pokeldn.ldn import channel_table
+from pokeldn.pla import data_exchange, game_channel, trade_box
 from pokeldn.pla import pokemon as pla_pokemon
 from pokeldn.ldn.ldn_mitm_host import IpHostTransport
 from pokeldn.ldn.transport import HostTransport, board_radio, find_ap_phy
-from pokeldn.host_support import resolve_keys
+from pokeldn.host_support import resolve_keys, needs_root
 
 PROTOCOL_NAMES = {
     0x08: "keep alive", 0x2C: "net", 0x30: "turn", 0x58: "rtt", 0x65: "sync",
@@ -260,6 +264,15 @@ def build_parser():
 def main():
     ap = build_parser()
     args = ap.parse_args()
+    if args.trade_box_record:
+        edits = {k: v for k, v in (("level", args.trade_box_level),
+                 ("experience", args.trade_box_experience), ("nickname", args.trade_box_nickname),
+                 ("pid", int(args.trade_box_pid, 16) if args.trade_box_pid else None)) if v is not None}
+        args.trade_box_record = pokemon_service.prepare_file("pla", args.trade_box_record,
+            fresh=args.fresh_pid, transform=lambda raw: pla_pokemon.encrypt(
+                pla_pokemon.write(pla_pokemon.load(raw), **edits)))
+        args.trade_box_level = args.trade_box_experience = args.trade_box_nickname = args.trade_box_pid = None
+        args.fresh_pid = False
 
     if len(args.code) != pla.LINK_CODE_LEN or not args.code.isdigit():
         ap.error(f"--code is {pla.LINK_CODE_LEN} digits")
@@ -269,7 +282,7 @@ def main():
         ap.error("--host-player-id must be hex")
     if len(host_player_id) != 16:
         ap.error("--host-player-id must be 16 bytes")
-    if not args.ip_host and os.geteuid() != 0 and not board_radio():
+    if not args.ip_host and needs_root():
         ap.error("hosting over the radio needs root; re-run under sudo, or pass --ip-host")
 
     phy = None
@@ -300,33 +313,8 @@ def main():
         print(f"[pla] radio profile: skip_encryption={machine.skip_encryption} "
               f"accept_decrypted_ccmp={machine.accept_decrypted_ccmp}")
 
-    cap = open(args.capture, "w") if args.capture else None
-
-    def record(**row):
-        if cap:
-            cap.write(json.dumps(row) + "\n")
-            cap.flush()
-
-    try:
-        transport.start()
-    except RuntimeError as exc:
-        print(f"[pla] the network did not come up: {exc}")
-        return 2
-
-    keys = pla.session_keys(transport.ssid)
-    print(f"[pla] ssid={transport.ssid.hex()} network_id={keys.network_id:#010x} "
-          f"us={transport.our_ip}")
-    record(rec="host", ssid=transport.ssid.hex(), network_id=keys.network_id,
-           our_ip=transport.our_ip, code=args.code, app_data=app_data.hex())
-
-    deadline = time.time() + args.seconds
-    seen, authed, failed = 0, 0, 0
-    net_seqid, net_sent, answered, seen_ips = 2, {}, set(), set()
-    reliable_high = {}
-    hello_sent = set()
-    host_seq = {}
     if args.data_exchange_record:
-        exchange_record = open(os.path.expanduser(args.data_exchange_record), "rb").read()
+        exchange_record = Path(os.path.expanduser(args.data_exchange_record)).read_bytes()
     else:
         exchange_record = data_exchange.build_record(
             player_id=(bytes.fromhex(args.data_exchange_id) if args.data_exchange_id else None),
@@ -343,7 +331,7 @@ def main():
 
     def build_offer():
         """-> the encrypted offer; a rebuild keeps the run's one --fresh-pid draw."""
-        template = (pla_pokemon.encrypt(pla_pokemon.load(open(box_file, "rb").read()))
+        template = (pla_pokemon.encrypt(pla_pokemon.load(Path(box_file).read_bytes()))
                     if box_file else trade_box.REFERENCE_RECORD)
         if args.trade_box_ours:
             template = trade_box.build_our_record(
@@ -355,7 +343,7 @@ def main():
             draw = iter((fresh_draw[:2], fresh_draw[2:]))
             template = pla_pokemon.encrypt(gen8.fresh_identity(
                 pla_pokemon.decrypt(template), rand=lambda n: next(draw)))
-        return template
+        return pokemon_service.validate("pla", template)
 
     # Re-read when the file changes, so a new offer needs no restart of the session.
     box_state = {"mtime": os.path.getmtime(box_file) if box_file else None,
@@ -379,6 +367,34 @@ def main():
     tx_window = reliable5.SendWindow(GAME_CHANNEL_RESEND)
     # One send sequence per stream, mirrors included: a mirror reusing the console's id makes its
     # window drop our next message as already delivered.
+
+    cap = open_output(args.capture, "w") if args.capture else None
+
+    def record(**row):
+        if cap:
+            cap.write(json.dumps(row) + "\n")
+            cap.flush()
+
+    try:
+        transport.start()
+    except RuntimeError as exc:
+        print(f"[pla] the network did not come up: {exc}")
+        if cap:
+            cap.close()
+        return 2
+
+    keys = pla.session_keys(transport.ssid)
+    print(f"[pla] ssid={transport.ssid.hex()} network_id={keys.network_id:#010x} "
+          f"us={transport.our_ip}")
+    record(rec="host", ssid=transport.ssid.hex(), network_id=keys.network_id,
+           our_ip=transport.our_ip, code=args.code, app_data=app_data.hex())
+
+    deadline = time.time() + args.seconds
+    seen, authed, failed = 0, 0, 0
+    net_seqid, net_sent, answered, seen_ips = 2, {}, set(), set()
+    reliable_high = {}
+    hello_sent = set()
+    host_seq = {}
     box_seq = {}
 
     def next_seq(src_ip, port):
@@ -646,7 +662,7 @@ def main():
                                                        for c in stem)
                                         path = os.path.join(os.path.expanduser(args.trade_box_collect),
                                                             f"{stem}.pa8")
-                                        with open(path, "wb") as fh:
+                                        with open_output(path, "wb") as fh:
                                             fh.write(offered["record"])
                                         print(f"[pla] wrote {path}")
                                 # Announce back every key the console opens on port 1; it sends on a

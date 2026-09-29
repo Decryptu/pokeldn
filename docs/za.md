@@ -331,19 +331,19 @@ sends four `0200b901XX` steps, 03 and 06 at once, 0b and 0e about 14 s later. Th
 
 The offer's record is the generation 8 and 9 entity: four 0x50-byte blocks shuffled by the
 encryption constant, 0x148 bytes stored, 0x158 with the party tail, the checksum over the stored
-body. `pokeldn.sv.pokemon.decrypt` and `read` handle it unchanged; the sample offer reads a shiny
+body. `pokeldn.gen9.decrypt` and `read` handle it unchanged; the sample offer reads a shiny
 Noibat, level 44, perfect IVs, ball 22, ability 151, moves 542, 103, 403 and 162. Nine records from
 three reference sessions all read version 52, language 10, met locations 200 to 212, met dates in
 October 2025, trainer id 5071, secret id 14217, original trainer "XS", zero height and weight
 scalars; the handler's name reads "Player" only when the current handler is set.
 
-A record composed from 344 zero bytes by `pokeldn.sv.pokemon.build` (or edited with
+A record composed from 344 zero bytes by `pokeldn.gen9.build` (or edited with
 `pokeldn.za.pokemon.build_offer`) trades and is kept:
 
 | field | what the receiving game does |
 |---|---|
 | nickname 0x58, nicknamed bit 0x8F bit 7, IVs 0x8C | kept, Scarlet's layout |
-| species 0x08 | national below 917, from 917 the generation 9 internal index (`pokeldn.sv.pokemon.internal_index`, `national`) |
+| species 0x08 | national below 917, from 917 the generation 9 internal index (`pokeldn.gen9.internal_index`, `national`) |
 | moves 0x72, four u16 | kept as sent (446, 328, 103, 784 arrived as Stealth Rock, Sand Tomb, Screech, Breaking Swipe) |
 | level | from the experience at 0x10: 1,000,000 on an Onix with the party level byte at 44 arrived at level 100 |
 | stats, current HP | recomputed from the species; left at zero they are filled in |

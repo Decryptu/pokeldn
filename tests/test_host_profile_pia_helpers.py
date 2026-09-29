@@ -7,8 +7,9 @@ from types import SimpleNamespace
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
 from pokeldn.frlg.link import linkplayer
-from pokeldn.ldn import beacon, crypto, pia_connect, reliable, transport
-from pokeldn.ldn.host_beacon import build_trade_app_data, parse_mac
+from pokeldn.frlg.link import beacon
+from pokeldn.ldn import crypto, pia_connect, reliable, transport
+from pokeldn.frlg.link.host_beacon import build_trade_app_data, parse_mac
 from pokeldn.ldn.host_pia import (
     HostPeerProtocol,
     PiaNonceSequence,
@@ -73,7 +74,7 @@ def test_identity_is_consistent_across_discovery_link_player_and_card():
     card = profile.build_trainer_card(
         mon_species=[1, 2, 3], name_pad=linkplayer.HOST_NAME_PAD)
     inactive, active = build_trade_app_data(profile, b"\xb7\xf1")
-    record = transport._b85_decode(inactive[beacon.PIA_HDR:])[:beacon.RECORD_SIZE]
+    record = beacon.b85_decode(inactive[beacon.PIA_HDR:])[:beacon.RECORD_SIZE]
 
     assert player.name == profile.name
     assert profile.discovery_name == profile.session_name == profile.name
@@ -99,7 +100,7 @@ def test_identity_is_consistent_across_discovery_link_player_and_card():
     assert beacon.decode_pia_header(inactive)["nickname"] == profile.name
     assert inactive[0x16] == 1 and not record[17] & 0x80
 
-    active_record = transport._b85_decode(active[beacon.PIA_HDR:])[:beacon.RECORD_SIZE]
+    active_record = beacon.b85_decode(active[beacon.PIA_HDR:])[:beacon.RECORD_SIZE]
     assert active[0x16] == 2 and active_record[17] & 0x80
     assert active_record[:17] == record[:17]
 

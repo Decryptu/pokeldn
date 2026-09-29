@@ -1,4 +1,5 @@
 """tools/switch/swsh_save.py: the Sword/Shield save block layers, round-tripped and patched in place."""
+from pathlib import Path
 import os
 import swsh_save
 
@@ -33,7 +34,7 @@ def test_the_shield_save_on_the_share_decrypts_when_present():
                               "0000000000000001/0/main")
     if not os.path.exists(path):
         return
-    raw = open(path, "rb").read()
+    raw = Path(path).read_bytes()
     assert swsh_save.hash_ok(raw)
     by_key = {b[0]: b for b in swsh_save.decrypt(raw)}
     assert by_key[0xf25c070e][3][0xB0:0xBE].decode("utf-16-le") == "Ryujinx"
@@ -47,7 +48,7 @@ def test_the_poisoned_shield_save_loses_its_invalid_row_and_nothing_else_when_pr
                               "0000000000000001/0/main")
     if not os.path.exists(path):
         return
-    raw = open(path, "rb").read()
+    raw = Path(path).read_bytes()
     before = {b[0]: b[3] for b in swsh_save.decrypt(raw)}
     fixed, dropped = swsh_save.drop_invalid_items(before[swsh_save.MY_ITEM])
     assert [(p, w & 0x7FFF, (w >> 15) & 0x7FFF) for p, w in dropped] == [("Medicine", 16389, 5)]

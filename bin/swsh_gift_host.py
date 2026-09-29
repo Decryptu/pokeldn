@@ -9,14 +9,17 @@ per advertisement.
 
     (them) Mystery Gift -> Recevoir un Cadeau Mystere -> Via communication sans fil locale
 """
+from pathlib import Path
 import argparse
 import os
 import sys
+import struct
 import time
 
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
-from pokeldn import config
+from pokeldn import config, pokemon
+from pokeldn.host_support import write_file
 from pokeldn.ldn import transport
 from pokeldn.ldn.transport import HostTransport
 from pokeldn.swsh import COMM_ID, PASSPHRASE, beacon, wc8
@@ -39,7 +42,7 @@ def build_record(args):
 
 def _base_record(args):
     if args.record:
-        rec = open(args.record, "rb").read()
+        rec = Path(args.record).read_bytes()
         if len(rec) != wc8.RECORD:
             raise SystemExit(f"{args.record} is {len(rec)} bytes, not {wc8.RECORD}")
         return rec
@@ -105,21 +108,26 @@ def build_parser():
     p.add_argument("--protocol", type=int, default=LDN_PROTOCOL, choices=(1, 3),
                    help="LDN advertisement protocol version")
     p.add_argument("--dump", help="write the record and its fragments here and exit")
-    p.add_argument("--image", default="scratchpad/swsh/main.bin",
-                   help="Sword's main NSO; the record goes through the game's validator in it")
+    p.add_argument("--image", default=None,
+                   help="optional research check using Sword's main NSO")
     p.add_argument("--no-validate", action="store_true",
-                   help="send without running the game's validator")
+                   help="skip the optional NSO check; PKHeX validation remains required")
     return p
 
 
-def main():
-    args = build_parser().parse_args()
+def main(argv=None):
+    args = build_parser().parse_args(argv)
 
-    record = build_record(args)
+    try:
+        record = build_record(args)
+        pokemon.SERVICE.validate_gift(record)
+    except (pokemon.BuilderError, ValueError, struct.error) as exc:
+        print(str(exc), file=sys.stderr)
+        return 1
     fragments = beacon.build_message(record)
     print(f"record {len(record)} bytes, checksum {wc8.record_crc(record):#06x}, "
           f"{len(fragments)} fragments")
-    if not args.no_validate:
+    if args.image and not args.no_validate:
         if not os.path.exists(args.image):
             print(f"{args.image} is missing: the record cannot be validated; pass --image or "
                   f"--no-validate", file=sys.stderr)
@@ -131,9 +139,9 @@ def main():
             return 1
 
     if args.dump:
-        open(args.dump, "wb").write(record)
+        write_file(args.dump, record)
         for i, f in enumerate(fragments):
-            open(f"{args.dump}.frag{i}", "wb").write(f)
+            write_file(f"{args.dump}.frag{i}", f)
         print(f"wrote {args.dump} and {len(fragments)} fragments")
         return 0
 

@@ -6,8 +6,9 @@ import time
 import flet as ft
 import serial
 
-from gui import board, runner
-from gui.paths import SESSION
+from gui import board
+from pokeldn.app import runner
+from pokeldn.app.paths import SESSION
 from gui import theme as t
 from gui.views.widgets import Log
 

@@ -6,7 +6,8 @@ import os
 import time
 
 from pokeldn.ldn import pia6, pia_connect, reliable5
-from pokeldn.pla import channel_table, data_exchange, game_channel, trade_box
+from pokeldn.ldn import channel_table
+from pokeldn.pla import data_exchange, game_channel, trade_box
 from pokeldn.ldn import show_done
 
 PROTO_NET = 0x2C

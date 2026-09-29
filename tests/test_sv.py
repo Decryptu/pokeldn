@@ -1,4 +1,5 @@
 """Scarlet / Violet: the advertisement and the reliable acks, pinned to retail Scarlet 4.0.0 captures."""
+from pathlib import Path
 import os
 import sys
 
@@ -264,7 +265,7 @@ def test_the_trade_stage_follows_the_pair_host_message_for_message():
     """Fed the pair joiner's 0x7C messages in order, the host stage sends the pair host's, byte for byte."""
     from pokeldn.sv import trade
     path = os.path.join(os.path.dirname(__file__), "data", "sv_pair_trade.txt")
-    rows = [line.split() for line in open(path) if line.strip()]
+    rows = [line.split() for line in Path(path).read_text(encoding="utf-8").splitlines() if line.strip()]
     rows = rows[2:]                                   # the key-0x80 opens belong to the seat
     host_offer = bytes.fromhex(rows[0][2])[4:]
     assert rows[0][0] == "TX" and len(host_offer) == trade.OFFER_SIZE
@@ -308,7 +309,7 @@ def test_the_joiner_stage_follows_the_pair_joiner_message_for_message():
     """Fed the pair host's messages, the joiner stage sends the pair joiner's, byte for byte."""
     from pokeldn.sv import trade
     path = os.path.join(os.path.dirname(__file__), "data", "sv_pair_trade.txt")
-    rows = [line.split() for line in open(path) if line.strip()]
+    rows = [line.split() for line in Path(path).read_text(encoding="utf-8").splitlines() if line.strip()]
     joiner_offer = bytes.fromhex(rows[3][2])[4:]
     assert rows[3][0] == "RX" and len(joiner_offer) == trade.OFFER_SIZE
     stage = trade.JoinerTradeStage(joiner_offer)
@@ -358,7 +359,7 @@ def test_a_second_offer_runs_the_cycle_again_in_one_seat():
     """Two records carry two trades in one seat, the trade key left open."""
     from pokeldn.sv import trade
     path = os.path.join(os.path.dirname(__file__), "data", "sv_pair_trade.txt")
-    rows = [line.split() for line in open(path) if line.strip()]
+    rows = [line.split() for line in Path(path).read_text(encoding="utf-8").splitlines() if line.strip()]
     first = bytes.fromhex(rows[3][2])[4:]
     second = bytes([0x5A]) + bytes(trade.OFFER_SIZE - 1)
     stage = trade.JoinerTradeStage([first, second])

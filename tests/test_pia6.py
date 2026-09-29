@@ -1,4 +1,5 @@
 """Pia version 11 (Legends Arceus): header, constants from its parser, keys against `crypto.PiaCrypto`."""
+from pathlib import Path
 import os
 import struct
 
@@ -99,7 +100,7 @@ def test_a_wrong_source_address_fails_the_tag():
 @pytest.mark.skipif(not os.path.exists(MAIN), reason="scratchpad/pla/main_111.bin is untracked")
 def test_the_constants_are_the_ones_arceus_enforces():
     """The header initializer at 0x6f0744 and the validator at 0x6f07d0, read back word by word."""
-    img = open(MAIN, "rb").read()
+    img = Path(MAIN).read_bytes()
 
     def word(addr):
         return struct.unpack_from("<I", img, addr)[0]
@@ -131,7 +132,7 @@ def test_the_game_package_agrees_with_the_band_module():
 def test_the_constants_come_out_of_the_binary():
     from pokeldn import pla
 
-    img = open(MAIN, "rb").read()
+    img = Path(MAIN).read_bytes()
     assert img[0x3985308:0x3985308 + 16] == pla.GAME_KEY
     assert img[0x3985319:0x3985319 + 64] == pla.PASSPHRASE
     assert img[0x3985319 + 64] == 0                     # NUL-terminated, and 0x40 is the length

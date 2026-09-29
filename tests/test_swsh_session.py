@@ -109,7 +109,7 @@ def test_the_host_uses_the_live_snapshot_and_replaces_the_offered_slot(tmp_path,
     assert fields["party"][1]["species"] == trade_payload.read(peer)["party"][1]["species"]
     assert offer == snapshot[:gen8.SIZE_PARTY]
     assert pokemon.read(offer)["species"] == pokemon.read(chosen)["species"]
-    assert pokemon.read(offer)["ot_name"] == "PkCamp"
+    assert pokemon.read(offer)["ot_name"] == pokemon.read(chosen)["ot_name"]
     assert pokemon.read(offer)["pid"] != pokemon.read(chosen)["pid"]
     assert profile["device_id"] == advert[0x1F:0x2F]
     assert profile["account_uid"] == advert[0x2F:0x3F]

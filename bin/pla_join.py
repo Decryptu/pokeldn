@@ -14,6 +14,7 @@ Over ldn_mitm, against an emulated console on the LAN, no root and no radio:
 
     ./.venv/bin/python bin/pla_join.py --ip-join --host-ip 172.16.86.1 --our-ip 172.16.86.128
 """
+from pathlib import Path
 import argparse
 import json
 import os
@@ -29,8 +30,10 @@ if os.path.isdir(BUNDLED_LDN):
 
 import trio
 
+from pokeldn.host_support import open_output
+from pokeldn import pokemon as pokemon_service
 from pokeldn import gen8, pla
-from pokeldn.host_support import resolve_keys
+from pokeldn.host_support import resolve_keys, needs_root
 from pokeldn.ldn import ldn_mitm, pia6
 from pokeldn.ldn.transport import board_radio, find_ap_phy
 from pokeldn.pla import data_exchange, joiner, trade_box
@@ -118,8 +121,7 @@ def make_socket(ifname, our_ip=None):
 def build_offer(args, exchange):
     """-> the encrypted party record: a file, or the reference under our name."""
     if args.offer:
-        offer = pla_pokemon.encrypt(pla_pokemon.load(open(os.path.expanduser(args.offer),
-                                                          "rb").read()))
+        offer = pla_pokemon.encrypt(pla_pokemon.load(Path(os.path.expanduser(args.offer)).read_bytes()))
     else:
         offer = trade_box.build_our_record(**data_exchange.read_record(exchange))
     if args.fresh_pid:
@@ -180,7 +182,7 @@ async def run_session(args, keys, sock, host_ip, our_ip, our_mac, offer, exchang
             if session.traded and traded_at is None:
                 traded_at = time.monotonic()
                 if args.offer_out and session.received is not None:
-                    with open(args.offer_out, "wb") as fh:
+                    with open_output(args.offer_out, "wb") as fh:
                         fh.write(session.received)
                     print(f"[pla] wrote the record the console traded, {args.offer_out}")
             if traded_at is not None and time.monotonic() - traded_at >= args.after_trade:
@@ -192,7 +194,7 @@ async def run_session(args, keys, sock, host_ip, our_ip, our_mac, offer, exchang
             os.makedirs(args.collect, exist_ok=True)
             for selector, counter, rec in session.console_records:
                 path = os.path.join(args.collect, f"{rec[:4].hex()}_{selector}.pa8")
-                with open(path, "wb") as fh:
+                with open_output(path, "wb") as fh:
                     fh.write(rec)
         print(f"[pla] seat over: {seen} datagrams in, {authed} authenticated, "
               f"seated={session.seated}, traded={session.traded}")
@@ -255,7 +257,7 @@ def main_ip(args, offer, exchange, record):
 def main_radio(args, offer, exchange, record):
     import ldn
 
-    if os.geteuid() != 0 and not board_radio():
+    if needs_root():
         print("[pla] joining needs the raw radio; re-run under sudo, or set POKELDN_RADIO")
         return 1
     phy = find_ap_phy(log=print) if args.phy == "auto" else args.phy
@@ -425,11 +427,11 @@ def build_parser():
 
 def host_argv(args, channel, seconds):
     """-> bin/pla_host.py's command line for the host role a console handed over."""
-    host = os.path.join(os.path.dirname(os.path.abspath(__file__)), "pla_host.py")
-    argv = [sys.executable, "-u", host, "--keys", args.keys, "--code", args.code,
+    from pokeldn.app.runner import command
+    argv = command("--run", "bin/pla_host.py", "--keys", args.keys, "--code", args.code,
             "--channel", str(channel), "--seconds", str(int(max(seconds, 60))),
             "--player-name", args.player_name, "--session-update", "--sustain", "--clock",
-            "--data-exchange", "--game-channel", "--trade-box"]
+            "--data-exchange", "--game-channel", "--trade-box")
     if args.offer:
         argv += ["--trade-box-record", args.offer]
     if args.fresh_pid:
@@ -445,15 +447,19 @@ def host_argv(args, channel, seconds):
 def main(argv=None):
     ap = build_parser()
     args = ap.parse_args(argv)
+    if args.offer and args.offer != "echo":
+        args.offer = pokemon_service.prepare_file("pla", args.offer, fresh=getattr(args, "fresh_pid", False))
+        if hasattr(args, "fresh_pid"):
+            args.fresh_pid = False
     try:
         sys.stdout.reconfigure(line_buffering=True)
     except (AttributeError, ValueError):
         pass
     exchange = data_exchange.build_record(player_id=bytes.fromhex(args.player_id),
                                           name=args.player_name)
-    offer = build_offer(args, exchange)
+    offer = pokemon_service.validate("pla", build_offer(args, exchange))
     print(f"[pla] offering {trade_box.describe(offer)}")
-    cap = open(args.capture, "w") if args.capture else None
+    cap = open_output(args.capture, "w") if args.capture else None
 
     def record(**row):
         if cap:

@@ -12,6 +12,7 @@ Against Ryujinx in ldn_mitm mode over the LAN, no radio:
     ./.venv/bin/python bin/sv_join.py --ip-join --host-ip 172.16.86.1 --our-ip 172.16.86.128 \
         --session-join --capture scratchpad/svNN_join.jsonl
 """
+from pathlib import Path
 import argparse
 import json
 import os
@@ -28,12 +29,14 @@ if os.path.isdir(BUNDLED_LDN):
 import trio
 import ldn
 
+from pokeldn.host_support import open_output
+from pokeldn import pokemon as pokemon_service
 from pokeldn import sv
 from pokeldn.ldn import ldn_mitm, pia6, pia_connect, reliable5
 from pokeldn.sv import pokemon, port2, reference, streams, trade
-from pokeldn.pla import game_channel
+from pokeldn.ldn import game_channel
 from pokeldn.ldn.transport import board_radio, find_ap_phy
-from pokeldn.host_support import resolve_keys
+from pokeldn.host_support import resolve_keys, needs_root
 from pokeldn.ldn import show_done
 
 PROTO_NET = 0x2C
@@ -414,6 +417,11 @@ def describe_offer(body):
 def main(argv=None):
     ap = build_parser()
     args = ap.parse_args(argv)
+    if args.trade_offer:
+        args.trade_offer = [pokemon_service.prepare_file("sv", p, fresh=args.fresh_pid,
+            transform=lambda raw: trade.load_offer(raw, args.offer_set)) for p in args.trade_offer]
+        args.offer_set = []
+        args.fresh_pid = False
     reference.fill_identity(args)
     # A killed run loses a block-buffered stdout, and the seat's log with it.
     try:
@@ -421,9 +429,9 @@ def main(argv=None):
     except (AttributeError, ValueError):
         pass
     if args.trade_offer and args.offer_dump:
-        with open(args.offer_dump, "w") as fh:
+        with open_output(args.offer_dump, "w") as fh:
             for path in args.trade_offer:
-                offer = trade.load_offer(open(path, "rb").read(), args.offer_set,
+                offer = trade.load_offer(Path(path).read_bytes(), args.offer_set,
                                          fresh=args.fresh_pid)
                 fh.write(offer.hex() + "\n")
                 print(f"[sv] offering {describe_offer(offer)}")
@@ -434,7 +442,7 @@ def main(argv=None):
         ap.error("--offer-set, --offer-dump and --offer-after-open need --trade-offer")
     if args.ip_join:
         return main_ip(args)
-    if os.geteuid() != 0 and not board_radio():
+    if needs_root():
         ap.error("joining needs the raw radio; re-run under sudo")
     phy = find_ap_phy(log=print) if args.phy == "auto" else args.phy
     if phy is None:
@@ -453,7 +461,7 @@ def main(argv=None):
         set_mac(phy, args.mac)
     keys_file = ldn.load_keys(keys_path)
 
-    cap = open(args.capture, "w") if args.capture else None
+    cap = open_output(args.capture, "w") if args.capture else None
 
     def record(**row):
         if cap:
@@ -554,7 +562,7 @@ def main_ip(args):
     our_mac = b"\x02\x00" + socket.inet_aton(args.our_ip)
     print(f"[sv] ip-join: host {args.host_ip}, us {args.our_ip}, "
           f"comm_id={' or '.join(f'{c:#018x}' for c in sorted(want))}")
-    cap = open(args.capture, "w") if args.capture else None
+    cap = open_output(args.capture, "w") if args.capture else None
 
     def record(**row):
         if cap:
@@ -629,13 +637,13 @@ async def run_session(args, keys, host_ip, host_mac, our_ip, our_mac, record):
     migration_at = None
     identity = None
     if args.send_record:
-        identity = streams.compress(open(args.send_record, "rb").read())
+        identity = streams.compress(Path(args.send_record).read_bytes())
     record_seq = 1
     channel = {"opened": False, "table": None, "key80": False, "port2": False}
     stage = None
     if args.trade_offer:
         stage = trade.JoinerTradeStage(
-            [trade.load_offer(open(path, "rb").read(), args.offer_set,
+            [trade.load_offer(Path(path).read_bytes(), args.offer_set,
                               fresh=args.fresh_pid)
              for path in args.trade_offer],
             confirm_delay=args.confirm_delay, commit_delay=args.commit_delay)
@@ -658,8 +666,7 @@ async def run_session(args, keys, host_ip, host_mac, our_ip, our_mac, record):
     if args.record_set:
         for name in sorted(os.listdir(args.record_set)):
             if name.endswith(".bin"):
-                record_set.append((int(name[:-4]), open(os.path.join(args.record_set, name),
-                                                        "rb").read()))
+                record_set.append((int(name[:-4]), Path(os.path.join(args.record_set, name)).read_bytes()))
         print(f"[sv] the record set holds {len(record_set)} record(s), "
               f"sequence ids {record_set[0][0]}..{record_set[-1][0]}")
     set_sent = False
@@ -1106,9 +1113,7 @@ async def run_session(args, keys, host_ip, host_mac, our_ip, our_mac, record):
                             if args.offer_out:
                                 path = (args.offer_out if offers_seen == 1
                                         else f"{args.offer_out}.{offers_seen}")
-                                with open(path, "w") as fh:
-                                    fh.write(trade.build(trade.KEY_TRADE, trade.KIND_OFFER, 0,
-                                                         body).hex() + "\n")
+                                pokemon_service.save_received("sv", path, body)
                                 print(f"[sv] the host's offer written to {path}")
                         if stage.trades > trades_done:
                             trades_done = stage.trades

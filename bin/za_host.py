@@ -16,12 +16,14 @@ import time
 
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
+from pokeldn.host_support import open_output
+from pokeldn import pokemon as pokemon_service
 from pokeldn import config, za
 from pokeldn.za import host as za_host
 from pokeldn.za import streams
 from pokeldn.ldn.ldn_mitm_host import IpHostTransport
 from pokeldn.ldn.transport import HostTransport, board_radio, find_ap_phy
-from pokeldn.host_support import resolve_keys
+from pokeldn.host_support import resolve_keys, needs_root
 
 
 def build_parser():
@@ -97,11 +99,16 @@ def describe_offer(body):
 def main(argv=None):
     ap = build_parser()
     args = ap.parse_args(argv)
+    renew_offer = args.fresh_pid
+    if args.trade_offer and args.trade_offer != "echo":
+        args.trade_offer = pokemon_service.prepare_file("za", args.trade_offer, fresh=getattr(args, "fresh_pid", False))
+        if hasattr(args, "fresh_pid"):
+            args.fresh_pid = False
     try:
         sys.stdout.reconfigure(line_buffering=True)
     except (AttributeError, ValueError):
         pass
-    if not args.ip_host and os.geteuid() != 0 and not board_radio():
+    if not args.ip_host and needs_root():
         ap.error("hosting over the radio needs root or POKELDN_RADIO; or pass --ip-host")
     identity, tail, selection, offer = load_payloads(args)
     phy = None
@@ -121,7 +128,7 @@ def main(argv=None):
         **({"our_ip": args.our_ip} if args.ip_host and args.our_ip else {}),
         **({} if args.ip_host else dict(skip_encryption=machine.skip_encryption,
                                         accept_decrypted_ccmp=machine.accept_decrypted_ccmp)))
-    cap = open(args.capture, "w") if args.capture else None
+    cap = open_output(args.capture, "w") if args.capture else None
 
     def record(**row):
         if cap:
@@ -153,7 +160,8 @@ def main(argv=None):
                     guest_ip=ip, code=args.code, identity=identity, identity_tail=tail,
                     selection=selection, offer=offer, offer_at=args.offer_at,
                     log=print, record=record,
-                    renew_offer=za.pokemon.fresh_offer if args.fresh_pid else None)
+                    renew_offer=(lambda raw: pokemon_service.offer_bytes("za",
+                        pokemon_service.prepare("za", raw, fresh=True))) if renew_offer else None)
             for ip in set(sessions) - seated:
                 s = sessions.pop(ip)
                 print(f"[za-host] the console at {ip} left; {s.console_offers} offer(s), "
@@ -171,8 +179,7 @@ def main(argv=None):
                     if s.console_offer is not None and s.console_offer is not before:
                         print(f"[za-host] the console offers {describe_offer(s.console_offer)}")
                         if args.offer_out:
-                            with open(args.offer_out, "w") as fh:
-                                fh.write(s.console_offer.hex() + "\n")
+                            pokemon_service.save_received("za", args.offer_out, s.console_offer)
             for s in list(sessions.values()):
                 for data, ip in s.tick():
                     transport.send(data, ip)

@@ -5,7 +5,7 @@ the trade channel, 0x0180 the exchange. `on_message` returns [(delay, port, payl
 
 import struct
 
-from pokeldn.pla import channel_table
+from pokeldn.ldn import channel_table
 
 KEY_TRADE = 0x0080
 KEY_EXCHANGE = 0x0180

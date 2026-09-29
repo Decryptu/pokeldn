@@ -1,9 +1,3 @@
-// PKHeX.Core for the app: one JSON request per line on stdin, one JSON reply per line on stdout.
-//   {"cmd":"species","game":"bdsp"}
-//   {"cmd":"names","game":"swsh","list":"moves"}          species, moves, items or balls
-//   {"cmd":"make","game":"bdsp","species":25,"level":30,"shiny":true,"nickname":"","trainer":{...}}
-//   {"cmd":"check","game":"bdsp","data":"<base64>"}
-// Bytes go out in the form each launcher reads: see Games below.
 using System.Text.Json.Nodes;
 using PKHeX.Core;
 using static PKHeX.Core.GameVersion;
@@ -12,11 +6,10 @@ var strings = GameInfo.GetStrings("en");
 var games = new Dictionary<string, Game>
 {
     ["frlg"] = new([FR, LG, E, R, S], PersonalTable.FR, EntityContext.Gen3, () => new PK3(), DecryptedParty),
-    // Let's Go trades the 232-byte encrypted box structure, the first 0xE8 bytes of a PB7.
-    ["lgpe"] = new([GP, GE], PersonalTable.GG, EntityContext.Gen7b, () => new PB7(), pk => EncryptedStored(pk)[..0xE8]),
+    ["lgpe"] = new([GP, GE], PersonalTable.GG, EntityContext.Gen7b, () => new PB7(), EncryptedParty),
     ["bdsp"] = new([BD, SP], PersonalTable.BDSP, EntityContext.Gen8b, () => new PB8(), EncryptedStored),
-    ["swsh"] = new([SW, SH], PersonalTable.SWSH, EntityContext.Gen8, () => new PK8(), EncryptedStored),
-    ["pla"] = new([PLA], PersonalTable.LA, EntityContext.Gen8a, () => new PA8(), EncryptedStored),
+    ["swsh"] = new([SW, SH], PersonalTable.SWSH, EntityContext.Gen8, () => new PK8(), EncryptedParty),
+    ["pla"] = new([PLA], PersonalTable.LA, EntityContext.Gen8a, () => new PA8(), EncryptedParty),
     ["sv"] = new([SL, VL], PersonalTable.SV, EntityContext.Gen9, () => new PK9(), EncryptedParty),
     // The app frames the decrypted record into Z-A's offer message (pokeldn.za.pokemon.build_offer).
     ["za"] = new([ZA], PersonalTable.ZA, EntityContext.Gen9a, () => new PA9(), DecryptedParty),
@@ -34,7 +27,8 @@ while (Console.ReadLine() is { } line)
             "species" => Species(game),
             "names" => Names(game, (string)request["list"]!),
             "make" => Make(game, request),
-            "check" => Check(game, Convert.FromBase64String((string)request["data"]!)),
+            "check" => Check(game, Convert.FromBase64String((string)request["data"]!), request),
+            "gift" => Gift(Convert.FromBase64String((string)request["data"]!)),
             var other => throw new ArgumentException($"unknown command {other}"),
         };
         reply["ok"] = true;
@@ -90,17 +84,25 @@ JsonObject Names(Game game, string list)
 
 JsonObject Make(Game game, JsonObject request)
 {
-    var species = (ushort)(int)request["species"]!;
+    var species = checked((ushort)(int)request["species"]!);
+    if (!game.Table.IsPresentInGame(species, 0))
+        throw new ArgumentException("This species is absent from the selected game.");
     var level = (int?)request["level"] ?? 0;
+    if (level < 0 || level > 100)
+        throw new ArgumentException("Level must be between 0 and 100.");
     var shiny = (bool?)request["shiny"] ?? false;
     var nickname = (string?)request["nickname"] ?? "";
     var t = request["trainer"]!.AsObject();
     var versions = game.Versions;
-    if ((string?)request["version"] is { } v && Enum.TryParse<GameVersion>(v, out var chosen))
+    if ((string?)request["version"] is { Length: > 0 } v)
+    {
+        if (!Enum.TryParse<GameVersion>(v, out var chosen) || !versions.Contains(chosen))
+            throw new ArgumentException("This version is incompatible with the selected game.");
         versions = [chosen, .. versions.Where(x => x != chosen)];
+    }
     var trainer = new SimpleTrainerInfo(versions[0])
     {
-        OT = (string)t["ot"]!, TID16 = (ushort)(int)t["tid"]!, SID16 = (ushort)(int)t["sid"]!,
+        OT = (string)t["ot"]!, TID16 = checked((ushort)(int)t["tid"]!), SID16 = checked((ushort)(int)t["sid"]!),
         Language = (int)t["language"]!, Gender = (byte)(int)t["gender"]!,
     };
     var blank = game.Blank();
@@ -120,10 +122,11 @@ JsonObject Make(Game game, JsonObject request)
             pk.Species = species;
             pk.ClearNickname();
         }
+        if (level > 0 && level < pk.CurrentLevel)
+            continue;
         if (level > pk.CurrentLevel)
             pk.CurrentLevel = (byte)Math.Min(level, 100);
-        if (shiny)
-            pk.SetIsShiny(true);
+        pk.SetIsShiny(shiny);
         if (nickname.Length > 0)
             pk.SetNickname(nickname);
         if (pk is PB7 pb7)
@@ -144,12 +147,39 @@ JsonObject Make(Game game, JsonObject request)
         : $"No legal {name} with these choices. {firstProblem}");
 }
 
-JsonObject Check(Game game, byte[] data)
+JsonObject Check(Game game, byte[] data, JsonObject request)
 {
-    if (game.Context == EntityContext.Gen7b && data.Length < 0x104)
+    if (game.Context == EntityContext.Gen7b && data.Length == 0xE8)
         data = [.. data, .. new byte[0x104 - data.Length]];
     var pk = EntityFormat.GetFromBytes(data, game.Context)
              ?? throw new InvalidDataException($"{data.Length} bytes are not a Pokemon of this game.");
+    if (pk.GetType() != game.Blank().GetType())
+        throw new InvalidDataException($"Expected {game.Blank().GetType().Name}, received {pk.GetType().Name}.");
+    if (!game.Table.IsPresentInGame(pk.Species, pk.Form))
+        throw new InvalidDataException("This species or form is absent from the selected game.");
+    if (!pk.ChecksumValid)
+        throw new InvalidDataException("The Pokemon checksum is invalid.");
+    if (request["fields"] is JsonObject fields)
+        foreach (var (name, value) in fields)
+        {
+            switch (name)
+            {
+                case "nickname": pk.SetNickname((string)value!); break;
+                case "ot_name": pk.OriginalTrainerName = (string)value!; break;
+                case "trainer_id": pk.TID16 = checked((ushort)(int)value!); break;
+                case "secret_id": pk.SID16 = checked((ushort)(int)value!); break;
+                default: throw new ArgumentException($"Unsupported edit {name}.");
+            }
+        }
+    if ((bool?)request["fresh"] == true)
+    {
+        var xor = (pk.PID >> 16) ^ (pk.PID & 0xFFFF);
+        var high = (uint)Random.Shared.Next(0x10000);
+        pk.PID = (high << 16) | (high ^ xor);
+        pk.EncryptionConstant = (uint)Random.Shared.NextInt64(1, 1L << 32);
+    }
+    pk.ResetPartyStats();
+    pk.RefreshChecksum();
     // A box record carries no party stats; the receiving console computes them, so do the same.
     if (pk is PB7 pb7)
     {
@@ -157,6 +187,41 @@ JsonObject Check(Game game, byte[] data)
         pb7.ResetCalculatedValues();
     }
     return Describe(game, pk, new LegalityAnalysis(pk));
+}
+
+JsonObject Gift(byte[] data)
+{
+    if (data.Length != WC8.Size)
+        throw new InvalidDataException("A WC8 record must contain 720 bytes.");
+    var card = new WC8(data);
+    var held = ItemStorage8SWSH.GetAllHeld();
+    bool ValidItem(int item) => item == 0 || held.Contains((ushort)item);
+    if (card.IsEntity)
+    {
+        if (!PersonalTable.SWSH.IsPresentInGame(card.Species, card.Form))
+            throw new InvalidDataException("This species or form is absent from Sword/Shield.");
+        var blank = new PK8();
+        var dummied = MoveInfo.GetDummiedMovesHashSet(EntityContext.Gen8);
+        ushort[] moves = [card.Move1, card.Move2, card.Move3, card.Move4,
+                          card.RelearnMove1, card.RelearnMove2, card.RelearnMove3, card.RelearnMove4];
+        foreach (var move in moves)
+            if (move > blank.MaxMoveID || MoveInfo.IsDummiedMove(dummied, move))
+                throw new InvalidDataException("This move is unavailable in Sword/Shield.");
+        if (card.Level > 100 || card.Ball > blank.MaxBallID || !ValidItem(card.HeldItem))
+            throw new InvalidDataException("Invalid gift level, ball or held item.");
+        if (data[0x243] > 2 || (data[0x246] > 24 && data[0x246] != 255) ||
+            data[0x247] > 4 || data[0x248] > 4 || data[0x24A] > 10)
+            throw new InvalidDataException("Invalid gift gender, nature, ability, shininess or Dynamax level.");
+    }
+    else if (card.IsItem)
+    {
+        for (var i = 0; i < 6; i++)
+            if (!ValidItem(card.GetItem(i)) || (card.GetItem(i) != 0 && card.GetQuantity(i) is < 1 or > 999))
+                throw new InvalidDataException("Invalid gift item or quantity; bag items only, up to 999.");
+    }
+    else if (card.CardType != WC8.GiftType.BP)
+        throw new InvalidDataException("Supported WC8 gifts are Pokemon, bag items and BP.");
+    return new JsonObject { ["valid"] = true };
 }
 
 JsonObject Describe(Game game, PKM pk, LegalityAnalysis la)
@@ -168,6 +233,7 @@ JsonObject Describe(Game game, PKM pk, LegalityAnalysis la)
     return new JsonObject
     {
         ["data"] = Convert.ToBase64String(game.Write(pk)),
+        ["format"] = pk.GetType().Name,
         ["species"] = strings.specieslist[pk.Species],
         ["species_id"] = pk.Species,
         ["level"] = pk.CurrentLevel,

@@ -5,7 +5,7 @@ from dataclasses import dataclass
 import serial
 from serial.tools import list_ports
 
-from gui.paths import ROOT
+from pokeldn.app.paths import ROOT
 from pokeldn.ldn import esp32
 
 # USB-to-serial bridges found on ESP32 boards, by USB vendor and product id.

@@ -2,10 +2,9 @@
 import argparse
 import importlib.util
 import os
-import sys
 from dataclasses import dataclass
 
-from gui.paths import ROOT
+from pokeldn.app.paths import ROOT
 
 
 @dataclass(frozen=True)
@@ -16,11 +15,6 @@ class Flag:
     choices: tuple = ()
     default: object = None
     group: str = ""
-
-
-class _Captured(Exception):
-    def __init__(self, parser):
-        self.parser = parser
 
 
 def _load(script: str):
@@ -34,23 +28,7 @@ def _load(script: str):
 
 def parser_of(script: str) -> argparse.ArgumentParser:
     module = _load(script)
-    if hasattr(module, "build_parser"):
-        return module.build_parser()
-
-    # Entry points without build_parser build theirs inside main(); stop main at its first parse.
-    def capture(self, *args, **kwargs):
-        raise _Captured(self)
-
-    saved = argparse.ArgumentParser.parse_args, argparse.ArgumentParser.parse_known_args, sys.argv
-    argparse.ArgumentParser.parse_args = argparse.ArgumentParser.parse_known_args = capture
-    sys.argv = [script]
-    try:
-        module.main()
-    except _Captured as captured:
-        return captured.parser
-    finally:
-        argparse.ArgumentParser.parse_args, argparse.ArgumentParser.parse_known_args, sys.argv = saved
-    raise RuntimeError(f"{script} never parsed its arguments")
+    return module.build_parser()
 
 
 def flags_of(script: str) -> list[Flag]:

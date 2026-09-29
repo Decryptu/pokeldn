@@ -1,5 +1,6 @@
 """Presence byte 0x00 opens a message whose whole header is inherited, in every band (docs/pia.md,
 Message framing)."""
+from pathlib import Path
 import json
 import os
 
@@ -9,8 +10,7 @@ from pokeldn import pla, sv
 from pokeldn.ldn import pia5, pia6
 from pokeldn.ldn import reliable5 as r5
 
-PACKETS = json.load(open(os.path.join(os.path.dirname(__file__), "data",
-                                      "pia_bundled_packets.json")))
+PACKETS = json.loads((Path(__file__).parent / "data" / "pia_bundled_packets.json").read_text(encoding="utf-8"))
 
 RTT, RELIABLE_5, RELIABLE_6, SESSION = 0x58, 0x7C, 0x81, 0x98
 

@@ -17,13 +17,14 @@ if os.path.isdir(BUNDLED):
     sys.path.insert(0, BUNDLED)
 
 import trio, ldn
+from pokeldn.host_support import open_output
 from pokeldn.bdsp import COMM_ID, PASSPHRASE, PIA_PORT, session_keys
 from pokeldn.ldn import local_protocol as lp
 from pokeldn.ldn.pia5 import (PiaHeader5, is_pia5, ciphertext, gcm_iv, ldn_nonce_crc,
                               build_message, pad_payload, parse_messages, encrypt_payload,
                               decrypt_payload)
 from pokeldn.ldn.transport import board_radio, find_ap_phy
-from pokeldn.host_support import resolve_keys
+from pokeldn.host_support import resolve_keys, needs_root
 
 def cleanup():
     if board_radio():
@@ -86,7 +87,7 @@ async def main_async(args):
     param.name, param.app_version = args.name.encode(), net.app_version
     param.phyname, param.ifname = phy, args.ifname
 
-    cap = open(args.capture, "w") if args.capture else None
+    cap = open_output(args.capture, "w") if args.capture else None
 
     def record(**kw):
         if cap:
@@ -243,7 +244,7 @@ async def main_async(args):
     return 0
 
 
-def main():
+def build_parser():
     ap = argparse.ArgumentParser(description=__doc__,
                                  formatter_class=argparse.RawDescriptionHelpFormatter)
     ap.add_argument("--comm-id", default=None)
@@ -265,8 +266,13 @@ def main():
     ap.add_argument("--our-mac", default=None,
                     help="override the MAC the IV is built from, hex or colon-separated")
     ap.add_argument("--capture", default=None, help="jsonl of every packet, both directions")
-    args = ap.parse_args()
-    if os.geteuid() != 0 and not board_radio():
+    return ap
+
+
+def main(argv=None):
+    ap = build_parser()
+    args = ap.parse_args(argv)
+    if needs_root():
         ap.error("must run as root")
     return trio.run(main_async, args)
 

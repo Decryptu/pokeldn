@@ -531,7 +531,7 @@ A console sends three during a trade:
 | `b9 01 01 b9 02 b9 02 01 00 01` | the phase key open | after the confirmation, when `0x26d7aa0` creates the phase channel |
 | `b9 01 01 b9 02 b9 02 01 00 00` | the phase key closed | once the trade is written |
 
-`pokeldn.pla.channel_table` builds and parses these. The host answers each open with its own, once
+`pokeldn.ldn.channel_table` builds and parses these. The host answers each open with its own, once
 per key, and leaves a close unanswered: a close sent back erases the console's peer entry for the
 phase key (harmless within the trade, since nothing polls the peer table), and the standing entry
 serves the next trade ([A second trade in one session](#a-second-trade-in-one-session)).

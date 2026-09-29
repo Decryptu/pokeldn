@@ -5,6 +5,7 @@
 
     (them) X -> Poke Portal -> Link Trade, offline, no code -> search
 """
+from pathlib import Path
 import argparse
 import binascii
 import json
@@ -16,14 +17,16 @@ import traceback
 
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
+from pokeldn.host_support import open_output
+from pokeldn import pokemon as pokemon_service
 from pokeldn import config
 from pokeldn import sv
 from pokeldn.ldn import pia6, pia_connect, reliable5
 from pokeldn.sv import pokemon, port2, reference, streams, trade
-from pokeldn.pla import game_channel
+from pokeldn.ldn import game_channel
 from pokeldn.ldn.ldn_mitm_host import IpHostTransport
 from pokeldn.ldn.transport import HostTransport, board_radio, find_ap_phy
-from pokeldn.host_support import resolve_keys
+from pokeldn.host_support import resolve_keys, needs_root
 from pokeldn.ldn import show_done
 
 PROTOCOL_NAMES = {
@@ -310,6 +313,11 @@ def build_parser():
 def main():
     ap = build_parser()
     args = ap.parse_args()
+    if args.trade_offer:
+        args.trade_offer = [pokemon_service.prepare_file("sv", p, fresh=args.fresh_pid,
+            transform=lambda raw: trade.load_offer(raw, args.offer_set)) for p in args.trade_offer]
+        args.offer_set = []
+        args.fresh_pid = False
     reference.fill_identity(args)
     try:
         host_player_id = binascii.unhexlify(args.host_player_id)
@@ -317,7 +325,7 @@ def main():
         ap.error("--host-player-id must be hex")
     if len(host_player_id) != 16:
         ap.error("--host-player-id must be 16 bytes")
-    if not args.ip_host and not args.offer_dump and os.geteuid() != 0 and not board_radio():
+    if not args.ip_host and not args.offer_dump and needs_root():
         ap.error("hosting over the radio needs root; re-run under sudo, or pass --ip-host")
     comm_id = args.comm_id or (sv.COMM_ID_VIOLET if args.violet else sv.COMM_ID_SCARLET)
 
@@ -349,7 +357,7 @@ def main():
     if args.trade_offer:
         # A wrong size raises here, before the radio is up.
         for path in args.trade_offer:
-            one = trade.load_offer(open(path, "rb").read(), args.offer_set,
+            one = trade.load_offer(Path(path).read_bytes(), args.offer_set,
                                    fresh=args.fresh_pid)
             trade_offers.append(one)
             try:
@@ -358,7 +366,7 @@ def main():
             except ValueError as exc:
                 print(f"[sv] offering {len(one)} bytes, which do not read as a record: {exc}")
         if args.offer_dump:
-            with open(args.offer_dump, "w") as fh:
+            with open_output(args.offer_dump, "w") as fh:
                 for one in trade_offers:
                     fh.write(one.hex() + "\n")
             print(f"[sv] offer written to {args.offer_dump}")
@@ -372,8 +380,7 @@ def main():
             print(f"[sv] {ip}: offered {len(body)} bytes that do not read as a record: {exc}")
         if args.offer_out:
             path = args.offer_out if n == 1 else f"{args.offer_out}.{n}"
-            with open(path, "w") as fh:
-                fh.write(trade.build(trade.KEY_TRADE, trade.KIND_OFFER, 0, body).hex() + "\n")
+            pokemon_service.save_received("sv", path, body)
             print(f"[sv] {ip}: offer written to {path}")
 
     game_data = binascii.unhexlify(args.game_data) if args.game_data else None
@@ -400,7 +407,7 @@ def main():
         print(f"[sv] radio profile: skip_encryption={machine.skip_encryption} "
               f"accept_decrypted_ccmp={machine.accept_decrypted_ccmp}")
 
-    cap = open(args.capture, "w") if args.capture else None
+    cap = open_output(args.capture, "w") if args.capture else None
 
     def record(**row):
         if cap:
@@ -588,7 +595,7 @@ def main():
                     path = os.path.join(args.record_set, name)
                     if not os.path.exists(path):
                         continue
-                    payload = open(path, "rb").read()
+                    payload = Path(path).read_bytes()
                     seq = int(name.split(".")[0])
                     flags = (reliable5.FLAG_APPLICATION_DATA | reliable5.FLAG_MESSAGE_START
                              | reliable5.FLAG_MESSAGE_END | reliable5.FLAG_ZLIB

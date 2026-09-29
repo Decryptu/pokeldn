@@ -57,7 +57,7 @@ VERSIONS = (("firered", "FireRed"), ("leafgreen", "LeafGreen"))
 LANGUAGES = (("english", "English"), ("french", "French"), ("german", "German"),
              ("italian", "Italian"), ("spanish", "Spanish"))
 CHANNELS = (("1", "1"), ("6", "6"), ("11", "11"))
-FRESH_PID = Field("--fresh-pid", "New PID each run", "switch", default=True,
+FRESH_PID = Field("--fresh-pid", "New PID each run", "switch", default=False,
                   help="Offer the Pokemon under a new PID and encryption constant, so a save that "
                        "already received it takes it again.")
 
@@ -153,14 +153,15 @@ LGPE = Game("lgpe", "Let's Go Pikachu & Eevee", "LGPE", "lgpe.md", (
                 help="Three picker names or indices 0 to 9, comma-separated."),
           FRESH_PID,
           Field("--seconds", "Seconds", "number", default="600")),
-         fixed=("--first", "echo"), doc="lgpe.md"),
+         fixed=("--first", "echo", "--received", "{received}/lgpe-{stamp}.pb7"), doc="lgpe.md"),
     Tool("lgpe-join", "Trade (console hosts)", "bin/lgpe_join.py",
          "Join the console's trade search.",
          ("Start the joiner: it scans for up to five minutes.", LGPE_STEPS,
           "Offer and confirm once PkCamp shows."),
          (offer("--offer"), FRESH_PID),
          fixed=("--channels", "1,6,11", "--dwell", "2.5", "--connect", "--connect-seconds", "900",
-                "--ack-peer-clock", "--ack-re-announce", "--facts", "lgpe_net_facts.json"),
+                "--ack-peer-clock", "--ack-re-announce", "--facts", "lgpe_net_facts.json",
+                "--received", "{received}/lgpe-{stamp}.pb7"),
          doc="lgpe_session.md"),
 ))
 
@@ -189,7 +190,7 @@ SWSH = Game("swsh", "Sword & Shield", "SwSh", "swsh.md", (
                 help="Change it when the console already holds this card."),
           Field("--record", "Or send a .wc8 file", "file", exts=("wc8",)),
           Field("--seconds", "Seconds", "number", default="300")),
-         fixed=("--no-validate",), doc="swsh_gift.md"),
+         doc="swsh_gift.md"),
     Tool("swsh-join", "Trade", "bin/swsh_connect.py", "Join the console's Link Trade search.",
          ("Y-Comm, Link Trade, local communication, no code; press A on both messages.",
           "Start the joiner while the console searches.",
@@ -286,7 +287,7 @@ SV = Game("sv", "Scarlet & Violet", "SV", "sv.md", (
                 "--dwell", "0.4", "--connect-timeout", "6", "--open-delay", "0.3", "--record-delay", "0.3",
                 "--session-join", "--answer-migration", "--net-ack", "--ack-flags", "0x00",
                 "--game-channel", "--announce-timeout", "20", "--rtt-delay", "0.3",
-                "--offer-out", "{received}/sv-{stamp}.hex"), doc="sv.md"),
+                "--offer-out", "{received}/sv-{stamp}.pk9"), doc="sv.md"),
     Tool("sv-host", "Trade (pokeldn hosts)", "bin/sv_host.py",
          "Host a trade the searching console joins.",
          ("Start the host first.", SV_SEARCH, "Offer and confirm on the trade screen."),
@@ -305,7 +306,7 @@ SV = Game("sv", "Scarlet & Violet", "SV", "sv.md", (
                 "--send-at", "0.04:0x81:5:000500000ff00800000000",
                 "--announce", "--announce-delay", "5.25",
                 "--send-at", "6.00:0x7c:1:b90101b902b90280800001", "--offer-after-open", "2",
-                "--offer-out", "{received}/sv-{stamp}.hex"),
+                "--offer-out", "{received}/sv-{stamp}.pk9"),
          doc="sv.md"),
 ))
 
@@ -320,7 +321,7 @@ ZA = Game("za", "Legends Z-A", "PLZA", "za.md", (
           FRESH_PID),
          fixed=("--channels", "1,6,11", "--dwell", "0.35", "--seconds", "900", "--hold", "450",
                 "--quiet-seat", "25", "--connect-timeout", "6", "--mac", "02:11:32:54:76:98", "--game",
-                "--offer-delay", "4"),
+                "--offer-delay", "4", "--offer-out", "{received}/za-{stamp}.pa9"),
          doc="za.md"),
     Tool("za-host", "Trade (pokeldn hosts)", "bin/za_host.py",
          "Host a trade the searching console joins.",
@@ -331,7 +332,7 @@ ZA = Game("za", "Legends Z-A", "PLZA", "za.md", (
           Field("--code", "Link code", default="00000000"),
           FRESH_PID,
           Field("--seconds", "Seconds", "number", default="900")),
-         fixed=("--offer-out", "{received}/za-{stamp}.hex"), doc="za.md"),
+         fixed=("--offer-out", "{received}/za-{stamp}.pa9"), doc="za.md"),
 ))
 
 GAMES = (FRLG, LGPE, SWSH, BDSP, PLA, SV, ZA)

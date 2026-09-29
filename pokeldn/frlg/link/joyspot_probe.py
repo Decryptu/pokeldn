@@ -4,9 +4,9 @@ from dataclasses import dataclass
 import os
 
 from pokeldn.ldn import ldntrace, transport
-from pokeldn.ldn.host_beacon import BeaconInjector
+from pokeldn.frlg.link.host_beacon import BeaconInjector
 from pokeldn.host_support import resolve_keys
-from pokeldn.ldn.joyspot_discovery import (
+from pokeldn.frlg.link.joyspot_discovery import (
     JOYSPOT_LOCAL_COMMUNICATION_ID,
     JOYSPOT_MAX_PARTICIPANTS,
     JOYSPOT_SERIAL,

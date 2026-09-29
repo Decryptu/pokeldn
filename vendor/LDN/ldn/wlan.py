@@ -11,7 +11,6 @@ from ldn import streams, util, queue
 
 import contextlib
 import os
-import fcntl
 import netlink
 import socket
 import string
@@ -1824,6 +1823,7 @@ class Factory:
         file = await trio.open_file("/dev/net/tun", "rb+", buffering=0)
         async with file:
             request = struct.pack("16sH", ifname.encode(), IFF_TAP | IFF_NO_PI)
+            import fcntl
             fcntl.ioctl(file.fileno(), TUNSETIFF, request)
 
             tap = Tap(self._wlan, self._router, ifname, address, file)
@@ -1878,6 +1878,9 @@ def set_factory(factory) -> None:
 
 @contextlib.asynccontextmanager
 async def create_factory() -> AsyncIterator[Factory]:
+    if _factory_override is None and os.environ.get("POKELDN_RADIO", "").startswith("esp32:"):
+        from pokeldn.ldn.esp32_wlan import use_from_environment
+        use_from_environment(log=print)
     if _factory_override is not None:
         async with _factory_override() as factory:
             yield factory

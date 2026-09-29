@@ -439,7 +439,7 @@ types open a trade:
 | 0.09 | joiner | 0x7C port 2 | 3 | `03b90200bc09` and nine zero bytes |
 | 0.15 | host | 0x80 port 2 | 9 | `09b9030000b90183` and the joiner's station id |
 
-The encoding is the channel table's (`pokeldn.pla.channel_table`) plus tag `0xbc`, a byte string:
+The encoding is the channel table's (`pokeldn.ldn.channel_table`) plus tag `0xbc`, a byte string:
 tag, length as an integer, bytes. The type 7 is a tuple of one tuple of five (writer `0xe464fc`):
 
     b9 06 ...   the type-1 body as a tuple of six: kind, capacity, a zero byte, the name as a
@@ -719,7 +719,7 @@ the permutation and checksum and re-seeds the LCG from the encryption constant.
     0x008       four 0x50-byte blocks, encrypted and permuted        -> 0x148
     0x148       level, a pad byte and the six stats, encrypted       -> 0x158
 
-The field map is PK9's [`PKHeX.Core/PKM/PK9.cs`]; `pokeldn/sv/pokemon.py` reads and writes it.
+The field map is PK9's [`PKHeX.Core/PKM/PK9.cs`]; `pokeldn/gen9.py` reads and writes it.
 
 | offset | field | | offset | field |
 |---|---|---|---|---|

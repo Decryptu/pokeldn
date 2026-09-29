@@ -3,6 +3,7 @@
 
 In the static image every PLT stub jumps through a zero GOT slot: stubs are mapped by name
 (nso_imports) and serviced in Python. bin/swsh_gift_host.py runs the Wonder Card validator with it."""
+from pathlib import Path
 import os, struct, sys
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 from nso_imports import imports
@@ -16,7 +17,7 @@ RETURN = SCRATCH + 0xF000
 
 
 def load(path):
-    img = bytearray(open(path, "rb").read())
+    img = bytearray(Path(path).read_bytes())
     off = struct.unpack_from("<I", img, 4)[0]
     bss_start, bss_end = struct.unpack_from("<ii", img, off + 8)
     bss_start += off; bss_end += off

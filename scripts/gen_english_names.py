@@ -6,6 +6,7 @@
 Method and control: docs/frlg_leafgreen.md. A name here is a deduction; one about to be called is
 checked by the call.
 """
+from pathlib import Path
 import argparse
 import collections
 import os
@@ -165,7 +166,7 @@ def main():
         print(f"{len(runs)} offset runs, {len(names)} French addresses named, "
               f"{len(weak)} more bracketed between two runs")
     if args.check:
-        current = open(OUT).read() if os.path.exists(OUT) else ""
+        current = Path(OUT).read_text(encoding='utf-8') if os.path.exists(OUT) else ""
         if current != text:
             print(f"{OUT} is not what the build would write")
             return 1

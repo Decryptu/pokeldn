@@ -6,6 +6,7 @@
 Per STATUS reply: ETH_TX written before its request against tx_eth + tx_eth_failed, and bytes since
 HELLO against CREDIT. A byte gap is loss on the line or in the UART; a command gap alone is loss
 after the reader. A trace two launchers appended is rebased where the board's counts restart."""
+from pathlib import Path
 import argparse
 import os
 import sys
@@ -41,7 +42,7 @@ def read(path, timeline):
     base_candidate, last_hello = 0, None
     resyncs = 0
     logs = []
-    for line in open(path):
+    for line in Path(path).read_text(encoding="utf-8").splitlines():
         parts = line.split(" ", 3)
         if len(parts) < 3:
             continue

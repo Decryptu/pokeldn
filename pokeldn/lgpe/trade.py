@@ -1,6 +1,7 @@
 """The trade above the reliable protocol, the same for a joiner and a host: the answer owed to a
 peer's offer and to its commit, under this station's own step counter (docs/lgpe_session.md, "The
 game's messages on the reliable protocol")."""
+from pathlib import Path
 from pokeldn.ldn import reliable3, show_done
 from pokeldn.lgpe import pb7
 
@@ -18,7 +19,7 @@ def fresh_offer(args, tag="[lg]"):
     `args.offer` at it, so the offer and the result message carry the same record."""
     if not getattr(args, "fresh_pid", False) or args.offer in (None, "echo"):
         return
-    body = pb7.fresh(open(args.offer, "rb").read())
+    body = pb7.fresh(Path(args.offer).read_bytes())
     path = args.offer.rsplit(".", 1)[0] + "_fresh.pb7"
     with open(path, "wb") as fh:
         fh.write(body)
@@ -76,6 +77,9 @@ def _answer_offer(args, state, msg, send, tag="[lg]", kind=pb7.OFFER_MESSAGE):
     if not pb7.valid(msg["body"]):
         print(f"{tag} offer: the peer's structure did not verify; not answering")
         return
+    if getattr(args, "received", None):
+        from pokeldn.pokemon import save_received
+        save_received("lgpe", args.received, msg["body"])
     plain = pb7.decrypt(msg["body"])
     peer_species = int.from_bytes(plain[8:10], "little")
     print(f"{tag} offer: the peer holds species "
@@ -84,7 +88,7 @@ def _answer_offer(args, state, msg, send, tag="[lg]", kind=pb7.OFFER_MESSAGE):
     if args.offer == "echo":
         body = msg["body"]
     else:
-        raw = open(args.offer, "rb").read()
+        raw = Path(args.offer).read_bytes()
         if len(raw) != pb7.BOX_SIZE:
             print(f"{tag} offer: {args.offer} is {len(raw)} bytes, not {pb7.BOX_SIZE}")
             return

@@ -14,8 +14,9 @@ import tempfile
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
 from pokeldn.frlg.save import mevent_pokemon  # noqa: E402
-from pokeldn.ldn import beacon, transport  # noqa: E402
-from pokeldn.ldn.host_beacon import (  # noqa: E402
+from pokeldn.frlg.link import beacon
+from pokeldn.ldn import transport  # noqa: E402
+from pokeldn.frlg.link.host_beacon import (  # noqa: E402
     build_trade_app_data, build_union_room_app_data,
 )
 from pokeldn.config import DEFAULT_TRAINER  # noqa: E402
@@ -213,7 +214,7 @@ def test_trade_board_leaves_the_unknown_bits_alone():
 
 
 def _record(app_data):
-    return transport._b85_decode(bytes(app_data)[beacon.PIA_HDR:])[:beacon.RECORD_SIZE]
+    return beacon.b85_decode(bytes(app_data)[beacon.PIA_HDR:])[:beacon.RECORD_SIZE]
 
 
 def test_host_app_registers_the_offered_mon_on_the_board():

@@ -3,10 +3,10 @@ import sys
 
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
-from gui import paths  # noqa: E402,F401  (puts the repository and vendor/LDN on sys.path)
+from pokeldn.app import paths  # noqa: E402,F401  (puts the repository and vendor/LDN on sys.path)
 
 if len(sys.argv) > 2 and sys.argv[1] in ("--run", "--module"):
-    from gui.runner import child
+    from pokeldn.app.runner import child
     child(sys.argv[1:])
     sys.exit(0)
 
@@ -18,7 +18,7 @@ import flet as ft  # noqa: E402
 
 from gui import theme as t  # noqa: E402
 from gui.app import App  # noqa: E402
-from gui.paths import ROOT  # noqa: E402
+from pokeldn.app.paths import ROOT  # noqa: E402
 
 PAGES = (
     ("games", "Games", ft.Icons.SPORTS_ESPORTS_OUTLINED, ft.Icons.SPORTS_ESPORTS),

@@ -1,0 +1,89 @@
+"""The shared service validates the bytes every game adapter actually sends."""
+import base64
+import shutil
+import subprocess
+from pathlib import Path
+
+import pytest
+
+from pokeldn import pokemon
+from pokeldn.swsh import wc8
+
+TRAINER = {"ot": "PkCamp", "tid": 12345, "sid": 54321, "language": 2, "gender": 0}
+FORMATS = {"frlg": "PK3", "lgpe": "PB7", "swsh": "PK8", "bdsp": "PB8", "pla": "PA8", "sv": "PK9", "za": "PA9"}
+
+
+@pytest.fixture(scope="module")
+def service(tmp_path_factory):
+    try:
+        pokemon._command()
+    except pokemon.BuilderError:
+        if not shutil.which("dotnet"):
+            pytest.skip("PKHeX integration needs the .NET 10 SDK or a published service")
+        subprocess.run(["dotnet", "build", "-c", "Release", pokemon.HERE, "-warnaserror"], check=True)
+    patch = pytest.MonkeyPatch()
+    patch.setattr(pokemon, "POKEMON", tmp_path_factory.mktemp("pokemon"))
+    patch.setattr(pokemon, "SESSION", tmp_path_factory.mktemp("session"))
+    instance = pokemon.Service()
+    patch.setattr(pokemon, "SERVICE", instance)
+    yield instance
+    instance.close()
+    patch.undo()
+
+
+@pytest.mark.parametrize("game", FORMATS)
+def test_creation_import_and_launcher_preparation_remain_legal(service, game):
+    built = service.make(game, 25, TRAINER)
+    imported = service.import_file(game, built["file"])
+    assert imported["legal"] and imported["format"] == FORMATS[game]
+    assert imported["file"] != built["file"]
+    offer = pokemon.prepare_file(game, imported["file"])
+    final = service.check_bytes(game, Path(offer).read_bytes())
+    assert final["legal"] and final["ot"] == imported["ot"]
+
+
+@pytest.mark.parametrize("game", ["sv", "za", "bdsp", "pla", "lgpe", "frlg"])
+def test_a_legal_sword_record_cannot_be_sent_to_another_game(service, game):
+    data = base64.b64decode(service.make("swsh", 25, TRAINER)["data"])
+    with pytest.raises(pokemon.BuilderError):
+        service.prepare(game, data)
+
+
+def test_corrupt_records_and_illegal_final_edits_are_refused(service):
+    data = bytearray(base64.b64decode(service.make("swsh", 25, TRAINER)["data"]))
+    data[6] ^= 1
+    with pytest.raises(pokemon.BuilderError, match="checksum"):
+        service.prepare("swsh", data)
+    good = service.make("swsh", 25, TRAINER)
+    with pytest.raises(pokemon.BuilderError, match="Unsupported edit"):
+        service.prepare("swsh", base64.b64decode(good["data"]), fields={"imaginary": 1})
+
+
+def test_a_fixed_event_trainer_cannot_be_overwritten(service):
+    built = service.make("swsh", 25, TRAINER)
+    assert built["ot"] != TRAINER["ot"]
+    with pytest.raises(pokemon.BuilderError):
+        service.prepare("swsh", base64.b64decode(built["data"]), fields={"ot_name": "Changed"})
+
+
+def test_full_pb7_import_is_saved_in_the_launchers_box_format(service, tmp_path):
+    box = base64.b64decode(service.make("lgpe", 25, TRAINER)["data"])[:232]
+    full = tmp_path / "full.pb7"
+    full.write_bytes(box + bytes(260 - len(box)))
+    imported = service.import_file("lgpe", str(full))
+    assert imported["legal"]
+    assert len(Path(imported["file"]).read_bytes()) == 260
+    assert len(Path(pokemon.prepare_file("lgpe", imported["file"])).read_bytes()) == 232
+
+
+def test_gifts_need_no_game_image_and_reject_unsafe_ids(service):
+    good = wc8.pokemon_card(25, level=25)
+    assert service.validate_gift(good)["valid"]
+    with pytest.raises(pokemon.BuilderError, match="checksum"):
+        service.validate_gift(bytes(720))
+    for fields in ({"held_item": 65535}, {"move1": 65535}, {"species": 9999}):
+        args = {"species": 25, **fields}
+        with pytest.raises(pokemon.BuilderError):
+            service.validate_gift(wc8.pokemon_card(**args))
+    with pytest.raises(pokemon.BuilderError, match="species"):
+        service.validate_gift(wc8.pokemon_card(1, form=255))

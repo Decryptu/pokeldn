@@ -11,8 +11,9 @@ sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
 from pokeldn.frlg.gift import gift_composer, wonder_card  # noqa: E402
 from pokeldn.frlg.text import charmap  # noqa: E402
-from pokeldn.ldn import beacon, crypto, pia_connect, reliable, transport  # noqa: E402
-from pokeldn.ldn.host_beacon import (  # noqa: E402
+from pokeldn.frlg.link import beacon
+from pokeldn.ldn import crypto, pia_connect, reliable, transport  # noqa: E402
+from pokeldn.frlg.link.host_beacon import (  # noqa: E402
     build_trade_app_data, build_wonder_card_app_data,
 )
 from pokeldn.frlg.gift.host_mg_app import (  # noqa: E402
@@ -28,7 +29,7 @@ SESSION_ID = b"\x7b\xf1"
 
 
 def _record(app_data):
-    return transport._b85_decode(app_data[beacon.PIA_HDR:])[:beacon.RECORD_SIZE]
+    return beacon.b85_decode(app_data[beacon.PIA_HDR:])[:beacon.RECORD_SIZE]
 
 
 def _search_word(app_data):

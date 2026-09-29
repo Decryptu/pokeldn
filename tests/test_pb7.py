@@ -1,4 +1,5 @@
 """The structure Let's Go trades, pinned to a message a host sent over LDN."""
+from pathlib import Path
 import os
 import struct
 
@@ -209,7 +210,7 @@ def test_a_fresh_offer_moves_only_its_pid_and_constant(message, tmp_path):
     (tmp_path / "offer.pb7").write_bytes(body)
     args = argparse.Namespace(offer=str(tmp_path / "offer.pb7"), fresh_pid=True)
     trade.fresh_offer(args)
-    made = open(args.offer, "rb").read()
+    made = Path(args.offer).read_bytes()
     assert args.offer.endswith("_fresh.pb7") and pb7.valid(made)
     before, after = pb7.decrypt(body), pb7.decrypt(made)
     changed = {i for i in range(pb7.BOX_SIZE) if before[i] != after[i]}

@@ -31,30 +31,7 @@ def gba_str(b):
     return "".join(out)
 
 
-DECOMP_PATHS = ("~/pokefirered", "~/Git/pokefirered")
-
-
-def load_species(decomp=None):
-    """Internal species index -> name, from the decomp's species.h; not the National Dex number:
-    252-276 are OLD_UNOWN, Hoenn starts at 277."""
-    import os
-    import re
-    for candidate in ((decomp,) if decomp is not None else DECOMP_PATHS):
-        path = os.path.expanduser(os.path.join(candidate, "include/constants/species.h"))
-        m = {}
-        try:
-            for line in open(path):
-                g = re.match(r"#define SPECIES_(\w+)\s+(\d+)", line.strip())
-                if g:
-                    m.setdefault(int(g.group(2)), g.group(1))
-        except OSError:
-            continue
-        if m:
-            return m
-    return {4: "CHARMANDER", 5: "CHARMELEON", 16: "PIDGEY", 19: "RATTATA"}
-
-
-SPECIES = load_species()
+from pokeldn.frlg.save.species_names import SPECIES
 
 
 def decode_mon(mon):

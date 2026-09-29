@@ -1,6 +1,7 @@
 """The per-VBlank orchestrator: transport <-> crypto <-> Pia <-> trade engine. No trade traffic
 until the ConnectionManager is connected; station var-ids are learned from the wire."""
 
+from pokeldn.host_support import open_output
 import json
 import os
 import time
@@ -179,7 +180,7 @@ class Sim:
         if conn is not None:
             conn.our_var = int.from_bytes(self.our_var, "big")
 
-        self._cap = open(capture_path, "w", buffering=1) if capture_path else None
+        self._cap = open_output(capture_path, "w", buffering=1) if capture_path else None
         if self._cap:
             self._cap.write(json.dumps({"rec": "meta", "event": "session", "kind": "sim",
                                         "ip": our_ip, "host": host_ip,

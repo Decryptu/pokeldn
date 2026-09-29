@@ -7,7 +7,7 @@ import threading
 import time
 from typing import Callable
 
-from gui.paths import ROOT
+from pokeldn.app.paths import ROOT
 
 # Session and flash runs are child processes of the app itself (`--run` / `--module`), which
 # also works inside a packaged app where no separate python executable exists.
@@ -25,7 +25,7 @@ def child(argv: list[str]) -> None:
     for stream in (sys.stdout, sys.stderr):
         if stream:
             stream.reconfigure(line_buffering=True)
-    if sys.stdin:
+    if sys.stdin and os.environ.get("POKELDN_MANAGED_RUN"):
         threading.Thread(target=_stop_on_stdin_close, daemon=True).start()
     mode, target, *args = argv
     if mode == "--run":
@@ -41,7 +41,7 @@ def child(argv: list[str]) -> None:
 def command(*argv: str) -> list[str]:
     if getattr(sys, "frozen", False):
         return [sys.executable, *argv]
-    return [sys.executable, "-u", os.path.join(ROOT, "gui", "main.py"), *argv]
+    return [sys.executable, "-u", os.path.join(ROOT, "pokeldn", "app", "entry.py"), *argv]
 
 
 class Process:
@@ -63,6 +63,9 @@ class Process:
     def _pump(self) -> None:
         for line in self.proc.stdout:
             self.on_line(line.rstrip("\n"))
+        self.proc.stdout.close()
+        if not self.proc.stdin.closed:
+            self.proc.stdin.close()
         self.on_exit(self.proc.wait())
 
     def stop(self) -> None:
@@ -88,7 +91,8 @@ class Process:
 
 
 def base_env(settings, port: str, trace: str | None = None) -> dict:
-    env = dict(os.environ, PYTHONUNBUFFERED="1", POKELDN_ESP32_BAUD=str(settings.baud))
+    env = dict(os.environ, PYTHONUNBUFFERED="1", POKELDN_ESP32_BAUD=str(settings.baud),
+               POKELDN_MANAGED_RUN="1")
     env["POKELDN_RADIO"] = f"esp32:{port or 'auto'}"
     if trace:
         env["POKELDN_ESP32_TRACE"] = trace

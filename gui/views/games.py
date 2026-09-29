@@ -5,11 +5,11 @@ import time
 
 import flet as ft
 
-from gui import command, runner
+from pokeldn.app import command, runner
 from gui import theme as t
-from gui.catalog import GAMES, Field, Game, Tool
-from gui.introspect import flags_of
-from gui.paths import SESSION
+from pokeldn.app.catalog import GAMES, Field, Game, Tool
+from pokeldn.app.introspect import flags_of
+from pokeldn.app.paths import SESSION
 from gui.views.pokemon import NAME_LISTS, NamePicker, PokemonPicker
 from gui.views.widgets import Log, PathField, open_folder
 
@@ -354,8 +354,7 @@ class SessionPanel:
             return
         stamp = time.strftime("%Y%m%d-%H%M%S")
         args = command.build(tool, self.games.values, self.games.extra, s, stamp)
-        # Some entry points write working files under scratchpad/ in their working directory.
-        for folder in (SESSION / "captures", SESSION / "scratchpad", os.path.expanduser(s.received)):
+        for folder in (SESSION / "captures", os.path.expanduser(s.received)):
             os.makedirs(folder, exist_ok=True)
         trace = f"captures/{tool.key}-{stamp}_esp32.trace" if s.board_trace else None
         self.log.add(f"[app] {tool.name} · {self.games.game.name} · radio {port}")
