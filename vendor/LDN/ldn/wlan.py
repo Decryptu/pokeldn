@@ -11,7 +11,6 @@ from ldn import streams, util, queue
 
 import contextlib
 import os
-import fcntl
 import netlink
 import socket
 import string
@@ -1821,6 +1820,7 @@ class Factory:
     async def create_tap(
         self, ifname: str, address: MACAddress
     ) -> AsyncIterator[Tap]:
+        import fcntl  # POSIX only; only the TAP needs it, so hosts without one can import wlan
         file = await trio.open_file("/dev/net/tun", "rb+", buffering=0)
         async with file:
             request = struct.pack("16sH", ifname.encode(), IFF_TAP | IFF_NO_PI)

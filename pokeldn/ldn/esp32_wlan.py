@@ -494,7 +494,12 @@ def auto_port(candidates=None):
     resets its board."""
     import glob
     if candidates is None:
-        candidates = sorted({p for g in SERIAL_PORT_GLOBS for p in glob.glob(g)})
+        if sys.platform == "win32":
+            # Windows has no /dev nodes; a board's COM port comes from the USB serial enumeration.
+            from serial.tools import list_ports
+            candidates = sorted(p.device for p in list_ports.comports() if p.vid is not None)
+        else:
+            candidates = sorted({p for g in SERIAL_PORT_GLOBS for p in glob.glob(g)})
     if len(candidates) != 1:
         raise RuntimeError(f"POKELDN_RADIO=esp32:auto needs exactly one USB serial port, found "
                            f"{candidates or 'none'}; name the radio's port instead")
