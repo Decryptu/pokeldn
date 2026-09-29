@@ -76,7 +76,9 @@ def main() -> int:
                 "--bundle-id", "io.github.decryptu.pokeldn", "--add-data",
                 *[f"{src}{os.pathsep}{dest}" for src, dest in data]]
         scripts = sorted(p.stem for p in (stage / "bin").glob("*.py"))
+        console = ["--console", "--hide-console=hide-early"] if sys.platform == "win32" else []
         for option in (f"--paths={dependencies}", f"--paths={ROOT / 'bin'}", f"--paths={ROOT / 'vendor' / 'LDN'}",
+                       *console,
                        *[f"--hidden-import={s}" for s in scripts],
                        *[f"--exclude-module={m}" for m in platform_excludes()], "--collect-all=esptool",
                        "--collect-all=esp_pylib", "--collect-submodules=pokeldn",
