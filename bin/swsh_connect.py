@@ -1,14 +1,6 @@
 #!/usr/bin/env python3
 """Speak version-4 Pia to a Sword/Shield console, from the first packet out to a completed trade.
 
-The console broadcasts a Local Protocol (0x24) update session ten times a second and repeats it
-until every station acknowledges it, so the ack needs nothing above Pia and its pass signal is the
-rebroadcast stopping. The announcement parses with `pokeldn.ldn.local_protocol`: version 1, type
-0x11, 0x30 fixed bytes, eight 9-byte seats.
-
-The header byte at 0x05 and the GCM IV's source-id byte are the same station index; `--station`
-sets both and `--station-sweep` walks the readings. The console sends 0 on every packet.
-
 Never pass --verbose to a live run; use --capture. docs/swsh_session.md, docs/pia.md.
 """
 import argparse, json, os, shlex, socket, struct, sys, time, traceback, zlib
@@ -80,12 +72,9 @@ def make_socket(ifname):
 
 def wrap(keys, our_mac, our_constant, nonce8, payload, protocol, station, port=0,
          message_flags=pia4.MESSAGE_FLAGS, destination=0):
-    """A version-4 packet carrying one message, framed the way the console frames its own.
+    """A version-4 packet carrying one message; the station byte goes in the header and the IV.
 
-    The station byte goes in the header and in the IV's source-id byte; 5.27 couples the two.
-
-    `destination` is a station BITMAP, not an index. The console addresses our seat (index 1) as 2;
-    ours back at it is 1.
+    `destination` is a station bitmap, not an index: the console addresses seat 1 as 2.
     """
     body = pia4.build_message(payload, protocol=protocol, source=our_constant, port=port,
                               message_flags=message_flags, destination=destination)
@@ -115,7 +104,6 @@ async def main_async(args):
     keys = session_keys(net)
     print(f"[cx] target ssid={net.ssid.hex()} ch={net.channel} scene={net.scene_id} "
           f"app_version={net.app_version}")
-    # The scene id is recorded, never branched on; what it means here is unknown.
     print(f"[cx] {keys}")
 
     param = ldn.ConnectNetworkParam()
@@ -191,8 +179,7 @@ async def main_async(args):
               "ladder_finished": False,
               "block_out": 0, "block_acked": None}
 
-        accepted = trio.Event()           # the station handshake closed; a mesh join is only
-                                          # ever answered after this
+        accepted = trio.Event()           # station handshake closed; a mesh join waits for it
         nonce = int.from_bytes(os.urandom(8), "big")
 
         def next_nonce():
@@ -203,9 +190,7 @@ async def main_async(args):
         def open_phase(offset, label):
             """Queue an RPC pair that opens a phase, built from the console's own 40030 envelope.
 
-            A phase can only be opened while the conversation is still running. Sent on the
-            migration start (the console's teardown) the pair is never read and never acked.
-            """
+            Sent on the migration start (the teardown) the pair is never read or acked."""
             if st["selection_sent"]:
                 return
             last = st["said_by_port"].get((reliable5.PROTOCOL, args.rpc_port))
@@ -216,9 +201,7 @@ async def main_async(args):
             clock = got["clock"] + args.rpc_clock_delta
             pair = swsh_trade.build_rpc_pair(offset, our_constant, clock)
             if args.offer_on_50 and st["our_pk8"] is not None:
-                # Content 50 is the transfer (`PokemonTradeDataHolder`); content 30 is the box
-                # exchange. On 50 the entity rides field 5 of the 40050 envelope. The pair is
-                # ignored if its bodies are the 40030 pair's four-byte ones.
+                # Content 50 ignores a pair with 40030's four-byte bodies; its PK8 rides field 5.
                 pair = (pair[0], swsh_trade.build_rpc_pokemon(
                     offset, swsh_trade.RPC_BASES[1], our_constant, clock, st["our_pk8"]))
                 print(f"[tx]     the second member carries our PK8 in field "
@@ -231,29 +214,19 @@ async def main_async(args):
 
 
         def _opener_for(offset):
-            """-> what to send on content `offset`'s 10000-base holder to open it.
+            """-> the opener for content `offset`'s 10000-base holder.
 
-            `0x010d81d0` takes the default-instance branch when the body carries no field 1 and
-            calls the listener anyway, so an empty `PokemonTradeDataHolder` opener is accepted as
-            our Pokemon and the player is offered an egg. With `--open-content-offer` the opener
-            for a content we hold a PK8 for is that PK8.
-            """
+            An empty opener is taken as our Pokemon and offers the player an egg (`0x010d81d0`)."""
             if args.open_content_offer and st["our_pk8"] is not None:
                 return swsh_trade.pokemon_offer(offset, st["our_pk8"])
             return swsh_trade.open_content(offset)
 
 
         def reliable_window(protocol, port, body, now):
-            """One version-4 reliable window, on whatever protocol and port it arrives.
+            """One version-4 reliable window, keyed by (protocol, port).
 
-            There is more than one window: 0x7C port 0 is the game's, and the mesh protocol has its
-            own on 0x18 port 1 (`mesh.PORT_RELIABLE`). An unacknowledged window tears the mesh down
-            within seconds, whichever protocol carries it.
-
-            A window does not start at sequence 1. On a rejoined session the stream resumes where
-            it left off, so a receiver seeded at 0 acks nothing. Per `0x01859d20`, the first
-            message carrying FLAG_IS_INITIALIZED defines where the stream starts.
-            """
+            A rejoined stream resumes mid-sequence: the first message carrying FLAG_IS_INITIALIZED
+            sets where it starts (`0x01859d20`)."""
             key = (protocol, port)
             w = st["windows"].setdefault(key, {"seqs": set(), "through": None, "acks": 0, "in": 0})
             w["in"] += 1
@@ -277,41 +250,34 @@ async def main_async(args):
                     st["their_ack_id"] = max(st["their_ack_id"], e["ack_id"])
                     st["ack_by_proto"][protocol] = max(st["ack_by_proto"].get(protocol, 0),
                                                        e["ack_id"])
-                    # Per port: the console sends its trade RPC pair on 0x7C port 1 and its
-                    # Pokemon offer on port 0. A per-protocol counter conflates the two windows.
+                    # Per port: 0x7C port 1 carries the RPC pair, port 0 the offer; one counter
+                    # conflates them.
                     st["ack_by_port"][(protocol, port)] = max(
                         st["ack_by_port"].get((protocol, port), 0), e["ack_id"])
                 if (st["data_acked"] is None and st["data_out"]
                         and protocol == args.send_protocol):
-                    # The console acknowledges application data and nothing else.
                     st["data_acked"] = now
                     print(f"[rx]     *** IT ANSWERED OUR DATA, t={now:.2f} ***")
                 return
-            # A resend of an older sequence must not replace what the console says now: on the
-            # ESP32 board pingReply (9) came back after pingSynced (10) and stalled the sync.
+            # An older resend must not replace the current payload: pingReply (9) arriving after
+            # pingSynced (10) stalled the sync.
             if not (w["seqs"] and got["sequence_id"] <= max(w["seqs"])):
                 st["their_payload"] = got["payload"]
                 st["said_by_proto"][protocol] = got["payload"]
                 st["said_by_port"][(protocol, port)] = got["payload"]
-            # id 130 pingSynced (`820000001a00`) arrives about 0.3 s ahead of the console's own
-            # burst and is the cue to open the selection phase. `open_phase` latches.
+            # pingSynced on id 130 is the cue to open the selection phase.
             if args.selection_start and got["payload"] == swsh_trade.sync(
                     130, swsh_trade.PING_SYNCED):
                 open_phase(swsh_trade.SELECTION_OFFSET, "SELECTION, ON THE 130 PINGSYNCED")
-            # An RPC is a PAIR, one member per base (10000 and 20000). `said_by_port` keeps only
-            # the last payload, so members must be kept by base for the sender to answer both.
-            # Key on the base field, not on payload[5]: that byte is the inner length and varies
-            # with the sender's station-id varint width (0x19/0x1A on one console, 0x1A/0x1B on
-            # another).
+            # An RPC is a pair, one member per base; keep both. Key on the base field, never
+            # payload[5]: that is the inner length and varies with the station-id varint width.
             if protocol == reliable5.PROTOCOL:
                 member = swsh_trade.parse_rpc(got["payload"])
                 if member is not None and member["base"] in swsh_trade.RPC_BASES:
-                    # Keyed by envelope and base: each phase has its own envelope (40030 offer,
-                    # 40050 selection, 40040 confirmation) and sends the same two members.
                     st["rpc_seen"][(member["envelope"], member["base"])] = got["payload"]
-                    # --abort-on-stall watches this. Any four-byte body on the confirmation
-                    # content's 20000 base is a step (`0x006d6490` drops every other length); the
-                    # console repeats the step it is parked on, so only an unseen body is movement.
+                    # --abort-on-stall: any four-byte body on 40040/20000 is a step (`0x006d6490`
+                    # drops other lengths); the console repeats its parked step, so only an unseen
+                    # body is movement.
                     if (member["envelope"] == (swsh_trade.RPC_ENVELOPE_BASE
                                                + swsh_trade.CONFIRMATION_OFFSET)
                             and member["base"] == swsh_trade.RPC_BASES[1]
@@ -327,18 +293,9 @@ async def main_async(args):
                                       f"teardown rung, THE ABORT STANDS DOWN *** "
                                       f"{member['body'].hex()} at t={now:.2f}")
                             st["ladder_finished"] = True
-                    # The confirmation content sends the same cue one content along: a
-                    # 40040/20000 member whose body also ends `0100`. It needs its own latch, or
-                    # the selection cue spends the one latch and the port-0 half never goes out.
-                    #
-                    # The answer here is a command, not a Pokemon: content 40's 10000-base holder
-                    # parses with `0x010df6d0`, which takes
-                    # `SyncSaveDataHolder{syncCommand{data:int32}}` and nothing else.
-                    # `swsh_trade.SYNC_COMMANDS` lists the values its state machine sends.
-                    #
-                    # The ladder is a handshake: the console's machine sends 0, 1, 2, 3 and parks
-                    # after each, so `--confirm-commands` sends the next one per new step. Do not
-                    # trigger on "the body ends 0100": `01000200` is a step and does not.
+                    # The confirmation cue (40040/20000, body ending `0100`) needs its own latch.
+                    # The answer is a `SyncSaveDataHolder` command (`0x010df6d0`), one per new step
+                    # with --confirm-commands; `01000200` is a step that does not end `0100`.
                     answered_confirmation = False
                     if st["confirm_queue"] is None:
                         st["confirm_queue"] = (
@@ -376,48 +333,35 @@ async def main_async(args):
                               f"{got['payload'].hex()}"
                               + (f" (step: phase {step[0]}, announced {step[1]})"
                                  if step else ""))
-                    # Once the 40050 pair is answered the console puts a 344-byte PK8 in field 5
-                    # of a 40050 envelope, then a status whose four-byte body ends `0100` instead
-                    # of the `18fc` every other member carries. That status is the cue to offer
-                    # ours on the same content's 10000-base holder (id 10050, reliable port 0) and
-                    # to answer the status itself on port 1.
+                    # After the 40050 pair the console sends its PK8, then a status ending `0100`
+                    # (not `18fc`): the cue to offer ours on 10050 port 0 and answer the status on
+                    # port 1.
                     if (args.selection_offer and not answered_confirmation
                             and member["base"] == swsh_trade.RPC_BASES[1]
                             and member["body"][-2:] == b"\x01\x00" and len(member["body"]) == 4
                             and not st["offer_status_answered"]
                             and st["our_pk8"] is not None):
-                        # A hard latch. A set keyed on a parsed field has been seen to let this
-                        # branch fire 48 times in one run. One offer per run; the trigger is
-                        # printed.
+                        # A hard latch: a set keyed on a parsed field let this fire 48 times in one
+                        # run.
                         st["offer_status_answered"].add(True)
-                        # The Pokemon goes out on the port-0 window and the status answer on
-                        # port 1. `box_queue` drains into `offer_pending` on port 0; `rpc_queue`
-                        # belongs to the port-1 sender.
+                        # `box_queue` drains to port 0, `rpc_queue` to port 1.
                         if args.selection_offer_sweep:
-                            # swsh_trade.SELECTION_SWEEP_NOTE lists the shapes. Spaced through
-                            # box_queue, behind the mirror shape.
+                            # The shapes: swsh_trade.SELECTION_SWEEP_NOTE.
                             st["box_queue"] = (st["box_queue"]
                                                + list(swsh_trade.selection_sweep(
                                                    member["offset"], st["our_pk8"])))
                             st["box_next"] = 0.0
                         elif args.selection_offer_high:
-                            # The 20000-base holder. The box phase's Pokemon rides 20030, one
-                            # content over, and that is the exchange the player sees.
                             st["box_queue"] = st["box_queue"] + [
                                 swsh_trade.pokemon_offer_high(member["offset"], st["our_pk8"])]
                             st["box_next"] = 0.0
                         elif args.selection_offer_mirror:
-                            # The console's own Pokemon-carrying 40050 decodes to fields 1, 4
-                            # and 5 only. This mirrors that field set.
                             clock = (member["clock"] or 0) + args.rpc_clock_delta
                             st["rpc_queue"] = [swsh_trade.mirror_pokemon_offer(
                                 member["offset"], clock, st["our_pk8"])] + st["rpc_queue"]
                         elif args.selection_offer_data:
-                            # Content 50's receive handler `0x010d5e40` resolves the sender to a
-                            # station index before it looks at a body and returns silently when it
-                            # cannot. This shape carries the PK8 in `body` of a 40050 whose
-                            # ownerId is ours, on the port the console sends its own on.
-                            # docs/swsh_protocol.md.
+                            # `0x010d5e40` drops a body whose sender resolves to no station
+                            # (docs/swsh_protocol.md).
                             clock = (member["clock"] or 0) + args.rpc_clock_delta
                             st["rpc_queue"] = [swsh_trade.build_rpc_pokemon(
                                 member["offset"], swsh_trade.RPC_BASES[1], our_constant,
@@ -427,9 +371,8 @@ async def main_async(args):
                                 swsh_trade.pokemon_offer(member["offset"], st["our_pk8"])]
                             st["box_next"] = 0.0
                         if args.sync_after_offer is not None:
-                            # --sync-after-hash cannot fire while --selection-offer is on: this
-                            # branch latches the body into rpc_bodies_answered first. Queue the
-                            # opener behind our own Pokemon instead.
+                            # --sync-after-hash cannot fire here: this branch latches the body
+                            # first, so queue the opener behind our Pokemon.
                             st["box_queue"] = st["box_queue"] + [
                                 swsh_trade.sync(args.sync_after_offer, args.sync_field)]
                             st["box_next"] = 0.0
@@ -454,9 +397,8 @@ async def main_async(args):
                         print(f"[tx]     *** THE SELECTION OFFER STATUS *** offering our "
                               f"Pokemon {where} and answering the status on port 1, triggered by "
                               f"{got['payload'].hex()}")
-                    # Every other distinct body, once. The clock advances on every message, so
-                    # the payload cannot be the key; (envelope, base, body) answers each new thing
-                    # the console says once and ignores its retransmissions.
+                    # Every other distinct body, once; the clock changes per message, so it is not
+                    # the key.
                     elif (args.rpc_bodies and member["clock"] is not None
                             and len(member["body"]) == 4):
                         seen_body = (member["envelope"], member["base"],
@@ -464,10 +406,8 @@ async def main_async(args):
                         if (seen_body not in st["rpc_bodies_answered"]
                                 and bytes(member["body"]) not in (b"\x00\x00\x00\x00",
                                                                   b"\x00\x00\x18\xfc")):
-                            # The confirmation content runs the selection content's ladder: the
-                            # pair, a member on elementId 1, then a hash. An elementId-1 echo and a
-                            # hash only appear once a record has reached a content's receive event.
-                            # It stalls at the same rung and needs the same re-arm, on its own flag.
+                            # The confirmation content stalls at the selection's hash rung and takes
+                            # the same re-arm.
                             if (args.confirm_final_delta
                                     and member["envelope"] ==
                                     swsh_trade.RPC_ENVELOPE_BASE
@@ -481,20 +421,15 @@ async def main_async(args):
                             if (args.selection_final_delta
                                     and member["envelope"] ==
                                     swsh_trade.RPC_ENVELOPE_BASE + swsh_trade.SELECTION_OFFSET):
-                                # After the offer the hash is answered with one member, then the
-                                # next 40050 pair with both members at a larger clock delta
-                                # (`selection_final_delta`, 9). `--rpc-pair` latches per envelope,
-                                # so the second pair needs the latch cleared.
+                                # `--rpc-pair` latches per envelope; the post-hash pair at the
+                                # larger delta needs it cleared.
                                 st["rpc_pair_sent"].discard(member["envelope"])
                                 st["rpc_pair_delta"][member["envelope"]] = \
                                     args.selection_final_delta
                                 print(f"[tx]     *** THE HASH - RE-ARMING THE {member['envelope']}"
                                       f" PAIR AT CLOCK +{args.selection_final_delta} ***")
-                            # `answer_rpc` copies the body, so an echo carries the console's own
-                            # two u16s and cannot move the value. `0x006d6490` stores any
-                            # four-byte Data whose (elementId, ownerId) matches a registered
-                            # sub-element at `sub+0x88`, and `0x006d3260` reads the phase back out
-                            # of those bytes. `--confirm-phase N` writes the low half only.
+                            # An echo copies the console's own body and cannot move the phase
+                            # (`0x006d6490`, `0x006d3260`); --confirm-phase writes the low half.
                             reply = None
                             if (args.confirm_phase is not None
                                     and member["envelope"] == swsh_trade.RPC_ENVELOPE_BASE
@@ -515,14 +450,12 @@ async def main_async(args):
                             if reply is not None:
                                 st["rpc_bodies_answered"].add(seen_body)
                                 st["rpc_queue"] = st["rpc_queue"] + [reply]
-                                # The console stops sending 40050 once this answer lands and
-                                # opens nothing further; the next phase has to be opened here.
+                                # The console sends no more 40050 once this lands; the next phase is
+                                # opened here.
                                 if (args.pair_after_hash is not None
                                         and not st["confirmation_opened"]):
-                                    # A phase opens on a PAIR of RPC members with the standard
-                                    # bodies, the way 40030 opened the offer and 40050 the
-                                    # selection. A bare ping on the 10000-base holder is ignored.
-                                    # `build_rpc_pair` uses our station id and the console's clock.
+                                    # A phase opens on a pair of RPC members; a bare ping on the
+                                    # 10000 base is ignored.
                                     st["confirmation_opened"] = True
                                     clock = (member["clock"] or 0) + args.rpc_clock_delta
                                     pair = swsh_trade.build_rpc_pair(
@@ -532,12 +465,8 @@ async def main_async(args):
                                           f" PHASE WITH A PAIR *** {[p.hex() for p in pair]}")
                                 elif (args.sync_after_hash is not None
                                         and not st["confirmation_opened"]):
-                                    # The sync chain runs 97 -> 60000 -> 110 -> 130; the console
-                                    # opens the selection phase when 130's pingSynced lands. It
-                                    # never sends id 120, the confirmation's trigger, so nothing
-                                    # starts 120 unless this does. A phase follows its sync, not
-                                    # a ping. `--sync-field` picks field 3 (pingSynced,
-                                    # `780000001a00`) or field 1 (a plain ping).
+                                    # The console never sends id 120, the confirmation's trigger;
+                                    # nothing starts it but this.
                                     st["confirmation_opened"] = True
                                     opener = swsh_trade.sync(args.sync_after_hash,
                                                              args.sync_field)
@@ -547,13 +476,9 @@ async def main_async(args):
                                           f"AFTER THE HASH *** {opener.hex()}")
                                 print(f"[tx]     *** ANSWERING A NEW {member['envelope']} BODY "
                                       f"{bytes(member['body']).hex()} *** {reply.hex()}")
-            # `--answer-once` distinguishes a new payload from a repeat by this counter: a
-            # sender that has already answered this serial has nothing to say.
             st["said_serial"] += 1
             st["serial_by_proto"][protocol] = st["said_serial"]
             st["serial_by_port"][(protocol, port)] = st["said_serial"]
-            # 0x18 port 1 is the mesh protocol's reliable port, so a payload here is a mesh
-            # message. The console sends MIGRATION_START when the player accepts the trade.
             if protocol == mesh.PROTOCOL:
                 start = mesh.parse_migration_start(got["payload"])
                 if start is not None:
@@ -562,8 +487,6 @@ async def main_async(args):
                           f"{start['new_host_index']} as the next host")
                     record(rec="rx_migration_start", t=now, **start)
                     if args.box_on_accept:
-                        # MIGRATION_START is the only signal that the player pressed accept.
-                        # The console keeps acknowledging for about five seconds after it.
                         st["box_queue"] = [swsh_trade.box_sync_state(int(c, 0))
                                            for c in args.box_on_accept.split(",")]
                         st["box_next"] = 0.0
@@ -571,10 +494,8 @@ async def main_async(args):
                         print(f"[tx]     *** ANSWERING THE ACCEPT *** box commands "
                               f"{args.box_on_accept}: "
                               f"{[p.hex() for p in st['box_queue']]}")
-                    # MIGRATION_START arrives once, seconds after the player accepts, and never
-                    # in a run where they did not. The console does not retransmit it; one
-                    # transport ack satisfies it. Answering it makes the console give up sooner
-                    # than ignoring it does.
+                    # MIGRATION_START is never retransmitted; answering it makes the console give up
+                    # sooner.
                     if args.send_selection == "migration":
                         open_phase(swsh_trade.SELECTION_OFFSET, "SELECTION")
                     if args.answer_migration and st["migration_pending"] is None:
@@ -583,11 +504,8 @@ async def main_async(args):
                             index = start["new_host_index"]
                             print("[tx]     no join response gave us an index; using the one the "
                                   "migration start names")
-                        # A MIGRATION_RESPONSE travels TO the new host (`0x017c3250` takes the
-                        # destination in w1 and its caller passes the new host index), so a station
-                        # just named the next host owes a FINISH, not a response. Sending 0x48 to
-                        # the console leaves it waiting to be told the migration is over: it steps
-                        # its update session, stops answering RTT and drops the link with
+                        # A MIGRATION_RESPONSE goes TO the new host (`0x017c3250`), so the named
+                        # host owes a FINISH; 0x48 sent to the console drops the link with
                         # 2-ALZAA-0016.
                         if args.migration_answer == "response" or (
                                 args.migration_answer == "auto"
@@ -606,8 +524,6 @@ async def main_async(args):
                     print(f"\n[rx] t={now:6.2f} *** MIGRATION FINISHED *** host "
                           f"{finish['host_index']} flag {finish['flag']}")
                     record(rec="rx_migration_finish", t=now, **finish)
-            # Record every distinct payload, not just the last: the ones `--sync-answers` has no
-            # rule for are what the console says next, in its own ids.
             command = swsh_trade.parse_box_command(got["payload"])
             if command is not None:
                 st["box_seen"].append((round(now, 2), command))
@@ -624,11 +540,9 @@ async def main_async(args):
                 if args.save_offered:
                     open(args.save_offered, "wb").write(offered)
                     print(f"[rx]     saved to {args.save_offered}")
-                # An offer is a one-shot and must outrank the running mirror: the sender
-                # otherwise answers the RPC pair the console repeats several times a second.
+                # One-shot, and it outranks the mirror, which answers the RPC pair the console
+                # repeats.
                 if args.offer_echo:
-                    # The record the console just sent came out of its own save, so a run that
-                    # offers it back and still aborts rules the record out as the cause.
                     st["our_pk8"] = offered
                     print("[tx]     *** ECHOING ITS OWN RECORD BACK, unchanged ***")
                 if st["our_pk8"] is not None:
@@ -651,7 +565,7 @@ async def main_async(args):
             w["seqs"].add(got["sequence_id"])
             through = reliable5.contiguous_through(w["seqs"], w["through"])
             if through == w["through"]:
-                return                        # nothing new is contiguous; do not re-ack
+                return
             w["through"] = through
             ack = reliable4.build_ack_message(through + 1, stream_id=got["stream_id"],
                                               slots=args.ack_slots,
@@ -740,8 +654,8 @@ async def main_async(args):
                                       f"{them['nat_flags']}/{them['nat_location']} ack "
                                       f"{got['ack_id']}")
                             st["requests_in"] += 1
-                            # WHOSE ids belong in the response is a deduction, so alternate the two
-                            # readings across retransmits and let the console pick.
+                            # Which ids belong in the response is unknown; alternate the two
+                            # readings.
                             mine = args.respond_with == "ours" or (
                                 args.respond_with == "both" and st["responses"] % 2)
                             cid = our_constant if mine else them["constant_id"]
@@ -756,9 +670,8 @@ async def main_async(args):
                             print(f"[tx]     answered with result {args.respond_result}, "
                                   f"{'our' if mine else 'their'} ids: {reply.hex()}")
                         elif kind == station4.CONNECTION_RESPONSE and args.respond:
-                            # THE CONSOLE ACCEPTED US AND REPEATS UNTIL IT IS ACKED - the same
-                            # pass/fail the update session gives, one layer up. Two readings of
-                            # which u32 belongs in the ack, alternated across the retransmits.
+                            # The console repeats its acceptance until acked; the ack's u32
+                            # alternates two readings.
                             st["responses_in"] += 1
                             if result == 0 and st["responses_in"] == 1:
                                 print(f"[rx]     *** ACCEPTED INTO THE MESH *** {len(body)} B")
@@ -780,10 +693,6 @@ async def main_async(args):
                                 print(f"[tx]     acked with {ack_id:#010x} "
                                       f"({'the message tail' if use_trailing else 'their variable id'})")
                     elif f["protocol"] == mesh.PROTOCOL and f["port"] == mesh.PORT_RELIABLE:
-                        # 0x18 port 1 is the mesh protocol's own reliable port: a version-4
-                        # reliable header carrying a mesh message. The console sends `440001`
-                        # (MIGRATION_START) here when the player accepts. `reliable_window` reads
-                        # both layers.
                         st["mesh_in"] += 1
                         if args.ack_reliable:
                             reliable_window(mesh.PROTOCOL, mesh.PORT_RELIABLE, body, now)
@@ -791,9 +700,7 @@ async def main_async(args):
                             print(f"\n[rx] t={now:6.2f} *** 0x18 PORT 1 *** {len(body)} B "
                                   f"{body[:32].hex()} - not acked, --ack-reliable is off")
                     elif f["protocol"] == mesh.PROTOCOL:
-                        # 0x18. The join response carries the whole mesh; version 4's entries are
-                        # 64 bytes with the index at 0x3E, which is the one thing that differs from
-                        # BDSP's (mesh_protocol, main.bin 0x017b4830).
+                        # Version-4 mesh entries are 64 bytes, the index at 0x3E (docs/pia.md).
                         st["mesh_in"] += 1
                         st["answer"] = st["answer"] or (now, st["phase"], f["protocol"])
                         kind, kname = mesh.parse_message(body)
@@ -825,8 +732,8 @@ async def main_async(args):
                             record(rec="rx_join_response", t=now, parsed=got, raw=body.hex())
                         elif kind == mesh.UPDATE_MESH:
                             st["updates_mesh"] += 1
-                            # Kept because after a migration we send these, and the cheapest
-                            # correct one is the console's own with the host index changed.
+                            # Kept: after a migration we resend the console's own with the host
+                            # index changed.
                             st["last_update_mesh"] = body
                             try:
                                 got = mesh.parse_update_mesh(body, version4=True)
@@ -850,8 +757,8 @@ async def main_async(args):
                             record(rec="tx_mesh_ack", t=now, protocol=proto, ack=payload.hex())
                             print(f"[tx]     acked it on {proto:#04x}: {payload.hex()}")
                     elif f["protocol"] == rtt.PROTOCOL and args.answer_rtt:
-                        # 0x58. Sixteen bytes at version 4, not BDSP's thirteen, and the answer
-                        # echoes every byte we do not read (rtt_protocol.response_for_v4).
+                        # 0x58 is sixteen bytes at version 4; the answer echoes every byte we do not
+                        # read.
                         st["rtt_in"] += 1
                         try:
                             got = rtt.parse_v4(body)
@@ -874,14 +781,11 @@ async def main_async(args):
                                   f"{got['timestamp']:#014x}")
                             print(f"[tx]     answered: {reply.hex()}")
                     elif f["protocol"] == reliable5.PROTOCOL and args.ack_reliable:
-                        # 0x7C, the game's own window. THE PASS SIGNAL IS THE RETRANSMITS STOPPING,
-                        # the same shape as every other layer here.
                         st["reliable_in"] += 1
                         reliable_window(reliable5.PROTOCOL, f["port"], body, now)
                     elif f["protocol"] == reliable4.BROADCAST_PROTOCOL:
-                        # 0x80, BroadcastReliableProtocol. Every one of these is zlib compressed
-                        # (pia4.MESSAGE_FLAG_ZLIB) and pia4 has already decompressed it; read raw
-                        # its 42 bytes look like a message claiming a payload of 0x6260.
+                        # Every 0x80 message is zlib compressed; pia4 has already inflated it
+                        # (docs/pia.md).
                         st["broadcast_in"] += 1
                         try:
                             got = reliable4.parse_broadcast_message(body)
@@ -900,12 +804,9 @@ async def main_async(args):
                                       f"{[e['slot'] for e in live]} at id "
                                       f"{sorted({e['ack_id'] for e in live})}")
                         if got["is_ack"] and len(got["payload"]) == reliable4.ACK_PAYLOAD_SIZE:
-                            # The 0x80 pass signal is slots 0..7, the mesh's real stations
-                            # (8 is max_total from the join response); an ack id of 1 is a window
-                            # that has received nothing.
-                            #
-                            # Slots above 7 are not an ack. A stray byte appears at slots
-                            # 18/21/23/31 whose value tracks our own 0x7C ack id exactly.
+                            # Slots 0..7 are the mesh's stations; ack id 1 means nothing received. A
+                            # stray byte at slots 18/21/23/31 tracks our own 0x7C ack id and is not
+                            # an ack.
                             entries = reliable4.parse_ack_payload(got["payload"])
                             real = {e["ack_id"] for e in entries
                                     if e["slot"] < 8 and e["ack_id"]}
@@ -924,16 +825,13 @@ async def main_async(args):
                             elif fresh and st["broadcast_in"] > 1:
                                 print(f"[rx] t={now:6.2f} 0x80 ack ids now {sorted(real)}")
                         if got["flags"] & reliable4.FLAG_APPLICATION_DATA and args.ack_reliable:
-                            # 0x80 carries application data as well, and retransmits it until
-                            # acknowledged.
                             reliable_window(reliable4.BROADCAST_PROTOCOL, f["port"], body, now)
                         record(rec="rx_broadcast", t=now, parsed={
                             k: (v if not isinstance(v, bytes) else v.hex())
                             for k, v in got.items() if k != "payload"})
                     elif f["protocol"] == broadcast4.PROTOCOL:
-                        # 0x84, ReliableBroadcastProtocol: the console's trade snapshot. It
-                        # retransmits until acknowledged. Its sequence has to be echoed back in
-                        # the peer-sequence field of every message we send.
+                        # 0x84: its sequence is echoed in the peer-sequence field of every message
+                        # we send.
                         st["snapshot_in"] += 1
                         try:
                             got = broadcast4.parse(body)
@@ -956,12 +854,9 @@ async def main_async(args):
                                       f"ack this project has ever been sent")
                                 if ((args.box_open or args.open_early)
                                         and not st["box_open_sent"]):
-                                    # The game emits its own command 3 on the first frame after
-                                    # the trade session is built (0x010c9bb0, gated on the role bit
-                                    # at session+0x419), before either player has picked anything.
-                                    # Sent after the offers instead, the console leaves. The
-                                    # snapshot ack is the earliest one-shot available and lands
-                                    # about ten seconds before the console's own offer.
+                                    # The game sends command 3 once the trade session is built
+                                    # (`0x010c9bb0`); sent after the offers, the console leaves. The
+                                    # snapshot ack is the earliest one-shot.
                                     st["box_open_sent"] = True
                                     st["box_queue"] = ([swsh_trade.box_sync_state(int(c, 0))
                                                         for c in (args.box_open or "").split(",")
@@ -974,9 +869,8 @@ async def main_async(args):
                                     print(f"[tx]     *** OPENING WITH box {args.box_open}, "
                                           f"content {args.open_early} *** "
                                           f"{[p.hex() for p in st['box_queue']]}")
-                            # The base counts what the receiver holds. When it reaches every
-                            # fragment the sender must say so once with a 0x19; without that the
-                            # base repeats indefinitely.
+                            # When the base reaches every fragment, say so once with 0x19 or it
+                            # repeats forever.
                             if (st["snapshot_fragments"]
                                     and got["base"] >= st["snapshot_fragments"]
                                     and not st["snapshot_done_sent"]):
@@ -993,11 +887,8 @@ async def main_async(args):
                         elif got["kind"] in (broadcast4.KIND_DONE, broadcast4.KIND_DONE_ACK):
                             print(f"[rx] t={now:6.2f} 0x84 kind {got['kind']:#04x} "
                                   f"seq {got['sequence']}")
-                        # The console retransmits 0x84 until it is acknowledged; one unacked
-                        # snapshot ran to 19142 messages.
                         if args.ack_snapshot:
-                            # `body` is already inflated: pia4 acts on the message's own 0x10 flag
-                            # before this point, the same way it does for 0x80.
+                            # `body` is already inflated by pia4, as for 0x80.
                             for reply in st["snapshot_rx"].feed(body):
                                 sock.sendto(wrap(keys, our_mac, our_constant, next_nonce(), reply,
                                                  broadcast4.PROTOCOL,
@@ -1009,7 +900,6 @@ async def main_async(args):
                                 if st["snapshot_acks_out"] <= 4:
                                     print(f"[tx]     acked 0x84 {reply[:16].hex()}")
                     else:
-                        # A protocol the console has not used before is worth recording
                         st["other"].append((now, "proto", f["protocol"], body.hex()))
                         st["answer"] = st["answer"] or (now, st["phase"], f["protocol"])
                         print(f"\n[rx] t={now:6.2f} *** PROTOCOL {f['protocol']:#04x}, "
@@ -1047,8 +937,7 @@ async def main_async(args):
                         stopped = True
                         break
                 if stopped:
-                    break                 # the ack landed; stay in the sender rather than
-                                          # returning, which would drop the association
+                    break                 # returning would drop the association
                 print(f"[tx] station byte {station}: the rebroadcast did not stop "
                       f"({st['updates']} update sessions so far)")
             if args.connect:
@@ -1056,12 +945,9 @@ async def main_async(args):
             st["phase"] = "hold"
 
         async def connect_sweep(dst):
-            """Sweep the one pair of bytes a version-4 connection request cannot know in advance.
+            """Sweep the target's nat flags [1] and nat location [0x10], unknown before 0x18 speaks.
 
-            [1] and [0x10] are the TARGET's nat flags and nat location, and we have never seen the
-            console's station location - it travels on the Mesh Protocol, which has not spoken to
-            us. A mismatch is silence and a match is the console's first word on 0x14, which is
-            exactly how BDSP's protocol count was measured."""
+            A mismatch is silence; a match is the console's first word on 0x14."""
             variable_id = args.src_var if args.src_var is not None else \
                 int.from_bytes(os.urandom(4), "big")
             st["our_variable_id"] = variable_id
@@ -1112,14 +998,9 @@ async def main_async(args):
                   f"constant id, a wrong count or a malformed location all look like.")
 
         async def joiner():
-            """The six-byte join request, once the station handshake has closed.
+            """The six-byte join request, sent only once the console has accepted us on 0x14.
 
-            THE ORDER IS THE FINDING BDSP LEFT: nothing is answered on 0x18 until the console has
-            accepted us as a station on 0x14, so this waits for that acceptance rather than firing
-            on a timer. Pia's own joiner retransmits every 500 ms and gives up after ten seconds,
-            and the response is acked on 0x14 - the mesh protocol never acks with a mesh message
-            (`mesh_protocol.ack_for`, and version 4 builds the same eight bytes at 0x017c6dd0).
-            """
+            0x18 answers nothing before that; the response is acked on 0x14 (`0x017c6dd0`)."""
             if not args.join:
                 return
             with trio.move_on_after(args.join_wait):
@@ -1152,19 +1033,9 @@ async def main_async(args):
 
 
         async def data_sender():
-            """Application data, on 0x7C or on 0x80.
+            """Application data on 0x7C or 0x80; the first message must carry FLAG_IS_INITIALIZED.
 
-            With the transport up and nothing above it, the console repeats one payload,
-            `61 00 00 00 0a 00`. Both reliable windows wait for sequence 1: the broadcast ack asks
-            for it once a second, and 0x7C has no ack to send until it is given data.
-
-            THE FIRST MESSAGE MUST CARRY FLAG_IS_INITIALIZED (reliable4.FIRST_DATA_FLAGS): while a
-            station's stream is unopened the handler at 0x01859ca0 does `tbz w9, #3` and drops
-            anything without it in silence, with nothing on the wire to say why.
-
-            It retransmits until the ack comes back, which is what a sliding window does and what
-            the console itself did through 1637 messages.
-            """
+            An unopened stream drops anything without it in silence (`0x01859ca0`, docs/pia.md)."""
             if args.send_data is None:
                 return
             payload = bytes.fromhex(args.send_data)
@@ -1185,8 +1056,6 @@ async def main_async(args):
             flags = pia4.MESSAGE_FLAGS
             wire = body
             if args.send_zlib:
-                # The console compresses every 0x80 message it sends and none of its 0x7C ones.
-                # The flag is the Pia MESSAGE's, not the window's, so it is a free variable here.
                 wire = zlib.compress(body)
                 flags |= pia4.MESSAGE_FLAG_ZLIB
             st["phase"] = "data"
@@ -1195,8 +1064,7 @@ async def main_async(args):
                   f"{[hex(d) for d in dests] or 'everyone (count 0)'}, payload {payload.hex()}"
                   f"{f' zlib {len(body)}->{len(wire)} B' if args.send_zlib else ''}")
             print(f"[tx]     the message: {body.hex()}")
-            # A stream, not one message: `--send-count` sequences, each sent only once the last
-            # is acknowledged. One message alone does not hold the console's state.
+            # A stream: one message alone does not hold the console's state.
             deadline = time.monotonic() + args.send_seconds
             seq = args.send_sequence
             answered_serial = None
@@ -1206,13 +1074,9 @@ async def main_async(args):
                 said = st["said_by_proto"].get(args.send_protocol)
                 if (args.answer_once and st["offer_pending"] is None
                         and not st["answer_queue"]):
-                    # `said` stays set for the rest of the run, so every tick would re-derive an
-                    # answer to a payload already answered. The console sends each of its own
-                    # messages once; a repeated answer stalls the phase it belongs to.
-                    #
-                    # The guard must also clear while a queued answer waits: one rule can be
-                    # several payloads (`ping` is answered `pingReply` then `ping`), and a guard on
-                    # the serial alone starves everything after the first.
+                    # A repeated answer stalls its phase, so answer each serial once. The guard
+                    # clears while a queued answer waits: one rule can be several payloads (`ping`
+                    # -> `pingReply`, `ping`).
                     serial = st["serial_by_proto"].get(args.send_protocol)
                     if serial is not None and serial == answered_serial:
                         await trio.sleep(args.send_period)
@@ -1220,28 +1084,24 @@ async def main_async(args):
                     answered_serial = serial
                 if (st["offer_pending"] is None and st["box_queue"]
                         and time.monotonic() >= st["box_next"]):
-                    # The queue drains here, where a payload is chosen. In the ack branch it
-                    # would deadlock: that branch runs only on the ack of a queued payload, so one
-                    # gate saying "not yet" leaves nothing queued and nothing ever acked again.
+                    # Drain here, never in the ack branch: that runs only on a queued payload's ack
+                    # and would deadlock.
                     st["offer_pending"] = st["box_queue"].pop(0)
                     st["box_next"] = time.monotonic() + args.box_period
                     print(f"[tx]     *** QUEUED PAYLOAD *** {st['offer_pending'].hex()} "
                           f"({len(st['box_queue'])} left)")
                 if st["offer_pending"] is not None:
-                    # Sticky until the window moves past it: a payload swapped out mid-sequence
-                    # may never reach the console whole.
+                    # Sticky until acked: a payload swapped mid-sequence may never arrive whole.
                     payload = st["offer_pending"]
                     st["offer_seq"] = seq
                 elif args.sync_answers and said:
-                    # The table sits on top of the mirror, never instead of it: `SYNC_ANSWERS`
-                    # covers four payloads and the per-protocol echo has to stand for the rest.
+                    # `SYNC_ANSWERS` covers four payloads; the mirror stands for the rest.
                     payload, st["answer_queue"] = swsh_trade.next_answer(
                         said, st["answer_queue"], station_id=our_constant,
                         clock_delta=args.rpc_clock_delta, offer_pk8=st["our_pk8"])
                 elif args.send_mirror and said:
-                    # Mirror what the console is saying now, and per protocol. A single "what it
-                    # last said" shared between windows makes the 0x7C mirror echo back what was
-                    # heard on 0x80, and the transfer does not follow.
+                    # Mirror per protocol: a shared last payload makes 0x7C echo what 0x80 said, and
+                    # the transfer stalls.
                     payload = st["said_by_proto"][args.send_protocol]
                 body = reliable4.build_data_message(payload, sequence_id=seq, destinations=dests,
                                                     stream_id=args.send_stream)
@@ -1260,24 +1120,20 @@ async def main_async(args):
                         print(f"[tx]     *** OUR OFFER WAS ACKNOWLEDGED at sequence {seq} ***")
                         st["offer_pending"], st["offer_seq"] = None, None
                         if args.send_selection == "offer":
-                            # The console acknowledges the offer and then goes quiet until the
-                            # accept; a phase opener has to go out before that quiet starts.
+                            # The console goes quiet after acking the offer until the accept; open
+                            # the phase now.
                             open_phase(swsh_trade.SELECTION_OFFSET, "SELECTION")
                         if st["box_queue"]:
-                            # Drained in the sender loop. `box_queue` holds built payloads only,
-                            # never command ints: a mixed queue raises inside the drain and kills
-                            # the nursery mid-trade.
+                            # Built payloads only: a command int raises in the drain and kills the
+                            # nursery.
                             pass
                         elif (st["pk8_offer_sent"] and not st["trade_ready_sent"]
                                 and (args.open_content or args.box_commands)):
-                            # "After our Pokemon was acknowledged", never "after any queued
-                            # payload was": `--box-open` puts a payload in the same queue ten
-                            # seconds earlier and would spend this branch before the offer exists.
+                            # Gate on our Pokemon's ack, not any queued payload's: --box-open queues
+                            # one ten seconds earlier.
                             st["trade_ready_sent"] = True
-                            # Box commands first, then the openers. `3e4e000012020801` after our
-                            # offer is what makes the console display it to the player; the
-                            # openers alone leave the offer undrawn. A content at offset N has an
-                            # id at 10000+N.
+                            # Box commands first: `3e4e000012020801` after our offer makes the
+                            # console draw it.
                             st["box_queue"] = (
                                 [swsh_trade.box_sync_state(int(c, 0))
                                  for c in (args.box_commands or "").split(",") if c.strip()]
@@ -1286,13 +1142,12 @@ async def main_async(args):
                             print(f"[tx]     *** AFTER THE OFFER: box {args.box_commands}, "
                                   f"open {args.open_content} *** "
                                   f"{[p.hex() for p in st['box_queue']]}")
-                            st["box_next"] = 0.0        # the sender loop takes it from here
+                            st["box_next"] = 0.0
                         elif (args.trade_ready and st["pk8_offer_sent"]
                                 and not st["trade_ready_sent"]):
                             st["trade_ready_sent"] = True
-                            # imReady on the trade holder: the same shape that releases the
-                            # snapshot, one holder further along. The console never sends these
-                            # bytes itself.
+                            # imReady on the trade holder; the console never sends these bytes
+                            # itself.
                             st["offer_pending"] = swsh_trade.trade_ready()
                             print(f"[tx]     *** SAYING imReady ON THE TRADE HOLDER *** "
                                   f"{st['offer_pending'].hex()}")
@@ -1308,24 +1163,16 @@ async def main_async(args):
 
 
         async def snapshot_sender():
-            """Send our own trade snapshot on 0x84.
+            """Send our trade snapshot on 0x84: the console's own, with the identity rewritten.
 
-            The trade is symmetric: the console sends nothing past its own snapshot until it
-            receives one.
-
-            What goes out is the console's own snapshot with the identity moved, in MyStatus, the
-            trainer card and every party record at once (`swsh.trade_payload.rewrite`), so every
-            unread byte stays a real byte from a real save.
-            """
+            The console sends nothing past its own snapshot until it receives one."""
             if args.send_snapshot is None:
                 return
             payload = open(args.send_snapshot, "rb").read()
             if len(payload) != trade_payload.PAYLOAD_LENGTH:
                 payload = trade_payload.inflate_short(payload)
             was = trade_payload.read(payload)["trainer_name"]
-            # The profile at the tail opens with the console's own three ids (docs/swsh_protocol.md,
-            # "The player profile"). The trade screen draws the partner from MyStatus, so they are
-            # not what the player sees.
+            # The tail's three ids are not drawn on the trade screen (docs/swsh_protocol.md).
             profile = trade_payload.read_tail(payload)
             theirs = profile["device_id"] + profile["account_uid"] + profile["nsa_id"]
             ids = {}
@@ -1337,9 +1184,6 @@ async def main_async(args):
                                             secret_id=args.snapshot_sid, **ids)
             edits = offer_edits(args)
             if args.offer_file:
-                # A WHOLE RECORD FROM DISK, e.g. a PKHeX .pk8, replaces the slot. Its original
-                # trainer follows the snapshot's identity like every other record in the payload
-                # unless --offer-file-as-is keeps the file's own; the --offer-* edits apply on top.
                 if not args.offer_slot:
                     raise ValueError("--offer-file needs --offer-slot")
                 identity = {} if args.offer_file_as_is else dict(
@@ -1364,9 +1208,6 @@ async def main_async(args):
                       f"IVs {before['ivs']} -> {after['ivs']}")
             fields = trade_payload.read(payload)
             if args.offer_slot:
-                # THE POKEMON WE OFFER COMES OUT OF THE PARTY WE ADVERTISED. Offering one the
-                # console never saw in our snapshot would be a second difference in the same run,
-                # and this way the trainer, the party and the offer all tell one story.
                 at = (args.offer_slot - 1) * swsh_pokemon.SIZE_PARTY
                 st["our_pk8"] = payload[at:at + swsh_pokemon.SIZE_PARTY]
                 ours = swsh_pokemon.read(st["our_pk8"])
@@ -1396,8 +1237,7 @@ async def main_async(args):
             st["snapshot_fragments"] = len(broadcast4.split(payload, sender4.chunk_size))
             while time.monotonic() < deadline:
                 if st["snapshot_done_sent"]:
-                    # THE CONSOLE HAS IT ALL AND HAS BEEN TOLD SO. Retransmitting past that is how
-                    # a sender talks over the answer it was waiting for.
+                    # Retransmitting past the 0x19 talks over the answer.
                     print(f"\n[tx] snapshot complete and acknowledged after "
                           f"{st['snapshot_out']} messages; the window is quiet now")
                     return
@@ -1422,15 +1262,7 @@ async def main_async(args):
 
 
         async def rpc_sender():
-            """Answer the trade RPC pair on the port the console sends it.
-
-            The RPC pair arrives on 0x7C port 1; the ping, the block messages and the Pokemon offer
-            all arrive on port 0. An answer sent on port 0 goes to a window the console does not
-            read it on.
-
-            The window on port 1 is its own: its own sequence, its own acks. `reliable_window`
-            already keys by (protocol, port); the ack counter now does too.
-            """
+            """Answer the trade RPC pair on 0x7C port 1, a window of its own; port 0 is not read."""
             if not args.rpc_port_answers:
                 return
             port = args.rpc_port
@@ -1442,11 +1274,9 @@ async def main_async(args):
             answered_serial = None
             while time.monotonic() < deadline:
                 said = st["said_by_port"].get(key)
-                # A queued message outranks an answer and travels on the same window: this port
-                # has one sequence and one ack counter, so a phase opened here has to go through
-                # this queue rather than beside it.
+                # This port has one sequence and one ack counter: a phase opened here goes through
+                # rpc_queue, never beside it.
                 if args.rpc_pair:
-                    # Both members, in order, once per envelope. The pair is one act.
                     for envelope in sorted({e for e, _ in st["rpc_seen"]}):
                         if envelope in st["rpc_pair_sent"]:
                             continue
@@ -1463,11 +1293,8 @@ async def main_async(args):
                             print(f"[tx]     *** ANSWERING THE {envelope} PAIR, BOTH MEMBERS *** "
                                   f"{[b.hex() for b in both]}")
                             if args.rpc_pair_advance:
-                                # The same pair one state later. `0x006d59f0` routes a
-                                # 40000-family Data on (elementId, ownerId) and hands the body and
-                                # the clock to the sub-element that owns the pair; a repeated
-                                # clock is a repeated state. The console's own pair goes out three
-                                # times with the clock +2 per burst.
+                                # A repeated clock is a repeated state (`0x006d59f0`); the console's
+                                # own pair goes out three times, clock +2 per burst.
                                 again = [swsh_trade.answer_rpc(
                                     st["rpc_seen"][k], our_constant,
                                     args.rpc_clock_delta + args.rpc_pair_advance)
@@ -1477,8 +1304,6 @@ async def main_async(args):
                                     print(f"[tx]     *** AND THE {envelope} PAIR AGAIN AT CLOCK "
                                           f"+{args.rpc_pair_advance} *** "
                                           f"{[a.hex() for a in again]}")
-                            # Prepended: a phase answer outranks whatever else is waiting on
-                            # this window.
                             st["rpc_queue"] = queued + st["rpc_queue"]
                 pending = st["rpc_queue"][0] if st["rpc_queue"] else None
                 answer = pending if pending is not None else (
@@ -1488,12 +1313,11 @@ async def main_async(args):
                     await trio.sleep(0.1)
                     continue
                 if args.rpc_pair and pending is None and st["rpc_pair_sent"]:
-                    # Every phase seen so far has been answered; anything further on this window
-                    # is a flood. A new envelope re-arms the branch above.
+                    # Every phase seen is answered; more is a flood. A new envelope re-arms the
+                    # branch above.
                     await trio.sleep(args.rpc_period)
                     continue
                 if args.answer_once and pending is None:
-                    # The same rule as the data sender: answer a serial once.
                     serial = st["serial_by_port"].get(key)
                     if serial is not None and serial == answered_serial:
                         await trio.sleep(args.rpc_period)
@@ -1528,16 +1352,9 @@ async def main_async(args):
 
 
         async def migration_sender():
-            """Answer MIGRATION_START on the mesh protocol's reliable port, and keep answering
-            until the console acknowledges it.
+            """Answer MIGRATION_START on 0x18 port 1, a window of its own, until the console acks.
 
-            MIGRATION_START is the last thing the console says: after `440001` on 0x18 port 1 it
-            goes silent on every window. It is waiting for a two-byte mesh message, not for
-            anything on the application layer. `mesh_protocol` carries the handler addresses.
-
-            The window is its own, like the RPC's: protocol 0x18, port 1, its own sequence and its
-            own acks, which `reliable_window` and `ack_by_port` already key correctly.
-            """
+            After `440001` the console goes silent on every window and waits for this message."""
             if not args.answer_migration:
                 return
             key = (mesh.PROTOCOL, mesh.PORT_RELIABLE)
@@ -1568,8 +1385,7 @@ async def main_async(args):
                         st["migration_acked"] = time.monotonic() - t0
                         print(f"\n[rx] *** IT ACKED OUR MIGRATION RESPONSE, "
                               f"t={st['migration_acked']:.2f} ***")
-                    # One message, not a stream: a state transition repeated past its ack
-                    # stalls the phase.
+                    # One message: a state transition repeated past its ack stalls the phase.
                     st["migration_pending"] = None
                     return
             if st["migration_out"] and st["migration_acked"] is None:
@@ -1577,16 +1393,9 @@ async def main_async(args):
 
 
         async def update_mesh_sender():
-            """Once we are the host, do the host's job: broadcast UPDATE_MESH.
+            """Once we are the host, rebroadcast the console's last UPDATE_MESH under our index.
 
-            The console stops sending UPDATE_MESH the moment it hands the host role over, having
-            sent one about every 2 seconds until then. Without a replacement the link is gone
-            about 1.3 seconds later.
-
-            We send the console's own last one with byte [2] set to our index and the counter
-            advancing, on 0x18 port 0, where every one of its own arrived. Editing its broadcast
-            keeps every unread byte its own.
-            """
+            Without it the link drops about 1.3 s after the console hands the host role over."""
             if not args.update_mesh:
                 return
             deadline = time.monotonic() + args.send_seconds + args.send_after + args.send_wait
@@ -1619,13 +1428,9 @@ async def main_async(args):
 
 
         async def block_sender():
-            """The SECOND stream, on the protocol the console chose for it.
+            """The second stream: `imReady` (`60ea000012020801`) on the broadcast window.
 
-            Message 97 is `gflnet.p2p.sync.ping.pb.SyncPingDataHolder` and message 60000 is
-            `gflnet.p2p.block.pb.BlockDataHolder`. The console pings, we answer, it walks
-            ping -> pingReply -> pingSynced, then says `imReady { isReady: true }`
-            (`60ea000012020801`) on its broadcast window and waits for the same back.
-            """
+            docs/swsh_session.md."""
             if args.send2_data is None:
                 return
             payload = bytes.fromhex(args.send2_data)
@@ -1668,15 +1473,10 @@ async def main_async(args):
                 print(f"\n[tx] {st['block_out']} out on {args.send2_protocol:#04x}, not acked")
 
         async def guarded(name, task):
-            """Run one sender and survive its own exceptions.
-
-            An unhandled exception takes the nursery down, transmission stops mid-trade, and the
-            player sees the console report the communication as interrupted. A task that raises
-            here reports it and the rest of the run carries on.
-            """
+            """Run one sender; an exception reaching the nursery would stop sending mid-trade."""
             try:
                 await task()
-            except Exception as exc:                      # noqa: BLE001 - the whole point
+            except Exception as exc:  # noqa: BLE001
                 traceback.print_exc()
                 print(f"\n[tx] *** {name} DIED: {exc!r} *** the run continues without it")
 
@@ -1690,10 +1490,8 @@ async def main_async(args):
             nursery.start_soon(guarded, "migration_sender", migration_sender)
             nursery.start_soon(guarded, "update_mesh_sender", update_mesh_sender)
             await sender()
-            # Drop the link on a stall rather than holding it. A transport kept alive through a
-            # stalled ladder lets the game's own timeout declare the TRADE failed, which costs the
-            # player about an hour's lockout; a link that stops is reported as a plain
-            # communication error instead. Nothing but acks follows the last step body.
+            # Drop the link on a stall: one held through a stalled ladder becomes a failed trade and
+            # an hour's lockout; a dropped link is a plain communication error.
             hold_until = time.monotonic() + args.hold
             while time.monotonic() < hold_until:
                 await trio.sleep(0.25)
@@ -1753,34 +1551,16 @@ LADDER_FINAL_PHASE = 4        # `0x010dbf40`: phase 4 -> state 13 -> 14, the tea
 def stall_abort(last_step, now, limit, final_phase_seen=False):
     """Has the confirmation ladder started and then gone quiet for `limit` seconds?
 
-    Only a ladder that STARTED can stall: `last_step` is None until the console puts its first
-    four-byte body on the confirmation content, and a run that never gets that far holds for its
-    full time as before. `limit` of 0 or None is the flag switched off.
-
-    A stalled ladder held open with acks becomes a failed trade on the console and costs the
-    player a lockout; a link that stops is reported as a dropped connection instead.
-
-    A finished ladder is silent like a stalled one: phase 4 is the last rung and its state sends
-    nothing. A ladder that has reached `LADDER_FINAL_PHASE` is done and the run must hold for the
-    save, the summary screen and the migration. The abort is for a ladder that died early.
-    """
+    A ladder that reached `LADDER_FINAL_PHASE` is finished and silent, never stalled."""
     if not limit or last_step is None or final_phase_seen:
         return False
     return (now - last_step) >= limit
 
 
 def offer_edits(args):
-    """-> the fields to write into the party record we offer, or `{}` when it goes as it came.
+    """-> the fields to write into the offered party record, or `{}`.
 
-    A record we build is the console's own party record with named fields changed, for the reason
-    `swsh.pokemon.build_from` gives: 0x158 bytes hold ribbons, memories, met data and handler
-    records nothing here has read, and the template keeps every one of them a real byte from a real
-    save. The edit is applied to the snapshot slot, so the party the console is shown and the
-    Pokemon it is offered are the same record.
-
-    Parsed here rather than at the offer, so a nickname that will not fit or a slot that was never
-    named fails before the radio is touched instead of halfway up the confirmation ladder.
-    """
+    Parsed before the radio starts, so a bad nickname or a missing slot fails early."""
     edits = {k: v for k, v in (("species", args.offer_species),
                                ("ability", args.offer_ability),
                                ("level", args.offer_level),
