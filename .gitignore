@@ -74,3 +74,11 @@ REFERENCES.local.md
 # MacOS
 .DS_Store
 EVAL_RUN_NOTES.txt
+
+# Build output of the app: the PKHeX service and the bundled firmware image.
+/gui/pkhex/bin/
+/gui/pkhex/obj/
+/gui/pkhex/dist/
+/gui/firmware/
+/dist/
+/*.spec

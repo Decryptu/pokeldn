@@ -1,6 +1,5 @@
 import os
 import random
-import shlex
 import time
 from functools import cache
 
@@ -25,17 +24,22 @@ def applies(field: Field, tool: Tool, values: dict) -> bool:
     return str(value_of(other, values)) == wanted
 
 
-def _args(field: Field, value, work_dir: str) -> list[str]:
+def offer_file(value) -> str:
+    """A pokemon field holds what the builder made: {"file": path, "summary": ..., ...}."""
+    return value.get("file", "") if isinstance(value, dict) else ""
+
+
+def _args(field: Field, value) -> list[str]:
     flags = field.flag if isinstance(field.flag, tuple) else (field.flag,)
     if field.kind == "switch":
-        return list(flags) if bool(value) != field.invert else []
-    if value in ("", None, []):
+        on = bool(value) != field.invert
+        return [flags[0], field.template] if (on and field.template) else list(flags) if on else []
+    if field.kind == "pokemon":
+        value = offer_file(value)
+    if value in ("", None):
         return list(field.unset)
-    if field.kind == "argsfile":
-        with open(os.path.join(work_dir, value)) as f:
-            return shlex.split(f.read())
-    items = list(value) if field.kind == "files" else \
-        str(value).split() if field.kind == "multi" else [str(value)]
+    items = str(value).split() if field.kind == "multi" else [field.template.format(value) if field.template
+                                                               else str(value)]
     if not field.flag:
         return items
     return [a for item in items for flag in flags for a in (flag, item)]
@@ -44,33 +48,45 @@ def _args(field: Field, value, work_dir: str) -> list[str]:
 def build(tool: Tool, values: dict, extra: dict, settings, stamp: str | None = None) -> list[str]:
     """The entry point's argument list: tested flags, the tool's fields, then the All tab's."""
     stamp = stamp or time.strftime("%Y%m%d-%H%M%S")
-    args = [a.replace("{src_var}", f"0x{random.getrandbits(32):08x}") for a in tool.fixed]
+    tokens = {"{received}": os.path.expanduser(settings.received), "{stamp}": stamp,
+              "{src_var}": f"0x{random.getrandbits(32):08x}"}
+    args = []
+    for arg in tool.fixed:
+        for token, value in tokens.items():
+            arg = arg.replace(token, value)
+        args.append(arg)
     for field in tool.fields:
         if applies(field, tool, values):
-            value = value_of(field, values)
-            if field.kind == "save" and isinstance(value, str):
-                value = value.replace("{stamp}", stamp)
-            args += _args(field, value, settings.work_dir)
+            args += _args(field, value_of(field, values))
     known = accepted(tool.script)
-    used = set(args)
-    if "--keys" in known and "--keys" not in used:
+    if "--keys" in known and "--keys" not in args:
         args += ["--keys", os.path.expanduser(settings.keys)]
-    if "--capture" in known and "--capture" not in used and settings.capture:
+    if "--capture" in known and settings.capture:
         args += ["--capture", f"captures/{tool.key}-{stamp}.jsonl"]
     for flag, value in extra.items():
         args += ([flag] if value is True else [] if value in (False, "", None) else [flag, str(value)])
     return args
 
 
-def needed_files(tool: Tool, values: dict) -> list[tuple[str, str]]:
-    """(label, path relative to the work folder) of every input file the run reads."""
-    files = [(f.label, value_of(f, values)) for f in tool.fields
-             if f.kind in ("file", "dir", "argsfile") and applies(f, tool, values)
-             and (f.required or value_of(f, values))]
-    files += [(os.path.basename(p), p) for p in tool.needs]
-    return [(label, p) for label, p in files if isinstance(p, str) and p and p != "echo"]
+def limit_error(field: Field, value) -> str:
+    """Why a NAME=VALUE field's value is refused, or ""."""
+    for item in str(value or "").split():
+        name, _, number = item.partition("=")
+        for limit_name, highest, why in field.limits:
+            if name == limit_name and number.isdigit() and int(number) > highest:
+                return why
+    return ""
 
 
-def output_dirs(args: list[str]) -> set[str]:
-    return {os.path.dirname(a) for a in args if a.startswith(("received/", "captures/", "scratchpad/"))
-            and os.path.dirname(a)}
+def problems(tool: Tool, values: dict) -> list[str]:
+    return [error for f in tool.fields if f.limits and applies(f, tool, values)
+            if (error := limit_error(f, value_of(f, values)))]
+
+
+def missing_offer(tool: Tool, values: dict) -> str:
+    for field in tool.fields:
+        if field.kind == "pokemon" and field.required and applies(field, tool, values):
+            path = offer_file(value_of(field, values))
+            if not path or not os.path.isfile(path):
+                return "Build the Pokemon to offer first."
+    return ""

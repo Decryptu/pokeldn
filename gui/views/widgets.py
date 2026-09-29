@@ -69,50 +69,34 @@ class Log:
 
 
 class PathField:
-    """A path text field with a browse button. Paths inside the work folder are kept relative."""
+    """A path text field with a browse button, for a file or a folder."""
 
-    def __init__(self, picker: ft.FilePicker, work_dir: Callable[[], str], value: str = "",
-                 mode: str = "file", exts: tuple = (), on_change: Callable[[str], None] | None = None,
-                 hint: str = ""):
-        self.picker, self.work_dir, self.mode, self.exts = picker, work_dir, mode, exts
+    def __init__(self, picker: ft.FilePicker, start_dir: Callable[[], str], value: str = "",
+                 mode: str = "file", exts: tuple = (), on_change: Callable[[str], None] | None = None):
+        self.picker, self.start_dir, self.mode, self.exts = picker, start_dir, mode, exts
         self.on_change = on_change
-        many = mode == "files"
-        self.field = t.field(value="\n".join(value) if many else value, hint=hint, mono=True,
-                             expand=True, multiline=many, min_lines=2 if many else None,
-                             on_change=lambda e: self._changed(e.control.value))
-        icon = ft.Icons.FOLDER_OPEN_OUTLINED if mode == "dir" else \
-            ft.Icons.SAVE_OUTLINED if mode == "save" else ft.Icons.FILE_OPEN_OUTLINED
+        self.field = t.field(value=value, mono=True, expand=True, on_change=lambda e: self._changed(e.control.value))
+        icon = ft.Icons.FOLDER_OPEN_OUTLINED if mode == "dir" else ft.Icons.FILE_OPEN_OUTLINED
         self.control = ft.Row([self.field, t.icon_button(icon, self._browse, "Browse")], spacing=6)
 
     def _changed(self, value: str) -> None:
         if self.on_change:
-            self.on_change([l.strip() for l in value.splitlines() if l.strip()]
-                           if self.mode == "files" else value)
-
-    def _relative(self, path: str) -> str:
-        work = os.path.abspath(os.path.expanduser(self.work_dir()))
-        path = os.path.abspath(path)
-        return os.path.relpath(path, work) if path.startswith(work + os.sep) else path
+            self.on_change(value)
 
     async def _browse(self, e) -> None:
-        start = os.path.expanduser(self.work_dir())
+        start = os.path.expanduser(self.start_dir())
         start = start if os.path.isdir(start) else None
         if self.mode == "dir":
             path = await self.picker.get_directory_path(initial_directory=start)
-        elif self.mode == "save":
-            path = await self.picker.save_file(initial_directory=start,
-                                               file_name=os.path.basename(self.field.value or ""))
         else:
             files = await self.picker.pick_files(
                 initial_directory=start, allowed_extensions=list(self.exts) or None,
-                file_type=ft.FilePickerFileType.CUSTOM if self.exts else ft.FilePickerFileType.ANY,
-                allow_multiple=self.mode == "files")
-            paths = [self._relative(f.path) for f in files if f.path]
-            path = "\n".join(paths) if self.mode == "files" else (paths[0] if paths else None)
+                file_type=ft.FilePickerFileType.CUSTOM if self.exts else ft.FilePickerFileType.ANY)
+            path = files[0].path if files else None
         if path:
-            self.field.value = path if self.mode == "files" else self._relative(path)
+            self.field.value = path
             self.field.update()
-            self._changed(self.field.value)
+            self._changed(path)
 
 
 def open_folder(path: str) -> None:

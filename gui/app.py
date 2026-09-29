@@ -1,6 +1,7 @@
 import flet as ft
 
 from gui import board, settings
+from gui.paths import SESSION
 from gui.views.widgets import on_ui
 
 
@@ -9,6 +10,7 @@ class App:
 
     def __init__(self, page: ft.Page):
         self.page = page
+        SESSION.mkdir(parents=True, exist_ok=True)
         self.settings = settings.load()
         self.picker = ft.FilePicker()
         self.clipboard = ft.Clipboard()

@@ -100,6 +100,32 @@ def main(page: ft.Page) -> None:
     page.add(ft.Row([side, content], spacing=12, expand=True,
                     vertical_alignment=ft.CrossAxisAlignment.STRETCH))
     navigate("games")
+    if not os.path.isfile(os.path.expanduser(app.settings.keys)):
+        welcome(app)
+
+
+def welcome(app: App) -> None:
+    """The one file the app cannot ship: the user's own Switch keys."""
+    async def choose(e):
+        files = await app.picker.pick_files(allowed_extensions=["keys"], file_type=ft.FilePickerFileType.CUSTOM)
+        if files and files[0].path:
+            app.settings.keys = files[0].path
+            app.settings.save()
+            app.page.pop_dialog()
+
+    app.page.show_dialog(ft.AlertDialog(
+        modal=True, bgcolor=t.PANEL, shape=ft.RoundedRectangleBorder(radius=16),
+        title=t.text("Welcome to pokeldn", 18, weight=ft.FontWeight.W_700),
+        content=ft.Container(ft.Column([
+            ft.Image(src="logo.svg", width=44, height=48),
+            t.text("pokeldn needs your Switch's prod.keys, dumped from your own console. It decrypts the "
+                   "local wireless messages and never leaves this computer.", 13, t.MUTED),
+            t.text("Everything else is included.", 13, t.MUTED),
+        ], spacing=10, tight=True), width=420),
+        actions=[ft.TextButton("Later", on_click=lambda e: app.page.pop_dialog(),
+                               style=ft.ButtonStyle(color=t.MUTED)),
+                 t.button("Choose prod.keys", choose, ft.Icons.KEY_ROUNDED)],
+    ))
 
 
 def run() -> None:

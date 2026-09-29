@@ -7,6 +7,7 @@ import flet as ft
 import serial
 
 from gui import board, runner
+from gui.paths import SESSION
 from gui import theme as t
 from gui.views.widgets import Log
 
@@ -218,11 +219,9 @@ class BoardView:
         p = self.port()
         source = ft.Row([
             ft.Icon(ft.Icons.INVENTORY_2_OUTLINED, size=16, color=t.MUTED),
-            t.text(("Built into the app" if image == board.FIRMWARE else image) if image else
-                   "No firmware image found. Choose the release's pokeldn-radio.bin or an ESP-IDF build folder.",
-                   12, t.TEXT if image else t.AMBER, expand=True, font_family=t.MONO if image and image != board.FIRMWARE else None),
-            ft.TextButton("Choose file", on_click=self._choose_file, style=ft.ButtonStyle(color=t.BLUE)),
-            ft.TextButton("Build folder", on_click=self._choose_dir, style=ft.ButtonStyle(color=t.BLUE)),
+            t.text(("pokeldn firmware, included with the app" if image == board.FIRMWARE else image) if image else
+                   "This copy of the app has no firmware image.", 12, t.MUTED if image else t.AMBER, expand=True),
+            ft.TextButton("Use another file", on_click=self._choose_file, style=ft.ButtonStyle(color=t.MUTED)),
         ], spacing=6)
         flashing = bool(self.app.process and self.app.process.running and self.app.process_label == "flash")
         return t.card("Flash the firmware", ft.Column([
@@ -239,14 +238,6 @@ class BoardView:
         if files and files[0].path:
             self._set_firmware(files[0].path)
 
-    async def _choose_dir(self, e) -> None:
-        path = await self.app.picker.get_directory_path()
-        if path:
-            if not os.path.isfile(os.path.join(path, "flash_args")):
-                self.log.add(f"[app] {path} has no flash_args; pick the folder idf.py build wrote.")
-                return
-            self._set_firmware(path)
-
     def _set_firmware(self, path: str) -> None:
         self.app.settings.firmware = path
         self.app.settings.save()
@@ -256,7 +247,7 @@ class BoardView:
     def _flash(self, e) -> None:
         if self.app.busy:
             return
-        args, cwd = board.flash_job(self.selected, self.firmware())
+        args = board.flash_args(self.selected, self.firmware())
         self.log.clear()
         self.log.add(f"[app] Flashing {self.selected}.")
         self.progress.visible, self.progress.value = True, None
@@ -264,7 +255,7 @@ class BoardView:
         env = dict(os.environ, NO_COLOR="1", PYTHONUNBUFFERED="1")
         env.pop("POKELDN_RADIO", None)
         self.app.process_label = "flash"
-        self.app.process = runner.Process(["--module", "esptool", *args], cwd, env, self._flash_line,
+        self.app.process = runner.Process(["--module", "esptool", *args], str(SESSION), env, self._flash_line,
                                           self._flashed)
         self.render()
         self.control.update()

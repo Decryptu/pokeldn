@@ -9,6 +9,8 @@ from gui import command, runner
 from gui import theme as t
 from gui.catalog import GAMES, Field, Game, Tool
 from gui.introspect import flags_of
+from gui.paths import SESSION
+from gui.views.pokemon import NAME_LISTS, NamePicker, PokemonPicker
 from gui.views.widgets import Log, PathField, open_folder
 
 TOOL_ICONS = {"Trade": ft.Icons.SWAP_HORIZ_ROUNDED, "Mystery Gift": ft.Icons.CARD_GIFTCARD_OUTLINED,
@@ -17,8 +19,6 @@ EMPTY = "-"   # a dropdown option cannot carry an empty key
 
 
 def tool_icon(tool: Tool):
-    if tool.setup:
-        return ft.Icons.TUNE_ROUNDED
     return TOOL_ICONS.get(tool.name.split(" (")[0], ft.Icons.SWAP_HORIZ_ROUNDED)
 
 
@@ -101,16 +101,13 @@ class GamesView:
             ], spacing=10), padding=ft.Padding(8, 7, 8, 7), border_radius=9,
                 on_click=lambda e, g=game: self.select(g, g.tools[0])))
             if open_:
-                main = [x for x in game.tools if not x.setup]
-                setup = [x for x in game.tools if x.setup]
-                for tool in main + setup:
-                    if setup and tool is setup[0]:
-                        rows.append(ft.Container(t.text("SETUP", 10, t.FAINT, weight=ft.FontWeight.W_700),
-                                                 padding=ft.Padding(26, 8, 8, 2)))
+                for tool in game.tools:
                     active = tool is self.tool
                     rows.append(ft.Container(ft.Row([
                         ft.Icon(tool_icon(tool), size=16, color=t.BLUE if active else t.FAINT),
-                        t.text(tool.name, 13, t.TEXT if active else t.MUTED, expand=True),
+                        t.text(tool.name, 13, t.TEXT if active else (t.FAINT if tool.unavailable else t.MUTED),
+                               expand=True),
+                        t.pill("Soon", t.FAINT) if tool.unavailable else ft.Container(),
                     ], spacing=10), padding=ft.Padding(24, 7, 8, 7), border_radius=9,
                         bgcolor=t.HOVER if active else None,
                         on_click=lambda e, g=game, x=tool: self.select(g, x)))
@@ -118,6 +115,11 @@ class GamesView:
         self.tree.controls = rows
 
     def render_body(self) -> None:
+        if self.tool.unavailable:
+            self.tabs.visible = False
+            self.body.controls = [t.card("Not available yet", None, self.tool.unavailable)]
+            return
+        self.tabs.visible = True
         self.body.controls = self.basic_cards() if self.tab == "basic" else self.all_rows()
 
     def _tab(self, key: str) -> None:
@@ -150,10 +152,12 @@ class GamesView:
                 out.append(t.card(item.label, self.input(item), item.help))
             else:
                 fields = groups[item]
-                out.append(t.card(item, ft.Row([
+                per_row = 2 if len(fields) > 3 else len(fields)
+                rows = [ft.Row([
                     ft.Column([t.text(f.label, 11, t.MUTED), self.input(f, grouped=True)], spacing=4, expand=True)
-                    for f in fields], spacing=10),
-                    tip=" ".join(f.help for f in fields if f.help)))
+                    for f in fields[i:i + per_row]], spacing=10) for i in range(0, len(fields), per_row)]
+                out.append(t.card(item, ft.Column(rows, spacing=10),
+                                  tip=" ".join(f.help for f in fields if f.help)))
         if not self.tool.fields:
             out.append(t.text("Nothing to fill in.", 13, t.MUTED))
         return out
@@ -166,14 +170,26 @@ class GamesView:
             return t.dropdown([(k or EMPTY, label) for k, label in field.choices], value or EMPTY,
                               on_select=lambda e: self.set_value(
                                   field, "" if e.control.value == EMPTY else e.control.value, rebuild=True))
-        if field.kind in ("file", "files", "dir", "save", "argsfile"):
-            mode = "file" if field.kind == "argsfile" else field.kind
-            return PathField(self.app.picker, lambda: self.app.settings.work_dir,
-                             value or ([] if mode == "files" else ""), mode, field.exts,
-                             lambda v: self.set_value(field, v),
-                             hint="One path per line, or choose with the button" if mode == "files" else "").control
-        return t.field(value=str(value), mono=field.kind == "number", width=180 if field.kind == "number" and not grouped else None,
-                       on_change=lambda e: self.set_value(field, e.control.value))
+        if field.kind in NAME_LISTS:
+            return NamePicker(self.app, self.game.key, field.kind, value,
+                              lambda v: self.set_value(field, v), optional=not field.default).control
+        if field.kind == "pokemon":
+            return PokemonPicker(self.app, self.game.key, value or {}, lambda v: self.set_value(field, v),
+                                 version=str(self.values.get("--version", ""))).control
+        if field.kind == "file":
+            return PathField(self.app.picker, lambda: os.path.expanduser("~"), value or "", "file", field.exts,
+                             lambda v: self.set_value(field, v)).control
+        def changed(e):
+            if field.limits:
+                e.control.error = command.limit_error(field, e.control.value) or None
+                e.control.update()
+            self.set_value(field, e.control.value)
+
+        box = t.field(value=str(value), mono=field.kind == "number", error_max_lines=2,
+                      width=180 if field.kind == "number" and not grouped else None,
+                      error=command.limit_error(field, value) or None, on_change=changed,
+                      expand=field.kind != "number" or grouped)
+        return box if grouped or field.kind == "number" else ft.Row([box])
 
     # All tab
 
@@ -253,8 +269,6 @@ class SessionPanel:
         self.status = ft.Container()
         self.board_line = ft.Container()
         self.steps = ft.Container()
-        self.files = ft.Container()
-        self.warning = ft.Container()
         self.action = ft.Container()
         self.command_text = ft.Text("", size=11, color=t.MUTED, font_family=t.MONO, selectable=True)
         self.command_box = ft.Container(self.command_text, bgcolor=t.BG, border_radius=8, padding=10,
@@ -263,12 +277,12 @@ class SessionPanel:
         tools = ft.Row([
             t.icon_button(ft.Icons.CODE_ROUNDED, self._toggle_command, "Show the command"),
             t.icon_button(ft.Icons.CONTENT_COPY_ROUNDED, self._copy_log, "Copy the log"),
-            t.icon_button(ft.Icons.FOLDER_OUTLINED, self._open_work, "Open the work folder"),
+            t.icon_button(ft.Icons.FOLDER_OUTLINED, self._open_received, "Open the Received folder"),
         ], spacing=0)
         self.control = t.panel(ft.Column([
             t.panel_header("Session", self.status),
             ft.Container(ft.Column([
-                self.board_line, self.steps, self.files, self.warning, self.action,
+                self.board_line, self.steps, self.action,
                 ft.Row([t.text("Output", 12, t.MUTED, weight=ft.FontWeight.W_600, expand=True), tools]),
                 self.command_box,
             ], spacing=10), padding=ft.Padding(14, 12, 14, 0)),
@@ -284,46 +298,25 @@ class SessionPanel:
             self.log.clear()
             self.set_status("Ready", t.MUTED)
         self.tool = tool
-        self.steps.content = t.card("On the console" if tool.radio else "Steps", t.numbered(list(tool.steps)))
-        self.warning.content = ft.Container(ft.Row([
-            ft.Icon(ft.Icons.WARNING_AMBER_ROUNDED, size=16, color=t.AMBER),
-            t.text(tool.warning, 12, t.AMBER, expand=True)], spacing=8),
-            bgcolor=ft.Colors.with_opacity(0.08, t.AMBER), border_radius=10, padding=10) if tool.warning else None
+        self.steps.content = t.card("On the console", t.numbered(list(tool.steps)))
         self.refresh(update=False)
 
     def refresh(self, update: bool = True) -> None:
         tool, s = self.tool, self.app.settings
         running = self.app.process and self.app.process.running
-        if tool.radio:
-            port = self.app.radio_port()
-            self.board_line.content = ft.Row([
-                ft.Icon(ft.Icons.MEMORY_ROUNDED, size=16, color=t.GREEN if port else t.AMBER),
-                t.text(f"Radio on {port}" if port else "No board selected", 12,
-                       t.TEXT if port else t.AMBER, expand=True),
-                ft.TextButton("Board", on_click=lambda e: self.app.navigate("board"),
-                              style=ft.ButtonStyle(color=t.BLUE)),
-            ], spacing=8)
-        else:
-            self.board_line.content = ft.Row([ft.Icon(ft.Icons.COMPUTER_ROUNDED, size=16, color=t.MUTED),
-                                              t.text("Runs on the computer, no board needed", 12, t.MUTED)],
-                                             spacing=8)
-        work = os.path.expanduser(s.work_dir)
-        needs = command.needed_files(tool, self.games.values)
-        rows = []
-        for label, path in needs:
-            ok = os.path.exists(path if os.path.isabs(path) else os.path.join(work, path))
-            rows.append(ft.Row([
-                ft.Icon(ft.Icons.CHECK_CIRCLE_ROUNDED if ok else ft.Icons.ERROR_OUTLINE_ROUNDED, size=15,
-                        color=t.GREEN if ok else t.AMBER),
-                ft.Column([t.text(label, 12), t.text(path, 11, t.MUTED, font_family=t.MONO)],
-                          spacing=0, expand=True)], spacing=8))
-        self.files.content = t.card("Files", ft.Column(rows, spacing=8),
-                                    tip="Relative paths are inside the work folder (Settings).") if rows else None
+        port = self.app.radio_port()
+        self.board_line.content = ft.Row([
+            ft.Icon(ft.Icons.MEMORY_ROUNDED, size=16, color=t.GREEN if port else t.AMBER),
+            t.text(f"Radio on {port}" if port else "No board selected", 12,
+                   t.TEXT if port else t.AMBER, expand=True),
+            ft.TextButton("Board", on_click=lambda e: self.app.navigate("board"),
+                          style=ft.ButtonStyle(color=t.BLUE)),
+        ], spacing=8)
         if running:
             action = t.button("Stop", self._stop, ft.Icons.STOP_ROUNDED, t.RED, expand=True)
         else:
             action = t.button("Start", self._start, ft.Icons.PLAY_ARROW_ROUNDED, expand=True,
-                              disabled=self.app.busy)
+                              disabled=self.app.busy or bool(tool.unavailable))
         self.action.content = ft.Row([action])
         try:
             self.command_text.value = shlex.join([tool.script, *command.build(
@@ -340,23 +333,18 @@ class SessionPanel:
     async def _copy_log(self, e) -> None:
         await self.app.copy(self.log.text())
 
-    def _open_work(self, e) -> None:
-        open_folder(os.path.expanduser(self.app.settings.work_dir))
+    def _open_received(self, e) -> None:
+        open_folder(os.path.expanduser(self.app.settings.received))
 
     def _start(self, e) -> None:
         tool, s = self.tool, self.app.settings
         if self.app.busy:
             return
-        work = os.path.expanduser(s.work_dir)
-        port = self.app.radio_port() if tool.radio else ""
-        problems = []
-        if tool.radio and not port:
-            problems.append("No board found. Plug it in, or pick one on the Board page.")
-        if "--keys" in command.accepted(tool.script) and not os.path.isfile(os.path.expanduser(s.keys)):
-            problems.append(f"prod.keys not found at {s.keys}. Choose it in Settings.")
-        for label, path in command.needed_files(tool, self.games.values):
-            if not os.path.exists(path if os.path.isabs(path) else os.path.join(work, path)):
-                problems.append(f"{label}: {path} is missing.")
+        port = self.app.radio_port()
+        problems = [p for p in (
+            "" if port else "No board found. Plug it in, or pick one on the Board page.",
+            "" if os.path.isfile(os.path.expanduser(s.keys)) else "Choose your prod.keys in Settings.",
+            command.missing_offer(tool, self.games.values), *command.problems(tool, self.games.values)) if p]
         self.log.clear()
         if problems:
             for p in problems:
@@ -366,16 +354,15 @@ class SessionPanel:
             return
         stamp = time.strftime("%Y%m%d-%H%M%S")
         args = command.build(tool, self.games.values, self.games.extra, s, stamp)
-        for folder in {"received", "captures", "scratchpad", *command.output_dirs(args)}:
-            os.makedirs(os.path.join(work, folder), exist_ok=True)
-        trace = f"captures/{tool.key}-{stamp}_esp32.trace" if (tool.radio and s.board_trace) else None
-        env = runner.base_env(s, port, trace) if tool.radio else dict(os.environ, PYTHONUNBUFFERED="1")
-        if not tool.radio:
-            env.pop("POKELDN_RADIO", None)
-        self.log.add(f"[app] {tool.name} · {self.games.game.name}" + (f" · radio {port}" if port else ""))
+        # Some entry points write working files under scratchpad/ in their working directory.
+        for folder in (SESSION / "captures", SESSION / "scratchpad", os.path.expanduser(s.received)):
+            os.makedirs(folder, exist_ok=True)
+        trace = f"captures/{tool.key}-{stamp}_esp32.trace" if s.board_trace else None
+        self.log.add(f"[app] {tool.name} · {self.games.game.name} · radio {port}")
         self.stopping = False
         self.app.process_label = tool.name
-        self.app.process = runner.Process(["--run", tool.script, *args], work, env, self.log.add, self._exited)
+        self.app.process = runner.Process(["--run", tool.script, *args], str(SESSION),
+                                          runner.base_env(s, port, trace), self.log.add, self._exited)
         threading.Thread(target=self._tick, daemon=True).start()
         self.refresh()
 

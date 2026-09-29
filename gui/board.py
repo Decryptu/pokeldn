@@ -25,7 +25,7 @@ DRIVERS = {
     "WCH CH340": "https://www.wch-ic.com/downloads/CH341SER_EXE.html",
 }
 
-FIRMWARE = os.path.join(ROOT, "firmware", "pokeldn-radio.bin")
+FIRMWARE = os.path.join(ROOT, "gui", "firmware", "pokeldn-radio.bin")   # written by the release build
 
 
 @dataclass(frozen=True)
@@ -91,11 +91,7 @@ def identify(port: str, blink: bool = True) -> Identity:
         radio.close()
 
 
-def flash_job(port: str, firmware: str) -> tuple[list[str], str]:
-    """esptool's arguments and working folder: a merged image written at 0, or an ESP-IDF build
-    folder, whose flash_args names its files relative to that folder."""
-    base = ["--chip", "esp32", "-p", port, "-b", "460800", "--before", "default-reset",
-            "--after", "hard-reset", "write-flash"]
-    if os.path.isdir(firmware):
-        return base + ["@flash_args"], firmware
-    return base + ["0x0", os.path.abspath(firmware)], os.path.dirname(os.path.abspath(firmware))
+def flash_args(port: str, firmware: str) -> list[str]:
+    """esptool's arguments for a merged image (bootloader, partition table, app) written at 0."""
+    return ["--chip", "esp32", "-p", port, "-b", "460800", "--before", "default-reset",
+            "--after", "hard-reset", "write-flash", "0x0", os.path.abspath(firmware)]

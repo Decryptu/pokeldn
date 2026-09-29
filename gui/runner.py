@@ -1,6 +1,6 @@
+import _thread
 import os
 import runpy
-import signal
 import subprocess
 import sys
 import threading
@@ -13,10 +13,20 @@ from gui.paths import ROOT
 # also works inside a packaged app where no separate python executable exists.
 
 
+def _stop_on_stdin_close() -> None:
+    # The app stops a run by closing its stdin; this raises the same KeyboardInterrupt as Ctrl-C,
+    # which a windowless child on Windows cannot receive as a signal.
+    sys.stdin.read()
+    _thread.interrupt_main()
+
+
 def child(argv: list[str]) -> None:
     """Runs in the child: an entry point script or a module, as `python -u` would."""
-    sys.stdout.reconfigure(line_buffering=True)
-    sys.stderr.reconfigure(line_buffering=True)
+    for stream in (sys.stdout, sys.stderr):
+        if stream:
+            stream.reconfigure(line_buffering=True)
+    if sys.stdin:
+        threading.Thread(target=_stop_on_stdin_close, daemon=True).start()
     mode, target, *args = argv
     if mode == "--run":
         path = os.path.join(ROOT, target)
@@ -38,8 +48,8 @@ class Process:
     def __init__(self, argv: list[str], cwd: str, env: dict, on_line: Callable[[str], None],
                  on_exit: Callable[[int], None]):
         self.on_line, self.on_exit = on_line, on_exit
-        flags = subprocess.CREATE_NEW_PROCESS_GROUP if os.name == "nt" else 0
-        self.proc = subprocess.Popen(command(*argv), cwd=cwd, env=env, stdin=subprocess.DEVNULL,
+        flags = subprocess.CREATE_NO_WINDOW if os.name == "nt" else 0
+        self.proc = subprocess.Popen(command(*argv), cwd=cwd, env=env, stdin=subprocess.PIPE,
                                      stdout=subprocess.PIPE, stderr=subprocess.STDOUT, text=True,
                                      encoding="utf-8", errors="replace", bufsize=1,
                                      creationflags=flags)
@@ -60,7 +70,10 @@ class Process:
         # that ignores it for 15 s is terminated.
         if not self.running:
             return
-        self.proc.send_signal(signal.CTRL_BREAK_EVENT if os.name == "nt" else signal.SIGINT)
+        try:
+            self.proc.stdin.close()
+        except OSError:
+            pass
         threading.Thread(target=self._escalate, daemon=True).start()
 
     def _escalate(self) -> None:

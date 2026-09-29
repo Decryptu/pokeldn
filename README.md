@@ -55,6 +55,20 @@ Recorded before the ESP32 radio, with a Linux Wi-Fi card (ALFA AWUS036ACHM).
 - **Scarlet / Violet**, **Legends Z-A**: trade both ways with a record composed from nothing
 - **Every game**: an offline toolkit for reading a retail title's own code (`tools/switch/`)
 
+## Desktop app
+
+The [releases](https://github.com/Decryptu/pokeldn/releases) carry a desktop app for macOS (Apple
+silicon), Windows and Linux. It includes the radio firmware and flashes the board, builds legal
+Pokemon to offer with [PKHeX.Core](https://github.com/kwsch/PKHeX), and runs every trade and Mystery
+Gift below with the tested settings. The only file it asks for is `prod.keys`.
+
+- macOS: the app is unsigned; open it the first time with right-click, Open.
+- Linux: it needs GTK 3 and libsecret, present on desktop distributions, and serial access
+  (`sudo usermod -aG dialout $USER`).
+- From source: `pip install -r gui/requirements.txt`, then `python gui/main.py`; the Pokemon builder
+  needs `dotnet build -c Release gui/pkhex` (.NET 10 SDK). `python scripts/pack_app.py` builds the
+  app for the current OS into `dist/`.
+
 ## Requirements
 
 - A classic ESP32 board on USB (tested: ESP32-D0WD-V3, ELEGOO board, CP2102 bridge), flashed with

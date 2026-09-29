@@ -3,11 +3,17 @@ import os
 import flet as ft
 
 from gui import theme as t
+from gui.paths import SESSION
+from gui.settings import LANGUAGES
 from gui.views.widgets import PathField, open_folder
 
 LINKS = (("Documentation", "https://decryptu.github.io/pokeldn/"),
          ("GitHub", "https://github.com/Decryptu/pokeldn"),
          ("Discord", "https://discord.gg/PyvaVYnpXC"))
+
+
+def keys_found(path: str) -> bool:
+    return os.path.isfile(os.path.expanduser(path))
 
 
 class SettingsView:
@@ -25,12 +31,36 @@ class SettingsView:
 
     def render(self) -> None:
         s = self.app.settings
-        home = lambda: str(os.path.expanduser("~"))   # noqa: E731
+        home = lambda: os.path.expanduser("~")   # noqa: E731
         keys = PathField(self.app.picker, home, s.keys, "file", ("keys",), self._keys)
-        work = PathField(self.app.picker, home, s.work_dir, "dir", on_change=lambda v: self.save("work_dir", v))
+        received = PathField(self.app.picker, home, s.received, "dir", on_change=lambda v: self.save("received", v))
         self._keys(s.keys, update=False)
         speed = t.dropdown([("921600", "921600 (default)"), ("1500000", "1500000 (faster, needs a good cable)")],
                            str(s.baud), on_select=lambda e: self.save("baud", int(e.control.value)))
+
+        def number(name, label):
+            def store(e):
+                try:
+                    value = int(e.control.value)
+                except ValueError:
+                    return
+                if 0 <= value <= 65535:
+                    self.save(name, value)
+            return ft.Column([t.text(label, 11, t.MUTED),
+                              t.field(value=str(getattr(s, name)), mono=True, on_change=store)],
+                             spacing=4, expand=True)
+
+        trainer = ft.Row([
+            ft.Column([t.text("Name", 11, t.MUTED),
+                       t.field(value=s.ot, on_change=lambda e: self.save("ot", e.control.value[:12]))],
+                      spacing=4, expand=2),
+            number("tid", "Trainer ID"),
+            number("sid", "Secret ID"),
+            ft.Column([t.text("Language", 11, t.MUTED),
+                       t.dropdown(list(LANGUAGES), str(s.language),
+                                  on_select=lambda e: self.save("language", int(e.control.value)))],
+                      spacing=4, expand=2),
+        ], spacing=10, vertical_alignment=ft.CrossAxisAlignment.START)
 
         def switch(name, label, help_):
             return t.card(label, None, help_,
@@ -43,26 +73,31 @@ class SettingsView:
         self.column.controls = [
             t.text("Settings", 22, weight=ft.FontWeight.W_700),
             t.card("Switch keys", ft.Column([keys.control, self.keys_state], spacing=8),
-                   "prod.keys from your own console. It decrypts the local wireless advertisements; it never "
+                   "prod.keys from your own console. It decrypts the local wireless advertisements and never "
                    "leaves this computer."),
-            t.card("Work folder", ft.Row([ft.Container(work.control, expand=True),
-                                          t.icon_button(ft.Icons.OPEN_IN_NEW_ROUNDED,
-                                                        lambda e: open_folder(os.path.expanduser(s.work_dir)),
-                                                        "Open it")]),
-                   "Sessions run here. Received Pokemon go to received/, session records to captures/, and "
-                   "relative paths in a tool point inside it."),
+            t.card("Your trainer", trainer,
+                   "The original trainer of every Pokemon the app builds. The IDs were drawn at random on first "
+                   "launch."),
+            t.card("Received Pokemon", ft.Row([ft.Container(received.control, expand=True),
+                                               t.icon_button(ft.Icons.OPEN_IN_NEW_ROUNDED,
+                                                             lambda e: open_folder(os.path.expanduser(s.received)),
+                                                             "Open it")]),
+                   "Where the Pokemon a console sends you are saved."),
             t.card("Serial speed", speed, "How fast the computer talks to the board after connecting."),
             switch("capture", "Record every session",
-                   "Writes each session's datagrams to captures/. Small, and what a bug report needs."),
+                   "Keeps each session's datagrams. Small, and what a bug report needs."),
             switch("board_trace", "Record the board's serial traffic",
                    "Adds the board's counters and every serial message. For radio problems only."),
+            t.card("Session records", ft.Row([t.button("Open the folder", lambda e: open_folder(str(SESSION / "captures")),
+                                                       ft.Icons.FOLDER_OUTLINED, filled=False)]),
+                   "Attach the latest file to a bug report."),
             t.card("About", ft.Row([link(label, url) for label, url in LINKS], spacing=4),
-                   "pokeldn is AGPLv3. It talks to retail games through their own local wireless protocols."),
+                   "pokeldn is AGPLv3. Pokemon are checked with PKHeX.Core (GPLv3)."),
         ]
 
     def _keys(self, value: str, update: bool = True) -> None:
         self.save("keys", value)
-        ok = os.path.isfile(os.path.expanduser(value))
+        ok = keys_found(value)
         self.keys_state.content = ft.Row([
             ft.Icon(ft.Icons.CHECK_CIRCLE_ROUNDED if ok else ft.Icons.ERROR_OUTLINE_ROUNDED, size=15,
                     color=t.GREEN if ok else t.AMBER),
