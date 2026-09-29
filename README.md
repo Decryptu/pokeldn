@@ -355,33 +355,30 @@ Pikachu, then wait on the search screen. See [Let's Go](docs/lgpe.md).
 
 ### Sword and Shield
 
-Trading joins the console's Link Trade session. The console hosts on Y-Comm → Link Trade over
-local communication; its local communication id is filled at runtime, so the first run is a scan:
+Both directions need a **snapshot** of the console's party, captured once from the same console.
+On the console: Y-Comm → Link Trade → local communication, then wait on the search screen.
 
 ```bash
-./.venv/bin/python bin/swsh_join.py --scan-only
-```
+# 1. capture the snapshot (sends no party), 2. extract it
+POKELDN_RADIO=esp32:auto ./.venv/bin/python bin/swsh_connect.py --keys PROD_KEYS \
+  --preset capture --capture scratchpad/swsh_first.jsonl
+./.venv/bin/python tools/switch/swsh_snapshot.py scratchpad/swsh_first.jsonl scratchpad/swsh_snapshot.bin
 
-Everything each advertisement carries is written to `scratchpad/swsh_net_facts.json`. The trade
-itself is `bin/swsh_connect.py`, which walks the station handshake, the mesh join, the party
-snapshot exchange and the confirmation ladder; `--offer-file FILE` puts a PKHeX `.pk8` on the wire
-in place of a party slot. The flags a completed trade takes are on [Trading](docs/swsh_trade.md).
-The scan facts are not a party snapshot. For a first join, capture the console's 0x84 fragments
-with `swsh_connect.py --capture FILE`, then extract them with
-`./.venv/bin/python tools/switch/swsh_snapshot.py FILE SNAPSHOT.bin`; the trading page gives the
-capture command.
+# 3a. join the console's session and trade (search again first)
+POKELDN_RADIO=esp32:auto ./.venv/bin/python bin/swsh_connect.py --keys PROD_KEYS \
+  --preset trade --send-snapshot scratchpad/swsh_snapshot.bin --offer-slot 1
 
-Hosting is `bin/swsh_host.py`; the console joins it from Y-Comm → Link Trade → trade, after A on
-both messages that follow (the search starts only after the second):
-
-```bash
+# 3b. or host, and let the console join
 POKELDN_RADIO=esp32:auto ./.venv/bin/python bin/swsh_host.py --keys PROD_KEYS \
-  --advert scratchpad/swsh_net_facts.json --scene-id 60001 --channel 6 --seconds 900
+  --advert scratchpad/swsh_net_facts.json --snapshot scratchpad/swsh_snapshot.bin \
+  --scene-id 60001 --channel 6 --seconds 900
 ```
 
-It offers party slot 1 of `--snapshot` under the trainer `--trainer-name` and writes the Pokémon it
-receives to `--received FILE`. `--code 12345678` hosts for a console searching with that Link
-Code; the joiner needs no flag for a coded search.
+`swsh_net_facts.json` is what `bin/swsh_join.py --scan-only` writes (the console's advertisement, not
+a snapshot). Use `--offer-slot 1 --offer-file your.pk8` to send a PKHeX `.pk8`. For 3b the console
+joins from Y-Comm → Link Trade → trade, after A on both messages that follow; `--received FILE`
+saves what it sends, `--code 12345678` hosts for a Link Code search. Use an absolute `--keys` path
+if you run under `sudo`. Details: [Trading](docs/swsh_trade.md).
 
 Mystery Gift needs no session: the gift screen scans, and a distributor advertises a network whose
 advertise data carries the card.

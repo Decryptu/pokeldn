@@ -40,7 +40,7 @@ def main():
     ap.add_argument("--phy", default="auto", help="wifi phy to scan on ('auto' = first AP-capable)")
     ap.add_argument("--keys", default="~/.switch/prod.keys")
     ap.add_argument("--channels", default="1,6,11", help="comma-separated channels to dwell on")
-    ap.add_argument("--dwell", type=float, default=0.110, help="seconds per channel")
+    ap.add_argument("--dwell", type=float, default=1.5, help="seconds per channel")
     args = ap.parse_args()
 
     if os.geteuid() != 0 and not board_radio():
@@ -80,9 +80,8 @@ def main():
         print(f"  application_data       : ({len(n.application_data)} B)")
         print(f"    {n.application_data.hex()}")
     if not nets:
-        print("[scan] nothing seen. Checklist: is a real LDN host actually up right now? Is it on one")
-        print("       of the dwell channels above (try --channels 1..11)? Is NetworkManager leaving")
-        print("       the radio alone (sudo systemctl stop NetworkManager if unsure)?")
+        print("[scan] nothing seen. Is the console on its search screen right now? Try --channels")
+        print("       1..11 or a longer --dwell; with a card, keep NetworkManager off the radio.")
     return 0
 
 

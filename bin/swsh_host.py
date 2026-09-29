@@ -88,7 +88,7 @@ def build_parser():
                     help="a Sword's own advertisement (hex, raw, or swsh_net_facts.json); its "
                          "game record from 0x18 is kept and the Pia header rebuilt")
     ap.add_argument("--player-name", default="PkCamp")
-    ap.add_argument("--snapshot", default="scratchpad/sw70_0x84_payload.bin",
+    ap.add_argument("--snapshot", default="scratchpad/swsh_snapshot.bin",
                     help="a Sword's 3456-byte 0x84 snapshot; its identity is moved to ours")
     ap.add_argument("--trainer-name", default="PkCamp")
     ap.add_argument("--trainer-tid", type=lambda s: int(s, 0), default=12345)
@@ -124,6 +124,10 @@ def main():
     network_id = (bytes.fromhex(args.network_id) if args.network_id
                   else os.urandom(2) + NETWORK_ID_HIGH)       # little-endian: the high half last
     app_data = build_advert(load_advert(args.advert), network_id=network_id, code=args.code)
+    if not os.path.exists(args.snapshot):
+        print(f"[sw] no snapshot at {args.snapshot}: capture one first (docs/swsh_trade.md, "
+              "'The command line of a completed trade') and pass it with --snapshot")
+        return 1
     snapshot = open(args.snapshot, "rb").read()
     if len(snapshot) != trade_payload.PAYLOAD_LENGTH:
         snapshot = trade_payload.inflate_short(snapshot)

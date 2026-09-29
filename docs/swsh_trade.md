@@ -684,45 +684,23 @@ identity consistency.
 
 ## The command line of a completed trade
 
-`swsh_join.py --scan-only` records the network advertisement, not the party snapshot. To obtain
-the snapshot for the first trade, let the console search for a local Link Trade and run the
-connector through the snapshot receive stage. This uses the working transport flags without
-sending a party or an offer:
+`swsh_connect.py --preset trade` carries the flags that completed a trade against a French Sword
+1.3.2; a flag given after it overrides the preset. The party snapshot comes from an earlier session
+against the same console, in three steps. Let the console search for a local Link Trade (Y-Comm,
+Link Trade, local) and run:
 
     POKELDN_RADIO=esp32:auto ./.venv/bin/python -u bin/swsh_connect.py --keys PROD_KEYS \
-        --channels 1,6,11 --dwell 2.5 --listen-first 6 \
-        --station-sweep 0 --ack-seconds 12 --connect --no-variable-id --request-platform 9 \
-        --request-flags 0x09 --connect-station 0 --nat-flags 0 --nat-location 0 --respond \
-        --respond-with theirs --join --answer-rtt --ack-reliable --send-data 610000000a00 \
-        --sync-answers --send-protocol 0x7c --send-after 4 --send-count 1200 --send-period 0.3 \
-        --send-seconds 350 --send2-data 60ea000012020801 --send2-trigger 60ea000012020801 \
-        --send2-protocol 0x80 --ack-snapshot --hold 90 --capture scratchpad/swsh_first.jsonl
-
-After the log shows fragments 0, 1 and 2, extract the 3456-byte payload:
-
+        --preset capture --capture scratchpad/swsh_first.jsonl
     ./.venv/bin/python tools/switch/swsh_snapshot.py scratchpad/swsh_first.jsonl scratchpad/swsh_snapshot.bin
 
-Use that file for `--send-snapshot` in the completed-trade line below. The console must be the
-same one that supplied the snapshot.
-
-`bin/swsh_connect.py` runs every layer of a trade. The line below completed one against a French
-Sword 1.3.2, the client joining the console's Link Trade session; `SNAPSHOT` is a 3456-byte party
-snapshot, the 0x84 payload of an earlier session against the same console, whose identity is
-rewritten to the client's trainer before it is sent back.
+The first command stops at the snapshot receive stage and sends no party. The second extracts the
+3456-byte 0x84 payload once the log shows fragments 0, 1 and 2. `swsh_join.py --scan-only` records
+only the advertisement, not the snapshot. Then search again and trade; the snapshot's identity is
+rewritten to the client's trainer before it is sent back:
 
     POKELDN_RADIO=esp32:auto ./.venv/bin/python -u bin/swsh_connect.py --keys PROD_KEYS \
-        --channels 1,6,11 --dwell 2.5 --listen-first 6 \
-        --station-sweep 0 --ack-seconds 12 --connect --no-variable-id --request-platform 9 \
-        --request-flags 0x09 --connect-station 0 --nat-flags 0 --nat-location 0 --respond \
-        --respond-with theirs --join --answer-rtt --ack-reliable --send-data 610000000a00 \
-        --sync-answers --send-protocol 0x7c --send-after 4 --send-count 1200 --send-period 0.3 \
-        --send-seconds 350 --send2-data 60ea000012020801 --send2-trigger 60ea000012020801 \
-        --send2-protocol 0x80 --ack-snapshot --send-snapshot SNAPSHOT --snapshot-port 1 \
-        --rpc-port-answers --rpc-pair --rpc-bodies --selection-final-delta 9 --selection-offer \
-        --offer-slot 1 --offer-nickname PKCAMP --open-content 30,50 --open-content-offer \
-        --box-commands 1 --box-on-accept 4 --box-period 0.35 --save-offered offered.pk8 \
-        --confirm-commands 0,1,2,3,0,1,2,3,0,1,2,3 --confirm-final-delta 9 --abort-on-stall 15 \
-        --hold 240 --capture trade.jsonl
+        --preset trade --send-snapshot scratchpad/swsh_snapshot.bin --save-offered offered.pk8 \
+        --capture trade.jsonl
 
 `--offer-file FILE` in place of `--offer-slot` puts a `.pk8` on the wire. On a Linux card, drop
 `POKELDN_RADIO` and prime the kernel's BSS table with `iw dev IFACE scan` before the run

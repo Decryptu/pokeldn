@@ -11,7 +11,7 @@ sets both and `--station-sweep` walks the readings. The console sends 0 on every
 
 Never pass --verbose to a live run; use --capture. docs/swsh_session.md, docs/pia.md.
 """
-import argparse, json, os, socket, struct, sys, time, traceback, zlib
+import argparse, json, os, shlex, socket, struct, sys, time, traceback, zlib
 
 PROJECT_ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 sys.path.insert(0, PROJECT_ROOT)
@@ -69,6 +69,10 @@ def make_socket(ifname):
         s.setsockopt(socket.SOL_SOCKET, socket.SO_BINDTODEVICE, ifname.encode())
     except PermissionError:
         pass
+    except OSError as e:
+        raise SystemExit(f"[cx] interface {ifname!r} not found ({e}): with a board set "
+                         "POKELDN_RADIO=esp32:PORT; with a Wi-Fi card check NetworkManager "
+                         "leaves ldn* unmanaged (docs/hardware_adapters.md)")
     s.bind(("", PIA_PORT))
     s.setblocking(False)
     return s
@@ -1805,9 +1809,30 @@ def offer_edits(args):
     return edits
 
 
+# The flags that completed a retail trade (docs/swsh_trade.md); later flags override them.
+_TRANSPORT = (
+    "--channels 1,6,11 --dwell 2.5 --listen-first 6 --station-sweep 0 --ack-seconds 12 --connect "
+    "--no-variable-id --request-platform 9 --request-flags 0x09 --connect-station 0 --nat-flags 0 "
+    "--nat-location 0 --respond --respond-with theirs --join --answer-rtt --ack-reliable "
+    "--send-data 610000000a00 --sync-answers --send-protocol 0x7c --send-after 4 --send-count 1200 "
+    "--send-period 0.3 --send-seconds 350 --send2-data 60ea000012020801 "
+    "--send2-trigger 60ea000012020801 --send2-protocol 0x80 --ack-snapshot")
+PRESETS = {
+    "capture": _TRANSPORT + " --hold 90",
+    "trade": (_TRANSPORT + " --snapshot-port 1 --rpc-port-answers --rpc-pair --rpc-bodies "
+              "--selection-final-delta 9 --selection-offer --offer-slot 1 --offer-nickname PKCAMP "
+              "--open-content 30,50 --open-content-offer --box-commands 1 --box-on-accept 4 "
+              "--box-period 0.35 --confirm-commands 0,1,2,3,0,1,2,3,0,1,2,3 "
+              "--confirm-final-delta 9 --abort-on-stall 15 --hold 240"),
+}
+
+
 def build_parser():
     ap = argparse.ArgumentParser(description=__doc__,
                                  formatter_class=argparse.RawDescriptionHelpFormatter)
+    ap.add_argument("--preset", choices=sorted(PRESETS),
+                    help="the tested flag set: 'capture' records the console's party snapshot, "
+                         "'trade' needs --send-snapshot")
     ap.add_argument("--comm-id", default=None, help="hex; defaults to Sword's 0x0100abf008968000")
     ap.add_argument("--keys", default="~/.switch/prod.keys")
     ap.add_argument("--phy", default="auto")
@@ -2221,7 +2246,13 @@ def build_parser():
 
 
 def main(argv=None):
+    argv = sys.argv[1:] if argv is None else list(argv)
+    preset = build_parser().parse_known_args(argv)[0].preset
+    if preset:
+        argv = shlex.split(PRESETS[preset]) + argv
     args = build_parser().parse_args(argv)
+    if preset == "trade" and not args.send_snapshot:
+        build_parser().error("--preset trade needs --send-snapshot FILE")
     args.connect_station_first = int(_expand(args.connect_station)[0], 0)
     try:
         offer_edits(args)
