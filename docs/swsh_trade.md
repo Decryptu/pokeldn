@@ -523,7 +523,9 @@ SID are rewritten to `--snapshot-name/-tid/-sid`, and it goes out 0.13 s after t
 retail Sword acked it and traded, with no earlier capture session. `--send-snapshot FILE` sends a
 saved 3456-byte payload instead (`--preset capture`, then `tools/switch/swsh_snapshot.py`, writes one).
 
-`--offer-file FILE` puts a `.pk8` in the offered party slot, its OT moved to the snapshot's trainer. On a Linux card, drop
+`--offer-file FILE` puts a `.pk8` in the offered party slot, its OT moved to the snapshot's trainer.
+A stored-format record with no party stats trades: a PKHeX-built Pikachu that `pokeldn.swsh.pokemon`
+reads as level 0 arrived at level 25, its level taken from its experience. On a Linux card, drop
 `POKELDN_RADIO` and prime the kernel's BSS table with `iw dev IFACE scan` before the run
 ([The cartridge and the session](swsh_session.md)).
 
