@@ -9,31 +9,23 @@ nav_order: 1
 ## The advertisement
 
     local_communication_id  0100000011d90000
-    scene_id                4352  (0x1100) in the Union Room; 5120 (0x1400) in the Union Room
-                            entered with a password; 12608 (0x3140) in the Grand Underground
+    scene_id                4352 (0x1100) Union Room; 5120 (0x1400) Union Room entered with a
+                            password; 12608 (0x3140) Grand Underground
     version                 4
     channel                 6, band 2 (2.4 GHz)
     accept_policy           ALL
     participants            1/8
     application_data        17 bytes
 
-The comm id is Brilliant Diamond's title id; the console was running Shining Pearl
-(`010018e011d92000`). Paired versions advertise one shared `local_communication_id`, so it does not
-identify which version is hosting.
-
-The advertisement decrypts with `prod.keys` alone. `tools/ldn/ldn_scan.py` sees the session before
-anything about the game is known.
-
-The 17 bytes of application data parse against Pia's LDN advertisement layout
-([The wireless layer](ldn.md)), with the CRC32 field reading 0 (the room was opened with no password)
-and the header size reading 16 against a 17-byte blob, so one byte is application data.
+The comm id is Brilliant Diamond's title id, shared by Shining Pearl (`010018e011d92000`). The
+advertisement decrypts with `prod.keys` alone (`tools/ldn/ldn_scan.py`). The 17 bytes of application data are Pia's LDN advertisement header
+([The wireless layer](ldn.md)), 16 bytes, then one byte of application data; the CRC32 field is 0 in
+a room opened with no password.
 
 A room entered with a password carries the CRC32 of the password's ASCII digits there, little-endian
-(00000000 -> `0xC0088D03`), and scene id 5120 in place of 4352. `bin/bdsp_connect.py` joins such a
-room and trades with no change; `bin/bdsp_host.py --password 00000000` advertises both and a console
-entering with that password joins it and trades.
-
-A console entering with a password checks both fields, at three stages (1.3.0 `main`):
+(00000000 -> `0xC0088D03`), and scene id 5120. `bin/bdsp_connect.py` joins such a room unchanged;
+`bin/bdsp_host.py --password 00000000` advertises both, and a console entering with that password
+joins and trades. The console checks at three stages (1.3.0 `main`):
 
 | stage | code | check |
 |---|---|---|
@@ -41,24 +33,19 @@ A console entering with a password checks both fields, at three stages (1.3.0 `m
 | browse | `LdnMatchmakeSession` `0x16c1abc`; `GameState_BrowseSessionAfter_LocalRandom2` `0x273f804` | a room is password-protected when the u32 at +0x04 is non-zero; a console with a password skips an unprotected room and one without skips a protected room |
 | connect | `LocalMatchJoinSessionJob` `0x16c36c8`; the check `0x16b8890` | the joiner computes `crc32` of its typed password (`0x1719204`); +0x08 must be 8, and a CRC other than the advertised u32 at +0x04 fails with 0x6c51 before `nn::ldn::Connect` |
 
-The host writes that header in `LdnProtocol` `0x16b6a14`: network id, the password's CRC32, the
-byte 8, the session parameter. No message carries the joiner's CRC to the host. A password longer
-than eight characters keeps eight for Pia and moves the rest into application data behind `INL1`
+The host writes that header in `LdnProtocol` `0x16b6a14`: network id, the password's CRC32, the byte
+8, the session parameter. No message carries the joiner's CRC to the host: a console typing the
+wrong password sends the host nothing and opens a room of its own. A password longer than eight
+characters keeps eight for Pia and moves the rest into application data behind `INL1`
 (`IlcaNetSession.SettingSet` `0x2735f14`).
-
-A retail console typing 00000000 against `bin/bdsp_host.py --password 11111111` (scene 5120, the
-wrong CRC) sent no frame to the host and opened an empty room of its own; the same console typing
-11111111 joined and traded. The CRC value decides the join.
 
 ## The passphrase
 
     WirelessStrongCryptoKey2021
 
-Used raw: 27 bytes, neither padded nor hashed. The LDN layer accepts any passphrase from 16 to 64
-bytes and stores the byte string with an explicit length.
-
-The game hands it to `nn::ldn::CreateNetwork` inside an `nn::ldn::SecurityConfig`; it never reaches
-Pia's crypto.
+Used raw: 27 bytes, neither padded nor hashed (LDN accepts 16 to 64 bytes with an explicit length).
+The game hands it to `nn::ldn::CreateNetwork` in an `nn::ldn::SecurityConfig`; it never reaches Pia's
+crypto.
 
 ## Taking a seat
 
@@ -67,40 +54,28 @@ Pia's crypto.
     participant 0: ip=169.254.54.1  mac=48f1eb209b22                 <- the console
     participant 1: ip=169.254.54.2  mac=58d8122149a2  name=b'PkCamp'  <- the client
 
-The console assigns the IP and holds the seat for as long as it is held. The Union Room's eight seats
-are the LDN `max_participants`, so the participant count is the room's population.
+The console assigns the IP. The Union Room's eight seats are the LDN `max_participants`. An LDN seat
+is below the game: nothing appears on screen, and it is not a seat in the Pia session.
 
-Nothing appears on the console's screen. LDN association is below the game; a seat in the LDN
-session is not a seat in the Pia session.
+Association succeeds about one attempt in two (`Connect failed with status code 1`); retry before
+diagnosing. The console can stop advertising while the player stays in the room, with no change on
+screen; leaving and re-entering brings it back on a new channel, SSID and session parameter, which
+the key derivation handles live. A receiver on the LDN interface must filter its own source IP:
+broadcasts loop back.
 
-LDN association succeeds roughly one attempt in two; `Connect failed with status code 1` with no
-`authenticate` line in dmesg is the baseline. Retry before diagnosing. The console can stop
-advertising while the player stays in the Union Room: the screen does not change and scans across
-all three channels find nothing. Leaving and re-entering the room brings it back on a new channel,
-SSID and session parameter; the key derivation handles all three live.
-
-A receiver on the LDN interface must filter its own source IP: broadcasts loop back on the tap.
-
-Unauthenticated Pia is discarded before it reaches anything that replies. Holding the seat and
-sending unencrypted Pia datagrams (header-only, header aimed at the console's variable id, header
-plus payload, to the host and to the broadcast address) drew nothing: over 70 seconds the console
-sent 630 packets, every one 176 bytes, every one addressed to `dst_var = 0`, none to the sender. It
-did not answer, did not error and did not drop the seat.
+Unauthenticated Pia is dropped silently, with no error and no loss of the seat.
 
 ## What is on the wire
 
-A hosting console broadcasts to `169.254.x.255:12345` at about nine datagrams a second, every one
-176 bytes, every one addressed to `dst_var = 0`:
+A hosting console broadcasts to `169.254.x.255:12345` about nine times a second, every datagram 176
+bytes and addressed to `dst_var = 0`:
 
     32ab9864 89 00000000 11bac90d 0000 00 f5a83bd383ce712d 59baa5cbc320cb56 <144 bytes>
     magic    v  dst=0    src      pid  f  nonce (a counter) tag              ciphertext
 
-Version byte `0x89` is encrypted, version 9: Pia 5.27-5.45. The header layout, message framing and
-transport protocols are on [The Pia layer](pia.md). `pokeldn/ldn/pia5.py` round-trips 674 captured
-packets byte-identically.
-
-The reliable protocol's version 3 pins Pia to 5.31-5.43, narrower than the mesh protocol's version 3
-(5.30-5.45).
+Version byte `0x89` is encrypted, version 9: Pia 5.27-5.45; the reliable protocol's version 3 narrows
+it to 5.31-5.43. The header, message framing and transport protocols are on
+[The Pia layer](pia.md). `pokeldn/ldn/pia5.py` round-trips 674 captured packets byte-identically.
 
 ## The key hierarchy
 
@@ -113,28 +88,21 @@ The reliable protocol's version 3 pins Pia to 5.31-5.43, narrower than the mesh 
     crc32(netid||MAC)  0xda291352
     IV (first packet)  da29130df5a83bd383ce712d
 
-All 674 packets of one capture authenticate on that. Re-encrypting each captured plaintext with the
-derived key and IV reproduces the console's own ciphertext and tag, byte for byte, for all 674.
+All 674 packets of one capture authenticate, and re-encrypting each plaintext reproduces the
+console's ciphertext and tag byte for byte.
 
 ### Where the seed lives
 
-`cryptoKeyDataSeed` is `9918bd0f dcfa6577` twice.
-
-`INL1.IlcaNetSessionSetting` is a plain `[Serializable]` class; its defaults come from its
-constructor:
+`INL1.IlcaNetSessionSetting`'s constructor sets the defaults:
 
     IlcaNetSessionSetting..ctor
       byte[16] cryptoKeyDataSeed  <- RuntimeHelpers.InitializeArray(array, fieldHandle)
       string   wirelessCryptoKey  <- the "WirelessStrongCryptoKey2021" literal
       ulong    localCommunicationId = 0x0100000011d90000
 
-The field handle resolves to
-`<PrivateImplementationDetails>.33F804682DF9E210AABDC4D939CBCD380EC7517F`; a C# compiler names
-those fields after the SHA-1 of their initial data, and SHA-1 of the sixteen bytes above is that
-name. The `localCommunicationId` in the same constructor is BDSP's.
-
-An `InitializeArray` blob lives in `global-metadata.dat`'s field-default-value section; neither a
-scan of the executables nor a scan of the 4.2 GB RomFS finds it. The method is on
+The field handle resolves to `<PrivateImplementationDetails>.33F804682DF9E210AABDC4D939CBCD380EC7517F`,
+the SHA-1 of the sixteen bytes. The blob lives in `global-metadata.dat`'s field-default-value
+section, in neither the executables nor the RomFS; the method is on
 [Reverse-engineering a Switch title](switch_re.md).
 
 ### The published key is the seed, derived
@@ -143,98 +111,77 @@ scan of the executables nor a scan of the 4.2 GB RomFS finds it. The method is o
     published key     9900bd0c dcfa6563 9918bd0f c7fa6577
                         ^^   ^^         ^^         ^^        bytes 1, 3, 7, 12
 
-The game overwrites those four bytes from the local communication version, 199 for 1.3.0 (the
-`app_version: 199` the advertisement carries). `ldn_game_key(seed, 199)` reproduces the published
-row byte for byte. A published key and a measured seed differ in exactly those four positions.
+The game overwrites bytes 1, 3, 7 and 12 from the local communication version, 199 for 1.3.0 (the
+advertisement's `app_version`); `ldn_game_key(seed, 199)` reproduces the published key.
 
 ### The session key
 
-Read out of `nn::pia::local::LocalProtocol`, the LDN implementation:
+From `nn::pia::local::LocalProtocol`:
 
     seed  = a u32 session value held at LocalProtocol+0x5b0
     state = for i in 1..4:  prev = ((prev ^ (prev >> 30)) * 0x6C078965 + i)
     rnd   = four consecutive xorshift128 draws (shifts 11, 8, 19) -> 16 bytes, little-endian
     key   = AES-128-ECB(game key at LocalProtocol+0x5bc).encrypt(rnd)
 
-The generator is SEAD's, Nintendo's standard-library RNG. `pokeldn/ldn/sead.py` implements it and
-matches the wiki's SEAD RNG: the same init multiplier, the same 11/8/19 shifts, the same state
-rotation. A failed derivation is a wrong key or a wrong nonce.
+The generator is SEAD's RNG; `pokeldn/ldn/sead.py` implements it.
 
 ### The GCM nonce
 
-The IV is built by the stream object, one per network family (its RTTI name says nothing about
-crypto):
+The IV is built by the stream object, one per network family:
 
     nn::pia::local::LdnOutputStream::vfunc3     0x16b39c4      the LDN sender
     nn::pia::local::LocalOutputStream::vfunc3   0x16bca80
     nn::pia::lan::LanOutputStream::vfunc3       0x16a0f80
     nn::pia::nex::NexOutputStream::vfunc3       0x16eca0c
 
-Each opens with `cmp w2, #0xb; b.hi` (the buffer must hold twelve bytes) and takes
-`(this, buf, buflen, packet)`. The sender calls it on the object at `PacketWriter+0x948` just before
-encrypting; the receiver memsets twelve zero bytes and calls the same slot on `PacketReader+0xc8`.
+Each takes `(this, buf, buflen, packet)`; the sender calls it at `PacketWriter+0x948`, the receiver
+at `PacketReader+0xc8`.
 
     IV[0..3]  = u32be( crc32(ten bytes) )
     IV[3]     = overwritten with (packet.source_variable_id & 0xFF)
     IV[4..11] = the eight-byte header nonce, copied from packet+0x1b
 
-Only three bytes of the CRC reach the IV. The hash at `0x1719204` is ordinary CRC32 (its
-table-building fallback spells out `0xEDB88320`). The ten bytes are the network id (little-endian)
-followed by the source MAC address: a u32 from the network object at +0x450, which the joiner copies
-out of advertisement +0x00, followed by six bytes of a station record.
-
-The source MAC cannot be recovered from the packet being decrypted.
+The CRC at `0x1719204` is ordinary CRC32 (`0xEDB88320`) over the network id (little-endian, from
+advertisement +0x00 via the network object's +0x450) and the source MAC from a station record. The
+source MAC cannot be recovered from the packet being decrypted.
 
 ## The Local Protocol, decoded
 
-Every one of the 674 packets carries exactly one message, and all of them are the same:
+Every one of the 674 packets carries one message, always the same:
 
     presence 0x7f  flags 0x11  size 121  protocol 36  port 0  destination 0
 
-Protocol 36 is the Local Protocol and the message is its `0x11` update session, rebroadcast every
-100 ms until every station acknowledges it:
+It is the Local Protocol's `0x11` update session, rebroadcast every 100 ms until every station
+acknowledges it:
 
     local message header  version 1, type 0x11, size 73
     sequence id           4
-    network id            8b4a3b22        random, and NOT the advertisement's network id
+    network id            8b4a3b22        random, not the advertisement's network id
     host variable id      11bac90d        the same value as the packet header's source variable id
     host constant id      0000 48f1 2022 9beb
     allow participating   1
     node 0                169.254.54.1:12345          the console
-    node 1                169.254.54.2:12345   01     us
+    node 1                169.254.54.2:12345   01     the client
     nodes 2-7             empty, marked 0xff
     host migration state  0
 
-Eight nine-byte node slots then one byte: the Union Room's eight seats. The sequence id never moves
-across 674 messages; the host repeats an unacknowledged update.
-
-The captured host constant id, read as the little-endian field it is, unpacks by the wiki's LDN rule
-(`mac[2] << 56 | mac[4] << 48 | mac[5] << 40 | mac[3] << 32 | mac[1] << 24 | mac[0] << 16`) to
-`48:f1:eb:20:9b:22`, the MAC the scan recorded.
-
-The byte order changes three times inside one message: the Pia message header is big-endian, the
-Local Protocol's own fields are little-endian, and a local address inside them is big-endian again.
+Eight nine-byte node slots, the room's eight seats, then one byte. The host constant id, read
+little-endian, unpacks by the LDN rule (`mac[2] << 56 | mac[4] << 48 | mac[5] << 40 | mac[3] << 32 |
+mac[1] << 24 | mac[0] << 16`) to the scanned MAC `48:f1:eb:20:9b:22`. The Pia message header is
+big-endian, the Local Protocol's fields little-endian, a local address inside them big-endian again.
+The presence byte 0x7F sets three bits that name no field in Pia 5.27-6.30.
 
 ### The ack
 
-The 20-byte ack, its framing, and how the console attributes it are documented on
-[The Pia layer](pia.md#the-local-protocol-0x24). The framing that works is a broadcast to the
-network broadcast address with packet `dst_var` 0 and message destination 0, the host's own framing.
-The three unicast framings have not been tested.
-
-Measured: 42 update sessions about 100 ms apart, the last at t=5.969, the first ack at t=6.003, and
-zero packets from the console for the remaining 78 seconds. Nothing appeared on the console's screen.
-That run was a fresh session (a different SSID, network id, session parameter, host variable id and
-sequence id from the capture the derivation was read against) with every key built live from the
-advertisement; all 42 packets authenticated.
-
-The message presence byte is 0x7F. Only bits 1/2/4/8 name a field in Pia 5.27-6.30 and the console's
-message carries exactly those four fields; it sets three more bits that name nothing.
+The 20-byte ack is on [The Pia layer](pia.md#the-local-protocol-0x24). The framing that works is
+the host's own: a broadcast with packet `dst_var` 0 and message destination 0; the unicast framings
+are untested. After 42 updates 100 ms apart, the first ack 34 ms after the last stopped them, and
+the console sent nothing for the remaining 78 seconds.
 
 ## Joining the mesh
 
-The three handshakes and the ack rule are on [The Pia layer](pia.md#joining-a-mesh). BDSP-specific
-addresses and results:
+The three handshakes and the ack rule are on [The Pia layer](pia.md#joining-a-mesh). BDSP's
+addresses:
 
 | what | where |
 |---|---|
@@ -247,104 +194,50 @@ addresses and results:
 | join REQUEST handler, host side | `0x0154b790`, `0x0154b868` |
 | join RESPONSE handler | `0x0154b984`, `0x0154b9a4` |
 
-`0x01550324` is a method of the object at `session + 0xa0`, and that object is the
-MeshStationProtocol: its field `0x120` holds the `0x2710` its constructor writes at `0x0154e614`,
-where `MeshProtocol`'s constructor zeroes the same offset. The join response handler is identified by
-the pointer it reads at `MeshProtocol + 0x128`, which `JoinMeshJob` stores through `0x0154e5c4`
-immediately after sending the join request at `0x0155cb8c`.
+`0x01550324` belongs to the MeshStationProtocol at `session + 0xa0`. The join response handler is the
+pointer `JoinMeshJob` stores at `MeshProtocol + 0x128` (`0x0154e5c4`) after sending the join request.
 
-The console's protocol count is 9, measured by sweeping the count against a console that answers
-only on a match: a connection response at N=9 and at no other N. Its nine protocols, read off its
-own acceptance:
+The console registers nine protocols ([measured](#measurement-methods)):
 
     0x14 Station v2   0x18 Mesh v3      0x1c SyncClock v0
     0x24 Local v0     0x58 RTT v3       0x68 Unreliable v1
     0x7c Reliable v3  0x94 Session v1   0xa4 MonitoringData v0
 
-Five of the nine answer a version probe; the other four are registered at version 0, which the probe
-cannot tell from unregistered (both expect 0). The wiki gives the Local Protocol version 0 for
-5.19-5.45.
-
-The Session Protocol (0x94) is `nn::pia::session::SessionProtocol` (1.3.0 `main`, vtable
-`0x4b5da50`; slot 4 returns 0x94, slot 5 returns 1). Pia's session start-up constructs it on every
-session [`0x157c66c`] unless a settings byte (+0x38 of the object behind GOT `0x4c4b850`) is set,
-registers it under 0x94, stores it at session+0xC8 and gives it one
-`transport::ReliableSlidingWindow` per other station [`0x1581938`]. It carries the joint-session
-feature: every call into `SessionProtocol` from outside it comes from
-`nex::NexMatchJointSessionJob`, and every handler of its receive dispatcher [`0x15820b8`, a switch on
-the first byte] returns when the session's joint-session job (session+0x70) is null. The job comes
-from the network factory's slot 61 [`0x157cb48`]: `local::LdnNetworkFactory`'s [`0x16b30ac`] returns
-null, `lan::LanNetworkFactory`'s builds a `LanMatchJointSessionJob` and `nex::NexNetworkFactory`'s a
-`NexMatchJointSessionJob`. No capture has carried a byte of 0x94.
-
-Three stores in Pia's text reach session+0x70 (the session object is `*0x50457f8`, GOT
-`0x4c4b848`), so on LDN the job stays null for the life of the session:
-
-| store | value | where |
-|---|---|---|
-| `0x157c618` `str xzr, [x8, #0x70]` | null | session start-up |
-| `0x157cb54` `str x0, [x8, #0x70]` | the factory's slot 61 (`blr [x8, #0x1e8]` at `0x157cb4c`) | the same function |
-| `0x157d0e8` `str xzr, [x19, #0x70]` | null, after destroying the job through factory slot 69 (`0x157d0e0`) | session teardown `0x157cf5c` |
-
-The Session Protocol's per-station windows are the same `ReliableSlidingWindow` the game stream
-uses, driven by the same functions:
-
-| step | Session Protocol | the window function | its callers |
-|---|---|---|---|
-| a station joins (event 0) | slot 11 `0x15821fc`: window reset `0x159e59c`, then add-peer with the station's constant id and index `0x158232c` | `0x159e5f8` | five: `MeshProtocol` `0x1549dbc`, `SessionProtocol` `0x158232c`, `BroadcastReliableProtocol` `0x1595598`, `ReliableProtocol` `0x159d07c`, one in clone code `0x167b730` |
-| a station leaves (event 1) | remove-peer `0x159e7c8`, then window slot 4 | `0x159e7c8` | |
-| a packet arrives | slot 10 `0x1581c98`: index above 0x1f or its own rejected (`0x1581dc0`, `0x1581dd4`), then the window's receive `0x1581e10` when the window has a peer (`0x159ef30`) | `0x159f1e4` | the same five protocols (`ReliableProtocol` slot 18 `0x159d814`) |
-| delivery | for stations whose state (+0x4c) is 5 or 6, pop into the 0x12C-byte buffer at +0x12A (`0x15a0a6c`) and hand each message to the dispatcher `0x15820b8` (`0x1581f50`) | `0x15a0a6c` | |
-| resend and ack timers | `0x159fea8(window, NULL, -1)`, no send budget (`0x1582014`, `0x158207c`) | `0x159fea8` | `ReliableProtocol` slot 19 `0x159d90c`, `0x159d988`, with a counter and a budget |
-
-Slot 10 also returns at once while its own station index is 0xFD, not joined (`0x1581cc0`). It
-reads its packets under the key `{u16 1, u8 0, u8 0x94}` (`0x1581d0c..0x1581d24`).
-
-The window is initialised at `0x15819d8` through `0x159de54(window, 2, 2, 0x94000001)`: both slot
-rings (window +0x18 and +0x38) are sized 2 (`0x159ded8`, `0x159df08`), and +0x748 holds
-`1 | 0x94 << 24` (`0x159deac`; slot 4 of the `SessionProtocol` vtable is `mov w0, #0x94; ret`,
-`0x1583d8c`), protocol 0x94 and port 1. `ReliableSlidingWindow` has one constructor
-[`0x159dab4`] and one vtable [`0x4b5eac8`, GOT `0x4c4e470`, read only in the constructor and the
-destructor], and the constructor's four callers are `MeshProtocol` [`0x154990c`], `SessionProtocol`
-[`0x1581984`], `BroadcastReliableProtocol` [`0x1595e7c`] and `ReliableProtocol` [`0x159cc18`].
-`SessionProtocol` and `ReliableProtocol` give their windows a packet writer through the same call,
-`0x159e59c` (`0x1582314` on a station's join, `0x159ce74`), which stores it at window +0x750 and
-+0x758.
-
-The ack does not depend on the joint-session job. The window's data receive sets the ack-owed byte
-and its update sends the ack, as for the game stream
-([the Pia page](pia.md#what-the-receiver-discards-in-silence)); nothing on the path from slot 10 to
-the window's receive reads session+0x70. The ack leaves on protocol 0x94, port 1. A reliable 0x94
-message whose destination bitmap names the console (or is empty), whose stream id matches the
-stream's first message, and whose sequence id is less than the base plus two (the ring's slot
-count, on a fresh stream) is therefore acknowledged
-and then dropped by its handler: every handler behind the dispatcher's jump table (`0x3e6b986`)
-tests session+0x70 first (type 3 at `0x15823a4`, type 0x14 at `0x1582188`), after the window has
-taken the packet and `0x15a0a6c` has popped it. The first message on the stream must carry
-`is initialized` (flag bit 3). No 0x94 message has been sent to a console.
+The four at version 0 cannot be told from unregistered by a version probe.
 
 The join response for a two-station mesh:
 
-    stations 2, host index 0, our index 1, max_active 8, update counter 0
+    stations 2, host index 0, joiner index 1, max_active 8, update counter 0
     station 0   the console
-    station 1   us - our own station location read back, with the ids we sent
+    station 1   the client: its own station location and ids, read back
 
-`max_active` 8 is the Union Room's eight seats. Within a second of the join the console begins
-sending RTT (0x58) and reliable (0x7c) traffic.
+Within a second the console sends RTT (0x58) and reliable (0x7c) traffic. Use a fresh `--src-var`
+every run: result 7 means the variable id is already one of its stations until the player leaves the
+room.
 
-Use a fresh `--src-var` every run. Result 7 means "this variable id is already one of my stations";
-re-using the previous run's id minutes later is refused, and changing one digit is accepted. Leaving
-and re-entering the room also clears them.
+### The Session Protocol (0x94)
+
+`nn::pia::session::SessionProtocol` (1.3.0 `main`, vtable `0x4b5da50`) carries the joint-session
+feature and is inert on LDN. Pia's session start-up builds it [`0x157c66c`] unless a settings byte
+(+0x38 behind GOT `0x4c4b850`) is set, stores it at session+0xC8 and gives it one
+`transport::ReliableSlidingWindow` per other station [`0x1581938`]. Every handler of its dispatcher
+[`0x15820b8`, jump table `0x3e6b986`] returns when the joint-session job (session+0x70) is null, and
+on LDN it always is: `LdnNetworkFactory`'s slot 61 [`0x16b30ac`] returns null, and the only other
+stores are nulls (`0x157c618`, `0x157d0e8`). Lan and Nex factories build `LanMatchJointSessionJob` and
+`NexMatchJointSessionJob`.
+
+Its windows are the game stream's `ReliableSlidingWindow` [constructor `0x159dab4`] with two-slot
+rings, protocol 0x94, port 1 (`0x159de54(window, 2, 2, 0x94000001)`); receive is slot 10
+[`0x1581c98`]. Nothing before the window reads session+0x70, so a valid reliable 0x94 message (first
+one flagged `is initialized`, sequence below base plus two) is acknowledged, then dropped by its
+handler. No 0x94 has been captured or sent.
 
 ## Hosting
 
-A console entering the Union Room looks for a room before it opens one of its own. The session
-setting's `matchingMode` defaults to `IlcaNetSessionInitMode.Random`, with
-`localRandomMatchmakeHostWaitTime` 25 and `localRandomMatchmakeTimeUp` 270 in the same constructor.
-A console that finds a room with a free seat joins it, whoever hosts it. `bin/bdsp_host.py` hosts
-one and a retail Shining Pearl walks into it; `pokeldn/bdsp/host.py` holds the host side.
-
-The advertisement a retail room carries, read off the console's own:
+A console entering the Union Room joins any room with a free seat before opening its own
+(`matchingMode` `IlcaNetSessionInitMode.Random`, `localRandomMatchmakeHostWaitTime` 25,
+`localRandomMatchmakeTimeUp` 270). `bin/bdsp_host.py` hosts one and a retail Shining Pearl walks in;
+`pokeldn/bdsp/host.py` holds the host side. A retail room's advertisement:
 
     LDN protocol         1 (AES-CTR advertisement)
     frame version        4
@@ -352,11 +245,10 @@ The advertisement a retail room carries, read off the console's own:
     scene_id             4352 (0x1100)
     app_version          199
     accept policy        ALL, 1/8
-    application_data     17 bytes, the Pia header above with a fresh network id and session
+    application_data     17 bytes, the Pia header with a fresh network id and session
                          parameter, then one zero byte
 
-What a host sends, in order, each one rebuilt byte for byte from a retail host's own
-(`tests/test_bdsp_host.py`):
+What a host sends, each rebuilt byte for byte from a retail host's (`tests/test_bdsp_host.py`):
 
 | step | message | framing |
 |---|---|---|
@@ -367,26 +259,19 @@ What a host sends, in order, each one rebuilt byte for byte from a retail host's
 | from then on | update mesh (556 bytes) every second, RTT requests, `NetCharacterStateData{0, 0}` on 0x68 | `dst_var` 1, destination 0xFFFFFFFF |
 
 The host's station location has no public address and zero NAT fields, 36 bytes; the joiner's has
-both and is 40. A host station entry carries index 0 and join order 0, the joiner index 1 and join
-order 1.
+both, 40. The host's station entry has index and join order 0, the joiner's 1.
 
-A joiner sends Sync Clock (0x1C) requests to the host about once a second from the moment the join
-response is acknowledged, and answering is the host's job: the reply is the request's tick and the
-mesh clock in milliseconds. A joiner whose requests go unanswered deauthenticates about ten
-seconds after its first one and re-associates, over and over, with its screen on "communication en
-cours". Answered, it sends `NetJoinData`, requests 0x04 and 0x23, and the player sees the host's
-character.
-
-A retail joiner's first reliable messages are its `NetJoinData` and a request for 0x23, the same
-two a retail host sends. From there the room is symmetric: the approach, the greeting and the trade
-on [The Union Room trade](bdsp_trade.md) run unchanged with the console as the joiner.
+The joiner sends Sync Clock (0x1C) requests about once a second from the acknowledged join response;
+the host answers with the request's tick and the mesh clock in milliseconds. Unanswered, the joiner
+deauthenticates about ten seconds after its first request and re-associates, over and over, on
+"communication en cours". Answered, it sends `NetJoinData` and requests 0x04 and 0x23, as a retail
+host does, and from there the room is symmetric: the approach, the greeting and
+[the trade](bdsp_trade.md) run unchanged with the console as joiner.
 
 ## Measurement methods
 
-- A check that refuses is an instrument. The console compares the protocol count against its own
-  and replies only on a match, so sweeping the count measures a number not otherwise visible. An
-  unregistered protocol id expects version 0, so a version of 1 against it is a guaranteed verdict,
-  and bisection then reads any protocol's version.
-- The equality signal must be a reply. Silence is a lost packet as often as a mismatch. A
-  reliable-window ack cannot be swept against silence; a window that accepts application data must
-  acknowledge it, so send data and sweep only the sequence id.
+- A refusing check is an instrument. The console answers a connection request only when the protocol
+  count matches its own, so sweeping the count measured 9. An unregistered protocol expects version
+  0, so a version of 1 against it always fails, and bisection reads any protocol's version.
+- The equality signal must be a reply; silence is as often a lost packet. A reliable window must
+  acknowledge data it accepts, so send data and sweep only the sequence id.

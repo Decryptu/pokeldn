@@ -6,36 +6,30 @@ nav_order: 2
 
 # BDSP's own protocol, and controlling a character
 
-Inside the Pia payloads BDSP runs a typed protocol of its own. `TeamLumi/opendpr` is a decompiled
-C# recreation of the game, and `Dpr.NetworkUtils.NetDataParser` lists every message it speaks. Each
-is an `ANetData<T>` with a one-byte `DataID`, and each `T` is a plain struct.
+Inside the Pia payloads BDSP runs a typed protocol. `Dpr.NetworkUtils.NetDataParser` in
+`TeamLumi/opendpr`, a decompiled C# recreation of the game, lists every message: an `ANetData<T>`
+with a one-byte `DataID` around a plain struct `T`.
 
 ## Framing
 
     0x0  1  data id
-    0x1  2  payload length, BIG-endian
-    0x3  .  the struct, little-endian, as C# lays it out
+    0x1  2  payload length, big-endian
+    0x3  .  the struct, little-endian, packed
 
-The layout is packed. `JoinData` is `byte, byte, byte, short, Vector3`: seventeen bytes packed,
-twenty with C#'s default alignment (an aligned `short` would sit at offset 4). The console's own
-message is seventeen bytes and its length field says `0x0011`. Every payload in every capture agrees
-with the packed reading.
+`JoinData` (`byte, byte, byte, short, Vector3`) is 17 bytes on the wire, 20 under C#'s default
+alignment.
 
-`NetDataParser` registers 65 messages and `pokeldn/bdsp/netdata.py` holds all of them, generated
-from an `opendpr` checkout by `scripts/gen_bdsp_netdata.py`. 53 have a layout the source decides;
-the other twelve carry a C# string, an array or a list and are listed in `netdata.OPAQUE`.
+`NetDataParser` registers 65 messages; `pokeldn/bdsp/netdata.py` holds all of them, generated from an
+`opendpr` checkout by `scripts/gen_bdsp_netdata.py`. The source decides 53 layouts. The other twelve
+carry a C# string, array or list (`netdata.OPAQUE`) and the binary decides them.
 
-The binary decides those twelve. A payload is the marshalled struct: `ANetData<T>.ConvertStructToBytes`
-[main.bin 0x27bb0e0] goes through `Marshal.SizeOf`, `Marshal.AllocHGlobal` and
-`Marshal.StructureToPtr`, so a string and an array become fixed-size fields rather than references,
-and the size of every struct is its `native_size` in the executable's `Il2CppTypeDefinitionSizes`
-table (`MetadataRegistration.typeDefinitionsSizes`, one entry per type definition). A string's
-character count is in `global-metadata.dat`'s `fieldMarshaledSizes`; an array's count is derived by
-subtracting the other fields from the native size. The generated marshal functions of every struct
-that is not blittable sit in `CodeRegistration.interopData` [1.3.0 main 0x4acd0c8, 0x255 entries of
-56 bytes], and an entry's `marshalToNative` writes the struct's exact bytes. Every struct is
-packed, and the four payloads a capture holds match the layout read this way byte for byte.
-`scratchpad/bdsp_native_layout.py` prints them; `room.NATIVE_SIZES` holds the twelve sizes.
+A payload is the marshalled struct (`ANetData<T>.ConvertStructToBytes` [main.bin 0x27bb0e0]:
+`Marshal.SizeOf`, `AllocHGlobal`, `StructureToPtr`), strings and arrays as fixed-size fields. A
+struct's size is its `native_size` in `Il2CppTypeDefinitionSizes`; a string's length is in
+`global-metadata.dat`'s `fieldMarshaledSizes`; an array's count is what the other fields leave. The
+exact bytes are written by `marshalToNative` in `CodeRegistration.interopData` [1.3.0 main 0x4acd0c8,
+0x255 entries of 56 bytes]. The four captured opaque payloads match byte for byte (`room.NATIVE_SIZES`,
+`room.MEASURED`).
 
 | id | payload | bytes | layout |
 |---|---|---|---|
@@ -50,33 +44,22 @@ packed, and the four payloads a capture holds match the layout read this way byt
 | 0x38 | `BattleMatchingPokeData` | 481 | a 328-byte PB8, 20 x `SealParam` 7, uint attachPokemonId, uint attachPersonalRnd, byte index, num, is3DEditMode, isAppliedTemplate, affixSealCount |
 | 0x42 | `NetPlayerName` | 28 | 13 UTF-16 chars, byte genderid, byte languageId |
 
-`BattleMatchingPokeData` holds two arrays, so its 328 is taken from `TradePokeData` and the 20 seals
-from `AttachSealData`; the two together are the only split of 468 that matches both. The four
-measured layouts are also in `room.MEASURED`.
+`BattleMatchingPokeData`'s two arrays split 468 as 328 + 20 seals, the only split matching
+`TradePokeData` and `AttachSealData`.
 
-`StandbyData` is four bytes, `isAddPlayer, hostIndex, myIndex, langId`, and the sender allocates
-five of them [1.3.0 main 0x01e52fa0, `UnionRoomManager$$SendStandbyPlayerData`], filling slot *i*
-from the *i*-th entry of its match-wait list (`UnionStateController.unionMatchWaitDataList`) with
-`isAddPlayer = 1` and `hostIndex` left 0. A console standing in the room with an empty list answers
-twenty zero bytes.
+`SendStandbyPlayerData` [1.3.0 main 0x01e52fa0] fills the five slots of 0x22 from
+`UnionStateController.unionMatchWaitDataList` (`isAddPlayer = 1`, `hostIndex` 0); an empty list is
+twenty zero bytes. A station adds itself with `NetDataStandbyWaitData` (0x59, the same four bytes):
+after `59 0004 01 00 01 03` (station 1, French), accepted by `ReciveMatchWaitData` [0x01e539b0], the
+next 0x22 is `22 0014 01 00 01 03` and sixteen zeros. `isAddPlayer = 0` removes it. The screen does not
+change.
 
-A station puts itself on that list with `NetDataStandbyWaitData` (0x59), the same four bytes:
-`59 0004 01 00 01 03` from station 1 with language 3 (French) is accepted by
-`UnionStateController$$ReciveMatchWaitData` [1.3.0 main 0x01e539b0], which takes the station's name
-from `NetworkManager.GetGamerData(myIndex)`, and the next answer to a 0x22 request is
-`22 0014 01 00 01 03` followed by sixteen zero bytes. `isAddPlayer = 0` takes the removal branch.
-Nothing changed on the console's screen when the record was added.
-
-The marshaller does not clear what it allocates; a fixed field carries heap residue past the value
-it holds (ten bytes of it in `NetDataTradeTranerData`, on [the trading page](bdsp_trade.md)).
-
-The ids are nibble-grouped: 0x01 to 0x09, 0x10 to 0x19, 0x20 to 0x29 and so on, no low nibble
-reaching 0xA. A gap in the numbering is the grouping.
+The marshaller does not clear its buffer: a fixed field carries heap residue past its value
+([the trading page](bdsp_trade.md)). The ids are nibble-grouped; no low nibble reaches 0xA.
 
 ## What has been on the air
 
-Four of the 65 appear in a capture of a console left alone in the room. The receiver drops
-looped-back broadcasts before recording, so all of these are the console talking:
+A console left alone in the room sends four of the 65 (the receiver drops looped-back broadcasts):
 
 | id | class | reliable | unreliable | size | runs |
 |---|---|---|---|---|---|
@@ -85,19 +68,12 @@ looped-back broadcasts before recording, so all of these are the console talking
 | 0x12 | `NetRequestData` | 4333 | 55 | 1 | 19 |
 | 0x23 | `NetDataIsMatchWaitData` | 1734 | 0 | 1 | 13 |
 
-Two more come only when asked for (below): `NetDataBattleTypeData` (0x09), one byte, 0 on a console
-with no battle set up, and `NetDataStandbyWaitListData` (0x22), twenty bytes. Two come when the
-player picks the activity (the transitionType table below): `NetDataRecodeData` (0x14) and
-`NetDataAttachSealNetData` (0x15). The trade messages are on [the trading page](bdsp_trade.md).
+On request it also sends 0x09 (one byte, 0 with no battle set up) and 0x22; on an activity, 0x14 and
+0x15. The trade messages are on [the trading page](bdsp_trade.md).
 
-1505 of the 1734 `NetDataIsMatchWaitData` copies, all in two captures, sit behind a presence byte of
-0x00 and are read only by a walk that takes 0x00 as a message ([Message framing](pia.md#message-framing)).
-
-Every payload in the archive (over eight thousand messages, nineteen runs) is a well-formed game
-message declaring a length that exactly accounts for its bytes.
-
-`NetPosData`'s struct is an array, one of the twelve; 72 bytes is 12 points of 6 and nothing else
-divides.
+1505 of the 0x23 copies, in two captures, sit behind a presence byte 0x00 and are read only by a
+walk that takes 0x00 as a message ([Message framing](pia.md#message-framing)). Every payload (over
+eight thousand) is a well-formed message whose length accounts exactly for its bytes.
 
 ## The messages the console repeats
 
@@ -108,35 +84,24 @@ divides.
 | 0x00 | 1 | `avatarId`, 8 in every capture |
 | 0x01 | 1 | `colorId`, 0 |
 | 0x02 | 1 | `cassetVersion`, 0x31 |
-| 0x03 | 2 | `InitRotY`, the facing in degrees, little-endian and unaligned |
+| 0x03 | 2 | `InitRotY`, the facing in degrees (multiples of 45 measured), little-endian, unaligned |
 | 0x05 | 12 | `InitPos`, three little-endian floats: x, y, z |
 
-Four captures of four places on the Union Room floor gave angles of 0, 90, 90 and 225, every one a
-multiple of 45 (an eight-direction facing). `y` is 0.0 in three of them and 1.5e-08 in the fourth:
-a height on a flat room.
-
-`NetRequestData` is one byte, `RequestDataID`, and names the message it wants;
-`OpcManager._RequestNetDataCallback` is an `Action<byte>`. `NetDataIsMatchWaitData` is the console
-answering its own request: `{isMatchWait = 0}`, "I am not waiting to be matched".
-
-The console asks for two different things:
+`NetRequestData` is one byte, the id of the message wanted. `NetDataIsMatchWaitData`
+`{isMatchWait = 0}` is the console answering its own request. The console asks for two things:
 
 | asked for | times | in which runs |
 |---|---|---|
 | `NetDataIsMatchWaitData` (0x23) | 4333 | all nineteen |
 | `NetCharacterStateData` (0x04) | 55 | four runs |
 
-Those four are the runs where an avatar appeared on the console's screen. Every run that sent game
-messages and drew nothing asked for 0x04 zero times, across 265 sends, and in all four positive runs
-the first 0x04 arrives after the client's first send. When the game creates a character from a
-join, it asks the station that sent it for that character's state; a request for 0x04 in the capture
-is a signal that a character exists. `bin/bdsp_connect.py` prints it as a verdict.
+The four are the runs where an avatar appeared (none across 265 sends that drew nothing). The game
+asks each character's station for its state when it creates the character, so a 0x04 request signals
+that a character exists; `bin/bdsp_connect.py` prints it as the verdict. The 0x23 request stops at t = 9.4 s once the
+client acknowledges the reliable window; unacknowledged, it came 487 times in 75 seconds.
 
-The match-wait request stops being asked at t = 9.4 in every run that acknowledges the reliable
-window, answered or not; the run that did not acknowledge it was asked 487 times in 75 seconds.
-
-The Union Room's receive handler, `UnionRoomManager$$SetNetData` [1.3.0 main 0x01e50700], answers a
-`NetRequestData` for six ids and ignores every other:
+`UnionRoomManager$$SetNetData` [1.3.0 main 0x01e50700] answers a `NetRequestData` for six ids and
+ignores every other:
 
 | requested | the console sends | by |
 |---|---|---|
@@ -147,19 +112,18 @@ The Union Room's receive handler, `UnionRoomManager$$SetNetData` [1.3.0 main 0x0
 | 0x22 `NetDataStandbyWaitListData` | its standby list | `UnionRoomManager$$SendStandbyPlayerData` |
 | 0x23 `NetDataIsMatchWaitData` | whether it is waiting to be matched | `UnionRoomManager$$SendIsMatchWait` |
 
-Sent one after another from a station whose character is in the room, five of the six are answered
-on the reliable stream 30-130 ms after the request lands; 0x13 is not (`SendPokeData` returns
-without sending when no Pokemon is selected). The base game's handler [base main 0x01fd4600] answers
-the same six ids, with 0x22 then named `NetDataTradeStandbyData`.
+From a station with a character in the room, five are answered on the reliable stream 30-130 ms
+after the request; 0x13 is not when no Pokemon is selected (`SendPokeData` returns). The base game's
+handler [base main 0x01fd4600] answers the same six, 0x22 then named `NetDataTradeStandbyData`. A
+request arrives on the stream its answer uses: all 4333 for 0x23 on the reliable one, all 55 for 0x04
+on the unreliable one.
 
-A reliable message may carry the reliable header's zlib flag (0x10). The 23 bytes of an all-zero
-0x22 list arrived as a 20-byte zlib stream (window 4 KB), and read raw they parse as a
-`NetBonusStart` with an impossible length. The same message with one record filled in, and the
-20-byte join, arrived uncompressed.
+### Compression
 
-The sender decides the flag by size. `ReliableSlidingWindow`'s push [1.3.0 main `0x15a10d0`] tests
-the window's compression switch (+0x7ac, `0x15a1364`); when it is on, `0x159a500` deflates the whole
-game message, its 3-byte header included:
+The reliable header's flag 0x10 marks a zlib stream. The sender decides it by size:
+`ReliableSlidingWindow`'s push [1.3.0 main `0x15a10d0`] tests the window's compression switch
+(+0x7ac, `0x15a1364`), and when it is on `0x159a500` deflates the whole game message, its 3-byte
+header included:
 
     0x1685384   deflateInit2: level 5, window bits 12, memLevel 5, strategy 0, 4000-byte output
     0x16854e0   deflate(Z_SYNC_FLUSH)
@@ -167,36 +131,29 @@ game message, its 3-byte header included:
     0x159a5b0   compressed size >= raw size  ->  error 0x2c7d, the message goes raw
     0x15a1398   otherwise: header |= 0x10, send the compressed bytes
 
-A message is sent compressed exactly when the result is strictly shorter. Every one of the 55
-flagged console messages in the captures is byte-identical to Python's
+All 55 flagged console messages are byte-identical to Python's
 `zlib.compressobj(5, zlib.DEFLATED, 12, 5)` with a sync flush then a finish, and none of 10955
-unflagged ones comes out shorter under it. A 20-byte join deflates to 20 bytes and a 23-byte list
-with one record to 24, so both go raw; the all-zero list, a record (0x14) and a ball capsule (0x15)
-shrink. A receiver never has to compress. `bin/bdsp_connect.py` and `scratchpad/bdsp_opaque.py`
-inflate on the flag.
+unflagged ones shrinks under it. A join and a one-record 0x22 list go raw; the all-zero 0x22 list
+(read raw it looks like a `NetBonusStart`), a record (0x14) and a ball capsule (0x15) shrink. A
+receiver never has to compress; `bin/bdsp_connect.py` inflates on the flag.
 
-Senders of the other opaque messages, from the callers of each `ANetData<T>.SendReliableData` in
-1.3.0:
+### Senders of the other opaque messages
+
+From the callers of each `ANetData<T>.SendReliableData` in 1.3.0:
 
 | id | class | sent by |
 |---|---|---|
 | 0x14 | `NetDataRecodeData` | `RecodeMatching$$SendRecodeData`, `UnionStateController$$SendRecodeData` |
 | 0x15 | `NetDataAttachSealNetData` | `BallDecoMatching$$SendBallDecoData` |
-| 0x18 | `NetSecretBaseData` | `UgNetworkManager$$SendMySecretBaseData`, and on request in `UgNetworkManager$$OnReceiveRequestData` |
-| 0x61 | `NetDigTableData` | on request in `UgNetworkManager$$OnReceiveRequestData`, once the console's own table is ready |
+| 0x18 | `NetSecretBaseData` | `UgNetworkManager$$SendMySecretBaseData`; on request (`OnReceiveRequestData`) |
+| 0x61 | `NetDigTableData` | on request (`OnReceiveRequestData`) |
 | 0x38 | `NetDataBattleMatchingSelectPokemon` | `BattleMatchingManager$$SendSelectPokemonData` |
-| 0x42 | `NetPlayerNameData` | `UgNetworkManager$$SendOnJoinNewPlayer`, `UgNetworkManager$$SendPlayerNameData` |
+| 0x42 | `NetPlayerNameData` | `UgNetworkManager$$SendOnJoinNewPlayer`, `SendPlayerNameData` |
 | 0x54 | `NetSecretBaseUpdate` | no reliable sender; `netdata.py` names it |
 
-Three belong to Union Room activities other than trading (record mixing, ball capsules, a battle) and
-the `Ug*` ones to the Grand Underground, where `NetPlayerNameData` is sent to a player who joins and
-requests for the secret base and dig lists are answered. No Underground session has been captured.
+### The unreliable stream
 
-The request's stream is the reply's stream. All 4333 requests for `NetDataIsMatchWaitData` arrived
-on the reliable protocol and all 55 for `NetCharacterStateData` on the unreliable one, with no
-crossover in nineteen runs; each is where the console puts its own answer.
-
-The unreliable stream carries three messages and nothing else:
+It carries three messages:
 
 | bytes | times | message |
 |---|---|---|
@@ -204,62 +161,51 @@ The unreliable stream carries three messages and nothing else:
 | `12 0001 04` | 55 | `NetRequestData`: "send me your `NetCharacterStateData`" |
 | `02 0048 <72 B>` | 60 | `NetPosData`, twelve points, while the console's avatar walks |
 
-The console retransmits a reliable message five times a second until the receiver's ack covers
-it; an ack two beyond its last sequence is ignored. `bin/bdsp_connect.py` acks every arrival at
-the last sequence plus one from the moment the console first acknowledges the client's own data.
+`room.build_state()` builds the first and `room.build_match_wait(False)` the console's own 0x23 answer.
 
-`room.build_state()` produces the five bytes the console broadcasts and `room.build_match_wait(False)`
-the four it answers itself with.
+The console retransmits a reliable message five times a second until an ack covers it; an ack two
+beyond its last sequence is ignored. `bin/bdsp_connect.py` acks at the last sequence plus one once the
+console has acknowledged the client's own data.
 
 ## Sending messages the game acts on
 
-The reliable sequence id is shared with the console's own sends, and anything below the number its
-acknowledgement names is discarded in silence. One run's ack sat at 13, twenty messages went out
-numbered 1 to 20, and exactly the eight from 13 up became avatars. Read the id immediately before
-each send.
+The reliable sequence id is shared with the console's own sends, and a message below the id its
+acknowledgement names is dropped in silence: with the ack at 13, of twenty joins numbered 1 to 20
+exactly the eight from 13 up became avatars. Read the id immediately before each send.
 
-With each join sent at the sequence the console's acknowledgement names, the game acts on nearly
-every one: over seven runs of fifteen joins 0.4 s apart, the console answered 12 to 15 of them with
-a request for `NetCharacterStateData`, the first 0.10 to 0.57 s after the first join. Fifteen such
-joins put two characters on the player's screen, one standing where it spawned and one following
-the walk. `--room-pattern fixed` therefore stops at the console's first request and gives each join
-`--join-wait` seconds (default 1.0) to draw it; one join, answered 0.3 s later, puts one character
-on the screen.
+Sent at the acknowledged sequence, nearly every join is acted on: of fifteen joins 0.4 s apart the
+console requested 0x04 for 12 to 15 (seven runs), the first 0.10 to 0.57 s after the first join.
+`--room-pattern fixed` stops at the first request, giving each join `--join-wait` seconds (default
+1.0).
 
-One avatar appears per join message: `UnionOpcManager` calls `CreateCharacter(joinData)` on each.
-Forty joins are forty arrivals.
-
-Avatars created this way survive the scene: the player walked out of the Union Room, down to the
-Poke Center floor and into a shop, and the crowd came along, through the walls. Only restarting the
-game cleared them. A remote player created without a session behind it is never cleaned up. A
-character that has been moved is cleaned up when the station that moved it leaves the mesh.
+`UnionOpcManager` calls `CreateCharacter(joinData)` on each join: forty joins are forty arrivals. A
+character created without a session behind it follows the player across maps until the game
+restarts; one that has been moved is cleaned up when its station leaves the mesh.
 
 ## The character record
 
 `OpcManager.CharaData` is
-`{int stationIndex, string assetName, int colorId, int avatarId, int sexId, int cassetVersion}` and
-`RemoveCharacter(int stationIndex)` takes the same key, so a character is keyed by the station it came
-from.
+`{int stationIndex, string assetName, int colorId, int avatarId, int sexId, int cassetVersion}`, keyed
+by station (`RemoveCharacter(int stationIndex)`).
 
 ### The model
 
-`OpcManager.CreateCharaData(ANetData<JoinData>)` builds the record out of the join message, and
-`avatarId` picks who appears:
+`OpcManager.CreateCharaData(ANetData<JoinData>)` builds the record from the join, and `avatarId`
+picks who appears:
 
     NetJoinData.avatarId  ->  CreateCharaData  ->  CharaData.avatarId
                           ->  UnionCharacterTable.SheetSheet1{ID, AssetName}
                           ->  OpLoadCharacter("persons/field/" + assetName)
 
-`GetSexId(id)` and `GetNpcColorId(avatarId)` read the same value. `avatarId = 8` is a girl and 0 a boy
-in a blue cap, with the sex changed as the binary predicts. `bin/bdsp_connect.py --join-avatar N`.
+`GetSexId` and `GetNpcColorId` read the same value: 8 is a girl, 0 a boy in a blue cap
+(`--join-avatar N`).
 
-`NetDataTranerCardData` (0x05) is 75 blittable bytes whose first fields are `fashionId`, `bodyType`
-and `genderid`; `UnionOpcManager.CreateTranerCard()` builds the trainer-card UI from it. Sending one
-is acknowledged and changes nothing on screen.
+`NetDataTranerCardData` (0x05, 75 bytes: `fashionId`, `bodyType`, `genderid`, ...) feeds
+`UnionOpcManager.CreateTranerCard()`; sending one changes nothing on screen.
 
 ### The state byte
 
-`StateData` is `{byte state, byte isRecruiment}`, and `state` is an `OpcState.OnlineState`:
+`StateData` is `{byte state, byte isRecruiment}`, `state` an `OpcState.OnlineState`:
 
 | value | name | value | name |
 |---|---|---|---|
@@ -269,134 +215,87 @@ is acknowledged and changes nothing on screen.
 | 3 | `RECRUITMENT_BATTLE` | 8 | `COMMUNICATE` |
 | 4 | `RECRUITMENT_TRADE` | | |
 
-Values 17 to 21 are the `NOW_*` states, one per activity (the transitionType table below).
+17 to 21 are the `NOW_*` states, one per activity ([the transitionType table](#talkstate-and-the-value-that-crashes-the-game)).
+`OpcController.ShowEmoticon(OnlineState)` and `GetEmoticonType(state)` read it; a `RECRUITMENT_*`
+value raises the speech bubble. Answering the console's request with `StateData{RECRUITMENT_TRADE, 1}`
+puts a trade bubble on a retail screen; `StateData{NONE, 0}` changes nothing.
 
-`OpcController.ShowEmoticon(OnlineState)` and `GetEmoticonType(state)` read it, and the
-`RECRUITMENT_*` values raise the speech bubble over a player advertising what they want. Answering
-the console's standing request with `StateData{RECRUITMENT_TRADE, 1}` puts a trade bubble on a retail
-console's screen.
-
-Answering with `StateData{NONE, 0}` changes nothing on screen.
-
-The console applies a received 0x04 in `UnionOpcController$$SetNetData` [1.3.0 main 0x01e48c50],
-reached through `UnionRoomManager$$OnReceiveData` [0x01e506c0] and `OpcManager$$SetNetData`
-[0x02279450], which drops a message from a station that has no character.
-`UnionRoomManager$$SetNetData` returns on id 4 [0x01e5270c]; the character controller is the only
-consumer:
+A received 0x04 goes `UnionRoomManager$$OnReceiveData` [1.3.0 main 0x01e506c0] ->
+`OpcManager$$SetNetData` [0x02279450] (dropped when the station has no character) ->
+`UnionOpcController$$SetNetData` [0x01e48c50], its only consumer:
 
     if state != GetOpcOnlineState():      SetOpcOnlineState(state)                 0x02277be0
                                           isRecruiment == 1 ? SetEmoticonHost()    0x022779b0
                                                             : SetEmoticonNormal()  0x02277a50
     if state != 0:                        AnimationPlayer.Play(animation 0)
 
-`SetOpcOnlineState` stores the state in the character's `OpcState` (+0x18) and, when it changed,
-invokes the `Action<OnlineState>` at `OpcState`+0x20. `GetOpcOnlineState` returns 0 for a character
-with no `OpcState` [0x02277dcc]. A requested answer and the two-second broadcast are the same message
-through the same handler; the receiver tests only the id. The Underground twin is
-`UgOpcController$$SetNetData` [0x01f7f820].
+The Underground twin is `UgOpcController$$SetNetData` [0x01f7f820].
 
 `OpcState` is `{OnlineState _curretOnlineState +0x18; Action<OnlineState> _OnChangeState +0x20}`,
-added at run time: `OnlinePlayerCharacter$$Start` [0x02276ff0] calls `AddComponent<OpcState>()`
-[0x02277044], stores it at +0x18 and binds the Action to `ShowEmoticon` [0x02277094]; the
-constructor [0x0227a520] only calls `MonoBehaviour`'s. The state starts at 0. Its only stores are
-`SetOpcOnlineState` [0x02277c80] and `OpcState$$OnChangeOnlineState` [0x02277d10], which has no
-caller; `UgOpcController$$SetOpcOnlineState` [0x01f7fbc8] overrides the setter and calls the base.
-Every virtual call to the setter (class offset 0x190):
+added by `OnlinePlayerCharacter$$Start` [0x02276ff0] with the Action bound to `ShowEmoticon`
+[0x02277094]; the state starts at 0. `SetOpcOnlineState` [0x02277c80] is its only live store
+(`OpcState$$OnChangeOnlineState` [0x02277d10] has no caller). Of the setter's callers (virtual, class
+offset 0x190), three touch a remote character: `UnionOpcController$$SetNetData` [0x01e48d7c] with the
+received state, and `OpcManager$$RemoveCharacter` [0x02279ee4] and `UgOpcManager$$RemoveAllCharacter`
+[0x01f80cac] with 0. So a remote character's state changes only on a 0x04 from its own station. The
+rest set the console's own: `UnionSystemController$$ChangeOpcState` [0x01c2d3f8] (its argument, then a
+0x04 broadcast [0x01c2d4d0]), `RusultGreetJoinYesNoWindow` [0x01c2e8ac] 6,
+`<CreateContextBattleTypeMenu>b__0` [0x01f8b790] 3, `UnionTradeManager$$InitPlayerState` [0x01c33a58],
+`UnionStateController$$InitPlayerState` [0x01e4e83c] and `SwitchCancelEnd` [0x01e4fd70] 0,
+`UnionStateTransitionController$$StartFadeOut` [0x01e5a00c] its model's +0x2c,
+`UgNetworkManager$$OnReceiveJoinDigPermission` [0x01f7ca94] and `SendOnPlayDigFossil` [0x01f79f78] 14,
+and `UgNetworkManager$$SetMyEmoticon` [0x01f79148].
 
-| call site | character | value |
-|---|---|---|
-| `UnionOpcController$$SetNetData` [0x01e48d7c] | the sender's | the received 0x04 `state` |
-| `OpcManager$$RemoveCharacter` [0x02279ee4] | the one removed | 0 |
-| `UgOpcManager$$RemoveAllCharacter` [0x01f80cac] | each remote one | 0 |
-| `UnionSystemController$$ChangeOpcState` [0x01c2d3f8], then a `NetCharacterStateData` broadcast [0x01c2d4d0] | own | the argument |
-| `UnionSystemController$$RusultGreetJoinYesNoWindow` [0x01c2e8ac] | own | 6 |
-| `UnionContextMenu.<>c__DisplayClass30_0.<CreateContextBattleTypeMenu>b__0` [0x01f8b790] | own | 3 |
-| `UnionTradeManager$$InitPlayerState` [0x01c33a58], `UnionStateController$$InitPlayerState` [0x01e4e83c], `SwitchCancelEnd` [0x01e4fd70] | own | 0 |
-| `UnionStateTransitionController$$StartFadeOut` [0x01e5a00c] | own | +0x2c of its model |
-| `UgNetworkManager$$OnReceiveJoinDigPermission` [0x01f7ca94], `SendOnPlayDigFossil` [0x01f79f78] | own | 14 |
-| `UgNetworkManager$$SetMyEmoticon` [0x01f79148] | own | |
+Until `Start` has run, the getter returns 0 [0x02277dcc] and the setter drops the value
+[0x02277c50]. The character's 0x04 request goes out right after `SetActive(true)` in the
+`CreateCharacter` load callback [0x01e49854], so an answer that lands before `Start` is lost; repeat
+the state every two seconds, as the console does.
 
-A remote character's state therefore changes only on a 0x04 from its own station and returns to 0
-when the character is removed; nothing the console's player does moves it.
-
-Until `Start` has run the component is null: the getter returns 0 and the setter returns without
-storing [0x02277c50]. The character's request for 0x04 goes out from the `CreateCharacter` load
-callback right after `GameObject.SetActive(true)` [0x01e497c4, request 0x01e49854]. A 0x04 applied
-before Unity runs the new component's `Start` is dropped and the character stays at `NONE` until
-the next one; a station that repeats its state, as the console does every two seconds, covers
-that.
-
-The stored state decides whether the console's player can talk to the character.
-`OnlinePlayerCharacter$$IsCanTalkState` [0x02277af0] is true for states 1, 3 to 8 and 17 to 21, and
-false for 0, 2 and 9 to 16: a character at `NONE` is never a talk target.
+`OnlinePlayerCharacter$$IsCanTalkState` [0x02277af0]: the player can talk to states 1, 3 to 8 and 17
+to 21, never to 0, 2 or 9 to 16.
 
 ### Walking
 
-Over 80 of the console's own `NetPosData`: one message every 0.410 s spanning 0.935 units, 2.28
-units per second. `room.POS_PERIOD` and `room.POS_STRIDE` are those numbers; `--room-walk-stride` and
-`--room-walk-period` override them. 0.1 units every 0.35 s renders as a stutter: twelve points
-crossing a tiny distance, then a pause.
+The console's own `NetPosData` comes every 0.410 s spanning 0.935 units (`room.POS_PERIOD`,
+`room.POS_STRIDE`; `--room-walk-period`, `--room-walk-stride`); 0.1 units every 0.35 s stutters.
 
-A walk must be bounded. Sixty messages at the console's speed is 55.8 units and crosses the whole
-room: the character hits a wall, is pushed back by the game's collision, keeps its facing at the
-angle sent while the position moves, and leaves through the far wall. `--room-walk-steps 8` stops
-inside the room. The game applies collision to a remote character's movement and takes `rot_y`
-literally. The player has no collision against a remote character.
-
-`PosData` is `{ushort posX, ushort posZ, short rotY}` with the game's conversion
-`pos = (-posX * 0.05, posZ * 0.05)`: a twentieth of a unit, x negated. A captured trail decodes to
-the place its join message named.
+`PosData` is `{ushort posX, ushort posZ, short rotY}`, `pos = (-posX * 0.05, posZ * 0.05)`: a
+twentieth of a unit, x negated. A remote character collides with walls (the player does not collide
+with it) and keeps `rot_y` literally; sixty messages at the console's speed cross the room and leave
+through the far wall, `--room-walk-steps 8` stays inside.
 
 ## Being talked to
 
-An emote locks a player in place waiting to be interacted with; a console showing a trade emote
-cannot start anything. The console broadcasts its own state, so the emote is visible on the wire:
+An emote locks a player in place until someone interacts. The console broadcasts it:
 
     NetCharacterStateData{state: 4, isRecruiment: 1}     the trade emote, up
     NetCharacterStateData{state: 0, isRecruiment: 0}     and down again
 
-Gate on `isRecruiment`: state 18 is a console already inside a trade, and approaching that is
-refused.
+Gate on `isRecruiment`: state 18 is a console already inside a trade, and approaching it is refused.
 
-The approach is `NetDataTalkReserveData` (0x63), `63 00 01 00`, byte-for-byte what the console sends
-when its own player walks up to someone. `bin/bdsp_connect.py --initiate-talk` sends it; it was
-answered in 40 ms.
+The approach is `NetDataTalkReserveData` (0x63), `63 00 01 00`, as the console sends it
+(`bin/bdsp_connect.py --initiate-talk`; answered in 40 ms). The console's player approaching the
+client's character:
 
-The exchange, with the console's player approaching the client's character (the console sent the
-0x63; its handling is under "The console approaching" below):
-
-    t=37.47  us  ->  64 0003 00 01 04   NetDataTalkReserveResultData{IsCanTalk, IsRecruitment, emoticonStateType}
+    t=37.47  cli ->  64 0003 00 01 04   NetDataTalkReserveResultData{IsCanTalk, IsRecruitment, emoticonStateType}
     t=37.67  con ->  06 0005 00 01000000  NetDataTalkData{talkOpcSexId: 0, talkState: GREETING}
     t=80.68  con ->  10 0002 01 04      NetDataTalkCancelEndData{IsRecruitment: 1, emoticonStateType: 4}
 
-The talk is a request/response and the console blocks on the answer. Unanswered, the player's own
-character freezes until the game is rebooted. Answered with `NetDataTalkReserveResultData` (0x64),
-the game runs its whole greeting (a greeting line, a name and an offer to trade) and parks on "one
-second!". The player can leave that with B.
+The talk blocks on the 0x64: unanswered, the player's character freezes until a reboot.
 
-`IsCanTalk` 0 keeps the conversation alive; 1 makes the character decline. Four runs, one variable
-each:
-
-| `IsCanTalk` | what followed | what the screen did |
+| `IsCanTalk` | then sent | the screen |
 |---|---|---|
 | 0 | nothing | the greeting runs and parks on "one second!" |
-| 1 | nothing | "sorry, I have other plans" and the chat closes |
-| 1 | `NetDataSelectData{0}` | the same refusal |
-| 1 | `NetDataSelectData{1}` | the same refusal |
+| 1 | nothing, `NetDataSelectData{0}` or `{1}` | "sorry, I have other plans", the chat closes |
 
-The receiver never reads the select index (0x08, under the battle ladder below).
-
-A parked conversation is not reliably escapable. B released the player in one run and did nothing
-in another; killing the run (dropping the station) is the first lever and a reboot the fallback.
-Say so before a run that parks the talk.
+B does not reliably leave a parked greeting; dropping the station does, a reboot otherwise.
 
 ### The console approaching
 
-`UnionRoomManager$$MyUpdate` [1.3.0 main 0x01e49fb0] handles the player's A press [0x01e4a644]. It
-does nothing unless the console player's own state is 0, `UnionWork.isTalking` (static +0x85) is 0,
-the player's menu is closed, no message window is open and the player is outside every
-`EnterCollision` circle. It then walks the characters within 10.0 units and within the player's
-`talkDistance` (+0x38) whose state passes `IsCanTalkState`:
+`UnionRoomManager$$MyUpdate` [1.3.0 main 0x01e49fb0] handles the A press [0x01e4a644] only when the
+player's own state is 0, `UnionWork.isTalking` (static +0x85) is 0, no menu or message window is open
+and the player is outside every `EnterCollision` circle. It walks the characters within 10.0 units
+and the player's `talkDistance` (+0x38) whose state passes `IsCanTalkState`:
 
 | the character's state | what A does |
 |---|---|
@@ -406,8 +305,8 @@ the player's menu is closed, no message window is open and the player is outside
 | 7 | `UnionSystemController$$CheckBallDeco` [0x01c2ec20]; when it passes, as the last row |
 | 1, 3, 5, 6 | `NetDataTalkReserveData` (0x63) to the character's station [0x01e4ac94], the state stored in `nowTalkReserveState` (+0x188), `isTalking` set, `UnionStateController$$CreateSelectStateModel(state, 1)` [0x01e4b620] |
 
-For states 1 and 3 to 7 the walk acts at once on the first qualifying character closer than every
-earlier one.
+For states 1 and 3 to 7 the walk acts at once on the first qualifying character nearer than the
+earlier ones.
 
 The console answering a 0x63, in `UnionRoomManager$$SetNetData` [0x01e50c3c]:
 
@@ -425,102 +324,52 @@ The console reading a 0x64 after its own 0x63 [0x01e50dec]:
     if emoticonStateType != nowTalkReserveState:
         send NetDataTalkCancelEndData{0, 0}                  0x01e50f24
     else:
-        nowTalkReserveState = 0
+        nowTalkReserveState = 0                              0x01e50ea0
         canTalk ? StartTalk(opc, IsRecruitment == 0, 1, 0)
                 : the refusal path 0x01e512f0 (the character's state against 3 to 7)
 
-A character advertising `{4, 1}` therefore draws `63 0001 00` when the player presses A facing it,
-and `64 0003 00 01 04` opens the talk. Any other `emoticonStateType` draws a
-`NetDataTalkCancelEndData{0, 0}`, and so does a second 0x64 for the same 0x63: the first answer
-cleared `nowTalkReserveState` (+0x188) [0x01e50ea0], so a repeated answer carrying 4 no longer
-matches [0x01e50e94..0x01e50e9c] and the console sends `{0, 0}` [0x01e50f40, 0x01e512e8] and falls
-into the refusal path [0x01e512f0]. Answer each 0x63 once, not each retransmitted copy of it.
+A character advertising `{4, 1}` draws `63 0001 00` on A, and `64 0003 00 01 04` opens the talk. Any
+other `emoticonStateType` draws `NetDataTalkCancelEndData{0, 0}`, and so does a second 0x64 for the
+same 0x63, the first having cleared `nowTalkReserveState` [0x01e50e94]. Answer each 0x63 once, not
+each retransmitted copy.
 
-With the console as the talker the client's character is the recruiter, and the greeting parks on
-"one second!". The recruiter's answer to the trade offer is
-`UnionTradeContextMenu.<>c__DisplayClass10_0.<ShowTradeYesNoWindow>b__0` [0x01c32f70], reached only
-from `TradeRecruitmentStateModel.<>c__DisplayClass31_0.<ShowTradeYesNoMenu>b__0` [`b` at
-0x01c24548]:
+With the console as the talker, the client's character is the recruiter. A recruiter's yes to the
+trade offer (`UnionTradeContextMenu.<>c__DisplayClass10_0.<ShowTradeYesNoWindow>b__0` [0x01c32f70];
+no is `TradeRecruitmentStateModel$$Cancel` 0x01c24150) opens message 8 and tail-calls
+`UnionContextMenu$$SendTransitionData(station, 0)` [0x01f86480], which sends
+`NetDataTransitionData{menu+0x50, 0}` reliably; `SetTransitionType` [0x01c32ef0] sets +0x50 to 18. The
+yes is `07 0002 12 00`, the message a recruiting console sends when the client approaches it
+([the trading page](bdsp_trade.md#the-message-sequence)). A client that answered the 0x63 and sent
+`07 0002 12 00` drew a retail console's `NetDataTradeTranerData` (0x24), the trade box and a completed
+trade, with no yes from the console.
 
-    no    TradeRecruitmentStateModel$$Cancel                                 0x01c24150
-    yes   OpenMsgWindow(8, 2); UnionContextMenu$$SendTransitionData(station, isRecruitment 0)
-                                                                             0x01c32fe4, tail call 0x01f86480
-
-`SendTransitionData` sends `NetDataTransitionData{transitionType = menu+0x50, isRecruitment}` on the
-reliable stream, and `UnionTradeContextMenu$$SetTransitionType` [0x01c32ef0] sets +0x50 to 18,
-called from the constructors of `TradeRecruitmentStateModel` [0x01c23d28] and `TradeJoinStateModel`
-[0x01c22b78]. The recruiter's yes is `07 0002 12 00`, the message a recruiting console sends when the
-client approaches it ([the trading page](bdsp_trade.md#the-message-sequence)).
-
-On a retail console approaching the client's state-4 character, the client answered the 0x63 at
-reliable sequence 5 and sent `07 0002 12 00` at sequence 6. The console acknowledged sequence 6,
-sent `NetDataTradeTranerData` (0x24), opened the trade box and completed the trade. The client's
-transition opens the trade without a recruiter's yes from the console.
-
-On the talking console, the A press on a state-4 character ends in
-`CreateSelectStateModel(4, 1)` (tail call at 0x01e4ad38): the halfword table 0x03db863e sends state
-4 to 0x01e4b7ec, which builds a `TradeJoinStateModel` and stores it at `UnionStateController+0x50`
-[0x01e4b814] with the controller's `TradeMsgWindow` (+0x18) at the model's +0x48 [0x01e4b828]. That
-is the only store at +0x50 through the controller in any of its methods, so the model is never
-cleared. On the 0x64 answer, `StartTalk` calls `SwitchTalkStateMine` [0x01e4c41c], whose table
-0x03db86ae sends state 4 to 0x01e546c8: `CheckErrorMessageTrade`, then 18 into
-`UnionSystemController.onlinePlayerSelectState` (+0x28) [0x01e54ab0] and `fadeAfterSelectState`
-(+0x2C) [0x01e54ab8], `SetTargetStationIndex(station, cassetVersion, 1)` [0x01e54ae8] and
-`MessageEndSpokenData` [0x01e54af0].
-
-A received `NetDataTransitionData` goes from `SetNetData`'s 0x07 branch (id compare
-0x01e52610..0x01e52618, class check 0x01e5261c..0x01e52650) with no state test to
-`UnionStateController$$SwitchTransitionMessage(type, sexId, -, isRecruitment == 1)` [tail call
-0x01e52698]. `SwitchTransitionMessage` [0x01e53bf0] stores the type in `transitionController+0x10`
-[0x01e53c00], then picks a model through the byte table 0x03db869b (base 0x01e53c2c):
-
-| transitionType | the model read, at `UnionStateController` + |
-|---|---|
-| 3, 17 | +0x38 or +0x40, by `isRecruitment` (`tbz w4`) |
-| 4, 18 | +0x50, `tradeJoinStateModel` |
-| 5, 19 | +0x60 |
-| 6, 20 | +0x70 |
-| 7, 21 | +0x80 |
-| 8 to 16 | none; returns |
-
-For a trade it calls `TradeJoinStateModel$$OpenSwitchFadeMsg` [0x01c22f50], which opens trade
-message 9 or 10 by the sender's sex (`cinc w1, #9, ne`) with `OpenMsgWindow(index, SpeakerID 1)`
-[0x01c22f60], spoken as `OPPONENT` (`UnionTextData.SpeakerID`: `MINE` 0, `OPPONENT` 1, `SYSTEM` 2),
-and stores `StartFadeOut` [0x01e53cc0] as that message's close action [0x01e53cc4]. `isRecruitment`
-is read only by the battle rows.
-
-After the fade, `UnionStateTransitionController$$MyUpdate` calls `SwitchTransition` [0x01e5ba70,
-from 0x01e5b9cc], which returns at once when `[this+0x90]` is set [0x01e5ba80] or when
-`systemController` is null, and otherwise switches on `onlinePlayerSelectState` (0x01e5ba98..0x01e5baa4,
-byte table 0x03db8733): 18 goes to `TransitionTradePoke` [0x01e5c1c0]. It reads and clears the target
-station (`ldr w20, [x0, #0x68]` 0x01e5c200, `SetTargetStationIndex(-1, -1, 1)` 0x01e5c214), returns
-when that is -1 or the trade manager (+0x60) is null, checks `NetworkManager$$IsGamerActive`
-[0x01e5c270], sets the trade target [0x01e5c29c] and sends the console's `NetDataTradeTranerData`
-(0x24) [`SendTranerData` 0x01e5c2b0]. A console that pressed A on a trade recruiter and got
-`64 0003 00 01 04` therefore holds the model, state 18 and the recruiter's station, and a
-`07 0002 12 xx` from that station leads to its 0x24, the start of the trade in the joiner direction.
-No 0x07 has been sent to a talker.
-
-`SwitchTransitionMessage` reads the model with no test (`ldr x0, [x19, #0x50]` 0x01e53c4c, then
-`ldr x0, [x0, #0x48]` 0x01c22f50). A `07 0002 12 xx` to a console that has not pressed A on a trade
-recruiter since its `UnionStateController` was built reads through null; the other transition types
-have the same shape on their own models.
+On the talking console, A on a state-4 character builds a `TradeJoinStateModel` at
+`UnionStateController+0x50` (`CreateSelectStateModel(4, 1)`, store 0x01e4b814, the only one, never
+cleared). The 0x64 runs `SwitchTalkStateMine` [0x01e4c41c]: 18 into
+`UnionSystemController.onlinePlayerSelectState` (+0x28) and `SetTargetStationIndex(station,
+cassetVersion, 1)` [0x01e54ae8]. A 0x07 goes, with no state test [0x01e52610], to
+`SwitchTransitionMessage` [0x01e53bf0], which reads the type's model (byte table 0x03db869b) with no
+null test; for a trade `TradeJoinStateModel$$OpenSwitchFadeMsg` [0x01c22f50] opens message 9 or 10 by
+the sender's sex, spoken as `OPPONENT` (`SpeakerID` 1), closing into `StartFadeOut`. After the fade
+`SwitchTransition` [0x01e5ba70] sends 18 to `TransitionTradePoke` [0x01e5c1c0], which takes and clears
+the target station, checks `IsGamerActive` and sends the console's 0x24 [`SendTranerData`
+0x01e5c2b0]: the start of the trade in the joiner direction. No 0x07 has been sent to a talker. A 0x07
+reaching a console that has not pressed A on a trade recruiter since its `UnionStateController` was
+built reads through null (0x01e53c4c); the other transition types have the same shape on their own
+models.
 
 ### The name in the greeting
 
 The greeting, its speaker label and the battle ladder's "is choosing" line name a character by its
-station's Pia player name. `UnionBaseMsgWindow$$SetTargetDataMessage` [1.3.0 main 0x01f86810] and
-`UnionBaseMsgWindow$$GetSpeakerName` [0x01f87050] read `NetworkManager$$GetGamerData(station)`
-[0x02250e50], an entry of `IlcaNetSession.NetGamer` (sixteen `IlcaNetGamer`, `gamerName` at +0x30,
-`nameStringLanguage` at +0x38). `gamerName` is written on the Pia join event:
-`IlcaNetSession$$CallBackExtensionCoreEventJoin` [0x02742760] calls `NetGamerNameGet` [0x0273a9a0],
-which takes an 80-byte name buffer from `INLpiaSessionGetPlayerInfo` [0x01e15cd0], decodes
-`length - 1` bytes as UTF-8, and stores an empty string when the length is under 2. The language is
-one byte copied raw.
+station's Pia player name: `UnionBaseMsgWindow$$SetTargetDataMessage` [1.3.0 main 0x01f86810] and
+`GetSpeakerName` [0x01f87050] read `NetworkManager$$GetGamerData(station)` [0x02250e50]
+(`IlcaNetGamer.gamerName` +0x30, `nameStringLanguage` +0x38). `NetGamerNameGet` [0x0273a9a0], on the
+Pia join event, decodes `length - 1` bytes of an 80-byte buffer from `INLpiaSessionGetPlayerInfo`
+[0x01e15cd0] as UTF-8 (empty under length 2) and copies the language byte raw.
 
 `Utils$$CheckNGTrainerName` [0x01cbdc30] replaces the name with
 `Utils$$GetReplacedNGName(UnionWork.nowTargetCassetVersion)` [0x01cbde20] when it is empty, when
-`CheckNgWords` [0x01c99220] flags it, or when it is longer in UTF-16 units than
+`CheckNgWords` [0x01c99220] flags it, or when it has more UTF-16 units than
 `SoftwareKeyboard$$LanguageMaxLength(6, lang)` [0x01c995b0]:
 
 | `lang` | limit |
@@ -529,9 +378,9 @@ one byte copied raw.
 | any other positive value | 12 |
 | 0 or below | the UI's current language decides |
 
-The language is PlayerInfo byte 122 (0x7A). The Mesh Station Protocol's parser
-[0x0154f044..0x0154f5e0] reads one 195-byte PlayerInfo per iteration (`add w23, w23, #0xc3`
-0x0154f588):
+The language is PlayerInfo byte 0x7A. The Mesh Station Protocol's parser [0x0154f044..0x0154f5e0]
+reads one 195-byte PlayerInfo per iteration (`add w23, w23, #0xc3` 0x0154f588); the offsets are fixed
+whatever the encodings:
 
 | offset | field | read |
 |---|---|---|
@@ -543,54 +392,27 @@ The language is PlayerInfo byte 122 (0x7A). The Mesh Station Protocol's parser
 | 0x7B..0xBA | 64 bytes | 0x0154f5b8 |
 | 0xBB..0xC2 | u64 | to +0x490 + index*8 |
 
-The field offsets are fixed whatever the encodings. `INLpiaSessionGetPlayerInfo` reaches
-`0x01391a90`, which defaults the byte to 0xFF [0x01391b44], reads player 0 through `0x0153e7ac` and
-`0x01545308` (`ldrb w8, [x23+index, #0x480]` 0x015453fc) and writes it unchanged to
-`NetGamerNameGet`'s `ref byte nameStringLanguage` [0x01391bb0]. The byte is a `MsgLangId`:
+`INLpiaSessionGetPlayerInfo` reaches `0x01391a90`, which defaults the byte to 0xFF [0x01391b44] and
+copies the station record's +0x480 unchanged into `NetGamerNameGet`'s `nameStringLanguage`
+[0x01391bb0]. The byte is a `MsgLangId`:
 
     JPN 1, USA 2, FRA 3, ITA 4, DEU 5, ESP 7, KOR 8, SCH 9, TCH 10
 
-A console's own session setting takes `nameStringLanguage` (+0x40) from
-`MessageManager$$get_UserLanguageID` and `playerName` (+0x38) from `CheckNGTrainerName` in
-`SessionConnector$$ResetParam` [0x0202f050, stores 0x0202f130 and 0x0202f158;
-`SessionConnector.sessionSetting` is +0x48]. From there the byte reaches Pia:
+A console sends its own `MessageManager$$get_UserLanguageID` and its `CheckNGTrainerName`-checked name
+(`SessionConnector$$ResetParam` [0x0202f050]), through `IlcaNetBase$$PlatformInitialize2`
+[0x01e13ce0] and `PiaPlugin$$RegisterStartupSessionSetting` [0x0227d5a0], and the station protocol's
+PlayerInfo writer puts +0x480 at byte 0x7A [0x01550e98]. A French console's connection response
+(station protocol kind 2) carries encoding 1, its name, byte 0x79 0 and byte 0x7A 3.
 
-    IlcaNetSession$$SettingSet               0x02735c08  DeepClone(setting), stored in IlcaNetBase statics +0x28 (0x02735c34)
-    IlcaNetBase$$PlatformInitialize2         0x01e13ce0  setting+0x40 -> PiaPlugin.PlayerInfo.nameStringLanguage (+0x10)
-                                             0x01e13d20  playerName -> PlayerInfo +0x18
-                                             0x01e13ec4  bl PiaPlugin$$RegisterStartupSessionSetting
-    PiaPlugin$$RegisterStartupSessionSetting 0x0227d5a0  byte 0 of a native entry, stride 0x28 (0x0227d5c8)
-                                             0x0227d6a4  bl 0x0156c450, x1 = that array
-    0x0156c450 -> 0x0156f918                 0x0156fa08  +0x80 of a startup-setting player entry (entries
-                                                         from +0x18, stride 0x98)
-    0x0168d4c8                               0x0168d528  entry 0's language into the plugin object at +0x3220;
-                                                         returns without copying when [plugin+0x4c] > 3
+`station_protocol.player_info` writes the UTF-8 name at offset 1 and the language at 122.
+`bin/bdsp_connect.py --name` (default `PkCamp`) sends `--language`, default 1 (`JPN`: a 6-unit limit,
+Japanese font); `pokeldn/bdsp/host.py` sends 3, under which an 11-character name shows whole.
 
-The station protocol's PlayerInfo writer puts a station record's +0x480 at PlayerInfo byte 0x7A
-[`ldrb w8, [x8, #0x480]` 0x01550e98, store 0x01550ea0], followed by the 64 bytes [0x01550eb8] and the
-u64 [0x01550ecc]; `0x01545308` hands the same +0x480 back to `INLpiaSessionGetPlayerInfo`
-[0x015453fc]. A French console's connection response (station protocol kind 2) carries one
-195-byte PlayerInfo with encoding 1, its name, byte 0x79 0 and byte 0x7A 3 (FRA).
-
-`station_protocol.player_info` puts the 80-byte UTF-8 name at offset 1 of the 195-byte PlayerInfo and
-the language byte at offset 122. `bin/bdsp_connect.py --name` (default `PkCamp`) sends `--language`,
-default 1, `JPN`: a 6-unit limit and the Japanese font. `pokeldn/bdsp/host.py` sends 3.
-Under language 3 a retail Shining Pearl's greeting shows an 11-character name whole.
-
-The substitute depends on the talked-to character. `UnionWork.nowTargetCassetVersion` (static
-+0x8C) has two writers, `UnionSystemController$$SetTargetStationIndex` [0x01c2cf9c, its third
-argument, default -1] and `UnionSystemController$$StartOpenGreetingMsgWindow` [0x01c2e2e8, its
-fourth]. The greeting's two callers pass the character's `CharaData.cassetVersion`
-(`OpcController._CharaData` at +0x90, `cassetVersion` at +0x1C):
-`UnionStateController$$SwitchSpokenStateMine` (`ldr w21, [x0, #0xac]` 0x01e53b58) and
-`MessageEndSpokenData` (`ldp w2, w3, [x0, #0xa8]` 0x01e57ab8). That value is byte 2 of the
-character's `NetJoinData`. `SetTargetDataMessage` reads it back (0x01f868e4) and passes it to
-`CheckNGTrainerName` (0x01f86910) with the language from `GetGamerData(station)+0x38`.
-`Utils$$GetReplacedNGName` [0x01cbde20] takes label 247 of the `dp_characters` message file when
-that value is 0x31 and label 206 otherwise (`cmp w19, #0x31; csel` 0x01cbdecc), reads it through
-`MessageMsgFile$$GetNameStr` [0x01cbdee0] and appends a full stop (`ConvertUnicodeToChar(0x2e)`
-0x01cbdf14, `StringBuilder$$Append(char)` 0x01cbdf2c). The texts are the 1.3.0 RomFS
-`Message/<language>` bundles, `<language>_dp_characters`:
+The substitute depends on the talked-to character's `CharaData.cassetVersion`, byte 2 of its
+`NetJoinData`, which both callers of the greeting (`SwitchSpokenStateMine` 0x01e53b58,
+`MessageEndSpokenData` 0x01e57ab8) store in `UnionWork.nowTargetCassetVersion` (static +0x8C).
+`GetReplacedNGName` takes label 247 of `dp_characters` for 0x31 and label 206 otherwise (0x01cbdecc)
+and appends a full stop. The texts, from the 1.3.0 RomFS `Message/<language>` bundles:
 
 | bundle | 0x31 (Shining Pearl), `DP_CHARACTERS_247` | anything else, `DP_CHARACTERS_206` |
 |---|---|---|
@@ -606,75 +428,61 @@ that value is 0x31 and label 206 otherwise (`cmp w19, #0x31; csel` 0x01cbdecc), 
 
 ### talkState, and the value that crashes the game
 
-`TalkState` is `{CHECK = 0, GREETING = 1, NONE = 2}`, and the console is parked in `GREETING` waiting
-to be advanced. `UnionStateController$$SwitchSpokenStateMine` is the handler and its whole shape is
-one branch:
+`TalkState` is `{CHECK = 0, GREETING = 1, NONE = 2}`; the parked console waits in `GREETING`.
+`UnionStateController$$SwitchSpokenStateMine` sends anything but CHECK to
+`StartOpenGreetingMsgWindow` (`b 0x1fd85e0` at 0x1fd5e80); CHECK loads `systemController->msgWindow`
+(0x1fd5e84) and dereferences it with no null guard (0x1fd5ec0). A player standing with an emote up has
+no message window, so CHECK crashes the game; `pokeldn/bdsp/room.py` refuses to send it. Never send a
+state value read from a sender before reading the receiver's handler.
 
-    0x1fd5e6c  cbz  w21, 0x1fd5e84    talkState == CHECK -> below
-    0x1fd5e80  b    0x1fd85e0         anything else -> StartOpenGreetingMsgWindow
+`NetDataTransitionData{transitionType, isRecruitment}` (0x07) advances a parked greeting into an
+activity. The game sends it as a tail call, so a BL-only caller scan reports it as never sent
+([finding callers](switch_re.md#finding-callers)). `transitionType` is an `OnlineState`;
+`UnionStateTransitionController$$SwitchTransition` [1.3.0 main 0x01e5ba70] dispatches on it through a
+19-entry table, and `SwitchTransitionMessage` reads the model at `UnionStateController` + the offset
+below:
 
-    0x1fd5e84  ldr  x0, [x0, #0x10]   systemController->msgWindow
-    0x1fd5e88  cbz  x0, 0x1fd5f00     ... and when it is NULL:
-    0x1fd5f00  mov  x19, xzr            x19 = 0
-    0x1fd5ec0  ldr  x20, [x19, #0x10]   dereferences it. No guard anywhere.
+| transitionType | activity | entered through | model |
+|---|---|---|---|
+| 3, 17 | battle | `TransitionBattle` | +0x38 or +0x40 by `isRecruitment` (`tbz w4`) |
+| 4, 18 | trade | `TransitionTradePoke` | +0x50, `tradeJoinStateModel` |
+| 5, 19 | record mixing | `RecodeMatching$$Open` | +0x60 |
+| 6, 20 | trainer card | `TransitionShowTrainerCard` | +0x70 |
+| 7, 21 | ball capsules | `BallDecoMatching$$Open` | +0x80 |
+| 8 to 16 | none | | none; returns |
 
-CHECK is only meaningful to a console that already has a message window open. A player standing with
-an emote up has none; sending CHECK crashes the game. GREETING takes the branch that opens the
-window. `pokeldn/bdsp/room.py` refuses to send CHECK.
+`RecodeMatching$$Open` and `BallDecoMatching$$Open` send the console's own record at once (0x14,
+0x15) and wait; only the partner's (`StartRecodeTradeFlow`, `StartBallDecoTradeFlow`) writes the
+save.
 
-A state value read out of a sender is not safe to send until the receiver's handler has been read.
+### Record mixing
 
-The message that advances a parked greeting into an activity is
-`NetDataTransitionData{transitionType, isRecruitment}` (0x07). The game sends it as a tail call, so
-a BL-only caller scan reports it as never sent; see [finding callers](switch_re.md#finding-callers).
+The console recruits with "Échanger des données" in the Y menu (state byte 5). When the client walks
+up and the player says yes, it sends `NetDataTransitionData{5, 0}`, then 1.5 s later its 694-byte
+`NetDataRecodeData` (a 205-byte zlib stream), and waits at state 19 (`NOW_RECORD`); after 44 s without
+an answer it shows "un des participants n'est plus disponible" and returns to the room. `room.parse`
+returns the record's head as `recode`:
 
-`transitionType` is an `OpcState.OnlineState`, and `UnionStateTransitionController$$SwitchTransition`
-[1.3.0 main 0x01e5ba70] dispatches on it through a 19-entry table, the same activity reachable
-under its `RECRUITMENT_*` value and its `NOW_*` value:
-
-| transitionType | activity | entered through |
-|---|---|---|
-| 3, 17 | battle | `TransitionBattle` |
-| 4, 18 | trade | `TransitionTradePoke` |
-| 5, 19 | record mixing | `RecodeMatching$$Open` |
-| 6, 20 | trainer card | `TransitionShowTrainerCard` |
-| 7, 21 | ball capsules | `BallDecoMatching$$Open` |
-
-8 to 16 do nothing. `RecodeMatching$$Open` and `BallDecoMatching$$Open` each open a message window
-and send the console's own record at once (`NetDataRecodeData`, 0x14, 694 bytes, and
-`NetDataAttachSealNetData`, 0x15, 143 bytes), then wait for the partner's, and only on receiving
-it (`StartRecodeTradeFlow`, `StartBallDecoTradeFlow`) apply the exchange and write the save. A
-partner that never answers puts nothing in the console's save.
-
-Measured for record mixing, with the console recruiting ("Échanger des données" in the Y menu,
-state byte 5) and the client walking up: the console asks its player "voulez-vous faire un échange
-de données ?", and on yes sends `NetDataTransitionData{5, 0}`, then 1.5 s later the 694-byte
-`NetDataRecodeData` as a 205-byte zlib stream under the reliable header's flag 0x10. Its state byte
-reads 19 (`NOW_RECORD`) while it waits; 44 s without an answer it shows "un des participants n'est
-plus disponible" and returns to the room. The record carries the player's name, a group name, the
-trainer id and 64-bit heap pointers in the unwritten fields, as the trainer record does.
-
-`scratchpad/bdsp_native_layout.py --decode NetRecodeData FILE` prints one against the layout;
-`room.parse` returns the head of it as `recode`. What one French Shining Pearl sent:
-
-    RECORD.record[30]        thirty uint counters indexed by RECORD_ID: CLEAR_TIME 20240726,
-                             DENDOU_CNT 1, CAPTURE_POKE 78, FISHING_SUCCESS 12, TAMAGO_HATCHING 3,
-                             BEAT_DOWN_POKE 1034, ..., CONTEST_RATE_SINGLE 100
-    RANDOM_SEED              group_name (16 chars), name (32 chars), int sex, int region_code (3),
-                             ulong seed, ulong random, long time_stmp (a Windows FILETIME:
-                             0x1d7dcd164934199 is 2021-11-18 23:09:52 UTC), int user_id (the
-                             trainer id)
+    RECORD.record[30]        thirty uint counters indexed by RECORD_ID (CLEAR_TIME, DENDOU_CNT,
+                             CAPTURE_POKE, ..., CONTEST_RATE_SINGLE)
+    RANDOM_SEED              group_name (16 chars), name (32 chars), int sex, int region_code,
+                             ulong seed, ulong random, long time_stmp (a Windows FILETIME),
+                             int user_id (the trainer id)
     TvRecodeData             five TV records (personality, ball decoration, fossil digging,
-                             statue, fashion), each `bool isEmpty` (4 bytes), ints, and a
-                             TV_STR_DATA name
+                             statue, fashion), each `bool isEmpty` (4 bytes), ints, a TV_STR_DATA
     4 x TV_STR_DATA          {16-char value, byte language, genderId, two reserved}
     RECORD_HEAD              13-char username, int language, byte sex, int body_type,
                              uint uniqueID (the trainer id again)
-    ten ints, six bytes      the per-TV branch values, then myVersion (0x31) and five
-                             *IsNotEmpty flags
+    ten ints, six bytes      the per-TV branch values, myVersion (0x31), five *IsNotEmpty flags
 
-A battle ("Combattre", state byte 3 while recruiting) runs a longer ladder, and the recruiting
-console waits on the joiner at every rung. Measured with the client as joiner:
+Unwritten fields hold 64-bit heap pointers. `RECORD_HEAD.sex` read 0 and `RANDOM_SEED.sex` 1 in the
+same record. `RECORD`, `RANDOM_SEED` and `RECORD_HEAD` (namespace `DPData`) marshal at pack 4, the
+`TvRecode*` structs at pack 8; no padding results at these field sizes.
+
+### The battle ladder
+
+A battle ("Combattre", state byte 3 while recruiting) runs a ladder; the recruiting console waits on
+the joiner (here the client) at every rung:
 
 | the joiner sends | the console does |
 |---|---|
@@ -685,17 +493,15 @@ console waits on the joiner at every rung. Measured with the client as joiner:
 | `NetDataBattleMatchingReady` (0x32, empty) | `BattleMatchingManager$$ReceiveReadyData`: when every member is ready, `NetDataBattleMatchingState{0, 6}` (0x33), `MatchingState.SelectBattleTeam` (4 and 5 skipped for a solo battle), and its player gets the team-selection button |
 | nothing | on the player's team choice, six `NetDataBattleMatchingSelectPokemon` (0x38, 481 bytes), then "en attente d'autres personnes" |
 
-The 0x38 body is the layout in the table above: a 328-byte encrypted PB8 whose checksum verifies
-and whose species read back the team the player picked, in order,
-twenty `SealParam` slots holding the same unwritten heap bytes in all six with `affixSealCount` 0,
-`attachPokemonId` and `attachPersonalRnd` 0, `index` 0 to 5 and `num` 6. The joiner's `id` in 0x30
-is not checked against anything: 0x0badc0de was accepted. `BattleMatchingManager.MatchingState` is
-None 0, Initialize 1, Load 2, RecruitmentMember 3, SelectTeamMember 4, SelectRule 5,
-SelectBattleTeam 6, SelectPokemon 7, GoBattle 8, Result 9, Resume 10, Closing 11,
-LeavedOtherMembers 12.
+Each 0x38 holds an encrypted PB8 whose checksum verifies (the picked team, in order), twenty
+`SealParam` slots of identical heap residue with `affixSealCount` 0, `attachPokemonId` and
+`attachPersonalRnd` 0, `index` 0 to 5 and `num` 6. The joiner's `id` in 0x30 is not checked
+(0x0badc0de was accepted). `BattleMatchingManager.MatchingState`: None 0, Initialize 1, Load 2,
+RecruitmentMember 3, SelectTeamMember 4, SelectRule 5, SelectBattleTeam 6, SelectPokemon 7, GoBattle
+8, Result 9, Resume 10, Closing 11, LeavedOtherMembers 12.
 
-`NetDataSelectData` (0x08) is `{byte index}` and has one receiver in 1.3.0, in
-`UnionRoomManager$$SetNetData` [main 0x01e52a30]. It reads the sender's station and never the index:
+`NetDataSelectData` (0x08) is `{byte index}`. Its one receiver [`UnionRoomManager$$SetNetData`,
+0x01e52a30] reads the sender's station and never the index:
 
     m = stateController.battleRecruitmentModel                  UnionStateController +0x38
     m.ChangeBattleRecruitmentState(BATTLE_RULE_SELECT_WAIT 4)   0x01d2aab0
@@ -704,111 +510,65 @@ LeavedOtherMembers 12.
     if m.unionMsgBattleWindow != null:
         SetTargetDataMessage(window, station, 1, 1); OpenMsgWindow(window, 3, 2)   0x01f86fa0
 
-Any index behaves as 0, and a 0x08 drives the battle recruitment model whatever conversation is
-open. Both senders write index 0: `UnionBattleContextMenu$$SendRuleSelectState` [0x01f87c60], a tail
-call, and the yes branch of `UnionBattleContextMenu.<ShowBattleJoinYesNoWindow>b__0` [0x01f8800c].
+A 0x08 drives the battle recruitment model whatever conversation is open. Both senders write 0
+(`UnionBattleContextMenu$$SendRuleSelectState` [0x01f87c60], a tail call, and
+`<ShowBattleJoinYesNoWindow>b__0` [0x01f8800c]).
 
-The receiver never tests the model for null. The branch is gated only by the message id and class
-[0x01e52a24..0x01e52a64], loads the model with `ldr x20, [x8, #0x38]` [0x01e52a78], and
-`ChangeBattleRecruitmentState` case 4 tail-calls `NetStateModel$$SetState` [0x023e25f0], whose first
-store is `str x2, [x20, #0x18]!` with x20 the model [0x023e2604]; the receiver then stores at
-model+0x28 [0x01e52a94] and calls through the model's vtable [0x01e52a98]. The model is built at one
-site: `UnionStateController$$CreateSelectStateModel` [0x01e4b620] constructs a
-`BattleRecruitmentStateModel` [0x01e4bafc] and stores it at +0x38 [0x01e4bb08] for state 3 or 17 when
-`stateModelType` is 0 (recruitment, `cbz w22` 0x01e4b754), as the battle-recruit menu does
-[0x01f8b7b8]. The A press passes 1 and builds a `BattleJoinStateModel`. No store clears +0x38. A 0x08
-reaching a `UnionStateController` whose player has never recruited a battle writes through null.
+The receiver never tests the model for null: it loads +0x38 [0x01e52a78] and case 4 writes
+through it in `NetStateModel$$SetState` [0x023e2604]. The only store to +0x38 is
+`CreateSelectStateModel` [0x01e4bb08], building a `BattleRecruitmentStateModel` for state 3 or 17
+when the player recruits a battle (`stateModelType` 0; the A press passes 1 and builds a
+`BattleJoinStateModel`). `UnionStateController` is built once per `UnionRoomManager`
+(`UnionRoomManager$$SetUp`, `.ctor` 0x01e4d01c), and a link battle keeps both
+(`EvDataManager$$UpdateStart` -> `UnionRoomManager$$ReturnBattle` [0x01b02a78], no constructor). A
+0x08 reaching a console whose player has not recruited a battle in that visit writes through null.
 
-No 0x08 has reached `SetNetData` on a console. In the runs of [Being talked to](#being-talked-to)
-that sent `NetDataSelectData` after a talk, all 22 copies went out under a sequence id one of the
-client's own 0x64 answers already held. The reliable window keeps the first message for an id and
-drops a later one, below the base or on an occupied slot, with an ack either way
-([the Pia page](pia.md#what-the-receiver-discards-in-silence)), so a 0x08 sent under an id the
-console already holds is dropped. The console's reply identifies the message it kept: its ack of
-the id alone for a 0x64 it had already taken, or with `NetDataTalkCancelEndData{0, 0}` for a
-repeated 0x64.
-
-`UnionStateController` is built once per `UnionRoomManager`. Its one `new` is in
-`UnionRoomManager$$SetUp` (TypeInfo load 0x01e4cfb4, `.ctor` called at 0x01e4d01c,
-`CreateTransitionController` 0x01e4d038), called directly only from the manager's `Start`
-coroutine (`<Start>d__52$$MoveNext`, 0x01e566cc). The event-script command
-`EvDataManager$$EvCmdUnionProc` builds the manager (`GameObject("UnionRoomManager")`,
-`AddComponent<UnionRoomManager>`, `SetZoneData`, 0x01b36080..0x01b36100), the only
-`AddComponent<UnionRoomManager>` in code. A link battle keeps it:
-`EvDataManager$$UpdateStart` finds the existing instance [0x01b02a20] and, when `isBattle`, calls
-`UnionRoomManager$$ReturnBattle` [0x01b02a78], which reinitialises the player state without a
-constructor. `battleRecruitmentModel` (+0x38) is stored only by `CreateSelectStateModel`
-[0x01e4bb08], so it stays null until that player first recruits a battle in that visit and is
-never cleared after.
+No 0x08 has reached `SetNetData` on a console: the 22 sent after a talk went out under a sequence id
+one of the client's own 0x64 answers already held, and the reliable window keeps the first message
+for an id ([the Pia page](pia.md#what-the-receiver-discards-in-silence)).
 
 Never send 0x08 unless the console's own 0x04 says state 3 with `isRecruiment` 1.
 
 ### The Grand Underground
 
-The Underground advertises the same `local_communication_id` under scene id 12608 and the same
-session line associates with it, with no join record needed: the walk is `--room-walk 0`.
-`UgNetworkManager` is the Underground's twin of `UnionRoomManager`, and on a station's arrival the
-console sends three messages at once:
+The Underground advertises the same `local_communication_id` under scene id 12608; the same session
+line associates, with no join record (`--room-walk 0`). On a station's arrival `UgNetworkManager`
+sends:
 
 | id | class | bytes | content |
 |---|---|---|---|
 | 0x17 | `NetZoneData` | 16 | `Vector3 pos`, `int zoneID` (519 measured) |
 | 0x42 | `NetPlayerNameData` | 28 | 13 UTF-16 chars, byte genderid, byte languageId (3, French) |
 | 0x50 | `NetKousekiCount` | 4 | `int Value` |
+| 0x41 | `NetSecretBaseInfo` | 16 | instead of 0x17 inside a secret base (zone 633): `Vector3 pos`, `int zoneID`, the entrance on the floor above (519) |
 
-A player standing inside their secret base (zone 633) sends, on a station's arrival,
-`NetSecretBaseInfo` (0x41, `Vector3 pos`, `int zoneID`: the base's entrance on the floor above,
-zone 519) paired with the `NetPlayerNameData`.
+A `NetUgJoinData` (0x16, 18 bytes: `byte avatarId, colorId; short zoneID, InitRotY; Vector3 InitPos`)
+naming the player's zone puts a character next to the player: `OnReceiveJoinData` [1.3.0 main
+0x01f7bd80] requests its `NetCharacterStateData` and `NetNaminoriData` (0x55, a 4-byte bool), and the
+console sends it `NetPosData` every 0.41 s. Positions use the room's encoding
+(`--ug-join --room-walk-steps N`).
 
-A station gets a character on the Underground floor with one `NetUgJoinData` (0x16, 18 bytes:
-`byte avatarId, colorId; short zoneID, InitRotY; Vector3 InitPos`) carrying the zone the console's
-`NetZoneData` named. `UgNetworkManager$$OnReceiveJoinData` [1.3.0 main 0x01f7bd80] records the
-sender's zone and, when it is the player's own, asks the sender for its `NetCharacterStateData`
-and its `NetNaminoriData` (0x55, a 4-byte bool); the character appears next to the player and
-the console starts sending it `NetPosData` every 0.41 s. Positions use the room's encoding:
-(-79.0, 67.24) is sent as `posX` 1577, `posZ` 1345, so `room.build_pos` walks a character there
-too (`--ug-join --room-walk-steps N`).
-
-`UgNetworkManager$$OnReceiveRequestData` [1.3.0 main 0x01f7c050] answers a `NetRequestData` for
-0x01, 0x04, 0x18, 0x19 `NetDigData`, 0x54, 0x55 `NetNaminoriData` and 0x61. The three opaque ones:
+`UgNetworkManager$$OnReceiveRequestData` [1.3.0 main 0x01f7c050] answers requests for 0x01, 0x04,
+0x18, 0x19 `NetDigData`, 0x54, 0x55 and 0x61:
 
 | requested | bytes | content |
 |---|---|---|
-| 0x18 `NetSecretBaseData` | 616 | the player's own `UgSecretBase`; `SendMySecretBaseData` sends nothing when its `zoneID` is 0 |
-| 0x54 `NetSecretBaseUpdate` | 616 | the same 616 bytes, byte for byte |
+| 0x18 `NetSecretBaseData` | 616 | the player's own `UgSecretBase`; nothing when its `zoneID` is 0 |
+| 0x54 `NetSecretBaseUpdate` | 616 | the same 616 bytes |
 | 0x61 `NetDigTableData` | 8 | eight dig-fossil ids, `01 06 04 02 05 03 00 07` |
 
-One base read back as zone 519 at (79, 64), `direction` 0, `expansionStatus` 0, `goodCount` 0,
-five statues (ids 12, 20, 22, 32, 35, each `pedestalId` -1) in the thirty slots, and `isEnable` 0.
-Before the console's reliable window has carried anything, a request lands at sequence 1 and is
-not answered; the same request later is.
+A request at sequence 1, before the console's window has
+carried anything, goes unanswered.
+A request for 0x29 or 0x42 draws nothing.
 
-The eight bytes of 0x61 are `UgFieldManager.ugDigGroupList`, built by
-`UgStationID_to_DigFossilIDList$$Init` [0x02031830]: bytes 0 to 7 ordered by `Guid.NewGuid()`, so a
-valid table is a permutation of 0..7.
-The marshaller [0x002498c0] throws on an array shorter than eight and copies elements 0 to 7, with no
-length prefix. The console answers a request for 0x61 only once its own table is ready
-(`UgNetworkManager.IsDigTableReady`, +0xA8, tested at 0x01f7c440).
+0x61 is `UgFieldManager.ugDigGroupList`, a `Guid.NewGuid()` ordering of 0..7
+(`UgStationID_to_DigFossilIDList$$Init` [0x02031830]); the marshaller [0x002498c0] copies elements 0
+to 7, no length prefix, and throws on fewer. The console answers a
+0x61 request only once its own table is ready (`UgNetworkManager.IsDigTableReady`, +0xA8, tested at
+0x01f7c440).
 
-The Underground session host builds its table and sets the flag in `UgNetworkManager$$OnSessionEvent`
-[0x01f77510]. A console that is not the host sends `NetRequestData{0x61}` to every station, and
-`UgNetworkManager$$OnReceiveDigTableData` [0x01f7dad0] adopts the first 0x61 that arrives while the
-flag is 0: it replaces `ugDigGroupList` with the sender's bytes, deletes every dig point
-[0x01cfd6d0], rebuilds them [0x01cfdab0] and sets the flag. A later session event sets the flag
-without a table when none arrived. A 0x61 reaching a console whose flag is set is ignored.
-
-The common receive dispatch has no sender filter. `SessionManager$$OnReceivePacket` (`0x1df8ac0`)
-reads the data id, obtains its `INetData` from `NetDataParser` (`0x224d650`), deserializes it, and
-invokes the `OnReceiveData` delegate at `0x1df8b44`..`0x1df8b60`. The concrete 0x61
-`ReceivePacket` stores the packet's station index at `INetData+0x18` (`0x26cd5ac`) and continues to
-deserialize without comparing it.
-`NetUseManager<T>.<Start>d__8.MoveNext` registers its virtual `OnReceiveData` as that delegate at
-`0x26cf8b0`..`0x26cf8dc`. The 0x61 branch in `UgNetworkManager$$OnReceiveData` reaches
-`OnReceiveDigTableData` without consulting `INetData.FromStationIndex`. The code therefore accepts
-the first table from an associated peer while `IsDigTableReady` is clear; a retail non-host run has
-not tested it.
-
-`OnSessionEvent` switches on `SessionEventType` through the byte table 0x03db8970:
+`UgNetworkManager$$OnSessionEvent` [0x01f77510] switches on `SessionEventType` (byte table
+0x03db8970):
 
 | event | target | effect |
 |---|---|---|
@@ -819,90 +579,68 @@ not tested it.
 | 6 `Leave_OtherPlayer` | 0x01f776ec | `OnLeaveOtherPlayer` |
 | 7, 8, 9 | 0x01f77574 | `OnCrash` |
 
-The three stores to +0xA8 in `UgNetworkManager` (0x01f7763c, 0x01f77740, 0x01f7dc08) all write 1;
-nothing clears it. The adoption tests the flag [0x01f7db0c] and the message class, never the sender,
-so a manager whose flag is 0 takes the first 0x61 from any station, before its own `JoinIn_Mine` as
-well as after, and ignores every later one for its life. It stores the array as `ugDigGroupList`
-[0x01f7db94] with no length or value check. `CreateDigPoints` reads element `[MyStationIndex]`
-[0x01cfdc7c]; a station index of 8 or more throws at the bounds check (`cmp w9, w20; b.ls` 0x01cfdc70,
-throw at 0x01cfdf84). It finds the `UgDigFossilePosGroup` whose `ID` equals that byte (`List.Find`
-0x01cfdcd8, null when none does) and hands it to `CreateDigPointModel` [0x01cfe470], which reads
-`group.Grids` (`ldr x1, [x20, #0x18]` 0x01cfe4d8) with no null test. In the 1.3.0 `ugdata` bundle's
-`UgDigFossilePosGroups`, each of the 35 zones (508 to 542) has exactly eight groups with IDs 0 to 7,
-of 6 to 26 cells each, so any byte 0 to 7 is valid in any zone and a larger byte finds no group and
-faults the console; send only permutations of 0..7.
+`UgNetworkManager$$OnReceiveDigTableData` [0x01f7dad0] adopts the first 0x61 that arrives while the
+flag is 0, from any station, before or after its own `JoinIn_Mine`: it tests only the flag
+[0x01f7db0c] and the class, stores the array as `ugDigGroupList` [0x01f7db94] unchecked, rebuilds the
+dig points [0x01cfd6d0, 0x01cfdab0] and sets the flag. All three stores to +0xA8 write 1, so every
+later 0x61 is ignored. The common dispatch (`SessionManager$$OnReceivePacket` `0x1df8ac0`) never
+consults `INetData.FromStationIndex`. A retail non-host console has not been tested.
 
-A console builds a new `UgNetworkManager` with each `UgFieldManager`, the object of that name in the
-`ugdata` bundle (matched by name in `UgResManager.<>c.<DataLoad>b__82_0`, 0x01f84d74..0x01f84d88).
-`UgFieldManager$$StartSession` [0x01cfebb0], called only from the `UgFieldManager` `Start` coroutine
-(`<Start>d__101$$MoveNext`, 0x01d0b95c), creates it only when `ugNetManager` (+0x58) is null:
-`GameObject("UgNetworkManager")`, `AddComponent<UgNetworkManager>` [0x01cfed54], the only one in
-code, and the store [0x01cfed5c]. `UgFieldManager$$OnDestroy` destroys it [0x01cff530] and stores
-null at +0x58 [0x01cff53c], the only null store there. A new manager's `IsDigTableReady` is 0, so
-each new `UgFieldManager` adopts a table afresh.
+`CreateDigPoints` reads element `[MyStationIndex]` [0x01cfdc7c] (8 or more throws), finds the
+`UgDigFossilePosGroup` with that `ID` (`List.Find` 0x01cfdcd8) and reads its `Grids` in
+`CreateDigPointModel` [0x01cfe470] with no null test. In the 1.3.0 `ugdata` bundle each of the 35
+zones (508 to 542) has eight groups, IDs 0 to 7, of 6 to 26 cells. Send only permutations of 0..7: a
+larger byte faults the console.
 
-0x29 `NetDigGroupIdData` shares the payload struct, its marshaller and every `ANetData<T>` method
-with 0x61. `NetDataParser`'s constructor [0x0224a420] instantiates it, the 29th of its 65 inlined
-registrations, and nothing else references it: no code sends it, and
-`UgNetworkManager$$OnReceiveData` [0x01f7a880], which tests 22 ids, has no branch for it. A request
-for it or for 0x42 draws nothing.
+Each `UgFieldManager` builds a new `UgNetworkManager` in `StartSession` [0x01cfebb0] (the only
+`AddComponent<UgNetworkManager>`, 0x01cfed54) and destroys it in `OnDestroy` [0x01cff530], so each
+adopts a table afresh.
 
-`--inject-file PATH` on `bin/bdsp_connect.py` sends each new `ID:HEX` line of the file on the
-reliable window while the association stands.
+0x29 `NetDigGroupIdData` shares 0x61's struct and methods. Only `NetDataParser`'s constructor
+[0x0224a420] references it: nothing sends it, and `UgNetworkManager$$OnReceiveData` [0x01f7a880]
+(22 ids) has no branch for it.
 
-`RECORD_HEAD.sex` read 0 and `RANDOM_SEED.sex` 1 in the same record. The record is 1.3.0's
-`RECORD`, `RANDOM_SEED` and `RECORD_HEAD` from the `DPData` namespace marshalled at pack 4, and the
-`TvRecode*` structs at pack 8; no padding results at these field sizes.
+`bin/bdsp_connect.py --inject-file PATH` sends each new `ID:HEX` line of the file reliably.
 
-Ball capsules run the same way ("Déco Capsule", state byte 7 while recruiting):
-`NetDataTransitionData{7, 0}`, state 21 (`NOW_BALL_DECORATION`), then 1.8 s later the 143-byte
-`NetDataAttachSealNetData` as a 116-byte zlib stream. Its first three bytes are the seal count, the
-3D-edit flag and the template flag; then twenty `SealParam{short x, short y, short z, byte id}`.
-A capsule with 19 stickers placed them all at a distance of 100 from the origin, slot 19 empty.
-45 s without an answer the console shows "quelqu'un a mis fin à la communication" and returns to
-the room.
+### Ball capsules
 
-Answered with a `NetDataAttachSealNetData` of the client's own (`bin/bdsp_connect.py --answer-with
-0x15:FILE`, the 143-byte body), the console applies it and returns to the room within five seconds,
-state byte 0. Addresses below are the 1.3.0 image.
+The console recruits with "Déco Capsule" (state byte 7). It sends `NetDataTransitionData{7, 0}`, goes
+to state 21 (`NOW_BALL_DECORATION`), and 1.8 s later sends its 143-byte `NetDataAttachSealNetData` as
+a 116-byte zlib stream. After 45 s without an answer it shows "quelqu'un a mis fin à la communication" and returns
+to the room. Answered with the client's own 143 bytes (`bin/bdsp_connect.py --answer-with 0x15:FILE`),
+it applies them and returns to the room within five seconds, state byte 0. Send the answer from a
+task of its own: from inside the receiver, the ack it waits for is never read.
 
-`BallDecoMatching$$ReceiveBallDecoData` (`0x021ca5e0`) runs once the console has sent its own design;
-one received earlier is held and applied right after that send. It writes the first of the 99
-capsule slots holding no seals (`0x021ca674`), and does nothing if every slot has seals; the console
-sends its first slot that has seals. `BallDecoWork$$CopyTradeCapsuleData` (`0x01f23eb0`, absent from
-the base game) clears the slot, including an attached Pokemon, stores `Is3DEditMode` and
-`IsAppliedTemplate` as `byte == 1`, and walks the received `affixSealCount` seals:
+In the 1.3.0 image, `BallDecoMatching$$ReceiveBallDecoData` (`0x021ca5e0`) runs once the console has
+sent its own design (its first slot with seals). It writes the first of the 99 capsule slots with no
+seals (`0x021ca674`), or nothing when all have seals. `BallDecoWork$$CopyTradeCapsuleData` (`0x01f23eb0`, absent from the
+base game) clears the slot, attached Pokemon included, stores `Is3DEditMode` and `IsAppliedTemplate`
+as `byte == 1`, and walks `affixSealCount` seals:
 
     if SaveSealData[id].Count >= 1:  place it at (x, y, z) / 100, then SubSealCount(id, 1)
     else:                            drop it
 
-Each placed seal consumes one from the player's stock, so a seal used three times needs three.
-Seals already on the player's capsules were paid for when placed and are not in the stock; taking a
-seal off a capsule returns it (`CapsuleInfo$$RemoveAffixSeal` `0x01e940d0` calls
-`BallDecoWork$$ReturnSealCount`). When no seal of the design is in stock, nothing is written. The slot
-stores the number placed, compacted. The result is true when at least one seal was placed and none
-was dropped, and it picks the closing message (`0x021c9f80`): `DLP_net_union_room_090` when true,
-`_114` otherwise. "Seuls les sceaux que vous possédez ont été collés" is the false branch.
+Seals on the player's capsules are out of stock until taken off (`CapsuleInfo$$RemoveAffixSeal`
+`0x01e940d0` calls `BallDecoWork$$ReturnSealCount`). With none in stock nothing is written; the slot
+stores the placed seals, compacted. The result is true when at least one was placed and none dropped, and picks the
+closing message (`0x021c9f80`): `DLP_net_union_room_090` when true, `_114` ("Seuls les sceaux que
+vous possédez ont été collés") otherwise. A count above 20 or a seal id of 200 or more indexes past
+an array (`0x01f24254`, `0x0238b7b0`) and throws.
 
-A count above 20 or a seal id of 200 or more indexes past an array (`0x01f24254`, `0x0238b7b0`) and
-throws on the console.
+Positions are hundredths of the capsule radius, the surface at magnitude 100 in both modes. "Has
+seals" is `AffixSealCount != 0` (`0x01e93630`). 3D mode draws every seal where it is. 2D mode
+(`Capsule2DViewController$$UpdateGridCells`, `0x01e90de0`) draws a seal only at a grid cell's
+`BallDecoWork$$Convert2DPosition` (`0x01f24da0`): radius 1, rows and columns 28 degrees apart on the
+front (+z) and 25 on the back, each component rounded to 0.01.
 
-Positions are hundredths of the capsule radius: the surface is at magnitude 100 in both modes. The
-"has seals" mark is `AffixSealCount != 0` (`0x01e93630`). In 3D mode every seal is drawn where it
-is. In 2D mode `Capsule2DViewController$$UpdateGridCells` (`0x01e90de0`) draws a seal only when its
-position equals a grid cell's `BallDecoWork$$Convert2DPosition` (`0x01f24da0`): radius 1, rows and
-columns 28 degrees apart on the front (+z) and 25 on the back, each component rounded to 0.01. A
-console's own 2D capsule has all 19 seals on front cells with column and row in -3..3.
-
-The cell set comes from the UI prefab. `Capsule2DViewController$$Initialize` (`0x01e909b0`) takes
-the grid root's `Capsule2DGridCell` children (`0x01e90a80`), the middle one as the centre
-(`0x01e90aa8`), the step as the root `GridLayoutGroup`'s cell size plus spacing (`0x01e90ae0`,
-`0x01e90bb4`), and gives each cell `GridPosition` = its offset from the centre divided by the step,
-each axis rounded (`0x01e90c48`). `Capsule2DGridCell$$Setup` (`0x01e905e0`) stores
-`Convert2DPosition(GridPosition, isFront)` as the cell's seal position (+0x30). The 1.3.0 bundle
-`/Data/StreamingAssets/AssetAssistant/UIs/ui/uiresidentwindow` holds three
-`Capsule2DViewController`s; each root `Grid` has a `GridLayoutGroup` {cell 72x72, spacing 3x3, fixed
-column count 7, middle centre} and 49 children, 37 of them cells and 12 bare corner spacers:
+`Capsule2DViewController$$Initialize` (`0x01e909b0`) takes the grid root's `Capsule2DGridCell`
+children, the middle one as the centre (+0x78) and the root `GridLayoutGroup`'s cell size plus spacing
+as the step, and gives each cell `GridPosition` = its offset from the centre over the step, rounded
+(`0x01e90c48`); `Capsule2DGridCell$$Setup` (`0x01e905e0`) stores `Convert2DPosition(GridPosition,
+isFront)` at +0x30. The 1.3.0 bundle `/Data/StreamingAssets/AssetAssistant/UIs/ui/uiresidentwindow`
+holds three `Capsule2DViewController`s, each root `Grid` a `GridLayoutGroup` {cell 72x72, spacing 3x3,
+7 fixed columns} over 37 cells and 12 corner spacers. The grid, front and back, is the 7 by 7 square
+minus `(|x|, |y|)` in `{(3, 2), (2, 3), (3, 3)}`:
 
     row  3   columns -1..1
     row  2   columns -2..2
@@ -912,36 +650,14 @@ column count 7, middle centre} and 49 children, 37 of them cells and 12 bare cor
     row -2   columns -2..2
     row -3   columns -1..1
 
-The 2D grid is those 37 cells, the same set front and back: the 7 by 7 square minus `(|x|, |y|)` in
-`{(3, 2), (2, 3), (3, 3)}`. A seal at a corner position such as (3, 3) matches no cell and is never
-drawn in 2D mode. A 2D design
-of 19 seals on a ring at z = 44, sent twice, filled capsule slots 2 and 3 of a retail console, each
-marked as decorated and showing nothing. A 2D design of eight different seals on front cells,
-sent after those slots were cleared, filled slot 2 with four visible seals, the ones the player had
-in stock, and closed on the same message. `scratchpad/bdsp_capsule_grid.py FILE` checks a design
-against the grid.
+A console's own 2D capsule has its seals on front cells. A 2D design off the grid (a ring at z = 44)
+fills a slot marked decorated and showing nothing; one on front cells shows the seals in stock.
 
-The grid positions hold at a world scale of 1, and a retail view is at that scale. `Initialize`
-measures the centre and the cells with `Transform$$get_position`, in world space (`0x01e90bd0`,
-`0x01e90c70`, `0x01e90cb4`), and divides their difference by the step, which is local
-(`0x01e90b7c..0x01e90b8c`, `fdiv` at `0x01e90c10` and `0x01e90c1c`). The centre is the middle cell,
-`gridCells[count / 2]` (`0x01e90a98..0x01e90ac4`), stored at +0x78. A grid root without a
-`GridLayoutGroup` would take the first cell's `rect.size` as the step (`0x01e90ad8..0x01e90b40`);
-all three retail roots have one, so the step is 72 + 3 = 75 on both axes. Every ancestor of each
-grid, up to the root `Seal` or `SealTemplate`, has local scale 1, and no `Canvas` is nested below the
-root. Each root `Canvas` has render mode 0 (screen-space overlay) and a `CanvasScaler` that scales
-with screen size from 1280 x 720, matched on the width (match mode 0, match 0). Each `Window` above a
-grid carries an `Animator` whose clips bind only `m_AnchoredPosition.x`, `m_AnchoredPosition.y` and
-a `CanvasGroup` value, never a scale; a translation cancels in the subtraction.
-
-The scaler's factor is `Screen.width / 1280`, the quotient `UIManager$$ScreenScaled` (`0x01bf7c40`)
-also computes. The Unity player reads 0x40 bytes of `/Data/rawsettings` into `0x04eed08c`
-(`0x002c16f8..0x002c1758`), and the 1.3.0 file's u32 at +0x1c is 0. The default-resolution switch
-`0x006062e8` sets 1280 x 720 and switches on that word through the byte table `0x03deab6c`: 0 keeps
-it, 1 follows the operation mode (1920 x 1080 docked), 2 the performance mode, 3 both. The
-mode-change handlers act only on 1 or 3 (`0x002c2a48..0x002c2a64`) and on 2 or 3
-(`0x002c2b1c..0x002c2b38`), and no managed code calls `SetResolution` or a `Screen` setter. With 0
-the default stays 1280 x 720 docked and handheld, and the factor is 1.
-
-The answer must be
-sent from a task of its own: sent from inside the receiver, the ack it waits for is never read.
+The grid positions hold at the retail scale. `Initialize` divides world-space offsets
+(`Transform$$get_position`, `0x01e90bd0`) by the local step, 75 on both axes (`fdiv` `0x01e90c10`).
+Every ancestor up to the root `Seal` or `SealTemplate` has local scale 1; the root `Canvas` is a
+screen-space overlay whose `CanvasScaler` scales from 1280 x 720 on the width, and the `Window`
+animators bind only translations. The factor `Screen.width / 1280` is 1: the 1.3.0 `/Data/rawsettings`
+u32 at +0x1c is 0, which keeps the default-resolution switch `0x006062e8` at 1280 x 720 docked and
+handheld (1 follows the operation mode, 2 the performance mode, 3 both), and no managed code calls
+`SetResolution` or a `Screen` setter.
