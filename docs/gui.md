@@ -5,6 +5,10 @@ title: Desktop builds
 
 Released apps include PKHeX and the merged ESP32 radio firmware. Users provide their own `prod.keys`.
 
+The interface bundles the free MIT SVG set from Pixelarticons 2.4.1 in `gui/assets/icons/`, with its
+license. `gui/icons.py` renders the unchanged paths at sizes on the 24-pixel grid and applies the
+interface colors through Flet's image tint.
+
 For source development, install Python 3.13 and the .NET 10 SDK:
 
 ```sh

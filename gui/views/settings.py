@@ -71,7 +71,7 @@ class SettingsView:
                                  style=ft.ButtonStyle(color=t.BLUE))
 
         self.column.controls = [
-            t.notch(ft.Row([ft.Icon(ft.Icons.SETTINGS_ROUNDED, size=16, color=t.RED),
+            t.notch(ft.Row([t.pixel_icon("gear", size=24, color=t.RED),
                             t.text("Settings", 13, weight=ft.FontWeight.W_600)], spacing=8, tight=True)),
             t.card("Switch keys", ft.Column([keys.control, self.keys_state], spacing=8),
                    "prod.keys from your own console. It decrypts the local wireless advertisements and never "
@@ -80,7 +80,7 @@ class SettingsView:
                    "The original trainer of every Pokemon the app builds. The IDs were drawn at random on first "
                    "launch."),
             t.card("Received Pokemon", ft.Row([ft.Container(received.control, expand=True),
-                                               t.icon_button(ft.Icons.OPEN_IN_NEW_ROUNDED,
+                                               t.icon_button("external-link",
                                                              lambda e: open_folder(os.path.expanduser(s.received)),
                                                              "Open it")]),
                    "Where the Pokemon a console sends you are saved."),
@@ -90,7 +90,7 @@ class SettingsView:
             switch("board_trace", "Record the board's serial traffic",
                    "Adds the board's counters and every serial message. For radio problems only."),
             t.card("Session records", ft.Row([t.button("Open the folder", lambda e: open_folder(str(SESSION / "captures")),
-                                                       ft.Icons.FOLDER_OUTLINED, filled=False)]),
+                                                       "folder", filled=False)]),
                    "Attach the latest file to a bug report."),
             t.card("About", ft.Row([link(label, url) for label, url in LINKS], spacing=4),
                    "pokeldn is AGPLv3. Pokemon are checked with PKHeX.Core (GPLv3)."),
@@ -100,7 +100,7 @@ class SettingsView:
         self.save("keys", value)
         ok = keys_found(value)
         self.keys_state.content = ft.Row([
-            ft.Icon(ft.Icons.CHECK_CIRCLE_ROUNDED if ok else ft.Icons.ERROR_OUTLINE_ROUNDED, size=15,
+            t.pixel_icon("checkbox-on" if ok else "warning-diamond", size=24,
                     color=t.GREEN if ok else t.RED),
             t.text("Found" if ok else "No file at this path", 12, t.GREEN if ok else t.RED)], spacing=6)
         if update:

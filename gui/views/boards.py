@@ -36,7 +36,7 @@ class BoardView:
         self.progress_text = t.text("", 12, t.MUTED)
         self.control = ft.Row([
             t.panel(ft.Column([
-                t.panel_header("Boards", t.icon_button(ft.Icons.REFRESH_ROUNDED, lambda e: self.scan(), "Scan again")),
+                t.panel_header("Boards", t.icon_button("refresh", lambda e: self.scan(), "Scan again")),
                 self.list,
             ], spacing=0, expand=True), width=270),
             ft.ListView([self.detail], padding=ft.Padding(4, 0, 4, 24), expand=True),
@@ -86,7 +86,7 @@ class BoardView:
             active = p.device == self.selected
             radio = p.device == self.app.settings.radio_port
             rows.append(ft.Container(ft.Row([
-                ft.Icon(ft.Icons.MEMORY_ROUNDED, size=18, color=t.BLUE if active else t.FAINT),
+                t.pixel_icon("cpu", size=24, color=t.BLUE if active else t.FAINT),
                 ft.Column([
                     t.text(self.name_of(p.device) or os.path.basename(p.device), 13,
                            t.TEXT if active else "#C5C7CD", weight=ft.FontWeight.W_600),
@@ -98,7 +98,7 @@ class BoardView:
                 on_click=lambda e, d=p.device: self._select(d)))
         if not rows:
             rows.append(ft.Container(ft.Column([
-                ft.Icon(ft.Icons.USB_OFF_ROUNDED, size=28, color=t.FAINT),
+                t.pixel_icon("usb", size=24, color=t.FAINT),
                 t.text("No board found", 13, t.MUTED, weight=ft.FontWeight.W_600),
                 t.text("Plug it in with a data cable. It shows up here on its own.", 12, t.FAINT,
                        text_align=ft.TextAlign.CENTER),
@@ -139,14 +139,14 @@ class BoardView:
             info("USB chip", p.bridge),
             info("Wi-Fi MAC", mac),
             info("Firmware", firmware),
-            info("Name", ft.Row([name, t.icon_button(ft.Icons.CHECK_ROUNDED, lambda e: self._rename(e, name),
+            info("Name", ft.Row([name, t.icon_button("check", lambda e: self._rename(e, name),
                                                      "Save the name")], spacing=4)),
             ft.Container(height=2),
             ft.Row([
-                t.button("Identify", self._identify, ft.Icons.LIGHTBULB_OUTLINE_ROUNDED,
+                t.button("Identify", self._identify, "lightbulb",
                          disabled=self.app.busy or not p.supported),
                 t.button("This is my radio" if not is_radio else "Radio board", self._use,
-                         ft.Icons.CHECK_CIRCLE_OUTLINE_ROUNDED if not is_radio else ft.Icons.CHECK_CIRCLE_ROUNDED,
+                         "checkbox" if not is_radio else "checkbox-on",
                          filled=False, disabled=is_radio),
             ], spacing=8),
         ], spacing=10)
@@ -219,7 +219,7 @@ class BoardView:
         image = self.firmware()
         p = self.port()
         source = ft.Row([
-            ft.Icon(ft.Icons.INVENTORY_2_OUTLINED, size=16, color=t.MUTED),
+            t.pixel_icon("package", size=24, color=t.MUTED),
             t.text(("pokeldn firmware, included with the app" if image == board.FIRMWARE else image) if image else
                    "This copy of the app has no firmware image.", 12, t.MUTED if image else t.RED, expand=True),
             ft.TextButton("Use another file", on_click=self._choose_file, style=ft.ButtonStyle(color=t.MUTED)),
@@ -229,7 +229,7 @@ class BoardView:
             t.numbered(FLASH_STEPS),
             source,
             ft.Column([self.progress, self.progress_text], spacing=6),
-            t.button("Flashing..." if flashing else "Flash", self._flash, ft.Icons.BOLT_ROUNDED,
+            t.button("Flashing..." if flashing else "Flash", self._flash, "zap",
                      disabled=self.app.busy or not image or not p or not p.supported),
         ], spacing=14), "Writes pokeldn's radio firmware to the selected board. Takes about thirty seconds.")
 

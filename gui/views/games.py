@@ -13,13 +13,13 @@ from pokeldn.app.paths import SESSION
 from gui.views.pokemon import NAME_LISTS, NamePicker, PokemonPicker
 from gui.views.widgets import Log, PathField, open_folder
 
-TOOL_ICONS = {"Trade": ft.Icons.SWAP_HORIZ_ROUNDED, "Mystery Gift": ft.Icons.CARD_GIFTCARD_OUTLINED,
-              "Console code": ft.Icons.MEMORY_OUTLINED}
+TOOL_ICONS = {"Trade": "arrows-horizontal", "Mystery Gift": "gift",
+              "Console code": "cpu"}
 EMPTY = "-"   # a dropdown option cannot carry an empty key
 
 
 def tool_icon(tool: Tool):
-    return TOOL_ICONS.get(tool.name.split(" (")[0], ft.Icons.SWAP_HORIZ_ROUNDED)
+    return TOOL_ICONS.get(tool.name.split(" (")[0], "arrows-horizontal")
 
 
 class GamesView:
@@ -30,14 +30,13 @@ class GamesView:
         self.tab = "basic"
         self.search = ""
         self.tree = ft.ListView(spacing=2, padding=ft.Padding(8, 8, 8, 8), expand=True)
-        self.title = t.text("", 13, weight=ft.FontWeight.W_600)
         self.summary = t.text("", 12, t.MUTED)
         self.body = ft.ListView(spacing=12, padding=ft.Padding(4, 8, 4, 24), expand=True)
         self.tabs = ft.Container()
         self.session = SessionPanel(app, self)
         center = ft.Column([
-            t.notch(self.title, self.tabs,
-                    t.icon_button(ft.Icons.MENU_BOOK_OUTLINED, self._open_doc, "Read the docs for this game")),
+            t.notch(self.tabs,
+                    t.icon_button("book-open", self._open_doc, "Read the docs for this game")),
             ft.Container(self.summary, alignment=ft.Alignment.CENTER, padding=ft.Padding(0, 10, 0, 2)),
             self.body,
         ], spacing=0, expand=True)
@@ -78,10 +77,9 @@ class GamesView:
         if tool is not self.tool:
             self.tab, self.search = "basic", ""
         self.game, self.tool = game, tool
-        self.title.value = f"{tool.name} · {game.name}"
         self.summary.value = tool.summary
-        self.tabs.content = t.segmented([("basic", "Basic", ft.Icons.TUNE_ROUNDED),
-                                          ("all", "All options", ft.Icons.LIST_ROUNDED)], self.tab, self._tab)
+        self.tabs.content = t.segmented([("basic", "Basic", "sliders-horizontal"),
+                                          ("all", "All options", "bulletlist")], self.tab, self._tab)
         self.render_tree()
         self.render_body()
         self.session.show(tool)
@@ -103,7 +101,7 @@ class GamesView:
                 for tool in game.tools:
                     active = tool is self.tool
                     rows.append(ft.Container(ft.Row([
-                        ft.Icon(tool_icon(tool), size=16, color=t.BLUE if active else t.FAINT),
+                        t.pixel_icon(tool_icon(tool), size=24, color=t.BLUE if active else t.FAINT),
                         t.text(tool.name, 13, t.TEXT if active else (t.FAINT if tool.unavailable else t.MUTED),
                                expand=True),
                         t.pill("Soon", t.FAINT) if tool.unavailable else ft.Container(),
@@ -194,7 +192,9 @@ class GamesView:
 
     def all_rows(self) -> list[ft.Control]:
         search = t.field(value=self.search, hint="Search every option", autofocus=False,
-                         prefix_icon=ft.Icons.SEARCH, on_change=self._search)
+                         prefix_icon=ft.Container(t.pixel_icon("search", color=t.FAINT),
+                                                  width=40, alignment=ft.Alignment.CENTER),
+                         on_change=self._search)
         note = ("Every option the entry point accepts, from its own help. Values set here are added after the "
                 "Basic fields and override them.")
         self.flag_list = ft.Column(spacing=8)
@@ -275,9 +275,9 @@ class SessionPanel:
                                         visible=False)
         self.log = Log(app.page, "The session's output appears here.")
         tools = ft.Row([
-            t.icon_button(ft.Icons.CODE_ROUNDED, self._toggle_command, "Show the command"),
-            t.icon_button(ft.Icons.CONTENT_COPY_ROUNDED, self._copy_log, "Copy the log"),
-            t.icon_button(ft.Icons.FOLDER_OUTLINED, self._open_received, "Open the Received folder"),
+            t.icon_button("code", self._toggle_command, "Show the command"),
+            t.icon_button("copy", self._copy_log, "Copy the log"),
+            t.icon_button("folder", self._open_received, "Open the Received folder"),
         ], spacing=0)
         self.control = t.panel(ft.Column([
             t.panel_header("Session", self.status),
@@ -306,16 +306,16 @@ class SessionPanel:
         running = self.app.process and self.app.process.running
         port = self.app.radio_port()
         self.board_line.content = ft.Row([
-            ft.Icon(ft.Icons.MEMORY_ROUNDED, size=16, color=t.GREEN if port else t.RED),
+            t.pixel_icon("cpu", size=24, color=t.GREEN if port else t.RED),
             t.text(f"Radio on {port}" if port else "No board selected", 12,
                    t.TEXT if port else t.RED, expand=True),
             ft.TextButton("Board", on_click=lambda e: self.app.navigate("board"),
                           style=ft.ButtonStyle(color=t.BLUE)),
         ], spacing=8)
         if running:
-            action = t.button("Stop", self._stop, ft.Icons.STOP_ROUNDED, t.RED, expand=True)
+            action = t.button("Stop", self._stop, "stop", t.RED, expand=True)
         else:
-            action = t.button("Start", self._start, ft.Icons.PLAY_ARROW_ROUNDED, expand=True,
+            action = t.button("Start", self._start, "play", expand=True,
                               disabled=self.app.busy or bool(tool.unavailable))
         self.action.content = ft.Row([action])
         try:

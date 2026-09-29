@@ -21,7 +21,7 @@ class PokemonPicker:
         self.shiny = t.switch(bool(self.value.get("shiny")), lambda e: self._set("shiny", e.control.value))
         self.nickname = t.field(value=self.value.get("nickname", ""), hint="Nickname (optional)", expand=True,
                                 on_change=lambda e: self._set("nickname", e.control.value))
-        self.build_button = t.button("Build", self._build, ft.Icons.AUTO_AWESOME_ROUNDED, disabled=True)
+        self.build_button = t.button("Build", self._build, "sparkles", disabled=True)
         self.result = ft.Container()
         self.control = ft.Column([
             ft.Row([ft.Container(self.species, expand=True),
@@ -119,7 +119,7 @@ class PokemonPicker:
             return
         legal = self.value.get("legal", False)
         lines = [ft.Row([
-            ft.Icon(ft.Icons.VERIFIED_ROUNDED if legal else ft.Icons.GPP_BAD_OUTLINED, size=16,
+            t.pixel_icon("shield" if legal else "warning-diamond", size=24,
                     color=t.GREEN if legal else t.RED),
             t.text(self.value.get("summary", ""), 13, weight=ft.FontWeight.W_600, expand=True),
             t.pill("Legal" if legal else "Not legal", t.GREEN if legal else t.RED),

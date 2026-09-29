@@ -74,7 +74,7 @@ class DocsView:
                                   expand=True)
         self.control = ft.Row([
             t.panel(ft.Column([
-                t.panel_header("Docs", t.icon_button(ft.Icons.OPEN_IN_NEW_ROUNDED,
+                t.panel_header("Docs", t.icon_button("external-link",
                                                      lambda e: self.app.page.run_task(self.app.open_url, SITE),
                                                      "Open the docs website")),
                 self.nav,
@@ -120,7 +120,7 @@ class DocsView:
         return ft.Container(ft.Row([
             t.text(title, 13 if depth == 0 else 12.5, t.TEXT if active else (t.MUTED if depth else "#C5C7CD"),
                    weight=ft.FontWeight.W_600 if depth == 0 else None, expand=True),
-            ft.Icon(ft.Icons.EXPAND_MORE_ROUNDED if expanded else ft.Icons.CHEVRON_RIGHT_ROUNDED, size=16,
+            t.pixel_icon("chevron-down" if expanded else "chevron-right", size=24,
                     color=t.FAINT) if folder else ft.Container(),
         ]), padding=ft.Padding(10 + depth * 14, 7, 8, 7), border_radius=8,
             bgcolor=t.HOVER if active else None, on_click=lambda e: self._pick(file, folder))

@@ -76,7 +76,7 @@ class PathField:
         self.picker, self.start_dir, self.mode, self.exts = picker, start_dir, mode, exts
         self.on_change = on_change
         self.field = t.field(value=value, mono=True, expand=True, on_change=lambda e: self._changed(e.control.value))
-        icon = ft.Icons.FOLDER_OPEN_OUTLINED if mode == "dir" else ft.Icons.FILE_OPEN_OUTLINED
+        icon = "folder" if mode == "dir" else "file"
         self.control = ft.Row([self.field, t.icon_button(icon, self._browse, "Browse")], spacing=6)
 
     def _changed(self, value: str) -> None:

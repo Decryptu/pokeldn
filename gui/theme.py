@@ -1,5 +1,7 @@
 import flet as ft
 
+from gui.icons import icon as pixel_icon
+
 BG = "#08090B"
 PANEL = "#111215"
 CARD = "#17181C"
@@ -70,7 +72,7 @@ def card(title: str, body: ft.Control | None = None, description: str = "",
          trailing: ft.Control | None = None, tip: str = "") -> ft.Container:
     head = [text(title, 13, weight=ft.FontWeight.W_600, expand=True)]
     if tip:
-        head.append(ft.Icon(ft.Icons.INFO_OUTLINE, size=15, color=FAINT, tooltip=tip))
+        head.append(pixel_icon("circle-info", size=24, color=FAINT, tooltip=tip))
     if trailing:
         head.append(trailing)
     rows: list[ft.Control] = [ft.Row(head, spacing=8)]
@@ -101,6 +103,8 @@ def dropdown(options: list[tuple[str, str]], value: str | None, on_select=None, 
     return ft.Dropdown(value=value, options=[ft.DropdownOption(key=k, text=t) for k, t in options],
                        on_select=on_select, dense=True, filled=True, bgcolor=FIELD, border=_border(),
                        text_size=13, expand=True,
+                       trailing_icon=pixel_icon("chevron-down", color=MUTED),
+                       selected_trailing_icon=pixel_icon("chevron-up", color=BLUE),
                        menu_style=ft.MenuStyle(bgcolor=FIELD), **kwargs)
 
 
@@ -114,11 +118,13 @@ def button(label: str, on_click=None, icon=None, color: str = BLUE, filled: bool
         overlay_color=ft.Colors.with_opacity(0.12, "#FFFFFF"),
         elevation={ft.ControlState.DISABLED: 0, ft.ControlState.DEFAULT: 6 if filled else 0},
         shadow_color=ft.Colors.with_opacity(0.6, color))
-    return ft.Button(label, icon=icon, on_click=on_click, style=style, **kwargs)
+    icon_color = "#FFFFFF" if filled else TEXT
+    return ft.Button(label, icon=pixel_icon(icon, color=icon_color) if icon else None,
+                     on_click=on_click, style=style, **kwargs)
 
 
 def icon_button(icon, on_click=None, tooltip: str = "", color: str = MUTED, **kwargs) -> ft.IconButton:
-    return ft.IconButton(icon, icon_size=18, icon_color=color, tooltip=tooltip or None,
+    return ft.IconButton(pixel_icon(icon, color=color), tooltip=tooltip or None,
                          on_click=on_click, style=ft.ButtonStyle(shape=ft.RoundedRectangleBorder(radius=8)),
                          **kwargs)
 
@@ -126,6 +132,11 @@ def icon_button(icon, on_click=None, tooltip: str = "", color: str = MUTED, **kw
 def switch(value: bool, on_change) -> ft.Switch:
     return ft.Switch(value=value, active_color=BLUE, inactive_thumb_color=MUTED, inactive_track_color=HOVER,
                      track_outline_color={ft.ControlState.DEFAULT: ft.Colors.TRANSPARENT},
+                     overlay_color={ft.ControlState.DEFAULT: ft.Colors.TRANSPARENT,
+                                    ft.ControlState.HOVERED: ft.Colors.TRANSPARENT,
+                                    ft.ControlState.PRESSED: ft.Colors.TRANSPARENT,
+                                    ft.ControlState.FOCUSED: ft.Colors.with_opacity(0.18, BLUE)},
+                     splash_radius=16,
                      on_change=on_change)
 
 
@@ -135,14 +146,14 @@ def pill(label: str, color: str = MUTED) -> ft.Container:
                         bgcolor=ft.Colors.with_opacity(0.14, color))
 
 
-def segmented(options: list[tuple[str, str, ft.IconData]], value: str, on_change) -> ft.Container:
+def segmented(options: list[tuple[str, str, str]], value: str, on_change) -> ft.Container:
     """The small pill switcher (Basic / All options)."""
     row = ft.Row(spacing=2, tight=True)
 
     def render(selected):
         row.controls = [
             ft.Container(ft.Row([
-                ft.Icon(icon, size=14, color=BLUE if key == selected else FAINT),
+                pixel_icon(icon, size=24, color=BLUE if key == selected else FAINT),
                 text(label, 12, TEXT if key == selected else MUTED, weight=ft.FontWeight.W_600),
             ], spacing=6, tight=True),
                 padding=ft.Padding(12, 6, 14, 6), border_radius=8,
@@ -167,5 +178,5 @@ def numbered(steps: list[str]) -> ft.Column:
                          border_radius=11, alignment=ft.Alignment.CENTER,
                          bgcolor=ft.Colors.with_opacity(0.14, BLUE)),
             text(step, 13, expand=True),
-        ], spacing=10, vertical_alignment=ft.CrossAxisAlignment.START)
+        ], spacing=10, vertical_alignment=ft.CrossAxisAlignment.CENTER)
         for i, step in enumerate(steps, 1)], spacing=10)
