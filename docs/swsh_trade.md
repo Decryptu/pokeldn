@@ -67,6 +67,15 @@ rides the reliable window of mesh port 1, is sent once, and one transport ack sa
 French Sword 1.3.2 (over the ESP32 board) and an emulated Shield 1.3.2 (over LAN) each joined,
 traded and saved. The details below come from a trade between two emulated Shields.
 
+The host builds a station advertisement with a fresh network id, device id and account uid. On 0x84
+it acknowledges the joiner's three snapshot fragments, rewrites that live snapshot with its trainer
+identity and the `--offer-file` PK8, then sends the result on port 0. An emulated Shield joined,
+traded Minisange for PKCAMP, and saved PKCAMP in party slot 2; the saved `main` hash passed. A retail
+Sword joined over the ESP32 board, completed the confirmation ladder and received PKCAMP without an
+error. The host wrote the console's offered PK8. The advertisement and live snapshot were each
+checked separately on the emulator before the combined trade. `--advert FILE` and `--snapshot FILE`
+keep the saved-record path available for comparison.
+
 The station handshake, host side:
 
     joiner -> host   connection request, [1] a random byte per request

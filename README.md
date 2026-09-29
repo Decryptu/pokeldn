@@ -213,16 +213,16 @@ Console: Y-Comm → Link Trade → local communication, A on both messages, wait
 POKELDN_RADIO=esp32:auto ./.venv/bin/python bin/swsh_connect.py --keys PROD_KEYS \
   --preset trade --offer-slot 1 [--offer-file your.pk8]
 
-# or host, and let the console join: needs the console's advertisement and a saved snapshot
+# or host, and let the console join: its snapshot is taken from this trade
 POKELDN_RADIO=esp32:auto ./.venv/bin/python bin/swsh_host.py --keys PROD_KEYS \
-  --advert scratchpad/swsh_net_facts.json --snapshot scratchpad/swsh_snapshot.bin \
-  --scene-id 60001 --channel 6 --seconds 900
+  --offer-file your.pk8 --fresh-pid --received received.pk8 --channel 6 --seconds 900
 ```
 
-`swsh_net_facts.json` is what `bin/swsh_join.py --scan-only` writes (the advertisement). A saved
-snapshot comes from `--preset capture` and `tools/switch/swsh_snapshot.py`. When hosting, the console
-joins from Y-Comm → Link Trade → trade, after A on both messages that follow; `--received FILE`
-saves what it sends, `--code 12345678` hosts for a Link Code search. Details: [Trading](docs/swsh_trade.md).
+The host builds its own station advertisement and rewrites the joining console's live snapshot.
+When hosting, the console joins from Y-Comm → Link Trade → trade, after A on both messages that
+follow; `--received FILE` saves what it sends, `--code 12345678` hosts for a Link Code search.
+`--advert` and `--snapshot` still accept saved records for comparison. Details:
+[Trading](docs/swsh_trade.md).
 
 Mystery Gift needs no session; the gift screen scans and a distributor advertises the card. Console:
 Mystery Gift → receive a gift → via local wireless.

@@ -145,10 +145,12 @@ class HostTrade:
               "confirm", "saving", "migrate", "done")
 
     def __init__(self, self_id, peer_id, snapshot, offer_pk8, send, send_broadcast, send_mesh,
-                 log=print, end_delay=END_DELAY, auto_accept=True, record=None, migrate=False):
+                 log=print, end_delay=END_DELAY, auto_accept=True, record=None, migrate=False,
+                 snapshot_builder=None):
         self.self_id, self.peer_id = self_id, peer_id
-        self.snapshot = bytes(snapshot)
-        self.offer_pk8 = bytes(offer_pk8)
+        self.snapshot = bytes(snapshot) if snapshot is not None else None
+        self.offer_pk8 = bytes(offer_pk8) if offer_pk8 is not None else None
+        self.snapshot_builder = snapshot_builder
         self._send, self._send_broadcast, self._send_mesh = send, send_broadcast, send_mesh
         self.log, self.record = log, record or (lambda **row: None)
         self.end_delay, self.auto_accept, self.migrate = end_delay, auto_accept, migrate
@@ -302,6 +304,10 @@ class HostTrade:
 
     def _stage_snapshot(self, now):
         if self.snap_messages is None:
+            if self.snapshot is None:
+                if self.peer_snapshot is None:
+                    return
+                self.snapshot, self.offer_pk8 = self.snapshot_builder(self.peer_snapshot)
             self.snap_messages = self.snap_out.transfer(self.snapshot)[1:]
             self.log(f"[trade] -> our snapshot, {len(self.snap_messages)} fragments")
         if now - self.snap_last >= BROADCAST_PERIOD / 5:

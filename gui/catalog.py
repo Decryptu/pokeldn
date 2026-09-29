@@ -164,9 +164,6 @@ LGPE = Game("lgpe", "Let's Go Pikachu & Eevee", "LGPE", "lgpe.md", (
          doc="lgpe_session.md"),
 ))
 
-SWSH_ADVERT = ("Hosting needs your console's own advertisement, which the app cannot record yet. "
-               "Trade works with the console hosting.")
-
 SWSH = Game("swsh", "Sword & Shield", "SwSh", "swsh.md", (
     Tool("swsh-gift", "Mystery Gift", "bin/swsh_gift_host.py",
          "Advertise a Wonder Card. Nothing joins; the console reads it off the air.",
@@ -205,8 +202,16 @@ SWSH = Game("swsh", "Sword & Shield", "SwSh", "swsh.md", (
                 "--save-offered", "{received}/swsh-{stamp}.pk8"),
          doc="swsh_trade.md"),
     Tool("swsh-host", "Trade (pokeldn hosts)", "bin/swsh_host.py", "Host a Link Trade the console joins.",
-         ("Y-Comm, Link Trade, trade; press A on both messages.",),
-         doc="swsh_trade.md", unavailable=SWSH_ADVERT),
+         ("Start the host and wait for the network to come up.",
+          "Y-Comm, Link Trade, local communication; press A on both messages, then wait in the overworld.",
+          "Choose a Pokemon and confirm when PkCamp appears."),
+         (offer("--offer-file"), FRESH_PID,
+          Field("--code", "Link Code", help="Eight digits. Empty for a plain trade."),
+          Field("--channel", "Channel", "choice", default="6", choices=CHANNELS),
+          Field("--seconds", "Seconds", "number", default="900")),
+         fixed=("--player-name", "{ot}", "--trainer-name", "{ot}",
+                "--trainer-tid", "{tid}", "--trainer-sid", "{sid}",
+                "--received", "{received}/swsh-{stamp}.pk8"), doc="swsh_trade.md"),
 ))
 
 BDSP_ROOM = "Pokemon Center 2F, left attendant, plain Yes (no password, not the group option)."

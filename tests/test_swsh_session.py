@@ -62,3 +62,54 @@ def test_the_host_rebuilds_a_retail_advert_under_a_link_code():
                                      session_param=struct.unpack("<I", adv[12:16])[0], code="12345678")
     assert rebuilt == adv
     assert swsh_host.build_advert(adv, network_id=adv[0:4])[4:8] == bytes(4)
+
+
+def test_the_host_builds_a_station_advert_without_a_saved_console_record():
+    import swsh_host
+    from pokeldn.swsh import beacon, trade_payload
+
+    advert = swsh_host.build_advert(network_id=bytes.fromhex("0102ffff"),
+                                   session_param=0x12345678, player_name="PkCamp")
+    record = beacon.decode(advert)
+    assert advert[:4] == bytes.fromhex("0102ffff")
+    assert advert[4:8] == bytes(4)
+    assert record["stored_crc"] == record["computed_crc"]
+    assert record["network_id"] == beacon.NETWORK_ID
+    assert advert[0x1C:0x1F] == bytes((0, 0, 1))
+    profile = advert[0x1F:0x1F + trade_payload.PROFILE_LENGTH]
+    assert any(profile[:16]) and any(profile[16:32])
+    assert profile[trade_payload.TAIL_NAME_OFFSET:
+                   trade_payload.TAIL_NAME_OFFSET + 12] == "PkCamp".encode("utf-16-le")
+    assert profile[trade_payload.TAIL_ACTIVITY] == 13
+
+
+def test_the_host_uses_the_live_snapshot_and_replaces_the_offered_slot(tmp_path, monkeypatch):
+    import swsh_host
+    from test_swsh_trade_payload import a_payload
+    from pokeldn import gen8
+    from pokeldn.swsh import pokemon, trade_payload
+
+    peer = a_payload(count=2)
+    chosen = peer[gen8.SIZE_PARTY:2 * gen8.SIZE_PARTY]
+    fresh = gen8.fresh_identity
+    monkeypatch.setattr(swsh_host.gen8, "fresh_identity",
+                        lambda plain: fresh(plain, rand=lambda n: bytes(range(1, n + 1))))
+    offer_path = tmp_path / "chosen.pk8"
+    offer_path.write_bytes(chosen[:gen8.SIZE_STORED])
+    args = swsh_host.build_parser().parse_args(["--offer-file", str(offer_path),
+                                                "--trainer-name", "PkCamp", "--trainer-tid", "12345",
+                                                "--trainer-sid", "54321", "--fresh-pid"])
+    advert = swsh_host.build_advert(player_name="PkCamp")
+    snapshot, offer = swsh_host.prepare_snapshot(peer, args, advert)
+    fields = trade_payload.read(snapshot)
+    profile = trade_payload.read_tail(snapshot)
+    assert fields["trainer_name"] == fields["card_name"] == "PkCamp"
+    assert (fields["trainer_id"], fields["secret_id"]) == (12345, 54321)
+    assert fields["party_count"] == 2
+    assert fields["party"][1]["species"] == trade_payload.read(peer)["party"][1]["species"]
+    assert offer == snapshot[:gen8.SIZE_PARTY]
+    assert pokemon.read(offer)["species"] == pokemon.read(chosen)["species"]
+    assert pokemon.read(offer)["ot_name"] == "PkCamp"
+    assert pokemon.read(offer)["pid"] != pokemon.read(chosen)["pid"]
+    assert profile["device_id"] == advert[0x1F:0x2F]
+    assert profile["account_uid"] == advert[0x2F:0x3F]
