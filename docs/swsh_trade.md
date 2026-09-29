@@ -511,24 +511,19 @@ lookup.
 ## The command line of a completed trade
 
 `swsh_connect.py --preset trade` carries the flags that completed a trade against a French Sword
-1.3.2; a flag given after it overrides the preset. The party snapshot comes from an earlier session
-against the same console, in three steps. Let the console search for a local Link Trade (Y-Comm,
-Link Trade, local) and run:
+1.3.2; a flag given after it overrides the preset. Let the console search for a local Link Trade
+(Y-Comm, Link Trade, local, A on both messages) and run:
 
     POKELDN_RADIO=esp32:auto ./.venv/bin/python -u bin/swsh_connect.py --keys PROD_KEYS \
-        --preset capture --capture scratchpad/swsh_first.jsonl
-    ./.venv/bin/python tools/switch/swsh_snapshot.py scratchpad/swsh_first.jsonl scratchpad/swsh_snapshot.bin
+        --preset trade --save-offered offered.pk8 --capture trade.jsonl
 
-The first command stops at the snapshot receive stage and sends no party. The second extracts the
-3456-byte 0x84 payload once the log shows fragments 0, 1 and 2. `swsh_join.py --scan-only` records
-only the advertisement, not the snapshot. Then search again and trade; the snapshot's identity is
-rewritten to the client's trainer before it is sent back:
+The snapshot sent back is the console's own from the same session (`--send-snapshot live`, the
+preset's default): the three 0x84 fragments are reassembled as they arrive, the trainer name, TID and
+SID are rewritten to `--snapshot-name/-tid/-sid`, and it goes out 0.13 s after the console's. A
+retail Sword acked it and traded, with no earlier capture session. `--send-snapshot FILE` sends a
+saved 3456-byte payload instead (`--preset capture`, then `tools/switch/swsh_snapshot.py`, writes one).
 
-    POKELDN_RADIO=esp32:auto ./.venv/bin/python -u bin/swsh_connect.py --keys PROD_KEYS \
-        --preset trade --send-snapshot scratchpad/swsh_snapshot.bin --save-offered offered.pk8 \
-        --capture trade.jsonl
-
-`--offer-file FILE` in place of `--offer-slot` puts a `.pk8` on the wire. On a Linux card, drop
+`--offer-file FILE` puts a `.pk8` in the offered party slot, its OT moved to the snapshot's trainer. On a Linux card, drop
 `POKELDN_RADIO` and prime the kernel's BSS table with `iw dev IFACE scan` before the run
 ([The cartridge and the session](swsh_session.md)).
 

@@ -14,7 +14,8 @@ from gui.paths import POKEMON, ROOT
 HERE = os.path.join(ROOT, "gui", "pkhex")
 EXE = "pokeldn-pkhex.exe" if sys.platform == "win32" else "pokeldn-pkhex"
 # The file each game's launchers take as an offer.
-EXTENSIONS = {"frlg": "pk3", "lgpe": "pb7", "bdsp": "pb8", "pla": "pa8", "sv": "pk9", "za": "bin"}
+EXTENSIONS = {"frlg": "pk3", "lgpe": "pb7", "bdsp": "pb8", "swsh": "pk8", "pla": "pa8", "sv": "pk9",
+              "za": "bin"}
 ZA_OFFER_HEADER = bytes.fromhex("0101b90300bc815801")   # SelectPokemon, round 0 (docs/za.md)
 
 

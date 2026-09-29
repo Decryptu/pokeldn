@@ -206,29 +206,23 @@ screen. See [Let's Go](docs/lgpe.md).
 
 ### Sword and Shield
 
-Both directions need a **snapshot** of the console's party, captured once from the same console.
-Console: Y-Comm → Link Trade → local communication, wait on the search screen.
+Console: Y-Comm → Link Trade → local communication, A on both messages, wait on the search screen.
 
 ```bash
-# 1. capture the snapshot (sends no party), 2. extract it
+# join the console's session and trade: the console's own party snapshot is sent back, rewritten
 POKELDN_RADIO=esp32:auto ./.venv/bin/python bin/swsh_connect.py --keys PROD_KEYS \
-  --preset capture --capture scratchpad/swsh_first.jsonl
-./.venv/bin/python tools/switch/swsh_snapshot.py scratchpad/swsh_first.jsonl scratchpad/swsh_snapshot.bin
+  --preset trade --offer-slot 1 [--offer-file your.pk8]
 
-# 3a. join the console's session and trade (search again first)
-POKELDN_RADIO=esp32:auto ./.venv/bin/python bin/swsh_connect.py --keys PROD_KEYS \
-  --preset trade --send-snapshot scratchpad/swsh_snapshot.bin --offer-slot 1
-
-# 3b. or host, and let the console join
+# or host, and let the console join: needs the console's advertisement and a saved snapshot
 POKELDN_RADIO=esp32:auto ./.venv/bin/python bin/swsh_host.py --keys PROD_KEYS \
   --advert scratchpad/swsh_net_facts.json --snapshot scratchpad/swsh_snapshot.bin \
   --scene-id 60001 --channel 6 --seconds 900
 ```
 
-`swsh_net_facts.json` is what `bin/swsh_join.py --scan-only` writes (the advertisement, not a
-snapshot). `--offer-slot 1 --offer-file your.pk8` sends a PKHeX `.pk8`. For 3b the console joins from
-Y-Comm → Link Trade → trade, after A on both messages that follow; `--received FILE` saves what it
-sends, `--code 12345678` hosts for a Link Code search. Details: [Trading](docs/swsh_trade.md).
+`swsh_net_facts.json` is what `bin/swsh_join.py --scan-only` writes (the advertisement). A saved
+snapshot comes from `--preset capture` and `tools/switch/swsh_snapshot.py`. When hosting, the console
+joins from Y-Comm → Link Trade → trade, after A on both messages that follow; `--received FILE`
+saves what it sends, `--code 12345678` hosts for a Link Code search. Details: [Trading](docs/swsh_trade.md).
 
 Mystery Gift needs no session; the gift screen scans and a distributor advertises the card. Console:
 Mystery Gift → receive a gift → via local wireless.

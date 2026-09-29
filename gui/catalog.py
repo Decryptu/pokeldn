@@ -164,8 +164,8 @@ LGPE = Game("lgpe", "Let's Go Pikachu & Eevee", "LGPE", "lgpe.md", (
          doc="lgpe_session.md"),
 ))
 
-SWSH_SNAPSHOT = ("Needs a party snapshot from your own console, which the app cannot take yet. "
-                 "Mystery Gift works.")
+SWSH_ADVERT = ("Hosting needs your console's own advertisement, which the app cannot record yet. "
+               "Trade works with the console hosting.")
 
 SWSH = Game("swsh", "Sword & Shield", "SwSh", "swsh.md", (
     Tool("swsh-gift", "Mystery Gift", "bin/swsh_gift_host.py",
@@ -194,11 +194,19 @@ SWSH = Game("swsh", "Sword & Shield", "SwSh", "swsh.md", (
           Field("--seconds", "Seconds", "number", default="300")),
          fixed=("--no-validate",), doc="swsh_gift.md"),
     Tool("swsh-join", "Trade", "bin/swsh_connect.py", "Join the console's Link Trade search.",
-         ("Y-Comm, Link Trade, local communication; wait on the search screen.",),
-         doc="swsh_trade.md", unavailable=SWSH_SNAPSHOT),
+         ("Y-Comm, Link Trade, local communication, no code; press A on both messages.",
+          "Start the joiner while the console searches.",
+          "PkCamp appears on the trade screen: choose a Pokemon and confirm."),
+         (offer("--offer-file", required=False,
+                help="Pick a species; PKHeX builds a legal one. Empty offers your own first party "
+                     "Pokemon back, renamed PKCAMP."),
+          Field("--hold", "Seconds", "number", default="240")),
+         fixed=("--preset", "trade", "--send-snapshot", "live",
+                "--save-offered", "{received}/swsh-{stamp}.pk8"),
+         doc="swsh_trade.md"),
     Tool("swsh-host", "Trade (pokeldn hosts)", "bin/swsh_host.py", "Host a Link Trade the console joins.",
          ("Y-Comm, Link Trade, trade; press A on both messages.",),
-         doc="swsh_trade.md", unavailable=SWSH_SNAPSHOT),
+         doc="swsh_trade.md", unavailable=SWSH_ADVERT),
 ))
 
 BDSP_ROOM = "Pokemon Center 2F, left attendant, plain Yes (no password, not the group option)."

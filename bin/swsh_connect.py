@@ -160,6 +160,7 @@ async def main_async(args):
               "their_payload": None, "ack_by_proto": {}, "said_by_proto": {},
               "seen_by_proto": {}, "answer_queue": [],
               "snapshot_in": 0, "snapshot_total": None, "snapshot_indexes": set(),
+              "snapshot_bodies": {},
               "their_sequence": None, "snapshot_out": 0, "snapshot_acked": None,
               "snapshot_acks_out": 0, "snapshot_rx": broadcast4.Receiver(),
               "snapshot_fragments": 0, "snapshot_done_sent": False, "snapshot_seq": 0,
@@ -844,6 +845,7 @@ async def main_async(args):
                                   f"{got['total']} bytes in chunks of {got['chunk_size']}")
                         if got["is_data"] and got["index"] not in st["snapshot_indexes"]:
                             st["snapshot_indexes"].add(got["index"])
+                            st["snapshot_bodies"][got["index"]] = got["body"]
                             print(f"[rx]     fragment {got['index']} of the snapshot, "
                                   f"{len(got['body'])} B on the wire")
                         if got["kind"] == broadcast4.KIND_ACK:
@@ -1168,7 +1170,18 @@ async def main_async(args):
             The console sends nothing past its own snapshot until it receives one."""
             if args.send_snapshot is None:
                 return
-            payload = open(args.send_snapshot, "rb").read()
+            if args.send_snapshot == "live":
+                deadline = time.monotonic() + args.send_seconds + args.send_after + args.send_wait
+                wanted = range(trade_payload.FRAGMENT_COUNT)
+                while not all(i in st["snapshot_bodies"] for i in wanted):
+                    if time.monotonic() > deadline:
+                        print("\n[tx] the console never sent its whole snapshot; ours stayed home")
+                        return
+                    await trio.sleep(0.05)
+                payload = trade_payload.reassemble([st["snapshot_bodies"][i] for i in wanted])
+                print(f"[tx] the console's own snapshot, {len(payload)} bytes, is ours to rewrite")
+            else:
+                payload = open(args.send_snapshot, "rb").read()
             if len(payload) != trade_payload.PAYLOAD_LENGTH:
                 payload = trade_payload.inflate_short(payload)
             was = trade_payload.read(payload)["trainer_name"]
@@ -1990,10 +2003,12 @@ def build_parser():
                     help="ACK the console's 0x84 fragments (kind 0x21, a contiguous base and a "
                          "bitmask). Nothing here has ever acked this protocol, which is why the "
                          "console retransmits one snapshot 19142 times and never moves on")
-    ap.add_argument("--send-snapshot", default=None, metavar="FILE",
+    ap.add_argument("--send-snapshot", default=None, metavar="FILE|live",
                     help="a 3456-byte trade snapshot to send back on 0x84 once the console sends "
-                         "its own. A short session-58 payload is inflated first. The identity is "
-                         "REWRITTEN by --snapshot-name/-tid/-sid so we are not the console")
+                         "its own, or live (the default under --preset trade) for the console's own "
+                         "from this session. A short "
+                         "2965-byte payload is inflated first. The identity is rewritten by "
+                         "--snapshot-name/-tid/-sid")
     ap.add_argument("--snapshot-name", default="PkCamp")
     ap.add_argument("--snapshot-tid", type=lambda s: int(s, 0), default=12345)
     ap.add_argument("--snapshot-sid", type=lambda s: int(s, 0), default=54321)
@@ -2032,7 +2047,7 @@ def main(argv=None):
         argv = shlex.split(PRESETS[preset]) + argv
     args = build_parser().parse_args(argv)
     if preset == "trade" and not args.send_snapshot:
-        build_parser().error("--preset trade needs --send-snapshot FILE")
+        args.send_snapshot = "live"
     args.connect_station_first = int(_expand(args.connect_station)[0], 0)
     try:
         offer_edits(args)
