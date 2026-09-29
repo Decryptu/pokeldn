@@ -1,14 +1,9 @@
 #!/usr/bin/env python3
-"""Hold an LDN seat in a BDSP session and SPEAK to the console on Pia's port instead of listening.
+"""Hold an LDN seat in a BDSP session and speak to the console on Pia's port.
 
-BDSP's Pia session key depends on state the console never advertises, so passive decryption is the
-wrong goal; the way in is joining and speaking. This is the first step of that: take the seat
-we can take, then find out whether the console answers anything we send.
-
-What it sends is deliberately minimal and UNENCRYPTED (the version byte's 0x80 bit clear). We cannot
-produce a valid tag, so an encrypted packet would be rejected on the MAC before it was even parsed;
-an unencrypted one at least reaches the header check that main.bin 0x01681ee4 performs. A reply, an
-error, or a disconnect are all evidence. Silence is evidence too, and is the expected first outcome.
+The probes are UNENCRYPTED (version byte bit 0x80 clear): with no valid tag an encrypted packet dies
+on the MAC, while an unencrypted one reaches the header check at main.bin 0x01681ee4. A reply, an
+error, a disconnect and silence are all evidence.
 """
 import argparse, os, socket, struct, sys, time
 
@@ -36,7 +31,7 @@ def cleanup():
 
 
 def make_socket(ifname, our_ip):
-    from pokeldn.ldn import userspace_ip  # no kernel interface (ESP32 on macOS)
+    from pokeldn.ldn import userspace_ip  # no kernel interface on the ESP32
     if (user := userspace_ip.udp_socket(ifname, PIA_PORT)) is not None:
         user.setblocking(False)
         return user
@@ -53,7 +48,7 @@ def make_socket(ifname, our_ip):
 
 
 def probes(our_var, seen_src):
-    """The packets worth sending, cheapest hypothesis first."""
+    """Cheapest hypothesis first."""
     out = []
     h = PiaHeader5(dst_var=0, src_var=our_var, packet_id=0, encrypted=False)
     out.append(("header-only, dst=0, plaintext", h.pack()))
@@ -112,12 +107,11 @@ async def main_async(args):
                     print(f"[rx] {addr[0]} {len(data)}B non-Pia {data[:16].hex()}")
                     continue
                 if addr[0] == our_ip:
-                    continue          # our own broadcast, looped back - not an answer
+                    continue
                 h = PiaHeader5.parse(data)
                 if seen_src is None:
                     seen_src = h.src_var
                     print(f"[rx] first Pia packet from {addr[0]}: {h}")
-                # a packet addressed to a non-zero destination is the interesting one
                 if h.dst_var != 0:
                     rx["unicast"] += 1
                     print(f"[rx] *** ADDRESSED PACKET from {addr[0]}: {h}")

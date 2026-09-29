@@ -1,21 +1,12 @@
 #!/usr/bin/env python3
-"""frlg_trade_join - FireRed/LeafGreen trade simulator (JOINER) over the LDN bridge.
+"""FireRed/LeafGreen trade joiner: the wireless CHILD of a real console's link session.
 
-Joins a real FRLG console's link session as the wireless CHILD and performs 1..6 sequential trades,
-injecting chosen .pk3 mons and saving each received mon as a .pk3.
+Performs 1..6 sequential trades (--trades), offering the party .pk3/.ek3 slots --slots picks and
+saving each received mon as a .pk3; then leaves by the trade-menu CANCEL [trade.c:2049].
 
-Supply 1..6 party .pk3/.ek3 files (gPlayerParty slots 0..5). --trades N (1..6, default 1) sets how
-many sequential trades to perform; --slots picks which OUR slot is offered each round (default:
-ascending distinct slots from --slot, or [0..N-1] for the full-party swap). After the Nth trade the
-sim leaves by selecting the trade-menu CANCEL option (REQUEST_CANCEL 0xEEAA), a graceful
-cancel-to-leave [trade.c:2049].
-
-LIVE (needs the Switch, root, and the ldn/trio/netlink deps):
     sudo -E python3 bin/frlg_trade_join.py --live --password PASS dummy.pk3 trademon.pk3 -o received.pk3
     sudo -E python3 bin/frlg_trade_join.py --live --trades 6 a.pk3 b.pk3 c.pk3 d.pk3 e.pk3 f.pk3
-
-OFFLINE self-check (replays a captured host stream through the full RX stack - no Switch):
-    python3 bin/frlg_trade_join.py --replay capture.jsonl dummy.pk3 trademon.pk3
+    python3 bin/frlg_trade_join.py --replay capture.jsonl dummy.pk3 trademon.pk3   # offline RX stack
 """
 
 import argparse
@@ -24,7 +15,6 @@ import signal
 import sys
 import time
 
-# This launcher lives in bin/; the pokeldn package is at the repo root beside it.
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 from pokeldn import config as configmod  # noqa
 from pokeldn.frlg.link import sim as simmod, trade  # noqa
@@ -57,8 +47,7 @@ def make_engine(run_config, lg, *, default_anim_delay=None):
 
 
 def _paced_sleep(s, period, slice_s=0.002):
-    """Flushes the TX pacer and polls RX every 2ms so PACE_MIN_GAP_MS / REPLY_HOLDOFF_MS hold at that
-    resolution rather than once per tick."""
+    """Polls RX every 2 ms so PACE_MIN_GAP_MS / REPLY_HOLDOFF_MS hold at that resolution."""
     end = time.monotonic() + period
     while True:
         now = time.monotonic()
@@ -70,12 +59,12 @@ def _paced_sleep(s, period, slice_s=0.002):
             s.flush_paced()
 
 
-# Going silent before the host leads the walk-out trips its keepalive watchdog (LinkRfu_FatalError); err long.
+# Going silent before the host leads the walk-out trips its keepalive watchdog (LinkRfu_FatalError);
+# err long.
 LEAVE_TAIL_S = 120.0
 
 
 def _live_connect(run_config, lg):
-    """Brings up the LDN transport, the Pia connection manager, the engine and the Sim."""
     plan, ldn, options = run_config.plan, run_config.ldn, run_config.role
     profile = run_config.profile
     lg(f"[live] scanning for FRLG LDN network (nickname={profile.name})...")
@@ -95,7 +84,8 @@ def _live_connect(run_config, lg):
         our_ip=t.our_ip, host_ip=t.host_ip, player_name=profile.name,
         random4=os.urandom(4), log=lg)
     lstate = lsmod.LinkState(self_id=options.self_id, log=lg)
-    # Any nonzero connect id works; a FRESH id per run avoids the host's ~40s lost-id re-join lockout.
+    # Any nonzero connect id works; a fresh one per run avoids the host's ~40 s lost-id re-join
+    # lockout.
     if options.connect_id:
         connect_id = options.connect_id
     else:
@@ -119,19 +109,17 @@ def _live_connect(run_config, lg):
 
 
 class _LiveJoiner:
-    """The live joiner loop's shared state: the wired-up objects plus the once-only announce flags."""
-
     def __init__(self, run_config, lg, t, engine, s, conn, lstate):
         self.run_config, self.lg = run_config, lg
         self.t, self.engine, self.s, self.conn, self.lstate = t, engine, s, conn, lstate
-        # sit() is gated on engine.established: SendKeysToRfu only emits once gReceivedRemoteLinkPlayers is set
-        # [link_rfu_2.c:1069], and a READY before that faults the host's childSendCmdId check.
+        # Gated on engine.established: SendKeysToRfu emits only once gReceivedRemoteLinkPlayers is
+        # set [link_rfu_2.c:1069]; an earlier READY faults the host's childSendCmdId check.
         self.sat = self.walking = self.exited = False
         self.connect_announced = self.responded_exit = False
         self.announced_cancel = self.announced_close = False
         self.announced_entry = self.announced_menu = False
         self.announced_established = False
-        self.saved_commits = 0  # received mons already written to disk (save AT COMMIT, not just run-end)
+        self.saved_commits = 0  # saved at commit, not only at run end
         self.connect_ticks = 0
         self.ni_wait_ticks = 0
         self.entry_ticks = 0
@@ -174,7 +162,7 @@ class _LiveJoiner:
                 raise KeyboardInterrupt
 
     def save_at_commit(self):
-        # Save at commit: the post-trade tail can stall or be interrupted and the mon is already valid.
+        # The post-trade tail can stall or be interrupted; the mon is already valid.
         engine, lg = self.engine, self.lg
         if engine.commits > self.saved_commits:
             self.saved_commits = engine.commits
@@ -204,8 +192,8 @@ class _LiveJoiner:
         if not s.connected:
             self.connect_ticks += 1
             if self.connect_ticks % 120 == 0:
-                # No proto 13 means the console never sent its Session join (a wedged host session: close
-                # and reopen the game); proto 13 with conn not OK is a handshake we mishandle.
+                # No proto 13: the console never sent its Session join (a wedged host session:
+                # reopen the game). Proto 13 with conn not OK: a handshake we mishandle.
                 lg.info(f"awaiting host connection: {self.connect_ticks}f, conn={self.conn.state}, "
                         f"host_var={'learned' if s._learned else 'unseen'}, "
                         f"rx_ok={s.rx_count} rx_decryptfail={s.rx_fail} "
@@ -260,15 +248,14 @@ class _LiveJoiner:
                         f"rx_ok={s.rx_count} tx={s.tx_count} {self.rates()}")
 
     def handle_seating(self):
-        """Announcements plus the walk/seat gating, in the order the entry sequence reaches them."""
         engine, lg = self.engine, self.lg
         if not self.announced_established and engine.established:
             self.announced_established = True
             lg("[live] RFU link ESTABLISHED (gReceivedRemoteLinkPlayers: both LinkPlayer "
                   "blocks exchanged) - held keys + sit are now armed.")
-        # Walk as soon as the host is in the room: the console leader sends only EMPTY held keys in the
-        # trade room and waits for the CHILD's READY, so waiting for host_ready deadlocks. READY fires
-        # only at the chair; from the doorway it faults the host's cable-seat FSM.
+        # Walk once the host is in the room: the leader sends only EMPTY held keys and waits for the
+        # CHILD's READY. READY fires only at the chair; from the doorway it faults the host's
+        # cable-seat FSM.
         if not self.walking and engine.host_in_seat:
             lg("[live] host is in the trade room - walking to the RIGHT seat.")
             self.lstate.walk_to_seat()
@@ -308,9 +295,9 @@ class _LiveJoiner:
     def handle_exit(self):
         """True when the walk-out is over (host CLOSE answered, or the leave tail elapsed)."""
         engine, lg = self.engine, self.lg
-        # Let the HOST lead the exit: a proactive EXIT_ROOM hits it mid-CB2_ReturnToFieldFromMultiplayer
-        # -> LinkRfu_FatalError. Its walk-out is mutual: it blocks at KeyInterCB_WaitForPlayersToExit
-        # until we answer with OUR EXIT_ROOM, so keep the link alive and answer reactively below.
+        # Let the HOST lead the exit: a proactive EXIT_ROOM mid-CB2_ReturnToFieldFromMultiplayer ->
+        # LinkRfu_FatalError. It blocks at KeyInterCB_WaitForPlayersToExit until our EXIT_ROOM, so
+        # keep the link alive and answer reactively.
         if engine.done and not self.exited:
             lg("[live] trade(s) complete - returning to the overworld; keeping the link ALIVE "
                   "(held-keys keepalive + barrier) and letting the HOST lead the walk-out. Will answer "
@@ -354,7 +341,7 @@ def run_live(run_config, lg):
             _paced_sleep(s, period)
     finally:
         signal.signal(signal.SIGINT, old_sigint)
-        s.close()          # flush the --capture .jsonl
+        s.close()
         t.stop()
         lg.info("Link closed.")
     return engine
@@ -367,8 +354,8 @@ def run_replay(run_config, lg):
     if not t.ssid:
         sys.exit("capture has no SSID (predates SSID logging) - cannot decrypt")
     pc = cryptomod.PiaCrypto(t.ssid)
-    # A finite capture would not outlast the 1935-frame anim; the early-arrival guard keeps READY_FINISH
-    # before commit for any value.
+    # A finite capture would not outlast the 1935-frame anim; the early-arrival guard keeps
+    # READY_FINISH before commit for any value.
     engine = make_engine(run_config, lg, default_anim_delay=5)
     s = simmod.Sim(t, pc, engine, t.our_ip, t.host_ip, log=lg)
     while not t.drained and not engine.done:

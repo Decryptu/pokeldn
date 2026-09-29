@@ -1,38 +1,12 @@
 #!/usr/bin/env python3
-"""Answer the console. Take the LDN seat in a BDSP session and send Pia's update-session ack.
+"""Take the LDN seat in a BDSP session and send Pia's Local Protocol update-session ack.
 
-A capture of an idle Shining Pearl host is one Local Protocol *update session*, rebroadcast
-every 100 ms - 674 of them, sequence id 4 in every one, with us already listed at seat 1. A host
-repeats that until every station acknowledges it, so it is one console asking the same question
-674 times and never being answered. This sends the answer.
+An idle host rebroadcasts its update session every 100 ms until every station acknowledges it,
+so the pass signal is that stream stopping for --quiet-for; the console shows nothing. The ack
+is sent in phases (broadcast, then unicast to the host), each timestamped, so one run separates
+them. The ack's layout and its addresses: docs/pia.md, docs/bdsp_session.md.
 
-THE PASS SIGNAL NEEDS NOTHING ON SCREEN, which is the point: the console shows nothing when we
-join, so "the rebroadcast stopped" is the only readable outcome this run can have. A gap longer
-than `--quiet-for` in a stream that has been arriving every 100 ms means the console accepted a
-packet from us.
-
-What the ack is made of is read off the console's own code and its own packets, not guessed:
-
-  the 20 bytes      main.bin 0x016bc0f4 serialises {1, 0x21, size=0, six zeros, pad, seq, zero},
-                    and the constructor at 0x016bc0c8 leaves the size field at 0 for an ack
-  message flags     0x11. LocalProtocol has exactly ONE send path (0x016af22c) and all four of its
-                    message types reach it with the same options, so an ack is framed like the
-                    update session it answers - which reads 0x11 on the wire
-  destination       a bitmap of `1 << station_index` (0x0159a15c builds it), and 0 for broadcast,
-                    which is what the console's own update session carries
-  presence byte     0x7F, off the capture. Only bits 1/2/4/8 name a field; the console sets three
-                    more that name nothing
-  who the ack is    the sender's ADDRESS. 0x016aec94 walks the nine node slots comparing a 16-byte
-  attributed to     address and a port - not the variable id, not the constant id. So our own
-                    source variable id, which the console has never been told, cannot be what
-                    decides whether this lands
-
-STILL NOT READ OFF THE CONSOLE, and why this sends in phases: whether a client's LocalProtocol
-broadcasts its ack the way the host broadcasts the question, or unicasts it to the host with the
-host's variable id in the packet header. Each phase is timestamped and the rebroadcast either
-stops during one of them or it does not, so a single run separates them.
-
-docs/bdsp_session.md. Never pass --verbose to a live run; use --capture.
+Never pass --verbose to a live run; use --capture.
 """
 import argparse, json, os, socket, struct, sys, time
 
@@ -61,7 +35,7 @@ def cleanup():
 
 
 def make_socket(ifname):
-    from pokeldn.ldn import userspace_ip  # no kernel interface (ESP32 on macOS)
+    from pokeldn.ldn import userspace_ip  # no kernel interface on the ESP32
     if (user := userspace_ip.udp_socket(ifname, PIA_PORT)) is not None:
         user.setblocking(False)
         return user
@@ -79,7 +53,6 @@ def make_socket(ifname):
 
 def ack_packet(session_key, network_id_le, our_mac, src_var, dst_var, nonce8, sequence_id,
                destination):
-    """The whole datagram: Local ack -> Pia message -> padded -> AES-GCM -> Pia 5.x header."""
     body = pad_payload(build_message(lp.build_ack(sequence_id), protocol=lp.PROTOCOL,
                                      message_flags=lp.MESSAGE_FLAGS, destination=destination))
     iv = gcm_iv(ldn_nonce_crc(network_id_le, our_mac), src_var, nonce8)
@@ -155,7 +128,7 @@ async def main_async(args):
                     continue
                 now = time.monotonic() - t0
                 if addr[0] == our_ip:
-                    continue                      # our own broadcast, looped back on the tap
+                    continue
                 if not is_pia5(data):
                     record(rec="rx_nonpia", t=now, src=addr[0], data=data[:64].hex())
                     continue
@@ -163,7 +136,7 @@ async def main_async(args):
                 # the IV is keyed to the SENDER's MAC, and everything not ours is the host's
                 iv = gcm_iv(ldn_nonce_crc(network_id_le, host_mac), h.src_var, h.nonce8)
                 pt = decrypt_payload(session_key, iv, ciphertext(data), h.tag)
-                if pt is None:                    # the tag is the oracle; a miss is not an error
+                if pt is None:
                     state["undecrypted"] += 1
                     record(rec="rx_undecrypted", t=now, src=addr[0], dst_var=h.dst_var,
                            src_var=h.src_var, nonce=h.nonce8.hex())
@@ -196,7 +169,7 @@ async def main_async(args):
                               f"({len(m.payload)} B) - NOT an update session")
 
         async def watchdog():
-            """The pass signal: the 100 ms rebroadcast simply stopping."""
+            """The pass signal: the 100 ms rebroadcast stopping."""
             while True:
                 await trio.sleep(0.2)
                 now = time.monotonic() - t0

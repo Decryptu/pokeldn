@@ -1,22 +1,12 @@
 #!/usr/bin/env python3
-"""Join the network a searching Legends Z-A console puts up, and read what its Pia sends.
-
-A console on the local search screen hosts its own network for a few seconds at a time, with a
-fresh SSID each phase, and scans between them. It registers its Pia protocols while it hosts, so
-the session is entered from that side: scan in a loop, take the seat when the network appears, and
-log every datagram.
+"""Join the network a searching Legends Z-A console puts up, and trade.
 
     sudo ./.venv/bin/python bin/za_join.py --seconds 600 --capture scratchpad/zaNN_join.jsonl
 
     (them) the local play menu, search, with the link code the run prints
 
-The band is Pia header version 16, which is the GBA application's, so the packet header is
-`pokeldn.ldn.crypto.PiaHeader`, the message framing is `pokeldn.ldn.reliable` and the Net, Session
-and RTT layouts are `pokeldn.ldn.pia_connect`'s. What this title puts in them is unmeasured, which
-is what the capture is for: every datagram in and out goes to --capture as one JSON line, and the
-run ends with a tally of the protocol ids the console used.
-
-`docs/za.md` has what the advertisement carries.
+A searching console hosts for a few seconds at a time under a fresh SSID, so this scans in a loop.
+The band is Pia header version 16, the GBA application's. docs/za.md.
 """
 import argparse
 import json
@@ -43,12 +33,9 @@ from pokeldn.ldn.transport import board_radio, find_ap_phy
 from pokeldn.host_support import resolve_keys
 from pokeldn.ldn import show_done
 
-# The variable id we send as our own until the host names one. A retail joiner takes the id the
-# host writes in the footer of its first mesh-addressed packet; this is the fallback.
+# Ours until the host names one in the footer of its first mesh-addressed packet.
 OUR_VAR = 0xC493
 STALE_VIFS = ["ldn", "ldn-mon", "ldn-tap", "ldnclient"]
-# The protocol ids of the band, as the GBA application registers them. A native title numbers its
-# own protocols and the names here are a starting guess, printed so a surprise is visible.
 PROTOCOL_NAMES = {
     pia_connect.PROTO_NET: "net", pia_connect.PROTO_RTT: "rtt",
     pia_connect.PROTO_RELIABLE: "reliable", pia_connect.PROTO_SESSION: "session",
@@ -102,26 +89,18 @@ def describe_msg(msg):
 
 GAME_RELIABLE = 10
 GAME_BROADCAST = 11
-# Protocol 11 is addressed to the mesh's pseudo-station, not to the host.
+# Protocol 11 goes to the mesh's pseudo-station, not to the host.
 MESH_DESTINATION = 0x0001
-# Every frame a station sends on protocol 11 carries three in the sub-header's recipient count.
 BROADCAST_RECIPIENTS = 3
-# A pure acknowledgement carries message flags 0x40 on both game protocols.
 ACK_MESSAGE_FLAGS = 0x40
-# The station index a Broadcast Reliable payload is prefixed with: the joiner is 1, the host 2.
+# The station index a Broadcast Reliable payload is prefixed with: joiner 1, host 2.
 BROADCAST_PREFIX_JOINER = bytes.fromhex("00000001")
-# The fourth trade step; once it is out the trade is saved on both sides (docs/za.md).
+# Once the fourth trade step is out the trade is saved on both sides (docs/za.md).
 LAST_STEP = bytes.fromhex("0200b9010e")
 
 
 class GameStreams:
-    """The game's own layer: two reliable streams, opened and fed the way a reference joiner does.
-
-    A reference joiner opens protocol 10 with its identity under the INIT flag, opens protocol 11
-    with a four-byte frame and repeats the identity there, then sends the 1211-byte selection
-    record the partner's screen is drawn from, and an offer when the player chooses one.
-    Payloads are replayed from the reference session until this project composes its own.
-    """
+    """The game's two reliable streams, opened and fed as a reference joiner does (docs/za.md)."""
 
     def __init__(self, args, send, send_messages, record):
         self.args = args
@@ -147,7 +126,7 @@ class GameStreams:
             path = os.path.join(args.game_dir, f"za_ref_{name}.bin")
             if os.path.exists(path):
                 self.ref[name] = open(path, "rb").read()
-        # The same record twice: the preview marked 1, the pick marked 0 (docs/za.md, Hosting).
+        # The preview marked 1, the pick marked 0 (docs/za.md, Hosting).
         self.offer = self.preview = None
         if args.trade_offer:
             record = open(args.trade_offer, "rb").read()
@@ -162,8 +141,6 @@ class GameStreams:
         self.src_var = 0
 
     def _emit(self, proto, seq, flags_a, inner):
-        """Protocol 10 is addressed to the host, protocol 11 to the mesh id, and both carry the
-        host's variable id in the footer and travel zstd-compressed, as a reference joiner's do."""
         link = self.links[proto]
         broadcast = proto == GAME_BROADCAST
         if broadcast:
@@ -171,7 +148,6 @@ class GameStreams:
         else:
             body = reliable.build_reliable(seq, link.send_low(), inner, flagsA=flags_a)
         dst = MESH_DESTINATION if broadcast else self.dst_var
-        # A pure acknowledgement rides message flags 0x40; application data carries none.
         msgflags = ACK_MESSAGE_FLAGS if flags_a == reliable.FLAGSA_CTRL else None
         self.send(proto, body, dst_var=dst, src_var=self.src_var, establishing=False,
                   compress=True, footer_var=self.dst_var, msgflags=msgflags)
@@ -182,8 +158,6 @@ class GameStreams:
         return seq
 
     def open(self, now_ms):
-        """The opening a reference joiner sends: the identity alone on protocol 10, then its three
-        protocol-11 messages bundled into one packet."""
         if "identity10" in self.ref:
             self._queue(GAME_RELIABLE, self.ref["identity10"], reliable.FLAGSA_INIT, now_ms)
         bundle = []
@@ -216,9 +190,7 @@ class GameStreams:
         for proto, link in self.links.items():
             for seq, flags_a, inner in link.due_retransmits(now_ms, limit=4):
                 self._emit(proto, seq, flags_a, inner)
-        # The selection record is a heartbeat, not a one-off: a reference joiner sends it about
-        # four times a second under a fresh sequence each time, and the partner's screen follows
-        # the highlight it carries.
+        # A heartbeat: the partner's screen follows the highlight it carries (docs/za.md).
         if ("selection" in self.ref and self.selections < self.args.selection_count
                 and elapsed - self.opened_at >= self.args.selection_delay
                 and elapsed - self.last_selection >= self.args.selection_period):
@@ -242,9 +214,8 @@ class GameStreams:
                 print(f"[za] trade_complete at {elapsed:.2f}s")
 
     def _answer_trade(self, inner, elapsed):
-        """A reference joiner's side of the trade: previews marked 1 each way, then the host's pick
-        marked 0, answered with ours and 0102; then 0104 each way and four 0200 steps. A console
-        sends a preview each time its cursor moves, so the pick is keyed on the mark. docs/za.md."""
+        """A console sends a preview each time its cursor moves, so the pick is keyed on the mark.
+        docs/za.md."""
         head = inner[:2].hex()
         if head in (MSG_CANCEL, "0102", "0104"):
             # a cancel moves both stations to the next round; a round-0 confirm is then ignored
@@ -289,9 +260,8 @@ class GameStreams:
             ack = streams.build_broadcast_ack(link.recv_next)
         else:
             ack = link.ack_payload()
-        # A pure acknowledgement carries no sequence of its own: a reference station sends every
-        # one of them on the stream's base, 0xfff0, and one that advances is read as data with a
-        # hole behind it.
+        # Every pure ack goes on the stream's base, 0xfff0: one that advances is read as data with a
+        # hole behind it (docs/za.md).
         self._emit(proto, self.start, reliable.FLAGSA_CTRL, ack)
 
 
@@ -389,16 +359,10 @@ def build_parser():
 
 
 async def run_session(args, keys, host_ip, host_mac, our_ip, our_mac, record):
-    """Hold the seat and run the band's joiner state machine against the console.
-
-    The answers come from `pokeldn.ldn.pia_connect.ConnectionManager`, which is the same joiner the
-    GBA application drives, and the framing is the one `pokeldn.frlg.link.sim` sends it with: the
-    Net acknowledgement from source variable id 0 with no footer, the Session join zstd-compressed
-    from our own id to destination 0, and everything after it addressed to the host with the
-    two-byte recipient footer.
-    """
-    # Over ldn_mitm the socket is bound to our own address: a wildcard one sends from whatever
-    # address the kernel picks, which on a host sharing this machine is the host's own.
+    """Hold the seat and run the band's joiner (`pia_connect.ConnectionManager`) against the
+    console, framed as `pokeldn.frlg.link.sim` frames it."""
+    # Over ldn_mitm, bind our own address: a wildcard socket on a host sharing this machine sends
+    # from the host's address.
     sock = make_socket(args.ifname, our_ip if args.ip_join else None)
     pia = crypto.PiaCrypto(keys.ssid, za.GAME_KEY)
     broadcast_ip = our_ip.rsplit(".", 1)[0] + ".255"
@@ -409,15 +373,13 @@ async def run_session(args, keys, host_ip, host_mac, our_ip, our_mac, record):
     first_in = None
     pktid_by_dst = {}
     state = [None]
-    # The header nonce is a per-station counter, not a random number: in a reference pair both
-    # stations increment theirs by one on every packet they send (the Mac pair capture,
-    # `docs/za.md`). A random nonce per packet is outside the peer's window after the first.
+    # A per-station counter, incremented per packet: a random nonce falls outside the peer's window
+    # after the first (docs/za.md).
     nonces = host_pia.PiaNonceSequence(native=True)
 
     def send_messages(items, *, dst_var, src_var, compress=False, footer=True,
                       establishing=False, unicast=True, pktid=None, footer_var=None, note=""):
-        """One Pia packet carrying N messages. A reference joiner bundles its three protocol-11
-        opening messages into one packet, and Pia tiles them in the order they are written."""
+        """One Pia packet carrying N messages, tiled in the order written."""
         nonlocal sent
         body = b"".join(reliable.build_message(proto, payload, msgflags)
                         for proto, payload, msgflags in items)
@@ -433,8 +395,8 @@ async def run_session(args, keys, host_ip, host_mac, our_ip, our_mac, record):
             footer_size = 2
         pad = (-len(body)) % 16
         if pktid is None:
-            # One counter for everything sent to the host (dst 0 included), one for the session
-            # address: the host drops a packet below the highest id it has seen. docs/za.md.
+            # One counter to the host (dst 0 included), one to the session address: the host drops a
+            # packet below the highest id it has seen (docs/za.md).
             channel = dst_var if dst_var == pia_connect.SESSION_VAR else "host"
             pktid = pktid_by_dst.get(channel, 1)
             pktid_by_dst[channel] = pktid + 1 if pktid < 0xFFFF else 1
@@ -459,8 +421,8 @@ async def run_session(args, keys, host_ip, host_mac, our_ip, our_mac, record):
 
     def flush(conn, tick):
         for e in conn.drain():
-            # The band's own type 6 names our MAC and no sequence; this title wants our LDN
-            # constant id and the update's sequence, and repeats its update forever otherwise.
+            # The band's type 6 names our MAC and no sequence; this title wants our LDN constant id
+            # and the update's sequence, and repeats its update forever otherwise.
             if e["proto"] == pia_connect.PROTO_SESSION and e["payload"][:1] == b"\x06":
                 continue
             send(e["proto"], e["payload"], dst_var=e["dst"], src_var=e["src"],
@@ -472,8 +434,7 @@ async def run_session(args, keys, host_ip, host_mac, our_ip, our_mac, record):
             print(f"[za] the joiner is now in state {conn.state}")
 
     class Joiner(pia_connect.ConnectionManager):
-        """The band's joiner, with the Session join's declared protocol set and application
-        version under the run's control: what this title expects in them is unmeasured."""
+        """The Session join's protocol set and application version under the run's control."""
 
         def _join(self):
             kwargs = {}
@@ -570,9 +531,8 @@ async def run_session(args, keys, host_ip, host_mac, our_ip, our_mac, record):
         record(**row)
         if conn is None:
             continue
-        # The console names our variable id in the footer of a mesh-addressed packet; until it
-        # does, ours is the one we invented. dst 0x0001 is the session address, never ours: taking it
-        # made our RTT unattributable and the host's liveness timeout kicked us. docs/za.md.
+        # dst 0x0001 is the session address, never ours: taking it made our RTT unattributable and
+        # the host's liveness timeout kicked us (docs/za.md).
         if header.footer == 2 and header.dst not in (0, pia_connect.SESSION_VAR, 0xFFFF):
             conn.learn_ids(header.dst, header.src)
         for m in messages:
@@ -602,8 +562,8 @@ async def run_session(args, keys, host_ip, host_mac, our_ip, our_mac, record):
 
 
 def ip_scan_once(our_ip, host_ip, timeout):
-    """-> the emulated host's NetworkInfo, or None. The scan leaves from our own address: the
-    bridge drops one whose source is the host's own address and answers where it came from."""
+    """-> the emulated host's NetworkInfo, or None. The bridge drops a scan from the host's own
+    address, so it leaves from ours."""
     with socket.socket(socket.AF_INET, socket.SOCK_DGRAM) as us:
         us.settimeout(timeout)
         us.bind((our_ip, 0))
@@ -619,7 +579,7 @@ def ip_scan_once(our_ip, host_ip, timeout):
 
 
 def ip_associate(our_ip, host_ip, our_mac, name, timeout, version=0):
-    """-> (NetworkInfo, held TCP socket). The host keeps the connection open for the session."""
+    """-> (NetworkInfo, held TCP socket)."""
     tcp = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
     tcp.settimeout(timeout)
     tcp.bind((our_ip, 0))
@@ -636,7 +596,7 @@ def ip_associate(our_ip, host_ip, our_mac, name, timeout, version=0):
 
 
 def mark_seat(path, state, **fields):
-    """Announce a seat to anything watching the shared folder: one line, state first."""
+    """One line, state first, for anything watching the shared folder."""
     if not path:
         return
     try:
@@ -650,13 +610,8 @@ def mark_seat(path, state, **fields):
 
 
 def main_ip(args):
-    """The same session against an emulated host on the LAN: a bridge scan, a connect, then Pia on
-    12345 between our two real addresses. Only the transport differs from the radio path.
-
-    The session key comes from the NetworkInfo of THIS scan: a Legends Z-A host hosting unmatched
-    rotates its session id about every four seconds, and a key derived from an older scan is one
-    the host has already discarded.
-    """
+    """The same session against an emulated host on the LAN, keyed from THIS scan: an unmatched
+    Z-A host rotates its session id about every four seconds."""
     our_ip = args.our_ip
     if our_ip is None:
         with socket.socket(socket.AF_INET, socket.SOCK_DGRAM) as probe:
@@ -700,8 +655,7 @@ def main_ip(args):
                 continue
             seats += 1
             host_mac = bytes(ldn_mitm.host_mac(synced))
-            # The bridge's SyncNetwork carries the session the host settled on; a rotation between
-            # our scan and our connect would otherwise leave us on a discarded key.
+            # A rotation between our scan and our connect would leave us on a discarded key.
             synced_id = ldn_mitm.session_id(synced)
             if synced_id != session_id:
                 print(f"[za] the session id rotated under the connect: {session_id.hex()} -> "
@@ -790,8 +744,7 @@ def main(argv=None):
                 print(f"[za] the scan raised: {exc}")
                 time.sleep(0.5)
                 continue
-            # A scan that never returns reads on the log exactly like a console that stopped
-            # hosting, so every pass says what it took and what it saw.
+            # A scan that never returns reads like a console that stopped hosting: log every pass.
             print(f"[za] scan {scans}: {len(nets)} network(s) in "
                   f"{time.monotonic() - scan_start:.1f}s")
             target = None

@@ -1,11 +1,11 @@
 #!/usr/bin/env python3
-"""Receive a Wonder Card from a real FireRed/LeafGreen console (Mystery Gift client). The console shares
-via Mystery Gift -> Wonder Cards -> Friend -> send; we join its LDN session as the child and save what it pushes.
+"""Receive a Wonder Card from a FireRed/LeafGreen console (Mystery Gift -> Wonder Cards -> Friend
+-> send): join its LDN session as the child and save what it pushes.
 
     sudo -E ./.venv/bin/python -u bin/frlg_mg_client.py --live --version firered --language french \\
         --capture scratchpad/CAPTURE.pcap --out scratchpad/OUT
 
-Outputs (with --out PREFIX): PREFIX_card.bin, PREFIX_ramscript.bin, PREFIX_messages.jsonl, PREFIX_trace.jsonl.
+--out PREFIX writes PREFIX_card.bin, PREFIX_ramscript.bin, PREFIX_messages.jsonl, PREFIX_trace.jsonl.
 """
 
 import argparse
@@ -15,7 +15,6 @@ import signal
 import sys
 import time
 
-# This launcher lives in bin/; the pokeldn package is at the repo root beside it.
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 from pokeldn import config as configmod  # noqa: E402
 from pokeldn.frlg.link import sim as simmod  # noqa: E402

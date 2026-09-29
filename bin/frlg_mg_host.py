@@ -1,14 +1,10 @@
 #!/usr/bin/env python3
-"""Distribute a FireRed/LeafGreen Wonder Card over LDN (Mystery Gift, Friend path): the console picks us
-from Mystery Gift -> Wonder Cards -> Friend and collects the gift from the delivery man in any Pokemon Center.
+"""Host FireRed/LeafGreen Mystery Gift over LDN: the console picks us from Mystery Gift -> Wonder
+Cards -> Friend; the delivery man in any Pokemon Center hands the gift over.
 
     sudo -E ./.venv/bin/python -u bin/frlg_mg_host.py --live
 
-With --news the same host serves the other half of the console's Mystery Gift menu instead: the
-console picks us from Mystery Gift -> Wonder News -> Friend and the man in the house in CERULEAN CITY
-hands over a BERRY for what it read.
-
-    sudo -E ./.venv/bin/python -u bin/frlg_mg_host.py --live --news
+--news serves Mystery Gift -> Wonder News -> Friend instead (docs/frlg_gift.md).
 """
 
 import argparse
@@ -18,7 +14,6 @@ import sys
 
 
 PROJECT_ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
-# This launcher lives in bin/; the pokeldn package and vendor/ are at the repo root.
 sys.path.insert(0, PROJECT_ROOT)
 
 BUNDLED_LDN = os.path.join(PROJECT_ROOT, "vendor", "LDN")
@@ -556,11 +551,7 @@ def _hunt_asked(args):
 
 def _hunt_definition(parser, args):
     """-> the card the command line asked for, composed, or None to send the registered one.
-
-    The cost is printed HERE, before anything is on the air, because the number that matters to
-    the player is how long the overworld stops while the stub searches - and a set of criteria
-    that would stop it for too long is refused by native_script rather than sent
-    [native_script.search_cost]."""
+    The cost is printed before anything is on the air [native_script.search_cost]."""
     if not _hunt_asked(args):
         return None
     hunts = (wonder_card_events.GIFT_RNG_MON_HUNT, wonder_card_events.GIFT_RNG_MON_HUNT_FAR,
@@ -574,8 +565,8 @@ def _hunt_definition(parser, args):
             iv_minimums=native_script.parse_iv_minimums(args.hunt_iv))
         cap = (native_script.cap_for(criteria) if args.hunt_cap is None else args.hunt_cap)
         cost = native_script.search_cost(criteria, cap)
-        # Composed HERE, so that a search too slow to be allowed, or a stub too big to stage, is
-        # an error on the command line and not one raised at the moment a console joins.
+        # Composed here, so a search too slow or a stub too big to stage fails on the command line,
+        # not when a console joins.
         compose = {
             wonder_card_events.GIFT_RNG_MON_HUNT_FAR: wonder_card_events.build_rng_mon_hunt_far_gift,
             wonder_card_events.GIFT_RNG_MON_HUNT_BOTH: wonder_card_events.build_rng_mon_hunt_both_gift,
@@ -695,7 +686,7 @@ def build_run_config(parser, args):
                 resident_params.append((key, int(value, 0)))
             write_resident = None
             if args.buffer_script == buffer_script.SAVE_WRITE and args.resident:
-                # the hook kept in the save, for MOM's loader (--gift resident-save), built per build
+                # the hook kept in the save for MOM's loader (--gift resident-save)
                 if write_data is not None:
                     parser.error("--resident is what save-write writes; drop --write-*")
                 write_resident = (args.resident, tuple(resident_params))
@@ -818,8 +809,7 @@ def main(argv=None):
             parser.error("--make-artifact describes one cartridge's bytes and these differ by "
                          "build; name it with --console-build")
         distribution = plan.distribution
-        # The artifact must describe what is actually sent: a run given --hunt-* carries its own
-        # composed definition, and the registry still holds the one built with the defaults.
+        # --hunt-* composes its own definition; the registry holds the default one.
         definition = (config.payload.definition
                       or gift_registry.GIFT_REGISTRY.entry(args.gift).definition)
         try:

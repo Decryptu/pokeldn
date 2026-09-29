@@ -10,7 +10,6 @@ import sys
 
 
 PROJECT_ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
-# This launcher lives in bin/; the pokeldn package and vendor/ are at the repo root.
 sys.path.insert(0, PROJECT_ROOT)
 
 BUNDLED_LDN = os.path.join(PROJECT_ROOT, "vendor", "LDN")
@@ -138,7 +137,7 @@ def build_run_config(parser, args):
         if args.union_room:
             parser.error("--colosseum is a Direct Corner activity; it cannot be combined with "
                          "--union-room")
-        # Nothing is offered in a battle, so the trade slot only has to be a valid index.
+        # Nothing is offered in a battle; the trade slot only has to be a valid index.
         if args.slot >= len(args.party):
             args.slot = 0
         args.trades = 1

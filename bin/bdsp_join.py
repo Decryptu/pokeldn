@@ -1,14 +1,8 @@
 #!/usr/bin/env python3
-"""Join a native Switch title's LDN session (first target: BDSP, comm id 0100000011d90000).
+"""Join a BDSP LDN session (comm id 0100000011d90000) and report what it says about itself.
 
-Layer under test is LDN ONLY: scan, then associate with the title's 64-byte passphrase and report
-what the session says about itself. Nothing Pia, nothing game-level. A successful association is
-the milestone - `vendor/LDN` already reads these advertisements with prod.keys alone, so the
-passphrase is the only thing between us and a seat in the session.
-
-The passphrase length is NOT settled: the NintendoClients wiki gives BDSP as the ASCII string
-`WirelessStrongCryptoKey2021` and spells out padding only for Mario Kart 8 Deluxe, so --pw-mode
-tries the readings. derive_data_key() hashes server_random + password, so the byte count matters.
+LDN only: scan, associate with the 64-byte passphrase, hold the seat. --pw-mode tries the readings
+of the passphrase's padding (docs/bdsp_session.md).
 """
 import argparse
 import os
@@ -28,17 +22,16 @@ from pokeldn.host_support import resolve_keys
 
 STALE_VIFS = ["ldn", "ldn-mon", "ldn-tap", "ldnclient"]
 
-# NintendoClients wiki, "LDN Passphrases", row "Pokemon Brilliant Diamond". Shining Pearl shares
-# Brilliant Diamond's local_communication_id, so it shares the passphrase.
+# NintendoClients wiki, "LDN Passphrases", row "Pokemon Brilliant Diamond"; Shining Pearl shares its
+# local_communication_id and so its passphrase.
 BDSP_PASSPHRASE = b"WirelessStrongCryptoKey2021"
 
 
 def pw_variants(base, mode):
-    """The readings of a wiki passphrase row worth trying, cheapest first."""
     v = {
-        "raw":    base,                                  # the string is the whole passphrase
+        "raw":    base,
         "pad64":  base.ljust(64, b"\0"),                 # nn::ldn's 64-byte buffer, null padded
-        "pad32":  base.ljust(32, b"\0"),                 # MK8D's row is 15 chars + 17 nulls = 32
+        "pad32":  base.ljust(32, b"\0"),                 # MK8D's row is 15 chars + 17 nulls
     }
     if mode == "all":
         return list(v.items())
@@ -109,9 +102,8 @@ def main():
         print("[join] target network not seen - is the console sitting in the room right now?")
         return 3
     print(f"[join] target: {describe(net)} ssid={net.ssid.hex()}")
-    # Everything the session's key derivation could be built from. The HMAC path
-    # (main.bin 0x1693714) takes a 32-BYTE input, and ssid||server_random is the only 32 bytes LDN
-    # gives every station; a capture without server_random cannot test it.
+    # The HMAC path (main.bin 0x1693714) takes a 32-byte input; ssid||server_random is the only
+    # 32 bytes LDN gives every station.
     import json as _json
     facts = {
         "ssid": net.ssid.hex(),

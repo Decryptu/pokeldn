@@ -1,20 +1,11 @@
 #!/usr/bin/env python3
-"""Scan for a Let's Go Pikachu / Eevee LDN session, take a seat, and listen.
+"""Join a Let's Go Pikachu / Eevee LDN session: scan, take a seat, trade.
 
-Three layers, each a measurement the next one needs:
+  --scan-only  report every advertisement and decode the Pia application-data header
+  --hold N     hold the seat N seconds; a quiet screen is expected
+  --capture F  every datagram on port 12345, hex, one JSON line each
 
-  1. `--scan-only`: report every advertisement seen and decode the Pia application-data header
-     (network id, password CRC32, system communication version, session param). The password CRC
-     is what the three-Pokemon link code becomes; read it off a session hosted with a known code.
-  2. associate with the 64-byte passphrase read out of the binary and hold the seat for `--hold`
-     seconds. A seat in the LDN session is not a seat in the game's session; a quiet screen is
-     expected.
-  3. while seated, every UDP datagram on port 12345 is recorded to `--capture` as hex and run
-     through the version-3 header parser and the session key derived from the advertisement. A
-     packet that authenticates prints its plaintext head, which is where the message framing
-     (Pia 5.11-5.12 against 5.14-5.17) is read from.
-
-Nothing is sent. `docs/lgpe_session.md` has the constants and their addresses.
+docs/lgpe_session.md has the constants and their addresses.
 """
 import argparse
 import json
@@ -52,14 +43,8 @@ from pokeldn.lgpe.trade import (TRADE_IN_PROGRESS, _answer_commit, _answer_offer
 
 
 def _survive_netlink_overflow():
-    """A netlink multicast socket returns ENOBUFS when the kernel's event queue overflows, and the
-    library's reader lets it out of the nursery, which kills the whole run.
-
-    Losing wifi events is survivable — the association is already up and nothing above the link reads
-    them. A run that dies mid-trade is not: on a retail console an interrupted trade leaves the save
-    refusing the next one, and there is no restore. So the reader swallows ENOBUFS and carries on,
-    and the socket's receive buffer is raised so it happens far less often.
-    """
+    """Swallow the netlink reader's ENOBUFS, which otherwise kills the run: an interrupted retail
+    trade leaves the save refusing the next one, with no restore."""
     import errno
     import socket as _socket
     try:
@@ -110,8 +95,7 @@ def describe(net):
 
 
 def app_header(app):
-    """The Pia 5.9-5.18 application-data header, little-endian, as a dict. Nothing is assumed
-    about the game's bytes after it."""
+    """The Pia 5.9-5.18 application-data header, little-endian, as a dict."""
     if len(app) < APP_HEADER_SIZE:
         return {"short": len(app)}
     network_id, crc, sysver, hsize, _pad, param, zero8 = struct.unpack_from("<IIBBHIQ", app, 0)
@@ -154,8 +138,8 @@ class _IpParticipant:
 
 
 class _IpNetwork:
-    """A scanned network's stand-in when the peer is reached over IP instead of the radio: an
-    emulator's Pia socket on :12345. Only `application_data` decides the session key."""
+    """A network reached over IP (an emulator's Pia socket on :12345). Only `application_data`
+    decides the session key."""
 
     def __init__(self, app, host_ip, host_mac, our_ip, our_mac):
         self.application_data = app
@@ -172,8 +156,6 @@ class _IpNetwork:
 
 
 class _IpSession:
-    """`ldn.connect`'s shape with no radio behind it."""
-
     def __init__(self, net):
         self._net = net
 
@@ -201,7 +183,7 @@ def _blob(text):
 
 
 def make_socket(ifname, bind_ip=None):
-    from pokeldn.ldn import userspace_ip  # no kernel interface (ESP32 on macOS)
+    from pokeldn.ldn import userspace_ip  # no kernel interface on the ESP32
     if bind_ip is None and (user := userspace_ip.udp_socket(ifname, PIA_PORT)) is not None:
         user.setblocking(False)
         return user
@@ -219,9 +201,8 @@ def make_socket(ifname, bind_ip=None):
 
 
 def try_decrypt(keys, data, macs):
-    """-> (header, plaintext or None, source_mac or None). The IV needs the sender's MAC, which the
-    datagram does not carry; every MAC the LDN layer knows is tried, with the header's station byte
-    and 0 as the source id."""
+    """-> (header, plaintext or None, source_mac or None). The datagram does not carry the sender's
+    MAC the IV needs, so every known MAC is tried with source id 0 and the header's station."""
     hdr = pia4.PiaHeader4.parse(data)
     ct = pia4.ciphertext(data)
     for mac in macs:
@@ -390,7 +371,7 @@ def main(argv=None):
     keys_file = ldn.load_keys(keys_path)
 
     async def find():
-        # A console on the search screen advertises only while it hosts; scan until it appears.
+        # A console on the search screen advertises only while it hosts.
         deadline = trio.current_time() + args.scan_seconds
         while True:
             nets = await ldn.scan(keys_file, phyname=phy, channels=channels, dwell_time=args.dwell)
@@ -432,12 +413,11 @@ def main(argv=None):
 
 
 def _discover(args, our_mac):
-    """The ldn_mitm association, in place of the radio: scan the host, then hold a TCP connection
-    open for the session so its game has a node for us. -> (advertise data, host MAC, socket)."""
+    """The ldn_mitm association: scan the host, then hold a TCP connection open so its game has a
+    node for us. -> (advertise data, host MAC, socket)."""
     with socket.socket(socket.AF_INET, socket.SOCK_DGRAM) as us:
         us.settimeout(args.discover_timeout)
-        # scan from our own address: ldn_mitm drops a scan whose source is the host's own LDN
-        # address, and the response goes back to whatever it came from
+        # ldn_mitm drops a scan whose source is the host's own LDN address.
         us.bind((args.our_ip, 0))
         us.sendto(ldn_mitm.build(ldn_mitm.SCAN), (args.host_ip, ldn_mitm.PORT))
         print(f"[ldn] scan -> {args.host_ip}:{ldn_mitm.PORT}")
@@ -465,8 +445,7 @@ def _discover(args, our_mac):
 
 
 def _main_over_ip(args):
-    """Join a host reached over plain UDP: an emulated console on a debugger, with no radio and no
-    LDN association between us. The session key still comes from its advertise data."""
+    """Join a host over plain UDP (an emulated console), no radio and no LDN association."""
     our_mac = _mac(args.our_mac)
     held = None
     if args.app_data:
@@ -475,7 +454,7 @@ def _main_over_ip(args):
         app, host_mac, held = _discover(args, our_mac)
         print(f"[ldn] advertise data {app.hex()} ({len(app)} B)")
     net = _IpNetwork(app, args.host_ip, host_mac, args.our_ip, our_mac)
-    net.held_connection = held          # the host FINs it when its game leaves; keep it open
+    net.held_connection = held  # the host FINs it when its game leaves
     keys = session_keys(net)
     facts = facts_of(net)
     print(f"[lg] over IP: host {args.host_ip}:{PIA_PORT} mac={host_mac.hex()}, "
@@ -487,8 +466,6 @@ def _main_over_ip(args):
 
 
 def _run(args, net, keys, facts, opener):
-    """Everything above the link: the Pia handshake, the mesh, the clone session and the
-    game. `opener` yields the seat, from the radio or from nothing at all."""
     cap = open(args.capture, "w") if args.capture else None
 
     def record(**kw):
@@ -551,8 +528,6 @@ def _run(args, net, keys, facts, opener):
             HOST_STATION_BIT = 0x0001
             KEEPALIVE_PROTOCOL = 0x08
             def to_host_bitmap(payload, protocol, port=0):
-                """The framing every post-join protocol uses: our constant id as the source, the
-                host's station bit as a bitmap destination."""
                 our_const = ldn_constant_id(our_mac) if len(our_mac) == 6 else 0
                 send_packet(pia3.build_message(payload, protocol=protocol, source=our_const,
                                                port=port, destination=HOST_STATION_BIT,
@@ -569,7 +544,6 @@ def _run(args, net, keys, facts, opener):
                        data=pkt.hex(), **what)
                 return pkt
             def complete_handshake(inverse_req):
-                """Ack the console's inverse connection request and send our connection response."""
                 host_const = ldn_constant_id(host_mac); our_const = ldn_constant_id(our_mac)
                 ack_id = station9.ack_id_of(inverse_req)
                 loc = inverse_req[station9.OFF_LOCATION:-4]
@@ -606,7 +580,6 @@ def _run(args, net, keys, facts, opener):
                 deadline = args.hold
                 print(f"[lg] listening on :{PIA_PORT} for {deadline:.0f}s")
             while time.monotonic() - t0 < deadline:
-                # leaving the way a console does, --leave-after seconds after our offer went out
                 if (args.leave_after is not None and state.get("leave_at") is None
                         and state.get("answered_step")):
                     state["leave_at"] = time.monotonic() + args.leave_after
@@ -629,7 +602,6 @@ def _run(args, net, keys, facts, opener):
                     for payload, proto, port in state["leaver"].poll(now):
                         to_host_bitmap(payload, proto, port=port)
                     if state["leaver"].done:
-                        # a deliberate exit leaves no trade half done on the peer
                         TRADE_IN_PROGRESS["offer"] = TRADE_IN_PROGRESS["commit"] = False
                         print("[lg] *** LEFT *** " + "; ".join(state["leaver"].log))
                         break
@@ -637,7 +609,6 @@ def _run(args, net, keys, facts, opener):
                     if not send_connection_request():
                         break
                     next_tx += 0.5
-                # a station that has left the mesh runs no sync clock, RTT or clone traffic
                 left = state.get("leaver") is not None and state["leaver"].leave_answered
                 if args.connect and not args.no_sync_clock and state["mesh_joined"] \
                         and not left and len(our_mac) == 6 and len(host_mac) == 6:
@@ -659,9 +630,8 @@ def _run(args, net, keys, facts, opener):
                     state["next_payload"] = time.monotonic() + args.reliable_interval
                     body = open(path, "rb").read()
                     if args.our_trainer:
-                        # a capture taken between two emulators sharing a save carries the host's
-                        # own trainer id, so a joiner replaying it presents itself as the station
-                        # it is trading with
+                        # A capture between two emulators sharing a save carries the host's own
+                        # trainer id.
                         msg = pb7.parse_message(body)
                         tid, sid = (int(v, 0) for v in args.our_trainer.split(":"))
                         if msg:
@@ -715,8 +685,7 @@ def _run(args, net, keys, facts, opener):
                     state["mesh_join_sent"] = True
                     state["our_ack"][0] += 1
                     next_tx += 0.5
-                # Wait in trio, never in select(): the ESP32 board's frames reach this socket
-                # through trio tasks (docs/hardware_esp32.md, The userspace stack).
+                # Wait in trio, never in select() (docs/hardware_esp32.md, The userspace stack).
                 r = False
                 with trio.move_on_after(0.1):
                     await trio.lowlevel.wait_readable(sock)
@@ -854,16 +823,15 @@ def _run(args, net, keys, facts, opener):
                                         print("[lg] clone: *** ELEMENT MESSAGE from the host: "
                                               "the clock is agreed ***")
                             elif m["protocol"] == lp.PROTOCOL and pl and pl[1:2] == b"\x11":
-                                # Local Protocol update-session: ack it (type 0x21) so the host
-                                # knows the seat is alive. RTT (0x58) never drops a silent station.
+                                # Ack the update session (0x21) so the host knows the seat is alive;
+                                # RTT never drops a silent station.
                                 try:
                                     seq = lp.parse_update_session(pl).sequence_id
                                     to_host(lp.build_ack(seq), lp.PROTOCOL)
                                 except Exception:
                                     pass
-                        # the packet's messages are all in, so the announcement of our own copy
-                        # goes out in the same frame as the take-over, the way a real joiner does,
-                        # with the content the host's own announcements carried resolved
+                        # Our copy's announcement goes in the same frame as the take-over, as a real
+                        # joiner's.
                         part = state.get("clone")
                         if part is not None and part.announce_in_burst:
                             for out in part.poll(time.monotonic()):

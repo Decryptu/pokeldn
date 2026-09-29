@@ -1,17 +1,12 @@
 #!/usr/bin/env python3
 """Host a Legends Z-A local Link Trade, so a searching console joins it and trades.
 
-A console on the Link Trade search alternates hosting and scanning, and joins a network carrying
-the title's advertisement and its own link code. This host puts one up and runs the host's side of
-the session and of the trade, `pokeldn.za.host`.
-
     POKELDN_RADIO=esp32:auto ./.venv/bin/python -u bin/za_host.py --keys KEYS \\
         --trade-offer scratchpad/za_offer_glaceon_built.bin --capture scratchpad/zhNN.jsonl
 
     (them) Link Trade -> local communication -> search, code 00000000
 
-`--ip-host --our-ip 127.0.0.2` hosts an emulated console over ldn_mitm instead of the radio.
-`docs/za.md` has what the host sends and why.
+`--ip-host --our-ip 127.0.0.2` hosts an emulated console over ldn_mitm. docs/za.md.
 """
 import argparse
 import json

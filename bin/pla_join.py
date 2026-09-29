@@ -1,11 +1,8 @@
 #!/usr/bin/env python3
 """Join the network a Legends Arceus console hosts, and trade with it.
 
-The game alternates: a station open and one second of scanning, then two to four seconds hosting
-its own network, then teardown, on a five-second cycle. It registers its Pia protocols only while
-it is hosting, so the session is entered from that side: scan in a loop and join the moment the
-network appears. `pokeldn.pla.joiner` then answers the console the way a retail joiner does, from
-the Net answer through the phase protocol.
+A searching console hosts only a few seconds in every five, so this scans in a loop and joins the
+moment the network appears; `pokeldn.pla.joiner` answers it. docs/pla.md has the layouts.
 
     POKELDN_RADIO=esp32:auto ./.venv/bin/python -u bin/pla_join.py \\
         --keys ~/Documents/Switch/prod.keys --code 00000000 --capture scratchpad/pjNN.jsonl
@@ -13,11 +10,9 @@ the Net answer through the phase protocol.
     (them) Jubilife Village, the trading post, Simona -> echanger des pokemon ! -> local
            -> the SAME eight digits -> wait on the search screen
 
-Over ldn_mitm, against an emulated console on the LAN, nothing needs root or a radio:
+Over ldn_mitm, against an emulated console on the LAN, no root and no radio:
 
     ./.venv/bin/python bin/pla_join.py --ip-join --host-ip 172.16.86.1 --our-ip 172.16.86.128
-
-Every datagram goes to --capture as one JSON line. `docs/pla.md` has the layouts.
 """
 import argparse
 import json
@@ -45,8 +40,8 @@ STALE_VIFS = ["ldn", "ldn-mon", "ldn-tap", "ldnclient"]
 
 
 def scan_once(our_ip, host_ip, timeout):
-    """-> the host's NetworkInfo, or None. The scan must leave from our own address: ldn_mitm drops
-    one whose source is the host's own address, and answers to wherever it came from."""
+    """-> the host's NetworkInfo, or None. ldn_mitm drops a scan from the host's own address, so
+    it leaves from ours."""
     with socket.socket(socket.AF_INET, socket.SOCK_DGRAM) as us:
         us.settimeout(timeout)
         us.bind((our_ip, 0))
@@ -62,13 +57,9 @@ def scan_once(our_ip, host_ip, timeout):
 
 
 def fast_scan(sock, host_ip, interval, deadline, last_ssid):
-    """A tight scan: send SCAN and poll non-blocking every `interval` until a ScanResp for an SSID
-    other than `last_ssid` arrives, or `deadline` passes. Returns (NetworkInfo, t_seen) or (None, _).
-
-    The host latches its node list once when it creates the network, so the joiner has to be present
-    before that latch. A per-request socket with a full timeout loses the race; this reuses one
-    socket and reacts within one `interval` of the network appearing.
-    """
+    """Poll one socket every `interval` for a ScanResp with an SSID other than `last_ssid`, until
+    `deadline`. -> (NetworkInfo, t_seen) or (None, _). The host latches its node list once, at
+    network creation: a per-request socket with a full timeout misses it."""
     while time.time() < deadline:
         try:
             sock.sendto(ldn_mitm.build(ldn_mitm.SCAN), (host_ip, ldn_mitm.PORT))
@@ -92,7 +83,7 @@ def fast_scan(sock, host_ip, interval, deadline, last_ssid):
 
 
 def associate(our_ip, host_ip, our_mac, name, timeout):
-    """-> (NetworkInfo, held TCP socket). The host holds the connection open for the session."""
+    """-> (NetworkInfo, held TCP socket)."""
     tcp = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
     tcp.settimeout(timeout)
     tcp.bind((our_ip, 0))
@@ -108,8 +99,7 @@ def associate(our_ip, host_ip, our_mac, name, timeout):
 
 
 def make_socket(ifname, our_ip=None):
-    """The Pia socket: the board's userspace stack when it owns `ifname`, else a kernel socket."""
-    from pokeldn.ldn import userspace_ip  # no kernel interface (ESP32 on macOS)
+    from pokeldn.ldn import userspace_ip  # no kernel interface on the ESP32
     if our_ip is None and (user := userspace_ip.udp_socket(ifname, pla.PIA_PORT)) is not None:
         user.setblocking(False)
         return user
@@ -126,7 +116,7 @@ def make_socket(ifname, our_ip=None):
 
 
 def build_offer(args, exchange):
-    """-> the encrypted party record to trade away: a file, or the reference under our name."""
+    """-> the encrypted party record: a file, or the reference under our name."""
     if args.offer:
         offer = pla_pokemon.encrypt(pla_pokemon.load(open(os.path.expanduser(args.offer),
                                                           "rb").read()))
@@ -138,11 +128,7 @@ def build_offer(args, exchange):
 
 
 async def run_session(args, keys, sock, host_ip, our_ip, our_mac, offer, exchange, record):
-    """Hold one seat: feed every authenticated packet to the joiner and send what it owes.
-
-    Wait in trio, never in select(): the ESP32 board's frames reach this socket through trio
-    tasks (docs/hardware_esp32.md, The userspace stack).
-    """
+    """Wait in trio, never in select() (docs/hardware_esp32.md, The userspace stack)."""
     session = joiner.JoinerSession(keys, our_ip, our_mac, offer, exchange,
                                    player_id=bytes.fromhex(args.join_player_id),
                                    drive=args.drive, net_answer=not args.no_net_answer, log=print)
@@ -187,7 +173,7 @@ async def run_session(args, keys, sock, host_ip, our_ip, our_mac, offer, exchang
                 try:
                     send(session.receive(messages))
                 except Exception as exc:
-                    # A fault in one message does not drop the seat: the console is still there.
+                    # The console is still there after a fault in one message.
                     print(f"[pla] the joiner raised on a message, still seated: "
                           f"{type(exc).__name__}: {exc}")
             send(session.poll())
@@ -337,8 +323,7 @@ def main_radio(args, offer, exchange, record):
 
 
 async def seat(args, keys_file, target, phy, offer, exchange, record):
-    """Associate with the scanned network and hold one seat. -> the session, or None if the
-    association did not complete within --connect-timeout."""
+    """-> the session, or None if the association did not complete within --connect-timeout."""
     import ldn
 
     keys = pla.session_keys(target.ssid)
@@ -366,8 +351,7 @@ async def seat(args, keys_file, target, phy, offer, exchange, record):
 
 
 def pick(args, nets, record):
-    """-> the Legends Arceus network to join, or None: its communication id, the code if one was
-    given, and a free seat."""
+    """-> the network to join, or None: its communication id, the code if given, a free seat."""
     for n in nets:
         if n.local_communication_id != pla.COMM_ID:
             continue
@@ -440,8 +424,7 @@ def build_parser():
 
 
 def host_argv(args, channel, seconds):
-    """-> bin/pla_host.py's command line for the host role a console handed over: the retail
-    host line, on the joiner's code, channel, keys and offer."""
+    """-> bin/pla_host.py's command line for the host role a console handed over."""
     host = os.path.join(os.path.dirname(os.path.abspath(__file__)), "pla_host.py")
     argv = [sys.executable, "-u", host, "--keys", args.keys, "--code", args.code,
             "--channel", str(channel), "--seconds", str(int(max(seconds, 60))),

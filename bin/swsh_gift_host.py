@@ -1,16 +1,13 @@
 #!/usr/bin/env python3
-"""Distribute a Sword/Shield Mystery Gift by advertising it on LDN.
+"""Distribute a Sword/Shield Mystery Gift by advertising it on LDN (docs/swsh_gift.md).
 
-The gift screen does not join anything: it scans, and a distributor advertises a network whose
-0x180-byte advertise data carries the card. This hosts such a network and walks the card's fragments
-across successive advertisements. See docs/swsh_gift.md.
+The gift screen scans and never joins: the card rides the 0x180-byte advertise data, one fragment
+per advertisement.
 
     sudo ./bin/swsh_gift_host.py --species 25 --level 25 --nickname PKCAMP --ot POKELDN
     sudo ./bin/swsh_gift_host.py --record scratchpad/card.bin --dwell 0.5
 
     (them) Mystery Gift -> Recevoir un Cadeau Mystere -> Via communication sans fil locale
-
-Nothing is sent until the console scans, and the console is the only thing that decides to take it.
 """
 import argparse
 import os
@@ -60,8 +57,8 @@ def _base_record(args):
 
 
 def validate(record, image):
-    """-> what the game's own validator returns for `record`, run out of `image` (Sword's main
-    NSO) under unicorn. Covers the seal only; an item id the bag cannot hold still passes."""
+    """-> the game's own validator's answer for `record`, run from `image` under unicorn. Covers
+    the seal only; an item id the bag cannot hold still passes."""
     sys.path.insert(0, os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))),
                                     "tools", "switch"))
     from nso_run import SCRATCH, Runner
@@ -140,8 +137,7 @@ def main():
         print(f"wrote {args.dump} and {len(fragments)} fragments")
         return 0
 
-    # The adapter's Wi-Fi profile and the keys path come from config/host.toml and host.local.toml,
-    # the same layer every other host on this machine runs with (docs/hardware_adapters.md).
+    # docs/hardware_adapters.md: the Wi-Fi profile and keys path come from config/host*.toml.
     machine = config.load_project_host_file_config()
     phy = transport.find_ap_phy(log=print) if args.phy == "auto" else args.phy
     if phy is None:
@@ -149,7 +145,7 @@ def main():
         return 1
     host = make_host(args, fragments, os.path.expanduser(args.keys or machine.keys_path), phy,
                      machine)
-    host.start()          # raises when the AP does not come up
+    host.start()  # raises when the AP does not come up
     print(f"advertising comm id {COMM_ID:#018x}, scene {args.scene_id}, protocol {args.protocol}, "
           f"walking {len(fragments)} fragments every {args.dwell}s")
     i = 0
@@ -164,7 +160,7 @@ def main():
 
 
 def make_host(args, fragments, keys_path, phy, machine):
-    """-> the network that carries the card: the gift screen's title, protocol 1, eight seats."""
+    """The gift screen's title, protocol 1, eight seats."""
     return HostTransport(
         app_data=fragments[0], password=PASSPHRASE, nickname=args.nickname_host,
         keys_path=keys_path, local_comm_id=COMM_ID,
@@ -176,7 +172,7 @@ def make_host(args, fragments, keys_path, phy, machine):
 
 
 def walk(host, fragments, dwell, deadline, stop=None):
-    """Put each fragment in the advertisement in turn, `dwell` seconds each. -> how many."""
+    """`dwell` seconds per fragment. -> how many."""
     i = 0
     while time.time() < deadline and not (stop is not None and stop.is_set()):
         host.set_app_data_later(fragments[i % len(fragments)])

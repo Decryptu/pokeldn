@@ -1,22 +1,9 @@
 #!/usr/bin/env python3
-"""Scan for a Sword/Shield LDN session and take a seat in it.
+"""Scan for a Sword/Shield LDN session and take a seat in it: LDN only, nothing Pia.
 
-Layer under test is LDN ONLY: scan, associate with the game's own 64-byte passphrase, report what
-the session says about itself, hold the seat. Nothing Pia - Sword/Shield's Pia header is version 4
-and `pokeldn.ldn` implements 6.32+ and 5.27-5.45, so there is nothing above LDN to speak yet.
-
-THE PASSPHRASE IS READ, NOT GUESSED. `mov w2, #0x40` at main.bin 0x006c3ec8 is the length, so the
-padding question BDSP had does not arise here and `--pw-mode raw` is the default rather than a
-sweep. If raw fails, that is a finding about the reading, not a reason to try paddings blind.
-
-THE LOCAL COMMUNICATION ID IS NOT KNOWN. It is filled at runtime from .bss rather than a literal,
-so this scans and reports EVERY network it sees and joins by --comm-id once you have read it off
-one run.
-
-POINT THE SCAN AT A SCREEN WHERE THE CONSOLE HOSTS - a Link Trade over local communication, or the
-Mystery Gift local-wireless screen. Both advertise the same comm id; the trade under scene id 60001
-and Mystery Gift under scene id 65535. The comm id is per application, so the id read off any
-local-wireless feature is the one the gift path uses. docs/swsh.md.
+Scan while the console hosts: a Link Trade over local communication (scene 60001) or the Mystery
+Gift local-wireless screen (scene 65535). Every network seen is reported; --comm-id picks one. The
+passphrase is 64 bytes (main.bin 0x006c3ec8), so --pw-mode raw is the default. docs/swsh.md.
 """
 import argparse
 import json
@@ -38,7 +25,6 @@ from pokeldn.swsh import PASSPHRASE
 
 STALE_VIFS = ["ldn", "ldn-mon", "ldn-tap", "ldnclient"]
 
-# Comm ids this project already knows, so an unexpected one stands out in the scan report.
 KNOWN = {0x0100000011D90000: "BDSP"}
 
 
@@ -58,8 +44,7 @@ def describe(net):
 
 
 def facts_of(net):
-    """Everything the advertisement carries. The session-key seed is not yet known to be in here,
-    so record all of it and let a later reading pick."""
+    """Everything the advertisement carries."""
     return {
         "ssid": net.ssid.hex(),
         "server_random": bytes(getattr(net, "server_random", b"") or b"").hex(),

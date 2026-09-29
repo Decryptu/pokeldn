@@ -4,11 +4,8 @@
     ./.venv/bin/python bin/swsh_host.py --ip-host --our-ip 127.0.0.2 --advert FILE --seconds 300
     (them) Y-Comm -> Link Trade -> local communication, no code (or --code) -> search
 
-The layers below the game are `pokeldn.ldn.host4`: the Local Protocol, the station handshake, the
-mesh, RTT and both reliable windows, answered as a retail Sword answers them while it hosts. Above
-them `pokeldn.swsh.host_trade` runs the trade the way a hosting Sword leads it: ping rounds, both
-snapshots, the box, the exchange, the confirmation ladder and the host migration. Every datagram
-goes to --capture as JSON lines. docs/swsh_session.md, docs/swsh_trade.md.
+Below the game `pokeldn.ldn.host4`, above it `pokeldn.swsh.host_trade`. docs/swsh_session.md,
+docs/swsh_trade.md.
 """
 import argparse
 import binascii
@@ -30,24 +27,21 @@ from pokeldn.swsh import beacon, host_trade, league_card, pokemon as swsh_pokemo
 from pokeldn.ldn.pia5 import password_crc
 from pokeldn.swsh.session import COMM_ID, PASSPHRASE, session_keys
 
-SCENE_ID = 60001                  # a retail Sword's Link Trade network
+SCENE_ID = 60001  # a retail Sword's Link Trade network
 APP_VERSION = 7
 LDN_PROTOCOL = 1
 MAX_PARTICIPANTS = 2
 ADVERT_SIZE = 0x180
 GAME_DATA_OFF = 0x18
 RECORD_LEN = 0x168
-# A searcher joins only a larger advertise-0x00 id than its own (0x006cba8c) and blacklists an id
-# whose join failed for the rest of its search, so each run draws a fresh one near the top.
+# A searcher joins only a larger id than its own (0x006cba8c) and blacklists one whose join failed,
+# so each run draws a fresh one near the top (docs/swsh_session.md).
 NETWORK_ID_HIGH = b"\xff\xff"
 
 
 def build_advert(template, network_id=None, session_param=None, code=""):
-    """-> the 384 bytes of application data: the Pia header rebuilt, the game's record kept.
-
-        0x00 network id, 0x04 CRC32 of the Link Code (0 with none), 0x08 05, 0x09 0x18 (header size),
-        0x0C session parameter, 0x10 eight zero bytes, 0x18 the game's own record
-    """
+    """-> the 384 bytes of application data: the Pia header rebuilt, the game's record kept at
+    0x18 (docs/swsh_session.md)."""
     out = bytearray(bytes(template).ljust(ADVERT_SIZE, b"\0")[:ADVERT_SIZE])
     out[0:4] = network_id or os.urandom(4)
     out[4:8] = password_crc(code)
@@ -175,7 +169,7 @@ def main():
     record({"rec": "host", "comm_id": args.comm_id, "app_data": app_data.hex(),
             "session_key": keys.session_key.hex()})
 
-    trades = {}                   # ip -> HostTrade
+    trades = {}
 
     def guarded(fn, *a):
         # A reader that raises stops the host mid-trade; the console calls that an interruption.
@@ -230,7 +224,6 @@ def main():
     except RuntimeError as exc:
         print(f"[sw] the network did not come up: {exc}")
         return 2
-    # The board's MAC and address exist only once the transport is up.
     host = host4.Pia4Host(keys.network_id_le, keys.session_key, transport.our_ip,
                           transport.our_mac, transport.send, on_data=on_data,
                           on_other=on_other, on_broadcast=on_broadcast,

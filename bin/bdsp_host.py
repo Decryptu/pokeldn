@@ -1,11 +1,7 @@
 #!/usr/bin/env python3
-"""Host a BDSP Union Room, so a console entering the Union Room joins us instead of opening its own.
+"""Host a BDSP Union Room: a console looks for a room before it opens one, and joins ours.
 
-A console looks for a room before it opens one (`IlcaNetSessionSetting.matchingMode = Random`).
-This advertises one with BDSP's title, passphrase, scene and advertisement, answers the Local,
-Station and Mesh handshakes as a retail host does, and speaks the game's room protocol.
-
-    POKELDN_RADIO=esp32:auto ./.venv/bin/python -u bin/bdsp_host.py \
+    POKELDN_RADIO=esp32:auto ./.venv/bin/python -u bin/bdsp_host.py \\
         --keys "$HOME/Documents/Switch/23.0.0 keys/prod.keys" --capture scratchpad/bhNN.jsonl
 
     (them) with the host up: any Pokemon Center -> 2F -> the LEFT attendant -> plain "Oui"
@@ -176,8 +172,8 @@ def main(argv=None):
             if session.joiner is not None and not any(p[1] == session.joiner.ip for p in present):
                 print(f"[bh] t={now:7.2f} the console left its seat")
                 session.leave(now)
-            # an association can follow a deauthentication inside one pass, and the transport
-            # reports a join without a leave; every join event starts the handshake over
+            # An association can follow a deauthentication inside one pass with no leave reported:
+            # every join event starts the handshake over.
             if host.join_events > joins_seen and present:
                 joins_seen = host.join_events
                 _, ip, mac, _ = present[-1]
