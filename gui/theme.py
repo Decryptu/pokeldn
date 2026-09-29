@@ -36,7 +36,7 @@ def text(value: str, size: float = 13, color: str = TEXT, weight=None, **kwargs)
 
 
 def backdrop(content: ft.Control) -> ft.Container:
-    """The window behind the panels: a plain square grid."""
+    """The window behind the panels: a dim checkerboard."""
     return ft.Container(content, expand=True, bgcolor=BG, padding=14,
                         image=ft.DecorationImage(src="grid.png", repeat=ft.ImageRepeat.REPEAT, scale=2,
                                                  alignment=ft.Alignment.TOP_LEFT))
