@@ -126,6 +126,8 @@ and `checksum` only reads.
 - lands at the Mystery Gift menu: the mon is in the party when the menu closes.
 
 Status 2 is success, 3 a full party with nothing written. Never put a `setstatus` after it.
+English FireRed v0 in Ryujinx returned status 2 and added the Lv30 Celebi to a five-Pokemon
+party. With six Pokemon, the same gift returned status 3 and left the party unchanged.
 
 Traps the builder enforces:
 
