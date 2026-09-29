@@ -6,67 +6,41 @@ nav_order: 2
 
 # Messages, contents and routing
 
-Above Pia, Sword and Shield run a publish/subscribe framework. An application message is four bytes
-of little-endian id, a discriminator byte, a zero byte, and a protobuf body. This page covers where
-an id comes from, how a message reaches a handler, and the party payload the game sends over it.
+The publish/subscribe framework above Pia. A message is a u16 LE id, a discriminator byte, a zero
+byte, and a protobuf body.
 
 ## Where a message id comes from
 
-Low ids are a registration table: 838 records of 24 bytes at `0x01BBFFA0`,
-`{u64 handler slot, u32 0x402, u32 id, u64 0}`, ids 1..880. The slot pointers step by eight through
-an array of identical thunks; the table is id -> handler. Ids 97 (the ping holder), 110, 120 and 130
-are in it.
-
-High ids are computed, base plus offset. 20030, 40030, 40040 and 40050 appear nowhere in the image
-(neither as an aligned word nor as a MOVZ/MOVK/MOVN immediate); 20000, 40000 and 60000 do, with code
-adding a register:
-
-    mov w9, #0x4e20          ; 20000
-    add w27, w22, w9         ; id = 20000 + w22
-
-    ldrh w8, [x19, #0x372]
-    mov w9, #0x4e20
-    add w8, w8, w9           ; id = 20000 + a halfword out of the object
-
-60000 is base + 0, a MOVZ at 41 sites. `scratchpad/swsh_msgid.py` reads both families.
-
-The 40000 family is minted one layer further down and encodes 40000 as a MOVN of -0x63c0:
-
-    ldrb w20, [x0, #0x28]          the content offset, 30 / 40 / 50
-    mov  w9, #-0x63c0              a MOVN: w9 = 0xffff9c40
-    add  w24, w20, w9
-    strh w24, [x20, #0x160]        0x9c5e / 0x9c68 / 0x9c72 = 40030 / 40040 / 40050
-
-40030, 40040 and 40050 are ids this image registers. Whether the trade flow over them is the one
-`andyjusa/nxldn-lab` records is a separate question.
+Low ids come from a table of 838 24-byte records at `0x01BBFFA0`, `{u64 handler slot, u32 0x402,
+u32 id, u64 0}`, ids 1..880 (97, the ping holder, 110, 120, 130 among them). High ids are base plus
+offset; 20030 or 40040 never occur as constants, 60000 is base + 0 (a MOVZ at 41 sites).
 
 ## Contents and holders
 
-Each content registers a family of three holders. The registrars are `0x010ccd90` for content 30,
-`0x010da7d0` for 40 and `0x010d5150` for 50; each reads the content's offset from the halfword at
-`[content+0x372]`:
+Each content registers three holders (registrars `0x010ccd90` content 30, `0x010da7d0` 40,
+`0x010d5150` 50), adding a base to its offset `ldrh [content+0x372]` and passing each to
+`0x006daeb0(manager, &holder, flag)`:
 
-    ldrh w8, [x19, #0x372] ; mov w9, #0x2710 ; add w8, w8, w9    id = 10000 + offset  -> 0x010dd910
-    ldrh w8, [x19, #0x372] ; mov w9, #0x4e20 ; add w8, w8, w9    id = 20000 + offset  -> 0x010d85f0
-    ldrh w8, [x19, #0x372] ; mov w9, #0x7530 ; add w8, w8, w9    id = 30000 + offset  -> 0x010d0980
+    mov w9, #0x2710    id = 10000 + offset   holder 0x010dd910   flag 1
+    mov w9, #0x4e20    id = 20000 + offset   holder 0x010d85f0   flag 0
+    mov w9, #0x7530    id = 30000 + offset   holder 0x010d0980   flag 0
 
-each handed to `0x006daeb0(manager, &holder, flag)` with flag 1, 0 and 0 in that order.
+The 40000 family is minted a layer lower, 40000 as a MOVN:
 
-Only a holder with a listener installed delivers anything. `0x010d81d0` (content 50's 10000-base
-parse) opens `ldr x8,[x0,#0x168]; cbz x8, out`: no listener, silent return. Installs and teardowns
-in the 30/40/50 band:
+    ldrb w20, [x0, #0x28]          the content offset, 30 / 40 / 50
+    mov  w9, #-0x63c0              w9 = 0xffff9c40
+    add  w24, w20, w9
+    strh w24, [x20, #0x160]        40030 / 40040 / 40050
 
-    content 30   0x010ccc94  0x010ccca4  0x010ccf7c        installs
-    content 40   0x010da6d0  0x010da9bc                    installs, and 0x010dab10 clears
-    content 50   0x010d50ac  0x010d533c                    installs, and 0x010d5660 clears
-
-Nothing writes the 20000-base holder's `+0x168` in content 40 or 50, so 20040 and 20050 are inert.
-A message addressed at either is dropped.
+A holder without a listener drops silently (`0x010d81d0`: `ldr x8,[x0,#0x168]; cbz x8, out`).
+Installs: content 30 `0x010ccc94`, `0x010ccca4`, `0x010ccf7c`; content 40 `0x010da6d0`,
+`0x010da9bc` (cleared `0x010dab10`); content 50 `0x010d50ac`, `0x010d533c` (cleared `0x010d5660`).
+None reaches the 20000-base holder of 40 or 50: 20040 and 20050 are inert.
 
 ### The 30000 holder
 
-The 30000+offset holder (`0x010d0980`, vtable GOT `0x02618620` = `0x02528100`, no RTTI) carries the
-framework's `SequenceDataHolder`, `sequence_data_holder.proto` in package `gflnet.p2p.framework.pb`:
+The 30000+offset holder (`0x010d0980`, vtable GOT `0x02618620` = `0x02528100`, no RTTI) carries
+`gflnet.p2p.framework.pb.SequenceDataHolder`:
 
     SequenceDataHolder    oneof message {
                             1 CancelAccepted        cancelAccepted
@@ -78,136 +52,85 @@ framework's `SequenceDataHolder`, `sequence_data_holder.proto` in package `gflne
     RequestCancelAll      { 1 int32 currentSeqNo }
     RequestForcedProceed  { 1 int32 currentSeqNo; 2 int32 targetSeqNo }
 
-The parser `0x006a7580` compares tags `0x0a`, `0x12`, `0x1a` and `0x22` (`0x006a761c..0x006a77a8`);
-RequestForcedProceed's parser `0x006a65c0` stores field 1 at `+0x14` and field 2 at `+0x18`
-(`0x006a6608`, `0x006a66f4`). The holder's receive, vtable slot 8 `0x008b9590`, reads the oneof case
-at `msg+0x24` and calls the listener at `[holder+0x168]` through the table at `0x0204c430`: case 1
-listener slot 0, case 2 slot 1, case 3 slot 2, case 4 slot 3.
+Parser `0x006a7580` (tags `0x0a`..`0x22`); RequestForcedProceed's `0x006a65c0` stores its fields
+at `+0x14`, `+0x18`. The receive, slot 8 `0x008b9590`, calls listener slot (case - 1) of
+`[holder+0x168]` via `0x0204c430`.
 
-Shield 1.3.2 builds only CancelAccepted. Nothing outside the generated protobuf code
-(`0x006a3000..0x006a8400`) calls the RequestCancel, RequestCancelAll or RequestForcedProceed
-constructors (`0x006a4b50`, `0x006a5730`, `0x006a6330`) or any of their mutable accessors. The
-CancelAccepted constructor `0x006a3db0` has 21 callers outside it: the holder's send wrapper
-`0x008b7420` and twenty reply jobs, two in each of ten sync contents (`0x008b71a0`, `0x008b7700`,
-`0x008cfb10`, `0x008cfbe0`, `0x00c06420`, `0x00c064f0`, `0x010763a0`, `0x01076470`, `0x010a2090`,
-`0x010a2160`, `0x010cf460`, `0x010cf530`, `0x010d7760`, `0x010d7830`, `0x010dd0c0`, `0x010dd190`,
-`0x012a8390`, `0x012a8460`, `0x012bec80`, `0x012bed50`). A trade between two retail consoles
-therefore never carries fields 2, 3 or 4; a console acts on them when a partner sends them
-([content 40's handlers](swsh_trade.md#the-cancel-and-proceed-messages)).
+Shield 1.3.2 builds only CancelAccepted: outside the protobuf code (`0x006a3000..0x006a8400`) nothing
+calls the other constructors (`0x006a4b50`, `0x006a5730`, `0x006a6330`) or their accessors.
+`0x006a3db0` has 21 outside callers: the send wrapper `0x008b7420` and two reply jobs in each of ten
+sync contents (`0x008b71a0`, `0x008b7700`, `0x008cfb10`, `0x008cfbe0`,
+`0x00c06420`, `0x00c064f0`, `0x010763a0`, `0x01076470`, `0x010a2090`, `0x010a2160`, `0x010cf460`,
+`0x010cf530`, `0x010d7760`, `0x010d7830`, `0x010dd0c0`, `0x010dd190`, `0x012a8390`, `0x012a8460`,
+`0x012bec80`, `0x012bed50`). Retail trades never carry cases 2 to 4; a console still acts on them
+([content 40](swsh_trade.md#the-cancel-and-proceed-messages)). Content 40's instance, 30040, port 0:
 
-Content 40's instance is message 30040, registered like every content holder on port 0:
-
-    RequestForcedProceed{currentSeqNo: c, targetSeqNo: c+1}
-      c=0  58750000 2204 0800 1001
-      c=1  58750000 2204 0801 1002
-      c=2  58750000 2204 0802 1003
-      c=3  58750000 2204 0803 1004
+    RequestForcedProceed{c, c+1}   58750000 2204 08<c> 10<c+1>     c=0: 58750000 2204 0800 1001
 
 ### The three trade contents
 
-One function, `0x010c9280`, constructs all three and stores them in the trade session object:
+`0x010c9280` builds the session:
 
     +0x120   content 30, the box exchange       ctor 0x010cca10, registers offset 30 at 0x010ce4f0
     +0x148   content 40, SyncSaveDataHolder     ctor 0x010da3f0
     +0x2b0   content 50, PokemonTradeDataHolder ctor 0x010d4d40
     +0x60    an event source, listeners in a vector at its own +0x60
-    +0x68    our Pokemon        +0x70  theirs
+    +0x68    own Pokemon        +0x70  theirs
+    +0x90    a delegate to +0xb0: thunk 0x010cc250 -> box callback 0x010ca800(session, code, payload)
     +0x140   the trade state, 1..10            +0x144  the error code
-    +0x418   send-command-3-on-the-first-frame  +0x419  the role bit that suppresses it
+    +0x418   send command 3 on the first frame  +0x419  the role bit that suppresses it
 
-It also writes four function pointers into `+0x90..+0xa8` and the session pointer into `+0xb0`: a
-delegate whose invoke thunk is `0x010cc250`, tail-calling `0x010ca800`, the session's box callback,
-as `(session, code, payload)`.
-
-A content's holders are registered by its init, which runs from a trade state; the constructors set
-two vtables, keep their arguments and zero their fields:
-
-    state 1   content 50 starts: 10050, 20050, 30050 registered, 40050 minted   init 0x010d4d90
-    state 6   content 40 starts: 10040, 20040, 30040 registered, 40040 minted   init 0x010da470
-
-No 40040 exists until the trade has passed states 1 to 4. State 6 is downstream of the Pokemon
-exchange (state 3) and of the state-4 decision at `0x01109320`.
+A content's init registers its holders and mints its 40000 id: content 50 in trade state 1
+(`0x010d4d90`), content 40 in state 6 (`0x010da470`), after the exchange (state 3) and the state-4
+decision `0x01109320`.
 
 ## The routing path
 
-From the radio to a content's receive event:
-
-    0x006a9a20   the sync pump, called from the trade session update
-    0x006db3b0   the poll: for every registered entry, take its byte at +8 and drain both streams
-    0x006a8490   stream A for that byte: mesh port [pia+0xd0+kind*4] on Pia PROTOCOL 0x7C
-    0x006a84f0   stream B for that byte: mesh port [pia+0xd8+kind*4] on Pia PROTOCOL 0x80
-    0x006db9c0   drain one stream: slot 0x78 fills (sender*, length) and the buffer at manager+0xf0
-    0x006db620   the dispatch: match the entry, then call the holder's vtable slot 8
-    0x010d81d0   content 50's 10000-base holder: parse the body, then call the listener's slot 0
-    0x010d5e40   the listener: resolve the sender to a station index, memcpy 0x158, invoke it
+    0x006a9a20   the sync pump, from the trade session update
+    0x006db3b0   the poll: per registered entry, drain both streams of its kind (byte +8)
+    0x006a8490   stream A: mesh port [pia+0xd0+kind*4], Pia protocol 0x7C
+    0x006a84f0   stream B: mesh port [pia+0xd8+kind*4], Pia protocol 0x80
+    0x006db9c0   drain: slot 0x78 fills (sender*, length) and the buffer at manager+0xf0
+    0x006db620   dispatch: match the entry, call the holder's slot 8
+    0x010d81d0   content 50's 10000-base holder: parse, call the listener's slot 0
+    0x010d5e40   the listener: sender to station index, memcpy 0x158, invoke
 
 ### The application header
 
-A payload is `struct.pack("<HBB", id, discriminator, 0)` then the body: id 97 with the body `0a00`
-assembles to `61 00 00 00 0a 00`, the ping the console repeats. `0x006db840` builds a message at
-`manager+0x240f0`:
-
-    manager+0x240f0   u16   the message id            strh w3
-    manager+0x240f2   u8    a discriminator           from manager+0x480f0
-    manager+0x240f3   u8    zero                      strb wzr
-    manager+0x240f4   ...   the body
-
-and `0x006db620` takes it apart the same way. The discriminator is a generation counter,
-`[content+0x370] = ([content+0x370] + 1) mod 255` (`0x008b6670`), pushed into `[manager+0x480f0]`.
-A CancelAccepted with `isForced` set steps the same counter on content 40 and hands it to
-`0x006db470` on the manager (`0x010dcea4..0x010dcec8`). Every content's registrar sets it to zero on its way out (`0x010d53a0`). All 107 application
-payloads in one whole run carried zero there, on every id.
+A payload is `struct.pack("<HBB", id, discriminator, 0)` then the body, built at `manager+0x240f0`
+by `0x006db840` (`strh w3`, the discriminator from `manager+0x480f0`, `strb wzr`) and parsed by
+`0x006db620`. The discriminator is a generation counter, `[content+0x370] = (+1) mod 255`
+(`0x008b6670`), pushed into `[manager+0x480f0]`; a forced CancelAccepted steps it on content 40
+(`0x006db470`, `0x010dcea4..0x010dcec8`); registrars zero it (`0x010d53a0`). All 107 payloads of one
+run carried zero.
 
 ### Reading the registrations live
-
-The poll walks the manager's entry array, so the ids a running scene accepts can be listed from
-memory without sending anything:
 
     manager = read_u64(read_u64(main + 0x02616750))     0x006a9a70, the poll's caller
     count   = read_u64(manager + 0xD8)                  0x006db3dc
     array   = read_u64(manager + 0xD0)                  0x006db3e0
-    entry i = array + i * 0x10                          the shift at 0x006db3e4
-    id      = holder's vtable slot 7, called at 0x006db740 as `ldr x8, [x8, #0x38]`
+    entry i = array + i * 0x10                          0x006db3e4
+    id      = holder's vtable slot 7, called at 0x006db740 (`ldr x8, [x8, #0x38]`)
 
-The id comes from a virtual call, so where it is stored depends on the holder's class and
-`holder+0x160` holds it only for the classes this page documents. Read the slot-7 function's address
-out of the holder's vtable and decode its `ldrh` immediate to get that class's offset.
+Slot 7 returns `[holder+0x160]` here; elsewhere decode its `ldrh`. Empty on an idle screen; a seated
+link trade adds two entries within two seconds and keeps them; Mystery Gift adds none.
 
-The array is empty on an idle screen. Entries appear only once a station is seated: a link trade
-seated adds two within two seconds and keeps them across leaving the scene, and the Mystery Gift
-scene adds none at all.
+### Dispatch gates, ports and senders
 
-### The three dispatch gates
+An entry is 16 bytes: holder, kind at +8 (`w2`), flag at +9 (`w3`, 1 only for 10000+offset):
 
-A registration entry is 16 bytes: the holder, then a byte at +8 and a byte at +9.
-`0x006daeb0(manager, &holder, flag)` passes `w2 = 0` and `w3 = flag`, so +8 is always 0 and +9 is
-the flag: 1 for the 10000+offset holder and 0 for the others. The gates:
-
-    id == holder->slot7()          slot 7 returns [holder+0x160], the id
-    entry[8] == the drain's kind   both 0
+    id == holder->slot7()
+    entry[8] == the drain's kind
     entry[9] ? header[2] == [manager+0x480f0] : no check
 
-The 10000-base holder is the only one whose discriminator byte is validated.
-
-### Kind is the Pia port
-
-The 40000-family holder registers with `0x006daf40(manager, &holder, 1, 0)` (`w2 = 1`); every
-content holder registers with `w2 = 0`. `w2` is `entry[8]`, the drain's kind, and `0x006a8490` /
-`0x006a84f0` turn a kind into a mesh port. Port 0 carries the content holders (20030, 10050, the
-pings); port 1 carries the framework's 40000-family envelopes.
-
-### The sender is a transport pointer
-
-`0x006db9c0` reads the sender out of the stream (`[sp+0x28]`, filled by the stream's own slot 0x78)
-and passes it as `x2`; `0x006db620` forwards it as `x3`; `0x010d81d0` forwards it as `x2` to
-`0x010d5e40`, which hands it to `0x006b5850`, Pia's `mesh->GetStationIndex`, `-3` (0xfd) on
-failure. The loopback path passes `[[0x2616a30]]+0xf0`, the station's own record.
-
-`Data.ownerId` is not on the 10050 path; varying it changes nothing there.
+Kind is the mesh port: 0 for content holders (20030, 10050, pings), 1 for the 40000 family
+(`0x006daf40(manager, &holder, 1, 0)`). The sender is a transport pointer (`[sp+0x28]` in
+`0x006db9c0`) passed down to `0x010d5e40` and resolved by `0x006b5850` (`mesh->GetStationIndex`,
+0xfd on failure); loopback passes `[[0x2616a30]]+0xf0`. `Data.ownerId` plays no part on 10050.
 
 ## The `Data` envelope
 
-`scratchpad/swsh_schema.txt`, `data.proto`, package `gflnet.p2p.sync.pb`:
+`gflnet.p2p.sync.pb`, `data.proto`:
 
     1  uint32  syncId        the content offset       30 / 40 / 50
     2  uint32  elementId     the base                 10000 / 20000
@@ -215,248 +138,186 @@ failure. The loopback path passes `[[0x2616a30]]+0xf0`, the station's own record
     4  uint64  clock
     5  bytes   body          four bytes in a pair; a 344-byte PK8 in a 40050
 
-The 40000 holder's listener is `element+0x18` and its slot 0 is `0x006d59f0`, eleven instructions of
-routing:
+The 40000 holder's listener is `element+0x18`; its slot 0, `0x006d59f0`, routes:
 
-    [Data+0x14] == [listener+0x10]        field 1, syncId, against the element's own offset
-    walk [listener+0x28] .. [+0x30]       the element's sub-elements, 0x90 bytes each
-      [Data+0x18] == [sub+0x62]           field 2, elementId, against the sub-element's u16 id
-      [Data+0x20] == [sub+0x68]           field 3, ownerId,   against the sub-element's u64 owner
-    sub->vtable at 0x48, called with (sub, body, len, [Data+0x28])   the body and the CLOCK
-    otherwise: ret
-
-A `Data` whose (elementId, ownerId) matches no registered sub-element is dropped silently.
+    [Data+0x14] == [listener+0x10]        syncId, the element's offset
+    walk [listener+0x28] .. [+0x30]       sub-elements, 0x90 bytes each
+      [Data+0x18] == [sub+0x62]           elementId, u16
+      [Data+0x20] == [sub+0x68]           ownerId, u64
+    sub->vtable at 0x48 (sub, body, len, [Data+0x28])     body and clock
+    otherwise: ret                        dropped silently
 
 ### Sub-element kinds
 
-Slot 9 of each kind's vtable is its receive handler; all three are the same five instructions with one
-constant changed:
+| kind | constructor | vtable | `+0x88` at birth | slot 9, receive: size check, store to `+0x88` |
+|---|---|---|---|---|
+| 32-bit | `0x006d5c00` | `0x2512bc8` | 0 (`0x006d5ce0`) | `0x006d5f20`: 4, `ldr w8` / `str w8` |
+| pair (the phase) | `0x006d6160` | `0x2512c90` | `0xfc18fc18` (`0x006d6230`) | `0x006d6490`: 4, `ldr w8` / `str w8` |
+| 16-bit | `0x006d66d0` | `0x2512d58` | 0 (`0x006d67b0`) | `0x006d69f0`: 2, `ldrh w8` / `strh w8` |
 
-    0x006d5f20   cmp x2,#4    ldr  w8,[x1]   str  w8,[sub+0x88]      a 32-bit value
-    0x006d6490   cmp x2,#4    ldr  w8,[x1]   str  w8,[sub+0x88]      the phase pair
-    0x006d69f0   cmp x2,#2    ldrh w8,[x1]   strh w8,[sub+0x88]      a 16-bit value
+A receive then sets `[sub+0x78] = clock` and `strh 0x0100 -> [sub+0x60]` (ready byte `+0x61`); slot
+7, the hashed value, returns the clock. A sub-element is 0x90 bytes; its constructor takes the
+element `x0` (`+0x80`), elementId `w1` (`+0x62`), ownerId `x2` (`+0x68`), flag `w3` (`+0x70`),
+returning through `x8`.
 
-each followed by `[sub+0x78] = clock` and `strh 0x0100 -> [sub+0x60]`, which sets the ready byte at
-`sub+0x61`. Slot 7, the value the framework hashes, is `ldr x0,[x0,#0x78]; ret`: the clock.
+The sync element (`0x006d3f80`) is built once per sync content: `0x008b5c60`, `0x008cecb0`,
+`0x00c05690`, `0x01075610`, `0x010a1230`, `0x010ce604` (30), `0x010d6904` (50), `0x010dc264` (40),
+`0x012a7530`, `0x012bdef0`. Vtables from `0x2512b28`:
 
-A sub-element records its size as 0x90, the router's stride. The pair is born with `0xfc18fc18` at
-`+0x88` (`0x006d6230`); the 32-bit and 16-bit kinds are born with zero there (`0x006d5ce0`,
-`0x006d67b0`). The three kinds are three classes with one constructor each: the 32-bit kind
-(`0x006d5c00`, vtable `0x2512bc8`), the pair (`0x006d6160`, `0x2512c90`) and the 16-bit kind
-(`0x006d66d0`, `0x2512d58`). A constructor takes the element in `x0`, the elementId in `w1` (kept at
-`+0x62`), the ownerId in `x2` (`+0x68`), a flag in `w3` (`+0x70`), and returns the sub-element
-through `x8`; it stores the element at `+0x80`.
-
-The sync element is one class (constructor `0x006d3f80`, ten construction sites, one per sync
-content: `0x008b5c60`, `0x008cecb0`, `0x00c05690`, `0x01075610`, `0x010a1230`, `0x010ce604`
-content 30, `0x010d6904` content 50, `0x010dc264` content 40, `0x012a7530`, `0x012bdef0`). It
-installs four vtables from the group at `0x2512b28`:
-
-    element+0x00  0x2512b38   primary, 6 slots; slots 2, 3, 4 are the three constructors with w3 = 1
-    element+0x08  0x2512b78   interface A, 1 slot: the 32-bit kind (thunk 0x006d5ab0)
-    element+0x10  0x2512b90   interface B, 2 slots: the pair (0x006d5ac0), the 16-bit kind (0x006d5ad0)
+    element+0x00  0x2512b38   primary, 6 slots; 2, 3, 4 are the three constructors with w3 = 1
+    element+0x08  0x2512b78   interface A: the 32-bit kind (thunk 0x006d5ab0)
+    element+0x10  0x2512b90   interface B: the pair (0x006d5ac0), the 16-bit kind (0x006d5ad0)
     element+0x18  0x2512bb0   the router listener, slot 0 = 0x006d59f0
 
-The element's mint `0x006d44e0` builds four channels and gives two of them an interface:
+The mint `0x006d44e0` builds four channels, adding every station in `[element+0x70..+0x78]`:
 
 | field | built by | size | holds |
 |---|---|---|---|
 | `+0xb0` | `0x006cd890` | 0x130 | |
-| `+0xd0` | `0x006d9ca0`, interface A | 0x38 | one 32-bit sub-element per station, elementId 10000, owner the station (`0x006d9d90`): the quorum hash |
-| `+0xf0` | `0x006d29b0`, interface B | 0x40 | one 16-bit sub-element, elementId 20000, owner 0, at `+0x38`, made by the channel's constructor; one pair per station, elementId 20000, owner the station (`0x006d2aa0`), in a vector of 16-byte `{stationId, sub}` entries |
+| `+0xd0` | `0x006d9ca0`, A | 0x38 | per station a 32-bit sub-element, elementId 10000 (`0x006d9d90`): the quorum hash |
+| `+0xf0` | `0x006d29b0`, B | 0x40 | at `+0x38` a 16-bit sub-element, elementId 20000, owner 0: the [shared value](swsh_trade.md#the-phase-is-the-elements-field); per station a pair, elementId 20000 (`0x006d2aa0`), in 16-byte `{stationId, sub}` entries |
 | `+0x110` | `0x006d7980` | 0x30 | the list the quorum hash walks |
-
-The mint calls both add-station functions for every station in `[element+0x70..+0x78]`. Every sync
-element therefore owns one 16-bit sub-element, the shared value
-([the trade page](swsh_trade.md#the-phase-is-the-elements-field)). The two-byte envelope with
-elementId 20000 and no owner that the confirmation content sends has its id, owner and size.
 
 ### The quorum hash
 
-The four bytes the framework sends on elementId 10000 are a checksum over the channel's sub-elements,
-built by `0x006d7b40` at `element+0xa8`:
+The four bytes on elementId 10000, built by `0x006d7b40` at `element+0xa8`:
 
     h = 0
     for sub in subs:
-        if (!sub[+0x61]) { h = 0; break }        any station not ready -> the hash is ZERO
+        if (!sub[+0x61]) { h = 0; break }        any station not ready -> zero
         h = crc32(le32(h + sub->slot7()))        slot 7 is the clock
 
-The hash is zero until every station's sub-element has taken a body; a non-zero hash is the console
-reporting that the peer's sub-element went ready. `0x0065de30` is a standard `zlib.crc32` (table
-generated from the non-reflected polynomial `0x04C11DB7` with index and value bit-reversed, the
-ordinary `0xEDB88320` table; init `0xFFFFFFFF`, `mvn` at the end); run under unicorn it returns
-`zlib.crc32` on every input tried (`scratchpad/swsh_emu_crc32.py`). The CRC-16 generator two
-functions along (`0x0065df04`, poly `0x8005`) belongs to a different table. The list the hash
-walks, `element+0x110`, is a copy `0x006d48b0` takes of the element's list at `+0x40`, keeping the
-entries whose `+0x68` is zero; how many entries a trade channel's copy holds has not been read.
+Non-zero means every station is ready. `0x0065de30` is `zlib.crc32` (checked under unicorn);
+`0x0065df04` (poly `0x8005`) is a CRC-16. The walked list `element+0x110` is `0x006d48b0`'s
+copy of `+0x40` keeping entries with `+0x68` zero; its length in a trade is unread.
 
-On the wire the chain covers three clocks, in this order: the sender's elementId-0 value with no
-owner, its elementId-1 value with no owner, and its own elementId-20000 sub-element. Every non-zero
-hash a hosting Sword sent in a completed trade matches, for example on content 50:
+The chain covers the sender's elementId 0 and 1 (no owner), then its own elementId 20000. Every
+non-zero hash a hosting Sword sent matches, e.g. content 50:
 
     elementId 0, no owner      clock 2304   the host's own Pokemon (344 bytes)
     elementId 1, no owner      clock 2313   the partner's Pokemon, sent back
     elementId 20000, host      clock 2278   then 2338 after its pair moved
-    crc32 chain                8ffa0f2e     then b3615e90, the 10000 bodies both sides sent
+    crc32 chain                8ffa0f2e     then b3615e90
 
-A value can change without a message: an elementId-1 clock the chain used went out on the wire only
-in a later envelope. A joiner that echoed the host's hash completed the trade. `scratchpad/sw_quorum_check.py` finds the
-clocks behind each hash in a capture.
+A clock can change before its message is sent. A joiner echoing the host's hash traded.
 
 ## The party payload on protocol 0x84
 
-Protocol 0x84 is `nn::pia::transport::ReliableBroadcastProtocol`. It carries the trade snapshot:
-3456 bytes in three fragments, repeated until acknowledged.
-
-The third fragment is compressed (Pia message flag 0x10, version 4's zlib flag). Concatenated raw
-the three fragments give 1404 + 1404 + 157 = 2965; inflated, the third is 648 bytes and the total is
-3456. `pokeldn/swsh/trade_payload.py` refuses any reassembly that is not 3456 bytes.
-
-The layout, verified field for field against pokeldn's own capture and matching
-`kwsch/PokePiaSWSH` and `lincoln-lm/swsh-lan-client`:
+`ReliableBroadcastProtocol` carries the 3456-byte trade snapshot in three fragments until acked;
+the third is zlib (Pia flag 0x10): 1404 + 1404 + 157 raw, the last inflating to 648.
+`trade_payload.py` refuses any other total. Layout (as in `kwsch/PokePiaSWSH`,
+`lincoln-lm/swsh-lan-client`):
 
     0x000  six PK8 records, party form, 0x158 each          -> 0x810
     0x810  u32   party count
     0x814  MyStatus, 272 bytes      TID/SID at 0xA0, trainer name at 0xB0
-    0x924  TrainerCard, 456 bytes   trainer name at 0x00, start date at 0x170
+    0x924  TrainerCard, 456 bytes   trainer name at 0x00, save start date at 0x170
     0xAEC  the player profile, 266 bytes                     -> 0xBF6
-    0xBF6  392 bytes another session kind supplies; zero for Link Trade
+    0xBF6  392 bytes, the Battle Stadium block; zero for Link Trade
     0xD7E  2 bytes of padding                                -> 0xD80 = 3456
 
-MyStatus and TrainerCard are PKHeX save blocks (`Saves/Substructures/Gen8/SWSH/`). The date at
-`0x924 + 0x170` is the date the save was started.
+MyStatus and TrainerCard are PKHeX save blocks (`Saves/Substructures/Gen8/SWSH/`).
 
-The builder is `0x0110c180`: `0x00784f90` writes the party, `0x01424f10` MyStatus, a memcpy of
-0x1C8 from the trainer card block, `0x01124fa0` the profile into the 0x10A at 0xAEC, and a memcpy
-of 0x188 from an optional block into 0xBF6, or a memset when the session has none. Three session
-setups call `0x010fcff0`: Link Trade (`0x010967f0`) and the password-matching session
-(`0x00bd80f4`, `ChikaMatchingStateSession`) pass no block; the Battle Stadium state
-(`0x00b2d7d0`, `StateBtlSpotCasualMatchBattle`, `StateBtlSpotRankMatchBattle`,
-`StateBtlSpotCompBattle`) passes one, so the block is the Battle Stadium's and a local
-session's snapshot carries 392 zero bytes there. The receiver `0x0110cff0` copies the two regions
-into per-station objects.
+The builder `0x0110c180`: `0x00784f90` (party), `0x01424f10` (MyStatus), a 0x1C8 memcpy (trainer
+card), `0x01124fa0` (profile), a 0x188 memcpy of an optional block or a memset. Of `0x010fcff0`'s
+callers, Link Trade (`0x010967f0`) and password matching (`0x00bd80f4`,
+`ChikaMatchingStateSession`) pass no block; Battle Stadium (`0x00b2d7d0`, `StateBtlSpot*Battle`,
+Casual, Rank, Comp) passes one. The receiver `0x0110cff0` copies both regions per station.
 
 ### The Battle Stadium block
 
-The 392 bytes at 0xBF6 are 0x180 bytes of data and a u64 length. The producer `0x00b2eb60` fills an
-optional whose flag is at `+0`, data at `+8`; the snapshot copies 0x188 bytes from its holder's
-`+0x60` (`0x0110c378`), and the reader `0x00b2d9fc` requires the length to be 0x118. Offsets from
-0xBF6:
+0x180 bytes of data, a u64 length. Producer `0x00b2eb60` fills an optional (flag `+0`, data
+`+8`); the snapshot copies 0x188 from its holder's `+0x60` (`0x0110c378`); the reader `0x00b2d9fc`
+requires length 0x118. From 0xBF6:
 
-| off | size | value | source |
-|---|---|---|---|
-| 0x000 | u32 | CRC-16 of the 0x22fc-byte regulation core, zero-extended | `0x008ff9e0`: `0x0065dd70([reg+0x180]+0x60, 0x22fc) & 0xffff`, a table CRC over polynomial `0x8005`; the regulation class references `regulation_preset_core_%d.bin` (`0x008feb34`) |
-| 0x004 | 0x100 | the battle team's signature | `+0x36` of a 0x136-byte team descriptor at `match+0x98` (`0x00b2ef24`) |
-| 0x104 | 4 | zero | |
-| 0x108 | u64 | an optional u64 of the Battle Stadium manager, value `+0x1ab8`, flag `+0x1ab0` (`0x00adc8d0`); zero unless the match type (`vtable+0x40`) is 3, the online competition (below) | `0x00b2f100` |
-| 0x110 | u8 | the manager's byte at `+0x191c` (`0x00adbbe0`), when `0x00adb920` yields an object and `0x00b1ce10(0) == 2` | `0x00b2efc4` |
-| 0x111 | u32 | team descriptor `+0` | |
-| 0x115 | u16 | team descriptor `+4` | |
-| 0x117 | u8 | team descriptor `+6` | |
-| 0x118 | 0x68 | zero | |
-| 0x180 | u64 | length, 0x118 | |
+    0x000  u32    CRC-16 (0x8005) of the 0x22fc-byte regulation core   0x008ff9e0:
+                  0x0065dd70([reg+0x180]+0x60, 0x22fc); regulation_preset_core_%d.bin (0x008feb34)
+    0x004  0x100  the team's signature: +0x36 of the 0x136-byte team descriptor at match+0x98
+                  (0x00b2ef24)
+    0x104  4      zero
+    0x108  u64    the manager's optional (value +0x1ab8, flag +0x1ab0, 0x00adc8d0), zero unless
+                  match type 3                                         0x00b2f100
+    0x110  u8     the manager's byte +0x191c (0x00adbbe0) when 0x00adb920 yields an object and
+                  0x00b1ce10(0) == 2                                   0x00b2efc4
+    0x111  u32, u16, u8   team descriptor +0, +4, +6
+    0x118  0x68   zero
+    0x180  u64    length, 0x118
 
-The receiver `0x00b2e590` recomputes its own regulation CRC (`0x00b2e760`) and compares it with the
-partner's; with `0x008fc470` the result is 9 when both hold and 10 otherwise (`cinc` at
-`0x00b2e778`). `0x010719f0`, `0x01071a98` and `0x01071c00` compare the same CRC and a second one over
-0x640 bytes at `+0x188` (`0x008ffa10`). The 0x136-byte descriptor is copied whole at 18 sites, four
-of them in `StateDownloadTeamMenu`'s code (`0x013e660c` to `0x013e7c58`).
+The receiver `0x00b2e590` compares the partner's CRC with its own (`0x00b2e760`); with `0x008fc470`
+the result is 9 when both hold, else 10 (`cinc` `0x00b2e778`). `0x010719f0`, `0x01071a98`,
+`0x01071c00` compare it and a CRC over 0x640 bytes at `+0x188` (`0x008ffa10`). The descriptor is
+copied whole at 18 sites, four in `StateDownloadTeamMenu` (`0x013e660c` to `0x013e7c58`).
 
-The signature is RSA-2048 with PKCS#1 v1.5 padding over SHA-256. The partner's signature goes with
-its party to `0x011aedf0(team, v, sig)`, the only caller of `nn::crypto::detail::BigNum::ModExp`
-(PLT `0x018fff50`, GOT `0x0260fb38`), with the signature as the third argument (`0x011aee2c mov
-x23,x2`). Its callers are `0x00b2f19c`, `0x00b2f1e0`, `0x00b2f2e0` and `0x0109eb68`.
+The signature is RSA-2048, PKCS#1 v1.5, SHA-256, checked by `0x011aedf0(team, v, sig)` (callers
+`0x00b2f19c`, `0x00b2f1e0`, `0x00b2f2e0`, `0x0109eb68`), the only caller of
+`nn::crypto::detail::BigNum::ModExp` (PLT `0x018fff50`, GOT `0x0260fb38`):
 
-    0x011aee90  count records of 0x148 bytes, the stored PK8s        bl 0x7664c0, add w26,#0x148
-    0x011aeeac  v as a big-endian u16, then 00 01                    rev w8,w22; lsr #16; strh 0x100
+    0x011aee90  count 0x148-byte stored PK8s        bl 0x7664c0, add w26,#0x148
+    0x011aeeac  v as BE u16, then 00 01             rev w8,w22; lsr #16; strh 0x100
     0x011aef98  Sha256Impl::Initialize
-    0x011aefa8  BigNum::Set(modulus, .., 0x100), then Set(exponent, ..)
+    0x011aefa8  BigNum::Set(modulus, .., 0x100), Set(exponent, ..)
     0x011aeffc  Sha256Impl::Update(message)
     0x011af01c  BigNum::ModExp(out, sig, exponent, 0x100, ..)
     0x011af06c  cmp x8,#0xca: the 00 01 FF..FF 00 padding
     0x011af090  memcmp(.., Sha256Generator::Asn1ObjectIdentifier, 0x13)
     0x011af128  Sha256Impl::GetHash, memcmp(.., 0x20)
 
-The console holds only the public key. The image carries the URLs
+The console holds only the public key; the image carries
 `https://v3-lp1.vp.n.srv.nintendo.net/v1/public_key` (`0x01bd7d41`) and `.../v1/validate`
-(`0x01c11a93`); that a Nintendo server signs this message is deduced from the layout. A Link Trade
-snapshot carries 392 zero bytes there and never reaches the check.
+(`0x01c11a93`), so a Nintendo server signs (deduced). Link Trade never reaches the check.
 
-The `v1/validate` request, built by `0x011a2a70`, is a NUL-terminated string (the whole body of the
-`v1/public_key` request too), the public key version as a big-endian u16 (key holder `+0x68`, set
-from the `v1/public_key` reply by `0x0144fb90`), the console's own version `0x007d4270() = 0x2D`
-(Shield) as a big-endian u16, `00 01`, a big-endian record count and the records of 0x148 bytes
-(`0x007664c0`). The signed message holds the same records, version and `00 01`. On the checking side
-`v` is the partner's player-status byte at block offset `0xA4` (`obj+0x104`, `0x01424bf0`), which
-the constructors default to `0x2D` (`0x014245f0`); PKHeX's `MyStatus8` names it `Game`.
+`v1/validate` (`0x011a2a70`) sends a NUL-terminated string (all of `v1/public_key`'s body), the key
+version as BE u16 (key holder `+0x68`, set from the `v1/public_key` reply by `0x0144fb90`), the
+console's version `0x007d4270() = 0x2D` (Shield) as BE u16, `00 01`, a BE count and 0x148-byte
+records (`0x007664c0`). The signed message holds the same records, version and `00 01`; there `v` is
+the partner's MyStatus byte `0xA4` (`obj+0x104`, `0x01424bf0`, default `0x2D` at `0x014245f0`, PKHeX
+`MyStatus8.Game`). The reply parser `0x011a2870`: byte 0 a status (2: stale key, fetch again;
+`R+0x70` = status == 1), bytes 5-6 a BE count n clamped to 6, n BE u32 into `R+0x74`, on status 0
+0x100 bytes into `R+0x8c` (`0x011a29e4`). Of five callers only `0x014f8c00` keeps them (to
+`obj+0x183`); `0x014f808c` writes them at `+0x36` of a descriptor-shaped 0x136-byte run.
 
-The reply parser `0x011a2870` reads byte 0 as a status (2: the key is stale, `v1/public_key` is sent
-again; `R+0x70` = status equal to 1), bytes 5 and 6 as a big-endian count n clamped to 6, n
-big-endian u32 into `R+0x74`, and, when the status is 0, the next 0x100 bytes into `R+0x8c`
-(`0x011a29e4`). Of the validate API's five callers only `0x014f8c00` keeps those bytes: it copies
-them to `obj+0x183`, and `0x014f808c` writes them at `+0x36` of a 0x136-byte run laid out as the team
-descriptor above.
-
-The match type is the constant the match object's virtual `+0x40` returns: the three match classes'
-vtables `0x2538238`, `0x2538358` and `0x2538478` hold at slot 8 `0x00adda60` (1), `0x00adde60` (2)
-and `0x00ade340` (3). Their constructors are reached from `0x00adcfb0(obj, mode)`, itself reached
-only through `0x00b1cdd0`, whose six callers are all in `StateBtlSpotTop` (`0x00b23080`, name at
-`0x01c21cd7`). That state sets mode 1, 2 or 3 and moves to `StateBtlSpotCasualMatchEntrance`
-(`0x01c21dae`), `StateBtlSpotRankMatchEntrance` (`0x01c257b1`) or `StateBtlSpotCompTop`
-(`0x01bfd817`): 1 is a casual battle, 2 a ranked battle, 3 an online competition. The u64 at
-`+0x108` is written by `0x00adc8b0` (`str x1,[x0,#0x1ab8]`, flag byte `+0x1ab0 = 1`), whose only
-caller `0x00b41b7c` is in `StateBtlSpotCompTop`'s code. It passes the u64 at offset 0x33C0 of save
-block `0x88F6D6AE` (0x33D0 bytes, key at `0x02072fac`, read by `0x01444ac0`); the key before it in the
-same table, `0xEEE5A3F8`, is PKHeX's `KOfficialCompetition`, also 0x33D0 bytes.
+The match type is slot 8 (`+0x40`) of vtables `0x2538238`, `0x2538358`, `0x2538478`: 1 casual
+(`0x00adda60`), 2 ranked (`0x00adde60`), 3 online competition (`0x00ade340`). `0x00adcfb0(obj,
+mode)` builds them, reached only via `0x00b1cdd0` from six sites in `StateBtlSpotTop`
+(`0x00b23080`), which moves to `StateBtlSpotCasualMatchEntrance`, `StateBtlSpotRankMatchEntrance` or
+`StateBtlSpotCompTop`. `+0x108` is written by `0x00adc8b0` (`str x1,[x0,#0x1ab8]`, flag `+0x1ab0 =
+1`) from `0x00b41b7c` in `StateBtlSpotCompTop`, with the u64 at 0x33C0 of save block `0x88F6D6AE`
+(0x33D0 bytes, key at `0x02072fac`, read by `0x01444ac0`; the preceding key `0xEEE5A3F8` is PKHeX's
+`KOfficialCompetition`).
 
 ### The player profile
 
-The 266 bytes at 0xAEC are the record the LDN beacon carries at application-data 0x1F
-([the session page](swsh_session.md)). `0x01111970` copies it out of the profile singleton
-(`[0x2610958]`, fields at +0x310 to +0x564 under the mutex at +0x580) and `0x01125080` packs it;
-every group must be present or nothing is written, so the layout is fixed. Raw fields are
-byte-aligned; three groups are bit-packed, least significant bit first.
-`pokeldn.swsh.trade_payload.read_tail` decodes it.
+266 bytes at 0xAEC, also the beacon's record at 0x1F ([session](swsh_session.md#taking-a-seat)).
+`0x01111970` copies it from the singleton `[0x2610958]` (+0x310 to +0x564, mutex +0x580);
+`0x01125080` packs all groups or none, so the layout is fixed; bit-packed groups are LSB first.
+`trade_payload.read_tail` decodes it.
 
     0x00  16  nn::oe::GetPseudoDeviceId
     0x10  16  nn::account::GetUserId, the account Uid
-    0x20   8  nn::account::GetNetworkServiceAccountId, zero when the account has none
-    0x28  24  trainer name, UTF-16, from MyStatus+0xB0; bytes after the terminator are whatever
-              the buffer held (in every capture, a stale copy of bytes 0x0E..0x17 of this record)
+    0x20   8  nn::account::GetNetworkServiceAccountId, or zero
+    0x28  24  trainer name, UTF-16, from MyStatus+0xB0; stale bytes after the terminator
     0x40  25  appearance, bit-packed:
                 bit 0      MyStatus+0xA5 (gender) != 0
-                bit 1      a flag 0x0111cfec sets to 1; 0 in every capture
+                bit 1      set by 0x0111cfec; 0 in every capture
                 bits 2-5   MyStatus+0xA7, the language (3, French)
                 bits 6-7   zero
-                8 bits     MyStatus+0xCC as a byte (17 on this save)
+                8 bits     MyStatus+0xCC
                 17 x 10    the model 0x0111dd60 unpacks from the MyStatus bitfield at +0x00
                 2, 2, 10   the last three of that unpacking
-    0x59  55  the position samples, bit-packed:
-                2, 2 bits  the sample object's +0x47 and +0x1c9 (2, 0 in every capture; below)
-                8 bits     a generation byte: drawn from the game's random source when the ring
-                           is reset (0x00eb98a8), incremented by one on a re-seed; a listener tells
-                           a new run of samples from an old one by it (3..222 across captures)
-                8 bits     the player object's byte at +0x136 (7 in every capture)
-                3 x 17     at 0x5C, 0x6D, 0x7E: the player's last three positions, newest first.
-                           A 5-bit counter 0x01123be0 steps once per push; a 3-bit state, the
-                           sample object's +0x1c8 (table below; 2 in every capture); the world position
-                           x, y, z as three floats; the yaw in radians, component 1 of the Euler
-                           angles 0x006101c0 derives from the player's rotation quaternion.
-                           0x00ebf590 pushes one sample at most once a second (nn::os tick delta
-                           in ms >= 1000) from the field object at +0x60 (position) and +0x50
-                           (rotation); the copies at 0x00b4f140 and 0x00b54450 re-push the
-                           current sample three times, which is why one capture's three samples
-                           differ only by the counter.
-                8 bits     at 0x8F: the player object's byte at +0x140 (1 in every capture)
-    0x90  37  activity, bit-packed: an 8-bit kind at 0x90 (table below; 13 in every trade
-              capture and in the trade-screen beacon), an optional 28-byte part, a
-              24-byte field, a u16 at 0xB2, a bool. All zero in every capture except the kind
-              and the u16. The u16 is the player's location: 0x00f27d70 looks the current
-              field's name up in `script/place_name.dat` and returns its line, the met-location
-              id PKHeX prints (`text_swsh_00000_en.txt`): 170 Challenge Beach in every trade
-              capture, 188 Stepping-Stone Sea in the trade-screen beacon read, and the player
-              confirms the character stood on that beach of the Isle of Armor through the
-              trade runs; the setter is 0x0111bc60, the readers 0x0111b8c8 and 0x0111b8f4.
+    0x59  55  position samples, bit-packed:
+                2, 2 bits  `a` (sample object +0x47) and `b` (+0x1c9), below
+                8 bits     generation: random at ring reset (0x00eb98a8), +1 per re-seed
+                8 bits     player object byte +0x136 (7 in every capture)
+                3 x 17     at 0x5C, 0x6D, 0x7E, newest first: 5-bit counter (0x01123be0, +1 per
+                           push); 3-bit state (+0x1c8, below); x, y, z floats; yaw in radians
+                           (Euler component 1, 0x006101c0). 0x00ebf590 pushes at most once a second
+                           from the field object's +0x60 (position) and +0x50 (rotation);
+                           0x00b4f140 and 0x00b54450 re-push the current sample three times.
+                8 bits     at 0x8F: player object byte +0x140 (1 in every capture)
+    0x90  37  activity, bit-packed: an 8-bit kind (below; 13 in trade), an optional 28-byte part,
+              a 24-byte field, a u16 at 0xB2, a bool; only kind and u16 non-zero. The u16 is the
+              location, the line of `script/place_name.dat` (0x00f27d70), PKHeX's met-location
+              id (170 Challenge Beach); setter 0x0111bc60, readers 0x0111b8c8, 0x0111b8f4.
     0xB5  37  two more groups (56 and 16 source bytes), zero in every capture
     0xDA  32  sixteen u16 records, `0x010f5060`: Record8 indexes 6, 32, 0, 33, 17, 27, 34, 24,
               12, 3, 10, 35, 38, 7, 36, 37, each clamped to 0xFFFF (PKHeX `RecordList_8`:
@@ -466,171 +327,120 @@ byte-aligned; three groups are bit-packed, least significant bit first.
     0xFA   8  an optional u64, zero in every capture
     0x102  8  zero
 
-The three samples in one capture were identical apart from the counter (11, 10, 9): position
-50288.4, 99.3, 56730.4 and yaw -0.643. Across thirty captures the position moved by at most 70
-units and the yaw between -1.8 and 0.3, on the same field (location 170). A receiver
-(0x00dd5e24) stores the position at its object's +0xB0 and the yaw, turned back into a quaternion
-with the other two angles zero (0x00992cd0), at +0xA0; 0x011a68a4 takes a sample only in
-states 1, 2, 3 and 6. The records move with play: 50 trades in the September captures, 66 a
-week later.
+A receiver (0x00dd5e24) stores the position at +0xB0 and the yaw, as a quaternion, at +0xA0
+(0x00992cd0); 0x011a68a4 samples only in states 1, 2, 3, 6.
 
-The sample state is the byte at `+0x1c8` of the sample object `[[0x261bd18]]`. `0x00ebf570`
-(`strb w1,[x0,#0x1c8]`) is its only setter; the reset `0x00eb97b0` (sole caller `0x00dd2e00`)
-zeroes it with the word at `0x00eb986c`. The push `0x00ebf590` returns at once while it is 0
-(`0x00ebf5a8`). Every value set:
+The sample state is `+0x1c8` of `[[0x261bd18]]`, set only by `0x00ebf570`, zeroed by the reset
+`0x00eb97b0` (sole caller `0x00dd2e00`, `0x00eb986c`); the push returns at once while it is 0
+(`0x00ebf5a8`):
 
 | state | set by |
 |---|---|
-| 0 | `0x00dfd1d4`, slot 9 of vtable `0x2561ec8` |
-| 1 | the field player class: slots 13 (`0x00d98f28`), 30 (`0x00d9d2a8`), 76 (`0x00da0188`), and `0x00d97730` with motion 0 |
-| 2 | the field player class: `0x00d97730` with motion 1 or 2; slot 7 (`0x00d97644`), which sets motion 1 when `[+0x5b8]` becomes 1 or 2 during motion 2; slot 75 (`0x00d9fcc4`) |
-| 3 | slot 15 of vtable `0x253e358` (`0x00b4f028`), the class whose slot 7 loads `StateCreateSession`; slot 8 of vtable `0x25614c0` (`0x00dedf80`) when `[[obj+0x98]+0x58]` is set |
-| 4 | slot 16 of vtable `0x253e8d0` (`0x00b54338`), the class whose slot 7 loads `StateConnect`; the same `0x25614c0` slot when that byte is clear |
+| 0 | `0x00dfd1d4`, vtable `0x2561ec8` slot 9 |
+| 1 | field player slots 13 (`0x00d98f28`), 30 (`0x00d9d2a8`), 76 (`0x00da0188`); `0x00d97730` motion 0 |
+| 2 | `0x00d97730` motion 1 or 2; slot 7 (`0x00d97644`, motion 1 when `[+0x5b8]` becomes 1 or 2 in motion 2); slot 75 (`0x00d9fcc4`) |
+| 3 | vtable `0x253e358` slot 15 (`0x00b4f028`, class of `StateCreateSession`); vtable `0x25614c0` slot 8 (`0x00dedf80`) when `[[obj+0x98]+0x58]` is set |
+| 4 | vtable `0x253e8d0` slot 16 (`0x00b54338`, class of `StateConnect`); the `0x25614c0` slot when clear |
 | 5 | nothing |
-| 6 | `0x00da09a0` (`0x00da0a04`), called from `0x00cebe00`, `0x00cebea4` and `0x01466d90`, the last in the script native `CallRaidBattleMatchingEvent_` (`0x01466d30`, named in the table at `0x25aac68`) |
+| 6 | `0x00da09a0` (`0x00da0a04`) from `0x00cebe00`, `0x00cebea4`, `0x01466d90` in the native `CallRaidBattleMatchingEvent_` (`0x01466d30`, table `0x25aac68`) |
 
-`0x00d97730(player, motion)` stores the motion through `player->vtable[0x190]` under the key
-`[0x261e8a0]`, then sets state 1 for motion 0 and state 2 for motions 1 and 2. The script native
-`IsPlayerRideBicycleType` (`0x0148b960` -> `0x00da0210`) compares its argument with the value under
-the same key, and the Lua enum registered at `0x00e57940` names the motions `NORMAL`,
-`BICYCLE_GROUND` and `BICYCLE_WATER` (`1 | 2<<32` at `0x00e5793c` for the last two). The `0x25614c0`
-slot also starts an activity record of kind 11 (`0x0111b660`), hands it to `[0x26108d8]`
-(`0x00fa13c0`), and pushes a sample at once.
+`0x00d97730(player, motion)` stores the motion via `player->vtable[0x190]` under key `[0x261e8a0]`,
+also read by the native `IsPlayerRideBicycleType` (`0x0148b960` -> `0x00da0210`); the Lua enum at
+`0x00e57940` names motions `NORMAL`, `BICYCLE_GROUND`, `BICYCLE_WATER` (`1 | 2<<32` at
+`0x00e5793c`). The `0x25614c0` slot also starts an activity record of kind 11 (`0x0111b660`), hands
+it to `[0x26108d8]` (`0x00fa13c0`) and pushes a sample.
 
-The group's first byte packs `a` in bits 0-1 and `b` in bits 2-3 (`0x01123710`; the unpacker
-`0x01123760` reads a `b` of 3 as 0). `a` is the sample object's `+0x47`, set by the reset
-`0x00eb97b0` in its mode 0 from a 64-bit key: `0x5742865396e549d0` -> 1, `0x5ea5c3539ab81c81` -> 2,
-`0x674edc539f9f74a6` -> 3, anything else 0 (`0x00eb97d0..0x00eb9848`). The three keys stand for the
-areas `wr0101`, `wr0201` and `wr0301`: they are also the data array at `0x02061f98`, looped over at `0x00ecd418`, and
-`0x00ec51b4..0x00ec5218` maps them in that order to the nest-hole emitter names
-`a_wr0101_nest_hole_emitter_%d` (`0x01c25bbb`), `a_wr0201_...` (`0x01be5bad`) and `a_wr0301_...`
-(`0x01c2d3a5`); `0x00de19c0` copies the name `a_wr0101` (`0x01c0ae67`) when the current area key
-`[[[0x2617c48]]+0x180]` equals the first. `a` is 1 in `wr0101`, 2 in `wr0201`, 3 in `wr0301`, 0
-elsewhere. Every capture on Challenge Beach (location 170, the Isle of Armor) carried 2, so `wr0201`
-is the Isle of Armor's wild area. The keys are the game's FNV-1a 64 (offset basis `0xcbf29ce484222645`, built at
-`0x01369700..0x01369724`) of `a_wr0101`, `a_wr0201` and `a_wr0301`: running FNV-1a backwards over
-`1`, `0` and the digit brings all three to the one state `0xb8123d750dc24af8`, the state after
-`a_wr0`. `a_wr0201` and `a_wr0301` are not strings in main; the romfs holds them as the sound banks
-`bin/sound/NX64/wwise/bank/a_wr0201.bnk` and `a_wr0301.bnk`. `b` is `+0x1c9`, set by
-`0x00ebf580` from slot 8 of vtable `0x259add8` (`b = 0x0110e850(...) < 4`, `0x012dfaec`) and from
-slot 11 (`b = 2`, `0x012dfca8`), each followed by a push.
+`a` and `b` pack into bits 0-1 and 2-3 (`0x01123710`; `0x01123760` reads `b` 3 as 0). The reset
+`0x00eb97b0` in mode 0 sets `a` from the area key `[[[0x2617c48]]+0x180]` (`0x00eb97d0..0x00eb9848`):
 
-The activity record at 0x90 is `0x49` bytes, initialised by `0x0111b660(rec, kind)`: the kind at
-`+0`, zeroes at `+4`, `+0x24..+0x3e`, `+0x40` and `+0x48`. The kinds its callers pass:
+| key | area | `a` |
+|---|---|---|
+| `0x5742865396e549d0` | `wr0101` | 1 |
+| `0x5ea5c3539ab81c81` | `wr0201`, the Isle of Armor (captures at location 170) | 2 |
+| `0x674edc539f9f74a6` | `wr0301` | 3 |
+| other | | 0 |
 
-| kind | site |
-|---|---|
-| 9 | `0x0102437c` |
-| 11 | `0x00dedf3c`, `0x0126e37c` |
-| 12 | `0x01272120` |
-| 18; 19, 21, 23, 25 | `0x01027d38`; `0x01027d2c` as `0x13 + 2n`, n < 4 |
-| 27 | `0x00de7a0c` |
-| 28 | `0x00de727c` |
-| 29 | `0x01026290` |
-| 30 | `0x0109659c` |
-| 31 | `0x015d595c` |
-| 255 | `0x01027fac`, `0x010962b8`, `0x01097990`, `0x01097bc4` |
-| by mode | `0x010961b0`: the 7-entry table at `0x2066c40` indexed by the communication mode `[obj+0x70]` |
+The keys are FNV-1a 64 (basis `0xcbf29ce484222645`, `0x01369700..0x01369724`) of `a_wr0101`,
+`a_wr0201`, `a_wr0301` (inverted over the last two characters, all reach `0xb8123d750dc24af8`). They
+are also the array `0x02061f98` (looped at `0x00ecd418`), map to the nest-hole emitter names at
+`0x01c25bbb`, `0x01be5bad`, `0x01c2d3a5` (`0x00ec51b4..0x00ec5218`), and `0x00de19c0` copies
+`a_wr0101` (`0x01c0ae67`) on the first; the romfs has `a_wr0201.bnk` and `a_wr0301.bnk` sound banks.
+`b` is set by `0x00ebf580` from vtable `0x259add8` slot 8 (`0x0110e850(...) < 4`, `0x012dfaec`) and
+slot 11 (2, `0x012dfca8`), each followed by a push.
+
+The activity record at 0x90 is `0x49` bytes, set up by `0x0111b660(rec, kind)` (kind at `+0`,
+zeroes at `+4`, `+0x24..+0x3e`, `+0x40`, `+0x48`). Kinds by call site: 9 `0x0102437c`; 11
+`0x00dedf3c`, `0x0126e37c`; 12 `0x01272120`; 18 `0x01027d38`; 19, 21, 23, 25 `0x01027d2c`
+(`0x13 + 2n`); 27 `0x00de7a0c`; 28 `0x00de727c`; 29 `0x01026290`; 30 `0x0109659c`; 31 `0x015d595c`;
+255 `0x01027fac`, `0x010962b8`, `0x01097990`, `0x01097bc4`; and `0x010961b0` by the communication
+mode `[obj+0x70]` through the table at `0x2066c40`:
 
     mode   0    1  2   3   4   5   6
     kind   255  1  13  14  15  16  30
 
-The mode is set by `SetMode` (`0x01096d10`, `str w1,[x0,#0x70]`), which Link Trade calls with 2
-([the session page](swsh_session.md#how-a-searching-sword-finds-a-partner)); its other constant
-callers pass 0, 1 and 6.
+`SetMode` (`0x01096d10`, `str w1,[x0,#0x70]`) is called with 2 by Link Trade
+([session](swsh_session.md#how-a-searching-sword-finds-a-partner)), and with 0, 1, 6.
 
-The name field is the fourth copy of the trainer name in the snapshot, after MyStatus, the trainer
-card and the party records; `trade_payload.rewrite` moves all four. The trade screen draws the
-partner from MyStatus.
-
-The party is the first 0x810: six PK8 records at a 0x158 stride. Empty slots are zero-filled; an
-empty slot is an encryption constant of zero. The count at 0x810 agrees.
-
-`pokeldn/swsh/trade_payload.rewrite` moves the identity in MyStatus, the trainer card, every party
-record and the profile at once, and the trade screen names that trainer as the partner.
-`scratchpad/sw84_read.py <payload.bin>` is the viewer.
+The trainer name appears four times (MyStatus, trainer card, party records, profile);
+`pokeldn/swsh/trade_payload.rewrite` moves all four, and the trade screen names that trainer. Empty
+party slots are zero; the count at 0x810 agrees.
 
 ## The PK8
 
-The Gen-8 entity format is shared with BDSP and lives in `pokeldn/gen8.py`; in PKHeX, `PK8` and `PB8`
-are both `G8PKM` and neither overrides a shared offset. `pokeldn/swsh/pokemon.py` is the Sword view
-and sends the party form, 0x158; a BDSP trade sends the 0x148 stored form.
+Shared with BDSP in `pokeldn/gen8.py` (PKHeX `PK8` and `PB8` are both `G8PKM`). Sword sends the
+0x158 party form (`pokeldn/swsh/pokemon.py`), BDSP the 0x148 stored form.
 
     0x00  u32  encryption constant, in the clear. Seeds the cipher and the block order
-    0x06  u16  checksum, in the clear, over the decrypted body ONLY
+    0x06  u16  checksum, in the clear, over the decrypted body only
     0x08       four 80-byte blocks, LCG-encrypted and permuted by (EC >> 13) & 31
-    0x148      the party stats, LCG-encrypted with the stream RESTARTED, and never permuted
+    0x148      the party stats, LCG-encrypted with the stream restarted, never permuted
 
-Two properties of that format cause silent misreads:
+Two silent misreads:
 
-- The party stats restart the LCG. `PokeCrypto.Decrypt8` calls `CryptArray` twice, both seeded from
-  the encryption constant. A tail decrypted with the continued stream produces plausible garbage such
-  as a level of 110.
-- `BLOCK_ORDER[sv]` is applied, not inverted: it names the block that becomes block *i*. Sixteen of
-  the 32 `sv` values (ten of the 24 distinct orderings) are their own inverse, so a wrong direction
-  reads perfectly for those and garbles the rest. The checksum is a sum of 16-bit words and does not
-  change under block permutation. The table is 32 entries long; PKHeX's `PokeCrypto.BlockPosition`
-  writes entries 24-31 as duplicates of 0-7.
+- The party stats restart the LCG (`PokeCrypto.Decrypt8` seeds `CryptArray` twice from the EC); a
+  continued stream gives plausible garbage such as level 110.
+- `BLOCK_ORDER[sv]` names the block that becomes block *i*: apply it, never invert it. 16 of 32 `sv`
+  values are self-inverse and the checksum ignores order, so the wrong direction often reads fine.
+  PKHeX's `BlockPosition` entries 24-31 duplicate 0-7.
 
-Independent checks that a party has decoded correctly: the nicknames decode
-as species names in the console's own language; the species numbers match those names; the levels
-come out of the party-stat tail, which is outside the four shuffled blocks; the experience agrees
-with each level on its own growth curve; the hyper-training byte at 0x126 agrees bit for bit with the
-IV word at 0x8C; and MyStatus's trainer ids match the ids inside every PK8, from a different block of
-the payload.
-
-`pokeldn/swsh/pokemon.py` `build_from` edits a record the console sent and re-encrypts it; every
-byte outside the named fields stays a byte from a real save.
+Checks of a decoded party: nicknames match species; levels (unshuffled tail) match experience;
+hyper-training 0x126 matches the IV word 0x8C; MyStatus's trainer ids match every PK8's.
 
 ## The trade message
 
-`pokemon_trade.proto`, package `net_contents.trade.common.pokemon_trade.protocol_buffers`:
+`net_contents.trade.common.pokemon_trade.protocol_buffers`:
 
     Pokemon                  { 1 bytes   serializePokemonParam }
     PokemonTradeDataHolder   { 1 Pokemon pokemon }
 
-129 bytes of descriptor, one message, one field. Content 50's holder parse `0x010d81d0` constructs a
-0x28-byte protobuf (`0x010d9c90`), calls `ParseFromArray` (`0x0070c180`) and passes `[msg+0x18]` to
-the listener; its `MergePartialFromCodedStream` (`0x010d9ee0`) accepts tag 0x0a and nothing else.
-The listener reads `[Pokemon+0x18]` as a libc++ `std::string` (byte 0 bit 0 selects the heap pointer
-at +0x10) and memcpys 0x158 out of it.
-
-A Pokemon offer is `PokemonTradeDataHolder{pokemon{serializePokemonParam: <344-byte PK8>}}` on
-10050. `pokeldn/swsh/trade.py` `pokemon_offer` builds it.
+An offer carries a 344-byte PK8 on 10050 (`trade.py` `pokemon_offer`). The parse `0x010d81d0` builds
+a 0x28-byte message (`0x010d9c90`), calls `ParseFromArray` (`0x0070c180`) and passes `[msg+0x18]`;
+`MergePartialFromCodedStream` (`0x010d9ee0`) accepts tag 0x0a only. The listener reads
+`[Pokemon+0x18]` as a libc++ `std::string` (byte 0 bit 0 selects the heap pointer at +0x10), copying
+0x158.
 
 ### The receive handler's two silent drops
 
 `0x010d5e40`:
 
-    w0 = 0x006b5850(senderPointer)      Pia: mesh->GetStationIndex; -3 (0xfd) on failure
-    if (w0 == 0xfd) { [content+0x1a4] = 1; return; }          nothing parsed, nothing answered
-    memcpy(stack, body, 0x158)                                0x158 = 344 = the party-form PK8
-    subscriber = [content + 0x30 + index*8]                   one slot per station index
-    if (subscriber == null || its refcount is 0) return       also silent
-    ... invoke it, then call content 50's own send 0x010d6000 on it
+    w0 = 0x006b5850(senderPointer)                            0xfd on failure
+    if (w0 == 0xfd) { [content+0x1a4] = 1; return; }          silent
+    memcpy(stack, body, 0x158)
+    subscriber = [content + 0x30 + index*8]
+    if (subscriber == null || its refcount is 0) return       silent
+    ... invoke it, then content 50's send 0x010d6000
 
-Content 50's init writes exactly two subscriber slots, `+0x30` and `+0x38`; any station index above
-1 reads zeroed memory and returns. Content 40's handler `0x010dbc90` has the identical gate at
-`+0x38`/`+0x40`.
-
-Diagnostic: receiving a Pokemon on the 10000-base holder makes the console put its own on the same
-holder immediately. A run in which the console never sends a 10050 is a run in which the offer never
-reached `0x010d5e40`.
-
-Content 30's equivalent slot (`0x010ce080`) does not resolve a station index; it compares the sender
-against the station's own id (`[[0x2616a30]]+0xf0`) and returns if they are equal. A sender id that
-is merely not-ours passes content 30 and fails content 50: an offer with no owner reaches the player
-in the box phase and is swallowed in the selection phase.
+Content 50's init fills only `+0x30` and `+0x38`, so a station index above 1 returns; content 40's
+`0x010dbc90` gates the same at `+0x38`/`+0x40`. The console answers a 10050 at once with its own; no
+10050 back means the offer never reached `0x010d5e40`. Content 30's slot (`0x010ce080`) only rejects
+its own id (`[[0x2616a30]]+0xf0`): an ownerless offer passes the box phase and fails content 50.
 
 ### Content 40's message
 
-`sync_save_data_holder.proto` and `sync_command.proto`, both in
 `net_contents.trade.common.sync_save.protocol_buffers`:
 
     SyncSaveDataHolder { 1 SyncCommand syncCommand }
     SyncCommand        { 1 int32       data       }
 
-Content 40's holder parse `0x010ddb20` is `0x010d81d0` instruction for instruction. Its
-`MergePartialFromCodedStream` `0x010df6d0` accepts tag 0x0a and nothing else, over a submessage
-parser `0x010debc0` that accepts tag 0x08 and nothing else: one length-delimited field carrying one
-varint. `swsh_trade.sync_command` builds it.
+Parse `0x010ddb20` (twin of `0x010d81d0`); `0x010df6d0` accepts tag 0x0a only, the submessage
+parser `0x010debc0` tag 0x08 only. `trade.sync_command` builds it.
