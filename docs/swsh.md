@@ -60,18 +60,6 @@ fills before the script resumes). A call is `PUSH` per argument, right to left, 
   `+0`, `+4`, `+6` (a save with a validated team shows it). Whether the `v1/validate` reply's 0x100
   bytes reach `match+0x98` past `0x014f808c`'s copy to `[x19+0xb0]+0x76`; its status 1 and up to six
   u32.
-- [Pia session](swsh_session.md#the-pia-session-object): whether mesh events 1 and 2 store slot 30
-  into `+0xf8` on LDN; whether only the joint-session jobs call `0x01839cc0` and `0x0183a040`, and
-  which `+0xd4` each event needs. Breakpoints on `0x01844bc4`, `0x01844edc`, `0x0184415c`,
-  `0x018407f0` through a hosted ladder with a host migration settle it.
-- [The command](swsh_trade.md#the-command): where content 40's tick `0x010dae70` (from `0x010c5f40`,
-  `0x010c9c34`) runs against the frame's two drains around the game update `0x00f1cc60`. A backtrace
-  at `0x010dae70` on an emulator settles it.
-- [RequestForcedProceed](swsh_trade.md#the-cancel-and-proceed-messages): what a console does with
-  one; none has been sent. Test: keep rung 0's `syncCommand`, send `{c, c+1}` on 30040 in place of
-  each later one; accepted if the shared value moves without a `syncCommand`.
-- [League Card](swsh_trade.md#the-league-card): a card differing only at 0x1A8 re-asking follows
-  from `0x013fbc40`, unmeasured.
 - Sword against Shield: binary readings are Shield's, the console is Sword; the
   [session constants](swsh_session.md#taking-a-seat) hold across the pair. Sword testing bit 0 of a
   card's version mask is inferred from Shield's code with version 44 (`0x2C`) for `0x007d4270`'s

@@ -417,14 +417,17 @@ and the sender `0x017c31b8` builds exactly `[0x44, host index, new host index]`.
 The answer is `[0x48, own station index]`: the MIGRATION_RESPONSE handler `0x017c10ac` requires
 `size == 2`, and the builder `0x017c3310` writes `[0x48, w22]` with w22 from `0x017bc430`. The getters
 are one byte apart: `0x017bbfe0` `ldrb w0, [x0, #0xAB]` (host index), `0x017bc430` `ldrb w0, [x0,
-#0xAC]` (own index), equal in a two-station mesh.
+#0xAC]` (own index), equal on the station hosting the mesh.
 
 MIGRATION_FINISH (0x41) closes it: `[0x41, host index, flag & 1]` (`0x017c2ef0`), handler
 `0x017c0fb0` checking `size == 3` and [1] against the host index.
 
+Responses go to the new host (`0x017c3250`, called by `0x017ca1a0`). That station broadcasts
+`MIGRATION_FINISH`; sending a response to the departing host does not complete the handover.
+
 `pokeldn/ldn/mesh_protocol.py`: `parse_migration_start`, `build_migration_response`,
-`parse_migration_finish`. None of the four published Sword/Shield clients handles migration; between
-two consoles the second answers it.
+`build_migration_finish`, `parse_migration_finish`. None of the four published Sword/Shield
+clients handles migration; between two consoles the second answers it.
 
 ## The RTT protocol (0x58)
 

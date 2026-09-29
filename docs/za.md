@@ -733,6 +733,12 @@ A retail Z-A joined `bin/za_host.py` 0.6 s after it came up and traded (offer ma
 protocol 10). Link code 12345678 works in both roles (`--code`); an emulated Z-A trades over
 ldn_mitm.
 
+The host keeps the session after the fourth trade step and closes when the console leaves. The
+previous timed close produced "Error Number: 6" on a retail console after the save.
+One patched-emulator trade and one retail trade returned to the box and left through B without
+an error; the host then closed after the disconnect. `--hold-after-trade` opts into a timed close;
+the overall `--seconds` limit still applies.
+
 ### The property update
 
 The Net update property (type 0x50) is built by `0x2502960` (sequence at NetProtocol+0x160, through

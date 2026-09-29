@@ -187,6 +187,31 @@ The stores to `+0xd4` in `0x01837000..0x01850000`:
 | 3 | `0x01839f7c`, in `0x01839cc0`, whose callers are `0x0177d8a0`, `0x0180afe0` and `0x0180bd0c` |
 | 4, else 2 | `0x0183a2cc`, in `0x0183a040`: 4 when `w8 - 6 < 3` (`0x0183a2b8..0x0183a2c8`); callers `0x0177e8a8` and `0x01818b68` |
 
+The callers of `0x01839cc0` belong to `LanMatchJointSessionJob` (`0x0177d8a0`) and
+`NexMatchJointSessionJob` (`0x0180afe0`, `0x0180bd0c`). The callers of `0x0183a040` belong to
+the same two jobs (`0x0177e8a8`, `0x01818b68`). Ordinary LDN create and join set mode `+0xd4` to 2.
+
+Event 2 reaches either host-id store only when `0x01841350` and `0x01769ec0([obj+0x38])` are
+false and the unsigned value `[obj+0xd8] - 2` is at least 6 (`0x01843980..0x018439a4`). Mode 2
+selects the new station's constant id from `0x017d6080`; mode 4 selects the joint-session branch
+containing the slot-30 store. The event-2 slot-30 store therefore requires joint-session mode 4.
+
+Event 1's slot-30 store requires the departing station's id to match `+0xf8` and differ from `+0x100`,
+`0x01840b90(obj)` to be true, state `+0xd8 == 1`, and `[mesh+0x64] == 0`
+(`0x01844614..0x01844638`, `0x01844654..0x01844664`). `0x0184a4b0` must find a mapping whose
+output word is non-zero and differs from the word at `obj+0x180+4*[obj+0x162]`.
+If the mesh controller's byte `+0x84` is set, its byte `+0xc0` must also be set
+(`0x01844b54..0x01844b9c`). The new slot-30 value must differ
+from `+0xf8` before it is stored. On LDN, `0x01840b90` tests the local mesh controller's
+`+0x281` and `+0x234` through virtual slots `+0xb0` and `+0xa8`. Successful local-controller
+construction sets both bytes to 1 (`0x017a06ac`, `0x0183c228`); the remaining event-1 gates
+still apply. Backend type alone does not exclude this branch.
+
+An emulated Shield joining a hosted trade had mode 2 and state 2 at initial mesh reset and
+after the save. Event 3 then cleared `+0xf8` and `+0x100`; neither slot-30 store ran. The
+experimental host's post-save `MIGRATION_START` received two `48 01` responses, with no
+completed migration event 2. A completed trade alone does not verify host migration.
+
 `LdnMatchmakeSession`'s slot 30 (`0x017a23d0`) returns `0xff` when `[this+0x18]` is null, otherwise
 `0x017672d0` of the 16-byte address at `[[this+0x18]+0x18]+0x2c0+8`: 0 when all zero, its first four
 bytes when the last twelve are zero, error `0x10c07` otherwise. Slot 28 (`0x017a23b0`) is the virtual

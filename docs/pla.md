@@ -813,6 +813,10 @@ showing, and the phase key close `b9 01 01 b9 02 b9 02 01 00 00`, which it does 
 
 ## A second trade in one session
 
+A retail console completed two trades on one ESP32-hosted session, returned to the trade box after
+each, and left normally without an error. Both rounds completed phases 3, 6, 11 and 14 and closed
+the phase key.
+
 After a completed trade the scene calls `0x26d8fd0(net)` at `0x110aa04` (only when `[net+0xb8]` is
 6) and sets step `[scene+0xb4]` to 0xc. The reset:
 
@@ -953,11 +957,9 @@ A received record whose encryption constant and personality value the save alrea
 box block `0x47E1CEAB` held two with EC `0x444C4B50` and PID `0x2A694C4B` (slots 690 and 570), both
 checksums good.
 
-`bin/pla_host.py` answers each distinct (selector, counter, record) once per join for selectors 2 and
-4, each distinct body for 3, 5, 6 and 7, and each phase and channel key once: a showing comes on
-every cursor move, and a cancelled offer is re-offered as `04 01`. Deduplicating by body also drops
-a second trade's repeated bytes; the console's `(port, sequence id)` tells a retransmission from a
-new message.
+`bin/pla_host.py` processes each `(port, sequence id)` once, in order, and resends unacknowledged
+answers. A showing comes on every cursor move, and a cancelled offer is re-offered as `04 01`.
+The second trade repeats message bodies, so deduplicating by body would drop its answers.
 
 ### Mastered moves
 

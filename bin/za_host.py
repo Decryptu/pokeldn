@@ -55,9 +55,9 @@ def build_parser():
     ap.add_argument("--comm-id", default=None,
                     help="hex; the default is the title's. An emulated Z-A advertises and scans "
                          "for ffffffffffffffff over ldn_mitm")
-    ap.add_argument("--hold-after-trade", type=float, default=90.0,
-                    help="seconds to keep the seat after the console's fourth step; the trade "
-                         "animation runs past that step")
+    ap.add_argument("--hold-after-trade", type=float, default=None,
+                    help="optional seconds to keep the seat after the console's fourth step; "
+                         "by default the host waits for the console to leave")
     return ap
 
 
@@ -159,6 +159,9 @@ def main(argv=None):
                 print(f"[za-host] the console at {ip} left; {s.console_offers} offer(s), "
                       f"{s.steps} step(s)")
                 record(rec="left", ip=ip, t=time.time())
+            if done_at is not None and not sessions:
+                print("[za-host] the console left after the trade; closing")
+                break
             transport.wait_readable(0.01)
             for payload, src_ip in transport.recv():
                 s = sessions.get(src_ip)
@@ -175,7 +178,8 @@ def main(argv=None):
                     transport.send(data, ip)
                 if s.trades != trades_seen:
                     trades_seen, done_at = s.trades, time.time()
-            if done_at is not None and time.time() - done_at > args.hold_after_trade:
+            if (done_at is not None and args.hold_after_trade is not None
+                    and time.time() - done_at > args.hold_after_trade):
                 print("[za-host] the trade is complete; closing")
                 break
     except KeyboardInterrupt:

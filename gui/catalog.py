@@ -326,7 +326,7 @@ ZA = Game("za", "Legends Z-A", "PLZA", "za.md", (
          "Host a trade the searching console joins.",
          ("Start the host first.",
           "X, Link Play, Link Trade, Nearby Players, the same code, then search.",
-          "Pick on the trade box, offer, then trade."),
+          "Pick on the trade box, offer, then trade. Back out with B after the trade."),
          (offer("--trade-offer"),
           Field("--code", "Link code", default="00000000"),
           FRESH_PID,

@@ -317,9 +317,10 @@ POKELDN_RADIO=esp32:auto ./.venv/bin/python -u bin/za_host.py --keys prod.keys -
   --hold 450 --quiet-seat 25 --connect-timeout 6 --game --trade-offer offer.bin --offer-delay 4
 ```
 
-Pick a Pokémon on the trade box and confirm when the other side's shows. The joiner stays seated and
-answers the next offer; back out with B. `--offer-out FILE` keeps what the console offered. For an
-emulated console over the LAN, use `za_host.py --ip-host --our-ip IP --comm-id ffffffffffffffff` and
+Pick a Pokémon on the trade box and confirm when the other side's shows. Both roles answer another
+offer in the same session. Back out with B when finished; the host closes when the console leaves.
+`--offer-out FILE` keeps what the console offered. For an emulated console over the LAN, use
+`za_host.py --ip-host --our-ip IP --comm-id ffffffffffffffff` and
 `za_join.py --ip-join --host-ip IP --our-ip IP --comm-id ffffffffffffffff`. The offer file is 354 bytes
 (nine-byte header, 344-byte record, one trailing byte); `pokeldn.sv.pokemon.build` composes the record
 because Z-A's layout is Scarlet's. See [Legends Z-A](docs/za.md).
