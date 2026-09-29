@@ -126,11 +126,6 @@ and `checksum` only reads.
 - lands at the Mystery Gift menu: the mon is in the party when the menu closes.
 
 Status 2 is success, 3 a full party with nothing written. Never put a `setstatus` after it.
-The host reads that status from the console's `MG_LINKID_RESPONSE`. A completed link exchange alone
-does not establish that `givepokemon` added the Pokémon. The English FireRed and LeafGreen
-distributions contain an English-language Lv30 Celebi and the same `givepokemon 8; end` command;
-the offline VM returns status 2 for each. An English-console report of no Pokémon in the party
-requires the console's returned status to distinguish a full party from an unobserved failure.
 
 Traps the builder enforces:
 
