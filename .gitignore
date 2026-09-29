@@ -15,6 +15,8 @@
 !/.github/
 # ESP32 radio firmware sources; the ESP-IDF build output stays local.
 !/firmware/
+# The desktop app.
+!/gui/
 /firmware/**/build/
 /firmware/**/sdkconfig
 /firmware/**/sdkconfig.old
