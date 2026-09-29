@@ -61,7 +61,7 @@ class DocsView:
                 h2_text_style=ft.TextStyle(size=19, weight=ft.FontWeight.W_600, color=t.TEXT),
                 h3_text_style=ft.TextStyle(size=16, weight=ft.FontWeight.W_600, color=t.TEXT),
                 a_text_style=ft.TextStyle(color=t.BLUE),
-                code_text_style=ft.TextStyle(font_family=t.MONO, size=12.5, color="#E6C07B",
+                code_text_style=ft.TextStyle(font_family=t.MONO, size=12.5, color=t.TEXT,
                                              bgcolor=t.FIELD),
                 codeblock_decoration=ft.BoxDecoration(bgcolor=t.BG, border_radius=8),
                 codeblock_padding=12,
@@ -80,7 +80,7 @@ class DocsView:
                 self.nav,
             ], spacing=0, expand=True), width=270),
             t.panel(self.scroll, expand=True),
-        ], spacing=12, expand=True, vertical_alignment=ft.CrossAxisAlignment.STRETCH)
+        ], spacing=14, expand=True, vertical_alignment=ft.CrossAxisAlignment.STRETCH)
         self.show("guide", update=False)
 
     def enter(self, doc: str = "", **_) -> None:

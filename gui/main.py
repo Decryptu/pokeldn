@@ -33,7 +33,7 @@ def main(page: ft.Page) -> None:
     page.theme_mode = ft.ThemeMode.DARK
     page.theme = page.dark_theme = t.app_theme()
     page.bgcolor = t.BG
-    page.padding = 12
+    page.padding = 0
     page.window.min_width, page.window.min_height = 1180, 720
     page.window.width, page.window.height = 1440, 900
     page.window.bgcolor = t.BG
@@ -67,9 +67,9 @@ def main(page: ft.Page) -> None:
                 ft.Icon(selected_icon if active else icon, size=22, color=color),
                 t.text(label, 10.5, color, weight=ft.FontWeight.W_600),
             ], spacing=3, horizontal_alignment=ft.CrossAxisAlignment.CENTER),
-                width=72, padding=ft.Padding(0, 9, 0, 9)),
-            ft.Container(width=3, height=34, bgcolor=t.RED if active else None, border_radius=2,
-                         left=0, top=12),
+                width=70, padding=ft.Padding(0, 9, 0, 9)),
+            ft.Container(width=3, height=30, bgcolor=t.RED if active else None,
+                         border_radius=ft.BorderRadius(0, 3, 0, 3), left=0, top=14),
         ]), on_click=lambda e, k=key: navigate(k), tooltip=label)
 
     def render_rail() -> None:
@@ -91,14 +91,16 @@ def main(page: ft.Page) -> None:
         page.update()
 
     app.navigate = navigate
-    side = ft.Container(ft.Column([
-        ft.Container(ft.Image(src="logo.svg", width=34, height=38), padding=ft.Padding(0, 10, 0, 18)),
+    side = t.panel(ft.Column([
+        ft.Container(ft.Image(src="logo.svg", width=32, height=36), padding=ft.Padding(0, 14, 0, 14)),
+        ft.Container(height=1, width=36, bgcolor=t.BORDER, margin=ft.Margin(0, 0, 0, 10)),
         rail,
         ft.Container(expand=True),
         bottom,
+        ft.Container(height=8),
     ], horizontal_alignment=ft.CrossAxisAlignment.CENTER, spacing=0), width=72)
-    page.add(ft.Row([side, content], spacing=12, expand=True,
-                    vertical_alignment=ft.CrossAxisAlignment.STRETCH))
+    page.add(t.backdrop(ft.Row([side, content], spacing=14, expand=True,
+                               vertical_alignment=ft.CrossAxisAlignment.STRETCH)))
     navigate("games")
     if not os.path.isfile(os.path.expanduser(app.settings.keys)):
         welcome(app)

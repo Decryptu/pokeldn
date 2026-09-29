@@ -1,11 +1,12 @@
 import flet as ft
 
-BG = "#0A0B0D"
-PANEL = "#131417"
-CARD = "#1A1B1F"
-FIELD = "#222328"
-HOVER = "#2A2B31"
-BORDER = "#25272C"
+BG = "#08090B"
+PANEL = "#111215"
+CARD = "#17181C"
+FIELD = "#202126"
+HOVER = "#292A30"
+BORDER = "#24262B"
+EDGE = "#2E3036"
 TEXT = "#ECEDEF"
 MUTED = "#8D9099"
 FAINT = "#5D6068"
@@ -14,8 +15,8 @@ BLUE_DEEP = "#3979EE"
 RED = "#FD474D"
 RED_DEEP = "#D93B56"
 GREEN = "#3DD68C"
-AMBER = "#F5B544"
 MONO = "monospace"
+FLOAT = [ft.BoxShadow(blur_radius=30, offset=ft.Offset(0, 12), color=ft.Colors.with_opacity(0.55, "#000000"))]
 
 
 def app_theme() -> ft.Theme:
@@ -34,9 +35,28 @@ def text(value: str, size: float = 13, color: str = TEXT, weight=None, **kwargs)
     return ft.Text(value, size=size, color=color, weight=weight, **kwargs)
 
 
+def backdrop(content: ft.Control) -> ft.Container:
+    """The window behind the panels: a dim checkerboard."""
+    return ft.Container(content, expand=True, bgcolor=BG, padding=14,
+                        image=ft.DecorationImage(src="grid.png", repeat=ft.ImageRepeat.REPEAT, scale=2,
+                                                 alignment=ft.Alignment.TOP_LEFT))
+
+
 def panel(content: ft.Control, width: float | None = None, expand=None, padding=0) -> ft.Container:
     return ft.Container(content, width=width, expand=expand, bgcolor=PANEL, padding=padding,
-                        border_radius=14, border=ft.Border.all(1, BORDER))
+                        border_radius=16, border=ft.Border.all(1, BORDER), shadow=FLOAT)
+
+
+def notch(*controls: ft.Control) -> ft.Row:
+    """A small floating toolbar centred over the canvas; its groups are split by hairlines."""
+    items: list[ft.Control] = []
+    for control in controls:
+        if items:
+            items.append(ft.Container(width=1, height=20, bgcolor=EDGE))
+        items.append(control)
+    return ft.Row([ft.Container(ft.Row(items, spacing=10, tight=True), bgcolor=PANEL, border_radius=14,
+                                padding=ft.Padding(12, 6, 8, 6), border=ft.Border.all(1, EDGE), shadow=FLOAT)],
+                  alignment=ft.MainAxisAlignment.CENTER)
 
 
 def panel_header(title: str, *actions: ft.Control) -> ft.Container:
@@ -58,13 +78,14 @@ def card(title: str, body: ft.Control | None = None, description: str = "",
         rows.append(text(description, 12, MUTED))
     if body:
         rows.append(body)
-    return ft.Container(ft.Column(rows, spacing=10, tight=True), bgcolor=CARD, border_radius=12,
-                        padding=14, border=ft.Border.all(1, BORDER))
+    return ft.Container(ft.Column(rows, spacing=10, tight=True), bgcolor=CARD, border_radius=14,
+                        padding=14, border=ft.Border.all(1, BORDER), shadow=FLOAT)
 
 
 def _border() -> dict:
-    return {ft.ControlState.DEFAULT: ft.OutlineInputBorder(border_radius=8, side=ft.BorderSide(0, FIELD)),
-            ft.ControlState.FOCUSED: ft.OutlineInputBorder(border_radius=8, side=ft.BorderSide(1, BLUE))}
+    flat = ft.OutlineInputBorder(border_radius=8, side=ft.BorderSide(0, FIELD))
+    return {ft.ControlState.FOCUSED: ft.OutlineInputBorder(border_radius=8, side=ft.BorderSide(1, BLUE)),
+            ft.ControlState.DISABLED: flat, ft.ControlState.DEFAULT: flat}
 
 
 def field(label: str = "", value: str = "", hint: str = "", mono: bool = False, **kwargs) -> ft.TextField:
@@ -90,7 +111,9 @@ def button(label: str, on_click=None, icon=None, color: str = BLUE, filled: bool
         color={ft.ControlState.DISABLED: FAINT, ft.ControlState.DEFAULT: "#FFFFFF" if filled else TEXT},
         shape=ft.RoundedRectangleBorder(radius=10), padding=ft.Padding(16, 12, 16, 12),
         text_style=ft.TextStyle(size=13, weight=ft.FontWeight.W_600),
-        overlay_color=ft.Colors.with_opacity(0.12, "#FFFFFF"), elevation=0)
+        overlay_color=ft.Colors.with_opacity(0.12, "#FFFFFF"),
+        elevation={ft.ControlState.DISABLED: 0, ft.ControlState.DEFAULT: 6 if filled else 0},
+        shadow_color=ft.Colors.with_opacity(0.6, color))
     return ft.Button(label, icon=icon, on_click=on_click, style=style, **kwargs)
 
 
@@ -112,17 +135,21 @@ def pill(label: str, color: str = MUTED) -> ft.Container:
                         bgcolor=ft.Colors.with_opacity(0.14, color))
 
 
-def segmented(options: list[tuple[str, str]], value: str, on_change) -> ft.Container:
-    """The small pill switcher from the panel headers (Basic / All)."""
-    row = ft.Row(spacing=4, tight=True)
+def segmented(options: list[tuple[str, str, ft.IconData]], value: str, on_change) -> ft.Container:
+    """The small pill switcher (Basic / All options)."""
+    row = ft.Row(spacing=2, tight=True)
 
     def render(selected):
         row.controls = [
-            ft.Container(text(label, 12, TEXT if key == selected else MUTED, weight=ft.FontWeight.W_600),
-                         padding=ft.Padding(14, 6, 14, 6), border_radius=8,
-                         bgcolor=HOVER if key == selected else None,
-                         on_click=lambda e, k=key: pick(k))
-            for key, label in options]
+            ft.Container(ft.Row([
+                ft.Icon(icon, size=14, color=BLUE if key == selected else FAINT),
+                text(label, 12, TEXT if key == selected else MUTED, weight=ft.FontWeight.W_600),
+            ], spacing=6, tight=True),
+                padding=ft.Padding(12, 6, 14, 6), border_radius=8,
+                bgcolor=HOVER if key == selected else None,
+                border=ft.Border.all(1, EDGE if key == selected else ft.Colors.TRANSPARENT),
+                on_click=lambda e, k=key: pick(k))
+            for key, label, icon in options]
 
     def pick(key):
         render(key)
@@ -130,7 +157,7 @@ def segmented(options: list[tuple[str, str]], value: str, on_change) -> ft.Conta
         on_change(key)
 
     render(value)
-    return ft.Container(row, bgcolor=FIELD, border_radius=10, padding=3)
+    return ft.Container(row, bgcolor=BG, border_radius=10, padding=3)
 
 
 def numbered(steps: list[str]) -> ft.Column:
