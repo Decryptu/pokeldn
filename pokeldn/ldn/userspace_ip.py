@@ -7,7 +7,6 @@ import collections
 import contextlib
 import errno
 import math
-import os
 import socket
 import struct
 import threading
@@ -77,22 +76,22 @@ def build_udp(src_ip: str, dst_ip: str, src_port: int, dst_port: int, payload: b
 
 
 class _Readable:
-    """A queue with a pipe beside it: one byte per queued item, so the read end is selectable."""
+    """A selectable queue: one socket byte per queued item, on every platform."""
 
     def __init__(self):
         self._queue = collections.deque()
-        # The pipe byte and the queued item change together under this lock: the radio's thread
+        # The socket byte and the queued item change together under this lock: the radio's thread
         # pushes while the reader pops, and a byte seen before its item made popleft raise.
         self._lock = threading.Lock()
-        self._r, self._w = os.pipe()
-        os.set_blocking(self._r, False)
-        os.set_blocking(self._w, False)
+        self._r, self._w = socket.socketpair()
+        self._r.setblocking(False)
+        self._w.setblocking(False)
         self._timeout = None
         self.closed = False
         self.dropped = 0
 
     def fileno(self) -> int:
-        return self._r
+        return self._r.fileno()
 
     def _push(self, item) -> None:
         with self._lock:
@@ -100,7 +99,7 @@ class _Readable:
                 return
             self._queue.append(item)
             try:
-                os.write(self._w, b"\x00")
+                self._w.send(b"\x00")
             except BlockingIOError:
                 self._queue.pop()
                 self.dropped += 1
@@ -109,7 +108,7 @@ class _Readable:
         while True:
             with self._lock:
                 try:
-                    os.read(self._r, 1)
+                    self._r.recv(1)
                     return self._queue.popleft()
                 except BlockingIOError:
                     pass
@@ -136,13 +135,14 @@ class _Readable:
         return 8 * 1024 * 1024 if option == socket.SO_RCVBUF else 0
 
     def close(self) -> None:
-        if self.closed:
-            return
-        self.closed = True
+        with self._lock:
+            if self.closed:
+                return
+            self.closed = True
+            self._queue.clear()
+            self._r.close()
+            self._w.close()
         self._detach()
-        for fd in (self._r, self._w):
-            with contextlib.suppress(OSError):
-                os.close(fd)
 
     def _detach(self) -> None:
         pass

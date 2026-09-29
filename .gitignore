@@ -63,6 +63,10 @@ __pycache__/
 *.jsonl
 *.pcap
 *.pcapng
+*.trace
+*_net_facts.json
+*.payload*.bin
+*.wc8.frag*
 host-tap-*.txt
 logs/
 # Nested standalone clone (kinnay/LDN), a reference copy of the vendored package.

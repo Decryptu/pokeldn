@@ -251,7 +251,7 @@ def _run_fake_cli(argv, answers=()):
 
     output = io.StringIO()
     with (
-        patch.object(joyspot_probe.os, "geteuid", return_value=0),
+        patch.object(joyspot_probe.os, "geteuid", return_value=0, create=True),
         patch.object(
             joyspot_probe, "JoySpotProbeApplication", _CliProbeApplication),
         patch("builtins.input", side_effect=answer),

@@ -15,7 +15,7 @@ jobs:
     runs-on: ubuntu-latest
     container: espressif/idf:v6.1
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
       - name: Build and merge the image
         shell: bash
         run: |
@@ -24,7 +24,7 @@ jobs:
           idf.py build
           idf.py merge-bin -o pokeldn-radio.bin
           cp "$(find . -name pokeldn-radio.bin | head -n 1)" "$GITHUB_WORKSPACE/pokeldn-radio.bin"
-      - uses: actions/upload-artifact@v4
+      - uses: actions/upload-artifact@v7
         with:
           name: firmware
           path: pokeldn-radio.bin
@@ -43,14 +43,14 @@ jobs:
             asset: pokeldn-linux-x64.tar.gz
     runs-on: ${{ matrix.os }}
     steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-python@v5
+      - uses: actions/checkout@v7
+      - uses: actions/setup-python@v7
         with:
           python-version: "3.13"
-      - uses: actions/setup-dotnet@v4
+      - uses: actions/setup-dotnet@v6
         with:
           dotnet-version: "10.0.x"
-      - uses: actions/download-artifact@v4
+      - uses: actions/download-artifact@v8
         with:
           name: firmware
           path: gui/firmware
@@ -58,6 +58,12 @@ jobs:
         run: python -m pip install -r gui/requirements.txt
       - name: Pack
         run: python scripts/pack_app.py
+      - name: Verify the frozen app (macOS and Linux)
+        if: runner.os != 'Windows'
+        run: python scripts/check_app.py dist/pokeldn
+      - name: Verify the frozen app (Windows)
+        if: runner.os == 'Windows'
+        run: python scripts/check_app.py dist/pokeldn.exe
       - name: Archive (macOS)
         if: runner.os == 'macOS'
         run: ditto -c -k --keepParent dist/pokeldn.app "${{ matrix.asset }}"
@@ -67,7 +73,7 @@ jobs:
       - name: Archive (Linux)
         if: runner.os == 'Linux'
         run: tar -czf "${{ matrix.asset }}" -C dist .
-      - uses: actions/upload-artifact@v4
+      - uses: actions/upload-artifact@v7
         with:
           name: ${{ matrix.asset }}
           path: ${{ matrix.asset }}
@@ -77,11 +83,11 @@ jobs:
     needs: app
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/download-artifact@v4
+      - uses: actions/download-artifact@v8
         with:
           path: assets
           merge-multiple: true
-      - uses: softprops/action-gh-release@v2
+      - uses: softprops/action-gh-release@v3
         with:
           files: assets/*
           generate_release_notes: true

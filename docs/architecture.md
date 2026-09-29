@@ -58,3 +58,6 @@ python -m pytest tests/ -q -W error
 
 CI runs these checks on Linux, macOS and Windows. Private research fixtures are optional; a clean
 checkout tests the shipped reference data and shared PKHeX service without them.
+
+Release builds run `scripts/check_app.py` against the frozen executable: GUI imports, all launchers,
+seven PKHeX formats, serial discovery and esptool. The check needs no keys or connected board.

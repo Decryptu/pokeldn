@@ -9,6 +9,7 @@ docs/lgpe_session.md has the constants and their addresses.
 """
 from pathlib import Path
 import argparse
+import contextlib
 import json
 import os
 import socket
@@ -485,7 +486,7 @@ def _run(args, net, keys, facts, opener):
     record(rec="target", **facts, session_key=keys.session_key.hex())
 
     async def attempt():
-        async with opener() as network:
+        async with opener() as network, contextlib.AsyncExitStack() as cleanup:
             info = network.info()
             parts = list(getattr(info, "participants", []) or [])
             macs = [bytes(getattr(p, "mac_address", b"") or b"") for p in parts]
@@ -503,7 +504,7 @@ def _run(args, net, keys, facts, opener):
             ours = parts[1] if len(parts) > 1 else None
             our_ip = str(getattr(ours, "ip_address", "") or host_ip.rsplit(".", 1)[0] + ".2")
             our_mac = macs[1] if len(macs) > 1 else (macs[0] if macs else bytes(6))
-            sock = make_socket(args.ifname, args.our_ip if args.over_ip else None)
+            sock = cleanup.enter_context(make_socket(args.ifname, args.our_ip if args.over_ip else None))
             t0 = time.monotonic()
             n_rx = n_ok = n_v3 = 0
             versions = {}
