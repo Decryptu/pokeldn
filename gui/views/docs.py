@@ -80,7 +80,7 @@ class DocsView:
                 self.nav,
             ], spacing=0, expand=True), width=270),
             t.panel(self.scroll, expand=True),
-        ], spacing=12, expand=True, vertical_alignment=ft.CrossAxisAlignment.STRETCH)
+        ], spacing=14, expand=True, vertical_alignment=ft.CrossAxisAlignment.STRETCH)
         self.show("guide", update=False)
 
     def enter(self, doc: str = "", **_) -> None:

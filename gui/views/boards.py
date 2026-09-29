@@ -38,11 +38,11 @@ class BoardView:
                 t.panel_header("Boards", t.icon_button(ft.Icons.REFRESH_ROUNDED, lambda e: self.scan(), "Scan again")),
                 self.list,
             ], spacing=0, expand=True), width=270),
-            t.panel(ft.ListView([self.detail], padding=16, expand=True), expand=True),
+            ft.ListView([self.detail], padding=ft.Padding(4, 0, 4, 24), expand=True),
             t.panel(ft.Column([t.panel_header("Activity"),
                                ft.Container(self.log.control, padding=14, expand=True)],
                               spacing=0, expand=True), width=380),
-        ], spacing=12, expand=True, vertical_alignment=ft.CrossAxisAlignment.STRETCH)
+        ], spacing=14, expand=True, vertical_alignment=ft.CrossAxisAlignment.STRETCH)
 
     # Port list, polled while the page is open so a board shows up when it is plugged in
 
@@ -119,10 +119,10 @@ class BoardView:
         ident = self.identities.get(p.device)
         if isinstance(ident, board.Identity):
             firmware = (t.pill("pokeldn firmware", t.GREEN) if ident.current else
-                        t.pill(f"Old firmware (protocol {ident.protocol}), flash it", t.AMBER))
+                        t.pill(f"Old firmware (protocol {ident.protocol}), flash it", t.RED))
             mac = ident.sta_mac
         elif isinstance(ident, str):
-            firmware, mac = t.pill(ident, t.AMBER), "unknown"
+            firmware, mac = t.pill(ident, t.RED), "unknown"
         else:
             firmware, mac = t.pill("Not checked yet", t.MUTED), "press Identify"
 
@@ -220,7 +220,7 @@ class BoardView:
         source = ft.Row([
             ft.Icon(ft.Icons.INVENTORY_2_OUTLINED, size=16, color=t.MUTED),
             t.text(("pokeldn firmware, included with the app" if image == board.FIRMWARE else image) if image else
-                   "This copy of the app has no firmware image.", 12, t.MUTED if image else t.AMBER, expand=True),
+                   "This copy of the app has no firmware image.", 12, t.MUTED if image else t.RED, expand=True),
             ft.TextButton("Use another file", on_click=self._choose_file, style=ft.ButtonStyle(color=t.MUTED)),
         ], spacing=6)
         flashing = bool(self.app.process and self.app.process.running and self.app.process_label == "flash")

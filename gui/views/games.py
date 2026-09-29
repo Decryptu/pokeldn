@@ -30,24 +30,22 @@ class GamesView:
         self.tab = "basic"
         self.search = ""
         self.tree = ft.ListView(spacing=2, padding=ft.Padding(8, 8, 8, 8), expand=True)
-        self.title = t.text("", 17, weight=ft.FontWeight.W_600)
+        self.title = t.text("", 13, weight=ft.FontWeight.W_600)
         self.summary = t.text("", 12, t.MUTED)
-        self.body = ft.ListView(spacing=10, padding=ft.Padding(16, 4, 16, 16), expand=True)
+        self.body = ft.ListView(spacing=12, padding=ft.Padding(4, 8, 4, 24), expand=True)
         self.tabs = ft.Container()
         self.session = SessionPanel(app, self)
-        center = t.panel(ft.Column([
-            ft.Container(ft.Row([
-                ft.Column([self.title, self.summary], spacing=2, expand=True),
-                t.icon_button(ft.Icons.MENU_BOOK_OUTLINED, self._open_doc, "Read the docs for this game"),
-            ]), padding=ft.Padding(18, 16, 12, 10)),
-            ft.Container(self.tabs, padding=ft.Padding(16, 0, 16, 10)),
+        center = ft.Column([
+            t.notch(self.title, self.tabs,
+                    t.icon_button(ft.Icons.MENU_BOOK_OUTLINED, self._open_doc, "Read the docs for this game")),
+            ft.Container(self.summary, alignment=ft.Alignment.CENTER, padding=ft.Padding(0, 10, 0, 2)),
             self.body,
-        ], spacing=0, expand=True), expand=True)
+        ], spacing=0, expand=True)
         self.control = ft.Row([
             t.panel(ft.Column([t.panel_header("Games"), self.tree], spacing=0, expand=True), width=270),
             center,
             self.session.control,
-        ], spacing=12, expand=True, vertical_alignment=ft.CrossAxisAlignment.STRETCH)
+        ], spacing=14, expand=True, vertical_alignment=ft.CrossAxisAlignment.STRETCH)
         self.select(self.game, self.tool, update=False)
 
     def enter(self, **_) -> None:
@@ -82,7 +80,8 @@ class GamesView:
         self.game, self.tool = game, tool
         self.title.value = f"{tool.name} · {game.name}"
         self.summary.value = tool.summary
-        self.tabs.content = t.segmented([("basic", "Basic"), ("all", "All options")], self.tab, self._tab)
+        self.tabs.content = t.segmented([("basic", "Basic", ft.Icons.TUNE_ROUNDED),
+                                          ("all", "All options", ft.Icons.LIST_ROUNDED)], self.tab, self._tab)
         self.render_tree()
         self.render_body()
         self.session.show(tool)
@@ -196,11 +195,12 @@ class GamesView:
     def all_rows(self) -> list[ft.Control]:
         search = t.field(value=self.search, hint="Search every option", autofocus=False,
                          prefix_icon=ft.Icons.SEARCH, on_change=self._search)
-        note = t.text("Every option the entry point accepts, from its own help. Values set here are added "
-                      "after the Basic fields and override them.", 12, t.MUTED)
+        note = ("Every option the entry point accepts, from its own help. Values set here are added after the "
+                "Basic fields and override them.")
         self.flag_list = ft.Column(spacing=8)
         self._fill_flags()
-        return [search, note, self.flag_list]
+        return [t.card("Every option", ft.Column([search, self.flag_list], spacing=10,
+                                                 horizontal_alignment=ft.CrossAxisAlignment.STRETCH), note)]
 
     def _search(self, e) -> None:
         self.search = e.control.value
@@ -258,7 +258,7 @@ class GamesView:
                       spacing=3, expand=True),
             control,
         ], spacing=12, vertical_alignment=ft.CrossAxisAlignment.START),
-            bgcolor=t.CARD, border_radius=10, padding=12, border=ft.Border.all(1, t.BORDER))
+            bgcolor=t.FIELD, border_radius=10, padding=12)
 
 
 class SessionPanel:
@@ -306,9 +306,9 @@ class SessionPanel:
         running = self.app.process and self.app.process.running
         port = self.app.radio_port()
         self.board_line.content = ft.Row([
-            ft.Icon(ft.Icons.MEMORY_ROUNDED, size=16, color=t.GREEN if port else t.AMBER),
+            ft.Icon(ft.Icons.MEMORY_ROUNDED, size=16, color=t.GREEN if port else t.RED),
             t.text(f"Radio on {port}" if port else "No board selected", 12,
-                   t.TEXT if port else t.AMBER, expand=True),
+                   t.TEXT if port else t.RED, expand=True),
             ft.TextButton("Board", on_click=lambda e: self.app.navigate("board"),
                           style=ft.ButtonStyle(color=t.BLUE)),
         ], spacing=8)
@@ -349,7 +349,7 @@ class SessionPanel:
         if problems:
             for p in problems:
                 self.log.add(f"[app] {p}")
-            self.set_status("Not started", t.AMBER)
+            self.set_status("Not started", t.RED)
             self.refresh()
             return
         stamp = time.strftime("%Y%m%d-%H%M%S")

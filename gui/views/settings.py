@@ -21,8 +21,8 @@ class SettingsView:
         self.app = app
         self.keys_state = ft.Container()
         self.column = ft.Column(spacing=12, width=760)
-        self.control = t.panel(ft.ListView([ft.Row([self.column], alignment=ft.MainAxisAlignment.CENTER)],
-                                           padding=24, expand=True), expand=True)
+        self.control = ft.ListView([ft.Row([self.column], alignment=ft.MainAxisAlignment.CENTER)],
+                                   padding=ft.Padding(4, 8, 4, 24), expand=True)
         self.render()
 
     def save(self, name: str, value) -> None:
@@ -71,7 +71,8 @@ class SettingsView:
                                  style=ft.ButtonStyle(color=t.BLUE))
 
         self.column.controls = [
-            t.text("Settings", 22, weight=ft.FontWeight.W_700),
+            t.notch(ft.Row([ft.Icon(ft.Icons.SETTINGS_ROUNDED, size=16, color=t.RED),
+                            t.text("Settings", 13, weight=ft.FontWeight.W_600)], spacing=8, tight=True)),
             t.card("Switch keys", ft.Column([keys.control, self.keys_state], spacing=8),
                    "prod.keys from your own console. It decrypts the local wireless advertisements and never "
                    "leaves this computer."),
@@ -100,7 +101,7 @@ class SettingsView:
         ok = keys_found(value)
         self.keys_state.content = ft.Row([
             ft.Icon(ft.Icons.CHECK_CIRCLE_ROUNDED if ok else ft.Icons.ERROR_OUTLINE_ROUNDED, size=15,
-                    color=t.GREEN if ok else t.AMBER),
-            t.text("Found" if ok else "No file at this path", 12, t.GREEN if ok else t.AMBER)], spacing=6)
+                    color=t.GREEN if ok else t.RED),
+            t.text("Found" if ok else "No file at this path", 12, t.GREEN if ok else t.RED)], spacing=6)
         if update:
             self.keys_state.update()

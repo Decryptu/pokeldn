@@ -63,7 +63,7 @@ class PokemonPicker:
 
     def _build(self, e) -> None:
         if not self.value.get("species"):
-            self._message("Pick a species first.", t.AMBER)
+            self._message("Pick a species first.", t.RED)
             self.control.update()
             return
         self.build_button.disabled = True
