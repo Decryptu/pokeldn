@@ -1,16 +1,9 @@
 #!/usr/bin/env python3
-"""Host a Scarlet / Violet local trade network, so a searching retail console joins and speaks.
-
-A console on the offline Link Trade search alternates scanning and hosting, and it joins a network
-carrying its own title id, passphrase and advertisement. This host puts one up, runs the layers
-below the game the way `bin/pla_host.py` runs them for Arceus (the same Pia band), acknowledges
-every reliable stream the console opens, and records every datagram both ways.
+"""Host a Scarlet / Violet local trade network for a searching retail console (docs/sv.md).
 
     sudo ./.venv/bin/python bin/sv_host.py --seconds 240 --capture scratchpad/svNN_host.jsonl
 
     (them) X -> Poke Portal -> Link Trade, offline, no code -> search
-
-`docs/sv.md` has what the console sends.
 """
 import argparse
 import binascii
@@ -46,9 +39,7 @@ SESSION_MESSAGE_NAMES = {
     8: "left station sync ack", 9: "start host migration", 10: "start host migration ack",
 }
 
-# The dispatch and addressing rules are the band's, read on Arceus (`bin/pla_host.py`,
-# `docs/pla.md`): a message sent before the peer registered the sender carries flag 0x01; RTT and
-# both broadcast reliable protocols are addressed to the mesh with the recipient in the footer.
+# The band's dispatch and addressing rules are Arceus's (docs/pla.md).
 ESTABLISHING_FLAGS = pia6.MESSAGE_FLAG_SKIP_SOURCE_CHECK
 PROTO_NET = 0x2C
 PROTO_RTT = 0x58
@@ -58,9 +49,7 @@ PROTO_RELIABLE = 0x7C
 PROTO_BROADCAST_RELIABLE = 0x80
 PROTO_STREAM_BROADCAST_RELIABLE = 0x81
 PROTO_SESSION = 0x98
-# Reliable 0x7C belongs here too: it is the channel the game's own messages run on, and a host that
-# leaves it out never acknowledges the joiner's channel table, which the console then retransmits
-# for the whole session.
+# 0x7C too: a host that does not ack it leaves the joiner resending its channel table all session.
 RELIABLE_PROTOCOLS = (PROTO_RELIABLE, PROTO_BROADCAST_RELIABLE, PROTO_STREAM_BROADCAST_RELIABLE)
 MESH_DESTINATION = 0x0001
 MESH_ADDRESSED = (PROTO_RTT, PROTO_BROADCAST_RELIABLE, PROTO_STREAM_BROADCAST_RELIABLE)
@@ -72,8 +61,7 @@ NET_REPEAT_SECONDS = 0.5
 SESSION_JOIN_REQUEST = 0
 RTT_REQUEST = 0
 RTT_RESPONSE = 1
-# A retail pair's bulk ack (sv02): four entries, every station byte 0, entry k acknowledging
-# station k's stream on that port, ack id one past the highest sequence received, 1 when nothing was.
+# A retail bulk ack: four entries, entry k for station k's stream (docs/sv.md).
 ACK_ENTRIES = 4
 
 
@@ -97,11 +85,8 @@ def build_net_probe(keys, our_ip, our_mac, station_ips, seqid, nonce8, max_stati
                              dst_var=0, src_var=PIA_HOST_VAR, packet_id=0, nonce8=nonce8)
 
 
-# The Net 0x50 update-property message, replayed from the emulated pair's host, which sends it
-# 0.37 s after its 0x11 and retransmits every 500 ms until the joiner's 0x51. Three fields are
-# patched rather than replayed: the sequence id at +4, the network id at +12, and the forty game
-# advertise bytes at +0x82, whose +0x21 carries 648cf4 on a host a joiner reached. The one space at
-# +0x42 is the host player name, the same single 0x20 the Session station list carries.
+# Replayed from an emulated pair's host, with the sequence at +4, the network id at +12 and the
+# forty game advertise bytes at +0x82 patched (docs/sv.md, Hosting for a console).
 NET_PROPERTY_BODY = bytes.fromhex(
     "015000840000000100000000d3bb434200020004000000000000000402010000005c00000028"
     "005c150015000000000000000000000000000000000102000000010120000000000000000000"
@@ -125,13 +110,8 @@ def build_net_property(keys, our_ip, seqid, nonce8, game_data=None,
                              dst_var=0, src_var=PIA_HOST_VAR, packet_id=0, nonce8=nonce8)
 
 
-# This band's RTT message is eleven bytes, not the thirteen `rtt_protocol` documents for BDSP:
-# a kind byte, a big-endian u64 timestamp and a big-endian u16 target. Read off the emulated pair,
-# where a request carries target 0 and a response echoes the timestamp and names the REQUESTER:
-#   request  00 0000000002c7c60d1e 0000
-#   response 01 0000000000d08f4691 e73d
-# The host sends a request every 410 ms from the moment it opens the mesh, and the joiner answers
-# once it is registered. The timestamp is the sender's own 19.2 MHz system tick.
+# RTT is eleven bytes in this band, not BDSP's thirteen; the timestamp is the sender's 19.2 MHz tick
+# (docs/sv.md, RTT).
 RTT_TICKS_PER_SECOND = 19200000
 RTT_PROBE_SECONDS = 0.41
 
@@ -153,8 +133,7 @@ def build_reply(keys, our_ip, body, dst_var, nonce8, *, protocol=PROTO_SESSION,
 
 
 def build_bulk_ack(port_high, host_next_seq, stream_id=0, unknown0=0):
-    """The reliable bulk ack in the retail shape: `port_high[k]` is the highest sequence received
-    from station k on this port, `host_next_seq` the host's own next sequence on it."""
+    """`port_high[k]` is the highest sequence from station k; `host_next_seq` our own next."""
     entries = []
     for k in range(ACK_ENTRIES):
         high = port_high.get(k, 0)
@@ -167,14 +146,8 @@ def build_bulk_ack(port_high, host_next_seq, stream_id=0, unknown0=0):
 
 
 def build_reliable_body(protocol, flags, sequence_id, data, lowest_pending=None):
-    """A reliable message in the header shape its protocol uses.
-
-    0x80 and 0x81 are addressed to the mesh and carry a destination bitmap. Reliable 0x7C carries
-    none: every 0x7C message in the emulated pair, in both directions, has destination_bits 0 and a
-    nine-byte header, and both the sequence and the lowest pending are the message's own sequence.
-    A console acknowledges a 0x7C message that carries a bitmap, so the sliding window takes it,
-    and does not act on its contents.
-    """
+    """0x7C takes no destination bitmap: a console acks a 0x7C message carrying one and ignores its
+    contents (docs/sv.md, Hosting for a console)."""
     low = sequence_id if lowest_pending is None else lowest_pending
     bits, bitmap = ((0, []) if protocol == PROTO_RELIABLE else (3, [JOINER_BITMAP]))
     return reliable5.build_header(flags, sequence_id, len(data), lowest_pending=low, stream_id=0,
@@ -356,24 +329,19 @@ def main():
     pending_trade = []          # (due, ip, port, payload) the trade stage asked to send
 
     def schedule_trade(delay, ip, port, payload):
-        """Queue a trade message, never before one already queued for the same station and port.
-
-        The stage's delays are gaps between messages, not positions on a clock. A confirmation
-        answering an offer that arrives while our own offer is still queued would otherwise go
-        first, and a station that confirms a trade whose record is not yet on the wire crashes
-        the game (sv97)."""
+        """Queue after any message already queued for this station and port: a station that
+        confirms a trade before its own record is on the wire crashes the game (docs/sv.md)."""
         due = time.time() + delay
         for other in pending_trade:
             if other[1] == ip and other[2] == port:
                 due = max(due, other[0] + delay)
         pending_trade.append((due, ip, port, payload))
-    stages = {}                 # ip -> trade.TradeStage
-    offers_seen = {}            # ip -> how many of that station's offers have been read out
-    trades_done = {}            # ip -> how many trades its stage has carried through
+    stages = {}
+    offers_seen = {}
+    trades_done = {}
     trade_offers = []
     if args.trade_offer:
-        # Hex text, a whole game message or a bare record, and every --offer-set written in;
-        # a wrong size raises here, before the radio is up.
+        # A wrong size raises here, before the radio is up.
         for path in args.trade_offer:
             one = trade.load_offer(open(path, "rb").read(), args.offer_set,
                                    fresh=args.fresh_pid)
@@ -392,7 +360,6 @@ def main():
     elif args.offer_set or args.offer_dump:
         ap.error("--offer-set and --offer-dump need --trade-offer")
     def report_offer(ip, body, n):
-        """Print what the console offered, and write the body where `--offer-out` says."""
         try:
             print(f"[sv] {ip}: offers {pokemon.describe(pokemon.from_wire(body))}")
         except ValueError as exc:
@@ -417,7 +384,7 @@ def main():
         app_version=args.app_version, max_participants=sv.MAX_PARTICIPANTS, phyname=phy,
         channel=args.channel, protocol=sv.LDN_PROTOCOL,
         ssid=binascii.unhexlify(args.ssid) if args.ssid else None,
-        # The platform byte and the radio profile belong to the air; ldn_mitm carries neither.
+        # ldn_mitm carries neither the platform byte nor the radio profile.
         **({"mirror_comm_version": True} if args.ip_host else {}),
         **({"our_ip": args.our_ip} if args.ip_host and args.our_ip else {}),
         **({} if args.ip_host else dict(platform=args.platform,
@@ -450,14 +417,12 @@ def main():
     net_seqid, net_sent, seen_ips = 2, {}, set()
     net_prop = {}              # src_ip -> [seqid, when it last went out, acknowledged]
     rtt_sent = {}              # src_ip -> when the last RTT request went out
-    net_answered = set()       # src_ip that has answered the Net 0x11 with its 0x12
+    net_answered = set()
 
-    station_ids = {}            # src_ip -> the ids session named
-    # (src_ip, protocol, port) -> highest data sequence received from the console on that stream
+    station_ids = {}
     stream_high = {}
-    # (src_ip, protocol, port) -> the host's next send sequence on that stream
     host_seq = {}
-    last_ack = {}               # (src_ip, protocol, port) -> when the last bulk ack went out
+    last_ack = {}
     sent_once = set()           # (src_ip, index of --send) already sent
     counts = {}
     advertised_players = [1]
@@ -468,7 +433,6 @@ def main():
         return s
 
     def send_data(ip, protocol, port, data, why):
-        """One reliable data message, whole, on the host's own sequence for that port."""
         seq = next_seq(ip, protocol, port)
         flags = (reliable5.FLAG_APPLICATION_DATA | reliable5.FLAG_MESSAGE_START
                  | reliable5.FLAG_MESSAGE_END
@@ -483,7 +447,7 @@ def main():
               f"{data[:8].hex()} ({why})")
 
     def send_record_bundle(ip, bundle):
-        """Records on 0x81 port 0 in one packet, the first message whole, the rest inheriting it."""
+        """The first message whole, the rest inheriting its header."""
         msgs = pia6.build_message(bundle[0][1], PROTO_STREAM_BROADCAST_RELIABLE)
         msgs += b"".join(pia6.build_message(body, PROTO_STREAM_BROADCAST_RELIABLE, inherit=True)
                          for _, body in bundle[1:])
@@ -498,16 +462,9 @@ def main():
     def send_ack(src_ip, protocol, port, dst_var, why):
         high = stream_high.get((src_ip, protocol, port), 0)
         if protocol == PROTO_RELIABLE:
-            # Reliable 0x7C is addressed to one station, so its acknowledgement is the one-entry
-            # form with no destination bitmap. The four-entry broadcast form belongs to 0x80 and
-            # 0x81; sent on 0x7C the console never counts its channel table acknowledged and
-            # retransmits it for as long as the session lasts.
-            #
-            # The lowest pending is the HOST's own next sequence, not one past the station's last.
-            # Declaring the station's number leaves its receive window waiting for it, and the
-            # host's next message, below that base, is acknowledged and dropped at 0x6f03cc
-            # without reaching the game. It costs the trade its commit: the station commits first,
-            # so the host acknowledges 8 and then sends its own commit as 7.
+            # 0x7C takes the one-entry ack, and its lowest pending is the host's own next sequence:
+            # a higher one makes the console drop our next message at 0x6f03cc, the commit
+            # (docs/sv.md, Hosting for a console).
             body = game_channel.build_ack(
                 high + 1, lowest_pending=host_seq.get((src_ip, protocol, port), 1))
         else:
@@ -528,12 +485,8 @@ def main():
             for entry in list(transport.participants):
                 seen_ips.add(entry[1])
                 current_ips.add(entry[1])
-            # THE PIA BLOCK'S PLAYER COUNT IS THE GAME'S VIEW OF THE SESSION, and the LDN
-            # participant list is not. A retail console advertises 2 the moment a station is
-            # seated (sv02); a beacon left saying 1 while a station sits in it is a session the
-            # joining game can see is not counting it.
-            # A station that has left has to be sent the opening Net 0x11 again when it comes
-            # back, so the set of stations that answered one is trimmed to those still seated.
+            # The Pia block's player count, not the LDN list, is the session the game sees. A
+            # returning station needs the Net 0x11 again.
             net_answered.intersection_update(current_ips)
             players = 1 + len(transport.participants)
             if players != advertised_players[0]:
@@ -544,9 +497,7 @@ def main():
                 print(f"[sv] advertising {players} player(s)")
             if not args.no_net_probe:
                 for ip in list(seen_ips):
-                    # A real Scarlet host sends its Net 0x11 ONCE and never repeats it. This host
-                    # sent one every 500 ms for the whole session, twenty a seat, each of which is
-                    # a fresh connection request at the station already seated.
+                    # A retail host sends Net 0x11 once; a repeat is a fresh connection request.
                     if ip in net_answered:
                         continue
                     if ip == transport.our_ip or now - net_sent.get(ip, 0) < NET_REPEAT_SECONDS:
@@ -616,10 +567,8 @@ def main():
                 if now < due or ip not in station_ids:
                     continue
                 del pending_records[ip]
-                # A station does not send its records in ascending order: the pair's host sends
-                # 1, 2, 3, 46, 4, 7, 8, 19, 9, 15 and so on, with the last id fourth. An `order`
-                # file in the set names that order, one sequence id a line; without one the files
-                # go out sorted.
+                # An `order` file names the send order, one id a line; retail is not ascending
+                # (docs/sv.md).
                 sent_ids, bundle = [], []
                 order_path = os.path.join(args.record_set, "order")
                 if os.path.exists(order_path):
@@ -640,7 +589,7 @@ def main():
                              | (reliable5.FLAG_IS_INITIALIZED if seq == 1 else 0))
                     body = build_reliable_body(PROTO_STREAM_BROADCAST_RELIABLE, flags, seq,
                                                payload, lowest_pending=1)
-                    # A bundle stays under the console's receive limit, as a retail round does.
+                    # Under the console's receive limit.
                     if bundle and (len(bundle) >= args.records_per_packet or sum(
                             len(b) + 3 for _, b in bundle) + len(body) + 3 > pia6.MAX_PAYLOAD - 48):
                         send_record_bundle(ip, bundle)
@@ -649,12 +598,8 @@ def main():
                     sent_ids.append(seq)
                 if bundle:
                     send_record_bundle(ip, bundle)
-                # THE SENDER'S OWN LOWEST PENDING IS HOW THE PEER LEARNS A GAP WILL NEVER FILL.
-                # The pair's host skips sequence ids 5 and 6 on this stream, and its next bulk ack
-                # on it declares lowest pending 47, one past the last id it sent. Its peer then
-                # acknowledges the whole set to 47 with an empty mask. Left at 1, the console waits
-                # for 5 for the rest of the session and acknowledges nothing past it, which is what
-                # made the set look as though it had to be renumbered.
+                # One past the last id sent tells the peer the gap at 5 and 6 never fills; left at 1
+                # it waits for 5 all session (docs/sv.md).
                 if sent_ids:
                     host_seq[(ip, PROTO_STREAM_BROADCAST_RELIABLE, 0)] = max(sent_ids) + 1
                 print(f"[sv] -> {ip}: identity, {len(names)} record(s) on 0x81 port 0, "
@@ -665,8 +610,6 @@ def main():
                     transport.send(pkt, ip)
                     record(rec="out", dst=ip, kind="session update", hex=pkt.hex(), t=now)
                     print(f"[sv] -> {ip}: session station-list update (type 5)")
-            # The periodic bulk ack on every stream the console has used, as a retail station
-            # sends one a second on every port it has open.
             if not args.no_ack:
                 for (ip, protocol, port), at in list(last_ack.items()):
                     if now - at >= args.ack_period and ip in station_ids:
@@ -715,10 +658,8 @@ def main():
                         if (msg.protocol == PROTO_SESSION and msg.payload
                                 and msg.payload[0] == SESSION_JOIN_REQUEST):
                             if args.net_property:
-                                # A rejoin is a new session, so the property goes out again under
-                                # the next sequence id. Re-arming on the console's Net 0x12 instead
-                                # would re-arm on every one of them, and this host repeats its 0x11
-                                # every 500 ms, so the property would never stop.
+                                # A rejoin re-arms the property; re-arming on Net 0x12 would never
+                                # stop, since the 0x11 repeats.
                                 previous = net_prop.get(src_ip, [0, 0.0, True])
                                 if previous[2]:
                                     net_prop[src_ip] = [previous[0] + 1, 0.0, False]
@@ -782,11 +723,8 @@ def main():
                                          join_order=1, token=j["identification_token"],
                                          players=[console_player]),
                                 ]
-                                # An emulated Scarlet host sends the station list TWICE: once in
-                                # the same breath as the join response, sequence id 0, and again
-                                # about two seconds later under the next id. A retail console is
-                                # known to leave when it is sent a type-1 join ack in that breath;
-                                # the list itself it takes.
+                                # An emulated host sends the list twice; a retail console leaves
+                                # when sent a type-1 join ack in that breath (docs/sv.md).
                                 if args.update_first_seq is not None:
                                     first = pia_connect.build_session_update_v11(
                                         host_const, host_var, stations,
@@ -804,9 +742,8 @@ def main():
                                 pkt = build_reply(keys, transport.our_ip, upd, console_var,
                                                   os.urandom(8), flags=session_flags,
                                                   packet_id=args.session_packet_id)
-                                # A Scarlet host answers the join request with the type 2 alone and
-                                # sends the station list about a second and a half later; sent in
-                                # the same breath the console takes neither.
+                                # The station list goes ~1.5 s after the type 2: sent together, the
+                                # console takes neither.
                                 pending_update[src_ip] = (time.time() + args.update_delay, pkt)
                             if args.record_set and src_ip not in pending_records:
                                 pending_records[src_ip] = time.time() + args.record_delay
@@ -822,16 +759,16 @@ def main():
                                     schedule_trade(args.offer_at + delay,
                                                    src_ip, out_port, payload)
                             if args.announce and (src_ip, "announce") not in pending_late:
-                                # The type 7 names THIS host's station: the constant id the
-                                # console addressed its join to, read big-endian (port2.py).
+                                # The type 7 names this host's station, the join's constant id read
+                                # big-endian.
                                 body = port2.build_announce(port2.station_id(host_const))
                                 pending_late[(src_ip, "announce")] = (
                                     time.time() + args.announce_delay,
                                     f"0x80:2:{port2.deflate_announce(body).hex()}:z")
                         if (not args.no_rtt and msg.protocol == PROTO_RTT and msg.payload
                                 and msg.payload[0] == RTT_REQUEST):
-                            # A pair's host answers with the REQUESTER's variable id in the
-                            # target field, where the request itself carries zero.
+                            # The response's target is the requester's variable id; the request
+                            # carries zero.
                             target = station_ids.get(src_ip, {}).get("console_var", 0)
                             echo = (bytes([RTT_RESPONSE]) + msg.payload[1:9]
                                     + struct.pack(">H", target & 0xFFFF)
@@ -906,8 +843,8 @@ def main():
                                         and src_ip in station_ids
                                         and rm["payload"] == trade.table_update(trade.KEY_TRADE, True)
                                         and (src_ip, "open") not in sent_once):
-                                    # The console's own open of the trade key. Only after it does
-                                    # a port-0 message reach the game's receiver.
+                                    # Nothing on port 0 reaches the game before the console's
+                                    # trade-key open.
                                     sent_once.add((src_ip, "open"))
                                     print(f"[sv] {src_ip}: opened key 0x80, "
                                           f"{len(args.send_on_open)} send(s) follow")
@@ -926,8 +863,8 @@ def main():
                                         else None)
                                 if (args.announce and slot is not None and src_ip in station_ids
                                         and (src_ip, "accept") not in sent_once):
-                                    # The type 9 carries the JOINER's station id; its receiver
-                                    # compares it with the station's own and drops any other.
+                                    # The type 9 carries the joiner's station id; the receiver drops
+                                    # any other.
                                     sent_once.add((src_ip, "accept"))
                                     data = port2.build_accept(
                                         port2.station_id(station_ids[src_ip]["console_const"]),
@@ -953,13 +890,10 @@ def main():
                                       f"map={rm['bitmap']} u0={a['unknown0']} "
                                       + " ".join(f"[s{e['stream_id']} ack={e['ack_id']} f={e['field_0x50']}]"
                                                  for e in a["entries"]))
-                                # Answer the console's periodic ack in kind, once per period, so
-                                # every port it opens has a host ack flowing on it.
                                 if (not args.no_ack and src_ip in station_ids
                                         and key not in last_ack):
                                     send_ack(src_ip, msg.protocol, msg.port,
                                              station_ids[src_ip]["console_var"], "first")
-                            # Anything the run was asked to originate, once the console is seated.
                             if src_ip in station_ids:
                                 for index, spec in enumerate(args.send):
                                     if (src_ip, index) in sent_once:

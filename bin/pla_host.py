@@ -1,20 +1,10 @@
 #!/usr/bin/env python3
-"""Host a Legends Arceus local trade network, so the console joins and speaks first.
-
-A console waiting on the trade search screen scans as well as advertising, so it will join a
-network carrying Arceus's own title, passphrase, advertisement and link code. A joiner sends the
-session protocol's join request before anything else, and that request is the thing this project
-cannot synthesise yet: it states the protocol list, the versions and the field layout this Pia band
-uses. Hosting is how to read it.
+"""Host a Legends Arceus local trade network that a searching console joins (docs/pla.md).
 
     sudo ./.venv/bin/python bin/pla_host.py --code 00000000 --seconds 240
 
     (them) Jubilife Village, the trading post, Simona (Trado) -> echanger des pokemon !
            -> local -> the warning -> the SAME eight digits -> wait on the search screen
-
-Every datagram in and out goes to --capture as one JSON line. Inbound packets are authenticated
-with the session key derived from our own SSID, and every message inside is printed by protocol id.
-`docs/pla.md` has the layouts this decodes.
 """
 import argparse
 import binascii
@@ -35,7 +25,6 @@ from pokeldn.ldn.ldn_mitm_host import IpHostTransport
 from pokeldn.ldn.transport import HostTransport, board_radio, find_ap_phy
 from pokeldn.host_support import resolve_keys
 
-# The 6.16-6.30 protocol ids, from docs/pla.md. A name makes a capture readable at a glance.
 PROTOCOL_NAMES = {
     0x08: "keep alive", 0x2C: "net", 0x30: "turn", 0x58: "rtt", 0x65: "sync",
     0x68: "unreliable", 0x74: "clone atomic", 0x75: "clone event",
@@ -45,16 +34,9 @@ PROTOCOL_NAMES = {
     0xB0: "reckoning 1d", 0xB4: "reckoning 3d",
 }
 
-# Whoever is waited on speaks first. At Pia 6.32 the HOST opens the exchange with a Net Protocol
-# connection request and the joiner only answers it; `host_pia.build_net_probe` is that move for the
-# GBA app. A joiner that gets no 0x11 sends nothing at all and leaves on a timer, which is what both
-# an emulated and a retail Arceus do. Net is protocol 0x2C at this band.
-# THE DISPATCH KEY IS THE SOURCE VARIABLE ID, NOT THE PROTOCOL. The parser copies the packet's
-# source variable id into the message's lookup field and walks the station registry for it; a
-# station it has never heard of makes the message unroutable and it is skipped, protocol and all.
-# A joiner's registry holds its own station under an id it re-rolls every session, so a host that
-# invents a fixed id can never match. Message flag 0x01 at this band is "skip the source variable
-# id check", which is what a message sent before the peer knows the sender is for.
+# The host speaks first: a joiner that gets no Net 0x11 sends nothing and leaves on a timer.
+# Messages dispatch on the source variable id; flag 0x01 skips that check (docs/pla.md, What a
+# message is routed by).
 ESTABLISHING_FLAGS = pia6.MESSAGE_FLAG_SKIP_SOURCE_CHECK
 JOINER_BITMAP = 0x02              # the destination station mask a host writes: the first joiner
 DATA_EXCHANGE_FLAGS = 0           # the Pia message flags a reference host puts on its record
@@ -70,7 +52,7 @@ PIA_PORT_DEFAULT = 12345        # the port the station list advertises the host 
 HOST_STATION_INDEX = 0
 CONSOLE_STATION_INDEX = 1
 NET_REPEAT_SECONDS = 0.5
-GAME_CHANNEL_RESEND = 0.4       # seconds a 0x7c message waits for its acknowledgement
+GAME_CHANNEL_RESEND = 0.4
 SESSION_JOIN_REQUEST = 0
 RTT_REQUEST = 0
 RTT_RESPONSE = 1
@@ -93,12 +75,7 @@ def _describe(msg):
 
 def build_net_probe(keys, our_ip, our_mac, station_ips, seqid, nonce8, max_stations,
                     protocol=PROTO_NET):
-    """The host's Net 0x11, in a version-11 packet: dst 0, src the host variable id, packet id 0.
-
-    The body is `pia_connect.build_net_conn_request`, which is the 6.39 layout and the one the GBA
-    app's host sends at 6.32. Whether 6.16 to 6.23 lays the station array out the same way is
-    unread; the joiner's answer, or its silence, is the measurement.
-    """
+    """The host's Net 0x11 in a version-11 packet: dst 0, src the host variable id, packet id 0."""
     body = pia6.build_message(
         pia_connect.build_net_conn_request(seqid, PIA_HOST_VAR, our_mac, keys.network_id,
                                            station_ips, max_stations=max_stations,
@@ -109,12 +86,7 @@ def build_net_probe(keys, our_ip, our_mac, station_ips, seqid, nonce8, max_stati
 
 
 def build_rtt_probe(keys, our_ip, systime, nonce8, version=5, subject=PIA_HOST_VAR):
-    """An RTT type-0 request, the cheapest thing a peer can answer.
-
-    RTT keeps no state, so a reply proves the packet authenticated, the message framing parsed and
-    the protocol id reached a registered protocol. Silence to both this and the Net request puts the
-    fault below the Net layout. [wiki RTT-Protocol]
-    """
+    """An RTT type-0 request. RTT keeps no state, so a reply proves the packet authenticated."""
     body = bytearray(21)
     body[0] = 0
     body[3] = version & 0xFF
@@ -126,27 +98,15 @@ def build_rtt_probe(keys, our_ip, systime, nonce8, version=5, subject=PIA_HOST_V
                              dst_var=0, src_var=PIA_HOST_VAR, packet_id=0, nonce8=nonce8)
 
 
-# RTT and the stream broadcast reliable protocol are addressed to the mesh rather than to a station:
-# both reference stations put the mesh destination in the header and name the recipients in the
-# plaintext footer, where the session, clock and reliable protocols carry the peer's variable id in
-# the header and no footer. A 0x81 message addressed the second way never reaches the game's stream
-# (`docs/pla.md`, The data exchange).
+# RTT and 0x81 go to the mesh destination with the recipient in the footer; a 0x81 addressed to the
+# station never reaches the game's stream (docs/pla.md).
 MESH_DESTINATION = 0x0001
 MESH_ADDRESSED = (PROTO_RTT, PROTO_BROADCAST_RELIABLE)
 
 
 def build_reply(keys, our_ip, body, dst_var, nonce8, *, protocol=PROTO_SESSION,
                 flags=ESTABLISHING_FLAGS, port=0):
-    """Wrap a message body in a version-11 packet addressed to the joiner.
-
-    A reply carries the host variable id as its source and the console's as its destination. The
-    session and mesh messages dispatch on the source variable id, so the skip-source-check flag is set
-    the way an establishing message is; a station the console already registered would route on the id
-    too, but skipping the check costs nothing and avoids a re-roll racing the reply.
-
-    A mesh-addressed protocol is addressed the way both reference stations address it: the mesh
-    destination in the header and the recipient's variable id in the footer.
-    """
+    """A version-11 packet to the console; a mesh-addressed one names it in the footer."""
     msg = pia6.build_message(body, protocol=protocol, port=port, message_flags=flags)
     footer_ids = ()
     if protocol in MESH_ADDRESSED:
@@ -157,11 +117,8 @@ def build_reply(keys, our_ip, body, dst_var, nonce8, *, protocol=PROTO_SESSION,
 
 
 def build_bundle(keys, our_ip, messages, dst_var, nonce8, *, protocol, flags=ESTABLISHING_FLAGS):
-    """Several messages of one protocol in a single packet, as a reference host bundles them.
-
-    The first message carries every header field and the rest inherit the flags while naming their
-    own port, which is the shape of the reference host's record-and-open packet.
-    """
+    """One protocol's messages in one packet, the rest inheriting the first's flags, as the
+    reference host sends its record and stream open."""
     plaintext = b""
     for index, (body, port) in enumerate(messages):
         plaintext += pia6.build_message(body, protocol=protocol, port=port, message_flags=flags,
@@ -325,11 +282,8 @@ def main():
     app_data = pla.build_advertise_data(args.code)
     print(f"[pla] advertising code {args.code}, {len(app_data)} bytes of application data")
 
-    # OVER THE AIR THE ADAPTER'S OWN PROFILE DECIDES WHETHER THE HOST READS ANYTHING. The proven
-    # TP-Link Archer T3U (rtw88_8822bu) hands its monitor interface already-decrypted frames that
-    # still carry the CCMP header and MIC, so a host built for standard CCMP reads nothing at all
-    # from it. Those two flags live in config/host.toml with this machine's values, the same layer
-    # every other host here runs with; over IP there is no radio and they do not apply.
+    # The radio profile flags come from config/host.toml: an adapter that hands up decrypted CCMP
+    # frames reads nothing without them.
     machine = config.load_project_host_file_config()
     factory = IpHostTransport if args.ip_host else HostTransport
     transport = factory(
@@ -368,16 +322,16 @@ def main():
     deadline = time.time() + args.seconds
     seen, authed, failed = 0, 0, 0
     net_seqid, net_sent, answered, seen_ips = 2, {}, set(), set()
-    reliable_high = {}          # src_ip -> highest reliable sequence id seen on the stream
-    hello_sent = set()          # src_ip we have sent the host reliable seq-1 hello to
-    host_seq = {}               # src_ip -> the host's own reliable send sequence, for --reliable-mirror
+    reliable_high = {}
+    hello_sent = set()
+    host_seq = {}
     if args.data_exchange_record:
         exchange_record = open(os.path.expanduser(args.data_exchange_record), "rb").read()
     else:
         exchange_record = data_exchange.build_record(
             player_id=(bytes.fromhex(args.data_exchange_id) if args.data_exchange_id else None),
             name=args.data_exchange_name)
-    exchange_sent = set()       # src_ip we have sent the data exchange record to
+    exchange_sent = set()
     box_edits = {k: v for k, v in dict(
         level=args.trade_box_level, experience=args.trade_box_experience,
         nickname=args.trade_box_nickname,
@@ -388,8 +342,7 @@ def main():
     fresh_draw = os.urandom(6) if args.fresh_pid else None
 
     def build_offer():
-        """-> the encrypted record to offer, from the file if one was named. A rebuild after the
-        file changes keeps the run's one --fresh-pid draw."""
+        """-> the encrypted offer; a rebuild keeps the run's one --fresh-pid draw."""
         template = (pla_pokemon.encrypt(pla_pokemon.load(open(box_file, "rb").read()))
                     if box_file else trade_box.REFERENCE_RECORD)
         if args.trade_box_ours:
@@ -404,9 +357,7 @@ def main():
                 pla_pokemon.decrypt(template), rand=lambda n: next(draw)))
         return template
 
-    # THE OFFER IS RE-READ WHEN THE FILE CHANGES. A console in the box screen offers over and over,
-    # so writing a different record to the file swaps what the next answer carries without
-    # restarting the host and dropping the session the console is in.
+    # Re-read when the file changes, so a new offer needs no restart of the session.
     box_state = {"mtime": os.path.getmtime(box_file) if box_file else None,
                  "record": build_offer()}
 
@@ -423,15 +374,12 @@ def main():
         print(f"[pla] offering {pla_pokemon.describe(pla_pokemon.decrypt(box_state['record']))}")
     if args.trade_box_collect:
         os.makedirs(os.path.expanduser(args.trade_box_collect), exist_ok=True)
-    collected = set()           # records already written, so a retransmit is not written twice
-    rx_windows = {}             # (src_ip, port) -> the console's game channel stream, as received
-    tx_window = reliable5.SendWindow(GAME_CHANNEL_RESEND)   # the host's, by (src_ip, port)
-    # ONE SEND SEQUENCE PER STREAM. Each station's sliding window on a port is its own, so every
-    # message the host originates on a port takes the next id in the host's own sequence, mirrors
-    # included. Numbering a mirror with the id the console used collides as soon as the host sends
-    # two messages where the console sent one, and the console's window drops the second as already
-    # delivered without dispatching it (ph36: the phase message reused the mirror's id).
-    box_seq = {}                # (src_ip, port) -> the host's next sequence on the game channel
+    collected = set()
+    rx_windows = {}
+    tx_window = reliable5.SendWindow(GAME_CHANNEL_RESEND)
+    # One send sequence per stream, mirrors included: a mirror reusing the console's id makes its
+    # window drop our next message as already delivered.
+    box_seq = {}
 
     def next_seq(src_ip, port):
         seq = box_seq.get((src_ip, port), 1)
@@ -444,7 +392,6 @@ def main():
         return tx_window.lowest((src_ip, port), box_seq.get((src_ip, port), 1))
 
     def send_reliable(src_ip, dst_var, body, *, protocol, port):
-        """Send one game channel data message and keep it until the console acknowledges it."""
         seq = reliable5.parse(body)["sequence_id"]
         body = reliable5.set_lowest_pending(body, min(seq, own_lowest(src_ip, port)))
         pkt = build_reply(keys, transport.our_ip, body, dst_var, os.urandom(8), protocol=protocol,
@@ -453,19 +400,15 @@ def main():
         tx_window.sent((src_ip, port), seq, (body, dst_var, protocol), time.time())
         return pkt
 
-    channel_mirrored = set()    # (src_ip, port) of a console channel message we have answered
-    channel_opened = set()      # src_ip we have opened the host's own port-0 channel to
-    atomic_sent = set()         # src_ip we have sent the Atomic kind-0 announce probe to
-    station_ids = {}            # src_ip -> the ids that session named, for the leave the host owes
-    left = set()                # src_ip the host has told it is going
-    phase3_sent = set()         # src_ip whose phase 3 the host answered in the interruption run
+    channel_mirrored = set()
+    channel_opened = set()
+    atomic_sent = set()
+    station_ids = {}
+    left = set()
+    phase3_sent = set()
 
     def leave(src_ip):
-        """Send the station the type-3 leave a console sends when it quits.
-
-        A console bursts this and waits for nothing, and the band pairs a leave with no reply, so
-        the host sends one and stops. `docs/pla.md`, Leaving.
-        """
+        """The type-3 leave a quitting console bursts; it takes no reply (docs/pla.md, Leaving)."""
         ids = station_ids.get(src_ip)
         if ids is None or src_ip in left:
             return
@@ -480,15 +423,11 @@ def main():
         if args.leave_sends:
             print(f"[pla] -> {src_ip}: session leave request (type 3) x{args.leave_sends}")
         else:
-            # The control for the leave: everything else the same, the message not sent. What a
-            # console does about a host that stops answering is then its own timeout, not the leave.
             print(f"[pla] {src_ip}: stopping WITHOUT a leave request (--leave-sends 0)")
 
     try:
         while time.time() < deadline:
             now = time.time()
-            # The host leaving is the one direction the captures never show, so it is timed from
-            # the join rather than triggered by the game.
             if args.leave_after is not None:
                 for ip, ids in list(station_ids.items()):
                     if ip not in left and now - ids["at"] >= args.leave_after:
@@ -496,22 +435,13 @@ def main():
                 if left and all(ip in left for ip in station_ids) and not args.stay_after_leave:
                     print("[pla] left the session; the run ends here")
                     break
-            # Open the Net exchange with every station that has joined, and keep repeating it until
-            # that station answers. A joiner waiting on this sends nothing before it arrives.
-            #
-            # A console on the trade search screen holds the discovery TCP open only for the sliver
-            # of its cycle when it is scanning, but its Pia UDP socket stays bound through the whole
-            # station phase (measured with lsof). So probe every address that has ever joined, not
-            # just the current TCP participants, or the short window is missed and the console reads
-            # almost nothing (measured: one datagram in a whole run of the participants-only sweep).
+            # Probe every address that ever joined, and keep probing after an answer: a searching
+            # console rebinds its station every cycle, and each needs the Net 0x11 to pass
+            # WaitConnected.
             for entry in list(transport.participants):
                 seen_ips.add(entry[1])
             if not args.no_net_probe:
                 for ip in list(seen_ips):
-                    # Do NOT stop once a station has acked: a console on the search screen tears its
-                    # station down and rebinds every cycle, and each new station window needs the
-                    # Net 0x11 again to fill its +0xb8 and pass WaitConnected. Gating on `answered`
-                    # gave exactly one working window, then silence for every cycle after.
                     if ip == transport.our_ip or ip in left:
                         continue
                     if now - net_sent.get(ip, 0) < NET_REPEAT_SECONDS:
@@ -532,8 +462,8 @@ def main():
                         transport.send(rtt, ip)
                         record(rec="out", dst=ip, kind="rtt request", hex=rtt.hex(), t=now)
                         print(f"[pla] -> {ip}: rtt request, version {args.rtt_version}")
-            # A lost host message is a silent stall: the console, acknowledged, never asks again.
-            # A resend keeps its sequence id under a new nonce (docs/pla.md, Acknowledgement).
+            # A lost host message stalls silently; a resend keeps its sequence id under a new nonce
+            # (docs/pla.md, Acknowledgement).
             for (ip, port), seq, (body, dst_var, protocol) in tx_window.due(now):
                 if ip in left:
                     continue
@@ -548,7 +478,7 @@ def main():
                 seen += 1
                 record(rec="in", src=src_ip, hex=payload.hex(), t=time.time())
                 if src_ip in left:
-                    continue          # silent after the leave; the network stays up
+                    continue
                 if not pia6.is_pia6(payload):
                     print(f"[pla] {src_ip}: not a version-11 packet, {payload[:8].hex()}")
                     continue
@@ -560,9 +490,7 @@ def main():
                     continue
                 authed += 1
                 print(f"[pla] {src_ip}: {header!r} footer={ids}")
-                # A FAULT IN ONE MESSAGE DOES NOT DROP THE SESSION. A live run costs a console
-                # rejoining and a player walking back to the trade screen, so the loop reports
-                # what it hit and keeps answering.
+                # A fault in one message is reported and the session kept.
                 try:
                     for msg in pia6.parse_messages(plain):
                         if src_ip in left:
@@ -582,11 +510,8 @@ def main():
                                 print(f"[pla] {src_ip}: join request did not parse, "
                                       f"{msg.payload[:16].hex()}")
                                 continue
-                            # A new join is a fresh session: the console re-rolls its variable id and
-                            # restarts its reliable stream at seq 1. Reset the per-station reliable state
-                            # so we do not ack a stale sequence from the previous session or skip the
-                            # hello (measured: a carried-over high made the next window ack seq 3 for a
-                            # stream that had just restarted at 1).
+                            # A new join is a fresh session: the console re-rolls its variable id
+                            # and restarts its streams at 1.
                             reliable_high.pop(src_ip, None)
                             hello_sent.discard(src_ip)
                             host_seq.pop(src_ip, None)
@@ -598,8 +523,8 @@ def main():
                             tx_window.forget(lambda stream: stream[0] == src_ip)
                             channel_mirrored = {c for c in channel_mirrored if c[0] != src_ip}
                             phase3_sent.discard(src_ip)
-                            # Echo the console's own record of the host ids (what it wrote into the
-                            # request's destination fields) so the four id compares cannot miss.
+                            # The console's own record of the host ids, so the four id compares
+                            # cannot miss.
                             host_const = j["destination_constant_id"]
                             host_var = j["destination_var"]
                             console_const = j["source_constant_id"]
@@ -628,10 +553,9 @@ def main():
                                 print(f"[pla] -> {src_ip}: session join response (type 2, status 1, "
                                       f"seq={args.join_seq})")
                             if args.session_update:
-                                # The console's own request tail carries a placeholder identity (id 00..01,
-                                # a 1-byte " " name). The game reads the peer's player entry as identity
-                                # rather than transport, so the host station carries a real id and name;
-                                # the console station keeps the placeholder, since the console knows itself.
+                                # The game reads the peer's player entry as identity: the host
+                                # station carries a real id and name, the console's the placeholder
+                                # its request sent.
                                 host_player = dict(player_id=host_player_id, name=args.host_player_name)
                                 console_player = dict(player_id=pia_connect.DEFAULT_PLAYER_ID, name=" ")
                                 stations = [
@@ -653,9 +577,7 @@ def main():
                                        t=time.time())
                                 print(f"[pla] -> {src_ip}: session station-list update (type 5, "
                                       f"seq={args.join_seq}, 2 stations)")
-                        # The game's own reliable channel. The trade flow's later step ticks the game's
-                        # network object, which advances on what the game reads here rather than on
-                        # anything the transport does (`docs/pla.md`, The game's reliable channel).
+                        # docs/pla.md, The game's reliable channel.
                         if (args.game_channel and msg.protocol == game_channel.PROTOCOL
                                 and len(msg.payload) >= reliable5.HEADER_SIZE):
                             try:
@@ -672,9 +594,8 @@ def main():
                                 if entries:
                                     tx_window.acked((src_ip, msg.port), entries[0]["ack_id"],
                                                     entries[0]["mask"])
-                            # The console's own receive rule: one past the contiguous run, the held
-                            # ones in the mask, each sequence handled once and in order. A second
-                            # trade repeats 05 00, 07 00 and every phase byte for byte (docs/pla.md).
+                            # Each sequence once and in order, never deduplicated by body: a second
+                            # trade repeats every message byte for byte (docs/pla.md).
                             ready = []
                             if cm and (cm["flags"] & reliable5.FLAG_APPLICATION_DATA):
                                 window = rx_windows.setdefault((src_ip, msg.port),
@@ -711,9 +632,6 @@ def main():
                                           f"{trade_box.describe(offered['record'])}")
                                     record(rec="box", src=src_ip, selector=offered["selector"],
                                            hex=offered["record"].hex(), t=time.time())
-                                    # A console sends one of these every time the box cursor moves, so
-                                    # a run with the cursor walked across a pasture is a library of
-                                    # records the game itself considers legal.
                                     if args.trade_box_collect and offered["record"] not in collected:
                                         collected.add(offered["record"])
                                         try:
@@ -731,16 +649,13 @@ def main():
                                         with open(path, "wb") as fh:
                                             fh.write(offered["record"])
                                         print(f"[pla] wrote {path}")
-                                # Port 1 is the channel table: the console announces each handler
-                                # key it opens or closes, and sends on a key only once the peer has
-                                # announced it open (`pokeldn.pla.channel_table`). Announce back
-                                # every key the console opens; a close is read and left alone. A
-                                # repeated open is an OR on the console (docs/pla.md).
+                                # Announce back every key the console opens on port 1; it sends on a
+                                # key only once the peer has (pokeldn.pla.channel_table).
                                 if announced:
                                     for ckey, opened in channel_table.parse(cm["payload"]):
                                         print(f"[pla] <- {src_ip}: channel {ckey.hex()} "
                                               f"{'open' if opened else 'closed'}")
-                                        # the phase key closes once the trade is written (docs/pla.md)
+                                        # the phase key closes once the trade is written
                                         if not opened and ckey == trade_box.PHASE_KEY:
                                             show_done()
                                             print(f"[pla] {src_ip}: trade complete, the phase key "
@@ -757,11 +672,7 @@ def main():
                                                key=ckey.hex(), hex=pkt.hex(), t=time.time())
                                         print(f"[pla] -> {src_ip}: channel {ckey.hex()} open "
                                               f"announced (port {msg.port})")
-                                # A reference station answers the peer's channel message with the
-                                # same message on the same port, then opens its own on port 0. The
-                                # handler key is what a message is addressed to rather than the port,
-                                # and a station opens more than one key on a port, so a mirror is owed
-                                # once per key.
+                                # A mirror is owed once per handler key, not per port (docs/pla.md).
                                 mirror = (src_ip, msg.port, key)
                                 if not announced and (key != bytes(game_channel.KEY_SIZE)
                                                       or cm["flags"] & reliable5.FLAG_IS_INITIALIZED) \
@@ -776,10 +687,8 @@ def main():
                                            hex=pkt.hex(), t=time.time())
                                     print(f"[pla] -> {src_ip}: game channel message back "
                                           f"(port {msg.port}, key {key.hex()})")
-                                # The selectors that carry no record are two bytes and are answered
-                                # as they stand. The console sends 5 when the player confirms the
-                                # trade, and its own sender sets the state that the arriving 5
-                                # completes, so mirroring it is what closes the rendezvous.
+                                # Mirroring the console's selector 5 completes the state its own
+                                # sender set.
                                 selector = trade_box.read_selector(cm["payload"])
                                 if (args.trade_box and offered is None and selector is not None
                                         and selector[0] in trade_box.MIRRORED_SELECTORS):
@@ -794,9 +703,8 @@ def main():
                                     print(f"[pla] -> {src_ip}: trade step "
                                           f"({trade_box.selector_name(selector[0])}, "
                                           f"{selector[1].hex()})")
-                                # Selector 2 on the phase key is the host's to send: the joiner's own
-                                # sender is behind a flag that is zero on anything but the host, so its
-                                # job cannot leave state 2 until the host announces the phase.
+                                # Selector 2 on the phase key is the host's to send; the joiner's
+                                # job waits in state 2 for it (docs/pla.md).
                                 phase = trade_box.read_phase(cm["payload"])
                                 if (args.trade_box and phase is not None
                                         and phase[0] == trade_box.PHASE_SELECTOR_MINE):
@@ -834,12 +742,8 @@ def main():
                                            hex=pkt.hex(), t=time.time())
                                     print(f"[pla] -> {src_ip}: game channel open "
                                           f"(port {game_channel.HOST_PORT}, key eight zero bytes)")
-                                # The console offers its Pokemon the moment the trade screen is up and
-                                # does not wait to be spoken to. Answer with ours on the same channel.
-                                # The selector says whether the console is showing a Pokemon or
-                                # offering it, and the two land in different slots on its side. Answer
-                                # with the selector we were sent: a showing answered with an offer, or
-                                # an offer answered with a showing, leaves the other slot empty.
+                                # Answer with the selector we were sent: a showing and an offer land
+                                # in different slots.
                                 if args.trade_box and offered is not None:
                                     box_record = offer_record()
                                     seq = next_seq(src_ip, msg.port)
@@ -855,15 +759,9 @@ def main():
                                           f"{trade_box.selector_name(offered['selector'])}, "
                                           f"{trade_box.describe(box_record)})")
 
-                        # Once joined, the console streams RTT, the clone clock and the reliable window and
-                        # times out after 12 s if none of it is answered (report 133). Echo RTT and
-                        # acknowledge the reliable stream to hold the session.
-                        # The console's ClockProtocol (0x77) message is [0] kind, [1] sequence, [2] u64 BE
-                        # originate tick, [0xA] u64 BE responder clock (report 159). Kind 0 is a request the
-                        # console discards (its handler is gated on my_station == master); kind 1 is the
-                        # reply that advances the state machine 1 -> 2 (synchronised). Answer a request with
-                        # kind 1: echo the sequence and originate tick, and put the host's own ms clock in
-                        # the last field.
+                        # Clock kind 0 is answered with kind 1: the sequence and originate tick
+                        # echoed, then the host's ms clock (docs/pla.md, The Clone Clock and Atomic
+                        # protocols).
                         if (args.clock and msg.protocol == PROTO_CLONE_CLOCK and len(msg.payload) >= 18
                                 and msg.payload[0] == 0):
                             host_ms = int(time.monotonic() * 1000) & ((1 << 64) - 1)
@@ -874,10 +772,7 @@ def main():
                             transport.send(pkt, src_ip)
                             record(rec="out", dst=src_ip, kind="clone clock reply", hex=pkt.hex(),
                                    t=time.time())
-                            # Probe the Atomic protocol once the mesh is running (the clock is flowing):
-                            # a kind-0 announce on element 0. It cannot create the slot from outside, but
-                            # it draws a kind-2 reply, and a slot at 0x1d5625dbe0 going non-zero would mean
-                            # a host announce does fill the table (report 163). Value is a marker to spot.
+                            # A kind-0 announce on element 0 draws a kind-2 reply (docs/pla.md).
                             if args.atomic_announce and src_ip not in atomic_sent:
                                 atomic_sent.add(src_ip)
                                 announce = (bytes([0, 0]) + (0).to_bytes(4, "big")
@@ -890,8 +785,7 @@ def main():
                                 print(f"[pla] -> {src_ip}: atomic kind-0 announce (element 0, probe)")
                         if args.sustain and msg.protocol == PROTO_RTT and msg.payload:
                             if msg.payload[0] == RTT_REQUEST:
-                                # Echo the timestamp and target unchanged, kind 1. A target of 0 is
-                                # accepted by everyone, and the console sends 0 here.
+                                # A target of 0 is accepted by everyone.
                                 echo = bytes([RTT_RESPONSE]) + msg.payload[1:]
                                 pkt = build_reply(keys, transport.our_ip, echo, header.src_var,
                                                   os.urandom(8), protocol=PROTO_RTT)
@@ -908,18 +802,15 @@ def main():
                                 is_new = rm["sequence_id"] > reliable_high.get(src_ip, 0)
                                 high = max(reliable_high.get(src_ip, 0), rm["sequence_id"])
                                 reliable_high[src_ip] = high
-                                # The consumer reads the entry at the receiver's own index (the console is
-                                # index 1, so it reads entry[1]) and requires that entry's station byte to
-                                # equal the SENDER's index, which is the host, 0. So every entry's station
-                                # byte is 0, and entry[1] carries the ack of the console's stream: ack_id
-                                # one past the highest sequence received.
+                                # The console reads entry[1] and requires its station byte to be the
+                                # sender's index, 0 (docs/pla.md, Sustaining the mesh).
                                 entries = [
                                     dict(stream_id=HOST_STATION_INDEX, ack_id=high, field_0x50=high),
                                     dict(stream_id=HOST_STATION_INDEX, ack_id=high + 1, field_0x50=high),
                                 ]
                                 payload = reliable5.build_ack_payload(entries)
-                                # The reference's acknowledgement declares the destination the content
-                                # messages declare; ours carried a nine-byte header with neither.
+                                # The reference's ack declares the destination its content messages
+                                # declare.
                                 body = (reliable5.build_header(0, reliable5.ACK_SEQUENCE, len(payload),
                                                                lowest_pending=high + 1,
                                                                stream_id=rm["stream_id"],
@@ -933,16 +824,12 @@ def main():
                                        ack_id=high + 1, hex=pkt.hex(), t=time.time())
                                 print(f"[pla] -> {src_ip}: reliable ack (stream {rm['stream_id']}, "
                                       f"seq {high}, ack_id {high + 1}, port {msg.port})")
-                                # The data exchange: the trade scene is the success branch of the
-                                # matching sequence, and the sequence completes when both stations have
-                                # sent their record and had it acknowledged. The console sends its own
-                                # only after it has received the host's, so a host that never sends one
-                                # is what the ten-second deadline is waiting on (`docs/pla.md`).
+                                # The console sends its record only after the host's; the ten-second
+                                # leave waits on it (docs/pla.md).
                                 if args.data_exchange and src_ip not in exchange_sent:
                                     exchange_sent.add(src_ip)
-                                    # One packet carrying the record on port 0 and the host's own
-                                    # stream open on port 1, which is the reference host's packet byte
-                                    # for byte (`docs/pla.md`, The data exchange).
+                                    # Record on port 0 and stream open on port 1 in one packet, the
+                                    # reference host's byte for byte.
                                     content = data_exchange.build_content_message(
                                         exchange_record, JOINER_BITMAP)
                                     opened = data_exchange.build_stream_open(JOINER_BITMAP)
@@ -962,10 +849,7 @@ def main():
                                     print(f"[pla] -> {src_ip}: data exchange record "
                                           f"(player {who['name']!r}, {len(content)}B on port 0) "
                                           f"and stream open ({len(opened)}B on port 1)")
-                                # The console acks a host reliable stream it never receives and leaves at
-                                # +10 s if the host stays silent. Speak on reliable: send the host's own
-                                # seq-1 data once, with the INITIALIZED flags the console's first message
-                                # carries.
+                                # With no host data on reliable the console leaves at +10 s.
                                 if args.reliable_hello and src_ip not in hello_sent:
                                     hello_sent.add(src_ip)
                                     data = bytes.fromhex(args.reliable_hello)
@@ -984,10 +868,8 @@ def main():
                                            hex=pkt.hex(), t=time.time())
                                     print(f"[pla] -> {src_ip}: reliable hello (host seq 1, "
                                           f"{len(data)}B payload)")
-                                # Progress the host stream in lockstep: the console advances its own
-                                # stream only after the host's matching sequence lands (its seq 2 came
-                                # 66 ms after the host's seq 1 was applied). Mirror each console data
-                                # message as the host's own next sequence with the same payload.
+                                # The console advances its stream only after the host's matching
+                                # sequence lands.
                                 if args.reliable_mirror and is_new:
                                     s = host_seq.get(src_ip, 0) + 1
                                     host_seq[src_ip] = s

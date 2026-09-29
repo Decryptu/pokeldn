@@ -1,22 +1,16 @@
 #!/usr/bin/env python3
-"""Join the network a searching Scarlet / Violet console puts up, and let its Pia speak to us.
+"""Join a searching Scarlet / Violet console's network and trade with it (docs/sv.md).
 
-A console on the offline Link Trade search alternates: a few seconds hosting its own network, then
-scanning. It registers its Pia protocols while it hosts, so the session is entered from that side:
-we scan in a loop, take the seat the moment the network appears, and answer what arrives.
+The searching console alternates a few seconds hosting with scanning; this scans until it hosts.
 
     sudo ./.venv/bin/python bin/sv_join.py --seconds 600 --capture scratchpad/svNN_join.jsonl
 
     (them) X -> Poke Portal -> Link Trade, offline, no code -> search
 
-Against an emulated console over the LAN (Ryujinx in ldn_mitm mode), no root and no radio:
+Against Ryujinx in ldn_mitm mode over the LAN, no radio:
 
     ./.venv/bin/python bin/sv_join.py --ip-join --host-ip 172.16.86.1 --our-ip 172.16.86.128 \
         --session-join --capture scratchpad/svNN_join.jsonl
-
-The band is Pia header version 11 (`pokeldn.ldn.pia6`), the same as Legends Arceus, so the Net,
-Session and RTT layouts are `pokeldn.ldn.pia_connect`'s v11 ones. Every datagram in and out goes to
---capture as one JSON line. `docs/sv.md` has what the console sends.
 """
 import argparse
 import json
@@ -54,24 +48,19 @@ MESH_ADDRESSED = (PROTO_RTT, PROTO_BROADCAST_RELIABLE, PROTO_STREAM_BROADCAST_RE
 MESH_DESTINATION = 0x0001
 NET_CONN_STATUS = 0x11
 NET_CONN_STATUS_ACK = 0x12
-# The host's 0x50 and the answer a joiner sends it, alongside the 0x11 and its 0x12 (docs/sv.md).
+# Net 0x50 and the joiner's 0x51 answer (docs/sv.md).
 NET_0x50 = 0x50
 NET_0x51 = 0x51
 ESTABLISHING_FLAGS = pia6.MESSAGE_FLAG_SKIP_SOURCE_CHECK
-# The variable id we send as our own until the host assigns one. A retail joiner does not invent
-# one: the host names the joiner's id in the plaintext footer of its first mesh-addressed packet,
-# 0.14 s after the association and before the joiner has sent anything, and the joiner then uses
-# that value as its own source id (`docs/sv.md`). This is the fallback for a host that never does.
+# Fallback only: a retail host names the joiner's id in the footer of its first mesh-addressed
+# packet, and the joiner takes it (docs/sv.md).
 OUR_VAR = 0xC493
 OUR_STATION_INDEX = 1
 PROTO_CLOCK = 0x77
-# The Clone Clock request a joiner sends the moment it is seated: eighteen zero bytes. The host
-# answers with a one, sixteen bytes and a trailing byte (docs/sv.md).
 CLOCK_REQUEST = bytes(18)
-# The 15 bytes a joiner sends to open 0x7c port 2, from a pair trading (docs/sv.md).
 CHANNEL_PORT2_OPEN = port2.build_join(0)
 HOST_BITMAP = 0x01                # the destination mask a joiner writes: the host, station 0
-ACK_ENTRIES = 4                   # what a retail station's bulk ack carries (sv02)
+ACK_ENTRIES = 4  # a retail station's bulk ack carries four
 
 PROTOCOL_NAMES = {
     0x2C: "net", 0x58: "rtt", 0x68: "unreliable", 0x74: "clone atomic", 0x77: "clone clock",
@@ -83,9 +72,8 @@ SESSION_MESSAGE_NAMES = {
     5: "update session", 6: "update session ack", 7: "start host migration",
     8: "start host migration ack",
 }
-# Type 7 at this band is written by LeaveMeshWithHostMigrationJob (0x6d8de0) and the job then waits
-# in "WaitStartHostMigrationAck" for a type 8, repeating every second: it is the host leaving the
-# mesh and handing the host role to the station it addresses (sv18), not the wiki's left-station sync.
+# Session type 7 here is LeaveMeshWithHostMigrationJob (0x6d8de0) handing the host role over, not
+# the wiki's left-station sync (docs/sv.md).
 
 STALE_VIFS = ["ldn", "ldn-mon", "ldn-tap", "ldnclient"]
 
@@ -100,11 +88,7 @@ def cleanup_stale():
 
 
 def set_mac(phy, mac, log=print):
-    """Give the phy's own interface this MAC, so the vif the association creates inherits it.
-
-    An interface has to be down to take a new address. The driver reload every launcher runs puts
-    the adapter's own address back, so nothing here has to undo it.
-    """
+    """Give the phy's interface this MAC, so the vif the association creates inherits it."""
     import subprocess
 
     if board_radio():
@@ -129,8 +113,7 @@ def set_mac(phy, mac, log=print):
 
 
 def make_socket(ifname, our_ip=None):
-    """Over the radio the socket is bound to the LDN interface; over IP to our own address."""
-    from pokeldn.ldn import userspace_ip  # no kernel interface (ESP32 on macOS)
+    from pokeldn.ldn import userspace_ip
     if our_ip is None and (user := userspace_ip.udp_socket(ifname, sv.PIA_PORT)) is not None:
         user.setblocking(False)
         return user
@@ -148,8 +131,7 @@ def make_socket(ifname, our_ip=None):
 
 
 def ip_scan_once(our_ip, host_ip, timeout):
-    """-> the emulated host's NetworkInfo, or None. The scan leaves from our own address: ldn_mitm
-    drops one whose source is the host's own address, and answers to wherever it came from."""
+    """-> the host's NetworkInfo, or None. ldn_mitm drops a scan from the host's own address."""
     with socket.socket(socket.AF_INET, socket.SOCK_DGRAM) as us:
         us.settimeout(timeout)
         us.bind((our_ip, 0))
@@ -165,7 +147,7 @@ def ip_scan_once(our_ip, host_ip, timeout):
 
 
 def ip_associate(our_ip, host_ip, our_mac, name, timeout):
-    """-> (NetworkInfo, held TCP socket). The host keeps the connection open for the session."""
+    """-> (NetworkInfo, TCP socket the host holds open for the session)."""
     tcp = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
     tcp.settimeout(timeout)
     tcp.bind((our_ip, 0))
@@ -203,11 +185,8 @@ def _describe_msg(msg):
 
 
 def build_out(keys, our_ip, body, dst_var, *, protocol, port=0, flags=0, src_var=OUR_VAR):
-    """A version-11 packet from us to the host, addressed the way the band addresses that protocol.
-
-    `dst_var` is 0 for an establishing message: the console has no station for us yet and its parser
-    dispatches on the destination variable id, so a message addressed to the host's own id before it
-    knows us is unroutable (`docs/pla.md`, and `bin/pla_join.py` sends both of its openers to 0)."""
+    """A version-11 packet to the host. `dst_var` is 0 until the console has a station for us:
+    its parser dispatches on the destination id (docs/pla.md)."""
     if flags & pia6.MESSAGE_FLAG_ZLIB:
         body = streams.compress(body)
     msg = pia6.build_message(body, protocol=protocol, port=port, message_flags=flags)
@@ -220,8 +199,7 @@ def build_out(keys, our_ip, body, dst_var, *, protocol, port=0, flags=0, src_var
 
 
 def build_bulk_ack(high, our_next_seq, stream_id=0):
-    """The bulk ack in the shape both retail stations send: four entries, every station byte our
-    own index, entry k acknowledging station k's stream on this port (sv02)."""
+    """The bulk ack both retail stations send: four entries, entry k for station k's stream."""
     entries = [dict(stream_id=0, ack_id=(high if k == 0 else 0) + 1,
                     field_0x50=(high if k == 0 else 0) + 1) for k in range(ACK_ENTRIES)]
     payload = reliable5.build_ack_payload(entries)
@@ -431,8 +409,7 @@ def describe_offer(body):
 def main(argv=None):
     ap = build_parser()
     args = ap.parse_args(argv)
-    # A run that is killed rather than ended loses a block-buffered stdout, and with it the whole
-    # log of the seat (sv32). Line buffering costs nothing here.
+    # A killed run loses a block-buffered stdout, and the seat's log with it.
     try:
         sys.stdout.reconfigure(line_buffering=True)
     except (AttributeError, ValueError):
@@ -520,9 +497,8 @@ def main(argv=None):
             param.phyname, param.ifname = phy, args.ifname
 
             async def seat():
-                # ldn.connect can block for minutes when the console's host phase ends under it
-                # (sv89: one attempt held the loop for six). The cancel scope bounds the
-                # association alone; once the session is running the scope is lifted.
+                # ldn.connect can block for minutes when the console's host phase ends under it; the
+                # scope bounds the association alone.
                 with trio.move_on_after(args.connect_timeout) as scope:
                     async with ldn.connect(param) as network:
                         scope.deadline = float("inf")
@@ -567,9 +543,7 @@ def main(argv=None):
 
 
 def main_ip(args):
-    """The same session against a Ryujinx host on the LAN: ldn_mitm scan, connect, then Pia on
-    12345 between our two real addresses. What the game does above the seat is what it does on
-    the radio; only the transport differs (`docs/ldn.md`, Hosting for an emulator)."""
+    """The same session against a Ryujinx host over ldn_mitm (docs/ldn.md)."""
     want = {int(args.comm_id, 16)} if args.comm_id else {sv.COMM_ID_SCARLET, sv.COMM_ID_VIOLET}
     our_mac = b"\x02\x00" + socket.inet_aton(args.our_ip)
     print(f"[sv] ip-join: host {args.host_ip}, us {args.our_ip}, "
@@ -635,7 +609,6 @@ def main_ip(args):
 
 
 async def run_session(args, keys, host_ip, host_mac, our_ip, our_mac, record):
-    """Everything above the seat: answer the host's Net, join its session, hold the streams."""
     sock = make_socket(args.ifname, our_ip if args.ip_join else None)
     t0 = time.monotonic()
     host_var = None
@@ -647,12 +620,11 @@ async def run_session(args, keys, host_ip, host_mac, our_ip, our_mac, record):
     join_sequence = None
     pending_update = None       # a type-5 update that arrived before the join response
     migration_sent = 0
-    migration_at = None         # when the console first asked us to take the host role
+    migration_at = None
     identity = None
     if args.send_record:
         identity = streams.compress(open(args.send_record, "rb").read())
     record_seq = 1
-    # Our own 0x7c state: the host's table, whether ours has gone, and its key-0x80 open.
     channel = {"opened": False, "table": None, "key80": False, "port2": False}
     stage = None
     if args.trade_offer:
@@ -666,17 +638,16 @@ async def run_session(args, keys, host_ip, host_mac, our_ip, our_mac, record):
     pending_trade = []          # (due, port, payload) the trade stage asked to send
 
     def schedule_trade(delay, port, payload):
-        """Queue a trade message, never before one already queued for the same port. The stage's
-        delays are gaps between messages, not positions on a clock, and a station that confirms a
-        trade whose own record is not yet on the wire crashes the game (sv97)."""
+        """Queue after any message already queued on this port: a station that confirms a trade
+        before its own record is on the wire crashes the game (docs/sv.md)."""
         due = time.time() + delay
         for other in pending_trade:
             if other[1] == port:
                 due = max(due, other[0] + delay)
         pending_trade.append((due, port, payload))
     pending_open = []           # (due, spec) hung on the host's own key-0x80 open
-    offers_seen = 0             # how many of the host's offers have been printed
-    trades_done = 0             # how many trades the stage has carried through the exchange
+    offers_seen = 0
+    trades_done = 0
     record_set = []
     if args.record_set:
         for name in sorted(os.listdir(args.record_set)):
@@ -686,26 +657,24 @@ async def run_session(args, keys, host_ip, host_mac, our_ip, our_mac, record):
         print(f"[sv] the record set holds {len(record_set)} record(s), "
               f"sequence ids {record_set[0][0]}..{record_set[-1][0]}")
     set_sent = False
-    mirrored = set()            # host sequence ids already sent back under --mirror-records
+    mirrored = set()
     record_acked = False
     last_record_send = 0.0
-    stream_high = {}            # (protocol, port) -> highest sequence received from the host
-    stream_got = {}             # (protocol, port) -> every sequence received from the host
+    stream_high = {}
+    stream_got = {}
     peer_lowest = {}            # (protocol, port) -> the host's own lowest pending on that stream
     our_seq = {}                # (protocol, port) -> our next send sequence on that stream
     last_ack = {}
     counts = {}
     seen = authed = 0
-    last_in = time.monotonic()  # when the console last sent anything, for --quiet-seat
+    last_in = time.monotonic()
 
-    # Both retail stations address every Pia datagram to the link-local broadcast of their own
-    # /24 (sv11: 169.254.86.2 -> 169.254.86.255), never to the peer's address.
-    # Over the LAN the emulated host is one address, and the IP host direction sends unicast too.
+    # Retail stations send every Pia datagram to their /24's broadcast, never to the peer.
     dest_ip = host_ip if (args.unicast or args.ip_join) else our_ip.rsplit(".", 1)[0] + ".255"
 
     ours = {"var": OUR_VAR, "assigned": False}
-    # (flags, entries, destination bits). The first is what both retail stations send; the last is
-    # the one shape a Scarlet guest has been seen to parse on this path (docs/sv.md).
+    # (flags, entries, destination bits): first the retail shape, last the one a Scarlet guest
+    # parsed (docs/sv.md).
     sweep = [(f, e, d) for f in (args.ack_flags, 0x00)
              for e in (args.ack_entries, 1) for d in (args.ack_dest_bits, 0)]
     sweep = list(dict.fromkeys(sweep))
@@ -713,7 +682,6 @@ async def run_session(args, keys, host_ip, host_mac, our_ip, our_mac, record):
                  "dest": args.ack_dest_bits}
 
     def ack_variant(elapsed):
-        """The shape our acks carry now, and a line when the sweep moves on."""
         if not args.ack_sweep:
             return
         i = int(elapsed // args.ack_sweep_period) % len(sweep)
@@ -726,7 +694,6 @@ async def run_session(args, keys, host_ip, host_mac, our_ip, our_mac, record):
                    dest_bits=sweep[i][2], t=time.time())
 
     def our_ack(key):
-        """A bulk ack for one stream in the shape the sweep currently says."""
         if args.ack_highest:
             through, masks = stream_high.get(key, 0), None
         else:
@@ -750,17 +717,15 @@ async def run_session(args, keys, host_ip, host_mac, our_ip, our_mac, record):
         record(rec="out", dst=to, kind=what, hex=pkt.hex(), t=time.time(), **extra)
 
     def next_seq(protocol, port):
-        """-> our next sequence on one stream, stepping it. Every send goes through here, so the
-        bulk acks state the same number as their window's lowest pending: a sender's own lowest
-        pending is what drives its peer's receive base (docs/pia.md)."""
+        """-> our next sequence on one stream. Every send steps it here, so our acks' lowest
+        pending matches it: that number drives the peer's receive base (docs/pia.md)."""
         key = (protocol, port)
         seq = our_seq.get(key, 1)
         our_seq[key] = seq + 1
         return seq
 
     def send_channel(port, payload, what, flags=None):
-        """A 0x7c data message under our own next sequence on that port. 0x7c carries no
-        destination bitmap and states its own sequence as the lowest pending."""
+        """0x7c carries no destination bitmap and states its own sequence as the lowest pending."""
         seq = next_seq(PROTO_RELIABLE, port)
         if flags is None:
             body = game_channel.build_open(payload, seq, initialized=(seq == 1))
@@ -773,14 +738,13 @@ async def run_session(args, keys, host_ip, host_mac, our_ip, our_mac, record):
         return seq
 
     def send_join():
-        # The host's constant id is the one its own Net 0x11 states, not the LDN MAC from the
-        # participant list: on the GBA app those differ, and the join must address the stated one.
+        # Address the constant id the host's Net 0x11 states; on the GBA app it differs from the
+        # MAC.
         body = pia6.build_session_join(
             our_const, ours["var"], our_ip, host_const, host_var or 0, args.join_player_name,
             os.urandom(4), player_id=player_id)
         dst = (host_var or 0) if args.join_dst_var == "host" else 0
-        # A Session message is addressed to one station, so it goes to the host's own address
-        # whatever the mesh-addressed messages go to (a joining Arceus sent its to the host's IP).
+        # A Session message goes to the host's own address, never the broadcast.
         send(out(body, dst, protocol=PROTO_SESSION, flags=args.join_flags), "session join request",
              to=host_ip)
         print(f"[sv] -> {host_ip}: session join request (type 0, {len(body)} bytes), "
@@ -795,8 +759,7 @@ async def run_session(args, keys, host_ip, host_mac, our_ip, our_mac, record):
         print(f"[sv] -> {host_ip}: session update ack (type 6), sequence {upd['sequence_id']}")
 
     def send_opening():
-        """The eleven bulk acks and the two stream opens a retail joiner sends at once, 0.9 s
-        after it associates (sv11). Everything is one packet per message, as the console sends it."""
+        """The eleven bulk acks and two stream opens a retail joiner sends at once."""
         for protocol, port in streams.every_stream():
             body = streams.build_ack({}, 1, streams.JOINER_INDEX, unknown0=1,
                                      entry_count=ack_shape["entries"],
@@ -845,22 +808,16 @@ async def run_session(args, keys, host_ip, host_mac, our_ip, our_mac, record):
             record(rec="left_after_migration", t=time.time())
             break
         ack_variant(elapsed)
-        # A retail joiner's opening follows its join by about 0.75 s (sv11: the join at 0.14 s, the
-        # opening at 0.89 s). With --session-join the opening waits for the seat.
+        # A retail joiner's opening follows its join by about 0.75 s.
         if not opened and elapsed >= args.open_delay and (
                 not args.session_join or (joined_at and now - joined_at >= args.open_delay)):
             opened = True
             send_opening()
-        # The host addresses the joiner by its variable id 0.14 s after the association, before the
-        # joiner has broadcast anything (sv11), so something unicast carries that id to it. The
-        # Session join request is the only message in the band that states a station's own ids, and
-        # a unicast one would not appear in a passive capture.
         if args.session_join and host_var is not None and not joined and (
                 join_sent == 0.0 or (args.join_repeat and now - join_sent >= args.join_repeat)):
             join_sent = now
             send_join()
-        # Our identity record on 0x81 port 1 (our station stream), retransmitted every 0.25 s
-        # until the host's bulk ack for port 1 names it. A retail joiner sends this at ~0.9 s.
+        # Retransmitted every 0.25 s until the host's bulk ack for port 1 names it.
         if identity is not None and joined and not record_acked and (
                 now - joined_at >= args.record_delay) and (now - last_record_send >= 0.25):
             last_record_send = now
@@ -870,14 +827,11 @@ async def run_session(args, keys, host_ip, host_mac, our_ip, our_mac, record):
                      port=streams.JOINER_INDEX, flags=streams.MESSAGE_FLAGS_DATA),
                  "identity record", port=streams.JOINER_INDEX)
             our_seq[(streams.PROTOCOL_STREAM, streams.JOINER_INDEX)] = record_seq + 1
-        # A retail joiner sends its own RTT request about twice a second from the moment it is
-        # seated, and it is the first thing it puts on the wire.
         if args.rtt_period and opened and now - last_rtt >= args.rtt_period:
             last_rtt = now
             clock = int(time.monotonic() * 1e6) & ((1 << 64) - 1)
             send(out(streams.build_rtt_request(clock.to_bytes(8, "big")),
                            host_var or 0, protocol=PROTO_RTT), "rtt request")
-        # Our own channel table, once the opening has gone and the host's table is in hand.
         if args.game_channel and opened and channel["table"] and not channel["opened"]:
             channel["opened"] = True
             send_channel(1, channel["table"], "channel table")
@@ -887,7 +841,6 @@ async def run_session(args, keys, host_ip, host_mac, our_ip, our_mac, record):
                 channel["port2"] = True
                 send_channel(2, CHANNEL_PORT2_OPEN, "channel port 2 open")
                 print(f"[sv] -> {host_ip}: the port-2 join, without waiting for an announcement")
-        # Our own identity, as a whole set of records under their original sequence ids.
         if record_set and joined and not set_sent and now - joined_at >= args.record_delay:
             set_sent = True
             for seq, payload in record_set:
@@ -896,10 +849,8 @@ async def run_session(args, keys, host_ip, host_mac, our_ip, our_mac, record):
                 send(out(body, host_var or 0, protocol=streams.PROTOCOL_STREAM,
                          port=streams.JOINER_INDEX, flags=streams.MESSAGE_FLAGS_DATA),
                      "record set", port=streams.JOINER_INDEX, seq=seq)
-            # Our next bulk ack on our own stream declares one past the highest id we sent, which
-            # is what closes a set numbered with the reference's gap at 5 and 6: left at 1 the
-            # host acknowledges id 5 and waits for the rest of the set for the whole session
-            # (docs/sv.md, The sender's own lowest pending).
+            # One past the highest id sent: left at 1, the host acks id 5 and waits on the set's gap
+            # at 5 and 6 all session (docs/sv.md, The sender's own lowest pending).
             our_seq[(streams.PROTOCOL_STREAM, streams.JOINER_INDEX)] = max(
                 seq for seq, _ in record_set) + 1
             print(f"[sv] -> {host_ip}: our identity, {len(record_set)} records on 0x81 port 1, "
@@ -934,8 +885,8 @@ async def run_session(args, keys, host_ip, host_mac, our_ip, our_mac, record):
                                    port=port, flags=ack_shape["flags"]), "reliable ack",
                          protocol=protocol, port=port)
                     last_ack[key] = now
-        # Wait in trio, never in select(): on the ESP32 board the frames reach this socket through
-        # trio tasks, and a blocking wait starves them, 50 ms per packet (docs/hardware_esp32.md).
+        # Wait in trio, never in select(): a blocking wait starves the board's frames
+        # (docs/hardware_esp32.md).
         ready = False
         with trio.move_on_after(0.05):
             await trio.lowlevel.wait_readable(sock)
@@ -962,14 +913,13 @@ async def run_session(args, keys, host_ip, host_mac, our_ip, our_mac, record):
         if host_var is None:
             host_var = header.src_var
             print(f"[sv] the host's variable id is {host_var:#06x}")
-            # A host that drew our fallback id for itself drops a join whose source id is its own
-            # (a Ryujinx host did, sv27). Draw another before anything states ours.
+            # A host that drew our fallback id drops a join sourced from its own id (seen on
+            # Ryujinx).
             if not ours["assigned"] and ours["var"] == host_var:
                 while ours["var"] in (0, host_var):
                     ours["var"] = int.from_bytes(os.urandom(2), "big")
                 print(f"[sv] the host holds our fallback id; ours is now {ours['var']:#06x}")
-        # The footer of a mesh-addressed packet names its recipients. A host that has created a
-        # station for us names the id it gave us there, and that id is ours from then on.
+        # A host names the id it gave us in a mesh-addressed footer; that id is ours from then on.
         if not ours["assigned"]:
             for fid in ids:
                 if fid not in (0, host_var):
@@ -1002,8 +952,7 @@ async def run_session(args, keys, host_ip, host_mac, our_ip, our_mac, record):
                                        protocol=PROTO_NET, flags=ESTABLISHING_FLAGS),
                              "net conn response", seqid=seqid)
                         print(f"[sv] -> {host_ip}: net 0x12 ack, seqid={seqid}")
-                # The host's 0x50 carries its own sequence at [4:8], and a joiner answers it with a
-                # 0x51 of the same shape as the 0x12 (a pair: 0x50 sequence 1, 0x51 sequence 1).
+                # The 0x50 carries its sequence at [4:8]; the 0x51 echoes it in the 0x12's shape.
                 if args.net_ack and len(msg.payload) >= 8 and msg.payload[0] == 1 \
                         and msg.payload[1] == NET_0x50:
                     seq50 = int.from_bytes(msg.payload[4:8], "big")
@@ -1050,10 +999,8 @@ async def run_session(args, keys, host_ip, host_mac, our_ip, our_mac, record):
                                stations=[{k: (v.hex() if isinstance(v, bytes) else v)
                                           for k, v in st.items() if k != "players"}
                                          for st in upd["stations"]])
-                        # A retail Scarlet seats a joiner with this update alone and sends no
-                        # join response at all: the update names our variable id and the player id
-                        # our request stated. That is the seat, and a joiner that waits for a type
-                        # 1 sends nothing for the rest of the session (sv83).
+                        # A retail Scarlet seats a joiner with this update alone, no join response;
+                        # a joiner waiting for a type 1 sends nothing for the rest of the session.
                         if not joined and any(st["variable_id"] == ours["var"]
                                               for st in upd["stations"]):
                             joined = True
@@ -1067,9 +1014,8 @@ async def run_session(args, keys, host_ip, host_mac, our_ip, our_mac, record):
                                 send(out(CLOCK_REQUEST, host_var or 0, protocol=PROTO_CLOCK),
                                      "clock request")
                                 print(f"[sv] -> {host_ip}: the clone clock request")
-                        # A joiner answers with the type 6 once it holds the join response and an
-                        # update whose sequence reaches the one the response named (docs/pla.md,
-                        # The type-5 station-list update). The host sends the update first (sv18).
+                        # Type 6 waits for the join response and an update reaching its sequence
+                        # (docs/pla.md, The type-5 station-list update).
                         if join_sequence is None:
                             pending_update = upd
                         else:
@@ -1098,9 +1044,8 @@ async def run_session(args, keys, host_ip, host_mac, our_ip, our_mac, record):
                 else:
                     send(out(streams.build_rtt_response(msg.payload, header.src_var),
                              header.src_var, protocol=PROTO_RTT), "rtt response")
-            # The game's own unicast channel, Reliable 0x7c: the host opens its channel table on
-            # port 1 (sv18: `b90104b902b9027b0001...`, the Arceus form, pokeldn.pla.channel_table)
-            # and retransmits every 65 ms until the one-entry ack Arceus's host answers with.
+            # Reliable 0x7c: the host opens its channel table on port 1 and resends every 65 ms
+            # until the one-entry ack (pokeldn.pla.channel_table).
             if msg.protocol == PROTO_RELIABLE and len(msg.payload) >= reliable5.HEADER_SIZE:
                 try:
                     cm = reliable5.parse(msg.payload)
@@ -1114,25 +1059,19 @@ async def run_session(args, keys, host_ip, host_mac, our_ip, our_mac, record):
                            flags=cm["flags"], payload=cm["payload"].hex(), t=time.time())
                     if args.game_channel and cm["flags"] & reliable5.FLAG_IS_INITIALIZED \
                             and msg.port == 1 and channel["table"] is None:
-                        # Held until the eleven acks and the stream opens have gone: a pair's
-                        # joiner announces its table in the same breath as its opening, never
-                        # before it (docs/sv.md).
+                        # Held until the opening has gone: a pair's joiner never announces its table
+                        # before it.
                         channel["table"] = cm["payload"]
                     elif args.game_channel and msg.port == 1 and channel["opened"] \
                             and stage is None \
                             and not (cm["flags"] & reliable5.FLAG_IS_INITIALIZED):
-                        # Every later table update is mirrored back under our own sequence. With a
-                        # trade stage the mirror is its own: it answers each open and close in the
-                        # order a pair's joiner does, and nothing else on port 1.
+                        # With a trade stage, the stage answers port 1 instead of this mirror.
                         seq = send_channel(1, cm["payload"], "channel table update")
                         print(f"[sv] -> {host_ip}: mirrored the channel table update "
                               f"({len(cm['payload'])} bytes), our sequence {seq}")
                     if not args.no_channel_ack:
-                        # The lowest pending is OUR own next sequence on this port, not one drawn
-                        # from the host's numbering: the field is the peer's receive base, and a
-                        # station declaring a number above its own next sequence walks that base
-                        # past its own later messages, which then arrive below it and are
-                        # acknowledged and discarded at 0x6f03cc (docs/pia.md).
+                        # Our own next sequence: a higher one walks the peer's receive base past our
+                        # later messages, which are then discarded at 0x6f03cc (docs/pia.md).
                         ack = game_channel.build_ack(
                             cm["sequence_id"] + 1,
                             lowest_pending=our_seq.get((PROTO_RELIABLE, msg.port), 1))
@@ -1140,8 +1079,8 @@ async def run_session(args, keys, host_ip, host_mac, our_ip, our_mac, record):
                              "channel ack", port=msg.port, to=host_ip)
                     if (msg.port == 1 and not channel["key80"]
                             and cm["payload"] == trade.table_update(trade.KEY_TRADE, True)):
-                        # The host's own open of the trade key. Nothing sent on port 0 before it
-                        # reaches the game, and neither does anything sent after it on that port.
+                        # Nothing sent on port 0 before the host's trade-key open reaches the game
+                        # (docs/sv.md).
                         channel["key80"] = True
                         print(f"[sv] the host opened key 0x80, "
                               f"{len(args.send_on_open)} send(s) follow")
@@ -1209,9 +1148,8 @@ async def run_session(args, keys, host_ip, host_mac, our_ip, our_mac, record):
                     if (args.game_channel and msg.protocol == PROTO_BROADCAST_RELIABLE
                             and msg.port == 2 and body[:1] == bytes([port2.TYPE_ANNOUNCE])
                             and not channel["port2"]):
-                        # The console's own trade announcement. A pair's joiner answers it with the
-                        # type-3 join 0.09 s later, and the host then sends the type 9 carrying the
-                        # joiner's station id (docs/sv.md, Port 2).
+                        # A pair's joiner answers the announcement with the type-3 join 0.09 s later
+                        # (docs/sv.md, Port 2).
                         channel["port2"] = True
                         station = body[-9:-1].hex() if len(body) > 9 else "?"
                         print(f"[sv] the console ANNOUNCED on 0x80 port 2, station {station}")
@@ -1238,15 +1176,14 @@ async def run_session(args, keys, host_ip, host_mac, our_ip, our_mac, record):
                     got = stream_got.setdefault(key, set())
                     repeat = rm["sequence_id"] in got
                     got.add(rm["sequence_id"])
-                    # A host retransmitting its set sends ~140 repeats a second, and one ack each
-                    # nearly fills what the board transmits (docs/sv.md).
+                    # A host resending its set sends ~140 repeats a second; one ack each nearly
+                    # fills what the board transmits.
                     held_off = repeat and time.time() - last_ack.get(key, 0.0) < args.repeat_ack_gap
                     if not args.no_ack and not held_off:
                         ack_due[key] = None
                 if key not in last_ack:
                     last_ack[key] = 0.0
-        # One ack per stream per packet, sent once every message is taken: a packet can carry 14
-        # records, and the ack's mask covers them all (docs/sv.md).
+        # One ack per stream per packet, after every message: a packet carries up to 14 records.
         for key in ack_due:
             protocol, port = key
             send(out(our_ack(key), host_var or 0, protocol=protocol, port=port,
