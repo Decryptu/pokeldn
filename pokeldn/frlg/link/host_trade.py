@@ -1,6 +1,6 @@
-"""Leader-side FRLG trade-room engine: tick() returns one parent gSendCmd (seven u16 words) for UNI
-row 0, feed_child_slot() consumes the child's reflected 14-byte row. The leader owns SET_MONS/START/
-CONFIRM and every cancel decision, so the follower engine in pokeldn.frlg.link.trade cannot be reused with mpid=0."""
+"""Leader-side FRLG trade-room engine: tick() returns one parent gSendCmd (seven u16 words),
+feed_child_slot() consumes the child's reflected 14-byte row. The leader owns SET_MONS/START/CONFIRM
+and every cancel decision, so the follower engine in trade.py cannot be reused with mpid=0."""
 
 from collections import Counter, deque
 from dataclasses import dataclass
@@ -10,33 +10,26 @@ from pokeldn.frlg.save import mon as monmod
 from pokeldn.gba import block, rfu, rfu_leader
 
 
-# Only a deadlock guard: the console re-sends a fragment until it sees the echo, so this
-# should never fire. It is logged when it does.
+# Deadlock guard only: the console re-sends a fragment until it sees the echo.
 ECHO_WAIT_MAX_POLLS = 240
-STATUS_REPORT_FRAMES = 30   # 0.5s; the H_LINK_PLAYER stall window is only ~2s
+STATUS_REPORT_FRAMES = 30  # 0.5s; the H_LINK_PLAYER stall window is only ~2s
 LEAVE_MENU_REPORT_FRAMES = 300
 H_LINK_PLAYER = "H_LINK_PLAYER"
 H_ENTRY_CARD = "H_ENTRY_CARD"
-# Union Room only: cards are exchanged, the console is at its "do something" prompt and every
-# choice arrives as a SEND_PACKET [union_room.c:2928, :2955].
+# Union Room: every choice at the prompt arrives as a SEND_PACKET [union_room.c:2928, :2955].
 H_UROOM_PROMPT = "H_UROOM_PROMPT"
-# Union Room only: a trading-board request was accepted; Task_StartUnionRoomTrade exchanges one
-# Pokemon block then one mail block, then CB2_LinkTrade with the mons preselected
+# Union Room trading board: one Pokemon block, one mail block, then CB2_LinkTrade
 # [union_room.c:1713].
 H_UROOM_TRADE = "H_UROOM_TRADE"
-# Union Room only: a chat request was accepted. Both members SendBlock a JOIN, then one 0x28
-# block per line typed, until the leader DISBANDs or the child LEAVEs [union_room_chat.c:429].
+# Union Room chat: a JOIN each, one 0x28 block per line, until DISBAND or LEAVE
+# [union_room_chat.c:429].
 H_UROOM_CHAT = "H_UROOM_CHAT"
-# Union Room only: a battle request was accepted. Both sides send a 0x20 selection block, two link
-# standbys pass, then a 31-byte LinkBattlerHeader and the party three blocks at a time
-# [CB2_UnionRoomBattle, CB2_HandleStartBattle battle_main.c:934].
+# Union Room battle entry [CB2_UnionRoomBattle, CB2_HandleStartBattle battle_main.c:934].
 H_UROOM_BATTLE = "H_UROOM_BATTLE"
-# ...and then the battle proper: the console is master and runs the whole engine, we answer its
-# controller commands [InitLinkBtlControllers, battle_controllers.c:141].
+# The console is master; we answer its controller commands [battle_controllers.c:141].
 H_UROOM_BATTLE_LINK = "H_UROOM_BATTLE_LINK"
 H_ENTRY_SEAT = "H_ENTRY_SEAT"
-# Colosseum only: both players are on their spots and Task_StartWirelessCableClubBattle is running
-# its one extra 28-byte LinkPlayer exchange before CB2_InitBattle [cable_club.c:683].
+# Colosseum: one extra 28-byte LinkPlayer exchange before CB2_InitBattle [cable_club.c:683].
 H_CC_BATTLE_ENTRY = "H_CC_BATTLE_ENTRY"
 H_PARTY = "H_PARTY"
 H_SELECT = "H_SELECT"
@@ -53,34 +46,32 @@ H_DONE = "H_DONE"
 
 @dataclass(frozen=True)
 class HostTradeTiming:
-    # A native completed trade has six consecutive child-initiated standby rounds before BufferTradeParties.
+    # A native trade has six child-initiated standby rounds before BufferTradeParties.
     save_barrier_rounds: int = 6
     # The child repeats the sixth post-save standby after 60 frames until the parent echo completes.
     save_final_standby_quiet_frames: int = 75
-    # BufferTradeParties needs a quiescent window after the child's first IDLE reaches the host.
+    # BufferTradeParties needs a quiet window after the child's first IDLE reaches the host.
     party_link_settle_frames: int = 30
     startup_standby_echo_frames: int = 4
-    # The child parks in Task_PlayerExchange case 2 until a *received* SEND_PLAYER_IDS sets
-    # gRfu.playerCount; a single-VBlank emission is missed [decomp:src/link_rfu_2.c:1832].
+    # A single-VBlank SEND_PLAYER_IDS is missed; the child parks until one is received
+    # [decomp:src/link_rfu_2.c:1832].
     player_ids_repeat_frames: int = 8
-    # After both LinkPlayer blocks land the console may idle waiting for the leader to move first, and
-    # nothing on the wire reports block consumption; counted only after our own block has drained.
+    # The console may idle waiting for the leader to move first; nothing on the wire reports block
+    # consumption. Counted only after our own block has drained.
     link_player_idle_frames: int = 12
     # Longer than SendReadyExitStandbyUntilAllReady's native re-emission cadence.
     entry_final_standby_quiet_frames: int = 75
-    # CB2_CreateTradeMenu needs time to finish installing its menu callback.
+    # CB2_CreateTradeMenu needs time to install its menu callback.
     final_menu_ready_frames: int = 5 * 60
     post_cancel_exit_wait_frames: int = 5 * 60
-    # Keep Pia traffic alive after READY_CLOSE_LINK while the Switch completes its fade/warp.
+    # Keep Pia alive after READY_CLOSE_LINK while the Switch fades and warps.
     post_client_close_grace_frames: int = 15 * 60
     close_retry_frames: int = 60
-    # Task_ReceiveChatMessage latches one block per player and scrolls it in; back-to-back sends
-    # would overwrite gBlockRecvBuffer before it reads. A typed line is seconds apart natively.
+    # Task_ReceiveChatMessage latches one block per player; back-to-back sends overwrite
+    # gBlockRecvBuffer before it reads.
     chat_message_gap_frames: int = 90
-    # ChatEntryRoutine_ExitChat runs SetCloseLinkCallback and then waits on
-    # !gReceivedRemoteLinkPlayers [union_room_chat.c:665]. u14: the leaver DOES answer with its own
-    # READY_CLOSE_LINK (0.1s) and its 'D' right after, so this bound is only the fallback for a
-    # leaver that stays silent; it must stay short, since it is the console's whole wait.
+    # Fallback for a leaver that stays silent [union_room_chat.c:665]; it is the console's whole
+    # wait, so keep it short. A leaver normally answers READY_CLOSE_LINK and 'D' in 0.1s.
     chat_exit_close_frames: int = 120
 
 
@@ -101,8 +92,8 @@ CHAT_MESSAGE_GAP_FRAMES = DEFAULT_HOST_TRADE_TIMING.chat_message_gap_frames
 CHAT_EXIT_CLOSE_FRAMES = DEFAULT_HOST_TRADE_TIMING.chat_exit_close_frames
 HOST_NAME_PAD = linkplayer.HOST_NAME_PAD
 
-# Native leader route from the cable-club entrance to the LEFT trade chair as (LINK_KEY_CODE low byte,
-# held frames); the high byte is a rolling heldKeyCount. READY is emitted exactly once, at count 161.
+# Native leader route to the LEFT trade chair as (LINK_KEY_CODE low byte, held frames); the high
+# byte is a rolling heldKeyCount. READY is emitted exactly once, at count 161.
 LINK_KEY_EMPTY = 0x11
 LINK_KEY_UP = 0x13
 LINK_KEY_LEFT = 0x14
@@ -121,11 +112,8 @@ ENTRY_LEFT_CHAIR_ROUTE = (
     (LINK_KEY_READY, 1),
     (LINK_KEY_EMPTY, 7),
 )
-# The colosseum's spot is on a different map and no native capture of that walk exists. Nothing
-# waits on where our avatar stands: GetCableClubPartnersReady is AreAllPlayersInLinkState(READY)
-# alone [decomp:src/overworld.c:2989], and the spot trigger each console steps on is its own
-# [BattleColosseum_2P_EventScript_PlayerSpot0]. So the walk is dropped and only the key that gates
-# the seat is kept, after the same settling idle. See docs/frlg_link.md.
+# Only the READY key gates the colosseum seat [decomp:src/overworld.c:2989]; the walk is dropped.
+# See docs/frlg_link.md.
 COLOSSEUM_SPOT_ROUTE = (
     (LINK_KEY_EMPTY, 43),
     (LINK_KEY_READY, 1),
@@ -161,8 +149,8 @@ class HostTradeEngine:
             raise ValueError("supply link_player or profile, not both")
         self.lp = (profile.to_link_player() if profile is not None else link_player) \
             or linkplayer.LinkPlayer(name="EMU", version=linkplayer.VERSION_FIRE_RED)
-        # The console reads this u16 back as the partner's Wonder Card flag id and arms its own
-        # card counters when it matches the card it holds [decomp:src/union_room.c:1777].
+        # The console arms its card counters when this matches its card
+        # [decomp:src/union_room.c:1777].
         self.card_flag_id = (profile.card_flag_id if profile is not None else int(card_flag_id))
         self.trainer_card = linkplayer.build_trainer_card(
             self.lp, wonder_card_id=self.card_flag_id,
@@ -173,36 +161,34 @@ class HostTradeEngine:
         self.union_room = bool(union_room)
         self.union_room_chat = bool(union_room_chat)
         self.union_room_battle = bool(union_room_battle)
-        # The cable-club colosseum, hosted instead of the trade centre: same entry, then a link
-        # battle rather than a trade menu. See pokeldn/frlg/link/cable_club.py.
+        # The cable-club colosseum: the trade-centre entry, then a link battle (cable_club.py).
         self.colosseum = bool(colosseum)
         if self.colosseum and self.union_room:
             raise ValueError("the colosseum is a Direct Corner activity, not a Union Room one")
         if self.union_room_battle and len(self.party) < 2:
-            # SetUpPartiesAndStartBattle keeps exactly two mons a side [union_room_battle.c:47];
-            # with one, the console's gEnemyParty[1] stays zero and the battle has nothing to send
-            # out second. Fail at start-up, not three blocks into a hardware run.
+            # SetUpPartiesAndStartBattle keeps two mons a side [union_room_battle.c:47]; with one,
+            # the battle has nothing to send out second.
             raise ValueError("a Union Room battle needs two party Pokemon; pass a second with "
                              "PARTY2= or --party")
         self.battle_forfeit = bool(battle_forfeit)
         self.battle_move_slot = int(battle_move_slot)
-        self.battle = None                 # the BattleController, once the battle starts
-        self.echo_backlog = 0              # set by HostSession each poll; see _echo_owed
-        self.echo_progress = 0             # monotonic count of echoes that have left the queue
-        self.last_echo_cmd = None          # the child slot the leader most recently mirrored back
-        self.echo_emissions = 0            # echoes actually emitted; drops excluded
+        self.battle = None
+        self.echo_backlog = 0  # see _echo_owed
+        self.echo_progress = 0
+        self.last_echo_cmd = None
+        self.echo_emissions = 0  # drops excluded
         self._echo_wait_mark = 0
-        self.echo_blocks = []              # per-block echo records, pushed by HostSession (u26)
-        self._child_blocks_landed = 0     # every console block assembled in UNI, in order
-        self._echo_wait_block = None      # index into echo_blocks of the block we must return first
-        self._child_slot = None            # the slot currently being fed to us
-        self._echo_wait_slot = None        # the slot that must be mirrored before we answer
+        self.echo_blocks = []  # pushed by HostSession
+        self._child_blocks_landed = 0
+        self._echo_wait_block = None
+        self._child_slot = None
+        self._echo_wait_slot = None
         self._echo_wait_polls = 0
         self._send_history = deque(maxlen=16)
         self._battle_party_block = 0
         self.uroom_requests = []
         self.uroom_trade_request = None
-        self.chat_received = []            # parsed blocks from the console, in arrival order
+        self.chat_received = []
         self._chat_outbox = deque(uroom_chat.check_text(t) for t in (chat_messages or ()))
         self._chat_joined = False
         self._chat_send_wait = None
@@ -253,14 +239,11 @@ class HostTradeEngine:
         self._leave_menu_wait = None
         self._host_cancel_ready = False
         self._child_cancel_requested = False
-        self._select_cancels = 0        # consecutive console CANCELs at the select screen
-        # Every entry into H_CLOSE resets this; a real value rather than None keeps the type stable
-        # for _tick_close_link, which is the only reader.
+        self._select_cancels = 0
         self._close_retry_wait = self.timing.close_retry_frames
         self._close_confirmed = False
         self._close_grace_wait = None
-        # Room entry is a real held-key movement route, not a static READY flag; omitting it strands
-        # the child on the black room-transition screen.
+        # Room entry needs a real held-key route; without it the child stays on a black screen.
         self._child_slot_runs = []
         self._child_key_runs = []
         self._held_count = 0
@@ -279,13 +262,13 @@ class HostTradeEngine:
         self._leave_menu_report = None
         self.trace = []
 
-        # SEND_PLAYER_IDS is idempotent in RfuHandleReceiveCommand, so repeating it is safe.
+        # SEND_PLAYER_IDS is idempotent in RfuHandleReceiveCommand.
         for _ in range(self.timing.player_ids_repeat_frames):
             self._queue_words(rfu.send_player_ids_words(), "SEND_PLAYER_IDS")
         self._link_player_block = linkplayer.build_block(
             self.lp, name_pad=HOST_NAME_PAD).ljust(200, b"\x00")
-        # Native case 3 emits only the block request and parks until the child's block lands
-        # [decomp:src/link_rfu_2.c:1852]; our block goes out from _after_child_block on a valid child block.
+        # Native case 3 emits only the block request [decomp:src/link_rfu_2.c:1852]; our block goes
+        # out from _after_child_block.
         self._expected = "link_player"
         self._queue_words(rfu.send_block_req_words(trade.BLOCK_REQ_SIZE_NONE),
                           "BLOCK_REQ:link_player")
@@ -295,7 +278,7 @@ class HostTradeEngine:
         idles = self._child_idles - self._leave_menu_idle_mark
         runs = self._child_slot_runs[self._leave_menu_run_mark:]
         if not runs:
-            # A run that started before the mark grows in place, so empty means "no new run", not "no frames".
+            # A run that started before the mark grows in place: empty means no new run.
             tail = ("no frames at all - the console is off the air"
                     if frames == 0 else
                     f"one unbroken run continuing from before the refresh ({frames} frames)")
@@ -335,8 +318,7 @@ class HostTradeEngine:
         self.trace.append(("queue", label))
 
     def recent_sends(self, n=8):
-        """The last few things we put on the wire, newest last. The disconnect message claims what
-        the host sent is the cause; u21/u22/u25 died mid-party-exchange with no idea what that was."""
+        """The last few things we put on the wire, newest last."""
         return list(self._send_history)[-n:]
 
     def _queue_block(self, data, label):
@@ -392,7 +374,7 @@ class HostTradeEngine:
         value = (self._held_count << 8) | keycode
         self.trace.append(("emit_held", self._held_label, value))
         words = rfu.held_keys_words(value)
-        # Even if the Switch exited first, our EXIT_ROOM must be exposed for one full parent poll before READY_CLOSE_LINK.
+        # Our EXIT_ROOM must be exposed for one full parent poll before READY_CLOSE_LINK.
         if (keycode == LINK_KEY_EXIT_ROOM and self.state == H_EXIT
                 and self._child_exit_seen):
             self._complete_room_exit()
@@ -471,21 +453,16 @@ class HostTradeEngine:
         self._request_and_send(trade.BLOCK_REQ_SIZE_100, self.trainer_card, "card")
 
     def _begin_seated_activity(self):
-        """Both players are on their spots. The trade centre opens its party exchange here; the
-        colosseum runs one more LinkPlayer exchange and then the battle [cable_club.c:683]."""
+        """Both players are on their spots [cable_club.c:683]."""
         if self.colosseum:
             self._begin_colosseum_battle()
             return
         self._begin_party_exchange()
 
     def _begin_colosseum_battle(self):
-        """Task_StartWirelessCableClubBattle case 2: each side SendBlocks its bare 28-byte
-        `struct LinkPlayer`. There is no block request - the console sends unprompted and then
-        parks in case 3 until ours lands, so ours goes out on receipt, as at the entry.
-
-        Armed from the trainer-card standby, not from a finished seat: the colosseum has no
-        post-seat standby rounds of its own. The READY key still goes out from the spot
-        route, and GetCableClubPartnersReady reads nothing else [overworld.c:2989]."""
+        """Task_StartWirelessCableClubBattle case 2: the console sends its bare 28-byte LinkPlayer
+        unprompted and parks in case 3 until ours lands. Armed from the trainer-card standby: the
+        colosseum has no post-seat standby rounds [overworld.c:2989]."""
         self._set_state(H_CC_BATTLE_ENTRY)
         self._expected = "cc_link_player"
         self.info("Colosseum: sending READY for the spot; the console's LinkPlayer record is "
@@ -510,9 +487,9 @@ class HostTradeEngine:
             "card": trade.COUNT_TRAINER_CARD,
             "mail": trade.COUNT_MAIL,
             "ribbons": trade.COUNT_RIBBON,
-            "uroom_mon": trade.COUNT_TRAINER_CARD,     # one 100-byte Pokemon
+            "uroom_mon": trade.COUNT_TRAINER_CARD,
             "uroom_mail": trade.COUNT_MAIL,
-            "uroom_chat": trade.COUNT_RIBBON,          # the 0x28-byte chat block
+            "uroom_chat": trade.COUNT_RIBBON,
             "battle_accept": uroom_battle.COUNT_ACCEPT,
             "battle_header": uroom_battle.COUNT_HEADER,
             "cc_link_player": cable_club.COUNT_LOCAL,
@@ -520,8 +497,8 @@ class HostTradeEngine:
               if expected and (expected.startswith("party:") or expected.startswith("battle_party:"))
               else None)
         if expected == "battle_link":
-            # Link buffer records are sized by their payload, from 12 bytes to over 100, so there is
-            # no fixed count to check here [PrepareBufferDataTransferLink, battle_controllers.c:412].
+            # Link buffer records have no fixed size [PrepareBufferDataTransferLink,
+            # battle_controllers.c:412].
             self._on_battle_block(data)
             return
         if expected_count is None:
@@ -532,7 +509,8 @@ class HostTradeEngine:
         if expected == "link_player":
             lp, ok = linkplayer.parse_block(data)
             if not ok:
-                # A block that predates Task_PlayerExchange case 0 carries stale buffer bytes: a too-early request, not fatal.
+                # A block predating Task_PlayerExchange case 0 carries stale bytes: too early, not
+                # fatal.
                 self._rejected_link_players = getattr(self, "_rejected_link_players", 0) + 1
                 self.trace.append(("link_player_rejected", self._rejected_link_players))
                 self.info("Console LinkPlayer block had an invalid GameFreak magic "
@@ -559,8 +537,8 @@ class HostTradeEngine:
             self._on_battle_party(int(expected.split(":", 1)[1]), data)
             return
         if expected == "uroom_mon":
-            # Task_StartUnionRoomTrade case 0/1: both sides SendBlock their registered mon, no
-            # request first [union_room.c:1721]. Ours goes out once theirs is in, like LinkPlayer.
+            # Task_StartUnionRoomTrade case 0/1: both sides send their mon unprompted
+            # [union_room.c:1721]; ours goes out once theirs is in.
             self.child_party = bytearray(600)
             self.child_party[0:monmod.PARTY_MON_SIZE] = data[:monmod.PARTY_MON_SIZE]
             self.child_cursor = 0
@@ -573,8 +551,7 @@ class HostTradeEngine:
                       "mail blocks next.")
             return
         if expected == "uroom_mail":
-            # case 2/3: mail both ways, then CB2_LinkTrade with the mons preselected. From here the
-            # trade-centre animation path applies: READY_FINISH from the console, our CONFIRM.
+            # case 2/3: mail both ways, then CB2_LinkTrade; the trade-centre animation path applies.
             self._queue_block(trade.empty_mail_block(), "host:uroom_mail")
             self._expected = None
             self._child_finish = False
@@ -585,8 +562,7 @@ class HostTradeEngine:
         if expected == "card":
             self.child_card = bytes(data[:100])
             if self.union_room:
-                # No standby follows Task_ExchangeCards in the room [union_room.c:1753]; the console
-                # goes to its prompt and talks in SEND_PACKETs from here on.
+                # No standby follows Task_ExchangeCards in the room [union_room.c:1753].
                 self._expected = None
                 self._set_state(H_UROOM_PROMPT)
                 self.info("Union Room: trainer cards exchanged; waiting at the console's "
@@ -597,7 +573,8 @@ class HostTradeEngine:
         if expected and expected.startswith("party:"):
             i = int(expected.split(":", 1)[1])
             self.child_party[i * 200:(i + 1) * 200] = data[:200]
-            # BufferTradeParties gates the next request on IsLinkTaskFinished(), not a standby barrier.
+            # BufferTradeParties gates the next request on IsLinkTaskFinished(), not a standby
+            # barrier.
             self._link_waiting_idle = True
             self._link_idle_frames = 0
             self._link_completed = f"party:{i}"
@@ -679,8 +656,8 @@ class HostTradeEngine:
             self.trace.append(("save_final_standby_complete",
                                self._save_last_count))
             if self.union_room:
-                # CB2_SaveAndEndTrade case 8: the room's savedCallback is CB2_ReturnToField, so the
-                # console calls SetCloseLinkCallback instead of another standby [trade_scene.c:2722].
+                # CB2_SaveAndEndTrade case 8: the room calls SetCloseLinkCallback instead of another
+                # standby [trade_scene.c:2722].
                 self.done = True
                 self.info("Union Room trade: save barriers complete; the console closes the link "
                           "and returns to the room.")
@@ -697,8 +674,7 @@ class HostTradeEngine:
             self._begin_seated_activity()
 
     def _idle_link_player_wait(self):
-        # tick() drains _words before an in-flight BlockSender, so a BLOCK_REQ queued while our
-        # block is still going out preempts it mid-transfer.
+        # tick() drains _words before an in-flight BlockSender: a BLOCK_REQ preempts our block.
         if self._sender is not None or self._blocks:
             return
         self._link_player_idle += 1
@@ -754,11 +730,8 @@ class HostTradeEngine:
             self._maybe_finish_entry()
         elif key == LINK_KEY_EXIT_ROOM and self.state in (H_RETURN_FIELD, H_CC_BATTLE_ENTRY,
                                                           H_UROOM_BATTLE_LINK):
-            # After a colosseum battle the console returns to the map and walking into the
-            # door runs QueueExitLinkRoomKey, which then waits for EVERY player to reach
-            # PLAYER_LINK_STATE_EXITING_ROOM [KeyInterCB_WaitForPlayersToExit, overworld.c:2977].
-            # With no answer from us it sits on "veuillez patienter" until the link errors. There is
-            # no five-second host delay to observe here: the console has already asked.
+            # After a colosseum battle the console waits for every player to reach EXITING_ROOM
+            # [KeyInterCB_WaitForPlayersToExit, overworld.c:2977]; unanswered, the link errors.
             self.trace.append(("child_exit_first",))
             self._begin_room_exit(child_already_exited=True)
         elif key == LINK_KEY_EXIT_ROOM and self.state == H_EXIT:
@@ -776,11 +749,10 @@ class HostTradeEngine:
     UR_CHAT = 0x45        # ACTIVITY_CHAT | IN_UNION_ROOM
     UR_ACCEPT = 0x51      # ACTIVITY_ACCEPT | IN_UNION_ROOM
     UR_DECLINE = 0x52     # ACTIVITY_DECLINE | IN_UNION_ROOM
-    UR_PACKET_REPEAT = 3  # PollPartnerYesNoResponse reads gRecvCmds every frame; a few repeats are safe
+    UR_PACKET_REPEAT = 3  # read every frame; a few repeats are safe
 
     def _child_send_packet(self, rec):
-        """The parent's half of UR_STATE_HANDLE_ACTIVITY_REQUEST [union_room.c:3151]: answer the
-        console's activity request with ACCEPT or DECLINE in a SEND_PACKET of our own."""
+        """UR_STATE_HANDLE_ACTIVITY_REQUEST [union_room.c:3151]: ACCEPT or DECLINE, SEND_PACKET."""
         packet = rec.get("packet") or [0] * 6
         request = packet[0]
         if not self.union_room or request == 0:
@@ -789,8 +761,8 @@ class HostTradeEngine:
             self.trace.append(("uroom_packet_ignored", self.state, request))
             return
         key = tuple(packet)
-        # Reliable already drops retransmits; this only guards a packet echoed in consecutive frames.
-        # The same choice made again later (a second Salut, u08) is a new request and must be answered.
+        # Guards only a packet echoed in consecutive frames; the same choice made later is a new
+        # request.
         if key == self._last_uroom_packet and self._child_frames - self._last_uroom_frame <= 4:
             return
         self._last_uroom_packet = key
@@ -833,9 +805,8 @@ class HostTradeEngine:
 
     def _child_ready_close_link(self, rec):
         if self.union_room and self.state not in (H_CLOSE, H_DONE):
-            # Exit at the prompt, or a declined request: the console runs SetCloseLinkCallback and
-            # waits for every player's READY_CLOSE_LINK [WaitAllReadyToCloseLink, link_rfu_2.c:1471]
-            # before it disconnects itself. u10: without our half it sat on the prompt text.
+            # Exit or decline: the console waits for every player's READY_CLOSE_LINK
+            # [WaitAllReadyToCloseLink, link_rfu_2.c:1471] before it disconnects.
             self._set_state(H_CLOSE)
             self._close_confirmed = False
             self._close_grace_wait = None
@@ -849,8 +820,7 @@ class HostTradeEngine:
         if not self._close_confirmed:
             self._close_confirmed = True
             if not self._chat_exiting:
-                # The chat exit runs its own short grace: the leaver is parked on
-                # !gReceivedRemoteLinkPlayers and 15s of it is 15s of a frozen prompt (u13).
+                # The chat leaver is parked on !gReceivedRemoteLinkPlayers: keep the grace short.
                 self._close_grace_wait = self.timing.post_client_close_grace_frames
             self.trace.append(("child_close_confirmed",
                                rec.get("count", 0),
@@ -863,9 +833,8 @@ class HostTradeEngine:
 
     def _on_child_block(self, count, data):
         self._child_blocks_landed += 1
-        # A battle link buffer record with a 4-byte payload is 16 bytes, exactly COUNT_LINKCMD,
-        # so routing on size alone reads every ack and every short command as a trade LINKCMD and
-        # drops it. There are no trade LINKCMDs inside a battle: the state decides, not the size.
+        # A 4-byte-payload battle record is 16 bytes, exactly COUNT_LINKCMD: in a battle the state
+        # decides the path, not the size.
         if count == trade.COUNT_LINKCMD and self.state != H_UROOM_BATTLE_LINK:
             self._on_child_linkcmd(int.from_bytes(data[:2], "little"),
                                    int.from_bytes(data[2:4], "little"))
@@ -878,7 +847,7 @@ class HostTradeEngine:
             self._link_idle_frames = 0
             return
         # A one-VBlank barrier echo can be missed, leaving the child repeating its count forever;
-        # save/cancel barriers are already multi-round handshakes and keep a single echo.
+        # save/cancel barriers are multi-round and keep a single echo.
         repeats = (self.timing.startup_standby_echo_frames
                    if self.state in (H_LINK_PLAYER, H_ENTRY_CARD, H_ENTRY_SEAT,
                                      H_UROOM_PROMPT, H_UROOM_TRADE, H_UROOM_CHAT,
@@ -893,11 +862,9 @@ class HostTradeEngine:
             self._begin_card_exchange()
         elif self.state == H_ENTRY_CARD and self._expected == "warp1":
             if self.colosseum:
-                # The colosseum does not produce the trade centre's post-seat standby rounds,
-                # so the entry can only be finished by the console's own next block. It fades to
-                # black on its spot and parks in Task_StartWirelessCableClubBattle case 3
-                # [cable_club.c:706] waiting for our record, which is why gating on standbys here
-                # deadlocked both sides. Arm for the block and let its arrival be the transition.
+                # The colosseum has no post-seat standbys; the console parks in
+                # Task_StartWirelessCableClubBattle case 3 [cable_club.c:706]. Its block ends the
+                # entry.
                 self._begin_colosseum_battle()
                 self._start_entry_route()
                 return
@@ -931,7 +898,7 @@ class HostTradeEngine:
             if self._cancel_standby_count is None:
                 self._cancel_standby_count = count
             elif count == ((self._cancel_standby_count + 1) & 0xFFFF):
-                # The next child-initiated count is wire proof that the cancel barrier passed.
+                # The next child-initiated count proves the cancel barrier passed.
                 self._set_state(H_RETURN_FIELD)
                 self._return_standby_count = count
                 self._room_exit_wait = self.timing.post_cancel_exit_wait_frames
@@ -963,11 +930,9 @@ class HostTradeEngine:
         elif cmd == trade.READY_FINISH_TRADE and self.state == H_ANIM:
             self._child_finish = True
         elif cmd == trade.REQUEST_CANCEL and self.state == H_SELECT:
-            # Leader_ReadLinkBuffer takes partner CANCEL with no state guard [decomp:src/trade.c:1622]. The
-            # leader with a mon selected answers PARTNER_CANCEL_TRADE [trade.c:1694-1701]: the console shows
-            # "your friend wants to trade" and both return to the menu. Answering that way every time loops
-            # forever (h6: two cancels, two identical prompts), so a second consecutive CANCEL means the
-            # console wants out and the leader cancels too: BOTH_CANCEL_TRADE [trade.c:1715-1722].
+            # Partner CANCEL has no state guard [decomp:src/trade.c:1622]. PARTNER_CANCEL_TRADE
+            # [trade.c:1694-1701] every time loops forever, so a second consecutive CANCEL gets
+            # BOTH_CANCEL_TRADE [trade.c:1715-1722].
             self._select_cancels += 1
             if self._select_cancels >= 2:
                 self._host_cancel_ready = True
@@ -981,7 +946,8 @@ class HostTradeEngine:
                     "Switch backed out of the trade menu; Linux acknowledged the cancel. "
                     "The menu is live again - select a Pokemon, or CANCEL again to leave.")
         elif cmd == trade.REQUEST_CANCEL and self.state == H_LEAVE_MENU:
-            # BOTH_CANCEL requires both select statuses CANCEL; the follower's REQUEST_CANCEL is a prerequisite.
+            # BOTH_CANCEL requires both select statuses CANCEL; the follower's REQUEST_CANCEL comes
+            # first.
             self._child_cancel_requested = True
             self.trace.append(("child_cancel_requested",))
             if self._host_cancel_ready:
@@ -1019,7 +985,7 @@ class HostTradeEngine:
         self._anim_wait = None
 
     def tick(self):
-        """One VBlank; returns the parent's seven-word gSendCmd row."""
+        """One VBlank -> the parent's seven-word gSendCmd row."""
         self._parent_polls += 1
         if self.state == H_LINK_PLAYER:
             self._tick_status_report()
@@ -1035,13 +1001,9 @@ class HostTradeEngine:
             self._tick_chat_exit() if self._chat_exiting else self._tick_chat_outbox()
         return self._next_parent_words()
 
-    # --- the Union Room battle ------------------------------------------------------------------
-
     def _on_colosseum_link_player(self, data):
         """Task_StartWirelessCableClubBattle case 2/3 [cable_club.c:701]: the bare 28-byte
-        `struct LinkPlayer`, no GameFreak magics. The console needs a record from every player
-        before it leaves case 3, and the trainerId in ours is the one its card counter records
-        against [cable_club.c:794]. Twenty frames and a standby follow, then the battler header."""
+        LinkPlayer, no GameFreak magics. The console's card counter records our trainerId [cable_club.c:794]."""
         lp = cable_club.read_local_link_player(data)
         self.child_link_player = lp
         self._queue_block(cable_club.local_link_player_block(self.lp, name_pad=HOST_NAME_PAD),
@@ -1051,9 +1013,8 @@ class HostTradeEngine:
                   f"trainer id 0x{self.lp.trainer_id & 0xFFFFFFFF:08x}. The battler header is next.")
 
     def _on_battle_accept(self, data):
-        """CB2_UnionRoomBattle case 3/4 [union_room_battle.c:139]: each side sends a 0x20 block
-        whose first byte is 0x51, and the console closes the link unless BOTH read 0x51. It sends
-        after its own party menu, so we answer rather than lead."""
+        """CB2_UnionRoomBattle case 3/4 [union_room_battle.c:139]: the console sends its 0x51 block
+        first, so we answer rather than lead."""
         if not uroom_battle.read_accept_block(data):
             self.info("Union Room battle: the console backed out of its party selection; it closes "
                       "the link now.")
@@ -1070,14 +1031,12 @@ class HostTradeEngine:
         return "Colosseum" if self.colosseum else "Union Room battle"
 
     def _battle_mons(self):
-        """Who fights. The Union Room keeps exactly the two mons each side chose
-        [union_room_battle.c:47]; the colosseum has no selection step and fights the whole party."""
+        """Two chosen mons in the Union Room [union_room_battle.c:47]; the whole party otherwise."""
         return list(self.party) if self.colosseum else self.party[:2]
 
     def _on_battle_header(self, data):
-        """CB2_HandleStartBattle state 1/2 [battle_main.c:962]. We answer with version signature
-        0x200 on purpose: LinkBattleComputeBattleTypeFlags [:886] then makes the CONSOLE master, so
-        it runs the whole battle engine and we only have to answer its controller commands."""
+        """CB2_HandleStartBattle state 1/2 [battle_main.c:962]; version 0x200 makes the console
+        master [:886]."""
         version = data[0] | (data[1] << 8)
         mons = self._battle_mons()
         self._queue_block(uroom_battle.battler_header(party_count=len(mons)), "host:battle_header")
@@ -1088,9 +1047,8 @@ class HostTradeEngine:
                   "Three party blocks next.")
 
     def _on_battle_party(self, i, data):
-        """States 3/7/11: the six party slots two at a time, the same 200-byte transfer the trade
-        already does. In the Union Room only the first block carries mons; the console zeroed the
-        rest in SetUpPartiesAndStartBattle [union_room_battle.c:51]."""
+        """States 3/7/11: the party two slots at a time. In the Union Room only the first block
+        carries mons [union_room_battle.c:51]."""
         self.child_party[i * 200:(i + 1) * 200] = data[:200]
         mons = self._battle_mons()
         blocks = uroom_battle.party_blocks(mons, limit=6 if self.colosseum else 2)
@@ -1109,11 +1067,10 @@ class HostTradeEngine:
                                           if self.battle_forfeit else "We fight."))
 
     def _on_battle_block(self, data):
-        """One link buffer record. Every BUFFER_A command must be acked, for BOTH battlers, or the
-        master waits on gBattleControllerExecFlags forever [battle_util.c:185]."""
+        """One link buffer record; every BUFFER_A command is acked [battle_util.c:185]."""
         rec = bl.parse(data)
-        # The slot that completed this block is the one the console must see returned before it will
-        # set the exec-flag bit our answer clears. Wait for that exact slot. See _echo_owed.
+        # The console sets the exec-flag bit our answer clears only once it sees this slot returned.
+        # See _echo_owed.
         self._echo_wait_slot = self._child_slot
         self._echo_wait_mark = self.echo_emissions
         self._echo_wait_block = self._child_blocks_landed - 1
@@ -1128,8 +1085,8 @@ class HostTradeEngine:
                       "link.")
 
     def _on_chat_block(self, data):
-        """One inbound 0x28 chat block. `_expected` stays "uroom_chat": members send blocks for as
-        long as the chat lives, with no request from us [union_room_chat.c:1451]."""
+        """One inbound 0x28 chat block; members send unprompted for the chat's life
+        [union_room_chat.c:1451]."""
         msg = uroom_chat.parse(data)
         self.chat_received.append(msg)
         self.trace.append(("uroom_chat_recv", msg["cmd"], msg["name"]))
@@ -1144,11 +1101,8 @@ class HostTradeEngine:
             self._begin_chat_exit()
 
     def _begin_chat_exit(self):
-        """Task_ReceiveChatMessage case 4 [union_room_chat.c:1524]: with only the two of us left,
-        the leader stops its partner search, sends a DROP block of its own, then runs
-        SetCloseLinkCallback and drops the link [ChatEntryRoutine_ExitChat, :665]. The leaver is
-        parked on !gReceivedRemoteLinkPlayers and does nothing until we do (u13: without this the
-        console sat on its yes/no prompt while we sat on `done`)."""
+        """Task_ReceiveChatMessage case 4 [union_room_chat.c:1524]: the leader sends DROP, then
+        SetCloseLinkCallback [:665]. The leaver does nothing until we do."""
         if self._chat_exiting:
             return
         self._chat_exiting = True
@@ -1160,19 +1114,17 @@ class HostTradeEngine:
                   "the link it is waiting on.")
 
     def queue_chat_message(self, text):
-        """Add a line while the chat is live, so the operator can answer instead of queueing every
-        line at launch. Returns False once the chat is over or has not opened."""
+        """Add a line to a live chat; False once the chat is over or has not opened."""
         if self.state != H_UROOM_CHAT or self._chat_exiting or not self._chat_joined:
             return False
         self._chat_outbox.append(uroom_chat.check_text(text))
         if self._chat_send_wait is None:
-            self._chat_send_wait = 0          # the outbox had drained; send on the next tick
+            self._chat_send_wait = 0
         return True
 
     def _tick_chat_exit(self):
-        """Hold in the chat until our DROP has drained, then take the room's close-link path with
-        a short grace of our own: the leaver is already parked waiting for the link to go, so the
-        room's 15-second post-exit buffer must not apply here."""
+        """Hold until our DROP has drained, then close with a short grace of our own: the leaver is
+        already waiting for the link to go."""
         if self._sender is not None or self._blocks or self._words:
             return
         self._set_state(H_CLOSE)
@@ -1186,9 +1138,8 @@ class HostTradeEngine:
                   "console is waiting for.")
 
     def _tick_chat_outbox(self):
-        """One queued line at a time, spaced: the console latches a single block per player and
-        scrolls it in before it reads the next. None means the outbox is drained or the chat has
-        not opened yet."""
+        """One queued line at a time, spaced (see CHAT_MESSAGE_GAP_FRAMES). None when drained or the
+        chat has not opened."""
         if self._chat_send_wait is None or self._sender is not None or self._blocks:
             return
         if self._chat_send_wait > 0:
@@ -1226,7 +1177,7 @@ class HostTradeEngine:
 
     def _tick_room_exit_wait(self):
         self._room_exit_wait -= 1
-        # Counted in child polls, not wall-clock: it stretches when the console's poll rate drops.
+        # Counted in child polls: it stretches when the console's poll rate drops.
         if self._room_exit_wait % 60 == 0 and self._room_exit_wait > 0:
             done = self.timing.post_cancel_exit_wait_frames - self._room_exit_wait
             self.info(
@@ -1257,34 +1208,9 @@ class HostTradeEngine:
             self._commit()
 
     def _echo_owed(self):
-        """u18: never answer a command before we have echoed it back.
-
-        Our echo of the console's own block is what makes MarkBattlerReceivedLinkData run over there
-        [battle_util.c:193] and SET the exec-flag bit our ack then clears. Our parent command and the
-        echo share a frame, one echo per poll, so a short ack can overtake the echo of a long block:
-        the console clears a bit that is not set yet, then sets it, and waits forever for an ack that
-        already came. That stalled u18.
-
-        u20: waiting for the echo queue to be EMPTY was correct but cost 5-8 s per command, because
-        the console sends one every poll and the queue almost never empties.
-
-        u23: waiting for a COUNT of entries to leave the queue was fast but wrong again, and stalled
-        the same way. ECHO_MAX drops fragments when the queue overflows and the console re-sends
-        them, so a counter reports "echoed" for a fragment that has not gone out; the ack overtook
-        the re-sent last fragment of a PLAYSE and the console stopped mid-animation. The user saw our
-        attack freeze half-played with the music still going.
-
-        u24: content alone is ambiguous. Two blocks can end in a byte-identical fragment -- both
-        CHOOSEMOVEs carry the same ChooseMoveStruct tail for two identical Chansey -- so
-        `last_echo_cmd` still held the previous battler's final fragment and the gate opened at once.
-        Pair the content with a mark taken when the block landed and require an emission after it.
-
-        So wait for the block's own last fragment to come back out of the echo, by content. The
-        safety valve is not a tuned delay: it exists only so a fragment the console somehow never
-        re-sends cannot deadlock us for ever, and it says so in the log when it fires.
-
-        Scoped to the battle. The trade, Mystery Gift and chat paths are proven on hardware with the
-        old timing and nothing in them acks a block the console has to see returned first."""
+        """Never answer a battle command before the console's block is echoed back
+        (docs/frlg_link.md). Neither an empty queue (5-8 s per command), an echo count (ECHO_MAX drops
+        fragments) nor the last fragment's content (blocks share tails) is enough."""
         if self.state != H_UROOM_BATTLE_LINK or self._echo_wait_slot is None:
             return False
         if self._echo_block_returned():
@@ -1300,10 +1226,8 @@ class HostTradeEngine:
         return True
 
     def _echo_block_returned(self):
-        """u26: every fragment index of the console's block has been echoed at least once. The
-        last-fragment test passed while an earlier fragment (dropped by ECHO_MAX) was still owed;
-        the console re-sent it and our echo of the re-send shared a frame with our ack, which the
-        console reads first. "Mais cela échoue!" stayed on screen with the link alive."""
+        """Every fragment index of the console's block has been echoed at least once. Trap: an echo
+        of a re-sent fragment sharing a frame with our ack is read after the ack."""
         k = self._echo_wait_block
         if k is None or k >= len(self.echo_blocks):
             return False
@@ -1334,7 +1258,7 @@ class HostTradeEngine:
         return self.child_link_player is not None
 
     def mark_disconnect_sent(self):
-        """Explicit acknowledgement so the engine cannot declare success before the close-link poll and 'D' enter Reliable's window."""
+        """The engine cannot declare success before the close-link poll and 'D' enter Reliable."""
         if not self.disconnect_requested:
             raise RuntimeError("disconnect sent before close-link handshake")
         self.done = True

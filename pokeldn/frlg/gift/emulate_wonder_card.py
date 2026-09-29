@@ -1,5 +1,5 @@
-"""Export a registry gift as the injector's .bin pair into Tickets/ and relaunch the injector (it scans
-Tickets/ only at startup)."""
+"""Export a registry gift as the injector's .bin pair into Tickets/ and relaunch the injector,
+which scans Tickets/ only at startup."""
 
 import glob
 import os
@@ -16,7 +16,7 @@ _APP_NAME = "Mystery_Gift_Injector.app"
 
 
 def _ticket_name(slug):
-    """The injector labels a ticket by its first underscore token and needs a game code (FRLG) in the name."""
+    """The injector labels a ticket by its first underscore token and needs FRLG in the name."""
     token = "".join(ch for ch in slug.upper() if ch.isalnum())
     return f"{token}_FRLG"
 

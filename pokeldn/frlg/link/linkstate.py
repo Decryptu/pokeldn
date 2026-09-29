@@ -1,6 +1,6 @@
-"""Held-keys overworld link-state engine: the child's CB1_UpdateLinkState / SendKeysToRfu chain
-[overworld.c:2579-2599; link_rfu_2.c:1069-1080]. The joiner is mpId 1 = gLocalLinkPlayerId = the RIGHT seat; the
-chair id is cosmetic. Held keys replace an IDLE slot only, never a SEND_BLOCK/LINKCMD slot."""
+"""Held-keys overworld link state: the child's CB1_UpdateLinkState / SendKeysToRfu chain
+[overworld.c:2579-2599; link_rfu_2.c:1069-1080]. The joiner is mpId 1, the right seat. Held keys
+replace an IDLE slot only, never a SEND_BLOCK/LINKCMD slot."""
 
 from collections import deque
 
@@ -18,13 +18,13 @@ LINK_KEY_CODE_EXIT_ROOM = 0x17   # leave -> sPlayerLinkStates[self]=EXITING_ROOM
 LINK_KEY_CODE_IDLE = 0x1A
 LINK_KEY_CODE_EXIT_SEAT = 0x1D
 
-# PLAYER_LINK_STATE_* [src/overworld.c:57-60] - host-side per-peer state (for the host model).
+# PLAYER_LINK_STATE_* [src/overworld.c:57-60]
 PLAYER_LINK_STATE_IDLE = 0x80
 PLAYER_LINK_STATE_BUSY = 0x81
 PLAYER_LINK_STATE_READY = 0x82
 PLAYER_LINK_STATE_EXITING_ROOM = 0x83
 
-# CABLE_SEAT_* [include/constants/cable_club.h:28-30] - GetCableClubPartnersReady verdict.
+# CABLE_SEAT_* [include/constants/cable_club.h:28-30]
 CABLE_SEAT_WAITING = 0
 CABLE_SEAT_SUCCESS = 1
 CABLE_SEAT_FAILED = 2
@@ -37,19 +37,17 @@ SEND_NOTHING = "SEND_NOTHING"
 # 60-frame watchdog (CheckRfuKeepAliveTimer >60 -> LinkRfu_FatalError [overworld.c:2623-2626]).
 KEEPALIVE_WATCHDOG = 60
 
-# The seat walk is real player input relayed over the link: a child that only sends EMPTY stands in the
-# doorway and the host waits for a READY that never comes. The EMPTY gaps between direction changes are
-# load-bearing (a step must finish before a new direction is accepted); the route costs one slot per host poll.
+# A child that sends only EMPTY stands in the doorway and the host waits forever for READY. The
+# EMPTY gaps between direction changes are load-bearing: a step must finish first.
 TILE_STEP_FRAMES = 16
 
 
 def _step_gap(run_frames):
-    # A step is exactly 16 link updates (directionSequenceIndex=16, decremented once per update while frozen
-    # [overworld.c:3432-3470]); a run of N keys leaves N mod 16 of its last step spent, so cover the rest, +1.
+    # A step is 16 link updates [overworld.c:3432-3470]; cover the rest of the last step, +1.
     return (TILE_STEP_FRAMES - (run_frames % TILE_STEP_FRAMES)) % TILE_STEP_FRAMES + 1
 
 
-# Each route frame costs one host link update and the console's trade room can be short-lived; keep it short.
+# One host link update per frame; the console's trade room can be short-lived.
 ENTRY_RIGHT_CHAIR_ROUTE = (
     (LINK_KEY_CODE_EMPTY, 4),
     (LINK_KEY_CODE_DPAD_UP, 43),
@@ -70,17 +68,17 @@ class LinkState:
         self.self_id = self_id
         self.partner_id = self_id ^ 1        # = 0, the host (LEFT) [trade.c:984-985]
         self.log = log
-        self.info = getattr(log, "info", log)   # clean milestone sink (default-mode narration)
-        self._out = out                      # STDOUT sink (for the cancel-to-leave message)
+        self.info = getattr(log, "info", log)
+        self._out = out
 
         self.state = PRE_SEAT
-        self._held_key_count = 0             # static u8 heldKeyCount [link_rfu_2.c:1071]; ++ before OR
+        self._held_key_count = 0  # heldKeyCount [link_rfu_2.c:1071]
         self._pending_once = None            # a one-shot key (READY/EXIT_ROOM) to emit next tick
-        self._route = deque()                # queued seat-walk key codes (ENTRY_RIGHT_CHAIR_ROUTE)
+        self._route = deque()
         self._walking = False
         self._seated = False
         self._exiting = False
-        # host-side mirror of our slot's link state, advanced from the key we send [overworld.c:2749-2766]
+        # the host's view of our slot [overworld.c:2749-2766]
         self.our_link_state = PLAYER_LINK_STATE_IDLE
 
     @property
@@ -92,8 +90,8 @@ class LinkState:
         return bool(self._route)
 
     def walk_to_seat(self):
-        """Prefer this to sit(): a READY fired from the doorway is rejected by the host's cable-seat FSM and
-        both sides then wait forever."""
+        """Prefer this to sit(): a READY fired from the doorway is rejected by the host's
+        cable-seat FSM and both sides then wait forever."""
         if self._walking or self._seated:
             return
         self._walking = True
@@ -103,7 +101,7 @@ class LinkState:
         self.log(f"linkstate: walk_to_seat() -> {len(self._route)} route frames to the RIGHT chair")
 
     def sit(self):
-        """Emits READY(0x16) exactly once on the next tick [cable_club.c:839; overworld.c:2951-2955]."""
+        """Emits READY(0x16) once on the next tick [cable_club.c:839; overworld.c:2951-2955]."""
         if self._seated:
             return
         self._seated = True
@@ -112,8 +110,8 @@ class LinkState:
         self.log("linkstate: sit() -> READY(0x16) at RIGHT seat (mpId 1)")
 
     def exit(self):
-        """Emits EXIT_ROOM(0x17) exactly once on the next tick [overworld.c:2977-2981]; the overworld-layer exit
-        that follows the trade engine's REQUEST_CANCEL."""
+        """Emits EXIT_ROOM(0x17) once on the next tick [overworld.c:2977-2981], after the trade
+        engine's REQUEST_CANCEL."""
         if self._exiting:
             return
         self._exiting = True
@@ -128,7 +126,7 @@ class LinkState:
             self.log("linkstate: host EXITING_ROOM -> SEND_NOTHING")
 
     def _emit(self, keycode):
-        """heldKeyCount++ then w1 = (count<<8) | key [link_rfu_2.c:1076-1077]: the first emit carries high byte 1."""
+        """w1 = (++heldKeyCount << 8) | key [link_rfu_2.c:1076-1077]: the first carries 1."""
         self._held_key_count = (self._held_key_count + 1) & 0xFF
         w1 = ((self._held_key_count & 0xFF) << 8) | (keycode & 0xFF)
         if keycode == LINK_KEY_CODE_READY:
@@ -140,8 +138,8 @@ class LinkState:
         return [rfu.SEND_HELD_KEYS, w1, 0, 0, 0, 0, 0]
 
     def tick(self):
-        """Never returns an all-zero idle: the host's view of our slot needs a 0xBE00 every VBlank in the seat phase."""
-        # EXIT_ROOM preempts the route (the host can walk out mid-route); nothing else does.
+        """Never an all-zero idle: the host needs a 0xBE00 every VBlank in the seat phase."""
+        # EXIT_ROOM preempts the route (the host can walk out mid-route).
         if self._route and self._pending_once is None:
             key = self._route.popleft()
             if key == LINK_KEY_CODE_READY:

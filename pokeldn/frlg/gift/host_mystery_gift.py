@@ -1,6 +1,6 @@
-"""Leader-side FRLG Mystery Gift engine; same feed_child_slot()/tick() contract as HostTradeEngine.
-The console ignores SEND_BLOCK_INIT unless its slot is RECV_STATE_READY [decomp:src/link_rfu_2.c:1146]
-and nothing on the wire reports that, so blocks must be paced (inter_block_gap_frames)."""
+"""Leader-side FRLG Mystery Gift engine (the HostTradeEngine feed_child_slot()/tick() contract).
+The console ignores SEND_BLOCK_INIT unless its slot is RECV_STATE_READY
+[decomp:src/link_rfu_2.c:1146], which nothing reports: blocks are paced (inter_block_gap_frames)."""
 
 from collections import Counter, deque
 from dataclasses import dataclass
@@ -20,25 +20,24 @@ MG_DONE = "MG_DONE"
 
 HOST_NAME_PAD = linkplayer.HOST_NAME_PAD
 
-# The console's own RFU timeout fires within a few seconds of it going quiet; report twice before that.
+# The console's own RFU timeout fires a few seconds after it goes quiet; report twice before.
 STATUS_REPORT_FRAMES = 120
 
 
 @dataclass(frozen=True)
 class MysteryGiftTiming:
     startup_standby_echo_frames: int = 4
-    # The console reaches MysteryGiftClient_Create [decomp:src/mystery_gift_menu.c:1231] only after its
-    # standby round; the second block of a message sent before then is dropped.
+    # The console reaches MysteryGiftClient_Create [decomp:src/mystery_gift_menu.c:1231] only after
+    # its standby round; the second block of a message sent before then is dropped.
     client_ready_idle_frames: int = 20
-    # The console silently drops a block that arrives before it consumed the previous one; raise this
-    # first if a live run stalls part-way through a message.
+    # The console drops a block that arrives before it consumed the previous one; raise this first
+    # if a live run stalls part-way through a message.
     inter_block_gap_frames: int = 36
-    # The console misses a single-VBlank SEND_PLAYER_IDS and then parks in Task_PlayerExchange case 2
+    # The console misses a single-VBlank SEND_PLAYER_IDS and parks in Task_PlayerExchange case 2
     # with multiplayer id 0 [decomp:src/link_rfu_2.c:1832].
     player_ids_repeat_frames: int = 8
     block_repeat: int = 2
-    # The MG client never reflects gift blocks, so a lost RAM-script fragment cannot be identified
-    # for resend; redundancy on first send is the only lever.
+    # The client never reflects gift blocks, so a lost RAM-script fragment cannot be resent.
     ram_script_block_repeat: int = 3
     close_retry_frames: int = 60
     # The console's Rfu_LinkClose and post-gift save must finish before the LDN network disappears.
@@ -148,12 +147,12 @@ class HostMysteryGiftEngine:
         self._begin_link_player_exchange()
 
     def _queue_player_ids(self, label="SEND_PLAYER_IDS"):
-        """SEND_PLAYER_IDS is idempotent on the console; SEND_BLOCK_REQ is not, so only this may be repeated."""
+        """SEND_PLAYER_IDS is idempotent on the console; SEND_BLOCK_REQ is not."""
         for _ in range(self.timing.player_ids_repeat_frames):
             self._queue_words(rfu.send_player_ids_words(), label)
 
     def _begin_link_player_exchange(self):
-        """Exactly one SEND_BLOCK_REQ [decomp:src/link_rfu_2.c:1813]; a repeat can start a second child send."""
+        """One SEND_BLOCK_REQ only [decomp:src/link_rfu_2.c:1813]; a repeat starts a second send."""
         self._queue_player_ids()
         self._expected = "link_player"
         self._link_player_requests += 1
@@ -236,8 +235,8 @@ class HostMysteryGiftEngine:
             try:
                 payload = self._receiver.feed_block(block)
             except mg_link.MysteryGiftLinkError as exc:
-                # A console retransmit of the previous message surfaces here as a stale header; drop it
-                # and re-arm the same ident rather than raising (the console re-sends what we await).
+                # A console retransmit of the previous message surfaces as a stale header; drop it
+                # and re-arm the same ident.
                 want = self._receiver.expected_ident
                 self.trace.append(("recv_resync", want, str(exc)))
                 self.info(f"[mg] ignoring a stale/duplicate child block while awaiting ident "
@@ -261,7 +260,7 @@ class HostMysteryGiftEngine:
 
     def _begin_close(self):
         """Both sides must expose READY_CLOSE_LINK before IsLinkRfuTaskFinished releases the console
-        into its save [decomp:src/mystery_gift_menu.c:1248], so ours goes out immediately."""
+        into its save [decomp:src/mystery_gift_menu.c:1248]."""
         self._set_state(MG_CLOSE)
         self._queue_close_words()
         self._close_retry_wait = self.timing.close_retry_frames
@@ -302,7 +301,7 @@ class HostMysteryGiftEngine:
                           + ("." if mp_id == 1 else
                              " - repeating only the id table, not the block request."))
             if self.state == MG_LINK_PLAYER and mp_id != 1:
-                # Do not repeat SEND_BLOCK_REQ here; it can start a second transfer after the first completes.
+                # Never repeat SEND_BLOCK_REQ: it can start a second transfer.
                 self._queue_player_ids("SEND_PLAYER_IDS:repair")
             self._rx.on_init(rec["count"], rec.get("owner_raw"))
         elif op == rfu.SEND_BLOCK:
@@ -332,8 +331,8 @@ class HostMysteryGiftEngine:
                 return
             parsed, ok = linkplayer.parse_block(data)
             if not ok:
-                # The child ships gBlockSendBuffer verbatim [decomp:src/link_rfu_2.c:232]; asked before
-                # Task_PlayerExchange case 0 fills it, it sends stale bytes. Not fatal.
+                # The child ships gBlockSendBuffer verbatim [decomp:src/link_rfu_2.c:232]; asked
+                # before Task_PlayerExchange case 0 fills it, it sends stale bytes. Not fatal.
                 self._reject_link_player("invalid GameFreak magic", data)
                 return
             self.child_link_player = parsed
@@ -341,7 +340,7 @@ class HostMysteryGiftEngine:
             self._link_player_seen = True
             self._link_phase = "send_host_block"
             self.trace.append(("link_player_child_block_valid", count))
-            # Only a valid child block proves case 0 ran; an INIT alone can predate its buffer reset.
+            # Only a valid child block proves case 0 ran; an INIT can predate its buffer reset.
             self._host_link_player_queued = True
             self._queue_block(self._link_player_block, "host:link_player")
             self.trace.append(("link_player_host_block_queued", count))
@@ -375,7 +374,8 @@ class HostMysteryGiftEngine:
     def _complete_link_player_barrier(self, count):
         if self.state != MG_LINK_PLAYER:
             return
-        # Exactly one SetLinkStandbyCallback round precedes the Mystery Gift client [decomp:src/union_room.c:2391].
+        # Exactly one SetLinkStandbyCallback round precedes the client
+        # [decomp:src/union_room.c:2391].
         self._pending_standby_count = None
         self._set_state(MG_START)
         self._standby_seen = True
@@ -474,9 +474,8 @@ class HostMysteryGiftEngine:
             + self._gift_status_detail())
 
     def _echo_status_detail(self):
-        """Row one health. The console's own block sender and MGL_Send both wait on the mirror, and a
-        DROPPED distinct command is a fragment it must repair blind. Anything but 0 here is the
-        first thing to read after a stall."""
+        """Row one health: a DROPPED distinct command is a fragment the console must repair blind.
+        Anything but 0 here is the first thing to read after a stall."""
         dropped = getattr(self, "echo_dropped", 0)
         return (f"; row-one echo backlog {getattr(self, 'echo_backlog', 0)} "
                 f"(peak {getattr(self, 'echo_backlog_peak', 0)}), "

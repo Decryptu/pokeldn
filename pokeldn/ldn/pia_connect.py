@@ -1,14 +1,15 @@
-"""Pia connection layer (Net + Session + RTT), the handshake the host completes before registering us as a peer.
-Station var-ids are ASSIGNED per session, not derived from the MAC: the header is [dst_var][src_var] and the footer is
-the DESTINATION var, so both are learned from the first incoming packet. The 8-byte constant id = 6-byte MAC + 0000.
-"""
+"""The Pia connection handshake (Net, Session, RTT) a joiner completes before the host admits it.
+
+Variable ids are assigned per session and learned from the first packet: the header is
+[dst_var][src_var], the footer the destination var. A constant id is the 6-byte MAC plus 0000."""
 
 PROTO_NET = 1
 PROTO_RTT = 3
 PROTO_RELIABLE = 10
 PROTO_SESSION = 13
 
-# RTT and session control ride header dst=0x0001 (the session pseudo-station); the footer recipient stays the host var.
+# RTT and session control use header dst 0x0001, the session pseudo-station; the footer stays the
+# host var.
 SESSION_VAR = 0x0001
 RTT_ORIGINATE_PERIOD = 10
 
@@ -35,12 +36,12 @@ def _ip4(ip):
 def parse_net(payload):
     if len(payload) < 4:
         return None
-    # `size` is not the full body length (Net 0x11 stores only the NetStation-array size, 0x12 stores zero), so return the whole body.
+    # `size` is not the body length: Net 0x11 stores the NetStation array size, 0x12 zero.
     return payload[0], payload[1], payload[4:]
 
 
 def build_net_response(seqid=2):
-    """The seqid must echo the host's 0x11 seqid; a fixed value deadlocks (endless 500ms 0x11 retransmits)."""
+    """Echo the host's 0x11 seqid; a fixed value leaves the host resending 0x11 every 500 ms."""
     return bytes([0x01, NET_CONN_RESPONSE, 0x00, 0x00]) + (seqid & 0xFFFFFFFF).to_bytes(4, "big")
 
 
@@ -52,13 +53,8 @@ def ldn_constant_id(mac):
 
 
 def _net_station(ip=None, port=12345, *, migration_state=0, migration_rank=0, prefix_len=4):
-    """A NetStation: a prefix then an 18-byte station address (16-byte address, IPv4 in the first 4,
-    then a big-endian port). An empty slot is rank 0xff with zero address and port.
-
-    The prefix is 4 bytes at Pia 6.39 ([migration_state][rank][disconnection candidate][kicking]) and
-    3 bytes at the 6.16-6.23 band ([migration_state][rank][one byte]), measured off a console's own
-    0x11 (docs/pla.md). So a station is 22 bytes at 6.39 and 21 here.
-    """
+    """A NetStation: prefix, 16-byte address (IPv4 first), big-endian port; empty is rank 0xff.
+    The prefix is 4 bytes at Pia 6.39 and 3 at 6.16-6.23 (docs/pla.md): 22 or 21 bytes a station."""
     address = (_ip4(ip) + b"\x00" * 12) if ip is not None else b"\x00" * 16
     if ip is None:
         port = 0
@@ -68,10 +64,8 @@ def _net_station(ip=None, port=12345, *, migration_state=0, migration_rank=0, pr
 
 def build_net_conn_request(seqid, host_var, host_mac, network_id, stations, max_stations=6,
                            station_size=22):
-    """Net 0x11: all max_stations slots are always emitted, unused ones rank 0xff; the network id is the 32-bit SSID CRC
-    zero-extended to 8 bytes. `station_size` is 22 at Pia 6.39 (the GBA app's 6.32 host) and 21 at the
-    6.16-6.23 band Legends Arceus speaks; it sets the NetStation prefix width.
-    """
+    """Net 0x11 carries all max_stations slots; the network id is the SSID CRC32 zero-extended to 8
+    bytes. `station_size` is 22 at Pia 6.39 (the GBA app) and 21 at 6.16-6.23 (Legends Arceus)."""
     entries = list(stations)
     if not 1 <= len(entries) <= max_stations:
         raise ValueError("Net 0x11 needs 1..max_stations occupied station addresses")
@@ -93,14 +87,13 @@ def build_net_conn_request(seqid, host_var, host_mac, network_id, stations, max_
 
 
 def build_net_property_ack(seqid):
-    """Echoes the host's 0x50 seqid; the host retransmits its 0x50 every 500ms until acked."""
+    """The host retransmits its 0x50 every 500 ms until this ack echoes its seqid."""
     return bytes([0x01, NET_UPDATE_PROPERTY_ACK, 0x00, 0x00]) + (seqid & 0xFFFFFFFF).to_bytes(4, "big")
 
 
 def parse_net_conn_request(payload):
-    """-> (host_var, host_mac, seqid). The host's Pia constant id is the emulator's fixed virtual GBA-adapter MAC (identical
-    across Switches), NOT its LDN MAC from the participant list; the Session join must address this one.
-    """
+    """-> (host_var, host_mac, seqid). The host's constant id is the emulator's fixed virtual
+    adapter MAC, the same on every Switch, not its LDN MAC; the Session join must address it."""
     n = parse_net(payload)
     if not n or n[1] != NET_CONN_REQUEST or len(n[2]) < 12:
         return None
@@ -109,9 +102,8 @@ def parse_net_conn_request(payload):
 
 
 def parse_rtt(payload):
-    """[wiki RTT-Protocol] byte 0 = type (0 request, 1 response), byte 3 = protocol version (must be preserved), [8:16] system
-    time, [19:21] subject var-id.
-    """
+    """Byte 0 type (0 request, 1 response), byte 3 protocol version, [8:16] system time, [19:21]
+    subject var id (NintendoClients wiki, RTT-Protocol)."""
     if len(payload) < 16:
         return None
     return {"type": payload[0],
@@ -121,16 +113,14 @@ def parse_rtt(payload):
 
 
 def build_rtt_response(request):
-    """Echo the request verbatim with byte 0 = 1: the host uses the echoed timestamp for its round-trip; the subject stays
-    the host var.
-    """
+    """The request with byte 0 = 1; the host times its round trip off the echoed timestamp."""
     b = bytearray(request[:21].ljust(21, b"\x00"))
     b[0] = 1
     return bytes(b)
 
 
 def build_rtt_request(template, systime):
-    """Clone the host's last request layout, type=0, fresh systime (echoed back in its type-1 response)."""
+    """The host's last request as a template, type 0, a fresh system time."""
     b = bytearray(template[:21].ljust(21, b"\x00"))
     b[0] = 0
     b[8:16] = (systime & ((1 << 64) - 1)).to_bytes(8, "little")
@@ -141,22 +131,21 @@ def build_session_join(src_mac, src_var, src_ip, dst_mac, dst_var, player_name,
                        random4, *, src_port=12345, app_ver=DEFAULT_APP_VER,
                        protocols=DEFAULT_PROTOCOLS, player_id=DEFAULT_PLAYER_ID,
                        token=b"\x00" * 32):
-    """`token` is the 32-byte identification token. The GBA application's host accepts zeroes;
-    a Legends Z-A joiner sends 0x06 in the first byte and zeroes after it."""
+    """The GBA app's host accepts a zero `token`; a Legends Z-A joiner sends 0x06 then zeroes."""
     out = bytearray([SESSION_JOIN_REQUEST, len(protocols)])
     for pid, ver in protocols:
         out += bytes([pid, ver])
     out += app_ver
-    out += random4                                   # 4-byte random nonce
-    out += bytes(src_mac) + b"\x00\x00"              # source constant id (8)
-    out += bytes(src_var)                            # source variable id (2)
-    out += bytes([0, 0])                             # NAT mapping, is-private-IPv6
-    out += bytes(token).ljust(32, b"\x00")[:32]      # identification token
-    out += bytes(dst_mac) + b"\x00\x00"             # dest constant id (8)
-    out += bytes(dst_var)                            # dest variable id (2)
-    out += bytes([1, 1])                             # num players, num participants
-    out += bytes([0]) + _ip4(src_ip) + src_port.to_bytes(2, "big")   # StationAddress (IPv4)
-    nm = player_name.encode()[:20]                   # PlayerInfo
+    out += random4  # nonce
+    out += bytes(src_mac) + b"\x00\x00"
+    out += bytes(src_var)
+    out += bytes([0, 0])  # NAT mapping, is-private-IPv6
+    out += bytes(token).ljust(32, b"\x00")[:32]
+    out += bytes(dst_mac) + b"\x00\x00"
+    out += bytes(dst_var)
+    out += bytes([1, 1])  # players, participants
+    out += bytes([0]) + _ip4(src_ip) + src_port.to_bytes(2, "big")
+    nm = player_name.encode()[:20]
     out += player_id + len(nm).to_bytes(4, "big") + bytes([1]) + nm
     return bytes(out)
 
@@ -187,7 +176,7 @@ def _parse_player_info(payload, offset):
 
 
 def parse_session_join(payload):
-    """Returns None for malformed or non-IPv4 requests rather than letting network input escape into the host loop."""
+    """None for a malformed or non-IPv4 request."""
     payload = bytes(payload)
     try:
         if len(payload) < 2 or payload[0] != SESSION_JOIN_REQUEST:
@@ -262,7 +251,7 @@ def _build_session_station(constant_id, variable_id, ip, port, station_index,
     out += _ip4(ip) + (port & 0xFFFF).to_bytes(2, "big")
     out += bytes([station_index & 0xFF])
     out += (join_order & 0xFFFF).to_bytes(2, "big")
-    out += b"\x00\x00"                              # left-join order / reserved
+    out += b"\x00\x00"  # left-join order / reserved
     out += token
     out += bytes([num_players & 0xFF, num_participants & 0xFF])
     out += b"\x00\x00"
@@ -274,9 +263,7 @@ def _build_session_station(constant_id, variable_id, ip, port, station_index,
 def build_session_update(join, host_constant_id, host_var, host_ip, host_name,
                          *, host_player_id=DEFAULT_PLAYER_ID, sequence_id=1,
                          host_token=b"\x00" * 32, update_sequence=0):
-    """Leader's fragmented Session type-5 update, the two-station Pia 6.39 layout: 7-byte fragment header (one fragment),
-    leader first, requester second.
-    """
+    """The leader's Session type-5 update, Pia 6.39: a one-fragment 7-byte header, leader first."""
     if not join or not join.get("players"):
         raise ValueError("a parsed Session join with at least one player is required")
     host_constant_id = _constant_id8(host_constant_id)
@@ -289,17 +276,17 @@ def build_session_update(join, host_constant_id, host_var, host_ip, host_name,
         join["source_constant_id"], join["source_var"], join["ip"], join["port"], 1, 1,
         join["identification_token"], join["num_players"], join["num_participants"],
         join["players"])
-    # [type, unknown:u16, fragment-count, fragment-index, fragment-offset:u16]
-    # The update's own sequence rides at +1 and again at +21: a Legends Z-A host's second update
-    # differs from its first in those two bytes alone (docs/za.md, Hosting).
+    # [type, sequence:u16, fragment count, fragment index, offset:u16]. The sequence rides at +1 and
+    # +21: a Legends Z-A host's second update differs from its first there alone (docs/za.md,
+    # Hosting).
     out = bytearray.fromhex("05000001000003")
     out[1:3] = (update_sequence & 0xFFFF).to_bytes(2, "big")
     out += host_constant_id
     out += host_var.to_bytes(2, "big")
-    out += bytes([2, 0])                            # two stations, no departed stations
+    out += bytes([2, 0])  # two stations, no departed stations
     out += (sequence_id & 0xFFFF).to_bytes(2, "big")
     out += (update_sequence & 0xFFFF).to_bytes(2, "big")
-    out += b"\x00" * 4                            # four 6.39 reserved bytes
+    out += b"\x00" * 4  # 6.39 reserved
     out += host_station + guest_station
     return bytes(out)
 
@@ -318,10 +305,7 @@ def build_session_join_response(join, host_constant_id, host_var, random4):
             + bytes([1]) + (1).to_bytes(2, "big") + b"\x00\x00")
 
 
-# --- Pia 6.16-6.30 (version 11) Session layouts, read from the console's own parsers -------------
-#
-# A location id on the wire is 12 bytes: u64 BE constant id, two zero bytes, u16 BE variable id.
-# `0x73fd98`/`0x73fda0` read the constant and variable ids the ack and response compare against.
+# Pia 6.16-6.30 (version 11) Session layouts (docs/pla.md, The Session join reply).
 SESSION_JOIN_ACK = 1
 WIRE_SESSION_PROTOCOL = 0x98
 
@@ -331,13 +315,7 @@ def _location_id(constant_id, variable_id):
 
 
 def parse_session_join_v11(payload, *, header_end=None):
-    """Parse a version-11 Session type-0 join request (`0x7364e4`), returning None on anything malformed.
-
-    The body is the type byte, a protocol count, that many (id, version) pairs, then a four-byte
-    application/nonce field, the source location id (12), a 32-byte identification token, three
-    zero bytes, the source station address (IPv4 + big-endian port), the destination location id
-    (12), and a trailer. Only the fields the response echoes are returned.
-    """
+    """A version-11 Session type-0 join request (`0x7364e4`), or None when malformed."""
     payload = bytes(payload)
     try:
         if len(payload) < 2 or payload[0] != SESSION_JOIN_REQUEST:
@@ -373,9 +351,7 @@ def parse_session_join_v11(payload, *, header_end=None):
 
 
 def build_session_join_ack_v11(host_constant_id, host_var, console_constant_id, console_var):
-    """Session type-1 join-request-ack, 25 bytes (`0x737534`). Every id is compared; a mismatch is
-    dropped silently. It extends the join deadline by 8 s and completes nothing on its own.
-    """
+    """Session type-1 join ack, 25 bytes (`0x737534`, docs/pla.md)."""
     return (bytes([SESSION_JOIN_ACK])
             + _location_id(host_constant_id, host_var)
             + _location_id(console_constant_id, console_var))
@@ -384,18 +360,8 @@ def build_session_join_ack_v11(host_constant_id, host_var, console_constant_id, 
 def build_session_join_response_v11(host_constant_id, host_var, console_constant_id, console_var,
                                     *, version=0, status=1, route=(0, 1), station_index=1,
                                     join_order=1, sequence_id=1, random4=b"\x00" * 4):
-    """Session type-2 join response (`0x7379c0`). Status 1 is the accept path; the four ids are
-    compared and the assignment (route bytes, station index, join order, sequence id) is stored
-    without validation. The sequence id is what a later type-5 update must reach to set
-    `JoinMeshJob+0x7c`.
-
-    `route=None` omits the two route bytes, which is the 41-byte form a Scarlet host sends: after
-    the two location ids it writes the station index, the join order and a sequence id of zero, and
-    nothing else. With a route the message is 43 bytes, which is what Arceus's host sends.
-
-    `random4` fills bytes +8..+0xC. A Scarlet host puts four random bytes there and the receiver
-    does not read them.
-    """
+    """Session type-2 join response (`0x7379c0`, docs/pla.md). `route=None` gives the 41-byte form
+    a Scarlet host sends (docs/sv.md); with a route it is Arceus's 43 bytes."""
     random4 = bytes(random4)
     if len(random4) != 4:
         raise ValueError("Session join response random value must be four bytes")
@@ -411,16 +377,8 @@ def build_session_join_response_v11(host_constant_id, host_var, console_constant
 
 def _session_station_v11(constant_id, variable_id, ip, port, *, station_index, route,
                          join_order, token, players, participants=None, nat=0, private_ipv6=0):
-    """One IPv4 entry in a version-11 type-5 station list, read by `0x739050`.
-
-    The variable id is a big-endian u32 whose low half is the id (`[0000 | var]`), the address is the
-    six-byte IPv4 form, then route bytes A and B, the station index, a big-endian u16 join order, a
-    NAT-mapping byte, a private-IPv6 flag, the 32-byte token, a player count, a participant count, and
-    the 6.32-style player records. The caller clears this station's IPv6 bitmap bit to match.
-
-    `route=None` omits the two route bytes, giving the 79-byte station a Scarlet host writes; with
-    them the station is 81 bytes, which is Arceus's.
-    """
+    """One IPv4 station of a version-11 type-5 list (`0x739050`, docs/pla.md). `route=None` gives
+    Scarlet's 79-byte station, with a route Arceus's 81. The caller clears its IPv6 bitmap bit."""
     token = bytes(token)
     if len(token) != 32:
         raise ValueError("Pia identification token must be 32 bytes")
@@ -445,19 +403,8 @@ SESSION_LEAVE_REQUEST = 3
 
 def build_session_leave_v11(constant_id, variable_id, ip, port=12345, *, reason=0,
                             random4=b"\0\0\0\0"):
-    """Session type-3 leave request, 24 bytes: the station saying it is going.
-
-    Read off four of a console's own, two per session, which it sends in a burst and does not wait
-    to have answered. The band's type table (NintendoClients, Session Protocol (new)) pairs a leave
-    with nothing; what a host owes the OTHER stations is the type-7 left-station sync, and a session
-    of two has none to tell.
-
-        03 | u32 random | location id (12) | reason byte | IPv4 (4) | port big-endian (2)
-
-    The random field differs on every send, including retransmissions of one leave, so nothing
-    reads it back and the default here is zeros; the host passes fresh bytes to look like a station
-    rather than because anything depends on it. `reason` is 0 on all four.
-    """
+    """Session type-3 leave request, 24 bytes (docs/pla.md, Leaving). A session of two owes no
+    type-7 left-station sync. Nothing reads the random word back."""
     return (bytes([SESSION_LEAVE_REQUEST])
             + bytes(random4)[:4].ljust(4, b"\0")
             + _location_id(constant_id, variable_id)
@@ -466,20 +413,13 @@ def build_session_leave_v11(constant_id, variable_id, ip, port=12345, *, reason=
 
 
 def build_session_update_v11(host_constant_id, host_var, stations, *, sequence_id=1):
-    """Session type-5 station-list update for the 6.16-6.30 band (`0x738740`, body read at `0x73897c`).
-
-    The reassembler `0x7404a8` reads a seven-byte fragment header first: the type, the big-endian u16
-    sequence, a fragment count, a fragment index, and a big-endian u16 offset. It seeds the buffer with
-    the first three bytes (type and sequence) and copies the fragment payload at the offset, so the
-    payload begins at the host constant id and the reassembled body reads: `05`, the sequence, the host
-    constant id, the host variable id as a `[0000 | var]` u32, the station count, an IPv6 bitmap of
-    `(count + 31) // 32 * 4` bytes, then the station entries. One fragment carries the whole update.
-    """
+    """Session type-5 station-list update, 6.16-6.30 band, one fragment at offset 3 (`0x738740`,
+    docs/pla.md, The type-5 station-list update)."""
     count = len(stations)
     payload = bytearray(_constant_id8(host_constant_id))
     payload += (_vid(host_var) & 0xFFFF).to_bytes(4, "big")      # [0000 | var]
     payload += bytes([count & 0xFF])
-    payload += bytearray((count + 31) // 32 * 4)                 # IPv6 bitmap, all IPv4, bits clear
+    payload += bytearray((count + 31) // 32 * 4)  # IPv6 bitmap, all clear
     for st in stations:
         payload += _session_station_v11(
             st["constant_id"], st["variable_id"], st["ip"], st["port"],
@@ -491,23 +431,19 @@ def build_session_update_v11(host_constant_id, host_var, stations, *, sequence_i
     return fragment_header + bytes(payload)
 
 
-# The joiner's side of the same three messages, read from Scarlet's writers and parsers, which
-# lay them out as Legends Arceus does (docs/sv.md, The Session join request).
+# The joiner's side, from Scarlet's writers and parsers (docs/sv.md, The Session join request).
 JOIN_RESPONSE_STATUS = {1: "accepted", 3: "protocol version mismatch", 4: "denied by the host",
                         5: "session not accepting"}
 
 
 def parse_session_join_response_v11(payload):
-    """Session type 2, 43 bytes, as the host `0x6d6390` writes it: type, protocol id, version,
-    status, a big-endian u32 the accept path fills, a four-byte random, the host location id, the
-    joiner's, route bytes A and B, the station index, the join order and the sequence id the
-    type-5 update must reach. On status 3 the protocol id and version at +1 and +2 are the
-    offending id and the host's version of it."""
+    """Session type 2 as the host `0x6d6390` writes it (docs/pla.md, docs/sv.md). On status 3, +1
+    and +2 are the offending protocol id and the host's version of it."""
     payload = bytes(payload)
     if len(payload) < 41 or payload[0] != SESSION_JOIN_RESPONSE:
         return None
-    # Scarlet's response is 41 bytes: no route bytes before the station index (its joiner reads
-    # the index at +0x24, the join order at +0x25 and the sequence at +0x27, `0x6d7460`).
+    # Scarlet's is 41 bytes with no route bytes: index at +0x24, join order +0x25, sequence +0x27
+    # (`0x6d7460`).
     routed = len(payload) >= 43
     p = 38 if routed else 36
     return {
@@ -529,10 +465,8 @@ def parse_session_join_response_v11(payload):
 
 
 def parse_session_update_v11(payload, *, route_bytes=2):
-    """A Session type-5 fragment, the reverse of `build_session_update_v11`: the seven-byte fragment
-    header, then the host location, the station count, the IPv6 bitmap and the IPv4 entries. A
-    fragment that is not the whole update returns its header only. Scarlet's entries carry no
-    route bytes (`route_bytes=0`): the station index follows the address directly."""
+    """The reverse of `build_session_update_v11`; a partial fragment returns its header only.
+    Scarlet's entries carry no route bytes (`route_bytes=0`)."""
     payload = bytes(payload)
     if len(payload) < 7 or payload[0] != SESSION_UPDATE:
         return None
@@ -586,9 +520,8 @@ SESSION_START_HOST_MIGRATION_ACK = 8
 
 
 def parse_session_migration_v11(payload):
-    """Session type 7, `LeaveMeshWithHostMigrationJob` (0x6d8de0), the host announcing it is
-    leaving and naming the station it hands the host role to. 34 bytes: type, the host location
-    id, a byte, the host IPv4 and port, the target's location id, two zero bytes."""
+    """Session type 7 (`LeaveMeshWithHostMigrationJob`, 0x6d8de0), the host naming its successor.
+    34 bytes: type, host location id, a byte, host IPv4 and port, target location id, 00 00."""
     payload = bytes(payload)
     if len(payload) < 32 or payload[0] != 7:
         return None
@@ -603,16 +536,15 @@ def parse_session_migration_v11(payload):
 
 
 def build_session_migration_ack_v11(self_constant_id, self_var, host_constant_id, host_var):
-    """Session type 8, 25 bytes, the migration target's answer to the host's type 7 (writer
-    0x6d917c). The self location id then the host's, the same two-location shape as the join ack."""
+    """Session type 8, 25 bytes (writer 0x6d917c): the self location id, then the host's."""
     return (bytes([SESSION_START_HOST_MIGRATION_ACK])
             + _location_id(self_constant_id, self_var)
             + _location_id(host_constant_id, host_var))
 
 
 def build_session_update_ack_v11(console_constant_id, sequence_id):
-    """Session type 6, 13 bytes, the joiner's answer to a type-5 update (Scarlet `0x6d80a4`, Arceus
-    `0x738740`): the type, the joiner's own constant id, two zero bytes, the sequence applied."""
+    """Session type 6, 13 bytes (Scarlet `0x6d80a4`, Arceus `0x738740`): type, own constant id,
+    00 00, the sequence applied."""
     return (bytes([SESSION_UPDATE_ACK]) + _constant_id8(console_constant_id) + b"\x00\x00"
             + (sequence_id & 0xFFFF).to_bytes(2, "big"))
 
@@ -627,15 +559,14 @@ def parse_session(payload):
     return rec
 
 
-# Host-ack-gated: we never advance on our own send, only when the host acknowledges (it retransmits every stage and we
-# answer each), so a dropped OUT packet is re-sent on its next retransmit. Header (dst,src) per stage: net 0x12 -> (0, 0),
-# session join -> (0, our_var), finalize/reliable -> (host_var, our_var).
+# A stage advances only on the host's retransmitted message, so a lost send is repeated. Header
+# (dst, src): Net 0x12 (0, 0), Session join (0, our_var), finalize and reliable (host_var, our_var).
 ST_NET, ST_FINALIZE, ST_CONNECTED = "net", "finalize", "connected"
 NET_WAIT, SESSION_WAIT, CONNECTED = ST_NET, ST_FINALIZE, ST_CONNECTED
 
 
 def build_session_finalize(our_mac):
-    """Session type 6: `06 <our_mac:6> 0000 0000000000 01` - it references OUR constant id, not the host's."""
+    """Session type 6 `06 <our_mac:6> 0000 0000000000 01`, carrying the joiner's own constant id."""
     return bytes([6]) + bytes(our_mac) + b"\x00\x00" + b"\x00" * 5 + bytes([1])
 
 
@@ -670,9 +601,8 @@ class ConnectionManager:
         self.rtt_samples = []
 
     def maybe_originate_rtt(self, tick):
-        """Once connected, originate a type-0 RTT probe every RTT_ORIGINATE_PERIOD VBlanks; the host expects liveness probes
-        from us. No-op until a host request has been seen to clone the layout from.
-        """
+        """A type-0 RTT probe every RTT_ORIGINATE_PERIOD VBlanks once connected; the host expects
+        them. Waits for a host request to copy the layout from."""
         if not self.connected or self._last_host_rtt is None or self.host_var is None:
             return
         if tick - self._rtt_orig_tick < RTT_ORIGINATE_PERIOD:
@@ -712,17 +642,12 @@ class ConnectionManager:
         self.log("[pia] re-sent the Session join (join_repeat_ticks)")
 
     def _q(self, proto, payload, dst, src, compress, footer, establishing, pktid=None, footer_var=None):
-        """`pktid` overrides the per-channel counter (establishing frames force 0); `footer_var` overrides the footer recipient
-        (RTT: header dst=0x0001, footer=host var).
-        """
+        """Establishing frames force `pktid` 0; RTT sets `footer_var` to the host var."""
         self._outbox.append({"proto": proto, "payload": payload, "dst": dst, "src": src,
                              "compress": compress, "footer": footer, "establishing": establishing,
                              "unicast": True, "pktid": pktid, "footer_var": footer_var})
 
     def on_message(self, proto, payload, tick=None):
-        """Framing per stage: Net 0x12 -> hdr(0,0), establishing, no footer, raw; Session join -> hdr(0, our_var), establishing,
-        no footer, zstd; finalize / RTT response -> hdr(host_var, our_var), footer=host_var, raw.
-        """
         if proto == PROTO_NET:
             n = parse_net(payload)
             if n and n[1] == NET_CONN_REQUEST and self.state == ST_NET:
@@ -743,7 +668,7 @@ class ConnectionManager:
                 seqid = int.from_bytes(body[0:4], "big") if len(body) >= 4 else 1
                 self._q(PROTO_NET, build_net_property_ack(seqid), 0, self.our_var, False, False, True)
         elif proto == PROTO_SESSION:
-            # Finalize only on the type-5 accept (re-emitted on a re-sent accept), never on the type-2 follow-up: native sends exactly one.
+            # Finalize on the type-5 accept only: native sends exactly one.
             s = parse_session(payload)
             if (s and s["type"] == SESSION_UPDATE
                     and self.host_var is not None and self.state != ST_CONNECTED):

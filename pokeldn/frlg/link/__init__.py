@@ -1,9 +1,3 @@
-"""FireRed and LeafGreen's own link protocol, above the RFU layer in `pokeldn.gba`.
-
-The trade room (`trade` joiner, `host_trade` leader), the Union Room (`uroom_chat`,
-`uroom_battle`), link battles (`battle_link`), the cable-club colosseum (`cable_club`), the
-player record exchanged at entry (`linkplayer`), the overworld link state (`linkstate`), and
-the runtimes that own one whole session (`host_app`, `host_session`, `sim`).
-
-`docs/frlg_link.md`.
+"""FireRed and LeafGreen's own link protocol, above the RFU layer in `pokeldn.gba`: trade room,
+Union Room, link and cable-club battles, the entry player record, the runtimes. docs/frlg_link.md.
 """

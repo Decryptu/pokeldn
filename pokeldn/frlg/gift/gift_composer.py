@@ -1,5 +1,6 @@
-"""Saved state used by compiled gifts: VAR_MYSTERY_GIFT_1 = ordinary/rally-completion stage cursor,
-VAR_MYSTERY_GIFT_2..7 = stamp-slot cursors (0 absent, 1 activated, +1 per stage), FLAG_MYSTERY_GIFT_DONE = one-shot."""
+"""Saved state used by compiled gifts: VAR_MYSTERY_GIFT_1 = ordinary/rally-completion stage
+cursor, VAR_MYSTERY_GIFT_2..7 = stamp-slot cursors (0 absent, 1 activated, +1 per stage),
+FLAG_MYSTERY_GIFT_DONE = one-shot."""
 
 import re
 from dataclasses import dataclass, field
@@ -82,10 +83,9 @@ SHARE_ONCE = "once"
 SHARE_ALWAYS = "always"
 SPECIAL_HAS_ALL_KANTO_MONS = 335
 SPECIAL_START_LEGENDARY_BATTLE = 312
-# GetMysteryGiftCardStat: reads gSpecialVar_Result as the selector (GET_CARD_* [decomp:
-# include/constants/mystery_gift.h:4]) and returns that counter for the card the console holds
-# [decomp:src/field_specials.c:1955]. Index counted in data/specials.inc, the same count that
-# gives HasAllKantoMons 335.
+# GetMysteryGiftCardStat: gSpecialVar_Result selects the counter (GET_CARD_*
+# [decomp:include/constants/mystery_gift.h:4]) for the held card [decomp:src/field_specials.c:1955];
+# index counted in data/specials.inc.
 SPECIAL_GET_MYSTERY_GIFT_CARD_STAT = 390
 GET_NUM_STAMPS = 0
 GET_MAX_STAMPS = 1
@@ -129,10 +129,8 @@ class WonderCardSpec:
     # 0 keeps the default ``flag_id % 100`` display number.
     id_number: int = 0
     bg_type: int = 0
-    # CARD_TYPE_LINK_STAT is not cosmetic: IncrementCardStat writes nothing at all unless the card
-    # the console holds is that type [decomp:src/mystery_gift.c:461], so a card that wants the
-    # battle and trade counters has to declare it. CARD_TYPE_STAMP belongs to a rally and is
-    # chosen by the rally compiler, not here.
+    # IncrementCardStat writes nothing unless the held card is CARD_TYPE_LINK_STAT
+    # [decomp:src/mystery_gift.c:461]. CARD_TYPE_STAMP is chosen by the rally compiler.
     card_type: int = CARD_TYPE_GIFT
     send_type: int = SEND_TYPE_DISALLOWED
     default_flag_id: int = 1003
@@ -352,14 +350,12 @@ class WonderGift:
     event: EventSpec
     delivery: DeliveryPlan
     completed_message: str = DEFAULT_COMPLETED_MESSAGE
-    # A packed BattleTowerEReaderTrainer to push in the same session [ereader_trainer.py]; the
-    # card and its script are delivered exactly as for any other gift.
+    # A packed BattleTowerEReaderTrainer pushed in the same session [ereader_trainer.py].
     trainer: bytes | None = None
-    # Assembled Mystery Event bytecode [mystery_event.py], run by the console at the Mystery Gift
-    # menu right after the card is saved. Its status comes back to us as MG_LINKID_RESPONSE.
+    # Mystery Event bytecode [mystery_event.py], run right after the card is saved; its status comes
+    # back as MG_LINKID_RESPONSE.
     mevent: bytes | None = None
-    # build -> this gift for that cartridge, when its bytes carry a build address [builds.py];
-    # None when they are the same on every build.
+    # build -> this gift for that cartridge when its bytes carry a build address [builds.py].
     for_build: object = field(default=None, compare=False, repr=False)
 
 
@@ -391,10 +387,8 @@ def _validate_plain_text(text, path, *, max_encoded=None):
         _fail(path, f"text encodes to {len(encoded)} bytes; maximum is {max_encoded}")
 
 
-# The placeholders the field text engine substitutes at print time. 0xFD introduces one and the
-# byte after it selects the source [decomp:charmap.txt:334]; STR_VAR_1..3 are gStringVar1..3, which
-# `buffernumberstring` writes a decimal number into [ScrCmd_buffernumberstring, src/scrcmd.c:1678].
-# {PLAYER} was the only one supported until the seed-reading script needed to print a number.
+# Field text placeholders: 0xFD then a source byte [decomp:charmap.txt:334]; STR_VAR_1..3 are
+# gStringVar1..3, which `buffernumberstring` fills [src/scrcmd.c:1678].
 MESSAGE_TOKENS = {
     "{PLAYER}": b"\xFD\x01",
     "{STR_VAR_1}": b"\xFD\x02",
@@ -729,8 +723,8 @@ def validate_definition(definition, *, flag_id=None):
     return definition
 
 
-METLOC_FATEFUL_ENCOUNTER = 0xFF   # a #define in the generator template, so not version-bound
-                                  # [decomp:src/data/region_map/region_map_sections.constants.json.txt]
+# Not version-bound [decomp:src/data/region_map/region_map_sections.constants.json.txt].
+METLOC_FATEFUL_ENCOUNTER = 0xFF
 MUS_OBTAIN_ITEM = 258
 
 
@@ -893,10 +887,8 @@ def _emit_condition_branch(builder, condition, true_label, false_label, prefix):
         raise AssertionError(type(condition))
 
 
-# The slot the new mon lands in is the party count BEFORE it is given, which is what the official
-# Surf Pichu script reads with `specialvar ... CalculatePlayerPartyCount` [data/mystery_event_msg.s:46].
-# `getpartysize` is the same call without a version-bound special id, but it answers in VAR_RESULT and
-# `givemon` overwrites VAR_RESULT with its own result - so the count has to be saved first.
+# The new mon's slot is the party count before the give [data/mystery_event_msg.s:46], saved first
+# because `givemon` overwrites VAR_RESULT.
 _FATEFUL_SLOT_VAR = _VAR_0x8002
 
 
@@ -906,17 +898,9 @@ def _save_party_slot():
 
 
 def _mark_fateful_encounter():
-    """The pair the official script emits together: the bit, and the met location that reads as one.
-
-    TRAP: `ScrCmd_setmonmodernfatefulencounter` does NOT bounds-check its index - it is a plain
-    `SetMonData(&gPlayerParty[VarGet(...)], ...)` [decomp:src/scrcmd.c:2239], unlike
-    `setmonmove`, whose helper clamps anything above PARTY_SIZE to the last mon
-    [ScriptSetMonMoveSlot, src/script_pokemon_util.c:144]. So LAST_PARTY_MON_INDEX (7) must NOT be
-    handed to it: that writes 100 bytes past the party. The real slot is used instead, and the
-    caller's full-party guard is what keeps it inside 0..5 - a party of 6 jumps to the failure
-    label before the mon is given, so a mon sent to the PC is never marked either.
-    `setmonmetlocation` does check [`:2261`], and is passed the same var for the same reason.
-    """
+    """The bit and the met location the official script emits. `setmonmodernfatefulencounter` does
+    not bounds-check its index [decomp:src/scrcmd.c:2239]: pass the real slot, never
+    LAST_PARTY_MON_INDEX; the caller's full-party guard keeps it in 0..5 (docs/frlg_gift.md)."""
     return (bytes([_OP_SETMONMODERNFATEFULENCOUNTER]) + _u16(_FATEFUL_SLOT_VAR)
             + bytes([_OP_SETMONMETLOCATION]) + _u16(_FATEFUL_SLOT_VAR)
             + bytes([METLOC_FATEFUL_ENCOUNTER]))
@@ -1012,9 +996,8 @@ def _failure_message(action):
     if isinstance(action, (GivePokemon, GiveEgg)):
         if action.failure_message:
             return action.failure_message
-        # Without moves a full party is not a failure at all - the mon goes to the PC, and only a
-        # full PC reaches the label. Moves and fateful_encounter both need the mon to be IN the
-        # party, so both emit the party-size guard, and then a full party is what the player hit.
+        # Without moves a full party sends the mon to the PC; moves and fateful_encounter need it in
+        # the party, so both emit the party-size guard.
         needs_party = bool(action.moves) or action.fateful_encounter
         return DEFAULT_PARTY_FULL_MESSAGE if needs_party else DEFAULT_STORAGE_FULL_MESSAGE
     if isinstance(action, RequireSpecialResult):
@@ -1274,24 +1257,8 @@ def _compile_rally(definition, flag_id):
 
 def build_bound_script(actions, *, slug="bound"):
     """Composer actions -> a standalone field script, the kind `initramscript` binds to an object.
-
-    `build_talk_script` below is this with only Message allowed. Everything the delivery plan can do
-    - give an item, give a mon, show a sprite, start a battle, read a special - is the same bytecode
-    running in the same interpreter out of the same `gSaveBlock1Ptr->ramScript.data.script`, so the
-    only thing that was missing was somewhere to put it that is not a DeliveryPlan.
-
-    WHAT IS DELIBERATELY NOT HERE: the stage cursor, the receipt flag and the completion bookkeeping.
-    A delivery plan is resumable because the delivery man can be talked to again mid-sequence and
-    must not repeat what he already gave. A bound script has no such contract - it ends in `end` and
-    not `endram`, so the binding survives and the player can simply run the whole thing again
-    [rng_script's header]. Anything that must happen once needs its own flag, as an
-    explicit SetVar or a condition, rather than getting one by accident.
-
-    THE TRAP THAT GOVERNS ALL OF THIS: a Wonder Card and an NPC-bound script share one RAM script
-    slot, so installing this takes the card's slot and the console then reports it holds no card
-    [ValidateSavedWonderCard requires ValidateRamScript, decomp:src/mystery_gift.c:186]. The card is
-    intact; the menu will not show it. Sending any ordinary card afterwards takes the slot back.
-    """
+    No stage cursor or receipt flag: it ends in `end`, so it can run again. Trap: it takes the card's
+    RAM script slot, so the menu shows no card [decomp:src/mystery_gift.c:186]."""
     builder = _FieldScriptBuilder()
     builder.emit(bytes([_OP_SETVADDRESS])
                  + _RAM_SCRIPT_VIRTUAL_BASE.to_bytes(4, "little"))
@@ -1317,12 +1284,7 @@ def build_bound_script(actions, *, slug="bound"):
 
 
 def build_talk_script(messages, *, slug="talk"):
-    """A minimal field script: lock, face the player, say each line, release.
-
-    The Mystery Event `initramscript` opcode binds a field script to any map and object, and what it
-    binds is exactly the bytecode a delivery script is made of -- same interpreter, same
-    `setvaddress` base, because both end up in `gSaveBlock1Ptr->ramScript.data.script`.
-    """
+    """A minimal field script: lock, face the player, say each line, release."""
     builder = _FieldScriptBuilder()
     builder.emit(bytes([_OP_SETVADDRESS])
                  + _RAM_SCRIPT_VIRTUAL_BASE.to_bytes(4, "little"))
@@ -1336,56 +1298,26 @@ def build_talk_script(messages, *, slug="talk"):
     return script
 
 
-# --- the seed-reading script --------------------------------------------------------------------
-
 SEED_READ_DEFAULT_LINES = ("RNG HI {STR_VAR_2}\n"
                            "RNG LO {STR_VAR_1}",)
 
 
 def _copybyte(dest, src):
-    """`copybyte` (0x15): one byte from any absolute address to any absolute address.
-
-        u8 *dest = (u8 *)ScriptReadWord(ctx);
-        *dest = *(const u8 *)ScriptReadWord(ctx);
-    [decomp:src/scrcmd.c:329] - DESTINATION FIRST, then source. It returns FALSE.
-    """
+    """`copybyte` (0x15): dest first, then source [decomp:src/scrcmd.c:329], returns FALSE."""
     return bytes([_OP_COPYBYTE]) + int(dest).to_bytes(4, "little") + int(src).to_bytes(4, "little")
 
 
 def _buffernumberstring(string_var_index, var_id):
-    """`buffernumberstring` (0x83): a var's value as decimal into gStringVar1..3.
-
-        u8 stringVarIndex = ScriptReadByte(ctx);
-        u16 num = VarGet(ScriptReadHalfword(ctx));
-    [decomp:src/scrcmd.c:1678]. It takes a VAR ID, not an address, so this half needs no address
-    hunt - `VarGet` resolves 0x8000 through gSpecialVars itself. The number is a **u16**, which is
-    why the 32-bit seed takes two of these.
-    """
+    """`buffernumberstring` (0x83): a var's u16 value as decimal into gStringVar1..3
+    [decomp:src/scrcmd.c:1678]; takes a var id, not an address."""
     return bytes([_OP_BUFFERNUMBERSTRING, int(string_var_index)]) + _u16(var_id)
 
 
 def build_seed_read_script(*, address=None, var_address=None, lines=SEED_READ_DEFAULT_LINES,
                            slug="rng-seed-reader"):
-    """A field script that PRINTS gRngValue and changes nothing.
-
-    Four `copybyte`s move the four bytes of gRngValue into gSpecialVar_0x8000 and 0x8001 - which
-    are adjacent u16s, so the four destinations are var_address + 0..3 - and two
-    `buffernumberstring`s turn those into the decimal halves the message prints.
-
-    **THE READ IS ATOMIC AND THAT IS NOT AN ACCIDENT.** The RNG never idles, so four byte copies
-    spread over four frames would tear: the halves would come from different states and the
-    reassembled word would be a value the console never held. `copybyte` and `buffernumberstring`
-    both return FALSE, and the field engine runs commands until one returns TRUE
-    [decomp:src/script.c], so all six run back to back inside a single frame. Nothing that yields
-    may be emitted between the first copybyte and the last buffernumberstring, and a test asserts
-    none is - the same rule, for the same reason, as the seed-and-generate script.
-
-    It ends with `end` (0x02), not `endram` (0x0d), so the binding survives and the NPC can be
-    asked again - which is what makes a miss cost nothing.
-
-    Nothing here writes gRngValue, the save, or any Pokemon. The one write is installing the
-    script, which is a Wonder Card session like any other.
-    """
+    """A field script that prints gRngValue and changes nothing. The read is atomic: `copybyte` and
+    `buffernumberstring` return FALSE, so all six run in one frame [decomp:src/script.c]; nothing
+    that yields may sit between them (docs/frlg_rng.md)."""
     address = rom_map.GRNG_VALUE if address is None else int(address)
     var_address = (rom_map.G_SPECIAL_VAR_0X8000 if var_address is None else int(var_address))
     builder = _FieldScriptBuilder()
@@ -1405,12 +1337,9 @@ def build_seed_read_script(*, address=None, var_address=None, lines=SEED_READ_DE
     return script
 
 
-# --- the self-timing rate probe -------------------------------------------------------------------
-# `ScrCmd_delay` yields and resumes after an exact number of frames [decomp:src/scrcmd.c:651], so a
-# script that reads gRngValue, delays N frames and reads it again measures turns-per-frame with no
-# clock in it: lcg.distance gives the numerator exactly and N is the denominator exactly. Every
-# earlier attempt divided by a hand-timed elapsed, and one of them was circular. docs/frlg_rng.md.
-RATE_PROBE_DEFAULT_FRAMES = 600         # ~10 s at 59.7275 Hz; the seconds are commentary, not data
+# `ScrCmd_delay` yields for an exact number of frames [decomp:src/scrcmd.c:651]: two reads N frames
+# apart measure turns-per-frame with no clock (docs/frlg_rng.md).
+RATE_PROBE_DEFAULT_FRAMES = 600  # ~10 s at 59.7275 Hz
 
 RATE_PROBE_DEFAULT_LINES = ("FIRST HI {STR_VAR_2}\n"
                             "FIRST LO {STR_VAR_1}",
@@ -1420,24 +1349,9 @@ RATE_PROBE_DEFAULT_LINES = ("FIRST HI {STR_VAR_2}\n"
 
 def build_seed_rate_script(*, address=None, var_address=None, frames=RATE_PROBE_DEFAULT_FRAMES,
                            lines=RATE_PROBE_DEFAULT_LINES, lock=True, slug="rng-rate-probe"):
-    """A field script that reads gRngValue, waits an EXACT number of frames, and reads it again.
-
-    The answer is two 32-bit states and a frame count that is not an estimate, so
-    `rng_script.measure_rate` divides one exact number by another. This is the first measurement of
-    the overworld rate with no clock in it; only the Mystery Gift menu's is measured.
-
-    WHAT IT ACTUALLY MEASURES, stated precisely because the distinction is the whole reason the old
-    numbers were wrong: the rate while a FIELD SCRIPT IS DELAYING, with the player locked. That is
-    not self-evidently the rate while the player is walking around, and it must not be reported as
-    if it were. It IS exactly the rate that a script which waits for a target state would run at -
-    the design where the game does the aiming instead of a human with a stopwatch - so it is the
-    number that design needs. Pass `lock=False` to measure with the player unlocked and compare;
-    changing one variable at a time is the point.
-
-    Both reads are atomic for the same reason the single read is: four `copybyte`s and nothing
-    between them. `delay` sits BETWEEN the two reads deliberately - it is the only command here
-    that yields, and a test asserts that it is.
-    """
+    """A field script that reads gRngValue, waits an exact number of frames, and reads it again. It
+    measures the rate while a field script delays with the player locked (`lock=False` unlocks);
+    `delay` is the only yielding command, between the two atomic reads."""
     address = rom_map.GRNG_VALUE if address is None else int(address)
     var_address = (rom_map.G_SPECIAL_VAR_0X8000 if var_address is None else int(var_address))
     frames = int(frames)
@@ -1466,16 +1380,9 @@ def build_seed_rate_script(*, address=None, var_address=None, frames=RATE_PROBE_
     return script
 
 
-# --- the draw counter: how many turns the generation itself costs ---------------------------------
-# `setwildbattle` and `copybyte` both return FALSE, so a read, the generation and a second read run
-# back to back inside one frame and none of the 2-per-frame overworld consumption falls between them.
-# `distance(before, after)` is therefore exactly what CreateScriptedWildMon took, which measures two
-# things: that the offset between a reading and the generation is zero by construction, and the draw
-# count itself (Method 1 says four; a stray draw shows up here as a 5 or a 6).
-#
-# It needs no Pokemon caught. `dowildbattle` calls ScriptContext_Stop [decomp:src/scrcmd.c:1945], so
-# nothing can be printed after the battle - which is why both readings and both messages come first,
-# and why the player's button press sits after the measured interval where it cannot reach it.
+# `setwildbattle` and `copybyte` return FALSE, so read, generate, read run in one frame and the
+# distance is exactly CreateScriptedWildMon's draws. `dowildbattle` stops the script
+# [decomp:src/scrcmd.c:1945], so both readings print first.
 DRAW_COUNT_DEFAULT_LINES = ("BEFORE HI {STR_VAR_2}\n"
                             "BEFORE LO {STR_VAR_1}",
                             "AFTER HI {STR_VAR_2}\n"
@@ -1485,10 +1392,7 @@ DRAW_COUNT_DEFAULT_LINES = ("BEFORE HI {STR_VAR_2}\n"
 def build_draw_count_script(*, species, level, item=0, address=None, var_address=None,
                             lines=DRAW_COUNT_DEFAULT_LINES, slug="rng-draw-count"):
     """Read gRngValue, generate a scripted wild mon, read gRngValue again, print both, then fight.
-
-    The two readings bracket the generation and nothing else: no yielding command sits between
-    them, so no frame passes and no per-frame draw is counted. A test asserts that.
-    """
+    No yielding command sits between the two readings."""
     address = rom_map.GRNG_VALUE if address is None else int(address)
     var_address = (rom_map.G_SPECIAL_VAR_0X8000 if var_address is None else int(var_address))
     if len(lines) != 2:
@@ -1514,10 +1418,8 @@ def build_draw_count_script(*, species, level, item=0, address=None, var_address
 
 
 def compile_definition(definition, *, flag_id=None, build=None):
-    """Returns one MysteryGiftDistribution for a GiftSpec, or ``{slot_slug: distribution}`` for a rally.
-
-    `build` is the cartridge the bytes are for [builds.py]; None is French FireRed.
-    """
+    """-> one MysteryGiftDistribution for a GiftSpec, or ``{slot_slug: distribution}`` for a rally.
+    `build` is the cartridge the bytes are for [builds.py]; None is French FireRed."""
     if build is not None and definition.for_build is not None:
         from pokeldn.frlg.rom import builds
         definition = definition.for_build(builds.resolve(build))

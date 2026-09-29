@@ -9,7 +9,7 @@ import time
 from pokeldn.ldn import beacon, transport
 
 
-# Captured from a native FireRed Direct Corner leader; undocumented record fields must stay verbatim.
+# Captured from a native FireRed Direct Corner leader; unknown record fields stay verbatim.
 CAPTURED_TRADE_BEACON = bytes.fromhex(
     "005c160058000000000000000000000000000000000101000000050143686173650000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000686c5a68656c76623476354358455a232323232368642323232323232323"
 )
@@ -90,13 +90,9 @@ def build_trade_app_data(profile, host_session_id):
 
 
 def _build_activity_app_data(profile, host_session_id, activity, trade_board=None):
-    """The advertisement every "we are a FRLG host doing X" beacon shares; only `activity` differs.
-
-    The console's listen task keeps a candidate only if IsPartnerActivityAcceptable matches the
-    activity against the accept list of the link group it is searching in
-    [src/data/union_room.h:398-453; union_room.c:1590], so this byte alone decides which of the
-    console's menus we are visible in.
-    """
+    """The advertisement every FRLG host beacon shares; only `activity` differs. The console keeps a
+    candidate only if IsPartnerActivityAcceptable finds the activity in its link group's accept
+    list [src/data/union_room.h:398-453; union_room.c:1590] (docs/frlg_link.md)."""
     app_data = bytearray(beacon.mutate_beacon(
         CAPTURED_TRADE_BEACON, name=profile.discovery_name,
         trainer_id=profile.discovery_trainer_id))
@@ -118,9 +114,8 @@ def _build_activity_app_data(profile, host_session_id, activity, trade_board=Non
     search_word |= activity & beacon.SEARCH_ACTIVITY_MASK
     record[offset:offset + 2] = search_word.to_bytes(2, "little")
     if trade_board is not None:
-        # (species, level, wanted_type): what the console's trading board lists us with
-        # [union_room.c:3400]. IsPartnerActivityIncompatible compares all three at connect time
-        # [link_rfu_2.c:2949], so they must not change while we host.
+        # The trading board lists these [union_room.c:3400]; IsPartnerActivityIncompatible compares
+        # all three at connect time [link_rfu_2.c:2949], so they stay fixed while hosting.
         record = bytearray(beacon.set_trade_board(record, *trade_board))
 
     inactive = bytes(app_data[:beacon.PIA_HDR]) + beacon.b85_encode(bytes(record))
@@ -128,28 +123,19 @@ def _build_activity_app_data(profile, host_session_id, activity, trade_board=Non
 
 
 def build_union_room_app_data(profile, host_session_id, activity=None, trade_board=None):
-    """Advertisement for the Union Room (the middle NPC on Pokemon Center 2F).
-
-    The trade and Wonder Card beacons are invisible there: IsPartnerActivityAcceptable drops every
-    activity but the ones the room's accept lists carry [src/data/union_room.h:398-453]. The default
-    is the bare IN_UNION_ROOM a console standing in the room accepts and connects to (u03).
-    """
+    """Advertisement for the Union Room (the middle NPC on Pokemon Center 2F); the default is the
+    bare IN_UNION_ROOM a console in the room accepts [src/data/union_room.h:398-453]."""
     if activity is None:
-        # IN_UNION_ROOM | ACTIVITY_NONE: IsPartnerActivityIncompatible [link_rfu_2.c:2933] requires
-        # partner->activity == IN_UNION_ROOM exactly, so the trade intent must NOT be advertised.
+        # IsPartnerActivityIncompatible [link_rfu_2.c:2933] requires partner->activity ==
+        # IN_UNION_ROOM exactly, so no trade intent bits.
         activity = beacon.IN_UNION_ROOM
     return _build_activity_app_data(profile, host_session_id, activity,
                                     trade_board=trade_board)
 
 
 def build_colosseum_app_data(profile, host_session_id):
-    """Direct Corner -> Colosseum -> Single Battle -> JOIN, the cable-club battle.
-
-    The trade beacon is invisible on that screen: the console searches with
-    LINK_GROUP_SINGLE_BATTLE, whose accept list holds ACTIVITY_BATTLE_SINGLE alone
-    [sAcceptedActivityIds_SingleBattle, src/data/union_room.h:398]. Nothing else about the
-    advertisement changes - the activity byte is the whole difference between the two menus.
-    """
+    """Direct Corner -> Colosseum -> Single Battle -> JOIN: LINK_GROUP_SINGLE_BATTLE accepts
+    ACTIVITY_BATTLE_SINGLE alone [sAcceptedActivityIds_SingleBattle, src/data/union_room.h:398]."""
     return _build_activity_app_data(profile, host_session_id,
                                     beacon.ACTIVITY_BATTLE_SINGLE)
 
@@ -161,14 +147,8 @@ def build_wonder_card_app_data(profile, host_session_id):
 
 
 def build_wonder_news_app_data(profile, host_session_id):
-    """Mystery Gift -> Wonder News -> Friend.
-
-    The Friend listen task filters on exactly ACTIVITY_WONDER_NEWS
-    [sAcceptedActivityIds_WonderNews, src/data/union_room.h:406], so a Wonder Card beacon is
-    invisible on this screen and vice versa. The compatibility hasNews bit is NOT consulted here:
-    HasWonderCardOrNewsByLinkGroup [union_room.c:3777] is only reached from
-    Task_ListenForWonderDistributor, the Wireless path.
-    """
+    """Mystery Gift -> Wonder News -> Friend, which accepts ACTIVITY_WONDER_NEWS alone
+    [sAcceptedActivityIds_WonderNews, src/data/union_room.h:406] (docs/frlg_gift.md)."""
     return _build_activity_app_data(profile, host_session_id,
                                     beacon.ACTIVITY_WONDER_NEWS)
 
@@ -187,8 +167,8 @@ def activate_trade_app_data(app_data, host_session_id):
 
 
 class NullBeaconInjector:
-    """The injector for a transport with no radio. An ldn_mitm host advertises by answering a scan
-    on port 11452, so there is no 802.11 beacon to inject and nothing for this to do."""
+    """Injector for a transport with no radio: an ldn_mitm host advertises by answering a scan on
+    port 11452."""
 
     def __init__(self, monitor=None, ap=None, channel=1, ssid_length=32, dtim_period=3, log=print):
         self.error = None
@@ -202,7 +182,7 @@ class NullBeaconInjector:
 
 
 class BeaconInjector:
-    """Some Wi-Fi drivers never beacon the AP themselves; this thread injects 802.11 beacons from userspace."""
+    """Injects 802.11 beacons from userspace for drivers that never beacon the AP themselves."""
 
     def __init__(self, monitor="ldn-mon", ap="ldn", channel=1,
                  ssid_length=32, dtim_period=3, log=print):

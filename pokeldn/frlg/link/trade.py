@@ -1,6 +1,6 @@
-"""JOINER trade FSM: a reactive Follower that supplies blocks on SEND_BLOCK_REQ, pushes LINKCMD blocks and reacts
-to SET_MONS -> START -> CONFIRM_FINISH; it never emits Leader broadcasts [trade.c:1637-1666]. Block supply is
-keyed by REQ size + phase: 200 -> LinkPlayerBlock then party #1-#3, 100 -> trainer card, 220 -> mail, 40 -> ribbons."""
+"""Joiner trade FSM: a reactive Follower that supplies blocks on SEND_BLOCK_REQ, pushes LINKCMD
+blocks and reacts to SET_MONS -> START -> CONFIRM_FINISH; it never emits Leader broadcasts
+[trade.c:1637-1666]. By REQ size: 200 LinkPlayerBlock then party, 100 card, 220 mail, 40 ribbons."""
 
 from pokeldn.frlg.link import linkplayer
 from pokeldn.frlg.save import mon as monmod
@@ -32,8 +32,8 @@ COUNT_PARTY = 17
 COUNT_MAIL = 19         # fixed 220B mail buffer
 COUNT_RIBBON = 4        # fixed 40B giftRibbons buffer
 
-# A cleared struct Mail is not all-zero (ClearMailStruct: 0xFFFF words, EOS name, species BULBASAUR);
-# BufferTradeParties sends six 34-byte records plus four bytes through the fixed 220-byte request.
+# A cleared struct Mail is not all-zero (ClearMailStruct: 0xFFFF words, EOS name, BULBASAUR);
+# BufferTradeParties sends six 34-byte records plus four bytes through the 220-byte request.
 MAIL_STRUCT_SIZE = 34
 MAIL_COUNT = 6
 
@@ -53,13 +53,13 @@ PLAYER_MON_INVALID = 0          # our selected mon is the last alive mon
 BOTH_MONS_VALID = 1
 PARTNER_MON_INVALID = 2         # host offered an (illegitimate) Deoxys/Mew
 
-# CheckValidityOfTradeMons refuses a Deoxys/Mew without the fateful-encounter flag [trade.c:1966]; the flag
-# is not decodable offline, so refusing any offered Deoxys/Mew is opt-in.
+# CheckValidityOfTradeMons refuses a Deoxys/Mew without the fateful-encounter flag [trade.c:1966];
+# the flag is not decodable offline, so refusing any offered Deoxys/Mew is opt-in.
 SPECIES_MEW = 151
 SPECIES_DEOXYS = 410
 
-# DoTradeAnim_Wireless stand-in: wire-anchored START_TRADE -> READY_FINISH = 32.4s ~= 1935 frames. Content-
-# dependent; the early-arrival guard keeps the FSM correct for any value.
+# DoTradeAnim_Wireless stand-in: START_TRADE -> READY_FINISH measured 32.4 s, about 1935 frames; the
+# early-arrival guard keeps the FSM correct for any value.
 DEFAULT_ANIM_FRAMES = 1935
 
 # QueueAction(180) delay before READY_CANCEL_TRADE on an invalid-mon verdict [trade.c:1989/2000].
@@ -69,11 +69,11 @@ S1_LINK, S4_PARTY, S5_SELECT, S6_CONFIRM, S7_ANIM, S8_DONE, S_CANCEL = \
     "S1_LINK", "S4_PARTY", "S5_SELECT", "S6_CONFIRM", "S7_ANIM", "S8_DONE", "S_CANCEL"
 
 # Child-initiated standby points [link_rfu_2.c:1566-1573]: (b) menu->scene seam [trade.c:2159-2166],
-# (c) post-trade save chain [trade_scene.c:2566-2725], (d) cancel-exit [trade.c:2117-2132]. A strict-ROM
-# host parks in the leader branch waiting for the child at each; the child must initiate.
+# (c) post-trade save chain [trade_scene.c:2566-2725], (d) cancel-exit [trade.c:2117-2132]. A
+# strict-ROM host waits in the leader branch for the child at each.
 
-# BLOCK_REQ_* reqtype selectors [include/link.h:111-115]: word0 low byte of a SEND_BLOCK_REQ, sizes OUR
-# reply block [link.c:185-190; link_rfu_2.c:1172-1173].
+# BLOCK_REQ_* [include/link.h:111-115]: word0 low byte of a SEND_BLOCK_REQ, sizes our reply
+# [link.c:185-190; link_rfu_2.c:1172-1173].
 BLOCK_REQ_SIZE_NONE = 0     # identical to 200
 BLOCK_REQ_SIZE_200 = 1      # LinkPlayer / party blocks
 BLOCK_REQ_SIZE_100 = 2      # trainer card (Task_ExchangeCards entry pull)
@@ -82,50 +82,48 @@ BLOCK_REQ_SIZE_40 = 4       # giftRibbons
 REQ_SIZE = {BLOCK_REQ_SIZE_NONE: 200, BLOCK_REQ_SIZE_200: 200, BLOCK_REQ_SIZE_100: 100,
             BLOCK_REQ_SIZE_220: 220, BLOCK_REQ_SIZE_40: 40}
 
-# The native child emits each READY_EXIT_STANDBY round exactly ONCE and idles; Pia reliable retransmits it.
-# Repeating the count keeps the host in a round it already completed, and a flood jams the reliable window.
+# The native child emits each READY_EXIT_STANDBY round once and idles; Pia reliable retransmits it.
+# Repeating keeps the host in a completed round, and a flood jams the reliable window.
 WARP_STANDBY_EMITS = 1
 
-# After both players sit the child drives two more standby rounds (count=2, 3) before the host pulls the
-# party; POST_SEAT_STANDBY_DELAY held-keys ticks let our READY go out first.
+# After both sit the child drives two more standby rounds (count=2, 3) before the host pulls the
+# party; the delay lets our READY go out first.
 POST_SEAT_STANDBY_DELAY = 20
 
 # Post-seat standby is mutual: advance count=2 -> 3 only after the host reached count=2, else its
 # readyExitStandby FSM desyncs (in-game comms error). WARP4_WATCHDOG is the offline backstop only.
 WARP4_WATCHDOG = 180
 
-# The host paces the save barriers by its real LinkFullSave writes; bursting the next round immediately races
-# its save FSM. Only the first round host wait [case 100] has a 180f timeout, later rounds have none.
+# The host paces save barriers by its LinkFullSave writes; bursting the next round races its save
+# FSM. Only the first round's host wait [case 100] has a 180f timeout.
 SAVE_BARRIER_GAP = 60
-# Entry warp barriers re-arm on EMITTED slots and the leader goes silent while it waits, so the gap must be
-# short (the save chain keeps 60: there the host is actively echoing).
+# ENTRY_BARRIER_GAP: entry warp barriers re-arm on emitted slots and the leader goes silent while it
+# waits, so the gap is short (the save chain keeps 60: there the host echoes).
 HOST_WALK_QUIET_FRAMES = 20  # host held-key frames with no DPAD code before we treat it as parked
 SEAT_HOST_READY_MAX = 1200  # ~20s safety bound on waiting for the host to reach its chair
 ENTRY_BARRIER_GAP = 6
-# After count=3 the native child idles ~75 slots and the leader pulls the party off that idle run, so a
-# fresh count=3 must be spaced wider than that.
+# After count=3 the native child idles ~75 slots and the leader pulls the party off that run, so a
+# fresh count=3 is spaced wider.
 POST_SEAT_REARM_GAP = 90
-# 0 = unpaced. Pacing compounds with the credit pacer and the LinkPlayer exchange has a tight budget; the
-# real limit is not fragments-per-second alone, so do not re-tune this against a single run.
+# 0 = unpaced. Pacing compounds with the credit pacer and the LinkPlayer exchange has a tight
+# budget; do not re-tune this against a single run.
 JOINER_STREAM_GAP = 0
 
-# The host pauses up to ~1.8s between save barriers; the chain ends on host re-exchange (Phase M), this
-# only releases a truly vanished host.
+# The host pauses up to 1.8 s between save barriers; the chain ends on host re-exchange (Phase M),
+# this only releases a vanished host.
 SAVE_CHAIN_TIMEOUT = 600
 
-# Last-resort ribbons fallback. Must exceed the host's 0.3-1.8s save-write pauses between block pulls, else
-# the cancel-to-leave fires before the host's mail/ribbons and both sides deadlock.
+# Last-resort ribbons fallback. Must exceed the host's 0.3-1.8 s save-write pauses between block
+# pulls, else the cancel-to-leave fires before its mail/ribbons and both sides deadlock.
 BUFFERTRADE_SETTLE = 600
-# Frames before selecting again after a PARTNER/PLAYER_CANCEL_TRADE: both sides return to the trade menu
-# [trade.c:2094-2113 CB_HandleTradeCanceled -> CB_MAIN_MENU] and the leader waits for both to select afresh;
-# this stands in for the A-press that dismisses the cancel message.
+# After a PARTNER/PLAYER_CANCEL_TRADE both sides return to the trade menu [trade.c:2094-2113] and
+# the leader waits for both to select afresh; stands in for the A-press dismissing the message.
 RESELECT_DELAY = 60
 
 COUNT_TRAINER_CARD = 9      # ceil(100/12)
 
-# Union-room -> trade-center entry phases, ONE-SHOT per session (the post-trade loop re-enters
-# CB2_StartCreateTradeMenu, not the seat barrier [trade_scene.c:2752]). P0 standby [union_room.c:1975-2013],
-# P1 card pull [union_room.c:1753-1789], P2 seat held-keys [cable_club.c:827-868], P3 standby
+# Entry phases, one-shot per session [trade_scene.c:2752]: P0 standby [union_room.c:1975-2013], P1
+# card pull [union_room.c:1753-1789], P2 seat [cable_club.c:827-868], P3 standby
 # [cable_club.c:910-942], P4 trade menu [trade.c:826], P5 the trade FSM owns the link.
 P0_WARP_QUIESCE_1 = "P0_WARP_QUIESCE_1"
 P1_CARD_EXCHANGE = "P1_CARD_EXCHANGE"
@@ -148,8 +146,8 @@ def linkcmd_block(cmd, cursor=0):
 
 
 def resolve_offered_slots(offered_slots, trade_slot, trades, party_size=None):
-    """Slots MUST be distinct: TradeMons swaps the received mon into the offered slot [trade_scene.c:1054-1083],
-    so re-offering a slot would give away a just-received mon."""
+    """Slots must be distinct: TradeMons swaps the received mon into the offered slot
+    [trade_scene.c:1054-1083], so re-offering one would give away a just-received mon."""
     if offered_slots is not None:
         slots = list(offered_slots)
         if len(slots) != trades:
@@ -166,21 +164,21 @@ def resolve_offered_slots(offered_slots, trade_slot, trades, party_size=None):
 
 
 class EntryPhase:
-    """One-shot, monotonic record of the entry progression (P0..P5); it generates no traffic. P1 is recorded
-    only if the card pull is actually observed."""
+    """Monotonic record of the entry phases P0..P5; generates no traffic. P1 only if the card pull
+    is observed."""
 
     def __init__(self, log=lambda *a: None):
         self.phase = P0_WARP_QUIESCE_1
         self.phase_history = [P0_WARP_QUIESCE_1]
-        self.card_pulled = False        # host issued a BLOCK_REQ_SIZE_100 (we were pulled for a card)
-        self.card_supplied = False      # we staged/streamed our 100B card in reply
-        self.host_card = None           # the host's 100B trainer card (count=9 block), if received
-        # seat_phase_over latches at P4: Task_StartWirelessTrade case 0 clears the keys callback [cable_club.c:918]
-        # before CB2_CreateTradeMenu, so held keys are off before any party traffic - strictly earlier than P5.
+        self.card_pulled = False
+        self.card_supplied = False
+        self.host_card = None
+        # Latches at P4: Task_StartWirelessTrade case 0 clears the keys callback [cable_club.c:918]
+        # before CB2_CreateTradeMenu, so held keys stop before any party traffic.
         self.seat_phase_over = False
-        self.complete = False           # advanced to P5: entry done, trade FSM owns the link
+        self.complete = False
         self.log = log
-        self.info = getattr(log, "info", log)   # clean milestone sink (default-mode narration)
+        self.info = getattr(log, "info", log)
 
     def _advance_to(self, phase):
         if ENTRY_PHASES.index(phase) <= ENTRY_PHASES.index(self.phase):
@@ -233,13 +231,13 @@ class TradeEngine:
     def __init__(self, party, trade_slot=1, link_player=None,
                  anim_delay=None, mpid=1, decline=False, refuse_partner_deoxys_mew=False,
                  trades=1, offered_slots=None, trust_pia=False, log=lambda *a: None):
-        """mpid MUST be 1 (the Follower / RIGHT seat). offered_slots must be distinct (see resolve_offered_slots).
-        Each round replays the full exchange -> select -> confirm -> anim -> commit; after the last, cancel-to-leave."""
+        """mpid must be 1 (the Follower, right seat). Each round replays exchange -> select ->
+        confirm -> anim -> commit; after the last, cancel-to-leave."""
         assert mpid == 1, f"sim must be the RIGHT-seat Follower (mpId==1), got mpId={mpid}"
         self.party = list(party)
         self.trade_slot = trade_slot
         self.mpid = mpid
-        # Cosmetic chair id (Chair1 [data/scripts/cable_club.inc:644-649]); no emitted byte may depend on it.
+        # Chair1 [data/scripts/cable_club.inc:644-649]; no emitted byte may depend on it.
         self.cosmetic_seat = 1
         self.lp = link_player or linkplayer.LinkPlayer()
         self.anim_delay = DEFAULT_ANIM_FRAMES if anim_delay is None else anim_delay
@@ -248,7 +246,7 @@ class TradeEngine:
         # trust_pia: fire-and-forget fragments relying on Pia's reliable layer (see block.py).
         self.trust_pia = trust_pia
         self.log = log
-        self.info = getattr(log, "info", log)   # clean milestone sink (default-mode narration)
+        self.info = getattr(log, "info", log)
 
         if not 1 <= trades <= 6:
             raise ValueError(f"trades must be 1..6, got {trades}")
@@ -257,26 +255,25 @@ class TradeEngine:
                                                    party_size=len(self.party))
         if any(s >= len(self.party) for s in self.offered_slots):
             raise ValueError(f"offered_slots {self.offered_slots} exceed party size {len(self.party)}")
-        self.round = 0                   # 0-based index of the current/next trade
-        self.received_mons = []          # one received Mon per completed trade, in order
-        self.leaving = False             # the configured trades are done; cancel-to-leave armed
-        self.requested_cancel = False    # REQUEST_CANCEL has been queued for the graceful leave
+        self.round = 0
+        self.received_mons = []
+        self.leaving = False
+        self.requested_cancel = False
         self.left_gracefully = False     # the host echoed *_CANCEL to our REQUEST_CANCEL
         self._offered = set()            # slots already given away (never re-offer)
         self.trade_slot = self.offered_slots[0]
 
         self.rx = block.BlockReceiver()
         self.sender = None
-        # Records every state entered (repeats collapsed) so the transient S8_DONE per commit is visible; must
-        # exist before the first `self.state =`.
+        # Every state entered, repeats collapsed; must exist before the first `self.state =`.
         self.state_history = []
         self.state = S1_LINK
 
-        # Persists across all N trades; answers barriers only on VBlanks the engine would otherwise idle.
+        # Persists across all trades; answers barriers only on VBlanks the engine would idle.
         self.barrier = barriermod.BarrierResponder(log=self.log)
 
         self.entry = EntryPhase(log=self.log)
-        # Cosmetic to the trade, but the host pulls it before the menu exists [union_room.c:1758-1759].
+        # Pulled before the menu exists [union_room.c:1758-1759].
         self.trainer_card = linkplayer.build_trainer_card(self.lp, wonder_card_id=0)
 
         self._lp_sent = False
@@ -284,70 +281,69 @@ class TradeEngine:
         self._party600 = monmod.build_player_party(self.party)
         self._party_blocks = monmod.party_blocks(self._party600)
 
-        # The host streams SEND_HELD_KEYS only once at its seat, so its first 0xBE00 is the "host in seat"
-        # signal; sitting before it sits into an empty room -> desync/black screen.
+        # The host's first 0xBE00 means it is in its seat; sitting before it sits into an empty room
+        # (desync, black screen).
         self._host_in_seat = False
-        self._host_ready = False          # host emitted READY (0x16) = its avatar seated -> we may sit
-        self._player_ids_seen = False     # logged/validated the host's SEND_PLAYER_IDS once
+        self._host_ready = False  # host READY (0x16): its avatar is seated
+        self._player_ids_seen = False
         self.host_link_player = None
         self._host_party = bytearray(monmod.PARTY_MON_SIZE * PARTY_SIZE)
         self._host_party_blocks = 0
         self.host_cursor = None
         self.received_mon = None
 
-        self._got_ribbons = False        # host streamed its giftRibbons = BufferTradeParties complete
-        self._bt_settle = 0              # IN frames since the last host block/REQ (offline ribbons fallback)
-        self._live = False               # set by the live sim: gate READY_TO_TRADE on full BufferTradeParties
+        self._got_ribbons = False  # giftRibbons seen: BufferTradeParties complete
+        self._bt_settle = 0  # offline ribbons fallback
+        self._live = False  # live: gate READY_TO_TRADE on the full BufferTradeParties
         self._selected = False
         self._reselect_wait = None      # frames until we may select again after a one-sided cancel
-        self._pending_push = None       # a LINKCMD block queued to send next
-        self._anim_wait = None          # frames remaining before READY_FINISH [S7]
-        self._finish_sent = False       # READY_FINISH has been emitted [S7 early-arrival guard]
+        self._pending_push = None
+        self._anim_wait = None  # [S7]
+        self._finish_sent = False  # [S7 early-arrival guard]
         self._pending_confirm = False   # CONFIRM_FINISH arrived before READY_FINISH; defer commit
-        self._confirmed = False         # confirm prompt processed (INIT_BLOCK / cancel decided) [S6]
-        self._cancel_wait = None        # frames remaining before a 180-frame READY_CANCEL [S6]
-        self._cancel_after_send = False # a cancel block is streaming; leave once it completes
-        self.commits = 0                # number of trades committed (== len(received_mons) when valid)
-        self._finish_sent_at_last_commit = False  # S7 invariant observable (READY_FINISH<commit)
+        self._confirmed = False  # [S6]
+        self._cancel_wait = None  # [S6]
+        self._cancel_after_send = False
+        self.commits = 0
+        self._finish_sent_at_last_commit = False
         self.done = False
         self.cancelled = False
 
-        # Child-initiated standby barriers [link_rfu_2.c:1566-1573]: (a)/(b) soft (selection/anim not stalled),
-        # (c)/(d) quiescent.
-        self._barrier_initiated_menu = False  # (a) trade-menu-entry standby initiated this round
-        self._barrier_initiated_seam = False  # (b) menu->scene-seam standby initiated this round
+        # Child-initiated standby barriers [link_rfu_2.c:1566-1573]: (a)/(b) soft, (c)/(d)
+        # quiescent.
+        self._barrier_initiated_menu = False  # (a)
+        self._barrier_initiated_seam = False  # (b)
         # Warp-quiesce standbys are session one-shots (not reset per round).
         self._barrier_initiated_warp1 = False  # post-LinkPlayer warp-quiesce (count 0)
         self._barrier_initiated_warp2 = False  # post-card warp-quiesce (count 1)
-        self._warp1_emits = 0           # NEW count-0 standby frames emitted (BOUNDED burst, not a flood)
-        self._warp1_regap = 0           # idle frames since the count-0 burst, before re-arming it (sustain)
-        self._warp2_emits = 0           # NEW count-1 standby frames emitted
-        self._warp2_regap = 0           # idle frames since the count-1 burst, before re-arming it (sustain)
-        self._warp3_emits = 0           # NEW count-2 standby frames (post-seat, warp into trade scene)
-        self._warp4_emits = 0           # NEW count-3 standby frames (post-seat)
+        self._warp1_emits = 0
+        self._warp1_regap = 0
+        self._warp2_emits = 0
+        self._warp2_regap = 0
+        self._warp3_emits = 0
+        self._warp4_emits = 0
         self._barrier_initiated_warp3 = False
         self._barrier_initiated_warp4 = False
-        self._warp3_regap = 0            # idle frames since the count=2 burst, before re-arming it (sustain)
-        self._warp4_regap = 0            # idle frames since the count=3 burst, before re-arming it (sustain)
-        self._self_standby_echo = 0      # highest READY_EXIT_STANDBY count the host reflected in OUR slot
-        # On hardware the console never broadcasts its own 0x6600 at mpId 0; the reflection is the only
-        # evidence a child-initiated entry barrier landed. Gate the warps on max(host_count, this).
-        self._seat_wait_host = 0         # ticks spent seated, waiting for the host to sit too
+        self._warp3_regap = 0
+        self._warp4_regap = 0
+        self._self_standby_echo = 0  # highest standby count the host reflected in our slot
+        # The console never broadcasts its own 0x6600 at mpId 0; the reflection is the only evidence
+        # a child-initiated entry barrier landed.
+        self._seat_wait_host = 0
         self._self_ready_echo = False    # the host has reflected OUR READY (0x16) back at us
         self._post_seat_logged = False
-        self._self_seated = False        # we have emitted our READY (0x16) at the cable seat
-        self._post_seat_wait = 0         # held-keys keepalive ticks left before the post-seat standbys
-        self._save_barriers = False     # (c) post-trade save barrier chain is running [trade_scene 2566+]
-        self._save_settle = 0           # consecutive host-idle frames since the last save barrier
-        self._save_started = False      # the FIRST save-chain round has been initiated (gate the inter-round pace)
-        self._save_round_wait = 0       # frames waited since the last save round completed (inter-round pace)
-        self._cancel_barrier_active = False  # (d) cancel-exit standby running, finish when it passes
-        self._return_field_barrier_active = False  # (e) return-to-field sync standby (count+1 after (d))
-        # After the cancel-exit standby the real game returns to the OVERWORLD, re-arms held keys, and only
-        # then runs the host-initiated READY_CLOSE_LINK; vanishing early breaks the teardown.
+        self._self_seated = False
+        self._post_seat_wait = 0
+        self._save_barriers = False  # (c) [trade_scene.c:2566]
+        self._save_settle = 0
+        self._save_started = False
+        self._save_round_wait = 0
+        self._cancel_barrier_active = False  # (d)
+        self._return_field_barrier_active = False  # (e)
+        # After the cancel-exit standby the game returns to the overworld, re-arms held keys, and
+        # only then runs the host-initiated READY_CLOSE_LINK; vanishing early breaks the teardown.
         self._post_cancel_overworld = False
-        # The host broadcast EXIT_ROOM and blocks until ALL players are EXITING_ROOM [overworld.c:2962-2981];
-        # we must answer with our own.
+        # The host's EXIT_ROOM blocks until all players are EXITING_ROOM [overworld.c:2962-2981].
         self._host_exiting = False
 
     @property
@@ -362,37 +358,37 @@ class TradeEngine:
 
     @property
     def in_seat_phase(self):
-        """True only in the overworld/seat phase (P0..P3), the sole phase the child runs held keys:
-        Task_StartWirelessTrade case 0 clears the keys callback [cable_club.c:918] before CB2_CreateTradeMenu.
-        Re-armed after the cancel-exit standby (the game returns to the overworld field)."""
+        """True only in the overworld/seat phase (P0..P3) and after the cancel-exit standby: the
+        keys callback is cleared before CB2_CreateTradeMenu [cable_club.c:918]."""
         return self._post_cancel_overworld or not self.entry.seat_phase_over
 
     @property
     def established(self):
-        """gReceivedRemoteLinkPlayers equivalent [link_rfu_2.c:1879]. Held keys / sit must NOT fire before this: a
-        tagged 0xBE00 ahead of the NI/block handshake faults the host's childSendCmdId check. Monotone."""
+        """gReceivedRemoteLinkPlayers [link_rfu_2.c:1879]. Held keys and sit must not fire before
+        it: a 0xBE00 ahead of the block handshake faults the host's childSendCmdId check."""
         return self._lp_sent and self.host_link_player is not None
 
     @property
     def held_keys_active(self):
-        """False once seated and the post-seat rounds are done: the leader needs a run of exactly-idle child
-        slots to finish the entry [host_trade.feed_child_slot], and keepalive through that window deadlocks it."""
-        # Once the host emitted EXIT_ROOM it waits for OUR 0x17 [overworld.c:2962-2981], which only linkstate emits.
+        """False once seated and past the post-seat rounds: the leader needs a run of idle child
+        slots [host_trade.feed_child_slot], and a keepalive there deadlocks it."""
+        # After its EXIT_ROOM the host waits for our 0x17 [overworld.c:2962-2981].
         if self._host_exiting:
             return True
         if not self.in_seat_phase:
             return False
-        # On hardware the console never broadcasts its own 0x6600; the reflection counts too.
+        # The console never broadcasts its own 0x6600; the reflection counts too.
         if self._self_seated and max(self.barrier.host_count or 0, self._self_standby_echo) >= 3:
             return False
-        # The native child sends ~13 EMPTY after READY then goes fully idle; the reflection of our READY marks that.
+        # The native child idles after ~13 EMPTY following READY; the reflection of our READY marks
+        # it.
         if self._self_seated and self._self_ready_echo:
             return False
         return True
 
     @property
     def host_in_seat(self):
-        """Gate for our sit: sitting before the host reaches its seat desyncs (black screen). Monotone latch."""
+        """Gate for our sit: sitting before the host reaches its seat desyncs (black screen)."""
         return self._host_in_seat
 
     @property
@@ -402,11 +398,11 @@ class TradeEngine:
 
     @property
     def host_exiting(self):
-        """The orchestrator must answer with OUR EXIT_ROOM (lstate.exit()) [overworld.c:2962-2981]."""
+        """Answer with our EXIT_ROOM (lstate.exit()) [overworld.c:2962-2981]."""
         return self._host_exiting
 
     def note_self_seated(self):
-        """Arms the post-seat standbys (count=2, 3) after POST_SEAT_STANDBY_DELAY so our READY goes out first."""
+        """Arms the post-seat standbys (count=2, 3) after POST_SEAT_STANDBY_DELAY."""
         if self._self_seated:
             return
         self._self_seated = True
@@ -423,9 +419,9 @@ class TradeEngine:
             self._on_req(reqtype)
         host_block = any(mpid == 0 for mpid, _c, _d in completed)
         for mpid, count, data in completed:
-            if mpid == 0:               # host's own blocks (mpId 0)
+            if mpid == 0:
                 self._on_host_block(count, data)
-        # _bt_settle: IN frames since the host last pulled/streamed a block (the offline MockHost sends no ribbons).
+        # IN frames since the host last pulled or streamed a block (MockHost sends no ribbons).
         if unwrapped is not None:
             self._bt_settle = 0 if (reqs or host_block) else self._bt_settle + 1
 
@@ -439,8 +435,8 @@ class TradeEngine:
             if not r:
                 continue
             op = r["word0"] & 0xFF00
-            # SEND_PLAYER_IDS: validate our RIGHT-seat mpId against ids[0]; a mismatch means the
-            # hardcoded seat walk is wrong.
+            # A SEND_PLAYER_IDS mismatch with our right-seat mpId means the hardcoded seat walk is
+            # wrong.
             if op == rfu.SEND_PLAYER_IDS and not self._player_ids_seen:
                 self._on_send_player_ids(slot)
             if op == rfu.SEND_HELD_KEYS and self._on_entry_held_keys(slot):
@@ -474,8 +470,8 @@ class TradeEngine:
         return False
 
     def _scan_exit_room(self, unwrapped):
-        # Host-led exit can come before any trade or after a cancelled one; the seat scan above is gated off,
-        # so detect EXIT_ROOM here regardless of trade state.
+        # Host-led exit can come before any trade or after a cancel, while the seat scan is gated
+        # off.
         if self._host_exiting or unwrapped is None:
             return
         for _mpid, slot in unwrapped.get("positional", []):
@@ -489,8 +485,8 @@ class TradeEngine:
                 break
 
     def _scan_own_reflection(self, unwrapped):
-        # Our own reflected slot is skipped by _host_barrier_in_frame (never complete a round off our own reply),
-        # but the reflection is the host's acknowledgement and on hardware the only one we get.
+        # _host_barrier_in_frame skips our reflected slot, but the reflection is the host's
+        # acknowledgement and on hardware the only one.
         if unwrapped is None:
             return
         for _mpid, _slot in unwrapped.get("positional", []):
@@ -521,40 +517,39 @@ class TradeEngine:
                 self._save_settle = 0 if saw_barrier else self._save_settle + 1
 
     def _end_save_chain_on_reexchange(self, completed, reqs):
-        # Only a HOST block (mpId 0) or a REQ ends the save chain; mpId-1 entries are reflections of our own block.
+        # Only a host block (mpId 0) or a REQ ends it; mpId-1 entries reflect our own block.
         host_reexchange = bool(reqs) or any(mpid == 0 for mpid, _c, _d in completed)
         if self._save_barriers and host_reexchange:
             self._save_barriers = False
-            # Drop any in-flight save standby, else priority-5 keeps emitting the stale count through Phase M.
+            # Drop any in-flight save standby, else priority 5 keeps emitting the stale count.
             self.barrier.reset_to_idle()
             self.log("save-chain: host re-exchanging (REQ/block) -> ending chain, resume trade")
 
     def _host_barrier_in_frame(self, unwrapped):
-        """Reads the raw slots of THIS frame only (the watchdogs depend on per-frame truth). A standby/close slot
-        carries no owner and may be coalesced past the mpId-0 offset, so dispatch by OP over all slots, skipping
-        our own reflection."""
+        """This frame only (the watchdogs need per-frame truth). A standby/close slot carries no
+        owner and may be coalesced past the mpId-0 offset: dispatch by op, skipping our slot."""
         if not unwrapped:
             return None
         for mpid, slot in unwrapped.get("positional", []):
             if mpid == self.mpid:
-                continue                 # our own reflected slot, not the host's broadcast
+                continue
             d = rfu.parse_slot(slot)
             if d is not None and d["op"] in (rfu.READY_EXIT_STANDBY, rfu.READY_CLOSE_LINK):
                 return d
         return None
 
     def _begin_send(self, buf):
-        """Reset peer-1 first: it still holds the previous block's completed state, which would falsely ack the
-        new block after one fragment."""
+        """Reset peer 1 first: its previous completed block would falsely ack the new one after one
+        fragment."""
         self.rx.peers[1] = block.RecvBlock()
         self.sender = block.BlockSender(buf, trust_pia=self.trust_pia, stream_gap=JOINER_STREAM_GAP)
         return self.sender
 
     def _on_req(self, reqtype):
-        """Keyed on the reqtype selector so BLOCK_REQ_SIZE_100 unambiguously means the entry trainer card
+        """BLOCK_REQ_SIZE_100 always means the entry trainer card
         [link.c:185-190; link_rfu_2.c:1172-1173]."""
         if self.sender is not None and not self.sender.done:
-            # A REQ while streaming is the host re-pulling the SAME block [link_rfu_2.c:1296], not a new pull;
+            # A REQ while streaming is the host re-pulling the same block [link_rfu_2.c:1296];
             # serving it would send the next party pair early.
             return
         size = REQ_SIZE.get(reqtype, 200)
@@ -568,13 +563,13 @@ class TradeEngine:
             self.entry.on_card_supplied()
             return self.trainer_card
         if size == 200:
-            # A size-200 pull after the host is seated is BufferTradeParties, which runs only after the keys
-            # callback was cleared [cable_club.c:918]: latch the held-keys cutoff (P4). Before the seat it is
-            # the LinkPlayer one-shot and must NOT latch it.
+            # After the host is seated a size-200 pull is BufferTradeParties, after the keys
+            # callback is cleared [cable_club.c:918]: latch P4. Before the seat it is the LinkPlayer
+            # and must not.
             if self._host_in_seat:
                 self.entry.on_trade_menu_open()
-            # The LinkPlayerBlock is exchanged exactly once (Task_PlayerExchange [link_rfu_2.c:1813-1900]);
-            # _lp_sent is a session one-shot. Resending it on a later round shifts the party by one and drops pair #3.
+            # The LinkPlayerBlock is exchanged once per session [link_rfu_2.c:1813-1900]; resending
+            # it on a later round shifts the party by one and drops pair #3.
             if self.round == 0 and not self._lp_sent:
                 self._lp_sent = True
                 return linkplayer.build_block(self.lp).ljust(200, b"\x00")
@@ -591,7 +586,7 @@ class TradeEngine:
 
     def _on_host_block(self, count, data):
         if count == COUNT_TRAINER_CARD and not self.entry.complete:
-            # The host's 100B card is cosmetic [union_room.c:1769-1779]; consume it without advancing the FSM.
+            # The host's card is cosmetic [union_room.c:1769-1779].
             self.entry.on_host_card(data)
             return
         if count == COUNT_LINKCMD:
@@ -599,13 +594,12 @@ class TradeEngine:
             cursor = int.from_bytes(data[2:4], "little")
             self._on_linkcmd(cmd, cursor)
         elif count == COUNT_PARTY:
-            # A host count-17 block after the seat is BufferTradeParties -> latch the held-keys cutoff (P4); before
-            # the seat it is its LinkPlayer (S1) and must not.
+            # After the seat a host count-17 block is BufferTradeParties (latch P4); before it, its
+            # LinkPlayer.
             if self._host_in_seat:
                 self.entry.on_trade_menu_open()
             lp, ok = linkplayer.parse_block(data)
-            # Identify the LinkPlayer by its magic, not by host_link_player being None: the host re-streams it
-            # first on every round.
+            # Identify the LinkPlayer by its magic: the host re-streams it first on every round.
             if ok:
                 if self.host_link_player is None:
                     self.host_link_player = lp
@@ -622,31 +616,30 @@ class TradeEngine:
             self.log(f"host {'mail' if count == COUNT_MAIL else 'giftRibbons'} block "
                      f"(count={count}) - consumed (cosmetic, not trade-affecting)")
             if count == COUNT_RIBBON:
-                # giftRibbons is the LAST block of BufferTradeParties [trade.c:1444-1542]; READY_TO_TRADE before it
-                # leaves the host stuck at "Communication standby".
+                # giftRibbons is the last block of BufferTradeParties [trade.c:1444-1542];
+                # READY_TO_TRADE before it leaves the host at "Communication standby".
                 self._got_ribbons = True
 
     def _on_linkcmd(self, cmd, cursor):
         self.log(f"<- LINKCMD {LINKCMD_NAMES.get(cmd, hex(cmd))} cursor={cursor}")
         if cmd == SET_MONS_TO_TRADE:
-            # partnerCursorPosition = recv[0][1] + PARTY_SIZE [trade.c:1653-1657]; INIT_BLOCK is gated behind the
-            # confirm prompt (_run_confirm).
+            # partnerCursorPosition = recv[0][1] + PARTY_SIZE [trade.c:1653-1657].
             self.host_cursor = cursor
             if self.state in (S5_SELECT, S4_PARTY):
                 self.state = S6_CONFIRM
                 self._run_confirm()
         elif cmd == START_TRADE:
-            # A Leader that latched STATUS_CANCEL never STARTs [trade.c:1629-1631]; ignore a late START.
+            # A Leader that latched STATUS_CANCEL never STARTs [trade.c:1629-1631].
             if self.cancelled:
                 return
-            # DoTradeAnim runs anim_delay frames before READY_FINISH [trade.c:1659-1661; trade_scene.c:2527-2536].
+            # anim_delay frames before READY_FINISH [trade.c:1659-1661; trade_scene.c:2527-2536].
             self.state = S7_ANIM
             self._anim_wait = self.anim_delay
         elif cmd == CONFIRM_FINISH_TRADE:
             if self.cancelled:
-                return                  # leaving: ignore a late CONFIRM
-            # CONFIRM_FINISH can land before our anim countdown elapses (the host latches READY_FINISH the frame it
-            # arrives [trade_scene.c:2547-2559]); defer the commit until READY_FINISH is emitted to keep the order.
+                return
+            # CONFIRM_FINISH can land before our anim countdown ends [trade_scene.c:2547-2559];
+            # defer the commit until READY_FINISH is emitted.
             if self._finish_sent:
                 self._commit()
             else:
@@ -668,11 +661,9 @@ class TradeEngine:
             self.barrier.initiate(barriermod.STANDBY)
             self.log("barrier (d): INITIATE cancel-exit standby [trade.c:2117-2132]")
         elif cmd in (PLAYER_CANCEL_TRADE, PARTNER_CANCEL_TRADE):
-            # One side selected and the other cancelled [trade.c:1695-1712, 1737-1746]: both sides go back
-            # to the trade menu via CB_HandleTradeCanceled -> CB_MAIN_MENU [2094-2113] with the select
-            # statuses cleared, and the leader waits for both to select again. Select afresh after the
-            # dismiss delay: CANCEL again if leaving (the leader's next CANCEL yields BOTH_CANCEL_TRADE),
-            # else our mon again. Ending the session here left the leader waiting forever.
+            # One side selected, the other cancelled [trade.c:1695-1712, 1737-1746]: both return to
+            # the trade menu [2094-2113] and the leader waits for both to select again. Ending the
+            # session here left the leader waiting forever.
             self.log(f"<- {LINKCMD_NAMES.get(cmd, hex(cmd))}: back to the trade menu; selecting again")
             self.info("Trade cancelled by one side; back at the menu.")
             self.state = S4_PARTY
@@ -687,17 +678,16 @@ class TradeEngine:
             self.host_cursor = None
 
     def _is_valid_slot(self, slot):
-        """CanTradeSelectedMon == CAN_TRADE_MON stand-in [trade.c:2745-2818]: in range and non-empty.
-        Deliberate divergence: the console's CANT_TRADE_LAST_MON rule [2809-2818; hasLiveMon 1958-1962]
-        protects a real trainer's only usable mon. Our party is a list of files and the leader never checks
-        its partner's count; enforcing it made a one-file party cancel the instant the menu opened."""
+        """CanTradeSelectedMon stand-in [trade.c:2745-2818]: in range and non-empty.
+        CANT_TRADE_LAST_MON [2809-2818] is skipped: the leader never checks it, and a one-file party
+        would cancel the instant the menu opened."""
         if not (0 <= slot < len(self.party)):
             return False
         return not self.party[slot].is_empty
 
     def _trade_menu_live(self):
-        """Live only once the FULL BufferTradeParties has finished (ribbons seen, or settled offline): READY_TO_TRADE
-        during it leaves the host stuck at "Communication standby"."""
+        """Live once the full BufferTradeParties has finished (ribbons seen, or settled):
+        READY_TO_TRADE during it leaves the host at "Communication standby"."""
         base = (self._host_party_blocks >= 3 and self._lp_sent
                 and self._party_sent >= len(self._party_blocks))
         if not self._live:
@@ -705,7 +695,8 @@ class TradeEngine:
         return base and (self._got_ribbons or self._bt_settle >= BUFFERTRADE_SETTLE)
 
     def _partner_mon_invalid(self):
-        """PARTNER_MON_INVALID stand-in [trade.c:1965-1968]; legitimacy is not decodable offline, so opt-in only."""
+        """PARTNER_MON_INVALID stand-in [trade.c:1965-1968]; opt-in, legitimacy is not decodable
+        offline."""
         if not self.refuse_partner_deoxys_mew or self.host_cursor is None:
             return False
         idx = self.host_cursor % PARTY_SIZE
@@ -714,7 +705,7 @@ class TradeEngine:
         return offered.species in (SPECIES_MEW, SPECIES_DEOXYS)
 
     def _confirm_verdict(self):
-        """CheckValidityOfTradeMons stand-in [trade.c:1951-1973]; PARTNER_MON_INVALID is checked first."""
+        """CheckValidityOfTradeMons stand-in [trade.c:1951-1973]; the partner is checked first."""
         if self._partner_mon_invalid():
             return PARTNER_MON_INVALID
         if not self._is_valid_slot(self.trade_slot):
@@ -722,8 +713,8 @@ class TradeEngine:
         return BOTH_MONS_VALID
 
     def _run_confirm(self):
-        """Confirm prompt [trade.c:2073-2029]: decline -> immediate READY_CANCEL [2019-2023]; valid -> INIT_BLOCK
-        [1991-1996]; invalid mon -> READY_CANCEL after 180f [1986-1990/1997-2001]."""
+        """Confirm prompt [trade.c:2073-2029]: decline -> READY_CANCEL now [2019-2023]; valid ->
+        INIT_BLOCK [1991-1996]; invalid mon -> READY_CANCEL after 180f [1986-1990/1997-2001]."""
         if self._confirmed:
             return
         self._confirmed = True
@@ -736,7 +727,7 @@ class TradeEngine:
         verdict = self._confirm_verdict()
         if verdict == BOTH_MONS_VALID:
             self.log("confirm: BOTH_MONS_VALID -> INIT_BLOCK (immediate) [trade.c:1991-1996]")
-            self._pending_push = linkcmd_block(INIT_BLOCK)          # confirm-YES (immediate)
+            self._pending_push = linkcmd_block(INIT_BLOCK)
         elif verdict == PLAYER_MON_INVALID:
             self.log("confirm: PLAYER_MON_INVALID -> READY_CANCEL_TRADE in 180f [trade.c:1986-1990]")
             self.info("Cannot keep our last living Pokémon; cancelling to leave.")
@@ -749,9 +740,9 @@ class TradeEngine:
             self.cancelled = True
 
     def _commit(self):
-        """Mirrors TradeMons [trade_scene.c:1054-1083]: received = host party[host_cursor % PARTY_SIZE], swapped into
-        our offered slot. More trades -> re-arm (BufferTradeParties re-runs [trade.c:935]); else cancel-to-leave."""
-        # Capture the S7 invariant (READY_FINISH before commit) before _reset_round_state clears it.
+        """TradeMons [trade_scene.c:1054-1083]: host party[host_cursor % PARTY_SIZE] into our
+        offered slot. More trades re-arm (BufferTradeParties re-runs [trade.c:935]), else leave."""
+        # Capture READY_FINISH-before-commit before _reset_round_state clears it.
         self._finish_sent_at_last_commit = self._finish_sent
         self.commits += 1
         received = None
@@ -760,7 +751,7 @@ class TradeEngine:
             idx = self.host_cursor % PARTY_SIZE
             off = idx * monmod.PARTY_MON_SIZE
             received = monmod.Mon(bytes(self._host_party[off:off + 100]))
-            self.received_mon = received                     # back-compat: last received
+            self.received_mon = received
             self.received_mons.append(received)
             self.info("Trade confirmed.")
             self.log(f"RECEIVED (trade {self.round + 1}/{self.trades}): {received.describe()}")
@@ -769,10 +760,10 @@ class TradeEngine:
         self.round += 1
         self.state = S8_DONE
 
-        # Post-trade save barrier chain [trade_scene.c:2566-2725]; ends when the host re-exchanges (feed_in_frame).
+        # Post-trade save chain [trade_scene.c:2566-2725]; ends when the host re-exchanges.
         self._save_barriers = True
         self._save_settle = 0
-        self._save_started = False       # first save round prompt; subsequent rounds paced (SAVE_BARRIER_GAP)
+        self._save_started = False
         self._save_round_wait = 0
 
         if self.round < self.trades:
@@ -784,19 +775,17 @@ class TradeEngine:
             self._arm_leave_round()
 
     def _reset_round_state(self):
-        """Does NOT clear _lp_sent: the LinkPlayerBlock is a session one-shot (gReceivedRemoteLinkPlayers never
-        clears on the trade path [link_rfu_2.c:1879]); resending it as party block #1 drops party pair #3."""
+        """Keeps _lp_sent: gReceivedRemoteLinkPlayers never clears on the trade path
+        [link_rfu_2.c:1879], and resending the LinkPlayerBlock as party block #1 drops pair #3."""
         self._party_sent = 0
         self._party600 = monmod.build_player_party(self.party)
         self._party_blocks = monmod.party_blocks(self._party600)
-        # Keep host_link_player (stable identity); reset only the party buffer + counters.
         self._host_party = bytearray(monmod.PARTY_MON_SIZE * PARTY_SIZE)
         self._host_party_blocks = 0
         self.host_cursor = None
         self._selected = False
-        # Menu re-entry re-runs the full BufferTradeParties [trade.c:935]; a stale _got_ribbons would fire
-        # READY_TO_TRADE / REQUEST_CANCEL after only the party blocks, before the host's Leader_ReadLinkBuffer
-        # runs -> deadlock.
+        # BufferTradeParties re-runs on menu re-entry [trade.c:935]; a stale _got_ribbons fires
+        # READY_TO_TRADE before the host's Leader_ReadLinkBuffer runs: deadlock.
         self._got_ribbons = False
         self._bt_settle = 0
         self._anim_wait = None
@@ -820,13 +809,13 @@ class TradeEngine:
         self.state = S1_LINK
 
     def _sustain_standby(self, count, emits_attr, regap_attr, gap=SAVE_BARRIER_GAP):
-        """Bounded burst of `count`, re-armed every `gap` idle frames; the caller stops once the host completes."""
+        """Bounded burst of `count`, re-armed every `gap` idle frames."""
         emits = getattr(self, emits_attr)
         if emits < WARP_STANDBY_EMITS:
             setattr(self, emits_attr, emits + 1)
             setattr(self, regap_attr, 0)
             return rfu.exit_standby_words(count)
-        regap = getattr(self, regap_attr) + 1     # burst delivered (+ retransmitting); idle, then re-arm
+        regap = getattr(self, regap_attr) + 1
         setattr(self, regap_attr, regap)
         if regap >= gap:
             setattr(self, emits_attr, 0)
@@ -834,22 +823,21 @@ class TradeEngine:
         return [0] * 7
 
     def _run_save_chain(self):
-        """Save chain [trade_scene.c:2566-2725]: the host's save writes pause it 0.3-1.8s between rounds, so the
-        chain ends only on host re-exchange (Phase M), never on a short quiet window. True while it runs."""
+        """Save chain [trade_scene.c:2566-2725]: the host's save writes pause it 0.3-1.8 s between
+        rounds, so it ends only on host re-exchange, never on a quiet window. True while it runs."""
         if not self.barrier.active:
             if self._save_settle > SAVE_CHAIN_TIMEOUT:
                 self._save_barriers = False
                 self.log(f"save-chain: host vanished for >{SAVE_CHAIN_TIMEOUT}f -> chain done (safety net)")
                 return False
-            # No inter-round pacing: the host is paced by its save writes and we complete each round on its echo.
+            # No inter-round pacing: the host is paced by its save writes.
             self._save_started = True
             self.barrier.initiate(barriermod.STANDBY)
         return True
 
     def _advance_timers(self):
-        """The wall-clock countdowns must tick EVERY VBlank: driven from tick() or, when the send-window is gated,
-        from poll_send_done() - never both in one VBlank. Gated behind the window the anim timer crawled and
-        READY_FINISH was never sent."""
+        """Ticks every VBlank, from tick() or, when the send window is gated, from
+        poll_send_done(), never both. Gated behind the window, READY_FINISH never went out."""
         if self._reselect_wait is not None:
             if self._reselect_wait > 0:
                 self._reselect_wait -= 1
@@ -876,16 +864,15 @@ class TradeEngine:
                     self._commit()
 
     def poll_send_done(self):
-        """Window-gated state pump: advances the timers and an in-flight HOLD -> DONE (SendLastBlock runs every
-        VBlank regardless of the send buffer; gating it deadlocked the party exchange). Emitted words are
-        discarded; a HOLD tick never advances the STREAM cursor, so nothing is lost."""
+        """Window-gated pump: timers and an in-flight HOLD -> DONE (SendLastBlock runs every
+        VBlank; gating it deadlocked the party exchange). A HOLD tick never moves STREAM."""
         self._advance_timers()
         if self.sender is not None and self.sender.state == block.HOLD:
-            self.tick(sender_only=True)   # ticks ONLY the sender; emitted words discarded
+            self.tick(sender_only=True)
 
     def tick(self, sender_only=False):
-        """sender_only: advance only the block sender; otherwise a HOLD tick would run the entry barrier inside
-        a call whose words poll_send_done discards."""
+        """sender_only: advance only the block sender, so a HOLD tick never runs the entry
+        barrier in a call whose words poll_send_done discards."""
         words = self._tick_sender(sender_only)
         if words is not None:
             return words
@@ -910,19 +897,19 @@ class TradeEngine:
         if words is not None:
             return words
 
-        # Priority 5: barrier only on a slot the engine would have idled; a barrier and a block never coexist
-        # on the wire [link_rfu_2.c:1553/1569/1586].
+        # Barrier only on a slot the engine would have idled; a barrier and a block never coexist
+        # [link_rfu_2.c:1553/1569/1586].
         bwords = self.barrier.want_emit()
         if bwords is not None:
             return bwords
 
-        return [0] * 7                  # idle keepalive
+        return [0] * 7
 
     def _tick_sender(self, sender_only):
         ack = self.rx.peers[1]          # the host's reflection of our block = wire ACK
         if self.sender is None:
             return None
-        # peer 0 = the host's own block. While it is mid-transfer we must not stream ours into it.
+        # Never stream ours into the host's own block (peer 0) mid-transfer.
         host_rx = self.rx.peers[0]
         peer_sending = bool(host_rx.receiving and not host_rx.done)
         words = self.sender.tick(ack, peer_sending=peer_sending)
@@ -931,69 +918,67 @@ class TradeEngine:
             if self._cancel_after_send and not self.done:
                 self._cancel_after_send = False
                 self.state = S_CANCEL
-                # Never finish on send: only BOTH_CANCEL_TRADE ends the session; a PARTNER/PLAYER_CANCEL puts
-                # both sides back in the menu [trade.c:1695-1712, 1737-1746], where we select CANCEL again.
-                # So a confirm-stage decline or an untradeable mon becomes a cancel-to-leave from here on.
+                # Only BOTH_CANCEL_TRADE ends the session; a PARTNER/PLAYER_CANCEL returns both to
+                # the menu [trade.c:1695-1712, 1737-1746], where we select CANCEL again.
                 self.leaving = True
                 self.log("cancel sent -> awaiting the leader's *_CANCEL echo")
-        # HOLD has no live watchdog (an early DONE left the host a fragment short and deadlocked the party
-        # exchange), so it can hold forever; its idle frames must yield or the entry warp barriers starve.
+        # HOLD has no live watchdog (an early DONE deadlocked the party exchange); its idle frames
+        # yield or the entry warp barriers starve.
         if sender_only or (words[0] & 0xFFFF) != 0 or self.sender is None \
                 or self.sender.state != block.HOLD:
             return words
         return None
 
     def _tick_exit_barriers(self):
-        # [barrier (d)] cancel-exit standby [trade.c:2117-2132]: quiescent until it passes.
+        # Barrier (d), cancel-exit standby [trade.c:2117-2132].
         if self._cancel_barrier_active:
             if self.barrier.active:
-                return self.barrier.want_emit() or [0] * 7   # never return None (idle while quiescent)
+                return self.barrier.want_emit() or [0] * 7  # never None while quiescent
             self._cancel_barrier_active = False
-            # The host then runs a SECOND SetLinkStandbyCallback in Task_ReturnToFieldRecordMixing case 0 and
-            # blocks on a black screen at case 1 [field_fadetransition.c] until we complete it.
+            # Then a second SetLinkStandbyCallback [field_fadetransition.c,
+            # Task_ReturnToFieldRecordMixing]; the host black-screens until we complete it.
             self._return_field_barrier_active = True
             self.barrier.initiate(barriermod.STANDBY)
             self.log("barrier (e): INITIATE return-to-field sync standby [field_fadetransition.c "
                      "Task_ReturnToFieldRecordMixing case 0 -> SetLinkStandbyCallback; host black-screens "
                      "at case 1 until we complete it]")
 
-        # [barrier (e)] return-to-field standby: quiescent until the host echoes or the offline watchdog releases.
+        # Barrier (e), return-to-field standby.
         if self._return_field_barrier_active:
             if self.barrier.active:
-                return self.barrier.want_emit() or [0] * 7   # never return None (idle while quiescent)
+                return self.barrier.want_emit() or [0] * 7  # never None while quiescent
             self._return_field_barrier_active = False
             self.done = True
-            # `done` latches but we must not vanish: the host's READY_CLOSE_LINK round still needs answering.
+            # Stay after done: the host's READY_CLOSE_LINK round still needs answering.
             self._post_cancel_overworld = True
             self.log("barrier (e): return-to-field standby passed -> done (post-cancel overworld; held-keys "
                      "re-armed, awaiting host READY_CLOSE_LINK)")
 
-        # Post-cancel overworld tail: answer the host's barriers; IDLE lets the held-keys engine take over.
+        # Post-cancel overworld: answer the host's barriers; IDLE hands over to held keys.
         if self._post_cancel_overworld and self.barrier.active:
-            return self.barrier.want_emit() or [0] * 7   # never return None (idle while quiescent)
+            return self.barrier.want_emit() or [0] * 7  # never None while quiescent
         return None
 
     def _tick_save_chain(self):
-        # [barrier (c)] save chain: quiescent; reached only when no block send owns the slot.
+        # Barrier (c), save chain.
         if self._save_barriers:
             if self._run_save_chain():
-                # never return None: want_emit() is None between rounds
+                # want_emit() is None between rounds
                 return self.barrier.want_emit() or [0] * 7
         return None
 
     def _tick_menu_and_push(self):
         self._advance_timers()
 
-        # [barrier (b)] menu->scene seam [trade.c:2159-2166]: soft initiate so a non-participating host does
-        # not stall the anim.
+        # Barrier (b), menu->scene seam [trade.c:2159-2166]: soft, so a silent host does not stall
+        # the anim.
         if self._anim_wait is not None and not self._barrier_initiated_seam:
             self._barrier_initiated_seam = True
             self.barrier.initiate(barriermod.STANDBY)
             self.log("barrier (b): INITIATE menu->scene-seam standby [trade.c:2159-2166]")
 
-        # [barrier (a)] trade-menu entry standby is deliberately NOT initiated: there is no standby between the
-        # party exchange and START_TRADE; the first trade-dance standby (count=4) follows START_TRADE (barrier
-        # (b)). Initiating it here runs one round ahead of the host and floods its buffer.
+        # Barrier (a) is never initiated: no standby sits between the party exchange and
+        # START_TRADE; initiating it runs one round ahead of the host and floods its buffer.
 
         self._select_offer()
 
@@ -1001,15 +986,15 @@ class TradeEngine:
             return None
         buf = self._pending_push
         self._pending_push = None
-        # Cancel opcodes arm cancel-after-send so the host receives the block before we leave [trade.c:2094-2132].
+        # Cancel opcodes leave only after the host receives the block [trade.c:2094-2132].
         pushed_cmd = int.from_bytes(buf[0:2], "little")
         if pushed_cmd in (REQUEST_CANCEL, READY_CANCEL_TRADE):
             self._cancel_after_send = True
             self.cancelled = True
-        return self._begin_send(buf).tick(self.rx.peers[1])   # fresh peer-1 after reset
+        return self._begin_send(buf).tick(self.rx.peers[1])
 
     def _select_offer(self):
-        # [S5] stand-in for SetReadyToTrade [trade.c:1905-1908] / CANCEL -> REQUEST_CANCEL [trade.c:2049].
+        # S5: SetReadyToTrade [trade.c:1905-1908], or CANCEL -> REQUEST_CANCEL [trade.c:2049].
         if (not self._selected and self.state in (S4_PARTY,) and self._reselect_wait is None
                 and self._trade_menu_live() and self._pending_push is None):
             self._selected = True
@@ -1035,13 +1020,13 @@ class TradeEngine:
                 self.cancelled = True
 
     def _tick_warp_standbys(self):
-        # Warp-quiesce standbys: between the LinkPlayer exchange and the seat the host waits for our
-        # READY_EXIT_STANDBY (count=0 post-LinkPlayer, count=1 post-card) before pulling the card / seating.
+        # Before the seat the host waits for our READY_EXIT_STANDBY (count=0 post-LinkPlayer,
+        # count=1 post-card).
         if self.established and not self._host_in_seat:
             wcount = 0 if not self.entry.card_supplied else 1
-            # ONE-SHOT bounded burst, then silence - do not sustain: the leader queues an echo for every count it
-            # receives and that queue preempts its held-key route, so it never walks to its chair. Not gated on
-            # the host echo: the real console never emits READY_EXIT_STANDBY in its own mp0 row.
+            # One burst, then silence: the leader queues an echo per count, which preempts its
+            # held-key route, so it never walks. The console never emits the standby in its own mp0
+            # row.
             if wcount == 0:
                 if not self._barrier_initiated_warp1:
                     self._barrier_initiated_warp1 = True
@@ -1056,51 +1041,50 @@ class TradeEngine:
                 if self._warp2_emits < WARP_STANDBY_EMITS:
                     self._warp2_emits += 1
                     return rfu.exit_standby_words(1)
-            return [0] * 7              # burst delivered; go QUIET so the leader can walk
+            return [0] * 7  # quiet so the leader can walk
         return None
 
     def _tick_seat_standbys(self):
-        # Post-seat standbys count=2 then count=3, after both players are READY and before the host pulls the party.
+        # Post-seat standbys count=2 then 3, before the host pulls the party.
         if self.established and self._self_seated and not self.entry.seat_phase_over:
             words = self._seat_wait_for_host()
             if words is not None:
                 return words
-            # The host's reflection of our READY proves it reached the wire; skip the rest of the delay.
+            # The host's reflection of our READY proves it reached the wire; skip the delay.
             if self._post_seat_wait > 0 and not self._self_ready_echo:
                 self._post_seat_wait -= 1
-                return [0] * 7         # still letting our READY + keepalives go out before count=2
-            # The host waits SILENTLY for each mutual barrier [link_rfu_2.c:1577-1591], so sustain each count
-            # until it completes. Once the host broadcasts its own count at mp0 trust only that: its recv gate
-            # accepts only its current count, and a reflection proves it saw our slot, not that it completed.
+                return [0] * 7
+            # The host waits silently for each mutual barrier [link_rfu_2.c:1577-1591]: sustain each
+            # count. Once it broadcasts its own count at mp0 trust only that; a reflection proves it
+            # saw our slot, not that it completed.
             hc_own = self.barrier.host_count or 0
             hc = hc_own if hc_own >= 2 else max(hc_own, self._self_standby_echo)
-            if hc < 2:                          # warp#3: drive count=2 until the host completes it
+            if hc < 2:
                 if not self._barrier_initiated_warp3:
                     self._barrier_initiated_warp3 = True
                     self.log("warp#3: post-seat READY_EXIT_STANDBY count=2 (sustained until host completes)")
                 return self._sustain_standby(2, "_warp3_emits", "_warp3_regap", gap=ENTRY_BARRIER_GAP)
-            if hc < 3:                          # warp#4: count=3 ONLY after the host did count=2; sustained
+            if hc < 3:  # count=3 only after the host did count=2
                 if not self._barrier_initiated_warp4:
                     self._barrier_initiated_warp4 = True
                     self.log("warp#4: post-seat READY_EXIT_STANDBY count=3 (host reached count=2; "
                              "sustained until host completes)")
                 return self._sustain_standby(3, "_warp4_emits", "_warp4_regap", gap=POST_SEAT_REARM_GAP)
-            return [0] * 7              # both post-seat bursts sent / waiting; idle + keepalive
+            return [0] * 7
         return None
 
     def _seat_wait_for_host(self):
         """Idles until the host's own READY (0x16), then falls through by returning None."""
-        # Both players must be seated first (CABLE_SEAT_SUCCESS needs AreAllPlayersInLinkState(READY)
-        # [overworld.c:2988-2999]); count=2 at a CABLE_SEAT_WAITING host faults it. Only the host's own
-        # READY (0x16) counts: DPAD codes are nulled under queue pressure [overworld.c:2786-2810], so
-        # "stopped moving" is unsound, while 0x16 is never nulled.
+        # CABLE_SEAT_SUCCESS needs all players READY [overworld.c:2988-2999]; count=2 at a waiting
+        # host faults it. Only the host's 0x16 counts: DPAD codes are nulled under queue pressure
+        # [overworld.c:2786-2810].
         _host_settled = self._host_ready
         if not _host_settled:
             self._seat_wait_host += 1
             if self._seat_wait_host <= SEAT_HOST_READY_MAX:
                 if self._seat_wait_host == 1:
                     self.info("Seated; waiting for the host to reach its chair.")
-                return [0] * 7      # idle -> the sim emits the EMPTY held-keys keepalive
+                return [0] * 7
             if self._seat_wait_host == SEAT_HOST_READY_MAX + 1:
                 self.info("Host never settled at its chair; starting the post-seat rounds anyway.")
         elif not self._post_seat_logged:

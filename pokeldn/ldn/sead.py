@@ -1,14 +1,5 @@
-"""SEAD's random number generator - the middleware Nintendo seeds key material from.
-
-Game-independent: SEAD is Nintendo's own standard library, and the same generator turns up under
-Pia and under ENL. This project needs it because Pia's LDN session key is AES over sixteen bytes of
-its output (`pia5.ldn_session_key`).
-
-TWO INDEPENDENT READINGS AGREE, which is why the generator is not a suspect when a derivation
-fails. It is read instruction by instruction off BDSP's own ARM64: the init at
-main.bin 0x15691c8 and the draw at 0x1569250, checked against the
-NintendoClients wiki's "SEAD RNG" page. Identical, down to the state rotation and the order the
-draws are packed in.
+"""SEAD's xorshift128, Nintendo's standard-library RNG; Pia's LDN session key is AES over sixteen
+bytes of its output. Read off BDSP main.bin 0x15691c8 (init) and 0x1569250 (draw) (docs/pia.md).
 """
 
 import struct

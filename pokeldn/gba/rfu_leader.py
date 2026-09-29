@@ -1,6 +1,6 @@
-"""Leader/parent side of the emulator RFU protocol (the inner payload of Pia Reliable protocol 10).
-receive(inner) once per unique in-order Reliable payload, tick(words) once per VBlank (at most one
-frame out). The Reliable layer MUST deduplicate retransmitted DATA before calling receive()."""
+"""Leader side of the emulator RFU protocol, the inner payload of Pia Reliable protocol 10.
+receive(inner) once per unique in-order Reliable payload, tick(words) once per VBlank; the Reliable
+layer must deduplicate retransmitted DATA before receive()."""
 
 from collections import deque
 import secrets
@@ -34,10 +34,8 @@ def _parent_ni_fields(slot):
             (value >> rfu.PARENT_LLSF_PHASE_SHIFT) & 3)
 
 
-# Safety valve only. With duplicate coalescing the queue never holds more than the distinct commands
-# of one console block (a 252-byte chunk is 21 fragments plus its INIT), so reaching this means the
-# echo has stopped draining and something else is already wrong. Dropping a DISTINCT command here is
-# never correct - see ChildEcho.
+# Safety valve: with coalescing the queue holds at most one console block's distinct commands (21
+# fragments and an INIT for 252 bytes). Dropping a distinct command is never correct.
 ECHO_MAX = 64
 
 
@@ -49,38 +47,20 @@ def _normalize_child_cmd(slot):
 
 
 class ChildEcho:
-    """Row one of the parent's 70-byte gRecvCmds table: the console's own commands mirrored back.
-
-    This is not a courtesy. `MysteryGiftClient_Init(client, 1, 0)` gives the client sendPlayerId 1 -
-    its own multiplayer id - so `MGL_Send` gates every chunk on `MGL_HasReceived(1)`
-    [mystery_gift_link.c:176,205], which is `gRfu.blockReceived[1]`, set only when the console's OWN
-    block comes back complete through this row [RfuHandleReceiveCommand, link_rfu_2.c:1125 loops over
-    every player including the child itself; RfuMain1_Child fills gRecvCmds from the parent table,
-    :970]. Its block sender waits on the same mirror: HandleBlockSend holds the INIT until it sees the
-    INIT echoed and SendLastBlock repeats the last fragment until it sees that echoed, then re-sends
-    every fragment missing from the mirrored bitmask [link_rfu_2.c:1366-1416].
-
-    So a dropped echo of a distinct fragment is a lost fragment, permanently: the console asks for a
-    608-byte dump, the old bound (keep the newest 2) dropped the echoes of fragments 13, 16, 17 and
-    18 of a 21-fragment chunk when the console emitted them in bursts of two and four, the console
-    re-sent exactly those four (HandleSendFailure) and errored before our echo of the re-send
-    arrived. A REPEAT is different: the console re-sends the same fragment every frame while it waits,
-    and echoing each repeat is what put the mirror 0.5 s behind. Coalescing repeats and never
-    dropping distinct commands fixes both: one entry is enough, because the console is waiting to see
-    that command once.
-    """
+    """Row one of gRecvCmds: the console's own commands mirrored back (docs/frlg_link.md).
+    MGL_Send and the block sender wait on it [mystery_gift_link.c:176,205; link_rfu_2.c:1366-1416]:
+    a dropped distinct command is a lost fragment; a repeat is coalesced."""
 
     def __init__(self, max_backlog=ECHO_MAX, coalesce=True):
         self.max_backlog = max_backlog
-        # coalesce=False with max_backlog=2 is the older policy: keep the newest
-        # two commands and drop the rest. Kept reachable so a test can show what it costs.
+        # coalesce=False with max_backlog=2 is the older keep-newest-two policy, kept for a test.
         self.coalesce = coalesce
         self._queue = deque()
         self._pending = set()
         self.cmd = rfu.idle_slot()
         self.backlog_peak = 0
-        self.dropped = 0           # distinct commands lost to the safety valve; must stay 0
-        self.coalesced = 0         # repeats folded into an entry already waiting
+        self.dropped = 0  # lost to the safety valve; must stay 0
+        self.coalesced = 0
         self.progress = 0
         self.emissions = 0
         self.last_cmd = None
@@ -100,8 +80,8 @@ class ChildEcho:
             self.progress += 1
 
     def next_row(self):
-        """The row to publish this frame. With nothing queued the last one stands, as the console's own
-        RFU does not clear a mirrored command it has already acted on."""
+        """The row for this frame; with nothing queued the last one stands, as the console's RFU
+        does not clear a mirrored command it has acted on."""
         if self._queue:
             self.cmd = self._queue.popleft()
             self._pending.discard(self.cmd)
@@ -134,18 +114,18 @@ class RFULeader:
                  join_status=ni.RFU_STATUS_JOIN_GROUP_OK, start_ts=1,
                  skip_parent_ni=False, keepalive_frames=0):
         if host_session_id is None:
-            # Native leaders use parent-id high byte 0xf1 with a varying low byte; beacon and A store it LE.
+            # Native leaders use parent-id high byte 0xf1 with a varying low byte; beacon and A
+            # store it LE.
             host_session_id = secrets.token_bytes(1) + b"\xf1"
         self.host_session_id = bytes(host_session_id)[:2].ljust(2, b"\x00")
         self.bm_slot = bm_slot & 0xF
         self.join_status = join_status & 0xFF
-        # Union Room: the child sets only a UNI receive buffer at LMAN_MSG_CHILD_NAME_SEND_COMPLETED
-        # [link_rfu_2.c:2526] and goes straight to UNI, so it never mirrors a parent NI body (u03, u04).
+        # The Union Room child sets only a UNI receive buffer [link_rfu_2.c:2526] and never mirrors
+        # a parent NI body (docs/frlg_link.md, No parent NI).
         self.skip_parent_ni = bool(skip_parent_ni)
-        # skip_parent_ni only: re-present the first parent NI_START subframe for this many VBlanks
-        # before the first UNI frame. The room child mirrors NI_STARTs without a game receive buffer
-        # [librfu_rfu.c:2202] and 'D's after five unanswered parent frames; the pending receive then
-        # blocks its own UNI send until its 480-frame NI fail counter releases it (u06, u12).
+        # Re-present the first parent NI_START for this many VBlanks before UNI: the room child 'D's
+        # after five unanswered parent frames, and a pending NI receive [librfu_rfu.c:2202] blocks
+        # its UNI send until its 480-frame NI fail counter releases it.
         self.keepalive_frames = max(0, int(keepalive_frames))
         self._keepalive_left = 0
         self._keepalive_slot = None
@@ -153,8 +133,6 @@ class RFULeader:
         self.state = WAIT_CONNECT
         self.connect_id = None
         self.child_cmd = rfu.idle_slot()
-        # Native RFU reflects every child command into row one, and the console's own block sender and
-        # MGL_Send both wait on that reflection; see ChildEcho.
         self._echo = ChildEcho()
         self.child_game_data = None
         self.k_acks = 0
@@ -190,7 +168,7 @@ class RFULeader:
         return frame
 
     def receive(self, inner):
-        """Output is queued for tick() to keep one parent frame per VBlank; returns an event name or None."""
+        """Queue output for tick(), one parent frame per VBlank; return an event name or None."""
         ctl = _control_frame(inner)
         if ctl is None:
             return None
@@ -208,8 +186,8 @@ class RFULeader:
                 self._pending.append(gbaframe.build_link_state(0))
                 return "connect"
             if cid == self.connect_id and self.state != DISCONNECTED:
-                # The child sends C as a new Reliable frame every VBlank until it sees A; A is one
-                # stream-opening frame whose retransmits belong to Reliable, so never allocate a fresh A per C.
+                # The child sends C every VBlank until it sees A; A's retransmits belong to
+                # Reliable, so no fresh A per C.
                 return "connect_duplicate"
             return "connect_rejected"
 
@@ -244,7 +222,7 @@ class RFULeader:
             slot = rec["slot"]
             key = (llsf["state"], llsf["n"], llsf["phase"], bytes(slot[2:]))
             if key in self._seen_child_ni:
-                # If a layer failed to deduplicate, ACK again but never append the payload twice.
+                # A layer failed to deduplicate: ack again, never append the payload twice.
                 if llsf["state"] in (rfu.LCOM_NI_START, rfu.LCOM_NI, rfu.LCOM_NI_END):
                     ack = ni.parent_recv_ack_slot(llsf["state"], llsf["n"],
                                                   llsf["phase"], self.bm_slot)
@@ -254,8 +232,8 @@ class RFULeader:
             ack = self._child_ni.on_child_ni(ni.decode_child_ni_slot(slot))
             if ack is not None:
                 self._pending.append(self._wrap_parent_t(ack))
-            # Handover to the parent NI sender happens on the child's unacknowledged terminal NULL,
-            # not on NI_END (native order: END -> NULL -> parent NI).
+            # Hand over to the parent NI sender on the child's unacked terminal NULL (native order:
+            # END -> NULL -> parent NI).
             if (llsf["state"] == rfu.LCOM_NULL
                     and self._child_ni.complete and self.state == CHILD_NI):
                 self.child_game_data = self._child_ni.game_data
@@ -274,8 +252,8 @@ class RFULeader:
                 return "child_ni_complete"
             return "child_ni"
 
-        # Native RfuMain2_Parent strips childSendCmdId bits before publishing via gRecvCmds; both the
-        # activity and the row-one echo must see that normalized form.
+        # Native RfuMain2_Parent strips childSendCmdId bits before publishing via gRecvCmds; the
+        # activity and the row-one echo both see that normalized form.
         if self.state != UNI or rec.get("cmd") is None:
             return "uni_early"
         self.child_cmd = _normalize_child_cmd(rec["cmd"])
@@ -284,8 +262,8 @@ class RFULeader:
         return "uni"
 
     def tick(self, parent_words=None):
-        """Queued A/NI ACKs first; parent NI is stop-and-wait on the child's mirrored ACK; in UNI a T
-        goes out every call, even with both rows idle. None before C arrives."""
+        """Queued A and NI acks first; parent NI is stop-and-wait on the child's mirrored ack; in
+        UNI a T goes out every call, even with both rows idle. None before C arrives."""
         if self._pending:
             return self._pending.popleft()
 
@@ -296,8 +274,8 @@ class RFULeader:
             self.state = UNI
 
         if self.state == PARENT_NI:
-            # The native leader re-presents the current NI subframe every VBlank until the child mirrors it
-            # with ack=1; a delivered poll can still be missed by the child's RFU callback.
+            # The native leader re-presents the current NI subframe every VBlank until the child
+            # mirrors it with ack=1; the child's RFU callback can miss a delivered poll.
             if self._parent_waiting is not None:
                 return self._wrap_parent_t(self._parent_current_slot)
 
@@ -328,24 +306,20 @@ class RFULeader:
 
     @property
     def echo_backlog(self):
-        """Child commands received but not yet mirrored back into row one. While this is non-zero
-        the console has not seen its own last block returned, so anything we say about that block
-        would arrive before the block itself [u18, see host_trade._next_parent_words]."""
+        """Child commands not yet mirrored into row one; while non-zero, anything said about the
+        console's last block arrives before the block (see host_trade._next_parent_words)."""
         return self._echo.backlog
 
     @property
     def echo_progress(self):
-        """Entries that have LEFT the echo queue. Monotonic, so a caller can record
-        `echo_progress + echo_backlog` when a block lands and wait for progress to reach it: that is
-        the point at which everything queued behind that block has been mirrored back."""
+        """Entries that have left the echo queue, monotonic. Once it reaches `echo_progress +
+        echo_backlog` recorded when a block landed, everything behind that block is mirrored."""
         return self._echo.progress
 
     @property
     def echo_emissions(self):
-        """Echoes actually EMITTED. `last_echo_cmd` alone is ambiguous: two blocks can end in a
-        byte-identical fragment -- u24 died on a CHOOSEMOVE whose last fragment matched the previous
-        battler's -- so a caller pairs the content with a mark taken when its block landed and
-        requires an emission after it."""
+        """Echoes emitted. Two blocks can end in a byte-identical fragment, so a caller pairs
+        `last_echo_cmd` with a mark taken when its block landed and needs an emission after it."""
         return self._echo.emissions
 
     @property
@@ -355,9 +329,8 @@ class RFULeader:
 
     @property
     def echo_blocks(self):
-        """One record per console block whose SEND_BLOCK_INIT we have echoed, with the set of fragment
-        indices emitted for it (u26). A block is returned to the console only when every index
-        0..count-1 is in the set; the last fragment alone is not enough."""
+        """One record per echoed SEND_BLOCK_INIT with the fragment indices emitted for it. A block
+        returns to the console only when every index 0..count-1 is in the set."""
         return self._echo.blocks
 
     @property
@@ -380,6 +353,6 @@ class RFULeader:
         return gbaframe.build_disconnect(self.connect_id)
 
     def on_ldn_leave(self):
-        """A LeaveEvent is below Pia/RFU: no peer remains to receive D. Graceful shutdown uses disconnect_frame()."""
+        """A LeaveEvent leaves no peer to receive D; graceful shutdown uses disconnect_frame()."""
         self.state = DISCONNECTED
         self._pending.clear()

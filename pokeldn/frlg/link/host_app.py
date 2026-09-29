@@ -1,5 +1,4 @@
-"""Application runtime for hosting one complete FRLG trade session; owns OS resources and
-scheduling only (protocol bytes live in host_pia, RFU/trade state in host_session)."""
+"""Runtime for hosting one FRLG trade session: OS resources and scheduling only."""
 
 import os
 import time
@@ -19,16 +18,14 @@ from pokeldn.ldn import show_done
 
 
 HOST_CONTROL_POLL_SECONDS = 0.05
-# Settle time after the console has left LDN following a confirmed room exit. It is not the
-# 15-second post-exit grace: that grace keeps Pia traffic alive while the Switch fades and
-# warps, and the console leaving LDN is that finishing.
+# Settle after the console leaves LDN following a confirmed room exit; separate from the 15-second
+# post-exit grace that keeps Pia alive while the Switch fades.
 HOST_CLOSE_SETTLE_SECONDS = 2.0
 CHAT_FILE_POLL_SECONDS = 0.25
 
 
 class ChatFileWatcher:
-    """Tails a file so lines appended to it while the host runs are sent into a live Union Room
-    chat. Only whole lines are taken, so a half-written line is never sent."""
+    """Tails a file into a live Union Room chat; only whole lines are sent."""
 
     def __init__(self, path, log=print):
         self.path = path
@@ -154,8 +151,8 @@ class HostApplication:
                 activity=getattr(self.options, "union_room_activity", None),
                 trade_board=trade_board)
         elif getattr(self.options, "colosseum", False):
-            # Direct Corner -> Colosseum -> Single Battle. Only the advertised activity differs from
-            # the trade beacon [sAcceptedActivityIds_SingleBattle, src/data/union_room.h:398].
+            # Only the advertised activity differs from the trade beacon
+            # [sAcceptedActivityIds_SingleBattle, src/data/union_room.h:398].
             inactive, active = build_colosseum_app_data(
                 self.profile, self.session.rfu.host_session_id)
         else:
@@ -216,9 +213,7 @@ class HostApplication:
             if getattr(activity, "close_confirmed", False):
                 self.info(f"Switch sent the RFU disconnect frame (D) in {state}: the normal close.")
             elif battle is not None and battle.done:
-                # u19: a finished link battle ends this way. CB2_ReturnFromCableClubBattle takes the
-                # console back to the room through its score screen and save, and it drops LDN on
-                # the way; nothing the host sent caused it.
+                # A finished link battle drops LDN on its own [CB2_ReturnFromCableClubBattle].
                 self.info("Switch sent the RFU disconnect frame (D) after the battle ended "
                           f"(outcome {battle.outcome}): the normal close for a link battle. It "
                           "returns to the room on its own; relaunch the host to appear there again.")
@@ -248,14 +243,9 @@ class HostApplication:
                 "settling for a moment before the host stops.")
 
     def _absence_stop_reason(self, now):
-        """The console is gone from LDN. Returns the message to stop on, or None to keep going.
-
-        Waiting here for the activity's own `done` deadlocks. `done` is set from the session's
-        disconnect path, whose timer only advances inside `activity.tick()`, and the hole guard
-        stops calling that as soon as the departed console's acks stop arriving -- so the clock
-        that would release the guard is itself behind the guard. Zero of 356 host logs ever
-        reached this completion; every clean close so far ended in a SIGTERM.
-        """
+        """The console is gone from LDN -> the message to stop on, or None to keep going.
+        Trap: never wait for the activity's `done`; its timer runs inside `activity.tick()`, which
+        the hole guard stops calling once the departed console's acks stop, so it deadlocks."""
         activity = self._activity()
         if not activity.close_confirmed or activity.done:
             return "The console left the LDN network; stopping host peer traffic."
@@ -281,7 +271,6 @@ class HostApplication:
         return bool(getattr(self._activity(), "gift_sent", False))
 
     def _poll_chat_file(self, now):
-        """Send whatever has been appended to --chat-file into a live chat."""
         if self.chat_watcher is None or not self.chat_watcher.due(now):
             return
         activity = self._activity()

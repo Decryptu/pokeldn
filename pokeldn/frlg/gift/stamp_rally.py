@@ -1,5 +1,5 @@
-"""FRLG stores the card and RAM script persistently and appends each four-byte stamp to WonderCardMetadata;
-a Mystery Event wrapper runs right after an accepted stamp to make its reward eligible."""
+"""FRLG keeps the card and RAM script and appends each four-byte stamp to WonderCardMetadata; a
+Mystery Event wrapper runs right after an accepted stamp to make its reward eligible."""
 
 from dataclasses import dataclass
 
@@ -60,35 +60,33 @@ class MysteryGiftDistribution:
     news: bytes | None = None
     # Bytecode for the second VM, run by CLI_RUN_MEVENT_SCRIPT [mystery_event.py].
     mevent: bytes | None = None
-    # Four Easy Chat word ids the console must be holding in its Poke Mart questionnaire before
-    # anything is sent [SVR_CHECK_QUESTIONNAIRE, mg_server.py], and what a wrong one reads.
+    # Four Easy Chat word ids the console's Poke Mart questionnaire must hold before anything is
+    # sent [SVR_CHECK_QUESTIONNAIRE, mg_server.py], and what a wrong one reads.
     questionnaire: tuple | None = None
     denied_message: str | None = None
-    # Native ARM code, run by CLI_RUN_BUFFER_SCRIPT [buffer_script.py], and what its answer is
-    # checked against (mg_server.BUFFER_EXPECT_TRAINER_ID, a u32, or None for "any answer").
+    # Native ARM code, run by CLI_RUN_BUFFER_SCRIPT [buffer_script.py], and its expected answer
+    # (mg_server.BUFFER_EXPECT_TRAINER_ID, a u32, or None for any answer).
     buffer_code: bytes | None = None
     buffer_expect: object | None = None
-    # Set when the payload repoints the console's outgoing message: how many bytes of console
-    # memory MG_LINKID_RESPONSE will carry instead of the usual 4.
+    # Set when the payload repoints the console's outgoing message: how many bytes
+    # MG_LINKID_RESPONSE carries instead of 4.
     buffer_dump_size: int | None = None
-    # memory-dump-multi only: how many blocks the client script asks for, and where the first one
-    # starts. MG_LINK_BUFFER_SIZE caps a MESSAGE, not a session [mg_script.MAX_DUMP_BLOCKS].
+    # memory-dump-multi only: block count and first address. MG_LINK_BUFFER_SIZE caps a message, not
+    # a session [mg_script.MAX_DUMP_BLOCKS].
     buffer_dump_blocks: int = 1
     buffer_dump_address: int = 0
-    # memory-dump-scatter only: the TABLE of bases the payload carries, one per block. A scattered
-    # block's address is its entry here, not `first + n * size`; that arithmetic
-    # against a scattered run and named an address 4 MB from where the bytes came from.
+    # memory-dump-scatter only: one base per block; a block's address is its entry here,
+    # never `first + n * size`.
     buffer_dump_addresses: tuple = ()
-    # The payloads whose answer is a structure rather than a region (memory-scan's hit table,
-    # rng-trace's samples): the script's name, so the log decodes what came back.
+    # Payloads whose answer is a structure (memory-scan hits, rng-trace samples): the script's name,
+    # so the log decodes it.
     buffer_decode: str | None = None
     # rom-checksum only: the path of the ROM image its sums are compared with, per build.
     buffer_reference: str | None = None
 
     def __post_init__(self):
         if self.buffer_code is not None:
-            # Not a gift: nothing is sent, nothing is saved, and no Wonder Card is involved, so a
-            # buffer script travels as alone as Wonder News does.
+            # A buffer script is not a gift: nothing is saved, no card, so it travels alone.
             object.__setattr__(self, "buffer_code", bytes(self.buffer_code))
             buffer_script.validate(self.buffer_code)
             if self.card is not None or self.ram_script is not None:
@@ -100,8 +98,7 @@ class MysteryGiftDistribution:
                     "trainer or a Mystery Event script")
             return
         if self.news is not None:
-            # Wonder News travels alone: it has no flagId, no metadata and no delivery script,
-            # so a news distribution carries neither card nor RAM script.
+            # Wonder News has no flagId, no metadata and no delivery script, so it travels alone.
             object.__setattr__(self, "news", bytes(self.news))
             if self.card is not None or self.ram_script is not None:
                 raise ValueError("a Wonder News distribution carries no card or RAM script")
@@ -203,7 +200,6 @@ def _script_text(text):
 
 
 # Field-event bytecode [asm/macros/event.inc].
-
 
 
 class _FieldScriptBuilder:
@@ -353,11 +349,10 @@ def build_stamp_rally_delivery_script(*, flag_id=STAMP_RALLY_FLAG_ID):
     return result
 
 
-
-
 def build_stamp_activation_script(state_var, *, flag_id=STAMP_RALLY_FLAG_ID,
                                   install=False):
-    """``runscript`` relocates its zero-based pointer against the received buffer (CLI_RUN_MEVENT_SCRIPT)."""
+    """``runscript`` relocates its zero-based pointer against the received buffer
+    (CLI_RUN_MEVENT_SCRIPT)."""
     if state_var not in (VAR_MYSTERY_GIFT_1, VAR_MYSTERY_GIFT_2):
         raise ValueError("state_var must be a Stamp Rally state variable")
     embedded = bytearray()

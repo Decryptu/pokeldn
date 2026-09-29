@@ -1,6 +1,5 @@
-"""The per-VBlank orchestrator: transport <-> crypto <-> Pia <-> trade engine. No trade traffic until the ConnectionManager
-is connected; station var-ids are learned from the wire (header = [dst_var][src_var], footer = dest var).
-"""
+"""The per-VBlank orchestrator: transport <-> crypto <-> Pia <-> trade engine. No trade traffic
+until the ConnectionManager is connected; station var-ids are learned from the wire."""
 
 import json
 import os
@@ -13,64 +12,60 @@ from pokeldn.ldn.reliable import _E_ACKED as _E_ACKED_IDX
 
 RELIABLE_SEQ_START = 0xFFF0
 
-# The reliable layer runs on a millisecond clock; 59.727 Hz VBlank.
 MS_PER_VBLANK = 1000.0 / 59.727
 
 # The reference host batches up to 9 Reliable messages per datagram.
 RELIABLE_BATCH_MAX = 9
-# The console MAC-acks but drops ~40% of our datagrams inside its own stack when another of ours lands within ~20ms;
-# one merged datagram per ~33ms window is dropped <5% of the time.
+# The console drops ~40% of our datagrams when another of ours lands within ~20ms; one merged
+# datagram per ~33ms window is dropped <5% of the time.
 PACE_MIN_GAP_MS = 34
 # A datagram sent within ~2ms after a console frame is dropped ~40% of the time; 20ms+ after, ~6%.
 REPLY_HOLDOFF_MS = 6
-# Every reliable data frame is repeated in the next CARRY_DEPTH datagrams. Air loss is ~1-2% and bursty (h5: an
-# original and its 68ms retransmit both lost), and Pia delivers in order, so one hole holds every later frame back
-# and the console's RFU queue (8 deep) overflows when the hole fills; the console then drops the link. The
-# ~40% "silent drop" this was first written against was the random header nonce (see _next_nonce); with the
-# counter nonce the carry costs ~0.4 copies per frame (j89). j90 ran at 0 but saw no trade-phase loss at all.
+# Air loss is bursty and Pia delivers in order, so one hole holds every later frame back and the
+# console's 8-deep RFU queue overflows when it fills; the console then drops the link. Carry each
+# data frame in the next CARRY_DEPTH datagrams (~0.4 copies per frame).
 CARRY_DEPTH = 4
 
-# LIVE cap on new standby frames per count: the reference child sends each ~3-4x then stops; emitting every VBlank
-# keeps the host in the same round forever. Offline keeps the unbounded cadence its MockHost depends on.
+# Live cap on standby frames per count: emitting every VBlank keeps the host in the same round
+# forever. Offline keeps the unbounded cadence MockHost depends on.
 BARRIER_EMITS = 6
 
 RTX_GAP_LIMIT = 1
 RTX_GAP_LIMIT_NI = 2
 # RTO_BACKOFF stays 1.0 (off): backoff blew recovery latency up to seconds.
-MAX_INFLIGHT = 24         # window/RTO bounds throughput; 24 reaches the console's native 60/s poll rate
+MAX_INFLIGHT = 24  # 24 reaches the console's native 60/s poll rate
 RTT_JITTER_K = 1.0
 DUP_NACK_THRESHOLD = 1
 RTO_CEIL_MS = 120
 RTO_BACKOFF = 1.0
 RECV_NI_REACK_EVERY = 20
 # Do not raise these: child registration must finish inside the parent's establishConnection window
-# of 240/360 frames [link_rfu_2.c:340-345, 522-527], and the host's librfu NI receiver drops the
-# link on extra sub-frames.
+# of 240/360 frames [link_rfu_2.c:340-345, 522-527]; librfu's NI receiver drops the link on extra
+# sub-frames.
 HOST_ACK_REPEAT_BEFORE_RESEND = 10
 NULL_REEMIT_EVERY = 12
 NI_ACK_WAIT_RESEND = 12
 NULL_REEMIT_MAX = 30
-RTO_BOOTSTRAP_MS = 200    # RTO while sampleless, so the connect J/C retransmit until the host's reliable side engages (~2s in); NOT a floor
-# K supersedes rather than queues (only the newest un-acked host ts is pending, one per VBlank) and is NOT window-gated:
-# the parent blocks its whole post-finalize sequence on the DRAC ack it carries [link_rfu_2.c:867]. k_seq is the running
-# count of host 'T' frames received; under-reporting it wedges the trade-room entry.
+RTO_BOOTSTRAP_MS = 200  # RTO while sampleless (connect J/C retransmit); not a floor
+# K supersedes and is not window-gated: the parent blocks its post-finalize sequence on the DRAC ack
+# it carries [link_rfu_2.c:867]. Under-reporting k_seq wedges the trade-room entry.
 K_INFLIGHT_MAX = 4
-# The per-VBlank child slot is a liveness obligation (FRLG's MC_TimerCount = 32 ~ 534ms, linkRecovery disabled
-# [link_rfu_2.c:129,136]); the window may DELAY it, never silence it.
+# The per-VBlank child slot is a liveness obligation (MC_TimerCount 32 ~ 534ms, no recovery
+# [link_rfu_2.c:129,136]); the window may delay it, never silence it.
 CHILD_SILENCE_LIMIT = 20   # VBlanks (~335ms)
 
-# Ceiling on the liveness override: once the peer is gone forced slots go unacked forever, so the window resumes as a hard cap.
+# Once the peer is gone forced slots go unacked forever, so the window resumes as a hard cap.
 SILENCE_OVERRIDE_CEIL = 2
-# One child slot per host poll is librfu's native cadence [MscCallback_Child]; surplus idle slots delay the K-ack the
+# One child slot per host poll [MscCallback_Child]; surplus idle slots delay the K-ack the
 # stop-and-wait parent is blocked on.
 SLOT_CREDIT_MAX = 2
-# MUST STAY 1: the parent keeps exactly one child slot per poll and treats any tag not +1 mod 8 as a receive error, fatal
-# on the fifth [link_rfu_2.c:876-892]; a second slot per poll is a guaranteed dropped tag.
+# Must stay 1: the parent treats any tag not +1 mod 8 as a receive error, fatal on the fifth
+# [link_rfu_2.c:876-892].
 WALK_SLOTS_PER_POLL = 1
-ACK_PERIOD = 2             # delayed-ack interval in VBlanks (~33ms); the ack piggybacks on data datagrams and goes standalone only when owed
-COMPRESS_MIN = 62          # zstd-compress iff the body is >= 62 bytes: the real host's exact threshold (largest raw 61, smallest compressed 62)
+ACK_PERIOD = 2  # delayed-ack VBlanks; standalone only when owed
+COMPRESS_MIN = 62  # the real host's threshold: largest raw 61, smallest compressed 62
 
-# Per-new-frame 'T' counter, reused on a Pia retransmit; the host gates on monotonicity, so seed nonzero.
+# 'T' counter per new frame, reused on a Pia retransmit; the host gates on monotonicity.
 TS_SEED = 0x0000362E
 
 
@@ -91,14 +86,13 @@ class Sim:
         self.carried = 0
         self.crypto = pia_crypto
         self.engine = engine
-        # Held keys (0xBE00) go out on an idle VBlank ONLY while engine.in_seat_phase, mirroring SendKeysToRfu, which runs only
-        # while gRfu.callback == SendKeysToRfu [link_rfu_2.c:1069-1089] - cleared on the warp out of the cable seat
-        # [cable_club.c:918]. Held keys never override a real slot.
+        # Held keys (0xBE00) go out only while engine.in_seat_phase, mirroring SendKeysToRfu
+        # [link_rfu_2.c:1069-1089, cable_club.c:918]. They never override a real slot.
         self.linkstate = linkstate
         self.conn = conn
         if conn is not None and hasattr(engine, "barrier"):
             engine.barrier.max_emits = BARRIER_EMITS
-        # LIVE: gate READY_TO_TRADE on the full BufferTradeParties (the offline MockHost has no mail/ribbons).
+        # Live: gate READY_TO_TRADE on the full BufferTradeParties (MockHost has no mail/ribbons).
         if conn is not None and hasattr(engine, "_live"):
             engine._live = True
         self.our_ip = our_ip
@@ -124,20 +118,21 @@ class Sim:
         self._ni = None
         self._ni_done = False
         self._ni_built = False
-        # librfu's NI transfer is stop-and-wait: one sub-frame in flight, advance on the host's ack; sending them faster puts
-        # out-of-sequence sub-frames into the host's receiver and it disconnects.
+        # librfu's NI transfer is stop-and-wait; out-of-sequence sub-frames make the host
+        # disconnect.
         self._ni_awaiting = None
         self._ni_wait_ticks = 0
         self._ni_recv = ni.NIReceiver()
-        # One current recv-NI ack, re-emitted per DISTINCT host sub-frame; a per-frame queue spammed hundreds of duplicates under loss.
+        # One current recv-NI ack, re-emitted per distinct host sub-frame; a queue spammed
+        # duplicates.
         self._cur_ni_ack = None
-        # At most one reliable recv-NI ack in flight; queuing one per poll backlogs stale acks and deadlocks the handshake.
+        # At most one reliable recv-NI ack in flight; one per poll deadlocks the handshake.
         self._ni_ack_seq = None
         self._ni_ack_bytes = None
         self._emitted_ni_ack = None
         self._host_uni_seen = False
-        # Stop acking at the host's NI NULL: re-emitting the stale NI_END ack through the ~2.4s join-textbox gap causes the
-        # in-game Communication error.
+        # Stop acking at the host's NI NULL: re-emitting NI_END through the ~2.4s join-textbox gap
+        # causes the in-game Communication error.
         self._host_ni_null_seen = False
         self._host_ni_ack_state = None
         self._host_ni_repeat = 0
@@ -150,12 +145,11 @@ class Sim:
         self.ni_rejected = False
         self.host_disconnected = False
         self.out_seq = RELIABLE_SEQ_START
-        # Pia packet ids are per-channel counters keyed by header dst var (dst=0 establishing, 0x0001 session/RTT, host-var
-        # reliable); a single global counter skips reliable pktids.
+        # Pia packet ids count per header dst var; one global counter skips reliable pktids.
         self._pktid_by_dst = {}
-        # Pia header nonce: one big-endian u64 counter, +1 per datagram, never 0. The peer drops a datagram
-        # whose nonce is not strictly above the last one it accepted on that channel, so a random nonce is
-        # silently discarded about half the time.
+        # Pia header nonce: a u64 counter, +1 per datagram, never 0. The peer drops a nonce not
+        # above the last it accepted on that channel, so a random nonce loses about half the
+        # datagrams.
         self._nonce = int.from_bytes(os.urandom(8), "big") or 1
         self.last_in_seq = 0
         self._recv_hi = None
@@ -178,7 +172,7 @@ class Sim:
         self.rx_protos = {}
         self._dbg = None
 
-        # our var id is self-chosen; the host's is learned from incoming headers (its first packet has dst=0).
+        # The host's var id is learned from incoming headers (its first packet has dst=0).
         self.our_var = our_var.to_bytes(2, "big")
         self.host_var = reliable.STATION_HOST.to_bytes(2, "big")
         self._learned = False
@@ -245,7 +239,7 @@ class Sim:
                     self._note_in_seq(rl.seq)
                     if rl.flagsA & 0x01 and rl.payload[:1] == b"\x57":
                         self._on_gba_in(rl.payload)
-                elif rl.flagsA & 0x01:                # live: deliver each unique frame as it lands (the emulator is order-tolerant), never stall the RFU exchange on a gap
+                elif rl.flagsA & 0x01:  # live: deliver on arrival; the emulator is order-tolerant
                     self._ack_owed = True
                     if rl.seq not in self._seen_in:
                         self._note_in_seq(rl.seq)
@@ -290,7 +284,7 @@ class Sim:
             ack_slot = self._ni_recv.on_host_ni(ni_rec)
             if ack_slot is not None:
                 if ack_slot == self._cur_ni_ack:
-                    # The host repeating a sub-frame means it has not seen our ack; re-ack on a slow cadence (every poll spams duplicates).
+                    # The host repeating a sub-frame has not seen our ack; re-ack on a slow cadence.
                     self._host_ni_repeat += 1
                     if self._host_ni_repeat % RECV_NI_REACK_EVERY == 0:
                         self._ni_ack_bytes = None
@@ -300,7 +294,8 @@ class Sim:
                     self._host_ni_repeat = 0
                 self._cur_ni_ack = ack_slot
             if ni_rec.get("ack") == 1:
-                # A repeated host ack of OUR send-NI names the sub-frame it is waiting for: the next one we emitted was lost.
+                # A repeated host ack of our send-NI names the sub-frame it waits for: the next one
+                # was lost.
                 key = (ni_rec.get("state"), ni_rec.get("n"), ni_rec.get("phase"))
                 self._host_ni_ack_state = ni_rec.get("state")
                 if key == self._host_ni_ack_key:
@@ -325,7 +320,7 @@ class Sim:
                     self.ni_rejected = True
                     self.log(f"[sim] WARNING: host NI join status = {st} (NOT JOIN_GROUP_OK=5) -> host "
                              f"REJECTED our join; the trade cannot proceed")
-        # The host's first UNI slot ends its NI; sending a UNI slot before the host itself is in UNI faults its link manager.
+        # A UNI slot sent before the host itself is in UNI faults its link manager.
         if rec.get("llsf_state") == 4:
             self._host_uni_seen = True
         _walk = self.linkstate is not None and self.linkstate.walking
@@ -354,7 +349,7 @@ class Sim:
         return pktid
 
     def flush_paced(self):
-        """Called between ticks too, so PACE_MIN_GAP_MS and the reply hold-off are honoured at sub-VBlank resolution."""
+        """Called between ticks too, so pacing holds at sub-VBlank resolution."""
         if not self._pace_pending:
             return None
         now = self._pace_clock()
@@ -369,10 +364,8 @@ class Sim:
     def _send_messages(self, messages, *, dst_var=None, src_var=None, compress=False,
                        footer=True, establishing=False, unicast=True, pktid=None, footer_var=None,
                        _paced=False):
-        """Frame N messages into ONE datagram: [messages, optionally zstd as a whole][2-byte recipient var-id footer,
-        uncompressed][0xFF pad to a multiple of 16]; header byte5 = (pad << 4) | (1 if zstd) | (2 if establishing). One pktid
-        per datagram, not per message.
-        """
+        """Frame N messages into ONE datagram with one pktid: [messages, zstd as a whole][2-byte
+        footer var][0xFF pad to 16]; header byte5 = pad << 4 | 1 if zstd | 2 if establishing."""
         if not messages:
             return None
         if self.pace_ms and not _paced:
@@ -420,7 +413,7 @@ class Sim:
                                    unicast=unicast, pktid=pktid, footer_var=footer_var)
 
     def _tx_reliable(self, seq, flagsA, inner):
-        """Pure-ack frames carry no seq of their own and ride the window base (the reference reuses 0xFFF0)."""
+        """Pure-ack frames ride the window base (the reference reuses 0xFFF0)."""
         s = RELIABLE_SEQ_START if seq is None else seq
         rel = reliable.build_reliable(s, self.rel.send_low(), inner, flagsA=flagsA)
         self._send(reliable.PROTO_RELIABLE, rel,
@@ -431,7 +424,7 @@ class Sim:
     def _tx_reliable_batch(self, batch):
         if not batch:
             return
-        # carry-forward: prepend the still-unacked data frames of the previous datagrams, newest first; ctrl-acks are never carried
+        # prepend the still-unacked data frames of previous datagrams; ctrl-acks are never carried
         if CARRY_DEPTH:
             have = {s for s, _, _ in batch if s is not None}
             carried = []
@@ -451,8 +444,8 @@ class Sim:
         for seq, flagsA, inner in batch:
             s = RELIABLE_SEQ_START if seq is None else seq
             rel = reliable.build_reliable(s, self.rel.send_low(), inner, flagsA=flagsA)
-            # Pia message flag 0x40 on every pure ack: both native parties set it, and without it the host never fast-retransmitted
-            # a hole. The ctrl-ack is LAST so its 0x40 never leaks into a later message via msgflags inheritance.
+            # Flag 0x40 on every pure ack, or the host never fast-retransmits a hole. The ctrl-ack
+            # is last so its 0x40 never leaks into a later message via msgflags inheritance.
             mf = 0x40 if flagsA == reliable.FLAGSA_CTRL else None
             msgs.append((reliable.PROTO_RELIABLE, rel, mf))
         dv = int.from_bytes(self.host_var, "big")
@@ -475,10 +468,10 @@ class Sim:
             self._tx_reliable(seq, reliable.FLAGSA_GBA, frame)
             self._gba_conn_sent = True
             return
-        # One datagram per VBlank; wire order (the reference's KT/KTA): retransmits, K, T, ctrl-ack last.
+        # Wire order (the reference's KT/KTA): retransmits, K, T, ctrl-ack last.
         batch = []
-        # Block/trade phase: gap-targeted retransmit (the host buffers out-of-order); NI/seat phase: a longer tail so the few
-        # critical frames get through.
+        # Block phase: gap-targeted retransmit (the host buffers out-of-order); NI/seat phase: a
+        # longer tail.
         in_block_phase = self._gba_accepted and not getattr(self.engine, "in_seat_phase", True)
         rtx_limit = RTX_GAP_LIMIT if in_block_phase else RTX_GAP_LIMIT_NI
         for seq, flagsA, inner in self.rel.due_retransmits(now_ms, limit=rtx_limit)[:RELIABLE_BATCH_MAX]:
@@ -497,11 +490,12 @@ class Sim:
             queued = 1
         t_frames = []
         if self._gba_accepted:
-            # Gate on outstanding(), not inflight(); the window yields to the liveness bound after CHILD_SILENCE_LIMIT quiet VBlanks.
+            # Gate on outstanding(), not inflight(); liveness wins after CHILD_SILENCE_LIMIT quiet
+            # VBlanks.
             _out = self.rel.outstanding()
             _quiet = self._tick - self._last_t_tick >= CHILD_SILENCE_LIMIT
             _starved = _quiet and _out < self.rel.max_inflight * SILENCE_OVERRIDE_CEIL
-            # NOTHING is exempt from the credit pacer, the seat walk included: the parent samples one child slot per poll and
+            # Nothing is exempt from the credit pacer, the seat walk included: the parent
             # hard-errors after >4 lost tag increments [link_rfu_2.c:884-888].
             _gated = ((_out >= self.rel.max_inflight and not _starved)
                       or (self._slot_credit <= 0 and not _quiet))
@@ -523,7 +517,7 @@ class Sim:
                         self._ni_ack_seq = seq
                         self._ni_ack_bytes = self._emitted_ni_ack
             else:
-                # window-gated: an in-flight block send must still advance on the host's reflection
+                # an in-flight block send must still advance on the host's reflection
                 self.engine.poll_send_done()
         batch.extend(k_frames)
         batch.extend(t_frames)
@@ -532,7 +526,8 @@ class Sim:
             self._dbg.append({"tick": tick, "credits": 0, "kacks": queued,
                               "gba_emitted": len(t_frames), "inflight": self.rel.inflight(),
                               "sender": (_snd.state, _snd.index, _snd.count) if _snd else None})
-        # Bulk-ack LAST, rate-limited to ACK_PERIOD and only when owed: a standalone pure-ack every VBlank flooded the half-duplex link.
+        # Bulk-ack last, only when owed and every ACK_PERIOD: one per VBlank floods the half-duplex
+        # link.
         due = (tick - self._last_ack_tick) >= ACK_PERIOD
         if due and (self._ack_owed or self.rel.recv_ooo):
             batch.append((None, reliable.FLAGSA_CTRL, self.rel.ack_payload()))
@@ -545,7 +540,7 @@ class Sim:
             return
         self._ni_built = True
         lp = getattr(self.engine, "lp", None) or linkplayer.LinkPlayer()
-        # ACTIVITY_TRADE for the trade joiner, ACTIVITY_WONDER_CARD for the Mystery Gift client [SetHostRfuGameData, union_room.c:2255].
+        # ACTIVITY_TRADE or ACTIVITY_WONDER_CARD [SetHostRfuGameData, union_room.c:2255].
         src = ni.build_game_data(version_low=lp.version & 0xFF,
                                  trainer_id=lp.trainer_id & 0xFFFF, ot_name=lp.name,
                                  activity=getattr(self.engine, "ni_activity", ni.ACTIVITY_TRADE),
@@ -553,12 +548,10 @@ class Sim:
         self._ni = ni.NISender(src)
 
     def _gba_frame(self):
-        """One slot per call: the NI handshake (after 'A', before UNI), then UNI slots. Held keys + sit() fire only while
-        engine.established AND in_seat_phase; earlier idle VBlanks are bare all-zero slots so a tagged 0xBE00 never races
-        the NI/block handshake.
-        """
+        """One slot per call: the NI handshake, then UNI slots. Held keys fire only while
+        established and in_seat_phase, so a tagged 0xBE00 never races the NI/block handshake."""
         self._emitted_ni_ack = None
-        # Do not go UNI until our send-NI is finished AND the host has entered UNI.
+        # Go UNI only once our send-NI is finished and the host has entered UNI.
         if self.conn is not None and self._gba_accepted and not self._ni_done:
             self._ensure_ni()
             if not self._ni.done:
@@ -572,11 +565,11 @@ class Sim:
                     self._ni_wait_ticks += 1
                     if self._ni_wait_ticks % NI_ACK_WAIT_RESEND == 0:
                         return self._wrap_t(self._ni.emitted[-1][3])
-            # The host is blocked on its current sub-frame's ack; this outranks our own re-sends (a branch below returns early).
+            # The host is blocked on this ack; it outranks our own re-sends.
             if self._cur_ni_ack is not None and self._ni_ack_bytes != self._cur_ni_ack:
                 self._emitted_ni_ack = self._cur_ni_ack
                 return self._wrap_t(self._cur_ni_ack)
-            # The host re-acking one of our sub-frames means the next never reached it; re-send it, paced (see the constants).
+            # The host re-acking one of our sub-frames means the next never reached it.
             if (self._ni.done and not self._host_uni_seen
                     and self._host_ni_resend is not None
                     and self._null_reemits < NULL_REEMIT_MAX):
@@ -587,8 +580,8 @@ class Sim:
                         self.info("Host is still awaiting one of our NI sub-frames; re-sending it.")
                     return self._wrap_t(self._host_ni_resend)
             if not self._host_uni_seen:
-                # Re-emit the current recv-NI ack rather than go silent past MC_Timer (a Pia retransmit keeps its seq and never
-                # reaches librfu), but not after the host's NULL.
+                # Re-emit the recv-NI ack rather than go silent past MC_Timer (a Pia retransmit
+                # never reaches librfu), but not after the host's NULL.
                 if (self._cur_ni_ack is not None and not self._host_ni_null_seen
                         and self._tick - self._last_t_tick >= CHILD_SILENCE_LIMIT):
                     self.silence_forced += 1
@@ -599,7 +592,7 @@ class Sim:
             self.log("[sim] host entered UNI -> NI handshake complete, switching to UNI trade slots")
             self.info("Join handshake complete.")
 
-        # engine.tick() returns None on a barrier frame with nothing to emit; treat it as idle.
+        # engine.tick() returns None on a barrier frame with nothing to emit.
         words = self.engine.tick() or [0] * 7
         if (self.linkstate is not None and (words[0] & 0xFFFF) == 0
                 and getattr(self.engine, "established", False)
@@ -616,7 +609,7 @@ class Sim:
         return frame
 
     def _reliable_trade_payload(self):
-        """Offline (conn=None): the bare UNI/idle 'T' the offline tests expect; the K-ack/NI layers are live-only."""
+        """Offline (conn=None): the bare UNI/idle 'T' frame; the K-ack/NI layers are live-only."""
         frame = self._gba_frame()
         rel = reliable.build_reliable(self.out_seq, self.last_in_seq, frame)
         self.out_seq = (self.out_seq + 1) & 0xFFFF

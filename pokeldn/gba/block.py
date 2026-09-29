@@ -1,6 +1,6 @@
-"""RFU block transfer: the ACK-gated CHILD send sub-FSM and the receive reassembler [link_rfu_2.c:1333-1421,
-1015-1042, 1125-1231]. Receive is idempotent and order-independent; send re-sends every stage until the host's
-reflection (IN owner=0x81, fed into peer 1) acks it."""
+"""RFU block transfer: the ack-gated child sender and the reassembler [link_rfu_2.c:1333-1421,
+1015-1042, 1125-1231]. Receive is idempotent and order-independent; send repeats every stage until
+the host's reflection (IN owner=0x81, fed into peer 1) acks it."""
 
 import math
 
@@ -18,7 +18,7 @@ def all_received_mask(count):
 
 
 class RecvBlock:
-    """Fragment writes are idempotent; a same-size INIT resend mid-block keeps accumulated fragments."""
+    """Fragment writes are idempotent; a same-size INIT resend mid-block keeps the fragments."""
 
     def __init__(self):
         self.count = 0
@@ -68,8 +68,8 @@ class BlockReceiver:
         self.last_cmd = {}
 
     def feed_frame(self, unwrapped):
-        """Returns (completed, reqs): completed = [(mpId, count, data)] for blocks finished on this frame,
-        reqs = [reqtype] for SEND_BLOCK_REQ slots (the host pulling a block)."""
+        """(completed, reqs): completed = [(mpId, count, data)] finished on this frame, reqs = the
+        reqtypes of SEND_BLOCK_REQ slots (the host pulling a block)."""
         completed, reqs = [], []
         if not unwrapped:
             return completed, reqs
@@ -98,13 +98,14 @@ INIT, STREAM, HOLD, DONE = "init", "stream", "hold", "done"
 
 
 class BlockSender:
-    """tick(ack) -> the 7-int gSendCmd for this VBlank. `ack` is the peer-1 RecvBlock (the host's reflection of
-    our block); None runs purely on the resend watchdog (offline)."""
+    """tick(ack) -> the 7-word gSendCmd for this VBlank. `ack` is the peer-1 RecvBlock (the host's
+    reflection of the block); None runs on the resend watchdog alone (offline)."""
 
-    # HOLD repeats until the host confirms; idle between re-sends so a parent that is already behind is not buried.
+    # HOLD repeats until the host confirms, idling between re-sends so a parent already behind is
+    # not buried.
     HOLD_RESEND_GAP = 6
-    # 0 = unpaced. Shared with the HOST and Mystery Gift senders, whose offline tests assert a fragment per
-    # tick; only the JOINER sets it.
+    # 0 is unpaced. The host and Mystery Gift senders' offline tests assert a fragment per tick;
+    # only the joiner sets it.
     STREAM_GAP = 0
 
     def __init__(self, data, owner=1, watchdog_init=4, watchdog_hold=6, trust_pia=False,
@@ -116,20 +117,19 @@ class BlockSender:
         self.index = 0
         self._init_sends = 0
         self._hold_sends = 0
-        self._hold_gap = 0               # ticks idled since the last HOLD re-send (HOLD_RESEND_GAP)
-        self._stream_gap = 0             # ticks idled since the last STREAM fragment (STREAM_GAP)
+        self._hold_gap = 0
+        self._stream_gap = 0
         if stream_gap is not None:
             self.STREAM_GAP = int(stream_gap)
-        # The console silently drops ~40% of our datagrams and does not retry; an incomplete LinkPlayerBlock
-        # fails both magic strcmps -> CB2_LinkError [decomp:src/link.c:1629]. Repeating each fragment is the
-        # bounded middle between send-once and re-send-until-confirmed.
+        # The console drops about 40% of datagrams without retry; an incomplete LinkPlayerBlock
+        # fails both magic strcmps -> CB2_LinkError [src/link.c:1629].
         self.stream_repeat = max(1, int(stream_repeat))
-        self._frag_sends = 0            # repeats emitted for the current fragment
-        self._rr = 0                    # round-robin cursor for re-queueing missing frags
+        self._frag_sends = 0
+        self._rr = 0
         self.watchdog_init = watchdog_init
         self.watchdog_hold = watchdog_hold
-        # trust_pia: send each fragment once and rely on Pia's reliable layer; the decomp re-send loop
-        # (faithful to the Switch, built for the lossy raw RFU) floods the high-RTT bridge. Default OFF.
+        # trust_pia sends each fragment once and relies on Pia's reliable layer; the decomp's
+        # re-send loop, built for lossy raw RFU, floods the high-RTT bridge.
         self.trust_pia = trust_pia
 
     @property
@@ -143,19 +143,18 @@ class BlockSender:
         return ack is not None and ack.receiving and ack.count == self.count
 
     def tick(self, ack=None, peer_sending=False):
-        """peer_sending: hold at INIT while the peer's own block is mid-transfer, so transfers never overlap."""
+        """peer_sending: hold at INIT while the peer's own block is mid-transfer."""
         if self.state == DONE:
             return [0] * 7
 
         if self.state == INIT:
-            # Hold SILENTLY: an INIT on every poll while the console streams its own block kills it.
+            # Hold silently: an INIT on every poll while the console streams its own block kills it.
             if peer_sending:
                 return [0] * 7
             self._init_sends += 1
-            # HandleBlockSend (CHILD) [link_rfu_2.c:1366-1382]: re-send SEND_BLOCK_INIT until the host echoes it.
-            # The watchdog applies live too: the parent transmits only when it has something to send, so once
-            # it waits for OUR block the echo may never come. Pia delivers the INIT in order ahead of the
-            # fragments, so arming on the watchdog is safe.
+            # HandleBlockSend (child) [link_rfu_2.c:1366-1382] re-sends SEND_BLOCK_INIT until the
+            # host echoes it. The watchdog applies live: a parent waiting for this block may never
+            # echo, and Pia delivers the INIT ahead of the fragments.
             armed = self._init_acked(ack) or self._init_sends > self.watchdog_init
             if armed:
                 self.state = STREAM
@@ -175,8 +174,8 @@ class BlockSender:
                 return words
             self._frag_sends = 0
             if idx >= self.count - 1:
-                # trust_pia: DONE here (the FSM advances on RECEIVING the host's block [trade.c:1454-1546]);
-                # faithful: HOLD the last fragment and re-send the missing.
+                # trust_pia: done here (the FSM advances on receiving the host's block
+                # [trade.c:1454-1546]); otherwise hold the last fragment and re-send the missing.
                 self.state = DONE if self.trust_pia else HOLD
                 self._hold_sends = 0
             else:
@@ -192,10 +191,9 @@ class BlockSender:
             self._hold_gap = 0
             self._hold_sends += 1
             full = all_received_mask(self.count)
-            # SendLastBlock (CHILD) [link_rfu_2.c:1398-1416]: re-send the last fragment; once the host acks its
-            # index, DONE if it has all, else re-send the missing (HandleSendFailure). No give-up on the live
-            # path: an early DONE leaves the host a fragment short -> it never requests mail (3/3 deadlock).
-            # watchdog_hold is the offline backstop only.
+            # SendLastBlock (child) [link_rfu_2.c:1398-1416]: after the host acks the last index,
+            # done if it has all, else re-send the missing. An early DONE live leaves the host a
+            # fragment short and it never requests mail; watchdog_hold is an offline backstop.
             if ack is not None:
                 if ack.last_index == last:
                     if ack.flags == full:
@@ -207,7 +205,7 @@ class BlockSender:
                         idx = missing[self._rr]
                         return rfu.send_block_words(idx, self._chunk(idx))
             elif self._hold_sends > self.watchdog_hold:
-                self.state = DONE          # offline (no host reflection) backstop only
+                self.state = DONE
                 return [0] * 7
             return rfu.send_block_words(last, self._chunk(last))
 

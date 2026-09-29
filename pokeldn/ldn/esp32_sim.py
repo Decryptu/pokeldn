@@ -1,8 +1,6 @@
 """A simulated ESP32 radio: the firmware's message set (`firmware/esp32/main/radio.c`) over an
-in-process byte stream, and an `Air` several boards share. It carries what the firmware's
-driver would carry: action frames to every board on the channel, a station's association to the
-access point with the same BSSID, SSID and channel, and Ethernet frames between them when both
-hold the same CCMP key. It knows nothing of LDN above that.
+in-process stream, and an `Air` several boards share. It carries action frames, association and
+CCMP-keyed Ethernet between boards, and nothing of LDN above that.
 """
 
 import queue
@@ -77,8 +75,6 @@ class SimulatedBoard:
         self.led_looks: list[bytes] = []
         air.attach(self)
 
-    # ---- host link ----
-
     def host_stream(self) -> _HostStream:
         return self.stream
 
@@ -100,8 +96,6 @@ class SimulatedBoard:
                         self._emit(esp32.MSG_CREDIT, struct.pack("<I", 0))
                     self._command(msg_type, payload)
         self._emit(esp32.MSG_CREDIT, struct.pack("<I", self._consumed))
-
-    # ---- the firmware's commands ----
 
     def _command(self, t: int, p: bytes) -> None:
         if t == esp32.CMD_HELLO:

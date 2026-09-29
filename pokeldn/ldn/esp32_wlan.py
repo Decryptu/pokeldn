@@ -1,10 +1,6 @@
 """An `ldn.wlan` factory backed by the ESP32 radio, so `ldn.scan`, `ldn.connect` and
-`ldn.create_network` run unchanged with the board in place of an nl80211 adapter.
-
-The board hands over Ethernet frames. LDN's authentication frames (EtherType 0x88B7) become the
-interface events the LDN library expects; everything else goes to an L2 port: a kernel TAP on
-Linux, so sockets bound to the interface keep working, or a userspace IP stack
-(`userspace_ip`) where there is no TAP, or a `MemoryPort` for tests. `use()` installs the backend for every later `ldn` call in the process.
+`ldn.create_network` run unchanged. LDN authentication frames (0x88B7) become interface events;
+other frames go to an L2 port: a Linux TAP, a userspace IP stack, or a `MemoryPort` for tests.
 """
 
 import contextlib
@@ -73,14 +69,12 @@ class MemoryPort:
     async def remove_neighbor(self, ipaddr: str, macaddr: wlan.MACAddress) -> None:
         self.neighbors.pop(ipaddr, None)
 
-    # the radio side
     async def write(self, frame: bytes) -> None:
         self._to_host_send.send_nowait(frame)
 
     async def read(self) -> bytes:
         return await self._to_air_recv.receive()
 
-    # the host side
     async def received(self) -> bytes:
         return await self._to_host_recv.receive()
 
@@ -381,9 +375,8 @@ class EspAccessPoint:
 
 
 class EspFactory:
-    """Stands in for `wlan.Factory`. `port_factory(name, address)` returns an async context
-    manager yielding the L2 port; the default is a kernel TAP on Linux and a userspace IP stack
-    elsewhere."""
+    """Stands in for `wlan.Factory`; `port_factory(name, address)` is an async context manager
+    yielding the L2 port."""
 
     def __init__(self, radio: esp32.Radio, port_factory=None, join_timeout: float = 20.0,
                  ap_flags: int = 0, ap_flags2: int = 0):
@@ -497,10 +490,8 @@ SERIAL_PORT_GLOBS = ("/dev/cu.usbserial-*", "/dev/cu.SLAB_USBtoUART*", "/dev/tty
 
 
 def auto_port(candidates=None):
-    """-> the one USB serial port present. The name follows the USB socket, so it is never fixed.
-
-    Refuses to choose between several: opening a port resets its board, so a guess can cost a run.
-    """
+    """The one USB serial port present; refuses to choose between several, since opening a port
+    resets its board."""
     import glob
     if candidates is None:
         candidates = sorted({p for g in SERIAL_PORT_GLOBS for p in glob.glob(g)})
@@ -510,8 +501,8 @@ def auto_port(candidates=None):
     return candidates[0]
 
 
-# A completed trade or delivery: a rise to full brightness held 3 s, then the radio's own look.
-# flash3 is the error look.
+# A completed trade or delivery: full brightness held 3 s, then the radio's own look; flash3 is the
+# error look.
 DONE_LOOK = ("ramp-up", 255, 800, 3000)
 
 

@@ -1,5 +1,6 @@
-"""JSONL tracer for the LDN hosting path: attach() rebinds hooks on a live ldn.APNetwork INSTANCE (its nursery loops
-resolve self._send_advertisement etc. per call). Every wrapper degrades to a log line; a tracer bug must never break hosting.
+"""JSONL tracer for the LDN hosting path: attach() rebinds hooks on a live ldn.APNetwork instance.
+
+Its nursery loops resolve the hooks per call. Every wrapper degrades to a log line.
 """
 
 import json

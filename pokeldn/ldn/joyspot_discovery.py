@@ -1,5 +1,5 @@
-"""Clones the byte-exact Direct Corner advertisement and changes only identity, RFU parent id, activity/hasCard
-and the group-active bit; unknown bytes are preserved. Record bytes 10..11 are the RFU parent id, not the serial."""
+"""Clones the byte-exact Direct Corner advertisement, changing only identity, RFU parent id,
+activity/hasCard and the group-active bit. Record bytes 10..11 are the RFU parent id."""
 
 from dataclasses import dataclass
 import secrets
@@ -21,8 +21,8 @@ SEARCH_HAS_CARD = beacon.SEARCH_HAS_CARD
 SEARCH_STARTED_ACTIVITY = beacon.SEARCH_STARTED_ACTIVITY
 SEARCH_UNKNOWN_BIT7 = beacon.SEARCH_UNKNOWN_BIT7
 
-# Serial writes stay inside the unexplained regions [12:16] and [18:24]: never identity, uname, the parent id
-# at [10:12] or the search word at [16:18].
+# Serial writes stay inside the unexplained regions [12:16] and [18:24]: never identity, uname, the
+# parent id at [10:12] or the search word at [16:18].
 SERIAL_PLACEMENT_OFFSETS = frozenset({12, 13, 14, 18, 19, 20, 21, 22})
 
 
@@ -133,7 +133,7 @@ def candidate_by_name(name):
 
 
 def candidates_for_stage(stage):
-    """Always ends with the Friend positive control so a silent sweep is distinguishable from a radio fault."""
+    """Ends with the Friend positive control, so a silent sweep is told apart from a radio fault."""
     if stage == "all":
         return JOYSPOT_CANDIDATES
     if stage not in JOYSPOT_STAGES:

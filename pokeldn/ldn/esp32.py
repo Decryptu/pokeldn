@@ -1,9 +1,6 @@
-"""The host side of the ESP32 radio (`firmware/esp32/`): its serial framing, its message set, and a
-link object that owns the port.
-
-A frame on the wire is COBS(type | payload | crc32-le(type | payload)) followed by 0x00. The board
-carries Ethernet frames and LDN vendor action frames; everything above them runs here. The message
-set is the one `firmware/esp32/main/radio.c` implements, documented in `docs/hardware_esp32.md`.
+"""The host side of the ESP32 radio (`firmware/esp32/`): serial framing, message set, and a link
+object that owns the port. A frame is COBS(type | payload | crc32-le(type | payload)) then 0x00;
+the message set is `firmware/esp32/main/radio.c`, documented in docs/hardware_esp32.md.
 """
 
 import collections
@@ -28,7 +25,7 @@ CMD_RAW_TX = 0x09
 CMD_SNIFF = 0x0A
 CMD_STATUS = 0x0B
 CMD_BENCH = 0x0C
-CMD_LED = 0x0D      # u8 pattern, u8 peak, u16 period ms, u16 duration ms: the board's blue LED
+CMD_LED = 0x0D
 
 # The LED's patterns (firmware/esp32/main/led.h); "auto" hands the LED back to the radio's state.
 LED_PATTERNS = ("auto", "off", "on", "breathe", "blink", "flash3", "ramp-up", "ramp-down", "pulse")
@@ -47,35 +44,34 @@ MSG_STA_JOINED = 0x87
 MSG_STA_LEFT = 0x88
 MSG_STATUS = 0x89
 MSG_BENCH = 0x8A
-MSG_RX_SNIFF = 0x8C   # u8 channel, i8 RSSI, u8 sig mode, u8 rate code, u8 MCS | 40 MHz << 7, frame
-MSG_CREDIT = 0x8B   # u32: host bytes the board has read and handled since the last HELLO
-MSG_BUTTON = 0x8E   # u32 board us, u16 press count: the BOOT button, a marker for the trace
-MSG_RX_CENSUS = 0x8F   # SNIFF to ff:ff:ff:ff:ff:ff: u32 board us, i8 RSSI, i8 noise floor, u8 rx_state,
-                       # u8 packet type, u8 sig mode, u8 rate, u8 MCS | 40 MHz << 7, u16 sig_len, 16 bytes
-MSG_TX_DONE = 0x8D  # u32 board us, u32 us since its ETH_TX (all ones: not one), u8 acked, u8 if, u16 len, 24 frame bytes
+MSG_RX_SNIFF = 0x8C
+MSG_CREDIT = 0x8B
+MSG_BUTTON = 0x8E
+MSG_RX_CENSUS = 0x8F
+MSG_TX_DONE = 0x8D
 
 # The board handles a command on the task that reads the UART, so an ETH_TX waiting on a full Wi-Fi
 # queue stops the reading; past 16 KB its RX ring overflows and commands are lost. Once the board
 # reports CREDIT the host keeps under FLOW_WINDOW bytes in flight. docs/hardware_esp32.md.
 FLOW_WINDOW = 8192
-# The window stays shut: a board repeating one count past FLOW_STALL is idle and the rest was lost on
-# the line; a silent one is busy (a Scarlet seat held its reader 0.7 s) and gets FLOW_BLIND.
+# The window stays shut: a board repeating one count past FLOW_STALL is idle and the rest was lost
+# on the line; a silent one is busy (a reader holds up to 0.7 s) and gets FLOW_BLIND.
 FLOW_STALL = 0.3
 FLOW_BLIND = 5.0
-QUEUE_LIMIT = 512       # frames waiting on the host; ETH_TX and RAW_TX beyond it are dropped here
+QUEUE_LIMIT = 512  # ETH_TX and RAW_TX beyond it are dropped here
 
-AP_FLAG_STOCK_JOIN = 1      # let the stock hostapd answer the association and start its 4-way handshake
-AP_FLAG_NO_QOS = 2          # clear the station node's QoS flag: non-QoS data frames to it
-AP_FLAG_NO_DATA_TRACE = 4   # skip the 40-byte copy of each station data frame (serial bandwidth)
-AP_FLAG_LONG_BEACON = 0x40  # beacon every 1000 TU instead of 100
-AP_FLAG_NO_PROMISC = 0x80   # no promiscuous receive: no RX_MGMT copies, a bisection only
-AP_FLAG2_NO_NOISE_CHECK = 1  # the second flag byte: stop the driver's periodic noise-floor check
+AP_FLAG_STOCK_JOIN = 1
+AP_FLAG_NO_QOS = 2
+AP_FLAG_NO_DATA_TRACE = 4
+AP_FLAG_LONG_BEACON = 0x40
+AP_FLAG_NO_PROMISC = 0x80
+AP_FLAG2_NO_NOISE_CHECK = 1
 # Bits 3..5 pin the AP's data rate (AP_FLAG_RATE_* << 3); 0 leaves the driver's rate control on.
 AP_FLAG_RATE_SHIFT = 3
 AP_FLAG_RATES = {1: "1M", 2: "11M", 3: "6M", 4: "12M", 5: "24M", 6: "36M", 7: "54M"}
 
-LINK_TIMEOUT = 0xFFFF       # MSG_LINK reason: no association within 15 s
-LINK_KEY_FAILED = 0xFFFE    # MSG_LINK reason: the driver refused the CCMP keys
+LINK_TIMEOUT = 0xFFFF
+LINK_KEY_FAILED = 0xFFFE
 
 
 def cobs_encode(data: bytes) -> bytes:
@@ -160,8 +156,7 @@ def sta_join_payload(channel: int, bssid, ssid: str, key: bytes, mac=bytes(6), r
     ssid_bytes = ssid.encode("ascii")
     if len(ssid_bytes) != 32 or len(key) != 16:
         raise ValueError("an LDN SSID is 32 hex characters and the key 16 bytes")
-    # The rate byte (the AP flag byte's bits 3..5 table) and the TX power byte (0.25 dBm units)
-    # go only when set, as flags2 does.
+    # The rate byte (the AP flag bits 3..5 table) and the TX power byte (0.25 dBm) go only when set.
     tail = (bytes([rate, power, flags]) if flags else bytes([rate, power]) if power
             else bytes([rate]) if rate else b"")
     return bytes([channel]) + mac_bytes(bssid) + ssid_bytes + key + mac_bytes(mac) + tail
@@ -240,11 +235,8 @@ class RadioError(Exception):
 
 
 class Radio:
-    """Owns one byte stream to a board. `stream` needs `read(n)` returning within a short timeout
-    and `write(data)`; a pyserial port and `esp32_sim.SimulatedBoard.host_stream()` both qualify.
-
-    Events go to every subscriber callback from the reader thread; `request` waits for the
-    reply a command produces."""
+    """Owns one byte stream to a board (`read(n)` with a short timeout, `write(data)`). Events go to
+    every subscriber from the reader thread; `request` waits for a command's reply."""
 
     def __init__(self, stream, log=None):
         self._stream = stream
@@ -260,8 +252,8 @@ class Radio:
         self._out: collections.deque = collections.deque()
         self._out_cv = threading.Condition()
         self._written = self._credited = 0
-        self._credit_seen = 0.0     # monotonic time of the last CREDIT, moved or not
-        self._lost = 0      # bytes a resync wrote off; the board's count stays behind by them
+        self._credit_seen = 0.0
+        self._lost = 0  # bytes a resync wrote off; the board's count stays behind by them
         self._flow = False
         self.tx_dropped = self.flow_resyncs = 0
         # POKELDN_ESP32_TRACE=FILE records every message both ways: time, direction, type, hex.
@@ -274,7 +266,7 @@ class Radio:
 
     @classmethod
     def open_serial(cls, port: str, baud: int = 115200, fast_baud: int | None = None, log=None):
-        """`fast_baud` defaults to POKELDN_ESP32_BAUD, else 921600, the rate every run so far used."""
+        """`fast_baud` defaults to POKELDN_ESP32_BAUD, else 921600."""
         import serial
         if fast_baud is None:
             fast_baud = int(os.environ.get("POKELDN_ESP32_BAUD", "921600"))
@@ -335,8 +327,6 @@ class Radio:
         if close:
             close()
 
-    # ---- plumbing ----
-
     def subscribe(self, callback) -> None:
         with self._subscribers_lock:
             self._subscribers.append(callback)
@@ -347,7 +337,7 @@ class Radio:
                 self._subscribers.remove(callback)
 
     def send(self, msg_type: int, payload: bytes = b"") -> None:
-        """Queues one command; the writer thread sends it in order. Never blocks the caller."""
+        """Queue one command for the writer thread; never blocks."""
         frame = encode_frame(msg_type, payload)
         with self._out_cv:
             if len(self._out) >= QUEUE_LIMIT and msg_type in (CMD_ETH_TX, CMD_RAW_TX):
@@ -357,7 +347,6 @@ class Radio:
             self._out_cv.notify_all()
 
     def drain(self, timeout: float = 5.0) -> bool:
-        """Waits until every queued command has been written to the port."""
         deadline = time.monotonic() + timeout
         with self._out_cv:
             while self._out or self._writing:
@@ -483,8 +472,6 @@ class Radio:
             subscribers = list(self._subscribers)
         for callback in subscribers:
             callback(msg_type, payload)
-
-    # ---- commands ----
 
     def hello(self) -> Info:
         info = Info.parse(self.request(CMD_HELLO, b"", MSG_INFO))

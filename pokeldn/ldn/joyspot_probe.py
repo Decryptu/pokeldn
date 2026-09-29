@@ -1,4 +1,4 @@
-"""Discovery-only probe: stops at LDN advertisement and association; no Pia, Reliable, RFU or Mystery Gift state."""
+"""Discovery-only probe: LDN advertisement and association, no Pia, Reliable, RFU or gift state."""
 
 from dataclasses import dataclass
 import os
@@ -155,7 +155,7 @@ class JoySpotProbeApplication:
                 "No higher protocol is running, so the game may time out normally.")
 
     def _drain_ignored_traffic(self):
-        # Drain the TAP queue without answering Pia; otherwise the socket stays hot after a join and the loop spins.
+        # Drain without answering Pia, or the socket stays hot after a join and the loop spins.
         for _datagram, _source in self.network.recv():
             self.ignored_datagrams += 1
             if self.ignored_datagrams == 1:
@@ -164,8 +164,8 @@ class JoySpotProbeApplication:
                     "at the Stage 1 discovery boundary.")
 
     def run(self, *, decision_prompt=None):
-        """Returns whether a console joined. Without a prompt, advertises until Ctrl-C; a sweep passes a zero-arg
-        prompt that runs once the AP and injector are live, and returning from it ends the candidate."""
+        """-> whether a console joined. With no prompt, advertises until Ctrl-C; a sweep's zero-arg
+        prompt runs once the AP and injector are live, and its return ends the candidate."""
         self.joined_once = False
         try:
             self._build_components()

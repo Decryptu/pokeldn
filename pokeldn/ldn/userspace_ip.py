@@ -1,10 +1,6 @@
-"""IPv4, UDP and ARP in the host process, for a radio whose L2 port has no kernel interface behind
-it (the ESP32 board on macOS). The launchers' sockets bound to an interface name become the
-objects here: `udp_socket` stands in for a UDP socket and `packet_socket` for an AF_PACKET one.
-Both have a real file descriptor, so `select` and `trio.lowlevel.wait_readable` work on them.
-
-A stack is registered under its interface name when the radio's port is created, and removed
-with it. `lookup(name)` answers None when the interface is a kernel one.
+"""IPv4, UDP and ARP in the host process, for a radio with no kernel interface (the ESP32 on macOS).
+`udp_socket` and `packet_socket` stand in for sockets bound to the interface name, with real file
+descriptors for `select` and trio; `lookup(name)` is None for a kernel interface.
 """
 
 import collections
@@ -221,7 +217,6 @@ class Stack:
         self._ident = 0
         self.counters = collections.Counter()
 
-    # addresses
     def set_address(self, local: str, broadcast: str) -> None:
         self.ip, self.broadcast = local, broadcast
 
@@ -231,7 +226,6 @@ class Stack:
     def remove_neighbor(self, ip: str) -> None:
         self.neighbors.pop(ip, None)
 
-    # sockets
     def udp_socket(self, port: int, receive: bool = True) -> UdpSocket:
         """`receive=False` makes a send-only socket that queues nothing."""
         sock = UdpSocket(self, port)
@@ -255,7 +249,6 @@ class Stack:
                 with contextlib.suppress(ValueError):
                     self._udp.get(sock.port, []).remove(sock)
 
-    # out
     def _resolve(self, ip: str) -> bytes | None:
         if ip == "255.255.255.255" or ip == self.broadcast or ip.endswith(".255"):
             return BROADCAST_MAC
@@ -283,7 +276,6 @@ class Stack:
                           socket.inet_aton(self.ip), hw_target, socket.inet_aton(ip_target))
         self._transmit(eth_target + self.mac + struct.pack("!H", ETH_P_ARP) + arp)
 
-    # in
     def deliver(self, frame: bytes) -> None:
         if len(frame) < 14:
             return

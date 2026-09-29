@@ -1,6 +1,6 @@
-"""Transport adapters: ReplayTransport replays a capture's IN datagrams offline; LiveTransport joins the console's LDN
-session (kinnay's ldn) and moves UDP :12345 via a bound UDP TX socket + an AF_PACKET RX socket (so subnet-directed
-broadcasts are not dropped); HostTransport is the AP side. The live classes need root and a real Switch.
+"""Transport adapters: ReplayTransport replays a capture's IN datagrams offline; LiveTransport joins
+a console's LDN session and moves UDP :12345 through a bound UDP TX socket and an AF_PACKET RX socket
+(so subnet broadcasts arrive); HostTransport is the access point side.
 """
 
 import json
@@ -21,11 +21,11 @@ PROTO_UDP = 17
 PIA_PORT = 12345
 
 
-_PIA_HDR = 0x5C     # Pia 6.16-6.41 LDN system header length; the game payload follows it
+_PIA_HDR = 0x5C  # Pia 6.16-6.41 LDN system header length
 
 
 def _b85_decode(s):
-    """Custom base85: alphabet 0x23..0x78 skipping 0x5c, first char = least-significant digit, 4-byte LE groups."""
+    """Custom base85: alphabet 0x23..0x78 skipping 0x5c, low digit first, 4-byte LE groups."""
     out = bytearray()
     for i in range(0, len(s) - len(s) % 5, 5):
         v = 0
@@ -68,7 +68,8 @@ def _dump_beacon(app_data, log):
                     f"TID=0x{int.from_bytes(d[0:2], 'little'):04x} "
                     f"RFU-session-id=0x{int.from_bytes(d[10:12], 'little'):04x} "
                     f"tradeSpecies={int.from_bytes(d[20:24], 'little') >> 16}")
-                # The only pre-join view of the host's game state; the verbose sink is unusable on live runs, so use INFO.
+                # The only pre-join view of the host's game state; logged at INFO since the verbose
+                # sink is unusable live.
                 word = int.from_bytes(d[16:18], "little")
                 info = getattr(log, "info", log)
                 info(f"host beacon game state: activity={word & 0x007F} "
@@ -80,7 +81,7 @@ def _dump_beacon(app_data, log):
 
 
 def _flatten_exc(e, depth=0):
-    """Flatten a (Base)ExceptionGroup (trio nursery failures) to its leaf exceptions -> [(depth, exc)]."""
+    """Flatten a (Base)ExceptionGroup to its leaves -> [(depth, exc)]."""
     subs = getattr(e, "exceptions", None)
     if subs:
         out = []
@@ -103,7 +104,7 @@ def _format_join_error(e):
     return "\n".join(parts)
 
 LDN_VIFS = {"ldn", "ldn-mon", "ldn-tap", "ldnclient"}
-AIR_MONITOR_VIF = "ldnair"      # passive capture vif owned by scratchpad/run_*.sh; never touched here
+AIR_MONITOR_VIF = "ldnair"      # owned by scratchpad/run_*.sh; never touched here
 
 
 def _run(cmd):
@@ -133,9 +134,8 @@ def get_power_save(iface):
 
 
 def disable_power_save(iface, log=print):
-    """rtw88 defaults a new managed vif to power save ON; a dozing station wakes only on the console's 100 TU beacons,
-    pinning the link at ~11-15 exchanges/s. An AP vif never dozes, which is why hosting never had this.
-    """
+    """rtw88 starts a managed vif in power save; a dozing station wakes only on the console's 100 TU
+    beacons, pinning the link at about 11-15 exchanges/s."""
     if board_radio():
         return True
     before = get_power_save(iface)
@@ -166,14 +166,14 @@ def list_phy_ifaces():
 
 
 def free_radio(phys, log=print):
-    """Delete stale LDN vifs and take other interfaces off the radio (SET_CHANNEL -> EBUSY otherwise). Needs root."""
+    """Delete stale LDN vifs and take other interfaces off the radio (SET_CHANNEL: EBUSY)."""
     if board_radio():
         return
     mapping = list_phy_ifaces()
     for phy in {p for p in phys if p}:
         for iface in mapping.get(phy, []):
             if iface == AIR_MONITOR_VIF:
-                # the launchers' passive air capture, created before the host starts; leave it up
+                # The launchers' passive air capture; leave it up.
                 continue
             if iface in LDN_VIFS:
                 _iw_del(iface)
@@ -181,15 +181,15 @@ def free_radio(phys, log=print):
                 _run(["nmcli", "device", "set", iface, "managed", "no"])
                 _run(["ip", "link", "set", iface, "down"])
                 log(f"[live] freed radio: brought {iface} ({phy}) down")
-    # A failed join leaks a still-associated station vif that makes the next association fail (nl80211 status 1);
-    # delete every known LDN vif by name.
+    # A failed join leaks an associated station vif that fails the next association (nl80211 status
+    # 1).
     for vif in LDN_VIFS:
         if vif in {i for ifs in mapping.values() for i in ifs} or _iface_exists(vif):
             _iw_del(vif)
             _run(["ip", "link", "del", vif])
             log(f"[live] freed radio: removed stale LDN vif {vif}")
-    # wpa_supplicant is not killed: the interfaces above are already unmanaged and down, and a global kill
-    # would drop any other adapter's connection. If a join still fails with EBUSY, stop it by hand.
+    # wpa_supplicant is left alone: a global kill drops other adapters' connections. On EBUSY, stop
+    # it by hand.
     time.sleep(0.3)
 
 
@@ -207,9 +207,8 @@ def light_cleanup(log=print):
 
 
 def tune_iface(iface, keep_ip, broadcast_ip, log=print):
-    """Make the iface deliver the host's link-local subnet broadcasts: rp_filter off, the broadcast route in the local
-    table, stray zeroconf addresses removed. Needs root.
-    """
+    """Deliver the link-local subnet broadcasts: rp_filter off, the broadcast route in the local
+    table, stray zeroconf addresses removed. Needs root."""
     if board_radio():
         return
     _run(["nmcli", "device", "set", iface, "managed", "no"])
@@ -234,8 +233,8 @@ def tune_iface(iface, keep_ip, broadcast_ip, log=print):
     except Exception as e:
         log(f"[live] stray-address cleanup skipped: {e}")
 
-# The emulator's LDN passphrase (NintendoClients wiki "LDN Passphrases"): one 64-byte value, shared across the GBA
-# emulator's titles.
+# The GBA emulator's LDN passphrase, shared across its titles (NintendoClients wiki, LDN
+# Passphrases).
 GBA_APP_PASSPHRASE = bytes.fromhex(
     "fcb6f6adb9dfea66aca9c326149d2b3b08a781895cbf78f720d78b85a57584a9"
     "9665d237797b2a41ddef14063ec28d259143af7832fb3cbcf2759cbfbdc81d8c")
@@ -332,7 +331,7 @@ class LiveTransport:
         self._err = None
 
     def start(self, timeout=30, attempts=3, settle=1.5):
-        """Join, retrying: the LDN/nl80211 layer flakes intermittently (radio busy, association timeout, a stale vif)."""
+        """Join, retrying through radio busy, association timeouts and stale vifs."""
         last_err = None
         for attempt in range(1, attempts + 1):
             free_radio({self.phyname}, self.log)
@@ -376,7 +375,8 @@ class LiveTransport:
         async def main():
             keys = ldn.load_keys(self.keys_path)
             self.info("Scanning for the FRLG network...")
-            # A Switch beacons every ~102ms; ldn.scan's default 110ms dwell sees barely one beacon per channel and misses the network.
+            # A Switch beacons every 102 ms; ldn.scan's default 110 ms dwell sees about one per
+            # channel and misses the network.
             networks = await ldn.scan(keys, phyname=self.phyname,
                                       channels=list(self.scan_channels),
                                       dwell_time=self.scan_dwell)
@@ -487,7 +487,8 @@ class LiveTransport:
         rx = socket.socket(socket.AF_PACKET, socket.SOCK_RAW, socket.htons(ETH_P_IP))
         rx.bind((self.iface, 0))
         rx.setblocking(False)
-        # AF_PACKET ring overflow between ~60Hz drains shows up as silent gaps; the kernel clamps to net.core.rmem_max.
+        # AF_PACKET ring overflow between 60 Hz drains shows as silent gaps; the kernel clamps to
+        # net.core.rmem_max.
         try:
             rx.setsockopt(socket.SOL_SOCKET, socket.SO_RCVBUF, 8 * 1024 * 1024)
             got = rx.getsockopt(socket.SOL_SOCKET, socket.SO_RCVBUF)
@@ -518,7 +519,8 @@ class LiveTransport:
             self.log(f"[live] sendto failed: {e}")
 
     def _accept_dst(self, dst_ip):
-        """The host broadcasts its Net 0x11 to the subnet .255 before unicasting; accept any 169.254.*.255 and the global broadcast."""
+        """The host broadcasts Net 0x11 to the subnet .255 before unicasting; accept any
+        169.254.*.255 and the global broadcast."""
         return (dst_ip == self.our_ip
                 or (dst_ip.startswith("169.254.") and dst_ip.endswith(".255"))
                 or dst_ip in ("255.255.255.255",))
@@ -610,7 +612,7 @@ def board_radio():
 
 
 def find_ap_phy(log=print):
-    """First phy advertising AP mode (for `--phy auto`; phy numbering changes when the adapter is reloaded)."""
+    """First phy advertising AP mode (`--phy auto`); phy numbers change when the adapter reloads."""
     if board_radio():
         log("[host] --phy auto -> esp32 (POKELDN_RADIO)")
         return "esp32"
@@ -632,7 +634,8 @@ HOST_WIFI_PROFILES = {
     "rtw88_8822bu": ("TP-Link Archer T3U (USB 2357:012d)", True, True),
 }
 
-# Match the USB id as well as the driver so the Pi's internal radio cannot be selected because it became phy0.
+# Match the USB id as well as the driver, so a Pi's internal radio that became phy0 is never
+# selected.
 HOST_ADAPTER_PROFILES = {
     "tplink-archer-t3u": {
         "label": "TP-Link Archer T3U / AC1300",
@@ -674,7 +677,7 @@ def describe_phys():
 
 
 def find_adapter_phy(adapter, log=print):
-    """Refuses to guess: a missing or duplicated adapter raises; a literal phyN via --phy is handled by the caller."""
+    """A missing or duplicated adapter raises; a literal phyN via --phy is the caller's."""
     if board_radio():
         return find_ap_phy(log)
     profile = HOST_ADAPTER_PROFILES.get(adapter)
@@ -723,9 +726,8 @@ def wifi_profile_messages(driver, skip_encryption, accept_decrypted_ccmp):
 
 
 def preflight_host(phyname, log=print, _iw_output=None):
-    """`iw phy` 'Supported interface modes' is the driver's registered capability, not a setting (MT7601U: managed+monitor
-    only -> IFTYPE_AP is EOPNOTSUPP). Raises RuntimeError with the verdict; `_iw_output` injects canned output for tests.
-    """
+    """`iw phy` 'Supported interface modes' is the driver's capability (MT7601U: managed and
+    monitor only, IFTYPE_AP is EOPNOTSUPP). Raises RuntimeError with the verdict."""
     if _iw_output is None and board_radio():
         log("[host] preflight: the ESP32 board hosts (POKELDN_RADIO)")
         return True
@@ -756,7 +758,7 @@ def preflight_host(phyname, log=print, _iw_output=None):
 class HostTransport:
     # A transport that brings up an AP needs a phy and prod.keys; IpHostTransport needs neither.
     NEEDS_RADIO = True
-    # comm_id/scene captured from a real FRLG session; the console's scan filters on comm_id, so a placeholder makes us invisible.
+    # comm_id and scene from a real FRLG session; the console's scan filters on comm_id.
     LOCAL_COMMUNICATION_ID = 0x01006fa0233f8000
     SCENE_ID = 22287
     APPLICATION_VERSION = 88
@@ -772,8 +774,8 @@ class HostTransport:
         # what the GBA app hosts; Sword's Mystery Gift screen hosts and scans protocol 1 (AES-CTR,
         # master_key_00). A title sees only advertisements of its own protocol. docs/ldn.md.
         self.protocol = protocol
-        # A title whose scan filters on the session id will not see a network with a random one;
-        # Let's Go's is a fixed value. None leaves it to the LDN layer.
+        # A title whose scan filters on the session id (Let's Go) needs a fixed one; None leaves it
+        # to the LDN layer.
         self.want_ssid = bytes(ssid) if ssid else None
         self.app_data = bytes(app_data or b"")
         self.password = password if password else GBA_APP_PASSPHRASE
@@ -787,9 +789,8 @@ class HostTransport:
         self.channel = channel
         self.skip_encryption = skip_encryption
         self.accept_decrypted_ccmp = accept_decrypted_ccmp
-        # The station platform byte the advertisement and the authentication response carry: 0 is a
-        # Switch, 1 a Switch 2. A retail Switch 2 advertises 1 (`docs/sv.md`). None keeps the LDN
-        # layer's own default.
+        # The station platform byte in the advertisement and authentication response: 0 Switch, 1
+        # Switch 2 (docs/sv.md). None keeps the LDN layer's default.
         self.platform = platform
         if local_comm_id is not None:
             self.LOCAL_COMMUNICATION_ID = local_comm_id
@@ -855,11 +856,8 @@ class HostTransport:
         raise RuntimeError(f"LDN host bring-up failed after {attempts} attempt(s):\n{last_err}")
 
     def set_app_data_later(self, data):
-        """Swap the advertisement's application data from another thread.
-
-        The host loop owns the trio task, so the new bytes are parked here and applied on its next
-        pass; advertisements go out every 0.1 s, so a swap is live within a frame or two.
-        """
+        """Swap the advertisement's application data from another thread; the host loop applies it
+        on its next pass, within a frame or two."""
         self.app_data = bytes(data)
         self._pending_app_data = self.app_data
 
@@ -949,7 +947,8 @@ class HostTransport:
                      f"mac={bytes(p.mac_address).hex()} name={bytes(p.name)!r}")
             self.info("A console joined the network.")
         elif name == "LeaveEvent":
-            # The host drivers use this list as their liveness/teardown signal; stale entries kept RTT/Reliable going to a departed station.
+            # The host drivers use this list as their liveness signal; a stale entry keeps RTT and
+            # Reliable going to a departed station.
             self.participants = [p for p in self.participants if p[0] != event.index]
             reason = getattr(event, "reason", None)
             management_type = getattr(event, "management_type", None)
@@ -961,9 +960,8 @@ class HostTransport:
             self.log(f"[host] event: {name} {event!r}")
 
     def _assert_vifs(self):
-        """Three vifs must exist: AP (mgmt/auth), monitor (advertisements + data frames incl. broadcast), tap (the kernel data
-        plane); a missing monitor means the console never sees an advertisement.
-        """
+        """AP (management, auth), monitor (advertisements, data frames including broadcast) and tap
+        (the kernel data plane); with no monitor the console never sees an advertisement."""
         if board_radio():
             return
         missing = []
@@ -999,8 +997,8 @@ class HostTransport:
         tx = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
         tx.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
         tx.setsockopt(socket.SOL_SOCKET, socket.SO_BROADCAST, 1)
-        # Unbound, limited broadcasts occasionally left on another link-local interface; Session type 5 is a subnet
-        # broadcast, so pin every host datagram to the LDN data plane.
+        # Unbound limited broadcasts sometimes left on another link-local interface; pin every host
+        # datagram to the LDN data plane.
         tx.setsockopt(socket.SOL_SOCKET, socket.SO_BINDTODEVICE,
                       self.iface.encode("ascii") + b"\x00")
         tx.bind(("0.0.0.0", PIA_PORT))
@@ -1022,8 +1020,8 @@ class HostTransport:
         try:
             self._tx.sendto(datagram, (dst, PIA_PORT))
         except BlockingIOError:
-            # The console stops acking ~0.5s during its flash save; a blocking sendto froze the host 6-11s, so drop what
-            # cannot be queued (Reliable re-sends it).
+            # The console stops acking for about 0.5 s during its flash save and a blocking sendto
+            # froze the host 6-11 s; drop what cannot queue (Reliable re-sends it).
             self.tx_dropped = getattr(self, "tx_dropped", 0) + 1
             if self.tx_dropped in (1, 10, 100, 1000):
                 self.log(f"[host] sendto would block; dropped {self.tx_dropped} datagram(s) so far")
@@ -1057,12 +1055,9 @@ class HostTransport:
         return out
 
     def _pin_neighbour(self, ip, mac):
-        """Install a PERMANENT ARP entry for the console. The console answers our ARP
-        probes late (1-2 s) and by broadcast, so the kernel's neighbour entry cycles STALE -> PROBE -> FAILED ->
-        INCOMPLETE and, while unresolved, queues every datagram to it (unres_qlen) and flushes them in a burst when
-        the reply lands: a 0.1-1.1 s hole in which the console sees no parent frame, and its game declares link loss.
-        A permanent entry never expires, so the kernel never probes and never queues.
-        """
+        """Install a permanent ARP entry for the console. It answers ARP late (1-2 s) and by
+        broadcast, so an unresolved kernel neighbour queues every datagram to it and flushes a burst
+        on reply: a 0.1-1.1 s hole with no parent frame, which the game declares link loss."""
         self._pinned_neighbours.add(ip)
         stack = userspace_ip.lookup(self.iface)
         if stack is not None:
@@ -1077,9 +1072,8 @@ class HostTransport:
             self.log(f"[host] could not pin ARP for {ip}: {e}")
 
     def wait_readable(self, timeout):
-        """select() on the AF_PACKET socket so the leader reacts as soon as a packet lands while still returning periodically
-        for event/deadline checks.
-        """
+        """select() on the AF_PACKET socket: return when a packet lands, and periodically for event
+        and deadline checks."""
         timeout = max(0.0, float(timeout))
         if self._rx is None:
             self._stop.wait(timeout)

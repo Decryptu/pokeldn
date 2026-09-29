@@ -1,6 +1,6 @@
-"""MysteryGiftLink framing [decomp:src/mystery_gift_link.c]: one message is a sequence of SendBlock
-transfers - block 0 is {u16 ident; u16 crc; u16 size}, then <=252-byte chunks. size 0 means the whole
-1024-byte buffer (RAM script, READY_END) and the CRC covers the declared size, padding included."""
+"""MysteryGiftLink framing [decomp:src/mystery_gift_link.c]: block 0 is {u16 ident; u16 crc;
+u16 size}, then <=252-byte chunks. size 0 means the whole 1024-byte buffer (RAM script, READY_END);
+the CRC covers the declared size, padding included."""
 
 from pokeldn.frlg.gift.mystery_gift import (
     MG_LINK_BUFFER_SIZE, MG_LINK_HEADER_SIZE, MG_LINK_MAX_CHUNK, crc16,
@@ -27,13 +27,13 @@ def parse_header(block):
 
 
 def chunk_payload(buf):
-    """As MGL_Send walks it: an exact multiple of 252 ends on a full chunk, never a trailing empty block."""
+    """As MGL_Send walks it: an exact multiple of 252 ends on a full chunk, no trailing block."""
     return [buf[i:i + MG_LINK_MAX_CHUNK]
             for i in range(0, len(buf), MG_LINK_MAX_CHUNK)]
 
 
 def build_message(ident, payload=b"", size=None):
-    """size None = exactly this payload; 0 = the native full-buffer message (zero-padded to 1024, CRC over padding)."""
+    """size None = exactly this payload; 0 = full buffer (padded to 1024, CRC over it)."""
     payload = bytes(payload)
     if size is None:
         size = len(payload)
@@ -50,7 +50,7 @@ def build_message(ident, payload=b"", size=None):
 
 
 class MysteryGiftLinkReceiver:
-    """Blocks arrive padded to 12-byte RFU fragments, so every read is sliced to the declared size, never len(block)."""
+    """Blocks arrive padded to 12-byte RFU fragments: every read is sliced to the declared size."""
 
     def __init__(self):
         self.expected_ident = None
@@ -106,7 +106,7 @@ class MysteryGiftLinkReceiver:
             raise MysteryGiftLinkError(
                 f"expected ident {self.expected_ident}, received {ident}")
         if size == 0:
-            # Stricter than MGL_Receive: InitSend maps 0 -> 1024, so a zero here is not a header at all.
+            # Stricter than MGL_Receive: InitSend maps 0 -> 1024, so a zero is not a header.
             raise MysteryGiftLinkError("received header declares a zero size")
         self.ident = ident
         self.crc = crc

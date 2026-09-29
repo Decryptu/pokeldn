@@ -1,25 +1,6 @@
-"""The ledger for what the console tells us about itself, session after session.
-
-Every Mystery Gift session ships a `MysteryGiftLinkGameData` before anything else happens: the
-player's name and trainer id, the version, the flag id of the card they hold, the four Poke Mart
-questionnaire words, their six Easy Chat battle words, and the counters `WonderCardMetadata` keeps
-for that card - battles won, battles lost, trades, stamps [decomp:src/mystery_gift.c:361].
-`mg_script.parse_link_game_data` has always read it and the host has always printed it, which
-means it was read once and then lost with the log.
-
-Two things want it kept instead:
-
-- **The counters only mean something as a difference.** "3 battles won" is a number; "3 where the
-  last session said 2, and the card is the same one" is the observation that the console really
-  does maintain the stats a Battle Count Card would be built on [docs/frlg_gift.md].
-  One session cannot show that. `changes` is the whole point of the file.
-- **The word ids are the only French vocabulary the console volunteers.** Anything the player has
-  typed comes back as a slot id; when `easychat_french` cannot render one, that id is worth one
-  question to the player and becomes ground truth for every gift after it.
-
-The record carries the raw 0x64 bytes as hex, so a later question can be answered by re-parsing an
-old session rather than by spending a new one.
-"""
+"""The ledger of what the console sends about itself each Mystery Gift session
+(`MysteryGiftLinkGameData` [decomp:src/mystery_gift.c:361]). Counters are evidence only as a
+difference between sessions of one console; the raw 0x64 bytes are kept for re-parsing."""
 
 import json
 from datetime import datetime
@@ -40,8 +21,8 @@ def record(data, *, tag=None, now=None):
         "time": now.isoformat(timespec="seconds"),
         "tag": tag,
         "player_name": data.player_name,
-        # None rather than a wrong number: a full 7-character name overwrites the first byte of
-        # playerTrainerId in the struct the console sends [LinkGameData.trainer_id_is_reliable].
+        # None for a full 7-character name, which overwrites the first byte of playerTrainerId
+        # [LinkGameData.trainer_id_is_reliable].
         "trainer_id": (data.trainer_id & 0xFFFF) if data.trainer_id_is_reliable else None,
         "version": data.version_name,
         "game_code": data.game_code.decode("ascii", "replace"),
@@ -71,8 +52,7 @@ def append(path, data, *, tag=None, now=None):
 
 
 def read(path):
-    """-> every record in the ledger, oldest first. A truncated last line is ignored: the host is
-    killed with a signal often enough that a half-written line is an ordinary way for one to end."""
+    """-> every record in the ledger, oldest first; a truncated last line is ignored."""
     entries = []
     with Path(path).open("r", encoding="utf-8") as handle:
         for line in handle:
@@ -106,12 +86,8 @@ _COUNTERS = (
 
 
 def changes(before, after):
-    """-> what moved between two records of the same console, as lines.
-
-    A counter that moves while the flag id is unchanged is the console maintaining the stats for a
-    card it kept; a counter that moves across a card change says nothing, and is reported with the
-    card change beside it so it cannot be read as the first thing.
-    """
+    """-> what moved between two records of the same console, as lines. A counter that moves across
+    a card change is reported beside the card change."""
     lines = []
     if before.get("flag_id") != after.get("flag_id"):
         lines.append(f"card flagId {before.get('flag_id')} -> {after.get('flag_id')}")
@@ -136,12 +112,7 @@ def language(game_code):
 
 
 def unknown_words(entry):
-    """-> the word ids in this record that no French console has been seen to render.
-
-    These are the ones a single question to the player converts into ground truth, and they cost
-    nothing to collect: the console sends them whether or not anything reads them. Only a French
-    console's: the English table is the decomp's own.
-    """
+    """-> the word ids in this record that no French console has been seen to render."""
     if language(entry.get("game_code")) != "french":
         return ()
     words = tuple(entry.get("questionnaire") or ()) + tuple(entry.get("easy_chat_profile") or ())
@@ -149,14 +120,14 @@ def unknown_words(entry):
 
 
 def _describe_words(values, game_code=None):
-    # Word 0 is EC_GROUP_POKEMON_2 index 0, which the console rejects and prints as "???"
-    # [IsECWordInvalid, decomp:src/easy_chat.c:118]: an all-zero profile is empty, not six words.
+    # Word 0 is rejected by the console and printed as "???" [IsECWordInvalid,
+    # decomp:src/easy_chat.c:118]: an all-zero profile is empty.
     values = [value for value in values or () if value not in (0, easychat.UNDEFINED)]
     if not values:
         return "(none)"
     spoken = language(game_code)
     if spoken == "english":
-        return easychat.describe_words(values)      # the decomp's names are the English words
+        return easychat.describe_words(values)
     if spoken == "french":
         return f"{easychat_french.render(values)} [{easychat.describe_words(values)}]"
     return (f"{easychat.describe_words(values)} (no Easy Chat table for {game_code}: the names "

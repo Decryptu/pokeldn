@@ -1,6 +1,6 @@
-"""Mystery Gift client scripts the server pushes, and the link game data read back. Every script must
-end in CLI_RETURN or CLI_COPY_RECV: the console runs straight out of its 1024-byte recv buffer and bytes
-past the script are stale. A client script's declared size is 8 bytes per command, not the full buffer."""
+"""Mystery Gift client scripts the server pushes, and the link game data read back. A script ends in
+CLI_RETURN or CLI_COPY_RECV: the console runs out of its 1024-byte recv buffer and bytes past the
+script are stale. A client script's declared size is 8 bytes per command."""
 
 from dataclasses import dataclass
 
@@ -70,8 +70,8 @@ def client_script(*commands):
     return bytes(out)
 
 
-# Boot script [decomp:src/mystery_gift_scripts.c:15]; never sent, but the server's first message must
-# be the CLIENT_SCRIPT it sits in CLI_RECV waiting for.
+# Boot script [decomp:src/mystery_gift_scripts.c:15]; never sent, but the server's first message
+# must be the CLIENT_SCRIPT it waits for in CLI_RECV.
 CLIENT_SCRIPT_INIT = client_script(
     (CLI_RECV, MG_LINKID_CLIENT_SCRIPT),
     CLI_COPY_RECV,
@@ -95,10 +95,9 @@ CLIENT_SCRIPT_SAVE_CARD = client_script(
     (CLI_RETURN, CLI_MSG_CARD_RECEIVED),
 )
 
-# sClientScript_SaveNews [decomp:src/mystery_gift_scripts.c:51]. The News path is the only one where
-# the console answers a gift with a value: CLI_SAVE_NEWS loads MG_LINKID_RESPONSE with FALSE when it
-# saved the news and TRUE when it already held exactly these 444 bytes [mystery_gift_client.c:210],
-# and CLI_SEND_LOADED ships that answer. The card path has no equivalent.
+# sClientScript_SaveNews [decomp:src/mystery_gift_scripts.c:51]. CLI_SAVE_NEWS loads
+# MG_LINKID_RESPONSE with FALSE when it saved the news, TRUE when it already held these 444 bytes
+# [mystery_gift_client.c:210]; CLI_SEND_LOADED ships it. The card path has no equivalent.
 CLIENT_SCRIPT_SAVE_NEWS = client_script(
     (CLI_RECV, MG_LINKID_NEWS),
     CLI_SAVE_NEWS,
@@ -113,18 +112,16 @@ CLIENT_SCRIPT_HAD_NEWS = client_script(
     (CLI_RETURN, CLI_MSG_HAD_NEWS),
 )
 
-# sClientScript_NewsReceived [decomp:src/mystery_gift_scripts.c:64]. CLI_MSG_NEWS_RECEIVED is a success
-# message, so the console saves by itself and then sets the berry reward for a Friend source
-# [GetClientResultMessage, mystery_gift_menu.c:905; WonderNews_SetReward, :1367].
+# sClientScript_NewsReceived [decomp:src/mystery_gift_scripts.c:64]: a success message, so the
+# console saves and sets the Friend berry reward [mystery_gift_menu.c:905, :1367].
 CLIENT_SCRIPT_NEWS_RECEIVED = client_script(
     CLI_SEND_READY_END,
     (CLI_RETURN, CLI_MSG_NEWS_RECEIVED),
 )
 
-# The visiting trainer rides the same card session: CLI_RECV_EREADER_TRAINER memcpys the 188 bytes
-# into gSaveBlock2Ptr->battleTower.ereaderTrainer and validates them [decomp:src/mystery_gift_client.c:233].
-# CLI_MSG_TRAINER_RECEIVED is a success message, so the console saves on its own afterwards
-# [GetClientResultMessage, mystery_gift_menu.c:939; MG_STATE_SAVE_LOAD_GIFT, :1379].
+# CLI_RECV_EREADER_TRAINER copies 188 bytes into battleTower.ereaderTrainer and validates them
+# [decomp:src/mystery_gift_client.c:233]; CLI_MSG_TRAINER_RECEIVED is a success message, so the
+# console saves [mystery_gift_menu.c:939, :1379].
 CLIENT_SCRIPT_SAVE_CARD_AND_TRAINER = client_script(
     (CLI_RECV, MG_LINKID_CARD),
     CLI_SAVE_CARD,
@@ -136,8 +133,7 @@ CLIENT_SCRIPT_SAVE_CARD_AND_TRAINER = client_script(
     (CLI_RETURN, CLI_MSG_TRAINER_RECEIVED),
 )
 
-# Re-sending to a console that already holds the card: the trainer alone, so the event can be
-# repeated without the player tossing anything.
+# A console already holding the card gets the trainer alone, tossing nothing.
 CLIENT_SCRIPT_SAVE_TRAINER = client_script(
     (CLI_RECV, MG_LINKID_EREADER_TRAINER),
     CLI_RECV_EREADER_TRAINER,
@@ -185,7 +181,7 @@ CLIENT_SCRIPT_HAD_CARD = client_script(
     (CLI_RETURN, CLI_MSG_HAD_CARD),
 )
 
-# sClientScript_AskToss [decomp:src/mystery_gift_scripts.c:69]; the answer comes back as MG_LINKID_RESPONSE.
+# sClientScript_AskToss [decomp:src/mystery_gift_scripts.c:69]; the answer is MG_LINKID_RESPONSE.
 CLIENT_SCRIPT_ASK_TOSS = client_script(
     CLI_ASK_TOSS,
     CLI_LOAD_TOSS_RESPONSE,
@@ -194,15 +190,15 @@ CLIENT_SCRIPT_ASK_TOSS = client_script(
     CLI_COPY_RECV,
 )
 
-# sClientScript_Canceled [decomp:src/mystery_gift_scripts.c:77] is the News cancel path; the card path
-# uses CLIENT_SCRIPT_DYNAMIC_ERROR.
+# sClientScript_Canceled [decomp:src/mystery_gift_scripts.c:77] is the News cancel path; the card
+# path uses CLIENT_SCRIPT_DYNAMIC_ERROR.
 CLIENT_SCRIPT_CANCELED = client_script(
     CLI_SEND_READY_END,
     (CLI_RETURN, CLI_MSG_COMM_CANCELED),
 )
 
-# sClientScript_DynamicError [decomp:src/union_room_message.c:562]: what a player who declines to toss
-# their card runs; it receives a 64-byte message to display first.
+# sClientScript_DynamicError [decomp:src/union_room_message.c:562]: run by a player who declines to
+# toss; it receives a 64-byte message to display first.
 CLIENT_SCRIPT_DYNAMIC_ERROR = client_script(
     (CLI_RECV, MG_LINKID_DYNAMIC_MSG),
     CLI_COPY_MSG,
@@ -324,8 +320,8 @@ class LinkGameData:
 
     @property
     def trainer_id_is_reliable(self):
-        """A full 7-character name's 0xFF terminator overwrites playerTrainerId[0] [decomp:src/mystery_gift.c:364]."""
-        # The struct is zero-filled first, so a short name reads `name FF 00 ..` [mystery_gift.c:339].
+        """A 7-character name's 0xFF eats playerTrainerId[0] [decomp:src/mystery_gift.c:364]."""
+        # Zero-filled first, so a short name reads `name FF 00 ..` [mystery_gift.c:339].
         return b"\xff" in self.raw[GD_OFF_PLAYER_NAME:GD_OFF_PLAYER_NAME + PLAYER_NAME_FIELD_SIZE]
 
     @property
@@ -340,20 +336,14 @@ class LinkGameData:
                    else "holding no Wonder Card"))
 
     def describe_extras(self):
-        """The Easy Chat words the console volunteers about itself.
-
-        The questionnaire words are the four the player typed at the Poke Mart clerk
-        [decomp:src/mystery_gift.c:361]; SVR_CHECK_QUESTIONNAIRE compares them, which is what makes
-        them a password gate. They are also the only channel that tells us which word id a FRENCH
-        player's phrase actually produces - the English decomp cannot
-        [easychat_french.py].
-        """
+        """The Easy Chat words the console volunteers: the four Poke Mart questionnaire words
+        [decomp:src/mystery_gift.c:361] (SVR_CHECK_QUESTIONNAIRE), and the battle profile."""
         lines = []
         if self.has_questionnaire:
             lines.append("Console questionnaire words: "
                          + easychat.describe_words(self.questionnaire_words))
-        # An all-zero profile is not empty, it is EC_GROUP_POKEMON_2 index 0, which the console
-        # rejects and prints as "???" [IsECWordInvalid, decomp:src/easy_chat.c:118].
+        # An all-zero profile is EC_GROUP_POKEMON_2 index 0, which the console rejects and prints as
+        # "???" [IsECWordInvalid, decomp:src/easy_chat.c:118].
         if any(word not in (0, easychat.UNDEFINED) for word in self.easy_chat_profile):
             lines.append("Console Easy Chat battle profile: "
                          + easychat.describe_words(self.easy_chat_profile))
@@ -425,13 +415,9 @@ def compare_card_flags(our_flag_id, data):
     return HAS_DIFF_CARD
 
 
-# --- The Mystery Event VM path -------------------------------------------------------------------
-# CLI_RUN_MEVENT_SCRIPT hands client->recvBuffer to the second bytecode interpreter
-# [decomp:src/mystery_gift_client.c:223] and Client_RunMysteryEventScript passes &client->param to
-# MEventScript_Run, which writes the script's status (ctx->data[2]) there
-# [decomp:src/mystery_event_script.c:75]. CLI_LOAD_TOSS_RESPONSE loads exactly client->param into
-# MG_LINKID_RESPONSE [decomp:src/mystery_gift_client.c:204], so the two together are a return channel:
-# whatever the Mystery Event script leaves in its status comes back to us as a u32.
+# The Mystery Event VM path: MEventScript_Run writes its status to client->param
+# [decomp:src/mystery_event_script.c:75] and CLI_LOAD_TOSS_RESPONSE ships it as a u32
+# [decomp:src/mystery_gift_client.c:204] (docs/frlg_rom.md).
 CLIENT_SCRIPT_SAVE_CARD_AND_MEVENT = client_script(
     (CLI_RECV, MG_LINKID_CARD),
     CLI_SAVE_CARD,
@@ -455,21 +441,17 @@ CLIENT_SCRIPT_RUN_MEVENT = client_script(
     CLI_COPY_RECV,
 )
 
-# The tail both of those branch into. CLI_MSG_CARD_RECEIVED is the only exit that is both a success
-# message and card-shaped, and success is what drives MG_STATE_SAVE_LOAD_GIFT
-# [decomp:src/mystery_gift_menu.c:1379] - without a save the event's writes die at the next reset.
+# CLI_MSG_CARD_RECEIVED is the one card-shaped success exit, and success drives the save
+# [decomp:src/mystery_gift_menu.c:1379]; without it the event's writes die at the next reset.
 CLIENT_SCRIPT_MEVENT_DONE = client_script(
     CLI_SEND_READY_END,
     (CLI_RETURN, CLI_MSG_CARD_RECEIVED),
 )
 
 
-# --- Native code: the CLI_RUN_BUFFER_SCRIPT path ---------------------------------------------------
-# Client_Run copies the whole receive buffer into gDecompressionBuffer and calls it as a function
-# [decomp:src/mystery_gift_client.c:237], so this is the same shape as the Mystery Event path with
-# the interpreter taken out: send the payload under MG_LINKID_RAM_SCRIPT (ident 25, the one the
-# ident-25 hole guard already covers), run it, and read what it left in client->param through the
-# CLI_LOAD_TOSS_RESPONSE return channel. No Wonder Card is involved: nothing here saves.
+# Native code: Client_Run calls the receive buffer as a function
+# [decomp:src/mystery_gift_client.c:237]; client->param comes back through CLI_LOAD_TOSS_RESPONSE.
+# Nothing here saves (docs/frlg_rom.md).
 CLIENT_SCRIPT_RUN_BUFFER = client_script(
     (CLI_RECV, MG_LINKID_RAM_SCRIPT),
     CLI_RUN_BUFFER_SCRIPT,
@@ -479,13 +461,9 @@ CLIENT_SCRIPT_RUN_BUFFER = client_script(
     CLI_COPY_RECV,
 )
 
-# sClientScript_DynamicSuccess [decomp:src/mystery_gift_scripts.c:87], the ROM's own exit for this
-# path: the console prints a 64-byte message of OUR composing (GetClientResultMessage returns NULL
-# for both buffer messages and the menu falls back to data->clientMsg [mystery_gift_menu.c:943]).
-# CLI_MSG_BUFFER_SUCCESS sets successMsg, which sends the menu on to MG_STATE_SAVE_LOAD_GIFT
-# [mystery_gift_menu.c:1379] - a save. CLIENT_SCRIPT_DYNAMIC_ERROR above is the same script with
-# CLI_MSG_BUFFER_FAILURE, which prints our message and returns to the menu without saving; a run
-# proved that half on hardware.
+# sClientScript_DynamicSuccess [decomp:src/mystery_gift_scripts.c:87]: the console prints our
+# 64-byte message [mystery_gift_menu.c:943] and CLI_MSG_BUFFER_SUCCESS saves [:1379];
+# CLI_MSG_BUFFER_FAILURE (CLIENT_SCRIPT_DYNAMIC_ERROR) returns to the menu without saving.
 CLIENT_SCRIPT_BUFFER_SUCCESS = client_script(
     (CLI_RECV, MG_LINKID_DYNAMIC_MSG),
     CLI_COPY_MSG,
@@ -494,11 +472,9 @@ CLIENT_SCRIPT_BUFFER_SUCCESS = client_script(
 )
 
 
-# The dump order. CLI_LOAD_TOSS_RESPONSE arms the send FIRST (ident MG_LINKID_RESPONSE, pointing at
-# client->sendBuffer, 4 bytes); the payload then repoints link->sendBuffer and link->sendSize, and
-# CLI_SEND_LOADED transmits from wherever it now points, with the CRC taken over that region at
-# send time [decomp:src/mystery_gift_link.c:166]. Swap the middle two commands and the payload
-# patches fields the InitSend is about to overwrite, and nothing happens.
+# CLI_LOAD_TOSS_RESPONSE arms the send before the payload repoints link->sendBuffer/sendSize;
+# CLI_SEND_LOADED sends from there, CRC at send time [decomp:src/mystery_gift_link.c:166]. Swapped,
+# the InitSend overwrites the payload's fields.
 CLIENT_SCRIPT_DUMP_MEMORY = client_script(
     (CLI_RECV, MG_LINKID_RAM_SCRIPT),
     CLI_LOAD_TOSS_RESPONSE,
@@ -509,24 +485,15 @@ CLIENT_SCRIPT_DUMP_MEMORY = client_script(
 )
 
 
-# MG_LINK_BUFFER_SIZE caps a MESSAGE, not a session, and the three commands above that produce one
-# block can appear as many times as the script has room for. Each pass runs the SAME payload image -
-# CLI_RUN_BUFFER_SCRIPT memcpys recvBuffer over gDecompressionBuffer every time
-# [decomp:src/mystery_gift_client.c:238] - so what makes the passes differ is the cursor the payload
-# keeps in client->param. asm/memory-dump-multi.s.
-#
-# The ceiling is the recv buffer the script runs out of: 1024 bytes at 8 bytes a command is 128, and
-# the three fixed commands around the loop leave 125 for it, so 41 blocks. Held at 32 because a
-# session that dies halfway loses every block in it, and 32 KB is already 32 runs of the old shape.
+# The three commands repeat once per block; each pass runs the same image
+# [decomp:src/mystery_gift_client.c:238]; the cursor is client->param (asm/memory-dump-multi.s).
+# The recv buffer fits 41 blocks; 32 caps what one dead session loses.
 MAX_DUMP_BLOCKS = 32
 
 
 def client_script_dump_memory(blocks=1):
-    """-> the client script that pulls `blocks` consecutive kilobytes in ONE session.
-
-    With `blocks` 1 this is CLIENT_SCRIPT_DUMP_MEMORY exactly, which is what keeps the single-block
-    path the one that has run on hardware a hundred times rather than a new one that looks like it.
-    """
+    """-> the client script that pulls `blocks` consecutive kilobytes in ONE session; 1 is
+    CLIENT_SCRIPT_DUMP_MEMORY exactly."""
     blocks = int(blocks)
     if not 1 <= blocks <= MAX_DUMP_BLOCKS:
         raise ValueError(f"a session carries 1..{MAX_DUMP_BLOCKS} blocks, asked for {blocks}")
@@ -534,9 +501,7 @@ def client_script_dump_memory(blocks=1):
         return CLIENT_SCRIPT_DUMP_MEMORY
     body = []
     for _ in range(blocks):
-        # The order is the whole trick: the InitSend arms the message FIRST, the payload then
-        # repoints link->sendBuffer and link->sendSize, and CLI_SEND_LOADED transmits from wherever
-        # it now points. Swapped, the payload patches fields the InitSend overwrites.
+        # InitSend first, then the payload repoints the send; swapped, nothing happens.
         body += [CLI_LOAD_TOSS_RESPONSE, CLI_RUN_BUFFER_SCRIPT, CLI_SEND_LOADED]
     script = client_script(
         (CLI_RECV, MG_LINKID_RAM_SCRIPT),

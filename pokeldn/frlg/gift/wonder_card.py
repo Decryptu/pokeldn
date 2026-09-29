@@ -1,6 +1,6 @@
-"""The card is the 332-byte struct WonderCard [decomp:include/global.h:655] and must pass ValidateWonderCard
-[decomp:src/mystery_gift.c:191]. The console wraps the RAM script body and computes its checksum itself; the script
-runs with no pointer relocation, so it may only use immediate operands and setvaddress-relative branches."""
+"""The 332-byte struct WonderCard [decomp:include/global.h:655], checked by ValidateWonderCard
+[decomp:src/mystery_gift.c:191]. The console wraps and checksums the RAM script; the script runs
+unrelocated, so it may use only immediates and setvaddress-relative branches."""
 
 from pokeldn.frlg.text import charmap
 from pokeldn.frlg.gift.mystery_gift import (
@@ -85,10 +85,8 @@ GIFT_BEAST_CUTSCENE = "beast-cutscene"
 GIFT_CELEBI = "celebi"
 LEGENDARY_BEAST_LEVEL = 65
 
-
-
 _PARTY_SIZE = 6
-# ScriptSetMonMoveSlot targets the last party mon only for index > PARTY_SIZE; 6 itself is out of bounds.
+# ScriptSetMonMoveSlot targets the last party mon only for index > PARTY_SIZE; 6 is out of bounds.
 _LAST_PARTY_MON_INDEX = _PARTY_SIZE + 1
 # Flags 0x3D8..0x3E7 are cleared by ClearMysteryGiftFlags when a replacement card is saved.
 _FLAG_REWARD_RECEIVED = 0x3D9
@@ -130,7 +128,7 @@ def _script_text(text):
 
 
 def flag_for_flag_id(flag_id):
-    """sReceivedGiftFlags[flagId - 1000] [decomp:src/mystery_gift.c:255]; valid flagIds are 1000..1019."""
+    """sReceivedGiftFlags[flagId - 1000] [decomp:src/mystery_gift.c:255]; flagIds 1000..1019."""
     idx = flag_id - WONDER_CARD_FLAG_OFFSET
     if not (0 <= idx < NUM_WONDER_CARD_FLAGS):
         raise ValueError(f"card flagId {flag_id} out of range [1000, {1000 + NUM_WONDER_CARD_FLAGS})")
@@ -139,8 +137,8 @@ def flag_for_flag_id(flag_id):
 
 
 def build_delivery_ram_script(item=DEFAULT_GIFT_ITEM, flag=None, flag_id=None):
-    """Ends with ``end`` (not ``endram``) so the saved script survives: the item is re-given on every
-    interaction, Celebi once per card (flag reset when a replacement card is saved)."""
+    """Ends with ``end``, not ``endram``, so the saved script survives: the item is re-given on
+    every interaction, Celebi once per card (flag reset when a replacement card is saved)."""
     if flag is None:
         flag = flag_for_flag_id(flag_id) if flag_id is not None else (FLAG_WONDER_CARD_UNUSED_1)
     if item is not None and (type(item) is not int or not 0 < item <= 0xFFFF):
@@ -153,7 +151,8 @@ def build_delivery_ram_script(item=DEFAULT_GIFT_ITEM, flag=None, flag_id=None):
                 + bytes([_OP_CALLSTD, _STD_OBTAIN_ITEM])
                 + bytes([_OP_SETFLAG]) + _u16(flag))
 
-    # Saved RAM scripts cannot hold absolute pointers; setvaddress + vgoto_if are relative [decomp:src/scrcmd.c:165-206].
+    # Saved RAM scripts cannot hold absolute pointers; setvaddress + vgoto_if are relative
+    # [decomp:src/scrcmd.c:165-206].
     virtual_anchor = len(out)
     out += bytes([_OP_SETVADDRESS]) + _RAM_SCRIPT_VIRTUAL_BASE.to_bytes(4, "little")
     out += bytes([_OP_CHECKFLAG]) + _u16(_FLAG_REWARD_RECEIVED)
@@ -208,8 +207,8 @@ def _card_text(s):
 def build_wonder_card(*, flag_id=1003, icon_species=1, id_number=0,
                       card_type=CARD_TYPE_GIFT, bg_type=0, send_type=SEND_TYPE_DISALLOWED,
                       max_stamps=0, title="", subtitle="", body=(), footer1="", footer2=""):
-    """ValidateWonderCard needs flagId != 0, type < 3, sendType in {0,1,2}, bgType < 8, maxStamps <= 7;
-    body is up to 4 lines of <= 39 chars; id_number 0 displays flag_id % 100."""
+    """ValidateWonderCard needs flagId != 0, type < 3, sendType in {0,1,2}, bgType < 8,
+    maxStamps <= 7; body is up to 4 lines of <= 39 chars; id_number 0 displays flag_id % 100."""
     if flag_id == 0:
         raise ValueError("flagId 0 is rejected by ValidateWonderCard")
     if not (0 <= card_type < 3 and 0 <= bg_type < 8 and send_type in (0, 1, 2) and 0 <= max_stamps <= 7):

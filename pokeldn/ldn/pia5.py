@@ -1,23 +1,7 @@
-"""Pia 5.27-5.45 packet header - the wire format BDSP speaks.
+"""Pia 5.27-5.45 packet header (version 9), the wire format BDSP speaks.
 
-This is NOT the format `pia_connect.py` speaks. That module targets Pia 6.32+ (header 0x1D, 2-byte
-variable ids); BDSP advertises protocol version 9, which the NintendoClients wiki places in the
-5.27-5.45 band, and every field below was read off the console's own parser at main.bin 0x01681ee4 rather than taken from the wiki:
-
-    off  size  field                         parser evidence
-    0x00  4    magic 0x32AB9864, big-endian  ldr w8,[x1]; rev w8; str w8,[x0,#8]
-    0x04  1    0x80 (encrypted) | version    ldrb -> obj+0xc, and (b & 0x7f) == 9 is checked
-    0x05  4    destination variable id, BE   ldur w8,[x1,#5]; rev; -> obj+0x10
-    0x09  4    source variable id, BE        ldur w8,[x1,#9]; rev; -> obj+0x14
-    0x0d  2    packet id, BE                 ldurh w8,[x1,#0xd]; rev; lsr #16 -> obj+0x18
-    0x0f  1    footer size                   ldrb -> obj+0x1a
-    0x10  8    AES-GCM nonce                 copied byte by byte to obj+0x1b
-    0x18  8    AES-GCM tag (truncated)       copied byte by byte to obj+0x23
-    0x20  ...  ciphertext (0xFF-padded to a multiple of 16 before encryption)
-
-The 4-byte variable ids are the visible difference from 6.32, which uses 2. `rev` on three fields is
-why the header is big-endian on the wire while the struct is not.
-"""
+Header, keys and IV: docs/pia.md, Version 9 (Pia 5.27-5.45) and Session keys, and
+docs/bdsp_session.md."""
 import struct
 import zlib
 
@@ -67,15 +51,8 @@ class PiaHeader5:
 
 
 def ciphertext(data, footer_size=None):
-    """The encrypted body: everything after the header, MINUS THE FOOTER.
-
-    A packet sent to more than one console at once carries a footer of one big-endian halfword per
-    recipient - the low half of each station's variable id - and it is NOT covered by the GCM tag.
-    One capture holds 111 packets with `footer size` 4, every one of them the game's own unreliable
-    traffic, and every one of them failed to authenticate until those four bytes were taken off the
-    end. The footer size is a header field, so nothing has to be guessed: pass it, or let this read
-    it back off the packet.
-    """
+    """The encrypted body minus the footer: the recipients' variable ids ride after the ciphertext,
+    outside the GCM tag (docs/pia.md, The footer)."""
     if footer_size is None:
         footer_size = data[FOOTER_SIZE_OFF] if len(data) > FOOTER_SIZE_OFF else 0
     end = len(data) - footer_size if footer_size else len(data)
@@ -83,7 +60,7 @@ def ciphertext(data, footer_size=None):
 
 
 def footer(data, footer_size=None):
-    """-> the recipients' variable ids, low halves, as the console packs them."""
+    """-> the recipients' variable ids, low halves."""
     if footer_size is None:
         footer_size = data[FOOTER_SIZE_OFF] if len(data) > FOOTER_SIZE_OFF else 0
     if not footer_size:
@@ -97,18 +74,8 @@ def is_pia5(data):
 
 
 def gcm_iv(station_crc, src_variable_id, nonce8):
-    """Pia 5.x's twelve-byte AES-GCM IV, as the stream objects build it.
-
-    Read off `nn::pia::local::LdnOutputStream::vfunc3` (main.bin 0x16b39c4), and the same code is
-    `LocalOutputStream` / `LanOutputStream` / `NexOutputStream` for the other three families:
-
-        IV[0..3]  = u32be(crc32(network id || six bytes of the station record))
-        IV[3]     = OVERWRITTEN with the low byte of the packet's source variable id
-        IV[4..11] = the packet's eight-byte header nonce
-
-    so only three bytes of the CRC reach the IV. Both of the other two inputs are on the wire, which
-    is why a capture pins the IV down to those three bytes. docs/bdsp_session.md "The GCM nonce".
-    """
+    """The twelve-byte IV: three CRC bytes, the source variable id's low byte, the header nonce
+    (`LdnOutputStream::vfunc3` 0x16b39c4, docs/bdsp_session.md, The GCM nonce)."""
     if len(nonce8) != 8:
         raise ValueError(f"a Pia 5.x header nonce is eight bytes, not {len(nonce8)}")
     return (struct.pack(">I", station_crc & 0xFFFFFFFF)[:3]
@@ -117,20 +84,13 @@ def gcm_iv(station_crc, src_variable_id, nonce8):
 
 
 def password_crc(password):
-    """-> advertise 0x04 of Pia's LDN header: CRC32 of the password's ASCII, little-endian; zero with
-    none. A Sword searching with Link Code 12345678 and a BDSP room entered with 00000000 both carry it."""
+    """-> advertise 0x04: CRC32 of the password's ASCII, little-endian; zero with none."""
     return struct.pack("<I", zlib.crc32(password.encode("ascii")) if password else 0)
 
 
 def ldn_session_key(game_key, seed):
-    """Pia 5.x's LDN session key: AES-128-ECB(game_key) over sixteen bytes of SEAD output.
-
-    Read off BDSP's `nn::pia::local::LocalProtocol` at main.bin 0x016b14e8: the seed is a u32
-    stored at +0x5b0, the game key sixteen bytes at +0x5bc, and the plaintext four consecutive SEAD
-    draws packed little-endian. This is the LDN family's derivation and ONLY the LDN family's - the
-    HMAC-SHA256 one belongs to `nn::pia::lan::LanProtocol`, and applying it to an LDN capture cannot
-    work. docs/bdsp_session.md "The session key".
-    """
+    """AES-128-ECB(game_key) over sixteen bytes of SEAD output (`LocalProtocol` 0x016b14e8,
+    docs/bdsp_session.md, The session key). LAN's HMAC derivation does not apply to LDN."""
     from Crypto.Cipher import AES
 
     from pokeldn.ldn.sead import Sead
@@ -141,15 +101,8 @@ def ldn_session_key(game_key, seed):
 
 
 def ldn_game_key(crypto_key_data_seed, local_communication_version):
-    """The Pia game key: the game's constant seed, with four bytes replaced by the version.
-
-    Read off BDSP's own key construction (base_main.bin 0x1e3f404) and matching the NintendoClients
-    wiki's "Pokemon Brilliant Diamond" page. The seed is what ships in the game's metadata; the key
-    is what Pia is handed. So a PUBLISHED per-game key is a derived value for one game version, and
-    the seed is the thing that does not move, which is the distinction that cost
-    a day of sweeps, because the published key and the measured seed differ in precisely these four
-    bytes and that reads as corruption until you know the rule.
-    """
+    """The game's constant seed with bytes 1, 3, 7 and 12 replaced by the version (0x1e3f404,
+    docs/pia.md, The game key). A published key is this for one version."""
     key = bytearray(crypto_key_data_seed)
     if len(key) != 16:
         raise ValueError(f"a cryptoKeyDataSeed is sixteen bytes, not {len(key)}")
@@ -162,11 +115,7 @@ def ldn_game_key(crypto_key_data_seed, local_communication_version):
 
 
 def ldn_nonce_crc(network_id_le, source_mac):
-    """The CRC32 whose first three bytes open the GCM IV: network id (LITTLE-endian) then the MAC.
-
-    The source MAC is the field this project never guessed. Every offline sweep failed on it alone,
-    with the key, the session key and the IV layout all already correct.
-    """
+    """The CRC32 opening the GCM IV: network id (little-endian) then the source MAC."""
     if len(network_id_le) != 4 or len(source_mac) != 6:
         raise ValueError("network id is four bytes little-endian, MAC is six")
     return zlib.crc32(bytes(network_id_le) + bytes(source_mac)) & 0xFFFFFFFF
@@ -177,7 +126,7 @@ MESSAGE_FLAG_RELAY_ONE = 0x02
 MESSAGE_FLAG_RELAY_MANY = 0x04
 MESSAGE_FLAG_WAS_RELAYED = 0x08
 MESSAGE_FLAG_NO_BUNDLING = 0x10
-MESSAGE_FLAG_ZLIB = 0x20          # 5.27-5.45: the PAYLOAD is zlib compressed
+MESSAGE_FLAG_ZLIB = 0x20
 
 
 class Pia5Message:
@@ -197,31 +146,15 @@ class Pia5Message:
 
 
 def parse_messages(plaintext, align=4):
-    """Split a decrypted payload into messages. Presence-flagged, and fields INHERIT.
-
-    Pia 5.27-6.30: each message opens with a byte saying which header fields are present, and any
-    field that is absent keeps the previous message's value - so a packet's second message is often
-    a single byte of flags and a payload. Messages are padded to a multiple of four bytes, and the
-    packet's tail is 0xFF padding, which is where the walk stops.
-
-    A presence byte of 0x00 is a message with every field inherited, size included: each game's
-    reader stops on 0xFF alone (BDSP `0x159b9d4`, Arceus `0x748520`, Scarlet `0x6ed324`). Scarlet
-    bundles runs of equal-sized records that way. docs/pia.md "Message framing".
-
-    Sizes and ids here are BIG-endian, like the packet header and unlike the wiki's note about the
-    advertisement. docs/bdsp_session.md "What the console is saying".
-
-    `align` is the boundary the next message starts on. 5.27-5.45 aligns to four; the 6.16-6.30 band
-    does not align at all, so `pia6` passes 0. Aligning there walks past a bundled message and reads
-    the packet as carrying one (`docs/pla.md`, The data exchange).
-    """
+    """Split a decrypted payload into presence-flagged messages whose absent fields inherit
+    (docs/pia.md, Message framing). 5.27-5.45 aligns each to four; `pia6` passes `align=0`."""
     out, off = [], 0
     flags = size = protocol = port = 0
     destination = 0
     while off < len(plaintext):
         present = plaintext[off]
         if present == 0xFF or (present == 0 and not out):
-            break                                   # padding, or nothing to inherit from
+            break  # padding, or nothing to inherit from
         off += 1
         if present & 1:
             if off >= len(plaintext):
@@ -244,10 +177,7 @@ def parse_messages(plaintext, align=4):
             break
         body = plaintext[off:off + size]
         compressed = False
-        # message flag 0x20 says the PAYLOAD is zlib compressed, and BDSP turns it on as soon as
-        # there is anything worth compressing: an answer to our position messages was 31 bytes
-        # of zlib around a 32-byte reliable ack. Read raw, one of those parses into a well-formed
-        # LOOKING header full of nonsense, so decompress here and let `compressed` say it happened.
+        # Read raw, a zlib payload parses as a plausible header full of nonsense.
         if flags & MESSAGE_FLAG_ZLIB and body:
             try:
                 body, compressed = zlib.decompress(body), True
@@ -261,7 +191,7 @@ def parse_messages(plaintext, align=4):
 
 
 def encrypt_payload(session_key, iv, plaintext):
-    """-> (ciphertext, 8-byte tag). Pia keeps only the first eight bytes of the GCM tag."""
+    """-> (ciphertext, 8-byte tag): Pia keeps the first eight bytes of the GCM tag."""
     from Crypto.Cipher import AES
 
     ct, tag = AES.new(bytes(session_key), AES.MODE_GCM, nonce=bytes(iv),
@@ -270,9 +200,7 @@ def encrypt_payload(session_key, iv, plaintext):
 
 
 def decrypt_payload(session_key, iv, ciphertext, tag):
-    """-> plaintext, or None if the tag does not verify. The tag IS the oracle: a wrong key,
-    session key, IV or layout cannot pass it, which is what a derivation should be tested against.
-    """
+    """-> plaintext, or None if the tag does not verify."""
     from Crypto.Cipher import AES
 
     try:
@@ -283,24 +211,16 @@ def decrypt_payload(session_key, iv, ciphertext, tag):
 
 
 def pad_payload(plaintext):
-    """0xFF-pad to a multiple of 16, which is what Packet::Header::vfunc3 does before encrypting."""
+    """0xFF-pad to a multiple of 16, as Packet::Header::vfunc3 does before encrypting."""
     return bytes(plaintext) + b"\xff" * (-len(plaintext) % 16)
 
 
-ALL_FIELDS_PRESENT = 0x7F         # what the console writes; only bits 1/2/4/8 name a field
+ALL_FIELDS_PRESENT = 0x7F  # what the console writes; only bits 1/2/4/8 name a field
 
 
 def build_message(payload, protocol, port=0, message_flags=0, destination=0, inherit=False):
-    """One Pia 5.27-6.30 message, padded to four bytes.
-
-    `inherit=True` emits only the payload size, leaving protocol, port, destination and the message
-    flags to be taken from the previous message - which is how the console packs a second message
-    into a packet.
-
-    The presence byte is 0x7F, not the 0x0F the four defined bits would suggest: the console's own
-    update session reads `7f 11 0079 24 000000 00*8` and carries exactly those four fields, so bits
-    0x10/0x20/0x40 add nothing to the header and are simply set. Emit what the console emits.
-    """
+    """One Pia 5.27-6.30 message, padded to four bytes. `inherit=True` states the size alone, as
+    the console packs a second message; presence 0x7F copies the console's own headers."""
     payload = bytes(payload)
     if inherit:
         out = bytes([0x02]) + struct.pack(">H", len(payload))

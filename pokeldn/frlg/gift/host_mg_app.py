@@ -1,5 +1,4 @@
-"""Application runtime for hosting one FRLG Mystery Gift distribution; subclasses HostApplication
-and overrides only the build/startup-log/progress seams."""
+"""Application runtime for hosting one FRLG Mystery Gift distribution."""
 
 import os
 
@@ -51,7 +50,6 @@ def _log_build_plan(app):
 
 
 class MysteryGiftHostApplication(HostApplication):
-    # The server results that mean the console actually kept something.
     SUCCESS_RESULTS = (SVR_MSG_CARD_SENT, SVR_MSG_STAMP_SENT, SVR_MSG_GIFT_SENT_1)
     ACTIVITY_NOUN = "Wonder Card"
 
@@ -130,7 +128,7 @@ class MysteryGiftHostApplication(HostApplication):
         return link_player
 
     def _build_app_data(self):
-        """Which of the console's menus this host is visible in; the activity byte is the only difference."""
+        """Which of the console's menus lists this host: only the activity byte differs."""
         return build_wonder_card_app_data(
             self.profile, self.session.rfu.host_session_id)
 
@@ -263,8 +261,7 @@ class MysteryGiftHostApplication(HostApplication):
         return joined
 
     def _record_game_data(self, engine):
-        """Keep what the console said about itself. The counters in it are only evidence as a
-        difference against the last session [pokeldn/frlg/gift/game_data_log.py]."""
+        """Keep what the console said about itself [pokeldn/frlg/gift/game_data_log.py]."""
         path = getattr(self.config, "game_data_log", None)
         data = getattr(getattr(engine, "server", None), "game_data", None)
         if not path or data is None:
@@ -272,7 +269,6 @@ class MysteryGiftHostApplication(HostApplication):
         try:
             previous = game_data_log.read(path) if os.path.exists(path) else ()
             capture = getattr(self.config.ldn, "capture_path", None)
-            # The run tag: every launcher names its capture after it.
             tag = os.path.splitext(os.path.basename(capture))[0] if capture else None
             _, entry = game_data_log.append(path, data, tag=tag)
         except OSError as exc:
@@ -287,13 +283,8 @@ class MysteryGiftHostApplication(HostApplication):
 
 
 class WonderNewsHostApplication(MysteryGiftHostApplication):
-    """The Wonder News half of the Mystery Gift menu.
-
-    Everything below the server script is the Wonder Card host: the same LDN network, the same RFU
-    parent, the same MysteryGiftLink framing. Only two things change - the advertisement's activity
-    byte (22, or the console's News screen never lists us) and the server script, which sends 444
-    bytes of news and then reads the console's own verdict on whether it kept them.
-    """
+    """The Wonder News half of the Mystery Gift menu: the Wonder Card host with activity byte 22
+    (the News screen lists nothing else) and the news server script (docs/frlg_gift.md)."""
 
     SUCCESS_RESULTS = (SVR_MSG_NEWS_SENT,)
     ACTIVITY_NOUN = "Wonder News"
@@ -332,13 +323,8 @@ class WonderNewsHostApplication(MysteryGiftHostApplication):
 
 
 class BufferScriptHostApplication(MysteryGiftHostApplication):
-    """CLI_RUN_BUFFER_SCRIPT: the console executes native ARM code we hand it.
-
-    The last unopened door in the Mystery Gift client, and the only one that is not a gift: no
-    Wonder Card, no flagId, nothing written to the save unless the payload writes it. The console
-    reaches it from the ordinary Wonder Cards -> Friend screen, so the advertisement, the RFU
-    parent and the link framing are all the Wonder Card host's; only the server script differs.
-    """
+    """CLI_RUN_BUFFER_SCRIPT: the console executes native ARM code we hand it, reached from
+    Wonder Cards -> Friend; only the server script differs from the Wonder Card host."""
 
     SUCCESS_RESULTS = (SVR_MSG_GIFT_SENT_1,)
     ACTIVITY_NOUN = "buffer script"

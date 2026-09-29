@@ -1,6 +1,6 @@
-"""FRLG AgbRfu 14-byte command slot [ChildBuildSendCmd, link_rfu_2.c:944-962]. The rolling tag (childSendCmdId, 0..7) lives
-in bits 5-7 of word0's low byte and advances on every NON-idle slot; the host hard-errors after >4 bad ids
-[link_rfu_2.c:884-888]. Idle = 14 zero bytes and does NOT advance the tag.
+"""FRLG AgbRfu 14-byte command slot [ChildBuildSendCmd, link_rfu_2.c:944-962].
+The rolling tag (childSendCmdId, 0..7) is bits 5-7 of word0 and advances on every non-idle slot;
+the host errors after more than 4 bad ids [link_rfu_2.c:884-888]. An idle slot is 14 zero bytes.
 """
 
 COMM_SLOT_LENGTH = 14
@@ -29,15 +29,17 @@ OWNER_FLAG = 0x80
 
 # librfu LLSF command states [include/librfu.h:249-253].
 LCOM_NULL, LCOM_NI_START, LCOM_NI, LCOM_NI_END, LCOM_UNI = 0, 1, 2, 3, 4
-# CHILD LLSF [llsf_struct[MODE_CHILD], librfu_rfu.c:79-94]: a 2-byte LE word, state<<10 ack<<9 n<<7 phase<<5 | size.
+# Child LLSF [llsf_struct[MODE_CHILD], librfu_rfu.c:79-94]: 2 bytes LE, state<<10 ack<<9 n<<7
+# phase<<5 | size.
 CHILD_LLSF_STATE_SHIFT, CHILD_LLSF_ACK_SHIFT = 10, 9
 CHILD_LLSF_N_SHIFT, CHILD_LLSF_PHASE_SHIFT = 7, 5
-# PARENT LLSF [llsf_struct[MODE_PARENT], librfu_rfu.c:95-110]: 3 bytes LE, state<<14 bmSlot<<18 ack<<13 n<<11 phase<<9 | size&0x7f.
+# Parent LLSF [llsf_struct[MODE_PARENT], librfu_rfu.c:95-110]: 3 bytes LE, state<<14 bmSlot<<18
+# ack<<13 n<<11 phase<<9 | size&0x7f.
 PARENT_LLSF_STATE_SHIFT = 14
 
 
 def uni_slot(cmd14):
-    """2-byte LLSF (LCOM_UNI<<10 | size) then the command [rfu_STC_UNI_constructLLSF, librfu_rfu.c:1872]."""
+    """LCOM_UNI<<10 | size, then the command [rfu_STC_UNI_constructLLSF, librfu_rfu.c:1872]."""
     cmd = bytes(cmd14)
     llsf = (LCOM_UNI << CHILD_LLSF_STATE_SHIFT) | len(cmd)
     return llsf.to_bytes(2, "little") + cmd
@@ -57,9 +59,8 @@ def _parent_llsf(state, size, *, ack=0, n=0, phase=0, bm_slot=1):
 
 
 def parent_uni_slot(recv_cmds, bm_slot=1):
-    """The 70-byte gRecvCmds table in a PARENT UNI sub-frame [rfu_UNI_setSendData(acceptSlot, gRfu.recvCmds, 70)];
-    broadcast every frame while linked.
-    """
+    """The 70-byte gRecvCmds table as a parent UNI sub-frame, broadcast every frame while linked
+    [rfu_UNI_setSendData(acceptSlot, gRfu.recvCmds, 70)]."""
     payload = bytes(recv_cmds).ljust(COMM_TABLE_LENGTH, b"\x00")[:COMM_TABLE_LENGTH]
     return _parent_llsf(LCOM_UNI, len(payload), bm_slot=bm_slot) + payload
 
@@ -69,9 +70,8 @@ def parent_ni_llsf(state, n, phase, ack, size, bm_slot=1):
 
 
 def pack_recv_cmds(rows):
-    """Row 0 = the parent's own gSendCmd, row 1 = the child; rows 2-4 zero for a 2-player link [ReadAllPlayerRecvCmds,
-    link_rfu_2.c:743].
-    """
+    """Row 0 is the parent's gSendCmd, row 1 the child's, rows 2-4 zero for two players
+    [ReadAllPlayerRecvCmds, link_rfu_2.c:743]."""
     out = bytearray(COMM_TABLE_LENGTH)
     for i, row in enumerate(rows[:5]):
         r = bytes(row)[:COMM_SLOT_LENGTH]
@@ -103,7 +103,7 @@ def idle_slot():
 
 
 def serialize(words):
-    """WITHOUT a rolling tag (the PARENT path / test harness); the child uses SlotBuilder, which adds the tag."""
+    """No rolling tag (parent path, tests); the child uses SlotBuilder, which adds it."""
     return _words_to_slot(words)
 
 
@@ -125,9 +125,8 @@ BLOCK_REQ_SIZE_NONE = 0
 
 
 def send_player_ids_words(link_player_idx=(1, 0, 0, 0), player_count=2):
-    """[RfuPrepareSendBuffer, link_rfu_2.c:1298-1305]: w1=playerCount, then linkPlayerIdx[0..3] as bytes from w2. A single
-    child in RFU slot 0 gets [1,0,0,0], so it reads mpId=1.
-    """
+    """w1 = playerCount, then linkPlayerIdx[0..3] as bytes from w2 [RfuPrepareSendBuffer,
+    link_rfu_2.c:1298-1305]. A single child in RFU slot 0 gets [1,0,0,0] and reads mpId=1."""
     idx = list(link_player_idx)[:4] + [0] * (4 - len(link_player_idx))
     w2 = (idx[0] & 0xFF) | ((idx[1] & 0xFF) << 8)
     w3 = (idx[2] & 0xFF) | ((idx[3] & 0xFF) << 8)
@@ -135,27 +134,25 @@ def send_player_ids_words(link_player_idx=(1, 0, 0, 0), player_count=2):
 
 
 def send_block_req_words(reqtype=BLOCK_REQ_SIZE_NONE):
-    """[link_rfu_2.c:1294-1296]: w1=blockRequestType; NONE(0) makes both sides block-send their LinkPlayerBlock
-    (link_rfu_2.c:1172).
-    """
+    """w1 = blockRequestType [link_rfu_2.c:1294-1296]; NONE (0) makes both sides block-send their
+    LinkPlayerBlock (link_rfu_2.c:1172)."""
     return [SEND_BLOCK_REQ, reqtype & 0xFFFF, 0, 0, 0, 0, 0]
 
 
 def send_packet_words(packet):
-    """RFUCMD_SEND_PACKET with up to six u16 words of gRfu.packet [Rfu_SendPacket, link_rfu_2.c:1324]."""
+    """Up to six u16 words of gRfu.packet [Rfu_SendPacket, link_rfu_2.c:1324]."""
     packet = [int(w) & 0xFFFF for w in packet][:6]
     return [SEND_PACKET] + packet + [0] * (6 - len(packet))
 
 
 def exit_standby_words(count):
-    """w1 = resendExitStandbyCount [link_rfu_2.c:1307-1310]; the child's reply MUST equal the round the host is currently
-    broadcasting or the host's recv gate ignores it (link_rfu_2.c:1178-1180).
-    """
+    """w1 = resendExitStandbyCount [link_rfu_2.c:1307-1310]; the child's reply must equal the round
+    the host is broadcasting or the host's receive gate ignores it (link_rfu_2.c:1178-1180)."""
     return [READY_EXIT_STANDBY, count & 0xFFFF, 0, 0, 0, 0, 0]
 
 
 def close_link_words(count):
-    """w1 continues the standby round counter; the host accepts any count (link_rfu_2.c:1175-1176)."""
+    """w1 continues the standby round counter; any count is accepted (link_rfu_2.c:1175-1176)."""
     return [READY_CLOSE_LINK, count & 0xFFFF, 0, 0, 0, 0, 0]
 
 
@@ -175,9 +172,7 @@ class SlotBuilder:
 
 
 def parse_slot(slot):
-    """Reflected child blocks may carry the child tag, so it is stripped for the index (real indices < 32). None for an
-    empty/short slot.
-    """
+    """Strip the child tag from a block index (real indices < 32); None for an empty slot."""
     if len(slot) < 2:
         return None
     if slot[:COMM_SLOT_LENGTH] == b"\x00" * min(len(slot), COMM_SLOT_LENGTH):
@@ -195,7 +190,7 @@ def parse_slot(slot):
         rec["index"] = word0 & FRAG_INDEX_MASK
         rec["frag"] = bytes(slot[2:14]).ljust(12, b"\x00")
     elif op == SEND_BLOCK_REQ:
-        # The BLOCK_REQ_* selector is word1 (gSendCmd[1] = blockRequestType, link_rfu_2.c:1296), not word0's low byte.
+        # blockRequestType is word1 (link_rfu_2.c:1296).
         rec["reqtype"] = int.from_bytes(slot[2:4], "little")
     elif op == SEND_HELD_KEYS:
         rec["keycode"] = int.from_bytes(slot[2:4], "little")

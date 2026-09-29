@@ -1,10 +1,7 @@
-"""Pia AES-GCM transport crypto (NintendoClients wiki "Pia Protocol" / "Pia Game Keys", LDN 6.16-6.42):
-    session_key = AES_ECB(game_key, ssid); net_id = CRC32(ssid[1:16])
-    GCM nonce = (net_id XOR src_ip_be)(4) || header_nonce(8); AAD empty; tag = first 8 bytes of the GCM tag
-29-byte header: [0:4] magic 32AB9864 [4] enc [5] flags [6:8] dst var-id BE [8:10] src var-id BE [10:12] pktid BE
-[12] footer size (the 2-byte RECIPIENT station-id footer inside the payload) [13:21] header nonce [21:29] tag [29:] ct.
-The decrypted payload may be a zstd frame (stock, no dict); decompress() peels it.
-"""
+"""Pia 6.16-6.42 AES-GCM transport crypto and zstd framing (NintendoClients wiki, Pia Protocol).
+
+Session key AES-ECB(game key, SSID); net id CRC32(ssid[1:16]); IV u32be(net_id ^ src_ip) then the
+header nonce; empty AAD; 8-byte tag. A decrypted payload may be a stock zstd frame."""
 
 import zlib
 from dataclasses import dataclass
@@ -15,12 +12,14 @@ try:
 except ImportError:                      # pragma: no cover
     _zstd = None
 
-# The host's Pia messages are zstd-compressed; without this module decompress() no-ops and nothing parses.
+# The host's Pia messages are zstd-compressed; without zstandard nothing parses.
 HAVE_ZSTD = _zstd is not None
 
 FRLG_GAME_KEY = bytes.fromhex("83ca7fab734c34633b10183526c1e85b")
 PIA_MAGIC = bytes.fromhex("32ab9864")
 ZSTD_MAGIC = bytes.fromhex("28b52ffd")
+# The 6.32 header, 29 bytes: magic, enc, flags, dst var, src var, pktid (big-endian u16s),
+# footer size [12], nonce [13:21], tag [21:29]; the recipient var-id footer is inside the payload.
 HDR = 29
 NONCE_OFF, TAG_OFF, CT_OFF = 13, 21, 29
 
@@ -69,7 +68,7 @@ def is_pia(datagram):
 
 
 def decompress(plaintext):
-    """-> (app_bytes, was_compressed); the streaming decompressor stops at the frame end, so trailing 0xff padding is ignored."""
+    """-> (app_bytes, was_compressed); decoding stops at the frame end, past the 0xFF padding."""
     if plaintext[:4] != ZSTD_MAGIC or _zstd is None:
         return plaintext, False
     try:
@@ -79,9 +78,8 @@ def decompress(plaintext):
 
 
 def _to_window_frame(frame, wd=0x18):
-    """Rewrite the zstd frame header to the window-descriptor form the Switch emits (28b52ffd 00 18); only ever widens
-    the declared window, so the frame decodes to the same bytes.
-    """
+    """Rewrite the zstd frame header to the Switch's window-descriptor form (28b52ffd 00 18); it
+    only widens the declared window, so the frame decodes to the same bytes."""
     if frame[:4] != ZSTD_MAGIC:
         return frame
     fhd = frame[4]
@@ -97,11 +95,11 @@ def _to_window_frame(frame, wd=0x18):
     return ZSTD_MAGIC + bytes([0x00, wd]) + blocks
 
 
-ZSTD_LEVEL = 4               # byte-identical to the console's frames; no other level is
+ZSTD_LEVEL = 4  # the only level byte-identical to the console's frames
 
 
 def compress(app_bytes):
-    """zstd frame matching the console byte-for-byte; the caller 0xFF-pads to a multiple of 16 before encrypting."""
+    """A zstd frame matching the console's byte for byte; the caller 0xFF-pads it."""
     if _zstd is None:
         raise RuntimeError("zstandard module not available")
     return _to_window_frame(
@@ -119,7 +117,7 @@ class PiaCrypto:
         return four.to_bytes(4, "big") + bytes(header_nonce8)
 
     def decrypt(self, datagram, src_ip):
-        """-> raw plaintext (still zstd-wrapped if compressed) or None on auth failure; src_ip = the SENDER's LDN ip."""
+        """-> plaintext, still zstd-wrapped, or None on auth failure; `src_ip` is the sender's."""
         if not is_pia(datagram):
             return None
         nonce = self.nonce(src_ip, datagram[NONCE_OFF:TAG_OFF])
@@ -132,7 +130,7 @@ class PiaCrypto:
             return None
 
     def encrypt(self, plaintext, src_ip, header):
-        """header.nonce8 is the GCM header nonce: randomise it per packet for live, copy a captured one to replay."""
+        """`header.nonce8` must be fresh per live packet; a replay copies the captured one."""
         nonce = self.nonce(src_ip, header.nonce8)
         c = AES.new(self.session_key, AES.MODE_GCM, nonce=nonce, mac_len=8)
         ct, tag = c.encrypt_and_digest(plaintext)

@@ -1,19 +1,6 @@
-"""The ldn_mitm host side: hosting a network for an emulated console over the LAN.
-
-`ldn_mitm.py` speaks this protocol as a joiner. This is the other end. An emulator in ldn_mitm mode
-has no radio, so the association is an exchange on UDP and TCP port 11452 and the game's own Pia
-traffic then flows over the LAN on the ordinary Pia port.
-
-    UDP  console -> host:11452   Scan          header only, broadcast and unicast
-    UDP  host    -> console      ScanResp      NetworkInfo, 0x480
-    TCP  console -> host:11452   Connect       NodeInfo, 0x40
-    TCP  host    -> console      SyncNetwork   NetworkInfo with the console in it, held open
-
-`IpHostTransport` carries the same surface as `transport.HostTransport`, so a host application takes
-it as its `transport_factory` and nothing above the transport changes.
-
-An emulated console's node carries its real LAN address, so every participant address in the
-NetworkInfo is a LAN address and Pia is not tunnelled. docs/ldn.md.
+"""The ldn_mitm host side: a network for an emulated console over UDP and TCP port 11452
+(docs/ldn.md, Hosting for an emulator). `IpHostTransport` carries `transport.HostTransport`'s
+surface, so a host application takes it as its `transport_factory`.
 """
 
 import ipaddress
@@ -46,13 +33,8 @@ OFF_NODE_LOCAL_COMM_VERSION = 0x2E
 
 
 def build_node_info(ip, mac, name=b"", node_id=0, connected=1, local_comm_version=0):
-    """The 0x40-byte NodeInfo for one participant. The address is the LAN address the emulator
-    reaches, little-endian, which is what `ldn_mitm.build_node_info` writes for a joiner.
-
-    `localCommunicationVersion` is a u16 at 0x2E, aligned after the byte at 0x2C rather than packed
-    against it. The console's own node in a NetworkInfo read back out of the running game carries 88
-    there, which is the value its `ConnectImpl` passes.
-    """
+    """The 0x40-byte NodeInfo for one participant, its LAN address little-endian;
+    `localCommunicationVersion` is a u16 at 0x2E (docs/ldn.md)."""
     out = bytearray(ldn_mitm.NODE_INFO_SIZE)
     out[0x00:0x04] = socket.inet_aton(ip)[::-1]
     out[0x04:0x0A] = bytes(mac)
@@ -66,22 +48,9 @@ def build_node_info(ip, mac, name=b"", node_id=0, connected=1, local_comm_versio
 def build_network_info(*, local_comm_id, scene_id, host_ip, host_mac, session_id,
                        advertise_data=b"", node_count_max=2, host_name=b"", channel=1,
                        local_comm_version=0):
-    """A 0x480 `nn::ldn::NetworkInfo` with one node, the host.
-
-    Layout: NetworkId 0x00 (IntentId 0x10 then SessionId 0x10), CommonNetworkInfo 0x20, then
-    LdnNetworkInfo at 0x50 whose nodes start at 0x68 and whose advertise data starts at 0x26C.
-    The offsets `ldn_mitm.py` reads a real emulator's SyncNetwork at are the same ones written here.
-
-    `session_id` is the network's 16-byte identity: the LDN `NetworkId.ssid`
-    [vendor/LDN/ldn/__init__.py:1921], which the text `Ssid` field carries in hexadecimal [:1910].
-    It is also the Pia session key's plaintext, `AES(game_key).encrypt(ssid)` [crypto.py:114], and
-    the Pia network id is `crc32(ssid[1:16])` [:115], so a host whose Pia keys off one value while
-    it advertises another is dropped without a symptom. The text form is derived here rather than
-    passed, so the two cannot disagree.
-
-    SecurityParameter is left zero. It carries the advertisement's key material on the radio, and an
-    ldn_mitm network has no advertisement to encrypt.
-    """
+    """A 0x480 `nn::ldn::NetworkInfo` with one node, the host (layout in docs/ldn.md).
+    `session_id` is the SessionId, the hex text Ssid and the Pia session key's plaintext at once;
+    SecurityParameter stays zero, as an ldn_mitm network has no advertisement to encrypt."""
     session_id = bytes(session_id)
     if len(session_id) != 16:
         raise ValueError(f"a session id is 16 bytes, got {len(session_id)}")
@@ -104,8 +73,8 @@ def build_network_info(*, local_comm_id, scene_id, host_ip, host_mac, session_id
     node = build_node_info(host_ip, host_mac, host_name, node_id=0, connected=1,
                            local_comm_version=local_comm_version)
     info[OFF_NODES:OFF_NODES + ldn_mitm.NODE_INFO_SIZE] = node
-    # Every slot carries its own index at NodeInfo+0x0A, connected or not, which is what a
-    # NetworkInfo read off a running ldn_mitm host holds: slots 2..7 are zero apart from that id.
+    # Every slot carries its own index at NodeInfo+0x0A, connected or not, as in a NetworkInfo read
+    # off a running ldn_mitm host.
     for index in range(1, 8):
         info[OFF_NODES + index * ldn_mitm.NODE_INFO_SIZE + 0x0A] = index
     struct.pack_into("<H", info, ldn_mitm.OFF_ADVERTISE_SIZE, len(advertise_data))
@@ -153,11 +122,8 @@ def broadcast_for(ip):
 
 
 class IpHostTransport:
-    """`transport.HostTransport`'s surface over ldn_mitm instead of over a radio.
-
-    The constructor takes the radio arguments the host applications pass and ignores them, so it
-    drops into `transport_factory` unchanged. Nothing here needs root.
-    """
+    """`transport.HostTransport`'s surface over ldn_mitm; the radio arguments are taken and
+    ignored, and nothing here needs root."""
 
     NEEDS_RADIO = False
     LOCAL_COMMUNICATION_ID = 0x01006fa0233f8000
@@ -180,8 +146,7 @@ class IpHostTransport:
         self.max_participants = max_participants
         self.channel = 1 if channel is None else channel
         self.discovery_port = discovery_port
-        # Both ports are arguments so a test can hold a whole host on free ports while a live one
-        # is on the real ones.
+        # Both ports are arguments so a test can hold a whole host on free ports.
         self.pia_port = pia_port
         if local_comm_id is not None:
             self.LOCAL_COMMUNICATION_ID = local_comm_id
@@ -191,13 +156,11 @@ class IpHostTransport:
             self.APPLICATION_VERSION = app_version
         self.our_ip = our_ip or local_ip()
         self.host_ip = self.our_ip
-        # An ldn_mitm node's MAC ENCODES ITS ADDRESS: the emulator gives itself 02:00 followed by
-        # the four bytes of its LAN address, so the console at 172.16.86.1 is 02:00:ac:10:56:01.
-        # A random MAC here is a node whose two identities disagree, and a peer that maps one to the
-        # other gets an address that is nobody. Follow the convention the peer already uses.
+        # An ldn_mitm node's MAC encodes its address: 02:00 then the four LAN address bytes
+        # (docs/ldn.md). A random MAC makes a node whose two identities disagree.
         self.our_mac = mac if mac else (b"\x02\x00" + socket.inet_aton(self.our_ip))
-        # One value, three uses: the advertised NetworkId.SessionId, the text Ssid in hexadecimal,
-        # and the Pia session key's plaintext. HostTransport's `ssid` is the same 16 raw bytes.
+        # The SessionId, the hex Ssid and the Pia session key's plaintext (docs/ldn.md);
+        # HostTransport's `ssid` is the same 16 raw bytes.
         self.ssid = bytes(ssid) if ssid else os.urandom(16)
         if len(self.ssid) != 16:
             raise ValueError(f"an LDN ssid is 16 bytes, got {len(self.ssid)}")
@@ -210,26 +173,21 @@ class IpHostTransport:
         self._info = None
         self._pia = None
         self._udp = None
-        # Bound to the advertised address, for sending. A wildcard socket's replies leave with a
-        # source the kernel picks, and on a peer that shares this machine that is the peer's own
-        # LDN address, which ldn_mitm discards as its own packet (LanProtocol.Read). The wildcard
-        # sockets stay for receiving: a socket bound to one address gets no subnet broadcast, and
-        # a stock emulator on the LAN discovers by broadcast alone.
+        # Bound to the advertised address for sending: a wildcard socket's reply to a peer on this
+        # machine carries the peer's own address, which ldn_mitm discards (LanProtocol.Read). The
+        # wildcard sockets receive the subnet broadcasts a stock emulator discovers by.
         self._udp_tx = None
         self._pia_tx = None
         self._tcp = None
         self._clients = []
-        # conn -> the node slot it was seated in. A station's advertised address is its own node
-        # info's, which a peer sharing this machine states differently from the address its TCP
-        # connection comes from, so the slot cannot be found by address when the connection closes.
+        # conn -> seated node slot. A peer on this machine states an address different from its TCP
+        # connection's, so the slot cannot be found by address on close.
         self._seats = {}
         self._lock = threading.Lock()
         self._stop = threading.Event()
         self._thread = None
         self._rx_seen = 0
         self._scans = 0
-
-    # -- bring-up ---------------------------------------------------------------
 
     def _build_info(self):
         return build_network_info(
@@ -241,14 +199,9 @@ class IpHostTransport:
             local_comm_version=self.APPLICATION_VERSION)
 
     def shares_this_machine(self):
-        """True when the peer runs here too, on another loopback alias.
-
-        A wildcard bind holds a port for every address on the machine, so the Pia socket on
-        0.0.0.0:12345 takes that port away from an emulator on 127.0.0.3. The guest's own bind then
-        fails with EADDRINUSE and it leaves the network inside a second: measured 2026-09-21, 49
-        joins with no Pia socket opened on any of them. Nothing is lost by dropping the wildcard
-        here, because a peer on loopback is reached by unicast and sends no subnet broadcast.
-        """
+        """True when the peer runs here too, on another loopback alias. A wildcard Pia bind takes
+        the port from an emulator on 127.0.0.3, whose own bind fails with EADDRINUSE and which
+        leaves within a second; a loopback peer sends no subnet broadcast."""
         try:
             return ipaddress.ip_address(self.our_ip).is_loopback
         except ValueError:
@@ -292,14 +245,12 @@ class IpHostTransport:
 
     def _bound_to_us(self, port):
         """-> a UDP socket on `our_ip`:`port` next to the wildcard one on the same port. A unicast
-        to our address lands here rather than on the wildcard socket, so both are read."""
+        to that address lands here rather than on the wildcard socket, so both are read."""
         s = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
         s.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
         s.setsockopt(socket.SOL_SOCKET, socket.SO_BROADCAST, 1)
         s.bind((self.our_ip, port))
         return s
-
-    # -- the discovery service --------------------------------------------------
 
     def _serve(self):
         while not self._stop.is_set():
@@ -382,13 +333,9 @@ class IpHostTransport:
         self.info("A console joined the network.")
 
     def _seat(self, node):
-        """Give the joiner the first free node slot and hand it that node id.
-
-        The joiner's own NodeInfo states its `localCommunicationVersion` at 0x2E. `nn::ldn` refuses
-        a connection whose version disagrees with the network's, so what the joiner states is worth
-        logging on every join, and `mirror_comm_version` puts it on the host's own node rather than
-        leaving the host advertising a version the game did not ask for.
-        """
+        """Give the joiner the first free node slot and its node id. `nn::ldn` refuses a joiner
+        whose `localCommunicationVersion` (NodeInfo 0x2E) disagrees with the network's;
+        `mirror_comm_version` copies the joiner's onto the host's node."""
         joiner_version = struct.unpack_from("<H", node, OFF_NODE_LOCAL_COMM_VERSION)[0]
         with self._lock:
             index = self._info[OFF_NODE_COUNT]
@@ -434,8 +381,6 @@ class IpHostTransport:
         self.log(f"[host] console left: {addr[0]} ({why}), "
                  f"node {seat if seat is not None else '?'} freed, "
                  f"{self._info[OFF_NODE_COUNT]} node(s) advertised")
-
-    # -- the data plane ---------------------------------------------------------
 
     def set_application_data(self, data):
         self.app_data = bytes(data)

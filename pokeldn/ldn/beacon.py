@@ -1,7 +1,6 @@
-"""Encoder for the host's advertisement application_data = <Pia system header, 0x5C> <custom-base85(24-byte RFU record)>,
-the inverse of transport._dump_beacon / _b85_decode. Record (LE): [0:2] trainer id, [2:10] name (FRLG charset,
-0xFF-padded), [10:12] RFU session id, [12:20] partnerInfo, [20:24] game data. A beacon is always a captured one
-with fields rewritten (`mutate_beacon`).
+"""FRLG advertisement application data: the 0x5C Pia system header (docs/ldn.md), then a custom
+base85 of the 24-byte RFU record (LE): [0:2] trainer id, [2:10] name (0xFF-padded), [10:12] RFU
+session id, [12:20] partnerInfo, [20:24] game data. Inverse of transport._b85_decode.
 """
 
 from pokeldn.frlg.text import charmap
@@ -10,24 +9,19 @@ PIA_HDR = 0x5C
 RECORD_SIZE = 24
 
 RFU_SERIAL_GAME = 0x0002
-# The cable-club colosseum: Direct Corner -> Colosseum -> Single Battle searches with
-# LINK_GROUP_SINGLE_BATTLE, whose accept list is this activity alone
+# Colosseum Single Battle searches with LINK_GROUP_SINGLE_BATTLE, which accepts this activity alone
 # [sAcceptedActivityIds_SingleBattle, src/data/union_room.h:398].
 ACTIVITY_BATTLE_SINGLE = 1
 ACTIVITY_TRADE = 4
 ACTIVITY_SEARCH = 12
 ACTIVITY_WONDER_CARD = 21
 ACTIVITY_WONDER_NEWS = 22
-# A console standing in the Union Room advertises ACTIVITY_SEARCH and its search accepts only
-# ACTIVITY_SEARCH back (sAcceptedActivityIds_Init, LINK_GROUP_UNION_ROOM_INIT; union_room.c sets it
-# with SetHostRfuGameData(ACTIVITY_SEARCH, 0, FALSE)). Once players are in the room the resume search
-# accepts IN_UNION_ROOM | activity instead (sAcceptedActivityIds_Resume). IN_UNION_ROOM is 1 << 6 and
-# so fits inside SEARCH_ACTIVITY_MASK.
+# Union Room search activities: docs/frlg_link.md, Getting listed.
 IN_UNION_ROOM = 1 << 6
 LANGUAGE_ENGLISH = 2
 VERSION_FIRE_RED = 4
 
-# Packed search-word positions in the record; hardware-proven.
+# The search word at record[16:18] (docs/frlg_gift.md).
 SEARCH_WORD_OFFSET = 16
 SEARCH_ACTIVITY_MASK = 0x007F
 SEARCH_UNKNOWN_BIT7 = 0x0080
@@ -38,14 +32,8 @@ SEARCH_LANGUAGE_SHIFT = 11
 SEARCH_HAS_CARD = 0x4000
 SEARCH_STARTED_ACTIVITY = 1 << 15
 
-# Trading-board registration in the record. Hardware-proven 2026-09-03 by diffing one console's
-# advertisement before and after it registered a Chansey lv26 asking for FEU (TYPE_FIRE = 10):
-#   byte 22  0x00 -> 0x71   tradeSpecies low byte (113)
-#   byte 19  0x01 -> 0x35   gender:1 | tradeLevel:7, the RfuGameData byte [include/link_rfu.h:112]
-#   byte 18  0x03 -> 0x2b   tradeType:6 << 2; bits 0-1 unchanged (meaning unknown)
-# Byte 23 proven u16b: we registered species 277 (Treecko), whose low byte alone is 21 (Spearow),
-# and the console's board listed ARCKO -- so 22:24 is the little-endian tradeSpecies:10
-# [include/link_rfu.h:107]. The same entry read "NORMAL" and "26", so all three fields are proven.
+# Trading-board fields (docs/frlg_link.md, The trading board); bits 0-1 of byte 18 are unknown and
+# kept.
 TRADE_BOARD_TYPE_OFFSET = 18
 TRADE_BOARD_LEVEL_OFFSET = 19
 TRADE_BOARD_SPECIES_OFFSET = 22
@@ -68,8 +56,8 @@ def set_trade_board(record, species, level, wanted_type):
     return bytes(rec)
 
 
-# Pia 6.16-6.41 system header (NintendoClients wiki LDN-Application-Data-(Pia)), big-endian; values confirmed from a
-# real FRLG beacon. A zero-filled header is rejected by the console's Pia layer.
+# Pia 6.16-6.41 system header (docs/ldn.md), values from a real FRLG beacon. The console's Pia layer
+# rejects a zero-filled header.
 PIA_SYS_COMM_VERSION = 22
 PIA_APP_COMM_VERSION = 88
 PIA_NAME_UTF8, PIA_NAME_UTF16 = 1, 2
@@ -84,18 +72,18 @@ def _encode_pia_name(nickname, encoding):
 def build_pia_header(*, sys_comm_ver=PIA_SYS_COMM_VERSION, app_comm_ver=PIA_APP_COMM_VERSION,
                      user_password=b"", player_limit_enabled=True, num_players=1, nickname="EMU",
                      name_encoding=PIA_NAME_UTF8):
-    """92-byte big-endian Pia system header; everything after offset 0x5C is the game's application data."""
+    """92-byte big-endian Pia system header; the game's application data follows at 0x5C."""
     name = _encode_pia_name(nickname, name_encoding)[:64]
     h = bytearray(PIA_HDR)
-    h[0x00:0x02] = PIA_HDR.to_bytes(2, "big")                       # system property data size (0x5C)
-    h[0x02] = sys_comm_ver & 0xFF                                   # system communication version
-    h[0x03:0x05] = (app_comm_ver & 0xFFFF).to_bytes(2, "big")       # application communication version
-    h[0x05:0x15] = bytes(user_password)[:16].ljust(16, b"\x00")     # user password (16)
-    h[0x15] = 1 if player_limit_enabled else 0                      # is player limit enabled
-    h[0x16] = num_players & 0xFF                                    # number of players
-    h[0x17:0x1B] = len(name).to_bytes(4, "big")                     # player name size
-    h[0x1B] = name_encoding & 0xFF                                  # player name encoding (1 UTF-8 / 2 UTF-16)
-    h[0x1C:0x1C + len(name)] = name                                 # player name (64, null-padded)
+    h[0x00:0x02] = PIA_HDR.to_bytes(2, "big")
+    h[0x02] = sys_comm_ver & 0xFF
+    h[0x03:0x05] = (app_comm_ver & 0xFFFF).to_bytes(2, "big")
+    h[0x05:0x15] = bytes(user_password)[:16].ljust(16, b"\x00")
+    h[0x15] = 1 if player_limit_enabled else 0
+    h[0x16] = num_players & 0xFF
+    h[0x17:0x1B] = len(name).to_bytes(4, "big")
+    h[0x1B] = name_encoding & 0xFF
+    h[0x1C:0x1C + len(name)] = name
     return bytes(h)
 
 
@@ -128,7 +116,7 @@ def _b85_char(digit):
 
 
 def b85_encode(data):
-    """4-byte LE groups -> 5 base85 chars each, LOW digit first (inverse of transport._b85_decode)."""
+    """4-byte LE groups -> 5 base85 chars each, low digit first."""
     data = bytes(data)
     if len(data) % 4:
         data = data.ljust(len(data) + (4 - len(data) % 4), b"\x00")
@@ -146,9 +134,8 @@ def encode_name(name, width=8):
 
 
 def mutate_beacon(captured_app_data, *, name=None, trainer_id=None, rfu_session_id=None):
-    """Clone a captured real host application_data, keeping its Pia header verbatim, and re-encode only the overridden
-    record fields.
-    """
+    """Clone a captured host's application data, Pia header verbatim, re-encoding only the
+    overridden record fields."""
     from pokeldn.ldn.transport import _b85_decode
     captured = bytes(captured_app_data)
     header = captured[:PIA_HDR]

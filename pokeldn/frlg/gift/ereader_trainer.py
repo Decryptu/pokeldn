@@ -1,24 +1,12 @@
-"""The visiting trainer: a BattleTowerEReaderTrainer pushed into the console's save over Mystery Gift.
-
-`CLI_RECV_EREADER_TRAINER` memcpys 188 bytes straight into `gSaveBlock2Ptr->battleTower.ereaderTrainer`
-and calls ValidateEReaderTrainer [decomp:src/mystery_gift_client.c:233]. Validation is only that the
-struct is non-zero and that its trailing u32 is the sum of the 46 words before it
-[SetEReaderTrainerChecksum, battle_tower.c:1384]; nothing else about the trainer or its party is
-checked. The old woman in SevenIsland_House_Room1 then offers a 3v3 against it, and
-StartSpecialBattle case 2 builds the party with CreateBattleTowerMon exactly as given -- no level
-scaling and no Battle Tower banlist, both of which live on the (unreachable) tower path
-[battle_tower.c:928, :232].
-
-FRLG prints only the first FIVE characters of the name in battle and in the old woman's line
-[CopyEReaderTrainerName5, battle_tower.c:1343]; the field is seven wide, so a longer name is stored
-whole and displayed cut.
-"""
+"""The visiting trainer: a BattleTowerEReaderTrainer pushed into the save over Mystery Gift
+[decomp:src/mystery_gift_client.c:233]; the old woman in SevenIsland_House_Room1 battles it with no
+level rule or banlist (docs/frlg_gift.md)."""
 
 from dataclasses import dataclass
 
 from pokeldn.frlg.text import charmap, easychat
 
-TRAINER_SIZE = 0xBC             # sizeof(struct BattleTowerEReaderTrainer) [decomp:include/global.h:286]
+TRAINER_SIZE = 0xBC  # sizeof(BattleTowerEReaderTrainer) [decomp:include/global.h:286]
 MON_SIZE = 0x2C                 # sizeof(struct BattleTowerPokemon) [decomp:include/pokemon.h:143]
 PARTY_SIZE = 3
 NAME_FIELD_SIZE = 8             # name[8]; only name[0..4] is ever displayed
@@ -27,8 +15,9 @@ NICKNAME_FIELD_SIZE = 11        # POKEMON_NAME_LENGTH + 1
 MAX_MON_MOVES = 4
 NUM_NATURES = 25
 
-# gFacilityClassToPicIndex / gFacilityClassToTrainerClass pick the sprite and the class name
-# [battle_tower.c:491, :505]. The Kanto block of FACILITY_CLASS_* [include/constants/trainers.h:379].
+# gFacilityClassToPicIndex / gFacilityClassToTrainerClass pick sprite and class name
+# [battle_tower.c:491, :505]; the Kanto block of FACILITY_CLASS_*
+# [include/constants/trainers.h:379].
 FACILITY_CLASSES = {
     "youngster": 88, "bug_catcher": 89, "lass": 90, "sailor": 91, "camper": 92,
     "picnicker": 93, "pokemaniac": 94, "super_nerd": 95, "hiker": 96, "biker": 97,
@@ -78,10 +67,8 @@ def is_shiny(personality, ot_id):
 
 
 def personality_for(nature, *, ot_id=0, shiny=False, gender_byte=None):
-    """-> the lowest personality with this nature (and, if asked, shiny against `ot_id`).
-
-    Nature is `personality % 25` and the low byte drives gender, so `gender_byte` pins that byte
-    when a species has a gender ratio worth choosing."""
+    """-> the lowest personality with this nature (and, if asked, shiny against `ot_id`);
+    `gender_byte` pins the low byte, which drives gender."""
     if isinstance(nature, str):
         key = nature.strip().lower()
         if key not in NATURES:
@@ -249,7 +236,7 @@ def validate(packed):
     return int.from_bytes(packed[0xB8:0xBC], "little") == checksum(packed)
 
 
-# Species, move and item ids as the ROM numbers them [decomp:include/constants/{species,moves,items}.h].
+# Species, move and item ids [decomp:include/constants/{species,moves,items}.h].
 SPECIES_CHARIZARD = 6
 SPECIES_BLASTOISE = 9
 SPECIES_PIKACHU = 25
@@ -272,10 +259,8 @@ _RED_OT_ID = 0x00010F2B
 
 
 def _red():
-    """The visiting trainer we send first: Red, silent, with the Kanto starters' finals.
-
-    Level 70 across the board and 252/252 spreads -- the console applies neither the Battle Tower
-    level rule nor its banlist on this path, so these are exactly the mons it will build."""
+    """Red, silent, with the Kanto starters' finals at level 70; the console applies neither the
+    Battle Tower level rule nor its banlist on this path."""
     return VisitingTrainer(
         name="RED",
         trainer_class="red",

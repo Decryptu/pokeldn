@@ -1,49 +1,29 @@
 """Protocol 0x84, `nn::pia::transport::ReliableBroadcastProtocol`, the version-4 bulk channel.
 
-`BroadcastReliableProtocol` is protocol 0x80 and uses the ACK window. Sword sends its 3456-byte
-trade snapshot on 0x84 with these fields:
-
-    11 000000 0000 ffff  00000d80 057c 0005 00000000     control, 20 bytes
-    12 000000 0001 ffff  00000000 <1404 bytes>           fragment 0
-    12 000000 0005 ffff  00000002 <157 bytes, deflated>  fragment 2
-
-    0x00  u8    kind: 0x11 control, 0x12 data
-    0x01  3     zero
-    0x04  u16be sequence, ours, counting up across BOTH kinds on this port
-    0x06  u16be the peer's sequence we have seen, 0xFFFF before any
-    0x08        control: u32be total size, u16be chunk size, u16be 5, four zero bytes
-                data:    u32be fragment index, then the fragment body
-
-Pia's version-4 zlib flag 0x10 applies only to bytes after the twelve-byte prefix. Concatenating a
-compressed fragment raw loses bytes from the snapshot, so `swsh.trade_payload.reassemble` refuses
-an unrecognised total.
-
-`kwsch/PokePiaSWSH` splits at the same twelve bytes and `andyjusa/nxldn-lab` builds the same eight
-byte header; where they and our console differ is the CHUNK SIZE, 1244 against our console's 1404,
-so that is a sender's choice and not a constant of the protocol.
+Kinds and ports: docs/pia.md, Protocol 0x84; the Sword snapshot: docs/swsh_protocol.md.
 """
 import struct
 import zlib
 
 PROTOCOL = 0x84
+# u8 kind, 3 zero, u16be own sequence (one counter across kinds on a port), u16be the peer's
+# last sequence seen (0xFFFF before any). Pia's zlib flag 0x10 covers only bytes after PREFIX_SIZE.
 HEADER_SIZE = 8
-PREFIX_SIZE = 12                      # header + the fragment index: never compressed
+PREFIX_SIZE = 12                      # header + u32be fragment index, never compressed
 KIND_CONTROL = 0x11
 KIND_DATA = 0x12
-KIND_ACK = 0x21                       # base index + a bitmask of what arrived out of order
-KIND_DONE = 0x19                      # a transfer is complete
-KIND_DONE_ACK = 0x28                  # and its answer
+KIND_ACK = 0x21                       # u32be base + u64be bitmask of what arrived out of order
+KIND_DONE = 0x19
+KIND_DONE_ACK = 0x28                  # the answer to KIND_DONE
 ACK_SIZE = HEADER_SIZE + 12
-CONTROL_SIZE = 20
+CONTROL_SIZE = 20                     # header, u32be total, u16be chunk size, u16be 5, 4 zero
 NO_PEER_SEQUENCE = 0xFFFF
-CONTROL_UNKNOWN = 5                   # the halfword at 0x0E, 5 in every message we have seen
-CHUNK_SIZE = 1404                     # what OUR console uses; nxldn-lab's sender picks 1244
+CONTROL_UNKNOWN = 5                   # the halfword at 0x0E, 5 in every message seen
+CHUNK_SIZE = 1404                     # the console's; nxldn-lab's sender picks 1244
 
-# The console's own deflate settings, from nxldn-lab's sender. A window of 12 bits and level 5 are
-# not arbitrary: an inflater accepts anything, but a 15-bit window from us would be a difference
-# from what the console sends, and this project changes one thing at a time.
-COMPRESS_LAST = "last"                # deflate only the final fragment, as our console does
-COMPRESS_AUTO = "auto"                # deflate whenever it is smaller, as nxldn-lab's sender does
+# The console's deflate settings, from nxldn-lab's sender: 12-bit window, level 5.
+COMPRESS_LAST = "last"                # deflate only the final fragment, as the console does
+COMPRESS_AUTO = "auto"                # deflate whenever smaller, as nxldn-lab's sender does
 
 _WBITS = 12
 _LEVEL = 5
@@ -55,20 +35,19 @@ def build_header(kind, sequence, peer_sequence=NO_PEER_SEQUENCE):
 
 
 def build_control(sequence, total, chunk_size=CHUNK_SIZE, peer_sequence=NO_PEER_SEQUENCE):
-    """-> the 20-byte control message that announces a transfer's size."""
     return (build_header(KIND_CONTROL, sequence, peer_sequence)
             + struct.pack(">IHH4x", total, chunk_size, CONTROL_UNKNOWN))
 
 
 def deflate(body):
-    """-> (bytes, compressed?). Deflated only when that is actually smaller, as the console does."""
+    """-> (bytes, compressed?), deflated only when smaller."""
     c = zlib.compressobj(_LEVEL, zlib.DEFLATED, _WBITS, _MEM_LEVEL)
     packed = c.compress(bytes(body)) + c.flush(zlib.Z_SYNC_FLUSH) + c.flush(zlib.Z_FINISH)
     return (packed, True) if len(packed) < len(body) else (bytes(body), False)
 
 
 def build_fragment(sequence, index, body, peer_sequence=NO_PEER_SEQUENCE, compress=True):
-    """-> (payload, compressed?). The caller sets Pia's 0x10 message flag when compressed is True."""
+    """-> (payload, compressed?); the caller sets Pia's 0x10 flag when compressed."""
     packed, done = deflate(body) if compress else (bytes(body), False)
     return (build_header(KIND_DATA, sequence, peer_sequence)
             + struct.pack(">I", index) + packed), done
@@ -79,11 +58,7 @@ def split(payload, chunk_size=CHUNK_SIZE):
 
 
 def parse(message):
-    """-> dict. One 0x84 message, header split from body; a data body is NOT inflated here.
-
-    Inflating belongs to the caller because only Pia's message flag says whether it should happen,
-    and a body that merely looks like a zlib stream is not a reason to treat it as one.
-    """
+    """-> dict. A data body is left deflated: only Pia's message flag says whether to inflate."""
     if len(message) < HEADER_SIZE:
         raise ValueError(f"a 0x84 message is at least {HEADER_SIZE} bytes, got {len(message)}")
     kind = message[0]
@@ -114,11 +89,8 @@ def parse(message):
 
 
 def build_ack(sequence, base, mask=0, peer_sequence=NO_PEER_SEQUENCE):
-    """-> the 0x21 ack: how far the transfer is contiguous, and a bitmask of what came early.
-
-    `base` is the first index NOT yet received, so it is a count of the contiguous run from zero,
-    and `mask` bit n is index `base + 1 + n`. A receiver that has 0 and 2 acks base 1, mask 1.
-    """
+    """`base` is the first index not yet received and `mask` bit n is index `base + 1 + n`: a
+    receiver holding 0 and 2 acks base 1, mask 1."""
     return (build_header(KIND_ACK, sequence, peer_sequence)
             + struct.pack(">IQ", base, mask))
 
@@ -132,7 +104,6 @@ def build_done_ack(sequence, peer_sequence=NO_PEER_SEQUENCE):
 
 
 def ack_fields(indexes):
-    """-> (base, mask) for a set of received fragment indexes."""
     received = set(indexes)
     base = 0
     while base in received:
@@ -145,12 +116,8 @@ def ack_fields(indexes):
 
 
 class Sender:
-    """One port's outgoing side: the sequence counter, and the messages of one transfer.
-
-    The console counts a single sequence across control and data alike: control at 0,
-    fragment 0 at 1 and fragment 2 at 5 - so the counter lives here rather than in the caller, and
-    the gaps are the retransmits it sends in between.
-    """
+    """One port's outgoing side. One sequence counts across control and data: control at 0,
+    fragment 0 at 1, fragment 2 at 5, the gaps being retransmits."""
 
     def __init__(self, chunk_size=CHUNK_SIZE):
         self.sequence = 0
@@ -162,21 +129,13 @@ class Sender:
         return sequence
 
     def saw(self, sequence):
-        """Record the peer's sequence, which every message of ours then echoes back."""
+        """Record the peer's sequence, which every later message echoes."""
         self.peer_sequence = sequence & 0xFFFF
 
     def transfer(self, payload, compress=COMPRESS_LAST):
-        """-> [(payload, compressed?), ...]: the control message and then every fragment, in order.
-
-        The default matches what the console does, which is not "compress when it helps". It
-        sent fragments 0 and 1 plain at the full 1404 bytes and deflated only the short last one -
-        and fragment 1's own bytes deflate to 776, so the console left half of it on the table by
-        choice. Whatever its rule is, "smaller wins" is not it, and a sender that compressed a
-        full-size fragment would differ from the console in a way no run had asked about.
-
-        `COMPRESS_AUTO` is that other policy, kept because nxldn-lab's sender uses it and reaches a
-        trade; `False` sends everything plain. One of these per run, never two.
-        """
+        """-> [(payload, compressed?), ...]. The console sent fragments 0 and 1 plain at 1404 bytes
+        (fragment 1 deflates to 776) and deflated only the last, so COMPRESS_LAST is the default;
+        COMPRESS_AUTO is nxldn-lab's policy, `False` sends everything plain."""
         chunks = split(payload, self.chunk_size)
         out = [(build_control(self._next(), len(payload), self.chunk_size, self.peer_sequence),
                 False)]
@@ -190,14 +149,8 @@ class Sender:
 
 
 class Receiver:
-    """The incoming side of one port: what has arrived, and the ack that says so.
-
-    An unacknowledged 0x84 repeats: 15460 and 19142 messages of the same snapshot in two runs,
-    because the console retransmits until a receiver
-    tells it what it has. Every other window here behaves the same way and every one of them had to
-    be answered before the layer above it would move - the mesh's own reliable window took the
-    session down in four seconds when it is left unacked.
-    """
+    """One port's incoming side. An unacknowledged 0x84 repeats: 15460 and 19142 messages of one
+    snapshot in two sessions left unacked."""
 
     def __init__(self):
         self.indexes = set()
@@ -212,11 +165,8 @@ class Receiver:
         return sequence
 
     def feed(self, message, body=None):
-        """-> the replies to send for one received 0x84 message, in order.
-
-        `body` is the fragment already inflated when Pia's 0x10 flag was set; the caller owns that
-        decision because only the flag decides it.
-        """
+        """-> the replies to one received message. `body` is the fragment already inflated when
+        Pia's 0x10 flag was set."""
         got = parse(message)
         self.peer_sequence = got["sequence"]
         if got["is_control"]:
@@ -232,14 +182,13 @@ class Receiver:
         return []
 
     def complete(self):
-        """-> True when every fragment the control message promised has arrived."""
         if self.total is None or self.chunk_size is None:
             return False
         expected = -(-self.total // self.chunk_size)
         return self.indexes >= set(range(expected))
 
     def payload(self):
-        """-> the reassembled bytes, or None until the transfer is complete."""
+        """-> the reassembled bytes, or None until complete."""
         if not self.complete():
             return None
         return b"".join(self.fragments[i] for i in sorted(self.fragments))

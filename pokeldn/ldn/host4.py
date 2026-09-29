@@ -1,22 +1,7 @@
-"""The host side of a Pia version-4 local session: what a Sword owes a station that joins it.
+"""The host side of a Pia version-4 local session, rebuilt from a retail Sword's own messages.
 
-Every message here is the one a retail Sword sends while it hosts, rebuilt from fields and checked
-byte for byte against the console's own (`tests/test_host4.py`). The order a joiner is answered in:
-
-    joiner -> host   0x14 connection request, carrying its location
-    host   -> joiner 0x14 ack of it, then a connection request of our own, addressed to the ids in
-                     that location
-    joiner -> host   0x14 connection response (17 bytes)
-    host   -> joiner 0x14 ack of it, then our 840-byte connection response
-    joiner -> host   0x14 ack, and 0x18 join request
-    host   -> joiner 0x14 ack, 0x18 join response, then update mesh, RTT and both window acks
-
-The Local Protocol update session goes to the subnet broadcast every 100 ms until each seated
-station acknowledges the current sequence. docs/pia.md, docs/swsh_session.md.
-
-Nothing here knows a game. Application data on 0x7C, 0x80 and the mesh's reliable port is handed
-up through `on_data`; 0x84 goes to `on_broadcast` with the message flags (0x10 is zlib); every
-other message the layer does not consume goes to `on_other`.
+Application data on 0x7C, 0x80 and the mesh's reliable port goes to `on_data`; 0x84 to
+`on_broadcast`; the rest to `on_other` (docs/swsh_trade.md, "Hosting a trade").
 """
 
 import os
@@ -58,13 +43,8 @@ def packet_iv(network_id_le, sender_mac, nonce8, source_id=0):
 
 def build_host_response(joiner_constant, joiner_variable, ack_id, account=None, session=None,
                         name="PkCamp", token=None):
-    """The 840-byte accepted 0x14 connection response a retail Sword sends a joiner.
-
-    Laid out from a retail Sword's own: `02 00 09 04 00`, the joiner's constant and variable ids,
-    the host account's 16 bytes, 16 zero bytes, four unread bytes, `01 01 01 20` (0x37 is the gate
-    the receiver checks under 5), the player name at 0x88, eleven constant bytes, a 52-byte token,
-    zeroes, and the ack id the joiner answers with on 0x14.
-    """
+    """The 840-byte accepted 0x14 connection response a retail Sword sends a joiner; 0x37 is the
+    gate the receiver checks under 5, and the ack id closes the message."""
     out = bytearray(RESPONSE_SIZE)
     out[0:5] = bytes([stp.CONNECTION_RESPONSE, 0, station4.PLATFORM_SWITCH, 4, 0])
     struct.pack_into(">Q", out, 5, joiner_constant & 0xFFFFFFFFFFFFFFFF)
@@ -82,7 +62,6 @@ def build_host_response(joiner_constant, joiner_variable, ack_id, account=None, 
 
 
 class Window:
-    """One reliable window in one direction, on one (protocol, port)."""
 
     def __init__(self):
         self.next_seq = reliable4.FIRST_SEQUENCE      # ours, outgoing
@@ -144,8 +123,6 @@ class Pia4Host:
         self.rtt_seen = 0
         self.t0 = time.time()
 
-    # -- the wire ------------------------------------------------------------------------------
-
     def record(self, **row):
         if self.capture is not None:
             row.setdefault("t", round(time.time() - self.t0, 4))
@@ -166,8 +143,6 @@ class Pia4Host:
     def next_ack_id(self):
         self.ack_counter = (self.ack_counter + 1) & 0xFFFFFFFF
         return self.ack_counter
-
-    # -- seats ---------------------------------------------------------------------------------
 
     def seat(self, ip, mac, index):
         """The LDN layer seated a station; the Local Protocol starts listing it."""
@@ -196,8 +171,6 @@ class Pia4Host:
             if st.location is not None and st.state == "joined":
                 out.append((st.location, st.index))
         return out
-
-    # -- periodic ------------------------------------------------------------------------------
 
     def tick(self, now=None):
         now = time.time() if now is None else now
@@ -239,8 +212,6 @@ class Pia4Host:
             peers = [st.ip for st in self.stations.values()]
             return peers[0] if peers else self.our_ip
         return ".".join(parts[:3] + ["255"])
-
-    # -- the reliable windows ------------------------------------------------------------------
 
     def send_window_ack(self, st, protocol, port, w):
         ack_id = (w.through + 1) if w.through is not None else reliable4.FIRST_SEQUENCE
@@ -302,8 +273,6 @@ class Pia4Host:
                         seq=got["sequence_id"], payload=got["payload"].hex())
             self.on_data(st, protocol, port, got["payload"])
 
-    # -- receive -------------------------------------------------------------------------------
-
     def on_packet(self, data, src_ip, now=None):
         now = time.time() if now is None else now
         st = self.stations.get(src_ip)
@@ -359,8 +328,7 @@ class Pia4Host:
     def _station(self, st, body):
         kind = body[0] if body else None
         if kind == stp.CONNECTION_REQUEST:
-            # A hosting Shield acks the joiner's request before it sends its own; unacked, the
-            # joiner repeats the request and never answers ours.
+            # Unacked, the joiner repeats its request and never answers ours.
             self.send_message(st.ip, station4.build_ack(station4.ack_id_of(body)), stp.PROTOCOL)
             got = station4.parse_incoming_request(body)
             if got["constant_id"] != self.constant:
@@ -371,8 +339,8 @@ class Pia4Host:
             st.location = got["location"][:loc["size"]]
             st.state = "requested"
             ack_id = self.next_ack_id()
-            # [0x10] of ours echoes [1] of theirs, which a joining Shield draws per request and
-            # checks; [1] of ours is our own draw (emulated Shield pair, docs/swsh_session.md).
+            # [0x10] of ours echoes [1] of theirs, which a joining Shield checks
+            # (docs/swsh_trade.md).
             req = station4.build_connection_request(st.constant, st.variable, self.location,
                                                     nat_flags=os.urandom(1)[0],
                                                     nat_location=body[1])

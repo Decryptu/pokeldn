@@ -1,6 +1,6 @@
 """Mystery Gift server script interpreter [decomp:src/mystery_gift_server.c]; we are link player 0.
-run() advances until it blocks and publishes ``action`` as ("send", ident, payload, size), ("recv", ident)
-or ("done", server_msg_id); the caller acknowledges with on_sent()/on_received()."""
+run() advances until it blocks and publishes ``action`` as ("send", ident, payload, size),
+("recv", ident) or ("done", server_msg_id); the caller acknowledges with on_sent()/on_received()."""
 
 from pokeldn.frlg.gift import ereader_trainer, mg_script, wonder_news
 from pokeldn.frlg.rom import buffer_script, builds, mystery_event
@@ -72,7 +72,7 @@ SERVER_RESULT_NAMES = {
     SVR_MSG_GIFT_SENT_1: "gift sent",
 }
 
-# Native never sets ramScriptSize [decomp:src/mystery_gift_server.c:275], so the RAM script travels as
+# Native never sets ramScriptSize [decomp:src/mystery_gift_server.c:275]: the RAM script travels as
 # a full 1024-byte message.
 FULL_BUFFER = 0
 
@@ -88,32 +88,22 @@ MEVENT_STATUS_NAMES = {
 
 NUM_QUESTIONNAIRE_WORDS = 4     # [decomp:include/constants/global.h:68]
 
-# What a console that says the wrong phrase reads, through CLIENT_SCRIPT_DYNAMIC_ERROR.
 DEFAULT_DENIED_MESSAGE = charmap.encode("That is not the phrase.") + b"\xff"
 
-# buffer_expect: compare what the payload returned against the trainer id the console already told
-# us in its MysteryGiftLinkGameData. The two come from different places in the console - our ARM
-# code reads gSaveBlock2Ptr directly, the game data was assembled by the ROM - so a match is proof
-# the payload ran, ran with the arguments the decomp says it gets, and read the real save.
+# buffer_expect: the payload reads gSaveBlock2Ptr, the game data was assembled by the ROM, so a
+# trainer id match proves the payload ran and read the real save.
 BUFFER_EXPECT_TRAINER_ID = buffer_script.EXPECT_TRAINER_ID
 
-# What AddTextPrinterToWindow1 draws into: window 1 of sMainWindows, 28 tiles wide and 4 high
-# [decomp:src/mystery_gift_menu.c:97,524] - two lines. The ROM's own longest string in it is
-# gText_WonderCardReceivedFrom's first line, "A WONDER CARD has been received", 31 characters
-# [decomp:src/strings.c:1291]. Past that, a 47-character line overflowed
-# the window's pixel buffer and wrapped around it, printing "ly. code ran and read yourTRAINER IDc"
-# on the console.
+# Window 1 of sMainWindows is 28x4 tiles, two lines [decomp:src/mystery_gift_menu.c:97,524]; the
+# ROM's longest line is 31 characters [decomp:src/strings.c:1291]. A 47-character line wrapped
+# around the window's pixel buffer on the console.
 MAX_MESSAGE_LINES = 2
 MAX_MESSAGE_LINE_CHARS = 31
 
 
 def _encode_message(text, default):
-    """A CLI_COPY_MSG payload, from a str, ready bytes, or the default.
-
-    `\n` becomes 0xFE, the game's line break. charmap.encode DROPS characters it does not know,
-    newline included, so encoding a two-line message with it alone silently produces one long line
-    - which is exactly what a wrapped line does.
-    """
+    """A CLI_COPY_MSG payload, from a str, ready bytes, or the default. `\n` becomes 0xFE:
+    charmap.encode drops characters it does not know, newline included."""
     if text is None:
         return default
     if isinstance(text, (bytes, bytearray)):
@@ -136,7 +126,6 @@ def _encode_message(text, default):
     return encoded
 
 
-# Both printed by the console itself, through CLI_MSG_BUFFER_SUCCESS / _FAILURE.
 DEFAULT_BUFFER_SUCCESS_MESSAGE = _encode_message(
     "The code ran and read your\nTRAINER ID correctly.", None)
 DEFAULT_BUFFER_FAILURE_MESSAGE = _encode_message(
@@ -155,9 +144,8 @@ _SCRIPT_CANT_SEND = (
     (SVR_RETURN, SVR_MSG_CANT_SEND_GIFT_1),
 )
 
-# Every distribution opens the same way [decomp:src/mystery_gift_scripts.c:174,:185]: push the
-# client script that uploads the console's MysteryGiftLinkGameData, take it, and refuse the session
-# if it fails MysteryGift_ValidateLinkGameData. Named once so a gate can be spliced after it.
+# Every distribution opens the same way [decomp:src/mystery_gift_scripts.c:174,:185]; named once so
+# a gate can be spliced after it.
 _GAME_DATA_PREFIX = (
     (SVR_LOAD_CLIENT_SCRIPT, mg_script.CLIENT_SCRIPT_SEND_GAME_DATA),
     (SVR_SEND,),
@@ -175,8 +163,8 @@ _SCRIPT_HAS_CARD = (
     (SVR_RETURN, SVR_MSG_HAS_CARD),
 )
 
-# gServerScript_ClientCanceledCard [decomp:src/union_room_message.c:569]; unlike the News cancel path
-# it pushes a live message for the console to display before ending.
+# gServerScript_ClientCanceledCard [decomp:src/union_room_message.c:569]; unlike the News cancel
+# path it pushes a live message for the console to display.
 _SCRIPT_CLIENT_CANCELED = (
     (SVR_LOAD_CLIENT_SCRIPT, mg_script.CLIENT_SCRIPT_DYNAMIC_ERROR),
     (SVR_SEND,),
@@ -194,9 +182,8 @@ _SCRIPT_HAS_NEWS = (
     (SVR_RETURN, SVR_MSG_HAS_NEWS),
 )
 
-# sServerScript_SendNews [decomp:src/mystery_gift_scripts.c:126]. The response is the console's own
-# verdict, not a player prompt: TRUE means it kept what it already had, so only FALSE continues to the
-# success script. There is no toss prompt and no flagId compare anywhere on the News path.
+# sServerScript_SendNews [decomp:src/mystery_gift_scripts.c:126]. The response is the console's
+# verdict: TRUE means it kept what it had, so only FALSE continues to success.
 _SCRIPT_SEND_NEWS = (
     (SVR_LOAD_CLIENT_SCRIPT, mg_script.CLIENT_SCRIPT_SAVE_NEWS),
     (SVR_SEND,),
@@ -211,8 +198,8 @@ _SCRIPT_SEND_NEWS = (
     (SVR_RETURN, SVR_MSG_NEWS_SENT),
 )
 
-# gMysteryGiftServerScript_SendWonderNews [decomp:src/mystery_gift_scripts.c:174] minus its leading
-# SVR_COPY_SAVED_NEWS: the news comes from configuration, not from a save block we do not have.
+# gMysteryGiftServerScript_SendWonderNews [decomp:src/mystery_gift_scripts.c:174] minus
+# SVR_COPY_SAVED_NEWS: the news comes from configuration.
 SCRIPT_SEND_WONDER_NEWS = (
     *_GAME_DATA_PREFIX,
     (SVR_GOTO, _SCRIPT_SEND_NEWS),
@@ -296,9 +283,8 @@ SCRIPT_SEND_STAMP_EVENT = (
     (SVR_GOTO, _SCRIPT_SEND_STAMP_ONLY),
 )
 
-# The visiting trainer. No native script sends one over the wireless link -- the Wonder Card that
-# advertised it did [MysteryEventScript_VisitingTrainer, data/mystery_event_msg.s:113] and the
-# trainer itself arrived in a later session -- so these are ours, built from the same opcodes.
+# The visiting trainer: no native script sends one over the wireless link
+# [MysteryEventScript_VisitingTrainer, data/mystery_event_msg.s:113]; these are ours.
 _SCRIPT_SEND_CARD_AND_TRAINER = (
     (SVR_LOAD_CLIENT_SCRIPT, mg_script.CLIENT_SCRIPT_SAVE_CARD_AND_TRAINER),
     (SVR_SEND,),
@@ -312,8 +298,7 @@ _SCRIPT_SEND_CARD_AND_TRAINER = (
     (SVR_RETURN, SVR_MSG_GIFT_SENT_1),
 )
 
-# HAS_SAME_CARD: the console keeps the card it already holds and just takes the trainer again, so a
-# rematch costs nothing and no card is tossed.
+# HAS_SAME_CARD: the console keeps its card and takes the trainer again.
 _SCRIPT_SEND_TRAINER_ONLY = (
     (SVR_LOAD_CLIENT_SCRIPT, mg_script.CLIENT_SCRIPT_SAVE_TRAINER),
     (SVR_SEND,),
@@ -340,9 +325,8 @@ SCRIPT_SEND_VISITING_TRAINER = (
     (SVR_GOTO, _SCRIPT_SEND_TRAINER_ONLY),
 )
 
-# The Mystery Event VM. No native script reaches it over the wireless link -- the stamp rally's
-# activation script is the only CLI_RUN_MEVENT_SCRIPT in the game -- so these are ours. The tail
-# after the mevent send reads MG_LINKID_RESPONSE, which carries the script's own status back.
+# The Mystery Event VM: no native script reaches it over the wireless link, so these are ours.
+# MG_LINKID_RESPONSE after the mevent send carries the script's status back.
 _SCRIPT_MEVENT_TAIL = (
     (SVR_RECV, MG_LINKID_RESPONSE),
     (SVR_READ_MEVENT_STATUS,),
@@ -364,8 +348,7 @@ _SCRIPT_SEND_CARD_AND_MEVENT = (
     (SVR_GOTO, _SCRIPT_MEVENT_TAIL),
 )
 
-# HAS_SAME_CARD: the console keeps the card it holds and only runs the event, so re-running an
-# event costs nothing and prompts for nothing.
+# HAS_SAME_CARD: the console keeps its card and only runs the event.
 _SCRIPT_SEND_MEVENT_ONLY = (
     (SVR_LOAD_CLIENT_SCRIPT, mg_script.CLIENT_SCRIPT_RUN_MEVENT),
     (SVR_SEND,),
@@ -392,11 +375,8 @@ SCRIPT_SEND_MYSTERY_EVENT = (
 )
 
 
-# --- Native code: CLI_RUN_BUFFER_SCRIPT ------------------------------------------------------------
-# No Wonder Card, no toss prompt and no branch on what the console already holds: the payload is not
-# a gift, so this runs the same way whatever card the console is carrying, and it never saves unless
-# the verdict is success. The verdict itself is decided here, from the value the payload left in
-# client->param, and the console is told which one it was in a message we compose.
+# Native code: CLI_RUN_BUFFER_SCRIPT. No card and no toss prompt; the verdict is decided here from
+# client->param and told to the console in a message we compose.
 _SCRIPT_BUFFER_SUCCESS = (
     (SVR_LOAD_CLIENT_SCRIPT, mg_script.CLIENT_SCRIPT_BUFFER_SUCCESS),
     (SVR_SEND,),
@@ -406,8 +386,7 @@ _SCRIPT_BUFFER_SUCCESS = (
     (SVR_RETURN, SVR_MSG_GIFT_SENT_1),
 )
 
-# CLIENT_SCRIPT_DYNAMIC_ERROR is the ROM's CLI_MSG_BUFFER_FAILURE exit, proven on hardware by the
-# questionnaire refusal: our message prints and the console returns to the menu, no save.
+# CLI_MSG_BUFFER_FAILURE exit: our message prints and the console returns to the menu, no save.
 _SCRIPT_BUFFER_FAILURE = (
     (SVR_LOAD_CLIENT_SCRIPT, mg_script.CLIENT_SCRIPT_DYNAMIC_ERROR),
     (SVR_SEND,),
@@ -417,9 +396,8 @@ _SCRIPT_BUFFER_FAILURE = (
     (SVR_RETURN, SVR_MSG_NOTHING_SENT),
 )
 
-# The memory dump. Identical to SCRIPT_RUN_BUFFER_SCRIPT except for the client script it pushes -
-# the payload repoints the console's own outgoing message, so what comes back on MG_LINKID_RESPONSE
-# is not the 4-byte return channel but the region we asked for.
+# The payload repoints the console's outgoing message, so MG_LINKID_RESPONSE carries the region
+# asked for.
 SCRIPT_DUMP_MEMORY = (
     *_GAME_DATA_PREFIX,
     (SVR_LOAD_CLIENT_SCRIPT, mg_script.CLIENT_SCRIPT_DUMP_MEMORY),
@@ -434,12 +412,8 @@ SCRIPT_DUMP_MEMORY = (
 
 
 def script_dump_memory(blocks=1):
-    """-> the host script for a dump of `blocks` consecutive kilobytes in ONE session.
-
-    The client script sends one message per block, so the host waits for one per block too. Each
-    arrives on MG_LINKID_RESPONSE exactly as the single-block dump's does, and SVR_READ_BUFFER_DUMP
-    appends rather than replaces - so what the session ends holding is the whole region, in order.
-    """
+    """-> the host script for a dump of `blocks` consecutive kilobytes in ONE session; one
+    MG_LINKID_RESPONSE per block, which SVR_READ_BUFFER_DUMP appends."""
     if blocks == 1:
         return SCRIPT_DUMP_MEMORY
     return (
@@ -477,8 +451,8 @@ _SCRIPT_TOSS_PROMPT = (
     (SVR_GOTO, _SCRIPT_CLIENT_CANCELED),
 )
 
-# gMysteryGiftServerScript_SendWonderCard [decomp:src/mystery_gift_scripts.c:185] minus its two leading
-# SVR_COPY_SAVED_* (card/script come from configuration; DisableWonderCardSending is deliberately not applied).
+# gMysteryGiftServerScript_SendWonderCard [decomp:src/mystery_gift_scripts.c:185] minus its
+# SVR_COPY_SAVED_*; DisableWonderCardSending is deliberately not applied.
 SCRIPT_SEND_WONDER_CARD = (
     *_GAME_DATA_PREFIX,
     (SVR_CHECK_EXISTING_CARD,),
@@ -488,15 +462,9 @@ SCRIPT_SEND_WONDER_CARD = (
 )
 
 
-# --- The questionnaire gate ----------------------------------------------------------------------
-# SVR_CHECK_QUESTIONNAIRE compares all four Easy Chat words the player typed at the Poke Mart clerk
-# against a phrase we choose, exactly [MysteryGift_DoesQuestionnaireMatch, decomp:src/mystery_gift.c:422].
-# No native server script ever uses it, so this whole flow is ours: a password on a gift. The official
-# Visiting Trainer card is the only known use of the idea, with "GIVE ME AWESOME TRAINER".
-#
-# TRAP: the four words are IDS, and an id is a slot in a per-language table. What a FRENCH player
-# types produces French ids, which the English decomp cannot tell us - so the phrase has to be read
-# off a real console first. The host logs it from every session [easychat_french.py].
+# Questionnaire gate: all four Poke Mart words, exactly [MysteryGift_DoesQuestionnaireMatch,
+# decomp:src/mystery_gift.c:422]. No native script uses it. The ids are per-language slots: read a
+# French phrase off a real console first [easychat_french.py].
 _SCRIPT_QUESTIONNAIRE_DENIED = (
     (SVR_LOAD_CLIENT_SCRIPT, mg_script.CLIENT_SCRIPT_DYNAMIC_ERROR),
     (SVR_SEND,),
@@ -508,7 +476,7 @@ _SCRIPT_QUESTIONNAIRE_DENIED = (
 
 
 def gate_on_questionnaire(script):
-    """Splice a questionnaire check between the game-data prefix and whatever the script does next."""
+    """Splice a questionnaire check after the game-data prefix."""
     if tuple(script[:len(_GAME_DATA_PREFIX)]) != _GAME_DATA_PREFIX:
         raise MysteryGiftServerError(
             "only a script that opens with the standard game-data prefix can be gated")
@@ -531,8 +499,6 @@ class MysteryGiftServer:
                  buffer_success_message=None, buffer_failure_message=None,
                  questionnaire=None, denied_message=None, expect_console=None,
                  script=None, per_build=None, log=lambda *a: None):
-        # Which cartridge this run is for. The console names its own version in the game data it
-        # sends before anything else [MysteryGiftLinkGameData], so a mismatch is refused there.
         self.expect_console = None if expect_console is None else str(expect_console).lower()
         if self.expect_console not in (None, "firered", "leafgreen"):
             raise MysteryGiftServerError(
@@ -540,7 +506,6 @@ class MysteryGiftServer:
         self.console_mismatch = None
         self.news = None if news is None else bytes(news)
         if self.news is not None:
-            # Wonder News is a session of its own: no card, no flagId, no delivery script.
             if card is not None or ram_script is not None:
                 raise MysteryGiftServerError(
                     "a Wonder News session carries no Wonder Card and no RAM script")
@@ -610,9 +575,7 @@ class MysteryGiftServer:
                 raise MysteryGiftServerError(
                     "a Mystery Event script cannot share a session with news, a stamp rally or a "
                     "visiting trainer")
-        # A CLI_RUN_BUFFER_SCRIPT payload: native ARM the console runs out of
-        # gDecompressionBuffer [buffer_script.py]. It is not a gift, so it shares a session with
-        # nothing else - the client script that runs it neither sends nor saves a card.
+        # A CLI_RUN_BUFFER_SCRIPT payload [buffer_script.py] shares a session with nothing else.
         self.buffer_code = None if buffer_code is None else bytes(buffer_code)
         if self.buffer_code is not None:
             buffer_script.validate(self.buffer_code)
@@ -622,14 +585,10 @@ class MysteryGiftServer:
                     "a buffer script runs on its own: no card, news, stamp rally, visiting "
                     "trainer or Mystery Event script in the same session")
         self.buffer_dump_size = None if buffer_dump_size is None else int(buffer_dump_size)
-        # How many blocks the client script will send, and where the first one starts. Only
-        # memory-dump-multi uses either; every other payload answers once.
+        # Only memory-dump-multi uses these; every other payload answers once.
         self.buffer_dump_blocks = int(buffer_dump_blocks)
         self.buffer_dump_address = int(buffer_dump_address)
-        # memory-dump-scatter carries a TABLE of bases, so a block's address is the table's entry
-        # and not `first + n * size`. The multi-dump arithmetic against a scattered
-        # payload and named 0x08083400 for bytes that came off 0x0847DC00: the dump file and its
-        # placement were right, the line above them was not.
+        # memory-dump-scatter: a block's address is the table's entry, not `first + n * size`.
         self.buffer_dump_addresses = tuple(int(a) for a in buffer_dump_addresses)
         if not 1 <= self.buffer_dump_blocks <= mg_script.MAX_DUMP_BLOCKS:
             raise MysteryGiftServerError(
@@ -643,8 +602,6 @@ class MysteryGiftServer:
                 raise MysteryGiftServerError(
                     f"a dump is 1..{buffer_script.MAX_BUFFER_SCRIPT_SIZE} bytes "
                     f"(MG_LINK_BUFFER_SIZE), got {self.buffer_dump_size}")
-        # memory-scan answers with a hit table and rng-trace with a series, not a region, and a
-        # run whose whole point is that structure must not leave it as a hex head.
         self.buffer_decode = buffer_decode
         if self.buffer_decode == buffer_script.MEMORY_SCAN \
                 and self.buffer_dump_size != buffer_script.SCAN_ANSWER_SIZE:
@@ -656,7 +613,7 @@ class MysteryGiftServer:
             raise MysteryGiftServerError(
                 f"a rom checksum answers with exactly {buffer_script.ROM_CHECKSUM_ANSWER_SIZE} "
                 f"bytes, got {self.buffer_dump_size}")
-        # rom-checksum: the ROM image its sums are set beside, a path read when the answer lands.
+        # rom-checksum: the ROM image its sums are compared with, read when the answer lands.
         self.buffer_reference = buffer_reference
         if self.buffer_decode == buffer_script.STRING_GATHER \
                 and self.buffer_dump_size != buffer_script.GATHER_ANSWER_SIZE:
@@ -696,7 +653,7 @@ class MysteryGiftServer:
             raise MysteryGiftServerError(
                 f"a questionnaire phrase is exactly {NUM_QUESTIONNAIRE_WORDS} Easy Chat words, "
                 f"got {len(self.questionnaire)}")
-        # Same window, same trap: a refusal message wraps around inside it too.
+        # A refusal message wraps inside the window too.
         self.denied_message = _encode_message(denied_message, DEFAULT_DENIED_MESSAGE)
         self.questionnaire_matched = None
         self.is_mevent_distribution = self.mevent is not None
@@ -705,8 +662,7 @@ class MysteryGiftServer:
         self.buffer_status = None
         self.buffer_matched = None
         self.buffer_dump = None
-        # One entry per block that arrived. The single-block dump leaves exactly one, so
-        # `buffer_dump` stays what it has always been and every reader of it is unchanged.
+        # One entry per block that arrived.
         self.buffer_blocks = []
         self.is_stamp_distribution = self.stamp is not None
         self.is_trainer_distribution = self.trainer is not None
@@ -731,9 +687,8 @@ class MysteryGiftServer:
             self.script = SCRIPT_SEND_WONDER_CARD
         if self.questionnaire is not None and script is None:
             self.script = gate_on_questionnaire(self.script)
-        # One payload per cartridge, {game code: server keywords, or why it could not be built},
-        # chosen at SVR_COPY_GAME_DATA, before anything build-dependent is sent [builds.py].
-        # None: these bytes go to any console.
+        # {game code: server keywords, or why it could not be built}, chosen at SVR_COPY_GAME_DATA
+        # before anything build-dependent is sent [builds.py]. None: any console.
         self.build = None
         self.build_refused = None
         self._build_servers = None
@@ -837,14 +792,10 @@ class MysteryGiftServer:
         self._check_expected_console()
         self._select_build()
         for line in self.game_data.describe_extras():
-            # Free every session: the console volunteers all of this and nothing in the game ever
-            # reads it back. On a French console the word ids are the only ground truth for what a
-            # slot actually prints [easychat_french.py].
             self.info(line)
 
     def _check_expected_console(self):
-        """Refuse a run aimed at the other cartridge, before anything is sent. Raises rather than
-        logs: a run that continues here answers as if it were the right console."""
+        """Refuse a run aimed at the other cartridge, before anything is sent."""
         if self.expect_console is None or self.game_data is None:
             return
         got = self.game_data.version_name.lower()
@@ -856,7 +807,6 @@ class MysteryGiftServer:
             f"{got.upper()}. Nothing was sent. Put the other cartridge on the Mystery Gift "
             "search screen and launch again, or drop --expect-console if the run does not care.")
 
-    # What differs between two builds' servers: the bytes and what the log decodes them with.
     BUILD_FIELDS = ("card", "ram_script", "news", "stamp", "activation_script",
                     "install_activation_script", "trainer", "mevent", "buffer_code",
                     "buffer_expect", "buffer_dump_size", "buffer_dump_blocks",
@@ -864,8 +814,8 @@ class MysteryGiftServer:
                     "buffer_reference")
 
     def _select_build(self):
-        """Take the payload built for the console's own game code. Raises rather than logs, before
-        anything is sent: another build's addresses land on other variables [builds.py]."""
+        """Take the payload built for the console's own game code, before anything is sent:
+        another build's addresses land on other variables [builds.py]."""
         if self._build_servers is None:
             return
         raw = bytes(self.game_data.game_code)
@@ -932,8 +882,8 @@ class MysteryGiftServer:
         self.trace.append(("existing_stamps", self.param))
 
     def _do_svr_read_response(self):
-        # The raw u32, not a bool [decomp:src/mystery_gift_server.c:193]; TRUE means the player KEPT
-        # the old card, so FALSE is the branch that gifts.
+        # The raw u32 [decomp:src/mystery_gift_server.c:193]; TRUE means the player kept the old
+        # card, so FALSE gifts.
         self.param = int.from_bytes(self._received[:4], "little")
 
     def _do_svr_load_client_script(self, script):
@@ -999,12 +949,8 @@ class MysteryGiftServer:
                   + buffer_script.describe(self.buffer_code))
 
     def _do_svr_read_buffer_status(self):
-        """Read what the payload left in client->param and decide the verdict.
-
-        The status is whatever our own code chose to write, so only the expectation makes it
-        evidence. With buffer_expect=None any answer counts as success: the console reached
-        CLI_LOAD_TOSS_RESPONSE at all, which already means the payload returned 1.
-        """
+        """Read what the payload left in client->param and decide the verdict. With
+        buffer_expect=None any answer counts: the payload returned 1 to get here."""
         self.buffer_status = int.from_bytes(self._received[:4], "little")
         refusal = buffer_script.flash_refusal(self.buffer_status)
         if refusal and buffer_script.describe(self.buffer_code).startswith(
@@ -1021,11 +967,7 @@ class MysteryGiftServer:
             self.info(f"Buffer script status: 0x{self.buffer_status:08X} {verdict} "
                       f"0x{expected:08X} ({why})")
             if self.buffer_expect == BUFFER_EXPECT_TRAINER_ID and self.buffer_matched:
-                # playerTrainerId is one u32: the public id the trainer card shows is the low
-                # half, the SECRET ID the high half. The secret id is not printed anywhere in the
-                # game and does not travel in any link message, so reading it out of the save is
-                # the only way to have it - and it is half of the gen 3 shiny check,
-                # (TID ^ SID ^ PID_high ^ PID_low) < 8.
+                # playerTrainerId: TID low half, SID high half. The SID travels in no link message.
                 self.info(f"  -> TID (public) {self.buffer_status & 0xFFFF}, "
                           f"SID (SECRET) {self.buffer_status >> 16}")
         self.param = self.buffer_matched
@@ -1044,9 +986,8 @@ class MysteryGiftServer:
         expected = self.game_data.trainer_id & 0xFFFFFFFF
         if self.game_data.trainer_id_is_reliable:
             return expected, 0xFFFFFFFF, "the trainer id from the console's own game data"
-        # StringCopy's terminator ate playerTrainerId[0] on the way into the game data
-        # [decomp:src/mystery_gift.c:364], so only the top three bytes are comparable. Our ARM
-        # code read the save directly and is the one telling the truth here.
+        # The name's terminator ate playerTrainerId[0] in the game data
+        # [decomp:src/mystery_gift.c:364]: compare the top three bytes.
         return expected, 0xFFFFFF00, ("the trainer id from the game data, low byte excluded: "
                                       "a 7-character player name overwrote it")
 
@@ -1059,11 +1000,8 @@ class MysteryGiftServer:
         return self.buffer_dump_address + index * (self.buffer_dump_size or 0)
 
     def _do_svr_read_buffer_dump(self):
-        """What came back is the region itself, not the 4-byte return channel.
-
-        With --dump-blocks this runs once per block and APPENDS, so the session ends holding the
-        whole region. Each block is checked on its own: a short one means the payload did not
-        repoint that pass's send, and the blocks before it are still good bytes."""
+        """The region itself, not the 4-byte return channel. With --dump-blocks this runs once per
+        block and appends; a short block means the payload did not repoint that pass's send."""
         block = bytes(self._received)
         matched = len(block) == self.buffer_dump_size
         if matched:
@@ -1093,10 +1031,8 @@ class MysteryGiftServer:
             self.trace.append(("buffer_trace", trace["taken"], trace["address"]))
             return
         if self.buffer_decode == buffer_script.CALL:
-            # Taken from the payload we actually sent, not plumbed alongside it: when the function
-            # is SeedRng the watched word after the call HAS TO BE the first argument, because
-            # SeedRng assigns the u16 outright [decomp:src/random.c:15]. Nothing else is predicted,
-            # so nothing else is claimed.
+            # For SeedRng the watched word after the call must equal the first argument
+            # [decomp:src/random.c:15]; nothing else is predicted.
             asked = buffer_script.call_parameters(self.buffer_code)
             expected = (asked["args"][0] & 0xFFFF
                         if asked["function"] == ((self.build or builds.DEFAULT).seed_rng | 1)
@@ -1108,8 +1044,6 @@ class MysteryGiftServer:
             self.trace.append(("buffer_call", got["function"], got["returned"]))
             return
         if self.buffer_decode == buffer_script.CALL_CHAIN:
-            # The steps come off the payload we actually sent, so the log names each result by the
-            # step that produced it rather than by position in a table nobody has to hand.
             asked = buffer_script.chain_parameters(self.buffer_code)
             for line in buffer_script.describe_call_chain(self.buffer_dump, asked["steps"]):
                 self.info(f"  {line}")
@@ -1179,7 +1113,6 @@ class MysteryGiftServer:
             self.trace.append(("buffer_scan", scan["found"], scan["cursor"], scan["calls"]))
             return
         if self.buffer_dump_size == buffer_script.ANCHORS_SIZE:
-            # A run whose whole answer is eleven words must not leave them as a hex head.
             for line in buffer_script.describe_anchors(self.buffer_dump):
                 self.info(f"  {line}")
 

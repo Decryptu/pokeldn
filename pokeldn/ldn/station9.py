@@ -1,24 +1,7 @@
-"""Pia station protocol version 9 (Pia 5.10-5.18) - protocol 0x14, the layer a station joins on
-for Let's Go Pikachu / Eevee.
+"""Pia station protocol version 9 (Pia 5.10-5.18), protocol 0x14, for Let's Go Pikachu / Eevee.
 
-The connection-request handler at Let's Go Pikachu's `main` 0x5b8800 reads the wiki's 5.10-5.18
-layout, station-protocol version number 9:
-
-    [0]     message type            1, or 6 for the relay variant
-    [1]     connection id
-    [2]     version number          9   (`cmp w8, #9` at 0x5b8848)
-    [3]     is inverse connection request; `b.hi` rejects anything above 1
-    [4]     target constant id      u64 big-endian, 4..0xB, compared against the console's own
-    [0xC]   target variable id      u32 big-endian, checked only when [3] is 1
-    [0x10]  inverse connection id   compared against the station's record at +0xA0
-    [0x11]  station location        the 5.11-5.45 layout, 0x20..0x40 bytes
-    [...]   ack id                  u32 big-endian, read as the message size minus four
-
-This is neither Sword's version-4 request (a platform byte at [2], a shift flag at [3]: `station4`)
-nor the repo's 5.29-5.45 `station_protocol` (a protocol list at [1]). The station location is the
-5.11-5.45 one `station_protocol.station_location` builds. docs/lgpe_session.md "The station
-protocol, for a mesh join".
-"""
+Request layout read off Let's Go Pikachu `main` 0x5b8800 (docs/lgpe_session.md, "The station
+protocol, for a mesh join")."""
 import struct
 
 from pokeldn.ldn.station_protocol import (ACK, CONNECTION_REQUEST, CONNECTION_RESPONSE,
@@ -41,12 +24,8 @@ OFF_LOCATION = 0x11
 
 PLATFORM_SWITCH = 4
 
-# The response fields the console's parser at 0x5b9270 reads, confirmed against Let's Go Pikachu:
-#   [1]     result byte; 2 (version too low) takes a separate path
-#   [5..C]  target constant id, big-endian, compared against the receiver's own (its +0x68)
-#   [0xD..10] target variable id, big-endian, compared against the receiver's own (+0x70)
-#   [0x37]  one byte, result-0 only, dropped when >= 5 (like Sword's gate)
-# Nothing else is required to accept the response; the player-info body is what the HOST sends back.
+# The response parser at 0x5b9270 reads [1] result, [5..C] and [0xD..10] the receiver's own ids
+# big-endian, and [0x37] a gate byte dropped when >= 5 (docs/lgpe_session.md).
 OFF_RESPONSE_RESULT = 1
 OFF_RESPONSE_VERSION = 2
 OFF_RESPONSE_PLATFORM = 3
@@ -56,13 +35,11 @@ OFF_RESPONSE_VARIABLE_ID = 0xD
 OFF_RESPONSE_GATE = 0x37
 ACCEPTED_RESPONSE_SIZE = 0x38
 
-# A Let's Go station answers with the full body, 0x348 bytes. The network id sits at 0x31 and a
-# 195-byte PlayerInfo at 0x37, so the gate byte the parser reads is that structure's first field.
-# Both captured stations and the retail console send this layout.
-OFF_RESPONSE_NETWORK_ID = 0x31      # the network id, big-endian: the advertise data's first u32
+# The full body a Let's Go station sends: 0x348 bytes, the PlayerInfo at 0x37.
+OFF_RESPONSE_NETWORK_ID = 0x31  # the advertise data's first u32, big-endian
 OFF_RESPONSE_FLAGS = 0x35           # 01 01, then the PlayerInfo at 0x37
 OFF_RESPONSE_PLAYER_INFO = 0x37
-FULL_RESPONSE_SIZE = 0x344          # the ack id follows, so the message is 0x348
+FULL_RESPONSE_SIZE = 0x344  # the ack id follows, so the message is 0x348
 STATION_NAME = "username"           # the name field of every captured station's PlayerInfo
 
 __all__ = ["PROTOCOL", "VERSION", "HEADER_SIZE", "PLATFORM_SWITCH", "CONNECTION_REQUEST",
@@ -75,12 +52,8 @@ __all__ = ["PROTOCOL", "VERSION", "HEADER_SIZE", "PLATFORM_SWITCH", "CONNECTION_
 def build_connection_request(target_constant_id, target_variable_id, location, ack_id=0,
                              connection_id=0, inverse_connection_id=0, is_inverse=False,
                              relay=False):
-    """One version-9 connection request, with a trailing u32 ack id.
-
-    `location` is `station_protocol.station_location` (the joiner's own). `is_inverse=False`
-    clears [3], which makes the console skip the variable-id comparison; the id is written anyway,
-    since the parser only stops reading it, not the fields after.
-    """
+    """`is_inverse=False` clears [3], so the console skips the variable-id comparison; the id is
+    written anyway."""
     location = bytes(location)
     if not STATION_LOCATION_MIN <= len(location) <= STATION_LOCATION_MAX:
         raise ValueError(f"a station location is 0x20..0x40 bytes, this is {len(location)}")
@@ -96,7 +69,6 @@ def build_connection_request(target_constant_id, target_variable_id, location, a
 
 
 def parse_connection_request(data):
-    """-> dict, the inverse of the builder, so a test can read back what a run will send."""
     if len(data) < HEADER_SIZE:
         raise ValueError(f"a connection request is at least {HEADER_SIZE} bytes")
     return {"type": data[0], "connection_id": data[OFF_CONNECTION_ID],
@@ -110,13 +82,8 @@ def parse_connection_request(data):
 def build_connection_response(target_constant_id, target_variable_id, result=0, ack_id=1,
                               gate=1, platform=PLATFORM_SWITCH, network_id=None, player_name=None,
                               station_name=STATION_NAME):
-    """A version-9 connection response. `target_constant_id` and `target_variable_id` are the
-    RECEIVER's own ids (the host's), which its parser compares against itself; `gate` is the byte at
-    0x37 the result-0 path reads and drops when 5 or more. A trailing u32 ack id follows the body.
-
-    With `network_id` the full 0x348-byte body a Let's Go station sends is built: the network id
-    big-endian at 0x31, the station name, and the player's nickname. Without it the body stops at
-    the gate, which the station protocol accepts but which carries no player."""
+    """The target ids are the receiver's own (the host's). With `network_id` the full 0x348-byte
+    body is built; without it the body stops at the gate and carries no player."""
     if network_id is not None:
         out = bytearray(FULL_RESPONSE_SIZE)
     else:
@@ -139,19 +106,17 @@ def build_connection_response(target_constant_id, target_variable_id, result=0, 
 
 
 def build_ack(ack_id):
-    """The type-5 acknowledgement: `05 00 00 00` then a u32 big-endian. The station-protocol ack is
-    one layout across every 5.x version (`station_protocol` and `station4` send the same eight)."""
+    """`05 00 00 00` then a u32 big-endian, one layout across every 5.x version."""
     return bytes([ACK, 0, 0, 0]) + struct.pack(">I", ack_id & 0xFFFFFFFF)
 
 
 def ack_id_of(data):
-    """The trailing u32, big-endian, which the console reads as the message size minus four."""
+    """The trailing u32, read by the console as the message size minus four."""
     return struct.unpack_from(">I", data, len(data) - 4)[0] if len(data) >= 4 else 0
 
 
 def parse_reply(data):
-    """-> (message type, connection result or None). A connection response carries its verdict in
-    the byte after the type."""
+    """-> (message type, connection result or None)."""
     if not data:
         return None, None
     kind = data[0]

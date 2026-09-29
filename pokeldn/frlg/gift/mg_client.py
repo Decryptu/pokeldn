@@ -1,6 +1,6 @@
-"""Child-side FRLG Mystery Gift client [decomp:src/mystery_gift_client.c]: we receive a Wonder Card from
-a console that chose Friend -> send. Same feed_in_frame()/tick() contract as the trade joiner, so it drops
-into pokeldn.frlg.link.sim.Sim unchanged; every message in both directions is kept in ``messages``."""
+"""Child-side FRLG Mystery Gift client [decomp:src/mystery_gift_client.c]: receives a Wonder Card
+from a console that chose Friend -> send. The trade joiner's feed_in_frame()/tick() contract, so it
+runs in pokeldn.frlg.link.sim.Sim; every message both ways is kept in ``messages``."""
 
 from collections import deque
 
@@ -49,8 +49,8 @@ IDENT_NAMES = {v: k for k, v in vars(mg).items() if k.startswith("MG_LINKID_")}
 def build_link_game_data(link_player, *, version_code, flag_id=0, game_code=b"BPRE",
                          software_version=0, max_stamps=0, card_metadata=b"",
                          questionnaire=(), easy_chat_profile=()):
-    """[decomp:src/mystery_gift.c:337]; a 7-character name spills its 0xFF over playerTrainerId[0] natively
-    and that is reproduced on purpose."""
+    """[decomp:src/mystery_gift.c:337]; a 7-character name spills its 0xFF over
+    playerTrainerId[0] natively, reproduced on purpose."""
     data = bytearray(mg_script.GAME_DATA_SIZE)
     data[0x00:0x04] = mg.GAME_DATA_VALID_VAR.to_bytes(4, "little")
     data[0x04:0x06] = (1).to_bytes(2, "little")
@@ -111,13 +111,10 @@ class MysteryGiftClientEngine:
         self.info = getattr(log, "info", log)
         self.trust_pia = trust_pia
         self.inter_block_gap = int(inter_block_gap)
-        # {address: bytes} written into the emulated cartridge before a payload runs. A real
-        # console's ROM is the game; ours is a header and zeros, so a payload that CALLS a ROM
-        # function needs something to land on or it executes the zeros. A stub here is a MODEL of
-        # the callee - what it does with its arguments - and it is the only way the harness can
-        # exercise a calling payload's whole session rather than just its send.
+        # {address: bytes} written into the emulated cartridge before a payload runs: our ROM is a
+        # header and zeros, so a payload that calls a ROM function needs a stub modelling the
+        # callee.
         self.rom_stubs = dict(rom_stubs or {})
-        # sim._ensure_ni reads these for the NI game data
         self.ni_activity = ACTIVITY_WONDER_CARD
         self.ni_started = False
         self._live = False
@@ -131,7 +128,7 @@ class MysteryGiftClientEngine:
             game_code=game_code, software_version=software_version,
             questionnaire=questionnaire, easy_chat_profile=easy_chat_profile)
         self.holding_flag_id = holding_flag_id
-        # CLI_ASK_TOSS param is FALSE for YES (toss the old card) and TRUE for NO; the server gifts on FALSE.
+        # CLI_ASK_TOSS param is FALSE for YES (toss the old card); the server gifts on FALSE.
         self.toss_param = 0 if accept_replacement else 1
         self.yes_no_param = 1 if yes_no_answer else 0
 
@@ -187,7 +184,7 @@ class MysteryGiftClientEngine:
 
     @property
     def in_seat_phase(self):
-        # sim.py uses this only to pick the retransmit policy; no held keys are ever emitted.
+        # sim.py uses this only to pick the retransmit policy.
         return not self.established
 
     host_in_seat = False
@@ -312,7 +309,8 @@ class MysteryGiftClientEngine:
             try:
                 payload = self.link_recv.feed_block(blk)
             except mg_link.MysteryGiftLinkError as exc:
-                # Natively LinkRfu_FatalError; keep the link up so the capture shows what the console does next.
+                # Natively LinkRfu_FatalError; the link stays up so the capture shows what the
+                # console does.
                 self.error = str(exc)
                 self.trace.append((self._tick, "link_error", str(exc)))
                 self.info(f"[mg] MysteryGiftLink error: {exc} (native would LinkRfu_FatalError)")
@@ -387,10 +385,9 @@ class MysteryGiftClientEngine:
             self.saved_card = bytes(self.recv_buffer[:332])
             self.info(f"[mg] WONDER CARD SAVED: {describe_wonder_card(self.saved_card)}")
         elif instr == mg_script.CLI_SAVE_NEWS:
-            # IsWonderNewsSameAsSaved compares the whole 444-byte struct against what is already
-            # saved [decomp:src/mystery_gift.c:140]; the verdict travels back as MG_LINKID_RESPONSE,
-            # FALSE when the news was taken and TRUE when the console kept what it had
-            # [mystery_gift_client.c:210]. Invalid news is not saved but still answers FALSE.
+            # IsWonderNewsSameAsSaved [decomp:src/mystery_gift.c:140]: the verdict is FALSE when the
+            # news was taken, TRUE when kept [mystery_gift_client.c:210]; invalid news still answers
+            # FALSE.
             news = bytes(self.recv_buffer[:wonder_news.WONDER_NEWS_SIZE])
             same = (self.saved_news is not None
                     and wonder_news.validate(self.saved_news)
@@ -402,9 +399,8 @@ class MysteryGiftClientEngine:
             self.info("[mg] Wonder News already held, keeping it" if same
                       else "[mg] WONDER NEWS SAVED: " + wonder_news.describe(news))
         elif instr == mg_script.CLI_RUN_MEVENT_SCRIPT:
-            # Client_RunMysteryEventScript runs the bytecode in place out of recvBuffer and leaves
-            # ctx->data[2] in client->param [decomp:src/mystery_gift_client.c:257], which is what a
-            # following CLI_LOAD_TOSS_RESPONSE ships back.
+            # Runs in place out of recvBuffer and leaves ctx->data[2] in client->param
+            # [decomp:src/mystery_gift_client.c:257]; CLI_LOAD_TOSS_RESPONSE ships it back.
             script = bytes(self.recv_buffer)
             self.activation_scripts.append(script)
             result = mystery_event.run(script, party_count=self.party_count)
@@ -427,8 +423,8 @@ class MysteryGiftClientEngine:
             self.info(f"[mg] RAM (delivery) SCRIPT SAVED ({len(self.saved_ram_script)} bytes, "
                       f"head {self.saved_ram_script[:8].hex()})")
         elif instr == mg_script.CLI_RECV_EREADER_TRAINER:
-            # InitRamScript-style: the console copies the struct and validates it, clearing it on a
-            # bad checksum [decomp:src/mystery_gift_client.c:233].
+            # The console validates the copy and clears it on a bad checksum
+            # [decomp:src/mystery_gift_client.c:233].
             trainer = bytes(self.recv_buffer[:ereader_trainer.TRAINER_SIZE])
             if ereader_trainer.validate(trainer):
                 self.saved_trainer = trainer
@@ -439,10 +435,8 @@ class MysteryGiftClientEngine:
                 self.saved_trainer = None
                 self.info("[mg] visiting trainer FAILED ValidateEReaderTrainer - console clears it")
         elif instr == mg_script.CLI_RUN_BUFFER_SCRIPT:
-            # Client_Run copies the WHOLE receive buffer into gDecompressionBuffer and then calls
-            # it every frame until it returns 1 [decomp:src/mystery_gift_client.c:237,276]. We run
-            # it for real, on a model of the console's memory map, so the offline harness proves
-            # the payload and not just the transport.
+            # Client_Run copies the whole receive buffer into gDecompressionBuffer and calls it
+            # every frame until it returns 1 [decomp:src/mystery_gift_client.c:237,276].
             code = bytes(self.recv_buffer)
             self.buffer_scripts.append(code)
             self._run_buffer_script(code)
@@ -450,12 +444,8 @@ class MysteryGiftClientEngine:
             self.info(f"[mg] unknown client instruction {instr} param={param} - ignored")
 
     def _save_block2_image(self):
-        """As much of struct SaveBlock2 [decomp:include/global.h:327] as a payload can read.
-
-        The trainer id here is the real one. The copy that travels in MysteryGiftLinkGameData can
-        have its low byte eaten by the player name's terminator [decomp:src/mystery_gift.c:364];
-        that divergence is the point of the trainer-id probe, so it must not be modelled away.
-        """
+        """As much of struct SaveBlock2 [decomp:include/global.h:327] as a payload can read. The
+        trainer id is the real one, unlike the game-data copy [decomp:src/mystery_gift.c:364]."""
         sav2 = bytearray(0x1000)
         name = charmap.encode(self.lp.name)[:7] + b"\xff"
         sav2[buffer_script.SAV2_PLAYER_NAME:buffer_script.SAV2_PLAYER_NAME + len(name)] = name
@@ -469,26 +459,21 @@ class MysteryGiftClientEngine:
             self.info("[mg] buffer script received, NOT executed (no unicorn): "
                       + buffer_script.describe(code))
             return
-        # Whatever a preceding command already armed. CLI_LOAD_TOSS_RESPONSE leaves a 4-byte send
-        # of MG_LINKID_RESPONSE pointing at client->sendBuffer, and a payload is free to repoint it
-        # before CLI_SEND_LOADED runs.
+        # CLI_LOAD_TOSS_RESPONSE leaves a 4-byte MG_LINKID_RESPONSE send armed; a payload may
+        # repoint it before CLI_SEND_LOADED.
         armed_ident, _armed_payload, armed_size = (
             self._pending_send if self._pending_send is not None
             else (MG_LINKID_RESPONSE, b"", 4))
         try:
-            # Called EVERY FRAME until it returns 1 [decomp:src/mystery_gift_client.c:276-280],
-            # with its own image as it left it - which is what memory-scan is built on. Modelling
-            # one call would refuse a payload the console runs quite happily. What this does not
-            # model is the frames themselves: the cost of a long payload is a frame budget, and
-            # that is arithmetic (asm/memory-scan.s), not something the harness measures.
+            # Called every frame until it returns 1, on its image as it left it
+            # [decomp:src/mystery_gift_client.c:276-280]; memory-scan relies on it.
             repeated = buffer_script.emulate_repeating(
                 code, param=self.param or 0, sav2=self._save_block2_image(),
                 send_size=armed_size, send_ident=armed_ident,
                 memory=self.rom_stubs or None)
             run = repeated.final
         except buffer_script.BufferScriptError as exc:
-            # On the console this is a crash or a hang inside the Mystery Gift menu, with no way
-            # back: exactly what the offline harness exists to catch.
+            # On the console this hangs the Mystery Gift menu with no way back.
             self.error = f"buffer script would not run on the console: {exc}"
             self.info("[mg] BUFFER SCRIPT FAILED: " + str(exc))
             return
@@ -498,10 +483,8 @@ class MysteryGiftClientEngine:
                       f"({repeated.instructions} instructions): on the console that is "
                       f"{repeated.calls} frames, about {repeated.calls / 60:.1f} s")
         if run.client.send_changed:
-            # The payload changed the console's own outgoing message - its address, its length, or
-            # both. What goes out is read from those two fields at send time, CRC included
-            # [decomp:src/mystery_gift_link.c:166], so the armed 4-byte response becomes however
-            # many bytes it asked for, from wherever it left the pointer.
+            # What goes out is read from sendBuffer/sendSize at send time, CRC included
+            # [decomp:src/mystery_gift_link.c:166].
             self._pending_send = (run.client.send_ident, run.pending_send, run.client.send_size)
             what = ("REPOINTED THE SEND" if run.client.send_repointed
                     else "WIDENED THE SEND")

@@ -10,14 +10,11 @@ from pokeldn.gba.rfu_leader import RFULeader, UNI
 
 
 # After a ~250ms adapter TX hiccup every unacked frame comes due at once and the console never
-# recovers from that flood, so retransmits per VBlank are capped.
+# recovers from that flood.
 HOST_RTX_LIMIT = 2
 
-# The console releases in-order Reliable frames to the game in one burst when a hole closes, and its
-# RFU receive queue is 8 deep (h5). If we keep emitting new frames while the console's cumulative ack
-# is stuck behind a lost frame, the backlog grows without bound and the release burst overflows the
-# queue, silently dropping block fragments (the ident-25 stall). Cap the frames the
-# console has not yet cumulatively acked: below its queue depth, so any single release fits.
+# Trap: a closed hole releases every held frame at once into the console's 8-deep RFU receive queue;
+# more than that drops block fragments. Stay below its depth.
 HOST_OUTSTANDING_MAX = 6
 
 class HostSession:
@@ -77,7 +74,7 @@ class HostSession:
 
     @property
     def trade(self):
-        """Compatibility alias for trade-host callers; the activity may be a Mystery Gift engine."""
+        """Alias for trade-host callers; the activity may be a Mystery Gift engine."""
         return self.activity
 
     @property
@@ -148,11 +145,7 @@ class HostSession:
                 "resuming the activity.")
             self.window_full_ticks = 0
 
-        # Hole guard: while the console's cumulative ack lags our send by more than its RFU receive
-        # queue can release at once, stop emitting NEW frames and let poll()'s retransmits refill the
-        # hole. A closed hole then releases at most HOST_OUTSTANDING_MAX frames, which the 8-deep queue
-        # accepts without dropping block fragments. Never gate the close/disconnect
-        # path: those must still go out even if an ack is outstanding.
+        # Hole guard (see HOST_OUTSTANDING_MAX). Never gate the close/disconnect path.
         if (not (self.close_poll_sent and self.activity.disconnect_requested)
                 and self.reliable.link.outstanding() >= HOST_OUTSTANDING_MAX):
             if not self.console_backlogged:
@@ -168,7 +161,6 @@ class HostSession:
                 f"Console ack caught up after {self.backlog_ticks} held ticks; resuming.")
             self.backlog_ticks = 0
 
-        # Queue D one VBlank after the final parent close-link UNI poll.
         if (self.close_poll_sent and self.activity.disconnect_requested
                 and not self.disconnect_sent):
             inner = self.rfu.disconnect_frame()
@@ -179,7 +171,8 @@ class HostSession:
             return out
 
         parent_words = self.activity.tick() if self.rfu.state == UNI else None
-        # Native leader ordering: cumulatively ACK C (not merely the preceding INIT) before opening A.
+        # Native leader ordering: cumulatively ACK C, not merely the preceding INIT, before opening
+        # A.
         if not self.reliable.local_opened and not self.connect_ack_sent:
             return out
         inner = self.rfu.tick(parent_words)

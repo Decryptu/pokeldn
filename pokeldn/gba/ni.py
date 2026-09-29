@@ -1,7 +1,6 @@
-"""librfu NI (acknowledged) sender/receiver machines [src/librfu_rfu.c rfu_STC_NI_constructLLSF:1808,
-rfu_STC_setSendData_org:1423]. The child delivers its 26-byte RfuGameData over NI (rfu_NI_CreateConnectionAllSlots:
-dataType=1, dataSize=26) before any UNI traffic; for payloadSize 12 the emitted sequence is NI_START n=1 sz=7 (header),
-NI n=1 ph=0/1/2 (12, 12, 2 bytes), NI_END n=0, NULL n=1.
+"""librfu NI (acknowledged) transfers [librfu_rfu.c:1808 NI_constructLLSF, :1423 setSendData_org].
+The child sends its 26-byte RfuGameData over NI before any UNI traffic; for payloadSize 12 the
+sequence is NI_START n=1 sz=7, NI n=1 ph=0/1/2 (12, 12, 2 bytes), NI_END n=0, NULL n=1.
 """
 
 from pokeldn.frlg.link import linkplayer
@@ -17,7 +16,7 @@ SLOT_STATE_DONE = "DONE"
 WINDOW_COUNT = 4
 CHILD_FRAME_SIZE = 2
 RFU_SERIAL_GAME = 0x0002
-RFU_STATUS_JOIN_GROUP_OK = 5             # host accepted our join [include/link_rfu.h:40]; any other status = reject
+RFU_STATUS_JOIN_GROUP_OK = 5  # [include/link_rfu.h:40]; any other status rejects
 NI_HEADER_SIZE = 7                       # dataType(1) + payloadSize(2) + dataSize(4)
 
 ACTIVITY_TRADE = 0x04
@@ -26,9 +25,8 @@ ACTIVITY_WONDER_CARD = 21
 
 def build_game_data(version_low, trainer_id, ot_name, *, language=linkplayer.LANGUAGE_ENGLISH,
                     activity=ACTIVITY_TRADE, started=True, partner_info=b"\x00\x00\x00\x00"):
-    """The 26-byte NI src (serialNo + gname[15] + uname[9]) built from our identity; gname[0:13] is a packed RfuGameData
-    [link_rfu.h:81-93]. `version_low` = gGameVersion (4 FireRed, 5 LeafGreen).
-    """
+    """The 26-byte NI src: serialNo + gname[15] + uname[9]; gname[0:13] is a packed RfuGameData
+    [link_rfu.h:81-93]. `version_low` is gGameVersion (4 FireRed, 5 LeafGreen)."""
     compat = (language & 0xF) | ((version_low & 0xF) << 10)
     rgd = bytearray(13)
     rgd[0:2] = (compat & 0xFFFF).to_bytes(2, "little")
@@ -37,8 +35,8 @@ def build_game_data(version_low, trainer_id, ot_name, *, language=linkplayer.LAN
     rgd[8:10] = (0).to_bytes(2, "little")                      # tradeSpecies:10 | tradeType:6
     rgd[10] = (activity & 0x7F) | ((1 if started else 0) << 7) # activity:7 | startedActivity:1
     rgd[11] = 0                                                # playerGender:1 | tradeLevel:7
-    rgd[12] = 0                                                # padding
-    gname = bytes(rgd).ljust(15, b"\x00")                      # gname[RFU_GAME_NAME_LENGTH + 2] = 15
+    rgd[12] = 0
+    gname = bytes(rgd).ljust(15, b"\x00")                      # RFU_GAME_NAME_LENGTH + 2
     uname = charmap.encode(ot_name, width=9, pad=0x00)         # uname[RFU_USER_NAME_LENGTH + 1] = 9
     src = RFU_SERIAL_GAME.to_bytes(2, "little") + gname + uname
     assert len(src) == 26, len(src)
@@ -53,14 +51,14 @@ def _ni_header(data_type, payload_size, data_size):
 
 
 def _ni_send_sequence(src, data_type, payload_size):
-    """Single pass of the librfu NI sender -> [(state, n, phase, size, payload)], LLSF-agnostic. The 7-byte header is
-    chunked over NI_STARTs in payload_size units (parent payloadSize 5 needs two), then src is windowed over WINDOW_COUNT phases.
-    """
+    """One pass of the librfu NI sender -> [(state, n, phase, size, payload)]. The 7-byte header
+    goes over NI_STARTs in payload_size units (parent payloadSize 5 needs two), then src over the
+    4 phases."""
     src = bytes(src)
     data_size = len(src)
     header = _ni_header(data_type, payload_size, data_size)
     seq = []
-    # SEND_START: the header goes out in payload_size units; remainSize starts at 7 and drops by payload_size per ack [receive_Sender:2132].
+    # The header's remainSize starts at 7 and drops by payload_size per ack [receive_Sender:2132].
     n0, off, remain = 1, 0, NI_HEADER_SIZE
     while True:
         size = min(remain, payload_size)
@@ -70,7 +68,8 @@ def _ni_send_sequence(src, data_type, payload_size):
         remain -= payload_size
         if remain <= 0:
             break
-    # SENDING: phase round-robin, skipping phases past the end of src [constructLLSF:1818]; n resets to 1 per phase.
+    # Phase round-robin skipping phases past the end of src [constructLLSF:1818]; n resets to 1 per
+    # phase.
     now = [payload_size * i for i in range(WINDOW_COUNT)]
     n = [1] * WINDOW_COUNT
     phase, remain = 0, data_size
@@ -110,7 +109,7 @@ class NISender:
 
     def _emit(self, state_lcom, n, phase, size, payload):
         slot = rfu.child_ni_llsf(state_lcom, n, phase, 0, size) + bytes(payload)
-        # Every emitted sub-frame is retained: the host can lose one and re-ack its predecessor forever, so the orchestrator re-sends.
+        # Every sub-frame is kept: the host can lose one and re-ack its predecessor forever.
         self.emitted.append((state_lcom, n, phase, slot))
         return slot
 
@@ -158,7 +157,7 @@ class NISender:
         if self.state == SLOT_STATE_SEND_NULL:
             slot = self._emit(rfu.LCOM_NULL, 1, 0, 0, b"")
             self.state = SLOT_STATE_DONE
-            # retained so the orchestrator can re-emit it if the host never registers it
+            # Kept for a re-emit if the host never registers it.
             self.null_slot = slot
             return slot
 
@@ -166,14 +165,12 @@ class NISender:
 
 
 class ParentNISender:
-    """PARENT NI sender for the 1-byte join status [SendRfuStatusToPartner -> rfu_NI_setSendData(1 << idx, 8, &status, 1),
-    link_rfu_2.c:1747]: frameSize 3, subFrameSize 8 -> payloadSize 5 < the 7-byte header, so SEND_START emits two NI_STARTs.
-    """
+    """Parent NI sender for the 1-byte join status [SendRfuStatusToPartner, link_rfu_2.c:1747].
+    subFrameSize 8 gives payloadSize 5, under the 7-byte header: SEND_START emits two NI_STARTs."""
 
     STATUS_SUBFRAME_SIZE = 8
 
     def __init__(self, status=RFU_STATUS_JOIN_GROUP_OK, bm_slot=1, sub_frame_size=STATUS_SUBFRAME_SIZE):
-        """RFU_STATUS_JOIN_GROUP_OK accepts the child; any other status rejects it."""
         self.status = status & 0xFF
         self.bm_slot = bm_slot
         payload_size = sub_frame_size - rfu.PARENT_FRAME_SIZE
@@ -194,18 +191,17 @@ class ParentNISender:
 
 
 def recv_ack_slot(state, n, phase):
-    """CHILD recv-side ack of a host NI sub-frame: mirror (state, n, phase) with ack=1, size=0, no payload [rfu_STC_NI_receive].
-    The child must ack every host NI sub-frame or the host faults the link.
-    """
+    """Child ack of a host NI sub-frame: (state, n, phase) with ack=1, size 0 [rfu_STC_NI_receive].
+    The child must ack every host NI sub-frame or the host faults the link."""
     return rfu.child_ni_llsf(state, n, phase, ack=1, size=0)
 
 
 class NIReceiver:
-    """Tracks the host's NI transfer; complete on its NI_END (or NULL) with ack=0. The host's terminal NULL is not acked."""
+    """Complete on the host's NI_END (or NULL) with ack=0; the terminal NULL is not acked."""
 
     def __init__(self):
         self.complete = False
-        # The 1-byte join status from the host's LCOM_NI sub-frame; anything but RFU_STATUS_JOIN_GROUP_OK means it rejected us.
+        # The host's 1-byte join status; anything but RFU_STATUS_JOIN_GROUP_OK is a rejection.
         self.status = None
 
     def on_host_ni(self, ni_rec):
@@ -235,9 +231,8 @@ def decode_child_ni_slot(slot):
 
 
 class ParentNIReceiver:
-    """Host-side NI receiver: acks the child's game-data sub-frames and reassembles the 26-byte RfuGameData by phase;
-    the child's terminal NULL is not acked.
-    """
+    """Acks the child's game-data sub-frames and reassembles the 26-byte RfuGameData by phase; the
+    child's terminal NULL is not acked."""
 
     def __init__(self, bm_slot=1, payload_size=12):
         self.complete = False

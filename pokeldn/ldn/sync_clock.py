@@ -1,36 +1,24 @@
-"""Pia Sync Clock Protocol - protocol 0x1C, the mesh's shared monotonic clock.
-
-The host controls the clock. Every two seconds each station sends the host its own system tick
-and the host replies with that tick and the mesh clock in milliseconds (wiki Sync-Clock-Protocol);
-a station estimates the one-way delay as half the round trip and adds it to the value it received.
-
-    request, 16 bytes   [0] u64 the sender's system tick (19.2 MHz), [8] u64 zero
-    reply,   16 bytes   [0] u64 the tick copied back, [8] u64 the mesh clock in ms
-
-Measured between two Let's Go Pikachu endpoints: the joiner sends the first request 46 ms after
-the mesh join response and one every two seconds after that, 436 messages in a seven-minute
-session. A Let's Go host tears the game's clone elements down about five seconds after a mesh join
-that carries no sync clock traffic.
-"""
+"""Pia Sync Clock Protocol 0x1C, the mesh clock the host controls (docs/lgpe_session.md, The Sync
+Clock Protocol). A Let's Go host tears the clone elements down about five seconds after a mesh join
+that carries no sync clock traffic."""
 import struct
 
 PROTOCOL = 0x1C
 MESSAGE_SIZE = 16
 TICK_HZ = 19_200_000
 INTERVAL = 2.0
-#   0x51a920  CloneProtocol::vfunc3, the caller that reads the synchronized clock
+# `0x51a920` CloneProtocol::vfunc3 reads the synchronized clock.
 __all__ = ["PROTOCOL", "MESSAGE_SIZE", "TICK_HZ", "INTERVAL", "build_request", "parse_message",
            "SyncClock"]
 
 
 def build_request(tick):
-    """The 16-byte request: the sender's system tick, then eight zero bytes."""
+    """The sender's system tick, then eight zero bytes."""
     return struct.pack(">QQ", tick & ((1 << 64) - 1), 0)
 
 
 def parse_message(payload):
-    """-> (tick, clock_ms), or None if it is not a 16-byte sync clock message. A request has a
-    zero clock; a reply carries the host's."""
+    """-> (tick, clock_ms), or None if not a 16-byte sync clock message; a request's clock is 0."""
     if len(payload) < MESSAGE_SIZE:
         return None
     return struct.unpack_from(">QQ", payload, 0)
@@ -38,7 +26,7 @@ def parse_message(payload):
 
 class SyncClock:
     """A station's side: a request every two seconds, the median of the last ten round trips as
-    the delay estimate. `now` is a monotonic clock in seconds."""
+    the delay. `now` is monotonic seconds."""
 
     def __init__(self, now, interval=INTERVAL):
         self.interval = interval
@@ -53,7 +41,7 @@ class SyncClock:
         return int(now * TICK_HZ) & ((1 << 64) - 1)
 
     def poll(self, now):
-        """-> [payload] to send now: the two-second request."""
+        """-> [payload] to send now."""
         if now < self.next_request:
             return []
         self.next_request = now + self.interval
@@ -62,7 +50,7 @@ class SyncClock:
         return [build_request(t)]
 
     def receive(self, payload, now):
-        """Take the host's reply. -> [] (nothing is sent in answer)."""
+        """Take the host's reply; nothing is sent in answer."""
         m = parse_message(payload)
         if m is None:
             return []
@@ -79,7 +67,7 @@ class SyncClock:
         return []
 
     def now_ms(self, now):
-        """-> the mesh clock in milliseconds, or None before the first reply."""
+        """-> the mesh clock in ms, or None before the first reply."""
         if self.clock_ms is None:
             return None
         return self.clock_ms + int((now - self.at) * 1000)

@@ -1,5 +1,5 @@
-"""Pure Mystery Gift protocol constants [decomp:src/mystery_gift_link.c, include/mystery_gift.h].
-We are the server (RFU parent, link player 0); the console runs MysteryGiftClient as link player 1."""
+"""Mystery Gift protocol constants [decomp:src/mystery_gift_link.c, include/mystery_gift.h].
+We are the server (RFU parent, link player 0); the console runs MysteryGiftClient as player 1."""
 
 # MysteryGiftLink message idents [include/mystery_gift_link.h:8-22].
 MG_LINKID_CLIENT_SCRIPT = 16    # server -> client: client-script instruction array
@@ -69,7 +69,7 @@ def _crc16_table():
 
 
 def _crc16_tabledriven(data):
-    """Exact port of CalcCRC16WithTable [decomp:src/util.c:250]; the self-test checks crc16() against it."""
+    """Exact port of CalcCRC16WithTable [decomp:src/util.c:250]; the self-test checks crc16()."""
     table = _crc16_table()
     crc = 0x1121
     for b in bytes(data):

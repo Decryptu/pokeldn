@@ -1,13 +1,5 @@
 """The 444-byte struct WonderNews [decomp:include/global.h:646] and the news the host can serve.
-
-Unlike a Wonder Card, news carries no flagId and no delivery script: ValidateWonderNews
-[decomp:src/mystery_gift.c:113] checks only ``id != 0``. The console decides whether to keep it with
-IsWonderNewsSameAsSaved [mystery_gift.c:140], a byte-for-byte compare of the whole struct against the
-news it already holds, so any single changed byte makes an old news new again. bgType is not validated
-either: WonderNews_Init clamps >= NUM_WONDER_BGS to 0 [mystery_gift_show_news.c:110].
-
-Receiving news from a Friend sets newsType = WONDER_NEWS_RECV_FRIEND and rolls a random berry
-[wonder_news.c:21]; the man in CeruleanCity_House4 hands it over. Five rewards, then 500 steps.
+ValidateWonderNews checks only id != 0; any changed byte makes old news new [docs/frlg_gift.md].
 """
 
 from dataclasses import dataclass
@@ -22,11 +14,10 @@ WONDER_NEWS_TEXT_LENGTH = 40
 WONDER_NEWS_BODY_TEXT_LINES = 10
 WONDER_NEWS_SIZE = 444              # u16 id + u8 sendType + u8 bgType + 40 + 10*40
 
-# WonderNews_ShowScrollIndicator arms only when a line past index 7 is non-empty
-# [decomp:src/mystery_gift_show_news.c:346]; the first eight lines are on screen at once.
+# A non-empty line past index 7 arms the scroll indicator [decomp:src/mystery_gift_show_news.c:346].
 WONDER_NEWS_VISIBLE_LINES = 8
 
-# [decomp:src/wonder_news.c] newsType, stored in WonderNewsMetadata by the receiving console.
+# newsType [decomp:src/wonder_news.c]
 WONDER_NEWS_NONE = 0
 WONDER_NEWS_RECV_FRIEND = 1
 WONDER_NEWS_RECV_WIRELESS = 2

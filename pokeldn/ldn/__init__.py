@@ -1,20 +1,6 @@
-"""The wireless layer, GAME-INDEPENDENT: LDN association, Pia, and the transport crypto.
+"""The wireless layer, independent of any game: LDN association, Pia, and the transport crypto.
 
-Layers, bottom-up: UDP :12345 (`transport`) -> zstd + AES-GCM (`crypto`) -> Pia connection
-(`pia_connect`, Pia 6.32+; `pia6`, Pia 6.16-6.30; `pia5`, Pia 5.27-5.45) -> Pia message + a
-reliable sliding window (`reliable` for 6.32, `reliable5` for 5.29-5.43 - different header shapes,
-do not confuse them).
-`sead` is Nintendo's own RNG, which Pia's LDN session key is built on, and `local_protocol` is
-Pia protocol 36 - the session bookkeeping a Union Room runs on, once its payloads decrypt.
-Above it a 5.x station joins a mesh through `station_protocol` (0x14) and `mesh_protocol` (0x18)
-and is then timed by `rtt_protocol` (0x58); a mesh message is acked on the STATION protocol, which
-is why the two are not separable.
-`host_pia` is the leader-side peer controller, `beacon`/`host_beacon` the advertisement a
-console discovers us by, and `joyspot_discovery`/`joyspot_probe` the discovery-only paths.
-
-Read `docs/ldn.md` and `docs/pia.md` before changing anything here. Do NOT put a game's
-addresses or a game's payload shapes in this package - they go in that game's own.
-"""
+See docs/ldn.md and docs/pia.md. A game's addresses and payload shapes belong in its own package."""
 
 import os as _os
 
@@ -25,7 +11,7 @@ if _os.environ.get("POKELDN_RADIO", "").startswith("esp32:"):
 
 
 def show_done() -> bool:
-    """Flashes the ESP32 board's LED for a completed trade or delivery; False with no board."""
+    """Flash the ESP32 board's LED for a completed trade or delivery; False with no board."""
     if not _os.environ.get("POKELDN_RADIO", "").startswith("esp32:"):
         return False
     from pokeldn.ldn import esp32_wlan

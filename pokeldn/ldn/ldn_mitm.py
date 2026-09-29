@@ -1,17 +1,6 @@
-"""The ldn_mitm discovery and join protocol, as an emulated console speaks it.
-
-On the radio the LDN association is the Wi-Fi link. Against an emulator there is no radio: the
-association is this exchange on port 11452, and a peer that skips it sends Pia traffic from a station
-the host's game has no node for. Game-independent, so it lives here rather than under a title.
-
-    UDP  joiner -> host:11452   Scan          header only
-    UDP  host   -> joiner       ScanResp      NetworkInfo, 0x480
-    TCP  joiner -> host:11452   Connect       NodeInfo, 0x40
-    TCP  host   -> joiner       SyncNetwork   NetworkInfo with the joiner in it
-
-The host holds the TCP connection open for the session and closes it when the game leaves, so the
-joiner must hold it too. `docs/lgpe_session.md` has the NetworkInfo layout.
-"""
+"""The ldn_mitm discovery and join exchange on port 11452, an emulated console's LDN association
+(docs/ldn.md, Hosting for an emulator). The host holds the TCP connection for the session and
+closes it when the game leaves, so the joiner holds it too."""
 
 import socket
 import struct
@@ -98,13 +87,8 @@ NODE_INFO_VERSION_OFF = 0x2E
 
 
 def build_node_info(ip, mac, name=b"RyuPlayer", version=0):
-    """The 0x40-byte NodeInfo a joiner sends in its Connect: the IPv4 little-endian, the MAC, a
-    one, then the user name, and at +0x2E the local communication version.
-
-    A host publishes its own version there (a Legends Z-A host publishes 6, its application
-    version) and a game compares the two before it will treat a station as a partner. A node that
-    leaves it zero is admitted by LDN and by Pia and is never paired with.
-    """
+    """The 0x40-byte NodeInfo of a Connect: IPv4 little-endian, the MAC, a one, the user name, and
+    the local communication version at +0x2E (docs/za.md)."""
     packed = socket.inet_aton(ip)[::-1]
     info = bytearray((packed + mac + struct.pack("<H", 0x0100)
                       + name.ljust(0x20, b"\0")[:0x20]).ljust(NODE_INFO_SIZE, b"\0")

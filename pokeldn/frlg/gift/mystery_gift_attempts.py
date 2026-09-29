@@ -12,8 +12,8 @@ def daily_attempt_path(directory, *, now=None):
 
 
 def append_attempt(directory, *, received_result, trainer=None, now=None):
-    """``trainer_ot`` is the low 16 bits of the trainer ID as five decimal digits; a failed early join
-    leaves both identity columns blank."""
+    """``trainer_ot`` is the low 16 bits of the trainer ID as five decimal digits; a failed early
+    join leaves both identity columns blank."""
     if type(received_result) is not bool:
         raise ValueError("received_result must be a bool")
     now = now or datetime.now().astimezone()

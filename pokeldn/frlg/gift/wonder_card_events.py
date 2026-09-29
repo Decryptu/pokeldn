@@ -190,7 +190,7 @@ LEGENDARY_BEAST_GIFT = WonderGift(
     completed_message="Please enjoy another encounter!",
 )
 
-# Same card and script, but the receiving console may pass it on (Mystery Gift -> Wonder Cards -> SEND).
+# Shareable: the receiving console may pass it on (Mystery Gift -> Wonder Cards -> SEND).
 LEGENDARY_BEAST_GIFT_SHARE = dataclasses.replace(
     LEGENDARY_BEAST_GIFT,
     slug="beast-cutscene-share",
@@ -425,11 +425,9 @@ WORLDS_XP_GIFT = WonderGift(
 )
 
 
-# The visiting trainer. The official event was a Wonder Card that pointed the player at a Poke Mart
-# questionnaire and delivered the trainer in a later session [MysteryEventScript_VisitingTrainer,
-# data/mystery_event_msg.s:113]; we send the card and the trainer together, because our host chooses
-# both halves of the session. The card is the explanation -- the trainer is the payload, and it lands
-# in gSaveBlock2Ptr->battleTower.ereaderTrainer whatever the player then does with the card.
+# The official event sent card and trainer in separate sessions [MysteryEventScript_VisitingTrainer,
+# data/mystery_event_msg.s:113]; this sends both. The trainer lands in
+# gSaveBlock2Ptr->battleTower.ereaderTrainer.
 VISITING_TRAINER_FLAG_ID = 1008
 GIFT_VISITING_TRAINER = "visiting-trainer"
 
@@ -452,8 +450,7 @@ VISITING_TRAINER_GIFT = WonderGift(
         "Thank you for using the MYSTERY\n"
         "GIFT System."),
     event=GiftSpec(repeatable=True),
-    # One stage: the delivery man says both lines in a single conversation, and `repeatable` lets
-    # the player hear them again. The trainer itself already arrived at the Mystery Gift menu.
+    # The trainer arrives at the Mystery Gift menu; this stage only says where to find it.
     delivery=DeliveryPlan(delivery=(
         DeliveryStage(
             Message(
@@ -476,25 +473,14 @@ VISITING_TRAINER_GIFT = WonderGift(
 GIFT_MEVENT_PROBE = "mystery-event-probe"
 MEVENT_PROBE_FLAG_ID = 1009
 
-# Marker status. Anything but 42 coming back names which of our assumptions was wrong, so this one
-# script distinguishes every failure mode without a second hardware run:
-#   42  the chain ran to the end AND pointer operands are offsets into our own buffer.
-#   1   the chain ran, but the relocated pointers did not land on our probe bytes.
-#   2   givenationaldex ran and nothing after it did (setstatus never reached).
-#   0   the VM was entered but no command executed.
-#   no response at all: the client script shape, not the VM, is what is wrong.
+# Marker status; each value's meaning is tabled in docs/frlg_rom.md.
 MEVENT_PROBE_STATUS = 42
 MEVENT_PROBE_BYTES = b"MEVENT-PROBE-01"
 
 
 def build_mevent_probe_script(*, status=MEVENT_PROBE_STATUS, probe=MEVENT_PROBE_BYTES):
-    """givenationaldex, then a marker status, then a read-only checksum over our own bytes.
-
-    Nothing here writes anything the player could lose. `givenationaldex` is a strict upgrade and a
-    no-op on a save that already has it; `checksum` only reads. It is terminal (it returns TRUE and
-    data[3] is 0 without checkcompat), which is exactly why it goes last: it reports on the
-    relocation without disturbing the status the commands before it left.
-    """
+    """givenationaldex, a marker status, then a read-only checksum over our own bytes. `checksum` is
+    terminal, so it goes last and leaves the status intact [docs/frlg_rom.md]."""
     script = mystery_event.MysteryEventScript()
     marker = script.blob(probe)
     script.givenationaldex().setstatus(status).checksum(marker)
@@ -553,12 +539,8 @@ MEVENT_CELEBI_MAIL_WORDS = (
 
 
 def build_mevent_celebi_script(*, nickname="CELEBI", level=30, build=None):
-    """`givepokemon`: a whole struct Pokemon plus the struct Mail that follows it.
-
-    The only route on this link to a Pokemon carrying Mail, and the only one that writes the
-    Pokedex itself. No `setstatus` follows it on purpose - `givepokemon` leaves 2 for success and 3
-    for a full party, and that is exactly the answer worth reading back.
-    """
+    """`givepokemon`: a struct Pokemon plus its struct Mail. No `setstatus` follows: givepokemon
+    leaves 2 for success and 3 for a full party."""
     mon = mevent_pokemon.build_party_mon(
         SPECIES_CELEBI_MEVENT, level,
         moves=(MOVE_CONFUSION, MOVE_RECOVER, MOVE_HEAL_BELL, MOVE_ANCIENT_POWER),
@@ -618,9 +600,8 @@ MEVENT_CELEBI_GIFT = _per_build(MEVENT_CELEBI_GIFT,
 GIFT_MEVENT_NPC = "mystery-event-npc"
 MEVENT_NPC_FLAG_ID = 1011
 
-# PALLET TOWN, group 3 map 0 [data/maps/map_groups.json]. Local ids are assigned in map.json order
-# and start at 1, so the FAT MAN standing at (13,17) is object 2 and the SIGN LADY is object 1
-# [data/maps/PalletTown/map.json]. Neither is plot-critical and both are outdoors in a Fly town.
+# PALLET TOWN, group 3 map 0 [data/maps/map_groups.json]; local ids start at 1 in map.json order
+# [data/maps/PalletTown/map.json].
 MAP_GROUP_PALLET_TOWN = 3
 MAP_NUM_PALLET_TOWN = 0
 PALLET_TOWN_OBJECT_SIGN_LADY = 1
@@ -628,19 +609,14 @@ PALLET_TOWN_OBJECT_FAT_MAN = 2
 
 MEVENT_NPC_STATUS = 55          # our marker; initramscript leaves the status untouched
 
-# Anything the player has to talk to at a chosen moment binds to the mother, not to Pallet Town.
-# Both Pallet Town object events are MOVEMENT_TYPE_WANDER_AROUND
-# [decomp:data/maps/PalletTown/map.json], so either walks off mid-countdown and has to be chased. The mother is MOVEMENT_TYPE_FACE_LEFT with flag 0: she never moves, is never hidden, and
-# is a step from where the player stands indoors. Group and map are indices into map_groups.json.
+# Pallet Town objects wander [decomp:data/maps/PalletTown/map.json]; the mother never moves or
+# hides, so anything the player must talk to at a chosen moment binds to her [docs/frlg_rng.md].
 MAP_GROUP_PLAYERS_HOUSE = 4
 MAP_NUM_PLAYERS_HOUSE = 0
 PLAYERS_HOUSE_OBJECT_MOM = 1
 
-# CERULEAN CAVE B1F, group 1 (gMapGroup_Dungeons) map 74 [data/maps/map_groups.json]. Local ids are
-# assigned in map.json order and start at 1, so the ULTRA BALL is 1, the MAX REVIVE is 2 and MEWTWO
-# at (7,12) is object 3 [data/maps/CeruleanCave_B1F/map.json]. He is MOVEMENT_TYPE_FACE_DOWN and
-# never wanders, which is the same requirement the mother satisfies. Binding here REPLACES his
-# encounter script, so the battle the player gets is the one we built, and it stays repeatable.
+# CERULEAN CAVE B1F, group 1 map 74 [data/maps/map_groups.json]; MEWTWO at (7,12) is object 3
+# [data/maps/CeruleanCave_B1F/map.json]. Binding there replaces his encounter script.
 MAP_GROUP_CERULEAN_CAVE = 1
 MAP_NUM_CERULEAN_CAVE_B1F = 74
 CERULEAN_CAVE_B1F_OBJECT_ULTRA_BALL = 1
@@ -649,8 +625,7 @@ CERULEAN_CAVE_B1F_OBJECT_MEWTWO = 3
 
 
 def _at_mom(kwargs):
-    """Bind to the mother unless the caller says otherwise: a stationary object is a hard
-    requirement for anything the player has to talk to at a chosen moment."""
+    """Bind to the mother unless the caller names another object."""
     return {"map_group": MAP_GROUP_PLAYERS_HOUSE, "map_num": MAP_NUM_PLAYERS_HOUSE,
             "object_id": PLAYERS_HOUSE_OBJECT_MOM, **kwargs}
 
@@ -658,29 +633,9 @@ def _at_mom(kwargs):
 def build_mevent_npc_script(*, map_group=MAP_GROUP_PALLET_TOWN, map_num=MAP_NUM_PALLET_TOWN,
                             object_id=PALLET_TOWN_OBJECT_FAT_MAN, lines=None, actions=None,
                             field_script=None):
-    """`initramscript`: bind a field script to ANY map and ANY object event, not just the Mystery
-    Gift delivery man.
-
-    `CLI_SAVE_RAM_SCRIPT`, which every gift we have ever sent uses, calls
-    `InitRamScript_NoObjectEvent` -- MAP_UNDEFINED and object 0xFF [decomp:src/script.c:578]. Those
-    never satisfy `GetRamScript`'s map and object checks [`:514`]; they exist to satisfy
-    `GetSavedRamScriptIfValid` [`:554`], which is the delivery man's own script command and which
-    also requires a valid Wonder Card.
-
-    `initramscript` writes real coordinates instead, which puts the script on the OTHER dispatch
-    path: `GetRamScript(gSpecialVar_LastTalked, script)` in the field
-    [decomp:src/field_control_avatar.c:458] runs our script INSTEAD of the object's own whenever the
-    player talks to that object on that map. It does not consult the Wonder Card at all, so a script
-    installed this way outlives the card.
-
-    There is one RAM script slot, so this replaces the delivery man's script; any later Wonder Card
-    takes the slot back.
-
-    Trap, confirmed on hardware: while this is installed the console reports that it holds no
-    Wonder Card. `ValidateSavedWonderCard` requires `ValidateRamScript`
-    [decomp:src/mystery_gift.c:186], which only passes for MAP_UNDEFINED / object 0xFF. The card is
-    intact in the save; the menu just will not show it, and the next session sees HAS_NO_CARD.
-    """
+    """`initramscript`: bind a field script to any map and object; it runs instead of the object's
+    own [decomp:src/field_control_avatar.c:458] and takes the delivery man's one RAM script slot.
+    Trap: while bound, the menu shows no Wonder Card (ValidateRamScript) [docs/frlg_gift.md]."""
     if actions is not None:
         if field_script is not None or lines is not None:
             raise ValueError("give actions, lines or a field_script, not more than one")
@@ -697,8 +652,7 @@ def build_mevent_npc_script(*, map_group=MAP_GROUP_PALLET_TOWN, map_num=MAP_NUM_
         raise ValueError("give lines or a field_script, not both")
 
     script = mystery_event.MysteryEventScript()
-    # initramscript sets no status of its own, so it would answer 0 whether it ran or not. A marker
-    # after it turns the readback into "the chain reached past initramscript".
+    # initramscript sets no status, so the marker proves the chain reached past it.
     script.initramscript(map_group, map_num, object_id, script.blob(field_script))
     script.setstatus(MEVENT_NPC_STATUS).end()
     return script.assemble()
@@ -716,8 +670,7 @@ MEVENT_NPC_GIFT = WonderGift(
             "Talk to the man in the south of",
             "town to hear what he was told.",
         ),
-        # The console will not display this card while the event's script is installed; it is here
-        # because a Wonder Card session must carry one, and to name the event in the log.
+        # Not displayed while the script is bound; a Wonder Card session must carry one.
         footer1="pokeldn",
         default_flag_id=MEVENT_NPC_FLAG_ID,
     ),
@@ -725,8 +678,7 @@ MEVENT_NPC_GIFT = WonderGift(
         "Thank you for using the MYSTERY\n"
         "GIFT System."),
     event=GiftSpec(repeatable=True),
-    # The delivery man's own script is the one this event REPLACES, so it never runs. It is here
-    # because a Wonder Card session must carry a RAM script, and because a later card restores it.
+    # Replaced by the bound script, so never run; a Wonder Card session must carry a RAM script.
     delivery=DeliveryPlan(delivery=(
         DeliveryStage(
             Message(
@@ -747,22 +699,16 @@ RNG_SHINY_DITTO_FLAG_ID = 1013
 SPECIES_DITTO = 132
 RNG_DITTO_LEVEL = 50
 
-# The seed is not a nice round number and could not be: it is the ANSWER to "which gRngValue makes
-# CreateMon's next four draws a shiny Ditto with these IVs", found by walking the LCG orbit with a
-# sliding window over 25 million candidates. For this console's TID / SID it gives shiny
-# value 3 (SHINY needs < 8) and IVs 31/23/27/18/30/30 - 159 of 186, with a perfect HP.
-# lcg.draws(seed, 4) recomputes all of it; rng_script.predict_wild_mon states it.
+# The gRngValue that makes CreateMon's next four draws a shiny Ditto for this console's TID/SID;
+# lcg.draws(seed, 4) recomputes it and rng_script.predict_wild_mon states it.
 RNG_DITTO_SEED = 0x81F6816D
 
 
 def build_rng_shiny_ditto_script(seed=RNG_DITTO_SEED, species=SPECIES_DITTO,
                                  level=RNG_DITTO_LEVEL, build=None, **kwargs):
-    """The Mystery Event that installs "talk to this man and fight a Pokemon we chose".
-
-    The field script sets gRngValue and calls setwildbattle in the SAME FRAME, so the four draws
-    that build the mon are a pure function of the seed - no timing, no frame precision, nothing
-    asked of the player but to talk to an NPC. See pokeldn/frlg/rom/rng_script.py for why there is no drift.
-    """
+    """Installs "talk to this man and fight a Pokemon we chose": the field script sets gRngValue
+    and calls setwildbattle in one frame, so the mon is a pure function of the seed
+    [rng_script.py]."""
     return build_mevent_npc_script(
         field_script=rng_script.build_wild_battle_script(
             seed, species, level, address=builds.resolve(build).rng), **kwargs)
@@ -808,16 +754,9 @@ RNG_SEED_READER_FLAG_ID = 1015
 
 
 def build_rng_seed_reader_script(build=None, **kwargs):
-    """The Mystery Event that installs "talk to this man and he tells you the RNG seed".
-
-    The other direction from rng-shiny-ditto, and the one that matters for READ-ONLY work: the
-    field script copies the four bytes of gRngValue into gSpecialVar_0x8000/0x8001 and prints them,
-    in one frame, and writes nothing at all. `gift_composer.build_seed_read_script` is the body and
-    says why the read cannot tear.
-
-    The address it needs is gSpecialVar_0x8000 = 0x020370B4 (pokeldn/frlg/rom/rom_map.py). This
-    script also confirms it: `rng_script.check_two_readings` on two visits to the NPC.
-    """
+    """Installs "talk to this man and he tells you the RNG seed": copies gRngValue into
+    gSpecialVar_0x8000/0x8001 (0x020370B4) and prints it in one frame, writing nothing
+    [gift_composer.build_seed_read_script]."""
     return build_mevent_npc_script(
         field_script=build_seed_read_script(address=builds.resolve(build).rng),
         **_at_mom(kwargs))
@@ -861,12 +800,8 @@ RNG_RATE_PROBE_FLAG_ID = 1016
 
 
 def build_rng_rate_probe_script(frames=None, build=None, **kwargs):
-    """The Mystery Event that installs "talk to this man and he times the RNG for you".
-
-    The field script reads gRngValue, waits an EXACT number of frames with `delay`, and reads it
-    again. Both numbers that go into turns-per-frame are then exact - there is no stopwatch and no
-    hand-timed elapsed anywhere, which is what every previous attempt at this rate had in it.
-    """
+    """Installs "talk to this man and he times the RNG": reads gRngValue, waits an exact number of
+    frames with `delay`, and reads it again."""
     asked = ({} if frames is None else {"frames": frames})
     return build_mevent_npc_script(
         field_script=build_seed_rate_script(address=builds.resolve(build).rng, **asked),
@@ -910,15 +845,8 @@ GIFT_RNG_RATE_PROBE_LONG = "rng-rate-probe-3000"
 RNG_RATE_PROBE_LONG_FLAG_ID = 1017
 RNG_RATE_PROBE_LONG_FRAMES = 3000
 
-# Measured: 1,202 turns over exactly 600 frames. Two models fit that one point and they are not
-# the same claim:
-#
-#   exactly 2 per frame plus a constant 2   -> turns = 2N + 2   -> 6002 at N=3000
-#   a rate slightly above 2 (2.003333)      -> turns = 2.0033N  -> 6010 at N=3000
-#
-# Over an 8192-frame countdown they diverge by ~27 turns against a target ONE STATE wide, so the
-# difference is the difference between aiming and missing. Only the frame count changes between
-# this probe and the 600-frame one; `lcg.distance` is exact, so the answer is unambiguous.
+# Two models fit 1,202 turns over 600 frames, 2N + 2 and 2.003333N; 3000 frames separates them
+# [docs/frlg_rng.md].
 RNG_RATE_PROBE_LONG_PREDICTIONS = {"constant overhead (2N+2)": 2 * RNG_RATE_PROBE_LONG_FRAMES + 2,
                                    "rate above 2 (2.003333N)": 6010}
 
@@ -959,20 +887,9 @@ RNG_RATE_PROBE_LONG_GIFT = _per_build(
 GIFT_MEVENT_SWEEP = "mevent-opcode-sweep"
 MEVENT_SWEEP_FLAG_ID = 1005
 
-# The last three Mystery Event opcodes in one card: setenigmaberry, addrareword and addtrainer.
-# Proven on hardware and read back out of the save. One status comes back and every opcode writes
-# the same field (ctx->data[2]), so the order is the experiment: markers after each opcode,
-# setenigmaberry last because its own status separates success from a berry that would not
-# validate.
-#
-#     status 2   all three ran and the berry validated
-#     status 1   all three ran and the berry did not [IsEnigmaBerryValid, src/berry.c:984]
-#     status 42  addtrainer ran, setenigmaberry did not
-#     status 41  addrareword ran, addtrainer did not
-#
-# The two description pointers are the cartridge's own sBerryDescriptionPart{1,2}_Enigma
-# [Build.enigma_desc]: struct Berry2 keeps them in the save for ever and the Berry Pouch
-# dereferences them, so another build's pointer renders garbage on every look. docs/frlg_gift.md.
+# setenigmaberry, addrareword and addtrainer in one card, a marker after each: status 2 all ran,
+# 1 the berry did not validate [IsEnigmaBerryValid, src/berry.c:984], 42 stopped before
+# setenigmaberry, 41 before addtrainer. Description pointers are per build [Build.enigma_desc].
 MEVENT_SWEEP_BERRY_DESC1, MEVENT_SWEEP_BERRY_DESC2 = builds.DEFAULT.enigma_desc
 MEVENT_SWEEP_RARE_WORD = 0
 MEVENT_SWEEP_MARK_RAREWORD = 41
@@ -980,7 +897,7 @@ MEVENT_SWEEP_MARK_TRAINER = 42
 
 
 def build_sweep_berry(name="PKCAMP", build=None):
-    """struct Berry2, 28 bytes: the console's own growth data with a name that is unmistakably ours."""
+    """struct Berry2, 28 bytes: the console's own growth data under a name of ours."""
     desc1, desc2 = builds.resolve(build).enigma_desc
     encoded = charmap.encode(name).ljust(6, b"\x00")[:6] + b"\xFF"
     return (encoded
@@ -989,7 +906,7 @@ def build_sweep_berry(name="PKCAMP", build=None):
             + bytes([2, 1])                                 # maxYield, minYield - both nonzero
             + desc1.to_bytes(4, "little")
             + desc2.to_bytes(4, "little")
-            + bytes([24])                                   # stageDuration - nonzero, so it VALIDATES
+            + bytes([24])                                   # stageDuration: nonzero, or invalid
             + bytes([40, 40, 40, 40, 40, 40])               # spicy dry sweet bitter sour smoothness
             + bytes([0]))                                   # pad to 28
 
@@ -1040,16 +957,8 @@ MEVENT_SWEEP_GIFT = _per_build(MEVENT_SWEEP_GIFT, build_mevent_sweep_script)
 GIFT_RESIDENT_HOOK = "resident-hook"
 RESIDENT_HOOK_FLAG_ID = 1003
 
-# The card that makes code of ours run every frame, and keeps making it run after a reset.
-#
-# A buffer script installs the same hook directly, in one session, and the console runs it every
-# frame until something clears EWRAM. What it cannot do is come back: every route to the Mystery
-# Gift menu passes through a boot, and a boot clears EWRAM and rewrites gIntrTable, so a gift
-# session can never reach a console that is already carrying a payload. This card puts the
-# installer in the save instead. The player talks to their MOM and the hook goes in; after any
-# later reset they talk to her again and it goes in again, with no link and no host.
-#
-# docs/frlg_rom.md, Code that outlives the session.
+# Installs a per-frame hook from the save: talking to MOM after any reset puts it back, with no
+# link. docs/frlg_rom.md, Code that outlives the session.
 
 
 def build_resident_hook_script(build=None, **kwargs):
@@ -1093,19 +1002,9 @@ RESIDENT_HOOK_GIFT = _per_build(RESIDENT_HOOK_GIFT,
 GIFT_SAVE_LOADER = "save-loader"
 SAVE_LOADER_FLAG_ID = 1003
 
-# The card that lifts the size ceiling.
-#
-# `resident-hook` puts the whole payload in the script body, so the payload can never be larger than
-# a body carries. This one puts a LOADER there instead: about fifty bytes that read gSaveBlock2Ptr,
-# copy a blob out of `filler_B20` into the top of EWRAM and branch into it. The blob is bounded by
-# save space rather than by the script, and it is put there separately by
-# `--buffer-script save-write`, which measurement says nothing else disturbs: not the write itself,
-# not ordinary play, not a later Wonder Card.
-#
-# The two cards share a flag id because they are two deliveries of one idea and a console can hold
-# only one of them at a time.
-#
-# docs/frlg_rom.md, Code that outlives the session.
+# A loader in the script body copies a blob out of filler_B20 (--buffer-script save-write) into
+# EWRAM and runs it; shares resident-hook's flag id. docs/frlg_rom.md, Code that outlives the
+# session.
 
 
 def build_save_loader_script(build=None, **kwargs):
@@ -1148,10 +1047,8 @@ SAVE_LOADER_GIFT = _per_build(SAVE_LOADER_GIFT,
 
 GIFT_RESIDENT_SAVE = "resident-save"
 
-# The loader again, pointed at a resident hook kept in the save: it stages filler_B20 in the
-# decompression buffer and runs its head, which checks the blob and runs install-resident. The hook
-# itself goes into the save with `--buffer-script save-write --resident NAME`. Same flag id as
-# save-loader: one bound script at a time. docs/frlg_rom.md, A resident hook kept in the save.
+# The loader pointed at a resident hook kept in the save (--buffer-script save-write --resident
+# NAME); same flag id as save-loader. docs/frlg_rom.md, A resident hook kept in the save.
 
 
 def build_resident_save_script(build=None, **kwargs):
@@ -1197,13 +1094,8 @@ RESIDENT_SAVE_GIFT = _per_build(RESIDENT_SAVE_GIFT,
 GIFT_RNG_SHINY_HUNT = "rng-shiny-hunt"
 RNG_SHINY_HUNT_FLAG_ID = 1012
 
-# The hunt that needs no aim. Earlier RNG cards either wrote a seed we chose (useless outside a
-# link, because the title screen reseeds) or read one back for a human to count frames against.
-# This one stages 80 bytes of THUMB into gDecompressionBuffer with `setptr` and runs them with
-# `callnative`, so the search happens on the console, in the overworld, at the encounter itself.
-# docs/frlg_rng.md; REFERENCES.local.md has where the technique came from.
-#
-# Ditto at 50. Nothing needs catching: shininess shows the instant the battle starts.
+# Stages 80 bytes of THUMB with `setptr` and runs them with `callnative`, so the search runs on the
+# console at the encounter [docs/frlg_rng.md]. Ditto at 50: shininess shows as the battle starts.
 RNG_SHINY_HUNT_SPECIES = 132
 RNG_SHINY_HUNT_LEVEL = 50
 
@@ -1250,16 +1142,9 @@ RNG_SHINY_HUNT_GIFT = _per_build(RNG_SHINY_HUNT_GIFT,
 GIFT_RNG_MON_HUNT = "rng-mon-hunt"
 RNG_MON_HUNT_FLAG_ID = 1019
 
-# The same delivery as rng-shiny-hunt with asm/field/mon-seek.s in place of shiny-seek: the search
-# tests all four draws, so a nature and a floor under any IV cost only search. `MonCriteria` is what
-# is asked for and `search_cost` what it costs; the host refuses a combination whose search could
-# block the overworld longer than --hunt-freeze-frames allows.
-#
-# The defaults are an experiment. Jolly exercises the division by 25 and the mask shift, and SPEED
-# is IV index 3, the seam where the two draw words are packed together. A shiny with the wrong
-# nature still looks like a success on screen, so the check is a party dump rather than the battle -
-# which is why the species is a level 5 Magikarp: catch rate 255 and low HP, one Ultra Ball. Neither
-# the species nor the level is drawn from the RNG. docs/frlg_rng.md.
+# asm/field/mon-seek.s tests all four draws, so nature and IV floors cost only search
+# [native_script.search_cost]. Jolly with a SPEED floor crosses the IV word seam; a level 5 Magikarp
+# is easy to catch for the party-dump check [docs/frlg_rng.md].
 RNG_MON_HUNT_SPECIES = 129              # SPECIES_MAGIKARP
 RNG_MON_HUNT_LEVEL = 5
 RNG_MON_HUNT_NATURE = 13                # NATURE_JOLLY [rng_countdown.NATURE_NAMES]
@@ -1282,12 +1167,8 @@ def build_rng_mon_hunt_script(criteria=None, *, species=None, level=None, cap=No
 
 def build_rng_mon_hunt_gift(criteria=None, *, species=None, level=None, cap=None,
                             max_freeze_frames=native_script.MAX_FREEZE_FRAMES, **kwargs):
-    """-> the same card carrying a search for whatever was asked for.
-
-    The registry holds the definition built with the defaults; a host that was given criteria on
-    the command line composes another one here rather than mutating that. Same slug, same flagId,
-    same card - only the staged stub's two parameter words differ.
-    """
+    """-> the card with a search composed from the command line; same slug, flagId and card, only
+    the stub's two parameter words differ."""
     def script(build):
         return build_rng_mon_hunt_script(criteria, species=species, level=level, cap=cap,
                                          max_freeze_frames=max_freeze_frames, build=build,
@@ -1331,15 +1212,9 @@ RNG_MON_HUNT_GIFT = _per_build(RNG_MON_HUNT_GIFT,
 GIFT_RNG_MON_HUNT_FAR = "rng-mon-hunt-far"
 RNG_MON_HUNT_FAR_FLAG_ID = 1000
 
-# The same hunt with one variable changed: where the code lives. rng-mon-hunt stages 160 bytes at
-# six script bytes each and stays the control; this card stages a 36-byte trampoline
-# and puts the search in the body behind the script at one byte each, because the field engine runs
-# a RAM script in place and never reads past the last command [GetRamScript, decomp:src/script.c:514].
-#
-# 755 payload bytes instead of 162, and the card uses every one: a 196-byte stub plus 559 bytes of
-# non-zero filler whose sum the stub checks before it will search. That is what makes it a
-# measurement - a short delivery sums low and the stub leaves gRngValue alone, so an ordinary
-# Magikarp means the tail did not arrive. docs/frlg_rng.md.
+# The search lives in the body behind a 36-byte trampoline: a RAM script runs in place
+# [GetRamScript, decomp:src/script.c:514]. The stub sums 559 filler bytes first, so an ordinary
+# Magikarp means the tail did not arrive [docs/frlg_rng.md].
 RNG_MON_HUNT_FAR_FILLER = "the far end of the body, summed before the search will run"
 
 
@@ -1358,11 +1233,8 @@ def build_rng_mon_hunt_far_script(criteria=None, *, species=None, level=None, ca
 def build_rng_mon_hunt_far_gift(criteria=None, *, species=None, level=None, cap=None,
                                 max_freeze_frames=native_script.MAX_FREEZE_FRAMES,
                                 payload_bytes=None, **kwargs):
-    """-> the card carrying the body-hosted search, with whatever was asked for on the line.
-
-    `payload_bytes` shortens the payload without changing anything else, which is how a partial
-    delivery would be bisected if the first run comes back with an ordinary Magikarp.
-    """
+    """-> the body-hosted search card; `payload_bytes` shortens the payload to bisect a partial
+    delivery."""
     def script(build):
         return build_rng_mon_hunt_far_script(
             criteria, species=species, level=level, cap=cap,
@@ -1407,16 +1279,9 @@ RNG_MON_HUNT_FAR_GIFT = _per_build(RNG_MON_HUNT_FAR_GIFT,
 GIFT_RNG_MON_HUNT_BOTH = "rng-mon-hunt-both"
 RNG_MON_HUNT_BOTH_FLAG_ID = 1001
 
-# The same hunt held against the stray draw: one extra Random() between the personality and the IV
-# draws defeats a one-placement search, giving a mon shiny and Jolly as asked with SPEED 10 against
-# a floor of 20. asm/field/mon-seek-both.s tests the floors at both placements, which covers all
-# three methods.
-#
-# One variable against rng-mon-hunt-far: the stub. What changes is the cost - the IV term is
-# squared, so 1 state in 1,456,000 rather than 546,000, about 4 s of frozen overworld typically. The
-# cap is 95% rather than 99% deliberately [native_script.BOTH_CONFIDENCE]: the script ends in `end`,
-# so a miss costs one more A press while a longer cap costs the stare. 232 bytes of stub, against
-# the 162 `setptr` could stage. docs/frlg_rng.md.
+# asm/field/mon-seek-both.s tests the IV floors at both placements, so a stray Random() between
+# personality and IVs cannot fool it. The cap is 95% [native_script.BOTH_CONFIDENCE]: a miss costs
+# one more A press [docs/frlg_rng.md].
 
 def build_rng_mon_hunt_both_script(criteria=None, *, species=None, level=None, cap=None,
                                    max_freeze_frames=native_script.MAX_FREEZE_FRAMES,
@@ -1478,13 +1343,8 @@ RNG_MON_HUNT_BOTH_GIFT = _per_build(RNG_MON_HUNT_BOTH_GIFT,
 GIFT_RNG_MON_HUNT_LOG = "rng-mon-hunt-log"
 RNG_MON_HUNT_LOG_FLAG_ID = 1002
 
-# The same search, reporting. Reconstructing a hunt afterwards from the mon the player caught
-# leaves two candidate states that only the IVs tell apart. The stub knows all of it while it runs,
-# so it writes {marker, start, found, iterations, cap} to SaveBlock1 + 0x348C. Read it back with
-#
-#     --buffer-script save-dump --dump-block sav1 --dump-offset 0x348C --dump-size 32
-#
-# and `native_script.decode_hunt_log`. One variable against rng-mon-hunt-both: the stub logs.
+# The stub logs {marker, start, found, iterations, cap} at SaveBlock1 + 0x348C
+# [native_script.decode_hunt_log, docs/frlg_rng.md].
 
 def build_rng_mon_hunt_log_script(criteria=None, *, species=None, level=None, cap=None,
                                   max_freeze_frames=native_script.MAX_FREEZE_FRAMES,
@@ -1546,9 +1406,7 @@ RNG_MON_HUNT_LOG_GIFT = _per_build(RNG_MON_HUNT_LOG_GIFT,
 GIFT_RNG_DRAW_COUNT = "rng-draw-count"
 RNG_DRAW_COUNT_FLAG_ID = 1018
 
-# Ditto at 50. The species is not the point and nothing needs catching: the answer is the two
-# numbers printed before the battle starts. Method 1 predicts a distance of 4; docs/frlg_rng.md's unexplained stray draw, if it is
-# in this path, shows up as 5 or 6.
+# Method 1 predicts a draw distance of 4; the stray draw [docs/frlg_rng.md] shows as 5 or 6.
 RNG_DRAW_COUNT_SPECIES = 132
 RNG_DRAW_COUNT_LEVEL = 50
 RNG_DRAW_COUNT_PREDICTION = 4
@@ -1599,23 +1457,13 @@ GIFT_BATTLE_COUNT = "battle-count-card"
 BATTLE_COUNT_FLAG_ID = 1005
 ITEM_POTION = 13
 BATTLE_COUNT_PRIZE_WINS = 3
-# The prize marker. The official script uses FLAG_MYSTERY_GIFT_DONE, which the composer sets when a
-# non-repeatable gift finishes - and this card must stay talkable while the count is still under
-# three, so the prize is gated on a var of its own instead and the card stays repeatable.
+# The prize is gated on its own var, not FLAG_MYSTERY_GIFT_DONE, so the card stays talkable under
+# three wins.
 BATTLE_COUNT_PRIZE_TAKEN = VAR_MYSTERY_GIFT_2
 
-# MysteryEventScript_BattleCard [decomp:data/mystery_event_msg.s:162], which is a counter READER:
-# the console keeps battlesWon/battlesLost/numTrades in WonderCardMetadata itself, and this card
-# reads one of them back through GetMysteryGiftCardStat and pays out at three wins.
-#
-# The card does not arm the counters. `MysteryGift_TryEnableStatsByFlagId` runs in the Union Room
-# card exchange, on the flag id the partner sent (the u16 immediately after the trainer card in the
-# BLOCK_REQ_SIZE_100 buffer [decomp:src/union_room.c:1777]), and only arms if it equals the card
-# the console holds. So our trainer card switches the console's counters on:
-# `frlg_trade_host.py --card-flag-id`. Then a completed trade increments numTrades
-# [decomp:src/trade_scene.c:2609] and a finished CABLE CLUB battle increments won/lost
-# [decomp:src/cable_club.c:792], each only for a trainer id the card has not counted before
-# [IncrementCardStatForNewTrainer, decomp:src/mystery_gift.c:630].
+# MysteryEventScript_BattleCard [decomp:data/mystery_event_msg.s:162] reads a counter through
+# GetMysteryGiftCardStat. The console arms the counters only in a Union Room card exchange carrying
+# its flag id: frlg_trade_host.py --card-flag-id [docs/frlg_gift.md].
 BATTLE_COUNT_GIFT = WonderGift(
     slug=GIFT_BATTLE_COUNT,
     card=WonderCardSpec(
@@ -1637,8 +1485,8 @@ BATTLE_COUNT_GIFT = WonderGift(
     event=GiftSpec(repeatable=True),
     delivery=DeliveryPlan(delivery=(
         DeliveryStage(
-            # gSpecialVar_Result is the selector GetMysteryGiftCardStat reads
-            # [decomp:src/field_specials.c:1957], so it is set before the special runs.
+            # gSpecialVar_Result selects the stat GetMysteryGiftCardStat reads
+            # [decomp:src/field_specials.c:1957].
             SetVar(VAR_RESULT, GET_CARD_BATTLES_WON),
             ReadSpecial(VAR_0x8008, SPECIAL_GET_MYSTERY_GIFT_CARD_STAT),
         ),
@@ -1677,11 +1525,8 @@ NUM_ALTERING_CAVE_TABLES = 9
 ALTERING_CAVE_WRAP = 10
 SPECIES_ZUBAT = 41
 
-# `addvar VAR_ALTERING_CAVE_WILD_SET, 1` and a wrap - the whole of the official Altering Cave event
-# [decomp:data/mystery_event_msg.s:325]. It is repeatable on purpose: the script ends with `end`,
-# not `endram`, so the binding survives and each talk advances the cave one set. The var is at
-# SaveBlock1 + 0x1000 + 2 * 0x24 = +0x1048, which is how a run is checked without walking to Six
-# Island: --buffer-script save-dump --dump-block sav1 --dump-offset 0x1048.
+# The whole official Altering Cave event [decomp:data/mystery_event_msg.s:325]; `end`, not `endram`,
+# so each talk advances one set. The var is at SaveBlock1 + 0x1048 [docs/frlg_gift.md].
 ALTERING_CAVE_GIFT = WonderGift(
     slug=GIFT_ALTERING_CAVE,
     card=WonderCardSpec(
@@ -1720,9 +1565,7 @@ ALTERING_CAVE_GIFT = WonderGift(
 GIFT_MASTER_BALL = "master-ball"
 MASTER_BALL_FLAG_ID = 1014
 
-# A plain item delivery: no cutscene, no sprite, no battle, so the delivery man hands it over and
-# nothing else happens.
-# It also takes the RAM script slot back from the Ditto script, which ends that binding.
+# A plain item delivery; it also takes the RAM script slot back from a bound script.
 MASTER_BALL_GIFT = WonderGift(
     slug=GIFT_MASTER_BALL,
     card=WonderCardSpec(

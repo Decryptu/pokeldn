@@ -1,5 +1,5 @@
-"""Pia host framing and the single-Switch Net/Session/RTT peer controller; ends at encrypted UDP
-datagrams and owns no sockets, interfaces or threads."""
+"""Pia host framing and the single-Switch Net/Session/RTT peer controller, down to encrypted UDP
+datagrams; owns no sockets, interfaces or threads."""
 
 from dataclasses import dataclass
 import os
@@ -13,14 +13,11 @@ PIA_HOST_VAR = 0x00C6
 NET_RETRY_SECONDS = 0.5
 SESSION_ACCEPT_RETRY_SECONDS = 0.25
 HOST_RTT_PERIOD_SECONDS = 0.315
-# Unacked data frames are re-offered in the next HOST_CARRY_DEPTH datagrams (the console dedups by seq). Air
-# loss is ~1-2% and bursty; Pia delivers in order, so a hole holds the later parent slots back and the child's
-# 8-deep RFU queue overflows when it fills. h5 at depth 0: seq 954 lost with its 68ms retransmit, the 137ms
-# one landed, the console received ten slots at once and disconnected 300ms later (LEAVE reason 3). h3/h4 at
-# depth 4 and unlimited: clean. Costs ~0.5 copies per frame.
+# Unacked data frames repeat in the next HOST_CARRY_DEPTH datagrams; at 0 one lost slot overflows
+# the console's 8-deep RFU queue (docs/frlg_link.md, Carry-forward).
 HOST_CARRY_DEPTH = 4
-# The console goes silent ~0.5s after accepting the card (its save); traffic pushed into that
-# silence piles up in the adapter and either freezes the host (blocking sendto) or floods the console.
+# The console goes silent ~0.5 s after accepting the card (its save); sending into it blocks the
+# host or floods the console (docs/frlg_link.md).
 QUIET_GATE_SECONDS = 0.25
 HOST_VBLANK_SECONDS = 1.0 / 59.727
 RELIABLE_BATCH_MAX = 9
@@ -132,7 +129,7 @@ def build_net_property_update(network, app_data, sequence_id=1, property_byte=1)
     body += network.max_participants.to_bytes(2, "big")
     body += b"\x00" * 6
     body += (network.SCENE_ID & 0xFFFF).to_bytes(2, "big")
-    # The GBA application writes 01 here and a Legends Z-A host 02; what the byte means is unread.
+    # The GBA application writes 01 here and a Legends Z-A host 02; the meaning is unknown.
     body += bytes([property_byte & 0xFF, 0x01])
     body += system_len.to_bytes(4, "big") + game_len.to_bytes(4, "big")
     body += app_data
@@ -202,10 +199,8 @@ class HostPeerProtocol:
         self.info = getattr(log, "info", log)
         self.tracer = tracer
         self.nonces = PiaNonceSequence(native=native_nonce_sequence)
-        # One RFU slot per GBA VBlank is what the emulated link expects, and it is what every
-        # Measured on the air, a console answers that with ~162 frames/s
-        # while a real console peer draws ~25 [docs/frlg_link.md]. This is the knob that tests
-        # whether the console's answer rate follows ours.
+        # One RFU slot per GBA VBlank; a console answers it with ~162 frames/s against ~25 for a
+        # console peer [docs/frlg_link.md].
         self.protocol_tick_seconds = float(protocol_tick_seconds)
 
         self.joined = False
@@ -278,8 +273,8 @@ class HostPeerProtocol:
         return "type 5 Update Session (broadcast + unicast), then type 2 Join Response (unicast)"
 
     def _unicast_session_update(self, update):
-        # The console receives only ~1 in 5 broadcast data frames and must see the type 5 before it
-        # sends the finalizing type 6; unicast copies are safe (nonce depends on source, dedup by pktid).
+        # The console receives ~1 in 5 broadcast data frames and needs the type 5 before its type 6;
+        # unicast copies are safe (nonce by source, dedup by pktid).
         seen = set()
         targets = [p[1] for p in self.network.participants]
         if self.session_join is not None:
@@ -455,8 +450,7 @@ class HostPeerProtocol:
         if self.joined and not self.net_acked and now >= self.next_net_send:
             probe = self._build_net_probe()
             self._send(probe, self.network.broadcast)
-            # The console receives only ~1 in 5 broadcast data frames but acks every unicast one;
-            # the Pia nonce depends on the source only and the console dedups by packet id.
+            # Unicast copies too: the console receives ~1 in 5 broadcast frames.
             for participant in self.network.participants:
                 self._send(probe, participant[1])
             self.next_net_send = now + NET_RETRY_SECONDS
