@@ -41,8 +41,9 @@ def test_element_values_and_quorum_rebuild_the_retail_bytes():
 class ScriptedJoiner:
     """A joining Sword as the host model reads one: answers, offers, commands, announcements."""
 
-    def __init__(self, pk8):
+    def __init__(self, pk8, snapshot=None):
         self.pk8 = pk8
+        self.snapshot = snapshot
         self.out = []                 # (kind, port, payload, compressed)
         self.pings = set()
         self.snap_in = broadcast4.Receiver()
@@ -68,6 +69,12 @@ class ScriptedJoiner:
                 self.data(protocol, 0, trade.sync(mid, trade.PING_SYNCED))
         elif mid == trade.BLOCK:
             self.data(protocol, port, payload)
+            if self.snapshot is not None and not self.sent_snapshot:
+                self.sent_snapshot = True
+                for msg, packed in self.snap_out.transfer(self.snapshot):
+                    self.out.append(("bcast", 0x84, 1, msg, packed))
+                self.out.append(("bcast", 0x84, 1,
+                                 broadcast4.build_done(self.snap_out._next()), False))
         elif mid == trade.POKEMON_TRADE:
             cmd = trade.parse_box_command(payload)
             if trade.offered_pokemon(payload) is not None:
@@ -146,6 +153,50 @@ def test_a_scripted_joiner_walks_the_host_to_the_end(monkeypatch):
     assert host.elements[50].values[1][0] == pk8
     assert host.elements[40].phase == host_trade.LADDER_LAST
     assert reliable4.PROTOCOL == 0x7C
+
+
+def test_the_host_builds_its_snapshot_after_the_joiner_sends_a_live_one(monkeypatch):
+    now = [1000.0]
+    monkeypatch.setattr(host_trade.time, "time", lambda: now[0])
+    peer_snapshot = bytes([0x57]) * 3456
+    our_snapshot = bytes([0xA3]) * 3456
+    offer = bytes([0x19]) * 0x158
+    joiner = ScriptedJoiner(offer, snapshot=peer_snapshot)
+    to_joiner = []
+    built = []
+
+    def build(live):
+        built.append(live)
+        return our_snapshot, offer
+
+    host = host_trade.HostTrade(
+        HOST, JOINER, snapshot=None, offer_pk8=None,
+        send=lambda protocol, port, payload: to_joiner.append(("data", protocol, port, payload)),
+        send_broadcast=lambda port, msg, packed: to_joiner.append(("bcast", 0x84, port, msg,
+                                                                   packed)),
+        send_mesh=lambda payload: to_joiner.append(("mesh", 0x18, 1, payload)),
+        snapshot_builder=build, log=lambda *a: None, end_delay=1.0)
+    for _ in range(4000):
+        host.tick(now[0])
+        for item in to_joiner:
+            if item[0] == "data":
+                joiner.on_data(item[1], item[2], item[3])
+            elif item[0] == "bcast":
+                joiner.on_broadcast(item[2], item[3], item[4])
+        to_joiner.clear()
+        for item in joiner.out:
+            if item[0] == "data":
+                host.on_data(item[1], item[2], item[3], now[0])
+            else:
+                host.on_broadcast(item[2], item[3], item[4])
+        joiner.out.clear()
+        if host.stage == "saving":
+            break
+        now[0] += 0.01
+    assert built == [peer_snapshot]
+    assert joiner.snap_in.payload() == our_snapshot
+    assert host.offer_pk8 == offer
+    assert host.stage == "saving", host.stage
 
 
 def test_without_migrate_the_host_holds_after_the_ladder():

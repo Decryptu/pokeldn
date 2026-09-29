@@ -126,14 +126,20 @@ def test_the_celebi_gift_assembles_to_givepokemon_and_nothing_else():
     assert len(distribution.mevent) <= mystery_event.MAX_SCRIPT_SIZE
 
 
-def test_the_console_would_take_the_mon_and_report_success():
-    distribution = gift_registry.GIFT_REGISTRY.build_distribution("mystery-event-celebi")
+@pytest.mark.parametrize("build, language", [("BPRF", mp.LANGUAGE_FRENCH),
+                                            ("BPRE", mp.LANGUAGE_ENGLISH),
+                                            ("BPGE", mp.LANGUAGE_ENGLISH)])
+def test_the_console_would_take_the_mon_and_report_success(build, language):
+    distribution = gift_registry.GIFT_REGISTRY.build_distribution(
+        "mystery-event-celebi", build=build)
     result = mystery_event.run(distribution.mevent)
 
     assert result.status == mystery_event.STATUS_SUCCESS
     assert result.stopped_at == "end"
     _, mon, mail = result.effect("givepokemon")
-    assert monmod.Mon(mon).decode()["species"] == wonder_card_events.SPECIES_CELEBI_MEVENT
+    decoded = monmod.Mon(mon).decode()
+    assert decoded["species"] == wonder_card_events.SPECIES_CELEBI_MEVENT
+    assert decoded["language"] == language
     assert int.from_bytes(mail[0x20:0x22], "little") == mp.ITEM_ORANGE_MAIL
     assert result.effect("read_past_buffer") is None
 

@@ -223,9 +223,15 @@ class MysteryGiftHostApplication(HostApplication):
                     "not would have read the refusal message and kept everything it has.")
         if distribution is not None and distribution.has_mevent:
             status = self.session.activity.server.mevent_status
+            if status == mystery_event.STATUS_INCOMPATIBLE:
+                return ("Mystery Event script returned status 3. For givepokemon, the party was "
+                        "full, so no Pokemon was added. Make room in the party and retry.")
+            if status != mystery_event.STATUS_SUCCESS:
+                return (f"Mystery Event script returned status {status}; Pokemon delivery is "
+                        "unconfirmed. Check the host log and the console's party.")
             return ("Mystery Event script ran on the console; it answered with status "
-                    f"{status}. The console saved by itself, so whatever the script wrote is "
-                    "now in the save.")
+                    "2. The console saved by itself, so whatever the script wrote is now in "
+                    "the save.")
         if result == SVR_MSG_GIFT_SENT_1:
             return ("Visiting trainer delivered. On the Switch, go to SEVEN ISLAND and talk to "
                     "the old woman in the house in town to battle it; the Wonder Card's own "
@@ -242,8 +248,15 @@ class MysteryGiftHostApplication(HostApplication):
         engine = self.session.activity if self.session is not None else None
         self.delivery_succeeded = bool(
             engine is not None and engine.result in self.SUCCESS_RESULTS)
+        if (self.delivery_succeeded and self.distribution is not None
+                and self.distribution.has_mevent
+                and engine.server.mevent_status != mystery_event.STATUS_SUCCESS):
+            self.delivery_succeeded = False
         if self.delivery_succeeded:
             show_done()
+            print(self._success_message(engine.result))
+        elif (engine is not None and self.distribution is not None
+              and self.distribution.has_mevent and engine.server.mevent_status is not None):
             print(self._success_message(engine.result))
         elif engine is not None and engine.result is not None:
             print("Session finished without delivering anything: "

@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """Host a Sword/Shield Link Trade network, so a console searching for a partner joins it.
 
-    ./.venv/bin/python bin/swsh_host.py --ip-host --our-ip 127.0.0.2 --advert FILE --seconds 300
+    ./.venv/bin/python bin/swsh_host.py --ip-host --our-ip 127.0.0.2 --offer-file FILE
     (them) Y-Comm -> Link Trade -> local communication, no code (or --code) -> search
 
 Below the game `pokeldn.ldn.host4`, above it `pokeldn.swsh.host_trade`. docs/swsh_session.md,
@@ -18,7 +18,7 @@ import time
 
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
-from pokeldn import config
+from pokeldn import config, gen8
 from pokeldn.host_support import resolve_keys
 from pokeldn.ldn import host4, mesh_protocol as mesh, reliable4
 from pokeldn.ldn.ldn_mitm_host import IpHostTransport
@@ -34,15 +34,35 @@ MAX_PARTICIPANTS = 2
 ADVERT_SIZE = 0x180
 GAME_DATA_OFF = 0x18
 RECORD_LEN = 0x168
+STATION_PAGE_OFF = 0x1E
+STATION_PROFILE_OFF = 0x1F
 # A searcher joins only a larger id than its own (0x006cba8c) and blacklists one whose join failed,
 # so each run draws a fresh one near the top (docs/swsh_session.md).
 NETWORK_ID_HIGH = b"\xff\xff"
 
 
-def build_advert(template, network_id=None, session_param=None, code=""):
-    """-> the 384 bytes of application data: the Pia header rebuilt, the game's record kept at
-    0x18 (docs/swsh_session.md)."""
-    out = bytearray(bytes(template).ljust(ADVERT_SIZE, b"\0")[:ADVERT_SIZE])
+def build_advert(template=None, network_id=None, session_param=None, code="", player_name="PkCamp"):
+    """-> the 384 advertise bytes: rebuild the Pia header and use a station record at 0x18,
+    either fresh or copied from a console (docs/swsh_session.md)."""
+    if template is None:
+        out = bytearray(ADVERT_SIZE)
+        out[GAME_DATA_OFF + 2:GAME_DATA_OFF + 4] = struct.pack("<H", beacon.NETWORK_ID)
+        out[STATION_PAGE_OFF] = 1
+        profile = STATION_PROFILE_OFF
+        out[profile + trade_payload.TAIL_DEVICE_ID:
+            profile + trade_payload.TAIL_DEVICE_ID + trade_payload.DEVICE_ID_LENGTH] = os.urandom(16)
+        out[profile + trade_payload.TAIL_ACCOUNT_UID:
+            profile + trade_payload.TAIL_ACCOUNT_UID + trade_payload.ACCOUNT_UID_LENGTH] = os.urandom(16)
+        name = player_name.encode("utf-16-le")
+        if len(name) > trade_payload.TAIL_NAME_LENGTH - 2:
+            raise ValueError("player name is too long for the station profile")
+        out[profile + trade_payload.TAIL_NAME_OFFSET:
+            profile + trade_payload.TAIL_NAME_OFFSET + len(name)] = name
+        out[profile + trade_payload.TAIL_ACTIVITY] = 13   # Link Trade
+    else:
+        if len(template) != ADVERT_SIZE:
+            raise ValueError(f"advertisement is {len(template)} bytes, expected {ADVERT_SIZE}")
+        out = bytearray(template)
     out[0:4] = network_id or os.urandom(4)
     out[4:8] = password_crc(code)
     out[8:12] = bytes([5, GAME_DATA_OFF, 0, 0])
@@ -65,6 +85,51 @@ def load_advert(path):
         return raw
 
 
+def prepare_snapshot(source, args, app_data):
+    """Build this host's trade payload from a saved or joining console's 0x84 snapshot."""
+    snapshot = trade_payload.inflate_short(source)
+    identity = {}
+    if args.advert is None or args.snapshot is None:
+        profile = app_data[STATION_PROFILE_OFF:STATION_PROFILE_OFF + trade_payload.PROFILE_LENGTH]
+        identity = dict(
+            device_id=profile[trade_payload.TAIL_DEVICE_ID:
+                              trade_payload.TAIL_DEVICE_ID + trade_payload.DEVICE_ID_LENGTH],
+            account_uid=profile[trade_payload.TAIL_ACCOUNT_UID:
+                                trade_payload.TAIL_ACCOUNT_UID + trade_payload.ACCOUNT_UID_LENGTH],
+            nsa_id=profile[trade_payload.TAIL_NSA_ID:
+                           trade_payload.TAIL_NSA_ID + trade_payload.NSA_ID_LENGTH])
+    snapshot = trade_payload.rewrite(snapshot, trainer_name=args.trainer_name,
+                                     trainer_id=args.trainer_tid, secret_id=args.trainer_sid,
+                                     **identity)
+    at = (args.offer_slot - 1) * swsh_pokemon.SIZE_PARTY
+    if args.offer_file:
+        raw = swsh_pokemon.encrypt(gen8.load(open(args.offer_file, "rb").read()))
+        raw = swsh_pokemon.build_from(raw, ot_name=args.trainer_name,
+                                      trainer_id=args.trainer_tid,
+                                      secret_id=args.trainer_sid)
+    else:
+        raw = snapshot[at:at + swsh_pokemon.SIZE_PARTY]
+    if struct.unpack_from("<I", raw)[0] == 0:
+        raise ValueError(f"offer slot {args.offer_slot} is empty; pass --offer-file")
+    if args.fresh_pid:
+        raw = swsh_pokemon.encrypt(gen8.fresh_identity(gen8.decrypt(raw)))
+    snapshot = snapshot[:at] + raw + snapshot[at + swsh_pokemon.SIZE_PARTY:]
+    if args.card_set:
+        edits = {}
+        for item in args.card_set:
+            name, value = item.split("=", 1)
+            edits[name] = value if name == "name" else int(value, 0)
+        tc = trade_payload.TRAINER_CARD_OFFSET
+        card = league_card.set_fields(snapshot[tc:tc + league_card.LENGTH], **edits)
+        snapshot = snapshot[:tc] + card + snapshot[tc + league_card.LENGTH:]
+        print(f"[sw] League Card: {league_card.read(card)}")
+    mon = swsh_pokemon.read(raw)
+    print(f"[sw] our trainer {args.trainer_name} {args.trainer_tid}/{args.trainer_sid}; "
+          f"offering slot {args.offer_slot}: species {mon['species']} {mon['nickname']!r} "
+          f"level {mon['level']}")
+    return snapshot, raw
+
+
 def build_parser():
     ap = argparse.ArgumentParser(description=__doc__,
                                  formatter_class=argparse.RawDescriptionHelpFormatter)
@@ -78,16 +143,21 @@ def build_parser():
     ap.add_argument("--scene-id", type=int, default=SCENE_ID)
     ap.add_argument("--app-version", type=int, default=APP_VERSION)
     ap.add_argument("--protocol", type=int, default=LDN_PROTOCOL, choices=(1, 3))
-    ap.add_argument("--advert", required=True,
-                    help="a Sword's own advertisement (hex, raw, or swsh_net_facts.json); its "
-                         "game record from 0x18 is kept and the Pia header rebuilt")
+    ap.add_argument("--advert", default=None,
+                    help="optional Sword advertisement (hex, raw, or swsh_net_facts.json); "
+                         "without one, build a fresh station record")
     ap.add_argument("--player-name", default="PkCamp")
-    ap.add_argument("--snapshot", default="scratchpad/swsh_snapshot.bin",
-                    help="a Sword's 3456-byte 0x84 snapshot; its identity is moved to ours")
+    ap.add_argument("--snapshot", default=None,
+                    help="optional saved Sword 0x84 snapshot; otherwise use the joining console's "
+                         "snapshot from this session")
     ap.add_argument("--trainer-name", default="PkCamp")
     ap.add_argument("--trainer-tid", type=lambda s: int(s, 0), default=12345)
     ap.add_argument("--trainer-sid", type=lambda s: int(s, 0), default=54321)
     ap.add_argument("--offer-slot", type=int, default=1, help="the party slot we offer")
+    ap.add_argument("--offer-file", default=None,
+                    help="a PK8 to place in the offered party slot, encrypted or PKHeX export")
+    ap.add_argument("--fresh-pid", action="store_true",
+                    help="draw a new encryption constant and PID for the offered Pokemon")
     ap.add_argument("--card-set", action="append", default=[], metavar="FIELD=VALUE",
                     help="set a field of the League Card the console may keep after the trade "
                          "(pokeldn.swsh.league_card: name, trainer_id, dex_owned, poke1_species, ...)")
@@ -117,31 +187,13 @@ def main():
         phy = find_ap_phy(log=print) if args.phy == "auto" else args.phy
     network_id = (bytes.fromhex(args.network_id) if args.network_id
                   else os.urandom(2) + NETWORK_ID_HIGH)       # little-endian: the high half last
-    app_data = build_advert(load_advert(args.advert), network_id=network_id, code=args.code)
-    if not os.path.exists(args.snapshot):
-        print(f"[sw] no snapshot at {args.snapshot}: capture one first (docs/swsh_trade.md, "
-              "'The command line of a completed trade') and pass it with --snapshot")
-        return 1
-    snapshot = open(args.snapshot, "rb").read()
-    if len(snapshot) != trade_payload.PAYLOAD_LENGTH:
-        snapshot = trade_payload.inflate_short(snapshot)
-    snapshot = trade_payload.rewrite(snapshot, trainer_name=args.trainer_name,
-                                     trainer_id=args.trainer_tid, secret_id=args.trainer_sid)
-    if args.card_set:
-        edits = {}
-        for item in args.card_set:
-            name, value = item.split("=", 1)
-            edits[name] = value if name == "name" else int(value, 0)
-        tc = trade_payload.TRAINER_CARD_OFFSET
-        card = league_card.set_fields(snapshot[tc:tc + league_card.LENGTH], **edits)
-        snapshot = snapshot[:tc] + card + snapshot[tc + league_card.LENGTH:]
-        print(f"[sw] League Card: {league_card.read(card)}")
-    at = (args.offer_slot - 1) * swsh_pokemon.SIZE_PARTY
-    offer = snapshot[at:at + swsh_pokemon.SIZE_PARTY]
-    mon = swsh_pokemon.read(offer)
-    print(f"[sw] our trainer {args.trainer_name} {args.trainer_tid}/{args.trainer_sid}; "
-          f"offering slot {args.offer_slot}: species {mon['species']} {mon['nickname']!r} "
-          f"level {mon['level']}")
+    app_data = build_advert(load_advert(args.advert) if args.advert else None,
+                            network_id=network_id, code=args.code, player_name=args.player_name)
+    if not 1 <= args.offer_slot <= swsh_pokemon.PARTY_SLOTS:
+        raise ValueError(f"offer slot must be 1..{swsh_pokemon.PARTY_SLOTS}")
+    snapshot = offer = None
+    if args.snapshot:
+        snapshot, offer = prepare_snapshot(open(args.snapshot, "rb").read(), args, app_data)
 
     class Net:
         application_data = app_data
@@ -216,7 +268,9 @@ def main():
         trades[st.ip] = host_trade.HostTrade(host.constant, st.constant, snapshot, offer, send,
                                              send_broadcast, send_mesh,
                                              end_delay=args.end_delay, record=on_record,
-                                             migrate=args.migrate)
+                                             migrate=args.migrate,
+                                             snapshot_builder=(lambda peer: prepare_snapshot(peer, args, app_data))
+                                             if snapshot is None else None)
         print(f"[sw] {st.ip}: the trade starts")
 
     try:
