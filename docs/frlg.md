@@ -18,9 +18,8 @@ two link layers are stacked:
 protocol at `REVISION >= 0xA`. Cartridge header, read off both consoles: software version `0x0A`,
 game code `BPRF` (FireRed, French) and `BPGF` (LeafGreen, French).
 
-The three-second disconnection was a rate set missing 6, 9 and 12 Mbit/s in the association response
-([frlg_link.md](frlg_link.md), The advertised rate set); a stall in the transmit path crosses a
-userspace hop.
+A three-second disconnection is a rate set missing 6, 9 and 12 Mbit/s in the association response
+([frlg_link.md](frlg_link.md), The advertised rate set).
 
 ## Status
 
@@ -47,17 +46,13 @@ player's party. The RNG is closed end to end; a shiny encounter costs one A pres
 
 ## The two cartridges
 
-LeafGreen is the same game with the same code at a different address. The offset is piecewise
-constant (four low segments stepping −0x2C, −0x28, −0x24, −0x20, then −0x1C4 and −0x12D8 higher up)
-and not monotonic. Measured pairs live in `pokeldn.frlg.rom.leafgreen_twins` (738 addresses, each
-read off its own cartridge) and `rom_map.LEAFGREEN_DELTA_BOUNDARIES`. Never predict an address across
-a boundary that has not been bracketed.
+LeafGreen runs the same code at a piecewise-constant offset; the measured pairs and the boundaries
+are on [LeafGreen](frlg_leafgreen.md). Never predict an address across an unbracketed boundary.
 
 ## Rules that hold across all of it
 
-- Nothing is inferred from the decompilation's addresses. The decomp's link order is evidence; its
-  addresses are not. `pokeldn/frlg/rom/rom_map.py` records how each address was obtained.
-- A payload is executed offline before it is sent. `buffer_script.emulate` and `emulate_repeating`
-  run it under unicorn on a model of the GBA memory map, and both simulated consoles run it. A
-  payload that faults, or never returns 1, hangs the Mystery Gift menu with no way out; a field stub
-  that loops forever freezes the overworld with no menu.
+- The decomp's link order is evidence; its addresses are not. `pokeldn/frlg/rom/rom_map.py` records
+  how each address was obtained.
+- A payload runs offline under unicorn (`buffer_script.emulate`, `emulate_repeating`, both simulated
+  consoles) before it is sent. One that faults or never returns 1 hangs the Mystery Gift menu with
+  no way out; a field stub that loops forever freezes the overworld.
