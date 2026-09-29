@@ -338,7 +338,7 @@ paths and passes `wpa_ap_join` one struct where v5.5.5 passes nine arguments.
 Channels 1 and 11 were busy 8.7 to 13% with 44 to 107 neighbour frames a second, channels 3 to 9 0.3
 to 1.7%, noise floor -96 dBm on all (`tools/ldn/esp32_census.py`). The access point's own census
 (second flag byte `0x10`) finds a neighbour frame in the 3 ms before a miss 13.1% of the time, 11.0%
-before a heard copy. 85 to 91% of misses leave no trace at the access point, not even an FCS failure.
+before a heard copy; a probe request in the 2 or 5 ms before a miss 0.0 or 1.1% against 0.0 or 0.1%. 85 to 91% of misses leave no trace at the access point, not even an FCS failure.
 
 The board misses most often a frame that follows its own transmission. A FireRed console sends every
 data frame behind RTS/CTS although the board's beacon carries ERP byte 0; the data follows the
@@ -348,7 +348,7 @@ bench, bursts of 4 at 54 Mbit/s: the first frame 0.5 to 3.0%, the second 2.4 to 
 
 An ESP32 station sends every retry behind an RTS 128 µs before the data (`lmacConfMib` +42, retries
 before RTS, 0; RTS threshold 2346 at +22); `esp_wifi_internal_get_rts` and `_set_rts` access both
-through a packed `{u16 threshold, u8 retries before RTS, u8 long, u8 short}`. Of 8527 RTS the access
+through a packed `{u16 threshold, u8 retries before RTS, u8 long, u8 short}`. The ACK and CTS rate table is at `0x3ff73400`..`0x3ff7341c`. Of 8527 RTS the access
 point heard in 90 s, 311 (3.6%) were answered and the data after the CTS missed; the count above
 leaves those out. The driver retries in software: `lmacRetryTxFrame` (libpp `lmac.o`) resends through
 `lmacTxFrame` up to `lmacConfMib` limits (short +21, long +20, 32 by default), set by
@@ -510,4 +510,4 @@ board-to-host at 92 KB/s.
   [Two boards reproduce the misses](#two-boards-reproduce-the-misses).
 - Whether an Espressif ESP32-WROOM-32E module misses fewer frames as an access point than the ELEGOO
   board's unbranded module is unmeasured. easyworld reports that a classic ESP32 must be the
-  ESP32-WROOM-32E and that the older ESP32-WROOM-32 does not trade reliably.
+  ESP32-WROOM-32E and that the older ESP32-WROOM-32 does not trade reliably. Espressif's ESP32-DevKitC-32E carries that module; its shield reads ESP32-WROOM-32E with the Espressif logo.

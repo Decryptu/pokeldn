@@ -72,6 +72,9 @@ close sockets and the network, clean the LDN vifs. The same cleanup runs on norm
 `KeyboardInterrupt`, startup failure after partial allocation, and beacon-worker failure. Saving a
 received Pokemon is independent of capture logging.
 
+The Mystery Gift hosts never stop on their own after a gift. The trade and battle hosts stop when the
+console leaves LDN.
+
 ## Trainer profile propagation
 
 `pokeldn.config.DEFAULT_TRAINER` is the default identity. Each CLI derives an immutable per-run

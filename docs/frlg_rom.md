@@ -638,6 +638,10 @@ The per-candidate layout 0x45 writes is unsettled: the copy loop's byte count do
 10 and, at or past it, atomically loads a flag at `component + 0x2790`; a set flag enters
 `main + 0x057250`'s continuation, which tests a third argument for null. Its caller is unidentified.
 
+The Mystery Gift client has never issued 0x46, 0x4E, 0x58 to 0x60, 0x48, 0x4C, 0x51, 0x53 past its
+`+0x2770` read, 0x55 or 0x56. The source side of the flash-sector fold of 0x48 and 0x56 is unread; only
+the destination side was checked.
+
 The `bkpt #0x52` component also owns the dispatcher (slot 21 of its vtable) and 2324 species names,
 six languages each, hashed with djb2 (`main + 0x056540`, strings at `main + 0x1C4470`). The
 dispatcher's frame, shared by every handler, is `0x40` bytes of saved registers plus `0x310`.

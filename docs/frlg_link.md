@@ -532,6 +532,12 @@ The echo then set the bit and the console waited forever on `gBattleControllerEx
 gates `Cmd_waitmessage` [battle_script_commands.c:2041], frozen on the battle-end message with the link
 alive. `HostTradeEngine._echo_owed` holds a new block while any child command awaits its mirror.
 
+The ack also waits for every fragment of the echo. `rfu_leader.echo_blocks` keeps each echoed
+`SEND_BLOCK_INIT` with the set of fragment indices emitted, and the ack waits for 0..count-1. An empty
+echo queue is 24 times too slow; counting echoes, or watching only the last fragment, lets a re-sent
+fragment's echo share a frame with the ack. A console stuck waiting on a battle ack cannot be rescued
+from outside; SIGTERM on the host returns it to the room through the error screen.
+
 ### The pace is the RFU VBlank budget
 
 A link battle shows about a second per step in both directions. Datagram turnaround
@@ -556,6 +562,9 @@ host). Sequence-corrected, same console `48:f1:eb:20:9b:22`:
 
 A whole trade runs between consoles at 25 and 6 frames a second; the same console answers the host's
 59/s with 162. The 25.5/s figure rests on the softest capture.
+
+A FireRed console hosting over Direct Corner carries the Switch profile name in plain ASCII at offset
+0x11 of `application_data`; the in-game trainer name is absent from the advertisement.
 
 ## The console's output rate is its own, not an echo of ours
 
