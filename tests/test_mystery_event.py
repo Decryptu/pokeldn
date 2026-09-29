@@ -12,6 +12,19 @@ from pokeldn.frlg.rom import mystery_event  # noqa: E402
 from test_mystery_gift_flow import ConsoleClientModel, _drive  # noqa: E402
 
 
+def test_host_reports_a_full_party_as_failed_delivery():
+    from types import SimpleNamespace
+    from pokeldn.frlg.gift.host_mg_app import MysteryGiftHostApplication
+
+    app = SimpleNamespace(
+        distribution=SimpleNamespace(is_gated=False, has_mevent=True),
+        session=SimpleNamespace(activity=SimpleNamespace(
+            server=SimpleNamespace(mevent_status=mystery_event.STATUS_INCOMPATIBLE))))
+    message = MysteryGiftHostApplication._success_message(app, mg_server.SVR_MSG_GIFT_SENT_1)
+    assert "party was full" in message
+    assert "no Pokemon was added" in message
+
+
 def test_reproduces_the_hardware_proven_stamp_activation_shape():
     """The stamp rally's hardware-proven activation: the same six bytes and field script offset."""
     proven = stamp_rally.build_stamp_activation_script(
