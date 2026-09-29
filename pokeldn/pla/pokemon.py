@@ -1,73 +1,6 @@
-"""The Pokemon entity Legends Arceus puts on the wire, and its crypto.
-
-It is the Gen-8 entity with wider blocks. The header, the LCG, the block permutation and the
-checksum are `pokeldn.gen8`'s field for field; a block is 0x58 bytes rather than 0x50, so a stored
-record is 0x168 and a party record 0x178. Everything here is pinned against one record a console
-sent over local wireless, decrypted and read back as a level-70 Azelf whose trainer id is the same
-four bytes the data exchange carries as the player id.
-
-    0x00  u32  encryption constant, in the clear
-    0x04  u16  sanity, 0 on a record a console sends
-    0x06  u16  checksum, in the clear, over the decrypted body to SIZE_STORED
-    0x08       four 0x58-byte blocks, encrypted and permuted
-    0x168      the party tail, encrypted with the stream RESTARTED and not permuted
-
-BLOCK ORDER. `gen8.BLOCK_ORDER[(ec >> 13) & 31]` is applied as it stands when decrypting and
-inverted when encrypting, which is `pokeldn.gen8`'s own rule. The checksum cannot tell the two
-apart, because permuting whole blocks leaves a sum of 16-bit words alone. What tells them apart is
-where the names land: read directly, the nickname sits at the start of the second block and the
-trainer name at the start of the fourth, which is the Gen-8 layout with the wider block. Read
-inverted, both strings still decode, one block earlier, and nothing about them looks wrong. The
-record decoded here was read the inverted way first and the layout is what caught it.
-
-THE BLOCK STARTS ARE GEN-8'S, WIDENED. A field at the head of a block sits where `pokeldn.gen8`
-puts it plus 8 bytes per block before it: the nickname at 0x60 where Gen 8 has 0x58, the handling
-trainer's name at 0xb8 where it has 0xa8, the trainer's name at 0x110 where it has 0xf8, and the
-party tail at 0x168 where it has 0x148. The three handler fields inside the third block keep their
-Gen-8 positions plus 0x10, which is how they were found: a record sent to a console and shown back by
-it afterwards differs in the checksum, the current HP, the six party stats, and exactly those three
-fields plus the handler name. Inside a block the offsets follow their block: the first block is Gen 8's
-field for field apart from the moves, the second is Gen 8's plus 8, the third plus 0x10, the fourth
-plus 0x18 with the ball moved to just after the met date.
-
-THE MOVES ARE NOT WHERE GEN 8 KEEPS THEM. They are four halfwords at 0x54 with four bytes of
-remaining PP at 0x5c, both inside the first block, where Gen 8 puts them in the second at 0x72 and
-0x7a. Pinned against 46 records off a console's own box: every pair of records of one species carries
-the same four move ids and the same PP, across different levels, encryption constants and personality
-values, and a lower-level Chimchar differs from a higher one in the fourth move alone. The Gen-8
-offsets read zero in all 46.
-
-THE REST OF THE MAP IS PKHeX'S PA8, CHECKED AGAINST 47 CAPTURED RECORDS. `SCALARS`, `VECTORS`,
-`BITFIELDS` and `NAMES` hold it. Three things in it are confirmed by the records themselves rather
-than by the source it came from: the alpha bit at 0x16 and the alpha move at 0x3e are set on the
-same three records and on no others; the height and weight scalars at 0x50 and 0x51 with the scale
-at 0x52 explain the three bytes that vary per individual, the first and third equal in all 47
-because the scale mirrors the height, and 0xff on each of the three alphas; and the packed
-individual values at 0x94 carry the egg and nickname bits clear in every record, six values in
-range. The effort values sit at Gen 8's own 0x26, trained on 18 of the 47, and this game's
-own growth values are the six bytes at 0xa4.
-
-THE SHINY RULE IS GEN 6'S. The trainer id, the secret id and the two halves of the personality
-value exclusive-ored together under 16 sparkle, and 0 is the square. A record built with that value
-0 was traded in and the console drew the sparkle on the summary, on the box panel and on the model.
-The panel's ID No. is the whole 32-bit id at 0x0c modulo a million, which is how the secret id at
-0x0e was confirmed to be the high half of one value rather than a field of its own.
-
-WHAT A TRADE REWRITES. The receiving game fills in the handling trainer's name, language, handler
-flag and friendship, and recomputes the current HP and the six party stats from the level and the
-experience. It does not trust the tail it was sent: a record sent at level 50 with a level-70 tail
-comes back with the level-50 stats. Everything else is stored as it arrived.
-
-FIELDS. Species, trainer id, secret id, experience, the nickname and the trainer name are pinned by
-that record: the species is the nickname, the trainer name is the name the data exchange carries,
-the trainer id is the player id it carries, and the experience is 428750, which is level 70 on the
-slow curve and the level the party tail holds. The held item is at the Gen-8 offset and read 0.
-The ability, the personality value and the nature are at theirs and read Levitate, a personality
-value and a nature in range. The effort values at Gen 8's own 0x26 read zero on that one record,
-which is the record and not the game: 18 of the 47 captured records carry trained effort values
-there. The six halfwords after the level byte are stats, and a trade rewrites them.
-
-`docs/pla.md`, The trade box.
+"""The Pokemon record Legends Arceus trades: the Gen-8 entity with 0x58-byte blocks (0x168 stored,
+0x178 party) and PKHeX's PA8 field map, checked against 47 captured records. The moves sit at 0x54
+inside the first block (docs/pla.md, The trade box and Choosing what to offer).
 """
 
 import struct
@@ -92,7 +25,7 @@ OFF_TID = 0x0C
 OFF_SID = 0x0E
 OFF_EXPERIENCE = 0x10
 OFF_ABILITY = 0x14
-OFF_ABILITY_FLAGS = 0x16                                   # bits 0-2 the ability number, bit 5 alpha
+OFF_ABILITY_FLAGS = 0x16                                   # bits 0-2 ability number, bit 5 alpha
 OFF_MARKINGS = 0x18
 OFF_PID = 0x1C
 OFF_NATURE = 0x20
@@ -360,9 +293,7 @@ def write(plain, **fields):
     return bytes(out)
 
 
-# What `build` puts in a record the caller does not name. Every value is one the 47 captured
-# records carry: this game's version byte, the save's language, no sanity flag, no affixed ribbon,
-# and the original trainer still holding it.
+# Values all 47 captured records carry.
 BUILD_DEFAULTS = {
     "sanity": 0,
     "version": VERSION_LEGENDS_ARCEUS,
@@ -380,11 +311,8 @@ BUILD_DEFAULTS = {
 
 
 def build(**fields):
-    """-> a plain PARTY record assembled from zero bytes, with BUILD_DEFAULTS under the caller's.
-
-    Nothing is copied from a record a console wrote. A field this module does not know stays zero,
-    so what the game reads out of one is what the field map here covers and nothing else.
-    """
+    """-> a plain party record built from zero bytes, BUILD_DEFAULTS under the caller's fields;
+    unmapped fields stay zero."""
     merged = dict(BUILD_DEFAULTS)
     merged.update(fields)
     out = bytearray(write(bytes(SIZE_PARTY), **merged))

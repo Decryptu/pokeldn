@@ -1,24 +1,6 @@
-"""The hosting side of a Sword/Shield Link Trade, above the Pia 4 host layer.
-
-A hosting Sword leads every stage and the joiner answers. The order, as a retail Sword hosted a
-completed trade (docs/swsh_trade.md, docs/swsh_protocol.md):
-
-    1  ping round on id 97; block `result{}` on 0x7C and `imReady` on 0x80
-    2  both 3456-byte snapshots on 0x84: ours on port 0, theirs on port 1
-    3  ping round on 110, then content 30 (the box): both offers and box commands on 20030
-    4  ping round on 130, then content 50 (the exchange): each side's Pokemon
-    5  ping round on 120, then content 40 (the confirmation ladder), phases 0..4
-    6  the host keeps the session and both players return to the trade screen; the retail
-       Sword that led our joiner instead sent box command 3 and MIGRATION_START (`migrate=True`)
-
-Per content N the joiner talks to the host on holder 10000+N (port 0) and the host publishes the
-element on 40000+N (port 1): element 0 is the host's own value, element 1 relays the joiner's,
-element 20000 with no owner is the shared phase, and each station has a 20000 pair (phase,
-announced) and a 10000 quorum hash.
-
-Nothing here touches a socket: `send(protocol, port, payload)` queues reliable data,
-`send_broadcast(port, message, compressed)` sends one 0x84 message, `send_mesh(payload)` a
-reliable mesh message on 0x18 port 1.
+"""The hosting side of a Sword/Shield Link Trade, above the Pia 4 host layer: the host leads every
+stage and the joiner answers (docs/swsh_trade.md). Per content N the joiner talks on holder 10000+N
+(port 0) and the host publishes on 40000+N (port 1). No socket I/O here.
 """
 import struct
 import time
@@ -73,8 +55,8 @@ class PingRound:
 
     def feed(self, which, send):
         if which == trade.PING:
-            # A ping of ours sent before the joiner's screen held this holder was dropped there;
-            # a hosting Shield answers the joiner's ping with its own ping, then the reply.
+            # A ping sent before the joiner's screen held this holder is dropped there; a hosting
+            # Shield answers the joiner's ping with its own ping, then the reply.
             if not self.got_reply:
                 send(PORT_CONTENT, trade.sync(self.id, trade.PING))
             self.got_ping = True
@@ -193,8 +175,6 @@ class HostTrade:
         self.ladder_done_at = None
         self.box3_at = None
 
-    # -- helpers -------------------------------------------------------------------------------
-
     def clock(self):
         """The frame clock, strictly increasing across every envelope we send."""
         c = CLOCK_BASE + int((time.time() - self.t0) * FRAMES_PER_SECOND)
@@ -214,8 +194,6 @@ class HostTrade:
         if offset not in self.elements:
             self.elements[offset] = Element(offset, self.self_id, self.peer_id, self.clock)
         return self.elements[offset]
-
-    # -- received ------------------------------------------------------------------------------
 
     def on_data(self, protocol, port, payload, now=None):
         now = time.time() if now is None else now
@@ -286,7 +264,6 @@ class HostTrade:
             self.log(f"[trade] <- 0x84/{port} unreadable: {exc}")
             return
         if port == 0:
-            # Their answers to our transfer.
             self.snap_out.saw(got["sequence"])
             if got["kind"] == broadcast4.KIND_ACK:
                 base, mask = got["base"], got["mask"]
@@ -304,8 +281,6 @@ class HostTrade:
             self.peer_snapshot = self.snap_in.payload()
             self.log(f"[trade] <- the joiner's snapshot, {len(self.peer_snapshot)} bytes")
             self.record(rec="peer_snapshot", payload=self.peer_snapshot.hex())
-
-    # -- the stages ------------------------------------------------------------------------------
 
     def tick(self, now=None):
         now = time.time() if now is None else now
@@ -410,7 +385,6 @@ class HostTrade:
             show_done()
             self.goto("saving")
             return
-        # At phase p we send command p (element 0) and announce p + 1, once.
         if self.ladder_sent < el.phase and el.peer_pair is not None:
             el.set_value(0, struct.pack("<I", el.phase), self.send)
             el.announce(el.phase + 1, self.send, now)
@@ -419,8 +393,8 @@ class HostTrade:
         el.advance_if_quorum(self.send, now)
 
     def _stage_saving(self, now):
-        # An emulated Shield host holds the mesh here and the pair goes back to the trade screen;
-        # a migration after a trade reads as an interruption on the joiner, after its save.
+        # An emulated Shield host holds the mesh here; a migration after a trade reads as an
+        # interruption on the joiner, after its save.
         if not self.migrate:
             return
         if now - self.stage_since >= self.end_delay:

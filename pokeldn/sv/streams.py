@@ -1,30 +1,12 @@
-"""The reliable streams a Scarlet / Violet station runs, and the records they carry.
-
-Measured on a retail pair from the moment the second console associated (sv11). There is no
-Session protocol, no Clone protocol and no Reliable 0x7C: the host announces both stations in a
-broadcast Net 0x11 and the mesh is those two protocols alone.
-
-    0x80  BroadcastReliable         ports 0, 1, 2
-    0x81  StreamBroadcastReliable   ports 0 to 7
-
-Every station acknowledges all eleven about once a second, whether or not anything came on them.
-A station opens two of them with an INITIALIZED data message and then sends its records on the port
-that is its own station index: the host on 0, the first joiner on 1, which is the convention
-`pokeldn.pla.data_exchange` reads for Legends Arceus.
-
-    station          opens                  sends records on
-    host (index 0)   0x81 port 1 and 5      0x81 port 0
-    joiner (index 1) 0x81 port 0 and 4      0x81 port 1
-
-A record is zlib with a 4 KB window, so its first two bytes are `484b`, and the reliable message
-carries FLAG_ZLIB with it.
+"""The reliable streams a Scarlet / Violet station runs (0x80 ports 0-2, 0x81 ports 0-7) and the
+zlib records they carry; a station sends records on the 0x81 port of its own index (docs/sv.md,
+The eleven streams).
 """
 
 from pokeldn.ldn import reliable5
 
-# The Pia MESSAGE flags both retail stations put on each kind of message (sv11). They are not the
-# establishing flag 0x01 the Arceus host uses: at this band 0x01 skips the station lookup and sets
-# no wake bit, so a message carrying it is parsed and never wakes the session.
+# Both retail stations' flags. At this band 0x01 skips the station lookup and sets no wake bit: such
+# a message is parsed and never wakes the session.
 MESSAGE_FLAGS_RTT = 0x00
 MESSAGE_FLAGS_DATA = 0x00
 MESSAGE_FLAGS_ACK = 0xA0
@@ -36,8 +18,7 @@ STREAM_PORTS = (0, 1, 2, 3, 4, 5, 6, 7)
 ACK_ENTRIES = 4                   # four, whatever the station count
 HOST_INDEX = 0
 JOINER_INDEX = 1
-# The two ports each station opens, and the eleven-byte payload each open carries. The second
-# payload states the port it opens in its first two bytes; the first does not.
+# The second open payload states its port in its first two bytes; the first does not.
 OPEN_PORTS = {HOST_INDEX: (1, 5), JOINER_INDEX: (0, 4)}
 OPEN_PAYLOAD_LOW = bytes.fromhex("0000000000f38800000000")
 ZLIB_HEADER = bytes.fromhex("484b")
@@ -62,13 +43,8 @@ def bitmap_for(station_index):
 
 
 def ack_position(received, peer_lowest_pending=1):
-    """-> (through, mask): what a retail station acknowledges of one peer's stream.
-
-    `through` is the end of the contiguous run from 1, counting every id below the peer's own
-    lowest pending as held (the peer has declared those will never come); the entry's ack id is
-    one past it. The mask's bit b of byte k is id `through + 2 + 8k + b`, an id that arrived early.
-    A Scarlet holding 1..4 and 7..38 acked `0005 0005 feffffff01` (sv.md, The acknowledgement).
-    """
+    """-> (through, mask): what a retail station acknowledges of one peer's stream; ids below the
+    peer's lowest pending count as held (docs/sv.md, The retail acknowledgement)."""
     have = set(received) | set(range(1, peer_lowest_pending))
     through = reliable5.contiguous_through(have)
     mask = bytearray(16)
@@ -81,17 +57,8 @@ def ack_position(received, peer_lowest_pending=1):
 
 def build_ack(highest, our_next_seq, station_index, *, unknown0=0, stream_id=0,
               entry_count=ACK_ENTRIES, destination_bits=3, masks=None):
-    """The bulk ack, in the shape both retail stations send.
-
-    `highest` maps a station index to the highest sequence received from it on this stream; entry k
-    acknowledges station k with one past that, and every entry's station byte is zero. `masks`
-    maps a station index to its entry's mask; with `ack_position` the two are what a retail
-    station sends.
-
-    `entry_count` and `destination_bits` are sweep handles: a retail station sends four entries and
-    a three-bit destination bitmap, and the only message a Scarlet guest has been seen to accept on
-    this path carried one entry and no bitmap (`docs/sv.md`).
-    """
+    """The bulk ack in the retail shape: entry k acknowledges station k with one past `highest[k]`.
+    `entry_count` and `destination_bits` are sweep handles; retail sends 4 entries, 3 bits."""
     masks = masks or {}
     entries = [dict(stream_id=0, ack_id=highest.get(k, 0) + 1, field_0x50=highest.get(k, 0) + 1,
                     mask=masks.get(k, b"")) for k in range(entry_count)]
@@ -116,11 +83,8 @@ def build_open(port, station_index, *, sequence_id=1):
 
 def build_record_message(record, sequence_id, station_index, *, lowest_pending=1, stream_id=0,
                          initialized=False):
-    """A compressed record as one reliable message: the retail flags are START, END and ZLIB.
-
-    A station's first record on a stream it sends on carries INITIALIZED as well: the host's own
-    sequence 1 on 0x81 port 0 is flags 0x1F and every record after it 0x17.
-    """
+    """A compressed record as one reliable message (START, END, ZLIB); a station's first record on a
+    stream carries INITIALIZED too, flags 0x1F then 0x17."""
     flags = (reliable5.FLAG_APPLICATION_DATA | reliable5.FLAG_MESSAGE_START
              | reliable5.FLAG_MESSAGE_END | reliable5.FLAG_ZLIB
              | (reliable5.FLAG_IS_INITIALIZED if initialized else 0))
@@ -131,11 +95,7 @@ def build_record_message(record, sequence_id, station_index, *, lowest_pending=1
 
 
 def compress(record, level=5, window_bits=12):
-    """-> the record framed as the game frames one: zlib, 4 KB window, sync-flushed then finished.
-
-    The same framing `pokeldn.pla.data_exchange` measured for Legends Arceus; a retail record's
-    first two bytes are `484b`, which is that window size in the zlib header.
-    """
+    """-> the record as the game frames one: zlib, 4 KB window, sync-flushed then finished."""
     import zlib
 
     deflate = zlib.compressobj(level, zlib.DEFLATED, window_bits)
@@ -160,10 +120,8 @@ def build_rtt_response(payload, peer_var):
 
 
 def parse_send_spec(hx):
-    """-> (data, flags) of a HEX[:z][:start|:end] send spec. `:z` marks a payload already zlib,
-    `:start` a fragment that opens a message and `:end` one that closes it; without either the
-    message is whole. A station's first game message goes out as two fragments, each deflated on
-    its own, 124 and 114 bytes (`docs/sv.md`, The trade)."""
+    """-> (data, flags) of a HEX[:z][:start|:end] send spec: `:z` marks a payload already zlib,
+    `:start`/`:end` a fragment opening or closing a message."""
     flags = 0
     parts = hx.split(":")
     hx = parts[0]

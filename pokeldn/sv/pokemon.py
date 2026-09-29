@@ -1,29 +1,6 @@
-"""The Pokemon Scarlet and Violet trade on the wire: a four-byte prefix and a Gen-9 record.
-
-The body of a `80 00 02 00` trade message is 348 bytes. The first four are the constant
-`bc 81 58 01`, the same on a retail console's offer and on an emulated pair host's. The 344 behind
-them are one PK9 party record, in the shape PKHeX's `PKM/PK9.cs` lays out, under the Gen-8 crypto
-`pokeldn.gen8` already carries: `SIZE_8STORED` 0x148, `SIZE_8PARTY` 0x158, four 0x50-byte blocks
-permuted by `(EC >> 13) & 31`, an LCG over the 16-bit words that restarts at the party tail, and a
-checksum that is the 16-bit sum of the decrypted body up to 0x148.
-
-    0x00  u32  encryption constant, in the clear
-    0x04  u16  sanity, 0 on both samples
-    0x06  u16  checksum, in the clear
-    0x08       four 0x50-byte blocks, encrypted and permuted   -> 0x148
-    0x148      level, then the six stats, encrypted and NOT permuted, the LCG re-seeded -> 0x158
-
-SPECIES. The field at 0x08 is the game's internal index, which parts from the National Dex at 917
-[`SpeciesConverter.cs:92`]. Under 917 the two agree, which is why both samples read straight.
-`national` and `internal_index` convert; `read` reports both and `write` takes `species` as a
-National Dex number.
-
-WHAT READS OUT OF THE TWO SAMPLES. `scratchpad/sv74_console_offer.hex`, a retail Scarlet's own
-offer: species 50 at level 3, nickname `Taupiqueur`, trainer `Gurvan`, handler `Pauline`, moves
-10 and 28, experience 27, which is level 3 on the Medium Fast curve, and stats 14/9/5/10/7/8.
-`scratchpad/sv_pair_host_offer.hex`, an emulated pair host's: species 906 at level 1, nickname
-`Sprigatito`, trainer `Mattia`. A wrong block order survives the checksum, so what pins the order
-is a record reading as a Pokemon: both do (`pokeldn/gen8.py`, the warning at the top).
+"""The Pokemon Scarlet and Violet trade: the four-byte prefix `bc 81 58 01` and a 344-byte PK9 party
+record under the Gen-8 crypto of `pokeldn.gen8`. The species field is the internal index, which
+parts from the National Dex at 917 (docs/sv.md, The record a trade message carries).
 """
 
 import struct
@@ -36,7 +13,6 @@ BLOCK_COUNT = gen8.BLOCK_COUNT
 SIZE_STORED = gen8.SIZE_STORED                             # 0x148, 328
 SIZE_PARTY = gen8.SIZE_PARTY                               # 0x158, 344
 
-# The four bytes in front of the record in a trade message, identical on both samples.
 WIRE_PREFIX = bytes.fromhex("bc815801")
 SIZE_WIRE = len(WIRE_PREFIX) + SIZE_PARTY                  # 348, the body of a 80 00 02 00 message
 
@@ -52,7 +28,7 @@ OFF_TID = 0x0C
 OFF_SID = 0x0E
 OFF_EXPERIENCE = 0x10
 OFF_ABILITY = 0x14
-OFF_ABILITY_FLAGS = 0x16                                   # bits 0-2 the ability number, bit 3 favourite
+OFF_ABILITY_FLAGS = 0x16                                   # bits 0-2 ability number, bit 3 favourite
 OFF_MARKINGS = 0x18
 OFF_PID = 0x1C
 OFF_NATURE = 0x20
@@ -191,8 +167,7 @@ BITFIELDS = {
 
 NAMES = {"nickname": OFF_NICKNAME, "ht_name": OFF_HT_NAME, "ot_name": OFF_OT_NAME}
 
-# The internal index and the National Dex number part at 917. Each table is the signed difference
-# to add, indexed from that species [`PKHeX.Core/PKM/Util/Conversion/SpeciesConverter.cs:141`].
+# Signed differences from species 917 on [`PKHeX.Core/PKM/Util/Conversion/SpeciesConverter.cs:141`].
 FIRST_UNALIGNED = 917
 NATIONAL_TO_INTERNAL = (
     1, 1, 1,
@@ -401,10 +376,7 @@ def write(plain, **fields):
     return bytes(out)
 
 
-# What `build` puts in a record the caller does not name. Every value is one a retail console's own
-# record carries: this game's version byte, the console's language, a Poke Ball, the friendship a
-# caught Pokemon starts at, and no handler, which is what an untraded record reads as. `level`,
-# `met_level` and `obedience_level` agree at 1, the level a record with no experience is.
+# Values a retail console's own record carries; level, met level and obedience agree at 1.
 BUILD_DEFAULTS = {
     "sanity": 0,
     "version": VERSION_SCARLET,
@@ -430,11 +402,8 @@ BUILD_DEFAULTS = {
 
 
 def build(**fields):
-    """-> a plain PARTY record assembled from zero bytes, with BUILD_DEFAULTS under the caller's.
-
-    Nothing is copied from a record a console wrote. A field this module does not know stays zero,
-    so what the game reads out of one is what the field map here covers and nothing else.
-    """
+    """-> a plain party record built from zero bytes, BUILD_DEFAULTS under the caller's fields;
+    unmapped fields stay zero."""
     merged = dict(BUILD_DEFAULTS)
     merged.update(fields)
     out = bytearray(write(bytes(SIZE_PARTY), **merged))

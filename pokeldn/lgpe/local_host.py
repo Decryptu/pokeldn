@@ -1,7 +1,5 @@
-"""The Local Protocol message a Let's Go host broadcasts: its statement of the session.
-
-`pokeldn.ldn.local_protocol` reads one; this builds one. The layout is that module's, confirmed by
-rebuilding a retail console's own message byte for byte.
+"""The Local Protocol 0x11 update session a Let's Go host broadcasts; `pokeldn.ldn.local_protocol`
+reads one. Rebuilds a retail console's message byte for byte.
 """
 import struct
 

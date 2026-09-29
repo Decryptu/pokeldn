@@ -1,47 +1,29 @@
-"""Everything a Let's Go session is keyed on, as far as the binary has been read.
-
-Read off Let's Go Pikachu 1.0.2's `main`, offline. `docs/lgpe_session.md` has the address behind
-each value. Three things are settled by the binary and one is not:
-
-  * the LDN passphrase is the 64-byte literal at 0xf73a50, handed to both session settings with a
-    literal length of 0x40. It is Sword's string, byte for byte.
-  * the Pia game key is the sixteen ASCII bytes at 0xefd659, loaded with one `ldp` and stored into
-    the crypto setting unchanged. Sword's key.
-  * the Pia header version byte is 3: the initializer at 0xd122d4 stores 0x00000003_32AB9864 and the
-    validator at 0xd12400 checks (byte & 0x7f) == 3. The layout is the 5.11-5.21 one that
-    `pokeldn.ldn.pia4` implements for Sword's version 4; the version byte is the only difference.
-  * the session-key derivation at 0x5cd560 is BDSP's and Sword's (SEAD from one 32-bit seed, four
-    draws, AES-128-ECB under the game key). Which advertised value is the seed is not yet measured
-    on this title; the wiki's 5.9-5.18 application-data header puts the session param at +0x0C,
-    where Sword's measured seed sits.
-"""
+"""Everything a Let's Go session is keyed on, read off Let's Go Pikachu 1.0.2's `main`
+(docs/lgpe_session.md has the address behind each value)."""
 
 import struct
 from dataclasses import dataclass
 
 from pokeldn.ldn.pia5 import gcm_iv, ldn_nonce_crc, ldn_session_key
 
-# The LDN passphrase, 64 bytes used raw. main.bin 0xf73a50; `mov w2, #0x40` at 0x4db6c4 (create)
-# and 0x4dbbb0 (join) is the length. docs/lgpe_session.md "The LDN passphrase".
+# 64 bytes used raw [main.bin 0xf73a50] (docs/lgpe_session.md "The LDN passphrase").
 PASSPHRASE = b"W3GoSMEn7RIIUQ89rzqBHGhGferRNb7K18ZBq2aNuj8Us9RO9Q9JYyGOZlLy8MYL"
 assert len(PASSPHRASE) == 64
 
-# The Pia game key, sixteen ASCII bytes at main.bin 0xefd659, used unchanged at 0x11a374.
+# Sixteen ASCII bytes at main.bin 0xefd659.
 GAME_KEY = b"p1frXqxmeCZWFv0X"
 assert len(GAME_KEY) == 16
 
-# The Pia header version byte; the header shape is pia4's. docs/lgpe_session.md "The Pia header".
+# docs/lgpe_session.md "The Pia header": pia4's shape, version byte 3.
 PIA_VERSION = 3
 PIA_HEADER_SIZE = 0x20
 PIA_TAG_SIZE = 16
 PIA_PORT = 12345
 
-# Let's Go Pikachu's title id. The comm id is read off the advertisement at runtime; this is what
-# the scan is expected to report, by analogy with BDSP and Sword whose comm ids are their title ids.
+# Let's Go Pikachu's title id; the comm id is read off the advertisement at runtime.
 COMM_ID_PIKACHU = 0x010003F003A34000
 
-# The link code is three Pokemon chosen in order from a picker of ten; it sets the advertised scene
-# id and leaves the password CRC at 0 (docs/lgpe_session.md, The link code).
+# Three Pokemon picked in order from ten; sets the scene id, CRC stays 0 (docs/lgpe_session.md).
 CODE_POKEMON = ("pikachu", "pikachu", "pikachu")
 CODE_PICKER = ("pikachu", "eevee", "bulbasaur", "charmander", "squirtle",
                "pidgey", "caterpie", "rattata", "jigglypuff", "diglett")
@@ -73,7 +55,7 @@ def scene_id(code=CODE_POKEMON):
     return 1000 * a + 100 * b + 10 * c + 1
 
 
-# main.bin 0xf73a44, indexed at 0x4db248 by scene % 3; docs/lgpe_session.md, The link code.
+# main.bin 0xf73a44, indexed at 0x4db248 by scene % 3.
 SEARCH_CHANNELS = (1, 6, 11)
 
 
@@ -96,9 +78,8 @@ APP_HEADER_SIZE = 0x18
 SYSTEM_COMM_VERSION_OFF = 8         # a u8 version and a u8 header size, then two zero bytes
 SYSTEM_COMM_VERSION = 4
 
-# What a Let's Go trade session advertises, measured on a retail console and on two emulator
-# sessions: scene id 1 in every CreateNetworkPrivate (the advertised NetworkInfo reports 0), no
-# application version, two seats, and a fixed SSID.
+# A trade session's advertisement, measured on retail and in emulation: the NetworkInfo reports
+# scene id 0, no application version, two seats, a fixed SSID.
 SCENE_ID = scene_id()
 APPLICATION_VERSION = 0
 MAX_PARTICIPANTS = 2

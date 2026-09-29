@@ -1,20 +1,6 @@
-"""A BDSP Pokemon on the wire: the 328-byte PB8 a `NetTradePokeData` carries.
+"""A BDSP Pokemon on the wire: the 328-byte stored-form PB8 a `NetTradePokeData` carries.
 
-The console hands one over as a 328-byte payload, and the
-whole format is the Gen 6+ one, unchanged since XY. The format ITSELF is `pokeldn.gen8`, because
-Sword/Shield's PK8 is the same class in PKHeX with one extra field; what belongs HERE is what is
-true of BDSP and of nothing else.
-
-SIZE_STORED is 328 and that is exactly what the message carried, so **a BDSP trade sends the
-STORED form** and not the party form (which is 0x10 longer and holds the battle stats). Sword sends
-the party form on protocol 0x84, which is the one difference in how the two games use one format.
-
-THE CHECKSUM IS WHAT MAKES THIS SAFE TO BUILD - BUT IT DOES NOT CHECK EVERYTHING. It is stored in
-the clear and is the 16-bit sum of the DECRYPTED body, so a wrong LCG stream cannot produce a match.
-It says NOTHING about the block order: permuting whole 80-byte blocks leaves a sum of 16-bit words
-untouched, because addition commutes. A block-order bug survives nine runs behind a
-checksum that agreed every time. What catches a wrong order is reading the fields and seeing whether
-a Pokemon comes out. `docs/bdsp.md`.
+The format is `pokeldn.gen8`; Sword sends the party form, BDSP the stored one (docs/bdsp_trade.md).
 """
 from pokeldn import gen8
 from pokeldn.gen8 import (                                             # noqa: F401 - the PB8 view
@@ -31,21 +17,9 @@ SIZE_STORED = gen8.SIZE_STORED                # 328 = 0x148, the stored form and
 
 
 def decrypt(raw):
-    """-> the plain, unshuffled 328 bytes. Raises if the checksum does not agree.
+    """-> the plain, unshuffled 328 bytes; raises if the checksum does not agree.
 
-    BLOCK_ORDER[sv] IS THE READ ORDER FOR DECRYPTION, APPLIED DIRECTLY (`gen8.decrypt`). It is not
-    "where each block went", and inverting it is wrong
-    for any sv whose permutation is not its own inverse.
-
-    THAT BUG SURVIVED NINE RUNS BECAUSE OF ONE POKEMON. Every PB8 this project had decoded came
-    from a Zubat whose EC gives sv=21 and the ordering (3, 1, 2, 0), which is self-inverse, so the
-    extra inversion was a no-op and the checksum agreed. A Keunotor at sv=28 is
-    (0, 2, 3, 1), which is not, and it decoded to a Bidoof with no moves, no ball and its species
-    name in the trainer field.
-
-    AND THE CHECKSUM CANNOT CATCH THIS. It is a sum of 16-bit words over the whole body, and
-    permuting whole 80-byte blocks does not change a sum - addition commutes. It verifies the LCG
-    stream and nothing about the block order.
+    BLOCK_ORDER[sv] is the read order, applied directly; the checksum cannot catch an inversion.
     """
     if len(raw) != SIZE_STORED:
         raise ValueError(f"{len(raw)} bytes, expected {SIZE_STORED}")
@@ -53,7 +27,6 @@ def decrypt(raw):
 
 
 def encrypt(plain):
-    """-> the 328 bytes to put on the wire, with the checksum written from the body itself."""
     if len(plain) != SIZE_STORED:
         raise ValueError(f"{len(plain)} bytes, expected {SIZE_STORED}")
     return gen8.encrypt(plain)
@@ -65,22 +38,8 @@ def read(raw):
 
 
 def build_from(template_raw, **fields):
-    """-> an encrypted PB8 made by editing a REAL one.
-
-    328 bytes hold far more than the dozen identified fields, and the rest is not zero on a
-    console's own Pokemon - move counts, met data, ribbons, the language byte, handler records.
-    Assembling one from nothing would mean inventing every byte this project has not read, so a
-    Pokemon we send is a Pokemon the console sent us with named fields changed. Every unknown byte
-    is then a real one, from a real save, in a slot the game itself put it in.
-
-    The checksum is rewritten from the edited body by `encrypt`, so a template edit cannot leave an
-    inconsistent Pokemon behind - and `read` on the result is the check that it did what was asked.
-    `gen8.write` lists the fields; `level` and `stats` are not among them for a PB8, which is the
-    stored form and has no party stats to set.
-
-    The template may be in any of the four shapes `gen8.load` reads, so a PKHeX export (344 bytes,
-    decrypted) works as it comes; the party tail is dropped, since a BDSP trade sends the stored form.
-    """
+    """-> an encrypted PB8 made by editing a real one; fields as `gen8.write`, without the party
+    `level` and `stats`. Any `gen8.load` shape works as a template; the party tail is dropped."""
     return encrypt(gen8.write(gen8.load(template_raw)[:SIZE_STORED], **fields))
 
 

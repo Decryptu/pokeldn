@@ -1,27 +1,8 @@
-"""The data exchange Legends Arceus runs on Stream Broadcast Reliable, and the record it carries.
+"""The data exchange Legends Arceus runs on Stream Broadcast Reliable (0x81), and its record.
 
-The trade scene is the success branch of the game's matching sequence, and the sequence completes
-when this exchange completes. Each station opens the 0x81 stream, sends one record of its own, and
-acknowledges its peer's. A station sends its record only after it has received the peer's, so a host
-that never sends one leaves the joiner's sequence outstanding until its ten-second deadline. The
-frame is `pokeldn.ldn.reliable5`, the same sliding window this band uses on 0x7c.
-
-    port          the SENDER's station index: the host sends on 0, the first joiner on 1
-    bitmap        the destination station mask, with one declared destination bit: 0x02 to the
-                  joiner, 0x01 to the host
-    sequence id   1, with the message-start, message-end and initialized flags and FLAG_ZLIB
-
-The record is zlib with a 4 KB window, level 5, sync-flushed and then finished, which reproduces a
-reference host's 61 compressed bytes byte for byte. It decompresses to 139 bytes that are identical
-in both directions of a pair and across separate sessions, so nothing in it is session-derived: it
-is the player the game shows as the trade partner. What each field means beyond the two below is
-unread, so a record is built from the reference and those two are written into it.
-
-    +0x1b  4   player id, as stored
-    +0x2b  26  player name, UTF-16 little-endian, NUL-padded
-
-The name's extent is the run of bytes to the next non-zero field at +0x47 and is not measured
-against a second name. `docs/pla.md`, The data exchange.
+A station sends its record only after receiving the peer's; the frame is `pokeldn.ldn.reliable5`.
+The record is zlib (4 KB window, level 5) of 139 bytes, identical in both directions and across
+sessions; only the player id at +0x1b and the UTF-16 name at +0x2b are written (docs/pla.md).
 """
 
 import zlib
@@ -31,21 +12,20 @@ from pokeldn.ldn import reliable5
 PROTOCOL = 0x81                   # StreamBroadcastReliable
 HOST_PORT = 0                     # the sender's station index
 JOINER_PORT = 1
-SEQUENCE_ID = 1                   # both stations send their record as their stream's seq 1
+SEQUENCE_ID = 1
 
-ZLIB_LEVEL = 5                    # with WINDOW_BITS, reproduces the reference record exactly
+ZLIB_LEVEL = 5                    # with WINDOW_BITS, reproduces a reference host's 61 bytes
 ZLIB_WINDOW_BITS = 12
 
 RECORD_SIZE = 139
 PLAYER_ID_OFFSET = 0x1B
 PLAYER_ID_SIZE = 4
 NAME_OFFSET = 0x2B
-NAME_SIZE = 26                    # to the next non-zero field; not measured against a second name
+NAME_SIZE = 26                    # to the next non-zero field; one name measured
 
 STREAM_OPEN_PAYLOAD = bytes.fromhex("0000000000008000000000")
 
-# The record a reference host sent, decompressed. Identical in both directions of a pair and across
-# two sessions, so it carries no session state. `docs/pla.md`, The data exchange.
+# A reference host's record, decompressed.
 REFERENCE_RECORD = bytes.fromhex(
     "010064000000000000008000000000000000000000000000000000879df3062f0000"
     "0200000000000000004600720065006500530068006b00720065006c006900000000"
@@ -55,11 +35,8 @@ REFERENCE_RECORD = bytes.fromhex(
 
 
 def compress(record):
-    """-> the record as the game frames it: zlib, 4 KB window, level 5, sync-flushed then finished.
-
-    A plain `zlib.compress` differs in the header and the trailer; this is byte for byte what a
-    reference host sent.
-    """
+    """-> the record as the game frames it: zlib, 4 KB window, level 5, sync-flushed then finished;
+    a plain `zlib.compress` differs in the header and trailer."""
     c = zlib.compressobj(ZLIB_LEVEL, zlib.DEFLATED, ZLIB_WINDOW_BITS)
     return c.compress(bytes(record)) + c.flush(zlib.Z_SYNC_FLUSH) + c.flush(zlib.Z_FINISH)
 
@@ -70,11 +47,8 @@ def decompress(payload):
 
 
 def build_record(player_id=None, name=None, template=REFERENCE_RECORD):
-    """-> the 139-byte record, the reference with the player id and name written into it.
-
-    `player_id` is four bytes or an int stored as they are; `name` is written UTF-16 little-endian
-    and NUL-padded. A name longer than the field raises rather than truncating into the next field.
-    """
+    """-> the 139-byte reference record with the player id and name written; a name longer than
+    the field raises."""
     record = bytearray(template)
     if len(record) != RECORD_SIZE:
         raise ValueError(f"a record is {RECORD_SIZE} bytes, not {len(record)}")
@@ -120,11 +94,7 @@ def build_content_message(record, destination_bitmap, sequence_id=SEQUENCE_ID):
 
 
 def build_ack_message(ack_ids, destination_bitmap, lowest_pending=1, station_index=0):
-    """-> the 0x81 acknowledgement: one entry per id, as the reference host sends two.
-
-    The reference acknowledges ids 1 and 2 with the window's own field at 1 and an empty mask, under
-    a thirteen-byte header carrying the destination bitmap the content messages carry.
-    """
+    """-> the 0x81 acknowledgement, one entry per id, as the reference acks ids 1 and 2."""
     entries = [dict(stream_id=station_index, ack_id=i, field_0x50=lowest_pending) for i in ack_ids]
     payload = reliable5.build_ack_payload(entries)
     return (reliable5.build_header(0, reliable5.ACK_SEQUENCE, len(payload),

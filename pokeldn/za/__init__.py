@@ -1,12 +1,7 @@
-"""Legends Z-A, a native Switch title on Pia header version 16.
+"""Legends Z-A, a native Switch title on Pia header version 16 (`pokeldn.ldn.crypto`).
 
-What belongs here is what is true of Legends Z-A and of nothing else: its LDN passphrase, its Pia
-game key, its local communication id, the advertisement a console waiting on the local search
-screen puts up, and the game's own messages once they are read. The packet header of its band is
-`pokeldn.ldn.crypto`, which the GBA application already uses, because a header band is true of
-every title in it.
-
-`docs/za.md` has the addresses and the unresolved list.
+Belongs here: its LDN passphrase, Pia game key, local communication id, the searching console's
+advertisement and the game's messages (docs/za.md).
 """
 
 from pokeldn.za import pokemon, streams

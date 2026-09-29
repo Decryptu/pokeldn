@@ -1,20 +1,5 @@
-"""The Pokemon record a Legends Z-A offer carries.
-
-The record is the generation 8 and 9 entity: an encryption constant, a sanity halfword, a
-checksum, then four 0x50-byte blocks shuffled by the constant, 0x148 bytes stored and 0x158 with
-the party tail. `pokeldn.sv.pokemon` already codes that shell and Z-A's records validate under it
-unchanged, so the crypto, the block shuffle and the checksum are imported rather than restated.
-
-The layout is Scarlet's. Measured on nine records out of three reference sessions:
-
-    0x008   species, Scarlet's index         714 Noibat, 716 Xerneas, 95 Onix; from 917 up it is
-                                             the generation 9 internal index (docs/za.md)
-    0x058   nickname, UTF-16LE               the species name in the save's language
-    0x0a8   handler's name                   "Player", only on a record whose handler is set
-    0x0f8   original trainer's name          "XS" on all nine
-    0x148   level, in the party tail         derived by the game from the experience
-
-`docs/za.md`, The offered Pokemon.
+"""The Pokemon record a Legends Z-A offer carries: Scarlet's layout and crypto, imported from
+`pokeldn.sv.pokemon` (docs/za.md, The offered Pokemon).
 """
 from pokeldn.sv import pokemon as _sv
 
@@ -77,8 +62,8 @@ def build_offer(header, plain, trailer=b"\x00"):
 
 
 def fresh_offer(offer, rand=None):
-    """-> the offer with its record under a new encryption constant and PID, shiny state kept. A
-    save that already holds that PID and constant takes the Pokemon as a duplicate."""
+    """-> the offer with its record under a new encryption constant and PID, shiny state kept; a
+    save already holding that PID and constant takes the Pokemon as a duplicate."""
     header, plain, trailer = parse_offer(offer)
     plain = _sv.fresh_identity(plain, **({"rand": rand} if rand else {}))
     return build_offer(header, plain, trailer)

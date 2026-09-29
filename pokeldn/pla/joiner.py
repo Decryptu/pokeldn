@@ -1,11 +1,5 @@
-"""The joining station of a Legends Arceus trade: what a station that joined a console's network owes
-it, from the Net answer to the phase protocol.
-
-The order is the retail joiner's, read off a console that joined our host and completed a trade
-(`docs/pla.md`, Joining a console's network). The class does no I/O. `receive` takes one
-authenticated packet and returns the packets to send back; `poll` returns what a timer owes. Every
-packet goes to the host.
-"""
+"""The joining station of a Legends Arceus trade, in the retail joiner's order (docs/pla.md,
+Joining a console's network). No I/O: `receive` and `poll` return the packets for the host."""
 
 import hashlib
 import os
@@ -19,8 +13,8 @@ PROTO_NET = 0x2C
 PROTO_RTT = 0x58
 PROTO_CLOCK = 0x77
 PROTO_SESSION = 0x98
-PROTO_STREAM = data_exchange.PROTOCOL          # 0x81
-PROTO_GAME = game_channel.PROTOCOL             # 0x7c
+PROTO_STREAM = data_exchange.PROTOCOL
+PROTO_GAME = game_channel.PROTOCOL
 
 NET_CONN_REQUEST = 0x11
 NET_PROPERTY = 0x50
@@ -60,7 +54,7 @@ class JoinerSession:
     def __init__(self, keys, our_ip, our_mac, offer, exchange, *, name=" ",
                  player_id=pia6.DEFAULT_PLAYER_ID, our_var=None, phase_waits=PHASE_WAITS,
                  drive=False, net_answer=True, log=print, clock=time.monotonic):
-        self.net_answer = net_answer   # False sends the join with no Net 0x12 (docs/pla.md, Unresolved)
+        self.net_answer = net_answer   # False: no Net 0x12 (docs/pla.md, Unresolved)
         self.keys, self.our_ip, self.offer, self.exchange = keys, our_ip, bytes(offer), exchange
         self.our_cid = pia_connect.ldn_constant_id(our_mac)
         self.name, self.player_id, self.phase_waits = name, player_id, tuple(phase_waits)
@@ -92,14 +86,11 @@ class JoinerSession:
         self.host_phase = 0
         self.phase_closed = False
         self.traded = False
-        # With `drive`, the joiner is the player as well: it offers once the host has shown, confirms
-        # once the host has offered, and sends selector 7 after the game's 1.5 s stopwatch. Without
-        # it, the console's player leads and every step is answered as a host of ours answers it.
+        # With `drive` the joiner plays: it offers after the host shows, confirms after it offers,
+        # and sends selector 7 after the game's 1.5 s stopwatch; without it the console leads.
         self.host_showed = self.offered = self.confirmed = False
         self.host_confirmed_at = None
         self.sent_seven = False
-
-    # -- packets ---------------------------------------------------------------------------------
 
     def _packet(self, body, protocol, port=0, flags=FLAGS):
         msg = pia6.build_message(body, protocol=protocol, port=port, message_flags=flags)
@@ -142,8 +133,6 @@ class JoinerSession:
         return [self._packet(pia_connect.build_session_leave_v11(
             self.our_cid, self.our_var, self.our_ip, random4=os.urandom(4)), PROTO_SESSION)
             for _ in range(sends)]
-
-    # -- inbound ---------------------------------------------------------------------------------
 
     def receive(self, messages):
         """-> the packets owed for one authenticated packet's messages."""
@@ -399,8 +388,6 @@ class JoinerSession:
             return out + self._advance()
         self.log(f"[pla] <- game channel port {port} key {key.hex()} body {body.hex()}")
         return out
-
-    # -- the trade, driven by state and time -----------------------------------------------------
 
     def _advance(self):
         out = []

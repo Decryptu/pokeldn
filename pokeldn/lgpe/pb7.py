@@ -1,17 +1,5 @@
-"""The Pokemon structure Let's Go trades, and the messages that carry it.
-
-A trade message is a 16-byte header and a body whose length the header states:
-
-    +0x00  4  message kind, 1 or 2
-    +0x04  4  body length, 0x168 for kind 1 and 0x0e8 for kind 2
-    +0x08  4  step, counting every message a station sends from 1
-    +0x0c  4  0x0000ff00
-
-The body follows at +0x10. Type 2's body is a 232-byte box-format structure, the generation 7 layout with the generation 6
-encryption: an encryption constant at +0x00, a zero sanity word at +0x04, a checksum at +0x06, and
-four 56-byte blocks from +0x08 whose order is a permutation of the encryption constant. The blocks
-are XORed with a 16-bit stream from an LCRNG seeded with that same constant.
-"""
+"""The 232-byte box structure Let's Go trades, and the 16-byte-header messages that carry it
+(docs/lgpe_session.md)."""
 import struct
 
 BOX_SIZE = 232
@@ -23,7 +11,6 @@ OFFER_MESSAGE = 2
 COMMIT_MESSAGE = 3   # body is one u32; both stations send it twice, carrying 1 and then 2
 RESULT_MESSAGE = 4   # the next round's party-offer channel, first sent after the trade animation
 
-# block b of a shuffled structure holds block BLOCK_ORDER[sv][b] of an unshuffled one
 BLOCK_ORDER = [
     [0, 1, 2, 3], [0, 1, 3, 2], [0, 2, 1, 3], [0, 3, 1, 2], [0, 2, 3, 1], [0, 3, 2, 1],
     [1, 0, 2, 3], [1, 0, 3, 2], [2, 0, 1, 3], [3, 0, 1, 2], [2, 0, 3, 1], [3, 0, 2, 1],
@@ -36,7 +23,6 @@ __all__ = ["BOX_SIZE", "HEADER_SIZE", "FIRST_MESSAGE", "OFFER_MESSAGE", "COMMIT_
            "crypt", "checksum", "decrypt", "encrypt", "parse_message", "build_message",
            "TRAINER_ID", "trainer_id", "set_trainer_id"]
 
-# the trainer id pair a first message opens with, and the same pair inside a box structure
 TRAINER_ID = 0x00
 BOX_TRAINER_ID = 0x0C
 OFF_PID = 0x18                      # PKHeX PB7.cs; the encryption constant is at 0x00
@@ -85,7 +71,6 @@ def encrypt(plain):
     out = bytearray(plain)
     struct.pack_into("<H", out, 6, checksum(out))
     order = BLOCK_ORDER[shuffle_value(struct.unpack_from("<I", out, 0)[0])]
-    # inverse of the permutation decrypt applies
     inverse = [order.index(b) for b in range(4)]
     return crypt(_reorder(bytes(out), inverse))
 
@@ -104,8 +89,7 @@ def parse_message(data):
     if len(data) < HEADER_SIZE:
         return None
     kind, size, step, flags = struct.unpack_from("<IIII", data, 0)
-    # every kind is accepted: narrowing this to the kinds already seen is twice now what hid the
-    # next step of the protocol, once for the step counter and once for the commit
+    # Every kind is accepted: narrowing to the kinds already seen has hidden a protocol step twice.
     if not 1 <= kind <= 0xFF or len(data) != HEADER_SIZE + size:
         return None
     return {"kind": kind, "size": size, "step": step, "flags": flags,
@@ -113,11 +97,8 @@ def parse_message(data):
 
 
 def build_message(kind, body, step=None):
-    """-> the message a station sends: the 16-byte header and the body behind it.
-
-    `step` counts the messages a station has sent, from 1. A station that repeats its offer under a
-    fresh step is asking again rather than retransmitting; the first message is step 1.
-    """
+    """-> the 16-byte header and the body. A repeated offer under a fresh step is a new question,
+    not a retransmission."""
     return struct.pack("<IIII", kind, len(body), kind if step is None else step,
                        FLAGS) + bytes(body)
 
@@ -128,16 +109,14 @@ def trainer_id(body, offset=TRAINER_ID):
 
 
 def set_trainer_id(body, tid, sid, offset=TRAINER_ID):
-    """-> `body` with its trainer id pair replaced. Two stations that carry the same pair are the
-    same trainer, which is what a capture taken between two emulators sharing a save produces."""
+    """-> `body` with its trainer id pair replaced."""
     out = bytearray(body)
     struct.pack_into("<HH", out, offset, tid & 0xFFFF, sid & 0xFFFF)
     return bytes(out)
 
 
 def fresh(raw, rand=None):
-    """-> the structure, encrypted, under a new encryption constant and PID. The PID keeps
-    `hi ^ lo`, so the shiny xor against the same trainer, and the shiny state, carry over."""
+    """-> the structure, encrypted, under a new encryption constant and PID; shiny state kept."""
     import os
     rand = rand or os.urandom
     plain = bytearray(decrypt(raw) if valid(raw) else raw)

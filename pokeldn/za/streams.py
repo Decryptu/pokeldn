@@ -1,13 +1,6 @@
-"""The game's own stream layer: what rides on Reliable (10) and Broadcast Reliable (11).
-
-Both protocols carry the sub-header `pokeldn.ldn.reliable` codes. What is true of this title is
-the shape of a Broadcast Reliable payload: four bytes naming the sending station, then the
-application data, and, on an acknowledgement, four station entries rather than the single entry a
-unicast acknowledgement carries.
-
-Measured on a reference pair's trade: the joiner prefixes 00000001 and the host 00000002. The
-reliable sub-header's length on protocol 11 counts the bytes after the prefix, so a frame carries
-four bytes more than it declares; a frame cut at the declared length is dropped by the host.
+"""The game's stream layer on Reliable (10) and Broadcast Reliable (11): a protocol-11 payload opens
+with the sender's four-byte station prefix, which the declared length leaves out; a frame cut at the
+declared length is dropped (docs/za.md).
 """
 from pokeldn.ldn import reliable
 
@@ -28,10 +21,8 @@ def build_ack(next_expected, mask=b"\x00" * 16):
 
 
 def build_broadcast_ack(next_expected, mask=b"\x00" * 16, *, prefix=PREFIX_JOINER, entry=0):
-    """The acknowledgement of protocol 11: the prefix, then four 18-byte station entries, 78 bytes.
-
-    Entry 0 is the host's stream and entry 1 the joiner's: a joiner acknowledges in entry 0, a host
-    in entry 1, and every other entry reports the idle base."""
+    """The acknowledgement of protocol 11: the prefix, then four 18-byte station entries (78 bytes);
+    a joiner acknowledges in entry 0, a host in entry 1."""
     out = bytearray(prefix)
     out += bytes([0x00, ACK_STATIONS])
     for i in range(ACK_STATIONS):

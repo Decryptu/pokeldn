@@ -1,7 +1,5 @@
 """A joiner leaving a Let's Go trade session the way a retail console does (docs/lgpe_session.md,
-"A joiner leaving"): the offered clone published with 4 in its state word, argument 0 and then 3;
-its clones released with a 0x83 each, repeated every 100 ms until the host's 0x84; the mesh leave
-request on the mesh protocol's reliable port; then the station disconnection, either way round."""
+"A joiner leaving")."""
 import struct
 
 from pokeldn.ldn import clone, reliable3
@@ -12,7 +10,7 @@ from pokeldn.ldn import station9
 __all__ = ["Leaver"]
 
 RELEASE_ORDER = (1, 0, 2, 3)
-# the console's own pause between its last release and its leave request, measured three times
+# The console's pause between its last release and its leave request, measured three times.
 LEAVE_AFTER_RELEASES = 2.45
 
 
@@ -105,9 +103,8 @@ class Leaver:
         elif protocol == mp.PROTOCOL and payload and payload[0] == mp.LEAVE_RESPONSE:
             if not self.leave_answered:
                 self.leave_answered = True
-                # a retail host answers the leave with 08 00, sends a Local Protocol start host
-                # migration (0x13) every 0.3 s and waits five seconds for the leaver to go, so
-                # the leaver's own disconnection request goes at once
+                # A retail host migrates every 0.3 s and waits five seconds for the leaver, so the
+                # disconnection request goes at once.
                 self.disconnect_at = now + 0.05
                 self.log.append("leave response")
         elif protocol == station9.PROTOCOL and payload:

@@ -1,37 +1,27 @@
-"""Everything a Legends Arceus session is keyed on, as far as the binary has been read.
+"""Everything a Legends Arceus session is keyed on, from update 1.1.1's `main` (docs/pla.md).
 
-Read off the decompressed `main` of update 1.1.1, offline, with no hardware run. `docs/pla.md` has
-the address behind each value. Two things separate this title from Sword/Shield, which shares its
-passphrase and its game key byte for byte:
-
-  * the Pia header is version 11, the 6.16 to 6.30 band, and `pokeldn.ldn.pia6` speaks it.
-  * the session key comes from the network's SSID rather than from a session parameter in the
-    advertisement. There is no seed to read out of the application data at this band, and the
-    network id is a hash of the SSID rather than a broadcast field.
+Passphrase and game key equal Sword's; the Pia header is version 11 (`pokeldn.ldn.pia6`) and the
+session key and network id come from the SSID.
 """
 from dataclasses import dataclass
 
 from pokeldn.ldn.pia6 import gcm_iv, ldn_network_id, ldn_session_key
 
-# The LDN passphrase, 64 bytes used RAW. rodata 0x3985319, copied in four `ldp`/`stp` pairs with the
-# length stored right after it as a literal 0x40 (0x2c24268). Byte-identical to Sword/Shield's.
+# 64 bytes used raw, rodata 0x3985319, length 0x40 at 0x2c24268.
 PASSPHRASE = b"W3GoSMEn7RIIUQ89rzqBHGhGferRNb7K18ZBq2aNuj8Us9RO9Q9JYyGOZlLy8MYL"
 assert len(PASSPHRASE) == 64
 
-# The Pia game key, sixteen ASCII bytes at rodata 0x3985308, used unchanged. The LDN setup at
-# 0x2c1e684 installs it; Pia keeps it at LdnProtocol+0x238 and derives the session key from it.
+# rodata 0x3985308; installed at 0x2c1e684, kept at LdnProtocol+0x238.
 GAME_KEY = b"p1frXqxmeCZWFv0X"
 assert len(GAME_KEY) == 16
 
-# The local communication id, built by the `mov`/`movk` run at 0x264082c and passed to the LDN setup
-# at 0x2c1e684 in x3. It is the title id. NOT yet seen on air.
+# The title id, built at 0x264082c and passed to the LDN setup 0x2c1e684 in x3.
 COMM_ID = 0x01001F5010DFA000
 
 PIA_VERSION = 11
 PIA_HEADER_SIZE = 0x1C
 PIA_TAG_SIZE = 8
 
-# Every Pia station listens on the same port; this is not game-specific, and BDSP measured it.
 PIA_PORT = 12345
 
 
@@ -48,35 +38,25 @@ class SessionKeys:
 
 
 def session_keys(ssid, game_key=GAME_KEY):
-    """-> SessionKeys for a network, from its SSID alone.
-
-    `ssid` is the LDN network's SSID as scanned. Both the session key and the network id come out of
-    it, so nothing here depends on what the game puts in its application data.
-    """
+    """-> SessionKeys for a network: the session key and the network id both come from its SSID."""
     ssid = bytes(ssid)
     return SessionKeys(ldn_session_key(game_key, ssid), bytes(game_key), ssid,
                        ldn_network_id(ssid))
 
 
 def packet_iv(keys, source_ip, nonce8):
-    """The twelve-byte GCM IV for a version-11 packet: `pia6`'s construction, unchanged.
-
-    `source_ip` is the SENDER's LDN address, dotted or four bytes.
-    """
+    """The twelve-byte GCM IV for a version-11 packet; `source_ip` is the sender's LDN address."""
     return gcm_iv(keys.network_id, source_ip, nonce8)
 
 
-# What a waiting console advertises, measured on two sessions of a retail Legends Arceus.
+# A waiting console's advertisement, measured on two retail sessions.
 LDN_PROTOCOL = 1                  # the advertisement is AES-CTR, as Sword's is
 ADVERTISE_VERSION = 4             # the advertisement frame version; the GBA app is 3, Sword 2
 SCENE_ID = 1
 MAX_PARTICIPANTS = 2
 
-# The eight-digit code the player types goes into the advertisement's sixteen-byte user password
-# field through Pia's password setter `0x6fc454`: the code, NUL-padded to sixteen bytes, encrypted
-# with AES-128-GCM under the game key and a four-byte IV read out of the key itself, tag discarded
-# (`0x6e68d0`). One block of GCM is one XOR with a fixed keystream, so the field is the code XORed
-# into this constant. `docs/pla.md`, The link code in the advertisement.
+# The code, NUL-padded to sixteen bytes, GCM-encrypted under the game key by `0x6fc454`: one XOR
+# with this fixed keystream (docs/pla.md, The link code in the advertisement).
 LINK_CODE_IV_BYTES = (1, 8, 7, 2)     # `0x6fc4e4`..`0x6fc4fc`: key[1] key[8] key[7] key[2]
 LINK_CODE_LEN = 8
 
@@ -98,12 +78,7 @@ CODE_OFF, CODE_LEN_OFF = 0x00, 0x10
 
 
 def user_password(code):
-    """-> the sixteen bytes a console advertises for this code.
-
-    `code` is the eight digits as a string or bytes. The first eight bytes of the mask carry the
-    code; the rest of the field is the mask unchanged, which is why a code shorter than the field
-    leaves the tail alone.
-    """
+    """-> the sixteen bytes a console advertises for this eight-digit code."""
     code = code.encode() if isinstance(code, str) else bytes(code)
     return bytes(m ^ c for m, c in zip(LINK_CODE_MASK, code.ljust(16, b"\x00")))
 
@@ -115,18 +90,14 @@ def link_code(user_password_bytes, length=LINK_CODE_LEN):
 
 
 def build_game_data(code):
-    """-> the twenty bytes the game puts after the system property block: the code, then its length."""
+    """-> the twenty bytes after the system property block: the code, then its length."""
     code = code.encode() if isinstance(code, str) else bytes(code)
     return code.ljust(16, b"\x00")[:16] + len(code).to_bytes(4, "little")
 
 
 def parse_advertise_data(app_data):
-    """-> dict: the 0x5C system property block's fields, the code, and the code the password agrees on.
-
-    `code` is what the game states in its own twenty bytes. `password_code` is what the password
-    field decodes to. They have matched on every session measured; a disagreement means the mask
-    is not constant and the derivation needs another look.
-    """
+    """-> dict: the 0x5C block's fields, the game's `code`, and the `password_code` the password
+    field decodes to; the two have matched on every session measured."""
     from pokeldn.ldn.beacon import decode_pia_header
 
     app = bytes(app_data)
@@ -152,11 +123,7 @@ SYS_COMM_VERSION = 21
 
 def build_advertise_data(code, *, name=ADVERTISE_NAME, num_players=1,
                          player_limit_enabled=True, app_comm_ver=APP_COMM_VERSION):
-    """-> the 112 bytes a console waiting on this code advertises.
-
-    The 0x5C system property block is `ldn.beacon`'s, which is the band's and not this game's; the
-    twenty bytes after it are the game's. Reproduces both captured advertisements byte for byte.
-    """
+    """-> the 112 bytes a console waiting on this code advertises; reproduces both captures."""
     from pokeldn.ldn.beacon import build_pia_header
 
     code = code.encode() if isinstance(code, str) else bytes(code)

@@ -1,11 +1,7 @@
-"""The 720-byte Wonder Card record Sword/Shield's importer accepts, and how to build one.
-
-The record is PKHeX's WC8. It carries its own checksum at +0x2CC: CRC-16/CCITT-FALSE (poly 0x1021,
-init 0xFFFF, no reflection, no final xor) over all 0x2D0 bytes with that halfword zeroed, verified
-at 0x010b5de0. The first eight bytes are the card's date, a calendar bitfield in UTC. Field by
-field: docs/swsh_gift.md, "What a record must carry" onwards.
-Trap: the nickname array is at 0x030 and the trainer array at 0x12C; a console shows them that way
-round, whatever a parser trace suggests."""
+"""The 720-byte WC8 Wonder Card record Sword/Shield's importer accepts, sealed by a
+CRC-16/CCITT-FALSE at +0x2CC, checked at 0x010b5de0 (docs/swsh_gift.md, "What a record must carry").
+Trap: the nickname array is at 0x030 and the trainer array at 0x12C, as a console shows them.
+"""
 import struct
 import time
 
@@ -73,8 +69,8 @@ def build(card_id=0x270F, region_mask=0xFFFF, dedup=0, extra=None, date=None):
     return seal(r)
 
 
-# The Pokemon block, read by the kind-1 path 0x010b58f0; offsets into the record and struct formats.
-# Every entry is confirmed on a console where docs/swsh_gift.md says so; the rest is PKHeX's map.
+# Read by the kind-1 path 0x010b58f0: (offset, format); PKHeX's map where docs/swsh_gift.md records
+# no console check.
 POKEMON = {
     "tid": (0x20, "H"), "sid": (0x22, "H"),          # 0/0 gives the player's own ids
     "ec": (0x28, "I"), "pid": (0x2C, "I"),            # 0 rolls one
@@ -117,11 +113,8 @@ def utf16(text, size=NAME_BYTES):
 def pokemon_card(species, level=5, moves=(0, 0, 0, 0), form=0, nickname=None, ot=None,
                  card_id=0x270F, region_mask=0xFFFF, dedup=0, met_level=None, ribbons=(),
                  date=None, **fields):
-    """A kind-1 record carrying one Pokemon. Fields not given stay zero, except the ribbon list,
-    which is empty rather than thirty-two ribbons of index 0. `fields` are POKEMON keys.
-
-    level 0 makes the game roll one and report the Pokemon as met at level 0; met_level defaults to
-    the level so a card looks like a real distribution rather than a measuring instrument."""
+    """A kind-1 record carrying one Pokemon (`fields` are POKEMON keys); the ribbon list starts
+    empty, and met_level defaults to the level (level 0 makes the game roll one)."""
     extra = {GIFT_KIND_AT: bytes([GIFT_KIND_POKEMON])}
     if met_level is None:
         met_level = level

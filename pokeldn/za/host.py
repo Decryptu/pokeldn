@@ -1,12 +1,5 @@
-"""The host's side of a Legends Z-A local trade, as a reference host runs it; owns no sockets.
-
-A searching console joins a network carrying the title's advertisement. What a host owes it is read
-off an emulated pair's trade (`docs/za.md`, Hosting): the Net connection status until the joiner
-answers, the Session join response and two update sessions, the game's identity on both reliable
-streams, the selection record once the second update is acknowledged, then the trade messages.
-
-`HostSession` takes datagrams in and queues datagrams out; `bin/za_host.py` carries them.
-"""
+"""The host's side of a Legends Z-A local trade, as a reference host runs it (docs/za.md, Hosting).
+`HostSession` queues datagrams in and out; `bin/za_host.py` carries them."""
 import os
 import time
 import zlib
@@ -44,8 +37,8 @@ MSG_CONFIRM = bytes.fromhex("0102b90100")
 MSG_COMMIT = bytes.fromhex("0104b90100")
 MSG_CANCEL = "0103"
 MSG_STEP = "0200"
-# An offer's last byte: 1 on the preview a station sends unasked, 0 on the player's pick. A pick
-# sent with 1 is drawn as nothing and the partner waits on "Communicating" (docs/za.md).
+# An offer's last byte: 1 on an unasked preview, 0 on the player's pick; a pick sent with 1 is drawn
+# as nothing (docs/za.md).
 OFFER_PREVIEW, OFFER_PICK = 1, 0
 STEP_ANSWER = bytes.fromhex("0201")   # a host answers each 0200 step on protocol 11 with 0201
 
@@ -145,8 +138,6 @@ class HostSession:
         self.renew_offer = renew_offer
         self.counts = {}
 
-    # -- framing -------------------------------------------------------------------------------
-
     def _elapsed(self, now):
         return now - self.t0
 
@@ -170,8 +161,6 @@ class HostSession:
     def drain(self):
         out, self.out = self.out, []
         return out
-
-    # -- the layers below the game ---------------------------------------------------------------
 
     def _net_status(self):
         body = pia_connect.build_net_conn_request(
@@ -248,8 +237,6 @@ class HostSession:
         if payload[:1] == b"\x00" and self.guest_var is not None:
             response = build_rtt_response(payload, self._micros(now), header.src)
             self._send([(pia_connect.PROTO_RTT, response, None)], dst=pia_connect.SESSION_VAR)
-
-    # -- the game's streams ----------------------------------------------------------------------
 
     def _emit(self, proto, seq, flags_a, inner, msgflags=None):
         link = self.links[proto]
@@ -331,12 +318,11 @@ class HostSession:
             if self.record:
                 self.record(rec="console_offer", n=self.console_offers, data=inner.hex(),
                             t=time.time())
-            # A console sends a preview, marked 1, each time its cursor moves; its pick is marked 0.
             if inner[-1] == OFFER_PICK and self.offer and not self.offer_sent:
                 self.offer_sent = True
                 self._schedule(now, OFFER_DELAY, self.offer, "our offer")
         elif head == MSG_CANCEL:
-            # a cancel moves both stations to the next round and back to the selection
+            # A cancel moves both stations to the next round.
             self.round = max(self.round, command_round(inner) or 0)
             self.offer_sent = self.confirmed = self.committed = False
             self.log(f"[za-host] console cancelled; round {self.round}")
@@ -358,19 +344,16 @@ class HostSession:
                            proto=streams.PROTO_BROADCAST)
             self.trade_steps += 1
             if self.trade_steps == 4:
-                # the console returns to its box in the same seat: the next trade starts clean
                 self.trade_complete = True
                 self.trades += 1
                 self.trade_steps = 0
-                self.round = 0      # a console's next trade in the seat confirms under round 0 (zh06)
+                self.round = 0      # the next trade in the seat confirms under round 0
                 self.offer_sent = self.confirmed = self.committed = False
                 if self.renew_offer and self.offer:
                     self.offer = bytes(self.renew_offer(self.offer)[:-1]) + bytes([OFFER_PICK])
                     self.preview = self.offer[:-1] + bytes([OFFER_PREVIEW])
                 show_done()
                 self.log(f"[za-host] trade_complete: the console sent its four steps (trade {self.trades})")
-
-    # -- the loop's two entry points -------------------------------------------------------------
 
     def receive(self, datagram, src_ip, now=None):
         now = self.clock() if now is None else now

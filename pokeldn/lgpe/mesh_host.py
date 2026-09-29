@@ -1,8 +1,5 @@
-"""The mesh messages a Let's Go host sends, built rather than replayed.
-
-Let's Go's mesh entries use the version-4 geometry `pokeldn.ldn.mesh_protocol` documents: a
-64-byte entry holding a station location with the station index at 0x3E. A two-station join
-response is 148 bytes and an update mesh is 524, both measured on a retail console.
+"""The mesh messages a Let's Go host sends, in `pokeldn.ldn.mesh_protocol`'s version-4 geometry:
+a two-station join response is 148 bytes and an update mesh 524, measured on a retail console.
 """
 import struct
 

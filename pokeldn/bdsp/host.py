@@ -1,9 +1,6 @@
-"""The host side of a BDSP Union Room: what a retail console sends when it hosts, built from fields.
+"""The host side of a BDSP Union Room: a retail host's messages, from fields (docs/bdsp_session.md).
 
-A console entering the Union Room joins a room it finds before it opens its own
-(`IlcaNetSessionSetting.matchingMode = Random`), so a network advertising the room draws it in.
-Every builder here reproduces a retail host's own message from its parsed fields; the layouts are
-on `docs/bdsp_session.md`. `HostSession` owns no socket: it takes datagrams and returns datagrams.
+A console entering the room joins one it finds before opening its own. `HostSession` owns no socket.
 """
 import struct
 import zlib
@@ -55,12 +52,8 @@ STATE_PERIOD = 1.0
 
 
 def build_advertise_data(network_id, session_param, application_data=b"\0", password=""):
-    """The 17 bytes a retail room advertises: Pia's 16-byte LDN header, then one byte of the game's.
-
-        +0x00  network id, little-endian     +0x08  system communication version 8
-        +0x04  password CRC32, 0 = none      +0x09  header size 16
-        +0x0c  session parameter, little-endian; it seeds the session key
-    """
+    """The 17 bytes a retail room advertises: Pia's 16-byte LDN header, then one game byte
+    (docs/bdsp_session.md)."""
     return (struct.pack("<I", network_id & 0xFFFFFFFF) + password_crc(password)
             + bytes([SYSTEM_COMM_VERSION, ADVERTISE_HEADER_SIZE, 0, 0])
             + struct.pack("<I", session_param & 0xFFFFFFFF) + bytes(application_data))
@@ -184,11 +177,8 @@ class Joiner:
 
 
 class HostSession:
-    """A BDSP room hosted for one console. `receive` and `tick` return [(packet, ip)].
-
-    `on_game(joiner, message, now)` is called with every game message the console sends and
-    returns game messages to send back reliably.
-    """
+    """A BDSP room hosted for one console. `receive` and `tick` return [(packet, ip)]; `on_game`
+    returns game messages to send back reliably."""
 
     def __init__(self, keys, adv, our_ip, our_mac, variable_id, name="PkCamp", language=3,
                  join=None, on_game=None, on_tick=None, record=None, nonce_start=0):
@@ -220,7 +210,6 @@ class HostSession:
         # the mesh clock a host hands out, in ms; any monotonic value
         self.clock_origin_ms = 1_000_000
 
-    # -- sending ---------------------------------------------------------------------------
     def _nonce8(self):
         self.nonce = (self.nonce + 1) & ((1 << 64) - 1)
         return self.nonce.to_bytes(8, "big")
@@ -235,7 +224,6 @@ class HostSession:
         out, self.out = self.out, []
         return out
 
-    # -- the LDN seat ----------------------------------------------------------------------
     def seat(self, ip, mac, now):
         """A console associated, or re-associated: its handshake starts over from the update
         session, which goes out until it is acknowledged."""
@@ -266,7 +254,6 @@ class HostSession:
             entries.append((j.location, JOINER_INDEX, 1))
         return entries
 
-    # -- receiving -------------------------------------------------------------------------
     def receive(self, data, src_ip, now):
         j = self.joiner
         if src_ip == self.our_ip or not is_pia5(data) or j is None or src_ip != j.ip:
@@ -416,7 +403,6 @@ class HostSession:
         if g:
             self._game(j, g, payload, now, via="reliable")
 
-    # -- the game --------------------------------------------------------------------------
     def _start_game(self, j, now):
         """In the mesh: say who we are, the way a retail host's first reliable message does."""
         self.send_game(self.join, now)
@@ -461,7 +447,6 @@ class HostSession:
         self._send([(msg, rl.PROTOCOL, rl.PORT, rl.MESSAGE_FLAGS, 1 << JOINER_INDEX)],
                    j.variable_id, j.ip)
 
-    # -- timers ----------------------------------------------------------------------------
     def tick(self, now):
         j = self.joiner
         if j is None:
@@ -503,14 +488,8 @@ class HostSession:
 
 
 class TradePartner:
-    """The game side of a room member who trades: the approach, the trade messages, and the
-    security phase, as a retail partner answers them (`docs/bdsp_trade.md`).
-
-    The player raises the trade emote (`NetCharacterStateData{4, 1}`); `approach_delay` seconds
-    later this walks up (`NetDataTalkReserveData`), and on an accepting result opens the greeting
-    (`NetDataTalkData{GREETING}`). The console then leads the trade and each message is answered.
-    `complete` gates the answer to the ready-ok, after which the console writes its save.
-    """
+    """The game side of a trading room member, as a retail partner answers (docs/bdsp_trade.md).
+    `complete` gates the answer to the ready-ok, after which the console writes its save."""
 
     def __init__(self, offer, trainer_name="PkCamp", trainer_id=41234, secret_id=23117,
                  complete=False, approach_delay=2.0, security_repeat=1.0, state=room.STATE_NONE,

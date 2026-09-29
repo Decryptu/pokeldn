@@ -1,47 +1,7 @@
-"""BDSP's OWN protocol, above Pia - the messages the Union Room is made of.
+"""BDSP's own protocol above Pia: encodes and decodes the messages the Union Room is made of.
 
-The game runs a typed protocol of its own inside the Pia payloads, and `TeamLumi/opendpr` names
-every message in it: `Dpr.NetworkUtils.NetDataParser` registers 65 classes, each an `ANetData<T>`
-with a `DataID` byte, and each `T` is a plain struct. Reading that beat guessing by a wide margin -
-the six bytes this module first called "a fixed head" are three struct fields and a length.
-`pokeldn.bdsp.netdata` is the generated table; this is what encodes and decodes.
-
-THE FRAMING, and it fits every payload ever captured:
-
-    0x0  1  data id
-    0x1  2  payload length, BIG-endian
-    0x3  .  payload - the struct, little-endian and PACKED
-
-    01 0011 08 00 31 5a00 <x><y><z>     NetJoinData    "a player has joined, here"
-    02 0048 <12 x 6 bytes>              NetPosData     where a player has been moving
-    12 0001 23                          NetRequestData     "send me your data id 0x23"
-    23 0001 00                          NetDataIsMatchWaitData  "I am not waiting for a match"
-
-The layout is packed, and measured. `JoinData` is byte, byte, byte, short, Vector3: 17 bytes
-packed and 20 aligned, and the console's own message is 17, with the short at offset 3. Every
-payload in every capture agrees with the packed reading.
-
-NetJoinData (id 1) is a player arriving, not a position update, so sending it repeatedly puts a
-crowd of avatars in the room. A real console sends avatar 8, colour 0, casset 0x31.
-
-NetPosData (id 2) is how a player moves, and it is cheaper: `ushort posX, ushort posZ, short rotY`
-per point, several points to a message, on the unreliable stream. The game's own conversion is
-`pos = (-posX * 0.05, posZ * 0.05)`, so a coordinate is a twentieth of a unit and x is negated. The
-twelve points are a span, not a burst: they are where the player has been since the last message,
-so a walk is one message per stride with the strides interpolated across it. Points packed tighter
-than the stride make the avatar creep and then jump; `pos_span` fixes that.
-
-A request is answered on the protocol it came in on, which is where the console puts its own
-answer: all 4333 requests for 0x23 arrived on the reliable protocol and all 55 for 0x04 on the
-unreliable one, with no crossover in nineteen runs.
-
-The two messages the console repeats from the first join are a question and its own answer:
-`12 0001 23` is `NetRequestData{RequestDataID = 0x23}` and 0x23 is itself a data id,
-`OpcManager._RequestNetDataCallback` is an `Action<byte>`, so a request names the message it wants -
-and `23 0001 00` is the console answering its own: `NetDataIsMatchWaitData{isMatchWait = 0}`, "I am
-not waiting to be matched". Nothing this project has sent has ever answered a request.
-
-`docs/bdsp.md` "What the room says".
+Framing: data id (1), payload length (2, big-endian), the packed little-endian struct. The ids and
+structs are `pokeldn.bdsp.netdata`, generated from opendpr (docs/bdsp_protocol.md).
 """
 
 import struct
@@ -50,10 +10,8 @@ from pokeldn.bdsp.netdata import FIELDS, NAMES, OPAQUE
 
 HEADER_SIZE = 3
 
-# The three payloads whose C# struct is not blittable AND whose layout the wire has decided anyway.
-# `netdata.OPAQUE` is a fact about the source; this is a fact about the marshalling, measured from
-# captures and from `ANetData<T>$$ConvertStructToBytes`, and the other nine ids in OPAQUE have
-# never been on the air at all (`scratchpad/bdsp_msgids.py`).
+# Payloads whose C# struct is not blittable, with the layout measured on the wire and from
+# `ANetData<T>$$ConvertStructToBytes`.
 MEASURED = {
     0x02: "12 x PosData, 72 bytes: ushort posX, ushort posZ, short rotY",
     0x13: "one encrypted PB8 at stored size, 328 bytes, no length prefix",
@@ -76,8 +34,7 @@ BALL_DECO = 0x15                  # NetDataAttachSealNetData - the ball-capsule 
 SEAL_SLOTS = 20
 SEAL_SIZE = 7
 
-# The marshalled size of every OPAQUE payload, read from the 1.3.0 executable's
-# Il2CppTypeDefinitionSizes table (docs/bdsp_protocol.md "Framing"). Four are also on the wire.
+# Marshalled sizes from the 1.3.0 Il2CppTypeDefinitionSizes table (docs/bdsp_protocol.md).
 NATIVE_SIZES = {
     0x02: 72, 0x13: 328, 0x14: 694, 0x15: 143, 0x18: 616, 0x22: 20, 0x24: 32, 0x29: 8,
     0x38: 481, 0x42: 28, 0x54: 616, 0x61: 8,
@@ -94,27 +51,23 @@ STATE = 0x04                      # NetCharacterStateData
 TRAINER_CARD = 0x05               # NetDataTranerCardData
 REQUEST = 0x12                    # NetRequestData - "send me your <data id>"
 MATCH_WAIT = 0x23                 # NetDataIsMatchWaitData
-TALK = 0x06                       # NetDataTalkData{talkOpcSexId, talkState}. talkState CHECK (0)
-                                  # is a null dereference in the receiver unless a message window
-                                  # is already open.
+TALK = 0x06                       # NetDataTalkData; talkState CHECK (0) is a null dereference
+                                  # in the receiver unless a message window is already open
 TALK_RESERVE = 0x63               # NetDataTalkReserveData: "I want to talk to your character"
 TALK_RESERVE_RESULT = 0x64        # NetDataTalkReserveResultData, the answer that unblocks it
-PLAYER_NAME = 0x42                # NetPlayerNameData - a string, so the layout is NOT known
+PLAYER_NAME = 0x42                # NetPlayerNameData, a string
 
 JOIN_BODY_SIZE = 17
 POS_POINT_SIZE = 6
-POS_POINTS = 12                   # what a console puts in one message; 12 * 6 is the 0x48 captured
+POS_POINTS = 12                   # 12 * 6 is the 0x48 captured
 
-# How a real player walks, measured over 80 of the console's own NetPosData messages. A ninth of
-# this renders as a stutter: twelve points crossing a sixth of a step, then a pause.
-POS_PERIOD = 0.41                 # seconds between messages; median gap, min 0.20 max 1.59
-POS_STRIDE = 0.93                 # units one message spans; median, max 2.60
+# A real player's walk, median over 80 NetPosData; a ninth of this renders as a stutter.
+POS_PERIOD = 0.41                 # seconds; min 0.20 max 1.59
+POS_STRIDE = 0.93                 # units one message spans; max 2.60
 POS_SCALE = 0.05                  # PosData.pos: -posX * 0.05, posZ * 0.05
-POS_UNIT = 20.0                   # the setter multiplies by 20 rather than dividing by 0.05:
-                                  # 10.35 / 0.05 truncates to 206 where 10.35 * 20 gives 207
-# `04 00 02 00 00` is data id 4, big-endian length 2, body `00 00`:
-# `NetCharacterStateData{state: NONE, isRecruiment: 0}`, the console broadcasting its own
-# character's state every two seconds. 853 of the 968 unreliable payloads in the archive are this.
+POS_UNIT = 20.0                   # the setter multiplies by 20: 10.35 / 0.05 truncates to 206,
+                                  # 10.35 * 20 gives 207
+# `NetCharacterStateData{NONE, 0}`, broadcast every two seconds by a console standing still.
 STATE_NONE_MESSAGE = bytes.fromhex("0400020000")
 KEEPALIVE = STATE_NONE_MESSAGE            # an alias, kept so an old log still reads
 
@@ -123,17 +76,12 @@ DATA_ID_NAMES = {ident: name for ident, (name, _) in NAMES.items()}
 
 
 def name(data_id):
-    """-> the game's own class name for a data id, or a bare description of the number."""
     known = NAMES.get(data_id)
     return known[0] if known else f"data id {data_id:#04x}"
 
 
 def layout(data_id):
-    """-> the struct format for a payload, or None when its struct is not blittable.
-
-    A `None` is a real answer: `NetPlayerNameData` carries a C# string and `NetPosData` an array,
-    and neither has a layout the source decides. They are named in `netdata.OPAQUE`.
-    """
+    """-> the struct format for a payload, or None when it is not blittable (`netdata.OPAQUE`)."""
     fields = FIELDS.get(data_id)
     return "<" + "".join(fmt for _, _, fmt in fields) if fields else None
 
@@ -183,11 +131,8 @@ def parse_fields(data_id, body):
 
 
 def parse_standby_list(body):
-    """`StanbyListData`: five StandbyData{isAddPlayer, hostIndex, myIndex, langId}, one byte each.
-
-    The sender fills slot i from the i-th entry of its standby list with isAddPlayer = 1 and
-    hostIndex left 0 [1.3.0 main 0x01e52fa0]; an empty list is twenty zero bytes.
-    """
+    """`StanbyListData`: five StandbyData{isAddPlayer, hostIndex, myIndex, langId}, one byte each;
+    an empty list is twenty zero bytes [1.3.0 main 0x01e52fa0]."""
     return [{"is_add_player": body[i], "host_index": body[i + 1], "my_index": body[i + 2],
              "lang_id": body[i + 3]}
             for i in range(0, min(len(body), STANDBY_SLOTS * STANDBY_SIZE), STANDBY_SIZE)]
@@ -201,8 +146,7 @@ def parse_ball_deco(body):
 
 
 def parse_recode_head(body):
-    """The named fields of a `NetRecodeData` a reader wants first: the thirty RECORD counters,
-    the names, the trainer id, the version. The full layout is on docs/bdsp_protocol.md."""
+    """The RECORD counters, names, trainer id and version of a `NetRecodeData`."""
     counters = struct.unpack_from("<30I", body, 0)
     group = body[0x78:0x98].decode("utf-16-le", "replace").split("\0")[0]
     name = body[0x98:0xd8].decode("utf-16-le", "replace").split("\0")[0]
@@ -276,19 +220,15 @@ def build_join(x, y, z, rot_y=0, avatar_id=8, color_id=0, casset_version=0x31):
 
 
 def build_pos(points):
-    """`points` is [(x, z, rot_y), ...]. X is negated and both scaled by 20, the way `PosData.pos`'s setter does it."""
+    """`points` is [(x, z, rot_y), ...]; x negated, both scaled by 20 as `PosData.pos` does."""
     body = b"".join(struct.pack("<HHh", int(abs(x * POS_UNIT)), int(abs(z * POS_UNIT)), int(rot))
                     for x, z, rot in points)
     return build(POS, body)
 
 
 def pos_span(start, end, rot_y, points=POS_POINTS):
-    """-> the points for ONE NetPosData covering a whole stride, endpoint included.
-
-    The twelve points span the movement since the last message. Points packed tighter than the
-    stride make the avatar creep and then jump to the next message's first point; each message has
-    to describe the stride it covers. `start` and `end` are (x, z).
-    """
+    """-> the twelve points of one NetPosData spanning a whole stride, endpoint included; tighter
+    points make the avatar creep, then jump. `start` and `end` are (x, z)."""
     if points < 1:
         raise ValueError("a NetPosData carries at least one point")
     (x0, z0), (x1, z1) = start, end
@@ -298,14 +238,7 @@ def pos_span(start, end, rot_y, points=POS_POINTS):
 
 def build_trainer_card(fashion_id=0, body_type=0, gender_id=0, lang_id=2, trainer_rank=1,
                        trainer_id=0, money=0, zukan_count=0, play_time_hour=1, play_time_minute=0):
-    """`NetDataTranerCardData`: 75 blittable bytes of appearance and trainer card.
-
-    NO CONSOLE HAS EVER SENT ONE in this project's 42 captures - the only game messages any capture
-    holds are 0x01, 0x04, 0x12 and 0x23 - so there is no template and every byte here comes from
-    opendpr's field list rather than from the wire. The first four fields are the ones the screen
-    can answer: fashionId, bodyType, genderid and langId are what an avatar LOOKS like.
-    `docs/bdsp.md`.
-    """
+    """`NetDataTranerCardData`: 75 bytes from opendpr's field list; no capture holds one."""
     return build_fields(TRAINER_CARD,
                         fashion_id & 0xFF, body_type & 0xFF, gender_id & 0xFF, lang_id & 0xFF,
                         trainer_rank & 0xFF,
@@ -324,42 +257,17 @@ def build_request(requested_id):
     return build_fields(REQUEST, requested_id & 0xFF)
 
 
-TRADE_POKE_CHECK_OK = 0x46        # NetDataTradePokeCheckOkData: "I have looked at yours and it
-                                  # is fine". `46 00 01 01` comes back after a Pokemon we built.
-TRADE_READY_OK = 0x21             # NetDataTradeReadyOkData: past this the console writes its
-                                  # save. `build_trade_ready_ok` below.
-TRADE_TRANER = 0x24               # NetDataTradeTranerData: who the player trading with us is
+TRADE_POKE_CHECK_OK = 0x46        # NetDataTradePokeCheckOkData
+TRADE_READY_OK = 0x21             # NetDataTradeReadyOkData: past this the console writes its save
+TRADE_TRANER = 0x24               # NetDataTradeTranerData
 TRADE_POKE = 0x13                 # NetTradePokeData: a whole Pokemon, 328 bytes
-RETURN_SELECT = 0x45              # NetDataReturnSelectData: the console is back in its select
-                                  # window after a completed trade. `45 00 01 00` once a second
-                                  # until the player picks the next Pokemon. An announcement, not
-                                  # a question: answering 1 changes nothing (docs/bdsp_trade.md).
+RETURN_SELECT = 0x45              # NetDataReturnSelectData: back in the select window after a
+                                  # trade, once a second; answering it changes nothing
 
 
 def parse_trade_traner(body):
-    """-> the player's own trade record. 32 bytes, and every one of them is accounted for.
-
-    `TradeTranerData` is `string tranerName; uint tranerId; byte cassetVersion; byte langId`, and
-    `ANetData<T>$$ConvertStructToBytes` [main.bin 0x27bb0e0] puts it on the wire through
-    `Marshal.SizeOf`, `Marshal.AllocHGlobal` and `Marshal.StructureToPtr`, so the payload IS the
-    marshalled struct, in declaration order, packed:
-
-        0x00  26  tranerName, UTF-16LE, NUL-terminated
-        0x1a   4  tranerId, the full 32-bit id - secret id in its high half
-        0x1e   1  cassetVersion
-        0x1f   1  langId
-
-    Four fields, 26 + 4 + 1 + 1 = 32, and nothing left over. THE READING CHECKS ITSELF against the
-    encrypted PB8 of the same trade: 0x1a..0x1d is 0x0FF0ADB2, which is that Pokemon's trainer id
-    44466 and secret id 4080; 0x1e is 49, its `version`; 0x1f is 3, its `language`. Two independent
-    messages agreeing on four fields.
-
-    The ten bytes past the string's terminator carry nothing. `AllocHGlobal` does not clear its
-    block and marshalling a string into a fixed field writes the characters and one terminator, so
-    what follows is heap residue: 0x14 read 107540 in nine runs, 44 and 60 in two others, while
-    every declared field held still. `slack` is those bytes as hex; a record we build sends the
-    console's own so ours differs from a real one only where intended.
-    """
+    """-> the 32-byte marshalled `TradeTranerData`: name, u32 id, version, language; the ten bytes
+    past the name are heap residue, kept as `slack` (docs/bdsp_trade.md)."""
     if len(body) != TRADE_TRANER_SIZE:
         raise ValueError(f"{len(body)} bytes, expected {TRADE_TRANER_SIZE}")
     trainer_id32, casset, lang = struct.unpack_from("<IBB", body, 26)
@@ -371,20 +279,15 @@ def parse_trade_traner(body):
 
 
 TRADE_TRANER_SIZE = 32
-TRADE_TRANER_NAME_SIZE = 26       # by subtraction: the other three fields are 6 bytes
+TRADE_TRANER_NAME_SIZE = 26
 
-# the console's own heap residue at 0x10, which a record we send carries so that it differs from
-# a real one only in the fields that mean something
+# The console's own heap residue at 0x10 (docs/bdsp_trade.md).
 CONSOLE_SLACK = bytes.fromhex("18a4010014a4010000 00".replace(" ", ""))
 
 
 def build_trade_poke(pb8):
-    """"here is my Pokemon" - a NetTradePokeData carrying an encrypted 328-byte PB8.
-
-    `UnionTradeManager$$RecivePokeData` [main.bin 0x1dd2800] takes it only when the manager's own
-    state field is 1, stores it at `[this+0x28]+0x68` and raises a flag at +0x70, so the message is
-    accepted in one phase and ignored in every other. `pokeldn.bdsp.pokemon` builds the payload.
-    """
+    """A NetTradePokeData carrying an encrypted 328-byte PB8; accepted only while the manager's
+    state is 1 [`UnionTradeManager$$RecivePokeData` main.bin 0x1dd2800]."""
     if len(pb8) != 328:
         raise ValueError(f"{len(pb8)} bytes, expected a 328-byte PB8")
     return build(TRADE_POKE, pb8)
@@ -392,12 +295,7 @@ def build_trade_poke(pb8):
 
 def build_trade_traner(name, trainer_id, secret_id, casset_version=0x31, lang_id=3,
                        slack=CONSOLE_SLACK):
-    """"and here is who I am" - the marshalled 32-byte record.
-
-    The defaults are a French BDSP console's own: `cassetVersion` 0x31 and `langId` 3 are the
-    `version` and `language` the console's Pokemon carry, and `slack` is the heap residue a real
-    record happened to have behind its name.
-    """
+    """The marshalled 32-byte record; the defaults are a French console's own."""
     encoded = name.encode("utf-16-le")
     if len(encoded) + 2 > TRADE_TRANER_NAME_SIZE:
         raise ValueError(f"{name!r} is too long for the {TRADE_TRANER_NAME_SIZE}-byte name field")
@@ -409,9 +307,7 @@ def build_trade_traner(name, trainer_id, secret_id, casset_version=0x31, lang_id
                  + struct.pack("<IBB", trainer_id32, casset_version & 0xFF, lang_id & 0xFF))
 
 
-# `TradeStateModel.TradeState` [dump.cs:258737]. The union-room flow only ever uses WAIT, which is
-# what a "ready" means here - the state machine that uses the rest of the enum is the one created
-# AFTER the handshake, on the other side of the save.
+# `TradeStateModel.TradeState` [dump.cs:258737].
 TRADE_STATE_NONE = 0
 TRADE_STATE_INIT = 1
 TRADE_STATE_WAIT = 2
@@ -433,33 +329,9 @@ TRADE_STATE_NAMES = {
 
 
 def mirror_trade_state(their_state):
-    """-> the state to claim back, so that THEIR machine advances.
+    """-> the state to claim back so that the console's machine advances (docs/bdsp_trade.md).
 
-    `TradeParentStateModel$$StateProc` [1.3.0 main.bin 0x1c23350] switches on `currentState - 2`
-    through a ten-entry table at 0x3d80f2f. `CreateTradeStateModel` [0x1c24620] builds this class
-    for both roles; `TradeChildStateModel` is dead code (its overrides are bare `ret`s).
-
-        2 WAIT          targetState == WAIT          -> 3 SEND_POKE
-        3 SEND_POKE     waitRndTime runs out, sends its own Pokemon     -> 4 WAIT_POKE
-        4 WAIT_POKE     targetPokeData is non-null   -> 5 SEND_READYOK   (our NetTradePokeData)
-        5 SEND_READYOK  tradeParent == PARENT: send its state           -> 6 WAIT_READYOK
-        6 WAIT_READYOK  targetIsTradeReadyOk         -> 7 START_WRITE_SAVE
-        7 START_WRITE_SAVE  WriteSaveData -> ReplacePoke                -> 8 WRITEING_SAVE
-        8 WRITEING_SAVE     CheckReplacePokeData                        -> 10 END
-       10 END          PlayerSave, close the window, currentState = 0
-
-    `tradeParent` comes from `TradeSecurityController$$CheckPokeRarity` [0x1c25060], run when our
-    Pokemon arrives: the side offering the rarer Pokemon (very rare 3, legendary 2, sub-legendary 1,
-    else 0) is PARENT, a tie goes to the recruiting side. A console that is CHILD sits in
-    SEND_READYOK, silent, until `ReciveState` [0x1c24f10] sees a peer state of 5 or 6. Its last word
-    is the WAIT_POKE that `SetTragetPokeData` sends, so WAIT_POKE is answered with SEND_READYOK:
-    echoing it deadlocks every trade where our offer is the rarer one. docs/bdsp_trade.md.
-
-    INIT is answered with WAIT rather than echoed: `ReciveState`'s INIT case sets their state to
-    WAIT and records ours as `targetState` in the same call. From SEND_READYOK on only the arrival
-    matters (state 6 sets `targetIsTradeReadyOk` for any message), so it is held at SEND_READYOK.
-    A SEND_READYOK that reaches a console still in WAIT_POKE or a PARENT in SEND_READYOK is stored
-    and ignored; the once-a-second repeat lands the next one.
+    WAIT_POKE is answered with SEND_READYOK: echoing it deadlocks a CHILD console.
     """
     if their_state <= TRADE_STATE_INIT:
         return TRADE_STATE_WAIT
@@ -469,63 +341,26 @@ def mirror_trade_state(their_state):
 
 
 def build_trade_ready_ok(trade_state=TRADE_STATE_WAIT, is_trade_ok=0):
-    """"I am ready" - AND IT IS THE MESSAGE THAT LETS THE CONSOLE WRITE ITS SAVE.
-
-    One byte of it is read. `TradeSelectPokeModel$$ReciveReadyOk` [main.bin 0x1cd4860] is three
-    instructions (`ldrb w8, [x1, #0x11]; str w8, [x0, #0x78]; ret`), so the second field
-    `tradeState` becomes `targetTradeState` and `isTradeOk` is never looked at. The console's own
-    is `{isTradeOk 0, tradeState 2}`, `21 00 02 00 02`, and 0 is kept as the default for the field
-    the game ignores so `build_trade_ready_ok()` produces those five bytes exactly.
-
-    `UnionTradeManager.<WaitBoxWindowComplete>d__24$$MoveNext` [0x1dd3780] waits for
-    `myTradeState == WAIT` (the player's own `MyReadyOk` sets that) AND `targetTradeState == WAIT`,
-    which has no other writer in the image. Both at WAIT and it sets
-    `UnionTradeManager.currentState = SECURIY_TRADE`, clears the select model and sends its own
-    0x21 back carrying zero. From there `TradeSecurityController` -> `CreateTradeStateModel` ->
-    `TradeStateModel$$InitState`, whose first instruction after the prologue is `PlayerSave`.
-
-    So the console cannot leave SELECT_WINDOW without this message, and it writes a save shortly
-    after it. `bin/bdsp_connect.py` gates it behind `--complete-trade`, off by default.
-    docs/bdsp.md "Where it stops, and why".
-    """
+    """The 0x21 that lets the console write its save; only `tradeState` is read
+    [`TradeSelectPokeModel$$ReciveReadyOk` main.bin 0x1cd4860]. Defaults give the console's own
+    `21 00 02 00 02` (docs/bdsp_trade.md)."""
     return build_fields(TRADE_READY_OK, is_trade_ok & 0xFF, trade_state & 0xFF)
 
 
 def build_talk_reserve(body_byte=0):
-    """"I want to talk to your character" - the message the player who WALKS UP sends.
-
-    When the console puts an emote up, picking one locks its player in place waiting to be
-    interacted with, so the approach has to come from us.
-
-    The console's own is `63 00 01 00`, one body byte, zero. `NetDataTalkReserveData` is not in the
-    generated FIELDS table (opendpr declares no layout for it), so this builds the console's own
-    bytes rather than packing a struct.
-    """
+    """The console's own `63 00 01 00`: the approach must come from us, since an emote locks the
+    player in place. opendpr declares no layout for it."""
     return build(TALK_RESERVE, bytes([body_byte & 0xFF]))
 
 
 def build_match_wait(is_waiting=False):
-    """The console's own repeated answer is 0 - "I am not waiting to be matched".
-
-    1 is the only value that starts a trade. `UnionRoomManager$$SetNetData`'s branch for this id
-    ends in one comparison [main.bin 0x01fd56e4]:
-
-        ldrb w23, [x19, #0x10]      isMatchWait, off the received message
-        cmp  w23, #1
-        b.ne 0x1fd5704              anything but 1 skips the rest
-        bl   UnionFrontDeskTradeController$$StartMatch
-
-    0 is a station saying it does not want to be matched: the right message answered with a no-op.
-    `docs/bdsp_protocol.md`.
-    """
+    """`isMatchWait`: only 1 starts a trade [`UnionRoomManager$$SetNetData` main.bin 0x01fd56e4];
+    the console's own repeated answer is 0."""
     return build_fields(MATCH_WAIT, 1 if is_waiting else 0)
 
 
-# `StateData.state` is an `OpcState.OnlineState` [opendpr:Assets/Scripts/OpcState.cs] - a short
-# enum, copied rather than generated because nothing in the message table references it by type.
-# NONE is what a character standing still is; the RECRUITMENT_* values are what a player advertising
-# itself for a battle or a trade sends, and `OpcState.IsCanTalkState()` reads this field, so it is
-# what decides whether the game lets the player talk to an avatar at all.
+# `OpcState.OnlineState` [opendpr:Assets/Scripts/OpcState.cs]; `IsCanTalkState()` reads it
+# (docs/bdsp_protocol.md).
 STATE_NONE = 0
 STATE_RECRUITMENT_BATTLE = 3
 STATE_RECRUITMENT_TRADE = 4
@@ -536,25 +371,13 @@ STATE_COMMUNICATE = 8
 
 
 def build_state(state=STATE_NONE, is_recruitment=0):
-    """`StateData`: what the character is doing, and whether it is recruiting.
-
-    THE DEFAULT IS THE NEUTRAL ANSWER - a character standing in the room doing nothing. It is what
-    a request for 0x04 is answered with until there is a reason to say anything else.
-    """
+    """`StateData`; the default is a character standing still, the answer to a request for 0x04."""
     return build_fields(STATE, state & 0xFF, is_recruitment & 0xFF)
 
 
 def build_talk_reserve_result(can_talk=1, is_recruitment=1, emoticon_state=STATE_NONE):
-    """`NetDataTalkReserveResultData`: the answer to a console asking to talk to our character.
-
-    A character reporting `StateData{RECRUITMENT_TRADE, 1}` shows a speech bubble; the player
-    presses A on it and the console sends `63 00 01 00`, a `NetDataTalkReserveData`. The talk is a
-    request/response and the console blocks on the answer: unanswered, the player's own character
-    freezes until the game is rebooted.
-
-    `IsCanTalk` is the field that decides it. `emoticonStateType` is an `OpcState.OnlineState`,
-    the same enum `build_state` takes.
-    """
+    """The answer to `NetDataTalkReserveData`; unanswered, the player's character freezes until
+    reboot. `IsCanTalk` decides it (docs/bdsp_protocol.md)."""
     return build_fields(TALK_RESERVE_RESULT, can_talk & 0xFF, is_recruitment & 0xFF,
                         emoticon_state & 0xFF)
 
@@ -564,17 +387,7 @@ def build_emotion(emotion_id):
 
 
 def answer(message, state=STATE_NONE, is_recruitment=0, match_wait=False):
-    """-> the reply a NetRequestData asks for, when this module can build one, else None.
-
-    The console has been asking for 0x23 since the first join and has never been answered. An
-    answer is buildable whenever the requested id has a layout; a request for an OPAQUE one is
-    named in the return so a caller can say what it could not answer.
-
-    The state is what the console acts on. `StateData{NONE, 0}` is the character saying it is
-    doing nothing and changes nothing on screen. `state` is `OpcState.OnlineState`, and the
-    RECRUITMENT_* values are what a Union Room player showing a speech bubble is in:
-    `OpcController.ShowEmoticon(OnlineState)` and `GetEmoticonType(state)` both read it.
-    """
+    """-> the reply a NetRequestData asks for, when the requested id has a layout, else None."""
     if message.get("data_id") != REQUEST or not message.get("fields"):
         return None
     wanted = message["fields"]["RequestDataID"]

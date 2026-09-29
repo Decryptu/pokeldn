@@ -29,7 +29,7 @@ def _config_bootstrap_parser():
 
 
 def load_host_file_config_from_argv(argv=None):
-    """A custom --config uses a sibling host.local.toml unless --local-config/--no-local-config says otherwise."""
+    """A custom --config uses a sibling host.local.toml unless --local-config/--no-local-config."""
     known, _unknown = _config_bootstrap_parser().parse_known_args(argv)
     shared_path = (Path(known.config) if known.config else
                    config.default_host_config_path())
@@ -198,7 +198,7 @@ def build_host_config(parser, args):
 
 
 def effective_host_file_config(args):
-    """Parsers carry the TOML values as defaults, so args are already the final layer; passwords never enter HostFileConfig."""
+    """Args already carry the TOML values as defaults; passwords never enter HostFileConfig."""
     return config.BUILTIN_HOST_FILE_CONFIG.with_overrides({
         "host": {
             "live": args.live,

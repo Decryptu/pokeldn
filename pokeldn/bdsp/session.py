@@ -1,32 +1,21 @@
-"""Everything a BDSP session is keyed on, derived from the advertisement the scan already read.
-
-Nothing here needs a hardware run: `ldn.scan` hands back the advertisement, and the advertisement
-carries the network id, the session parameter and the local communication version. Run against a
-fresh session (a different SSID, network id and session parameter from the
-capture - and all 42 of the console's packets authenticated, which is what says the derivation is
-general and not fitted to one capture.
-"""
+"""What a BDSP session is keyed on, from the scanned advertisement (docs/bdsp_session.md)."""
 
 import struct
 from dataclasses import dataclass
 
 from pokeldn.ldn.pia5 import ldn_game_key, ldn_session_key
 
-# The LDN passphrase, used RAW - 27 bytes, unpadded. Its only destination is
-# nn::ldn::CreateNetwork. It is not Pia's game key.
+# Used raw, 27 bytes, unpadded, for nn::ldn::CreateNetwork only; distinct from Pia's game key.
 PASSPHRASE = b"WirelessStrongCryptoKey2021"
 
-# Shining Pearl's local communication id, and the port every Pia station listens on.
 COMM_ID = 0x0100000011D90000
 PIA_PORT = 12345
 
-# BDSP's cryptoKeyDataSeed, out of global-metadata.dat - the sha1 of the constant matches its
-# own field name. The GAME KEY is this with four bytes replaced by the local communication version,
-# so a published per-game key is a DERIVED value for one game version and the seed is the thing that
-# does not move. A published key differing from the seed in four bytes is not a corrupt one.
+# From global-metadata.dat. The game key is this with four bytes replaced by the local communication
+# version (docs/bdsp_session.md).
 CRYPTO_KEY_DATA_SEED = bytes.fromhex("9918bd0fdcfa65779918bd0fdcfa6577")
 
-# Where the advertisement's application data keeps what the derivation needs.
+# Offsets into the advertisement's application data.
 NETWORK_ID_OFF = 0
 SESSION_PARAM_OFF = 12
 

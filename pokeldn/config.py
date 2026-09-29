@@ -39,9 +39,8 @@ class TrainerProfile:
     language: str = "english"
     has_national_dex: bool = True
     has_completed_game: bool = True
-    # The Wonder Card flag id our trainer card claims, at offset 96 of the BLOCK_REQ_SIZE_100
-    # exchange buffer. The console arms ITS OWN card counters when this equals the card it holds
-    # [MysteryGift_TryEnableStatsByFlagId, decomp:src/union_room.c:1777]; 0 arms nothing.
+    # Offset 96 of the BLOCK_REQ_SIZE_100 exchange; the console arms its card counters when this
+    # equals its held card [union_room.c:1777]. 0 arms nothing.
     card_flag_id: int = 0
 
     def __post_init__(self):
@@ -220,24 +219,16 @@ class HostOptions:
     accept_decrypted_ccmp: bool = False
     native_nonce_sequence: bool = False
     session_response_first: bool = False
-    # How often the host emits one RFU slot. The GBA link is one slot per VBlank, which is what this
-    # defaults to; a real console pair runs an order of magnitude below it
-    # [docs/frlg_link.md], so this exists to test the console's answer rate against ours.
+    # One RFU slot per VBlank by default; a console pair runs far below it [docs/frlg_link.md].
     protocol_tick_hz: float = 59.727
-    # Host for the Union Room (the middle NPC on Pokemon Center 2F) instead of the trade centre:
-    # bare IN_UNION_ROOM advertisement, no parent NI, SEND_PACKET prompt, room trade flow.
+    # Host the Union Room (middle NPC, Pokemon Center 2F) instead of the trade centre.
     union_room: bool = False
-    # Which activity --union-room advertises. None = ACTIVITY_SEARCH, the form Task_InitUnionRoom
-    # looks for (the screen before entering). A console already standing in the room runs
-    # Task_RunUnionRoom and searches with the RESUME list, which accepts IN_UNION_ROOM | activity.
+    # Activity --union-room advertises; None is ACTIVITY_SEARCH [docs/frlg_link.md].
     union_room_activity: int | None = None
-    # After the child's name NI, re-present a parent NI_START for this many VBlanks before the first
-    # UNI frame. The room child 'D's after five unanswered parent frames and only enters UNI 480
-    # frames after our last NI_START (its NI fail counter), so 0 never connects; 120 is proven.
+    # VBlanks of parent NI_START after the child's name NI; 0 never connects, 120 works (the child's
+    # NI fail counter is 480 frames) [docs/frlg_link.md].
     union_room_keepalive: int = 0
-    # Trading board: the type we ask for in return (beacon.TYPE_NAMES value). None = no
-    # registration, so the console's board does not list us. Species and level come from the
-    # offered party mon unless union_room_board_level overrides the level.
+    # Trading board type asked in return (beacon.TYPE_NAMES); None does not register.
     union_room_board_type: int | None = None
     union_room_board_level: int | None = None
     union_room_chat: bool = False
@@ -245,9 +236,8 @@ class HostOptions:
     union_room_battle: bool = False
     battle_forfeit: bool = True
     battle_move_slot: int = 0
-    # Host the cable-club colosseum (Direct Corner -> Colosseum -> Single Battle) instead of the
-    # trade centre: ACTIVITY_BATTLE_SINGLE on the air, then a link battle where the trade menu
-    # would be. Only this path increments the console's Wonder Card battlesWon [cable_club.c:792].
+    # Host the colosseum instead of the trade centre; only this path increments the card's
+    # battlesWon [cable_club.c:792].
     colosseum: bool = False
     chat_file: str | None = None
 
@@ -264,12 +254,7 @@ class HostOptions:
             uroom_chat.check_text(text)
 
 
-# --union-room-activity names, resolved to the packed activity field.
-#   search    Task_InitUnionRoom advertises ACTIVITY_SEARCH and its search (LINK_GROUP_UNION_ROOM_INIT)
-#             accepts only ACTIVITY_SEARCH. This is the screen BEFORE entering the room.
-#   in-room*  Task_RunUnionRoom sets sPlayerCurrActivity = IN_UNION_ROOM and searches with
-#             LINK_GROUP_UNION_ROOM_RESUME, which accepts IN_UNION_ROOM | activity. This is a console
-#             standing in the room. [src/union_room.c:2664, src/data/union_room.h:407-418]
+# --union-room-activity names [src/union_room.c:2664, src/data/union_room.h:407-418].
 UNION_ROOM_ACTIVITIES = {
     "search": beacon.ACTIVITY_SEARCH,
     "in-room": beacon.IN_UNION_ROOM | 0,                      # IN_UNION_ROOM | ACTIVITY_NONE
@@ -288,8 +273,7 @@ def resolve_board_type(name):
 
 
 def resolve_union_room_activity(name):
-    # Default to the in-room form: it is the only one proven to get a console past
-    # IsPartnerActivityIncompatible (u03). "search" remains untested.
+    # The in-room form is the only one measured to pass IsPartnerActivityIncompatible.
     if name is None:
         return UNION_ROOM_ACTIVITIES["in-room"]
     try:
@@ -494,15 +478,11 @@ class TradeRunConfig:
 class MysteryGiftPayload:
     gift: str = wonder_card.GIFT_CELEBI
     flag_id: int | None = None
-    # A questionnaire phrase gates the whole session: the console must already hold these four Easy
-    # Chat word ids or nothing is sent [SVR_CHECK_QUESTIONNAIRE].
+    # The four Easy Chat word ids the console must hold, or nothing is sent
+    # [SVR_CHECK_QUESTIONNAIRE].
     questionnaire: tuple | None = None
     denied_message: str | None = None
-    # A composed definition, not a knob. Some gifts are a family rather than a constant
-    # (rng-mon-hunt carries whatever search the caller asked for,
-    # [wonder_card_events.build_rng_mon_hunt_gift]); the card is composed in wonder_card_events and
-    # arrives here already built, and this field only says to send that one instead of the
-    # registry's. Nothing gift-specific belongs in this dataclass.
+    # A card already composed in wonder_card_events, sent instead of the registry's.
     definition: object = None
 
     def __post_init__(self):
@@ -543,36 +523,25 @@ class MysteryGiftPayload:
 
 @dataclass(frozen=True)
 class BufferScriptPayload:
-    """Native ARM code for CLI_RUN_BUFFER_SCRIPT [buffer_script.py].
-
-    Not a gift: no card, no flagId, no receipt flag, nothing saved unless the payload's answer is
-    the one we demanded. The console reaches it through the ordinary Wonder Cards -> Friend
-    screen, so the advertisement and every layer below the server script are the Wonder Card
-    host's.
-    """
+    """Native ARM code for CLI_RUN_BUFFER_SCRIPT [buffer_script.py], reached through Wonder Cards
+    -> Friend; no card, no flag, nothing saved."""
     script: str = buffer_script.TRAINER_ID_PROBE
     expect: object = None
     _expect_explicit: bool = False
-    # The dumps: memory-dump reads an absolute address, save-dump an offset into a save block
-    # whose pointer the console hands the payload.
+    # memory-dump reads an absolute address, save-dump an offset into a save block.
     dump_address: int | None = None
     dump_block: str = buffer_script.SAVE_BLOCK_2
     dump_offset: int = 0
     dump_size: int = buffer_script.MAX_BUFFER_SCRIPT_SIZE
     dump_blocks: int = 1
-    # memory-dump-scatter: the blocks are UNRELATED addresses, so the payload carries a table of
-    # them and `dump_blocks` is however many were asked for rather than something to pass.
+    # memory-dump-scatter: unrelated addresses, one block each.
     dump_addresses: tuple = ()
-    # save-write only: the bytes to put into the save block, and the override for the guard that
-    # keeps a write inside the region the game never reads.
+    # save-write: the bytes, and the override for the guard that keeps a write in unread space.
     write_data: bytes | None = None
     write_unsafe: bool = False
-    # save-write of a resident hook for MOM's loader, (name, params): its bytes are built per
-    # build, so `write_data` holds French FireRed's only for the checks below.
+    # save-write of a resident hook (name, params); `write_data` holds French FireRed's bytes.
     write_resident: tuple | None = None
-    # flash-write: the sector the syscall writes and the pattern the console composes for it. The
-    # write goes straight into save flash with none of the game's save code in the way, so
-    # `write_unsafe` is what allows a sector inside the two save bands.
+    # flash-write: straight into save flash, so `write_unsafe` allows a sector in the save bands.
     flash_sector: int | None = None
     flash_fill_base: int = 0x46570000
     flash_fill_step: int = 1
@@ -587,65 +556,52 @@ class BufferScriptPayload:
     flash_patch_offset: int = 0
     flash_patch_data: bytes | None = None
     flash_read_offset: int = 0
-    # memory-scan: the needle, the range and the frame budget. The scan is not a dump of somewhere
-    # we already knew about - it is how an address is found in the first place.
+    # memory-scan: the needle, the range and the frame budget.
     scan_word: int | None = None
     scan_start: int = buffer_script.SCAN_ROM_START
     scan_end: int = buffer_script.SCAN_ROM_END
     scan_blocks: int = buffer_script.SCAN_DEFAULT_BLOCKS
     scan_max_calls: int | None = None
-    # table-scan: a SHAPE instead of a value - a run of `table_runlen` words each exactly
-    # `table_delta` above the one before it. It is how a table of pointers is found when no
-    # constant in it is known, which is the case for gSpecialVars.
+    # table-scan: a run of `table_runlen` words each `table_delta` above the last.
     table_delta: int | None = None
     table_runlen: int = buffer_script.SPECIAL_VARS_RUN_LENGTH
     table_start: int = buffer_script.SCAN_ROM_START
     table_end: int = buffer_script.SCAN_ROM_END
     table_blocks: int = buffer_script.TABLE_SCAN_DEFAULT_BLOCKS
     table_max_calls: int | None = None
-    # rom-checksum: the range, the block size and the frame budget, and the ROM image the sums are
-    # compared with. None picks REFERENCE_ROMS' image for the console's own build.
+    # rom-checksum: None reference picks REFERENCE_ROMS' image for the console's build.
     sum_start: int = buffer_script.SCAN_ROM_START
     sum_end: int = buffer_script.SCAN_ROM_END
     sum_block: int = buffer_script.ROM_CHECKSUM_DEFAULT_BLOCK
     sum_budget: int = buffer_script.ROM_CHECKSUM_DEFAULT_BUDGET
     sum_max_calls: int | None = None
     sum_reference: str | None = None
-    # rng-trace: the word to sample once a frame, and what to call between the two reads of it.
+    # rng-trace: the word sampled once a frame and what to call between two reads.
     trace_address: int | None = None
     trace_call: int = 0
     trace_samples: int = buffer_script.TRACE_SAMPLE_CAPACITY
     trace_max_calls: int | None = None
-    # call: any ROM function, with arguments we choose. `call_watch` is one address read either
-    # side of the call, which for a function returning nothing - SeedRng - is the only evidence
-    # that it ran and did what it was called for.
+    # call: `call_watch` is one address read either side of the call.
     call_address: int | None = None
     call_args: tuple = ()
     call_watch: int = 0
-    # call-chain: a LIST of those, as buffer_script.ChainStep, run in one frame. `write_unsafe`
-    # covers every write step here, because a chain has no scratch region to be safe in: its
-    # targets are wherever the game keeps the thing being changed.
+    # call-chain: buffer_script.ChainStep list in one frame; `write_unsafe` covers every write step.
     chain_steps: tuple = ()
-    # sloop-svc: one Sloop syscall. `svc_data` is copied to the result block and `svc_data_in`
-    # points r0 (1) or r1 (2) at that copy.
+    # sloop-svc: `svc_data_in` points r0 (1) or r1 (2) at the copy of `svc_data`.
     svc_numbers: tuple = ()
     svc_args: tuple = ()
     svc_data: bytes = b""
     svc_data_in: int = 0
     svc_bkpt: bool = False
-    # install-resident: which resident hook, and its parameters.
     resident_name: str | None = None
     resident_params: tuple = ()
-    # string-gather: an array of pointers to follow, and how far apart they are. This is the one
-    # payload that dereferences, so the answer is the strings rather than a window around them.
+    # string-gather: an array of pointers and their stride.
     gather_address: int | None = None
     gather_count: int = 1
     gather_stride: int = 12
     gather_maxlen: int = buffer_script.GATHER_DEFAULT_MAXLEN
-    # create-mon: the eight arguments CreateMon takes, and where the finished 100 bytes go. The mon
-    # is always BUILT inside the payload's own image; `create_mon_destination` copies it onward,
-    # which is a write to the console's live memory and so needs write_unsafe, exactly as an
-    # out-of-scratch save-write does.
+    # create-mon: CreateMon's eight arguments; `create_mon_destination` writes live memory and needs
+    # write_unsafe.
     create_mon_call: int | None = None
     create_mon_species: int = 1
     create_mon_level: int = 5
@@ -656,8 +612,6 @@ class BufferScriptPayload:
     create_mon_destination: int = 0
     create_mon_append: bool = False
     create_mon_append_dry_run: bool = False
-    # Where to write the bytes that come back. A dump whose contents only ever reached a log line
-    # is a run spent for 16 bytes of head.
     dump_file: str | None = None
 
     def __post_init__(self):
@@ -678,7 +632,6 @@ class BufferScriptPayload:
                 raise ValueError(
                     f"{buffer_script.MEMORY_DUMP_SCATTER} needs the addresses to read "
                     "(--dump-scatter A,B,C)")
-            # The count is not a separate knob: one block per address, in the order given.
             object.__setattr__(self, "dump_blocks", len(self.dump_addresses))
         elif self.dump_addresses:
             raise ValueError(
@@ -707,7 +660,6 @@ class BufferScriptPayload:
             if not self.write_data:
                 raise ValueError(
                     f"{buffer_script.SAVE_WRITE} needs the bytes to write (--write-text/--write-hex)")
-            # The answer is the destination read back, so it is exactly as long as what we wrote.
             object.__setattr__(self, "dump_size", len(self.write_data))
         elif self.write_data is not None:
             raise ValueError(
@@ -735,8 +687,7 @@ class BufferScriptPayload:
             if self.scan_word is None:
                 raise ValueError(
                     f"{buffer_script.MEMORY_SCAN} needs the 32-bit value to look for")
-            # The answer is a fixed-size table however many matches there are, so the host's
-            # length check stays the proof that the payload repointed the send.
+            # A fixed-size answer, so the host's length check proves the payload repointed the send.
             object.__setattr__(self, "dump_size", buffer_script.SCAN_ANSWER_SIZE)
         elif self.scan_word is not None:
             raise ValueError(
@@ -776,8 +727,6 @@ class BufferScriptPayload:
             if not self.chain_steps:
                 raise ValueError(
                     f"{buffer_script.CALL_CHAIN} needs at least one step (--chain-step)")
-            # A fixed-size answer however many steps ran, so the host's length check stays the
-            # proof that the payload repointed the send.
             object.__setattr__(self, "dump_size", buffer_script.CHAIN_ANSWER_SIZE)
         elif self.chain_steps:
             raise ValueError(
@@ -803,8 +752,6 @@ class BufferScriptPayload:
                 raise ValueError(
                     f"{buffer_script.STRING_GATHER} needs the array of pointers to follow "
                     "(--gather-address)")
-            # A fixed-size answer however many strings fit, so the host's length check stays the
-            # proof that the payload repointed the send.
             object.__setattr__(self, "dump_size", buffer_script.GATHER_ANSWER_SIZE)
         elif self.gather_address is not None:
             raise ValueError(
@@ -832,10 +779,9 @@ class BufferScriptPayload:
                 f"a function to call with eight arguments is only meaningful with "
                 f"{buffer_script.CREATE_MON}")
         if self.script == buffer_script.ANCHORS:
-            # It reports a fixed set of words; --dump-size means nothing to it.
             object.__setattr__(self, "dump_size", buffer_script.ANCHORS_SIZE)
         if self.is_dump:
-            self.build_code()       # every operand check, before a console is involved
+            self.build_code()
 
     @property
     def is_dump(self):
@@ -953,8 +899,7 @@ class BufferScriptPayload:
         return REFERENCE_ROMS.get(builds.resolve(build).game_code)
 
 
-# The retail images each build's v0 cartridge is extracted to, relative to the repository root
-# the launchers run from. rom-checksum compares the console's sums with the one its build names.
+# Each build's v0 cartridge image, relative to the repository root.
 REFERENCE_ROMS = {
     "BPRF": "scratchpad/FireRed_f.gba",
     "BPGF": "scratchpad/LeafGreen_f.gba",
@@ -965,13 +910,8 @@ REFERENCE_ROMS = {
 
 @dataclass(frozen=True)
 class WonderNewsPayload:
-    """The other half of the console's Mystery Gift menu: {Wonder Cards, Wonder News} x {Wireless, Friend}.
-
-    News has no flagId and no receipt flag, so nothing here mirrors MysteryGiftPayload.flag_id. What
-    decides whether a console keeps the news is a byte-for-byte compare against the news it already
-    holds [IsWonderNewsSameAsSaved, decomp:src/mystery_gift.c:140], so `news_id` overrides the id to
-    make the same text land again on a console that already took it.
-    """
+    """Wonder News. A console keeps news that differs byte for byte from what it holds
+    [decomp:src/mystery_gift.c:140]; `news_id` makes the same text land again."""
     news: str = wonder_news.DEFAULT_NEWS
     news_id: int | None = None
 
@@ -1008,11 +948,10 @@ def _mystery_gift_host_defaults():
 class MysteryGiftRunConfig:
     profile: TrainerProfile = DEFAULT_TRAINER
     payload: MysteryGiftPayload = field(default_factory=MysteryGiftPayload)
-    # Which cartridge the run is for, checked against the console's game data. None: do not check.
+    # The cartridge checked against the console's game data; None does not check.
     expect_console: str | None = None
-    # Which build's addresses to send: a game code, or "auto" for the one the console names in its
-    # game data. `console_version` is an explicit --version, which a build-dependent payload is
-    # held to [plan_builds].
+    # A game code, or "auto" for the console's own; an explicit `console_version` holds a
+    # build-dependent payload to it [plan_builds].
     console_build: str = "auto"
     console_version: str | None = None
     ldn: LdnConfig = field(default_factory=lambda: LdnConfig(phy="auto"))
@@ -1025,8 +964,7 @@ class MysteryGiftRunConfig:
     end_on_success: bool = False
     idle_timeout_seconds: int | None = None
     attempt_log_dir: str | None = None
-    # Where to keep what the console says about itself. See pokeldn/frlg/gift/game_data_log.py: the
-    # card counters only mean something as a difference between two sessions.
+    # Card counters are only evidence as a difference between sessions [game_data_log.py].
     game_data_log: str | None = None
 
     def __post_init__(self):
@@ -1080,15 +1018,11 @@ CONSOLE_BUILD_CHOICES = (CONSOLE_BUILD_AUTO, *builds.GAME_CODES)
 
 @dataclass(frozen=True)
 class BuildPlan:
-    """What each cartridge a run may meet is sent.
-
-    `per_build` is {game code: distribution, or why that cartridge is refused}, for the server to
-    choose from at SVR_COPY_GAME_DATA. None when every build gets the same bytes: those go to any
-    console, German and Spanish included, as they always have.
-    """
+    """`per_build` is {game code: distribution, or the refusal reason}; None when every build gets
+    the same bytes."""
     distribution: MysteryGiftDistribution
     per_build: Mapping | None
-    build: object = None            # the Build `distribution` is for, when there is only one
+    build: object = None
 
     @property
     def codes(self):

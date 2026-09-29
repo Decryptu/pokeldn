@@ -1,26 +1,7 @@
-"""The stats Legends Arceus computes for a record, and the nature table it reads them through.
+"""The stats Legends Arceus computes for a record (PKHeX's `PA8.LoadStats`), and its nature table.
 
-A trade rewrites the six halfwords in the party tail, so what a host sends there is discarded and
-this is what the receiving game puts in its place. The model is PKHeX's `PA8.LoadStats` and it is
-verified against a console's own arithmetic: a record built here with every individual value 31 and
-every growth value 10 came back out of a console's box with 273/210/199/322/345/220, which is what
-`stats` returns for Gengar's base stats at level 68 with nature 14, and the level-68 record the
-values were taken from came back with its own 239/136/121/322/304/133.
-
-    stat  = ganbaru(base, iv, gv, level) + base term
-    HP    base term ((level / 100 + 1) * base) truncated, plus the level
-    other base term ((level / 50 + 1) * base / 1.5) truncated, then the nature at 110% or 90%
-
-GROWTH VALUES SATURATE. `ganbaru` indexes MULTIPLIER by the growth value plus a bias from the
-individual value, 3 at 31 and above, 2 at 26, 1 at 20, and clamps the sum at 10. Two records with
-different individual and growth values therefore compute the same stat whenever both sums reach 10,
-which is why a record sent with perfect values came back with the speed it was sent: the donor's
-individual value 22 and growth value 9 reach 10 as surely as 31 and 10 do.
-
-THE NATURE TABLE IS GEN 3'S. Byte 9 drew Lax on a console's panel and byte 14 drew Naive, and the
-stat the nature raises is read from 0x21 rather than 0x20.
-
-`docs/pla.md`, Choosing what to offer.
+A trade rewrites the party tail's stats with these; verified against a console's own numbers
+(docs/pla.md, The stats the game computes).
 """
 
 import math
@@ -29,8 +10,8 @@ import struct
 MULTIPLIER = (0, 2, 3, 4, 7, 8, 9, 14, 15, 16, 25)
 MULTIPLIER_MAX = 10
 
-# Five amplifiers per nature, in the order the game reads them: attack, defence, special attack,
-# special defence, speed. 1 raises the stat by a tenth, -1 lowers it by a tenth.
+# Per nature, in the game's order: attack, defence, special attack, special defence, speed; 1 raises
+# by a tenth, -1 lowers.
 NATURE_AMP = (
     (0, 0, 0, 0, 0),    # 0  Hardy
     (1, -1, 0, 0, 0),   # 1  Lonely
@@ -66,7 +47,7 @@ NATURE_NAMES = (
 )
 
 # The stat order of a record's own fields, and the amplifier index each one reads.
-AMP_INDEX = (None, 0, 1, 4, 2, 3)       # hp, attack, defence, speed, special attack, special defence
+AMP_INDEX = (None, 0, 1, 4, 2, 3)       # hp, atk, def, spe, spa, spd
 
 
 def bias(iv):
@@ -111,8 +92,7 @@ def nature_name(nature):
     return NATURE_NAMES[nature] if nature < len(NATURE_NAMES) else f"nature {nature}"
 
 
-# The two constants as the game holds them, 32-bit floats whose words the source names. Rounding
-# them through a double gives a height a bit away from the one a record carries.
+# The game's 32-bit float constants; rounding through a double moves the height.
 SCALAR_STEP = struct.unpack("<f", struct.pack("<I", 0x3ECCCCCE))[0]      # +/- 20% per scalar step
 SCALAR_BASE = struct.unpack("<f", struct.pack("<I", 0x3F4CCCCD))[0]      # 0.8 at scalar 0
 
@@ -129,11 +109,7 @@ def scalar_percent(scalar):
 
 
 def absolute_size(base_height, base_weight, height_scalar, weight_scalar):
-    """-> (height, weight) for the floats at 0xac and 0xb0, in centimetres and hectograms.
-
-    Verified against a console's own record: its level-68 Gengar carries scalars 111 and 221 with
-    146.1177 and 452.3803, which is what the species' average 150 and 405 give here.
-    """
+    """-> (height, weight) for the floats at 0xac and 0xb0, in centimetres and hectograms."""
     height = scalar_percent(height_scalar)
     return (_f32(base_height * height),
             _f32(base_weight * _f32(height * scalar_percent(weight_scalar))))

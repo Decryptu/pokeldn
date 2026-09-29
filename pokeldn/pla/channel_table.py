@@ -1,27 +1,6 @@
-"""Port 1 of the game's reliable channel: each station's announcement of the handler keys it has open.
-
-Port 0 of protocol 0x7c carries the game's messages, each an eight-byte handler key and a body.
-Port 1 carries no game message. It is the channel table: whenever a station creates or destroys a
-channel, its port-1 object (`0x2ca83dc`, ticked from the dispatcher's per-frame poll `0x2ca82d0`)
-sends the peer the keys that changed, and the peer's receiver (`0x2ca9800`) keeps a table of which
-keys each station has open. A station sends a game message on a key only after the peer has
-announced that key open (`0x2ca92e0` -> `0x2ca9360`, called before every channel send, for
-instance at `0x26d980c`). A host that never announces a key never receives a message on it.
-
-A message is the game's tagged serialisation. An unsigned integer below 0x80 is its own byte;
-above it a tag names the width: 0x80 and one byte, 0x81 and two, 0x82 and four, 0x83 and eight,
-little-endian. 0xb9 opens a tuple and the integer after it is the field count.
-
-    b9 01            a tuple of one field: the list
-    NN               the number of entries
-    per entry:
-      b9 02          a tuple of two fields: the key and its state
-      b9 02 LO HI    the key as two u32, low word first
-      01 | 00        1 the key is open, 0 it is closed
-
-`b9 01 01 b9 02 b9 02 00 00 01` announces the trade box key (eight zero bytes) open, which is the
-joiner's port-1 open; `b9 01 01 b9 02 b9 02 01 00 01` the phase key (`01 00 00 00 00 00 00 00`) open
-and `... 01 00 00` the same key closed. `docs/pla.md`, The channel table on port 1.
+"""Port 1 of the game's reliable channel: the channel table, each station's announcement of the
+handler keys it has open. A station sends on a key only after its peer announced it open. Encoding:
+the game's tagged serialisation (docs/pla.md, The channel table on port 1).
 """
 
 import struct
@@ -33,7 +12,6 @@ STATE_CLOSED = 0
 
 
 def encode_uint(value):
-    """-> the game's encoding of an unsigned integer."""
     if value < 0:
         raise ValueError("unsigned only")
     if value < 0x80:

@@ -1,31 +1,6 @@
-"""The 3456-byte trade snapshot a Sword sends on protocol 0x84.
-
-The layout below comes from two published clients, `kwsch/PokePiaSWSH` (C#) and
-`lincoln-lm/swsh-lan-client` (Python), both over LAN mode rather than local wireless. What verified
-it here is our own capture, field for field.
-
-    0x000  six PK8 records, party form, 0x158 each          -> 0x810
-    0x810  u32   party count
-    0x814  MyStatus, 272 bytes      TID/SID at 0xA0, trainer name at 0xB0
-    0x924  TrainerCard, 456 bytes   trainer name at 0x00, start date at 0x170
-    0xAEC  the player profile, 266 bytes, the record the LDN beacon carries too
-    0xBF6  392 bytes another session kind fills; zero for Link Trade
-    0xD7E  2 bytes of padding                                -> 0xD80 = 3456
-
-The profile is read in `docs/swsh_protocol.md`, "The player profile"; `read_tail` decodes it.
-
-The payload is 3456 bytes. The third fragment is compressed under Pia's message flag 0x10, the
-version-4 zlib flag `docs/pia.md` documents for protocol 0x80. Concatenated raw the three give
-1404 + 1404 + 157 = 2965, which looks like a whole payload because nothing states the length;
-inflated, the third is 648 bytes and the total is 3456. `reassemble` refuses anything but 3456: a
-reassembly that produces a plausible length is not a reassembly that is right.
-
-What verifies the layout on our own bytes, none of it a checksum:
-
-  - the party count reads 3, and slots 4-6 are the ones with a zero encryption constant;
-  - MyStatus gives TID 56909 and SID 48474, and **those are the ids inside all three PK8s**;
-  - the trainer name is at both named offsets, and matches the OT name in the party;
-  - the start date at TrainerCard+0x170 is 2019-11-15, and 0x924 + 0x170 is 0xA94.
+"""The 3456-byte trade snapshot a Sword sends on protocol 0x84: party, MyStatus, TrainerCard and the
+player profile (docs/swsh_protocol.md). The third fragment is zlib under Pia's flag 0x10; a raw
+concatenation of 2965 bytes looks whole and is not.
 """
 import struct
 import zlib
@@ -63,12 +38,7 @@ NAME_LENGTH = 0x1A
 
 
 def inflate(fragment):
-    """-> a 0x84 fragment body decompressed, or unchanged if it is not a zlib stream.
-
-    The console sets Pia's message flag 0x10 on the compressed one; a receiver that reads the flag
-    should not need this. It is here because our capture path did not, and because a payload
-    already on disk can be repaired without another association.
-    """
+    """-> a 0x84 fragment body decompressed, or unchanged if it is not a zlib stream."""
     try:
         return zlib.decompress(fragment)
     except zlib.error:
@@ -76,10 +46,7 @@ def inflate(fragment):
 
 
 def reassemble(fragments):
-    """-> the whole 3456-byte payload from its three fragment bodies, compressed ones inflated.
-
-    Raises on any other total: a short concatenation is wrong and nothing in it says so.
-    """
+    """-> the whole 3456-byte payload from its three fragment bodies; raises on any other total."""
     if len(fragments) != FRAGMENT_COUNT:
         raise ValueError(f"{len(fragments)} fragments, expected {FRAGMENT_COUNT}")
     payload = b"".join(inflate(f) for f in fragments)
@@ -94,12 +61,7 @@ FRAGMENT_2_END = 2808                 # where its third fragment begins
 
 
 def inflate_short(payload):
-    """-> a whole payload from a short file, which is what earlier captures hold.
-
-    A payload saved before the compressed fragment was understood is 2965 bytes with its third
-    fragment still deflated. Nothing about those files is wrong except that they stop early, so
-    they are repaired rather than thrown away - the party in them is a real console's.
-    """
+    """-> a whole payload from a 2965-byte file whose third fragment is still deflated."""
     payload = bytes(payload)
     if len(payload) == PAYLOAD_LENGTH:
         return payload
@@ -138,9 +100,8 @@ def read(payload):
     }
 
 
-# The profile at TAIL_OFFSET, as 0x01125080 (Shield 1.3.2) writes it from the struct 0x01111970
-# copies out of the profile singleton. Raw fields first; the three bit-packed groups are decoded
-# by `read_tail`. docs/swsh_protocol.md, "The player profile".
+# The profile as 0x01125080 (Shield 1.3.2) writes it; `read_tail` decodes the bit-packed groups
+# (docs/swsh_protocol.md, The player profile).
 TAIL_DEVICE_ID = 0x00                 # 16 bytes, nn::oe::GetPseudoDeviceId
 TAIL_ACCOUNT_UID = 0x10               # 16 bytes, nn::account::GetUserId
 TAIL_NSA_ID = 0x20                    # 8 bytes, nn::account::GetNetworkServiceAccountId, or zero
@@ -169,16 +130,8 @@ def _bits(data, pos, n):
 
 
 def read_tail(payload):
-    """-> the player profile at TAIL_OFFSET, field by field.
-
-    `appearance` is the 17 ten-bit values 0x0111dd60 unpacks from MyStatus, the player's model.
-    `samples` are the player's last three field positions, newest first: a 5-bit counter that
-    steps once per push, the 3-bit movement state, the world position and the yaw in radians
-    (docs/swsh_protocol.md, The player profile). `sample_generation` is the byte a listener tells
-    a new run of samples by; `location` is the met-location id of the field the player stands on.
-    `records` are the sixteen game records the profile carries, clamped to 0xFFFF, by their PKHeX
-    names.
-    """
+    """-> the player profile at TAIL_OFFSET, field by field (docs/swsh_protocol.md, The player
+    profile); `records` are clamped to 0xFFFF and named by PKHeX."""
     if len(payload) != PAYLOAD_LENGTH:
         raise ValueError(f"{len(payload)} bytes, expected {PAYLOAD_LENGTH}")
     t = bytes(payload[TAIL_OFFSET:TAIL_OFFSET + PROFILE_LENGTH])
@@ -221,29 +174,9 @@ def read_tail(payload):
 
 def rewrite(payload, *, trainer_name=None, trainer_id=None, secret_id=None, old_name=None,
             account_uid=None, device_id=None, nsa_id=None):
-    """-> the snapshot with a new trainer identity, and every other byte still the console's own.
-
-    THE POINT OF THE PROJECT NEEDS ONE OF THESE AND IT MUST NOT BE THE CONSOLE'S OWN. 3456 bytes
-    hold a trainer card, a status block, six party records and the player profile, and most of it
-    is fields this project has never built. Building one from nothing would mean inventing every
-    one of them, so ours is the console's snapshot with the identity moved - the same method
-    `swsh.pokemon.build_from` and `bdsp.pokemon.build_from` use on a single Pokemon, for the same
-    reason.
-
-    The identity has to move in four places at once: MyStatus, the trainer card, every party
-    record, and the profile's name field at TAIL_OFFSET + 0x28. The trade screen draws the partner
-    from MyStatus, so a snapshot with the profile left alone reads correctly on screen while it
-    still names the console's own player, and `party_matches_trainer` cannot see that because it
-    only compares the party against MyStatus.
-
-    The profile name field is 24 bytes and the console leaves whatever its buffer held after the
-    terminator; the replacement is padded with zeros. `old_name` is accepted for the older call
-    sites and ignored: the field is at a fixed offset.
-
-    The three ids at the front of the profile are the console's own (its pseudo device id, the
-    account's Uid and its network service account id) and are handed straight back unless
-    replaced; the trade screen never draws them.
-    """
+    """-> the snapshot with a new trainer identity in all four places the name lives (MyStatus, the
+    trainer card, every party record, the profile at TAIL_OFFSET + 0x28); every other byte stays the
+    console's own. `old_name` is ignored."""
     if len(payload) != PAYLOAD_LENGTH:
         raise ValueError(f"{len(payload)} bytes, expected {PAYLOAD_LENGTH}")
     out = bytearray(payload)
@@ -292,11 +225,7 @@ def rewrite(payload, *, trainer_name=None, trainer_id=None, secret_id=None, old_
 
 
 def party_matches_trainer(fields):
-    """-> True when every party member carries the trainer's own ids.
-
-    The party records and MyStatus are different blocks of the payload and agree on the ids. A
-    reassembly that had slipped would not.
-    """
+    """-> True when every party member carries MyStatus's ids; a slipped reassembly would not."""
     ids = (fields["trainer_id"], fields["secret_id"])
     return all((p["trainer_id"], p["secret_id"]) == ids
                for p in fields["party"] if p is not None)

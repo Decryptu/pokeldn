@@ -1,22 +1,6 @@
-"""The trade on Reliable 0x7C port 0, as a host runs it against a joiner.
-
-A game message is a four-byte header and a body: the handler key as a little-endian u16, a kind
-byte and a step byte. Key 0x0080 is the trade channel, key 0x0180 the one the exchange itself runs
-on; each is announced open on port 1 before its first message and closed after its last
-(`pokeldn.pla.channel_table` for the table, `docs/sv.md` "The trade" for the order).
-
-    80 00 02 00 + 348 bytes    the offered Pokemon, once each way, either side first
-    80 00 03 00                the player confirmed, once each way, either side first
-    80 00 04 01 00             the player backed out of the wait (B); the station leaves after it
-    80 00 05 00                the joiner commits, the host answers in kind
-    80 01 01 SS                the host starts step SS, the joiner echoes it
-    80 01 02 SS                the host closes step SS; steps 03, 06, 0B, 0E
-
-`TradeStage` is the host's side as a pure state machine and `JoinerTradeStage` the joiner's:
-`on_message(port, payload)` returns what to send, each entry `(delay, port, payload)`, and
-`tests/test_sv.py` runs each of them over the emulated pair's own message list, in its own
-direction. The delays are the pair's: a confirmation came from a player and is sent here a second
-after the offer it answers.
+"""The trade on Reliable 0x7C port 0, host and joiner side, as pure state machines (docs/sv.md,
+The trade). A game message is a u16 handler key, a kind byte, a step byte and a body; key 0x0080 is
+the trade channel, 0x0180 the exchange. `on_message` returns [(delay, port, payload)].
 """
 
 import struct
@@ -106,9 +90,8 @@ class TradeStage:
         if self.done:
             return []
         if port == 1:
-            # A station sends on a key only once its peer has announced it, so the first
-            # exchange step waits for the joiner's own open of key 0x0180. A pair's host sends
-            # 80010103 twenty-five milliseconds after that echo, not before it.
+            # A station sends on a key only once its peer announced it: the first exchange step
+            # waits for the joiner's open of key 0x0180.
             if (self.committed and self.step_index is None
                     and payload == table_update(KEY_EXCHANGE, True)):
                 self.step_index = 0
@@ -136,8 +119,7 @@ class TradeStage:
             return []
         if key == KEY_TRADE and kind == KIND_COMMIT and not self.committed:
             self.committed = True
-            # A pair's host answers the commit 83 ms later, not in the same breath: sent at once
-            # the message is acknowledged by the station's transport and never dispatched.
+            # Sent at once, the commit answer is acknowledged by the transport and never dispatched.
             return [(0.09, 0, build(KEY_TRADE, KIND_COMMIT)),
                     (0.19, 1, table_update(KEY_EXCHANGE, True))]
         if (key == KEY_EXCHANGE and kind == KIND_STEP_OPEN and self.step_index is not None
@@ -149,7 +131,6 @@ class TradeStage:
             else:
                 self.trades += 1
                 if self.index + 1 < len(self.offers):
-                    # A second trade in the same seat, at the next record.
                     self.index += 1
                     self._start()
                 else:
@@ -160,20 +141,8 @@ class TradeStage:
 
 
 class JoinerTradeStage:
-    """The joiner's side of a trade, `TradeStage` mirrored.
-
-    `offer` is one 348-byte record or a list of them. With a list the stage runs the cycle again
-    at the next record when the exchange key closes, so one seat carries more than one trade.
-
-    A joiner answers rather than leads: it opens key 0x0080 on port 1 once the host has announced
-    it, offers when the host's offer arrives, confirms and then commits on its own, opens key
-    0x0180 after the host opens it, echoes each step the host starts, and mirrors the close. The
-    pair's joiner committed first and its host answered in kind, so the commit is the joiner's to
-    send; `commit_delay` is how long after its own confirmation it goes.
-
-    The delays are the pair joiner's: the key-0x80 open after the last identity fragment, the
-    confirmation a second after the host's and the commit 1.5 s after that.
-    """
+    """The joiner's side of a trade: it answers rather than leads, and commits first, `commit_delay`
+    after its own confirmation. `offer` is one 348-byte record or a list, one per trade."""
 
     def __init__(self, offer, confirm_delay=1.0, commit_delay=1.5, open_delay=0.35):
         offers = [offer] if isinstance(offer, (bytes, bytearray)) else list(offer)
@@ -196,7 +165,7 @@ class JoinerTradeStage:
         self._start()
 
     def _start(self):
-        """Clear what belongs to one trade. The key-0x80 open belongs to the seat, not to a trade."""
+        """Clear what belongs to one trade; the key-0x80 open belongs to the seat."""
         self.host_offer = None
         self.offered = False
         self.confirmed = False
@@ -220,8 +189,8 @@ class JoinerTradeStage:
             return []
         if port == 1:
             if payload == table_update(KEY_TRADE, True) and not self.opened:
-                # The pair's joiner opened the key 206 ms after the host did, after all four
-                # of its identity fragments on port 0 rather than between them.
+                # The pair's joiner opened the key 206 ms after the host, after all four identity
+                # fragments.
                 self.opened = True
                 return [(self.open_delay, 1, table_update(KEY_TRADE, True))]
             if (self.committed and self.step_index is None
@@ -232,16 +201,12 @@ class JoinerTradeStage:
                     and payload == table_update(KEY_EXCHANGE, False)):
                 self.trades += 1
                 if self.index + 1 < len(self.offers):
-                    # A second trade in the same seat: the cycle starts again at the next offer,
-                    # with the trade key still open. What a console does after a trade closes is
-                    # unmeasured.
                     self.index += 1
                     self._start()
                 else:
                     self.done = True
                 return [(0.0, 1, table_update(KEY_EXCHANGE, False))]
             if payload == table_update(KEY_TRADE, False) and self.opened:
-                # The host closing the trade key, mirrored the way every other table update is.
                 self.opened = False
                 return [(self.open_delay, 1, table_update(KEY_TRADE, False))]
             return []
@@ -253,8 +218,6 @@ class JoinerTradeStage:
         key, kind, step, body = m
         if key == KEY_TRADE and kind == KIND_OFFER and len(body) == OFFER_SIZE:
             if self.host_offer != body:
-                # Every record the host puts up, in order, one entry per selection it makes. A
-                # second trade in the seat starts a fresh entry even for the same record.
                 self.host_offers.append(body)
             self.host_offer = body
             if self.offered:
@@ -277,11 +240,8 @@ class JoinerTradeStage:
 
 
 def apply_fields(plain, settings):
-    """-> the record with each `FIELD=VALUE` written into it. `shiny` alone rolls the value.
-
-    A name field takes the text as it stands, a comma in the value makes a vector, and an integer
-    may be decimal or `0x`-prefixed. The field names are `pokeldn.sv.pokemon`'s.
-    """
+    """-> the record with each `FIELD=VALUE` (`pokeldn.sv.pokemon` names) written; `shiny`
+    alone rolls the value, a comma makes a vector."""
     from pokeldn.sv import pokemon
 
     for setting in settings:
@@ -303,12 +263,8 @@ def apply_fields(plain, settings):
 
 
 def load_offer(raw, settings=(), fresh=False):
-    """-> the 348-byte body to offer, from a file's bytes in any of the forms one is kept in.
-
-    Hex text, a 352-byte game message with its header, and a bare stored or party record, plain or
-    encrypted, all read; `settings` are `apply_fields`'s. `fresh` then draws a new PID and
-    encryption constant, shiny state kept (`pokemon.fresh_identity`).
-    """
+    """-> the 348-byte body to offer from hex text, a 352-byte message or a stored or party record;
+    `fresh` draws a new PID and encryption constant, shiny state kept."""
     from pokeldn.sv import pokemon
 
     raw = bytes(raw)

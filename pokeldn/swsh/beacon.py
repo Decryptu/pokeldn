@@ -1,15 +1,7 @@
-"""The LDN advertise data Sword/Shield's BeaconCommunication core sends and reassembles: the frame,
-the message split across advertisements, and the reassembly the console performs.
-
-Wire advertise data is 0x180 bytes: a 0x18 Pia header, then a 0x168 body. The body is a u16
-CRC-16/ARC at +0 over body[2:0x168] (init 0, no final xor), a 12-bit network id at +2 (0xD70 on
-every screen), a zero byte, and the application payload at +5, at most 0x163 bytes. A type-1
-payload carries a ten-byte message header and up to 300 bytes of one fragment; the console sizes
-its buffer from the header's length, copies 300 bytes per fragment except the last, and checks a
-CRC-16/ARC over the reassembled message before handing it to the importer. docs/swsh_gift.md, "The
-beacon body frame" through "The message checksum".
-Trap: the Pia header is outside the body checksum but a retail console lists nothing without it;
-`pia_header()` is what goes there."""
+"""The LDN advertise data Sword/Shield's BeaconCommunication core sends and reassembles: a 0x18 Pia
+header and a 0x168 body carrying one message fragment (docs/swsh_gift.md, "The beacon body frame").
+Trap: the Pia header is outside the body checksum, but a retail console lists nothing without it.
+"""
 import os
 import struct
 

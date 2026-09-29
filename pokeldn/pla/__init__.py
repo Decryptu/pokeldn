@@ -1,13 +1,6 @@
-"""Legends Arceus, a native Switch title on Pia header version 11.
+"""Legends Arceus, a native Switch title on Pia header version 11 (`pokeldn.ldn.pia6`).
 
-What belongs here is what is true of Legends Arceus and of nothing else: its LDN passphrase, its
-Pia game key, its local communication id and the way a scanned network becomes session keys. Pia
-and LDN themselves are `pokeldn.ldn` and carry no game's constants; the version-11 packet header is
-`pokeldn.ldn.pia6`, because a header band is true of every title in it. Like `bdsp` and `swsh`,
-this sits directly on `ldn` with no link layer of its own.
-
-`docs/pla.md` has the addresses and the unresolved list. The constants are read off the binary and
-the advertisement is measured on a retail console; no Pia packet has been captured yet.
+Belongs here: its LDN passphrase, Pia game key, local communication id and session keys (docs/pla.md).
 """
 
 from pokeldn.pla.session import (ADVERTISE_NAME, ADVERTISE_VERSION, APP_COMM_VERSION, COMM_ID,

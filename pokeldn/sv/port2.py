@@ -1,20 +1,6 @@
-"""Port 2 of the game's reliable protocols: the announcement a host relays and the join it answers.
-
-The game's messages on 0x7C port 2 (one station) and 0x80 port 2 (every station) share one
-dispatcher, `0x1954aec`, keyed on the first byte, types 1 to 0xD. Three of them open a trade:
-
-    type 7   host -> all, 0x80 port 2, zlib     the host's announcement: a relayed type 1
-    type 3   joiner -> host, 0x7C port 2        the join, the announcement's key and nine zero bytes
-    type 9   host -> all, 0x80 port 2           the answer, carrying the joiner's station id
-
-The type-1 handler `0x18ceb70` copies the 0x8e-byte body, appends the sender's station id and
-queues it as a type 7, so a host announcing alone relays its own. The type-3 handler `0x1981e94`
-queues the type 9; its receiver `0x18b65c8` compares the id in it with the station's own, at
-`[[0x46d0a08]] + 0xb8`. That id is the Pia constant id read as a big-endian u64: the 127.0.0.2
-instance of a pair carries `7f00020000020000`, `ldn_constant_id` of its MAC `02:00:7f:00:00:02`.
-
-The encoding is the tagged one `pokeldn.pla.channel_table` describes, plus `0xbc` for a byte string:
-the tag, the length as an integer, the bytes. `docs/sv.md`, Port 2.
+"""Port 2 of the game's reliable protocols: the type-7 announcement a host relays, the type-3 join
+and the type-9 answer (dispatcher `0x1954aec`). Tagged encoding as `pokeldn.pla.channel_table`,
+plus `0xbc` for a byte string (docs/sv.md, Port 2).
 """
 
 import struct
@@ -69,7 +55,7 @@ def _skip_field(data, pos):
 
 def announce_key(body):
     """-> the key of an inflated type 7, the first integer after its six-tuple, or None. The type-3
-    handler `0x1981ed4` compares the join's first field with it and refuses a mismatch with code 1."""
+    handler `0x1981ed4` refuses a join whose first field differs, with code 1."""
     try:
         if body[0] != TYPE_ANNOUNCE:
             return None
