@@ -11,6 +11,7 @@ from pathlib import Path
 
 ROOT = Path(__file__).resolve().parent.parent
 FIRMWARE = ROOT / "gui" / "firmware" / "pokeldn-radio.bin"
+APP_ID = "io.github.decryptu.pokeldn"
 
 
 def runtime_id() -> str:
@@ -71,10 +72,12 @@ def main() -> int:
         data += [(stage / "gui/guide.md", "gui"), (executable, "services/pkhex/dist"),
                  (FIRMWARE, "gui/firmware")]
         args = [sys.executable, "-m", "flet_cli.cli", "pack", str(ROOT / "gui" / "main.py"),
-                "--name", "pokeldn", "--icon", str(ROOT / "gui" / "assets" / icon), "-y",
+                "--name", "pokeldn", "-y",
                 "--distpath", str(ROOT / "dist"), "--product-name", "pokeldn",
-                "--bundle-id", "io.github.decryptu.pokeldn", "--add-data",
+                "--bundle-id", APP_ID, "--add-data",
                 *[f"{src}{os.pathsep}{dest}" for src, dest in data]]
+        if sys.platform in ("darwin", "win32"):
+            args += ["--icon", str(ROOT / "gui" / "assets" / icon)]
         scripts = sorted(p.stem for p in (stage / "bin").glob("*.py"))
         console = ["--console", "--hide-console=hide-early"] if sys.platform == "win32" else []
         for option in (f"--paths={dependencies}", f"--paths={ROOT / 'bin'}", f"--paths={ROOT / 'vendor' / 'LDN'}",
@@ -88,6 +91,8 @@ def main() -> int:
         expected = ROOT / "dist" / ({"darwin": "pokeldn.app", "win32": "pokeldn.exe"}.get(sys.platform, "pokeldn"))
         if result == 0 and not expected.exists():
             raise SystemExit("The packer produced no desktop application.")
+        if result == 0 and sys.platform.startswith("linux"):
+            (ROOT / "dist" / f"{APP_ID}.desktop").unlink(missing_ok=True)
         return result
 
 

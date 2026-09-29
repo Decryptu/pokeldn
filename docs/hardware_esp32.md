@@ -378,6 +378,7 @@ None for a kernel interface, which is how every launcher picks its path.
 - `udp_socket(port)` stands in for a UDP socket bound to the interface, `packet_socket()` for an
   `AF_PACKET` socket delivering whole IPv4 Ethernet frames. Each uses a socket pair with one byte
   per queued datagram, so `select` and `trio.lowlevel.wait_readable` work on macOS, Linux and Windows.
+  TCP socket pairs disable Nagle buffering so readiness bytes reach the reader promptly.
 - The board's frames reach the stack through trio tasks in the launcher's own trio loop. A blocking
   `select` inside that loop starves them and each datagram waits out the full timeout; wait with
   `trio.lowlevel.wait_readable` under `trio.move_on_after`. A Scarlet joiner blocking in

@@ -50,6 +50,7 @@ The packer takes tracked runtime files, the published self-contained PKHeX execu
 radio firmware. Missing firmware stops the build. It excludes machine configuration and notes.
 Windows builds keep standard input and output for child-process logs and stop handling, with the
 owned console hidden. PyInstaller's windowed mode removes those streams on Windows.
+Linux archives contain the portable executable; desktop entries with build-machine paths are omitted.
 
 ## Verification
 

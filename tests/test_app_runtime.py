@@ -3,6 +3,7 @@ import os
 import subprocess
 import sys
 from pathlib import Path
+import threading
 
 from pokeldn.app import runner
 from pokeldn.app.command import limit_error
@@ -54,3 +55,31 @@ def test_board_backend_does_not_require_unix_user_ids(monkeypatch):
 def test_vendor_import_does_not_require_linux_fcntl():
     subprocess.run([sys.executable, "-c", "import sys; sys.modules['fcntl'] = None; import ldn.wlan"],
                    check=True, capture_output=True)
+
+
+def test_managed_process_logs_utf8_and_stops_on_stdin_close(tmp_path):
+    script = tmp_path / "session.py"
+    script.write_text("import time\nprint('Pokémon prêt 🎮')\ntry:\n"
+                      "    while True: time.sleep(0.02)\nexcept KeyboardInterrupt:\n"
+                      "    print('stopped')\n", encoding="utf-8")
+    lines, exits = [], []
+    ready, done = threading.Event(), threading.Event()
+
+    def line(value):
+        lines.append(value)
+        ready.set()
+
+    def exit(code):
+        exits.append(code)
+        done.set()
+
+    process = runner.Process(["--run", str(script)], str(tmp_path),
+                             dict(os.environ, POKELDN_MANAGED_RUN="1", PYTHONIOENCODING="ascii"),
+                             line, exit)
+    try:
+        assert ready.wait(5)
+        assert lines == ["Pokémon prêt 🎮"]
+    finally:
+        process.stop()
+        assert done.wait(5)
+    assert exits == [0] and lines[-1] == "stopped"

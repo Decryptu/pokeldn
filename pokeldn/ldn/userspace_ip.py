@@ -84,8 +84,10 @@ class _Readable:
         # pushes while the reader pops, and a byte seen before its item made popleft raise.
         self._lock = threading.Lock()
         self._r, self._w = socket.socketpair()
-        self._r.setblocking(False)
-        self._w.setblocking(False)
+        for sock in (self._r, self._w):
+            sock.setblocking(False)
+            if sock.family in (socket.AF_INET, socket.AF_INET6):
+                sock.setsockopt(socket.IPPROTO_TCP, socket.TCP_NODELAY, 1)
         self._timeout = None
         self.closed = False
         self.dropped = 0

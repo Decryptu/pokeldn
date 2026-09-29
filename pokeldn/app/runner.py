@@ -24,7 +24,7 @@ def child(argv: list[str]) -> None:
     """Runs in the child: an entry point script or a module, as `python -u` would."""
     for stream in (sys.stdout, sys.stderr):
         if stream:
-            stream.reconfigure(line_buffering=True)
+            stream.reconfigure(encoding="utf-8", line_buffering=True)
     if sys.stdin and os.environ.get("POKELDN_MANAGED_RUN"):
         threading.Thread(target=_stop_on_stdin_close, daemon=True).start()
     mode, target, *args = argv
