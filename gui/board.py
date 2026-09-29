@@ -26,6 +26,13 @@ DRIVERS = {
 }
 
 FIRMWARE = os.path.join(ROOT, "gui", "firmware", "pokeldn-radio.bin")   # written by the release build
+FIRMWARE_S3 = os.path.join(ROOT, "gui", "firmware", "pokeldn-radio-s3.bin")   # ditto, this fork only
+
+
+def bundled_firmware(p: "Port | None") -> str:
+    """The release build's own image for this port's chip family, if the release included one."""
+    path = FIRMWARE_S3 if p and p.bridge.startswith("Espressif") else FIRMWARE
+    return path if os.path.exists(path) else ""
 
 
 @dataclass(frozen=True)
@@ -36,7 +43,12 @@ class Port:
 
     @property
     def supported(self) -> bool:
-        return not self.bridge.startswith("Espressif")
+        # Upstream pokeldn only ships classic-ESP32 firmware, so it rejects the native-USB
+        # Espressif bridge (S3/C3/C6) outright. This fork has an ESP32-S3 build (USB Serial/JTAG
+        # transport added in firmware/esp32/main/wire.c), so let it through here; esptool's own
+        # chip-vs-image check at flash time is what actually catches a C3/C6 board with no
+        # compatible firmware, not this property.
+        return True
 
 
 @dataclass(frozen=True)
@@ -92,6 +104,9 @@ def identify(port: str, blink: bool = True) -> Identity:
 
 
 def flash_args(port: str, firmware: str) -> list[str]:
-    """esptool's arguments for a merged image (bootloader, partition table, app) written at 0."""
-    return ["--chip", "esp32", "-p", port, "-b", "460800", "--before", "default-reset",
+    """esptool's arguments for a merged image (bootloader, partition table, app) written at 0.
+    --chip auto lets esptool detect the connected chip itself (classic ESP32 or ESP32-S3) rather
+    than forcing esp32 and refusing an S3 outright; it still refuses if the image's own chip-id
+    header doesn't match what's connected, so a C3/C6 board with no compatible image is still safe."""
+    return ["--chip", "auto", "-p", port, "-b", "460800", "--before", "default-reset",
             "--after", "hard-reset", "write-flash", "0x0", os.path.abspath(firmware)]

@@ -24,7 +24,10 @@ def main() -> int:
                     "-r", runtime_id(), "-o", os.path.join(ROOT, "gui", "pkhex", "dist")], check=True)
     icon = {"darwin": "icon.icns", "win32": "icon.ico"}.get(sys.platform, "icon.png")
     data = ["bin", "pokeldn", "vendor/LDN/ldn", "docs", "config", "gui/assets", "gui/pkhex/dist"]
-    if os.path.isfile(os.path.join(ROOT, "gui", "firmware", "pokeldn-radio.bin")):
+    # Either image is enough to bundle the folder: this fork's esp32s3 build ships without a
+    # classic-ESP32 one when it's the only firmware built locally.
+    if any(os.path.isfile(os.path.join(ROOT, "gui", "firmware", name))
+           for name in ("pokeldn-radio.bin", "pokeldn-radio-s3.bin")):
         data.append("gui/firmware")
     args = [sys.executable, "-m", "flet_cli.cli", "pack", os.path.join(ROOT, "gui", "main.py"),
             "--name", "pokeldn", "--icon", os.path.join(ROOT, "gui", "assets", icon), "-y",

@@ -151,8 +151,6 @@ class BoardView:
         ], spacing=10)
         note = ("Identify restarts the board, reads its firmware and MAC, and blinks its blue LED for five "
                 "seconds so you can tell the boards apart.")
-        if not p.supported:
-            note = "This is an ESP32-S3, C3 or C6. pokeldn runs on the classic ESP32 only."
         return t.card(self.name_of(p.device) or "ESP32 board", body, note)
 
     def _rename(self, e, field=None) -> None:
@@ -212,15 +210,17 @@ class BoardView:
         chosen = self.app.settings.firmware
         if chosen and os.path.exists(chosen):
             return chosen
-        return board.FIRMWARE if os.path.exists(board.FIRMWARE) else ""
+        return board.bundled_firmware(self.port())
 
     def flash_card(self) -> ft.Control:
         image = self.firmware()
         p = self.port()
+        bundled = image in (board.FIRMWARE, board.FIRMWARE_S3)
+        label = "pokeldn firmware for this board, included with the app" if bundled else image
         source = ft.Row([
             ft.Icon(ft.Icons.INVENTORY_2_OUTLINED, size=16, color=t.MUTED),
-            t.text(("pokeldn firmware, included with the app" if image == board.FIRMWARE else image) if image else
-                   "This copy of the app has no firmware image.", 12, t.MUTED if image else t.RED, expand=True),
+            t.text(label if image else "This copy of the app has no firmware image for this board.",
+                   12, t.MUTED if image else t.RED, expand=True),
             ft.TextButton("Use another file", on_click=self._choose_file, style=ft.ButtonStyle(color=t.MUTED)),
         ], spacing=6)
         flashing = bool(self.app.process and self.app.process.running and self.app.process_label == "flash")
@@ -297,6 +297,6 @@ class BoardView:
             t.text("Linux: allow serial ports, then log out and back in:", 12.5),
             ft.Container(t.text("sudo usermod -aG dialout $USER", 12, font_family=t.MONO, selectable=True),
                          bgcolor=t.BG, border_radius=8, padding=10),
-            t.text("pokeldn needs a classic ESP32 (ESP32-D0WD, WROOM-32E). S3, C3 and C6 boards are not "
-                   "supported.", 12.5, t.MUTED),
+            t.text("pokeldn needs a classic ESP32 (ESP32-D0WD, WROOM-32E) or, in this fork, an ESP32-S3 "
+                   "flashed with its own firmware build. C3 and C6 boards are not supported.", 12.5, t.MUTED),
         ], spacing=8))

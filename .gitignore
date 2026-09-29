@@ -22,6 +22,7 @@
 /firmware/**/sdkconfig.old
 /firmware/**/dependencies.lock
 /firmware/**/managed_components/
+/firmware/**/*.bin
 !/config/host.toml
 
 # Machine-specific host settings can name local key locations and capture
