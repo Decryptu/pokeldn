@@ -459,6 +459,9 @@ offsets:
 +0x52 16  Pokemon name
 ```
 
+`pokeldn.lgpe.reference` ships one, recorded from an emulated save whose trainer is `POKELDN`.
+`bin/lgpe_join.py` sends it by default, the trainer id pair replaced by `--our-trainer`.
+
 Kind 2, body 0xe8, the offer, goes the instant the station's published state word reaches 2, and
 again under the next step each time its player changes the offered Pokemon (the selection browses
 the box). A new step is answered; a repeated step is a retransmit and is not.

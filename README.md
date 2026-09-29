@@ -174,15 +174,16 @@ checksum, writes the sector back and bumps a counter so the game loads it. It ed
 
 ### Let's Go Pikachu and Eevee
 
-The trade screen alternates hosting and scanning, so pokeldn can host or join. Both need a captured
-kind-1 identity message (`--first` / `--reliable-payload`) and a 232-byte PB7 to offer
-(`pokeldn.lgpe.pb7`; `--offer echo` returns the console's own).
+The trade screen alternates hosting and scanning, so pokeldn can host or join. Both send a kind-1
+identity message: the joiner the one `pokeldn.lgpe.reference` ships, the host the console's own back
+(`--first echo`) or a file. Both offer a 232-byte PB7 (`pokeldn.lgpe.pb7`; `--offer echo` returns the
+console's own).
 
 ```bash
 ./.venv/bin/python bin/lgpe_host.py --seconds 600 --player-name PkCamp \
-  --first identity.bin --our-trainer 41234:12345 --offer offer.pb7
+  --first echo --our-trainer 41234:12345 --offer offer.pb7
 ./.venv/bin/python bin/lgpe_join.py --connect --connect-seconds 300 \
-  --reliable-payload identity.bin --ack-peer-clock --ack-re-announce \
+  --ack-peer-clock --ack-re-announce \
   --our-trainer 41234:12345 --offer offer.pb7 --leave-after 15
 ```
 
@@ -286,9 +287,8 @@ The offline Link Trade search alternates scanning and hosting, so pokeldn hosts 
 ```bash
 ./.venv/bin/python bin/sv_host.py --seconds 240 --player-name RyuPlayer \
   --rtt-probe --net-property --clock --net-stations 4 --scarlet-response \
-  --record-set records/ --announce --announce-delay 5.25 \
+  --record-delay 0.17 --announce --announce-delay 5.25 \
   --send-at 6.00:0x7c:1:b90101b902b90280800001 \
-  --send-on-open 0.15:0x7c:0:<identity fragment>:z:start \
   --trade-offer offer.hex --offer-after-open 8
 ```
 

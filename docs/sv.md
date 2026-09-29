@@ -205,6 +205,10 @@ packet (41 of 48 retail sets). The identical zero chunks travel behind a presenc
 header field inherited ([Message framing](pia.md#message-framing)). 46 of 52 retail sets went out
 within 0.19 s. `pokeldn.sv.streams.decompress` reads them.
 
+`pokeldn.sv.reference` ships a station's 44 records and its two identity fragments on 0x7C port 0,
+recorded from an emulated Scarlet whose player is `Player`, account identifier unset. `bin/sv_host.py`
+and `bin/sv_join.py` send them unless given `--record-set`, `--send-on-open` or `--no-identity`.
+
 ### The retail acknowledgement, and a flood of retransmits
 
 A retail station acks a peer's record stream with ack id one past the contiguous run, field 0x50

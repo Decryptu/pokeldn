@@ -137,6 +137,10 @@ id, in order of first appearance:
 | `0102`, `0104` | 5 | step messages |
 | `0200` | 5 | the confirmation steps, last byte 3, 6, 0x0b, 0x0e |
 
+`pokeldn.za.reference` ships the identity, its follow-up, the protocol-11 opening and the selection
+record, recorded from an emulated pair whose player is `Player`; `bin/za_join.py` and
+`bin/za_host.py` send them (`--game-dir` names another set).
+
 ### The trade commands
 
 The trade session setup `0xca2928` subscribes five command types (named by ctti strings) on the
