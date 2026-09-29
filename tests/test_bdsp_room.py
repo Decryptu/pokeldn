@@ -1,8 +1,5 @@
-"""BDSP's own protocol, above Pia - the messages the Union Room is made of.
-
-Every fixture is real, off a console. The names come from `TeamLumi/opendpr`'s decompiled C#
-(`Dpr.NetworkUtils.NetDataParser`), which names every message the game speaks.
-"""
+"""BDSP's Union Room messages above Pia; fixtures off a console, names from TeamLumi/opendpr's
+NetDataParser."""
 
 import pathlib
 import struct
@@ -53,7 +50,6 @@ def test_pos_data_is_halfwords_at_a_twentieth_of_a_unit_with_x_negated():
     first = out["points"][0]
     assert first["raw"] == (140, 207)
     assert round(first["x"], 2) == -7.00 and round(first["z"], 2) == 10.35
-    # and that is the same place the JOIN message named, which is what says they are one player
     assert abs(first["x"] - room.parse(JOIN_SP36)["join"]["x"]) < 0.1
     assert abs(first["z"] - room.parse(JOIN_SP36)["join"]["z"]) < 0.2
 
@@ -87,7 +83,7 @@ def test_what_was_called_a_keepalive_is_a_message():
     assert out["data_id"] == room.STATE and out["name"] == "NetCharacterStateData"
     assert out["length"] == 2 and out["truncated"] is False
     assert out["fields"] == {"state": room.STATE_NONE, "isRecruiment": 0}
-    # so the answer to a request for 0x04 is a message the console itself broadcasts every 2 s
+    # The console broadcasts this message every 2 s.
     assert room.build_state() == room.STATE_NONE_MESSAGE
 
 
@@ -95,8 +91,7 @@ def test_every_message_the_game_speaks_is_named_and_the_ids_are_nibble_grouped()
     assert len(netdata.NAMES) == 65                     # NetDataParser registers exactly 65
     assert netdata.NAMES[room.JOIN][0] == "NetJoinData"
     assert netdata.NAMES[room.POS][0] == "NetPosData"
-    # 0x01..0x09, 0x10..0x19, 0x20..0x29 and so on - no id's low nibble reaches 0xA,
-    # so a gap in the numbering is the grouping and not a message this table is missing
+    # No id's low nibble reaches 0xA: gaps are the grouping.
     assert all(ident & 0x0F <= 9 for ident in netdata.NAMES)
     assert max(netdata.NAMES) == 0x66 and min(netdata.NAMES) == 0x01
 
@@ -108,43 +103,28 @@ def test_the_packed_layout_is_what_the_wire_says_and_not_c_sharp_alignment():
 
 
 def test_the_two_repeated_small_messages_are_a_request_and_its_own_answer():
-    """The console has been asking for one data id and answering it itself since the first join."""
     req = room.parse(SMALL_A)
     assert req["name"] == "NetRequestData"
     assert req["fields"]["RequestDataID"] == room.MATCH_WAIT == 0x23
     ans = room.parse(SMALL_B)
     assert ans["name"] == "NetDataIsMatchWaitData"
     assert ans["fields"]["isMatchWait"] == 0
-    # and building the answer to the console's own request reproduces the console's own bytes
     assert room.answer(req) == SMALL_B
 
 
 def test_the_match_wait_answer_carries_the_value_the_trade_is_gated_on():
-    """isMatchWait is the ONE byte UnionRoomManager$$SetNetData compares against 1.
-
-    `cmp w23, #1; b.ne; bl UnionFrontDeskTradeController$$StartMatch` [main.bin 0x01fd56e4], and
-    w23 is `ldrb [received, #0x10]`. Every run so far answered 0, which is a
-    station declining to be matched - the console asked fifty sessions running and was told no.
-    """
+    """isMatchWait is the byte UnionRoomManager$$SetNetData compares with 1 [main.bin 0x01fd56e4]."""
     req = room.parse(SMALL_A)
     assert req["fields"]["RequestDataID"] == room.MATCH_WAIT
-    # the default is unchanged: it still reproduces the console's own bytes
     assert room.answer(req) == SMALL_B
     assert room.parse(room.answer(req))["fields"]["isMatchWait"] == 0
-    # and the value the gate wants is one flag away, same length, same id
     waiting = room.answer(req, match_wait=True)
     assert room.parse(waiting)["fields"]["isMatchWait"] == 1
     assert waiting[0] == room.MATCH_WAIT and len(waiting) == len(SMALL_B)
 
 
 def test_the_approach_reproduces_the_console_s_own_talk_reserve_bytes():
-    """We approach THEM when they are the one advertising - the roles reversed.
-
-    Picking an emote locks a player in place waiting to be interacted with (the user, at the
-    console), so a recruiting console can only be reached by someone walking up to it.
-    NetDataTalkReserveData has no layout in the generated table, so the check that our approach is
-    well formed is the console's own bytes, seen.
-    """
+    """NetDataTalkReserveData has no layout in the table; the check is the console's own bytes."""
     assert room.build_talk_reserve() == bytes.fromhex("63000100")
     parsed = room.parse(room.build_talk_reserve())
     assert parsed["name"] == "NetDataTalkReserveData"
@@ -158,12 +138,7 @@ TRADE_TRANER_SP82 = bytes.fromhex(
 
 
 def test_the_trade_trainer_record_reads_and_agrees_with_the_pokemon_it_came_with():
-    """An OPAQUE message given a layout by reading it, and checked against a SECOND message.
-
-    opendpr declares no layout for this id (it holds a string), so the only check available is
-    that the trainer id and secret id in the clear here are the same pair carried INSIDE the
-    encrypted PB8 of the same trade: the console's Zubat, TID 44466 SID 4080.
-    """
+    """TID 44466 SID 4080 in the clear match the encrypted PB8 of the same trade."""
     r = room.parse_trade_traner(TRADE_TRANER_SP82)
     assert r["name"] == "Player"
     assert r["trainer_id"] == 44466
@@ -180,7 +155,6 @@ def test_a_payload_whose_struct_is_not_blittable_has_no_layout_and_says_so():
         assert room.layout(data_id) is None
         with pytest.raises(ValueError):
             room.build_fields(data_id, 0)
-    # ... and only the one id no capture holds is still reported opaque
     assert room.parse(room.build(0x29, b"\x00"))["opaque"] is True
     assert room.parse(room.build(room.PLAYER_NAME, b"\x00"))["opaque"] is False
 
@@ -192,7 +166,6 @@ def test_the_generic_packer_agrees_with_the_hand_written_builders():
 
 
 def test_a_pos_span_covers_the_whole_stride_rather_than_creeping():
-    """twelve points 0.008 apart made the avatar creep and then jump a tenth of a unit."""
     span = room.pos_span((0.0, 0.0), (1.2, 0.0), 90)
     assert len(span) == room.POS_POINTS == 12
     assert span[0][:2] == (0.0, 0.0)
@@ -235,28 +208,19 @@ def test_trainer_card_is_seventy_five_blittable_bytes():
 
 
 def test_the_ready_ok_we_send_is_the_console_s_own_message_byte_for_byte():
-    """A run's own is `21 00 02 00 02` on the wire and ours is that, byte for byte.
-
-    `TradeSelectPokeModel$$ReciveReadyOk` [main.bin 0x1cd4860] is three instructions and only
-    `[netdata + 0x11]` - the SECOND field - reaches the game, so `isTradeOk` is left at the value
-    the console itself sends rather than given a meaning it does not have.
-    """
+    """`21 00 02 00 02` on the wire; `ReciveReadyOk` [main.bin 0x1cd4860] reads only `[netdata + 0x11]`."""
     msg = room.build_trade_ready_ok()
     assert msg == bytes.fromhex("2100020002")
     parsed = room.parse(msg)
     assert parsed["data_id"] == room.TRADE_READY_OK
     assert parsed["fields"] == {"isTradeOk": 0, "tradeState": room.TRADE_STATE_WAIT}
-    # and WAIT is 2 in TradeStateModel.TradeState, which is what the console's own carried
+    # WAIT is 2 in TradeStateModel.TradeState.
     assert room.TRADE_STATE_WAIT == 2
     assert room.TRADE_STATE_START_WRITE_SAVE == 7 and room.TRADE_STATE_WRITEING_SAVE == 8
 
 
 def test_the_ready_ok_is_the_only_trade_message_that_needs_a_flag_of_its_own():
-    """Every other answer rides on --trade-reply; this one writes a save, so it is separate.
-
-    The launcher's parser is built inside `main()`, so this reads the source rather than the
-    namespace - what matters is that the flag exists, defaults to off, and says what it does.
-    """
+    """The launcher's parser is built inside `main()`, so the source is read."""
     source = (pathlib.Path(__file__).resolve().parent.parent
               / "bin" / "bdsp_connect.py").read_text()
     assert '"--complete-trade", action=argparse.BooleanOptionalAction, default=False' in source
@@ -267,29 +231,23 @@ def test_the_ready_ok_is_the_only_trade_message_that_needs_a_flag_of_its_own():
 def test_the_security_phase_answer_mirrors_the_state_that_advances_theirs():
     """StateProc advances on `targetState`, so what we claim decides whether it moves at all."""
     m = room.mirror_trade_state
-    # INIT is answered with WAIT, not echoed: ReciveState's INIT case records ours in the same
-    # call that moves theirs to WAIT, so WAIT saves the round trip an echo would cost
+    # INIT is answered with WAIT: ReciveState's INIT case moves theirs to WAIT in the same call.
     assert m(room.TRADE_STATE_NONE) == room.TRADE_STATE_WAIT
     assert m(room.TRADE_STATE_INIT) == room.TRADE_STATE_WAIT
     assert m(room.TRADE_STATE_WAIT) == room.TRADE_STATE_WAIT
     assert m(room.TRADE_STATE_SEND_POKE) == room.TRADE_STATE_SEND_POKE
-    # a console that is CHILD (our offer the rarer, e.g. a legendary) says WAIT_POKE last and then
-    # waits in SEND_READYOK for a peer state of 5 or 6; an echoed WAIT_POKE deadlocks it
-    # from SEND_READYOK on only the arrival matters, so it stops chasing
+    # A CHILD console waits in SEND_READYOK for a peer state of 5 or 6; an echoed WAIT_POKE
+    # deadlocks it.
     for theirs in (4, 5, 6, 7, 8, 9, 10):
         assert m(theirs) == room.TRADE_STATE_SEND_READYOK
-    # and the security answer sets the byte the console's receiver gates on
     assert room.build_trade_ready_ok(room.TRADE_STATE_WAIT, is_trade_ok=1) \
         == bytes.fromhex("2100020102")
     assert room.TRADE_STATE_NAMES[room.TRADE_STATE_START_WRITE_SAVE] == "START_WRITE_SAVE"
 
 
 def test_the_post_trade_question_is_built_the_way_the_console_asks_it():
-    """Two runs both ended on `45 00 01 00`, repeated once a second until we left.
-
-    dump_base cannot explain this message - the base game has no such type, and the console runs
-    1.3.0 - so the shape is taken from the wire and the value from opendpr's parameter name.
-    """
+    """`45 00 01 00`, repeated once a second: the shape from the wire, the value from opendpr's
+    parameter name."""
     assert room.name(room.RETURN_SELECT) == "NetDataReturnSelectData"
     theirs = bytes.fromhex("45000100")
     assert room.parse(theirs)["fields"] == {"isReturnSelect": 0}

@@ -1,10 +1,4 @@
-"""The trade box, against the message a console sent.
-
-The reference is one 399-byte message a console put on the wire twice: once in a pair capture of two
-emulated consoles that reached the trade screen, and once against this project's own host, in a
-different session with different keys. The two are byte for byte the same. `docs/pla.md`, The trade
-box.
-"""
+"""The trade box against a 399-byte message a console sent (`docs/pla.md`, The trade box)."""
 
 import struct
 
@@ -89,9 +83,8 @@ def test_the_record_re_encrypts_to_the_bytes_the_console_sent():
 
 
 def test_the_block_order_is_read_directly_and_the_names_say_so():
-    """The checksum cannot tell a permutation from its inverse, so the layout has to. Read directly
-    the nickname is the second block's first field and the trainer name the fourth's; read inverted
-    both strings still decode, one block earlier, against a record that carries neither."""
+    """The checksum cannot tell a permutation from its inverse; the nickname and trainer name place
+    the blocks."""
     from pokeldn import gen8
 
     raw = trade_box.REFERENCE_RECORD
@@ -130,9 +123,7 @@ def test_a_written_field_survives_the_round_trip_and_nothing_else_moves():
 
 
 def test_a_record_of_our_own_is_not_the_one_the_console_holds():
-    """The console offers a record it is itself holding, so a host that replays it offers the
-    console its own Pokemon. A record of the host's own carries the player the data exchange names
-    and an identity of its own, and everything else stays the template's."""
+    """A record of the host's own carries the data exchange's player and its own identity."""
     ours = trade_box.build_our_record(bytes.fromhex("11223344"), "POKELDN")
     assert ours != trade_box.REFERENCE_RECORD
     fields = pokemon.read(pokemon.decrypt(ours))
@@ -180,8 +171,7 @@ def test_a_record_less_selector_reads_back_as_itself():
 
 
 def test_the_channel_open_is_a_selector_too():
-    """The open the host sends is selector 1 under the same key, which is the same handler's case
-    that sets [net+0x78]. The channel and the trade are one message stream."""
+    """The open is selector 1 under the same key, the case that sets [net+0x78]."""
     assert trade_box.read_selector(game_channel.HOST_OPEN_PAYLOAD) \
         == (trade_box.SELECTOR_READY, b"\x01\x00")
 
@@ -201,7 +191,6 @@ def test_a_phase_message_reads_back_as_its_selector_and_phase():
 def test_the_host_answers_with_the_other_selector_and_the_same_phase():
     ours = trade_box.build_phase(trade_box.PHASE_SELECTOR_HOST, 3, sequence_id=6)
     assert trade_box.read_phase(reliable5.parse(ours)["payload"]) == (2, 3)
-    # The two differ in the selector alone: same key, same phase, same shape.
     mine = reliable5.parse(CONSOLE_PHASE)["payload"]
     theirs = reliable5.parse(ours)["payload"]
     assert mine[:game_channel.KEY_SIZE] == theirs[:game_channel.KEY_SIZE] == trade_box.PHASE_KEY
@@ -210,7 +199,6 @@ def test_the_host_answers_with_the_other_selector_and_the_same_phase():
 
 def test_the_phase_key_is_not_the_trade_handlers_key():
     assert trade_box.PHASE_KEY != bytes(game_channel.KEY_SIZE)
-    # So the trade handler's readers do not claim a phase message and the other way round.
     assert trade_box.read_selector(reliable5.parse(CONSOLE_PHASE)["payload"]) is None
     assert trade_box.read_payload(reliable5.parse(CONSOLE_PHASE)["payload"]) is None
     assert trade_box.read_phase(reliable5.parse(CONSOLE_CONFIRMING)["payload"]) is None
@@ -222,8 +210,6 @@ def test_a_phase_past_a_single_byte_is_refused():
 
 
 def test_the_level_and_experience_are_writable_and_nothing_else_moves():
-    """The panel shows a level, so the level is the cheapest proof that the offered record is the
-    host's to write rather than a capture to replay."""
     plain = pokemon.decrypt(trade_box.REFERENCE_RECORD)
     # 428750 is 1.25 * 70**3 in the captured record, so 1.25 * 50**3 is the same curve at 50.
     edited = pokemon.write(plain, level=50, experience=156250)
@@ -233,7 +219,6 @@ def test_the_level_and_experience_are_writable_and_nothing_else_moves():
     moved = [i for i in range(len(plain)) if plain[i] != edited[i]]
     assert moved == [pokemon.OFF_EXPERIENCE, pokemon.OFF_EXPERIENCE + 1,
                      pokemon.OFF_EXPERIENCE + 2, pokemon.OFF_LEVEL]
-    # It still round-trips, so the checksum is rewritten from the edited body.
     assert pokemon.read(pokemon.decrypt(pokemon.encrypt(edited)))["level"] == 50
 
 
@@ -257,8 +242,7 @@ STORED_BACK = bytes.fromhex(
 
 
 def test_the_block_starts_are_the_gen8_ones_widened():
-    """A field at the head of a block sits at the Gen-8 offset plus eight bytes per block before it,
-    because a block is 0x58 here and 0x50 there."""
+    """A block is 0x58 here and 0x50 in Gen 8: eight bytes per preceding block."""
     from pokeldn import gen8
 
     assert pokemon.BLOCK_SIZE - gen8.BLOCK_SIZE == 8
@@ -274,9 +258,8 @@ def test_the_block_starts_are_the_gen8_ones_widened():
 
 
 def test_a_traded_record_comes_back_with_the_receivers_own_fields_filled_in():
-    """The console showed the record it had been sent, out of its own box, one trade later. What
-    differs is the checksum, the current HP, the six party stats, the handler's name and the three
-    handler fields - and nothing else. `docs/pla.md`, What a trade rewrites."""
+    """Traded back, only the checksum, current HP, party stats, handler name and three handler
+    fields differ (`docs/pla.md`)."""
     sent = pokemon.write(
         pokemon.decrypt(trade_box.build_our_record(bytes.fromhex("11223344"), "POKELDN")),
         level=50, experience=156250)
@@ -296,8 +279,7 @@ def test_a_traded_record_comes_back_with_the_receivers_own_fields_filled_in():
 
 
 def test_the_moves_are_in_the_first_block_where_gen8_has_none():
-    """Placed against 46 records off a console's own box: one species always carries one move set.
-    Gen 8's move offsets read zero in every one of them. `docs/pla.md`, The trade box."""
+    """Placed against 46 records off a console's box (`docs/pla.md`, The trade box)."""
     from pokeldn import gen8
 
     plain = pokemon.decrypt(trade_box.REFERENCE_RECORD)
@@ -311,8 +293,7 @@ def test_the_moves_are_in_the_first_block_where_gen8_has_none():
 
 
 def test_the_field_map_reads_the_reference_record_whole():
-    """Every field PKHeX's PA8 names, read off the one record a console sent, and every value in
-    range for it. `docs/pla.md`, The trade box."""
+    """Every field PKHeX's PA8 names, in range on the console's record (`docs/pla.md`, The trade box)."""
     fields = pokemon.read(pokemon.decrypt(trade_box.REFERENCE_RECORD))
     assert fields["version"] == pokemon.VERSION_LEGENDS_ARCEUS == 47
     assert fields["language"] == 2                  # the save's language, English
@@ -342,8 +323,7 @@ def test_the_individual_values_share_a_word_with_two_flag_bits():
 
 
 def test_the_shiny_rule_is_the_gen6_one():
-    """The record ph40 offered read shiny by this rule and the console drew the sparkle.
-    `docs/pla.md`, Choosing what to offer."""
+    """A record read shiny by this rule drew the sparkle (`docs/pla.md`, Choosing what to offer)."""
     ours = {"trainer_id": 8721, "secret_id": 17459, "pid": 711543883}
     assert pokemon.shiny_xor(ours) == 0
     assert (ours["secret_id"] << 16 | ours["trainer_id"]) % 1000000 == 201745, "the panel's ID No."
@@ -366,6 +346,5 @@ def test_a_record_built_from_zero_bytes_carries_only_what_it_was_given():
     assert fields["ivs"] == (31,) * 6 and fields["gvs"] == (10,) * 6
     assert fields["evs"] == (0,) * 6 and fields["held_item"] == 0
     assert fields["stats"] == (0,) * 6, "the receiving game rebuilds the tail"
-    # The round trip through the wire form gives the same bytes back.
     assert pokemon.is_plain(built), "it carries its own checksum"
     assert pokemon.decrypt(pokemon.encrypt(built)) == built

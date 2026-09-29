@@ -1,9 +1,4 @@
-"""The field script that seeds the RNG in the overworld.
-
-These are byte-level checks against the decomp's own command table, because there is no way to
-execute a field script offline here - the console's script engine is the only interpreter. So what
-is checked is that every byte is the opcode the table names and that the decode round-trips.
-"""
+"""The field script that seeds the RNG, checked byte for byte against the decomp's command table."""
 import pytest
 
 from pokeldn.frlg.gift import gift_composer
@@ -40,8 +35,7 @@ def test_the_script_decodes_back_to_the_word_it_was_asked_for():
 
 
 def test_it_targets_the_address_bs14_read_out_of_random_s_literal_pool():
-    """gRngValue may be named as a constant precisely because it does NOT move: it is a link-time
-    IWRAM global, unlike a save block, which carries a random offset re-rolled on every battle."""
+    """gRngValue is a link-time IWRAM global; it does not move."""
     assert rom_map.GRNG_VALUE == 0x03004220
     assert rng_script.build_seed_script(0).find((0x03004220).to_bytes(4, "little")) == 2
 
@@ -62,8 +56,6 @@ def test_it_fits_the_ram_script_the_save_actually_has_room_for():
     assert len(rng_script.build_seed_script(0xFFFFFFFF)) < rng_script.MAX_RAM_SCRIPT_SIZE
 
 
-# --- the RNG owned: seed and generate in the same frame -------------------------------------------
-
 def test_the_wild_battle_script_is_the_seed_then_the_battle_out_of_the_save_block():
     script = rng_script.build_wild_battle_script(0x81F6816D, 132, 50)
     assert script[:24] == rng_script.build_seed_script(0x81F6816D, sound=None)[:24]
@@ -71,10 +63,9 @@ def test_the_wild_battle_script_is_the_seed_then_the_battle_out_of_the_save_bloc
     assert int.from_bytes(script[25:27], "little") == 132       # DITTO
     assert script[27] == 50                                     # level
     assert int.from_bytes(script[28:30], "little") == 0         # no held item
-    # NO `dowildbattle` IN THE SAVE BLOCK. A battle relocates gSaveBlock1 twice
-    # [decomp:src/battle_main.c:614, src/overworld.c:1337, SAVEBLOCK_MOVE_RANGE 128], so the
-    # engine returns from the battle to an address this script no longer occupies; one run froze
-    # the overworld solid that way. The battle is started from gSpecialVar_0x8000 instead.
+    # No `dowildbattle` in the save block: a battle relocates gSaveBlock1
+    # [decomp:src/battle_main.c:614, src/overworld.c:1337], so the battle starts from
+    # gSpecialVar_0x8000.
     assert script[30:] == (bytes([rng_script.SCR_SETVAR]) + b"\x00\x80"
                            + rng_script.TRAMPOLINE_WORD.to_bytes(2, "little")
                            + bytes([rng_script.SCR_GOTO])
@@ -84,9 +75,7 @@ def test_the_wild_battle_script_is_the_seed_then_the_battle_out_of_the_save_bloc
 
 
 def test_nothing_that_yields_sits_between_the_seed_and_the_generation():
-    """The whole design rests on setptr and setwildbattle running back to back in ONE frame: both
-    return FALSE, so the field engine does not yield between them and no draw can creep in. A
-    playse/waitse in there would break exactly that, silently."""
+    """setptr and setwildbattle both return FALSE: one frame, nothing yields between them."""
     script = rng_script.build_wild_battle_script(0x81F6816D, 132, 50)
     upto_generation = script[:script.index(bytes([rng_script.SCR_SETWILDBATTLE]))]
     assert rng_script.SCR_PLAYSE not in upto_generation
@@ -104,9 +93,7 @@ def test_the_chosen_seed_makes_a_shiny_ditto_for_this_console():
 
 
 def test_shininess_and_ivs_do_not_depend_on_the_half_order_but_nature_does():
-    """Random32 is `Random() | (Random() << 16)` and C does not order the operands, so the half
-    order is the compiler's. It does not put the result at risk: the shiny test XORs both halves
-    together, and the IVs come from the two draws after."""
+    """Random32 is `Random() | (Random() << 16)`; the shiny test XORs both halves and the IVs come after."""
     got = rng_script.predict_wild_mon(0x81F6816D, 57189, 58811)
     assert got["low_first"]["shiny"] == got["high_first"]["shiny"]
     assert got["low_first"]["personality"] != got["high_first"]["personality"]
@@ -136,14 +123,8 @@ def test_a_field_script_and_lines_are_not_both_accepted():
 
 
 def test_mev07_the_console_built_exactly_what_was_predicted():
-    """on hardware, first try. The prediction was committed before the console had
-    ever seen the seed; this is what came back out of gPlayerParty afterwards. Every bit of the
-    personality, all six IVs, the nature and the shininess.
-
-    It also settles the one thing that could not be settled offline: nature 17 is QUIET - DISCRET
-    on the console's French screen - so `Random32()` evaluates its LOW half first at CreateBoxMon's
-    call site, the same way CreateMonWithNature's does.
-    """
+    """Measured: the console built the predicted mon; nature 17 (QUIET) shows `Random32()` takes its
+    low half first."""
     from pokeldn.frlg.gift import wonder_card_events
     got = rng_script.predict_wild_mon(wonder_card_events.RNG_DITTO_SEED, 57189, 58811)
     assert got["low_first"]["personality"] == 0x026F38B2
@@ -152,11 +133,7 @@ def test_mev07_the_console_built_exactly_what_was_predicted():
     assert got["shiny"] is True
 
 
-# --- reading the seed: the script that prints gRngValue and writes nothing ----------------------
-# The write direction was always the easy one. Reading gRngValue in the OVERWORLD is what a
-# countdown needs, and it was blocked on one unknown until it was measured: the absolute address of
-# gSpecialVar_0x8000, because `copybyte` needs a destination ADDRESS where `buffernumberstring`
-# only needs a var id.
+# Reading gRngValue in the overworld: `copybyte` needs gSpecialVar_0x8000's absolute address.
 
 _OP_SETVADDRESS = 0xB8
 _OP_COPYBYTE = 0x15
@@ -196,18 +173,13 @@ def test_the_seed_read_script_copies_the_four_bytes_of_grngvalue_into_the_two_va
     for i, (dest, src) in enumerate(copies):
         assert src == rom_map.GRNG_VALUE + i, f"byte {i} does not come from gRngValue"
         assert dest == rom_map.G_SPECIAL_VAR_0X8000 + i, f"byte {i} does not land in the vars"
-    # gSpecialVar_0x8000 and 0x8001 are adjacent u16s, so the four destinations are one run of
-    # four bytes and the halves reassemble as a little-endian u32 without any further arithmetic.
+    # gSpecialVar_0x8000 and 0x8001 are adjacent u16s: the halves reassemble as a little-endian u32.
     assert [dest for dest, _ in copies] == list(
         range(rom_map.G_SPECIAL_VAR_0X8000, rom_map.G_SPECIAL_VAR_0X8000 + 4))
 
 
 def test_nothing_that_yields_sits_inside_the_read():
-    """THE ONE THAT MATTERS. The RNG never idles, so four byte copies spread over four frames
-    would tear: the halves would come from different states and the word would be one the console
-    never held. copybyte and buffernumberstring both return FALSE and the field engine runs
-    commands until one returns TRUE, so the six of them are a single frame - as long as nothing
-    else is emitted between them."""
+    """copybyte and buffernumberstring return FALSE: the four copies share one frame and cannot tear."""
     walked = _walk(gift_composer.build_seed_read_script())
     opcodes = [op for _offset, op, _operand in walked]
     first = opcodes.index(_OP_COPYBYTE)
@@ -218,8 +190,7 @@ def test_nothing_that_yields_sits_inside_the_read():
 
 
 def test_the_script_writes_nothing_but_the_two_scratch_vars():
-    """It is a READ. No setptr, no setvar, no givemon, no battle - and the destinations are the
-    two special vars the game itself uses as scratch."""
+    """No setptr, setvar, givemon or battle; the destinations are the game's own scratch vars."""
     walked = _walk(gift_composer.build_seed_read_script())
     for _offset, op, operand in walked:
         assert op != 0x11, "setptr writes memory; this script must not"
@@ -231,9 +202,7 @@ def test_the_script_writes_nothing_but_the_two_scratch_vars():
 
 
 def test_the_message_pointer_is_relative_to_the_script_not_absolute():
-    """gSaveBlock1Ptr carries a random 4-aligned offset re-rolled on every battle and load, so a
-    RAM script cannot hold an absolute pointer to its own text. setvaddress makes vmessage's
-    operand an offset from wherever the script actually landed."""
+    """gSaveBlock1Ptr moves; setvaddress makes vmessage's operand relative to the script."""
     script = gift_composer.build_seed_read_script()
     walked = _walk(script)
     (_offset, first_op, base_operand) = walked[0]
@@ -250,8 +219,7 @@ def test_the_message_pointer_is_relative_to_the_script_not_absolute():
 
 
 def test_the_script_ends_with_end_so_the_npc_can_be_asked_again():
-    """`endram` (0x0d) calls ClearRamScript; `end` (0x02) does not. A miss costing nothing depends
-    entirely on being able to ask a second time."""
+    """`endram` (0x0d) calls ClearRamScript; `end` (0x02) does not."""
     script = gift_composer.build_seed_read_script()
     opcodes = [op for _o, op, _operand in _walk(script)]
 
@@ -266,9 +234,8 @@ def test_the_printed_halves_reassemble_into_grngvalue():
 
 
 def test_two_readings_prove_the_address_without_any_clock():
-    """A distance ALWAYS exists - the LCG is a permutation of 2**32 states - so the distance is
-    only evidence when it is small. Two readings seconds apart are thousands of turns apart; two
-    unrelated numbers are ~2**31."""
+    """A distance always exists; two readings seconds apart are thousands of turns, unrelated
+    numbers ~2**31."""
     first = 0x12345678
     second = lcg.advance(first, 2400)
 
@@ -280,10 +247,8 @@ def test_two_readings_prove_the_address_without_any_clock():
     assert any("NOT consistent" in line for line in bad)
 
 
-# --- the rate probe: the clock removed rather than improved -------------------------------------
-# Every earlier attempt at the overworld rate divided an exact turn count by a hand-timed elapsed,
-# and one of them divided by a number that had itself been computed from the answer. `delay` waits
-# an exact number of frames [decomp:src/scrcmd.c:651], so both sides of the division are exact.
+# `delay` waits an exact number of frames [decomp:src/scrcmd.c:651], so the rate is two exact
+# numbers.
 
 _OP_DELAY = 0x28
 
@@ -300,7 +265,7 @@ def test_the_rate_probe_reads_twice_into_different_vars_with_the_delay_between()
     base = rom_map.G_SPECIAL_VAR_0X8000
     assert [dest for dest, _src in copies] == list(range(base, base + 8)), \
         "the two readings must not land on top of each other"
-    # The delay is between them, and it is the only yielding command in the measured interval.
+    # The delay is the only yielding command in the measured interval.
     assert opcodes.count(_OP_DELAY) == 1
     delay_at = opcodes.index(_OP_DELAY)
     assert opcodes[delay_at - 4:delay_at] == [_OP_COPYBYTE] * 4
@@ -342,9 +307,7 @@ def test_a_rate_that_is_not_two_is_reported_as_such_rather_than_rounded():
 
 
 def test_the_two_rate_models_are_told_apart_by_the_frame_count_and_only_that():
-    """A run's 1,202 turns over 600 frames fits both `2N+2` and `2.003333N`. They diverge by ~27
-    turns over an 8192-frame countdown, against a target one state wide, so the run that separates
-    them changes the frame count and nothing else."""
+    """1,202 turns over 600 frames fits `2N+2` and `2.003333N`; only the frame count separates them."""
     from pokeldn.frlg.gift import wonder_card_events as events
 
     short = gift_composer.build_seed_rate_script(frames=600)
@@ -362,10 +325,7 @@ def test_the_two_rate_models_are_told_apart_by_the_frame_count_and_only_that():
 
 
 def test_the_generation_is_bracketed_by_two_reads_with_no_yield_between():
-    """The measured interval must contain the generation and NOTHING else. copybyte and
-    setwildbattle both return FALSE, so all nine commands run in one frame and none of the
-    overworld's 2-turns-per-frame falls inside the bracket. If anything yielding got in there the
-    distance would silently pick up frames and read as extra draws."""
+    """copybyte and setwildbattle return FALSE: the nine commands run in one frame."""
     script = gift_composer.build_draw_count_script(species=132, level=50)
     opcodes = [op for _o, op, _operand in _walk(script)]
     first = opcodes.index(_OP_COPYBYTE)

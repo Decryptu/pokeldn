@@ -1,20 +1,8 @@
 #!/usr/bin/env python3
-"""The Wonder News half of the Mystery Gift menu.
+"""The Wonder News half of the Mystery Gift menu [sServerScript_SendNews, decomp:src/mystery_gift_scripts.c:126].
 
-The console's Mystery Gift screen is two axes - {Wonder Cards, Wonder News} x {Wireless, Friend} - and
-until now this project only ever served Cards x Friend. News is a different server script over the
-same link: 444 bytes with no flagId, no metadata and no delivery script, and the console answers with
-its own verdict on whether it kept them [sServerScript_SendNews, decomp:src/mystery_gift_scripts.c:126].
-
-Two things decide whether a hardware run can work at all, and both are checked here:
-
-* the advertisement's activity byte must be ACTIVITY_WONDER_NEWS (22). The console's Friend listen
-  task keeps only candidates whose activity is in the accept list of the link group it is searching
-  [sAcceptedActivityIds_WonderNews, src/data/union_room.h:406; IsPartnerActivityAcceptable,
-  union_room.c:1590], so a Wonder Card beacon is simply invisible on the News screen.
-* the server must read MG_LINKID_RESPONSE after the news and branch on it. TRUE means the console
-  already held exactly these bytes and kept them; only FALSE reaches sClientScript_NewsReceived, and
-  only that message makes the console save and set the berry reward [mystery_gift_menu.c:1367].
+The beacon's activity must be ACTIVITY_WONDER_NEWS (22) [src/data/union_room.h:406], and only a
+FALSE MG_LINKID_RESPONSE makes the console save the news [mystery_gift_menu.c:1367].
 
 Run standalone (no pytest needed):   python tests/test_wonder_news.py
 """
@@ -40,7 +28,6 @@ def _distribution(news=None):
         None, None, news=_news() if news is None else news)
 
 
-# --- the struct -----------------------------------------------------------------------------
 def test_the_news_struct_is_the_444_byte_layout_the_console_memcpys():
     news = _news()
     assert len(news) == wonder_news.WONDER_NEWS_SIZE == 444
@@ -52,8 +39,8 @@ def test_the_news_struct_is_the_444_byte_layout_the_console_memcpys():
     parsed = wonder_news.parse(news)
     assert parsed["title"] == wonder_news.PKCAMP_NEWS.title
     assert parsed["body"][:len(wonder_news.PKCAMP_NEWS.body)] == wonder_news.PKCAMP_NEWS.body
-    # Every 40-byte text field is EOS-terminated and 0xFF-padded, exactly as the card's are; the
-    # console reads them with a fixed memcpy and appends its own EOS [mystery_gift_show_news.c:338].
+    # EOS-terminated and 0xFF-padded; the console appends its own EOS
+    # [mystery_gift_show_news.c:338].
     title = news[4:44]
     assert title[len(parsed["title"])] == 0xFF and set(title[len(parsed["title"]):]) == {0xFF}
     assert set(news[44 + 3 * 40:44 + 4 * 40]) == {0xFF}   # the deliberately blank body line
@@ -82,7 +69,6 @@ def test_a_ten_line_news_fills_every_body_slot():
     assert body[wonder_news.WONDER_NEWS_VISIBLE_LINES]
 
 
-# --- the advertisement ----------------------------------------------------------------------
 def test_the_news_beacon_advertises_activity_22_and_the_card_beacon_still_21():
     profile = configmod.DEFAULT_TRAINER
     session_id = bytes((0x34, 0x12))
@@ -98,13 +84,10 @@ def test_the_news_beacon_advertises_activity_22_and_the_card_beacon_still_21():
     assert activity_of(news_inactive) == beacon.ACTIVITY_WONDER_NEWS == 22
     assert activity_of(news_active) == beacon.ACTIVITY_WONDER_NEWS
     assert activity_of(card_inactive) == beacon.ACTIVITY_WONDER_CARD == 21
-    # The two beacons are the same advertisement apart from that one activity byte, so nothing
-    # else about the hardware-proven Wonder Card beacon changes on the News path.
     assert len(news_inactive) == len(card_inactive)
     assert sum(a != b for a, b in zip(news_inactive, card_inactive)) <= 2
 
 
-# --- the server script ----------------------------------------------------------------------
 def test_the_server_script_is_the_decompiled_news_script():
     """gMysteryGiftServerScript_SendWonderNews minus SVR_COPY_SAVED_NEWS, which reads a save block
     we do not have [decomp:src/mystery_gift_scripts.c:174]."""
@@ -114,8 +97,7 @@ def test_the_server_script_is_the_decompiled_news_script():
         mg_server.SVR_COPY_GAME_DATA, mg_server.SVR_CHECK_GAME_DATA,
         mg_server.SVR_GOTO_IF_EQ, mg_server.SVR_GOTO,
     ]
-    # No SVR_CHECK_EXISTING_CARD and no toss prompt anywhere on the News path: news carries no
-    # flagId, so nothing compares it against what the console holds.
+    # News carries no flagId: no SVR_CHECK_EXISTING_CARD and no toss prompt.
     send_news = script[-1][1]
     assert [command[0] for command in send_news] == [
         mg_server.SVR_LOAD_CLIENT_SCRIPT, mg_server.SVR_SEND,
@@ -129,7 +111,6 @@ def test_the_server_script_is_the_decompiled_news_script():
     assert send_news[-1][1] == mg_server.SVR_MSG_NEWS_SENT
 
 
-# --- end to end against the console model ---------------------------------------------------
 def test_news_reaches_a_console_that_holds_none():
     news = _news()
     console = ConsoleClientModel(flag_id=0)
@@ -139,7 +120,6 @@ def test_news_reaches_a_console_that_holds_none():
     assert engine.result == mg_server.SVR_MSG_NEWS_SENT and engine.gift_sent
     assert engine.state == host_mystery_gift.MG_DONE and engine.done
     assert console.saved_news == news
-    # No card, no delivery script and no stamp went anywhere near the wire.
     assert console.saved_card is None and console.saved_ram_script is None
     assert [ident for ident, _payload in console.messages_received] == [
         mg.MG_LINKID_CLIENT_SCRIPT,     # sClientScript_SendGameData
@@ -150,8 +130,7 @@ def test_news_reaches_a_console_that_holds_none():
 
 
 def test_a_console_that_already_holds_the_same_news_keeps_it():
-    """The console's own verdict, not a player prompt: MG_LINKID_RESPONSE TRUE means it kept what
-    it had, and the server must end in SVR_MSG_HAS_NEWS instead of claiming a delivery."""
+    """MG_LINKID_RESPONSE TRUE means the console kept what it had: SVR_MSG_HAS_NEWS."""
     news = _news()
     console = ConsoleClientModel(flag_id=0, saved_news=news)
     engine, _frames = _drive(console, distribution=_distribution(news))
@@ -162,8 +141,7 @@ def test_a_console_that_already_holds_the_same_news_keeps_it():
 
 
 def test_one_changed_byte_makes_the_same_news_new_again():
-    """IsWonderNewsSameAsSaved is a byte compare of the whole struct [mystery_gift.c:140], so the
-    --news-id override is enough to re-send the same text to the same console."""
+    """IsWonderNewsSameAsSaved compares the whole struct [mystery_gift.c:140]; --news-id makes it new."""
     held = _news()
     fresh = _news(news_id=wonder_news.PKCAMP_NEWS.news_id + 1)
     assert fresh != held
@@ -185,11 +163,7 @@ def test_the_ten_line_news_survives_the_link_unchanged():
 
 
 def test_our_own_receive_client_answers_the_same_way_as_the_console_model():
-    """bin/frlg_mg_client.py's client is a second implementation of the same case; keep them agreeing.
-
-    It is the receive direction's console stand-in, so its CLI_SAVE_NEWS has to reproduce the same
-    save-or-keep verdict the real console reaches.
-    """
+    """bin/frlg_mg_client.py's CLI_SAVE_NEWS reaches the console model's save-or-keep verdict."""
     news = _news()
     client = mg_client.MysteryGiftClientEngine()
     client.recv_buffer[:] = news.ljust(mg.MG_LINK_BUFFER_SIZE, b"\x00")
@@ -200,14 +174,13 @@ def test_our_own_receive_client_answers_the_same_way_as_the_console_model():
     assert client.saved_news == news
     assert client._pending_send == (mg.MG_LINKID_RESPONSE, (0).to_bytes(4, "little"), 4)
 
-    # Offered the identical struct a second time it keeps what it has and answers TRUE.
     client.cmdidx = 0
     client._run_one()
     assert client.saved_news == news
     assert client._pending_send == (mg.MG_LINKID_RESPONSE, (1).to_bytes(4, "little"), 4)
 
-    # News with id 0 fails ValidateWonderNews, so nothing is saved - but the answer is still FALSE
-    # [mystery_gift_client.c:210 takes the save branch whenever the bytes differ].
+    # Id 0 fails ValidateWonderNews and nothing is saved, but the answer is FALSE
+    # [mystery_gift_client.c:210].
     client.recv_buffer[:] = (b"\x00\x00" + news[2:]).ljust(mg.MG_LINK_BUFFER_SIZE, b"\x00")
     client.cmdidx = 0
     client._run_one()
@@ -215,7 +188,6 @@ def test_our_own_receive_client_answers_the_same_way_as_the_console_model():
     assert client._pending_send == (mg.MG_LINKID_RESPONSE, (0).to_bytes(4, "little"), 4)
 
 
-# --- configuration --------------------------------------------------------------------------
 def test_news_and_card_payloads_cannot_be_mixed():
     for kwargs in ({"card": b"\x00" * 332}, {"ram_script": b"\x02"}):
         try:

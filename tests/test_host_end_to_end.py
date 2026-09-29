@@ -1,22 +1,6 @@
 #!/usr/bin/env python3
-"""Deterministic full-stack validation of the FRLG leader implementation.
-
-This test intentionally uses the public boundaries between all three leader
-layers instead of calling their internal state transitions directly::
-
-    HostReliableSession -> RFULeader -> HostTradeEngine
-
-The peer is a small scripted FireRed child.  It speaks serialized Reliable
-frames, emulator C/A/T/K/D frames, RFU NI and UNI, and real block/link-command
-slots.  A deterministic in-memory radio drops, duplicates, and reorders DATA
-in both directions.  Consequently the test covers the integration properties
-that the layer-specific tests cannot: Reliable must hide those impairments
-from RFU, RFU must reflect each unique child command into UNI, and the trade
-engine must still finish two trades and its graceful close handshake.
-
-It remains an offline protocol model: Pia encryption/addressing, kernel Wi-Fi
-timing and Nintendo's exact implementation quirks still require a live Switch.
-"""
+"""HostReliableSession, RFULeader and HostTradeEngine against a scripted FireRed child over an
+impaired radio."""
 
 from collections import defaultdict
 from dataclasses import dataclass
@@ -47,14 +31,8 @@ class _AirPacket:
 
 
 class ImpairedRadio:
-    """A deterministic bidirectional datagram link.
-
-    First transmissions of selected Reliable DATA sequence ids are dropped;
-    selected ids are duplicated; and alternating delay makes later frames
-    overtake earlier ones.  Retransmissions are recognized by direction+seq
-    and delivered normally.  Control ACKs are never dropped so the test stays
-    focused on DATA recovery rather than randomized test duration.
-    """
+    """Drops the first send of chosen DATA ids, duplicates others, reorders by delay; ACKs are never
+    dropped."""
 
     def __init__(self):
         self.pending = []
@@ -66,8 +44,7 @@ class ImpairedRadio:
         self.delivered = 0
         self.control_frames = defaultdict(int)
         self.initialized = []
-        # fff3 is early child NI; fff4 is early parent NI/ACK traffic.  Both
-        # peers continue emitting, creating a real selective-ACK gap.
+        # fff3 is early child NI, fff4 early parent NI/ACK: a selective-ACK gap.
         self.drop_once = {("child", 0xFFF3), ("host", 0xFFF4)}
         self.duplicate_once = {("child", 0xFFF2), ("host", 0xFFF2)}
 
@@ -87,8 +64,7 @@ class ImpairedRadio:
             self.dropped.append(key)
             return
 
-        # Alternating 1/4 ms delay makes neighboring DATA frames overtake one
-        # another. Reliable control frames use the short path.
+        # Alternating 1/4 ms delay makes neighbouring DATA frames overtake.
         delay = 1 if not is_data or (frame.seq & 1) else 4
         if is_data and delay == 1:
             self.reordered += 1
@@ -300,8 +276,7 @@ class ScriptedFireRedChild:
                 self.disconnect_seen = True
 
     def _queue_reliable_gba(self, frame, now):
-        # Filled by advance(); immediate responses use this small side queue so
-        # receive() never reaches into the radio/orchestrator.
+        # Immediate responses wait here; receive() never touches the radio.
         self._gba_pending.append((bytes(frame), now))
 
     def advance(self, now):
@@ -315,8 +290,8 @@ class ScriptedFireRedChild:
         elif self.uni_ready:
             if self._awaiting_select and not self._cmd_slots:
                 self._post_ribbon_idle += 1
-                # A human follower cannot choose until both sides have left BufferTradeParties.
-                # Keep the scripted choice beyond the host's bridge quiescence window too.
+                # A human follower cannot choose until both sides leave BufferTradeParties and the
+                # host's bridge settles.
                 if self._post_ribbon_idle >= PARTY_LINK_SETTLE_FRAMES + 5:
                     self._awaiting_select = False
                     if self.confirmed < self.trades:
@@ -442,8 +417,7 @@ def test_leader_cumulatively_acks_connect_before_opening_with_a():
     init = child.open(reliable.METADATA_FRAME, 0)
     connect = child.send(gbaframe.build_connect(b"\x80\x84"), 1)
 
-    # Reproduce 7.2 exactly: the child waits for its INIT ACK before C. An
-    # ACK that covers only INIT must not unlock A.
+    # The child waits for its INIT ACK before C; an ACK covering only INIT must not unlock A.
     host.receive(init.serialize(), 0)
     init_outputs = host.advance(6)
     assert len(init_outputs) == 1

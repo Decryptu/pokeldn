@@ -1,9 +1,4 @@
-"""The Legends Arceus joiner against a scripted console host, message by message.
-
-The host's side is what a hosting station sends, in the reference pair's order; the joiner's
-answers are checked against what the retail joiner sent a host of ours (`docs/pla.md`, Joining a
-console's network). Nothing here touches a socket.
-"""
+"""The Legends Arceus joiner against a scripted console host (`docs/pla.md`, Joining a console's network)."""
 
 from pokeldn import pla
 from pokeldn.ldn import pia6, pia_connect, reliable5
@@ -131,7 +126,6 @@ def test_a_whole_trade_against_a_scripted_console_host():
     assert port0[0]["payload"] == game_channel.HOST_OPEN_PAYLOAD
     shown = trade_box.read_payload(port0[1]["payload"])
     assert shown["selector"] == trade_box.SELECTOR_SHOWING and shown["record"] == s.offer
-    # A host that mirrors the mirror back is acknowledged and not mirrored a second time.
     again = game_channel.build_open(game_channel.HOST_OPEN_PAYLOAD, sequence_id=2)
     assert not _data(_open(keys, s.receive([_msg(again, 0x7C, 0)])), 0x7C, 0)
 
@@ -141,7 +135,6 @@ def test_a_whole_trade_against_a_scripted_console_host():
     back = trade_box.read_payload(_data(sent, 0x7C, 0)[0]["payload"])
     assert back["selector"] == trade_box.SELECTOR_OFFERING and back["counter"] == 0
     assert s.received == theirs
-    # Its retransmission is acknowledged and not answered twice.
     sent = _open(keys, s.receive([_msg(trade_box.build_message(theirs, sequence_id=3), 0x7C, 0)]))
     assert not _data(sent, 0x7C, 0)
 
@@ -152,8 +145,8 @@ def test_a_whole_trade_against_a_scripted_console_host():
     table = channel_table.parse(_data(sent, 0x7C, 1)[0]["payload"])
     assert table == [(trade_box.PHASE_KEY, True)]
 
-    # Once the host announces the phase key, the joiner walks its phases, each after the host's
-    # answer to the one before and the retail joiner's wait.
+    # The joiner walks its phases, each after the host's answer to the one before and the retail
+    # joiner's wait.
     sent = _open(keys, s.receive([_game(channel_table.build([(trade_box.PHASE_KEY, True)]),
                                         1, 2, flags=0x07)]))
     phases, host_seq, tables = [], 6, []
@@ -228,9 +221,7 @@ def test_driving_offers_once_and_confirms_after_the_host_offers():
 
 
 def test_the_console_s_migration_request_is_noted_and_left_unanswered():
-    """The retail console's Net request, then after our ack the same request with is-migrating set
-    and a bare NetStartHostMigration: the joiner notes the request once and answers only the Net
-    request, as a console that is handed the host role owes the old host nothing."""
+    """The console's migration request is noted once; only the Net request is answered."""
     keys, clock, s = _session()
     req = pia_connect.build_net_conn_request(2, HOST_VAR, HOST_MAC, keys.network_id,
                                              [HOST_IP, OUR_IP], max_stations=2, station_size=21)
@@ -250,11 +241,8 @@ def test_the_console_s_migration_request_is_noted_and_left_unanswered():
 
 
 def test_a_host_message_lost_ahead_of_another_is_held_for_and_handled_in_order():
-    """A console host shows and then offers; the showing is lost on the air. Its window releases a
-    message below the acknowledgement id or named in the mask (0x74f0ec, `reliable5.SendWindow`).
-    The joiner acknowledged the offer as its sequence plus one, which released the showing
-    unseen, so it never offered and never confirmed. It acknowledges the showing's sequence with
-    the offer in the mask, takes the resent showing, and hands both over in order."""
+    """A lost showing is acknowledged with the offer in the mask (0x74f0ec), and both are handed
+    over in order."""
     keys, clock, s = _session()
     s.drive = True
     _seat(keys, s)

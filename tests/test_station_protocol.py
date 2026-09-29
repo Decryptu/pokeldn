@@ -1,13 +1,4 @@
-"""Pia's Mesh Station Protocol (0x14) - the handshake that joins a mesh, not just its bookkeeping.
-
-Every offset asserted here is one the console's own parser reads, main.bin 0x0154ebd0. The tests
-are written against THAT order, because the order is what makes the sweep in bin/bdsp_connect.py
-work: the target ids and the protocol count are checked before anything is sent back, and the
-protocol VERSIONS are the first thing that draws a reply.
-
-Synthetic except for the one real value - the captured Shining Pearl host's constant id, which is
-its MAC put through the wiki's LDN rule.
-"""
+"""Pia's Mesh Station Protocol (0x14), in the order the console's parser main.bin 0x0154ebd0 reads it."""
 
 import struct
 
@@ -15,15 +6,14 @@ import pytest
 
 from pokeldn.ldn import station_protocol as stp
 
-# off scratchpad/bdsp_net_facts.json and a captured update session
+# The captured Shining Pearl host's MAC.
 CONSOLE_MAC = bytes.fromhex("48f1eb209b22")
 CONSOLE_CONSTANT_FIELD = bytes.fromhex("000048f120229beb")     # as the message carries it
 HOST_VAR = 0x11BAC90D
 
 
 def test_the_constant_id_rule_reproduces_the_captured_host():
-    """The one place three independent things agree: the wiki's rule, the field's byte order, the
-    scan's MAC. If any of the three were wrong this would not close."""
+    """The wiki's rule, the field's byte order and the scanned MAC agree."""
     value = stp.ldn_constant_id(CONSOLE_MAC)
     assert value == int.from_bytes(CONSOLE_CONSTANT_FIELD, "little")
     assert value == 0xEB9B2220F1480000
@@ -45,8 +35,8 @@ def test_a_station_location_is_forty_bytes_and_inside_the_accepted_range():
     loc = stp.station_location("169.254.49.2", 12345, 0x1122334455667788, 0xAABBCCDD, 0x12345678)
     assert len(loc) == 40
     assert stp.STATION_LOCATION_MIN <= len(loc) <= stp.STATION_LOCATION_MAX
-    # THE SIZE INCLUDES THE PORT. 4 is what an earlier build sent and the console rejects it outright:
-    # its parser builds 1 << size and tests against 0x00040044, so only 2, 6 and 18 pass.
+    # The size includes the port: the parser tests 1 << size against 0x00040044, so only 2, 6 and 18
+    # pass.
     assert loc[0] == 6 and loc[1] == 6
     assert loc[0] in stp.INET_SIZES and stp.INET_IPV4 == 6
     assert loc[2:8] == bytes([169, 254, 49, 2]) + struct.pack(">H", 12345)
@@ -148,16 +138,14 @@ def test_a_probe_needs_at_least_one_entry():
 def test_a_probe_result_reads_as_a_direction():
     assert stp.read_version(stp.RESULT_VERSION_TOO_LOW) == "higher"
     assert stp.read_version(stp.RESULT_VERSION_TOO_HIGH) == "lower"
-    # the equality signal is a REPLY: the request got past the version loop and something later
-    # refused it, which on hardware is result 7
+    # The equality signal is a reply refused after the version loop; on hardware it is result 7.
     assert stp.read_version(stp.RESULT_VERSIONS_MATCHED) == "equal"
     assert stp.read_version(stp.RESULT_ACCEPTED) == "equal"
     assert stp.read_version(stp.RESULT_DENIED) == "equal"
 
 
 def test_silence_is_no_longer_read_as_a_match():
-    """The mistake this corrects. Silence means a lost packet, and inventing a version from it is
-    exactly the class of error rule 4 is about."""
+    """Silence means a lost packet, never a version match."""
     with pytest.raises(ValueError):
         stp.read_version(None)
 
@@ -254,7 +242,7 @@ def test_an_acceptance_reads_back_the_whole_handshake():
 
 
 def test_a_location_whose_sizes_are_illegal_is_refused_not_misread():
-    """The an earlier build bug, from the reading side: size 4 must raise, never parse to something."""
+    """Size 4 raises; it never parses."""
     bad = bytearray(stp.station_location("169.254.14.1", 12345, 1, 2, 3))
     bad[0] = bad[1] = 4
     with pytest.raises(ValueError):

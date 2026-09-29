@@ -1,9 +1,4 @@
-"""Naming a script's operands, and following one to what it reaches.
-
-The disassembler turns console bytes into commands; this is the layer that turns their operands
-back into meaning - the var, the flag, the special, the comparison - and then chases every goto and
-call to say which addresses a future `memory-dump` should aim at.
-"""
+"""Naming a script's operands, and following its jumps to the addresses a `memory-dump` should aim at."""
 
 import os
 import sys
@@ -19,8 +14,8 @@ STD_SCRIPT_POINTERS = (0x081A8E49, 0x081A8F81, 0x081A7624, 0x081A762F, 0x081A763
 
 
 def test_the_var_bounds_are_the_ones_the_save_writer_already_enforces():
-    """`sav1_var_offset` was written against GetVarPointer months before this table existed
-    [decomp:src/event_data.c:186]; the generated bounds have to be the same two numbers."""
+    """`sav1_var_offset`'s bounds, from GetVarPointer [decomp:src/event_data.c:186], match the
+    generated ones."""
     assert symbol_names.VARS_START == 0x4000
     assert symbol_names.VARS_END == 0x40FF
     assert symbol_names.SPECIAL_VARS_START == 0x8000
@@ -29,9 +24,7 @@ def test_the_var_bounds_are_the_ones_the_save_writer_already_enforces():
 
 
 def test_the_altering_cave_var_lands_on_the_offset_measured_on_hardware():
-    """The generated name table and a hardware measurement, meeting. Two runs read the Altering
-    Cave counter at SaveBlock1 + 0x1048 and watched it move; the decomp calls that var
-    VAR_ALTERING_CAVE_WILD_SET, and the two only agree if the id is right."""
+    """Measured: the Altering Cave counter at SaveBlock1 + 0x1048 is VAR_ALTERING_CAVE_WILD_SET."""
     altering = [value for value, name in symbol_names.VARS.items()
                 if name == "VAR_ALTERING_CAVE_WILD_SET"]
     assert altering == [0x4024]
@@ -39,15 +32,12 @@ def test_the_altering_cave_var_lands_on_the_offset_measured_on_hardware():
 
 
 def test_the_names_agree_with_the_constants_this_project_wrote_by_hand():
-    """scrcmd.py's own constants were transcribed from the decomp one at a time. A generated table
-    that disagreed with them would be wrong about something that has run on hardware."""
     assert symbol_names.VARS[scrcmd.VAR_RESULT] == "VAR_RESULT"
     assert symbol_names.VARS[scrcmd.VAR_STARTER_MON] == "VAR_STARTER_MON"
 
 
 def test_an_operand_is_a_variable_exactly_at_vars_start():
-    """VarGet returns the number unchanged below VARS_START and reads the variable at or above it
-    [decomp:src/event_data.c:235], so this boundary is the whole rule."""
+    """VarGet returns the number unchanged below VARS_START [decomp:src/event_data.c:235]."""
     assert not symbol_names.is_var(0x3FFF)
     assert symbol_names.is_var(0x4000)
     assert symbol_names.is_var(0x800D)
@@ -56,25 +46,21 @@ def test_an_operand_is_a_variable_exactly_at_vars_start():
 
 
 def test_a_define_with_no_value_does_not_swallow_the_next_one():
-    """The include guard is `#define GUARD_CONSTANTS_VARS_H` with nothing after it, and VARS_START
-    is the next define in the file. Matching the value with `\\s` instead of `[ \\t]` lets it cross
-    the newline and eat that line, which is how VARS_START went missing the first time."""
+    """Match a define's value with `[ \\t]`, not `\\s`, or a valueless include guard eats the next line."""
     assert symbol_names.VARS_START == 0x4000
     assert len(symbol_names.VARS) == 274
     assert len(symbol_names.FLAGS) + len(symbol_names.FLAGS_ALIASES) == 1470
 
 
 def test_the_system_flags_resolve_through_the_header_they_are_built_on():
-    """The FLAG_SYS_* block is `SYS_FLAGS + n`, and SYS_FLAGS is built on MAX_TRAINERS_COUNT from
-    opponents.h. 188 flags were missing until that header was read with flags.h."""
+    """FLAG_SYS_* is `SYS_FLAGS + n`, built on MAX_TRAINERS_COUNT from opponents.h."""
     named = {name: value for value, name in symbol_names.FLAGS.items()}
     assert named["FLAG_SYS_POKEDEX_GET"] == 0x829
     assert named["FLAG_SYS_NATIONAL_DEX"] == 0x840
 
 
 def test_the_console_s_trainer_script_reads_with_the_decomps_own_names():
-    """The same bytes as test_script_cmd_table, with the operands named. Every name here is one the
-    decomp writes on that line [data/scripts/trainer_battle.inc:8]."""
+    """Every name is the one the decomp writes on that line [data/scripts/trainer_battle.inc:8]."""
     lines = scrcmd.disassemble(TRAINER_BATTLE_BYTES, TRAINER_BATTLE_BASE, 0x081A76A6, symbols=True)
     text = [line.split("  ", 3)[3] for line in lines]
     assert text[2] == "applymovement 0x800F (VAR_LAST_TALKED), 0x081A77B0"
@@ -92,8 +78,7 @@ def test_the_condition_byte_is_the_decomps_row_order():
 
 
 def test_a_special_index_and_a_std_index_are_told_apart_by_width():
-    """Both macros call the operand `function`. ScrCmd_special reads a u16 into gSpecials, and
-    ScrCmd_callstd a u8 into gStdScripts, so the width is what says which table."""
+    """ScrCmd_special reads a u16 into gSpecials, ScrCmd_callstd a u8 into gStdScripts."""
     assert scrcmd.name_operand(0x25, 0, 2, 0x38) == "PlayTrainerEncounterMusic"
     assert scrcmd.name_operand(0x09, 0, 1, 0x38) == "gStdScripts[56]"
 
@@ -104,15 +89,13 @@ def test_a_trainerbattle_type_is_named():
 
 
 def test_following_a_script_names_what_the_dump_stops_short_of():
-    """The fixture is 266 bytes of trainer_battle.inc, and the file carries on past it. Following
-    the jumps says exactly which labels are missing - and every one of the five is a label the
-    decomp names, which is the check on the walk itself:
+    """The five labels the 266-byte fixture stops short of, each one the decomp names:
 
-        0x081A77A3  EventScript_EndQuestLogRematch     two goto_ifs reach it
-        0x081A77A5  EventScript_RevealTrainer          two calls
-        0x081A77B0  Movement_RevealTrainer             DATA, the applymovement operand
-        0x081A77B2  EventScript_DoTrainerBattle        two gotos
-        0x081A7805  EventScript_EndQuestLogBattle      one goto_if
+    0x081A77A3  EventScript_EndQuestLogRematch     two goto_ifs reach it
+    0x081A77A5  EventScript_RevealTrainer          two calls
+    0x081A77B0  Movement_RevealTrainer             DATA, the applymovement operand
+    0x081A77B2  EventScript_DoTrainerBattle        two gotos
+    0x081A7805  EventScript_EndQuestLogBattle      one goto_if
     """
     reached, referenced = scrcmd.follow(TRAINER_BATTLE_BYTES, TRAINER_BATTLE_BASE, 0x081A76A6)
     assert len(reached) == 7
@@ -126,8 +109,7 @@ def test_following_a_script_names_what_the_dump_stops_short_of():
 
 
 def test_an_entry_point_the_dump_does_not_hold_is_what_to_dump_next():
-    """Pointed at gStdScripts with only the trainer region in hand, every one of the ten pointers
-    is an address we want and do not have - which is the report, not a failure."""
+    """Every gStdScripts pointer outside the held dump is reported as wanted."""
     reached, referenced = scrcmd.follow(
         TRAINER_BATTLE_BYTES, TRAINER_BATTLE_BASE, STD_SCRIPT_POINTERS)
     assert reached == {}
@@ -137,8 +119,7 @@ def test_an_entry_point_the_dump_does_not_hold_is_what_to_dump_next():
 
 
 def test_the_plan_puts_the_window_that_catches_the_most_first():
-    """Five of the ten standard scripts share the 1 KB window at 0x081A7400, and a run that catches
-    five costs exactly what one that catches a single script does."""
+    """Five of the ten standard scripts share the 1 KB window at 0x081A7400."""
     _reached, referenced = scrcmd.follow(
         TRAINER_BATTLE_BYTES, TRAINER_BATTLE_BASE, STD_SCRIPT_POINTERS)
     plan = scrcmd.dump_plan(referenced)
@@ -149,8 +130,7 @@ def test_the_plan_puts_the_window_that_catches_the_most_first():
 
 
 def test_two_dumps_that_touch_become_one_region():
-    """A block that straddles the join between two dumps has to disassemble, so overlapping and
-    adjacent segments merge rather than sitting side by side."""
+    """Overlapping and adjacent segments merge so a straddling block disassembles."""
     memory = scrcmd.Memory([(0x08000000, b"\x00" * 16), (0x08000010, b"\x11" * 16)])
     assert len(memory.segments) == 1 and len(memory) == 32
     overlapping = scrcmd.Memory([(0x08000000, b"\x00" * 16), (0x08000008, b"\x11" * 16)])
@@ -161,9 +141,6 @@ def test_two_dumps_that_touch_become_one_region():
 
 
 def test_a_script_split_across_two_dumps_still_walks():
-    """The real fixture cut in half and handed over as two separate runs. Every block still reads,
-    which is the point of holding all the dumps at once: a script does not care which run caught
-    the block it jumps to."""
     half = len(TRAINER_BATTLE_BYTES) // 2
     memory = scrcmd.Memory([
         (TRAINER_BATTLE_BASE, TRAINER_BATTLE_BYTES[:half]),
@@ -175,9 +152,7 @@ def test_a_script_split_across_two_dumps_still_walks():
 
 
 def test_a_dump_that_ends_mid_command_says_so():
-    """A command with a known shape whose operands run off the end means the DUMP is short, not
-    that the bytes are not a script. Reading `no shape here` for that sends you looking for a bug
-    in the table - it happened, on the last command of one run."""
+    """Operands running off the end mean the dump is short, not that the bytes are not a script."""
     truncated = bytes([0x0F, 0x00, 0x11, 0x22])          # loadword wants 1 + 4, four bytes given
     assert scrcmd.shape(truncated, 0, 0) is None
     assert "truncated" in scrcmd.disassemble(truncated, 0, 0)[-1]

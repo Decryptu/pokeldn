@@ -1,10 +1,4 @@
-"""The ivs hook, installed and run under unicorn.
-
-How it could fail. The IVs unpacked in the wrong order or width; a two-digit BCD wrong at 10, 20 or
-30; the nature taken from the wrong half of the personality; GetMonData called in a lag frame, where
-the main loop may be inside the same Pokemon, or outside the overworld. With the cartridge on disk,
-the real GetMonData runs on a Pokemon this project encrypted, and must leave it as it found it.
-"""
+"""The ivs hook, installed and run under unicorn, with the cartridge's GetMonData when on disk."""
 
 import pathlib
 

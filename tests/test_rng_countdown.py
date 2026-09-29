@@ -1,13 +1,9 @@
-"""The countdown: which frames are shiny, and how far a press missed.
-
-Every constant it stands on was measured on hardware, so these tests check the arithmetic against
-the runs rather than against a restatement of the same arithmetic.
-"""
+"""The countdown: which frames are shiny, and how far a press missed, against measured runs."""
 import pytest
 
 from pokeldn.frlg.rom import lcg, rng_countdown, rng_script
 
-# A run's own reading, and the mon a run dumped out of gPlayerParty afterwards.
+# A console's own reading, and the mon dumped out of gPlayerParty afterwards.
 MEV11_BEFORE = 0x9A4F5DAA
 MEV11_PID = 0x0BF87DD1
 MEV11_IVS = (25, 10, 28, 9, 19, 3)
@@ -15,7 +11,7 @@ CONSOLE_TID, CONSOLE_SID = 57189, 58811
 
 
 def test_the_mon_it_computes_is_the_one_the_console_actually_built():
-    """The whole tool rests on this: frame 0 of a scan must reproduce the measured samples exactly."""
+    """Frame 0 of a scan reproduces the measured samples exactly."""
     mon = rng_countdown._mon_from(MEV11_BEFORE, CONSOLE_TID, CONSOLE_SID)
 
     assert mon["personality"] == MEV11_PID
@@ -25,8 +21,7 @@ def test_the_mon_it_computes_is_the_one_the_console_actually_built():
 
 
 def test_a_press_lands_only_on_even_turns_because_the_rate_is_two_per_frame():
-    """Two runs measured exactly 2 turns a frame, so the states a press can reach are
-    advance(S, 2k) and nothing between them."""
+    """Measured at exactly 2 turns a frame: a press reaches advance(S, 2k) only."""
     hits = rng_countdown.scan(MEV11_BEFORE, CONSOLE_TID, CONSOLE_SID, frames=200)
     assert rng_countdown.TURNS_PER_FRAME == 2
     for hit in hits:
@@ -65,8 +60,7 @@ def test_want_narrows_without_inventing_hits():
 
 @pytest.mark.parametrize("frames_late", [0, 1, 5, -1, -12])
 def test_a_miss_reads_back_as_the_signed_number_of_frames_it_missed_by(frames_late):
-    """The script prints the state it generated from, so a miss is not a mystery - it is a
-    measurement. Late is positive: the console had already moved past the target."""
+    """Late is positive: the console had already moved past the target."""
     target = MEV11_BEFORE
     actual = lcg.advance(target, 2 * frames_late)
 
@@ -79,8 +73,7 @@ def test_a_miss_reads_back_as_the_signed_number_of_frames_it_missed_by(frames_la
 
 
 def test_a_reseed_is_reported_as_a_different_seed_rather_than_a_huge_miss():
-    """Backing out to the title screen reseeds, and a distance ALWAYS exists - so the tool has to
-    say 'that is not the same orbit position' instead of '1.9 billion turns late'."""
+    """The title screen reseeds; the tool says so instead of reporting a huge miss."""
     miss = rng_countdown.press_error(0xC0DE, 0x9A4F5DAA)
 
     assert not miss["usable"]

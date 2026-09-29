@@ -1,9 +1,4 @@
-"""The RNG as arithmetic: exact distances, the seed behind a state, and a caught Pokemon read back.
-
-Every test here is offline arithmetic, but the shapes are the ones a hardware run has to answer in:
-a state read off the console (its own samples are the fixture), and a Pokemon the console
-built by itself in the grass.
-"""
+"""The RNG as arithmetic: exact distances, the seed behind a state, and a caught Pokemon read back."""
 import random
 
 import pytest
@@ -40,8 +35,8 @@ def test_distance_is_exact_at_any_range(n):
 
 
 def test_distance_between_unrelated_states_is_huge_and_that_is_the_point():
-    # A run's first sample against the trainer id the Switch-only RfuMain1 hook would have seeded
-    # with [decomp:src/link_rfu_2.c:2116]. A reseed did not happen: the answer is not small.
+    # Against the trainer id the Switch-only RfuMain1 hook would seed with
+    # [decomp:src/link_rfu_2.c:2116]: no reseed.
     assert lcg.distance(0xDF65, 0x3C22BA3A) > 1 << 30
 
 
@@ -106,7 +101,7 @@ def test_iv_word_refuses_an_impossible_iv():
 
 
 def test_bs15_samples_hold_the_recurrence_and_two_turns_a_frame():
-    # The console's own bytes, kept as the fixture that says the arithmetic here describes it.
+    # The console's own bytes.
     trace = buffer_script.read_rng_trace(open("scratchpad/bs15_dump.bin", "rb").read()) \
         if __import__("os").path.exists("scratchpad/bs15_dump.bin") else None
     if trace is None:
@@ -117,10 +112,7 @@ def test_bs15_samples_hold_the_recurrence_and_two_turns_a_frame():
     assert gaps == {2}, "the game turned the RNG exactly twice a frame at that menu"
 
 
-# --- a Pokemon the console caught by itself, in the grass ----------------------------------
-# The ASPICOT (Weedle, species 13, Lv7) the player caught on Route 24 between two runs, read
-# out of gPlayerParty at 0x02024280. This is the fixture that says the model here describes the
-# console rather than the decomp's English build, and it is the run that CORRECTED the model.
+# A Weedle (Lv7) the player caught on Route 24, read out of gPlayerParty at 0x02024280.
 
 BS51_WEEDLE_PID = 0xF7EBC01B
 BS51_WEEDLE_IVS = (23, 3, 16, 17, 24, 7)        # hp, atk, def, speed, spatk, spdef
@@ -128,8 +120,7 @@ BS51_WEEDLE_STATE = 0x4125F87F                  # gRngValue before the four draw
 
 
 def test_the_caught_weedle_is_certain_before_any_rng_claim_is_made():
-    """The PID and IVs are not taken on trust: they predict the six stats the console printed on
-    its own summary screen, which the player read back. Two different mechanisms, one answer."""
+    """The PID and IVs predict the six stats the console's summary screen showed."""
     # Weedle base stats [decomp gSpeciesInfo]: HP 40, ATK 35, DEF 30, SPEED 50, SPATK 20, SPDEF 20.
     level, base = 7, (40, 35, 30, 50, 20, 20)
     hp, atk, dfn, spe, spa, spd = BS51_WEEDLE_IVS[0], *BS51_WEEDLE_IVS[1:]
@@ -146,8 +137,7 @@ def test_the_caught_weedle_is_certain_before_any_rng_claim_is_made():
 
 
 def test_the_caught_weedle_names_one_state_and_the_gap_is_one_not_zero():
-    """The run that corrected the model. Assuming the IV draws follow the personality immediately
-    finds NOTHING for this mon; searching the gap finds exactly one state, one draw later."""
+    """IV draws right after the personality find nothing; a gap of one finds exactly one state."""
     found = lcg.recover_wild_state(BS51_WEEDLE_PID, BS51_WEEDLE_IVS)
     assert len(found) == 1
     got = found[0]
@@ -155,22 +145,17 @@ def test_the_caught_weedle_names_one_state_and_the_gap_is_one_not_zero():
     assert got["gap"] == 1, "one extra draw sits between the personality and the IVs"
     assert got["order"] == "low-half first"
     assert got["iv_order"] == "HP/ATK/DEF first"
-    # And the model that was wrong stays wrong, so a regression cannot pass unnoticed.
     assert lcg.recover_wild_state(BS51_WEEDLE_PID, BS51_WEEDLE_IVS, max_gap=0) == []
 
 
 def test_the_seed_we_set_in_bs50_is_not_where_the_weedle_came_from():
-    """The title screen re-seeds on the way out of Mystery Gift [mystery_gift_menu.c:463 ->
-    CB2_InitTitleScreen -> SeedRng(REG_TM1CNT_L), title_screen.c:735], so 0xC0DE cannot reach the
-    grass. The distance says so rather than leaving it to argument."""
+    """The title screen re-seeds on the way out of Mystery Gift [mystery_gift_menu.c:463,
+    title_screen.c:735]."""
     assert lcg.distance(0xC0DE, BS51_WEEDLE_STATE) > 1 << 30
     assert lcg.distance(0xDF65, BS51_WEEDLE_STATE) > 1 << 30      # nor did RfuMain1 reseed
 
 
-# --- every mon this console has generated, and the three layouts it used ------------------------
-# Methods 1, 2 and 4, all observed on the same cartridge in one evening. Searching one gap finds
-# only some of them, and finds them SILENTLY - the other two came back empty, which is why the
-# recovery searches both gaps and reports which it used.
+# Methods 1, 2 and 4, all observed on one cartridge; the recovery searches both gaps.
 CONSOLE_MONS = {
     # name:            (personality, ivs, state before, gap, iv_gap)
     "bs51 Weedle":     (0xF7EBC01B, (23, 3, 16, 17, 24, 7), 0x4125F87F, 1, 0),   # Method 2
@@ -192,9 +177,7 @@ def test_every_mon_the_console_made_recovers_to_one_state(name):
 
 
 def test_the_scripted_battle_recovers_to_the_seed_we_actually_wrote():
-    """A run's Ditto is the only one whose state was not inferred but CHOSEN: the field script wrote
-    it four commands earlier. It recovers to exactly that, with both gaps zero - so the scripted
-    generation is plain Method 1, with none of the stray draws the walked encounters showed."""
+    """The Ditto's state was written by the field script: both gaps zero, plain Method 1."""
     from pokeldn.frlg.gift import wonder_card_events
     personality, ivs, state, gap, iv_gap = CONSOLE_MONS["bs53 Ditto"]
     assert state == wonder_card_events.RNG_DITTO_SEED
@@ -202,21 +185,12 @@ def test_the_scripted_battle_recovers_to_the_seed_we_actually_wrote():
 
 
 def test_the_union_room_does_not_reseed_either():
-    """a full Union Room session - LinkPlayer exchange, trainer cards, a greeting, 199
-    seconds of RFU - then a Mankey caught on Route 22. If SVC4B_RESEED_RNG fired for the Union
-    Room the state would descend from the console's own trainer id. It is 2.1 BILLION turns away.
-    Mystery Gift and the Union Room are both ruled out now."""
+    """Measured: after a full Union Room session the state is 2.1 billion turns from the trainer-id seed."""
     assert lcg.distance(0xDF65, CONSOLE_MONS["bs54 Mankey"][2]) > 1 << 30
 
 
 def test_the_overworld_never_stops_turning_the_rng():
-    """a Mankey caught, then FIVE MINUTES standing still touching nothing, then a Rattata by
-    Sweet Scent. 43,702 turns between the two states - which at exactly 2 a frame is 365.8 s, and
-    the two catches were ~368 s apart by the clock (message sends, so a couple of seconds late).
-
-    So idling costs the same as anything else, and it is the rate measured at the Mystery
-    Gift link menu on 95 of 95 gaps. This is the measurement that says reading the RNG and acting on
-    it BY HAND is impossible: there is no state in which it waits for the player."""
+    """Measured: 43,702 turns over ~368 s of standing still, 2 a frame: the RNG never waits for the player."""
     mankey, rattata = 0xC57E0CF6, 0x50281FE4
     turns = lcg.distance(mankey, rattata)
     assert turns == 43702

@@ -1,8 +1,4 @@
-"""The ldn_mitm discovery and join protocol, pinned to bytes captured from a real emulated join.
-
-The vectors are the Connect a joining instance sent and the wire lengths the three payloads of that
-exchange compressed to.
-"""
+"""The ldn_mitm discovery and join protocol, pinned to bytes captured from a real emulated join."""
 
 from pokeldn.ldn import ldn_mitm
 

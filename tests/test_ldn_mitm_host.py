@@ -12,7 +12,7 @@ from pokeldn.ldn import ldn_mitm, ldn_mitm_host
 COMM_ID = 0x01006fa0233f8000
 HOST_IP = "127.0.0.1"
 PEER_IP = "127.0.0.2"
-# Not the real ports: a live host on this machine holds those, and a test must not need them free.
+# Not the real ports: a live host on this machine may hold those.
 DISCOVERY_PORT = 21452
 PIA_PORT = 22345
 
@@ -27,8 +27,7 @@ def _info(**kw):
 
 
 def test_the_advertised_session_id_is_the_key_the_host_encrypts_pia_with():
-    """crypto.PiaCrypto keys off the LDN ssid, so the value advertised as NetworkId.SessionId and
-    the value the host hands the Pia layer have to be one 16-byte value."""
+    """crypto.PiaCrypto keys off the LDN ssid, the value advertised as NetworkId.SessionId."""
     from pokeldn.ldn import crypto
     host = ldn_mitm_host.IpHostTransport(our_ip=HOST_IP, log=lambda *_a, **_k: None)
     info = host._build_info()
@@ -42,8 +41,7 @@ def test_the_advertised_session_id_is_the_key_the_host_encrypts_pia_with():
 
 
 def test_the_host_advertises_the_application_version_where_the_console_carries_its_own():
-    """A NetworkInfo read out of the running game puts the console's own 88 at node+0x2E, so the
-    field is a u16 aligned after the byte at 0x2C. `dumps/003_networkinfo_as_game_sees_it.bin`."""
+    """The game's NetworkInfo carries the console's 88 at node+0x2E, a u16 after the byte at 0x2C."""
     host = ldn_mitm_host.IpHostTransport(our_ip=HOST_IP, log=lambda *_a, **_k: None)
     assert ldn_mitm_host.OFF_NODE_LOCAL_COMM_VERSION == 0x2E
     assert ldn_mitm_host.node_local_comm_version(host._build_info(), 0) == 88
@@ -155,10 +153,8 @@ def test_the_host_mac_encodes_its_address_the_way_the_peer_does():
 
 
 def test_a_station_that_leaves_frees_its_node_and_the_next_scan_says_so(host):
-    """A station's node info states its own address, which need not be the address its connection
-    comes from: a peer on this machine connects from one and advertises another. The node slot is
-    tracked by the connection, because a session capped at two advertises as full while a slot is
-    held by a station that has gone, and the console will not join."""
+    """Node slots are tracked by connection, not by the advertised address; a freed slot shows in
+    the next scan."""
     udp = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
     udp.settimeout(3)
     tcp = socket.socket(socket.AF_INET, socket.SOCK_STREAM)

@@ -1,5 +1,4 @@
-"""Test-time import paths: `bin/` and the `tools/` subdirectories for the launchers the tests import by name
-(`import frlg_mg_host`), and the repo root for `pokeldn` and `vendor/LDN`."""
+"""Import paths for tests: bin/, the tools/ subdirectories and the repo root."""
 
 import os
 import sys

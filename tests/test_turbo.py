@@ -1,11 +1,4 @@
-"""install-resident and the turbo-text hook, both executed under unicorn.
-
-How it could fail. The installer: the blob lands short or shifted; the table is written before the
-blob is whole; the hook chains to nothing or, installed twice, to itself (a spin inside the
-interrupt that freezes the console); IME is left cleared. The hook: it skips the game's VBlankIntr;
-it runs the text printers in a lag frame, where they would interleave with the main loop's own;
-it returns anywhere but where IntrMain called it from.
-"""
+"""install-resident and the turbo-text hook, both executed under unicorn."""
 
 import pytest
 
@@ -52,7 +45,7 @@ def test_a_second_install_keeps_chaining_to_the_game_not_to_itself():
     blob, entry, original = bs.resident_blob("turbo")
     machine = bs._Machine(code, memory={ns.GINTRTABLE_VBLANK: (VBLANK_INTR | 1).to_bytes(4, "little")})
     machine.call()
-    machine.call()                                               # the same payload, run again
+    machine.call()
     chained = int.from_bytes(machine.uc.mem_read(ns.RESIDENT_BASE + original, 4), "little")
     assert chained == VBLANK_INTR | 1
 
@@ -130,8 +123,7 @@ def _printer(x, y, current_x, current_y, active=1):
 
 
 def test_a_printer_the_game_has_not_started_holds_every_extra_call():
-    """The field box adds its printer before drawing the box; printing it early drew the speaker's
-    name and the start of the line into a window the box then cleared."""
+    """The field box adds its printer before drawing the box, so an unstarted printer gets no extra call."""
     started = _printer(8, 1, 40, 1)
     fresh = _printer(8, 1, 8, 1)
     _, printers, _, idle = _run_hook(0, 5, started + fresh)
@@ -143,9 +135,7 @@ def test_a_printer_the_game_has_not_started_holds_every_extra_call():
 
 
 def test_a_reinstall_over_a_different_hook_still_chains_to_the_game():
-    """The second install finds the table pointing into the resident area, at a hook whose layout
-    differs from the new one's; it must chain to the handler kept at dest - 4, not to a stale
-    offset of the old blob."""
+    """A reinstall chains to the handler kept at dest - 4, not to a stale offset of the old blob."""
     code = bs.build_install_resident("turbo")
     blob, entry, original = bs.resident_blob("turbo")
     machine = bs._Machine(code, memory={
@@ -158,8 +148,7 @@ def test_a_reinstall_over_a_different_hook_still_chains_to_the_game():
 
 
 def test_a_resident_hook_with_no_kept_handler_is_left_alone():
-    """An older installer kept nothing at dest - 4. Chaining to that zero would jump to address 0
-    inside the interrupt, so nothing is written and the answer says so."""
+    """No kept handler at dest - 4 means chaining to address 0; nothing is written."""
     code = bs.build_install_resident("turbo")
     old = b"\xAA" * 0x80
     machine = bs._Machine(code, memory={
@@ -186,8 +175,7 @@ HELP_R_DISABLED = 0x0203F171
 
 @pytest.mark.parametrize("held, passes", [(0x0000, 0), (0x0100, 2), (0x0101, 2), (0x0200, 0)])
 def test_with_hold_r_the_passes_run_only_while_r_is_held_and_the_text_extras_always(held, passes):
-    """heldKeys is gMain + 0x2C; newKeys, two bytes on, is cleared by a pass and must not be what is
-    tested."""
+    """heldKeys is gMain + 0x2C; newKeys, two bytes on, is cleared by a pass."""
     _, printers, _, _ = _run_hook(0, 3, field=2, hold=0x100, held=held,
                                   callbacks=(CB1_OVERWORLD | 1, CB2_OVERWORLD | 1, 0x0100))
     m = _run_hook.last
@@ -227,8 +215,7 @@ def _vcount_stub(lines):
 ])
 def test_the_budget_starts_a_pass_only_when_it_and_the_game_frame_fit(
         budget, start, last_cost, passes, held_back):
-    """Fixed passes past what a frame holds lagged one frame in four at field=3; the budget measures
-    each pass in scanlines and stops before the game's own frame would miss V-blank."""
+    """Each pass is measured in scanlines; none starts once the game's frame would miss V-blank."""
     counters = 0x0203FF60
     _run_hook(0, 0, field=3, budget=budget, callbacks=(CB1_OVERWORLD | 1, CB2_OVERWORLD | 1, 0),
               cb2_stub=_vcount_stub(60),
@@ -241,8 +228,7 @@ def test_the_budget_starts_a_pass_only_when_it_and_the_game_frame_fit(
 
 
 def test_a_held_back_frame_shrinks_the_kept_cost_until_a_pass_fits_again():
-    """One slow pass (101 lines, read off the emulator) kept as it was stopped every later pass: 30
-    lines of the game's VBlankIntr plus 202 is past 228 forever."""
+    """A 101-line pass kept as cost would stop every later pass: 30 + 202 is past 228."""
     counters = 0x0203FF60
     cost = 101
     for frame in range(10):
@@ -264,8 +250,7 @@ def test_no_field_pass_outside_the_overworld():
 
 
 def test_a_pass_whose_cb1_leaves_the_overworld_does_not_run_cb2():
-    """CB1 bumps callback2 the way a warp's SetMainCallback2 replaces it: CB2_Overworld must not
-    run after it, and no further pass starts."""
+    """CB1 replacing callback2 (a warp's SetMainCallback2) stops CB2_Overworld and further passes."""
     leave = _counting_stub(GMAIN + 4)                            # callback2 += 1
     _run_hook(0, 0, field=2, callbacks=(CB1_OVERWORLD | 1, CB2_OVERWORLD | 1, 0), cb1_stub=leave)
     m = _run_hook.last
@@ -282,8 +267,7 @@ def test_the_battle_pass_runs_the_battle_callbacks_and_not_the_field_ones():
 
 
 def test_no_callback_pass_while_a_palette_fade_runs():
-    """The stuck bag: gPaletteFade read off the console after closing it, a hardware fade that
-    never finished. A second UpdatePaletteFade a frame wraps its one-bit hardwareFadeFinishing."""
+    """A second UpdatePaletteFade a frame wraps its one-bit hardwareFadeFinishing and sticks the fade."""
     stuck = bytes.fromhex("0000000000000080400210000000000000000000")
     battle = (0x08015B6C, 0x08014888)
     _run_hook(0, 0, battle=1, callbacks=(battle[0] | 1, battle[1] | 1, 0), cb_addresses=battle,
@@ -333,9 +317,7 @@ def test_no_overlay_outside_the_overworld_or_when_off():
 
 
 def test_the_overlay_is_in_the_oam_buffer_before_the_game_copies_it():
-    """Written after VBlankIntr, the entries reached OAM once the screen had begun drawing and the
-    digits' top rows showed the previous frame. A VBlankIntr that records attr2 of entry 120 when it
-    runs must see the overlay's tile already there."""
+    """A VBlankIntr recording attr2 of entry 120 already sees the overlay's tile."""
     probe = 0x0203FFC0
     snapshot = (bytes.fromhex("0248018802480180704700 00".replace(" ", ""))
                 + (OAM_120 + 4).to_bytes(4, "little") + probe.to_bytes(4, "little"))
@@ -345,9 +327,7 @@ def test_the_overlay_is_in_the_oam_buffer_before_the_game_copies_it():
 
 
 def test_the_expanded_font_matches_the_sentinels_the_skip_compares():
-    """A frame skips the ~9000-instruction upload when two words of the tiles already hold what the
-    upload writes. If the constants disagreed with the expansion, the font would be rewritten every
-    frame (a sentinel never matching) or never refreshed after the game overwrote it."""
+    """Two sentinel words decide whether the font upload is skipped; they must match the expansion."""
     from unicorn import arm_const as a
     _run_hook(1, 0, overlay=0x03004220, watched=0, callbacks=(CB1_OVERWORLD | 1, CB2_OVERWORLD | 1, 0))
     m = _run_hook.last
@@ -357,10 +337,8 @@ def test_the_expanded_font_matches_the_sentinels_the_skip_compares():
 
 
 def test_the_rng_history_keeps_the_frames_up_to_the_encounter_and_then_freezes():
-    """The instrument that measures how many Random calls an encounter spends before its nature roll.
-    It must keep the seed of every frame up to the one where gEnemyParty[0]'s personality changed,
-    wrap at 32, and stop there so the transition that follows cannot overwrite the frames that
-    matter."""
+    """Seeds of every frame up to the one where gEnemyParty[0]'s personality changes, wrapping at
+    32, then frozen."""
     from unicorn import arm_const as a
     ring, watch, rng = 0x0203FF74, 0x02024028, 0x03004220
     code = bs.build_install_resident("turbo", extra=0, ring=ring)

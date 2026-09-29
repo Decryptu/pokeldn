@@ -1,11 +1,6 @@
-"""A Let's Go console withdrawing its trade vote, and voting again, against our host.
-
-The console's records are the ones a retail Let's Go Pikachu published when its player pressed A
-onto Retour as the confirmation greyed the buttons: 1 1 1, 0 1 1, 1 2 2, then state 2 with counter
-3. The host that answered it with the vote agreed held the console on a warning and locked the
-save's trading for 30 minutes. What our host publishes back is run through the game's own record
-code under unicorn: the console's reader 0x11ba20, the status 0x3488b0 its screens branch on, and
-the host-side authority 0x11b6c0 whose answer ours must equal (docs/lgpe_session.md)."""
+"""A Let's Go console withdrawing its trade vote and voting again, against our host, with the game's
+record code under unicorn: reader 0x11ba20, status 0x3488b0, host authority 0x11b6c0 (docs/lgpe_session.md).
+Answering a withdrawal with the vote agreed locked a retail save's trading for 30 minutes."""
 import os
 import struct
 
@@ -22,7 +17,7 @@ def record(state, arg, counter, tail, step=11):
 
 
 def withdraw(stage):
-    """The offered clone from the console's first 1 1 1 to its state 2, at lgh65's spacing."""
+    """The offered clone from the console's first 1 1 1 to its state 2."""
     s = stage["s"]
     s.clone.flags.pop(3, None)
     s.clone.tail.pop(3, None)
@@ -37,9 +32,7 @@ def withdraw(stage):
 
 
 def test_a_withdrawn_vote_keeps_the_agreed_word_and_takes_the_counter(stage):
-    """Within a tick the host publishes type 4 with the agreed word still 1, the console's counter
-    3 in the joiner's slot and the trailing word on by one, and its own type 2 under that trailing
-    word. It never publishes the withdrawn 2 as agreed."""
+    """The host keeps the agreed word 1, takes the console's counter 3 and advances the trailing word."""
     withdraw(stage)
     t4 = stage["published"](3, ctype=4)
     assert all(w[0] != 2 for w in t4), "the withdrawn vote went out as agreed"
@@ -48,9 +41,8 @@ def test_a_withdrawn_vote_keeps_the_agreed_word_and_takes_the_counter(stage):
 
 
 def test_a_second_vote_after_a_withdrawal_is_agreed_in_one_publish(stage):
-    """The console republishes 0 2 3 on the new trailing word, then votes 2 again under counter 4.
-    The host votes 2 under its next counter and moves the agreed word and the trailing word
-    together, as the authority does when every station votes the same."""
+    """A re-vote of 2 is agreed in one publish, agreed and trailing words moving together, as the
+    authority does."""
     withdraw(stage)
     stage["console_publishes"](3, record(0, 2, 3, 2))
     stage["run"](1.0)
@@ -61,7 +53,7 @@ def test_a_second_vote_after_a_withdrawal_is_agreed_in_one_publish(stage):
     assert stage["published"](3, ctype=4)[-1] == [2, 0, 0, 3, 0, 0, 10, 3]
 
 
-# The game's own record code. Globals 0x15fc910 / 0x15fc980 point at these after relocation.
+# Globals 0x15fc910 / 0x15fc980 point at these after relocation.
 G910, G980 = 0x1614098, 0x163c8d0
 
 
@@ -121,9 +113,8 @@ def test_the_games_authority_answers_the_withdrawal_as_our_host_does(stage):
     ((2, 0, 0, 0, 0, 0, 10, 2), 4),              # the vote agreed under it, as the locked run had
 ])
 def test_the_console_leaves_its_confirmation_only_on_our_answer(stage, answer, status):
-    """The console's reader takes our type 4 over its record 2 2 3 (agreed word 1, trailing 1):
-    state 0, the agreed word kept, 0 2 3 republished on trailing word 2, status 2. The locked run's
-    answer gives status 4, which the confirmation loop at 0x9c3300 has no case for."""
+    """The console's reader takes our type 4 to status 2; the locking answer gives status 4, which
+    0x9c3300 has no case for."""
     withdraw(stage)
     type4 = stage["published"](3, ctype=4)[-1] if answer == "ours" else answer
     rec, republished, got = game(False, (2, 1, 2, 3, 0, 1), type4)
@@ -133,9 +124,7 @@ def test_the_console_leaves_its_confirmation_only_on_our_answer(stage, answer, s
 
 @needs_image
 def test_the_console_takes_the_agreed_second_vote(stage):
-    """After the re-vote the console's reader, holding 1 2 4 on trailing word 2, takes our type 4:
-    the agreed word 2, and it republishes 0 2 4 on trailing word 3, the answer a console gives
-    the agreed vote on a trade that goes through."""
+    """After the re-vote the console republishes 0 2 4 on trailing word 3, as for an agreed trade."""
     withdraw(stage)
     stage["console_publishes"](3, record(0, 2, 3, 2))
     stage["run"](0.5)

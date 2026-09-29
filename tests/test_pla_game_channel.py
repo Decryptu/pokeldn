@@ -1,8 +1,5 @@
-"""The game's reliable channel, against the bytes a reference pair sent on 0x7c.
-
-Every constant here is a capture of a Ryujinx pair that reached the trade screen. `docs/pla.md`,
-The game's reliable channel.
-"""
+"""The game's reliable channel against a Ryujinx reference pair's 0x7c bytes (`docs/pla.md`, The
+game's reliable channel)."""
 
 from pokeldn.ldn import reliable5
 from pokeldn.pla import game_channel
@@ -36,8 +33,8 @@ def test_the_channel_declares_no_destination_bitmap():
         assert reliable5.parse(message)["header_size"] == 9
 
 
-# What a console sends on port 1 once the trade is confirmed: the same key family as the channel
-# open with a different last byte, and the same two-byte body, without the initialized flag.
+# A console's port-1 message once the trade is confirmed: the channel open's key family, another
+# last byte.
 CONSOLE_SECOND_KEY = bytes.fromhex("0700000a0002000200b90101b902b902010001")
 
 

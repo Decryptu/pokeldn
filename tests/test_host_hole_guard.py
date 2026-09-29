@@ -1,6 +1,5 @@
-"""The host stops emitting new Reliable frames while the console's cumulative ack is stuck behind a hole,
-keeps retransmitting the hole, and resumes once the ack catches up (an unbounded backlog behind a
-lost frame is released in one burst that overflows the console's 8-deep RFU queue)."""
+"""New Reliable frames stop while the console's ack is stuck behind a hole and resume once it catches
+up; a backlog released in one burst overflows the console's 8-deep RFU queue."""
 import os
 import sys
 
@@ -65,16 +64,13 @@ def test_new_frames_stop_at_the_outstanding_cap_and_resume_after_the_ack():
         now += 16.7
         for seq in _new_data_seqs(session.tick(now)):
             seen.add(seq)
-    # The opening frame plus the new frames never exceed the cap; the engine was held, not drained.
     assert len(seen) + 1 == HOST_OUTSTANDING_MAX
     assert session.console_backlogged
     assert session.activity.ticks == HOST_OUTSTANDING_MAX - 1
-    # Retransmits of the hole keep flowing while held.
     now += 500
     held = session.tick(now)
     assert any(e.retransmitted for e in held)
     assert not _new_data_seqs(held)
-    # The console catches up: everything sent is acked, new frames resume.
     _ack(session, session.reliable.link.out_seq, now)
     now += 16.7
     resumed = _new_data_seqs(session.tick(now))
@@ -89,7 +85,6 @@ def test_partial_catch_up_releases_exactly_the_room_it_frees():
         now += 16.7
         session.tick(now)
     assert session.console_backlogged
-    # Ack two frames: the guard opens for two new frames, then closes again.
     _ack(session, session.reliable.start_seq + 2, now)
     new = []
     for _ in range(10):

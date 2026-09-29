@@ -1,13 +1,5 @@
-"""bin/pla_host.py against a scripted Arceus console, with packets lost and with a second trade in
-the same session. The host's own main loop runs over a loopback transport on a fake clock.
-
-The console is `pokeldn.pla.joiner.JoinerSession` driving the trade as a player would, behind the
-console's own 0x7c receive window: every message's lowest-pending field walks the window base over
-empty slots (`0x74c250`, before the flag dispatch at `0x74c3ac`), a message below the base is
-discarded with an acknowledgement, the rest are handed to the game in order, and the
-acknowledgement is the base with the held ones in the mask (`0x74ee1c`). It acts on the host's phase
-only under the host's selector 2 (`0x26d7e5c` reads the pair only selector 2 writes, `0x26d7f90`).
-docs/pla.md, Acknowledgement and The completed trade."""
+"""bin/pla_host.py against a scripted Arceus console behind its own 0x7c receive window
+(`0x74c250`, `0x74ee1c`), with packets lost and a second trade (docs/pla.md, Acknowledgement)."""
 import importlib.util
 import os
 import struct
@@ -100,10 +92,8 @@ def _data(messages):
 
 
 def run_host(monkeypatch, capsys, console_class, goal, drop=None):
-    """Run the host's main against `console_class` until `goal(console)` holds (plus SETTLE) or the
-    run ends. `drop(port, payload)` loses the first host 0x7c message it matches on the air.
-    -> .console, .log (the host's), .sent (every host 0x7c data (port, seq)), .copies
-    [(port, seq, message bytes, packet)] of those that reached the console, .lost (one of those)."""
+    """Run the host's main against `console_class` until `goal(console)` holds, plus SETTLE.
+    `drop(port, payload)` loses the first matching host 0x7c message. -> .console, .log, .sent, .copies, .lost"""
     clock = Clock()
     keys = pla.session_keys(SSID)
     exchange = data_exchange.build_record(player_id=bytes.fromhex("504b4c44"), name="PkCamp")
@@ -205,11 +195,7 @@ HOST_LOSSES = {
 
 @pytest.mark.parametrize("lost", ["nothing"] + sorted(HOST_LOSSES) + ["the console's offer"])
 def test_one_lost_message_and_the_trade_still_completes(monkeypatch, capsys, lost):
-    """Any one of about a dozen host answers lost on the air stalled a trade with every message
-    acknowledged: the host sent each once. A console message lost ahead of another was released by
-    the host's acknowledgement of the later one and never resent (0x74f0ec). A host message lost
-    ahead of another was skipped by the console's base walk when the second declared its own
-    sequence as lowest pending. With nothing lost the host resends nothing."""
+    """A lost message is resent; the console's `0x74f0ec` releases only what the mask acknowledges."""
     console_class = ConsoleLosesItsOffer if lost == "the console's offer" else Console
     run = run_host(monkeypatch, capsys, console_class, lambda c: c.traded,
                    drop=HOST_LOSSES.get(lost))
@@ -230,10 +216,8 @@ def test_one_lost_message_and_the_trade_still_completes(monkeypatch, capsys, los
 
 
 class TwoTrades(Console):
-    """After a trade the console's reset `0x26d8fd0` zeroes its counters and frees the job, so the
-    second trade sends 05 00, 07 00 and phases 3, 6, 11, 14 again, byte for byte, and opens the
-    phase key again on port 1. The box cursor sits on the Pokemon just received, which it shows
-    (docs/pla.md, The completed trade)."""
+    """The console's reset `0x26d8fd0` zeroes its counters, so the second trade repeats the first's
+    messages byte for byte."""
 
     def __init__(self, *a, **k):
         super().__init__(*a, **k)
@@ -256,10 +240,7 @@ class TwoTrades(Console):
 
 
 def test_a_second_trade_in_the_same_session_completes(monkeypatch, capsys):
-    """The host de-duplicated on content, so the second trade's 05 00 was dropped as answered and
-    the console waited on the trade screen. Its acknowledgement of the console's second phase-key
-    open declared the console's sequence as lowest pending, past its own re-announcement, which
-    the console's base walk then discarded."""
+    """The second trade's 05 00 is not dropped as already answered."""
     run = run_host(monkeypatch, capsys, TwoTrades, lambda c: len(c.trades) == 2)
     assert run.console.trades == [_host_offer(), _host_offer()]
     assert sorted(run.console.delivered) == sorted(run.sent)
@@ -281,9 +262,7 @@ MAIN = os.path.join(ROOT, "scratchpad", "pla", "main_111.bin")      # Legends Ar
     ([1, 34, 96, 128], 1, (34, 128)),        # word 1 bit 0 and word 3 bit 30; 96 not held
 ])
 def test_the_consoles_window_releases_what_the_mask_says(pending, ack_id, held):
-    """The console's own consumer `0x74f0ec`, run on a window holding `pending` for the host, given
-    the acknowledgement our host builds: it keeps exactly what `SendWindow` keeps for the same
-    bytes. That pins the mask's word order both ways."""
+    """The console's consumer `0x74f0ec` keeps what `SendWindow` keeps for the same acknowledgement."""
     from nso_run import Runner, SCRATCH
     runner = Runner(MAIN)
     uc = runner.uc

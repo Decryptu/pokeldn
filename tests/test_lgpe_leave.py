@@ -40,7 +40,6 @@ def test_the_two_state_4_records_then_the_releases_then_the_leave_request():
     ends = [clone.parse_command(p) for p, proto, port in out if proto == clone.PROTOCOL]
     assert [(c["ctype"], c["station"], c["clone_id"], c["dest"]) for c in ends] == \
         [(4, 0xFD, 1, 1), (3, 0xFD, 0, 1), (4, 0xFD, 2, 1), (4, 0xFD, 3, 1)]
-    # unacknowledged, each goes again every 100 ms; acknowledged, it stops
     out = run(lv, 101.6, 101.65)
     ends = [clone.parse_command(p)["clone_id"] for p, proto, port in out if proto == clone.PROTOCOL]
     assert sorted(ends) == [0, 1, 2, 3]
@@ -55,14 +54,12 @@ def test_the_two_state_4_records_then_the_releases_then_the_leave_request():
     assert len(leaves) == 1 and leaves[0][1] == 1
     r = reliable3.parse(leaves[0][0])
     assert r["payload"] == bytes([mp.LEAVE_REQUEST, 1]) and r["sequence"] == reliable3.FIRST_SEQUENCE
-    # repeated every half second until the response
     out = run(lv, 104.3, 105.3)
     assert len([1 for p, proto, port in out if proto == mp.PROTOCOL]) == 2
     lv.receive(mp.PROTOCOL, bytes([mp.LEAVE_RESPONSE, 0]), 105.3)
     out = run(lv, 105.3, 105.4)
     assert [p for p, proto, port in out if proto == mp.PROTOCOL] == []
-    # our disconnection request follows the leave response at once; the host's own, if it comes
-    # first, is answered
+    # Our disconnection request follows the leave response at once; the host's own is answered.
     assert [p for p, proto, port in out if proto == station9.PROTOCOL] == [bytes([DISCONNECTION_REQUEST])]
     assert not lv.done
     ans = lv.receive(station9.PROTOCOL, bytes([DISCONNECTION_REQUEST]), 105.4)

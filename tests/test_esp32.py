@@ -35,9 +35,8 @@ def test_reader_resynchronises_after_boot_text():
 
 
 class _RingBoard:
-    """The firmware's receive side as measured on a board: a 16 KB ring the UART fills, emptied
-    only as fast as the command handler's Wi-Fi queue drains, bytes past a full ring lost, and a
-    CREDIT per 1024 bytes read. A flood at 1500000 baud lost 429 of 5000 ETH_TX this way."""
+    """The firmware's receive side as measured: a 16 KB ring, a CREDIT per 1024 bytes; 1500000 baud
+    lost 429 of 5000 ETH_TX."""
 
     RING, RATE = 16384, 2_000_000   # bytes, bytes per second the handler takes
 
@@ -107,8 +106,7 @@ class _RingBoard:
 
 
 def test_a_flood_of_eth_tx_never_overflows_the_boards_ring():
-    """2000 ETH_TX handed over at once, as a Scarlet seat's opening does; every one reaches the
-    handler because the host keeps under the window the board's CREDIT leaves."""
+    """2000 ETH_TX at once, as a Scarlet seat opens, all reach the handler under the CREDIT window."""
     board = _RingBoard()
     radio = esp32.Radio(board)
     try:
@@ -131,8 +129,7 @@ def test_a_flood_of_eth_tx_never_overflows_the_boards_ring():
 
 
 def test_bytes_lost_on_the_line_close_the_window_once_each():
-    """Three losses of 3 KB, 9 KB together, more than the 8 KB window: the window shuts once, one
-    resync writes the loss off for good, and the rest of the flood reaches the handler."""
+    """9 KB lost in three pieces shuts the window once; one resync writes it off."""
     board = _RingBoard(losses=[(100_000, 3000), (200_000, 3000), (300_000, 3000)])
     radio = esp32.Radio(board)
     try:
@@ -154,8 +151,7 @@ def test_bytes_lost_on_the_line_close_the_window_once_each():
 
 
 def test_a_trace_reconciles_the_commands_and_bytes_the_line_lost(tmp_path, monkeypatch):
-    """3 KB lost on the line, under the window: tools/ldn/esp32_cmd_loss.py reads the trace and
-    names exactly the commands the board never handled and the bytes it never read."""
+    """tools/ldn/esp32_cmd_loss.py names the commands and bytes the board never read."""
     import esp32_cmd_loss
     trace = tmp_path / "loss_esp32.trace"
     monkeypatch.setenv("POKELDN_ESP32_TRACE", str(trace))
@@ -188,8 +184,7 @@ def test_a_trace_reconciles_the_commands_and_bytes_the_line_lost(tmp_path, monke
 
 
 def test_a_reader_held_silent_is_waited_for_not_overrun():
-    """The board stops reading for 1.2 s with the window full, as a Scarlet seat's reader did for
-    0.7 s: the host waits instead of resyncing, and the 16 KB ring never overflows."""
+    """A reader silent for 1.2 s with the window full is waited for, not resynced."""
     board = _RingBoard(holds=[(60_000, 1.2)])
     radio = esp32.Radio(board)
     try:
@@ -261,8 +256,7 @@ def _two_boards():
 
 @pytest.mark.parametrize("console_scene, found", [(2321, 11), (2341, None)])
 def test_the_lets_go_host_finds_the_channel_a_console_searches_on(console_scene, found):
-    """`lgpe_host.py --channel auto` for the code Bulbasaur, Charmander, Bulbasaur (2321): a
-    console searching under it on channel 11 is found there; one under another code is not."""
+    """`--channel auto` for code 2321 finds a console on channel 11; another code is not found."""
     import lgpe_host
     from pokeldn.lgpe import COMM_ID_PIKACHU
 
@@ -522,9 +516,8 @@ def test_first_contact_sees_and_decodes_a_simulated_host():
 
 
 def test_station_broadcast_with_no_ds_bits_reaches_the_ldn_data_path():
-    """A console on the softAP sends its broadcasts (ARP first) straight to the BSS with no DS bits
-    and the group key; the board forwards them whole and the monitor hands them to the LDN library
-    still protected. docs/hardware_esp32.md"""
+    """A console's no-DS-bit group-key broadcasts reach the LDN library still protected
+    (docs/hardware_esp32.md)."""
     key = os.urandom(16)
     bssid, station = wlan.MACAddress("1a:ff:86:ca:35:1f"), wlan.MACAddress("48:f1:eb:20:9b:22")
     arp = wlan.SNAPHeader()
@@ -560,8 +553,7 @@ def test_station_broadcast_with_no_ds_bits_reaches_the_ldn_data_path():
 
 
 def test_userspace_socket_queue_survives_a_concurrent_reader():
-    """The radio's thread pushes while the host polls non-blocking; a pipe byte seen before its item
-    once raised IndexError in the FRLG host and the console showed 2318-0006."""
+    """A pipe byte seen before its item once raised IndexError; the console showed 2318-0006."""
     import threading
     from pokeldn.ldn import userspace_ip
     queue = userspace_ip._Readable()
@@ -589,9 +581,7 @@ def test_userspace_socket_queue_survives_a_concurrent_reader():
 
 
 def test_the_arceus_joiner_seats_across_simulated_boards():
-    """bin/pla_join.py's radio path, unchanged: it scans, picks the Legends Arceus network by its
-    communication id and code, associates with the passphrase, and its session reaches the
-    console's Net request, join and station list over the userspace stack."""
+    """bin/pla_join.py scans, associates and reaches the console's Net request, join and station list."""
     import argparse
 
     import pla_join
@@ -703,9 +693,7 @@ def test_the_arceus_joiner_seats_across_simulated_boards():
 
 
 def test_the_arceus_joiner_takes_the_host_role_a_console_hands_it(tmp_path, monkeypatch):
-    """bin/pla_join.py's radio path against a console that answers the joiner's Net ack with a
-    NetStartHostMigration, as a retail Legends Arceus hosting a trade does: the joiner leaves the
-    seat and hands its caller the channel to host on."""
+    """A NetStartHostMigration answer makes the joiner hand its caller the channel to host on."""
     import threading
 
     import pla_join
@@ -798,9 +786,7 @@ def test_the_arceus_joiner_takes_the_host_role_a_console_hands_it(tmp_path, monk
 
 
 def test_the_sword_gift_walks_its_fragments_on_a_simulated_board(tmp_path, monkeypatch):
-    """bin/swsh_gift_host.py's own network and fragment walk on a board: a protocol-1
-    advertisement whose application data changes while it is up, read back by a scan on a
-    second board and reassembled the way the console does."""
+    """A protocol-1 advertisement whose data changes while up, reassembled by a scan on a second board."""
     import threading
     import types
 
@@ -861,8 +847,7 @@ def test_the_sword_gift_walks_its_fragments_on_a_simulated_board(tmp_path, monke
 
 
 def test_the_firered_gift_host_comes_up_and_advertises_on_a_simulated_board(tmp_path, monkeypatch):
-    """bin/frlg_mg_host.py as launched, on a board: no root, the host transport on the board, and
-    its Wonder Card network read back by a scan on a second board."""
+    """bin/frlg_mg_host.py's Wonder Card network, read back by a scan on a second board."""
     import threading
 
     import frlg_mg_host
@@ -907,9 +892,7 @@ def test_the_firered_gift_host_comes_up_and_advertises_on_a_simulated_board(tmp_
 
 
 def test_the_lets_go_joiner_reaches_the_game_on_simulated_boards(tmp_path, monkeypatch):
-    """bin/lgpe_join.py with the retail trade's flags against bin/lgpe_host.py, each on its own
-    board: association, the station handshake, the mesh, the clone session, and the kind-1 identity
-    carried both ways on the Reliable Protocol (the host echoes ours)."""
+    """bin/lgpe_join.py against bin/lgpe_host.py: association through the kind-1 identity both ways."""
     import threading
 
     import lgpe_host

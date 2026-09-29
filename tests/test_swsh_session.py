@@ -1,9 +1,4 @@
-"""Sword and Shield's constants, pinned to what the binary says rather than to a published table.
-
-Every value here was read off a Shield 1.3.2 cartridge image offline; none of it has been on the
-air. The point of pinning them is that the next person to touch this cannot quietly "fix" the
-passphrase to the wiki's Legends Arceus row - the differences are the findings.
-"""
+"""Sword and Shield's constants, read off a Shield 1.3.2 image."""
 
 import pytest
 
@@ -11,9 +6,7 @@ from pokeldn.swsh import COMM_ID, GAME_KEY, PASSPHRASE, session_key, session_key
 
 
 def test_the_passphrase_is_not_the_arceus_one():
-    # The wiki has no Sword/Shield row at all. Its Scarlet/Violet row is this string exactly; its
-    # Legends: Arceus row differs in ONE character, and reading one as the other's typo is the
-    # mistake this test exists to prevent.
+    # The wiki's Scarlet/Violet row is this string; its Legends Arceus row differs in one character.
     arceus = b"W3GoSMEn7RIIUQ89rzqBHGHGferRNb7K18ZBq2aNuj8Us9RO9Q9JYyGOZlLy8MYL"
     assert PASSPHRASE != arceus
     assert sum(a != b for a, b in zip(PASSPHRASE, arceus)) == 1
@@ -25,7 +18,7 @@ def test_a_game_key_of_the_wrong_length_is_refused():
 
 
 def test_the_advertisement_carries_the_seed_twelve_bytes_in():
-    """A run's own advertisement, and the key that authenticated all 484 of its packets."""
+    """A console's advertisement, and the key that authenticated all 484 of its packets."""
     class _Net:
         application_data = bytes.fromhex("0330112400000000051800008b718ac6")
 
@@ -45,8 +38,7 @@ def test_a_short_advertisement_is_refused_rather_than_read_past():
 
 
 def test_the_local_communication_id_is_swords_not_shields():
-    # Read off the advertisement. The binary this project reads is a SHIELD image, so
-    # nothing about this id can be assumed to hold for the other cartridge.
+    # Read off the advertisement; the binary read is a Shield image.
     assert COMM_ID == 0x0100ABF008968000
 
 

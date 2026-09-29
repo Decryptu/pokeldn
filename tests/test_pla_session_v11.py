@@ -1,9 +1,5 @@
-"""Byte-exact regressions for the Pia 6.16-6.30 (version 11) Session join reply.
-
-The request is the 115 bytes a retail Legends Arceus sent to a hosted network. The expected ack and
-response bytes are what the console's own type-1 (0x737534) and type-2 (0x7379c0) parsers require,
-read from the binary.
-"""
+"""Pia 6.16-6.30 (version 11) Session join, against a retail Legends Arceus request and its parsers
+(0x737534, 0x7379c0)."""
 
 import os
 import sys
@@ -104,8 +100,7 @@ def test_update_header_offsets():
     assert e[75:79] == (1).to_bytes(4, "big") and e[79] == 1 and e[80:81] == b" "
 
 
-# Four of a console's own type-3 leave requests, two per session, off the ph44 capture. The random
-# field is the only part that moves, including between retransmissions of one leave.
+# A console's own type-3 leave requests, two per session; only the random field moves.
 CONSOLE_LEAVES = (
     "031ea65baaac560110000200000000e76700ac1056013039",
     "0307961814ac560110000200000000e76700ac1056013039",
@@ -127,9 +122,7 @@ def test_the_leave_request_is_the_consoles_own_bytes():
 
 
 def test_builder_reproduces_the_retail_request():
-    """`pia6.build_session_join` writes the retail request byte for byte from its fields: the ten
-    (id, version) pairs, the four-byte nonce, both location ids, the seven-byte station address
-    and the one player record. Scarlet's own writer 0x6d5464 lays it out the same way."""
+    """`pia6.build_session_join` writes the retail request byte for byte; Scarlet's writer 0x6d5464 agrees."""
     from pokeldn.ldn import pia6
 
     j = pc.parse_session_join_v11(JOIN_REQUEST)

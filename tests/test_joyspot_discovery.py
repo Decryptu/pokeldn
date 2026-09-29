@@ -1,4 +1,4 @@
-"""Offline regressions for the bounded Stage 1 JoySpot discovery probe."""
+"""The JoySpot discovery probe."""
 
 from contextlib import redirect_stdout
 import io
@@ -65,8 +65,7 @@ def _record(app_data):
 
 
 def _captured_identity_profile():
-    # The captured Switch nickname is Chase, while its Gen III trainer is GREEN.
-    # Only the decoded RFU record matters to this preservation regression.
+    # The captured Switch nickname is Chase, its Gen III trainer GREEN.
     return TrainerProfile(
         name="GREEN", tid=0x1050, sid=0, gender=0,
         version="leafgreen", language="english")
@@ -80,9 +79,7 @@ def test_wireless_activity21_no_card_preserves_unknown_record_bytes():
     actual = _record(built)
 
     expected = bytearray(original)
-    # Identity fields are deliberately normalized by the profile.  In
-    # particular, Gen III names use all-FF padding even though this capture had
-    # two trailing zeroes after its terminator.
+    # The profile normalizes identity fields: Gen III names are all-FF padded.
     expected[0:2] = profile.discovery_trainer_id.to_bytes(2, "little")
     expected[2:10] = charmap.encode(
         profile.discovery_name, width=8, pad=0xFF)
@@ -96,8 +93,7 @@ def test_wireless_activity21_no_card_preserves_unknown_record_bytes():
 
 
 def test_wireless_activity21_no_card_preserves_unknown_pia_header_bytes():
-    # Match the captured Pia nickname so there are no intentional header
-    # mutations; every byte must survive the clone-and-patch path.
+    # The captured Pia nickname: no intentional header mutations.
     profile = TrainerProfile(
         name="Chase", tid=0x1050, sid=0, gender=0,
         version="leafgreen", language="english")
@@ -189,7 +185,6 @@ def test_all_candidates_preserve_bytes_outside_identity_session_and_status():
 def test_serial_placement_offsets_exclude_every_proven_field():
     for offset in SERIAL_PLACEMENT_OFFSETS:
         assert 12 <= offset <= 22
-        # A two-byte write must stay clear of the parent id and search word.
         assert not (offset < 12 or 10 <= offset <= 11)
         assert offset + 1 < 16 or offset >= 18
     for bad in (0, 2, 8, 10, 11, 15, 16, 17, 23, -1):
@@ -273,7 +268,6 @@ def _run_fake_cli(argv, answers=()):
 
 def test_all_candidates_runs_ordered_fresh_applications_and_summarizes():
     expected = candidates_for_stage("all")
-    # The first invalid reply proves each prompt enforces a simple Y/N answer.
     answers = ["not yet", "  y  "] + [
         "Y" if index % 2 else "n"
         for index in range(1, len(expected))

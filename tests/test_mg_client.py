@@ -1,10 +1,4 @@
-"""Mystery Gift CLIENT (pokeldn.frlg.gift.mg_client) driven against our own Mystery Gift HOST.
-
-Row-level, no radio, no Pia: one parent row and one child row per tick, the parent echoing
-the child's previous row in gRecvCmds row 1 (the reflection the child's BlockSender acks on).
-The host engine is the one proven on retail hardware, so a client that completes here speaks
-the same block/message protocol a console does.
-"""
+"""The Mystery Gift client (pokeldn.frlg.gift.mg_client) against our own Mystery Gift host, row by row."""
 
 from pokeldn.frlg.gift import host_mystery_gift, mg_client, mg_script, wonder_card
 from pokeldn.frlg.link import linkplayer

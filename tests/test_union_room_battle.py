@@ -22,11 +22,8 @@ def _mon():
     return monmod.Mon.from_file(path)
 
 
-# --- the link buffer record -------------------------------------------------------------------
-
 def test_the_stored_size_always_adds_a_whole_word():
-    """`alignedSize = size - size % 4 + 4` [battle_controllers.c:417], so an exact multiple of four
-    still grows: a 4-byte payload is stored as 8."""
+    """`alignedSize = size - size % 4 + 4` [battle_controllers.c:417]: a 4-byte payload is stored as 8."""
     assert bl.aligned_size(1) == 4
     assert bl.aligned_size(3) == 4
     assert bl.aligned_size(4) == 8
@@ -54,8 +51,8 @@ def test_a_truncated_record_is_rejected_rather_than_read_short():
 
 
 def test_the_ack_names_the_battler_and_carries_our_player_id():
-    """It clears gBitTable[active_battler] << (id * 4) [battle_controllers.c:590], and the reference
-    sends it at size 4, so 16 bytes on the wire."""
+    """Clears gBitTable[active_battler] << (id * 4) [battle_controllers.c:590]; sent at size 4, 16
+    bytes on the wire."""
     rec = bl.parse(bl.ack(1, 0))
     assert rec["buffer_id"] == bl.EXEC_CLEAR
     assert rec["active_battler"] == 1
@@ -82,8 +79,6 @@ def test_reply_payloads_match_their_emitters():
     assert xfer["payload"][:4] == bytes([bl.DATATRANSFER, bl.DATATRANSFER, 5, 0])
     assert xfer["payload"][4:9] == b"ABCDE"
 
-
-# --- struct BattlePokemon ---------------------------------------------------------------------
 
 def test_battle_pokemon_is_the_struct_size():
     assert battle_mon.SIZE == 0x58
@@ -115,8 +110,6 @@ def test_the_fields_the_game_leaves_as_stack_garbage_are_zero():
     assert b[0x50:0x54] == bytes(4)         # status2
 
 
-# --- the entry blocks -------------------------------------------------------------------------
-
 def test_the_selection_block_is_32_bytes_of_one_meaningful_byte():
     assert len(ub.accept_block()) == ub.ACCEPT_BLOCK_SIZE == 0x20
     assert ub.accept_block()[0] == 0x51 and ub.accept_block()[1:] == bytes(0x1F)
@@ -140,8 +133,7 @@ def test_we_advertise_a_version_that_makes_the_console_master():
 
 
 def test_a_healthy_party_slot_is_one_not_zero_on_the_vs_screen():
-    """BUFFER_PARTY_VS_SCREEN_STATUS [battle_main.c:718]: 1 healthy, 2 egg or statused, 3 fainted,
-    0 EMPTY. u17 sent 0 for two healthy mons and the console drew six empty balls for us."""
+    """BUFFER_PARTY_VS_SCREEN_STATUS [battle_main.c:718]: 1 healthy, 2 egg or statused, 3 fainted, 0 empty."""
     assert ub.vs_screen_flags(0) == 0
     assert ub.vs_screen_flags(2) == 0b0101
     assert ub.vs_screen_flags(6) == 0b010101010101
@@ -155,8 +147,6 @@ def test_the_party_goes_out_as_the_same_three_blocks_the_trade_uses():
     with pytest.raises(ValueError):
         ub.party_blocks([_mon()] * 3)
 
-
-# --- the controller ---------------------------------------------------------------------------
 
 def _controller(**kw):
     return ub.BattleController([_mon(), _mon()], **kw)
@@ -180,8 +170,7 @@ def test_a_reply_goes_out_before_its_ack():
 
 
 def test_the_consoles_own_battler_gets_no_reply_from_us():
-    """Hypothesis 2 in the write-up: it answers its own GETMONDATA locally from gEnemyParty
-    [battle_controller_link_opponent.c:444], so ours would be a duplicate."""
+    """It answers its own GETMONDATA from gEnemyParty [battle_controller_link_opponent.c:444]."""
     c = _controller()
     out = c.feed(bl.build(bl.BUFFER_A, bl.MASTER_BATTLER, bytes([bl.GETMONDATA, 0, 0, 0])))
     assert [bl.parse(b)["buffer_id"] for b in out] == [bl.EXEC_CLEAR]
@@ -206,8 +195,6 @@ def test_get_mon_data_concatenates_the_mons_a_bitmask_asks_for():
 
 
 def test_an_unimplemented_get_mon_data_request_fails_loudly():
-    """Only REQUEST_ALL_BATTLE is sent at battle start; a different id means the battle went
-    somewhere this controller has not read, and silence would look like a protocol stall."""
     c = _controller()
     with pytest.raises(ValueError):
         c.feed(bl.build(bl.BUFFER_A, bl.OUR_BATTLER, bytes([bl.GETMONDATA, 1, 0, 0])))
@@ -244,8 +231,6 @@ def test_replies_and_acks_from_the_console_owe_nothing():
     assert c.feed(bl.two_return_values(bl.MASTER_BATTLER, 0, 0)) == []
     assert c.feed(bl.ack(bl.MASTER_BATTLER, 1)) == []
 
-
-# --- the engine, end to end -------------------------------------------------------------------
 
 def _engine(**kw):
     """A HostTradeEngine parked at the Union Room's "do something" prompt, as the chat tests do."""
@@ -333,8 +318,8 @@ def _into_the_battle(**kw):
 
 
 def test_the_controller_loop_acks_a_command_of_any_size():
-    """Link buffer records have no fixed block count, so the size check that guards every other
-    block must not apply here [PrepareBufferDataTransferLink, battle_controllers.c:412]."""
+    """Link buffer records have no fixed block count [PrepareBufferDataTransferLink,
+    battle_controllers.c:412]."""
     h = _into_the_battle()
     h._after_child_block(99, bl.build(bl.BUFFER_A, bl.MASTER_BATTLER,
                                       bytes([bl.INTROSLIDE, 0, 0, 0])))
@@ -350,10 +335,8 @@ def test_the_battle_ends_and_stops_expecting_blocks():
 
 
 def test_a_short_link_record_is_not_mistaken_for_a_trade_linkcmd():
-    """u17, the bug that cost the first battle run: a link buffer record with a 4-byte payload is 16
-    bytes, i.e. trade.COUNT_LINKCMD, so _on_child_block routed every ack and every short command --
-    including the very first GETMONDATA -- into the trade LINKCMD path and dropped it. Inside a
-    battle the state decides, not the size."""
+    """A 4-byte-payload record is 16 bytes, trade.COUNT_LINKCMD: inside a battle the state decides,
+    not the size."""
     from pokeldn.frlg.link import trade
     from pokeldn.gba import block
     h = _into_the_battle()
@@ -372,8 +355,7 @@ def test_a_linkcmd_sized_block_is_still_a_linkcmd_outside_a_battle():
 
 
 def _landed(h, cmd, count=3, echoed=()):
-    """A console block of `count` fragments lands; `echoed` says which of its indices our echo has
-    already emitted (HostSession pushes the leader's per-block records into h.echo_blocks)."""
+    """A console block of `count` fragments lands; `echoed` is the indices our echo already emitted."""
     h._words.clear()
     h._child_slot = b"\xaa" * 14
     h._child_blocks_landed = 0
@@ -382,10 +364,8 @@ def _landed(h, cmd, count=3, echoed=()):
 
 
 def test_our_ack_waits_for_the_console_to_see_its_own_block_returned():
-    """u18: our parent command and the child-slot echo share a frame, so a short ack can overtake
-    the echo of the block it acks. On the console MarkBattlerReceivedLinkData only SETS the exec-flag
-    bit when its own block comes back [battle_util.c:193], so an early ack clears a bit that is not
-    set yet and the battler stays flagged for ever."""
+    """MarkBattlerReceivedLinkData sets the exec-flag bit only when its own block returns
+    [battle_util.c:193]; an earlier ack is lost."""
     h = _into_the_battle()
     _landed(h, bl.PRINTSTRING, count=3, echoed=())
     assert h._blocks, "the ack must be queued"
@@ -399,9 +379,7 @@ def test_our_ack_waits_for_the_console_to_see_its_own_block_returned():
 
 
 def test_the_echo_gate_matches_the_block_not_a_count():
-    """u23: counting entries out of the echo queue was fast but wrong. ECHO_MAX drops fragments and
-    the console re-sends them, so a count reports "echoed" for a fragment still to go; our ack
-    overtook a re-sent PLAYSE fragment and the console froze mid-animation."""
+    """ECHO_MAX drops fragments the console re-sends, so a count reports echoed too early."""
     h = _into_the_battle()
     _landed(h, bl.PLAYSE, count=2, echoed=())
     h.echo_progress, h.echo_emissions = 999, 999           # counters would call this echoed
@@ -412,8 +390,7 @@ def test_the_echo_gate_matches_the_block_not_a_count():
 
 
 def test_a_stale_identical_fragment_does_not_open_the_gate():
-    """u24: two CHOOSEMOVE blocks for identical Chansey end in the same bytes. Records are per
-    block, so the previous block's complete echo says nothing about this one."""
+    """Two identical CHOOSEMOVE blocks end in the same bytes; records are per block."""
     h = _into_the_battle()
     h._words.clear()
     h._child_slot = b"\xee" * 14
@@ -427,9 +404,6 @@ def test_a_stale_identical_fragment_does_not_open_the_gate():
 
 
 def test_a_dropped_earlier_fragment_holds_the_ack_until_its_resend_is_echoed():
-    """u26: the last fragment had gone back but ECHO_MAX had dropped fragment 1; the console re-sent
-    it and our echo of the re-send shared a frame with our ack, which the console reads first.
-    "Mais cela echoue!" stayed on screen with the link alive."""
     h = _into_the_battle()
     _landed(h, bl.PRINTSTRING, count=7, echoed={0, 2, 3, 4, 5, 6})
     assert h._next_parent_words() == [0] * 7, "index 1 is still owed"
@@ -451,10 +425,7 @@ def test_the_leader_keeps_one_echo_record_per_console_block():
 
 
 def test_the_echo_never_drops_a_distinct_child_command():
-    """The console's own block sender and MGL_Send both wait on row one, and the console cannot ask
-    for one fragment back - it only sees that its mirrored bitmask is short. So a distinct command
-    dropped from the relay costs a whole HandleSendFailure repair round (one run lost fragments 13, 16,
-    17 and 18 of a 21-fragment chunk to a bound of two and never recovered)."""
+    """The console cannot ask for one fragment back; a dropped command costs a HandleSendFailure round."""
     from pokeldn.gba import rfu, rfu_leader
     echo = rfu_leader.ChildEcho()
     frags = [(rfu.SEND_BLOCK | i).to_bytes(2, "little") + bytes(12) for i in range(8)]
@@ -465,9 +436,8 @@ def test_the_echo_never_drops_a_distinct_child_command():
 
 
 def test_the_echo_folds_away_a_repeat_that_is_still_waiting():
-    """SendLastBlock re-sends the same fragment every frame while it waits [link_rfu_2.c:1398], and
-    mirroring each repeat is what put the row one behind by 0.5 s. One entry is enough: the
-    console is waiting to see that command once."""
+    """SendLastBlock re-sends a waiting fragment every frame [link_rfu_2.c:1398]; one mirror entry
+    suffices."""
     from pokeldn.gba import rfu, rfu_leader
     echo = rfu_leader.ChildEcho()
     last = (rfu.SEND_BLOCK | 20).to_bytes(2, "little") + bytes(12)
@@ -475,7 +445,6 @@ def test_the_echo_folds_away_a_repeat_that_is_still_waiting():
         echo.append(last)
     assert echo.backlog == 1 and echo.coalesced == 29 and echo.dropped == 0
     assert echo.next_row() == last
-    # With nothing queued the row stands, as the console's RFU keeps acting on what it last saw.
     assert echo.next_row() == last
     # A repeat that arrives after the mirror has gone out is a new question and is answered again.
     echo.append(last)
@@ -483,8 +452,7 @@ def test_the_echo_folds_away_a_repeat_that_is_still_waiting():
 
 
 def test_the_echo_wait_cannot_deadlock_for_ever():
-    """Only a deadlock guard: the console re-sends until it sees the echo, so it should never fire.
-    It logs when it does, so a run that needed it says so."""
+    """A deadlock guard only; it logs when it fires."""
     said = []
     h = _into_the_battle(log=said.append)
     h._words.clear()
@@ -527,7 +495,6 @@ def test_switch_in_anim_tracks_which_of_our_mons_is_out():
     assert c.active_index == 0
     c.feed(bl.build(bl.BUFFER_A, bl.OUR_BATTLER, bytes([bl.SWITCHINANIM, 1, 0, 5])))
     assert c.active_index == 1
-    # a switch-in for the console's own mon is not ours to track
     c.feed(bl.build(bl.BUFFER_A, bl.MASTER_BATTLER, bytes([bl.SWITCHINANIM, 0, 0, 5])))
     assert c.active_index == 1
 
@@ -542,9 +509,8 @@ def test_a_faint_sends_out_the_other_mon():
 
 
 def test_exp_update_is_acked_but_never_answered():
-    """PlayerHandleExpUpdate [battle_controller_player.c:2513] runs the bar and completes; only
-    Task_GiveExpToMon replies, and only on a real level-up. An unprompted reply would be read back
-    as a level-up decision."""
+    """PlayerHandleExpUpdate [battle_controller_player.c:2513] replies only through
+    Task_GiveExpToMon on a level-up."""
     assert bl.EXPUPDATE not in bl.NEEDS_REPLY
     c = _controller()
     out = c.feed(bl.build(bl.BUFFER_A, bl.OUR_BATTLER, bytes([bl.EXPUPDATE, 0, 0, 0])))

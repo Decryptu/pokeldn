@@ -1,4 +1,4 @@
-"""Deterministic child/parent simulation for RFU leader milestones 3.1-3.3."""
+"""Child/parent simulation of the RFU leader."""
 
 from pokeldn.gba import gbaframe, ni, rfu, rfu_leader
 from pokeldn.gba.rfu_leader import CHILD_NI, PARENT_NI, UNI, RFULeader
@@ -18,10 +18,9 @@ def test_31_connect_accept_matches_native_completed_trade():
     assert gbaframe.parse_in(accept) == {
         "type": "A", "host_session_id": b"\xb7\xf1", "connect_id": b"\x80\x84"
     }
-    # A real Switch parent follows A with a 'G' link-state 0 (every joiner capture j19-j87).
+    # A real Switch parent follows A with a 'G' link-state 0 in every joiner capture.
     assert leader.tick() == bytes.fromhex("5747040000000000")
-    # host_2.3 shows each retry C uses a new Reliable seq.  The leader must
-    # not allocate another A; Reliable retransmits the original opening A.
+    # Each retry C uses a new Reliable seq; the leader allocates no second A.
     assert leader.receive(bytes.fromhex("574302008084")) == "connect_duplicate"
     assert leader.tick() is None
 
@@ -47,8 +46,7 @@ def test_32_bidirectional_ni_is_ack_gated_and_recovers_identity():
         slot = child.next_slot()
         event = leader.receive(_child_t(slot, ts))
         ts += 1
-        # Child NULL is not ACKed.  Leave the next tick for the parent's first
-        # join-status NI frame instead of consuming it in this half-loop.
+        # Child NULL is not ACKed; the next tick is the parent's first join-status NI frame.
         child_llsf = rfu.parse_llsf_child(slot)
         if child_llsf["state"] == rfu.LCOM_NI_END:
             saw_end = True
@@ -135,7 +133,8 @@ def test_duplicate_child_ni_is_reacked_without_corrupting_reassembly():
 
 
 def test_link_state_frames_mirror_the_real_parent():
-    """The real Switch parent sends 'G' link-state frames: 0 shortly after A, 1 once it holds the child's NI."""
+    """The real Switch parent sends 'G' link-state frames: 0 shortly after A, 1 once it holds the
+    child's NI."""
     leader = RFULeader()
     leader.receive(gbaframe.build_connect(b"\x67\x79"))
     assert gbaframe.parse_in(leader.tick())["type"] == "A"
@@ -157,13 +156,8 @@ def test_link_state_frames_mirror_the_real_parent():
 
 
 def test_union_room_leader_skips_the_parent_join_status_ni():
-    """Union Room: the child reaches RFUSTATE_UR_PLAYER_EXCHANGE and goes straight to UNI via
-    rfu_UNI_setSendData + Task_PlayerExchange [src/link_rfu_2.c:533], so it never waits for the
-    parent's join-status NI. On hardware (u03, u04) the console mirrored both our NI_STARTs, then
-    stopped mirroring the NI body and disconnected 80ms later.
-
-    With skip_parent_ni the leader still sends the 'G' link-state 1 frame, then goes straight to
-    UNI instead of presenting an NI. Proven with the keepalive (u06)."""
+    """The Union Room child goes straight to UNI [src/link_rfu_2.c:533]; skip_parent_ni sends 'G' 1
+    then UNI, proven on hardware."""
     leader = RFULeader(skip_parent_ni=True)
     leader.receive(gbaframe.build_connect(b"\x67\x79"))
     assert gbaframe.parse_in(leader.tick())["type"] == "A"
@@ -180,7 +174,6 @@ def test_union_room_leader_skips_the_parent_join_status_ni():
     assert event == "child_ni_complete_no_parent_ni"
     # The 'G' link-state 1 frame is still sent: it is not part of the NI.
     assert leader.tick() == bytes.fromhex("5747040001000000")
-    # Next frame is UNI, not an NI_START.
     parsed = gbaframe.parse_in(leader.tick())
     assert parsed.get("ni") is None, parsed
     assert leader.state == "UNI"
@@ -219,7 +212,8 @@ def _complete_ni_handshake():
 
 
 def test_every_child_command_is_echoed_even_when_they_arrive_in_a_burst(monkeypatch):
-    """Row 1 reflects every child command rather than only the newest one, once the backlog bound is lifted."""
+    """Row 1 reflects every child command rather than only the newest one, once the backlog bound is
+    lifted."""
     monkeypatch.setattr(rfu_leader, "ECHO_MAX", 1000)
     leader = _complete_ni_handshake()
     builder = rfu.SlotBuilder()
@@ -245,9 +239,8 @@ def test_every_child_command_is_echoed_even_when_they_arrive_in_a_burst(monkeypa
 
 
 def test_union_room_keepalive_re_presents_an_ni_start_before_uni():
-    """Probe for the 'D' that follows five unanswered parent frames (u03-u05): after the child's
-    name NI the leader re-presents the first parent NI_START subframe, which the console mirrors
-    even in the room (u03, u04), for keepalive_frames VBlanks, then goes to UNI. Proven u06-u12."""
+    """After the child's name NI the leader re-presents the first parent NI_START for
+    keepalive_frames, then UNI; proven on hardware."""
     leader = RFULeader(skip_parent_ni=True, keepalive_frames=3)
     leader.receive(gbaframe.build_connect(b"\x67\x79"))
     leader.tick()                                      # A
@@ -270,7 +263,6 @@ def test_union_room_keepalive_re_presents_an_ni_start_before_uni():
         assert parsed["ni"]["n"] == 1 and parsed["ni"]["ack"] == 0, parsed
         assert parsed["ni"]["size"] == 5 and parsed["ni"]["payload"] == first[-5:]
         assert leader.state == "KEEPALIVE"
-    # A mirrored ack during the keepalive is accepted without changing state.
     assert leader.receive(_child_t(ni.recv_ack_slot(rfu.LCOM_NI_START, 1, 0), ts)) == "ni_ack_ignored"
     parsed = gbaframe.parse_in(leader.tick())
     assert parsed.get("ni") is None, parsed

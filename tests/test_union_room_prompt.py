@@ -1,7 +1,5 @@
-"""Union Room 'do something' prompt: after the cards the console talks in SEND_PACKETs
-[union_room.c:2928, :2955] and the parent answers with ACCEPT / DECLINE packets
-[UR_STATE_HANDLE_ACTIVITY_REQUEST, union_room.c:3151]. Seen on hardware in u06: the console sent
-SEND_PACKET 0x48 (ACTIVITY_CARD | IN_UNION_ROOM) and waited on us."""
+"""Union Room 'do something' prompt: SEND_PACKETs [union_room.c:2928, :2955] answered with ACCEPT /
+DECLINE [union_room.c:3151]."""
 import os
 import sys
 
@@ -64,10 +62,9 @@ def test_greetings_request_is_accepted_and_the_standby_echoed():
     h.feed_child_slot(_packet_slot(0x48))
     assert _queued_packets(h) == [0x51] * HostTradeEngine.UR_PACKET_REPEAT
     assert h.uroom_requests == [(0x48, 0, 0, 0, 0, 0)]
-    # Reliable dedups retransmits; the same packet in the very next frame must not answer twice.
     h.feed_child_slot(_packet_slot(0x48))
     assert len(_queued_packets(h)) == HostTradeEngine.UR_PACKET_REPEAT
-    # But a second Salut chosen later is a new request (u08: the console hung on our silence).
+    # A second Salut chosen later is a new request.
     for _ in range(30):
         h.feed_child_slot(rfu.idle_slot())
     h.feed_child_slot(_packet_slot(0x48))
@@ -105,8 +102,7 @@ def test_packets_are_ignored_outside_the_union_room():
 
 
 def test_exit_at_the_prompt_answers_the_close_link_handshake():
-    """u10: after Retour the console sent READY_CLOSE_LINK and waited; WaitAllReadyToCloseLink
-    [link_rfu_2.c:1471] needs the parent's READY_CLOSE_LINK before the child disconnects itself."""
+    """WaitAllReadyToCloseLink [link_rfu_2.c:1471] needs the parent's READY_CLOSE_LINK."""
     from pokeldn.frlg.link.host_trade import H_CLOSE
     h = _engine()
     h._after_child_block(trade.COUNT_TRAINER_CARD, bytes(100))
@@ -125,10 +121,8 @@ def test_close_link_outside_the_room_prompt_is_still_ignored():
 
 
 def test_trading_board_request_runs_mon_mail_animation_save_and_close():
-    """Task_StartUnionRoomTrade [union_room.c:1713]: after our ACCEPT and a standby barrier the
-    console sends its Pokemon (100 B) and mail (220 B) blocks with no request, then CB2_LinkTrade
-    with the mons preselected, whose READY_FINISH / CONFIRM_FINISH and save barriers are the
-    trade-centre ones; the room then closes the link [trade_scene.c:2722]. Proven u12."""
+    """Task_StartUnionRoomTrade [union_room.c:1713]: mon and mail blocks, CB2_LinkTrade, then the
+    link closes [trade_scene.c:2722]."""
     from pokeldn.frlg.link.host_trade import H_ANIM, H_CLOSE, H_SAVE, H_UROOM_TRADE
     h = HostTradeEngine([_mon(1)], union_room=True, anim_delay=1)
     h._words.clear()
@@ -157,7 +151,6 @@ def test_trading_board_request_runs_mon_mail_animation_save_and_close():
     for _ in range(3):
         h.tick()
     assert h.state == H_SAVE and h.received_mons and h.received_mons[0].raw == theirs
-    # Save barriers done: the room closes the link instead of re-exchanging parties.
     h._save_final_standby_seen = True
     for _ in range(h.timing.save_final_standby_quiet_frames + 1):
         h.feed_child_slot(rfu.idle_slot())

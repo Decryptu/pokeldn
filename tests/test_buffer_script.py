@@ -1,9 +1,4 @@
-"""CLI_RUN_BUFFER_SCRIPT: native ARM code the console runs out of gDecompressionBuffer.
-
-The payload is executed for real (unicorn, on a model of the GBA memory map) rather than asserted
-about, and the end-to-end tests run it through the same ConsoleClientModel the Mystery Event work
-used, whose client-script engine is written from the decomp independently of pokeldn.
-"""
+"""CLI_RUN_BUFFER_SCRIPT payloads, executed under unicorn and through ConsoleClientModel."""
 
 import os
 import shutil
@@ -27,11 +22,7 @@ needs_unicorn = pytest.mark.skipif(not buffer_script.emulation_available(),
                                    reason="offline execution needs unicorn")
 
 
-# --- the payloads ---------------------------------------------------------------------------
-
 def test_the_committed_bytes_are_what_the_sources_assemble_to():
-    """The machine code is committed so that a live host needs no GBA toolchain. This is what
-    stops the committed bytes and asm/*.s drifting apart."""
     if shutil.which("arm-none-eabi-as") is None:
         pytest.skip("no GBA toolchain on this machine")
     result = subprocess.run(
@@ -68,8 +59,8 @@ def test_the_trainer_id_probe_reads_the_save_and_returns_one():
 
 @needs_unicorn
 def test_the_probe_survives_the_whole_1024_byte_buffer_the_console_actually_copies():
-    """Client_Run memcpys MG_LINK_BUFFER_SIZE bytes whatever we sent, so the payload runs with
-    whatever the previous receive left behind sitting after it [mystery_gift_client.c:237]."""
+    """Client_Run copies MG_LINK_BUFFER_SIZE bytes, the previous receive's tail included
+    [mystery_gift_client.c:237]."""
     code = buffer_script.payload(buffer_script.TRAINER_ID_PROBE)
     padded = code + b"\xAA" * (buffer_script.MAX_BUFFER_SCRIPT_SIZE - len(code))
     sav2 = bytearray(0x1000)
@@ -83,20 +74,16 @@ def test_the_probe_survives_the_whole_1024_byte_buffer_the_console_actually_copi
 
 @needs_unicorn
 def test_a_payload_that_never_returns_is_caught_offline():
-    """`b .` - the shape of a bug that would hang the console's Mystery Gift menu for good."""
     with pytest.raises(buffer_script.BufferScriptError, match="never returned"):
         buffer_script.emulate(bytes.fromhex("feffffea"))
 
 
 @needs_unicorn
 def test_a_payload_that_faults_is_caught_offline():
-    """ldr r0, [r0] with r0 pointing at nothing: unmapped, and a crash on the console."""
     with pytest.raises(buffer_script.BufferScriptError, match="faulted"):
         # mov r0, #0x60000000 ; ldr r0, [r0] ; bx lr - 0x60000000 is unmapped on a GBA.
         buffer_script.emulate(bytes.fromhex("0602a0e3000090e51eff2fe1"))
 
-
-# --- the session ----------------------------------------------------------------------------
 
 def _distribution(expect=mg_server.BUFFER_EXPECT_TRAINER_ID, name=None):
     return stamp_rally.MysteryGiftDistribution(
@@ -113,8 +100,8 @@ def test_a_buffer_script_cannot_share_a_session_with_a_gift():
 
 
 def test_the_client_script_runs_the_payload_then_reads_the_return_channel():
-    """The order is load-bearing: CLI_LOAD_TOSS_RESPONSE ships client->param, and only the buffer
-    script has written to it by then [mystery_gift_client.c:204,276]."""
+    """CLI_LOAD_TOSS_RESPONSE ships client->param after the payload wrote it
+    [mystery_gift_client.c:204,276]."""
     commands = [mg_script.CLIENT_SCRIPT_RUN_BUFFER[i:i + mg_script.CLIENT_CMD_SIZE]
                 for i in range(0, len(mg_script.CLIENT_SCRIPT_RUN_BUFFER),
                                mg_script.CLIENT_CMD_SIZE)]
@@ -142,7 +129,6 @@ def test_end_to_end_the_console_runs_our_code_and_the_id_it_returns_matches():
 
 @needs_unicorn
 def test_end_to_end_a_console_whose_save_disagrees_is_reported_as_a_mismatch():
-    """The verdict must come from comparing two sources, not from echoing one."""
     console = ConsoleClientModel(flag_id=0, save_trainer_id=CONSOLE_TRAINER_ID ^ 0x1234)
 
     engine, _frames = _drive(console, distribution=_distribution())
@@ -154,8 +140,6 @@ def test_end_to_end_a_console_whose_save_disagrees_is_reported_as_a_mismatch():
 
 @needs_unicorn
 def test_end_to_end_a_card_the_console_already_holds_changes_nothing():
-    """A buffer script is not a gift: there is no flagId to compare, so a console carrying a card
-    takes the same path and keeps the card."""
     console = ConsoleClientModel(flag_id=1012)
 
     engine, _frames = _drive(console, distribution=_distribution())
@@ -181,7 +165,6 @@ def test_the_cli_builds_a_buffer_script_session_with_its_own_expectation():
 
 
 def test_the_cli_refuses_a_flag_id_or_a_questionnaire_with_a_buffer_script():
-    """Both belong to a Wonder Card session; the buffer script server script has neither."""
     for argv in (["--buffer-script", "--flag-id", "1009"],
                  ["--buffer-script", "--questionnaire", "species:55,FEELINGS/60,move:177,why"]):
         with pytest.raises(SystemExit):
@@ -195,9 +178,7 @@ def test_a_buffer_script_and_a_gift_are_mutually_exclusive_on_the_command_line()
 
 
 def test_the_identity_log_names_the_payload_and_the_expectation():
-    """The lines the operator reads before deciding a run is worth the console's time. Called on a
-    stub because the real application needs a radio; what is being checked is that every attribute
-    it reaches for exists on a buffer script session, where there is no card and no flagId."""
+    """Every attribute the identity log reads exists on a buffer-script session."""
     from types import SimpleNamespace
 
     from pokeldn import config as configmod
@@ -225,8 +206,6 @@ def test_the_identity_log_names_the_payload_and_the_expectation():
 
 
 def test_the_success_message_reads_the_status_off_the_running_engine():
-    """the run itself was clean and the crash was here, in the last line printed. The engine
-    is the session's activity; the application has never had an `engine` attribute."""
     from types import SimpleNamespace
 
     from pokeldn.frlg.gift.host_mg_app import BufferScriptHostApplication
@@ -242,12 +221,8 @@ def test_the_success_message_reads_the_status_off_the_running_engine():
         SimpleNamespace(session=None), mg_server.SVR_MSG_GIFT_SENT_1)
 
 
-# --- the console's message window -----------------------------------------------------------
-
 def test_a_newline_becomes_the_games_line_break():
-    """A run printed 'ly. code ran and read yourTRAINER IDc' on the console: charmap.encode drops
-    every character it does not know, newline included, so the two lines went out as one 47-
-    character line and wrapped around inside window 1."""
+    """charmap.encode drops a newline, so it is sent as the game's line break."""
     from pokeldn.frlg.text import charmap
 
     encoded = mg_server._encode_message("first line\nsecond line", None)
@@ -258,8 +233,7 @@ def test_a_newline_becomes_the_games_line_break():
 
 
 def test_a_line_too_long_for_the_window_is_refused_offline():
-    """31 characters is the ROM's own longest line in this window, gText_WonderCardReceivedFrom
-    [decomp:src/strings.c:1291]. The message that wrapped was 47."""
+    """31 characters is the ROM's longest line in this window [decomp:src/strings.c:1291]."""
     mg_server._encode_message("A WONDER CARD has been received", None)
     with pytest.raises(mg_server.MysteryGiftServerError, match="wraps around"):
         mg_server._encode_message("The code ran and read your TRAINER ID correctly.", None)
@@ -284,10 +258,7 @@ def test_every_default_message_fits_the_window():
 
 
 def test_the_trainer_id_probe_reports_the_secret_id():
-    """The secret id is the high half of playerTrainerId. The game never prints it and no link
-    message carries it, so native code reading the save is the only route to it. Two runs of it
-    both returned 0xE5BBDF65: TID 57189, which the console's own game data and the trainer card
-    both confirm, and SID 58811, which nothing else could have told us."""
+    """The secret id is the high half of playerTrainerId."""
     lines = []
     server = mg_server.MysteryGiftServer(
         buffer_code=buffer_script.payload(buffer_script.TRAINER_ID_PROBE),
@@ -316,11 +287,8 @@ def _game_data_with_trainer_id(trainer_id):
     return bytes(data)
 
 
-# --- the memory read primitive --------------------------------------------------------------
-
 def test_the_dump_payload_operands_are_where_we_patch_them():
-    """Proven by running it, not by trusting DUMP_TARGET_OFFSET: a patched payload must actually
-    leave link->sendBuffer and link->sendSize holding what we asked for."""
+    """A patched payload leaves link->sendBuffer and sendSize holding the request."""
     run = buffer_script.emulate(buffer_script.build_memory_dump(0x03001234, 512))
 
     assert run.done
@@ -353,9 +321,8 @@ def test_a_dump_aimed_at_unreadable_memory_is_caught_offline():
 
 
 def test_the_dump_client_script_arms_the_send_before_the_payload_repoints_it():
-    """Order is the whole trick. CLI_LOAD_TOSS_RESPONSE must come FIRST: it calls InitSend, which
-    overwrites sendBuffer and sendSize [mystery_gift_client.c:204]. Run the payload before it and
-    the patch is thrown away."""
+    """CLI_LOAD_TOSS_RESPONSE comes first: its InitSend overwrites sendBuffer and sendSize
+    [mystery_gift_client.c:204]."""
     commands = [mg_script.CLIENT_SCRIPT_DUMP_MEMORY[i:i + mg_script.CLIENT_CMD_SIZE]
                 for i in range(0, len(mg_script.CLIENT_SCRIPT_DUMP_MEMORY),
                                mg_script.CLIENT_CMD_SIZE)]
@@ -377,9 +344,7 @@ def _dump_distribution(address=None, size=buffer_script.MAX_BUFFER_SCRIPT_SIZE):
 
 @needs_unicorn
 def test_end_to_end_the_console_reads_out_a_kilobyte_of_its_own_memory():
-    """The whole primitive, through the independently written console model: the console's own
-    outgoing message is repointed at its SaveBlock2 and 1024 bytes come back, with the trainer id
-    at the offset the decomp gives it."""
+    """The console model repoints its outgoing message at SaveBlock2 and returns 1024 bytes."""
     console = ConsoleClientModel(flag_id=0)
 
     engine, _frames = _drive(console, distribution=_dump_distribution())
@@ -403,8 +368,6 @@ def test_end_to_end_a_short_dump_comes_back_short():
     assert engine.server.buffer_matched is True
 
 
-# --- save-dump: no absolute address needed ----------------------------------------------------
-
 def test_the_save_dump_operands_are_where_we_patch_them():
     for block, offset, size in ((buffer_script.SAVE_BLOCK_2, 0, 1024),
                                 (buffer_script.SAVE_BLOCK_1, 0x290, 64)):
@@ -417,8 +380,7 @@ def test_the_save_dump_operands_are_where_we_patch_them():
 
 
 def test_the_save_dump_reads_either_block_without_knowing_any_address():
-    """The whole point: the console hands the payload gSaveBlock2Ptr and gSaveBlock1Ptr, so this
-    works on a console whose memory layout we have never seen."""
+    """The console hands the payload gSaveBlock2Ptr and gSaveBlock1Ptr; no address is needed."""
     sav2 = bytearray(0x1000)
     sav2[buffer_script.SAV2_PLAYER_TRAINER_ID:
          buffer_script.SAV2_PLAYER_TRAINER_ID + 4] = (0xE5BBDF65).to_bytes(4, "little")
@@ -467,8 +429,6 @@ def test_the_cli_builds_both_dumps():
 
 
 def test_a_dump_is_written_to_a_file(tmp_path):
-    """A run returned 256 bytes of a real SaveBlock2 and only the first 16 reached the log. A dump
-    that is not kept has spent a console run for a head line."""
     from types import SimpleNamespace
 
     from pokeldn.frlg.gift.host_mg_app import BufferScriptHostApplication
@@ -502,21 +462,8 @@ def test_no_dump_file_and_no_dump_are_both_harmless(tmp_path):
     assert not (tmp_path / "x").exists()
 
 
-# --- the multi-chunk receive and the row-one mirror --------------------------------------
-#
-# A run asked the console for 608 bytes of SaveBlock1 and it timed out into "erreur de connexion".
-# The capture says why, exactly. `MysteryGiftClient_Init(client, 1, 0)` gives the client sendPlayerId
-# 1 - its own multiplayer id - so `MGL_Send` gates every chunk on `MGL_HasReceived(1)`
-# [mystery_gift_link.c:176,205]: the console's OWN block, mirrored back by us in row one of the
-# parent's 70-byte table, complete. Its RFU block sender waits on the same mirror
-# [HandleBlockSend / SendLastBlock / HandleSendFailure, link_rfu_2.c:1366-1416].
-#
-# A run's console sent a 21-fragment chunk and emitted it partly in bursts (two at its frame 283831,
-# four at 283833). The leader's echo queue kept only the newest two, so the echoes of fragments 13,
-# 16, 17 and 18 were never sent - and those four are exactly the ones the console then re-sent. The
-# echo of that repair was itself dropped and the console gave up.
-#
-# The mechanism is size-independent; 608 bytes is simply three 21-fragment chunks instead of one.
+# MGL_Send gates every chunk on MGL_HasReceived(1): the console's own block, mirrored in row one
+# [mystery_gift_link.c:176,205; link_rfu_2.c:1366-1416]. A console hands over four commands a frame.
 
 def _dump_dist(size, block_id=buffer_script.SAVE_BLOCK_2, offset=0):
     return stamp_rally.MysteryGiftDistribution(
@@ -527,8 +474,7 @@ def _dump_dist(size, block_id=buffer_script.SAVE_BLOCK_2, offset=0):
 
 @needs_unicorn
 def test_the_console_makes_no_progress_without_its_own_block_mirrored_back():
-    """The gate itself. Withhold row one and the console never finishes its first block, however
-    long the host waits - which is why nothing about this was visible offline before."""
+    """Withhold row one and the console never finishes its first block."""
     console = ConsoleClientModel(flag_id=0)
     engine = host_mystery_gift.HostMysteryGiftEngine(
         distribution=_dump_dist(608),
@@ -537,7 +483,7 @@ def test_the_console_makes_no_progress_without_its_own_block_mirrored_back():
         child_row = console.step(rfu.serialize(engine.tick()), None)   # no mirror, ever
         engine.feed_child_slot(child_row)
 
-    assert console.host_link_player is None      # it never got past its LinkPlayer block
+    assert console.host_link_player is None
     assert engine.child_link_player is None
     assert console.own_block_received is False
 
@@ -545,8 +491,7 @@ def test_the_console_makes_no_progress_without_its_own_block_mirrored_back():
 @needs_unicorn
 @pytest.mark.parametrize("size", [256, 608, 1024])
 def test_the_console_reads_out_a_multi_chunk_dump(size):
-    """608 bytes is header + three chunks, so four rounds of the MGL_Send handshake instead of the
-    two a 256-byte dump needs. Each one is the console's own block coming back."""
+    """608 bytes is a header and three chunks: four MGL_Send handshakes."""
     console = ConsoleClientModel(flag_id=0)
 
     engine, _frames = _drive(console, distribution=_dump_dist(size))
@@ -557,15 +502,12 @@ def test_the_console_reads_out_a_multi_chunk_dump(size):
                                   buffer_script.SAV2_PLAYER_TRAINER_ID + 4],
         "little") == CONSOLE_TRAINER_ID
     assert console.result == mg_script.CLI_MSG_BUFFER_SUCCESS
-    # Nothing was mirrored back late enough to make the console repeat itself.
     assert console.own_resends == 0
 
 
 @needs_unicorn
 def test_a_bursting_console_still_gets_every_fragment_of_its_dump_back():
-    """The observed shape: the console hands its commands over four at a time. Not one distinct command
-    may be dropped from the mirror - the console cannot tell which one is missing, only that its
-    bitmask is short, and each repair round is another chance to lose it."""
+    """A console handing over four commands at a time gets every one mirrored back."""
     echo = rfu_leader.ChildEcho()
     console = ConsoleClientModel(flag_id=0)
 
@@ -577,21 +519,13 @@ def test_a_bursting_console_still_gets_every_fragment_of_its_dump_back():
     assert echo.dropped == 0
     assert echo.coalesced > 0
     assert console.own_dropped_inits == 0
-    assert console.own_resends == 0      # it never had to repair a block
+    assert console.own_resends == 0
 
 
 @needs_unicorn
 def test_the_old_echo_bound_makes_the_console_repair_its_own_block():
-    """A run's mechanism, reproduced offline and measured. Keep only the newest two child commands and
-    a burst of four loses two of them; the console cannot ask for a specific fragment, it can only
-    notice its own bitmask is short and re-queue everything missing (HandleSendFailure), and each
-    repair round is another burst's worth of chances to lose the repair as well.
-
-    The model's console is infinitely patient, so it still gets there. A real console's is not: its repairs
-    for fragments 13, 16, 17 and 18 went out at 11.626-11.663 s, our echo of 13 was dropped a second
-    time, and it declared link loss at 11.790. What is asserted here is therefore the drop and the
-    repair traffic, which are what the capture shows - not a give-up threshold, which is not
-    measured."""
+    """An echo queue of two drops part of a four-command burst and the console re-queues the missing
+    fragments."""
     legacy = rfu_leader.ChildEcho(max_backlog=2, coalesce=False)
     strays = ConsoleClientModel(flag_id=0)
     _drive(strays, distribution=_dump_dist(608), echo=legacy, child_burst=4, burst_every=1)
@@ -610,9 +544,7 @@ def test_the_old_echo_bound_makes_the_console_repair_its_own_block():
 
 @needs_unicorn
 def test_a_dump_can_be_aimed_at_the_cartridge():
-    """The CPU reads ROM like any other region, so a dump aimed there is legal and the CRC walk over
-    it cannot fault. It is also the only way to learn WHICH build the console is running, which is
-    what calling into the ROM would need [GBA cartridge header: 0xA0 title, 0xAC game code]."""
+    """A dump aimed at ROM is legal [GBA cartridge header: 0xA0 title, 0xAC game code]."""
     run = buffer_script.emulate(buffer_script.build_memory_dump(buffer_script.ROM_BASE, 1024))
 
     assert run.done and run.client.send_buffer == buffer_script.ROM_BASE
@@ -625,31 +557,23 @@ def test_a_dump_can_be_aimed_at_the_cartridge():
     assert seeded.pending_send[:12] == b"POKEMON LEAF"
 
 
-# --- anchors: where the machine says it is -----------------------------------------------------
-
 def test_the_anchors_payload_reports_every_address_it_promises():
-    """Offline this can only check the shape and the plumbing - the emulator's values are ones it
-    chose. The point of the payload is the run on hardware, where `return_address` is a real ROM
-    address and `code` measures a number this project has so far only deduced."""
+    """Offline this checks the shape and plumbing only; the emulator's values are its own."""
     run = buffer_script.emulate(buffer_script.payload(buffer_script.ANCHORS))
 
     assert run.done and run.client.send_size == buffer_script.ANCHORS_SIZE
     anchors = buffer_script.read_anchors(run.pending_send)
     assert set(anchors) == set(buffer_script.ANCHORS_FIELDS)
-    # It writes into the buffer InitSend already aimed at, so it must not have repointed anything.
     assert run.client.send_buffer == anchors["client_send_buffer"] == anchors["link_send_buffer"]
     assert anchors["code"] == buffer_script.GDECOMPRESSION_BUFFER
     assert anchors["save_block_2"] == buffer_script.SAV2_ADDRESS
     assert anchors["save_block_1"] == buffer_script.SAV1_ADDRESS
     assert anchors["stack_pointer"] == buffer_script.STACK_POINTER
-    # client->sendBuffer and the struct are separate allocations in the model, so the offline run
-    # cannot check that they are laid out as gHeap lays them out; describe_anchors does that on the
-    # bytes a console sends back.
+    # The model allocates client->sendBuffer and the struct separately; describe_anchors checks the
+    # gHeap layout on a console's bytes.
 
 
 def test_the_anchors_description_calls_out_an_answer_that_is_not_self_consistent():
-    """An address that looks plausible but is not consistent is worse than no address, so the
-    description checks what it can rather than printing eleven numbers."""
     good = bytearray(buffer_script.ANCHORS_SIZE)
     fields = list(buffer_script.ANCHORS_FIELDS)
     def put(name, value):
@@ -677,18 +601,14 @@ def test_the_cli_builds_an_anchors_session_with_its_own_fixed_size():
     run = _run_config(["--buffer-script", "anchors"])
     distribution = run.payload.build_distribution()
 
-    assert run.payload.is_dump                      # the answer comes back as bytes, not the u32
+    assert run.payload.is_dump
     assert distribution.buffer_dump_size == buffer_script.ANCHORS_SIZE
     assert distribution.card is None
 
 
-# --- save-write: the first payload that changes something --------------------------------------
-
 @needs_unicorn
 def test_a_save_write_lands_in_the_block_and_reads_itself_back():
-    """One run does both: the bytes go into the save block, and link->sendBuffer is pointed AT THE
-    DESTINATION, so what comes back over the air is what is now in the console's save rather than a
-    copy of what we asked for."""
+    """link->sendBuffer points at the destination, so the answer is what the save now holds."""
     data = b"FRLG-LDN bs09xx"
     run = buffer_script.emulate(buffer_script.build_save_write(data),
                                 sav2=bytes(0x1000))
@@ -697,7 +617,6 @@ def test_a_save_write_lands_in_the_block_and_reads_itself_back():
     assert run.client.send_size == len(data)
     assert run.pending_send == data
     assert run.sav2[0xB20:0xB20 + len(data)] == data
-    # Nothing outside the region it was given.
     assert run.sav2[:0xB20] == bytes(0xB20)
     assert run.sav2[0xB20 + len(data):] == bytes(0x1000 - 0xB20 - len(data))
 
@@ -712,9 +631,7 @@ def test_a_save_write_carries_anything_from_one_byte_to_a_full_payload():
 
 
 def test_a_save_write_outside_the_never_read_filler_is_refused():
-    """This is the player's live save and the console commits it to flash at the end of the session,
-    so a wrong offset is a damaged game rather than a failed run. The two spans allowed are
-    struct SaveBlock2's `u8 filler[]` [global.h:345,357], which src/ never references."""
+    """Writes are confined to SaveBlock2's unreferenced filler [global.h:345,357]; the save goes to flash."""
     assert buffer_script.is_scratch(buffer_script.SAVE_BLOCK_2, 0xB20, 0x400)
     assert buffer_script.is_scratch(buffer_script.SAVE_BLOCK_2, 0x90, 8)
     assert not buffer_script.is_scratch(buffer_script.SAVE_BLOCK_2, 0xB20, 0x401)  # runs off the end
@@ -725,10 +642,8 @@ def test_a_save_write_outside_the_never_read_filler_is_refused():
     with pytest.raises(buffer_script.BufferScriptError, match="the game reads"):
         buffer_script.build_save_write(b"\x01\x02", block=buffer_script.SAVE_BLOCK_1, offset=0x38)
     with pytest.raises(buffer_script.BufferScriptError, match="the game reads"):
-        # Ends four bytes past filler_B20, in SaveBlock2.encryptionKey - which money is XORed with,
-        # so getting this wrong would scramble the player's money rather than fail cleanly.
+        # Ends in SaveBlock2.encryptionKey, which money is XORed with.
         buffer_script.build_save_write(bytes(8), offset=0xF1C)
-    # The override exists, and says what it is.
     assert buffer_script.build_save_write(b"\x01\x02", offset=0x0A, unsafe=True)
 
 
@@ -760,16 +675,12 @@ def test_the_cli_refuses_a_write_without_bytes_and_bytes_without_a_write():
         _run_config(["--buffer-script", "save-write", "--dump-offset", "0xB20"])
 
 
-# --- memory-scan: searching instead of reading -------------------------------------------------
-# The payload returns 0 to be called again next frame [decomp:src/mystery_gift_client.c:276-280],
-# so these run it the way the console does - many calls, one image - through emulate_repeating.
+# The payload returns 0 to be called again next frame [decomp:src/mystery_gift_client.c:276-280].
 
 SCAN_NEEDLE = 0x41C64E6D        # RAND_MULT [decomp:include/random.h:18], the first real needle
 
 
 def test_the_scan_operands_are_where_we_patch_them():
-    """The offsets are fixed by construction (asm/memory-scan.s opens with a branch over its own
-    parameter block), so this reads them back rather than trusting a disassembly."""
     code = buffer_script.build_memory_scan(
         SCAN_NEEDLE, 0x08100000, 0x08102000, blocks=64, max_calls=99)
 
@@ -792,14 +703,12 @@ def test_the_scan_finds_every_match_in_the_range_and_says_where():
     assert scan["found"] == len(planted)
     assert [address for address, _value in scan["hits"]] == list(planted)
     assert all(value == SCAN_NEEDLE for _address, value in scan["hits"])
-    assert scan["cursor"] == 0x08101000        # the whole range, so the answer is complete
+    assert scan["cursor"] == 0x08101000
 
 
 @needs_unicorn
 def test_the_scan_takes_one_call_per_budget_and_repoints_the_send_only_at_the_end():
-    """The frame loop itself. Every call but the last returns 0 with the console's outgoing
-    message untouched; the last one repoints it at a FIXED-size answer, so the host's length
-    check stays the proof that the payload ran."""
+    """Every call but the last returns 0 and leaves the send alone; the last repoints it at a fixed size."""
     code = buffer_script.build_memory_scan(SCAN_NEEDLE, 0x08100000, 0x08101000, blocks=8)
 
     first = buffer_script.emulate(code)
@@ -815,8 +724,7 @@ def test_the_scan_takes_one_call_per_budget_and_repoints_the_send_only_at_the_en
 
 @needs_unicorn
 def test_the_scan_watchdog_answers_instead_of_hanging_the_menu():
-    """A payload that never returns 1 hangs the Mystery Gift menu with no way out, so the count is
-    bounded in the payload. A watchdog stop still answers, and says how far it got."""
+    """The payload bounds its call count; a watchdog stop still answers."""
     code = buffer_script.build_memory_scan(
         SCAN_NEEDLE, 0x08100000, 0x08200000, blocks=8, max_calls=4)
 
@@ -833,7 +741,7 @@ def test_the_scan_watchdog_answers_instead_of_hanging_the_menu():
 
 @needs_unicorn
 def test_a_scan_with_more_matches_than_the_table_holds_still_counts_them_all():
-    """The count is what says whether the needle was a good one; the table is only the first 64."""
+    """The table holds the first 64 matches; the count covers them all."""
     over = buffer_script.SCAN_HIT_CAPACITY + 6
     memory = {0x08100000 + 4 * i: SCAN_NEEDLE.to_bytes(4, "little") for i in range(over)}
 
@@ -850,8 +758,6 @@ def test_a_scan_with_more_matches_than_the_table_holds_still_counts_them_all():
 
 @needs_unicorn
 def test_a_scan_resumes_from_where_the_last_one_stopped():
-    """Which is what makes 16 MB reachable at all: the cursor that comes back is the start of the
-    next run, and the two halves together see what one pass would have."""
     memory = {0x08100FE0: SCAN_NEEDLE.to_bytes(4, "little")}
     stopped = buffer_script.emulate_repeating(
         buffer_script.build_memory_scan(SCAN_NEEDLE, 0x08100000, 0x08102000,
@@ -870,14 +776,12 @@ def test_a_scan_resumes_from_where_the_last_one_stopped():
 
 @needs_unicorn
 def test_one_call_of_the_default_budget_fits_in_a_frame():
-    """The budget is the whole design. The console is holding an RFU link open while this runs, so
-    a call must be a few milliseconds: ~7000 ARM instructions out of EWRAM (6 cycles a fetch on a
-    16-bit bus) is around 45000 of a frame's 280896 cycles."""
+    """~7000 ARM instructions from EWRAM is about 45000 of a frame's 280896 cycles."""
     run = buffer_script.emulate(
         buffer_script.build_memory_scan(SCAN_NEEDLE, 0x08000000, 0x09000000),
         instruction_limit=buffer_script.SCAN_DEFAULT_BLOCKS * 32)
 
-    assert not run.done                      # it yields, having scanned its budget
+    assert not run.done
     assert run.instructions < 10000
     assert buffer_script.scan_call_count(0x08000000, 0x09000000,
                                          buffer_script.SCAN_DEFAULT_BLOCKS) == 1024
@@ -899,7 +803,6 @@ def test_a_scan_range_the_payload_cannot_walk_is_refused():
 
 @needs_unicorn
 def test_a_payload_that_never_returns_one_is_caught_offline_rather_than_on_the_console():
-    """mov r0,#0; bx lr - the shape of every hang this project could ship."""
     with pytest.raises(buffer_script.BufferScriptError, match="every frame for ever"):
         buffer_script.emulate_repeating(bytes.fromhex("0000a0e31eff2fe1"), max_calls=8)
 
@@ -914,8 +817,7 @@ def _scan_distribution(needle, start, end, blocks=8):
 
 @needs_unicorn
 def test_end_to_end_the_console_searches_its_own_cartridge():
-    """Through the independently written console model: 'POKE' at the head of the cartridge title
-    [GBA header 0xA0], found by address rather than read from one we already knew."""
+    """'POKE' at the cartridge title [GBA header 0xA0], found by address."""
     console = ConsoleClientModel(flag_id=0)
 
     engine, _frames = _drive(console, distribution=_scan_distribution(
@@ -955,9 +857,7 @@ def test_the_cli_refuses_a_scan_without_a_needle_and_a_needle_without_a_scan():
 
 
 def test_a_built_payload_is_still_named_by_its_own_bytes():
-    """Every hardware run logs `describe` on what it is about to send. A payload with its operands
-    patched in is the ONLY kind a dump, a write or a scan ever sends, so naming those 'unknown'
-    made the line useless exactly when it mattered."""
+    """`describe` names a payload with its operands patched in."""
     for name, code in (
             (buffer_script.MEMORY_SCAN, buffer_script.build_memory_scan(SCAN_NEEDLE)),
             (buffer_script.MEMORY_DUMP, buffer_script.build_memory_dump(0x08000000, 1024)),
@@ -975,23 +875,15 @@ def test_a_built_payload_is_still_named_by_its_own_bytes():
     assert "unknown" in buffer_script.describe(bytes.fromhex("0000a0e3"))
 
 
-# --- table-scan: finding a table by its SHAPE ---------------------------------------------------
-# Every address this project has found by searching rested on a constant only one function could
-# hold. A table of POINTERS has no such constant, so gSpecialVars is found by the RELATION between
-# its entries instead: entries 0..11 are the addresses of gSpecialVar_0x8000..0x800B, twelve u16s
-# declared consecutively [decomp:src/event_data.c:16], so each word is exactly 2 above the last.
+# gSpecialVars entries 0..11 point at gSpecialVar_0x8000..0x800B, u16s declared consecutively
+# [decomp:src/event_data.c:16]: each pointer is 2 above the last.
 
 SPECIAL_VAR_BASE = 0x02024C40           # a plausible &gSpecialVar_0x8000 to plant
 TABLE_AT = 0x08160000
 
 
 def _special_vars_table(base=SPECIAL_VAR_BASE):
-    """gSpecialVars exactly as data/event_scripts.s:51 orders it.
-
-    The order is BY VAR ID, which is not the order event_data.c declares the variables in: entry
-    12 is gSpecialVar_Facing, declared after Result and LastTalked, so it sits +6 from entry 11
-    and the ascending run stops dead at twelve. That is why the fingerprint is 12 and not 21.
-    """
+    """gSpecialVars in data/event_scripts.s:51 order, by var id: entry 12 (Facing) ends the run at twelve."""
     entries = [base + 2 * i for i in range(12)]              # 0x8000 .. 0x800B
     entries += [base + 28, base + 24, 0x0203ABCD, base + 26,  # Facing, Result, ItemId, LastTalked
                 base + 30, base + 32, base + 34, base + 36, base + 38]
@@ -1008,8 +900,6 @@ def test_the_table_scan_operands_are_where_we_patch_them():
 
 
 def test_a_shape_search_refuses_the_shapes_that_are_not_shapes():
-    """A delta of 0 matches every stretch of repeated words - padding, zeroed tables, all of it -
-    and one word in a row is not a relation at all."""
     with pytest.raises(buffer_script.BufferScriptError):
         buffer_script.build_table_scan(delta=0)
     with pytest.raises(buffer_script.BufferScriptError):
@@ -1018,8 +908,7 @@ def test_a_shape_search_refuses_the_shapes_that_are_not_shapes():
 
 @needs_unicorn
 def test_the_table_scan_finds_gspecialvars_by_shape_and_reads_the_pointer_out_of_it():
-    """The answer is not just WHERE the table is: the run's first value IS gSpecialVar_0x8000,
-    which is the address the RNG-reading NPC needs. Locating and reading are one run."""
+    """The run's first value is gSpecialVar_0x8000 itself."""
     memory = {TABLE_AT: _special_vars_table()}
 
     repeated = buffer_script.emulate_repeating(
@@ -1030,14 +919,12 @@ def test_the_table_scan_finds_gspecialvars_by_shape_and_reads_the_pointer_out_of
 
     assert repeated.done
     assert table["hits"] == [(TABLE_AT, SPECIAL_VAR_BASE)]
-    assert table["cursor"] == 0x08170000        # the whole range, so the answer is complete
+    assert table["cursor"] == 0x08170000
     assert repeated.final.client.send_size == buffer_script.TABLE_ANSWER_SIZE
 
 
 @needs_unicorn
 def test_the_run_really_is_exactly_twelve_long():
-    """Asking for thirteen finds NOTHING against the same table. That is the check that the
-    fingerprint is being matched against the shape and not merely against 'some pointers'."""
     memory = {TABLE_AT: _special_vars_table()}
 
     repeated = buffer_script.emulate_repeating(
@@ -1051,8 +938,7 @@ def test_the_run_really_is_exactly_twelve_long():
 
 @needs_unicorn
 def test_a_run_survives_the_ldmia_boundary_and_the_frame_boundary():
-    """A run has to be carried across both, which is what memory-scan never had to do: one block
-    per call puts the frame boundary inside the table itself."""
+    """One block per call puts the frame boundary inside the table."""
     memory = {TABLE_AT: _special_vars_table()}
     start, end = TABLE_AT - 0x40, TABLE_AT + 0x100
 
@@ -1096,9 +982,8 @@ def test_the_log_says_where_the_table_is_and_what_it_starts_with():
     assert any("the whole range" in line for line in lines)
 
 
-# --- rom-checksum: which blocks of the cartridge differ from an image we hold -------------------
-# The sums are checked against a reference written here, word by word as the recurrence reads,
-# independently of buffer_script.rom_checksum_reference.
+# The expected sums are computed here word by word, independently of
+# buffer_script.rom_checksum_reference.
 
 FRENCH_FIRERED = os.path.join(ROOT, "scratchpad", "FireRed_f.gba")
 
@@ -1121,8 +1006,7 @@ def _noise_cartridge(size=0x40000, seed=0x0A):
 
 
 def test_a_block_past_the_reference_image_is_named_by_what_it_holds():
-    """A cartridge larger than the reference image, or an emulator's fill past it: each block
-    beyond the image is named a fill, the GBA's open bus, a mirror of the image, or CONTENT."""
+    """Each block past the image is named a fill, open bus, a mirror of the image, or CONTENT."""
     base, block = 0x08000000, 0x400
     image = _noise_cartridge(0x1000, seed=1)
     open_bus = b"".join(((a >> 1) & 0xFFFF).to_bytes(2, "little")
@@ -1155,14 +1039,13 @@ def test_the_console_sums_are_the_recurrence_over_its_own_cartridge():
     assert got["cursor"] == end and got["shift"] == 11
     assert got["sums"] == _sequential_sums(rom, start, end, block)
     assert repeated.final.param == got["stored"] == 64
-    # The host's reference, against the same bytes: it is what a hardware answer is judged by.
     assert buffer_script.rom_checksum_reference(rom, start, end, block) == got["sums"]
 
 
 @needs_unicorn
 @pytest.mark.skipif(not os.path.exists(FRENCH_FIRERED), reason="no French FireRed image")
 def test_the_default_run_over_french_firered_answers_what_the_image_sums_to():
-    """The run line's own range and blocks, 16 MB in 128 sums, over the retail image."""
+    """The run line's range: 16 MB in 128 sums over the retail image."""
     rom = open(FRENCH_FIRERED, "rb").read()
     code = buffer_script.build_rom_checksum()
 
@@ -1195,8 +1078,7 @@ def test_a_changed_word_is_named_by_its_block_and_by_no_other():
 
 @needs_unicorn
 def test_a_block_split_across_frames_sums_as_it_does_in_one_frame():
-    """The running sum crosses the frame boundary in the image. A budget of 3 chunks against
-    8-chunk blocks puts a frame boundary inside most blocks."""
+    """A budget of 3 chunks against 8-chunk blocks puts a frame boundary inside most blocks."""
     rom = _noise_cartridge()
     start, end, block = 0x08020000, 0x08024000, 0x100
 
@@ -1232,7 +1114,6 @@ def test_the_rom_checksum_watchdog_answers_with_the_blocks_it_finished():
 
 @needs_unicorn
 def test_one_call_of_the_default_rom_checksum_budget_fits_in_a_frame():
-    """The same bound memory-scan's 512 blocks are held to."""
     run = buffer_script.emulate(buffer_script.build_rom_checksum(), instruction_limit=20000)
 
     assert not run.done
@@ -1259,8 +1140,6 @@ def test_a_range_the_rom_checksum_cannot_sum_whole_is_refused():
 
 @needs_unicorn
 def test_end_to_end_the_console_sums_its_cartridge_and_the_host_names_the_block(tmp_path):
-    """Through the independently written console model and the host's own decode, which reads
-    the reference image from the path the distribution carries."""
     rom = _noise_cartridge()
     reference = tmp_path / "v0.gba"
     reference.write_bytes(rom)
@@ -1292,8 +1171,6 @@ def test_the_server_refuses_a_rom_checksum_whose_answer_is_not_its_size():
 
 
 def test_each_console_build_is_compared_with_its_own_image():
-    """A LeafGreen summed against FireRed would be all DIFF. --sum-reference names one image for
-    every build."""
     run = _run_config(["--buffer-script", "rom-checksum", "--sum-start", "0x08120000",
                        "--sum-end", "0x08140000", "--sum-block", "0x400"])
     plan = configmod.plan_builds(run.payload)
@@ -1310,9 +1187,7 @@ def test_each_console_build_is_compared_with_its_own_image():
         _run_config(["--buffer-script", "memory-scan", "--scan-word", "1", "--sum-block", "0x400"])
 
 
-# --- rng-trace: a word once a frame, and the first call into the ROM ---------------------------
-# The fixture is the console's OWN code: the twenty bytes of Random and its literal pool, read off
-# the cartridge. Executing those under unicorn is what proved the payload before it ran on hardware.
+# The console's own Random and its literal pool, read off the cartridge.
 
 RANDOM_CODE_BASE = 0x080486B0
 RANDOM_CODE = bytes.fromhex(
@@ -1332,8 +1207,6 @@ def _console_memory(seed):
 
 
 def test_the_committed_random_bytes_are_the_function_the_decomp_describes():
-    """If this fixture is wrong every test below it proves nothing, so check it against the two
-    things that cannot both be coincidence: the constants, and where the pc-relative loads land."""
     words = [int.from_bytes(RANDOM_CODE[i:i + 4], "little") for i in range(0, len(RANDOM_CODE), 4)]
     assert words[-3:] == [GRNG_VALUE, buffer_script.RAND_MULT, buffer_script.RAND_ADD]
     assert RANDOM_CODE[:2] == b"\x04\x4a"       # ldr r2, [pc, #16] -> &gRngValue
@@ -1351,9 +1224,7 @@ def test_the_trace_operands_are_where_we_patch_them():
 
 @needs_unicorn
 def test_the_trace_calls_the_console_s_own_random_and_the_recurrence_holds():
-    """The whole point, offline: our ARM payload `bx`es into THUMB ROM code, the callee's
-    own `bx lr` brings it back, and the word either side of the call is one turn of the LCG apart.
-    Nothing but gRngValue and Random answers that."""
+    """The ARM payload calls THUMB Random in ROM and returns; the words either side are one LCG step apart."""
     seed = 0x12345678
     repeated = buffer_script.emulate_repeating(
         buffer_script.build_rng_trace(GRNG_VALUE, RANDOM_CODE_BASE | 1, samples=8),
@@ -1366,15 +1237,14 @@ def test_the_trace_calls_the_console_s_own_random_and_the_recurrence_holds():
     for before, after in trace["samples"]:
         assert before == expected
         assert after == buffer_script.rand_step(before)
-        expected = after                    # nothing else turned it: we are the only caller here
+        expected = after
     assert any("THE ADDRESS IS gRngValue AND THE ROM CALL RAN" in line
                for line in buffer_script.describe_rng_trace(repeated.final.pending_send))
 
 
 @needs_unicorn
 def test_the_trace_with_no_function_only_watches():
-    """function=0 makes the same payload a plain sampler, which is what a word with no known
-    recurrence needs. Then before and after are the same word and nothing is claimed."""
+    """function=0 samples only; before and after are the same word."""
     repeated = buffer_script.emulate_repeating(
         buffer_script.build_rng_trace(GRNG_VALUE, 0, samples=4),
         memory=_console_memory(0xABCD1234))
@@ -1388,8 +1258,7 @@ def test_the_trace_with_no_function_only_watches():
 
 @needs_unicorn
 def test_the_trace_answers_a_fixed_size_whatever_the_watchdog_does():
-    """The host proves the send was repointed by the length, so a watchdog stop must not shorten
-    the answer - the samples not taken come back as the zeros they were sent as."""
+    """Samples a watchdog stop skips come back as zeros; the length is unchanged."""
     code = buffer_script.build_rng_trace(GRNG_VALUE, RANDOM_CODE_BASE | 1,
                                          samples=8, max_calls=3)
     repeated = buffer_script.emulate_repeating(code, memory=_console_memory(1))
@@ -1402,8 +1271,7 @@ def test_the_trace_answers_a_fixed_size_whatever_the_watchdog_does():
 
 
 def test_lcg_distance_measures_what_the_game_itself_turned():
-    """A run's second answer: between our call in one frame and our read in the next, the game had
-    turned the RNG exactly twice, on all 95 gaps."""
+    """Measured on a console: the game turns the RNG twice between frames, on all 95 gaps."""
     start = 0x3C22BA3A
     two = buffer_script.rand_step(buffer_script.rand_step(start))
 
@@ -1467,11 +1335,8 @@ def test_the_cli_refuses_a_trace_without_an_address_and_an_address_without_a_tra
         _run_config(["--buffer-script", "save-dump", "--trace-address", "0x03004220"])
 
 
-# --- string-gather: following a pointer array instead of reading a window ------------------------
-# The Easy Chat vocabulary is why this payload exists. sEasyChatGroups' 22 word arrays and their
-# text span 21560 bytes of cartridge, which is 22 dumps, and two thirds of those bytes are
-# struct EasyChatWordInfo's alphabeticalOrder and enabled - neither of which says anything about
-# what the console PRINTS. This one dereferences, so one run carries a whole group.
+# Easy Chat groups span 21560 bytes of cartridge; this payload dereferences, so one run carries a
+# whole group.
 
 GATHER_WORDS = ["SALUT", "JE SUIS LA", "MERCI", "AMIS", "POURQUOI", "STRESSE", "FURAX",
                 "CONNEXION", "AVEC", "LES", "DRESSEURS"]
@@ -1497,8 +1362,6 @@ def _gathered(code, memory):
 
 
 def test_the_gather_operands_are_where_we_patch_them():
-    """Fixed by construction - asm/string-gather.s opens with a branch over its own parameter
-    block - so this reads them back rather than trusting a disassembly."""
     code = buffer_script.build_string_gather(0x083E1000, 26, stride=12, budget=400, maxlen=32)
 
     assert buffer_script.gather_parameters(code) == {
@@ -1525,9 +1388,7 @@ def test_the_gather_follows_the_pointers_and_sends_back_the_strings():
 
 @needs_unicorn
 def test_the_gather_stops_before_a_word_it_cannot_fit_whole_and_resumes_exactly():
-    """A half-copied word would be indistinguishable from a French word that really is that
-    short, which is the kind of silent wrong this project keeps paying for. So a string that does
-    not fit ends the run BEFORE it, and `next` is where the following run starts."""
+    """A string that does not fit ends the run before it; `next` is where the following run starts."""
     from pokeldn.frlg.text import charmap
     memory = _word_info_fixture()
     fits = len(charmap.encode(GATHER_WORDS[0])) + 1 + len(charmap.encode(GATHER_WORDS[1])) + 1
@@ -1542,15 +1403,13 @@ def test_the_gather_stops_before_a_word_it_cannot_fit_whole_and_resumes_exactly(
     assert [charmap.decode(s) for s in first["strings"]] == GATHER_WORDS[:2]
     assert first["reason"] == 1 and first["written"] == fits
     assert first["next"] == GATHER_ARRAY + 2 * WORD_INFO_STRIDE
-    # nothing lost, nothing repeated across the seam
     assert ([charmap.decode(s) for s in first["strings"]]
             + [charmap.decode(s) for s in second["strings"]]) == GATHER_WORDS
 
 
 @needs_unicorn
 def test_the_gather_refuses_a_pointer_that_is_not_a_string():
-    """Without maxlen a bad pointer is copied until it happens to meet an 0xFF, and the answer is
-    garbage that looks like data."""
+    """Without maxlen a bad pointer is copied until it meets an 0xFF."""
     memory = _word_info_fixture()
     array = bytearray(memory[GATHER_ARRAY])
     array[0:4] = (0x08000000).to_bytes(4, "little")
@@ -1561,7 +1420,7 @@ def test_the_gather_refuses_a_pointer_that_is_not_a_string():
         buffer_script.build_string_gather(GATHER_ARRAY, 3, stride=WORD_INFO_STRIDE, maxlen=8),
         memory)
 
-    assert run.done                          # it still answers rather than hanging the menu
+    assert run.done
     assert gathered["copied"] == 0 and gathered["reason"] == 2
 
 
@@ -1594,11 +1453,8 @@ def test_the_cli_refuses_a_gather_without_an_array_and_an_array_without_a_gather
         _run_config(["--buffer-script", "save-dump", "--gather-address", "0x083DE528"])
 
 
-# --- create-mon: a ROM call that takes EIGHT arguments -------------------------------------------
-# A run called Random - no arguments, a u16 back. CreateMon is the other end of the range: four
-# arguments in r0..r3 and four on the stack. The console's own prologue is what says
-# where they go, and CREATE_MON_ARG_MODEL is a THUMB stub that reads them back out from exactly
-# there, so these tests check the payload against the disassembly rather than against itself.
+# CreateMon takes four arguments in r0..r3 and four on the stack; CREATE_MON_ARG_MODEL reads them
+# back from where the console's prologue does.
 
 CREATE_MON_ADDRESS = rom_map.thumb(rom_map.CREATE_MON)
 CONSOLE_OT_ID = 0xE5BBDF65               # measured: TID 57189, SID 58811
@@ -1615,11 +1471,7 @@ def _create_mon_args(code, **kwargs):
 
 def _valid_mon(species=151, level=30, ivs=31, personality=0x3ADE0000, ot_id=CONSOLE_OT_ID,
                nickname="MEW", ot_name="PLAYER"):
-    """100 bytes that decode as a struct Pokemon, built the way the ROM would have left them.
-
-    Not a model of CreateMon - a fixture. What it is for is the DECODE: a mon that travels the
-    whole path proves that what comes off the console can be read as one.
-    """
+    """100 bytes that decode as a struct Pokemon: a decode fixture, not a model of CreateMon."""
     from pokeldn.frlg.save import mon as monlib, stats
     from pokeldn.frlg.text import charmap
     canon = bytearray(monlib.PARTY_MON_SIZE)
@@ -1659,8 +1511,6 @@ def test_the_create_mon_operands_are_where_we_patch_them():
         destination=0)
     assert buffer_script.create_mon_parameters(code) == {
         "function": CREATE_MON_ADDRESS, "destination": 0, "party_append": 0,
-        # the party addresses ride along even when no append was asked for, defaulted from the
-        # measured ones, rather than left for a caller to supply
         "party_base": rom_map.GPLAYER_PARTY, "party_count": rom_map.GPLAYER_PARTY_COUNT,
         "species": 151, "level": 30, "fixed_iv": 31, "has_fixed_personality": 1,
         "fixed_personality": 0x3ADE0000,
@@ -1669,9 +1519,7 @@ def test_the_create_mon_operands_are_where_we_patch_them():
 
 @needs_unicorn
 def test_all_eight_arguments_arrive_where_the_console_s_prologue_reads_them():
-    """CreateMon pushes five registers, then r8, then subtracts 28, and reads its stack arguments
-    at [sp,#52], [sp,#56], [sp,#60] and [sp,#64] - entry sp + 0, 4, 8 and 12. The model
-    reads them from exactly those four words, so agreement here is agreement with the console."""
+    """CreateMon reads its stack arguments at [sp,#52..#64], entry sp + 0, 4, 8 and 12."""
     code = buffer_script.build_create_mon(
         CREATE_MON_ADDRESS, species=151, level=30, fixed_iv=31,
         has_fixed_personality=1, fixed_personality=0x3ADE0000,
@@ -1684,12 +1532,10 @@ def test_all_eight_arguments_arrive_where_the_console_s_prologue_reads_them():
     assert args["fixedPersonality"] == 0x3ADE0000
     assert args["otIdType"] == buffer_script.OT_ID_PRESET
     assert args["fixedOtId"] == CONSOLE_OT_ID
-    # r0 is the mon, and it is inside our own image at the offset the source fixes.
     assert args["mon"] == result["built_at"] == (
         buffer_script.GDECOMPRESSION_BUFFER + buffer_script.CREATE_MON_MON_OFFSET)
-    # Returning at all is the proof that the 16 bytes of stack arguments were taken back: the
-    # callee does not pop them [measured: add sp,#28; pop {r3}; pop {r4-r7}; pop {r0}; bx r0], so a
-    # payload that forgot would pop a garbage lr and never reach _RETURN_ADDRESS.
+    # The callee does not pop the 16 bytes of stack arguments [measured: add sp,#28; pop {r3}; pop
+    # {r4-r7}; pop {r0}; bx r0].
     assert run.returned == buffer_script.BUFFER_SCRIPT_DONE
     assert run.client.send_size == buffer_script.CREATE_MON_ANSWER_SIZE == 120
 
@@ -1707,8 +1553,6 @@ def test_the_call_is_made_in_one_frame_and_the_answer_is_a_fixed_size():
 
 @needs_unicorn
 def test_with_no_function_nothing_is_called_and_the_send_is_still_repointed():
-    """The whole payload with the ROM left out of it: what it checks is the send path and the
-    shape of the answer, which is worth one run on a console whose ROM we have not read."""
     code = buffer_script.build_create_mon(0, species=25, level=5)
 
     run = buffer_script.emulate(code)
@@ -1721,9 +1565,7 @@ def test_with_no_function_nothing_is_called_and_the_send_is_still_repointed():
 
 
 def test_the_mon_is_built_inside_our_own_image_and_cannot_reach_the_code():
-    """CreateMon writes 100 bytes wherever it is pointed, and it is pointed at our own image. The
-    distance from the mon to the first instruction is read out of the payload's OWN opening branch
-    rather than assumed, so this fails if the guard is ever assembled away."""
+    """The mon-to-code distance is read from the payload's own opening branch."""
     code = buffer_script.build_create_mon(CREATE_MON_ADDRESS, species=25, level=5)
 
     branch = int.from_bytes(code[:4], "little")
@@ -1754,8 +1596,6 @@ def test_the_destination_copy_writes_exactly_the_hundred_bytes_and_nothing_else(
 
 @needs_unicorn
 def test_the_answer_decodes_as_a_struct_pokemon_and_every_argument_is_checked():
-    """The other half: what comes back has to be readable as a mon, and the check has to be able
-    to say WHICH argument disagreed. The copy model puts a real mon at the destination."""
     template = 0x08300000
     mon = _valid_mon(species=151, level=30, ivs=31, personality=0x3ADE0000, ot_id=CONSOLE_OT_ID)
     code = buffer_script.build_create_mon(
@@ -1793,8 +1633,6 @@ def test_the_check_names_the_argument_that_disagreed():
 
 
 def test_a_shiny_personality_is_shiny_for_the_trainer_it_was_aimed_at():
-    """the player's SECRET id is what makes this possible at all: it is printed nowhere in the game
-    and carried by no link message; native code reads it out of the save [rom_map.py]."""
     personality = buffer_script.shiny_personality(57189, 58811)
 
     assert buffer_script.is_shiny(CONSOLE_OT_ID, personality)
@@ -1896,10 +1734,7 @@ def test_the_cli_refuses_create_mon_flags_on_another_payload():
 
 CHANSEY = b"\xAA" * buffer_script.PARTY_MON_SIZE     # a mon that must survive every append
 
-# gPlayerParty is an EWRAM global, not part of a save block; the save block's copy is
-# the wrong target. The emulator only hands back the two save-block buffers, so these tests put the
-# party inside the sav1 buffer purely as A REGION OF EWRAM THAT CAN BE READ BACK, and pass its
-# address to the payload explicitly. Nothing here says a party lives in a save block.
+# gPlayerParty is an EWRAM global; these tests place it in the sav1 buffer only as readable EWRAM.
 TEST_PARTY_COUNT = buffer_script.SAV1_ADDRESS + 0x34
 TEST_PARTY = buffer_script.SAV1_ADDRESS + 0x38
 PARTY_ARGS = {"party_base": TEST_PARTY, "party_count": TEST_PARTY_COUNT}
@@ -1930,11 +1765,10 @@ def test_the_append_writes_the_first_free_slot_and_raises_the_count():
     party, size = PARTY_OFF, buffer_script.PARTY_MON_SIZE
     assert result["party"] == {"count_before": 1, "slot": 1,
                                "status": buffer_script.PARTY_WRITE_APPENDED}
-    assert run.sav1[party:party + size] == CHANSEY          # the mon that was there is untouched
+    assert run.sav1[party:party + size] == CHANSEY
     assert run.sav1[party + size:party + 2 * size] == result["mon"]
     assert run.sav1[COUNT_OFF] == 2
-    # The address is COMPUTED from gSaveBlock1Ptr, never given: the save blocks move between save
-    # loads, so an absolute address for a party slot would be right only until the next boot.
+    # Computed from gSaveBlock1Ptr: the save blocks move between loads.
     assert result["destination"] == TEST_PARTY + size
     assert buffer_script.create_mon_parameters(code)["destination"] == 0
 
@@ -1958,8 +1792,6 @@ def test_the_append_never_touches_an_occupied_slot_at_any_party_size():
 
 @needs_unicorn
 def test_a_full_party_writes_nothing_and_says_so():
-    """The same shape as `givepokemon` answering 3 instead of 2: a refusal that comes back
-    as an answer, not a failure."""
     code = buffer_script.build_create_mon(CREATE_MON_ADDRESS, species=59, level=30,
                                           party_append=True, **PARTY_ARGS)
 
@@ -1979,8 +1811,7 @@ def test_a_full_party_writes_nothing_and_says_so():
 
 @needs_unicorn
 def test_the_append_writes_nothing_past_the_party():
-    """playerParty[6] ends at 0x38 + 600 = 0x290, which is `money` [global.h:774]. A slot index
-    that ran over would land on it."""
+    """playerParty[6] ends at 0x290, which is `money` [global.h:774]."""
     code = buffer_script.build_create_mon(CREATE_MON_ADDRESS, species=59, level=30,
                                           party_append=True, **PARTY_ARGS)
     end = PARTY_OFF + buffer_script.PARTY_SIZE * buffer_script.PARTY_MON_SIZE
@@ -2037,9 +1868,7 @@ def test_the_cli_refuses_an_append_without_the_deliberate_override():
 
 
 def test_bs43_and_bs44_dumps_still_read_without_a_party_word():
-    """Those runs answered 116 bytes, from before the party word existed. The header and the mon
-    are at the same offsets, so their dumps must still decode - and say `party` is not there
-    rather than invent one."""
+    """Dumps from before the party word decode with `party` absent."""
     import struct
     mon = _valid_mon(species=59, level=30, ivs=31, personality=0x3ADF0001, ot_id=CONSOLE_OT_ID)
     old_answer = struct.pack("<4I", 1, 0, CREATE_MON_ADDRESS, 0x0201C038) + mon
@@ -2052,9 +1881,7 @@ def test_bs43_and_bs44_dumps_still_read_without_a_party_word():
 
 @needs_unicorn
 def test_the_dry_run_writes_nothing_and_reads_back_the_slot_it_would_have_written():
-    """The dry run is the real append with the two stores left out - same call, same arithmetic on
-    the same gSaveBlock1Ptr. What makes it worth a hardware run of its own is that NO payload had
-    ever used r2 before, and an append computes its destination from it."""
+    """The dry run is the real append without the two stores."""
     before = _party_sav1(1)
     code = buffer_script.build_create_mon(
         CREATE_MON_ADDRESS, species=59, level=30,
@@ -2067,16 +1894,12 @@ def test_the_dry_run_writes_nothing_and_reads_back_the_slot_it_would_have_writte
     assert run.sav1 == before, "the dry run changed the save"
     assert result["party"] == {"count_before": 1, "slot": 1,
                                "status": buffer_script.PARTY_WRITE_DRY_RUN}
-    # The address it WOULD have written, computed the same way the real append computes it.
     assert result["destination"] == TEST_PARTY + buffer_script.PARTY_MON_SIZE
-    # And the 100 bytes are the SLOT's, not the mon's: an empty slot reads as zeros.
     assert result["mon"] == bytes(buffer_script.PARTY_MON_SIZE)
 
 
 @needs_unicorn
 def test_the_dry_run_computes_the_same_address_the_real_append_writes():
-    """The two paths must not be able to disagree, or the dry run proves nothing about the real
-    one. Same arguments, same save, at every party size."""
     for count in range(buffer_script.PARTY_SIZE):
         sav1 = _party_sav1(count)
         stub = {rom_map.CREATE_MON: buffer_script.CREATE_MON_ARG_MODEL}
@@ -2097,8 +1920,6 @@ def test_the_dry_run_computes_the_same_address_the_real_append_writes():
 
 @needs_unicorn
 def test_the_dry_run_over_an_occupied_slot_says_do_not_append():
-    """If playerPartyCount ever disagreed with what is actually in the party, the dry run is what
-    would catch it - before a store, not after."""
     sav1 = bytearray(_party_sav1(1))
     start = PARTY_OFF + buffer_script.PARTY_MON_SIZE
     sav1[start:start + buffer_script.PARTY_MON_SIZE] = b"\xCC" * buffer_script.PARTY_MON_SIZE
@@ -2142,14 +1963,10 @@ def test_the_cli_takes_the_dry_run_without_an_override_and_refuses_both_at_once(
 
 
 def test_an_empty_party_slot_is_not_a_hundred_zero_bytes():
-    """A run read the slot a real append would write and found ONE non-zero byte in it. That is not
-    a problem with the console: ZeroMonData zeroes everything and then ends `arg = MAIL_NONE;
-    SetMonData(mon, MON_DATA_MAIL, &arg)` [decomp:src/pokemon.c:1737], and mail is at offset 0x55.
-    An empty slot the game itself zeroed looks EXACTLY like this, so requiring a hundred zeros was
-    the check being wrong, not the save."""
+    """ZeroMonData leaves MAIL_NONE at offset 0x55 [decomp:src/pokemon.c:1737]."""
     assert len(buffer_script.EMPTY_PARTY_SLOT) == buffer_script.PARTY_MON_SIZE
     assert buffer_script.EMPTY_PARTY_SLOT[85] == 0xFF
-    assert sum(buffer_script.EMPTY_PARTY_SLOT) == 0xFF        # and nothing else is set
+    assert sum(buffer_script.EMPTY_PARTY_SLOT) == 0xFF
 
     assert buffer_script.is_empty_party_slot(buffer_script.EMPTY_PARTY_SLOT)
     assert buffer_script.is_empty_party_slot(bytes(buffer_script.PARTY_MON_SIZE))
@@ -2179,11 +1996,8 @@ def test_the_dry_run_calls_a_zeroed_slot_empty_and_a_used_one_occupied():
 
 
 def test_the_save_blocks_move_by_a_four_aligned_offset_the_game_rolls():
-    """Two runs read gSaveBlock1Ptr six minutes apart, on one boot, and it had MOVED.
-    SetSaveBlocksPointers [decomp:src/load_save.c:75] rolls
-    `offset = Random() & ((SAVEBLOCK_MOVE_RANGE - 1) & ~3)` and MoveSaveBlocks_ResetHeap re-rolls
-    it - CB2_InitBattle calls that, so every battle moves them. This is why nothing may carry an
-    absolute save address between runs."""
+    """SetSaveBlocksPointers rolls a four-aligned offset [decomp:src/load_save.c:75]; every battle
+    re-rolls it."""
     seen = rom_map.GSAVEBLOCK1_SEEN
     deltas = [abs(a - b) for a in seen for b in seen if a != b]
 
@@ -2193,28 +2007,18 @@ def test_the_save_blocks_move_by_a_four_aligned_offset_the_game_rolls():
 
 
 def test_no_payload_carries_an_absolute_address_into_a_save_block():
-    """The consequence of the ASLR, as a check rather than a comment: what is safe to hardcode is
-    decided by whether the thing MOVES, not by whether it is convenient.
-
-    save-dump and save-write name a block, an offset and a size, and take the pointer itself from
-    r1/r2 every call. The party append DOES hardcode two addresses - and that is right, because
-    gPlayerParty and gPlayerPartyCount are link-time EWRAM globals, one of them read as a literal
-    constant out of the ROM's own pool. What must never be hardcoded is an address inside a save
-    block, and none is."""
+    """No payload hardcodes a save-block address; gPlayerParty and gPlayerPartyCount are link-time globals."""
     assert buffer_script.build_save_dump(buffer_script.SAVE_BLOCK_1, 0x38, 200)[
         buffer_script.SAVE_DUMP_WHICH_OFFSET:buffer_script.SAVE_DUMP_WHICH_OFFSET + 12] == (
             (1).to_bytes(4, "little") + (0x38).to_bytes(4, "little")
             + (200).to_bytes(4, "little"))
 
-    # The party the append names is further below every gSaveBlock1Ptr this project has seen than
-    # the ASLR offset could ever move one.
     party_end = rom_map.GPLAYER_PARTY + buffer_script.PARTY_SIZE * buffer_script.PARTY_MON_SIZE
     for seen in rom_map.GSAVEBLOCK1_SEEN:
         assert seen - rom_map.SAVEBLOCK_MOVE_MASK > party_end
 
 
 def test_the_party_append_refuses_a_party_that_is_not_in_ewram():
-    """These are the two addresses the payload does hardcode, so they are the two worth guarding."""
     for kwargs in ({"party_base": 0x08041150}, {"party_count": 0x03004220},
                    {"party_base": 0x0203FFC0}):        # too near the top for six mons
         with pytest.raises(buffer_script.BufferScriptError):
@@ -2222,10 +2026,7 @@ def test_the_party_append_refuses_a_party_that_is_not_in_ewram():
                                            party_append=True, **kwargs)
 
 
-# --- call: any ROM function, with arguments we choose --------------------------------------------
-# The fixture is again the console's own code: SeedRng as read out of the cartridge, twelve
-# bytes and its literal pool. It is the function the RNG work needs to call, and executing it under
-# unicorn is what proves the payload before a run is spent on it.
+# SeedRng and its literal pool, read off the cartridge.
 
 SEED_RNG_CODE_BASE = 0x080486D0
 SEED_RNG_CODE = bytes.fromhex(
@@ -2236,8 +2037,6 @@ SEED_RNG_CODE = bytes.fromhex(
 
 
 def test_the_committed_seed_rng_bytes_are_the_function_the_decomp_describes():
-    """Same discipline as the Random fixture: check it against the things that cannot both be
-    coincidence - the pool word, the u16 truncation, and where it sits in the map."""
     assert int.from_bytes(SEED_RNG_CODE[12:16], "little") == GRNG_VALUE
     assert SEED_RNG_CODE[:4] == b"\x00\x04\x00\x0c"     # lsls #16 then lsrs #16: the u16
     assert SEED_RNG_CODE[8:10] == b"\x70\x47"           # bx lr
@@ -2248,7 +2047,6 @@ def test_the_call_operands_are_where_we_patch_them():
     code = buffer_script.build_call(SEED_RNG_CODE_BASE | 1, [0xB8C0], watch=GRNG_VALUE)
     assert buffer_script.call_parameters(code) == {
         "function": SEED_RNG_CODE_BASE | 1, "argc": 1, "args": [0xB8C0], "watch": GRNG_VALUE}
-    # It must still be recognisable as the payload it was built from [PATCHED_SPANS].
     assert buffer_script.describe(code).startswith(buffer_script.CALL)
 
 
@@ -2265,8 +2063,7 @@ def test_the_call_refuses_what_would_hang_or_run_rubbish():
 
 @needs_unicorn
 def test_the_call_seeds_the_console_s_own_rng_and_the_watch_proves_it():
-    """A run called Random and read the word either side; this calls SeedRng, whose return value is
-    nothing at all - so the watched word is the ONLY evidence the call did anything."""
+    """SeedRng returns nothing; the watched word is the only evidence of the call."""
     seed = 0xB8C0
     memory = {SEED_RNG_CODE_BASE: SEED_RNG_CODE,
               GRNG_VALUE: (0x3C22BA3A).to_bytes(4, "little")}
@@ -2282,8 +2079,7 @@ def test_the_call_seeds_the_console_s_own_rng_and_the_watch_proves_it():
 
 @needs_unicorn
 def test_the_call_truncates_to_a_u16_because_the_callee_does():
-    """SeedRng takes a u16 and the console's own two shifts throw the top half away. Passing more
-    than 16 bits is therefore not an error we can refuse - it is a fact about the answer."""
+    """SeedRng's two shifts drop the top half of the argument."""
     memory = {SEED_RNG_CODE_BASE: SEED_RNG_CODE, GRNG_VALUE: b"\0\0\0\0"}
     run = buffer_script.emulate(
         buffer_script.build_call(SEED_RNG_CODE_BASE | 1, [0xDEADB8C0], watch=GRNG_VALUE),
@@ -2293,8 +2089,6 @@ def test_the_call_truncates_to_a_u16_because_the_callee_does():
 
 @needs_unicorn
 def test_the_call_returns_what_the_callee_returned():
-    """Random returns a u16 in r0, so calling it through the general path must bring that back -
-    and it must be the top half of the state the same call left behind."""
     memory = _console_memory(0x00001234)
     run = buffer_script.emulate(
         buffer_script.build_call(RANDOM_CODE_BASE | 1, [], watch=GRNG_VALUE),
@@ -2319,10 +2113,8 @@ def test_calling_nothing_still_reads_the_watched_word_twice():
                for line in buffer_script.describe_call(run.pending_send))
 
 
-# Eight arguments, hand-assembled THUMB: sum r0..r3 and the four stack words and return the total.
-# Powers of two go in, so the sum names EXACTLY which slots arrived - a missing or duplicated
-# argument cannot cancel out. This is the mechanism proven for CreateMon on hardware, checked here
-# for the general payload that is meant to reach every other function with it.
+# Hand-assembled THUMB summing r0..r3 and four stack words; powers of two in, so the sum names each
+# slot that arrived.
 EIGHT_ARG_CODE_BASE = 0x08100000
 EIGHT_ARG_CODE = bytes.fromhex(
     "4018"      # adds r0, r0, r1
@@ -2351,8 +2143,7 @@ def test_all_eight_arguments_arrive_in_the_slots_the_prologue_reads():
 
 @needs_unicorn
 def test_a_call_that_passes_fewer_arguments_leaves_the_stack_slots_it_did_not_set_at_zero():
-    """The sixteen bytes are pushed for every call, so a function taking four still reads four
-    zeros if it looks - which is what makes passing fewer safe rather than undefined."""
+    """Sixteen stack bytes are pushed for every call, so unused slots read as zero."""
     run = buffer_script.emulate(
         buffer_script.build_call(EIGHT_ARG_CODE_BASE | 1, [1, 2, 4, 8]),
         memory={EIGHT_ARG_CODE_BASE: EIGHT_ARG_CODE},
@@ -2378,20 +2169,13 @@ _MINIMAL_ARGS = {
 }
 
 
-# --- call-chain: a list of calls and memory accesses, in one frame -------------------------------
-# The fixtures are the ones the single `call` tests already use: SeedRng and Random as
-# read them out of the cartridge - plus one hand-assembled THUMB stub that returns a pointer, which
-# is the shape GetVarPointer has and the reason this payload exists.
-
-# THUMB: ldr r0,[pc,#0] ; bx lr ; .word POINTER. A one-argument function that ignores its argument
-# and answers with an address, which is what GetVarPointer does as far as a chain can tell.
+# THUMB: ldr r0,[pc,#0] ; bx lr ; .word POINTER, shaped like GetVarPointer.
 POINTER_STUB_BASE = 0x08100100
 POINTER_STUB_TARGET = 0x02025100
 POINTER_STUB_CODE = (bytes.fromhex("0048" "7047")
                      + POINTER_STUB_TARGET.to_bytes(4, "little"))
 
-# THUMB: adds r0,r0,r1 ; adds r0,r0,r2 ; adds r0,r0,r3 ; bx lr. Four arguments, each a distinct
-# bit, so the total names exactly which of r0..r3 arrived.
+# THUMB: adds r0,r0,r1 ; adds r0,r0,r2 ; adds r0,r0,r3 ; bx lr.
 FOUR_ARG_BASE = 0x08100200
 FOUR_ARG_CODE = bytes.fromhex("4018" "8018" "c018" "7047")
 
@@ -2414,8 +2198,7 @@ def test_a_chain_step_is_parsed_the_way_the_cli_takes_one():
 
 
 def test_a_step_that_names_a_function_this_project_has_not_measured_is_refused():
-    """The names come from rom_map.CALLABLE, the measured list with its one call-site confirmation:
-    not from the decomp, whose addresses are a DIFFERENT build's."""
+    """Callable names come from rom_map.CALLABLE, never from the decomp's different build."""
     with pytest.raises(buffer_script.BufferScriptError):
         buffer_script.parse_chain_step("call:GiveMon,1")
     with pytest.raises(buffer_script.BufferScriptError):
@@ -2459,8 +2242,7 @@ def test_the_chain_refuses_what_would_hang_or_run_rubbish():
 
 
 def test_a_write_step_needs_the_same_deliberate_override_a_save_write_does():
-    """There is no scratch region here: a chain writes wherever the game keeps the thing being
-    changed, and the console commits its save to flash afterwards."""
+    """A chain writes live game state that the console commits to flash."""
     steps = _chain("write16:0x02024EA4,0x7")
     with pytest.raises(buffer_script.BufferScriptError, match="write-unsafe"):
         buffer_script.build_call_chain(steps)
@@ -2469,8 +2251,7 @@ def test_a_write_step_needs_the_same_deliberate_override_a_save_write_does():
 
 @needs_unicorn
 def test_the_chain_calls_the_console_s_own_seed_rng_and_reads_the_result_back():
-    """One frame, two steps, and the second is the evidence for the first: SeedRng returns
-    nothing at all [decomp:src/random.c:15], so only reading gRngValue afterwards says it ran."""
+    """SeedRng returns nothing [decomp:src/random.c:15]; reading gRngValue says it ran."""
     steps = _chain("call:SeedRng,0xB8C0", "read32:0x03004220")
     run = buffer_script.emulate(
         buffer_script.build_call_chain(steps),
@@ -2487,9 +2268,7 @@ def test_the_chain_calls_the_console_s_own_seed_rng_and_reads_the_result_back():
 
 @needs_unicorn
 def test_a_pointer_a_call_returned_becomes_the_address_a_later_step_writes():
-    """There is no VarSet among the measured field-script workers: setting a
-    var the game's own way is GetVarPointer followed by a store through what it returned, and no
-    single-call payload can do that. Read before, write, read after - one frame, one run."""
+    """Setting a var is GetVarPointer then a store through its result; no measured worker is VarSet."""
     steps = _chain("call:0x08100101,0x4024", "read16+keep:prev", "write16:prev,0x7",
                    "read16:prev")
     run = buffer_script.emulate(
@@ -2508,7 +2287,6 @@ def test_a_pointer_a_call_returned_becomes_the_address_a_later_step_writes():
 
 @needs_unicorn
 def test_a_write_leaves_prev_alone_so_a_pointer_survives_the_store_through_it():
-    """Without this the third step would write to address 7, which is not memory at all."""
     steps = _chain("call:0x08100101,0x4024", "write16:prev,0x7", "write16:prev+0x2,0x9",
                    "read32:prev")
     run = buffer_script.emulate(
@@ -2523,8 +2301,7 @@ def test_a_write_leaves_prev_alone_so_a_pointer_survives_the_store_through_it():
 
 @needs_unicorn
 def test_a_read_that_does_not_keep_prev_replaces_the_pointer_with_what_it_read():
-    """The other half of the same rule, stated as a test so the trap is documented rather than
-    discovered on hardware: a plain read is the new prev."""
+    """A plain read replaces prev."""
     steps = _chain("call:0x08100101,0x4024", "read16:prev")
     run = buffer_script.emulate(
         buffer_script.build_call_chain(steps),
@@ -2540,10 +2317,7 @@ def test_a_read_that_does_not_keep_prev_replaces_the_pointer_with_what_it_read()
 
 @needs_unicorn
 def test_an_argument_can_be_an_offset_from_the_previous_result():
-    """THE MONEY SHAPE. `AddMoney(&gSaveBlock1Ptr->money, n)` needs an address inside a block whose
-    base moves on every load and battle [SetSaveBlocksPointers, src/load_save.c:75], so the offset
-    has to be added on the console. That handler reads its base from 0x03004228 and the
-    field is 0xA4 << 2 past it."""
+    """gSaveBlock1Ptr moves [src/load_save.c:75]: money is read through 0x03004228, 0xA4 << 2 past it."""
     steps = _chain("read32:0x03004228", "call+keep:0x08100201,prev+0x290,0x2")
     run = buffer_script.emulate(
         buffer_script.build_call_chain(steps),
@@ -2570,8 +2344,6 @@ def test_all_four_arguments_arrive_in_r0_to_r3():
 
 @needs_unicorn
 def test_the_first_argument_can_be_the_previous_result():
-    """Random's answer handed straight to the next call: the chain carries a value the host never
-    sees until the run is over."""
     steps = _chain("call:Random", "call:0x08100201,prev,0x2")
     run = buffer_script.emulate(
         buffer_script.build_call_chain(steps),
@@ -2584,7 +2356,6 @@ def test_the_first_argument_can_be_the_previous_result():
 
 @needs_unicorn
 def test_a_step_the_payload_does_not_have_stops_the_run_and_is_named_in_the_answer():
-    """A payload cannot fail silently here: what stopped it comes back with what did run."""
     steps = [buffer_script.chain_call(SEED_RNG_CODE_BASE | 1, [0xB8C0]),
              buffer_script.ChainStep(9, 0x02024EA4)]
     code = bytearray(buffer_script.build_call_chain(steps[:1]))
@@ -2600,13 +2371,12 @@ def test_a_step_the_payload_does_not_have_stops_the_run_and_is_named_in_the_answ
     assert got["refused"] == 9
     assert "STOPPED" in "\n".join(buffer_script.describe_call_chain(run.pending_send))
     with pytest.raises(buffer_script.BufferScriptError):
-        buffer_script.build_call_chain(steps)       # and the builder refuses it in the first place
+        buffer_script.build_call_chain(steps)
 
 
 @needs_unicorn
 def test_a_full_chain_of_sixteen_steps_still_returns_in_one_frame():
-    """The capacity is a hard stop in the payload as well as in the builder, so a count that
-    overruns the step area cannot walk off the end of the image."""
+    """The payload caps the step count, so an overrun count cannot walk off the image."""
     steps = _chain(*(["call:Random"] * buffer_script.CHAIN_MAX_STEPS))
     code = bytearray(buffer_script.build_call_chain(steps))
     code[buffer_script.CHAIN_COUNT_OFFSET] = 0xFF       # more than there is room for
@@ -2653,14 +2423,9 @@ def test_the_cli_builds_a_chain_and_refuses_a_write_without_the_override():
                      "--chain-step", "call:Random"])
 
 
-# --- the lists a new payload has to be added to ------------------------------------------------
-# A run can be lost to this alone: table-scan runs on the console, searches 2.75 MB and
-# found its table, and the host asked for 4 bytes because the new payload had been added to neither
-# of the two hand-maintained tuples in config.py. The tuples are now one set beside the payloads.
+# A payload missing from the bytes-answer set makes the host ask for 4 bytes and drop the answer.
 
 def test_every_payload_that_answers_with_bytes_asks_the_host_for_them():
-    """The failure this guards is silent: the payload succeeds, the console sends what it was
-    asked for, and the answer is simply never collected."""
     for name in buffer_script.DUMP_SCRIPTS:
         assert configmod.BufferScriptPayload(script=name, **_MINIMAL_ARGS.get(name, {})).is_dump, \
             f"{name} answers on ident 19 but config would ask for the 4-byte channel"
@@ -2682,15 +2447,12 @@ def test_table_scan_asks_for_its_whole_answer_and_gets_it_decoded():
 
 
 def test_a_dump_that_overlaps_grngvalue_is_refused_offline():
-    """Two runs both died mid transmission with 'erreur de connexion'. MGL_Send takes the
-    header CRC one frame and sends the payload the next [decomp:src/mystery_gift_link.c:155], so a
-    region that moves between them cannot match its own header and the console calls
-    LinkRfu_FatalError. gRngValue moves every frame. The same 32 bytes dumped from ROM come back
-    the same bytes back exactly, which is what rules the size out."""
+    """MGL_Send CRCs the header one frame and sends the next [decomp:src/mystery_gift_link.c:155];
+    gRngValue moves every frame."""
     for address in (rom_map.GRNG_VALUE, rom_map.GRNG_VALUE - 2, rom_map.GRNG_VALUE + 2):
         with pytest.raises(buffer_script.BufferScriptError, match="erreur de connexion"):
             buffer_script.build_memory_dump(address, 32)
-    # Immediately past it is fine - that is how the save-block pointers beside it get read.
+    # Immediately past it is fine.
     buffer_script.build_memory_dump(rom_map.GRNG_VALUE + 4, 32)
     buffer_script.build_memory_dump(rom_map.GRNG_VALUE - 32, 32)
 
@@ -2703,18 +2465,12 @@ def test_a_dump_that_overlaps_grngvalue_is_refused_offline():
 ])
 @pytest.mark.parametrize("address, size", [(0x0E01BC00, 1024), (0x0E01E000, 252), (0x0DFFFF00, 512)])
 def test_a_dump_of_the_save_flash_window_is_refused_offline(build, address, size):
-    """Both flash dumps on the emulated FireRed sent a header whose CRC equals the real sector
-    (0xDEC2 over physical 0x1BC00, 0x5907 over 0x1E000) and a body that does not match it; the host
-    discarded the body and the menu waited forever."""
+    """The flash window's header CRC and body disagree (0xDEC2 over physical 0x1BC00, 0x5907 over 0x1E000)."""
     with pytest.raises(buffer_script.BufferScriptError, match="flash-read"):
         build(address, size)
     build(0x0DFFFF00, 256)   # ends at the window's first byte, exclusive
 
-# --- memory-dump-multi: several blocks in one session ---------------------------------------------
-
 def test_the_multi_dump_operands_are_where_we_patch_them():
-    """Proven by running it, not by counting instructions - which is what caught the three offsets
-    being written down 0x10 too low the first time."""
     run = buffer_script.emulate(buffer_script.build_memory_dump_multi(0x03001234, 512))
 
     assert run.done
@@ -2724,9 +2480,8 @@ def test_the_multi_dump_operands_are_where_we_patch_them():
 
 
 def test_the_multi_dump_cursor_advances_a_block_per_pass():
-    """The whole point. CLI_RUN_BUFFER_SCRIPT memcpys recvBuffer over gDecompressionBuffer on every
-    pass [decomp:src/mystery_gift_client.c:238], so the image is identical each time and the only
-    thing that can differ is client->param - which is what the payload keeps its cursor in."""
+    """The image is re-copied every pass [decomp:src/mystery_gift_client.c:238]; only client->param
+    carries the cursor."""
     code = buffer_script.build_memory_dump_multi(0x08100000, 1024)
     memory = {0x08100000 + i * 1024: bytes([i]) * 1024 for i in range(4)}
     param = 0
@@ -2739,21 +2494,18 @@ def test_the_multi_dump_cursor_advances_a_block_per_pass():
 
 
 def test_the_multi_dump_cursor_starts_over_from_a_param_that_is_not_ours():
-    """Nothing in the client script sets param before the first pass, so its value there is not
-    ours to assume. The magic in the high half is what makes pass zero recognisable."""
+    """Nothing sets param before the first pass; the magic in the high half marks a continuation."""
     code = buffer_script.build_memory_dump_multi(0x08100000, 1024)
     for junk in (0, 0xDEADBEEF, 0xFFFFFFFF, 1, 0x5A5A0000 - 1, 0x5A5B0000):
         run = buffer_script.emulate(code, param=junk)
         assert run.client.send_buffer == 0x08100000, f"param {junk:#x} did not start at block 0"
         assert run.client.param == buffer_script.DUMP_MULTI_MAGIC | 1
-    # And a param that DOES carry the magic is a continuation, not junk - including the last one.
     resumed = buffer_script.emulate(code, param=buffer_script.DUMP_MULTI_MAGIC | 0xFF)
     assert resumed.client.send_buffer == 0x08100000 + 0xFF * 1024
 
 
 def test_the_multi_dump_payload_is_in_the_lists_it_cannot_see():
-    """The standing trap: a payload has to be added to DUMP_SCRIPTS and PATCHED_SPANS by hand, and
-    a dump payload missing from them logs as 'unknown buffer script' and answers nothing."""
+    """A payload missing from DUMP_SCRIPTS and PATCHED_SPANS logs as 'unknown buffer script'."""
     assert buffer_script.MEMORY_DUMP_MULTI in buffer_script.DUMP_SCRIPTS
     assert buffer_script.MEMORY_DUMP_MULTI in buffer_script.PATCHED_SPANS
     assert buffer_script.MEMORY_DUMP_MULTI in buffer_script.SCRIPT_REGISTRY
@@ -2762,9 +2514,6 @@ def test_the_multi_dump_payload_is_in_the_lists_it_cannot_see():
 
 
 def test_the_multi_dump_guard_covers_the_whole_span_not_the_first_block():
-    """gRngValue advances two turns a frame, and MGL_Send CRCs one frame and sends the next, so a
-    dump that crosses it kills the link mid transmission. A BASE clear of it says
-    nothing about the sixteenth block, which is the whole difference this payload introduces."""
     # A base four kilobytes below gRngValue: fine alone, fatal once the span reaches it.
     base = (rom_map.GRNG_VALUE - 4096) & ~1
     assert buffer_script.describe(
@@ -2774,15 +2523,8 @@ def test_the_multi_dump_guard_covers_the_whole_span_not_the_first_block():
         buffer_script.build_memory_dump_multi(base, 1024, blocks=8)
 
 
-# --- memory-dump-scatter: several UNRELATED regions in one session ---------------------------------
-# multi reads N CONSECUTIVE blocks, which is what a long region needs. A PLAN does not ask for a long
-# region: the 166 gSpecials bodies still unread are spread over a megabyte, the densest 16 KB window
-# catches 22 of them, and the sixteen densest KILOBYTES catch 83. Same join, same bytes off the wire.
-
 def test_each_pass_of_a_scattered_dump_sends_the_next_address_in_the_table():
-    """The cursor indexes the payload's own table instead of multiplying by 1024, and the table
-    travels inside the image - which survives because CLI_RUN_BUFFER_SCRIPT re-copies it every pass
-    and only client->param carries anything forward."""
+    """The cursor indexes the payload's own table, re-copied with the image every pass."""
     addresses = (0x080CE040, 0x0804A2A0, 0x08162848)
     code = buffer_script.build_memory_dump_scatter(addresses, 1024)
     param = 0
@@ -2801,16 +2543,13 @@ def test_a_scattered_dump_starts_over_from_a_param_that_is_not_ours():
 
 
 def test_an_unpromised_pass_re_sends_the_last_block_rather_than_address_zero():
-    """Every slot in the table is filled, the unused ones with the last address. A pass the client
-    script did not promise then re-sends a block we already hold instead of pointing the console's
-    outgoing message at 0x00000000."""
+    """Unused table slots hold the last address, so an unpromised pass re-sends a held block."""
     code = buffer_script.build_memory_dump_scatter((0x08100000, 0x08200000), 1024)
     run = buffer_script.emulate(code, param=buffer_script.DUMP_MULTI_MAGIC | 5)
     assert run.client.send_buffer == 0x08200000
 
 
 def test_the_scattered_guard_is_per_block_because_the_blocks_are_unrelated():
-    """multi's guard covers one span; here each block is its own region and each one is checked."""
     safe = 0x08100000
     moving = (rom_map.GRNG_VALUE - 512) & ~1
     assert buffer_script.describe(
@@ -2827,8 +2566,6 @@ def test_the_scattered_payload_is_in_the_lists_it_cannot_see():
 
 
 def test_a_scattered_dump_carries_one_block_per_address_and_says_so():
-    """The count is not a separate knob: asking for three addresses is asking for three blocks, and
-    the client script has to promise exactly that many passes."""
     payload = configmod.BufferScriptPayload(
         script=buffer_script.MEMORY_DUMP_SCATTER,
         dump_addresses=(0x080CE040, 0x0804A2A0, 0x08162848))
@@ -2842,10 +2579,6 @@ def test_a_scattered_dump_carries_one_block_per_address_and_says_so():
 
 
 def test_a_scattered_block_is_logged_at_the_address_it_came_from():
-    """A run read 27 scattered kilobytes and the progress line named `first + n * 1024` for every
-    one of them - so the last block, which came off 0x0847DC00, was announced as 0x08083400. The
-    dump file and its placement were right and only the line was wrong, which is the kind of wrong
-    that is read back a session later as an address this project holds bytes for."""
     addresses = (0x0807CC00, 0x080DE000, 0x0847DC00)
     payload = configmod.BufferScriptPayload(
         script=buffer_script.MEMORY_DUMP_SCATTER, dump_addresses=addresses)
@@ -2858,7 +2591,6 @@ def test_a_scattered_block_is_logged_at_the_address_it_came_from():
         buffer_dump_address=distribution.buffer_dump_address,
         buffer_dump_addresses=distribution.buffer_dump_addresses)
     assert [server.block_address(i) for i in range(3)] == list(addresses)
-    # memory-dump-multi is the other shape and keeps the arithmetic it always had.
     contiguous = mg_server.MysteryGiftServer(
         None, None, buffer_code=distribution.buffer_code, buffer_dump_size=1024,
         buffer_dump_blocks=3, buffer_dump_address=0x08000000)

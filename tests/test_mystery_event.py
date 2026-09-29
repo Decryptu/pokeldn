@@ -1,10 +1,4 @@
-"""The Mystery Event VM: the assembler, the chain rule that makes it usable without ``checkcompat``,
-and the return channel it opens back from the console.
-
-The end-to-end tests drive the ConsoleClientModel from tests/test_mystery_gift_flow.py, whose
-Mystery Event interpreter is written from the decomp rather than from ``pokeldn.frlg.rom.mystery_event``, so
-agreement between the two is evidence and not a tautology.
-"""
+"""The Mystery Event VM: the assembler, the chain rule without ``checkcompat``, and the return channel."""
 
 import os
 import sys
@@ -18,12 +12,8 @@ from pokeldn.frlg.rom import mystery_event  # noqa: E402
 from test_mystery_gift_flow import ConsoleClientModel, _drive  # noqa: E402
 
 
-# --- the assembler --------------------------------------------------------------------------
-
 def test_reproduces_the_hardware_proven_stamp_activation_shape():
-    """The stamp rally's activation script has been landing on both French consoles since session
-    22. Assembling the same runscript/end pair must produce the same six bytes of code and put the
-    embedded field script at the same offset."""
+    """The stamp rally's hardware-proven activation: the same six bytes and field script offset."""
     proven = stamp_rally.build_stamp_activation_script(
         stamp_rally.VAR_MYSTERY_GIFT_1, install=False)
     embedded = proven[6:]
@@ -113,8 +103,6 @@ def test_calc_helpers_match_the_decomp():
     assert mystery_event.calc_crc16(b"") == (~0x1121) & 0xFFFF
 
 
-# --- the runner -----------------------------------------------------------------------------
-
 def test_the_chain_runs_every_command_up_to_the_first_yield():
     script = mystery_event.MysteryEventScript()
     script.givenationaldex().addrareword(3).giveribbon(0, 5).setstatus(99).end()
@@ -170,8 +158,6 @@ def test_the_enigma_berry_tail_falls_outside_the_receive_buffer():
     assert result.effect("read_past_buffer") is not None
 
 
-# --- the wired-up gift ----------------------------------------------------------------------
-
 def test_the_probe_script_is_what_the_registry_ships():
     distribution = gift_registry.GIFT_REGISTRY.build_distribution("mystery-event-probe")
     assert distribution.has_mevent
@@ -183,8 +169,7 @@ def test_the_probe_script_is_what_the_registry_ships():
 
 
 def test_the_client_script_runs_the_event_and_then_ships_its_status_back():
-    """CLI_RUN_MEVENT_SCRIPT leaves ctx->data[2] in client->param and CLI_LOAD_TOSS_RESPONSE loads
-    exactly client->param, so these three in this order are the return channel."""
+    """CLI_RUN_MEVENT_SCRIPT leaves ctx->data[2] in client->param; CLI_LOAD_TOSS_RESPONSE sends it."""
     commands = [
         int.from_bytes(mg_script.CLIENT_SCRIPT_SAVE_CARD_AND_MEVENT[i:i + 4], "little")
         for i in range(0, len(mg_script.CLIENT_SCRIPT_SAVE_CARD_AND_MEVENT), 8)]
@@ -218,8 +203,6 @@ def _probe_card():
     return distribution.card, distribution.ram_script
 
 
-# --- end to end against the console model ---------------------------------------------------
-
 def test_end_to_end_a_console_with_no_card_takes_the_card_and_runs_the_event():
     distribution = gift_registry.GIFT_REGISTRY.build_distribution("mystery-event-probe")
     console = ConsoleClientModel(flag_id=0)
@@ -229,17 +212,14 @@ def test_end_to_end_a_console_with_no_card_takes_the_card_and_runs_the_event():
     assert engine.result == mg_server.SVR_MSG_CARD_SENT and engine.gift_sent
     assert engine.state == host_mystery_gift.MG_DONE
     assert console.saved_card == distribution.card
-    # The console ran our bytecode ...
     assert console.national_dex is True
     assert console.activation_scripts and console.activation_scripts[0][:len(distribution.mevent)] \
         == distribution.mevent
-    # ... and the status it left came back to us over MG_LINKID_RESPONSE.
     assert engine.server.mevent_status == wonder_card_events.MEVENT_PROBE_STATUS
 
 
 def test_end_to_end_a_console_holding_the_same_card_runs_the_event_alone():
-    """HAS_SAME_CARD sends no card and no delivery script, so re-running an event costs the player
-    nothing and prompts for nothing."""
+    """HAS_SAME_CARD sends no card and no delivery script."""
     distribution = gift_registry.GIFT_REGISTRY.build_distribution("mystery-event-probe")
     console = ConsoleClientModel(flag_id=wonder_card_events.MEVENT_PROBE_FLAG_ID)
     engine, _frames = _drive(console, distribution=distribution)
@@ -260,8 +240,6 @@ def test_end_to_end_a_console_holding_another_card_is_asked_before_anything_runs
     assert console.national_dex is False
     assert engine.server.mevent_status is None
 
-
-# --- the questionnaire gate ------------------------------------------------------------------
 
 def _game_data(*, flag_id=0, questionnaire=(), profile=(), battles_won=0, trades=0):
     from pokeldn.frlg.gift import mystery_gift as mg
@@ -342,9 +320,7 @@ def test_a_phrase_must_be_exactly_four_words():
 
 
 def test_a_refusal_message_longer_than_the_console_copies_is_refused():
-    """Two bounds, and the tighter one bites first: a line wider than the message window wraps
-    around inside it, well before 64 bytes is reached. Pre-encoded bytes skip the line
-    check and still have to fit what CLI_COPY_MSG copies."""
+    """A line wider than the window wraps before 64 bytes; pre-encoded bytes must still fit CLI_COPY_MSG."""
     from pokeldn.frlg.text import easychat
     card, ram_script = _probe_card()
     with pytest.raises(mg_server.MysteryGiftServerError, match="wraps around"):
@@ -376,8 +352,6 @@ def test_an_all_zero_battle_profile_is_not_reported_as_words():
     data = mg_script.parse_link_game_data(_game_data())
     assert not any("battle profile" in line for line in data.describe_extras())
 
-
-# --- initramscript: binding a field script to any map and object -----------------------------
 
 def test_initramscript_names_the_map_the_object_and_both_ends_of_the_script():
     distribution = gift_registry.GIFT_REGISTRY.build_distribution("mystery-event-npc")
@@ -411,9 +385,7 @@ def test_a_marker_status_follows_initramscript_because_it_sets_none():
 
 
 def test_species_and_move_words_are_built_from_ids_not_from_the_english_table():
-    """the player typed AKWAKWAK and the console stored POKEMON/55 (SPECIES_GOLDUCK); they
-    typed AEROBLAST and it stored MOVE_1/177 (MOVE_AEROBLAST). Our constructors must produce
-    exactly those ids."""
+    """Measured: AKWAKWAK is POKEMON/55 (SPECIES_GOLDUCK), AEROBLAST is MOVE_1/177."""
     from pokeldn.frlg.text import easychat
     assert easychat.species_word(55) == 0x2A37
     assert easychat.move_word(177) == 0x24B1
@@ -433,17 +405,14 @@ def test_an_illegal_species_or_move_is_refused():
 
 
 def test_the_french_check_passes_language_safe_words_and_flags_guesses():
-    """All 1006 language-dependent slots have been read out of the console's own
-    sEasyChatGroup_* tables, so `check` flags no real word: what it still catches is
-    an id that is not a word at all."""
+    """All 1006 language-dependent slots were read off the console; `check` flags only non-words."""
     from pokeldn.frlg.text import easychat, easychat_french
     assert easychat_french.check([easychat.species_word(55)]) == ()
     assert easychat_french.check([easychat.WORDS["hello"]]) == ()          # observed on hardware
     assert easychat_french.check([easychat.WORDS["trade"]]) == ()          # ECHANGER
     assert easychat_french.french(easychat.WORDS["trade"]) == "ECHANGER"
 
-    # EC_GROUP_TRAINER holds 26 words, so index 30 is past the end of the group and no
-    # console prints anything for it.
+    # EC_GROUP_TRAINER holds 26 words; index 30 is past its end.
     past_the_end = (1 << 9) | 30
     assert easychat_french.check([past_the_end]) == (past_the_end,)
     with pytest.raises(easychat_french.UnverifiedFrenchWord):
@@ -451,9 +420,7 @@ def test_the_french_check_passes_language_safe_words_and_flags_guesses():
 
 
 def test_the_phrase_read_off_the_console_gates_a_gift():
-    """Every session logs the console's four questionnaire ids; they are the key the gate compares
-    against. CONSOLE_QUESTIONNAIRE is whatever the console currently holds - the default phrase since
-    a run - so this test follows the console rather than pinning a phrase."""
+    """CONSOLE_QUESTIONNAIRE is what the console currently holds."""
     from pokeldn.frlg.text import easychat_french
     card, ram_script = _probe_card()
     server = mg_server.MysteryGiftServer(
@@ -471,8 +438,6 @@ def test_the_phrase_read_off_the_console_gates_a_gift():
 
 
 def test_the_cli_parses_a_phrase_in_every_form_it_accepts():
-    """Every accepted spelling of the custom phrase the gate was set to, plus the default the
-    console holds now, which is four plain group/index slots."""
     from pokeldn.frlg.text import easychat, easychat_french
     import frlg_mg_host
     assert easychat.parse_phrase("species:55,FEELINGS/60,move:177,why") \

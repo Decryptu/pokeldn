@@ -49,9 +49,7 @@ def test_joiner_cli_builds_full_config_from_identity_overrides():
 
 
 def test_latin_languages_are_offered_with_their_decomp_values():
-    """include/constants/global.h:21-27. Japanese (1) is deliberately absent: its kana reuse the
-    same byte values as the accented Latin range in charmap, so a Japanese name cannot be encoded
-    with the international table we ship."""
+    """include/constants/global.h:21-27; Japanese is absent: its kana reuse the accented Latin byte values."""
     assert config.LANGUAGES == {
         "english": 2, "french": 3, "italian": 4, "german": 5, "spanish": 7,
     }
@@ -61,8 +59,7 @@ def test_latin_languages_are_offered_with_their_decomp_values():
 
 
 def test_accented_names_survive_the_charmap_round_trip():
-    """encode() drops unknown characters, so before the accented range was added a French OT name
-    went on the wire mangled: "Zoe(acute)" -> "Zo". Names are what the console displays for us."""
+    """encode() drops unknown characters, so accented names must round-trip."""
     from pokeldn.frlg.text import charmap
     for name in ("Zoé", "Éloïse", "Jürgen", "Muñoz", "Grüße", "José", "Renaud"):
         encoded = charmap.encode(name, width=8, pad=0x00)
@@ -70,8 +67,7 @@ def test_accented_names_survive_the_charmap_round_trip():
 
 
 def test_charmap_never_maps_the_terminator_to_a_glyph():
-    """charmap.txt maps 0xFF to '$', but 0xFF is our EOS and fixed-width pad. Mapping it would
-    corrupt every name field."""
+    """charmap.txt maps 0xFF to '$', but 0xFF is EOS and the fixed-width pad."""
     from pokeldn.frlg.text import charmap
     assert charmap.EOS == 0xFF and charmap.PAD == 0xFF
     assert 0xFF not in charmap._DEC
@@ -79,8 +75,7 @@ def test_charmap_never_maps_the_terminator_to_a_glyph():
 
 
 def test_language_override_reaches_the_linkplayer_wire_byte():
-    """The dict is useless unless --language can select it and it lands in the struct the console
-    actually reads (LinkPlayer[26:28])."""
+    """--language lands in LinkPlayer[26:28]."""
     from pokeldn.frlg.link import linkplayer
     for name, code in config.LANGUAGES.items():
         profile = config.profile_from_overrides(ot="Zoé", language=name)

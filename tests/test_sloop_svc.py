@@ -1,11 +1,4 @@
-"""sloop-svc: Sloop syscalls from the Mystery Gift menu, answered through a result block.
-
-How it could fail: the thunk carries the wrong number or runs in ARM state (the wrapper decodes a
-THUMB `swi`); the rewritten thunk byte does not reach the next call; r0 points somewhere other than
-a fresh, terminated copy; the block is taken before a call, so a syscall that rewrites its string
-in place is reported unchanged; the config path hands the host the unpatched image; a number that
-writes the save goes out.
-"""
+"""sloop-svc: Sloop syscalls from the Mystery Gift menu, answered through a result block."""
 
 import pytest
 

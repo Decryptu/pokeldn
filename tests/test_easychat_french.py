@@ -1,17 +1,5 @@
-"""The French Easy Chat vocabulary, and the two independent ways it was established.
-
-An Easy Chat id is `(group << 9) | index` - a SLOT. `easychat_words` is generated from the
-ENGLISH decomp, so it names the slot and not what a French console prints in it. Two things say
-what the console prints, and they were gathered completely differently:
-
-  * a RENDER: ids put into a mail or a script and read off the console's screen by the player. One slot at a time, and it needs a human eye.
-  * the ROM TABLE: sEasyChatGroup_* read out of the cartridge with `--buffer-script
-    string-gather`: the table was found by its own count fingerprint, then read, then the words
-    read the words). A whole group per run, and it is the data the game itself indexes.
-
-Neither is worth much alone. Together they are: where they overlap they must agree, and this
-file is what enforces that.
-"""
+"""The French Easy Chat vocabulary: slots rendered on the console's screen agree with
+sEasyChatGroup_* read from ROM."""
 
 import os
 import sys
@@ -23,10 +11,7 @@ from pokeldn.frlg.text.easychat import WORDS                        # noqa: E402
 
 
 def test_the_rom_table_agrees_with_every_word_read_off_the_console_screen():
-    """The check that makes both sources evidence. A render and a ROM read of the same slot are
-    independent all the way down - different runs, different mechanisms, different years of this
-    project - so a disagreement means one of them is wrong and neither can be used until it is
-    explained."""
+    """A render and a ROM read of the same slot must agree."""
     overlap = {slot: (word, easychat_french.ROM_WORDS[slot])
                for slot, word in easychat_french.CONFIRMED.items()
                if slot in easychat_french.ROM_WORDS}
@@ -37,9 +22,7 @@ def test_the_rom_table_agrees_with_every_word_read_off_the_console_screen():
 
 
 def test_the_two_feelings_words_the_console_rendered_are_in_the_table_it_was_reading_from():
-    """A run is the run, and these two slots are why it could be trusted the moment it landed:
-    EC_WORD_ENJOY in a mail printed STRESSE, and EC_WORD_DONE in
-    a script and it printed FURAX. Both were known before any of sEasyChatGroups was found."""
+    """EC_WORD_ENJOY rendered STRESSE and EC_WORD_DONE rendered FURAX on the console."""
     assert easychat_french.french(WORDS["enjoy"]) == "STRESSE"
     assert easychat_french.french(WORDS["done"]) == "FURAX"
     assert easychat_french.ROM_WORDS[WORDS["enjoy"]] == "STRESSE"
@@ -47,8 +30,7 @@ def test_the_two_feelings_words_the_console_rendered_are_in_the_table_it_was_rea
 
 
 def test_a_group_read_off_the_console_is_read_whole():
-    """A gather run that stopped on its budget leaves a group half known, and a half-known group
-    is the one thing that would make `check` lie: it would pass a slot nobody has read."""
+    """A half-read group would let `check` pass a slot nobody has read."""
     from pokeldn.frlg.text import easychat_french_words as table
     for group, (_address, words) in table.GROUPS.items():
         indices = sorted(words)
@@ -57,10 +39,8 @@ def test_a_group_read_off_the_console_is_read_whole():
 
 
 def test_species_and_move_slots_need_no_table_at_all():
-    """EC_GROUP_POKEMON, POKEMON_2, MOVE_1 and MOVE_2 print from gSpeciesNames / gMoveNames
-    indexed by species number and move id [decomp:src/easy_chat.c:155], so the console prints its
-    own localized name and the slot means the same thing in every language. Proven on hardware: the
-    player typed AKWAKWAK and the console stored POKEMON/55, SPECIES_GOLDUCK."""
+    """Species and move slots print gSpeciesNames / gMoveNames [decomp:src/easy_chat.c:155];
+    AKWAKWAK stored POKEMON/55."""
     assert easychat.is_language_safe(easychat.species_word(55))
     assert easychat.is_language_safe(easychat.move_word(177))
     assert easychat_french.check([easychat.species_word(55), easychat.move_word(177)]) == ()

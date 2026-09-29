@@ -1,21 +1,7 @@
-"""The French cartridges get the bytes they got before the build table existed.
+"""French cartridges get the bytes recorded in tests/data/frlg_french_payloads.json before builds.py.
 
-`tests/data/frlg_french_payloads.json` was recorded from the code as it stood before
-`pokeldn/frlg/rom/builds.py`: for each case, a digest of what French FireRed was sent (`BPRF`) and
-of what a French LeafGreen was sent (`BPGF`: `version="leafgreen"` for the resident hooks, French
-FireRed's bytes for everything else). The `operands:` rows are the PATCHED_SPANS of the four flash
-cases, recorded from the same code.
-
-How it could fail: a builder that forgets its `build` and sends another cartridge's address; a
-default that moves (the resident hooks defaulted to LeafGreen); a gift whose composition now
-depends on a build field that is wrong for French. Three changes are intended, and are the only
-differences allowed, each checked for exactly what it changes:
-
-- flash-write and flash-patch gained a range guard in asm, so their images differ; their operands
-  must not.
-- French LeafGreen's callable names past 0x0807CF68 resolve to LeafGreen's own functions
-  (AddBagItem 0x0809DA44), where they resolved to French FireRed's.
-- The Enigma berry's description pointers are LeafGreen's own on French LeafGreen.
+Three differences are intended: the flash images' asm range guard, French LeafGreen's callable names
+past 0x0807CF68 (AddBagItem 0x0809DA44), and LeafGreen's own Enigma berry description pointers.
 """
 
 import dataclasses
@@ -35,8 +21,7 @@ REFERENCE = json.loads(
 FRENCH = (builds.BPRF, builds.BPGF)
 
 
-# Distribution fields added after the recording. At their default they send what the recorded code
-# sent, so the digest leaves them out; set, they are digested like any other field.
+# Fields added after the recording; at their default they are left out of the digest.
 NEWER_FIELDS = {"buffer_reference": None}
 
 
@@ -201,8 +186,7 @@ def test_the_french_bytes_are_the_recorded_ones(case, build):
 
 @pytest.mark.parametrize("case", sorted(FLASH_IMAGES))
 def test_the_guarded_flash_images_changed_and_nothing_else_is_new(case):
-    """The guard is new code: the image must differ from the recorded one, which also proves the
-    operand row is not comparing an unchanged image with itself."""
+    """The guarded image differs from the recorded one; only its operand row is held."""
     for build in FRENCH:
         assert digest(CASES[case](build)) != REFERENCE[case][build.game_code]
 

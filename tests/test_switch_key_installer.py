@@ -1,9 +1,4 @@
-"""Static safety checks for the Pi key installation helper.
-
-These deliberately do not create, read, or copy any Nintendo Switch key
-material. Runtime validation belongs on the target machine with the owner's
-explicit source file.
-"""
+"""Static safety checks for the Pi key installation helper; no key material is touched."""
 
 from pathlib import Path
 

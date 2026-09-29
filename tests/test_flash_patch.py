@@ -1,10 +1,4 @@
-"""flash-patch: read a save sector out of flash, change one field, write it back.
-
-The point of reading rather than composing: a sector built from a live save block is not what the
-game's save routine writes, because the routine serializes at save time. Two fields have already
-been lost that way, the encryption key and the saved map view. Here nothing is rebuilt, so the test
-that matters is that NOTHING outside the patch moves.
-"""
+"""flash-patch: read a save sector out of flash, change one field, write it back; nothing else moves."""
 
 import pytest
 
@@ -20,8 +14,7 @@ def band(lws=LWS, counter=COUNTER, name="ASH"):
     """A flash image whose two sectors of interest were written by a plausible real save."""
     flash = bytearray(b"\xFF" * bs.FLASH_SIZE)
     places = {}
-    # The target id, and whichever id the rotation puts at position 13 this generation. They are the
-    # same sector when lws is 13, which the payload handles by re-reading what it just wrote.
+    # The target id and the id at position 13 coincide when lws is 13.
     at_thirteen = (13 - lws) % 14
     for sector_id, fill in ((0, 0x11110000), (at_thirteen, 0x22220000)):
         phys = ((lws + sector_id) % 14) + 14 * (counter % 2)
@@ -64,7 +57,7 @@ def test_nothing_outside_the_patch_moves():
     result, _, after = run(patched(), flash)
     before, now = sector(flash, places[0]), sector(after, places[0])
     moved = [i for i in range(bs.FLASH_SECTOR_SIZE) if before[i] != now[i]]
-    # the name bytes that differ, the checksum, and the counter. Nothing else in 4096 bytes.
+    # The name bytes that differ, the checksum and the counter; nothing else in 4096 bytes.
     assert moved == [0, 1, 2, 3, 4, 5, 6, 0xFF6, 0xFF7, 0xFFC]
     assert charmap.decode(now[0:8]) == "POKELDN"
     assert result.returned == 1
@@ -98,8 +91,7 @@ def test_both_sectors_carry_the_winning_counter():
 
 
 def test_it_writes_exactly_the_two_sectors_it_derived():
-    """The reads are not logged: the payload reads the window inline rather than calling ReadFlash,
-    so there is no ROM function to hook. That they happened is what every content test above shows."""
+    """The reads are inline, not through ReadFlash; the content tests show they happened."""
     flash, places = band()
     _, machine, _ = run(patched(), flash)
     assert [(w[1], w[3]) for w in machine.flash_writes] == \
@@ -122,8 +114,7 @@ def test_the_placement_follows_the_live_globals(lws, counter):
 
 
 def test_the_status_witness_is_a_live_value_not_a_constant():
-    """It reports the counter sector B already held, which a payload that read nothing could not
-    invent; a constant like the signature could be produced without reading anything."""
+    """It reports the counter sector B already held, which a payload that read nothing could not invent."""
     for counter in (129, 131, 137):
         flash, _ = band(LWS, counter)
         result, _, _ = run(patched(), flash, LWS, counter)

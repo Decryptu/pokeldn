@@ -1,9 +1,5 @@
-"""The stats a console computes for a record it is given, against its own arithmetic.
-
-Both cases are measured: a record built with perfect individual values and every growth value 10
-came back out of a console's box with the first set, and the console's own level-68 Gengar the
-record was modelled on carries the second. `docs/pla.md`, Choosing what to offer.
-"""
+"""Stats a console computes for a record, against two measured cases (`docs/pla.md`, Choosing what
+to offer)."""
 
 from pokeldn.pla import stats
 
@@ -22,8 +18,7 @@ def test_the_stats_a_console_carries_on_its_own_record():
 
 
 def test_the_growth_multiplier_saturates_and_that_is_why_the_speed_matched():
-    """Two records one of which has perfect values compute the same speed, because the individual
-    value's bias and the growth value both reach the top of the table."""
+    """The individual value's bias and the growth value both saturate, so the speeds match."""
     assert stats.bias(31) == 3 and stats.bias(22) == 1
     assert stats.MULTIPLIER[min(10 + stats.bias(31), 10)] == stats.MULTIPLIER[min(9 + stats.bias(22), 10)]
     perfect = stats.stats(GENGAR_BASE, 68, (31,) * 6, (10,) * 6, NAIVE)

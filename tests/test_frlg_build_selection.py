@@ -1,13 +1,5 @@
-"""The Mystery Gift host picks the cartridge build from the game code the console sends.
-
-Whole path, no radio: the run config comes from bin/frlg_mg_host.py's own parser, the plan from
-config.plan_builds as the host application makes it, and our Mystery Gift client plays the console,
-its game data carrying the game code [mystery_gift.c:369].
-
-How it could fail: the server sends French FireRed's bytes to an English console; an unknown game
-code is served whatever was built first; the refusal comes after the buffer script has left;
-`--version firered` stops holding a build-dependent payload to FireRed cartridges.
-"""
+"""The Mystery Gift host picks the cartridge build from the game code the console sends
+[mystery_gift.c:369]."""
 
 import pytest
 

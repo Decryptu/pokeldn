@@ -15,16 +15,14 @@ def test_the_table_is_the_decomps_length():
 
 
 def test_the_address_is_derived_from_the_measured_gspecialvars():
-    """script_data opens with the table and gSpecialVars follows it [ld_script_rev10.ld:318]; it is
-    measured gSpecialVars, so the table costs no run of its own."""
+    """script_data opens with the table and gSpecialVars follows it [ld_script_rev10.ld:318]."""
     assert rom_map.G_SCRIPT_CMD_TABLE == 0x08163650
     assert rom_map.G_SPECIAL_VARS - rom_map.G_SCRIPT_CMD_TABLE == \
         scrcmd_names.SCRIPT_CMD_TABLE_SIZE
 
 
 def test_the_index_is_the_opcode_this_project_already_emits():
-    """A cross-check against the opcodes the composers write: if the generated order were wrong,
-    these would not line up [pokeldn/frlg/rom/scrcmd.py]."""
+    """Cross-check against the opcodes the composers write [pokeldn/frlg/rom/scrcmd.py]."""
     assert scrcmd_names.COMMANDS[scrcmd.OP_END] == "end"
     assert scrcmd_names.COMMANDS[scrcmd.OP_ADDVAR] == "addvar"
     assert scrcmd_names.COMMANDS[scrcmd.OP_SETVAR] == "setvar"
@@ -52,8 +50,6 @@ def test_a_table_read_at_the_wrong_address_fails_the_shape_test():
     assert scrcmd_names.plausible(entries) == []
 
 
-# --- the measured table -------------------------------------------------------------------
-
 def test_every_measured_handler_is_a_rom_address():
     assert len(scrcmd_names.HANDLERS) == 214
     assert all(0x0806D000 <= a < 0x08071000 for a in scrcmd_names.HANDLERS)
@@ -61,8 +57,7 @@ def test_every_measured_handler_is_a_rom_address():
 
 
 def test_the_only_shared_handler_is_the_pair_the_decomp_names_nop():
-    """This is the alignment proof, not a curiosity: ScrCmd_nop sits at opcode 0 and opcode 213
-    with ScrCmd_nop1 distinct between them, so a table read off by one entry cannot reproduce it."""
+    """ScrCmd_nop at opcodes 0 and 213 with ScrCmd_nop1 between: an off-by-one read cannot reproduce it."""
     shared = [i for i, a in enumerate(scrcmd_names.HANDLERS)
               if scrcmd_names.HANDLERS.count(a) > 1]
     assert shared == [0, 213]
@@ -76,8 +71,6 @@ def test_a_handler_is_reachable_by_name():
     assert scrcmd_names.handler("nop") == scrcmd_names.HANDLERS[0]
 
 
-# --- the workers behind the handlers ------------------------------------------------------
-
 def test_the_worker_addresses_sit_inside_the_dumped_rom():
     for name in ("ADD_BAG_ITEM", "REMOVE_BAG_ITEM", "CHECK_BAG_HAS_SPACE", "CHECK_BAG_HAS_ITEM",
                  "ADD_PC_ITEM", "FLAG_SET", "FLAG_CLEAR", "FLAG_GET", "INCREMENT_GAME_STAT",
@@ -88,16 +81,12 @@ def test_the_worker_addresses_sit_inside_the_dumped_rom():
 
 
 def test_the_flag_helpers_are_three_consecutive_functions():
-    """FlagSet, FlagClear and FlagGet are written in that order [decomp:src/event_data.c], and the
-    handlers called them in that order, so the addresses must ascend."""
+    """FlagSet, FlagClear, FlagGet are written in that order [decomp:src/event_data.c]."""
     assert rom_map.FLAG_SET < rom_map.FLAG_CLEAR < rom_map.FLAG_GET
 
 
-# --- reading a script the console holds ------------------------------------------------
-# 42 bytes read off the console at 0x081A7624, where gStdScripts points: five standard scripts laid
-# out back to back. They are the fixture because they are the one place a script's boundaries are
-# known independently - data/scripts/std_msgbox.inc says what each one is, and gStdScripts says
-# where each one starts, so a wrong opcode table or a wrong operand width desynchronises visibly.
+# 42 bytes read off the console at gStdScripts (0x081A7624): five standard scripts back to back
+# [data/scripts/std_msgbox.inc].
 STD_MSGBOX_BASE = 0x081A7624
 STD_MSGBOX_BYTES = bytes.fromhex(
     "6a5a6700000000666d6c03"      # Std_MsgboxNPC     0x081A7624
@@ -116,9 +105,7 @@ def test_the_console_s_own_standard_script_disassembles_as_the_decomp_wrote_it()
 
 
 def test_each_standard_script_ends_exactly_where_the_next_one_begins():
-    """The real check on the operand widths. gStdScripts gives five entry points; the disassembly
-    of each one has to stop on `return` at the byte before the next. A width that is wrong by one
-    anywhere cannot land on all five."""
+    """A wrong operand width cannot stop on `return` right before all five entry points."""
     entries = (0x081A7624, 0x081A762F, 0x081A7639, 0x081A7641, 0x081A764B)
     for start, next_start in zip(entries, entries[1:]):
         lines = scrcmd.disassemble(STD_MSGBOX_BYTES, STD_MSGBOX_BASE, start)
@@ -136,8 +123,7 @@ def test_a_pointer_that_is_not_a_script_is_not_mistaken_for_one():
 
 
 def test_every_command_the_project_emits_has_a_shape():
-    """scrcmd.py's OP_* constants are the commands this host actually writes into a RAM script; a
-    command with no fixed shape cannot be disassembled, so it must not be one of ours."""
+    """Every OP_* the host writes into a RAM script has a fixed shape."""
     ours = [value for name, value in vars(scrcmd).items()
             if name.startswith("OP_") and isinstance(value, int)]
     assert ours
@@ -145,9 +131,7 @@ def test_every_command_the_project_emits_has_a_shape():
         assert opcode in scrcmd_args.ARGS, f"{scrcmd_names.COMMANDS[opcode]} has no operand shape"
 
 
-# 0x081A7699..0x081A77A3 of the French FireRed cartridge, read off the console (a 1 KB
-# memory-dump at 0x081A7600). It is data/scripts/trainer_battle.inc: seven labels, four runs that
-# each end on `end`, and the region every trainer on every map goes through.
+# 0x081A7699..0x081A77A3 of French FireRed, read off the console: data/scripts/trainer_battle.inc.
 TRAINER_BATTLE_BASE = 0x081A7699
 TRAINER_BATTLE_BYTES = bytes.fromhex(
     "6a2538002537002705b2771a086a5a4f0f80b077"
@@ -173,17 +157,14 @@ def names_at(start):
 
 def test_the_console_s_own_trainer_script_disassembles_as_the_decomp_wrote_it():
     """EventScript_TryDoNormalTrainerBattle [decomp:data/scripts/trainer_battle.inc:8], command for
-    command. This is the shape the old flattened operand table could not read: it measured
-    `applymovement` at 14 bytes instead of 7, swallowed the `waitmovement` and the `specialvar`
-    behind it, and every byte after that was noise."""
+    command."""
     assert names_at(0x081A76A6) == [
         "lock", "faceplayer", "applymovement", "waitmovement", "specialvar",
         "compare_var_to_value", "goto_if", "special", "special", "goto"]
 
 
 def test_the_operands_of_that_script_are_the_decomps_own_arguments():
-    """VAR_LAST_TALKED and Movement_RevealTrainer, then `waitmovement 0`. A width wrong by one
-    anywhere above these would put a different number here."""
+    """VAR_LAST_TALKED, Movement_RevealTrainer, then `waitmovement 0`."""
     lines = scrcmd.disassemble(TRAINER_BATTLE_BYTES, TRAINER_BATTLE_BASE, 0x081A76A6)
     assert lines[2].split("  ", 3)[3] == "applymovement 0x800F, 0x081A77B0"   # VAR_LAST_TALKED
     assert lines[3].split("  ", 3)[3] == "waitmovement 0x0000"
@@ -191,10 +172,7 @@ def test_the_operands_of_that_script_are_the_decomps_own_arguments():
 
 
 def test_each_trainer_script_ends_exactly_where_the_next_one_begins():
-    """The same end-to-start check as the standard scripts, over a region that actually uses the
-    commands the widths were wrong for. Seven runs, no gap and no overlap, and every boundary is a
-    label the decomp names [data/scripts/trainer_battle.inc]. A width wrong by one anywhere above
-    cannot land on all seven."""
+    """Seven runs, no gap and no overlap, each boundary a decomp label [data/scripts/trainer_battle.inc]."""
     entries = (0x081A7699,      # EventScript_DoTrainerBattleFromApproach
                0x081A76A6,      # EventScript_TryDoNormalTrainerBattle
                0x081A76CD,      # EventScript_NoTrainerBattle, EventScript_TryDoDoubleTrainerBattle
@@ -213,18 +191,14 @@ def test_each_trainer_script_ends_exactly_where_the_next_one_begins():
 
 
 def test_a_goto_ends_the_run_because_control_never_falls_through_it():
-    """The decomp puts EventScript_NoTrainerBattle immediately behind the `goto` that ends
-    EventScript_TryDoNormalTrainerBattle [trainer_battle.inc:17], so a walk that carried on through
-    the goto would run two labels together and never find the boundary."""
+    """EventScript_NoTrainerBattle sits right behind that `goto` [trainer_battle.inc:17]."""
     lines = scrcmd.disassemble(TRAINER_BATTLE_BYTES, TRAINER_BATTLE_BASE, 0x081A76A6)
     assert lines[-1].split()[2] == "goto"
     assert scrcmd.OP_GOTO in scrcmd.TERMINATORS
 
 
 def test_the_flattened_shapes_cannot_come_back():
-    """Eleven macros in event.inc have conditional bodies, and reading one as a flat list of
-    directives concatenates every branch. These are the lengths the decomp's macros actually
-    give [asm/macros/event.inc]; each was wrong before the generator walked the branches."""
+    """Lengths from the decomp's conditional macro bodies [asm/macros/event.inc]."""
     lengths = {opcode: 1 + sum(widths) for opcode, widths in scrcmd_args.ARGS.items()}
     assert lengths[0x4F] == 7      # applymovement: localId, movements
     assert lengths[0x51] == 3      # waitmovement: localId
@@ -236,8 +210,7 @@ def test_the_flattened_shapes_cannot_come_back():
 
 
 def test_the_at_variants_exist_at_all():
-    """`.ifb \\map` picks between two opcodes, and only the first was read before, so the four
-    commands that carry an explicit map were missing from the table entirely."""
+    """`.ifb \\map` picks between two opcodes; the four explicit-map commands are in the table."""
     for opcode, name in ((0x50, "applymovementat"), (0x52, "waitmovementat"),
                          (0x54, "removeobjectat"), (0x56, "addobjectat")):
         assert opcode in scrcmd_args.ARGS, name
@@ -245,8 +218,7 @@ def test_the_at_variants_exist_at_all():
 
 
 def test_trainerbattle_is_the_one_command_with_a_tail_that_varies():
-    """Ten types, one to four pointers each [asm/macros/event.inc, .macro trainerbattle]. The head
-    is type, trainer, localId; the type is what picks the tail."""
+    """Ten types, one to four pointers each [asm/macros/event.inc, .macro trainerbattle]."""
     assert set(scrcmd_args.VARIABLE) == {0x5C}
     shape = scrcmd_args.VARIABLE[0x5C]
     assert shape["head"] == (1, 2, 2) and shape["select"] == 0
@@ -265,8 +237,7 @@ def test_a_trainerbattle_is_measured_from_its_type_byte():
 
 
 def test_a_type_the_decomp_does_not_define_is_not_a_trainerbattle():
-    """Type 10 has no branch in the macro, so the length is unknown and the walk stops rather than
-    guessing one - a guessed length turns every byte after it into noise."""
+    """Type 10 has no branch in the macro; the walk stops rather than guess a length."""
     assert scrcmd.shape(bytes([0x5C, 10]) + b"\x00" * 20, 0, 0) is None
     assert not scrcmd.looks_like_a_script(bytes([0x5C, 10]) + b"\x00" * 20, 0, 0)
 

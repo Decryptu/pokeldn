@@ -1,9 +1,5 @@
-"""The cable-club colosseum host: the advertisement, the extra LinkPlayer record, the battle.
-
-Every assertion here is a decomp fact; see pokeldn/frlg/link/cable_club.py and
-docs/frlg_gift.md. NOTHING here is hardware-proven yet: no run has advertised
-ACTIVITY_BATTLE_SINGLE.
-"""
+"""The cable-club colosseum host: the advertisement, the extra LinkPlayer record, the battle
+(docs/frlg_gift.md)."""
 
 import os
 import sys
@@ -38,16 +34,11 @@ def _search_word(app_data):
         record[beacon.SEARCH_WORD_OFFSET:beacon.SEARCH_WORD_OFFSET + 2], "little")
 
 
-# --- the advertisement ------------------------------------------------------------------------
-
 def test_the_activity_constant_matches_the_decomp():
-    """sAcceptedActivityIds_SingleBattle[] = {ACTIVITY_BATTLE_SINGLE, 0xFF}
-    [src/data/union_room.h:398], and ACTIVITY_BATTLE_SINGLE is 1
+    """sAcceptedActivityIds_SingleBattle [src/data/union_room.h:398]; ACTIVITY_BATTLE_SINGLE is 1
     [include/constants/union_room.h:22]."""
     assert beacon.ACTIVITY_BATTLE_SINGLE == 1
 
-
-# --- the extra 28-byte LinkPlayer record ------------------------------------------------------
 
 def test_the_cable_club_record_is_the_bare_struct_without_the_magics():
     """SendBlock(0, &gLocalLinkPlayer, sizeof(gLocalLinkPlayer)) [cable_club.c:701] sends the
@@ -69,8 +60,6 @@ def test_a_short_record_is_rejected_rather_than_read_short():
         cable_club.read_local_link_player(bytes(20))
 
 
-# --- the engine -------------------------------------------------------------------------------
-
 def _engine(party=None, **kw):
     kw.setdefault("colosseum", True)
     h = HostTradeEngine(party or [_mon()], trade_slot=0, **kw)
@@ -89,9 +78,8 @@ def test_the_colosseum_cannot_be_hosted_from_the_union_room():
 
 
 def test_the_card_standby_arms_the_battle_entry_without_waiting_for_a_seat():
-    """the console fades to black on its spot and parks in Task_StartWirelessCableClubBattle
-    case 3 waiting for our record. The trade centre's post-seat standby rounds never come, so
-    gating on them deadlocked both sides."""
+    """The console parks in Task_StartWirelessCableClubBattle case 3 waiting for our record; no seat
+    rounds come."""
     from pokeldn.frlg.link.host_trade import H_ENTRY_CARD
     h = _engine()
     h._set_state(H_ENTRY_CARD)
@@ -168,9 +156,7 @@ def test_the_whole_party_fights_not_just_two():
 
 
 def test_our_trainer_id_is_the_one_the_counter_records():
-    """MysteryGift_TryIncrementStat(CARD_STAT_BATTLES_WON, gLinkPlayers[id ^ 1].trainerId)
-    [cable_club.c:794], and IncrementCardStatForNewTrainer counts an id once
-    [mystery_gift.c:630] - so three wins need three --id values, carried by this block."""
+    """IncrementCardStatForNewTrainer counts a trainer id once [cable_club.c:794, mystery_gift.c:630]."""
     from pokeldn import config as configmod
     profile = configmod.profile_from_overrides(trainer_id=(1234, 4321))
     h = HostTradeEngine([_mon()], trade_slot=0, colosseum=True, profile=profile)
@@ -179,10 +165,8 @@ def test_our_trainer_id_is_the_one_the_counter_records():
 
 
 def test_a_forfeit_is_still_a_win_for_the_console():
-    """HandleAction_Run sets B_OUTCOME_WON on the other side and ORs B_OUTCOME_LINK_BATTLE_RAN
-    [battle_main.c:4300], but HandleEndTurn_BattleWon clears that bit before
-    CB2_ReturnFromCableClubBattle switches on the outcome [battle_main.c:3734], so the plain
-    B_OUTCOME_WON case is what runs. Our default forfeit therefore still moves battlesWon."""
+    """HandleEndTurn_BattleWon clears B_OUTCOME_LINK_BATTLE_RAN [battle_main.c:4300,3734], so a
+    forfeit still counts as the console's win."""
     from pokeldn.frlg.link import battle_link as bl
     h = _engine()
     h._begin_seated_activity()
@@ -196,8 +180,6 @@ def test_a_forfeit_is_still_a_win_for_the_console():
     reply = bl.parse(out[0])
     assert reply["payload"][:2] == bytes([bl.TWORETURNVALUES, bl.B_ACTION_RUN])
 
-
-# --- the host application and the CLI ---------------------------------------------------------
 
 def _advertised_activity(**options):
     """Drive the real HostApplication._build_components and read what it puts on the air."""
@@ -239,8 +221,7 @@ def test_the_host_app_advertises_the_battle_activity_only_with_the_option():
 
 
 def test_the_cli_flag_reaches_the_options_and_keeps_the_slot_valid():
-    """--colosseum offers nothing, so the trade slot only has to index the party; the default
-    --slot 1 must not fail a one-mon battle party."""
+    """--colosseum offers nothing; the default --slot 1 must not fail a one-mon party."""
     import frlg_trade_host
     parser = frlg_trade_host.build_parser(
         __import__("pokeldn.config", fromlist=["config"]).HostFileConfig())
@@ -269,7 +250,6 @@ def test_the_seat_route_keeps_the_ready_key_and_drops_the_trade_centre_walk():
     keys = {key for key, _held in COLOSSEUM_SPOT_ROUTE}
     assert keys == {LINK_KEY_EMPTY, LINK_KEY_READY}
     assert sum(held for key, held in COLOSSEUM_SPOT_ROUTE if key == LINK_KEY_READY) == 1
-    # the settling idle before it is the native leader's, unchanged
     assert COLOSSEUM_SPOT_ROUTE[0] == ENTRY_LEFT_CHAIR_ROUTE[0]
 
 
@@ -286,9 +266,7 @@ def test_the_engine_plays_the_colosseum_route_at_the_seat():
 
 
 def test_the_console_leaving_the_colosseum_is_answered_with_our_own_exit_key():
-    """the console's door script waits for every player to reach
-    PLAYER_LINK_STATE_EXITING_ROOM [overworld.c:2977]; unanswered, it sits on "veuillez patienter"
-    until the link errors."""
+    """The door script waits for PLAYER_LINK_STATE_EXITING_ROOM from every player [overworld.c:2977]."""
     from pokeldn.frlg.link.host_trade import H_EXIT, H_UROOM_BATTLE_LINK, LINK_KEY_EXIT_ROOM
     h = _engine()
     h._set_state(H_UROOM_BATTLE_LINK)

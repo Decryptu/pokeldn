@@ -52,12 +52,7 @@ def test_rejects_non_pia_and_short():
 
 
 def test_the_message_header_is_byte_exact_against_the_console():
-    """The 16 bytes in front of the console's own update session, off the capture.
-
-    The presence byte is 0x7F and not 0x0F - the four defined bits are all this header carries, but
-    the console sets three more that name nothing. Emitting 0x0F was the one byte our send path had
-    wrong; everything after it already matched.
-    """
+    """The 16 bytes before the console's own update session; the presence byte is 0x7F, not 0x0F."""
     from pokeldn.ldn.pia5 import build_message
     real = bytes.fromhex("7f110079240000000000000000000000")
     built = build_message(b"\0" * 121, protocol=36, port=0, message_flags=0x11, destination=0)
@@ -74,8 +69,7 @@ def test_an_inherited_message_still_opens_with_its_own_presence_byte():
     assert [m.message_flags for m in got] == [0x11, 0x11]
 
 
-# One real captured packet, 68 bytes, `footer size` 4: the shape that decrypts only once the footer
-# came off. Its four footer bytes are the low halves of the two stations' variable ids.
+# A captured 68-byte packet with footer size 4: the low halves of the two stations' variable ids.
 SP36_FOOTER_PACKET = bytes.fromhex(
     "32ab98648900000001ab358028000504100d649b1ec312c65bc4bc05c88237c05acc7a796988"
     "059a6f997bede1c55e308972518adcbd59256ebdf3d5f6aa69c780284c11")
@@ -113,9 +107,8 @@ def test_the_real_footer_packet_authenticates_once_the_footer_is_off():
     assert msgs[0].payload == bytes.fromhex("0400020000")
 
 
-# the moment we put positions of our own into the Union Room, the console started answering
-# with COMPRESSED messages - 31 bytes of zlib around a 32-byte reliable ack. Read raw, those 31
-# bytes parse into a header claiming a payload of 0x6260, which is the trap this guards.
+# A console's compressed message: 31 bytes of zlib around a 32-byte reliable ack. Read raw, it
+# claims a payload of 0x6260.
 SP46_COMPRESSED_MESSAGE = bytes.fromhex(
     "7f21001f7c0000000000000000000002"      # presence 0x7f, flags 0x21, 31 B, 0x7c, dest bitmap 2
     "484b62606010ffff9f819f81819181410008d100000000ffff03003d510246")

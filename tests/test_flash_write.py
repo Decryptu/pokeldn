@@ -1,10 +1,5 @@
-"""flash-write: composing a sector on the console and writing it with swi 0x48.
-
-The expectations here are the measurements from the FR emulator, not a reading of the wrapper:
-a rejected call writes nothing and returns no status, an accepted one copies 0x1000 bytes and
-touches nothing else, and swi 0x56 voids the destination's signature and aborts outright when the
-destination is rejected [docs/frlg_rom.md, the Sloop syscall boundary].
-"""
+"""flash-write: composing a sector on the console and writing it with swi 0x48 (docs/frlg_rom.md,
+the Sloop syscall boundary)."""
 
 import pytest
 
@@ -84,14 +79,11 @@ def test_replace_sector_needs_the_override_too():
         bs.build_flash_write(30, number=bs.SWI_REPLACE_SECTOR)
 
 
-# --- composing a well-formed save sector ---------------------------------------------------------
-
 def test_the_console_computes_the_games_own_checksum():
     code = bs.build_flash_write(30, footer=True, sector_id=1, counter=99, fill_base=0x41310000)
     result, _, flash = run(code)
     reference = bs.flash_write_source(fill_base=0x41310000, footer=True, sector_id=1, counter=99)
-    # *param carries the chosen sector in its high half and the checksum in its low half, so one
-    # word says both where it went and whether the arithmetic agreed.
+    # *param carries the sector in its high half and the checksum in its low half.
     assert result.param & 0xFFFF == bs.sector_checksum(reference)
     assert result.param >> 16 == 30
     assert sector(flash, 30) == reference
@@ -103,7 +95,7 @@ def test_a_composed_sector_carries_a_well_formed_footer():
     assert int.from_bytes(written[0xFF4:0xFF6], "little") == 4
     assert int.from_bytes(written[0xFF8:0xFFC], "little") == bs.SECTOR_SIGNATURE
     assert int.from_bytes(written[0xFFC:0x1000], "little") == 0x1234
-    # The checksum in the footer recomputes over the data, which is what the loader checks.
+    # The footer checksum recomputes over the data, as the loader checks.
     assert int.from_bytes(written[0xFF6:0xFF8], "little") == bs.sector_checksum(written)
 
 
@@ -114,7 +106,6 @@ def test_everything_between_the_pattern_and_the_footer_is_zeroed():
 
 
 def test_the_checksum_matches_the_real_saves_on_disk():
-    """The reference is the game's, so it must reproduce a save this project did not compute."""
     import pathlib
     sav = pathlib.Path("scratchpad/hgfs/Switch/frlg_bridge/dumps/055_backup_pre_step2.sav")
     if not sav.exists():
@@ -135,8 +126,6 @@ def test_an_id_without_a_footer_is_refused():
         bs.build_flash_write(30, sector_id=3)
 
 
-# --- deriving the position from the game's own save globals --------------------------------------
-
 def globals_at(lws, counter):
     return {bs.GLASTWRITTENSECTOR: int(lws).to_bytes(2, "little"),
             bs.GSAVECOUNTER: int(counter).to_bytes(4, "little")}
@@ -155,8 +144,8 @@ def test_the_console_derives_the_sector_the_id_actually_occupies(lws, counter, s
     machine = bs._Machine(code, memory=globals_at(lws, counter))
     result = machine.call()
     want = rotation(lws, counter, sector_id)
-    assert result.param >> 16 == want                     # reported back, so a miss is visible
-    assert [w[1] for w in machine.flash_writes] == [want]  # and that is where the syscall went
+    assert result.param >> 16 == want
+    assert [w[1] for w in machine.flash_writes] == [want]
 
 
 def test_a_derived_sector_carries_the_live_counter_unchanged():
@@ -196,19 +185,16 @@ def test_a_derived_write_must_be_meant():
         bs.build_flash_write(30, derive=True, unsafe=True)
 
 
-# --- the chunk size the game actually checksums ---------------------------------------------------
-# Ids 0, 4 and 13 carry less than a full data area. In a sector the GAME wrote, everything past the
-# chunk is zero, so summing the full 3968 gives the same answer and the distinction is invisible
-# against any real save. A composed sector that fills the whole data area breaks that equivalence,
-# and the game, which sums the chunk, rejects it. This is the case no real save can exercise.
+# Ids 0, 4 and 13 carry less than a full data area; the game sums only the chunk, so a composed
+# sector filling past it is rejected.
 
 def test_a_composed_sector_is_checksummed_the_way_the_game_will_checksum_it():
     for sector_id in sorted(bs.SECTOR_CHUNK_SIZES):
         built = bs.flash_write_source(footer=True, sector_id=sector_id, counter=1)
         size = bs.sector_chunk_size(sector_id)
         stored = int.from_bytes(built[0xFF6:0xFF8], "little")
-        assert stored == bs.sector_checksum(built, size), sector_id      # the game's rule
-        assert stored == bs.sector_checksum(built), sector_id            # and the shortcut agrees
+        assert stored == bs.sector_checksum(built, size), sector_id
+        assert stored == bs.sector_checksum(built), sector_id
 
 
 def test_a_composed_sector_leaves_its_tail_zero_like_a_real_one():
@@ -219,13 +205,10 @@ def test_a_composed_sector_leaves_its_tail_zero_like_a_real_one():
 
 
 def test_filling_past_the_chunk_would_be_rejected_by_the_game():
-    """The regression: this is what a full-fill sector for a short id looks like to the loader."""
     full = bs.flash_write_source(words=bs.SECTOR_DATA_WORDS, footer=True, sector_id=13, counter=1)
-    # Its stored checksum is the one computed over the chunk, as the game computes it...
     stored = int.from_bytes(full[0xFF6:0xFF8], "little")
     assert stored == bs.sector_checksum(full, bs.sector_chunk_size(13))
-    # ...but the data past the chunk is not zero, so the full-area sum no longer agrees. A payload
-    # that stored THAT value would be refused by the game.
+    # The full-area sum no longer agrees; the game would refuse that value.
     assert bs.sector_checksum(full) != stored
 
 
@@ -238,7 +221,7 @@ def test_the_console_composes_the_short_chunk_too():
 
 
 def test_the_chunk_sizes_are_the_ones_in_the_cartridge():
-    """sSaveSlotLayout is const data in the ROM; if it is on disk, read it rather than trust me."""
+    """sSaveSlotLayout is read from the ROM when it is on disk."""
     import pathlib
     import struct
     rom = pathlib.Path("scratchpad/FireRed_f.gba")
@@ -254,11 +237,8 @@ def test_the_chunk_sizes_are_the_ones_in_the_cartridge():
         [0] + [n * bs.SECTOR_DATA_SIZE for n in range(4)] + [n * bs.SECTOR_DATA_SIZE for n in range(9)]
 
 
-# --- aiming at a band position, and deriving the id from it ---------------------------------------
-# GetSaveValidStatus assigns the slot's counter on every valid sector in physical order, so the LAST
-# valid sector's counter is the slot's. A sector meant to change which slot loads must sit at
-# position 13, and the id that belongs there depends on gLastWrittenSector, which is only known on
-# the console.
+# GetSaveValidStatus takes the last valid sector's counter; position 13's id depends on
+# gLastWrittenSector, known only on the console.
 
 @pytest.mark.parametrize("lws,counter", [(3, 131), (0, 130), (13, 129), (7, 200), (1, 4)])
 def test_the_console_derives_the_id_from_the_position(lws, counter):
@@ -273,7 +253,6 @@ def test_the_console_derives_the_id_from_the_position(lws, counter):
     written = sector(flash, want_phys)
     assert int.from_bytes(written[0xFF4:0xFF6], "little") == want_id
     assert int.from_bytes(written[0xFFC:0x1000], "little") == counter + 2
-    # Valid under the id that actually landed there, which is the one the loader will use.
     assert int.from_bytes(written[0xFF6:0xFF8], "little") == \
         bs.sector_checksum(written, bs.sector_chunk_size(want_id))
 

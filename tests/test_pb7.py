@@ -12,8 +12,7 @@ OFFER = os.path.join(os.path.dirname(__file__), "..", "scratchpad",
 
 @pytest.fixture
 def message():
-    """An offer a host sent over LDN. The captures live outside the repository, so the tests that
-    need one skip rather than fail on a fresh checkout; the ones that do not need one still run."""
+    """An offer a host sent over LDN; tests needing the capture skip without it."""
     if not os.path.exists(OFFER):
         pytest.skip("the captured offer is not here")
     with open(OFFER, "rb") as fh:
@@ -73,8 +72,7 @@ def test_every_shuffle_value_round_trips():
 
 
 def test_the_joiner_answers_an_offer_once_with_a_structure_the_game_accepts(message, tmp_path):
-    """`--offer echo` returns the host's own structure, so a refusal is about the protocol rather
-    than the contents. It goes once: the host retransmits its offer until it is answered."""
+    """`--offer echo` returns the host's own structure, once."""
     import types
     import importlib.util
     spec = importlib.util.spec_from_file_location(
@@ -95,17 +93,14 @@ def test_the_joiner_answers_an_offer_once_with_a_structure_the_game_accepts(mess
     assert len(sent) == 1
     assert pb7.parse_message(sent[0])["body"] == msg["body"]
 
-    # the same step again is a retransmit and is not answered twice
     mod._answer_offer(args, state, msg, lambda b, p: sent.append(b))
     assert len(sent) == 1
 
-    # a fresh step is the peer offering something else, and is owed an answer of its own
     later = dict(msg, step=msg["step"] + 1)
     mod._answer_offer(args, state, later, lambda b, p: sent.append(b))
     assert len(sent) == 2
     assert [pb7.parse_message(m)["step"] for m in sent] == [2, 3]
 
-    # and with no --offer it stays quiet
     state2, sent2 = {"window": Window()}, []
     mod._answer_offer(types.SimpleNamespace(offer=None), state2, msg,
                       lambda b, p: sent2.append(b))
@@ -113,8 +108,7 @@ def test_the_joiner_answers_an_offer_once_with_a_structure_the_game_accepts(mess
 
 
 def test_the_first_message_a_capture_gives_us_carries_the_hosts_own_trainer(message):
-    """The marker payload was captured between two emulators sharing a save, so its trainer id pair
-    is the host's. A joiner replaying it presents itself as the station it is trading with."""
+    """The marker payload came from two emulators sharing a save, so its trainer ids are the host's."""
     marker = os.path.join(os.path.dirname(__file__), "..", "scratchpad",
                           "lgpe_joiner_first_named.bin")
     if not os.path.exists(marker):
@@ -133,8 +127,7 @@ def test_a_replaced_trainer_id_changes_four_bytes_and_nothing_else():
 
 
 def test_the_commit_is_answered_with_a_commit_of_our_own():
-    """A station's player agreeing sends kind 3, one u32 holding 1. The peer sits on a screen with a
-    spinner and no button until it has ours, so the answer cannot come from its side."""
+    """Kind 3 holding 1 answers the peer's commit; its spinner waits on ours."""
     import types
     import importlib.util
     spec = importlib.util.spec_from_file_location(
@@ -159,16 +152,13 @@ def test_the_commit_is_answered_with_a_commit_of_our_own():
     assert ours["kind"] == pb7.COMMIT_MESSAGE and ours["body"] == b"\1\0\0\0"
     assert ours["step"] == 5
 
-    # a repeat of the same step is not answered twice
     mod._answer_commit(types.SimpleNamespace(offer="echo"), state, commit,
                        lambda b, p: sent.append(b))
     assert len(sent) == 1
 
 
 def test_the_completed_trade_sends_the_pokemon_we_built_back_to_us():
-    """Kind 4 is the result: the party once the trade has gone through. The second one carries the
-    Pokemon the host received, so it comes back under our own trainer id and OT — the wire's own
-    proof that a structure built outside the game is in a save inside it."""
+    """The second kind 4 returns our built Pokemon under our own trainer id and OT."""
     import struct
     result = os.path.join(os.path.dirname(__file__), "..", "scratchpad",
                           "ip23_pia.jsonl.payload8.bin")
@@ -184,9 +174,7 @@ def test_the_completed_trade_sends_the_pokemon_we_built_back_to_us():
 
 
 def test_a_run_that_ends_mid_trade_says_so(capsys, monkeypatch):
-    """A run that stops after the peer has offered leaves it mid-exchange, which a console answers
-    by refusing the next trade for about half an hour. Reading a run's end as one's own doing rather
-    than checking why it ended is what made that cost a lockout."""
+    """A run stopped mid-exchange locks the console out of trades for about half an hour; the log says so."""
     import importlib.util
     spec = importlib.util.spec_from_file_location(
         "lgpe_join", os.path.join(os.path.dirname(__file__), "..", "bin", "lgpe_join.py"))
@@ -206,7 +194,7 @@ def test_a_run_that_ends_mid_trade_says_so(capsys, monkeypatch):
     mod._warn_if_mid_trade()
     assert "after the commit" in capsys.readouterr().out
 
-    # the console's kind 4 ends the trade: once, whatever copies follow, and the exit is clean
+    # The console's kind 4 ends the trade once, whatever copies follow.
     import pokeldn.lgpe.trade as trade_mod
     done = []
     monkeypatch.setattr(trade_mod, "show_done", lambda: done.append(1))
@@ -217,8 +205,7 @@ def test_a_run_that_ends_mid_trade_says_so(capsys, monkeypatch):
 
 
 def test_a_fresh_offer_moves_only_its_pid_and_constant(message, tmp_path):
-    """`--fresh-pid` on a console's own structure: the game's sanity check still passes, every byte
-    but the two ids and the checksum decodes back, and the shiny xor is unchanged."""
+    """`--fresh-pid`: the sanity check passes and only the two ids and the checksum change."""
     import argparse
     from pokeldn.lgpe import trade
 
@@ -245,9 +232,7 @@ def test_a_fresh_offer_moves_only_its_pid_and_constant(message, tmp_path):
     (16, 25, [1]),        # an ordinary trade: the host's own 2 closes it
 ])
 def test_a_trade_giving_a_special_species_sends_the_second_commit(ours, theirs, expected, tmp_path):
-    """`0x838660` hands the kind 3 carrying 2 to the station giving Mewtwo, Mew, a legendary bird,
-    Meltan or Melmetal for an ordinary Pokemon. A joiner that only echoes would leave the console in
-    its state 6 with the lock armed."""
+    """`0x838660` sends kind 3 carrying 2 to the station giving a special species."""
     import types
     import importlib.util
     spec = importlib.util.spec_from_file_location(

@@ -215,8 +215,7 @@ def test_peer_ignores_malformed_session_join_without_changing_identity():
         nonce_source=PiaNonceSequence(native=True, initial=1),
     )
 
-    # ``build_message`` uses network.our_ip as AES-GCM associated data, so
-    # receive it from that address in this transport-independent unit test.
+    # ``build_message`` uses network.our_ip as AES-GCM associated data.
     assert peer.receive(malformed, network.our_ip, now=1.0) == []
     assert not peer.session_join_seen
     assert peer.session_join is None

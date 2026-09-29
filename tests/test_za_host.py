@@ -1,8 +1,4 @@
-"""The Legends Z-A host against an emulated pair's host and against a scripted joiner.
-
-Every hex string below is a message an emulated Z-A host or joiner sent in one reference session:
-session id 9e9c14c2238b018697293395cba1e6d2, host 127.0.0.2 id 0xefb0, joiner 127.0.0.3 id 0x5ad2.
-"""
+"""The Legends Z-A host against a scripted joiner, with messages from one emulated reference session."""
 import pytest
 
 from pokeldn import za
@@ -108,10 +104,8 @@ class ScriptedJoiner:
 
 @pytest.mark.parametrize("cancel", [False, True])
 def test_a_whole_trade_against_a_scripted_joiner(monkeypatch, cancel):
-    """The preview goes out marked 1, the pick marked 0 and only after the joiner's own pick, the
-    confirmation and commit after the joiner's, and every step is answered with its own byte. The
-    board's LED shows the done look once, on the fourth step. A CommandCancelTrade (0103) moves the
-    round on: the console ignores a later 0102 or 0104 under the old one (0xc8dda0, 0x2dc52b4)."""
+    """Preview marked 1, pick marked 0 after the joiner's, every step answered; 0103 moves the round
+    on (0xc8dda0, 0x2dc52b4)."""
     board = esp32_sim.SimulatedBoard(esp32_sim.Air())
     radio = esp32.Radio(board.host_stream())
     monkeypatch.setenv("POKELDN_RADIO", "esp32:simulated")
@@ -173,8 +167,7 @@ def test_a_whole_trade_against_a_scripted_joiner(monkeypatch, cancel):
     radio.close()
     assert board.led_looks == [bytes.fromhex("06ff2003b80b")]   # ramp-up, peak 255, 800 ms, 3000 ms
 
-    # A retail Z-A returns to its box in the same seat (zh05): its next pick draws our offer again,
-    # renewed, since the console's save now holds the first one's PID.
+    # A retail Z-A returning to its box in the same seat draws our offer again, renewed.
     joiner.game(offer[:-1] + b"\x00", t)
     t = joiner.run(t + 2.0, t)
     offers = [x[2] for x in joiner.game_heard() if x[2][:2] == b"\x01\x01"]
@@ -220,7 +213,6 @@ def test_the_joiner_answers_the_hosts_pick_and_not_its_cursor(tmp_path):
     assert [o[-1] for o in offers()] == [za_host.OFFER_PREVIEW, za_host.OFFER_PICK]
     assert offers()[1][:-1] == offer[:-1]
 
-    # The host's commit starts the four steps; the joiner marks the trade done on the last one.
     assert game.traded_at is None
     commit_at = t
     game.on_message(za_join.GAME_RELIABLE,

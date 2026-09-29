@@ -1,12 +1,5 @@
-"""The Legends Arceus joiner against bin/pla_host.py, with one packet lost on the air in either
-direction. The host's own main loop runs over a loopback transport on a fake clock; the joiner is
-`pokeldn.pla.joiner.JoinerSession` driving the trade as `bin/pla_join.py --drive` does.
-
-The host's receive side of the joiner's 0x7c streams is the console's: every message's
-lowest-pending field walks the window base over empty slots before the flags are read (`0x74c250`),
-and a data message that then arrives below the base is dropped. A sequence the base walked over
-before it arrived is a message a hosting console never hands to the game. docs/pla.md,
-Acknowledgement."""
+"""The Legends Arceus joiner against bin/pla_host.py behind a console's receive window (`0x74c250`),
+one packet lost (docs/pla.md, Acknowledgement)."""
 import importlib.util
 import os
 import sys
@@ -28,7 +21,7 @@ HOST_IP, JOINER_IP = "169.254.1.1", "169.254.1.2"
 JOINER_MAC = bytes.fromhex("0200a9fe0102")
 SECONDS = 90.0                      # the host's --seconds, on the fake clock
 SETTLE = 2.0                        # run on after the trade so the host reads the phase-key close
-JOINER = joiner.JoinerSession       # the class under test
+JOINER = joiner.JoinerSession
 
 
 class Clock:
@@ -78,11 +71,8 @@ class ConsoleReceiver:
 
 
 def run(monkeypatch, capsys, drop_host=None, drop_joiner=None):
-    """Run the host's main against the joiner until the joiner has traded (plus SETTLE) or the run
-    ends. `drop_host(port, payload)` loses the first host 0x7c data message it matches on the air,
-    `drop_joiner` the first of the joiner's. -> .joiner, .log (the host's), .jlog (the joiner's),
-    .lost (port, seq, bytes, direction), .copies [(direction, port, seq, bytes, packet)] of every
-    0x7c data message that reached its peer, .receiver."""
+    """Run the host's main against the joiner until it has traded, plus SETTLE. `drop_host` and
+    `drop_joiner` lose the first matching 0x7c data message. -> .joiner, .log, .jlog, .lost, .copies, .receiver"""
     clock = Clock()
     keys = pla.session_keys(SSID)
     exchange = data_exchange.build_record(player_id=bytes.fromhex("504b4c44"), name="PkCamp")
@@ -208,13 +198,8 @@ HOST_LOSSES = {
 
 @pytest.mark.parametrize("lost", ["nothing"] + sorted(JOINER_LOSSES) + sorted(HOST_LOSSES))
 def test_one_lost_message_and_the_trade_still_completes(monkeypatch, capsys, lost):
-    """The joiner acknowledged each host message as its sequence plus one and declared that
-    sequence as its lowest pending; its data messages declared their own sequence. Our host's
-    port-0 numbering runs one ahead of the joiner's (it mirrors the joiner's mirror), so the
-    acknowledgement of the host's phase-3 answer walked a console's base past the joiner's phase 6
-    before it was sent; and a joiner message lost ahead of another was walked over by the second.
-    Either way a hosting console never hands the message to the game. With nothing lost nothing is
-    resent."""
+    """A joiner acknowledging a sequence plus one lets a console's base walk over unseen messages; a
+    lost message is resent."""
     r = run(monkeypatch, capsys, drop_host=HOST_LOSSES.get(lost),
             drop_joiner=JOINER_LOSSES.get(lost))
     assert r.receiver.skipped == [], lost

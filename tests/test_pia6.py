@@ -1,11 +1,4 @@
-"""Pia version 11, the band Legends Arceus speaks.
-
-No console packet has been captured yet, so the pins here are what can be checked without one: the
-header layout and the constants Arceus's own parser enforces, the key and IV against
-`crypto.PiaCrypto`, which runs the same 6.16-6.42 derivation and is proven on retail at 6.32, and
-the game package against the band module. The binary checks run only where the extracted `main` is
-on disk, which is untracked.
-"""
+"""Pia version 11 (Legends Arceus): header, constants from its parser, keys against `crypto.PiaCrypto`."""
 import os
 import struct
 
@@ -147,9 +140,8 @@ def test_the_constants_come_out_of_the_binary():
     assert sum(p << (16 * i) for i, p in enumerate(parts)) == pla.COMM_ID
 
 
-# Two advertisements a retail Legends Arceus broadcast while waiting on its local-trade search
-# screen, with the eight-digit codes 0000 0000 and 1234 5678. Different sessions: the SSIDs differ
-# and so do the channels.
+# Two advertisements a retail Legends Arceus broadcast on its local-trade search, codes 0000 0000
+# and 1234 5678, from different sessions.
 PLA_ADVERTISE = {
     "00000000": bytes.fromhex(
         "005c150000d59b29dd441b5d70885998bf968aa1660101000000010120000000000000000000000000000000"
@@ -288,9 +280,7 @@ def test_the_net_protocol_id_is_selectable():
 
 
 def test_a_message_ends_where_its_payload_ends_and_the_packet_pads_with_ff():
-    """This band does not align a message: a reference station starts the next one on the byte after
-    the last payload, and only the packet pads, to sixteen and with 0xFF. A zero there is a legal
-    message header and would reject the packet."""
+    """A message ends at its payload; only the packet pads, to sixteen with 0xFF."""
     m = pia6.build_message(b"A" * 74, protocol=0x2C, port=0)
     assert len(m) == 90                                    # a sixteen-byte header and the payload
     packed = pia6.pad_payload(m)

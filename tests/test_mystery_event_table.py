@@ -1,21 +1,8 @@
-"""Locating gMysteryEventScriptCmdTable, the one table this project has only ever read from the
-decomp.
+"""gMysteryEventScriptCmdTable located through sMysteryEventScriptContext.
 
-The Mystery Event VM has its own 17-command interpreter [docs/frlg_rom.md]. Every opcode in it
-has been RUN on the console, but the table itself has never been located: it carries no constant to
-search for, and its 17 entries are unrelated function addresses, so `table-scan`'s arithmetic-run
-fingerprint does not match it either.
-
-What does match is where the table's ADDRESS is kept. `InitMysteryEventScript` calls
-`InitScriptContext(ctx, gMysteryEventScriptCmdTable, gMysteryEventScriptCmdTableEnd)`
-[decomp:src/mystery_event_script.c:52], `struct ScriptContext` stores those two as ADJACENT words
-at +0x5C and +0x60 [decomp:include/script.h], and the context is
-`EWRAM_DATA static struct ScriptContext sMysteryEventScriptContext` - so once a Mystery Event script
-has run, the pair sits in EWRAM for the rest of the boot.
-
-Two adjacent words exactly 68 apart is a `table-scan` with `--table-delta 0x44 --table-runlen 2`,
-and the scan answers with the run's first VALUE, which is the table address itself. Locating and
-reading are one run, the same way gSpecialVars was.
+InitScriptContext stores the table and its end as adjacent words at +0x5C and +0x60
+[decomp:src/mystery_event_script.c:52, include/script.h], 68 apart: a `table-scan` with
+`--table-delta 0x44 --table-runlen 2` answers with the table address.
 """
 
 import os
@@ -33,9 +20,8 @@ MYSTERY_EVENT_TABLE_BYTES = MYSTERY_EVENT_CMD_COUNT * 4
 CTX_CMD_TABLE = 0x5C
 CTX_CMD_TABLE_END = 0x60
 
-# Where the answer has to fall if it is real. script_data opens at gScriptCmdTable and the mystery
-# event table is its LAST member [ld_script_rev10.ld:318-328], so the table sits above every event
-# script we have read and below .rodata, which starts below gSpeciesInfo.
+# The table is script_data's last member [ld_script_rev10.ld:318-328]: above the event scripts,
+# below .rodata.
 ANSWER_LOW = 0x081AB569                 # the last command of gStdScripts[8], read
 ANSWER_HIGH = 0x0824CDC0 - MYSTERY_EVENT_TABLE_BYTES     # gSpeciesInfo
 
@@ -50,8 +36,7 @@ def _context(cmd_table):
 
 
 def test_the_scan_finds_the_context_and_reads_the_table_address_out_of_it():
-    """The payload, run offline against a context planted where one would be. The hit's ADDRESS is
-    the context, and the hit's VALUE is gMysteryEventScriptCmdTable."""
+    """The hit's address is the context and its value gMysteryEventScriptCmdTable."""
     context_at, table_at = 0x0203A000, 0x08215A40
     low, high = context_at - 0x40, context_at + 0x200
     repeated = buffer_script.emulate_repeating(
@@ -65,9 +50,7 @@ def test_the_scan_finds_the_context_and_reads_the_table_address_out_of_it():
 
 
 def test_a_context_that_never_ran_a_script_answers_nothing():
-    """`sMysteryEventScriptContext` is zero until a Mystery Event script runs, and 0 and 0 are not
-    68 apart. So the run has to FOLLOW a mystery-event gift in the same boot - which is the one
-    thing that can make this run uninformative, and it is worth knowing before it is spent."""
+    """The context is zero until a Mystery Event script runs; the scan must follow one in the same boot."""
     context_at = 0x0203A000
     low, high = context_at - 0x40, context_at + 0x200
     repeated = buffer_script.emulate_repeating(
@@ -79,9 +62,7 @@ def test_a_context_that_never_ran_a_script_answers_nothing():
 
 
 def test_the_field_script_context_is_the_control_and_its_answer_is_already_known():
-    """The same shape with delta 856 finds the FIELD script context instead, whose cmdTable is
-    gScriptCmdTable - an address a run already measured. A scan that cannot find that on the console
-    is not measuring what it thinks, and it costs one ordinary run to check."""
+    """Delta 856 finds the field script context, whose cmdTable is the measured gScriptCmdTable."""
     assert rom_map.G_SCRIPT_CMD_TABLE == 0x08163650
     field_table_bytes = 214 * 4
     assert field_table_bytes == 0x358
@@ -99,19 +80,15 @@ def test_the_field_script_context_is_the_control_and_its_answer_is_already_known
     assert answer["hits"] == [(context_at + CTX_CMD_TABLE, rom_map.G_SCRIPT_CMD_TABLE)]
 
 
-# --- and then it was measured: A run found it, a run read it ---------------------------------------
-
 def test_the_table_was_found_where_the_bracket_said_it_had_to_be():
-    """one hit in all 256 KB of EWRAM, no false positives. The scan's value is the table."""
+    """One hit in all 256 KB of EWRAM."""
     assert rom_map.G_MYSTERY_EVENT_CMD_TABLE == 0x081DE144
     assert ANSWER_LOW < rom_map.G_MYSTERY_EVENT_CMD_TABLE < ANSWER_HIGH
     assert rom_map.S_MYSTERY_EVENT_SCRIPT_CONTEXT + CTX_CMD_TABLE == 0x0203AA94
 
 
 def test_the_seventeen_entries_are_seventeen_functions():
-    """A run read the table. Every entry odd (THUMB), every one distinct, every one inside .text,
-    and all of them within about a kilobyte of each other - one object file's worth of functions.
-    Seventeen coincidences would not do that."""
+    """Seventeen distinct odd .text addresses within about a kilobyte: one object file."""
     addresses = [address for _name, address in rom_map.MYSTERY_EVENT_HANDLERS]
     assert len(addresses) == MYSTERY_EVENT_CMD_COUNT
     assert len(set(addresses)) == MYSTERY_EVENT_CMD_COUNT
@@ -121,31 +98,25 @@ def test_the_seventeen_entries_are_seventeen_functions():
 
 
 def test_the_table_order_is_the_vms_own_opcode_order():
-    """The names in rom_map are the decomp's table order; mystery_event.OPCODE_NAMES was written
-    from the VM's behaviour on the console, run by run. They have to agree entry for entry."""
+    """rom_map's decomp order agrees with mystery_event.OPCODE_NAMES, written from the console's VM."""
     from pokeldn.frlg.rom import mystery_event
     assert [name for name, _address in rom_map.MYSTERY_EVENT_HANDLERS] == [
         mystery_event.OPCODE_NAMES[opcode] for opcode in range(MYSTERY_EVENT_CMD_COUNT)]
 
 
 def test_the_end_of_the_table_is_the_end_of_script_data():
-    """`mystery_event_script_cmd_table.o(script_data)` is the LAST member of script_data and
-    lib_text follows it [ld_script_rev10.ld:318-330]. A run read 0x4C41B510 at that address -
-    `push {r4, lr}` - which is a THUMB prologue, so lib_text starts exactly there."""
+    """lib_text follows script_data [ld_script_rev10.ld:318-330]; 0x4C41B510 (`push {r4, lr}`) was
+    read there."""
     assert rom_map.SCRIPT_DATA_END == 0x081DE188
     assert rom_map.LIB_TEXT_START == rom_map.SCRIPT_DATA_END
     assert rom_map.SCRIPT_DATA_END == (rom_map.G_MYSTERY_EVENT_CMD_TABLE
                                        + 4 * MYSTERY_EVENT_CMD_COUNT)
-    # and script_data has to contain everything already measured inside it
     for address in (rom_map.G_SCRIPT_CMD_TABLE, rom_map.G_SPECIALS, rom_map.G_STD_SCRIPTS):
         assert rom_map.G_SCRIPT_CMD_TABLE <= address < rom_map.SCRIPT_DATA_END
 
 
 def test_the_vms_workers_were_read_by_position():
-    """A run dumped 16 of the 17 handlers and the bl targets name themselves against the decomp's
-    call order. Both dead opcodes - setrecordmixinggift and enableresetrtc - make exactly one call,
-    to the same address, which is SetIncompatible: that is what makes them dead
-    [decomp:src/mystery_event_script.c], and it is the shape the dump actually came back with."""
+    """Both dead opcodes make one call, to SetIncompatible [decomp:src/mystery_event_script.c]."""
     assert rom_map.ME_SET_INCOMPATIBLE == 0x080DE330
     assert rom_map.ME_CHECK_COMPATIBILITY < rom_map.ME_SET_INCOMPATIBLE
     # the two statics sit BELOW the handlers, which is where a C file's helpers go
@@ -154,23 +125,14 @@ def test_the_vms_workers_were_read_by_position():
 
 
 def test_memcpy_lands_inside_lib_text_and_checks_the_boundary():
-    """addtrainer is `ScriptReadWord; memcpy; ValidateEReaderTrainer; StringExpandPlaceholders`
-    [decomp:src/mystery_event_script.c], so its second call is memcpy - which comes from libgcc and
-    lives in lib_text. It has to be above the boundary a run found by reading a THUMB prologue, and
-    nothing about that reading knew anything about this handler."""
+    """addtrainer's second call is memcpy [decomp:src/mystery_event_script.c], from libgcc in lib_text."""
     assert rom_map.MEMCPY > rom_map.LIB_TEXT_START
     assert rom_map.STRING_EXPAND_PLACEHOLDERS < rom_map.G_SCRIPT_CMD_TABLE   # ordinary .text
     assert rom_map.INIT_RAM_SCRIPT < rom_map.G_SCRIPT_CMD_TABLE
 
 
 def test_varset_was_reachable_only_through_the_vm():
-    """No ScrCmd body calls VarSet - `setvar`'s worker is GetVarPointer and a store through what it
-    returns, which is why call-chain grew its `prev` mechanism. The Mystery Event VM
-    does call it: setenigmaberry ends `VarSet(VAR_ENIGMA_BERRY_AVAILABLE, 1)`.
-
-    The check is the layout. event_data.c declares GetVarPointer, VarGet, VarSet in that order, and
-    the gap between VarGet and VarSet is 0x1C - the whole of VarGet's body, which is one call, one
-    null test and one load [decomp:src/event_data.c:235]."""
+    """No ScrCmd calls VarSet; setenigmaberry does. VarGet's body is 0x1C [decomp:src/event_data.c:235]."""
     assert rom_map.GET_VAR_POINTER < rom_map.VAR_GET < rom_map.VAR_SET
     assert rom_map.VAR_SET - rom_map.VAR_GET == 0x1C
     assert rom_map.callable_function("VarSet") == rom_map.VAR_SET | 1, "a call needs the THUMB bit"

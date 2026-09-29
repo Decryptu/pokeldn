@@ -1,15 +1,5 @@
-"""The English builds' payloads, run on the retail English cartridge images under unicorn.
-
-The image is the cartridge's own code: each payload is entered through that cartridge's
-Client_RunBufferScript [mystery_gift_client.c:276], which reads gSaveBlock2Ptr and gSaveBlock1Ptr at
-the build's own IWRAM addresses, and every function a payload calls is the cartridge's.
-
-How it could fail: a build address off by the IWRAM shift (+0xB0) or by a ROM move, so the client
-never returns, CreateMon runs from the middle of another function, GetVarPointer is not where the
-chain calls it, the installer patches the French gIntrTable slot, or MOM's loader reads the save
-through the French gSaveBlock2Ptr. The negative case is the French-built create-mon, which must
-not make a Pokemon on an English cartridge.
-"""
+"""The English builds' payloads on the retail English cartridge images under unicorn, through their
+own Client_RunBufferScript [mystery_gift_client.c:276]."""
 
 import pathlib
 
@@ -102,8 +92,7 @@ def test_create_mon_makes_an_english_pikachu(build, path):
 
 @pytest.mark.parametrize("build, path", CARTRIDGES)
 def test_the_french_create_mon_makes_nothing_on_an_english_cartridge(build, path):
-    """French CreateMon's address is inside another English function. In this model the call
-    faults; on a console the outcome is not a clean refusal. Either way no Pokemon comes back."""
+    """French CreateMon's address is inside another English function; no Pokemon comes back."""
     from unicorn import UcError
     machine = _console(_create_mon(builds.BPRF), build, _image(path))
     try:

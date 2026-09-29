@@ -46,8 +46,6 @@ def test_readme_local_links_exist():
     assert all(Path(link).exists() for link in links)
 
 
-# --- the published site -------------------------------------------------------------------
-#
 # The sidebar matches `parent` and `grand_parent` against page titles; a mismatch hides the page.
 
 DOCS = Path("docs")
@@ -100,7 +98,6 @@ def test_the_navigation_is_a_tree_no_deeper_than_just_the_docs_renders():
             node = by_title[node["parent"]]
             assert node["title"] not in seen or depth == 2, f"{name} is in a parent cycle"
             seen.add(node["title"])
-        # A grandchild must name its grandparent, and name it correctly.
         if depth == 3:
             assert front.get("grand_parent") == by_title[front["parent"]]["parent"], \
                 f"{name}: grand_parent does not match its parent's parent"
@@ -124,9 +121,7 @@ def test_the_site_base_url_matches_the_repository():
     assert "https://github.com/Decryptu/pokeldn" in config
 
 
-# --- the launchers ------------------------------------------------------------------------
-#
-# conftest.py sets sys.path, so launcher imports must be checked in a separate process.
+# conftest.py sets sys.path, so launcher imports are checked in a separate process.
 
 def _standalone(script):
     env = {k: v for k, v in os.environ.items() if k != "PYTHONPATH"}

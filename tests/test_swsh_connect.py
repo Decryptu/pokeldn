@@ -1,10 +1,4 @@
-"""The launcher's own send path, offline - the exact function a hardware run will call.
-
-`tests/test_pia4.py` proves the framing against the console's own packets; this proves that
-`swsh_connect.wrap` puts a Local Protocol ack inside it correctly, so the run spends its association
-on a question rather than on a typo. There is no capture of one of our version-4 packets yet, so
-this is a self-consistency check with the receiver's derivation on the other side of it.
-"""
+"""The launcher's send path offline: `swsh_connect.wrap` against the receiver's derivation."""
 
 import struct
 
@@ -52,8 +46,7 @@ def test_the_ack_the_run_sends_reads_back_as_an_ack():
 
 
 def test_the_station_byte_reaches_the_header_and_the_iv_together():
-    """The sweep only reads if the two move as one; a header saying 1 and an IV built on 0 would
-    fail the tag and look exactly like the console ignoring us."""
+    """A header station byte and an IV built on another fail the tag like a console ignoring us."""
     for station in (0, 1, 2):
         h, _, body = _read_back(_ack(station=station))
         assert h.station == station
@@ -61,7 +54,7 @@ def test_the_station_byte_reaches_the_header_and_the_iv_together():
 
 
 def test_the_packet_is_padded_the_way_the_console_pads_its_own():
-    """0xFF to a multiple of sixteen, which is what a run's 160-byte ciphertext measures."""
+    """0xFF to a multiple of sixteen, as a console's 160-byte ciphertext measures."""
     packet = _ack()
     assert (len(packet) - pia4.HEADER_SIZE) % 16 == 0
     keys = session_keys(_Net())
@@ -87,8 +80,7 @@ def test_the_join_request_the_run_sends_is_what_0x017c1700_checks():
 
 
 def test_the_join_travels_on_the_unreliable_port_by_default():
-    # `--join-port` exists because the update mesh uses the reliable one and the join does not;
-    # the default has to be the port the request is actually sent on.
+    # The update mesh uses the reliable port and the join does not; the default is the join's.
     args = swsh_connect.build_parser().parse_args([])
     assert args.join_port == mesh.PORT_UNRELIABLE == 0
     assert args.join_station_index == mesh.STATION_INDEX_INVALID == 0xFD
@@ -96,9 +88,7 @@ def test_the_join_travels_on_the_unreliable_port_by_default():
     assert fields["port"] == 0
 
 
-# --------------------------------------------------------------------------- answering a run
-# The two protocols the console left unanswered. Both send paths are checked as BYTES, decrypted
-# back through the console's own derivation, because that is what a run will actually put on the air.
+# Both send paths are checked as bytes, decrypted through the console's own derivation.
 
 SW29_RTT = bytes.fromhex("000000000000000000000e7840e6df87")
 
@@ -125,7 +115,7 @@ def test_our_data_messages_carry_the_bitmap_bit_for_the_console():
 
 
 def test_replaying_sw29s_own_stream_acks_it_through_sequence_twenty():
-    """The 1637 messages a run received are 20 sequence ids. One ack per advance, never a re-ack."""
+    """A run's 1637 received messages are 20 sequence ids: one ack per advance."""
     seen, acks, through = set(), [], 0
     for seq in [1] + list(range(2, 21)) * 8:          # the retransmit train, in arrival order
         seen.add(seq)
@@ -153,11 +143,8 @@ def test_the_openers_and_the_commands_are_different_ids():
     assert swsh_trade.parse(swsh_trade.box_sync_state(4))[0] == swsh_trade.POKEMON_TRADE
 
 
-# --- Selection phase messages -------------------------------
-
 def test_advancing_the_pair_moves_the_clock_and_nothing_else():
-    """The second copy of a pair member must differ from the first in the clock alone - that is
-    what makes it a new state rather than a retransmission."""
+    """The second copy differs from the first in the clock alone."""
     member = swsh_trade.build_rpc(50, 10000, 0xdeadbeef, 0x1cb4)
     first = swsh_trade.answer_rpc(member, 0x1249a221d8580000, 5)
     again = swsh_trade.answer_rpc(member, 0x1249a221d8580000, 5 + 2)
@@ -169,8 +156,7 @@ def test_advancing_the_pair_moves_the_clock_and_nothing_else():
 
 
 def test_the_selection_start_cue_is_the_console_payload_we_capture():
-    """The trigger is id 130's pingSynced, byte for byte - the payload sx45r1_6 records at t=31.30,
-    0.3 s ahead of the console's own 40050 burst."""
+    """The trigger is id 130's pingSynced, byte for byte, 0.3 s ahead of the console's 40050 burst."""
     assert swsh_trade.sync(130, swsh_trade.PING_SYNCED) == bytes.fromhex("820000001a00")
 
 
@@ -188,9 +174,8 @@ def test_the_selection_start_pair_is_the_shape_nxldn_lab_sends():
 
 
 def test_the_content_opener_can_carry_the_pokemon():
-    """the empty opener on content 50's 10000-base holder was accepted AS our Pokemon - the
-    console reached the confirmation phase and offered the player an Oeuf. Same holder, same
-    moment; the flag decides whether the body is empty or a PK8."""
+    """An opener on content 50's 10000-base holder is accepted as our Pokemon; the flag chooses
+    empty or a PK8."""
     args = swsh_connect.build_parser().parse_args([])
     assert args.open_content_offer is False
     assert swsh_connect.build_parser().parse_args(["--open-content-offer"]).open_content_offer
@@ -201,9 +186,7 @@ def test_the_content_opener_can_carry_the_pokemon():
 
 
 def test_the_confirmation_cue_is_the_selection_cue_one_content_along():
-    """A run's last unanswered message is a 40040/20000 member whose four-byte body ends `0100` -
-    the same shape that, on 40050, was the cue to send our Pokemon. The two differ in the envelope
-    alone, which is why the branch keys on it and why one shared latch swallowed the second."""
+    """The 40040/20000 cue ends `0100` like the 40050 one; the branch keys on the envelope."""
     body = bytes.fromhex("00000100")
     selection = swsh_trade.build_rpc(swsh_trade.SELECTION_OFFSET, swsh_trade.RPC_BASES[1],
                                      0x1249a221d8580000, 0x14c4, body)
@@ -226,10 +209,7 @@ def test_the_confirmation_answer_rides_the_content_holder_and_the_status_the_env
     assert status is not None and swsh_trade.parse_rpc(status)["envelope"] == 40040
 
 
-# A run's own 40040 traffic, out of `scratchpad/sx51b_1_cx.log.gz`. The first two are the cue - a
-# four-byte body ending `0100` on elementId 20000 - and the third is the `18fc` every other member
-# of the pair carries. Real bytes, so the condition is tested against what the console actually
-# sent rather than against a reconstruction of it.
+# A console's own 40040 traffic: two `0100` cues on elementId 20000 and the pair's `18fc` member.
 SX51B_CONFIRMATION_CUES = (
     "689c00000a19082810a09c01188080e0c29dc4e8a41220c9142a0400000100",
     "689c00000a1a082810a09c01188080a08a8fc4c8cdeb0120c4142a0400000100")
@@ -255,8 +235,7 @@ def test_the_condition_fires_on_sx51bs_own_confirmation_cues():
 
 
 def test_the_confirmation_hash_is_a_four_byte_body_on_the_40040_envelope():
-    """A run's own bytes: the hash arrives on elementId 10000 of 40040, four bytes, and it is
-    neither of the pair's two constants - which is what the re-arm has to trigger on."""
+    """The hash arrives on elementId 10000 of 40040, four bytes, neither of the pair's constants."""
     hashed = swsh_trade.parse_rpc(bytes.fromhex(
         "689c00000a1a082810904e188080a08a8fc4c8cdeb01208e80022a04b22d6f50"))
     assert hashed["envelope"] == swsh_trade.RPC_ENVELOPE_BASE + swsh_trade.CONFIRMATION_OFFSET
@@ -266,13 +245,8 @@ def test_the_confirmation_hash_is_a_four_byte_body_on_the_40040_envelope():
 
 
 def test_the_stall_abort_is_off_until_the_ladder_has_started():
-    """A run that never reaches the confirmation content holds for its full time.
-
-    two runs both ended with the console penalised, and both times the cause was the same:
-    the ladder stalled and we kept the transport alive and acking until the GAME's own timeout
-    declared the trade failed. A link that stops instead is a dropped connection, which is a
-    different thing for the console to report.
-    """
+    """Holding a stalled ladder until the game's timeout penalises the console; the abort arms once
+    the ladder starts."""
     assert swsh_connect.stall_abort(None, 100.0, 10.0) is False   # never started
     assert swsh_connect.stall_abort(40.0, 45.0, 10.0) is False    # started, still moving
     assert swsh_connect.stall_abort(40.0, 50.0, 10.0) is True     # started, then quiet
@@ -281,12 +255,7 @@ def test_the_stall_abort_is_off_until_the_ladder_has_started():
 
 
 def test_a_finished_ladder_is_not_a_stalled_one():
-    """A run climbed the whole ladder, traded, and then the abort dropped the link on it.
-
-    Phase 4 is the teardown rung - `0x010dbf40` sends nothing from it - so the console goes quiet
-    the moment it succeeds, which is byte for byte what a stall looks like from outside. The run
-    has to hold through whatever follows: the save, the summary, the migration.
-    """
+    """Phase 4 is the teardown rung: `0x010dbf40` sends nothing from it, so success looks like a stall."""
     assert swsh_connect.stall_abort(40.0, 60.0, 15.0) is True
     assert swsh_connect.stall_abort(40.0, 60.0, 15.0, final_phase_seen=True) is False
     assert swsh_connect.LADDER_FINAL_PHASE == 4

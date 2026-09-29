@@ -1,10 +1,5 @@
-"""The 3456-byte trade snapshot a Sword sends on protocol 0x84.
-
-Two runs are captures and stay out of the repository (CLAUDE.md rule 6), so the payload here is
-synthetic. What the real ones proved - and what these reproduce - is that the third fragment is
-compressed, that a concatenation which skips that is short and must be refused, and that the party
-records and the trainer block agree on one trainer.
-"""
+"""The 3456-byte trade snapshot a Sword sends on protocol 0x84, synthetic; the third fragment is
+compressed."""
 import struct
 import zlib
 
@@ -84,8 +79,7 @@ def test_a_missing_fragment_is_refused_rather_than_read_as_a_short_payload():
 
 
 def test_an_uncompressed_third_fragment_still_reassembles():
-    """`inflate` leaves a fragment alone when it is not a zlib stream, so a receiver that reads
-    Pia's 0x10 flag itself and hands over plain bodies gets the same answer."""
+    """`inflate` passes a non-zlib fragment through unchanged."""
     payload = a_payload()
     assert trade_payload.reassemble(fragments_of(payload, compress_last=False)) == payload
 
@@ -102,7 +96,6 @@ def test_the_trainer_blocks_and_the_party_name_one_trainer():
 
 
 def test_a_party_carrying_another_trainers_ids_is_visible_as_such():
-    """The check has content only if it can fail: MyStatus and the PK8s are different blocks."""
     payload = bytearray(a_payload(count=1))
     ms = trade_payload.MY_STATUS_OFFSET
     struct.pack_into("<H", payload, ms + trade_payload.MY_STATUS_TID, 1)
@@ -110,12 +103,7 @@ def test_a_party_carrying_another_trainers_ids_is_visible_as_such():
 
 
 def test_our_snapshot_survives_the_round_trip_the_console_will_put_it_through():
-    """Build it, frame it on 0x84, take it apart the way a receiver does, and read it back.
-
-    This is the whole outgoing path offline, and it is what an association would otherwise pay to
-    discover. `reassemble` is the receiver's rule, so if the sender's chunking disagrees with it the
-    test fails here rather than on the air.
-    """
+    """Build, frame on 0x84, reassemble as a receiver does, read back."""
     from pokeldn.ldn import broadcast4
 
     ours = trade_payload.rewrite(a_payload(count=3), trainer_name="PkCamp",
@@ -148,11 +136,8 @@ def test_a_short_session_58_payload_is_repaired_and_anything_else_is_refused():
         trade_payload.inflate_short(b"\x00" * 100)
 
 
-# --- The player profile at the tail ------------------------------------------------------------
-#
-# A retail Sword's profile with the three ids at its front zeroed and the slack after the name's
-# terminator cleared. `docs/swsh_protocol.md`, "The player profile", is the layout; the values
-# below are what that console's profile said on the day.
+# A retail Sword's profile, ids zeroed and post-terminator slack cleared (docs/swsh_protocol.md, The
+# player profile).
 
 PROFILE = bytes.fromhex(
     "00" * 0x28
@@ -206,7 +191,6 @@ def test_the_profile_name_is_the_fourth_copy_and_moves_with_the_others():
     assert out[at:at + 24] == "PkCamp".encode("utf-16-le") + b"\x00" * 12
     assert trade_payload.read_tail(out)["name"] == "PkCamp"
     assert trade_payload.party_matches_trainer(trade_payload.read(out))
-    # nothing else in the profile moved
     changed = {i for i in range(0xAEC, 0xD80) if payload[i] != out[i]}
     assert changed <= set(range(at, at + 24))
 

@@ -36,8 +36,8 @@ def test_definition_compiles_to_the_expected_celebi_card_and_cli_entry():
     assert card[8] & 0x3 == mystery_gift.CARD_TYPE_GIFT
     assert card[9] == 0
     assert charmap.decode(card[10:50]) == "CELEBI GIFT"
-    # 355 before the mon was flagged a fateful encounter; the pair of opcodes and the setorcopyvar
-    # that gives them a real party slot are 12 bytes [gift_composer._mark_fateful_encounter].
+    # The fateful-encounter opcodes and their setorcopyvar are 12 bytes
+    # [gift_composer._mark_fateful_encounter].
     assert len(distribution.ram_script) == 367
 
     slug = wonder_card.GIFT_CELEBI

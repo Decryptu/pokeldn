@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Offline coverage for the composed Porygon/Clefairy TM gift."""
+"""The composed Porygon/Clefairy TM gift."""
 
 import os
 import sys

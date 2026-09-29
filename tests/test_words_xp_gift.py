@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Offline coverage for the composed worlds-xp Mystery Gift."""
+"""The composed worlds-xp Mystery Gift."""
 
 import os
 import sys

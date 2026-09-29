@@ -1,18 +1,5 @@
-"""Pia's Local Protocol - protocol 36, the session bookkeeping behind a Union Room.
-
-Once BDSP's payloads decrypt, this is what the console is actually saying: an *update session*
-message listing the room's eight seats, rebroadcast every 100 ms until every station acknowledges
-it. The captured Shining Pearl session carries 674 of them and every one has sequence id 4, which
-is the host repeating itself because nothing ever answered - so the 0x21 ack is a hardware test
-with a pass/fail that needs nothing on the console's screen.
-
-THE TRAP THESE GUARD IS BYTE ORDER, and it is genuinely mixed three ways: the Pia message header
-around these is big-endian, the Local Protocol's own fields are little-endian, and a local address
-inside them is big-endian again. Getting any one of them wrong still parses and gives nonsense.
-
-Synthetic throughout - captures do not belong in the tree, and the real message carries the
-console's MAC address in its constant id.
-"""
+"""Pia's Local Protocol (36): the update session a BDSP host rebroadcasts every 100 ms until acked.
+Byte order is mixed: the message header big-endian, the protocol's fields little-endian, a local address big-endian."""
 
 import struct
 
@@ -97,12 +84,7 @@ def test_the_ack_refuses_to_parse_an_update_session():
 
 
 def test_the_ack_carries_no_payload_size_the_way_the_console_writes_it():
-    """main.bin 0x016bc0c8 writes 0x14 as a WORD at +0x14, so the size halfword at +0x16 is zero.
-
-    The update session sets that field (73, the node list plus the migration state); the ack leaves
-    it at 0 and is 20 bytes regardless. Getting this from the console's serializer rather than from
-    the shape of the struct is what makes it a fact.
-    """
+    """main.bin 0x016bc0c8 writes 0x14 as a word at +0x14, so the size halfword at +0x16 is zero."""
     ack = lp.build_ack(4)
     assert len(ack) == 20
     assert ack[0] == 1 and ack[1] == lp.UPDATE_SESSION_ACK

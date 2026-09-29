@@ -1,10 +1,5 @@
-"""The visiting trainer: the 188-byte BattleTowerEReaderTrainer, and the Mystery Gift session that
-pushes it into gSaveBlock2Ptr->battleTower.ereaderTrainer.
-
-Every offset here is read off struct BattleTowerEReaderTrainer [decomp:include/global.h:286] and
-struct BattleTowerPokemon [decomp:include/pokemon.h:143] rather than from our own packer, so a
-layout mistake fails instead of round-tripping.
-"""
+"""The 188-byte BattleTowerEReaderTrainer [decomp:include/global.h:286, include/pokemon.h:143] and
+the session that sends it."""
 import os
 import sys
 
@@ -31,7 +26,6 @@ def _trainer(**overrides):
     return VisitingTrainer(**fields)
 
 
-# --- struct layout ----------------------------------------------------------------------------
 def test_the_packed_trainer_is_exactly_the_struct_size():
     packed = _trainer().pack()
     assert len(packed) == ereader_trainer.TRAINER_SIZE == 0xBC
@@ -95,7 +89,6 @@ def test_unused_move_slots_are_zero():
     assert int.from_bytes(packed[0x0A:0x0C], "little") == 0
 
 
-# --- validation the console performs ------------------------------------------------------------
 def test_the_checksum_is_the_sum_of_every_word_but_the_last():
     packed = _trainer().pack()
     expected = sum(int.from_bytes(packed[off:off + 4], "little")
@@ -116,7 +109,6 @@ def test_validate_insists_on_the_exact_length():
         ereader_trainer.validate(b"\x00" * 100)
 
 
-# --- authoring guardrails -----------------------------------------------------------------------
 def test_the_party_must_be_exactly_three():
     with pytest.raises(EReaderTrainerError):
         _trainer(party=(_mon(), _mon())).pack()
@@ -157,7 +149,6 @@ def test_personality_picks_the_nature_and_can_force_a_shiny():
     assert not ereader_trainer.is_shiny(ereader_trainer.personality_for("jolly"), 0xFFFF0000)
 
 
-# --- the registered gift --------------------------------------------------------------------
 def test_the_gift_flag_id_stays_out_of_the_ticket_flags():
     """sReceivedGiftFlags[0..2] are FLAG_RECEIVED_AURORA_TICKET, _MYSTIC_TICKET and _OLD_SEA_MAP
     [decomp:src/mystery_gift.c:30]; only 1003 and up are spare."""
@@ -176,7 +167,6 @@ def test_a_definition_with_a_broken_trainer_is_refused():
             dataclasses.replace(wonder_card_events.VISITING_TRAINER_GIFT, trainer=b"\x01\x02"))
 
 
-# --- the session ----------------------------------------------------------------------------
 def _server(**kwargs):
     distribution = gift_registry.GIFT_REGISTRY.build_distribution("visiting-trainer")
     return mg_server.MysteryGiftServer(

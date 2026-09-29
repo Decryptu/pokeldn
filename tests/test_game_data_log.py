@@ -1,10 +1,4 @@
-"""The ledger of what the console volunteers about itself.
-
-Every session ships a MysteryGiftLinkGameData and every session before this one printed it and
-threw it away. The counters in it (battlesWon, battlesLost, numTrades, the stamps) are the ones a
-Battle Count Card would be built on, and a single reading of a counter says nothing at all - only
-the difference between two sessions of the SAME console does.
-"""
+"""The ledger of what the console volunteers about itself; a counter is evidence only as a difference."""
 
 import json
 import types
@@ -54,8 +48,8 @@ def test_the_record_carries_the_console_identity_and_the_card_counters():
 
 
 def test_a_seven_character_name_reports_no_trainer_id_rather_than_a_wrong_one():
-    """The name field has no terminator slot, so a full name's 0xFF lands on playerTrainerId[0]
-    [decomp:src/mystery_gift.c:364]. A wrong TID here would be indistinguishable from a real one."""
+    """A full name's 0xFF lands on playerTrainerId[0] [decomp:src/mystery_gift.c:364], so no trainer
+    id is reported."""
     entry = game_data_log.record(_game_data(name="PLAYERO"))
     assert entry["trainer_id"] is None
     assert game_data_log.record(_game_data(name="PLAYER"))["trainer_id"] == 57189
@@ -124,8 +118,7 @@ def test_an_all_zero_battle_profile_reads_as_empty_not_as_six_rejected_words():
 
 
 def test_a_half_written_last_line_does_not_lose_the_sessions_before_it(tmp_path):
-    """The Mystery Gift host is stopped with a signal, so a truncated final line is an ordinary
-    way for the ledger to end (CLAUDE.md: the dump file only lands when the host exits cleanly)."""
+    """The host is stopped with a signal, so a truncated final line is an ordinary end."""
     path = tmp_path / "game_data.jsonl"
     game_data_log.append(path, _game_data(flag_id=1009), tag="u34")
     with path.open("a", encoding="utf-8") as handle:

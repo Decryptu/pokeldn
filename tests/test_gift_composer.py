@@ -751,11 +751,8 @@ def test_registry_supports_composed_static_gifts_and_live_only_rally_slots():
 
 
 def test_a_gift_mon_can_be_flagged_a_fateful_encounter_at_its_real_slot():
-    """The official Surf Pichu script pairs `setmonmodernfatefulencounter` with `setmonmetlocation
-    ..., METLOC_FATEFUL_ENCOUNTER` [decomp:data/mystery_event_msg.s:71]. Both take the slot through
-    VarGet, and the FIRST OF THEM DOES NOT BOUNDS-CHECK IT [src/scrcmd.c:2239] - unlike setmonmove,
-    whose helper clamps 7 to the last mon. So the slot must be the real index, which is the party
-    count read BEFORE the mon is given."""
+    """`setmonmodernfatefulencounter` does not bounds-check its slot [src/scrcmd.c:2239]; it is the
+    party count before the give."""
     definition = _gift(
         "fateful", _plan(gc.DeliveryStage(
             gc.GivePokemon(251, 50, fateful_encounter=True))))
@@ -763,13 +760,11 @@ def test_a_gift_mon_can_be_flagged_a_fateful_encounter_at_its_real_slot():
         run = ScriptVM(gc.compile_definition(definition).ram_script,
                        party_size=party_size).run()
         assert run.mons == [(251, 50, 0)]
-        # The index the mon actually landed in, never LAST_PARTY_MON_INDEX.
         assert run.fateful == [party_size]
         assert run.met_locations == [(party_size, gc.METLOC_FATEFUL_ENCOUNTER)]
         assert party_size < gc.PARTY_SIZE
 
-    # A full party jumps to the failure label before the give, so nothing is marked and the
-    # out-of-bounds index 6 is never reached.
+    # A full party jumps to the failure label before the give.
     full = ScriptVM(gc.compile_definition(definition).ram_script,
                     party_size=gc.PARTY_SIZE).run()
     assert full.mons == [] and full.fateful == [] and full.met_locations == []
@@ -792,10 +787,7 @@ def test_an_egg_can_be_flagged_too_which_is_what_the_official_script_does():
 
 
 def test_a_bound_script_runs_composer_actions_outside_a_delivery_plan():
-    """`initramscript` binds a field script to an object, and until now the composer could only
-    build one out of Messages. It is the same bytecode in the same interpreter, so everything a
-    delivery stage can do works here - what is absent is the stage cursor and the receipt flag,
-    because a bound script ends in `end` and is meant to be run again."""
+    """A bound script runs composer actions without a stage cursor or receipt flag and ends in `end`."""
     script = gc.build_bound_script([
         gc.Message("Take this."),
         gc.GiveItem(4, 2),
@@ -810,8 +802,7 @@ def test_a_bound_script_runs_composer_actions_outside_a_delivery_plan():
 
 
 def test_a_bound_script_takes_the_failure_branch_and_still_releases_the_player():
-    """A bound script with no failure tail would leave the player LOCKed in the overworld, and there
-    is no menu to back out of in the field."""
+    """A bound script with no failure tail leaves the player locked in the overworld."""
     script = gc.build_bound_script([gc.GivePokemon(251, 30, fateful_encounter=True)], slug="npc")
     full = ScriptVM(script, party_size=gc.PARTY_SIZE).run()
     assert full.mons == [] and full.fateful == [] and full.met_locations == []
@@ -820,9 +811,7 @@ def test_a_bound_script_takes_the_failure_branch_and_still_releases_the_player()
 
 
 def test_a_fateful_give_without_moves_says_the_party_is_full_not_the_storage():
-    """Without moves a full party is not a failure - the mon goes to the PC - so the message is
-    about storage. fateful_encounter needs the mon IN the party, which brings the guard back, and
-    then the player's problem really is the party."""
+    """Without moves a full party sends the mon to the PC; fateful_encounter needs it in the party."""
     assert gc._failure_message(gc.GivePokemon(1, 5)) == gc.DEFAULT_STORAGE_FULL_MESSAGE
     assert gc._failure_message(
         gc.GivePokemon(1, 5, fateful_encounter=True)) == gc.DEFAULT_PARTY_FULL_MESSAGE

@@ -1,12 +1,6 @@
 #!/usr/bin/env python3
-"""Offline coverage for the Battle Count Card, and for the thing that arms it.
-
-`MysteryEventScript_BattleCard` [decomp:data/mystery_event_msg.s:162] only READS a counter. The
-counters themselves are switched on by the PARTNER'S trainer card: `Task_ExchangeCards` passes the
-u16 that follows the 96-byte card in the BLOCK_REQ_SIZE_100 buffer to
-`MysteryGift_TryEnableStatsByFlagId`, which arms nothing unless it equals the flag id of the card
-the console is holding [decomp:src/union_room.c:1777]. That u16 is ours to set.
-"""
+"""The Battle Count Card, and the partner trainer card's u16 that arms its counters
+[decomp:src/union_room.c:1777]."""
 
 import os
 import sys
@@ -45,9 +39,7 @@ def _talk(wins, *, prize_taken=0):
 
 
 def test_the_card_declares_the_type_that_makes_the_counters_move():
-    """`IncrementCardStat` returns without writing unless the held card is CARD_TYPE_LINK_STAT
-    [decomp:src/mystery_gift.c:461]. A CARD_TYPE_GIFT card reads zero,
-    after a trade that had every other condition right."""
+    """`IncrementCardStat` writes only for CARD_TYPE_LINK_STAT [decomp:src/mystery_gift.c:461]."""
     card = compile_definition(event.BATTLE_COUNT_GIFT).card
     assert card[8] & 0x3 == mystery_gift.CARD_TYPE_LINK_STAT == 2
 
@@ -98,8 +90,7 @@ def test_at_three_wins_the_prize_is_given_once():
 
 
 def test_a_count_past_three_is_not_a_prize_either():
-    """`vgoto_if_ne VAR_0x8008, 3` [decomp:data/mystery_event_msg.s:167] is an equality, not a
-    threshold: a fourth win takes the card past the payout, exactly as the official one does."""
+    """`vgoto_if_ne VAR_0x8008, 3` [decomp:data/mystery_event_msg.s:167] is an equality."""
     assert _talk(4).items == []
     assert _talk(9).items == []
 
@@ -134,13 +125,11 @@ def test_the_trade_host_sends_the_flag_id_it_was_given():
 
 
 def test_the_counters_can_be_read_and_written_where_the_console_keeps_them():
-    """SaveBlock1.mysteryGift.cardMetadata [decomp:include/global.h:681]. `MysteryGift_GetCardStat`
-    reads it with no CRC check, so a save-dump reads the counter and a save-write sets it."""
+    """SaveBlock1.mysteryGift.cardMetadata [decomp:include/global.h:681], read with no CRC check."""
     assert buffer_script.SAV1_MYSTERY_GIFT == 0x3120
     assert buffer_script.SAV1_CARD_METADATA == 0x3434
     assert (buffer_script.SAV1_CARD_BATTLES_WON,
             buffer_script.SAV1_CARD_BATTLES_LOST,
             buffer_script.SAV1_CARD_NUM_TRADES) == (0x3434, 0x3436, 0x3438)
-    # The metadata sits between the card and the questionnaire words, whose offset the Mystery Gift
-    # link data already agrees on.
+    # The metadata sits between the card and the questionnaire words.
     assert buffer_script.SAV1_CARD_METADATA - buffer_script.SAV1_MYSTERY_GIFT == 0x314

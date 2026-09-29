@@ -1,23 +1,4 @@
-"""Offline tests for the Mystery Gift distributor: framing, scripts, server, engine.
-
-The centrepiece is :class:`ConsoleClientModel` - a model of the Switch side built
-from the decomp rather than from our own encoders, so the end-to-end test is a
-real check and not a tautology. It models the three things that can strand a
-live console:
-
-* ``RfuHandleReceiveCommand``'s block gate - ``SEND_BLOCK_INIT`` is ignored
-  unless the slot is ``RECV_STATE_READY`` [link_rfu_2.c:1146], and the slot only
-  returns to READY when ``MGL_ResetReceived`` runs. A dropped INIT is counted and
-  asserted to be zero, because on hardware it is a silent hang.
-* ``MGL_Receive``'s header/chunk stepping, ident check and final CRC.
-* ``MysteryGiftClient_Run``'s one-command-per-frame script execution out of a
-  buffer we filled.
-* the console's OWN block coming back on row one of the parent's table. The client is
-  ``MysteryGiftClient_Init(client, 1, 0)``, so its sendPlayerId is its own multiplayer id and
-  ``MGL_Send`` gates every chunk on ``MGL_HasReceived(1)`` [mystery_gift_link.c:176,205] - the
-  mirror, not anything the host says. Its RFU block sender waits on the same mirror
-  [HandleBlockSend / SendLastBlock / HandleSendFailure, link_rfu_2.c:1366-1416]. Modelling this is
-  what makes a lost echo visible offline; one run lost four fragments to it on hardware.
+"""Mystery Gift distributor against ConsoleClientModel, a console written from the decomp.
 
 Run standalone (no pytest needed):   python tests/test_mystery_gift_flow.py
 """
@@ -37,10 +18,8 @@ from pokeldn.gba import block, rfu, rfu_leader  # noqa: E402
 from pokeldn.frlg.gift import mystery_gift as mg  # noqa: E402
 
 
-# --- MysteryGiftLink framing ------------------------------------------------------------------
 def test_chunking_matches_mgl_send_walk():
-    """MGL_Send sends 252 while >252 remain and the remainder otherwise, so an
-    exact multiple ends on a full chunk with no trailing empty block."""
+    """MGL_Send sends 252 while >252 remain; an exact multiple ends on a full chunk."""
     assert [len(c) for c in mg_link.chunk_payload(b"\x00" * 252)] == [252]
     assert [len(c) for c in mg_link.chunk_payload(b"\x00" * 504)] == [252, 252]
     assert [len(c) for c in mg_link.chunk_payload(b"\x00" * 332)] == [252, 80]
@@ -78,7 +57,6 @@ def test_receiver_faults_exactly_where_the_console_calls_fatal_error():
         raise AssertionError("CRC mismatch must fault")
 
 
-# --- client scripts + link game data -----------------------------------------------------------
 def test_client_scripts_match_the_decomp_arrays():
     """Byte-for-byte against src/mystery_gift_scripts.c, 8 bytes per command."""
     assert mg_script.CLIENT_SCRIPT_INIT == mg_script.client_script(
@@ -100,8 +78,7 @@ def test_client_scripts_match_the_decomp_arrays():
 
 
 def test_every_client_script_terminates_execution():
-    """CopyRecvScript copies the whole 1024-byte buffer, so a script that runs off
-    its own end would execute stale bytes from the previous message."""
+    """CopyRecvScript copies the whole 1024-byte buffer; a script running off its end executes stale bytes."""
     stoppers = (mg_script.CLI_RETURN, mg_script.CLI_COPY_RECV,
                 mg_script.CLI_COPY_RECV_IF, mg_script.CLI_COPY_RECV_IF_N)
     for name in dir(mg_script):
@@ -186,7 +163,6 @@ def test_link_game_data_rejects_what_the_console_rejects():
             mg_script.parse_link_game_data(bytes(data)))
 
 
-# --- server script branches ---------------------------------------------------------------------
 def _run_server(game_data, toss_response=None):
     """Drive MysteryGiftServer through one conversation, returning (idents, result)."""
     card, script = wonder_card.build_default_gift()
@@ -215,7 +191,6 @@ def test_server_refuses_invalid_game_data():
     assert result == mg_server.SVR_MSG_CANT_SEND_GIFT_1
 
 
-# --- console model ------------------------------------------------------------------------------
 class _Mirror:
     """gRfu.recvBlock[GetMultiplayerId()] in the shape ``block.BlockSender`` reads."""
 
@@ -240,14 +215,10 @@ class ConsoleClientModel:
         self.lp = linkplayer.LinkPlayer(name="ASH", version=linkplayer.VERSION_FIRE_RED,
                                         player_id=1)
         self.toss_answer = toss_answer
-        # {address: bytes} placed in the emulated cartridge before a payload runs. Our ROM is a
-        # header and zeros, so a payload that CALLS a ROM function has nothing to land on.
+        # Our ROM is a header and zeros; a payload that calls a ROM function needs a stub here.
         self.rom_stubs = dict(rom_stubs or {})
-        # Frames between a block completing in the RFU receive callback and
-        # MGL_Receive getting around to consuming it. The exact interleaving of
-        # RfuHandleReceiveCommand and the client task within one frame is not
-        # worth pinning down: the host's margin must survive either order, so the
-        # model charges a small latency instead of assuming the best case.
+        # Frames between a block completing and MGL_Receive consuming it; the host's margin must
+        # survive either order.
         self.consume_latency = consume_latency
         self._received_age = 0
         self.metadata_icon = metadata_icon
@@ -256,9 +227,7 @@ class ConsoleClientModel:
         self.game_data = _game_data(
             flag_id=flag_id, max_stamps=max_stamps,
             metadata_icon=metadata_icon, stamps=stamps, trainer_id=trainer_id)
-        # What gSaveBlock2Ptr holds, which is what native code reads. Normally the same value the
-        # game data carries; a test can drive them apart to check that the host is really
-        # comparing the two and not just echoing one of them.
+        # What gSaveBlock2Ptr holds; a test drives it apart from the game data.
         self.save_trainer_id = trainer_id if save_trainer_id is None else save_trainer_id
         self.buffer_scripts = []
         self.vars = {var: 0 for var in range(0x40B6, 0x40BD)}
@@ -268,7 +237,6 @@ class ConsoleClientModel:
         self.ribbons = []
         self.rare_words = []
 
-        # RFU receive slot for the parent (player 0).
         self.recv_state = self.RECV_READY
         self.recv_count = 0
         self.recv_flags = 0
@@ -279,7 +247,6 @@ class ConsoleClientModel:
         self.dropped_fragments = 0
         self.redundant_fragments = 0   # a repeat of a fragment already held; the console ignores it
 
-        # Link-establishment phase.
         self.phase = "wait_req"
         self.host_link_player = None
         self.standby_sent = False
@@ -305,10 +272,8 @@ class ConsoleClientModel:
         self._send_stage = 0            # MGL_Send's link->state: 0 header, 1 chunks, 3 finishing
         self._pending_send = None
 
-        # gRfu.recvBlock[1] / gRfu.blockReceived[1]: this console's OWN commands mirrored back by the
-        # parent in row one of its 70-byte table. RfuHandleReceiveCommand runs the same block gate over
-        # every player including the child itself [link_rfu_2.c:1125], RfuMain1_Child fills gRecvCmds
-        # from the parent table [:970], and MGL_Send waits on the result.
+        # gRfu.recvBlock[1]: this console's own commands mirrored in row one; the block gate runs
+        # over the child itself [link_rfu_2.c:1125, :970].
         self.own_state = self.RECV_READY
         self.own_count = 0
         self.own_flags = 0
@@ -319,7 +284,6 @@ class ConsoleClientModel:
         self.own_fragments_mirrored = 0
         self.own_resends = 0            # fragments re-sent because their echo never came back
 
-    # --- RFU receive side ----------------------------------------------------------------------
     def _feed_parent_row(self, row):
         rec = rfu.parse_slot(row)
         if rec is None:
@@ -337,9 +301,7 @@ class ConsoleClientModel:
                 # frames [link_rfu_2.c:1370] and the receiver ignores the repeats.
                 self.redundant_inits += 1
             else:
-                # RECV_FINISHED: the previous block has not been consumed, so
-                # this INIT is silently discarded and the console then waits
-                # forever for fragments that are never re-sent.
+                # RECV_FINISHED: the INIT is discarded and the console waits forever.
                 self.dropped_inits += 1
         elif op == rfu.SEND_BLOCK:
             if self.recv_state == self.RECV_RECEIVING:
@@ -376,14 +338,11 @@ class ConsoleClientModel:
             elif self.own_state == self.RECV_RECEIVING:
                 self.own_redundant_inits += 1
             else:
-                # RECV_STATE_FINISHED: MGL_Send has not consumed the previous block, so this INIT is
-                # discarded and the console waits for fragments that will never be accepted.
+                # RECV_STATE_FINISHED: this INIT is discarded.
                 self.own_dropped_inits += 1
         elif rec["op"] == rfu.SEND_BLOCK:
-            # SendLastBlock reads the raw mirrored command word, `(u8)gRecvCmds[mpId][0]`
-            # [link_rfu_2.c:1408], so the index it compares against is tracked whatever state the
-            # receive slot is in; only the bitmask and the completion flag are gated on RECEIVING
-            # [RfuHandleReceiveCommand, :1152].
+            # SendLastBlock reads the raw mirrored command word [link_rfu_2.c:1408]; only the
+            # bitmask and the completion flag are gated on RECEIVING [:1152].
             index = rec["index"]
             self.own_last_index = index
             if self.own_state == self.RECV_RECEIVING:
@@ -405,12 +364,8 @@ class ConsoleClientModel:
         self.own_state = self.RECV_READY
 
     def _own_tick(self):
-        """One VBlank of the console's RFU block send, and a count of the repairs it costs.
-
-        A SEND_BLOCK that is not the last fragment while the sender is holding is HandleSendFailure
-        re-queueing a fragment missing from the console's own mirrored bitmask [link_rfu_2.c:1015,
-        1404]: proof that an echo of ours never came back. One run showed exactly four of these on the
-        wire (fragments 13, 16, 17, 18)."""
+        """One VBlank of the console's RFU block send; a non-last SEND_BLOCK while holding is a
+        repair [link_rfu_2.c:1015,1404]."""
         words = self._sender.tick(self._own_mirror())
         if self._sender.state == block.HOLD:
             w0 = words[0]
@@ -420,8 +375,8 @@ class ConsoleClientModel:
         return rfu.serialize(words)
 
     def _new_own_sender(self, data):
-        """Rfu_InitBlockSend: no watchdog and no pacing - the console re-sends every frame until its
-        own command comes back, and never gives up on its own [link_rfu_2.c:1366-1416]."""
+        """Rfu_InitBlockSend: re-sends every frame until its own command comes back
+        [link_rfu_2.c:1366-1416]."""
         sender = block.BlockSender(data, owner=1, trust_pia=False,
                                    watchdog_init=1 << 30, watchdog_hold=1 << 30)
         sender.HOLD_RESEND_GAP = 0
@@ -435,7 +390,6 @@ class ConsoleClientModel:
         self.block_received = False
         self.recv_state = self.RECV_READY
 
-    # --- per-VBlank ----------------------------------------------------------------------------
     def _run_buffer_script(self, payload):
         sav2 = bytearray(0x1000)
         sav2[buffer_script.SAV2_PLAYER_TRAINER_ID:
@@ -444,10 +398,8 @@ class ConsoleClientModel:
         param = self.param if isinstance(self.param, int) else 0
         armed = self._pending_send
         ident, size = (armed[0], armed[2]) if armed else (mg.MG_LINKID_RESPONSE, 4)
-        # Called every frame until it returns 1, with gDecompressionBuffer as it left it: the
-        # memcpy that loads the payload runs once, at CLI_RUN_BUFFER_SCRIPT
-        # [decomp:src/mystery_gift_client.c:239,276]. emulate_repeating keeps that one image, so a
-        # payload that yields (memory-scan, rng-trace) is modelled rather than declared a hang.
+        # Called every frame until it returns 1; the payload is copied once
+        # [decomp:src/mystery_gift_client.c:239,276].
         try:
             run = buffer_script.emulate_repeating(
                 payload, param=param, sav2=bytes(sav2), send_size=size, send_ident=ident,
@@ -458,9 +410,7 @@ class ConsoleClientModel:
             ) from None
         self.param = run.param
         if run.client.send_changed:
-            # MysteryGiftLink_InitSend kept the pointer and the size is read at send time too, so
-            # what goes out is whatever the payload left in those two fields
-            # [mystery_gift_link.c:59,166] - repointed, resized, or both.
+            # The send pointer and size are read at send time [mystery_gift_link.c:59,166].
             self._pending_send = (run.client.send_ident, run.pending_send, run.client.send_size)
 
     def step(self, parent_row, echo_row=None):
@@ -524,13 +474,8 @@ class ConsoleClientModel:
         return rfu.idle_slot()
 
     def _step_send(self):
-        """MGL_Send [mystery_gift_link.c:150].
-
-        state 0 sends the {ident, crc, size} header with no gate. Every step after it waits on
-        ``MGL_HasReceived(link->sendPlayerId)``, and sendPlayerId is 1 - THIS console's own
-        multiplayer id - so what it waits for is its own block mirrored back by the parent, complete,
-        in row one. One wait before each chunk (state 1) and one more after the last (state 3).
-        """
+        """MGL_Send [mystery_gift_link.c:150]: the header ungated, then each chunk waits on the
+        console's own mirrored block."""
         if self._sender is not None:
             row = self._own_tick()
             if self._sender.done:
@@ -554,15 +499,8 @@ class ConsoleClientModel:
 
 
     def _run_mystery_event(self, payload):
-        """MEventScript_Run over gMysteryEventScriptCmdTable [mystery_event_script.c].
-
-        Written from the decomp, not from pokeldn.frlg.rom.mystery_event. Two rules drive it: pointer
-        operands are relocated ``operand - ctx->data[1] + ctx->data[0]`` with data[1] == 0 and
-        data[0] == the buffer, and the chain runs until a command returns TRUE, because
-        ``RunScriptCommand`` loops [script.c:107] and ``MEventScript_Run`` stops as soon as one
-        yields while data[3] is 0. Returns the status left in ctx->data[2], which is what
-        Client_RunMysteryEventScript writes to client->param.
-        """
+        """MEventScript_Run [mystery_event_script.c], from the decomp: operands relocate by
+        ``operand - data[1] + data[0]``; the chain runs until a command returns TRUE [script.c:107]."""
         status = 0
         position = 0
 
@@ -650,10 +588,8 @@ class ConsoleClientModel:
                 self.vars[var] = 0
             self.flags.discard(0x3D8)
         elif instr == mg_script.CLI_SAVE_NEWS:
-            # IsWonderNewsSameAsSaved is a byte compare of the whole struct against the saved news
-            # [mystery_gift.c:140]; SaveWonderNews refuses id 0 [ValidateWonderNews, :113]. Either
-            # way the console answers with MG_LINKID_RESPONSE: FALSE saved, TRUE kept what it had
-            # [mystery_gift_client.c:210].
+            # IsWonderNewsSameAsSaved compares the whole struct [mystery_gift.c:140]; SaveWonderNews
+            # refuses id 0 [:113]. The answer is MG_LINKID_RESPONSE [mystery_gift_client.c:210].
             news = bytes(self.recv_buffer[:wonder_news.WONDER_NEWS_SIZE])
             same = (self.saved_news is not None
                     and wonder_news.validate(self.saved_news)
@@ -683,17 +619,13 @@ class ConsoleClientModel:
             self.activation_scripts.append(payload)
             self.param = self._run_mystery_event(payload)
         elif instr == mg_script.CLI_RUN_BUFFER_SCRIPT:
-            # memcpy(gDecompressionBuffer, client->recvBuffer, MG_LINK_BUFFER_SIZE), then
-            # funcId = FUNC_RUN_BUFFER, which calls it ONCE PER FRAME until it returns 1
-            # [mystery_gift_client.c:237,276]. The repeated call is modelled here and nowhere
-            # else: a payload that returns 0 must not look like a payload that finished.
+            # Called once per frame until it returns 1 [mystery_gift_client.c:237,276].
             payload = bytes(self.recv_buffer)
             self.buffer_scripts.append(payload)
             self._run_buffer_script(payload)
         elif instr == mg_script.CLI_COPY_MSG:
-            # memcpy(client->msg, client->recvBuffer, CLIENT_MAX_MSG_SIZE)
-            # [mystery_gift_client.c] - a fixed 64 bytes regardless of the
-            # message's declared size; the text is EOS-terminated.
+            # A fixed CLIENT_MAX_MSG_SIZE bytes are copied [mystery_gift_client.c]; the text is
+            # EOS-terminated.
             self.dynamic_msg = bytes(self.recv_buffer[:mg_script.CLIENT_MAX_MSG_SIZE])
         elif instr == mg_script.CLI_ASK_TOSS:
             self.param = self.toss_answer
@@ -712,19 +644,8 @@ class ConsoleClientModel:
 def _drive(console, *, max_frames=4000, card=None, ram_script=None,
            distribution=None, timing=None, require_completion=True,
            echo=None, child_burst=1, burst_every=120, log=None):
-    """Run the engine against the console model until both sides are finished.
-
-    The parent's table has two live rows and the console reads both: row 0 is the host's own
-    gSendCmd, row 1 is the console's last command mirrored back [ReadAllPlayerRecvCmds,
-    link_rfu_2.c:743]. The mirror is not decoration - the console's block sender and MGL_Send both
-    wait on it - so the relay here is the real :class:`rfu_leader.ChildEcho`, the same object the live
-    host publishes from.
-
-    ``child_burst``/``burst_every`` model the console's RfuSendQueue flushing: every ``burst_every``
-    frames the next ``child_burst`` commands are held and handed over together, as a console does
-    twice a second (two at ts 283831, four at ts 283833). A relay that drops on a burst loses those
-    fragments for good, and the console has no way to know which.
-    """
+    """Run the engine against the console model; row 1 relays through rfu_leader.ChildEcho
+    [link_rfu_2.c:743]."""
     if distribution is not None:
         card, ram_script = distribution.card, distribution.ram_script
     elif card is None:
@@ -775,20 +696,15 @@ def test_end_to_end_gift_reaches_a_console_with_no_card():
     assert console.result == mg_script.CLI_MSG_CARD_RECEIVED
     assert engine.result == mg_server.SVR_MSG_CARD_SENT and engine.gift_sent
     assert engine.state == host_mystery_gift.MG_DONE and engine.done
-    # The console saved exactly the bytes we authored.
     assert console.saved_card == card
     assert console.saved_ram_script.startswith(ram_script)
     assert console.saved_ram_script[len(ram_script):] == b"\x00" * (995 - len(ram_script))
-    # Both sides agree on the identity exchange that preceded the gift.
     assert engine.child_link_player.name == "ASH"
     assert console.host_link_player.name == "EMU"
 
 
 def test_ram_script_block_repeat_adds_redundancy_to_only_the_ident25_message():
-    """--ram-script-block-repeat gives the stall-prone RAM/delivery script (ident 25) extra fragment
-    redundancy while the small messages keep the base block_repeat. Regression guard for the targeted
-    fix to the ident-25 stall (NOTES.local.md): the console never reflects a gift block, so proactive
-    redundancy on JUST ident 25 is the only lever, and it must not bloat every other message."""
+    """--ram-script-block-repeat raises fragment redundancy for ident 25 only."""
     card, ram_script = wonder_card.build_default_gift()
     console = ConsoleClientModel(flag_id=0)
     timing = host_mystery_gift.MysteryGiftTiming(
@@ -814,24 +730,17 @@ def test_ram_script_block_repeat_adds_redundancy_to_only_the_ident25_message():
 
 
 def test_end_to_end_never_drops_a_block_init():
-    """The pacing check: an INIT that arrives before the console consumed the
-    previous block is discarded, and the transfer then hangs with no error."""
+    """An INIT arriving before the previous block is consumed is discarded and the transfer hangs."""
     console = ConsoleClientModel(flag_id=0)
     _drive(console)
     assert console.dropped_inits == 0
     assert console.dropped_fragments == 0
-    # The console must still be seeing the native INIT resends; if it were not,
-    # this test would be passing for the wrong reason.
+    # Without native INIT resends this test would pass for the wrong reason.
     assert console.redundant_inits > 0
 
 
 def test_inter_block_gap_is_what_prevents_the_drop():
-    """Give the console a slow consume and remove the gap: the transfer dies.
-
-    This is the regression guard for :attr:`MysteryGiftTiming.inter_block_gap_frames`
-    - without it there is nothing in the protocol that stops us overrunning the
-    console, because the receiver never acknowledges a block.
-    """
+    """MysteryGiftTiming.inter_block_gap_frames is all that stops the host overrunning the console."""
     slow = ConsoleClientModel(flag_id=0, consume_latency=6)
     _drive(slow)                                        # default gap absorbs it
     assert slow.dropped_inits == 0 and slow.result == mg_script.CLI_MSG_CARD_RECEIVED
@@ -847,8 +756,6 @@ def test_inter_block_gap_is_what_prevents_the_drop():
 
 
 def test_pacing_budget_is_what_the_timing_docstring_claims():
-    """Lock the measured margin so a change to the gap or to the block sender's
-    INIT resend count cannot silently shrink it."""
     gap = host_mystery_gift.DEFAULT_MYSTERY_GIFT_TIMING.inter_block_gap_frames
 
     def survives(latency):
@@ -885,9 +792,8 @@ def test_end_to_end_console_holding_a_different_card_is_asked_to_toss():
     console = ConsoleClientModel(flag_id=1001, toss_answer=1)      # TRUE = kept
     engine, _frames = _drive(console)
     assert engine.result == mg_server.SVR_MSG_CLIENT_CANCELED
-    # The *card* cancel path is gServerScript_ClientCanceledCard
-    # [union_room_message.c:569], which pushes a live message and ends in
-    # CLI_MSG_BUFFER_FAILURE - not the News path's CLI_MSG_COMM_CANCELED.
+    # The card cancel path is gServerScript_ClientCanceledCard [union_room_message.c:569], ending in
+    # CLI_MSG_BUFFER_FAILURE.
     assert console.result == mg_script.CLI_MSG_BUFFER_FAILURE
     assert console.saved_card is None
     assert console.dynamic_msg is not None
@@ -947,8 +853,7 @@ def test_link_player_block_is_sent_only_after_a_completed_valid_child_block():
     engine = _new_link_player_engine()
     _drain_link_player_opening(engine)
 
-    # An INIT only proves the child has begun a transfer.  It is not sufficient
-    # to send our block because case 0 may still reset the receive flags.
+    # An INIT is not enough: case 0 may still reset the receive flags.
     engine.feed_child_slot(rfu.serialize(rfu.init_words(trade.COUNT_PARTY, owner=1)))
     assert not engine._host_link_player_queued
     assert not engine._host_link_player_complete
@@ -965,8 +870,6 @@ def test_link_player_block_is_sent_only_after_a_completed_valid_child_block():
     assert engine._host_link_player_queued
     assert not engine._host_link_player_complete
 
-    # The host emission is inspectable without turning the live log into a
-    # per-frame dump: four INIT frames then every 200-byte fragment in order.
     for _ in range(64):
         engine.tick()
         if engine._host_link_player_complete:
@@ -987,11 +890,7 @@ def test_link_player_block_is_sent_only_after_a_completed_valid_child_block():
 
 
 def test_early_link_player_standby_is_latched_until_the_host_block_finishes():
-    """The child is allowed to send its one standby before our last fragment.
-
-    We still echo it immediately, so it may not be sent again.  The event must
-    therefore be latched rather than ignored while the host block is in flight.
-    """
+    """A child standby sent before our last fragment is latched, not ignored."""
     engine = _new_link_player_engine()
     _drain_link_player_opening(engine)
     _send_child_link_player(
@@ -999,7 +898,6 @@ def test_early_link_player_standby_is_latched_until_the_host_block_finishes():
         linkplayer.build_block(
             linkplayer.LinkPlayer(name="ASH", player_id=1)).ljust(200, b"\x00"))
 
-    # Four INITs plus fragments 0-15: leave fragment 16 unsent.
     for _ in range(20):
         engine.tick()
     assert not engine._host_link_player_complete
@@ -1007,8 +905,6 @@ def test_early_link_player_standby_is_latched_until_the_host_block_finishes():
     assert engine.state == host_mystery_gift.MG_LINK_PLAYER
     assert engine._pending_standby_count == 7
 
-    # Do not send another child standby.  The queued echo delays the final
-    # fragment, but completion must promote the already-latched event.
     for _ in range(16):
         engine.tick()
         if engine.state == host_mystery_gift.MG_START:
@@ -1034,13 +930,7 @@ def test_player_id_repair_never_repeats_the_destructive_block_request():
 
 
 def test_stale_link_player_block_stops_without_restarting_the_child_transfer():
-    """A stale buffer is diagnostically useful, but not safe to overwrite.
-
-    A second SEND_BLOCK_REQ is not a recovery primitive: once the first callback
-    is clear it starts a new send while Task_PlayerExchange waits at case 4.
-    Keep the link alive and report the exact failure instead of creating that
-    ambiguous second transfer.
-    """
+    """A second SEND_BLOCK_REQ starts a new send while Task_PlayerExchange waits at case 4; report instead."""
     engine = _new_link_player_engine()
     _drain_link_player_opening(engine)
     _send_child_link_player(engine, b"\xdd" * 200)
@@ -1057,7 +947,6 @@ def test_stale_link_player_block_stops_without_restarting_the_child_transfer():
     assert engine._link_player_requests == 1
 
 
-# --- the visiting trainer ---------------------------------------------------------------------
 def _visiting_trainer():
     from pokeldn.frlg.gift import gift_registry
     return gift_registry.GIFT_REGISTRY.build_distribution("visiting-trainer")
@@ -1071,7 +960,6 @@ def test_end_to_end_the_visiting_trainer_lands_in_the_save():
     assert console.result == mg_script.CLI_MSG_TRAINER_RECEIVED
     assert engine.result == mg_server.SVR_MSG_GIFT_SENT_1 and engine.gift_sent
     assert engine.state == host_mystery_gift.MG_DONE and engine.done
-    # Byte-for-byte what we authored, and it survives ValidateEReaderTrainer.
     assert console.saved_trainer == distribution.trainer
     assert ereader_trainer.validate(console.saved_trainer)
     assert console.saved_card == distribution.card
@@ -1122,8 +1010,6 @@ def test_end_to_end_a_console_holding_another_card_is_asked_to_toss_first():
 
 
 def test_the_host_status_line_reports_the_state_of_row_one():
-    """A live run must be able to say, from its own log, whether it gave the console back everything
-    it sent - the one number that decided a run."""
     card, ram_script = wonder_card.build_default_gift()
     said = []
     engine = host_mystery_gift.HostMysteryGiftEngine(card, ram_script, log=said.append)

@@ -1,17 +1,12 @@
-"""The 0x81 data exchange, against the bytes two reference stations sent.
-
-Every constant here is a capture of a Ryujinx pair that reached the trade screen: the host's content
-message, its acknowledgement, and the stream open both stations send. `docs/pla.md`, The data
-exchange.
-"""
+"""The 0x81 data exchange against a Ryujinx reference pair's bytes (`docs/pla.md`, The data exchange)."""
 
 import pytest
 
 from pokeldn.ldn import reliable5
 from pokeldn.pla import data_exchange
 
-# The host's content message on 0x81 port 0, whole, and the joiner's on port 1. They differ only in
-# the destination bitmap: the payload behind them is byte for byte the same.
+# The host's content message on 0x81 port 0 and the joiner's on port 1; only the destination bitmap
+# differs.
 HOST_CONTENT = bytes.fromhex(
     "1f00003d000100010100000002484b626448618080060634d03ef7339b3e0303138cefc650c4900"
     "a84c10c190cd960760e4326548e155d3310306211c30700000000ffff0300ea23078e")
@@ -60,7 +55,6 @@ def test_a_built_record_carries_the_name_and_id_written_into_it():
     assert len(record) == data_exchange.RECORD_SIZE
     assert data_exchange.read_record(record) == dict(
         player_id=bytes.fromhex("01020304"), name="POKELDN")
-    # Every byte outside the two fields is the reference's.
     for offset in range(data_exchange.RECORD_SIZE):
         in_id = (data_exchange.PLAYER_ID_OFFSET
                  <= offset < data_exchange.PLAYER_ID_OFFSET + data_exchange.PLAYER_ID_SIZE)
@@ -76,10 +70,8 @@ def test_a_name_past_the_field_is_refused_rather_than_written_into_the_next():
 
 
 def test_the_stream_and_rtt_are_addressed_to_the_mesh_and_the_rest_to_the_station():
-    """Both reference stations put the mesh destination in the header for 0x58 and 0x81 and name the
-    recipient in the plaintext footer; the session, clock and reliable protocols carry the peer's
-    variable id in the header with no footer. A 0x81 message addressed the second way never reaches
-    the game's stream."""
+    """0x58 and 0x81 go to the mesh with the recipient in the footer; session, clock and reliable
+    name the peer in the header."""
     import pla_host
     from pokeldn.ldn import pia6
     from pokeldn.pla import session as pla_session
@@ -102,8 +94,8 @@ def test_the_stream_and_rtt_are_addressed_to_the_mesh_and_the_rest_to_the_statio
         assert header.footer_size == 0, hex(protocol)
 
 
-# The whole packet a reference host sends when it answers the console's stream open: the record on
-# port 0 and the host's own stream open on port 1, in one packet.
+# A reference host's answer to the stream open: the record on port 0 and its own stream open on port
+# 1.
 REFERENCE_BUNDLE_PLAINTEXT = bytes.fromhex(
     "7f00004a8100000000000000000000001f00003d000100010100000002484b6264486180800606"
     "34d03ef7339b3e0303138cefc650c4900a84c10c190cd960760e4326548e155d3310306211c307"

@@ -1,12 +1,11 @@
-"""Session-12 client-side join experiment knobs on ConnectionManager (all default-off)."""
+"""Client-side join knobs on ConnectionManager, all default-off."""
 
 from pokeldn.ldn import pia_connect
 from pokeldn.ldn.pia_connect import PROTO_NET, PROTO_RTT, PROTO_SESSION
 
 
 def _net_0x11(host_var=0x7620):
-    # version, type, size, then a body whose first 4 bytes are the seqid; parse_net_conn_request
-    # needs the host var + mac: build one via the host-side builder for realism.
+    # parse_net_conn_request needs the host var and MAC, so the host-side builder makes the body.
     body = pia_connect.build_net_conn_request(2, host_var, b"\x02\x00\x00\x00\x00\x01", 1, ["169.254.1.1"])
     return body
 

@@ -100,8 +100,6 @@ def test_print_effective_config_validates_transport_options():
 
 
 def test_adapter_profile_resolves_exactly_one_physical_tplink(monkeypatch=None):
-    # Avoid adding a test-framework dependency: temporarily replace the
-    # diagnostic seam directly, as the standalone test scripts do elsewhere.
     old_describe = transport.describe_phys
     try:
         transport.describe_phys = lambda: [

@@ -85,7 +85,7 @@ def test_gcm_iv_refuses_a_nonce_that_is_not_eight_bytes():
         gcm_iv(0, 0, b"\x00" * 7)
 
 
-# --- The BDSP session, end to end. These pin the values a real capture authenticates with.
+# The BDSP session values a real capture authenticates with.
 
 BDSP_SEED = bytes.fromhex("9918bd0fdcfa65779918bd0fdcfa6577")   # cryptoKeyDataSeed, from metadata
 BDSP_KEY = bytes.fromhex("9900bd0cdcfa65639918bd0fc7fa6577")    # what Pia is handed, version 199
@@ -96,7 +96,7 @@ SP4_SESSION_KEY = bytes.fromhex("7b182cb087eeabd228a2efd91a8be147")
 
 
 def test_the_published_game_key_is_the_seed_derived_with_the_version():
-    """Not a corrupted transcription - the four differing bytes are the four the game overwrites."""
+    """The four bytes that differ from the seed are the four the game overwrites."""
     from pokeldn.ldn.pia5 import ldn_game_key
     assert ldn_game_key(BDSP_SEED, 199) == BDSP_KEY
     differing = [i for i in range(16) if BDSP_SEED[i] != BDSP_KEY[i]]
@@ -210,8 +210,8 @@ def test_an_empty_or_all_padding_payload_yields_nothing():
     assert parse_messages(b"\xff" * 16) == []
 
 
-# --- The send path. Proven offline against the capture: re-encrypting the console's own plaintext
-# --- reproduces its ciphertext and tag for all 674 packets. These keep that path honest.
+# Re-encrypting the console's own plaintext reproduced its ciphertext and tag for all 674 captured
+# packets.
 
 def test_decrypt_returns_none_rather_than_raising_on_a_bad_tag():
     """Callers sweep candidate keys against this, so a miss must be cheap and not an exception."""

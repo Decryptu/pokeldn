@@ -84,11 +84,8 @@ def test_shared_card_layout_and_stamp_encodings_are_exact():
 
 
 def test_hardware_one_solrock_stamp_payload_matches_without_tossing_card():
-    """Regression from lunatone-stamp.jsonl after collecting Solrock.
-
-    agbcc aligns WonderCardMetadata to 0x20; treating the struct as packed read
-    icon/maxStamps as zero and incorrectly entered the destructive toss flow.
-    """
+    """agbcc aligns WonderCardMetadata to 0x20; read packed, icon/maxStamps were zero and the toss
+    flow ran."""
     raw = bytes.fromhex(
         "0101000001000000010000000100000002000000ee0309020b1430102a100000"
         "0000000000003f015d010000000000000000000000000100000000000000000000"

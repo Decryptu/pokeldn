@@ -1,9 +1,4 @@
-"""Reading THUMB bodies out of a dump: where a function ends, what it calls, what it points at.
-
-A run's method - a handler is an entry point and the worker behind it is what is worth calling - as
-a module, so that any of the four function tables this project has read off a cartridge can be
-interpreted from the same 1 KB window. The fixtures are console bytes, not the decomp's.
-"""
+"""Reading THUMB bodies out of a dump: where a function ends, what it calls, what it points at."""
 
 import os
 import sys
@@ -13,16 +8,15 @@ sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 from pokeldn.frlg.rom import rom_map, scrcmd, scrcmd_names, special_names, thumb  # noqa: E402
 from pokeldn.frlg.text import charmap  # noqa: E402
 
-# ScrCmd_special and the literal pool immediately after it, as dumped off the console. The two words in the
-# pool ARE gSpecials and gSpecialsEnd: this is the run that located the table.
+# ScrCmd_special and its literal pool, dumped off the console; the pool words are gSpecials and
+# gSpecialsEnd.
 SPECIAL_BASE = 0x0806D7EC
 SPECIAL_BYTES = bytes.fromhex(
     "00b5fff7fbfc0004800b054941180548814202d2086874f10ffd002002bc0847"
     "fc391608ec40160830b5041c"
 )
 
-# MEScrCmd_crc and the prologue of whatever follows it, as dumped off the console. The epilogue here is
-# `pop {r4,r5,r6}; pop {r1}; bx r1` - agbcc's, not `pop {..., pc}`.
+# MEScrCmd_crc, dumped off the console. agbcc's epilogue: `pop {r4,r5,r6}; pop {r1}; bx r1`.
 CRC_BASE = 0x080DE830
 CRC_BYTES = bytes.fromhex(
     "70b5061c8ef7e4fc051c301c8ef7e0fc041cb06e241a706e2418301c8ef7d8fc"
@@ -35,8 +29,7 @@ OBTAINED_TEXT = bytes.fromhex("c9d6e8d9e2e9f000fd03ab")
 
 
 def test_the_literal_pool_of_scrcmd_special_is_where_gspecials_came_from():
-    """A run read the table's address out of this function's pool by eye. The reader has to get the
-    same two words, because the difference between them - 444 * 4 - is what proved the length."""
+    """The pool words differ by 444 * 4, the table's length."""
     values = [value for _site, _pool, value
               in thumb.pc_literals(SPECIAL_BYTES, SPECIAL_BASE, SPECIAL_BASE,
                                    SPECIAL_BASE + len(SPECIAL_BYTES))]
@@ -45,9 +38,7 @@ def test_the_literal_pool_of_scrcmd_special_is_where_gspecials_came_from():
 
 
 def test_scrcmd_special_calls_the_argument_reader_and_then_the_table():
-    """Every ScrCmd body is `VarGet(ScriptReadHalfword(ctx))` per argument and then one call. This
-    one reads a halfword and then `bx`es through the table, so ScriptReadHalfword is the check that
-    the window is decoded at the right offset."""
+    """ScrCmd_special reads a halfword, then `bx`es through the table."""
     targets = [target for _site, target
                in thumb.bl_targets(SPECIAL_BYTES, SPECIAL_BASE, SPECIAL_BASE,
                                    SPECIAL_BASE + len(SPECIAL_BYTES))]
@@ -55,9 +46,8 @@ def test_scrcmd_special_calls_the_argument_reader_and_then_the_table():
 
 
 def test_a_function_ends_on_the_agbcc_epilogue_not_only_on_pop_pc():
-    """THE TRAP. This ROM is agbcc-built and ends a THUMB function `pop {r4,r5,r6}; pop {r1};
-    bx r1`. A reader looking only for 0xBDxx walks into the next function, which is how crc first
-    came back with 25 `bl` targets instead of four."""
+    """agbcc ends a THUMB function `pop {r4,r5,r6}; pop {r1}; bx r1`; looking only for 0xBDxx walks
+    into the next one."""
     limit = CRC_BASE + len(CRC_BYTES)
     end = thumb.function_end(CRC_BYTES, CRC_BASE, CRC_BASE, limit)
     assert end < limit, "the epilogue was not found: bx Rn is not being treated as a return"
@@ -67,18 +57,14 @@ def test_a_function_ends_on_the_agbcc_epilogue_not_only_on_pop_pc():
 
 
 def test_the_crc_handler_makes_the_four_calls_the_decomp_gives_it():
-    """The whole point of the boundary: bounded to its own body, crc reads its three words and
-    calls CalcCRC16 once. Unbounded it swallowed the next function and came back with 25."""
+    """Bounded to its body, crc reads three words and calls CalcCRC16 once."""
     end = thumb.function_end(CRC_BYTES, CRC_BASE, CRC_BASE, CRC_BASE + len(CRC_BYTES))
     targets = [t for _s, t in thumb.bl_targets(CRC_BYTES, CRC_BASE, CRC_BASE, end)]
     assert targets == [rom_map.SCRIPT_READ_WORD] * 3 + [rom_map.CALC_CRC16]
 
 
 def test_every_table_entry_is_an_even_cartridge_address_the_thumb_bit_is_added_back():
-    """The dumps came back as odd THUMB pointers and the tables keep them stripped, so a body can be
-    read at the address directly; `rom_map.thumb` is what puts the bit back for a `bx`. An entry
-    that is odd HERE would mean the two conventions had been mixed, and every body read one byte
-    late is a different function."""
+    """Tables keep THUMB pointers stripped; `rom_map.thumb` puts the bit back for a `bx`."""
     for table in (rom_map.SPECIAL_ADDRESSES, scrcmd_names.HANDLERS):
         for address in table:
             assert not address & 1, f"0x{address:08X} still carries the THUMB bit"
@@ -87,16 +73,13 @@ def test_every_table_entry_is_an_even_cartridge_address_the_thumb_bit_is_added_b
 
 
 def test_a_message_string_keeps_its_placeholders():
-    """`decode` is for a name and turns a control code into '.'. A string a script points at is
-    dialogue: the first one read off this console was 'Obtenu: {STR_VAR_2}!' and the placeholder is
-    most of what it says."""
+    """A script string is dialogue: 'Obtenu: {STR_VAR_2}!' keeps its placeholder."""
     assert charmap.decode_message(OBTAINED_TEXT) == "Obtenu: {STR_VAR_2}!"
     assert charmap.decode(OBTAINED_TEXT) == "Obtenu: .Â!"
 
 
 def test_read_string_refuses_a_string_whose_end_the_dump_does_not_hold():
-    """A truncated string is the one case where the missing part is the part worth reading, so it
-    comes back None and stays on the list of addresses to dump rather than printing a half."""
+    """A truncated string comes back None."""
     memory = scrcmd.Memory([(0x081A79F0, OBTAINED_TEXT)])
     assert scrcmd.read_string(memory, 0x081A79F0) is None
     whole = scrcmd.Memory([(0x081A79F0, OBTAINED_TEXT + b"\xff")])
@@ -104,8 +87,7 @@ def test_read_string_refuses_a_string_whose_end_the_dump_does_not_hold():
 
 
 def test_data_pointers_reports_what_a_script_points_at_and_the_dump_holds():
-    """`follow` answers with what is MISSING, because that is what a run is spent on. This is the
-    other half: a text operand already inside a dump is a string to print, not an address to want."""
+    """A text operand already inside a dump is a string to print, not an address to want."""
     # `msgbox <0x081A79F0>, 4` then `end` - the shape of Std_ObtainItem's message.
     script = bytes.fromhex("67f0791a08") + bytes([0x04]) + bytes.fromhex("02")
     memory = scrcmd.Memory([(0x081A7600, script), (0x081A79F0, OBTAINED_TEXT + b"\xff")])
@@ -116,11 +98,8 @@ def test_data_pointers_reports_what_a_script_points_at_and_the_dump_holds():
     assert scrcmd.read_string(memory, 0x081A79F0) == "Obtenu: {STR_VAR_2}!"
 
 
-# --- what was read off the cartridge ------------------------------------------------------------
-
 def test_null_field_special_is_a_two_byte_bx_lr():
-    """171 of the 444 indices point here, which is the alignment argument: they must all come back
-    with one address. The function itself does nothing at all."""
+    """171 of the 444 indices point at it."""
     assert rom_map.NULL_FIELD_SPECIAL == 0x080CE8DC
     assert rom_map.SPECIAL_ADDRESSES.count(rom_map.NULL_FIELD_SPECIAL) == 171
     body = bytes.fromhex("7047")     # bx lr
@@ -131,8 +110,7 @@ def test_null_field_special_is_a_two_byte_bx_lr():
 
 
 def test_get_battle_outcome_is_one_load_of_the_global_it_is_named_for():
-    """`ldr r0, [pc, #4]; ldrb r0, [r0]; bx lr` and a pool word. The pool word is gBattleOutcome,
-    which is how a one-line special names a global with no search."""
+    """`ldr r0, [pc, #4]; ldrb r0, [r0]; bx lr`; the pool word is gBattleOutcome."""
     base = 0x080CE268
     body = bytes.fromhex("0148007870470000") + rom_map.GBATTLE_OUTCOME.to_bytes(4, "little")
     literals = thumb.pc_literals(body, base, base, base + len(body))
@@ -140,18 +118,14 @@ def test_get_battle_outcome_is_one_load_of_the_global_it_is_named_for():
 
 
 def test_the_specials_table_names_its_own_entries():
-    """ShowDiploma and ShowTownMap both call QuestLog_CutRecording, which IS special 392 - the same
-    self-confirmation DoDiveWarp gave between the script-command and specials tables. A table that
-    names its own entry cannot have been placed by the decomp alone."""
+    """ShowDiploma and ShowTownMap both call QuestLog_CutRecording, which is special 392."""
     quest_log_cut_recording = 0x08115E58
     assert rom_map.SPECIAL_ADDRESSES[392] == quest_log_cut_recording
     assert special_names.SPECIALS[392] == "QuestLog_CutRecording"
 
 
 def test_get_lead_mon_index_is_the_body_four_lead_mon_specials_share():
-    """Named by its calls, not its position: CalculatePlayerPartyCount and then GetMonData twice is
-    the decomp's GetLeadMonIndex command for command, and CalculatePlayerPartyCount is itself
-    special 131."""
+    """CalculatePlayerPartyCount then GetMonData twice: the decomp's GetLeadMonIndex."""
     assert rom_map.GET_LEAD_MON_INDEX == 0x080CE818
     assert rom_map.SPECIAL_ADDRESSES[131] == rom_map.CALCULATE_PLAYER_PARTY_COUNT
     for index in (230, 292, 293, 294):
@@ -173,37 +147,31 @@ def test_the_high_leafgreen_segment_reaches_down_to_the_m4a_tables():
 
 
 def test_the_two_sound_tables_are_four_music_players_apart():
-    """What proves the pair's alignment without a second run: struct MusicPlayer is 12 bytes and
-    music_player_table.inc has four of them, so gSongTable must sit exactly 0x30 above gMPlayTable
-    on BOTH cartridges. It does."""
+    """struct MusicPlayer is 12 bytes and there are four: gSongTable sits 0x30 above gMPlayTable on
+    both cartridges."""
     assert rom_map.G_SONG_TABLE - rom_map.G_MPLAY_TABLE == 4 * 12
     assert (rom_map.leafgreen_guess(rom_map.G_SONG_TABLE)
             - rom_map.leafgreen_guess(rom_map.G_MPLAY_TABLE)) == 4 * 12
 
 
 def test_the_field_command_table_is_closed():
-    """213 handlers, and after that run every one of their bodies has been read off the cartridge.
-    The table itself was dumped; this is the code behind it."""
+    """Every one of the 213 handler bodies has been read off the cartridge."""
     assert len(scrcmd_names.HANDLERS) == 214      # 214 opcodes, two of them the same ScrCmd_nop
     assert len(set(scrcmd_names.HANDLERS)) == 213
 
 
 def test_the_easy_chat_segment_reaches_out_both_ways_after_bs120_lg191():
-    """One needle moves one end. 27 paired literal-pool words moved BOTH: the -0x1C4 segment was
-    0x083DE528..0x083E3700, 21 KB, and 0x083BEE74..0x0841463E.
-    paired scattered blocks moved both ends again, to a boundary either side rather than a pool."""
+    """27 paired literal-pool words moved both ends of the -0x1C4 segment."""
     low, high, delta, _e = [seg for seg in rom_map.LEAFGREEN_DELTA_SEGMENTS if seg[2] == -0x1C4][0]
     assert (low, high) == (0x083B8000, 0x0843AFFF)
     assert rom_map.leafgreen_guess(0x083BEE74) == 0x083BEE74 - 0x1C4
     assert rom_map.leafgreen_guess(0x0841463E) == 0x0841463E - 0x1C4
-    # The control that rode along: 0x082370FC is inside the measured -0x24 segment and reads
-    # back at -0x24. Anything else there would be answering about the wrong console.
+    # Control: 0x082370FC is inside the measured -0x24 segment.
     assert rom_map.leafgreen_guess(0x082370FC) == 0x082370FC - 0x24
 
 
 def test_no_boundary_is_wider_than_the_evidence_that_brackets_it():
-    """Every gap must still be REFUSED end to end - narrowing a segment without moving the boundary
-    beside it would leave leafgreen_guess quietly interpolating across a boundary."""
+    """Every gap is refused end to end."""
     for _before, _after, low, high, _evidence in rom_map.LEAFGREEN_DELTA_BOUNDARIES:
         for inside in (low + 1, (low + high) // 2, high - 1):
             try:
@@ -214,9 +182,7 @@ def test_no_boundary_is_wider_than_the_evidence_that_brackets_it():
 
 
 def test_there_is_a_minus_0x20_segment_between_the_species_table_and_easy_chat():
-    """Two runs. Nobody had seen it, and it is WHY 0x0824CDFC..0x083BEE74 looked like one 1.5 MB
-    gap: the delta does not go -0x24 straight to -0x1C4, it sits at -0x20 for 1256 KB on the way.
-    Two points that far apart at one delta is a segment; one point is the mistake one point makes."""
+    """The delta sits at -0x20 for 1256 KB between -0x24 and -0x1C4."""
     low, high, delta, _e = [seg for seg in rom_map.LEAFGREEN_DELTA_SEGMENTS if seg[2] == -0x20][0]
     assert (low, high) == (0x08251DAD, 0x083B7B47)
     assert high - low > 1024 * 1024, "one point pretending to be a segment"
@@ -230,18 +196,14 @@ def test_there_is_a_minus_0x20_segment_between_the_species_table_and_easy_chat()
 
 
 def test_the_four_low_segments_step_by_exactly_four_bytes():
-    """Corroboration for -0x20, from an independent direction. The deltas do NOT
-    simply grow along the link order - the four low segments are -0x2C, -0x28, -0x24 and -0x20,
-    each four bytes LESS divergent than the one below it. -0x20 continues that run exactly, which
-    is not what a pairing read at the wrong offset produces."""
+    """The four low segments are -0x2C, -0x28, -0x24 and -0x20."""
     low = [d for _lo, _hi, d, _e in rom_map.LEAFGREEN_DELTA_SEGMENTS if -0x2C <= d < 0]
     assert low == [-0x2C, -0x28, -0x24, -0x20]
     assert all(b - a == 4 for a, b in zip(low, low[1:]))
 
 
 def test_the_segments_are_in_address_order_and_never_overlap():
-    """Two segments claiming the same address means one of them is measured wrong, and
-    leafgreen_guess would answer with whichever came first."""
+    """Overlapping segments would make leafgreen_guess answer with whichever came first."""
     bounds = [(lo, hi) for lo, hi, _d, _e in rom_map.LEAFGREEN_DELTA_SEGMENTS]
     assert bounds == sorted(bounds), "segments must be in address order"
     for (_lo, hi), (nlo, _nhi) in zip(bounds, bounds[1:]):

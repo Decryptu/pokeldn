@@ -2,10 +2,8 @@ from pokeldn.frlg.save import mon
 
 
 def test_the_misc_substruct_reads_back_what_was_written_into_it():
-    """`modernFatefulEncounter` is BIT 31 of the ribbon word at Misc+0x08, not a byte of its own
-    [decomp:include/pokemon.h:40-82], and `metLocation` is Misc+0x01. Both are in the encrypted,
-    shuffled region, so the only way to read them is through the same decode every other field uses.
-    Built here rather than asserted against a capture: a synthetic mon can set exactly one bit."""
+    """`modernFatefulEncounter` is bit 31 of Misc+0x08 and `metLocation` is Misc+0x01
+    [decomp:include/pokemon.h:40-82]."""
     for pid in (0, 1, 23, 24, 0xDEADBEEF):
         for fateful in (0, 1):
             plain = bytearray(48)

@@ -1,8 +1,4 @@
-"""The noencounter hook, and the flag it holds, checked against the cartridge's own code.
-
-How it could fail. The hook skips the game's VBlankIntr or returns anywhere but where IntrMain
-called it; the flag address is not the byte StandardWildEncounter tests, so encounters go on.
-"""
+"""The noencounter hook, and the flag it holds, checked against the cartridge's own code."""
 
 import pathlib
 

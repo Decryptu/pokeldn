@@ -1,22 +1,7 @@
 """The Union Room advertisement (the middle NPC on Pokemon Center 2F).
 
-Why this exists: the trade host is invisible to the middle NPC, and until now that was only an
-observation.  The decomp says exactly why.  A console standing in the Union Room searches with
-LINK_GROUP_UNION_ROOM_INIT, whose accept list is::
-
-    sAcceptedActivityIds_Init[] = {ACTIVITY_SEARCH, 0xFF};   [src/data/union_room.h:419]
-
-and IsPartnerActivityAcceptable [src/union_room.c:1590] walks that list and returns FALSE for
-anything else.  ACTIVITY_TRADE (4) and ACTIVITY_WONDER_CARD (21) are therefore both dropped before
-the group list is ever drawn.  The console's own Union Room advertisement is
-SetHostRfuGameData(ACTIVITY_SEARCH, 0, FALSE) [src/union_room.c:3549].
-
-Once players are in the room the resume search uses sAcceptedActivityIds_Resume, which accepts
-IN_UNION_ROOM | activity [src/data/union_room.h:407-418], IN_UNION_ROOM being 1 << 6
-[include/constants/union_room.h:49].
-
-These are offline assertions about what we put on the air.  NOTHING here is hardware-proven: no run
-has advertised ACTIVITY_SEARCH yet.
+LINK_GROUP_UNION_ROOM_INIT accepts ACTIVITY_SEARCH only [src/data/union_room.h:419, src/union_room.c:1590];
+the resume search accepts IN_UNION_ROOM | activity [src/data/union_room.h:407-418].
 
 Run standalone (no pytest needed):   python tests/test_union_room_advertisement.py
 """
@@ -54,10 +39,8 @@ def test_constants_match_the_decomp():
 
 
 def test_default_advertisement_is_the_bare_in_union_room_activity():
-    """HARDWARE-PROVEN (u03): IsPartnerActivityIncompatible [link_rfu_2.c:2933] tests
-    partner->activity != IN_UNION_ROOM as an exact equality. Advertising
-    IN_UNION_ROOM | ACTIVITY_TRADE (u01, u02) made the console fail the connect instantly with
-    "the trainer appears busy" and no packet on the air; the bare bit connected."""
+    """IsPartnerActivityIncompatible [link_rfu_2.c:2933] compares activity with IN_UNION_ROOM
+    exactly; measured on hardware."""
     inactive, active = build_union_room_app_data(DEFAULT_TRAINER, SESSION_ID)
     word = _search_word(inactive)
     assert word & beacon.SEARCH_ACTIVITY_MASK == beacon.IN_UNION_ROOM
@@ -78,8 +61,7 @@ def test_resume_form_is_expressible():
 
 
 def test_only_the_activity_differs_from_the_trade_advertisement():
-    """Every unexplained captured byte is preserved; the Pia header, version, language and
-    both unexplained regions are untouched, exactly as the Wonder Card beacon does it."""
+    """Only the activity differs; the Pia header, version, language and unexplained regions are kept."""
     uroom, _ = build_union_room_app_data(DEFAULT_TRAINER, SESSION_ID)
     trade, _ = build_trade_app_data(DEFAULT_TRAINER, SESSION_ID)
     assert uroom[:beacon.PIA_HDR] == trade[:beacon.PIA_HDR]
@@ -92,10 +74,9 @@ def test_only_the_activity_differs_from_the_trade_advertisement():
     assert bytes(u_record) == bytes(t_record)
 
 
-# --- the flag actually reaches the air ------------------------------------------------------------
 def test_activity_names_resolve_to_the_decomp_values():
     resolve = config.resolve_union_room_activity
-    assert resolve(None) == beacon.IN_UNION_ROOM   # proven default, see u03
+    assert resolve(None) == beacon.IN_UNION_ROOM  # proven on hardware
     assert resolve("search") == beacon.ACTIVITY_SEARCH
     assert resolve("in-room") == beacon.IN_UNION_ROOM
     assert resolve("in-room-trade") == beacon.IN_UNION_ROOM | beacon.ACTIVITY_TRADE
@@ -110,8 +91,7 @@ def test_activity_names_resolve_to_the_decomp_values():
 
 
 def test_in_room_activities_carry_the_union_room_bit_and_search_does_not():
-    """The two forms are not interchangeable: a console standing in the room searches with the
-    RESUME list and would drop a bare ACTIVITY_SEARCH advertisement."""
+    """A console in the room searches with the resume list and drops a bare ACTIVITY_SEARCH."""
     assert not config.resolve_union_room_activity("search") & beacon.IN_UNION_ROOM
     for name in ("in-room", "in-room-trade", "in-room-chat"):
         assert config.resolve_union_room_activity(name) & beacon.IN_UNION_ROOM
@@ -128,8 +108,7 @@ def test_union_room_activity_flag_reaches_host_options():
 
 @functools.lru_cache(maxsize=1)
 def _party_files():
-    """Two throwaway party files. `*.pk3` is gitignored (CLAUDE.md: never commit one), so the
-    tests write their own rather than depending on a file outside the repo."""
+    """Two throwaway party files; `*.pk3` is gitignored."""
     directory = tempfile.mkdtemp(prefix="frlg-party-")
     paths = []
     for name, species, level in (("PARTY1.pk3", 129, 5),        # MAGIKARP, trade fodder
@@ -170,7 +149,6 @@ def test_host_app_advertises_activity_search_only_with_the_option():
 
 
 def test_host_app_advertises_the_chosen_in_room_activity():
-    """The run we are about to spend: a console standing in the room needs IN_UNION_ROOM set."""
     activity = beacon.IN_UNION_ROOM | beacon.ACTIVITY_TRADE
     assert _advertised_activity(True, activity) == activity
 
@@ -215,8 +193,8 @@ def test_post_join_advertisement_sets_started_activity_by_default():
 
 
 
-# One console's record before and after registering Chansey lv26 asking for FEU (2026-09-03).
-# Byte 10 is its RFU session id, which it re-rolled when it re-initialised the link.
+# One console's record before and after registering Chansey lv26 asking for FEU. Byte 10 is its
+# re-rolled RFU session id.
 CONSOLE_BASELINE = bytes.fromhex("65dfc1cfccd0bbc8ff00805d00000000401c030100000000")
 CONSOLE_REGISTERED = bytes.fromhex("65dfc1cfccd0bbc8ff00815d00000000401c2b3500007100")
 

@@ -14,8 +14,7 @@ from pokeldn.frlg.save import save_inject  # noqa: E402
 from test_gift_composer import ScriptVM  # noqa: E402
 
 
-# The card moved when the footer stopped saying "frlg-ldn-trade"; the SCRIPT did not,
-# which is what says the rename touched the printed text and not the payload.
+# The card changed with its footer text; the script did not.
 CARD_SHA256 = "c2c6554508297011b534ecd1526fd48c4e91cd245483cab5196fea79a6d9bc9c"
 SCRIPT_SHA256 = "23108fe1f4a28045d19fa9a2a68679fe81286371af4a681b28c4ccddd99f031c"
 
@@ -212,12 +211,8 @@ def test_all_three_clis_default_to_the_composed_fixed_level_65_cutscene():
         assert not {"--level", "--item", "--title", "--subtitle"} & options
     host_config = frlg_mg_host.build_run_config(
         frlg_mg_host.build_parser(), host_args)
-    # The payload names WHICH gift, never how it is built; anything shaping the card itself belongs
-    # in the composed definition. `questionnaire` and `denied_message` are session gating, not gift
-    # content, which is why they are allowed here [SVR_CHECK_QUESTIONNAIRE, mg_server.py].
-    # `definition` is the same rule and not an exception to it: a gift that is a FAMILY rather than
-    # a constant (rng-mon-hunt, whose staged stub carries whatever search was asked for) is still
-    # composed in wonder_card_events and arrives already built. What this list refuses is a knob.
+    # The payload names which gift, never how it is built; `questionnaire` and `denied_message` are
+    # session gating [SVR_CHECK_QUESTIONNAIRE, mg_server.py].
     assert [field.name for field in fields(host_config.payload)] == [
         "gift", "flag_id", "questionnaire", "denied_message", "definition"]
     assert host_config.payload.definition is None

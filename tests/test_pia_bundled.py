@@ -1,8 +1,5 @@
-"""A presence byte of 0x00 opens a message whose whole header is inherited, in every band
-`pia5.parse_messages` walks. Each packet here is one a game sent, decrypted under its own session
-keys; the expected reliable sequence ids are what the console put in the packet, read off the
-sniffer and the console's own retransmissions. docs/pia.md "Message framing".
-"""
+"""Presence byte 0x00 opens a message whose whole header is inherited, in every band (docs/pia.md,
+Message framing)."""
 import json
 import os
 
@@ -64,8 +61,7 @@ def test_a_presence_byte_of_zero_is_a_message(case, expected):
 
 
 def test_the_version_16_walk_reads_the_byte_bit_0x10_states():
-    """Z-A's header size `0x256dfc8` is 1 + flags + 2 * size + one byte each for bits 4, 8 and
-    0x10; a walk that stops on 0x10 loses the message and every one behind it."""
+    """Z-A's header size `0x256dfc8` counts one byte each for flag bits 4, 8 and 0x10."""
     from pokeldn.ldn import reliable
     first = bytes([0x1F, 0x00, 0x00, 0x03, 0x81, 0xFD, 0x02]) + b"abc"
     second = bytes([0x00]) + b"xyz"

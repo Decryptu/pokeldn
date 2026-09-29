@@ -1,9 +1,5 @@
-"""The talk answer and each --after-talk message, against a scripted console window.
-
-The console's reliable window drops a message under an id it already holds and acks the next id it
-wants. The talk answer (0x64) and an after-talk 0x07 sent under one id lose the 0x07; a lost copy
-resent under a NEW id is a second message (docs/bdsp_protocol.md, The console approaching).
-"""
+"""The talk answer and each --after-talk message against the console's receive window
+(docs/bdsp_protocol.md, The console approaching)."""
 
 import trio
 

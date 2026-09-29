@@ -382,8 +382,6 @@ def test_a_console_that_never_confirmed_a_room_exit_stops_the_host_at_once():
 
 
 def test_a_confirmed_close_settles_briefly_and_then_stops():
-    """0 of 356 host logs ever reached this completion: the host waited for an activity `done`
-    that cannot arrive once the console is gone, and every clean close ended in a SIGTERM."""
     app, _ = _absence_app(close_confirmed=True)
     assert app._absence_stop_reason(100.0) is None          # first sighting: start settling
     assert app._absence_stop_reason(100.0 + host_app.HOST_CLOSE_SETTLE_SECONDS / 2) is None

@@ -1,10 +1,5 @@
-"""flash-read: select the bank, byte-copy the flash window into EWRAM, send the copy.
-
-Two things are tested separately because they fail differently. The bank arithmetic is arithmetic
-and is checked against the decomp's own formula; the payload's mechanics are checked by running it.
-Pointing the send at flash itself is not tested because it does not work: measured at two addresses
-and two lengths, the console sent content belonging to neither.
-"""
+"""flash-read: select the bank, copy the flash window into EWRAM, send the copy; sending from flash
+itself fails (measured)."""
 
 import pytest
 
@@ -12,8 +7,6 @@ from pokeldn.frlg.rom import buffer_script as bs
 
 pytestmark = pytest.mark.skipif(not bs.emulation_available(), reason="needs unicorn")
 
-
-# --- the bank arithmetic -------------------------------------------------------------------------
 
 @pytest.mark.parametrize("sector", range(32))
 def test_the_window_address_is_the_games_own(sector):
@@ -39,12 +32,9 @@ def test_a_read_may_not_run_off_the_end_of_the_window():
         bs.build_flash_read(31, offset=0xF00, length=512)
 
 
-# --- the payload ---------------------------------------------------------------------------------
-
 def test_it_copies_the_window_into_the_scratch_and_sends_the_copy():
     code = bs.build_flash_read(30, length=252)
     _, window = bs.flash_window_address(30)
-    # The engine maps flash flat, so lay the bytes where the payload will read them.
     marker = bytes((0x41 + (i % 7)) for i in range(252))
     # The chip is addressed linearly; the payload reaches it through bank 1's window.
     flash = bytearray(b"\x00" * bs.FLASH_SIZE)
@@ -53,10 +43,10 @@ def test_it_copies_the_window_into_the_scratch_and_sends_the_copy():
     result = machine.call()
     assert result.returned == 1
     scratch = bs.FLASH_WRITE_SCRATCH
-    assert bytes(machine.uc.mem_read(scratch, 252)) == marker      # the CPU copy landed
-    assert result.client.send_buffer == scratch                    # and the send points at EWRAM
+    assert bytes(machine.uc.mem_read(scratch, 252)) == marker
+    assert result.client.send_buffer == scratch
     assert result.client.send_size == 252
-    assert result.pending_send == marker                           # which is what goes out
+    assert result.pending_send == marker
 
 
 def test_the_bank_select_writes_the_games_command_sequence():
@@ -70,16 +60,9 @@ def test_the_bank_select_writes_the_games_command_sequence():
     assert machine0.flash_bank == 0
 
 
-# --- the config path, which is the one the host actually uses -------------------------------------
-
 def test_config_returns_a_patched_image_not_the_raw_payload():
-    """The failure this guards cost a console run and was blamed on the ROM function it calls.
-
-    A build dispatch placed in __post_init__ instead of build_code returns early during validation
-    and build_code then falls through to `payload(name)` - the UNPATCHED image, every operand zero.
-    For flash-patch that meant a ReadFlash pointer of 0 and a `bx` to 0x00000000, which hung the
-    console; the payload builder was correct and the tests that called it directly all passed.
-    """
+    """A build dispatch in __post_init__ made build_code send the unpatched image; flash-patch then
+    `bx`ed to 0."""
     from pokeldn import config as configmod
     from pokeldn.frlg.text import charmap
 

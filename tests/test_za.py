@@ -1,7 +1,4 @@
-"""Legends Z-A constants, pinned to a retail console's own advertisement.
-
-Two sessions of a retail Legends Z-A on the local search screen, one per link code.
-"""
+"""Legends Z-A constants, pinned to a retail console's advertisement under two link codes."""
 import pytest
 
 from pokeldn import za
@@ -89,8 +86,7 @@ def test_the_record_round_trips_through_an_offer():
 
 @pytest.mark.parametrize("pid", [0x12345678, 0xE5BBDF65 ^ 0x0000FFFF])
 def test_a_fresh_offer_changes_the_identity_and_nothing_else(pid):
-    """New PID and constant, the same Pokemon: a stale shuffle would garble the species and names,
-    a lost `hi ^ lo` would change the shiny state against the same trainer."""
+    """A fresh offer changes PID and constant only; the species, names and shiny state survive."""
     from pokeldn.sv import pokemon as svp
     from pokeldn.za import pokemon as zp
 

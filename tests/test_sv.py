@@ -1,8 +1,4 @@
-"""Scarlet / Violet: the advertisement and the reliable acks, pinned to the retail bytes.
-
-Every expected value here was read off a retail Scarlet 4.0.0: `sv01` (three scans of a console
-searching alone) and `sv02` (a passive capture of the two consoles' own trade).
-"""
+"""Scarlet / Violet: the advertisement and the reliable acks, pinned to retail Scarlet 4.0.0 captures."""
 import os
 import sys
 
@@ -13,8 +9,8 @@ sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 from pokeldn import sv
 from pokeldn.ldn import pia6, reliable5
 
-# The application data a searching console advertises, and the same beacon once a second console
-# has joined it: the two differ in the number-of-players byte alone.
+# A searching console's application data, and the same beacon once a second console joined: only the
+# player count differs.
 SV01_APP_DATA = bytes.fromhex(
     "005c150015000000000000000000000000000000000101000000010120000000"
     "0000000000000000000000000000000000000000000000000000000000000000"
@@ -27,8 +23,7 @@ SV02_APP_DATA = bytes.fromhex(
     "0000000000000000000000000000000000000000000000000000000000000000"
     "0000000000000000000000000000000000000000000000000000000000000000"
     "00000000")
-# The joiner's bulk ack on 0x81 port 1 in sv02, and the host's on the same port, whole
-# messages, both with the ack payload's first byte zero (it is 0 or 1 across the capture).
+# The joiner's and host's bulk acks on 0x81 port 1, whole messages off a retail pair capture.
 SV02_JOINER_ACK_81_1 = bytes.fromhex(
     "00000056ffff002f030000000100040000020002000000000000000000000000"
     "0000000000000100010000000000000000000000000000000000000100010000"
@@ -40,8 +35,7 @@ SV02_HOST_ACK_81_1 = bytes.fromhex(
     "0000000000000000000000000000000001000100000000000000000000000000"
     "000000")
 
-# The first 0x80 port-0 bulk acknowledgement from the retail Scarlet in sv131, measured before
-# the Pia parser inflates it. The plain bytes are the independently decoded acknowledgement.
+# A retail Scarlet's first 0x80 port-0 bulk ack before inflation, and its decoded plain bytes.
 SV131_ACK_80_0 = bytes.fromhex(
     "00000056ffff000103000000020104000001000100000000000000000000000000000000000001000100000000000000000000000000000000000001000100000000000000000000000000000000000001000100000000000000000000000000000000")
 SV131_ACK_ZLIB = bytes.fromhex(
@@ -149,8 +143,7 @@ def test_the_host_ack_reproduces_the_retail_message():
     assert sv_host.build_bulk_ack({1: 46}, 2) == SV02_HOST_ACK_81_1
 
 
-# A retail Scarlet host's bulk acks of a joiner's gapped record set (ids 1..4, 7..46) on 0x81 port 1,
-# as the console sent them while the set was arriving: what it held, then the message.
+# A retail Scarlet host's bulk acks of a gapped record set (ids 1..4, 7..46) on 0x81 port 1.
 RETAIL_GAPPED_ACKS = [
     (list(range(1, 5)) + list(range(7, 17)),
      "00000056ffff0002030000000200040000010001000000000000000000000000000000000000050005fe07000000"
@@ -165,9 +158,7 @@ RETAIL_GAPPED_ACKS = [
 
 @pytest.mark.parametrize("held, console", RETAIL_GAPPED_ACKS)
 def test_a_gapped_set_is_acknowledged_as_the_console_does(held, console):
-    """The ack names the end of the contiguous run and masks what came early. Acking one past the
-    highest id instead claims ids the sender has not sent, and a console holding id 26 back
-    retransmitted 1..25 for 3.5 s against it."""
+    """The ack names the end of the contiguous run and masks what came early."""
     from pokeldn.sv import streams
     through, mask = streams.ack_position(held)
     assert streams.build_ack({streams.JOINER_INDEX: through}, 2, streams.HOST_INDEX,
@@ -175,8 +166,7 @@ def test_a_gapped_set_is_acknowledged_as_the_console_does(held, console):
 
 
 def test_the_peers_lowest_pending_closes_a_gap():
-    """Once the sender declares nothing below 47 is outstanding, the set is acked to 47 with an
-    empty mask, as the retail host did 5.3 s into a seat."""
+    """A lowest-pending of 47 closes the gap: acked to 47 with an empty mask, as the retail host did."""
     from pokeldn.sv import streams
     held = list(range(1, 5)) + list(range(7, 47))
     assert streams.ack_position(held, 47) == (46, bytes(16))
@@ -184,7 +174,7 @@ def test_the_peers_lowest_pending_closes_a_gap():
 
 
 def test_the_streams_module_reproduces_the_retail_opening():
-    """Every byte here is a message from the retail pair's first second (sv11)."""
+    """Every byte is a message from the retail pair's first second."""
     from pokeldn.sv import streams
     entry = "00" + "0001" + "0001" + "00" * 16
     assert streams.build_ack({}, 1, streams.JOINER_INDEX, unknown0=1).hex() == (
@@ -251,8 +241,7 @@ def test_the_announcement_reproduces_the_pair_host_inflated():
 
 
 def test_the_join_names_the_key_the_announcement_carries():
-    """The type-3 handler `0x1981ed4` refuses a join whose first field is not the announcement's
-    key, the relay's count at +0x1c4. A pair's host announced key 0 and its joiner joined with 0."""
+    """The type-3 handler `0x1981ed4` refuses a join whose first field is not the announced key."""
     import zlib
     from pokeldn.sv import port2
     assert port2.announce_key(zlib.decompress(PAIR_ANNOUNCE_WIRE)) == 0
@@ -272,9 +261,7 @@ def test_the_join_parses_and_the_accept_reproduces_the_pair_host():
 
 
 def test_the_trade_stage_follows_the_pair_host_message_for_message():
-    """The emulated pair's 0x7C exchange from the key-0x80 open to the close of key 0x0180, both
-    directions, drives the host's state machine: fed the joiner's messages in order it must send
-    the host's, in order, byte for byte."""
+    """Fed the pair joiner's 0x7C messages in order, the host stage sends the pair host's, byte for byte."""
     from pokeldn.sv import trade
     path = os.path.join(os.path.dirname(__file__), "data", "sv_pair_trade.txt")
     rows = [line.split() for line in open(path) if line.strip()]
@@ -318,9 +305,7 @@ def test_a_host_that_offers_first_still_confirms_on_the_joiner_offer():
 
 
 def test_the_joiner_stage_follows_the_pair_joiner_message_for_message():
-    """The same exchange from the other side: fed the host's messages in order, the joiner's state
-    machine must send the pair joiner's, in order, byte for byte, from its own key-0x80 open to
-    its mirror of the close of key 0x0180."""
+    """Fed the pair host's messages, the joiner stage sends the pair joiner's, byte for byte."""
     from pokeldn.sv import trade
     path = os.path.join(os.path.dirname(__file__), "data", "sv_pair_trade.txt")
     rows = [line.split() for line in open(path) if line.strip()]
@@ -370,9 +355,7 @@ def test_a_cancelled_trade_stops_the_joiner_stage():
 
 
 def test_a_second_offer_runs_the_cycle_again_in_one_seat():
-    """With two records the joiner stage carries two trades in a seat: the second cycle is the
-    pair joiner's message list again, from the console's offer to the mirror of the exchange
-    close, with the trade key left open and the second record offered."""
+    """Two records carry two trades in one seat, the trade key left open."""
     from pokeldn.sv import trade
     path = os.path.join(os.path.dirname(__file__), "data", "sv_pair_trade.txt")
     rows = [line.split() for line in open(path) if line.strip()]
@@ -391,7 +374,6 @@ def test_a_second_offer_runs_the_cycle_again_in_one_seat():
 
     assert replay(rows) == [(int(p), h) for d, p, h in rows if d == "RX"]
     assert stage.trades == 1 and not stage.done and stage.offer == second
-    # The trade key stays open, so the second cycle starts at the console's next offer.
     again = rows[2:]
     sent = replay(again)
     expected = [(int(p), h) for d, p, h in again if d == "RX"]

@@ -30,12 +30,12 @@ def test_names_go_where_the_console_read_them():
 
 
 def test_date_bitfield_matches_the_three_album_readings():
-    # 18 October 2018 16:26 UTC showed 18/10/2018 18:26; the field is absolute, UTC, month 1-based
+    # 18 October 2018 16:26 UTC showed 18/10/2018 18:26: absolute, UTC, month 1-based.
     rec = wc8.build(date=1539879960)
     assert wc8.unpack_date(rec) == (2018, 10, 18, 16, 26, 0)
     v = struct.unpack_from("<Q", rec, 0)[0]
     assert (v >> 26) & 0x3FFF == 2018 and (v >> 22) & 0xF == 10 and (v >> 17) & 0x1F == 18
-    # the probe 01 02 .. 08 packs month 0 of year 321 and showed December of the year before
+    # The probe 01 02 .. 08 packs month 0 of year 321 and showed December of the year before.
     v = struct.unpack("<Q", bytes(range(1, 9)))[0]
     assert ((v >> 26) & 0x3FFF, (v >> 22) & 0xF, (v >> 17) & 0x1F) == (321, 0, 1)
 

@@ -1,9 +1,5 @@
-"""Offline end-to-end checks for the leader-side trade-room engine.
-
-The peer below is intentionally small: it supplies the exact blocks/opcodes a right-seat FireRed
-child owns, while all framing uses the real RFU and block implementations.  This catches leader /
-follower ownership inversions and ordering errors without pretending to validate Pia timing.
-"""
+"""The leader-side trade-room engine against a minimal right-seat FireRed child over the real RFU
+and block layers."""
 
 import os
 import sys
@@ -26,7 +22,7 @@ from pokeldn.frlg.link.host_trade import (
 
 
 def _mon(marker):
-    # Wire-validity is not relevant to this FSM test; distinct raw structs make swaps unambiguous.
+    # Distinct raw structs make swaps unambiguous.
     return mon.Mon(bytes([marker & 0xFF]) + b"\x00" * 99)
 
 
@@ -77,8 +73,7 @@ class ScriptedChild:
         self._sent_return_standby = False
 
     def send_words(self, words):
-        # A fresh SlotBuilder is sufficient for block/linkcmd injection here: the receiver strips the
-        # rolling bits.  Dedicated rolling-tag behavior is covered by rfu tests.
+        # The receiver strips the rolling bits; rolling tags are covered by the rfu tests.
         self.host.feed_child_slot(rfu.SlotBuilder().build(words))
 
     def send_linkcmd(self, cmd, cursor=0):
@@ -112,7 +107,6 @@ class ScriptedChild:
             elif cmd == trade.START_TRADE:
                 self.send_linkcmd(trade.READY_FINISH_TRADE)
             elif cmd == trade.CONFIRM_FINISH_TRADE:
-                # Mirror TradeMons locally before the next BufferTradeParties exchange.
                 offered = self.offered[self.round]
                 off = self.host_cursor * 100
                 self.party[offered] = mon.Mon(bytes(self._host_party[off:off + 100]))
@@ -121,7 +115,7 @@ class ScriptedChild:
                 self._req200 = 0
                 self._host_party = bytearray(600)
                 self._host_party_i = 0
-                # Completed native capture: six consecutive child-initiated save rounds.
+                # Measured: six consecutive child-initiated save rounds.
                 base = 5 + (self.round - 1) * 6
                 for n in range(base, base + 6):
                     self.send_standby(n)
@@ -167,8 +161,7 @@ class ScriptedChild:
                 self.send_words(rfu.held_keys_words(0x17))
         elif rec["op"] == rfu.READY_EXIT_STANDBY:
             count = rec["count"]
-            # Counts 0/1 are the host echoing an already-sent child barrier.  Count 2 completion
-            # advances the child to the final post-seat round (count 3).
+            # Counts 0/1 echo a child barrier already sent; count 2 advances the child to count 3.
             if count == 2 and not self._sent_warp3:
                 self._sent_warp3 = True
                 self.send_standby(3)
@@ -287,8 +280,7 @@ def test_extra_trade_selection_is_declined_without_false_exit():
 
 def test_leader_never_advances_without_child_ack_opcode():
     h = HostTradeEngine([_mon(1), _mon(2)], anim_delay=0)
-    # Directly exercise the leader-only decision boundary: selecting queues SET_MONS, but START is
-    # forbidden until the child supplies INIT_BLOCK.
+    # Selecting queues SET_MONS; START waits for the child's INIT_BLOCK.
     h._set_state(H_SELECT)
     h._on_child_linkcmd(trade.READY_TO_TRADE, 0)
     assert h.state != H_ANIM
@@ -328,8 +320,7 @@ def test_entry_route_matches_native_and_exit_key_is_one_shot():
     for _ in range(ENTRY_FINAL_STANDBY_QUIET_FRAMES - 1):
         h.feed_child_slot(rfu.idle_slot())
     assert h.state == "H_ENTRY_SEAT"
-    # A native >60-frame count-3 resend proves the child has not accepted our echo yet and resets
-    # the completion observation window.
+    # A native >60-frame count-3 resend means the child has not taken our echo; the window resets.
     h._on_child_standby(3)
     for _ in range(ENTRY_FINAL_STANDBY_QUIET_FRAMES - 1):
         h.feed_child_slot(rfu.idle_slot())
@@ -349,15 +340,14 @@ def test_entry_route_matches_native_and_exit_key_is_one_shot():
     assert h.state == "H_RETURN_FIELD"
     exit_words = h.tick()
     assert rfu.parse_slot(rfu.serialize(exit_words))["keycode"] & 0xFF == 0x17
-    # Drain the queued barrier echoes before the EXIT_ROOM held-key plan.
     while h._words:
         h.tick()
     assert rfu.parse_slot(rfu.serialize(h.tick()))["keycode"] & 0xFF == 0x11
     h.feed_child_slot(rfu.SlotBuilder().build(rfu.held_keys_words(0x17)))
     assert not h._held_plan and h._held_steady is None
 
-    # If the Switch exits first during the five-second delay, Linux mirrors EXIT_ROOM once and
-    # proceeds to READY_CLOSE_LINK without waiting for the timer.
+    # If the Switch exits first during the five-second delay, EXIT_ROOM is mirrored once and
+    # READY_CLOSE_LINK follows.
     h._words.clear()
     h._set_state("H_RETURN_FIELD")
     h._room_exit_wait = POST_CANCEL_EXIT_WAIT_FRAMES
@@ -382,7 +372,6 @@ def test_child_close_confirmation_keeps_peer_traffic_alive_for_fifteen_seconds()
     assert not h.disconnect_requested
     assert h._close_grace_wait == POST_CLIENT_CLOSE_GRACE_FRAMES
 
-    # A repeated confirmation must not restart the grace period.
     h.tick()
     remaining = h._close_grace_wait
     h.feed_child_slot(close)
@@ -462,16 +451,9 @@ def test_host_party_payloads_are_identical_to_client_payloads_for_1_to_6_mons():
 
 
 def test_host_identity_uses_redundant_gen3_name_terminators():
-    """The host-only wire profile pads the fixed name field with EOS bytes.
-
-    The first FF is the normal FireRed terminator; the remaining FF bytes keep
-    the trade-menu partner-name renderer bounded if the bridge or a fixed-width
-    copy consumes more than the first terminator.  The working follower/client
-    profile deliberately retains its capture-matching zero padding.
-    """
+    """The host pads the name field with EOS bytes so a fixed-width copy stays bounded."""
     h = HostTradeEngine([_mon(1)], link_player=linkplayer.LinkPlayer(name="EMU"))
-    # The block is built at construction but only queued once the child's own LinkPlayer block
-    # lands, so that both sides are not sending blocks over each other.
+    # Queued only once the child's own LinkPlayer block lands.
     payload = h._link_player_block
     assert not h._blocks
     parsed, ok = linkplayer.parse_block(payload)
@@ -508,17 +490,13 @@ def test_host_session_consumes_shared_plan_and_profile():
 
 
 def test_leave_menu_report_separates_a_silent_console_from_a_steadily_idling_one():
-    """A console idling across the mark appends no new run, because feed_child_slot
-    increments an unbroken run in place. Without frame counts that reads identically to a
-    console that has gone off the air - which is what w1 printed for 85s while the user
-    was looking at the console's live trade menu."""
+    """An idle run continued across the mark is told from silence by frame counts."""
     lines = []
     h = HostTradeEngine([_mon(1)], log=lines.append)
     h._words.clear()
     h._blocks.clear()
     h._sender = None
     h.round = h.trades
-    # Idle before the refresh, so the run that follows the mark is a continuation.
     h.feed_child_slot(rfu.idle_slot())
     h._finish_party_exchange()
     assert h.state == H_LEAVE_MENU
@@ -537,12 +515,8 @@ def test_leave_menu_report_separates_a_silent_console_from_a_steadily_idling_one
 
 
 def test_child_cancel_at_select_is_answered_with_partner_cancel_not_silence():
-    """Backing out of the trade SELECT screen wedged the console on "your friend has not
-    finished...": REQUEST_CANCEL was only handled in H_LEAVE_MENU, so in H_SELECT it fell through
-    the elif chain and the host went silent while the console waited for a verdict.
-    Native: Leader_ReadLinkBuffer sets partnerSelectStatus = STATUS_CANCEL unguarded
-    (trade.c:1622); player READY + partner CANCEL -> LINKCMD_PARTNER_CANCEL_TRADE
-    (trade.c:1694-1701)."""
+    """Leader_ReadLinkBuffer sets STATUS_CANCEL unguarded (trade.c:1622); READY + CANCEL is
+    LINKCMD_PARTNER_CANCEL_TRADE (trade.c:1694-1701)."""
     h = HostTradeEngine([_mon(1), _mon(2)], anim_delay=0)
     h._words.clear()
     h._blocks.clear()
@@ -554,16 +528,13 @@ def test_child_cancel_at_select_is_answered_with_partner_cancel_not_silence():
     queued = [x[1] for x in h.trace if x[0] == "queue_block"]
     assert queued[-1:] == ["PARTNER_CANCEL_TRADE"], queued
     assert ("partner_cancel_at_select",) in h.trace
-    # The menu stays live: a normal selection afterwards must still start a trade.
     assert h.state == H_SELECT
     h._on_child_linkcmd(trade.READY_TO_TRADE, 0)
     assert h.state == H_CONFIRM
 
 
 def test_second_child_cancel_at_select_makes_both_cancel():
-    """h6: every REQUEST_CANCEL at SELECT answered with PARTNER_CANCEL_TRADE looped the console on
-    "your friend wants to trade". A second consecutive CANCEL is the console wanting out: the leader
-    cancels too, LINKCMD_BOTH_CANCEL_TRADE (trade.c:1715-1722), and the exit path runs."""
+    """A second consecutive CANCEL is answered LINKCMD_BOTH_CANCEL_TRADE (trade.c:1715-1722)."""
     h = HostTradeEngine([_mon(1), _mon(2)], anim_delay=0)
     h._words.clear()
     h._blocks.clear()

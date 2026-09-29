@@ -1,10 +1,4 @@
-"""The version-4 connection request, against Sword's own serializer.
-
-Every offset here was read off `main` 0x017c7aa0 (the serializer) and checked against 0x017c62a0
-(the parser that reads the same bytes back). There is no capture of one, so what these tests can
-prove is that the bytes land where those two functions put them and that a version-4 request is
-NOT a 5.27 request - which is the mistake that would cost a run and read as ordinary silence.
-"""
+"""The version-4 connection request, against Sword's serializer `main` 0x017c7aa0 and parser 0x017c62a0."""
 
 import pytest
 
@@ -38,8 +32,8 @@ def test_every_field_lands_where_the_serializer_puts_it():
 
 
 def test_it_is_not_a_5_27_request():
-    """The flag byte at [3] shifts everything after it, so the two layouts disagree from there on -
-    and a version-4 console drops a mismatched constant id in silence."""
+    """The flag byte at [3] shifts everything after it; a version-4 console drops a mismatched
+    constant id in silence."""
     v4 = _request()
     v5 = stp.build_connection_request(stp.ldn_constant_id(HOST_MAC), HOST_VAR,
                                       [stp.FILLER], _location(), player_infos=[], ack_id=1)
@@ -56,15 +50,15 @@ def test_the_relay_variant_is_the_same_message_with_type_6():
 
 
 def test_a_location_of_the_wrong_size_is_refused_here_rather_than_on_the_air():
-    """0x20..0x40, the same bounds 5.27 has. A malformed location's error is thrown away by the
-    connection-request parser, so it reads as a working request the console refuses."""
+    """0x20..0x40, as in 5.27; the parser discards a malformed location's error, so it reads as a
+    refused request."""
     with pytest.raises(ValueError):
         s4.build_connection_request(1, 2, b"\0" * 8)
 
 
 def test_a_padded_response_answers_the_gate_byte_from_inside_the_message():
-    """A result-0 connection response is read at [0x37] by `0x017c6ff0`, which drops the whole
-    message when that byte is 5 or more. The 17-byte form leaves the byte 38 bytes past its end."""
+    """`0x017c6ff0` drops a result-0 response whose byte [0x37] is 5 or more; the 17-byte form ends
+    38 bytes short of it."""
     short = s4.build_connection_response(0, 0x1122334455667788, 0xAABBCCDD)
     padded = s4.build_connection_response(0, 0x1122334455667788, 0xAABBCCDD,
                                           min_size=s4.ACCEPTED_RESPONSE_SIZE)

@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Deterministic Stage 2.4 tests for the host Pia Reliable state machine."""
+"""The host Pia Reliable state machine."""
 
 from pokeldn.ldn import reliable
 
@@ -34,8 +34,8 @@ def test_stream_open_and_delayed_ack():
     assert ack_id == 0xFFF1
     assert mask == b"\x00" * 16
 
-    # Native leader capture: it ACKs the child's metadata while its own stream
-    # is still closed, then opens fff0 with RFU A (not another metadata frame).
+    # A native leader ACKs the child's metadata with its own stream closed, then opens fff0 with RFU
+    # A.
     assert not leader.local_opened
     rfu_accept = bytes.fromhex("57410600b7f180840000")
     leader_opening = leader.open(rfu_accept, 35)
@@ -52,7 +52,6 @@ def test_gap_sack_fast_retransmit_and_ordered_delivery():
     receiver = reliable.HostReliableSession(ack_period_ms=0)
 
     sender.open(reliable.METADATA_FRAME, 0)
-    # Retire INIT so the three test frames occupy fff1..fff3.
     sender.receive(reliable.build_reliable(
         0xFFF0, 0xFFF1, reliable.build_bulk_ack(0xFFF1),
         reliable.FLAGSA_CTRL), 1)
@@ -60,8 +59,7 @@ def test_gap_sack_fast_retransmit_and_ordered_delivery():
     second = sender.send(b"second", 2)
     third = sender.send(b"third", 2)
 
-    # The receiver has already consumed its peer's INIT, but DATA fff1 is
-    # lost.  Later frames are SACKed and held away from the application.
+    # DATA fff1 is lost; later frames are SACKed and held back.
     receiver.receive(reliable.build_reliable(
         0xFFF0, 0xFFF0, reliable.METADATA_FRAME,
         reliable.FLAGSA_INIT), 0)
@@ -71,11 +69,8 @@ def test_gap_sack_fast_retransmit_and_ordered_delivery():
     sack = receiver.poll(3)[0]
     ack_id, mask = reliable.parse_bulk_ack(sack.payload)
     assert ack_id == 0xFFF1
-    # The bitmap covers the frames ABOVE the hole and so starts at ack_id + 1:
-    # fff2/fff3 above the fff1 hole occupy bits 0 and 1 (0x03). The old expectation
-    # here was bits 1 and 2, taken from a single ambiguous capture example; three
-    # hardware captures (591 masks) settle it the other way - see
-    # reliable.MASK_ORIGIN_OFFSET.
+    # The bitmap starts at ack_id + 1, measured over 591 masks in three hardware captures
+    # [reliable.MASK_ORIGIN_OFFSET].
     assert mask[0] & 0b111 == 0b011
 
     sender.receive(sack.serialize(), 4)
@@ -86,7 +81,6 @@ def test_gap_sack_fast_retransmit_and_ordered_delivery():
 
     delivered = receiver.receive(retransmits[0].serialize(), 5)
     assert _payloads(delivered) == [b"first", b"second", b"third"]
-    # Repeated air/MAC delivery is idempotent.
     assert receiver.receive(retransmits[0].serialize(), 6) == []
 
     cumulative = receiver.poll(6)[0]
@@ -104,8 +98,7 @@ def test_bootstrap_timeout_then_rtt_driven_timeout():
     assert retry[0].payload == opening.payload
     assert retry[0].message_flags == 0x20
 
-    # ACK the retransmitted INIT, then provide a clean RTT sample.  Native RTO
-    # becomes 33 + 1.4*10 = 47 ms for the next frame.
+    # Native RTO becomes 33 + 1.4*10 = 47 ms for the next frame.
     session.receive(reliable.build_reliable(
         0xFFF0, 0xFFF1, reliable.build_bulk_ack(0xFFF1),
         reliable.FLAGSA_CTRL), 201)
@@ -119,7 +112,6 @@ def test_bootstrap_timeout_then_rtt_driven_timeout():
 def test_window_backpressure_and_malformed_input():
     session = reliable.HostReliableSession(max_inflight=2)
     assert session.receive(b"short", 0) == []
-    # Plain DATA cannot consume the peer's required fff0 INIT slot.
     malformed_open = reliable.build_reliable(
         0xFFF0, 0xFFF0, b"not initialized", reliable.FLAGSA_GBA)
     assert session.receive(malformed_open, 0) == []

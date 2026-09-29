@@ -47,8 +47,6 @@ def _labels(h):
     return [label for _, label in h._blocks]
 
 
-# --- the block itself -------------------------------------------------------------------------
-
 def test_join_block_has_the_decomp_layout():
     """PrepareSendBuffer_Join: [0] command, [1..8] name, [1 + PLAYER_NAME_LENGTH + 1] mpid."""
     b = uroom_chat.build(uroom_chat.JOIN, "PkCamp", multiplayer_id=0)
@@ -69,8 +67,7 @@ def test_chat_block_carries_the_text_after_the_name_field():
 
 
 def test_a_full_length_line_still_fits_the_block():
-    """messageEntryBuffer is 2 * MESSAGE_BUFFER_NCHAR + 1 = 31 bytes, exactly the block's tail. The
-    31 bytes are 15 two-byte entries; a line we can actually send is 15 one-byte ones."""
+    """messageEntryBuffer is 2 * MESSAGE_BUFFER_NCHAR + 1 = 31 bytes, the block's tail."""
     assert uroom_chat.TEXT_FIELD == 31
     text = "A" * uroom_chat.MESSAGE_NCHAR
     assert uroom_chat.parse(uroom_chat.build(uroom_chat.CHAT, "PkCamp", text=text))["text"] == text
@@ -103,8 +100,6 @@ def test_a_bad_chat_message_fails_at_engine_construction():
         HostTradeEngine([_mon(1)], union_room=True, union_room_chat=True,
                         chat_messages=["A" * 40])
 
-
-# --- the engine -------------------------------------------------------------------------------
 
 def test_chat_is_declined_unless_it_is_asked_for():
     h = _engine()
@@ -175,7 +170,6 @@ def test_queued_lines_go_out_one_at_a_time_after_the_gap():
     assert _labels(h) == []
     h._tick_chat_outbox()
     assert [uroom_chat.parse(b)["text"] for b, _ in h._blocks] == ["BYE"]
-    # Drained: the chat stays open, nothing more is queued.
     h._blocks.clear()
     for _ in range(3 * gap):
         h._tick_chat_outbox()
@@ -194,9 +188,8 @@ def test_an_in_flight_block_defers_the_next_line():
 
 @pytest.mark.parametrize("cmd", [uroom_chat.LEAVE, uroom_chat.DROP, uroom_chat.DISBAND])
 def test_the_console_leaving_the_chat_sends_our_drop_then_closes(cmd):
-    """u13: the console sent LEAVE and then parked on !gReceivedRemoteLinkPlayers while we sat on
-    an internal flag, so its yes/no prompt never cleared. The leader's native answer is a DROP
-    block of its own followed by SetCloseLinkCallback [union_room_chat.c:1524, :665]."""
+    """The leader answers LEAVE with its own DROP block, then SetCloseLinkCallback
+    [union_room_chat.c:1524, :665]."""
     from pokeldn.frlg.link.host_trade import H_CLOSE
     h = _engine(union_room_chat=True, chat_messages=["UNSENT"])
     h.feed_child_slot(_packet_slot(0x45))
@@ -220,9 +213,7 @@ def test_the_console_leaving_the_chat_sends_our_drop_then_closes(cmd):
 
 
 def test_the_chat_exit_grace_is_not_stretched_by_the_consoles_own_close():
-    """u14: the leaver does send its own READY_CLOSE_LINK, 0.1s after ours. The room path answers
-    one with a 15-second buffer before disconnecting; here that would be 15 seconds of the frozen
-    yes/no prompt u13 showed, so the chat exit keeps its own short grace."""
+    """The console's own READY_CLOSE_LINK does not stretch the chat exit to the room's 15-second buffer."""
     h = _engine(union_room_chat=True)
     h.feed_child_slot(_packet_slot(0x45))
     h._after_child_block(trade.COUNT_RIBBON,
@@ -237,8 +228,6 @@ def test_the_chat_exit_grace_is_not_stretched_by_the_consoles_own_close():
             break
     assert h.disconnect_requested
 
-
-# --- live input ------------------------------------------------------------------------------
 
 def _open_chat(**kw):
     h = _engine(union_room_chat=True, **kw)

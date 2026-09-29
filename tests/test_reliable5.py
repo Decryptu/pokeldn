@@ -1,8 +1,5 @@
-"""Pia 5.29-5.43's reliable sliding window (protocol 0x7c) - where BDSP's game data is.
-
-The two fixtures are the whole reliable side of one capture: the console sent exactly these, to us by
-station bitmap, and repeated them 3.1 s later because nothing acknowledged them.
-"""
+"""Pia 5.29-5.43's reliable sliding window (protocol 0x7c); the fixtures are one capture's whole
+reliable side."""
 
 import os
 
@@ -68,8 +65,7 @@ def test_an_ack_payload_round_trips_at_two_plus_twenty_one_per_entry():
         rl.build_ack_payload([entries[0]] * 33)            # cmp #0x21 / b.lo
 
 
-# The console's own bulk acknowledgement: what it sent back after we put two application
-# messages (sequence 0 and 1) into its reliable window. This is the only ack anyone has captured.
+# The console's own bulk acknowledgement of our sequences 0 and 1.
 SP44_ACK = bytes.fromhex(
     "00000017ffff0003000001000002000100000000000000000000000000000000")
 
@@ -91,14 +87,13 @@ def test_build_ack_message_reproduces_it_byte_for_byte():
                                 )["entries"][0]["field_0x50"] == 8
 
 
-# --------------------------------------------------------------------------- version 4
 # Sword/Shield version 4 uses a fixed ACK payload table.
 
 def test_the_version_four_ack_payload_is_the_size_the_handler_demands():
     from pokeldn.ldn import reliable4 as r4
     assert r4.ACK_PAYLOAD_SIZE == 0x260 == r4.ACK_ENTRIES * r4.ACK_ENTRY_SIZE == 32 * 19
     assert len(r4.build_ack_payload(21)) == r4.ACK_PAYLOAD_SIZE
-    # and it is NOT the 5.29 size. This is the payload sent 96 times, refused unread.
+    # It is not the 5.29 size, which the console refused unread.
     five = rl.build_ack_payload([{"stream_id": 0, "ack_id": 21, "field_0x50": 20, "mask": b""}])
     assert len(five) == 2 + rl.ACK_ENTRY_SIZE == 23 != r4.ACK_PAYLOAD_SIZE
 
@@ -140,8 +135,7 @@ def test_a_wrongly_sized_ack_payload_is_refused_here_the_way_the_console_refuses
 
 
 def test_the_broadcast_reliable_message_is_a_seventeen_byte_header_over_the_same_ack():
-    """A run's protocol-0x80 body, decompressed. The console's own ack, which had been on the wire
-    since then and was unreadable because nothing decompressed it."""
+    """A protocol-0x80 body, decompressed: the console's own ack."""
     import zlib
     from pokeldn.ldn import reliable4 as r4
     raw = bytes.fromhex("484b6260604af8ff9f819151c87391e28d0806206064c000834268140c07"
@@ -160,10 +154,8 @@ def test_the_broadcast_reliable_message_is_a_seventeen_byte_header_over_the_same
 
 
 def test_the_console_fills_one_slot_per_STATION_and_zeroes_the_rest():
-    """Independent confirmation of the 0x260 table, from the console's own transmitter - and it
-    names what the 32 slots are indexed by. The console fills slots 0..7 with the real ack id and
-    leaves 8..31 at zero; 8 is `max_total` from the join response, the mesh's station limit. So the
-    table is indexed by STATION INDEX, one entry per possible station."""
+    """The console fills slots 0..7 (the join response's `max_total`) and zeroes 8..31: the table is
+    indexed by station."""
     import zlib
     from pokeldn.ldn import reliable4 as r4
     body = zlib.decompress(bytes.fromhex(
@@ -179,8 +171,7 @@ def test_the_console_fills_one_slot_per_STATION_and_zeroes_the_rest():
     assert r4.build_ack_payload(1)[:8 * r4.ACK_ENTRY_SIZE] == theirs[:8 * r4.ACK_ENTRY_SIZE]
 
 
-# --- version 4's own header, and the first application data ---------------------------------
-# The byte at 0x8 counts eight-byte station ids; it is not a bitmap width.
+# The byte at 0x8 counts eight-byte station ids, not a bitmap width.
 
 def test_the_version_four_header_grows_eight_bytes_per_destination_not_a_bitmap():
     from pokeldn.ldn import reliable4 as r4
@@ -194,8 +185,7 @@ def test_the_version_four_header_grows_eight_bytes_per_destination_not_a_bitmap(
 
 
 def test_our_first_data_message_is_the_consoles_own_first_message_byte_for_byte():
-    """The only offline proof available for a message we have never sent: the console sent this
-    exact one, sequence 1 of its 0x7C stream, and `build_data_message` reproduces it."""
+    """`build_data_message` reproduces sequence 1 of the console's 0x7C stream."""
     from pokeldn.ldn import reliable4 as r4
     theirs = bytes.fromhex("0f0000060001000100" "610000000a00")
     assert r4.build_data_message(bytes.fromhex("610000000a00")) == theirs
@@ -206,8 +196,8 @@ def test_our_first_data_message_is_the_consoles_own_first_message_byte_for_byte(
 
 
 def test_only_the_first_message_carries_the_flag_that_opens_the_stream():
-    """0x01859ca0 does `tbz w9, #3` while a station's stream is unopened and drops the message in
-    silence. The console's own traffic is the example: 0x0F once, then 0x07 for 1636 messages."""
+    """0x01859ca0 drops a message on an unopened stream (`tbz w9, #3`); the console sends 0x0F once,
+    then 0x07."""
     from pokeldn.ldn import reliable4 as r4
     first = r4.parse_message(r4.build_data_message(b"ab"))
     later = r4.parse_message(r4.build_data_message(b"ab", sequence_id=2))
@@ -218,8 +208,8 @@ def test_only_the_first_message_carries_the_flag_that_opens_the_stream():
 
 
 def test_the_payload_bound_is_the_receivers_and_it_shrinks_with_the_destination_list():
-    """Two different bounds: the deserialiser refuses 0x589 and above (0x0184e3cc) and the receive
-    path refuses anything over 0x57F - 8 * count (0x0185952c). The tighter one is what matters."""
+    """The deserialiser refuses 0x589 and above (0x0184e3cc); the receive path refuses over 0x57F -
+    8 * count (0x0185952c)."""
     from pokeldn.ldn import reliable4 as r4
     assert r4.MAX_PAYLOAD == 0x588 and r4.max_payload_for([]) == 0x57F
     assert r4.max_payload_for([1]) == 0x57F - 8 and r4.max_payload_for([1, 2]) == 0x57F - 16
@@ -231,9 +221,7 @@ def test_the_payload_bound_is_the_receivers_and_it_shrinks_with_the_destination_
 
 
 def test_we_can_rebuild_the_consoles_own_broadcast_ack_byte_for_byte():
-    """The whole 625-byte message out of `build_ack_message`, header and payload, against the one
-    the console sent on hardware - which is the builder tested against a worked example rather than
-    against a reading of the disassembly."""
+    """The console's 625-byte broadcast ack, rebuilt by `build_ack_message`."""
     import zlib
     from pokeldn.ldn import reliable4 as r4
     theirs = zlib.decompress(bytes.fromhex(
@@ -245,9 +233,8 @@ def test_we_can_rebuild_the_consoles_own_broadcast_ack_byte_for_byte():
 
 
 def test_a_resent_check_ok_is_delivered_once():
-    """A retail BDSP's check-ok arrived three times under two sequence ids in one seat; the joiner
-    answered each copy. A copy the console resends after a lost ack lands once its box is past the
-    last confirmation, where a second answer resets the round (`0x1c34290`, docs/bdsp_trade.md)."""
+    """A resent check-ok is answered once; a second answer resets the round (`0x1c34290`,
+    docs/bdsp_trade.md)."""
     import gzip
     import json
     capture = os.path.join(os.path.dirname(__file__), "..", "scratchpad", "sp110_pia.jsonl.gz")

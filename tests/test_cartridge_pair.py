@@ -32,11 +32,8 @@ def window(base, calls):
     return bytes(data)
 
 
-# --- the pairing --------------------------------------------------------------------------------
-
 def test_the_same_call_on_both_cartridges_is_two_measurements():
-    # The instruction is identical; what differs is where it lands, and that difference IS the delta
-    # at the target. Here one call does not move and one moves by -0x2C.
+    # The call is identical; the difference in where it lands is the delta at the target.
     firered = ("bs", "firered", 0x08081CC8, window(0x08081CC8, {8: 0x0800053C, 16: 0x08083910}))
     leafgreen = ("lg", "leafgreen", 0x08081C9C, window(0x08081C9C, {8: 0x0800053C,
                                                                     16: 0x08083910 - 0x2C}))
@@ -45,7 +42,6 @@ def test_the_same_call_on_both_cartridges_is_two_measurements():
 
 
 def test_a_window_is_paired_by_code_offset_not_by_base():
-    # Pair by offset because the cartridge windows have different base addresses.
     calls = {4: 0x08040000, 12: 0x08090000}
     firered = ("bs", "firered", 0x08081CC8, window(0x08081CC8, calls))
     leafgreen = ("lg", "leafgreen", 0x08081C9C,
@@ -54,9 +50,7 @@ def test_a_window_is_paired_by_code_offset_not_by_base():
 
 
 def test_a_pool_word_is_counted_once_however_many_instructions_read_it():
-    # Two instructions over the same word are one measurement, not two.
-    # `ldr r0, [pc, #4]` at offsets 0 and 2 both resolve to the word at offset 8: THUMB rounds the
-    # PC down to a word before adding the immediate, which is why the two encodings are the same.
+    # `ldr r0, [pc, #4]` at offsets 0 and 2 read the same word: THUMB rounds the PC down to a word.
     reads = bytes.fromhex("0148") + bytes.fromhex("0148") + b"\x00\x00\x00\x00"
     body = reads + (0x083BEE74).to_bytes(4, "little")
     theirs = reads + (0x083BEE74 - 0x1C4).to_bytes(4, "little")
@@ -75,26 +69,20 @@ def test_two_windows_are_only_a_pair_when_they_hold_the_same_code():
 
 
 def test_a_boundary_is_the_span_between_two_segments_in_rom_order():
-    # Ordered by where they sit, NOT by delta: the low segments step -0x2C, -0x28, -0x24, -0x20, so
-    # reading a less divergent segment as a mistake is how a boundary lands in the wrong place.
+    # Ordered by address, not delta: the low segments step -0x2C, -0x28, -0x24, -0x20.
     spans = segments([(0x08000000, 0x08000000), (0x0807AF04, 0x0807AF04),
                       (0x0807E068, 0x0807E068 - 0x2C), (0x080D4404, 0x080D4404 - 0x2C)])
     assert boundaries(spans) == [(0x0, -0x2C, 0x0807AF04, 0x0807E068)]
 
 
-# --- what it measured ---------------------------------------------------------------------------
-
 def test_the_pairing_puts_leafgreen_where_two_runs_of_its_own_had_measured_it():
-    # Neither run knew about this method: one needled AddBagItem and the other read Random out of a
-    # literal pool, and the paired call sites land on both.
+    # Two independent runs (AddBagItem, Random's literal pool) land on paired call sites.
     assert leafgreen_twins.TWINS[0x0809DA70] == rom_map.LEAFGREEN_ADD_BAG_ITEM
     assert leafgreen_twins.TWINS[0x080486B0] == rom_map.LEAFGREEN["Random"]
 
 
 def test_every_twin_agrees_with_the_segment_it_falls_in():
-    # 738 measured pairs against seven segments measured from other directions. A twin inside a
-    # segment whose delta is known must show that delta; one inside a BOUNDARY is where the map has
-    # nothing to say, and those are the points that narrow it.
+    # 738 measured pairs against seven segments measured from other directions.
     inside, checked = 0, 0
     for ours, theirs in leafgreen_twins.TWINS.items():
         for low, high, delta, _evidence in rom_map.LEAFGREEN_DELTA_SEGMENTS:
@@ -106,8 +94,7 @@ def test_every_twin_agrees_with_the_segment_it_falls_in():
 
 
 def test_no_twin_falls_inside_a_boundary_that_is_still_recorded_as_unknown():
-    # The segment map was moved to the last point that agrees with it; anything left in a boundary
-    # would mean a measurement the map is ignoring.
+    # Nothing is left in a boundary: the map ignores no measurement.
     for ours, theirs in leafgreen_twins.TWINS.items():
         for _from, _to, low, high in [(b[0], b[1], b[2], b[3])
                                       for b in rom_map.LEAFGREEN_DELTA_BOUNDARIES]:
@@ -117,9 +104,7 @@ def test_no_twin_falls_inside_a_boundary_that_is_still_recorded_as_unknown():
 def test_a_twin_answers_exactly_and_an_unmeasured_address_falls_back_to_the_guess():
     assert leafgreen_twins.leafgreen(0x0809DA70) == rom_map.LEAFGREEN_ADD_BAG_ITEM
     assert leafgreen_twins.leafgreen(0x0809DA71) == rom_map.LEAFGREEN_ADD_BAG_ITEM | 1
-    # Not measured, but inside a segment: the delta answers.
     assert leafgreen_twins.leafgreen(0x08000010) == 0x08000010
-    # Not measured and inside a boundary: refuse rather than interpolate.
     with pytest.raises(ValueError):
         leafgreen_twins.leafgreen(rom_map.LEAFGREEN_DELTA_BOUNDARIES[0][2] + 0x10)
 
@@ -131,10 +116,8 @@ def test_the_twins_are_rom_addresses():
 
 
 def test_a_leafgreen_view_of_a_table_is_moved_to_where_leafgreen_keeps_it():
-    """Every table this project holds was read off FireRed. Reading a LeafGreen dump against those
-    addresses is coherent in the delta-0 region and quietly wrong above it - the entry, the body and
-    the names all have to move. An entry inside a BOUNDARY has no measured address on the other
-    cartridge and is dropped rather than read at a guess."""
+    """A LeafGreen dump read against FireRed tables moves each entry by its delta; an entry in a
+    boundary is dropped."""
     from rom_functions import deduplicate, known_names, on_leafgreen, tables
     entries = deduplicate(tables()["specials"])
     moved, names = on_leafgreen(entries, known_names())
@@ -142,7 +125,6 @@ def test_a_leafgreen_view_of_a_table_is_moved_to_where_leafgreen_keeps_it():
     with pytest.raises(ValueError, match="gap between measured segments"):
         rom_map.leafgreen_guess(0x08148100)               # inside the -0x28 -> -0x24 divergence
     by_label = dict(moved)
-    # Below the split the two cartridges agree, and above it the entry moves by its own delta.
     assert by_label["CalculatePlayerPartyCount [131]"] == 0x08044338
     assert by_label["HealPlayerParty [0]"] == 0x080A3A64 - 0x2C
     assert names[rom_map.LEAFGREEN_ADD_BAG_ITEM] == "AddBagItem"

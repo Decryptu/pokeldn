@@ -1,12 +1,6 @@
-"""Offline tests for the Mystery Gift distributor work (Milestone-1 foundations + payload).
-
-Everything here is hardware-independent: it checks the byte-exact protocol pieces built so far
-against the FRLG decomp facts, with no Switch, no LDN, no root. The hardware-iterated integration
-layers (Pia host FSM, NI handshake, ldn.create_network, the engine) are NOT covered here because
-they can only be validated against a real console.
+"""Mystery Gift protocol pieces checked against the FRLG decomp, offline.
 
 Run standalone (no pytest needed):   python tests/test_mystery_gift_offline.py
-Or under pytest if installed:         pytest tests/test_mystery_gift_offline.py
 """
 
 import os
@@ -22,7 +16,6 @@ from pokeldn.ldn import beacon, transport
 from pokeldn.frlg.gift import mystery_gift as mg
 
 
-# --- CRC16 (MysteryGiftLink header checksum) -------------------------------------------------
 def test_crc16_bitwise_equals_game_table():
     """crc16() must equal the game's table-driven CalcCRC16WithTable [util.c:250] for any data."""
     for sample in (b"", b"\x00", b"GameFreak inc.", bytes(range(256)), b"\xff" * 333,
@@ -38,7 +31,6 @@ def test_crc16_regression_anchors():
     assert mg.crc16(b"123456789") == 0xBE75
 
 
-# --- Wonder Card + delivery RAM script ----------------------------------------------------------
 def test_wonder_card_size_and_validation_fields():
     """332 bytes, and the fields the console's ValidateWonderCard [mystery_gift.c:191] checks."""
     card = wonder_card.build_wonder_card(flag_id=1003, title="ENIGMA BERRY")
@@ -52,7 +44,6 @@ def test_wonder_card_size_and_validation_fields():
 
 
 def test_wonder_card_rejects_invalid_like_the_console():
-    """Builder rejects the same out-of-range fields SaveWonderCard would reject."""
     for kwargs in ({"flag_id": 0}, {"bg_type": 8}, {"card_type": 3},
                    {"send_type": 3}, {"max_stamps": 8}):
         try:
@@ -63,7 +54,6 @@ def test_wonder_card_rejects_invalid_like_the_console():
 
 
 def test_delivery_ram_script_is_byte_exact():
-    """The saved script has exact per-card Celebi control flow and messages."""
     expected_no_item = bytes.fromhex(
             "6a5ab8000000082bd903bb014c00000843210d800600bb0155000008"
             "79fb00320000000000000000000000"
@@ -75,7 +65,6 @@ def test_delivery_ram_script_is_byte_exact():
             "fecae0d9d5e7d900e1d5dfd900e6e3e3e100d5e2d800d7e3e1d900d6d5d7dfabff")
 
     assert wonder_card.build_delivery_ram_script(flag_id=1003) == expected_no_item
-    # An explicitly requested item keeps the standard giveitem prefix.
     item_script = wonder_card.build_delivery_ram_script(item=173, flag_id=1003)
     assert item_script.startswith(bytes.fromhex("6a5a1a0080ad001a01800100090029aa02"))
     assert len(item_script) == len(expected_no_item) + 12
@@ -93,7 +82,6 @@ def test_flag_id_maps_to_receipt_flag():
 
 
 def test_default_gift_bundle():
-    """The shipped payload is a level-50 Celebi with no item."""
     card, script = wonder_card.build_default_gift()
     assert len(card) == 332 and len(script) == 251
     assert wonder_card.DEFAULT_GIFT_ITEM is None
@@ -111,9 +99,7 @@ def test_every_generated_card_uses_flag_suffix_by_default_and_honors_explicit_id
     assert int.from_bytes(custom[4:8], "little") == 0xDEADBEEF
 
 
-# --- Parent-side 0x54 framing (sim as leader/parent) -----------------------------------------
 def test_parent_uni_echo_table_roundtrips_through_parse_in():
-    """wrap_t_parent(parent_uni_slot(70B table)) must parse back into 5 mpId rows via parse_in."""
     row0 = rfu.serialize(rfu.send_player_ids_words())            # parent's own broadcast
     row1 = rfu.serialize([0x8800, 3, 0x81, 0, 0, 0, 0])         # child's reflected block-init
     table = rfu.pack_recv_cmds([row0, row1])
@@ -137,7 +123,6 @@ def test_parent_accept_and_disconnect_frames():
     assert dis["type"] == 0x44
 
 
-# --- Parent link-opcode payloads --------------------------------------------------------------
 def test_send_player_ids_payload():
     """0x7700: w1=playerCount=2, linkPlayerIdx[0]=1 (child -> mpId 1), rest 0 [link_rfu_2.c:1298]."""
     b = rfu.serialize(rfu.send_player_ids_words())
@@ -159,12 +144,8 @@ def test_link_player_block_has_both_magics():
 
 
 def test_trade_animation_partner_name_is_terminated_and_identity_aligned():
-    """The trade animation's ``{STR_VAR_1}`` is copied directly from
-    ``gLinkPlayers[GetMultiplayerId() ^ 1].name`` (trade_scene.c).  Lock the
-    exact LinkPlayer name/language offsets and the matching trainer-card name
-    so a layout or character-map regression cannot turn the destination name
-    in ``"{MON} will be sent to {TRAINER}"`` into unterminated text.
-    """
+    """``{STR_VAR_1}`` is ``gLinkPlayers[GetMultiplayerId() ^ 1].name`` (trade_scene.c); it must
+    stay terminated."""
     lp = linkplayer.LinkPlayer(
         name="EMU", trainer_id=0x47ED8822,
         version=linkplayer.VERSION_LEAF_GREEN,
@@ -181,17 +162,14 @@ def test_trade_animation_partner_name_is_terminated_and_identity_aligned():
 
 
 def test_200_byte_link_player_transfer_cannot_overwrite_name_with_tail_fragment():
-    """The RFU NONE request transfers a 60-byte LinkPlayerBlock in a fixed
-    200-byte buffer (17 twelve-byte fragments).  Model the Switch receiver's
-    offset calculation, including repeated INIT and fragment 16, and prove the
-    140-byte tail cannot overlap the display-name field in fragment 2.
-    """
+    """A 60-byte LinkPlayerBlock in a 200-byte buffer: the 140-byte tail cannot reach the name in
+    fragment 2."""
     lp = linkplayer.LinkPlayer(name="EMU", player_id=0)
     sent = linkplayer.build_block(lp).ljust(200, b"\x00")
     sender = block.BlockSender(sent, owner=0, trust_pia=True)
     recv = block.RecvBlock()
 
-    # The live 8.3 trace carried four INIT polls before fragments 0..16.
+    # A live trace carried four INIT polls before fragments 0..16.
     for _ in range(4):
         recv.on_init(sender.count, 0x80)
     while not sender.done:
@@ -207,10 +185,7 @@ def test_200_byte_link_player_transfer_cannot_overwrite_name_with_tail_fragment(
     assert ok and parsed.name == "EMU"
 
 
-# --- Parent NI handshake (sender = join status; receiver = ack + reassemble child game data) --
 def test_ni_send_sequence_matches_verified_child_sender():
-    """The shared _ni_send_sequence must reproduce the byte-verified child NISender frame-for-frame
-    (this is what lets ParentNISender reuse it with confidence)."""
     src = ni.build_game_data(5, 0x2288, "EMU")
     sender = ni.NISender(src)
     got = []
@@ -244,9 +219,7 @@ def test_parent_ni_sender_join_status_frames():
 
 
 def test_child_acks_of_parent_ni_match_reference_capture():
-    """Round-trip: wrap each ParentNISender frame in a HOST 'T', parse_in it, feed the child's
-    NIReceiver: the child's recv-ack sequence must equal the reference capture (8006/0007/800a/000e),
-    and the child must read the join status 5. Exercises wrap_t_parent + parse_in on NI frames too."""
+    """The child's recv-ack sequence equals the reference capture (8006/0007/800a/000e)."""
     sender = ni.ParentNISender()
     recv = ni.NIReceiver()
     acks, ts = [], 1
@@ -263,8 +236,7 @@ def test_child_acks_of_parent_ni_match_reference_capture():
 
 
 def test_parent_ni_receiver_acks_and_reassembles_child_game_data():
-    """PARENT NI receiver: ack the console-child's game-data NI (mirror state/n/phase, ack=1, sz=0 in
-    PARENT LLSF) and reassemble the 26-byte RfuGameData with the child's trainer id + uname."""
+    """Acks the child's game-data NI and reassembles the 26-byte RfuGameData."""
     src = ni.build_game_data(5, 0x2288, "EMU")
     child = ni.NISender(src)                          # models the console acting as RFU child
     recv = ni.ParentNIReceiver()
@@ -291,10 +263,9 @@ def test_parent_ni_receiver_acks_and_reassembles_child_game_data():
     assert acks == expected_acks
 
 
-# --- Host beacon encoder (inverse of transport._dump_beacon / _b85_decode) --------------------
 def test_pia_header_matches_wiki_layout_and_round_trips():
-    """Pia 6.16-6.41 header (sysCommVer 21-22, big-endian) per the NintendoClients wiki: size 0x5C at
-    0x00, sysCommVer at 0x02, big-endian fields, name at 0x1C; decode is the inverse of build."""
+    """Pia 6.16-6.41 header per the NintendoClients wiki: size 0x5C at 0x00, sysCommVer at 0x02,
+    name at 0x1C."""
     h = beacon.build_pia_header(sys_comm_ver=21, app_comm_ver=1, nickname="Chase",
                                 name_encoding=beacon.PIA_NAME_UTF8)
     assert len(h) == beacon.PIA_HDR == 0x5C
@@ -309,7 +280,6 @@ def test_pia_header_matches_wiki_layout_and_round_trips():
 
 
 def test_mutate_beacon_preserves_header_changes_record():
-    """mutate_beacon keeps a captured Pia header verbatim and only rewrites overridden RFU fields."""
     record = (0x1111).to_bytes(2, "little") + beacon.encode_name("ABC") + (9).to_bytes(2, "little")
     captured = bytes(range(beacon.PIA_HDR)) + beacon.b85_encode(record.ljust(beacon.RECORD_SIZE, b"\x00"))
     out = beacon.mutate_beacon(captured, name="EMU", trainer_id=0x2288)
@@ -319,7 +289,6 @@ def test_mutate_beacon_preserves_header_changes_record():
     assert int.from_bytes(rec[10:12], "little") == 9            # not overridden -> preserved
 
 
-# --- Hosting preflight (iw-phy AP-mode check) + trace harness ---------------------------------
 _IW_MT7601U = """Wiphy phy0
 	max # scan SSIDs: 4
 	Supported interface modes:
@@ -363,7 +332,6 @@ def test_preflight_accepts_ap_capable_phy():
 
 
 def test_tracer_writes_jsonl(tmp_path=None):
-    """ldntrace.Tracer writes one JSON object per line with rec/kind/ts, and a closing summary."""
     import json
     import tempfile
     from pokeldn.ldn import ldntrace
@@ -381,13 +349,11 @@ def test_tracer_writes_jsonl(tmp_path=None):
 
 
 def test_a_multi_block_client_script_is_the_single_block_one_repeated():
-    """One block must stay byte-for-byte the script that has run on hardware a hundred times: a new
-    path that merely looks like the proven one is not the proven one."""
+    """One block stays byte-for-byte the script proven on hardware."""
     from pokeldn.frlg.gift import mg_script
     assert mg_script.client_script_dump_memory(1) == mg_script.CLIENT_SCRIPT_DUMP_MEMORY
     two = mg_script.client_script_dump_memory(2)
     one = mg_script.CLIENT_SCRIPT_DUMP_MEMORY
-    # Three commands more, and they are the same three the single-block script already has.
     assert len(two) == len(one) + 3 * 8
     assert two[:8] == one[:8]                  # CLI_RECV MG_LINKID_RAM_SCRIPT
     assert two[-16:] == one[-16:]              # CLI_RECV CLIENT_SCRIPT, CLI_COPY_RECV
@@ -395,8 +361,7 @@ def test_a_multi_block_client_script_is_the_single_block_one_repeated():
 
 
 def test_a_client_script_that_would_not_fit_the_recv_buffer_is_refused():
-    """The console runs the script straight out of its 1024-byte recv buffer, so a script past that
-    reads stale bytes as commands."""
+    """The console runs the script from its 1024-byte recv buffer."""
     import pytest
     from pokeldn.frlg.gift import mg_script
     assert len(mg_script.client_script_dump_memory(mg_script.MAX_DUMP_BLOCKS)) <= 1024

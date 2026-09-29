@@ -1,10 +1,4 @@
-"""The trainer card's profile quote [TrainerCardRSE.easyChatProfile, include/trainer_card.h:28].
-
-u08-u11: the console rendered our card's quote as "??? ???". A word is
-(group & 0x7F) << 9 | (index & 0x1FF) [EC_WORD, easy_chat.h:1089], and an all-zero profile is word
-0 = group EC_GROUP_POKEMON_2 index 0 (SPECIES_NONE), which IsECWordInvalid rejects, so
-CopyEasyChatWord prints gText_ThreeQuestionMarks [easy_chat.c:166-171].
-"""
+"""The trainer card's profile quote [include/trainer_card.h:28]; word 0 prints ??? [easy_chat.c:166-171]."""
 import os
 import sys
 

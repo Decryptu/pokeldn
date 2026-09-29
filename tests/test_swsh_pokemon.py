@@ -1,10 +1,5 @@
-"""The 0x158-byte PK8 a Sword sends on protocol 0x84, and the party of six it arrives in.
-
-Two runs are captures and stay out of the repository (CLAUDE.md rule 6), so everything here is
-built from synthetic records. What the real ones proved - and what these reproduce - is that the
-party stats RESTART the LCG, that they are outside both the shuffle and the checksum, and that the
-block order is applied and not inverted.
-"""
+"""The 0x158-byte PK8 a Sword sends on protocol 0x84, and the party of six it arrives in, on
+synthetic records."""
 import struct
 
 import pytest
@@ -15,11 +10,7 @@ from pokeldn.swsh import pokemon
 
 def a_record(ec=0x39C5F2CC, species=94, nickname="Ectoplasma", ot="Player", level=100,
              size=gen8.SIZE_PARTY):
-    """A plain, unshuffled record with the named fields set and the rest patterned.
-
-    The filler is deliberately NOT zero: a block permutation and an off-by-one offset both survive
-    a body of zeros, and neither survives this.
-    """
+    """A plain record; the patterned filler catches block permutations and off-by-one offsets."""
     plain = bytearray(bytes(range(256)) * 2)[:size]
     struct.pack_into("<I", plain, 0x00, ec)
     struct.pack_into("<H", plain, 0x04, 0)
@@ -53,12 +44,8 @@ def test_the_stored_form_has_no_party_stats_at_all():
 
 
 def test_the_party_stats_restart_the_lcg_rather_than_continuing_the_body_stream():
-    """`PokeCrypto.Decrypt8` calls CryptArray TWICE, both seeded from the encryption constant.
-
-    A round trip cannot catch this - the cipher is its own inverse either way - so the test asserts
-    the keystream directly: the first word of the tail is masked with the SAME step as the first
-    word of the body. Levels of 110 and 118 were read out of a tail nothing had decrypted.
-    """
+    """`PokeCrypto.Decrypt8` seeds CryptArray twice from the encryption constant: the tail's first
+    word uses the body's first step."""
     ec = 0x39C5F2CC
     plain = a_record(ec=ec)
     raw = pokemon.encrypt(plain)
@@ -68,7 +55,6 @@ def test_the_party_stats_restart_the_lcg_rather_than_continuing_the_body_stream(
     tail_cipher = struct.unpack_from("<H", raw, gen8.SIZE_STORED)[0]
     assert tail_cipher == tail_plain ^ first_step
 
-    # and the body's first word uses that same first step, which is what "restart" means
     body_plain = struct.unpack_from("<H", plain, gen8.HEADER_SIZE)[0]
     shuffled = gen8.permute(plain, gen8.invert(gen8.BLOCK_ORDER[(ec >> 13) & 31]))
     if gen8.BLOCK_ORDER[(ec >> 13) & 31][0] == 0:                 # block 0 stayed in place
@@ -85,7 +71,6 @@ def test_the_checksum_covers_the_body_and_stops_at_the_party_stats():
     assert gen8.checksum(plain) == before
     plain[gen8.OFF_SPECIES] ^= 0xFF
     assert gen8.checksum(plain) != before
-    # a party record still verifies on decrypt, so the shorter sum is the right one
     assert pokemon.read(pokemon.encrypt(bytes(plain)))["level"] == 42
 
 
@@ -97,12 +82,7 @@ def test_a_corrupted_record_is_refused_by_its_own_checksum():
 
 
 def test_every_block_order_puts_the_fields_back_where_they_belong():
-    """The session-58 bug, in the shape that catches it.
-
-    `sw84_read.py` inverted the block order, and for sv=1 - whose ordering is its own inverse -
-    that is a no-op, so the one slot that happened to have it read perfectly while the two either
-    side did not. Sweeping all 32 sv values is what makes the difference visible.
-    """
+    """Every one of the 32 block orders reads back; a self-inverse order hides an inverted permutation."""
     self_inverse = [sv for sv in range(32)
                     if gen8.BLOCK_ORDER[sv] == gen8.invert(gen8.BLOCK_ORDER[sv])]
     assert self_inverse, "the bug needs at least one of these to have hidden behind"
@@ -138,7 +118,7 @@ def test_a_short_payload_is_refused_rather_than_read_as_a_short_party():
 
 
 def test_building_a_party_record_from_a_template_keeps_every_byte_nothing_asked_for():
-    """Nothing of ours has been on 0x84 yet, and when it goes it goes as an edit of a real record."""
+    """A party record built from a template keeps every byte not asked for."""
     template = pokemon.encrypt(a_record())
     made = pokemon.build_from(template, species=25, nickname="PIKA", level=50,
                               stats=(120, 80, 70, 90, 85, 75))

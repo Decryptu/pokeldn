@@ -1,9 +1,4 @@
-"""The 328-byte PB8 a NetTradePokeData carries.
-
-A run's real Zubat is a capture and stays out of the repository (CLAUDE.md rule 6), so everything
-here is built from synthetic bodies. What the real one proved, and what these reproduce, is that
-the checksum verifies a decryption and that encrypt is exactly the inverse of decrypt.
-"""
+"""The 328-byte PB8 a NetTradePokeData carries, on synthetic bodies."""
 import struct
 
 import pytest
@@ -12,11 +7,7 @@ from pokeldn.bdsp import netdata, pokemon, room
 
 
 def a_body(ec=0xCDBEB642, species=41, nickname="Nosferapti", ot="Player", tid=44466, sid=4080):
-    """A plain, unshuffled 328-byte body with the named fields set and the rest patterned.
-
-    The filler is deliberately NOT zero: a block permutation and an off-by-one offset both survive
-    a body of zeros, and neither survives this.
-    """
+    """A plain 328-byte body; the patterned filler catches block permutations and off-by-one offsets."""
     plain = bytearray(bytes(range(256)) * 2)[:pokemon.SIZE_STORED]
     struct.pack_into("<I", plain, 0x00, ec)
     struct.pack_into("<H", plain, 0x04, 0)
@@ -33,7 +24,6 @@ def test_encrypt_is_the_inverse_of_decrypt_and_the_checksum_is_written_from_the_
     raw = pokemon.encrypt(a_body())
     assert len(raw) == pokemon.SIZE_STORED == 328
     plain = pokemon.decrypt(raw)
-    # the header travels in the clear; the body comes back exactly
     assert plain[8:] == a_body()[8:]
     assert struct.unpack_from("<H", raw, 6)[0] == pokemon.checksum(plain)
     assert pokemon.encrypt(plain) == raw
@@ -48,14 +38,7 @@ def test_a_corrupted_body_is_refused_by_its_own_checksum():
 
 
 def test_a_block_order_that_is_not_its_own_inverse_still_round_trips():
-    """A run is the run this test exists for.
-
-    Every PB8 the project had decoded came from one Pokemon, whose EC gave sv=21 and the ordering
-    (3, 1, 2, 0) - SELF-INVERSE, so decrypt inverting the order was a no-op and nothing complained
-    for nine runs. A Keunotor at sv=28, (0, 2, 3, 1), decoded to a Bidoof with no moves and its
-    species name in the trainer field. The checksum agreed both times and always will: it is a sum
-    over the body, and permuting whole blocks does not change a sum.
-    """
+    """Every EC's block order round-trips; the checksum cannot catch a wrong permutation."""
     def sv_of(ec):
         return (ec >> 13) & 31
 
@@ -70,7 +53,7 @@ def test_a_block_order_that_is_not_its_own_inverse_still_round_trips():
             f"sv={sv_of(ec)} put the names in the wrong blocks"
         assert r["species"] == 41
 
-    # and the table covers the whole 5-bit index, with 24-31 repeating 0-7 as PKHeX writes it
+    # 24-31 repeat 0-7, as PKHeX writes it.
     assert len(pokemon.BLOCK_ORDER) == 32
     assert pokemon.BLOCK_ORDER[24:] == pokemon.BLOCK_ORDER[:8]
 
@@ -84,7 +67,6 @@ def test_the_block_order_follows_the_encryption_constant():
     second = pokemon.encrypt(bytes(body))
     assert pokemon.BLOCK_ORDER[(0 >> 13) & 31] != pokemon.BLOCK_ORDER[(0xE000 >> 13) & 31]
     assert first[8:] != second[8:]
-    # and each still decodes to the body it was built from
     assert pokemon.decrypt(first)[8:] == pokemon.decrypt(second)[8:]
 
 
@@ -96,7 +78,6 @@ def test_building_from_a_template_changes_only_what_was_asked_for():
     r = pokemon.read(made)
     assert (r["species"], r["nickname"], r["ot_name"]) == (25, "PIKA", "PkCamp")
     assert r["ivs"] == (31, 31, 31, 31, 31, 31)
-    # untouched fields still hold the template's values
     assert r["trainer_id"] == 44466 and r["secret_id"] == 4080
     before, after = pokemon.decrypt(template), pokemon.decrypt(made)
     untouched = [i for i in range(0xA0, 0xF8) if before[i] != after[i]]
@@ -106,8 +87,8 @@ def test_building_from_a_template_changes_only_what_was_asked_for():
 
 
 def test_a_fresh_pb8_moves_only_its_pid_and_constant():
-    """`--fresh-pid`: under the new constant every byte but the two ids and the checksum decodes back
-    to the template's, and the shiny xor against the same trainer is unchanged."""
+    """`--fresh-pid`: all but the two ids and the checksum decode back to the template; the shiny
+    xor holds."""
     template = pokemon.encrypt(a_body())
     made = pokemon.fresh(template)
     before, after = pokemon.decrypt(template), pokemon.decrypt(made)
@@ -119,8 +100,7 @@ def test_a_fresh_pb8_moves_only_its_pid_and_constant():
 
 
 def test_a_nickname_sets_the_flag_that_makes_the_console_draw_it():
-    """A run's whole visible edit was lost to this: the name field is only shown when IV32 bit 31 is
-    set, and a PB8 always carries a name string, so a nickname with the flag clear is invisible."""
+    """The name field shows only with IV32 bit 31 set."""
     template = pokemon.encrypt(a_body())
     plain = bytearray(a_body())
     struct.pack_into("<I", plain, pokemon.OFF_IVS, 0x14A65C08)      # flag clear, as the console's was
@@ -132,7 +112,7 @@ def test_a_nickname_sets_the_flag_that_makes_the_console_draw_it():
     assert r["nickname"] == "PKCAMP" and r["is_nicknamed"] is True
     assert r["ivs"] == pokemon.read(template)["ivs"], "the IVs share the word with the flag"
 
-    # an explicit value after the nickname still wins, for the run that wants the string unshown
+    # An explicit value after the nickname still wins.
     quiet = pokemon.read(pokemon.build_from(template, nickname="PKCAMP", is_nicknamed=False))
     assert quiet["nickname"] == "PKCAMP" and quiet["is_nicknamed"] is False
 
@@ -172,7 +152,7 @@ def test_the_trade_messages_wrap_the_payloads_the_console_wraps_them_in():
     assert room.parse_trade_traner(rec[3:])["trainer_id"] == 44466
 
 
-# the two trainer records this project has seen. They differ at 0x18.
+# The two trainer records seen on the wire; they differ at 0x18.
 TRADE_TRANER_SP82 = bytes.fromhex(
     "50006c0061007900650072000000000018a4010014a401000000b2adf00f3103")
 TRADE_TRANER_SP83 = bytes.fromhex(
@@ -180,28 +160,18 @@ TRADE_TRANER_SP83 = bytes.fromhex(
 
 
 def test_the_trainer_record_is_parsed_from_the_game_message_not_the_reliable_frame():
-    """A run handed the parser the reliable frame and the exception took the station down.
-
-    The console reads a station that vanishes mid-trade as a cancellation, which is exactly what
-    the player saw. The parser must refuse a wrong length loudly - it did - and the caller must
-    pass the game message alone.
-    """
+    """The parser takes the game message alone and refuses a wrong length."""
     message = room.build(room.TRADE_TRANER, TRADE_TRANER_SP83)
     assert room.parse(message)["data_id"] == room.TRADE_TRANER
     body = message[room.HEADER_SIZE:]
     assert len(body) == room.TRADE_TRANER_SIZE
     assert room.parse_trade_traner(body)["name"] == "Player"
-    # a reliable header left on the front is a length error, not a silent misparse
     with pytest.raises(ValueError, match="expected 32"):
         room.parse_trade_traner(b"\x00" * 9 + body)
 
 
 def test_the_bytes_behind_the_name_vary_between_sessions_and_no_field_is_read_out_of_them():
-    """Two runs differ only in the slack, and every declared field holds still.
-
-    The record is a marshalled struct out of an uncleared `AllocHGlobal` block, so what follows the
-    name's terminator is heap residue. It is carried, not interpreted.
-    """
+    """What follows the name's terminator is `AllocHGlobal` heap residue: carried, not read."""
     sp82 = room.parse_trade_traner(TRADE_TRANER_SP82)
     sp83 = room.parse_trade_traner(TRADE_TRANER_SP83)
     assert sp82["slack"] != sp83["slack"]
@@ -268,14 +238,9 @@ def test_the_standby_list_reads_the_record_the_console_sent_back():
 
 
 def test_the_handler_block_is_readable_and_settable():
-    """A run gave a console a Pokemon whose OT was not the player and asked for it back.
-
-    Eleven bytes changed: the handler name at 0xA8, language at 0xC3, CurrentHandler at 0xC4,
-    friendship at 0xC8, and the checksum. 0xC6 - which PKHeX carries as `// unused?` - stayed zero
-    while everything around it was written, so it is unused in BDSP.
-    """
-    # a_body's filler is a byte pattern, not zeros, so an untraded Pokemon has to be made one:
-    # IsUntraded is literally "the handler name field is empty".
+    """Traded back: handler name 0xA8, language 0xC3, CurrentHandler 0xC4, friendship 0xC8; 0xC6
+    stays zero."""
+    # IsUntraded is an empty handler name field.
     template = pokemon.encrypt(a_body())
     template = pokemon.build_from(template, ht_name="")
     assert pokemon.read(template)["is_untraded"] is True

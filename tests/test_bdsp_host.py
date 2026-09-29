@@ -1,8 +1,5 @@
-"""The BDSP room host: its builders against a retail host's own messages, and a scripted joiner.
-
-The references are a French Shining Pearl 1.3.0 hosting the Union Room, decrypted off the air, with
-the joiner's connection request it accepted. Each is zlib-compressed, base64.
-"""
+"""The BDSP room host against a retail French Shining Pearl 1.3.0 host's own messages, and a
+scripted joiner."""
 import base64
 import struct
 import zlib
@@ -131,7 +128,6 @@ def test_a_scripted_console_joins_and_is_answered():
     assert [n.ip for n in us.nodes[:2]] == ["169.254.112.1", "169.254.112.2"]
     assert h.src_var == HOST_VAR and us.host_variable_id == HOST_VAR
 
-    # until acknowledged it repeats; after, it stops
     assert c.read(s.tick(0.15))
     c.send([(lp.build_ack(us.sequence_id), lp.PROTOCOL, 0, lp.MESSAGE_FLAGS, 0)], 0.2)
     assert not c.read(s.tick(0.5))
@@ -165,7 +161,6 @@ def test_a_scripted_console_joins_and_is_answered():
     protos = sorted({m.protocol for _, m in got})
     assert protos == [mp.PROTOCOL, 0x58, host.UNRELIABLE_PROTOCOL]
 
-    # a request for the character state is acknowledged and answered
     msg = rl.build_header(0x0F, 1, 4, lowest_pending=1) + room.build_request(room.STATE)
     got = c.send([(msg, rl.PROTOCOL, 0, 1, 2)], 2.5, dst_var=HOST_VAR)
     acks = [rl.parse(m.payload) for _, m in got if m.protocol == rl.PROTOCOL]
@@ -175,7 +170,6 @@ def test_a_scripted_console_joins_and_is_answered():
     assert room.parse(answer[0]["payload"])["data_id"] == room.STATE
     assert s.counters["state_requests"] == 1
 
-    # our NetJoinData is repeated until acknowledged, then dropped
     assert any(m.protocol == rl.PROTOCOL for _, m in c.read(s.tick(3.0)))
     ack = rl.build_ack_message(3)
     c.send([(ack, rl.PROTOCOL, 0, 1, 2)], 3.1, dst_var=HOST_VAR)
@@ -244,7 +238,6 @@ def test_a_scripted_trade_is_answered_through_the_save():
         msg = rl.build_header(0x07 | (0x08 if seq[0] == 1 else 0), seq[0], len(message),
                               lowest_pending=seq[0]) + message
         got = _game_out(c.send([(msg, rl.PROTOCOL, 0, 1, 2)], now, dst_var=HOST_VAR))
-        # acknowledge what the host sent, so its window drains
         c.send([(rl.build_ack_message(s.joiner.tx_seq), rl.PROTOCOL, 0, 1, 2)], now,
                dst_var=HOST_VAR)
         return got
@@ -267,7 +260,7 @@ def test_a_scripted_trade_is_answered_through_the_save():
     [ready] = say(room.build_trade_ready_ok(room.TRADE_STATE_WAIT, 0), 7.0)
     assert ready == room.build_trade_ready_ok()
 
-    # the security phase: each of the console's states is mirrored, and repeated once a second
+    # Each security-phase state is mirrored and repeated once a second.
     for t, theirs in ((8.0, 1), (8.2, 2), (8.4, 3), (8.6, 4)):
         [mine] = say(room.build_trade_ready_ok(theirs, 1), t)
         assert mine == room.build_trade_ready_ok(room.mirror_trade_state(theirs), 1)
@@ -285,9 +278,8 @@ def test_the_ready_ok_is_not_answered_without_complete():
 
 
 def test_an_ack_names_our_own_lowest_pending_not_theirs():
-    """The console advances its receive window to the lowest-pending an ack carries. With the
-    console's messages outnumbering ours, an ack carrying its own next id made it discard our
-    trainer record and our Pokemon as repeats."""
+    """An ack names our own lowest pending; the console's own next id made it discard our records as
+    repeats."""
     s, c = _joined(host.TradePartner(bytes(328)))
     for seq in range(1, 7):
         msg = rl.build_header(0x07 | (0x08 if seq == 1 else 0), seq, 4, lowest_pending=seq) \

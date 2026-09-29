@@ -1,12 +1,4 @@
-"""The shiny hook, installed and run frame by frame under unicorn against a Python model of FireRed.
-
-How it could fail. The search: a nature roll or personality built from the wrong call or the wrong
-half; a `% 25` off by the reciprocal's rounding; a shiny test on the wrong IDs; the target index off
-by one from the seed that rolls it. The count: the followed seed lost while the game only advanced
-it, or kept across a reseed; a target kept after it has passed. The display: BCD digits in the
-wrong order. Slow motion: V-blanks not waited out, the sound not mixed for each, the waited V-blank
-left pending so the handler runs again at once.
-"""
+"""The shiny hook, installed and run frame by frame under unicorn against a Python model of FireRed."""
 
 import pytest
 
@@ -212,8 +204,8 @@ def test_the_committed_resident_stubs_are_what_the_sources_assemble_to():
                                               ("BPRE", "scratchpad/frlg_en/FireRed_e.gba"),
                                               ("BPGE", "scratchpad/frlg_en/LeafGreen_e.gba")])
 def test_the_sound_mixer_is_the_one_each_cartridges_vblankintr_calls(code, cartridge):
-    """m4aSoundMain is the one address the hooks carry that moves on French LeafGreen. The call
-    0x56 bytes into VBlankIntr is a bl; decode it on the cartridge itself."""
+    """m4aSoundMain moves on French LeafGreen; the bl 0x56 bytes into VBlankIntr is decoded on the
+    cartridge."""
     import pathlib
     import struct
     from pokeldn.frlg.rom import builds

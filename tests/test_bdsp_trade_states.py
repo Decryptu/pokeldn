@@ -1,10 +1,5 @@
-"""The BDSP security phase against a model of the console's own state machine, in both roles.
-
-The model is `TradeParentStateModel$$StateProc` [0x1c23350] and `TradeSecurityController$$ReciveState`
-[0x1c24f10] as `docs/bdsp_trade.md` (Who leads) reads them. The client side is bin/bdsp_connect.py's
-policy: answer each state with `room.mirror_trade_state`, answer the Pokemon with ours, and repeat
-our state once a second. A console is CHILD when the client offers the rarer Pokemon.
-"""
+"""The BDSP security phase against `TradeParentStateModel$$StateProc` [0x1c23350] and `ReciveState`
+[0x1c24f10] (docs/bdsp_trade.md)."""
 
 import heapq
 import random

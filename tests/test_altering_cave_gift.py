@@ -1,11 +1,6 @@
 #!/usr/bin/env python3
-"""Offline coverage for the Altering Cave event, ported from the official script.
-
-`MysteryEventScript_AlteringCave` [decomp:data/mystery_event_msg.s:325] is four commands and a
-message: add one to VAR_ALTERING_CAVE_WILD_SET, wrap it, and say something. The var is read at the
-encounter, where `i += alteringCaveId` picks one of NUM_ALTERING_CAVE_TABLES consecutive wild
-headers for MAP_SIX_ISLAND_ALTERING_CAVE [decomp:src/wild_encounter.c:192].
-"""
+"""The Altering Cave event, ported from `MysteryEventScript_AlteringCave`
+[decomp:data/mystery_event_msg.s:325]."""
 
 import os
 import sys
@@ -53,9 +48,8 @@ def test_the_card_is_registered_and_reaches_every_launcher():
 
 
 def test_the_var_walks_the_whole_cycle_and_wraps_where_the_official_script_wraps():
-    """The official script resets at 10, not at NUM_ALTERING_CAVE_TABLES (9)
-    [decomp:data/mystery_event_msg.s:328], so a full cycle passes through an id the encounter
-    reader clamps back to table 0 [decomp:src/wild_encounter.c:193]."""
+    """The official script resets at 10, not 9 [decomp:data/mystery_event_msg.s:328]; id 9 reads as
+    table 0 [src/wild_encounter.c:193]."""
     script = _distribution().ram_script
     state = {event.VAR_ALTERING_CAVE_WILD_SET: 0, VAR_MYSTERY_GIFT_1: 0}
     seen = []
@@ -70,8 +64,7 @@ def test_the_var_walks_the_whole_cycle_and_wraps_where_the_official_script_wraps
 
 
 def test_the_binding_survives_so_the_cave_can_be_rotated_more_than_once():
-    """`end` (0x02), never `endram` (0x0D): ScrCmd_endram calls ClearRamScript
-    [decomp:src/scrcmd.c:262] and the second talk would find nothing bound."""
+    """`end`, never `endram`: ScrCmd_endram calls ClearRamScript [decomp:src/scrcmd.c:262]."""
     script = _distribution().ram_script
     # The code runs up to the first message the script points at; the text pool follows it.
     code = script[:min(int.from_bytes(script[pos + 1:pos + 5], "little") - 0x08000000
@@ -98,8 +91,7 @@ def test_nothing_but_the_cave_var_and_the_card_bookkeeping_is_touched():
 
 
 def test_the_run_is_checked_by_reading_the_var_out_of_the_save():
-    """Six Island may be unreachable in the save; the var itself is not. It sits in
-    SaveBlock1.vars [decomp:include/global.h:791], which save-dump can read."""
+    """The var is in SaveBlock1.vars [decomp:include/global.h:791], readable by save-dump."""
     assert buffer_script.sav1_var_offset(event.VAR_ALTERING_CAVE_WILD_SET) == 0x1048
     assert buffer_script.sav1_var_offset(0x4000) == buffer_script.SAV1_VARS
     for bad in (0x3FFF, 0x4100, 0x8000):

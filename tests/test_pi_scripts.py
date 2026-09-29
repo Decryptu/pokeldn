@@ -1,8 +1,4 @@
-"""Static coverage for Raspberry Pi deployment tooling.
-
-The scripts make privileged and hardware-specific changes at runtime, so these
-tests check their safety boundaries without attempting to run them on a desktop.
-"""
+"""Static safety checks on the Raspberry Pi deployment scripts."""
 
 from pathlib import Path
 

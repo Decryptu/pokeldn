@@ -42,7 +42,7 @@ def test_the_shield_save_on_the_share_decrypts_when_present():
 
 def test_the_poisoned_shield_save_loses_its_invalid_row_and_nothing_else_when_present():
     # Written by an emulated Shield after a card carrying item 0xC005 (stored 16389 x5, Medicine
-    # slot 2). The same repair of a save with the row last loaded, scrolled and category-sorted.
+    # slot 2).
     path = os.path.expanduser("~/Documents/Switch/save_backups/POISONED_036_20260912_113704/"
                               "0000000000000001/0/main")
     if not os.path.exists(path):

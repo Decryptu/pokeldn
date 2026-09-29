@@ -1,10 +1,4 @@
-"""The `givepokemon` payload: a struct Pokemon the console can decrypt, followed by the struct Mail
-it reads at +sizeof(struct Pokemon).
-
-The mon is checked through `pokeldn.frlg.save.mon`'s decoder, which is the same wire form the trade host has
-been putting on the air since before this feature existed, so a mon that decodes here is a mon the
-console has already been shown to accept.
-"""
+"""The `givepokemon` payload: a struct Pokemon, then the struct Mail at +sizeof(struct Pokemon)."""
 
 import os
 import sys
@@ -77,8 +71,6 @@ def test_a_species_with_no_base_stats_is_refused_rather_than_shipped_flat():
         mp.build_party_mon(0xFFF, 30, nickname="NOPE", language=mp.LANGUAGE_FRENCH)
 
 
-# --- the mail ------------------------------------------------------------------------------
-
 def test_mail_is_the_struct_the_console_reads():
     mail = mp.build_mail(("hello", "friend"), player_name="PkCamp", trainer_id=0x1234,
                          species=251, item_id=mp.ITEM_ORANGE_MAIL)
@@ -96,8 +88,6 @@ def test_a_non_mail_item_is_refused():
     with pytest.raises(mp.MysteryEventPokemonError, match="ItemIsMail"):
         mp.build_mail((), item_id=1)
 
-
-# --- the payload ---------------------------------------------------------------------------
 
 def test_the_payload_is_the_mon_then_the_mail():
     mon = _celebi(held_item=mp.ITEM_ORANGE_MAIL)
@@ -130,8 +120,6 @@ def test_a_payload_with_no_mail_is_still_the_right_length():
     assert len(payload) == monmod.PARTY_MON_SIZE + mp.MAIL_SIZE
 
 
-# --- the wired-up gift ---------------------------------------------------------------------
-
 def test_the_celebi_gift_assembles_to_givepokemon_and_nothing_else():
     distribution = gift_registry.GIFT_REGISTRY.build_distribution("mystery-event-celebi")
     assert mystery_event.describe(distribution.mevent) == "givepokemon 8; end"
@@ -147,7 +135,6 @@ def test_the_console_would_take_the_mon_and_report_success():
     _, mon, mail = result.effect("givepokemon")
     assert monmod.Mon(mon).decode()["species"] == wonder_card_events.SPECIES_CELEBI_MEVENT
     assert int.from_bytes(mail[0x20:0x22], "little") == mp.ITEM_ORANGE_MAIL
-    # Nothing is read outside the buffer we sent.
     assert result.effect("read_past_buffer") is None
 
 

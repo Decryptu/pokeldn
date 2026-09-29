@@ -255,10 +255,8 @@ def test_gate_1_legacy_serialized_fixtures_are_byte_identical():
 
 
 def test_hunt_criteria_reach_the_card_and_belong_only_to_the_hunt(capsys):
-    """--hunt-* steer rng-mon-hunt's staged stub [asm/field/mon-seek.s]. The registry's own
-    definition is built with the defaults at import, so a run that was given criteria has to
-    compose another card - and one that was not must still send the registered one, byte for
-    byte."""
+    """--hunt-* compose another card for rng-mon-hunt [asm/field/mon-seek.s]; without them the
+    registered card goes byte for byte."""
     from pokeldn.frlg.gift import wonder_card_events
     from pokeldn.frlg.rom import native_script
 
@@ -276,11 +274,8 @@ def test_hunt_criteria_reach_the_card_and_belong_only_to_the_hunt(capsys):
     chosen_distribution = chosen.payload.build_distribution()
     plain_distribution = plain.payload.build_distribution()
     assert chosen_distribution.mevent != plain_distribution.mevent
-    # Only the staged stub differs: the card, and the delivery script that installs it, do not.
     assert chosen_distribution.card == plain_distribution.card
     assert chosen_distribution.ram_script == plain_distribution.ram_script
-    # The cost of the search is printed before anything is on the air, not discovered by a player
-    # looking at a frozen overworld.
     printed = capsys.readouterr().out
     assert "shiny, Adamant, attack >= 16" in printed and "overworld stops" in printed
 
@@ -299,8 +294,7 @@ def test_hunt_criteria_reach_the_card_and_belong_only_to_the_hunt(capsys):
 
 
 def test_a_hunt_too_slow_to_run_is_refused_on_the_command_line():
-    """Not when the console joins. The stub searches with the field engine stopped, so criteria
-    whose search could outlast the ceiling are an error before the host ever comes up."""
+    """The stub searches with the field engine stopped; a search that could outlast the ceiling is refused."""
     from pokeldn.frlg.gift import wonder_card_events
     parser = frlg_mg_host.build_parser()
     with redirect_stderr(io.StringIO()) as err:

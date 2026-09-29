@@ -1,33 +1,6 @@
 #!/usr/bin/env python3
-"""Full-stack validation of the Mystery Gift distributor over a lossy radio.
-
-tests/test_mystery_gift_flow.py drives :class:`ConsoleClientModel` against the
-gift engine in perfect lockstep - one parent row in, one child row out, nothing
-in between.  That proves the activity, but it says nothing about the two layers
-the live host actually runs on::
-
-    HostReliableSession -> RFULeader -> HostMysteryGiftEngine
-
-This test reuses that same console model and wraps it in the Pia Reliable +
-emulator C/A/K/T/D + RFU NI machinery taken from
-:class:`tests.test_host_end_to_end.ScriptedFireRedChild`.  Between the two peers
-sits a radio that drops, duplicates, reorders and delays Reliable DATA in both
-directions, throughout the run rather than only during the handshake.  The
-model shares the production MysteryGiftLink codec, so the ID16/ID17 handoff also
-has a separate native-shaped byte fixture below; the full-stack model alone is
-not independent conformance evidence for that codec.
-
-The property under test is narrow and load-bearing.  ``SEND_BLOCK_INIT`` is
-ignored unless the receiver's slot is ``RECV_STATE_READY`` [link_rfu_2.c:1146]
-and nothing on the wire acknowledges a block, so the whole transfer rests on the
-sender's pacing (:attr:`MysteryGiftTiming.inter_block_gap_frames`).  A radio that
-stalls one fragment for a retransmit and then delivers a burst is exactly the
-thing that could eat that margin.  It must not: Reliable has to hide loss,
-duplication and reordering from RFU so the console still sees one clean,
-in-order, deduplicated row stream and never drops an INIT.
-
-Still an offline protocol model: Pia encryption/addressing, kernel Wi-Fi timing
-and Nintendo's exact implementation quirks need a live Switch.
+"""Mystery Gift distributor over an impaired radio: HostReliableSession, RFULeader and the gift
+engine against ConsoleClientModel. Reliable must hide loss from the RFU block gate [link_rfu_2.c:1146].
 
 Run standalone (no pytest needed):   python tests/test_mystery_gift_end_to_end.py
 """
@@ -48,9 +21,7 @@ from pokeldn.frlg.link.host_session import HostSession  # noqa: E402
 from pokeldn.gba.rfu_leader import DISCONNECTED  # noqa: E402
 from tests.test_mystery_gift_flow import ConsoleClientModel  # noqa: E402
 
-# The console model's identity, so both halves of the link agree.  Its
-# LinkPlayer is named "ASH" and its MysteryGift_LoadLinkGameData image carries
-# trainer id 0x47ED8822 [mystery_gift.c:337], whose public half is 0x8822.
+# ConsoleClientModel's identity: LinkPlayer ASH, trainer id 0x47ED8822 [mystery_gift.c:337].
 CHILD_NAME = "ASH"
 CHILD_TRAINER_ID = 0x8822
 CHILD_VERSION_LOW = 4                       # gGameVersion: 4 = FireRed [include/constants/game_version.h]
@@ -58,13 +29,7 @@ HOST_NAME = "EMU"
 
 
 def _native_crc16(data):
-    """A local transcription of ``CalcCRC16WithTable``'s reflected algorithm.
-
-    This intentionally does not call :func:`mystery_gift.crc16`: the point of
-    the fixture below is to check the production ``mg_link`` sender against a
-    separately written, source-shaped representation of
-    ``mystery_gift_link.c``.
-    """
+    """``CalcCRC16WithTable`` transcribed locally, independent of :func:`mystery_gift.crc16`."""
     crc = 0x1121
     for byte in bytes(data):
         crc ^= byte
@@ -74,14 +39,8 @@ def _native_crc16(data):
 
 
 def _native_mgl_blocks(ident, payload, size):
-    """Direct model of ``MysteryGiftLink_InitSend``/``MGL_Send``.
-
-    It is deliberately small and test-local: header then payload chunks, with
-    native ``size == 0`` expansion and a CRC over the padded declared buffer.
-    Do not replace it with ``mg_link.build_message``; it is the independent
-    stage-5 oracle for the first CLIENT_SCRIPT/GAME_DATA transaction and the
-    later full-buffer messages.
-    """
+    """``MysteryGiftLink_InitSend``/``MGL_Send`` modelled locally; never replace with
+    ``mg_link.build_message``."""
     if size == 0:
         size = 0x400  # MG_LINK_BUFFER_SIZE in mystery_gift_link.c:55-58.
     payload = bytes(payload)
@@ -103,20 +62,8 @@ class _AirPacket:
 
 
 class ImpairedRadio:
-    """A deterministic bidirectional datagram link with steady-state impairment.
-
-    The trade harness impairs a hand-picked pair of connect-phase sequence ids.
-    A gift is hundreds of parent VBlanks of back-to-back block traffic and the
-    failure this test hunts lives *inside* those transfers, so the rule here is
-    periodic: the first transmission of every ``drop_every``-th DATA sequence is
-    dropped and every ``duplicate_every``-th is duplicated, with different phase
-    per direction so both peers lose frames.  Retransmissions are recognized by
-    direction+seq and always delivered.  An alternating 1/4 ms delay makes later
-    DATA overtake earlier DATA continuously.
-
-    Reliable control ACKs are never dropped: the point is DATA recovery, not
-    randomized test duration.
-    """
+    """Drops each ``drop_every``-th DATA sequence's first send, duplicates each
+    ``duplicate_every``-th, reorders by delay; ACKs pass."""
 
     def __init__(self, *, drop_every=31, duplicate_every=17):
         self.pending = []
@@ -177,19 +124,7 @@ class ImpairedRadio:
 
 
 class ScriptedMysteryGiftConsole:
-    """The Switch peer: :class:`ConsoleClientModel` behind Reliable + RFU.
-
-    The transport half (Reliable stream, ``C``/``A`` connect, ``K`` acks, the NI
-    game-data handshake, UNI framing) is the proven trade child.  The activity
-    half is delegated wholesale to the imported console model: every parent UNI
-    poll that Reliable delivers is handed to ``step`` and the 14-byte row it
-    returns is the console's next gSendCmd.
-
-    That one-row-in/one-row-out coupling is the console's VBlank: on hardware a
-    parent poll and the child's reply are the same interrupt.  Because Reliable
-    delivers each parent poll exactly once and in order, the model sees the same
-    row sequence it would over a perfect link - proving that is the test.
-    """
+    """ConsoleClientModel behind Reliable and RFU: one parent poll in, one row out per VBlank."""
 
     def __init__(self, console, *, close_rows=4):
         self.console = console
@@ -219,7 +154,6 @@ class ScriptedMysteryGiftConsole:
             self.rel.send(gbaframe.build_connect(self.connect_id), now),
         ]
 
-    # --- inbound ------------------------------------------------------------------------------
     def receive(self, wire, now):
         for delivery in self.rel.receive(wire, now):
             rec = gbaframe.parse_in(delivery.payload)
@@ -248,9 +182,8 @@ class ScriptedMysteryGiftConsole:
                     # Row 0 of the parent's gRecvCmds echo table is its own
                     # gSendCmd [ReadAllPlayerRecvCmds, link_rfu_2.c:743].
                     rows = dict(rec["slots"])
-                    # Row 1 is this console's own last command mirrored back by the leader. Its block
-                    # sender and MGL_Send both wait on it [ChildEcho, rfu_leader.py], so the model
-                    # gets the whole table it would see on hardware, not just the host's half.
+                    # Row 1 is this console's own last command mirrored back [ChildEcho,
+                    # rfu_leader.py].
                     self._out_rows.append(
                         self._console_row(rows[0], rows.get(1)))
             elif rec["type"] == gbaframe.TYPE_D:
@@ -259,14 +192,12 @@ class ScriptedMysteryGiftConsole:
     def _console_row(self, parent_row, echo_row=None):
         row = self.console.step(parent_row, echo_row)
         if self.console.func == "done" and self.close_rows_sent < self._close_rows:
-            # The client task is finished, so the menu hands the link to
-            # Rfu_SetCloseLinkCallback [mystery_gift_menu.c:1248] and the console
-            # advertises READY_CLOSE_LINK instead of its own idle rows.
+            # Rfu_SetCloseLinkCallback [mystery_gift_menu.c:1248]: the console advertises
+            # READY_CLOSE_LINK.
             self.close_rows_sent += 1
             row = rfu.serialize(rfu.close_link_words(1))
         return row
 
-    # --- outbound -----------------------------------------------------------------------------
     def _queue_gba(self, frame, now):
         # advance() owns the radio; receive() only parks immediate replies here.
         self._gba_pending.append((bytes(frame), now))
@@ -280,8 +211,8 @@ class ScriptedMysteryGiftConsole:
             self._gba_pending.append((gbaframe.wrap_t(slot, self.ts), now))
             self.ts += 1
         else:
-            # One UNI reply per parent poll consumed, so a radio stall followed
-            # by a burst does not silently rate-limit the console.
+            # One UNI reply per parent poll consumed, so a stall then a burst does not rate-limit
+            # the console.
             while self._out_rows:
                 row = self._out_rows.popleft()
                 self._gba_pending.append(
@@ -336,9 +267,7 @@ def _run_full_stack(*, console=None, timing=None, radio=None, payload=None,
     if console is None:
         console = ConsoleClientModel(flag_id=0)
     if timing is None:
-        # Only the console-ready idle window is shortened, purely for test
-        # duration.  inter_block_gap_frames keeps its shipped value: it is the
-        # thing under test.
+        # inter_block_gap_frames keeps its shipped value: it is under test.
         timing = host_mystery_gift.MysteryGiftTiming(client_ready_idle_frames=10)
     kwargs = dict(
         link_player=linkplayer.LinkPlayer(name=HOST_NAME,
@@ -392,20 +321,9 @@ def _gift_run():
     return _CACHED_RUN[0]
 
 
-# --- independent MysteryGiftLink stage-5 fixture ----------------------------------------------
 def test_native_shaped_mgl_fixture_covers_the_stage_5_id16_id17_handoff():
-    """Check the first post-LinkPlayer exchange without sharing the sender codec.
-
-    ``Task_PlayerExchange`` case 6 only makes the menu construct
-    ``MysteryGiftClient``.  Its initial script waits for ID16, whose native
-    ``sClientScript_SendGameData`` is 32 bytes; that script then returns a
-    96-byte ID17 ``MysteryGiftLinkGameData``.  These exact blocks must be right
-    before a live run can attribute a failure to anything after stage 5.
-
-    Include the later message shapes here as cheap regression coverage of the
-    same framing code.  The fixture is source-shaped, not a round-trip through
-    the production sender.
-    """
+    """ID16 ``sClientScript_SendGameData`` (32 bytes) and ID17 game data (96 bytes) from a
+    source-shaped sender."""
     card, ram_script = wonder_card.build_default_gift()
     game_data = ConsoleClientModel(flag_id=0).game_data
     cases = (
@@ -425,9 +343,8 @@ def test_native_shaped_mgl_fixture_covers_the_stage_5_id16_id17_handoff():
         native = _native_mgl_blocks(ident, payload, size)
         assert mg_link.build_message(ident, payload, size) == native
 
-        # The production receive state machine must also accept the blocks the
-        # independent native-shaped sender produced, including 1024-byte
-        # size-zero messages and RFU-fragment padding on every completed block.
+        # The production receiver accepts the native-shaped blocks, 1024-byte size-zero messages
+        # included.
         receiver = mg_link.MysteryGiftLinkReceiver()
         receiver.expect(ident)
         padded = [block.ljust(((len(block) + 11) // 12) * 12, b"\x00")
@@ -439,14 +356,11 @@ def test_native_shaped_mgl_fixture_covers_the_stage_5_id16_id17_handoff():
         assert result == bytes(payload).ljust(declared_size, b"\x00")
 
 
-# --- the gift itself ------------------------------------------------------------------------
 def test_wonder_card_reaches_the_console_through_loss_duplication_and_reordering():
     run = _gift_run()
 
     assert run.console.result == mg_script.CLI_MSG_CARD_RECEIVED
     assert run.engine.result == mg_server.SVR_MSG_CARD_SENT and run.engine.gift_sent
-    # The console saved exactly the bytes we authored, after hundreds of VBlanks
-    # of block traffic across an impaired link.
     assert run.console.saved_card == run.card
     assert run.console.saved_ram_script.startswith(run.ram_script)
     assert run.console.saved_ram_script[len(run.ram_script):] == b"\x00" * (
@@ -471,13 +385,7 @@ def test_legendary_beast_cutscene_reaches_the_console_over_the_impaired_stack():
 
 
 def test_wonder_news_reaches_the_console_over_the_impaired_stack():
-    """The News path puts a 444-byte message and a console-authored answer on the same radio.
-
-    A Wonder Card is 332 bytes: one header block plus two fragments. News is 444, so it is one
-    fragment longer, and unlike the card the console then has to get a MG_LINKID_RESPONSE back to
-    us before the session can end. Both directions have to survive the same impairments before a
-    hardware run can attribute a stall to anything else.
-    """
+    """A 444-byte News and the console's MG_LINKID_RESPONSE survive the impaired radio."""
     news = wonder_news.BERRY_NEWS.build()
     distribution = stamp_rally.MysteryGiftDistribution(None, None, news=news)
     run = _run_full_stack(payload=distribution)
@@ -509,21 +417,16 @@ def test_the_shared_link_bring_up_completes_below_the_gift():
     assert run.host.rfu.child_trainer_id == CHILD_TRAINER_ID
     assert run.child.ni_frames_in > 0 and run.child.ni_frames_out > 0
 
-    # The LinkPlayer exchange that precedes MysteryGiftClient_Create.
     assert run.engine.child_link_player.name == CHILD_NAME
     assert run.console.host_link_player.name == HOST_NAME
     assert run.console.standby_sent and run.console.standby_echoed
 
 
 def test_reliable_hides_every_impairment_from_the_rfu_block_pacing():
-    """The real point.  SEND_BLOCK_INIT is dropped on the floor unless the
-    receive slot is RECV_STATE_READY [link_rfu_2.c:1146], and nothing on the wire
-    acknowledges a block - so a retransmit-induced burst that outran the
-    console's MGL_ResetReceived would strand it with no error at all.
-    """
+    """SEND_BLOCK_INIT is dropped unless the slot is RECV_STATE_READY [link_rfu_2.c:1146]; nothing
+    acknowledges a block."""
     run = _gift_run()
 
-    # The radio really did misbehave, in both directions, while blocks were flowing.
     assert [d for d, _seq in run.radio.dropped if d == "host"]
     assert [d for d, _seq in run.radio.dropped if d == "child"]
     assert run.radio.duplicated and run.radio.reordered > 0
@@ -531,29 +434,19 @@ def test_reliable_hides_every_impairment_from_the_rfu_block_pacing():
 
     assert run.console.dropped_inits == 0
     assert run.console.dropped_fragments == 0
-    # If the native INIT resends [link_rfu_2.c:1370] were not reaching the
-    # console at all, dropped_inits would be zero for the wrong reason.
+    # Without native INIT resends [link_rfu_2.c:1370] dropped_inits would be zero for the wrong
+    # reason.
     assert run.console.redundant_inits > 0
 
-    # Reliable delivered every parent poll exactly once and in order: the console
-    # model saw the same row stream a perfect link would have given it, despite
-    # dozens of dropped and duplicated DATA frames in the middle of the blocks.
     assert run.child.parent_rows == run.host.rfu.uni_out > 0
-    # The other direction is a bound, not an equality: the leader leaves UNI the
-    # moment it emits D [RFULeader.disconnect_frame], so the last few console
-    # rows still in flight are refused by design.
+    # The leader leaves UNI on emitting D [RFULeader.disconnect_frame]; the last console rows are
+    # refused.
     assert 0 < run.host.rfu.uni_in <= run.child.uni_frames_out
-    # Both console->leader messages of the conversation arrived intact anyway.
     assert run.engine.server.messages_received == 2      # GAME_DATA, READY_END
 
 
 def test_the_gap_is_still_what_prevents_the_drop_over_the_impaired_radio():
-    """Negative control, so the assertions above cannot pass vacuously.
-
-    Same stack, same radio, a console that consumes blocks slowly and a leader
-    whose inter-block gap has been removed: the transfer must die exactly where
-    the offline test says it does.
-    """
+    """Negative control: no gap and a slow console kill the transfer over the same radio."""
     starved = ConsoleClientModel(flag_id=0, consume_latency=6)
     run = _run_full_stack(
         console=starved, max_ms=2500, require_completion=False,
@@ -563,7 +456,6 @@ def test_the_gap_is_still_what_prevents_the_drop_over_the_impaired_radio():
     assert run.elapsed is None and starved.result is None
     assert run.engine.result is None
 
-    # ... and the shipped gap absorbs that same slow console over the same radio.
     slow = ConsoleClientModel(flag_id=0, consume_latency=6)
     slow_run = _run_full_stack(console=slow)
     assert slow.dropped_inits == 0
@@ -584,6 +476,5 @@ def test_close_and_disconnect_handshake_finishes_the_session():
         host_mystery_gift.MG_DONE]
     assert run.host.rfu.state == DISCONNECTED
     assert run.host.rel.inflight == run.child.rel.inflight == 0
-    # One parent poll per millisecond is the clean-link floor, so this bounds
-    # what loss recovery cost: retransmission must not stretch a gift handout.
+    # One parent poll per millisecond is the clean-link floor.
     assert run.elapsed < run.host.rfu.uni_out * 1.5

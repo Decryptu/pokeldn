@@ -1,9 +1,5 @@
-"""The Gen-9 record a Scarlet trade message carries.
-
-The sample is the offer in `tests/data/sv_pair_trade.txt`, the message the emulated pair put on
-0x7C port 0. A retail Scarlet's own offer is a capture and stays out of the repository
-(CLAUDE.md rule 7); what it read out is on `docs/sv.md`.
-"""
+"""The Gen-9 record a Scarlet trade message carries; the sample is the pair's offer in
+tests/data/sv_pair_trade.txt."""
 import os
 import struct
 import sys
@@ -34,9 +30,7 @@ def test_a_trade_body_is_the_prefix_and_a_party_record():
 
 
 def test_the_record_decrypts_under_the_gen8_crypto():
-    """The checksum the record carries is the sum of the body the Gen-8 cipher and block order
-    produce. A wrong LCG cannot survive it; a wrong block order can, so the fields below are what
-    pin the order."""
+    """The checksum pins the Gen-8 cipher; the named fields pin the block order."""
     plain = pokemon.from_wire(pair_offer())
     assert struct.unpack_from("<H", plain, pokemon.OFF_SANITY)[0] == 0
     assert pokemon.checksum(plain) == struct.unpack_from("<H", plain, pokemon.OFF_CHECKSUM)[0]
@@ -102,9 +96,8 @@ def test_a_shiny_personality_value_reads_back_shiny():
 
 
 def test_a_composed_offer_runs_the_trade_the_pair_ran():
-    """A record composed here goes through the stage the pair's messages drive, and the host's
-    side comes out the pair host's byte for byte apart from the offer itself. Nothing reaches a
-    console that this has not run first (CLAUDE.md, prove it offline)."""
+    """A composed offer drives the pair's trade stage; the host's side matches the pair host's apart
+    from the offer."""
     path = os.path.join(os.path.dirname(__file__), "data", "sv_pair_trade.txt")
     rows = [line.split() for line in open(path) if line.strip()][2:]
     pair_body = bytes.fromhex(rows[0][2])[4:]
@@ -133,8 +126,7 @@ def test_a_composed_offer_runs_the_trade_the_pair_ran():
 
 
 def test_every_field_a_retail_record_uses_has_a_name():
-    """A record built from zero and then given every field `read` reports from a real one comes
-    out byte for byte that record: the map covers the whole structure, with nothing left over."""
+    """A record rebuilt from every field `read` reports is byte for byte the original."""
     body = pair_offer()
     real = pokemon.from_wire(body)
     fields = pokemon.read(real)
@@ -147,8 +139,7 @@ def test_every_field_a_retail_record_uses_has_a_name():
 
 
 def test_a_fresh_offer_is_drawn_after_the_settings_and_keeps_them():
-    """`--offer-set shiny --fresh-pid`: the new PID must keep the square the setting rolled, and
-    the named fields must survive the reshuffle under the new constant."""
+    """`--offer-set shiny --fresh-pid` keeps the rolled square and the named fields under the new constant."""
     base = pokemon.to_wire(pokemon.build(species=132, trainer_id=57189, secret_id=58811,
                                          pid=0x12345678, encryption_constant=0x9C96AA87))
     one = pokemon.read(pokemon.from_wire(trade.load_offer(base, ["shiny", "nickname=PKJOIN"])))

@@ -6,7 +6,7 @@ import pytest
 
 from pokeldn.ldn import broadcast4
 
-# off the wire, headers only - the bodies are a player's data and stay out of the repository.
+# Off the wire, headers only.
 CONTROL = bytes.fromhex("110000000000ffff00000d80057c000500000000")
 DATA_0 = bytes.fromhex("120000000001ffff00000000")
 DATA_2 = bytes.fromhex("120000000005ffff00000002")
@@ -55,13 +55,7 @@ def test_the_body_deflates_and_the_twelve_byte_prefix_never_does():
 
 
 def test_a_body_that_does_not_shrink_is_sent_plain():
-    """The console only sets the flag when compression paid, and so do we.
-
-    The body has to be genuinely incompressible for this to mean anything - a repeating byte
-    pattern deflates to nothing and takes the other branch. Our console's own fragments 0 and 1 go
-    out plain at 1404 bytes; they are party data and stay out of the repository, so this uses a
-    deterministic pseudo-random blob instead.
-    """
+    """A body that does not shrink is sent plain; the fixture is a deterministic incompressible blob."""
     body = random.Random(SEED).randbytes(400)
     assert len(zlib.compress(body)) > len(body), "the fixture must be incompressible"
     payload, compressed = broadcast4.build_fragment(1, 0, body)
@@ -103,13 +97,7 @@ def test_every_message_echoes_the_peer_sequence_we_last_saw():
 
 
 def test_the_default_policy_matches_what_our_console_actually_did():
-    """The console sends fragments 0 and 1 plain at 1404 bytes and deflates only the short last one.
-
-    Fragment 1's own bytes compress to well under half, so "smaller wins" is demonstrably not the
-    console's rule, and a sender that used it would differ from the console in a way no run has
-    asked about. The fixture reproduces that shape: two full chunks that would compress, and a
-    short tail.
-    """
+    """The console sends fragments 0 and 1 plain at 1404 bytes and deflates only the short last one."""
     payload = bytes(3456)                              # all zeros: every chunk would compress
     plain = broadcast4.Sender().transfer(payload)
     assert [c for _, c in plain] == [False, False, False, True], \
@@ -123,23 +111,20 @@ def test_the_default_policy_matches_what_our_console_actually_did():
 
 
 def test_the_receiver_acks_every_fragment_with_a_base_and_a_mask():
-    """0x21, the kind nothing in this project had ever sent - which is why 0x84 repeats forever."""
+    """0x21 acks every fragment; unacked, 0x84 repeats forever."""
     rx = broadcast4.Receiver()
     assert rx.feed(broadcast4.build_control(0, 3456, 1404)) == []
     assert rx.total == 3456 and rx.chunk_size == 1404
 
-    # fragment 0 arrives: contiguous through 0, so base 1 and nothing early
     ack = broadcast4.parse(rx.feed(broadcast4.build_fragment(1, 0, b"a" * 1404,
                                                              compress=False)[0])[0])
     assert ack["kind"] == broadcast4.KIND_ACK and (ack["base"], ack["mask"]) == (1, 0)
 
-    # fragment 2 arrives before 1: base stays 1 and bit 0 of the mask says "2 is here"
     ack = broadcast4.parse(rx.feed(broadcast4.build_fragment(2, 2, b"c" * 648,
                                                              compress=False)[0])[0])
     assert (ack["base"], ack["mask"]) == (1, 1)
     assert rx.complete() is False
 
-    # and the hole fills
     ack = broadcast4.parse(rx.feed(broadcast4.build_fragment(3, 1, b"b" * 1404,
                                                              compress=False)[0])[0])
     assert (ack["base"], ack["mask"]) == (3, 0)

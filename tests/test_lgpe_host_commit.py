@@ -1,9 +1,5 @@
-"""The commit and result stages a Let's Go host runs, pinned to the walk two reference hosts
-took (docs/lgpe_session.md, "The two clone records a trade walks"): a retail console hosting and
-an emulated one. The whole stage runs against a scripted console with no radio.
-
-A host that gets this stage wrong leaves the console on its confirmation screen, and a retail save
-answers that with about half an hour of refused trades. Everything here runs before a console does."""
+"""The Let's Go host's commit and result stages against a scripted console (docs/lgpe_session.md).
+A console left on its confirmation screen refuses trades for about half an hour."""
 import importlib.util
 import os
 import struct
@@ -115,8 +111,7 @@ def stage(tmp_path, monkeypatch):
         return out
 
     def run(seconds, ack=True):
-        """Let the clock run. The console acknowledges every game message within 30 ms in every
-        capture, so by default the pending ones are acknowledged as the clock passes."""
+        """Advance the clock; pending game messages are acknowledged within 30 ms, as in every capture."""
         end = clk.t + seconds
         while clk.t < end:
             clk.t += 0.005
@@ -130,10 +125,8 @@ def stage(tmp_path, monkeypatch):
 
 
 def test_the_commit_clone_walks_to_the_trailing_word_1_and_no_further(stage):
-    """The console announces the commit clone and publishes 1 1 1 on it. The host answers with
-    the trailing word 1, 30 ms later, its type 4 copy carrying 1 in its first word; then nothing
-    until the console answers. A host that walks it on to 01 02 02 leaves the console on its
-    confirmation screen."""
+    """The host answers 1 1 1 with trailing word 1 after 30 ms, then waits; walking on to 01 02 02
+    strands the console."""
     stage["console_publishes"](4, bytes(12))
     stage["console_publishes"](4, ONES)
     stage["sent"].clear()
@@ -149,9 +142,8 @@ def test_the_commit_clone_walks_to_the_trailing_word_1_and_no_further(stage):
 
 
 def test_the_consoles_zero_first_word_brings_the_first_commit_in_one_frame(stage):
-    """The console answers the trailing word 1 with 0 1 1. In one frame the host publishes 0 1 1
-    on the commit clone and 0 2 2 on the offered one, both under its next step, and sends its
-    kind 3 carrying 1 under that step."""
+    """The console's 0 1 1 brings, in one frame, 0 1 1 on the commit clone, 0 2 2 on the offered
+    one, and kind 3 carrying 1."""
     stage["console_publishes"](4, bytes(12))
     stage["console_publishes"](4, ONES)
     stage["run"](0.05)
@@ -160,15 +152,13 @@ def test_the_consoles_zero_first_word_brings_the_first_commit_in_one_frame(stage
     assert stage["published"](4)[-1] == [0, 1, 1, 11, 1]
     assert stage["published"](3)[-1] == [0, 2, 2, 11, 2]
     assert stage["game"]() == [(pb7.COMMIT_MESSAGE, 11, b"\x01\0\0\0")]
-    # the same answer again is a retransmit
     stage["console_publishes"](4, b"\0\0\0\0" + b"\x01\0\0\0" * 2 + struct.pack("<I", 11) + b"\x01\0\0\0")
     stage["run"](1.0)
     assert stage["game"]() == [(pb7.COMMIT_MESSAGE, 11, b"\x01\0\0\0")]
 
 
 def test_the_consoles_own_first_publish_of_the_commit_clone_is_not_an_answer(stage):
-    """The console's first copy of the commit clone carries 0 0 0 with a trailing word of 0. It
-    precedes the 1 1 1 and is no answer: the host sends no commit off it."""
+    """The console's first copy (0 0 0, trailing 0) is not an answer."""
     stage["console_publishes"](4, bytes(12))
     stage["run"](1.0)
     assert stage["game"]() == []
@@ -176,9 +166,8 @@ def test_the_consoles_own_first_publish_of_the_commit_clone_is_not_an_answer(sta
 
 
 def test_the_second_commit_follows_the_consoles_own_by_four_frames(stage):
-    """The console's kind 3 carrying 1 answers the host's. The host echoes nothing and sends its
-    second, carrying 2, 65 ms after its first: both reference hosts sent it 63 to 66 ms after the
-    first and behind the peer's."""
+    """The second commit follows 65 ms after the first; the references sent it 63 to 66 ms after,
+    behind the peer's."""
     stage["console_publishes"](4, bytes(12))
     stage["console_publishes"](4, ONES)
     stage["run"](0.05)
@@ -298,9 +287,7 @@ def test_second_trade_uses_new_offer_commit_clones_and_result(stage):
 
 
 def test_the_offered_clone_walks_on_to_01_02_02_and_the_trailing_word_2(stage):
-    """The offered party clone is the one the host walks the whole way: 1 1 1 with the trailing
-    word 1 after 30 ms, then 1 2 2 with it still 1, then the trailing word 2, one --drive-delay
-    apart. The console's buttons come up on the last."""
+    """The offered clone walks 1 1 1 (trailing 1), 1 2 2, then trailing 2, one --drive-delay apart."""
     s = stage["s"]
     del s.clone.flags[3], s.clone.tail[3]
     stage["console_publishes"](3, ONES)
@@ -319,9 +306,7 @@ def test_the_offered_clone_walks_on_to_01_02_02_and_the_trailing_word_2(stage):
 
 
 def test_an_unacknowledged_game_message_goes_again_after_half_a_second(stage):
-    """The console acknowledges every game message with the next id it expects. One it never
-    acknowledges is sent again, byte for byte, every half second until it does; one it does is
-    not."""
+    """An unacknowledged game message is resent byte for byte every half second."""
     s = stage["s"]
     commit(stage)
     step = _send_step(s.trade, s.send, pb7.COMMIT_MESSAGE, b"\x02\0\0\0")
@@ -332,7 +317,6 @@ def test_an_unacknowledged_game_message_goes_again_after_half_a_second(stage):
     stage["run"](0.1, ack=False)
     again = [payload for p, payload, _ in stage["sent"] if p == reliable3.PROTOCOL]
     assert again == first
-    # the console's acknowledgement names the id after the last one, and both stop
     s.handle(reliable3.PROTOCOL, reliable3.build_ack(s.window.sequence))
     stage["sent"].clear()
     stage["run"](2.0, ack=False)
@@ -346,10 +330,8 @@ def test_the_window_holds_nothing_without_a_clock():
 
 
 def test_the_consoles_release_of_a_clone_is_acknowledged_on_the_same_clone(stage):
-    """After the trade the console releases clones 4, 3 and 2 with a 0x83 on clone type 4,
-    station 0xFD, every 100 ms until each is acknowledged with a 0x84 on that clone; unanswered,
-    its player waits on "interruption de la connexion" until the session dies. The released clone
-    is no longer republished. A release on clone type 2 is acknowledged on clone type 1."""
+    """The console's 0x83 releases on clone type 4 are acked with 0x84 on that clone; type 2 is
+    acked on type 1."""
     s = stage["s"]
     commit(stage)
     stage["sent"].clear()
@@ -371,10 +353,8 @@ def test_the_consoles_release_of_a_clone_is_acknowledged_on_the_same_clone(stage
 
 
 def test_the_consoles_state_word_4_is_its_player_leaving_and_is_acknowledged(stage):
-    """A record whose state word is 4 is the peer's player backing out. The host answers 30 ms
-    later on that clone with zeros in the first three words, the trailing word one further on,
-    and the peer's argument in the type 4 copy's first word, which is what an emulated host did
-    before the peer released its clones."""
+    """State word 4 is the peer's player leaving; answered after 30 ms with zeros and the trailing
+    word advanced."""
     stage["sent"].clear()
     stage["console_publishes"](3, b"\x04\0\0\0" + b"\x03\0\0\0" + b"\x02\0\0\0"
                                + struct.pack("<I", 14) + b"\x02\0\0\0")
@@ -388,9 +368,7 @@ def test_the_consoles_state_word_4_is_its_player_leaving_and_is_acknowledged(sta
 
 
 def test_a_second_state_word_4_under_a_fresh_counter_is_answered_again(stage):
-    """A retail console backing out sends argument 0 first and argument 3 as it leaves, under
-    successive counters. Each is answered, with the trailing word one further on each time, and
-    a walk still pending on the clone is dropped."""
+    """Each state word 4 under a fresh counter is answered; a pending walk is dropped."""
     s = stage["s"]
     del s.clone.flags[3], s.clone.tail[3]
     stage["console_publishes"](3, ONES)
@@ -411,10 +389,8 @@ def test_a_second_state_word_4_under_a_fresh_counter_is_answered_again(stage):
 
 
 def test_the_consoles_leave_request_is_acknowledged_and_answered(stage):
-    """The console leaves the mesh with a leave request on the mesh protocol's reliable port,
-    under the 24-byte reliable header. The host acknowledges that header on the same port,
-    answers with a leave response on the unreliable port, and its mesh and session go back to
-    one node. Unanswered, the console repeats the request every 40 ms for five seconds."""
+    """A leave request on the reliable port is acked there and answered on the unreliable port; mesh
+    and session shrink to one node."""
     from pokeldn.ldn import mesh_protocol as mp
     s = stage["s"]
     stage["sent"].clear()
@@ -430,15 +406,13 @@ def test_the_consoles_leave_request_is_acknowledged_and_answered(stage):
     assert not s.joined and s.session_nodes() == ((s.host.our_ip, lgpe_host.PIA_PORT, 0),)
     updates = [payload for payload, kw in mesh if payload[0] == mp.UPDATE_MESH]
     assert updates and updates[-1][1] == 1, "the mesh update still lists the console"
-    # the same request again is a retransmit
     s.handle(mp.PROTOCOL, leave)
     assert len([1 for p, payload, kw in stage["sent"] if p == mp.PROTOCOL
                 and payload[0] == mp.LEAVE_RESPONSE]) == 1
 
 
 def test_the_consoles_disconnection_request_is_answered(stage):
-    """One byte each way on the station protocol. Unanswered, the console repeats it every half
-    second, eight times, and deauthenticates."""
+    """Unanswered, the console repeats it every half second, eight times, and deauthenticates."""
     from pokeldn.ldn import station9
     from pokeldn.ldn.station_protocol import DISCONNECTION_REQUEST, DISCONNECTION_RESPONSE
     s = stage["s"]
@@ -449,9 +423,7 @@ def test_the_consoles_disconnection_request_is_answered(stage):
 
 
 def test_the_host_releases_its_own_copy_after_the_consoles(stage):
-    """The emulated pair released their own copies in answer to each other's: 30 ms after the
-    console's 0x83 the host sends its own on clone type 2 under its station to both stations and
-    on clone type 4, station 0xFD, to the console; clone 0 on clone type 3 alone."""
+    """30 ms after the console's 0x83 the host releases its own copies, as the emulated pair did."""
     s = stage["s"]
     stage["sent"].clear()
     s.handle(clone.PROTOCOL, clone.build_command(clone.COMMAND_END, 4, 0xFD, 3, 0x478, 1))

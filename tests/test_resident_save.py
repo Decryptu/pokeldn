@@ -1,10 +1,4 @@
-"""A resident hook kept in the save: the loader MOM runs, the head, the installer, the hook, end to end.
-
-How it could fail. The loader branches into a blob that is not whole (a save-write that landed short,
-or the older PKLD payload still in filler_B20); the head misreads its own base from the loader's
-+5 and sums the wrong span; the ARM installer is entered from THUMB and returns into the wrong
-state; a second visit to MOM chains the hook to itself. The blob must also fit one save-write.
-"""
+"""A resident hook kept in the save: MOM's loader, the head, the installer and the hook, end to end."""
 
 import pytest
 

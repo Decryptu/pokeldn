@@ -1,8 +1,4 @@
-"""Wiring tests for the Mystery Gift host: advertisement, config, session seam.
-
-These cover the parts that only run live, so the failure mode they guard against
-is "the console never sees us" or "the trade host broke" rather than a protocol
-bug.  The gift conversation itself is covered by tests/test_mystery_gift_flow.py.
+"""Wiring for the Mystery Gift host: advertisement, config, session seam.
 
 Run standalone (no pytest needed):   python tests/test_mystery_gift_host_wiring.py
 """
@@ -41,11 +37,9 @@ def _search_word(app_data):
         record[beacon.SEARCH_WORD_OFFSET:beacon.SEARCH_WORD_OFFSET + 2], "little")
 
 
-# --- the advertisement --------------------------------------------------------------------------
 def test_wonder_card_advertisement_matches_the_proven_friend_control():
-    """The JoySpot sweep's ``friend_control`` candidate was listed AND joined by a
-    real console; its record was ``...9515...`` (docs/frlg_gift.md).
-    Anything that changes these bytes changes whether the console can see us."""
+    """The ``friend_control`` record ``...9515...`` was listed and joined by a real console
+    (docs/frlg_gift.md)."""
     inactive, _active = build_wonder_card_app_data(DEFAULT_TRAINER, SESSION_ID)
     record = _record(inactive)
     assert record.hex() == "2288cadfbdd5e1e4ffff7bf1000000009515000000000000"
@@ -55,12 +49,10 @@ def test_advertisement_declares_activity_wonder_card_and_is_joinable():
     inactive, active = build_wonder_card_app_data(DEFAULT_TRAINER, SESSION_ID)
     word = _search_word(inactive)
     assert word & beacon.SEARCH_ACTIVITY_MASK == beacon.ACTIVITY_WONDER_CARD == 21
-    # union_room.c:2313 refuses a candidate whose startedActivity bit is set, so
-    # the advertisement must stay clear until a console has actually joined.
+    # union_room.c:2313 refuses a candidate whose startedActivity bit is set.
     assert not word & beacon.SEARCH_STARTED_ACTIVITY
     assert _search_word(active) & beacon.SEARCH_STARTED_ACTIVITY
-    # SetHostRfuWonderFlags(FALSE, FALSE) [union_room.c:2052]: a native sender
-    # advertises no wonder flags, and the Friend list never reads them.
+    # SetHostRfuWonderFlags(FALSE, FALSE) [union_room.c:2052]: no wonder flags.
     assert not word & beacon.SEARCH_HAS_CARD
 
 
@@ -88,7 +80,6 @@ def test_trade_advertisement_is_unchanged_by_the_gift_host():
         == beacon.ACTIVITY_TRADE
 
 
-# --- run configuration ---------------------------------------------------------------------------
 def test_default_config_selects_the_self_contained_celebi_gift():
     config = MysteryGiftRunConfig()
     assert config.payload.gift == wonder_card.GIFT_CELEBI
@@ -98,8 +89,6 @@ def test_default_config_selects_the_self_contained_celebi_gift():
     assert config.role.native_nonce_sequence is True
     assert config.role.session_response_first is True
     assert config.payload.receipt_flag == 0x2AA
-    # The card keeps the original Celebi presentation while the registry uses
-    # the composed delivery setup.
     app = MysteryGiftHostApplication.__new__(MysteryGiftHostApplication)
     app.config = config
     card, script = app._build_payload()
@@ -132,15 +121,8 @@ def test_client_ready_idle_frame_override_reaches_the_engine():
 
 
 def test_max_participants_matches_the_trade_host():
-    """Regression for a live failure: the console joined the LDN network and then
-    never sent one Pia frame.
-
-    ``max_participants`` is an LDN/Pia value, not the RFU group size. It sizes the
-    Net 0x11 station array at ``max_stations * 22`` bytes and native FRLG always
-    emits every configured slot [pia_connect.build_net_conn_request], so setting
-    it to the two players a gift actually involves changes the length of the
-    packet the console has to parse before it will answer.
-    """
+    """``max_participants`` sizes the Net 0x11 station array [pia_connect.build_net_conn_request]; 2
+    left the console silent."""
     trade_default = HostOptions().max_participants
     assert MysteryGiftRunConfig().role.max_participants == trade_default == 6
 
@@ -150,8 +132,7 @@ def test_max_participants_matches_the_trade_host():
         body = crypto.compress(reliable.build_message(pia_connect.PROTO_NET, net))
         return ((-len(body)) % 16) << 4 | 0x03
 
-    # The station array is the length difference, and it lands in the header's
-    # pad nibble, so a wrong value is visible in the clear on the wire.
+    # The station array length lands in the header's pad nibble.
     assert net_flags(2) != net_flags(6)
 
 
@@ -166,15 +147,12 @@ def test_config_rejects_a_flag_id_outside_the_receipt_flag_table():
         raise AssertionError(f"flag_id {bad} should be rejected")
 
 
-# --- the HostSession activity seam ------------------------------------------------------------------
 def test_session_accepts_a_mystery_gift_engine_in_place_of_a_party():
     card, ram_script = wonder_card.build_default_gift()
     engine = HostMysteryGiftEngine(card, ram_script)
     session = HostSession(engine=engine)
     assert session.activity is engine
-    # The trade host and its tests reach the engine through `.trade`.
     assert session.trade is engine
-    # The shared stack below the activity is built either way.
     assert session.reliable is not None and session.rfu is not None
 
 
@@ -198,11 +176,8 @@ def test_the_engine_cannot_declare_the_close_before_the_handshake():
     raise AssertionError("mark_disconnect_sent before the close handshake must fail")
 
 
-# --- the cartridge the run is for ----------------------------------------------------------------
-
 def _console_game_data(version_code):
-    """The console's own MysteryGiftLinkGameData, with the version nibble set. The magic and the
-    game code are what parse_link_game_data insists on; nothing else matters here."""
+    """The console's MysteryGiftLinkGameData with the version nibble set."""
     from pokeldn.frlg.gift import mg_script
     raw = bytearray(0x64)
     raw[0x00:0x04] = int(mg_script.LINK_GAME_DATA_MAGIC).to_bytes(4, "little") \
@@ -234,7 +209,7 @@ def test_the_right_cartridge_passes_and_no_expectation_passes_anything():
                            (None, mg_script.VERSION_CODE_FIRERED)):
         server = mg_server.MysteryGiftServer(card, ram_script, expect_console=expected)
         server.game_data = _console_game_data(code)
-        server._check_expected_console()          # no raise
+        server._check_expected_console()
         assert server.console_mismatch is None
 
 

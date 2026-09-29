@@ -1,9 +1,4 @@
-"""NATIVE CODE IN THE OVERWORLD: a RAM script that stages a THUMB stub and `callnative`s it.
-
-The stub is EXECUTED here, not asserted about - unicorn on a model of the GBA memory map, the same
-rule asm/*.s lives under - and what its answer is checked against is `rng_countdown`, the model
-that predicted seven fields of a mon the console built from a state it chose for itself. Two independent things agreeing, rather than one restating the other.
-"""
+"""RAM scripts that stage a THUMB stub and `callnative` it; stubs run under unicorn against rng_countdown."""
 
 import os
 import shutil
@@ -27,8 +22,7 @@ except ImportError:
 needs_unicorn = pytest.mark.skipif(not _HAVE_UNICORN,
                                    reason="offline execution needs unicorn")
 
-# The console's own, read off it: trainer-id-probe returned 0xE5BBDF65, and the player's
-# trainer card shows 57189 = 0xDF65. Not chosen here.
+# Read off the console: trainer-id-probe returned 0xE5BBDF65; the trainer card shows 57189.
 CONSOLE_TID = 0xDF65
 CONSOLE_SID = 0xE5BB
 _SAV2 = 0x02030000
@@ -48,11 +42,8 @@ def _run(state, *, cap=1 << 18):
     })
 
 
-# --- the commands, against the decomp's own table -----------------------------------------------
-
 def test_callnative_sets_bit_zero_because_the_stubs_are_thumb():
-    """`callnative` calls through a function pointer, so bit 0 chooses the instruction set. A
-    word-aligned address would enter ARM state and run the same bytes as garbage."""
+    """`callnative` calls through a pointer; bit 0 selects THUMB."""
     assert native_script.callnative_at(0x0201C000) == bytes.fromhex("2301c00102")
     assert native_script.callnative_at(0x0201C000, thumb=False)[1] == 0x00
     with pytest.raises(native_script.NativeScriptError):
@@ -77,8 +68,7 @@ def test_the_budget_is_computed_from_the_two_sizes_and_not_written_down():
 
 
 def test_a_stub_too_big_to_stage_is_refused_offline(monkeypatch):
-    """995 bytes of RAM script at six a byte is ~163 bytes of code, and this is the only budget
-    that binds. It has to fail HERE and not in the middle of the player's game."""
+    """995 bytes of RAM script at six a byte is ~163 bytes of code."""
     assert not native_script.budget(200)["fits"]
     oversized = dict(STUBS)
     code, digest, symbols = oversized["shiny-seek"]
@@ -87,8 +77,6 @@ def test_a_stub_too_big_to_stage_is_refused_offline(monkeypatch):
     with pytest.raises(native_script.NativeScriptError, match="will not fit"):
         native_script.build_shiny_hunt_script(132, 50)
 
-
-# --- the stub's parameters ----------------------------------------------------------------------
 
 def test_the_pool_offsets_come_from_the_assembler():
     """A parameter that moves in the .s must be a KeyError here, never a silently wrong word."""
@@ -106,8 +94,7 @@ def test_patching_writes_the_word_where_the_symbol_says():
     for key, value in (("rng", 0x03004220), ("sav2ptr", 0x0300422C), ("cap", 99)):
         offset = symbols[f"p_{key}"]
         assert int.from_bytes(code[offset:offset + 4], "little") == value
-    # The constants the stub does NOT take as parameters are the LCG's own, and they are the
-    # decomp's [include/random.h].
+    # The LCG constants are the decomp's [include/random.h].
     assert int.from_bytes(code[symbols["p_mult"]:symbols["p_mult"] + 4], "little") == lcg.RAND_MULT
     assert int.from_bytes(code[symbols["p_add"]:symbols["p_add"] + 4], "little") == lcg.RAND_ADD
 
@@ -120,8 +107,6 @@ def test_the_committed_stub_bytes_are_what_the_source_assembles_to():
         capture_output=True, text=True)
     assert result.returncode == 0, result.stderr
 
-
-# --- the script -----------------------------------------------------------------------------
 
 def test_the_hunt_script_stages_calls_and_then_battles_in_that_order():
     script = native_script.build_shiny_hunt_script(132, 50)
@@ -136,16 +121,13 @@ def test_the_hunt_script_stages_calls_and_then_battles_in_that_order():
 
 
 def test_nothing_between_the_call_and_the_generation_can_yield():
-    """The whole point. `setptr` and `callnative` return FALSE and `setwildbattle` returns FALSE
-    [decomp:src/scrcmd.c], so the field engine runs the lot in ONE frame and the state the stub
-    leaves is the state CreateScriptedWildMon consumes. Anything that yields between them - a
-    playse/waitse, a message - would let the per-frame consumer turn the RNG and break it."""
+    """`setptr`, `callnative` and `setwildbattle` return FALSE [decomp:src/scrcmd.c]: one frame,
+    nothing yields."""
     script = native_script.build_shiny_hunt_script(132, 50)
     code_size = len(native_script.stub("shiny-seek", rng=rom_map.GRNG_VALUE,
                                        sav2ptr=rom_map.GSAVEBLOCK2PTR, cap=1 << 18))
     call = code_size * native_script.SETPTR_SIZE          # the staged run ends, callnative begins
     assert script[call] == native_script.SCR_CALLNATIVE
-    # Everything from the call to the generation, byte for byte. No room for anything that yields.
     assert script[call:] == (native_script.callnative_at(native_script.SCRATCH)
                              + rng_script.battle_and_exit(132, 50))
 
@@ -159,30 +141,24 @@ def test_the_species_and_level_are_checked_before_a_console_ever_sees_them():
         native_script.build_shiny_hunt_script(132, 50, item=0x10000)
 
 
-# --- the stub, executed ---------------------------------------------------------------------
-
 @needs_unicorn
 @pytest.mark.parametrize("state", [
     0x52E6B438, 0xF2A74DE4, 0x269E0D37, 0x6513270E, 0xA6A3A450, 0x0C5C7FD0,
     0x128B2F33, 0xD23F0824, 0x892F902B, 0x1818E811, 0x5D9DC9F8, 0x9531985D,
 ])
 def test_the_stub_lands_on_a_state_whose_encounter_is_shiny(state):
-    """The stub searches; `rng_countdown`, validated on hardware, says what the
-    console would build from what it found. The two are written from different directions."""
+    """The stub's landing state is shiny by `rng_countdown`, written from the other direction."""
     landed = int.from_bytes(_run(state)["memory"][rom_map.GRNG_VALUE], "little")
     mon = rng_countdown._mon_from(landed, CONSOLE_TID, CONSOLE_SID)
     assert mon["shiny"], f"0x{state:08X} -> 0x{landed:08X} is not shiny"
     assert mon["shiny_value"] < native_script.SHINY_ODDS
-    # It only ever moves FORWARD along the orbit, and not far: 1 state in 8192 is shiny.
+    # 1 state in 8192 is shiny.
     assert lcg.distance(state, landed) < 1 << 17
 
 
 @needs_unicorn
 def test_the_trainer_id_is_read_off_the_console_and_actually_used():
-    """The stub dereferences gSaveBlock2Ptr rather than being handed an id, so the same bytes work
-    on either console. This is the test that would catch it reading and then ignoring: a different
-    trainer id must send the search somewhere else, and each answer must be shiny for ITS OWN pair
-    and not for the other."""
+    """The stub reads gSaveBlock2Ptr; a different trainer id sends the search elsewhere."""
     state = 0x52E6B438
     other_tid, other_sid = 0x1234, 0x5678
     save = bytearray(0x10)
@@ -205,8 +181,6 @@ def test_the_trainer_id_is_read_off_the_console_and_actually_used():
 
 @needs_unicorn
 def test_the_stub_leaves_the_rng_untouched_when_the_cap_runs_out():
-    """A bounded search that fails must change NOTHING - the player gets an ordinary encounter,
-    which is a miss and not a broken game."""
     state = 0x12345678
     assert not rng_countdown._mon_from(state, CONSOLE_TID, CONSOLE_SID)["shiny"]
     result = _run(state, cap=4)
@@ -215,11 +189,10 @@ def test_the_stub_leaves_the_rng_untouched_when_the_cap_runs_out():
 
 @needs_unicorn
 def test_the_stub_returns_and_the_run_says_how_long_it_blocked_for():
-    """There is no menu to back out of in the overworld, so a stub that does not return is a frozen
-    game. `emulate` refuses one instead of returning a result."""
+    """A stub that does not return freezes the overworld; `emulate` refuses one."""
     result = _run(0x52E6B438)
     assert result["instructions"] > 0
-    # An estimate from the GBA's clock, not a hardware measurement - see the module.
+    # An estimate from the GBA's clock, not a hardware measurement.
     assert native_script.frames_for(result["instructions"]) < 60
 
 
@@ -231,45 +204,29 @@ def test_a_stub_that_never_returns_is_refused_rather_than_run():
 
 
 def test_the_battle_never_starts_from_inside_the_save_block():
-    """and it is the sharpest rule this project has about RAM scripts.
-
-    `CB2_InitBattle` and `InitOverworldBgs` both call `MoveSaveBlocks_ResetHeap`
-    [decomp:src/battle_main.c:614, src/overworld.c:1337], which re-rolls gSaveBlock1's address by
-    a multiple of 4 in 0..124 [SAVEBLOCK_MOVE_RANGE, src/load_save.c:75]. The engine holds the RAM
-    script by a POINTER INTO THAT BLOCK, so after a battle it resumes at an address the script no
-    longer occupies: `releaseall` + `end` written after dowildbattle are simply not there. A stray
-    second battle, a clean walk away and a dead overworld are
-    all the same mechanism landing in different places.
-
-    So no builder may leave `dowildbattle` in the body: the battle is started from
-    gSpecialVar_0x8000, which does not move, and the `end` the engine returns to sits beside it."""
+    """MoveSaveBlocks_ResetHeap re-rolls gSaveBlock1 after a battle [decomp:src/battle_main.c:614,
+    src/load_save.c:75] and the RAM script is held by a pointer into it: the battle starts from
+    gSpecialVar_0x8000, never from a `dowildbattle` in the body."""
     cases = ((native_script.build_shiny_hunt_script(132, 50), 132, 50),
              (native_script.build_mon_hunt_script(129, 5), 129, 5),
              (rng_script.build_wild_battle_script(0xC0DE, 132, 50), 132, 50))
     for script, species, level in cases:
-        # The tail, byte for byte: setwildbattle, the two bytes of the trampoline, and the jump
-        # out of the save block. 0xB7 still occurs in the body as DATA - it is half of the word
-        # setvar writes - so the check is on the command stream and not on the bytes.
+        # setwildbattle, the trampoline and the jump out of the save block. 0xB7 still occurs in the
+        # body as data.
         assert script.endswith(rng_script.battle_and_exit(species, level))
         assert script.endswith(bytes([rng_script.SCR_GOTO])
                                + rng_script.TRAMPOLINE_ADDRESS.to_bytes(4, "little"))
     assert rng_script.TRAMPOLINE_WORD == (native_script.SCR_DOWILDBATTLE
                                           | (rng_script.SCR_END << 8))
-    # Read back as commands rather than as bytes: nothing in a body IS a dowildbattle.
     for script, _species, _level in cases[:2]:
         lines = native_script.describe(script)
-        # The only mention left is inside the setvar's annotation, which is the trampoline itself.
         assert not any(line.strip().startswith("dowildbattle") for line in lines), lines
         assert "UNKNOWN" not in "".join(lines)
 
 
-# --- the three untried Mystery Event opcodes, in one card ----------------------------------------
-
 def test_the_opcode_sweep_runs_all_three_and_the_order_is_the_experiment():
-    """ONE status comes back and `setstatus` writes the same field every opcode writes
-    (ctx->data[2]) [decomp:src/mystery_event_script.c], so the last thing to run decides the answer.
-    Markers go AFTER each opcode; setenigmaberry goes last because its own status tells success
-    (2) from failure (1)."""
+    """`setstatus` and every opcode write ctx->data[2] [decomp:src/mystery_event_script.c];
+    setenigmaberry runs last."""
     from pokeldn.frlg.gift import wonder_card_events as w
     from pokeldn.frlg.rom import mystery_event
     script = w.MEVENT_SWEEP_GIFT.mevent
@@ -280,10 +237,8 @@ def test_the_opcode_sweep_runs_all_three_and_the_order_is_the_experiment():
 
 
 def test_the_sweep_berry_validates_and_keeps_the_cartridge_own_description_pointers():
-    """IsEnigmaBerryValid needs stageDuration and maxYield nonzero [decomp:src/berry.c:984]; the
-    checksum is recomputed by SetEnigmaBerry, so we do not have to produce one. The two ROM pointers
-    are not invented: they are read out of gSaveBlock1Ptr->enigmaBerry. They live in the save for
-    ever and the Berry Pouch dereferences them to print the description."""
+    """IsEnigmaBerryValid needs stageDuration and maxYield nonzero [decomp:src/berry.c:984]; the ROM
+    pointers come from the save."""
     from pokeldn.frlg.gift import wonder_card_events as w
     berry = w.build_sweep_berry()
     assert len(berry) == 28
@@ -291,8 +246,6 @@ def test_the_sweep_berry_validates_and_keeps_the_cartridge_own_description_point
     assert int.from_bytes(berry[12:16], "little") == w.MEVENT_SWEEP_BERRY_DESC1
     assert int.from_bytes(berry[16:20], "little") == w.MEVENT_SWEEP_BERRY_DESC2
 
-
-# --- mon-seek: the whole mon, not just the shine -------------------------------------------------
 
 def _mon_run(state, criteria, *, cap=None, tid=CONSOLE_TID, sid=CONSOLE_SID,
              instruction_limit=1 << 26):
@@ -320,9 +273,7 @@ def _accepts(mon, criteria):
 
 
 def test_the_packed_words_are_what_the_stub_reads():
-    """p_nature is a bit per nature and p_ivmin six 5-bit floors PLUS the terminator the loop
-    counts with: without bit 30 the IV loop in asm/field/mon-seek.s never ends, and a stub that
-    never ends is a frozen overworld."""
+    """Without bit 30 in p_ivmin the IV loop in asm/field/mon-seek.s never ends."""
     criteria = native_script.MonCriteria(natures=(0, 24), iv_minimums=(1, 2, 3, 4, 5, 6))
     assert criteria.nature_mask == (1 << 0) | (1 << 24)
     assert native_script.MonCriteria().nature_mask == native_script.ANY_NATURE == (1 << 25) - 1
@@ -358,19 +309,16 @@ def test_what_a_criterion_costs_is_arithmetic_and_not_a_guess():
     assert nature.probability == pytest.approx(plain.probability / 25)
     floored = native_script.MonCriteria(iv_minimums=(0, 0, 0, 16, 0, 0))
     assert floored.probability == pytest.approx(plain.probability / 2)
-    # The cap is the one that finds a state SEARCH_CONFIDENCE of the time, and nothing else.
     cap = native_script.cap_for(nature)
     assert native_script.search_cost(nature, cap)["found_within_cap"] >= 0.99
     assert native_script.search_cost(nature, cap - 1)["found_within_cap"] < 0.99
 
 
 def test_a_search_that_would_freeze_the_overworld_too_long_is_refused():
-    """A criterion never slows an iteration down, it multiplies how many are needed - so the cap
-    is what bounds the freeze, and the freeze is what the player sees."""
+    """The cap bounds the freeze the player sees."""
     greedy = native_script.MonCriteria(natures=(3,), iv_minimums=(0, 31, 0, 31, 0, 0))
     with pytest.raises(native_script.NativeScriptError, match="ceiling"):
         native_script.build_mon_hunt_script(132, 50, criteria=greedy)
-    # Raising the ceiling is a decision, so it is an argument: the same criteria then build.
     script = native_script.build_mon_hunt_script(132, 50, criteria=greedy,
                                                  max_freeze_frames=10 ** 9, cap=1 << 24)
     assert len(script) <= rng_script.MAX_RAM_SCRIPT_SIZE
@@ -388,8 +336,7 @@ def test_the_mon_hunt_script_stages_calls_and_then_battles_like_the_shiny_one():
 
 
 def test_the_bigger_stub_still_fits_the_only_budget_that_binds():
-    """160 bytes of the 163 a 995-byte RAM script allows. The margin is three bytes, so this is
-    the test that fails first when the stub grows."""
+    """160 bytes of the 163 a 995-byte RAM script allows."""
     code = native_script.stub("mon-seek")
     plan = native_script.budget(len(code), other=9)
     assert plan["fits"] and plan["spare"] >= 0
@@ -407,9 +354,7 @@ def test_the_bigger_stub_still_fits_the_only_budget_that_binds():
     native_script.MonCriteria(iv_minimums=(24, 0, 0, 0, 0, 0)),
 ], ids=["shiny", "nature", "two-natures-and-speed", "hp-floor"])
 def test_the_stub_lands_on_the_first_state_that_satisfies_everything_asked_for(state, criteria):
-    """Two independent statements, and the second is the one that catches a filter that is merely
-    LOOSE: the state it lands on passes, AND no state between here and there does. A nature test
-    that always said yes would pass the first half of this and fail the second."""
+    """The landing state passes and no state before it does."""
     landed, _instructions = _mon_run(state, criteria)
     assert _accepts(rng_countdown._mon_from(landed, CONSOLE_TID, CONSOLE_SID), criteria)
     walked = lcg.distance(state, landed)
@@ -424,9 +369,7 @@ def test_the_stub_lands_on_the_first_state_that_satisfies_everything_asked_for(s
 @needs_unicorn
 @pytest.mark.parametrize("index", range(6))
 def test_a_floor_lands_on_the_stat_it_names(index):
-    """The two IV draws are packed into one 30-bit word for the loop, 15 bits from each, and the
-    seam is between DEF and SPEED. A floor that landed one field over would still produce a shiny,
-    which is why the check is per stat and against the model rather than against the packing."""
+    """The IV draws pack 15 bits each with the seam between DEF and SPEED; checked per stat."""
     floors = [0] * 6
     floors[index] = 24
     criteria = native_script.MonCriteria(iv_minimums=tuple(floors))
@@ -437,8 +380,7 @@ def test_a_floor_lands_on_the_stat_it_names(index):
 
 @needs_unicorn
 def test_the_iteration_cost_the_host_quotes_is_the_one_unicorn_counts():
-    """`INSTRUCTIONS_PER_ITERATION` is what every freeze estimate rests on. Measure it instead of
-    trusting it: two states, and the count divided by the distance walked."""
+    """INSTRUCTIONS_PER_ITERATION, measured: the count over the distance walked."""
     criteria = native_script.MonCriteria()
     for state in (0x52E6B438, 0x6513270E):
         landed, instructions = _mon_run(state, criteria)
@@ -464,26 +406,21 @@ def test_the_richer_stub_also_leaves_the_rng_alone_when_the_cap_runs_out():
 
 
 def test_the_hunt_card_carries_the_criteria_it_says_it_does():
-    """The registry's definition is built with the defaults at import; a host given criteria on
-    the command line composes another card rather than mutating that one."""
+    """Command-line criteria compose another card; the registry's default is untouched."""
     from pokeldn.frlg.gift import wonder_card_events as w
     default = w.RNG_MON_HUNT_GIFT.mevent
     assert len(default) <= 0x400                     # the console's receive buffer
     other = w.build_rng_mon_hunt_gift(native_script.MonCriteria(natures=(0,))).mevent
     assert other != default and len(other) == len(default)
     assert w.RNG_MON_HUNT_GIFT.card.default_flag_id == w.RNG_MON_HUNT_FLAG_ID
-    # The two words the stub reads are the only difference between the two cards.
     differing = [i for i, (a, b) in enumerate(zip(default, other)) if a != b]
     assert 0 < len(differing) <= 4 * native_script.SETPTR_SIZE
 
 
 @needs_unicorn
 def test_the_bytes_the_console_will_actually_be_sent_search_for_what_the_card_says():
-    """THE WHOLE CHAIN, from the card down to the CPU, and starting from the bytes that go on the
-    air rather than from what we meant to build. The Mystery Event VM is run [mystery_event.run],
-    its `initramscript` payload is the field script the console would store, the `setptr` run in it
-    is read back into the bytes it stages, and those are what unicorn executes. That family of
-    bug - a path that only the live host takes - has no room left here."""
+    """From the card's bytes: mystery_event.run, its `initramscript`, the staged `setptr` bytes,
+    then unicorn."""
     from pokeldn.frlg.gift import wonder_card_events as w
     from pokeldn.frlg.rom import mystery_event
 
@@ -514,13 +451,8 @@ def test_the_bytes_the_console_will_actually_be_sent_search_for_what_the_card_sa
                     w.RNG_MON_HUNT_CRITERIA)
 
 
-# --- the payload in the body: one byte each instead of six ---------------------------------------
-
 def test_the_ramscript_offsets_are_the_decomps():
-    """A wrong offset here is a branch into whatever else is in the save block. The three come
-    from struct SaveBlock1 [decomp:include/global.h] and are checked against their neighbours:
-    unused_348C[400] ends where ramScript starts, and ramScript's own 1003 bytes end where
-    recordMixingGift starts at 0x3A08."""
+    """ramScript offsets from struct SaveBlock1 [decomp:include/global.h], checked against neighbours."""
     assert native_script.RAMSCRIPT_IN_SAVEBLOCK1 == 0x361C
     assert 0x348C + 400 == native_script.RAMSCRIPT_IN_SAVEBLOCK1
     assert native_script.RAMSCRIPT_MAGIC_OFFSET == 0x3620       # past the u32 checksum
@@ -531,11 +463,7 @@ def test_the_ramscript_offsets_are_the_decomps():
 
 
 def test_the_payload_starts_word_aligned_and_not_merely_even():
-    """THE TRAP THIS PROJECT ALMOST SPENT A RUN ON. A Thumb stub reads its literal pool with
-    `ldr rN, [pc, #imm]` and its tail with `adr`, both of which use Align(PC, 4). Two bytes off
-    and every pool word is read from two bytes past where it lives - the branch still lands, the
-    code still runs, and the constants are garbage. Even is enough to BRANCH, which is what makes
-    it quiet."""
+    """Thumb `ldr [pc]` and `adr` use Align(PC, 4): an even but unaligned stub runs with garbage constants."""
     assert native_script.BODY_ALIGNMENT == 4
     for tail in range(0, 40):
         assert native_script.body_prefix_size(tail) % native_script.BODY_ALIGNMENT == 0
@@ -545,8 +473,8 @@ def test_the_payload_starts_word_aligned_and_not_merely_even():
 
 
 def test_the_body_carries_several_times_what_staging_ever_could():
-    """The whole point. `setptr` charges six script bytes a payload byte; the body charges one,
-    because GetRamScript hands the engine the body itself [decomp:src/script.c:514]."""
+    """The body costs one byte a payload byte; GetRamScript hands the engine the body
+    [decomp:src/script.c:514]."""
     tail = rng_script.battle_and_exit(129, 5, 0)   # setwildbattle + setvar + goto
     assert len(tail) == 16
     room = native_script.body_capacity(len(tail))
@@ -569,7 +497,7 @@ def test_the_trampoline_is_the_only_thing_that_still_pays_six():
 
 def _far(state, criteria, *, sb1_base=0x02025734, magic=native_script.RAM_SCRIPT_MAGIC,
          truncate=0, cap=None, tid=CONSOLE_TID, sid=CONSOLE_SID):
-    """The REAL script, walked command by command, exactly as the field engine would."""
+    """The script walked command by command, as the field engine would."""
     body = native_script.build_mon_hunt_far_script(
         129, 5, criteria=criteria, cap=cap)
     assert len(body) == native_script.MAX_RAM_SCRIPT_SIZE
@@ -580,9 +508,7 @@ def _far(state, criteria, *, sb1_base=0x02025734, magic=native_script.RAM_SCRIPT
 
 @needs_unicorn
 def test_the_whole_script_finds_the_mon_it_was_asked_for_from_the_body():
-    """Not the stub on its own: the 36 `setptr`s, the `callnative`, the trampoline reading
-    gSaveBlock1Ptr and branching back into the body, and the search. A run can be lost to exercising
-    everything except the one path the hardware takes."""
+    """The whole script: 36 `setptr`s, `callnative`, the trampoline into the body, and the search."""
     criteria = native_script.MonCriteria(natures=(13,), iv_minimums=(0, 0, 0, 20, 0, 0))
     for state in (0x12345678, 0x7041F74F, 1, 0xFFFFFFFF):
         result = _far(state, criteria)
@@ -592,10 +518,8 @@ def test_the_whole_script_finds_the_mon_it_was_asked_for_from_the_body():
 
 @needs_unicorn
 def test_a_short_body_leaves_the_rng_alone_instead_of_searching():
-    """The filler is what makes the run prove the SIZE and not just the jump. Every filler byte is
-    non-zero and InitRamScript zero-fills what it was not given [ClearRamScript, script.c:495], so
-    a short delivery sums LOW and the stub returns without touching gRngValue: the player gets an
-    ordinary encounter, which is a readable miss and not a broken game."""
+    """InitRamScript zero-fills what it was not given [ClearRamScript, script.c:495]; a short body
+    sums low and the stub returns."""
     criteria = native_script.MonCriteria(natures=(13,))
     for truncate in (1, 2, 64, 500):
         result = _far(0x12345678, criteria, truncate=truncate)
@@ -604,9 +528,7 @@ def test_a_short_body_leaves_the_rng_alone_instead_of_searching():
 
 @needs_unicorn
 def test_a_wrong_save_block_offset_bails_instead_of_executing_anything():
-    """The magic guard is the whole safety argument for aiming at a moving block. If
-    ramScript.data.magic is not 51 the trampoline has not found the RamScript, so it must return
-    rather than branch - there is no menu to back out of in the overworld."""
+    """ramScript.data.magic other than 51 makes the trampoline return instead of branch."""
     result = _far(0x12345678, native_script.MonCriteria(), magic=0)
     assert result["rng"] == 0x12345678
     assert result["instructions"] < 20, "it should bail in single figures, not search"
@@ -614,19 +536,15 @@ def test_a_wrong_save_block_offset_bails_instead_of_executing_anything():
 
 @needs_unicorn
 def test_it_follows_the_save_block_wherever_this_load_put_it():
-    """`offset = Random() & ((SAVEBLOCK_MOVE_RANGE - 1) & ~3)` [decomp:src/load_save.c:75] is a
-    multiple of 4 in 0..124, re-rolled at every battle and load; measured moving 76 bytes
-    of movement between two reads minutes apart. The trampoline reads the pointer at run time, so
-    the offset is not a thing the card has to know."""
+    """The save block offset is re-rolled per battle and load [decomp:src/load_save.c:75]; the
+    trampoline reads it at run time."""
     criteria = native_script.MonCriteria(natures=(13,))
     answers = {_far(0x12345678, criteria, sb1_base=0x02025734 + offset)["rng"]
                for offset in (0, 4, 76, 124)}
     assert len(answers) == 1 and 0x12345678 not in answers
 
 
-# --- the stray draw, and the search that holds against it ----------------------------------------
-# A run read this off the console. It is the evidence for asm/field/mon-seek-both.s and it is a
-# fixture so that a change to the draw model has to answer for it.
+# Read off the console after the hunt; the fixture for asm/field/mon-seek-both.s.
 
 MEV20_PID = 0xCCCFF615                      # party slot 5, caught after the hunt
 MEV20_IVS = (25, 7, 14, 10, 10, 30)         # hp atk def spe spa spd, off the Misc substructure
@@ -640,12 +558,8 @@ def _ivs_from(first, second):
 
 
 def test_mev20_needed_one_extra_draw_between_the_personality_and_the_ivs():
-    """THE MEASUREMENT. The stub asked for shiny + Jolly + SPEED >= 20 and the console produced a
-    shiny Jolly MAGIKARP with SPEED 10. The state is not in doubt - exactly one state in 2**32 has
-    that PID on its next two draws - and from it the criteria are satisfied at draws 3,4 and the
-    mon that appeared came from draws 4,5. So the search was right and one Random() ran in
-    between. docs/frlg_rng.md already had this for wild encounters (Method 2); this is the first time
-    it has been seen on a scripted one, where earlier runs were clean."""
+    """Measured: the console built from draws 4,5 where the criteria held at 3,4, one extra Random()
+    (docs/frlg_rng.md)."""
     assert lcg.nature_of(MEV20_PID) == 13                       # Jolly
     draws, _ = lcg.draws(MEV20_STATE, 5)
     assert (draws[0], draws[1]) == (MEV20_PID & 0xFFFF, MEV20_PID >> 16), "low half first"
@@ -656,8 +570,7 @@ def test_mev20_needed_one_extra_draw_between_the_personality_and_the_ivs():
 
 
 def test_mev20_is_the_only_state_that_could_have_produced_that_pid():
-    """The claim above rests on the state being unique, so it is checked rather than asserted:
-    S1's low half is the PID's low half, which leaves 2**16 candidates, and one survives S2."""
+    """S1's low half is the PID's low half: 2**16 candidates, one survives S2."""
     lo, hi = MEV20_PID & 0xFFFF, MEV20_PID >> 16
     found = [lcg.unstep((lo << 16) | top) for top in range(1 << 16)
              if lcg.draw(lcg.unstep((lo << 16) | top))[0] == lo
@@ -666,10 +579,7 @@ def test_mev20_is_the_only_state_that_could_have_produced_that_pid():
 
 
 def test_two_words_cover_all_three_methods_docs_rng_records():
-    """The derivation in asm/field/mon-seek-both.s, checked rather than believed. Word A puts the
-    first IV triple on d3 and the second on d4; word B puts them on d4 and d5. Between them every
-    source draw each triple can have is covered, so Method 4 (first d3, second d5) passes without
-    its word ever being built."""
+    """Words A (d3, d4) and B (d4, d5) cover Method 4 (d3, d5) too [asm/field/mon-seek-both.s]."""
     criteria = native_script.MonCriteria(natures=(13,), iv_minimums=(0, 0, 0, 20, 0, 0))
     body = native_script.build_mon_hunt_both_script(129, 5, criteria=criteria)
     result = native_script.emulate_body_script(
@@ -686,10 +596,7 @@ def test_two_words_cover_all_three_methods_docs_rng_records():
 
 @needs_unicorn
 def test_the_two_placement_search_refuses_what_the_one_placement_search_accepts():
-    """The two stubs have to actually differ, or the run proves nothing. From the same state,
-    mon-seek-far stops at the first state that satisfies ONE placement and mon-seek-both walks
-    past it - so `both`'s answer is never earlier than `far`'s, and on at least one seed it is
-    strictly later because `far`'s answer fails Method 2."""
+    """`both` never answers before `far`, and on some seed strictly later."""
     criteria = native_script.MonCriteria(natures=(13,), iv_minimums=(0, 0, 0, 20, 0, 0))
     strictly_later = 0
     for state in (0x12345678, 0x7041F74F, 0xDEADBEEF, 1):
@@ -707,25 +614,20 @@ def test_the_two_placement_search_refuses_what_the_one_placement_search_accepts(
 
 
 def test_the_second_placement_squares_the_iv_term_and_nothing_else():
-    """The shiny and nature terms come from the personality, which is drawn BEFORE the stray and
-    is the same word in every method, so only the IV term is raised."""
+    """The personality precedes the stray draw, so only the IV term is raised."""
     criteria = native_script.MonCriteria(natures=(13,), iv_minimums=(0, 0, 0, 20, 0, 0))
     one = native_script.probability_for(criteria, 1)
     two = native_script.probability_for(criteria, 2)
     assert one == criteria.probability
     assert two == pytest.approx(one * (12 / 32))
-    # And the freeze it buys stays inside the ceiling at the confidence the card actually uses.
     cap = native_script.cap_for(criteria, native_script.BOTH_CONFIDENCE, 2)
     cost = native_script.search_cost(criteria, cap, 2)
     assert cost["worst_frames"] <= native_script.MAX_FREEZE_FRAMES
     assert cost["expected_seconds"] < 6
 
 
-# --- the hunt that reports what it did -----------------------------------------------------------
-
 def test_the_log_region_is_the_decomps_unused_block():
-    """A run read all 400 bytes of it off the console as zero before anything was written there, so
-    the decomp's `unused_348C` is true of the build this Switch runs and not only of the source."""
+    """Measured: all 400 bytes of `unused_348C` read zero on the console before any write."""
     assert native_script.HUNT_LOG_OFFSET == 0x348C
     assert (native_script.HUNT_LOG_OFFSET + 400
             == native_script.RAMSCRIPT_IN_SAVEBLOCK1), "unused_348C ends where ramScript starts"
@@ -733,8 +635,7 @@ def test_the_log_region_is_the_decomps_unused_block():
 
 
 def test_an_untouched_region_is_not_read_as_a_report():
-    """The marker is the whole reason a miss is legible. An exhausted search writes `found` 0 ON
-    PURPOSE, so without the marker it would decode the same as a stub that never ran at all."""
+    """An exhausted search writes `found` 0; the marker tells it from a stub that never ran."""
     assert native_script.decode_hunt_log(bytes(native_script.HUNT_LOG_SIZE)) is None
     record = native_script.HUNT_LOG_MAGIC.to_bytes(4, "little") + bytes(16)
     assert native_script.decode_hunt_log(record)["exhausted"] is True
@@ -742,8 +643,6 @@ def test_an_untouched_region_is_not_read_as_a_report():
 
 @needs_unicorn
 def test_the_hunt_writes_down_the_state_it_found_and_what_it_cost():
-    """No brute-force recovery, no ambiguity between candidate states: the answer is written where
-    a save-dump can read it."""
     criteria = native_script.MonCriteria(natures=(13,), iv_minimums=(0, 0, 0, 20, 0, 0))
     body = native_script.build_mon_hunt_log_script(129, 5, criteria=criteria)
     result = native_script.emulate_body_script(
@@ -755,16 +654,13 @@ def test_the_hunt_writes_down_the_state_it_found_and_what_it_cost():
     assert log["found_one"] and 0 < log["iterations"] <= log["cap"]
     mon = rng_countdown._mon_from(log["found"], CONSOLE_TID, CONSOLE_SID)
     assert mon["shiny"] and mon["nature"] == 13
-    # The stub counts the search itself, so the frames it implies must match what the host model
-    # predicts for that many iterations - the two are computed from opposite ends.
+    # The stub's count and the host model are computed from opposite ends.
     assert log["frames"] == pytest.approx(
         native_script.frames_for_iterations(log["iterations"]))
 
 
 @needs_unicorn
 def test_an_exhausted_search_still_says_what_it_spent():
-    """Until now an ordinary encounter and a stub that never ran looked identical from the player's
-    side. A cap of 1 cannot find anything, and the log says so."""
     criteria = native_script.MonCriteria(natures=(13,), iv_minimums=(0, 0, 0, 20, 0, 0))
     body = native_script.build_mon_hunt_log_script(129, 5, criteria=criteria, cap=1)
     result = native_script.emulate_body_script(
@@ -775,8 +671,6 @@ def test_an_exhausted_search_still_says_what_it_spent():
     assert result["rng"] == 0x12345678, "a miss must leave gRngValue exactly as it was"
 
 
-# --- the log closed the loop, and Method 4 fired ------------------------------------------
-
 MEV22_FOUND = 0x4FB97B07                    # written into the save by the stub itself
 MEV22_ITERATIONS = 603745                   # counted by the console
 MEV22_START = 0x91D7F204
@@ -785,24 +679,18 @@ MEV22_IVS = (25, 10, 30, 21, 3, 1)
 
 
 def test_the_consoles_own_counter_agrees_with_the_lcg_from_the_other_end():
-    """The stub counts its loop; `lcg.distance` solves the discrete log between the two states it
-    logged. Two independent computations, and they agree to the iteration - which is what makes
-    everything else in the record evidence rather than a number the console emitted."""
+    """The stub's loop count and `lcg.distance` between its logged states agree."""
     assert lcg.distance(MEV22_START, MEV22_FOUND) == MEV22_ITERATIONS
 
 
 def test_the_logged_state_predicts_the_caught_mon_with_no_recovery_at_all():
-    """Every earlier run brute-forced 2**16 candidates out of the PID, and one came back with two.
-    Here the state was read out of the save and the PID follows from it."""
     draws, _ = lcg.draws(MEV22_FOUND, 5)
     assert (draws[1] << 16) | draws[0] == MEV22_PID
     assert lcg.nature_of(MEV22_PID) == 13                       # Jolly
 
 
 def test_mev22_fired_method_4_and_the_two_placement_search_still_held():
-    """Method 4 puts the first IV triple on d3 and the second on d5 - a word mon-seek-both never
-    builds. It passes as a CONSEQUENCE of the floors holding on d3 and d4 and on d4 and d5, and
-    this is that consequence on hardware."""
+    """Method 4 (d3, d5) passes as a consequence of the floors on d3/d4 and d4/d5, measured on hardware."""
     criteria = native_script.MonCriteria(natures=(13,), iv_minimums=(0, 0, 0, 20, 0, 0))
     draws, _ = lcg.draws(MEV22_FOUND, 5)
     placements = {"1": _ivs_from(draws[2], draws[3]),

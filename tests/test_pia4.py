@@ -1,10 +1,4 @@
-"""Pia version 4, against the packets a retail Sword actually sent us.
-
-The two packets below are, captured while we held a seat in a Sword's LDN
-session with its Link Trade over local communication open. They are a GOLDEN VECTOR in the strict
-sense: the tag is sixteen bytes and unforgeable, so a change that breaks the derivation, the IV or
-the framing cannot pass these.
-"""
+"""Pia version 4 against packets a retail Sword sent; the 16-byte tag makes them a golden vector."""
 
 from Crypto.Cipher import AES
 
@@ -93,11 +87,8 @@ def test_every_message_header_in_the_capture_held_the_same_constants():
         assert header[8:16] == b"\0" * 8           # destination, broadcast
 
 
-# --- What we send back ------------------------------------------------------------
-#
-# There is no capture of a version-4 packet LEAVING this machine, so the only offline checks
-# available are these two: our builder reproduces the console's own bytes when handed the console's
-# own values, and a packet we build decrypts under the derivation the console would use on it.
+# No capture of our own version-4 packet exists: the builder reproduces the console's bytes from its
+# values, and our packets decrypt under its derivation.
 
 from pokeldn.ldn import local_protocol as lp, station_protocol as stp
 
@@ -106,9 +97,8 @@ OUR_MAC = bytes.fromhex("7e5f4c3b2a19")
 
 
 def test_the_console_constant_id_is_what_its_message_header_carries():
-    """Two independent fields agree: the update session's host_constant_id and the message
-    header's eight-byte source, both `ldn_constant_id` over the scanned MAC - and they disagree
-    about byte order, the header big-endian and the Local Protocol's body little-endian."""
+    """host_constant_id and the header's source are both `ldn_constant_id` over the MAC: big-endian
+    in the header, little-endian in the body."""
     plain = _decrypt(STATION_ANNOUNCE)
     header, body = pia4.parse_messages(plain)[0]
     assert pia4.parse_message_header(header)["source"] == CONSOLE_CONSTANT \
@@ -124,8 +114,7 @@ def test_our_builder_reproduces_the_consoles_own_message_header():
 
 
 def test_the_announcement_is_the_local_protocols_update_session():
-    """Protocol 0x24 is Pia's Local Protocol here too - BDSP's parser reads Sword's field for
-    field, which is what says the ack is the right thing to answer with."""
+    """Protocol 0x24 is Pia's Local Protocol; BDSP's parser reads Sword's field for field."""
     body = pia4.parse_messages(_decrypt(STATION_ANNOUNCE))[0][1]
     us = lp.parse_update_session(body)
     assert us.sequence_id == 2 and us.allow_participating
@@ -134,8 +123,7 @@ def test_the_announcement_is_the_local_protocols_update_session():
 
 
 def test_a_packet_we_build_decrypts_the_way_the_console_would_read_it():
-    """End to end, with the run's own derivation on both sides: ack -> message -> packet ->
-    the receiver's IV -> the ack's sequence id back out."""
+    """Ack, message, packet, the receiver's IV, and the ack's sequence id back out."""
     keys = session_keys(_Net())
     our_constant = stp.ldn_constant_id(OUR_MAC)
     for station in (0, 1):
@@ -145,7 +133,7 @@ def test_a_packet_we_build_decrypts_the_way_the_console_would_read_it():
                                    packet_iv(keys, OUR_MAC, nonce8, source_id=station),
                                    body, station=station, nonce8=nonce8)
 
-        h = pia4.PiaHeader4.parse(packet)              # now read it as the console would
+        h = pia4.PiaHeader4.parse(packet)
         assert h.station == station and h.version == 4 and h.encrypted
         plain = pia4.decrypt_payload(keys.session_key,
                                      packet_iv(keys, OUR_MAC, h.nonce8, source_id=h.station),
@@ -161,7 +149,7 @@ def test_a_packet_we_build_decrypts_the_way_the_console_would_read_it():
 
 def test_the_tag_refuses_a_packet_built_under_the_wrong_station_byte():
     """The IV's source id follows the header byte, so a receiver reading 0 cannot verify a packet
-    built with 1 - which is what makes the sweep readable rather than ambiguous."""
+    built with 1."""
     keys = session_keys(_Net())
     nonce8 = b"\x11" * 8
     body = pia4.build_message(lp.build_ack(2), protocol=lp.PROTOCOL, source=0)
@@ -171,9 +159,7 @@ def test_the_tag_refuses_a_packet_built_under_the_wrong_station_byte():
                                 pia4.ciphertext(packet), pia4.PiaHeader4.parse(packet).tag) is None
 
 
-# --------------------------------------------------------------------------- more than one message
-# the first capture in which a Sword ever put two messages in one packet. Both vectors are
-# the decrypted plaintext of a real packet, taken from the capture rather than typed.
+# Decrypted plaintext of real packets carrying two messages each.
 
 SW29_RELIABLE = bytes.fromhex(          # RTT, then three reliable-window messages
     "7f010010580000000000000000000002eb9b2220f14800000000000000000000"
@@ -197,16 +183,14 @@ def test_a_header_is_as_long_as_its_presence_byte_says():
 
 
 def test_a_presence_byte_of_zero_is_a_message_and_not_the_end_of_the_packet():
-    """The console's own walk stops at 0xFF alone (0x01852da0). Stopping at 0x00 as well threw
-    away two of the three reliable messages in this packet. Over one capture the old walk found
-    247 messages where there are 1740, and left a non-padding tail on 159 of 238 packets."""
+    """The console's walk stops at 0xFF alone (0x01852da0); stopping at 0x00 drops messages."""
     msgs = pia4.parse_packet(SW29_RELIABLE)
     assert [m["present"] for m in msgs] == [0x7F, 0x06, 0x00, 0x00]
     assert [m["protocol"] for m in msgs] == [0x58, 0x7C, 0x7C, 0x7C]
     assert [m["header_size"] for m in msgs] == [24, 7, 1, 1]
     last = msgs[-1]
     used = last["at"] + last["header_size"] + last["size"]
-    assert used == len(SW29_RELIABLE)                       # every byte accounted for
+    assert used == len(SW29_RELIABLE)
 
 
 def test_an_omitted_field_comes_from_the_previous_message_in_the_packet():
@@ -229,14 +213,13 @@ def test_the_walk_consumes_each_packet_up_to_its_ff_padding():
 
 
 def test_parse_messages_still_hands_back_the_header_as_sent():
-    # every caller and capture tool speaks this; a short header stays short
     assert [len(h) for h, _ in pia4.parse_messages(SW29_RELIABLE)] == [24, 7, 1, 1]
     assert pia4.parse_message_header(pia4.parse_messages(SW29_TWO_PORTS)[1][0]) == {
         "present": 0x04, "proto_port": 0x80000001, "protocol": 0x80, "port": 1}
 
 
 def test_swords_rtt_and_reliable_messages_read_through_the_modules_we_have():
-    """A run's own bodies. RTT needed a version-4 size; the reliable window needed nothing."""
+    """Sword's own RTT (a version-4 size) and reliable-window bodies."""
     from pokeldn.ldn import reliable5 as r5, rtt_protocol as rtt
 
     req = bytes.fromhex("000000000000000000000e7840e6df87")
@@ -263,7 +246,7 @@ def test_a_compressed_payload_is_decompressed_and_says_so():
     assert m["compressed"] is True
     assert m["raw_payload"] == SW29_BROADCAST and m["size"] == len(SW29_BROADCAST) == 42
     assert len(m["payload"]) == 625                      # what the console actually said
-    # and read RAW it is the trap: a well-formed-looking header claiming 0x6260 of payload
+    # Read raw, a well-formed-looking header claims 0x6260 of payload.
     assert int.from_bytes(SW29_BROADCAST[2:4], "big") == 0x6260
 
 
