@@ -19,7 +19,7 @@ sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 from pokeldn import config
 from pokeldn import sv
 from pokeldn.ldn import pia6, pia_connect, reliable5
-from pokeldn.sv import pokemon, port2, streams, trade
+from pokeldn.sv import pokemon, port2, reference, streams, trade
 from pokeldn.pla import game_channel
 from pokeldn.ldn.ldn_mitm_host import IpHostTransport
 from pokeldn.ldn.transport import HostTransport, board_radio, find_ap_phy
@@ -245,7 +245,11 @@ def build_parser():
                     help="a directory of NNN.bin records to send on 0x81 port 0 as this host's own "
                          "identity, the way a pair's host sends its 46; the first carries "
                          "INITIALIZED and every one is already zlib "
-                         "(scratchpad/sv_extract_records.py writes such a set)")
+                         "(scratchpad/sv_extract_records.py writes such a set); by default the "
+                         "recorded set in pokeldn.sv.reference")
+    ap.add_argument("--no-identity", action="store_true",
+                    help="send no station identity unless --record-set or --send-on-open names "
+                         "one; by default the recorded one in pokeldn.sv.reference")
     ap.add_argument("--record-delay", type=float, default=0.0,
                     help="seconds after the seat before the record set goes out")
     ap.add_argument("--records-per-packet", type=int, default=1, metavar="N",
@@ -286,7 +290,8 @@ def build_parser():
                     help="DELAY:PROTO:PORT:HEX[:z][:start|:end], sent that many seconds after the "
                          "console announces its own key 0x80 open on 0x7c port 1. A port-0 "
                          "message sent before that open is acknowledged by the console and never "
-                         "reaches the game, and so is everything after it on that port; repeatable")
+                         "reaches the game, and so is everything after it on that port; "
+                         "repeatable; by default the identity fragments in pokeldn.sv.reference")
     ap.add_argument("--offer-after-open", type=float, default=None,
                     help="seconds after the console's key-0x80 open at which the host offers "
                          "first; the same gate as --send-on-open")
@@ -305,6 +310,7 @@ def build_parser():
 def main():
     ap = build_parser()
     args = ap.parse_args()
+    reference.fill_identity(args)
     try:
         host_player_id = binascii.unhexlify(args.host_player_id)
     except binascii.Error:

@@ -122,10 +122,9 @@ class GameStreams:
         self.last_selection = 0.0
         self.traded_at = None
         self.ref = {}
-        for name in ("identity10", "open11", "identity11", "identity11b", "selection"):
-            path = os.path.join(args.game_dir, f"za_ref_{name}.bin")
-            if os.path.exists(path):
-                self.ref[name] = open(path, "rb").read()
+        for name in za.reference.NAMES:
+            if os.path.exists(os.path.join(args.game_dir, f"{name}.bin")):
+                self.ref[name] = za.reference.load(name, args.game_dir)
         # The preview marked 1, the pick marked 0 (docs/za.md, Hosting).
         self.offer = self.preview = None
         if args.trade_offer:
@@ -320,8 +319,9 @@ def build_parser():
     ap.add_argument("--game", action="store_true",
                     help="once the session is up, open the game's reliable streams and send the "
                          "identity, the selection record and, with --trade-offer, an offer")
-    ap.add_argument("--game-dir", default="scratchpad",
-                    help="where the reference payloads za_ref_*.bin live")
+    ap.add_argument("--game-dir", default=za.reference.DIR,
+                    help="where the reference payloads (identity10.bin, selection.bin, ...) live; "
+                         "by default the ones pokeldn.za.reference ships")
     ap.add_argument("--fresh-pid", action="store_true",
                     help="send the offer under a new PID and encryption constant, shiny state kept, "
                          "so a save that took this record before takes it again")

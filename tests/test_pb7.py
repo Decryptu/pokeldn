@@ -4,7 +4,7 @@ import struct
 
 import pytest
 
-from pokeldn.lgpe import pb7
+from pokeldn.lgpe import pb7, reference
 
 OFFER = os.path.join(os.path.dirname(__file__), "..", "scratchpad",
                      "ip18_pia.jsonl.payload2.bin")
@@ -108,12 +108,8 @@ def test_the_joiner_answers_an_offer_once_with_a_structure_the_game_accepts(mess
 
 
 def test_the_first_message_a_capture_gives_us_carries_the_hosts_own_trainer(message):
-    """The marker payload came from two emulators sharing a save, so its trainer ids are the host's."""
-    marker = os.path.join(os.path.dirname(__file__), "..", "scratchpad",
-                          "lgpe_joiner_first_named.bin")
-    if not os.path.exists(marker):
-        pytest.skip("the marker payload is not here")
-    with open(marker, "rb") as fh:
+    """The recorded identity came from two emulators sharing a save, so its trainer ids are the host's."""
+    with open(reference.IDENTITY, "rb") as fh:
         ours = pb7.parse_message(fh.read())
     offer = pb7.decrypt(pb7.parse_message(message)["body"])
     assert pb7.trainer_id(ours["body"]) == pb7.trainer_id(offer, pb7.BOX_TRAINER_ID)

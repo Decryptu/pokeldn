@@ -36,9 +36,9 @@ def build_parser():
     ap.add_argument("--capture", default=None, help="every datagram as one JSON line")
     ap.add_argument("--player-name", default=" ",
                     help="the LDN node name; a searching console advertises one space")
-    ap.add_argument("--game-dir", default="scratchpad",
-                    help="where the reference payloads za_ref_identity10.bin, "
-                         "za_ref_identity11b.bin and za_ref_selection.bin live")
+    ap.add_argument("--game-dir", default=za.reference.DIR,
+                    help="where identity10.bin, identity11b.bin and selection.bin live; by "
+                         "default the ones pokeldn.za.reference ships")
     ap.add_argument("--trade-offer", default=None,
                     help="the 354-byte offer message: the preview, then our pick")
     ap.add_argument("--fresh-pid", action="store_true",
@@ -62,14 +62,10 @@ def build_parser():
 
 
 def load_payloads(args):
-    def read(name):
-        path = os.path.join(args.game_dir, name)
-        with open(path, "rb") as fh:
-            return fh.read()
-    identity = read("za_ref_identity10.bin")
+    identity = za.reference.load("identity10", args.game_dir)
     # The nine-byte message after the identity on protocol 11, stored with the joiner's prefix.
-    tail = read("za_ref_identity11b.bin")[streams.PREFIX_SIZE:]
-    selection = read("za_ref_selection.bin")
+    tail = za.reference.load("identity11b", args.game_dir)[streams.PREFIX_SIZE:]
+    selection = za.reference.load("selection", args.game_dir)
     offer = None
     if args.trade_offer:
         with open(args.trade_offer, "rb") as fh:

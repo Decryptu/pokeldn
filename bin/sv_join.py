@@ -30,7 +30,7 @@ import ldn
 
 from pokeldn import sv
 from pokeldn.ldn import ldn_mitm, pia6, pia_connect, reliable5
-from pokeldn.sv import pokemon, port2, streams, trade
+from pokeldn.sv import pokemon, port2, reference, streams, trade
 from pokeldn.pla import game_channel
 from pokeldn.ldn.transport import board_radio, find_ap_phy
 from pokeldn.host_support import resolve_keys
@@ -264,7 +264,11 @@ def build_parser():
                     help="send this directory's records as our own on 0x81 port 1, in sequence "
                          "order, in place of --mirror-records. `scratchpad/sv_extract_records.py` "
                          "writes one from a station's own log, so a whole real identity can be "
-                         "replayed rather than the host's mirrored back")
+                         "replayed rather than the host's mirrored back; by default the recorded "
+                         "set in pokeldn.sv.reference")
+    ap.add_argument("--no-identity", action="store_true",
+                    help="send no station identity unless --record-set or --send-on-open names "
+                         "one; by default the recorded one in pokeldn.sv.reference")
     ap.add_argument("--mirror-records", action="store_true",
                     help="send every record the host puts on 0x81 port 0 back on port 1 as our "
                          "own, in order. A retail joiner answers the host's records with a set of "
@@ -281,7 +285,8 @@ def build_parser():
                     help="DELAY:PROTO:PORT:HEX[:z][:start|:end], sent that many seconds after the "
                          "host announces key 0x80 open on 0x7c port 1. A station's identity is "
                          "four messages on 0x7c port 0, the two fragments twice, and nothing sent "
-                         "on that port before the announcement reaches the game; repeatable")
+                         "on that port before the announcement reaches the game; repeatable; by "
+                         "default the identity fragments in pokeldn.sv.reference")
     ap.add_argument("--fresh-pid", action="store_true",
                     help="offer each record under a new PID and encryption constant, shiny state "
                          "kept, so a save that took it before takes it again")
@@ -409,6 +414,7 @@ def describe_offer(body):
 def main(argv=None):
     ap = build_parser()
     args = ap.parse_args(argv)
+    reference.fill_identity(args)
     # A killed run loses a block-buffered stdout, and the seat's log with it.
     try:
         sys.stdout.reconfigure(line_buffering=True)

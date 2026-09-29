@@ -35,7 +35,7 @@ from pokeldn.host_support import resolve_keys
 from pokeldn.lgpe import (COMM_ID_PIKACHU, PASSPHRASE, PIA_PORT, PIA_VERSION, packet_iv,
                           session_keys)
 from pokeldn.lgpe.session import APP_HEADER_SIZE
-from pokeldn.lgpe import pb7
+from pokeldn.lgpe import pb7, reference
 from pokeldn.lgpe.leave import Leaver
 from pokeldn.lgpe.trade import fresh_offer
 from pokeldn.lgpe.trade import (TRADE_IN_PROGRESS, _answer_commit, _answer_offer,  # noqa: F401
@@ -252,9 +252,11 @@ def build_parser():
     ap.add_argument("--nat-location", action="store_true",
                     help="send nat flags 5 and nat location 1. A Let's Go joiner sends zero for "
                          "both on local wireless")
-    ap.add_argument("--reliable-payload", default=None,
-                    help="a file holding the game payload to send on the Reliable Protocol (0x7c) "
-                         "once the clone elements are up. Without it nothing is sent there")
+    ap.add_argument("--reliable-payload", default=reference.IDENTITY,
+                    help="files, comma-separated, holding the game payloads to send on the "
+                         "Reliable Protocol (0x7c) once the clone elements are up; by default the "
+                         "recorded identity in pokeldn.lgpe.reference, and an empty value sends "
+                         "nothing there")
     ap.add_argument("--reliable-interval", type=float, default=4.0,
                     help="seconds between the payloads of --reliable-payload")
     ap.add_argument("--no-rtt", action="store_true",

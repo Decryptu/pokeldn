@@ -55,6 +55,20 @@ Recorded before the ESP32 radio, with a Linux Wi-Fi card (ALFA AWUS036ACHM).
 - **Scarlet / Violet**, **Legends Z-A**: trade both ways with a record composed from nothing
 - **Every game**: an offline toolkit for reading a retail title's own code (`tools/switch/`)
 
+## Desktop app
+
+The [releases](https://github.com/Decryptu/pokeldn/releases) carry a desktop app for macOS (Apple
+silicon), Windows and Linux. It includes the radio firmware and flashes the board, builds legal
+Pokemon to offer with [PKHeX.Core](https://github.com/kwsch/PKHeX), and runs every trade and Mystery
+Gift below with the tested settings. The only file it asks for is `prod.keys`.
+
+- macOS: the app is unsigned; open it the first time with right-click, Open.
+- Linux: it needs GTK 3 and libsecret, present on desktop distributions, and serial access
+  (`sudo usermod -aG dialout $USER`).
+- From source: `pip install -r gui/requirements.txt`, then `python gui/main.py`; the Pokemon builder
+  needs `dotnet build -c Release gui/pkhex` (.NET 10 SDK). `python scripts/pack_app.py` builds the
+  app for the current OS into `dist/`.
+
 ## Requirements
 
 - A classic ESP32 board on USB (tested: ESP32-D0WD-V3, ELEGOO board, CP2102 bridge), flashed with
@@ -73,8 +87,9 @@ cd firmware/esp32 && idf.py build && idf.py -p PORT flash && cd ../..   # ESP-ID
 export POKELDN_RADIO=esp32:auto
 ```
 
-`PORT` is the board's serial device (`/dev/cu.usbserial-*` on macOS, `/dev/ttyUSB*` on Linux) and
-follows the USB socket. `esp32:auto` takes the only USB serial port present; `esp32:PORT` names one.
+`PORT` is the board's serial device (`/dev/cu.usbserial-*` or `/dev/cu.usbmodem*` on macOS,
+`/dev/ttyUSB*` or `/dev/ttyACM*` on Linux) and follows the USB socket. `esp32:auto` takes the only USB
+serial port present; `esp32:PORT` names one.
 `POKELDN_ESP32_TRACE=FILE` records every serial message and the board's counters. The exact IDF
 version is on [ESP32 radio](docs/hardware_esp32.md).
 
@@ -173,15 +188,16 @@ checksum, writes the sector back and bumps a counter so the game loads it. It ed
 
 ### Let's Go Pikachu and Eevee
 
-The trade screen alternates hosting and scanning, so pokeldn can host or join. Both need a captured
-kind-1 identity message (`--first` / `--reliable-payload`) and a 232-byte PB7 to offer
-(`pokeldn.lgpe.pb7`; `--offer echo` returns the console's own).
+The trade screen alternates hosting and scanning, so pokeldn can host or join. Both send a kind-1
+identity message: the joiner the one `pokeldn.lgpe.reference` ships, the host the console's own back
+(`--first echo`) or a file. Both offer a 232-byte PB7 (`pokeldn.lgpe.pb7`; `--offer echo` returns the
+console's own).
 
 ```bash
 ./.venv/bin/python bin/lgpe_host.py --seconds 600 --player-name PkCamp \
-  --first identity.bin --our-trainer 41234:12345 --offer offer.pb7
+  --first echo --our-trainer 41234:12345 --offer offer.pb7
 ./.venv/bin/python bin/lgpe_join.py --connect --connect-seconds 300 \
-  --reliable-payload identity.bin --ack-peer-clock --ack-re-announce \
+  --ack-peer-clock --ack-re-announce \
   --our-trainer 41234:12345 --offer offer.pb7 --leave-after 15
 ```
 
@@ -190,29 +206,23 @@ screen. See [Let's Go](docs/lgpe.md).
 
 ### Sword and Shield
 
-Both directions need a **snapshot** of the console's party, captured once from the same console.
-Console: Y-Comm → Link Trade → local communication, wait on the search screen.
+Console: Y-Comm → Link Trade → local communication, A on both messages, wait on the search screen.
 
 ```bash
-# 1. capture the snapshot (sends no party), 2. extract it
+# join the console's session and trade: the console's own party snapshot is sent back, rewritten
 POKELDN_RADIO=esp32:auto ./.venv/bin/python bin/swsh_connect.py --keys PROD_KEYS \
-  --preset capture --capture scratchpad/swsh_first.jsonl
-./.venv/bin/python tools/switch/swsh_snapshot.py scratchpad/swsh_first.jsonl scratchpad/swsh_snapshot.bin
+  --preset trade --offer-slot 1 [--offer-file your.pk8]
 
-# 3a. join the console's session and trade (search again first)
-POKELDN_RADIO=esp32:auto ./.venv/bin/python bin/swsh_connect.py --keys PROD_KEYS \
-  --preset trade --send-snapshot scratchpad/swsh_snapshot.bin --offer-slot 1
-
-# 3b. or host, and let the console join
+# or host, and let the console join: needs the console's advertisement and a saved snapshot
 POKELDN_RADIO=esp32:auto ./.venv/bin/python bin/swsh_host.py --keys PROD_KEYS \
   --advert scratchpad/swsh_net_facts.json --snapshot scratchpad/swsh_snapshot.bin \
   --scene-id 60001 --channel 6 --seconds 900
 ```
 
-`swsh_net_facts.json` is what `bin/swsh_join.py --scan-only` writes (the advertisement, not a
-snapshot). `--offer-slot 1 --offer-file your.pk8` sends a PKHeX `.pk8`. For 3b the console joins from
-Y-Comm → Link Trade → trade, after A on both messages that follow; `--received FILE` saves what it
-sends, `--code 12345678` hosts for a Link Code search. Details: [Trading](docs/swsh_trade.md).
+`swsh_net_facts.json` is what `bin/swsh_join.py --scan-only` writes (the advertisement). A saved
+snapshot comes from `--preset capture` and `tools/switch/swsh_snapshot.py`. When hosting, the console
+joins from Y-Comm → Link Trade → trade, after A on both messages that follow; `--received FILE`
+saves what it sends, `--code 12345678` hosts for a Link Code search. Details: [Trading](docs/swsh_trade.md).
 
 Mystery Gift needs no session; the gift screen scans and a distributor advertises the card. Console:
 Mystery Gift → receive a gift → via local wireless.
@@ -285,9 +295,8 @@ The offline Link Trade search alternates scanning and hosting, so pokeldn hosts 
 ```bash
 ./.venv/bin/python bin/sv_host.py --seconds 240 --player-name RyuPlayer \
   --rtt-probe --net-property --clock --net-stations 4 --scarlet-response \
-  --record-set records/ --announce --announce-delay 5.25 \
+  --record-delay 0.17 --announce --announce-delay 5.25 \
   --send-at 6.00:0x7c:1:b90101b902b90280800001 \
-  --send-on-open 0.15:0x7c:0:<identity fragment>:z:start \
   --trade-offer offer.hex --offer-after-open 8
 ```
 

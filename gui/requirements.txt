@@ -1,0 +1,4 @@
+-r ../requirements.txt
+flet[all]==1.0.2
+esptool==5.4.0
+pyinstaller==6.22.3

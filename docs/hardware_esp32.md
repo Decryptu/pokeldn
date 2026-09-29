@@ -445,8 +445,8 @@ boots and never answers.
 ## Running
 
 `POKELDN_RADIO=esp32:<port>` puts every launcher's `ldn` calls on the board. `esp32:auto` takes the
-only USB serial port present (`/dev/cu.usbserial-*`, `/dev/cu.SLAB_USBtoUART*`, `/dev/ttyUSB*`) and
-refuses to choose between several, since opening a port resets its board. The port is opened once
+only USB serial port present (`/dev/cu.usbserial-*`, `/dev/cu.SLAB_USBtoUART*`,
+`/dev/cu.wchusbserial*`, `/dev/cu.usbmodem*`, `/dev/ttyUSB*`, `/dev/ttyACM*`) and refuses to choose between several, since opening a port resets its board. The port is opened once
 per process with DTR and RTS released; a CP2102 board on macOS resets on open regardless, so the host
 retries HELLO for 5 s before switching to 921600.
 
@@ -464,6 +464,25 @@ access point beacons itself.
 | `tools/ldn/esp32_first_contact.py` | first run against a new board: `--flash` writes the build with esptool, then HELLO, STATUS, an idle scan counting LDN action frames per channel and source, and with `--keys` the LDN library's scan, decrypting each network |
 | `tools/ldn/esp32_sniff.py` | a second board as a sniffer (SNIFF) |
 | `tests/test_esp32.py` | the LDN library's host and station on two simulated boards (`pokeldn.ldn.esp32_sim`), from scan to fragmented UDP through two userspace stacks |
+
+A CH9102 or CH343 USB bridge enumerates as CDC ACM: `/dev/ttyACM0` on Linux, `/dev/cu.usbmodem*` on
+macOS.
+
+### A board that decodes no OFDM
+
+A console's advertisements are HT MCS 3 ([Discovery](ldn.md#discovery)), so a board that cannot
+demodulate OFDM hears its DSSS beacons and none of its advertisements: `esp32_first_contact.py`
+counts 0 LDN action frames on every channel. Two checks separate it from a firmware or host fault:
+
+| check | a working board | a board that decodes no OFDM |
+|---|---|---|
+| `tools/ldn/esp32_census.py` next to a console or a busy access point | `OFDM` and `HT` among the good frames | good frames all `DSSS`; the OFDM frames fail with `rx_state` 65 |
+| joined to an access point as a station, the rate of the unicast frames the access point sends it | HT MCS 5 to 7 (HT40 access point) | about 97% at DSSS 5.5 Mbit/s, never above OFDM 6 or HT MCS 1 |
+
+A station association and a ping succeed on such a board: the access point's rate adaptation falls
+back to DSSS. One generic ESP32-WROOM-32 DevKit (ESP32-D0WD-V3 revision 3.1, CP2102) failed both
+checks with firmware other than pokeldn's; a WROOM-32E board with the same chip passed both, found
+Sword's gift network at once and delivered a Mystery Gift ([issue 1](https://github.com/Decryptu/pokeldn/issues/1)).
 
 ## Measured on a board
 
@@ -510,4 +529,6 @@ board-to-host at 92 KB/s.
   [Two boards reproduce the misses](#two-boards-reproduce-the-misses).
 - Whether an Espressif ESP32-WROOM-32E module misses fewer frames as an access point than the ELEGOO
   board's unbranded module is unmeasured. easyworld reports that a classic ESP32 must be the
-  ESP32-WROOM-32E and that the older ESP32-WROOM-32 does not trade reliably. Espressif's ESP32-DevKitC-32E carries that module; its shield reads ESP32-WROOM-32E with the Espressif logo.
+  ESP32-WROOM-32E and that the older ESP32-WROOM-32 does not trade reliably; one WROOM-32 DevKit
+  decoded no OFDM at all ([A board that decodes no OFDM](#a-board-that-decodes-no-ofdm)). Whether
+  that is the module or that one board is unknown. Espressif's ESP32-DevKitC-32E carries that module; its shield reads ESP32-WROOM-32E with the Espressif logo.

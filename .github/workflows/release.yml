@@ -1,0 +1,87 @@
+name: Release
+
+# A tag v* builds the radio firmware and the desktop app for macOS, Windows and Linux, and publishes
+# them as a GitHub release. Running it by hand builds the same files as workflow artifacts only.
+on:
+  push:
+    tags: ["v*"]
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  firmware:
+    runs-on: ubuntu-latest
+    container: espressif/idf:v6.1
+    steps:
+      - uses: actions/checkout@v4
+      - name: Build and merge the image
+        shell: bash
+        run: |
+          . "$IDF_PATH/export.sh"
+          cd firmware/esp32
+          idf.py build
+          idf.py merge-bin -o pokeldn-radio.bin
+          cp "$(find . -name pokeldn-radio.bin | head -n 1)" "$GITHUB_WORKSPACE/pokeldn-radio.bin"
+      - uses: actions/upload-artifact@v4
+        with:
+          name: firmware
+          path: pokeldn-radio.bin
+
+  app:
+    needs: firmware
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - os: macos-14
+            asset: pokeldn-macos-arm64.zip
+          - os: windows-latest
+            asset: pokeldn-windows-x64.exe
+          - os: ubuntu-22.04
+            asset: pokeldn-linux-x64.tar.gz
+    runs-on: ${{ matrix.os }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.13"
+      - uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: "10.0.x"
+      - uses: actions/download-artifact@v4
+        with:
+          name: firmware
+          path: gui/firmware
+      - name: Install
+        run: python -m pip install -r gui/requirements.txt
+      - name: Pack
+        run: python scripts/pack_app.py
+      - name: Archive (macOS)
+        if: runner.os == 'macOS'
+        run: ditto -c -k --keepParent dist/pokeldn.app "${{ matrix.asset }}"
+      - name: Archive (Windows)
+        if: runner.os == 'Windows'
+        run: Copy-Item dist/pokeldn.exe "${{ matrix.asset }}"
+      - name: Archive (Linux)
+        if: runner.os == 'Linux'
+        run: tar -czf "${{ matrix.asset }}" -C dist .
+      - uses: actions/upload-artifact@v4
+        with:
+          name: ${{ matrix.asset }}
+          path: ${{ matrix.asset }}
+
+  release:
+    if: startsWith(github.ref, 'refs/tags/v')
+    needs: app
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/download-artifact@v4
+        with:
+          path: assets
+          merge-multiple: true
+      - uses: softprops/action-gh-release@v2
+        with:
+          files: assets/*
+          generate_release_notes: true
