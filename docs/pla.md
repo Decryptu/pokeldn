@@ -813,9 +813,8 @@ showing, and the phase key close `b9 01 01 b9 02 b9 02 01 00 00`, which it does 
 
 ## A second trade in one session
 
-A retail console completed two trades on one ESP32-hosted session, returned to the trade box after
-each, and left normally without an error. Both rounds completed phases 3, 6, 11 and 14 and closed
-the phase key.
+Two consecutive trades and normal departure are verified on a retail console in one
+ESP32-hosted session.
 
 After a completed trade the scene calls `0x26d8fd0(net)` at `0x110aa04` (only when `[net+0xb8]` is
 6) and sets step `[scene+0xb4]` to 0xc. The reset:

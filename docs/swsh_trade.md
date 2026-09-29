@@ -50,23 +50,18 @@ for confirmation.
 
 ## Host migration
 
-Once the player accepts, the console sends twelve bytes on protocol 0x18 port 1 and nothing more on
-the application layer:
+When leaving after a trade, Sword can request host migration on protocol 0x18 port 1:
 
     0f 00 00 03 00 01 00 01   44 00 01
     ^ version 4's reliable header, sequence 1     ^ the mesh message
 
 `44` is MIGRATION_START, `[0x44, host index 0, new host index 1]`: the console names the client next
-host (`nn::pia::mesh::LeaveWithHostMigrationJob`). The named new host broadcasts
-`MIGRATION_FINISH [0x41, new host index, 1]`; other stations send `MIGRATION_RESPONSE
-[0x48, own station index]` to it. These use the reliable window of mesh port 1. Handlers:
-[The Pia layer](pia.md#host-migration).
+host (`nn::pia::mesh::LeaveWithHostMigrationJob`). The named client must broadcast
+`MIGRATION_FINISH` on the reliable window of mesh port 1
+([The Pia layer](pia.md#host-migration)).
 
-A retail Sword completed a trade without an error with `--answer-migration --update-mesh`.
-Phase 4 arrived at 65.44 s, box command 3 at 90.82 s, and `44 00 01` at 91.61 s. The client
-answered `41 01 01` and published mesh updates naming station 1 as host. The console sent no
-reliable acknowledgement of the finish, so the capture establishes the request and answer but
-does not establish a retained session after the handover.
+With `--answer-migration --update-mesh`, the client sends the finish and publishes mesh updates
+under its new host index. Retaining a session after the handover is unverified.
 
 ## Hosting a trade
 
@@ -371,7 +366,7 @@ network update's drain, outside the pump: `0x006a9a20` calls Pia's dispatch `0x0
 
 Content 40's command tick `0x010dae70` runs in the trade scene task: `0x00c8c6b0` calls
 `0x010c9bb0` at `0x00c8c6d8`, which calls the tick at `0x010c9c34`. The task dispatcher reaches
-it through `0x00f19770` and `0x00f19080`. Ten emulator cycles placed this tick before
+it through `0x00f19770` and `0x00f19080`. Emulator traces place this tick before
 `0x01109250`, then `0x00f1cc60`, then `0x01109308`. A command drained there can be consumed by
 the following scene tick.
 
@@ -419,11 +414,9 @@ Each acts only when `currentSeqNo` equals the committed phase `(s16)[content+0x8
   `0x006d33b0([content+0x1c0], targetSeqNo)`, state 10's write without states 8 and 9, the
   `0x006d3060`/`0x006d4f50` tests or the master test; the sender index is unread.
 
-An emulated Shield accepted `RequestForcedProceed{1,2}` on 30040: the receive handler observed
-committed phase 1, the job ran, and the console's pair advanced to 2 before the host published it.
-A second request advanced it to 3 without host `syncCommand` 1 or 2. Replacing every later command
-stalled the trade at "Communicating": shared and committed phase 3, predicted phase 2, pump state 2,
-delegate state 4. Advancing the shared phase alone is insufficient to complete the save sequence.
+`RequestForcedProceed` advances the shared phase without a `syncCommand`, verified on an emulated
+Shield. Replacing the later confirmation commands with these requests stalls the trade at
+"Communicating"; advancing the shared phase alone is insufficient to complete the save sequence.
 
 The job queue `content+0x310` (entries `+0x350`, count `+0x358`) runs in `0x010ddf40` from the pump
 (`0x010db7d4`); a job returning true is removed. The commit empties it.
@@ -465,7 +458,7 @@ Against an emulated Shield holding the host's card:
 | trainer id 848973 -> 111111 | yes; filed in a new slot beside the first |
 | Pokédex count 400 -> 401 | no |
 | name PkCamp -> PkCampX | no |
-| timestamp 1579861659 -> 1579861660, only byte 0x1A8 changed | yes |
+| timestamp_printed, only byte 0x1A8 changed | yes |
 
 A retail Sword draws the date received, the logo of `game` (0x24, 0 Sword) top left, the three
 ASCII bytes at 0x39 bottom left, a Rotom-Dex crown for `dex_complete` (0x30), and stars. The view

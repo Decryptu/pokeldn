@@ -207,11 +207,6 @@ from `+0xf8` before it is stored. On LDN, `0x01840b90` tests the local mesh cont
 construction sets both bytes to 1 (`0x017a06ac`, `0x0183c228`); the remaining event-1 gates
 still apply. Backend type alone does not exclude this branch.
 
-An emulated Shield joining a hosted trade had mode 2 and state 2 at initial mesh reset and
-after the save. Event 3 then cleared `+0xf8` and `+0x100`; neither slot-30 store ran. The
-experimental host's post-save `MIGRATION_START` received two `48 01` responses, with no
-completed migration event 2. A completed trade alone does not verify host migration.
-
 `LdnMatchmakeSession`'s slot 30 (`0x017a23d0`) returns `0xff` when `[this+0x18]` is null, otherwise
 `0x017672d0` of the 16-byte address at `[[this+0x18]+0x18]+0x2c0+8`: 0 when all zero, its first four
 bytes when the last twelve are zero, error `0x10c07` otherwise. Slot 28 (`0x017a23b0`) is the virtual
