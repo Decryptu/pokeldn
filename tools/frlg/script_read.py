@@ -6,25 +6,9 @@ next.
     ./.venv/bin/python tools/frlg/script_read.py DUMP.bin --base 0x081640EC --std-scripts
     ./.venv/bin/python tools/frlg/script_read.py DUMP.bin --base ADDR --with-every-dump
 
-`--base` is the `--dump-address` the run used; without `--start` the whole dump is walked as
-back-to-back scripts, which is what a region of `data/scripts/*.inc` actually is.
-
-`--with-every-dump` adds every other ROM dump in `scratchpad/`, paired with the `--dump-address`
-its launcher log records. 127 runs are on disk and a script does not care which one caught the
-block it jumps to; without this the plan proposes runs for bytes we already have. `--dump
-PATH@0xADDR` adds one by hand. It adds ONE cartridge's dumps - `--console`, FireRed by default -
-because the two cartridges keep the same code at addresses a segment delta apart and an image
-holding both answers with whichever it happened to place there.
-
-The operands are named, not just printed: a var, a flag, a special and a comparison all come back
-with the decomp's own name beside the number [pokeldn/frlg/rom/symbol_names.py, special_names.py]. An
-operand of 0x4000 or more is a variable REFERENCE whatever it sits in, because every ScrCmd body
-passes its arguments through VarGet [decomp:src/event_data.c:235].
-
-The last section is the useful one. Following the jumps finds every address these scripts reach for,
-and the ones this dump does not hold are printed as ready-made `--dump-address` lines, biggest catch
-first. A dump aimed there is asked for by the console's own scripts rather than guessed at, and
-several unknowns usually share one 1 KB window. docs/frlg_rom.md.
+`--base` is the run's `--dump-address`; without `--start` the dump is walked as back-to-back scripts.
+`--with-every-dump` adds one cartridge's other ROM dumps from `scratchpad/`, placed by their launcher
+logs. An operand of 0x4000 or more is a variable [decomp:src/event_data.c:235]. docs/frlg_rom.md.
 """
 import argparse
 import gzip
@@ -40,11 +24,7 @@ from pokeldn.frlg.rom import rom_map, scrcmd
 
 
 def dump_console(tag, log_text):
-    """-> which cartridge a run was against: its own `--expect-console`, else the tag.
-
-    The flag is the run's own record and is checked against the game data before anything is sent,
-    so it is the authority. The tag is the fallback for the runs that predate it, and it is the same
-    rule `run_mg_fast.sh` uses to pass the flag: `lgNN` is LeafGreen, anything else is FireRed."""
+    """-> which cartridge a run was against: its `--expect-console`, else the tag (`lgNN` is LeafGreen)."""
     match = re.search(r"--expect-console\s+(\w+)", log_text)
     if match:
         return match.group(1).lower()
@@ -52,22 +32,12 @@ def dump_console(tag, log_text):
 
 
 def dumps(directory):
-    """-> [(tag, console, base, data)] for every ROM dump in `directory`, from its launcher log.
-
-    The log line is the run's own argv, so the pairing is the run's, not a guess. A dump with no
-    `--dump-address` was a save-block or a scan and has no ROM address to place it at.
-
-    A `--dump-scatter` run comes back as ONE segment PER BLOCK, tagged `run[n]`: the file holds the
-    blocks end to end in the order the payload's table names them, and they are unrelated regions,
-    so a single base would put fifteen of the sixteen kilobytes in the wrong place."""
+    """-> [(tag, console, base, data)] for every ROM dump in `directory`, placed by its launcher log's
+    argv. A `--dump-scatter` run comes back as one segment per block, tagged `run[n]`."""
     directory = pathlib.Path(directory)
     found = []
-    # BOTH NAMES, BECAUSE THE ARCHIVE IS GZIPPED. `scratchpad/launcher_logs` holds 652 logs and
-    # every one of them is `*_launcher.log.gz`; a glob for the uncompressed name matched none, so
-    # `every_dump` returned nothing and every reading built on it came back empty. That is a silent
-    # failure with a loud symptom: `test_worker_names.py` regenerates the shipped table from these
-    # dumps and got an empty table. Read whichever name is on disk rather than re-expanding 652
-    # files - this box is short of disk, and the logs are an archive that is only ever read.
+    # The archived logs are `*_launcher.log.gz`: a glob for the plain name matched none and every
+    # reader built on this came back empty.
     logs = sorted((directory / "launcher_logs").glob("*_launcher.log*"))
     for log in logs:
         name = log.name[: -len(".gz")] if log.suffix == ".gz" else log.name
@@ -80,8 +50,6 @@ def dumps(directory):
         data, console = dump.read_bytes(), dump_console(tag, text)
         scatter = re.search(r"--dump-scatter\s+([0-9A-Fa-fx,]+)", text)
         if scatter:
-            # memory-dump-scatter: one file, but its blocks are UNRELATED regions, so the run's
-            # own list of bases is the only thing that says where each one belongs.
             size = int((re.search(r"--dump-size\s+(\d+)", text) or [None, "1024"])[1])
             for index, base in enumerate(int(part, 0) for part in scatter.group(1).split(",")
                                          if part):
@@ -96,14 +64,8 @@ def dumps(directory):
 
 
 def every_dump(directory, console="firered"):
-    """-> [(base, data)] for the dumps of ONE cartridge; `console=None` for all of them.
-
-    One cartridge at a time. A LeafGreen dump at 0x08081C9C is FireRed's 0x08081CC8 shifted by
-    that segment's -0x2C, and folding it into the same image as the FireRed dumps puts LeafGreen
-    bodies at FireRed addresses: gSpecials[54] is Script_HasTrainerBeenFought at 0x08083C08 on
-    FireRed, and a mixed image answers 0x08083C34, the +0x2C twin, whose body calls FlagSet where
-    the decomp calls FlagGet. Every call target read out of the wrong cartridge's copy is that
-    cartridge's address."""
+    """-> [(base, data)] for the dumps of ONE cartridge; `console=None` for all. A mixed image answers
+    LeafGreen bodies at FireRed addresses: gSpecials[54] read 0x08083C34, the +0x2C twin."""
     return [(base, data) for _tag, its_console, base, data in dumps(directory)
             if console is None or its_console == console]
 
@@ -114,8 +76,6 @@ def entry_points(data, base, args):
         return list(struct.unpack_from("<10I", data, rom_map.G_STD_SCRIPTS - base))
     if args.start:
         return args.start
-    # No entry points given: walk the dump as one script after another, which is how the decomp
-    # lays a script file out. Each run stops on a terminator and the next begins on the next byte.
     starts, cursor = [], 0
     while cursor < len(data):
         measured = scrcmd.shape(data, base, cursor)

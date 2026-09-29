@@ -1,23 +1,11 @@
 #!/usr/bin/env python3
 """Read a game update's RomFS in place: a BKTR section over the base game's RomFS.
 
-Offline and game-independent. An update NCA's RomFS section is a patch: a relocation table
-maps every virtual RomFS range either to a range of the update's own section (with its own
-counter, from a subsection table) or to a range of the base game's RomFS. Both tables sit at
-the end of the update's section and decrypt under the section's ordinary CTR, so the whole
-virtual RomFS can be read straight off the two containers without extracting either.
-
     ./.venv/bin/python tools/switch/bktr_read.py UPDATE.nsp --base BASE.nsp --list
     ./.venv/bin/python tools/switch/bktr_read.py UPDATE.nsp --base BASE.nsp \\
         --extract /Data/Managed/Metadata/global-metadata.dat --out global-metadata.dat
 
-Layouts are hactool's (nca.h, bktr.c). A relocation entry is {u64 virt, u64 phys, u32 is_patch}
-in 0x4000-byte buckets keyed by virtual offset; a subsection entry is {u64 phys, u32, u32 ctr}
-in 0x4000-byte buckets keyed by physical offset, and its ctr replaces bytes 4..8 of the section
-counter. A read never crosses a relocation entry, and a base-side read is the base NCA's own
-section at the physical offset.
-
-docs/switch_re.md "Reading a game update's RomFS".
+Layouts are hactool's (nca.h, bktr.c). docs/switch_re.md "Reading a game update's RomFS".
 """
 import argparse
 import os
@@ -51,8 +39,8 @@ def _buckets(raw, entry):
 
 
 def _lookup(keys, buckets, offset):
-    """hactool bktr.c: the last bucket whose key is <= offset, then the last entry whose
-    offset is <= offset, and the entry's reach ends at the next entry (or the bucket's end)."""
+    """hactool bktr.c: the last bucket whose key <= offset, then the last entry whose offset <= offset;
+    an entry reaches to the next entry or the bucket's end."""
     b = 0
     for i in range(1, len(keys)):
         if keys[i] > offset:

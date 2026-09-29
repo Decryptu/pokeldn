@@ -1,9 +1,7 @@
 #!/usr/bin/env python3
 """Decompress a Switch NSO (exefs module) into its three segments, laid out at their memory offsets.
 
-No lz4 dependency: NSO segments use the LZ4 *block* format, which is 40 lines. Written for the BDSP
-work - the Pia layer we need the key derivation from is statically linked into one of
-`main` / `sdk` / `subsdk0`.  Usage: nso_read.py <nso> <out.bin>
+No lz4 dependency: NSO segments use the LZ4 block format. Usage: nso_read.py <nso> <out.bin>
 """
 import struct, sys
 

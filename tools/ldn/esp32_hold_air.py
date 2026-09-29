@@ -3,13 +3,9 @@
 
     tools/ldn/esp32_hold_air.py HOST_TRACE SNIFF_TRACE --ap MAC --sta MAC [--min-ms 100]
 
-Holds come from the host trace's TX_DONE (0x8D): a frame done more than --min-ms after the previous
-TX-done. Each is found in the sniff trace by the access point's 802.11 sequence number; the console's
-frames from the head frame's first copy to its last are listed with their power-management bit.
-A sniffer on firmware that keeps ACKs also shows each ACK, and counts copies acknowledged on the air
-and yet sent again: the sender missed that ACK.
-The sniffer's arrival times lag the air, so only the order is used; --ap is the board's BSSID
-(the sender of most frames to --sta), not an infrastructure access point on the same channel."""
+Holds are TX_DONE (0x8D) frames done more than --min-ms after the previous one, found in the sniff
+trace by sequence number. Sniffer times lag the air, so only order is used. --ap is the board's
+BSSID, not an infrastructure access point on the same channel."""
 import argparse
 import struct
 

@@ -1,13 +1,10 @@
 #!/usr/bin/env python3
 """Name Pia's C++ classes and their virtual methods from the binary's own RTTI.
 
-main.bin keeps Itanium-ABI type_info records for nn::pia. Each one is
-{vtable-of-type_info, name*, [bases...]}, and every polymorphic class's vtable holds
-{offset-to-top, type_info*, method0, method1, ...}. Both the name pointer and the type_info pointer
-are RELATIVE relocations, so the whole map falls out of the relocation table - no heuristics.
+    ./.venv/bin/python tools/switch/rtti_names.py IMAGE TEXT_END [QUERY] [--rodata LO:HI]
 
-This is the same move `scripts/gen_worker_names.py` makes for FRLG: stop guessing what a function is
-and let the binary's own structure name it.
+Itanium-ABI type_info names and vtable slots are relative relocations, so the whole map falls out
+of the relocation table. docs/switch_re.md.
 """
 import sys, os, struct, collections
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
@@ -45,7 +42,7 @@ def build(img, text_end, rodata=None):
     # a type_info: slot+8 holds the name pointer (a string), slot+0 the type_info vtable
     typeinfos = {}
     for s, a in rel:
-        if not (lo <= a < hi):                    # the rodata band holding mangled names
+        if not (lo <= a < hi):
             continue
         nm = cstr(img, a)
         if not nm or nm[0] not in "N123456789PK" or len(nm) < 5:

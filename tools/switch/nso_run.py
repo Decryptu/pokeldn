@@ -1,10 +1,8 @@
 #!/usr/bin/env python3
 """Run a function out of a title's main NSO image under unicorn, with its nnSdk imports intercepted.
 
-An NSO's imported symbols are resolved at load time, so in the static image every PLT stub jumps
-through a zero GOT slot. This maps the stubs by name (nso_imports) and services the handful a
-self-contained routine needs in Python. Used to execute the game's own validators offline before
-spending a hardware run; bin/swsh_gift_host.py runs the Wonder Card validator with it."""
+In the static image every PLT stub jumps through a zero GOT slot: stubs are mapped by name
+(nso_imports) and serviced in Python. bin/swsh_gift_host.py runs the Wonder Card validator with it."""
 import os, struct, sys
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 from nso_imports import imports

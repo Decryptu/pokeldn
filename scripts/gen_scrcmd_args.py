@@ -1,44 +1,10 @@
 #!/usr/bin/env python3
 r"""Regenerate pokeldn/frlg/rom/scrcmd_args.py from the decompilation's own script macros.
 
-A field script is a byte stream: one opcode then its operands, and the operand WIDTHS are what say
-where the next opcode starts. asm/macros/event.inc is the authority - each macro emits its opcode
-as `.byte` and then a `.byte`/`.2byte`/`.4byte` per argument - so the whole table can be read out of
-it rather than transcribed. scrcmd_names.COMMANDS already gives the names; this gives the shapes,
-and together they disassemble any script the console holds.
-
     ./.venv/bin/python scripts/gen_scrcmd_args.py [~/pokefirered]
 
-Eleven macros have CONDITIONAL bodies and cannot be read as a flat list of directives. Each branch
-is walked separately, and a macro's branches resolve one of two ways:
-
-  - different opcodes, one per branch (`applymovement`/`applymovementat` are the two halves of one
-    `.ifb \map`), which is two ordinary ARGS entries; or
-  - one opcode with a different tail per branch (`trainerbattle`, ten of them), which is a VARIABLE
-    entry: a fixed head, and the tail chosen by one of the head's own operands.
-
-A line inside a command macro that emits bytes without being a `.byte`/`.2byte`/`.4byte` directive
-is a macro invocation, and there are three kinds. A macro event.inc defines itself is INLINED at
-the call site - `warp` is `.byte 0x39` then `formatwarp`, and only the callee knows the five
-operands that follow, so dropping the call would lose them. A macro named by a PARAMETER
-(`\jump \condition`) cannot be resolved and its route is dropped; the macro it stands for is read
-on its own. A macro defined in ANOTHER file (`map \map`, two bytes, asm/macros/map.inc) has its
-widths in SUBMACROS, and an unknown one RAISES rather than being skipped, because silently dropping
-emitted bytes is exactly how the operand stream drifts.
-
-Which brings the last distinction: `warp` is `.byte 0x39` then `formatwarp`, ONE instruction, but
-`giveitem` is `loadword` then `callstd`, TWO - and inlining alone cannot tell them apart, because
-both come out as one long emit sequence. A macro is a COMMAND macro (one instruction, one shape)
-only when every route through it starts with a literal `.byte 0xNN` of its own AND it does not
-reach another command macro. `formatwarp` starts with `map`, `stringvar` has a `.byte \id` route,
-so neither is a command macro and both inline; `loadword` is one, so `giveitem` is a composition
-and is not read for shapes at all - `loadword` and `callstd` already carry them.
-
-Inlining needs no argument substitution: a callee's branches are taken for every combination, and
-what is read off each route is the WIDTHS, which do not depend on the values passed. `formatwarp`
-emits `.byte`, `.2byte`, `.2byte` down all four of its branches; `stringvar` one `.byte` down all
-four of its. Where a callee's branches did differ in width, the opcode would come out VARIABLE and
-the selector check would refuse it rather than pick one.
+asm/macros/event.inc is the authority. Branch rules and the command-macro test: docs/frlg_rom_map.md,
+The conditional macros. An unknown sub-macro raises: dropping emitted bytes drifts the operand stream.
 """
 import pathlib
 import re
@@ -80,12 +46,8 @@ ARGS = {
 
 
 def parse_body(lines, bodies, seen=()):
-    """-> a node list for one macro body. A node is ('emit', width) or ('cond', [(label, nodes)]).
-
-    `.if`/`.ifb`/`.ifnb` open a conditional, `.elseif`/`.else` add an arm, `.endif` closes it.
-    Nesting is handled by recursion on the arm's own lines. `bodies` is every macro event.inc
-    defines, by name, so a call to one is inlined here; `seen` guards against a macro reaching
-    itself."""
+    """-> a node list for one macro body: ('emit', width, line), ('opaque', 0, line) or
+    ('cond', [(label, nodes)]). A macro event.inc defines is inlined; `seen` stops self-reach."""
     nodes, index = [], 0
     while index < len(lines):
         line = lines[index]
@@ -129,12 +91,9 @@ def parse_body(lines, bodies, seen=()):
 
 
 def paths(nodes):
-    """-> every (labels, emits) route through a node list. One route is one shape.
-
-    An emit is (width, source line, came from inside a conditional arm). That last flag is what
-    separates a variable command's fixed HEAD from its per-branch tail: taking the longest common
-    prefix of the shapes instead would swallow the pointer that every trainerbattle type happens to
-    share."""
+    """-> every (labels, emits) route; an emit is (width, line, inside a conditional arm). That flag
+    splits a variable command's head from its tail: a common prefix would swallow the pointer every
+    trainerbattle type shares."""
     routes = [((), ())]
     for node in nodes:
         if node[0] == "opaque":
@@ -243,7 +202,6 @@ def main():
                            if match), None)
             if branch is None or branch.group(2) not in battle_types:
                 raise SystemExit(f"{macro}: cannot tell which value picks a shape ({labels})")
-            # which HEAD operand is the macro parameter the branch tests? The one emitted from it.
             wanted = "\\" + branch.group(1)
             where = [index for index, (_w, line) in enumerate(head_emits)
                      if wanted in line.split()[1:]]

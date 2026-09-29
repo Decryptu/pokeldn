@@ -1,16 +1,10 @@
 #!/usr/bin/env python3
 """Resolve an NSO's R_AARCH64_RELATIVE relocations, so vtable slots can be read.
 
-An NSO's vtables are empty in the static image - each slot is filled at load time from a RELATIVE
-relocation whose ADDEND is the function address. So "who points at this function" is a question for
-the relocation table, not a pointer scan (the GCM pair had no pointers and no BL
-callers, which is what sent us here).
+    ./.venv/bin/python tools/switch/nso_relocs.py IMAGE [ADDEND ...]
 
-Two encodings carry them. A RELA table (DT_RELA) spends 24 bytes on each. A RELR table (DT_RELR,
-tag 0x24) packs them: an even entry is the address of a relocated word, and each odd entry that
-follows is a bitmap of the next 63 words, bit k for the word at address + 8*(k+1). RELR carries no
-addend, so the addend is the value the linker already stored at the slot. Legends Z-A's `main` uses
-RELR for every one of its relative relocations and a reader that knows only RELA sees none.
+An NSO's vtable slots are empty in the image and filled from RELATIVE relocations. RELR (DT_RELR,
+tag 0x24) carries no addend: the addend is the value stored at the slot. Legends Z-A uses only RELR.
 """
 import struct, sys
 

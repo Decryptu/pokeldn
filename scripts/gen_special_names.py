@@ -1,11 +1,7 @@
 #!/usr/bin/env python3
 """Regenerate pokeldn/frlg/rom/special_names.py from the decompilation.
 
-`gSpecials` is the field engine's second dispatch table: `ScrCmd_special` reads a u16, indexes the
-table and `bx`es through it [decomp:src/scrcmd.c:101]. Its address and its end come out of
-ScrCmd_special's own literal pool - 0x081639FC..0x081640EC, a span of 0x6F0, which is 444 entries
-and exactly the number in this list. The index IS the special, so the decomp's ORDER is what makes
-a dumped address nameable, the same way scrcmd_names.COMMANDS does for the 214 field commands.
+The index is the special [decomp:src/scrcmd.c:101], so the decomp's order names a dumped address.
 
     ./.venv/bin/python scripts/gen_special_names.py [~/pokefirered]
 """

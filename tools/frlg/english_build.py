@@ -7,41 +7,8 @@
     ./.venv/bin/python tools/frlg/english_build.py --boundaries   # the LeafGreen delta map, predicted
     ./.venv/bin/python tools/frlg/english_build.py --plan         # what to dump to close it
 
-WHAT THIS IS. `pret/pokefirered` builds `firered_switch` and `leafgreen_switch` - REVISION 10, the
-build the Switch release runs - and both come out byte-identical to the sha1 the decomp pins. It is
-the ENGLISH release, so it is NOT this project's cartridges: at the same address the French console
-and the English build agree on 3.7% of their bytes, because French text is a different length and
-everything after a string moves. What it is instead is a second cartridge PAIR whose every symbol,
-section and object is known, and the two pairs are built from the same source in the same order.
-
-THE MEASUREMENT. A French address and an English address hold the same function whenever the content
-matches, and the difference between them - the OFFSET - is piecewise constant, stepping only where a
-language-dependent object changes size. Two independent readings give it, and they agree everywhere
-both speak:
-
-  1. THE TABLES, free. `gSpecials[i]`, `gScriptCmdTable[i]` and `gMysteryEventScriptCmdTable[i]` are
-     the same function on both builds, so entry i on the console and entry i in the English ROM are
-     an offset point. 675 of them, off dumps already on disk, no fingerprinting and no run.
-  2. THE DUMPS. A 16-byte window that occurs exactly once in the English ROM places the French bytes
-     that equal it. Thousands of windows per dump, and a disagreement inside one run is visible.
-
-WHAT IT ANSWERS. Given the offset at an address, a French address becomes an English address, and
-the English ELF names it - statics included, which the link map does not carry. THE CONTROL IS THE
-POINT: run it against the 301 workers this project measured off the console's own bodies and it
-agrees 80 times and disagrees 0 times. A name from here is a DEDUCTION with that control behind it,
-never a measurement; `rom_map.CALLABLE` still means "called on hardware and something happened".
-
-AND THE LEAFGREEN DELTA MAP. The English pair's own FireRed<->LeafGreen delta map is computable
-exactly, by comparing the two ROMs: 0, -0x2c, -0x28, -0x24, -0x20, -0x1c4 - the same six values the
-French cartridges measured, in the same order. Each step happens inside a version-divergent object,
-not at its edge (title_screen.o, mystery_event_script.o, mystery_gift.o, pokemon.o, title_screen.o
-again), and byte comparison brackets each one to a few hundred bytes. Carried across by the offset
-map, that predicts where the French boundary is. A prediction, not a measurement - see --plan for
-what to dump to settle it, and docs/frlg_leafgreen.md for what it is worth.
-
-The build is not in this repository and never will be: it is a ROM. `scratchpad/legacy_linux/build_decomp.sh`
-makes it from the decomp in about two minutes, and both sha1s must match the decomp's own before any
-of this is worth reading.
+Method and results: docs/frlg_leafgreen.md. A name from here is a deduction, never a call target.
+The build is a ROM, made by scratchpad/legacy_linux/build_decomp.sh; both sha1s must match the decomp's.
 """
 import argparse
 import collections
@@ -90,11 +57,8 @@ class English:
 
     @property
     def symbols(self):
-        """-> {address: (name, ...)}, off the ELF so that STATIC functions are in it too.
-
-        An address can carry several names: `GetBoxMonData2` is `__attribute__((alias))` of
-        `GetBoxMonData3` [decomp:src/pokemon.c:3332], one function with two symbols, and reading
-        only the first would report a disagreement where there is none."""
+        """-> {address: (name, ...)}, off the ELF so that STATIC functions are in it too. An address
+        can carry two names: `GetBoxMonData2` aliases `GetBoxMonData3` [decomp:src/pokemon.c:3332]."""
         if self._symbols is None:
             out = collections.defaultdict(list)
             code = set()
@@ -153,7 +117,6 @@ class English:
         return self.symbols.get(address & ~1, ())
 
     def name_at(self, address):
-        """-> one name for what starts at `address`, or None."""
         names = self.names_at(address)
         return names[0] if names else None
 
@@ -166,8 +129,6 @@ def english(console="firered"):
         ENGLISH[console] = English(console)
     return ENGLISH[console]
 
-
-# --------------------------------------------------------------------------- the offset map
 
 def table_points():
     """-> [(french, english, source)] from the tables. Entry i is the same function in both builds."""
@@ -207,11 +168,7 @@ def dump_points(console="firered", step=4):
 
 
 def offset_runs(points, min_votes=MIN_VOTES):
-    """-> [(low, high, offset, points, source)] merging neighbours that agree.
-
-    A run is a claim that everything between its ends is that far from the English build. It holds
-    because the offset only moves where an object's size differs, and a run with hundreds of
-    agreeing points either side of an address is what says no such object is in between."""
+    """-> [(low, high, offset, points, source)] merging neighbours that agree."""
     runs = []
     for french, other, source in points:
         offset = other - french
@@ -255,17 +212,12 @@ def name_of(address, runs=None, console="firered"):
     return english(console).name_at((address & ~1) + offset)
 
 
-# --------------------------------------------------------------------------- the delta map
-
 DELTA_STEPS = ((0x0, -0x2C), (-0x2C, -0x28), (-0x28, -0x24), (-0x24, -0x20), (-0x20, -0x1C4))
 
 
 def english_delta_at(address, delta, length=64):
     """does the English LeafGreen hold, at `address + delta`, what English FireRed holds here?
-
-    Padding matches at every delta, so a window has to SAY something before its match means
-    anything: sixteen distinct byte values is what separates real content from a run of zeros and
-    from the 0xFF filler between objects."""
+    Padding matches at every delta: a window needs 16 distinct byte values to count."""
     fr, lg = english("firered").rom, english("leafgreen").rom
     i = address - ROM_START
     here = fr[i:i + length]
@@ -275,10 +227,8 @@ def english_delta_at(address, delta, length=64):
 
 
 def english_divergence(low, high, before, after, length=64):
-    """-> (last address that still maps at `before`, first that maps at `after`).
-
-    The step is INSIDE a version-divergent object, not at its edge, and between the two returned
-    addresses the builds hold different code and no delta is defined."""
+    """-> (last address that still maps at `before`, first that maps at `after`); the step is
+    inside a version-divergent object and no delta is defined between them."""
     last = None
     first = None
     for address in range(low, high):
@@ -319,11 +269,7 @@ def delta_windows(coarse=0x8000):
 
 def predicted_boundaries():
     """-> [(before, after, french low, french high, note)] carrying the English step across.
-
-    HYPOTHESIS, and the one the next run settles: the object that diverges is the same object on the
-    French cartridges - the delta values are the same six in the same order, which is what says so -
-    and the offset map puts it at a French address. Where the offset is not measured either side of
-    the step, the answer is a range as wide as the offsets around it."""
+    A prediction: it assumes the same object diverges on the French cartridges."""
     runs = merged_runs("firered")
     out = []
     for before, after, last, first in delta_windows():
@@ -351,8 +297,6 @@ def predicted_boundaries():
     return out
 
 
-# --------------------------------------------------------------------------- the control
-
 def check():
     """-> (agreed, disagreed, silent, uncovered) against every name the console's bodies proved."""
     runs = merged_runs("firered")
@@ -373,19 +317,9 @@ def check():
     return agreed, disagreed, silent, uncovered
 
 
-# --------------------------------------------------------------------------- what to dump next
-
 def plan(blocks=32):
-    """-> the scattered kilobytes that settle what is predicted rather than measured.
-
-    THE SHAPE, and it is why one address list serves both cartridges: a block fingerprinted into
-    ITS OWN English build gives the offset there, and the English pair's delta map joins the two
-    English addresses. So a LeafGreen block does NOT have to be aimed at the twin of a FireRed one -
-    which is what a bisection needs when the delta it is bisecting is the unknown. Dump the same 32
-    addresses on both consoles and every block is a delta point.
-
-    Blocks go where the offset is NOT measured yet: two at each prediction that already has one (the
-    control), and a spread across the recorded bracket where it does not."""
+    """-> the scattered kilobytes that settle what is predicted rather than measured. A block is
+    placed by its own English build, so one address list serves both cartridges."""
     runs = merged_runs("firered")
     out = []
     for before, after, low, high, note in predicted_boundaries():
@@ -413,8 +347,6 @@ def plan(blocks=32):
                 "object in it is language-dependent"))
     return out
 
-
-# --------------------------------------------------------------------------- CLI
 
 def main():
     parser = argparse.ArgumentParser(description=__doc__.split("\n")[0])

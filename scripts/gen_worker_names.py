@@ -3,40 +3,8 @@
 
     ./.venv/bin/python scripts/gen_worker_names.py [~/pokefirered] [--report] [--check]
 
-The method, mechanised. A table entry is a function nameable from the decomp's table order; its
-body, dumped off the cartridge, makes `bl` calls in the order agbcc emits them; the decomp's source
-for that same function gives the same calls in the same order. Zipping the two names every worker
-the body reaches, over every body in the four tables at once.
-
-Four checks, and a name that fails any one is dropped:
-
-  LENGTH. The measured list and the source list must be the same length. agbcc inlines, emits
-  `__divsi3` for a division nobody wrote, and expands macros the parser reads as calls; every one of
-  those changes the count, so an equal count is a body where none of it happened. 40% of bodies fail
-  here and are simply not named.
-
-  ANCHOR. Every measured target this project has ALREADY measured must land back on its own name.
-  One mismatch and the whole body is dropped - that is what caught the cartridge mixing
-  before it could name anything: FireRed's ScrCmd_additem read out of the LeafGreen dump appeared to
-  call an AddBagItem 0x2C below the measured one.
-
-  AGREEMENT. Two callers of the same address must propose the same name for it, and one name must
-  come back at one address. `HideFieldMessageBox` is reached from seven bodies; seven agreeing
-  callers is the check, against how many commands the decomp says should call it.
-
-  ORDER. agbcc emits a translation unit's functions in the order the file defines them, so the
-  names proposed out of one .c file must come back with ascending addresses - together with every
-  address this project measured in that file, which is what makes the check bite. That is the check
-  that named VarSet without a run (event_data.c defines GetVarPointer, VarGet, VarSet, and
-  0x08071CC8 < 0x08071DDC < 0x08071DF8), applied to all of them.
-
-ONE CARTRIDGE. FireRed's dumps only - `script_read.every_dump` defaults to it now. The two
-cartridges hold the same code a segment delta apart and an image of both answers with whichever it
-placed at the address.
-
-`--report` prints what was dropped and why, the name corrections it found (an address this project
-named itself where the decomp has a name of its own), and any contradiction. `--check` writes
-nothing and exits non-zero if the module on disk is not what this decomp and these dumps produce.
+FireRed's dumps only: an image of both cartridges answers with whichever it placed at an address.
+The four checks: docs/frlg_rom_map.md, Naming 300 workers offline.
 """
 import argparse
 import collections
@@ -63,16 +31,11 @@ ADDRESS = 2
 # rom_map constants that are a limit rather than a name for the code at that address.
 # SHARED_WITH_LEAFGREEN_THROUGH sits on 0x0807AF04, which is also the highest call target that did
 # not move between the cartridges: a function, and one this method can name.
-MARKERS = frozenset({"SHARED_WITH_LEAFGREEN_THROUGH"})                     # where the address sits in a link-order point
+MARKERS = frozenset({"SHARED_WITH_LEAFGREEN_THROUGH"})
 
 
 def link_order(decomp):
-    """-> {source file: its place in the ROM}, from the link script's own .text list.
-
-    ld_script_rev10.ld:50-... names every object in the order it is laid down, which is the order
-    their functions come out in. That turns the per-file order check into a whole-ROM one: a name
-    proposed in `string_util.c` has to sit above everything in `sloopsvc.c` and below everything in
-    `link.c`, and one that does not is not that function."""
+    """-> {source file: its place in the ROM}, from ld_script_rev10.ld's .text list."""
     text = (decomp / "ld_script_rev10.ld").read_text()
     body = text.split(".text", 1)[1]
     body = body[:body.index("} >")] if "} >" in body else body
@@ -103,9 +66,7 @@ them is called, that call is the measurement.
 def measured_bodies(memory, entries):
     """-> [(label, address, [bl targets])] for the table entries the dumps hold.
 
-    Bounded the way `tools/frlg/rom_functions.py` bounds them: by the next entry in the table AND by the
-    function's own epilogue, because a function returning from more than one place otherwise
-    swallows its neighbour."""
+    Bounded by the next entry AND the epilogue: a function with two returns swallows its neighbour."""
     held = [(label, address) for label, address in entries if address in memory]
     starts = sorted(address for _label, address in held)
     out = []
@@ -125,13 +86,9 @@ def normalise(name):
 
 
 def same_function(ours, theirs):
-    """-> whether a name this project holds and a name in the decomp are the same function.
-
-    A NAME THIS PROJECT COINED IS UPPER_SNAKE and matches by shape - SCRIPT_READ_WORD is
-    ScriptReadWord. Anything else has to match exactly, because the tables carry names that are not
-    C functions at all: `gMysteryEventScriptCmdTable`'s entries are OPCODE names, and the opcode
-    `enableresetrtc` is not `EnableResetRTC` in event_data.c however alike they look with the
-    underscores taken out."""
+    """-> whether our name and the decomp's are one function. An UPPER_SNAKE name we coined matches by
+    shape; anything else exactly: `gMysteryEventScriptCmdTable` holds opcode names, and
+    `enableresetrtc` is not `EnableResetRTC`."""
     if ours.isupper():
         return normalise(ours) == normalise(theirs)
     return ours == theirs
@@ -155,10 +112,8 @@ def entry_name(label):
 
 
 def anchor_pairs(measured_names, source):
-    """-> [(i, j)] where a measured target this project already names meets its own name in source.
-
-    Longest common subsequence over the names, so a function called twice cannot pull the alignment
-    sideways: the pairs come back in order and each one is a place both sides agree about."""
+    """-> [(i, j)] where a target we already name meets its name in source; an LCS, so a function
+    called twice cannot pull the alignment sideways."""
     n, m = len(measured_names), len(source)
     best = [[0] * (m + 1) for _ in range(n + 1)]
     for i in range(n - 1, -1, -1):
@@ -180,14 +135,7 @@ def anchor_pairs(measured_names, source):
 
 
 def closed_gaps(measured, source, names, source_names):
-    """-> [(address, name)] forced by an anchor on BOTH sides, for a body whose counts differ.
-
-    The length rule drops a body where agbcc inlined something or emitted `__umodsi3`, which is
-    right - but a gap BETWEEN two anchors holding exactly one unnamed target and exactly one source
-    call is not a guess whatever happened elsewhere in the body: there is one way to fill it. Three
-    names in the whole table come from here, which is a measure of how little the strict rule was
-    costing rather than a reason to relax it further. An OPEN gap - before the first anchor or after
-    the last - is not forced and is not used."""
+    """-> [(address, name)] forced by a closed gap: one unnamed target and one call between anchors."""
     measured_names = [decomp_name(names[target], source_names) if target in names else None
                       for target in measured]
     pairs, out = anchor_pairs(measured_names, source), []
@@ -246,10 +194,7 @@ def align(decomp_calls, memory, names, source_names):
 
 
 def resolve(proposals, where, names, link_order):
-    """-> ({address: name}, [rejection]) after agreement, uniqueness and definition order.
-
-    The order check is the one that needs the addresses this project already holds: a file with one
-    proposed name and three measured ones is four points on a line that has to ascend."""
+    """-> ({address: name}, [rejection]) after agreement, uniqueness and definition order."""
     rejected, accepted = [], {}
     by_name = collections.defaultdict(set)
     for address, options in proposals.items():
@@ -269,13 +214,8 @@ def resolve(proposals, where, names, link_order):
             for address in addresses:
                 accepted.pop(address, None)
 
-    # LINK ORDER. agbcc emits a translation unit's functions in the order the file defines them,
-    # and ld_script_rev10.ld:53 lists the objects in the order they are laid down, so every name -
-    # proposed or already measured - has a place in ONE global sequence and its address has to
-    # ascend along it. THE LONGEST RUN WINS, not the first: a single misplaced name would otherwise
-    # reject every correctly placed one after it. pokemon.c is where that showed - GetMonData3
-    # proposed at 0x08129844, a megabyte above the rest of its file, threw out the four below it
-    # until the check started asking which points form the longest ascending chain.
+    # Link order [ld_script_rev10.ld:53]: the longest ascending chain wins, not the first break, or
+    # one misplaced name rejects every one after it. docs/frlg_rom_map.md
     known_by_name = {}
     for address, label in names.items():
         name = decomp_name(entry_name(label), set(where))
@@ -300,11 +240,7 @@ def resolve(proposals, where, names, link_order):
 
 
 def ascending_outliers(points):
-    """-> the points that are NOT in the longest ascending-by-address chain, in link order.
-
-    Classic longest increasing subsequence, O(n^2) over a file's handful of names. A point outside
-    the longest chain is the one to doubt: agbcc emits a translation unit in definition order, so
-    the chain is what the file itself says and everything else contradicts it."""
+    """-> the points outside the longest ascending-by-address chain, in link order."""
     best = [1] * len(points)
     previous = [-1] * len(points)
     for i in range(len(points)):
@@ -322,7 +258,6 @@ def ascending_outliers(points):
 
 
 def render(accepted, where, proposals):
-    """-> the text of pokeldn/frlg/rom/worker_names.py."""
     lines = [HEADER, "", "WORKERS = {"]
     for address in sorted(accepted):
         name = accepted[address]
@@ -367,9 +302,7 @@ def main():
         raise SystemExit(f"no {args.console} dumps under {args.scratchpad}")
     memory = scrcmd.Memory(segments)
     names = {address: entry_name(label)
-             # with_english=False for the same reason as with_workers: a name deduced from the
-             # ENGLISH build is not evidence that the console's own body calls what the decomp says
-             # it calls, and feeding it back in would let one deduction anchor the next.
+             # with_english=False: a name deduced from the English build must not anchor the next.
              for address, label in known_names(with_workers=False, with_english=False).items()
              if entry_name(label) not in MARKERS}
     names.update(rom_map.DECOMP_NAMES)

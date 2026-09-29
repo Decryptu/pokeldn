@@ -1,10 +1,5 @@
-/* pokeldn radio: an ESP32 as the LDN radio of a host on USB serial.
-
-   The board carries Ethernet frames and LDN's vendor action frames; everything above them
-   (advertisement crypto, LDN authentication, IP, Pia) runs on the host. A station joins a
-   console's network with the host's derived CCMP key; an access point takes a console's
-   association without the 4-way handshake and installs the same key for it.
-   docs/hardware_esp32.md has the message set. */
+/* pokeldn radio: an ESP32 as the LDN radio of a host on USB serial. LDN has no 4-way handshake:
+   the host derives the CCMP key and the board installs it. Message set: docs/hardware_esp32.md. */
 #include <stdatomic.h>
 #include <string.h>
 
@@ -65,9 +60,9 @@ static uint8_t s_ap_flags;
 static int64_t s_join_started;
 static atomic_bool s_assoc_seen;
 static atomic_uint s_rx_mgmt, s_rx_eth, s_tx_eth, s_tx_eth_failed, s_tx_raw, s_tx_raw_failed;
-static atomic_uint s_tx_acked, s_tx_unacked;   /* the driver's TX-done status */
+static atomic_uint s_tx_acked, s_tx_unacked;
 static atomic_uint s_rx_sniff;   /* frames RX_SNIFF carried: the LED's activity while sniffing */
-static atomic_int s_ap_stations;   /* stations whose port is open */
+static atomic_int s_ap_stations;
 static atomic_uint s_led_alarm;   /* a join that failed or a key refused: the LED's warning */
 static atomic_uint s_tx_eth_retried;   /* ETH_TX calls that found the driver's queue full */
 static atomic_int s_tx_eth_last_err;
@@ -95,8 +90,6 @@ static wifi_interface_t current_interface(void)
 {
     return atomic_load(&s_mode) == MODE_AP ? WIFI_IF_AP : WIFI_IF_STA;
 }
-
-/* ---- receive paths ---- */
 
 /* Census: u32 receive time, i8 RSSI, i8 noise floor, u8 rx_state (0 good), u8 packet type,
    u8 sig_mode, u8 rate, u8 mcs|cwb<<7, u16 sig_len, then the frame's first 16 bytes. */
@@ -251,8 +244,6 @@ static void tx_done(uint8_t ifidx, uint8_t *data, uint16_t *length, bool acked)
     wire_send(MSG_TX_DONE, head, sizeof(head), data, data ? (n < 24 ? n : 24) : 0);
 }
 
-/* ---- WPA hooks: LDN has no 4-way handshake; the key comes from the host ---- */
-
 static int ldn_sta_connect(uint8_t *bssid)
 {
     /* The stock callback rebuilds the RSN element; install ours on both sides of it. */
@@ -311,8 +302,6 @@ static void install_hooks(void)
     ESP_ERROR_CHECK(esp_wifi_register_wpa_cb_internal(table));
     wpa_cb = table;
 }
-
-/* ---- modes ---- */
 
 static void go_idle(void)
 {
@@ -557,8 +546,6 @@ static void wifi_event(void *arg, esp_event_base_t base, int32_t id, void *data)
     }
 }
 
-/* ---- the LED ---- */
-
 /* A BOOT press: u32 board time in µs, u16 press count, for the host's trace. */
 static void button_pressed(uint32_t count, int64_t press_us)
 {
@@ -587,8 +574,6 @@ static void led_state(led_look_t *look, uint32_t *activity, uint32_t *alarm)
     *alarm = atomic_load(&s_led_alarm) + wire_dropped() + wire_rx_bad() + wire_rx_fifo_ovf() +
              wire_rx_buffer_full();
 }
-
-/* ---- host commands ---- */
 
 static void send_status(void)
 {
@@ -622,10 +607,8 @@ static void send_status(void)
     wire_send(MSG_STATUS, text, len, NULL, 0);
 }
 
-/* BENCH: u32 bytes, u16 message size. Random payloads (like the ciphertext a run carries, for the
-   same COBS overhead) as fast as the UART takes them, each led by a u32 sequence, then one led by
-   0xffffffff carrying the microseconds the board spent. Nothing is dropped: the task waits for the
-   queue. docs/hardware_esp32.md, The serial ceiling. */
+/* BENCH: u32 bytes, u16 message size. Random payloads, each led by a u32 sequence, then one led by
+   0xffffffff carrying the board's microseconds; nothing is dropped. docs/hardware_esp32.md */
 static void bench_task(void *arg)
 {
     const uint32_t total = ((uint32_t *)arg)[0], size = ((uint32_t *)arg)[1];
@@ -708,10 +691,8 @@ static void command(uint8_t type, const uint8_t *p, size_t n)
             s_tx_handed[atomic_load(&s_tx_handed_head) % TX_RING] = (uint32_t)started;
             atomic_fetch_add(&s_tx_handed_head, 1);
             r = esp_wifi_internal_tx(current_interface(), frame, n);
-            /* A burst from the host fills the driver's TX buffers; wait for them to drain rather
-               than drop the frame (a Scarlet joiner's 44-record burst lost 28). The UART
-               buffer holds the host's next commands meanwhile. Only NO_MEM is retried: a
-               station that left gives 0x3015 at once. docs/hardware_esp32.md. */
+            /* A full driver queue is retried rather than dropped; a station that left gives 0x3015
+               at once. docs/hardware_esp32.md */
             for (int tries = 0; r == ESP_ERR_NO_MEM && tries < 100; ++tries) {
                 if (tries == 0) atomic_fetch_add(&s_tx_eth_retried, 1);
                 vTaskDelay(1);
@@ -783,7 +764,6 @@ void app_main(void)
 
     int64_t last_status = 0;
     for (;;) {
-        /* Unasked STATUS every 2 s while hosting, for the host's trace. */
         if (atomic_load(&s_mode) == MODE_AP && esp_timer_get_time() - last_status > 2000000) {
             last_status = esp_timer_get_time();
             send_status();

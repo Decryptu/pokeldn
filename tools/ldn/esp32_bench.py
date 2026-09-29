@@ -4,21 +4,13 @@
     ./.venv/bin/python tools/ldn/esp32_bench.py --port PORT \\
         --bauds 921600,1500000,2000000,3000000 --bytes 2000000
 
-For each rate the board streams random payloads (the COBS overhead of ciphertext) through CMD_BENCH
-and this prints what arrived, what was lost or failed its checksum, and the rate against the line's
-own limit of baud / 10. The port is reopened per rate, which resets the board. A rate the USB
-bridge does not take shows as a HELLO that never answers. docs/hardware_esp32.md, The serial
-ceiling.
+The port is reopened per rate, which resets the board; a rate the USB bridge refuses shows as a HELLO
+that never answers. docs/hardware_esp32.md, The serial ceiling.
 
-    --uplink N   the other direction: the board hosts an empty network and the host sends N ETH_TX
-                 commands in bursts of --burst, 100 to 300 bytes each as a seat's are; the board's
-                 tx_eth + tx_eth_failed against N is what the host-to-board path lost.
-                 --no-flow writes past the board's CREDIT window, to overrun its UART on purpose
-                 and check that every command lost shows in the board's error counters.
-    --trickle S  command latency: for S seconds the host writes a 14-byte ETH_TX (21 bytes on the
-                 line) every 15 ms to an idle board, with --flood also streaming BENCH the other
-                 way; prints the board's read_max_us, which stays near its 20 ms read timeout
-                 unless a read waits for more than the bytes that arrived.
+    --uplink N   host to board: N ETH_TX of 100 to 300 bytes in bursts of --burst to an empty network,
+                 against the board's tx_eth + tx_eth_failed. --no-flow ignores CREDIT on purpose.
+    --trickle S  command latency: a 14-byte ETH_TX every 15 ms for S seconds (--flood adds BENCH the
+                 other way); read_max_us stays near the 20 ms read timeout unless a read over-waits.
 """
 import argparse
 import os

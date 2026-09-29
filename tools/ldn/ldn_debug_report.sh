@@ -1,16 +1,8 @@
 #!/usr/bin/env bash
-# Collect a shareable debug report for the LDN hosting failure (ENOTSUP at create_ap) -
-# everything the LDN library author would ask for, in one file, with ZERO pokeldn
-# code involved.
+# Collect a shareable debug report for the LDN hosting failure (ENOTSUP at create_ap), with no
+# pokeldn code involved. Legacy Linux path.
 #
 #   sudo ./ldn_debug_report.sh [phy]        (default phy0; writes ldn-debug-report.txt)
-#
-# Sections:
-#   1. kernel/distro + adapter (usb id, driver)     - the environment
-#   2. full `iw phy` info + `iw dev` + `iw reg`     - what the driver declares to nl80211
-#   3. plain-iw AP vif creation                     - the failure, reproduced with no Python at all
-#   4. plain-iw MONITOR vif creation (control)      - proves the command form/permissions are fine
-#   5. vendored LDN revision metadata                - identifies the exact local implementation
 set -u
 
 PHY="${1:-phy0}"

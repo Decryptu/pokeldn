@@ -1,20 +1,11 @@
 #!/usr/bin/env python3
 """Assemble every asm/resident/*.s into pokeldn/frlg/rom/resident_stubs.py.
 
-A third kind of payload, and the distinction matters. A buffer script (`asm/*.s`) is called once
-per frame by the Mystery Gift client and stops when the session does. A field stub (`asm/field/*.s`)
-is staged by a RAM script and runs once, in the overworld, when the player talks to an object. A
-resident stub is neither: it is written into the top of EWRAM and installed in `gIntrTable`, and it
-runs every frame afterwards in every game state [docs/frlg_rom.md, Code that outlives the session].
-
-It is never executed where it is assembled, so it is stored as words. Whatever installs it writes
-those words somewhere and patches the two addresses it needs, which is why the symbol offsets are
-recorded here the way the field generator records them.
-
-The committed bytes are the source of truth at run time: a live host must not need a GBA toolchain.
-`tests/test_shiny.py` re-assembles and compares whenever arm-none-eabi-as is installed.
-
     ./scripts/gen_resident_stubs.py [--check]
+
+A resident stub is written to the top of EWRAM and installed in `gIntrTable`, running every frame
+in every game state [docs/frlg_rom.md, Code that outlives the session]. Stored as words, with the
+symbol offsets its installer patches.
 """
 
 import argparse

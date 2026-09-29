@@ -3,28 +3,8 @@
 
     ./.venv/bin/python scripts/gen_english_names.py [--check] [--report]
 
-THE METHOD is `tools/frlg/english_build.py`, and its docstring is where the argument lives. In one
-line: `pret/pokefirered` builds `firered_switch` and `leafgreen_switch` byte-exactly, the ENGLISH
-release of the same revision the Switch runs; a French address and an English address hold the same
-function wherever their bytes agree; the difference between them is piecewise constant; and the
-English ELF names every function, statics included.
-
-WHAT MAKES IT EVIDENCE. Two independent readings give the offset and they agree everywhere both
-speak - the four tables, whose entry i is the same function in both builds and costs nothing, and
-the dumps, placed by 16-byte windows that occur exactly once in the English ROM. Then the CONTROL:
-run the result against every name the console's own bodies proved [worker_names] and it comes back
-230 for 230, with no disagreement. That control is the reason this file is allowed to exist.
-
-WHAT THIS IS NOT. A name here is a DEDUCTION. `rom_map.CALLABLE` still means "called on hardware and
-something happened", `worker_names.WORKERS` still means "the console's own body called it in the
-order the decomp says", and a name from here that is about to be CALLED should be checked by the
-call. The English build is a different cartridge in a different language: it says what a French
-address is a copy of, not what the French console did.
-
-THE OFFSET RUNS ARE THE MEASUREMENT and are written out beside the names, because they are what a
-later session can extend, argue with, or use for an address this file does not name. A run's ends
-are the addresses that were actually read; nothing between them is interpolated beyond the claim
-that no object changed size in between, which is what its point count is for.
+Method and control: docs/frlg_leafgreen.md. A name here is a deduction; one about to be called is
+checked by the call.
 """
 import argparse
 import collections
@@ -52,15 +32,8 @@ def call_targets():
 
 
 def bracketed(runs, rom, named):
-    """-> {address: (name, offset)} for a call target BETWEEN two runs rather than inside one.
-
-    A weaker reading than NAMES and kept apart from it. The offset here is not measured at the
-    address, it is one of the two measured either side - so the check has to come from somewhere
-    else, and it does: the candidate must land EXACTLY on a function start, and only one of the two
-    may. An offset that is wrong by even two bytes lands mid-instruction, and the ones this finds
-    are the three libgcc helpers agbcc emits for a division nobody wrote (`__divsi3`, `__modsi3`,
-    `__umodsi3`), which is what the unnamed residue was predicted to be from a direction that knew
-    nothing about any of this."""
+    """-> {address: (name, offset)} for a call target between two runs. Weaker than NAMES: the offset
+    from either side must land exactly on a function start, and only one may."""
     out = {}
     for address in sorted(call_targets()):
         if address in named or english_build.offset_at(runs, address)[0] is not None:
@@ -136,12 +109,8 @@ def bracketed_name(address):
 
 
 def build():
-    """-> (offset runs, {French address: name}).
-
-    WHERE AN ADDRESS CARRIES SEVERAL NAMES, the one this project already uses wins. `GetBoxMonData2`
-    is `__attribute__((alias("GetBoxMonData3")))` [decomp:src/pokemon.c:3332] - one function, two
-    symbols, and writing down whichever `nm` printed first would put a second vocabulary for the
-    same address into the repository and read as a disagreement with `worker_names` for ever."""
+    """-> (offset runs, {French address: name}). Where an address carries several names
+    (`GetBoxMonData2` aliases `GetBoxMonData3` [decomp:src/pokemon.c:3332]), ours wins."""
     runs = english_build.merged_runs("firered")
     rom = english_build.english("firered")
     ours = dict(worker_names.WORKERS)

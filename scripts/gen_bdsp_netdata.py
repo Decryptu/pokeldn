@@ -1,25 +1,16 @@
 #!/usr/bin/env python3
 """Regenerate pokeldn/bdsp/netdata.py from a TeamLumi/opendpr checkout.
 
-BDSP's own protocol above Pia is a table of typed messages, and `Dpr.NetworkUtils.NetDataParser`
-registers every one of them. Each is an `ANetData<T>` that declares its own `DataID` byte and
-carries one plain struct `T`, so the id, the name and the payload layout are all in the source -
-there is nothing to guess and nothing to read off a capture.
-
     ./.venv/bin/python scripts/gen_bdsp_netdata.py [~/opendpr] [--check]
 
-`--check` regenerates into memory and diffs, which is what a test can run.
-
-The layout is PACKED, not C#'s default alignment, and the wire says so: a real console's
-NetJoinData is 17 bytes with `short InitRotY` at offset 3, where an aligned struct would put it at
-4 and make the message 20. Every payload ever captured agrees with the packed reading.
+`--check` diffs instead of writing. The layout is packed: a console's NetJoinData is 17 bytes with
+`short InitRotY` at offset 3.
 """
 import pathlib
 import re
 import sys
 
-# C# type -> (struct format, size). Only blittable primitives; anything else makes a payload
-# UNKNOWN rather than a guess, which is the whole point of generating this instead of writing it.
+# C# type -> (struct format, size). Anything else makes a payload UNKNOWN rather than a guess.
 PRIMITIVES = {
     "byte": ("B", 1), "sbyte": ("b", 1), "bool": ("?", 1),
     "short": ("h", 2), "ushort": ("H", 2),
@@ -49,10 +40,7 @@ def scan(root):
 
 def flatten(type_name, structs, enums, seen=()):
     """-> [(path, csharp type, format)] for a payload struct, or None if anything is not blittable.
-
-    A nested struct is inlined, because the wire carries the fields and not the struct. Recursion
-    is bounded by `seen`: a struct that reaches itself has no fixed size at all.
-    """
+    A nested struct is inlined; one that reaches itself has no fixed size."""
     if type_name in enums:
         fmt = PRIMITIVES.get(enums[type_name])
         return [((), type_name, fmt[0])] if fmt else None

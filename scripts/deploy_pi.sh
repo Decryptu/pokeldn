@@ -1,7 +1,6 @@
 #!/usr/bin/env bash
-# Deploy one committed desktop revision to a Pi through SSH and a Pi-local bare
-# Git repository.  No GitHub connection, rsync, virtual environment, keys, or
-# ignored runtime/reference data are involved.
+# Deploy one committed desktop revision to a Pi through SSH and a Pi-local bare Git repository;
+# no GitHub connection and no rsync.
 set -euo pipefail
 
 PROJECT_ROOT=$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")/.." && pwd -P)
@@ -127,9 +126,7 @@ fi
 REMOTE_UPDATE
 
 if [[ "$REFRESH_SERVICE" == true ]]; then
-    # Reinstall + restart the systemd unit so the running service picks up the
-    # freshly deployed run_mystery_gift.sh and unit definition. Needs a TTY for
-    # the remote sudo prompt, like the MT7601U step below.
+    # Reinstall and restart the unit; -t for the remote sudo prompt.
     ssh -t "$SSH_TARGET" \
         "cd '$PI_PATH' && ./scripts/setup_mg_service.sh"
 fi

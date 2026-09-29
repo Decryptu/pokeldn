@@ -1,21 +1,11 @@
 #!/usr/bin/env python3
 """Assemble every asm/field/*.s into pokeldn/frlg/rom/field_stubs.py.
 
-These are NOT buffer scripts and deliberately do not live in `asm/`, which
-scripts/gen_buffer_scripts.py globs: nothing here goes through CLI_RUN_BUFFER_SCRIPT. A field
-stub is THUMB code that a RAM script stages into EWRAM one byte at a time and reaches with
-`callnative`, so it runs in the overworld [pokeldn/frlg/rom/native_script.py].
-
-The committed bytes are the source of truth at run time, exactly as with the buffer payloads: a
-live host must not need a GBA toolchain. tests/test_native_script.py re-assembles and compares
-whenever arm-none-eabi-as is installed.
-
-WHAT THIS RECORDS THAT THE BUFFER GENERATOR DOES NOT: the offset of every global symbol. A field
-stub carries its parameters in a literal pool AFTER the code (a Thumb pc-relative load only
-reaches forward), so the builder cannot patch them at a fixed offset the way call.s allows. The
-assembler knows where they are; read them from it rather than writing the offsets down twice.
-
     ./scripts/gen_field_stubs.py [--check]
+
+Field stubs live outside `asm/`, which gen_buffer_scripts.py globs: a RAM script stages them and
+reaches them with `callnative` [pokeldn/frlg/rom/native_script.py]. Symbol offsets are recorded
+because the parameters sit in a literal pool after the code, where no fixed offset reaches.
 """
 
 import argparse

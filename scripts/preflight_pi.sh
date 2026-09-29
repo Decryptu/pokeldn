@@ -2,10 +2,7 @@
 # Read-only checks for the Pi's TP-Link Archer T3U / rtw88_8822bu host setup.
 set -euo pipefail
 
-# Debian may omit sbin directories from PATH for non-interactive SSH commands,
-# even though tools such as iw and modinfo are installed there.  Preflight is
-# normally launched that way by the desktop workflow, so use the normal system
-# command locations explicitly.
+# Debian may omit sbin from PATH for non-interactive SSH commands, which is how preflight runs.
 export PATH="/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin${PATH:+:$PATH}"
 
 PROJECT_ROOT=$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")/.." && pwd -P)

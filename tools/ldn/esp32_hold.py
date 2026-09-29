@@ -3,11 +3,8 @@
 
     tools/ldn/esp32_hold.py HOST_CAPTURE.jsonl HOST_TRACE [--min-ms 100]
 
-Stages: udp_out (capture) -> ETH_TX written (trace '>' 08) -> board receives it (TX_DONE board time
-minus its since-ETH_TX field, mapped to host time by the smallest arrival offset) -> TX-done.
-Prints each stage's median / p99 / max, the datagrams over --min-ms end to end, and the largest
-gaps in the udp_out stream and in the TX-done stream (a hold shows as a TX-done gap with no udp_out gap),
-and the head-of-line holds: a frame that waited over --min-ms after the previous TX-done.
+Stages: udp_out -> ETH_TX written -> board receives it (TX_DONE board time minus its since-ETH_TX
+field) -> TX-done. A hold shows as a TX-done gap with no udp_out gap.
 """
 import argparse
 import json

@@ -2,22 +2,10 @@
 """Read the BODIES of a ROM function table off the console's own dumps, and say what to dump next.
 
     ./.venv/bin/python tools/frlg/rom_functions.py --table specials --with-every-dump
-    ./.venv/bin/python tools/frlg/rom_functions.py --table field --dump scratchpad/bs84_dump.bin@0x0806F800
+    ./.venv/bin/python tools/frlg/rom_functions.py --table field --dump scratchpad/TAG_dump.bin@0x0806F800
     ./.venv/bin/python tools/frlg/rom_functions.py --table specials --plan --window 1024
 
-The worker-naming method, generalised to every table read off a cartridge. A table entry is an
-address; the code at it makes `bl` calls, in the decomp's own call order, and keeps the globals it
-touches in its literal pool. So ONE 1 KB window turns a dozen table entries into a dozen named
-bodies plus every worker behind them, which is what makes another window cost nothing to interpret.
-
-The last section is the useful one, and it is the same idea as `tools/frlg/script_read.py`'s: the entries
-this project does NOT hold are clustered into `--dump-address` windows and ranked by how many of
-them one run would catch, so a run is spent where the table is densest rather than on a guess.
-
-WHAT NAMES A BODY IS ITS CALLS, NOT ITS POSITION. `gSpecials` is 444 entries and its names come from
-the decomp's table order; a body whose `bl` targets land on functions this project measured
-elsewhere is that mapping confirmed against the cartridge, and a body that lands on nothing known is
-the run's new surface. docs/frlg_rom.md.
+Entries not held are clustered into `--dump-address` windows, densest first. docs/frlg_rom.md.
 """
 import argparse
 import os
@@ -33,10 +21,7 @@ ROM_START, ROM_END = 0x08000000, 0x0A000000
 
 
 def tables():
-    """-> {name: [(label, address)]} for every function table read off a console.
-
-    Addresses are stripped of the THUMB bit: a table stores the pointer a `bx` needs, and code is at
-    the even address."""
+    """-> {name: [(label, address)]} for every function table read off a console, THUMB bit cleared."""
     specials = []
     for index, address in enumerate(rom_map.SPECIAL_ADDRESSES):
         specials.append((f"{special_names.SPECIALS[index]} [{index}]", address & ~1))
@@ -45,9 +30,8 @@ def tables():
         "field": [(f"ScrCmd_{name} [{opcode}]", address & ~1)
                   for opcode, (name, address)
                   in enumerate(zip(scrcmd_names.COMMANDS, scrcmd_names.HANDLERS))],
-        # The Mystery Event table is kept by OPCODE name; the decomp's function for one is
-        # `MEScrCmd_<opcode>` [decomp:src/mystery_event_script.c:97], which is the name a reader
-        # can look up and the name `gen_worker_names.py` needs to find the body's source.
+        # Kept by opcode name; the decomp's function is `MEScrCmd_<opcode>`
+        # [decomp:src/mystery_event_script.c:97], the name gen_worker_names.py looks up.
         "mystery-event": [(f"MEScrCmd_{name}", address & ~1)
                           for name, address in rom_map.MYSTERY_EVENT_HANDLERS],
         "callable": [(name, address & ~1) for name, address in sorted(rom_map.CALLABLE.items())],
@@ -55,13 +39,8 @@ def tables():
 
 
 def known_names(with_workers=True, with_english=True):
-    """-> {address: what this project calls it}, from every measured symbol and table.
-
-    `with_workers` is False for the generator that WRITES `worker_names`: a name it produced last
-    time is not evidence for producing it again, and a table this project can only regenerate from
-    its own output cannot be checked. `with_english` is False for the same reason and for one more:
-    a name out of the English build is a DEDUCTION, and it goes in LAST so that it can only fill a
-    hole, never overrule a body this console's own calls named. It is marked in the listing.
+    """-> {address: what this project calls it}. The generator that writes worker_names passes both
+    False: its own output is no evidence. English names go in last, filling holes only.
     docs/frlg_leafgreen.md."""
     out = {}
     for name, value in vars(rom_map).items():
@@ -88,10 +67,7 @@ def known_names(with_workers=True, with_english=True):
 
 
 def deduplicate(entries):
-    """-> [(label, address)] with one line per DISTINCT address.
-
-    `gSpecials` calls NullFieldSpecial from 171 indices and several real functions from more than
-    one, so the table has 444 entries and 272 bodies. Reading one body 171 times is not evidence."""
+    """-> [(label, address)], one per distinct address: gSpecials has 444 entries and 272 bodies."""
     by_address = {}
     for label, address in entries:
         by_address.setdefault(address, []).append(label)
@@ -103,11 +79,7 @@ def deduplicate(entries):
 
 
 def windows(missing, window, limit):
-    """-> [(start, [addresses caught])], densest first, disjoint.
-
-    Greedy over the addresses not held: the window starting at each one, whichever catches the most,
-    then the same again over what is left. A window is anchored ON an entry rather than on a round
-    number because a body starts where the table says it does."""
+    """-> [(start, [addresses caught])], densest first, disjoint, each window anchored on an entry."""
     left, out = sorted(missing), []
     while left and len(out) < limit:
         best_start, best = left[0], []
@@ -121,13 +93,8 @@ def windows(missing, window, limit):
 
 
 def on_leafgreen(entries, names):
-    """-> (entries, names) moved to where the OTHER cartridge keeps them.
-
-    Every table this project holds was read off FireRed, so a LeafGreen dump read against those
-    addresses is only coherent in the delta-0 region and quietly wrong above it. `leafgreen_twins`
-    is where each address was MEASURED - the same instruction resolved on both cartridges - and
-    `leafgreen()` falls back to the segment delta, which is measured too. An entry inside a boundary
-    has neither and is DROPPED rather than read at a guess."""
+    """-> (entries, names) moved to LeafGreen through `leafgreen_twins`; an entry inside a delta
+    boundary is dropped rather than read at a guess."""
     moved_entries, moved_names = [], {}
     for label, address in entries:
         try:
@@ -156,11 +123,8 @@ def plan(missing, window, limit):
 
 
 def scatter_line(missing, window, blocks):
-    """-> the one-join line for `memory-dump-scatter`: the N densest windows, in one session.
-
-    THE POINT OF THE PAYLOAD. `memory-dump-multi` reads N CONSECUTIVE blocks, and a table's unread
-    entries are not consecutive - the densest 16 KB of gSpecials holds 22 bodies where the sixteen
-    densest KILOBYTES hold about sixty. Same join, same 16 KB off the wire."""
+    """-> the one-join `memory-dump-scatter` line for the N densest windows: a table's unread entries
+    are not consecutive, so scattered blocks catch about three times what consecutive ones do."""
     chosen = windows(missing, window, blocks)
     if not chosen:
         return []

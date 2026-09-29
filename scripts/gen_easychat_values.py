@@ -1,10 +1,8 @@
 #!/usr/bin/env python3
 """Regenerate pokeldn/frlg/text/easychat_values.py from the decompilation.
 
-The four groups that print from gSpeciesNames / gMoveNames index by species number and move id, so
-they are the only Easy Chat words that are the same word in every language. IsECWordInvalid checks
-the index against the group's value list rather than a count [decomp:src/easy_chat.c:129], so those
-lists are what makes a species or move a legal word.
+IsECWordInvalid checks species and move words against value lists [decomp:src/easy_chat.c:129];
+these are the lists.
 
     ./.venv/bin/python scripts/gen_easychat_values.py [~/pokefirered]
 """

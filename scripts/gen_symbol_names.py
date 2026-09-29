@@ -3,20 +3,8 @@
 
     ./.venv/bin/python scripts/gen_symbol_names.py [~/pokefirered]
 
-A field script's operands are bare numbers, and the two that carry meaning everywhere are the var
-id and the flag id. `include/constants/vars.h` and `include/constants/flags.h` name every one, but
-as arithmetic on other constants (`VAR_TEMP_0` is `(TEMP_VARS_START + 0x0)`), so the values are
-evaluated here rather than transcribed.
-
-Several names can share a value - the decomp keeps `FLAG_TEMP_1` alongside a `FLAG_0x001` style
-alias for the ones it has not identified. The FIRST definition in file order wins, which is the
-identified name, and the rest are kept in ALIASES so nothing is lost.
-
-WHY THE VALUE ALONE IS ENOUGH to tell a var from a literal: every ScrCmd body passes its arguments
-through `VarGet`, which returns the number unchanged unless it is >= VARS_START and otherwise reads
-the variable [decomp:src/event_data.c:235, GetVarPointer:214]. So an operand of 0x4000 or more IS a
-variable reference, in any command, and one below it is the literal it looks like. No per-command
-table and no guessing.
+Values are evaluated from the headers' arithmetic, not transcribed. The first definition of a value
+wins; the other names go to ALIASES.
 """
 import pathlib
 import re

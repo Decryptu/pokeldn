@@ -3,14 +3,8 @@
 
     ./.venv/bin/python scripts/gen_leafgreen_twins.py [--scratchpad scratchpad]
 
-For a pointer inside a window both cartridges have been dumped at,
-`tools/frlg/cartridge_pair.py` reads the same instruction off both consoles; the two targets it
-resolves to are FireRed's address and LeafGreen's, each read off its own cartridge, with no delta
-applied. Elsewhere `rom_map.leafgreen_guess` applies a segment's delta and refuses inside a
-boundary.
-
-An address that pairs to two different LeafGreen addresses across runs is dropped rather than
-picked between.
+Each pair is one instruction read off both cartridges, no delta applied (tools/frlg/cartridge_pair.py).
+An address that pairs to two LeafGreen addresses across runs is dropped.
 """
 import argparse
 import collections

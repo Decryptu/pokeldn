@@ -1,7 +1,6 @@
 #!/usr/bin/env bash
-# Install Nintendo Switch prod.keys without relying on sudo's idea of $HOME.
-#
-# This script deliberately does not validate, display, or log key contents.
+# Install Nintendo Switch prod.keys without relying on sudo's idea of $HOME. Key contents are never
+# validated, displayed or logged.
 set -euo pipefail
 
 program_name=${0##*/}

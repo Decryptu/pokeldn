@@ -1,12 +1,10 @@
 #!/usr/bin/env python3
 """Assemble every asm/*.s into pokeldn/frlg/rom/buffer_payloads.py.
 
-The payloads are ARM machine code the console executes through CLI_RUN_BUFFER_SCRIPT, so the
-bytes are committed rather than assembled at run time: a live host must not need a GBA
-toolchain. tests/test_buffer_script.py re-assembles and compares whenever arm-none-eabi-as is
-installed, which is what keeps the committed bytes honest.
-
     ./scripts/gen_buffer_scripts.py [--check]
+
+The bytes are committed so a live host needs no GBA toolchain; tests/test_buffer_script.py
+re-assembles and compares when arm-none-eabi-as is installed.
 """
 
 import argparse

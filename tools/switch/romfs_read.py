@@ -1,17 +1,9 @@
 #!/usr/bin/env python3
 """Read a retail Switch title's RomFS in place, without extracting it.
 
-Offline and game-independent. A retail RomFS is tens of thousands of files and
-gigabytes; hactool's --listromfs segfaults on a sparse NCA and a full extraction
-does not fit on this machine. Nothing here needs either: the NCA's RomFS section
-is AES-128-CTR with the decrypted title key, and CTR is seekable, so any range of
-it can be decrypted straight off the container.
+    ./.venv/bin/python tools/switch/romfs_read.py NSP --nca-offset N --romfs-offset N --title-key HEX --list
 
-The counter is the section CTR's high half followed by (nca_relative_offset >> 4)
-big-endian, which makes every read independent. Reading the 0x50-byte RomFS header
-back with header_size == 0x50 is the proof the counter is right.
-
-docs/switch_re.md "Reading the RomFS".
+hactool's --listromfs segfaults on a sparse NCA. docs/switch_re.md "Reading the RomFS".
 """
 
 import argparse
@@ -108,11 +100,7 @@ class RomFs:
 
 
 def scan(romfs, needles, names=None, chunk=8 << 20):
-    """Search every file's DATA for any of `needles`; yield (path, offset, needle).
-
-    Streamed, so a 4 GB RomFS costs no disk. One pass takes as many needles as
-    wanted because the read, not the search, is what a scan spends.
-    """
+    """Search every file's DATA for any of `needles`, streamed; yield (path, offset, needle)."""
     overlap = max(len(n) for n in needles) - 1
     for path, data_off, size in romfs.walk():
         if names is not None and not any(n in path.lower() for n in names):

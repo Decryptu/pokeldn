@@ -1,15 +1,11 @@
 #!/usr/bin/env bash
-# Install (or refresh) the systemd unit that supervises the Mystery Gift host.
-# Safe to re-run: it rewrites the unit from this script, reloads systemd, and
-# restarts the service so a fresh checkout's run_mystery_gift.sh takes effect.
-# scripts/deploy_pi.sh calls this after updating the Pi checkout.
+# Install or refresh the systemd unit that supervises the Mystery Gift host. Safe to re-run;
+# scripts/deploy_pi.sh calls it after updating the checkout.
 set -euo pipefail
 
 SERVICE_NAME="fr-ldn-mystery-gift"
 SERVICE_FILE="/etc/systemd/system/${SERVICE_NAME}.service"
-# Resolve the checkout from this script's own location so the unit gets an
-# absolute WorkingDirectory/ExecStart no matter the caller's CWD (systemd does
-# not expand ~, and a relative path would break the service).
+# systemd does not expand ~ and a relative path breaks the unit: resolve the checkout absolutely.
 PROJECT_DIR=$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")/.." && pwd -P)
 RUNNER="${PROJECT_DIR}/scripts/run_mystery_gift.sh"
 

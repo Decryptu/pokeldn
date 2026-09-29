@@ -65,9 +65,7 @@ done
     exit 1
 }
 
-# Remove only the same named/versioned DKMS registration.  The source directory
-# is then refreshed from the committed checkout so stale files cannot survive a
-# future source update.
+# Remove only the same named/versioned DKMS registration, then refresh the source from the checkout.
 dkms remove -m "$PACKAGE_NAME" -v "$PACKAGE_VERSION" --all >/dev/null 2>&1 || true
 rm -rf -- "$SYSTEM_SOURCE_DIR"
 install -d -m 0755 "$SYSTEM_SOURCE_DIR"

@@ -1,10 +1,9 @@
 #!/usr/bin/env python3
 """Find the ARM64 code that references an address, via ADRP(+ADD|+LDR) pairs.
 
-The NSO images written by nso_read.py put every segment at its memory offset, so a file offset IS
-the address. That makes an xref a scan: ADRP loads a 4 KB page into Xd, and a following ADD or LDR
-with the same base register completes the address. Written for the BDSP work - Pia's
-transport carries no searchable constant, so its code is reached from the strings instead.
+    ./.venv/bin/python tools/switch/arm64_xref.py IMAGE TEXT_END ADDR [ADDR ...]
+
+nso_read.py images put every segment at its memory offset, so a file offset is the address.
 """
 import struct, sys
 

@@ -5,26 +5,9 @@
     ./.venv/bin/python tools/frlg/cartridge_pair.py --names        # the LeafGreen twin of what we name
     ./.venv/bin/python tools/frlg/cartridge_pair.py --pair FIRERED_TAG LEAFGREEN_TAG
 
-A pointer dumped off both consoles is a delta point at
-wherever it points, and one window holds hundreds of them. Sessions 40 and 41 read the literal pools
-that way - 27 paired words moved both ends of the -0x1C4 segment, 13 more found the -0x20 segment
-nobody had seen. What this adds is the OTHER pointer in every window, and there are more of them:
-a `bl` is a relative call, so the same instruction on the two cartridges resolves to two addresses
-whose difference is the delta AT THE TARGET. 16 KB of handlers is 834 of those.
-
-It costs nothing: the dumps are already on disk. The paired 16 KB dumps were each spent to
-pair one pool; they hold 1592 paired call sites between them, and every one is a delta point at a
-place no needle was ever aimed at.
-
-WHAT MAKES IT TRUSTWORTHY. Every site pairs or the window is not the twin: 734 of 734 and 834 of 834
-here, and the deltas come out QUANTISED - four values across 16 KB, no outliers, no "nearly". A
-misplaced window does not do that; the first run of this tool had the LeafGreen offsets computed off
-the FireRed base and answered with 64 different deltas, none of them repeated.
-
-PAIR BY CODE OFFSET. The LeafGreen dump is aimed at the twin of the FireRed window, so offset N in
-one is offset N in the other whatever the bases are. Pairing by INDEX - the n-th pool word against
-the n-th - drifts the moment one side holds a word the other does not, and invents deltas.
-docs/frlg_leafgreen.md.
+A `bl` is relative, so one instruction on both cartridges resolves to two targets whose difference is
+the delta at the target; pool pointers add more points. Sites pair by code offset, never by index: an
+index drifts at the first word one side lacks. docs/frlg_leafgreen.md.
 """
 import argparse
 import collections
@@ -44,9 +27,7 @@ IDENTITY = 0.80          # how alike two windows must be before they are called 
 def candidate_pairs(everything, minimum=IDENTITY):
     """-> [(firered tag, leafgreen tag, code delta, how alike)] for windows that hold the same code.
 
-    A LeafGreen run is aimed at the twin of a FireRed window, so its base minus that window's base
-    IS the code delta and the two dumps should be nearly byte for byte. Nearly, not exactly: the
-    literal pools and the `bl` immediates are what differ, which is the whole point."""
+    A LeafGreen run is aimed at a FireRed window's twin: base minus base is the code delta."""
     firered = [entry for entry in everything if entry[1] == "firered"]
     leafgreen = [entry for entry in everything if entry[1] == "leafgreen"]
     out = []
@@ -79,8 +60,7 @@ def paired_calls(fr, lg):
 def paired_literals(fr, lg):
     """-> [(FireRed pointer, LeafGreen pointer)] for the pool word each `ldr [pc]` reaches.
 
-    One pool word is read by several instructions, so the pool ADDRESS is what makes a point
-    distinct - counting an entry once per `ldr` would report the same measurement three times."""
+    One pool word read by several `ldr`s counts once, by pool address."""
     _tag, _c, fr_base, fr_data = fr
     _tag2, _c2, lg_base, lg_data = lg
     size = min(len(fr_data), len(lg_data))
@@ -110,9 +90,7 @@ def segments(points):
 def boundaries(spans):
     """-> [(from delta, to delta, low, high)]: what is left unmeasured between the segments.
 
-    Ordered by where they sit in the ROM, not by delta: the deltas are NOT monotonic - the low
-    segments step -0x2C, -0x28, -0x24, -0x20 - so reading a less divergent segment as a mistake is
-    how a boundary gets put in the wrong place."""
+    Ordered by ROM position: the deltas are not monotonic (-0x2C, -0x28, -0x24, -0x20)."""
     ordered = sorted(spans.items(), key=lambda item: item[1][0])
     out = []
     for (delta, (_low, high)), (next_delta, (next_low, _high)) in zip(ordered, ordered[1:]):

@@ -1,11 +1,8 @@
 #!/usr/bin/env python3
 """Map an NSO's imported symbols to the GOT slots that hold them.
 
-A call into another module (nnSdk's nn::ldn, say) goes through a GOT slot filled at
-load time by a JUMP_SLOT or GLOB_DAT relocation naming a dynamic symbol. So "where
-does this module call nn::ldn::CreateNetwork" is: find the slot, then find the code
-that loads it. tools/switch/nso_relocs.py only reads RELATIVE relocations, which are
-the intra-module ones.
+Calls into another module go through GOT slots filled by JUMP_SLOT or GLOB_DAT relocations;
+nso_relocs.py reads only the RELATIVE ones.
 """
 import struct, sys, os
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))

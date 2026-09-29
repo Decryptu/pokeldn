@@ -1,24 +1,10 @@
 #!/usr/bin/env python3
-"""Walk a Switch container (XCI/HFS0 or NSP/PFS0) and read its NCAs in place.
+"""Walk a Switch container (XCI/HFS0 or NSP/PFS0) and read its NCAs in place; nothing is extracted.
 
-Offline, game-independent, and NOTHING is extracted unless asked for: the NCA
-header is 0xC00 bytes of AES-128-XTS under `header_key` with a big-endian sector
-tweak, and every section below it is AES-128-CTR, which is seekable. So the whole
-map - title id, content type, key generation, each section's absolute offset, its
-counter and its section key - comes off a 13 GB cartridge image on a network share
-with no disk spent.
+    ./.venv/bin/python tools/switch/xci_read.py CONTAINER [--type Program] [--exefs N --extract main]
 
-`--exefs N` lists the PartitionFS in section N and `--extract PATH` writes one file
-out of it, which is how the `main` NSO is obtained without unpacking anything.
-For a RomFS section the printed `level6` offset is what tools/switch/romfs_read.py
-wants for --romfs-offset, and the printed section key is its --title-key.
-
-Key rule, from hactool nca.c: the generation is max(crypto_type, crypto_type2),
-minus one when non-zero (0 and 1 are both master key 0), and it indexes
-key_area_key_application_%02x. A rights id of all zeroes means key-area crypto and
-no ticket is needed at all.
-
-docs/switch_re.md "Do not unpack the NSP".
+A RomFS section's `level6` offset and section key are romfs_read.py's --romfs-offset and --title-key.
+Header and key rules: docs/switch_re.md "Do not unpack the NSP".
 """
 
 import argparse
@@ -200,12 +186,8 @@ def nca_header(container, off, header_key):
 
 
 def section_key(h, keys, tickets=None):
-    """The body key: key area slot 2 under key_area_key_application_<keygen>, or, for an NCA
-    with a rights id, the ticket's title key under titlekek_<keygen>.
-
-    The ticket is `<rights id>.tik` in the same container, its encrypted title key at +0x180
-    (hactool ticket.c). The rights id's last byte is the key generation and the titlekek index
-    is that minus one, which is the same number as `h["keygen"]`."""
+    """The body key: key area slot 2 under key_area_key_application_<keygen>, or the `<rights id>.tik`
+    title key (+0x180) under titlekek_<keygen>. docs/switch_re.md."""
     rights = h["rights_id"]
     if rights != bytes(16):
         name = f"titlekek_{h['keygen']:02x}"

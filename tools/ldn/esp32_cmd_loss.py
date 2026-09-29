@@ -3,11 +3,9 @@
 
     tools/ldn/esp32_cmd_loss.py TRACE [TRACE ...] [--timeline]
 
-For each STATUS reply: ETH_TX the host wrote before the STATUS request that produced it, against
-the board's tx_eth + tx_eth_failed; bytes written since the last HELLO against the board's latest
-CREDIT (bytes the reader took off the UART). A byte gap is loss on the line or in the UART; a
-command gap with no byte gap is loss after the reader (parse or handler). A trace two launchers
-appended (the Arceus joiner that execs the host) is rebased where the board's counts restart."""
+Per STATUS reply: ETH_TX written before its request against tx_eth + tx_eth_failed, and bytes since
+HELLO against CREDIT. A byte gap is loss on the line or in the UART; a command gap alone is loss
+after the reader. A trace two launchers appended is rebased where the board's counts restart."""
 import argparse
 import os
 import sys

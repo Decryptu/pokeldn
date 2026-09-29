@@ -1,16 +1,10 @@
 #!/usr/bin/env python3
-"""Two boards, no console: board A hosts a network and floods the station with 1200-byte frames
-at --flood per second, as a Scarlet host does in a retransmit storm; board B joins it and sends a
-200-byte frame every 1/--send s, as the joiner's acks. Prints what B's host handed B, what B
-counted, and B's STATUS maxima (read_max_us is the one a starved reader moves).
+"""Two boards, no console: board A hosts and floods the station with 1200-byte frames at --flood per
+second; board B joins and sends a 200-byte frame every 1/--send s. Prints B's counts and STATUS maxima.
     ./.venv/bin/python tools/ldn/esp32_pair_bench.py AP_PORT STA_PORT [--seconds S] [--flood N]
         [--send N] [--bench]
---bench fills the station board's board-to-host line with BENCH while it sends, with the air free:
-the condition in which a writer that spins on a full UART ring starved the reader.
---burst N sends N frames back to back per tick. A's RX_MGMT header copies count B's frames it
-received and its misses: a sequence number first seen with the retry bit (docs/hardware_esp32.md).
---flood is broadcast from the access point, which an ESP32 sends at 1 Mbit/s: past about 90 a second
-it fills the air itself. docs/hardware_esp32.md, The serial ceiling."""
+--bench fills B's board-to-host line with BENCH while it sends; --burst N sends N frames per tick.
+--flood is broadcast at 1 Mbit/s and fills the air past about 90 a second. docs/hardware_esp32.md."""
 import argparse, collections, os, sys, threading, time
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__)))))
 from pokeldn.ldn import esp32
