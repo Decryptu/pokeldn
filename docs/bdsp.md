@@ -6,8 +6,8 @@ has_children: true
 
 # Brilliant Diamond and Shining Pearl
 
-Brilliant Diamond and Shining Pearl are built in Unity by ILCA. Pia is the game's own transport
-and IL2CPP game code sits directly on it.
+Brilliant Diamond and Shining Pearl are built in Unity by ILCA, with IL2CPP game code directly on
+Pia.
 
 Measured against a French Shining Pearl, version 1.3.0, in the Union Room (Pokemon Center 2F, the
 left attendant, the plain "yes") and in the Grand Underground.
@@ -16,11 +16,10 @@ left attendant, the plain "yes") and in the Grand Underground.
 
 Proven on retail hardware, end to end:
 
-- LDN association and a seat in the console's session, needing only `prod.keys` and the title's LDN
-  passphrase.
-- Every packet decrypted, and the send path proven byte-exact against the console's own ciphertext.
-- The Local Protocol, Mesh Station Protocol and Mesh Protocol handshakes; a station in the console's
-  mesh; its round-trip timer answered; its reliable transport acknowledged in both directions.
+- A seat in the console's session with only `prod.keys` and the LDN passphrase; every packet
+  decrypted; the send path byte-exact against the console's own ciphertext.
+- The Local, Mesh Station and Mesh Protocol handshakes, the RTT timer answered, the reliable
+  transport acknowledged both ways.
 - A character of pokeldn's own choosing walking in a retail Union Room, showing a trade emote, and
   running the game's own greeting dialogue with the player.
 - A complete trade: the console opened its trade screen for that character, offered a Pokemon,
@@ -52,9 +51,9 @@ Proven on retail hardware, end to end:
   `UnionRoomManager` is unread (`UnionRoomManager$$OnDestroy` `0x1e4c540` exists; its caller is not
   known).
 - Whether a retail console that is not the Grand Underground session host adopts a 0x61 from
-  pokeldn. Every Underground session measured had the console as host, and pokeldn does not host an
-  Underground session. The common dispatch and the `UgNetworkManager` handler have no sender filter
-  ([the protocol page](bdsp_protocol.md#the-grand-underground)); a non-host retail run is still needed.
+  pokeldn. Every Underground session measured had the console as host, and pokeldn does not host one. The
+  common dispatch and the `UgNetworkManager` handler have no sender filter
+  ([the protocol page](bdsp_protocol.md#the-grand-underground)).
 - Where the Unity player takes `Screen.width` from. The 2D grid positions rest on it being the
   1280 x 720 default that `0x6062e8` keeps when `/Data/rawsettings` +0x1c is 0
   ([the protocol page](bdsp_protocol.md#the-grand-underground)); another source, such as the

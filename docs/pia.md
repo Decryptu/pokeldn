@@ -6,10 +6,8 @@ nav_order: 1
 
 # The Pia layer
 
-Pia is Nintendo's peer-to-peer session middleware. It runs directly on UDP, port 12345 in every
-title examined, and every datagram begins with the magic `32 AB 98 64`, big-endian on the wire.
-
-The Pia version decides the header layout. Three bands appear in the titles covered here:
+Pia is Nintendo's peer-to-peer session middleware, on UDP port 12345 in every title examined. Every
+datagram begins with the magic `32 AB 98 64`. The Pia version decides the header layout:
 
 | | FireRed/LeafGreen (the GBA app) | Brilliant Diamond / Shining Pearl | Sword / Shield |
 |---|---|---|---|
@@ -17,16 +15,16 @@ The Pia version decides the header layout. Three bands appear in the titles cove
 | header size | 0x1D | 0x20 | 0x20 |
 | variable ids | 2 bytes each | 4 bytes each | 1 byte + a halfword |
 | GCM tag on the wire | | 8, truncated from 16 | all 16 |
-| module | `pokeldn/ldn/pia_connect.py` | `pokeldn/ldn/pia5.py` | `pokeldn/ldn/pia4.py` |
+| module | `pokeldn/ldn/pia_connect.py` | `pokeldn/ldn/pia5.py` (round-trips captures byte for byte) | `pokeldn/ldn/pia4.py` |
 
-Addresses given below as `0x01...` are offsets into Shield 1.3.2's decompressed `main`, as
-`tools/switch/nso_read.py` lays it out; addresses given as `main.bin 0x01...` are BDSP 1.3.0's.
+Unless a section names another build, `0x01...` addresses are Shield 1.3.2's decompressed `main`
+(as `tools/switch/nso_read.py` lays it out) and `main.bin 0x01...` addresses are BDSP 1.3.0's.
 
 ## Packet headers
 
 ### Version 9 (Pia 5.27-5.45)
 
-Read out of `nn::pia::common::Packet::Header`; the parser byte-swaps three fields with `rev`.
+From `nn::pia::common::Packet::Header`; the parser byte-swaps three fields with `rev`.
 
     0x00  4  magic 0x32AB9864, big-endian
     0x04  1  0x80 (encrypted) | version (0x7F)
@@ -38,12 +36,9 @@ Read out of `nn::pia::common::Packet::Header`; the parser byte-swaps three field
     0x18  8  AES-GCM tag, truncated from 16
     0x20     ciphertext: the plaintext padded to a multiple of 16
 
-`pokeldn/ldn/pia5.py` round-trips real captured packets byte-identically.
-
 ### Version 4
 
-Read out of the deserializer at `0x01774730`, which requires more than 0x1f bytes
-(`cmp w2, #0x1f; b.hi`) and then copies field by field:
+From the deserializer `0x01774730`, which requires more than 0x1f bytes (`cmp w2, #0x1f; b.hi`):
 
     0x00  4  magic 0x32AB9864, big-endian
     0x04  1  0x80 (encrypted) | version (0x7F) = 4
@@ -53,44 +48,31 @@ Read out of the deserializer at `0x01774730`, which requires more than 0x1f byte
     0x10  16 AES-GCM tag, not truncated
     0x20     ciphertext
 
-The widths, the endianness, the 0x20 total and the version byte are measured. The two small
-fields are per destination station and both are 0 on a packet sent to no station in particular,
-which is every packet a retail Sword sent in 484 (`0x017beb14`, `0x017beb20`: no station object,
-both zero). Sent to one station (`0x017beb74`, `0x017beb78`):
+The two small fields are per destination station, both 0 on a packet sent to no station in
+particular: every one of 484 packets a retail Sword sent (`0x017beb14`, `0x017beb20`). Sent to one
+station (`0x017beb74`, `0x017beb78`, byte from the caller, halfword from a session object):
 
-- The connection id is the sender's byte at station +0x78, set at connection to
-  `2 + (tick mod 254)` (`0x017c6a00`); the peer's id arrives in the connection setup and is kept
-  at +0x79. The receiver (`0x017bdbd0`) drops a packet whose connection id is 2 or more and
-  differs from the id it holds for that sender; 0 and 1 pass.
-- The packet id is a per-station counter `0x0185dd00` steps before each send, 1 to 0xFFFF and
-  never 0. The receiver (`0x0185dd20`) counts a 0 as unsequenced and passes it; a non-zero id not
-  above the last one seen from that station is dropped, and the gap above it is added to the
-  station's lost-packet count at +0x18.
+- Connection id: the sender's byte at station +0x78, set at connection to `2 + (tick mod 254)`
+  (`0x017c6a00`); the peer's arrives in the connection setup and is kept at +0x79. The receiver
+  (`0x017bdbd0`) drops an id of 2 or more that differs from the one it holds; 0 and 1 pass.
+- Packet id: a per-station counter stepped by `0x0185dd00` before each send, 1 to 0xFFFF. The
+  receiver (`0x0185dd20`) passes 0 as unsequenced; a non-zero id not above the last one from that
+  station is dropped, and a gap is added to the station's lost-packet count at +0x18.
 
-Sending 0 in both, as the console does, is accepted on every path. The initializer at
-`0x017748bc` writes magic and version as one 64-bit store, `0x00000004_32AB9864`, and zeroes exactly
-8 bytes at the nonce and 16 at the tag; three validators (`0x017749f0`, `0x01774b60`, `0x01774d00`)
-each check `(byte & 0x7f) == 4`. BDSP's binary carries the same three validators against 9 and the
-same initializer writing 9.
-
-The meanings of the byte at 0x05 and the halfword at 0x06 are unconfirmed. `0x017beb74` and
-`0x017beb78` write them, taking the byte from the caller and the halfword from a session object.
-Both were zero in every captured packet.
-
-Below the header, version 4 is version 9's LDN family: the same session key, the same IV, and the
-same message framing with one extra field. `pokeldn/ldn/pia4.py` implements the header.
+Sending 0 in both, as the console does, passes every path. The initializer `0x017748bc` stores
+`0x00000004_32AB9864` as one 64-bit word and zeroes nonce and tag; validators `0x017749f0`,
+`0x01774b60`, `0x01774d00` check `(byte & 0x7f) == 4` (BDSP: the same with 9). Below the header,
+version 4 shares version 9's session key and IV, and its framing plus one field.
 
 ## Message framing
 
-A Pia payload carries one or more messages. Each opens with a presence byte saying which header
-fields follow. The walk stops at `0xFF` and at nothing else; `0x00` is a legal one-byte header
-stating no field at all, a message whose flags, size, protocol, port and destination are all the
-previous message's. A field the presence byte omits is inherited from the previous message in the
-same packet (`0x01853050`, bit by bit): flags at +9, size at +0xA, protocol|port at +0xC,
-destination at +0x10 and source at +0x18. An inherited size is bounds-checked against 0x589.
+A Pia payload carries one or more messages, each opening with a presence byte saying which header
+fields follow. A field it omits is inherited from the previous message in the packet (`0x01853050`,
+bit by bit): flags at +9, size at +0xA, protocol|port at +0xC, destination at +0x10, source at
++0x18. An inherited size is bounds-checked against 0x589. The walk stops at `0xFF` and nothing else:
+`0x00` is a legal one-byte header, a message inheriting every field.
 
-Each band's own reader copies the previous header forward, then deserialises the new one, reading a
-field only when its bit is set:
+Each band's reader copies the previous header forward, then reads the fields whose bits are set:
 
 | header version | title read | reader | stop test | next message starts |
 |---|---|---|---|---|
@@ -100,19 +82,17 @@ field only when its bit is set:
 | 11 | Scarlet 4.0.0 | `0x6ed2d0`, copy `0x6ed348`..`0x6ed360`, fields `0x6ed4b4` | `0x6ed324` | where the payload ends (`0x6e9054`..`0x6e905c`) |
 | 16 (6.39-7.2) | Legends Z-A | `0x256e088`, copy `0x256dac4`, fields `0x256de5c` | none: the packet header states its padding | where the payload ends |
 
-A station bundles runs of equal-sized messages this way: Scarlet sends its zero-filled record chunks
-behind presence 0x00, a Shining Pearl a reliable message that follows one of the same size, and
-an Arceus its second 24-byte record. Across every decrypted retail and emulated capture of the
-three version-9 and version-11 titles, a walk that treats 0x00 as a message ends exactly on the
-`0xFF` padding in every packet (5,866 Shining Pearl, 11,501 Arceus, 38,350 Scarlet); a walk that
-stops at 0x00 leaves bytes unread in 3,444 of them and drops everything after the first such
-message, of any protocol. `tests/test_pia_bundled.py` pins one packet of each title.
+Stations bundle runs of equal-sized messages behind presence 0x00: Scarlet its zero-filled record
+chunks, Shining Pearl a reliable message after one of the same size, Arceus its second 24-byte
+record. Treating 0x00 as a message ends every walk exactly on the `0xFF` padding (5,866 Shining
+Pearl, 11,501 Arceus, 38,350 Scarlet packets); stopping at 0x00 leaves bytes unread in 3,444 of them
+and drops everything after. `tests/test_pia_bundled.py` pins one packet of each title.
 
 Version 3 (Let's Go 1.0.2) has no presence byte: a fixed 0x16-byte header whose second byte must be
 1 (`0x5ae7d0`), the walk stopping at `0xFF` (`0x5ae790`).
 
-The header size is computed inline at eighteen sites in the version-4 Pia band, always as the same
-five conditional adds over a base of one:
+Version 4 computes the header size inline at eighteen sites, always as five conditional adds over a
+base of one:
 
     tst w9, #1    -> +1       message flags
     tst w9, #2    -> +2       payload size, big-endian
@@ -120,70 +100,54 @@ five conditional adds over a base of one:
     tst w9, #8    -> +8       destination
     tst w9, #0x10 -> +8       the sender's station constant id
 
-A presence byte of 0x7F gives a 24-byte header; bits 0x20/0x40 add nothing, as version 9's 0x7F adds
-nothing past 0x0F. Version 9's header is 16 bytes; version 4 adds the eight-byte constant id. That
-id is `station_protocol.ldn_constant_id` over the sender's MAC, the same integer the Local Protocol's
-`host_constant_id` carries: big-endian in the Pia header, little-endian in the Local Protocol body.
+Presence 0x7F gives a 24-byte header; bits 0x20/0x40 add nothing, as in version 9, whose header is
+16 bytes. The eight-byte constant id is `station_protocol.ldn_constant_id` over the sender's MAC, the
+Local Protocol's `host_constant_id`: big-endian here, little-endian in the Local Protocol body.
 
-Version 16 (Z-A) narrows the fields: its header size `0x256dfc8` is one byte plus one for flags,
-two for the size, and one each for bits 0x04 (protocol), 0x08 (port) and 0x10. The bit-0x10 byte is
-stored between the protocol and the port (`0x256df54`, setter `0x256a8e8`); a fresh header holds
-protocol 0xFF, 0xFD there and port 0 (`0x256a8c0`). The reader ignores bits 0x20 to 0x80 and
-rejects a size of 0x590 or more (`0x256df04`). Bit 0x10 has not been seen on the air.
-`pokeldn.ldn.reliable.parse_messages` reads it.
+Version 16 (Z-A) narrows the fields: header size `0x256dfc8` is one byte plus one for flags, two for
+size, and one each for bits 0x04 (protocol), 0x08 (port) and 0x10. The bit-0x10 byte sits between
+protocol and port (`0x256df54`, setter `0x256a8e8`); a fresh header holds protocol 0xFF, 0xFD there
+and port 0 (`0x256a8c0`). The reader ignores bits 0x20 to 0x80 and rejects a size of 0x590 or more
+(`0x256df04`). Bit 0x10 has not been seen on the air. `pokeldn.ldn.reliable.parse_messages` reads it.
 
-In versions 4 and 9 each message is padded to a multiple of four, and the reader steps over the
-padding without reading it: a Shining Pearl pads with 0x00. The packet tail is `0xFF`.
-
-`pia4.parse_packet()` resolves the inheritance; `pia4.parse_messages()` returns each header as sent.
-The check that a walk is correct is that consumed bytes plus `0xFF` padding account for the whole
-plaintext of every packet in a capture.
+In versions 4 and 9 each message is padded to a multiple of four (Shining Pearl pads with 0x00),
+stepped over unread; the packet tail is `0xFF`. `pia4.parse_packet()` resolves the inheritance,
+`pia4.parse_messages()` returns each header as sent. A walk is correct when consumed bytes plus
+`0xFF` padding account for every packet's whole plaintext.
 
 ### Compression
 
-A message's payload may be a zlib stream, flagged in the message flags:
+A payload may be a zlib stream, flagged per message in the message flags: 0x20 in 5.27-5.45, 0x10
+in version 4. The version-5 reliable header has its own zlib flag, 0x10; BDSP set it on one 23-byte
+game message, sent as a 20-byte stream with a 4 KB window ([BDSP's protocol](bdsp_protocol.md)).
 
-| Pia version | zlib flag |
-|---|---|
-| 5.27-5.45 | 0x20 |
-| 4 | 0x10 |
-
-The version-5 reliable stream has a flag of its own, 0x10 in its own header; BDSP has set it on one
-23-byte game message, sent as a 20-byte zlib stream with a 4 KB window
-([BDSP's protocol](bdsp_protocol.md)).
-
-Compression is per message: BDSP switches it on mid-session. Read raw, a compressed 31-byte message
-parses into a header claiming a payload of 0x6260. Over 2835 version-4 messages in two captures,
-`flags & 0x10` predicts zlib-decompressibility exactly: 256 set and every one a valid stream, 2579
-clear and none decompressing. A zlib stream's first two bytes read as a big-endian halfword are a
-multiple of 31.
+BDSP switches compression on mid-session. Read raw, a compressed 31-byte message parses into a
+header claiming a payload of 0x6260. Over 2835 version-4 messages, `flags & 0x10` predicts
+decompressibility exactly (256 set, all valid; 2579 clear, none). A zlib stream's first two bytes,
+read as a big-endian halfword, are a multiple of 31.
 
 ### The footer
 
 A packet sent to more than one console carries a footer: one big-endian halfword per recipient, the
-low half of each station's variable id. Its length is the header field at offset 0x0f. It is not
-covered by the GCM tag; including it in the ciphertext makes the packet fail to authenticate with no
-other symptom. The ciphertext is `data[0x20 : len(data) - footer_size]`;
-`pokeldn/ldn/pia5.ciphertext()` reads the size off the packet. A capture where some packets
-authenticate and some do not: group the failures by footer size before doubting the key or the IV.
+low half of its variable id, length in the header byte at 0x0f. The GCM tag does not cover it: the
+ciphertext is `data[0x20 : len(data) - footer_size]` (`pokeldn/ldn/pia5.ciphertext()`), and a
+footer left in fails authentication with no other symptom. When only some packets authenticate,
+group the failures by footer size first.
 
 ## Session keys
 
-Pia carries a separate session-key implementation per network type, in separate classes:
+One session-key implementation per network type, in separate classes:
 
 | network type | class | derivation |
 |---|---|---|
-| **LDN** (local wireless) | `nn::pia::local::LocalProtocol` | AES-128-ECB under the game key, over 16 bytes drawn from an xorshift128 seeded from a session value |
+| LDN (local wireless, the Union Room) | `nn::pia::local::LocalProtocol` | AES-128-ECB under the game key, over 16 bytes drawn from an xorshift128 seeded from a session value |
 | LAN | `nn::pia::lan::LanProtocol` | first 16 bytes of HMAC-SHA256(game key, a 32-byte parameter whose last byte is incremented) |
 | NEX (internet) | `nn::pia::nex::*` | session key from the matchmaking server |
 
-A Union Room or any local-wireless session is LDN. Published prose describing a game as encrypting
-"the SSID or random values seeded with the session parameter" describes two implementations; the
-class name says which a capture used.
+"The SSID or random values seeded with the session parameter", in published prose, names two
+implementations; the class name says which one a capture used.
 
 ### The game key
-
-The game key is a constant plus the game version:
 
     key = cryptoKeyDataSeed                     the game's own 16-byte constant
     key[1]  = (version >> 8) & 0xFF
@@ -191,44 +155,39 @@ The game key is a constant plus the game version:
     key[7]  = (version >> 1) & 0xFF                       which the advertisement carries
     key[12] = (version >> 0) & 0xFF
 
-A published per-game key is a derived value for one game version; it differs from the game's own
-seed in exactly bytes 1, 3, 7 and 12. `ldn_game_key()` implements it.
-
-Sword/Shield's key is a 16-byte ASCII literal loaded with a single `ldp` and handed over unchanged,
-with no seed and no version substitution.
+A published per-game key is this value for one game version and differs from the seed in exactly
+bytes 1, 3, 7 and 12 (`ldn_game_key()`). Sword/Shield's key is a 16-byte ASCII literal loaded with
+one `ldp` and used unchanged, with no seed and no version substitution.
 
 ### The LDN session key
 
 For Pia 5.9-5.45:
 
-    rnd = four SEAD draws, seeded with the SESSION PARAMETER from the advertisement (+0x0c),
+    rnd = four SEAD draws, seeded with the session parameter from the advertisement (+0x0c),
           packed little-endian into 16 bytes
     session key = AES-128-ECB(game key).encrypt(rnd)
 
-SEAD is Nintendo's standard-library RNG: the state is seeded by the recurrence
-`s[i] = (prev ^ (prev >> 30)) * 0x6C078965 + i` and run as an xorshift128 with shifts 11, 8 and 19.
-`pokeldn/ldn/sead.py` is the generator and `pia5.ldn_session_key()` the derivation.
-
-For Pia 6.16+ (FireRed) the session key is AES of the network SSID under the game key.
+SEAD, Nintendo's standard-library RNG, seeds its state by `s[i] = (prev ^ (prev >> 30)) *
+0x6C078965 + i` and runs an xorshift128 with shifts 11, 8 and 19 (`pokeldn/ldn/sead.py`;
+`pia5.ldn_session_key()`). For Pia 6.16+ (FireRed) the session key is AES of the SSID under the game
+key ([The wireless layer](ldn.md#hosting-for-an-emulator)).
 
 ### The AES-GCM IV
 
-For Pia 5.27-5.45, and unchanged in version 4:
+For Pia 5.27-5.45 and version 4 (`ldn_nonce_crc()`, `gcm_iv()`):
 
-    IV[0..2]  = first three bytes of crc32( network id (LITTLE-endian) || SOURCE MAC ADDRESS )
-    IV[3]     = source variable id & 0xFF        both from the packet header
+    IV[0..2]  = first three bytes of crc32( network id (little-endian) || source MAC address )
+    IV[3]     = source variable id & 0xFF        from the packet header
     IV[4..11] = the packet's 8-byte header nonce
 
-`ldn_nonce_crc()` and `gcm_iv()`. The source MAC cannot be read off the packet being decrypted;
-everything else comes from the capture or the advertisement.
-
-The plaintext is padded with `0xFF` to a multiple of 16 before encryption. The padding is known
-plaintext: a candidate key can be tested with one AES block.
+The source MAC is not in the packet; the rest comes from the capture or the advertisement. The
+plaintext is padded with `0xFF` to a multiple of 16, known plaintext that tests a candidate key in
+one AES block.
 
 ## The protocols
 
-Read off `GetProtocolId`, vfunc4 on every `nn::pia` protocol object, whose body is two words; one
-pass over the RTTI vtables names the whole numbering.
+Read off `GetProtocolId` (vfunc4 on every `nn::pia` protocol object, a two-word body) in one pass
+over the RTTI vtables.
 
 | id | class | notes |
 |---|---|---|
@@ -246,81 +205,64 @@ pass over the RTTI vtables names the whole numbering.
 | 0x94 | SessionProtocol | |
 | 0xa4 | MonitoringDataProtocol | |
 
-BDSP registers nine of these and advertises versions 0x14 v2, 0x18 v3, 0x1c v0, 0x24 v0, 0x58 v3,
-0x68 v1, 0x7c v3, 0x94 v1, 0xa4 v0. Mesh protocol version 3 pins the library to Pia 5.30-5.45 and
-reliable version 3 narrows it to 5.31-5.43.
+BDSP registers nine: 0x14 v2, 0x18 v3, 0x1c v0, 0x24 v0, 0x58 v3, 0x68 v1, 0x7c v3, 0x94 v1, 0xa4
+v0. Mesh version 3 pins the library to Pia 5.30-5.45, reliable version 3 to 5.31-5.43.
 
 ### Joining a mesh
 
-A station reaches a mesh through three protocols in order (the Local Protocol's update session
-0x24, the Mesh Station Protocol's connection request 0x14, the Mesh Protocol's join request 0x18);
-each retransmits every 500 ms until acknowledged.
+A station joins through the update session (0x24), the connection request (0x14) and the join
+request (0x18), in order; each retransmits every 500 ms until acknowledged.
 
-A mesh message is acknowledged on the station protocol. The Mesh Protocol's type table has no ack
-and a 5.31-5.43 binary has no builder for one: each of the four sites that acknowledges a mesh
-message reads the ack id and calls a `MeshStationProtocol` method, so the ack on the air is the
-station protocol's eight-byte type-5 ack on 0x14, `05 00 00 00` and the ack id, big-endian. The ack
-id is the last four bytes of the message, whatever its length; the reader is `size - 4` with a
-borrow check and answers 0 for anything shorter than four bytes.
-`pokeldn/ldn/mesh_protocol.ack_for()`.
-
-A host acknowledges an incoming join request before it sends the join response. The ack belongs in
-the receiver, on every copy.
+The Mesh Protocol has no ack type (5.31-5.43 has no builder): the four sites acking a mesh message
+call `MeshStationProtocol`, so the ack is the eight-byte type-5 ack on 0x14, `05 00 00 00` and the
+ack id big-endian. The ack id is the message's last four bytes whatever its
+length (`size - 4` with a borrow check; 0 under four bytes). `pokeldn/ldn/mesh_protocol.ack_for()`.
+A host acks a join request before sending the join response; the receiver acks every copy.
 
 ## The Local Protocol (0x24)
 
-The host broadcasts an update session (message type 0x11) about every 100 ms and repeats it
-until every station acknowledges it. Its body:
+The host broadcasts an update session (type 0x11) about every 100 ms until every station acks it:
 
     local message header  version 1, type 0x11, size 73
     sequence id
-    network id            random, and NOT the advertisement's network id
+    network id            random, not the advertisement's network id
     host variable id      the same value as the packet header's source variable id
     host constant id
     allow participating
     node 0..7             address:port and a ranking byte each
     host migration state
 
-Eight nine-byte node slots and one byte. The byte order changes twice inside one message: the Pia
-message header around it is big-endian, the Local Protocol's own fields are little-endian, and a
-local address inside them is big-endian again.
-
-`pokeldn/ldn/local_protocol.py` parses it and the same parser reads version 4's unchanged.
+Eight nine-byte node slots and one byte. The Pia message header is big-endian, these fields
+little-endian, a local address inside them big-endian. `pokeldn/ldn/local_protocol.py` parses it and
+version 4's.
 
 ### The ack
 
-The 20-byte ack (type 0x21) is built by `LocalAckMessage::Serialize` (`main.bin 0x016bc0f4`): `1` at
-offset 0, the message type at 1, the payload-size halfword at 2, six zero bytes at 4, the sequence
-id at 0x0C and four zero bytes at 0x10. The constructor (`0x016bc0c8`) does `mov w8, #0x14; str w8,
-[x0, #0x14]`, a word store that writes the 20-byte total into the halfword at +0x14 and zeroes the
-payload size at +0x16, so an ack's payload size is 0 and the whole message is 20 bytes.
+The ack (type 0x21) is 20 bytes, from `LocalAckMessage::Serialize` (`main.bin 0x016bc0f4`): `1` at
+0, the type at 1, the payload-size halfword at 2, six zero bytes at 4, the sequence id at 0x0C, four
+zero bytes at 0x10. The constructor (`0x016bc0c8`, `mov w8, #0x14; str w8, [x0, #0x14]`) writes 20
+into the halfword at +0x14 and zeroes the payload size at +0x16.
 
-`LocalProtocol` has exactly one send path (`0x016af22c`), and all four of its message types reach it
-with the same destination object and options, so an ack is framed exactly like the update session it
-answers: presence `0x7F`, message flags `0x11`, protocol 36, port 0, destination 0. Flags `0x11` is
-"destination is a bitmap" plus "may not be bundled"; the bitmap (`0x0159a15c`) is `1 << station
-index`, or 0 for broadcast.
+`LocalProtocol` has one send path (`0x016af22c`) for all four types, so an ack is framed like the
+update session: presence `0x7F`, flags `0x11` ("destination is a bitmap" plus "may not be bundled"),
+protocol 36, port 0, destination 0. The bitmap (`0x0159a15c`) is `1 << station index`, or 0 for
+broadcast. A client broadcasts its ack to the network broadcast address, packet `dst_var` 0, message
+destination 0; the rebroadcast stopping is the pass signal.
 
-An ack is attributed by the sender's address. `0x016af96c` handles a received 0x21 and calls
-`0x016aec94`, which walks nine node slots at `this+0x188` in steps of 0x40 and compares each with a
-memcmp of 16 bytes of address at +8 plus the port halfword at +0x18. The client's own Pia variable
-id reaches the IV as the low byte of the source variable id, so it must be stable within a run and
-non-zero.
-
-A client broadcasts its ack the way the host broadcasts the question: to the network broadcast
-address with packet `dst_var` 0 and message destination 0. The pass signal is the rebroadcast
-stopping.
+An ack is attributed by the sender's address: `0x016af96c` calls `0x016aec94`, which walks nine node
+slots at `this+0x188` (stride 0x40) comparing 16 bytes of address at +8 and the port at +0x18. The
+client's variable id feeds the IV (low byte of the source variable id), so it must be stable within a
+run and non-zero.
 
 ## The Mesh Station Protocol (0x14)
 
-The receive dispatcher reads the message type from byte 0, subtracts one, bounds it at six and jumps
-through a seven-entry table (version 4: `0x017c5f50`, table `0x02081804`; BDSP: `0x0154e848`, table
-`0x3e6b38f`). The seven types are connection request, connection response, disconnection request,
-disconnection response, ack, relay connection request, relay connection response.
+The dispatcher indexes a seven-entry table with byte 0 minus one (version 4: `0x017c5f50`, table
+`0x02081804`; BDSP: `0x0154e848`, table `0x3e6b38f`): connection request and response,
+disconnection request and response, ack, relay connection request and response.
 
 ### The version-9 connection request
 
-Checked in this order:
+Checked in order:
 
 | offset | field | a failure gives |
 |---|---|---|
@@ -333,94 +275,74 @@ Checked in this order:
 | | station location size, big-endian u16, 0x20..0x40 | drop |
 | | the station location | drop |
 
-`0x0159b850` looks a protocol version up by id by walking the registered list and returns 0 when it
-finds nothing, so an unregistered id expects version 0 and a version of 1 against it is always "too
-high", a reply. The protocol count and every protocol's version are measurable without knowing any
-protocol in advance: send N pairs of `(0xFF, 1)` for each N in turn; the N that draws a denial is
-the console's own count.
+`0x0159b850` returns version 0 for an unregistered id, so `(0xFF, 1)` always draws "too high": the N
+of `(0xFF, 1)` pairs that draws a denial is the console's protocol count.
 
 The result byte maps from internal errors at `0x0154f5e8`:
 
 | error | result | meaning |
 |---|---|---|
-| 0x646f | 2 | our version too low |
-| 0x6470 | 3 | our version too high |
+| 0x646f | 2 | the requester's version too low |
+| 0x6470 | 3 | too high |
 | 0xc24 | 4 | |
 | 0xc25 | 1 | |
-| 0x11c0f | 7 | the request parsed and every version matched; the second stage refused it |
-| 0x11c26 | *(none)* | the protocol count mismatch, which is why that one is silence |
+| 0x11c0f | 7 | parsed, every version matched, the second stage refused it; also "this variable id is already one of my stations" (cleared by re-entering the room or a fresh id) |
+| 0x11c26 | *(none)* | protocol count mismatch: silence |
 
-The parser checks that our count equals the console's and that each of our entries carries the
-right version; it never checks that our ids are its ids. Nine entries of `(0xFF, 0)` pass the whole
-negotiation.
+The ids are never checked: nine `(0xFF, 0)` entries pass the negotiation.
 
-Result 7 also means "this variable id is already one of my stations". Leaving and re-entering the
-room clears it, and so does a fresh id.
+The station location's address-size byte counts the port: the InetAddress parser tests `1 << size`
+against `0x00040044`, so only 2, 6 and 18 pass. The request parser discards the location's error, so
+a malformed location reads as a request with variable id 0 and every variable id draws the same
+refusal.
 
-The station location's address-size byte counts the port. The InetAddress parser builds `1 << size`
-and tests it against `0x00040044`, so only 2, 6 and 18 pass. The connection-request parser throws
-the location's error away, so a malformed location reads as a well-formed request whose variable id
-is 0, and every variable id then draws the same refusal.
-
-Related sizes, each read off the binary: the station protocol's ack is 8 bytes (`0x0154fa2c`), its
-denial 15 (`0x015501ec`), its disconnection response 1 (`0x0154ea60`).
+Sizes from the binary: ack 8 bytes (`0x0154fa2c`), denial 15 (`0x015501ec`), disconnection response
+1 (`0x0154ea60`).
 
 ### The version-4 connection request
 
-The same protocol number carries a different message. The handler at `0x017c62a0` reads:
+The handler `0x017c62a0` reads a different message on the same protocol:
 
     [0]     message type            1
     [1]     a byte compared against the station's own byte at +0x79
     [2]     platform id             must be 9   (5.27-5.45 checks 4)
     [3]     0 or 1; anything higher is rejected. 1 means the request also names a target variable id
     [4]     target constant id      big-endian u64, compared against the console's own
-    [0xC]   target variable id      big-endian u32, checked ONLY when [3] is 1
+    [0xC]   target variable id      big-endian u32, checked only when [3] is 1
     [0x10]  protocol count          compared against the console's own count at +0x78
     [0x11]  the sender's station location
 
-Version 9's layout shifted one byte from offset 3 onwards, plus the flag byte that causes the
-shift. Sending version 9's request at a version-4 console puts every field one byte early.
+From offset 3 on, version 9's fields sit one byte earlier. There is no protocol list: from 0x11 on is
+the station location (one serializer call capped at 0x40 bytes), unchanged from version 9
+(deserializer `0x0185ee20`, same offsets, address size 2, 6 or 18), which makes [1] and [0x10] its
+nat flags and nat location.
 
-There is no protocol list: everything from 0x11 is the station location, written by one serializer
-call capped at 0x40 bytes. The location is unchanged from version 9 (the deserializer at
-`0x0185ee20` stores to the same offsets in the same order and its address-size byte admits only 2, 6
-and 18), which names the two bytes at [1] and [0x10] as the location's nat flags and nat location.
+With [3] = 1, 96 requests drew nothing. With [3] = 0 the console answers with its own request: its
+location, constant id, the variable id the update session gave the joiner, a service variable id, a
+nat quad, then an ack id, a per-message counter `0x017d5750` reads at message size minus four.
 
-[3] must be 0 for a request to be answered. With [3] = 1, 96 requests drew nothing; with [3] = 0
-the console answered with a connection request of its own, carrying its location, its constant id,
-the variable id the update session had already given us, a service variable id, a nat quad, and
-then four bytes that are not part of the location: an ack id, a counter that increments once per
-message. `0x017d5750` reads it as the message size minus four.
+The platform check (`0x017c62e8`) runs first and a mismatch is answered: the response sender
+`0x017c6c30` allocates 17 bytes, `[0] = 2`, `[1] = result`, `[2] = 9`, `[3] = 0`. Later checks are
+silent, so a wrong platform tells "never reached the handler" from "failed a later check". Platform 4
+drew from a retail Sword `02 02 09 00 00 00 00 00 00 00 00 00 00 00 00 00 00`: result 2.
 
-The platform byte is an instrument. Its check sits above every other one (`0x017c62e8`) and a
-mismatch is answered: it tail-calls the connection-response sender
-(`0x017c6c30`), which allocates 17 bytes and writes `[0] = 2`, `[1] = the result code`, `[2] = 9`,
-`[3] = 0`. Everything below the platform byte is silence on mismatch, so a deliberately wrong
-platform separates "the packet never reached the handler" from "it reached the handler and failed a
-later check". Sent with platform 4, a retail Sword answered
-`02 02 09 00 00 00 00 00 00 00 00 00 00 00 00 00 00`: result 2, version too low.
-
-The whole handshake, once [3] is cleared:
+The handshake, [3] cleared:
 
     ->   the console's connection request
-    <-   our connection response, result 0, carrying its constant and variable ids
-    ->   `05 00 00 00 <ack id>` - a type-5 ack, eight bytes
-    ->   its own connection response, result 0, accepted, ~600 bytes, carrying our constant id,
-         our variable id and the player's name in plain ASCII
+    <-   the joiner's connection response, result 0, carrying the console's constant and variable ids
+    ->   `05 00 00 00 <ack id>`, a type-5 ack, eight bytes
+    ->   its own connection response, result 0, ~600 bytes, carrying the joiner's constant id,
+         variable id and the player's name in plain ASCII, repeated until acknowledged
 
-and it repeats that response until acknowledged. The u32 in an ack is the acked message's own
-trailing counter.
-
-A retail Sword closes that sequence with no ack of its own request. A Shield 1.3.2 under Ryujinx does
-not: without a type-5 ack of the console's connection request it answers a well-formed response with
-silence and re-issues its request on its own 10-second timer, never sending a connection response.
-`--ack-request` on the bridge driver sends it.
+The u32 in an ack is the acked message's trailing counter. A retail Sword needs no ack of its
+request; a Shield 1.3.2 under Ryujinx ignores the response without one and re-requests every 10 s
+(`--ack-request` on the bridge driver sends it).
 
 ### What a connection response must satisfy to be read
 
-Both message types reach one handler, `0x017c6e70`, with a flag distinguishing them (`0x017c60c0`
-sets it for a request, the type-2 dispatch entry clears it). A response whose result byte is not 2 is
-checked field by field, and every failure is a silent drop:
+Both types reach handler `0x017c6e70` (`0x017c60c0` sets a flag for a request, the type-2 dispatch
+entry clears it). A response whose result is not 2 is checked field by field, each failure a silent
+drop:
 
 | the handler reads | it requires | a failure gives |
 |---|---|---|
@@ -430,83 +352,58 @@ checked field by field, and every failure is a silent drop:
 | the sender's station location | resolves to a station it knows | drop, `0x017c6f04` |
 | `[0x37]` one byte, result 0 only | under 5 | drop, `0x017c6ff0` |
 
-A receiver's ack table is 32 entries of 19 bytes, `{u8 stream id, u16 ack id big-endian, 16-byte
-mask}`. Only the entry for the stream being acked carries a real ack id; a Shield leaves the slots it
-does not use holding stale bytes under stream id 0, so `22284`, `16`, `57080` and `2517` read as ack
-ids for slots 1, 2, 4 and 5 while slot 0 held 2. Taking the largest entry therefore reads a constant
-as an acknowledgement and overruns the sender's window: 401 messages went out against a window the
-console had advanced to 97, and it stopped acking. Read the one entry, never the maximum.
+A 17-byte response (`RESPONSE_SIZE`, the short-form allocation `mov w3, #0x11` at `0x017c6c30`)
+leaves `[0x37]` 38 bytes past its end, in stale buffer bytes: an emulated Shield accepted 3 of 22
+byte-identical responses, then 0 of 49 after a restart; a retail Sword accepted all. The console's
+own accepted response is 840 bytes with 1 at `[0x37]`;
+`station4.build_connection_response(..., min_size=ACCEPTED_RESPONSE_SIZE)` pads to 0x38 and writes 1.
 
-The last one decides how long the message has to be. `RESPONSE_SIZE` is 17 bytes, the allocation the
-console's own short-form sender asks for (`mov w3, #0x11` at `0x017c6c30`), and 0x37 is 38 bytes past
-the end of it, so a 17-byte result-0 response puts the decision on whatever the receive buffer
-happens to hold there. An accepted response is long: the console's own is 840 bytes and carries 1 at
-`[0x37]`. `station4.build_connection_response(..., min_size=ACCEPTED_RESPONSE_SIZE)` pads to 0x38,
-the shortest size that answers the gate from inside the message, and writes 1 there.
+After the response: the console's connection response is acceptance; its request retransmitted every
+500 ms with the same trailing counter is rejection (a response carrying the joiner's own ids draws
+20 retransmits, then silence); silence alone is neither, and it re-requests 10 s later.
 
-Read past the end, the byte is a lottery. An emulated Shield accepted 3 of 22 responses that were
-byte-identical on the wire, then 0 of 49 later the same morning across a game restart; a retail Sword
-accepted every one. Passing the gate byte ourselves is what makes the handshake repeatable.
-
-Three outcomes separate on the wire after our response goes out. Its connection response is
-acceptance. A retransmit of its request every 500 ms, carrying the same trailing counter, is
-rejection: putting our own constant and variable ids in the response instead of the ids read out of
-its request draws exactly that, 20 retransmits and then silence. Silence with no retransmit is
-neither, and the console re-requests 10 seconds later.
-
-The nat-flags byte at [1] of the console's own request varies run to run with nothing sent by the
-joiner to explain it, across 26 attempts and both readings of every byte the joiner controls. What
-writes it is unknown; the record it comes from is filled by the station-location parser
-`0x0185ee20`.
+The nat-flags byte at [1] of the console's request varies run to run with no joiner byte to explain
+it (26 attempts, both readings of every byte the joiner controls). What writes it is unknown; its
+record is filled by the station-location parser `0x0185ee20`.
 
 ## The Mesh Protocol (0x18)
 
-The dispatcher is reached through `MeshProtocol::vfunc9` (the receive slot on every Pia protocol
-object) and reads the message type from byte [0], subtracts one, bounds it at 0x80 and jumps through
-a table (version 4: dispatcher `0x017c0c80`, table `0x02081564`). Nineteen of the 129 entries are
-live. Version 4's table is BDSP's minus 0x22 DUMMY_MESSAGE and 0x23 DUMMY_ACK.
+`MeshProtocol::vfunc9` (the receive slot) takes byte [0] minus one, bounded at 0x80, through a table
+(version 4: dispatcher `0x017c0c80`, table `0x02081564`). Nineteen of 129 entries are live; version
+4's are BDSP's minus 0x22 DUMMY_MESSAGE and 0x23 DUMMY_ACK.
 
-The join request is six bytes: type 1, the station index 253 meaning "not in a mesh yet", and an
-ack id. The version-4 handler (`0x017c1700`) compares byte [1] against 0xFD and takes the ack id with
-`0x017d5750`, then acks on 0x14 with the eight bytes built at `0x017c6dd0`. Pia gives up after ten
-seconds of retransmission.
+The join request is six bytes: type 1, station index 253 ("not in a mesh yet"), an ack id. The
+version-4 handler (`0x017c1700`) checks [1] against 0xFD, takes the ack id with `0x017d5750` and
+acks on 0x14 (`0x017c6dd0`). Pia retransmits it for ten seconds.
 
-The join response header is sixteen bytes in both bands. The version-4 parser is `0x017b4830`: it
-reads the refusal shape first (`[1] == 0`, `[2] == 0xFF`, `[3] == 0xFF`, reason at [4]), then the
-station count at [1] against its own maximum, packs [8] [9] [0xA] into one big-endian 24-bit value,
-and loads the update counter big-endian at 0xC.
+The join response header is sixteen bytes in both bands. The version-4 parser `0x017b4830` reads the
+refusal shape first (`[1] == 0`, `[2] == 0xFF`, `[3] == 0xFF`, reason at [4]), then the station count
+at [1] against its maximum, [8] [9] [0xA] as one big-endian 24-bit value, and the update counter
+big-endian at 0xC.
 
-The station entry stride differs. 5.31-5.45 uses 68 bytes: a 64-byte station location, the station
-index, and a big-endian halfword join order. Version 4 uses 64 bytes with the index at 0x3E and no
-join order: the loop starts its cursor at `0x10 + 0x3E` and reads `ldrb w8, [x20], #0x40`; the
-parser refuses a response longer than 0x810; and `0x810 = 0x10 + 32 * 0x40` against the 32-station
-bound at `0x017bfa34`. A 68-byte entry would make the bound 0x890.
-
-Version 4 also reads the entry count from a different field in each path. An unfragmented response
-(`fragments == 1`, `0x017b48f4`) walks `stations` entries from base 0 and never touches [6] or [7]; a
-fragmented one (`0x017b4b6c`) walks [6] entries into slot [7] and checks [1]-[4] against the first
-fragment. At most three fragments are allowed. The 5.31-5.45 reading takes [6] in both cases, so a
-host that leaves it zero on a single-fragment response hands that reading an empty mesh.
-`parse_join_response(version4=True)` follows both paths.
-
-Two message lengths confirm the version-4 stride:
+Station entries: 5.31-5.45 uses 68 bytes (64-byte station location, station index, big-endian
+halfword join order); version 4 uses 64 with the index at 0x3E and no join order (cursor starts at
+`0x10 + 0x3E`, `ldrb w8, [x20], #0x40`; a response over `0x810 = 0x10 + 32 * 0x40` is refused
+against the 32-station bound at `0x017bfa34`). Two lengths confirm it:
 
     join response   148 B  =  0x10 + 2 * 0x40 + 4        68-byte entries would give 156
     update mesh     524 B  =  12   + 8 * 0x40            BDSP's eight 68-byte seats give 556
 
-UPDATE_MESH (0x20) is the host's periodic statement of who is in the mesh, sent about once a second.
-In BDSP it is always the full 556 bytes with unused seats zeroed; walk the `entries` byte.
-`mesh_protocol.parse_update_mesh()`.
+Version 4 takes the entry count from a different field per path: unfragmented (`fragments == 1`,
+`0x017b48f4`) walks `stations` entries from base 0 and never reads [6] or [7]; fragmented
+(`0x017b4b6c`, at most three fragments) walks [6] entries into slot [7] and checks [1]-[4] against
+the first fragment. 5.31-5.45 takes [6] in both, so a single-fragment response with [6] zero reads
+as an empty mesh there. `parse_join_response(version4=True)` follows both paths.
 
-The 5.31-5.45 join order counts joins rather than seats: after three successive connections from the
-same machine it reads 0 for the host and 3 for the client at station index 1.
+UPDATE_MESH (0x20), about once a second, is the host's list of who is in the mesh; in BDSP always
+the full 556 bytes with unused seats zeroed, so walk the `entries` byte
+(`mesh_protocol.parse_update_mesh()`). The 5.31-5.45 join order counts joins: after three
+successive connections from one machine it reads 0 for the host and 3 for the client at index 1.
 
 ### Host migration
 
-A station named as the next host has to answer.
-
-Port 1 of the mesh protocol is the reliable port: a payload on 0x18 port 1 arrives under the
-reliable header with the mesh message inside it.
+A station named next host must answer. Mesh messages on 0x18 port 1 arrive under the reliable
+header.
 
 MIGRATION_START (0x44) is three bytes. The handler `0x017c1f00` refuses the message unless
 
@@ -515,51 +412,41 @@ MIGRATION_START (0x44) is three bytes. The handler `0x017c1f00` refuses the mess
     [2] <= 0x1F                                   0x017c1f78, the 32-station bound
     [2] != that host index                        0x017c1f8c
 
-and the sender builds exactly those three at `0x017c31b8`: `[0x44, host index, new host index]`.
+and the sender `0x017c31b8` builds exactly `[0x44, host index, new host index]`.
 
-The answer is two bytes, `[0x48, our own station index]`. The MIGRATION_RESPONSE handler
-`0x017c10ac` refuses anything but `size == 2`; the builder `0x017c3310` writes `[0x48, w22]` where
-w22 came from `0x017bc430`. The two index getters are one byte apart and are different fields:
-`0x017bbfe0` is `ldrb w0, [x0, #0xAB]`, the host's index, and `0x017bc430` is `ldrb w0, [x0, #0xAC]`,
-the station's own. In a two-station mesh they hold the same number.
+The answer is `[0x48, own station index]`: the MIGRATION_RESPONSE handler `0x017c10ac` requires
+`size == 2`, and the builder `0x017c3310` writes `[0x48, w22]` with w22 from `0x017bc430`. The getters
+are one byte apart: `0x017bbfe0` `ldrb w0, [x0, #0xAB]` (host index), `0x017bc430` `ldrb w0, [x0,
+#0xAC]` (own index), equal in a two-station mesh.
 
-MIGRATION_FINISH (0x41) closes it: three bytes, `[0x41, host index, flag & 1]` (`0x017c2ef0`), with
-its handler `0x017c0fb0` checking `size == 3` and [1] against the host index.
+MIGRATION_FINISH (0x41) closes it: `[0x41, host index, flag & 1]` (`0x017c2ef0`), handler
+`0x017c0fb0` checking `size == 3` and [1] against the host index.
 
-`pokeldn/ldn/mesh_protocol.py` has `parse_migration_start`, `build_migration_response` and
-`parse_migration_finish`. None of the four published Sword/Shield clients handles migration; in a
-console-to-console capture the second console answers it invisibly.
+`pokeldn/ldn/mesh_protocol.py`: `parse_migration_start`, `build_migration_response`,
+`parse_migration_finish`. None of the four published Sword/Shield clients handles migration; between
+two consoles the second answers it.
 
 ## The RTT protocol (0x58)
 
-The host starts timing a station the moment it is in the mesh. There is no wiki page for this
-protocol.
-
-Version 9's message is thirteen bytes:
+The host times each station from its entry into the mesh (no wiki page covers this). Version 9's
+message is thirteen bytes:
 
     u8   kind        0 = request, 1 = response; anything else is dropped
     u64  timestamp   big-endian, the sender's own clock
-    u32  target      big-endian, whose reply this is - and zero is accepted by everyone
+    u32  target      big-endian, whose reply this is; zero is accepted by everyone
 
-Version 4 keeps the protocol number (vfunc4 at `0x0185d590` returns 0x58); its parser (`0x0185d2a0`)
-reads a flat 0x10, sixteen bytes. A thirteen-byte answer is three short and is ignored. Bytes 1..7
-are zero in every request observed and their meaning is unknown; `rtt_protocol.response_for_v4()`
-echoes them and sets only the kind.
+Version 4 keeps id 0x58 (vfunc4 `0x0185d590`); its parser (`0x0185d2a0`) reads a flat sixteen bytes
+and ignores a thirteen-byte answer. Bytes 1..7 are zero in every request observed, meaning unknown;
+`rtt_protocol.response_for_v4()` echoes them and sets only the kind.
 
-A station answers with kind 1 and the timestamp echoed unchanged; the receiver's first test on the
-target field is "if zero, accept". The host computes `(now - echoed) / ticks per ms` into a
-nine-sample ring per station, whose median becomes that station's RTT once the ring is full.
-BDSP timestamps advance at about 31.36 MHz.
+A station answers kind 1 with the timestamp echoed. The host puts `(now - echoed) / ticks per ms`
+into a nine-sample ring per station, whose median is the RTT once full; BDSP timestamps run at about
+31.36 MHz. A silent station is never dropped, only unsampled. Once every ring is full, BDSP's request
+period moves from 410 ms to 508 ms and its reliable retransmit interval collapses.
 
-Nothing in this protocol drops a station for staying silent; a station that never answers never
-gets a sample. Answering changes the host's behaviour: BDSP's request period moves from 410 ms to
-508 ms (the branch taken once every sample ring is full) and its reliable retransmit interval
-collapses accordingly.
-
-BDSP addresses: protocol id and version at `0x015ada10`/`0x015ada18`, message size
-(`mov w0, #0xd`) at `0x015adab4`, serialise/parse at `0x015ada24`/`0x015ad54c`, the update at
-`0x015acd90`, the answer builder at `0x015ad024`, the target check at `0x015ad000`, the sample ring
-at `0x015ad058`.
+BDSP addresses: id and version `0x015ada10`/`0x015ada18`, size (`mov w0, #0xd`) `0x015adab4`,
+serialise/parse `0x015ada24`/`0x015ad54c`, update `0x015acd90`, answer builder `0x015ad024`, target
+check `0x015ad000`, sample ring `0x015ad058`.
 
 ## The reliable sliding window (0x7c)
 
@@ -575,131 +462,91 @@ at `0x015ad058`.
     0x9  4 * ceil(N / 32)  destination bitmap words, big-endian
             payload
 
-The header is 9 or 13 bytes: `GetSize` is `9 + (((N + 0x1f) >> 3) & 0x3c)`. N is refused at 0x20 or
-more, and a payload of 0x5a1 or more is refused.
+`GetSize` is `9 + (((N + 0x1f) >> 3) & 0x3c)`, so 9 or 13 bytes. N of 0x20 or more and a payload of
+0x5a1 or more are refused.
 
-When the application-data flag is clear the payload is a bulk acknowledgement, two bytes then `n`
-entries of 21:
+With the application-data flag clear the payload is a bulk acknowledgement:
 
     0x0  1   a bitfield; 0 in every captured ack. Its bit 0 sets a flag on the receiver
     0x1  1   entry count, refused at 0x21 or more
     0x2  21 * n  entries: u8 stream id, u16be ack id, u16be `ack id - 1`, 16-byte ack mask
 
-A retail console's ack to two application messages, sequences 0 and 1:
+A retail console's ack to sequences 0 and 1:
 
     00 00 0017 ffff 0003 00   00 01   00 0002 0001  00 * 16
 
-No flags at all, stream 0, sequence id 0xFFFF (a control message carries no sequence of its own), and
-the lowest id the sender is still waiting on. `ack id` is one more than the highest sequence
-received. `pokeldn/ldn/reliable5.build_ack_message()` reproduces it byte for byte.
-
-A window that accepts application data must acknowledge it, so sending data and sweeping only the
-sequence id measures the ack format. Sequence 0 draws nothing and sequence 1 draws the ack.
+No flags, stream 0, sequence id 0xFFFF (a control message has no sequence), then the lowest id the
+sender still waits on. `ack id` is one more than the highest sequence received.
+`pokeldn/ldn/reliable5.build_ack_message()` reproduces it byte for byte. Sweeping the sequence id of
+a data message measures the ack format: sequence 0 draws nothing, sequence 1 draws the ack.
 
 ### What the receiver discards in silence
 
-`0x006f0330` in Scarlet 4.0.0 `main.bin` is the version-9 receive path: it validates one message
-against the port's window and copies the payload into a slot. Five conditions make it discard the
-message and return success, so the caller cannot tell a discard from a delivery. Two of them also
-set the "an ack is owed" byte at protocol `+0x48`, and a sender then reads an acknowledgement for a
-message the application never receives.
+The receive path checks one message against the port's window and copies the payload into a slot:
+Scarlet 4.0.0 `main.bin` `0x006f0330`; Brilliant Diamond 1.3.0 `0x159fb98`, reached from the
+`ReliableSlidingWindow` receive `0x159f1e4` for flag bit 0 (bit 5 reset, bit 6 reset ack, anything
+else an ack for window slot 13; `0x159f88c..0x159f8b8`). Five conditions discard the message and
+still return success; two also set the "ack owed" byte (Scarlet protocol `+0x48`, BDSP window
+`+0x738`), so the sender reads an ack for a message the application never receives.
 
-| address | the message is discarded when | ack still sent |
-|---|---|---|
-| `0x6f037c` | the port window is uninitialised and the flags lack `is initialized` (bit 3) | no |
-| `0x6f03cc` | the sequence id is below the window base at window `+0x18` | yes, `0x6f03d0` |
-| `0x6f0430` | the destination bitmap does not name this station | no |
-| `0x6f0454` | the stream id at header `+1` differs from the one the window was initialised with, kept at window `+0x1e` | no |
-| `0x6f0540` | the ring slot the sequence maps to is already occupied | yes, `0x6f0530` |
+| the message is discarded when | Scarlet | BDSP | ack still sent |
+|---|---|---|---|
+| the window is uninitialised and the flags lack `is initialized` (bit 3) | `0x6f037c` | `0x159fbd8..0x159fbe4` | no |
+| the sequence id is below the window base `+0x18` | `0x6f03cc` | `0x159fc30..0x159fc3c` | yes, `0x6f03d0` / `0x159fc3c` |
+| the destination count (parsed header `+0x10`) is non-zero and the bitmap lacks the receiver's bit | `0x6f0430` | `0x159fc7c..0x159fca4` | no |
+| the stream id (wire byte 1, parsed header `+9`) differs from the one latched at initialisation at window `+0x1e` (BDSP `strb w26, [x24, #0x1e]` `0x159fc14`) | `0x6f0454` | `0x159fcc0..0x159fcc8` | no |
+| the ring slot is already occupied | `0x6f0540` | `0x159fdb0..0x159fdb4` | yes, `0x6f0530` / `0x159fda4` (before the test) |
 
-Three further conditions return a result the caller can read: a sequence past the end of the window
-gives `0x4c0d` (`0x6f04a4`), a reassembly over `0x5a1` bytes gives `0x10407` (`0x6f05cc`), and a
-zlib payload that does not inflate gives `0x2c03` (`0x6f0580`).
+Three conditions return a readable result (Scarlet): a sequence past the window's end `0x4c0d`
+(`0x6f04a4`), a reassembly over `0x5a1` bytes `0x10407` (`0x6f05cc`), a zlib payload that does not
+inflate `0x2c03` (`0x6f0580`).
 
-Pia 5 has the same receive. In Brilliant Diamond 1.3.0 `main` it is `0x159fb98`, reached from the
-`ReliableSlidingWindow` receive `0x159f1e4` for a message with flag bit 0 (bit 5 is a reset, bit 6 a
-reset ack, anything else an ack handled by window slot 13; `0x159f88c..0x159f8b8`). It works on the
-window's receive ring at window `+0x38`, which holds the base sequence at `+0x18`, the stream id at
-`+0x1e` and the initialised flag at `+0x1f`; the "an ack is owed" byte is window `+0x738`.
-
-| address | the message is discarded when | ack still sent |
-|---|---|---|
-| `0x159fbd8..0x159fbe4` | the ring is uninitialised and the flags lack `is initialized` (bit 3) | no |
-| `0x159fc30..0x159fc3c` | the sequence id is below the base | yes, `0x159fc3c` |
-| `0x159fc7c..0x159fca4` | the destination count (parsed header `+0x10`) is non-zero and the bitmap lacks the receiver's own bit | no |
-| `0x159fcc0..0x159fcc8` | the stream id (wire byte 1, parsed header `+9`) differs from the one latched at initialisation (`strb w26, [x24, #0x1e]` `0x159fc14`) | no |
-| `0x159fdb0..0x159fdb4` | the ring slot is already occupied | yes, set at `0x159fda4` before the test |
+The BDSP receive ring sits at window `+0x38`: slot buffer `+0x8`, slot count `+0x10`, ring head
+`+0x14`, base sequence `+0x18`, stream id `+0x1e`, initialised flag `+0x1f`. Slots are `0x5b8` bytes;
+the ring index wraps by subtraction. A slot: occupied byte `+0`, message-end flag `+1`, zlib flag
+`+2`, payload size `+4`, payload from `+6`, per-port handle `+0x5a8`, timestamp `+0x5b0`. The
+message-start flag is not stored; reassembly runs from the base to the first slot with the end flag.
 
 The first message on a stream sets the base to its own sequence id (`strh w25, [x24, #0x18]`
 `0x159fc10`); the initialised flag is set only after the destination and stream-id tests pass
-(`0x159fce4`). A sequence id is refused with `0x4c0d` when `seq - base + [ring+0x1c] >= [ring+0x10]`
-(`0x159fc60..0x159fc78`): `+0x10` is the slot count and `+0x1c` a ring head offset, 0 on a fresh
-stream.
+(`0x159fce4`). A sequence is refused with `0x4c0d` when `seq - base + [ring+0x1c] >= [ring+0x10]`
+(`0x159fc60..0x159fc78`); `+0x1c` is a ring head offset, 0 on a fresh stream.
 
-The window's update `0x159fea8` sends the owed ack. When the ack timer (window `+0x740` plus the
-period at `+0x778`) has run out (`0x15a003c..0x15a005c`), it calls window slot 11 `0x15a1c78` with the
-packet writer held at `+0x750` (`0x15a0318`, `0x15a0354..0x15a0364`). Slot 11 returns when `+0x738`
-is 0 (`0x15a1cb8`), builds a control message with sequence id 0xFFFF (`0x15a1de4`) under the same
-optional compression as data (`+0x7ac`, `0x15a1f70`), sends it through slot 10 (`0x15a203c..0x15a2044`),
-clears `+0x738` (`0x15a1fe8`) and restarts the timer (`0x15a1ff8`). Slot 10 writes the window's
-protocol-and-port word at `+0x748` into the header (`0x15a1be8`) and hands the packet to the writer
-(`0x15a1c0c`, `0x15a1c20`). The ack goes to every peer held at window `+0x638` whose station is live;
-with none, the byte is cleared and nothing is sent (`0x15a1eb4`, `0x15a1fd8..0x15a1ff8`). Slot 11 is
-also called on the data path (`0x15a0298..0x15a02b8`), so an ack also rides along with data.
+The BDSP window update `0x159fea8` sends the owed ack when the timer (window `+0x740` plus period
+`+0x778`) runs out (`0x15a003c..0x15a005c`), calling window slot 11 `0x15a1c78` with the packet
+writer at `+0x750` (`0x15a0318`, `0x15a0354..0x15a0364`). Slot 11 returns if `+0x738` is 0
+(`0x15a1cb8`), builds a control message with sequence 0xFFFF (`0x15a1de4`), optionally compressed
+like data (`+0x7ac`, `0x15a1f70`), sends it through slot 10 (`0x15a203c..0x15a2044`), clears
+`+0x738` (`0x15a1fe8`) and restarts the timer (`0x15a1ff8`). Slot 10 writes the protocol-and-port
+word at `+0x748` into the header (`0x15a1be8`) and hands the packet to the writer (`0x15a1c0c`,
+`0x15a1c20`). The ack goes to every live peer at window `+0x638`; with none, nothing is sent and the
+byte is cleared (`0x15a1eb4`, `0x15a1fd8..0x15a1ff8`). Slot 11 also runs on the data path
+(`0x15a0298..0x15a02b8`), so acks ride along with data.
 
-The window object carries the slot buffer at `+0x8`, the slot count at `+0x10`, the ring head at
-`+0x14`, the base sequence at `+0x18`, the stream id at `+0x1e` and the initialised flag at `+0x1f`.
-Slots are `0x5b8` bytes and the ring index wraps by subtraction rather than a modulo.
+Scarlet writes the base at window `+0x18` in `0x6f03a8` (initialisation), `0x6f0238` (one step per
+delivered message) and `0x6f1734`/`0x6f176c`, a walk over empty slots towards a target at window
+`+0x20` (-1 from `0x6ef228`, no walk while negative, stops at the first occupied slot). The receive
+function `0x6efc2c` deserialises the header to `sp+0x18` before the window checks (`0x6efdc8`,
+`MessageHeader` vfunc3); `0x6eff24`/`0x6eff28` copy its `lowest pending` (header `+0x6`,
+`[sp+0x26]`) to window `+0x20`, and the walk at `0x6eff2c` advances base and ring head up to
+`lowest pending - base` slots.
 
-A slot holds an occupied byte at `+0`, the message-end flag at `+1`, the zlib flag at `+2`, the
-payload size at `+4`, the payload from `+6`, a per-port handle at `+0x5a8` and a timestamp at
-`+0x5b0`. The message-start flag is not stored, so reassembly runs from the base forward to the
-first slot whose end flag is set.
-
-A message acknowledged but never delivered therefore came through `0x6f03cc` or `0x6f0540`, and
-both mean the window base and the ring have moved apart from the sender's numbering. Traced through
-a trade on the emulator, the one that fires is `0x6f03cc`: every message of a host's identity, its
-offer and its confirmation passes with the base equal to its own sequence, and its commit, sequence
-7, arrives at a base of 8 and is discarded. `0x6f0540` never fires.
-
-What moves that base ahead of the sender is the `lowest_pending` field of the messages the sender
-itself sends. A host whose acknowledgements on 0x7C declare one past the station's last sequence,
-rather than its own next sequence, leaves the base at that number, and its own next message is
-below it. Correcting the field is enough for every message to be delivered.
-
-The base at window `+0x18` is written in three places. `0x6f03a8` sets it when the window is
-initialised, `0x6f0238` advances it by one for each message the delivery loop takes out of the
-ring, and `0x6f1734` and `0x6f176c` walk it forward over empty slots towards a target sequence held
-at window `+0x20`. That target is initialised to -1 at `0x6ef228` and the walk is skipped while it
-is negative; the walk also stops at the first occupied slot.
-
-What writes that target from a message is `0x6eff28`, inside the receive function `0x6efc2c` and
-ahead of the window checks at `0x6f0330`. The header the message carries is deserialised onto the
-stack at `sp+0x18` (`0x6efdc8`, `MessageHeader` vfunc3), so its `lowest pending` field at header
-`+0x6` is `[sp+0x26]`; `0x6eff24` loads that halfword and `0x6eff28` stores it at window `+0x20`.
-The walk follows at `0x6eff2c` and runs in the same function: it advances the base by one slot at a
-time, up to `lowest pending - base` times, moving the ring head at `+0x14` with it and stopping at
-the first occupied slot.
-
-So a sender's own `lowest pending` drives its peer's receive base, and a sender that declares a
-number above its own next sequence id moves that base past messages it has not sent yet. Those
-messages then arrive below the base and are discarded at `0x6f03cc` with an acknowledgement.
-
-BDSP does the same. A host whose bulk acks carried the console's next id as their lowest pending
-had its trainer record and its Pokemon acknowledged and never delivered: the console's acks read
-`(7, 7)` and `(8, 8)` against the host's sequences 5 and 6, and the trade screen never showed the
-offer. An ack carries the sender's own lowest unacknowledged sequence, in the header and in the
-entry's second halfword.
+A sender's own `lowest pending` therefore drives the peer's receive base. Declared above the
+sender's next sequence, it moves the base past messages not yet sent, which then arrive below it and
+are discarded at `0x6f03cc` with an ack. In an emulated Scarlet trade, a host whose acks on 0x7C
+declared one past the station's last sequence had its commit, sequence 7, discarded at a base of 8
+(`0x6f0540` never fired). In BDSP, bulk acks carrying the console's next id as lowest pending left
+the host's trainer record and Pokemon acked and never delivered (console acks `(7, 7)` and `(8, 8)`
+against sequences 5 and 6). An ack carries the sender's own lowest unacknowledged sequence, in the
+header and in the entry's second halfword.
 
 ### Who a window sends to (Pia 6)
 
-A `ReliableSlidingWindow` keeps its destinations at window `+0x40`, an array of station pointers,
-one per station index, sized by `[[0x46d0860]]+0x50` (Scarlet 4.0.0 `main`). Pia fills it itself on
-the station events, with no game code involved. The only store of a non-null element is `0x6ef69c`
-(`str x23, [x8, x25, lsl #3]`) in `0x6ef588`, which registers a station at an index; nulls are
-stored at `0x6ef3dc`, `0x6ef4e0` and `0x6ef9b4`.
-
-`0x6ef588` refuses when:
+A `ReliableSlidingWindow`'s destinations are station pointers at window `+0x40`, by station index,
+sized by `[[0x46d0860]]+0x50` (Scarlet 4.0.0 `main`), filled by Pia on station events with no game
+code. The only non-null store is `0x6ef69c` (`str x23, [x8, x25, lsl #3]`) in `0x6ef588`, which
+registers a station at an index; nulls are stored at `0x6ef3dc`, `0x6ef4e0`, `0x6ef9b4`. `0x6ef588`
+refuses when:
 
 | refusal | code |
 |---|---|
@@ -710,112 +557,96 @@ stored at `0x6ef3dc`, `0x6ef4e0` and `0x6ef9b4`.
 | the station is already registered at another index | 0x10408 |
 
 On success it resets that record (vfunc `0x10`), writes the index at `+0x24` and a u16 from `w3` at
-`+0x26`, and sets the index's bit in `[w+0x74]`.
-
-Its two callers are a protocol's slot-11 station-event method: `0x6e6288`, BroadcastReliableProtocol
-(0x80), `bl` at `0x6e630c`, which StreamBroadcastReliableProtocol's slot 11 `0x6f51a8` calls first
+`+0x26`, and sets the index's bit in `[w+0x74]`. Its callers are slot-11 station-event methods: `0x6e6288`, BroadcastReliableProtocol (0x80),
+`bl` at `0x6e630c`, called first by StreamBroadcastReliableProtocol's slot 11 `0x6f51a8`
 (`0x6f51bc`); and `0x6ee528`, ReliableProtocol (0x7C), call site `0x6ee5d4`. `0x6e6288` looks the
 event's station up by the id at event `+8` (`[[0x46d0860]]` -> `0x1e7c4e8` -> vfunc `+0x38`) and
-returns when the protocol's own station index is 0xfd (`0x6ec4f0`) or the station is the protocol's
-own (`0x6ec4a8`, against `[station+0x30]`). Event 0 registers `[station+0x30]` at index
+returns when the protocol's own station index is 0xfd (`0x6ec4f0`) or the station is its own
+(`0x6ec4a8`, against `[station+0x30]`). Event 0 registers `[station+0x30]` at index
 `[station+0x28]` with `[station+0x38]`; event 1 removes the index (`0x6ef75c`).
 
-A window's destination list is therefore empty for a station only before its join event is handled,
-after its leave, while the protocol has no station index (0xfd), or when `0x6ef588` refused the
-registration.
-
-The bulk-acknowledgement composer `0x6f2138` also reads this list. It skips null entries at
-`0x6f2324`..`0x6f232c` and sets a station's header destination bit at `0x6f22f8`..`0x6f230c`
-after checking that station's acknowledgement state, with a fallback to the caller's mask at
-`0x6f2360`..`0x6f2370`. A bit in an acknowledgement therefore establishes that the window has
-registered the station; it does not establish that an application message was sent to it.
+A station is missing from the list only before its join event, after its leave, while the protocol
+has station index 0xfd, or when `0x6ef588` refused it. The bulk-ack composer `0x6f2138` reads the same list: it skips nulls (`0x6f2324`..`0x6f232c`) and
+sets a station's header destination bit (`0x6f22f8`..`0x6f230c`) after checking its ack state,
+falling back to the caller's mask (`0x6f2360`..`0x6f2370`). A bit in an ack shows the window
+registered the station, nothing about messages sent to it.
 
 ### Version 4
 
-Version 4 uses one header class for both reliable protocols, 0x7C and 0x80:
-`nn::pia::transport::ReliableSlidingWindow::MessageHeader` (GetSize `0x0184e480`, Deserialize
-`0x0184e390`, Serialize `0x0184e230`).
+One header class serves 0x7C and 0x80: `nn::pia::transport::ReliableSlidingWindow::MessageHeader`
+(GetSize `0x0184e480`, Deserialize `0x0184e390`, Serialize `0x0184e230`).
 
     0x0  1  flags
     0x1  1  stream id
     0x2  2  payload size, big-endian    refused at 0x589 and above (0x0184e3cc)
     0x4  2  sequence id, big-endian
     0x6  2  lowest sequence id pending ack, big-endian
-    0x8  1  destination COUNT           refused at 0x20 and above (0x0184e404)
+    0x8  1  destination count           refused at 0x20 and above (0x0184e404)
     0x9  8 * count  station constant ids, big-endian
 
-The byte at 0x8 is a count of eight-byte ids. `GetSize` is `9 + 8 * count`. The two versions' rules
-agree at count 0 and nowhere else; count 0 is every 0x7C message either side sends, so version 9's
-parser reads 221887 version-4 messages without a field out of place.
+`GetSize` is `9 + 8 * count`. The two versions agree only at count 0, which is every 0x7C message
+either side sends, so version 9's parser reads 221887 version-4 messages without a field out of
+place.
 
 The receive path (`0x01859338`) refuses five things in silence:
 
     0x0185952c   payload size <= 0x57F - 8 * count     tighter than the deserialiser's own bound
-    0x0185954c   the Pia message length must EQUAL 9 + 8 * count + size, exactly
-    0x0185956c   the stream id must be the window's own for this station, [w + 0x18*st + 0x46]
+    0x0185954c   the Pia message length equals 9 + 8 * count + size exactly
+    0x0185956c   the stream id is the window's own for this station, [w + 0x18*st + 0x46]
     0x01859578   a count above 0 is a list the receiver must find itself in; count 0 is unfiltered
-    0x01859ca0   the first message on a stream must carry FLAG_IS_INITIALIZED
+    0x01859ca0   the first message on a stream carries FLAG_IS_INITIALIZED
 
-It then dispatches on the flags at `0x01859734`: bit 5 RESET, bit 6 RESET_ACK, bit 0
-APPLICATION_DATA, and everything else falls through to the ack handler `0x01859a70`. A message with
-no flags at all is an ack.
+It dispatches on the flags at `0x01859734`: bit 5 RESET, bit 6 RESET_ACK, bit 0 APPLICATION_DATA;
+anything else, including no flags, goes to the ack handler `0x01859a70`.
 
-The first data message opens the stream and chooses where it starts. While the per-station byte
-at `[window + 0x18*station + 0x47]` is zero the stream does not exist; the handler requires
-FLAG_IS_INITIALIZED and only then adopts the message's stream id into `+0x46` and its sequence id
-into `+0x40`. A console's own traffic shows this: flags 0x0F on its first message and 0x07 on every
-one after it.
+While the per-station byte `[window + 0x18*station + 0x47]` is zero the stream does not exist; the
+first data message must carry FLAG_IS_INITIALIZED and sets the stream id (`+0x46`) and starting
+sequence (`+0x40`). A console sends flags 0x0F on its first message and 0x07 after.
+`reliable4.build_data_message(bytes.fromhex("610000000a00"))` reproduces a console's sequence 1 byte
+for byte: `0f0000060001000100610000000a00`.
 
-`reliable4.build_data_message(bytes.fromhex("610000000a00"))` reproduces a console's own sequence 1
-byte for byte: `0f0000060001000100610000000a00`.
-
-Version 4's ack payload is exactly 0x260 bytes, 32 entries of 19, with nothing in front of them:
+The ack payload is exactly 0x260 bytes, the wiki's original "Ack Data" that 5.29 replaced with a
+counted list:
 
     5.29-5.43   1 unknown byte, 1 count, then `count` x 21 bytes
                     u8 stream id, u16be ack id, u16be the window's field 0x50, 16-byte mask
-    version 4   32 entries of 19 bytes, ALWAYS
+    version 4   32 entries of 19 bytes, always
                     u8 stream id, u16be ack id, 16-byte mask
 
-This is the wiki's original "Ack Data", which 5.29 replaced with a counted list. The handler
-`0x01859a84` opens `ldrh w8, [x2, #0xa]; cmp w8, #0x260; b.ne` and answers error 0x2c03 without
-reading the body; the serialiser `0x0185bfb0` bounds the buffer at 0x260, loops 0x20 times, and
-writes per entry a stream id, an ack id big-endian into [1] and [2], and sixteen mask bytes as two
-big-endian u64 halves.
+The handler `0x01859a84` opens `ldrh w8, [x2, #0xa]; cmp w8, #0x260; b.ne` and answers 0x2c03
+without reading the body; the serialiser `0x0185bfb0` loops 0x20 times writing a stream id, a
+big-endian ack id and sixteen mask bytes as two big-endian u64 halves. The slot read is a station
+index taken from the handler's fourth argument, whose station the site does not say; the slot's
+stream id must match the window's (`0x01859c1c`). `reliable4.build_ack_payload` fills every slot with
+the same entry, correct under either reading.
 
-Which of the 32 slots is read is a station index, and the site does not say whose: the handler
-indexes the table with its fourth argument and requires that slot's stream id to match the window's
-own (`0x01859c1c`). `reliable4.build_ack_payload` fills every slot with the same entry, correct
-under either reading.
+A Shield leaves the slots it does not use holding stale bytes under stream id 0 (`22284`, `16`,
+`57080`, `2517` in slots 1, 2, 4, 5 while slot 0 held 2). Taking the maximum entry overran the
+console's window (401 messages sent against a window at 97) and it stopped acking. Read the one
+entry for the acked stream.
 
-Sequence ids can grow while `lowest_pending` stays fixed: a longer hold and a bigger backlog. The
-distinguishing measurement is `lowest_pending`, in every message, and the retransmit count per
-sequence id; a sliding window sends fewer copies of old ids.
+Growing sequence ids over a fixed `lowest_pending` mean a growing backlog; measure `lowest_pending`
+per message and retransmits per sequence id.
 
 ## Protocol 0x80, the broadcast reliable window
 
-`nn::pia::transport::BroadcastReliableProtocol` (vfunc4 `0x0184d880` returns 0x80).
-`ReliableBroadcastProtocol` is 0x84, a different class.
-
-Its messages are compressed (version-4 flag 0x10). Read raw, 42 bytes parse into a header claiming a
-payload of 0x6260. Decompressed they are 625 bytes: the reliable header above with a destination
-count of 1 and one eight-byte station constant id, over the same 0x260 ack payload. Version 9's
-bitmap rule gives 621; the message is 625.
-
-The ack names its own 32 slots: a console fills 0..7 with the real ack id and leaves 8..31 at zero,
-and 8 is `max_total` from the join response. One entry per station the mesh can hold, indexed by
-station index.
+`nn::pia::transport::BroadcastReliableProtocol` (vfunc4 `0x0184d880` returns 0x80), a different
+class from 0x84's `ReliableBroadcastProtocol`. Its messages are compressed (version-4 flag 0x10):
+42 bytes raw, 625 decompressed, the reliable header with destination count 1 and one eight-byte
+station constant id over the 0x260 ack payload (version 9's bitmap rule would give 621). The ack has
+one slot per station the mesh can hold, by station index: a console fills 0..7 with the real ack id
+and leaves 8..31 zero, 8 being `max_total` from the join response.
 
 ## Protocol 0x81, the stream broadcast reliable transfer (Pia 6)
 
-`StreamBroadcastReliableProtocol` moves one block of a fixed size from a station to every station
-that asked for it, in chunks. Its slot 10 is its own update `0x6f5360`, slot 11 `0x6f51a8`, slot 17
-`0x6e6818`, and slot 19 is BroadcastReliableProtocol's `0x6e69a0` (Scarlet 4.0.0 `main`). `0x6e69a0`
-loads the window from `[proto+0x70]` and runs the `ReliableSlidingWindow` send loop `0x6f0638`
-(`bl` at `0x6e69c0`) with the byte budget `[proto+0x64]`; the send loop takes every slot's next time
-from the retransmit deadline `0x6f0d14` (`bl` at `0x6f073c`). The stream enqueues its chunks through
-`0x6f1994` (`0x6f5c2c`, `x0 = [proto+0x70]`), which stamps a slot with now (`0x6f1bd4`). A 0x81
-transfer therefore retransmits on the same deadline as 0x7C and 0x80, and with no RTT sample for
-any destination it never retransmits.
+`StreamBroadcastReliableProtocol` moves one fixed-size block from a station to every station that
+asked for it, in chunks (Scarlet 4.0.0 `main`). Slot 10 is its update `0x6f5360`, slot 11
+`0x6f51a8`, slot 17 `0x6e6818`, slot 19 BroadcastReliableProtocol's `0x6e69a0`, which loads the
+window from `[proto+0x70]` and runs the `ReliableSlidingWindow` send loop `0x6f0638` (`bl` at
+`0x6e69c0`) with byte budget `[proto+0x64]`; the loop takes each slot's next time from the retransmit
+deadline `0x6f0d14` (`bl` at `0x6f073c`). Chunks are enqueued through `0x6f1994` (`0x6f5c2c`,
+`x0 = [proto+0x70]`), which stamps the slot with now (`0x6f1bd4`). A 0x81 transfer retransmits on
+the same deadline as 0x7C and 0x80, and never with no RTT sample for any destination.
 
 Each message carries an eleven-byte StreamData header, written by `0x6f60e8`:
 
@@ -826,47 +657,41 @@ Each message carries an eleven-byte StreamData header, written by `0x6f60e8`:
     +7  4  big-endian u32: the length of the data that follows
     +11    the data
 
-The game calls a send API with a buffer, a size and a transfer id, and a receive API with a sender,
-a buffer, a capacity and an id. A posted receive sends a kind 0 carrying the capacity. The send
-refuses a size above `[proto+0xa0]`, an id of 0xff, and a send when no station's `[proto+0x98]`
-byte equals the id. The chunk loop (`0x6f5b54`..`0x6f5c58`, in `0x6f5560`) enqueues while
-`0x6f1ef8` finds a free slot, chunks of `[window+0x70] - 11` bytes, kind `(offset != 0) + 1`
-(`0x6f5bb0`..`0x6f5bbc`), the id from `+0xa4`, and the percent `(offset + chunk) * 100 / size`
-(`0x6f5b78`..`0x6f5b98`), also kept at `+0xba`.
+The game's send API takes a buffer, a size and a transfer id; its receive API a sender, a buffer, a
+capacity and an id, and a posted receive sends a kind 0 carrying the capacity. A send is refused for
+a size above `[proto+0xa0]`, id 0xff, or no station's `[proto+0x98]` byte equal to the id. The chunk
+loop (`0x6f5b54`..`0x6f5c58`, in `0x6f5560`) enqueues while `0x6f1ef8` finds a free slot: chunks of
+`[window+0x70] - 11` bytes, kind `(offset != 0) + 1` (`0x6f5bb0`..`0x6f5bbc`), id from `+0xa4`,
+percent `(offset + chunk) * 100 / size` (`0x6f5b78`..`0x6f5b98`), also kept at `+0xba`.
 
-The receive loop `0x6f5cdc`, called from the update `0x6f5360` after `0x6f5560`, pulls each message
-with BroadcastReliableProtocol vfunc13 (`0x6e644c`, the sender at `sp+0xb80`), decodes the header
-with StreamData vfunc3 (`0x6f635c`), resolves the sender's index with `0xe42ddc`, and switches on the
-kind through the byte table at `0x3c0d5e5`; a kind above 6 is ignored:
+The receive loop `0x6f5cdc`, called from the update after `0x6f5560`, pulls each message with
+BroadcastReliableProtocol vfunc13 (`0x6e644c`, sender at `sp+0xb80`), decodes the header with
+StreamData vfunc3 (`0x6f635c`), resolves the sender's index with `0xe42ddc` and switches on the kind
+through the byte table at `0x3c0d5e5`, ignoring kinds above 6:
 
 | kind | target | what the receiver does |
 |---|---|---|
 | 0, receive posted | `0x6f5e5c` | in its own state 1, 2, 4, 5, 8, 9 or 10 (mask 0x736), flags the sender in `[+0xc0]`; otherwise (`0x6f6094`) `[+0x98][sender] = id` and `[+0xa0] = min([+0xa0], capacity)` |
 | 1, first chunk | `0x6f5e90` | clears the received count `+0xac` and `+0xba`, state 4 to 5, then as kind 2 |
 | 2, chunk | `0x6f5eb4` | in state 5 only, for id `+0xa5` from sender `+0xb0`: copies the data to `[+0x88] + [+0xac]` if it fits `+0x90`, adds its length, keeps the percent at `+0xba` |
-| 3 | `0x6f5f2c` | in state 4 only: resets the transfer, every `[+0x98]` to 0xff, state 7 |
-| 4 | `0x6f5f9c` | resets the transfer, every `[+0x98]` to 0xff, state 0xC |
-| 5 | `0x6f6000` | `[+0x98][sender] = 0xff`, flags the sender in `[+0xc8]` |
-| 6 | `0x6f6024` | in state 0xA only: resets, state 0xB |
+| 3, busy sender refuses a receive | `0x6f5f2c` | in state 4 only: resets the transfer, every `[+0x98]` to 0xff, state 7 |
+| 4, sender cancels | `0x6f5f9c` | resets the transfer, every `[+0x98]` to 0xff, state 0xC |
+| 5, receiver cancels | `0x6f6000` | `[+0x98][sender] = 0xff`, flags the sender in `[+0xc8]` |
+| 6, sender acks the cancel | `0x6f6024` | in state 0xA only: resets, state 0xB |
 
-The control kinds carry id 0xff. The update `0x6f5560` sends kind 3 to every station flagged in
-`[+0xc0]` (`0x6f6268` with `w2 = 3`, `0x6f5750`) and kind 6 to every station flagged in `[+0xc8]`
-(`0x6f57d8`); in state 9 it sends kind 5 to the expected sender `[+0xb0]` (`0x6f5904`, unicast
-through `0x6f1de8`) and goes to state 0xA; in state 8 it sends kind 4 to its destinations
-(`0x6f5984`). Kind 3 is a busy sender refusing a receive posted during its transfer, kind 4 a sender
-cancelling its transfer, kind 5 a receiver cancelling its receive, kind 6 the sender's
-acknowledgement of that cancel. A station's kind 0 is what sets its `[+0x98]` byte to the transfer id
-on an idle sender, and the smallest capacity posted bounds the block the send API accepts.
+Control kinds carry id 0xff. The update `0x6f5560` sends kind 3 to stations flagged in `[+0xc0]`
+(`0x6f6268` with `w2 = 3`, `0x6f5750`), kind 6 to those flagged in `[+0xc8]` (`0x6f57d8`), in state
+9 kind 5 to the expected sender `[+0xb0]` (`0x6f5904`, unicast through `0x6f1de8`) then state 0xA,
+and in state 8 kind 4 to its destinations (`0x6f5984`). The smallest capacity posted bounds the block
+the send API accepts.
 
-The protocol's state at `+0x78` (`0x6f53b0`): a receive goes from 5 to 6 when `+0xba` reaches 0x64
-(`0x6f5460`); a send goes from 2 to 3 when an entry of `[+0x98]` equals `+0xa4` and the window
-reports the sequence `+0xb8` acknowledged (`0x6e7128`, `0x6f54e4`), and resets to 0xC with no
-matching entry.
+The state at `+0x78` (`0x6f53b0`): a receive goes from 5 to 6 when `+0xba` reaches 0x64
+(`0x6f5460`); a send from 2 to 3 when an entry of `[+0x98]` equals `+0xa4` and the window reports
+sequence `+0xb8` acknowledged (`0x6e7128`, `0x6f54e4`), and to 0xC with no matching entry.
 
 ## Protocol 0x84, the reliable broadcast transfer
 
-`nn::pia::transport::ReliableBroadcastProtocol`. Used by Sword/Shield to move the trade snapshot. Its
-message kinds:
+`nn::pia::transport::ReliableBroadcastProtocol` carries Sword/Shield's trade snapshot:
 
 | kind | meaning |
 |---|---|
@@ -876,25 +701,14 @@ message kinds:
 | 0x28 | the answer to 0x19 |
 
 A receiver that never answers never sees the last three, and the sender retransmits indefinitely.
-The total at offset [10] of a data message is a capacity. `pokeldn/ldn/broadcast4.py`.
-
-The two directions do not share a Pia port: a console sends its own transfer on port 0 and
-acknowledges the peer's on port 1.
-
-## Published sources
-
-    gh search code "<a constant you have>" --limit 20
-    gh api repos/kinnay/NintendoClientsWiki/contents --jq '.[].name'
-    gh api repos/kinnay/NintendoClientsWiki/contents/<Page>.md --jq .content | base64 -d
-
-The NintendoClients wiki is a repository; code search reaches inside it, and it holds per-game pages
-the summary tables do not link. `Pokemon-Brilliant-Diamond.md` states the key derivation above; the
-`Pia-Game-Keys` table lists only the derived result. Published values are transcriptions; verify
-against the binary.
+`pokeldn/ldn/broadcast4.py`. A console sends its own transfer on port 0 and acks the peer's on port
+1.
 
 ## Credits
 
-The packet-header version table, the session-key derivations and the nonce layouts come from the
-[NintendoClients wiki](https://github.com/kinnay/NintendoClients/wiki/Pia-Protocol). Which derivation
-belongs to which network type, the `cryptoKeyDataSeed` value, and the version rule that turns it into
-the published key were read out of retail titles' own code.
+The header version table, the session-key derivations and the nonce layouts come from the
+[NintendoClients wiki](https://github.com/kinnay/NintendoClients/wiki/Pia-Protocol) (its
+`Pokemon-Brilliant-Diamond.md` states the game-key derivation; `Pia-Game-Keys` lists only derived
+keys; searching it is on [Reverse-engineering a Switch title](switch_re.md)). Which derivation
+belongs to which network type, the `cryptoKeyDataSeed` value and the version rule were read out of
+retail titles' own code.

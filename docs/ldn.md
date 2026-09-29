@@ -6,43 +6,32 @@ has_children: true
 
 # The wireless layer
 
-A Nintendo Switch communicates with nearby consoles over **LDN**, Nintendo's local wireless, and
-above that over Pia, Nintendo's peer-to-peer session middleware. Both belong to the console, so
-an implementation carries from one title to the next. What changes per title is the Pia version and
-what the game does with the payloads.
+A Switch talks to nearby consoles over **LDN**, Nintendo's local wireless, and above it over
+[Pia](pia.md), Nintendo's peer-to-peer session middleware. Both are system libraries; titles differ
+in Pia version and payloads.
 
 ## The two secrets
 
-| layer | secret | purpose |
-|---|---|---|
-| LDN | the title's LDN passphrase, 16-64 bytes | authenticates the 802.11 association |
-| Pia | the title's game key, 16 bytes | derives the session key that encrypts every datagram |
-
-In Brilliant Diamond the passphrase is an ASCII string handed straight to `nn::ldn::CreateNetwork`;
-it never reaches Pia's crypto.
-
-Known values:
+The LDN passphrase authenticates the 802.11 association: 16-64 bytes (checked by
+`nn::pia::local::LdnBackgroundProcessJob`), used verbatim; Brilliant Diamond passes an ASCII string
+straight to `nn::ldn::CreateNetwork`. The 16-byte Pia game key derives the session key that
+encrypts every datagram.
 
 | title | LDN passphrase | Pia game key |
 |---|---|---|
 | Brilliant Diamond / Shining Pearl | `WirelessStrongCryptoKey2021` (27 bytes, raw) | derived from `cryptoKeyDataSeed`; see [BDSP](bdsp_session.md) |
 | Sword / Shield | `W3GoSMEn7RIIUQ89rzqBHGhGferRNb7K18ZBq2aNuj8Us9RO9Q9JYyGOZlLy8MYL` (64 bytes, raw) | `p1frXqxmeCZWFv0X` |
 
-The Sword/Shield passphrase is byte-for-byte the string the NintendoClients wiki lists for
-Scarlet/Violet, and differs from its Legends: Arceus row in one character (`HGhG` against `HGHG`).
+The NintendoClients wiki gives Scarlet/Violet the same passphrase and Legends: Arceus one differing
+in one character (`HGHG` for `HGhG`).
 
 ## Discovery
 
-Reading an advertisement needs only `prod.keys`. The LDN beacon payload is decrypted with console
-key material, so any title's session can be seen with nothing known about the game:
+Reading an advertisement needs only `prod.keys`: `tools/ldn/ldn_scan.py` shows any session's
 `local_communication_id`, `scene_id`, version, channel, accept policy, participant count and
-application data. `tools/ldn/ldn_scan.py` does this.
-
-An advertisement is encrypted for one LDN protocol version, and a title sees only advertisements of
-the protocol its own session runs. Protocol 1 is AES-CTR under `master_key_00`; protocol 3 is
-AES-GCM under `master_key_12`. Which one a title uses is read off its own advertisement
-(`scratchpad/air_ldn_adv.py` over an air capture); a host meant for that title advertises the same
-protocol (`HostTransport(protocol=...)`).
+application data. A title sees only advertisements of its own LDN protocol (1: AES-CTR under
+`master_key_00`; 3: AES-GCM under `master_key_12`), so a host copies the title's
+(`HostTransport(protocol=...)`).
 
 | title | protocol | advertisement format |
 |---|---|---|
@@ -50,19 +39,13 @@ protocol (`HostTransport(protocol=...)`).
 | Sword Mystery Gift screen, comm id `0x0100abf008968000` | 1 | 2, AES-CTR |
 | Legends Arceus local trade, comm id `0x01001f5010dfa000` | 1 | 4 |
 
-A hosting console sends its beacons at 11 Mbit/s DSSS and its LDN advertisement action frames at HT
-MCS 3, 20 MHz, an OFDM rate: 8908 beacons and 8679 action frames over fifteen sniffed Scarlet
-sessions, every one at those rates. Sword on its Mystery Gift local-wireless screen does the same:
-beacons at 11 Mbit/s on the channel it hosts, advertisements at HT MCS 3 on 1, 6 and 11. A receiver
-that decodes only DSSS sees the console's beacons and none of its advertisements.
-
-Association is the first step that needs a title secret. The passphrase is used verbatim, neither
-padded nor hashed. `nn::pia::local::LdnBackgroundProcessJob` validates the length as 16-64 before
-use.
+A host console sends beacons at 11 Mbit/s DSSS and advertisement action frames at HT MCS 3, 20 MHz
+(OFDM): 8908 beacons and 8679 action frames over fifteen Scarlet sessions, and Sword's Mystery Gift
+screen likewise; a DSSS-only receiver misses them.
 
 ## The advertisement's application data
 
-Pia's LDN advertisement layout, as parsed from a Shining Pearl session:
+Pia 5 layout, from Shining Pearl:
 
     +0x00  4  network id                     random per session
     +0x04  4  CRC32 of the user password     0 when the room has no password
@@ -72,13 +55,10 @@ Pia's LDN advertisement layout, as parsed from a Shining Pearl session:
     +0x0c  4  session parameter              random per session; seeds the Pia session key
     +0x10     application data
 
-The network id and the session parameter both change per session. A key derivation tested against a
-capture from a different session fails on every packet with no distinguishing symptom. Match the
-advertisement and the capture before doubting the derivation.
+A capture decrypts only with its own session's advertisement; another fails silently.
 
-Pia 6.16 to 6.41 replaced that header with a system property block, and the session parameter with
-it: the session key is derived from the network's SSID instead, and the network id is a hash of the
-SSID rather than a broadcast field.
+Pia 6.16 to 6.41 use a system property block and derive the session key and network id from the
+SSID:
 
     +0x00  2  system property data size      0x5C
     +0x02  1  system communication version   21 for 6.16-6.30, 22 for 6.39-6.41
@@ -91,30 +71,21 @@ SSID rather than a broadcast field.
     +0x1c  64 player name
     +0x5c     application data
 
-The user password field is encrypted when the session's transport encryption is on. Pia's password
-setter pads the password to sixteen bytes with 0xFE and encrypts the buffer in place with
-AES-128-GCM under the game key, the tag discarded and the IV four bytes of the key, `key[1] key[8]
-key[7] key[2]`; the block builder copies the sixteen bytes into the field as they stand (Legends
-Arceus 1.1.1: setter `0x6fc454`, cipher `0x6e68d0`, builder `0x6fac70`). One GCM block is one XOR
-with a keystream fixed by the key, so a password shorter than sixteen bytes leaves the keystream in
-the tail, and a scan reads a password off the air with the game key alone
-([Legends Arceus](pla.md#the-link-code-in-the-advertisement)).
+With transport encryption on, the user password is padded to sixteen bytes with 0xFE and encrypted
+in place, AES-128-GCM under the game key, tag discarded, IV `key[1] key[8] key[7] key[2]`, then
+copied in by the block builder (Arceus 1.1.1 `0x6fac70`; [the setter](pla.md#the-link-code-in-the-advertisement)).
+One GCM block is an XOR with a keystream fixed by the key: the game key alone reads the password.
 
 ## Hosting for an emulator
 
-An emulator in ldn_mitm mode has no radio. The association is an exchange on port 11452 and the
-game's Pia traffic then flows over the LAN on the ordinary Pia port, so a host reaches it with no
-adapter, no `prod.keys` and no root.
+An emulator in ldn_mitm mode associates over port 11452, then runs Pia over the LAN: no radio, no
+`prod.keys`, no root. `pokeldn/ldn/ldn_mitm.py` joins; `ldn_mitm_host.py` hosts through
+`IpHostTransport`, whose `NEEDS_RADIO = False` selects `NullBeaconInjector`.
 
-    UDP  console -> host:11452   Scan          header only, sent to both the unicast and the broadcast address
+    UDP  console -> host:11452   Scan          header only, unicast and broadcast
     UDP  host    -> console      ScanResp      NetworkInfo, 0x480
     TCP  console -> host:11452   Connect       NodeInfo, 0x40
     TCP  host    -> console      SyncNetwork   NetworkInfo with the console seated, held open
-
-`pokeldn/ldn/ldn_mitm.py` speaks it as a joiner and `pokeldn/ldn/ldn_mitm_host.py` as a host.
-`IpHostTransport` carries `HostTransport`'s surface, so a host application takes it as its
-`transport_factory` and nothing above the transport changes. `NEEDS_RADIO = False` on a transport
-also selects `NullBeaconInjector`, because a host that answers scans emits no 802.11 beacon.
 
 `nn::ldn::NetworkInfo`, 0x480 bytes:
 
@@ -127,63 +98,36 @@ also selects `NullBeaconInjector`, because a host that answers scans emits no 80
     +0x26A                     u16 advertiseDataSize, then 0x180 bytes of advertise data
     +0x478                     u64 authenticationId
 
-Every participant's node carries its real LAN address, so the addresses in the NetworkInfo are LAN
-addresses and Pia is not tunnelled. The address in node 0 is where the console sends its Pia
-datagrams and where it opens the TCP connection, so it must be the address the host is reachable at
-rather than a link-local one.
+Nodes carry real LAN addresses (Pia is not tunnelled); node 0's must be reachable, never link-local:
+the console sends Pia and opens the TCP connection there. The emulator derives a node's MAC from its
+address (`02:00:ac:10:56:01` for 172.16.86.1). The game's own node holds 88 at +0x2E (aligned after
+the byte at 0x2C), the value its `ConnectImpl` passes, and the game keeps the NetworkInfo exactly as
+sent. FireRed's scan filter compares `localCommunicationId` and `networkType` only (`sceneId`
+0xFFFF, `ssidLength` 0).
 
-The 16-byte session id is three things at once and they cannot be allowed to disagree: the
-advertised `NetworkId.SessionId`, the text `Ssid` in hexadecimal, and the plaintext of the Pia
-session key, `AES(game_key).encrypt(ssid)`, whose network id is `crc32(ssid[1:16])`
-[`pokeldn/ldn/crypto.py`:114]. On the radio the LDN library generates one value and uses it for all
-three [vendor/LDN/ldn/__init__.py:1921, :1910]. A host that advertises one value and encrypts with
-another completes the association and is then ignored: the console authenticates every datagram
-against the key it derived, drops what fails, sends nothing, and closes the socket on its own
-timeout. There is no error and no retry, so the symptom is silence from a peer that is demonstrably
-receiving.
-
-`localCommunicationVersion` sits at node + 0x2E, aligned after the byte at 0x2C rather than packed
-against it. A NetworkInfo read back out of the running game carries the console's own 88 there, which
-is the value its `ConnectImpl` passes, so the console's own node settles the offset. The emulator
-synthesises a node's MAC from its address: `02:00:ac:10:56:01` for 172.16.86.1.
-
-A whole NetworkInfo read out of the game after it joined is identical to what the host sent, field
-for field, so nothing between the ScanResp and the game rewrites any of it.
-
-A scan filter names which fields the game compares. FireRed's filters on `localCommunicationId` and
-`networkType` alone, with `sceneId` 0xFFFF and `ssidLength` 0, so only those two have to match.
+The 16-byte session id is one value in three places: `NetworkId.SessionId`, the `Ssid` text in hex,
+and the plaintext of the Pia session key `AES(game_key).encrypt(ssid)`, network id
+`crc32(ssid[1:16])` [`pokeldn/ldn/crypto.py`:114], as the LDN library does
+[vendor/LDN/ldn/__init__.py:1921, :1910]. Advertising one and encrypting with another associates,
+then the console drops every datagram and times out, with no error.
 
 ## A station's broadcasts
 
-A console joined to a network sends its broadcast and multicast frames straight to the BSS, not
-through the access point: no DS bits, address 1 the group address, address 2 the console,
-address 3 the BSSID, CCMP with the group key (key id 1). Its unicast frames to the host are to-DS
-with the pairwise key (key id 0). FireRed's first broadcasts after LDN authentication are an ARP
-request for the host's address and IPv6 multicast. A standard access point drops a data frame with
-no DS bits, so a host that reads only its AP interface never sees the ARP; the console cannot reach
-the host, sends nothing more, and deauthenticates with reason 3 about 7 s later. The Linux host
-reads these frames on its monitor interface and decrypts them in software
-(`vendor/LDN/ldn/__init__.py` `_process_data_frame`); the ESP32 radio forwards them whole
-([ESP32 radio](hardware_esp32.md)).
+A joined console sends broadcast and multicast straight to the BSS (no DS bits; addresses group,
+console, BSSID; CCMP group key, key id 1) and unicast to-DS (pairwise key, key id 0). FireRed's first
+broadcasts are an ARP for the host and IPv6 multicast. A standard access point drops frames with no
+DS bits, and a host that misses the ARP is deauthenticated with reason 3 about 7 s later. The Linux
+host decrypts them off its monitor interface (`vendor/LDN/ldn/__init__.py` `_process_data_frame`);
+the [ESP32](hardware_esp32.md) forwards them whole.
 
 ## Channels
 
-LDN allows 5 GHz channels 36/40/44/48 and a host may use them; the FireRed/LeafGreen application
-scans 2.4 GHz only. A console re-hosting picks a new channel. Read it before a run with the board's
-own scan, which prints each network with its channel:
+LDN also allows 5 GHz channels 36/40/44/48, which the ESP32 cannot reach (on a Linux card: `sudo iw
+dev <managed iface> scan | grep -A3 <console MAC>`); FireRed/LeafGreen scans 2.4 GHz only. A
+re-hosting console changes channel; the board's scan prints it:
 
     POKELDN_RADIO=esp32:auto ./.venv/bin/python tools/ldn/ldn_scan.py --keys PROD_KEYS --dwell 2.5
 
-The ESP32 is 2.4 GHz only, so a host on channel 36 to 48 needs a Linux card, where the kernel's own
-scan gives the frequency: `sudo iw dev <managed iface> scan | grep -A3 <console MAC>`.
-
-A receiver next to a console also hears a few of its advertisements while tuned to a neighbouring
-channel: an ESP32 at 2.5 s per channel caught a Sword host 2 times on channel 1, about 30 times on
-channel 6 and 2 times on 11, all at the same RSSI. Joining on channel 1 associates, then the next
-advertisement arrives on 6 and the LDN library drops the link as an incompatible network. The
-scan reports each console on the channel that carried the most of its advertisements.
-
-## Pages
-
-- [The Pia layer](pia.md): packet header formats by version, message framing, the transport
-  protocols, and the session-key derivations.
+Advertisements leak onto neighbouring channels: at 2.5 s per channel an ESP32 heard a Sword host 2
+times on 1, ~30 on 6, 2 on 11, at one RSSI. Joining on 1 associates, then the next advertisement on
+6 drops the link as an incompatible network, so the scan reports the busiest one.
