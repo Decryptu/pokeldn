@@ -16,7 +16,9 @@ import sys
 import time
 
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
-from pokeldn import config as configmod  # noqa
+from pokeldn import pokemon as pokemon_service
+from pokeldn.frlg.link import beacon
+from pokeldn.frlg import config as configmod  # noqa
 from pokeldn.frlg.link import sim as simmod, trade  # noqa
 from pokeldn.ldn import crypto as cryptomod  # noqa
 from pokeldn.frlg.link import linkstate as lsmod  # noqa: E402
@@ -70,7 +72,7 @@ def _live_connect(run_config, lg):
     lg(f"[live] scanning for FRLG LDN network (nickname={profile.name})...")
     t = tmod.LiveTransport(
         password=ldn.password, nickname=profile.name, keys_path=ldn.keys_path,
-        local_comm_id=ldn.local_comm_id, phyname=ldn.phy, log=lg).start()
+        local_comm_id=ldn.local_comm_id, phyname=ldn.phy, log=lg, beacon_debug=beacon.diagnose).start()
     pc = cryptomod.PiaCrypto(t.ssid)
     engine = make_engine(run_config, lg)
     # The sim must not emit trade traffic or sit until the host confirms the Pia connection
@@ -482,6 +484,8 @@ def _build_run_config(ap, args):
 def main(argv=None):
     ap = build_parser()
     args = ap.parse_args(argv)
+    if args.party and not getattr(args, "print_effective_config", False):
+        args.party = [pokemon_service.prepare_file("frlg", p) for p in args.party]
     run_config = _build_run_config(ap, args)
     if not cryptomod.HAVE_ZSTD:
         sys.exit(f"FATAL: 'zstandard' is not installed in this Python ({sys.executable}).\n"

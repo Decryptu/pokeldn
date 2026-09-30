@@ -3,8 +3,8 @@ import random
 import time
 from functools import cache
 
-from gui.catalog import Field, Tool
-from gui.introspect import flags_of
+from pokeldn.app.catalog import Field, Tool
+from pokeldn.app.introspect import flags_of
 
 
 @cache
@@ -74,8 +74,12 @@ def limit_error(field: Field, value) -> str:
     for item in str(value or "").split():
         name, _, number = item.partition("=")
         for limit_name, highest, why in field.limits:
-            if name == limit_name and number.isdigit() and int(number) > highest:
-                return why
+            if name == limit_name:
+                try:
+                    if int(number, 0) > highest:
+                        return why
+                except ValueError:
+                    return f"{name} must be an integer."
     return ""
 
 
@@ -86,8 +90,12 @@ def problems(tool: Tool, values: dict) -> list[str]:
 
 def missing_offer(tool: Tool, values: dict) -> str:
     for field in tool.fields:
-        if field.kind == "pokemon" and field.required and applies(field, tool, values):
+        if field.kind == "pokemon" and applies(field, tool, values):
             path = offer_file(value_of(field, values))
+            if not path and not field.required:
+                continue
             if not path or not os.path.isfile(path):
                 return "Build the Pokemon to offer first."
+            if value_of(field, values).get("legal") is False:
+                return "The selected Pokemon is not legal."
     return ""

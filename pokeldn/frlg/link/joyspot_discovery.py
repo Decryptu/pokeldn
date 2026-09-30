@@ -5,8 +5,9 @@ from dataclasses import dataclass
 import secrets
 
 from pokeldn.frlg.text import charmap
-from pokeldn.ldn import beacon, transport
-from pokeldn.ldn.host_beacon import CAPTURED_TRADE_BEACON
+from pokeldn.frlg.link import beacon
+from pokeldn.ldn import transport
+from pokeldn.frlg.link.host_beacon import CAPTURED_TRADE_BEACON
 
 
 JOYSPOT_LOCAL_COMMUNICATION_ID = transport.HostTransport.LOCAL_COMMUNICATION_ID
@@ -149,7 +150,7 @@ def new_parent_session_id():
 
 
 def _record_from_app_data(app_data):
-    raw = transport._b85_decode(bytes(app_data)[beacon.PIA_HDR:])
+    raw = beacon.b85_decode(bytes(app_data)[beacon.PIA_HDR:])
     if len(raw) < beacon.RECORD_SIZE:
         raise ValueError("application data does not contain a 24-byte discovery record")
     return bytearray(raw[:beacon.RECORD_SIZE])

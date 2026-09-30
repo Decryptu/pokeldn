@@ -120,11 +120,11 @@ packet ids) and a game-level RFU policy; raising the LDN participant limit is no
 | source | responsibility |
 |---|---|
 | `bin/frlg_trade_host.py` | CLI, configuration, entry point |
-| `pokeldn/host_cli.py` | shared host CLI options |
+| `pokeldn/frlg/host_cli.py` | shared host CLI options |
 | `pokeldn/frlg/link/host_app.py` | `HostApplication` |
-| `pokeldn/config.py` | trainer, trade plan, Mystery Gift payload, LDN, role and run configuration |
+| `pokeldn/frlg/config.py` | trainer, trade plan, Mystery Gift payload, LDN, role and run configuration |
 | `pokeldn/frlg/link/trade_runtime.py` | CLI logging, party loading, slot parsing, output saving |
-| `pokeldn/ldn/host_beacon.py` | captured trade beacon, discovery mutation, `BeaconInjector` |
+| `pokeldn/frlg/link/host_beacon.py` | captured trade beacon, discovery mutation, `BeaconInjector` |
 | `pokeldn/host_support.py` | OS-facing support (sudo-aware key-path resolution) |
 | `pokeldn/ldn/transport.py` | `HostTransport` |
 | `pokeldn/ldn/host_pia.py` | Pia framing, `HostPeerProtocol` |

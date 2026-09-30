@@ -3,6 +3,7 @@
 Run standalone (no pytest needed):   python tests/test_mystery_gift_offline.py
 """
 
+from pathlib import Path
 import os
 import sys
 
@@ -12,7 +13,8 @@ from pokeldn.frlg.gift import wonder_card
 from pokeldn.frlg.link import linkplayer
 from pokeldn.frlg.text import charmap
 from pokeldn.gba import block, gbaframe, ni, rfu
-from pokeldn.ldn import beacon, transport
+from pokeldn.frlg.link import beacon
+from pokeldn.ldn import transport
 from pokeldn.frlg.gift import mystery_gift as mg
 
 
@@ -284,8 +286,8 @@ def test_mutate_beacon_preserves_header_changes_record():
     captured = bytes(range(beacon.PIA_HDR)) + beacon.b85_encode(record.ljust(beacon.RECORD_SIZE, b"\x00"))
     out = beacon.mutate_beacon(captured, name="EMU", trainer_id=0x2288)
     assert out[:beacon.PIA_HDR] == captured[:beacon.PIA_HDR]     # header untouched
-    rec = transport._b85_decode(out[beacon.PIA_HDR:])[:beacon.RECORD_SIZE]
-    assert transport._frlg_name(rec[2:10]) == "EMU" and int.from_bytes(rec[0:2], "little") == 0x2288
+    rec = beacon.b85_decode(out[beacon.PIA_HDR:])[:beacon.RECORD_SIZE]
+    assert beacon.decode_name(rec[2:10]) == "EMU" and int.from_bytes(rec[0:2], "little") == 0x2288
     assert int.from_bytes(rec[10:12], "little") == 9            # not overridden -> preserved
 
 
@@ -341,7 +343,7 @@ def test_tracer_writes_jsonl(tmp_path=None):
         tr.write("udp_out", dst="169.254.1.255", hex="5c00")
         tr.write("advert", nonce="00000001", hex="7f0022aa")
         tr.close()
-        recs = [json.loads(line) for line in open(path)]
+        recs = [json.loads(line) for line in Path(path).read_text(encoding="utf-8").splitlines()]
     kinds = [r["kind"] for r in recs]
     assert kinds == ["udp_out", "advert", "summary"]
     assert all(r["rec"] == "trace" and "ts" in r for r in recs)

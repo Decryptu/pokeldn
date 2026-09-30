@@ -15,7 +15,7 @@ if os.path.isdir(BUNDLED): sys.path.insert(0, BUNDLED)
 import trio, ldn
 from pokeldn.ldn.pia5 import PiaHeader5, is_pia5, HEADER_SIZE, CT_OFF
 from pokeldn.ldn.transport import board_radio, find_ap_phy
-from pokeldn.host_support import resolve_keys
+from pokeldn.host_support import resolve_keys, needs_root
 
 BDSP_PASSPHRASE = b"WirelessStrongCryptoKey2021"
 PIA_PORT = 12345
@@ -143,7 +143,7 @@ async def main_async(args):
     return 0
 
 
-def main():
+def build_parser():
     ap = argparse.ArgumentParser(description=__doc__,
                                  formatter_class=argparse.RawDescriptionHelpFormatter)
     ap.add_argument("--comm-id", default="0100000011d90000")
@@ -155,8 +155,13 @@ def main():
     ap.add_argument("--hold", type=float, default=60.0)
     ap.add_argument("--listen-first", type=float, default=5.0)
     ap.add_argument("--gap", type=float, default=1.5)
-    args = ap.parse_args()
-    if os.geteuid() != 0 and not board_radio():
+    return ap
+
+
+def main(argv=None):
+    ap = build_parser()
+    args = ap.parse_args(argv)
+    if needs_root():
         ap.error("must run as root")
     return trio.run(main_async, args)
 

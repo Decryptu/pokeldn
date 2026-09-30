@@ -434,13 +434,13 @@ def test_userspace_stack_answers_arp_and_reassembles():
                       bytes(6), bytes([169, 254, 9, 2]))
     stack.deliver(b"\xff" * 6 + peer + b"\x08\x06" + arp)
     assert sent[-1][:6] == peer and sent[-1][14 + 7] == 2
-    sock = stack.udp_socket(12345)
-    sock.setblocking(False)
-    for packet in userspace_ip.build_udp("169.254.9.1", "169.254.9.2", 12345, 12345, bytes(range(256)) * 12, 7):
-        stack.deliver(stack.mac + peer + b"\x08\x00" + packet)
-    assert sock.recvfrom(65535) == (bytes(range(256)) * 12, ("169.254.9.1", 12345))
-    with pytest.raises(BlockingIOError):
-        sock.recvfrom(65535)
+    with stack.udp_socket(12345) as sock:
+        sock.setblocking(False)
+        for packet in userspace_ip.build_udp("169.254.9.1", "169.254.9.2", 12345, 12345, bytes(range(256)) * 12, 7):
+            stack.deliver(stack.mac + peer + b"\x08\x00" + packet)
+        assert sock.recvfrom(65535) == (bytes(range(256)) * 12, ("169.254.9.1", 12345))
+        with pytest.raises(BlockingIOError):
+            sock.recvfrom(65535)
 
 
 def test_host_transport_uses_the_userspace_stack_that_owns_its_interface():
@@ -458,7 +458,7 @@ def test_host_transport_uses_the_userspace_stack_that_owns_its_interface():
         console = b"\x02\x00\x00\x00\x00\x02"
         for packet in userspace_ip.build_udp("169.254.9.2", "169.254.9.1", 12345, 12345, b"pia-in"):
             stack.deliver(stack.mac + console + b"\x08\x00" + packet)
-        assert host.wait_readable(0) is True
+        assert host.wait_readable(0.2) is True
         assert host.recv() == [(b"pia-in", "169.254.9.2")]
         assert stack.neighbors["169.254.9.2"] == console
         host.send(b"pia-out", "169.254.9.2")
@@ -466,6 +466,8 @@ def test_host_transport_uses_the_userspace_stack_that_owns_its_interface():
         host.send(b"bcast", "169.254.9.255")
         assert sent[-1][:6] == b"\xff" * 6
     finally:
+        host._tx.close()
+        host._rx.close()
         userspace_ip._stacks.pop("ldn-tap", None)
 
 
@@ -550,6 +552,36 @@ def test_station_broadcast_with_no_ds_bits_reaches_the_ldn_data_path():
         assert router.mgmt.statistics().current_buffer_used == 0
 
     trio.run(main)
+
+
+@pytest.mark.parametrize("tcp", [False, True])
+def test_userspace_socket_readiness_tracks_queued_datagrams(monkeypatch, tcp):
+    import select
+    import socket
+    from pokeldn.ldn.userspace_ip import _Readable
+
+    if tcp:
+        monkeypatch.setattr(socket, "socketpair", socket._fallback_socketpair)
+    with _Readable() as queue:
+        if tcp:
+            assert queue._w.getsockopt(socket.IPPROTO_TCP, socket.TCP_NODELAY)
+        queue.setblocking(False)
+        assert select.select([queue], [], [], 0)[0] == []
+        queue._push(b"first")
+        queue._push(b"second")
+        assert select.select([queue], [], [], 0.2)[0] == [queue]
+        assert queue._pop() == b"first"
+        assert select.select([queue], [], [], 0.2)[0] == [queue]
+        assert queue._pop() == b"second"
+        assert select.select([queue], [], [], 0)[0] == []
+        with pytest.raises(BlockingIOError):
+            queue._pop()
+        queue.settimeout(0.001)
+        with pytest.raises(socket.timeout):
+            queue._pop()
+    queue.close()
+    queue._push(b"closed")
+    assert queue.fileno() == -1
 
 
 def test_userspace_socket_queue_survives_a_concurrent_reader():

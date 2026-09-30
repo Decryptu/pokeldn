@@ -17,13 +17,13 @@ if os.path.isdir(os.path.join(BUNDLED_LDN, "ldn")):
     sys.path.insert(0, BUNDLED_LDN)
 
 from pokeldn.config import DEFAULT_TRAINER  # noqa: E402
-from pokeldn.ldn.joyspot_discovery import (  # noqa: E402
+from pokeldn.frlg.link.joyspot_discovery import (  # noqa: E402
     JOYSPOT_CANDIDATES,
     JOYSPOT_STAGES,
     candidate_by_name,
     candidates_for_stage,
 )
-from pokeldn.ldn.joyspot_probe import (  # noqa: E402
+from pokeldn.frlg.link.joyspot_probe import (  # noqa: E402
     JoySpotProbeApplication,
     JoySpotProbeConfig,
 )

@@ -2,7 +2,7 @@ import threading
 
 import flet as ft
 
-from gui import builder
+from pokeldn import pokemon as builder
 from gui import theme as t
 
 VERSIONS = {"firered": "FR", "leafgreen": "LG"}
@@ -21,7 +21,7 @@ class PokemonPicker:
         self.shiny = t.switch(bool(self.value.get("shiny")), lambda e: self._set("shiny", e.control.value))
         self.nickname = t.field(value=self.value.get("nickname", ""), hint="Nickname (optional)", expand=True,
                                 on_change=lambda e: self._set("nickname", e.control.value))
-        self.build_button = t.button("Build", self._build, ft.Icons.AUTO_AWESOME_ROUNDED, disabled=True)
+        self.build_button = t.button("Build", self._build, "sparkles", disabled=True)
         self.result = ft.Container()
         self.control = ft.Column([
             ft.Row([ft.Container(self.species, expand=True),
@@ -30,8 +30,7 @@ class PokemonPicker:
                    spacing=10, vertical_alignment=ft.CrossAxisAlignment.END),
             ft.Row([self.nickname, self.build_button], spacing=10),
             self.result,
-            ft.TextButton("Or use a Pokemon file", on_click=self._use_file,
-                          style=ft.ButtonStyle(color=t.MUTED, padding=0)),
+            t.secondary_button("Or use a Pokemon file", self._use_file, "file"),
         ], spacing=10)
         self._show_result()
         threading.Thread(target=self._load_species, daemon=True).start()
@@ -92,18 +91,18 @@ class PokemonPicker:
 
     async def _use_file(self, e) -> None:
         files = await self.app.picker.pick_files(
-            allowed_extensions=[builder.EXTENSIONS[self.game], "bin", "ek3"],
+            allowed_extensions=[builder.EXTENSIONS[self.game], "bin", "hex", "ek3"],
             file_type=ft.FilePickerFileType.CUSTOM)
         if not files or not files[0].path:
             return
         path = files[0].path
         try:
-            info = builder.SERVICE.check(self.game, path)
+            info = builder.SERVICE.import_file(self.game, path)
         except Exception as exc:
             self._message(f"Not a Pokemon this game can take: {exc}", t.RED)
             self.control.update()
             return
-        self.value.update(file=path, summary=builder.summary(info), legal=info["legal"],
+        self.value.update(file=info["file"], summary=builder.summary(info), legal=info["legal"],
                           encounter=info["encounter"], moves=info["moves"],
                           report="" if info["legal"] else info["report"])
         self.on_change(dict(self.value))
@@ -119,7 +118,7 @@ class PokemonPicker:
             return
         legal = self.value.get("legal", False)
         lines = [ft.Row([
-            ft.Icon(ft.Icons.VERIFIED_ROUNDED if legal else ft.Icons.GPP_BAD_OUTLINED, size=16,
+            t.pixel_icon("shield" if legal else "warning-diamond",
                     color=t.GREEN if legal else t.RED),
             t.text(self.value.get("summary", ""), 13, weight=ft.FontWeight.W_600, expand=True),
             t.pill("Legal" if legal else "Not legal", t.GREEN if legal else t.RED),

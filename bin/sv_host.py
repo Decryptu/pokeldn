@@ -5,6 +5,7 @@
 
     (them) X -> Poke Portal -> Link Trade, offline, no code -> search
 """
+from pathlib import Path
 import argparse
 import binascii
 import json
@@ -16,14 +17,16 @@ import traceback
 
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
+from pokeldn.host_support import open_output
+from pokeldn import pokemon as pokemon_service
 from pokeldn import config
 from pokeldn import sv
 from pokeldn.ldn import pia6, pia_connect, reliable5
 from pokeldn.sv import pokemon, port2, reference, streams, trade
-from pokeldn.pla import game_channel
+from pokeldn.ldn import game_channel
 from pokeldn.ldn.ldn_mitm_host import IpHostTransport
 from pokeldn.ldn.transport import HostTransport, board_radio, find_ap_phy
-from pokeldn.host_support import resolve_keys
+from pokeldn.host_support import resolve_keys, needs_root
 from pokeldn.ldn import show_done
 
 PROTOCOL_NAMES = {
@@ -310,6 +313,11 @@ def build_parser():
 def main():
     ap = build_parser()
     args = ap.parse_args()
+    if args.trade_offer:
+        args.trade_offer = [pokemon_service.prepare_file("sv", p, fresh=args.fresh_pid,
+            transform=lambda raw: trade.load_offer(raw, args.offer_set)) for p in args.trade_offer]
+        args.offer_set = []
+        args.fresh_pid = False
     reference.fill_identity(args)
     try:
         host_player_id = binascii.unhexlify(args.host_player_id)
@@ -317,7 +325,7 @@ def main():
         ap.error("--host-player-id must be hex")
     if len(host_player_id) != 16:
         ap.error("--host-player-id must be 16 bytes")
-    if not args.ip_host and not args.offer_dump and os.geteuid() != 0 and not board_radio():
+    if not args.ip_host and not args.offer_dump and needs_root():
         ap.error("hosting over the radio needs root; re-run under sudo, or pass --ip-host")
     comm_id = args.comm_id or (sv.COMM_ID_VIOLET if args.violet else sv.COMM_ID_SCARLET)
 
@@ -349,7 +357,7 @@ def main():
     if args.trade_offer:
         # A wrong size raises here, before the radio is up.
         for path in args.trade_offer:
-            one = trade.load_offer(open(path, "rb").read(), args.offer_set,
+            one = trade.load_offer(Path(path).read_bytes(), args.offer_set,
                                    fresh=args.fresh_pid)
             trade_offers.append(one)
             try:
@@ -358,7 +366,7 @@ def main():
             except ValueError as exc:
                 print(f"[sv] offering {len(one)} bytes, which do not read as a record: {exc}")
         if args.offer_dump:
-            with open(args.offer_dump, "w") as fh:
+            with open_output(args.offer_dump, "w") as fh:
                 for one in trade_offers:
                     fh.write(one.hex() + "\n")
             print(f"[sv] offer written to {args.offer_dump}")
@@ -372,8 +380,7 @@ def main():
             print(f"[sv] {ip}: offered {len(body)} bytes that do not read as a record: {exc}")
         if args.offer_out:
             path = args.offer_out if n == 1 else f"{args.offer_out}.{n}"
-            with open(path, "w") as fh:
-                fh.write(trade.build(trade.KEY_TRADE, trade.KIND_OFFER, 0, body).hex() + "\n")
+            pokemon_service.save_received("sv", path, body)
             print(f"[sv] {ip}: offer written to {path}")
 
     game_data = binascii.unhexlify(args.game_data) if args.game_data else None
@@ -400,7 +407,7 @@ def main():
         print(f"[sv] radio profile: skip_encryption={machine.skip_encryption} "
               f"accept_decrypted_ccmp={machine.accept_decrypted_ccmp}")
 
-    cap = open(args.capture, "w") if args.capture else None
+    cap = open_output(args.capture, "w") if args.capture else None
 
     def record(**row):
         if cap:
@@ -428,6 +435,7 @@ def main():
     station_ids = {}
     stream_high = {}
     host_seq = {}
+    identity_window = reliable5.SendWindow(0.25)
     last_ack = {}
     sent_once = set()           # (src_ip, index of --send) already sent
     counts = {}
@@ -452,9 +460,13 @@ def main():
         print(f"[sv] -> {ip}: data 0x{protocol:02x}:{port} seq {seq} {len(data)}B "
               f"{data[:8].hex()} ({why})")
 
-    def send_record_bundle(ip, bundle):
+    def send_record_bundle(ip, bundle, retry=False):
         """The first message whole, the rest inheriting its header."""
-        msgs = pia6.build_message(bundle[0][1], PROTO_STREAM_BROADCAST_RELIABLE)
+        key = (ip, PROTO_STREAM_BROADCAST_RELIABLE, 0)
+        low = identity_window.lowest(key, host_seq.get(key, 1)) if retry else 1
+        bundle = [(seq, reliable5.set_lowest_pending(body, low)) for seq, body in bundle]
+        msgs = pia6.build_message(bundle[0][1], PROTO_STREAM_BROADCAST_RELIABLE,
+                                  message_flags=0x40 if retry else 0)
         msgs += b"".join(pia6.build_message(body, PROTO_STREAM_BROADCAST_RELIABLE, inherit=True)
                          for _, body in bundle[1:])
         pkt = pia6.build_packet(keys.session_key, keys.network_id, transport.our_ip, msgs,
@@ -462,7 +474,8 @@ def main():
                                 nonce8=os.urandom(8), footer_ids=(station_ids[ip]["console_var"],))
         transport.send(pkt, ip)
         for seq, _ in bundle:
-            record(rec="out", dst=ip, kind="record set", protocol=0x81, port=0, seq=seq,
+            record(rec="out", dst=ip, kind="record retry" if retry else "record set",
+                   protocol=0x81, port=0, seq=seq,
                    hex=pkt.hex(), t=time.time())
 
     def send_ack(src_ip, protocol, port, dst_var, why):
@@ -475,7 +488,8 @@ def main():
                 high + 1, lowest_pending=host_seq.get((src_ip, protocol, port), 1))
         else:
             body = build_bulk_ack({CONSOLE_STATION_INDEX: high},
-                                  host_seq.get((src_ip, protocol, port), 1))
+                                  identity_window.lowest((src_ip, protocol, port),
+                                                        host_seq.get((src_ip, protocol, port), 1)))
         pkt = build_reply(keys, transport.our_ip, body, dst_var, os.urandom(8),
                           protocol=protocol, port=port, flags=0)
         transport.send(pkt, src_ip)
@@ -494,6 +508,10 @@ def main():
             # The Pia block's player count, not the LDN list, is the session the game sees. A
             # returning station needs the Net 0x11 again.
             net_answered.intersection_update(current_ips)
+            identity_window.forget(lambda key: key[0] not in current_ips)
+            for (ip, _, _), seq, body in identity_window.due(now):
+                if ip in station_ids:
+                    send_record_bundle(ip, [(seq, body)], retry=True)
             players = 1 + len(transport.participants)
             if players != advertised_players[0]:
                 advertised_players[0] = players
@@ -578,8 +596,8 @@ def main():
                 sent_ids, bundle = [], []
                 order_path = os.path.join(args.record_set, "order")
                 if os.path.exists(order_path):
-                    names = [f"{int(line):03d}.bin" for line in open(order_path)
-                             if line.strip()]
+                    with open(order_path) as order:
+                        names = [f"{int(line):03d}.bin" for line in order if line.strip()]
                 else:
                     names = sorted(os.listdir(args.record_set))
                 for name in names:
@@ -588,13 +606,15 @@ def main():
                     path = os.path.join(args.record_set, name)
                     if not os.path.exists(path):
                         continue
-                    payload = open(path, "rb").read()
+                    payload = Path(path).read_bytes()
                     seq = int(name.split(".")[0])
                     flags = (reliable5.FLAG_APPLICATION_DATA | reliable5.FLAG_MESSAGE_START
                              | reliable5.FLAG_MESSAGE_END | reliable5.FLAG_ZLIB
                              | (reliable5.FLAG_IS_INITIALIZED if seq == 1 else 0))
                     body = build_reliable_body(PROTO_STREAM_BROADCAST_RELIABLE, flags, seq,
                                                payload, lowest_pending=1)
+                    identity_window.sent((ip, PROTO_STREAM_BROADCAST_RELIABLE, 0),
+                                         seq, body, now)
                     # Under the console's receive limit.
                     if bundle and (len(bundle) >= args.records_per_packet or sum(
                             len(b) + 3 for _, b in bundle) + len(body) + 3 > pia6.MAX_PAYLOAD - 48):
@@ -604,12 +624,11 @@ def main():
                     sent_ids.append(seq)
                 if bundle:
                     send_record_bundle(ip, bundle)
-                # One past the last id sent tells the peer the gap at 5 and 6 never fills; left at 1
-                # it waits for 5 all session (docs/sv.md).
+                # Only acknowledged records may advance lowest pending past gaps (docs/sv.md).
                 if sent_ids:
                     host_seq[(ip, PROTO_STREAM_BROADCAST_RELIABLE, 0)] = max(sent_ids) + 1
                 print(f"[sv] -> {ip}: identity, {len(names)} record(s) on 0x81 port 0, "
-                      f"lowest pending now {max(sent_ids) + 1 if sent_ids else 1}")
+                      f"next sequence {max(sent_ids) + 1 if sent_ids else 1}")
             for ip, (due, pkt) in list(pending_update.items()):
                 if now >= due:
                     del pending_update[ip]
@@ -681,6 +700,7 @@ def main():
                             for d in (stream_high, host_seq, last_ack):
                                 for k in [k for k in d if k[0] == src_ip]:
                                     d.pop(k)
+                            identity_window.forget(lambda key: key[0] == src_ip)
                             sent_once = {s for s in sent_once if s[0] != src_ip}
                             stages.pop(src_ip, None)
                             pending_trade[:] = [e for e in pending_trade if e[1] != src_ip]
@@ -891,6 +911,11 @@ def main():
                                           f"slot {slot}, station {data[-8:].hex()}")
                             elif rm:
                                 a = reliable5.parse_ack_payload(rm["payload"])
+                                if (not rm["truncated"] and a["entries"]
+                                        and msg.protocol == PROTO_STREAM_BROADCAST_RELIABLE
+                                        and msg.port == 0 and a["entries"][0]["stream_id"] == 0):
+                                    entry = a["entries"][0]
+                                    identity_window.acked(key, entry["ack_id"], entry["mask"])
                                 print(f"[sv] <- {src_ip}: ACK 0x{msg.protocol:02x}:{msg.port} "
                                       f"low={rm['lowest_pending']} bits={rm['destination_bits']} "
                                       f"map={rm['bitmap']} u0={a['unknown0']} "

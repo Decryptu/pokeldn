@@ -1,5 +1,6 @@
 """The recorded game messages shipped in pokeldn/*/data carry no real player: every name in them is
 an emulator's, and no account identifier is set. A file added there must pass this too."""
+from pathlib import Path
 import glob
 import os
 import re
@@ -23,7 +24,7 @@ def plain(data):
 
 @pytest.mark.parametrize("path", FILES, ids=lambda p: os.path.relpath(p, ROOT))
 def test_a_shipped_message_names_only_an_emulated_player(path):
-    data = plain(open(path, "rb").read())
+    data = plain(Path(path).read_bytes())
     names = {m.decode("utf-16-le") for m in re.findall(rb"(?:[\x20-\x7e]\x00){3,}", data)}
     assert names <= EMULATOR_NAMES
     assert not re.search(rb"u-[0-9a-z]{20}", data)
@@ -32,8 +33,8 @@ def test_a_shipped_message_names_only_an_emulated_player(path):
 def test_the_scarlet_identity_is_44_records_and_four_fragments_a_launcher_can_send():
     names = sorted(os.listdir(sv_reference.RECORDS))
     assert len(names) == 44 and "005.bin" not in names and "006.bin" not in names
-    first = plain(open(os.path.join(sv_reference.RECORDS, "001.bin"), "rb").read())
-    sizes = [len(plain(open(os.path.join(sv_reference.RECORDS, n), "rb").read())) for n in names]
+    first = plain(Path(os.path.join(sv_reference.RECORDS, '001.bin')).read_bytes())
+    sizes = [len(plain(Path(os.path.join(sv_reference.RECORDS, n)).read_bytes())) for n in names]
     assert sizes == [1395] * 43 + [75]              # 45 chunks of 1384 and one of 64, each after 11
     assert first[0x13:0x2d].decode("utf-16-le").rstrip("\0") == "Player"
     assert first[0x2d:0x43] == bytes(22)            # the account identifier, unset

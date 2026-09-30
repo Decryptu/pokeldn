@@ -6,7 +6,8 @@ import struct
 import threading
 import time
 
-from pokeldn.ldn import beacon, transport
+from pokeldn.frlg.link import beacon
+from pokeldn.ldn import transport
 
 
 # Captured from a native FireRed Direct Corner leader; unknown record fields stay verbatim.
@@ -80,7 +81,7 @@ def build_trade_app_data(profile, host_session_id):
     app_data[0x1C:beacon.PIA_HDR] = b"\x00" * 64
     app_data[0x1C:0x1C + len(pia_name)] = pia_name
 
-    record = bytearray(transport._b85_decode(
+    record = bytearray(beacon.b85_decode(
         app_data[beacon.PIA_HDR:])[:beacon.RECORD_SIZE]).ljust(
             beacon.RECORD_SIZE, b"\x00")
     record[10:12] = bytes(host_session_id)[:2].ljust(2, b"\x00")
@@ -102,7 +103,7 @@ def _build_activity_app_data(profile, host_session_id, activity, trade_board=Non
     app_data[0x1C:beacon.PIA_HDR] = b"\x00" * 64
     app_data[0x1C:0x1C + len(pia_name)] = pia_name
 
-    record = bytearray(transport._b85_decode(
+    record = bytearray(beacon.b85_decode(
         app_data[beacon.PIA_HDR:])[:beacon.RECORD_SIZE]).ljust(
             beacon.RECORD_SIZE, b"\x00")
     record[10:12] = bytes(host_session_id)[:2].ljust(2, b"\x00")
@@ -158,7 +159,7 @@ def activate_trade_app_data(app_data, host_session_id):
     active_header = bytearray(app_data[:beacon.PIA_HDR])
     if len(active_header) > 0x16:
         active_header[0x16] = 2
-    record = bytearray(transport._b85_decode(
+    record = bytearray(beacon.b85_decode(
         app_data[beacon.PIA_HDR:])[:beacon.RECORD_SIZE]).ljust(
             beacon.RECORD_SIZE, b"\x00")
     record[10:12] = bytes(host_session_id)[:2].ljust(2, b"\x00")

@@ -3,12 +3,12 @@
 import os
 import time
 
-from pokeldn import config as configmod
+from pokeldn.frlg import config as configmod
 from pokeldn.frlg.link import host_session, host_trade, trade_runtime
 from pokeldn.ldn import ldntrace, transport
 from pokeldn.frlg.link.linkplayer import HOST_NAME_PAD
 from pokeldn.ldn.transport import board_radio
-from pokeldn.ldn.host_beacon import (
+from pokeldn.frlg.link.host_beacon import (
     BeaconInjector, NullBeaconInjector, build_colosseum_app_data, build_trade_app_data,
     build_union_room_app_data,
 )

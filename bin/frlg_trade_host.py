@@ -16,9 +16,12 @@ BUNDLED_LDN = os.path.join(PROJECT_ROOT, "vendor", "LDN")
 if os.path.isdir(os.path.join(BUNDLED_LDN, "ldn")):
     sys.path.insert(0, BUNDLED_LDN)
 
-from pokeldn import config as configmod, host_cli  # noqa: E402
+from pokeldn import pokemon as pokemon_service
+from pokeldn.host_support import needs_root
+from pokeldn.frlg import config as configmod, host_cli  # noqa: E402
 from pokeldn.frlg.link import trade_runtime  # noqa: E402
-from pokeldn.ldn import beacon as beaconmod, transport  # noqa: E402
+from pokeldn.frlg.link import beacon as beaconmod
+from pokeldn.ldn import transport  # noqa: E402
 from pokeldn.frlg.link.host_app import HostApplication  # noqa: E402
 
 
@@ -166,6 +169,8 @@ def main(argv=None):
     parser = build_parser(
         file_config, shared_path=shared_path, local_path=local_path)
     args = parser.parse_args(argv)
+    if args.party and not getattr(args, "print_effective_config", False):
+        args.party = [pokemon_service.prepare_file("frlg", p) for p in args.party]
     if args.print_effective_config:
         host_cli.build_host_config(parser, args)
         print(host_cli.format_effective_config(args), end="")
@@ -174,7 +179,7 @@ def main(argv=None):
         parser.error("the following arguments are required: MON")
     if not args.live:
         parser.error("hosting only supports live mode; omit --no-live")
-    if os.geteuid() != 0 and not transport.board_radio():
+    if needs_root():
         parser.error("live LDN hosting requires root; run with sudo -E")
     run_config = build_run_config(parser, args)
     joined = HostApplication(

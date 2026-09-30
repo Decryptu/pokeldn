@@ -7,10 +7,8 @@ import collections
 import contextlib
 import errno
 import math
-import os
 import socket
 import struct
-import sys
 import threading
 import time
 
@@ -78,43 +76,24 @@ def build_udp(src_ip: str, dst_ip: str, src_port: int, dst_port: int, payload: b
 
 
 class _Readable:
-    """A queue with a pipe beside it: one byte per queued item, so the read end is selectable.
-    Windows' select and trio's wait_readable take only sockets, so there the pipe is a socketpair."""
+    """A selectable queue: one socket byte per queued item, on every platform."""
 
     def __init__(self):
         self._queue = collections.deque()
-        # The pipe byte and the queued item change together under this lock: the radio's thread
+        # The socket byte and the queued item change together under this lock: the radio's thread
         # pushes while the reader pops, and a byte seen before its item made popleft raise.
         self._lock = threading.Lock()
-        if sys.platform == "win32":
-            self._rsock, self._wsock = socket.socketpair()
-            self._rsock.setblocking(False)
-            self._wsock.setblocking(False)
-            self._r, self._w = self._rsock.fileno(), self._wsock.fileno()
-        else:
-            self._rsock = self._wsock = None
-            self._r, self._w = os.pipe()
-            os.set_blocking(self._r, False)
-            os.set_blocking(self._w, False)
+        self._r, self._w = socket.socketpair()
+        for sock in (self._r, self._w):
+            sock.setblocking(False)
+            if sock.family in (socket.AF_INET, socket.AF_INET6):
+                sock.setsockopt(socket.IPPROTO_TCP, socket.TCP_NODELAY, 1)
         self._timeout = None
         self.closed = False
         self.dropped = 0
 
     def fileno(self) -> int:
-        return self._r
-
-    def _wake(self) -> None:
-        if self._wsock is not None:
-            self._wsock.send(b"\x00")
-        else:
-            os.write(self._w, b"\x00")
-
-    def _consume(self) -> None:
-        if self._rsock is not None:
-            if not self._rsock.recv(1):
-                raise BlockingIOError(errno.EAGAIN, "wake socket closed")
-        else:
-            os.read(self._r, 1)
+        return self._r.fileno()
 
     def _push(self, item) -> None:
         with self._lock:
@@ -122,7 +101,7 @@ class _Readable:
                 return
             self._queue.append(item)
             try:
-                self._wake()
+                self._w.send(b"\x00")
             except BlockingIOError:
                 self._queue.pop()
                 self.dropped += 1
@@ -131,7 +110,7 @@ class _Readable:
         while True:
             with self._lock:
                 try:
-                    self._consume()
+                    self._r.recv(1)
                     return self._queue.popleft()
                 except BlockingIOError:
                     pass
@@ -158,18 +137,14 @@ class _Readable:
         return 8 * 1024 * 1024 if option == socket.SO_RCVBUF else 0
 
     def close(self) -> None:
-        if self.closed:
-            return
-        self.closed = True
+        with self._lock:
+            if self.closed:
+                return
+            self.closed = True
+            self._queue.clear()
+            self._r.close()
+            self._w.close()
         self._detach()
-        if self._rsock is not None:
-            for sock in (self._rsock, self._wsock):
-                with contextlib.suppress(OSError):
-                    sock.close()
-        else:
-            for fd in (self._r, self._w):
-                with contextlib.suppress(OSError):
-                    os.close(fd)
 
     def _detach(self) -> None:
         pass

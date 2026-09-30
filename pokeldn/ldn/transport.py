@@ -21,65 +21,6 @@ PROTO_UDP = 17
 PIA_PORT = 12345
 
 
-_PIA_HDR = 0x5C  # Pia 6.16-6.41 LDN system header length
-
-
-def _b85_decode(s):
-    """Custom base85: alphabet 0x23..0x78 skipping 0x5c, low digit first, 4-byte LE groups."""
-    out = bytearray()
-    for i in range(0, len(s) - len(s) % 5, 5):
-        v = 0
-        for c in reversed(s[i:i + 5]):
-            v = v * 85 + ((c - 0x23) if c < 0x5C else (c - 0x24))
-        out += (v & 0xFFFFFFFF).to_bytes(4, "little")
-    return bytes(out)
-
-
-def _frlg_name(b):
-    out = []
-    for x in b:
-        if x == 0xFF:
-            break
-        if 0xBB <= x <= 0xD4:
-            out.append(chr(ord("A") + x - 0xBB))
-        elif 0xD5 <= x <= 0xEE:
-            out.append(chr(ord("a") + x - 0xD5))
-        elif 0xA1 <= x <= 0xAA:
-            out.append(chr(ord("0") + x - 0xA1))
-        else:
-            out.append(" " if x == 0 else "?")
-    return "".join(out).rstrip()
-
-
-def _dump_beacon(app_data, log):
-    """Diagnostics only; the connect id is not taken from the beacon."""
-    if not app_data:
-        log("[live] beacon: NO application_data on the advertisement")
-        return None
-    app_data = bytes(app_data)
-    log(f"[live] beacon application_data ({len(app_data)} B): {app_data.hex()}")
-    if len(app_data) >= _PIA_HDR:
-        gba = app_data[_PIA_HDR:]
-        log(f"[live] beacon RFU payload (after the 0x5C Pia header, {len(gba)} B): {gba.hex()}")
-        try:
-            d = _b85_decode(gba)
-            if len(d) >= 24:
-                log(f"[live] beacon decoded: host name={_frlg_name(d[2:10])!r} "
-                    f"TID=0x{int.from_bytes(d[0:2], 'little'):04x} "
-                    f"RFU-session-id=0x{int.from_bytes(d[10:12], 'little'):04x} "
-                    f"tradeSpecies={int.from_bytes(d[20:24], 'little') >> 16}")
-                # The only pre-join view of the host's game state; logged at INFO since the verbose
-                # sink is unusable live.
-                word = int.from_bytes(d[16:18], "little")
-                info = getattr(log, "info", log)
-                info(f"host beacon game state: activity={word & 0x007F} "
-                     f"started_activity={bool(word & (1 << 15))} "
-                     f"has_card={bool(word & 0x4000)} word=0x{word:04x}")
-        except Exception as e:
-            log(f"[live] beacon decode skipped ({type(e).__name__}: {e})")
-    return app_data
-
-
 def _flatten_exc(e, depth=0):
     """Flatten a (Base)ExceptionGroup to its leaves -> [(depth, exc)]."""
     subs = getattr(e, "exceptions", None)
@@ -270,7 +211,7 @@ class ReplayTransport:
     def from_capture(cls, raw_path):
         metas, ins = [], []
         sess = {}
-        for line in open(raw_path, errors="replace"):
+        for line in Path(raw_path).read_text(encoding="utf-8", errors="replace").splitlines():
             line = line.strip()
             if not line:
                 continue
@@ -298,7 +239,7 @@ class LiveTransport:
     def __init__(self, password=None, nickname="EMU", keys_path="~/.switch/prod.keys",
                  local_comm_id=None, scene_id=None, app_version=None,
                  phyname="phy0", ifname="ldnclient", log=print,
-                 scan_channels=(1, 6, 11), scan_dwell=0.6):
+                 scan_channels=(1, 6, 11), scan_dwell=0.6, beacon_debug=None):
         self.info = getattr(log, "info", log)
         self.password = password if password else GBA_APP_PASSPHRASE
         self.nickname = nickname
@@ -307,6 +248,7 @@ class LiveTransport:
         self.ifname = ifname
         self.scan_channels = tuple(scan_channels)
         self.scan_dwell = scan_dwell
+        self.beacon_debug = beacon_debug
         if local_comm_id is not None:
             self.LOCAL_COMMUNICATION_ID = local_comm_id
         if scene_id is not None:
@@ -399,7 +341,9 @@ class LiveTransport:
                 self._ready.set()
                 return
             self.LOCAL_COMMUNICATION_ID = net.local_communication_id
-            self.app_data = _dump_beacon(getattr(net, "application_data", b"") or b"", self.log)
+            self.app_data = bytes(getattr(net, "application_data", b"") or b"")
+            if self.beacon_debug:
+                self.beacon_debug(self.app_data, self.log)
             param = ldn.ConnectNetworkParam()
             param.keys = keys
             param.network = net

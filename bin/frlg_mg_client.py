@@ -16,7 +16,9 @@ import sys
 import time
 
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
-from pokeldn import config as configmod  # noqa: E402
+from pokeldn.host_support import open_output
+from pokeldn.frlg.link import beacon
+from pokeldn.frlg import config as configmod  # noqa: E402
 from pokeldn.frlg.link import sim as simmod  # noqa: E402
 from pokeldn.ldn import crypto as cryptomod  # noqa: E402
 from pokeldn.frlg.gift import mg_client  # noqa: E402
@@ -54,23 +56,23 @@ def save_outputs(engine, prefix, lg):
     written = []
     if engine.saved_card is not None:
         p = f"{prefix}_card.bin"
-        with open(p, "wb") as f:
+        with open_output(p, "wb") as f:
             f.write(engine.saved_card)
         written.append(p)
     if engine.saved_ram_script is not None:
         p = f"{prefix}_ramscript.bin"
-        with open(p, "wb") as f:
+        with open_output(p, "wb") as f:
             f.write(engine.saved_ram_script)
         written.append(p)
     p = f"{prefix}_messages.jsonl"
-    with open(p, "w") as f:
+    with open_output(p, "w") as f:
         for tick, d, ident, size, payload in engine.messages:
             f.write(json.dumps({"tick": tick, "dir": d, "ident": ident,
                                 "name": mg_client.IDENT_NAMES.get(ident), "size": size,
                                 "payload_hex": payload.hex()}) + "\n")
     written.append(p)
     p = f"{prefix}_trace.jsonl"
-    with open(p, "w") as f:
+    with open_output(p, "w") as f:
         for ev in engine.trace:
             f.write(json.dumps({"tick": ev[0], "event": ev[1], "args": [
                 (a.hex() if isinstance(a, (bytes, bytearray)) else a) for a in ev[2:]]}) + "\n")
@@ -85,7 +87,7 @@ def run_live(args, profile, lg):
         password=_hex_bytes(None, "--password", args.password) if args.password else None,
         nickname=profile.name, keys_path=args.keys,
         local_comm_id=int(args.comm_id, 16) if args.comm_id else None,
-        phyname=args.phy, log=lg).start()
+        phyname=args.phy, log=lg, beacon_debug=beacon.diagnose).start()
     pc = cryptomod.PiaCrypto(t.ssid)
     elog = runtime.ConsoleLog(lg.verbose, "  [mgc]", start=lg.start)
     engine = mg_client.MysteryGiftClientEngine(

@@ -20,7 +20,8 @@ BUNDLED_LDN = os.path.join(PROJECT_ROOT, "vendor", "LDN")
 if os.path.isdir(os.path.join(BUNDLED_LDN, "ldn")):
     sys.path.insert(0, BUNDLED_LDN)
 
-from pokeldn import config as configmod, host_cli  # noqa: E402
+from pokeldn.host_support import needs_root
+from pokeldn.frlg import config as configmod, host_cli  # noqa: E402
 from pokeldn.frlg.gift import gift_artifact, gift_registry, wonder_news  # noqa: E402
 from pokeldn.frlg.link import trade_runtime  # noqa: E402
 from pokeldn.frlg.rom import buffer_script, builds, native_script  # noqa: E402
@@ -825,7 +826,7 @@ def main(argv=None):
         factory = functools.partial(ldn_mitm_host.IpHostTransport, our_ip=our_ip)
         # functools.partial hides the class attribute the phy resolution reads.
         factory.NEEDS_RADIO = False
-    elif os.geteuid() != 0 and not transport.board_radio():
+    elif needs_root():
         parser.error("live LDN hosting requires root; run with sudo -E")
     application = (WonderNewsHostApplication if args.news is not None
                    else BufferScriptHostApplication if args.buffer_script is not None

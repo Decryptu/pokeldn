@@ -3,6 +3,7 @@
 Its nursery loops resolve the hooks per call. Every wrapper degrades to a log line.
 """
 
+from pokeldn.host_support import open_output
 import json
 import time
 
@@ -13,7 +14,7 @@ class Tracer:
     def __init__(self, path, log=print):
         self.path = path
         self.log = log
-        self._f = open(path, "a", buffering=1)
+        self._f = open_output(path, "a", buffering=1)
         self.counts = {}
 
     def write(self, kind, **fields):

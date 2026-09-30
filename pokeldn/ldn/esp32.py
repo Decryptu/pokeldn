@@ -3,6 +3,7 @@ object that owns the port. A frame is COBS(type | payload | crc32-le(type | payl
 the message set is `firmware/esp32/main/radio.c`, documented in docs/hardware_esp32.md.
 """
 
+from pokeldn.host_support import open_output
 import collections
 import os
 import struct
@@ -258,7 +259,7 @@ class Radio:
         self.tx_dropped = self.flow_resyncs = 0
         # POKELDN_ESP32_TRACE=FILE records every message both ways: time, direction, type, hex.
         trace = os.environ.get("POKELDN_ESP32_TRACE")
-        self._trace = open(trace, "a", buffering=1) if trace else None
+        self._trace = open_output(trace, "a", buffering=1) if trace else None
         self._thread = threading.Thread(target=self._read_loop, name="esp32-radio", daemon=True)
         self._thread.start()
         self._writer = threading.Thread(target=self._write_loop, name="esp32-writer", daemon=True)
@@ -326,6 +327,9 @@ class Radio:
         close = getattr(self._stream, "close", None)
         if close:
             close()
+        if self._trace:
+            self._trace.close()
+            self._trace = None
 
     def subscribe(self, callback) -> None:
         with self._subscribers_lock:

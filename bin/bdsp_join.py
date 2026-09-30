@@ -17,8 +17,9 @@ if os.path.isdir(BUNDLED_LDN):
 
 import trio
 import ldn
+from pokeldn.host_support import open_output
 from pokeldn.ldn.transport import board_radio, find_ap_phy
-from pokeldn.host_support import resolve_keys
+from pokeldn.host_support import resolve_keys, needs_root
 
 STALE_VIFS = ["ldn", "ldn-mon", "ldn-tap", "ldnclient"]
 
@@ -52,7 +53,7 @@ def describe(net):
             f"{net.num_participants}/{net.max_participants}")
 
 
-def main():
+def build_parser():
     ap = argparse.ArgumentParser(description=__doc__,
                                  formatter_class=argparse.RawDescriptionHelpFormatter)
     ap.add_argument("--comm-id", default="0100000011d90000",
@@ -69,11 +70,16 @@ def main():
     ap.add_argument("--hold", type=float, default=60.0,
                     help="seconds to stay in the session once joined")
     ap.add_argument("--scan-only", action="store_true")
-    ap.add_argument("--facts", default="scratchpad/bdsp_net_facts.json",
+    ap.add_argument("--facts", default="bdsp_net_facts.json",
                     help="where to write everything the advertisement tells us")
-    args = ap.parse_args()
+    return ap
 
-    if os.geteuid() != 0 and not board_radio():
+
+def main(argv=None):
+    ap = build_parser()
+    args = ap.parse_args(argv)
+
+    if needs_root():
         ap.error("must run as root (LDN needs the raw radio)")
 
     phy = find_ap_phy(log=print) if args.phy == "auto" else args.phy
@@ -118,7 +124,7 @@ def main():
     }
     for k, v in facts.items():
         print(f"[net] {k:24s} {v}")
-    with open(args.facts, "w") as fh:
+    with open_output(args.facts, "w") as fh:
         _json.dump(facts, fh, indent=2)
     print(f"[join] network facts -> {args.facts}")
     if net.num_participants >= net.max_participants:

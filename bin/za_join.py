@@ -8,6 +8,7 @@
 A searching console hosts for a few seconds at a time under a fresh SSID, so this scans in a loop.
 The band is Pia header version 16, the GBA application's. docs/za.md.
 """
+from pathlib import Path
 import argparse
 import json
 import os
@@ -24,13 +25,15 @@ if os.path.isdir(BUNDLED_LDN):
 import trio
 import ldn
 
+from pokeldn.host_support import open_output
+from pokeldn import pokemon as pokemon_service
 from pokeldn import za
 from pokeldn.za import streams
 from pokeldn.za.host import (MSG_CANCEL, OFFER_PICK, OFFER_PREVIEW,  # noqa: F401
                              build_command, command_round)
 from pokeldn.ldn import crypto, host_pia, ldn_mitm, pia_connect, reliable
 from pokeldn.ldn.transport import board_radio, find_ap_phy
-from pokeldn.host_support import resolve_keys
+from pokeldn.host_support import resolve_keys, needs_root
 from pokeldn.ldn import show_done
 
 # Ours until the host names one in the footer of its first mesh-addressed packet.
@@ -128,7 +131,7 @@ class GameStreams:
         # The preview marked 1, the pick marked 0 (docs/za.md, Hosting).
         self.offer = self.preview = None
         if args.trade_offer:
-            record = open(args.trade_offer, "rb").read()
+            record = Path(args.trade_offer).read_bytes()
             if getattr(args, "fresh_pid", False):
                 record = za.pokemon.fresh_offer(record)
                 plain = za.pokemon.parse_offer(record)[1]
@@ -224,6 +227,8 @@ class GameStreams:
             print(f"[za] the console cancelled; round {self.round}")
         elif head == "0101":
             self.host_offers += 1
+            if getattr(self.args, "offer_out", None) and len(inner) == za.pokemon.OFFER_SIZE:
+                pokemon_service.save_received("za", self.args.offer_out, inner)
             if inner[-1:] == bytes([OFFER_PICK]) and self.offer and not self.picked:
                 self.picked = True
                 self.scheduled.append((elapsed + 1.5, self.offer))
@@ -325,6 +330,7 @@ def build_parser():
     ap.add_argument("--fresh-pid", action="store_true",
                     help="send the offer under a new PID and encryption constant, shiny state kept, "
                          "so a save that took this record before takes it again")
+    ap.add_argument("--offer-out", help="write the host's offered PA9 here")
     ap.add_argument("--trade-offer", default=None,
                     help="a 354-byte offer message to send once the streams are open")
     ap.add_argument("--selection-delay", type=float, default=0.5,
@@ -600,7 +606,7 @@ def mark_seat(path, state, **fields):
     if not path:
         return
     try:
-        with open(path, "a") as fh:
+        with open_output(path, "a") as fh:
             fh.write(f"{time.strftime('%H:%M:%S')} {state} "
                      + " ".join(f"{k}={v}" for k, v in fields.items()) + "\n")
             fh.flush()
@@ -620,7 +626,7 @@ def main_ip(args):
     our_mac = b"\x02\x00" + socket.inet_aton(our_ip)
     want = int(args.comm_id, 16) if args.comm_id else za.COMM_ID
     print(f"[za] ip-join: host {args.host_ip}, us {our_ip}, comm_id={want:#018x}")
-    cap = open(args.capture, "w") if args.capture else None
+    cap = open_output(args.capture, "w") if args.capture else None
 
     def record(**row):
         if cap:
@@ -690,13 +696,17 @@ def main_ip(args):
 def main(argv=None):
     ap = build_parser()
     args = ap.parse_args(argv)
+    if args.trade_offer and args.trade_offer != "echo":
+        args.trade_offer = pokemon_service.prepare_file("za", args.trade_offer, fresh=getattr(args, "fresh_pid", False))
+        if hasattr(args, "fresh_pid"):
+            args.fresh_pid = False
     try:
         sys.stdout.reconfigure(line_buffering=True)
     except (AttributeError, ValueError):
         pass
     if args.ip_join:
         return main_ip(args)
-    if os.geteuid() != 0 and not board_radio():
+    if needs_root():
         ap.error("joining needs the raw radio; re-run under sudo")
     phy = find_ap_phy(log=print) if args.phy == "auto" else args.phy
     if phy is None:
@@ -721,7 +731,7 @@ def main(argv=None):
             subprocess.run(["ip", "link", "set", "dev", name, "address", args.mac], check=False)
     keys_file = ldn.load_keys(keys_path)
 
-    cap = open(args.capture, "w") if args.capture else None
+    cap = open_output(args.capture, "w") if args.capture else None
 
     def record(**row):
         if cap:

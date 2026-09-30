@@ -15,8 +15,9 @@ from pokeldn import config
 from pokeldn.frlg.gift import gift_registry, mg_script, wonder_card
 from pokeldn.frlg.link import linkplayer
 from pokeldn.frlg.text import charmap
-from pokeldn.ldn import beacon, transport
-from pokeldn.ldn.host_beacon import build_wonder_card_app_data
+from pokeldn.frlg.link import beacon
+from pokeldn.ldn import transport
+from pokeldn.frlg.link.host_beacon import build_wonder_card_app_data
 from pokeldn.frlg.gift.host_mg_app import MysteryGiftHostApplication
 from pokeldn.frlg.gift.host_mystery_gift import HostMysteryGiftEngine
 from pokeldn.ldn.host_pia import HostPeerProtocol
@@ -36,7 +37,7 @@ def _build_trade(argv):
 
 
 def _record(app_data):
-    return transport._b85_decode(app_data[beacon.PIA_HDR:])[:beacon.RECORD_SIZE]
+    return beacon.b85_decode(app_data[beacon.PIA_HDR:])[:beacon.RECORD_SIZE]
 
 
 def _sha256(data):
@@ -119,9 +120,8 @@ def test_mystery_gift_host_lifecycle_options_are_explicit_and_validated():
             raise AssertionError(f"invalid idle timeout accepted: {bad!r}")
 
 
-def test_mystery_gift_main_returns_distinct_supervisor_outcomes():
+def test_mystery_gift_main_returns_distinct_supervisor_outcomes(monkeypatch):
     original_app = frlg_mg_host.MysteryGiftHostApplication
-    original_euid = frlg_mg_host.os.geteuid
 
     class FakeApplication:
         delivered = False
@@ -138,7 +138,7 @@ def test_mystery_gift_main_returns_distinct_supervisor_outcomes():
 
     try:
         frlg_mg_host.MysteryGiftHostApplication = FakeApplication
-        frlg_mg_host.os.geteuid = lambda: 0
+        monkeypatch.setattr(frlg_mg_host.os, "geteuid", lambda: 0, raising=False)
         FakeApplication.delivered, FakeApplication.idle, FakeApplication.interrupted = True, False, False
         assert frlg_mg_host.main(["--live"]) == 0
         FakeApplication.delivered, FakeApplication.idle, FakeApplication.interrupted = False, False, False
@@ -149,7 +149,6 @@ def test_mystery_gift_main_returns_distinct_supervisor_outcomes():
         assert frlg_mg_host.main(["--live"]) == 130
     finally:
         frlg_mg_host.MysteryGiftHostApplication = original_app
-        frlg_mg_host.os.geteuid = original_euid
 
 
 def test_both_host_clis_use_the_same_explicit_transport_parsing():

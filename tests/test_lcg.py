@@ -1,4 +1,5 @@
 """The RNG as arithmetic: exact distances, the seed behind a state, and a caught Pokemon read back."""
+from pathlib import Path
 import random
 
 import pytest
@@ -102,7 +103,7 @@ def test_iv_word_refuses_an_impossible_iv():
 
 def test_bs15_samples_hold_the_recurrence_and_two_turns_a_frame():
     # The console's own bytes.
-    trace = buffer_script.read_rng_trace(open("scratchpad/bs15_dump.bin", "rb").read()) \
+    trace = buffer_script.read_rng_trace(Path('scratchpad/bs15_dump.bin').read_bytes()) \
         if __import__("os").path.exists("scratchpad/bs15_dump.bin") else None
     if trace is None:
         pytest.skip("bs15_dump.bin is not in this checkout")

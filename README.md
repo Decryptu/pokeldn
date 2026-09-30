@@ -66,8 +66,11 @@ Gift below with the tested settings. The only file it asks for is `prod.keys`.
 - Linux: it needs GTK 3 and libsecret, present on desktop distributions, and serial access
   (`sudo usermod -aG dialout $USER`).
 - From source: `pip install -r gui/requirements.txt`, then `python gui/main.py`; the Pokemon builder
-  needs `dotnet build -c Release gui/pkhex` (.NET 10 SDK). `python scripts/pack_app.py` builds the
-  app for the current OS into `dist/`.
+  needs `dotnet build -c Release services/pkhex` (.NET 10 SDK). `python scripts/pack_app.py` builds the
+  app for the current OS into `dist/`, with firmware required. See [desktop builds](docs/gui.md).
+- `python -m pokeldn --list` lists the shared GUI/CLI presets. For example,
+  `python -m pokeldn --radio esp32:auto swsh-host --offer-file offer.pk8`.
+  See [code organization](docs/architecture.md) for the shared modules and legality checks.
 
 ## Requirements
 
@@ -75,6 +78,8 @@ Gift below with the tested settings. The only file it asks for is `prod.keys`.
   [`firmware/esp32`](firmware/esp32). 2.4 GHz only.
 - Python 3.11+ and a venv with `requirements.txt` installed. No root. The bundled
   [`vendor/LDN`](vendor/LDN) is installed by it; do not substitute the PyPI `ldn` package.
+- Source trade tools also need the .NET 10 SDK and `dotnet build -c Release services/pkhex`.
+  Released desktop apps include the helper.
 - A Switch or Switch 2 with one of the games. FireRed / LeafGreen needs the Direct Corner unlocked
   (20 to 40 minutes of play) and at least two `.pk3` party members.
 - Switch `prod.keys` (default `~/.switch/prod.keys`; `--keys PATH` elsewhere, absolute under `sudo`).
@@ -104,7 +109,8 @@ See [Adapters](docs/hardware_adapters.md).
 | [`bin/`](bin) | entry points, named for the game: `frlg_*`, `lgpe_*`, `swsh_*`, `bdsp_*`, `pla_*`, `sv_*`, `za_*` (`_host` hosts, `_join` / `_connect` joins; `bin/X --help` lists flags) |
 | [`tools/ldn/`](tools/ldn) | the radio, any target: `esp32_first_contact.py`, `esp32_sniff.py` (second board as air sniffer), `ldn_scan.py` |
 | [`tools/frlg/`](tools/frlg), [`tools/switch/`](tools/switch) | offline readers: a FireRed console's dumps; a retail Switch title's own code |
-| [`pokeldn/`](pokeldn) | the package: `ldn/` wireless layer, `gba/` GBA link, one package per game, `gen8.py` the Pokémon format SwSh and BDSP share |
+| [`pokeldn/`](pokeldn) | the package: `ldn/` wireless layer, `gba/` GBA link, one package per game, `gen8.py` and `gen9.py` shared Pokémon codecs |
+| [`pokeldn/app/`](pokeldn/app), [`services/pkhex/`](services/pkhex), [`gui/`](gui) | shared tool runtime; PKHeX service; desktop views |
 | [`firmware/esp32/`](firmware/esp32), [`asm/`](asm) | the radio's firmware; ARM sources for the payloads the console runs |
 | [`scripts/`](scripts), [`config/`](config), [`vendor/`](vendor) | setup and code generation; host profiles; bundled LDN and the mt7601u driver |
 | [`docs/`](docs), [`tests/`](tests) | the protocol findings, with citations; `python -m pytest tests/ -q` |
@@ -317,11 +323,12 @@ POKELDN_RADIO=esp32:auto ./.venv/bin/python -u bin/za_host.py --keys prod.keys -
   --hold 450 --quiet-seat 25 --connect-timeout 6 --game --trade-offer offer.bin --offer-delay 4
 ```
 
-Pick a Pokémon on the trade box and confirm when the other side's shows. The joiner stays seated and
-answers the next offer; back out with B. `--offer-out FILE` keeps what the console offered. For an
-emulated console over the LAN, use `za_host.py --ip-host --our-ip IP --comm-id ffffffffffffffff` and
+Pick a Pokémon on the trade box and confirm when the other side's shows. Both roles answer another
+offer in the same session. Back out with B when finished; the host closes when the console leaves.
+`--offer-out FILE` keeps what the console offered. For an emulated console over the LAN, use
+`za_host.py --ip-host --our-ip IP --comm-id ffffffffffffffff` and
 `za_join.py --ip-join --host-ip IP --our-ip IP --comm-id ffffffffffffffff`. The offer file is 354 bytes
-(nine-byte header, 344-byte record, one trailing byte); `pokeldn.sv.pokemon.build` composes the record
+(nine-byte header, 344-byte record, one trailing byte); `pokeldn.gen9.build` composes the record
 because Z-A's layout is Scarlet's. See [Legends Z-A](docs/za.md).
 
 ### Diagnostics

@@ -6,7 +6,7 @@ plus `0xbc` for a byte string (docs/sv.md, Port 2).
 import struct
 import zlib
 
-from pokeldn.pla.channel_table import TUPLE, decode_uint, encode_uint
+from pokeldn.ldn.channel_table import TUPLE, decode_uint, encode_uint
 
 BYTES = 0xBC
 TYPE_JOIN = 3

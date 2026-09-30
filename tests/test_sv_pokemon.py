@@ -1,5 +1,6 @@
 """The Gen-9 record a Scarlet trade message carries; the sample is the pair's offer in
 tests/data/sv_pair_trade.txt."""
+from pathlib import Path
 import os
 import struct
 import sys
@@ -15,7 +16,7 @@ from pokeldn.sv import pokemon, trade
 def pair_offer():
     """-> the 348-byte trade body the pair's host offered."""
     path = os.path.join(os.path.dirname(__file__), "data", "sv_pair_trade.txt")
-    for line in open(path):
+    for line in Path(path).read_text(encoding="utf-8").splitlines():
         parts = line.split()
         if len(parts) == 3 and parts[2].startswith("80000200"):
             return bytes.fromhex(parts[2])[4:]
@@ -99,7 +100,7 @@ def test_a_composed_offer_runs_the_trade_the_pair_ran():
     """A composed offer drives the pair's trade stage; the host's side matches the pair host's apart
     from the offer."""
     path = os.path.join(os.path.dirname(__file__), "data", "sv_pair_trade.txt")
-    rows = [line.split() for line in open(path) if line.strip()][2:]
+    rows = [line.split() for line in Path(path).read_text(encoding="utf-8").splitlines() if line.strip()][2:]
     pair_body = bytes.fromhex(rows[0][2])[4:]
     composed = pokemon.to_wire(pokemon.write(pokemon.from_wire(pair_body),
                                              nickname="POKELDN", is_nicknamed=1,

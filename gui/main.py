@@ -3,10 +3,10 @@ import sys
 
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
-from gui import paths  # noqa: E402,F401  (puts the repository and vendor/LDN on sys.path)
+from pokeldn.app import paths  # noqa: E402,F401  (puts the repository and vendor/LDN on sys.path)
 
 if len(sys.argv) > 2 and sys.argv[1] in ("--run", "--module"):
-    from gui.runner import child
+    from pokeldn.app.runner import child
     child(sys.argv[1:])
     sys.exit(0)
 
@@ -18,14 +18,14 @@ import flet as ft  # noqa: E402
 
 from gui import theme as t  # noqa: E402
 from gui.app import App  # noqa: E402
-from gui.paths import ROOT  # noqa: E402
+from pokeldn.app.paths import ROOT  # noqa: E402
 
 PAGES = (
-    ("games", "Games", ft.Icons.SPORTS_ESPORTS_OUTLINED, ft.Icons.SPORTS_ESPORTS),
-    ("board", "Board", ft.Icons.MEMORY_OUTLINED, ft.Icons.MEMORY),
-    ("docs", "Docs", ft.Icons.MENU_BOOK_OUTLINED, ft.Icons.MENU_BOOK),
+    ("games", "Games", "gamepad"),
+    ("board", "Board", "cpu"),
+    ("docs", "Docs", "book-open"),
 )
-SETTINGS = ("settings", "Settings", ft.Icons.SETTINGS_OUTLINED, ft.Icons.SETTINGS)
+SETTINGS = ("settings", "Settings", "gear")
 
 
 def main(page: ft.Page) -> None:
@@ -59,12 +59,12 @@ def main(page: ft.Page) -> None:
         return SettingsView(app)
 
     def item(entry) -> ft.Control:
-        key, label, icon, selected_icon = entry
+        key, label, icon = entry
         active = key == current["key"]
         color = t.RED if active else t.MUTED
         return ft.Container(ft.Stack([
             ft.Container(ft.Column([
-                ft.Icon(selected_icon if active else icon, size=22, color=color),
+                t.pixel_icon(icon, size=24, color=color),
                 t.text(label, 10.5, color, weight=ft.FontWeight.W_600),
             ], spacing=3, horizontal_alignment=ft.CrossAxisAlignment.CENTER),
                 width=70, padding=ft.Padding(0, 9, 0, 9)),
@@ -124,9 +124,8 @@ def welcome(app: App) -> None:
                    "local wireless messages and never leaves this computer.", 13, t.MUTED),
             t.text("Everything else is included.", 13, t.MUTED),
         ], spacing=10, tight=True), width=420),
-        actions=[ft.TextButton("Later", on_click=lambda e: app.page.pop_dialog(),
-                               style=ft.ButtonStyle(color=t.MUTED)),
-                 t.button("Choose prod.keys", choose, ft.Icons.KEY_ROUNDED)],
+        actions=[t.secondary_button("Later", lambda e: app.page.pop_dialog()),
+                 t.button("Choose prod.keys", choose, "key")],
     ))
 
 

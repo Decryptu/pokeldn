@@ -1,7 +1,8 @@
 import flet as ft
 
-from gui import board, settings
-from gui.paths import SESSION
+from gui import board
+from pokeldn.app import settings
+from pokeldn.app.paths import SESSION
 from gui.views.widgets import on_ui
 
 

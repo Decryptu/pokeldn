@@ -14,7 +14,9 @@ sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
 from pokeldn import config as configmod  # noqa: E402
 from pokeldn.frlg.gift import host_mystery_gift, mg_client, mg_script, mg_server, stamp_rally, wonder_news  # noqa: E402
-from pokeldn.ldn import beacon, host_beacon, transport  # noqa: E402
+from pokeldn.frlg.link import beacon
+from pokeldn.frlg.link import host_beacon
+from pokeldn.ldn import transport  # noqa: E402
 from pokeldn.frlg.gift import mystery_gift as mg  # noqa: E402
 from tests.test_mystery_gift_flow import ConsoleClientModel, _drive  # noqa: E402
 
@@ -74,7 +76,7 @@ def test_the_news_beacon_advertises_activity_22_and_the_card_beacon_still_21():
     session_id = bytes((0x34, 0x12))
 
     def activity_of(app_data):
-        record = transport._b85_decode(app_data[beacon.PIA_HDR:])[:beacon.RECORD_SIZE]
+        record = beacon.b85_decode(app_data[beacon.PIA_HDR:])[:beacon.RECORD_SIZE]
         word = int.from_bytes(
             record[beacon.SEARCH_WORD_OFFSET:beacon.SEARCH_WORD_OFFSET + 2], "little")
         return word & beacon.SEARCH_ACTIVITY_MASK

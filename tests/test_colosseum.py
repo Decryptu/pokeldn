@@ -9,7 +9,8 @@ import pytest
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
 from pokeldn.frlg.link import cable_club, trade  # noqa: E402
-from pokeldn.ldn import beacon, transport  # noqa: E402
+from pokeldn.frlg.link import beacon
+from pokeldn.ldn import transport  # noqa: E402
 from pokeldn.frlg.link import uroom_battle as ub  # noqa: E402
 from pokeldn.config import DEFAULT_TRAINER  # noqa: E402
 from pokeldn.frlg.link.host_trade import (  # noqa: E402
@@ -29,7 +30,7 @@ def _mon():
 
 
 def _search_word(app_data):
-    record = transport._b85_decode(app_data[beacon.PIA_HDR:])[:beacon.RECORD_SIZE]
+    record = beacon.b85_decode(app_data[beacon.PIA_HDR:])[:beacon.RECORD_SIZE]
     return int.from_bytes(
         record[beacon.SEARCH_WORD_OFFSET:beacon.SEARCH_WORD_OFFSET + 2], "little")
 

@@ -17,6 +17,7 @@
 !/firmware/
 # The desktop app.
 !/gui/
+!/services/
 /firmware/**/build/
 /firmware/**/sdkconfig
 /firmware/**/sdkconfig.old
@@ -35,6 +36,13 @@
 # identifiers); covers any stray .pk3/.ek3 at the root or inside pokeldn/ too.
 *.pk3
 *.ek3
+*.pb7
+*.pk8
+*.pb8
+*.pa8
+*.pk9
+*.pa9
+*.wc8
 
 # Nintendo Switch key material is machine-local.  This includes the normal
 # ~/.switch/prod.keys location when it is copied into the project by mistake.
@@ -56,6 +64,10 @@ __pycache__/
 *.jsonl
 *.pcap
 *.pcapng
+*.trace
+*_net_facts.json
+*.payload*.bin
+*.wc8.frag*
 host-tap-*.txt
 logs/
 # Nested standalone clone (kinnay/LDN), a reference copy of the vendored package.
@@ -77,9 +89,9 @@ REFERENCES.local.md
 EVAL_RUN_NOTES.txt
 
 # Build output of the app: the PKHeX service and the bundled firmware image.
-/gui/pkhex/bin/
-/gui/pkhex/obj/
-/gui/pkhex/dist/
+/services/pkhex/bin/
+/services/pkhex/obj/
+/services/pkhex/dist/
 /gui/firmware/
 /dist/
 /*.spec

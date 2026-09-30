@@ -1,5 +1,6 @@
 """The Let's Go host's commit and result stages against a scripted console (docs/lgpe_session.md).
 A console left on its confirmation screen refuses trades for about half an hour."""
+from pathlib import Path
 import importlib.util
 import os
 import struct
@@ -249,7 +250,7 @@ def test_the_result_carries_our_own_structure(stage, tmp_path):
     kind, _, _ = stage["game"]()[-1]
     body = [r for p, payload, _ in stage["sent"] if p == reliable3.PROTOCOL
             for r in [reliable3.parse(payload)] if r["size"]][-1]["payload"][16:]
-    assert body == open(stage["s"].args.offer, "rb").read()
+    assert body == Path(stage['s'].args.offer).read_bytes()
     assert pb7.valid(body)
 
 
@@ -260,12 +261,12 @@ def test_second_trade_uses_new_offer_commit_clones_and_result(stage):
     s.args.next_offer = s.args.offer
     commit(stage)
     stage["run"](27.1)
-    stage["console_says"](pb7.RESULT_MESSAGE, open(s.args.offer, "rb").read(), step=13)
+    stage["console_says"](pb7.RESULT_MESSAGE, Path(s.args.offer).read_bytes(), step=13)
     assert s.round == 1
     assert s.trade["done"]
     assert s.commit_clone is None
     stage["sent"].clear()
-    stage["console_says"](4, open(s.args.offer, "rb").read(), step=14)
+    stage["console_says"](4, Path(s.args.offer).read_bytes(), step=14)
     assert stage["game"]()[-1][:2] == (4, 14)
     assert not s.trade["done"]
     stage["console_publishes"](6, ONES)
@@ -282,7 +283,7 @@ def test_second_trade_uses_new_offer_commit_clones_and_result(stage):
     assert stage["game"]()[-1] == (5, 16, b"\x02\0\0\0")
     stage["run"](27.1)
     assert stage["game"]()[-1][0] == 6
-    stage["console_says"](6, open(s.args.offer, "rb").read(), step=16)
+    stage["console_says"](6, Path(s.args.offer).read_bytes(), step=16)
     assert s.trade["done"]
 
 

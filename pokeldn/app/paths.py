@@ -3,13 +3,15 @@ import sys
 from pathlib import Path
 
 # A PyInstaller bundle unpacks the repository's folders under sys._MEIPASS.
-ROOT = getattr(sys, "_MEIPASS", os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+ROOT = getattr(sys, "_MEIPASS", str(Path(__file__).resolve().parents[2]))
 for folder in (ROOT, os.path.join(ROOT, "vendor", "LDN")):
     if folder not in sys.path:
         sys.path.insert(0, folder)
 
 
 def _data_dir() -> Path:
+    if os.environ.get("POKELDN_DATA"):
+        return Path(os.environ["POKELDN_DATA"]).expanduser().resolve()
     if sys.platform == "win32":
         return Path(os.environ.get("APPDATA", Path.home())) / "pokeldn"
     if sys.platform == "darwin":

@@ -8,6 +8,7 @@
 
 Game payloads are written beside --capture. docs/lgpe_session.md has every layout.
 """
+from pathlib import Path
 import argparse
 import json
 import os
@@ -18,6 +19,8 @@ import time
 
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
+from pokeldn.host_support import open_output
+from pokeldn import pokemon as pokemon_service
 from pokeldn.ldn import clone, pia3, pia4, reliable3, station4, station9, sync_clock
 from pokeldn.lgpe import pb7
 from pokeldn.lgpe.trade import fresh_offer
@@ -30,7 +33,7 @@ from pokeldn.ldn.station_protocol import (DISCONNECTION_REQUEST, DISCONNECTION_R
                                           ldn_constant_id, ldn_service_variable_id,
                                           station_location)
 from pokeldn.ldn.transport import HostTransport, board_radio, find_ap_phy
-from pokeldn.host_support import resolve_keys
+from pokeldn.host_support import resolve_keys, needs_root, write_file
 from pokeldn.lgpe import (APPLICATION_VERSION, COMM_ID_PIKACHU, MAX_PARTICIPANTS, PASSPHRASE,
                           PIA_PORT, SSID, build_advertise_data, packet_iv, scene_id,
                           session_keys)
@@ -99,6 +102,7 @@ def build_parser():
                     help="the trainer id pair written over the identity's")
     ap.add_argument("--scene-id", type=int, default=None,
                     help="the advertised scene id, in place of the one --code gives")
+    ap.add_argument("--received", help="write the peer's offered PB7 here")
     ap.add_argument("--fresh-pid", action="store_true",
                     help="offer the --offer structure under a new PID and encryption constant, "
                          "shiny state kept, so a save that took it before takes it again")
@@ -150,6 +154,12 @@ def console_channel(keys_path, phy, scene, seconds):
 
 def main(argv=None):
     args = build_parser().parse_args(argv)
+    if args.offer and args.offer != "echo":
+        args.offer = pokemon_service.prepare_file("lgpe", args.offer, fresh=getattr(args, "fresh_pid", False))
+        if hasattr(args, "fresh_pid"):
+            args.fresh_pid = False
+    if args.next_offer:
+        args.next_offer = pokemon_service.prepare_file("lgpe", args.next_offer)
     fresh_offer(args, "[lgh]")
     if args.next_offer:
         with open(args.next_offer, "rb") as fh:
@@ -157,7 +167,7 @@ def main(argv=None):
         if not pb7.valid(next_body):
             print(f"[lgh] next offer is not a valid {pb7.BOX_SIZE}-byte box structure")
             return 2
-    if os.geteuid() != 0 and not board_radio():
+    if needs_root():
         print("[lgh] must run as root (LDN needs the raw radio)"); return 1
     phy = find_ap_phy(log=print) if args.phy == "auto" else args.phy
     if phy is None:
@@ -182,7 +192,7 @@ def main(argv=None):
           f"{adv.session_param:#010x}")
     print(f"[lgh] {adv.keys}")
 
-    cap = open(args.capture, "w") if args.capture else None
+    cap = open_output(args.capture, "w") if args.capture else None
 
     def record(**kw):
         if cap:
@@ -517,7 +527,7 @@ class Session:
         if not self.args.offer or self.args.offer == "echo":
             print("[lgh] game: no --offer structure to send first")
             return
-        raw = open(self.args.offer, "rb").read()
+        raw = Path(self.args.offer).read_bytes()
         if len(raw) != pb7.BOX_SIZE:
             print(f"[lgh] game: {self.args.offer} is {len(raw)} bytes, not {pb7.BOX_SIZE}")
             return
@@ -535,7 +545,7 @@ class Session:
         if not self.args.offer or self.args.offer == "echo":
             print("[lgh] game: no --offer structure to send as the result")
             return
-        raw = open(self.args.offer, "rb").read()
+        raw = Path(self.args.offer).read_bytes()
         body = raw if pb7.valid(raw) else pb7.encrypt(raw)
         step = _send_step(self.trade, self.send, self.result_kind, body)
         self.publish_step()
@@ -628,10 +638,9 @@ class Session:
                 self.send(out, reliable3.PROTOCOL)
             if r and r["size"]:
                 self.payloads.append(r["payload"])
-                name = f"{self.args.capture or 'scratchpad/lgpe_host'}.payload{len(self.payloads)}.bin"
-                open(name, "wb").write(r["payload"])
-                print(f"[lgh] *** THE CONSOLE'S GAME PAYLOAD *** {r['size']}B -> {name}")
-                print(f"[lgh]     {r['payload'][:48].hex()}")
+                if self.args.capture:
+                    name = f"{self.args.capture}.payload{len(self.payloads)}.bin"
+                    write_file(name, r["payload"])
                 self.game(pb7.parse_message(r["payload"]))
 
     def game(self, msg):
@@ -642,7 +651,7 @@ class Session:
         if msg["kind"] == pb7.FIRST_MESSAGE and self.args.first and not self.trade.get("first"):
             self.trade["first"] = True
             body = (pb7.build_message(msg["kind"], msg["body"]) if self.args.first == "echo"
-                    else open(self.args.first, "rb").read())
+                    else Path(self.args.first).read_bytes())
             first = pb7.parse_message(body)
             if first and self.args.our_trainer:
                 tid, sid = (int(v, 0) for v in self.args.our_trainer.split(":"))

@@ -2,14 +2,14 @@
 
 import os
 
-from pokeldn import config as configmod
+from pokeldn.frlg import config as configmod
 from pokeldn.frlg.gift import game_data_log, gift_registry, mystery_gift_attempts, wonder_news
 from pokeldn.frlg.link import host_session
 from pokeldn.frlg.rom import buffer_script, builds, mystery_event
 from pokeldn.frlg.text import charmap, easychat
 from pokeldn.ldn import ldntrace
 from pokeldn.frlg.link.host_app import HostApplication
-from pokeldn.ldn.host_beacon import build_wonder_card_app_data, build_wonder_news_app_data
+from pokeldn.frlg.link.host_beacon import build_wonder_card_app_data, build_wonder_news_app_data
 from pokeldn.frlg.gift.host_mystery_gift import (
     MG_CLOSE, MG_DONE, MG_GIFT, MG_START, HostMysteryGiftEngine,
     MysteryGiftTiming,

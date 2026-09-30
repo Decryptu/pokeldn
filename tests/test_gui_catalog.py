@@ -2,10 +2,10 @@
 flag renamed in bin/ fails here instead of in a user's session."""
 import pytest
 
-from gui.catalog import GAMES
-from gui.command import build
-from gui.introspect import parser_of
-from gui.settings import Settings
+from pokeldn.app.catalog import GAMES
+from pokeldn.app.command import build
+from pokeldn.app.introspect import parser_of
+from pokeldn.app.settings import Settings
 
 TOOLS = [tool for game in GAMES for tool in game.tools if not tool.unavailable]
 

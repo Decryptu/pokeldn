@@ -7,7 +7,7 @@ from types import SimpleNamespace
 
 from pokeldn import za
 from pokeldn.ldn import crypto, host_pia, pia_connect, reliable, show_done
-from pokeldn.pla.channel_table import TUPLE, decode_uint, encode_uint
+from pokeldn.ldn.channel_table import TUPLE, decode_uint, encode_uint
 from pokeldn.za import streams
 
 NET_REPEAT = 0.456                # a reference host re-sends its connection status this often
