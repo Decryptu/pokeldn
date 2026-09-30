@@ -451,6 +451,19 @@ The field then advanced to 47 and Scarlet announced at 1.210 s. Dropping a host 
 records 1, 2 and 3 also recovered and completed a trade with an emulated joiner. Loss of the first
 INITIALIZED record left all 44 records unacknowledged, so all 44 were retried in that case.
 
+A retail console completed two trades on one hosted seat with the acknowledgement-held sender.
+Records 34 through 46 were retried once with flag `0x40`; `lowest_pending` advanced through 1,
+34 and 47, and the console acknowledged 47. The ESP32 reported no lost serial commands, UART
+overflow or resynchronization. The console left cleanly after the second trade.
+
+The same retail console then hosted a fresh connection without restarting the game and completed
+two trades with the joiner. Joiner records 36 through 46 were retried once with flag `0x40`;
+`lowest_pending` advanced through 1, 36 and 47, and the console acknowledged 47. The announcement
+arrived 1.792 s after seating. The ESP32 again reported no lost serial commands, UART overflow
+or resynchronization. Both sender roles completed repeated retail trades with pending-record
+retries enabled. After exhausting the two configured offers, a third attempt waited for a response;
+the console cancelled it and left cleanly with B.
+
 ## The game's own protocol, from a pair
 
 Measured from two emulated Scarlet 4.0.0 instances that traded, each logging every datagram it sent.
@@ -912,8 +925,8 @@ nothing all session.
   reached acknowledgement 47, but the sender advanced its own `lowest_pending` before receiving
   acknowledgement. That acknowledgement alone cannot establish StreamData completion. Dropping
   one outgoing chunk reproduces the symptom in the emulator; the older captures do not establish
-  which chunk reached the retail receiver. Repeated retail trades with acknowledgement-held
-  retries remain unmeasured.
+  which chunk reached the retail receiver. The acknowledgement-held senders completed two
+  consecutive retail trades in each role.
 - Whether a master-only leave event, without the client's own leave event, can hold a type-2
   request across the client's 15 s timeout. The master-only branch drains the relay's queues
   through `0x12fbef0` while preserving `+0xb8`. Closing an emulated master before type 9 caused
