@@ -157,7 +157,8 @@ def welcome(app: App) -> None:
         modal=True, bgcolor=t.PANEL, elevation=24,
         shape=ft.ContinuousRectangleBorder(radius=36, side=ft.BorderSide(1, t.OUTLINE)),
         barrier_color=ft.Colors.with_opacity(0.65, "#000000"),
-        content_padding=0, inset_padding=32, clip_behavior=ft.ClipBehavior.ANTI_ALIAS,
+        content_padding=0, actions_padding=0, inset_padding=32,
+        clip_behavior=ft.ClipBehavior.ANTI_ALIAS,
         semantics_label="Welcome to pokeldn",
         content=ft.Container(ft.Column([
             ft.Container(ft.Row([
