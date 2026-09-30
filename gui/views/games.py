@@ -335,7 +335,7 @@ class SessionPanel:
             self.log.clear()
             self.set_status("Ready", t.MUTED)
         self.tool = tool
-        self.steps.content = t.card("On the console", t.numbered(list(tool.steps)))
+        self.steps.content = t.card("On the console", t.step_list(list(tool.steps)))
         self.refresh(update=False)
 
     def refresh(self, update: bool = True) -> None:

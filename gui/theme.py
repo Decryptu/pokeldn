@@ -1,4 +1,5 @@
 import flet as ft
+import flet.canvas as cv
 
 from gui.icons import icon as pixel_icon
 
@@ -223,12 +224,34 @@ def segmented(options: list[tuple[str, str, str]], value: str, on_change) -> ft.
     return ft.Container(row, bgcolor=BG, border_radius=10, padding=3)
 
 
-def numbered(steps: list[str]) -> ft.Column:
-    return ft.Column([
-        ft.Row([
-            ft.Container(text(str(i), 11, BLUE, weight=ft.FontWeight.W_700), width=22, height=22,
-                         border_radius=11, alignment=ft.Alignment.CENTER,
-                         bgcolor=ft.Colors.with_opacity(0.14, BLUE)),
-            text(step, 13, expand=True),
-        ], spacing=10, vertical_alignment=ft.CrossAxisAlignment.CENTER)
-        for i, step in enumerate(steps, 1)], spacing=10)
+def step_list(steps: list[str]) -> ft.Column:
+    rows = []
+    for index, step in enumerate(steps):
+        first, last = index == 0, index == len(steps) - 1
+        lead = 22 if first else 0
+        center = lead + 8
+        stroke = ft.Paint(color=MUTED, stroke_width=1, style=ft.PaintingStyle.STROKE)
+        shapes = [cv.Circle(9, center, 4,
+                            paint=ft.Paint(color=MUTED, stroke_width=1.5, style=ft.PaintingStyle.STROKE))]
+        if first:
+            shapes.append(cv.Line(9, 0, 9, lead, paint=ft.Paint(
+                stroke_width=1, style=ft.PaintingStyle.STROKE,
+                gradient=ft.PaintLinearGradient(begin=ft.Offset(9, 0), end=ft.Offset(9, lead),
+                                               colors=[ft.Colors.with_opacity(0, MUTED), MUTED]))))
+        else:
+            shapes.append(cv.Line(9, 0, 9, 2, paint=stroke))
+
+        def resize(e, base=shapes, start=center + 7, final=last, paint=stroke):
+            e.control.shapes = list(base)
+            if not final:
+                y = start
+                while y < e.height:
+                    e.control.shapes.append(cv.Line(9, y, 9, min(y + 3, e.height), paint=paint))
+                    y += 7
+            e.control.update()
+
+        rows.append(ft.Row([
+            cv.Canvas(list(shapes), width=18, on_resize=resize),
+            ft.Container(text(step, 13), expand=True, padding=ft.Padding(0, lead, 0, 0 if last else 14)),
+        ], spacing=10, intrinsic_height=True, vertical_alignment=ft.CrossAxisAlignment.STRETCH))
+    return ft.Column(rows, spacing=0, tight=True)

@@ -226,7 +226,7 @@ class BoardView:
         ], spacing=6)
         flashing = bool(self.app.process and self.app.process.running and self.app.process_label == "flash")
         return t.card("Flash the firmware", ft.Column([
-            t.numbered(FLASH_STEPS),
+            t.step_list(FLASH_STEPS),
             source,
             ft.Column([self.progress, self.progress_text], spacing=6),
             t.button("Flashing..." if flashing else "Flash", self._flash, "zap",
