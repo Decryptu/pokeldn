@@ -4,26 +4,30 @@ import flet.canvas as cv
 from gui.icons import icon as pixel_icon
 
 BG = "#08090B"
-PANEL = "#111215"
-CARD = "#17181C"
-FIELD = "#202126"
-HOVER = "#292A30"
-BORDER = "#24262B"
-EDGE = "#2E3036"
+PANEL = "#111317"
+CARD = "#181A1F"
+FIELD = "#24272E"
+HOVER = "#30343D"
+OUTLINE = "#202329"
+BORDER = "#2D3139"
+EDGE = "#3A404B"
+DIVIDER = "#22262D"
 TEXT = "#ECEDEF"
-MUTED = "#8D9099"
-FAINT = "#5D6068"
+MUTED = "#9A9FAA"
+FAINT = "#737986"
 BLUE = "#47AEFA"
 BLUE_DEEP = "#3979EE"
 RED = "#FD474D"
 RED_DEEP = "#D93B56"
 GREEN = "#3DD68C"
 MONO = "monospace"
-CONTROL_HEIGHT = 36
+CONTROL_HEIGHT = 38
 CONTROL_PADDING = ft.Padding(12, 8, 12, 8)
-CONTROL_RADIUS = 8
-BUTTON_DEPTH = 3
-FLOAT = [ft.BoxShadow(blur_radius=30, offset=ft.Offset(0, 12), color=ft.Colors.with_opacity(0.55, "#000000"))]
+CONTROL_RADIUS = 9
+BUTTON_DEPTH = 2
+GAP = 16
+SIDEBAR_WIDTH = 254
+SESSION_WIDTH = 360
 
 
 def app_theme() -> ft.Theme:
@@ -31,7 +35,8 @@ def app_theme() -> ft.Theme:
         color_scheme_seed=BLUE,
         color_scheme=ft.ColorScheme(primary=BLUE, secondary=RED, surface=PANEL, on_surface=TEXT,
                                     error=RED, outline=BORDER, surface_container_highest=FIELD),
-        divider_color=BORDER,
+        divider_color=DIVIDER,
+        card_theme=ft.CardTheme(margin=0),
         scrollbar_theme=ft.ScrollbarTheme(thickness=6, radius=3, thumb_color=HOVER),
         tooltip_theme=ft.TooltipTheme(decoration=ft.BoxDecoration(bgcolor=FIELD, border_radius=6),
                                      text_style=ft.TextStyle(color=TEXT, size=12)),
@@ -39,19 +44,27 @@ def app_theme() -> ft.Theme:
 
 
 def text(value: str, size: float = 13, color: str = TEXT, weight=None, **kwargs) -> ft.Text:
+    kwargs.setdefault("style", ft.TextStyle(height=1.4))
     return ft.Text(value, size=size, color=color, weight=weight, **kwargs)
 
 
 def backdrop(content: ft.Control) -> ft.Container:
     """The window behind the panels: a dim checkerboard."""
-    return ft.Container(content, expand=True, bgcolor=BG, padding=14,
+    return ft.Container(content, expand=True, bgcolor=BG, padding=GAP,
                         image=ft.DecorationImage(src="grid.png", repeat=ft.ImageRepeat.REPEAT, scale=2,
                                                  alignment=ft.Alignment.TOP_LEFT))
 
 
-def panel(content: ft.Control, width: float | None = None, expand=None, padding=0) -> ft.Container:
-    return ft.Container(content, width=width, expand=expand, bgcolor=PANEL, padding=padding,
-                        border_radius=16, border=ft.Border.all(1, BORDER), shadow=FLOAT)
+def surface(content: ft.Control, *, bgcolor: str = CARD, stroke: str = BORDER,
+            radius: float = 24, elevation: float = 0, **kwargs) -> ft.Card:
+    return ft.Card(content, bgcolor=bgcolor, elevation=elevation, shadow_color="#000000",
+                   shape=ft.ContinuousRectangleBorder(radius=radius, side=ft.BorderSide(1, stroke)),
+                   clip_behavior=ft.ClipBehavior.ANTI_ALIAS, semantic_container=False, **kwargs)
+
+
+def panel(content: ft.Control, width: float | None = None, expand=None, padding=0) -> ft.Card:
+    return surface(ft.Container(content, padding=padding), width=width, expand=expand,
+                   bgcolor=PANEL, stroke=OUTLINE, radius=30, elevation=8)
 
 
 def notch(*controls: ft.Control) -> ft.Row:
@@ -61,8 +74,9 @@ def notch(*controls: ft.Control) -> ft.Row:
         if items:
             items.append(ft.Container(width=1, height=20, bgcolor=EDGE))
         items.append(control)
-    return ft.Row([ft.Container(ft.Row(items, spacing=10, tight=True), bgcolor=PANEL, border_radius=14,
-                                padding=ft.Padding(12, 6, 8, 6), border=ft.Border.all(1, EDGE), shadow=FLOAT)],
+    return ft.Row([surface(ft.Container(ft.Row(items, spacing=12, tight=True),
+                                       padding=ft.Padding(10, 7, 8, 7)),
+                           bgcolor=PANEL, stroke=OUTLINE, radius=26, elevation=8)],
                   alignment=ft.MainAxisAlignment.CENTER)
 
 
@@ -70,12 +84,12 @@ def panel_header(title: str, *actions: ft.Control) -> ft.Container:
     return ft.Container(
         ft.Row([text(title, 15, weight=ft.FontWeight.W_600), ft.Row(list(actions), spacing=4)],
                alignment=ft.MainAxisAlignment.SPACE_BETWEEN),
-        padding=ft.Padding(16, 14, 12, 14), border=ft.Border(bottom=ft.BorderSide(1, BORDER)))
+        padding=ft.Padding(18, 16, 14, 16), border=ft.Border(bottom=ft.BorderSide(1, DIVIDER)))
 
 
 def card(title: str, body: ft.Control | None = None, description: str = "",
-         trailing: ft.Control | None = None, tip: str = "") -> ft.Container:
-    head = [text(title, 13, weight=ft.FontWeight.W_600, expand=True)]
+         trailing: ft.Control | None = None, tip: str = "") -> ft.Card:
+    head = [text(title, 14, weight=ft.FontWeight.W_600, expand=True)]
     if tip:
         head.append(pixel_icon("circle-info", color=FAINT, tooltip=tip))
     if trailing:
@@ -85,12 +99,11 @@ def card(title: str, body: ft.Control | None = None, description: str = "",
         rows.append(text(description, 12, MUTED))
     if body:
         rows.append(body)
-    return ft.Container(ft.Column(rows, spacing=10, tight=True), bgcolor=CARD, border_radius=14,
-                        padding=14, border=ft.Border.all(1, BORDER), shadow=FLOAT)
+    return surface(ft.Container(ft.Column(rows, spacing=12, tight=True), padding=16))
 
 
 def _border() -> dict:
-    flat = ft.OutlineInputBorder(border_radius=CONTROL_RADIUS, side=ft.BorderSide(0, FIELD))
+    flat = ft.OutlineInputBorder(border_radius=CONTROL_RADIUS, side=ft.BorderSide(1, BORDER))
     return {ft.ControlState.FOCUSED: ft.OutlineInputBorder(border_radius=CONTROL_RADIUS, side=ft.BorderSide(1, BLUE)),
             ft.ControlState.DISABLED: flat, ft.ControlState.DEFAULT: flat}
 
@@ -149,17 +162,19 @@ def button(label: str, on_click=None, icon=None, color: str = BLUE, filled: bool
     stroke = color if filled else EDGE
     style = ft.ButtonStyle(
         bgcolor={ft.ControlState.DISABLED: FIELD, ft.ControlState.DEFAULT: color if filled else FIELD},
-        color={ft.ControlState.DISABLED: FAINT, ft.ControlState.DEFAULT: "#FFFFFF" if filled else TEXT},
+        color={ft.ControlState.DISABLED: FAINT, ft.ControlState.DEFAULT: BG if filled else TEXT},
         shape=ft.RoundedRectangleBorder(radius=CONTROL_RADIUS), padding=CONTROL_PADDING,
-        side=ft.BorderSide(1, stroke),
+        side={ft.ControlState.DISABLED: ft.BorderSide(1, FIELD),
+              ft.ControlState.DEFAULT: ft.BorderSide(1, stroke),
+              ft.ControlState.FOCUSED: ft.BorderSide(2, TEXT)},
         text_style=ft.TextStyle(size=13, weight=ft.FontWeight.W_600),
         overlay_color=ft.Colors.with_opacity(0.12, "#FFFFFF"),
         elevation=0, shadow_color=ft.Colors.TRANSPARENT)
-    icon_color = "#FFFFFF" if filled else TEXT
+    icon_color = BG if filled else TEXT
     kwargs.setdefault("height", CONTROL_HEIGHT)
     return _Button(ft.Button(label, icon=pixel_icon(icon, color=icon_color) if icon else None,
                              on_click=on_click, style=style, elevation=0, height=kwargs["height"]),
-                   bgcolor=color if filled else FIELD, border_radius=CONTROL_RADIUS,
+                   border_radius=CONTROL_RADIUS,
                    shadow=[] if filled else [ft.BoxShadow(blur_radius=0, spread_radius=0,
                                                         offset=ft.Offset(0, BUTTON_DEPTH), color=stroke)],
                    data=None if filled else stroke, **kwargs)
@@ -221,7 +236,7 @@ def segmented(options: list[tuple[str, str, str]], value: str, on_change) -> ft.
         on_change(key)
 
     render(value)
-    return ft.Container(row, bgcolor=BG, border_radius=10, padding=3)
+    return ft.Container(row, bgcolor=BG, border_radius=11, padding=3)
 
 
 def step_list(steps: list[str]) -> ft.Column:

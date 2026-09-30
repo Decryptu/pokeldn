@@ -1,3 +1,4 @@
+import asyncio
 import os
 import re
 import threading
@@ -7,6 +8,34 @@ from typing import Callable
 import flet as ft
 
 from gui import theme as t
+
+
+class PixelActivity(ft.Container):
+    def __init__(self, label: str = "Loading"):
+        positions = [(6, 0), (12, 0), (12, 6), (12, 12), (6, 12), (0, 12), (0, 6), (0, 0)]
+        self._pixels = [ft.Container(width=3, height=3, left=x, top=y, bgcolor=t.BLUE,
+                                     opacity=1 if i == 0 else 0.2)
+                        for i, (x, y) in enumerate(positions)]
+        self._task = None
+        super().__init__(ft.Semantics(content=ft.Stack(self._pixels, width=15, height=15),
+                                      label=label, container=True, exclude_semantics=True),
+                         width=24, height=24, alignment=ft.Alignment.CENTER)
+
+    def did_mount(self):
+        self._task = self.page.run_task(self._animate)
+
+    def will_unmount(self):
+        if self._task:
+            self._task.cancel()
+
+    async def _animate(self):
+        phase = 0
+        while True:
+            await asyncio.sleep(0.14)
+            phase = (phase + 1) % len(self._pixels)
+            for i, pixel in enumerate(self._pixels):
+                pixel.opacity = max(0.18, 1 - ((phase - i) % 8) * 0.22)
+            self.update()
 
 
 class CodeBlock:

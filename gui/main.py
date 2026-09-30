@@ -62,7 +62,8 @@ def main(page: ft.Page) -> None:
         key, label, icon = entry
         active = key == current["key"]
         color = t.RED if active else t.MUTED
-        return ft.Container(ft.Stack([
+        return ft.Semantics(selected=active, button=True, label=label, exclude_semantics=True,
+                            on_tap=lambda e, k=key: navigate(k), content=ft.Container(ft.Stack([
             ft.Container(ft.Column([
                 t.pixel_icon(icon, size=24, color=color),
                 t.text(label, 10.5, color, weight=ft.FontWeight.W_600),
@@ -70,7 +71,7 @@ def main(page: ft.Page) -> None:
                 width=70, padding=ft.Padding(0, 9, 0, 9)),
             ft.Container(width=3, height=30, bgcolor=t.RED if active else None,
                          border_radius=ft.BorderRadius(0, 3, 0, 3), left=0, top=14),
-        ]), on_click=lambda e, k=key: navigate(k), tooltip=label)
+        ]), on_click=lambda e, k=key: navigate(k), tooltip=label))
 
     def render_rail() -> None:
         rail.controls = [item(p) for p in PAGES]
@@ -99,7 +100,7 @@ def main(page: ft.Page) -> None:
         bottom,
         ft.Container(height=8),
     ], horizontal_alignment=ft.CrossAxisAlignment.CENTER, spacing=0), width=72)
-    page.add(t.backdrop(ft.Row([side, content], spacing=14, expand=True,
+    page.add(t.backdrop(ft.Row([side, content], spacing=t.GAP, expand=True,
                                vertical_alignment=ft.CrossAxisAlignment.STRETCH)))
     navigate("games")
     if not os.path.isfile(os.path.expanduser(app.settings.keys)):
@@ -108,24 +109,71 @@ def main(page: ft.Page) -> None:
 
 def welcome(app: App) -> None:
     """The one file the app cannot ship: the user's own Switch keys."""
+    def close(e):
+        app.page.pop_dialog()
+
     async def choose(e):
         files = await app.picker.pick_files(allowed_extensions=["keys"], file_type=ft.FilePickerFileType.CUSTOM)
         if files and files[0].path:
             app.settings.keys = files[0].path
             app.settings.save()
             app.page.pop_dialog()
+            app.navigate("games")
 
+    def instructions(e):
+        app.page.pop_dialog()
+        app.navigate("docs", doc="guide")
+
+    def ready(icon, title, description):
+        return ft.Row([
+            ft.Container(t.pixel_icon(icon, size=24, color=t.MUTED), width=44, height=44,
+                         alignment=ft.Alignment.CENTER, bgcolor=t.FIELD, border_radius=10),
+            ft.Column([t.text(title, 13, weight=ft.FontWeight.W_600),
+                       t.text(description, 12, t.MUTED)], spacing=3, expand=True),
+        ], spacing=14)
+
+    body = ft.Column([
+        t.text("Connect your games", 24, weight=ft.FontWeight.W_600),
+        t.text("Trade and send gifts over local wireless, right from your computer.", 13, t.MUTED),
+        ft.Container(height=4),
+        t.surface(ft.Container(ft.Column([
+            ft.Row([
+                ft.Container(t.pixel_icon("key", size=24, color=t.BLUE), width=44, height=44,
+                             alignment=ft.Alignment.CENTER,
+                             bgcolor=ft.Colors.with_opacity(0.1, t.BLUE), border_radius=10),
+                ft.Column([t.text("Add your Switch keys", 14, weight=ft.FontWeight.W_600),
+                           t.text("The only file you need to bring.", 12, t.MUTED)], spacing=3, expand=True),
+                t.pill("Required", t.BLUE),
+            ], spacing=14),
+            t.text("Choose prod.keys dumped from your own console. These keys decrypt local wireless "
+                   "messages and stay on this computer.", 13, t.MUTED),
+            t.link_button("Read the setup guide", instructions),
+        ], spacing=12, tight=True), padding=18), stroke=ft.Colors.with_opacity(0.45, t.BLUE), radius=28),
+        ft.Container(height=4),
+        ready("usb", "Plug in your ESP32", "Connect your radio with a USB data cable."),
+        ready("gamepad", "Pick a game", "Choose a tool and follow the console steps."),
+    ], spacing=12, tight=True)
     app.page.show_dialog(ft.AlertDialog(
-        modal=True, bgcolor=t.PANEL, shape=ft.RoundedRectangleBorder(radius=16),
-        title=t.text("Welcome to pokeldn", 18, weight=ft.FontWeight.W_700),
+        modal=True, bgcolor=t.PANEL, elevation=24,
+        shape=ft.ContinuousRectangleBorder(radius=36, side=ft.BorderSide(1, t.OUTLINE)),
+        barrier_color=ft.Colors.with_opacity(0.65, "#000000"),
+        content_padding=0, inset_padding=32, clip_behavior=ft.ClipBehavior.ANTI_ALIAS,
+        semantics_label="Welcome to pokeldn",
         content=ft.Container(ft.Column([
-            ft.Image(src="logo.svg", width=44, height=48),
-            t.text("pokeldn needs your Switch's prod.keys, dumped from your own console. It decrypts the "
-                   "local wireless messages and never leaves this computer.", 13, t.MUTED),
-            t.text("Everything else is included.", 13, t.MUTED),
-        ], spacing=10, tight=True), width=420),
-        actions=[t.secondary_button("Later", lambda e: app.page.pop_dialog()),
-                 t.button("Choose prod.keys", choose, "key")],
+            ft.Container(ft.Row([
+                ft.Image(src="logo.svg", width=28, height=32),
+                t.text("Welcome to pokeldn", 16, weight=ft.FontWeight.W_600, expand=True),
+                t.icon_button("close", close, "Close welcome"),
+            ], spacing=12), padding=ft.Padding(24, 18, 18, 18),
+                border=ft.Border(bottom=ft.BorderSide(1, t.DIVIDER))),
+            ft.Container(body, padding=24),
+            ft.Container(ft.Row([
+                t.text("Add keys later in Settings.", 12, t.MUTED, expand=True),
+                t.secondary_button("Later", close),
+                t.button("Choose prod.keys", choose, "key"),
+            ], spacing=10), padding=ft.Padding(24, 18, 24, 22),
+                border=ft.Border(top=ft.BorderSide(1, t.DIVIDER))),
+        ], spacing=0, tight=True), width=540),
     ))
 
 

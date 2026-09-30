@@ -30,20 +30,20 @@ class BoardView:
         self.identities: dict[str, board.Identity | str] = {}   # device -> identity or error
         self.visible = False
         self.list = ft.ListView(spacing=4, padding=8, expand=True)
-        self.detail = ft.Column(spacing=12)
+        self.detail = ft.Column(spacing=t.GAP)
         self.log = Log(app.page, "Identify and flash output appears here.")
-        self.progress = ft.ProgressBar(value=0, color=t.BLUE, bgcolor=t.FIELD, border_radius=4, visible=False)
+        self.progress = ft.ProgressBar(value=0, color=t.BLUE, bgcolor=t.FIELD, height=4, border_radius=0, visible=False)
         self.progress_text = t.text("", 12, t.MUTED)
         self.control = ft.Row([
             t.panel(ft.Column([
                 t.panel_header("Boards", t.icon_button("refresh", lambda e: self.scan(), "Scan again")),
                 self.list,
-            ], spacing=0, expand=True), width=270),
-            ft.ListView([self.detail], padding=ft.Padding(4, 0, 4, 24), expand=True),
+            ], spacing=0, expand=True), width=t.SIDEBAR_WIDTH),
+            ft.ListView([self.detail], padding=ft.Padding(0, 0, 0, 24), expand=True),
             t.panel(ft.Column([t.panel_header("Activity"),
-                               ft.Container(self.log.control, padding=14, expand=True)],
-                              spacing=0, expand=True), width=380),
-        ], spacing=14, expand=True, vertical_alignment=ft.CrossAxisAlignment.STRETCH)
+                               ft.Container(self.log.control, padding=16, expand=True)],
+                              spacing=0, expand=True), width=t.SESSION_WIDTH),
+        ], spacing=t.GAP, expand=True, vertical_alignment=ft.CrossAxisAlignment.STRETCH)
 
     # Port list, polled while the page is open so a board shows up when it is plugged in
 

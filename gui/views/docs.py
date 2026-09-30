@@ -62,9 +62,9 @@ class DocsView:
                                                      lambda e: self.app.page.run_task(self.app.open_url, SITE),
                                                      "Open the docs website")),
                 self.nav,
-            ], spacing=0, expand=True), width=270),
+            ], spacing=0, expand=True), width=t.SIDEBAR_WIDTH),
             t.panel(self.scroll, expand=True),
-        ], spacing=14, expand=True, vertical_alignment=ft.CrossAxisAlignment.STRETCH)
+        ], spacing=t.GAP, expand=True, vertical_alignment=ft.CrossAxisAlignment.STRETCH)
         self.show("guide", update=False)
 
     def enter(self, doc: str = "", **_) -> None:
@@ -87,7 +87,7 @@ class DocsView:
 
     def render_nav(self) -> None:
         rows = [self.row("Start here", "guide", 0)]
-        rows.append(ft.Container(t.text("DOCUMENTATION", 10, t.FAINT, weight=ft.FontWeight.W_700),
+        rows.append(ft.Container(t.text("Documentation", 11, t.FAINT, weight=ft.FontWeight.W_600),
                                  padding=ft.Padding(10, 14, 8, 4)))
 
         def walk(items, depth):

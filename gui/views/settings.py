@@ -20,7 +20,7 @@ class SettingsView:
     def __init__(self, app):
         self.app = app
         self.keys_state = ft.Container()
-        self.column = ft.Column(spacing=12, width=760)
+        self.column = ft.Column(spacing=t.GAP, width=760)
         self.control = ft.ListView([ft.Row([self.column], alignment=ft.MainAxisAlignment.CENTER)],
                                    padding=ft.Padding(4, 8, 4, 24), expand=True)
         self.render()

@@ -31,20 +31,20 @@ class GamesView:
         self.search = ""
         self.tree = ft.ListView(spacing=2, padding=ft.Padding(8, 8, 8, 8), expand=True)
         self.summary = t.text("", 12, t.MUTED)
-        self.body = ft.ListView(spacing=12, padding=ft.Padding(4, 8, 4, 24), expand=True)
+        self.body = ft.ListView(spacing=t.GAP, padding=ft.Padding(0, 12, 0, 24), expand=True)
         self.tabs = ft.Container()
         self.session = SessionPanel(app, self)
         center = ft.Column([
             t.notch(self.tabs,
                     t.icon_button("book-open", self._open_doc, "Read the docs for this game")),
-            ft.Container(self.summary, alignment=ft.Alignment.CENTER, padding=ft.Padding(0, 10, 0, 2)),
+            ft.Container(self.summary, alignment=ft.Alignment.CENTER, padding=ft.Padding(12, 14, 12, 2)),
             self.body,
         ], spacing=0, expand=True)
         self.control = ft.Row([
-            t.panel(ft.Column([t.panel_header("Games"), self.tree], spacing=0, expand=True), width=270),
+            t.panel(ft.Column([t.panel_header("Games"), self.tree], spacing=0, expand=True), width=t.SIDEBAR_WIDTH),
             center,
             self.session.control,
-        ], spacing=14, expand=True, vertical_alignment=ft.CrossAxisAlignment.STRETCH)
+        ], spacing=t.GAP, expand=True, vertical_alignment=ft.CrossAxisAlignment.STRETCH)
         self.select(self.game, self.tool, update=False)
 
     def enter(self, **_) -> None:
@@ -162,7 +162,7 @@ class GamesView:
 
     def description(self, field: Field) -> str:
         selected = command.value_of(field, self.values)
-        detail = dict(field.choice_help).get(selected, "")
+        detail = dict(field.choice_help).get(selected, "") if field.kind == "choice" else ""
         return " ".join(part for part in (field.help, detail) if part)
 
     def input(self, field: Field, grouped: bool = False) -> ft.Control:
@@ -308,9 +308,9 @@ class SessionPanel:
                 self.board_line, self.steps, self.action,
                 ft.Row([t.text("Output", 12, t.MUTED, weight=ft.FontWeight.W_600, expand=True), tools]),
                 self.command_box,
-            ], spacing=10), padding=ft.Padding(14, 12, 14, 0)),
-            ft.Container(self.log.control, padding=ft.Padding(14, 0, 14, 14), expand=True),
-        ], spacing=0, expand=True), width=380)
+            ], spacing=14), padding=ft.Padding(16, 16, 16, 12)),
+            ft.Container(self.log.control, padding=ft.Padding(16, 0, 16, 16), expand=True),
+        ], spacing=0, expand=True), width=t.SESSION_WIDTH)
         self.set_status("Ready", t.MUTED)
 
     def set_status(self, label: str, color: str) -> None:
