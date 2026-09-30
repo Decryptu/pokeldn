@@ -79,8 +79,8 @@ and supplies all three images to every desktop packer.
 The app version is `pokeldn.__version__`. It appears in Settings and in the macOS and Windows
 package metadata. Update it and `.github/release-notes.md` together before preparing a release.
 The workflow produces `SHA256SUMS` for the three desktop downloads and three firmware images.
-Manual workflow runs produce artifacts; `v*` tags publish a release. Versions below 1.0 and
-versions with a hyphen are marked as pre-releases.
+Manual workflow runs produce artifacts; `v*` tags publish a release. Only tags with a hyphen, such as `v0.3.0-rc1`, are marked as pre-releases; GitHub shows
+the newest other release as Latest in the repository sidebar.
 
 Flet 1.0.2's packer re-signs the macOS viewer without its existing entitlements. The packaging
 wrapper in `scripts/pack_flet.py` retains them when signing the viewer after its metadata changes.

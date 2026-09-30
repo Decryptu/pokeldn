@@ -126,4 +126,4 @@ jobs:
         with:
           files: assets/*
           body_path: .github/release-notes.md
-          prerelease: ${{ startsWith(github.ref_name, 'v0.') || contains(github.ref_name, '-') }}
+          prerelease: ${{ contains(github.ref_name, '-') }}

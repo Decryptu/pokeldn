@@ -1,6 +1,6 @@
 # pokeldn 0.2.0
 
-This desktop pre-release trades with seven Pokemon game families on a Switch or Switch 2
+This desktop app trades with seven Pokemon game families on a Switch or Switch 2
 through an ESP32 radio connected by USB. Nothing is installed on the console.
 
 ## What is new
@@ -48,7 +48,7 @@ Received Pokemon are saved in `Documents/pokeldn/Received`, with a configurable 
 
 ## Platform notes
 
-This is a pre-release. macOS requires Apple silicon. Linux requires GTK 3, libsecret and access
+macOS requires Apple silicon. Linux requires GTK 3, libsecret and access
 to the serial port; on distributions using the `dialout` group, run `sudo usermod -aG dialout "$USER"`
 and log out and back in. ESP32-S2 and ESP32-C6 are unsupported.
 
