@@ -91,9 +91,10 @@ class GamesView:
         for game in GAMES:
             open_ = game is self.game
             rows.append(ft.Container(ft.Row([
-                ft.Container(t.text(game.short, 10, t.BLUE if open_ else t.MUTED, weight=ft.FontWeight.W_700),
-                             width=40, height=26, border_radius=7, alignment=ft.Alignment.CENTER,
-                             bgcolor=ft.Colors.with_opacity(0.14, t.BLUE) if open_ else t.FIELD),
+                ft.Container(ft.Image(src=f"games/{game.key}.png", width=36, height=36,
+                                      fit=ft.BoxFit.CONTAIN, filter_quality=ft.FilterQuality.NONE,
+                                      semantics_label=game.name),
+                             width=40, height=36, alignment=ft.Alignment.CENTER),
                 t.text(game.name, 13, t.TEXT if open_ else "#C5C7CD", weight=ft.FontWeight.W_600, expand=True),
             ], spacing=10), padding=ft.Padding(8, 7, 8, 7), border_radius=9,
                 on_click=lambda e, g=game: self.select(g, g.tools[0])))
