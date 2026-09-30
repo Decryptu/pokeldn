@@ -257,7 +257,8 @@ about 150), one ack per stream per packet.
 
 With no RTT sample the 0x81 streams never retransmit
 ([Protocol 0x81](pia.md#protocol-0x81-the-stream-broadcast-reliable-transfer-pia-6)): in four seats
-answering no RTT request, a record lost on the air stayed lost and held the host's `lowest_pending`:
+answering no RTT request, an unacknowledged record stayed pending. Three seats lost full-header
+records on the air; all four also dropped bundled messages through the old presence-0x00 parser:
 
 | seat | host ids lost on the air | host `lowest_pending` | seat ended |
 |---|---|---|---|
@@ -265,6 +266,18 @@ answering no RTT request, a record lost on the air stayed lost and held the host
 | 1 | none | 26 from 2.86 s (26 came behind presence 0x00) | 22.68 s |
 | 2 | 19 | 19 from 2.86 s | 20.49 s |
 | 3 | 18, 23 | 18 from 1.46 s | 20.02 s |
+
+A Scarlet 4.0.0 emulated host with the corrected parser announced at 1.459 and 1.489 s with no
+RTT requests or answers from the joiner. All 46 identity records arrived once in each session,
+the joiner's set was acknowledged through 47, and a complete trade returned the received Pokemon
+to the box. RTT samples enable retransmission; the announcement job has no RTT gate.
+
+Dropping one datagram containing identity records 10 and 16 with no RTT answers left 44 of 46
+records received and `lowest_pending = 10`, with no repeats or announcement after 59 s. At
+`0x1e51ae8`, the finished-slot count was 1 against a required 2 and the BoxTrade job remained in
+state 1 (`+0xb8`). The host had acknowledged the joiner's full set through 47.
+With the same datagram dropped and RTT answers enabled, records 10 and 16 arrived at 0.529 s
+with Pia message flag 0x40, `lowest_pending` reached 47, and the host announced at 1.469 s.
 
 ### What a passive capture misses
 
@@ -418,8 +431,25 @@ pair's host: 1, 2, 3, 46, 4, 7, 8, 19, 9, 15, 10, 16...). Every record declares
 `lowest_pending` 1, destination bits 3, bitmap `[2]`, stream id 0. The gap is closed by the sender's
 next bulk ack on the same stream, whose `lowest_pending` steps from 1 to 47; the peer then acks the
 set to 47 with an empty mask. Left at 1, the peer answers `ack_id` 5, mask `feffffffff01`, all
-session. Renumbering 1 to 44 also works but uses ids no retail sender uses. `bin/sv_host.py
---record-set` sends the ids as they are and sets the field; the station then opens 0x7C port 2.
+session. Renumbering 1 to 44 also works but uses ids no retail sender uses.
+
+A sender may advance `lowest_pending` only past acknowledged records. Advancing directly to 47
+after the initial burst can hide a lost identity chunk: the peer acknowledges 47 while the
+StreamData block remains incomplete. Dropping the joiner's first identity chunk reproduced this
+condition in Scarlet 4.0.0: both sets reached acknowledgement 47, but no announcement arrived in
+300 s. Keeping unacknowledged records and retrying them recovered the same dropped chunk,
+announced at 1.472 s and completed a trade.
+
+Both SV launchers keep a `reliable5.SendWindow` for the identity set. The corresponding bulk-ack
+entry releases records below its `ack_id` and records named by its selective mask. Every 250 ms,
+unacknowledged records are resent with their original sequence ids and Pia message flag `0x40`.
+The outgoing data and bulk-ack headers declare the lowest record still pending, or 47 when the
+set is fully acknowledged. This preserves intentional gaps 5 and 6 while retaining actual losses.
+
+Dropping outgoing joiner record 10 retried only that record, at 0.660 s with `lowest_pending = 10`.
+The field then advanced to 47 and Scarlet announced at 1.210 s. Dropping a host datagram containing
+records 1, 2 and 3 also recovered and completed a trade with an emulated joiner. Loss of the first
+INITIALIZED record left all 44 records unacknowledged, so all 44 were retried in that case.
 
 ## The game's own protocol, from a pair
 
@@ -545,6 +575,11 @@ four request creators write `+0xb8`; `0x18ab83c` and `0x2799b10` refuse while a 
 The last three callers each sit in a function whose sole caller is in `0x1d98xxx` (`0x1d986d8`,
 `0x1d98990`, `0x1d98c20`).
 
+In a Link Trade, the type-2 creator is reached from BoxTrade state 4 at `0x1e51c40`, through
+`0x1d986d8` and `0x1e635fc`. It runs only on the client after the master's slot is present
+(`0x1d999f4`, `0x18c7a40`), retains the request at job `+0xf8`, and enters state 5. The other
+callers of `0x1d98698` belong to other job classes.
+
 The drain `0xe44cf0` walks queues `+0x1c8`, `+0x200`, `+0x238`, `+0x270`, `+0x2a8`, `+0x2e0`,
 `+0x318`, `+0x350` in order; a composer returning false ends the drain for the frame, so a stuck
 type 7 holds the type 9 and 0x0D behind it. The
@@ -600,6 +635,12 @@ request at `+0xb8`. A type-0 request is completed only by the type-7 receiver, t
 receiver and the own-leave event; type 2 by the type-9 receiver `0x18b6710`, type 3 by the type-0xA
 receiver `0x1945404`, type 4 by the type-0xB receiver `0x279be18`.
 
+Closing an emulated master before its type-9 acceptance leaves the client's type-2 request stored
+but completed with result 5: request bytes `+0x40..+0x43` are `02 00 01 05`. The transport
+disconnect causes the own-leave path at `0x12fbc3c..0x12fbc4c`. On the same running Scarlet 4.0.0
+game, the next host session announced in 1.459 s and completed a trade. The completed request
+therefore permits the next creator to replace it.
+
 The relay lives until the application exits, so a request pending at `+0xb8` survives every seat,
 search and menu until a completer runs. Its holder `0x4739430` (GOT `0x46da9c0`, guard `0x4739440`
 via GOT `0x46da9b8`) is written only by the assignment `0x165a2b4` (from the creator, `bl` at
@@ -634,6 +675,10 @@ never sends its first game message and A on a Pokemon gives no menu. A retail co
 9.15 s after the seat; a host opening at 6.0 s gets the menu, at 11.0 s none. The 0x7C reliable
 header is nine bytes, no bitmap, sequence and lowest pending both the message's own; an open is
 flags 0x0F, a later update 0x07.
+
+With an emulated Scarlet 4.0.0 joiner and a host announcement at 5.25 s, a key-0x80 open at 6.0 s
+leaves the trade box without a selection cursor. Moving only that open to 4.5 s enables selection.
+The channel must open before the trade screen draws; the required delay depends on the peer.
 
 ### The trade
 
@@ -863,29 +908,14 @@ nothing all session.
 
 ## Unresolved
 
-- Why two seats that completed both 0x81 transfers were never announced. Of eight unannounced
-  seats, six ended with the console's transfer unfinished (the four `--no-rtt` seats, two left at
-  20 s mid-resend). In the other two, RTT answered at once, both sets stood acknowledged by 7.88 s,
-  and the console sent nothing on 0x80 or 0x7C port 2 in 200 and 24 s, while its 0x80 port-2 bulk
-  acks were byte-identical to an announced seat's with bitmap `[2]`. The ack composer `0x6f2138`
-  sets that bit from `[window+0x40]` (nulls skipped at `0x6f2324`..`0x6f232c`, bit at
-  `0x6f22f8`..`0x6f230c` after ack-state checks, maybe the caller's mask at `0x6f2360`..`0x6f2370`),
-  so it shows a registered destination, not the job's state. One followed a seat migrated 0.5 s in,
-  the other a failed association (LDN reason `0xc9`); a prior migration does not decide it (five of
-  six seats after one were announced). Candidates: no trade job; the job in state 1 on a slot whose
-  `+0xd9`/`+0xda` were never set; a request refused while one is pending (result 8); a type 7 held
-  by vfunc20. Ryujinx GDB breakpoints, 3 s after the console's set is acknowledged: job Update
-  `0x1e51a04` (state `+0xb8`, result `+0x40`); `0x1e51ae8` (finished count `x0`, slot vtable `[x21]`,
-  `0x4455ec0` or a 0xF388 sibling); `0xe45fb0` (vfunc20 result `w8`); `0x18ab8e8` (pending request
-  type `[x8+0x40]`, done `[x8+0x42]`).
-- Which path creates a type-2 request, and whether a stale one holds later seats. A client's type-2
-  request (`0x2799b10`) shares `+0xb8` and its refusal; if its master leaves, the event runs
-  `0x12fbef0` alone, the job ends at 15 s and nothing clears `+0xb8`, so every later request on that
-  console would be refused. The creator's sole caller `0x1e635fc` is reached only from `0x1d986d8` in
-  `0x1d98698`, called from `0x1d96c38`, `0x1d9973c`, `0x1e50eec`, `0x1e51c40`, `0x1e638ac`,
-  `0x1e63904`. The BoxTrade job's `0x1e51c40` is its client state 4 (jump table `0x3c5baf0`,
-  `0x1e51b04`..`0x1e51b18` choose state 2 or 4). Whether the other five run in a Link Trade is
-  unknown. Check: a `bin/sv_host.py` session stopped before its type 9, then `bin/sv_join.py`
-  without restarting the game, and again after a restart.
-- Whether a seat whose joiner answers no RTT request, reads every message and loses no host record
-  is announced.
+- Whether the two older unannounced retail seats lost an outgoing identity chunk. Both sets
+  reached acknowledgement 47, but the sender advanced its own `lowest_pending` before receiving
+  acknowledgement. That acknowledgement alone cannot establish StreamData completion. Dropping
+  one outgoing chunk reproduces the symptom in the emulator; the older captures do not establish
+  which chunk reached the retail receiver. Repeated retail trades with acknowledgement-held
+  retries remain unmeasured.
+- Whether a master-only leave event, without the client's own leave event, can hold a type-2
+  request across the client's 15 s timeout. The master-only branch drains the relay's queues
+  through `0x12fbef0` while preserving `+0xb8`. Closing an emulated master before type 9 caused
+  the client's own leave event, completed the request with result 5, and allowed the next trade
+  without restarting the game.

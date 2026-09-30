@@ -372,8 +372,8 @@ def build_parser():
                     help="seconds between our own RTT requests (0 sends none)")
     ap.add_argument("--no-rtt", action="store_true", help="do not answer RTT requests")
     ap.add_argument("--rtt-delay", type=float, default=0.0, metavar="SECONDS",
-                    help="answer each RTT request SECONDS late; a host that never gets an answer "
-                         "never announces the station (docs/sv.md)")
+                    help="answer each RTT request SECONDS late; RTT samples enable the host's "
+                         "retransmission timer (docs/sv.md)")
     ap.add_argument("--no-ack", action="store_true", help="do not acknowledge reliable streams")
     ap.add_argument("--repeat-ack-gap", type=float, default=0.05, metavar="SECONDS",
                     help="acknowledge a record already held at most once per SECONDS per stream; "
@@ -677,6 +677,7 @@ async def run_session(args, keys, host_ip, host_mac, our_ip, our_mac, record):
     stream_got = {}
     peer_lowest = {}            # (protocol, port) -> the host's own lowest pending on that stream
     our_seq = {}                # (protocol, port) -> our next send sequence on that stream
+    identity_window = reliable5.SendWindow(0.25)
     last_ack = {}
     counts = {}
     seen = authed = 0
@@ -713,7 +714,7 @@ async def run_session(args, keys, host_ip, host_mac, our_ip, our_mac, record):
             through, mask = streams.ack_position(stream_got.get(key, ()), peer_lowest.get(key, 1))
             masks = {streams.HOST_INDEX: mask}
         return streams.build_ack({streams.HOST_INDEX: through},
-                                 our_seq.get(key, 1), streams.JOINER_INDEX,
+                                 identity_window.lowest(key, our_seq.get(key, 1)), streams.JOINER_INDEX,
                                  entry_count=ack_shape["entries"],
                                  destination_bits=ack_shape["dest"], masks=masks)
     player_id = {"arceus": pia6.DEFAULT_PLAYER_ID, "random": os.urandom(16),
@@ -862,12 +863,18 @@ async def run_session(args, keys, host_ip, host_mac, our_ip, our_mac, record):
                 send(out(body, host_var or 0, protocol=streams.PROTOCOL_STREAM,
                          port=streams.JOINER_INDEX, flags=streams.MESSAGE_FLAGS_DATA),
                      "record set", port=streams.JOINER_INDEX, seq=seq)
-            # One past the highest id sent: left at 1, the host acks id 5 and waits on the set's gap
-            # at 5 and 6 all session (docs/sv.md, The sender's own lowest pending).
+                identity_window.sent((streams.PROTOCOL_STREAM, streams.JOINER_INDEX),
+                                     seq, body, now)
+            # Only acknowledged records may advance lowest pending past gaps (docs/sv.md).
             our_seq[(streams.PROTOCOL_STREAM, streams.JOINER_INDEX)] = max(
                 seq for seq, _ in record_set) + 1
             print(f"[sv] -> {host_ip}: our identity, {len(record_set)} records on 0x81 port 1, "
                   f"our next sequence there {our_seq[(streams.PROTOCOL_STREAM, streams.JOINER_INDEX)]}")
+        for key, seq, body in identity_window.due(now):
+            body = reliable5.set_lowest_pending(
+                body, identity_window.lowest(key, our_seq.get(key, 1)))
+            send(out(body, host_var or 0, protocol=key[0], port=key[1], flags=0x40),
+                 "record retry", protocol=key[0], port=key[1], seq=seq)
         for due, spec in [e for e in pending_open if e[0] <= now]:
             proto, port, hx = spec.split(":", 2)
             proto, port = int(proto, 0), int(port)
@@ -1137,6 +1144,13 @@ async def run_session(args, keys, host_ip, host_mac, our_ip, our_mac, record):
                     continue
                 key = (msg.protocol, msg.port)
                 peer_lowest[key] = max(peer_lowest.get(key, 1), rm["lowest_pending"])
+                if (rm.get("is_ack") and not rm["truncated"]
+                        and key == (streams.PROTOCOL_STREAM, streams.JOINER_INDEX)):
+                    entries = reliable5.parse_ack_payload(rm["payload"])["entries"]
+                    if len(entries) > streams.JOINER_INDEX:
+                        entry = entries[streams.JOINER_INDEX]
+                        if entry["stream_id"] == 0:
+                            identity_window.acked(key, entry["ack_id"], entry["mask"])
                 if (identity is not None and not record_acked and rm.get("is_ack")
                         and msg.protocol == streams.PROTOCOL_STREAM and msg.port == streams.JOINER_INDEX):
                     e = reliable5.parse_ack_payload(rm["payload"])
