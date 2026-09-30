@@ -25,6 +25,19 @@ def check() -> None:
     assert not (root / "scratchpad").exists()
     assert (root / "LICENSE").is_file()
     assert (root / "vendor/LDN/LICENSE").is_file()
+    if sys.platform == "darwin":
+        import plistlib
+        import tarfile
+        with tempfile.TemporaryDirectory(prefix="pokeldn-view-check-") as folder:
+            with tarfile.open(root / "flet_desktop/app/flet-macos.tar.gz") as archive:
+                archive.extractall(folder, filter="data")
+            bundle, = Path(folder).glob("*.app")
+            result = subprocess.run(["codesign", "--display", "--entitlements", "-", "--xml", str(bundle)],
+                                    capture_output=True, check=True)
+            entitlements = plistlib.loads(result.stdout) if result.stdout else {}
+            assert entitlements.get("com.apple.security.files.user-selected.read-write"), entitlements
+            subprocess.run(["codesign", "--verify", "--deep", "--strict", str(bundle)],
+                           capture_output=True, check=True)
     trainer = {"ot": "PkCamp", "tid": 12345, "sid": 54321, "language": 2, "gender": 0}
     with tempfile.TemporaryDirectory(prefix="pokeldn-check-") as folder:
         pokemon.POKEMON = Path(folder)

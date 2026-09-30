@@ -56,3 +56,8 @@ package metadata. Update it and `.github/release-notes.md` together before prepa
 The workflow produces `SHA256SUMS` for the three desktop downloads and three firmware images.
 Manual workflow runs produce artifacts; `v*` tags publish a release. Versions below 1.0 and
 versions with a hyphen are marked as pre-releases.
+
+Flet 1.0.2's packer re-signs the macOS viewer without its existing entitlements. The packaging
+wrapper in `scripts/pack_flet.py` retains them when signing the viewer after its metadata changes.
+The frozen check reads the sealed `com.apple.security.files.user-selected.read-write` entitlement
+from the embedded viewer; without it, choosing `prod.keys` raises `ENTITLEMENT_NOT_FOUND`.

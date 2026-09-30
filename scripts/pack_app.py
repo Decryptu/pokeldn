@@ -80,7 +80,7 @@ def main() -> int:
         data += [(stage / "gui/guide.md", "gui"), (executable, "services/pkhex/dist")]
         data += [(stage / "LICENSE", "."), (stage / "vendor/LDN/LICENSE", "vendor/LDN")]
         data += [(path, "gui/firmware") for path in firmware]
-        args = [sys.executable, "-m", "flet_cli.cli", "pack", str(ROOT / "gui" / "main.py"),
+        args = [sys.executable, str(ROOT / "scripts/pack_flet.py"), "pack", str(ROOT / "gui" / "main.py"),
                 "--name", "pokeldn", "-y",
                 "--distpath", str(ROOT / "dist"), "--product-name", "pokeldn",
                 "--product-version", __version__, "--file-version", f"{__version__}.0",
