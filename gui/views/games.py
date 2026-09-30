@@ -146,18 +146,23 @@ class GamesView:
             if kind == "field" and item.kind == "switch":
                 out.append(t.card(item.label, None, item.help, trailing=self.input(item)))
             elif kind == "field":
-                out.append(t.card(item.label, self.input(item), item.help))
+                out.append(t.card(item.label, self.input(item), self.description(item)))
             else:
                 fields = groups[item]
                 per_row = 2 if len(fields) > 3 else len(fields)
                 rows = [ft.Row([
-                    ft.Column([t.text(f.label, 11, t.MUTED), self.input(f, grouped=True)], spacing=4, expand=True)
+                    t.labeled_control(f.label, self.input(f, grouped=True), expand=True)
                     for f in fields[i:i + per_row]], spacing=10) for i in range(0, len(fields), per_row)]
                 out.append(t.card(item, ft.Column(rows, spacing=10),
                                   tip=" ".join(f.help for f in fields if f.help)))
         if not self.tool.fields:
             out.append(t.text("Nothing to fill in.", 13, t.MUTED))
         return out
+
+    def description(self, field: Field) -> str:
+        selected = command.value_of(field, self.values)
+        detail = dict(field.choice_help).get(selected, "")
+        return " ".join(part for part in (field.help, detail) if part)
 
     def input(self, field: Field, grouped: bool = False) -> ft.Control:
         value = command.value_of(field, self.values)
@@ -232,6 +237,9 @@ class GamesView:
                 self.extra[flag.option] = v
             self.app.settings.save()
             self.session.refresh()
+            if flag.kind == "choice":
+                self._fill_flags()
+                self.flag_list.update()
 
         if flag.kind == "switch":
             control = t.switch(bool(value), lambda e: store(e.control.value))
@@ -244,7 +252,14 @@ class GamesView:
             default = "" if flag.default in (None, [], "") else str(flag.default)
             control = ft.Container(t.field(value=value or "", hint=default, mono=True,
                                            on_change=lambda e: store(e.control.value)), width=220)
+        detail = ""
+        for field in self.tool.fields:
+            if field.flag == flag.option:
+                detail = dict(field.choice_help).get(value or flag.default, "")
+                break
         lines = [" ".join(line.split()) for line in flag.help.splitlines()]
+        if detail:
+            lines.append(detail)
         help_ = t.text("\n".join(l for l in lines if l) or "No description.", 11.5, t.MUTED, max_lines=4,
                        overflow=ft.TextOverflow.ELLIPSIS)
 
@@ -258,7 +273,7 @@ class GamesView:
                       spacing=3, expand=True),
             control,
         ], spacing=12, vertical_alignment=ft.CrossAxisAlignment.START),
-            bgcolor=t.FIELD, border_radius=10, padding=12)
+            bgcolor=t.CARD, border=ft.Border.all(1, t.BORDER), border_radius=10, padding=12)
 
 
 class SessionPanel:
@@ -266,7 +281,13 @@ class SessionPanel:
         self.app, self.games = app, games
         self.tool: Tool | None = None
         self.stopping = False
-        self.status = ft.Container()
+        self.pulsing = False
+        self.status_dot = ft.Container(width=10, height=10, border_radius=5, bgcolor=t.MUTED,
+                                       animate_opacity=ft.Animation(800, ft.AnimationCurve.EASE_IN_OUT),
+                                       on_animation_end=self._pulse)
+        self.status_label = ft.Semantics(content=self.status_dot, label="Idle")
+        self.status = ft.Container(self.status_label, width=24, height=24,
+                                   alignment=ft.Alignment.CENTER, tooltip="Idle")
         self.board_line = ft.Container()
         self.steps = ft.Container()
         self.action = ft.Container()
@@ -292,7 +313,21 @@ class SessionPanel:
         self.set_status("Ready", t.MUTED)
 
     def set_status(self, label: str, color: str) -> None:
-        self.status.content = t.pill(label, color)
+        description = "Idle" if label == "Ready" else label
+        running = label.startswith("Running")
+        self.status_dot.bgcolor = color
+        self.status.tooltip = description
+        self.status_label.label = description
+        if running and not self.pulsing:
+            self.status_dot.opacity = 0.35
+        elif not running:
+            self.status_dot.opacity = 1
+        self.pulsing = running
+
+    def _pulse(self, e) -> None:
+        if self.pulsing:
+            self.status_dot.opacity = 1 if self.status_dot.opacity < 1 else 0.35
+            self.status_dot.update()
 
     def show(self, tool: Tool) -> None:
         if tool is not self.tool and not (self.app.process and self.app.process.running):
@@ -370,7 +405,8 @@ class SessionPanel:
         while process.running:
             elapsed = int(time.monotonic() - process.started)
             self.app.ui(lambda e=elapsed: (self.set_status(f"Running {e // 60:02d}:{e % 60:02d}", t.BLUE),
-                                           self.status.update()))
+                                           self.status.update())
+                        if self.app.process is process and process.running else None)
             time.sleep(1)
 
     def _stop(self, e) -> None:

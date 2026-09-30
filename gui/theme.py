@@ -20,6 +20,8 @@ GREEN = "#3DD68C"
 MONO = "monospace"
 CONTROL_HEIGHT = 36
 CONTROL_PADDING = ft.Padding(12, 8, 12, 8)
+CONTROL_RADIUS = 8
+BUTTON_DEPTH = 3
 FLOAT = [ft.BoxShadow(blur_radius=30, offset=ft.Offset(0, 12), color=ft.Colors.with_opacity(0.55, "#000000"))]
 
 
@@ -87,18 +89,32 @@ def card(title: str, body: ft.Control | None = None, description: str = "",
 
 
 def _border() -> dict:
-    flat = ft.OutlineInputBorder(border_radius=8, side=ft.BorderSide(0, FIELD))
-    return {ft.ControlState.FOCUSED: ft.OutlineInputBorder(border_radius=8, side=ft.BorderSide(1, BLUE)),
+    flat = ft.OutlineInputBorder(border_radius=CONTROL_RADIUS, side=ft.BorderSide(0, FIELD))
+    return {ft.ControlState.FOCUSED: ft.OutlineInputBorder(border_radius=CONTROL_RADIUS, side=ft.BorderSide(1, BLUE)),
             ft.ControlState.DISABLED: flat, ft.ControlState.DEFAULT: flat}
+
+
+class _Field(ft.TextField):
+    def before_update(self):
+        super().before_update()
+        details = self.error or self.helper or self.counter
+        self.height = None if details else CONTROL_HEIGHT
+        self.fit_parent_size = not bool(details)
 
 
 def field(label: str = "", value: str = "", hint: str = "", mono: bool = False, **kwargs) -> ft.TextField:
     style = ft.TextStyle(size=13, color=TEXT, font_family=MONO if mono else None)
-    return ft.TextField(value=value, label=label or None, hint_text=hint or None, text_style=style,
-                        label_style=ft.TextStyle(size=12, color=MUTED), dense=True,
-                        hint_style=ft.TextStyle(size=13, color=FAINT), bgcolor=FIELD, filled=True,
-                        border=_border(), cursor_color=BLUE,
-                        content_padding=ft.Padding(12, 10, 12, 10), **kwargs)
+    uniform = not kwargs.get("multiline") and not label and "height" not in kwargs
+    if uniform:
+        kwargs.setdefault("height", CONTROL_HEIGHT)
+        kwargs.setdefault("fit_parent_size", True)
+    kwargs.setdefault("size_constraints", ft.BoxConstraints(min_height=CONTROL_HEIGHT))
+    control = _Field if uniform else ft.TextField
+    return control(value=value, label=label or None, hint_text=hint or None, text_style=style,
+                   label_style=ft.TextStyle(size=12, color=MUTED), dense=True,
+                   hint_style=ft.TextStyle(size=13, color=FAINT), bgcolor=FIELD, filled=True,
+                   border=_border(), cursor_color=BLUE,
+                   content_padding=CONTROL_PADDING, text_vertical_align=ft.VerticalAlignment.CENTER, **kwargs)
 
 
 def dropdown(options: list[tuple[str, str]], value: str | None, on_select=None, **kwargs) -> ft.Dropdown:
@@ -110,32 +126,45 @@ def dropdown(options: list[tuple[str, str]], value: str | None, on_select=None, 
                        menu_style=ft.MenuStyle(bgcolor=FIELD), **kwargs)
 
 
-class _Button(ft.Button):
+def labeled_control(label: str, control: ft.Control, **kwargs) -> ft.Column:
+    return ft.Column([ft.Container(text(label, 11, MUTED), height=16,
+                                  alignment=ft.Alignment.CENTER_LEFT), control],
+                     spacing=4, tight=True, **kwargs)
+
+
+class _Button(ft.Container):
     def before_update(self):
         super().before_update()
-        if isinstance(self.icon, ft.Image):
-            colors = self.style.color
-            self.icon.color = colors[ft.ControlState.DISABLED if self.disabled else ft.ControlState.DEFAULT]
+        self.content.disabled = self.disabled
+        if isinstance(self.content.icon, ft.Image):
+            colors = self.content.style.color
+            self.content.icon.color = colors[ft.ControlState.DISABLED if self.disabled else ft.ControlState.DEFAULT]
+        self.shadow = [] if self.disabled or self.data is None else [ft.BoxShadow(
+            blur_radius=0, spread_radius=0, offset=ft.Offset(0, BUTTON_DEPTH), color=self.data)]
 
 
 def button(label: str, on_click=None, icon=None, color: str = BLUE, filled: bool = True,
-           **kwargs) -> ft.Button:
+           **kwargs) -> ft.Container:
+    stroke = color if filled else EDGE
     style = ft.ButtonStyle(
         bgcolor={ft.ControlState.DISABLED: FIELD, ft.ControlState.DEFAULT: color if filled else FIELD},
         color={ft.ControlState.DISABLED: FAINT, ft.ControlState.DEFAULT: "#FFFFFF" if filled else TEXT},
-        shape=ft.RoundedRectangleBorder(radius=8), padding=CONTROL_PADDING,
-        side=ft.BorderSide(1, EDGE) if not filled else ft.BorderSide(0, ft.Colors.TRANSPARENT),
+        shape=ft.RoundedRectangleBorder(radius=CONTROL_RADIUS), padding=CONTROL_PADDING,
+        side=ft.BorderSide(1, stroke),
         text_style=ft.TextStyle(size=13, weight=ft.FontWeight.W_600),
         overlay_color=ft.Colors.with_opacity(0.12, "#FFFFFF"),
-        elevation={ft.ControlState.DISABLED: 0, ft.ControlState.DEFAULT: 6 if filled else 0},
-        shadow_color=ft.Colors.with_opacity(0.6, color))
+        elevation=0, shadow_color=ft.Colors.TRANSPARENT)
     icon_color = "#FFFFFF" if filled else TEXT
     kwargs.setdefault("height", CONTROL_HEIGHT)
-    return _Button(label, icon=pixel_icon(icon, color=icon_color) if icon else None,
-                     on_click=on_click, style=style, **kwargs)
+    return _Button(ft.Button(label, icon=pixel_icon(icon, color=icon_color) if icon else None,
+                             on_click=on_click, style=style, elevation=0, height=kwargs["height"]),
+                   bgcolor=color if filled else FIELD, border_radius=CONTROL_RADIUS,
+                   shadow=[] if filled else [ft.BoxShadow(blur_radius=0, spread_radius=0,
+                                                        offset=ft.Offset(0, BUTTON_DEPTH), color=stroke)],
+                   data=None if filled else stroke, **kwargs)
 
 
-def secondary_button(label: str, on_click=None, icon=None, **kwargs) -> ft.Button:
+def secondary_button(label: str, on_click=None, icon=None, **kwargs) -> ft.Container:
     return button(label, on_click, icon, filled=False, **kwargs)
 
 
@@ -152,7 +181,8 @@ def icon_button(icon, on_click=None, tooltip: str = "", color: str = MUTED, **kw
 
 
 def switch(value: bool, on_change) -> ft.Switch:
-    return ft.Switch(value=value, active_color=BLUE, inactive_thumb_color=MUTED, inactive_track_color=HOVER,
+    return ft.Switch(value=value, height=CONTROL_HEIGHT, padding=0,
+                     active_color=BLUE, inactive_thumb_color=MUTED, inactive_track_color=HOVER,
                      track_outline_color={ft.ControlState.DEFAULT: ft.Colors.TRANSPARENT},
                      overlay_color={ft.ControlState.DEFAULT: ft.Colors.TRANSPARENT,
                                     ft.ControlState.HOVERED: ft.Colors.TRANSPARENT,

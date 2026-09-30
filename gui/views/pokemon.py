@@ -24,11 +24,14 @@ class PokemonPicker:
         self.build_button = t.button("Build", self._build, "sparkles", disabled=True)
         self.result = ft.Container()
         self.control = ft.Column([
-            ft.Row([ft.Container(self.species, expand=True),
-                    ft.Column([t.text("Level", 11, t.MUTED), self.level], spacing=2),
-                    ft.Column([t.text("Shiny", 11, t.MUTED), self.shiny], spacing=2)],
-                   spacing=10, vertical_alignment=ft.CrossAxisAlignment.END),
-            ft.Row([self.nickname, self.build_button], spacing=10),
+            ft.Row([t.labeled_control("Species", self.species, expand=True),
+                    t.labeled_control("Level", self.level),
+                    t.labeled_control("Shiny", ft.Container(
+                        self.shiny, width=64, height=t.CONTROL_HEIGHT,
+                        alignment=ft.Alignment.CENTER))],
+                   spacing=10, vertical_alignment=ft.CrossAxisAlignment.START),
+            ft.Row([self.nickname, self.build_button], spacing=10,
+                   vertical_alignment=ft.CrossAxisAlignment.CENTER),
             self.result,
             t.secondary_button("Or use a Pokemon file", self._use_file, "file"),
         ], spacing=10)
