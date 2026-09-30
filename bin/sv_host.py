@@ -596,8 +596,8 @@ def main():
                 sent_ids, bundle = [], []
                 order_path = os.path.join(args.record_set, "order")
                 if os.path.exists(order_path):
-                    names = [f"{int(line):03d}.bin" for line in open(order_path)
-                             if line.strip()]
+                    with open(order_path) as order:
+                        names = [f"{int(line):03d}.bin" for line in order if line.strip()]
                 else:
                     names = sorted(os.listdir(args.record_set))
                 for name in names:

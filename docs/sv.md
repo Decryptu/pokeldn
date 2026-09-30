@@ -267,17 +267,10 @@ records on the air; all four also dropped bundled messages through the old prese
 | 2 | 19 | 19 from 2.86 s | 20.49 s |
 | 3 | 18, 23 | 18 from 1.46 s | 20.02 s |
 
-A Scarlet 4.0.0 emulated host with the corrected parser announced at 1.459 and 1.489 s with no
-RTT requests or answers from the joiner. All 46 identity records arrived once in each session,
-the joiner's set was acknowledged through 47, and a complete trade returned the received Pokemon
-to the box. RTT samples enable retransmission; the announcement job has no RTT gate.
-
-Dropping one datagram containing identity records 10 and 16 with no RTT answers left 44 of 46
-records received and `lowest_pending = 10`, with no repeats or announcement after 59 s. At
-`0x1e51ae8`, the finished-slot count was 1 against a required 2 and the BoxTrade job remained in
-state 1 (`+0xb8`). The host had acknowledged the joiner's full set through 47.
-With the same datagram dropped and RTT answers enabled, records 10 and 16 arrived at 0.529 s
-with Pia message flag 0x40, `lowest_pending` reached 47, and the host announced at 1.469 s.
+RTT samples enable retransmission; the announcement job has no RTT gate. With the corrected
+parser, a loss-free emulated Scarlet 4.0.0 host announces and completes a trade without RTT requests or
+answers. A missing identity record holds the BoxTrade job in state 1 (`+0xb8`); the finished-slot
+count at `0x1e51ae8` remains 1 against a required 2 until retransmission completes the set.
 
 ### What a passive capture misses
 
@@ -435,10 +428,7 @@ session. Renumbering 1 to 44 also works but uses ids no retail sender uses.
 
 A sender may advance `lowest_pending` only past acknowledged records. Advancing directly to 47
 after the initial burst can hide a lost identity chunk: the peer acknowledges 47 while the
-StreamData block remains incomplete. Dropping the joiner's first identity chunk reproduced this
-condition in Scarlet 4.0.0: both sets reached acknowledgement 47, but no announcement arrived in
-300 s. Keeping unacknowledged records and retrying them recovered the same dropped chunk,
-announced at 1.472 s and completed a trade.
+StreamData block remains incomplete and the station is never announced.
 
 Both SV launchers keep a `reliable5.SendWindow` for the identity set. The corresponding bulk-ack
 entry releases records below its `ack_id` and records named by its selective mask. Every 250 ms,
@@ -446,23 +436,9 @@ unacknowledged records are resent with their original sequence ids and Pia messa
 The outgoing data and bulk-ack headers declare the lowest record still pending, or 47 when the
 set is fully acknowledged. This preserves intentional gaps 5 and 6 while retaining actual losses.
 
-Dropping outgoing joiner record 10 retried only that record, at 0.660 s with `lowest_pending = 10`.
-The field then advanced to 47 and Scarlet announced at 1.210 s. Dropping a host datagram containing
-records 1, 2 and 3 also recovered and completed a trade with an emulated joiner. Loss of the first
-INITIALIZED record left all 44 records unacknowledged, so all 44 were retried in that case.
-
-A retail console completed two trades on one hosted seat with the acknowledgement-held sender.
-Records 34 through 46 were retried once with flag `0x40`; `lowest_pending` advanced through 1,
-34 and 47, and the console acknowledged 47. The ESP32 reported no lost serial commands, UART
-overflow or resynchronization. The console left cleanly after the second trade.
-
-The same retail console then hosted a fresh connection without restarting the game and completed
-two trades with the joiner. Joiner records 36 through 46 were retried once with flag `0x40`;
-`lowest_pending` advanced through 1, 36 and 47, and the console acknowledged 47. The announcement
-arrived 1.792 s after seating. The ESP32 again reported no lost serial commands, UART overflow
-or resynchronization. Both sender roles completed repeated retail trades with pending-record
-retries enabled. After exhausting the two configured offers, a third attempt waited for a response;
-the console cancelled it and left cleanly with B.
+Loss of the first INITIALIZED record leaves all 44 records unacknowledged, requiring the whole
+set to be retried. A missing middle record is retried on its own. Both sender roles complete
+repeated retail trades over the ESP32 with this window.
 
 ## The game's own protocol, from a pair
 
@@ -648,11 +624,9 @@ request at `+0xb8`. A type-0 request is completed only by the type-7 receiver, t
 receiver and the own-leave event; type 2 by the type-9 receiver `0x18b6710`, type 3 by the type-0xA
 receiver `0x1945404`, type 4 by the type-0xB receiver `0x279be18`.
 
-Closing an emulated master before its type-9 acceptance leaves the client's type-2 request stored
-but completed with result 5: request bytes `+0x40..+0x43` are `02 00 01 05`. The transport
-disconnect causes the own-leave path at `0x12fbc3c..0x12fbc4c`. On the same running Scarlet 4.0.0
-game, the next host session announced in 1.459 s and completed a trade. The completed request
-therefore permits the next creator to replace it.
+The own-leave path at `0x12fbc3c..0x12fbc4c` completes a client's pending type-2 request with
+result 5 (`+0x40..+0x43 = 02 00 01 05`). The next creator can replace that completed request
+without restarting the game, including after a disconnect before type-9 acceptance.
 
 The relay lives until the application exits, so a request pending at `+0xb8` survives every seat,
 search and menu until a completer runs. Its holder `0x4739430` (GOT `0x46da9c0`, guard `0x4739440`
@@ -689,9 +663,8 @@ never sends its first game message and A on a Pokemon gives no menu. A retail co
 header is nine bytes, no bitmap, sequence and lowest pending both the message's own; an open is
 flags 0x0F, a later update 0x07.
 
-With an emulated Scarlet 4.0.0 joiner and a host announcement at 5.25 s, a key-0x80 open at 6.0 s
-leaves the trade box without a selection cursor. Moving only that open to 4.5 s enables selection.
-The channel must open before the trade screen draws; the required delay depends on the peer.
+The channel must open before the trade screen draws. A later open leaves an emulated Scarlet
+4.0.0 trade box without a selection cursor; the required delay depends on the peer.
 
 ### The trade
 
@@ -925,10 +898,7 @@ nothing all session.
   reached acknowledgement 47, but the sender advanced its own `lowest_pending` before receiving
   acknowledgement. That acknowledgement alone cannot establish StreamData completion. Dropping
   one outgoing chunk reproduces the symptom in the emulator; the older captures do not establish
-  which chunk reached the retail receiver. The acknowledgement-held senders completed two
-  consecutive retail trades in each role.
+  which chunk reached the retail receiver.
 - Whether a master-only leave event, without the client's own leave event, can hold a type-2
   request across the client's 15 s timeout. The master-only branch drains the relay's queues
-  through `0x12fbef0` while preserving `+0xb8`. Closing an emulated master before type 9 caused
-  the client's own leave event, completed the request with result 5, and allowed the next trade
-  without restarting the game.
+  through `0x12fbef0` while preserving `+0xb8`.
