@@ -96,8 +96,7 @@ jobs:
           name: ${{ matrix.asset }}
           path: ${{ matrix.asset }}
 
-  release:
-    if: startsWith(github.ref, 'refs/tags/v')
+  checksums:
     needs: app
     runs-on: ubuntu-24.04
     steps:
@@ -105,7 +104,26 @@ jobs:
         with:
           path: assets
           merge-multiple: true
+      - name: Hash release assets
+        working-directory: assets
+        run: sha256sum pokeldn-* > SHA256SUMS
+      - uses: actions/upload-artifact@v7
+        with:
+          name: SHA256SUMS
+          path: assets/SHA256SUMS
+
+  release:
+    if: startsWith(github.ref, 'refs/tags/v')
+    needs: checksums
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/download-artifact@v8
+        with:
+          path: assets
+          merge-multiple: true
       - uses: softprops/action-gh-release@v3
         with:
           files: assets/*
-          generate_release_notes: true
+          body_path: .github/release-notes.md
+          prerelease: ${{ startsWith(github.ref_name, 'v0.') || contains(github.ref_name, '-') }}

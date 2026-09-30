@@ -37,6 +37,7 @@ def test_packer_uses_tracked_defaults_and_requires_firmware(monkeypatch, tmp_pat
     spec.loader.exec_module(pack)
     files = pack.runtime_files()
     assert "config/host.toml" in files
+    assert "LICENSE" in files and "vendor/LDN/LICENSE" in files
     assert not any("scratchpad" in p or "host.local.toml" in p or "__pycache__" in p for p in files)
     monkeypatch.setattr(pack, "FIRMWARE", tmp_path / "absent.bin")
     monkeypatch.setattr(pack, "FIRMWARE_S3", tmp_path / "absent-s3.bin")

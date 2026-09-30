@@ -7,6 +7,7 @@ from pathlib import Path
 
 
 def check() -> None:
+    from pokeldn import __version__
     from pokeldn import pokemon
     from pokeldn.app import paths, runner
     import gui.app
@@ -22,6 +23,8 @@ def check() -> None:
     assert (root / "gui/firmware/pokeldn-radio-c3.bin").is_file()
     assert not (root / "config/host.local.toml").exists()
     assert not (root / "scratchpad").exists()
+    assert (root / "LICENSE").is_file()
+    assert (root / "vendor/LDN/LICENSE").is_file()
     trainer = {"ot": "PkCamp", "tid": 12345, "sid": 54321, "language": 2, "gender": 0}
     with tempfile.TemporaryDirectory(prefix="pokeldn-check-") as folder:
         pokemon.POKEMON = Path(folder)
@@ -41,15 +44,29 @@ def check() -> None:
                             capture_output=True, text=True, timeout=30, check=True)
     assert "--firmware" in result.stdout and not result.stderr, (result.stdout, result.stderr)
     print(f"{len(scripts)} launchers and seven Pokemon formats verified")
+    print(f"pokeldn {__version__}")
 
 
 if __name__ == "__main__":
     if len(sys.argv) == 2:
+        sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
+        from pokeldn import __version__
+
         result = subprocess.run([sys.argv[1], "--run", str(Path(__file__).resolve())],
                                 capture_output=True, text=True, timeout=180)
         assert result.returncode == 0, (result.stdout, result.stderr)
         assert "seven Pokemon formats verified" in result.stdout, (result.stdout, result.stderr)
         assert not result.stderr, result.stderr
+        assert f"pokeldn {__version__}\n" in result.stdout, result.stdout
+        if sys.platform == "darwin":
+            import plistlib
+            executable = Path(sys.argv[1]).resolve()
+            bundle = next((p for p in executable.parents if p.suffix == ".app"),
+                          executable.parent / "pokeldn.app")
+            with (bundle / "Contents/Info.plist").open("rb") as source:
+                info = plistlib.load(source)
+            assert info["CFBundleShortVersionString"] == __version__, info
+            assert info["CFBundleVersion"] == __version__, info
         print(result.stdout, end="")
     else:
         check()

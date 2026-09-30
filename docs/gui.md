@@ -50,3 +50,9 @@ python scripts/pack_app.py
 The absolute output paths keep the images in `gui/firmware`. The packer requires all three images;
 the frozen app check verifies all are included. The release workflow builds each target separately
 and supplies all three images to every desktop packer.
+
+The app version is `pokeldn.__version__`. It appears in Settings and in the macOS and Windows
+package metadata. Update it and `.github/release-notes.md` together before preparing a release.
+The workflow produces `SHA256SUMS` for the three desktop downloads and three firmware images.
+Manual workflow runs produce artifacts; `v*` tags publish a release. Versions below 1.0 and
+versions with a hyphen are marked as pre-releases.

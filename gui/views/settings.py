@@ -3,6 +3,7 @@ import os
 import flet as ft
 
 from gui import theme as t
+from pokeldn import __version__
 from pokeldn.app.paths import SESSION
 from pokeldn.app.settings import LANGUAGES
 from gui.views.widgets import PathField, open_folder
@@ -91,7 +92,7 @@ class SettingsView:
             t.card("Session records", ft.Row([t.button("Open the folder", lambda e: open_folder(str(SESSION / "captures")),
                                                        "folder", filled=False)]),
                    "Attach the latest file to a bug report."),
-            t.card("About", ft.Row([link(label, url) for label, url in LINKS], spacing=4),
+            t.card(f"About pokeldn {__version__}", ft.Row([link(label, url) for label, url in LINKS], spacing=4),
                    "pokeldn is AGPLv3. Pokemon are checked with PKHeX.Core (GPLv3)."),
         ]
 

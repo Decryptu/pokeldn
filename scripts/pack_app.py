@@ -3,6 +3,7 @@
 import os
 import importlib.util
 import platform
+import plistlib
 import shutil
 import tempfile
 import subprocess
@@ -10,6 +11,9 @@ import sys
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parent.parent
+sys.path.insert(0, str(ROOT))
+from pokeldn import __version__
+
 FIRMWARE = ROOT / "gui" / "firmware" / "pokeldn-radio.bin"
 FIRMWARE_S3 = ROOT / "gui" / "firmware" / "pokeldn-radio-s3.bin"
 FIRMWARE_C3 = ROOT / "gui" / "firmware" / "pokeldn-radio-c3.bin"
@@ -25,7 +29,7 @@ def runtime_files() -> list[str]:
     tracked = subprocess.check_output(["git", "ls-files", "-z"], cwd=ROOT).decode().split("\0")
     folders = ("bin/", "pokeldn/", "vendor/LDN/ldn/", "docs/", "gui/assets/")
     return [name for name in tracked if (name.startswith(folders) or name in
-            ("config/host.toml", "gui/guide.md")) and (ROOT / name).is_file()]
+            ("config/host.toml", "gui/guide.md", "LICENSE", "vendor/LDN/LICENSE")) and (ROOT / name).is_file()]
 
 
 def platform_excludes():
@@ -74,27 +78,37 @@ def main() -> int:
         data = [(stage / name, name) for name in
                 ("bin", "pokeldn", "vendor/LDN/ldn", "docs", "config", "gui/assets")]
         data += [(stage / "gui/guide.md", "gui"), (executable, "services/pkhex/dist")]
+        data += [(stage / "LICENSE", "."), (stage / "vendor/LDN/LICENSE", "vendor/LDN")]
         data += [(path, "gui/firmware") for path in firmware]
         args = [sys.executable, "-m", "flet_cli.cli", "pack", str(ROOT / "gui" / "main.py"),
                 "--name", "pokeldn", "-y",
                 "--distpath", str(ROOT / "dist"), "--product-name", "pokeldn",
+                "--product-version", __version__, "--file-version", f"{__version__}.0",
                 "--bundle-id", APP_ID, "--add-data",
                 *[f"{src}{os.pathsep}{dest}" for src, dest in data]]
         if sys.platform in ("darwin", "win32"):
             args += ["--icon", str(ROOT / "gui" / "assets" / icon)]
         scripts = sorted(p.stem for p in (stage / "bin").glob("*.py"))
         console = ["--console", "--hide-console=hide-early"] if sys.platform == "win32" else []
-        for option in (f"--paths={dependencies}", f"--paths={ROOT / 'bin'}", f"--paths={ROOT / 'vendor' / 'LDN'}",
+        for option in (f"--paths={dependencies}", f"--paths={ROOT}", f"--paths={ROOT / 'bin'}", f"--paths={ROOT / 'vendor' / 'LDN'}",
                        *console,
                        *[f"--hidden-import={s}" for s in scripts],
                        *[f"--exclude-module={m}" for m in platform_excludes()], "--collect-all=esptool",
                        "--collect-all=esp_pylib", "--collect-submodules=pokeldn",
                        "--collect-submodules=ldn"):
             args.append(f"--pyinstaller-build-args={option}")
-        result = subprocess.run(args, cwd=ROOT).returncode
+        result = subprocess.run(args, cwd=stage).returncode
         expected = ROOT / "dist" / ({"darwin": "pokeldn.app", "win32": "pokeldn.exe"}.get(sys.platform, "pokeldn"))
         if result == 0 and not expected.exists():
             raise SystemExit("The packer produced no desktop application.")
+        if result == 0 and sys.platform == "darwin":
+            info_path = expected / "Contents/Info.plist"
+            with info_path.open("rb") as source:
+                info = plistlib.load(source)
+            info.update(CFBundleShortVersionString=__version__, CFBundleVersion=__version__)
+            with info_path.open("wb") as dest:
+                plistlib.dump(info, dest)
+            subprocess.run(["codesign", "--force", "--deep", "--sign", "-", str(expected)], check=True)
         if result == 0 and sys.platform.startswith("linux"):
             (ROOT / "dist" / f"{APP_ID}.desktop").unlink(missing_ok=True)
         return result
