@@ -119,3 +119,23 @@ def parse_block(b):
     magic2 = b[44:60]
     ok = (magic1[:14] == b"GameFreak inc." and magic2[:14] == b"GameFreak inc.")
     return LinkPlayer.unpack(struct), ok
+
+
+def as_parent_role_block(data):
+    """Preserve a received 200-byte transfer buffer and assign its LinkPlayer parent slot.
+
+    The Switch-facing transfer buffer contains a 60-byte record followed by padding. Only the
+    player_id field is role-relative here; every other byte, including unknown padding, is kept.
+    This mapping is an explicit P0 hypothesis and still requires the real-console gate in the
+    remote-trade plan.
+    """
+    raw = bytes(data)
+    if len(raw) != 200:
+        raise ValueError("LinkPlayer transfer buffer must be exactly 200 bytes")
+    _player, magic_ok = parse_block(raw)
+    if not magic_ok:
+        raise ValueError("LinkPlayer transfer buffer has invalid GameFreak magic")
+    result = bytearray(raw)
+    # GAMEFREAK_MAGIC is 16 bytes; LinkPlayer.player_id is at struct offset 24.
+    result[16 + 24:16 + 26] = b"\x00\x00"
+    return bytes(result)

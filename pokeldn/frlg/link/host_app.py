@@ -65,7 +65,7 @@ class ChatFileWatcher:
 class HostApplication:
     def __init__(self, config, *, log=print,
                  transport_factory=transport.HostTransport,
-                 injector_factory=BeaconInjector):
+                 injector_factory=BeaconInjector, activity_factory=None):
         if not isinstance(config.role, configmod.HostOptions):
             raise ValueError("HostApplication requires HostOptions")
         self.config = config
@@ -77,6 +77,7 @@ class HostApplication:
         self.info = getattr(log, "info", log)
         self.transport_factory = transport_factory
         self.injector_factory = injector_factory
+        self.activity_factory = activity_factory
         self.network = None
         self.injector = None
         self.tracer = None
@@ -118,7 +119,7 @@ class HostApplication:
         return phy, keys
 
     def _build_components(self):
-        party = self._load_party()
+        party = None if self.activity_factory is not None else self._load_party()
         phy, keys = self._resolve_phy_and_keys()
         link_player = self.profile.to_link_player()
         union_room = bool(getattr(self.options, "union_room", False))
@@ -126,15 +127,20 @@ class HostApplication:
         if union_room:
             rfu_kwargs = {"skip_parent_ni": True,
                           "keepalive_frames": int(getattr(self.options, "union_room_keepalive", 0))}
-        self.session = host_session.HostSession(
-            party, plan=self.plan, profile=self.profile, log=self.log,
-            rfu_kwargs=rfu_kwargs, union_room=union_room,
-            union_room_chat=bool(getattr(self.options, "union_room_chat", False)),
-            chat_messages=tuple(getattr(self.options, "chat_messages", ()) or ()),
-            union_room_battle=bool(getattr(self.options, "union_room_battle", False)),
-            battle_forfeit=bool(getattr(self.options, "battle_forfeit", True)),
-            battle_move_slot=int(getattr(self.options, "battle_move_slot", 0) or 0),
-            colosseum=bool(getattr(self.options, "colosseum", False)))
+        if self.activity_factory is not None:
+            activity = self.activity_factory(profile=self.profile, log=self.log)
+            self.session = host_session.HostSession(
+                engine=activity, log=self.log, rfu_kwargs=rfu_kwargs)
+        else:
+            self.session = host_session.HostSession(
+                party, plan=self.plan, profile=self.profile, log=self.log,
+                rfu_kwargs=rfu_kwargs, union_room=union_room,
+                union_room_chat=bool(getattr(self.options, "union_room_chat", False)),
+                chat_messages=tuple(getattr(self.options, "chat_messages", ()) or ()),
+                union_room_battle=bool(getattr(self.options, "union_room_battle", False)),
+                battle_forfeit=bool(getattr(self.options, "battle_forfeit", True)),
+                battle_move_slot=int(getattr(self.options, "battle_move_slot", 0) or 0),
+                colosseum=bool(getattr(self.options, "colosseum", False)))
         if union_room:
             trade_board = None
             board_type = getattr(self.options, "union_room_board_type", None)
@@ -227,6 +233,10 @@ class HostApplication:
                 if sender is not None:
                     self.info(f"  a block send was IN FLIGHT when it left: {sender.state} "
                               f"frag {getattr(sender, 'index', '?')}")
+
+    def _poll_control_events(self):
+        """Control-plane hook; called each runtime pass even when RFU tick is backpressured."""
+        return None
 
     def _activity(self):
         activity = getattr(self.session, "activity", None)
@@ -362,6 +372,7 @@ class HostApplication:
                     self._send_pending(self.peer.drain())
 
                 now = time.monotonic()
+                self._poll_control_events()
                 idle_timeout = self._idle_timeout_seconds()
                 if idle_timeout is not None and now - last_peer_activity >= idle_timeout:
                     self.idle_timed_out = True

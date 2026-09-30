@@ -130,21 +130,34 @@ class HostTradeEngine:
     def close_confirmed(self):
         return self._close_confirmed
 
-    def __init__(self, party, trade_slot=0, *, offered_slots=None, trades=1,
+    def __init__(self, party=None, trade_slot=0, *, offered_slots=None, trades=1,
                  link_player=None, profile=None, anim_delay=1935, trust_pia=True, timing=None,
                  union_room=False, union_room_chat=False, chat_messages=None,
                  union_room_battle=False, battle_forfeit=True, battle_move_slot=0,
-                 colosseum=False, card_flag_id=0, log=lambda *a: None):
-        self.party = list(party)
-        if not 1 <= len(self.party) <= 6:
-            raise ValueError("party must contain 1..6 Pokémon")
-        if not 1 <= trades <= 6:
-            raise ValueError("trades must be 1..6")
-        self.trades = trades
-        self.offered_slots = trade.resolve_offered_slots(
-            offered_slots, trade_slot, trades, party_size=len(self.party))
-        if any(i >= len(self.party) for i in self.offered_slots):
-            raise ValueError("offered slot exceeds party size")
+                 colosseum=False, card_flag_id=0, log=lambda *a: None,
+                 remote_policy=None):
+        self.remote_policy = remote_policy
+        self.probe_only = remote_policy is not None
+        if self.probe_only:
+            if party is not None:
+                raise ValueError("the remote probe does not accept a local or placeholder party")
+            if (union_room or union_room_chat or union_room_battle or colosseum
+                    or chat_messages or offered_slots is not None):
+                raise ValueError("the remote probe supports only Direct Corner data exchange")
+            self.party = []
+            self.trades = 1
+            self.offered_slots = ()
+        else:
+            self.party = list(party or ())
+            if not 1 <= len(self.party) <= 6:
+                raise ValueError("party must contain 1..6 Pokémon")
+            if not 1 <= trades <= 6:
+                raise ValueError("trades must be 1..6")
+            self.trades = trades
+            self.offered_slots = trade.resolve_offered_slots(
+                offered_slots, trade_slot, trades, party_size=len(self.party))
+            if any(i >= len(self.party) for i in self.offered_slots):
+                raise ValueError("offered slot exceeds party size")
         if link_player is not None and profile is not None:
             raise ValueError("supply link_player or profile, not both")
         self.lp = (profile.to_link_player() if profile is not None else link_player) \
@@ -152,10 +165,10 @@ class HostTradeEngine:
         # The console arms its card counters when this matches its card
         # [decomp:src/union_room.c:1777].
         self.card_flag_id = (profile.card_flag_id if profile is not None else int(card_flag_id))
-        self.trainer_card = linkplayer.build_trainer_card(
+        self.trainer_card = (None if self.probe_only else linkplayer.build_trainer_card(
             self.lp, wonder_card_id=self.card_flag_id,
             mon_species=[m.species for m in self.party],
-            name_pad=HOST_NAME_PAD)
+            name_pad=HOST_NAME_PAD))
         self.anim_delay = anim_delay
         self.trust_pia = trust_pia
         self.union_room = bool(union_room)
@@ -266,7 +279,7 @@ class HostTradeEngine:
         for _ in range(self.timing.player_ids_repeat_frames):
             self._queue_words(rfu.send_player_ids_words(), "SEND_PLAYER_IDS")
         self._link_player_block = linkplayer.build_block(
-            self.lp, name_pad=HOST_NAME_PAD).ljust(200, b"\x00")
+            self.lp, name_pad=HOST_NAME_PAD).ljust(200, b"\x00") if not self.probe_only else None
         # Native case 3 emits only the block request [decomp:src/link_rfu_2.c:1852]; our block goes
         # out from _after_child_block.
         self._expected = "link_player"
@@ -385,7 +398,72 @@ class HostTradeEngine:
         self._queue_words(rfu.send_block_req_words(reqtype), f"BLOCK_REQ:{reqtype}:{expected}")
         self._queue_block(data, f"host:{expected}")
 
+    def _request_remote(self, reqtype, expected):
+        self._expected = expected
+        self._queue_words(rfu.send_block_req_words(reqtype),
+                          f"BLOCK_REQ:{reqtype}:{expected}")
+
+    def process_control(self):
+        """Consume LAN worker events on the RFU owner thread, even under RFU backpressure."""
+        if self.remote_policy is not None:
+            self.remote_policy.poll()
+
+    def resume_remote_phase(self):
+        if self.remote_policy is None or not (
+                isinstance(self._expected, str) and self._expected.startswith("remote:")):
+            return
+        phase = self._expected.split(":", 1)[1]
+        remote = self.remote_policy.take_remote_block(phase)
+        if remote is not None:
+            self._accept_remote_block(phase, remote)
+
+    def _publish_and_wait(self, phase, local_data):
+        self.remote_policy.publish_local_block(phase, bytes(local_data))
+        self._expected = f"remote:{phase}"
+        self.trace.append(("await_remote_block", phase))
+        self.resume_remote_phase()
+
+    def _accept_remote_block(self, phase, data):
+        if self._expected != f"remote:{phase}":
+            raise RuntimeError(f"remote {phase} data arrived outside its requested phase")
+        raw = bytes(data)
+        self.trace.append(("remote_block", phase, len(raw)))
+        if phase == "link_player":
+            self._link_player_block = linkplayer.as_parent_role_block(raw)
+            self._expected = "warp0"
+            self._queue_block(self._link_player_block, "remote:link_player-as-parent")
+            self.info("Sent the peer's LinkPlayer bytes to this Switch as the local parent.")
+        elif phase == "trainer_card":
+            if len(raw) != linkplayer.TRAINER_CARD_BLOCK_SIZE:
+                raise ValueError("remote trainer card must be exactly 100 bytes")
+            self._expected = "warp1"
+            self._queue_block(raw, "remote:trainer_card")
+        elif phase.startswith("party_"):
+            index = int(phase[-1])
+            if not 0 <= index < 3 or len(raw) != 200:
+                raise ValueError("remote party block must be exactly 200 bytes")
+            self._expected = f"party:{index}"
+            self._link_waiting_idle = True
+            self._link_idle_frames = 0
+            self._link_completed = f"party:{index}"
+            self._queue_block(raw, f"remote:{phase}")
+            self.trace.append(("party_wait_idle", index))
+        elif phase in ("mail", "ribbons"):
+            expected_length = 220 if phase == "mail" else 40
+            if len(raw) != expected_length:
+                raise ValueError(f"remote {phase} block must be exactly {expected_length} bytes")
+            self._expected = phase
+            self._link_waiting_idle = True
+            self._link_idle_frames = 0
+            self._link_completed = phase
+            self._queue_block(raw, f"remote:{phase}")
+            self.trace.append((f"{phase}_wait_idle",))
+        else:
+            raise ValueError(f"unsupported remote block phase: {phase}")
+
     def _send_linkcmd(self, cmd, cursor=0):
+        if self.probe_only and cmd == trade.START_TRADE:
+            raise RuntimeError("P0 probe invariant: START_TRADE is disabled")
         self._queue_block(trade.linkcmd_block(cmd, cursor), trade.LINKCMD_NAMES[cmd])
 
     def _enter_cancel_to_leave(self):
@@ -411,6 +489,11 @@ class HostTradeEngine:
 
     def _finish_party_exchange(self):
         self._expected = None
+        if self.probe_only:
+            self._select_cancels = 0
+            self._set_state(H_SELECT)
+            self.info("P0 data exchange reached the trade menu. START_TRADE is disabled; cancel to exit.")
+            return
         if self.round >= self.trades:
             self._set_state(H_LEAVE_MENU)
             self._leave_menu_wait = self.timing.final_menu_ready_frames
@@ -449,8 +532,14 @@ class HostTradeEngine:
         self.info("Both players left the room; closing the RFU link.")
 
     def _begin_card_exchange(self):
+        if (self.probe_only
+                and "link_player" not in self.remote_policy.coordinator.local_settled):
+            self.remote_policy.phase_settled("link_player")
         self._set_state(H_ENTRY_CARD)
-        self._request_and_send(trade.BLOCK_REQ_SIZE_100, self.trainer_card, "card")
+        if self.probe_only:
+            self._request_remote(trade.BLOCK_REQ_SIZE_100, "card")
+        else:
+            self._request_and_send(trade.BLOCK_REQ_SIZE_100, self.trainer_card, "card")
 
     def _begin_seated_activity(self):
         """Both players are on their spots [cable_club.c:683]."""
@@ -475,6 +564,9 @@ class HostTradeEngine:
         self._request_party_pair()
 
     def _request_party_pair(self):
+        if self.probe_only:
+            self._request_remote(trade.BLOCK_REQ_SIZE_200, f"party:{self._party_pair}")
+            return
         host_party = monmod.party_blocks(monmod.build_player_party(self.party))
         self._request_and_send(trade.BLOCK_REQ_SIZE_200,
                                host_party[self._party_pair], f"party:{self._party_pair}")
@@ -517,6 +609,12 @@ class HostTradeEngine:
                           f"(#{self._rejected_link_players}); still waiting for a valid one.")
                 return
             self.child_link_player = lp
+            if self.probe_only:
+                self.remote_policy.local_identity(
+                    version=lp.version, language=lp.language, player_id=lp.player_id)
+                self._publish_and_wait("link_player", bytes(data[:200]))
+                self.info("Received a valid local LinkPlayer record; waiting for the peer's record.")
+                return
             self._expected = "warp0"
             self._queue_block(self._link_player_block, "host:link_player")
             self.info(f"Console identified as {lp.name!r}; sending the host LinkPlayer block now.")
@@ -561,6 +659,10 @@ class HostTradeEngine:
             return
         if expected == "card":
             self.child_card = bytes(data[:100])
+            if self.probe_only:
+                self._publish_and_wait("trainer_card", self.child_card)
+                self.info("Received the local trainer card; waiting for the peer's card.")
+                return
             if self.union_room:
                 # No standby follows Task_ExchangeCards in the room [union_room.c:1753].
                 self._expected = None
@@ -573,6 +675,10 @@ class HostTradeEngine:
         if expected and expected.startswith("party:"):
             i = int(expected.split(":", 1)[1])
             self.child_party[i * 200:(i + 1) * 200] = data[:200]
+            if self.probe_only:
+                self._publish_and_wait(f"party_{i}", bytes(data[:200]))
+                self.info(f"Received local party data block {i + 1}/3; waiting for peer data.")
+                return
             # BufferTradeParties gates the next request on IsLinkTaskFinished(), not a standby
             # barrier.
             self._link_waiting_idle = True
@@ -582,6 +688,10 @@ class HostTradeEngine:
             self.info(f"Party block {i + 1}/3 exchanged; waiting for the Switch link task to finish.")
             return
         if expected == "mail":
+            if self.probe_only:
+                self._publish_and_wait("mail", bytes(data[:220]))
+                self.info("Received local mail data; waiting for the peer block.")
+                return
             self._link_waiting_idle = True
             self._link_idle_frames = 0
             self._link_completed = "mail"
@@ -589,6 +699,10 @@ class HostTradeEngine:
             self.info("Mail block exchanged; waiting for the Switch link task to finish.")
             return
         if expected == "ribbons":
+            if self.probe_only:
+                self._publish_and_wait("ribbons", bytes(data[:40]))
+                self.info("Received local ribbon data; waiting for the peer block.")
+                return
             self._link_waiting_idle = True
             self._link_idle_frames = 0
             self._link_completed = "ribbons"
@@ -685,6 +799,8 @@ class HostTradeEngine:
             self._begin_card_exchange()
 
     def _idle_party_link_settle(self):
+        if self.probe_only and (self._sender is not None or self._blocks):
+            return
         self._link_idle_frames += 1
         if self._link_idle_frames >= self.timing.party_link_settle_frames:
             completed = self._link_completed
@@ -694,17 +810,26 @@ class HostTradeEngine:
                 i = int(completed.split(":", 1)[1])
             else:
                 i = None
+            if self.probe_only:
+                phase = f"party_{i}" if i is not None else completed
+                self.remote_policy.phase_settled(phase)
             if i is not None and i < 2:
                 self._party_pair = i + 1
                 self.trace.append(("party_link_finished", i))
                 self._request_party_pair()
             elif i == 2:
                 self.info("Party blocks 3/3 exchanged; exchanging mail and ribbon data.")
-                self._request_and_send(
-                    trade.BLOCK_REQ_SIZE_220, b"\x00" * 220, "mail")
+                if self.probe_only:
+                    self._request_remote(trade.BLOCK_REQ_SIZE_220, "mail")
+                else:
+                    self._request_and_send(
+                        trade.BLOCK_REQ_SIZE_220, b"\x00" * 220, "mail")
             elif completed == "mail":
-                self._request_and_send(
-                    trade.BLOCK_REQ_SIZE_40, b"\x00" * 40, "ribbons")
+                if self.probe_only:
+                    self._request_remote(trade.BLOCK_REQ_SIZE_40, "ribbons")
+                else:
+                    self._request_and_send(
+                        trade.BLOCK_REQ_SIZE_40, b"\x00" * 40, "ribbons")
             elif completed == "ribbons":
                 self._finish_party_exchange()
 
@@ -868,6 +993,8 @@ class HostTradeEngine:
                 self._begin_colosseum_battle()
                 self._start_entry_route()
                 return
+            if self.probe_only:
+                self.remote_policy.phase_settled("trainer_card")
             self._set_state(H_ENTRY_SEAT)
             self._expected = "warp2"
             self._start_entry_route()
@@ -918,6 +1045,16 @@ class HostTradeEngine:
 
     def _on_child_linkcmd(self, cmd, cursor):
         self.trace.append(("child_linkcmd", trade.LINKCMD_NAMES.get(cmd, hex(cmd)), cursor))
+        if self.probe_only and cmd in (trade.READY_TO_TRADE, trade.INIT_BLOCK):
+            # Even a late or unexpected game command cannot authorize a real trade in P0.
+            self._send_linkcmd(trade.PLAYER_CANCEL_TRADE)
+            self.trace.append(("probe_trade_command_refused", trade.LINKCMD_NAMES.get(cmd, hex(cmd))))
+            self.info("P0 probe refused a trade command. No trade animation or save will be started.")
+            return
+        if self.probe_only and cmd == trade.READY_FINISH_TRADE:
+            self.trace.append(("probe_unexpected_finish",))
+            self.info("Unexpected finish event in the trade-disabled P0 probe; preserving evidence.")
+            return
         if cmd == trade.READY_TO_TRADE and self.state == H_SELECT:
             self._select_cancels = 0
             self.child_cursor = cursor % 6
@@ -964,6 +1101,8 @@ class HostTradeEngine:
                 "select CANCEL and confirm YES to leave.")
 
     def _commit(self):
+        if self.probe_only:
+            raise RuntimeError("P0 probe invariant: trade commit is disabled")
         host_slot = self.offered_slots[self.round]
         child_slot = self.child_cursor
         if child_slot is None:
@@ -986,6 +1125,7 @@ class HostTradeEngine:
 
     def tick(self):
         """One VBlank -> the parent's seven-word gSendCmd row."""
+        self.process_control()
         self._parent_polls += 1
         if self.state == H_LINK_PLAYER:
             self._tick_status_report()
