@@ -1,19 +1,19 @@
-# pokeldn 0.2.1
+# pokeldn 0.2.2
 
 This desktop app trades with seven Pokemon game families on a Switch or Switch 2
 through an ESP32 radio connected by USB. Nothing is installed on the console.
 
 ## What is new
 
-- A shiny Pokemon can be built for FireRed and LeafGreen. The encounter now picks a shiny PID, where
-  the old build rewrote the PID and PKHeX rejected the result (a shiny Ditto failed with "PID+
-  correlation does not match").
-- Evolved Pokemon are raised to their evolution level when the catch level is too low, so Ivysaur,
-  Charizard and similar species build in FireRed and LeafGreen, and more evolved species build in
-  Brilliant Diamond, Shining Pearl, Scarlet and Violet.
-- A level chosen in the picker keeps moves, relearn moves, move flags and size consistent in Legends
-  Arceus and Legends Z-A.
-- The README shows the desktop app.
+- Evolved Pokemon build legally far more often. An evolved species takes the ability of its own
+  species, a trade evolution (Alakazam, Politoed, Scizor and similar) receives a second handling
+  trainer, and evolutions that count something (Sirfetch'd, Runerigus, Annihilape, Gholdengo) start
+  from that count. Plain builds that failed fall from 48 to 7 in Brilliant Diamond and Shining Pearl,
+  from 7 to 0 in Let's Go and from 4 to 0 in Legends Arceus.
+- A build no longer fails at random. A wild encounter's level and personality are rolled at random, and
+  about one build in ten of a chosen level was refused; each encounter now gets several rolls.
+- A level below the lowest one a game offers says so, for example "Mewtwo cannot be lower than level
+  100 in this game".
 
 ## Downloads
 
