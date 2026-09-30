@@ -229,29 +229,32 @@ def step_list(steps: list[str]) -> ft.Column:
     for index, step in enumerate(steps):
         first, last = index == 0, index == len(steps) - 1
         lead = 22 if first else 0
-        center = lead + 8
-        stroke = ft.Paint(color=MUTED, stroke_width=1, style=ft.PaintingStyle.STROKE)
-        shapes = [cv.Circle(9, center, 4,
-                            paint=ft.Paint(color=MUTED, stroke_width=1.5, style=ft.PaintingStyle.STROKE))]
-        if first:
-            shapes.append(cv.Line(9, 0, 9, lead, paint=ft.Paint(
-                stroke_width=1, style=ft.PaintingStyle.STROKE,
-                gradient=ft.PaintLinearGradient(begin=ft.Offset(9, 0), end=ft.Offset(9, lead),
-                                               colors=[ft.Colors.with_opacity(0, MUTED), MUTED]))))
-        else:
-            shapes.append(cv.Line(9, 0, 9, 2, paint=stroke))
+        gap = 0 if last else 14
 
-        def resize(e, base=shapes, start=center + 7, final=last, paint=stroke):
-            e.control.shapes = list(base)
+        def resize(e, initial=first, final=last, top=lead, bottom=gap):
+            center = top + (e.height - top - bottom) / 2
+            stroke = ft.Paint(color=MUTED, stroke_width=1, style=ft.PaintingStyle.STROKE)
+            shapes = [cv.Circle(9, center, 4,
+                                paint=ft.Paint(color=MUTED, stroke_width=1.5, style=ft.PaintingStyle.STROKE))]
+            if initial:
+                end = center - 7
+                shapes.append(cv.Line(9, 0, 9, end, paint=ft.Paint(
+                    stroke_width=1, style=ft.PaintingStyle.STROKE,
+                    gradient=ft.PaintLinearGradient(begin=ft.Offset(9, 0), end=ft.Offset(9, end),
+                                                   colors=[ft.Colors.with_opacity(0, MUTED), MUTED]))))
+            ranges = ([] if initial else [(0, center - 7)])
             if not final:
+                ranges.append((center + 7, e.height))
+            for start, end in ranges:
                 y = start
-                while y < e.height:
-                    e.control.shapes.append(cv.Line(9, y, 9, min(y + 3, e.height), paint=paint))
+                while y < end:
+                    shapes.append(cv.Line(9, y, 9, min(y + 3, end), paint=stroke))
                     y += 7
+            e.control.shapes = shapes
             e.control.update()
 
         rows.append(ft.Row([
-            cv.Canvas(list(shapes), width=18, on_resize=resize),
-            ft.Container(text(step, 13), expand=True, padding=ft.Padding(0, lead, 0, 0 if last else 14)),
+            cv.Canvas([], width=18, on_resize=resize),
+            ft.Container(text(step, 13), expand=True, padding=ft.Padding(0, lead, 0, gap)),
         ], spacing=10, intrinsic_height=True, vertical_alignment=ft.CrossAxisAlignment.STRETCH))
     return ft.Column(rows, spacing=0, tight=True)
