@@ -108,6 +108,7 @@ JsonObject Make(Game game, JsonObject request)
     var blank = game.Blank();
     blank.Species = species;
     string? firstProblem = null;
+    var lowest = int.MaxValue;
     // The first encounter that stays legal with the requested level, shininess and nickname wins.
     // The first pass takes encounters as they come; the second lets an evolved Pokemon climb to its evolution level.
     foreach (var climb in new[] { false, true })
@@ -116,11 +117,24 @@ JsonObject Make(Game game, JsonObject request)
         {
             if (encounter is not IEncounterConvertible convertible)
                 continue;
+            if (level > 0 && encounter.LevelMin > level)
+            {
+                lowest = Math.Min(lowest, encounter.LevelMin);
+                continue;
+            }
             // Shininess is chosen while the encounter builds its PID: a Gen 3 to 5 PID rewritten afterwards
             // no longer matches the RNG frame the legality check expects.
             var criteria = shiny ? EncounterCriteria.Unrestricted with { Shiny = Shiny.Always } : EncounterCriteria.Unrestricted;
-            var built = convertible.ConvertToPKM(trainer, criteria);
-            if (built.GetType() != blank.GetType() || !new LegalityAnalysis(built).Valid)
+            // The PID, IVs and, for a wild slot, the level are rolled at random; a roll can be refused or land
+            // above the level asked for, so an encounter gets several.
+            PKM? built = null;
+            for (var roll = 0; roll < 8 && built is null; roll++)
+            {
+                var rolled = convertible.ConvertToPKM(trainer, criteria);
+                if (rolled.GetType() == blank.GetType() && (level == 0 || rolled.CurrentLevel <= level) && new LegalityAnalysis(rolled).Valid)
+                    built = rolled;
+            }
+            if (built is null)
                 continue;
             // An egg or a pre-evolution encounter is evolved into the species asked for.
             var evolved = built.Species != species;
@@ -142,20 +156,7 @@ JsonObject Make(Game game, JsonObject request)
                     pk.SetIsShiny(true);
                 if (nickname.Length > 0)
                     pk.SetNickname(nickname);
-                var la = Refresh(pk);
-                if (!la.Valid)
-                {
-                    // Moves, relearn moves and move flags depend on the species and level just set.
-                    try
-                    {
-                        Refit(pk);
-                        la = Refresh(pk);
-                    }
-                    catch (IndexOutOfRangeException)
-                    {
-                        // PKHeX's move suggester indexes past a learnset some forms lack; this candidate stays as it was.
-                    }
-                }
+                var la = Mend(pk, evolved, encounter.Species, trainer);
                 if (la.Valid)
                     return Describe(game, pk, la);
                 firstProblem ??= la.Report();
@@ -163,9 +164,56 @@ JsonObject Make(Game game, JsonObject request)
         }
     }
     var name = strings.specieslist[species];
-    throw new InvalidOperationException(firstProblem is null
-        ? $"PKHeX has no legal {name} for this game."
-        : $"No legal {name} with these choices. {firstProblem}");
+    throw new InvalidOperationException(firstProblem is not null
+        ? $"No legal {name} with these choices. {firstProblem}"
+        : lowest != int.MaxValue
+            ? $"{name} cannot be lower than level {lowest} in this game."
+            : $"PKHeX has no legal {name} for this game.");
+}
+
+// Repairs a built record one step at a time, each step on top of the last, and stops at the first that is legal.
+LegalityAnalysis Mend(PKM pk, bool evolved, ushort source, ITrainerInfo trainer)
+{
+    var la = Refresh(pk);
+    if (la.Valid)
+        return la;
+    // Moves, relearn moves and move flags depend on the species and level just set.
+    var repairs = new List<Action> { () => Refit(pk) };
+    if (evolved)
+    {
+        // The ability keeps its slot but names the species it was caught as.
+        repairs.Add(() => { pk.RefreshAbility(pk.AbilityNumber >> 1 & 3); Refit(pk); });
+        if (pk.HandlingTrainerName.Length == 0)
+            repairs.Add(() =>
+            {
+                // A species reached by trade evolution has been through a trade: a second trainer handles it.
+                pk.CurrentHandler = 1;
+                pk.HandlingTrainerName = "PkCamp";
+                pk.HandlingTrainerGender = (byte)(1 - trainer.Gender);
+                if (pk is IHandlerLanguage language)
+                    language.HandlingTrainerLanguage = (byte)trainer.Language;
+                Refit(pk);
+            });
+        // Evolutions that count something (critical hits, damage taken, Rage Fist uses, coins) start from that count.
+        if (FormArgumentUtil.GetFormArgumentMinEvolution(pk.Species, source) is var counted and not 0)
+            repairs.Add(() => { FormArgumentUtil.ChangeFormArgument(pk, counted); Refit(pk); });
+    }
+    foreach (var repair in repairs)
+    {
+        try
+        {
+            repair();
+        }
+        catch (IndexOutOfRangeException)
+        {
+            // PKHeX's move suggester indexes past a learnset some forms lack; this candidate stays as it was.
+            continue;
+        }
+        la = Refresh(pk);
+        if (la.Valid)
+            break;
+    }
+    return la;
 }
 
 LegalityAnalysis Refresh(PKM pk)

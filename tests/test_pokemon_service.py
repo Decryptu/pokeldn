@@ -49,6 +49,10 @@ def test_creation_import_and_launcher_preparation_remain_legal(service, game):
     ("frlg", 2, {}),
     ("pla", 36, {"level": 50}),                          # height and weight follow the evolved species
     ("za", 16, {"level": 50}),                           # plus-move flags follow the level
+    ("bdsp", 12, {}),                                    # the ability names the species the encounter was
+    ("bdsp", 186, {}),                                   # a trade evolution needs a second handler
+    ("lgpe", 65, {}),
+    ("za", 1000, {}),                                    # a repair that fixes one species must not be applied first to another
 ])
 def test_a_shiny_level_or_evolved_request_is_built_legal(service, game, species, edit):
     built = service.make(game, species, TRAINER, **edit)
@@ -56,6 +60,21 @@ def test_a_shiny_level_or_evolved_request_is_built_legal(service, game, species,
     assert built["shiny"] == edit.get("shiny", False)
     if "level" in edit:
         assert built["level"] == edit["level"]
+
+
+def test_a_wild_slot_level_range_does_not_make_a_request_fail_at_random(service):
+    # Chingling's slots straddle level 50; one roll in ten landed above it and the build was refused.
+    for _ in range(40):
+        assert service.make("pla", 433, TRAINER, level=50)["level"] == 50
+
+
+@pytest.mark.parametrize("game, species, level, message", [
+    ("sv", 150, 50, "cannot be lower than level"),       # a fixed-level encounter names its level
+    ("sv", 377, 0, "no legal"),                          # an encounter PKHeX does not have
+])
+def test_an_impossible_request_is_refused_with_its_reason(service, game, species, level, message):
+    with pytest.raises(pokemon.BuilderError, match=message):
+        service.make(game, species, TRAINER, level=level)
 
 
 @pytest.mark.parametrize("game", ["sv", "za", "bdsp", "pla", "lgpe", "frlg"])

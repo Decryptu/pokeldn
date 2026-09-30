@@ -33,11 +33,40 @@ PID and encryption-constant changes can invalidate encounter correlations, espec
 raids. Fresh identity is opt-in and must pass PKHeX; a fixed event trainer is preserved.
 
 A built Pokémon is an encounter converted to a record. Shininess is requested from the encounter, so a
-Generation 3 PID keeps the RNG correlation PKHeX expects. A species reached by evolving the encounter
-is raised to its evolution level when no encounter fits as caught. A record that fails after a level
-or species change has its moves, relearn moves, plus-move flags, mastery flags and Legends Arceus size
-refitted once before the next encounter is tried. Shiny-locked legendaries and fixed-level gifts have no
-legal shiny or lower-level form and are refused.
+Generation 3 PID keeps the RNG correlation PKHeX expects. The PID, IVs and, for a wild slot, the level
+are rolled at random, so an encounter gets up to eight rolls before it is skipped. A species reached by
+evolving the encounter is raised to its evolution level when no encounter fits as caught.
+
+A record that fails after a level or species change is repaired in steps, each on top of the last, and the
+first legal result is kept:
+
+1. Moves, relearn moves, plus-move flags, mastery flags and Legends Arceus size are refitted.
+2. The ability is refreshed to the evolved species in the slot it was caught with.
+3. A trade evolution receives a second handling trainer, `PkCamp`.
+4. An evolution that counts something (critical hits, damage taken, Rage Fist uses, coins) starts from
+   that count.
+
+Applying the ability refresh before step 1 breaks Gholdengo in Legends Z-A, so the order is fixed.
+
+A request PKHeX cannot satisfy is refused with the reason. A level below the lowest encounter level
+reports that level; a species without an encounter in the game reports that. Shiny-locked legendaries,
+fixed-level gifts and event-only species have no legal shiny or lower-level form. Sweeping every species of
+every game with six request shapes (plain, shiny, level 50, level 100, shiny at level 50, nickname), plain
+builds that fail are:
+
+| game | species | failing |
+|---|---|---|
+| FireRed/LeafGreen | 386 | 0 |
+| Let's Go | 153 | 0 |
+| Legends Arceus | 226 | 0 |
+| Brilliant Diamond/Shining Pearl | 493 | 7 |
+| Sword/Shield | 664 | 5 |
+| Legends Z-A | 364 | 8 |
+| Scarlet/Violet | 733 | 35 |
+
+Scarlet/Violet failures are mostly legendaries that only arrive from HOME. The rest are evolutions with
+a condition PKHeX checks against the moveset or the form: Milotic, Shedinja, Sirfetch'd, Runerigus,
+Perrserker, Wyrdeer, Ursaluna, Sneasler and Hydrapple in the games where they fail.
 
 Sword/Shield Mystery Gift validates the WC8 seal and checks supported species, forms, moves and safe
 items with PKHeX. Custom WC8 cards are distributions, and this structural check does not make them
