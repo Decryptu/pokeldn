@@ -122,8 +122,12 @@ jobs:
         with:
           path: assets
           merge-multiple: true
+      - name: Check the release notes name this tag
+        run: test "$(head -n1 .github/release-notes.md)" = "# pokeldn ${GITHUB_REF_NAME#v}"
       - uses: softprops/action-gh-release@v3
         with:
+          name: pokeldn ${{ github.ref_name }}
           files: assets/*
           body_path: .github/release-notes.md
           prerelease: ${{ contains(github.ref_name, '-') }}
+          make_latest: ${{ !contains(github.ref_name, '-') }}
