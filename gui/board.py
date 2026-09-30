@@ -28,11 +28,12 @@ DRIVERS = {
 
 FIRMWARE = os.path.join(ROOT, "gui", "firmware", "pokeldn-radio.bin")   # written by the release build
 FIRMWARE_S3 = os.path.join(ROOT, "gui", "firmware", "pokeldn-radio-s3.bin")
+FIRMWARE_C3 = os.path.join(ROOT, "gui", "firmware", "pokeldn-radio-c3.bin")
 
 
 def bundled_firmware(chip: str) -> str:
     """Select by the chip esptool detected; native USB IDs are shared by S3, C3 and C6."""
-    return {"ESP32": FIRMWARE, "ESP32-S3": FIRMWARE_S3}[chip]
+    return {"ESP32": FIRMWARE, "ESP32-S3": FIRMWARE_S3, "ESP32-C3": FIRMWARE_C3}[chip]
 
 
 @dataclass(frozen=True)
@@ -100,8 +101,8 @@ def flash(port: str, firmware: str = "") -> None:
     from esptool.bin_image import LoadFirmwareImage
 
     with esptool.detect_chip(port) as chip:
-        if chip.CHIP_NAME not in ("ESP32", "ESP32-S3"):
-            raise esptool.FatalError(f"{chip.CHIP_NAME} is not supported. Use an ESP32 or ESP32-S3.")
+        if chip.CHIP_NAME not in ("ESP32", "ESP32-S3", "ESP32-C3"):
+            raise esptool.FatalError(f"{chip.CHIP_NAME} is not supported. Use an ESP32, ESP32-S3 or ESP32-C3.")
         path = firmware or bundled_firmware(chip.CHIP_NAME)
         if not os.path.isfile(path):
             raise esptool.FatalError(f"Missing firmware for {chip.CHIP_NAME}: {path}")

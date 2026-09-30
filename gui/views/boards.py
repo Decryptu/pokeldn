@@ -18,7 +18,7 @@ FLASH_STEPS = [
     "Use a USB data cable. A charge-only cable powers the board but no port appears.",
     "Select the board on the left.",
     "Press Flash. If it stays on 'Connecting', hold the BOOT button until writing starts.",
-    "ESP32-S3: use the native USB port. After flashing, release BOOT and press RESET if needed.",
+    "ESP32-S3 and C3: use the native USB port. After flashing, release BOOT and press RESET if needed.",
 ]
 
 
@@ -216,10 +216,10 @@ class BoardView:
     def flash_card(self) -> ft.Control:
         image = self.firmware()
         p = self.port()
-        available = image or any(os.path.isfile(f) for f in (board.FIRMWARE, board.FIRMWARE_S3))
+        available = image or any(os.path.isfile(f) for f in (board.FIRMWARE, board.FIRMWARE_S3, board.FIRMWARE_C3))
         source = ft.Row([
             t.pixel_icon("package", color=t.MUTED),
-            t.text(image or ("Included firmware is selected automatically for ESP32 or ESP32-S3." if available
+            t.text(image or ("Included firmware is selected automatically for ESP32, ESP32-S3 or ESP32-C3." if available
                             else "This copy of the app has no firmware image."),
                    12, t.MUTED if available else t.RED, expand=True),
             t.secondary_button("Use another file", self._choose_file, "file"),
@@ -298,6 +298,6 @@ class BoardView:
                     link("CH340", board.DRIVERS["WCH CH340"])], spacing=6, wrap=True),
             t.text("Linux: allow serial ports, then log out and back in:", 12.5),
             CodeBlock(self.app, "sudo usermod -aG dialout $USER").control,
-            t.text("Use a classic ESP32 (ESP32-D0WD, WROOM-32E) or an ESP32-S3 through its native USB port. "
-                   "C3 and C6 boards are not supported.", 12.5, t.MUTED),
+            t.text("Use a classic ESP32 (ESP32-D0WD, WROOM-32E), or an ESP32-S3 or C3 through its native USB port. "
+                   "C6 and S2 boards are not supported.", 12.5, t.MUTED),
         ], spacing=8))

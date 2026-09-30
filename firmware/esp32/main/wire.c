@@ -6,9 +6,9 @@
 #include <stdlib.h>
 #include <string.h>
 
-/* S3 uses native USB Serial/JTAG; ESP32 uses UART0. Connect the matching USB port.
+/* S3 and C3 use native USB Serial/JTAG; ESP32 uses UART0. Connect the matching USB port.
    docs/hardware_esp32.md, Supported boards. */
-#if CONFIG_IDF_TARGET_ESP32S3
+#if CONFIG_IDF_TARGET_ESP32S3 || CONFIG_IDF_TARGET_ESP32C3
 #define WIRE_USB 1
 #include "driver/usb_serial_jtag.h"
 #else
@@ -20,6 +20,8 @@
 #include "freertos/FreeRTOS.h"
 #include "freertos/queue.h"
 #include "freertos/task.h"
+
+#define WIRE_CORE (configNUMBER_OF_CORES - 1)
 
 #if !WIRE_USB
 #define WIRE_UART UART_NUM_0
@@ -300,9 +302,9 @@ static void deliver(const uint8_t *encoded, size_t used)
     if (took > 50000) wire_log("slow command 0x%02x: %u ms", frame[0], (unsigned)(took / 1000));
 }
 
-/* The host-link driver is installed on core 1 because its interrupt is allocated on the core
-   that installs it. On core 0, with the Wi-Fi task, a console's receive flood lost 500 host
-   commands in 7 s and none after. docs/hardware_esp32.md, The serial ceiling. */
+/* Dual-core targets install the host link on core 1 to separate Wi-Fi interrupts; C3 uses core 0.
+   Moving classic UART interrupts to core 0 lost 500 host commands in 7 s under a receive flood.
+   docs/hardware_esp32.md, The serial ceiling. */
 static void reader(void *arg)
 {
 #if WIRE_USB
@@ -327,9 +329,9 @@ static void reader(void *arg)
        Scarlet seat's opening overflowed it 235 times. At 32 the margin is 640 us.
        docs/hardware_esp32.md, The serial ceiling. */
     ESP_ERROR_CHECK(uart_set_rx_full_threshold(WIRE_UART, 32));
-    xTaskCreatePinnedToCore(events, "wire_ev", 2048, NULL, 21, NULL, 1);
+    xTaskCreatePinnedToCore(events, "wire_ev", 2048, NULL, 21, NULL, WIRE_CORE);
 #endif
-    xTaskCreatePinnedToCore(writer, "wire_tx", 4096, NULL, 20, NULL, 1);
+    xTaskCreatePinnedToCore(writer, "wire_tx", 4096, NULL, 20, NULL, WIRE_CORE);
     static uint8_t chunk[512], encoded[WIRE_MAX_PAYLOAD + 32];
     size_t used = 0;
     bool overflow = false;
@@ -376,5 +378,5 @@ void wire_start(wire_handler_t handler)
 {
     s_handler = handler;
     s_out = xQueueCreate(WIRE_QUEUE_LENGTH, sizeof(message_t *));
-    xTaskCreatePinnedToCore(reader, "wire_rx", 6144, NULL, 19, NULL, 1);
+    xTaskCreatePinnedToCore(reader, "wire_rx", 6144, NULL, 19, NULL, WIRE_CORE);
 }

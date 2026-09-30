@@ -622,7 +622,13 @@ class TradeEngine:
 
     def _on_linkcmd(self, cmd, cursor):
         self.log(f"<- LINKCMD {LINKCMD_NAMES.get(cmd, hex(cmd))} cursor={cursor}")
-        if cmd == SET_MONS_TO_TRADE:
+        if cmd == REQUEST_CANCEL and self.leaving and self.requested_cancel and not self.done:
+            # BufferTradeParties clears received flags before the menu reads commands [trade.c:1549].
+            # Reanswer the leader's local Cancel if an earlier request was consumed there.
+            # docs/frlg_link.md, Cancel after a trade.
+            self._pending_push = linkcmd_block(REQUEST_CANCEL)
+            self.info("The host selected Cancel; repeating our cancel request.")
+        elif cmd == SET_MONS_TO_TRADE:
             # partnerCursorPosition = recv[0][1] + PARTY_SIZE [trade.c:1653-1657].
             self.host_cursor = cursor
             if self.state in (S5_SELECT, S4_PARTY):
@@ -649,6 +655,7 @@ class TradeEngine:
             # Both sides picked CANCEL [trade.c:1715-1722]: the session ends.
             self.state = S_CANCEL
             self.cancelled = True
+            self._pending_push = None
             if self.requested_cancel:
                 self.left_gracefully = True
                 self.log("<- BOTH_CANCEL_TRADE: graceful cancel acknowledged")

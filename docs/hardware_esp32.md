@@ -17,12 +17,31 @@ host. `pokeldn.ldn.esp32_wlan` gives the LDN library a factory backed by the boa
 |---|---|---|
 | classic ESP32 (ESP32-D0WD, WROOM-32E) | UART0 through a USB serial bridge | `pokeldn-radio.bin` |
 | ESP32-S3 | native USB Serial/JTAG | `pokeldn-radio-s3.bin` |
+| ESP32-C3 | native USB Serial/JTAG | `pokeldn-radio-c3.bin` |
 
-Both targets use 2.4 GHz. ESP32-C3, C6 and S2 are unsupported. An S3 board with separate UART
+All targets use 2.4 GHz. ESP32-C6 and S2 are unsupported. An S3 or C3 board with separate UART
 and native USB sockets needs the native socket for radio communication. USB Serial/JTAG uses
 GPIO19 (D-) and GPIO20 (D+), as described in
 [Espressif's USB guide](https://docs.espressif.com/projects/esp-idf/en/v5.2/esp32s3/api-guides/usb-serial-jtag-console.html).
-The USB identifier `303a:1001` is shared by several chips; it does not identify an S3.
+On C3, native USB uses GPIO18 (D-) and GPIO19 (D+), as described in
+[Espressif's C3 USB guide](https://docs.espressif.com/projects/esp-idf/en/latest/esp32c3/api-guides/usb-serial-jtag-console.html).
+The USB identifier `303a:1001` is shared by several chips; flashing detects the chip with esptool.
+
+The Seeed Studio XIAO ESP32C3 uses its USB-C socket for native USB Serial/JTAG.
+Attach its supplied external antenna before radio use. BOOT is GPIO9, and the onboard LED
+is a charging indicator ([Seeed's board guide](https://wiki.seeedstudio.com/XIAO_ESP32C3_Getting_Started/)).
+The C3 build runs at 160 MHz. Wire and button tasks run on core 0; the dual-core targets keep
+these tasks on core 1. FireRed joiner trades completed on this board, with valid received
+PK3 checksums and no in-game error. Mutual Cancel closed the link and returned the console
+to the Pokemon Center.
+Sword host trading also completed through the packaged macOS app, with a legal received
+PK8 and a clean console departure. Both roles reported zero lost host ETH_TX commands,
+bad wire frames and USB resyncs.
+
+On a XIAO ESP32C3 revision 0.4 over native USB on macOS, two 2,000,000-byte transfers
+at host baud settings 115200 and 1500000 each delivered 1429 messages with zero missing
+messages and zero bad checksums. Measured payload rates were 880.1 and 878.3 KB/s.
+The host baud setting does not change USB speed. Initial idle free heap was 152656 bytes.
 
 Gr3nSkyDragon reports a completed FireRed joiner trade on an ESP32-S3 under Windows in
 [the S3 contribution](https://github.com/Decryptu/pokeldn/pull/2). The classic ESP32 measurements
@@ -406,8 +425,8 @@ None for a kernel interface, which is how every launcher picks its path.
 
 ## The board's LED and buttons
 
-GPIO2 LED patterns apply to classic ESP32 boards. S3 boards have different LED wiring; the S3
-firmware leaves LED pins alone and continues to read BOOT on GPIO0 for trace markers.
+GPIO2 LED patterns apply to classic ESP32 boards. The S3 and C3 firmware leaves LED pins
+alone. BOOT trace markers use GPIO0 on classic ESP32 and S3, and GPIO9 on C3.
 
 The ELEGOO ESP-32 Type-C board (CP2102, ESP32-D0WD-V3) carries an unbranded module with a PCB antenna
 and no Espressif module name:
@@ -455,32 +474,32 @@ no such moment. `tools/ldn/esp32_led.py --port PORT PATTERN` sets a look; `--dem
 
 ## Building and flashing
 
-ESP-IDF v6.1 (tag `v6.1`, commit `fff9895c82d744c7237be8847347bdd1b07c6643`) builds both targets.
-Install its tools with `install.sh esp32,esp32s3`, then activate the IDF environment.
+ESP-IDF v6.1 (tag `v6.1`, commit `fff9895c82d744c7237be8847347bdd1b07c6643`) builds all three targets.
+Install its tools with `install.sh esp32,esp32s3,esp32c3`, then activate the IDF environment.
 
     cd firmware/esp32
-    idf.py set-target esp32   # esp32s3 for an S3 board
+    idf.py set-target esp32   # esp32s3 for an S3, esp32c3 for a C3
     idf.py build
     idf.py -p <port> flash
 
 Console output is off (`CONFIG_ESP_CONSOLE_NONE`, `CONFIG_ESP_CONSOLE_SECONDARY_NONE`). On classic
 ESP32, UART0 is the host link, so the firmware assigns GPIO1 and GPIO3 itself (`uart_set_pin`).
-On S3, the firmware installs the USB Serial/JTAG driver on core 1.
+On S3, the firmware installs the USB Serial/JTAG driver on core 1; C3 installs it on core 0.
 
 The desktop app detects the chip with esptool on the same connection used for flashing.
 It validates the merged image's bootloader at the chip's flash offset (ESP32: `0x1000`,
-S3: `0x0`) before writing, including custom images. esptool 5.4.0's `write_flash` can skip its
+S3 and C3: `0x0`) before writing, including custom images. esptool 5.4.0's `write_flash` can skip its
 chip check when a merged image starts with padding. Never choose firmware from a USB bridge ID.
-[Desktop builds](gui.md) covers packaging both images.
+[Desktop builds](gui.md) covers packaging all three images.
 
 ### The USB host link
 
-The S3 uses the same COBS, CRC and CREDIT protocol over USB Serial/JTAG. Both driver rings are
+The S3 and C3 use the same COBS, CRC and CREDIT protocol over USB Serial/JTAG. Both driver rings are
 16 KB. IDF v6.1's `usb_serial_jtag_write_bytes` enqueues a whole frame or returns zero after its
 timeout; the writer retries with 20 ms waits and counts a dropped message after 500 ms without
 progress. `write_max_us` includes this wait. The reader takes available bytes with a 20 ms
 timeout. UART overflow and framing counters stay zero on this path; they do not measure USB loss.
-`POKELDN_ESP32_BAUD` is accepted on both targets and only changes the classic ESP32's line rate.
+`POKELDN_ESP32_BAUD` is accepted on all targets and only changes the classic ESP32's line rate.
 
 ## Running
 

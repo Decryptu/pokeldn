@@ -1,5 +1,5 @@
 CONFIG_ESPTOOLPY_FLASHSIZE_4MB=y
-# The host link carries binary frames; console output must stay off on both targets.
+# The host link carries binary frames; console output must stay off on every target.
 CONFIG_LOG_DEFAULT_LEVEL_NONE=y
 CONFIG_BOOTLOADER_LOG_LEVEL_NONE=y
 CONFIG_ESP_CONSOLE_NONE=y
@@ -15,4 +15,3 @@ CONFIG_ESP_WIFI_STATIC_RX_BUFFER_NUM=25
 CONFIG_ESP_WIFI_DYNAMIC_RX_BUFFER_NUM=64
 CONFIG_ESP_WIFI_DYNAMIC_TX_BUFFER_NUM=64
 CONFIG_FREERTOS_HZ=1000
-CONFIG_ESP_DEFAULT_CPU_FREQ_MHZ_240=y

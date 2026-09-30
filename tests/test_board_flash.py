@@ -9,7 +9,7 @@ from gui import board
 
 
 # ESP-IDF image format: one four-byte RAM segment, checksum 0xeb, no SHA digest.
-# Chip IDs and bootloader offsets: esptool's ESP32 / ESP32-S3 ROM definitions.
+# Chip IDs and bootloader offsets: esptool's ESP32, ESP32-S3 and ESP32-C3 ROM definitions.
 BOOTLOADERS = {
     "ESP32": bytes.fromhex(
         "e9 01 00 20 00000040 ff000000 0000 00 0000 ffff 00000000 00 "
@@ -17,6 +17,9 @@ BOOTLOADERS = {
     "ESP32-S3": bytes.fromhex(
         "e9 01 00 20 00000040 ff000000 0900 00 0000 ffff 00000000 00 "
         "0000c93f 04000000 01020304 0000000000000000000000 eb"),
+    "ESP32-C3": bytes.fromhex(
+        "e9 01 00 20 00000040 ff000000 0500 00 0000 ffff 00000000 00 "
+        "0000c83f 04000000 01020304 0000000000000000000000 eb"),
 }
 
 
@@ -24,7 +27,7 @@ class Chip:
     def __init__(self, name):
         self.CHIP_NAME = name
         self.BOOTLOADER_FLASH_OFFSET = 0x1000 if name == "ESP32" else 0
-        self.IMAGE_CHIP_ID = 0 if name == "ESP32" else 9
+        self.IMAGE_CHIP_ID = {"ESP32": 0, "ESP32-S3": 9, "ESP32-C3": 5}.get(name, -1)
         self.closed = False
 
     def __enter__(self):
@@ -43,6 +46,7 @@ def flasher(monkeypatch, tmp_path):
         images[name] = path
     monkeypatch.setattr(board, "FIRMWARE", str(images["ESP32"]))
     monkeypatch.setattr(board, "FIRMWARE_S3", str(images["ESP32-S3"]))
+    monkeypatch.setattr(board, "FIRMWARE_C3", str(images["ESP32-C3"]))
     writes, connections = [], []
 
     def detect(port):
@@ -67,7 +71,7 @@ def test_flash_uses_the_detected_chip_on_one_connection(flasher, name):
     assert flasher.chip.closed
 
 
-@pytest.mark.parametrize("name", ["ESP32-C3", "ESP32-C6", "ESP32-S2"])
+@pytest.mark.parametrize("name", ["ESP32-C6", "ESP32-S2"])
 def test_unsupported_chip_is_refused_before_writing(flasher, name):
     flasher.chip = Chip(name)
     with pytest.raises(esptool.FatalError, match="not supported"):
@@ -75,27 +79,29 @@ def test_unsupported_chip_is_refused_before_writing(flasher, name):
     assert not flasher.writes and flasher.chip.closed
 
 
-@pytest.mark.parametrize("name", BOOTLOADERS)
-def test_wrong_custom_image_is_refused_before_writing(flasher, name):
+@pytest.mark.parametrize("name,other", [(name, other) for name in BOOTLOADERS
+                                       for other in BOOTLOADERS if name != other])
+def test_wrong_custom_image_is_refused_before_writing(flasher, name, other):
     flasher.chip = Chip(name)
-    other = "ESP32-S3" if name == "ESP32" else "ESP32"
     with pytest.raises(esptool.FatalError, match="does not match"):
         board.flash("COM4", str(flasher.images[other]))
     assert not flasher.writes and flasher.chip.closed
 
 
-def test_missing_s3_image_does_not_fall_back_to_classic(flasher):
-    flasher.chip = Chip("ESP32-S3")
-    flasher.images["ESP32-S3"].unlink()
-    with pytest.raises(esptool.FatalError, match="Missing firmware for ESP32-S3"):
+@pytest.mark.parametrize("name", BOOTLOADERS)
+def test_missing_image_does_not_fall_back_to_another_chip(flasher, name):
+    flasher.chip = Chip(name)
+    flasher.images[name].unlink()
+    with pytest.raises(esptool.FatalError, match=f"Missing firmware for {name}"):
         board.flash("COM4")
     assert not flasher.writes and flasher.chip.closed
 
 
 @pytest.mark.parametrize("damage", ["truncate", "checksum"])
-def test_damaged_bootloader_is_refused_before_writing(flasher, damage):
-    flasher.chip = Chip("ESP32-S3")
-    path = flasher.images["ESP32-S3"]
+@pytest.mark.parametrize("name", BOOTLOADERS)
+def test_damaged_bootloader_is_refused_before_writing(flasher, damage, name):
+    flasher.chip = Chip(name)
+    path = flasher.images[name]
     data = path.read_bytes()
     path.write_bytes(data[:10] if damage == "truncate" else data[:-1] + b"\x00")
     with pytest.raises(esptool.FatalError):

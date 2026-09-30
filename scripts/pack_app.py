@@ -12,6 +12,7 @@ from pathlib import Path
 ROOT = Path(__file__).resolve().parent.parent
 FIRMWARE = ROOT / "gui" / "firmware" / "pokeldn-radio.bin"
 FIRMWARE_S3 = ROOT / "gui" / "firmware" / "pokeldn-radio-s3.bin"
+FIRMWARE_C3 = ROOT / "gui" / "firmware" / "pokeldn-radio-c3.bin"
 APP_ID = "io.github.decryptu.pokeldn"
 
 
@@ -41,10 +42,10 @@ def platform_excludes():
 
 
 def main() -> int:
-    firmware = (FIRMWARE, FIRMWARE_S3)
+    firmware = (FIRMWARE, FIRMWARE_S3, FIRMWARE_C3)
     missing = [str(path) for path in firmware if not path.is_file()]
     if missing:
-        raise SystemExit(f"Missing firmware: {', '.join(missing)}. Build both images "
+        raise SystemExit(f"Missing firmware: {', '.join(missing)}. Build all three images "
                          "as described in docs/gui.md before packing.")
     if importlib.util.find_spec("PyInstaller") is None:
         raise SystemExit("Install desktop build dependencies: python -m pip install -r gui/requirements.txt")

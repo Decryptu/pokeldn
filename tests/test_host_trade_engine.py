@@ -561,3 +561,39 @@ def test_child_selection_resets_the_select_cancel_count():
     h._on_child_linkcmd(trade.READY_TO_TRADE, 0)
     assert h.state == H_CONFIRM
     assert h._select_cancels == 0
+
+
+def test_joiner_reanswers_a_leaders_cancel_after_its_earlier_request_was_consumed(tmp_path):
+    """BufferTradeParties clears block flags before Leader_ReadLinkBuffer starts (trade.c:1549).
+    The retail leader's subsequent local Cancel must receive a fresh child block."""
+    child = trade.TradeEngine([_mon(1)], trade_slot=0)
+    child.state = trade.S_CANCEL
+    child.leaving = child.cancelled = child.requested_cancel = True
+    child._selected = True
+    child._host_in_seat = child._host_ready = child._self_seated = True
+    child.entry.on_trade_menu_live()
+
+    # Retail leader's REQUEST_CANCEL, including the unused tail of its second fragment.
+    parent_slots = [bytes.fromhex(value) for value in (
+        "0088020080000000000000000000",
+        "0089aaee0000000000000000000000",
+        "01890000000000000000bdd5e1e4",
+    )]
+    for slot in parent_slots:
+        child.feed_in_frame({"positional": [(0, slot)], "slots": [(0, slot)]})
+
+    received = block.BlockReceiver()
+    slots = rfu.SlotBuilder()
+    reflected = rfu.idle_slot()
+    wire = bytearray()
+    replies = []
+    for _ in range(40):
+        child.feed_in_frame({"positional": [(1, reflected)], "slots": [(1, reflected)]})
+        reflected = slots.build(child.tick())
+        wire.extend(reflected)
+        complete, _ = received.feed_frame({"positional": [(1, reflected)]})
+        replies.extend(data for _, _, data in complete)
+        if replies:
+            break
+    (tmp_path / "cancel_reply.bin").write_bytes(wire)
+    assert replies == [bytes.fromhex("aaee") + bytes(22)]

@@ -27,7 +27,7 @@ typedef struct {
    sent or received, and a counter that moves on every fault worth a warning. */
 typedef void (*led_state_t)(led_look_t *look, uint32_t *activity, uint32_t *alarm);
 
-/* Called from the LED task once per press of the BOOT button (GPIO0), debounced over 30 ms: the
+/* Called from the LED task once per press of BOOT (GPIO0; C3 GPIO9), debounced over 30 ms: the
    press count since boot and the board time in µs of the press. */
 typedef void (*led_button_t)(uint32_t count, int64_t press_us);
 

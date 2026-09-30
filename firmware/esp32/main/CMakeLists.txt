@@ -1,10 +1,10 @@
 idf_build_get_property(idf_target IDF_TARGET)
-if(idf_target STREQUAL "esp32s3")
+if(idf_target STREQUAL "esp32s3" OR idf_target STREQUAL "esp32c3")
     set(wire_driver esp_driver_usb_serial_jtag)
 elseif(idf_target STREQUAL "esp32")
     set(wire_driver esp_driver_uart)
 else()
-    message(FATAL_ERROR "pokeldn supports esp32 and esp32s3 targets only")
+    message(FATAL_ERROR "pokeldn supports esp32, esp32s3 and esp32c3 targets only")
 endif()
 
 idf_component_register(

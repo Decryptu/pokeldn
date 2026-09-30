@@ -19,6 +19,7 @@ def check() -> None:
     assert Path(pokemon.HERE) == root / "services/pkhex"
     assert (root / "gui/firmware/pokeldn-radio.bin").is_file()
     assert (root / "gui/firmware/pokeldn-radio-s3.bin").is_file()
+    assert (root / "gui/firmware/pokeldn-radio-c3.bin").is_file()
     assert not (root / "config/host.local.toml").exists()
     assert not (root / "scratchpad").exists()
     trainer = {"ot": "PkCamp", "tid": 12345, "sid": 54321, "language": 2, "gender": 0}

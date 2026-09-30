@@ -13,7 +13,11 @@
 #include "led.h"
 
 #define LED_GPIO 2
+#if CONFIG_IDF_TARGET_ESP32C3
+#define BUTTON_GPIO 9
+#else
 #define BUTTON_GPIO 0   /* BOOT: low while pressed, pulled up */
+#endif
 #define BUTTON_TICKS 3  /* 30 ms of one level makes it the button's state */
 #define DUTY_MAX 8191   /* 13 bits at 5 kHz */
 #define TICK_MS 10
@@ -139,7 +143,7 @@ static void led_task(void *arg)
                       (uint32_t)lroundf(powf(clamp01(shown_level), 2.2f) * DUTY_MAX));
         ledc_update_duty(LEDC_LOW_SPEED_MODE, LEDC_CHANNEL_0);
 #else
-        (void)shown_level;   /* S3 boards have different LED wiring; keep BOOT markers active. */
+        (void)shown_level;   /* S3 and C3 LED wiring varies; keep BOOT markers active. */
 #endif
         vTaskDelayUntil(&wake, pdMS_TO_TICKS(TICK_MS));
     }
@@ -180,5 +184,5 @@ void led_start(led_state_t state, led_button_t button)
     if (ledc_timer_config(&timer) != ESP_OK || ledc_channel_config(&channel) != ESP_OK) return;
 #endif
     s_host_until_ms = now_ms() + 900;
-    xTaskCreatePinnedToCore(led_task, "led", 3072, NULL, 1, NULL, 1);
+    xTaskCreatePinnedToCore(led_task, "led", 3072, NULL, 1, NULL, configNUMBER_OF_CORES - 1);
 }

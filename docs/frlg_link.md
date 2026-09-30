@@ -125,6 +125,15 @@ The walk-out: the host emits `LINK_KEY_CODE_EXIT_ROOM` (0x17) and blocks in
 [overworld.c:2962-2981]. The child must answer with its own 0x17 on the held-keys stream; an all-zero
 slot is not a key.
 
+## Cancel after a trade
+
+`BufferTradeParties` clears received block flags after the gift-ribbon exchange
+[trade.c:1549], before `Leader_ReadLinkBuffer` reads menu commands [1593-1633]. A cancel
+request completed during that exchange can be cleared before it sets the partner's selection.
+The leader's own `REQUEST_CANCEL` (`0xEEAA`) proves that it is processing the Cancel input
+[2049]. A joiner already leaving sends a fresh `REQUEST_CANCEL` when that block arrives.
+`BOTH_CANCEL_TRADE` clears any pending request before the exit standby rounds.
+
 ## One-sided cancel returns both sides to the menu
 
 `PLAYER_CANCEL_TRADE` / `PARTNER_CANCEL_TRADE` go through `CB_HandleTradeCanceled` → `CB_MAIN_MENU`
