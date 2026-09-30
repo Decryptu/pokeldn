@@ -129,7 +129,8 @@ class PokemonPicker:
             t.pixel_icon("shield" if legal else "warning-diamond",
                     color=t.GREEN if legal else t.RED),
             t.text(self.value.get("summary", ""), 13, weight=ft.FontWeight.W_600, expand=True),
-            t.pill("Legal" if legal else "Not legal", t.GREEN if legal else t.RED),
+            t.badge("Legal" if legal else "Not legal", t.GREEN if legal else t.RED,
+                    "check" if legal else "warning-diamond"),
         ], spacing=8)]
         detail = " · ".join(x for x in (self.value.get("encounter", ""), ", ".join(self.value.get("moves", []))) if x)
         if detail:

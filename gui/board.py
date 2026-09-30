@@ -50,6 +50,7 @@ class Identity:
     chip_revision: int
     firmware: str
     protocol: int
+    firmware_version: str = ""
 
     @property
     def current(self) -> bool:
@@ -90,7 +91,7 @@ def identify(port: str, blink: bool = True) -> Identity:
             time.sleep(1.0)   # the boot pulse
             radio.led("blink", 255, 300, 5000)
         return Identity(bytes(info.sta_mac).hex(":"), bytes(info.ap_mac).hex(":"), info.chip_revision,
-                        info.text, info.version)
+                        info.text, info.version, info.firmware_version)
     finally:
         radio.close()
 

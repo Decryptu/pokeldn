@@ -143,7 +143,7 @@ def welcome(app: App) -> None:
                              bgcolor=ft.Colors.with_opacity(0.1, t.BLUE), border_radius=10),
                 ft.Column([t.text("Add your Switch keys", 14, weight=ft.FontWeight.W_600),
                            t.text("The only file you need to bring.", 12, t.MUTED)], spacing=3, expand=True),
-                t.pill("Required", t.BLUE),
+                t.badge("Required", t.BLUE),
             ], spacing=14),
             t.text("Choose prod.keys dumped from your own console. These keys decrypt local wireless "
                    "messages and stay on this computer.", 13, t.MUTED),

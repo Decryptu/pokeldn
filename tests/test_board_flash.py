@@ -1,11 +1,13 @@
 """Chip detection and merged-image checks before the first flash write."""
 from pathlib import Path
+from queue import Empty, Queue
 from types import SimpleNamespace
 
 import esptool
 import pytest
 
 from gui import board
+from pokeldn.ldn import esp32
 
 
 # ESP-IDF image format: one four-byte RAM segment, checksum 0xeb, no SHA digest.
@@ -21,6 +23,50 @@ BOOTLOADERS = {
         "e9 01 00 20 00000040 ff000000 0500 00 0000 ffff 00000000 00 "
         "0000c83f 04000000 01020304 0000000000000000000000 eb"),
 }
+
+
+@pytest.mark.parametrize("protocol,text,release,compatible", [
+    (1, b"pokeldn-radio esp32c3 version=1.0.0 idf=v6.1", "1.0.0", True),
+    (1, b"pokeldn-radio esp32 version=0.9.9 idf=v6.1", "0.9.9", True),
+    (1, b"pokeldn-radio esp32s3 idf=v6.1", "", True),
+    (2, b"pokeldn-radio esp32 version=2.0.0 idf=v6.1", "2.0.0", False),
+])
+def test_identify_preserves_release_and_protocol_across_serial(monkeypatch, protocol, text, release, compatible):
+    class SerialReply:
+        def __init__(self):
+            self.inbox = Queue()
+            self.closed = False
+
+        def open(self):
+            pass
+
+        def write(self, frame):
+            command, payload = esp32.decode_frame(frame[:-1])
+            assert command == 0x01 and payload == b""
+            # INFO's fixed header: protocol, STA MAC, AP MAC, chip revision.
+            header = bytes([protocol]) + bytes.fromhex("021122334455 0266778899aa 03")
+            self.inbox.put(esp32.encode_frame(0x81, header + text))
+            return len(frame)
+
+        def read(self, n):
+            try:
+                return self.inbox.get(timeout=0.02)
+            except Empty:
+                return b""
+
+        def close(self):
+            self.closed = True
+
+    serial = SerialReply()
+    monkeypatch.setattr(board.serial, "Serial", lambda: serial)
+    ident = board.identify("COM4", blink=False)
+    assert ident.sta_mac == "02:11:22:33:44:55"
+    assert ident.ap_mac == "02:66:77:88:99:aa"
+    assert ident.chip_revision == 3
+    assert ident.firmware == text.decode()
+    assert ident.firmware_version == release
+    assert ident.protocol == protocol and ident.current is compatible
+    assert serial.closed
 
 
 class Chip:

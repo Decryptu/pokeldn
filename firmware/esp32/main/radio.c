@@ -1,8 +1,10 @@
 /* pokeldn radio: an ESP32 as the LDN radio of a host on USB serial. LDN has no 4-way handshake:
    the host derives the CCMP key and the board installs it. Message set: docs/hardware_esp32.md. */
 #include <stdatomic.h>
+#include <stdio.h>
 #include <string.h>
 
+#include "esp_app_desc.h"
 #include "esp_chip_info.h"
 #include "esp_event.h"
 #include "esp_mac.h"
@@ -637,7 +639,9 @@ static void send_info(void)
     esp_wifi_get_mac(WIFI_IF_STA, head + 1);
     esp_read_mac(head + 7, ESP_MAC_WIFI_SOFTAP);
     head[13] = (uint8_t)(chip.revision / 100);
-    const char *text = "pokeldn-radio " CONFIG_IDF_TARGET " idf=" IDF_VER;
+    char text[128];
+    snprintf(text, sizeof(text), "pokeldn-radio " CONFIG_IDF_TARGET " version=%s idf=" IDF_VER,
+             esp_app_get_description()->version);
     wire_send(MSG_INFO, head, sizeof(head), text, strlen(text));
 }
 

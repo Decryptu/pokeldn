@@ -105,7 +105,7 @@ class GamesView:
                         t.pixel_icon(tool_icon(tool), color=t.BLUE if active else t.FAINT),
                         t.text(tool.name, 13, t.TEXT if active else (t.FAINT if tool.unavailable else t.MUTED),
                                expand=True),
-                        t.pill("Soon", t.FAINT) if tool.unavailable else ft.Container(),
+                        t.badge("Soon", t.FAINT) if tool.unavailable else ft.Container(),
                     ], spacing=10), padding=ft.Padding(24, 7, 8, 7), border_radius=9,
                         bgcolor=t.HOVER if active else None,
                         on_click=lambda e, g=game, x=tool: self.select(g, x)))

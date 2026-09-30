@@ -92,7 +92,7 @@ class BoardView:
                            t.TEXT if active else "#C5C7CD", weight=ft.FontWeight.W_600),
                     t.text(p.bridge, 11, t.MUTED),
                 ], spacing=1, expand=True),
-                t.pill("Radio", t.RED) if radio else ft.Container(),
+                t.badge("Radio", t.RED, "cpu") if radio else ft.Container(),
             ], spacing=10), padding=ft.Padding(10, 8, 10, 8), border_radius=9,
                 bgcolor=t.HOVER if active else None,
                 on_click=lambda e, d=p.device: self._select(d)))
@@ -119,13 +119,16 @@ class BoardView:
             return t.card("No board selected", None, "Plug a board in; it is listed on the left.")
         ident = self.identities.get(p.device)
         if isinstance(ident, board.Identity):
-            firmware = (t.pill("pokeldn firmware", t.GREEN) if ident.current else
-                        t.pill(f"Old firmware (protocol {ident.protocol}), flash it", t.RED))
+            release = f"v{ident.firmware_version}" if ident.firmware_version else "version unknown"
+            label = f"pokeldn firmware · {release}"
+            firmware = (t.badge(label, t.GREEN, "check") if ident.current else
+                        t.badge(f"{label} · unsupported protocol {ident.protocol}", t.RED,
+                                "warning-diamond"))
             mac = ident.sta_mac
         elif isinstance(ident, str):
-            firmware, mac = t.pill(ident, t.RED), "unknown"
+            firmware, mac = t.badge(ident, t.RED, "warning-diamond"), "unknown"
         else:
-            firmware, mac = t.pill("Not checked yet", t.MUTED), "press Identify"
+            firmware, mac = t.badge("Not checked yet", t.MUTED), "press Identify"
 
         def info(label, value):
             return ft.Row([t.text(label, 12, t.MUTED, width=110),
@@ -192,7 +195,7 @@ class BoardView:
                 if ident.current:
                     self.log.add("[app] Identified. Classic ESP32 GPIO2 LEDs blink for five seconds.")
                 else:
-                    self.log.add("[app] This firmware is older than the app. Flash the board.")
+                    self.log.add("[app] This firmware uses a different radio protocol. Flash the board.")
             except serial.SerialException as error:
                 self.identities[device] = "Port busy or not allowed"
                 self.log.add(f"[app] Could not open {device}: {error}")
@@ -289,12 +292,13 @@ class BoardView:
 
     def help_card(self) -> ft.Control:
         def link(label, url):
-            return t.link_button(label, lambda e: self.app.page.run_task(self.app.open_url, url))
+            return t.secondary_button(label, lambda e: self.app.page.run_task(self.app.open_url, url),
+                                      "external-link")
 
         return t.card("Board not listed?", ft.Column([
             t.text("Try another cable or USB port. Many cables only charge.", 12.5),
-            ft.Row([t.text("Windows and macOS need the driver for the board's USB chip:", 12.5),
-                    link("CP210x", board.DRIVERS["Silicon Labs CP210x"]),
+            t.text("Windows and macOS need the driver for the board's USB chip:", 12.5),
+            ft.Row([link("CP210x", board.DRIVERS["Silicon Labs CP210x"]),
                     link("CH340", board.DRIVERS["WCH CH340"])], spacing=6, wrap=True),
             t.text("Linux: allow serial ports, then log out and back in:", 12.5),
             CodeBlock(self.app, "sudo usermod -aG dialout $USER").control,

@@ -24,7 +24,6 @@ MONO = "monospace"
 CONTROL_HEIGHT = 38
 CONTROL_PADDING = ft.Padding(12, 8, 12, 8)
 CONTROL_RADIUS = 9
-BUTTON_DEPTH = 2
 GAP = 16
 SIDEBAR_WIDTH = 254
 SESSION_WIDTH = 360
@@ -153,31 +152,36 @@ class _Button(ft.Container):
         if isinstance(self.content.icon, ft.Image):
             colors = self.content.style.color
             self.content.icon.color = colors[ft.ControlState.DISABLED if self.disabled else ft.ControlState.DEFAULT]
-        self.shadow = [] if self.disabled or self.data is None else [ft.BoxShadow(
-            blur_radius=0, spread_radius=0, offset=ft.Offset(0, BUTTON_DEPTH), color=self.data)]
+        self.gradient = None if self.disabled else self.data
 
 
 def button(label: str, on_click=None, icon=None, color: str = BLUE, filled: bool = True,
            **kwargs) -> ft.Container:
-    stroke = color if filled else EDGE
+    top, bottom, edge = {BLUE: ("#50B2FB", "#42A7F1", "#67BDF9"),
+                         RED: ("#FD5258", "#F3444B", "#FD6870")}.get(color, (color, color, color))
+    gradient = ft.LinearGradient(begin=ft.Alignment.TOP_CENTER, end=ft.Alignment.BOTTOM_CENTER,
+                                 colors=[top, bottom]) if filled else None
+    stroke = edge if filled else EDGE
     style = ft.ButtonStyle(
-        bgcolor={ft.ControlState.DISABLED: FIELD, ft.ControlState.DEFAULT: color if filled else FIELD},
+        bgcolor={ft.ControlState.DISABLED: FIELD,
+                 ft.ControlState.DEFAULT: ft.Colors.TRANSPARENT if filled else FIELD},
         color={ft.ControlState.DISABLED: FAINT, ft.ControlState.DEFAULT: BG if filled else TEXT},
         shape=ft.RoundedRectangleBorder(radius=CONTROL_RADIUS), padding=CONTROL_PADDING,
         side={ft.ControlState.DISABLED: ft.BorderSide(1, FIELD),
               ft.ControlState.DEFAULT: ft.BorderSide(1, stroke),
               ft.ControlState.FOCUSED: ft.BorderSide(2, TEXT)},
-        text_style=ft.TextStyle(size=13, weight=ft.FontWeight.W_600),
-        overlay_color=ft.Colors.with_opacity(0.12, "#FFFFFF"),
+        text_style=ft.TextStyle(size=13, weight=ft.FontWeight.W_500),
+        overlay_color={ft.ControlState.DEFAULT: ft.Colors.TRANSPARENT,
+                       ft.ControlState.HOVERED: ft.Colors.with_opacity(0.06, "#FFFFFF"),
+                       ft.ControlState.PRESSED: ft.Colors.with_opacity(0.12, "#000000")},
         elevation=0, shadow_color=ft.Colors.TRANSPARENT)
     icon_color = BG if filled else TEXT
     kwargs.setdefault("height", CONTROL_HEIGHT)
     return _Button(ft.Button(label, icon=pixel_icon(icon, color=icon_color) if icon else None,
                              on_click=on_click, style=style, elevation=0, height=kwargs["height"]),
                    border_radius=CONTROL_RADIUS,
-                   shadow=[] if filled else [ft.BoxShadow(blur_radius=0, spread_radius=0,
-                                                        offset=ft.Offset(0, BUTTON_DEPTH), color=stroke)],
-                   data=None if filled else stroke, **kwargs)
+                   gradient=None if kwargs.get("disabled") else gradient,
+                   data=gradient, **kwargs)
 
 
 def secondary_button(label: str, on_click=None, icon=None, **kwargs) -> ft.Container:
@@ -208,10 +212,9 @@ def switch(value: bool, on_change) -> ft.Switch:
                      on_change=on_change)
 
 
-def pill(label: str, color: str = MUTED) -> ft.Container:
-    return ft.Container(text(label, 11, color, weight=ft.FontWeight.W_600),
-                        padding=ft.Padding(8, 3, 8, 3), border_radius=20,
-                        bgcolor=ft.Colors.with_opacity(0.14, color))
+def badge(label: str, color: str = MUTED, icon: str = "circle-info") -> ft.Row:
+    return ft.Row([pixel_icon(icon, size=12, color=color), text(label, 12)],
+                  spacing=6, tight=True, vertical_alignment=ft.CrossAxisAlignment.CENTER)
 
 
 def segmented(options: list[tuple[str, str, str]], value: str, on_change) -> ft.Container:

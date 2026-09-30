@@ -182,6 +182,11 @@ class Info:
     chip_revision: int
     text: str
 
+    @property
+    def firmware_version(self) -> str:
+        return next((part.removeprefix("version=") for part in self.text.split()
+                     if part.startswith("version=")), "")
+
     @classmethod
     def parse(cls, payload: bytes) -> "Info":
         return cls(payload[0], payload[1:7], payload[7:13], payload[13], payload[14:].decode(errors="replace"))

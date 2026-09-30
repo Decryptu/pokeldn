@@ -474,6 +474,13 @@ no such moment. `tools/ldn/esp32_led.py --port PORT PATTERN` sets a look; `--dem
 
 ## Building and flashing
 
+Firmware releases use `major.minor.patch` in `firmware/esp32/version.txt`, shared by ESP32, S3 and
+C3. Increment patch for fixes, minor for compatible features and major for incompatible changes
+before building a release. ESP-IDF embeds the version in the application descriptor; INFO reports
+it as `version=...`, and Boards displays it after Identify. Unversioned builds show `version unknown`
+and remain usable when their serial protocol matches. The serial protocol and desktop app versions
+are independent; increment the protocol number when its wire contract changes.
+
 ESP-IDF v6.1 (tag `v6.1`, commit `fff9895c82d744c7237be8847347bdd1b07c6643`) builds all three targets.
 Install its tools with `install.sh esp32,esp32s3,esp32c3`, then activate the IDF environment.
 
