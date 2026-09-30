@@ -11,6 +11,7 @@ from pathlib import Path
 
 ROOT = Path(__file__).resolve().parent.parent
 FIRMWARE = ROOT / "gui" / "firmware" / "pokeldn-radio.bin"
+FIRMWARE_S3 = ROOT / "gui" / "firmware" / "pokeldn-radio-s3.bin"
 APP_ID = "io.github.decryptu.pokeldn"
 
 
@@ -40,8 +41,10 @@ def platform_excludes():
 
 
 def main() -> int:
-    if not FIRMWARE.is_file():
-        raise SystemExit("Missing gui/firmware/pokeldn-radio.bin. Build it from firmware/esp32 "
+    firmware = (FIRMWARE, FIRMWARE_S3)
+    missing = [str(path) for path in firmware if not path.is_file()]
+    if missing:
+        raise SystemExit(f"Missing firmware: {', '.join(missing)}. Build both images "
                          "as described in docs/gui.md before packing.")
     if importlib.util.find_spec("PyInstaller") is None:
         raise SystemExit("Install desktop build dependencies: python -m pip install -r gui/requirements.txt")
@@ -69,8 +72,8 @@ def main() -> int:
             ports.write_text(source)
         data = [(stage / name, name) for name in
                 ("bin", "pokeldn", "vendor/LDN/ldn", "docs", "config", "gui/assets")]
-        data += [(stage / "gui/guide.md", "gui"), (executable, "services/pkhex/dist"),
-                 (FIRMWARE, "gui/firmware")]
+        data += [(stage / "gui/guide.md", "gui"), (executable, "services/pkhex/dist")]
+        data += [(path, "gui/firmware") for path in firmware]
         args = [sys.executable, "-m", "flet_cli.cli", "pack", str(ROOT / "gui" / "main.py"),
                 "--name", "pokeldn", "-y",
                 "--distpath", str(ROOT / "dist"), "--product-name", "pokeldn",

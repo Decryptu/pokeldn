@@ -14,6 +14,14 @@ jobs:
   firmware:
     runs-on: ubuntu-24.04
     container: espressif/idf:v6.1
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - target: esp32
+            file: pokeldn-radio.bin
+          - target: esp32s3
+            file: pokeldn-radio-s3.bin
     steps:
       - uses: actions/checkout@v7
       - name: Build and merge the image
@@ -21,13 +29,13 @@ jobs:
         run: |
           . "$IDF_PATH/export.sh"
           cd firmware/esp32
+          idf.py set-target ${{ matrix.target }}
           idf.py build
-          idf.py merge-bin -o pokeldn-radio.bin
-          cp "$(find . -name pokeldn-radio.bin | head -n 1)" "$GITHUB_WORKSPACE/pokeldn-radio.bin"
+          idf.py merge-bin -o "$GITHUB_WORKSPACE/${{ matrix.file }}"
       - uses: actions/upload-artifact@v7
         with:
-          name: firmware
-          path: pokeldn-radio.bin
+          name: firmware-${{ matrix.target }}
+          path: ${{ matrix.file }}
 
   app:
     needs: firmware
@@ -52,7 +60,11 @@ jobs:
           dotnet-version: "10.0.x"
       - uses: actions/download-artifact@v8
         with:
-          name: firmware
+          name: firmware-esp32
+          path: gui/firmware
+      - uses: actions/download-artifact@v8
+        with:
+          name: firmware-esp32s3
           path: gui/firmware
       - name: Install
         run: python -m pip install -r gui/requirements.txt

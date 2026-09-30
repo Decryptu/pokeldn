@@ -1,4 +1,5 @@
 import os
+import struct
 import time
 from dataclasses import dataclass
 
@@ -26,6 +27,12 @@ DRIVERS = {
 }
 
 FIRMWARE = os.path.join(ROOT, "gui", "firmware", "pokeldn-radio.bin")   # written by the release build
+FIRMWARE_S3 = os.path.join(ROOT, "gui", "firmware", "pokeldn-radio-s3.bin")
+
+
+def bundled_firmware(chip: str) -> str:
+    """Select by the chip esptool detected; native USB IDs are shared by S3, C3 and C6."""
+    return {"ESP32": FIRMWARE, "ESP32-S3": FIRMWARE_S3}[chip]
 
 
 @dataclass(frozen=True)
@@ -33,10 +40,6 @@ class Port:
     device: str
     bridge: str
     serial_number: str
-
-    @property
-    def supported(self) -> bool:
-        return not self.bridge.startswith("Espressif")
 
 
 @dataclass(frozen=True)
@@ -66,8 +69,8 @@ def ports() -> list[Port]:
 
 
 def identify(port: str, blink: bool = True) -> Identity:
-    """HELLO, then five seconds of fast blinking so the user can see which board answered.
-    Raises esp32.RadioError when no pokeldn firmware answers. Opening the port resets the board."""
+    """HELLO, then blink GPIO2 on classic boards to identify them (docs/hardware_esp32.md).
+    Raises esp32.RadioError when no pokeldn firmware answers. Opening the port can reset it."""
     s = serial.Serial()
     s.port, s.baudrate, s.timeout = port, 115200, 0.02
     s.dtr = s.rts = False   # most boards reset on a DTR/RTS edge
@@ -91,7 +94,53 @@ def identify(port: str, blink: bool = True) -> Identity:
         radio.close()
 
 
-def flash_args(port: str, firmware: str) -> list[str]:
-    """esptool's arguments for a merged image (bootloader, partition table, app) written at 0."""
-    return ["--chip", "esp32", "-p", port, "-b", "460800", "--before", "default-reset",
-            "--after", "hard-reset", "write-flash", "0x0", os.path.abspath(firmware)]
+def flash(port: str, firmware: str = "") -> None:
+    """Detect, validate and flash on one connection (docs/hardware_esp32.md, Building and flashing)."""
+    import esptool
+    from esptool.bin_image import LoadFirmwareImage
+
+    with esptool.detect_chip(port) as chip:
+        if chip.CHIP_NAME not in ("ESP32", "ESP32-S3"):
+            raise esptool.FatalError(f"{chip.CHIP_NAME} is not supported. Use an ESP32 or ESP32-S3.")
+        path = firmware or bundled_firmware(chip.CHIP_NAME)
+        if not os.path.isfile(path):
+            raise esptool.FatalError(f"Missing firmware for {chip.CHIP_NAME}: {path}")
+        # esptool skips its image check on a merged ESP32 image's 0x1000 padding.
+        # Validate the bootloader at the detected chip's offset before any erase or write.
+        # docs/hardware_esp32.md, Building and flashing.
+        with open(path, "rb") as source:
+            source.seek(chip.BOOTLOADER_FLASH_OFFSET)
+            data = source.read()
+        if len(data) < 24 or data[0] != 0xE9 or int.from_bytes(data[12:14], "little") != chip.IMAGE_CHIP_ID:
+            raise esptool.FatalError(f"Merged firmware does not match {chip.CHIP_NAME}: {path}")
+        try:
+            image = LoadFirmwareImage(chip.CHIP_NAME, data)
+        except (struct.error, RuntimeError, TypeError) as error:
+            raise esptool.FatalError(f"Invalid merged firmware: {path}") from error
+        image.verify()
+        if image.checksum != image.calculate_checksum() or (
+                image.append_digest and image.stored_digest != image.calc_digest):
+            raise esptool.FatalError(f"Firmware checksum does not match: {path}")
+        print(f"[app] Firmware for {chip.CHIP_NAME}: {path}", flush=True)
+        esptool.main(["--baud", "460800", "--after", "hard-reset", "write-flash",
+                      "0x0", os.path.abspath(path)], esp=chip)
+
+
+def main() -> int:
+    import argparse
+    import esptool
+
+    parser = argparse.ArgumentParser(description="Flash pokeldn firmware for the connected chip.")
+    parser.add_argument("--port", required=True)
+    parser.add_argument("--firmware", default="", help="custom merged image; default: bundled firmware")
+    args = parser.parse_args()
+    try:
+        flash(args.port, args.firmware)
+    except (esptool.FatalError, OSError, ValueError) as error:
+        print(f"[app] {error}", flush=True)
+        return 1
+    return 0
+
+
+if __name__ == "__main__":
+    raise SystemExit(main())

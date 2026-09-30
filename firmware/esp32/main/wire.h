@@ -1,4 +1,4 @@
-/* The host link: COBS frames on UART0, each `type | payload | crc32-le`, closed by 0x00.
+/* The host link: COBS frames on UART0 (ESP32) or USB Serial/JTAG (S3), closed by 0x00.
    The message set is in docs/hardware_esp32.md and pokeldn/ldn/esp32.py. */
 #pragma once
 

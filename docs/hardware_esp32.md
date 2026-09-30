@@ -11,6 +11,24 @@ action frames and Ethernet frames; advertisement crypto, LDN authentication, IP 
 host. `pokeldn.ldn.esp32_wlan` gives the LDN library a factory backed by the board, so `ldn.scan`,
 `ldn.connect` and `ldn.create_network` run unchanged and the host needs no Wi-Fi driver.
 
+## Supported boards
+
+| chip | host connection | merged image |
+|---|---|---|
+| classic ESP32 (ESP32-D0WD, WROOM-32E) | UART0 through a USB serial bridge | `pokeldn-radio.bin` |
+| ESP32-S3 | native USB Serial/JTAG | `pokeldn-radio-s3.bin` |
+
+Both targets use 2.4 GHz. ESP32-C3, C6 and S2 are unsupported. An S3 board with separate UART
+and native USB sockets needs the native socket for radio communication. USB Serial/JTAG uses
+GPIO19 (D-) and GPIO20 (D+), as described in
+[Espressif's USB guide](https://docs.espressif.com/projects/esp-idf/en/v5.2/esp32s3/api-guides/usb-serial-jtag-console.html).
+The USB identifier `303a:1001` is shared by several chips; it does not identify an S3.
+
+Gr3nSkyDragon reports a completed FireRed joiner trade on an ESP32-S3 under Windows in
+[the S3 contribution](https://github.com/Decryptu/pokeldn/pull/2). The classic ESP32 measurements
+below use the ELEGOO ESP32-D0WD-V3 board unless another board is named. S3 throughput, host-role
+trades and other games have not been measured locally.
+
 ## Roles
 
 | role | what the board does |
@@ -62,7 +80,8 @@ beacons cannot be stopped.
 ## Serial protocol
 
 A frame is `COBS(type | payload | crc32-le(type | payload))` then `0x00`; the CRC is CRC-32/ISO-HDLC
-(`zlib.crc32`). The board boots at 115200 baud; `BAUD` switches both ends. Anything before a `0x00`,
+(`zlib.crc32`). The classic ESP32 boots at 115200 baud; `BAUD` switches both ends. On S3,
+`BAUD` is acknowledged without changing the USB transfer rate. Anything before a `0x00`,
 the ROM's boot text included, fails the checksum and is discarded.
 
 | type | direction | payload |
@@ -107,7 +126,7 @@ the ROM's boot text included, fails the checksum and is discarded.
 | `wire_dropped`, `wire_rx_bad` | board-to-host messages dropped; host commands failing COBS or CRC |
 | `uart_fifo_ovf`, `uart_buffer_full`, `uart_overflow` | 128-byte hardware FIFO and 16 KB ring overflows, and their sum |
 | `uart_frame_err`, `uart_events_full` | framing, parity and break events; ticks with the UART event queue full (the counters may undercount) |
-| `read_max_us`, `write_max_us`, `handler_max_us`, `handler_max_type` | the longest `uart_read_bytes` (20 ms timeout included), `uart_write_bytes`, and command with its type |
+| `read_max_us`, `write_max_us`, `handler_max_us`, `handler_max_type` | the longest host-link read turn (20 ms timeout included), writer wait, and command with its type |
 | `heap_min`, `queue_max`, `refused_heap`, `refused_queue` | least free heap, deepest outgoing queue, messages refused at the heap floor and on a full queue |
 | `tx_eth_max_us`, `tx_eth_total_us`, `tx_eth_slow` | ETH_TX in `esp_wifi_internal_tx`, retries included: longest, sum, count over 5 ms |
 
@@ -118,12 +137,13 @@ EtherType `0x88B7` frames are LDN authentication; `esp32_wlan` turns them into t
 | port | where | the launchers' sockets |
 |---|---|---|
 | kernel TAP named after the interface | Linux | kernel sockets, `SO_BINDTODEVICE` and `AF_PACKET` unchanged |
-| `userspace_ip` stack | every other host (macOS) | `userspace_ip.udp_socket` and `packet_socket` |
+| `userspace_ip` stack | macOS and Windows | `userspace_ip.udp_socket` and `packet_socket` |
 | `MemoryPort` | tests | none |
 
 ## The serial ceiling
 
-At 921600 baud, 8N1, the board-to-host line carries 92.16 KB/s. A message costs its payload plus a
+On the classic ESP32 UART at 921600 baud, 8N1, the board-to-host line carries 92.16 KB/s.
+A message costs its payload plus a
 type byte, a four-byte CRC, the COBS overhead (one byte per 254 and the delimiter) and, for RX_MGMT,
 two bytes of channel and RSSI. Pia payloads are AES-GCM ciphertext and do not compress.
 
@@ -386,6 +406,9 @@ None for a kernel interface, which is how every launcher picks its path.
 
 ## The board's LED and buttons
 
+GPIO2 LED patterns apply to classic ESP32 boards. S3 boards have different LED wiring; the S3
+firmware leaves LED pins alone and continues to read BOOT on GPIO0 for trace markers.
+
 The ELEGOO ESP-32 Type-C board (CP2102, ESP32-D0WD-V3) carries an unbranded module with a PCB antenna
 and no Espressif module name:
 
@@ -432,22 +455,39 @@ no such moment. `tools/ldn/esp32_led.py --port PORT PATTERN` sets a look; `--dem
 
 ## Building and flashing
 
-ESP-IDF v6.1 (tag `v6.1`, commit `fff9895c82d744c7237be8847347bdd1b07c6643`), target `esp32`;
-`install.sh esp32` is enough, and Linux and macOS (Apple silicon) build the same image size.
+ESP-IDF v6.1 (tag `v6.1`, commit `fff9895c82d744c7237be8847347bdd1b07c6643`) builds both targets.
+Install its tools with `install.sh esp32,esp32s3`, then activate the IDF environment.
 
     cd firmware/esp32
+    idf.py set-target esp32   # esp32s3 for an S3 board
     idf.py build
     idf.py -p <port> flash
 
-The image is 0x90650 bytes. The console output is off (`CONFIG_ESP_CONSOLE_NONE`): UART0 is the host
-link, left unrouted, so the firmware assigns GPIO1 and GPIO3 itself (`uart_set_pin`) or the board
-boots and never answers.
+Console output is off (`CONFIG_ESP_CONSOLE_NONE`, `CONFIG_ESP_CONSOLE_SECONDARY_NONE`). On classic
+ESP32, UART0 is the host link, so the firmware assigns GPIO1 and GPIO3 itself (`uart_set_pin`).
+On S3, the firmware installs the USB Serial/JTAG driver on core 1.
+
+The desktop app detects the chip with esptool on the same connection used for flashing.
+It validates the merged image's bootloader at the chip's flash offset (ESP32: `0x1000`,
+S3: `0x0`) before writing, including custom images. esptool 5.4.0's `write_flash` can skip its
+chip check when a merged image starts with padding. Never choose firmware from a USB bridge ID.
+[Desktop builds](gui.md) covers packaging both images.
+
+### The USB host link
+
+The S3 uses the same COBS, CRC and CREDIT protocol over USB Serial/JTAG. Both driver rings are
+16 KB. IDF v6.1's `usb_serial_jtag_write_bytes` enqueues a whole frame or returns zero after its
+timeout; the writer retries with 20 ms waits and counts a dropped message after 500 ms without
+progress. `write_max_us` includes this wait. The reader takes available bytes with a 20 ms
+timeout. UART overflow and framing counters stay zero on this path; they do not measure USB loss.
+`POKELDN_ESP32_BAUD` is accepted on both targets and only changes the classic ESP32's line rate.
 
 ## Running
 
 `POKELDN_RADIO=esp32:<port>` puts every launcher's `ldn` calls on the board. `esp32:auto` takes the
 only USB serial port present (`/dev/cu.usbserial-*`, `/dev/cu.SLAB_USBtoUART*`,
-`/dev/cu.wchusbserial*`, `/dev/cu.usbmodem*`, `/dev/ttyUSB*`, `/dev/ttyACM*`) and refuses to choose between several, since opening a port resets its board. The port is opened once
+`/dev/cu.wchusbserial*`, `/dev/cu.usbmodem*`, `/dev/ttyUSB*`, `/dev/ttyACM*`; USB COM ports on Windows)
+and refuses to choose between several, since opening a port can reset its board. The port is opened once
 per process with DTR and RTS released; a CP2102 board on macOS resets on open regardless, so the host
 retries HELLO for 5 s before switching to 921600.
 

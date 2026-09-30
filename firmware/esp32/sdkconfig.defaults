@@ -1,9 +1,9 @@
-CONFIG_IDF_TARGET="esp32"
 CONFIG_ESPTOOLPY_FLASHSIZE_4MB=y
-# UART0 is the host link; nothing else may print on it once the firmware runs.
+# The host link carries binary frames; console output must stay off on both targets.
 CONFIG_LOG_DEFAULT_LEVEL_NONE=y
 CONFIG_BOOTLOADER_LOG_LEVEL_NONE=y
 CONFIG_ESP_CONSOLE_NONE=y
+CONFIG_ESP_CONSOLE_SECONDARY_NONE=y
 CONFIG_ESP_TASK_WDT_EN=n
 CONFIG_ESP_WIFI_SOFTAP_SUPPORT=y
 CONFIG_ESP_WIFI_ENABLE_WPA3_SAE=n

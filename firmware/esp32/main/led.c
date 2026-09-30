@@ -134,9 +134,13 @@ static void led_task(void *arg)
         flash *= 0.8f;
         press_flash *= 0.9f;
 
+#if CONFIG_IDF_TARGET_ESP32
         ledc_set_duty(LEDC_LOW_SPEED_MODE, LEDC_CHANNEL_0,
                       (uint32_t)lroundf(powf(clamp01(shown_level), 2.2f) * DUTY_MAX));
         ledc_update_duty(LEDC_LOW_SPEED_MODE, LEDC_CHANNEL_0);
+#else
+        (void)shown_level;   /* S3 boards have different LED wiring; keep BOOT markers active. */
+#endif
         vTaskDelayUntil(&wake, pdMS_TO_TICKS(TICK_MS));
     }
 }
@@ -163,6 +167,7 @@ void led_start(led_state_t state, led_button_t button)
         .intr_type = GPIO_INTR_DISABLE,
     };
     gpio_config(&input);
+#if CONFIG_IDF_TARGET_ESP32
     const ledc_timer_config_t timer = {
         .speed_mode = LEDC_LOW_SPEED_MODE, .duty_resolution = LEDC_TIMER_13_BIT,
         .timer_num = LEDC_TIMER_0, .freq_hz = 5000, .clk_cfg = LEDC_AUTO_CLK,
@@ -173,6 +178,7 @@ void led_start(led_state_t state, led_button_t button)
     };
     /* A board without the LED still runs: the radio never depends on it. */
     if (ledc_timer_config(&timer) != ESP_OK || ledc_channel_config(&channel) != ESP_OK) return;
+#endif
     s_host_until_ms = now_ms() + 900;
     xTaskCreatePinnedToCore(led_task, "led", 3072, NULL, 1, NULL, 1);
 }

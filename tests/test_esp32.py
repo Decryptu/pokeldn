@@ -1034,3 +1034,16 @@ def test_auto_port_takes_the_one_serial_port_and_refuses_to_guess():
         except RuntimeError:
             continue
         raise AssertionError(f"chose a port out of {ports}")
+
+
+def test_windows_auto_port_enumerates_usb_without_opening_it(monkeypatch):
+    from types import SimpleNamespace
+    from serial.tools import list_ports
+    monkeypatch.setattr(esp32_wlan.sys, "platform", "win32")
+    found = [SimpleNamespace(device="COM1", vid=None),
+             SimpleNamespace(device="COM4", vid=0x303A)]
+    monkeypatch.setattr(list_ports, "comports", lambda: found)
+    assert esp32_wlan.auto_port() == "COM4"
+    found.append(SimpleNamespace(device="COM5", vid=0x10C4))
+    with pytest.raises(RuntimeError, match="exactly one"):
+        esp32_wlan.auto_port()

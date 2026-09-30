@@ -18,7 +18,7 @@ FLASH_STEPS = [
     "Use a USB data cable. A charge-only cable powers the board but no port appears.",
     "Select the board on the left.",
     "Press Flash. If it stays on 'Connecting', hold the BOOT button until writing starts.",
-    "When it is done the blue LED pulses once, then breathes slowly.",
+    "ESP32-S3: use the native USB port. After flashing, release BOOT and press RESET if needed.",
 ]
 
 
@@ -144,16 +144,14 @@ class BoardView:
             ft.Container(height=2),
             ft.Row([
                 t.button("Identify", self._identify, "lightbulb",
-                         disabled=self.app.busy or not p.supported),
+                         disabled=self.app.busy),
                 t.button("This is my radio" if not is_radio else "Radio board", self._use,
                          "checkbox" if not is_radio else "checkbox-on",
                          filled=False, disabled=is_radio),
             ], spacing=8),
         ], spacing=10)
-        note = ("Identify restarts the board, reads its firmware and MAC, and blinks its blue LED for five "
-                "seconds so you can tell the boards apart.")
-        if not p.supported:
-            note = "This is an ESP32-S3, C3 or C6. pokeldn runs on the classic ESP32 only."
+        note = ("Identify reads the firmware and MAC. Opening the port can restart the board. "
+                "A classic ESP32's GPIO2 LED blinks for five seconds; S3 onboard LEDs vary.")
         return t.card(self.name_of(p.device) or "ESP32 board", body, note)
 
     def _rename(self, e, field=None) -> None:
@@ -181,7 +179,7 @@ class BoardView:
         if self.app.busy:
             return
         self.app.board_busy = True
-        self.log.add(f"[app] Opening {device}; the board restarts.")
+        self.log.add(f"[app] Opening {device}; the board may restart.")
         self.render()
         self.control.update()
 
@@ -192,7 +190,7 @@ class BoardView:
                 self.log.add(f"[app] {ident.firmware}, protocol {ident.protocol}, chip revision "
                              f"{ident.chip_revision}, MAC {ident.sta_mac}")
                 if ident.current:
-                    self.log.add("[app] The board's blue LED blinks for five seconds.")
+                    self.log.add("[app] Identified. Classic ESP32 GPIO2 LEDs blink for five seconds.")
                 else:
                     self.log.add("[app] This firmware is older than the app. Flash the board.")
             except serial.SerialException as error:
@@ -213,15 +211,17 @@ class BoardView:
         chosen = self.app.settings.firmware
         if chosen and os.path.exists(chosen):
             return chosen
-        return board.FIRMWARE if os.path.exists(board.FIRMWARE) else ""
+        return ""
 
     def flash_card(self) -> ft.Control:
         image = self.firmware()
         p = self.port()
+        available = image or any(os.path.isfile(f) for f in (board.FIRMWARE, board.FIRMWARE_S3))
         source = ft.Row([
             t.pixel_icon("package", color=t.MUTED),
-            t.text(("pokeldn firmware, included with the app" if image == board.FIRMWARE else image) if image else
-                   "This copy of the app has no firmware image.", 12, t.MUTED if image else t.RED, expand=True),
+            t.text(image or ("Included firmware is selected automatically for ESP32 or ESP32-S3." if available
+                            else "This copy of the app has no firmware image."),
+                   12, t.MUTED if available else t.RED, expand=True),
             t.secondary_button("Use another file", self._choose_file, "file"),
         ], spacing=6)
         flashing = bool(self.app.process and self.app.process.running and self.app.process_label == "flash")
@@ -230,7 +230,7 @@ class BoardView:
             source,
             ft.Column([self.progress, self.progress_text], spacing=6),
             t.button("Flashing..." if flashing else "Flash", self._flash, "zap",
-                     disabled=self.app.busy or not image or not p or not p.supported),
+                     disabled=self.app.busy or not available or not p),
         ], spacing=14), "Writes pokeldn's radio firmware to the selected board. Takes about thirty seconds.")
 
     async def _choose_file(self, e) -> None:
@@ -248,7 +248,9 @@ class BoardView:
     def _flash(self, e) -> None:
         if self.app.busy:
             return
-        args = board.flash_args(self.selected, self.firmware())
+        args = ["--module", "gui.board", "--port", self.selected]
+        if image := self.firmware():
+            args += ["--firmware", image]
         self.log.clear()
         self.log.add(f"[app] Flashing {self.selected}.")
         self.progress.visible, self.progress.value = True, None
@@ -256,7 +258,7 @@ class BoardView:
         env = dict(os.environ, NO_COLOR="1", PYTHONUNBUFFERED="1")
         env.pop("POKELDN_RADIO", None)
         self.app.process_label = "flash"
-        self.app.process = runner.Process(["--module", "esptool", *args], str(SESSION), env, self._flash_line,
+        self.app.process = runner.Process(args, str(SESSION), env, self._flash_line,
                                           self._flashed)
         self.render()
         self.control.update()
@@ -296,6 +298,6 @@ class BoardView:
                     link("CH340", board.DRIVERS["WCH CH340"])], spacing=6, wrap=True),
             t.text("Linux: allow serial ports, then log out and back in:", 12.5),
             CodeBlock(self.app, "sudo usermod -aG dialout $USER").control,
-            t.text("pokeldn needs a classic ESP32 (ESP32-D0WD, WROOM-32E). S3, C3 and C6 boards are not "
-                   "supported.", 12.5, t.MUTED),
+            t.text("Use a classic ESP32 (ESP32-D0WD, WROOM-32E) or an ESP32-S3 through its native USB port. "
+                   "C3 and C6 boards are not supported.", 12.5, t.MUTED),
         ], spacing=8))

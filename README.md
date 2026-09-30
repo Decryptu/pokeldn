@@ -74,8 +74,9 @@ Gift below with the tested settings. The only file it asks for is `prod.keys`.
 
 ## Requirements
 
-- A classic ESP32 board on USB (tested: ESP32-D0WD-V3, ELEGOO board, CP2102 bridge), flashed with
-  [`firmware/esp32`](firmware/esp32). 2.4 GHz only.
+- A classic ESP32 board with a USB serial bridge, or an ESP32-S3 through native USB Serial/JTAG,
+  flashed with [`firmware/esp32`](firmware/esp32) for its chip. Both use 2.4 GHz.
+  Board requirements and hardware verification are on [ESP32 radio](docs/hardware_esp32.md#supported-boards).
 - Python 3.11+ and a venv with `requirements.txt` installed. No root. The bundled
   [`vendor/LDN`](vendor/LDN) is installed by it; do not substitute the PyPI `ldn` package.
 - Source trade tools also need the .NET 10 SDK and `dotnet build -c Release services/pkhex`.
@@ -87,14 +88,19 @@ Gift below with the tested settings. The only file it asks for is `prod.keys`.
 ## Setup
 
 ```bash
-cd firmware/esp32 && idf.py build && idf.py -p PORT flash && cd ../..   # ESP-IDF v6.1
+cd firmware/esp32
+idf.py set-target esp32   # use esp32s3 for an ESP32-S3; ESP-IDF v6.1
+idf.py build
+idf.py -p PORT flash
+cd ../..
 ./.venv/bin/python tools/ldn/esp32_first_contact.py --port PORT           # HELLO, counters, networks
 export POKELDN_RADIO=esp32:auto
 ```
 
 `PORT` is the board's serial device (`/dev/cu.usbserial-*` or `/dev/cu.usbmodem*` on macOS,
-`/dev/ttyUSB*` or `/dev/ttyACM*` on Linux) and follows the USB socket. `esp32:auto` takes the only USB
-serial port present; `esp32:PORT` names one.
+`/dev/ttyUSB*` or `/dev/ttyACM*` on Linux, `COM4` on Windows) and follows the USB socket.
+`esp32:auto` takes the only USB serial port present; `esp32:PORT` names one.
+An S3 board with two USB sockets needs its native USB socket for radio communication.
 `POKELDN_ESP32_TRACE=FILE` records every serial message and the board's counters. The exact IDF
 version is on [ESP32 radio](docs/hardware_esp32.md).
 

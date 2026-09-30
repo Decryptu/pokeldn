@@ -18,6 +18,7 @@ def check() -> None:
     root = Path(sys._MEIPASS)
     assert Path(pokemon.HERE) == root / "services/pkhex"
     assert (root / "gui/firmware/pokeldn-radio.bin").is_file()
+    assert (root / "gui/firmware/pokeldn-radio-s3.bin").is_file()
     assert not (root / "config/host.local.toml").exists()
     assert not (root / "scratchpad").exists()
     trainer = {"ot": "PkCamp", "tid": 12345, "sid": 54321, "language": 2, "gender": 0}
@@ -35,6 +36,9 @@ def check() -> None:
     result = subprocess.run(runner.command("--module", "esptool", "version"),
                             capture_output=True, text=True, timeout=30, check=True)
     assert "esptool" in result.stdout and not result.stderr, (result.stdout, result.stderr)
+    result = subprocess.run(runner.command("--module", "gui.board", "--help"),
+                            capture_output=True, text=True, timeout=30, check=True)
+    assert "--firmware" in result.stdout and not result.stderr, (result.stdout, result.stderr)
     print(f"{len(scripts)} launchers and seven Pokemon formats verified")
 
 

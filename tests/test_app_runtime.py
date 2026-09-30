@@ -39,9 +39,16 @@ def test_packer_uses_tracked_defaults_and_requires_firmware(monkeypatch, tmp_pat
     assert "config/host.toml" in files
     assert not any("scratchpad" in p or "host.local.toml" in p or "__pycache__" in p for p in files)
     monkeypatch.setattr(pack, "FIRMWARE", tmp_path / "absent.bin")
+    monkeypatch.setattr(pack, "FIRMWARE_S3", tmp_path / "absent-s3.bin")
     import pytest
     with pytest.raises(SystemExit, match="Missing"):
         pack.main()
+    # A release missing either target must fail before invoking the packer.
+    for present, missing in ((pack.FIRMWARE, pack.FIRMWARE_S3), (pack.FIRMWARE_S3, pack.FIRMWARE)):
+        present.write_bytes(b"firmware")
+        with pytest.raises(SystemExit, match=missing.name):
+            pack.main()
+        present.unlink()
 
 
 def test_board_backend_does_not_require_unix_user_ids(monkeypatch):
