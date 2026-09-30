@@ -4,4 +4,4 @@ Layers: `ldn` (game-independent wireless), `gba` (the GBA adapter above Pia), on
 Nothing in `ldn` imports a game package; imports are absolute so a layering mistake shows in the diff.
 """
 
-__version__ = "0.1.0"
+__version__ = "0.2.0"

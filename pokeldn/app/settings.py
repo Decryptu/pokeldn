@@ -19,6 +19,7 @@ class Settings:
     baud: int = 921600
     capture: bool = True
     board_trace: bool = False
+    sprites: bool = True    # download Pokemon sprites from PokeAPI; the cache is read either way
     firmware: str = ""
     # Trainer used for generated encounters.
     ot: str = "PkCamp"

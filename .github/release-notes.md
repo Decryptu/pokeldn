@@ -1,7 +1,17 @@
-# pokeldn 0.1.0
+# pokeldn 0.2.0
 
-The first desktop pre-release trades with seven Pokemon game families on a Switch or Switch 2
+This desktop pre-release trades with seven Pokemon game families on a Switch or Switch 2
 through an ESP32 radio connected by USB. Nothing is installed on the console.
+
+## What is new
+
+- The Pokemon picker shows the species' pixel-art sprite, and the shiny sprite when Shiny is on.
+  Sprites come from PokeAPI's sprite repository, are drawn without smoothing, and are saved on the
+  computer after the first download. A computer that has never been online shows a placeholder icon
+  and everything else works. Settings has a switch for the downloads and a button that clears the
+  cache.
+- The ESP32 firmware carries a version, shown on Board after Identify.
+- The driver links on the Board page for CP210x and CH340 adapters are visible buttons.
 
 ## Downloads
 

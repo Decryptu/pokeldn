@@ -5,6 +5,7 @@ import flet as ft
 from gui import theme as t
 from pokeldn import __version__
 from pokeldn.app.paths import SESSION
+from pokeldn.app.sprites import CACHE
 from pokeldn.app.settings import LANGUAGES
 from gui.views.widgets import PathField, open_folder
 
@@ -21,6 +22,7 @@ class SettingsView:
     def __init__(self, app):
         self.app = app
         self.keys_state = ft.Container()
+        self.sprite_state = t.text("", 12, t.MUTED)
         self.column = ft.Column(spacing=t.GAP, width=760)
         self.control = ft.ListView([ft.Row([self.column], alignment=ft.MainAxisAlignment.CENTER)],
                                    padding=ft.Padding(4, 8, 4, 24), expand=True)
@@ -85,6 +87,11 @@ class SettingsView:
                                                              "Open it")]),
                    "Where the Pokemon a console sends you are saved."),
             t.card("Serial speed", speed, "How fast the computer talks to the board after connecting."),
+            t.card("Pokemon sprites", ft.Row([t.button("Clear the cache", self._clear_sprites, "refresh",
+                                                        filled=False), self.sprite_state], spacing=10),
+                   "Pixel-art sprites come from PokeAPI and are saved on this computer after the first download, "
+                   "so they keep showing offline. The app works without them.",
+                   trailing=t.switch(s.sprites, lambda e: self.save("sprites", e.control.value))),
             switch("capture", "Record every session",
                    "Keeps each session's datagrams. Small, and what a bug report needs."),
             switch("board_trace", "Record the board's serial traffic",
@@ -95,6 +102,10 @@ class SettingsView:
             t.card(f"About pokeldn {__version__}", ft.Row([link(label, url) for label, url in LINKS], spacing=4),
                    "pokeldn is AGPLv3. Pokemon are checked with PKHeX.Core (GPLv3)."),
         ]
+
+    def _clear_sprites(self, e) -> None:
+        self.sprite_state.value = f"{CACHE.clear()} files removed"
+        self.sprite_state.update()
 
     def _keys(self, value: str, update: bool = True) -> None:
         self.save("keys", value)

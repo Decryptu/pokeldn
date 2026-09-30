@@ -13,6 +13,31 @@ chosen in Settings; the folder button beside Output opens it. Flash detects the 
 its bundled image; a custom image is checked against that chip before writing. Connect an S3
 or C3 through native USB Serial/JTAG. C6 and S2 chips are refused.
 
+## Pokemon sprites
+
+The Pokemon picker shows the species' pixel-art sprite, and the shiny sprite when Shiny is on. The
+sprites are the 96x96 PNGs behind `sprites.front_default` and `sprites.front_shiny` of
+`https://pokeapi.co/api/v2/pokemon/{id}`, read from `raw.githubusercontent.com/PokeAPI/sprites`
+(`sprites/pokemon/{id}.png`, `sprites/pokemon/shiny/{id}.png`). The JSON is not fetched: it is 300 KB
+per species, and the sprite path is fixed by the id. They are drawn at 96 px with nearest-neighbour
+filtering, never scaled to a non-integer size. Twelve National Dex numbers sampled from 1 to 1025 all have both sprites; 1026 returns 404.
+When a shiny sprite is missing, the picker shows the normal one.
+
+The cache is `sprites/` in the app's data folder, one file per sprite under `normal/` and `shiny/`.
+A sprite downloads on first use and is read from disk afterwards, with no network access. Rules:
+
+| situation | behaviour |
+|---|---|
+| no network, nothing cached | the pixelarticons `circle-question` icon; no error; the next attempt waits 60 s |
+| HTTP 404 | a `{id}.none` marker; not asked again for 7 days |
+| reply that is not a PNG, or over 200 KB | not cached |
+| damaged cached file | deleted, downloaded again |
+| data folder not writable | the sprite shows for the session and is not saved |
+| Settings, Pokemon sprites off | the cache is read, nothing is downloaded |
+
+Settings has the switch and a button that empties the cache. `POKELDN_SPRITE_BASE` replaces the sprite
+host, for tests (`tests/test_sprites.py`).
+
 ## Run from source
 
 For source development, install Python 3.13 and the .NET 10 SDK:

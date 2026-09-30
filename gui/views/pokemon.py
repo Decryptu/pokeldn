@@ -4,9 +4,11 @@ import flet as ft
 
 from pokeldn import pokemon as builder
 from gui import theme as t
+from gui.views.sprites import SIZE as SPRITE_SIZE, Sprite
 from gui.views.widgets import PixelActivity
 
 VERSIONS = {"firered": "FR", "leafgreen": "LG"}
+ROW_GAP = SPRITE_SIZE - 2 * t.CONTROL_HEIGHT   # the species and nickname boxes, and the gap, are as tall as a sprite
 
 
 class PokemonPicker:
@@ -20,12 +22,13 @@ class PokemonPicker:
         self.species.trailing_icon = PixelActivity("Loading species")
         self.level = t.field(value=str(self.value.get("level") or ""), hint="auto", mono=True, width=90,
                              on_change=lambda e: self._set("level", e.control.value))
-        self.shiny = t.switch(bool(self.value.get("shiny")), lambda e: self._set("shiny", e.control.value))
+        self.sprite = Sprite(app, int(self.value.get("species") or 0), bool(self.value.get("shiny")))
+        self.shiny = t.switch(bool(self.value.get("shiny")), self._shiny)
         self.nickname = t.field(value=self.value.get("nickname", ""), hint="Nickname (optional)", expand=True,
                                 on_change=lambda e: self._set("nickname", e.control.value))
         self.build_button = t.button("Build", self._build, "sparkles", disabled=True)
         self.result = ft.Container()
-        self.control = ft.Column([
+        form = ft.Column([
             ft.Row([t.labeled_control("Species", self.species, expand=True),
                     t.labeled_control("Level", self.level),
                     t.labeled_control("Shiny", ft.Container(
@@ -34,6 +37,11 @@ class PokemonPicker:
                    spacing=10, vertical_alignment=ft.CrossAxisAlignment.START),
             ft.Row([self.nickname, self.build_button], spacing=10,
                    vertical_alignment=ft.CrossAxisAlignment.CENTER),
+        ], spacing=ROW_GAP, expand=True)
+        # The tile runs from the top of the species box to the bottom of the nickname box, below the 20 px label.
+        tile = ft.Container(self.sprite.control, margin=ft.Margin(0, 20, 0, 0))
+        self.control = ft.Column([
+            ft.Row([tile, form], spacing=14, vertical_alignment=ft.CrossAxisAlignment.START),
             self.result,
             t.secondary_button("Or use a Pokemon file", self._use_file, "file"),
         ], spacing=10)
@@ -45,6 +53,11 @@ class PokemonPicker:
 
     def _pick(self, e) -> None:
         self.value["species"] = int(e.control.value)
+        self.sprite.show(self.value["species"], bool(self.value.get("shiny")))
+
+    def _shiny(self, e) -> None:
+        self._set("shiny", e.control.value)
+        self.sprite.show(int(self.value.get("species") or 0), bool(e.control.value))
 
     def _load_species(self) -> None:
         try:
