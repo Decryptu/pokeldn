@@ -32,6 +32,13 @@ Pokémon's original trainer.
 PID and encryption-constant changes can invalidate encounter correlations, especially events and
 raids. Fresh identity is opt-in and must pass PKHeX; a fixed event trainer is preserved.
 
+A built Pokémon is an encounter converted to a record. Shininess is requested from the encounter, so a
+Generation 3 PID keeps the RNG correlation PKHeX expects. A species reached by evolving the encounter
+is raised to its evolution level when no encounter fits as caught. A record that fails after a level
+or species change has its moves, relearn moves, plus-move flags, mastery flags and Legends Arceus size
+refitted once before the next encounter is tried. Shiny-locked legendaries and fixed-level gifts have no
+legal shiny or lower-level form and are refused.
+
 Sword/Shield Mystery Gift validates the WC8 seal and checks supported species, forms, moves and safe
 items with PKHeX. Custom WC8 cards are distributions, and this structural check does not make them
 official events. The optional `--image` research check uses a user-supplied game binary; it is not

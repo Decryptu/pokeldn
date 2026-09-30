@@ -109,42 +109,90 @@ JsonObject Make(Game game, JsonObject request)
     blank.Species = species;
     string? firstProblem = null;
     // The first encounter that stays legal with the requested level, shininess and nickname wins.
-    foreach (var encounter in EncounterMovesetGenerator.GenerateEncounters(blank, trainer, ReadOnlyMemory<ushort>.Empty, versions).Take(80))
+    // The first pass takes encounters as they come; the second lets an evolved Pokemon climb to its evolution level.
+    foreach (var climb in new[] { false, true })
     {
-        if (encounter is not IEncounterConvertible convertible)
-            continue;
-        var pk = convertible.ConvertToPKM(trainer);
-        if (pk.GetType() != blank.GetType() || !new LegalityAnalysis(pk).Valid)
-            continue;
-        // An egg or a pre-evolution encounter is evolved into the species asked for.
-        if (pk.Species != species)
+        foreach (var encounter in EncounterMovesetGenerator.GenerateEncounters(blank, trainer, ReadOnlyMemory<ushort>.Empty, versions).Take(80))
         {
-            pk.Species = species;
-            pk.ClearNickname();
+            if (encounter is not IEncounterConvertible convertible)
+                continue;
+            // Shininess is chosen while the encounter builds its PID: a Gen 3 to 5 PID rewritten afterwards
+            // no longer matches the RNG frame the legality check expects.
+            var criteria = shiny ? EncounterCriteria.Unrestricted with { Shiny = Shiny.Always } : EncounterCriteria.Unrestricted;
+            var built = convertible.ConvertToPKM(trainer, criteria);
+            if (built.GetType() != blank.GetType() || !new LegalityAnalysis(built).Valid)
+                continue;
+            // An egg or a pre-evolution encounter is evolved into the species asked for.
+            var evolved = built.Species != species;
+            if (evolved)
+            {
+                built.Species = species;
+                built.ClearNickname();
+            }
+            if (level > 0 && level < built.CurrentLevel)
+                continue;
+            // An evolved Pokemon left at the level it was caught at can be below its evolution level: walk up.
+            var last = climb && evolved && level == 0 ? 100 : Math.Max(level, built.CurrentLevel);
+            for (var lv = Math.Max(level, built.CurrentLevel); lv <= last; lv++)
+            {
+                var pk = built.Clone();
+                if (lv > pk.CurrentLevel)
+                    pk.CurrentLevel = (byte)lv;
+                if (shiny && !pk.IsShiny)
+                    pk.SetIsShiny(true);
+                if (nickname.Length > 0)
+                    pk.SetNickname(nickname);
+                var la = Refresh(pk);
+                if (!la.Valid)
+                {
+                    // Moves, relearn moves and move flags depend on the species and level just set.
+                    try
+                    {
+                        Refit(pk);
+                        la = Refresh(pk);
+                    }
+                    catch (IndexOutOfRangeException)
+                    {
+                        // PKHeX's move suggester indexes past a learnset some forms lack; this candidate stays as it was.
+                    }
+                }
+                if (la.Valid)
+                    return Describe(game, pk, la);
+                firstProblem ??= la.Report();
+            }
         }
-        if (level > 0 && level < pk.CurrentLevel)
-            continue;
-        if (level > pk.CurrentLevel)
-            pk.CurrentLevel = (byte)Math.Min(level, 100);
-        pk.SetIsShiny(shiny);
-        if (nickname.Length > 0)
-            pk.SetNickname(nickname);
-        if (pk is PB7 pb7)
-        {
-            AwakeningUtil.SetSuggestedAwakenedValues(pb7, pb7);
-            pb7.ResetCalculatedValues();
-        }
-        pk.ResetPartyStats();
-        pk.RefreshChecksum();
-        var la = new LegalityAnalysis(pk);
-        if (la.Valid)
-            return Describe(game, pk, la);
-        firstProblem ??= la.Report();
     }
     var name = strings.specieslist[species];
     throw new InvalidOperationException(firstProblem is null
         ? $"PKHeX has no legal {name} for this game."
         : $"No legal {name} with these choices. {firstProblem}");
+}
+
+LegalityAnalysis Refresh(PKM pk)
+{
+    if (pk is PB7 pb7)
+    {
+        AwakeningUtil.SetSuggestedAwakenedValues(pb7, pb7);
+        pb7.ResetCalculatedValues();
+    }
+    pk.ResetPartyStats();
+    pk.RefreshChecksum();
+    return new LegalityAnalysis(pk);
+}
+
+void Refit(PKM pk)
+{
+    pk.SetMoveset();
+    pk.SetRelearnMoves(new LegalityAnalysis(pk));
+    if (pk is IPlusRecord plus && pk.PersonalInfo is IPermitPlus permit)
+        PlusRecordApplicator.SetPlusFlags(plus, pk, permit, PlusRecordApplicatorOption.LegalCurrent);
+    if (pk is IMoveShop8Mastery shop)
+        shop.SetMoveShopFlags(pk);
+    if (pk is PA8 pa8)
+    {
+        pa8.ResetHeight();
+        pa8.ResetWeight();
+    }
 }
 
 JsonObject Check(Game game, byte[] data, JsonObject request)

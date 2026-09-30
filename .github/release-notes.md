@@ -1,17 +1,19 @@
-# pokeldn 0.2.0
+# pokeldn 0.2.1
 
 This desktop app trades with seven Pokemon game families on a Switch or Switch 2
 through an ESP32 radio connected by USB. Nothing is installed on the console.
 
 ## What is new
 
-- The Pokemon picker shows the species' pixel-art sprite, and the shiny sprite when Shiny is on.
-  Sprites come from PokeAPI's sprite repository, are drawn without smoothing, and are saved on the
-  computer after the first download. A computer that has never been online shows a placeholder icon
-  and everything else works. Settings has a switch for the downloads and a button that clears the
-  cache.
-- The ESP32 firmware carries a version, shown on Board after Identify.
-- The driver links on the Board page for CP210x and CH340 adapters are visible buttons.
+- A shiny Pokemon can be built for FireRed and LeafGreen. The encounter now picks a shiny PID, where
+  the old build rewrote the PID and PKHeX rejected the result (a shiny Ditto failed with "PID+
+  correlation does not match").
+- Evolved Pokemon are raised to their evolution level when the catch level is too low, so Ivysaur,
+  Charizard and similar species build in FireRed and LeafGreen, and more evolved species build in
+  Brilliant Diamond, Shining Pearl, Scarlet and Violet.
+- A level chosen in the picker keeps moves, relearn moves, move flags and size consistent in Legends
+  Arceus and Legends Z-A.
+- The README shows the desktop app.
 
 ## Downloads
 

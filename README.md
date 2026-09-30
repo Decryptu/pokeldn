@@ -35,27 +35,9 @@ Direct local wireless communication with retail Pokémon games, and the protocol
 such as an unofficial GTS or online battles. AI tools helped reverse engineer the protocols and write
 parts of the code.
 
-## Demonstration
-https://github.com/user-attachments/assets/b0df878e-67f0-483d-ae81-583cfc2a8692
-
-Recorded before the ESP32 radio, with a Linux Wi-Fi card (ALFA AWUS036ACHM).
-
-## Features
-
-- **FireRed / LeafGreen**: trade both ways (`.pk3` / `.ek3`), Mystery Gift both ways (Wonder Cards,
-  Wonder News, Battle Tower trainer), Union Room (chat, trading board, link battles), native code
-  through the gift link (save read and write, ROM map, per-frame hooks such as turbo, shiny counter,
-  IVs on screen, no encounters)
-- **Let's Go**: trade both ways under any link code; a box structure built here goes into the save
-- **Sword / Shield**: trade both ways, with or without a Link Code, with a PKHeX `.pk8`; Mystery
-  Gift (Pokémon, eggs, items, Battle Points, clothing); an editable League Card after a hosted trade
-- **Brilliant Diamond / Shining Pearl**: trade both ways in the Union Room (plain or password), ball
-  capsule exchange, record mixing, battle lobby
-- **Legends Arceus**: trade both ways under any link code, any Pokémon composed from nothing
-- **Scarlet / Violet**, **Legends Z-A**: trade both ways with a record composed from nothing
-- **Every game**: an offline toolkit for reading a retail title's own code (`tools/switch/`)
-
 ## Desktop app
+
+<img src=".github/assets/desktop-app.png" alt="The pokeldn desktop app offering a shiny Ditto for a FireRed trade" width="100%">
 
 The [releases](https://github.com/Decryptu/pokeldn/releases) carry a desktop app for macOS (Apple
 silicon), Windows and Linux. It includes the radio firmware and flashes the board, builds legal

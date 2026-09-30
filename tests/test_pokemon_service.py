@@ -42,6 +42,22 @@ def test_creation_import_and_launcher_preparation_remain_legal(service, game):
     assert final["legal"] and final["ot"] == imported["ot"]
 
 
+@pytest.mark.parametrize("game, species, edit", [
+    ("frlg", 132, {"shiny": True}),                      # a Gen 3 PID is chosen with the encounter, not patched in
+    ("frlg", 132, {"shiny": True, "version": "LG"}),
+    ("frlg", 6, {"shiny": True}),                        # an evolved starter must be raised to its evolution level
+    ("frlg", 2, {}),
+    ("pla", 36, {"level": 50}),                          # height and weight follow the evolved species
+    ("za", 16, {"level": 50}),                           # plus-move flags follow the level
+])
+def test_a_shiny_level_or_evolved_request_is_built_legal(service, game, species, edit):
+    built = service.make(game, species, TRAINER, **edit)
+    assert built["legal"]
+    assert built["shiny"] == edit.get("shiny", False)
+    if "level" in edit:
+        assert built["level"] == edit["level"]
+
+
 @pytest.mark.parametrize("game", ["sv", "za", "bdsp", "pla", "lgpe", "frlg"])
 def test_a_legal_sword_record_cannot_be_sent_to_another_game(service, game):
     data = base64.b64decode(service.make("swsh", 25, TRAINER)["data"])
