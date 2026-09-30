@@ -4,6 +4,7 @@ import flet as ft
 
 from pokeldn import pokemon as builder
 from gui import theme as t
+from gui.views.widgets import PixelActivity
 
 VERSIONS = {"firered": "FR", "leafgreen": "LG"}
 
@@ -16,6 +17,7 @@ class PokemonPicker:
         self.value = dict(value or {})
         self.species = t.dropdown([], None, on_select=self._pick, enable_filter=True, editable=True,
                                   menu_height=320, hint_text="Loading species...", disabled=True)
+        self.species.trailing_icon = PixelActivity("Loading species")
         self.level = t.field(value=str(self.value.get("level") or ""), hint="auto", mono=True, width=90,
                              on_change=lambda e: self._set("level", e.control.value))
         self.shiny = t.switch(bool(self.value.get("shiny")), lambda e: self._set("shiny", e.control.value))
@@ -24,11 +26,14 @@ class PokemonPicker:
         self.build_button = t.button("Build", self._build, "sparkles", disabled=True)
         self.result = ft.Container()
         self.control = ft.Column([
-            ft.Row([ft.Container(self.species, expand=True),
-                    ft.Column([t.text("Level", 11, t.MUTED), self.level], spacing=2),
-                    ft.Column([t.text("Shiny", 11, t.MUTED), self.shiny], spacing=2)],
-                   spacing=10, vertical_alignment=ft.CrossAxisAlignment.END),
-            ft.Row([self.nickname, self.build_button], spacing=10),
+            ft.Row([t.labeled_control("Species", self.species, expand=True),
+                    t.labeled_control("Level", self.level),
+                    t.labeled_control("Shiny", ft.Container(
+                        self.shiny, width=64, height=t.CONTROL_HEIGHT,
+                        alignment=ft.Alignment.CENTER))],
+                   spacing=10, vertical_alignment=ft.CrossAxisAlignment.START),
+            ft.Row([self.nickname, self.build_button], spacing=10,
+                   vertical_alignment=ft.CrossAxisAlignment.CENTER),
             self.result,
             t.secondary_button("Or use a Pokemon file", self._use_file, "file"),
         ], spacing=10)
@@ -49,6 +54,7 @@ class PokemonPicker:
             species, error = [], str(exc)
 
         def show():
+            self.species.trailing_icon = t.pixel_icon("chevron-down", color=t.MUTED)
             if error:
                 self.species.hint_text = "Unavailable"
                 self._message(error, t.RED)
@@ -66,7 +72,7 @@ class PokemonPicker:
             self.control.update()
             return
         self.build_button.disabled = True
-        self._message("PKHeX is looking for a legal encounter...", t.MUTED)
+        self._message("Finding a legal encounter...", t.MUTED, busy=True)
         self.control.update()
         try:
             level = int(self.value.get("level") or 0)
@@ -109,8 +115,10 @@ class PokemonPicker:
         self._show_result()
         self.control.update()
 
-    def _message(self, text: str, color: str) -> None:
-        self.result.content = t.text(text, 12, color, selectable=True)
+    def _message(self, text: str, color: str, busy: bool = False) -> None:
+        message = t.text(text, 12, color, selectable=True, expand=True if busy else None)
+        self.result.content = (ft.Row([PixelActivity("Building Pokemon"), message], spacing=8)
+                               if busy else message)
 
     def _show_result(self) -> None:
         if not self.value.get("file"):
@@ -145,6 +153,7 @@ class NamePicker:
                                    enable_filter=True, editable=True, menu_height=320,
                                    hint_text="Loading...", disabled=True)
         self.value = value
+        self.dropdown.trailing_icon = PixelActivity("Loading names")
         self.control = self.dropdown
         threading.Thread(target=self._load, daemon=True).start()
 
@@ -155,6 +164,7 @@ class NamePicker:
             names = None
 
         def show():
+            self.dropdown.trailing_icon = t.pixel_icon("chevron-down", color=t.MUTED)
             if names is None:
                 self.dropdown.hint_text = "Unavailable"
             else:

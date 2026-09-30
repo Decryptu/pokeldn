@@ -21,6 +21,7 @@ class Field:
     when: tuple[str, str] = ()    # (flag, value): the field applies only while that field has that value
     template: str = ""            # the value is passed as template.format(value), e.g. "ball={}"
     limits: tuple[tuple[str, int, str], ...] = ()   # (NAME, highest, why) for NAME=VALUE text
+    choice_help: tuple[tuple[str, str], ...] = ()
 
     @property
     def key(self) -> str:
@@ -73,7 +74,7 @@ HOOK = ("--buffer-script", "install-resident")
 FRLG_PATH = "Pokemon Center 2F, third attendant, Direct Corner, Trade Center"
 
 FRLG = Game("frlg", "FireRed & LeafGreen", "FRLG", "frlg.md", (
-    Tool("frlg-trade-host", "Trade", "bin/frlg_trade_host.py",
+    Tool("frlg-trade-host", "Trade (Host)", "bin/frlg_trade_host.py",
          "Host a Direct Corner trade. The console joins pokeldn's group.",
          ("Start the host and wait for 'Hosting Direct Corner' in the log.",
           f"{FRLG_PATH}, Join Group, then pick PkCamp.",
@@ -85,7 +86,7 @@ FRLG = Game("frlg", "FireRed & LeafGreen", "FRLG", "frlg.md", (
           Field("--channel", "Channel", "choice", default="11", choices=CHANNELS)),
          fixed=("--live", "--phy", "auto", "--slot", "0", "--out", "{received}/frlg-{stamp}.pk3"),
          doc="frlg_link.md"),
-    Tool("frlg-trade-join", "Trade (console hosts)", "bin/frlg_trade_join.py",
+    Tool("frlg-trade-join", "Trade (Join)", "bin/frlg_trade_join.py",
          "Join a trade group the console leads.",
          ("Start the joiner first: it scans until the console appears.",
           f"{FRLG_PATH}, Become Leader.",
@@ -133,7 +134,14 @@ FRLG = Game("frlg", "FireRed & LeafGreen", "FRLG", "frlg.md", (
           Field("--dump-size", "Bytes", "number", default="64", group="Save dump", when=SAVE_DUMP),
           Field("--resident", "Hook", "choice", default="turbo", when=HOOK, choices=(
               ("turbo", "Turbo"), ("shiny", "Shiny encounters"), ("ivs", "IVs on screen"),
-              ("noencounter", "No wild encounters"))),
+              ("noencounter", "No wild encounters")),
+                help="Applies until the next soft reset.", choice_help=(
+                    ("turbo", "Speeds up dialogue text. Movement and battle speed can be adjusted "
+                              "with --resident-param in All options."),
+                    ("shiny", "Shows a countdown to the next shiny wild encounter."),
+                    ("ivs", "Displays the lead Pokemon's six IVs and nature number on screen."),
+                    ("noencounter", "Disables grass, water and roaming encounters. "
+                                    "Fishing and Sweet Scent still work."))),
           Field("--write-unsafe", "Allow writes", "switch", default=False, when=HOOK,
                 help="A hook changes the running game until a soft reset. Docs: Code on the console."),
           Field(("--version", "--expect-console"), "Version", "choice", default="firered",
@@ -145,7 +153,7 @@ FRLG = Game("frlg", "FireRed & LeafGreen", "FRLG", "frlg.md", (
 LGPE_STEPS = "X, Communicate, Local Communication, Trade, enter the same link code, then search."
 
 LGPE = Game("lgpe", "Let's Go Pikachu & Eevee", "LGPE", "lgpe.md", (
-    Tool("lgpe-host", "Trade", "bin/lgpe_host.py",
+    Tool("lgpe-host", "Trade (Host)", "bin/lgpe_host.py",
          "Host a trade under a link code; the console joins.",
          ("Start the host first.", LGPE_STEPS, "Choose a Pokemon and confirm."),
          (offer("--offer"),
@@ -154,7 +162,7 @@ LGPE = Game("lgpe", "Let's Go Pikachu & Eevee", "LGPE", "lgpe.md", (
           FRESH_PID,
           Field("--seconds", "Seconds", "number", default="600")),
          fixed=("--first", "echo", "--received", "{received}/lgpe-{stamp}.pb7"), doc="lgpe.md"),
-    Tool("lgpe-join", "Trade (console hosts)", "bin/lgpe_join.py",
+    Tool("lgpe-join", "Trade (Join)", "bin/lgpe_join.py",
          "Join the console's trade search.",
          ("Start the joiner: it scans for up to five minutes.", LGPE_STEPS,
           "Offer and confirm once PkCamp shows."),
@@ -191,7 +199,7 @@ SWSH = Game("swsh", "Sword & Shield", "SwSh", "swsh.md", (
           Field("--record", "Or send a .wc8 file", "file", exts=("wc8",)),
           Field("--seconds", "Seconds", "number", default="300")),
          doc="swsh_gift.md"),
-    Tool("swsh-join", "Trade", "bin/swsh_connect.py", "Join the console's Link Trade search.",
+    Tool("swsh-join", "Trade (Join)", "bin/swsh_connect.py", "Join the console's Link Trade search.",
          ("Y-Comm, Link Trade, local communication, no code; press A on both messages.",
           "Start the joiner while the console searches.",
           "PkCamp appears on the trade screen: choose a Pokemon and confirm."),
@@ -202,7 +210,7 @@ SWSH = Game("swsh", "Sword & Shield", "SwSh", "swsh.md", (
          fixed=("--preset", "trade", "--send-snapshot", "live",
                 "--save-offered", "{received}/swsh-{stamp}.pk8"),
          doc="swsh_trade.md"),
-    Tool("swsh-host", "Trade (pokeldn hosts)", "bin/swsh_host.py", "Host a Link Trade the console joins.",
+    Tool("swsh-host", "Trade (Host)", "bin/swsh_host.py", "Host a Link Trade the console joins.",
          ("Start the host and wait for the network to come up.",
           "Y-Comm, Link Trade, local communication; press A on both messages, then wait in the overworld.",
           "Choose a Pokemon and confirm when PkCamp appears."),
@@ -218,7 +226,7 @@ SWSH = Game("swsh", "Sword & Shield", "SwSh", "swsh.md", (
 BDSP_ROOM = "Pokemon Center 2F, left attendant, plain Yes (no password, not the group option)."
 
 BDSP = Game("bdsp", "Brilliant Diamond & Shining Pearl", "BDSP", "bdsp.md", (
-    Tool("bdsp-join", "Trade", "bin/bdsp_connect.py",
+    Tool("bdsp-join", "Trade (Join)", "bin/bdsp_connect.py",
          "Join the console's Union Room as a character and trade.",
          (f"{BDSP_ROOM} Wait in the room, clear of the walls.",
           "Start the joiner. Wait for the character to appear and finish walking.",
@@ -236,7 +244,7 @@ BDSP = Game("bdsp", "Brilliant Diamond & Shining Pearl", "BDSP", "bdsp.md", (
                 "--complete-trade", "--src-var", "{src_var}",
                 "--trade-save-poke", "{received}/bdsp-{stamp}.pb8"),
          doc="bdsp_trade.md"),
-    Tool("bdsp-host", "Trade (pokeldn hosts)", "bin/bdsp_host.py",
+    Tool("bdsp-host", "Trade (Host)", "bin/bdsp_host.py",
          "Host a Union Room the console enters.",
          ("Start the host before the player enters the room.",
           f"{BDSP_ROOM} Our character appears.",
@@ -254,7 +262,7 @@ PLA_STEPS = ("Talk to the trade NPC in Jubilife Village: trade, local, past the 
 PLA_OFFER_HELP = "Pick a species; PKHeX builds a legal one. Empty offers pokeldn's own Azelf."
 
 PLA = Game("pla", "Legends Arceus", "PLA", "pla.md", (
-    Tool("pla-host", "Trade", "bin/pla_host.py",
+    Tool("pla-host", "Trade (Host)", "bin/pla_host.py",
          "Host a trade under a link code; the console joins.",
          ("Start the host first.", *PLA_STEPS, "Offer a Pokemon and confirm.",
           "Leave the host running until the trade ends: an interrupted trade locks trading for a while."),
@@ -264,7 +272,7 @@ PLA = Game("pla", "Legends Arceus", "PLA", "pla.md", (
          fixed=("--channel", "6", "--session-update", "--sustain", "--clock", "--data-exchange",
                 "--game-channel", "--trade-box", "--trade-box-collect", "{received}/pla-{stamp}"),
          doc="pla.md"),
-    Tool("pla-join", "Trade (console hosts)", "bin/pla_join.py",
+    Tool("pla-join", "Trade (Join)", "bin/pla_join.py",
          "Join the console's search. It hands pokeldn the host role, which the joiner takes on its own.",
          (*PLA_STEPS, "Start the joiner.", "Offer and confirm once the partner shows."),
          (offer("--offer", required=False, help=PLA_OFFER_HELP),
@@ -276,7 +284,7 @@ PLA = Game("pla", "Legends Arceus", "PLA", "pla.md", (
 SV_SEARCH = "X, Poke Portal, Link Trade, offline, then search."
 
 SV = Game("sv", "Scarlet & Violet", "SV", "sv.md", (
-    Tool("sv-join", "Trade", "bin/sv_join.py",
+    Tool("sv-join", "Trade (Join)", "bin/sv_join.py",
          "Join the console's Link Trade search.",
          (SV_SEARCH, "Start the joiner.", "Offer and confirm on the trade screen.",
           "If the console keeps refusing, leave and re-enter the search screen."),
@@ -288,7 +296,7 @@ SV = Game("sv", "Scarlet & Violet", "SV", "sv.md", (
                 "--session-join", "--answer-migration", "--net-ack", "--ack-flags", "0x00",
                 "--game-channel", "--announce-timeout", "20", "--rtt-delay", "0.3",
                 "--offer-out", "{received}/sv-{stamp}.pk9"), doc="sv.md"),
-    Tool("sv-host", "Trade (pokeldn hosts)", "bin/sv_host.py",
+    Tool("sv-host", "Trade (Host)", "bin/sv_host.py",
          "Host a trade the searching console joins.",
          ("Start the host first.", SV_SEARCH, "Offer and confirm on the trade screen."),
          (offer("--trade-offer"),
@@ -311,7 +319,7 @@ SV = Game("sv", "Scarlet & Violet", "SV", "sv.md", (
 ))
 
 ZA = Game("za", "Legends Z-A", "PLZA", "za.md", (
-    Tool("za-join", "Trade", "bin/za_join.py",
+    Tool("za-join", "Trade (Join)", "bin/za_join.py",
          "Join the console's Link Trade search.",
          ("Link Trade, local communication, search with the link code.",
           "Start the joiner. Refusals while seating are normal; let it run.",
@@ -323,7 +331,7 @@ ZA = Game("za", "Legends Z-A", "PLZA", "za.md", (
                 "--quiet-seat", "25", "--connect-timeout", "6", "--mac", "02:11:32:54:76:98", "--game",
                 "--offer-delay", "4", "--offer-out", "{received}/za-{stamp}.pa9"),
          doc="za.md"),
-    Tool("za-host", "Trade (pokeldn hosts)", "bin/za_host.py",
+    Tool("za-host", "Trade (Host)", "bin/za_host.py",
          "Host a trade the searching console joins.",
          ("Start the host first.",
           "X, Link Play, Link Trade, Nearby Players, the same code, then search.",

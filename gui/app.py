@@ -30,7 +30,7 @@ class App:
 
     def radio_port(self) -> str:
         """The chosen radio if it is plugged in, else the only board present."""
-        present = [p.device for p in board.ports() if p.supported]
+        present = [p.device for p in board.ports()]
         if self.settings.radio_port in present:
             return self.settings.radio_port
         return present[0] if len(present) == 1 else ""

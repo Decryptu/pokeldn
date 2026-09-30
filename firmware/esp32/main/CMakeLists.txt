@@ -1,9 +1,10 @@
-# The ESP32-S3 has no USB-UART bridge on a native-USB board: its host link is the chip's USB Serial/JTAG.
 idf_build_get_property(idf_target IDF_TARGET)
 if(idf_target STREQUAL "esp32s3")
     set(wire_driver esp_driver_usb_serial_jtag)
-else()
+elseif(idf_target STREQUAL "esp32")
     set(wire_driver esp_driver_uart)
+else()
+    message(FATAL_ERROR "pokeldn supports esp32 and esp32s3 targets only")
 endif()
 
 idf_component_register(

@@ -6,8 +6,8 @@
 #include <stdlib.h>
 #include <string.h>
 
-/* The host link is UART0 behind a USB-UART bridge on the classic ESP32, and the chip's own USB
-   Serial/JTAG port on the ESP32-S3 (a native-USB board has no bridge and no UART0 pins to use). */
+/* S3 uses native USB Serial/JTAG; ESP32 uses UART0. Connect the matching USB port.
+   docs/hardware_esp32.md, Supported boards. */
 #if CONFIG_IDF_TARGET_ESP32S3
 #define WIRE_USB 1
 #include "driver/usb_serial_jtag.h"
@@ -177,23 +177,19 @@ void wire_set_baud(uint32_t baud)
 }
 
 #if WIRE_USB
-/* usb_serial_jtag_write_bytes copies what fits in the TX ring and returns the count, and returns 0
-   for as long as no host is reading. The task sleeps inside it; a host that takes nothing for half
-   a second is gone, so the rest of the frame is dropped and counted rather than blocking the queue. */
+/* IDF 6.1 usb_serial_jtag.c queues a whole frame or returns 0 on timeout.
+   Drop after 500 ms without progress; a disconnected host must not hold the queue forever.
+   docs/hardware_esp32.md, The USB host link. */
 static void write_usb(const uint8_t *p, size_t n)
 {
-    int64_t progress = esp_timer_get_time();
-    while (n) {
-        const int wrote = usb_serial_jtag_write_bytes(p, n, pdMS_TO_TICKS(20));
-        if (wrote > 0) {
-            p += wrote;
-            n -= wrote;
-            progress = esp_timer_get_time();
-        } else if (esp_timer_get_time() - progress > 500000) {
+    const int64_t started = esp_timer_get_time();
+    while (usb_serial_jtag_write_bytes(p, n, pdMS_TO_TICKS(20)) != (int)n) {
+        if (esp_timer_get_time() - started > 500000) {
             atomic_fetch_add(&s_dropped, 1);
-            return;
+            break;
         }
     }
+    raise_max(&s_write_max_us, esp_timer_get_time() - started);
 }
 #endif
 
@@ -220,17 +216,17 @@ static void writer(void *arg)
         }
         memcpy(frame, m->bytes, n);
         free(m);
+#if !WIRE_USB
         /* uart_write_bytes spins on a full TX ring (IDF 6.1 uart.c:1662) and this task outranks
            the reader on its core, which it starved in the middle of esp_wifi_internal_tx: 111 ms
            sends under a line-rate flood. Sleep until the frame fits. docs/hardware_esp32.md */
         const int64_t waited = esp_timer_get_time();
-#if !WIRE_USB
         const size_t need = n + 4 + (n + 4) / 254 + 2 + 32;
         for (size_t free_size = 0;
              uart_get_tx_buffer_free_size(WIRE_UART, &free_size) == ESP_OK && free_size < need;)
             vTaskDelay(1);
-#endif
         raise_max(&s_write_max_us, esp_timer_get_time() - waited);
+#endif
         if (frame[0] == MSG_CREDIT && n == 5) {
             atomic_store(&s_credit_queued, false);
             const uint32_t credit = atomic_load(&s_credit_value);
@@ -304,7 +300,7 @@ static void deliver(const uint8_t *encoded, size_t used)
     if (took > 50000) wire_log("slow command 0x%02x: %u ms", frame[0], (unsigned)(took / 1000));
 }
 
-/* The UART driver is installed here, on core 1, because its interrupt is allocated on the core
+/* The host-link driver is installed on core 1 because its interrupt is allocated on the core
    that installs it. On core 0, with the Wi-Fi task, a console's receive flood lost 500 host
    commands in 7 s and none after. docs/hardware_esp32.md, The serial ceiling. */
 static void reader(void *arg)
@@ -314,7 +310,6 @@ static void reader(void *arg)
     usb_config.rx_buffer_size = 16384;
     usb_config.tx_buffer_size = 16384;
     ESP_ERROR_CHECK(usb_serial_jtag_driver_install(&usb_config));
-    xTaskCreatePinnedToCore(writer, "wire_tx", 4096, NULL, 20, NULL, 1);
 #else
     const uart_config_t config = {
         .baud_rate = 115200,
@@ -332,21 +327,21 @@ static void reader(void *arg)
        Scarlet seat's opening overflowed it 235 times. At 32 the margin is 640 us.
        docs/hardware_esp32.md, The serial ceiling. */
     ESP_ERROR_CHECK(uart_set_rx_full_threshold(WIRE_UART, 32));
-    xTaskCreatePinnedToCore(writer, "wire_tx", 4096, NULL, 20, NULL, 1);
     xTaskCreatePinnedToCore(events, "wire_ev", 2048, NULL, 21, NULL, 1);
 #endif
+    xTaskCreatePinnedToCore(writer, "wire_tx", 4096, NULL, 20, NULL, 1);
     static uint8_t chunk[512], encoded[WIRE_MAX_PAYLOAD + 32];
     size_t used = 0;
     bool overflow = false;
     for (;;) {
         const int64_t turn = esp_timer_get_time();
-        /* uart_read_bytes waits its timeout again for every ring item until `length` is met: a
-           host trickling 21-byte commands every 15 ms was read 461 ms late. Wait for one byte,
-           then take what is buffered. docs/hardware_esp32.md, The serial ceiling. */
 #if WIRE_USB
         /* The USB driver returns whatever is buffered as soon as there is any, so one call does both. */
         const int n = usb_serial_jtag_read_bytes(chunk, sizeof(chunk), pdMS_TO_TICKS(20));
 #else
+        /* uart_read_bytes waits its timeout again for every ring item until `length` is met: a
+           host trickling 21-byte commands every 15 ms was read 461 ms late. Wait for one byte,
+           then take what is buffered. docs/hardware_esp32.md, The serial ceiling. */
         size_t buffered = 0;
         uart_get_buffered_data_len(WIRE_UART, &buffered);
         const int n = buffered

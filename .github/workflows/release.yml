@@ -20,7 +20,7 @@ jobs:
         include:
           - target: esp32
             file: pokeldn-radio.bin
-          - target: esp32s3   # this fork's board.py/wire.c addition; upstream is classic-ESP32 only
+          - target: esp32s3
             file: pokeldn-radio-s3.bin
     steps:
       - uses: actions/checkout@v7
@@ -31,8 +31,7 @@ jobs:
           cd firmware/esp32
           idf.py set-target ${{ matrix.target }}
           idf.py build
-          idf.py merge-bin -o ${{ matrix.file }}
-          cp "$(find . -name ${{ matrix.file }} | head -n 1)" "$GITHUB_WORKSPACE/${{ matrix.file }}"
+          idf.py merge-bin -o "$GITHUB_WORKSPACE/${{ matrix.file }}"
       - uses: actions/upload-artifact@v7
         with:
           name: firmware-${{ matrix.target }}

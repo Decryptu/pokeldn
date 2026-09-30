@@ -25,8 +25,10 @@ BUILD_DIR = os.path.join(PROJECT_ROOT, "scratchpad", "esp", "build-radio")
 
 
 def find_port() -> str | None:
-    ports = sorted(p for pattern in esp32_wlan.SERIAL_PORT_GLOBS for p in glob.glob(pattern))
-    return ports[0] if len(ports) == 1 else None
+    try:
+        return esp32_wlan.auto_port()
+    except RuntimeError:
+        return None
 
 
 def flash(port: str, build_dir: str = BUILD_DIR, log=print) -> None:
@@ -34,7 +36,7 @@ def flash(port: str, build_dir: str = BUILD_DIR, log=print) -> None:
     envs = sorted(glob.glob(os.path.join(PROJECT_ROOT, "scratchpad", "esp", "idf-tools",
                                          "python_env", "*", "bin", "python")))
     python = envs[-1] if envs else sys.executable
-    cmd = [python, "-m", "esptool", "--chip", "esp32", "-p", port, "-b", "460800",
+    cmd = [python, "-m", "esptool", "--chip", "auto", "-p", port, "-b", "460800",
            "--before", "default-reset", "--after", "hard-reset", "write-flash", "@flash_args"]
     log("[flash] " + " ".join(cmd))
     subprocess.run(cmd, cwd=build_dir, check=True)
@@ -103,6 +105,7 @@ def main(argv=None) -> int:
     ap = argparse.ArgumentParser(description=__doc__.splitlines()[0])
     ap.add_argument("--port", help="serial port (default: the only USB serial port present)")
     ap.add_argument("--flash", action="store_true", help=f"flash {BUILD_DIR} first")
+    ap.add_argument("--build-dir", default=BUILD_DIR, help="ESP-IDF build directory for the connected chip")
     ap.add_argument("--channels", default="1,6,11")
     ap.add_argument("--dwell", type=float, default=2.0, help="seconds per channel")
     ap.add_argument("--keys", help="prod.keys, to decode the advertisements with the LDN library")
@@ -114,7 +117,7 @@ def main(argv=None) -> int:
         print("no single USB serial port found; pass --port", file=sys.stderr)
         return 2
     if args.flash:
-        flash(port)
+        flash(port, args.build_dir)
         time.sleep(1.0)
     keys = None
     if args.keys:
