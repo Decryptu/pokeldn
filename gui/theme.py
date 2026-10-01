@@ -1,4 +1,5 @@
 import flet as ft
+import flet.canvas as cv
 
 from gui.icons import icon as pixel_icon
 
@@ -307,8 +308,36 @@ def fade(scrollable: ft.ScrollableControl, size: float = 24) -> ft.ShaderMask:
 
 
 def step_list(steps: list[str]) -> ft.Column:
-    return ft.Column([ft.Row([text(str(n), 12, BLUE, weight=ft.FontWeight.W_600, width=14,
-                                   text_align=ft.TextAlign.RIGHT),
-                              text(step, 13, SOFT, expand=True)],
-                             spacing=10, vertical_alignment=ft.CrossAxisAlignment.START)
-                      for n, step in enumerate(steps, start=1)], spacing=10, tight=True)
+    rows = []
+    for index, step in enumerate(steps):
+        first, last = index == 0, index == len(steps) - 1
+        lead = 22 if first else 0
+        gap = 0 if last else 14
+
+        def resize(e, initial=first, final=last, top=lead, bottom=gap):
+            center = top + (e.height - top - bottom) / 2
+            stroke = ft.Paint(color=MUTED, stroke_width=1, style=ft.PaintingStyle.STROKE)
+            shapes = [cv.Circle(9, center, 4,
+                                paint=ft.Paint(color=MUTED, stroke_width=1.5, style=ft.PaintingStyle.STROKE))]
+            if initial:
+                end = center - 7
+                shapes.append(cv.Line(9, 0, 9, end, paint=ft.Paint(
+                    stroke_width=1, style=ft.PaintingStyle.STROKE,
+                    gradient=ft.PaintLinearGradient(begin=ft.Offset(9, 0), end=ft.Offset(9, end),
+                                                   colors=[ft.Colors.with_opacity(0, MUTED), MUTED]))))
+            ranges = ([] if initial else [(0, center - 7)])
+            if not final:
+                ranges.append((center + 7, e.height))
+            for start, end in ranges:
+                y = start
+                while y < end:
+                    shapes.append(cv.Line(9, y, 9, min(y + 3, end), paint=stroke))
+                    y += 7
+            e.control.shapes = shapes
+            e.control.update()
+
+        rows.append(ft.Row([
+            cv.Canvas([], width=18, on_resize=resize),
+            ft.Container(text(step, 13), expand=True, padding=ft.Padding(0, lead, 0, gap)),
+        ], spacing=10, intrinsic_height=True, vertical_alignment=ft.CrossAxisAlignment.STRETCH))
+    return ft.Column(rows, spacing=0, tight=True)
