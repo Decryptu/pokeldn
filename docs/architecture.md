@@ -135,12 +135,14 @@ repeated offer flags:
 | Brilliant Diamond/Shining Pearl host and join | `--offer` / `--trade-template`, repeated | the last is offered again |
 | Legends Arceus host and join | `--trade-box-record` / `--offer`, repeated; the joiner hands the list to the host role | the last is offered again |
 | Scarlet/Violet host and join | `--trade-offer`, repeated | the stage stops answering |
+| Sword/Shield host and join | `--offer-file`, repeated; the console leaves after each trade, so each record waits for its next search | host: the last is offered again; join: the run ends |
 | Legends Z-A host and join | `--trade-offer`, repeated; each new record is previewed when its trade starts | the last is offered again, under a new PID with `--fresh-pid` |
 
 `--fresh-pid` gives every queued record its own PID and encryption constant. Trade N above 1 writes
 what it received to the output path with `-N` before the extension (FireRed/LeafGreen: `_tradeN_` and
 the species; Scarlet/Violet: `.N`, counted by distinct offers; Brilliant Diamond/Shining Pearl host:
-`_N`; Legends Z-A: `-N`). Let's Go join and Sword/Shield trade once per session and take one Pokemon.
+`_N`; Legends Z-A and Sword/Shield: `-N`). Let's Go join trades once per session and takes one
+Pokemon.
 
 ## Local files and releases
 

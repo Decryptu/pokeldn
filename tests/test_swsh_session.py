@@ -100,7 +100,7 @@ def test_the_host_uses_the_live_snapshot_and_replaces_the_offered_slot(tmp_path,
                                                 "--trainer-name", "PkCamp", "--trainer-tid", "12345",
                                                 "--trainer-sid", "54321", "--fresh-pid"])
     advert = swsh_host.build_advert(player_name="PkCamp")
-    snapshot, offer = swsh_host.prepare_snapshot(peer, args, advert)
+    snapshot, offer = swsh_host.prepare_snapshot(peer, args, advert, args.offer_file[0])
     fields = trade_payload.read(snapshot)
     profile = trade_payload.read_tail(snapshot)
     assert fields["trainer_name"] == fields["card_name"] == "PkCamp"

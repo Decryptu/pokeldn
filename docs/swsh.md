@@ -66,3 +66,5 @@ fills before the script resumes). A call is `PUSH` per argument, right to left, 
   `0x2D`, and from PKHeX `RestrictVersion` (1 Sword, 2 Shield, 3 both).
 - [Mystery Gift](swsh_gift.md#what-the-menu-refuses): whether `0x010b6110` or `0x010159d0` checks
   legality (illegal moves were accepted on retail).
+- [A trade queue](swsh_trade.md#hosting-a-trade): whether a retail Sword's next search joins the
+  network it has just traded on, and how long a retail host takes to advertise again after a trade.

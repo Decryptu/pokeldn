@@ -27,7 +27,8 @@ species can legally have in that game, and Build refuses a combination PKHeX fin
 reason.
 
 Add a trade, below the Pokemon, queues up to six for one session; each completed trade offers the
-next. It shows on every trade tool except Let's Go join and Sword/Shield, which trade once per session. Each trade's received Pokemon gets its own file.
+next. It shows on every trade tool except Let's Go join, which trades once per session. A Sword or Shield
+leaves after each trade: search again on the console for the next one. Each trade's received Pokemon gets its own file.
 
 The Pokemon the console sends you are saved in `Documents/pokeldn/Received`.
 

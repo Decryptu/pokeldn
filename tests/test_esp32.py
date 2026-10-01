@@ -1047,3 +1047,69 @@ def test_windows_auto_port_enumerates_usb_without_opening_it(monkeypatch):
     found.append(SimpleNamespace(device="COM5", vid=0x10C4))
     with pytest.raises(RuntimeError, match="exactly one"):
         esp32_wlan.auto_port()
+
+
+def test_sword_host_and_joiner_trade_a_queue_across_two_sessions(tmp_path, monkeypatch):
+    """bin/swsh_connect.py against bin/swsh_host.py, two offers each: a Sword ends the session after
+    a trade, so the joiner leaves, joins again, and each side offers its next record."""
+    import threading
+
+    import swsh_connect
+    import swsh_host
+    from test_swsh_trade_payload import a_payload
+    from pokeldn import gen8, pokemon as pokemon_service
+    from pokeldn.ldn import userspace_ip
+    from pokeldn.swsh import pokemon
+
+    monkeypatch.setenv("POKELDN_RADIO", "esp32:simulated")
+    monkeypatch.setattr(pokemon_service, "prepare_file", lambda game, path, **kw: path)
+    monkeypatch.setattr(pokemon_service, "prepare", lambda game, raw, **kw: gen8.decrypt(raw))
+    keys_file = tmp_path / "prod.keys"
+    keys_file.write_text("".join(f"{k} = {v.hex()}\n" for k, v in KEYS.items()))
+    party = a_payload(count=4)
+    (tmp_path / "snapshot.bin").write_bytes(party)
+    for slot in range(4):
+        (tmp_path / f"offer{slot}.pk8").write_bytes(party[slot * gen8.SIZE_PARTY:(slot + 1) * gen8.SIZE_PARTY])
+    air = esp32_sim.Air()
+    host_radio = esp32.Radio(esp32_sim.SimulatedBoard(air).host_stream())
+    join_radio = esp32.Radio(esp32_sim.SimulatedBoard(air).host_stream())
+    threads = {}
+
+    @contextlib.asynccontextmanager
+    async def factory():
+        radio = join_radio if threading.current_thread() is threads.get("join") else host_radio
+        esp = esp32_wlan.EspFactory(radio, port_factory=userspace_ip.userspace_port, join_timeout=5)
+        try:
+            yield esp
+        finally:
+            esp.router.close()
+
+    result = {}
+    threads["host"] = threading.Thread(target=lambda: result.setdefault("host", swsh_host.main(
+        ["--keys", str(keys_file), "--channel", "6", "--seconds", "60",
+         "--snapshot", str(tmp_path / "snapshot.bin"), "--received", str(tmp_path / "host.pk8"),
+         "--offer-file", str(tmp_path / "offer0.pk8"), "--offer-file", str(tmp_path / "offer1.pk8")])),
+        daemon=True)
+    threads["join"] = threading.Thread(target=lambda: result.setdefault("join", swsh_connect.main(
+        ["--keys", str(keys_file), "--preset", "trade", "--channels", "6", "--dwell", "0.5",
+         "--hold", "30", "--next-after", "2", "--rescan-seconds", "20",
+         "--save-offered", str(tmp_path / "join.pk8"),
+         "--offer-file", str(tmp_path / "offer2.pk8"), "--offer-file", str(tmp_path / "offer3.pk8")])),
+        daemon=True)
+    wlan.set_factory(factory)
+    try:
+        threads["host"].start()
+        time.sleep(2)
+        threads["join"].start()
+        threads["join"].join(120)
+        threads["host"].join(120)
+    finally:
+        wlan.set_factory(None)
+        host_radio.close()
+        join_radio.close()
+    assert result == {"host": 0, "join": 0}
+
+    def species(name):
+        return pokemon.read(pokemon.encrypt(gen8.load((tmp_path / name).read_bytes())))["species"]
+    assert [species("join.pk8"), species("join-2.pk8")] == [94, 95]
+    assert [species("host.pk8"), species("host-2.pk8")] == [96, 97]

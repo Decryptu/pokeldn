@@ -108,6 +108,12 @@ League Card question; a retail Sword sends box command 3 and deauthenticates, sa
 Sword host sends box command 3 and MIGRATION_START; a host migrating after the save leaves the
 joiner with an interrupted-communication error.
 
+One trade is one session, so a queue spans sessions. `bin/swsh_host.py` keeps its network up and
+gives the next joiner the next `--offer-file`; `bin/swsh_connect.py` leaves `--next-after` seconds
+(default 30) after phase 4 and scans `--rescan-seconds` for the next session. The two launchers
+traded two queued records each across two sessions on simulated boards
+(`tests/test_esp32.py::test_sword_host_and_joiner_trade_a_queue_across_two_sessions`).
+
 ## The box state machine
 
 Content 30 carries everything from the trade screen to the offer. `onBoxSyncStateCommand`
