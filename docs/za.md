@@ -705,7 +705,8 @@ resets both states to 2 and both rounds to 0 ([The trade commands](#the-trade-co
 
 The joiner takes a repeated `--trade-offer`: 2.7 s after its fourth step it previews the next record
 and picks it on the console's next pick, under round 0. `bin/za_join.py` and `bin/za_host.py` trade a
-queue of records in order over ldn_mitm (`tests/test_za_host.py` scripts the joiner's side).
+queue of records in order over ldn_mitm (`tests/test_za_host.py` scripts the joiner's side), and the
+joiner traded two queued records with a retail Z-A host on one seat.
 
 A seat formed late in the console's host phase is handed over: the first datagram comes late, no
 update sequence 1 follows, and the console repeats Session type 9 once a second (start host migration
