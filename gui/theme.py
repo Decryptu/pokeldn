@@ -76,15 +76,20 @@ def panel(content: ft.Control, width: float | None = None, expand=None, padding=
     return glass(ft.Container(content, padding=padding), width=width, expand=expand)
 
 
+TOOLBAR_ITEM = 32   # the icon buttons are this size
+TOOLBAR_INSET = 4
+
+
 def notch(*controls: ft.Control) -> ft.Row:
-    """A small glass toolbar centred over the content; its groups are split by hairlines."""
+    """A small glass toolbar centred over the content; its groups are split by hairlines.
+    Its corners are concentric with its items': outer radius = item radius + the even inset."""
     items: list[ft.Control] = []
     for control in controls:
         if items:
             items.append(ft.Container(width=1, height=18, bgcolor=ft.Colors.with_opacity(0.12, "#FFFFFF")))
         items.append(control)
-    return ft.Row([glass(ft.Container(ft.Row(items, spacing=8, tight=True), padding=ft.Padding(4, 4, 4, 4)),
-                         radius=22)],
+    row = ft.Row(items, spacing=8, tight=True, vertical_alignment=ft.CrossAxisAlignment.CENTER)
+    return ft.Row([glass(ft.Container(row, padding=TOOLBAR_INSET), radius=TOOLBAR_ITEM / 2 + TOOLBAR_INSET)],
                   alignment=ft.MainAxisAlignment.CENTER)
 
 
@@ -247,7 +252,8 @@ def segmented(options: list[tuple[str, str, str]], value: str, on_change) -> ft.
                 pixel_icon(icon, color=BLUE if key == selected else FAINT),
                 text(label, 12, TEXT if key == selected else MUTED, weight=ft.FontWeight.W_600),
             ], spacing=6, tight=True),
-                padding=ft.Padding(12, 5, 14, 5), border_radius=16,
+                height=TOOLBAR_ITEM, padding=ft.Padding(12, 0, 14, 0), border_radius=TOOLBAR_ITEM / 2,
+                alignment=ft.Alignment.CENTER,
                 bgcolor=ft.Colors.with_opacity(0.14, "#FFFFFF") if key == selected else None,
                 on_click=lambda e, k=key: pick(k))
             for key, label, icon in options]
