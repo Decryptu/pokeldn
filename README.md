@@ -24,7 +24,7 @@ installed on the Switch or Switch 2. Seven games are supported:
 ✓ works on a retail console · ✗ not done · ∅ the game has no such feature over local wireless
 FRLG FireRed/LeafGreen · LGPE Let's Go Pikachu/Eevee · SwSh Sword/Shield · BDSP Brilliant Diamond/Shining Pearl · PLA Legends Arceus · SV Scarlet/Violet · PLZA Legends Z-A
 
-Every game has completed a trade through the ESP32 board. Protocol documentation:
+Every game trades through the ESP32 board. Protocol documentation:
 [decryptu.github.io/pokeldn](https://decryptu.github.io/pokeldn/).
 
 ---
@@ -123,8 +123,9 @@ it receives to `output.pk3`. Defaults come from `config/host.toml`, then the ign
 2. On the Switch: Direct Corner, Join Group, pick pokeldn's trainer. Wait until the host reports
    that trade selection is active.
 3. Select the Pokémon to trade away and confirm.
-4. After the save sequence returns to the trade menu, wait for the host prompt, then **CANCEL**,
-   **YES**. The room exit and disconnect finish on their own.
+4. The console returns to the trade menu after each trade. `--trades N` (1 to 6) offers party
+   slots 0 to N-1, one per trade, on the same link. After the last trade, wait for the host prompt,
+   then **CANCEL**, **YES**; the room exit and disconnect follow on their own.
 
 | flag | purpose |
 |---|---|
@@ -133,15 +134,16 @@ it receives to `output.pk3`. Defaults come from `config/host.toml`, then the ign
 | `--capture FILE` | JSONL diagnostic capture |
 | `--config` / `--local-config` / `--no-local-config` | replace or disable a config layer |
 | `--ot NAME`, `--version firered\|leafgreen`, `--id TID[:SID]` | per-run trainer overrides (0..65535 each; the LinkPlayer ID is `(SID << 16) \| TID`) |
-| `--verbose` | per-packet output; `--replay` of a capture only, it stalls a live console |
+| `--verbose` | per-packet output, logged synchronously inside the frame-timed loop; use it with `--replay` only |
 
 `DEFAULT_TRAINER` in [`pokeldn/config.py`](pokeldn/config.py) holds the defaults with no flag
 (gender, language, National Dex). The link protocol is in [The link protocol](docs/frlg_link.md).
 
-**Union Room.** `--union-room` advertises on the middle NPC's path; the console takes about ten
-seconds to see itself connected. `--board-type normal` registers the offered Pokémon on the trading
-board, `--union-room-chat` with `--chat-message` / `--chat-file` chats, `--union-room-battle
---battle-fight` battles (the console needs two non-egg Pokémon at level 30 or lower).
+**Union Room.** `--union-room` advertises on the middle NPC's path; the console shows itself
+connected after the keepalive wait, about 10 s ([The link protocol](docs/frlg_link.md)). A Union
+Room link carries one trade, then the console returns to the field (`union_room.c:1744`).
+`--board-type normal` registers the offered Pokémon on the trading board, `--union-room-chat` with
+`--chat-message` / `--chat-file` chats, `--union-room-battle --battle-fight` battles (the console needs two non-egg Pokémon at level 30 or lower).
 
 ```bash
 ./.venv/bin/python bin/frlg_trade_host.py --union-room --union-room-keepalive 120 PARTY1.pk3 PARTY2.pk3
@@ -186,14 +188,16 @@ The trade screen alternates hosting and scanning, so pokeldn can host or join. B
 identity message: the joiner the one `pokeldn.lgpe.reference` ships, the host the console's own back
 (`--first echo`) or a file. Both offer a 232-byte PB7 (`pokeldn.lgpe.pb7`; `--offer echo` returns the
 console's own). The host's `--next-offer` and the joiner's repeated `--offer` queue one record per
-later trade on the same seat.
+later trade on the same seat. The joiner's `--leave-after S` backs out S seconds after it answers
+the first trade step, the way a player leaves the trade screen; without it the seat stays up for
+later trades.
 
 ```bash
 ./.venv/bin/python bin/lgpe_host.py --seconds 600 --player-name PkCamp \
   --first echo --our-trainer 41234:12345 --offer offer.pb7
 ./.venv/bin/python bin/lgpe_join.py --connect --connect-seconds 300 \
   --ack-peer-clock --ack-re-announce \
-  --our-trainer 41234:12345 --offer offer.pb7 --leave-after 15
+  --our-trainer 41234:12345 --offer offer.pb7
 ```
 
 Console: Communiquer, Communication locale, Échange, link code Pikachu ×3, wait on the search
@@ -216,9 +220,8 @@ POKELDN_RADIO=esp32:auto ./.venv/bin/python bin/swsh_host.py --keys PROD_KEYS \
 The host builds its own station advertisement and rewrites the joining console's live snapshot.
 When hosting, the console joins from Y-Comm → Link Trade → trade, after A on both messages that
 follow; `--received FILE` saves what it sends, `--code 12345678` hosts for a Link Code search.
-`--advert` and `--snapshot` still accept saved records for comparison. A repeated `--offer-file`
-queues Pokemon in both roles: the console leaves after each trade, and its next search trades the
-next file. Details: [Trading](docs/swsh_trade.md).
+`--advert` and `--snapshot` still accept saved records for comparison. The host takes a repeated `--offer-file`, one per trade on the session. Details:
+[Trading](docs/swsh_trade.md).
 
 Mystery Gift needs no session; the gift screen scans and a distributor advertises the card. Console:
 Mystery Gift → receive a gift → via local wireless.
@@ -250,7 +253,10 @@ walls.
   --trade-template offer.pb8 --trade-nickname PKCAMP --src-var 0x2B7F4C12
 ```
 
-A join lands about one attempt in eight; `--room-pattern fixed` bursts fifteen. Use a fresh
+Association can fail (`Connect failed with status code 1`); retry the run before diagnosing
+([Session](docs/bdsp_session.md)). `--room-pattern fixed` sends joins until the console asks for the
+character's state, at most `--room-walk` (15 above). A repeated `--trade-template` queues one
+Pokémon per trade in the session; the last is offered again. Use a fresh
 `--src-var` every run (the console keeps ids it has seen), and after a hand-stopped run the player
 leaves and re-enters the room. `--complete-trade` lets the console write its save; without it the
 trade stops at the last confirmation. Once the character has appeared and finished walking: Y →
@@ -263,13 +269,15 @@ trade emote (Y → communication menu → trade Pokémon):
 ./.venv/bin/python bin/bdsp_host.py --offer offer.pb8 --complete-trade --capture bh01.jsonl
 ```
 
-`--offer` must be a legal PB8 whose PID the save does not hold. `--password 00000000` hosts a room
+`--offer` must be a legal PB8 whose PID the save does not hold; repeated, it queues one per trade,
+the last offered again. `--password 00000000` hosts a room
 entered with that password. See [Brilliant Diamond and Shining Pearl](docs/bdsp.md).
 
 ### Legends Arceus
 
-The trade screen registers its protocols only while it hosts, so pokeldn hosts and the console joins by
-link code.
+A console hosting a trade hands the host role to the station that joins ([Legends Arceus](docs/pla.md)).
+`bin/pla_host.py` hosts and the console joins by link code; `bin/pla_join.py` joins the console's
+search and takes the host role it is handed.
 
 ```bash
 ./.venv/bin/python bin/pla_host.py --code 00000000 --channel 6 --seconds 1800 \
@@ -281,12 +289,14 @@ link code.
 
 Console: Simona at Jubilife Village → trade → someone nearby → the same eight-digit code, offer a
 Pokémon and confirm. The host re-reads its record file between offers and writes each record the console
-shows to `--trade-box-collect`. `pokeldn.pla.pokemon` reads, writes and `build`s a record from 376
+shows to `--trade-box-collect`; a repeated `--trade-box-record` queues one record per trade in the
+session, the last offered again. `pokeldn.pla.pokemon` reads, writes and `build`s a record from 376
 zero bytes; `pokeldn.pla.stats` computes stats and size. See [Legends Arceus](docs/pla.md).
 
 ### Scarlet and Violet
 
-The offline Link Trade search alternates scanning and hosting, so pokeldn hosts and the console joins.
+The offline Link Trade search alternates scanning and hosting, so pokeldn hosts (`bin/sv_host.py`) or
+joins (`bin/sv_join.py`).
 
 ```bash
 ./.venv/bin/python bin/sv_host.py --seconds 240 --player-name RyuPlayer \
@@ -296,14 +306,14 @@ The offline Link Trade search alternates scanning and hosting, so pokeldn hosts 
   --trade-offer offer.hex --offer-after-open 8
 ```
 
-Console: X → Poké Portal → Link Trade → offline, no code → search. The wire-level requirements
+Console: X → Poké Portal → Link Trade → offline, no code → search. A repeated `--trade-offer`
+offers one record per trade in the same seat. The wire-level requirements
 (identity message order, acknowledgement `lowest_pending`) are in [Scarlet and Violet](docs/sv.md).
 
 ### Legends Z-A
 
 The Link Trade search alternates hosting and scanning, so pokeldn joins or hosts. Console: Link Trade →
-local communication → search with code 00000000. The board usually seats on the first scan and the
-joiner rescans until one seats.
+local communication → search with code 00000000. The joiner rescans until it takes a seat.
 
 ```bash
 # host: start it first, then search on the console

@@ -292,7 +292,6 @@ async def main_async(args):
                         step = swsh_trade.parse_sync_step(member["body"])
                         if step is not None and step[0] >= LADDER_FINAL_PHASE:
                             if not st["ladder_finished"]:
-                                st["ladder_finished_at"] = now
                                 show_done()
                                 print(f"\n[rx] *** THE LADDER IS FINISHED - phase {step[0]} is the "
                                       f"teardown rung, THE ABORT STANDS DOWN *** "
@@ -1515,11 +1514,6 @@ async def main_async(args):
             hold_until = time.monotonic() + args.hold
             while time.monotonic() < hold_until:
                 await trio.sleep(0.25)
-                if (getattr(args, "more_queued", False) and st["ladder_finished"]
-                        and time.monotonic() - t0 >= st["ladder_finished_at"] + args.next_after):
-                    print(f"\n[tx] leaving {args.next_after:.0f} s after the ladder; the next "
-                          f"queued Pokemon waits for the next search")
-                    break
                 if stall_abort(st["confirm_last_step"], time.monotonic() - t0,
                                args.abort_on_stall, st["ladder_finished"]):
                     print(f"\n[tx] *** THE LADDER STALLED FOR {args.abort_on_stall:.1f} s - "
@@ -1528,7 +1522,7 @@ async def main_async(args):
                           f"{len(st['confirm_steps_seen'])} distinct steps")
                     break
             nursery.cancel_scope.cancel()
-        # Closed before the network is released; a queue opens one per session.
+        # Closed before the network is released.
         sock.close()
 
         windows = " / ".join(
@@ -1567,7 +1561,6 @@ async def main_async(args):
                their_ack_id=st["their_ack_id"],
                broadcast_ack_ids=sorted(st["broadcast_ack_ids"]),
                broadcast_stray_ids=sorted(st["broadcast_stray_ids"]))
-        args.traded = st["ladder_finished"]
     if cap:
         cap.close()
     return 0
@@ -1970,17 +1963,10 @@ def build_parser():
     ap.add_argument("--offer-slot", type=lambda s: int(s, 0), default=0,
                     help="which party slot of --send-snapshot to offer back, 1-6; 0 offers "
                          "nothing and only records what the console offers us")
-    ap.add_argument("--offer-file", action="append", default=[], metavar="FILE",
+    ap.add_argument("--offer-file", default=None, metavar="FILE",
                     help="a .pk8 to put in --offer-slot in place of the snapshot's record: stored "
                          "or party form, encrypted or PKHeX's decrypted export. Its OT name and "
-                         "ids become the snapshot's unless --offer-file-as-is. Repeatable: a "
-                         "Sword ends the session after each trade, so each file waits for the "
-                         "console's next search")
-    ap.add_argument("--next-after", type=float, default=30.0,
-                    help="with more files queued, leave this long after the ladder finishes, "
-                         "once the console has saved, and scan for its next search")
-    ap.add_argument("--rescan-seconds", type=float, default=300.0,
-                    help="with more files queued, how long to scan for the console's next search")
+                         "ids become the snapshot's unless --offer-file-as-is")
     ap.add_argument("--offer-file-as-is", action="store_true",
                     help="keep the file's own OT name and trainer ids")
     ap.add_argument("--offer-species", type=lambda s: int(s, 0), default=None,
@@ -2007,7 +1993,7 @@ def build_parser():
     ap.add_argument("--save-offer", default=None, metavar="FILE",
                     help="write the PK8 we will offer to this file, before the radio is touched")
     ap.add_argument("--save-offered", default=None, metavar="FILE",
-                    help="write the PK8 the console offers to this file; trade N > 1 writes FILE-N")
+                    help="write the PK8 the console offers to this file")
     ap.add_argument("--rpc-clock-delta", type=lambda s: int(s, 0), default=5,
                     help="how far to advance a trade RPC's clock in our answer. 5 is nxldn-lab's "
                          "and is the one number in this path nothing here has measured")
@@ -2062,32 +2048,6 @@ def build_parser():
     return ap
 
 
-def run_queue(args, queue, run=lambda args: trio.run(main_async, args), clock=time.monotonic,
-              sleep=time.sleep):
-    """One session per queued file: a Sword leaves after each trade and searches anew
-    (docs/swsh_trade.md). Without a queue, one session as before."""
-    saved = args.save_offered
-    trades = 0
-    deadline = None
-    while True:
-        args.offer_file = queue[trades] if queue else None
-        args.more_queued = trades + 1 < len(queue)
-        args.save_offered = pokemon_service.trade_path(saved, trades + 1)
-        args.traded = False
-        code = run(args)
-        if args.traded:
-            trades += 1
-            print(f"[cx] trade {trades} complete")
-            if trades >= len(queue):
-                return code
-            deadline = clock() + args.rescan_seconds
-            print(f"[cx] {len(queue) - trades} queued; search again on the console")
-        elif deadline is None or code not in (3, 5) or clock() >= deadline:
-            return code
-        else:
-            sleep(1.0)
-
-
 def main(argv=None):
     argv = sys.argv[1:] if argv is None else list(argv)
     preset = build_parser().parse_known_args(argv)[0].preset
@@ -2101,12 +2061,10 @@ def main(argv=None):
         offer_edits(args)
     except ValueError as e:
         build_parser().error(str(e))
-    queue = args.offer_file
-    if queue:
+    if args.offer_file:
         edits = offer_edits(args)
-        queue = [pokemon_service.prepare_file("swsh", path,
-                                              transform=lambda raw: swsh_pokemon.build_from(raw, **edits))
-                 for path in queue]
+        args.offer_file = pokemon_service.prepare_file("swsh", args.offer_file,
+            transform=lambda raw: swsh_pokemon.build_from(raw, **edits))
         args.offer_file_as_is = True
         for key in ("species", "ability", "level", "experience", "nickname", "ot", "ivs", "moves"):
             setattr(args, "offer_" + key, None)
@@ -2114,7 +2072,7 @@ def main(argv=None):
     if needs_root():
         build_parser().error("must run as root (LDN needs the raw radio)")
     try:
-        return run_queue(args, queue)
+        return trio.run(main_async, args)
     except BaseException as e:
         print(f"[cx] {type(e).__name__}: {e}")
         for sub in getattr(e, "exceptions", ()) or ():

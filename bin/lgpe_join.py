@@ -298,7 +298,7 @@ def build_parser():
                          "which presents the joiner as the station it is trading with")
     ap.add_argument("--leave-after", type=float, default=None, metavar="SECONDS",
                     help="leave the session the way a console backs out of its trade screen, "
-                         "this long after our offer went out (docs/lgpe_session.md)")
+                         "this long after the first trade step we answered (docs/lgpe_session.md)")
     ap.add_argument("--received", help="write the peer's offered PB7 here")
     ap.add_argument("--fresh-pid", action="store_true",
                     help="offer every --offer structure under a new PID and encryption constant, "

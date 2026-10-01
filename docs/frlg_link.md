@@ -15,13 +15,17 @@ Measured on retail hardware or read out of [pret/pokefirered](https://github.com
 `RfuMain2_Parent` keeps one child slot per poll in `gRfu.childRecvBuffer[i]` and checks its rolling
 `childSendCmdId` tag is the last kept `+1 mod 8` [link_rfu_2.c:876-892]. A bad tag increments
 `numChildRecvErrors[i]`; `> 4` calls `RfuSetErrorParams` and kills the link; a good tag resets it, so
-death needs five consecutive bad polls. A second slot inside one poll is a dropped tag:
+death needs five consecutive bad polls. A second slot inside one poll is a dropped tag. One walk
+into the trade room per emission rate, measured on retail FireRed:
 
-| child emission | console kept polling for |
+| child emission | the console stopped polling |
 |---|---|
-| free-running (~57/s against its ~55/s) | 0.10 s |
-| 2 slots per poll | 0.28 s |
-| 1 slot per poll | 5.8 s |
+| free-running (~57/s against its ~55/s) | 0.10 s after the walk started |
+| 2 slots per poll | 0.28 s after the walk started |
+| 1 slot per poll | 5.8 s after the walk started |
+
+At one slot per poll every tag is in order and `numChildRecvErrors` never increments; later walks at
+that rate reached the seat, so the 5.8 s stop is not the tag check.
 
 Nothing is exempt, including the seat walk.
 
@@ -43,9 +47,9 @@ a missing fragment; it resends everything.
 
 `rfu_leader.ChildEcho` follows two rules:
 
-- Never drop a distinct command; a dropped fragment is a blind repair round. A two-entry bound once
-  ate four commands of a bursty 21-fragment chunk, a repair was dropped again, and the console
-  declared link loss.
+- Never drop a distinct command; a dropped fragment is a blind repair round. A bounded echo queue
+  drops commands from a burst (a 21-fragment chunk overflows a two-entry bound); the console then
+  repeats the whole block, and a second drop ends in link loss.
 - Coalesce a repeat still waiting (`SendLastBlock` resends every frame); one entry is enough. A repeat
   after the mirror went out is a new question and is answered.
 
@@ -78,7 +82,8 @@ are READY; driving them at a console still in `CABLE_SEAT_WAITING` faults its se
 
 ## What a real child sends, end to end
 
-A retail French FireRed as child against the host, full trade:
+One recorded trade, a retail French FireRed as child against the host. The order is the
+protocol's; the IDLE counts are that trade's:
 
 ```
 IDLE x8
@@ -106,19 +111,21 @@ IDLE x75    -> the host pulls the party
 `CB1_UpdateLinkState` runs `UpdateAllLinkPlayers` only when `!IsRfuRecvQueueEmpty()`, which returns
 FALSE if any `gRecvCmds` entry is non-zero [link_rfu_2.c:787-800]. `MoveSendCmdToRecv` copies the
 parent's own `gSendCmd` into `gRecvCmds[0]`, so the parent can self-sustain; in practice the loop
-settles into one exchange per round trip (182 out→in against 182 in→out, 22 in→in, 27 out→out).
+settles into one exchange per round trip (one capture: 182 out→in against 182 in→out, 22 in→in,
+27 out→out).
 
 The high byte of the host's `SEND_HELD_KEYS` is `heldKeyCount`, one per prepared command, so the last
 value counts the link updates its trade room survived.
 
 ## Post-seat standby gate and walk-out
 
-After both sit, the console broadcasts its own `READY_EXIT_STANDBY` count=2 at mpId 0 about 130 ms
-after reflecting the host's. It accepts a child count only when it equals its own (`Rfu_LinkStandby`
+After both sit, the console broadcasts its own `READY_EXIT_STANDBY` count=2 at mpId 0 after
+reflecting the host's (130 ms later in a recorded trade). It accepts a child count only when it equals its own (`Rfu_LinkStandby`
 recv gate, link_rfu_2.c:1577-1591), so a count=3 sent on the reflection of the host's count=2 is
 ignored: a reflection proves the parent saw the slot, not that the round completed. Gate count=3 on
-the host's own mp0 count=2 and keep re-arming it, spaced by more than the 75 idle slots the leader
-needs before `BufferTradeParties`.
+the host's own mp0 count=2 and keep re-arming it, spaced by more than the host's quiet window before
+`BufferTradeParties` (`HostTradeTiming.entry_final_standby_quiet_frames`, 75 slots, longer than the
+child's 60-frame re-send of `READY_EXIT_STANDBY` [link_rfu_2.c:1529]).
 
 The walk-out: the host emits `LINK_KEY_CODE_EXIT_ROOM` (0x17) and blocks in
 `KeyInterCB_WaitForPlayersToExit` until `AreAllPlayersInLinkState(EXITING_ROOM)`
@@ -131,7 +138,9 @@ slot is not a key.
 [trade.c:1549], before `Leader_ReadLinkBuffer` reads menu commands [1593-1633]. A cancel
 request completed during that exchange can be cleared before it sets the partner's selection.
 The leader's own `REQUEST_CANCEL` (`0xEEAA`) proves that it is processing the Cancel input
-[2049]. A joiner already leaving sends a fresh `REQUEST_CANCEL` when that block arrives.
+[2049]. `bin/frlg_trade_join.py`, once its configured trades are done and it has chosen Cancel,
+sends its `REQUEST_CANCEL` again when the leader's arrives (`pokeldn/frlg/link/trade.py`,
+`_on_linkcmd`).
 `BOTH_CANCEL_TRADE` clears any pending request before the exit standby rounds.
 
 ## One-sided cancel returns both sides to the menu
@@ -178,10 +187,13 @@ then `RfuSoftReset()` under `Task_MysteryGift`, else `RfuReloadSave()` [link.c:1
 
 ## The advertised rate set
 
-The three-second disconnection is the console leaving the LDN network 2.9 to 3.9 s after it
-associates, after the Pia session has finalized, in any link phase. The association response's rate
-set decides it. From 360 air captures of hosted FireRed and LeafGreen sessions, each run's first
-association against whether the console left inside 6 s:
+An association response without 6, 9 and 12 Mbit/s makes the console leave the LDN network 2.9 to
+3.9 s after it associates, after the Pia session has finalized, in any link phase: 42 of 76 such
+first associations left, against 0 of 284 with those rates. A missing Pia type 2 Join Response gives
+a leave at the same time ([The console as a Pia child](#the-console-as-a-pia-child)), as does a Linux
+station the AP never marks authorized ([Host implementation](frlg_host.md), Failure handling). From
+360 air captures of hosted FireRed and LeafGreen sessions, each run's first association against
+whether the console left inside 6 s:
 
 | association response | beacon | console's association request | left at 3 s | stayed |
 |---|---|---|---|---|
@@ -198,22 +210,27 @@ rates ([hardware_esp32.md](hardware_esp32.md), The access point's frames).
 The host advertises the Switch rate set (1B 2B 5.5B 11B 6 9 12 18, extended 24 36 48 54). The
 Switch's other elements (DTIM 2, ERP, capability 0x411, the Nintendo vendor element, HT/HE, WMM) are
 not needed. The console builds its association request's rates from the beacon, so the beacon head
-carries elements 0 (SSID), 1 (Supported Rates) and 3 (DS Params), a 41-byte subset; a full 208-byte
-element set stalls Mystery Gift traffic.
+carries elements 0 (SSID), 1 (Supported Rates) and 3 (DS Params), a 41-byte subset. With the full
+208-byte element set in the beacon of the Linux adapter, 0 of 5 Mystery Gift sessions completed: the
+console joined and the traffic stalled before the gift.
 
-`host_pia` unicasts the type 5 Update Session, since the console receives about one broadcast frame in
-five. WMM (QoS data, subtype 8) and a probe response lacking RSN under a privacy capability also end
-a session early.
+`host_pia` unicasts the type 5 Update Session: on the Linux adapter the console received about one
+broadcast frame in five. A beacon carrying WMM makes the console send QoS data frames (subtype 8),
+which the host must decode; the vendored LDN decoder takes the TID into the CCMP nonce and AAD. With a
+probe response that lacked RSN under a privacy capability, the console's three association requests
+went unanswered (one Linux session).
 
 ## The console as a Pia child
 
 - The console child needs the type 2 Join Response: on a type 5 alone it re-sends its join request
-  every 0.5 s, ignores unicast type 5 copies, and leaves 3.05-3.20 s after joining.
-- A real Mystery Gift host sends a console child its type 5 within ~50-66 ms of its Net 0x11, but
-  sent `bin/frlg_mg_client.py` no type 2 and held the type 5 for 2.03 s (the join-request difference
-  is unknown). A real trade host sends type 5 and type 2 within 34 ms, RTT only after finalization.
+  every 0.5 s, ignores unicast type 5 copies, and leaves the network about 3 s after joining
+  (3.05-3.20 s measured), the same symptom as a short rate set.
+- A console hosting Mystery Gift answers a console child with type 5 within 50-66 ms of its Net 0x11.
+  It answers `bin/frlg_mg_client.py` with no type 2 and a type 5 after 2.0 s; which field of the join
+  request causes the difference is unknown. A console hosting a trade sends type 5 and type 2 within
+  34 ms, RTT only after finalization.
 
-A real Mystery Gift host to the receive client, from its Net 0x11:
+One session, a console hosting Mystery Gift to the receive client, from its Net 0x11:
 
     0.000  Net 0x11 (once)
     0.006  us: Net 0x12 + Session join
@@ -227,15 +244,15 @@ A real Mystery Gift host to the receive client, from its Net 0x11:
 
 ## 802.11 behaviour
 
-- Console as station: no power save (PM bit 0 always), RTS before every data frame, a clean
-  mid-stream deauth with no probe or null frames before it.
+- Console as station: no power save (PM bit 0 always), RTS before every data frame. When it leaves,
+  it sends one deauthentication with no probe or null frame before it.
 - A Switch host beacons at 11M and sends data at 48-54M. rtw88 (kernel 7.0) sends management frames
   at the lowest basic rate, beacons and injected action frames at 1M.
-- The monitor vif's copy of the host's own frames is a software loopback emitted at TX status,
-  lagging `sendto` by a median 594 ms (quantised at ~610 ms) while the console acks within 15 ms. Use
-  those timestamps for ordering only.
-- The Switch host drops about 40% of a child's Pia datagrams after MAC-acking them, independent of
-  spacing, size or content. Repeating each reliable frame in the next few datagrams removes the
+- On the Linux monitor vif the host's own frames are a software loopback emitted at TX status, a
+  delayed copy (median 594 ms behind `sendto` in the captures measured, while the console acks within
+  15 ms). Use those timestamps for ordering only.
+- In the Linux captures a console host dropped about 40% of a child's Pia datagrams after MAC-acking
+  them, across spacing, size and content. Repeating each reliable frame in the next few datagrams removes the
   in-order stalls; the host de-duplicates by sequence.
 
 ## The Pia header nonce is a counter the console enforces
@@ -252,9 +269,10 @@ datagram not strictly above it, so a random nonce passes about half the time:
 
 Each reliable frame is repeated in the next 4 datagrams, acknowledged about 17 ms after the
 original. Air loss is 1-2% and bursty (the console's own retransmit rate is 0.01-0.02 per frame), Pia
-delivers in order, and a hole holds every later slot until the console's 8-deep RFU receive queue
-overflows: with carry 0, one lost parent slot and its 68 ms retransmit put ten slots into the console
-at once and it disconnected 300 ms later.
+delivers in order, and a hole holds every later slot until its retransmit, which then delivers them
+together and overflows the console's 8-deep RFU receive queue. Measured with carry 0: one lost parent
+slot and its 68 ms retransmit put ten slots into the console at once, and it disconnected 300 ms
+later.
 
 ## The console's acknowledgement lag is a 512 ms metronome
 
@@ -269,7 +287,7 @@ retransmits its own last frames, then its cumulative ack jumps several frames:
     26.617 in   D1849* D1850*        (retransmits, no ack)
     26.653 in   ACK next=924         (catches up five frames at once)
 
-Across 42 intervals in five runs (two cartridges, three activities) every period is an integer number
+Over 42 intervals on both cartridges and three activities, every period is an integer number
 of 512 ms slots within 16 ms (one frame). Observed counts are 16 and 17 slots, with one 18 and one 33
 where a tick was skipped. The grid is phase-locked to the LDN join: twelve stalls over 103 s span 18
 ms of phase. On an idle chat link the outstanding count reaches 5 harmlessly; under Mystery Gift or
@@ -282,43 +300,45 @@ The console sometimes goes idle after the last delivery-script block (ident 25,
 `MG_LINKID_RAM_SCRIPT`), never sends ident 20 (READY_END), and leaves. A parent block is never
 reflected, so the lost fragment is invisible in the capture.
 
-In one capture two consecutive frames were lost; the console's cumulative ack stalled 1.75 s while
-the host re-sent them in every datagram (about 100 copies) and kept adding five new frames per
-datagram. When the hole closed the console released 97 frames to the game in one datagram, its 8-deep
-RFU queue dropped the ident-25 fragments, and it sat on "Transmission..." for 150 s. The backlog
-behind a hole leaves no room for the retransmit. The normal ack lag is 0-1 frames at 99% of acks.
+When a hole closes behind an unbounded backlog, the console hands every held frame to the game at
+once, its 8-deep RFU queue drops the ident-25 fragments, and it stays on "Transmission..." with the
+link up. In the capture that shows it, two consecutive frames were lost, the cumulative ack stalled
+1.75 s while the host re-sent them in every datagram (about 100 copies) and added five new frames per
+datagram, 97 frames reached the game in one datagram, and the console stayed on "Transmission..." for
+150 s. The normal ack lag is 0-1 frames at 99% of acks.
 
 `HostSession` holds new frames while `HOST_OUTSTANDING_MAX` (6) frames are unacknowledged, keeps
 retransmitting the gap, and resumes when the ack catches up, so a closed hole releases at most 6.
-Sending the ident-25 block three times (`--ram-script-block-repeat 3`) took a stalling console to 5/5;
-`--block-repeat 1` is measurably worse. Whether air loss or the console's RFU-to-game handoff drops
+`--ram-script-block-repeat 3` sends the ident-25 block three times: 5 of 5 sessions delivered on a
+console that had been stalling there. With `--block-repeat 1`, the one LeafGreen session measured
+stalled at ident 25. Whether air loss or the console's RFU-to-game handoff drops
 the fragment is not established.
 
 ## Transmission-phase deaths after the card
 
-Every death after the card showed host UDP output peaking at 52-519 datagrams per 0.25 s, against
-23-36 in every success: a 250 ms-3 s adapter transmit stall (frames sat in the rtw88 USB path), then
-no acks, then every unacked frame re-sent every tick. Host fixes, all on by default:
+On the Linux adapter, the sessions that died after the card showed host UDP output peaking at 52-519
+datagrams per 0.25 s, against 23-36 in those that succeeded: a 250 ms to 3 s transmit stall in the
+rtw88 USB path, then no acks, then every unacked frame re-sent every tick. The host's guards, all on
+by default:
 
 - `HOST_RTX_LIMIT` caps Reliable retransmits per VBlank.
 - `FRLG_ECHO_MAX` bounds the FIFO echo of the child's block slots.
 - The transmit socket is non-blocking, and `FRLG_QUIET_GATE_MS` holds retransmits and carry-forward
   while the console is silent (about 0.5 s after accepting the card, its flash save; a blocking send
   there froze the host 6-11 s).
-- A duplicate child message no longer crashes the receiver.
 
 The adapter stall is unexplained.
 
 ## Datagrams held between the socket and the air
 
-On the Linux card a battle could end in "erreur de connexion, rapprochez-vous" after the host's
-datagrams were held 0.1-1.1 s below the UDP socket (no `EAGAIN`, released as one burst of 71 frames in
-200 ms), by which time the game had taken the link-loss path [link_rfu_2.c:2312 →
+On the Linux card the host's datagrams can be held 0.1-1.1 s below the UDP socket (no `EAGAIN`; in
+the measured battle, released as one burst of 71 frames in 200 ms), long enough for the game to take
+the link-loss path and show "erreur de connexion, rapprochez-vous" [link_rfu_2.c:2312 →
 CB2_PrintErrorMessage, link.c:1521]. The vendored LDN library reads `ldn-tap` in Python and injects on
 `ldn-mon` (`ldn/__init__.py:1795-1858`), bypassing the AP vif (`ieee80211_subif_start_xmit` 0 calls
 against `tun_net_xmit` 17549); which stage held the frames is unknown. On the ESP32 board the longest
-socket-to-acknowledgement wait over four FireRed trades was 265 ms, in the board's transmit queue, and
-every trade completed ([ESP32 radio](hardware_esp32.md), TX_DONE).
+socket-to-acknowledgement wait measured over four FireRed trades was 265 ms, in the board's transmit
+queue; all four trades completed ([ESP32 radio](hardware_esp32.md), TX_DONE).
 
 # The Union Room
 
@@ -333,8 +353,8 @@ src/data/union_room.h:398-456]; most lists hold one id. A console in the Union R
 `LINK_GROUP_UNION_ROOM_RESUME` [union_room.c:2664]: `IN_UNION_ROOM | activity`, `IN_UNION_ROOM = 1 << 6`
 [include/constants/union_room.h:49].
 
-Changing only record byte 16 from 21 to 22 moved a host from the Wonder Cards screen to the Wonder
-News screen, where the console listed it, joined and completed a session.
+Record byte 16 is the activity: 21 lists the host on the Wonder Cards screen, 22 on the Wonder News
+screen, where the console joins it and completes a session.
 
 ## The connect: IN_UNION_ROOM, exactly and alone
 
@@ -362,14 +382,14 @@ ERR_RECV_BUFF_OVER [librfu_rfu.c:2300] → `recvErrorFlag` → REQ error → `LM
 `RfuSetErrorParams` → "erreur de connexion, rapprochez-vous" [link_rfu_2.c:2585].
 `RFULeader(skip_parent_ni=True)`, enabled by `--union-room`, skips it.
 
-The console disconnects after exactly five parent frames it left unanswered:
+The console disconnects on the fifth parent frame it left unanswered (three captures agree):
 
     child NULL 28.361  host NI ts=8..12, K only   D 28.496   (NI_STARTs ts=6,7 were mirrored)
     child NULL 34.069  host NI ts=8..12, K only   D 34.199
     child NULL 36.527  host UNI ts=6..10, K only  D 36.628
 
 From the child's NULL: 135/130/101 ms, the third two frames earlier for the two mirrors it lacked,
-matching `maxMFrame = 4` [link_rfu_2.c:128]. A healthy trade-centre run never exceeds two.
+matching `maxMFrame = 4` [link_rfu_2.c:128]. Trade-centre captures that completed showed at most two.
 
 `--union-room-keepalive N` (120 works) re-presents the first parent NI_START for N VBlanks before UNI,
 so the console always has an acknowledgement to send. It then waits about eight seconds:
@@ -377,8 +397,8 @@ so the console always has an acknowledgement to send. It then waits about eight 
 and fails with ERR_SUBFRAME_SIZE while a NI_START is pending: the receive control takes 2 of the
 child's 16 LL-frame bytes [librfu_rfu.c:2262] and the UNI subframe needs 16 [librfu_rfu.c:1449]. The
 pending receive is released only by `NI_failCounter_limit`, 480 frames after the last NI_START
-[link_rfu_2.c:139, AgbRfu_LinkManager.c:1328]; the first UNI frame came 482 frames after the host's
-last. Nothing releases it early.
+[link_rfu_2.c:139, AgbRfu_LinkManager.c:1328] (measured: the first UNI frame 482 frames after the
+host's last). Nothing releases it early.
 
 ## What the console does once connected
 
@@ -418,10 +438,15 @@ The board lists partners whose advertisement carries `tradeSpecies`, `tradeType`
 `tradeSpecies:10` of `RfuGameData` [include/link_rfu.h:107]). Species 277 (Treecko; low byte alone 21,
 Spearow) listed "PkCamp / NORMAL / ARCKO / 26", which measures byte 23.
 
-A board trade runs `Task_StartUnionRoomTrade` as written: the console's Pokemon block (count 9), the
-host's, its mail block (count 19), the host's, the animation, its READY_FINISH, the host's
-CONFIRM_FINISH, the save barriers, READY_CLOSE_LINK both ways, its normal disconnect. No party
-exchange, menu or room route: about 45 s from board pick to room (~10 s keepalive wait, ~32 s
+A trading-board trade is one trade per link. `Task_StartUnionRoomTrade` sets `gMain.savedCallback =
+CB2_ReturnToField` before `CB2_LinkTrade` [union_room.c:1744], and `CB2_SaveAndEndTrade` keeps the
+link only when the saved callback is the trade centre's `CB2_StartCreateTradeMenu`
+[trade_scene.c:2722-2725]; any other ends in `SetCloseLinkCallback`. The sequence: the console's
+Pokemon block (count 9), the host's, its mail block (count 19), the host's, the animation, its
+READY_FINISH, the host's CONFIRM_FINISH, the save barriers, READY_CLOSE_LINK both ways, its normal
+disconnect back into the room. Another board trade is a new connection. The trade centre returns to
+its trade menu instead [trade.c:2094-2113]. There is no party exchange, menu or room route. One
+measured board trade took about 45 s from board pick to room (~10 s keepalive wait, ~32 s
 animation).
 
 ## Chat
@@ -448,7 +473,7 @@ line at start-up (`uroom_chat.entry_count`).
 The leader must close on a LEAVE: the leaver waits for the parent to drop the link
 [`ChatEntryRoutine_AskQuitChatting` cases 2/4/5, union_room_chat.c:596-660], else it sits on "quit
 the chat?". The host sends DROP 0.1 s after LEAVE and runs the close-link handshake. Lines appended
-to `--chat-file` reach the console about 1.7 s after the write.
+to `--chat-file` reached the console about 1.7 s after the write (measured).
 
 ## The link battle (UR_BATTLE 0x41)
 
@@ -544,12 +569,12 @@ alive. `HostTradeEngine._echo_owed` holds a new block while any child command aw
 The ack also waits for every fragment of the echo. `rfu_leader.echo_blocks` keeps each echoed
 `SEND_BLOCK_INIT` with the set of fragment indices emitted, and the ack waits for 0..count-1. An empty
 echo queue is 24 times too slow; counting echoes, or watching only the last fragment, lets a re-sent
-fragment's echo share a frame with the ack. A console stuck waiting on a battle ack cannot be rescued
-from outside; SIGTERM on the host returns it to the room through the error screen.
+fragment's echo share a frame with the ack. No later message frees a console waiting on
+`gBattleControllerExecFlags`; ending the host returns it to the room through the error screen.
 
 ### The pace is the RFU VBlank budget
 
-A link battle shows about a second per step in both directions. Datagram turnaround
+A link battle step takes about a second against the host, in both directions. Datagram turnaround
 is median 5.8 ms (p99 16.6 ms over 8204 replies; the console's median 8.1 ms). Consecutive `bufferA`
 commands are a median 800 ms apart; a console block is echoed in 19 ms and the host's answering block
 follows 355 ms later. `HostSession.tick` emits one RFU slot per call at `HOST_VBLANK_SECONDS =
@@ -569,15 +594,16 @@ host). Sequence-corrected, same console `48:f1:eb:20:9b:22`:
 | the FireRed console | 161.8/s | 25.5/s |
 | its peer | 58.9/s, the host at one slot per VBlank | 6.1/s, the LeafGreen |
 
-A whole trade runs between consoles at 25 and 6 frames a second; the same console answers the host's
-59/s with 162. The 25.5/s figure rests on the softest capture.
+In that passive capture of a console-to-console trade the stations sent 25 and 6 frames a second;
+against the host's 59/s the same console sent 162/s. The 25.5/s figure rests on the softest capture.
 
 A FireRed console hosting over Direct Corner carries the Switch profile name in plain ASCII at offset
 0x11 of `application_data`; the in-game trainer name is absent from the advertisement.
 
 ## The console's output rate is its own, not an echo of ours
 
-`--tick-hz` sets the host's RFU slots per second (default one per VBlank). Same console, two trades:
+`--tick-hz` sets the host's RFU slots per second (default one per VBlank). One trade at each rate,
+same console:
 
 | | 59.727 Hz (the default) | 20 Hz |
 |---|---|---|
@@ -586,8 +612,8 @@ A FireRed console hosting over Direct Corner carries the Switch profile name in 
 | trade duration | 92 s | 197 s |
 | console datagrams, whole session | 5663 | 10218 |
 
-Halving the host's output moved the console's by a sixth; the session lasted 2.1x as long with 80%
-more console traffic. Do not lower the tick: `--tick-hz` is an instrument.
+At 20 Hz the console's rate fell by a sixth, the trade took 197 s against 92 s, and the console sent
+80% more datagrams. `--tick-hz` is an instrument; the default is one slot per VBlank.
 
 # The cable-club colosseum
 
@@ -614,7 +640,7 @@ change:
 From `CB2_InitBattle` on it is the Union Room battle, signature 0x200 included, without the 0x20-byte
 0x51 selection block (`CB2_UnionRoomBattle` only).
 
-The seat needs the READY key alone: with no movement sent the console went on to
+The seat needs the READY key alone: with no movement sent the console proceeds to
 `Task_StartWirelessCableClubBattle` (`GetCableClubPartnersReady` reads link states only
 [overworld.c:2989]). There are no post-seat standby rounds; a host waiting for them deadlocks while the
 console, parked in case 3, sends `SEND_BLOCK_INIT` count 3 and
@@ -631,8 +657,9 @@ A forfeit is a win for the console: `HandleAction_Run` sets `B_OUTCOME_WON` for 
 run, ORed with `B_OUTCOME_LINK_BATTLE_RAN` (1 << 7) [battle_main.c:4300], which
 `HandleEndTurn_BattleWon` clears [battle_main.c:3734] before `CB2_ReturnFromCableClubBattle` switches on
 it. The id recorded is `gLinkPlayers[GetMultiplayerId() ^ 1].trainerId` [cable_club.c:794], from the
-28-byte record, counted once each (five remembered per stat) [mystery_gift.c:630]. Three forfeits with
-three `--id` values took `battlesWon` from 0 to 3 and earned the Battle Count Card's POTION:
+28-byte record, counted once each (five remembered per stat) [mystery_gift.c:630]. Three forfeits
+against three different `--id` values raise `battlesWon` to 3, which the Battle Count Card rewards
+with its POTION. After one:
 
     save 0x3434:  0100 0000 0000 2300    battlesWon 1, lost 0, trades 0, icon 35 CARD_TYPE_LINK_STAT
     game data:    "1 battles won"

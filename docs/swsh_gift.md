@@ -80,7 +80,8 @@ framework or to trade, the three battle modules, the raid dens, the underground,
 On the local-wireless screen the console advertises its always-on local-play network: local
 communication id `0x0100ABF008968000` (both titles), version 4, scene id 65535 (60001 on the link
 trade), accept policy ALL, `NodeCountMax` 2, 384 bytes of advertise data, password CRC zero. The game
-creates that access point once, 16 to 31 s after loading; entering or leaving Mystery Gift makes no
+creates that access point once, some seconds after loading (16 to 31 s measured); entering or leaving
+Mystery Gift makes no
 LDN call. The gift screen only sets its advertise data and arms the Pia join filter.
 
 On the screen the game calls `nn::ldn::Scan` about forty times a minute (33 in a 40 s IPC trace),
@@ -114,13 +115,13 @@ count through the jump table `0x02066C14`; `0x010961a8` maps it to the advertise
 
 The link trade is mode 2 (0x0D measured); the gift screen runs mode 0 (0xFF measured), which creates
 no session. Entering the app reads the mode (`0x01096d20`), saves it at `app+0xFE8` and sets 0
-(`0x01022f08`); leaving restores it (`0x01023198`). The byte held `0xFF` for 717 s across idling,
-leaving and re-entering. A Max Raid host advertises `0x11`, which is not in the table.
+(`0x01022f08`); leaving restores it (`0x01023198`). The byte stays `0xFF` across idling, leaving and
+re-entering. A Max Raid host advertises `0x11`, which is not in the table.
 
 Across five trade and four gift advertisements from one console, the only other byte that differs by
 screen is `0xB9` (0x00 gift, 0xAA trade), meaning unread; the rest is fixed or random per session.
-One reading found the LDN `SceneId` 0 on every network the console advertised, link trade included,
-and no 60001-family value in the advertisement.
+The LDN `SceneId` reads 60001 on a scanned Link Trade network and 65535 on the gift screen
+([Taking a seat](swsh_session.md#taking-a-seat)).
 
 ## The Pia mesh on the gift screen
 
@@ -129,11 +130,11 @@ card uses [the beacon transport](#the-card-travels-in-beacon-advertise-data).
 
 A joiner completes the station handshake on 0x14 (the console's connection request, a result-0
 response, its type-5 ack, its 840-byte type-2 station record) and the mesh join request on 0x18 is
-refused, two of two times:
+refused:
 
     02 00 ff ff 01        JOIN_RESPONSE, refused, reason 1
 
-The same join against the link trade drew a 148-byte response five of five times. Nothing follows on
+The same join against the link trade draws a 148-byte response. Nothing follows on
 0x58, 0x7C or 0x80. Held with no join sent, the console sends nothing after the handshake but its
 update session, which lists the joiner as seat 1 with `allow_participating` set.
 
@@ -246,21 +247,21 @@ sel 0, bits 0, `+0xC4` 0, `+0xC8` 1, so the first two tests pass. Three more exi
 It returns 2 when `+0xAA` is zero or a preliminary predicate holds, and 4 when `mesh_obj+0x131` is set
 by the type-0x19 event.
 
-### Measured with a station seated
+### With a station seated
 
 - Writing 8 to `game_session+0x1F0` on the search screen admits the join at once (148-byte response,
   station count 1 to 2); writing 0 brings reason 1 back.
 - On the emulator, with `+0x1F0` and `+0x1F4` patched to 2, the join drew `02 00 ff ff 00` (reason 0,
   the transport check's short form), the same five bytes a link-trade host there answers with. Every
-  packet authenticated across four sessions.
+  packet authenticates.
 - Once an LDN node joins, the console broadcasts a Local Protocol update session about six times a
-  second listing it as seat 1 (238 decoded in one run; none in five minutes with no node). One ack
-  stops it after 1.6 s; with `--no-ack-update`, 612 arrived in 100 s. Trap: the emulator's wildcard
+  second listing it as seat 1, and none with no node. One ack stops it; unacked
+  (`--no-ack-update`) it continues. Trap: the emulator's wildcard
   socket on 12345 can take another listener's broadcasts; observe updates with an external capture.
 - The only flows between the nodes are Pia on 12345 and ldn_mitm's control channel on 11452 (every
-  port captured, 48,123 UDP ports listened on for ten minutes).
+  port captured, 48,123 UDP ports listened on).
 - Seated, the scene sends RTT probes, reliable-window opens on two ports and mesh updates, and no
-  application payload in 360 s; nothing opens on 0x84. It acks 96 pings on 0x7C in sequence.
+  application payload; nothing opens on 0x84. It acks pings on 0x7C in sequence.
 - A 0x2D0 record behind the trade driver's 4-byte header (`u16 id, u8 disc, u8 0`), sent on 0x7C and
   0x80, ports 0 and 1, is acked and never reaches the receive job.
 - Advertisements built from the console's own sessions, six variants and scene ids 60001..60021, are
@@ -373,9 +374,8 @@ test failing rejects:
 4. the network id agrees with the core's own nibble by nibble (`0x006c1cf0`): the low nibble must be
    equal; a differing second nibble accepts; otherwise the third nibble must be equal.
 
-Two beacons differing only in the checksum were served to a console on the search screen: the stale
-one was answered on 114 scans and never stored (count 0 over 6,597 samples); the correct one was in
-the store 0.21 s after it started.
+A beacon with a stale checksum is scanned and never stored; the same beacon with the correct
+checksum is stored on its first scan (0.21 s measured).
 
 Trap: the 0x480-byte `NetworkInfo` scan-result slots, `pia_obj+0x3C0` among them, take a full 0x180
 copy of any body whatever its checksum; a marker there proves only reception.
@@ -429,12 +429,11 @@ buffer through `0x0065dcb0`) and returns null on a mismatch. The poll skips the 
 
 Traps:
 
-- A message with a wrong checksum leaves no trace. Its context is only ever sampled one fragment short
-  (seen at counts 2 and 3, and for 11.1 s while the missing fragment was offered about 44 times),
-  then vanishes; the sink `0x01005bc0` is never reached.
+- A message with a wrong checksum leaves no trace. Its context is only ever sampled one fragment
+  short, then vanishes; the sink `0x01005bc0` is never reached.
 - An empty context list after a beacon is what a completed message leaves.
-- With header `+0` set to 1, `job+0x160` stayed null; with it zero the list was allocated 1.77 s
-  later and `manager+0x80` took its first stamp.
+- With header `+0` non-zero, `job+0x160` stays null and no context list is allocated; with it zero
+  the list is allocated and `manager+0x80` takes its first stamp.
 
 ## What a record must carry
 
@@ -542,9 +541,9 @@ The language index comes from the table at `0x02067650` (game language to 0..8).
 `0x00775d50`; indices above 127 set nothing. A record with zero ribbon bytes names ribbon 0
 thirty-two times: fill the list with `0xFF`.
 
-The parser does not read the level or the met level. Each was located as the one offset that
-predicted two claimed cards whose unknown bytes between `0x238` and `0x272` held distinct levels
-(28 then 63 for the level, 32 then 59 for the met level).
+The parser does not read the level or the met level. Both offsets come from cards, not code:
+`+0x244` and `+0x249` are the only offsets in `0x238..0x272` that predict two claimed cards' distinct
+levels (28 and 63 for the level, 32 and 59 for the met level).
 
 Level 0: the builder draws `r = random & 0x7f` until `r <= 99` and takes `r + 1`, uniform over
 1..100 (`0x010b6218`); one record gave 20 then 35. An egg (`+0x245` = 1) gets level 1 regardless
@@ -576,15 +575,14 @@ at `bound+0x2C0`, `bound` being `job+0x80`. Two records differing only in their 
 record the mask filters out leaves the list empty. The `0xFFFF` record had a zero checksum at
 `+0x2CC`, and the validator's `0x80000001` came back as 1. Neither faulted.
 
-A sealed kind-3 record was listed, confirmed and saved. The screen showed the title from the kind at
-`+0x11`, the quantity 1 from the word at `+0x20`, and 1 January 2070 for the zeroed date; it
-delivered nothing, as a kind-3 record with a zero identifier should. The save changed in 29 regions
-(671 bytes, clustered around `0x062000`) and gained a 789-byte `poke_trade` file.
+A sealed kind-3 record is listed, confirmed and saved. The screen shows the title from the kind at
+`+0x11`, the quantity from the word at `+0x20`, and 1 January 2070 for a zeroed date; with a zero
+identifier it delivers nothing.
 
 ## A card delivered to a retail console
 
-`bin/swsh_gift_host.py` delivered a level 25 Pikachu with the record's strings to a retail Sword over
-LDN. Each row below changed one variable:
+`bin/swsh_gift_host.py` delivers a card to a retail Sword over LDN. A retail Sword lists a card only
+when the advertise data opens with the Pia header:
 
 | what the host advertised | listed |
 |---|---|
@@ -596,8 +594,8 @@ The Pia header is the one the console's own gift advertisement opens with
 ([Sword sessions](swsh_session.md)): a random network id, a zero password CRC, system communication
 version 5, header size 0x18, a random session parameter and eight zero bytes. Scene id 0 and
 application version 4 were accepted; the console's own advertisement carries scene 65535 and
-application version 7, so neither is filtered on. Emulator runs could not test these variables:
-ldn_mitm carries no 802.11 advertisement.
+application version 7, so neither is filtered on. ldn_mitm carries no 802.11 advertisement, so an
+emulator cannot test these variables.
 
 | kind | record | result on the console |
 |---|---|---|
@@ -777,9 +775,9 @@ store. The `+0x80` accesses around the importer `0x00ff2170` are a different thi
 guard stack `nn::os::GetTlsValue` returns, the same push and pop around the store append at
 `0x006c54a4`.
 
-Some sessions never drain: three accepted bodies sat in the store with the count climbing 1, 2, 3,
-the first still there after 27 minutes (24,651 samples), `manager+0x80` constant and `job+0x160`
-null. Other sessions drain normally; the cause is unresolved. Trap: check that `manager+0x80`
+In some sessions the store is never drained: accepted bodies accumulate (a first body still there
+after 27 minutes), `manager+0x80` stays constant and `job+0x160` stays null. Other sessions drain
+normally; the cause is unresolved. Trap: check that `manager+0x80`
 advances before reading any beacon result.
 
 What ticks the update is unresolved. Its only caller is `0x01109240`, a sequence of per-subsystem

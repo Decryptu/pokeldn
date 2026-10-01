@@ -54,7 +54,7 @@ header does in `pokeldn.ldn.pia6`.
 ## The advertisement
 
 A console on the local search screen hosts a network and advertises 112 bytes: the 0x5C Pia system
-property block and 20 game bytes. Constant over two sessions with different link codes:
+property block and 20 game bytes. Fields that do not change with the link code:
 
 | field | value |
 |---|---|
@@ -69,7 +69,7 @@ property block and 20 game bytes. Constant over two sessions with different link
 | system / application communication version | 22 / 6 |
 | player name | one byte, a space, UTF-8 |
 
-SSID and channel are per session (both on channel 6). The game bytes are the link code in ASCII,
+SSID and channel are per session. The game bytes are the link code in ASCII,
 NUL-padded to sixteen, then its length as a little-endian `u32`. Layout and password field are
 Legends Arceus's ([pla.md](pla.md), The link code in the advertisement); Z-A's game key gives the
 mask `1068a742ac3a8787ab6066a161f5d5e1`. `pokeldn.za.build_advertise_data(code)` reproduces each
@@ -88,7 +88,7 @@ decrypted). Unanswered, it sends on protocol 1 (Net) from its variable id to des
 
 The connection status is the layout `pokeldn.ldn.pia_connect.parse_net_conn_request` reads: four
 slots, two filled, both on port 12345, host `169.254.x.1`, joiner `169.254.x.2`. It stops after
-14.4 s but leaves the station seated.
+about 14 s (14.4 s measured) but leaves the station seated.
 
 A capture of both ends of an emulated pair (768 packets) gives the opening:
 
@@ -99,11 +99,12 @@ A capture of both ends of an emulated pair (768 packets) gives the opening:
   second carries its own source id, zstd-compressed;
 - the host's next packet is addressed to that id and carries the two-byte recipient footer.
 
-A station left unanswered after admission disconnects cleanly after about 8 s, as a retail console does.
+An emulated joiner left unanswered after admission disconnected cleanly after about 8 s in that
+capture; the timer behind it is unresolved.
 
 ## The session, on a retail console
 
-A station sending a reference joiner's Session join is admitted within 30 ms:
+A station sending a reference joiner's Session join is admitted at once. One capture's timeline:
 
 | from the seat | what the console sends |
 |---|---|
@@ -116,16 +117,18 @@ A station sending a reference joiner's Session join is admitted within 30 ms:
 
 The join owes, over the Net acknowledgement: ten protocols
 (`1:0 3:5 5:1 6:0 9:1 10:3 11:4 12:4 13:7 15:0`), application communication version 6, an
-identification token `0x06` then zeroes, and a PlayerInfo name of one space. The GBA application's
-six protocols and version 0x58 are dropped unanswered; the console hands the host role away after
-about 8.7 s. With the game's messages unanswered the session holds 27 s, then the console moves to
-host migration and reports no partner found.
+identification token `0x06` then zeroes, and a PlayerInfo name of one space. A join listing
+the GBA application's six protocols and version 0x58 goes unanswered and the console starts host
+migration (8.7 s after the seat, measured). A join with the ten protocols above whose game messages
+go unanswered ended in host migration and "no partner found" 27 s after the seat, measured; the timer
+behind either is unresolved.
 
 ## The game's own exchange
 
 Above Pia the game runs on Reliable (protocol 10) and Broadcast Reliable (protocol 11), the
-sub-header `pokeldn.ldn.reliable` parses. A trade is twenty distinct application payloads, each
-re-sent until acknowledged, the same set from both stations apart from the station id. By message
+sub-header `pokeldn.ldn.reliable` parses. A trade carries the application payloads below
+(twenty distinct ones in a reference capture), each re-sent until acknowledged, the same set from both
+stations apart from the station id. By message
 id, in order of first appearance:
 
 | id | bytes | what it carries |
@@ -211,8 +214,9 @@ bytes are untraced.
 
 A Z-A choosing Cancel on the trade prompt sends `0103b9020100` (round 1, reason 0) and, once its
 player picks again, redraws the prompt with the host's earlier offer without a resend. Its next
-confirmation is `0102b90101` and `0104b90101`. A host answering under round 0 is ignored and the
-console waits on "Communicating" with no timeout; round 1 completes the trade. `pokeldn.za.host`
+confirmation is `0102b90101` and `0104b90101`. A host answering under round 0 is ignored (the
+handlers reject a round below +0x152) and the console waits on "Communicating"; round 1 completes the
+trade. `pokeldn.za.host`
 takes the round from the console's own `0102`, `0103` and `0104`.
 
 ### What a joiner owes on those streams
@@ -227,8 +231,8 @@ Measured against a reference pair and an emulated host's acknowledgements:
 - an acknowledgement on protocol 11 is 74 bytes: the station's four bytes, a stream byte, a count of
   four, then four entries of a next-expected halfword and a sixteen-byte mask, the last cut short.
   Entry 1 is the joiner's stream; the host reports the idle base 0xfff0 in the other three;
-- the identity goes out under INIT, the selection record about 0.5 s later and then about four
-  times a second under a fresh sequence, the same 1211 bytes each time;
+- the identity goes out under INIT, the selection record after it and then repeatedly under a fresh
+  sequence, the same 1211 bytes each time (measured: about 0.5 s later, then about four a second);
 - the sub-header's recipient count is three on protocol 11, zero on protocol 10;
 - on protocol 11 the sub-header length counts the payload after the four-byte station prefix, so
   every frame carries four bytes more than it declares: the opening is `00000001` and `1402 b900`,
@@ -242,14 +246,13 @@ is treated the same.
 
 ### The kick
 
-A host that has not made a trade partner of a station kicks it: from about 18 to 25 s its RTT stops
-and it repeats Session type 13 twice a second (0x0d, its eight-byte constant id big-endian, length
-ten, a reason byte of 1), composed at `0x2551320` in `0x25512b4`, whose two callers `0x255bad4` and
-`0x255bd70` are in `nn::pia::session::KickoutManageJob` (`vfunc6` `0x255bda0`).
-
-The kick is a 10 s liveness timeout, confirmed with breakpoints on an emulated host: a station whose
-own variable id sources no packet for 10 s is kicked, whatever its player's screen. 0x0001 is only a
-destination; a joiner sending from it is heard by no one.
+A host kicks a station whose own variable id has sourced no packet for 10 s, whatever its player's
+screen: its RTT to the station stops and it repeats Session type 13 every 501 ms (0x0d, its
+eight-byte constant id big-endian, length ten, a reason byte of 1), composed at `0x2551320` in
+`0x25512b4`, whose two callers `0x255bad4` and `0x255bd70` are in
+`nn::pia::session::KickoutManageJob` (`vfunc6` `0x255bda0`). 0x0001 is only a destination; a joiner
+sending from it is heard by no one. In captures of a kick it came 18 to 25 s after
+the seat.
 
     0x2547700   from SessionProtocol vfunc 10 (0x2547170), while the local station's byte +0x48 is 2
                 and +0x1b0 is non-zero: for each station in state 2, reason 1 through 0x2547dd0 (map at
@@ -299,7 +302,8 @@ checks the packet id (wire 0x0a) and big-endian nonce (wire 0x0d):
 
 A rejected packet goes to `0x25655d8` and is dropped: a repeated id, or one 0x8000 or more ahead. A
 joiner with a separate counter for destination 0 has every Net 0x51 dropped until it passes the
-host-id counter; the host repeats its Net 0x50 for about 10 s and its update sequence 1 comes late.
+host-id counter; the host repeats its Net 0x50 until one passes (about 10 s, measured) and its
+update sequence 1 is delayed.
 The Net 0x51 handler `0x2504100` reads no header field: it deserializes (`0x250f930`), checks length
 and type 0x51 (`0x2504150`), matches the source against its stations (`0x250c60c`, `0x24fba00`) and
 passes station and the acknowledged sequence at message +4 to `0x250daa8`.
@@ -311,19 +315,21 @@ passes station and the acknowledged sequence at message +4 to `0x250daa8`.
   constant id, the update's sequence as a big-endian u32, and 0x0001. The GBA application's answer
   (raw MAC, no sequence) makes a Z-A host repeat its update every two seconds indefinitely.
 
-A host that accepts update sequence 1 at about 1.2 s sends its selection record at 1.25 s and moves
-to its trade box.
+A host that accepts update sequence 1 sends its selection record about 50 ms later (1.2 and 1.25 s
+after the seat, measured) and moves to its trade box.
 
 ### The trade on protocol 10
 
-Each side sends a 354-byte `0101` about 2.5 s after the selection records. The offer's last byte is
-1 on a preview the station sends unasked (a retail console sends one each time its cursor moves on
+Each side sends a 354-byte `0101` after the selection records (about 2.5 s after, measured). The
+offer's last byte is 1 on a preview the station sends unasked (a retail console sends one each time its cursor moves on
 the trade box) and 0 on a player's pick; a host keys on that byte, not on a count. A pick sent with 1
 is acknowledged and drawn as nothing, and the partner waits on "Communicating" with an empty slot.
 
 The joiner answers the host's pick with its own and confirms with `0102b90100`; the host confirms
 with the same, both send `0104b90100` (the host 1.5 s after the joiner's `0102`), and the joiner
-sends four `0200b901XX` steps, 03 and 06 at once, 0b and 0e about 14 s later. The host sends
+sends four `0200b901XX` steps, 03 and 06 at once, 0b and 0e after the trade animation and the
+exchange worker's random wait ([The trade commands](#the-trade-commands); about 14 s later in one
+capture). The host sends
 `0000000202` on protocol 11 and answers each step with `0201b901XX` under its prefix.
 `bin/za_join.py --trade-offer` runs the joiner.
 
@@ -469,8 +475,8 @@ above (Scarlet's Tera types at 0x94/0x95 are flags 264..279 here). A move's inde
 the 340 u16 move ids at rodata `0x3303fb0`, found by the linear search `0xe669e0` (-1 when absent;
 every caller then skips the flag). `0x631834` sets a flag, `0x673448` clears one, `0xe438e4` clears
 the array, `0xe43068` reads one. An Onix with moves 446, 328, 103, 784 flags 33 38 88 91 103 106 157
-174 225 231 328 444 446 457 784. Every move traded so far (58, 103, 162, 247, 328, 403, 423, 446,
-542, 573, 784) is in the list.
+174 225 231 328 444 446 457 784. Moves 58, 103, 162, 247, 328, 403, 423, 446, 542, 573 and 784
+are in the list.
 
 `0xe343a0(species, form, move)` reads field 25 of the personal entry (vtable +0x36, through
 `0xe3cb88` and `0xe36850`), a vector of {u16 move, u8 level, u8 unlock level}, and returns the
@@ -574,10 +580,9 @@ reads the first as a u16 (`0xa91178`), requires the second to be tag 0xbc of exa
 
 Nothing checks moves against a learnset, the ball, met data, trainer ids, the ability or the tail's
 level. A composed record fails only by a wrong checksum or a personal-table field 1 of zero, and
-both make a Bad Egg, never a refusal; a rejected name is rewritten. An emulated Z-A offered a record
-with its checksum off by one draws an egg icon, level 0, male symbol, under the offer's nickname,
-and offers "Trade it"; confirmed, it lands in the box as "Egg" with an empty summary and the game
-keeps running.
+both make a Bad Egg, never a refusal; a rejected name is rewritten. A record with a bad checksum is drawn
+as an egg icon, level 0, male symbol, under the offer's nickname, with "Trade it" offered; traded, it
+lands in the box as "Egg" with an empty summary and the game keeps running.
 
 ### The name check on a received Pokemon
 
@@ -683,8 +688,8 @@ Species run 0..1010, all present, 434 entries with a form above 0; keys from 917
 internal index. Field 1 is 1 on 594 (species, form) pairs over 364 species, absent on the other 851.
 Those 594 equal PKHeX's `personal_za` presence list up to 1010; PKHeX's 1011..1016 (14 pairs) have
 no entry and arrive as Bad Eggs. The Mega Dimension DLC ships no personal table (its one PublicData
-NCA, 101,376 bytes, holds a 692-byte RomFS). Every species traded so far (95, 333, 407, 471, 707,
-714, 716) is present in form 0.
+NCA, 101,376 bytes, holds a 692-byte RomFS). Species 95, 333, 407, 471, 707, 714 and 716 are
+present in form 0.
 
 No refusal of a Bad Egg was found on the boxing or exchange path. `0x962388` boxes only a Pokemon
 neither empty (IsEmpty `0x13778`) nor egg-or-bad (IsEgg `0x18e4c`), but the live trade path
@@ -694,20 +699,19 @@ Egg tests only skip work: the PP clamp `0xe42584` and the stat recomputation `0x
 
 ## A trade with a retail console
 
-A retail Z-A on its Link Trade search traded with `bin/za_join.py` and kept the composed Glaceon:
-selection record 1.16 s after the seat, previews at 3.74 s, the player's offer at 55 s, `0102` at
-88 s, `0104` at 89.6 s, the joiner's `0200` steps at 89.7 s and 104 s. The console then returns to
-its trade menu on the same seat and offers again.
+A retail Z-A on its Link Trade search trades with `bin/za_join.py` and keeps a composed record.
+After a trade the console returns to its trade box on the same seat and can trade again: `0x964568`
+resets both states to 2 and both rounds to 0 ([The trade commands](#the-trade-commands)).
 
 The joiner takes a repeated `--trade-offer`: 2.7 s after its fourth step it previews the next record
-and picks it on the console's next pick, under round 0. `bin/za_join.py` and `bin/za_host.py`, each
-with two records, traded both pairs in order over ldn_mitm (`tests/test_za_host.py` scripts the
-joiner's side).
+and picks it on the console's next pick, under round 0. `bin/za_join.py` and `bin/za_host.py` trade a
+queue of records in order over ldn_mitm (`tests/test_za_host.py` scripts the joiner's side).
 
-A seat formed late in the console's host phase is handed over: the first datagram comes 1.4 s after
-association instead of within 0.1 s, no update sequence 1 follows, and the console repeats Session
-type 9 once a second (start host migration in the wiki's numbering, which puts the kick at 12 where
-Z-A uses 13) until it restarts its Net at 6.5 s. Scarlet's search runs the same race.
+A seat formed late in the console's host phase is handed over: the first datagram comes late, no
+update sequence 1 follows, and the console repeats Session type 9 once a second (start host migration
+in the wiki's numbering, which puts the kick at 12 where Z-A uses 13) until it restarts its Net
+(measured: first datagram 1.4 s after association against under 0.1 s on a normal seat, Net restarted
+at 6.5 s). A retail Scarlet's search behaved the same on hardware; no code on either side is traced.
 
 ## Hosting
 
@@ -734,17 +738,18 @@ Unlike the GBA application's host:
   (CloseParticipation, below);
 - a broadcast acknowledgement reports the joiner's stream in entry 1, 0xfff0 in the other three.
 
-A retail Z-A joined `bin/za_host.py` 0.6 s after it came up and traded (offer marker: The trade on
-protocol 10). Link code 12345678 works in both roles (`--code`); an emulated Z-A trades over
+A retail Z-A joins `bin/za_host.py` and trades (offer marker: The trade on protocol 10). Link code 12345678 works in both roles (`--code`); an emulated Z-A trades over
 ldn_mitm.
 
-The host keeps the session after the fourth trade step and closes when the console leaves.
-A timed close can produce "Error Number: 6" after the save. `--hold-after-trade` opts into a
-timed close; the overall `--seconds` limit still applies.
+The host keeps the session after the fourth trade step and closes when the console leaves. A console
+whose host closed the network on a timer after the trade's save showed "Error Number: 6"; which
+console state a close must wait for is unresolved. `--hold-after-trade` opts into a timed close; the
+overall `--seconds` limit still applies.
 
-A retail Z-A traded twice on one seat with two different records from a repeated `--trade-offer`,
-the second previewed after the fourth step of the first, and left without an error. Back on its box
-after a trade, the console previews the Pokemon under its cursor, so `--offer-out` keeps only picks.
+A hosted seat trades a queue of records in turn from a repeated `--trade-offer`: the next record is
+previewed after the fourth step of the previous trade. The console leaves when its player backs out.
+Back on its box after a trade, the console previews the Pokemon under its cursor, so `--offer-out`
+keeps only picks.
 
 ### The property update
 
@@ -810,13 +815,14 @@ host test (`0x2a49218`, from `0x915630`, `0x2cb5238`, `0xae0eb8`). The local dri
 (`0x19a1310`) runs the sequence `0x19a1470`; its CloseSession step passes bit 0 of slot 13's fourth
 argument to `0x19d7a70`, which builds the task when set and names "NoNeedToClose" when clear.
 
-A retail console on its Link Trade search, four seated sessions, advertisements decrypted by the
-joiner board: policy 0 with 2 of 2 nodes at the seat, Pia player count 2 (advertise data +0x16,
-`e1 01 01 00` to `e1 01 02 00`, the only changing byte) at 0.07 to 0.59 s, policy 1 first advertised
-2 to 48 ms before the one Net 0x50 (150 bytes, sequence 1, accept state `02`) at 0.09 to 0.64 s. The
-policy stays 1 to the end (68 to 74 s) and no host migration runs before 65.7 s, so the retail `02`
-is CloseParticipation's; which task builder started it is unknown. With 2 of 2 participants the
-policy refuses nothing the capacity did not.
+On a retail console's Link Trade search the advertisement holds policy 0 with 2 of 2 nodes at the
+seat, the Pia player count (advertise data +0x16, `e1 01 01 00` to `e1 01 02 00`, the only changing
+byte) moves to 2, then policy 1 is advertised just before the console's one Net 0x50 (150 bytes,
+sequence 1, accept state `02`), and the policy stays 1 for the seated session. No host migration
+precedes it, so the retail `02` is CloseParticipation's; which task builder starts it is unresolved.
+Measured over four seated sessions decrypted by a joiner board: player count 2 at 0.07 to 0.59 s,
+policy 1 first advertised 2 to 48 ms before the Net 0x50 at 0.09 to 0.64 s. With 2 of 2 participants
+the policy refuses nothing the capacity did not.
 
 ## Mystery Gift
 
@@ -834,5 +840,10 @@ is no local-wireless path.
   language-select table `[x0+0x50]` holds (breakpoint `0x16734c0`, read at `0x2c204ac`).
 - What writes the exchange worker's error word +0x10, which selects own state 7 (a watchpoint during
   an emulated trade cancelled after the steps start).
+- What timer ends an emulated joiner left unanswered after admission (about 8 s measured), and what
+  ends a session whose game messages go unanswered (host migration at 27 s measured), against the
+  10 s kick (The kick).
+- Which console state a host must wait for before closing the network after a trade, given
+  "Error Number: 6" after a timed close.
 - What a station does with a protocol-0 message, and the keepalive's header bytes (`04 00` by the
   header diff). A capture of a seated station the console has nothing else to send to.

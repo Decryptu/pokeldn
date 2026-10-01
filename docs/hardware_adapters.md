@@ -17,7 +17,7 @@ A Linux host can drive an AP-capable Wi-Fi card directly, as root, in place of t
 
 ## Tested cards
 
-| model | type | driver | result |
+| model | type | driver | result on a tested host |
 |---|---|---|---|
 | TP-Link Archer T3U (`2357:012d`) | external USB | `rtw88_8822bu` | reliable; the reference adapter |
 | ALFA AWUS036ACHM | external USB | `mt76x0u` | reliable |
@@ -30,7 +30,8 @@ A Linux host can drive an AP-capable Wi-Fi card directly, as root, in place of t
 ## Host modes
 
 `--skip-encryption` skips LDN's Python CCMP step so mac80211 or the hardware applies CCMP once;
-traffic stays encrypted over the air. Both proven adapters need it.
+traffic stays encrypted over the air. The Archer T3U (`skip_encryption = true` in `config/host.toml`)
+and the ALFA AWUS036ACHM need it.
 
 `--accept-decrypted-ccmp` is for monitor drivers that keep the CCMP header and MIC around
 hardware-decrypted plaintext, as the Archer T3U's `rtw88_8822bu` does; it strips the MIC before
@@ -59,7 +60,7 @@ iw dev
 ### Keep NetworkManager off the adapter itself
 
 NetworkManager claims the adapter's hotplugged interface (`wlx...`) and starts a background scan;
-the channel change takes the radio down about 11 s after the interface appears:
+the channel change takes the radio down shortly after the interface appears (11 s measured):
 
 ```text
 rtw88_8822bu 3-1:1.0: write register 0x81c failed with -71
@@ -84,7 +85,7 @@ fails with `[Errno 114] Match already configured`.
 
 `rtw88_usb` defaults to `switch_usb_mode=Y`, which re-enumerates the adapter into USB 3 mode after
 the driver loads. A hypervisor passing the device through sees a disconnect, the LDN interfaces
-vanish, and the host dies about 1 s into hosting with no preceding driver error:
+vanish, and the host dies early in hosting (about 1 s measured) with no preceding driver error:
 
 ```text
 RuntimeError: 802.11 beacon injector stopped: [Errno 100] Network is down

@@ -328,10 +328,9 @@ def build_parser():
                          "for the whole --hold")
     ap.add_argument("--leave-on-migration", type=float, default=None, metavar="SECONDS",
                     help="end the seat this many seconds after the console asks us to take the "
-                         "host role, and go back to scanning. A console that sends Session type 7 "
-                         "was seated late in its five-second host phase and sends nothing but "
-                         "NetStartHostMigration afterwards, so the seat is spent; without this "
-                         "the run holds it for the whole --hold")
+                         "host role (Session type 7), and go back to scanning. A console that sent "
+                         "it sent nothing but NetStartHostMigration afterwards in the seats "
+                         "measured; without this the run holds the seat for the whole --hold")
     ap.add_argument("--announce-timeout", type=float, default=None, metavar="SECONDS",
                     help="end a seat whose console has not announced on 0x80 port 2 this many "
                          "seconds after the seat, and go back to scanning. A seat can carry every "

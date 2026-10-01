@@ -72,8 +72,11 @@ close sockets and the network, clean the LDN vifs. The same cleanup runs on norm
 `KeyboardInterrupt`, startup failure after partial allocation, and beacon-worker failure. Saving a
 received Pokemon is independent of capture logging.
 
-The Mystery Gift hosts never stop on their own after a gift. The trade and battle hosts stop when the
-console leaves LDN.
+Every host, trade, battle and Mystery Gift alike, stops when the console leaves LDN
+(`HostApplication.run`): at once when no close was confirmed, after a 2 s settle
+(`HOST_CLOSE_SETTLE_SECONDS`) when it was. `--end-on-success` stops a Mystery Gift host once a
+successful delivery's disconnect is sent, without waiting for the console to leave; its `--idle-timeout`
+stops it after that many seconds without Switch traffic.
 
 ## Trainer profile propagation
 
@@ -95,13 +98,14 @@ and derives every view from it:
   --no-accept-decrypted-ccmp`; TP-Link Archer T3U `2357:012d` / `rtw88_8822bu` with
   `--skip-encryption --accept-decrypted-ccmp`. Startup warns when the flags do not match the driver.
 - On Linux the AP must mark the station `NL80211_STA_FLAG_AUTHORIZED` after LDN authentication;
-  without it the Realtek station disappears about three seconds after joining.
+  without it the console left the Realtek AP about three seconds after joining, the same symptom as a
+  short rate set ([The link protocol](frlg_link.md), The advertised rate set).
 - `--accept-decrypted-ccmp` strips the retained MIC from hardware-decrypted CCMP frames before TAP
   delivery. Radiotap trailing FCS bytes are removed for every driver.
 - Transport or beacon-thread failure aborts the run and unwinds what was created.
-- An unexpected participant leave halts output. After a normal room-close confirmation the host
-  keeps the fifteen-second grace even if the participant disappears: the Switch may still be in its
-  fade, warp and bridge teardown.
+- An unexpected participant leave halts output. After a room-close confirmation, a participant that
+  disappears from LDN ends the run after a 2 s settle (`HOST_CLOSE_SETTLE_SECONDS`) rather than at
+  once; the fifteen-second grace runs to its end only while the participant stays.
 - Output is written only for a complete received Pokemon; input `.pk3`/`.ek3` files are never
   modified.
 
@@ -114,6 +118,11 @@ or command rows.
 
 The host serves one Switch. More peers need a `HostPeerProtocol` each (own Pia variables, nonces,
 packet ids) and a game-level RFU policy; raising the LDN participant limit is not enough.
+
+## Unresolved
+
+- Whether the console needs the fifteen-second close grace is unmeasured; it covers the console's
+  fade and warp after `READY_CLOSE_LINK` (`HostTradeTiming.post_client_close_grace_frames`).
 
 ## Source map
 

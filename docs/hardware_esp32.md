@@ -33,22 +33,18 @@ The Seeed Studio XIAO ESP32C3 uses its USB-C socket for native USB Serial/JTAG.
 Attach its supplied external antenna before radio use. BOOT is GPIO9, and the onboard LED
 is a charging indicator ([Seeed's board guide](https://wiki.seeedstudio.com/XIAO_ESP32C3_Getting_Started/)).
 The C3 build runs at 160 MHz. Wire and button tasks run on core 0; the dual-core targets keep
-these tasks on core 1. FireRed joiner trades completed on this board, with valid received
-PK3 checksums and no in-game error. Mutual Cancel closed the link and returned the console
-to the Pokemon Center.
-Sword host trading also completed through the packaged macOS app, with a legal received
-PK8 and a clean console departure. Both roles reported zero lost host ETH_TX commands,
-bad wire frames and USB resyncs.
+these tasks on core 1. The XIAO ESP32C3 trades as FireRed joiner, with valid received PK3
+checksums and no in-game error, and as Sword host through the packaged macOS app, with a legal
+received PK8. Both roles report zero lost host ETH_TX commands, bad wire frames and USB resyncs.
 
-On a XIAO ESP32C3 revision 0.4 over native USB on macOS, two 2,000,000-byte transfers
-at host baud settings 115200 and 1500000 each delivered 1429 messages with zero missing
-messages and zero bad checksums. Measured payload rates were 880.1 and 878.3 KB/s.
-The host baud setting does not change USB speed. Initial idle free heap was 152656 bytes.
+A XIAO ESP32C3 revision 0.4 over native USB on macOS carries a 2,000,000-byte BENCH transfer as
+1429 messages with none missing and no bad checksum, at 880.1 KB/s with the host baud setting at
+115200 and 878.3 KB/s at 1500000: the host baud setting does not change USB speed. Its idle free
+heap at start is 152656 bytes.
 
 Gr3nSkyDragon reports a completed FireRed joiner trade on an ESP32-S3 under Windows in
 [the S3 contribution](https://github.com/Decryptu/pokeldn/pull/2). The classic ESP32 measurements
-below use the ELEGOO ESP32-D0WD-V3 board unless another board is named. S3 throughput, host-role
-trades and other games have not been measured locally.
+below use the ELEGOO ESP32-D0WD-V3 board unless another board is named.
 
 ## Roles
 
@@ -108,7 +104,7 @@ the ROM's boot text included, fails the checksum and is discarded.
 | type | direction | payload |
 |---|---|---|
 | `0x01` HELLO | host | none; answered by CREDIT 0, then INFO |
-| `0x02` BAUD | host | u32 baud; RESULT at the old rate, then the switch, which waits up to 3 s for the UART to drain (at 115200 the ring holds over a second of RX_MGMT). The first HELLO at 1500000 is lost in about one open of four; `open_serial` retries it |
+| `0x02` BAUD | host | u32 baud; RESULT at the old rate, then the switch, which waits up to 3 s for the UART to drain (at 115200 the ring holds over a second of RX_MGMT). The first HELLO at 1500000 is sometimes lost (about one open of four measured); `open_serial` retries it |
 | `0x03` CHANNEL | host | u8 channel; idle only |
 | `0x04` STA_JOIN | host | u8 channel, 6 BSSID, 32 SSID (the LDN SSID's hex text), 16 key, 6 station MAC (zero = random); optional: u8 fixed data rate (the AP_START bits 3..5 table), u8 maximum TX power in 0.25 dBm (`esp_wifi_set_max_tx_power`, 8 to 84, the driver caps it at 61), u8 flags: 1 RTS before every frame, 2 no RTS before a retry (`esp_wifi_internal_set_rts`) |
 | `0x05` STOP | host | none; back to idle, keys cleared |
@@ -174,9 +170,10 @@ two bytes of channel and RSSI. Pia payloads are AES-GCM ciphertext and do not co
 | a station's data frame, joined | the frame as RX_ETH only; station mode passes management frames alone |
 | an LDN advertisement nearby | the whole action frame, about ten a second per network |
 
-The outgoing queue holds 384 messages and refuses one below 64 KB of free heap (a 128-entry queue
-dropped 337 in a Scarlet host's opening burst). A console at the line's rate holds the heap at that
-floor (`heap_min` 63976, `queue_max` 95, `refused_heap` 219): the heap, not the queue, refuses RX_ETH.
+The outgoing queue holds 384 messages and refuses one below 64 KB of free heap; a 128-entry queue
+overflows in a Scarlet host's opening burst (337 messages dropped where measured). A console at the
+line's rate holds the heap at that floor (`heap_min` 63976, `queue_max` 95, `refused_heap` 219): the
+heap refuses RX_ETH before the queue fills.
 
 ### Baud rate
 
@@ -193,16 +190,17 @@ on macOS:
 | 1500000 | 140.2 KB/s | 20000 of 100 bytes | 0 | 0 |
 | 2000000, 3000000 | the board never answers HELLO at the new rate | | | |
 
-A Legends Z-A seat at 921600 with CREDIT seated with no refused association, first message at 1.68 s
-(1.7 s at 1500000), 695 of 695 ETH_TX, and traded: the default rate wins Z-A's seat race.
+One Legends Z-A seat at 921600 with CREDIT had no refused association, its first message at 1.68 s
+(1.7 s in a seat at 1500000), 695 of 695 ETH_TX, and a trade.
 
 ### Host-to-board command loss and CREDIT
 
-Under a console's flood, host commands can be lost before the handler: one Scarlet seat handed the board 660 ETH_TX in 7.5 s and the board counted 92 (`tx_eth +
-tx_eth_failed`), with no CCMP packet number spent on the rest and `tx_eth_retried` 0. Causes and
-fixes:
+Under a console's flood, host commands can be lost before the handler: a Scarlet seat that handed
+the board 660 ETH_TX in 7.5 s had 92 counted (`tx_eth + tx_eth_failed`), with no CCMP packet number
+spent on the rest and `tx_eth_retried` 0. Each cause, measured without its countermeasure, and what
+the firmware does:
 
-| cause | measured | fix |
+| cause | measured without the countermeasure | the firmware |
 |---|---|---|
 | UART interrupt on core 0 with the Wi-Fi task | the seat above | driver installed from the reader task, core 1 |
 | an ETH_TX waiting on a full Wi-Fi queue in the reader task; the 16 KB ring fills, the FIFO overflows | `esp32_bench.py --uplink 5000` (5000 broadcast ETH_TX to an empty network) at 1500000: 369 to 429 lost, `uart_fifo_ovf` 305, `wire_rx_bad` 169; none at 921600 | CREDIT: 0 of 5000 lost at either rate |
@@ -225,17 +223,15 @@ outgoing queue (at most one queued) yet arrives about 0.5 s late behind a Scarle
 RX_ETH. A board without CREDIT never opens the window and the host writes unthrottled. The board logs a
 command over 50 ms (`slow command`) and a reader turn over 100 ms (`reader held`).
 
-Since the idle count and the CREDIT ahead of the queue, 26 seats (Scarlet both roles, Sword host)
-handed the board 35514 ETH_TX and it counted 35514, every overflow counter 0.
+With the idle count and the CREDIT ahead of the queue, the board counts every ETH_TX the host hands
+it: 35514 of 35514 over 26 seats (Scarlet both roles, Sword host), every overflow counter 0.
 `tools/ldn/esp32_cmd_loss.py TRACE` reconciles a trace: ETH_TX written against `tx_eth +
-tx_eth_failed`, bytes written since HELLO against the last CREDIT. Earlier losses of a few commands
-with no overflow counted (6 of 2333, 10 of 1691, 1 of 836) fell in the host's first burst after the
-link came up; the cause is unmeasured.
+tx_eth_failed`, bytes written since HELLO against the last CREDIT.
 
 ### Transmit timing
 
-On a calm Scarlet seat ETH_TX spent 0.12 ms average and 1.57 ms at most in the driver; the console
-held all 44 of the joiner's records 0.35 s after sending.
+On one calm Scarlet seat ETH_TX spent 0.12 ms on average and 1.57 ms at most in the driver, and the
+console held all 44 of the joiner's records 0.35 s after they were sent.
 
 TX_DONE separates the board from the peer. On a flooding Scarlet seat a frame waited 1.0 ms median
 and 6.8 ms at most from ETH_TX to TX-done, and the console's radio acknowledged 1267 of 1267. The
@@ -259,8 +255,9 @@ second.
 
 ### The FireRed hold
 
-Five FireRed trades hosted as an access point; the console acknowledged every frame. Wait is ETH_TX
-to TX-done; retries are the share of data frames the sniffer saw with the retry bit.
+Five FireRed trades with the board as the access point, one row per trade; the console
+acknowledged every frame. Wait is ETH_TX to TX-done; retries are the share of data frames the sniffer
+saw with the retry bit.
 
 | channel | frames | wait median | wait p99 | wait max | holds over 100 ms | retries AP / console |
 |---|---|---|---|---|---|---|
@@ -297,8 +294,8 @@ TRACE` splits each wait into stages, pairing TX-dones by length (they complete o
 ### The CPU clock
 
 The firmware runs the CPU at 240 MHz (`CONFIG_ESP_DEFAULT_CPU_FREQ_MHZ_240`; IDF's default is 160).
-Six FireRed trades on channel 1, in order; missed is the share of the console's first copies the
-board did not hear:
+Six FireRed trades on channel 1, one row per trade; missed is the share of the console's first
+copies the board did not hear:
 
 | CPU | RX buffers | frames | p90 | p99 | p99.9 | over 5 ms | over 40 ms | over 80 ms | holds | missed | console retries |
 |---|---|---|---|---|---|---|---|---|---|---|---|
@@ -313,7 +310,8 @@ The spread between runs of one setting is as large as the clock's difference.
 
 ### The channel
 
-The long waits belong to channel 1 in this room, which also carries the console's home access point:
+Long waits follow the channel's occupancy. Where these trades were measured, channel 1 also carried
+the console's home access point and held the long waits:
 
 | channel | trades | wait p99 | wait max | trades with a hold over 100 ms | board missed, console first copies |
 |---|---|---|---|---|---|
@@ -335,7 +333,7 @@ sent again means its sender missed the ACK. One FireRed trade on channel 1 (6744
 | board | 6514 | 490 (7.5%) | 56 |
 | console | 4517 | 428 (9.5%) | 2 |
 
-Only the board misses ACKs. During a hold the
+In that trade the board missed far more ACKs than the console (56 against 2). During a hold the
 board hears neither the console's data nor its ACKs: its copies of the held frame go out about 40 ms
 apart, and 42 to 66% of the console's frames to it carry the retry bit (11 to 14% over the session),
 while the sniffer hears both sides at -19 to -21 dBm.
@@ -423,7 +421,8 @@ None for a kernel interface, which is how every launcher picks its path.
 - The board's frames reach the stack through trio tasks in the launcher's own trio loop. A blocking
   `select` inside that loop starves them and each datagram waits out the full timeout; wait with
   `trio.lowlevel.wait_readable` under `trio.move_on_after`. A Scarlet joiner blocking in
-  `select(0.05)` handled one message per 50 ms and the console re-sent its records for 50 to 70 s.
+  `select(0.05)` handles one message per 50 ms, and the console re-sends its records meanwhile (50
+  to 70 s measured).
 
 ## The board's LED and buttons
 
@@ -549,9 +548,9 @@ counts 0 LDN action frames on every channel. Two checks separate it from a firmw
 | joined to an access point as a station, the rate of the unicast frames the access point sends it | HT MCS 5 to 7 (HT40 access point) | about 97% at DSSS 5.5 Mbit/s, never above OFDM 6 or HT MCS 1 |
 
 A station association and a ping succeed on such a board: the access point's rate adaptation falls
-back to DSSS. One generic ESP32-WROOM-32 DevKit (ESP32-D0WD-V3 revision 3.1, CP2102) failed both
-checks with firmware other than pokeldn's; a WROOM-32E board with the same chip passed both, found
-Sword's gift network at once and delivered a Mystery Gift ([issue 1](https://github.com/Decryptu/pokeldn/issues/1)).
+back to DSSS. A generic ESP32-WROOM-32 DevKit (ESP32-D0WD-V3 revision 3.1, CP2102) fails both checks
+with firmware other than pokeldn's; a WROOM-32E board with the same chip passes both, hears Sword's
+gift network and delivers a Mystery Gift ([issue 1](https://github.com/Decryptu/pokeldn/issues/1)).
 
 ## Measured on a board
 
@@ -560,39 +559,48 @@ has traded with retail Switch 2 consoles:
 
 | role | title | result |
 |---|---|---|
-| station | FireRed | joined 2.5 s after the scan, Pia at 3.3 s, GBA link at 3.4 s; 38 to 42 'T' slots a second each way, as on the rtw88 adapter |
+| station | FireRed | trade; 38 to 42 'T' slots a second each way, as on the rtw88 adapter |
 | access point | FireRed, LeafGreen | trade and Wonder Cards; the console's association below |
-| station | Scarlet | four trades in three runs, below |
-| access point | Scarlet | the console's type-3 join answered with the type 9 accept, key `0x80` opened, offer sent 11.4 s after the join. In one of two runs the console acknowledged the announcement and never sent its port 2 join; re-entering the search cleared it |
-| station | Legends Z-A | seated on the first scan: selection record (`0100`) at 1.75 s, offer at 11.9 s, close (`0104`, `0200`) at 15 s |
+| station | Scarlet | trade, more than one in a seat; below |
+| access point | Scarlet | trade: the console's type-3 join answered with the type 9 accept, key `0x80` opened, offer sent 11.4 s after the join |
+| station, access point | Legends Z-A | trade in both roles |
 | station, access point | Let's Go | trade in both roles |
 | access point | Legends Arceus | trade through the four host phases (3, 6, 11, 14) |
-| station | Sword | channel 6 by the busiest-channel scan, the first association held, confirmation ladder done 34 s after the seat; late-ack resends arrive out of order ([Sword session](swsh_session.md)) |
-| access point | Sword | two Mystery Gifts |
-| station | Brilliant Diamond | Union Room trade to `NetDataReturnSelectData` and the save. A killed client leaves its station in the room; the same MAC is never answered until the player leaves and re-enters |
-| access point | Brilliant Diamond | a Shining Pearl entered the hosted room, handshake done 0.46 s after association, trade to the save ([Hosting](bdsp_session.md#hosting)) |
+| station | Sword | trade; late-ack resends arrive out of order ([Sword session](swsh_session.md)) |
+| access point | Sword | trade and Mystery Gift |
+| station | Brilliant Diamond | Union Room trade to `NetDataReturnSelectData` and the save. A client that stops without leaving stays a station in the room; the console refuses the same variable id (result 7) until the player re-enters the room or a fresh id is used ([The Pia layer](pia.md#the-version-9-connection-request)) |
+| access point | Brilliant Diamond | a Shining Pearl entered the hosted room and traded to the save ([Hosting](bdsp_session.md#hosting)) |
 
 A FireRed console joining the board's access point lists the network (it accepts the zero-length
 hidden SSID, the rate order, capability `0x0431` and the WMM element), authenticates open and sends
-one association request 24 ms later, not retried: capability `0x0431`, listen interval 10, the SSID
+an association request (one, 24 ms after the authentication, in the captured join): capability
+`0x0431`, listen interval 10, the SSID
 as 32 hex characters, rates `02 04 0b 16 0c 12 18 24` and `30 48 60 6c`, power capability `00 14`,
 RSN capabilities `0x0000`, a WMM information element, vendor element `00 22 aa 10 01 02`. Its LDN
 authentication request reaches `RX_ETH` 40 ms after `STA_JOINED`. Its first broadcasts need the
 firmware's forwarding ([A station's broadcasts](ldn.md#a-stations-broadcasts)).
 
-Scarlet as joiner: the first association attempt seats, 0.35 s from `STA_JOIN` to `LINK` (the rtw88
-adapter needs 30 to 60 refused attempts); the session join is answered at 0.93 s and the announcement
-comes 5.8 to 7.7 s after the seat. The console's first burst of 46 records (about 50 KB) saturates
-board-to-host at 92 KB/s.
+Scarlet as joiner: in the measured seats the board seated on its first association attempt, 0.35 s
+from `STA_JOIN` to `LINK`, where the rtw88 adapter needed 30 to 60 refused attempts; the session join
+was answered at 0.93 s and the announcement came 5.8 to 7.7 s after the seat. The console's first
+burst of 46 records (about 50 KB) saturates board-to-host at 92 KB/s.
 
 ## Unresolved
 
 - The softAP negotiates WMM, which a Switch host does not; trades complete with and without it.
   `POKELDN_ESP32_AP_FLAGS=2` (`AP_FLAG_NO_QOS`) clears the station's QoS flag after association: the
   board then sends plain data (446 frames on a Z-A trade) while the console keeps sending QoS data.
-  Z-A, Legends Arceus, Let's Go and LeafGreen trades completed with it. Two sniffed Z-A trades
-  without and with QoS data retried 11.9% then 1.3% of the board's frames and 11.5% then 1.3% of the
-  console's: the retry rate follows the air, and nothing attributes a difference to the setting.
+  Z-A, Legends Arceus, Let's Go and LeafGreen trades completed with it. Of two sniffed Z-A trades,
+  the one without QoS data retried 11.9% of the board's frames and 11.5% of the console's, the one
+  with QoS data 1.3% of each: the retry rate follows the air, and nothing attributes a difference to
+  the setting.
+- ESP32-S3 throughput, and S3 trades in the host role or with titles other than FireRed, are
+  unmeasured on a local board.
+- A few host commands were lost with no overflow counted (6 of 2333, 10 of 1691, 1 of 836), all in
+  the host's first burst after the link came up, on firmware without the idle CREDIT and the CREDIT
+  ahead of the queue. The cause is unmeasured.
+- A Scarlet console joined to the board's access point acknowledged the announcement and never sent
+  its port 2 join in one of two seats. The cause is unknown.
 - What in the access point's receive path misses 1 to 22% of a station's OFDM first copies, and ACKs
   during a FireRed hold, is unknown; the settings ruled out are in
   [Two boards reproduce the misses](#two-boards-reproduce-the-misses).

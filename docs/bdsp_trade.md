@@ -105,10 +105,10 @@ only setter of `isRecivePokeParam` is `UnionTradeManager$$RecivePokeData`, in SE
 phase [0x1c33e9c]); the partner's `{0}` does not release it.
 
 - Answer each console check-ok once. A copy answered after the first answer moved the box to
-  `LastConfirm` resets the round. A console never reused a reliable sequence id for different
-  content within a seat (322 repeated ids among 12858 reliable messages in 76 captures, every copy
-  identical), so a receiver can drop an id already delivered; `pokeldn.ldn.reliable5.Reassembler`
-  does, and `bin/bdsp_connect.py` uses it.
+  `LastConfirm` resets the round. The reliable window keeps the first message for an id
+  ([the Pia page](pia.md#what-the-receiver-discards-in-silence)); the 322 repeated ids among 12858
+  console reliable messages captured were byte-identical copies. A receiver drops an id already
+  delivered; `pokeldn.ldn.reliable5.Reassembler` does, and `bin/bdsp_connect.py` uses it.
 - Answer a console's `45 0001 01` with `45 0001 00`; a `{1}` back is a back-out of the client's own.
   Never send a 0x45 after the replacement Pokemon has gone out or after the console's re-pick: it
   wipes the round.
@@ -179,10 +179,9 @@ A Dialga offered against a console's Mew leaves the console PARENT.
 `TradeStateModel$$SetTragetPokeData` [0x1c24d70] ends by sending the console's state, WAIT_POKE. A
 CHILD console then moves to SEND_READYOK and waits silently for a peer state of 5 or 6, so a client
 that echoes WAIT_POKE deadlocks it. `room.mirror_trade_state` answers WAIT_POKE with SEND_READYOK,
-which a console accepts in either role: offered a Dialga against an ordinary species, a retail
-console walked INIT to SEND_READYOK as CHILD and completed the trade on the client's repeated
-SEND_READYOK. `tests/test_bdsp_trade_states.py` runs both functions as a model against the client's
-policy under random latencies.
+which `ReciveState` takes in either role: a CHILD at its SEND_READYOK (case 5), a PARENT at
+WAIT_READYOK (case 6). `tests/test_bdsp_trade_states.py` runs both functions as a model against the
+client's policy under random latencies.
 
 Send one message per reliable sequence id: `their_ack_id` moves only when the console acknowledges,
 so later messages under one id look like retransmits and are discarded. `bdsp_connect` keeps its
@@ -190,31 +189,37 @@ own counter.
 
 ## The completed trade
 
-Six states in 630 ms, the console as recruiter and PARENT:
+The security states in order, the console as recruiter and PARENT (the console's state, then the
+client's answer):
 
-    t=79.41  their READY-OK {isTradeOk 0, tradeState 2}  ->  the client's READY-OK
-    t=79.82  INIT          ->  WAIT
-    t=80.03  WAIT          ->  WAIT
-    t=80.05  SEND_POKE     ->  SEND_POKE, and its Pokemon
-    t=80.24  WAIT_POKE     ->  WAIT_POKE
-    t=80.44  SEND_READYOK  ->  SEND_READYOK
-    t=80.45  WAIT_READYOK  ->  SEND_READYOK
-    t=109.31 NetDataReturnSelectData
+    their READY-OK {isTradeOk 0, tradeState 2}  ->  the client's READY-OK
+    INIT          ->  WAIT
+    WAIT          ->  WAIT
+    SEND_POKE     ->  SEND_POKE, and its Pokemon
+    WAIT_POKE     ->  WAIT_POKE
+    SEND_READYOK  ->  SEND_READYOK
+    WAIT_READYOK  ->  SEND_READYOK
 
-The 28 to 29 s after WAIT_READYOK are the save writes, the animation and `ReplacePoke`, with only
-`NetCharacterStateData` on the wire. Leaving WAIT_READYOK needs one more
-message from the peer, which the client's once-a-second state repeat supplies. The station must not
-leave in this window: a drop lands the console between `FirstSave` and `SecondSave`. With the console
-as the room's joiner and pokeldn as host, it sent its check-ok 8 s after the Pokemon crossed and
-walked states 1 to 6 in 0.4 s as PARENT.
+After WAIT_READYOK the console writes the save, plays the animation and runs `ReplacePoke`, sending
+only `NetCharacterStateData`. Leaving WAIT_READYOK needs one more message from the peer, which the
+client's once-a-second state repeat supplies. The station must not leave in this window: a drop
+lands the console between `FirstSave` and `SecondSave`. The same sequence runs with the console as
+the room's joiner and pokeldn as host.
 
 `NetDataReturnSelectData` (0x45), `45 00 01 00` (`{isReturnSelect: 0}`), announces the console's
 return to its select window. It asks for no answer (a `{1}` answer draws a `{0}` and a reset of an
-already clear round) and repeats once a second until the player picks the next Pokemon.
+already clear round). The console repeats it, about once a second as measured, while its player is
+in the select window. `TradeSelectPokeModel$$SendReturnSelectPoke` [0x01c27c20] builds it
+(`isReturnSelect` = not its argument, to `tradeTargetIndex` +0x48); it has no direct `bl` caller,
+and what repeats it is not traced.
 
-One association carries as many trades as the player starts, each looping from the select window
-with no second approach or trainer record. A second trade reads back what the console stored. The client's security-state repeater must stop when a trade completes: a
-SEND_READYOK (5) 0x21 landing while the player picks (box phase 5 or below) resets the round.
+Trades chain in one association, each looping from the select window with no second approach or
+trainer record: a retail console traded three times back to back with `bin/bdsp_connect.py`, and
+its box screen came back after every trade. `TradeStateModel$$ReturnTradePokeSelectWindow`
+[0x01c29590] runs `PlayerSave`, then the model's callback at +0x80; its caller is not traced. A
+second trade reads back what the console stored. The client's security-state repeater must stop when
+a trade completes: a SEND_READYOK (5) 0x21 landing while the player picks (box phase 5 or below)
+resets the round.
 
 ## The Pokemon
 
@@ -264,19 +269,22 @@ turns false.
 
 ### Duplicate detection
 
-A locally traded Pokemon duplicating one in the save gets an illegal flag and cannot be traded
-("Un probleme avec votre Pokemon rend tout echange impossible."). `opendpr` names the machinery, all bodies stubbed: `PokeDupeChecker` (a 1.3.0 addition)
-with `CheckDuplicate`, `IsDuplicatedPokemonParam(pp0, List<PokemonParam>)`, `UpdateIllegalFlagAll`,
+On a retail console, a locally traded Pokemon duplicating one in the save was flagged illegal and
+could not be traded on ("Un probleme avec votre Pokemon rend tout echange impossible."). `opendpr`
+names the machinery, all bodies stubbed: `PokeDupeChecker` (a 1.3.0 addition) with `CheckDuplicate`,
+`IsDuplicatedPokemonParam(pp0, List<PokemonParam>)`, `UpdateIllegalFlagAll`,
 `IsLocalKoukanPokemonParam` and `ClearIllegalFlagAll`.
 
 Never build an offer from a console's own Pokemon without changing the PID. The same record under a
-new PID and encryption constant, shiny state kept, trades into a save holding the original
-(`bin/bdsp_host.py --fresh-pid`) and carries no illegal flag.
+new PID and encryption constant, shiny state kept, traded into a save holding the original
+(`bin/bdsp_host.py --fresh-pid`) and carried no illegal flag. What `PokeDupeChecker` compares is
+unread.
 
 ## The disconnect penalty
 
-Dropping out mid-trade earns "vous ne pouvez pas faire d'echange en reseau pour le moment", and the
-console stops advertising (`their advertising state seen 0`):
+A station dropping out between `FirstSave` and `SecondSave` leaves the penalty armed, and the
+console refuses a new local trade with "vous ne pouvez pas faire d'echange en reseau pour le moment"
+until it clears:
 
     TradeStateModel$$FirstSave    0x1cd4fc0   SetPenartyCounter(30); SetPenartyTime(now)
     TradeStateModel$$SecondSave   0x1cd5030   SetPenartyCounter(0)

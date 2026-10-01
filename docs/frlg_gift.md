@@ -72,9 +72,9 @@ Under `pokeldn/frlg/gift/` unless stated:
                --keys PROD_KEYS --gift beast-cutscene --flag-id 1005
     (them) join the host when it appears; YES on the replace-card prompt if one shows
 
-Radio setup: [The ESP32 radio](hardware_esp32.md). Back out of the search screen between runs or the
-console may join a stale SSID; after two or three mixed failures, restart the game.
-`tests/test_mystery_gift_flow.py` models the block-receive gate, `MGL_Receive` and one client command
+Radio setup: [The ESP32 radio](hardware_esp32.md). `bin/frlg_mg_host.py` serves one console per run
+and stops once it has left LDN ([Host implementation](frlg_host.md), Shutdown and cleanup); a second
+console needs a new run. `tests/test_mystery_gift_flow.py` models the block-receive gate, `MGL_Receive` and one client command
 per frame; `tests/test_mystery_gift_end_to_end.py` adds an impaired Reliable/RFU path.
 
 ## What the link can carry
@@ -100,8 +100,9 @@ save with a good CRC, but the menu hides it and `MysteryGift_LoadLinkGameData` r
 [mystery_gift.c:349] (`HAS_NO_CARD`).
 
 The next Wonder Card rebinds the slot (`magic` stays 51, coordinates 0xFF) and the card comes back; a
-buffer script sends no card and leaves the slot alone. One ordinary delivery changes 564 bytes of the
-15872-byte SaveBlock1: 246 in the card at +0x32E0, 426 in the RAM script at +0x361C, one save sector.
+buffer script sends no card and leaves the slot alone. An ordinary card delivered over a bound script
+rewrites the card at +0x32E0 and the RAM script at +0x361C, both in one save sector, and nothing in
+SaveBlock2; measured, 564 of the 15872 bytes of SaveBlock1 differed.
 
 ## The gift catalogue
 
@@ -185,8 +186,9 @@ above to table 0 [wild_encounter.c:192]. The var (0x4024) is at SaveBlock1 + 0x1
 
     --buffer-script save-dump --dump-block sav1 --dump-offset 0x1048 --dump-size 2
 
-It read 3 after three talks; the first encounter in GROTTE METAMO (Six Island) was then a level-16
-Houndour, table 3 `sSixIslandAlteringCave_4_FireRed` [src/data/wild_encounters.json].
+Three talks set it to 3, and GROTTE METAMO (Six Island) then draws from table 3
+`sSixIslandAlteringCave_4_FireRed` [src/data/wild_encounters.json] (a level-16 Houndour on retail
+FireRed).
 
 | var | species | | var | species |
 |---|---|---|---|---|
@@ -280,7 +282,7 @@ News from a Friend rolls a berry between `ITEM_RAZZ_BERRY` and `ITEM_NOMEL_BERRY
 then 500 steps [`MAX_REWARD`]. The four-berry reward needs `WONDER_NEWS_RECV_WIRELESS`, a closed path.
 
 `--news` (`--news berry`, `--news-id N`); the player picks Wonder News, "input one?", Friend (a
-console holding news shows it: A, then Receive). About 18 seconds:
+console holding news shows it: A, then Receive). One session (about 18 s):
 
     ident 16  sClientScript_SendGameData
     ident 17  MysteryGiftLinkGameData
@@ -468,7 +470,7 @@ Blocked at the RFU serial-number gate. Both paths reach the same gift conversati
 
 A wrong serial fails gate 1 silently (no SE_BOO). The Switch bridge reports `0x0002`
 (`RFU_SERIAL_GAME`): Friend (`sAcceptedSerialNos` [link_rfu_2.c:240]) lists every candidate and
-Wireless ignores all 21. The advertisement has no serial field; a native one is zero outside four
+Wireless ignores every one. The advertisement has no serial field; a native one is zero outside four
 fields:
 
 ```
@@ -479,9 +481,9 @@ TID   | uname                   | parent| UNEXPLAINED | search| UNEXPLAINED
 `svc_47` [sloopsvc.c:34] takes `{u8 HostRfuGameData[0x10]; u8 HostRfuUsername[8]}`, 24 bytes with no
 serial, while the bridge writes the candidate list through `svc_45_rfu_link_status()`.
 
-The 21 advertisements varied the scene id (0, 21, 0x7F7D), LDN and Pia app versions, `0x7F7D` in
-both byte orders at offsets 12, 13, 14, 18, 19, 20, 22, the activity (0, 4, 21), `hasCard`, and the
-search word's bit 7; none drew an 802.11 authentication. Constant: `local_communication_id =
+Advertisements that drew no 802.11 authentication from the Wireless path (21 tried): the scene id
+(0, 21, 0x7F7D), LDN and Pia app versions, `0x7F7D` in both byte orders at offsets 12, 13, 14, 18,
+19, 20, 22, the activity (0, 4, 21), `hasCard`, and the search word's bit 7. Held constant: `local_communication_id =
 0x01006fa0233f8000`, LDN version 4, channel 1, `max_participants = 2`, Pia `sysCommVer = 22`, scene
 22287.
 
@@ -506,10 +508,6 @@ The distribution scripts are in `data/mystery_event_msg.s:200`, but the Switch r
 tickets and both `FLAG_RECEIVED_*` flags on the first Hall of Fame entry
 [post_battle_event_funcs.c:52, `#if REVISION >= 0xA`], so on a completed save the script is a no-op.
 The Old Sea Map is Emerald-only [mystery_gift.c:30].
-
-### Serving consoles back to back
-
-Not built: the host is restarted between consoles.
 
 ## Traps
 

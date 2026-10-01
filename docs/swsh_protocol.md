@@ -101,8 +101,8 @@ A payload is `struct.pack("<HBB", id, discriminator, 0)` then the body, built at
 by `0x006db840` (`strh w3`, the discriminator from `manager+0x480f0`, `strb wzr`) and parsed by
 `0x006db620`. The discriminator is a generation counter, `[content+0x370] = (+1) mod 255`
 (`0x008b6670`), pushed into `[manager+0x480f0]`; a forced CancelAccepted steps it on content 40
-(`0x006db470`, `0x010dcea4..0x010dcec8`); registrars zero it (`0x010d53a0`). All 107 payloads of one
-run carried zero.
+(`0x006db470`, `0x010dcea4..0x010dcec8`); registrars zero it (`0x010d53a0`). The 107 payloads of
+one trade with no forced CancelAccepted all carried zero.
 
 ### Reading the registrations live
 
@@ -113,7 +113,7 @@ run carried zero.
     id      = holder's vtable slot 7, called at 0x006db740 (`ldr x8, [x8, #0x38]`)
 
 Slot 7 returns `[holder+0x160]` here; elsewhere decode its `ldrh`. Empty on an idle screen; a seated
-link trade adds two entries within two seconds and keeps them; Mystery Gift adds none.
+link trade adds two entries (seen within two seconds of the seat); Mystery Gift adds none.
 
 ### Dispatch gates, ports and senders
 
@@ -199,7 +199,8 @@ non-zero hash a hosting Sword sent matches, e.g. content 50:
     elementId 20000, host      clock 2278   then 2338 after its pair moved
     crc32 chain                8ffa0f2e     then b3615e90
 
-A clock can change before its message is sent. A joiner echoing the host's hash traded.
+A clock can change before its message is sent. A joiner that echoes the host's hash completes a
+trade against a hosting Sword.
 
 ## The party payload on protocol 0x84
 

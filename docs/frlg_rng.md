@@ -36,8 +36,7 @@ by baby-step/giant-step (2<sup>17</sup> operations). The map permutes all 2<sup>
 distance always exists and is evidence only when small (odds N / 2<sup>32</sup>).
 
 `gRngValue` and `gSpecialVar_0x8000` are link-time globals and never move. A save-block address
-moves: `SetSaveBlocksPointers` re-rolls a 4-aligned offset on every battle and load [load_save.c:75]
-(76 bytes between two runs).
+moves: `SetSaveBlocksPointers` re-rolls a 4-aligned offset on every battle and load [load_save.c:75].
 
 ## The rate: exactly 2 turns per frame
 
@@ -70,8 +69,8 @@ void SeedRngAndSetTrainerId(void) { u16 val = REG_TM1CNT_L; SeedRng(val); gTrain
 
 A seed set during a link does not survive: backing out of Mystery Gift runs
 `MainCB_FreeAllBuffersAndReturnToInitTitleScreen` → `CB2_InitTitleScreen` [mystery_gift_menu.c:463],
-and START reseeds. No route from the Mystery Gift menu to the overworld avoids it; a seed of `0xC0DE`
-was 1,898,278,119 turns from the next encounter.
+and START reseeds. No route from the Mystery Gift menu to the overworld avoids it. A seed of `0xC0DE`
+set there is not an ancestor of the next encounter's state (measured 1,898,278,119 turns apart).
 
 | `SeedRng` call site | when |
 |---|---|
@@ -86,10 +85,11 @@ if ((svc_4b() & SVC4B_RESEED_RNG) != 0)
 ```
 
 [link_rfu_2.c:2114, `#if REVISION >= 0xA`]. `RfuMain1` runs every frame while RFU is up, so a set
-bit would pin the state near the advertised `playerTrainerId` (`0xDF65` on the measured console). It
-does not fire: at the Mystery Gift menu the first sample was 1,374,895,295 turns from `0xDF65`, and
-after a Union Room session an encounter was 2,098,390,873 turns from it. A state descending from the
-console's `playerTrainerId` would name this hook.
+bit would pin the state near the advertised `playerTrainerId` (`0xDF65` on the measured console). No
+state measured descends from it, so the bit was clear in both samples: the first sample at the
+Mystery Gift menu was 1,374,895,295 turns from `0xDF65`, and an encounter after a Union Room session
+2,098,390,873 turns from it. When the bit is set is unknown; a state descending from the console's
+`playerTrainerId` would name this hook.
 
 Timing START cannot choose a seed. Timer 1 runs at F/1 and a frame is 280,896 cycles, so frame-aligned
 reads would all be multiples of `gcd(280896 mod 65536, 65536) = 64`. Recovered seeds `0xB8C0`,
@@ -118,9 +118,9 @@ Both gaps must be searched; the console does not use one layout:
 | Magikarp (scripted) | 0 | 1 | 4 |
 
 A one-gap search reports "no state builds this mon" for the others. The stray draw is in no line of
-`CreateBoxMon`; its source is unknown. On a scripted encounter it is intermittent. A stub asking for
-shiny + Jolly + SPEED >= 20 produced a shiny Jolly Magikarp with SPEED 10; exactly one state in
-2<sup>32</sup> has that PID on its next two draws:
+`CreateBoxMon`; its source is unknown. On a scripted encounter it is intermittent. Example: a stub
+asking for shiny + Jolly + SPEED >= 20 can yield a shiny Jolly Magikarp with SPEED 10; exactly one
+state in 2<sup>32</sup> has that PID on its next two draws:
 
     state 0x429D2189
       draws 3,4 -> 15/0/12/25/7/14      what the stub tested: SPEED 25, passes
@@ -212,7 +212,7 @@ hidden, a step from the player. Both Pallet Town object events are `MOVEMENT_TYP
 
 ## How precisely a human can press A
 
-Four trials against a target 30.00 s ahead, read off the seed-printing NPC:
+Four trials by one player against a target 30.00 s ahead, read off the seed-printing NPC:
 
 | trial | frames elapsed | error vs 1791.8 |
 |---|---|---|
@@ -221,19 +221,26 @@ Four trials against a target 30.00 s ahead, read off the seed-printing NPC:
 | 3 | 1800 | +8.2 |
 | 4 | 1796 | +4.2 |
 
-Mean +9.2 frames (a fixed offset that cancels), standard deviation 4.5, range 11: presses land within
-about ±6 frames of the aim. All four turn counts are even.
+Mean +9.2 frames (a fixed offset that cancels), standard deviation 4.5, range 11: the four presses
+landed within about ±6 frames of the aim. All four turn counts are even.
 
-A shiny frame arrives every ~8192 frames (~137 s); a 4.5-frame spread hits one chosen frame about 9%
-of the time, so a hand-aimed shiny costs about 25 minutes against about 23 hours of random
-encounters. A miss costs one A press and is measured exactly. `pokeldn/frlg/rom/rng_countdown.py` is
+A shiny frame arrives every ~8192 frames (~137 s); at that 4.5-frame spread a press hits one chosen
+frame about 9% of the time, so a hand-aimed shiny costs about 25 minutes against about 23 hours of
+random encounters. A miss costs one A press and is measured exactly. `pokeldn/frlg/rom/rng_countdown.py` is
 the countdown; `--aimed-at STATE` turns a miss into a signed frame count. This remains the route when
 the RAM script slot holds a Wonder Card.
 
 ## The stub that does the search
 
-`--gift rng-shiny-hunt`, `pokeldn/frlg/rom/native_script.py`, `asm/field/shiny-seek.s`. On hardware,
-talking to the mother gave a shiny Ditto twice, from two different states.
+`--gift rng-shiny-hunt`, `pokeldn/frlg/rom/native_script.py`, `asm/field/shiny-seek.s`. Each stub on
+this page is verified on retail hardware:
+
+| stub | gift | verified on retail |
+|---|---|---|
+| `shiny-seek.s` | `rng-shiny-hunt` | a shiny Ditto from the mother, from two different states |
+| `mon-seek.s` | `rng-mon-hunt` | shiny, Jolly, Speed IV >= 20 on a level 5 Magikarp |
+| `mon-seek-far.s` | `rng-mon-hunt-far` | a shiny Jolly Magikarp, so the 559 filler bytes arrived |
+| `mon-seek-both.s` | `rng-mon-hunt-both` | shiny, Jolly, SPEED 22; a shiny Mewtwo on LeafGreen |
 
 ```c
 bool8 ScrCmd_setptr(struct ScriptContext * ctx)          // 0x11
@@ -287,9 +294,9 @@ the IVs [pokemon.c:1836, HP/ATK/DEF then SPE/SPATK/SPDEF].
 
     --hunt-nature adamant,jolly   --hunt-iv speed=31 --hunt-iv attack=20   --hunt-cap N
 
-On hardware, shiny + Jolly + Speed IV >= 20 on a level 5 Magikarp (catch rate 255, one Ultra Ball) read
-back PID 0x01503B8A, shiny value 4, Jolly, IVs 6/2/25/28/12/7; `lcg.recover_wild_state` gives state
-0x7041F74F and `rng_countdown` reproduces every field.
+The Magikarp of the table above (catch rate 255, one Ultra Ball) reads back PID 0x01503B8A, shiny
+value 4, Jolly, IVs 6/2/25/28/12/7; `lcg.recover_wild_state` gives state 0x7041F74F and
+`rng_countdown` reproduces every field.
 
 Shininess is tested in the fifteen-instruction hot loop; the division by 25 and the IV comparisons run
 for 1 state in 8192, so a criterion multiplies the iterations needed without slowing one:
@@ -354,7 +361,7 @@ it so. `native_script.emulate_body_script` catches a misalignment by walking the
 A shiny proves the jump, not the size. `asm/field/mon-seek-far.s` is followed by non-zero filler to
 byte 995; the stub sums it and searches only on a match. `InitRamScript` zero-fills the rest
 [`ClearRamScript`, script.c:495], so a short delivery leaves `gRngValue` alone. `--gift
-rng-mon-hunt-far` (196 bytes of stub, 559 of filler) produced a shiny Jolly Magikarp on hardware.
+rng-mon-hunt-far` carries 196 bytes of stub and 559 of filler.
 
 ## Searching so the stray draw cannot move the answer
 
@@ -374,7 +381,7 @@ Only the IV term is squared: shiny + Jolly + SPEED >= 20 goes from 1 in 546,000 
 about 4 s typical. The cap is 95%, since a miss costs one A press while 99% costs 18 s on an unlucky
 run.
 
-On hardware, state 0xFCB5674F gave shiny, Jolly, SPEED 22 by Method 1, and every method passed:
+State 0xFCB5674F gives shiny, Jolly, SPEED 22 by Method 1 on retail, and every method passes:
 
 | method | IVs | floors |
 |---|---|---|
@@ -389,14 +396,11 @@ Another logged state predicts the PID exactly, with the IVs from Method 4 (SPEED
       Method 2 (stray)  20/ 9/25/21/ 3/ 1
       Method 4          25/10/30/21/ 3/ 1   <- the mon that appeared
 
-Five scripted encounters used methods 1, 1, 2, 1, 4.
-
 ## Where a hunt writes its report
 
 `asm/field/mon-seek-log.s` (288 bytes, `--gift rng-mon-hunt-log`, flag id 1002) writes
 `{marker, start, found, iterations, cap}` to `gSaveBlock1Ptr + 0x348C`, `u8 unused_348C[400]`
-[include/global.h]. All 400 bytes read zero on the console before use (the dump stopped one byte short
-of `ramScript` at 0x361C, which changes during a session). The block is outside `ramScript`, so
+[include/global.h]. No code writes `unused_348C`, and it reads zero on a retail save. The block is outside `ramScript`, so
 `CalculateRamScriptChecksum` is untouched and the binding survives; each talk overwrites the log. It
 survives the battle (`MoveSaveBlocks_ResetHeap` copies the blocks) and reaches flash on save.
 
@@ -419,5 +423,5 @@ exponentially distributed. An underestimate only makes the freeze ceiling refuse
 ## LeafGreen
 
 The stubs run unported: every literal is a link-time IWRAM word or a constant identical on LeafGreen,
-and `TID ^ SID` is read at run time. A binding on Mewtwo gave a shiny Mewtwo; see
+and `TID ^ SID` is read at run time. A binding on Mewtwo aims Mewtwo's encounter; see
 [LeafGreen](frlg_leafgreen.md).

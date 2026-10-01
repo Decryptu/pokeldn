@@ -12,7 +12,7 @@ nav_order: 1
     scene_id                4352 (0x1100) Union Room; 5120 (0x1400) Union Room entered with a
                             password; 12608 (0x3140) Grand Underground
     version                 4
-    channel                 6, band 2 (2.4 GHz)
+    channel                 a 2.4 GHz channel, band 2, chosen per session (6 in the capture)
     accept_policy           ALL
     participants            1/8
     application_data        17 bytes
@@ -57,18 +57,19 @@ crypto.
 The console assigns the IP. The Union Room's eight seats are the LDN `max_participants`. An LDN seat
 is below the game: nothing appears on screen, and it is not a seat in the Pia session.
 
-Association succeeds about one attempt in two (`Connect failed with status code 1`); retry before
-diagnosing. The console can stop advertising while the player stays in the room, with no change on
-screen; leaving and re-entering brings it back on a new channel, SSID and session parameter, which
-the key derivation handles live. A receiver on the LDN interface must filter its own source IP:
-broadcasts loop back.
+`Connect failed with status code 1` is a failed association; from the ESP32 board about one attempt
+in two failed, so retry before diagnosing. A console in the room can stop advertising with no change
+on screen; what stops it is unread. Re-entering the room opens a new network (new channel, SSID and
+session parameter), which the key derivation handles live. A receiver on the LDN interface must
+filter its own source IP: broadcasts loop back.
 
 Unauthenticated Pia is dropped silently, with no error and no loss of the seat.
 
 ## What is on the wire
 
-A hosting console broadcasts to `169.254.x.255:12345` about nine times a second, every datagram 176
-bytes and addressed to `dst_var = 0`:
+Before a station acknowledges it, a hosting console broadcasts its update session to
+`169.254.x.255:12345` every 100 ms, addressed to `dst_var = 0`; every datagram of the capture is 176
+bytes:
 
     32ab9864 89 00000000 11bac90d 0000 00 f5a83bd383ce712d 59baa5cbc320cb56 <144 bytes>
     magic    v  dst=0    src      pid  f  nonce (a counter) tag              ciphertext
@@ -147,7 +148,7 @@ source MAC cannot be recovered from the packet being decrypted.
 
 ## The Local Protocol, decoded
 
-Every one of the 674 packets carries one message, always the same:
+Every one of the 674 packets of the capture carries the same message:
 
     presence 0x7f  flags 0x11  size 121  protocol 36  port 0  destination 0
 
@@ -175,8 +176,8 @@ The presence byte 0x7F sets three bits that name no field in Pia 5.27-6.30.
 
 The 20-byte ack is on [The Pia layer](pia.md#the-local-protocol-0x24). The framing that works is
 the host's own: a broadcast with packet `dst_var` 0 and message destination 0; the unicast framings
-are untested. After 42 updates 100 ms apart, the first ack 34 ms after the last stopped them, and
-the console sent nothing for the remaining 78 seconds.
+are untested. The first ack stops the updates: in the capture, 42 updates went 100 ms apart and the
+ack came 34 ms after the last. The console then sent nothing while the station sent nothing more.
 
 ## Joining the mesh
 
@@ -211,9 +212,8 @@ The join response for a two-station mesh:
     station 0   the console
     station 1   the client: its own station location and ids, read back
 
-Within a second the console sends RTT (0x58) and reliable (0x7c) traffic. Use a fresh `--src-var`
-every run: result 7 means the variable id is already one of its stations until the player leaves the
-room.
+Within a second the console sends RTT (0x58) and reliable (0x7c) traffic. Result 7 means the
+variable id is already one of its stations.
 
 ### The Session Protocol (0x94)
 
@@ -236,8 +236,8 @@ handler. No 0x94 has been captured or sent.
 
 A console entering the Union Room joins any room with a free seat before opening its own
 (`matchingMode` `IlcaNetSessionInitMode.Random`, `localRandomMatchmakeHostWaitTime` 25,
-`localRandomMatchmakeTimeUp` 270). `bin/bdsp_host.py` hosts one and a retail Shining Pearl walks in;
-`pokeldn/bdsp/host.py` holds the host side. A retail room's advertisement:
+`localRandomMatchmakeTimeUp` 270). `bin/bdsp_host.py` hosts one, and a console entering the Union
+Room joins it; `pokeldn/bdsp/host.py` holds the host side. A retail room's advertisement:
 
     LDN protocol         1 (AES-CTR advertisement)
     frame version        4
@@ -262,9 +262,10 @@ The host's station location has no public address and zero NAT fields, 36 bytes;
 both, 40. The host's station entry has index and join order 0, the joiner's 1.
 
 The joiner sends Sync Clock (0x1C) requests about once a second from the acknowledged join response;
-the host answers with the request's tick and the mesh clock in milliseconds. Unanswered, the joiner
-deauthenticates about ten seconds after its first request and re-associates, over and over, on
-"communication en cours". Answered, it sends `NetJoinData` and requests 0x04 and 0x23, as a retail
+the host answers with the request's tick and the mesh clock in milliseconds. A joiner whose Sync
+Clock requests go unanswered deauthenticates and re-associates repeatedly while the screen shows
+"communication en cours". The measured departures came about ten seconds after the first request;
+the timeout is unread. Answered, it sends `NetJoinData` and requests 0x04 and 0x23, as a retail
 host does, and from there the room is symmetric: the approach, the greeting and
 [the trade](bdsp_trade.md) run unchanged with the console as joiner.
 

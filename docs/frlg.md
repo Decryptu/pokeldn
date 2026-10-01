@@ -18,19 +18,21 @@ two link layers are stacked:
 protocol at `REVISION >= 0xA`. Cartridge header, read off both consoles: software version `0x0A`,
 game code `BPRF` (FireRed, French) and `BPGF` (LeafGreen, French).
 
-A three-second disconnection is a rate set missing 6, 9 and 12 Mbit/s in the association response
-([frlg_link.md](frlg_link.md), The advertised rate set).
+A console that leaves about three seconds after associating, once the Pia session has finalized,
+was given an association response without 6, 9 and 12 Mbit/s ([frlg_link.md](frlg_link.md), The
+advertised rate set); a missing Pia type 2 Join Response gives the same symptom.
 
-## Status
+## What works
 
-Every activity the console offers has been hosted on retail hardware, on both cartridges: Mystery
+On retail hardware, on both cartridges, the host serves every activity the console offers: Mystery
 Gift in both directions, trade as host and as joiner, the whole Union Room including full link
 battles, Wonder News, the cable-club colosseum, and a visiting Battle Tower trainer.
 
 Through the gift link's two interpreters the console also runs code sent to it: its memory read and
 written, its ROM mapped into named functions for the build it runs, its own functions called with
 eight arguments, and a Pokemon chosen by the host built by its own `CreateMon` and left in the
-player's party. The RNG is closed end to end; a shiny encounter costs one A press.
+player's party. The RNG is closed end to end; an aimed shiny encounter costs one A press per
+attempt.
 
 ## Pages
 

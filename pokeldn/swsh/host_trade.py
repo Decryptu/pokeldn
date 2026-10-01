@@ -146,7 +146,7 @@ class HostTrade:
 
     def __init__(self, self_id, peer_id, snapshot, offer_pk8, send, send_broadcast, send_mesh,
                  log=print, end_delay=END_DELAY, auto_accept=True, record=None, migrate=False,
-                 snapshot_builder=None):
+                 snapshot_builder=None, next_offer=None, accept_first=False):
         self.self_id, self.peer_id = self_id, peer_id
         self.snapshot = bytes(snapshot) if snapshot is not None else None
         self.offer_pk8 = bytes(offer_pk8) if offer_pk8 is not None else None
@@ -176,6 +176,11 @@ class HostTrade:
         self.ladder_sent = -1
         self.ladder_done_at = None
         self.box3_at = None
+        # Trades chain on one session: back in its box the joiner offers again, and the box, 130,
+        # content 50, 120 and content 40 run anew. next_offer(n) is our record for trade n.
+        self.next_offer = next_offer
+        self.trades = 0
+        self.accept_first = accept_first      # a player's side: accept before the joiner does
 
     def clock(self):
         """The frame clock, strictly increasing across every envelope we send."""
@@ -222,6 +227,8 @@ class HostTrade:
         if mid == trade.POKEMON_TRADE:
             pk8 = trade.offered_pokemon(payload)
             command = trade.parse_box_command(payload)
+            if self.stage == "saving" and (pk8 is not None or command == 1):
+                self._next_round()
             if pk8 is not None:
                 self.box["peer_pk8"] = pk8
                 self.log(f"[trade] <- the joiner offers a Pokemon, EC {pk8[:4].hex()}")
@@ -352,8 +359,12 @@ class HostTrade:
             self.send(PORT_CONTENT, trade.box_sync_state(1))
             self.box["our_offer"] = True
             self.log("[trade] -> our offer and box command 1")
-        if (self.auto_accept and not self.box["our_accept"] and self.box["peer_pk8"] is not None
-                and 1 in self.box["peer_cmds"]):
+        # Our 4 goes after the joiner's: its box step 3 clears our flags 1 and 4 together on our
+        # offer (0x00aa5688), and step 7 then waits for a 4 already erased.
+        if (self.auto_accept and self.box["our_offer"] and not self.box["our_accept"]
+                and self.box["peer_pk8"] is not None
+                and (4 in self.box["peer_cmds"] if not self.accept_first
+                     else 1 in self.box["peer_cmds"] and now - self.stage_since > 2.0)):
             self.send(PORT_CONTENT, trade.box_sync_state(4))
             self.box["our_accept"] = True
             self.log("[trade] -> box command 4, we accept")
@@ -387,7 +398,8 @@ class HostTrade:
             return
         if el.phase >= LADDER_LAST:
             self.ladder_done_at = now
-            self.log("[trade] the ladder reached phase 4")
+            self.trades += 1
+            self.log(f"[trade] the ladder reached phase 4 (trade {self.trades})")
             show_done()
             self.goto("saving")
             return
@@ -397,6 +409,26 @@ class HostTrade:
             self.ladder_sent = el.phase
             self.log(f"[trade] ladder: command {el.phase}, announcing {el.phase + 1}")
         el.advance_if_quorum(self.send, now)
+
+    def _next_round(self):
+        """The joiner offers from its box after a trade: the next trade on this session."""
+        if self.next_offer is not None:
+            offer = self.next_offer(self.trades + 1)
+            if offer is not None:
+                self.offer_pk8 = bytes(offer)
+        # Contents 50 and 40 and their pings 130 and 120 are built anew for every trade
+        # (0x010d4d90, 0x010da470, 0x006d46d0); content 30 and ping 110 last the session.
+        self.box = {"our_offer": False, "our_accept": False, "peer_pk8": None, "peer_cmds": []}
+        for message_id in (130, 120):
+            self.pings[message_id] = PingRound(message_id)
+        for offset in (50, 40):
+            self.elements.pop(offset, None)
+        self.peer_pk8 = None
+        self.peer_commands = []
+        self.ladder_sent = -1
+        self.ladder_done_at = None
+        self.log(f"[trade] the joiner offers again: trade {self.trades + 1}")
+        self.goto("box")
 
     def _stage_saving(self, now):
         # An emulated Shield host holds the mesh here; a migration after a trade reads as an

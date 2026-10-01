@@ -78,9 +78,9 @@ class ScriptedJoiner:
         elif mid == trade.POKEMON_TRADE:
             cmd = trade.parse_box_command(payload)
             if trade.offered_pokemon(payload) is not None:
+                # the player sees our offer, then accepts: a console's 4 comes before ours
                 self.data(protocol, 0, trade.pokemon_trade(self.pk8))
                 self.data(protocol, 0, trade.box_sync_state(1))
-            if cmd == 4:
                 self.data(protocol, 0, trade.box_sync_state(4))
         elif 40000 < mid < 41000:
             got = trade.parse_rpc(payload)
@@ -205,3 +205,62 @@ def test_without_migrate_the_host_holds_after_the_ladder():
     host.stage, host.stage_since = "saving", 0.0
     host.tick(10_000.0)
     assert host.stage == "saving"
+
+
+def test_a_second_trade_runs_on_the_same_session(monkeypatch):
+    """Back in its box after a trade, a retail Sword offered again (content 30 offer, box command 1)
+    on the same session: the host answers with its next record, accepts only after the joiner's box
+    command 4 (0x00aa5688), and runs fresh contents 50 and 40 and pings 130 and 120 to phase 4."""
+    now = [1000.0]
+    monkeypatch.setattr(host_trade.time, "time", lambda: now[0])
+    first, second = bytes(range(256)) + bytes(0x158 - 256), bytes(range(255, -1, -1)) + bytes(0x58)
+    ours = [bytes([0x11]) * 0x158, bytes([0x22]) * 0x158]
+    joiner = ScriptedJoiner(first)
+    to_joiner = []
+    host = host_trade.HostTrade(
+        HOST, JOINER, snapshot=bytes(3456), offer_pk8=ours[0],
+        send=lambda protocol, port, payload: to_joiner.append(("data", protocol, port, payload)),
+        send_broadcast=lambda port, msg, packed: to_joiner.append(("bcast", 0x84, port, msg,
+                                                                   packed)),
+        send_mesh=lambda payload: to_joiner.append(("mesh", 0x18, 1, payload)),
+        log=lambda *a: None, next_offer=lambda n: ours[n - 1])
+    offered = []
+
+    def run(until):
+        for _ in range(4000):
+            host.tick(now[0])
+            for item in to_joiner:
+                if item[0] == "data":
+                    if struct.unpack_from("<I", item[3])[0] == trade.POKEMON_TRADE:
+                        pk8 = trade.offered_pokemon(item[3])
+                        if pk8 is not None:
+                            offered.append(pk8)
+                    joiner.on_data(item[1], item[2], item[3])
+                elif item[0] == "bcast":
+                    joiner.on_broadcast(item[2], item[3], item[4])
+            to_joiner.clear()
+            for item in joiner.out:
+                if item[0] == "data":
+                    host.on_data(item[1], item[2], item[3], now[0])
+                else:
+                    host.on_broadcast(item[2], item[3], item[4])
+            joiner.out.clear()
+            if until():
+                return
+            now[0] += 0.01
+    run(lambda: host.trades == 1 and host.stage == "saving")
+    assert host.elements[50].values[1][0] == first
+    now[0] += 3.0
+    joiner.pk8 = second
+    joiner.pings.clear()
+    joiner.pairs.clear()
+    joiner.commands_sent.clear()
+    host.on_data(0x7C, 0, trade.pokemon_trade(second), now[0])
+    host.on_data(0x7C, 0, trade.box_sync_state(1), now[0])
+    run(lambda: host.trades == 2 and host.stage == "saving")
+    assert host.trades == 2
+    assert offered == ours
+    assert host.elements[50].values[0][0] == ours[1]
+    assert host.elements[50].values[1][0] == second
+    assert host.elements[50].phase == 1
+    assert host.elements[40].phase == host_trade.LADDER_LAST

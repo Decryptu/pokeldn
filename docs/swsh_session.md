@@ -101,9 +101,11 @@ The 384 bytes of application data:
     0x1F 266 the player profile, as in the trade snapshot at 0xAEC but sampled at another moment
              ([the protocol page](swsh_protocol.md#the-player-profile)); zero to the end
 
-Association succeeds about one attempt in two (`Connect failed with status code 1` is a retry). The
-advertisement disappears within a minute of a released seat. After association the console
-broadcasts Pia to `169.254.x.255:12345` about ten times a second; the screen shows nothing. On a
+`Connect failed with status code 1` is a refused association; the next attempt on the same search
+can associate (about one attempt in two over the ESP32 board). After pokeldn's station left a
+console-hosted session, the console's advertisement was gone within a minute; what ends it is
+unread. After association the console broadcasts Pia to `169.254.x.255:12345` (about ten packets a
+second measured); the screen shows nothing. On a
 Linux card, status 1 with no auth frame is cfg80211 missing the BSS; `iw dev IFACE scan` primes it
 (`--dwell 2.5`).
 
@@ -119,8 +121,8 @@ advertise 0x1F and account uid at 0x2F, `0x0111b160`) and any without a network 
 Link Trade, then the plain trade, shows two messages, each waiting for A. After the second ("you can
 cancel the search..."), `0x00fba940` calls `SetMode(comm, 2)` (`0x01096d10`); `0x01095f10` walks
 states 0, 5, 3, 4, 6 within a second, and state 6 calls `StartRandomMatching` (`0x010fcff0`) with
-scene 60001 (`0x01096730`). The overworld shows "Recherche...". Left on the first message, a console
-beacons forever and never matches.
+scene 60001 (`0x01096730`). The overworld shows "Recherche...". A console left on the first message
+never calls `SetMode(comm, 2)` and never matches.
 
 The matching layer joins a network (`0x006c9e70`, `0x006cb8e0`, join `0x006ca1c0`) with:
 
@@ -144,8 +146,8 @@ tables the joiner before it speaks Pia.
     a9fe0e01 3039 ... 00      169.254.14.1:12345   station 0, the console, ranking 0
     a9fe0e02 3039 ... 01      169.254.14.2:12345   station 1, the seat, ranking 1
 
-The host repeats an update session until each station acks it (0x21). Acking its sequence id stops
-the rebroadcast within 13 ms; acking a wrong one left 261 update sessions and 148 acks
+The host repeats an update session until each station acks it (0x21). An ack carrying its sequence
+id stops the rebroadcast (within 13 ms measured); an ack with another sequence id does not
 (`bin/swsh_connect.py --seq-delta`). Header byte 0x05 and the IV's source id are 0, as in the
 console's own (`--station-sweep` walks others).
 
@@ -222,7 +224,7 @@ the confirmation ladder on commands; one that joined pokeldn's host follows the 
 Every layer below the game works both ways ([The Pia layer](pia.md)): Local Protocol 0x24, station
 handshake 0x14, mesh join 0x18, RTT 0x58, reliable windows 0x7C and 0x80.
 
-Left alone, the console repeats `61 00 00 00 0a 00` (455 messages in 120 s, sequence 1..233); 0x80
+Left alone, the console repeats `61 00 00 00 0a 00`, a ping (about four a second); 0x80
 asks for ack id 1 once a second, 0x7C stays silent. `bin/swsh_connect.py --send-data HEX
 --send-protocol 0x7c` sends application data (`reliable4.build_data_message`, byte-exact with the
 console's own; five silent receive checks: [version 4](pia.md#version-4)). Pass signal: the 0x80 ack
@@ -231,7 +233,7 @@ id moves off 1; 0x7C acks at all.
 ## The ping handshake
 
 A payload is a four-byte little-endian message id and a protobuf body. A whole handshake carries
-these five and no others:
+these five and no others (the right column counts each in one captured handshake):
 
     0x7C  61000000 0a00      97 SyncPingDataHolder, field 1 ping {}           x20
     0x7C  61000000 1200      97, field 2 pingReply {}                          x2
@@ -248,9 +250,10 @@ these five and no others:
     4  answer imReady on 0x80         --send2-data 60ea000012020801
     5  the console sends its party on 0x84
 
-- One message drew one `pingReply` and the game fell back to pinging; 400 acked ones held the state.
-- A `pingReply` sent before the console asked stopped the heartbeat after ten messages.
-- One "last said" shared across protocols echoed `imReady` on 0x7C for `result{}`; no 0x84 followed.
+- The ping must be answered continuously: a single answer draws one `pingReply` and the game returns
+  to pinging.
+- A `pingReply` sent before the console asks for one stops its heartbeat.
+- `imReady` sent on 0x7C in answer to `result{}` draws no 0x84: the answer goes on 0x80.
 - A late-acked message is resent and can arrive after its successor (`pingReply` at sequence 9 after
   `pingSynced` at 10). Only a sequence above the newest replaces the current message; answering the
   resend loops on `pingReply` and `imReady` never comes.
@@ -261,7 +264,8 @@ protocol elsewhere, and prints each unruled payload (after the answer it caused;
 ## Operational notes
 
 - Never pass `--verbose` live; use `--capture FILE`.
-- The console moves between channels 1 and 6; the scan keeps the busiest ([channels](ldn.md#channels)).
+- The console's channel changes between sessions (1 and 6 seen); the scan keeps the busiest
+  ([channels](ldn.md#channels)).
 - Linux card: a hard-killed run leaves the `ldnclient` vif (later attempts look like refusals); an
   interface left up holds the channel (`Errno 16 Device or resource busy`).
 - `0x2D0` (allocations at `0x006a970c`, `0x006a9740`) is the session singleton's size

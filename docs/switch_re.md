@@ -5,8 +5,8 @@ nav_order: 3
 
 # Reverse-engineering a Switch title
 
-Reading a retail Switch game's code without unpacking it: BDSP (Unity/IL2CPP, 7.3 GB of NSPs, 3.5
-GB free) and Sword / Shield (native C++, a 13.3 GB XCI on a network share).
+Reading a retail Switch game's code without unpacking it, for a Unity/IL2CPP title (BDSP, 7.3 GB of
+NSPs) and a native C++ one (Sword / Shield, a 13.3 GB XCI).
 
 ## Order of work
 
@@ -91,7 +91,7 @@ written by its constructor with `RuntimeHelpers.InitializeArray` over a static f
 `<PrivateImplementationDetails>`, whose bytes live only in `global-metadata.dat`'s
 field-default-value table. The constructor's ADRP/LDR pair names a metadata-usage slot resolving to
 `Field$<PrivateImplementationDetails>.<HEX>`, the SHA-1 of the data; read the value by field name
-and verify by hashing. BDSP's 16-byte game key seed came out this way. Native C++ constants are in
+and verify by hashing. BDSP's 16-byte game key seed is stored this way. Native C++ constants are in
 rodata, found by cross-reference.
 
 ## Check which version you dumped

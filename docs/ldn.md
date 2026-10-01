@@ -22,8 +22,9 @@ encrypts every datagram.
 | Brilliant Diamond / Shining Pearl | `WirelessStrongCryptoKey2021` (27 bytes, raw) | derived from `cryptoKeyDataSeed`; see [BDSP](bdsp_session.md) |
 | Sword / Shield | `W3GoSMEn7RIIUQ89rzqBHGhGferRNb7K18ZBq2aNuj8Us9RO9Q9JYyGOZlLy8MYL` (64 bytes, raw) | `p1frXqxmeCZWFv0X` |
 
-The NintendoClients wiki gives Scarlet/Violet the same passphrase and Legends: Arceus one differing
-in one character (`HGHG` for `HGhG`).
+Scarlet/Violet and Legends Arceus use Sword/Shield's passphrase and game key ([Scarlet and
+Violet](sv.md), [Legends Arceus](pla.md)); the NintendoClients wiki's `HGHG` spelling for Arceus is
+wrong.
 
 ## Discovery
 
@@ -40,8 +41,8 @@ application data. A title sees only advertisements of its own LDN protocol (1: A
 | Legends Arceus local trade, comm id `0x01001f5010dfa000` | 1 | 4 |
 
 A host console sends beacons at 11 Mbit/s DSSS and advertisement action frames at HT MCS 3, 20 MHz
-(OFDM): 8908 beacons and 8679 action frames over fifteen Scarlet sessions, and Sword's Mystery Gift
-screen likewise; a DSSS-only receiver misses them.
+(OFDM), Scarlet's Link Trade search and Sword's Mystery Gift screen alike; a DSSS-only receiver
+misses the action frames.
 
 ## The advertisement's application data
 
@@ -116,7 +117,7 @@ then the console drops every datagram and times out, with no error.
 A joined console sends broadcast and multicast straight to the BSS (no DS bits; addresses group,
 console, BSSID; CCMP group key, key id 1) and unicast to-DS (pairwise key, key id 0). FireRed's first
 broadcasts are an ARP for the host and IPv6 multicast. A standard access point drops frames with no
-DS bits, and a host that misses the ARP is deauthenticated with reason 3 about 7 s later. The Linux
+DS bits, and a host that does not answer the ARP is deauthenticated with reason 3. The Linux
 host decrypts them off its monitor interface (`vendor/LDN/ldn/__init__.py` `_process_data_frame`);
 the [ESP32](hardware_esp32.md) forwards them whole.
 
@@ -124,10 +125,11 @@ the [ESP32](hardware_esp32.md) forwards them whole.
 
 LDN also allows 5 GHz channels 36/40/44/48, which the ESP32 cannot reach (on a Linux card: `sudo iw
 dev <managed iface> scan | grep -A3 <console MAC>`); FireRed/LeafGreen scans 2.4 GHz only. A
-re-hosting console changes channel; the board's scan prints it:
+re-hosting console may change channel; the board's scan prints it:
 
     POKELDN_RADIO=esp32:auto ./.venv/bin/python tools/ldn/ldn_scan.py --keys PROD_KEYS --dwell 2.5
 
-Advertisements leak onto neighbouring channels: at 2.5 s per channel an ESP32 heard a Sword host 2
-times on 1, ~30 on 6, 2 on 11, at one RSSI. Joining on 1 associates, then the next advertisement on
-6 drops the link as an incompatible network, so the scan reports the busiest one.
+Advertisements leak onto neighbouring channels: a board hears a host's advertisements on the
+channels beside its own too, far fewer of them and at the same RSSI. Joining on a neighbour
+associates, then the next advertisement on the host's own channel drops the link as an incompatible
+network, so the scan reports the busiest one.

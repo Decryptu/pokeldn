@@ -34,7 +34,8 @@ The measurements run inside the Mystery Gift menu, so the console never leaves i
 not in the table instead of falling back to FireRed.
 
 Every IWRAM and EWRAM address measured is identical (link-time globals of the same code); every ROM
-address above 0x080486C8 differs. That holds for fifteen symbols; the next is still measured.
+address above 0x080486C8 differs. Fifteen symbols confirm it; measure every new one rather than
+predicting it.
 
 ## The delta is a property of a region
 
@@ -140,11 +141,11 @@ delta at the target; a 16 KB handler window holds 834. `tools/frlg/cartridge_pai
 
 ### Dumping both cartridges at the same address
 
-This method closed the map. At a common address with delta d, the LeafGreen block
+At a common address with delta d, the LeafGreen block
 holds the FireRed block shifted by d; for |d| under a kilobyte, cross-correlation reads d directly.
 `memory-dump-scatter` sends the same 27 addresses to both consoles. Inside a block, testing which
-delta still matches window by window places a step to the byte: 346 KB of unmeasured boundary became
-2036 bytes across the five code steps, and all 272 specials have a LeafGreen address.
+delta still matches window by window places a step to the byte: the boundaries of the five code
+steps total 2036 bytes, and all 272 specials have a LeafGreen address.
 
 A wide gap may hide several steps: the 421 KB from −0x1C4 to −0x12D8 holds three. Graphics
 resembles itself, so each reading is scored against the alternatives: at 0x08442800 −0x124C scores
@@ -170,14 +171,15 @@ Every literal in [the seek stubs](frlg_rng.md) is a link-time IWRAM word shared 
 object to bind to: `initramscript` takes a map group, map number and object id, and `GetRamScript`
 runs the script instead of the object's own [field_control_avatar.c:458]. Cerulean Cave B1F is group
 1 map 74 [data/maps/map_groups.json]; Mewtwo is object 3 [data/maps/CeruleanCave_B1F/map.json].
-`rng-mon-hunt-both` bound there with `setwildbattle` species 150 level 70 replaced Mewtwo's script,
-started the battle at once, and produced a shiny Mewtwo.
+`rng-mon-hunt-both` bound there with `setwildbattle` species 150, level 70, replaces Mewtwo's script
+and starts an aimed Mewtwo battle at once (verified shiny on retail LeafGreen).
 
 - The stray-draw search works on LeafGreen; the stub reads `TID ^ SID` off `gSaveBlock2Ptr` at run
   time [asm/field/mon-seek-both.s:73].
 - The binding survives a power cycle, although `gSaveBlock1Ptr` is re-rolled on every load.
 - A buffer script sends no card and leaves the RAM script slot alone. A Wonder Card session takes it
-  back; an ordinary card restored Mewtwo's script through `InitRamScript_NoObjectEvent`.
+  back: an ordinary card rebinds the slot through `InitRamScript_NoObjectEvent`, and Mewtwo's own
+  script returns.
 
 While bound, the console reports holding no Wonder Card; the card stays intact
 ([the one RAM script slot](frlg_gift.md#the-one-ram-script-slot)).
@@ -185,12 +187,12 @@ While bound, the console reports holding no Wonder Card; the card stays intact
 ## A dumped region must not move
 
 A `memory-dump` of 0x03004220 (`gRngValue`, two turns per frame) dies mid-transmission with *erreur
-de connexion*: the CRC and the send happen on different frames. A repeat fails with a different CRC
-pair; the same 32 bytes from ROM read back fine. Mechanism and guard:
+de connexion*: the CRC and the send happen on different frames. A dump of a region that changes
+between frames fails its CRC; a ROM region of the same size does not. Mechanism and guard:
 [Code on the console](frlg_rom.md#repointing-the-consoles-outgoing-message).
 
-Starting 4 bytes higher reads the save-block pointers. Both moved by exactly 12 between two readings,
-one shared 4-aligned offset inside the 0..124 range `SetSaveBlocksPointers` rolls.
+Starting 4 bytes higher reads the save-block pointers. Both move together, by one shared 4-aligned
+offset inside the 0..124 range `SetSaveBlocksPointers` rolls [load_save.c:75].
 
 ## The English build as an instrument
 
@@ -237,7 +239,7 @@ Of 177 unnamed call targets, 158 fall inside a measured offset run and are named
 between runs and go to `english_names.BRACKETED`: named with one of the two neighbouring offsets, only
 when it lands exactly on a function start and the other does not (`[english?]`). Two are left. Three
 targets reached from a dozen bodies each read as `__divsi3`, `__modsi3` and `__umodsi3`, agbcc's
-division helpers, as the worker-naming pass had predicted.
+division helpers.
 
 ### The English pair's own delta map
 

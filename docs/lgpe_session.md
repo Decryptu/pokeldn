@@ -140,10 +140,9 @@ The same constructor picks the channel a searching console hosts on: `{1, 6, 11}
 | Pikachu, Pikachu, Bulbasaur | 21 | 1 |
 
 A searching console hosts its own network and joins another only when that network advertises its
-scene id on its own channel: under code 2321 it ignored a host on channel 6 and joined at once on
-channel 11. `bin/lgpe_host.py --code NAMES` hosts on the code's channel (`--channel auto` scans for
-the console's network instead); Let's Go Pikachu and Eevee both joined it. A host checks no code on
-a joiner: `bin/lgpe_join.py` sends none and trades.
+scene id on its own channel (`{1, 6, 11}[scene % 3]`). `bin/lgpe_host.py --code NAMES` hosts on the
+code's channel (`--channel auto` scans for the console's network instead); Let's Go Pikachu and Let's
+Go Eevee join it. `bin/lgpe_join.py` sends no code, and a console host trades with it.
 
 ## The Local Protocol, measured
 
@@ -248,9 +247,10 @@ seconds and adds half the round trip to the value the host replies with.
     request, 16 bytes   [0] u64 the sender's system tick (19.2 MHz), [8] u64 zero
     reply,   16 bytes   [0] u64 the tick copied back, [8] u64 the mesh clock in milliseconds
 
-A joiner's first request goes 46 ms after the mesh join response. Clone Protocol clocks are this
-clock: a host receiving clone messages timed on a station's own uptime releases the clone and
-leaves. `pokeldn.ldn.sync_clock`; `bin/lgpe_join.py --connect` runs it (`--no-sync-clock` to stop).
+A joiner sends its first request right after the mesh join response. Clone Protocol clocks are this
+clock: a host given clone messages timed on the joiner's own uptime was measured releasing the clone
+and leaving. `pokeldn.ldn.sync_clock`; `bin/lgpe_join.py --connect` runs it (`--no-sync-clock` to
+stop).
 
 Keep-alive is protocol 0x08, no body, answered in kind.
 
@@ -269,8 +269,7 @@ both stations.
     0x18     the payload
 
 An acknowledgement is the header alone, stream and size zero. `pokeldn.ldn.reliable3`. The payload
-is the game's framing ("The game's messages on the reliable protocol" below). A retail console
-acknowledges a kind 1 message replayed from another session and sends nothing of its own.
+is the game's framing ("The game's messages on the reliable protocol" below).
 
 ## The Clone Protocol (0x73)
 
@@ -305,16 +304,18 @@ answer the other's with a reply (type 0x21, 22 bytes, `0x51fab0`).
 
 ### Participate
 
-After ten answered requests (2.1 s) the joiner sends a participate (type 0x31, 10 bytes, serializer
-`0x51fbd0`): header, message count, bitmap 0x0003. The host answers within 30 ms with 0x33, bitmap
-0x0002, and sends its own participate 1.1 s later, which the joiner acknowledges with 0x33, 0x0001.
+After ten answered requests the joiner sends a participate (type 0x31, 10 bytes, serializer
+`0x51fbd0`): header, message count, bitmap 0x0003. The host answers with 0x33, bitmap 0x0002, and
+then sends its own participate, which the joiner acknowledges with 0x33, 0x0001 (2.1 s, 30 ms and
+1.1 s between the two emulated endpoints).
 From the first participate, clock replies are type 0x22.
 
 ### Clone elements
 
 A clone is keyed by a clone type (1 to 4), the owning station (0xFD when none) and a 32-bit clone
-id. Both stations publish their own copy. The host creates ids 1, 2, 3 as the trade screens advance;
-clone type 3 id 0 exists once both sides have participated.
+id. Both stations publish their own copy. In the first trade the host creates ids 1, 2, 3 as the
+trade screens advance; each later trade announces more. Clone type 3 id 0 exists once both sides
+have participated.
 
     every command message   [0] version 3, [1] type, [2] u16 the sender's frame counter,
                             [4] u8 clone type, [5] u8 owning station, [6] u16 0,
@@ -476,35 +477,32 @@ and when the link ends (`0x8869f0`); the normal save after a trade re-creates it
 new channel id.
 
 Kind 3, body 4, the commit, a u32 sent by the sync save ("The commit and the trade lock" below):
-each station sends a 1, and one sends a 2 after the peer's 1. A host sends its 1 and 2 63 to 66 ms
-apart, the joiner's 1 landing between them; a joiner also answering the 2 with a 2 is tolerated.
+each station sends a 1, and one sends a 2 after the peer's 1. The station that sends the 2 sends it
+on taking the peer's 1 (state 5, `0x838310`); a 2 received in state 6 commits, any other body is
+ignored (`0x83839c`), so a joiner also answering the 2 with a 2 is tolerated.
 After its commit a station shows a spinner with no button prompt. An incomplete exchange leaves the
 trade lock set.
 
-Kind 4, body 0xe8, rides the channel of the party-offer object the normal save re-creates about 3 s
-after its save, and carries the next round's selection: first the station's first slot
-(byte-identical to its step-2 offer), then one per selection. A retail host sent its first 26.8 s
-after its second commit, an emulated host 29.9 s; a retail joiner sent its at 31.2 s. A joiner that
-sends none leaves a retail host's trade complete.
-
-A second trade completes on the same seat: the console voted on party clone 6 and commit clone 7,
-the commit ran on kind 5 (host 1 and 2, console 1), the host announced result clones 8 and 9, and
-kind 6 followed the animation from each side.
+Kind 4, body 0xe8, rides the channel of the party-offer object the normal save re-creates 3000 ms
+after its `SaveThread` (`0x8377ec`, `0x8375a4`), after the trade demo, and carries the next trade's
+selection: first the station's first slot (byte-identical to its step-2 offer), then one per
+selection. A trade is saved before kind 4 goes out; kind 4 opens the next trade.
 
 Trade r, counted from 0, offers on kind 2 + 2r, commits on 3 + 2r and ends on 4 + 2r, the offer
-channel of trade r + 1; a third trade on one seat is unmeasured. Hosting, `bin/lgpe_host.py
+channel of trade r + 1 (`0x116e80` hands out ids from a per-session counter; the dispatcher
+re-registers both channels each trade). In the two consecutive trades measured, trade r's party pair
+was clones 2 + 3r and 3 + 3r and its commit clone 4 + 3r; the pair announced after a trade's save
+belongs to the next trade. Hosting, `bin/lgpe_host.py
 --next-offer` answers the console's selections in each later trade with the next record. Joining,
 the console host's first kind 4 is its first slot: `bin/lgpe_join.py` answers it and each later
 selection with its next `--offer`, answers the commit on kind 5, and takes kind 6 as that trade's
 end; after its last record it answers nothing.
 
-A retail console host traded twice with `bin/lgpe_join.py` on one seat and both saves kept the
-records. It announced the next party pair, clones 5 and 6, 26.3 s after its second commit, and its
-first kind 4 (its first slot, byte-identical to its step-2 offer) 0.66 s later; it then sent a new
-kind 4 step per selection, commit clone 7 at its confirmation, kind 5 bodies 1 and 2 66 ms apart,
-and its kind 6 32.9 s after the second, with clones 8 and 9 announced 0.6 s before it.
-`bin/lgpe_host.py --lead` plays a console host's part, offering and voting unprompted, for
-`bin/lgpe_join.py`; `tests/test_esp32.py` trades two records each way between the two.
+A console host runs each later trade as the first: the next party pair announced before its first
+kind 4, a kind 4 step per selection, the commit clone at its confirmation, the commit on kind 5, and
+the following pair announced before kind 6. `bin/lgpe_host.py --lead` plays a console host's part,
+offering and voting unprompted, for `bin/lgpe_join.py`; `tests/test_esp32.py` trades two records
+each way between the two.
 
 A complete trade, both stations counting their own steps:
 
@@ -558,8 +556,8 @@ What a console joining a hosted session needs, above the joiner's layers:
 - The update session goes out when the session changes and once more behind it, never on a timer.
   Its node list holds one node until the peer has joined the mesh.
 - A station stops its clone clock requests the moment it participates.
-- The host announces clone 1 in the frame it publishes clone 0; the console announces its own 31 ms
-  later, and a host that waits loses the race and the roles swap.
+- The host announces clone 1 in the frame it publishes clone 0; the console announces its own tens
+  of milliseconds later (31 ms measured), and a host that waits loses the race and the roles swap.
 - The `0xa2` answering the peer's announcement of a host-owned clone carries the clock from the
   `0xa1` behind the `0x81`, so it is built after the whole datagram is parsed. Carrying the host's
   clock, it leaves the console re-announcing every half second and never publishing its copy.
@@ -637,34 +635,37 @@ retail and emulated alike, clone type 2 data as five words:
                                        and the kind 3 carrying 1 goes under that step
 +3 ms     the peer's kind 3 carrying 1, its copies under its own next step
 +63 ms    kind 3 carrying 2 under the next step, every copy republished under it
-+27 s     two more clones announced, 32 zeros on type 4; the peer publishes 0 0 0 on each
-+0.5 s    kind 4 under the next step, every copy republished under it
+after the trade demo and the normal save (3000 ms past SaveThread, 0x8377ec):
+          two more clones announced, 32 zeros on type 4; the peer publishes 0 0 0 on each
+then      kind 4 under the next step, every copy republished under it
 ```
 
 The peer answers trailing word 1 only when the type 4 copy's first word is 1; built before the
 peer's `1 1 1` landed, it carries 0 and the console waits. Walking the commit clone on to `1 2 2`
 draws `0 1 1`, trailing word 2, no kind 3, and the console sits on its confirmation screen.
 
-A retail console host announces every clone first: clone 1, the party pair 2 and 3 before its first
-slot, the commit clone 4 6.3 s after its A 2, and the next pair 5 and 6 26.9 s after its second
-commit, its first kind 4 0.84 s later. It votes first as well: `1 1 1` on clone 3, A 1 with trailing
+A console host announces every clone first: clone 1, the party pair 2 and 3 before its first slot,
+the commit clone 4 after its A 2 (state 1's random delay, `0x8380d8`), and the next pair 5 and 6
+after its save, then its first kind 4. It votes first as well: `1 1 1` on clone 3, A 1 with trailing
 word 1, `1 2 2`, A 2 with trailing word 2; on the commit clone `0 0 0`, `1 1 1`, A 1 with trailing
 word 1, then `0 1 1` with the kind 3 carrying 1, 152 ms after announcing it. A joiner that takes
 each clone over and republishes the host's first three words and trailing word under its own state
-word completes the trade. Given no kind 4 by that joiner, the player backed out of the next trade:
-state 4, argument 3, on clone 6, then the releases.
+word completes the trade.
 
 Pressing A again as the confirmation greys the buttons withdraws the vote: `2 2 3` (state 2,
-argument 2, counter 3) after `1 2 2`. Answering A 2 gives status 4 and proceeds: the console
-republished `0 2 3`, committed 600, announced its commit clone 5.0 s later, then went silent on it,
-held a warning screen, and refused the next trade. The right answer, type 4 `1 0 0 3 0 0 step T+1`,
+argument 2, counter 3) after `1 2 2`. Answering A 2 gives status 4: the console starts the sync
+save, which commits the trade lock (600) before the commit exchange. A console answered so
+republished `0 2 3`, announced its commit clone 5.0 s later and went silent on it; the exchange never
+completed, so the lock stayed set and the link menu refused the next trade (`0x976634`). The right
+answer, type 4 `1 0 0 3 0 0 step T+1`,
 takes that record to state 0 under `0x11ba20`; A 1 with state 0 is status 2 (`0xf4e9f0[0]`), back to
 the selection. A withdrawn selection `2 1 4` under A 0 takes `0 0 0 4 0 0 step T+1`.
 `bin/lgpe_host.py` answers so and agrees the next vote in one publish;
 `tests/test_lgpe_host_withdraw.py` runs both through the game's code.
 
-Publishing no clone data on clone types 4 and 1, as two retail consoles do, leaves a joining console
-short of the gate `0x11b080`, on its search screen.
+A trade between two retail consoles carries no clone data on clone types 4 and 1 in either
+direction; a host publishing none there leaves a joining console short of the gate `0x11b080`, on
+its search screen.
 
 ### The commit and the trade lock
 
@@ -810,7 +811,7 @@ through `0x345860`, else the ErrorCode through `0x345900`; the manager repeats t
 `0xc7`) and M = {808, 809}: a station offering from S or M and receiving from neither sends it; the
 reverse does not; otherwise the station for which `0x4d9720` is true (`[mgr+0x128c] != 0`) does. So
 a station giving Articuno, Zapdos, Moltres, Mewtwo, Mew, Meltan or Melmetal for an ordinary Pokemon
-sends the 2 in either role (verified with a joiner giving Mewtwo to a retail host).
+sends the 2 in either role.
 
 The parent block (`[parent+0x88]`, "The trade dispatcher" below) holds the own offered Pokemon's box
 index at `+8` and the arriving Pokemon at `+0x10`. State 0 calls `0x838660` while the box slot still
@@ -890,7 +891,8 @@ State 2 fills it for the sync save (`0x88685c..0x88689c`); state 5 sets the type
 party-offer object (`0x8375a4`, retried each frame) and writes result 0 (`0x8375b8`); in any other
 state it writes 0 alone. Result 1 comes only from `0x837860`, gated on `[x20+0x258]` and a queue at
 `[x20+0x250]` (`0x83776c..0x8377a0`). After a trade the dispatcher returns from state 7 to state 1
-with a new party-offer object on a new channel.
+(`0x88691c..0x88692c`) with a new party-offer object on a new channel, so one seat carries one trade
+after another.
 
 ### The battle scene's channel
 
@@ -911,8 +913,8 @@ registers none. The teardown (`0x9d3df0` -> `0x9dcce0`) clears the pointer.
 
 ### What a hosted trade puts in the save
 
-The offered box structure lands in the save as sent, unchecked. A retail Let's Go Pikachu's
-summary screen showed: species 132, experience 1,000,000 (level
+The offered box structure lands in the save as sent, unchecked. A record carrying these values
+reads back unchanged on a Let's Go Pikachu's summary screen: species 132, experience 1,000,000 (level
 100), ability 150 in the hidden slot, a PID with shiny xor 0 against TID 41234 and SID 12345 (shown
 as 083154, `(sid << 16 | tid) % 1000000`), nature 10, genderless, 31 in every IV, 200 in every AV (HP
 437 at level 100, the game's maximum), one move, met level 30, met location 4 (Route 2), language 2,
@@ -923,9 +925,10 @@ OT `POKELDN`. Offsets are PKHeX's PB7 map.
 A console backing out with Retour publishes state 4 on the offered clone, argument 0 under a fresh
 counter, then argument 3. The host answers each 30 ms later with zeros in the first three words, the
 trailing word plus one, and the argument as the type 4 copy's first word. The console then releases
-its clones with a 0x83 on clone type 4, station 0xFD (clone 0 on clone type 3), every 100 ms until a
-0x84 answers; the host releases its own (0x83 on clone type 2 under its station, and on clone type
-4). 2.45 s after the last release (a delay no answer moves) the console sends a mesh leave request
+its clones with a 0x83 on clone type 4, station 0xFD (clone 0 on clone type 3), repeated (about
+every 100 ms, measured) until a 0x84 answers; the host releases its own (0x83 on clone type 2 under
+its station, and on clone type 4). After the last release (2.45 s measured, a delay no answer moved)
+the console sends a mesh leave request
 on the mesh protocol's reliable port, under the 24-byte reliable header:
 
 ```
@@ -933,14 +936,15 @@ on the mesh protocol's reliable port, under the 24-byte reliable header:
 ```
 
 It is owed the reliable acknowledgement on that port and a two-byte leave response (`08`, the
-station index) on the unreliable port; unanswered, it repeats every 40 ms for five seconds. The
-host then sends a one-byte station disconnection request, type 3; the console answers type 4 within
-20 ms and deauthenticates, or sends its own request five seconds later.
+station index) on the unreliable port; unanswered, it repeats it (every 40 ms for five seconds,
+measured). After a Retour the host sends a one-byte station disconnection request, type 3; the
+console answers type 4 and disconnects, or sends its own request about five seconds later.
 
-A retail host answers a joiner's leave request with `08 00` twice, then sends a Local Protocol start
-host migration (type 0x13) every 0.3 s. A joiner sending its disconnection request the instant the
-leave response arrives returns the host's player to the menu at once ("l'autre joueur a choisi
-d'annuler l'échange"); one that waits leaves the host repeating 0x13 for five seconds.
+A console host answers a joiner's leave request with `08 00`, then repeats a Local Protocol start
+host migration (type 0x13; `08 00` twice and 0x13 every 0.3 s, measured). A joiner's disconnection
+request sent as the leave response arrives returns the host's player to the menu ("l'autre joueur a
+choisi d'annuler l'échange"); a joiner that waits leaves the host repeating 0x13 (five seconds,
+measured).
 `bin/lgpe_join.py --leave-after SECONDS` runs the exit (`pokeldn.lgpe.leave`).
 
 An emulated host leaving releases first, then sends a migration start on the reliable port,
@@ -948,25 +952,26 @@ An emulated host leaving releases first, then sends a migration start on the rel
 
 ### What a host does with a joiner that holds no clone data
 
-Given a 0x3C-byte connection response (no network id, no player), a retail host answers a clone
-announcement and announces its own, then about five seconds after the mesh join releases it and
-sends 0x32, with no 0xb1 and no clone data. A real joiner gets the clone's data 1.1 s after its
-participate.
+A console host given a 0x3C-byte connection response (no network id, no player) answers a clone
+announcement and announces its own, never sends the clone's data (no 0xb1), and leaves the clone
+session (0x32) a few seconds after the mesh join. A joiner that sent a full response gets the clone's
+data after its participate (1.1 s measured).
 
 ### Past the gate
 
-A host goes from state 4 to the settled state 8 in 66 ms: the gate passes (after seven refusals),
-state 6 sends the first message (0x168 bytes from `obj+0x450`), and state 7 counts its own loopback
-and the joiner's into `obj+0x470`, leaving for 8 at exactly two (`b.ne`) and receiving no more. The
-host's screen then reads that a player has been found. Headers of the first messages:
+A host goes from state 4 to the settled state 8 once the gate passes (66 ms and seven refusals in
+one measured session): state 6 sends the first message (0x168 bytes from `obj+0x450`), and state 7
+counts its own loopback and the joiner's into `obj+0x470`, leaving for 8 at exactly two (`b.ne`) and
+receiving no more. The host's screen then reads that a player has been found. Headers of the first
+messages:
 
     01000000 68010000 01000000 00ff0000    kind 1, 0x168 bytes, step 1
     02000000 e8000000 02000000 00ff0000    kind 2, 0xe8 bytes, step 2
     02000000 e8000000 03000000 00ff0000    kind 2, 0xe8 bytes, step 3
 
-In a working session the kind 1 messages are acknowledged within 70 ms, clone ids 2 and 3 are
-announced 3.2 s later, and the kind 2 messages follow 0.4 s after. State 8 is terminal for
-`0x349200`: while the mode word `+0x8C` stays 0, clone ids 2 and 3 are never announced.
+In a working session the kind 1 messages are acknowledged, clone ids 2 and 3 are announced, and the
+kind 2 messages follow (70 ms, 3.2 s and 0.4 s apart in one measured session). State 8 is terminal
+for `0x349200`: while the mode word `+0x8C` stays 0, clone ids 2 and 3 are never announced.
 
 ### The state machine above the gate
 
@@ -987,9 +992,10 @@ by the queued object's kind: hence `0x81` on clone type 2, `0xa1` on type 4 and 
 one frame.
 
 The announcement comes before the gate: a station emitting that triple has passed state 3; one that
-never emits it has not reached state 3, and no message aimed at the gate's inputs helps it. A retail
-console hosting emits the triple for clone id 1 and never for id 2; joining, it emits no `0x81`, only
-the take-over burst. A station runs `0x11aec0` once per clone id, 1 then 2 and 3.
+never emits it has not reached state 3, and no message aimed at the gate's inputs helps it. A
+console host emits the triple from the trade state machine for clone id 1 only; ids 2 and 3 come
+from the second publisher (`0x349a90`, below). Joining, it emits no `0x81`, only the take-over
+burst. A station runs `0x11aec0` once per clone id, 1 then 2 and 3.
 
 ### The second publisher and its mode word
 
@@ -1049,7 +1055,7 @@ allocation. With a take-over carrying the joiner's own clock, a host allocated `
 party clones; clone 0's completion carried `0x1114b` and set `+0x110`, clone 1's carried `0x111b0`
 and was refused: the gate `0x11b080` stays false and the state word never leaves 4. Answering only
 the peer's first clone type 2 publish and acknowledging the rest returns it to re-announcing under a
-fresh sequence each time (1082 sequences in one run against three).
+fresh sequence each time.
 
 ### The take-over exchange a joiner runs once per clone
 
@@ -1068,11 +1074,10 @@ announcement at zero:
 +141 ms joiner  0xa2 per clone                           clock 0x19e2, the host's
 ```
 
-The joiner takes each clone over once, at the first announcement of a clone it does not own (six
-`0x91`s in a whole session). Every later re-announcement gets one `0xa2` carrying that
-announcement's clock, on clone type 2 under the joiner's station, payload `<clock> 00 00 00 02`. A
-second take-over cancels an announcement that was never meant to change hands, and the peer
-re-announces without limit (1792 retransmits in 180 s against three).
+The joiner takes each clone over once, at the first announcement of a clone it does not own. Every
+later re-announcement gets one `0xa2` carrying that announcement's clock, on clone type 2 under the
+joiner's station, payload `<clock> 00 00 00 02`. A second take-over cancels an announcement that was
+never meant to change hands, and the peer re-announces without limit.
 
 The `0xa2` drives completion. A station's own announcer completes off the loopback of its own `0xa2`
 within about 6 ms, so the first party clone always completes; the second needs the joiner's. The
@@ -1090,8 +1095,8 @@ bitmap it answers neither and keeps sending 0xa1 on clone type 1, and the gate `
 the acknowledged set fill.
 
 The retransmit count of `0xa1` on clone type 1 tells a working session from a stalled one: nine per
-station when working, one every 0.12 s (over a thousand in 150 s, its game silent) from a peer taken
-over at every re-announcement.
+station when working, one every 0.12 s without end from a peer taken over at every
+re-announcement, its game silent.
 
 Every clone message is built through `0x51e3d0`, the protocol object's ninth vtable slot (the fourth
 returns 0x73). Literal types at their call sites: 0xa2 on clone type 2 `0x51cbb8`, 0x81 `0x51e92c`,

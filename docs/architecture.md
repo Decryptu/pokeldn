@@ -130,19 +130,19 @@ repeated offer flags:
 
 | tool | offers as | after the last |
 |---|---|---|
-| FireRed/LeafGreen host and join | party files, `--trades N`, slots 0 to N-1 | Cancel and Yes end the link |
-| Let's Go host | `--offer`, then `--next-offer` per later trade | a further trade is not answered |
-| Let's Go join | `--offer`, repeated | a further trade is not answered |
+| FireRed/LeafGreen host and join | party files, `--trades N`, slots 0 to N-1 | the host declines a further trade (`PLAYER_CANCEL_TRADE`) and waits for the player's Cancel and Yes; the joiner cancels to leave |
+| Let's Go host | `--offer`, then `--next-offer` per later trade | the launcher answers no further trade (`pokeldn/lgpe/trade.py`); the player backs out |
+| Let's Go join | `--offer`, repeated | the launcher answers no further trade; the player backs out |
 | Brilliant Diamond/Shining Pearl host and join | `--offer` / `--trade-template`, repeated | the last is offered again |
 | Legends Arceus host and join | `--trade-box-record` / `--offer`, repeated; the joiner hands the list to the host role | the last is offered again |
-| Scarlet/Violet host and join | `--trade-offer`, repeated | the stage stops answering |
-| Sword/Shield host and join | `--offer-file`, repeated; the console leaves after each trade, so each record waits for its next search | host: the last is offered again; join: the run ends |
+| Scarlet/Violet host and join | `--trade-offer`, repeated | the launcher's trade stage answers no further message (`pokeldn/sv/trade.py`, `done`) |
+| Sword/Shield host | `--offer-file`, repeated; each later trade runs from the box on the same session | the last is offered again |
 | Legends Z-A host and join | `--trade-offer`, repeated; each new record is previewed when its trade starts | the last is offered again, under a new PID with `--fresh-pid` |
 
 `--fresh-pid` gives every queued record its own PID and encryption constant. Trade N above 1 writes
 what it received to the output path with `-N` before the extension (FireRed/LeafGreen: `_tradeN_` and
 the species; Scarlet/Violet: `.N`, counted by distinct offers; Brilliant Diamond/Shining Pearl host:
-`_N`; Legends Z-A and Sword/Shield: `-N`).
+`_N`; Legends Z-A and Sword/Shield host: `-N`). The Sword/Shield joiner takes one Pokemon.
 
 ## Local files and releases
 

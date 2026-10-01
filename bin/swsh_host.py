@@ -89,6 +89,22 @@ def load_advert(path):
         return raw
 
 
+def offer_record(args, offer_file, renew, slot_record):
+    """-> the encrypted party record we offer: the file's, or the snapshot slot's."""
+    if offer_file:
+        raw = swsh_pokemon.encrypt(gen8.load(Path(offer_file).read_bytes()))
+    else:
+        raw = slot_record
+    if struct.unpack_from("<I", raw)[0] == 0:
+        raise ValueError(f"offer slot {args.offer_slot} is empty; pass --offer-file")
+    if args.fresh_pid or renew:
+        raw = swsh_pokemon.encrypt(gen8.fresh_identity(gen8.decrypt(raw)))
+    if getattr(args, "validate_offer", False):
+        raw = pokemon_service.prepare("swsh", raw)
+        raw = swsh_pokemon.encrypt(gen8.load(raw))
+    return raw
+
+
 def prepare_snapshot(source, args, app_data, offer_file=None, renew=False):
     """Build this host's trade payload from a saved or joining console's 0x84 snapshot."""
     snapshot = trade_payload.inflate_short(source)
@@ -108,17 +124,7 @@ def prepare_snapshot(source, args, app_data, offer_file=None, renew=False):
                                      **identity)
     snapshot = original[:swsh_pokemon.PARTY_BLOCK] + snapshot[swsh_pokemon.PARTY_BLOCK:]
     at = (args.offer_slot - 1) * swsh_pokemon.SIZE_PARTY
-    if offer_file:
-        raw = swsh_pokemon.encrypt(gen8.load(Path(offer_file).read_bytes()))
-    else:
-        raw = original[at:at + swsh_pokemon.SIZE_PARTY]
-    if struct.unpack_from("<I", raw)[0] == 0:
-        raise ValueError(f"offer slot {args.offer_slot} is empty; pass --offer-file")
-    if args.fresh_pid or renew:
-        raw = swsh_pokemon.encrypt(gen8.fresh_identity(gen8.decrypt(raw)))
-    if getattr(args, "validate_offer", False):
-        raw = pokemon_service.prepare("swsh", raw)
-        raw = swsh_pokemon.encrypt(gen8.load(raw))
+    raw = offer_record(args, offer_file, renew, original[at:at + swsh_pokemon.SIZE_PARTY])
     snapshot = snapshot[:at] + raw + snapshot[at + swsh_pokemon.SIZE_PARTY:]
     if args.card_set:
         edits = {}
@@ -162,8 +168,8 @@ def build_parser():
     ap.add_argument("--offer-slot", type=int, default=1, help="the party slot we offer")
     ap.add_argument("--offer-file", action="append", default=[],
                     help="a PK8 to place in the offered party slot, encrypted or PKHeX export. "
-                         "Repeatable: a Sword leaves after each trade, and the next console to "
-                         "join gets the next file; the last serves every later trade")
+                         "Repeatable, one per trade: the player trades again from the box, or "
+                         "searches again; the last serves every later trade")
     ap.add_argument("--fresh-pid", action="store_true",
                     help="draw a new encryption constant and PID for the offered Pokemon")
     ap.add_argument("--card-set", action="append", default=[], metavar="FIELD=VALUE",
@@ -174,6 +180,9 @@ def build_parser():
     ap.add_argument("--migrate", action="store_true",
                     help="end with box command 3 and MIGRATION_START, as the retail Sword that "
                          "led our joiner did; by default the host keeps the session")
+    ap.add_argument("--accept-first", action="store_true",
+                    help="accept without waiting for the joiner's acceptance, as a player would; "
+                         "for our own joiner, which accepts after its partner")
     ap.add_argument("--received", default=None,
                     help="write the joiner's Pokemon here; trade N > 1 writes FILE-N")
     ap.add_argument("--code", default="",
@@ -238,7 +247,8 @@ def main(argv=None):
             "session_key": keys.session_key.hex()})
 
     trades = {}
-    done = []           # each trade that reached the end of the ladder, in order
+    completed = [0]     # trades that reached the end of the ladder, every session
+    seen = {}           # HostTrade -> trades counted from it
 
     def guarded(fn, *a):
         # A reader that raises stops the host mid-trade; the console calls that an interruption.
@@ -275,15 +285,22 @@ def main(argv=None):
         def send_mesh(payload):
             host.send_data(st.ip, mesh.PROTOCOL, mesh.PORT_RELIABLE, payload)
 
-        n = len(done)
-        received = pokemon_service.trade_path(args.received, n + 1)
+        n = completed[0]    # trade k of this session is trade n + k of the run
 
         def on_record(**row):
             kind = row.pop("rec", None)
             record({"rec": "trade", "kind": kind, **row})
-            if kind == "peer_exchange" and received:
-                write_file(received, bytes.fromhex(row['pk8']))
-                print(f"[sw] the joiner's Pokemon written to {received}")
+            if kind == "peer_exchange" and args.received:
+                path = pokemon_service.trade_path(args.received, n + trades[st.ip].trades + 1)
+                write_file(path, bytes.fromhex(row['pk8']))
+                print(f"[sw] the joiner's Pokemon written to {path}")
+
+        def next_offer(k):
+            i = n + k - 1
+            print(f"[sw] {st.ip}: trade {i + 1} offers "
+                  f"{offer_file(i) or 'the snapshot slot again'}")
+            return offer_record(args, offer_file(i), args.renew_offer and i >= len(args.offer_file),
+                                trades[st.ip].offer_pk8)
 
         snapshot = offer = None
         if args.snapshot:
@@ -293,7 +310,8 @@ def main(argv=None):
                                              end_delay=args.end_delay, record=on_record,
                                              migrate=args.migrate,
                                              snapshot_builder=(lambda peer: build_snapshot(peer, n))
-                                             if snapshot is None else None)
+                                             if snapshot is None else None,
+                                             next_offer=next_offer, accept_first=args.accept_first)
         print(f"[sw] {st.ip}: trade {n + 1} starts")
 
     try:
@@ -327,11 +345,12 @@ def main(argv=None):
                     start_trade(st)
             for tr in list(trades.values()):
                 guarded(tr.tick, now)
-                if tr.ladder_done_at is not None and tr not in done:
-                    done.append(tr)
-                    left = len(args.offer_file) - len(done)
-                    print(f"[sw] trade {len(done)} complete"
-                          + (f"; {left} queued for the next search" if left > 0 else ""))
+                if tr.trades > seen.get(tr, 0):
+                    completed[0] += tr.trades - seen.get(tr, 0)
+                    seen[tr] = tr.trades
+                    left = len(args.offer_file) - completed[0]
+                    print(f"[sw] trade {completed[0]} complete"
+                          + (f"; {left} queued" if left > 0 else ""))
             transport.wait_readable(0.02)
     except KeyboardInterrupt:
         print("\n[sw] stopping")

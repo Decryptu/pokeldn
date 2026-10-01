@@ -118,8 +118,8 @@ stepped over unread; the packet tail is `0xFF`. `pia4.parse_packet()` resolves t
 ### Compression
 
 A payload may be a zlib stream, flagged per message in the message flags: 0x20 in 5.27-5.45, 0x10
-in version 4. The version-5 reliable header has its own zlib flag, 0x10; BDSP set it on one 23-byte
-game message, sent as a 20-byte stream with a 4 KB window ([BDSP's protocol](bdsp_protocol.md)).
+in version 4. The version-5 reliable header has its own zlib flag, 0x10; BDSP sets it on some game messages (a
+23-byte one went as a 20-byte stream with a 4 KB window) ([BDSP's protocol](bdsp_protocol.md)).
 
 BDSP switches compression on mid-session. Read raw, a compressed 31-byte message parses into a
 header claiming a payload of 0x6260. Over 2835 version-4 messages, `flags & 0x10` predicts
@@ -286,7 +286,7 @@ The result byte maps from internal errors at `0x0154f5e8`:
 | 0x6470 | 3 | too high |
 | 0xc24 | 4 | |
 | 0xc25 | 1 | |
-| 0x11c0f | 7 | parsed, every version matched, the second stage refused it; also "this variable id is already one of my stations" (cleared by re-entering the room or a fresh id) |
+| 0x11c0f | 7 | parsed, every version matched, the second stage refused it; also "this variable id is already one of my stations" (cleared when the station leaves, the player re-entering the room, or by a fresh id) |
 | 0x11c26 | *(none)* | protocol count mismatch: silence |
 
 The ids are never checked: nine `(0xFF, 0)` entries pass the negotiation.
@@ -317,7 +317,7 @@ the station location (one serializer call capped at 0x40 bytes), unchanged from 
 (deserializer `0x0185ee20`, same offsets, address size 2, 6 or 18), which makes [1] and [0x10] its
 nat flags and nat location.
 
-With [3] = 1, 96 requests drew nothing. With [3] = 0 the console answers with its own request: its
+With [3] = 1 the console does not answer (96 requests measured). With [3] = 0 the console answers with its own request: its
 location, constant id, the variable id the update session gave the joiner, a service variable id, a
 nat quad, then an ack id, a per-message counter `0x017d5750` reads at message size minus four.
 
@@ -334,8 +334,8 @@ The handshake, [3] cleared:
     ->   its own connection response, result 0, ~600 bytes, carrying the joiner's constant id,
          variable id and the player's name in plain ASCII, repeated until acknowledged
 
-The u32 in an ack is the acked message's trailing counter. A retail Sword needs no ack of its
-request; a Shield 1.3.2 under Ryujinx ignores the response without one and re-requests every 10 s
+The u32 in an ack is the acked message's trailing counter. Send the type-5 ack of the console's
+request: a Shield 1.3.2 under Ryujinx ignores the response without one and re-requests every 10 s
 (`--ack-request` on the bridge driver sends it).
 
 ### What a connection response must satisfy to be read
@@ -353,17 +353,18 @@ drop:
 | `[0x37]` one byte, result 0 only | under 5 | drop, `0x017c6ff0` |
 
 A 17-byte response (`RESPONSE_SIZE`, the short-form allocation `mov w3, #0x11` at `0x017c6c30`)
-leaves `[0x37]` 38 bytes past its end, in stale buffer bytes: an emulated Shield accepted 3 of 22
-byte-identical responses, then 0 of 49 after a restart; a retail Sword accepted all. The console's
+leaves `[0x37]` 38 bytes past its end, in stale buffer bytes, so whether it is read depends on
+memory the sender does not control (an emulated Shield accepted 3 of 22 byte-identical responses,
+then 0 of 49 after a restart; a retail Sword accepted those it was sent). The console's
 own accepted response is 840 bytes with 1 at `[0x37]`;
 `station4.build_connection_response(..., min_size=ACCEPTED_RESPONSE_SIZE)` pads to 0x38 and writes 1.
 
 After the response: the console's connection response is acceptance; its request retransmitted every
-500 ms with the same trailing counter is rejection (a response carrying the joiner's own ids draws
-20 retransmits, then silence); silence alone is neither, and it re-requests 10 s later.
+500 ms with the same trailing counter is rejection (a response carrying the joiner's own ids drew
+20 retransmits, then silence); silence alone is neither, and it re-requests about 10 s later.
 
-The nat-flags byte at [1] of the console's request varies run to run with no joiner byte to explain
-it (26 attempts, both readings of every byte the joiner controls). What writes it is unknown; its
+The nat-flags byte at [1] of the console's request varies between connections and follows no byte
+the joiner controls (both readings of each tried over 26 connections). What writes it is unknown; its
 record is filled by the station-location parser `0x0185ee20`.
 
 ## The Mesh Protocol (0x18)
@@ -374,7 +375,7 @@ record is filled by the station-location parser `0x0185ee20`.
 
 The join request is six bytes: type 1, station index 253 ("not in a mesh yet"), an ack id. The
 version-4 handler (`0x017c1700`) checks [1] against 0xFD, takes the ack id with `0x017d5750` and
-acks on 0x14 (`0x017c6dd0`). Pia retransmits it for ten seconds.
+acks on 0x14 (`0x017c6dd0`). Pia retransmits it for about ten seconds.
 
 The join response header is sixteen bytes in both bands. The version-4 parser `0x017b4830` reads the
 refusal shape first (`[1] == 0`, `[2] == 0xFF`, `[3] == 0xFF`, reason at [4]), then the station count
@@ -397,8 +398,8 @@ as an empty mesh there. `parse_join_response(version4=True)` follows both paths.
 
 UPDATE_MESH (0x20), about once a second, is the host's list of who is in the mesh; in BDSP always
 the full 556 bytes with unused seats zeroed, so walk the `entries` byte
-(`mesh_protocol.parse_update_mesh()`). The 5.31-5.45 join order counts joins: after three
-successive connections from one machine it reads 0 for the host and 3 for the client at index 1.
+(`mesh_protocol.parse_update_mesh()`). The 5.31-5.45 join order counts joins since the mesh was created: after three
+successive connections from one machine it read 0 for the host and 3 for the client at index 1.
 
 ### Host migration
 
@@ -427,7 +428,7 @@ Responses go to the new host (`0x017c3250`, called by `0x017ca1a0`). That statio
 
 `pokeldn/ldn/mesh_protocol.py`: `parse_migration_start`, `build_migration_response`,
 `build_migration_finish`, `parse_migration_finish`. None of the four published Sword/Shield
-clients handles migration; between two consoles the second answers it.
+clients handles migration; between two consoles the named station answers it.
 
 ## The RTT protocol (0x58)
 
@@ -444,8 +445,10 @@ and ignores a thirteen-byte answer. Bytes 1..7 are zero in every request observe
 
 A station answers kind 1 with the timestamp echoed. The host puts `(now - echoed) / ticks per ms`
 into a nine-sample ring per station, whose median is the RTT once full; BDSP timestamps run at about
-31.36 MHz. A silent station is never dropped, only unsampled. Once every ring is full, BDSP's request
-period moves from 410 ms to 508 ms and its reliable retransmit interval collapses.
+31.36 MHz. In the BDSP sessions measured the RTT protocol dropped no silent station; it stopped
+sampling it. The update's request period has two branches behind `0x015ace54`, 410 ms and 500 ms:
+unanswered, BDSP requested every 410 ms; once every ring was full, every 508 ms, and the reliable
+retransmit interval followed the small measured RTT (about six rounds a second).
 
 BDSP addresses: id and version `0x015ada10`/`0x015ada18`, size (`mov w0, #0xd`) `0x015adab4`,
 serialise/parse `0x015ada24`/`0x015ad54c`, update `0x015acd90`, answer builder `0x015ad024`, target
@@ -536,11 +539,9 @@ function `0x6efc2c` deserialises the header to `sp+0x18` before the window check
 
 A sender's own `lowest pending` therefore drives the peer's receive base. Declared above the
 sender's next sequence, it moves the base past messages not yet sent, which then arrive below it and
-are discarded at `0x6f03cc` with an ack. In an emulated Scarlet trade, a host whose acks on 0x7C
-declared one past the station's last sequence had its commit, sequence 7, discarded at a base of 8
-(`0x6f0540` never fired). In BDSP, bulk acks carrying the console's next id as lowest pending left
-the host's trainer record and Pokemon acked and never delivered (console acks `(7, 7)` and `(8, 8)`
-against sequences 5 and 6). An ack carries the sender's own lowest unacknowledged sequence, in the
+are discarded at `0x6f03cc` with an ack: an emulated Scarlet station discarded a host's commit
+(sequence 7) at a base of 8, and a BDSP console acked a host's sequences 5 and 6 as `(7, 7)` and
+`(8, 8)` and never delivered them. An ack carries the sender's own lowest unacknowledged sequence, in the
 header and in the entry's second halfword.
 
 ### Who a window sends to (Pia 6)
@@ -624,9 +625,9 @@ stream id must match the window's (`0x01859c1c`). `reliable4.build_ack_payload` 
 the same entry, correct under either reading.
 
 A Shield leaves the slots it does not use holding stale bytes under stream id 0 (`22284`, `16`,
-`57080`, `2517` in slots 1, 2, 4, 5 while slot 0 held 2). Taking the maximum entry overran the
-console's window (401 messages sent against a window at 97) and it stopped acking. Read the one
-entry for the acked stream.
+`57080`, `2517` in slots 1, 2, 4, 5 while slot 0 held 2). Read only the entry for the acked stream:
+the maximum over all slots is a stale value, and a sender following it overruns the console's
+window (401 messages sent against a window at 97), which then stops acking.
 
 Growing sequence ids over a fixed `lowest_pending` mean a growing backlog; measure `lowest_pending`
 per message and retransmits per sequence id.
@@ -703,9 +704,15 @@ sequence `+0xb8` acknowledged (`0x6e7128`, `0x6f54e4`), and to 0xC with no match
 | 0x21 | an ack carrying a contiguous base and a bitmask of what arrived early |
 | 0x28 | the answer to 0x19 |
 
-A receiver that never answers never sees the last three, and the sender retransmits indefinitely.
+A receiver that never answers never sees the last three, and the sender keeps retransmitting (no
+limit measured).
 `pokeldn/ldn/broadcast4.py`. A console sends its own transfer on port 0 and acks the peer's on port
 1.
+
+## Unresolved
+
+- Whether a retail Sword reads a version-4 connection response sent without the type-5 ack of its
+  request. One did; an emulated Shield 1.3.2 did not.
 
 ## Credits
 

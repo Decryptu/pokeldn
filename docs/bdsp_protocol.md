@@ -61,18 +61,18 @@ The marshaller does not clear its buffer: a fixed field carries heap residue pas
 
 A console left alone in the room sends four of the 65 (the receiver drops looped-back broadcasts):
 
-| id | class | reliable | unreliable | size | runs |
-|---|---|---|---|---|---|
-| 0x01 | `NetJoinData` | 2070 | 0 | 17 | 19 |
-| 0x02 | `NetPosData` | 0 | 60 | 72 | 5 |
-| 0x12 | `NetRequestData` | 4333 | 55 | 1 | 19 |
-| 0x23 | `NetDataIsMatchWaitData` | 1734 | 0 | 1 | 13 |
+| id | class | reliable | unreliable | size |
+|---|---|---|---|---|
+| 0x01 | `NetJoinData` | 2070 | 0 | 17 |
+| 0x02 | `NetPosData` | 0 | 60 | 72 |
+| 0x12 | `NetRequestData` | 4333 | 55 | 1 |
+| 0x23 | `NetDataIsMatchWaitData` | 1734 | 0 | 1 |
 
 On request it also sends 0x09 (one byte, 0 with no battle set up) and 0x22; on an activity, 0x14 and
 0x15. The trade messages are on [the trading page](bdsp_trade.md).
 
-1505 of the 0x23 copies, in two captures, sit behind a presence byte 0x00 and are read only by a
-walk that takes 0x00 as a message ([Message framing](pia.md#message-framing)). Every payload (over
+A 0x23 can sit behind a presence byte 0x00 (1505 of the copies counted) and is read only by a walk
+that takes 0x00 as a message ([Message framing](pia.md#message-framing)). Every payload (over
 eight thousand) is a well-formed message whose length accounts exactly for its bytes.
 
 ## The messages the console repeats
@@ -81,7 +81,7 @@ eight thousand) is a well-formed message whose length accounts exactly for its b
 
 | offset | size | field |
 |---|---|---|
-| 0x00 | 1 | `avatarId`, 8 in every capture |
+| 0x00 | 1 | `avatarId` (8 a girl, 0 a boy; [The model](#the-model)) |
 | 0x01 | 1 | `colorId`, 0 |
 | 0x02 | 1 | `cassetVersion`, 0x31 |
 | 0x03 | 2 | `InitRotY`, the facing in degrees (multiples of 45 measured), little-endian, unaligned |
@@ -90,15 +90,16 @@ eight thousand) is a well-formed message whose length accounts exactly for its b
 `NetRequestData` is one byte, the id of the message wanted. `NetDataIsMatchWaitData`
 `{isMatchWait = 0}` is the console answering its own request. The console asks for two things:
 
-| asked for | times | in which runs |
-|---|---|---|
-| `NetDataIsMatchWaitData` (0x23) | 4333 | all nineteen |
-| `NetCharacterStateData` (0x04) | 55 | four runs |
+| asked for | times |
+|---|---|
+| `NetDataIsMatchWaitData` (0x23) | 4333 |
+| `NetCharacterStateData` (0x04) | 55 |
 
-The four are the runs where an avatar appeared (none across 265 sends that drew nothing). The game
-asks each character's station for its state when it creates the character, so a 0x04 request signals
-that a character exists; `bin/bdsp_connect.py` prints it as the verdict. The 0x23 request stops at t = 9.4 s once the
-client acknowledges the reliable window; unacknowledged, it came 487 times in 75 seconds.
+The console requests 0x04 only for a character it has created (55 requests, none across 265 joins
+that drew no character). The game asks each character's station for its state when it creates the
+character, so a 0x04 request signals that a character exists; `bin/bdsp_connect.py` prints it as the
+verdict. The console repeats its 0x23 request until the client acknowledges its reliable window;
+unacknowledged, 487 requests came in 75 seconds.
 
 `UnionRoomManager$$SetNetData` [1.3.0 main 0x01e50700] answers a `NetRequestData` for six ids and
 ignores every other:
@@ -112,11 +113,11 @@ ignores every other:
 | 0x22 `NetDataStandbyWaitListData` | its standby list | `UnionRoomManager$$SendStandbyPlayerData` |
 | 0x23 `NetDataIsMatchWaitData` | whether it is waiting to be matched | `UnionRoomManager$$SendIsMatchWait` |
 
-From a station with a character in the room, five are answered on the reliable stream 30-130 ms
-after the request; 0x13 is not when no Pokemon is selected (`SendPokeData` returns). The base game's
-handler [base main 0x01fd4600] answers the same six, 0x22 then named `NetDataTradeStandbyData`. A
-request arrives on the stream its answer uses: all 4333 for 0x23 on the reliable one, all 55 for 0x04
-on the unreliable one.
+From a station with a character in the room, five are answered on the reliable stream, measured 30
+to 130 ms after the request; 0x13 is not when no Pokemon is selected (`SendPokeData` returns). The
+base game's handler [base main 0x01fd4600] answers the same six, 0x22 then named
+`NetDataTradeStandbyData`. A request arrives on the stream its answer uses: all 4333 for 0x23 on the
+reliable one, all 55 for 0x04 on the unreliable one.
 
 ### Compression
 
@@ -157,30 +158,31 @@ It carries three messages:
 
 | bytes | times | message |
 |---|---|---|
-| `04 0002 00 00` | 853 | `NetCharacterStateData{state: NONE, isRecruiment: 0}`, every two seconds |
+| `04 0002 00 00` | 853 | `NetCharacterStateData{state: NONE, isRecruiment: 0}`, measured every two seconds |
 | `12 0001 04` | 55 | `NetRequestData`: "send me your `NetCharacterStateData`" |
 | `02 0048 <72 B>` | 60 | `NetPosData`, twelve points, while the console's avatar walks |
 
 `room.build_state()` builds the first and `room.build_match_wait(False)` the console's own 0x23 answer.
 
-The console retransmits a reliable message five times a second until an ack covers it; an ack two
-beyond its last sequence is ignored. `bin/bdsp_connect.py` acks at the last sequence plus one once the
-console has acknowledged the client's own data.
+The console retransmits a reliable message until an ack covers it, measured five times a second; an
+ack two beyond its last sequence is ignored. `bin/bdsp_connect.py` acks at the last sequence plus
+one once the console has acknowledged the client's own data.
 
 ## Sending messages the game acts on
 
 The reliable sequence id is shared with the console's own sends, and a message below the id its
-acknowledgement names is dropped in silence: with the ack at 13, of twenty joins numbered 1 to 20
-exactly the eight from 13 up became avatars. Read the id immediately before each send.
+acknowledgement names is dropped in silence. Read the id immediately before each send.
 
-Sent at the acknowledged sequence, nearly every join is acted on: of fifteen joins 0.4 s apart the
-console requested 0x04 for 12 to 15 (seven runs), the first 0.10 to 0.57 s after the first join.
+A join sent at the acknowledged sequence is acted on: of fifteen joins sent 0.4 s apart, the console
+requested 0x04 for 12 to 15, the first 0.10 to 0.57 s after the first join.
 `--room-pattern fixed` stops at the first request, giving each join `--join-wait` seconds (default
 1.0).
 
-`UnionOpcManager` calls `CreateCharacter(joinData)` on each join: forty joins are forty arrivals. A
-character created without a session behind it follows the player across maps until the game
-restarts; one that has been moved is cleaned up when its station leaves the mesh.
+`UnionOpcManager` calls `CreateCharacter(joinData)` on each join: forty joins are forty arrivals. On
+a retail console a character created without a session behind it followed the player across maps
+until the game restarted, and one that had been moved was removed when its station left the mesh.
+The removal path on a departure is not traced (`OpcManager$$RemoveCharacter` [0x02279ee4] takes a
+station index).
 
 ## The character record
 
@@ -201,7 +203,7 @@ picks who appears:
 (`--join-avatar N`).
 
 `NetDataTranerCardData` (0x05, 75 bytes: `fashionId`, `bodyType`, `genderid`, ...) feeds
-`UnionOpcManager.CreateTranerCard()`; sending one changes nothing on screen.
+`UnionOpcManager.CreateTranerCard()`; a received one draws nothing on screen in the Union Room.
 
 ### The state byte
 
@@ -257,16 +259,19 @@ to 21, never to 0, 2 or 9 to 16.
 ### Walking
 
 The console's own `NetPosData` comes every 0.410 s spanning 0.935 units (`room.POS_PERIOD`,
-`room.POS_STRIDE`; `--room-walk-period`, `--room-walk-stride`); 0.1 units every 0.35 s stutters.
+`room.POS_STRIDE`; `--room-walk-period`, `--room-walk-stride`); a walk of 0.1 units every 0.35 s
+shows as a stutter.
 
 `PosData` is `{ushort posX, ushort posZ, short rotY}`, `pos = (-posX * 0.05, posZ * 0.05)`: a
 twentieth of a unit, x negated. A remote character collides with walls (the player does not collide
-with it) and keeps `rot_y` literally; sixty messages at the console's speed cross the room and leave
-through the far wall, `--room-walk-steps 8` stays inside.
+with it) and keeps `rot_y` literally. Keep a walk within the room: sixty messages at the console's
+stride cross it and leave through the far wall, `--room-walk-steps 8` stays inside.
 
 ## Being talked to
 
-An emote locks a player in place until someone interacts. The console broadcasts it:
+A player with an emote up stays in place until someone interacts, and the player's own A press does
+nothing while the player's state is non-zero ([The console approaching](#the-console-approaching)).
+The console broadcasts the emote:
 
     NetCharacterStateData{state: 4, isRecruiment: 1}     the trade emote, up
     NetCharacterStateData{state: 0, isRecruiment: 0}     and down again
@@ -274,21 +279,21 @@ An emote locks a player in place until someone interacts. The console broadcasts
 Gate on `isRecruiment`: state 18 is a console already inside a trade, and approaching it is refused.
 
 The approach is `NetDataTalkReserveData` (0x63), `63 00 01 00`, as the console sends it
-(`bin/bdsp_connect.py --initiate-talk`; answered in 40 ms). The console's player approaching the
-client's character:
+(`bin/bdsp_connect.py --initiate-talk`). The console's player approaching the client's character, in
+order:
 
-    t=37.47  cli ->  64 0003 00 01 04   NetDataTalkReserveResultData{IsCanTalk, IsRecruitment, emoticonStateType}
-    t=37.67  con ->  06 0005 00 01000000  NetDataTalkData{talkOpcSexId: 0, talkState: GREETING}
-    t=80.68  con ->  10 0002 01 04      NetDataTalkCancelEndData{IsRecruitment: 1, emoticonStateType: 4}
+    cli ->  64 0003 00 01 04      NetDataTalkReserveResultData{IsCanTalk, IsRecruitment, emoticonStateType}
+    con ->  06 0005 00 01000000   NetDataTalkData{talkOpcSexId: 0, talkState: GREETING}
+    con ->  10 0002 01 04         NetDataTalkCancelEndData{IsRecruitment: 1, emoticonStateType: 4}
 
-The talk blocks on the 0x64: unanswered, the player's character freezes until a reboot.
+The talk waits on the 0x64; unanswered, the player's character stays frozen.
 
 | `IsCanTalk` | then sent | the screen |
 |---|---|---|
 | 0 | nothing | the greeting runs and parks on "one second!" |
 | 1 | nothing, `NetDataSelectData{0}` or `{1}` | "sorry, I have other plans", the chat closes |
 
-B does not reliably leave a parked greeting; dropping the station does, a reboot otherwise.
+Dropping the station releases a parked greeting; B did not reliably leave one.
 
 ### The console approaching
 
@@ -337,11 +342,13 @@ With the console as the talker, the client's character is the recruiter. A recru
 trade offer (`UnionTradeContextMenu.<>c__DisplayClass10_0.<ShowTradeYesNoWindow>b__0` [0x01c32f70];
 no is `TradeRecruitmentStateModel$$Cancel` 0x01c24150) opens message 8 and tail-calls
 `UnionContextMenu$$SendTransitionData(station, 0)` [0x01f86480], which sends
-`NetDataTransitionData{menu+0x50, 0}` reliably; `SetTransitionType` [0x01c32ef0] sets +0x50 to 18. The
-yes is `07 0002 12 00`, the message a recruiting console sends when the client approaches it
-([the trading page](bdsp_trade.md#the-message-sequence)). A client that answered the 0x63 and sent
-`07 0002 12 00` drew a retail console's `NetDataTradeTranerData` (0x24), the trade box and a completed
-trade, with no yes from the console.
+`NetDataTransitionData{menu+0x50, 0}` reliably; `SetTransitionType` [0x01c32ef0] sets +0x50 to 18.
+The yes is `07 0002 12 00`, the message a recruiting console sends when the client approaches it
+([the trading page](bdsp_trade.md#the-message-sequence)). A 0x07 of type 18 after the 0x64 starts
+the trade on the talking console with no yes from its player (`SwitchTransitionMessage` [0x01e53bf0]
+-> `TransitionTradePoke` [0x01e5c1c0], below): the console sends its `NetDataTradeTranerData` (0x24)
+and opens the trade box. A retail console that approached the client's state-4 character took a `07
+0002 12 00` sent after the 0x64 answer and completed the trade.
 
 On the talking console, A on a state-4 character builds a `TradeJoinStateModel` at
 `UnionStateController+0x50` (`CreateSelectStateModel(4, 1)`, store 0x01e4b814, the only one, never
@@ -353,7 +360,7 @@ null test; for a trade `TradeJoinStateModel$$OpenSwitchFadeMsg` [0x01c22f50] ope
 the sender's sex, spoken as `OPPONENT` (`SpeakerID` 1), closing into `StartFadeOut`. After the fade
 `SwitchTransition` [0x01e5ba70] sends 18 to `TransitionTradePoke` [0x01e5c1c0], which takes and clears
 the target station, checks `IsGamerActive` and sends the console's 0x24 [`SendTranerData`
-0x01e5c2b0]: the start of the trade in the joiner direction. No 0x07 has been sent to a talker. A 0x07
+0x01e5c2b0]: the start of the trade in the joiner direction. A 0x07
 reaching a console that has not pressed A on a trade recruiter since its `UnionStateController` was
 built reads through null (0x01e53c4c); the other transition types have the same shape on their own
 models.
@@ -458,10 +465,11 @@ save.
 ### Record mixing
 
 The console recruits with "Échanger des données" in the Y menu (state byte 5). When the client walks
-up and the player says yes, it sends `NetDataTransitionData{5, 0}`, then 1.5 s later its 694-byte
-`NetDataRecodeData` (a 205-byte zlib stream), and waits at state 19 (`NOW_RECORD`); after 44 s without
-an answer it shows "un des participants n'est plus disponible" and returns to the room. `room.parse`
-returns the record's head as `recode`:
+up and the player says yes, it sends `NetDataTransitionData{5, 0}`, then its 694-byte
+`NetDataRecodeData` (a 205-byte zlib stream; 1.5 s later as measured), and waits at state 19
+(`NOW_RECORD`). Unanswered, it shows "un des participants n'est plus disponible" and returns to the
+room; the one measured wait was 44 s, and the timer is not located. `room.parse` returns the
+record's head as `recode`:
 
     RECORD.record[30]        thirty uint counters indexed by RECORD_ID (CLEAR_TIME, DENDOU_CNT,
                              CAPTURE_POKE, ..., CONTEST_RATE_SINGLE)
@@ -475,9 +483,10 @@ returns the record's head as `recode`:
                              uint uniqueID (the trainer id again)
     ten ints, six bytes      the per-TV branch values, myVersion (0x31), five *IsNotEmpty flags
 
-Unwritten fields hold 64-bit heap pointers. `RECORD_HEAD.sex` read 0 and `RANDOM_SEED.sex` 1 in the
-same record. `RECORD`, `RANDOM_SEED` and `RECORD_HEAD` (namespace `DPData`) marshal at pack 4, the
-`TvRecode*` structs at pack 8; no padding results at these field sizes.
+Unwritten fields hold 64-bit heap pointers. `RECORD_HEAD.sex` and `RANDOM_SEED.sex` can disagree
+within one record (0 and 1 in a captured one). `RECORD`, `RANDOM_SEED` and `RECORD_HEAD` (namespace
+`DPData`) marshal at pack 4, the `TvRecode*` structs at pack 8; no padding results at these field
+sizes.
 
 ### The battle ladder
 
@@ -495,10 +504,10 @@ the joiner (here the client) at every rung:
 
 Each 0x38 holds an encrypted PB8 whose checksum verifies (the picked team, in order), twenty
 `SealParam` slots of identical heap residue with `affixSealCount` 0, `attachPokemonId` and
-`attachPersonalRnd` 0, `index` 0 to 5 and `num` 6. The joiner's `id` in 0x30 is not checked
-(0x0badc0de was accepted). `BattleMatchingManager.MatchingState`: None 0, Initialize 1, Load 2,
-RecruitmentMember 3, SelectTeamMember 4, SelectRule 5, SelectBattleTeam 6, SelectPokemon 7, GoBattle
-8, Result 9, Resume 10, Closing 11, LeavedOtherMembers 12.
+`attachPersonalRnd` 0, `index` 0 to 5 and `num` 6. A console accepted a 0x30 whose `id` was
+0x0badc0de; no check on the field is located. `BattleMatchingManager.MatchingState`: None 0,
+Initialize 1, Load 2, RecruitmentMember 3, SelectTeamMember 4, SelectRule 5, SelectBattleTeam 6,
+SelectPokemon 7, GoBattle 8, Result 9, Resume 10, Closing 11, LeavedOtherMembers 12.
 
 `NetDataSelectData` (0x08) is `{byte index}`. Its one receiver [`UnionRoomManager$$SetNetData`,
 0x01e52a30] reads the sender's station and never the index:
@@ -523,9 +532,11 @@ when the player recruits a battle (`stateModelType` 0; the A press passes 1 and 
 (`EvDataManager$$UpdateStart` -> `UnionRoomManager$$ReturnBattle` [0x01b02a78], no constructor). A
 0x08 reaching a console whose player has not recruited a battle in that visit writes through null.
 
-No 0x08 has reached `SetNetData` on a console: the 22 sent after a talk went out under a sequence id
-one of the client's own 0x64 answers already held, and the reliable window keeps the first message
-for an id ([the Pia page](pia.md#what-the-receiver-discards-in-silence)).
+The ladder's 0x08 row was measured on a console that had recruited the battle. A 0x08 under a
+sequence id the client already used is discarded by the reliable window ([the Pia
+page](pia.md#what-the-receiver-discards-in-silence)). The 22 sent to a talking console that had not
+recruited went out under an id one of the client's own 0x64 answers already held, so none has
+reached the null path.
 
 Never send 0x08 unless the console's own 0x04 says state 3 with `isRecruiment` 1.
 
@@ -537,7 +548,7 @@ sends:
 
 | id | class | bytes | content |
 |---|---|---|---|
-| 0x17 | `NetZoneData` | 16 | `Vector3 pos`, `int zoneID` (519 measured) |
+| 0x17 | `NetZoneData` | 16 | `Vector3 pos`, `int zoneID` (519 in the capture) |
 | 0x42 | `NetPlayerNameData` | 28 | 13 UTF-16 chars, byte genderid, byte languageId (3, French) |
 | 0x50 | `NetKousekiCount` | 4 | `int Value` |
 | 0x41 | `NetSecretBaseInfo` | 16 | instead of 0x17 inside a secret base (zone 633): `Vector3 pos`, `int zoneID`, the entrance on the floor above (519) |
@@ -557,9 +568,8 @@ console sends it `NetPosData` every 0.41 s. Positions use the room's encoding
 | 0x54 `NetSecretBaseUpdate` | 616 | the same 616 bytes |
 | 0x61 `NetDigTableData` | 8 | eight dig-fossil ids, `01 06 04 02 05 03 00 07` |
 
-A request at sequence 1, before the console's window has
-carried anything, goes unanswered.
-A request for 0x29 or 0x42 draws nothing.
+A request sent at sequence 1, before the console's window had carried anything, went unanswered. A
+request for any other id draws nothing (0x29 and 0x42 were tried).
 
 0x61 is `UgFieldManager.ugDigGroupList`, a `Guid.NewGuid()` ordering of 0..7
 (`UgStationID_to_DigFossilIDList$$Init` [0x02031830]); the marshaller [0x002498c0] copies elements 0
@@ -584,7 +594,7 @@ flag is 0, from any station, before or after its own `JoinIn_Mine`: it tests onl
 [0x01f7db0c] and the class, stores the array as `ugDigGroupList` [0x01f7db94] unchecked, rebuilds the
 dig points [0x01cfd6d0, 0x01cfdab0] and sets the flag. All three stores to +0xA8 write 1, so every
 later 0x61 is ignored. The common dispatch (`SessionManager$$OnReceivePacket` `0x1df8ac0`) never
-consults `INetData.FromStationIndex`. A retail non-host console has not been tested.
+consults `INetData.FromStationIndex`.
 
 `CreateDigPoints` reads element `[MyStationIndex]` [0x01cfdc7c] (8 or more throws), finds the
 `UgDigFossilePosGroup` with that `ID` (`List.Find` 0x01cfdcd8) and reads its `Grids` in
@@ -604,12 +614,14 @@ adopts a table afresh.
 
 ### Ball capsules
 
-The console recruits with "Déco Capsule" (state byte 7). It sends `NetDataTransitionData{7, 0}`, goes
-to state 21 (`NOW_BALL_DECORATION`), and 1.8 s later sends its 143-byte `NetDataAttachSealNetData` as
-a 116-byte zlib stream. After 45 s without an answer it shows "quelqu'un a mis fin à la communication" and returns
-to the room. Answered with the client's own 143 bytes (`bin/bdsp_connect.py --answer-with 0x15:FILE`),
-it applies them and returns to the room within five seconds, state byte 0. Send the answer from a
-task of its own: from inside the receiver, the ack it waits for is never read.
+The console recruits with "Déco Capsule" (state byte 7). It sends `NetDataTransitionData{7, 0}`,
+goes to state 21 (`NOW_BALL_DECORATION`), and sends its 143-byte `NetDataAttachSealNetData` as a
+116-byte zlib stream (1.8 s later as measured). Unanswered, it shows "quelqu'un a mis fin à la
+communication" and returns to the room; the one measured wait was 45 s, and the timer is not
+located. Answered with the client's own 143 bytes (`bin/bdsp_connect.py --answer-with 0x15:FILE`),
+it applies them (`BallDecoMatching$$ReceiveBallDecoData`, below) and returns to the room, state byte
+0; that return took under five seconds as measured. Send the answer from a task of its own: from
+inside the receiver, the ack it waits for is never read.
 
 In the 1.3.0 image, `BallDecoMatching$$ReceiveBallDecoData` (`0x021ca5e0`) runs once the console has
 sent its own design (its first slot with seals). It writes the first of the 99 capsule slots with no
@@ -650,8 +662,8 @@ minus `(|x|, |y|)` in `{(3, 2), (2, 3), (3, 3)}`:
     row -2   columns -2..2
     row -3   columns -1..1
 
-A console's own 2D capsule has its seals on front cells. A 2D design off the grid (a ring at z = 44)
-fills a slot marked decorated and showing nothing; one on front cells shows the seals in stock.
+A console's own 2D capsule has its seals on front cells. A 2D design off the grid fills a slot marked
+decorated and draws nothing; seals on front cells draw when in stock.
 
 The grid positions hold at the retail scale. `Initialize` divides world-space offsets
 (`Transform$$get_position`, `0x01e90bd0`) by the local step, 75 on both axes (`fdiv` `0x01e90c10`).
