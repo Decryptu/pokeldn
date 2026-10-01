@@ -41,6 +41,7 @@ writes the 232-byte box structure the offer and kind 4 carry.
 A retail console joined to the app's host completed three queued trades on one seat, receiving
 Pikachu, Eevee and Onix in order. All three queue entries were marked complete, exactly three
 checksummed 260-byte received files were saved, and the host exited with code 0 after the console left.
+In the joiner role, two queued trades completed on one retail seat without an error.
 
 A console leaves the seat when its player presses Retour. `bin/lgpe_join.py --leave-after SECONDS`
 runs the same exit that long after its first answered trade step, and `bin/lgpe_host.py` answers a
@@ -64,6 +65,9 @@ ten minutes of counted play time), then the fatal error screen.
   severity-4 error (`0x4d8a80`, result 2 and the fatal error screen). An `0xa1` repeated until
   answered separates a pending mask (a later copy answered) from a message that never reaches the
   clone protocol (none answered); a sniffing board records what arrived independently of the host.
+- Whether the host's peer-only clone-4 announcement retry recovers a missing 0x82 on retail.
+  `Participant.announce_retry` in `pokeldn/ldn/clone.py` recovers a dropped request in
+  `tests/test_lgpe_host_commit.py`; it did not fire during the three-trade retail check.
 - Whether a partner leaving during the sync save reaches the code 0xe abort. The pump fails when
   `+0x1e6` is 1 or less, but the recount runs only under the guards on `[s+0xd8]`, `[s+0xd4]` and
   `0x52abf0`, whose values in a trade are unread, and the local station's own record (the other

@@ -29,6 +29,8 @@ class BoardStatus:
 class App:
     """State shared by the pages: settings, the one child process a board allows, and services."""
 
+    storage_busy = False
+
     def __init__(self, page: ft.Page):
         self.page = page
         SESSION.mkdir(parents=True, exist_ok=True)
@@ -52,7 +54,7 @@ class App:
 
     @property
     def busy(self) -> bool:
-        return self.board_busy or bool(self.process and self.process.running)
+        return self.storage_busy or self.board_busy or bool(self.process and self.process.running)
 
     def radio_port(self, present: list[board.Port] | None = None) -> str:
         """The chosen board if it is plugged in, else the only board present."""

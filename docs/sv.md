@@ -434,6 +434,10 @@ set is fully acknowledged. This preserves intentional gaps 5 and 6 while retaini
 Loss of the first INITIALIZED record leaves all 44 records unacknowledged, requiring the whole
 set to be retried. A missing middle record is retried on its own.
 
+An emulated console completed trades with the INITIALIZED record and a middle record deliberately
+dropped. A retail console completed two trades per role with pending identity records retried and
+acknowledged, zero radio loss counters and normal departures.
+
 ## The game's own protocol, from a pair
 
 Measured from two emulated Scarlet 4.0.0 instances that traded, each logging every datagram it sent.
@@ -712,9 +716,10 @@ already queued for the same station and port.
 
 Key 0x0080 stays open; key 0x0180 opens and closes per trade. A second trade repeats the cycle with
 sequences running on (host offer 16, confirmation 17, commit 18, steps 19 to 26) and no new
-association, Session exchange or identity; a retail console joined to `bin/sv_host.py` traded twice
-on one seat this way. `TradeStage` and `JoinerTradeStage` take a list of records, one per trade;
-`--trade-offer` is repeatable.
+association, Session exchange or identity. A retail console completed two queued trades on one
+seat with `bin/sv_host.py` and with `bin/sv_join.py`, including runs started from the app.
+`TradeStage` and `JoinerTradeStage` take a list of records, one per trade; `--trade-offer` is
+repeatable. Retaining a seat after the console requests host migration remains unverified.
 
 ### The first game message, and what it carries
 
@@ -935,6 +940,10 @@ NetStartHostMigration (`--stay-on-host-migration` holds it).
 A joiner leaving on the first NetStartHostMigration was off the network 0.14 s after the type 7,
 with one NetStartHostMigration sent.
 
+After a completed trade, both launchers exit when the console leaves; app runs in both roles
+returned to the idle state without Stop. A seat that completes no trade lets `bin/sv_join.py`
+resume scanning ([Ending a run](architecture.md#ending-a-run)).
+
 ## Unresolved
 
 - Whether an unannounced seat whose identity set reached acknowledgement 47 lost an outgoing chunk
@@ -944,9 +953,8 @@ with one NetStartHostMigration sent.
 - What makes a console hosting from its search hand the host role to its joiner on one seat and run
   the game on another. A player id above the host's own drew no type 7 on one seat; a lower one drew
   it 22 to 28 ms after the accept on two, and another seat with a lower id did not migrate.
-- Whether a console hosting from its search runs a second trade in the same seat. After each trade
-  measured in the joiner direction it handed the host role over and the joiner left
-  (`--leave-on-migration`); a console joined to `bin/sv_host.py` traded twice in one seat.
+- Whether a seat can carry another trade after the console asks `bin/sv_join.py` to take the host
+  role (`--answer-migration`; [Several trades in one seat](#several-trades-in-one-seat)).
 - Whether the game checks a joiner's Link Code when it hosts under one: a retail console hosting
   under a code accepted a joiner advertising none.
 - Why a console joined to `bin/sv_host.py` can acknowledge the host's announcement and never send its

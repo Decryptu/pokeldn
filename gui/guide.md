@@ -37,6 +37,13 @@ next. It shows on every trade tool. Each trade's received Pokemon gets its own f
 
 The Pokemon the console sends you are saved in `Documents/pokeldn/Received`.
 
+## Free up storage
+
+Settings, Storage shows how much space can be freed. Press Clear local files, then Clear files to
+remove saved session records, logs, temporary offers and unused built Pokemon. Save any records
+needed for a bug report first. Received Pokemon, selected offers, keys, firmware and settings are
+kept. Finish the current run before clearing files.
+
 ## Basic and Advanced
 
 Basic shows the fields most runs need; the tested settings for each game are applied underneath.

@@ -13,6 +13,25 @@ chosen in Settings; the folder button beside Output opens it. Flash detects the 
 its bundled image; a custom image is checked against that chip before writing. Connect an S3
 or C3 through native USB Serial/JTAG. C6 and S2 chips are refused.
 
+## Local storage
+
+Settings, Storage shows the space occupied by reclaimable local files. Clear local files asks for
+confirmation, removes the files in the check and reports how much space was freed. Save records
+needed for a bug report before clearing them.
+
+Cleanup includes the app's `session/` working files (captures, serial traces, temporary offers and
+session metadata), `logs/`, and unused generated or imported offers in `pokemon/`. Built offers
+less than a minute old are kept so a build still finishing can save its selection. Offers referenced
+by saved tool settings and queues are kept. Received files and their selected folder, Switch keys,
+selected firmware and settings are preserved, including when they are stored under a cleanup folder.
+Pokemon records and binary dumps outside the app's named temporary offers are kept even after the
+Received folder changes. Generated offers are identified by the builder's timestamp and random suffix.
+Symlinks are skipped; files changed after the check are kept. Empty subfolders are removed.
+
+Finish any active session, flash or board check before cleanup. Cleanup runs in the background and
+holds off new sessions and flashes until it finishes. A file that cannot be removed is reported and
+can be retried. The Pokemon sprites cache has its own Clear the cache button under advanced settings.
+
 ## Pokemon sprites
 
 The sprites are the 96x96 PNGs behind `sprites.front_default` and `sprites.front_shiny` of

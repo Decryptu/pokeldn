@@ -182,6 +182,11 @@ needed after a session that worked.
 
 The time limit (`--seconds`, `--hold`) still bounds a run whose console never leaves.
 
+App runs completed queued trades, marked their offers complete and returned to idle after the
+console left in all seven title families, in both roles. Game-specific departure measurements and
+remaining questions are on each title's Leaving section; screen delays before the first leave
+message remain separate from the answered departure exchange.
+
 ## Local files and releases
 
 `config/host.toml` and runtime reference messages are tracked. `host.local.toml`, keys, notes, logs,
@@ -190,6 +195,11 @@ research images and generated build outputs stay local. ROM checksum comparisons
 
 Settings and prepared offers use the platform's application data folder. `POKELDN_DATA` overrides it
 for isolated runs. Received records use `.pk3`, `.pb7`, `.pk8`, `.pb8`, `.pa8`, `.pk9` or `.pa9`.
+
+Settings exposes manual cleanup through `pokeldn.app.storage`
+([Local storage](gui.md#local-storage)). A scan inventories reclaimable files; deletion uses that
+inventory, rechecks current selections and preserves changed files. Cleanup holds the app's busy
+state, so sessions and flashes cannot start during deletion.
 
 The packer takes tracked runtime files, the published self-contained PKHeX executable and the merged
 radio firmware for ESP32, ESP32-S3 and ESP32-C3. Any missing image stops the build.

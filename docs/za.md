@@ -742,10 +742,12 @@ Unlike the GBA application's host:
 A retail Z-A joins `bin/za_host.py` and trades (offer marker: The trade on protocol 10). Link code 12345678 works in both roles (`--code`); an emulated Z-A trades over
 ldn_mitm.
 
-The host keeps the session after the fourth trade step and closes when the console leaves. A console
-whose host closed the network on a timer after the trade's save showed "Error Number: 6"; which
-console state a close must wait for is unresolved. `--hold-after-trade` opts into a timed close; the
-overall `--seconds` limit still applies.
+The host keeps the session after the fourth trade step and closes when the console leaves. An
+emulated console and a retail console returned to the box after trading, then left with B without
+an error; the host closed after their departure. A retail app run completed two queued trades and
+closed normally when the player left. `--hold-after-trade` opts into a timed close; the overall
+`--seconds` limit still applies. A console whose host closed the network on a timer after the
+trade's save showed "Error Number: 6".
 
 A hosted seat trades a queue of records in turn from a repeated `--trade-offer`: the next record is
 previewed after the fourth step of the previous trade. The console leaves when its player backs out.
@@ -899,10 +901,11 @@ is no local-wireless path.
 - What timer ends an emulated joiner left unanswered after admission (about 8 s measured), and what
   ends a session whose game messages go unanswered (host migration at 27 s measured), against the
   10 s kick (The kick).
-- Which console state a host must wait for before closing the network after a trade, given
-  "Error Number: 6" after a timed close. A leaving retail host sends the type 9 first ([A host
-  leaving](#a-host-leaving)); `bin/za_host.py` closes without it.
+- Whether an optional timed close (`--hold-after-trade`) can leave the console without an error
+  while it is still seated. The default host waits for the console's departure ([Hosting](#hosting)).
+  A leaving retail host sends the type 9 first ([A host leaving](#a-host-leaving)); the timed close
+  in `bin/za_host.py` sends none.
 - What the Net 0x11 sequence 3 after a type 9 asks of the next host (`NetHostMigrationJob`, vtable
-  slots from `0x2509d60`), and what a retail console shows on each side of an answered handover.
+  slots from `0x2509d60`), and whether a retail session can continue trading after the handover.
 - What a station does with a protocol-0 message, and the keepalive's header bytes (`04 00` by the
   header diff). A capture of a seated station the console has nothing else to send to.
