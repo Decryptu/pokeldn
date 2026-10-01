@@ -496,7 +496,13 @@ channel of trade r + 1; a third trade on one seat is unmeasured. Hosting, `bin/l
 --next-offer` answers the console's selections in each later trade with the next record. Joining,
 the console host's first kind 4 is its first slot: `bin/lgpe_join.py` answers it and each later
 selection with its next `--offer`, answers the commit on kind 5, and takes kind 6 as that trade's
-end; after its last record it answers nothing. A second trade with a console host is unmeasured.
+end; after its last record it answers nothing.
+
+A retail console host traded twice with `bin/lgpe_join.py` on one seat and both saves kept the
+records. It announced the next party pair, clones 5 and 6, 26.3 s after its second commit, and its
+first kind 4 (its first slot, byte-identical to its step-2 offer) 0.66 s later; it then sent a new
+kind 4 step per selection, commit clone 7 at its confirmation, kind 5 bodies 1 and 2 66 ms apart,
+and its kind 6 32.9 s after the second, with clones 8 and 9 announced 0.6 s before it.
 `bin/lgpe_host.py --lead` plays a console host's part, offering and voting unprompted, for
 `bin/lgpe_join.py`; `tests/test_esp32.py` trades two records each way between the two.
 

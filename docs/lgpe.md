@@ -28,8 +28,8 @@ Jigglypuff, Diglett. The code sets the advertisement's scene id
 ## What works
 
 A retail Let's Go Pikachu trades in both directions: `bin/lgpe_join.py` joins the console's session,
-`bin/lgpe_host.py` hosts one the console joins, and two consecutive trades complete in one hosted
-session (a fresh offer and commit channel for the second). Both take a queue of records, one per
+`bin/lgpe_host.py` hosts one the console joins, and two consecutive trades complete on one seat in
+either role (a fresh offer and commit channel for the second). Both take a queue of records, one per
 trade on the seat. The game checks no field of a received
 box structure: a shiny level-100 Imposter Ditto with 31 in every IV and 200 in every AV reads back
 on the summary screen. The Clone Protocol's take-over exchange passes the game's `0x11b080` gate,
@@ -43,9 +43,6 @@ trade lock set (no trades for ten minutes of counted play time), then the fatal 
 
 ## Unresolved
 
-- Whether a console host trades a second time with a joiner: `bin/lgpe_join.py` answers the host's
-  first kind 4 with its next record and has traded two in a row only against `bin/lgpe_host.py
-  --lead` ([the session page](lgpe_session.md#the-games-messages-on-the-reliable-protocol)).
 
 - How counted play time relates to wall time, so how long the lock lasts on a clock: the rate of
   the gated call `0x13c944` and whether the frame period stays at 33.3 ms are unread. Trying Link
