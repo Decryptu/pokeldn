@@ -943,7 +943,9 @@ response only when its byte [1] is the index of the station the host getter `0x5
 (`0x5896c0`) waits for the flag or the deadline, retransmitting the request (every 40 ms, measured),
 then disconnects its stations and leaves the network. A response naming the leaver (`08 01`) is
 dropped: the console then deauthenticates 5.00 s after its leave request (six runs, two consoles,
-4.98 to 5.01 s, the host's disconnection request answered in each). After a Retour the host sends a one-byte station
+4.98 to 5.01 s, the host's disconnection request answered in each); answered `08 00` twice, it
+sent its own disconnection request 0.04 s after the leave request and deauthenticated about 0.06 s
+after it. After a Retour the host sends a one-byte station
 disconnection request, type 3; the console answers type 4 within 50 ms.
 
 A console host answers a joiner's leave request with `08 00` twice, then repeats a Local Protocol
@@ -967,7 +969,8 @@ station but itself is connected to the LDN network (`0x5cc2d0` counts them) or 1
 (`0x5d4050`), then destroys the network: eight LDN disconnect frames, reason 3, broadcast over
 200 ms. A joiner that answers neither holds the console host 15.0 s after the migration start (two
 retail runs). An emulated host answered with the ack and `48 01` sent its update session and the
-first 0x13 34 ms later. `bin/lgpe_join.py` sends both answers and leaves the network on the first
+first 0x13 34 ms later; a retail host answered the same way sent its first 0x13 0.06 s after the
+migration start. `bin/lgpe_join.py` sends both answers and leaves the network on the first
 0x13 (`pokeldn.lgpe.leave.host_departure`).
 
 ### What a host does with a joiner that holds no clone data
