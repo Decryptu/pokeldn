@@ -1174,6 +1174,10 @@ station (`0x735b90`). The type-4 handler `0x738280` sets the job's done flag `[j
 | host | first leave to deauthentication |
 |---|---|
 | `bin/pla_host.py` before the type-4 response, eight retail departures, started directly or by `bin/pla_join.py` taking the host role | 2.02 to 2.07 s, four requests 0.49 to 0.55 s apart |
+| `bin/pla_host.py` answering with the type 4, one retail departure | 0.066 s, one request |
+
+In that departure the console's last game message on 0x7C came 1.999 s before its leave request;
+only Net, RTT and its periodic 0x81 acks passed between them. What it waits on is unread.
 
 `bin/pla_host.py` answers every type-3 request with the type-4 response. The scripted console in
 `tests/test_pla_host_loss.py` runs the job's timing, and the host's answer goes through `0x738280`

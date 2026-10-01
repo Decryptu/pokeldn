@@ -910,6 +910,7 @@ A host's type-3 handler `0x6d7894` writes exactly that (type byte at `0x6d7a50`,
 draw from `0x6c70a8`, sent at `0x6d7ad8`) once it finds the station by constant id and variable id.
 Unanswered, a retail console sent four leave requests 0.49 to 0.54 s apart in four sessions with
 `bin/sv_host.py`, and deauthenticated 2.04 s after the first in the one with a board trace.
+Answered, a retail console sent one leave request and deauthenticated 0.04 s after it.
 `bin/sv_host.py` answers the first (`--no-leave-response` leaves it unanswered);
 `tests/test_sv_departure.py` runs the answer through `0x6d7b10` under unicorn.
 
@@ -930,6 +931,8 @@ network went down 4.3 s after the type 7, after LDN broadcasts of ethertype `88b
 joiner left 3.0 s after the type 7 and the console's advertisements were gone within 0.5 s of the
 joiner leaving, before the console's own 4 s deadline. `bin/sv_join.py` leaves the seat at the first
 NetStartHostMigration (`--stay-on-host-migration` holds it).
+A joiner leaving on the first NetStartHostMigration was off the network 0.14 s after the type 7,
+with one NetStartHostMigration sent.
 
 ## Unresolved
 
