@@ -6,7 +6,7 @@ import flet as ft
 import serial
 
 from gui import board
-from pokeldn.app import settings
+from pokeldn.app import settings, update
 from pokeldn.app.paths import SESSION
 from gui.views.widgets import on_ui
 
@@ -43,6 +43,9 @@ class App:
         self.identities: dict[str, board.Identity | str] = {}   # device -> identity, or why none answered
         self.chips: dict[str, str] = {}                         # device -> chip the last flash detected
         self.board_listeners: list = []                         # called on the UI loop after a check
+        self.update: update.Release | None = None               # a newer release GitHub offered
+        self.update_state = ""                                  # checking, current, available, offline
+        self.update_listeners: list = []                        # called on the UI loop after a check
 
     def ui(self, fn) -> None:
         on_ui(self.page, fn)
@@ -126,6 +129,28 @@ class App:
         port = self.radio_port(present)
         if port and port not in self.identities and not self.busy:
             self.check_board(port)
+
+    def check_update(self) -> None:
+        """Ask GitHub for a newer release in the background; listeners run when it answers."""
+        if self.update_state == "checking":
+            return
+        self.update_state = "checking"
+
+        def work():
+            try:
+                found, state = update.check(), "current"
+            except OSError:
+                found, state = None, "offline"
+            self.ui(lambda: self._update_done(found, state))
+
+        threading.Thread(target=work, daemon=True).start()
+
+    def _update_done(self, found, state: str) -> None:
+        if state != "offline":   # a failed check keeps a release an earlier one found
+            self.update = found
+        self.update_state = "available" if self.update else state
+        for listener in list(self.update_listeners):
+            listener()
 
     async def open_url(self, url: str) -> None:
         await self.launcher.launch_url(url)

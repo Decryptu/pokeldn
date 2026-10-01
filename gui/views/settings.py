@@ -20,11 +20,21 @@ class SettingsView:
         self.app = app
         self.keys_state = ft.Container()
         self.sprite_state = t.text("", 12, t.MUTED)
+        self.update_state = t.text("", 12, t.MUTED)
+        self.shown = self.asked = False
+        app.update_listeners.append(self._update_shown)
+        self._update_text()
         self.show_advanced = False
         self.column = ft.Column(spacing=t.GAP, width=760)
         self.control = ft.ListView([ft.Row([self.column], alignment=ft.MainAxisAlignment.CENTER)],
                                    padding=ft.Padding(4, 8, 4, 24), expand=True)
         self.render()
+
+    def enter(self, **_) -> None:
+        self.shown = True
+
+    def leave(self) -> None:
+        self.shown = False
 
     def save(self, name: str, value) -> None:
         setattr(self.app.settings, name, value)
@@ -110,6 +120,11 @@ class SettingsView:
             ft.Row([t.link_button("Hide advanced settings" if self.show_advanced else "Show advanced settings",
                                   self._toggle_advanced)]),
             *(advanced if self.show_advanced else []),
+            t.card("Updates", ft.Row([t.button("Check now", self._check_update, "refresh", filled=False),
+                                      self.update_state], spacing=10),
+                   "Asks GitHub for a newer pokeldn when the app starts. Nothing about you or your games is "
+                   "sent.",
+                   trailing=t.switch(s.check_updates, lambda e: self.save("check_updates", e.control.value))),
             t.card(f"About pokeldn {__version__}", ft.Row([link(label, url) for label, url in LINKS], spacing=4),
                    "pokeldn is AGPLv3. Pokemon are checked with PKHeX.Core (GPLv3)."),
         ]
@@ -118,6 +133,30 @@ class SettingsView:
         self.show_advanced = not self.show_advanced
         self.render()
         self.control.update()
+
+    def _check_update(self, e) -> None:
+        self.asked = True
+        self.app.check_update()
+        self._update_text()
+        self.update_state.update()
+
+    def _update_text(self) -> None:
+        release, state = self.app.update, self.app.update_state
+        self.update_state.value = {
+            "checking": "Checking...",
+            "current": f"You have the latest version ({__version__}).",
+            "offline": "GitHub did not answer. Check your connection.",
+            "available": f"pokeldn {release.version} is available." if release else "",
+        }.get(state, "")
+        self.update_state.color = t.GREEN if state == "available" else t.MUTED
+
+    def _update_shown(self) -> None:
+        self._update_text()
+        if self.shown:
+            self.update_state.update()
+            if self.asked and self.app.update:
+                self.app.navigate("update")
+        self.asked = False
 
     def _clear_sprites(self, e) -> None:
         self.sprite_state.value = f"{CACHE.clear()} files removed"

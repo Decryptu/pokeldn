@@ -20,6 +20,7 @@ class Settings:
     capture: bool = True
     board_trace: bool = False
     sprites: bool = True    # download Pokemon sprites from PokeAPI; the cache is read either way
+    check_updates: bool = True   # ask GitHub for a newer release at launch
     firmware: str = ""
     # Trainer used for generated encounters.
     ot: str = "PkCamp"

@@ -38,6 +38,24 @@ A sprite downloads on first use and is read from disk afterwards, with no networ
 Settings has the switch and a button that empties the cache. `POKELDN_SPRITE_BASE` replaces the sprite
 host, for tests (`tests/test_sprites.py`).
 
+## Updates
+
+At launch the app asks `api.github.com/repos/Decryptu/pokeldn/releases/latest` for the newest stable
+release, in the background with a 5 s timeout. A tag above the app's `pokeldn.__version__` adds an
+Update entry to the sidebar; it opens the release notes or downloads this computer's archive from the
+release (`pokeldn-macos-arm64.zip`, `pokeldn-windows-x64.exe`, `pokeldn-linux-x64.tar.gz`), or the
+release page when none fits. The user replaces the app with the download; settings, keys and received
+Pokemon live outside it.
+
+| situation | behaviour |
+|---|---|
+| pre-release or draft, or a tag that is not `vX.Y.Z` | not offered |
+| no network, HTTP error, reply that is not a release | nothing shown at launch; Check now says GitHub did not answer |
+| Settings, Updates off | no request at launch; Check now still asks |
+
+The request carries no user data. GitHub allows 60 unauthenticated requests per hour per address.
+`POKELDN_UPDATE_URL` replaces the endpoint, for tests (`tests/test_app_update.py`).
+
 ## Run from source
 
 For source development, install Python 3.13 and the .NET 10 SDK:

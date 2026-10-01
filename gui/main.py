@@ -18,6 +18,7 @@ import flet as ft  # noqa: E402
 
 from gui import theme as t  # noqa: E402
 from gui.app import App  # noqa: E402
+from pokeldn import __version__  # noqa: E402
 from pokeldn.app.paths import ROOT  # noqa: E402
 
 PAGES = (
@@ -26,6 +27,7 @@ PAGES = (
     ("docs", "Docs", "book-open"),
 )
 SETTINGS = ("settings", "Settings", "gear")
+UPDATE = ("update", "Update", "download")
 
 
 def main(page: ft.Page) -> None:
@@ -62,6 +64,8 @@ def main(page: ft.Page) -> None:
         key, label, icon = entry
         active = key == current["key"]
         color = t.RED if active else t.MUTED
+        if key == "update":
+            color = t.GREEN
         return ft.Semantics(selected=active, button=True, label=label, exclude_semantics=True,
                             on_tap=lambda e, k=key: navigate(k), content=ft.Container(ft.Stack([
             ft.Container(ft.Column([
@@ -75,9 +79,12 @@ def main(page: ft.Page) -> None:
 
     def render_rail() -> None:
         rail.controls = [item(p) for p in PAGES]
-        bottom.controls = [item(SETTINGS)]
+        bottom.controls = [item(UPDATE)] * bool(app.update) + [item(SETTINGS)]
 
     def navigate(key: str, **kwargs) -> None:
+        if key == "update":
+            offer_update(app)
+            return
         previous = views.get(current["key"])
         if previous is not None and hasattr(previous, "leave"):
             previous.leave()
@@ -105,6 +112,46 @@ def main(page: ft.Page) -> None:
     navigate("games")
     if not os.path.isfile(os.path.expanduser(app.settings.keys)):
         welcome(app)
+
+    def updated() -> None:
+        render_rail()
+        page.update()
+    app.update_listeners.append(updated)
+    if app.settings.check_updates:
+        app.check_update()
+
+
+def offer_update(app: App) -> None:
+    """A newer release on GitHub: its file for this computer, and its notes."""
+    release = app.update
+
+    def close(e):
+        app.page.pop_dialog()
+
+    def open_(url):
+        def go(e):
+            app.page.pop_dialog()
+            app.page.run_task(app.open_url, url)
+        return go
+
+    direct = release.download != release.page
+    app.page.show_dialog(ft.AlertDialog(
+        bgcolor=t.PANEL, elevation=24,
+        shape=ft.ContinuousRectangleBorder(radius=36, side=ft.BorderSide(1, t.OUTLINE)),
+        barrier_color=ft.Colors.with_opacity(0.65, "#000000"),
+        semantics_label="Update available",
+        title=t.text(f"pokeldn {release.version} is available", 16, weight=ft.FontWeight.W_600),
+        content=ft.Container(t.text(
+            f"You have {__version__}. "
+            + ("Download the new version, then replace this app with it. " if direct else
+               "Download the new version for your computer from the release page, then replace this app "
+               "with it. ")
+            + "Your settings, keys and received Pokemon stay where they are.", 13, t.MUTED), width=460),
+        actions=[t.link_button("What's new", open_(release.page)),
+                 t.secondary_button("Later", close),
+                 t.button("Download", open_(release.download), "download")],
+    ))
+    app.page.update()   # also shown from a background check, where Flet does not flush on its own
 
 
 def welcome(app: App) -> None:
