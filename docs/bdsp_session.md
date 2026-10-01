@@ -312,8 +312,6 @@ no wait on the partner.
 
 ### Unresolved
 
-- Whether an answered leave or migration closes the console's wait at once; no answered departure
-  has been run.
 - What ends the Local Protocol 0x13 phase early.
 
 ## Measurement methods

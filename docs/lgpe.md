@@ -38,6 +38,10 @@ The Clone Protocol's take-over exchange passes the game's `0x11b080` gate, and t
 carries identity, offer, commit and kind 4 (the next trade's selection); `pokeldn.lgpe.pb7` reads and
 writes the 232-byte box structure the offer and kind 4 carry.
 
+A retail console joined to the app's host completed three queued trades on one seat, receiving
+Pikachu, Eevee and Onix in order. All three queue entries were marked complete, exactly three
+checksummed 260-byte received files were saved, and the host exited with code 0 after the console left.
+
 A console leaves the seat when its player presses Retour. `bin/lgpe_join.py --leave-after SECONDS`
 runs the same exit that long after its first answered trade step, and `bin/lgpe_host.py` answers a
 console's Retour ([A joiner leaving](lgpe_session.md#a-joiner-leaving)).
@@ -68,6 +72,6 @@ ten minutes of counted play time), then the fatal error screen.
   `seq+0xb8` is released after an aborted commit.
 - Whether the channel counter or the 16-entry channel table bounds a long seat. `0x116e80` hands out
   ids from `mgr+0x270` and returns 0 with 16 channels registered; `0x117920` compacts out dead ones.
-  How many trades a seat carries before either matters is unmeasured.
+  A hosted retail seat carried three trades. The limit beyond that is unmeasured.
 - Whether the dispatcher's modes 1 and 2 are link battles. The reading rests on the scene they build;
   a capture of a link battle's session, with the mode word `+0x8c`, settles it.

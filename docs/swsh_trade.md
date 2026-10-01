@@ -156,7 +156,7 @@ the 40050 and 40040 pairs and bodies answered, the confirmation command queue, t
 latch. The 40030 pair and the ping answers carry over. `bin/swsh_host.py --accept-first --lead
 SECONDS` plays a console host's player (accepts first, offers its next queued record from the box
 after a trade), and the two launchers trade two records each way on one session on simulated boards
-(`tests/test_esp32.py`). A retail console host's second round against the joiner is unmeasured.
+(`tests/test_esp32.py`). Two trades against a retail console host also completed on one session.
 
 When that retail joiner's player then pressed B in the box, the console sent box commands 2 and 3
 and mesh `0401` and deauthenticated, with no error; its next search joined the same hosted network
@@ -547,6 +547,21 @@ DesignLevel 5, language 6, GlossIndex 9. `bin/swsh_host.py --card-set FIELD=VALU
 (`pokeldn.swsh.league_card` fields); a fresh `trainer_id` makes the console ask again.
 
 ## The offered record
+
+An app-built Pikachu traded to a retail Sword and back in the second trade on the same session
+kept every requested offer option. Its returned PK8 has a valid checksum and passes PKHeX legality;
+the PID, original trainer ids, all six IVs and all six EVs match the first outgoing offer.
+
+| requested field | returned record |
+|---|---|
+| level | 30 |
+| nature and stat nature | Adamant, 3 |
+| ability | Lightning Rod, 31 |
+| gender | female, 1 |
+| ball | Ultra Ball, 2 |
+| held item | Light Ball, 236 |
+| selected IVs | HP 31, Attack 0, Speed 31 |
+| EVs | HP 252, Speed 4, every other stat 0 |
 
 The offer on 20030 is the snapshot's party slot `--offer-slot`, edited in place, so the shown party
 and the offer agree; the identity rewrite runs first and `party_matches_trainer` holds.

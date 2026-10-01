@@ -1115,6 +1115,10 @@ commit clone arrived after one re-announcement, the console stayed on its confir
 its trade lock already saved. `pokeldn.ldn.clone` resends the peer-only `0x81` every 100 ms, at most
 20 times, until the `0x82` arrives.
 
+In a three-trade retail host session, the peer answered the first peer-only announcements for
+commit clones 4, 7 and 10 after 63, 26 and 62 ms. No retry fired; recovery after an unanswered
+announcement remains unverified on retail.
+
 ### What the announce's destination field decides
 
 The command header `0x51f820` lays out `+0x10` as a station bitmap. An 0x81 announcing a clone for

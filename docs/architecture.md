@@ -124,6 +124,10 @@ fixed effort values, each gender and a held item, 8088 of 8095 builds are legal.
 Docile and Bashful on the Sword/Shield event Celebi, and the same three and Quirky on the Legends Z-A
 gift Melmetal.
 
+Custom offer options are also verified by a retail Sword round trip: the received Pokemon was
+traded back on the next queued exchange and its saved record compared with the outgoing offer
+([The offered record](swsh_trade.md#the-offered-record)).
+
 Sword/Shield Mystery Gift validates the WC8 seal and checks supported species, forms, moves and safe
 items with PKHeX. Custom WC8 cards are distributions, and this structural check does not make them
 official events. The optional `--image` research check uses a user-supplied game binary; it is not
