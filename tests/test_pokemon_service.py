@@ -38,9 +38,20 @@ def test_creation_import_and_launcher_preparation_remain_legal(service, game):
     imported = service.import_file(game, built["file"])
     assert imported["legal"] and imported["format"] == FORMATS[game]
     assert imported["file"] != built["file"]
-    offer = pokemon.prepare_file(game, imported["file"])
+    offer = pokemon.prepare_file(game, imported["file"], fresh=True)   # the launchers' --fresh-pid
     final = service.check_bytes(game, Path(offer).read_bytes())
     assert final["legal"] and final["ot"] == imported["ot"]
+    assert "Event" not in built["encounter"]   # Pikachu has wild and egg encounters in every game
+
+
+def test_an_event_pokemon_offered_under_a_new_pid_keeps_its_own(service, capsys):
+    """Melmetal reaches Sword only as an event; its PID is part of the event."""
+    built = service.make("swsh", 809, TRAINER)
+    assert "Event" in built["encounter"] or "Gift" in built["encounter"]
+    offer = Path(pokemon.prepare_file("swsh", built["file"], fresh=True)).read_bytes()
+    assert service.check_bytes("swsh", offer)["legal"]
+    assert offer[:4] == base64.b64decode(built["data"])[:4]   # the encryption constant
+    assert "kept its own PID" in capsys.readouterr().out
 
 
 @pytest.mark.parametrize("game, species, edit", [
@@ -164,7 +175,7 @@ def test_corrupt_records_and_illegal_final_edits_are_refused(service):
 
 
 def test_a_fixed_event_trainer_cannot_be_overwritten(service):
-    built = service.make("swsh", 25, TRAINER)
+    built = service.make("swsh", 809, TRAINER)
     assert built["ot"] != TRAINER["ot"]
     with pytest.raises(pokemon.BuilderError):
         service.prepare("swsh", base64.b64decode(built["data"]), fields={"ot_name": "Changed"})

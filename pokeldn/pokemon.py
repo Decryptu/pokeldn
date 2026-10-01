@@ -30,11 +30,13 @@ def _command() -> list[str]:
     override = os.environ.get("POKELDN_PKHEX")
     if override:
         return ["dotnet", override] if override.endswith(".dll") else [override]
-    # dist/ is the release build's single file; bin/ is a local `dotnet build -c Release`.
-    found = [os.path.join(HERE, "dist", EXE), *glob.glob(os.path.join(HERE, "bin", "Release", "*", "*", EXE))]
-    for path in found:
-        if os.path.isfile(path):
-            return [path]
+    # dist/ is the release build's single file; bin/ is a local `dotnet build -c Release`. The newest
+    # wins: a dist/ left by a pack would otherwise hide every later source build.
+    found = [path for path in (os.path.join(HERE, "dist", EXE),
+                               *glob.glob(os.path.join(HERE, "bin", "Release", "*", "*", EXE)))
+             if os.path.isfile(path)]
+    if found:
+        return [max(found, key=os.path.getmtime)]
     raise BuilderError("PKHeX is missing. From source, run: dotnet build -c Release services/pkhex")
 
 
@@ -114,6 +116,8 @@ class Service:
         reply = self.check_bytes(game, data, fresh=fresh, fields=fields)
         if not reply["legal"]:
             raise BuilderError(reply["report"])
+        if reply.get("note"):
+            print(f"[pokemon] the offer {reply['note']}", flush=True)
         return base64.b64decode(reply["data"])
 
     def validate_gift(self, data):

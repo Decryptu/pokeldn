@@ -34,7 +34,10 @@ illegal final records are refused. A session's trainer identity does not overwri
 Pokémon's original trainer.
 
 PID and encryption-constant changes can invalidate encounter correlations, especially events and
-raids. Fresh identity is opt-in and must pass PKHeX; a fixed event trainer is preserved.
+raids. Fresh identity is opt-in and must pass PKHeX; a fixed event trainer is preserved. A record legal
+as supplied and illegal under a fresh identity keeps its own PID and encryption constant, and the
+launcher logs `the offer kept its own PID`. A build tries Mystery Gift encounters after every other
+encounter of the species, so a species with a wild, static or egg encounter is never built as an event.
 
 A built Pokémon is an encounter converted to a record. Shininess is requested from the encounter, so a
 Generation 3 PID keeps the RNG correlation PKHeX expects. A single-gender species asks for that gender

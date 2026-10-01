@@ -193,9 +193,11 @@ JsonObject Make(Game game, JsonObject request)
     var shinyLocked = false;
     // The first encounter that stays legal with the requested level, shininess and nickname wins.
     // The first pass takes encounters as they come; the second lets an evolved Pokemon climb to its evolution level.
+    // Mystery Gifts come last: an event's fixed PID makes the launchers' new-PID offer illegal.
     foreach (var climb in new[] { false, true })
     {
-        foreach (var encounter in EncounterMovesetGenerator.GenerateEncounters(blank, trainer, ReadOnlyMemory<ushort>.Empty, versions).Take(80))
+        foreach (var encounter in EncounterMovesetGenerator.GenerateEncounters(blank, trainer, ReadOnlyMemory<ushort>.Empty, versions)
+                     .Take(80).OrderBy(e => e is MysteryGift))
         {
             if (encounter is not IEncounterConvertible convertible)
                 continue;
@@ -404,12 +406,21 @@ JsonObject Check(Game game, byte[] data, JsonObject request)
                 default: throw new ArgumentException($"Unsupported edit {name}.");
             }
         }
+    string? note = null;
     if ((bool?)request["fresh"] == true)
     {
+        var (pid, ec) = (pk.PID, pk.EncryptionConstant);
+        var legal = new LegalityAnalysis(pk).Valid;
         var xor = (pk.PID >> 16) ^ (pk.PID & 0xFFFF);
         var high = (uint)Random.Shared.Next(0x10000);
         pk.PID = (high << 16) | (high ^ xor);
         pk.EncryptionConstant = (uint)Random.Shared.NextInt64(1, 1L << 32);
+        // An event Pokemon's PID is part of the event: a new one makes it illegal.
+        if (legal && !new LegalityAnalysis(pk).Valid)
+        {
+            (pk.PID, pk.EncryptionConstant) = (pid, ec);
+            note = "kept its own PID: this event Pokemon is legal only with it";
+        }
     }
     pk.ResetPartyStats();
     pk.RefreshChecksum();
@@ -419,7 +430,10 @@ JsonObject Check(Game game, byte[] data, JsonObject request)
         pb7.ResetPartyStats();
         pb7.ResetCalculatedValues();
     }
-    return Describe(game, pk, new LegalityAnalysis(pk));
+    var reply = Describe(game, pk, new LegalityAnalysis(pk));
+    if (note is not null)
+        reply["note"] = note;
+    return reply;
 }
 
 JsonObject Gift(byte[] data)
