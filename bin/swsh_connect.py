@@ -1719,7 +1719,7 @@ PRESETS = {
               "--open-content 30,50 --open-content-offer --box-commands 1 --box-on-accept 4 "
               "--box-period 0.35 --confirm-commands 0,1,2,3,0,1,2,3,0,1,2,3 "
               "--confirm-final-delta 9 --abort-on-stall 15 --hold 240 --send-seconds 0 "
-              "--send-count 0 --answer-migration --leave-with-host"),
+              "--send-count 0 --answer-migration --update-mesh --leave-with-host"),
 }
 
 

@@ -276,6 +276,8 @@ A joined Sword leaving a host:
 
 Eleven host captures (retail Sword and emulated Shield, the host answering neither) measure 9.0 to
 9.1 s from LEAVE_REQUEST to the LDN leave.
+With `08 00` twice and `04` answered, a retail Sword sent one `03` 0.04 s after LEAVE_REQUEST and
+left the network 0.14 s after it.
 
 - The version-4 host handler `0x017c19a0` (mesh type 4, table `0x02081564`) sends `08` and its own
   index through `0x017c2450`, two unreliable copies (`0x01851200` with the no-bundle flag 0, then
@@ -290,12 +292,21 @@ A hosting Sword leaving its client (it is the LDN access point):
 
 | step | the Sword sends | the client owes | unanswered |
 |---|---|---|---|
-| mesh migration | MIGRATION_START `44 00 01` ([host migration](swsh_trade.md#host-migration)) | MIGRATION_FINISH from the named station | 5.0 s |
+| mesh migration | MIGRATION_START `44 00 01` ([host migration](swsh_trade.md#host-migration)) | MIGRATION_FINISH and an UPDATE_MESH naming itself host, from the named station | 5.0 s |
 | local session | its update session (0x24 type 0x11) with the host-migration byte 1 and a new sequence id, about every 0.11 s | the 0x21 ack for that sequence id | 10.0 s |
 | destroy network | START_HOST_MIGRATION `01 13 00..` (16 bytes), every 0.33 s | leave the LDN network | 10.0 s |
 
-Five retail joiner captures with no answer measure 25.0 s from MIGRATION_START to the last packet;
-one with MIGRATION_FINISH sent measures 20.1 s, the mesh step ending 0.1 s after the start.
+Measured on a retail Sword, from MIGRATION_START to its last packet:
+
+| the client answered | mesh step ends | last packet |
+|---|---|---|
+| nothing (5 captures) | 5.0 s | 25.0 s |
+| MIGRATION_FINISH and UPDATE_MESH as host, repeated | 0.1 s | 20.1 s |
+| MIGRATION_FINISH (acked), the ack, the leave | 5.0 s | 5.07 s |
+| MIGRATION_FINISH, UPDATE_MESH as host, the ack, the leave | 0.07 s | 0.17 s |
+
+With the finish alone acked, the console went on acknowledging the client's data for 4.8 s; with
+the UPDATE_MESH it went quiet 0.07 s after the start.
 
 - `LocalDestroyNetworkJob::WaitUntilAllClientsDisconnection` (`0x017acd70`) counts the network's
   connected nodes (`0x017a9b20`, eight slots) and destroys it when only the host remains or after
@@ -306,8 +317,9 @@ one with MIGRATION_FINISH sent measures 20.1 s, the mesh step ending 0.1 s after
 - START_HOST_MIGRATION carries no sequence (its serializer `0x017abc60` writes 0 at 0xC) and has no
   resend job: nothing acks it.
 
-`bin/swsh_connect.py --answer-migration --leave-with-host` sends the finish, acks the
-host-migration update session and leaves the network on START_HOST_MIGRATION.
+`bin/swsh_connect.py --answer-migration --update-mesh --leave-with-host` (in `--preset trade`) sends
+the finish and an UPDATE_MESH as host, acks the host-migration update session and leaves the
+network on START_HOST_MIGRATION.
 
 ## Operational notes
 
