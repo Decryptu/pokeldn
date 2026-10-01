@@ -47,7 +47,7 @@ class CodeBlock:
                          padding=ft.Padding(0, 6, 0, 6)),
             t.icon_button("copy", self._copy, "Copy code"),
         ], spacing=8, vertical_alignment=ft.CrossAxisAlignment.START),
-            bgcolor=t.BG, border_radius=8, padding=10, border=ft.Border.all(1, t.BORDER))
+            bgcolor=t.BG, border_radius=10, padding=10)
 
     async def _copy(self, e) -> None:
         await self.app.copy(self.text.value)
@@ -86,16 +86,16 @@ class MarkdownDocument:
             value, selectable=True, extension_set=ft.MarkdownExtensionSet.GITHUB_WEB,
             code_theme=ft.MarkdownCodeTheme.ATOM_ONE_DARK, on_tap_link=self.on_link,
             md_style_sheet=ft.MarkdownStyleSheet(
-                p_text_style=ft.TextStyle(size=14, color="#D4D6DB", height=1.55),
-                h1_text_style=ft.TextStyle(size=26, weight=ft.FontWeight.W_700, color=t.TEXT),
+                p_text_style=ft.TextStyle(size=14, color=t.SOFT, height=1.55),
+                h1_text_style=ft.TextStyle(size=26, weight=ft.FontWeight.W_600, color=t.TEXT),
                 h2_text_style=ft.TextStyle(size=19, weight=ft.FontWeight.W_600, color=t.TEXT),
                 h3_text_style=ft.TextStyle(size=16, weight=ft.FontWeight.W_600, color=t.TEXT),
                 a_text_style=ft.TextStyle(color=t.BLUE),
-                code_text_style=ft.TextStyle(font_family=t.MONO, size=12.5, color=t.TEXT, bgcolor=t.FIELD),
-                codeblock_decoration=ft.BoxDecoration(bgcolor=t.BG, border_radius=8),
+                code_text_style=ft.TextStyle(font_family=t.MONO, size=12, color=t.TEXT, bgcolor=t.FIELD),
+                codeblock_decoration=ft.BoxDecoration(bgcolor=t.BG, border_radius=10),
                 codeblock_padding=0,
                 table_head_text_style=ft.TextStyle(size=13, weight=ft.FontWeight.W_600, color=t.TEXT),
-                table_body_text_style=ft.TextStyle(size=13, color="#D4D6DB"),
+                table_body_text_style=ft.TextStyle(size=13, color=t.SOFT),
                 table_cells_padding=ft.Padding(8, 6, 8, 6),
                 block_spacing=14,
             ))
@@ -128,16 +128,16 @@ class Log:
         self.placeholder = t.text(placeholder, 12, t.FAINT)
         self.control = ft.Container(ft.Stack([t.fade(self.list, 16), ft.Container(self.placeholder, padding=12)],
                                              expand=True),
-                                    expand=True, bgcolor=t.BG, border_radius=10,
-                                    border=ft.Border.all(1, t.BORDER))
+                                    expand=True, bgcolor=ft.Colors.with_opacity(0.45, "#000000"),
+                                    border_radius=12)
 
     @staticmethod
     def _line(line: str) -> ft.Text:
         lower = line.lower()
         color = t.RED if ("traceback" in lower or "error" in lower or "failed" in lower) else \
             t.GREEN if ("complete" in lower or "success" in lower) else \
-            t.BLUE if line.startswith("[app]") else "#B9BCC4"
-        return ft.Text(line, size=11.5, color=color, font_family=t.MONO, selectable=True)
+            t.BLUE if line.startswith("[app]") else t.SOFT
+        return ft.Text(line, size=11, color=color, font_family=t.MONO, selectable=True)
 
     def add(self, line: str) -> None:
         with self.lock:

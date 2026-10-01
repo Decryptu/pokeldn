@@ -19,7 +19,7 @@ class Sprite:
         self.app, self.size = app, size
         self.token = 0
         self.frame = ft.Container(width=size + 2 * EDGE, height=size + 2 * EDGE, alignment=ft.Alignment.CENTER,
-                                  bgcolor=t.BG, border=ft.Border.all(EDGE, t.BORDER), border_radius=10 if size >= SIZE else 8,
+                                  bgcolor=t.BG, border=ft.Border.all(EDGE, t.DIVIDER), border_radius=12 if size >= SIZE else 10,
                                   clip_behavior=ft.ClipBehavior.ANTI_ALIAS)
         self.control = self.frame
         self.show(species, shiny, update=False)

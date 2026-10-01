@@ -27,7 +27,7 @@ class PokemonPicker:
         self.shiny = t.switch(bool(self.value.get("shiny")), self._shiny)
         self.nickname = t.field(value=self.value.get("nickname", ""), hint="Nickname (optional)", expand=True,
                                 on_change=lambda e: self._set("nickname", e.control.value))
-        self.build_button = t.button("Build", self._build, "sparkles", disabled=True)
+        self.build_button = t.button("Build", self._build, disabled=True)
         self.options = OfferOptions(self)
         self.result = ft.Container()
         form = ft.Column([
@@ -164,8 +164,8 @@ class PokemonPicker:
         if detail:
             lines.append(t.text(detail, 12, t.MUTED))
         if self.value.get("report"):
-            lines.append(t.text(self.value["report"], 11.5, t.RED, selectable=True))
-        self.result.content = ft.Container(ft.Column(lines, spacing=4), bgcolor=t.BG, border_radius=10, padding=10)
+            lines.append(t.text(self.value["report"], 12, t.RED, selectable=True))
+        self.result.content = ft.Column(lines, spacing=4)
 
 
 class OfferQueue:
@@ -183,7 +183,7 @@ class OfferQueue:
         self._render()
 
     def _slot(self, entry: dict) -> None:
-        slot = {"value": dict(entry), "title": t.text("", 12.5, weight=ft.FontWeight.W_600, expand=True)}
+        slot = {"value": dict(entry), "title": t.text("", 13, weight=ft.FontWeight.W_600, expand=True)}
         slot["picker"] = PokemonPicker(self.app, self.game, entry, lambda v, s=slot: self._changed(s, v),
                                        version=self.version)
         slot["remove"] = t.icon_button("close", lambda e, s=slot: self._remove(s), "Remove this trade")
@@ -196,7 +196,7 @@ class OfferQueue:
         for n, slot in enumerate(self.slots, start=1):
             slot["title"].value = f"Trade {n}"
             slot["header"].visible = several
-            slot["box"].border = ft.Border.all(1, t.BORDER) if several else None
+            slot["box"].border = ft.Border.all(1, t.DIVIDER) if several else None
             slot["box"].border_radius = 12 if several else None
             slot["box"].padding = ft.Padding(12, 6, 6, 12) if several else None
         self.rows.controls = [slot["box"] for slot in self.slots]
@@ -248,7 +248,7 @@ class OfferOptions:
         self.body = ft.Column([], spacing=10, visible=False)
         self.chevron = t.pixel_icon("chevron-right", color=t.FAINT)
         self.label = t.text("", 12, t.MUTED)
-        header = ft.Container(ft.Row([self.chevron, t.text("More options", 12.5, t.TEXT, weight=ft.FontWeight.W_600),
+        header = ft.Container(ft.Row([self.chevron, t.text("More options", 13, t.TEXT, weight=ft.FontWeight.W_600),
                                       self.label], spacing=8),
                               padding=ft.Padding(2, 4, 2, 4), border_radius=8, on_click=self._toggle)
         self.control = ft.Column([header, self.body], spacing=8)
@@ -325,7 +325,7 @@ class OfferOptions:
             ft.Row(second, spacing=10),
             self._stats("ivs", "IVs", 31, "0-31"),
             self._stats("effort", EFFORT[effort["kind"]], effort["max"], limit, effort.get("total")),
-            ft.Row([t.text("Empty means random. The build is checked by PKHeX's legality analysis.", 11.5, t.FAINT,
+            ft.Row([t.text("Empty means random. The build is checked by PKHeX's legality analysis.", 12, t.FAINT,
                            expand=True),
                     t.link_button("Clear", self._clear)]),
         ]
@@ -373,7 +373,7 @@ class OfferOptions:
             boxes.append(t.labeled_control(name, box, expand=True))
         if not values:
             self.chosen.pop(group, None)
-        return ft.Column([t.text(f"{title} ({limit})", 11.5, t.MUTED), ft.Row(boxes, spacing=6)], spacing=4)
+        return ft.Column([t.text(f"{title} ({limit})", 12, t.MUTED), ft.Row(boxes, spacing=6)], spacing=4)
 
     def _clear(self, e) -> None:
         self.chosen.clear()

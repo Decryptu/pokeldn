@@ -47,16 +47,20 @@ class GamesView:
         self.sprites: dict[str, Sprite] = {}   # a species field's key -> the sprite on its card
         self.visible = False
         self.tree = ft.ListView(spacing=2, padding=ft.Padding(8, 8, 8, 8), expand=True)
-        self.summary = t.text("", 12, t.MUTED)
-        self.body = ft.ListView(spacing=t.GAP, padding=ft.Padding(0, 12, 0, 24), expand=True)
+        self.summary = t.text("", 12, t.MUTED, text_align=ft.TextAlign.CENTER)
+        self.cards = ft.Column(spacing=t.GAP)
+        # The cards start below the toolbar and scroll under its glass.
+        self.body = ft.ListView([ft.Container(self.summary, alignment=ft.Alignment.CENTER,
+                                              padding=ft.Padding(12, 0, 12, 4)), self.cards],
+                                spacing=t.GAP, padding=ft.Padding(0, 62, 0, 24), expand=True)
         self.tabs = ft.Container()
         self.session = SessionPanel(app, self)
-        center = ft.Column([
-            t.notch(self.tabs,
-                    t.icon_button("book-open", self._open_doc, "Read the docs for this game")),
-            ft.Container(self.summary, alignment=ft.Alignment.CENTER, padding=ft.Padding(12, 14, 12, 2)),
-            t.fade(self.body),
-        ], spacing=0, expand=True)
+        center = ft.Stack([
+            t.fade(self.body, 48),
+            ft.Container(t.notch(self.tabs,
+                                 t.icon_button("book-open", self._open_doc, "Read the docs for this game")),
+                         top=0, left=0, right=0),
+        ], expand=True)
         self.control = ft.Row([
             t.panel(ft.Column([t.panel_header("Games"), t.fade(self.tree)], spacing=0, expand=True), width=t.SIDEBAR_WIDTH),
             center,
@@ -90,7 +94,7 @@ class GamesView:
         self.app.settings.save()
         if rebuild:
             self.render_body()
-            self.body.update()
+            self.cards.update()
         self.session.refresh()
 
     # Rendering
@@ -100,8 +104,7 @@ class GamesView:
             self.tab, self.search = "basic", ""
         self.game, self.tool = game, tool
         self.summary.value = tool.summary
-        self.tabs.content = t.segmented([("basic", "Basic", "sliders-horizontal"),
-                                          ("all", "Advanced", "bulletlist")], self.tab, self._tab)
+        self.tabs.content = t.segmented([("basic", "Basic"), ("all", "Advanced")], self.tab, self._tab)
         self.render_tree()
         self.render_body()
         self.session.show(tool)
@@ -117,8 +120,8 @@ class GamesView:
                                       fit=ft.BoxFit.CONTAIN, filter_quality=ft.FilterQuality.NONE,
                                       semantics_label=game.name),
                              width=40, height=36, alignment=ft.Alignment.CENTER),
-                t.text(game.name, 13, t.TEXT if open_ else "#C5C7CD", weight=ft.FontWeight.W_600, expand=True),
-            ], spacing=10), padding=ft.Padding(8, 7, 8, 7), border_radius=9,
+                t.text(game.name, 13, t.TEXT if open_ else t.SOFT, weight=ft.FontWeight.W_600, expand=True),
+            ], spacing=10), padding=ft.Padding(8, 6, 8, 6), border_radius=12,
                 on_click=lambda e, g=game: self.select(g, g.tools[0])))
             if open_:
                 for tool in game.tools:
@@ -130,8 +133,8 @@ class GamesView:
                         ft.Column([name, t.text(role, 11, t.FAINT)], spacing=0, expand=True) if role else
                         ft.Container(name, expand=True),
                         t.badge("Soon", t.FAINT) if tool.unavailable else ft.Container(),
-                    ], spacing=10), padding=ft.Padding(24, 7, 8, 7), border_radius=9, tooltip=tool.summary,
-                        bgcolor=t.HOVER if active else None,
+                    ], spacing=10), padding=ft.Padding(24, 7, 8, 7), border_radius=12, tooltip=tool.summary,
+                        bgcolor=t.SELECTED if active else None,
                         on_click=lambda e, g=game, x=tool: self.select(g, x)))
                 rows.append(ft.Container(height=6))
         self.tree.controls = rows
@@ -139,15 +142,15 @@ class GamesView:
     def render_body(self) -> None:
         if self.tool.unavailable:
             self.tabs.visible = False
-            self.body.controls = [t.card("Not available yet", None, self.tool.unavailable)]
+            self.cards.controls = [t.card("Not available yet", None, self.tool.unavailable)]
             return
         self.tabs.visible = True
-        self.body.controls = self.basic_cards() if self.tab == "basic" else self.all_rows()
+        self.cards.controls = self.basic_cards() if self.tab == "basic" else self.all_rows()
 
     def _tab(self, key: str) -> None:
         self.tab = key
         self.render_body()
-        self.body.update()
+        self.cards.update()
 
     def _open_doc(self, e) -> None:
         self.app.navigate("docs", doc=self.tool.doc or self.game.doc)
@@ -250,7 +253,7 @@ class GamesView:
                          prefix_icon=ft.Container(t.pixel_icon("search", color=t.FAINT),
                                                   width=40, alignment=ft.Alignment.CENTER),
                          on_change=self._search)
-        self.flag_list = ft.Column(spacing=8)
+        self.flag_list = ft.Column(spacing=0)
         self._fill_flags()
         return [t.card("Advanced options", ft.Column([search, self.flag_list], spacing=10,
                                                      horizontal_alignment=ft.CrossAxisAlignment.STRETCH),
@@ -319,7 +322,7 @@ class GamesView:
                  [" ".join(line.split()) for line in flag.help.splitlines()])
         if detail:
             lines.append(detail)
-        help_ = t.text("\n".join(l for l in lines if l) or "No description.", 11.5, t.MUTED, max_lines=4,
+        help_ = t.text("\n".join(l for l in lines if l) or "No description.", 12, t.MUTED, max_lines=4,
                        overflow=ft.TextOverflow.ELLIPSIS)
 
         def toggle(e):
@@ -327,25 +330,25 @@ class GamesView:
             help_.update()
 
         return ft.Container(ft.Row([
-            ft.Column([ft.Row([t.text(bound.label, 12.5, weight=ft.FontWeight.W_600),
+            ft.Column([ft.Row([t.text(bound.label, 13, weight=ft.FontWeight.W_600),
                                t.text(flag.option, 12, t.BLUE if value != bound.default else t.MUTED,
                                       font_family=t.MONO)], spacing=8) if bound else
-                       t.text(flag.option, 12.5, t.BLUE if value else t.TEXT, font_family=t.MONO),
+                       t.text(flag.option, 13, t.BLUE if value else t.TEXT, font_family=t.MONO),
                        ft.Container(help_, on_click=toggle, tooltip="Show all" if len(lines) > 4 else None)],
                       spacing=3, expand=True),
             control,
         ], spacing=12, vertical_alignment=ft.CrossAxisAlignment.START),
-            bgcolor=t.CARD, border=ft.Border.all(1, t.BORDER), border_radius=10, padding=12)
+            border=ft.Border(top=ft.BorderSide(1, t.DIVIDER)), padding=ft.Padding(0, 12, 0, 12))
 
 
 def pokemon_row(app, species: int, shiny: bool, summary: str, tip: str = "") -> ft.Control:
     """A small sprite, then pokeldn.pokemon.summary on two lines: species, level and shininess, then the rest."""
     parts = summary.split(" · ")
     head = 3 if len(parts) > 2 and parts[2] == "shiny" else 2
-    lines = [t.text(" · ".join(parts[:head]), 12.5, weight=ft.FontWeight.W_600, max_lines=1,
+    lines = [t.text(" · ".join(parts[:head]), 13, weight=ft.FontWeight.W_600, max_lines=1,
                     overflow=ft.TextOverflow.ELLIPSIS)]
     if parts[head:]:
-        lines.append(t.text(" · ".join(parts[head:]), 11.5, t.MUTED, max_lines=1, overflow=ft.TextOverflow.ELLIPSIS))
+        lines.append(t.text(" · ".join(parts[head:]), 12, t.MUTED, max_lines=1, overflow=ft.TextOverflow.ELLIPSIS))
     return ft.Container(ft.Row([Sprite(app, species, shiny, size=MINI).control,
                                 ft.Column(lines, spacing=0, expand=True)],
                                spacing=10, vertical_alignment=ft.CrossAxisAlignment.CENTER),
@@ -385,15 +388,15 @@ class SessionPanel:
         self.control = t.panel(ft.Column([
             t.panel_header("Session", self.status),
             # The checklist and the steps scroll; Start stays in view below them.
-            ft.Container(t.fade(ft.Column([self.board_line, self.offering, self.received, self.steps], spacing=14,
+            ft.Container(t.fade(ft.Column([self.board_line, self.offering, self.received, self.steps], spacing=24,
                                           scroll=ft.ScrollMode.AUTO)),
-                         padding=ft.Padding(16, 16, 16, 0), expand=3),
+                         padding=ft.Padding(18, 8, 18, 0), expand=3),
             ft.Container(ft.Column([
                 self.action,
                 ft.Row([t.text("Output", 12, t.MUTED, weight=ft.FontWeight.W_600, expand=True), tools]),
                 self.command_box,
-            ], spacing=14), padding=ft.Padding(16, 14, 16, 12)),
-            ft.Container(self.log.control, padding=ft.Padding(16, 0, 16, 16), expand=2),
+            ], spacing=12), padding=ft.Padding(18, 14, 18, 8)),
+            ft.Container(self.log.control, padding=ft.Padding(12, 0, 12, 12), expand=2),
         ], spacing=0, expand=True), width=t.SESSION_WIDTH)
         self.set_status("Ready", t.MUTED)
         app.board_listeners.append(lambda: self.refresh() if games.visible else None)
@@ -421,7 +424,7 @@ class SessionPanel:
             self.set_status("Ready", t.MUTED)
             self.seen, self.received.content, self.received.visible = {}, None, False
         self.tool = tool
-        self.steps.content = t.card("On the console", t.step_list(list(tool.steps)))
+        self.steps.content = t.section("On the console", t.step_list(list(tool.steps)))
         self.refresh(update=False)
 
     def checklist(self) -> list[tuple[str, str, str, str]]:
@@ -445,22 +448,22 @@ class SessionPanel:
     def render_checklist(self, items) -> ft.Control:
         if all(state == "ok" for state, *_ in items):
             return ft.Row([t.pixel_icon("checkbox-on", color=t.GREEN),
-                           t.text("Ready to start", 12.5, t.TEXT, expand=True),
+                           t.text("Ready to start", 13, t.TEXT, expand=True),
                            t.secondary_button("Board", lambda e: self.app.navigate("board"), "cpu")], spacing=8)
         looks = {"ok": ("checkbox-on", t.GREEN), "wait": ("refresh", t.BLUE),
-                 "warn": ("warning-diamond", "#F5B94A"), "block": ("warning-diamond", t.RED)}
+                 "warn": ("warning-diamond", t.AMBER), "block": ("warning-diamond", t.RED)}
         labels = {"settings": "Settings", "board": "Board"}
         rows = []
         for state, what, how, page in items:
             icon, color = looks[state]
             rows.append(ft.Row([
                 ft.Container(t.pixel_icon(icon, color=color), padding=ft.Padding(0, 1, 0, 0)),
-                ft.Column([t.text(what, 12.5, weight=ft.FontWeight.W_600)] +
+                ft.Column([t.text(what, 13, weight=ft.FontWeight.W_600)] +
                           ([t.text(how, 12, t.MUTED)] if how else []), spacing=1, expand=True),
                 t.secondary_button(labels[page], lambda e, k=page: self.app.navigate(k))
                 if page and state != "ok" else ft.Container(),
             ], spacing=8, vertical_alignment=ft.CrossAxisAlignment.START))
-        return t.card("Before you start", ft.Column(rows, spacing=10))
+        return t.section("Before you start", ft.Column(rows, spacing=10))
 
     def refresh(self, update: bool = True) -> None:
         tool, s = self.tool, self.app.settings
@@ -497,14 +500,14 @@ class SessionPanel:
             self.offering.content = None
         elif len(shown) == 1:
             species, shiny, summary = shown[0]
-            self.offering.content = t.card("Offering", pokemon_row(self.app, species, shiny, summary))
+            self.offering.content = t.section("Offering", pokemon_row(self.app, species, shiny, summary))
         else:
             tiles = []
             for n, (species, shiny, summary) in enumerate(shown, start=1):
                 sprite = Sprite(self.app, species, shiny, size=MINI)
                 sprite.frame.tooltip = f"Trade {n}: {summary}"
                 tiles.append(sprite.control)
-            self.offering.content = t.card("Offering", ft.Row(tiles, spacing=6, run_spacing=6, wrap=True),
+            self.offering.content = t.section("Offering", ft.Row(tiles, spacing=6, run_spacing=6, wrap=True),
                                            trailing=t.text(f"{len(shown)} trades, in order", 12, t.MUTED))
 
     def scan_received(self, run: tuple) -> None:
@@ -541,7 +544,7 @@ class SessionPanel:
                 rows.append(pokemon_row(self.app, int(info.get("species_id") or 0), bool(info.get("shiny")),
                                         builder.summary(info), path))
         self.received.visible = True
-        self.received.content = t.card("Received", ft.Column(rows, spacing=8),
+        self.received.content = t.section("Received", ft.Column(rows, spacing=8),
                                        trailing=t.icon_button("folder", self._open_received,
                                                               "Open the Received folder"))
         self.received.update()

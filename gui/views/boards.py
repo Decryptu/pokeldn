@@ -116,13 +116,13 @@ class BoardView:
                 t.pixel_icon("cpu", color=t.BLUE if active else t.FAINT),
                 ft.Column([
                     t.text(self.name_of(p.device) or os.path.basename(p.device), 13,
-                           t.TEXT if active else "#C5C7CD", weight=ft.FontWeight.W_600),
+                           t.TEXT if active else t.SOFT, weight=ft.FontWeight.W_600),
                     t.text(state.title, 11, t.MUTED),
                 ], spacing=1, expand=True),
                 t.badge("In use", t.BLUE, "checkbox-on") if several and p.device == session_port else
                 ft.Container(width=8, height=8, border_radius=4, bgcolor=dot),
-            ], spacing=10), padding=ft.Padding(10, 8, 10, 8), border_radius=9,
-                bgcolor=t.HOVER if active else None,
+            ], spacing=10), padding=ft.Padding(10, 8, 10, 8), border_radius=12,
+                bgcolor=t.SELECTED if active else None,
                 on_click=lambda e, d=p.device: self._select(d)))
         if not rows:
             rows.append(ft.Container(ft.Column([
@@ -165,13 +165,12 @@ class BoardView:
                        else " Sessions use another board; press Use this board to switch.")
         return t.surface(ft.Container(ft.Column([
             ft.Row([
-                ft.Container(lead, width=44, height=44, alignment=ft.Alignment.CENTER,
-                             bgcolor=ft.Colors.with_opacity(0.12, color), border_radius=10),
-                ft.Column([t.text(status.title, 16, weight=ft.FontWeight.W_600),
-                           t.text(detail, 12.5, t.MUTED)], spacing=3, expand=True),
-            ], spacing=14),
+                ft.Container(lead, width=24, height=24, alignment=ft.Alignment.CENTER),
+                ft.Column([t.text(status.title, 17, weight=ft.FontWeight.W_600),
+                           t.text(detail, 13, t.MUTED)], spacing=2, expand=True),
+            ], spacing=12, vertical_alignment=ft.CrossAxisAlignment.START),
             *([ft.Row(actions, spacing=8)] if actions else []),
-        ], spacing=14, tight=True), padding=18), stroke=ft.Colors.with_opacity(0.45, color))
+        ], spacing=14, tight=True), padding=ft.Padding(18, 16, 18, 18)))
 
     def details_card(self) -> ft.Control:
         p = self.port()
@@ -184,7 +183,7 @@ class BoardView:
 
         def info(label, value):
             return ft.Row([t.text(label, 12, t.MUTED, width=110),
-                           value if isinstance(value, ft.Control) else t.text(value, 12.5, font_family=t.MONO)])
+                           value if isinstance(value, ft.Control) else t.text(value, 13, font_family=t.MONO)])
 
         name = t.field(value=self.name_of(p.device), hint="Living room, spare...", width=220,
                        disabled=not isinstance(ident, board.Identity), on_submit=self._rename)
@@ -245,7 +244,7 @@ class BoardView:
         image = self.firmware()
         available = image or any(os.path.isfile(f) for f in (board.FIRMWARE, board.FIRMWARE_S3, board.FIRMWARE_C3))
         flashing = bool(self.app.process and self.app.process.running and self.app.process_label == "flash")
-        return t.button("Flashing..." if flashing else "Flash", self._flash, "zap",
+        return t.button("Flashing..." if flashing else "Flash", self._flash, "zap", filled=not self.status().ready,
                         disabled=self.app.busy or not available or not self.port())
 
     def flash_card(self) -> ft.Control:
@@ -364,12 +363,12 @@ class BoardView:
                                       "external-link")
 
         return t.card("Board not listed?", ft.Column([
-            t.text("Try another cable or USB port. Many cables only charge.", 12.5),
-            t.text("Windows and macOS need the driver for the board's USB chip:", 12.5),
+            t.text("Try another cable or USB port. Many cables only charge.", 13),
+            t.text("Windows and macOS need the driver for the board's USB chip:", 13),
             ft.Row([link("CP210x", board.DRIVERS["Silicon Labs CP210x"]),
                     link("CH340", board.DRIVERS["WCH CH340"])], spacing=6, wrap=True),
-            t.text("Linux: allow serial ports, then log out and back in:", 12.5),
+            t.text("Linux: allow serial ports, then log out and back in:", 13),
             CodeBlock(self.app, "sudo usermod -aG dialout $USER").control,
             t.text("Use a classic ESP32 (ESP32-D0WD, WROOM-32E), or an ESP32-S3 or C3 through its native USB port. "
-                   "C6 and S2 boards are not supported.", 12.5, t.MUTED),
+                   "C6 and S2 boards are not supported.", 13, t.MUTED),
         ], spacing=8))

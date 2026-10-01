@@ -63,7 +63,7 @@ class DocsView:
                                                      "Open the docs website")),
                 t.fade(self.nav),
             ], spacing=0, expand=True), width=t.SIDEBAR_WIDTH),
-            t.panel(t.fade(self.scroll), expand=True),
+            t.surface(t.fade(self.scroll), radius=20, expand=True),
         ], spacing=t.GAP, expand=True, vertical_alignment=ft.CrossAxisAlignment.STRETCH)
         self.show("guide", update=False)
 
@@ -102,12 +102,12 @@ class DocsView:
         active = file == self.file
         expanded = file in self.open_parents
         return ft.Container(ft.Row([
-            t.text(title, 13 if depth == 0 else 12.5, t.TEXT if active else (t.MUTED if depth else "#C5C7CD"),
+            t.text(title, 13, t.TEXT if active else (t.MUTED if depth else t.SOFT),
                    weight=ft.FontWeight.W_600 if depth == 0 else None, expand=True),
             t.pixel_icon("chevron-down" if expanded else "chevron-right",
                     color=t.FAINT) if folder else ft.Container(),
-        ]), padding=ft.Padding(10 + depth * 14, 7, 8, 7), border_radius=8,
-            bgcolor=t.HOVER if active else None, on_click=lambda e: self._pick(file, folder))
+        ]), padding=ft.Padding(10 + depth * 14, 7, 8, 7), border_radius=12,
+            bgcolor=t.SELECTED if active else None, on_click=lambda e: self._pick(file, folder))
 
     def _pick(self, file: str, folder: bool) -> None:
         if folder and file in self.open_parents and file == self.file:
