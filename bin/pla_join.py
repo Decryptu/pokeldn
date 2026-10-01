@@ -437,6 +437,8 @@ def host_argv(args, channel, seconds):
         argv += ["--trade-box-record", path]
     if args.fresh_pid:
         argv += ["--fresh-pid"]
+    if args.offer_out:
+        argv += ["--offer-out", args.offer_out]
     if args.collect:
         argv += ["--trade-box-collect", args.collect]
     if args.capture:

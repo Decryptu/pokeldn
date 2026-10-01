@@ -263,6 +263,39 @@ def test_each_trade_in_the_session_offers_the_next_record(monkeypatch, capsys, t
     assert "trade 2 complete, the phase key closed" in run.log
 
 
+class BrowsesThenTwoTrades(TwoTrades):
+    """Before each offer the player's cursor rests on another Pokemon: a showing (selector 2)."""
+
+    def __init__(self, *a, **k):
+        super().__init__(*a, **k)
+        self.browsed, self.offers = 0, []
+
+    def _drive(self, now):
+        out = []
+        if self.shown and self.host_showed and not self.offered:
+            if self.browsed == len(self.trades):
+                self.browsed += 1
+                saved = self.offer
+                self.offer = pla_pokemon.encrypt(gen8.fresh_identity(pla_pokemon.decrypt(saved),
+                                                                     rand=os.urandom))
+                out.append(self._send_box(trade_box.SELECTOR_SHOWING, 0))
+                self.offer = saved
+            self.offers.append(self.offer)
+        return out + super()._drive(now)
+
+
+def test_each_trade_writes_the_record_the_console_offered_and_nothing_it_only_showed(
+        monkeypatch, capsys, tmp_path):
+    """--offer-out: one file per trade, -2 for the second; a Pokemon the cursor rested on is not kept."""
+    out = tmp_path / "received" / "pla-STAMP.pa8"
+    run = run_host(monkeypatch, capsys, BrowsesThenTwoTrades, lambda c: len(c.trades) == 2,
+                   extra=["--offer-out", str(out)])
+    assert "showing" in run.log
+    assert sorted(p.name for p in out.parent.iterdir()) == ["pla-STAMP-2.pa8", "pla-STAMP.pa8"]
+    assert out.read_bytes() == run.console.offers[0]
+    assert (out.parent / "pla-STAMP-2.pa8").read_bytes() == run.console.offers[1]
+
+
 MAIN = os.path.join(ROOT, "scratchpad", "pla", "main_111.bin")      # Legends Arceus 1.1.1
 
 

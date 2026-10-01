@@ -297,13 +297,14 @@ search and takes the host role it is handed.
 ./.venv/bin/python bin/pla_host.py --code 00000000 --channel 6 --seconds 1800 \
   --session-update --sustain --clock --data-exchange --data-exchange-name POKELDN \
   --data-exchange-id 11223344 --game-channel --trade-box --trade-box-record offer.pa8 \
-  --trade-box-collect records/
+  --offer-out received.pa8
 ./.venv/bin/python bin/pla_host.py --ip-host --our-ip 172.16.86.128 --code 00000000 ...   # emulated console, no radio
 ```
 
 Console: Simona at Jubilife Village → trade → someone nearby → the same eight-digit code, offer a
-Pokémon and confirm. The host re-reads its record file between offers and writes each record the console
-shows to `--trade-box-collect`; a repeated `--trade-box-record` queues one record per trade in the
+Pokémon and confirm. The host re-reads its record file between offers and writes the record the console
+traded to `--offer-out` (`-2` and on for later trades); `--trade-box-collect DIR` keeps every record
+the console shows or offers, its cursor included. A repeated `--trade-box-record` queues one record per trade in the
 session, the last offered again. `pokeldn.pla.pokemon` reads, writes and `build`s a record from 376
 zero bytes; `pokeldn.pla.stats` computes stats and size. See [Legends Arceus](docs/pla.md).
 

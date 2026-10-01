@@ -229,6 +229,9 @@ def build_parser():
     ap.add_argument("--trade-box-collect", default=None,
                     help="write every record the console shows or offers to this directory, one "
                          "file per distinct record, named by species and nickname")
+    ap.add_argument("--offer-out", default=None,
+                    help="write the record the console traded to this file, -N before the extension "
+                         "for trade N above 1")
     ap.add_argument("--fresh-pid", action="store_true",
                     help="offer the record under a new PID and encryption constant, drawn once per "
                          "run, shiny state kept, so a save that took it before takes it again")
@@ -370,6 +373,7 @@ def main():
     if args.trade_box_collect:
         os.makedirs(os.path.expanduser(args.trade_box_collect), exist_ok=True)
     collected = set()
+    console_offer = {}      # the record each console last offered (selector 4), the one a trade delivers
     rx_windows = {}
     tx_window = reliable5.SendWindow(GAME_CHANNEL_RESEND)
     # One send sequence per stream, mirrors included: a mirror reusing the console's id makes its
@@ -670,6 +674,8 @@ def main():
                                           f"{trade_box.describe(offered['record'])}")
                                     record(rec="box", src=src_ip, selector=offered["selector"],
                                            hex=offered["record"].hex(), t=time.time())
+                                    if offered["selector"] == trade_box.SELECTOR_OFFERING:
+                                        console_offer[src_ip] = offered["record"]
                                     if args.trade_box_collect and offered["record"] not in collected:
                                         collected.add(offered["record"])
                                         try:
@@ -699,6 +705,12 @@ def main():
                                             trades[0] += 1
                                             print(f"[pla] {src_ip}: trade {trades[0]} complete, the "
                                                   "phase key closed")
+                                            if args.offer_out and src_ip in console_offer:
+                                                path = pokemon_service.trade_path(args.offer_out,
+                                                                                  trades[0])
+                                                with open_output(path, "wb") as fh:
+                                                    fh.write(console_offer.pop(src_ip))
+                                                print(f"[pla] wrote the record the console traded, {path}")
                                         if not opened:
                                             continue
                                         announce = game_channel.build_payload_message(
