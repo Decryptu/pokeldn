@@ -1,19 +1,26 @@
-# pokeldn 0.3.1
+# pokeldn 0.4.0
 
 This desktop app trades with seven Pokemon game families on a Switch or Switch 2
 through an ESP32 radio connected by USB. Nothing is installed on the console.
 
 ## What is new
 
-- The window opens centered and sized to fit the screen. On a 13-inch MacBook Air it used to spill
-  past the right and bottom edges.
-- The first-run steps say how to allow the unsigned app on macOS (Privacy & Security, Open Anyway)
-  and on Windows (SmartScreen, Run anyway).
+- A new look: a glass toolbar and panels, and Pokemon sprites in the Session panel, on the
+  Mystery Gift card and in the Received list.
+- Each queued Pokemon gets a check mark when its trade completes.
+- A session ends on its own once the console has left after a trade, in every game and both roles;
+  Stop is only needed to cut a session short. Start on another tool stops the running session first.
+- Let's Go: the link code is three slots; each opens the console's ten Pokemon, as on the Switch.
+- Let's Go host: a lost message near the end of a trade no longer leaves the console on its
+  confirmation screen.
+- Brilliant Diamond/Shining Pearl: pokeldn's character appears ready to trade with no walk, and
+  hosting, it comes over the moment the trade emote goes up.
+- Legends Arceus: only the Pokemon traded is saved, not every Pokemon the console's cursor passed over.
+- Sword/Shield: a Pokemon that exists only as an event keeps its own PID, so hosting with it no longer
+  fails; a built Pokemon comes from a wild, static or egg encounter when the species has one. The
+  Mystery Gift card id moved to Advanced: a console takes a card built here again under the same id.
 
-Everything from 0.3.0 is included: several trades in one session, nature, IVs, EVs, held item and
-ball when building a Pokemon, a clean departure in every game, a Board page that checks the board on
-its own and names the fix (including an ESP32-S3 or C3 on its COM/UART socket), and a Before you start
-list in the Session panel. The firmware is unchanged; a board flashed by 0.3.0 needs no new flash.
+The firmware is unchanged; a board flashed by 0.3.x needs no new flash.
 
 ## Downloads
 
