@@ -33,40 +33,53 @@ PID and encryption-constant changes can invalidate encounter correlations, espec
 raids. Fresh identity is opt-in and must pass PKHeX; a fixed event trainer is preserved.
 
 A built Pokémon is an encounter converted to a record. Shininess is requested from the encounter, so a
-Generation 3 PID keeps the RNG correlation PKHeX expects. The PID, IVs and, for a wild slot, the level
-are rolled at random, so an encounter gets up to eight rolls before it is skipped. A species reached by
-evolving the encounter is raised to its evolution level when no encounter fits as caught.
+Generation 3 PID keeps the RNG correlation PKHeX expects. A single-gender species asks for that gender
+from the encounter: a female-only Vespiquen or Froslass comes only from a female Combee or Snorunt. The
+PID, IVs and, for a wild slot, the level are rolled at random, so an encounter gets up to eight rolls
+before it is skipped. A species reached by evolving the encounter is raised to its evolution level when no
+encounter fits as caught. An evolved record takes the evolved species' gender when it is genderless
+(Shedinja from Nincada) and form 0 when the evolved species has no form the encounter had (Sirfetch'd
+from Galarian Farfetch'd).
 
 A record that fails after a level or species change is repaired in steps, each on top of the last, and the
 first legal result is kept:
 
-1. Moves, relearn moves, plus-move flags, mastery flags and Legends Arceus size are refitted.
-2. The ability is refreshed to the evolved species in the slot it was caught with.
-3. A trade evolution receives a second handling trainer, `PkCamp`.
-4. An evolution that counts something (critical hits, damage taken, Rage Fist uses, coins) starts from
+1. An event gift that reached the game only through HOME (Zeraora and Melmetal in Sword/Shield)
+   receives a HOME tracker. This precedes the refit, which would replace the event's fixed moves.
+2. Moves, relearn moves, TM and TR record flags, plus-move flags, mastery flags and Legends Arceus size
+   are refitted. A suggested moveset holds TM and TR moves that are legal only with their record flags.
+3. An evolved record's ability is refreshed to the evolved species in the slot it was caught with.
+4. A record with no handling trainer receives a second one, `PkCamp`: a trade evolution has been traded,
+   and some gifts (Magearna in Legends Z-A) arrive already handled.
+5. An evolution that counts something (critical hits, damage taken, Rage Fist uses, coins) starts from
    that count.
+6. A Brilliant Diamond/Shining Pearl evolution at a Beauty threshold (Milotic, 170) sets that Beauty and
+   the lowest Sheen its poffins imply.
 
-Applying the ability refresh before step 1 breaks Gholdengo in Legends Z-A, so the order is fixed.
+Applying the ability refresh before the refit breaks Gholdengo in Legends Z-A, so the order is fixed.
 
 A request PKHeX cannot satisfy is refused with the reason. A level below the lowest encounter level
-reports that level; a species without an encounter in the game reports that. Shiny-locked legendaries,
-fixed-level gifts and event-only species have no legal shiny or lower-level form. Sweeping every species of
-every game with six request shapes (plain, shiny, level 50, level 100, shiny at level 50, nickname), plain
-builds that fail are:
+reports that level; a shiny request whose every encounter is shiny-locked reports that; a species without
+an encounter in the game reports that. Fixed-level gifts and event-only species have no lower-level form.
+Sweeping every species of every game with six request shapes (plain, shiny, level 50, level 100, shiny at
+level 50, nickname), plain builds that fail are:
 
 | game | species | failing |
 |---|---|---|
 | FireRed/LeafGreen | 386 | 0 |
 | Let's Go | 153 | 0 |
 | Legends Arceus | 226 | 0 |
-| Brilliant Diamond/Shining Pearl | 493 | 7 |
-| Sword/Shield | 664 | 5 |
-| Legends Z-A | 364 | 8 |
-| Scarlet/Violet | 733 | 35 |
+| Brilliant Diamond/Shining Pearl | 493 | 2 |
+| Sword/Shield | 664 | 3 |
+| Legends Z-A | 364 | 5 |
+| Scarlet/Violet | 733 | 32 |
 
-Scarlet/Violet failures are mostly legendaries that only arrive from HOME. The rest are evolutions with
-a condition PKHeX checks against the moveset or the form: Milotic, Shedinja, Sirfetch'd, Runerigus,
-Perrserker, Wyrdeer, Ursaluna, Sneasler and Hydrapple in the games where they fail.
+Every failure but three is a species PKHeX has no encounter for in that game: Celebi and Deoxys in
+Brilliant Diamond/Shining Pearl, Diancie, Magearna and Meltan in Sword/Shield, Scatterbug, Spewpa,
+Vivillon and Zygarde in Legends Z-A, and in Scarlet/Violet the legendaries that arrive only from HOME.
+The three with an encounter are Milotic in Legends Z-A and Wyrdeer and Ursaluna in Scarlet/Violet. PKHeX
+gives Wyrdeer and Ursaluna no Generation 9 evolution. For a Z-A Milotic built from Feebas with a
+handling trainer, PKHeX's evolution chain stops at Milotic; the game's records refuse contest stats.
 
 Sword/Shield Mystery Gift validates the WC8 seal and checks supported species, forms, moves and safe
 items with PKHeX. Custom WC8 cards are distributions, and this structural check does not make them

@@ -107,8 +107,14 @@ JsonObject Make(Game game, JsonObject request)
     };
     var blank = game.Blank();
     blank.Species = species;
+    // Encounters are matched on the blank's gender: a female-only Vespiquen comes only from a female Combee.
+    var detail = game.Table[species];
+    var gender = detail.OnlyFemale ? Gender.Female : detail.OnlyMale ? Gender.Male : Gender.Random;
+    if (gender != Gender.Random)
+        blank.Gender = (byte)gender;
     string? firstProblem = null;
     var lowest = int.MaxValue;
+    var shinyLocked = false;
     // The first encounter that stays legal with the requested level, shininess and nickname wins.
     // The first pass takes encounters as they come; the second lets an evolved Pokemon climb to its evolution level.
     foreach (var climb in new[] { false, true })
@@ -122,18 +128,31 @@ JsonObject Make(Game game, JsonObject request)
                 lowest = Math.Min(lowest, encounter.LevelMin);
                 continue;
             }
+            if (shiny && encounter.Shiny == Shiny.Never)
+            {
+                shinyLocked = true;
+                continue;
+            }
             // Shininess is chosen while the encounter builds its PID: a Gen 3 to 5 PID rewritten afterwards
             // no longer matches the RNG frame the legality check expects.
-            var criteria = shiny ? EncounterCriteria.Unrestricted with { Shiny = Shiny.Always } : EncounterCriteria.Unrestricted;
+            var criteria = EncounterCriteria.Unrestricted with { Gender = gender };
+            if (shiny)
+                criteria = criteria with { Shiny = Shiny.Always };
             // The PID, IVs and, for a wild slot, the level are rolled at random; a roll can be refused or land
             // above the level asked for, so an encounter gets several.
-            PKM? built = null;
+            PKM? built = null, mendable = null;
             for (var roll = 0; roll < 8 && built is null; roll++)
             {
                 var rolled = convertible.ConvertToPKM(trainer, criteria);
-                if (rolled.GetType() == blank.GetType() && (level == 0 || rolled.CurrentLevel <= level) && new LegalityAnalysis(rolled).Valid)
+                if (rolled.GetType() != blank.GetType() || (level != 0 && rolled.CurrentLevel > level))
+                    continue;
+                if (new LegalityAnalysis(rolled).Valid)
                     built = rolled;
+                // A gift of the species asked for can be invalid as generated (a missing handler or HOME tracker).
+                else if (rolled.Species == species)
+                    mendable ??= rolled;
             }
+            built ??= mendable;
             if (built is null)
                 continue;
             // An egg or a pre-evolution encounter is evolved into the species asked for.
@@ -142,6 +161,11 @@ JsonObject Make(Game game, JsonObject request)
             {
                 built.Species = species;
                 built.ClearNickname();
+                if (detail.Genderless)
+                    built.Gender = EntityGender.Genderless;
+                // A Galarian Farfetch'd (form 1) becomes Sirfetch'd, which has only form 0.
+                if (built.Form >= detail.FormCount)
+                    built.Form = 0;
             }
             if (level > 0 && level < built.CurrentLevel)
                 continue;
@@ -156,7 +180,7 @@ JsonObject Make(Game game, JsonObject request)
                     pk.SetIsShiny(true);
                 if (nickname.Length > 0)
                     pk.SetNickname(nickname);
-                var la = Mend(pk, evolved, encounter.Species, trainer);
+                var la = Mend(pk, evolved, encounter, trainer);
                 if (la.Valid)
                     return Describe(game, pk, la);
                 firstProblem ??= la.Report();
@@ -168,35 +192,50 @@ JsonObject Make(Game game, JsonObject request)
         ? $"No legal {name} with these choices. {firstProblem}"
         : lowest != int.MaxValue
             ? $"{name} cannot be lower than level {lowest} in this game."
-            : $"PKHeX has no legal {name} for this game.");
+            : shinyLocked
+                ? $"{name} cannot be shiny in this game."
+                : $"PKHeX has no legal {name} for this game.");
 }
 
 // Repairs a built record one step at a time, each step on top of the last, and stops at the first that is legal.
-LegalityAnalysis Mend(PKM pk, bool evolved, ushort source, ITrainerInfo trainer)
+LegalityAnalysis Mend(PKM pk, bool evolved, IEncounterTemplate encounter, ITrainerInfo trainer)
 {
     var la = Refresh(pk);
     if (la.Valid)
         return la;
+    var repairs = new List<Action>();
+    // Event Pokemon that Sword/Shield received only through HOME (Zeraora, Melmetal) carry a HOME tracker.
+    // This comes first: a refit would replace the event's fixed moves.
+    if (encounter is MysteryGift && pk is IHomeTrack { HasTracker: false } home)
+        repairs.Add(() => home.Tracker = (ulong)Random.Shared.NextInt64(1, long.MaxValue));
     // Moves, relearn moves and move flags depend on the species and level just set.
-    var repairs = new List<Action> { () => Refit(pk) };
+    repairs.Add(() => Refit(pk));
     if (evolved)
-    {
         // The ability keeps its slot but names the species it was caught as.
         repairs.Add(() => { pk.RefreshAbility(pk.AbilityNumber >> 1 & 3); Refit(pk); });
-        if (pk.HandlingTrainerName.Length == 0)
+    if (pk.HandlingTrainerName.Length == 0)
+        repairs.Add(() =>
+        {
+            // A trade evolution has been through a trade, and some gifts (Z-A's Magearna) arrive already handled.
+            pk.CurrentHandler = 1;
+            pk.HandlingTrainerName = "PkCamp";
+            pk.HandlingTrainerGender = (byte)(1 - trainer.Gender);
+            if (pk is IHandlerLanguage language)
+                language.HandlingTrainerLanguage = (byte)trainer.Language;
+            Refit(pk);
+        });
+    if (evolved)
+    {
+        // Evolutions that count something (critical hits, damage taken, Rage Fist uses, coins) start from that count.
+        if (FormArgumentUtil.GetFormArgumentMinEvolution(pk.Species, encounter.Species) is var counted and not 0)
+            repairs.Add(() => { FormArgumentUtil.ChangeFormArgument(pk, counted); Refit(pk); });
+        // BDSP's Milotic evolves at Beauty 170; poffins that raise Beauty also raise Sheen.
+        if (pk is PB8 pb8 && HowEvolved(pk) is { Method: EvolutionType.LevelUpBeauty } beauty)
             repairs.Add(() =>
             {
-                // A species reached by trade evolution has been through a trade: a second trainer handles it.
-                pk.CurrentHandler = 1;
-                pk.HandlingTrainerName = "PkCamp";
-                pk.HandlingTrainerGender = (byte)(1 - trainer.Gender);
-                if (pk is IHandlerLanguage language)
-                    language.HandlingTrainerLanguage = (byte)trainer.Language;
-                Refit(pk);
+                pb8.ContestBeauty = (byte)beauty.Argument;
+                pb8.ContestSheen = ContestStatInfo.CalculateMinimumSheen8b(pb8, pb8.Nature, ContestStatInfo.GetReferenceTemplate(encounter));
             });
-        // Evolutions that count something (critical hits, damage taken, Rage Fist uses, coins) start from that count.
-        if (FormArgumentUtil.GetFormArgumentMinEvolution(pk.Species, source) is var counted and not 0)
-            repairs.Add(() => { FormArgumentUtil.ChangeFormArgument(pk, counted); Refit(pk); });
     }
     foreach (var repair in repairs)
     {
@@ -216,6 +255,17 @@ LegalityAnalysis Mend(PKM pk, bool evolved, ushort source, ITrainerInfo trainer)
     return la;
 }
 
+// The method that turned the species before this one into the record's species, if PKHeX has one.
+static EvolutionMethod? HowEvolved(PKM pk)
+{
+    var tree = EvolutionTree.GetEvolutionTree(pk.Context);
+    foreach (var (species, form) in tree.Reverse.GetPreEvolutions(pk.Species, pk.Form))
+        foreach (var method in tree.Forward.GetForward(species, form).Span)
+            if (method.Species == pk.Species)
+                return method;
+    return null;
+}
+
 LegalityAnalysis Refresh(PKM pk)
 {
     if (pk is PB7 pb7)
@@ -232,6 +282,9 @@ void Refit(PKM pk)
 {
     pk.SetMoveset();
     pk.SetRelearnMoves(new LegalityAnalysis(pk));
+    // A TM or TR move the suggested moveset holds is legal only with its record flag (Sword/Shield's TRs).
+    if (pk is ITechRecord record)
+        record.SetRecordFlags(pk, TechnicalRecordApplicatorOption.LegalCurrent);
     if (pk is IPlusRecord plus && pk.PersonalInfo is IPermitPlus permit)
         PlusRecordApplicator.SetPlusFlags(plus, pk, permit, PlusRecordApplicatorOption.LegalCurrent);
     if (pk is IMoveShop8Mastery shop)

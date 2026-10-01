@@ -33,8 +33,9 @@ The separate `pokeldn-radio*.bin` files are merged firmware images for manual fl
 1. Extract the macOS or Linux archive, or launch the Windows executable. On macOS, the app is
    unsigned; use right-click, Open for the first launch.
 2. Choose `prod.keys` when prompted.
-3. Connect one supported board with a USB data cable. S3 and C3 boards use native USB Serial/JTAG;
-   attach the external antenna on a Seeed Studio XIAO ESP32C3.
+3. Connect one supported board with a USB data cable. S3 and C3 boards use native USB Serial/JTAG.
+   A board that ships an external antenna, such as the Seeed Studio XIAO ESP32C3 or XIAO ESP32S3,
+   needs it attached; larger S3 boards such as the N8R2 and N16R8 have an onboard antenna.
 4. On Board, select the port, press Flash, then Identify.
 5. On Games, choose a game and a tool, build an offer or select a Pokemon file, and follow the
    console instructions before starting.

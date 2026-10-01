@@ -53,6 +53,12 @@ def test_creation_import_and_launcher_preparation_remain_legal(service, game):
     ("bdsp", 186, {}),                                   # a trade evolution needs a second handler
     ("lgpe", 65, {}),
     ("za", 1000, {}),                                    # a repair that fixes one species must not be applied first to another
+    ("bdsp", 416, {}),                                   # a female-only species comes only from a female encounter
+    ("bdsp", 292, {}),                                   # Shedinja is genderless though Nincada is not
+    ("za", 865, {}),                                     # Galarian Farfetch'd evolves into a species with one form
+    ("bdsp", 350, {}),                                   # Milotic evolves at Beauty 170, which needs Sheen
+    ("swsh", 809, {}),                                   # an event that reached the game through HOME has a tracker
+    ("za", 801, {}),                                     # a gift that arrives already handled
 ])
 def test_a_shiny_level_or_evolved_request_is_built_legal(service, game, species, edit):
     built = service.make(game, species, TRAINER, **edit)
@@ -68,13 +74,20 @@ def test_a_wild_slot_level_range_does_not_make_a_request_fail_at_random(service)
         assert service.make("pla", 433, TRAINER, level=50)["level"] == 50
 
 
-@pytest.mark.parametrize("game, species, level, message", [
-    ("sv", 150, 50, "cannot be lower than level"),       # a fixed-level encounter names its level
-    ("sv", 377, 0, "no legal"),                          # an encounter PKHeX does not have
+def test_a_tr_move_in_the_suggested_moveset_does_not_make_a_request_fail_at_random(service):
+    # An egg Porygon2's suggested moves include TR moves; without their record flags half the builds failed.
+    for _ in range(10):
+        assert service.make("swsh", 233, TRAINER, shiny=True, level=50)["legal"]
+
+
+@pytest.mark.parametrize("game, species, edit, message", [
+    ("sv", 150, {"level": 50}, "cannot be lower than level"),  # a fixed-level encounter names its level
+    ("sv", 377, {}, "no legal"),                               # an encounter PKHeX does not have
+    ("swsh", 802, {"shiny": True}, "cannot be shiny"),         # every encounter is shiny-locked
 ])
-def test_an_impossible_request_is_refused_with_its_reason(service, game, species, level, message):
+def test_an_impossible_request_is_refused_with_its_reason(service, game, species, edit, message):
     with pytest.raises(pokemon.BuilderError, match=message):
-        service.make(game, species, TRAINER, level=level)
+        service.make(game, species, TRAINER, **edit)
 
 
 @pytest.mark.parametrize("game", ["sv", "za", "bdsp", "pla", "lgpe", "frlg"])

@@ -19,7 +19,9 @@ host. `pokeldn.ldn.esp32_wlan` gives the LDN library a factory backed by the boa
 | ESP32-S3 | native USB Serial/JTAG | `pokeldn-radio-s3.bin` |
 | ESP32-C3 | native USB Serial/JTAG | `pokeldn-radio-c3.bin` |
 
-All targets use 2.4 GHz. ESP32-C6 and S2 are unsupported. An S3 or C3 board with separate UART
+All targets use 2.4 GHz. ESP32-C6 and S2 are unsupported. The Seeed Studio XIAO ESP32C3 and XIAO
+ESP32S3 have no onboard antenna and need their supplied external one attached; larger S3 boards
+such as the N8R2 and N16R8 carry an onboard antenna. An S3 or C3 board with separate UART
 and native USB sockets needs the native socket for radio communication. USB Serial/JTAG uses
 GPIO19 (D-) and GPIO20 (D+), as described in
 [Espressif's USB guide](https://docs.espressif.com/projects/esp-idf/en/v5.2/esp32s3/api-guides/usb-serial-jtag-console.html).
