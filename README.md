@@ -261,7 +261,7 @@ walls.
 ./.venv/bin/python tools/ldn/ldn_scan.py --channels 1,6,11 --dwell 0.8      # see the session
 ./.venv/bin/python bin/bdsp_connect.py --channels 1,6,11 --count 9 --connect 5 --join 6 \
   --hold 420 --reliable-ack --reliable-sweep 3 --room-walk 15 --room-pattern fixed \
-  --room-walk-steps 8 --join-avatar 0 --answer-requests --state 0 --recruiting 0 \
+  --room-walk-steps 0 --join-avatar 0 --answer-requests --state 0 --recruiting 0 \
   --answer-talk --can-talk 0 --initiate-talk --initiate-delay 3 \
   --after-approach 0x06:0001000000 --trade-reply --complete-trade \
   --trade-template offer.pb8 --trade-nickname PKCAMP --src-var 0x2B7F4C12

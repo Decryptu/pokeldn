@@ -371,6 +371,7 @@ class SessionPanel:
         self.board_line = ft.Container()   # the checklist before Start, or one line once all is set
         self.offering = ft.Container(visible=False)
         self.offered = None                # what the offering card shows, to rebuild it only on a change
+        self.traded = 0                    # the run's completed trades, from its `[done] trade N` lines
         self.received = ft.Container(visible=False)
         self.run = None                    # (process, stamp, game) of the last run started
         self.seen: dict[str, tuple] = {}   # a received file -> (size, mtime, what PKHeX read, or None)
@@ -424,6 +425,7 @@ class SessionPanel:
             self.log.clear()
             self.set_status("Ready", t.MUTED)
             self.seen, self.received.content, self.received.visible = {}, None, False
+            self.traded = 0
         self.tool = tool
         self.steps.content = t.section("On the console", t.step_list(list(tool.steps)))
         self.refresh(update=False)
@@ -493,23 +495,29 @@ class SessionPanel:
                    for entry in command.offers(command.value_of(field, self.games.values))[:field.queue]
                    if entry.get("file")]
         shown = [(int(e.get("species") or 0), bool(e.get("shiny")), e.get("summary", "")) for e in entries]
-        if shown == self.offered:
+        if (shown, self.traded) == self.offered:
             return
-        self.offered = shown
+        self.offered = (shown, self.traded)
         self.offering.visible = bool(shown)
+        done = t.text(f"{self.traded} traded", 12, t.GREEN) if self.traded else None
         if not shown:
             self.offering.content = None
         elif len(shown) == 1:
             species, shiny, summary = shown[0]
-            self.offering.content = t.section("Offering", pokemon_row(self.app, species, shiny, summary))
+            self.offering.content = t.section("Offering", pokemon_row(self.app, species, shiny, summary),
+                                              trailing=done)
         else:
             tiles = []
             for n, (species, shiny, summary) in enumerate(shown, start=1):
                 sprite = Sprite(self.app, species, shiny, size=MINI)
-                sprite.frame.tooltip = f"Trade {n}: {summary}"
-                tiles.append(sprite.control)
+                traded = n <= self.traded
+                sprite.frame.tooltip = f"Trade {n}{' (done)' if traded else ''}: {summary}"
+                tiles.append(ft.Stack([sprite.control, ft.Container(
+                    t.pixel_icon("checkbox-on", color=t.GREEN), right=0, bottom=0, visible=traded)]))
+            progress = (f"{min(self.traded, len(shown))} of {len(shown)} traded" if self.traded
+                        else f"{len(shown)} trades, in order")
             self.offering.content = t.section("Offering", ft.Row(tiles, spacing=6, run_spacing=6, wrap=True),
-                                           trailing=t.text(f"{len(shown)} trades, in order", 12, t.MUTED))
+                                              trailing=t.text(progress, 12, t.GREEN if self.traded else t.MUTED))
 
     def scan_received(self, run: tuple) -> None:
         """Read each Pokemon file the run has saved so far; a file still growing is read again."""
@@ -583,13 +591,24 @@ class SessionPanel:
         trace = f"captures/{tool.key}-{stamp}_esp32.trace" if s.board_trace else None
         self.log.add(f"[app] {tool.name} · {self.games.game.name} · radio {port}")
         self.seen, self.received.content, self.received.visible = {}, None, False
+        self.traded = 0
         self.stopping = False
         self.app.process_label = tool.name
         self.app.process = runner.Process(["--run", tool.script, *args], str(SESSION),
-                                          runner.base_env(s, port, trace), self.log.add, self._exited)
+                                          runner.base_env(s, port, trace), self._line, self._exited)
         self.run = (self.app.process, stamp, self.games.game.key)
         threading.Thread(target=self._tick, daemon=True).start()
         self.refresh()
+
+    def _line(self, line: str) -> None:
+        self.log.add(line)
+        n = received.trades_done(line)
+        if n is not None and n > self.traded:
+            def mark():
+                self.traded = n
+                self.render_offering()
+                self.offering.update()
+            self.app.ui(mark)
 
     def _tick(self) -> None:
         run = self.run

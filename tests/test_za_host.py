@@ -2,6 +2,7 @@
 import pytest
 
 from pokeldn import za
+from pokeldn.app import received
 from pokeldn.ldn import crypto, esp32, esp32_sim, esp32_wlan, host_pia, pia_connect, reliable
 from pokeldn.za import host as za_host
 from pokeldn.za import streams
@@ -198,7 +199,7 @@ def test_a_whole_trade_against_a_scripted_joiner(monkeypatch, cancel, queue):
     assert host.console_pick == offer[:-1] + b"\x00"
 
 
-def test_the_joiner_answers_the_hosts_pick_and_not_its_cursor(tmp_path):
+def test_the_joiner_answers_the_hosts_pick_and_not_its_cursor(tmp_path, capsys):
     """`bin/za_join.py` against a scripted host that previews three cursor moves before its pick:
     the joiner's preview goes out marked 1, and its pick, marked 0, only after the host's pick. The
     second queued record is previewed after the trade and picked for the host's next pick."""
@@ -282,6 +283,10 @@ def test_the_joiner_answers_the_hosts_pick_and_not_its_cursor(tmp_path):
         game.pump(HOST_VAR, JOINER_VAR, t)
     assert game.trades == 2 and game.queue_done
     assert za.pokemon.read((tmp_path / "theirs-2.pa9").read_bytes())["species"] == 4
+    # the app ticks its queue off by the line each completed trade prints
+    counts = [n for line in capsys.readouterr().out.splitlines()
+              if (n := received.trades_done(line)) is not None]
+    assert len(counts) == 2 and counts[1] == counts[0] + 1
 
 
 def test_the_host_answers_a_leave_as_the_console_reads_it():

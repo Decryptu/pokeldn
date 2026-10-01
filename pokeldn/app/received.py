@@ -4,6 +4,13 @@ import os
 import re
 
 POKEMON = re.compile(r"\.(pk3|ek3|pb7|pk8|pb8|pa8|pk9|pa9)$", re.IGNORECASE)
+DONE = re.compile(r"^\[done\] trade (\d+) complete$")   # pokeldn.ldn.show_done
+
+
+def trades_done(line: str) -> int | None:
+    """The run's completed-trade count a log line reports, or None."""
+    match = DONE.match(line.strip())
+    return int(match.group(1)) if match else None
 
 
 def session_files(folder: str, stamp: str) -> list[str]:

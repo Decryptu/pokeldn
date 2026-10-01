@@ -139,6 +139,12 @@ repeated offer flags:
 | Sword/Shield host and join | `--offer-file`, repeated; each later trade runs from the box on the same session | the last is offered again |
 | Legends Z-A host and join | `--trade-offer`, repeated; each new record is previewed when its trade starts | the last is offered again, under a new PID with `--fresh-pid` |
 
+Every trade launcher calls `pokeldn.ldn.show_done()` once per completed trade, at the step its
+title's table above ends on; it flashes the board's LED and prints `[done] trade N complete`. The
+Session panel's Offering strip counts that line and marks the first N queued Pokemon as traded. The
+Received list cannot stand in for it: some launchers write the console's Pokemon when the console
+picks it, before the trade completes.
+
 `--fresh-pid` gives every queued record its own PID and encryption constant. Trade N above 1 writes
 what it received to the output path with `-N` before the extension (FireRed/LeafGreen: `_tradeN_` and
 the species; Scarlet/Violet: `.N`, counted by distinct offers; Brilliant Diamond/Shining Pearl host:

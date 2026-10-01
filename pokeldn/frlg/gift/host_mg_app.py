@@ -253,7 +253,7 @@ class MysteryGiftHostApplication(HostApplication):
                 and engine.server.mevent_status != mystery_event.STATUS_SUCCESS):
             self.delivery_succeeded = False
         if self.delivery_succeeded:
-            show_done()
+            show_done("delivery")
             print(self._success_message(engine.result))
         elif (engine is not None and self.distribution is not None
               and self.distribution.has_mevent and engine.server.mevent_status is not None):

@@ -716,7 +716,8 @@ async def main_async(args):
                     deadline = trio.current_time() + args.join_wait
                     while st["state_requests"] == created and trio.current_time() < deadline:
                         await trio.sleep(0.05)
-                print(f"\n[tx]   --- now moving whatever is standing there, to the RIGHT")
+                if args.room_walk_steps:
+                    print(f"\n[tx]   --- now moving whatever is standing there, to the RIGHT")
                 for i in range(args.room_walk_steps):
                     # The console's own pace (docs/bdsp_protocol.md); a ninth of it renders as a
                     # stutter.

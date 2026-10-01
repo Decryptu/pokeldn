@@ -77,7 +77,7 @@ def build_parser():
     ap.add_argument("--save-theirs", default=None, metavar="PREFIX",
                     help="write the Pokemon the console offers in trade N to PREFIX_N.pb8")
     ap.add_argument("--approach-delay", type=float, default=3.0,
-                    help="seconds after the player's trade emote before our character walks up")
+                    help="seconds after the player's trade emote before our character approaches (no walk)")
     ap.add_argument("--phy", default="auto")
     ap.add_argument("--ifname", default="ldn-tap")
     ap.add_argument("--ap-ifname", default="ldn")
