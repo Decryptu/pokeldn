@@ -81,6 +81,42 @@ The three with an encounter are Milotic in Legends Z-A and Wyrdeer and Ursaluna 
 gives Wyrdeer and Ursaluna no Generation 9 evolution. For a Z-A Milotic built from Feebas with a
 handling trainer, PKHeX's evolution chain stops at Milotic; the game's records refuse contest stats.
 
+### Offer options
+
+A build can also ask for a nature, ability, gender, held item, ball, IVs and effort values. Nature,
+ability, gender and IVs go into the encounter criteria, so the record is generated with them; a
+Generation 3 PID is searched for the requested nature. When an encounter rolls something else, the
+record is moved to the request the way a player would, and the legality analysis judges the result:
+
+| differs | change |
+|---|---|
+| nature | a mint sets the stat nature, Generation 8 onward |
+| ability | the slot that holds the ability (capsule or patch) |
+| an IV asked to be 31 | hyper training |
+
+Held item, ball and effort values are set after the build. A Generation 3 or 4 EV above 100 is legal
+only once the Pokémon has gained experience since it was met, so such a record gets one experience
+point, below the next level. A Legends Arceus effort level is the stored value plus a bias from the IV
+(1 from 20, 2 from 26, 3 at 31), and a stored value past 10 minus the bias is illegal, so the request
+is taken as the level the game shows and the bias is subtracted.
+
+The record must carry every request and pass the legality analysis. The first encounter that does is
+kept, and the first request no encounter can carry is named in the refusal.
+
+The options offered are the ones a species can have in that game:
+
+| option | listed when |
+|---|---|
+| ball | PKHeX permits it for at least one encounter of the species |
+| ability | a legal build carrying it exists; Legends Z-A lists none |
+| held item | PKHeX lists it as a released held item for the game; Let's Go and Legends Arceus have none |
+| effort | EVs, 252 each and 510 in all; AVs in Let's Go, 200 each; effort levels in Legends Arceus, 10 each |
+
+Sampling 25 species per game and building each with every listed ball, every nature, a fixed IV set,
+fixed effort values, each gender and a held item, 8088 of 8095 builds are legal. PKHeX refuses Hardy,
+Docile and Bashful on the Sword/Shield event Celebi, and the same three and Quirky on the Legends Z-A
+gift Melmetal.
+
 Sword/Shield Mystery Gift validates the WC8 seal and checks supported species, forms, moves and safe
 items with PKHeX. Custom WC8 cards are distributions, and this structural check does not make them
 official events. The optional `--image` research check uses a user-supplied game binary; it is not

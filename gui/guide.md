@@ -21,6 +21,11 @@ the radio. Nothing is installed on the console.
    the trainer in Settings.
 4. Follow the steps under On the console, then press Start.
 
+More options, under the species, sets the nature, ability, gender, held item, ball, IVs and EVs (AVs in
+Let's Go, effort levels in Legends Arceus). Empty fields stay random. The lists hold only what the
+species can legally have in that game, and Build refuses a combination PKHeX finds illegal, with the
+reason.
+
 The Pokemon the console sends you are saved in `Documents/pokeldn/Received`.
 
 ## Basic and All options

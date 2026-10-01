@@ -78,10 +78,20 @@ class Service:
             self.species_cache[key] = sorted(names, key=lambda n: n["name"])
         return self.species_cache[key]
 
+    def options(self, game: str, species: int, trainer: dict, version: str = "") -> dict:
+        """The natures, abilities, held items, balls and effort kind an offer of this species can ask for."""
+        key = f"{game}:options:{species}:{version}"
+        if key not in self.species_cache:
+            self.species_cache[key] = self._ask({"cmd": "options", "game": game, "species": species,
+                                                 "trainer": trainer, "version": version})
+        return self.species_cache[key]
+
     def make(self, game: str, species: int, trainer: dict, level: int = 0, shiny: bool = False,
-             nickname: str = "", version: str = "") -> dict:
+             nickname: str = "", version: str = "", options: dict | None = None) -> dict:
+        """options: nature, ability, gender, held_item, ball (ids), and ivs / effort as {hp, atk, def, spa, spd, spe}."""
         reply = self._ask({"cmd": "make", "game": game, "species": species, "level": level, "shiny": shiny,
-                           "nickname": nickname, "trainer": trainer, "version": version})
+                           "nickname": nickname, "trainer": trainer, "version": version,
+                           "options": options or {}})
         reply["file"] = self._save(game, reply)
         return reply
 
@@ -144,7 +154,9 @@ def summary(info: dict) -> str:
         parts.append("shiny")
     if info.get("nickname") and info["nickname"].lower() != info["species"].lower():
         parts.append(f"'{info['nickname']}'")
-    parts += [info.get("nature", ""), info.get("ball", "")]
+    parts += [info.get("nature", ""), info.get("ability", ""), info.get("ball", "")]
+    if info.get("held_item"):
+        parts.append(f"holding {info['held_item']}")
     return " · ".join(p for p in parts if p)
 
 

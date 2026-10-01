@@ -27,6 +27,7 @@ class PokemonPicker:
         self.nickname = t.field(value=self.value.get("nickname", ""), hint="Nickname (optional)", expand=True,
                                 on_change=lambda e: self._set("nickname", e.control.value))
         self.build_button = t.button("Build", self._build, "sparkles", disabled=True)
+        self.options = OfferOptions(self)
         self.result = ft.Container()
         form = ft.Column([
             ft.Row([t.labeled_control("Species", self.species, expand=True),
@@ -42,6 +43,7 @@ class PokemonPicker:
         tile = ft.Container(self.sprite.control, margin=ft.Margin(0, 20, 0, 0))
         self.control = ft.Column([
             ft.Row([tile, form], spacing=14, vertical_alignment=ft.CrossAxisAlignment.START),
+            self.options.control,
             self.result,
             t.secondary_button("Or use a Pokemon file", self._use_file, "file"),
         ], spacing=10)
@@ -54,6 +56,7 @@ class PokemonPicker:
     def _pick(self, e) -> None:
         self.value["species"] = int(e.control.value)
         self.sprite.show(self.value["species"], bool(self.value.get("shiny")))
+        self.options.species_changed()
 
     def _shiny(self, e) -> None:
         self._set("shiny", e.control.value)
@@ -84,6 +87,10 @@ class PokemonPicker:
             self._message("Pick a species first.", t.RED)
             self.control.update()
             return
+        if problem := self.options.problem():
+            self._message(problem, t.RED)
+            self.control.update()
+            return
         self.build_button.disabled = True
         self._message("Finding a legal encounter...", t.MUTED, busy=True)
         self.control.update()
@@ -96,7 +103,8 @@ class PokemonPicker:
             try:
                 info = builder.SERVICE.make(self.game, self.value["species"], self.app.settings.trainer(),
                                             level, bool(self.value.get("shiny")),
-                                            self.value.get("nickname", ""), VERSIONS.get(self.version, ""))
+                                            self.value.get("nickname", ""), VERSIONS.get(self.version, ""),
+                                            self.value.get("options"))
                 self.value.update(file=info["file"], summary=builder.summary(info), legal=info["legal"],
                                   encounter=info["encounter"], moves=info["moves"])
                 self.on_change(dict(self.value))
@@ -151,6 +159,169 @@ class PokemonPicker:
         if self.value.get("report"):
             lines.append(t.text(self.value["report"], 11.5, t.RED, selectable=True))
         self.result.content = ft.Container(ft.Column(lines, spacing=4), bgcolor=t.BG, border_radius=10, padding=10)
+
+
+STATS = (("hp", "HP"), ("atk", "Atk"), ("def", "Def"), ("spa", "SpA"), ("spd", "SpD"), ("spe", "Spe"))
+EFFORT = {"evs": "EVs", "avs": "AVs", "gvs": "Effort levels"}
+GENDERS = (("0", "Male"), ("1", "Female"))
+ANY = "-"
+
+
+class OfferOptions:
+    """Nature, ability, gender, held item, ball, IVs and effort for the built Pokemon, folded under the form.
+
+    The choices offered are the ones PKHeX permits for the species (services/pkhex Options); the build is
+    still checked for legality as a whole."""
+
+    def __init__(self, picker: "PokemonPicker"):
+        self.picker = picker
+        self.chosen: dict = picker.value.setdefault("options", {})
+        self.open = False
+        self.loaded_for = None
+        self.total = None    # the game's cap on all six effort values together, once the options are read
+        self.body = ft.Column([], spacing=10, visible=False)
+        self.chevron = t.pixel_icon("chevron-right", color=t.FAINT)
+        self.label = t.text("", 12, t.MUTED)
+        header = ft.Container(ft.Row([self.chevron, t.text("More options", 12.5, t.TEXT, weight=ft.FontWeight.W_600),
+                                      self.label], spacing=8),
+                              padding=ft.Padding(2, 4, 2, 4), border_radius=8, on_click=self._toggle)
+        self.control = ft.Column([header, self.body], spacing=8)
+        self._label()
+
+    def _label(self) -> None:
+        count = sum(1 for k, v in self.chosen.items() if (v if isinstance(v, dict) else v is not None))
+        self.label.value = f"{count} set" if count else "random"
+
+    def _toggle(self, e) -> None:
+        self.open = not self.open
+        self.chevron.src = f"icons/chevron-{'down' if self.open else 'right'}.svg"
+        self.body.visible = self.open
+        if self.open:
+            self._load()
+        self.control.update()
+
+    def species_changed(self) -> None:
+        self.loaded_for = None
+        if self.open:
+            self._load()
+            self.control.update()
+
+    def _load(self) -> None:
+        species = int(self.picker.value.get("species") or 0)
+        if not species:
+            self.body.controls = [t.text("Pick a species first.", 12, t.MUTED)]
+            return
+        if self.loaded_for == species:
+            return
+        self.loaded_for = species
+        self.body.controls = [ft.Row([PixelActivity("Loading options"),
+                                      t.text("Reading what this species can have...", 12, t.MUTED)], spacing=8)]
+        app = self.picker.app
+
+        def work():
+            try:
+                found, error = builder.SERVICE.options(self.picker.game, species, app.settings.trainer(),
+                                                       VERSIONS.get(self.picker.version, "")), ""
+            except Exception as exc:
+                found, error = None, str(exc)
+
+            def show():
+                if self.loaded_for != species:
+                    return
+                self.body.controls = [t.text(error, 12, t.RED)] if error else self._form(found)
+                self._label()
+                self.control.update()
+            app.ui(show)
+        threading.Thread(target=work, daemon=True).start()
+
+    def _form(self, found: dict) -> list[ft.Control]:
+        # A choice the new species cannot have is dropped rather than sent.
+        for key, names in (("ability", found["abilities"]), ("ball", found["balls"]), ("held_item", found["held"])):
+            if self.chosen.get(key) is not None and all(n["id"] != self.chosen[key] for n in names):
+                self.chosen.pop(key)
+        if not found["gendered"]:
+            self.chosen.pop("gender", None)
+        first = [t.labeled_control("Nature", self._choice("nature", found["natures"]), expand=True)]
+        if len(found["abilities"]) > 1:
+            first.append(t.labeled_control("Ability", self._choice("ability", found["abilities"]), expand=True))
+        if found["gendered"]:
+            first.append(t.labeled_control("Gender", self._choice(
+                "gender", [{"id": int(k), "name": n} for k, n in GENDERS]), expand=True))
+        second = [t.labeled_control("Ball", self._choice("ball", found["balls"]), expand=True)]
+        if found["held"]:
+            second.insert(0, t.labeled_control("Held item", self._choice("held_item", found["held"], search=True),
+                                               expand=True))
+        effort = found["effort"]
+        self.total = effort.get("total")
+        limit = f"0-{effort['max']}" + (f", {effort['total']} in all" if effort.get("total") else "")
+        return [
+            ft.Row(first, spacing=10),
+            ft.Row(second, spacing=10),
+            self._stats("ivs", "IVs", 31, "0-31"),
+            self._stats("effort", EFFORT[effort["kind"]], effort["max"], limit, effort.get("total")),
+            ft.Row([t.text("Empty means random. The build is checked by PKHeX's legality analysis.", 11.5, t.FAINT,
+                           expand=True),
+                    t.link_button("Clear", self._clear)]),
+        ]
+
+    def _choice(self, key: str, names: list[dict], search: bool = False) -> ft.Dropdown:
+        current = self.chosen.get(key)
+
+        def picked(e):
+            if e.control.value == ANY:
+                self.chosen.pop(key, None)
+            else:
+                self.chosen[key] = int(e.control.value)
+            self._label()
+            self.label.update()
+        options = [(ANY, "Random")] + [(str(n["id"]), n["name"]) for n in
+                                       (sorted(names, key=lambda n: n["name"]) if search else names)]
+        return t.dropdown(options, ANY if current is None else str(current), on_select=picked,
+                          enable_filter=search, editable=search, menu_height=320)
+
+    def _stats(self, group: str, title: str, top: int, limit: str, total: int | None = None) -> ft.Control:
+        values = self.chosen.setdefault(group, {})
+        boxes = []
+
+        def changed(e, stat):
+            raw = e.control.value.strip()
+            if not raw:
+                values.pop(stat, None)
+                e.control.error = None
+            elif raw.isdigit() and int(raw) <= top:
+                values[stat] = int(raw)
+                e.control.error = None
+            else:
+                values.pop(stat, None)
+                e.control.error = ""
+            if not values:
+                self.chosen.pop(group, None)
+            else:
+                self.chosen[group] = values
+            self._label()
+            self.control.update()
+
+        for stat, name in STATS:
+            box = t.field(value=str(values.get(stat, "")), hint="-", mono=True, expand=True,
+                          on_change=lambda e, stat=stat: changed(e, stat))
+            boxes.append(t.labeled_control(name, box, expand=True))
+        if not values:
+            self.chosen.pop(group, None)
+        return ft.Column([t.text(f"{title} ({limit})", 11.5, t.MUTED), ft.Row(boxes, spacing=6)], spacing=4)
+
+    def _clear(self, e) -> None:
+        self.chosen.clear()
+        species, self.loaded_for = self.loaded_for, None
+        if species:
+            self._load()
+        self._label()
+        self.control.update()
+
+    def problem(self) -> str:
+        """Why the options cannot be sent as they stand, or an empty string."""
+        if self.total and sum(self.chosen.get("effort", {}).values()) > self.total:
+            return f"EVs add up to at most {self.total}."
+        return ""
 
 
 NAME_LISTS = {"species": "species", "move": "moves", "item": "items", "ball": "balls"}
