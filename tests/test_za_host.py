@@ -200,13 +200,17 @@ def test_a_whole_trade_against_a_scripted_joiner(monkeypatch, cancel, queue):
 
 def test_the_joiner_answers_the_hosts_pick_and_not_its_cursor(tmp_path):
     """`bin/za_join.py` against a scripted host that previews three cursor moves before its pick:
-    the joiner's preview goes out marked 1, and its pick, marked 0, only after the host's pick."""
+    the joiner's preview goes out marked 1, and its pick, marked 0, only after the host's pick. The
+    second queued record is previewed after the trade and picked for the host's next pick."""
     import argparse
 
     import za_join
     offer = bytes.fromhex("0101b90300bc815801") + bytes(344) + b"\x01"
+    second = bytes.fromhex("0101b90300bc815801") + bytes(range(255, 0, -1)) + bytes(89) + b"\x01"
     (tmp_path / "offer.bin").write_bytes(offer)
-    args = argparse.Namespace(game_dir=str(tmp_path), trade_offer=str(tmp_path / "offer.bin"),
+    (tmp_path / "second.bin").write_bytes(second)
+    args = argparse.Namespace(game_dir=str(tmp_path),
+                              trade_offer=[str(tmp_path / "offer.bin"), str(tmp_path / "second.bin")],
                               selection_count=0, offer_out=str(tmp_path / "theirs.pa9"),
                               selection_delay=0.0, selection_period=1.0, offer_delay=1.0)
 
@@ -250,8 +254,31 @@ def test_the_joiner_answers_the_hosts_pick_and_not_its_cursor(tmp_path):
         t += 0.02
         game.pump(HOST_VAR, JOINER_VAR, t)
     assert game.traded_at is not None and abs(game.traded_at - (commit_at + 14.6)) < 0.05
+    assert not game.queue_done
 
     # Back on its box, the host's cursor previews another Pokemon; the file keeps the one it traded.
+    seq += 1
     game.on_message(za_join.GAME_RELIABLE,
-                    reliable.build_reliable(seq + 1, seq + 1, theirs(4, 1), flagsA=reliable.FLAGSA_GBA), t)
+                    reliable.build_reliable(seq, seq, theirs(4, 1), flagsA=reliable.FLAGSA_GBA), t)
     assert za.pokemon.read((tmp_path / "theirs.pa9").read_bytes())["species"] == 3
+    while t < commit_at + 16.0 + za_host.PREVIEW_DELAY:
+        t += 0.02
+        game.pump(HOST_VAR, JOINER_VAR, t)
+    assert offers()[-1] == second[:-1] + bytes([za_host.OFFER_PREVIEW])
+
+    seq += 1
+    game.on_message(za_join.GAME_RELIABLE,
+                    reliable.build_reliable(seq, seq, theirs(4, 0), flagsA=reliable.FLAGSA_GBA), t)
+    for _ in range(200):
+        t += 0.02
+        game.pump(HOST_VAR, JOINER_VAR, t)
+    assert offers()[-1] == second[:-1] + bytes([za_host.OFFER_PICK])
+    seq += 1
+    game.on_message(za_join.GAME_RELIABLE,
+                    reliable.build_reliable(seq, seq, bytes.fromhex("0104b90000"),
+                                            flagsA=reliable.FLAGSA_GBA), t)
+    for _ in range(800):
+        t += 0.02
+        game.pump(HOST_VAR, JOINER_VAR, t)
+    assert game.trades == 2 and game.queue_done
+    assert za.pokemon.read((tmp_path / "theirs-2.pa9").read_bytes())["species"] == 4

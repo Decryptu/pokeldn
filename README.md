@@ -312,7 +312,8 @@ POKELDN_RADIO=esp32:auto ./.venv/bin/python -u bin/za_host.py --keys prod.keys -
 ```
 
 Pick a Pokémon on the trade box and confirm when the other side's shows. Both roles answer another
-offer in the same session. Back out with B when finished; the host closes when the console leaves.
+offer in the same session; a repeated `--trade-offer` queues records, one per trade. Back out with
+B when finished; the host closes when the console leaves.
 `--offer-out FILE` keeps what the console offered. For an emulated console over the LAN, use
 `za_host.py --ip-host --our-ip IP --comm-id ffffffffffffffff` and
 `za_join.py --ip-join --host-ip IP --our-ip IP --comm-id ffffffffffffffff`. The offer file is 354 bytes

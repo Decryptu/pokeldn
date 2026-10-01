@@ -358,6 +358,9 @@ class HostSession:
                     self._load_offer(self.offers[self.trades])
                     # A station sends a preview each time its cursor moves to another Pokemon.
                     self._schedule(now, PREVIEW_DELAY, self.preview, "preview offer")
+                    if self.offer_at is not None:
+                        self.offer_sent = True
+                        self._schedule(now, self.offer_at, self.offer, "our offer")
                 elif self.renew_offer and self.offer:
                     self._load_offer(self.renew_offer(self.offer))
                 show_done()

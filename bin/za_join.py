@@ -28,7 +28,7 @@ import ldn
 from pokeldn.host_support import open_output
 from pokeldn import pokemon as pokemon_service
 from pokeldn import za
-from pokeldn.za import streams
+from pokeldn.za import host as za_host, streams
 from pokeldn.za.host import (MSG_CANCEL, OFFER_PICK, OFFER_PREVIEW,  # noqa: F401
                              build_command, command_round)
 from pokeldn.ldn import crypto, host_pia, ldn_mitm, pia_connect, reliable
@@ -124,23 +124,33 @@ class GameStreams:
         self.selections = 0
         self.last_selection = 0.0
         self.traded_at = None
+        self.trades = 0
         self.ref = {}
         for name in za.reference.NAMES:
             if os.path.exists(os.path.join(args.game_dir, f"{name}.bin")):
                 self.ref[name] = za.reference.load(name, args.game_dir)
-        # The preview marked 1, the pick marked 0 (docs/za.md, Hosting).
+        # The preview marked 1, the pick marked 0 (docs/za.md, Hosting). One per queued trade; the
+        # last serves every later trade.
+        paths = args.trade_offer or []
+        self.offers = [Path(p).read_bytes() for p in ([paths] if isinstance(paths, str) else paths)]
         self.offer = self.preview = None
-        if args.trade_offer:
-            record = Path(args.trade_offer).read_bytes()
-            if getattr(args, "fresh_pid", False):
-                record = za.pokemon.fresh_offer(record)
-                plain = za.pokemon.parse_offer(record)[1]
-                print(f"[za] offering pid {plain[0x1C:0x20][::-1].hex()} ec {plain[:4][::-1].hex()}")
-            self.preview = record[:-1] + bytes([OFFER_PREVIEW])
-            self.offer = record[:-1] + bytes([OFFER_PICK])
+        if self.offers:
+            self._load_offer(self.offers[0], renew=getattr(args, "fresh_pid", False))
         self.seen = {}
         self.dst_var = 0
         self.src_var = 0
+
+    def _load_offer(self, record, renew=False):
+        if renew:
+            record = za.pokemon.fresh_offer(record)
+            plain = za.pokemon.parse_offer(record)[1]
+            print(f"[za] offering pid {plain[0x1C:0x20][::-1].hex()} ec {plain[:4][::-1].hex()}")
+        self.preview = record[:-1] + bytes([OFFER_PREVIEW])
+        self.offer = record[:-1] + bytes([OFFER_PICK])
+
+    @property
+    def queue_done(self):
+        return self.traded_at is not None and self.trades >= len(self.offers)
 
     def _emit(self, proto, seq, flags_a, inner):
         link = self.links[proto]
@@ -212,8 +222,21 @@ class GameStreams:
             print(f"[za] sent {item[1][:2].hex()} ({len(item[1])} bytes) at {elapsed:.2f}s")
             if item[1] == LAST_STEP:
                 self.traded_at = elapsed
+                self.trades += 1
                 show_done()
-                print(f"[za] trade_complete at {elapsed:.2f}s")
+                print(f"[za] trade_complete at {elapsed:.2f}s (trade {self.trades})")
+                self._next_trade(elapsed)
+
+    def _next_trade(self, elapsed):
+        """Back on its box the console trades again under round 0; the next queued record is
+        previewed, as a station does when its cursor moves (docs/za.md)."""
+        self.round = 0
+        self.picked = False
+        if self.trades < len(self.offers):
+            self._load_offer(self.offers[self.trades])
+            self.scheduled.append((elapsed + za_host.PREVIEW_DELAY, self.preview))
+        elif self.offer and getattr(self.args, "renew_offer", False):
+            self._load_offer(self.offer, renew=True)
 
     def _answer_trade(self, inner, elapsed):
         """A console sends a preview each time its cursor moves, so the pick is keyed on the mark.
@@ -230,7 +253,8 @@ class GameStreams:
             # A preview is the console's cursor on its box; only its pick is what it trades.
             if (getattr(self.args, "offer_out", None) and len(inner) == za.pokemon.OFFER_SIZE
                     and inner[-1] == OFFER_PICK):
-                pokemon_service.save_received("za", self.args.offer_out, inner)
+                pokemon_service.save_received(
+                    "za", pokemon_service.trade_path(self.args.offer_out, self.trades + 1), inner)
             if inner[-1:] == bytes([OFFER_PICK]) and self.offer and not self.picked:
                 self.picked = True
                 self.scheduled.append((elapsed + 1.5, self.offer))
@@ -282,7 +306,8 @@ def build_parser():
     ap.add_argument("--seconds", type=float, default=600.0, help="the whole run")
     ap.add_argument("--hold", type=float, default=120.0, help="how long to hold one seat")
     ap.add_argument("--after-trade", type=float, default=90.0,
-                    help="seconds to keep the seat after the fourth step, then exit the run")
+                    help="seconds to keep the seat after the last queued trade's fourth step, "
+                         "then exit the run")
     ap.add_argument("--quiet-seat", type=float, default=0.0,
                     help="end a seat on which the console has sent nothing for this long")
     ap.add_argument("--connect-timeout", type=float, default=12.0,
@@ -332,9 +357,11 @@ def build_parser():
     ap.add_argument("--fresh-pid", action="store_true",
                     help="send the offer under a new PID and encryption constant, shiny state kept, "
                          "so a save that took this record before takes it again")
-    ap.add_argument("--offer-out", help="write the host's offered PA9 here")
-    ap.add_argument("--trade-offer", default=None,
-                    help="a 354-byte offer message to send once the streams are open")
+    ap.add_argument("--offer-out", help="write the host's offered PA9 here; trade N > 1 writes "
+                                         "FILE-N")
+    ap.add_argument("--trade-offer", action="append", default=[],
+                    help="a 354-byte offer message to send once the streams are open. Repeatable, "
+                         "one per trade in the seat; the last serves every later trade")
     ap.add_argument("--selection-delay", type=float, default=0.5,
                     help="seconds after the identity before the selection record starts; a "
                          "reference joiner waits about 0.46 s")
@@ -484,9 +511,8 @@ async def run_session(args, keys, host_ip, host_mac, our_ip, our_mac, record):
         if now - t0 >= args.hold:
             print(f"[za] the hold ended after {now - t0:.1f}s")
             break
-        if game is not None and game.traded_at is not None \
-                and now - t0 >= game.traded_at + args.after_trade:
-            print(f"[za] leaving the seat {args.after_trade:.0f}s after the trade")
+        if game is not None and game.queue_done and now - t0 >= game.traded_at + args.after_trade:
+            print(f"[za] leaving the seat {args.after_trade:.0f}s after trade {game.trades}")
             break
         if args.quiet_seat and first_in is None and now - t0 >= args.quiet_seat:
             print(f"[za] nothing from the console in {args.quiet_seat:.0f}s; ending the seat")
@@ -698,10 +724,10 @@ def main_ip(args):
 def main(argv=None):
     ap = build_parser()
     args = ap.parse_args(argv)
-    if args.trade_offer and args.trade_offer != "echo":
-        args.trade_offer = pokemon_service.prepare_file("za", args.trade_offer, fresh=getattr(args, "fresh_pid", False))
-        if hasattr(args, "fresh_pid"):
-            args.fresh_pid = False
+    # Every queued record gets its own PID here; a later trade on the last record renews it again.
+    args.trade_offer = [pokemon_service.prepare_file("za", path, fresh=args.fresh_pid)
+                        for path in args.trade_offer]
+    args.renew_offer, args.fresh_pid = args.fresh_pid, False
     try:
         sys.stdout.reconfigure(line_buffering=True)
     except (AttributeError, ValueError):

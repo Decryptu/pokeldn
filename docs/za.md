@@ -699,6 +699,11 @@ selection record 1.16 s after the seat, previews at 3.74 s, the player's offer a
 88 s, `0104` at 89.6 s, the joiner's `0200` steps at 89.7 s and 104 s. The console then returns to
 its trade menu on the same seat and offers again.
 
+The joiner takes a repeated `--trade-offer`: 2.7 s after its fourth step it previews the next record
+and picks it on the console's next pick, under round 0. `bin/za_join.py` and `bin/za_host.py`, each
+with two records, traded both pairs in order over ldn_mitm (`tests/test_za_host.py` scripts the
+joiner's side).
+
 A seat formed late in the console's host phase is handed over: the first datagram comes 1.4 s after
 association instead of within 0.1 s, no update sequence 1 follows, and the console repeats Session
 type 9 once a second (start host migration in the wiki's numbering, which puts the kick at 12 where
