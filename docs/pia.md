@@ -219,6 +219,26 @@ ack id big-endian. The ack id is the message's last four bytes whatever its
 length (`size - 4` with a borrow check; 0 under four bytes). `pokeldn/ldn/mesh_protocol.ack_for()`.
 A host acks a join request before sending the join response; the receiver acks every copy.
 
+### Leaving a session (Pia 6)
+
+`Session::LeaveAsync` starts `LeaveSessionJob`, whose first step, LeaveSessionJob::LeaveMesh, starts
+`LeaveMeshJob` on a station that is not the host (`LeaveMeshWithHostMigrationJob` on the host).
+`LeaveMeshJob`'s first step, SendLeaveRequest, sends the Session type-3 leave request and waits 500 ms
+for the host's type-4 response, four sends at most. No timer runs inside Pia between the call and the
+first type 3; a delay before it belongs to the game.
+
+| | Legends Arceus 1.1.1 | GBA app (Pia 6.39) |
+|---|---|---|
+| `Session::LeaveAsync` | `0x72a6dc` | `0xb1060` |
+| `LeaveSessionJob` startup, first step LeaveMesh | `0x72c5a4` -> `0x72c640` | `0xb460c` -> `0xb46f0` |
+| non-host branch to the `LeaveMeshJob` startup | `0x734f04` -> `0x734dd0` -> `0x73b820` | |
+| SendLeaveRequest | `0x73b898` | `0xcacf4` |
+
+The steps are named by strings the job stores beside each step pointer (`LeaveSessionJob::LeaveMesh`
+at `0x37a2eb9` in Arceus, `0x174e53` in the GBA app). Its other steps are WaitLeaveMesh,
+WaitLeaveMeshWithHostMigration, WaitHostMigrated, MeshCleanup and DisconnectNetwork, and in 6.39
+also WaitDisconnectNetwork, SendMonitoringData and CompleteProcess.
+
 ## The Local Protocol (0x24)
 
 The host broadcasts an update session (type 0x11) about every 100 ms until every station acks it:

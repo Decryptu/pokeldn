@@ -433,11 +433,14 @@ class HostPeerProtocol:
             self.log(f"[host] malformed Session leave request ({len(payload)} bytes); ignoring it")
             return
         self.leave_requests_in += 1
+        # On the guest's unicast counter: a retail FireRed ignored four type 4s numbered 560-573
+        # after unicast packets up to 6203 (docs/frlg_link.md, Leaving the Pia session).
         data = build_message(
             self.network, self.pia_crypto, pia_connect.PROTO_SESSION, response,
-            dst_var=self.guest_var, src_var=PIA_HOST_VAR, pktid=self.session_packet_id,
+            dst_var=self.guest_var, src_var=PIA_HOST_VAR, pktid=self.reliable_packet_id,
             compress=False, footer_var=self.guest_var, nonce_source=self.nonces)
-        self.session_packet_id = ((self.session_packet_id + 1) & 0xFFFF) or 1
+        self.reliable_packet_id = self.reliable_packet_id + 1 \
+            if self.reliable_packet_id < 0xFFFF else 1
         self._send(data, src_ip)
         if self.leave_requests_in == 1:
             self.info("Switch is leaving the Pia session (Session type 3); answered with type 4.")

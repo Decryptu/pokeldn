@@ -1176,8 +1176,16 @@ station (`0x735b90`). The type-4 handler `0x738280` sets the job's done flag `[j
 | `bin/pla_host.py` before the type-4 response, eight retail departures, started directly or by `bin/pla_join.py` taking the host role | 2.02 to 2.07 s, four requests 0.49 to 0.55 s apart |
 | `bin/pla_host.py` answering with the type 4, one retail departure | 0.066 s, one request |
 
-In that departure the console's last game message on 0x7C came 1.999 s before its leave request;
-only Net, RTT and its periodic 0x81 acks passed between them. What it waits on is unread.
+No timer inside Pia precedes the first type 3 ([pia.md](pia.md), Leaving a session). The only
+caller of `Session::LeaveAsync` is the game's leave request, update `0x2ca0a10` (vtable `0x4198ef8`,
+state `[req+0x88]`, jump table `0x3985448`): its first update calls `LeaveAsync` (`0x2ca0ac0`)
+unless a Session job is already running (`0x72a280`), and its next updates wait for the job's result
+(`0x72a294`).
+
+From the console's last game message on 0x7C to its first type 3, nine host departures measured
+1.91, 2.00, 3.02, 3.26, 4.07, 12.0, 15.3, 23.7 and 83.4 s, the player's input included. In each, the
+console sent nothing in that window except RTT, Net answers, its periodic 0x81 records and acks of
+the host's trade box. No fixed delay precedes the leave on the wire, and none is owed a reply.
 
 `bin/pla_host.py` answers every type-3 request with the type-4 response. The scripted console in
 `tests/test_pla_host_loss.py` runs the job's timing, and the host's answer goes through `0x738280`
@@ -1201,7 +1209,7 @@ against the four captured console leaves.
 - The code path by which a console hosting a search hands the host role to the station that joins,
   and whether it ever answers a Session join request itself.
 - The deadline constant behind the Matching timeout `0x26d4ae8` (10.2 s measured).
-- How long a console answered at its first leave takes to leave the network and to return to the
-  field.
+- The screen time of a departure: from the player's confirmation to the first type 3, and from the
+  LDN leave to the field.
 - The keepalive timeout a silent host trips in Legends Arceus, by its setting constant (Z-A's is
   10000 ms at `0x199eb48`, [za.md](za.md), The kick).

@@ -671,8 +671,17 @@ class TradeEngine:
             # One side selected, the other cancelled [trade.c:1695-1712, 1737-1746]: both return to
             # the trade menu [2094-2113] and the leader waits for both to select again. Ending the
             # session here left the leader waiting forever.
-            self.log(f"<- {LINKCMD_NAMES.get(cmd, hex(cmd))}: back to the trade menu; selecting again")
-            self.info("Trade cancelled by one side; back at the menu.")
+            # PLAYER_CANCEL while we are READY is the leader's player choosing Cancel [trade.c:1704-
+            # 1712]; we cancel at the menu so their next Cancel ends the session.
+            if cmd == PLAYER_CANCEL_TRADE and self.state == S5_SELECT:
+                self.leaving = True
+                self.log("<- PLAYER_CANCEL_TRADE at selection: the console's player cancelled; "
+                         "cancelling with them")
+                self.info("The console's player cancelled; Cancel again on the console to leave.")
+            else:
+                self.log(f"<- {LINKCMD_NAMES.get(cmd, hex(cmd))}: back to the trade menu; "
+                         "selecting again")
+                self.info("Trade cancelled by one side; back at the menu.")
             self.state = S4_PARTY
             self._selected = False
             self._reselect_wait = RESELECT_DELAY

@@ -152,9 +152,12 @@ once.
 
 `PLAYER_CANCEL_TRADE` / `PARTNER_CANCEL_TRADE` go through `CB_HandleTradeCanceled` → `CB_MAIN_MENU`
 [trade.c:2094-2113]; only `BOTH_CANCEL_TRADE` ends the session [1715-1722]. The joiner re-enters
-S4_PARTY and selects again after 60 frames. Answering every `REQUEST_CANCEL` with
-`PARTNER_CANCEL_TRADE` loops the console on "votre ami veut échanger des Pokémon"; the leader cancels
-on a second consecutive CANCEL, giving `BOTH_CANCEL_TRADE` and the exit path.
+S4_PARTY and selects again after 60 frames. Answering `REQUEST_CANCEL` with `PARTNER_CANCEL_TRADE`
+loops the console on "votre ami veut échanger des Pokémon"; `bin/frlg_trade_host.py` answers the
+first one with `BOTH_CANCEL_TRADE`, the exit path. A leader's own pick sends nothing (`SetReadyToTrade`
+[trade.c:1811-1828]); its Cancel goes to every player as `REQUEST_CANCEL` [trade.c:2049]. A joiner
+that sent `READY_TO_TRADE` first draws `PLAYER_CANCEL_TRADE` on the leader's first Cancel;
+`bin/frlg_trade_join.py` then cancels at the menu, so the leader's second Cancel ends the session.
 
 ## Version and language are not gates
 
@@ -272,9 +275,27 @@ constant id at 5 and variable id at 13 are the station's own. A host's type-3 ha
 takes 22 or 34 bytes (kind 1 carries 18 address bytes, `0xbf3ac`) and answers 15 bytes: type 4, a
 fresh random word, the request's bytes 5 to 14 (`0xbf454`..`0xbf4e4`). The host answers every
 type 3 in that form (`pokeldn.ldn.host_pia.HostPeerProtocol`), unicast, header
-`(console variable, 0x00C6)`.
+`(console variable, 0x00C6)`, numbered on the counter of its other unicast packets to that console.
+A retail FireRed ignored four type 4s numbered 560 to 573 after unicast packets numbered up to 6203
+from the same station: it sent all four type 3s and left 2.05 s after the first. Numbered on the
+unicast counter, the first type 4 was taken: one type 3, the LDN leave 0.07 s after it. The console's own
+packets carry one counter per destination (to the host variable and to variable 1).
 
-What the console waits on during the two seconds before its first type 3 is unknown.
+The pause before the first type 3 is a fixed 120-tick countdown in the GBA app's network manager,
+not a wait on the host. The manager counts 60 ticks a second (its timeouts compare the tick counter
+`+0x2774` against seconds times 60, `0x4ff64`). The child's `TryDisconnectRfu` issues `swi 0x44`
+before its `rfu_REQ_disconnect` sends the `D` [link_rfu_2.c:1446-1455, 983-985]; `LinkRfu_Shutdown`
+issues it too [link_rfu_2.c:625]. Its handler `0x58b0c` posts disconnect request 1 through the
+manager's slot `0x68` (`0x53d98` -> `0x4f0ec`, field `+0x730`). The per-tick update `0x4ee34` turns
+request 1 into the countdown `+0x734 = 0x78` (`0x4ef00`), decrements it once a tick, and at zero
+calls the manager's slot `0x78` (`0x4ef60`; subclass `0x53328` sets the state to 1 through
+`0x4f0b4`). The next update (`0x5392c` -> `0x536f0`) calls `Session::LeaveAsync` (`0xb1060`, at
+`0x537e0`), and the leave job's first step sends the type 3 ([pia.md](pia.md), Leaving a session).
+
+Nothing received from the network shortens the countdown. It ends early only on disconnect request 2
+or 3 (`swi 0x42`, or `swi 0x43` with a zero PID) or once a Pia error or timeout has set the
+disconnect reason `+0x277c` (checked first in `0x4ee64`; set through `0x4f020` from `0x5110c`,
+`0x52470` and `0x53440`). The countdown code has no role check.
 
 ## 802.11 behaviour
 

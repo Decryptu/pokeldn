@@ -157,6 +157,7 @@ def test_leave_request_is_answered_in_the_form_the_leaver_checks():
                      pktid=2)
     assert peer.session_finalized
     peer.drain()
+    peer.reliable_packet_id = 6204      # the guest's unicast counter after a trade (6203 in eh36)
 
     leave = (bytes([pia_connect.SESSION_LEAVE_REQUEST]) + b"\x11\x22\x33\x44"
              + bytes.fromhex("3c33006094930000") + bytes.fromhex("c493") + b"\x00"
@@ -171,7 +172,7 @@ def test_leave_request_is_answered_in_the_form_the_leaver_checks():
         assert len(payload) == 15 and payload[0] == 4
         assert payload[5:13] == bytes.fromhex("3c33006094930000")
         assert payload[13:15] == bytes.fromhex("c493")
-    assert len({h.pktid for _, h, _ in replies}) == 4
+    assert sorted(h.pktid for _, h, _ in replies) == [6204, 6205, 6206, 6207]
 
     stranger = leave[:13] + bytes.fromhex("7171") + leave[15:]
     _console_session(peer, stranger, pktid=9)
