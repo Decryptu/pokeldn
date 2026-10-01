@@ -873,6 +873,8 @@ the type 9 with a type 10 48 ms later, the host sent Net 0x11 sequence 3 and the
 With the type 10 and the 0x12 sent at once, a retail host sent the 0x11 0.04 s after its type 9
 and then Net 0x40 (`01 40 00 00`, source 0) every 0.3 s for 4.06 s while the joiner stayed on its
 network; no second type 9 came.
+Leaving on that first 0x40, the joiner was off the network 0.09 s after the type 9 (no trade, the
+player backing out of the box).
 
 `bin/za_join.py` answers a type 9 naming it with the type 10, and the Net 0x11 after it with the
 0x12, and leaves the network on the first Net 0x40 (or once the console has been silent for a
