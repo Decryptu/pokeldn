@@ -26,6 +26,7 @@ from pokeldn.frlg.remote.protocol import PHASE_ORDER  # noqa: E402
 from pokeldn.frlg.remote.transport import RemoteTransport, TransportError  # noqa: E402
 
 HOST_TICK_HZ = 59.727
+P0_MAX_PARTICIPANTS = 6
 
 
 def build_parser(file_config=None, *, shared_path=None, local_path=None):
@@ -34,7 +35,7 @@ def build_parser(file_config=None, *, shared_path=None, local_path=None):
     if file_config is None:
         file_config = configmod.load_project_host_file_config()
     commands = parser.add_subparsers(dest="remote_role", required=True)
-    defaults = replace(file_config.to_host_options(), max_participants=2)
+    defaults = replace(file_config.to_host_options(), max_participants=P0_MAX_PARTICIPANTS)
     ldn_defaults = file_config.to_ldn_config()
     for role in ("host", "join"):
         command = commands.add_parser(role, help=f"LAN {role} for one local Switch")
@@ -120,7 +121,7 @@ def build_remote_config(parser, args):
         args.id = None
         args.card_flag_id = None
         args.trust_pia = True
-        args.max_participants = 2
+        args.max_participants = P0_MAX_PARTICIPANTS
         args.tick_hz = HOST_TICK_HZ
         args.live = True
         profile, ldn, role = host_cli.build_host_config(parser, args)

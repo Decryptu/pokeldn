@@ -6,14 +6,15 @@ nav_order: 8
 
 # FRLG 局域网数据探针（P0）
 
-`bin/frlg_remote_trade.py` 是双端远程交换方案的 P0 实验入口。它只转发真实 Switch 提供的 LinkPlayer、Trainer Card、三组队伍块、mail 和 ribbons；到达交易菜单后拒绝交易命令。此版本不会发送 `START_TRADE`，不会启动交换动画、保存或提交。
+`bin/frlg_remote_trade.py` 是双端远程交换方案的 P0 实验入口。它只转发真实 Switch 提供的 LinkPlayer、Trainer Card、三组队伍块、mail 和 ribbons；到达交易菜单后拒绝交易命令。此版本不会发送 `START_TRADE`，不会启动交换动画、保存或提交。正式交换的设计和后续 P1/P2 落地顺序见 [FRLG 远程联机方案](frlg_remote_trade_lan_plan_zh.md)。
 
-P0 已有协议、协调器和引擎保护的自动化检查，具体覆盖和缺口见下文；**尚未完成两台零售 Switch 的实测**。游戏角色映射和不同入室时差仍是待验证门槛，不能据此宣称远程交换已可用。
+P0 已有协议、协调器和引擎保护的自动化检查。最近一轮双 PC、双 ESP32、双真实 Switch 已完成七阶段数据交换，双端 snapshot 摘要相互匹配，`probe_only=true`、`commits=0`，且 `READY_TO_TRADE` 被拒绝；这证明了 P0 核心数据路径。该轮结束时仍暴露出正常退出的 TCP shutdown race，代码已增加正常取消后的断开豁免，需重新运行完整证据核验器。P0 仍不代表正式交换可用。
 
 ## 运行准备
 
 - 两套独立、已通过本地 FR/LG Direct Corner 基线的 PC + ESP32 + Switch。
 - 两台 PC 位于可信的普通局域网，知道 PC A 的明确私有 IP。两边不自动扫描、改防火墙或做 NAT 穿透。
+- P0 的本地 LDN 配置固定 `max_participants=6`，以容纳真实双端链路所需的参与者；CLI 不接受把它降回 2 的覆盖值。
 - 每台 PC 各自保留本机 `prod.keys`。LAN 业务消息不携带房间密钥，也不传输 Nintendo 密钥；房间密钥仅通过双方选定的可信私下渠道配对。
 - 首次探针选已解锁 Direct Corner 的目标游戏/语言组合。仅观察数据和取消；不要选择要交换的宝可梦。
 
@@ -48,7 +49,7 @@ python bin/frlg_remote_trade.py join --connect 192.168.1.10 --port 24873 --chann
 
 现有自动化检查包含帧边界/半包粘包、错误 HMAC、JSON 重复字段、正常配对和方向序号、部分阶段顺序与快照门控、LinkPlayer 字节保留，以及 P0 拒绝交易选择和提交。它们没有穷举全部长度、重放、超时、故障和实机行为，不能把代码中的校验分支当成已经测试通过。
 
-实机 P0 必须记录准确游戏版本、语言、固件、提交号和关联 run ID，并回答方案中的 G0-A / G0-B 问题：角色字段是否正确、逐块数据是否无死锁、晚入室等待上限、是否可以正常取消退场。当前支持矩阵仍为“未验证”；这份探针实现不代表已通过任何双实机测试。
+实机 P0 必须记录准确游戏版本、语言、固件、提交号和关联 run ID，并回答方案中的 G0-A / G0-B 问题：角色字段是否正确、逐块数据是否无死锁、晚入室等待上限、是否可以正常取消退场。最近一轮已在指定组合上回答了七阶段逐块传递、双 snapshot 和菜单取消的核心问题；正式验收仍以修复后的双端 `check-evidence.ps1` 重新通过为准，特殊数据样本、故障矩阵和正式交换仍未验证。
 
 ## P0 测试执行方案
 
@@ -361,20 +362,20 @@ P0 的 G0 可行性门槛要求 H-01、L-01、G0-A-01、G0-B-01、G0-B-02 的准
 
 ### 16. 本轮执行记录（2026-10-01）
 
-本轮在 `b675878` 基线上实现 P0 阶段闸门、命令审计和实机测试包设施；下表记录待打包工作区的本机检查结果。最终源码提交号以测试包内 `BUILD_INFO.txt` 为准。
+本轮在 `66b7272` 基线上继续修复 P0 正常退出时的 LAN 关闭竞态；当前工作区仍有待提交改动，最终源码提交号以测试包内 `BUILD_INFO.txt` 为准。
 
 | 检查 | 结果 | 证据范围 |
 |---|---|---|
-| A-01，含 A-02 与新增 P0 夹具 | `46 passed` | `test_frlg_remote_probe.py`、`test_frlg_remote_policy.py`、`test_frlg_remote_field_kit.py` |
+| A-01，含 A-02 与新增 P0 夹具 | `51 passed` | `test_frlg_remote_probe.py`、`test_frlg_remote_policy.py`、`test_frlg_remote_field_kit.py`、`test_frlg_remote_cli.py` |
 | A-03 | `23 passed` | `test_host_trade_engine.py`、`test_trade_runtime.py`、`test_host_end_to_end.py` |
 | 测试包 PowerShell 脚本语法 | `6 个脚本通过` | 使用 PowerShell AST parser 逐个解析 `tests/frlg_remote_p0_field_kit/*.ps1` |
 | Python 编译与 CLI 冒烟 | 通过 | `compileall`；远程探针、日志核验器及打包器 `--help` |
 | 文档检查 | `7 passed`（排除 `every_launcher` 参数化检查） | 在完整提交树的临时副本中执行；原工作区还含未跟踪计划草稿，不纳入本轮包 |
 | diff 格式检查 | `git diff --check` 通过 | 不代表实机验收 |
-| H-01 / L-01 / G0-A / G0-B / C-01 | `NOT_RUN` | 本轮没有执行双 PC / 双实机测试，没有可填写的实机 run ID |
+| H-01 / L-01 / G0-A / G0-B / C-01 | 核心 P0 路径通过，证据复跑待完成 | 双 PC、双 ESP32、双真实 Switch 已完成七阶段、双 snapshot 和正常取消；原始证据有退出时 `LAN peer disconnected`，修复后需重新跑 `check-evidence.ps1` |
 | F-01 至 F-06、S-01 完整审计、自动化补测清单 | `NOT_RUN` | 仅已有测试覆盖的子项通过，完整故障与命令审计尚待实施 |
 
-本轮结论：A-01/A-02/A-03 自动化结果如上，实机支持矩阵仍为“未验证”。后续执行按 H-01 → L-01 → G0-A/G0-B 顺序开展；本轮新增测试设施和实机包内容另见第 17 节。
+本轮结论：自动化结果如上，P0 核心实机数据路径已跑通，但证据核验尚未因 shutdown race 修复而重跑，因此不能把本轮记为最终全绿。修复后的下一步是重新运行双端日志核验和 `check-evidence.ps1`；正式交换依照 [LAN 方案第 5.5 节](frlg_remote_trade_lan_plan_zh.md) 进入 P1/P2，当前仍未实现。
 
 ### 17. 实机测试设施与打包记录（2026-10-01）
 

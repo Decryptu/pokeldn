@@ -76,17 +76,22 @@ class RemoteProbeApplication(HostApplication):
             self.remote_policy.local_link_state("waiting")
             return super().run()
         finally:
-            report = self.remote_policy.report()
-            if self.remote_policy.engine is not None:
-                report["p0_command_audit"] = self.remote_policy.engine.p0_command_audit()
-                report["local_close_confirmed"] = self.remote_policy.engine.close_confirmed
             try:
-                if self.lan_transport.error is None:
-                    reason = ("link_failed" if self.remote_policy.failed is not None
-                              or (self.session and not self._activity().close_confirmed)
-                              else "cancelled")
-                    self.remote_policy.stop(reason)
-                    self.lan_transport.flush()
+                transport_error = self.lan_transport.error
+                reason = ("link_failed" if self.remote_policy.failed is not None
+                          or (transport_error is not None
+                              and transport_error != "LAN peer disconnected")
+                          or (self.session and not self._activity().close_confirmed)
+                          else "cancelled")
+                self.remote_policy.stop(reason)
+                self.lan_transport.flush()
+                # Process a peer stop and a queued EOF before taking the final snapshot.  This
+                # makes the report reflect the control-plane order at normal asymmetric shutdown.
+                self.remote_policy.poll()
+                report = self.remote_policy.report()
+                if self.remote_policy.engine is not None:
+                    report["p0_command_audit"] = self.remote_policy.engine.p0_command_audit()
+                    report["local_close_confirmed"] = self.remote_policy.engine.close_confirmed
                 self.journal.append("probe_summary", **report)
                 self.info("P0 probe summary: " + json.dumps(report, sort_keys=True))
             except (TransportError, JournalError, OSError) as exc:

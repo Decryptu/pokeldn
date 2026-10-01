@@ -164,3 +164,59 @@ def test_policy_holds_only_the_configured_phase_until_local_release(tmp_path):
     assert host.take_remote_block("link_player") == remote
     assert host.take_remote_block("link_player") is None
     assert sum("test gate released" in message for message in messages) == 1
+
+
+def test_peer_cancel_then_tcp_eof_is_a_normal_close():
+    host_transport = MemoryTransport("host")
+    join_transport = MemoryTransport("join")
+    host_transport.peer = join_transport
+    join_transport.peer = host_transport
+    host = RemoteTradePolicy(host_transport)
+    join = RemoteTradePolicy(join_transport)
+
+    join.stop("cancelled")
+    host_transport.error = "LAN peer disconnected"
+    host.poll()
+
+    assert host.report()["lan_failure"] is None
+    assert host.report()["remote_stop_reason"] == "cancelled"
+
+
+def test_tcp_eof_without_a_stop_intent_is_still_a_failure():
+    transport = MemoryTransport("host")
+    transport.error = "LAN peer disconnected"
+    policy = RemoteTradePolicy(transport)
+
+    policy.poll()
+
+    assert policy.report()["lan_failure"] == "LAN peer disconnected"
+
+
+def test_queued_tcp_eof_after_peer_cancel_is_not_reclassified_as_empty_message():
+    host_transport = MemoryTransport("host")
+    join_transport = MemoryTransport("join")
+    host_transport.peer = join_transport
+    join_transport.peer = host_transport
+    host = RemoteTradePolicy(host_transport)
+    join = RemoteTradePolicy(join_transport)
+
+    join.stop("cancelled")
+    host_transport.incoming.append(TransportEvent(
+        "error", error="LAN peer disconnected"))
+    host.poll()
+
+    assert host.report()["lan_failure"] is None
+
+
+def test_local_cancel_also_protects_against_a_racing_tcp_eof():
+    transport = MemoryTransport("host")
+    peer = MemoryTransport("join")
+    transport.peer = peer
+    peer.peer = transport
+    policy = RemoteTradePolicy(transport)
+    policy.stop("cancelled")
+    transport.error = "LAN peer disconnected"
+
+    policy.poll()
+
+    assert policy.report()["lan_failure"] is None

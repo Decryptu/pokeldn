@@ -2,7 +2,7 @@
 
 本目录随 `source/` 中的同版本 PokeLDN 源码和经典 ESP32 合并固件一起分发。包内固件取自官方 PokeLDN `v0.2.2` 发布资产；它与 P0 主机程序分开版本，协议版本兼容性由 ESP32 串口握手和本机测试确认。检查 `BUILD_INFO.txt` 与 `MANIFEST.sha256` 记录的源码提交和文件摘要。
 
-P0 仅把两台真实 Switch 提供的 LinkPlayer、Trainer Card、三组队伍块、mail 和 ribbons 经 LAN 转发到对端，随后停在交易菜单。不得选宝可梦或确认交换。运行结束后，检查两台 Switch 录像、双端日志和命令审计；本包不启用交易、动画或保存功能。
+P0 仅把两台真实 Switch 提供的 LinkPlayer、Trainer Card、三组队伍块、mail 和 ribbons 经 LAN 转发到对端，随后停在交易菜单。不得选宝可梦或确认交换。运行结束后，检查两台 Switch 录像、双端日志和命令审计；本包不启用交易、动画或保存功能。正式交换仍未启用；开始/完成双门、取消与异常处理的设计见包外源码中的 [FRLG 远程联机方案](source/docs/frlg_remote_trade_lan_plan_zh.md)，该方案是 P1/P2 计划，不是本测试包的操作步骤。
 
 ## 硬件与主机
 

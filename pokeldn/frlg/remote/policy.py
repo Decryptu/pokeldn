@@ -10,6 +10,10 @@ from pokeldn.frlg.remote.protocol import PHASE_SIZES, ProtocolError, logical_byt
 from pokeldn.frlg.remote.transport import TransportError, TransportEvent
 
 
+NORMAL_STOP_REASONS = frozenset({"cancelled", "completed"})
+PEER_DISCONNECTED = "LAN peer disconnected"
+
+
 class RemoteTradePolicy:
     """Exchange exact game business blocks and stop at the trade menu."""
 
@@ -23,6 +27,9 @@ class RemoteTradePolicy:
         self.failed = None
         self.journal_failure = None
         self.local_game_identity = None
+        self.local_stop_reason = None
+        self.peer_stop_reason = None
+        self._normal_disconnect_logged = False
         self.phase_gate = phase_gate
         self._phase_gate_held_logged = False
         self._phase_gate_released_logged = False
@@ -47,6 +54,24 @@ class RemoteTradePolicy:
         self.coordinator.remote_link_state = "failed"
         self.log(f"LAN probe control failed: {self.failed}. Local RFU traffic remains active.")
         self._record("lan_control_failed", code="link_lost")
+
+    def _has_normal_stop_intent(self):
+        return (self.local_stop_reason in NORMAL_STOP_REASONS
+                or self.peer_stop_reason in NORMAL_STOP_REASONS)
+
+    def _handle_transport_error(self, reason):
+        reason = str(reason)
+        if reason == PEER_DISCONNECTED and self._has_normal_stop_intent():
+            if not self._normal_disconnect_logged:
+                self._normal_disconnect_logged = True
+                stop_reason = (self.peer_stop_reason
+                                if self.peer_stop_reason in NORMAL_STOP_REASONS
+                                else self.local_stop_reason)
+                self.log(f"LAN peer disconnected after probe stop ({stop_reason}); "
+                         "treating it as a normal close.")
+                self._record("lan_control_closed", reason=reason, stop_reason=stop_reason)
+            return
+        self._mark_failed(reason)
 
     def publish_local_block(self, phase, data):
         raw = bytes(data)
@@ -136,15 +161,17 @@ class RemoteTradePolicy:
     def poll(self):
         for event in self.transport.poll():
             if event.kind == "error":
-                self._mark_failed(event.error or "LAN transport failed")
-                break
+                self._handle_transport_error(event.error or "LAN transport failed")
+                if self.failed is not None:
+                    break
+                continue
             try:
                 self._handle_event(event)
             except (ProtocolError, TransportError, ValueError) as exc:
                 self._mark_failed(exc)
                 break
         if self.transport.error is not None:
-            self._mark_failed(self.transport.error)
+            self._handle_transport_error(self.transport.error)
         if self.engine is not None:
             self.engine.resume_remote_phase()
 
@@ -175,9 +202,10 @@ class RemoteTradePolicy:
             self.log(f"Peer local RFU state: {message.payload['state']}.")
             self._record("peer_link_state", state=message.payload["state"])
         elif message.type == "PROBE_STOP":
-            self.coordinator.remote_stop_reason = message.payload["reason"]
-            self.log(f"Peer requested probe stop ({message.payload['reason']}).")
-            self._record("peer_stop", reason=message.payload["reason"])
+            self.peer_stop_reason = message.payload["reason"]
+            self.coordinator.remote_stop_reason = self.peer_stop_reason
+            self.log(f"Peer requested probe stop ({self.peer_stop_reason}).")
+            self._record("peer_stop", reason=self.peer_stop_reason)
         elif message.type == "ERROR":
             raise TransportError(f"peer reported {message.payload['code']}")
         else:
@@ -186,8 +214,12 @@ class RemoteTradePolicy:
     def stop(self, reason):
         if reason not in {"cancelled", "completed", "in_doubt", "link_failed"}:
             raise ValueError("invalid probe stop reason")
-        if self.failed is None:
-            self.transport.send("PROBE_STOP", {"reason": reason})
+        self.local_stop_reason = reason
+        if self.failed is None and self.transport.error is None:
+            try:
+                self.transport.send("PROBE_STOP", {"reason": reason})
+            except TransportError as exc:
+                self._handle_transport_error(exc)
         self._record("probe_stop", reason=reason)
 
     def report(self):
@@ -195,4 +227,5 @@ class RemoteTradePolicy:
         report["lan_failure"] = self.failed
         report["journal_failure"] = self.journal_failure
         report["local_game_identity"] = self.local_game_identity
+        report["local_stop_reason"] = self.local_stop_reason
         return report

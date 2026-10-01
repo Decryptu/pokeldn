@@ -8,6 +8,8 @@ nav_order: 9
 
 仓库中的 `tests/frlg_remote_p0_field_kit/` 和 `tools/frlg/validate_remote_p0_evidence.py` 是实机测试包的模板和日志核验器。生成的 ZIP 包含本次提交的完整源码、Windows 安装/启动脚本、测试记录表、经典 ESP32 合并固件，以及源码与固件的 SHA-256 清单。
 
+P0 只验证真实数据到达交易菜单并安全取消；正式交换仍未启用。正式交换的事件顺序、`START_TRADE` 开始门、`_commit()`/`CONFIRM_FINISH_TRADE` 完成门、取消与 `IN_DOUBT` 处理，以及 P1/P2 落地顺序见 [FRLG 远程联机方案](frlg_remote_trade_lan_plan_zh.md)。
+
 用当前工作区 Python 构建包：
 
 ```powershell
