@@ -104,7 +104,12 @@ class MarkdownDocument:
 def on_ui(page: ft.Page, fn: Callable[[], None]) -> None:
     """Runs fn on the page's event loop; control updates are not safe from worker threads."""
     async def call():
-        fn()
+        try:
+            fn()
+        except RuntimeError as error:
+            # A worker that answers after its view was replaced (another tool picked) updates nothing.
+            if "must be added to the page" not in str(error):
+                raise
     page.run_task(call)
 
 

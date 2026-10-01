@@ -26,6 +26,7 @@ class Field:
     more: str = ""                # a pokemon field: the flag for the second and later offers
     count: str = ""               # a pokemon field: the flag that carries how many there are
     hidden: bool = False          # applied with its default, set on the Advanced tab instead of Basic
+    shiny: bool = False           # a switch that makes the species field's Pokemon shiny, for its sprite
 
     @property
     def key(self) -> str:
@@ -232,7 +233,7 @@ SWSH = Game("swsh", "Sword & Shield", "SwSh", "swsh.md", (
           Field("--set", "Held item", "item", template="held_item={}", group="Extras",
                 help="Empty for no item and the game's default ball."),
           Field("--set", "Ball", "ball", template="ball={}", group="Extras"),
-          Field("--set", "Shiny", "switch", template="shiny_type=2", default=False,
+          Field("--set", "Shiny", "switch", template="shiny_type=2", default=False, shiny=True,
                 help="The Pokemon arrives shiny."),
           Field("--nickname", "Nickname", default="PKCAMP", group="Names",
                 help="The Pokemon's nickname and the original trainer name it shows."),

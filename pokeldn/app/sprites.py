@@ -5,10 +5,13 @@ than TIMEOUT on a dead network. docs/gui.md (Pokemon sprites) describes the cach
 """
 import os
 import ssl
+import struct
 import threading
 import time
 import urllib.error
 import urllib.request
+import zlib
+from functools import lru_cache
 from pathlib import Path
 
 from pokeldn.app.paths import DATA
@@ -34,6 +37,73 @@ def _context() -> ssl.SSLContext:
 
 def valid(data: bytes) -> bool:
     return data[:8] == PNG and data[12:16] == b"IHDR" and len(data) <= MAX_BYTES
+
+
+CHANNELS = {0: 1, 2: 3, 3: 1, 4: 2, 6: 4}
+
+
+@lru_cache(maxsize=512)
+def bounds(data: bytes) -> tuple[int, int, int, int] | None:
+    """(x0, y0, x1, y1) around a PNG's visible pixels, x1 and y1 exclusive; None for an empty image or
+    one this does not read (16-bit, interlaced). Pillow is not in the packaged app."""
+    try:
+        chunks, pos = {}, 8
+        while pos < len(data):
+            size = struct.unpack(">I", data[pos:pos + 4])[0]
+            kind = data[pos + 4:pos + 8]
+            chunks[kind] = chunks.get(kind, b"") + data[pos + 8:pos + 8 + size]
+            pos += 12 + size
+        width, height, depth, color, _, _, interlace = struct.unpack(">IIBBBBB", chunks[b"IHDR"])
+        if depth > 8 or interlace or color not in CHANNELS:
+            return None
+        raw = zlib.decompress(chunks[b"IDAT"])
+    except (KeyError, struct.error, zlib.error):
+        return None
+    channels = CHANNELS[color]
+    step, stride = max(1, channels * depth // 8), (width * channels * depth + 7) // 8
+    trns = chunks.get(b"tRNS", b"")
+    # A pixel is clear when its alpha is 0, or it is the colour (or palette entry) tRNS marks clear.
+    clear_key = struct.unpack(">H", trns[:2])[0] if color == 0 and len(trns) >= 2 else None
+    rgb_key = struct.unpack(">HHH", trns[:6]) if color == 2 and len(trns) >= 6 else None
+    previous = bytearray(stride)
+    xs, ys = [], []
+    for y in range(height):
+        start = y * (stride + 1)
+        kind, line = raw[start], bytearray(raw[start + 1:start + 1 + stride])
+        if len(line) < stride:
+            return None
+        for i in range(stride):
+            a = line[i - step] if i >= step else 0
+            b, c = previous[i], previous[i - step] if i >= step else 0
+            if kind == 1:
+                line[i] = (line[i] + a) & 0xFF
+            elif kind == 2:
+                line[i] = (line[i] + b) & 0xFF
+            elif kind == 3:
+                line[i] = (line[i] + (a + b) // 2) & 0xFF
+            elif kind == 4:
+                p = a + b - c
+                pa, pb, pc = abs(p - a), abs(p - b), abs(p - c)
+                line[i] = (line[i] + (a if pa <= pb and pa <= pc else b if pb <= pc else c)) & 0xFF
+        previous = line
+        for x in range(width):
+            if color in (4, 6):
+                seen = line[x * channels + channels - 1] != 0
+            elif color == 3:
+                bit = x * depth
+                index = (line[bit // 8] >> (8 - depth - bit % 8)) & ((1 << depth) - 1)
+                seen = index >= len(trns) or trns[index] != 0
+            elif color == 2:
+                seen = rgb_key is None or tuple(line[x * 3:x * 3 + 3]) != rgb_key
+            else:
+                bit = x * depth
+                seen = clear_key is None or ((line[bit // 8] >> (8 - depth - bit % 8)) & ((1 << depth) - 1)) != clear_key
+            if seen:
+                xs.append(x)
+                ys.append(y)
+    if not xs:
+        return None
+    return min(xs), min(ys), max(xs) + 1, max(ys) + 1
 
 
 class SpriteCache:

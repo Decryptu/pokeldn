@@ -5,11 +5,11 @@ import flet as ft
 from pokeldn import pokemon as builder
 from pokeldn.app.command import offers
 from gui import theme as t
-from gui.views.sprites import SIZE as SPRITE_SIZE, Sprite
+from gui.views.sprites import EDGE, SIZE as SPRITE_SIZE, Sprite
 from gui.views.widgets import PixelActivity
 
 VERSIONS = {"firered": "FR", "leafgreen": "LG"}
-ROW_GAP = SPRITE_SIZE - 2 * t.CONTROL_HEIGHT   # the species and nickname boxes, and the gap, are as tall as a sprite
+ROW_GAP = SPRITE_SIZE + 2 * EDGE - 2 * t.CONTROL_HEIGHT   # the species and nickname boxes and the gap match the tile
 
 
 class PokemonPicker:
@@ -132,7 +132,13 @@ class PokemonPicker:
             return
         self.value.update(file=info["file"], summary=builder.summary(info), legal=info["legal"],
                           encounter=info["encounter"], moves=info["moves"],
-                          report="" if info["legal"] else info["report"])
+                          report="" if info["legal"] else info["report"],
+                          species=info["species_id"], shiny=info["shiny"])
+        if self.species.options:
+            self.species.value = str(info["species_id"])
+        self.shiny.value = info["shiny"]
+        self.sprite.show(info["species_id"], info["shiny"], update=False)
+        self.options.species_changed()
         self.on_change(dict(self.value))
         self._show_result()
         self.control.update()

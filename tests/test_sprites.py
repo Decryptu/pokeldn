@@ -152,3 +152,71 @@ def test_clear_empties_the_cache(host, tmp_path):
     cache.get(25)
     cache.get(26)
     assert cache.clear() == 2 and cache.cached(25) is None
+
+
+def _figure(bits: int):
+    """96x96 values: 0 outside the box (13, 20)-(71, 89), noise inside, its four edges touched."""
+    import random
+    rng = random.Random(bits)
+    top = (1 << bits) - 1
+    grid = [[0] * 96 for _ in range(96)]
+    for y in range(20, 89):
+        for x in range(13, 71):
+            if rng.random() < 0.6:
+                grid[y][x] = rng.randint(1, top)
+    for x, y in ((13, 50), (70, 51), (40, 20), (41, 88)):
+        grid[y][x] = top
+    return grid
+
+
+@pytest.mark.parametrize("mode, bits", [("RGBA", 8), ("LA", 8), ("RGB", 8), ("L", 8),
+                                        ("P", 8), ("P", 4), ("P", 2), ("P", 1)])
+def test_bounds_matches_pillow_on_every_colour_type_and_palette_depth(mode, bits):
+    Image = pytest.importorskip("PIL.Image")
+    import io
+    grid = _figure(bits)
+    image = Image.new(mode, (96, 96))
+    colour = {"RGBA": lambda v: (v, 255 - v, v // 2, 255 if v else 0), "LA": lambda v: (v, 255 if v else 0),
+              "RGB": lambda v: (v, 255 - v, v // 2) if v else (0, 255, 0), "L": lambda v: v, "P": lambda v: v}[mode]
+    image.putdata([colour(v) for row in grid for v in row])
+    options = {"RGB": {"transparency": (0, 255, 0)}, "L": {"transparency": 0}, "P": {"transparency": 0, "bits": bits}}
+    if mode == "P":
+        image.putpalette([c for i in range(1 << bits) for c in (i, 255 - i, i)])
+    out = io.BytesIO()
+    image.save(out, "PNG", **options.get(mode, {}))
+    data = out.getvalue()
+    assert data[24] == bits                         # the IHDR bit depth this case is about
+    assert sprites.bounds(data) == Image.open(io.BytesIO(data)).convert("RGBA").getbbox() == (13, 20, 71, 89)
+
+
+@pytest.mark.parametrize("kind", range(5))
+def test_bounds_undoes_each_scanline_filter(kind):
+    """Each row stored with one PNG filter (section 9.2); Pillow reads the same file as the reference."""
+    Image = pytest.importorskip("PIL.Image")
+    import io
+    grid = _figure(8)
+    rows = [bytes(v for value in row for v in ((value, value, 255 - value, 255) if value else (0, 0, 0, 0)))
+            for row in grid]
+    raw, previous = b"", bytes(len(rows[0]))
+    for line in rows:
+        out = bytearray()
+        for i, x in enumerate(line):
+            a, b, c = (line[i - 4] if i >= 4 else 0), previous[i], (previous[i - 4] if i >= 4 else 0)
+            p = a + b - c
+            paeth = a if abs(p - a) <= abs(p - b) and abs(p - a) <= abs(p - c) else b if abs(p - b) <= abs(p - c) else c
+            out.append((x - (0, a, b, (a + b) // 2, paeth)[kind]) & 0xFF)
+        raw += bytes([kind]) + out
+        previous = line
+
+    def chunk(name: bytes, body: bytes) -> bytes:
+        return struct.pack(">I", len(body)) + name + body + struct.pack(">I", zlib.crc32(name + body))
+    data = (b"\x89PNG\r\n\x1a\n" + chunk(b"IHDR", struct.pack(">IIBBBBB", 96, 96, 8, 6, 0, 0, 0))
+            + chunk(b"IDAT", zlib.compress(raw)) + chunk(b"IEND", b""))
+    assert Image.open(io.BytesIO(data)).convert("RGBA").getbbox() == (13, 20, 71, 89)
+    assert sprites.bounds(data) == (13, 20, 71, 89)
+
+
+@pytest.mark.parametrize("data", [b"", b"\x89PNG\r\n\x1a\n", png()[:40], png()[:33] + png()[-12:]])
+def test_bounds_of_a_broken_png_is_none(data):
+    assert sprites.bounds(png()) == (0, 0, 1, 1)
+    assert sprites.bounds(data) is None

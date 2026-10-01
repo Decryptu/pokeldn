@@ -382,7 +382,7 @@ def main():
         except ValueError as exc:
             print(f"[sv] {ip}: offered {len(body)} bytes that do not read as a record: {exc}")
         if args.offer_out:
-            path = args.offer_out if n == 1 else f"{args.offer_out}.{n}"
+            path = pokemon_service.trade_path(args.offer_out, n)
             pokemon_service.save_received("sv", path, body)
             print(f"[sv] {ip}: offer written to {path}")
 

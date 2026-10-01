@@ -774,7 +774,8 @@ A record rebuilt from 344 zero bytes and the fields `read` reports comes out byt
 (`tests/test_sv_pokemon.py`). Species is the internal index, which parts from the National Dex at
 917 [`PKHeX.Core/PKM/Util/Conversion/SpeciesConverter.cs:92`]. A wrong block order survives the
 checksum; a record reading as a coherent Pokemon pins it. `bin/sv_host.py` prints both offers,
-`--offer-out FILE` writes the console's, and `--trade-offer` takes a 344-byte record (plain or
+`--offer-out FILE` writes the console's (offer N after the first to `FILE` with `-N` before the
+extension), and `--trade-offer` takes a 344-byte record (plain or
 encrypted), the 348-byte body or the 352-byte message.
 
 ### A record composed here

@@ -217,3 +217,41 @@ def test_the_released_firmware_lands_only_when_every_image_matches_its_checksum(
     finally:
         server.shutdown()
         server.server_close()
+
+
+def test_a_pokemon_file_shows_its_own_species_and_shininess(monkeypatch):
+    import asyncio
+    monkeypatch.setattr(pokemon.builder.SERVICE, "species", lambda game: [{"id": 25, "name": "Pikachu"}])
+    monkeypatch.setattr(pokemon.builder.SERVICE, "import_file", lambda game, path: {
+        "file": path, "species": "Charizard", "species_id": 6, "level": 50, "shiny": True, "legal": True,
+        "encounter": "", "moves": [], "report": ""})
+
+    async def pick_files(**_):
+        return [SimpleNamespace(path="charizard.pk8")]
+    app = SimpleNamespace(settings=SimpleNamespace(sprites=False), ui=lambda fn: None,
+                          picker=SimpleNamespace(pick_files=pick_files))
+    saved = []
+    picker = pokemon.PokemonPicker(app, "swsh", {"species": 25}, saved.append)
+    picker.species.options = [object()]
+    picker.control = SimpleNamespace(update=lambda: None)
+    shown = []
+    picker.sprite.show = lambda species, shiny, update=True: shown.append((species, shiny))
+    asyncio.run(picker._use_file(None))
+    assert shown == [(6, True)]
+    assert (saved[-1]["species"], saved[-1]["shiny"], picker.species.value, picker.shiny.value) == (6, True, "6", True)
+
+
+def test_a_worker_answering_after_its_picker_left_the_page_is_dropped():
+    """Picking another tool before the species list loads replaces the picker the worker answers."""
+    import asyncio
+    import flet as ft
+    from gui.views.widgets import on_ui
+    ran = []
+
+    def run_task(task):
+        asyncio.run(task())
+    page = SimpleNamespace(run_task=run_task)
+    on_ui(page, lambda: (ran.append(1), ft.Column().update()))
+    assert ran == [1]
+    with pytest.raises(RuntimeError):
+        on_ui(page, lambda: (_ for _ in ()).throw(RuntimeError("another failure")))

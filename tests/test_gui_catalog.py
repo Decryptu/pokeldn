@@ -84,3 +84,36 @@ def test_every_console_code_action_the_app_offers_is_accepted_by_the_host(action
     parser = frlg_mg_host.build_parser()
     args = parser.parse_args(build(tool, {"--buffer-script": action}, {}, Settings()))
     frlg_mg_host.build_run_config(parser, args)
+
+
+SAVING = [(game, tool) for game in GAMES for tool in game.tools
+          if not tool.unavailable and any("{received}" in arg and not arg.endswith(".bin") for arg in tool.fixed)]
+
+
+@pytest.mark.parametrize("game, tool", SAVING, ids=[tool.key for _, tool in SAVING])
+def test_the_session_panel_finds_every_file_a_run_saves_and_none_from_another_run(game, tool, tmp_path):
+    """A launcher names trade n with pokemon.trade_path or trade_runtime.received_paths, or writes
+    under the prefix or folder its {received} argument names."""
+    import os
+    from types import SimpleNamespace
+    from pokeldn.app.received import POKEMON, session_files
+    from pokeldn.frlg.link.trade_runtime import received_paths
+    from pokeldn.pokemon import EXTENSIONS, trade_path
+
+    def saved(stamp: str) -> list[str]:
+        args = build(tool, {}, {}, Settings(received=str(tmp_path)), stamp=stamp)
+        paths = []
+        for out in (a for a in args if a.startswith(str(tmp_path))):
+            if POKEMON.search(out):
+                mons = [SimpleNamespace(species_name="Mr. Mime", species=122)] * 2
+                paths += [trade_path(out, 1), trade_path(out, 2), *received_paths(mons, out, "pk3", 2)]
+            elif not out.endswith(".bin"):
+                paths += [f"{out}_1.{EXTENSIONS[game.key]}", os.path.join(out, f"0a1b2c3d_1.{EXTENSIONS[game.key]}")]
+        for path in paths:
+            os.makedirs(os.path.dirname(path), exist_ok=True)
+            open(path, "wb").close()
+        return paths
+
+    ours = saved("20261001-120000")
+    saved("20261001-115959")
+    assert ours and sorted(session_files(str(tmp_path), "20261001-120000")) == sorted(ours)

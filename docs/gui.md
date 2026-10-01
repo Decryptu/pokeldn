@@ -15,13 +15,29 @@ or C3 through native USB Serial/JTAG. C6 and S2 chips are refused.
 
 ## Pokemon sprites
 
-The Pokemon picker shows the species' pixel-art sprite, and the shiny sprite when Shiny is on. The
-sprites are the 96x96 PNGs behind `sprites.front_default` and `sprites.front_shiny` of
+The sprites are the 96x96 PNGs behind `sprites.front_default` and `sprites.front_shiny` of
 `https://pokeapi.co/api/v2/pokemon/{id}`, read from `raw.githubusercontent.com/PokeAPI/sprites`
 (`sprites/pokemon/{id}.png`, `sprites/pokemon/shiny/{id}.png`). The JSON is not fetched: it is 300 KB
-per species, and the sprite path is fixed by the id. They are drawn at 96 px with nearest-neighbour
-filtering, never scaled to a non-integer size. Twelve National Dex numbers sampled from 1 to 1025 all have both sprites; 1026 returns 404.
-When a shiny sprite is missing, the picker shows the normal one.
+per species, and the sprite path is fixed by the id. Twelve National Dex numbers sampled from 1 to 1025
+all have both sprites; 1026 returns 404. When a shiny sprite is missing, the normal one is shown.
+
+| where | size |
+|---|---|
+| the trade picker, beside Species, shiny when Shiny is on | 96 px, the whole canvas |
+| the card of a Species field (Sword/Shield Mystery Gift), shiny when the tool's Shiny switch is on | 46 px tile |
+| Session panel, Offering: each queued offer in trade order, its summary as a tooltip | 46 px tile |
+| Session panel, Received: each Pokemon file the run saved, read by PKHeX, with its summary | 46 px tile |
+
+Sprites are drawn with nearest-neighbour filtering at 1:1, never at a size in between. A 46 px tile
+crops the canvas around the visible pixels (`pokeldn.app.sprites.bounds`) and draws them at 1:1 when
+they fit in 46 px, else at 1:2. Of 33 sprites sampled, the visible box ran from 36x29 (Eevee) to the
+full 96 px width (Lugia, Reshiram). At 1:2 a sprite lands on whole device pixels of a 2x display.
+
+The Received list matches files by the run's `{stamp}`, which every tool's output path carries; a
+launcher adds `-N` for trade N (`pokeldn.pokemon.trade_path`) or writes into a folder or prefix so
+named. A file still growing is read again on the next second. What the list holds is what the
+launcher wrote: some launchers write the console's offer when the console picks it, before the trade
+completes.
 
 The cache is `sprites/` in the app's data folder, one file per sprite under `normal/` and `shiny/`.
 A sprite downloads on first use and is read from disk afterwards, with no network access. Rules:

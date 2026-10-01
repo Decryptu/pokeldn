@@ -1126,8 +1126,7 @@ async def run_session(args, keys, host_ip, host_mac, our_ip, our_mac, record):
                             offers_seen += 1
                             print(f"[sv] {host_ip}: offers {describe_offer(body)}")
                             if args.offer_out:
-                                path = (args.offer_out if offers_seen == 1
-                                        else f"{args.offer_out}.{offers_seen}")
+                                path = pokemon_service.trade_path(args.offer_out, offers_seen)
                                 pokemon_service.save_received("sv", path, body)
                                 print(f"[sv] the host's offer written to {path}")
                         if stage.trades > trades_done:

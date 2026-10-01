@@ -7,12 +7,14 @@ import flet as ft
 
 from gui import board
 from gui.app import keys_found
-from pokeldn.app import command, runner
+from pokeldn import pokemon as builder
+from pokeldn.app import command, received, runner
 from gui import theme as t
 from pokeldn.app.catalog import GAMES, Field, Game, Tool
 from pokeldn.app.introspect import flags_of
 from pokeldn.app.paths import SESSION
 from gui.views.pokemon import NAME_LISTS, NamePicker, OfferQueue, PokemonPicker
+from gui.views.sprites import MINI, Sprite
 from gui.views.widgets import CodeBlock, Log, PathField, open_folder
 
 TOOL_ICONS = {"Trade": "arrows-horizontal", "Mystery Gift": "gift",
@@ -42,6 +44,7 @@ class GamesView:
         self.tool: Tool = self.game.tools[0]
         self.tab = "basic"
         self.search = ""
+        self.sprites: dict[str, Sprite] = {}   # a species field's key -> the sprite on its card
         self.visible = False
         self.tree = ft.ListView(spacing=2, padding=ft.Padding(8, 8, 8, 8), expand=True)
         self.summary = t.text("", 12, t.MUTED)
@@ -164,22 +167,38 @@ class GamesView:
             else:
                 cards.append(("field", field))
         out = []
+        self.sprites = {}
         for kind, item in cards:
             if kind == "field" and item.kind == "switch":
                 out.append(t.card(item.label, None, item.help, trailing=self.input(item)))
             elif kind == "field":
-                out.append(t.card(item.label, self.input(item), self.description(item)))
+                out.append(t.card(item.label, self.input(item), self.description(item),
+                                  trailing=self.species_sprite([item])))
             else:
                 fields = groups[item]
                 per_row = 2 if len(fields) > 3 else len(fields)
+                sprite = self.species_sprite(fields)
                 rows = [ft.Row([
                     t.labeled_control(f.label, self.input(f, grouped=True), expand=True)
                     for f in fields[i:i + per_row]], spacing=10) for i in range(0, len(fields), per_row)]
                 out.append(t.card(item, ft.Column(rows, spacing=10),
-                                  " ".join(f.help for f in fields if f.help)))
+                                  " ".join(f.help for f in fields if f.help), trailing=sprite))
         if not self.tool.fields:
             out.append(t.text("Nothing to fill in.", 13, t.MUTED))
         return out
+
+    def shiny(self) -> bool:
+        return any(bool(command.value_of(f, self.values)) for f in self.tool.fields
+                   if f.shiny and command.applies(f, self.tool, self.values))
+
+    def species_sprite(self, fields: list[Field]) -> ft.Control | None:
+        field = next((f for f in fields if f.kind == "species"), None)
+        if field is None:
+            return None
+        value = str(command.value_of(field, self.values) or "")
+        sprite = Sprite(self.app, int(value) if value.isdigit() else 0, self.shiny(), size=MINI)
+        self.sprites[field.key] = sprite
+        return sprite.control
 
     def description(self, field: Field) -> str:
         selected = command.value_of(field, self.values)
@@ -195,8 +214,12 @@ class GamesView:
                               on_select=lambda e: self.set_value(
                                   field, "" if e.control.value == EMPTY else e.control.value, rebuild=True))
         if field.kind in NAME_LISTS:
-            return NamePicker(self.app, self.game.key, field.kind, value,
-                              lambda v: self.set_value(field, v), optional=not field.default).control
+            def picked(v):
+                self.set_value(field, v)
+                if field.key in self.sprites:
+                    self.sprites[field.key].show(int(v) if str(v).isdigit() else 0, self.shiny())
+            return NamePicker(self.app, self.game.key, field.kind, value, picked,
+                              optional=not field.default).control
         if field.kind == "pokemon" and field.queue > 1:
             return OfferQueue(self.app, self.game.key, value, field.queue, lambda v: self.set_value(field, v),
                               version=str(self.values.get("--version", ""))).control
@@ -315,6 +338,20 @@ class GamesView:
             bgcolor=t.CARD, border=ft.Border.all(1, t.BORDER), border_radius=10, padding=12)
 
 
+def pokemon_row(app, species: int, shiny: bool, summary: str, tip: str = "") -> ft.Control:
+    """A small sprite, then pokeldn.pokemon.summary on two lines: species, level and shininess, then the rest."""
+    parts = summary.split(" · ")
+    head = 3 if len(parts) > 2 and parts[2] == "shiny" else 2
+    lines = [t.text(" · ".join(parts[:head]), 12.5, weight=ft.FontWeight.W_600, max_lines=1,
+                    overflow=ft.TextOverflow.ELLIPSIS)]
+    if parts[head:]:
+        lines.append(t.text(" · ".join(parts[head:]), 11.5, t.MUTED, max_lines=1, overflow=ft.TextOverflow.ELLIPSIS))
+    return ft.Container(ft.Row([Sprite(app, species, shiny, size=MINI).control,
+                                ft.Column(lines, spacing=0, expand=True)],
+                               spacing=10, vertical_alignment=ft.CrossAxisAlignment.CENTER),
+                        tooltip=tip or None)
+
+
 class SessionPanel:
     def __init__(self, app, games: GamesView):
         self.app, self.games = app, games
@@ -328,6 +365,11 @@ class SessionPanel:
         self.status = ft.Container(self.status_label, width=24, height=24,
                                    alignment=ft.Alignment.CENTER, tooltip="Idle")
         self.board_line = ft.Container()   # the checklist before Start, or one line once all is set
+        self.offering = ft.Container(visible=False)
+        self.offered = None                # what the offering card shows, to rebuild it only on a change
+        self.received = ft.Container(visible=False)
+        self.run = None                    # (process, stamp, game) of the last run started
+        self.seen: dict[str, tuple] = {}   # a received file -> (size, mtime, what PKHeX read, or None)
         self.steps = ft.Container()
         self.action = ft.Container()
         command_block = CodeBlock(app)
@@ -343,7 +385,8 @@ class SessionPanel:
         self.control = t.panel(ft.Column([
             t.panel_header("Session", self.status),
             # The checklist and the steps scroll; Start stays in view below them.
-            ft.Container(t.fade(ft.Column([self.board_line, self.steps], spacing=14, scroll=ft.ScrollMode.AUTO)),
+            ft.Container(t.fade(ft.Column([self.board_line, self.offering, self.received, self.steps], spacing=14,
+                                          scroll=ft.ScrollMode.AUTO)),
                          padding=ft.Padding(16, 16, 16, 0), expand=3),
             ft.Container(ft.Column([
                 self.action,
@@ -376,6 +419,7 @@ class SessionPanel:
         if tool is not self.tool and not (self.app.process and self.app.process.running):
             self.log.clear()
             self.set_status("Ready", t.MUTED)
+            self.seen, self.received.content, self.received.visible = {}, None, False
         self.tool = tool
         self.steps.content = t.card("On the console", t.step_list(list(tool.steps)))
         self.refresh(update=False)
@@ -430,6 +474,7 @@ class SessionPanel:
             action = t.button("Start", self._start, "play", expand=True,
                               disabled=self.app.busy or blocked or bool(tool.unavailable))
         self.action.content = ft.Row([action])
+        self.render_offering()
         try:
             self.command_text.value = shlex.join([tool.script, *command.build(
                 tool, self.games.values, self.games.extra, s, stamp="STAMP")])
@@ -437,6 +482,69 @@ class SessionPanel:
             self.command_text.value = f"{error}"
         if update:
             self.control.update()
+
+    def render_offering(self) -> None:
+        entries = [entry for field in self.tool.fields
+                   if field.kind == "pokemon" and command.applies(field, self.tool, self.games.values)
+                   for entry in command.offers(command.value_of(field, self.games.values))[:field.queue]
+                   if entry.get("file")]
+        shown = [(int(e.get("species") or 0), bool(e.get("shiny")), e.get("summary", "")) for e in entries]
+        if shown == self.offered:
+            return
+        self.offered = shown
+        self.offering.visible = bool(shown)
+        if not shown:
+            self.offering.content = None
+        elif len(shown) == 1:
+            species, shiny, summary = shown[0]
+            self.offering.content = t.card("Offering", pokemon_row(self.app, species, shiny, summary))
+        else:
+            tiles = []
+            for n, (species, shiny, summary) in enumerate(shown, start=1):
+                sprite = Sprite(self.app, species, shiny, size=MINI)
+                sprite.frame.tooltip = f"Trade {n}: {summary}"
+                tiles.append(sprite.control)
+            self.offering.content = t.card("Offering", ft.Row(tiles, spacing=6, run_spacing=6, wrap=True),
+                                           trailing=t.text(f"{len(shown)} trades, in order", 12, t.MUTED))
+
+    def scan_received(self, run: tuple) -> None:
+        """Read each Pokemon file the run has saved so far; a file still growing is read again."""
+        process, stamp, game = run
+        changed = False
+        for path in received.session_files(self.app.settings.received, stamp):
+            try:
+                size, mtime = os.path.getsize(path), os.path.getmtime(path)
+            except OSError:
+                continue
+            if path in self.seen and self.seen[path][:2] == (size, mtime):
+                continue
+            try:
+                info = builder.SERVICE.check(game, path)
+            except Exception:
+                info = None
+            if self.run is not run:
+                return
+            self.seen[path] = (size, mtime, info)
+            changed = True
+        if changed:
+            self.app.ui(lambda: self.render_received(process))
+
+    def render_received(self, process) -> None:
+        if self.run is None or self.run[0] is not process:
+            return
+        rows = []
+        for path, (_, _, info) in list(self.seen.items()):
+            name = os.path.basename(path)
+            if info is None:
+                rows.append(pokemon_row(self.app, 0, False, f"Not read by PKHeX · {name}", path))
+            else:
+                rows.append(pokemon_row(self.app, int(info.get("species_id") or 0), bool(info.get("shiny")),
+                                        builder.summary(info), path))
+        self.received.visible = True
+        self.received.content = t.card("Received", ft.Column(rows, spacing=8),
+                                       trailing=t.icon_button("folder", self._open_received,
+                                                              "Open the Received folder"))
+        self.received.update()
 
     def _toggle_command(self, e) -> None:
         self.command_box.visible = not self.command_box.visible
@@ -470,21 +578,26 @@ class SessionPanel:
             os.makedirs(folder, exist_ok=True)
         trace = f"captures/{tool.key}-{stamp}_esp32.trace" if s.board_trace else None
         self.log.add(f"[app] {tool.name} · {self.games.game.name} · radio {port}")
+        self.seen, self.received.content, self.received.visible = {}, None, False
         self.stopping = False
         self.app.process_label = tool.name
         self.app.process = runner.Process(["--run", tool.script, *args], str(SESSION),
                                           runner.base_env(s, port, trace), self.log.add, self._exited)
+        self.run = (self.app.process, stamp, self.games.game.key)
         threading.Thread(target=self._tick, daemon=True).start()
         self.refresh()
 
     def _tick(self) -> None:
-        process = self.app.process
+        run = self.run
+        process = run[0]
         while process.running:
             elapsed = int(time.monotonic() - process.started)
             self.app.ui(lambda e=elapsed: (self.set_status(f"Running {e // 60:02d}:{e % 60:02d}", t.BLUE),
                                            self.status.update())
                         if self.app.process is process and process.running else None)
+            self.scan_received(run)
             time.sleep(1)
+        self.scan_received(run)   # a launcher may write its last file as it closes
 
     def _stop(self, e) -> None:
         self.stopping = True
