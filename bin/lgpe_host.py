@@ -23,7 +23,6 @@ from pokeldn.host_support import open_output
 from pokeldn import pokemon as pokemon_service
 from pokeldn.ldn import clone, pia3, pia4, reliable3, station4, station9, sync_clock
 from pokeldn.lgpe import pb7
-from pokeldn.lgpe.trade import fresh_offer
 from pokeldn.lgpe.trade import (TRADE_IN_PROGRESS, _answer_offer, _send_step,
                                 _warn_if_mid_trade)
 from pokeldn.ldn import local_protocol as lp
@@ -104,13 +103,14 @@ def build_parser():
                     help="the advertised scene id, in place of the one --code gives")
     ap.add_argument("--received", help="write the peer's offered PB7 here")
     ap.add_argument("--fresh-pid", action="store_true",
-                    help="offer the --offer structure under a new PID and encryption constant, "
+                    help="offer every --offer and --next-offer structure under a new PID and encryption constant, "
                          "shiny state kept, so a save that took it before takes it again")
     ap.add_argument("--offer", metavar="echo|PATH",
                     help="answer the console's offer with this 232-byte box structure (echo: "
                          "its own back), and its commits with commits")
-    ap.add_argument("--next-offer", metavar="PATH",
-                    help="232-byte box structure for a second trade in the same session")
+    ap.add_argument("--next-offer", metavar="PATH", action="append", default=[],
+                    help="232-byte box structure for the next trade in the same session; "
+                         "repeatable, one per trade after the first")
     ap.add_argument("--no-type4-data", dest="type4_data", action="store_false",
                     help="publish no clone data on clone types 4 and 1. Without it the console "
                          "never passes the gate at 0x11b080 and stays on its search screen")
@@ -154,19 +154,15 @@ def console_channel(keys_path, phy, scene, seconds):
 
 def main(argv=None):
     args = build_parser().parse_args(argv)
+    fresh, args.fresh_pid = args.fresh_pid, False
     if args.offer and args.offer != "echo":
-        args.offer = pokemon_service.prepare_file("lgpe", args.offer, fresh=getattr(args, "fresh_pid", False))
-        if hasattr(args, "fresh_pid"):
-            args.fresh_pid = False
-    if args.next_offer:
-        args.next_offer = pokemon_service.prepare_file("lgpe", args.next_offer)
-    fresh_offer(args, "[lgh]")
-    if args.next_offer:
-        with open(args.next_offer, "rb") as fh:
-            next_body = fh.read()
-        if not pb7.valid(next_body):
-            print(f"[lgh] next offer is not a valid {pb7.BOX_SIZE}-byte box structure")
-            return 2
+        args.offer = pokemon_service.prepare_file("lgpe", args.offer, fresh=fresh)
+    args.next_offer = [pokemon_service.prepare_file("lgpe", path, fresh=fresh) for path in args.next_offer]
+    for path in args.next_offer:
+        with open(path, "rb") as fh:
+            if not pb7.valid(fh.read()):
+                print(f"[lgh] next offer {path} is not a valid {pb7.BOX_SIZE}-byte box structure")
+                return 2
     if needs_root():
         print("[lgh] must run as root (LDN needs the raw radio)"); return 1
     phy = find_ap_phy(log=print) if args.phy == "auto" else args.phy
@@ -261,6 +257,7 @@ class Session:
         self.window.clock = time.monotonic
         self.trade = {"window": self.window, "step": 1}
         self.round = 0
+        self.received = args.received
         self.payloads = []
         self.clone = None
         # Each step is timed 30 ms off the console's answer to the last (docs/lgpe_session.md).
@@ -510,7 +507,8 @@ class Session:
 
     def next_round(self, result_step):
         self.round += 1
-        self.args.offer = self.args.next_offer
+        self.args.offer = self.args.next_offer[self.round - 1]
+        self.args.received = pokemon_service.trade_path(self.received, self.round + 1)
         self.trade["answered_step"] = result_step
         self.commit_clone = None
         self.committed = self.peer_committed = self.committed_2 = False
@@ -691,7 +689,7 @@ class Session:
             TRADE_IN_PROGRESS["offer"] = TRADE_IN_PROGRESS["commit"] = False
             print("[lgh] game: *** THE RESULT *** the trade has gone through on the console")
             self.send_result()
-            if self.round == 0 and self.args.next_offer:
+            if self.round < len(self.args.next_offer):
                 self.next_round(msg["step"])
 
     def new_clone(self):

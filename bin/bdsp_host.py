@@ -20,7 +20,7 @@ sys.path.insert(0, PROJECT_ROOT)
 
 import pathlib
 
-from pokeldn.host_support import open_output
+from pokeldn.host_support import open_output, write_file
 from pokeldn import pokemon as pokemon_service
 from pokeldn.bdsp import pokemon, room
 from pokeldn.bdsp.host import (APP_VERSION, MAX_PARTICIPANTS, SCENE_UNION_ROOM,
@@ -65,15 +65,16 @@ def build_parser():
     ap.add_argument("--fresh-pid", action="store_true",
                     help="offer it under a new PID and encryption constant, shiny state kept, so a "
                          "save that took it before takes it again")
-    ap.add_argument("--offer", metavar="PB8",
+    ap.add_argument("--offer", metavar="PB8", action="append", default=[],
                     help="the Pokemon we trade: a complete, legal, encrypted 328-byte PB8 whose PID "
-                         "the console's save does not already hold")
+                         "the console's save does not already hold; repeatable, one per trade in "
+                         "order, the last offered again after the list")
     ap.add_argument("--complete-trade", action="store_true",
                     help="answer the ready-ok, after which the console writes its save")
     ap.add_argument("--trainer", default="PkCamp:41234:23117", metavar="NAME:TID:SID",
                     help="our trade trainer record")
     ap.add_argument("--save-theirs", default=None, metavar="PREFIX",
-                    help="write each Pokemon the console offers to PREFIX_N.pb8")
+                    help="write the Pokemon the console offers in trade N to PREFIX_N.pb8")
     ap.add_argument("--approach-delay", type=float, default=3.0,
                     help="seconds after the player's trade emote before our character walks up")
     ap.add_argument("--phy", default="auto")
@@ -85,10 +86,7 @@ def build_parser():
 
 def main(argv=None):
     args = build_parser().parse_args(argv)
-    if args.offer and args.offer != "echo":
-        args.offer = pokemon_service.prepare_file("bdsp", args.offer, fresh=getattr(args, "fresh_pid", False))
-        if hasattr(args, "fresh_pid"):
-            args.fresh_pid = False
+    args.offer = [pokemon_service.prepare_file("bdsp", path, fresh=args.fresh_pid) for path in args.offer]
     if needs_root():
         print("[bh] needs the ESP32 board (POKELDN_RADIO) or root"); return 1
     phy = find_ap_phy(log=print) if args.phy == "auto" else args.phy
@@ -121,13 +119,10 @@ def main(argv=None):
         elif kw.get("rec") == "game_message":
             print(f"[bh] t={kw['t']:7.2f} game {kw['via']:10s} {kw['name']} {kw.get('fields') or ''}")
 
-    offer = None
-    if args.offer:
-        offer = pokemon.build_from(pathlib.Path(args.offer).read_bytes())
-        if args.fresh_pid:
-            offer = pokemon.fresh(offer)
+    offers = [pokemon.build_from(pathlib.Path(path).read_bytes()) for path in args.offer]
+    for n, offer in enumerate(offers, start=1):
         o = pokemon.read(offer)
-        print(f"[bh] offering species {o['species']} {o['nickname']!r} OT {o['ot_name']!r} "
+        print(f"[bh] trade {n} offers species {o['species']} {o['nickname']!r} OT {o['ot_name']!r} "
               f"pid {o['pid']:08x}")
     if args.complete_trade:
         print("[bh] *** --complete-trade: the console WRITES ITS SAVE and the Pokemon the player "
@@ -140,10 +135,10 @@ def main(argv=None):
         if prefix:
             write_file(f'{prefix}_{n}.pb8', raw)
 
-    partner = TradePartner(offer, tname, int(tid), int(sid), complete=args.complete_trade,
+    partner = TradePartner(offers or bytes(0), tname, int(tid), int(sid), complete=args.complete_trade,
                            approach_delay=args.approach_delay, state=args.state,
                            recruiting=args.recruiting, save_theirs=save_theirs, record=record)
-    on_game = partner.game if offer is not None else None
+    on_game = partner.game if offers else None
 
     host = HostTransport(app_data=adv.application_data, password=PASSPHRASE, nickname=args.name,
                          keys_path=keys_path, local_comm_id=COMM_ID, scene_id=args.scene_id,
@@ -166,7 +161,7 @@ def main(argv=None):
 
     session = HostSession(keys, adv, host.our_ip, host.our_mac, variable_id, name=args.name,
                           language=args.language, join=join, on_game=on_game,
-                          on_tick=partner.tick if offer is not None else None, record=record,
+                          on_tick=partner.tick if offers else None, record=record,
                           nonce_start=random.getrandbits(48))
     last_status = 0.0
     joins_seen = 0

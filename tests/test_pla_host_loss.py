@@ -91,7 +91,7 @@ def _data(messages):
     return out
 
 
-def run_host(monkeypatch, capsys, console_class, goal, drop=None):
+def run_host(monkeypatch, capsys, console_class, goal, drop=None, extra=()):
     """Run the host's main against `console_class` until `goal(console)` holds, plus SETTLE.
     `drop(port, payload)` loses the first matching host 0x7c message. -> .console, .log, .sent, .copies, .lost"""
     clock = Clock()
@@ -147,7 +147,7 @@ def run_host(monkeypatch, capsys, console_class, goal, drop=None):
         "pla_host.py", "--ip-host", "--our-ip", HOST_IP, "--seconds", str(SECONDS),
         "--session-update", "--sustain", "--clock", "--data-exchange", "--game-channel",
         "--trade-box", "--trade-box-ours", "--data-exchange-name", "HOST",
-        "--data-exchange-id", "11223344"])
+        "--data-exchange-id", "11223344", *extra])
     capsys.readouterr()
     assert pla_host.main() == 0
     run.log = capsys.readouterr().out
@@ -202,7 +202,7 @@ def test_one_lost_message_and_the_trade_still_completes(monkeypatch, capsys, los
     assert run.console.traded, lost
     assert run.console.received == _host_offer()
     assert sorted(run.console.delivered) == sorted(run.sent)
-    assert run.log.count("trade complete, the phase key closed") == 1
+    assert run.log.count("trade 1 complete, the phase key closed") == 1
     if lost == "nothing":
         assert "resend" not in run.log and "held behind" not in run.log
     elif run.lost is None:
@@ -245,8 +245,22 @@ def test_a_second_trade_in_the_same_session_completes(monkeypatch, capsys):
     assert run.console.trades == [_host_offer(), _host_offer()]
     assert sorted(run.console.delivered) == sorted(run.sent)
     assert run.log.count("trade step (confirming, 0500)") == 2
-    assert run.log.count("trade complete, the phase key closed") == 2
+    assert run.log.count("complete, the phase key closed") == 2
     assert [run.log.count(f"trade phase {p} as the host") for p in joiner.PHASES] == [2, 2, 2, 2]
+
+
+def test_each_trade_in_the_session_offers_the_next_record(monkeypatch, capsys, tmp_path):
+    """--trade-box-record repeated: the first trade gives the first record, the second the next."""
+    names = ["ONE", "TWO"]
+    extra = []
+    for name in names:
+        path = tmp_path / f"{name}.pa8"
+        path.write_bytes(pla_pokemon.encrypt(pla_pokemon.write(
+            pla_pokemon.decrypt(trade_box.REFERENCE_RECORD), nickname=name, is_nicknamed=1)))
+        extra += ["--trade-box-record", str(path)]
+    run = run_host(monkeypatch, capsys, TwoTrades, lambda c: len(c.trades) == 2, extra=extra)
+    assert [pla_pokemon.read(pla_pokemon.decrypt(r))["nickname"] for r in run.console.trades] == names
+    assert "trade 2 complete, the phase key closed" in run.log
 
 
 MAIN = os.path.join(ROOT, "scratchpad", "pla", "main_111.bin")      # Legends Arceus 1.1.1

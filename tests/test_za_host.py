@@ -102,19 +102,21 @@ class ScriptedJoiner:
         return out
 
 
-@pytest.mark.parametrize("cancel", [False, True])
-def test_a_whole_trade_against_a_scripted_joiner(monkeypatch, cancel):
+@pytest.mark.parametrize("cancel, queue", [(False, False), (True, False), (False, True)])
+def test_a_whole_trade_against_a_scripted_joiner(monkeypatch, cancel, queue):
     """Preview marked 1, pick marked 0 after the joiner's, every step answered; 0103 moves the round
-    on (0xc8dda0, 0x2dc52b4)."""
+    on (0xc8dda0, 0x2dc52b4). A queue's second trade previews and picks the next record."""
     board = esp32_sim.SimulatedBoard(esp32_sim.Air())
     radio = esp32.Radio(board.host_stream())
     monkeypatch.setenv("POKELDN_RADIO", "esp32:simulated")
     monkeypatch.setattr(esp32_wlan, "_radio", radio)
     offer = bytes.fromhex("0101b90300bc815801") + bytes(range(256)) + bytes(88) + b"\x01"
+    second = bytes.fromhex("0101b90300bc815801") + bytes(range(255, -1, -1)) + bytes(88) + b"\x01"
     host = za_host.HostSession(
         ssid=SSID, our_ip=HOST_IP, our_mac=HOST_MAC, guest_ip=JOINER_IP, code="00000000",
         identity=bytes.fromhex("1400") + bytes(104), identity_tail=bytes.fromhex("1403b9018269fb308f"),
-        selection=bytes.fromhex("0100") + bytes(1209), offer=offer, host_var=HOST_VAR,
+        selection=bytes.fromhex("0100") + bytes(1209), offer=[offer, second] if queue else offer,
+        host_var=HOST_VAR,
         clock=lambda: 0.0, renew_offer=lambda o: o[:9] + bytes([o[9] ^ 0xFF]) + o[10:])
     joiner = ScriptedJoiner(host)
     t = joiner.run(0.1, 0.0)
@@ -167,12 +169,29 @@ def test_a_whole_trade_against_a_scripted_joiner(monkeypatch, cancel):
     radio.close()
     assert board.led_looks == [bytes.fromhex("06ff2003b80b")]   # ramp-up, peak 255, 800 ms, 3000 ms
 
-    # A retail Z-A returning to its box in the same seat draws our offer again, renewed.
+    if queue:
+        t = joiner.run(t + za_host.PREVIEW_DELAY, t)
+        offers = [x[2] for x in joiner.game_heard() if x[2][:2] == b"\x01\x01"]
+        assert offers[-1] == second[:-1] + bytes([za_host.OFFER_PREVIEW])
+        joiner.game(offer[:-1] + b"\x00", t)
+        t = joiner.run(t + 2.0, t)
+        offers = [x[2] for x in joiner.game_heard() if x[2][:2] == b"\x01\x01"]
+        assert offers[-1] == second[:-1] + bytes([za_host.OFFER_PICK])
+        joiner.game(bytes.fromhex("0102b90100"), t)
+        t = joiner.run(t + 3.0, t)
+        joiner.game(bytes.fromhex("0104b90100"), t)
+        for step in ("03", "06", "0b", "0e"):
+            joiner.game(bytes.fromhex("0200b901" + step), t)
+            t = joiner.run(t + 0.2, t)
+        assert host.trades == 2
+        offer = second
+
+    # A retail Z-A returning to its box in the same seat draws our last offer again, renewed.
     joiner.game(offer[:-1] + b"\x00", t)
     t = joiner.run(t + 2.0, t)
     offers = [x[2] for x in joiner.game_heard() if x[2][:2] == b"\x01\x01"]
     assert offers[-1][-1] == za_host.OFFER_PICK and offers[-1][9] == offer[9] ^ 0xFF
-    assert host.trades == 1
+    assert host.trades == (2 if queue else 1)
 
 
 def test_the_joiner_answers_the_hosts_pick_and_not_its_cursor(tmp_path):

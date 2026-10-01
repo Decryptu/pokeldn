@@ -22,6 +22,9 @@ class Field:
     template: str = ""            # the value is passed as template.format(value), e.g. "ball={}"
     limits: tuple[tuple[str, int, str], ...] = ()   # (NAME, highest, why) for NAME=VALUE text
     choice_help: tuple[tuple[str, str], ...] = ()
+    queue: int = 1                # a pokemon field: how many trades one session can carry
+    more: str = ""                # a pokemon field: the flag for the second and later offers
+    count: str = ""               # a pokemon field: the flag that carries how many there are
 
     @property
     def key(self) -> str:
@@ -63,9 +66,21 @@ FRESH_PID = Field("--fresh-pid", "New PID each run", "switch", default=False,
                        "already received it takes it again.")
 
 
-def offer(flag: str = "", required: bool = True, help: str = "") -> Field:
+QUEUE = 6   # a party's worth
+
+
+def offer(flag: str = "", required: bool = True, help: str = "", queue: int = 1, more: str = "",
+          count: str = "") -> Field:
     return Field(flag, "Pokemon to offer", "pokemon", required=required,
-                 help=help or "Pick a species; PKHeX builds a legal one for this game.")
+                 help=help or "Pick a species; PKHeX builds a legal one for this game.",
+                 queue=queue, more=more, count=count)
+
+
+def queued(flag: str = "", help: str = "", **kw) -> Field:
+    """An offer field whose session trades each entry in turn, on one seat."""
+    help = help or "Pick a species; PKHeX builds a legal one for this game."
+    return offer(flag, help=f"{help} Add a trade to queue more: one session trades them in order.",
+                 queue=QUEUE, **kw)
 
 
 CARD = ("--news", "")
@@ -79,8 +94,9 @@ FRLG = Game("frlg", "FireRed & LeafGreen", "FRLG", "frlg.md", (
          ("Start the host and wait for 'Hosting Direct Corner' in the log.",
           f"{FRLG_PATH}, Join Group, then pick PkCamp.",
           "Choose the Pokemon to trade and confirm.",
-          "Back on the trade menu after the save, wait for the host's prompt, then Cancel and Yes."),
-         (offer(),
+          "With several queued, trade again after each save; the host offers the next one.",
+          "Back on the trade menu after the last save, wait for the host's prompt, then Cancel and Yes."),
+         (queued(count="--trades"),
           Field("--version", "Version", "choice", default="firered", choices=VERSIONS, group="Console"),
           Field("--language", "Language", "choice", default="english", choices=LANGUAGES, group="Console"),
           Field("--channel", "Channel", "choice", default="11", choices=CHANNELS)),
@@ -90,8 +106,9 @@ FRLG = Game("frlg", "FireRed & LeafGreen", "FRLG", "frlg.md", (
          "Join a trade group the console leads.",
          ("Start the joiner first: it scans until the console appears.",
           f"{FRLG_PATH}, Become Leader.",
-          "Accept PkCamp when it appears, then choose and confirm."),
-         (offer(),),
+          "Accept PkCamp when it appears, then choose and confirm.",
+          "With several queued, trade again after each save; the joiner offers the next one."),
+         (queued(count="--trades"),),
          fixed=("--live", "--phy", "auto", "--slot", "0", "--out", "{received}/frlg-{stamp}.pk3"),
          doc="frlg_link.md"),
     Tool("frlg-gift", "Mystery Gift", "bin/frlg_mg_host.py",
@@ -156,11 +173,11 @@ LGPE = Game("lgpe", "Let's Go Pikachu & Eevee", "LGPE", "lgpe.md", (
     Tool("lgpe-host", "Trade (Host)", "bin/lgpe_host.py",
          "Host a trade under a link code; the console joins.",
          ("Start the host first.", LGPE_STEPS, "Choose a Pokemon and confirm."),
-         (offer("--offer"),
+         (queued("--offer", more="--next-offer"),
           Field("--code", "Link code", default="pikachu,pikachu,pikachu",
                 help="Three picker names or indices 0 to 9, comma-separated."),
           FRESH_PID,
-          Field("--seconds", "Seconds", "number", default="600")),
+          Field("--seconds", "Seconds", "number", default="1200")),
          fixed=("--first", "echo", "--received", "{received}/lgpe-{stamp}.pb7"), doc="lgpe.md"),
     Tool("lgpe-join", "Trade (Join)", "bin/lgpe_join.py",
          "Join the console's trade search.",
@@ -232,7 +249,7 @@ BDSP = Game("bdsp", "Brilliant Diamond & Shining Pearl", "BDSP", "bdsp.md", (
           "Start the joiner. Wait for the character to appear and finish walking.",
           "Y, Communicate, Trade Pokemon, and wait: the greeting comes up on its own.",
           "Between runs, leave and re-enter the room."),
-         (offer("--trade-template"),
+         (queued("--trade-template"),
           Field("--trade-nickname", "Nickname", default="PKCAMP"),
           FRESH_PID,
           Field("--hold", "Seconds", "number", default="600")),
@@ -249,7 +266,7 @@ BDSP = Game("bdsp", "Brilliant Diamond & Shining Pearl", "BDSP", "bdsp.md", (
          ("Start the host before the player enters the room.",
           f"{BDSP_ROOM} Our character appears.",
           "Y, Communicate, Trade Pokemon; accept the greeting, then choose and confirm."),
-         (offer("--offer"),
+         (queued("--offer"),
           FRESH_PID,
           Field("--password", "Room password", help="Eight digits. Empty for the plain room."),
           Field("--seconds", "Seconds", "number", default="1500")),
@@ -266,19 +283,20 @@ PLA = Game("pla", "Legends Arceus", "PLA", "pla.md", (
          "Host a trade under a link code; the console joins.",
          ("Start the host first.", *PLA_STEPS, "Offer a Pokemon and confirm.",
           "Leave the host running until the trade ends: an interrupted trade locks trading for a while."),
-         (offer("--trade-box-record", required=False, help=PLA_OFFER_HELP),
+         (queued("--trade-box-record", required=False, help=PLA_OFFER_HELP),
           Field("--code", "Link code", default="00000000"),
-          Field("--seconds", "Seconds", "number", default="300")),
+          Field("--seconds", "Seconds", "number", default="900")),
          fixed=("--channel", "6", "--session-update", "--sustain", "--clock", "--data-exchange",
                 "--game-channel", "--trade-box", "--trade-box-collect", "{received}/pla-{stamp}"),
          doc="pla.md"),
     Tool("pla-join", "Trade (Join)", "bin/pla_join.py",
          "Join the console's search. It hands pokeldn the host role, which the joiner takes on its own.",
          (*PLA_STEPS, "Start the joiner.", "Offer and confirm once the partner shows."),
-         (offer("--offer", required=False, help=PLA_OFFER_HELP),
+         (queued("--offer", required=False, help=PLA_OFFER_HELP),
           Field("--code", "Link code", default="00000000"),
           FRESH_PID),
-         fixed=("--offer-out", "{received}/pla-{stamp}.pa8"), doc="pla.md"),
+         fixed=("--offer-out", "{received}/pla-{stamp}.pa8", "--collect", "{received}/pla-{stamp}"),
+         doc="pla.md"),
 ))
 
 SV_SEARCH = "X, Poke Portal, Link Trade, offline, then search."
@@ -288,7 +306,7 @@ SV = Game("sv", "Scarlet & Violet", "SV", "sv.md", (
          "Join the console's Link Trade search.",
          (SV_SEARCH, "Start the joiner.", "Offer and confirm on the trade screen.",
           "If the console keeps refusing, leave and re-enter the search screen."),
-         (offer("--trade-offer"),
+         (queued("--trade-offer"),
           Field("--code", "Link Code", help="Empty joins a search with no code."),
           FRESH_PID),
          fixed=("--phy", "auto", "--seconds", "1500", "--hold", "900", "--channels", "1,6,11",
@@ -299,7 +317,7 @@ SV = Game("sv", "Scarlet & Violet", "SV", "sv.md", (
     Tool("sv-host", "Trade (Host)", "bin/sv_host.py",
          "Host a trade the searching console joins.",
          ("Start the host first.", SV_SEARCH, "Offer and confirm on the trade screen."),
-         (offer("--trade-offer"),
+         (queued("--trade-offer"),
           Field("--code", "Link Code", help="Empty hosts a search with no code.",
                 unset=("--game-data",
                        "000000000000000000000000000000000000000000000000000000000000000000648cf400000000")),
@@ -335,8 +353,9 @@ ZA = Game("za", "Legends Z-A", "PLZA", "za.md", (
          "Host a trade the searching console joins.",
          ("Start the host first.",
           "X, Link Play, Link Trade, Nearby Players, the same code, then search.",
-          "Pick on the trade box, offer, then trade. Back out with B after the trade."),
-         (offer("--trade-offer"),
+          "Pick on the trade box, offer, then trade. Queued Pokemon follow, one per trade.",
+          "Back out with B after the last trade."),
+         (queued("--trade-offer"),
           Field("--code", "Link code", default="00000000"),
           FRESH_PID,
           Field("--seconds", "Seconds", "number", default="900")),

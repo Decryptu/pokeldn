@@ -205,7 +205,7 @@ def test_one_lost_message_and_the_trade_still_completes(monkeypatch, capsys, los
     assert r.receiver.skipped == [], lost
     assert r.joiner.traded, lost
     assert r.joiner.received == _host_offer()
-    assert r.log.count("trade complete, the phase key closed") == 1
+    assert r.log.count("complete, the phase key closed") == 1
     if lost == "nothing":
         assert r.lost is None
         assert "resend" not in r.log and "resend" not in r.jlog and "held behind" not in r.jlog

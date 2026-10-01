@@ -122,6 +122,27 @@ items with PKHeX. Custom WC8 cards are distributions, and this structural check 
 official events. The optional `--image` research check uses a user-supplied game binary; it is not
 required to distribute a card.
 
+### The trade queue
+
+A tool whose entry point completes several trades on one seat takes up to six Pokemon; "Add a trade"
+adds a picker, and the session offers them in order, one per completed trade. The pickers become
+repeated offer flags:
+
+| tool | offers as | after the last |
+|---|---|---|
+| FireRed/LeafGreen host and join | party files, `--trades N`, slots 0 to N-1 | Cancel and Yes end the link |
+| Let's Go host | `--offer`, then `--next-offer` per later trade | a further trade is not answered |
+| Brilliant Diamond/Shining Pearl host and join | `--offer` / `--trade-template`, repeated | the last is offered again |
+| Legends Arceus host and join | `--trade-box-record` / `--offer`, repeated; the joiner hands the list to the host role | the last is offered again |
+| Scarlet/Violet host and join | `--trade-offer`, repeated | the stage stops answering |
+| Legends Z-A host | `--trade-offer`, repeated; each new record is previewed when its trade starts | the last is offered again, under a new PID with `--fresh-pid` |
+
+`--fresh-pid` gives every queued record its own PID and encryption constant. Trade N above 1 writes
+what it received to the output path with `-N` before the extension (FireRed/LeafGreen: `_tradeN_` and
+the species; Scarlet/Violet: `.N`, counted by distinct offers; Brilliant Diamond/Shining Pearl host:
+`_N`). Let's Go join, Sword/Shield and the Legends Z-A joiner trade once per session and take one
+Pokemon.
+
 ## Local files and releases
 
 `config/host.toml` and runtime reference messages are tracked. `host.local.toml`, keys, notes, logs,

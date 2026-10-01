@@ -3,6 +3,7 @@ import threading
 import flet as ft
 
 from pokeldn import pokemon as builder
+from pokeldn.app.command import offers
 from gui import theme as t
 from gui.views.sprites import SIZE as SPRITE_SIZE, Sprite
 from gui.views.widgets import PixelActivity
@@ -159,6 +160,65 @@ class PokemonPicker:
         if self.value.get("report"):
             lines.append(t.text(self.value["report"], 11.5, t.RED, selectable=True))
         self.result.content = ft.Container(ft.Column(lines, spacing=4), bgcolor=t.BG, border_radius=10, padding=10)
+
+
+class OfferQueue:
+    """The Pokemon one session trades, in order: one picker per trade, up to `limit`."""
+
+    def __init__(self, app, game: str, value, limit: int, on_change, version: str = ""):
+        self.app, self.game, self.limit, self.on_change, self.version = app, game, limit, on_change, version
+        self.slots: list[dict] = []
+        self.rows = ft.Column(spacing=10)
+        self.add_button = t.secondary_button("Add a trade", self._add, "plus")
+        self.count = t.text("", 12, t.MUTED)
+        self.control = ft.Column([self.rows, ft.Row([self.add_button, self.count], spacing=12)], spacing=12)
+        for entry in (offers(value)[:limit] or [{}]):
+            self._slot(entry)
+        self._render()
+
+    def _slot(self, entry: dict) -> None:
+        slot = {"value": dict(entry), "title": t.text("", 12.5, weight=ft.FontWeight.W_600, expand=True)}
+        slot["picker"] = PokemonPicker(self.app, self.game, entry, lambda v, s=slot: self._changed(s, v),
+                                       version=self.version)
+        slot["remove"] = t.icon_button("close", lambda e, s=slot: self._remove(s), "Remove this trade")
+        slot["header"] = ft.Row([slot["title"], slot["remove"]], spacing=8)
+        slot["box"] = ft.Container(ft.Column([slot["header"], slot["picker"].control], spacing=8))
+        self.slots.append(slot)
+
+    def _render(self) -> None:
+        several = len(self.slots) > 1
+        for n, slot in enumerate(self.slots, start=1):
+            slot["title"].value = f"Trade {n}"
+            slot["header"].visible = several
+            slot["box"].border = ft.Border.all(1, t.BORDER) if several else None
+            slot["box"].border_radius = 12 if several else None
+            slot["box"].padding = ft.Padding(12, 6, 6, 12) if several else None
+        self.rows.controls = [slot["box"] for slot in self.slots]
+        self.add_button.disabled = len(self.slots) >= self.limit
+        self.count.value = (f"{len(self.slots)} of {self.limit}, traded in this order" if several
+                            else f"Up to {self.limit} Pokemon in one session")
+
+    def _save(self) -> None:
+        self.on_change([dict(slot["value"]) for slot in self.slots])
+
+    def _changed(self, slot: dict, value: dict) -> None:
+        slot["value"] = value
+        self._save()
+
+    def _add(self, e) -> None:
+        if len(self.slots) >= self.limit:
+            return
+        self._slot({})
+        self._render()
+        self._save()
+        self.control.update()
+
+    def _remove(self, slot: dict) -> None:
+        if len(self.slots) > 1:
+            self.slots.remove(slot)
+            self._render()
+            self._save()
+            self.control.update()
 
 
 STATS = (("hp", "HP"), ("atk", "Atk"), ("def", "Def"), ("spa", "SpA"), ("spd", "SpD"), ("spe", "Spe"))

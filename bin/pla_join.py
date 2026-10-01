@@ -121,7 +121,7 @@ def make_socket(ifname, our_ip=None):
 def build_offer(args, exchange):
     """-> the encrypted party record: a file, or the reference under our name."""
     if args.offer:
-        offer = pla_pokemon.encrypt(pla_pokemon.load(Path(os.path.expanduser(args.offer)).read_bytes()))
+        offer = pla_pokemon.encrypt(pla_pokemon.load(Path(os.path.expanduser(args.offer[0])).read_bytes()))
     else:
         offer = trade_box.build_our_record(**data_exchange.read_record(exchange))
     if args.fresh_pid:
@@ -403,9 +403,10 @@ def build_parser():
     ap.add_argument("--fresh-pid", action="store_true",
                     help="offer the record under a new PID and encryption constant, drawn once per "
                          "run, shiny state kept, so a save that took it before takes it again")
-    ap.add_argument("--offer", default=None,
+    ap.add_argument("--offer", action="append", default=[],
                     help="the record to trade away, stored or party, encrypted or not; the "
-                         "default is the reference Azelf under our player name")
+                         "default is the reference Azelf under our player name. Repeatable: the "
+                         "host role, once taken, offers one per trade in order")
     ap.add_argument("--offer-out", default=None,
                     help="write the record the console traded to this file")
     ap.add_argument("--collect", default=None,
@@ -432,8 +433,8 @@ def host_argv(args, channel, seconds):
             "--channel", str(channel), "--seconds", str(int(max(seconds, 60))),
             "--player-name", args.player_name, "--session-update", "--sustain", "--clock",
             "--data-exchange", "--game-channel", "--trade-box")
-    if args.offer:
-        argv += ["--trade-box-record", args.offer]
+    for path in args.offer:
+        argv += ["--trade-box-record", path]
     if args.fresh_pid:
         argv += ["--fresh-pid"]
     if args.collect:
@@ -447,10 +448,8 @@ def host_argv(args, channel, seconds):
 def main(argv=None):
     ap = build_parser()
     args = ap.parse_args(argv)
-    if args.offer and args.offer != "echo":
-        args.offer = pokemon_service.prepare_file("pla", args.offer, fresh=getattr(args, "fresh_pid", False))
-        if hasattr(args, "fresh_pid"):
-            args.fresh_pid = False
+    args.offer = [pokemon_service.prepare_file("pla", path, fresh=args.fresh_pid) for path in args.offer]
+    args.fresh_pid = False
     try:
         sys.stdout.reconfigure(line_buffering=True)
     except (AttributeError, ValueError):

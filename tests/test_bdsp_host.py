@@ -227,9 +227,13 @@ def _game_out(got):
     return out
 
 
-def test_a_scripted_trade_is_answered_through_the_save():
-    offer = bytes(328)
-    p = host.TradePartner(offer, complete=True, approach_delay=3.0)
+def test_scripted_trades_are_answered_through_the_save_each_with_the_next_offer():
+    """One association, three trades: each answers the console's Pokemon with the next offer (the
+    last again once they run out) and files the console's under that trade's number."""
+    offers = [bytes([n]) * 328 for n in (1, 2)]
+    saved = []
+    p = host.TradePartner(offers, complete=True, approach_delay=3.0,
+                          save_theirs=lambda n, raw: saved.append((n, raw[:1])))
     s, c = _joined(p)
     seq = [0]
 
@@ -253,21 +257,25 @@ def test_a_scripted_trade_is_answered_through_the_save():
     assert talk == bytes.fromhex("0600050001000000")
     [traner] = say(room.build_trade_traner("Gurvan", 44466, 4080), 5.0)
     assert traner[0] == room.TRADE_TRANER and len(traner) == 35
-    [poke] = say(room.build_trade_poke(bytes(328)), 5.5)
-    assert poke == room.build_trade_poke(offer)
-    [ok] = say(room.build_fields(room.TRADE_POKE_CHECK_OK, 1), 6.0)
-    assert ok == room.build_fields(room.TRADE_POKE_CHECK_OK, 1)
-    [ready] = say(room.build_trade_ready_ok(room.TRADE_STATE_WAIT, 0), 7.0)
-    assert ready == room.build_trade_ready_ok()
-
-    # Each security-phase state is mirrored and repeated once a second.
-    for t, theirs in ((8.0, 1), (8.2, 2), (8.4, 3), (8.6, 4)):
-        [mine] = say(room.build_trade_ready_ok(theirs, 1), t)
-        assert mine == room.build_trade_ready_ok(room.mirror_trade_state(theirs), 1)
-    assert _game_out(c.read(s.tick(9.7)))
-    say(room.build_fields(room.RETURN_SELECT, 0), 30.0)
-    assert p.trades == 1
-    assert not _game_out(c.read(s.tick(32.0)))
+    t = 5.5
+    for trade, ours in enumerate([*offers, offers[-1]], start=1):
+        theirs = bytes([0x40 + trade]) * 328
+        [poke] = say(room.build_trade_poke(theirs), t)
+        assert poke == room.build_trade_poke(ours)
+        [ok] = say(room.build_fields(room.TRADE_POKE_CHECK_OK, 1), t + 0.5)
+        assert ok == room.build_fields(room.TRADE_POKE_CHECK_OK, 1)
+        [ready] = say(room.build_trade_ready_ok(room.TRADE_STATE_WAIT, 0), t + 1.5)
+        assert ready == room.build_trade_ready_ok()
+        # Each security-phase state is mirrored and repeated once a second.
+        for dt, state in ((2.5, 1), (2.7, 2), (2.9, 3), (3.1, 4)):
+            [mine] = say(room.build_trade_ready_ok(state, 1), t + dt)
+            assert mine == room.build_trade_ready_ok(room.mirror_trade_state(state), 1)
+        assert _game_out(c.read(s.tick(t + 4.2)))
+        say(room.build_fields(room.RETURN_SELECT, 0), t + 24.5)
+        assert p.trades == trade
+        assert saved[-1] == (trade, theirs[:1])
+        assert not _game_out(c.read(s.tick(t + 26.5)))
+        t += 30.0
 
 
 def test_the_ready_ok_is_not_answered_without_complete():

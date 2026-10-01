@@ -24,9 +24,12 @@ def applies(field: Field, tool: Tool, values: dict) -> bool:
     return str(value_of(other, values)) == wanted
 
 
-def offer_file(value) -> str:
-    """A pokemon field holds what the builder made: {"file": path, "summary": ..., ...}."""
-    return value.get("file", "") if isinstance(value, dict) else ""
+def offers(value) -> list[dict]:
+    """A pokemon field holds what the builder made, {"file": path, "summary": ..., ...}, or a list
+    of them, one per trade in the queue."""
+    if isinstance(value, list):
+        return [v if isinstance(v, dict) else {} for v in value]
+    return [value] if isinstance(value, dict) else []
 
 
 def _args(field: Field, value) -> list[str]:
@@ -35,7 +38,12 @@ def _args(field: Field, value) -> list[str]:
         on = bool(value) != field.invert
         return [flags[0], field.template] if (on and field.template) else list(flags) if on else []
     if field.kind == "pokemon":
-        value = offer_file(value)
+        files = [f for v in offers(value)[:field.queue] if (f := v.get("file", ""))]
+        if not files:
+            return list(field.unset)
+        out = files if not field.flag else [a for n, f in enumerate(files)
+                                             for a in ((field.more if n and field.more else flags[0]), f)]
+        return out + ([field.count, str(len(files))] if field.count else [])
     if value in ("", None):
         return list(field.unset)
     items = str(value).split() if field.kind == "multi" else [field.template.format(value) if field.template
@@ -90,12 +98,16 @@ def problems(tool: Tool, values: dict) -> list[str]:
 
 def missing_offer(tool: Tool, values: dict) -> str:
     for field in tool.fields:
-        if field.kind == "pokemon" and applies(field, tool, values):
-            path = offer_file(value_of(field, values))
-            if not path and not field.required:
+        if field.kind != "pokemon" or not applies(field, tool, values):
+            continue
+        entries = offers(value_of(field, values))[:field.queue] or [{}]
+        for n, entry in enumerate(entries, start=1):
+            which = f" for trade {n}" if len(entries) > 1 else ""
+            path = entry.get("file", "")
+            if not path and not field.required and len(entries) == 1:
                 continue
             if not path or not os.path.isfile(path):
-                return "Build the Pokemon to offer first."
-            if value_of(field, values).get("legal") is False:
-                return "The selected Pokemon is not legal."
+                return f"Build the Pokemon to offer{which} first."
+            if entry.get("legal") is False:
+                return f"The Pokemon{which} is not legal."
     return ""

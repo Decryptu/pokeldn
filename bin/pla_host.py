@@ -231,9 +231,10 @@ def build_parser():
     ap.add_argument("--fresh-pid", action="store_true",
                     help="offer the record under a new PID and encryption constant, drawn once per "
                          "run, shiny state kept, so a save that took it before takes it again")
-    ap.add_argument("--trade-box-record", default=None,
+    ap.add_argument("--trade-box-record", action="append", default=[],
                     help="offer this record file instead of the reference one; stored or party, "
-                         "encrypted or decrypted")
+                         "encrypted or decrypted. Repeatable, one per trade in order; the last is "
+                         "offered again after the list")
     ap.add_argument("--interrupt-before-phase-6", action="store_true",
                     help="after answering phase 3, wait for the console's phase 6, then leave "
                          "without answering it; this deliberately triggers the game's trade "
@@ -268,9 +269,9 @@ def main():
         edits = {k: v for k, v in (("level", args.trade_box_level),
                  ("experience", args.trade_box_experience), ("nickname", args.trade_box_nickname),
                  ("pid", int(args.trade_box_pid, 16) if args.trade_box_pid else None)) if v is not None}
-        args.trade_box_record = pokemon_service.prepare_file("pla", args.trade_box_record,
+        args.trade_box_record = [pokemon_service.prepare_file("pla", path,
             fresh=args.fresh_pid, transform=lambda raw: pla_pokemon.encrypt(
-                pla_pokemon.write(pla_pokemon.load(raw), **edits)))
+                pla_pokemon.write(pla_pokemon.load(raw), **edits))) for path in args.trade_box_record]
         args.trade_box_level = args.trade_box_experience = args.trade_box_nickname = args.trade_box_pid = None
         args.fresh_pid = False
 
@@ -325,11 +326,11 @@ def main():
         nickname=args.trade_box_nickname,
         pid=(int(args.trade_box_pid, 16) if args.trade_box_pid else None)).items()
         if v is not None}
-    box_file = os.path.expanduser(args.trade_box_record) if args.trade_box_record else None
+    box_files = [os.path.expanduser(path) for path in args.trade_box_record] or [None]
 
     fresh_draw = os.urandom(6) if args.fresh_pid else None
 
-    def build_offer():
+    def build_offer(box_file):
         """-> the encrypted offer; a rebuild keeps the run's one --fresh-pid draw."""
         template = (pla_pokemon.encrypt(pla_pokemon.load(Path(box_file).read_bytes()))
                     if box_file else trade_box.REFERENCE_RECORD)
@@ -346,20 +347,25 @@ def main():
         return pokemon_service.validate("pla", template)
 
     # Re-read when the file changes, so a new offer needs no restart of the session.
-    box_state = {"mtime": os.path.getmtime(box_file) if box_file else None,
-                 "record": build_offer()}
+    box_states = [{"mtime": os.path.getmtime(path) if path else None, "record": build_offer(path)}
+                  for path in box_files]
+    trades = [0]
 
     def offer_record():
+        """-> the record for the trade at hand: one per completed trade, the last once they run out."""
+        index = min(trades[0], len(box_files) - 1)
+        box_file, box_state = box_files[index], box_states[index]
         if box_file:
             mtime = os.path.getmtime(box_file)
             if mtime != box_state["mtime"]:
-                box_state.update(mtime=mtime, record=build_offer())
+                box_state.update(mtime=mtime, record=build_offer(box_file))
                 print("[pla] offer reloaded: "
                       f"{pla_pokemon.describe(pla_pokemon.decrypt(box_state['record']))}")
         return box_state["record"]
 
     if args.trade_box:
-        print(f"[pla] offering {pla_pokemon.describe(pla_pokemon.decrypt(box_state['record']))}")
+        for n, state in enumerate(box_states, start=1):
+            print(f"[pla] trade {n} offers {pla_pokemon.describe(pla_pokemon.decrypt(state['record']))}")
     if args.trade_box_collect:
         os.makedirs(os.path.expanduser(args.trade_box_collect), exist_ok=True)
     collected = set()
@@ -674,8 +680,9 @@ def main():
                                         # the phase key closes once the trade is written
                                         if not opened and ckey == trade_box.PHASE_KEY:
                                             show_done()
-                                            print(f"[pla] {src_ip}: trade complete, the phase key "
-                                                  "closed")
+                                            trades[0] += 1
+                                            print(f"[pla] {src_ip}: trade {trades[0]} complete, the "
+                                                  "phase key closed")
                                         if not opened:
                                             continue
                                         announce = game_channel.build_payload_message(

@@ -40,3 +40,25 @@ def test_sword_host_uses_the_apps_trainer_and_a_built_offer():
     assert args[args.index("--trainer-sid") + 1] == "12345"
     assert args[args.index("--offer-file") + 1] == "/tmp/chosen.pk8"
     assert "--advert" not in args and "--snapshot" not in args
+
+
+QUEUES = [(tool, f) for tool in TOOLS for f in tool.fields if f.kind == "pokemon" and f.queue > 1]
+
+
+@pytest.mark.parametrize("tool, field", QUEUES, ids=[t.key for t, _ in QUEUES])
+def test_a_queue_reaches_the_entry_point_as_every_offer_in_order(tool, field):
+    files = [f"/tmp/queued-{n}.bin" for n in range(1, field.queue + 1)]
+    args = build(tool, {field.key: [{"file": f} for f in files] + [{"file": "/tmp/past-the-limit"}]},
+                 {}, Settings())
+    parsed = vars(parser_of(tool.script).parse_args(args))
+    given = [v for value in parsed.values() for v in (value if isinstance(value, list) else [value])
+             if isinstance(v, str) and v.startswith("/tmp/")]
+    assert given == files
+    if field.count:
+        assert parsed[field.count.lstrip("-")] == field.queue
+
+
+def test_one_offer_from_an_older_settings_file_still_builds():
+    tool = next(t for game in GAMES for t in game.tools if t.key == "sv-host")
+    args = build(tool, {"--trade-offer": {"file": "/tmp/single.pk9"}}, {}, Settings())
+    assert args.count("--trade-offer") == 1 and "/tmp/single.pk9" in args

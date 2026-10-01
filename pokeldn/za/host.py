@@ -90,10 +90,12 @@ class HostSession:
         self.code = code
         self.identity, self.identity_tail = bytes(identity), bytes(identity_tail)
         self.selection = bytes(selection)
+        # One 354-byte offer, or a list with one per trade; the last serves every later trade.
+        self.offers = ([bytes(offer)] if isinstance(offer, (bytes, bytearray))
+                       else [bytes(o) for o in offer or ()])
         self.offer = self.preview = None
-        if offer:
-            self.offer = bytes(offer[:-1]) + bytes([OFFER_PICK])
-            self.preview = bytes(offer[:-1]) + bytes([OFFER_PREVIEW])
+        if self.offers:
+            self._load_offer(self.offers[0])
         # Seconds after the preview to make our pick unprompted; None waits for the console's.
         self.offer_at = offer_at
         self.host_var = host_var or int.from_bytes(os.urandom(2), "big") % 0xFFF0 + 0x0002
@@ -349,11 +351,18 @@ class HostSession:
                 self.trade_steps = 0
                 self.round = 0      # the next trade in the seat confirms under round 0
                 self.offer_sent = self.confirmed = self.committed = False
-                if self.renew_offer and self.offer:
-                    self.offer = bytes(self.renew_offer(self.offer)[:-1]) + bytes([OFFER_PICK])
-                    self.preview = self.offer[:-1] + bytes([OFFER_PREVIEW])
+                if self.trades < len(self.offers):
+                    self._load_offer(self.offers[self.trades])
+                    # A station sends a preview each time its cursor moves to another Pokemon.
+                    self._schedule(now, PREVIEW_DELAY, self.preview, "preview offer")
+                elif self.renew_offer and self.offer:
+                    self._load_offer(self.renew_offer(self.offer))
                 show_done()
                 self.log(f"[za-host] trade_complete: the console sent its four steps (trade {self.trades})")
+
+    def _load_offer(self, offer):
+        self.offer = bytes(offer[:-1]) + bytes([OFFER_PICK])
+        self.preview = bytes(offer[:-1]) + bytes([OFFER_PREVIEW])
 
     def receive(self, datagram, src_ip, now=None):
         now = self.clock() if now is None else now

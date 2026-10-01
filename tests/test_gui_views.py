@@ -4,8 +4,9 @@ import pytest
 
 pytest.importorskip("flet")
 
+from gui.views import pokemon
 from gui.views.games import GamesView
-from gui.views.pokemon import OfferOptions
+from gui.views.pokemon import OfferOptions, OfferQueue
 from pokeldn.app.catalog import Field, offer
 
 
@@ -44,3 +45,28 @@ def test_effort_over_the_games_total_is_refused_before_the_builder_is_asked(effo
     options = OfferOptions(SimpleNamespace(value={"options": {"effort": dict(values)}}))
     options._form({**FOUND, "effort": effort})
     assert bool(options.problem()) == refused
+
+
+def test_a_queue_keeps_each_trades_pokemon_in_order_through_add_and_remove(monkeypatch):
+    class Picker:
+        def __init__(self, app, game, value, on_change, version=""):
+            self.on_change, self.control = on_change, SimpleNamespace()
+    monkeypatch.setattr(pokemon, "PokemonPicker", Picker)
+    saved = []
+    queue = OfferQueue(None, "sv", {"file": "a.pk9"}, 3, saved.append)
+    queue.control = SimpleNamespace(update=lambda: None)
+    assert not queue.slots[0]["header"].visible
+    for name in ("b.pk9", "c.pk9"):
+        queue._add(None)
+        queue.slots[-1]["picker"].on_change({"file": name})
+    assert saved[-1] == [{"file": "a.pk9"}, {"file": "b.pk9"}, {"file": "c.pk9"}]
+    assert queue.add_button.disabled
+    queue._add(None)
+    assert len(queue.slots) == 3
+    queue._remove(queue.slots[1])
+    assert saved[-1] == [{"file": "a.pk9"}, {"file": "c.pk9"}]
+    assert [s["title"].value for s in queue.slots] == ["Trade 1", "Trade 2"]
+    assert not queue.add_button.disabled
+    queue._remove(queue.slots[0])
+    queue._remove(queue.slots[0])
+    assert saved[-1] == [{"file": "c.pk9"}]

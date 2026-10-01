@@ -26,6 +26,10 @@ Let's Go, effort levels in Legends Arceus). Empty fields stay random. The lists 
 species can legally have in that game, and Build refuses a combination PKHeX finds illegal, with the
 reason.
 
+Add a trade, below the Pokemon, queues up to six for one session; each completed trade offers the
+next. It shows on every trade tool except Let's Go join, Sword/Shield and Legends Z-A join, which trade
+once per session. Each trade's received Pokemon gets its own file.
+
 The Pokemon the console sends you are saved in `Documents/pokeldn/Received`.
 
 ## Basic and All options

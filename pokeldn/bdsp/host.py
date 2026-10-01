@@ -489,12 +489,13 @@ class HostSession:
 
 class TradePartner:
     """The game side of a trading room member, as a retail partner answers (docs/bdsp_trade.md).
-    `complete` gates the answer to the ready-ok, after which the console writes its save."""
+    `complete` gates the answer to the ready-ok, after which the console writes its save. `offer`
+    is one PB8 or a list, one per trade; the last is offered again once the list runs out."""
 
     def __init__(self, offer, trainer_name="PkCamp", trainer_id=41234, secret_id=23117,
                  complete=False, approach_delay=2.0, security_repeat=1.0, state=room.STATE_NONE,
                  recruiting=0, save_theirs=None, record=None):
-        self.offer = offer
+        self.offers = [offer] if isinstance(offer, (bytes, bytearray)) else list(offer)
         self.trainer = room.build_trade_traner(trainer_name, trainer_id, secret_id)
         self.complete = complete
         self.approach_delay, self.security_repeat = approach_delay, security_repeat
@@ -509,6 +510,10 @@ class TradePartner:
         self.next_security = 0.0
         self.their_pokes = 0
         self.trades = 0
+
+    @property
+    def offer(self):
+        return self.offers[min(self.trades, len(self.offers) - 1)]
 
     def game(self, joiner, g, payload, now):
         data_id, fields = g["data_id"], g.get("fields") or {}
@@ -540,7 +545,8 @@ class TradePartner:
             return [self.trainer]
         if data_id == room.TRADE_POKE:
             self.their_pokes += 1
-            self.save_theirs(self.their_pokes, body)
+            # A reselection within one trade replaces that trade's file.
+            self.save_theirs(self.trades + 1, body)
             self.record(rec="their_poke", t=now, n=self.their_pokes)
             return [room.build_trade_poke(self.offer)]
         if data_id == room.TRADE_POKE_CHECK_OK:

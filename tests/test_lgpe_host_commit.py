@@ -254,37 +254,57 @@ def test_the_result_carries_our_own_structure(stage, tmp_path):
     assert pb7.valid(body)
 
 
-def test_second_trade_uses_new_offer_commit_clones_and_result(stage):
-    """The kind-4 channel and clones 5/6 opened after the first result; the next commit uses
-    kind 5 and clone 7, and the second completion uses kind 6."""
+def test_each_later_trade_offers_the_next_record_on_its_own_kinds_and_clones(stage, tmp_path):
+    """Round r answers offers on kind 2 + 2r, commits on 3 + 2r on clone 4 + 3r, and ends on kind
+    4 + 2r; it offers the r-th --next-offer and writes what it received to a numbered file."""
+    def record(ec, species):
+        plain = bytearray(pb7.BOX_SIZE)
+        struct.pack_into("<I", plain, 0, ec)
+        struct.pack_into("<H", plain, 8, species)
+        return pb7.encrypt(bytes(plain))
+
     s = stage["s"]
-    s.args.next_offer = s.args.offer
+    offers = []
+    for n in (1, 2):
+        path = tmp_path / f"next{n}.bin"
+        path.write_bytes(record(0x1000 + n, 25 + n))
+        offers.append(str(path))
+    s.args.next_offer = offers
+    s.args.received = s.received = str(tmp_path / "got.pb7")
+    first = Path(s.args.offer).read_bytes()
     commit(stage)
     stage["run"](27.1)
-    stage["console_says"](pb7.RESULT_MESSAGE, Path(s.args.offer).read_bytes(), step=13)
-    assert s.round == 1
-    assert s.trade["done"]
-    assert s.commit_clone is None
-    stage["sent"].clear()
-    stage["console_says"](4, Path(s.args.offer).read_bytes(), step=14)
-    assert stage["game"]()[-1][:2] == (4, 14)
-    assert not s.trade["done"]
-    stage["console_publishes"](6, ONES)
-    stage["run"](0.04)
-    assert s.commit_clone is None
-    stage["console_publishes"](7, ONES)
-    stage["run"](0.04)
-    assert s.commit_clone == 7
-    stage["console_publishes"](7, b"\0\0\0\0" + b"\x01\0\0\0" * 2 +
-                               struct.pack("<I", 15) + b"\x01\0\0\0")
-    assert stage["game"]()[-1][0] == 5
-    stage["console_says"](5, b"\x01\0\0\0", step=15)
-    stage["run"](0.1)
-    assert stage["game"]()[-1] == (5, 16, b"\x02\0\0\0")
-    stage["run"](27.1)
-    assert stage["game"]()[-1][0] == 6
-    stage["console_says"](6, Path(s.args.offer).read_bytes(), step=16)
-    assert s.trade["done"]
+    stage["console_says"](pb7.RESULT_MESSAGE, first, step=13)
+    step = 14
+    for r, path in enumerate(offers, start=1):
+        assert s.round == r and s.trade["done"] and s.commit_clone is None
+        theirs = record(0x2000 + r, 130 + r)
+        stage["sent"].clear()
+        stage["console_says"](2 + 2 * r, theirs, step=step)
+        assert stage["game"]()[-1][0] == 2 + 2 * r
+        assert not s.trade["done"]
+        sent = [reliable3.parse(p)["payload"][16:] for proto, p, _ in stage["sent"]
+                if proto == reliable3.PROTOCOL and reliable3.parse(p)["size"]]
+        assert sent[-1] == Path(path).read_bytes()
+        assert Path(tmp_path / f"got-{r + 1}.pb7").read_bytes()[:pb7.BOX_SIZE] == theirs
+        stage["console_publishes"](3 + 3 * r, ONES)
+        stage["run"](0.04)
+        assert s.commit_clone is None
+        stage["console_publishes"](4 + 3 * r, ONES)
+        stage["run"](0.04)
+        assert s.commit_clone == 4 + 3 * r
+        stage["console_publishes"](4 + 3 * r, b"\0\0\0\0" + b"\x01\0\0\0" * 2 +
+                                   struct.pack("<I", step + 1) + b"\x01\0\0\0")
+        assert stage["game"]()[-1][0] == 3 + 2 * r
+        stage["console_says"](3 + 2 * r, b"\x01\0\0\0", step=step + 1)
+        stage["run"](0.1)
+        assert stage["game"]()[-1][::2] == (3 + 2 * r, b"\x02\0\0\0")
+        stage["run"](27.1)
+        assert stage["game"]()[-1][0] == 4 + 2 * r
+        stage["console_says"](4 + 2 * r, theirs, step=step + 2)
+        assert s.trade["done"]
+        step += 3
+    assert s.round == 2
 
 
 def test_the_offered_clone_walks_on_to_01_02_02_and_the_trailing_word_2(stage):

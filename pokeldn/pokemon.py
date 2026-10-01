@@ -206,6 +206,14 @@ def prepare_file(game, path, *, fresh=False, fields=None, transform=None):
     return str(target)
 
 
+def trade_path(path, n):
+    """Where the n-th trade of one run writes what it received: `path` itself for the first."""
+    if n <= 1 or not path:
+        return path
+    target = Path(path)
+    return str(target.with_name(f"{target.stem}-{n}{target.suffix}"))
+
+
 def save_received(game, path, data):
     from pokeldn.host_support import write_file
     data = entity_bytes(game, data)

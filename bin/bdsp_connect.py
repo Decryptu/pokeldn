@@ -151,22 +151,22 @@ async def main_async(args):
               "reserve_accepted": False, "room_done": False, "their_traner": None,
               "requests_sent": 0, "requested_answers": {}, "rel_rx": rl.Reassembler(), "their_zone": None,
               "rel_repeats": 0,
-              "their_poke": None, "their_pokes": 0, "our_poke": None, "answered_with": set(), "trade_replies": 0, "check_oks": 0,
+              "their_poke": None, "their_pokes": 0, "our_pokes": [], "trades": 0, "answered_with": set(), "trade_replies": 0, "check_oks": 0,
               "their_ready_ok": None, "ready_oks_sent": 0, "their_security_state": None,
               "our_security_state": 0, "our_next_seq": 0, "return_selects": 0}
 
         # Build the offer before the radio is touched, so a bad template or nickname fails here.
-        if args.trade_template:
-            # No species edit: the species word alone leaves the template's gender, ability, moves
-            # and level, and the game crashes drawing such an offer. Offer a complete, legal PB8.
-            edits = {k: v for k, v in (("nickname", args.trade_nickname),
-                                       ("ot_name", args.trade_ot)) if v is not None}
-            st["our_poke"] = pokemon.build_from(
-                pathlib.Path(args.trade_template).read_bytes(), **edits)
+        # No species edit: the species word alone leaves the template's gender, ability, moves
+        # and level, and the game crashes drawing such an offer. Offer a complete, legal PB8.
+        edits = {k: v for k, v in (("nickname", args.trade_nickname),
+                                   ("ot_name", args.trade_ot)) if v is not None}
+        for n, path in enumerate(args.trade_template, start=1):
+            poke = pokemon.build_from(pathlib.Path(path).read_bytes(), **edits)
             if args.fresh_pid:
-                st["our_poke"] = pokemon.fresh(st["our_poke"])
-            offered = pokemon.read(st["our_poke"])
-            print(f"[cx] offering species {offered['species']}, {offered['nickname']!r}, "
+                poke = pokemon.fresh(poke)
+            st["our_pokes"].append(poke)
+            offered = pokemon.read(poke)
+            print(f"[cx] trade {n} offers species {offered['species']}, {offered['nickname']!r}, "
                   f"OT {offered['ot_name']!r}, IVs {offered['ivs']}, pid {offered['pid']:08x}")
 
         # Read now, so a missing file fails before the console waits on us.
@@ -1058,7 +1058,8 @@ async def main_async(args):
                 # security phase: a repeater still sending SEND_READYOK(5) holds the next trade in
                 # the box window (docs/bdsp_trade.md).
                 if st["our_security_state"] or st["their_security_state"] is not None:
-                    print(f"[cx]   trade complete - security phase over, repeater quiet")
+                    st["trades"] += 1
+                    print(f"[cx]   trade {st['trades']} complete - security phase over, repeater quiet")
                     show_done()
                     record(rec="security_phase_end", t=now)
                 st["our_security_state"] = 0
@@ -1121,17 +1122,16 @@ async def main_async(args):
                       f"{theirs['nickname']!r}, OT {theirs['ot_name']!r}, "
                       f"IVs {theirs['ivs']} ***")
                 record(rec="their_poke", t=now, fields=theirs)
-                # One association carries many trades; each offer also goes to a numbered copy.
+                # One association carries many trades, each to its own file; a reselection within
+                # one trade replaces that trade's file.
                 st["their_pokes"] += 1
-                out = pathlib.Path(args.trade_save_poke)
-                numbered = out.with_name(f"{out.stem}_{st['their_pokes']}{out.suffix}")
-                out.write_bytes(payload[room.HEADER_SIZE:])
-                numbered.write_bytes(payload[room.HEADER_SIZE:])
-                print(f"[cx]   saved their Pokemon -> {out} and {numbered}")
-                if not st["our_poke"]:
+                out = pokemon_service.trade_path(args.trade_save_poke, st["trades"] + 1)
+                pathlib.Path(out).write_bytes(payload[room.HEADER_SIZE:])
+                print(f"[cx]   saved their Pokemon -> {out}")
+                if not st["our_pokes"]:
                     print("[cx] no --trade-template, so nothing to offer back")
                     return
-                reply = room.build_trade_poke(st["our_poke"])
+                reply = room.build_trade_poke(st["our_pokes"][min(st["trades"], len(st["our_pokes"]) - 1)])
                 label = "our Pokemon"
             send_trade_message(reply, label, now)
 
@@ -1538,11 +1538,12 @@ def build_parser():
     ap.add_argument("--fresh-pid", action="store_true",
                     help="offer it under a new PID and encryption constant, shiny state kept, so a "
                          "save that took it before takes it again")
-    ap.add_argument("--trade-template", metavar="FILE",
+    ap.add_argument("--trade-template", metavar="FILE", action="append", default=[],
                     help="a PB8 to offer (328 or 344 bytes, encrypted or PKHeX's decrypted export), edited by --trade-nickname and --trade-ot. 328 "
                          "bytes hold much more than this project has identified, so what we send "
                          "is a real Pokemon with named fields changed rather than one invented "
-                         "from nothing")
+                         "from nothing. Repeatable, one per trade in order; the last is offered "
+                         "again after the list")
     ap.add_argument("--trade-nickname", metavar="TEXT", help="nickname for the offered Pokemon")
     ap.add_argument("--answer-return-select", action="store_true",
                     help="answer the NetDataReturnSelectData a completed trade ends on, ONCE. "
@@ -1557,7 +1558,8 @@ def build_parser():
     ap.add_argument("--trade-tid", type=int, default=44466, metavar="N")
     ap.add_argument("--trade-sid", type=int, default=4080, metavar="N")
     ap.add_argument("--trade-save-poke", default="received.pb8", metavar="FILE",
-                    help="where to write the Pokemon the console offers")
+                    help="where to write the Pokemon the console offers; trade N > 1 writes "
+                         "FILE-N")
     ap.add_argument("--join-offset-x", type=float, default=2.0, metavar="U",
                     help="where our character spawns relative to the console's own, on x. The "
                          "default +2.0 is one fixed side, and a player standing against the wall "
@@ -1698,13 +1700,12 @@ def build_parser():
 def main():
     ap = build_parser()
     args = ap.parse_args()
-    if args.trade_template:
-        fields = {k: v for k, v in (("nickname", args.trade_nickname), ("ot_name", args.trade_ot))
-                  if v is not None}
-        args.trade_template = pokemon_service.prepare_file("bdsp", args.trade_template,
-            fresh=args.fresh_pid, fields=fields)
-        args.trade_nickname = args.trade_ot = None
-        args.fresh_pid = False
+    fields = {k: v for k, v in (("nickname", args.trade_nickname), ("ot_name", args.trade_ot))
+              if v is not None}
+    args.trade_template = [pokemon_service.prepare_file("bdsp", path, fresh=args.fresh_pid, fields=fields)
+                           for path in args.trade_template]
+    args.trade_nickname = args.trade_ot = None
+    args.fresh_pid = False
     if needs_root():
         ap.error("must run as root")
     if args.complete_trade and not args.trade_reply:
