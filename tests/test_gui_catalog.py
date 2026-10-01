@@ -116,4 +116,5 @@ def test_the_session_panel_finds_every_file_a_run_saves_and_none_from_another_ru
 
     ours = saved("20261001-120000")
     saved("20261001-115959")
-    assert ours and sorted(session_files(str(tmp_path), "20261001-120000")) == sorted(ours)
+    found = session_files(str(tmp_path), "20261001-120000")
+    assert ours and sorted(map(os.path.normpath, found)) == sorted(map(os.path.normpath, ours))   # Windows mixes / and \
