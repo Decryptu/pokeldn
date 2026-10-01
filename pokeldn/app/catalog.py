@@ -242,8 +242,9 @@ SWSH = Game("swsh", "Sword & Shield", "SwSh", "swsh.md", (
                 help="Any other record field, space-separated NAME=VALUE: nature=10 gender=1 iv_hp=31.",
                 limits=(("held_item", 1607, "Sword and Shield have no item above 1607; a higher id crashes "
                                             "the bag screen."),)),
-          Field("--card-id", "Card id", "number", default="9999",
-                help="Change it when the console already holds this card."),
+          Field("--card-id", "Card id", "number", default="9999", hidden=True,
+                help="The id the card carries. A console takes a card built here again under the same "
+                     "id; a .wc8 file that allows one copy is refused by a console that received it."),
           Field("--record", "Or send a .wc8 file", "file", exts=("wc8",),
                 help="A Wonder Card file from PKHeX or an event archive. It replaces everything above."),
           Field("--seconds", "Time limit (seconds)", "number", default="300", hidden=True,
