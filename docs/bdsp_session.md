@@ -296,6 +296,11 @@ Measured with nothing answered:
 | joiner leaving a hosted room, 4 runs | leave request every 0.125 s for 4.9 to 5.0 s | disconnection request every 0.5 s, 3.6 s in the one run captured to the end | deauthentication 9.0 s after the first request, in that run |
 | host leaving its room with one station joined, 4 runs | migration start every 0.125 s for 4.9 s | update session, sequence +1, migration state 1, every 0.11 s for 10 s; then Local Protocol 0x13 (start host migration) every 0.3 s for 10 s | its network closes 25.3 s after the first migration start |
 
+Answered (`08 00` twice and `04`), a retail joiner leaving sent one disconnection request 0.06 s
+after its leave request and deauthenticated 0.15 s after it.
+Answered (`48 01`, the update-session ack, the leave on 0x13), a retail host leaving its room sent
+0x13 0.11 and 0.45 s after its migration start (2 runs) and closed it.
+
 `pokeldn.bdsp.session.answer_departure` builds both answers; `bin/bdsp_host.py` answers a leaving
 joiner and its disconnection request, and `bin/bdsp_connect.py` answers a migration start, acks every
 later update session and leaves the network on 0x13 (`--no-leave-on-host-migration` stays).
