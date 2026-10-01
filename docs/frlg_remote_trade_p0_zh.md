@@ -369,7 +369,7 @@ P0 的 G0 可行性门槛要求 H-01、L-01、G0-A-01、G0-B-01、G0-B-02 的准
 | A-03 | `23 passed` | `test_host_trade_engine.py`、`test_trade_runtime.py`、`test_host_end_to_end.py` |
 | 测试包 PowerShell 脚本语法 | `6 个脚本通过` | 使用 PowerShell AST parser 逐个解析 `tests/frlg_remote_p0_field_kit/*.ps1` |
 | Python 编译与 CLI 冒烟 | 通过 | `compileall`；远程探针、日志核验器及打包器 `--help` |
-| 文档检查 | `7 passed, 71 deselected` | 在仅含已提交源码及本轮文档的临时源码树中执行；原工作区还含未跟踪计划草稿，不纳入本轮包 |
+| 文档检查 | `7 passed`（排除 `every_launcher` 参数化检查） | 在完整提交树的临时副本中执行；原工作区还含未跟踪计划草稿，不纳入本轮包 |
 | diff 格式检查 | `git diff --check` 通过 | 不代表实机验收 |
 | H-01 / L-01 / G0-A / G0-B / C-01 | `NOT_RUN` | 本轮没有执行双 PC / 双实机测试，没有可填写的实机 run ID |
 | F-01 至 F-06、S-01 完整审计、自动化补测清单 | `NOT_RUN` | 仅已有测试覆盖的子项通过，完整故障与命令审计尚待实施 |
