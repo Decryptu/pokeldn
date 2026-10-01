@@ -61,9 +61,12 @@ stateDiagram-v2
 ```
 
 After the final trade the host waits for the Switch trade menu; the player selects CANCEL and
-confirms YES. The host finishes the standby barriers, waits five seconds before leaving the room,
-and keeps normal peer traffic for fifteen seconds after the Switch confirms close
-(`READY_CLOSE_LINK`), then queues the RFU disconnect. An LDN leave event stops peer output at once.
+confirms YES, and the host answers with `BOTH_CANCEL_TRADE` at once. The host finishes the standby
+barriers, waits five seconds before leaving the room unless the Switch leaves first, and keeps
+normal peer traffic for fifteen seconds after the Switch confirms close (`READY_CLOSE_LINK`), then
+queues the RFU disconnect. It answers the console's Session leave request with type 4
+([frlg_link.md](frlg_link.md), Leaving the Pia session). An LDN leave event stops peer output at
+once.
 
 ## Shutdown and cleanup
 

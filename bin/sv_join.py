@@ -54,6 +54,9 @@ NET_CONN_STATUS_ACK = 0x12
 # Net 0x50 and the joiner's 0x51 answer (docs/sv.md).
 NET_0x50 = 0x50
 NET_0x51 = 0x51
+# Sent only by NetDestroyNetworkJob (`0x69d310` from `0x6aca54`), every 0.3 s until every client has
+# left the LDN network or 4 s pass (`0x6acac8`; docs/sv.md, Leaving).
+NET_START_HOST_MIGRATION = 0x40
 ESTABLISHING_FLAGS = pia6.MESSAGE_FLAG_SKIP_SOURCE_CHECK
 # Fallback only: a retail host names the joiner's id in the footer of its first mesh-addressed
 # packet, and the joiner takes it (docs/sv.md).
@@ -331,6 +334,10 @@ def build_parser():
                          "host role (Session type 7), and go back to scanning. A console that sent "
                          "it sent nothing but NetStartHostMigration afterwards in the seats "
                          "measured; without this the run holds the seat for the whole --hold")
+    ap.add_argument("--stay-on-host-migration", action="store_true",
+                    help="hold the seat after the console's NetStartHostMigration (Net 0x40). By "
+                         "default the joiner leaves on the first one: the console is destroying "
+                         "its network and resends it until every client has left, for up to 4 s")
     ap.add_argument("--announce-timeout", type=float, default=None, metavar="SECONDS",
                     help="end a seat whose console has not announced on 0x80 port 2 this many "
                          "seconds after the seat, and go back to scanning. A seat can carry every "
@@ -795,6 +802,7 @@ async def run_session(args, keys, host_ip, host_mac, our_ip, our_mac, record):
     opened = False
     last_rtt = 0.0
     pending_rtt = []            # (due, request payload, requester var)
+    host_leaving = False
     while time.monotonic() - t0 < args.hold:
         now = time.time()
         for due, request, requester in [e for e in pending_rtt if e[0] <= now]:
@@ -959,6 +967,8 @@ async def run_session(args, keys, host_ip, host_mac, our_ip, our_mac, record):
             if msg.protocol not in (PROTO_RTT,) or args.verbose_rtt:
                 print(f"[sv] <- {addr[0]} {_describe_msg(msg)}  {msg.payload.hex()[:160]}")
             if msg.protocol == PROTO_NET and len(msg.payload) > 1:
+                if msg.payload[:2] == bytes([1, NET_START_HOST_MIGRATION]):
+                    host_leaving = True
                 req = pia_connect.parse_net_conn_request(msg.payload)
                 if req is not None:
                     stated_var, stated_const, seqid = req
@@ -1213,6 +1223,11 @@ async def run_session(args, keys, host_ip, host_mac, our_ip, our_mac, record):
             send(out(our_ack(key), host_var or 0, protocol=protocol, port=port,
                      flags=ack_shape["flags"]), "reliable ack", protocol=protocol, port=port)
             last_ack[key] = time.time()
+        if host_leaving and not args.stay_on_host_migration:
+            print("[sv] the console is destroying its network (NetStartHostMigration); "
+                  "leaving the seat")
+            record(rec="left_on_host_migration", t=time.time())
+            break
     sock.close()
     print(f"[sv] seat over: {seen} datagram(s) in, {authed} authenticated. messages by protocol: "
           + " ".join(f"0x{p:02x}={n}" for p, n in sorted(counts.items())))

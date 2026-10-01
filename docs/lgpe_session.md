@@ -935,20 +935,40 @@ on the mesh protocol's reliable port, under the 24-byte reliable header:
 04 01        leave request, station index
 ```
 
-It is owed the reliable acknowledgement on that port and a two-byte leave response (`08`, the
-station index) on the unreliable port; unanswered, it repeats it (every 40 ms for five seconds,
-measured). After a Retour the host sends a one-byte station disconnection request, type 3; the
-console answers type 4 and disconnects, or sends its own request about five seconds later.
+It is owed the reliable acknowledgement on that port and a two-byte leave response on the
+unreliable port, `08` and the mesh host's index (`08 00`). The leaver's handler `0x591bf4` takes the
+response only when its byte [1] is the index of the station the host getter `0x58e5d0` (`ldrb
+[x0,#0xa3]`) names, then clears the leave job's flag `+0x78`. The job (`LeaveMeshJob`, constructor
+`0x589470`) arms a 5000 ms deadline when it sends the request (`0x5895bc`); `WaitLeaveResponse`
+(`0x5896c0`) waits for the flag or the deadline, retransmitting the request (every 40 ms, measured),
+then disconnects its stations and leaves the network. A response naming the leaver (`08 01`) is
+dropped: the console then deauthenticates 5.00 s after its leave request (six runs, two consoles,
+4.98 to 5.01 s, the host's disconnection request answered in each). After a Retour the host sends a one-byte station
+disconnection request, type 3; the console answers type 4 within 50 ms.
 
-A console host answers a joiner's leave request with `08 00`, then repeats a Local Protocol start
-host migration (type 0x13; `08 00` twice and 0x13 every 0.3 s, measured). A joiner's disconnection
-request sent as the leave response arrives returns the host's player to the menu ("l'autre joueur a
-choisi d'annuler l'échange"); a joiner that waits leaves the host repeating 0x13 (five seconds,
-measured).
+A console host answers a joiner's leave request with `08 00` twice, then repeats a Local Protocol
+start host migration (type 0x13, every 0.3 s, measured). A joiner's disconnection request sent as
+the leave response arrives returns the host's player to the menu ("l'autre joueur a choisi
+d'annuler l'échange"); a joiner that waits leaves the host repeating 0x13 (five seconds, measured).
 `bin/lgpe_join.py --leave-after SECONDS` runs the exit (`pokeldn.lgpe.leave`).
 
-An emulated host leaving releases first, then sends a migration start on the reliable port,
-`44 00 01`, which the joiner acknowledges and answers with `48 01`, then the 0x13.
+### A host leaving
+
+A console host whose player backs out publishes state 4, argument 3, releases its clones (0x83,
+answered by 0x84), and 2.49 s after the last release sends a mesh migration start on the reliable
+port, `44 00 01` (host index, next host's index). Its wait (`0x58aeb0`) keeps a flag per connected
+station at `job+0x6e+index` and ends when every flag is clear or 5000 ms (`0x58a8f0`) have passed; a
+migration response `48 <index>` clears that station's flag (handler `0x591e98` -> `0x58b010`), and
+so does the station leaving. Unanswered, the console retransmits the start every 45 ms for 5.0 s.
+
+It then broadcasts an update session carrying host migration state 1 with its node list unchanged,
+and repeats a Local Protocol start host migration (type 0x13) every 301 ms (`0x5d40ac`) until no
+station but itself is connected to the LDN network (`0x5cc2d0` counts them) or 10000 ms have passed
+(`0x5d4050`), then destroys the network: eight LDN disconnect frames, reason 3, broadcast over
+200 ms. A joiner that answers neither holds the console host 15.0 s after the migration start (two
+retail runs). An emulated host answered with the ack and `48 01` sent its update session and the
+first 0x13 34 ms later. `bin/lgpe_join.py` sends both answers and leaves the network on the first
+0x13 (`pokeldn.lgpe.leave.host_departure`).
 
 ### What a host does with a joiner that holds no clone data
 

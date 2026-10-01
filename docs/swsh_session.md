@@ -261,6 +261,54 @@ these five and no others (the right column counts each in one captured handshake
 `bin/swsh_connect.py --sync-answers` answers `trade.SYNC_ANSWERS` where it has a rule, echoes per
 protocol elsewhere, and prints each unruled payload (after the answer it caused; read the ownerId).
 
+## Leaving
+
+A Sword leaving a trade session sends box command 3 and, about 0.77 s later, starts the Pia leave
+for its role. Each step waits for a reply and falls through on a timeout when none comes.
+
+A joined Sword leaving a host:
+
+| step | the Sword sends | the host owes | unanswered |
+|---|---|---|---|
+| mesh leave | LEAVE_REQUEST `04 <own index>`, 0x18 port 1, reliable, once | LEAVE_RESPONSE `08 <host index>` | 5.0 s |
+| station disconnection | `03` on 0x14, every 0.5 s | `04` | 8 requests, 3.6 s |
+| LDN | leaves the network | | |
+
+Eleven host captures (retail Sword and emulated Shield, the host answering neither) measure 9.0 to
+9.1 s from LEAVE_REQUEST to the LDN leave.
+
+- The version-4 host handler `0x017c19a0` (mesh type 4, table `0x02081564`) sends `08` and its own
+  index through `0x017c2450`, two unreliable copies (`0x01851200` with the no-bundle flag 0, then
+  1), and drops the station from the mesh. The leaver's handler `0x017c0d44` takes it only when
+  [1] is the mesh host's index.
+- The 0x14 handler `0x017c6110` (type 3, table `0x02081804`) answers the one byte `04` to the
+  sender and marks it gone; the type-4 handler `0x017c5fcc` clears the leaver's wait.
+
+`pokeldn/ldn/host4.py` answers both.
+
+A hosting Sword leaving its client (it is the LDN access point):
+
+| step | the Sword sends | the client owes | unanswered |
+|---|---|---|---|
+| mesh migration | MIGRATION_START `44 00 01` ([host migration](swsh_trade.md#host-migration)) | MIGRATION_FINISH from the named station | 5.0 s |
+| local session | its update session (0x24 type 0x11) with the host-migration byte 1 and a new sequence id, about every 0.11 s | the 0x21 ack for that sequence id | 10.0 s |
+| destroy network | START_HOST_MIGRATION `01 13 00..` (16 bytes), every 0.33 s | leave the LDN network | 10.0 s |
+
+Five retail joiner captures with no answer measure 25.0 s from MIGRATION_START to the last packet;
+one with MIGRATION_FINISH sent measures 20.1 s, the mesh step ending 0.1 s after the start.
+
+- `LocalDestroyNetworkJob::WaitUntilAllClientsDisconnection` (`0x017acd70`) counts the network's
+  connected nodes (`0x017a9b20`, eight slots) and destroys it when only the host remains or after
+  `0x2710` ms, re-sending START_HOST_MIGRATION every `0x12d` ms (`0x017acbd0`, `0x017a8bb0`).
+- The update session is re-sent by `LocalResendMessageJob`; an ack (handler `0x017a9250`, local
+  type 0x21) clears the sender's bit only when its sequence id equals the message's
+  (`0x017aed10`). What bounds the 10.0 s local-session step in the binary is unread.
+- START_HOST_MIGRATION carries no sequence (its serializer `0x017abc60` writes 0 at 0xC) and has no
+  resend job: nothing acks it.
+
+`bin/swsh_connect.py --answer-migration --leave-with-host` sends the finish, acks the
+host-migration update session and leaves the network on START_HOST_MIGRATION.
+
 ## Operational notes
 
 - Never pass `--verbose` live; use `--capture FILE`.

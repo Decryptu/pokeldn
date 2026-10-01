@@ -38,7 +38,7 @@ PROTOCOL_NAMES = {
 }
 SESSION_MESSAGE_NAMES = {
     0: "join request", 1: "join request ack", 2: "join response", 3: "leave request",
-    5: "update session", 6: "update session ack", 7: "left station sync",
+    4: "leave response", 5: "update session", 6: "update session ack", 7: "left station sync",
     8: "left station sync ack", 9: "start host migration", 10: "start host migration ack",
 }
 
@@ -192,6 +192,9 @@ def build_parser():
     ap.add_argument("--no-session-ack", action="store_true")
     ap.add_argument("--no-session-response", action="store_true")
     ap.add_argument("--no-session-update", action="store_true")
+    ap.add_argument("--no-leave-response", action="store_true",
+                    help="leave a console's Session type-3 leave request unanswered; it then "
+                         "resends it every 0.5 s and leaves after the fourth (docs/sv.md, Leaving)")
     ap.add_argument("--join-seq", type=int, default=1)
     ap.add_argument("--host-player-name", default="PkCamp")
     ap.add_argument("--host-player-id", default="00000000000000020000000000000000")
@@ -680,6 +683,21 @@ def main():
                                     net_prop[src_ip][2] = True
                                     print(f"[sv] {src_ip}: acknowledged net 0x50 with 0x51, "
                                           f"seqid={acked}")
+                        # The leaver resends every 500 ms until this, four sends at most
+                        # (`0x6db7b0`); a host answers at `0x6d7894` (docs/sv.md, Leaving).
+                        if (not args.no_leave_response and msg.protocol == PROTO_SESSION
+                                and len(msg.payload) >= 17
+                                and msg.payload[0] == pia_connect.SESSION_LEAVE_REQUEST):
+                            body = pia_connect.build_session_leave_response_v11(
+                                msg.payload, random4=os.urandom(4))
+                            pkt = build_reply(keys, transport.our_ip, body, header.src_var,
+                                              os.urandom(8), flags=session_flags,
+                                              packet_id=args.session_packet_id)
+                            transport.send(pkt, src_ip)
+                            record(rec="out", dst=src_ip, kind="session leave response",
+                                   hex=pkt.hex(), t=time.time())
+                            print(f"[sv] -> {src_ip}: session leave response (type 4); "
+                                  f"the console is leaving")
                         if (msg.protocol == PROTO_SESSION and msg.payload
                                 and msg.payload[0] == SESSION_JOIN_REQUEST):
                             if args.net_property:

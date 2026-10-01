@@ -6,6 +6,7 @@ Layout, handshake and gate byte: docs/pia.md, The version-4 connection request.
 import struct
 
 from pokeldn.ldn.station_protocol import (CONNECTION_REQUEST, CONNECTION_RESPONSE,
+                                          DISCONNECTION_REQUEST, DISCONNECTION_RESPONSE,
                                           RELAY_CONNECTION_REQUEST, RESULT_NAMES,
                                           STATION_LOCATION_MAX, STATION_LOCATION_MIN,
                                           inet_address, ldn_constant_id,
@@ -27,7 +28,8 @@ __all__ = ["PROTOCOL", "PLATFORM_SWITCH", "HEADER_SIZE", "OFF_NAT_FLAGS", "OFF_P
            "OFF_HAS_VARIABLE_ID", "OFF_CONSTANT_ID", "OFF_VARIABLE_ID", "OFF_NAT_LOCATION",
            "OFF_LOCATION", "CONNECTION_REQUEST", "CONNECTION_RESPONSE",
            "OFF_RESPONSE_GATE", "RESPONSE_GATE_MAX", "ACCEPTED_RESPONSE_SIZE",
-           "ACK", "ACK_SIZE", "build_ack", "ack_id_of",
+           "ACK", "ACK_SIZE", "build_ack", "ack_id_of", "DISCONNECTION_REQUEST",
+           "DISCONNECTION_RESPONSE", "build_disconnection_response",
            "RELAY_CONNECTION_REQUEST", "RESULT_NAMES", "RESPONSE_SIZE", "build_connection_request",
            "build_connection_response", "parse_connection_request", "parse_incoming_request",
            "parse_station_location", "parse_reply", "inet_address", "ldn_constant_id",
@@ -127,6 +129,12 @@ ACK_SIZE = 8
 def build_ack(ack_id):
     """`05 00 00 00` then a u32 big-endian: the acked message's own trailing counter."""
     return bytes([ACK, 0, 0, 0]) + struct.pack(">I", ack_id & 0xFFFFFFFF)
+
+
+def build_disconnection_response():
+    """One byte: the handler of `03`, 0x017c6110, answers `04` and marks the station gone; a leaving
+    Sword repeats `03` every 0.5 s until it hears it."""
+    return bytes([DISCONNECTION_RESPONSE])
 
 
 def ack_id_of(data):

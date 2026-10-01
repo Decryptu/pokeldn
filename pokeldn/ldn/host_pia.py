@@ -231,6 +231,7 @@ class HostPeerProtocol:
         self.next_protocol_tick = None
         self.reliable_messages_in = 0
         self.reliable_messages_out = 0
+        self.leave_requests_in = 0
         self._out = []
         self._reliable_carry = []
 
@@ -416,6 +417,30 @@ class HostPeerProtocol:
             self.next_protocol_tick = now
             self.info("Switch finalized the Pia Session with type 6 Update Session ACK. "
                       "Session join checkpoint complete; starting RTT liveness.")
+        elif parsed["type"] == pia_connect.SESSION_LEAVE_REQUEST:
+            self._answer_leave_request(header, payload, src_ip)
+
+    def _answer_leave_request(self, header, payload, src_ip):
+        # Unanswered, the leaver resends every 500 ms and leaves LDN after the fourth
+        # (docs/frlg_link.md, Leaving the Pia session).
+        if (self.guest_var is None or header.src != self.guest_var
+                or payload[13:15] != (self.guest_var & 0xFFFF).to_bytes(2, "big")):
+            self.log("[host] Session leave request from an unknown station; ignoring it")
+            return
+        try:
+            response = pia_connect.build_session_leave_response(payload, os.urandom(4))
+        except ValueError:
+            self.log(f"[host] malformed Session leave request ({len(payload)} bytes); ignoring it")
+            return
+        self.leave_requests_in += 1
+        data = build_message(
+            self.network, self.pia_crypto, pia_connect.PROTO_SESSION, response,
+            dst_var=self.guest_var, src_var=PIA_HOST_VAR, pktid=self.session_packet_id,
+            compress=False, footer_var=self.guest_var, nonce_source=self.nonces)
+        self.session_packet_id = ((self.session_packet_id + 1) & 0xFFFF) or 1
+        self._send(data, src_ip)
+        if self.leave_requests_in == 1:
+            self.info("Switch is leaving the Pia session (Session type 3); answered with type 4.")
 
     def _receive_rtt(self, payload, src_ip, now):
         parsed = pia_connect.parse_rtt(payload)

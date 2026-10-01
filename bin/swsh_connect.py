@@ -174,6 +174,7 @@ async def main_async(args):
               "selection_sent": False, "box_queue": [], "box_seen": [], "box_next": 0.0,
               "we_are_host": False, "update_mesh_out": 0,
               "migration_pending": None, "migration_out": 0, "migration_acked": None,
+              "host_leaving": None,
               "said_serial": 0, "serial_by_proto": {}, "serial_by_port": {},
               "rpc_seen": {}, "rpc_pair_sent": set(), "offer_status_answered": set(),
               "rpc_bodies_answered": set(), "confirmation_opened": False, "rpc_pair_delta": {},
@@ -669,6 +670,20 @@ async def main_async(args):
                               for k, v in m.items()} for m in msgs])
                 for f in msgs:
                     body = f["payload"]
+                    step = departure_step(body) if (args.leave_with_host and
+                                                    f["protocol"] == lp.PROTOCOL) else None
+                    if step and step[0] == "ack":
+                        station = st["station"] if st["station"] is not None else 0
+                        sock.sendto(wrap(keys, our_mac, our_constant, next_nonce(), step[1],
+                                         lp.PROTOCOL, station),
+                                    (host_ip if args.unicast else bcast, PIA_PORT))
+                        record(rec="tx_ack", t=now, seq=lp.parse_ack(step[1]), station=station,
+                               departure=True)
+                    elif step and st["host_leaving"] is None:
+                        st["host_leaving"] = now
+                        record(rec="leave_with_host", t=now)
+                        print(f"\n[rx] t={now:6.2f} *** START_HOST_MIGRATION: THE CONSOLE IS "
+                              f"CLOSING ITS NETWORK - LEAVING IT ***")
                     if f["protocol"] == lp.PROTOCOL and len(body) >= 2 \
                             and body[1] == lp.UPDATE_SESSION:
                         us = lp.parse_update_session(body)
@@ -1573,6 +1588,8 @@ async def main_async(args):
             while (time.monotonic() < hold_until
                    or mid_trade() and time.monotonic() < hold_until + args.grace):
                 await trio.sleep(0.25)
+                if st["host_leaving"] is not None:
+                    break
                 if stall_abort(st["confirm_last_step"], time.monotonic() - t0,
                                args.abort_on_stall, st["ladder_finished"]):
                     print(f"\n[tx] *** THE LADDER STALLED FOR {args.abort_on_stall:.1f} s - "
@@ -1626,6 +1643,24 @@ async def main_async(args):
 
 
 LADDER_FINAL_PHASE = 4        # `0x010dbf40`: phase 4 -> state 13 -> 14, the teardown, no send
+
+
+def departure_step(body):
+    """What a hosting Sword's leave owes its client, from one Local Protocol message: ("ack", payload)
+    for an update session carrying the host-migration state, ("leave", None) for
+    START_HOST_MIGRATION, else None. Each waits up to 10 s unanswered (docs/swsh_session.md,
+    Leaving)."""
+    try:
+        kind, _size = lp.parse_header(body)
+        if kind == lp.START_HOST_MIGRATION:
+            return ("leave", None)
+        if kind == lp.UPDATE_SESSION:
+            us = lp.parse_update_session(body)
+            if us.host_migration_state:
+                return ("ack", lp.build_ack(us.sequence_id))
+    except ValueError:
+        pass
+    return None
 
 
 def stall_abort(last_step, now, limit, final_phase_seen=False):
@@ -1684,7 +1719,7 @@ PRESETS = {
               "--open-content 30,50 --open-content-offer --box-commands 1 --box-on-accept 4 "
               "--box-period 0.35 --confirm-commands 0,1,2,3,0,1,2,3,0,1,2,3 "
               "--confirm-final-delta 9 --abort-on-stall 15 --hold 240 --send-seconds 0 "
-              "--send-count 0"),
+              "--send-count 0 --answer-migration --leave-with-host"),
 }
 
 
@@ -1843,6 +1878,10 @@ def build_parser():
                          "MIGRATION_RESPONSE. `440001` arrives there only when the player "
                          "accepts, and the console goes silent on every window afterwards: the "
                          "last thing it asks for is two bytes of mesh, not application data")
+    ap.add_argument("--leave-with-host", action="store_true",
+                    help="when the hosting console leaves, ack its update session carrying the "
+                         "host-migration state and leave the network on its START_HOST_MIGRATION, "
+                         "as its own clients do; each step waits 10 s unanswered")
     ap.add_argument("--migration-answer", choices=("auto", "finish", "response"), default="auto",
                     help="what to send when the console migrates the mesh. \"auto\" sends "
                          "MIGRATION_FINISH when the start names US as the next host and a "

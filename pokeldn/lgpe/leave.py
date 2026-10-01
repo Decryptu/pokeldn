@@ -3,11 +3,12 @@
 import struct
 
 from pokeldn.ldn import clone, reliable3
+from pokeldn.ldn import local_protocol as lp
 from pokeldn.ldn import mesh_protocol as mp
 from pokeldn.ldn.station_protocol import DISCONNECTION_REQUEST, DISCONNECTION_RESPONSE
 from pokeldn.ldn import station9
 
-__all__ = ["Leaver"]
+__all__ = ["Leaver", "host_departure"]
 
 RELEASE_ORDER = (1, 0, 2, 3)
 # The console's pause between its last release and its leave request, measured three times.
@@ -20,8 +21,9 @@ class Leaver:
     answered or given up on."""
 
     def __init__(self, participant, offered_clone, step, tail, counter, station=1,
-                 host_bit=1, clone_ids=RELEASE_ORDER):
+                 host_bit=1, clone_ids=RELEASE_ORDER, host_index=0):
         self.p = participant
+        self.host_index = host_index
         self.offered = offered_clone
         self.step, self.tail, self.counter = step, tail, counter
         self.station = station
@@ -100,7 +102,9 @@ class Leaver:
             c = clone.parse_command(payload)
             if c:
                 self.acked.add(c["clone_id"])
-        elif protocol == mp.PROTOCOL and payload and payload[0] == mp.LEAVE_RESPONSE:
+        elif protocol == mp.PROTOCOL and bytes(payload) == bytes([mp.LEAVE_RESPONSE,
+                                                                  self.host_index]):
+            # The console's handler 0x591bf4 takes only the host's index at [1].
             if not self.leave_answered:
                 self.leave_answered = True
                 # A retail host migrates every 0.3 s and waits five seconds for the leaver, so the
@@ -116,3 +120,22 @@ class Leaver:
                 self.done = True
                 self.log.append("disconnection response")
         return []
+
+
+def host_departure(protocol, payload, station_index):
+    """-> (replies, leave) for a console host that leaves: the migration start's ack and `48 <own
+    index>` (wait 0x58aeb0, 5 s unanswered); `leave` on START_HOST_MIGRATION, repeated until no
+    station is on the network (0x5d3fd0, 10 s). docs/lgpe_session.md, A host leaving."""
+    payload = bytes(payload)
+    if protocol == mp.PROTOCOL and len(payload) > reliable3.HEADER_SIZE:
+        r = reliable3.parse(payload)
+        if r and r["size"] and mp.parse_migration_start(r["payload"]) is not None:
+            return ([(reliable3.build_ack(r["sequence"] + 1), mp.PROTOCOL, 1),
+                     (mp.build_migration_response(station_index), mp.PROTOCOL, 0)], False)
+    if protocol == lp.PROTOCOL and len(payload) >= lp.HEADER_SIZE:
+        try:
+            kind, _ = lp.parse_header(payload)
+        except ValueError:
+            return [], False
+        return [], kind == lp.START_HOST_MIGRATION
+    return [], False

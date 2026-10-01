@@ -247,3 +247,22 @@ def parse_migration_finish(data):
     if len(data) != MIGRATION_FINISH_SIZE or data[0] != MIGRATION_FINISH:
         return None
     return {"host_index": data[1], "flag": data[2]}
+
+
+# Leaving the mesh: a joined station sends `04 <own index>` on the reliable port; the version-4 host
+# handler 0x017c19a0 answers `08 <host index>` through 0x017c2450 (unreliable, two copies) and drops
+# the station. Unanswered, a Sword waits 5 s (docs/swsh_session.md, Leaving).
+LEAVE_REQUEST_SIZE = 2
+
+
+def parse_leave_request(data):
+    """-> the leaving station's index, or None; never raises."""
+    data = bytes(data)
+    if len(data) != LEAVE_REQUEST_SIZE or data[0] != LEAVE_REQUEST:
+        return None
+    return data[1]
+
+
+def build_leave_response(host_index):
+    """The leaver's handler 0x017c0d44 takes it only when [1] is the mesh host's index."""
+    return bytes([LEAVE_RESPONSE, host_index & 0xFF])

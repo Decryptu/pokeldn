@@ -143,6 +143,11 @@ sends its `REQUEST_CANCEL` again when the leader's arrives (`pokeldn/frlg/link/t
 `_on_linkcmd`).
 `BOTH_CANCEL_TRADE` clears any pending request before the exit standby rounds.
 
+The follower sends `REQUEST_CANCEL` from its live menu after YES, prints "waiting for friend" and
+idles until `BOTH_CANCEL_TRADE` [trade.c:2049, 1643]; a leader whose player chose Cancel answers
+when it reads it [1715-1722]. The host answers a console's `REQUEST_CANCEL` in the final menu at
+once.
+
 ## One-sided cancel returns both sides to the menu
 
 `PLAYER_CANCEL_TRADE` / `PARTNER_CANCEL_TRADE` go through `CB_HandleTradeCanceled` → `CB_MAIN_MENU`
@@ -241,6 +246,35 @@ One session, a console hosting Mystery Gift to the receive client, from its Net 
     4.63   host's own NI (join status = the user's YES on the console)
     6.82   SEND_PLAYER_IDS, 6.87 BLOCK_REQ (2.2s after the YES)
     8.15   Net 0x50 property update every ~0.5s, acked 0x51
+
+## Leaving the Pia session
+
+A console child leaves in three steps after its RFU `D` frame: a pause, the Session type-3 leave
+request, then its LDN deauthentication (reason 3). Across 33 hosted trade and Mystery Gift captures
+with no type-4 answer, every one measured:
+
+| interval | measured |
+|---|---|
+| `D` to the first type 3 | 1.97-2.02 s |
+| type 3 to type 3, four sends | 0.48-0.54 s |
+| first type 3 to the LDN leave | 2.03-2.08 s |
+| `D` to the LDN leave | 4.02-4.08 s |
+
+    type 3, 22 bytes:  03 | random u32 | constant id (8) | variable id (2) | kind 0 | IPv4 | port
+    type 4, 15 bytes:  04 | random u32 | the request's constant id and variable id
+
+Offsets are in the GBA app's `main`, from the image start. `LeaveMeshJob` sends the request at
+`0xcacf4` with a 500 ms deadline, and `WaitLeaveResponse` (`0xcaf38`) ends on the job's
+response flag `+0x99`, or at each deadline resends while its count is 2 or less (`0xcb06c`..
+`0xcb08c`): four sends, then the job completes and the station leaves the network. The Session
+dispatcher's type-4 case (`0xba028`, table `0x180fc9`) sets that flag for a 15-byte message whose
+constant id at 5 and variable id at 13 are the station's own. A host's type-3 handler (`0xbf2d4`)
+takes 22 or 34 bytes (kind 1 carries 18 address bytes, `0xbf3ac`) and answers 15 bytes: type 4, a
+fresh random word, the request's bytes 5 to 14 (`0xbf454`..`0xbf4e4`). The host answers every
+type 3 in that form (`pokeldn.ldn.host_pia.HostPeerProtocol`), unicast, header
+`(console variable, 0x00C6)`.
+
+What the console waits on during the two seconds before its first type 3 is unknown.
 
 ## 802.11 behaviour
 

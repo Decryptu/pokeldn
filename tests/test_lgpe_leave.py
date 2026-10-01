@@ -5,7 +5,7 @@ import struct
 from pokeldn.ldn import clone, reliable3, station9
 from pokeldn.ldn import mesh_protocol as mp
 from pokeldn.ldn.station_protocol import DISCONNECTION_REQUEST, DISCONNECTION_RESPONSE
-from pokeldn.lgpe.leave import Leaver
+from pokeldn.lgpe.leave import Leaver, host_departure
 
 
 def words(data):
@@ -80,3 +80,36 @@ def test_a_host_that_never_answers_the_disconnection_is_given_two_seconds():
     assert not lv.done
     run(lv, 106.3, 106.6)
     assert lv.done
+
+
+# A Let's Go host leaving, as an emulated pair recorded it: its migration start on the mesh reliable
+# port, and the joiner's two answers (docs/lgpe_session.md, A host leaving).
+HOST_MIGRATION_START = bytes.fromhex("0003000300000000fffff82ffffff82f0000000000000000440001")
+JOINER_ACK = bytes.fromhex("000000000000000000000000fffff8300000000000000000")
+# A retail host's START_HOST_MIGRATION, repeated every 0.3 s until no station is left.
+START_HOST_MIGRATION = bytes.fromhex("01130000000000000000000000000000")
+
+
+def test_a_leaving_hosts_migration_start_gets_the_emulated_joiners_answers():
+    replies, leave = host_departure(mp.PROTOCOL, HOST_MIGRATION_START, 1)
+    assert replies == [(JOINER_ACK, mp.PROTOCOL, 1), (b"\x48\x01", mp.PROTOCOL, 0)]
+    assert not leave
+
+
+def test_start_host_migration_leaves_the_network_and_nothing_else_does():
+    from pokeldn.ldn import local_protocol as lp
+    assert host_departure(lp.PROTOCOL, START_HOST_MIGRATION, 1) == ([], True)
+    update = bytes.fromhex("011149000000000000000000040000004d461bb5")
+    assert host_departure(lp.PROTOCOL, update, 1) == ([], False)
+    leave_request = reliable3.build(b"\x04\x01", reliable3.FIRST_SEQUENCE, reliable3.FIRST_SEQUENCE)
+    assert host_departure(mp.PROTOCOL, leave_request, 1) == ([], False)
+    assert host_departure(mp.PROTOCOL, b"\x08\x00", 1) == ([], False)
+
+
+def test_a_leave_response_naming_the_leaver_is_ignored_as_the_console_ignores_it():
+    part, lv = make()
+    lv.leave_sent = lv.leave_next = 100.0
+    lv.receive(mp.PROTOCOL, bytes([mp.LEAVE_RESPONSE, 1]), 100.0)
+    assert not lv.leave_answered
+    lv.receive(mp.PROTOCOL, bytes([mp.LEAVE_RESPONSE, 0]), 100.0)
+    assert lv.leave_answered

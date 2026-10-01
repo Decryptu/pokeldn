@@ -825,6 +825,54 @@ Measured over four seated sessions decrypted by a joiner board: player count 2 a
 policy 1 first advertised 2 to 48 ms before the Net 0x50 at 0.09 to 0.64 s. With 2 of 2 participants
 the policy refuses nothing the capacity did not.
 
+## Leaving
+
+A station leaves through one of two `nn::pia::session` jobs, each waiting on a reply from the other
+station. Session types read by the dispatcher `0x2547490` (table `0x336a9b7`, types 0 to 17):
+
+| type | size | sender | message |
+|---|---|---|---|
+| 3 | 22 | a joiner leaving | leave request: type, random u32, its constant id (8, big-endian), its variable id (2), address type 0, its IPv4, port |
+| 4 | 15 | the host | leave response: type, random u32, the leaver's constant and variable ids copied from the request |
+| 9 | 30 | the host leaving | start host migration: type, host constant and variable ids, 0, host IPv4 and port, the next host's constant and variable ids, `00 01` |
+| 10 | 21 | the station a type 9 names | its acknowledgement: type, its own constant and variable ids, then the host's |
+
+`pokeldn.za` builds all four (`build_leave_request`, `build_leave_response`, `build_migration_ack`).
+
+### A joiner leaving
+
+`LeaveMeshJob::SendLeaveRequest` (`0x2557e54`) sends the type 3 to the host and sets a 500 ms
+deadline; `WaitLeaveResponse` (`0x2558098`) completes on a type 4 and re-sends on each deadline,
+four sends in all (counter +0x9c, `cmp w8, #2; b.gt` at `0x25581e0`), then completes without one.
+The type 4 is taken by `0x25474f8` only at 15 bytes and only when bytes 5 to 14 are the station's
+own ids (+0x1b8, +0x1c0); it sets the job's byte +0x99. The host's type-3 handler `0x254c5ac` (22 or
+34 bytes, host only) writes the type 4 at `0x254c740` and removes the station (`0x2548500`).
+
+A retail Z-A joined to a host that sends no type 4 sent four type 3 about 0.5 s apart and
+deauthenticated 2.0 s after the first (1.99, 2.02 and 2.03 s over three departures).
+`bin/za_host.py` answers each type 3 with a type 4; `bin/za_join.py` sends its own type 3 when it
+leaves on `--hold` or `--hold-after-trade`, and goes on the type 4 or after the fourth send.
+
+### A host leaving
+
+`LeaveMeshWithHostMigrationJob` names the next host (`CalcNextHost` `0x255a6fc`), then
+`SendStartHostMigrationMessage` (`0x255a91c`) sends the type 9 once a second until a 5000 ms
+deadline (`0x255a8c8`), after which the job fails with `0x6c0e`. `WaitStartHostMigrationAck`
+(`0x255abb4`) completes as soon as byte +0xe0 is set. The type-10 reader `0x2550a64` takes a 21-byte
+message only on the host, only when bytes 11 to 20 are the host's own ids, and sets +0xe0 through
+`0x255a630` when bytes 1 to 10 are the named next host's.
+
+With the type 9 unanswered, a retail Z-A hosting a trade whose player backed out sent five type 9 one
+second apart, then Net 0x11 sequence 3 from source 0 every 0.5 s for about 4 s, then Net 0x40 for
+about 2 s, and went silent 10.82 to 10.86 s after its first type 9 (four departures); its network
+went down 11.26 s after it in the one with a board trace. In an emulated pair the joiner answered
+the type 9 with a type 10 48 ms later, the host sent Net 0x11 sequence 3 and the joiner answered
+`0112000000000003`; the host's network was gone 0.25 s after its type 9. The joiner's type 10 and
+0x12 went out with header flags 2, destination 0, packet id 0 and no footer.
+
+`bin/za_join.py` answers a type 9 naming it with the type 10, and the Net 0x11 after it with the
+0x12, and ends the seat once the console has been silent for a second.
+
 ## Mystery Gift
 
 Mystery Gift in 2.0.2 offers Get via Internet, Get with Code/Password and Check Mystery Gifts; there
@@ -845,6 +893,9 @@ is no local-wireless path.
   ends a session whose game messages go unanswered (host migration at 27 s measured), against the
   10 s kick (The kick).
 - Which console state a host must wait for before closing the network after a trade, given
-  "Error Number: 6" after a timed close.
+  "Error Number: 6" after a timed close. A leaving retail host sends the type 9 first ([A host
+  leaving](#a-host-leaving)); `bin/za_host.py` closes without it.
+- What the Net 0x11 sequence 3 after a type 9 asks of the next host (`NetHostMigrationJob`, vtable
+  slots from `0x2509d60`), and what a retail console shows on each side of an answered handover.
 - What a station does with a protocol-0 message, and the keepalive's header bytes (`04 00` by the
   header diff). A capture of a seated station the console has nothing else to send to.

@@ -137,6 +137,7 @@ class HostSession:
         self.trade_complete = False
         self.trades = 0
         self.trade_steps = 0
+        self.leave_requests = 0
         # called on our offer after each trade; a console refuses a PID its save already holds
         self.renew_offer = renew_offer
         self.counts = {}
@@ -232,6 +233,13 @@ class HostSession:
                     if self.offer_at is not None:
                         self.offer_sent = True
                         self._schedule(now, self.offer_at, self.offer, "our offer")
+        elif kind == za.SESSION_LEAVE_REQUEST and len(payload) >= 15:
+            # Unanswered, a console re-sends its leave every 0.5 s and gives up after four (docs/za.md).
+            self.leave_requests += 1
+            self._send([(pia_connect.PROTO_SESSION,
+                         za.build_leave_response(payload, os.urandom(4)), None)],
+                       dst=header.src, note="session leave response")
+            self.log(f"[za-host] the console asked to leave at {self._elapsed(now):.2f}s; answered")
         else:
             self.log(f"[za-host] Session type {kind} ({len(payload)} bytes) at "
                      f"{self._elapsed(now):.2f}s: {payload[:16].hex()}")

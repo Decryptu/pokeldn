@@ -298,3 +298,48 @@ def test_an_ack_names_our_own_lowest_pending_not_theirs():
     entry = rl.parse_ack_payload(ack["payload"])["entries"][0]
     assert entry["ack_id"] == 7
     assert ack["lowest_pending"] == entry["field_0x50"] == s.joiner.tx_seq == 2
+
+
+# A retail Shining Pearl leaving our room, decrypted from its packet: the mesh leave request on 0x18
+# port 1 under the reliable header (sequence 1), naming its station index 1.
+LEAVE_REQUEST = bytes.fromhex("0f00000200010001000401")
+
+
+def test_a_leaving_console_is_answered_and_released():
+    """Unanswered, the console repeats its leave request for 5 s and its disconnection request
+    for 4 s before it deauthenticates (docs/bdsp_session.md, Leaving)."""
+    s, c = _joined(host.TradePartner(bytes(328)))
+    host_index = mp.parse_join_response(s.joiner.join_response)["host_index"]
+    got = c.send([(LEAVE_REQUEST, mp.PROTOCOL, mp.PORT_RELIABLE, 1, 1)], 10.0)
+    acks = [rl.parse(m.payload) for _, m in got if (m.protocol, m.port) == (mp.PROTOCOL, 1)]
+    assert [a["is_ack"] for a in acks] == [True]
+    assert rl.parse_ack_payload(acks[0]["payload"])["entries"][0]["ack_id"] == 2
+    # the leaver's handler [0x0154baf8] takes two bytes naming the host's index, from the host
+    responses = [m.payload for _, m in got if (m.protocol, m.port) == (mp.PROTOCOL, 0)]
+    assert responses == [bytes([mp.LEAVE_RESPONSE, host_index])] * 2
+    assert s.counters["leave_requests"] == 1
+
+    got = c.send([(bytes([stp.DISCONNECTION_REQUEST]), stp.PROTOCOL, 0, 1, 1)], 10.5)
+    assert [m.payload for _, m in got] == [bytes([stp.DISCONNECTION_RESPONSE])]
+
+    # nothing more goes to a station that has left the mesh
+    c.send([(lp.build_ack(s.session_seq), lp.PROTOCOL, 0, lp.MESSAGE_FLAGS, 0)], 10.6)
+    assert not c.read(s.tick(12.0))
+
+
+@pytest.mark.parametrize("message, own, answer", [
+    # a retail joiner leaving: the host (index 0) owes the leaver's handler [0x0154baf8] `08 00`
+    (LEAVE_REQUEST, 0, "0800"),
+    # a retail host leaving its room names us (index 1) next host; its wait [0x015607bc] ends on
+    # `48 01` from each station [0x0154b068]
+    (bytes.fromhex("0f0000030001000100440001"), 1, "4801"),
+    # neither is answered by the station that sent it
+    (LEAVE_REQUEST, 1, None),
+    (bytes.fromhex("0f0000030001000100440001"), 0, None),
+])
+def test_a_departure_is_answered_and_its_window_acked(message, own, answer):
+    from pokeldn.bdsp.session import answer_departure
+    ack, got = answer_departure(message, own)
+    entry = rl.parse_ack_payload(rl.parse(ack)["payload"])["entries"][0]
+    assert (entry["stream_id"], entry["ack_id"]) == (0, 2)
+    assert (got.hex() if got else None) == answer

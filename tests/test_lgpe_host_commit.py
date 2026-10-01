@@ -410,8 +410,8 @@ def test_a_second_state_word_4_under_a_fresh_counter_is_answered_again(stage):
 
 
 def test_the_consoles_leave_request_is_acknowledged_and_answered(stage):
-    """A leave request on the reliable port is acked there and answered on the unreliable port; mesh
-    and session shrink to one node."""
+    """A leave request on the reliable port is acked there and answered on the unreliable port with
+    the host's index, twice, as a console host answers it; mesh and session shrink to one node."""
     from pokeldn.ldn import mesh_protocol as mp
     s = stage["s"]
     stage["sent"].clear()
@@ -422,14 +422,32 @@ def test_the_consoles_leave_request_is_acknowledged_and_answered(stage):
     assert len(acks) == 1 and acks[0][1].get("port") == 1
     assert reliable3.parse(acks[0][0])["expected"] == reliable3.FIRST_SEQUENCE + 1
     responses = [(payload, kw) for payload, kw in mesh if payload[0] == mp.LEAVE_RESPONSE]
-    assert len(responses) == 1 and responses[0][0] == b"\x08\x01"
-    assert responses[0][1].get("port", 0) == 0
+    assert [r[0] for r in responses] == [b"\x08\x00"] * 2
+    assert all(r[1].get("port", 0) == 0 for r in responses)
     assert not s.joined and s.session_nodes() == ((s.host.our_ip, lgpe_host.PIA_PORT, 0),)
     updates = [payload for payload, kw in mesh if payload[0] == mp.UPDATE_MESH]
     assert updates and updates[-1][1] == 1, "the mesh update still lists the console"
     s.handle(mp.PROTOCOL, leave)
     assert len([1 for p, payload, kw in stage["sent"] if p == mp.PROTOCOL
-                and payload[0] == mp.LEAVE_RESPONSE]) == 1
+                and payload[0] == mp.LEAVE_RESPONSE]) == 2
+
+
+def test_a_leaving_console_takes_the_hosts_leave_response(stage):
+    """The leave request a leaving console sends, through the host, back into the console's own
+    check (0x591bf4: [1] must be the host's index, else it waits 5000 ms and deauthenticates)."""
+    from pokeldn.ldn import mesh_protocol as mp
+    from pokeldn.lgpe.leave import Leaver
+    s = stage["s"]
+    part = clone.Participant(100.0, dest=1, own=2, station=JOINER)
+    lv = Leaver(part, 3, 11, 2, 2, station=JOINER, host_bit=1)
+    lv.leave_sent = lv.leave_next = 100.0
+    request = [p for p, proto, port in lv.poll(100.0) if proto == mp.PROTOCOL and port == 1]
+    assert len(request) == 1
+    stage["sent"].clear()
+    s.handle(mp.PROTOCOL, request[0])
+    for p, payload, kw in stage["sent"]:
+        lv.receive(p, payload, 100.01)
+    assert lv.leave_answered
 
 
 def test_the_consoles_disconnection_request_is_answered(stage):

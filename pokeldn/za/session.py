@@ -149,3 +149,41 @@ def build_session_update_ack(constant_id, sequence):
         raise ValueError(f"a constant id is six or eight bytes, not {len(constant_id)}")
     return (bytes([6]) + constant_id + (sequence & 0xFFFFFFFF).to_bytes(4, "big")
             + SESSION_UPDATE_ACK_TAIL)
+
+
+# Leaving (docs/za.md, Leaving). A location here is a constant id and a variable id, 8 + 2 bytes.
+SESSION_LEAVE_REQUEST, SESSION_LEAVE_RESPONSE = 3, 4
+SESSION_START_MIGRATION, SESSION_START_MIGRATION_ACK = 9, 10
+
+
+def build_leave_response(request, random4):
+    """-> the fifteen-byte type 4 a host answers a type-3 leave with: the type, a random word, the
+    leaver's location copied from the request (writer `0x254c740`, reader `0x25474f8`)."""
+    request = bytes(request)
+    if len(request) < 15 or request[0] != SESSION_LEAVE_REQUEST:
+        raise ValueError("not a type-3 leave request")
+    return bytes([SESSION_LEAVE_RESPONSE]) + bytes(random4)[:4].ljust(4, b"\0") + request[5:15]
+
+
+def migration_target(start):
+    """-> the (constant id, variable id) a type-9 start host migration names as the next host."""
+    start = bytes(start)
+    if len(start) < 28 or start[0] != SESSION_START_MIGRATION:
+        raise ValueError("not a type-9 start host migration")
+    return start[18:26], int.from_bytes(start[26:28], "big")
+
+
+def build_migration_ack(start):
+    """-> the 21-byte type 10 the named station answers a type 9 with: its own location, then the
+    sender's (reader `0x2550a64`)."""
+    start = bytes(start)
+    migration_target(start)
+    return bytes([SESSION_START_MIGRATION_ACK]) + start[18:28] + start[1:11]
+
+
+def build_leave_request(constant_id, variable_id, ip, random4, port=PIA_PORT):
+    """-> the 22-byte type 3 a station leaving sends its host: the type, a random word, its location,
+    address type 0, its IPv4 and port (`LeaveMeshJob` `0x2557e54`; a retail console's own leave)."""
+    return (bytes([SESSION_LEAVE_REQUEST]) + bytes(random4)[:4].ljust(4, b"\0")
+            + bytes(constant_id) + (variable_id & 0xFFFF).to_bytes(2, "big") + b"\0"
+            + bytes(int(x) for x in ip.split(".")) + (port & 0xFFFF).to_bytes(2, "big"))

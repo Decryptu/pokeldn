@@ -946,14 +946,14 @@ class HostTradeEngine:
                     "Switch backed out of the trade menu; Linux acknowledged the cancel. "
                     "The menu is live again - select a Pokemon, or CANCEL again to leave.")
         elif cmd == trade.REQUEST_CANCEL and self.state == H_LEAVE_MENU:
-            # BOTH_CANCEL requires both select statuses CANCEL; the follower's REQUEST_CANCEL comes
-            # first.
+            # The follower sends it from its live menu and waits on "waiting for friend" until
+            # BOTH_CANCEL [trade.c:2049, 1643]; a native leader that chose CANCEL answers at once
+            # [trade.c:1715-1722], so the menu wait no longer applies.
             self._child_cancel_requested = True
             self.trace.append(("child_cancel_requested",))
-            if self._host_cancel_ready:
-                self._enter_cancel_to_leave()
-            else:
-                self.info("Switch requested CANCEL; honoring it after the 5-second menu wait.")
+            self._leave_menu_wait = None
+            self._host_cancel_ready = True
+            self._enter_cancel_to_leave()
         elif cmd in (trade.READY_TO_TRADE, trade.READY_CANCEL_TRADE) \
                 and self.state == H_LEAVE_MENU:
             # Native sends PLAYER_CANCEL when the leader chose CANCEL but the follower picked a mon.

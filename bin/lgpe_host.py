@@ -955,20 +955,20 @@ class Session:
                   "starting the clone protocol")
             self.broadcast_mesh()
         elif pl[0] == 0 and len(pl) >= reliable3.HEADER_SIZE:
-            # The leave request rides the reliable port and is owed that ack and a leave response;
-            # unanswered, a console repeats it every 40 ms for 5 s, then disconnects the station.
+            # The leave request rides the reliable port and is owed that ack and `08 <host index>`:
+            # the leaver's handler 0x591bf4 drops any other index and waits out its 5000 ms
+            # (0x589490) before it deauthenticates (docs/lgpe_session.md, A joiner leaving).
             r = reliable3.parse(pl)
             if r and r["size"] and r["payload"][0] == mp.LEAVE_REQUEST and not self.peer_left:
                 self.peer_left = True
                 TRADE_IN_PROGRESS["offer"] = TRADE_IN_PROGRESS["commit"] = False
                 self.send(reliable3.build_ack(r["sequence"] + 1), mp.PROTOCOL, port=1)
-                self.send(bytes([mp.LEAVE_RESPONSE, r["payload"][1]]), mp.PROTOCOL,
-                          destination=0, kind="leave_response")
+                for _ in range(2):
+                    self.send(mp.build_leave_response(HOST_INDEX), mp.PROTOCOL,
+                              destination=0, kind="leave_response")
                 self.peer_location = None
                 self.joined = False
                 self.broadcast_mesh()
-                # Under test: the console waited 5 s after the leave response and then disconnected
-                # itself; our own disconnection request may be what it waits for.
                 self.send(bytes([DISCONNECTION_REQUEST]), station9.PROTOCOL, destination=0)
                 print(f"[lgh] *** THE CONSOLE LEFT THE MESH *** station {r['payload'][1]}; "
                       "answered its leave request and asked it to disconnect")

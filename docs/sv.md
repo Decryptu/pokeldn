@@ -873,8 +873,8 @@ type-3 join, sends the four identity messages after the console opens key 0x80, 
 
 With the joiner's whole opening delivered, a retail console hosting from its search either hands
 the host role to the joiner or runs the game. Handing it over, it sends Session type 7 naming the
-joiner (`LeaveMeshWithHostMigrationJob`), then only NetStartHostMigration `01400000`, about twice a
-second; taking the host role needs the new host to create an LDN network. The handover has been
+joiner (`LeaveMeshWithHostMigrationJob`), then only NetStartHostMigration `01400000`, every 0.3 s
+for up to 4 s ([Leaving](#leaving)); taking the host role needs the new host to create an LDN network. The handover has been
 measured anywhere from 22 ms after the accept to about eight seconds after the seat, and after a
 completed trade (three seats measured); what decides it is unresolved. Running the game, the
 console sends, in order:
@@ -892,6 +892,45 @@ A joiner answers the announcement with the type-3 join (`--port2-now` sends it w
 table instead). A retail console seated a joiner with the station update alone, before any join
 response; a joiner that waits for the join response sends nothing all session.
 
+## Leaving
+
+A console that quits a seat runs one of two Pia jobs, by its role. Each waits on its peer and gives
+up on a timer.
+
+A joined console runs `LeaveMeshJob`. SendLeaveRequest `0x6db590` sends the Session type-3 leave
+request (the layout in [docs/pla.md](pla.md#leaving)) and sets a 500 ms deadline (`0x6db6a0`);
+WaitLeaveResponse `0x6db7b0` resends on expiry and completes after the fourth send (`[job+0x6c]` past
+2, `0x6db8e8`) or as soon as `[job+0x69]` is set. The Session dispatcher (`0x6d4960`, table
+`0x3c0cd3b`, types 0 to 0xA) hands type 4 to `0x6d7b10`, which sets `[job+0x69]` for a 17-byte
+message whose bytes 5 to 16 are the station's own location id:
+
+    04 | u32 random | location id (12), copied from the request
+
+A host's type-3 handler `0x6d7894` writes exactly that (type byte at `0x6d7a50`, a fresh xorshift
+draw from `0x6c70a8`, sent at `0x6d7ad8`) once it finds the station by constant id and variable id.
+Unanswered, a retail console sent four leave requests 0.49 to 0.54 s apart in four sessions with
+`bin/sv_host.py`, and deauthenticated 2.04 s after the first in the one with a board trace.
+`bin/sv_host.py` answers the first (`--no-leave-response` leaves it unanswered);
+`tests/test_sv_departure.py` runs the answer through `0x6d7b10` under unicorn.
+
+A console hosting from its search hands the host role on. `LeaveMeshWithHostMigrationJob` sends
+Session type 7 to the next host and resends it every second (`0x6df050`) until a type 8 names that
+station (`0x6ded94`), giving up after 5 s (`0x6defb8`). Then `NetDestroyNetworkJob`, in its
+host-migration form, waits until every client has received the connection-status update (4 s at
+most, `0x6ac68c`), sends NetStartHostMigration `01400000` (written only by `0x69d310`, called only
+from `0x6aca54`) every 300 ms (`0x6aca98`) until the network's station count is 1 (`0x6acaf4`) or a
+deadline passes (4 s, or 2 s when the update wait timed out, `0x6ac984`), and destroys the LDN
+network. On the wire the update is Net 0x11 with is-migrating set; after a joiner's Net 0x12 the first
+NetStartHostMigration followed 45 ms later. Which job a client starts on NetStartHostMigration is
+untraced; `NetHostMigrationJob` opens with DisconnectNetwork or EmulateDisconnection (`0x6a93c4`).
+
+In 39 seats a joiner answered the type 7 at once and held the seat: the console sent
+NetStartHostMigration 12 to 14 times, the last 3.5 to 4.1 s after the type 7; on the one traced, its
+network went down 4.3 s after the type 7, after LDN broadcasts of ethertype `88b7`. In two seats the
+joiner left 3.0 s after the type 7 and the console's advertisements were gone within 0.5 s of the
+joiner leaving, before the console's own 4 s deadline. `bin/sv_join.py` leaves the seat at the first
+NetStartHostMigration (`--stay-on-host-migration` holds it).
+
 ## Unresolved
 
 - Whether an unannounced seat whose identity set reached acknowledgement 47 lost an outgoing chunk
@@ -904,8 +943,6 @@ response; a joiner that waits for the join response sends nothing all session.
 - Whether a console hosting from its search runs a second trade in the same seat. After each trade
   measured in the joiner direction it handed the host role over and the joiner left
   (`--leave-on-migration`); a console joined to `bin/sv_host.py` traded twice in one seat.
-- What answering the console's type 7 with a type 8 (`bin/sv_join.py --answer-migration`) leads to;
-  no seat that migrated has been answered.
 - Whether the game checks a joiner's Link Code when it hosts under one: a retail console hosting
   under a code accepted a joiner advertising none.
 - Why a console joined to `bin/sv_host.py` can acknowledge the host's announcement and never send its
@@ -913,3 +950,6 @@ response; a joiner that waits for the join response sends nothing all session.
 - Whether a master-only leave event, without the client's own leave event, can hold a type-2
   request across the client's 15 s timeout. The master-only branch drains the relay's queues
   through `0x12fbef0` while preserving `+0xb8`.
+- What a console does between its player backing out and its first departure message: none of the
+  captures marks the button press. In one joiner seat the cancel `8000040100` preceded the type 7
+  by 1.5 s.

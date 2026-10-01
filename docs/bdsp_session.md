@@ -269,6 +269,48 @@ the timeout is unread. Answered, it sends `NetJoinData` and requests 0x04 and 0x
 host does, and from there the room is symmetric: the approach, the greeting and
 [the trade](bdsp_trade.md) run unchanged with the console as joiner.
 
+## Leaving
+
+A console leaving the room runs Pia's mesh leave as a joiner and its host-migration leave as a host.
+Both open on the mesh protocol's reliable window, 0x18 port 1, under the reliable header with
+sequence 1, and both wait on an answer sent unreliably on port 0. A retail Pia sends each answer
+twice, the second in a packet of its own. The mesh dispatcher is `0x0154ac94` (jump table
+`0x3e6b25a`, types 0x40 to 0x4A behind `0x3e6b35c`).
+
+| the console | sends | is owed | handler that ends its wait |
+|---|---|---|---|
+| joiner, `LeaveMeshJob` | `04 <own index>`, the leave request | `08 <host index>` from the host | `0x0154baf8`, clears job+0x7c |
+| joiner, then | station disconnection request, `03` on 0x14 | `04` | |
+| host, `LeaveWithHostMigrationJob` | `44 <host index> <new host index>`, one to each station | `48 <station index>` from every station | `0x0154b068`, clears job+0x6e[index] |
+
+The host's leave request handler `0x0154b9e0` refuses a size other than 2, index 0xFD and its own
+index, answers through `0x0154c860` (`08` and the host's own station index) and drops the station.
+`LeaveMeshJob::WaitLeaveResponse` `0x0155fd2c` moves on when the response clears its flag or its
+deadline passes. `LeaveWithHostMigrationJob::WaitMigrationResponse` `0x015607bc` waits while any
+present station's flag is set; a station that left clears its own.
+
+Measured with nothing answered:
+
+| the console | first message | then | gone |
+|---|---|---|---|
+| joiner leaving a hosted room, 4 runs | leave request every 0.125 s for 4.9 to 5.0 s | disconnection request every 0.5 s, 3.6 s in the one run captured to the end | deauthentication 9.0 s after the first request, in that run |
+| host leaving its room with one station joined, 4 runs | migration start every 0.125 s for 4.9 s | update session, sequence +1, migration state 1, every 0.11 s for 10 s; then Local Protocol 0x13 (start host migration) every 0.3 s for 10 s | its network closes 25.3 s after the first migration start |
+
+`pokeldn.bdsp.session.answer_departure` builds both answers; `bin/bdsp_host.py` answers a leaving
+joiner and its disconnection request, and `bin/bdsp_connect.py` answers a migration start, acks every
+later update session and leaves the network on 0x13 (`--no-leave-on-host-migration` stays).
+
+Leaving the trade box is not a departure: the box's close callback `TradeSelectPokeModel$$CheckComplete`
+[1.3.0 main 0x1c26810] sends `NetDataCurrentFlowCancelData{0}` (0x25, `SendCancel` 0x1c26bf0) and
+`UnionTradeManager$$Cancel` [0x1c33780] sends `NetCharacterStateData{0}`, both in one packet, with
+no wait on the partner.
+
+### Unresolved
+
+- Whether an answered leave or migration closes the console's wait at once; no answered departure
+  has been run.
+- What ends the Local Protocol 0x13 phase early.
+
 ## Measurement methods
 
 - A refusing check is an instrument. The console answers a connection request only when the protocol

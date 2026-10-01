@@ -7,7 +7,7 @@ import zlib
 from dataclasses import dataclass, field
 
 from pokeldn.bdsp import room
-from pokeldn.bdsp.session import PIA_PORT, session_keys
+from pokeldn.bdsp.session import PIA_PORT, answer_departure, session_keys
 from pokeldn.ldn import local_protocol as lp
 from pokeldn.ldn import mesh_protocol as mp
 from pokeldn.ldn.pia5 import password_crc
@@ -166,6 +166,7 @@ class Joiner:
     join_ack: int = None
     next_join_response: float = 0.0
     join_acked: bool = False
+    leaving: bool = False
     # reliable, their direction
     rx_seqs: set = field(default_factory=set)
     rx_base: int = None
@@ -206,7 +207,8 @@ class HostSession:
         self.joiner = None
         self.out = []
         self.counters = {"rx": 0, "rx_bad": 0, "tx": 0, "game_rx": 0, "game_tx": 0,
-                         "rtt_answers": 0, "clock_answers": 0, "state_requests": 0}
+                         "rtt_answers": 0, "clock_answers": 0, "state_requests": 0,
+                         "leave_requests": 0, "disconnection_requests": 0}
         # the mesh clock a host hands out, in ms; any monotonic value
         self.clock_origin_ms = 1_000_000
 
@@ -320,8 +322,18 @@ class HostSession:
                 j.join_acked = True
                 self.record(rec="join_acked", t=now)
                 self._start_game(j, now)
+        elif kind == stp.DISCONNECTION_REQUEST:
+            # One byte back [0x0154ea60]; unanswered, a leaving console repeats it every 0.5 s
+            # until it deauthenticates (docs/bdsp_session.md, Leaving).
+            self.counters["disconnection_requests"] += 1
+            self.record(rec="disconnection_request", t=now)
+            self._send([(bytes([stp.DISCONNECTION_RESPONSE]), stp.PROTOCOL, 0, 0x01,
+                         1 << JOINER_INDEX)], 0, j.ip)
 
     def _mesh(self, j, m, now):
+        if m.port == mp.PORT_RELIABLE:
+            self._mesh_reliable(j, m, now)
+            return
         kind = m.payload[0] if m.payload else None
         if kind == mp.JOIN_REQUEST:
             ack = mp.read_ack_id(m.payload)
@@ -339,6 +351,27 @@ class HostSession:
             self._send(msgs, 0, self.broadcast)
         else:
             self.record(rec="mesh_rx", t=now, kind=kind, payload=m.payload.hex())
+
+    def _mesh_reliable(self, j, m, now):
+        """The mesh's reliable window, port 1, where a console leaving the room sends its leave
+        request (docs/bdsp_session.md, Leaving)."""
+        try:
+            ack, answer = answer_departure(m.payload, HOST_INDEX)
+        except ValueError:
+            ack = answer = None
+        if ack is not None:
+            self._send([(ack, mp.PROTOCOL, mp.PORT_RELIABLE, rl.MESSAGE_FLAGS, 1 << JOINER_INDEX)],
+                       j.variable_id or 0, j.ip)
+        if answer is None or answer[0] != mp.LEAVE_RESPONSE:
+            self.record(rec="mesh_rx", t=now, port=m.port, payload=m.payload.hex())
+            return
+        if not j.leaving:
+            j.leaving = True
+            self.counters["leave_requests"] += 1
+            self.record(rec="leave_request", t=now, payload=m.payload.hex())
+        for _ in range(2):
+            self._send([(answer, mp.PROTOCOL, mp.PORT_UNRELIABLE, 0x01, 1 << JOINER_INDEX)], 0,
+                       j.ip)
 
     def _rtt(self, j, m, now):
         reply = rtt.response_for(m.payload)
@@ -461,7 +494,7 @@ class HostSession:
         if j.join_ack is not None and j.join_response is not None and now >= j.next_join_response:
             self._send([(j.join_response, mp.PROTOCOL, 0, 0x01, 0)], 0, self.broadcast)
             j.next_join_response = now + STATION_RETRY
-        if j.join_acked:
+        if j.join_acked and not j.leaving:
             if now >= self.next_mesh:
                 self._send([(build_update_mesh(self.mesh_entries(), self.mesh_counter),
                              mp.PROTOCOL, 0, 0x01, ALL_STATIONS)], DST_VAR_ALL, j.ip)

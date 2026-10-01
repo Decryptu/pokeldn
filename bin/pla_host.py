@@ -63,6 +63,7 @@ RTT_RESPONSE = 1
 
 SESSION_MESSAGE_NAMES = {
     0: "join request", 1: "join request ack", 2: "join response", 3: "leave request",
+    4: "leave response",
     5: "update session", 6: "update session ack", 7: "left station sync",
     8: "left station sync ack", 9: "start host migration", 10: "start host migration ack",
 }
@@ -430,7 +431,7 @@ def main():
     phase3_sent = set()
 
     def leave(src_ip):
-        """The type-3 leave a quitting console bursts; it takes no reply (docs/pla.md, Leaving)."""
+        """The type-3 leave burst; only a host answers it (`0x738000`, docs/pla.md, Leaving)."""
         ids = station_ids.get(src_ip)
         if ids is None or src_ip in left:
             return
@@ -525,6 +526,18 @@ def main():
                                 answered.add(src_ip)
                                 print(f"[pla] {src_ip} answered the connection request; "
                                       f"waiting for its session join")
+                        # The leaver resends every 500 ms until this, four sends at most (`0x73bab8`).
+                        if (msg.protocol == PROTO_SESSION and len(msg.payload) >= 17
+                                and msg.payload[0] == pia_connect.SESSION_LEAVE_REQUEST):
+                            body = pia_connect.build_session_leave_response_v11(
+                                msg.payload, random4=os.urandom(4))
+                            pkt = build_reply(keys, transport.our_ip, body, header.src_var,
+                                              os.urandom(8))
+                            transport.send(pkt, src_ip)
+                            record(rec="out", dst=src_ip, kind="session leave response",
+                                   hex=pkt.hex(), t=time.time())
+                            print(f"[pla] -> {src_ip}: session leave response (type 4); "
+                                  f"the console is leaving")
                         if (msg.protocol == PROTO_SESSION and msg.payload
                                 and msg.payload[0] == SESSION_JOIN_REQUEST):
                             j = pia_connect.parse_session_join_v11(msg.payload)

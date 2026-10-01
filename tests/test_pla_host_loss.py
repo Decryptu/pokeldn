@@ -9,7 +9,7 @@ import types
 import pytest
 
 from pokeldn import gen8, pla
-from pokeldn.ldn import pia6, reliable5
+from pokeldn.ldn import pia6, pia_connect, reliable5
 from pokeldn.pla import channel_table, data_exchange, game_channel, joiner, trade_box
 from pokeldn.pla import pokemon as pla_pokemon
 
@@ -300,3 +300,84 @@ def test_the_consoles_window_releases_what_the_mask_says(pending, ack_id, held):
         ours.sent("console", seq, None, 0)
     ours.acked("console", ack_id, mask)
     assert theirs == sorted(seq for _, seq in ours.pending)
+
+
+LEAVE_WAIT = 0.5          # LeaveMeshJob's wait for the answer, 0x1f4 ms at `0x73b9a8`
+LEAVE_SENDS = 4           # its retry counter `[job+0x6c]` gives up past 3 (`0x73bbf0`)
+
+
+class LeavingConsole(Console):
+    """The player quits after the trade: `LeaveMeshJob` sends the type-3 request, waits 500 ms for
+    a type 4 carrying its own location id (`0x738280`) and resends, four sends at most, then
+    leaves the network whether answered or not (docs/pla.md, Leaving)."""
+
+    def __init__(self, *a, **k):
+        super().__init__(*a, **k)
+        self.leave_sends, self.leave_answer, self.left_at = [], None, None
+
+    def poll(self):
+        out = super().poll()
+        now = self.clock()
+        if self.traded and self.left_at is None:
+            if len(self.leave_sends) == LEAVE_SENDS and now - self.leave_sends[-1] >= LEAVE_WAIT:
+                self.left_at = now
+            elif not self.leave_sends or (len(self.leave_sends) < LEAVE_SENDS
+                                          and now - self.leave_sends[-1] >= LEAVE_WAIT):
+                self.leave_sends.append(now)
+                out += self.leave(sends=1)
+        return out
+
+    def _session(self, msg):
+        p = msg.payload
+        own = pia_connect._location_id(self.our_cid, self.our_var)
+        if (self.leave_sends and self.left_at is None and len(p) == 17
+                and p[0] == pia_connect.SESSION_LEAVE_RESPONSE and p[5:17] == own):
+            self.leave_answer, self.left_at = bytes(p), self.clock()
+        return super()._session(msg)
+
+
+def test_a_console_quitting_after_a_trade_is_answered_at_its_first_leave(monkeypatch, capsys):
+    """Unanswered, the job takes four sends and 2.0 s before the console drops off the network
+    (2.02 to 2.07 s in every retail departure captured); answered, one."""
+    run = run_host(monkeypatch, capsys, LeavingConsole, lambda c: c.left_at is not None)
+    console = run.console
+    assert console.traded
+    assert len(console.leave_sends) == 1, "the host never answered the leave request"
+    assert console.left_at - console.leave_sends[0] < LEAVE_WAIT
+    assert run.log.count("session leave response (type 4)") == 1
+
+
+MAIN_PRESENT = pytest.mark.skipif(not os.path.exists(MAIN),
+                                  reason="needs the Legends Arceus 1.1.1 main")
+
+
+@MAIN_PRESENT
+def test_the_games_own_leave_job_accepts_the_hosts_answer(monkeypatch, capsys):
+    """The answer the host sent goes through the console's type-4 handler `0x738280`, which sets
+    the leave job's `+0x69` only on a 17-byte message carrying the station's own location id."""
+    from nso_run import Runner, SCRATCH
+    run = run_host(monkeypatch, capsys, LeavingConsole, lambda c: c.left_at is not None)
+    console = run.console
+    runner = Runner(MAIN)
+    manager, reader, job, buf = (SCRATCH + 0x10000 + n * 0x1000 for n in range(4))
+
+    def answered(message, job_state=2):
+        runner.write(manager, bytes(0x400))
+        runner.write(reader, bytes(0x200))
+        runner.write(job, bytes(0x100))
+        runner.write(0x42a5590, struct.pack("<Q", manager))     # the global behind GOT `0x4277550`
+        runner.write(manager + 0x178 + 8, struct.pack("<Q", int.from_bytes(console.our_cid, "big")))
+        runner.write(manager + 0x178 + 0x10, struct.pack("<H", console.our_var))
+        runner.write(reader + 0xb0, struct.pack("<Q", job))
+        runner.write(job + 8, struct.pack("<I", job_state))     # running: `0x6e5f0c`
+        runner.write(buf, message)
+        runner.call(0x738280, (reader, buf, len(message)))
+        return runner.uc.mem_read(job + 0x69, 1)[0] == 1
+
+    assert console.leave_answer is not None, "the host never answered the leave request"
+    request = pia_connect.build_session_leave_v11(console.our_cid, console.our_var,
+                                                  CONSOLE_IP, random4=b"\1\2\3\4")
+    assert answered(console.leave_answer)
+    assert not answered(console.leave_answer, job_state=0)
+    assert not answered(request)                                 # its own request, 24 bytes
+    assert not answered(console.leave_answer[:-1] + bytes([console.leave_answer[-1] ^ 1]))

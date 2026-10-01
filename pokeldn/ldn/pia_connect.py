@@ -305,6 +305,17 @@ def build_session_join_response(join, host_constant_id, host_var, random4):
             + bytes([1]) + (1).to_bytes(2, "big") + b"\x00\x00")
 
 
+def build_session_leave_response(request, random4):
+    """The host's Session type-4 answer to a 6.39 type-3 leave request, 15 bytes: type, random,
+    the request's constant id and variable id (docs/frlg_link.md, Leaving the Pia session)."""
+    request, random4 = bytes(request), bytes(random4)
+    if len(request) not in (0x16, 0x22) or request[0] != SESSION_LEAVE_REQUEST:
+        raise ValueError("not a 6.39 Session leave request")
+    if len(random4) != 4:
+        raise ValueError("Session leave response random value must be four bytes")
+    return bytes([4]) + random4 + request[5:15]
+
+
 # Pia 6.16-6.30 (version 11) Session layouts (docs/pla.md, The Session join reply).
 SESSION_JOIN_ACK = 1
 WIRE_SESSION_PROTOCOL = 0x98
@@ -399,17 +410,27 @@ def _session_station_v11(constant_id, variable_id, ip, port, *, station_index, r
 
 
 SESSION_LEAVE_REQUEST = 3
+SESSION_LEAVE_RESPONSE = 4
 
 
-def build_session_leave_v11(constant_id, variable_id, ip, port=12345, *, reason=0,
+def build_session_leave_v11(constant_id, variable_id, ip, port=12345, *, address_kind=0,
                             random4=b"\0\0\0\0"):
-    """Session type-3 leave request, 24 bytes (docs/pla.md, Leaving). A session of two owes no
-    type-7 left-station sync. Nothing reads the random word back."""
+    """Session type-3 leave request, 24 bytes (docs/pla.md, Leaving). Nothing reads the random
+    word back."""
     return (bytes([SESSION_LEAVE_REQUEST])
             + bytes(random4)[:4].ljust(4, b"\0")
             + _location_id(constant_id, variable_id)
-            + bytes([reason & 0xFF])
+            + bytes([address_kind & 0xFF])
             + _ip4(ip) + (port & 0xFFFF).to_bytes(2, "big"))
+
+
+def build_session_leave_response_v11(request, *, random4):
+    """The host's type-4 answer to a type-3 leave request: the request's location id echoed, 17
+    bytes (Arceus `0x7381c0`; the leaver's check `0x738280`; docs/pla.md, Leaving)."""
+    request = bytes(request)
+    if len(request) < 17 or request[0] != SESSION_LEAVE_REQUEST:
+        raise ValueError("not a leave request")
+    return bytes([SESSION_LEAVE_RESPONSE]) + bytes(random4)[:4].ljust(4, b"\0") + request[5:17]
 
 
 def build_session_update_v11(host_constant_id, host_var, stations, *, sequence_id=1):

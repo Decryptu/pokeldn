@@ -40,7 +40,7 @@ from pokeldn.lgpe import (COMM_ID_PIKACHU, PASSPHRASE, PIA_PORT, PIA_VERSION, pa
                           session_keys)
 from pokeldn.lgpe.session import APP_HEADER_SIZE
 from pokeldn.lgpe import pb7, reference
-from pokeldn.lgpe.leave import Leaver
+from pokeldn.lgpe.leave import Leaver, host_departure
 from pokeldn.lgpe.trade import (TRADE_IN_PROGRESS, _answer_commit, _answer_offer,  # noqa: F401
                                 _note_result, _send_step, _warn_if_mid_trade, answer_console)
 
@@ -596,6 +596,11 @@ def _run(args, net, keys, facts, opener):
                 print(f"[lg] listening on :{PIA_PORT} for {deadline:.0f}s")
             while (time.monotonic() - t0 < deadline
                    or state.get("mid_trade") and time.monotonic() - t0 < deadline + args.grace):
+                # Our own leave sends its disconnection request first: that, not the network
+                # leaving, returns a console host's player at once (docs/lgpe_session.md).
+                lv = state.get("leaver")
+                if state.get("host_left") and (lv is None or lv.disconnect_sent is not None):
+                    break
                 if (args.leave_after is not None and state.get("leave_at") is None
                         and state.get("answered_step")):
                     state["leave_at"] = time.monotonic() + args.leave_after
@@ -738,6 +743,18 @@ def _run(args, net, keys, facts, opener):
                                 for payload, proto, port in state["leaver"].receive(
                                         m["protocol"], pl, time.monotonic()):
                                     to_host_bitmap(payload, proto, port=port)
+                            replies, leave = host_departure(m["protocol"], pl,
+                                                            state.get("station_index", 1))
+                            for payload, proto, port in replies:
+                                to_host_bitmap(payload, proto, port=port)
+                            if replies and not state.get("host_migrating"):
+                                state["host_migrating"] = True
+                                print("[lg] *** THE HOST IS LEAVING *** answered its migration "
+                                      "start")
+                            if leave and not state.get("host_left"):
+                                state["host_left"] = True
+                                print("[lg] *** THE HOST CLOSED ITS NETWORK *** "
+                                      "(start host migration); leaving it")
                             if m["protocol"] == station9.PROTOCOL:
                                 kind, result = station9.parse_reply(pl)
                                 is_inverse = kind == 1 and len(pl) > 3 and pl[3] == 1

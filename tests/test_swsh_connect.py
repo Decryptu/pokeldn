@@ -330,3 +330,24 @@ def test_a_record_loads_from_any_of_the_four_shapes_a_pk8_file_takes():
         assert len(loaded) == gen8.SIZE_PARTY
         assert gen8.read(loaded)["species"] == 841
     assert gen8.load(stored_plain)[:gen8.SIZE_STORED] == stored_plain
+
+
+# A retail Sword hosting, leaving after its player backed out (sx79_2): its update session before the
+# leave (seq 3, state 0), the one it rebroadcast for 10 s after MIGRATION_START (seq 4, state 1),
+# and the START_HOST_MIGRATION it repeated for 10 s more before closing its network.
+_SEATS = ("9c8299d67af514eea3c27b5900000000000048f120229beb0200000000000000a9fe33013039000000a9fe33"
+          "0230390000010000000000000000ff0000000000000000ff0000000000000000ff0000000000000000ff0000"
+          "000000000000ff0000000000000000ff")
+HOSTING_SWORD_SEQ3 = bytes.fromhex("01114900000000000000000003000000" + _SEATS + "00")
+HOSTING_SWORD_LEAVING = bytes.fromhex("01114900000000000000000004000000" + _SEATS + "01")
+HOSTING_SWORD_CLOSING = bytes.fromhex("01130000000000000000000000000000")
+
+
+def test_a_leaving_host_is_acked_then_left_and_a_staying_one_is_not():
+    assert swsh_connect.departure_step(HOSTING_SWORD_SEQ3) is None
+    kind, ack = swsh_connect.departure_step(HOSTING_SWORD_LEAVING)
+    assert kind == "ack" and lp.parse_ack(ack) == 4
+    h, header, body = _read_back(_ack(seq=lp.parse_ack(ack)))
+    assert body == ack and header["protocol"] == lp.PROTOCOL
+    assert swsh_connect.departure_step(HOSTING_SWORD_CLOSING) == ("leave", None)
+    assert swsh_connect.departure_step(b"\x01") is None

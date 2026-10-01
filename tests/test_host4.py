@@ -96,13 +96,14 @@ def test_a_scripted_joiner_is_seated_and_heard():
         iv = host4.packet_iv(net, JOINER_MAC, nonce)
         host.on_packet(pia4.build_packet(key, iv, msg, nonce8=nonce), "169.254.2.2")
 
-    def replies():
+    def replies(ports=False):
         out = []
         for data, _ip in sent:
             h = pia4.PiaHeader4.parse(data)
             iv = host4.packet_iv(net, HOST_MAC, h.nonce8)
             plain = pia4.decrypt_payload(key, iv, pia4.ciphertext(data), h.tag)
-            out += [(m["protocol"], m["payload"]) for m in pia4.parse_packet(plain)]
+            out += [(m["protocol"], m["port"], m["payload"]) if ports else
+                    (m["protocol"], m["payload"]) for m in pia4.parse_packet(plain)]
         sent.clear()
         return out
 
@@ -136,3 +137,14 @@ def test_a_scripted_joiner_is_seated_and_heard():
     (proto, ack), = replies()
     assert proto == reliable4.PROTOCOL
     assert reliable4.parse_ack_payload(reliable4.parse_message(ack)["payload"])[0]["ack_id"] == 2
+
+    # The departure a retail Sword sent this host 0.77 s after its box command 3 (sh09 and eleven
+    # other captures): LEAVE_REQUEST on the mesh's reliable port, then `03` on 0x14 every 0.5 s.
+    from_joiner(bytes.fromhex("0f00000200010001000401"), mesh.PROTOCOL, port=mesh.PORT_RELIABLE)
+    out = replies(ports=True)
+    assert out.count((mesh.PROTOCOL, mesh.PORT_UNRELIABLE, bytes.fromhex("0800"))) == 2
+    assert heard[-1] == bytes.fromhex("0401")
+    host.tick(2e9)
+    assert not {p for p, _port, _b in replies(ports=True)} & {mesh.PROTOCOL, 0x58}
+    from_joiner(bytes.fromhex("03"), s4.PROTOCOL)
+    assert replies() == [(s4.PROTOCOL, bytes.fromhex("04"))]

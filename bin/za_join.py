@@ -96,6 +96,9 @@ GAME_BROADCAST = 11
 MESH_DESTINATION = 0x0001
 BROADCAST_RECIPIENTS = 3
 ACK_MESSAGE_FLAGS = 0x40
+# A console that named us its next host leaves the network about 0.2 s after our answer.
+MIGRATED_QUIET = 1.0
+LEAVE_SENDS, LEAVE_REPEAT = 4, 0.5
 # The station index a Broadcast Reliable payload is prefixed with: joiner 1, host 2.
 BROADCAST_PREFIX_JOINER = bytes.fromhex("00000001")
 # Once the fourth trade step is out the trade is saved on both sides (docs/za.md).
@@ -406,6 +409,9 @@ async def run_session(args, keys, host_ip, host_mac, our_ip, our_mac, record):
     counts = {}
     seen = authed = sent = 0
     first_in = None
+    last_in = t0
+    migrated_at = None
+    leave = None
     pktid_by_dst = {}
     state = [None]
     # A per-station counter, incremented per packet: a random nonce falls outside the peer's window
@@ -508,12 +514,32 @@ async def run_session(args, keys, host_ip, host_mac, our_ip, our_mac, record):
     while True:
         now = time.monotonic()
         tick = int((now - t0) * 59.727)
+        why = None
         if now - t0 >= args.hold:
-            print(f"[za] the hold ended after {now - t0:.1f}s")
-            break
-        if (args.hold_after_trade is not None and game is not None and game.queue_done
+            why = f"the hold ended after {now - t0:.1f}s"
+        elif (args.hold_after_trade is not None and game is not None and game.queue_done
                 and now - t0 >= game.traded_at + args.hold_after_trade):
-            print(f"[za] leaving the seat {args.hold_after_trade:.0f}s after trade {game.trades}")
+            why = f"leaving the seat {args.hold_after_trade:.0f}s after trade {game.trades}"
+        if why and leave is None:
+            print(f"[za] {why}")
+            if conn is None or not conn.host_var or migrated_at is not None:
+                break
+            leave = {"sent": 0, "next": now, "answered": False}
+        if leave is not None:
+            # A leaving station re-sends its type 3 every 0.5 s and stops after four (docs/za.md).
+            if leave["answered"] or (leave["sent"] >= LEAVE_SENDS and now >= leave["next"]):
+                print("[za] the console answered our leave" if leave["answered"]
+                      else "[za] our leave went unanswered")
+                break
+            if leave["sent"] < LEAVE_SENDS and now >= leave["next"]:
+                send(pia_connect.PROTO_SESSION, za.build_leave_request(
+                         pia_connect.ldn_constant_id(our_mac), our_var, our_ip, os.urandom(4)),
+                     dst_var=conn.host_var, src_var=our_var, footer_var=conn.host_var,
+                     note="session leave request")
+                leave["sent"] += 1
+                leave["next"] = now + LEAVE_REPEAT
+        if migrated_at is not None and now - last_in >= MIGRATED_QUIET:
+            print(f"[za] the console went quiet {now - last_in:.1f}s after leaving; ending the seat")
             break
         if args.quiet_seat and first_in is None and now - t0 >= args.quiet_seat:
             print(f"[za] nothing from the console in {args.quiet_seat:.0f}s; ending the seat")
@@ -570,7 +596,31 @@ async def run_session(args, keys, host_ip, host_mac, our_ip, our_mac, record):
         # the host's liveness timeout kicked us (docs/za.md).
         if header.footer == 2 and header.dst not in (0, pia_connect.SESSION_VAR, 0xFFFF):
             conn.learn_ids(header.dst, header.src)
+        last_in = now
         for m in messages:
+            # A host leaving hands its role to us and waits 5 s for the type 10; the Net 0x11 that
+            # follows is answered too, as a reference joiner does (docs/za.md, Leaving).
+            if (m.proto == pia_connect.PROTO_SESSION
+                    and m.payload[:1] == bytes([za.SESSION_START_MIGRATION]) and len(m.payload) >= 28
+                    and za.migration_target(m.payload)[0] == pia_connect.ldn_constant_id(our_mac)):
+                send(pia_connect.PROTO_SESSION, za.build_migration_ack(m.payload), dst_var=0,
+                     src_var=our_var, footer=False, establishing=True, pktid=0,
+                     note="start host migration acknowledgement")
+                if migrated_at is None:
+                    migrated_at = now - t0
+                    print(f"[za] the console is leaving and named us the next host at "
+                          f"{migrated_at:.2f}s; acknowledged")
+            if (leave is not None and m.proto == pia_connect.PROTO_SESSION
+                    and m.payload[:1] == bytes([za.SESSION_LEAVE_RESPONSE])
+                    and m.payload[5:13] == pia_connect.ldn_constant_id(our_mac)):
+                leave["answered"] = True
+            if (migrated_at is not None and m.proto == pia_connect.PROTO_NET
+                    and m.payload[1:2] == bytes([pia_connect.NET_CONN_REQUEST])):
+                net = pia_connect.parse_net_conn_request(m.payload)
+                if net is not None:
+                    send(pia_connect.PROTO_NET, pia_connect.build_net_response(net[2]), dst_var=0,
+                         src_var=our_var, footer=False, establishing=True, pktid=0,
+                         note=f"net 0x12, sequence {net[2]}")
             if m.proto == pia_connect.PROTO_SESSION and m.payload[:1] == b"\x05" and conn is not None:
                 sequence = za.session_encoding.session_update_sequence(m.payload) \
                     if False else za.session_update_sequence(m.payload)

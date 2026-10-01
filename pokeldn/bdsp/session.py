@@ -3,6 +3,8 @@
 import struct
 from dataclasses import dataclass
 
+from pokeldn.ldn import mesh_protocol as mp
+from pokeldn.ldn import reliable5 as rl
 from pokeldn.ldn.pia5 import ldn_game_key, ldn_session_key
 
 # Used raw, 27 bytes, unpadded, for nn::ldn::CreateNetwork only; distinct from Pia's game key.
@@ -43,3 +45,25 @@ def session_keys(net):
     game_key = ldn_game_key(CRYPTO_KEY_DATA_SEED, net.app_version)
     return SessionKeys(ldn_session_key(game_key, session_param), game_key,
                        network_id_le, session_param)
+
+
+def answer_departure(payload, own_index):
+    """A message on the mesh's reliable port (0x18 port 1) -> (ack, answer): the window's ack, and
+    the unreliable answer a departure waits for, or None (docs/bdsp_session.md, Leaving).
+
+    A leave request `04 <leaver>` at the host is owed `08 <host index>` [0x0154c860, 0x0154baf8];
+    a migration start `44 <host> <new host>` at a station is owed `48 <own index>`
+    [0x0154d66c, 0x0154b068]. A retail Pia sends either answer twice."""
+    d = rl.parse(payload)
+    if d["is_ack"] or d["truncated"]:
+        return None, None
+    # nothing of ours is on this window, so our lowest pending is its first id
+    ack = rl.build_ack_message(d["sequence_id"] + 1, stream_id=d["stream_id"], field_0x50=1,
+                               lowest_pending=1)
+    body = bytes(d["payload"])
+    if len(body) == 2 and body[0] == mp.LEAVE_REQUEST and body[1] != own_index:
+        return ack, mp.build_leave_response(own_index)
+    start = mp.parse_migration_start(body)
+    if start is not None and start["host_index"] != own_index:
+        return ack, mp.build_migration_response(own_index)
+    return ack, None

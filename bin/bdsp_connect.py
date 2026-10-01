@@ -16,6 +16,7 @@ import trio, ldn
 from pokeldn.host_support import open_output
 from pokeldn import pokemon as pokemon_service
 from pokeldn.bdsp import COMM_ID, PASSPHRASE, PIA_PORT, pokemon, room, session_keys
+from pokeldn.bdsp.session import answer_departure
 from pokeldn.ldn import (local_protocol as lp, mesh_protocol as mp, reliable5 as rl,
                         rtt_protocol as rtt, station_protocol as stp)
 from pokeldn.ldn.pia5 import (PiaHeader5, is_pia5, ciphertext, gcm_iv, ldn_nonce_crc,
@@ -153,7 +154,8 @@ async def main_async(args):
               "rel_repeats": 0,
               "their_poke": None, "their_pokes": 0, "our_pokes": [], "trades": 0, "answered_with": set(), "trade_replies": 0, "check_oks": 0,
               "their_ready_ok": None, "ready_oks_sent": 0, "their_security_state": None,
-              "our_security_state": 0, "our_next_seq": 0, "return_selects": 0}
+              "our_security_state": 0, "our_next_seq": 0, "return_selects": 0,
+              "departure_answers": 0, "leaving": False, "hold_scope": None}
 
         # Build the offer before the radio is touched, so a bad template or nickname fails here.
         # No species edit: the species word alone leaves the template's gender, ability, moves
@@ -229,7 +231,45 @@ async def main_async(args):
                             st["seq"] = us.sequence_id
                             print(f"[rx] t={now:6.2f} update session seq={us.sequence_id} "
                                   f"host_var={us.host_variable_id:#010x} "
-                                  f"host_constant={st['host_constant_seen']:#018x}")
+                                  f"host_constant={st['host_constant_seen']:#018x} "
+                                  f"migration state {us.host_migration_state}")
+                        if st["phase"] not in ("listen", "ack"):
+                            # A later session (a departing host's carries migration state 1) is
+                            # repeated for 10 s until acked (docs/bdsp_session.md, Leaving).
+                            sock.sendto(wrap(keys, our_mac, args.src_var, 0, next_nonce(),
+                                             lp.build_ack(us.sequence_id), lp.PROTOCOL),
+                                        (bcast, PIA_PORT))
+                            record(rec="tx_ack", t=now, seq=us.sequence_id)
+                    elif (m.protocol == lp.PROTOCOL and len(m.payload) > 1
+                          and m.payload[1] == lp.START_HOST_MIGRATION):
+                        record(rec="host_migration", t=now, payload=m.payload.hex())
+                        if args.leave_on_host_migration and not st["leaving"]:
+                            st["leaving"] = True
+                            print(f"\n[rx] t={now:6.2f} *** THE CONSOLE IS CLOSING ITS ROOM "
+                                  f"(start host migration) *** leaving the network")
+                            st["hold_scope"].cancel()
+                    elif m.protocol == mp.PROTOCOL and m.port == mp.PORT_RELIABLE:
+                        jr = (mp.parse_join_response(st["join_response"])
+                              if st["join_response"] else None)
+                        own = jr["our_index"] if jr else 1
+                        host_index = jr["host_index"] if jr else 0
+                        try:
+                            ack, answer = answer_departure(m.payload, own)
+                        except ValueError:
+                            ack = answer = None
+                        out = ([(ack, mp.PORT_RELIABLE)] if ack else []) \
+                            + [(answer, mp.PORT_UNRELIABLE)] * (2 if answer else 0)
+                        for payload, port in out:
+                            sock.sendto(wrap(keys, our_mac, args.src_var, st["dst_var"],
+                                             next_nonce(), payload, mp.PROTOCOL, port=port,
+                                             destination=1 << host_index, message_flags=0x01),
+                                        (st["dst_ip"], PIA_PORT))
+                        record(rec="mesh_reliable", t=now, payload=m.payload.hex(),
+                               answer=answer.hex() if answer else None)
+                        if answer and st["departure_answers"] == 0:
+                            print(f"\n[rx] t={now:6.2f} *** THE CONSOLE IS LEAVING *** "
+                                  f"{m.payload.hex()}, answered {answer.hex()}")
+                        st["departure_answers"] += bool(answer)
                     elif m.protocol == mp.PROTOCOL:
                         kind, name = mp.parse_message(m.payload)
                         st["replies"].append((now, st["phase"], m.payload.hex()))
@@ -1390,6 +1430,7 @@ async def main_async(args):
                     return
 
         with trio.move_on_after(args.hold) as hold_scope:
+            st["hold_scope"] = hold_scope
             async with trio.open_nursery() as nursery:
                 nursery.start_soon(stop_on_signal, hold_scope)
                 nursery.start_soon(receiver)
@@ -1666,6 +1707,11 @@ def build_parser():
                     help="how long one connection request waits for its answer")
     ap.add_argument("--rtt", action=argparse.BooleanOptionalAction, default=True,
                     help="answer the console's RTT requests (protocol 0x58) while we hold the seat")
+    ap.add_argument("--leave-on-host-migration", action=argparse.BooleanOptionalAction,
+                    default=True,
+                    help="leave the network when the console host starts host migration (Local "
+                         "Protocol 0x13), which its player leaving the room sends; a station that "
+                         "stays sees it repeated for 10 s before the console closes its network")
     ap.add_argument("--join-ack", action=argparse.BooleanOptionalAction, default=True,
                     help="ack the mesh join response, on the STATION protocol")
     ap.add_argument("--join-ack-seconds", type=float, default=8.0,

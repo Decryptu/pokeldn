@@ -110,3 +110,70 @@ def test_peer_rejects_malformed_session_without_mutating_identity():
     assert peer.guest_var is None and peer.guest_ip is None
     assert peer.drain() == []
     assert any("malformed or unsupported Session join" in line for line in logs)
+
+
+# The GBA app's join (an emulated "EMU" player, tests/test_pia_host_session.py) and a leave request
+# in the layout a retail FireRed sent four times on leaving: type, random, constant id, variable id,
+# reason, IPv4, port.
+_EMU_JOIN = bytes.fromhex(
+    "00060100030505010a030d070f00005838a074cc3c33006094930000c4930000"
+    "0000000000000000000000000000000000000000000000000000000000000000"
+    "ab3c06f7a93c000000c6010100a9fe580230390000000000000001000000000000"
+    "00000000000301454d55")
+_RETAIL_LEAVE = bytes.fromhex("03439e6bc0eb9b2220f1480000696800a9fe4a023039")
+
+
+def _console_session(peer, payload, src_var=0xC493, pktid=1):
+    console = SimpleNamespace(our_ip="169.254.88.2")
+    return peer.receive(build_message(
+        console, peer.pia_crypto, pia_connect.PROTO_SESSION, payload,
+        dst_var=PIA_HOST_VAR, src_var=src_var, pktid=pktid, footer_var=PIA_HOST_VAR,
+        nonce_source=PiaNonceSequence(native=True, initial=pktid)), "169.254.88.2", now=1.0)
+
+
+def _session_replies(peer, network):
+    out = []
+    for item in peer.drain():
+        decoded, error = decode_datagram(item.data, network.our_ip, peer.pia_crypto)
+        assert error is None
+        header, messages = decoded
+        out += [(item.destination, header, m.payload) for m in messages
+                if m.proto == pia_connect.PROTO_SESSION]
+    return out
+
+
+def test_leave_request_is_answered_in_the_form_the_leaver_checks():
+    """The leaver's type-4 check `0xba028` (GBA app main): 15 bytes, its own constant id at 5 and
+    variable id at 13. Unanswered, it resends every 500 ms and leaves after the fourth."""
+    assert pia_connect.build_session_leave_response(_RETAIL_LEAVE, b"RAND") == (
+        b"\x04RAND" + bytes.fromhex("eb9b2220f1480000") + bytes.fromhex("6968"))
+
+    network = _network()
+    session = SimpleNamespace(trade=SimpleNamespace(established=False))
+    peer = HostPeerProtocol(network, SimpleNamespace(session_name="EMU"), session, b"app")
+    peer.on_participant_joined()
+    _console_session(peer, _EMU_JOIN)
+    _console_session(peer, pia_connect.build_session_finalize(b"\x3c\x33\x00\x60\x94\x93"),
+                     pktid=2)
+    assert peer.session_finalized
+    peer.drain()
+
+    leave = (bytes([pia_connect.SESSION_LEAVE_REQUEST]) + b"\x11\x22\x33\x44"
+             + bytes.fromhex("3c33006094930000") + bytes.fromhex("c493") + b"\x00"
+             + bytes.fromhex("a9fe5802") + (12345).to_bytes(2, "big"))
+    for n in range(4):
+        _console_session(peer, leave, pktid=3 + n)
+    replies = _session_replies(peer, network)
+    assert len(replies) == 4 and peer.leave_requests_in == 4
+    for destination, header, payload in replies:
+        assert destination == "169.254.88.2"
+        assert (header.dst, header.src) == (0xC493, PIA_HOST_VAR)
+        assert len(payload) == 15 and payload[0] == 4
+        assert payload[5:13] == bytes.fromhex("3c33006094930000")
+        assert payload[13:15] == bytes.fromhex("c493")
+    assert len({h.pktid for _, h, _ in replies}) == 4
+
+    stranger = leave[:13] + bytes.fromhex("7171") + leave[15:]
+    _console_session(peer, stranger, pktid=9)
+    _console_session(peer, leave, src_var=0x7171, pktid=10)
+    assert _session_replies(peer, network) == [] and peer.leave_requests_in == 4

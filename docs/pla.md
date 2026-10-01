@@ -1147,21 +1147,41 @@ warning screen, with no restriction; leaving the trade menu and searching again 
 
 ## Leaving
 
-A console quitting the trade sends the Session type-3 leave request and closes its station without
-waiting for a reply; captured leaves repeated it four times about 150 ms apart. The step `0x73b898`
-of `nn::pia::session::LeaveMeshJob` sends it through the writer `0x737ee8` (type byte 3 at
-`0x737f40`, call at `0x73b990`); the repeat count is untraced:
+A console quitting the trade runs `nn::pia::session::LeaveMeshJob`: it sends the Session type-3
+leave request, waits 500 ms for the host's type-4 leave response, and sends again, four sends at
+most, then leaves the network answered or not. The steps are SendLeaveRequest `0x73b898` (writer
+`0x737ee8`, type byte 3 at `0x737f40`, call at `0x73b990`, deadline 0x1f4 ms at `0x73b9a8`),
+WaitLeaveResponse `0x73bab8` (retry counter `[job+0x6c]`, given up past 3 at `0x73bbf0`) and
+CompleteProcess `0x73ba54`.
 
-    03 | u32 random | location id (12) | reason byte | IPv4 (4) | port big-endian (2)
+    03 | u32 random | location id (12) | address kind | IPv4 (4) | port big-endian (2)
+    04 | u32 random | location id (12)                          the response, 17 bytes
 
 The location id is `pia_connect._location_id`'s (station constant, zero halfword, big-endian variable
 id) and the address the station's own. The random word differs on every send, retransmissions
-included; the reason byte is 0 in every captured leave. A leave has no reply: a host owes the type-7
-left-station sync to the other stations, and a session of two has none.
+included. The address kind at `+0x11` is 0 in every captured leave; the handler reads 18 bytes of
+address and port after a 1 and 6 after anything else (`0x7380f0`), and takes a request of 24 or 36
+bytes (`0x738024`).
+
+The type-3 handler `0x738000` (dispatch table `0x3973f19`, base `0x735434`) acts only when the
+session's constant id at `+0x50` (`0x7473ec`) equals the station's own at `+0x40` (`0x747388`). It
+finds the leaver by its location id, answers `04`, a fresh random word and the request's bytes 5 to
+16 to the request's address (`0x7381c0..0x738248`, sent through `0x735fb0`), then removes the
+station (`0x735b90`). The type-4 handler `0x738280` sets the job's done flag `[job+0x69]` only on a
+17-byte message whose constant id and variable id are the leaver's own and only while the job runs
+(`0x6e5f0c`); a host answering no leave holds every quitting console for the full four sends.
+
+| host | first leave to deauthentication |
+|---|---|
+| `bin/pla_host.py` before the type-4 response, eight retail departures, started directly or by `bin/pla_join.py` taking the host role | 2.02 to 2.07 s, four requests 0.49 to 0.55 s apart |
+
+`bin/pla_host.py` answers every type-3 request with the type-4 response. The scripted console in
+`tests/test_pla_host_loss.py` runs the job's timing, and the host's answer goes through `0x738280`
+under unicorn.
 
 A received leave changed nothing on the console's screen in the two cases below; the console acted
-on the network vanishing or on its partner going silent. What the game does on receiving a leave is
-untraced. With the console on the box screen and nothing offered:
+on the network vanishing or on its partner going silent. With the console on the box screen and
+nothing offered:
 
 | host | console |
 |---|---|
@@ -1177,7 +1197,7 @@ against the four captured console leaves.
 - The code path by which a console hosting a search hands the host role to the station that joins,
   and whether it ever answers a Session join request itself.
 - The deadline constant behind the Matching timeout `0x26d4ae8` (10.2 s measured).
-- The repeat count and interval of the Session type-3 leave in `LeaveMeshJob` (`0x73b898`).
-- The handler, if any, for a received Session type-3 leave.
+- How long a console answered at its first leave takes to leave the network and to return to the
+  field.
 - The keepalive timeout a silent host trips in Legends Arceus, by its setting constant (Z-A's is
   10000 ms at `0x199eb48`, [za.md](za.md), The kick).
