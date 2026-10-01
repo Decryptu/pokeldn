@@ -411,6 +411,7 @@ async def run_session(args, keys, host_ip, host_mac, our_ip, our_mac, record):
     first_in = None
     last_in = t0
     migrated_at = None
+    destroyed = False
     leave = None
     pktid_by_dst = {}
     state = [None]
@@ -538,6 +539,9 @@ async def run_session(args, keys, host_ip, host_mac, our_ip, our_mac, record):
                      note="session leave request")
                 leave["sent"] += 1
                 leave["next"] = now + LEAVE_REPEAT
+        if destroyed:
+            print("[za] the console is closing its network; leaving it")
+            break
         if migrated_at is not None and now - last_in >= MIGRATED_QUIET:
             print(f"[za] the console went quiet {now - last_in:.1f}s after leaving; ending the seat")
             break
@@ -621,6 +625,11 @@ async def run_session(args, keys, host_ip, host_mac, our_ip, our_mac, record):
                     send(pia_connect.PROTO_NET, pia_connect.build_net_response(net[2]), dst_var=0,
                          src_var=our_var, footer=False, establishing=True, pktid=0,
                          note=f"net 0x12, sequence {net[2]}")
+            # Then it repeats Net 0x40 every 0.3 s until its clients leave, for at most 4 s
+            # (docs/za.md, Leaving).
+            if (migrated_at is not None and m.proto == pia_connect.PROTO_NET
+                    and m.payload[:2] == bytes([1, pia_connect.NET_START_HOST_MIGRATION])):
+                destroyed = True
             if m.proto == pia_connect.PROTO_SESSION and m.payload[:1] == b"\x05" and conn is not None:
                 sequence = za.session_encoding.session_update_sequence(m.payload) \
                     if False else za.session_update_sequence(m.payload)

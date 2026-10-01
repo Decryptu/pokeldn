@@ -870,8 +870,13 @@ the type 9 with a type 10 48 ms later, the host sent Net 0x11 sequence 3 and the
 `0112000000000003`; the host's network was gone 0.25 s after its type 9. The joiner's type 10 and
 0x12 went out with header flags 2, destination 0, packet id 0 and no footer.
 
+With the type 10 and the 0x12 sent at once, a retail host sent the 0x11 0.04 s after its type 9
+and then Net 0x40 (`01 40 00 00`, source 0) every 0.3 s for 4.06 s while the joiner stayed on its
+network; no second type 9 came.
+
 `bin/za_join.py` answers a type 9 naming it with the type 10, and the Net 0x11 after it with the
-0x12, and ends the seat once the console has been silent for a second.
+0x12, and leaves the network on the first Net 0x40 (or once the console has been silent for a
+second).
 
 ## Mystery Gift
 

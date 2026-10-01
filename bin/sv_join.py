@@ -56,7 +56,6 @@ NET_0x50 = 0x50
 NET_0x51 = 0x51
 # Sent only by NetDestroyNetworkJob (`0x69d310` from `0x6aca54`), every 0.3 s until every client has
 # left the LDN network or 4 s pass (`0x6acac8`; docs/sv.md, Leaving).
-NET_START_HOST_MIGRATION = 0x40
 ESTABLISHING_FLAGS = pia6.MESSAGE_FLAG_SKIP_SOURCE_CHECK
 # Fallback only: a retail host names the joiner's id in the footer of its first mesh-addressed
 # packet, and the joiner takes it (docs/sv.md).
@@ -967,7 +966,7 @@ async def run_session(args, keys, host_ip, host_mac, our_ip, our_mac, record):
             if msg.protocol not in (PROTO_RTT,) or args.verbose_rtt:
                 print(f"[sv] <- {addr[0]} {_describe_msg(msg)}  {msg.payload.hex()[:160]}")
             if msg.protocol == PROTO_NET and len(msg.payload) > 1:
-                if msg.payload[:2] == bytes([1, NET_START_HOST_MIGRATION]):
+                if msg.payload[:2] == bytes([1, pia_connect.NET_START_HOST_MIGRATION]):
                     host_leaving = True
                 req = pia_connect.parse_net_conn_request(msg.payload)
                 if req is not None:

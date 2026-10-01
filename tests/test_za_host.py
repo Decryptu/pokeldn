@@ -382,8 +382,9 @@ def test_the_joiner_hands_a_leaving_console_its_acknowledgement(monkeypatch):
     """A host leaving names us its next host: the pair's own type 10 and 0x12 go back, framed as the
     reference joiner framed them, and the seat ends once the host is gone. Unanswered, a retail host
     repeats the type 9 for 5 s (`0x255a91c`) and leaves 11 s after its first."""
+    # A retail host then repeats Net 0x40 every 0.3 s for 4 s (za67); the seat ends on the first.
     script = [(1.0, pia_connect.PROTO_SESSION, PAIR_START_MIGRATION)]
-    script += [(1.0 + 0.3 * i, pia_connect.PROTO_RTT, bytes(21)) for i in range(1, 3)]
+    script += [(1.1 + 0.3 * i, pia_connect.PROTO_NET, bytes.fromhex("01400000")) for i in range(14)]
 
     def answer(proto, payload):
         if proto == pia_connect.PROTO_SESSION and payload[:1] == b"\x0a":
@@ -396,7 +397,7 @@ def test_the_joiner_hands_a_leaving_console_its_acknowledgement(monkeypatch):
     assert len(acks) == 1 and len(nets) == 1
     for h in acks + nets:
         assert (h.dst, h.src, h.pktid, h.footer, h.flags & 0x0F) == (0, 0xB701, 0, 0, 0x02)
-    assert lasted < 3.0                 # the seat ended on the host's silence, not on --hold
+    assert lasted < 1.3                 # on the first 0x40, not on the host's silence or --hold
     assert not [m for _, _, p, m in heard if p == pia_connect.PROTO_SESSION and m[:1] == b"\x03"]
 
 
