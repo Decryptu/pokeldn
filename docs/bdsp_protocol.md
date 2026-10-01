@@ -267,6 +267,10 @@ twentieth of a unit, x negated. A remote character collides with walls (the play
 with it) and keeps `rot_y` literally. Keep a walk within the room: sixty messages at the console's
 stride cross it and leave through the far wall, `--room-walk-steps 8` stays inside.
 
+A walk is not needed to trade. A retail console asked for `NetCharacterStateData`, accepted the talk
+and completed two trades with a client character that sent no `NetPosData` at all
+(`--room-walk-steps 0`, the default on the trade path).
+
 ## Being talked to
 
 A player with an emote up stays in place until someone interacts, and the player's own A press does
