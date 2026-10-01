@@ -305,9 +305,9 @@ def build_parser():
     ap.add_argument("--dwell", type=float, default=1.0, help="seconds per channel in a scan")
     ap.add_argument("--seconds", type=float, default=600.0, help="the whole run")
     ap.add_argument("--hold", type=float, default=120.0, help="how long to hold one seat")
-    ap.add_argument("--after-trade", type=float, default=90.0,
-                    help="seconds to keep the seat after the last queued trade's fourth step, "
-                         "then exit the run")
+    ap.add_argument("--hold-after-trade", type=float, default=None, metavar="SECONDS",
+                    help="leave this long after the last queued trade's fourth step; by default the "
+                         "seat is kept until the player backs out or --hold ends, as every joiner does")
     ap.add_argument("--quiet-seat", type=float, default=0.0,
                     help="end a seat on which the console has sent nothing for this long")
     ap.add_argument("--connect-timeout", type=float, default=12.0,
@@ -511,8 +511,9 @@ async def run_session(args, keys, host_ip, host_mac, our_ip, our_mac, record):
         if now - t0 >= args.hold:
             print(f"[za] the hold ended after {now - t0:.1f}s")
             break
-        if game is not None and game.queue_done and now - t0 >= game.traded_at + args.after_trade:
-            print(f"[za] leaving the seat {args.after_trade:.0f}s after trade {game.trades}")
+        if (args.hold_after_trade is not None and game is not None and game.queue_done
+                and now - t0 >= game.traded_at + args.hold_after_trade):
+            print(f"[za] leaving the seat {args.hold_after_trade:.0f}s after trade {game.trades}")
             break
         if args.quiet_seat and first_in is None and now - t0 >= args.quiet_seat:
             print(f"[za] nothing from the console in {args.quiet_seat:.0f}s; ending the seat")
