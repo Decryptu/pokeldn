@@ -4,7 +4,7 @@
 Never pass --verbose to a live run; use --capture. docs/swsh_session.md, docs/pia.md.
 """
 from pathlib import Path
-import argparse, json, os, shlex, socket, struct, sys, time, traceback, zlib
+import argparse, json, math, os, shlex, socket, struct, sys, time, traceback, zlib
 
 PROJECT_ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 sys.path.insert(0, PROJECT_ROOT)
@@ -180,11 +180,15 @@ async def main_async(args):
               "confirm_status_answered": set(),
               "confirm_queue": None,
               "confirm_steps_seen": set(), "confirm_last_step": None,
-              "ladder_finished": False,
+              "ladder_finished": False, "trades": 0, "first_pk8": None,
               "block_out": 0, "block_acked": None}
 
         accepted = trio.Event()           # station handshake closed; a mesh join waits for it
         nonce = int.from_bytes(os.urandom(8), "big")
+
+        def run_until(extra=0.0):
+            """-> when a sender gives up; --send-seconds 0 keeps it sending until the run ends."""
+            return time.monotonic() + args.send_seconds + extra if args.send_seconds else math.inf
 
         def next_nonce():
             nonlocal nonce
@@ -216,6 +220,51 @@ async def main_async(args):
                   f"0x7c port {args.rpc_port}, clock {clock}\n"
                   f"[tx]       {pair[0].hex()}\n[tx]       {pair[1].hex()}")
 
+
+        def validated(raw):
+            if getattr(args, "validate_offer", False):
+                raw = swsh_pokemon.encrypt(gen8.load(pokemon_service.prepare("swsh", raw)))
+            return raw
+
+        def renewed(raw):
+            return swsh_pokemon.encrypt(gen8.fresh_identity(gen8.decrypt(raw)))
+
+        def queued_offer(n):
+            """-> our record for trade n > 1: the n-th --offer-file, else the last again, else the
+            first trade's; one offered again gets a new PID under --fresh-pid."""
+            files = args.offer_file
+            if n <= len(files):
+                return validated(swsh_pokemon.encrypt(gen8.load(Path(files[n - 1]).read_bytes())))
+            raw = (swsh_pokemon.encrypt(gen8.load(Path(files[-1]).read_bytes())) if files
+                   else st["first_pk8"])
+            return validated(renewed(raw) if args.fresh_pid else raw)
+
+        def next_trade():
+            """The console offers from its box after a finished ladder: the next trade.
+
+            Contents 50 and 40 and pings 130 and 120 are built anew for every trade; content 30
+            and ping 110 last the session (docs/swsh_trade.md, Trades in a row on one session)."""
+            n = st["trades"] + 1
+            st["our_pk8"] = queued_offer(n)
+            for key in ("offered_pk8", "confirm_queue", "confirm_last_step"):
+                st[key] = None
+            for key in ("pk8_offer_sent", "trade_ready_sent", "ladder_finished",
+                        "confirmation_opened", "selection_sent"):
+                st[key] = False
+            for key in ("offer_status_answered", "confirm_steps_seen", "confirm_status_answered"):
+                st[key] = set()
+            per_trade = {swsh_trade.RPC_ENVELOPE_BASE + offset
+                         for offset in (swsh_trade.SELECTION_OFFSET, swsh_trade.CONFIRMATION_OFFSET)}
+            st["rpc_seen"] = {k: v for k, v in st["rpc_seen"].items() if k[0] not in per_trade}
+            st["rpc_pair_sent"] -= per_trade
+            st["rpc_bodies_answered"] = {k for k in st["rpc_bodies_answered"]
+                                         if k[0] not in per_trade}
+            for envelope in per_trade:
+                st["rpc_pair_delta"].pop(envelope, None)
+            ours = swsh_pokemon.read(st["our_pk8"])
+            print(f"\n[tx] *** TRADE {n}: THE CONSOLE OFFERS AGAIN *** we offer species "
+                  f"{ours['species']} {ours['nickname']!r} level {ours['level']}")
+            record(rec="next_trade", trade=n, our_pk8=st["our_pk8"].hex())
 
         def _opener_for(offset):
             """-> the opener for content `offset`'s 10000-base holder.
@@ -292,6 +341,7 @@ async def main_async(args):
                         step = swsh_trade.parse_sync_step(member["body"])
                         if step is not None and step[0] >= LADDER_FINAL_PHASE:
                             if not st["ladder_finished"]:
+                                st["trades"] += 1
                                 show_done()
                                 print(f"\n[rx] *** THE LADDER IS FINISHED - phase {step[0]} is the "
                                       f"teardown rung, THE ABORT STANDS DOWN *** "
@@ -535,6 +585,8 @@ async def main_async(args):
                       f"holder - the console naming its own state machine")
                 record(rec="rx_box_command", t=now, command=command)
             offered = swsh_trade.offered_pokemon(got["payload"])
+            if offered is not None and st["ladder_finished"]:
+                next_trade()
             if offered is not None and st["offered_pk8"] is None:
                 st["offered_pk8"] = offered
                 read = swsh_pokemon.read(offered)
@@ -542,8 +594,9 @@ async def main_async(args):
                       f"{read['species']} {read['nickname']!r} level {read['level']} "
                       f"OT {read['ot_name']!r} ({read['trainer_id']}/{read['secret_id']})")
                 if args.save_offered:
-                    write_file(args.save_offered, offered)
-                    print(f"[rx]     saved to {args.save_offered}")
+                    path = pokemon_service.trade_path(args.save_offered, st["trades"] + 1)
+                    write_file(path, offered)
+                    print(f"[rx]     saved to {path}")
                 # One-shot, and it outranks the mirror, which answers the RPC pair the console
                 # repeats.
                 if args.offer_echo:
@@ -1070,11 +1123,11 @@ async def main_async(args):
                   f"{f' zlib {len(body)}->{len(wire)} B' if args.send_zlib else ''}")
             print(f"[tx]     the message: {body.hex()}")
             # A stream: one message alone does not hold the console's state.
-            deadline = time.monotonic() + args.send_seconds
+            deadline = run_until()
             seq = args.send_sequence
             answered_serial = None
             while time.monotonic() < deadline:
-                if seq - args.send_sequence >= args.send_count:
+                if args.send_count and seq - args.send_sequence >= args.send_count:
                     break
                 said = st["said_by_proto"].get(args.send_protocol)
                 if (args.answer_once and st["offer_pending"] is None
@@ -1174,7 +1227,7 @@ async def main_async(args):
             if args.send_snapshot is None:
                 return
             if args.send_snapshot == "live":
-                deadline = time.monotonic() + args.send_seconds + args.send_after + args.send_wait
+                deadline = run_until(args.send_after + args.send_wait)
                 wanted = range(trade_payload.FRAGMENT_COUNT)
                 while not all(i in st["snapshot_bodies"] for i in wanted):
                     if time.monotonic() > deadline:
@@ -1208,8 +1261,8 @@ async def main_async(args):
             if edits or args.offer_file:
                 at = (args.offer_slot - 1) * swsh_pokemon.SIZE_PARTY
                 if args.offer_file:
-                    raw = swsh_pokemon.encrypt(gen8.load(Path(args.offer_file).read_bytes()))
-                    print(f"[tx] slot {args.offer_slot} is {args.offer_file}")
+                    raw = swsh_pokemon.encrypt(gen8.load(Path(args.offer_file[0]).read_bytes()))
+                    print(f"[tx] slot {args.offer_slot} is {args.offer_file[0]}")
                 else:
                     raw = original_party[at:at + swsh_pokemon.SIZE_PARTY]
                 if struct.unpack_from("<I", raw, 0)[0] == 0:
@@ -1225,10 +1278,11 @@ async def main_async(args):
             if args.offer_slot:
                 at = (args.offer_slot - 1) * swsh_pokemon.SIZE_PARTY
                 raw = payload[at:at + swsh_pokemon.SIZE_PARTY]
-                if getattr(args, "validate_offer", False):
-                    raw = swsh_pokemon.encrypt(gen8.load(pokemon_service.prepare("swsh", raw)))
-                    payload = payload[:at] + raw + payload[at + swsh_pokemon.SIZE_PARTY:]
-                st["our_pk8"] = raw
+                if args.fresh_pid and not args.offer_file:
+                    raw = renewed(raw)
+                raw = validated(raw)
+                payload = payload[:at] + raw + payload[at + swsh_pokemon.SIZE_PARTY:]
+                st["our_pk8"] = st["first_pk8"] = raw
                 ours = swsh_pokemon.read(st["our_pk8"])
                 print(f"[tx] we will offer slot {args.offer_slot}: species {ours['species']} "
                       f"{ours['nickname']!r} level {ours['level']}")
@@ -1244,7 +1298,7 @@ async def main_async(args):
                   f"{[p['nickname'] for p in fields['party'] if p]}, "
                   f"consistent {trade_payload.party_matches_trainer(fields)}")
 
-            deadline = time.monotonic() + args.send_seconds + args.send_after + args.send_wait
+            deadline = run_until(args.send_after + args.send_wait)
             while st["snapshot_in"] == 0:
                 if time.monotonic() > deadline:
                     print("\n[tx] the console never sent its snapshot; ours stayed home")
@@ -1287,7 +1341,7 @@ async def main_async(args):
             port = args.rpc_port
             key = (reliable5.PROTOCOL, port)
             dests = [host_constant] if args.send_destinations != "none" else []
-            deadline = time.monotonic() + args.send_seconds + args.send_after + args.send_wait
+            deadline = run_until(args.send_after + args.send_wait)
             seq = reliable4.FIRST_SEQUENCE
             last_answered = None
             answered_serial = None
@@ -1378,7 +1432,7 @@ async def main_async(args):
                 return
             key = (mesh.PROTOCOL, mesh.PORT_RELIABLE)
             dests = [host_constant] if args.send_destinations != "none" else []
-            deadline = time.monotonic() + args.send_seconds + args.send_after + args.send_wait
+            deadline = run_until(args.send_after + args.send_wait)
             seq = reliable4.FIRST_SEQUENCE
             while time.monotonic() < deadline:
                 payload = st["migration_pending"]
@@ -1417,7 +1471,7 @@ async def main_async(args):
             Without it the link drops about 1.3 s after the console hands the host role over."""
             if not args.update_mesh:
                 return
-            deadline = time.monotonic() + args.send_seconds + args.send_after + args.send_wait
+            deadline = run_until(args.send_after + args.send_wait)
             counter = None
             while time.monotonic() < deadline:
                 if not (st["we_are_host"] and st["last_update_mesh"] and st["our_index"] is not None):
@@ -1454,7 +1508,7 @@ async def main_async(args):
                 return
             payload = bytes.fromhex(args.send2_data)
             trigger = bytes.fromhex(args.send2_trigger) if args.send2_trigger else None
-            deadline = time.monotonic() + args.send_seconds + args.send_after + args.send_wait
+            deadline = run_until(args.send_after + args.send_wait)
             while trigger is not None:
                 if st["said_by_proto"].get(args.send2_protocol) == trigger:
                     print(f"\n[tx] the console said {trigger.hex()} on "
@@ -1491,6 +1545,10 @@ async def main_async(args):
             if st["block_acked"] is None and st["block_out"]:
                 print(f"\n[tx] {st['block_out']} out on {args.send2_protocol:#04x}, not acked")
 
+        def mid_trade():
+            """The console has offered and the ladder has not finished: leaving now fails it."""
+            return st["offered_pk8"] is not None and not st["ladder_finished"]
+
         async def guarded(name, task):
             """Run one sender; an exception reaching the nursery would stop sending mid-trade."""
             try:
@@ -1512,7 +1570,8 @@ async def main_async(args):
             # Drop the link on a stall: one held through a stalled ladder becomes a failed trade and
             # an hour's lockout; a dropped link is a plain communication error.
             hold_until = time.monotonic() + args.hold
-            while time.monotonic() < hold_until:
+            while (time.monotonic() < hold_until
+                   or mid_trade() and time.monotonic() < hold_until + args.grace):
                 await trio.sleep(0.25)
                 if stall_abort(st["confirm_last_step"], time.monotonic() - t0,
                                args.abort_on_stall, st["ladder_finished"]):
@@ -1624,7 +1683,8 @@ PRESETS = {
               "--selection-final-delta 9 --selection-offer --offer-slot 1 --offer-nickname PKCAMP "
               "--open-content 30,50 --open-content-offer --box-commands 1 --box-on-accept 4 "
               "--box-period 0.35 --confirm-commands 0,1,2,3,0,1,2,3,0,1,2,3 "
-              "--confirm-final-delta 9 --abort-on-stall 15 --hold 240"),
+              "--confirm-final-delta 9 --abort-on-stall 15 --hold 240 --send-seconds 0 "
+              "--send-count 0"),
 }
 
 
@@ -1963,10 +2023,14 @@ def build_parser():
     ap.add_argument("--offer-slot", type=lambda s: int(s, 0), default=0,
                     help="which party slot of --send-snapshot to offer back, 1-6; 0 offers "
                          "nothing and only records what the console offers us")
-    ap.add_argument("--offer-file", default=None, metavar="FILE",
+    ap.add_argument("--offer-file", action="append", default=[], metavar="FILE",
                     help="a .pk8 to put in --offer-slot in place of the snapshot's record: stored "
                          "or party form, encrypted or PKHeX's decrypted export. Its OT name and "
-                         "ids become the snapshot's unless --offer-file-as-is")
+                         "ids become the snapshot's unless --offer-file-as-is. Repeatable, one per "
+                         "trade on the session: the console's player picks again from the box; the "
+                         "last serves every later trade")
+    ap.add_argument("--fresh-pid", action="store_true",
+                    help="draw a new encryption constant and PID for every offered Pokemon")
     ap.add_argument("--offer-file-as-is", action="store_true",
                     help="keep the file's own OT name and trainer ids")
     ap.add_argument("--offer-species", type=lambda s: int(s, 0), default=None,
@@ -1993,7 +2057,7 @@ def build_parser():
     ap.add_argument("--save-offer", default=None, metavar="FILE",
                     help="write the PK8 we will offer to this file, before the radio is touched")
     ap.add_argument("--save-offered", default=None, metavar="FILE",
-                    help="write the PK8 the console offers to this file")
+                    help="write the PK8 the console offers to this file; trade N > 1 writes FILE-N")
     ap.add_argument("--rpc-clock-delta", type=lambda s: int(s, 0), default=5,
                     help="how far to advance a trade RPC's clock in our answer. 5 is nxldn-lab's "
                          "and is the one number in this path nothing here has measured")
@@ -2036,14 +2100,18 @@ def build_parser():
                          "the fixed --send-data. --send-data is still the first payload, before "
                          "the console has said anything")
     ap.add_argument("--send-count", type=lambda s: int(s, 0), default=1,
-                    help="how many sequence ids of ours to send in all. One message does not "
-                         "hold the console's state; it sends its own heartbeat about 580 times in "
-                         "180 s")
+                    help="how many sequence ids of ours to send in all; 0 has no limit. One "
+                         "message does not hold the console's state; it sends its own heartbeat "
+                         "about 580 times in 180 s")
     ap.add_argument("--send-period", type=float, default=1.0,
                     help="the retransmit interval. A window retransmits until it is acked")
     ap.add_argument("--send-seconds", type=float, default=60.0,
-                    help="how long to keep retransmitting if nothing acknowledges it")
+                    help="how long to keep retransmitting if nothing acknowledges it; 0 sends "
+                         "until the run ends")
     ap.add_argument("--hold", type=float, default=30.0)
+    ap.add_argument("--grace", type=float, default=300.0,
+                    help="seconds past --hold to keep a session whose trade is under way: the "
+                         "console has offered and the ladder has not finished")
     ap.add_argument("--capture", default=None)
     return ap
 
@@ -2063,8 +2131,9 @@ def main(argv=None):
         build_parser().error(str(e))
     if args.offer_file:
         edits = offer_edits(args)
-        args.offer_file = pokemon_service.prepare_file("swsh", args.offer_file,
-            transform=lambda raw: swsh_pokemon.build_from(raw, **edits))
+        args.offer_file = [pokemon_service.prepare_file(
+            "swsh", path, fresh=args.fresh_pid,
+            transform=lambda raw: swsh_pokemon.build_from(raw, **edits)) for path in args.offer_file]
         args.offer_file_as_is = True
         for key in ("species", "ability", "level", "experience", "nickname", "ot", "ivs", "moves"):
             setattr(args, "offer_" + key, None)

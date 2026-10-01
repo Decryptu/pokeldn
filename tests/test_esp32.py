@@ -1138,7 +1138,9 @@ def test_windows_auto_port_enumerates_usb_without_opening_it(monkeypatch):
 
 
 def test_sword_host_and_joiner_trade_on_simulated_boards(tmp_path, monkeypatch):
-    """bin/swsh_connect.py against bin/swsh_host.py: one trade, each side saving the other's record."""
+    """bin/swsh_connect.py against bin/swsh_host.py: two trades on one session, each side offering
+    its queued records in order and saving the other's. The host plays a console's player: it accepts
+    first and offers again from the box after the first trade (--lead)."""
     import threading
 
     import swsh_connect
@@ -1173,14 +1175,15 @@ def test_sword_host_and_joiner_trade_on_simulated_boards(tmp_path, monkeypatch):
 
     result = {}
     threads["host"] = threading.Thread(target=lambda: result.setdefault("host", swsh_host.main(
-        ["--keys", str(keys_file), "--channel", "6", "--seconds", "35", "--accept-first",
+        ["--keys", str(keys_file), "--channel", "6", "--seconds", "50", "--accept-first",
+         "--lead", "3",
          "--snapshot", str(tmp_path / "snapshot.bin"), "--received", str(tmp_path / "host.pk8"),
          "--offer-file", str(tmp_path / "offer0.pk8"), "--offer-file", str(tmp_path / "offer1.pk8")])),
         daemon=True)
     threads["join"] = threading.Thread(target=lambda: result.setdefault("join", swsh_connect.main(
         ["--keys", str(keys_file), "--preset", "trade", "--channels", "6", "--dwell", "0.5",
-         "--hold", "25", "--save-offered", str(tmp_path / "join.pk8"),
-         "--offer-file", str(tmp_path / "offer2.pk8")])),
+         "--hold", "35", "--save-offered", str(tmp_path / "join.pk8"),
+         "--offer-file", str(tmp_path / "offer2.pk8"), "--offer-file", str(tmp_path / "offer3.pk8")])),
         daemon=True)
     wlan.set_factory(factory)
     try:
@@ -1197,4 +1200,5 @@ def test_sword_host_and_joiner_trade_on_simulated_boards(tmp_path, monkeypatch):
 
     def species(name):
         return pokemon.read(pokemon.encrypt(gen8.load((tmp_path / name).read_bytes())))["species"]
-    assert species("join.pk8") == 94 and species("host.pk8") == 96
+    assert [species(n) for n in ("join.pk8", "join-2.pk8")] == [94, 95]
+    assert [species(n) for n in ("host.pk8", "host-2.pk8")] == [96, 97]

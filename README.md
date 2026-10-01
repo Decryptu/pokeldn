@@ -210,7 +210,8 @@ Console: Y-Comm → Link Trade → local communication, A on both messages, wait
 ```bash
 # join the console's session and trade: the console's own party snapshot is sent back, rewritten
 POKELDN_RADIO=esp32:auto ./.venv/bin/python bin/swsh_connect.py --keys PROD_KEYS \
-  --preset trade --offer-slot 1 [--offer-file your.pk8]
+  --preset trade --offer-slot 1 [--offer-file your.pk8 --offer-file next.pk8 --fresh-pid] \
+  --save-offered received.pk8
 
 # or host, and let the console join: its snapshot is taken from this trade
 POKELDN_RADIO=esp32:auto ./.venv/bin/python bin/swsh_host.py --keys PROD_KEYS \
@@ -220,8 +221,9 @@ POKELDN_RADIO=esp32:auto ./.venv/bin/python bin/swsh_host.py --keys PROD_KEYS \
 The host builds its own station advertisement and rewrites the joining console's live snapshot.
 When hosting, the console joins from Y-Comm → Link Trade → trade, after A on both messages that
 follow; `--received FILE` saves what it sends, `--code 12345678` hosts for a Link Code search.
-`--advert` and `--snapshot` still accept saved records for comparison. The host takes a repeated `--offer-file`, one per trade on the session. Details:
-[Trading](docs/swsh_trade.md).
+`--advert` and `--snapshot` still accept saved records for comparison. The host and the joiner
+take a repeated `--offer-file`, one per trade on the session, as the player picks again from the box;
+trade N writes what it received with `-N`. Details: [Trading](docs/swsh_trade.md).
 
 Mystery Gift needs no session; the gift screen scans and a distributor advertises the card. Console:
 Mystery Gift → receive a gift → via local wireless.

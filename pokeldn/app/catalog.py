@@ -242,11 +242,13 @@ SWSH = Game("swsh", "Sword & Shield", "SwSh", "swsh.md", (
     Tool("swsh-join", "Trade (Join)", "bin/swsh_connect.py", "Join the console's Link Trade search.",
          ("Y-Comm, Link Trade, local communication, no code; press A on both messages.",
           "Start the joiner while the console searches.",
-          "PkCamp appears on the trade screen: choose a Pokemon and confirm."),
-         (offer("--offer-file", required=False,
-                help="Pick a species; PKHeX builds a legal one. Empty offers your own first party "
-                     "Pokemon back, renamed PKCAMP."),
-          join_seconds("240")),
+          "PkCamp appears on the trade screen: choose a Pokemon and confirm.",
+          "Queued Pokemon follow, one per trade: pick again from the box."),
+         (queued("--offer-file", required=False,
+                 help="Pick a species; PKHeX builds a legal one. Empty offers your own first party "
+                      "Pokemon back, renamed PKCAMP."),
+          FRESH_PID,
+          join_seconds("900")),
          fixed=("--preset", "trade", "--send-snapshot", "live",
                 "--save-offered", "{received}/swsh-{stamp}.pk8"),
          doc="swsh_trade.md"),

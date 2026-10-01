@@ -146,7 +146,8 @@ class HostTrade:
 
     def __init__(self, self_id, peer_id, snapshot, offer_pk8, send, send_broadcast, send_mesh,
                  log=print, end_delay=END_DELAY, auto_accept=True, record=None, migrate=False,
-                 snapshot_builder=None, next_offer=None, accept_first=False):
+                 snapshot_builder=None, next_offer=None, accept_first=False, lead=None,
+                 queued=0):
         self.self_id, self.peer_id = self_id, peer_id
         self.snapshot = bytes(snapshot) if snapshot is not None else None
         self.offer_pk8 = bytes(offer_pk8) if offer_pk8 is not None else None
@@ -181,6 +182,8 @@ class HostTrade:
         self.next_offer = next_offer
         self.trades = 0
         self.accept_first = accept_first      # a player's side: accept before the joiner does
+        # A player's side: with a record still queued, offer it `lead` seconds after a trade.
+        self.lead, self.queued = lead, queued
 
     def clock(self):
         """The frame clock, strictly increasing across every envelope we send."""
@@ -263,7 +266,7 @@ class HostTrade:
                 if 40 in self.elements:
                     self.elements[40].set_value(1, struct.pack("<I", value), self.send)
             return
-        self.log(f"[trade] <- holder 1000{offset} {body.hex()[:80]}")
+        self.log(f"[trade] <- holder {10000 + offset} {body.hex()[:80]}")
 
     def on_broadcast(self, port, message, compressed):
         """One 0x84 message from the joiner; `compressed` is Pia's 0x10 flag."""
@@ -427,13 +430,16 @@ class HostTrade:
         self.peer_commands = []
         self.ladder_sent = -1
         self.ladder_done_at = None
-        self.log(f"[trade] the joiner offers again: trade {self.trades + 1}")
+        self.log(f"[trade] trade {self.trades + 1} from the box")
         self.goto("box")
 
     def _stage_saving(self, now):
         # An emulated Shield host holds the mesh here; a migration after a trade reads as an
         # interruption on the joiner, after its save.
         if not self.migrate:
+            if (self.lead is not None and self.trades < self.queued
+                    and now - self.stage_since >= self.lead):
+                self._next_round()
             return
         if now - self.stage_since >= self.end_delay:
             self.send(PORT_CONTENT, trade.box_sync_state(3))

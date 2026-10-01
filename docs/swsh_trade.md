@@ -148,6 +148,15 @@ content 40 from phase 0 to 4. No 0x84 snapshot, ping 97 or 110, box command 3 or
 comes between trades. `bin/swsh_host.py` with a repeated `--offer-file` traded two queued records
 with a retail Sword joiner on one session this way.
 
+`bin/swsh_connect.py` with a repeated `--offer-file` takes the console's offer after a finished
+ladder (phase 4 on 40040) as the next trade. It answers that offer with its next record, so the
+console's box sequence is already in step 3 holding its own offer, and clears its per-trade state:
+the 40050 and 40040 pairs and bodies answered, the confirmation command queue, the selection-offer
+latch. The 40030 pair and the ping answers carry over. `bin/swsh_host.py --accept-first --lead
+SECONDS` plays a console host's player (accepts first, offers its next queued record from the box
+after a trade), and the two launchers trade two records each way on one session on simulated boards
+(`tests/test_esp32.py`). A retail console host's second round against the joiner is unmeasured.
+
 When that retail joiner's player then pressed B in the box, the console sent box commands 2 and 3
 and mesh `0401` and deauthenticated, with no error; its next search joined the same hosted network
 (same network id). A searching console joins any network that passes the
@@ -545,7 +554,7 @@ constant, and keeps every unnamed byte (ribbons, memories, met data, handler rec
 
 A French Sword 1.3.2 accepted a record its save already held (same PID and EC) in four trades;
 whether Sword checks for a duplicate is unread. `bin/swsh_host.py --fresh-pid` draws a new
-encryption constant and PID; `bin/swsh_connect.py` has no such flag. Brilliant Diamond flags a
+encryption constant and PID, as does `bin/swsh_connect.py --fresh-pid`. Brilliant Diamond flags a
 duplicate as illegal ([the BDSP trade page](bdsp_trade.md#duplicate-detection)).
 
     --offer-slot 1 --offer-nickname PKCAMP --offer-ivs 31,31,31,31,31,31
@@ -594,6 +603,10 @@ reassembled, so no earlier capture session is needed. `--send-snapshot FILE` sen
 saved 3456-byte payload instead (`--preset capture`, then `tools/switch/swsh_snapshot.py`, writes one).
 
 `--offer-file FILE` puts a `.pk8` in the offered party slot, its OT moved to the snapshot's trainer.
+Repeated, it queues one record per trade on the session; the last serves every later trade, under a
+new PID with `--fresh-pid`, and trade N writes `--save-offered` with `-N`. A trade the console has
+offered and whose ladder has not finished holds the session up to `--grace` seconds (300) past
+`--hold`.
 A stored-format record with no party stats trades; the console computes the level from the
 experience. On a Linux card, drop
 `POKELDN_RADIO` and prime the kernel's BSS table with `iw dev IFACE scan` before the run

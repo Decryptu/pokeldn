@@ -183,6 +183,10 @@ def build_parser():
     ap.add_argument("--accept-first", action="store_true",
                     help="accept without waiting for the joiner's acceptance, as a player would; "
                          "for our own joiner, which accepts after its partner")
+    ap.add_argument("--lead", type=float, default=None, metavar="SECONDS",
+                    help="test only, for bin/swsh_connect.py: act as a console host's player: "
+                         "after a trade with another --offer-file queued, offer it from the box this "
+                         "many seconds after the ladder, without waiting for the joiner's offer")
     ap.add_argument("--received", default=None,
                     help="write the joiner's Pokemon here; trade N > 1 writes FILE-N")
     ap.add_argument("--code", default="",
@@ -311,7 +315,8 @@ def main(argv=None):
                                              migrate=args.migrate,
                                              snapshot_builder=(lambda peer: build_snapshot(peer, n))
                                              if snapshot is None else None,
-                                             next_offer=next_offer, accept_first=args.accept_first)
+                                             next_offer=next_offer, accept_first=args.accept_first,
+                                             lead=args.lead, queued=len(args.offer_file) - n)
         print(f"[sw] {st.ip}: trade {n + 1} starts")
 
     try:
