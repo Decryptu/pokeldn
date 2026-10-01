@@ -61,11 +61,13 @@ Gift below with the tested settings. The only file it asks for is `prod.keys`.
 
 The FRLG and Sword/Shield Mystery Gift tools open and save `.pokegift` files, which keep a complete
 distribution and its target game together. Sword/Shield also accepts `.wc8`. In the app, use
-Gift file to browse and Save gift file to export the selected gift without a board.
+Gift file to browse and Save gift file to export the selected gift without a board. FRLG, Console
+code uses Payload file and Save payload file for built-in or custom ARM payloads.
 
 ```bash
 ./.venv/bin/python bin/frlg_mg_host.py --gift celebi --export-gift celebi.pokegift
 ./.venv/bin/python bin/swsh_gift_host.py --species 25 --export-gift pikachu.pokegift
+./.venv/bin/python bin/frlg_mg_host.py --buffer-script trainer-id-probe --export-gift probe.pokegift
 ./.venv/bin/python -m pokeldn.gifts inspect celebi.pokegift
 ```
 

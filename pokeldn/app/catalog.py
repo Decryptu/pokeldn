@@ -167,17 +167,19 @@ FRLG = Game("frlg", "FireRed & LeafGreen", "FRLG", "frlg.md", (
          ("Title screen: Mystery Gift, Wonder Cards, Friend.",
           "Start the host, then pick PkCamp when it appears.",
           "Keep the host running until the log shows the result; a dump is written a few seconds later."),
-         (Field("--buffer-script", "Action", "choice", default="save-dump",
+         (Field("--gift-file", "Payload file", "gift", exts=("pokegift",),
+                help="Import a shared ARM payload with its cartridge targets and response settings."),
+          Field("--buffer-script", "Action", "choice", default="save-dump", unless="--gift-file",
                 help="What the code does on the console. A read leaves the game unchanged.", choices=(
              ("trainer-id-probe", "Read the trainer id (reads only)"),
              ("save-dump", "Read part of the save (reads only)"),
              ("install-resident", "Install a hook until the next reset (writes RAM)"))),
-          Field("--dump-block", "Save block", "choice", default="sav2", group="Save dump",
+          Field("--dump-block", "Save block", "choice", default="sav2", group="Save dump", unless="--gift-file",
                 help="The part of the save to read, and how many bytes; the file lands in Received.",
                 choices=(("sav2", "Trainer (sav2)"), ("sav1", "Party, bag, flags (sav1)")),
                 when=SAVE_DUMP),
-          Field("--dump-size", "Bytes", "number", default="64", group="Save dump", when=SAVE_DUMP),
-          Field("--resident", "Hook", "choice", default="turbo", when=HOOK, choices=(
+          Field("--dump-size", "Bytes", "number", default="64", group="Save dump", when=SAVE_DUMP, unless="--gift-file"),
+          Field("--resident", "Hook", "choice", default="turbo", when=HOOK, unless="--gift-file", choices=(
               ("turbo", "Turbo"), ("shiny", "Shiny encounters"), ("ivs", "IVs on screen"),
               ("noencounter", "No wild encounters")),
                 help="Applies until the next soft reset.", choice_help=(
@@ -187,7 +189,7 @@ FRLG = Game("frlg", "FireRed & LeafGreen", "FRLG", "frlg.md", (
                     ("ivs", "Displays the lead Pokemon's six IVs and nature number on screen."),
                     ("noencounter", "Disables grass, water and roaming encounters. "
                                     "Fishing and Sweet Scent still work."))),
-          Field("--write-unsafe", "Allow writes", "switch", default=True, when=HOOK, hidden=True,
+          Field("--write-unsafe", "Allow writes", "switch", default=True, when=HOOK, hidden=True, unless="--gift-file",
                 help="A hook needs it: it changes the running game until a soft reset."),
           Field(("--version", "--expect-console"), "Version", "choice", default="firered",
                 choices=VERSIONS, group="Console",

@@ -15,7 +15,8 @@ or C3 through native USB Serial/JTAG. C6 and S2 chips are refused.
 
 Mystery Gift tools share a Gift file control: open a `.pokegift` distribution, or save the selected
 gift without a board. Sword/Shield also opens `.wc8` cards. [Mystery Gift files](gifts.md) describes
-cartridge variants and native-format conversion.
+cartridge variants and native-format conversion. FRLG, Console code imports and saves shared ARM
+payloads through Payload file and Save payload file.
 
 ## Local storage
 

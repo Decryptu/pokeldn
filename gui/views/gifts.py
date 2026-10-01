@@ -17,9 +17,10 @@ class GiftPicker:
         value = command.value_of(field, games.values) or ""
         self.path = PathField(games.app.picker, lambda: os.path.expanduser("~"), value,
                               "file", field.exts, self._changed, single_line=True)
-        self.path.control.controls.append(t.icon_button("close", self._clear, "Use built-in gifts"))
+        self.path.control.controls.append(t.icon_button("close", self._clear, "Use built-in options"))
         self.detail = t.text("", 12, t.MUTED)
-        self.save_button = t.secondary_button("Save gift file", self._save, "download")
+        self.save_button = t.secondary_button("Save payload file" if games.tool.key == "frlg-code"
+                                              else "Save gift file", self._save, "download")
         self.control = ft.Column([self.path.control, self.detail, self.save_button], spacing=10)
         self._describe(value)
 

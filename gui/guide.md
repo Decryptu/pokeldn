@@ -69,6 +69,11 @@ appear below the path. Clear the path to select a built-in gift again.
 Save gift file stores the selected gift for reuse or sharing. It works without a board. FRLG files
 keep the card, delivery script and event extras together, with their supported cartridge variants.
 
+FireRed/LeafGreen, Console code uses Payload file and Save payload file for compiled ARM payloads.
+Built-in actions can be saved and shared. Custom payload files carry their cartridge targets and
+response settings; importing one hides the action composer. Native code can change the running
+game or its save. Use payloads whose source and behavior you have checked.
+
 ## When a run fails
 
 - Stop, then back out of the console's search screen and search again. Most games keep a stale session

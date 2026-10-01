@@ -241,14 +241,16 @@ def test_a_pokemon_file_shows_its_own_species_and_shininess(monkeypatch):
     assert (saved[-1]["species"], saved[-1]["shiny"], picker.species.value, picker.shiny.value) == (6, True, "6", True)
 
 
-def test_gift_picker_exports_without_a_board_and_imports_the_saved_file(tmp_path):
+@pytest.mark.parametrize("key,values,name", [("frlg-gift", {"--gift": "celebi"}, "celebi"),
+    ("frlg-code", {"--buffer-script": "trainer-id-probe"}, "trainer-id-probe")])
+def test_gift_picker_exports_without_a_board_and_imports_the_saved_file(tmp_path, key, values, name):
     import asyncio
     from gui.views.gifts import GiftPicker
     from pokeldn import gifts
     from pokeldn.app.catalog import GAMES
     from pokeldn.app.settings import Settings
 
-    tool = next(tool for game in GAMES for tool in game.tools if tool.key == "frlg-gift")
+    tool = next(tool for game in GAMES for tool in game.tools if tool.key == key)
     field = next(field for field in tool.fields if field.kind == "gift")
     path = tmp_path / "celebi.pokegift"
 
@@ -257,7 +259,7 @@ def test_gift_picker_exports_without_a_board_and_imports_the_saved_file(tmp_path
         return str(path)
 
     settings = Settings()
-    view = SimpleNamespace(tool=tool, values={"--gift": "celebi"}, extra={},
+    view = SimpleNamespace(tool=tool, values=values, extra={},
         app=SimpleNamespace(settings=settings, picker=SimpleNamespace(save_file=save_file)))
     changes = []
     view.set_value = lambda field, path, rebuild: changes.append((field.key, path, rebuild))
@@ -265,7 +267,7 @@ def test_gift_picker_exports_without_a_board_and_imports_the_saved_file(tmp_path
     picker.control = SimpleNamespace(update=lambda: None)
     asyncio.run(picker._save(None))
     saved = gifts.load(path, game="frlg")
-    assert saved.name == "celebi" and len(saved.variants) == 4
+    assert saved.name == name and len(saved.variants) == 4
     picker._changed(str(path))
     assert picker.detail.value == saved.summary
     assert changes == [("--gift-file", str(path), True)]

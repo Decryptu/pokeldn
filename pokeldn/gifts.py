@@ -8,7 +8,7 @@ from pathlib import Path
 from types import MappingProxyType
 
 FORMAT = "pokeldn.gift"
-VERSION = 1
+VERSION = 2
 EXTENSION = "pokegift"
 MAX_FILE_SIZE = 256 * 1024
 ADAPTERS = {"frlg": "pokeldn.frlg.gift.file", "swsh": "pokeldn.swsh.gift_file"}
@@ -32,8 +32,8 @@ class Variant:
         object.__setattr__(self, "data", MappingProxyType(dict(self.data)))
         options = dict(self.options or {})
         for key, value in options.items():
-            if not isinstance(key, str) or not isinstance(value, (str, tuple)):
-                raise ValueError("Gift options must be text or tuples of integers.")
+            if not isinstance(key, str) or type(value) not in (str, tuple, int):
+                raise ValueError("Gift options must be text, integers or tuples of integers.")
             if isinstance(value, tuple) and any(type(v) is not int for v in value):
                 raise ValueError("Gift option lists must contain integers.")
         object.__setattr__(self, "options", MappingProxyType(options))
@@ -88,7 +88,7 @@ def loads(source, *, game=None):
     try:
         root = json.loads(source, object_pairs_hook=_unique)
         _fields(root, ("format", "version", "game", "name", "variants"))
-        if root["format"] != FORMAT or type(root["version"]) is not int or root["version"] != VERSION:
+        if root["format"] != FORMAT or type(root["version"]) is not int or root["version"] not in (1, VERSION):
             raise ValueError("Unsupported gift file format or version.")
         if not isinstance(root["game"], str):
             raise ValueError("A gift game must be text.")
@@ -111,6 +111,8 @@ def loads(source, *, game=None):
                     raise ValueError(f"Gift component {key!r} failed its SHA-256 check.")
                 data[key] = raw
             options = {k: tuple(v) if isinstance(v, list) else v for k, v in value["options"].items()}
+            if root["version"] == 1 and "buffer_code" in data:
+                raise ValueError("Console code requires gift file version 2.")
             variants[target] = Variant(data, options)
         return Gift(root["game"], root["name"], variants)
     except (UnicodeError, json.JSONDecodeError, TypeError, RecursionError) as exc:
@@ -150,6 +152,9 @@ def main(argv=None):
     convert.add_argument("--record", help="Sword/Shield .wc8")
     convert.add_argument("--card", help="FRLG WonderCard.bin")
     convert.add_argument("--script", help="FRLG Script.bin")
+    convert.add_argument("--code", help="FRLG raw ARM console payload (.bin)")
+    convert.add_argument("--expect", help="console-code result: trainer-id or a 32-bit integer")
+    convert.add_argument("--dump-size", type=int, help="console-code response length when it returns a dump")
     convert.add_argument("--build", help="FRLG cartridge game code, e.g. BPRF")
     convert.add_argument("--name")
     convert.add_argument("-o", "--out", required=True)
@@ -161,12 +166,25 @@ def main(argv=None):
     try:
         if args.command == "import":
             if args.game == "swsh":
-                if not args.record or args.card or args.script or args.build:
+                if (not args.record or args.card or args.script or args.build or args.code
+                        or args.expect is not None or args.dump_size is not None):
                     raise ValueError("Sword/Shield import requires --record only.")
                 gift = load(args.record, game="swsh")
                 if args.name:
                     gift = Gift(gift.game, args.name, dict(gift.variants))
             else:
+                if args.code:
+                    if args.card or args.script or args.record or not args.build:
+                        raise ValueError("FRLG code import requires --code and --build only, plus response options.")
+                    expect = (args.expect if args.expect == "trainer-id" else
+                              int(args.expect, 0) if args.expect is not None else None)
+                    gift = adapter("frlg").from_code(Path(args.code).read_bytes(), build=args.build,
+                        name=args.name or Path(args.code).stem, expect=expect, dump_size=args.dump_size)
+                    save(args.out, gift)
+                    print(f"Saved {args.out}: {gift.summary}")
+                    return 0
+                if args.expect is not None or args.dump_size is not None:
+                    raise ValueError("Response options require --code.")
                 if not args.card or not args.script or not args.build or args.record:
                     raise ValueError("FRLG import requires --card, --script and --build.")
                 gift = adapter("frlg").from_bins(Path(args.card).read_bytes(),

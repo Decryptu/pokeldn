@@ -595,11 +595,14 @@ def build_run_config(parser, args):
         if args.gift_file:
             from pokeldn import gifts
             from pokeldn.frlg.gift.file import FilePayload
-            if (args.questionnaire is not None or args.news_id is not None
-                    or getattr(args, "_flag_id_explicit", False) or _hunt_asked(args)
-                    or args.dump_address is not None or args.dump_blocks != 1 or args.dump_scatter is not None):
+            payload_prefixes = ("dump_", "create_mon_", "write_", "flash_", "scan_", "sum_",
+                                "table_", "trace_", "call_", "chain_", "svc_", "resident", "hunt_")
+            overrides = any(value != parser.get_default(key) for key, value in vars(args).items()
+                            if key != "dump_file" and (key.startswith(payload_prefixes)
+                            or key in ("questionnaire", "denied_message", "news_id")))
+            if overrides or getattr(args, "_flag_id_explicit", False):
                 parser.error("A gift file already defines its card, scripts and options; use it without payload overrides")
-            payload = FilePayload(gifts.load(args.gift_file, game="frlg"))
+            payload = FilePayload(gifts.load(args.gift_file, game="frlg"), dump_file=args.dump_file)
         elif args.news is not None:
             if args.questionnaire is not None:
                 parser.error(
@@ -824,7 +827,7 @@ def main(argv=None):
     distribution = None
     if args.make_artifact and plan.distribution.is_news:
         parser.error("--make-artifact disassembles a delivery RAM script; Wonder News has none")
-    if args.make_artifact and args.buffer_script is not None:
+    if args.make_artifact and plan.distribution.buffer_code is not None:
         parser.error(
             "--make-artifact disassembles a delivery RAM script; a buffer script has none")
     if args.make_artifact:
@@ -851,7 +854,7 @@ def main(argv=None):
     elif needs_root():
         parser.error("live LDN hosting requires root; run with sudo -E")
     application = (WonderNewsHostApplication if plan.distribution.is_news
-                   else BufferScriptHostApplication if args.buffer_script is not None
+                   else BufferScriptHostApplication if plan.distribution.buffer_code is not None
                    else MysteryGiftHostApplication)
     app = application(
         config, plan=plan, transport_factory=factory,

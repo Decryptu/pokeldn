@@ -211,6 +211,10 @@ static u32 Client_RunBufferScript(struct MysteryGiftClient * client)
 
 ## The build
 
+The Console code tool imports and exports `.pokegift` files containing compiled ARM bytes,
+cartridge targets and response settings. Built-in payloads and authors' raw `.bin` payloads use
+the same host. [Mystery Gift files](gifts.md#console-code) documents packaging and sharing.
+
 - `asm/*.s`, one ARM source per payload, assembled by `scripts/gen_buffer_scripts.py` into the
   committed `pokeldn/frlg/rom/buffer_payloads.py`; `tests/test_buffer_script.py` re-assembles and
   compares when `arm-none-eabi-as` is installed.

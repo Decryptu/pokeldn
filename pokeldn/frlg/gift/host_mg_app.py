@@ -356,7 +356,8 @@ class BufferScriptHostApplication(MysteryGiftHostApplication):
                   f"language={int.from_bytes(wire[26:28], 'little')}")
         self.info(f"RFU parent identity: raw={self.session.rfu.host_session_id.hex()} "
                   f"u16=0x{int.from_bytes(self.session.rfu.host_session_id, 'little'):04x}")
-        self.info(f"Buffer script: {payload.script!r}; {payload.spec.description}; "
+        description = "imported console code" if hasattr(payload, "file") else payload.spec.description
+        self.info(f"Buffer script: {payload.script!r}; {description}; "
                   f"{len(code)}B of ARM, {code.hex()}")
         self.info("The console copies it into gDecompressionBuffer and CALLS IT as "
                   "func(&param, gSaveBlock2Ptr, gSaveBlock1Ptr) "

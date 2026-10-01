@@ -4,7 +4,7 @@ title: Mystery Gift files
 # Mystery Gift files
 
 A `.pokegift` file stores a complete Mystery Gift distribution for FireRed/LeafGreen or
-Sword/Shield, with its target game and native records.
+Sword/Shield, or an FRLG ARM console payload, with its target game and native records.
 
 ## Desktop app
 
@@ -12,6 +12,10 @@ Games, Mystery Gift has the same Gift file control for both supported games. Bro
 `.pokegift` file and shows its name, game and cartridge variants. Sword/Shield also opens `.wc8`
 files. Selecting a file hides the built-in gift fields and sends the file's data. Clearing the
 path restores those fields. Existing Sword/Shield settings containing a `.wc8` path still work.
+
+FRLG, Console code has a Payload file control and Save payload file button. They import a shared
+ARM payload or export the selected built-in action, including its response settings. Imported
+code files belong on Console code; cards and news belong on Mystery Gift.
 
 Save gift file writes the selected built-in gift or imported file as `.pokegift`. It needs no board
 or Switch keys. FRLG exports include every supported cartridge variant that the selected options
@@ -36,6 +40,50 @@ An FRLG gift file defines the card flag ID, scripts, questionnaire and refusal m
 Payload overrides such as `--flag-id`, `--questionnaire` and `--hunt-*` are refused with it.
 Radio, trainer identity and cartridge-selection options remain session settings.
 
+### Console code
+
+Export a built-in payload with its configured bytes and response settings:
+
+```bash
+./.venv/bin/python bin/frlg_mg_host.py --buffer-script save-dump --dump-size 64 \
+  --export-gift save-dump.pokegift
+```
+
+Authors can package their own raw ARM code with an explicit cartridge target:
+
+```bash
+arm-none-eabi-as -march=armv4t -mcpu=arm7tdmi -o payload.o payload.s
+arm-none-eabi-objcopy -O binary -j .text payload.o payload.bin
+./.venv/bin/python -m pokeldn.gifts import --game frlg --code payload.bin \
+  --build BPRF --name "Custom payload" --expect 66 -o custom.pokegift
+```
+
+A minimal `payload.s` writes 66 into the response parameter and completes in one call:
+
+```asm
+.syntax unified
+.arm
+.text
+.global _start
+_start:
+    mov r3, #66
+    str r3, [r0]
+    mov r0, #1
+    bx lr
+```
+
+The code must be position independent ARMv4T, word aligned, and at most 1024 bytes. The console
+passes `r0 = &param`, `r1 = gSaveBlock2Ptr` and `r2 = gSaveBlock1Ptr`; it calls the payload once per
+frame until it returns 1. See [Console code](frlg_rom.md) for the execution contract. Without
+`--expect`, any returned parameter is accepted. A payload that repoints the response to a byte
+buffer uses `--dump-size N` when packaged.
+
+Share the `.pokegift` file. The recipient imports it on FRLG, Console code, or launches with
+`--gift-file custom.pokegift`. `--dump-file PATH` chooses where the host writes a returned dump.
+Cartridge variants are enforced before code is sent. Packaging verifies structure and size;
+authors must execute new payloads offline with `buffer_script.emulate_repeating` before a live
+run. A file hash does not prove that native code returns or leaves the save intact.
+
 ### Native formats
 
 The converter imports Sword/Shield WC8 records and paired FRLG files used by
@@ -54,14 +102,14 @@ CRCs and the script's unbound Mystery Gift header. The native pair cannot carry 
 trainers, Mystery Event scripts, questionnaire gates or Wonder News. Export to that pair refuses
 a distribution with those extras. `.pokegift` preserves them together.
 
-## Version 1
+## Version 2
 
 The file is UTF-8 JSON with five required fields:
 
 | Field | Value |
 | --- | --- |
 | `format` | `pokeldn.gift` |
-| `version` | integer `1` |
+| `version` | integer `2` |
 | `game` | `frlg` or `swsh` |
 | `name` | non-empty display name, up to 180 characters |
 | `variants` | object mapping target codes to native data and options |
@@ -72,11 +120,22 @@ meaning. Export sorts fields for deterministic files.
 
 | Game | Variant keys | Data components | Options |
 | --- | --- | --- | --- |
-| FRLG | supported cartridge codes | `card`, `ram_script`, `stamp`, `activation_script`, `install_activation_script`, `trainer`, `news`, `mevent` | `questionnaire`, `denied_message` |
+| FRLG gifts | supported cartridge codes | `card`, `ram_script`, `stamp`, `activation_script`, `install_activation_script`, `trainer`, `news`, `mevent` | `questionnaire`, `denied_message` |
+| FRLG console code | supported cartridge codes | `buffer_code` | response settings below |
 | Sword/Shield | `swsh` | `wc8` | none |
 
-FRLG card variants carry the same flag ID and gift type. Wonder News travels alone. Native buffer
-code, captures, keys, filesystem paths and session timing are outside this format.
+FRLG card variants carry the same flag ID and gift type. Wonder News and console code each travel
+alone. Captures, keys, filesystem paths and session timing are outside this format.
+
+An FRLG console-code variant has exactly one `buffer_code` component. Its optional response
+settings are `buffer_expect` (a 32-bit unsigned integer or `trainer-id`), `buffer_dump_size`,
+`buffer_dump_blocks`, `buffer_dump_address`, `buffer_dump_addresses` and `buffer_decode`.
+Dump sizes are 1 to 1024 bytes per block, with at most 32 blocks; a scatter dump names one address
+per block. Decoder names come from the existing response decoders. Dump output paths and local
+ROM comparison paths remain on the host and are excluded from shared files.
+
+Readers also accept version-1 files containing cards, news or WC8. Exports use version 2, which
+adds console code and integer response settings. Version-1 readers reject version-2 files.
 
 Readers reject unknown versions, fields and target codes, duplicate JSON fields, invalid hashes,
 files larger than 256 KiB, invalid native sizes and invalid component combinations. FRLG validation

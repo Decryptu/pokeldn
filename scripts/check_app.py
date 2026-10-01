@@ -46,6 +46,7 @@ def check() -> None:
             assert result["legal"] and pokemon.SERVICE.check(game, result["file"])["legal"]
         for game, script, options in (
                 ("frlg", "bin/frlg_mg_host.py", ("--gift", "celebi")),
+                ("frlg-code", "bin/frlg_mg_host.py", ("--buffer-script", "save-dump", "--dump-size", "64")),
                 ("swsh", "bin/swsh_gift_host.py", ("--species", "25"))):
             source, copy = Path(folder) / f"{game}.pokegift", Path(folder) / f"{game}-copy.pokegift"
             for args in ((*options, "--export-gift", str(source)),
@@ -53,8 +54,8 @@ def check() -> None:
                 subprocess.run(runner.command("--run", script, *args),
                                capture_output=True, text=True, timeout=30, check=True)
             assert source.read_bytes() == copy.read_bytes()
-            assert gifts.load(copy, game=game).variants
-        print("FRLG and Sword/Shield gift files verified")
+            assert gifts.load(copy, game="frlg" if game == "frlg-code" else game).variants
+        print("FRLG gifts, console code and Sword/Shield gift files verified")
     list(list_ports.comports())
     scripts = sorted((Path(paths.ROOT) / "bin").glob("*.py"))
     for path in scripts:

@@ -113,6 +113,8 @@ def test_missing_app_folders_need_no_cleanup(local):
 
 def test_old_received_records_and_personal_files_survive_a_change_of_output_folder(local):
     saved = [put(storage.SESSION / "previous-received/pokemon.pk9", b"received"),
+             put(storage.SESSION / "shared/custom.pokegift", b"personal payload"),
+             put(storage.LOGS / "shared/event.wc8", b"personal gift"),
              put(storage.LOGS / "previous-dumps/save.bin", b"dump"),
              put(storage.POKEMON / "personal.pb7", b"personal"),
              put(storage.SESSION / "offers/received.pk9", b"received in offers")]
