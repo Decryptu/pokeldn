@@ -65,14 +65,14 @@ def main(page: ft.Page) -> None:
     def item(entry) -> ft.Control:
         key, label, icon = entry
         active = key == current["key"]
-        color = t.GREEN if key == "update" else t.TEXT if active else t.MUTED
+        color = t.GREEN if key == "update" else t.RED if active else t.MUTED
         return ft.Semantics(selected=active, button=True, label=label, exclude_semantics=True,
                             on_tap=lambda e, k=key: navigate(k), content=ft.Container(ft.Column([
             t.pixel_icon(icon, size=24, color=color),
             t.text(label, 11, color, weight=ft.FontWeight.W_500),
         ], spacing=2, horizontal_alignment=ft.CrossAxisAlignment.CENTER),
             width=56, padding=ft.Padding(0, 8, 0, 7), border_radius=12,
-            bgcolor=t.SELECTED if active else None,
+            bgcolor=ft.Colors.with_opacity(0.12, t.RED) if active else None,
             on_click=lambda e, k=key: navigate(k), tooltip=label))
 
     def render_rail() -> None:

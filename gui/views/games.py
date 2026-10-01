@@ -104,7 +104,8 @@ class GamesView:
             self.tab, self.search = "basic", ""
         self.game, self.tool = game, tool
         self.summary.value = tool.summary
-        self.tabs.content = t.segmented([("basic", "Basic"), ("all", "Advanced")], self.tab, self._tab)
+        self.tabs.content = t.segmented([("basic", "Basic", "sliders-horizontal"),
+                                          ("all", "Advanced", "bulletlist")], self.tab, self._tab)
         self.render_tree()
         self.render_body()
         self.session.show(tool)

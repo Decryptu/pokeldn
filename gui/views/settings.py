@@ -98,7 +98,9 @@ class SettingsView:
                    trailing=t.switch(s.sprites, lambda e: self.save("sprites", e.control.value))),
         ]
         self.column.controls = [
-            ft.Container(t.text("Settings", 22, weight=ft.FontWeight.W_600), padding=ft.Padding(4, 12, 0, 0)),
+            ft.Container(ft.Row([t.pixel_icon("gear", size=24, color=t.RED),
+                                 t.text("Settings", 22, weight=ft.FontWeight.W_600)], spacing=10),
+                         padding=ft.Padding(4, 12, 0, 0)),
             section("Your setup"),
             t.card("Switch keys", ft.Column([keys.control, self.keys_state], spacing=8),
                    "prod.keys dumped from your own console. Needed to talk to the games; it never leaves this "

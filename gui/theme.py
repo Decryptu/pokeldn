@@ -15,11 +15,11 @@ TEXT = "#F5F5F7"
 SOFT = "#D1D1D6"
 MUTED = "#A1A1A6"
 FAINT = "#86868B"
-BLUE = "#0A84FF"
-RED = "#FF453A"
-GREEN = "#30D158"
+BLUE = "#47AEFA"
+RED = "#FD474D"
+GREEN = "#3DD68C"
 AMBER = "#FF9F0A"
-SELECTED = ft.Colors.with_opacity(0.09, "#FFFFFF")
+SELECTED = ft.Colors.with_opacity(0.14, BLUE)
 MONO = "monospace"
 CONTROL_HEIGHT = 34
 CONTROL_PADDING = ft.Padding(12, 8, 12, 8)
@@ -49,23 +49,21 @@ def text(value: str, size: float = 13, color: str = TEXT, weight=None, **kwargs)
 
 
 def backdrop(content: ft.Control) -> ft.Container:
-    """The window behind the glass: near black, lit faintly from the top left so the glass has something to carry."""
+    """The window behind the glass: a dim checkerboard."""
     return ft.Container(content, expand=True, bgcolor=BG, padding=GAP,
-                        gradient=ft.RadialGradient(center=ft.Alignment(-0.7, -1.1), radius=1.6,
-                                                   colors=["#1A2130", "#111317", BG], stops=[0, 0.45, 1]))
+                        image=ft.DecorationImage(src="grid.png", repeat=ft.ImageRepeat.REPEAT, scale=2,
+                                                 alignment=ft.Alignment.TOP_LEFT))
 
 
 def glass(content: ft.Control, radius: float = 20, **kwargs) -> ft.Container:
     """Liquid Glass: the layer of navigation and controls that floats above the content, never the content itself."""
-    # The four sides keep one width: Flutter draws a rounded border with mixed colours only then.
-    edge = ft.BorderSide(1, ft.Colors.with_opacity(0.07, "#FFFFFF"))
+    # One colour on all four sides: Flutter leaves the corners of a mixed-colour border square.
     return ft.Container(
         content, blur=ft.Blur(30, 30), border_radius=radius, clip_behavior=ft.ClipBehavior.ANTI_ALIAS,
         gradient=ft.LinearGradient(begin=ft.Alignment.TOP_CENTER, end=ft.Alignment.BOTTOM_CENTER,
                                    colors=[ft.Colors.with_opacity(0.72, "#26262A"),
                                            ft.Colors.with_opacity(0.64, "#18181B")]),
-        border=ft.Border(top=ft.BorderSide(1, ft.Colors.with_opacity(0.16, "#FFFFFF")),
-                         left=edge, right=edge, bottom=edge),
+        border=ft.Border.all(1, ft.Colors.with_opacity(0.1, "#FFFFFF")),
         **kwargs)
 
 
@@ -184,7 +182,7 @@ class _Button(ft.Button):
 def button(label: str, on_click=None, icon=None, color: str = BLUE, filled: bool = True,
            **kwargs) -> ft.Button:
     """A capsule. Filled carries the colour and is the one likely action in a view; the rest are not filled."""
-    ink = "#FFFFFF" if filled else TEXT
+    ink = BG if filled else TEXT
     style = ft.ButtonStyle(
         bgcolor={ft.ControlState.DISABLED: ft.Colors.with_opacity(0.05, "#FFFFFF"),
                  ft.ControlState.DEFAULT: color if filled else ft.Colors.with_opacity(0.09, "#FFFFFF")},
@@ -239,17 +237,20 @@ def badge(label: str, color: str = MUTED, icon: str = "circle-info") -> ft.Row:
                   spacing=6, tight=True, vertical_alignment=ft.CrossAxisAlignment.CENTER)
 
 
-def segmented(options: list[tuple[str, str]], value: str, on_change) -> ft.Row:
+def segmented(options: list[tuple[str, str, str]], value: str, on_change) -> ft.Row:
     """The capsule switcher (Basic / Advanced); it sits on the glass toolbar."""
     row = ft.Row(spacing=0, tight=True)
 
     def render(selected):
         row.controls = [
-            ft.Container(text(label, 12, TEXT if key == selected else MUTED, weight=ft.FontWeight.W_600),
-                         padding=ft.Padding(14, 5, 14, 5), border_radius=16,
-                         bgcolor=ft.Colors.with_opacity(0.14, "#FFFFFF") if key == selected else None,
-                         on_click=lambda e, k=key: pick(k))
-            for key, label in options]
+            ft.Container(ft.Row([
+                pixel_icon(icon, color=BLUE if key == selected else FAINT),
+                text(label, 12, TEXT if key == selected else MUTED, weight=ft.FontWeight.W_600),
+            ], spacing=6, tight=True),
+                padding=ft.Padding(12, 5, 14, 5), border_radius=16,
+                bgcolor=ft.Colors.with_opacity(0.14, "#FFFFFF") if key == selected else None,
+                on_click=lambda e, k=key: pick(k))
+            for key, label, icon in options]
 
     def pick(key):
         render(key)
@@ -300,7 +301,7 @@ def fade(scrollable: ft.ScrollableControl, size: float = 24) -> ft.ShaderMask:
 
 
 def step_list(steps: list[str]) -> ft.Column:
-    return ft.Column([ft.Row([text(str(n), 12, FAINT, weight=ft.FontWeight.W_600, width=14,
+    return ft.Column([ft.Row([text(str(n), 12, BLUE, weight=ft.FontWeight.W_600, width=14,
                                    text_align=ft.TextAlign.RIGHT),
                               text(step, 13, SOFT, expand=True)],
                              spacing=10, vertical_alignment=ft.CrossAxisAlignment.START)
