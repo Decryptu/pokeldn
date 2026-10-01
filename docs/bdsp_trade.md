@@ -215,7 +215,8 @@ and what repeats it is not traced.
 
 Trades chain in one association, each looping from the select window with no second approach or
 trainer record: a retail console traded three times back to back with `bin/bdsp_connect.py`, and
-its box screen came back after every trade. `TradeStateModel$$ReturnTradePokeSelectWindow`
+its box screen came back after every trade, and two queued trades completed in one association
+with `bin/bdsp_host.py` hosting. `TradeStateModel$$ReturnTradePokeSelectWindow`
 [0x01c29590] runs `PlayerSave`, then the model's callback at +0x80; its caller is not traced. A
 second trade reads back what the console stored. The client's security-state repeater must stop when
 a trade completes: a SEND_READYOK (5) 0x21 landing while the player picks (box phase 5 or below)
