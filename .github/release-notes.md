@@ -1,26 +1,19 @@
-# pokeldn 0.3.0
+# pokeldn 0.3.1
 
 This desktop app trades with seven Pokemon game families on a Switch or Switch 2
 through an ESP32 radio connected by USB. Nothing is installed on the console.
 
 ## What is new
 
-- Several trades in one session. Add a trade, under the Pokemon to offer, queues up to six; each
-  completed trade offers the next one, on every trade tool.
-- More options when building a Pokemon: nature, ability, gender, held item, ball, IVs and EVs (AVs in
-  Let's Go, effort levels in Legends Arceus). The lists hold only what the species can legally have.
-- Female-only species (Vespiquen, Froslass, Wormadam), event gifts and Pokemon that need TM or TR
-  records build legally far more often.
-- The console leaves cleanly. In every game and in both roles, the app answers the console's goodbye,
-  so a player backing out of the trade gets no communication error.
-- The Board page checks the board on its own and says what is wrong in plain words: no firmware,
-  port in use, or an ESP32-S3 or C3 plugged into its COM/UART socket instead of the one marked USB.
-- Before you start, in the Session panel, lists what Start still needs (Switch keys, board, a built
-  Pokemon) with a button to fix each.
-- Every setting has a short explanation. Settings rarely changed moved to Advanced, and Settings puts
-  your setup first.
-- The app tells you when a newer release is out.
-- Running from source, the Board page downloads the released firmware; no ESP-IDF needed.
+- The window opens centered and sized to fit the screen. On a 13-inch MacBook Air it used to spill
+  past the right and bottom edges.
+- The first-run steps say how to allow the unsigned app on macOS (Privacy & Security, Open Anyway)
+  and on Windows (SmartScreen, Run anyway).
+
+Everything from 0.3.0 is included: several trades in one session, nature, IVs, EVs, held item and
+ball when building a Pokemon, a clean departure in every game, a Board page that checks the board on
+its own and names the fix (including an ESP32-S3 or C3 on its COM/UART socket), and a Before you start
+list in the Session panel. The firmware is unchanged; a board flashed by 0.3.0 needs no new flash.
 
 ## Downloads
 
@@ -37,8 +30,11 @@ The separate `pokeldn-radio*.bin` files are merged firmware images for manual fl
 
 ## First run
 
-1. Extract the macOS or Linux archive, or launch the Windows executable. On macOS, the app is
-   unsigned; use right-click, Open for the first launch.
+1. Extract the macOS or Linux archive, or launch the Windows executable.
+   - macOS: the app is unsigned, so the first launch is blocked. Open it once and close the warning,
+     then open System Settings, Privacy & Security, scroll down to Security and press Open Anyway next
+     to pokeldn, then confirm with your password. Later launches open normally.
+   - Windows: if SmartScreen stops the app, choose More info, then Run anyway.
 2. Choose `prod.keys` when prompted.
 3. Connect one supported board with a USB data cable. S3 and C3 boards use native USB Serial/JTAG.
    A board that ships an external antenna, such as the Seeed Studio XIAO ESP32C3 or XIAO ESP32S3,

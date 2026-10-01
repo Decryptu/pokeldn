@@ -16,7 +16,7 @@ os.environ.pop("POKELDN_RADIO", None)
 
 import flet as ft  # noqa: E402
 
-from gui import theme as t  # noqa: E402
+from gui import screen, theme as t  # noqa: E402
 from gui.app import App  # noqa: E402
 from pokeldn import __version__  # noqa: E402
 from pokeldn.app.paths import ROOT  # noqa: E402
@@ -36,8 +36,10 @@ def main(page: ft.Page) -> None:
     page.theme = page.dark_theme = t.app_theme()
     page.bgcolor = t.BG
     page.padding = 0
-    page.window.min_width, page.window.min_height = 1180, 720
-    page.window.width, page.window.height = 1440, 900
+    # 1440 x 900 overflows a 13-inch MacBook Air (1440 x 932 points less the menu bar): fit, then center.
+    (width, height), (min_width, min_height) = screen.fit((1440, 900), (1180, 720), screen.size())
+    page.window.min_width, page.window.min_height = min_width, min_height
+    page.window.width, page.window.height = width, height
     page.window.bgcolor = t.BG
 
     app = App(page)
@@ -110,6 +112,8 @@ def main(page: ft.Page) -> None:
     page.add(t.backdrop(ft.Row([side, content], spacing=t.GAP, expand=True,
                                vertical_alignment=ft.CrossAxisAlignment.STRETCH)))
     navigate("games")
+    if not page.web:
+        page.run_task(page.window.center)
     if not os.path.isfile(os.path.expanduser(app.settings.keys)):
         welcome(app)
 

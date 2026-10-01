@@ -44,7 +44,10 @@ silicon), Windows and Linux. It includes the radio firmware and flashes the boar
 Pokemon to offer with [PKHeX.Core](https://github.com/kwsch/PKHeX), and runs every trade and Mystery
 Gift below with the tested settings. The only file it asks for is `prod.keys`.
 
-- macOS: the app is unsigned; open it the first time with right-click, Open.
+- macOS: the app is unsigned, so the first launch is blocked. Open it once and close the warning,
+  then System Settings, Privacy & Security, scroll down to Security, Open Anyway next to pokeldn,
+  and confirm with your password. Later launches open normally.
+- Windows: SmartScreen may stop the unsigned app; choose More info, then Run anyway.
 - Linux: it needs GTK 3 and libsecret, present on desktop distributions, and serial access
   (`sudo usermod -aG dialout $USER`).
 - From source: `pip install -r gui/requirements.txt`, then `python gui/main.py`; the Pokemon builder
