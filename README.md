@@ -185,7 +185,8 @@ checksum, writes the sector back and bumps a counter so the game loads it. It ed
 The trade screen alternates hosting and scanning, so pokeldn can host or join. Both send a kind-1
 identity message: the joiner the one `pokeldn.lgpe.reference` ships, the host the console's own back
 (`--first echo`) or a file. Both offer a 232-byte PB7 (`pokeldn.lgpe.pb7`; `--offer echo` returns the
-console's own).
+console's own). The host's `--next-offer` and the joiner's repeated `--offer` queue one record per
+later trade on the same seat.
 
 ```bash
 ./.venv/bin/python bin/lgpe_host.py --seconds 600 --player-name PkCamp \

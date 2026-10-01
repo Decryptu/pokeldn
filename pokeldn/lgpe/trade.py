@@ -43,31 +43,60 @@ def _send_step(state, send, kind, body):
     return step
 
 
-def _note_result(tag="[lg]"):
+def _note_result(tag="[lg]", state=None):
     """The peer's kind 4: the trade has gone through on its side. The first copy after a commit
-    ends the trade; a republished copy changes nothing."""
-    if not TRADE_IN_PROGRESS["commit"]:
+    ends the trade; a republished copy changes nothing. With `state`, the commit is this station's
+    own, not the process-wide flag."""
+    if not (state.pop("committed", False) if state is not None else TRADE_IN_PROGRESS["commit"]):
         return False
     TRADE_IN_PROGRESS["offer"] = TRADE_IN_PROGRESS["commit"] = False
+    if state is not None:
+        state["mid_trade"] = False
     show_done()
     print(f"{tag} game: *** THE RESULT *** the trade has gone through on the console")
     return True
 
 
-def _answer_commit(args, state, msg, send, tag="[lg]"):
+def _answer_commit(args, state, msg, send, tag="[lg]", kind=pb7.COMMIT_MESSAGE):
     """Agree back: the peer waits on a spinner with no button until our commit arrives."""
     if not args.offer or msg["step"] <= state.get("answered_step", 0):
         return
     state["answered_step"] = msg["step"]
-    TRADE_IN_PROGRESS["commit"] = True
-    step = _send_step(state, send, pb7.COMMIT_MESSAGE, msg["body"])
+    state["committed"] = TRADE_IN_PROGRESS["commit"] = True
+    step = _send_step(state, send, kind, msg["body"])
     print(f"{tag} offer: *** COMMITTED step {step} *** answering the peer's step {msg['step']}")
     # A console host giving an ordinary Pokemon for one of these never sends the 2.
     if (msg["body"][:4] == b"\1\0\0\0" and not state.get("sent_second_commit")
             and SECOND_COMMIT_SPECIES & set(state.get("offer_species", ()))):
         state["sent_second_commit"] = True
-        step = _send_step(state, send, pb7.COMMIT_MESSAGE, b"\2\0\0\0")
+        step = _send_step(state, send, kind, b"\2\0\0\0")
         print(f"{tag} offer: *** COMMITTED 2 step {step} *** a special species is in the trade")
+
+
+def answer_console(args, state, msg, send, tag="[lg]"):
+    """A joiner's answer to one game message of the console host. Trade r, from 0, offers on kind
+    2 + 2r, commits on 3 + 2r and ends on 4 + 2r, which is trade r + 1's offer channel: its first
+    message is answered with the next record of `args.offers` (docs/lgpe_session.md). After the
+    last record nothing is answered."""
+    r = state.setdefault("round", 0)
+    kind = msg["kind"]
+    if kind == pb7.OFFER_MESSAGE + 2 * r:
+        _answer_offer(args, state, msg, send, tag, kind=kind)
+    elif kind == pb7.COMMIT_MESSAGE + 2 * r:
+        _answer_commit(args, state, msg, send, tag, kind=kind)
+    elif kind == pb7.RESULT_MESSAGE + 2 * r and _note_result(tag, state):
+        queue = getattr(args, "offers", None) or [args.offer]
+        if r + 1 >= len(queue):
+            print(f"{tag} game: trade {r + 1} was the last queued; a further trade is not answered")
+            return
+        from pokeldn.pokemon import trade_path
+        state["round"] = r + 1
+        state.pop("sent_second_commit", None)
+        state.setdefault("received", getattr(args, "received", None))
+        args.offer = queue[r + 1]
+        args.received = trade_path(state["received"], r + 2)
+        print(f"{tag} game: trade {r + 2} offers on kind {kind}, commits on kind {kind + 1}")
+        _answer_offer(args, state, msg, send, tag, kind=kind)
 
 
 def _answer_offer(args, state, msg, send, tag="[lg]", kind=pb7.OFFER_MESSAGE):
@@ -96,7 +125,7 @@ def _answer_offer(args, state, msg, send, tag="[lg]", kind=pb7.OFFER_MESSAGE):
     state["offer_species"] = (int.from_bytes(pb7.decrypt(body)[8:10], "little"), peer_species)
     # The peer sends a fresh step each time its player changes the offer; each is owed an answer.
     state["answered_step"] = msg["step"]
-    TRADE_IN_PROGRESS["offer"] = True
+    state["mid_trade"] = TRADE_IN_PROGRESS["offer"] = True
     step = _send_step(state, send, kind, body)
     what = "the peer's own structure" if args.offer == "echo" else args.offer
     print(f"{tag} offer: *** SENT {len(body)} B step {step} *** {what} "

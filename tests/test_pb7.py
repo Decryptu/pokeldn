@@ -262,3 +262,52 @@ def test_a_trade_giving_a_special_species_sends_the_second_commit(ours, theirs, 
     assert [c["kind"] for c in commits] == [pb7.COMMIT_MESSAGE] * len(expected)
     assert [int.from_bytes(c["body"], "little") for c in commits] == expected
     assert [c["step"] for c in commits] == list(range(3, 3 + len(expected)))
+
+
+def test_the_joiner_answers_a_console_hosts_trades_in_turn_from_its_queue(tmp_path):
+    """A retail console host's game messages, kind and step as it sent them: offers on kind 2 at
+    steps 2 to 12, commits 1 and 2 at 13 and 14, its first slot on kind 4 at 15. The joiner answered
+    each under the same step; the queue's second record answers the kind 4, and trade 2 runs on
+    kinds 4, 5, 6. After the last record nothing is answered."""
+    import types
+    from pokeldn.lgpe import trade
+
+    def box(species, ec):
+        plain = bytearray(pb7.BOX_SIZE)
+        struct.pack_into("<I", plain, 0, ec)
+        struct.pack_into("<H", plain, 8, species)
+        return pb7.encrypt(bytes(plain))
+
+    offers = []
+    for n, species in enumerate((133, 1)):
+        offers.append(str(tmp_path / f"offer{n}.pb7"))
+        Path(offers[-1]).write_bytes(box(species, 0x1000 + n))
+
+    class Window:
+        def send(self, body):
+            return body
+
+    args = types.SimpleNamespace(offer=offers[0], offers=offers, received=str(tmp_path / "got.pb7"))
+    state, sent = {"window": Window()}, []
+
+    def console(kind, step, body):
+        before = len(sent)
+        trade.answer_console(args, state, pb7.parse_message(pb7.build_message(kind, body, step=step)),
+                             lambda b, p: sent.append(pb7.parse_message(b)))
+        return [(m["kind"], m["step"], m["body"]) for m in sent[before:]]
+
+    one, two = b"\1\0\0\0", b"\2\0\0\0"
+    for step in range(2, 13):
+        assert console(2, step, box(16 + step, step)) == [(2, step, box(133, 0x1000))]
+    assert console(3, 13, one) == [(3, 13, one)]
+    assert console(3, 14, two) == [(3, 14, two)]
+    assert console(4, 15, box(25, 15)) == [(4, 15, box(1, 0x1001))]
+    assert console(4, 16, box(132, 16)) == [(4, 16, box(1, 0x1001))]
+    assert console(5, 17, one) == [(5, 17, one)]
+    assert console(5, 18, two) == [(5, 18, two)]
+    assert console(6, 19, box(25, 19)) == []
+    assert console(6, 20, box(95, 20)) == [] and console(7, 21, one) == []
+
+    def species(name):
+        return struct.unpack_from("<H", pb7.decrypt((tmp_path / name).read_bytes()[:pb7.BOX_SIZE]), 8)[0]
+    assert [species("got.pb7"), species("got-2.pb7")] == [28, 132]

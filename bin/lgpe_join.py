@@ -41,9 +41,8 @@ from pokeldn.lgpe import (COMM_ID_PIKACHU, PASSPHRASE, PIA_PORT, PIA_VERSION, pa
 from pokeldn.lgpe.session import APP_HEADER_SIZE
 from pokeldn.lgpe import pb7, reference
 from pokeldn.lgpe.leave import Leaver
-from pokeldn.lgpe.trade import fresh_offer
 from pokeldn.lgpe.trade import (TRADE_IN_PROGRESS, _answer_commit, _answer_offer,  # noqa: F401
-                                _note_result, _send_step, _warn_if_mid_trade)
+                                _note_result, _send_step, _warn_if_mid_trade, answer_console)
 
 
 def _survive_netlink_overflow():
@@ -244,6 +243,9 @@ def build_parser():
                     help="our own variable id, any nonzero value (the console's is random)")
     ap.add_argument("--connect-seconds", type=float, default=20.0,
                     help="how long to retransmit the connection request and listen for its reply")
+    ap.add_argument("--grace", type=float, default=300.0,
+                    help="seconds past --connect-seconds or --hold to keep a seat whose trade is half "
+                         "done: a trade left mid-way locks the console out of trading")
     ap.add_argument("--player-name", default="PkCamp",
                     help="the nickname the connection response carries, what the console shows as "
                          "the partner (a real station sends its Switch profile's)")
@@ -299,12 +301,14 @@ def build_parser():
                          "this long after our offer went out (docs/lgpe_session.md)")
     ap.add_argument("--received", help="write the peer's offered PB7 here")
     ap.add_argument("--fresh-pid", action="store_true",
-                    help="offer the --offer structure under a new PID and encryption constant, "
+                    help="offer every --offer structure under a new PID and encryption constant, "
                          "shiny state kept, so a save that took it before takes it again")
-    ap.add_argument("--offer", metavar="echo|PATH",
-                    help="answer the host's type 2 message with a box structure of our own. "
-                         "'echo' returns the host's own, which the game accepts by construction; "
-                         "a path is a 232-byte structure, encrypted or not")
+    ap.add_argument("--offer", metavar="echo|PATH", action="append",
+                    help="answer the host's offers with a box structure of our own. 'echo' returns "
+                         "the host's own, which the game accepts by construction; a path is a "
+                         "232-byte structure, encrypted or not. Repeatable, one per trade on the "
+                         "seat; trade N writes what it received to --received with -N. After the "
+                         "last, a further trade is not answered and the player backs out")
     ap.add_argument("--ack-re-announce", action="store_true",
                     help="answer a peer re-announcement with an acknowledgement carrying its "
                          "clock rather than a second take-over. A reference joiner takes a clone "
@@ -353,11 +357,11 @@ def pick(nets, want):
 def main(argv=None):
     ap = build_parser()
     args = ap.parse_args(argv)
-    if args.offer and args.offer != "echo":
-        args.offer = pokemon_service.prepare_file("lgpe", args.offer, fresh=getattr(args, "fresh_pid", False))
-        if hasattr(args, "fresh_pid"):
-            args.fresh_pid = False
-    fresh_offer(args, "[lg]")
+    args.offers = [path if path == "echo" else
+                   pokemon_service.prepare_file("lgpe", path, fresh=args.fresh_pid)
+                   for path in args.offer or ()]
+    args.offer = args.offers[0] if args.offers else None
+    args.fresh_pid = False
     if args.over_ip:
         if not args.our_mac:
             ap.error("--over-ip needs --our-mac")
@@ -590,7 +594,8 @@ def _run(args, net, keys, facts, opener):
             else:
                 deadline = args.hold
                 print(f"[lg] listening on :{PIA_PORT} for {deadline:.0f}s")
-            while time.monotonic() - t0 < deadline:
+            while (time.monotonic() - t0 < deadline
+                   or state.get("mid_trade") and time.monotonic() - t0 < deadline + args.grace):
                 if (args.leave_after is not None and state.get("leave_at") is None
                         and state.get("answered_step")):
                     state["leave_at"] = time.monotonic() + args.leave_after
@@ -614,6 +619,7 @@ def _run(args, net, keys, facts, opener):
                         to_host_bitmap(payload, proto, port=port)
                     if state["leaver"].done:
                         TRADE_IN_PROGRESS["offer"] = TRADE_IN_PROGRESS["commit"] = False
+                        state["mid_trade"] = False
                         print("[lg] *** LEFT *** " + "; ".join(state["leaver"].log))
                         break
                 if args.connect and not state["host_accepted"] and time.monotonic() - t0 >= next_tx:
@@ -779,14 +785,8 @@ def _run(args, net, keys, facts, opener):
                                         if args.capture:
                                             write_file(f"{args.capture}.payload{n}.bin", r["payload"])
                                         msg = pb7.parse_message(r["payload"])
-                                        if msg and msg["kind"] == pb7.OFFER_MESSAGE:
-                                            _answer_offer(args, state, msg,
-                                                          to_host_bitmap)
-                                        elif msg and msg["kind"] == pb7.COMMIT_MESSAGE:
-                                            _answer_commit(args, state, msg,
-                                                           to_host_bitmap)
-                                        elif msg and msg["kind"] == pb7.RESULT_MESSAGE:
-                                            _note_result()
+                                        if msg:
+                                            answer_console(args, state, msg, to_host_bitmap)
                                     else:
                                         print(f"[lg] reliable: acked, expects "
                                               f"{r['expected']:#x}")

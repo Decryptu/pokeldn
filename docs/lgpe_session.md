@@ -491,6 +491,15 @@ A second trade completes on the same seat: the console voted on party clone 6 an
 the commit ran on kind 5 (host 1 and 2, console 1), the host announced result clones 8 and 9, and
 kind 6 followed the animation from each side.
 
+Trade r, counted from 0, offers on kind 2 + 2r, commits on 3 + 2r and ends on 4 + 2r, the offer
+channel of trade r + 1; a third trade on one seat is unmeasured. Hosting, `bin/lgpe_host.py
+--next-offer` answers the console's selections in each later trade with the next record. Joining,
+the console host's first kind 4 is its first slot: `bin/lgpe_join.py` answers it and each later
+selection with its next `--offer`, answers the commit on kind 5, and takes kind 6 as that trade's
+end; after its last record it answers nothing. A second trade with a console host is unmeasured.
+`bin/lgpe_host.py --lead` plays a console host's part, offering and voting unprompted, for
+`bin/lgpe_join.py`; `tests/test_esp32.py` trades two records each way between the two.
+
 A complete trade, both stations counting their own steps:
 
 ```
@@ -629,6 +638,15 @@ retail and emulated alike, clone type 2 data as five words:
 The peer answers trailing word 1 only when the type 4 copy's first word is 1; built before the
 peer's `1 1 1` landed, it carries 0 and the console waits. Walking the commit clone on to `1 2 2`
 draws `0 1 1`, trailing word 2, no kind 3, and the console sits on its confirmation screen.
+
+A retail console host announces every clone first: clone 1, the party pair 2 and 3 before its first
+slot, the commit clone 4 6.3 s after its A 2, and the next pair 5 and 6 26.9 s after its second
+commit, its first kind 4 0.84 s later. It votes first as well: `1 1 1` on clone 3, A 1 with trailing
+word 1, `1 2 2`, A 2 with trailing word 2; on the commit clone `0 0 0`, `1 1 1`, A 1 with trailing
+word 1, then `0 1 1` with the kind 3 carrying 1, 152 ms after announcing it. A joiner that takes
+each clone over and republishes the host's first three words and trailing word under its own state
+word completes the trade. Given no kind 4 by that joiner, the player backed out of the next trade:
+state 4, argument 3, on clone 6, then the releases.
 
 Pressing A again as the confirmation greys the buttons withdraws the vote: `2 2 3` (state 2,
 argument 2, counter 3) after `1 2 2`. Answering A 2 gives status 4 and proceeds: the console

@@ -132,6 +132,7 @@ repeated offer flags:
 |---|---|---|
 | FireRed/LeafGreen host and join | party files, `--trades N`, slots 0 to N-1 | Cancel and Yes end the link |
 | Let's Go host | `--offer`, then `--next-offer` per later trade | a further trade is not answered |
+| Let's Go join | `--offer`, repeated | a further trade is not answered |
 | Brilliant Diamond/Shining Pearl host and join | `--offer` / `--trade-template`, repeated | the last is offered again |
 | Legends Arceus host and join | `--trade-box-record` / `--offer`, repeated; the joiner hands the list to the host role | the last is offered again |
 | Scarlet/Violet host and join | `--trade-offer`, repeated | the stage stops answering |
@@ -141,8 +142,7 @@ repeated offer flags:
 `--fresh-pid` gives every queued record its own PID and encryption constant. Trade N above 1 writes
 what it received to the output path with `-N` before the extension (FireRed/LeafGreen: `_tradeN_` and
 the species; Scarlet/Violet: `.N`, counted by distinct offers; Brilliant Diamond/Shining Pearl host:
-`_N`; Legends Z-A and Sword/Shield: `-N`). Let's Go join trades once per session and takes one
-Pokemon.
+`_N`; Legends Z-A and Sword/Shield: `-N`).
 
 ## Local files and releases
 

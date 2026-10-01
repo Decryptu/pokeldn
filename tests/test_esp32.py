@@ -978,6 +978,94 @@ def test_the_lets_go_joiner_reaches_the_game_on_simulated_boards(tmp_path, monke
     assert (tmp_path / "join.jsonl.payload1.bin").read_bytes() == identity
 
 
+def test_the_lets_go_joiner_trades_its_queue_on_one_seat_on_simulated_boards(tmp_path, monkeypatch):
+    """bin/lgpe_join.py with two --offer against bin/lgpe_host.py --lead, which plays a console host:
+    trade 2 offers on kind 4 and commits on kind 5 on clones 6 and 7, and each side writes what it
+    received in order."""
+    import struct
+    import threading
+
+    import lgpe_host
+    import lgpe_join
+    from pokeldn import pokemon
+    from pokeldn.ldn import userspace_ip
+    from pokeldn.lgpe import pb7
+
+    monkeypatch.setenv("POKELDN_RADIO", "esp32:simulated")
+    monkeypatch.setattr(pokemon, "prepare_file", lambda game, path, fresh=False: path)
+    keys_file = tmp_path / "prod.keys"
+    keys_file.write_text("".join(f"{k} = {v.hex()}\n" for k, v in KEYS.items()))
+
+    def record(name, species, ec):
+        plain = bytearray(pb7.BOX_SIZE)
+        struct.pack_into("<IH", plain, 0, ec, 0)
+        struct.pack_into("<H", plain, 8, species)
+        (tmp_path / name).write_bytes(pb7.encrypt(bytes(plain)))
+        return str(tmp_path / name)
+
+    host_offers = [record("pikachu.pb7", 25, 0x11111111), record("onix.pb7", 95, 0x22222222)]
+    join_offers = [record("eevee.pb7", 133, 0x33333333), record("bulbasaur.pb7", 1, 0x44444444)]
+    air = esp32_sim.Air()
+    host_radio = esp32.Radio(esp32_sim.SimulatedBoard(air).host_stream())
+    join_radio = esp32.Radio(esp32_sim.SimulatedBoard(air).host_stream())
+    threads = {}
+
+    @contextlib.asynccontextmanager
+    async def factory():
+        radio = join_radio if threading.current_thread() is threads.get("join") else host_radio
+        esp = esp32_wlan.EspFactory(radio, port_factory=userspace_ip.userspace_port,
+                                    join_timeout=5)
+        try:
+            yield esp
+        finally:
+            esp.router.close()
+
+    result = {}
+    threads["host"] = threading.Thread(target=lambda: result.setdefault("host", lgpe_host.main(
+        ["--keys", str(keys_file), "--channel", "6", "--seconds", "30", "--grace", "0",
+         "--first", "echo", "--lead", "1", "--result-after", "2",
+         "--offer", host_offers[0], "--next-offer", host_offers[1],
+         "--received", str(tmp_path / "host_got.pb7"),
+         "--capture", str(tmp_path / "host.jsonl")])), daemon=True)
+    threads["join"] = threading.Thread(target=lambda: result.setdefault("join", lgpe_join.main(
+        ["--keys", str(keys_file), "--channels", "6", "--dwell", "0.5", "--connect",
+         "--connect-seconds", "26", "--grace", "0", "--facts", str(tmp_path / "facts.json"),
+         "--capture", str(tmp_path / "join.jsonl"), "--ack-peer-clock", "--ack-re-announce",
+         "--offer", join_offers[0], "--offer", join_offers[1],
+         "--received", str(tmp_path / "join_got.pb7")])), daemon=True)
+    wlan.set_factory(factory)
+    try:
+        threads["host"].start()
+        time.sleep(2)
+        threads["join"].start()
+        threads["join"].join(60)
+        threads["host"].join(60)
+    finally:
+        wlan.set_factory(None)
+        host_radio.close()
+        join_radio.close()
+
+    def species(name):
+        return int.from_bytes(pb7.decrypt((tmp_path / name).read_bytes()[:pb7.BOX_SIZE])[8:10], "little")
+
+    def sent(capture):
+        """(kind, step) of each game message the other side received, from its payload files."""
+        out = []
+        for path in sorted(tmp_path.glob(f"{capture}.payload*.bin"),
+                           key=lambda p: int(p.name.rsplit("payload", 1)[1][:-4])):
+            m = pb7.parse_message(path.read_bytes())
+            out.append((m["kind"], m["step"]))
+        return out
+
+    assert result == {"host": 0, "join": 0}
+    assert [species("join_got.pb7"), species("join_got-2.pb7")] == [25, 95]
+    assert [species("host_got.pb7"), species("host_got-2.pb7")] == [133, 1]
+    # The joiner's answers, as the host read them: identity, offer, commits 1 and 2, then trade 2 on
+    # kinds 4 and 5. After the last queued trade it sends no kind 6.
+    assert sent("host.jsonl") == [(1, 1), (2, 2), (3, 3), (3, 4), (4, 5), (4, 6), (5, 7), (5, 8)]
+    assert sent("join.jsonl")[-1] == (6, 9)
+
+
 def test_the_bench_counts_every_message_from_a_simulated_board():
     radio = esp32.Radio(esp32_sim.SimulatedBoard(esp32_sim.Air()).host_stream())
     try:
