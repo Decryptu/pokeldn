@@ -133,6 +133,7 @@ class HostSession:
         self.round = 0
         self.steps = 0
         self.console_offer = None
+        self.console_pick = None      # the last offer the player chose; a preview is only the cursor
         self.trade_complete = False
         self.trades = 0
         self.trade_steps = 0
@@ -317,6 +318,8 @@ class HostSession:
         if head == MSG_OFFER:
             self.console_offers += 1
             self.console_offer = bytes(inner)
+            if inner[-1] == OFFER_PICK:
+                self.console_pick = self.console_offer
             if self.record:
                 self.record(rec="console_offer", n=self.console_offers, data=inner.hex(),
                             t=time.time())

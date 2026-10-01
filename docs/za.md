@@ -737,6 +737,10 @@ The host keeps the session after the fourth trade step and closes when the conso
 A timed close can produce "Error Number: 6" after the save. `--hold-after-trade` opts into a
 timed close; the overall `--seconds` limit still applies.
 
+A retail Z-A traded twice on one seat with two different records from a repeated `--trade-offer`,
+the second previewed after the fourth step of the first, and left without an error. Back on its box
+after a trade, the console previews the Pokemon under its cursor, so `--offer-out` keeps only picks.
+
 ### The property update
 
 The Net update property (type 0x50) is built by `0x2502960` (sequence at NetProtocol+0x160, through

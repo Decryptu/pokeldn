@@ -51,8 +51,8 @@ def build_parser():
                     help="make our pick this many seconds after the preview, without waiting for "
                          "the console's; the default answers the console's pick")
     ap.add_argument("--offer-out", default=None,
-                    help="write the console's last offer message here, hex; trade N > 1 writes "
-                         "FILE-N")
+                    help="write the Pokemon the console picks here; trade N > 1 writes FILE-N. "
+                         "A preview, the console's cursor on its box, is not written")
     ap.add_argument("--ip-host", action="store_true",
                     help="host an emulated console over ldn_mitm, with no radio")
     ap.add_argument("--our-ip", default=None)
@@ -176,14 +176,14 @@ def main(argv=None):
             for payload, src_ip in transport.recv():
                 s = sessions.get(src_ip)
                 if s is not None:
-                    before = s.console_offer
+                    before, picked = s.console_offer, s.console_pick
                     s.receive(payload, src_ip)
                     if s.console_offer is not None and s.console_offer is not before:
                         print(f"[za-host] the console offers {describe_offer(s.console_offer)}")
-                        if args.offer_out:
-                            pokemon_service.save_received(
-                                "za", pokemon_service.trade_path(args.offer_out, s.trades + 1),
-                                s.console_offer)
+                    if args.offer_out and s.console_pick is not picked:
+                        pokemon_service.save_received(
+                            "za", pokemon_service.trade_path(args.offer_out, s.trades + 1),
+                            s.console_pick)
             for s in list(sessions.values()):
                 for data, ip in s.tick():
                     transport.send(data, ip)

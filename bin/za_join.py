@@ -227,7 +227,9 @@ class GameStreams:
             print(f"[za] the console cancelled; round {self.round}")
         elif head == "0101":
             self.host_offers += 1
-            if getattr(self.args, "offer_out", None) and len(inner) == za.pokemon.OFFER_SIZE:
+            # A preview is the console's cursor on its box; only its pick is what it trades.
+            if (getattr(self.args, "offer_out", None) and len(inner) == za.pokemon.OFFER_SIZE
+                    and inner[-1] == OFFER_PICK):
                 pokemon_service.save_received("za", self.args.offer_out, inner)
             if inner[-1:] == bytes([OFFER_PICK]) and self.offer and not self.picked:
                 self.picked = True
