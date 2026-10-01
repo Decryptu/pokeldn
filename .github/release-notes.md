@@ -1,19 +1,26 @@
-# pokeldn 0.2.2
+# pokeldn 0.3.0
 
 This desktop app trades with seven Pokemon game families on a Switch or Switch 2
 through an ESP32 radio connected by USB. Nothing is installed on the console.
 
 ## What is new
 
-- Evolved Pokemon build legally far more often. An evolved species takes the ability of its own
-  species, a trade evolution (Alakazam, Politoed, Scizor and similar) receives a second handling
-  trainer, and evolutions that count something (Sirfetch'd, Runerigus, Annihilape, Gholdengo) start
-  from that count. Plain builds that failed fall from 48 to 7 in Brilliant Diamond and Shining Pearl,
-  from 7 to 0 in Let's Go and from 4 to 0 in Legends Arceus.
-- A build no longer fails at random. A wild encounter's level and personality are rolled at random, and
-  about one build in ten of a chosen level was refused; each encounter now gets several rolls.
-- A level below the lowest one a game offers says so, for example "Mewtwo cannot be lower than level
-  100 in this game".
+- Several trades in one session. Add a trade, under the Pokemon to offer, queues up to six; each
+  completed trade offers the next one, on every trade tool.
+- More options when building a Pokemon: nature, ability, gender, held item, ball, IVs and EVs (AVs in
+  Let's Go, effort levels in Legends Arceus). The lists hold only what the species can legally have.
+- Female-only species (Vespiquen, Froslass, Wormadam), event gifts and Pokemon that need TM or TR
+  records build legally far more often.
+- The console leaves cleanly. In every game and in both roles, the app answers the console's goodbye,
+  so a player backing out of the trade gets no communication error.
+- The Board page checks the board on its own and says what is wrong in plain words: no firmware,
+  port in use, or an ESP32-S3 or C3 plugged into its COM/UART socket instead of the one marked USB.
+- Before you start, in the Session panel, lists what Start still needs (Switch keys, board, a built
+  Pokemon) with a button to fix each.
+- Every setting has a short explanation. Settings rarely changed moved to Advanced, and Settings puts
+  your setup first.
+- The app tells you when a newer release is out.
+- Running from source, the Board page downloads the released firmware; no ESP-IDF needed.
 
 ## Downloads
 
