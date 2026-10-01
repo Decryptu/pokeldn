@@ -22,6 +22,7 @@ import pathlib
 
 from pokeldn.host_support import open_output, write_file
 from pokeldn import pokemon as pokemon_service
+from pokeldn.ldn import left_after_trade
 from pokeldn.bdsp import pokemon, room
 from pokeldn.bdsp.host import (APP_VERSION, MAX_PARTICIPANTS, SCENE_UNION_ROOM,
                                SCENE_UNION_ROOM_PASSWORD, Advertisement,
@@ -174,6 +175,9 @@ def main(argv=None):
             if session.joiner is not None and not any(p[1] == session.joiner.ip for p in present):
                 print(f"[bh] t={now:7.2f} the console left its seat")
                 session.leave(now)
+            if left_after_trade(present):
+                print(f"[bh] t={now:7.2f} the console left after the trade; closing")
+                break
             # An association can follow a deauthentication inside one pass with no leave reported:
             # every join event starts the handshake over.
             if host.join_events > joins_seen and present:

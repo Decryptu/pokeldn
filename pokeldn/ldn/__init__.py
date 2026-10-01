@@ -16,3 +16,14 @@ def show_done(kind: str = "trade") -> bool:
         return False
     from pokeldn.ldn import esp32_wlan
     return esp32_wlan.show_done()
+
+
+def trades_done() -> int:
+    """Trades this process completed, as show_done counted them."""
+    return _done.get("trade", 0)
+
+
+def left_after_trade(seated) -> bool:
+    """A host's run is over once a trade has completed and no console is seated; a console that
+    leaves before any trade may come back (docs/architecture.md, Ending a run)."""
+    return trades_done() > 0 and not seated

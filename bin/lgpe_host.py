@@ -38,7 +38,7 @@ from pokeldn.lgpe import (APPLICATION_VERSION, COMM_ID_PIKACHU, MAX_PARTICIPANTS
                           session_keys)
 from pokeldn.lgpe.session import SEARCH_CHANNELS
 from pokeldn.lgpe import local_host, mesh_host
-from pokeldn.ldn import show_done
+from pokeldn.ldn import left_after_trade, show_done
 
 HOST_INDEX = 0
 JOINER_INDEX = 1
@@ -229,6 +229,9 @@ def main(argv=None):
                     break
                 if time.monotonic() - t0 >= args.seconds + args.grace:
                     break
+            if left_after_trade(host.participants):
+                print("[lgh] the console left after the trade; closing")
+                break
             session.poll()
             time.sleep(0.005)
     except KeyboardInterrupt:

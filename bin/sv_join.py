@@ -37,7 +37,7 @@ from pokeldn.sv import pokemon, port2, reference, streams, trade
 from pokeldn.ldn import game_channel
 from pokeldn.ldn.transport import board_radio, find_ap_phy
 from pokeldn.host_support import resolve_keys, needs_root
-from pokeldn.ldn import show_done
+from pokeldn.ldn import show_done, trades_done
 
 PROTO_NET = 0x2C
 PROTO_RTT = 0x58
@@ -552,6 +552,9 @@ def main(argv=None):
                 detail = "; ".join(f"{type(e).__name__}: {e}" for e in leaves(exc))
                 print(f"[sv] the seat ended: {detail}")
                 record(rec="seat_failed", detail=detail, t=time.time())
+            if trades_done():
+                print("[sv] the seat ended after a trade; closing")
+                break
     except KeyboardInterrupt:
         print("\n[sv] interrupted")
     finally:
@@ -618,6 +621,9 @@ def main_ip(args):
                     tcp.close()
                 except OSError:
                     pass
+            if trades_done():
+                print("[sv] the seat ended after a trade; closing")
+                break
     except KeyboardInterrupt:
         print("\n[sv] interrupted")
     finally:

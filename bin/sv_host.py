@@ -27,7 +27,7 @@ from pokeldn.ldn import game_channel
 from pokeldn.ldn.ldn_mitm_host import IpHostTransport
 from pokeldn.ldn.transport import HostTransport, board_radio, find_ap_phy
 from pokeldn.host_support import resolve_keys, needs_root
-from pokeldn.ldn import show_done
+from pokeldn.ldn import left_after_trade, show_done
 
 PROTOCOL_NAMES = {
     0x08: "keep alive", 0x2C: "net", 0x30: "turn", 0x58: "rtt", 0x65: "sync",
@@ -508,6 +508,9 @@ def main():
             for entry in list(transport.participants):
                 seen_ips.add(entry[1])
                 current_ips.add(entry[1])
+            if left_after_trade(current_ips):
+                print("[sv] the console left after the trade; closing")
+                break
             # The Pia block's player count, not the LDN list, is the session the game sees. A
             # returning station needs the Net 0x11 again.
             net_answered.intersection_update(current_ips)

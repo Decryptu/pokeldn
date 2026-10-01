@@ -286,7 +286,7 @@ def test_the_joiner_answers_the_hosts_pick_and_not_its_cursor(tmp_path, capsys):
     # the app ticks its queue off by the line each completed trade prints
     counts = [n for line in capsys.readouterr().out.splitlines()
               if (n := received.trades_done(line)) is not None]
-    assert len(counts) == 2 and counts[1] == counts[0] + 1
+    assert counts == [1, 2]
 
 
 def test_the_host_answers_a_leave_as_the_console_reads_it():

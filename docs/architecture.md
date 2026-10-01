@@ -154,6 +154,19 @@ what it received to the output path with `-N` before the extension (FireRed/Leaf
 the species; Scarlet/Violet: `.N`, counted by distinct offers; Brilliant Diamond/Shining Pearl host:
 `_N`; Legends Z-A and Sword/Shield: `-N`).
 
+### Ending a run
+
+A trade run ends on its own when the console has left after a trade, so the app's Stop is never
+needed after a session that worked.
+
+| role | ends when |
+|---|---|
+| host, every title | the console has left the network after at least one completed trade (`pokeldn.ldn.left_after_trade`); a console that leaves before any trade may come back, and the host stays up |
+| FireRed/LeafGreen host | the console has left the network, after a trade or not |
+| joiner | the console's host closes its network or hands its role on (FireRed/LeafGreen, Let's Go, Sword/Shield, Brilliant Diamond/Shining Pearl); Scarlet/Violet, Legends Arceus and Legends Z-A search again after a seat that traded nothing, and close after one that did |
+
+The time limit (`--seconds`, `--hold`) still bounds a run whose console never leaves.
+
 ## Local files and releases
 
 `config/host.toml` and runtime reference messages are tracked. `host.local.toml`, keys, notes, logs,

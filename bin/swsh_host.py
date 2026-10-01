@@ -24,7 +24,7 @@ from pokeldn import pokemon as pokemon_service
 from pokeldn.host_support import write_file
 from pokeldn import config, gen8
 from pokeldn.host_support import resolve_keys, needs_root
-from pokeldn.ldn import host4, mesh_protocol as mesh, reliable4
+from pokeldn.ldn import host4, left_after_trade, mesh_protocol as mesh, reliable4
 from pokeldn.ldn.ldn_mitm_host import IpHostTransport
 from pokeldn.ldn.transport import HostTransport, board_radio, find_ap_phy
 from pokeldn.swsh import beacon, host_trade, league_card, pokemon as swsh_pokemon, trade_payload
@@ -342,6 +342,9 @@ def main(argv=None):
                 if ip not in present:
                     host.unseat(ip)
                     trades.pop(ip, None)
+            if left_after_trade(present):
+                print("[sw] the console left after the trade; closing")
+                break
             for payload, src_ip in transport.recv():
                 host.on_packet(payload, src_ip, now)
             host.tick(now)

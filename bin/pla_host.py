@@ -21,7 +21,7 @@ from pokeldn.host_support import open_output
 from pokeldn import pokemon as pokemon_service
 from pokeldn import config
 from pokeldn import gen8, pla
-from pokeldn.ldn import pia6, pia_connect, reliable5, rtt_protocol, show_done
+from pokeldn.ldn import left_after_trade, pia6, pia_connect, reliable5, rtt_protocol, show_done
 from pokeldn.ldn import channel_table
 from pokeldn.pla import data_exchange, game_channel, trade_box
 from pokeldn.pla import pokemon as pla_pokemon
@@ -463,6 +463,9 @@ def main():
             # WaitConnected.
             for entry in list(transport.participants):
                 seen_ips.add(entry[1])
+            if left_after_trade(transport.participants):
+                print("[pla] the console left after the trade; closing")
+                break
             if not args.no_net_probe:
                 for ip in list(seen_ips):
                     if ip == transport.our_ip or ip in left:
