@@ -691,6 +691,11 @@ through `0x00ff17b4` to `0x00ff1a30`:
     a free entry                                                                               -> 0
     none                                                                                       -> 3
 
+The bitmap read takes byte `id >> 3` (`0x00ff1a8c ubfx x9, x23, #3, #0xd`) with no bound: the
+bitmap is 0x100 bytes (ids 0 to 2047), so a record with flag bit 0 and an id of 2048 or more reads
+past it, and from id 13000 past the block's 0x17C8 bytes. A record with flag bit 0 clear never
+reads it. No writer of the bitmap is located.
+
 The entries are written only by `0x01449560`, whose only caller `0x00ff1558` sits behind
 `0x00ff154c tbz w8,#2` on `[card+0xe8]`, and they store the record's own date (`0x01449570`,
 `0x01449648`), not the receipt time. A card with flag bit 2 is taken once per card date and at most
