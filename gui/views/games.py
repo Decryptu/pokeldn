@@ -372,6 +372,8 @@ class SessionPanel:
         self.offering = ft.Container(visible=False)
         self.offered = None                # what the offering card shows, to rebuild it only on a change
         self.traded = 0                    # the run's completed trades, from its `[done] trade N` lines
+        self.running_tool: Tool | None = None
+        self.restart = False               # Start on another tool: stop this run, then start that one
         self.received = ft.Container(visible=False)
         self.run = None                    # (process, stamp, game) of the last run started
         self.seen: dict[str, tuple] = {}   # a received file -> (size, mtime, what PKHeX read, or None)
@@ -470,12 +472,17 @@ class SessionPanel:
 
     def refresh(self, update: bool = True) -> None:
         tool, s = self.tool, self.app.settings
-        running = self.app.process and self.app.process.running
+        running = bool(self.app.process and self.app.process.running)
+        session = running and self.run is not None and self.run[0] is self.app.process
+        here = session and self.running_tool is tool
         items = self.checklist()
-        self.board_line.content = None if running else self.render_checklist(items)
+        self.board_line.content = None if here else self.render_checklist(items)
         blocked = any(state == "block" for state, *_ in items)
-        if running:
+        if here:
             action = t.button("Stop", self._stop, "stop", t.RED, expand=True)
+        elif session:
+            action = t.button(f"Stop {self.running_tool.name} and start", self._start, "play", expand=True,
+                              disabled=self.restart or blocked or bool(tool.unavailable))
         else:
             action = t.button("Start", self._start, "play", expand=True,
                               disabled=self.app.busy or blocked or bool(tool.unavailable))
@@ -570,6 +577,14 @@ class SessionPanel:
 
     def _start(self, e) -> None:
         tool, s = self.tool, self.app.settings
+        process = self.app.process
+        if (process and process.running and self.run is not None and self.run[0] is process
+                and self.running_tool is not tool):
+            # one board, one session: the running one leaves the network first
+            self.restart = True
+            self._stop(e)
+            self.refresh()
+            return
         if self.app.busy:
             return
         port = self.app.radio_port()
@@ -594,6 +609,7 @@ class SessionPanel:
         self.traded = 0
         self.stopping = False
         self.app.process_label = tool.name
+        self.running_tool = tool
         self.app.process = runner.Process(["--run", tool.script, *args], str(SESSION),
                                           runner.base_env(s, port, trace), self._line, self._exited)
         self.run = (self.app.process, stamp, self.games.game.key)
@@ -636,5 +652,9 @@ class SessionPanel:
             else:
                 self.set_status(f"Failed ({code})", t.RED)
             self.log.add(f"[app] Exited with code {code}.")
+            if self.restart:
+                self.restart = False
+                self._start(None)
+                return
             self.refresh()
         self.app.ui(done)

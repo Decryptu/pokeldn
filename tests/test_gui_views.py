@@ -255,3 +255,51 @@ def test_a_worker_answering_after_its_picker_left_the_page_is_dropped():
     assert ran == [1]
     with pytest.raises(RuntimeError):
         on_ui(page, lambda: (_ for _ in ()).throw(RuntimeError("another failure")))
+
+
+def test_start_on_another_tool_stops_the_running_session_then_starts(tmp_path, monkeypatch):
+    """One board, one session: the running launcher leaves the network before the next opens the port."""
+    from gui.views import games
+    from pokeldn.app.settings import Settings
+    events = []
+
+    class Process:
+        def __init__(self, argv, cwd, env, on_line, on_exit):
+            self.script, self.on_exit, self.running = argv[1], on_exit, True
+            events.append(("start", self.script))
+
+        def stop(self):
+            events.append(("stop", self.script))
+            self.running = False
+            self.on_exit(0)
+
+    class FakeApp:
+        process, process_label = None, ""
+        settings = Settings(keys=str(tmp_path / "prod.keys"), received=str(tmp_path), board_trace=False)
+
+        @property
+        def busy(self):
+            return bool(self.process and self.process.running)
+
+        def radio_port(self):
+            return "/dev/cu.usbserial-1"
+
+        def ui(self, fn):
+            fn()
+    (tmp_path / "prod.keys").write_text("")
+    monkeypatch.setattr(games.runner, "Process", Process)
+    monkeypatch.setattr(games.runner, "base_env", lambda *a: {})
+    monkeypatch.setattr(games, "SESSION", tmp_path)
+    monkeypatch.setattr(SessionPanel, "_tick", lambda self: None)
+    first, second = (next(t for t in TOOLS if t.key == key) for key in ("swsh-join", "pla-host"))
+    panel = SessionPanel.__new__(SessionPanel)
+    panel.__dict__.update(app=FakeApp(), games=SimpleNamespace(values={}, extra={}, game=SimpleNamespace(
+        name="game", key="swsh")), log=SimpleNamespace(add=lambda line: None, clear=lambda: None),
+        received=SimpleNamespace(), run=None, running_tool=None, restart=False, stopping=False, traded=0)
+    panel.set_status = panel.refresh = lambda *a, **k: None
+    panel.tool = first
+    panel._start(None)
+    panel.tool = second
+    panel._start(None)
+    assert events == [("start", first.script), ("stop", first.script), ("start", second.script)]
+    assert panel.running_tool is second and panel.app.process.running and not panel.restart

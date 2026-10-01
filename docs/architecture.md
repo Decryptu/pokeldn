@@ -21,6 +21,10 @@ formats and timing; shared components belong outside a game directory.
 FRLG profiles, advertising and gift settings live in `pokeldn/frlg/`. The older configuration and
 codec import paths retain small compatibility shims.
 
+The app runs one session at a time, since one board serves one process. Stop appears only on the tool
+whose session is running; Start on another tool stops that session, waits for it to exit, then
+starts. A flash holds the board too, and Start waits for it.
+
 ## Pokémon preparation
 
 The shared service generates legal encounters and saves imports in the selected game's format.
