@@ -70,3 +70,21 @@ def test_a_queue_keeps_each_trades_pokemon_in_order_through_add_and_remove(monke
     queue._remove(queue.slots[0])
     queue._remove(queue.slots[0])
     assert saved[-1] == [{"file": "c.pk9"}]
+
+
+from pokeldn.app.catalog import GAMES  # noqa: E402
+
+TOOLS = [tool for game in GAMES for tool in game.tools if not tool.unavailable]
+
+
+@pytest.mark.parametrize("tool", TOOLS, ids=[t.key for t in TOOLS])
+def test_every_tools_all_options_tab_renders_with_the_hidden_settings_first(tool):
+    """A repeatable flag's default is a list; the tab must still draw every row."""
+    import flet as ft
+    view = SimpleNamespace(tool=tool, search="", values={}, extra={}, flag_list=ft.Column())
+    view.flag_row = lambda flag: GamesView.flag_row(view, flag)
+    GamesView._fill_flags(view)
+    rows = view.flag_list.controls
+    assert not (len(rows) == 1 and str(getattr(rows[0], "value", "")).startswith("Could not"))
+    hidden = {f.label for f in tool.fields if f.hidden}
+    assert {row.content.controls[0].controls[0].controls[0].value for row in rows[:len(hidden)]} == hidden

@@ -133,7 +133,7 @@ class GamesView:
     def basic_cards(self) -> list[ft.Control]:
         cards, groups = [], {}
         for field in self.tool.fields:
-            if not command.applies(field, self.tool, self.values):
+            if field.hidden or not command.applies(field, self.tool, self.values):
                 continue
             if field.group:
                 if field.group not in groups:
@@ -225,18 +225,27 @@ class GamesView:
             self.flag_list.controls = [t.text(f"Could not read the options: {error}", 12, t.RED)]
             return
         query = self.search.lower().strip()
+        hidden = {f.key: f for f in self.tool.fields if f.hidden}
         rows = []
-        for flag in flags:
-            if query and query not in flag.option.lower() and query not in flag.help.lower():
+        # The settings kept off the Basic tab come first.
+        for flag in sorted(flags, key=lambda f: f.option not in hidden):
+            field = hidden.get(flag.option)
+            text = " ".join((flag.option, flag.help, field.label, field.help) if field else (flag.option, flag.help))
+            if query and query not in text.lower():
                 continue
             rows.append(self.flag_row(flag))
         empty = "No option matches." if flags else "This tool takes no options beyond its Basic fields."
         self.flag_list.controls = rows[:200] or [t.text(empty, 12, t.MUTED)]
 
     def flag_row(self, flag) -> ft.Control:
-        value = self.extra.get(flag.option)
+        # A field kept off the Basic tab is set here, on its own value, default included.
+        bound = next((f for f in self.tool.fields if f.hidden and f.key == flag.option), None)
+        value = command.value_of(bound, self.values) if bound else self.extra.get(flag.option)
 
         def store(v):
+            if bound:
+                self.set_value(bound, v if v not in (None, "") else bound.default)
+                return
             if v in (None, "", False):
                 self.extra.pop(flag.option, None)
             else:
@@ -260,10 +269,11 @@ class GamesView:
                                            on_change=lambda e: store(e.control.value)), width=220)
         detail = ""
         for field in self.tool.fields:
-            if field.flag == flag.option:
+            if field.flag == flag.option and field.choice_help:
                 detail = dict(field.choice_help).get(value or flag.default, "")
                 break
-        lines = [" ".join(line.split()) for line in flag.help.splitlines()]
+        lines = ([bound.help] if bound and bound.help else
+                 [" ".join(line.split()) for line in flag.help.splitlines()])
         if detail:
             lines.append(detail)
         help_ = t.text("\n".join(l for l in lines if l) or "No description.", 11.5, t.MUTED, max_lines=4,
@@ -274,7 +284,10 @@ class GamesView:
             help_.update()
 
         return ft.Container(ft.Row([
-            ft.Column([t.text(flag.option, 12.5, t.BLUE if value else t.TEXT, font_family=t.MONO),
+            ft.Column([ft.Row([t.text(bound.label, 12.5, weight=ft.FontWeight.W_600),
+                               t.text(flag.option, 12, t.BLUE if value != bound.default else t.MUTED,
+                                      font_family=t.MONO)], spacing=8) if bound else
+                       t.text(flag.option, 12.5, t.BLUE if value else t.TEXT, font_family=t.MONO),
                        ft.Container(help_, on_click=toggle, tooltip="Show all" if len(lines) > 4 else None)],
                       spacing=3, expand=True),
             control,

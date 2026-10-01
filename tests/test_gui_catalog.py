@@ -62,3 +62,15 @@ def test_one_offer_from_an_older_settings_file_still_builds():
     tool = next(t for game in GAMES for t in game.tools if t.key == "sv-host")
     args = build(tool, {"--trade-offer": {"file": "/tmp/single.pk9"}}, {}, Settings())
     assert args.count("--trade-offer") == 1 and "/tmp/single.pk9" in args
+
+
+def test_a_setting_kept_off_the_basic_tab_still_reaches_the_entry_point():
+    """New PID and the time limit live on All options; their defaults must still be passed."""
+    tool = next(t for game in GAMES for t in game.tools if t.key == "za-host")
+    args = build(tool, {"--trade-offer": {"file": "/tmp/offer.pa9"}}, {}, Settings())
+    parsed = parser_of(tool.script).parse_args(args)
+    assert parsed.fresh_pid and parsed.seconds == 900
+    args = build(tool, {"--trade-offer": {"file": "/tmp/offer.pa9"}, "--fresh-pid": False,
+                        "--seconds": "1800"}, {}, Settings())
+    parsed = parser_of(tool.script).parse_args(args)
+    assert not parsed.fresh_pid and parsed.seconds == 1800
