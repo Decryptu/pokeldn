@@ -88,3 +88,66 @@ def test_every_tools_all_options_tab_renders_with_the_hidden_settings_first(tool
     assert not (len(rows) == 1 and str(getattr(rows[0], "value", "")).startswith("Could not"))
     hidden = {f.label for f in tool.fields if f.hidden}
     assert {row.content.controls[0].controls[0].controls[0].value for row in rows[:len(hidden)]} == hidden
+
+
+from gui import board as board_module  # noqa: E402
+from gui.app import NO_FIRMWARE, App  # noqa: E402
+from gui.views.games import SessionPanel  # noqa: E402
+
+UART = board_module.Port("/dev/cu.usbserial-1", "WCH CH343", "1")
+NATIVE = board_module.Port("/dev/cu.usbmodem1", "Espressif USB (S3, C3, C6)", "2", native=True)
+CURRENT = board_module.Identity("02:00:00:00:00:01", "02:00:00:00:00:02", 3, "pokeldn-radio", 1, "1.0.0")
+OLD = board_module.Identity("02:00:00:00:00:01", "02:00:00:00:00:02", 3, "pokeldn-radio", 0)
+
+
+def _app(port, ident, chip=""):
+    app = App.__new__(App)
+    app.settings = SimpleNamespace(radio_port="", keys="")
+    app.identities = {port.device: ident} if ident is not None else {}
+    app.chips = {port.device: chip} if chip else {}
+    return app
+
+
+@pytest.mark.parametrize("port, ident, chip, state", [
+    (UART, NO_FIRMWARE, "ESP32-S3", "wrong-port"),   # flashed through the UART socket: it never answers there
+    (UART, NO_FIRMWARE, "ESP32-C3", "wrong-port"),
+    (NATIVE, NO_FIRMWARE, "ESP32-S3", "flash"),      # the right socket: reset or flash, never "move the cable"
+    (UART, NO_FIRMWARE, "ESP32", "flash"),           # a classic ESP32 talks over its bridge
+    (UART, NO_FIRMWARE, "", "flash"),                # nothing flashed this session: no guess about the socket
+    (UART, OLD, "", "flash"),
+    (NATIVE, CURRENT, "ESP32-S3", "ready"),
+    (UART, None, "", "checking"),
+])
+def test_the_board_status_names_the_fix_for_what_the_board_answered(port, ident, chip, state):
+    assert _app(port, ident, chip).board_status([port]).state == state
+
+
+def test_a_board_unplugged_is_checked_again_when_it_returns():
+    app = _app(UART, CURRENT)
+    assert app.board_status([]).state == "missing"
+    assert app.board_status([UART]).state == "checking"
+
+
+@pytest.mark.parametrize("ident, keys, offer, blocked", [
+    (CURRENT, True, True, False),
+    (None, True, True, False),          # still checking: the check holds the port, Start follows it
+    (NO_FIRMWARE, True, True, False),   # a warning; a mistaken check must not lock the player out
+    (CURRENT, False, True, True),
+    (CURRENT, True, False, True),
+])
+def test_start_waits_for_keys_and_a_built_offer_but_not_for_a_doubtful_board(tmp_path, monkeypatch, ident,
+                                                                              keys, offer, blocked):
+    monkeypatch.setattr(board_module, "ports", lambda: [UART])
+    app = _app(UART, ident)
+    keyfile = tmp_path / "prod.keys"
+    if keys:
+        keyfile.write_text("")
+    app.settings.keys = str(keyfile)
+    pk = tmp_path / "offer.pk9"
+    pk.write_bytes(b"")
+    tool = next(t for t in TOOLS if t.key == "sv-host")
+    values = {"--trade-offer": {"file": str(pk)}} if offer else {}
+    panel = SimpleNamespace(app=app, tool=tool, games=SimpleNamespace(values=values))
+    states = [state for state, *_ in SessionPanel.checklist(panel)]
+    assert ("block" in states) == blocked
+    assert ("ok" in states) and len(states) >= 2

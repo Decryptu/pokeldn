@@ -218,7 +218,7 @@ def badge(label: str, color: str = MUTED, icon: str = "circle-info") -> ft.Row:
 
 
 def segmented(options: list[tuple[str, str, str]], value: str, on_change) -> ft.Container:
-    """The small pill switcher (Basic / All options)."""
+    """The small pill switcher (Basic / Advanced)."""
     row = ft.Row(spacing=2, tight=True)
 
     def render(selected):

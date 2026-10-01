@@ -14,12 +14,18 @@ the radio. Nothing is installed on the console.
 
 ## First run
 
-1. Board: plug the board in, select it, press Flash. The app detects the chip and selects its
-   firmware. Identify reads the MAC; classic ESP32 boards with a GPIO2 LED also blink.
-2. Games: pick a game and a tool.
+1. Board: plug the board in and press Flash. The app detects the chip, writes its firmware, then
+   checks the board on its own. The top of the page says Board ready when it answers.
+2. Games: pick a game and a tool. A Host tool waits for your console to join; a Join tool finds the
+   console's own search.
 3. Pokemon to offer: search a species and press Build. PKHeX makes a legal one for that game, owned by
    the trainer in Settings.
-4. Follow the steps under On the console, then press Start.
+4. Before you start, in the Session panel, lists anything still missing, with a button to fix it.
+   Follow the steps under On the console, then press Start.
+
+An ESP32-S3 or C3 board with two USB ports talks to the app only through the port marked USB. Flashing
+through the other one (COM or UART) works, but the board then never answers; the Board page says so.
+With several boards plugged in, Use this board picks the one sessions use.
 
 More options, under the species, sets the nature, ability, gender, held item, ball, IVs and EVs (AVs in
 Let's Go, effort levels in Legends Arceus). Empty fields stay random. The lists hold only what the
@@ -31,13 +37,13 @@ next. It shows on every trade tool. Each trade's received Pokemon gets its own f
 
 The Pokemon the console sends you are saved in `Documents/pokeldn/Received`.
 
-## Basic and All options
+## Basic and Advanced
 
-Basic shows the fields most runs need; the tested settings for each game are applied underneath. All
-options lists every option the game's session accepts, with its own help text. A value set there
-overrides the Basic field.
+Basic shows the fields most runs need; the tested settings for each game are applied underneath.
+Advanced lists every option the game's session accepts, with its own help text. A value set there
+overrides the Basic field. Leave it alone unless a guide or a bug report asks for a change.
 
-The settings most players never change sit at the top of All options, already set: the time limit
+The settings most players never change sit at the top of Advanced, already set: the time limit
 before a session stops on its own, the wireless channel, and New PID each run. New PID gives each
 offered Pokemon a new PID so a save that already received it takes it again; turn it off for a file
 whose PID must stay, such as an event Pokemon.
@@ -52,5 +58,5 @@ it is legal before you offer it. An illegal Pokemon can crash the other game whe
 - Stop, then back out of the console's search screen and search again. Most games keep a stale session
   for a short while.
 - Change one thing per run.
-- Settings, Session records opens the recording of every session; attach the latest one to a bug
-  report.
+- Settings, Record every session, Open the records shows the recording of every session; attach the
+  latest one to a bug report.

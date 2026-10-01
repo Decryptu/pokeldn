@@ -20,6 +20,7 @@ BRIDGES = {
     (0x0403, 0x6015): "FTDI FT231X",
     (0x303A, 0x1001): "Espressif USB (S3, C3, C6)",
 }
+NATIVE_USB = (0x303A, 0x1001)
 
 DRIVERS = {
     "Silicon Labs CP210x": "https://www.silabs.com/developer-tools/usb-to-uart-bridge-vcp-drivers",
@@ -41,6 +42,12 @@ class Port:
     device: str
     bridge: str
     serial_number: str
+    native: bool = False   # the chip's own USB, not a USB-to-serial bridge
+
+
+def wrong_port(port: Port, chip: str) -> bool:
+    """S3 and C3 firmware talks over native USB only; flashing through a UART bridge still works."""
+    return chip in ("ESP32-S3", "ESP32-C3") and not port.native
 
 
 @dataclass(frozen=True)
@@ -66,7 +73,7 @@ def ports() -> list[Port]:
         if info.device.startswith("/dev/tty.") and os.path.exists(info.device.replace("/tty.", "/cu.")):
             continue
         bridge = BRIDGES.get((info.vid, info.pid), f"USB serial {info.vid:04x}:{info.pid:04x}")
-        found.append(Port(info.device, bridge, info.serial_number or ""))
+        found.append(Port(info.device, bridge, info.serial_number or "", (info.vid, info.pid) == NATIVE_USB))
     return sorted(found, key=lambda p: p.device)
 
 

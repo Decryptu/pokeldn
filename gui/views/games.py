@@ -5,6 +5,8 @@ import time
 
 import flet as ft
 
+from gui import board
+from gui.app import keys_found
 from pokeldn.app import command, runner
 from gui import theme as t
 from pokeldn.app.catalog import GAMES, Field, Game, Tool
@@ -16,10 +18,21 @@ from gui.views.widgets import CodeBlock, Log, PathField, open_folder
 TOOL_ICONS = {"Trade": "arrows-horizontal", "Mystery Gift": "gift",
               "Console code": "cpu"}
 EMPTY = "-"   # a dropdown option cannot carry an empty key
+ADVANCED_NOTE = ("The tested defaults work for most players. Change these only when a guide or a bug report "
+                 "asks you to. A value set here overrides the Basic tab.")
 
 
 def tool_icon(tool: Tool):
     return TOOL_ICONS.get(tool.name.split(" (")[0], "arrows-horizontal")
+
+
+def tool_role(tool: Tool) -> str:
+    """Who looks for whom, said from the console's side."""
+    if tool.key.endswith("-host"):
+        return "Your console joins pokeldn"
+    if tool.key.endswith("-join"):
+        return "pokeldn joins your console"
+    return ""
 
 
 class GamesView:
@@ -29,6 +42,7 @@ class GamesView:
         self.tool: Tool = self.game.tools[0]
         self.tab = "basic"
         self.search = ""
+        self.visible = False
         self.tree = ft.ListView(spacing=2, padding=ft.Padding(8, 8, 8, 8), expand=True)
         self.summary = t.text("", 12, t.MUTED)
         self.body = ft.ListView(spacing=t.GAP, padding=ft.Padding(0, 12, 0, 24), expand=True)
@@ -48,7 +62,12 @@ class GamesView:
         self.select(self.game, self.tool, update=False)
 
     def enter(self, **_) -> None:
+        self.visible = True
         self.session.refresh(update=False)
+        self.app.check_if_unknown()
+
+    def leave(self) -> None:
+        self.visible = False
 
     # State
 
@@ -79,7 +98,7 @@ class GamesView:
         self.game, self.tool = game, tool
         self.summary.value = tool.summary
         self.tabs.content = t.segmented([("basic", "Basic", "sliders-horizontal"),
-                                          ("all", "All options", "bulletlist")], self.tab, self._tab)
+                                          ("all", "Advanced", "bulletlist")], self.tab, self._tab)
         self.render_tree()
         self.render_body()
         self.session.show(tool)
@@ -101,12 +120,14 @@ class GamesView:
             if open_:
                 for tool in game.tools:
                     active = tool is self.tool
+                    name = t.text(tool.name, 13, t.TEXT if active else (t.FAINT if tool.unavailable else t.MUTED))
+                    role = tool_role(tool)
                     rows.append(ft.Container(ft.Row([
                         t.pixel_icon(tool_icon(tool), color=t.BLUE if active else t.FAINT),
-                        t.text(tool.name, 13, t.TEXT if active else (t.FAINT if tool.unavailable else t.MUTED),
-                               expand=True),
+                        ft.Column([name, t.text(role, 11, t.FAINT)], spacing=0, expand=True) if role else
+                        ft.Container(name, expand=True),
                         t.badge("Soon", t.FAINT) if tool.unavailable else ft.Container(),
-                    ], spacing=10), padding=ft.Padding(24, 7, 8, 7), border_radius=9,
+                    ], spacing=10), padding=ft.Padding(24, 7, 8, 7), border_radius=9, tooltip=tool.summary,
                         bgcolor=t.HOVER if active else None,
                         on_click=lambda e, g=game, x=tool: self.select(g, x)))
                 rows.append(ft.Container(height=6))
@@ -155,7 +176,7 @@ class GamesView:
                     t.labeled_control(f.label, self.input(f, grouped=True), expand=True)
                     for f in fields[i:i + per_row]], spacing=10) for i in range(0, len(fields), per_row)]
                 out.append(t.card(item, ft.Column(rows, spacing=10),
-                                  tip=" ".join(f.help for f in fields if f.help)))
+                                  " ".join(f.help for f in fields if f.help)))
         if not self.tool.fields:
             out.append(t.text("Nothing to fill in.", 13, t.MUTED))
         return out
@@ -202,16 +223,15 @@ class GamesView:
     # All tab
 
     def all_rows(self) -> list[ft.Control]:
-        search = t.field(value=self.search, hint="Search every option", autofocus=False,
+        search = t.field(value=self.search, hint="Search the options", autofocus=False,
                          prefix_icon=ft.Container(t.pixel_icon("search", color=t.FAINT),
                                                   width=40, alignment=ft.Alignment.CENTER),
                          on_change=self._search)
-        note = ("Every option the entry point accepts, from its own help. Values set here are added after the "
-                "Basic fields and override them.")
         self.flag_list = ft.Column(spacing=8)
         self._fill_flags()
-        return [t.card("Every option", ft.Column([search, self.flag_list], spacing=10,
-                                                 horizontal_alignment=ft.CrossAxisAlignment.STRETCH), note)]
+        return [t.card("Advanced options", ft.Column([search, self.flag_list], spacing=10,
+                                                     horizontal_alignment=ft.CrossAxisAlignment.STRETCH),
+                       ADVANCED_NOTE)]
 
     def _search(self, e) -> None:
         self.search = e.control.value
@@ -307,7 +327,7 @@ class SessionPanel:
         self.status_label = ft.Semantics(content=self.status_dot, label="Idle")
         self.status = ft.Container(self.status_label, width=24, height=24,
                                    alignment=ft.Alignment.CENTER, tooltip="Idle")
-        self.board_line = ft.Container()
+        self.board_line = ft.Container()   # the checklist before Start, or one line once all is set
         self.steps = ft.Container()
         self.action = ft.Container()
         command_block = CodeBlock(app)
@@ -322,14 +342,18 @@ class SessionPanel:
         ], spacing=0)
         self.control = t.panel(ft.Column([
             t.panel_header("Session", self.status),
+            # The checklist and the steps scroll; Start stays in view below them.
+            ft.Container(ft.Column([self.board_line, self.steps], spacing=14, scroll=ft.ScrollMode.AUTO),
+                         padding=ft.Padding(16, 16, 16, 0), expand=3),
             ft.Container(ft.Column([
-                self.board_line, self.steps, self.action,
+                self.action,
                 ft.Row([t.text("Output", 12, t.MUTED, weight=ft.FontWeight.W_600, expand=True), tools]),
                 self.command_box,
-            ], spacing=14), padding=ft.Padding(16, 16, 16, 12)),
-            ft.Container(self.log.control, padding=ft.Padding(16, 0, 16, 16), expand=True),
+            ], spacing=14), padding=ft.Padding(16, 14, 16, 12)),
+            ft.Container(self.log.control, padding=ft.Padding(16, 0, 16, 16), expand=2),
         ], spacing=0, expand=True), width=t.SESSION_WIDTH)
         self.set_status("Ready", t.MUTED)
+        app.board_listeners.append(lambda: self.refresh() if games.visible else None)
 
     def set_status(self, label: str, color: str) -> None:
         description = "Idle" if label == "Ready" else label
@@ -356,21 +380,55 @@ class SessionPanel:
         self.steps.content = t.card("On the console", t.step_list(list(tool.steps)))
         self.refresh(update=False)
 
+    def checklist(self) -> list[tuple[str, str, str, str]]:
+        """(state, what, how to fix it, the page that fixes it) for each thing Start needs.
+        state is ok, wait, warn (Start still allowed) or block."""
+        status = self.app.board_status()
+        board_state = ("ok" if status.ready else "wait" if status.state == "checking" else
+                       "block" if status.state in ("missing", "choose") else "warn")
+        items = [
+            ("ok", "Switch keys added", "", "") if keys_found(self.app.settings.keys) else
+            ("block", "Add your Switch keys", "Choose prod.keys in Settings.", "settings"),
+            (board_state, status.title, "" if status.ready else status.detail, "board"),
+        ]
+        if missing := command.missing_offer(self.tool, self.games.values):
+            hint = " Pick a species, then press Build." if missing.startswith("Build") else ""
+            items.append(("block", "Pokemon to offer", missing + hint, ""))
+        items += [("block", "Check the options", problem, "") for problem in
+                  command.problems(self.tool, self.games.values)]
+        return items
+
+    def render_checklist(self, items) -> ft.Control:
+        if all(state == "ok" for state, *_ in items):
+            return ft.Row([t.pixel_icon("checkbox-on", color=t.GREEN),
+                           t.text("Ready to start", 12.5, t.TEXT, expand=True),
+                           t.secondary_button("Board", lambda e: self.app.navigate("board"), "cpu")], spacing=8)
+        looks = {"ok": ("checkbox-on", t.GREEN), "wait": ("refresh", t.BLUE),
+                 "warn": ("warning-diamond", "#F5B94A"), "block": ("warning-diamond", t.RED)}
+        labels = {"settings": "Settings", "board": "Board"}
+        rows = []
+        for state, what, how, page in items:
+            icon, color = looks[state]
+            rows.append(ft.Row([
+                ft.Container(t.pixel_icon(icon, color=color), padding=ft.Padding(0, 1, 0, 0)),
+                ft.Column([t.text(what, 12.5, weight=ft.FontWeight.W_600)] +
+                          ([t.text(how, 12, t.MUTED)] if how else []), spacing=1, expand=True),
+                t.secondary_button(labels[page], lambda e, k=page: self.app.navigate(k))
+                if page and state != "ok" else ft.Container(),
+            ], spacing=8, vertical_alignment=ft.CrossAxisAlignment.START))
+        return t.card("Before you start", ft.Column(rows, spacing=10))
+
     def refresh(self, update: bool = True) -> None:
         tool, s = self.tool, self.app.settings
         running = self.app.process and self.app.process.running
-        port = self.app.radio_port()
-        self.board_line.content = ft.Row([
-            t.pixel_icon("cpu", color=t.GREEN if port else t.RED),
-            t.text(f"Radio on {port}" if port else "No board selected", 12,
-                   t.TEXT if port else t.RED, expand=True),
-            t.secondary_button("Board", lambda e: self.app.navigate("board")),
-        ], spacing=8)
+        items = self.checklist()
+        self.board_line.content = None if running else self.render_checklist(items)
+        blocked = any(state == "block" for state, *_ in items)
         if running:
             action = t.button("Stop", self._stop, "stop", t.RED, expand=True)
         else:
             action = t.button("Start", self._start, "play", expand=True,
-                              disabled=self.app.busy or bool(tool.unavailable))
+                              disabled=self.app.busy or blocked or bool(tool.unavailable))
         self.action.content = ft.Row([action])
         try:
             self.command_text.value = shlex.join([tool.script, *command.build(

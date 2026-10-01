@@ -4,22 +4,29 @@ import threading
 import time
 
 import flet as ft
-import serial
 
 from gui import board
+from gui.app import BoardStatus
 from pokeldn.app import runner
 from pokeldn.app.paths import SESSION
 from gui import theme as t
-from gui.views.widgets import CodeBlock, Log
+from gui.views.widgets import CodeBlock, Log, PixelActivity
 
 PERCENT = re.compile(r"(\d{1,3}(?:\.\d)?)\s?%")
+CHIP = re.compile(r"Firmware for (ESP32(?:-S3|-C3)?):")
 
 FLASH_STEPS = [
-    "Use a USB data cable. A charge-only cable powers the board but no port appears.",
-    "Select the board on the left.",
-    "Press Flash. If it stays on 'Connecting', hold the BOOT button until writing starts.",
-    "ESP32-S3 and C3: use the native USB port. After flashing, release BOOT and press RESET if needed.",
+    "ESP32-S3 or C3 with two USB ports: plug into the one marked USB, not COM or UART.",
+    "Press Flash. The app picks the firmware for your chip and checks the board afterwards.",
+    "Stuck on 'Connecting'? Hold the board's BOOT button until writing starts, then let go.",
 ]
+
+STATE_LOOK = {   # state -> icon, color
+    "ready": ("checkbox-on", t.GREEN),
+    "checking": ("refresh", t.BLUE),
+    "missing": ("usb", t.MUTED),
+    "choose": ("cpu", t.BLUE),
+}
 
 
 class BoardView:
@@ -27,11 +34,10 @@ class BoardView:
         self.app = app
         self.ports: list[board.Port] = []
         self.selected: str = ""
-        self.identities: dict[str, board.Identity | str] = {}   # device -> identity or error
         self.visible = False
         self.list = ft.ListView(spacing=4, padding=8, expand=True)
         self.detail = ft.Column(spacing=t.GAP)
-        self.log = Log(app.page, "Identify and flash output appears here.")
+        self.log = Log(app.page, "Checks and flashing show their output here.")
         self.progress = ft.ProgressBar(value=0, color=t.BLUE, bgcolor=t.FIELD, height=4, border_radius=0, visible=False)
         self.progress_text = t.text("", 12, t.MUTED)
         self.control = ft.Row([
@@ -44,6 +50,7 @@ class BoardView:
                                ft.Container(self.log.control, padding=16, expand=True)],
                               spacing=0, expand=True), width=t.SESSION_WIDTH),
         ], spacing=t.GAP, expand=True, vertical_alignment=ft.CrossAxisAlignment.STRETCH)
+        app.board_listeners.append(self._checked)
 
     # Port list, polled while the page is open so a board shows up when it is plugged in
 
@@ -66,33 +73,53 @@ class BoardView:
         self.ports = board.ports()
         devices = [p.device for p in self.ports]
         if self.selected not in devices:
-            self.selected = self.app.radio_port() or (devices[0] if devices else "")
+            self.selected = self.app.radio_port(self.ports) or (devices[0] if devices else "")
+        self._check_selected()
         self.render()
         if update:
+            self.control.update()
+
+    def _check_selected(self) -> None:
+        if self.selected and self.selected not in self.app.identities and not self.app.busy:
+            self.log.add(f"[app] Checking {self.selected}; the board may restart.")
+            self.app.check_board(self.selected, log=self.log.add)
+
+    def _checked(self) -> None:
+        if self.visible:
+            self.render()
             self.control.update()
 
     def port(self) -> board.Port | None:
         return next((p for p in self.ports if p.device == self.selected), None)
 
     def name_of(self, device: str) -> str:
-        ident = self.identities.get(device)
+        ident = self.app.identities.get(device)
         if isinstance(ident, board.Identity):
             return self.app.settings.board_names.get(ident.sta_mac, "")
         return ""
 
+    def status(self) -> BoardStatus:
+        if self.app.board_busy and self.selected not in self.app.identities:
+            return BoardStatus("checking", "Checking the board", "Asking the board for its firmware.", self.selected)
+        return self.app.board_status(self.ports, self.selected)
+
     def render(self) -> None:
         rows = []
+        several = len(self.ports) > 1
+        session_port = self.app.radio_port(self.ports)
         for p in self.ports:
             active = p.device == self.selected
-            radio = p.device == self.app.settings.radio_port
+            state = self.app.board_status(self.ports, p.device)
+            dot = t.GREEN if state.ready else t.RED if state.state in ("flash", "wrong-port", "busy") else t.FAINT
             rows.append(ft.Container(ft.Row([
                 t.pixel_icon("cpu", color=t.BLUE if active else t.FAINT),
                 ft.Column([
                     t.text(self.name_of(p.device) or os.path.basename(p.device), 13,
                            t.TEXT if active else "#C5C7CD", weight=ft.FontWeight.W_600),
-                    t.text(p.bridge, 11, t.MUTED),
+                    t.text(state.title, 11, t.MUTED),
                 ], spacing=1, expand=True),
-                t.badge("Radio", t.RED, "cpu") if radio else ft.Container(),
+                t.badge("In use", t.BLUE, "checkbox-on") if several and p.device == session_port else
+                ft.Container(width=8, height=8, border_radius=4, bgcolor=dot),
             ], spacing=10), padding=ft.Padding(10, 8, 10, 8), border_radius=9,
                 bgcolor=t.HOVER if active else None,
                 on_click=lambda e, d=p.device: self._select(d)))
@@ -104,62 +131,78 @@ class BoardView:
                        text_align=ft.TextAlign.CENTER),
             ], horizontal_alignment=ft.CrossAxisAlignment.CENTER, spacing=6), padding=24))
         self.list.controls = rows
-        self.detail.controls = [self.board_card(), self.flash_card(), self.help_card()]
+        cards = [self.status_card()]
+        if self.port():
+            cards += [self.flash_card(), self.details_card()]
+        cards.append(self.help_card())
+        self.detail.controls = cards
 
     def _select(self, device: str) -> None:
         self.selected = device
+        self._check_selected()
         self.render()
         self.control.update()
 
-    # The selected board
+    # The selected board, in one line
 
-    def board_card(self) -> ft.Control:
+    def status_card(self) -> ft.Control:
+        status = self.status()
+        icon, color = STATE_LOOK.get(status.state, ("warning-diamond", t.RED))
+        lead = PixelActivity("Checking") if status.state == "checking" else t.pixel_icon(icon, size=24, color=color)
+        actions: list[ft.Control] = []
+        several = len(self.ports) > 1
+        if self.port() and several and self.selected != self.app.radio_port(self.ports):
+            actions.append(t.button("Use this board", self._use, "check"))
+        if status.ready:
+            actions.append(t.button("Go to Games", lambda e: self.app.navigate("games"), "gamepad",
+                                    filled=not actions))
+        if status.state in ("flash", "wrong-port", "busy"):
+            actions.append(t.secondary_button("Check again", self._identify, "refresh", disabled=self.app.busy))
+        detail = status.detail
+        if status.ready and several:
+            detail += (" Sessions use this board." if self.selected == self.app.radio_port(self.ports)
+                       else " Sessions use another board; press Use this board to switch.")
+        return t.surface(ft.Container(ft.Column([
+            ft.Row([
+                ft.Container(lead, width=44, height=44, alignment=ft.Alignment.CENTER,
+                             bgcolor=ft.Colors.with_opacity(0.12, color), border_radius=10),
+                ft.Column([t.text(status.title, 16, weight=ft.FontWeight.W_600),
+                           t.text(detail, 12.5, t.MUTED)], spacing=3, expand=True),
+            ], spacing=14),
+            *([ft.Row(actions, spacing=8)] if actions else []),
+        ], spacing=14, tight=True), padding=18), stroke=ft.Colors.with_opacity(0.45, color))
+
+    def details_card(self) -> ft.Control:
         p = self.port()
-        if not p:
-            return t.card("No board selected", None, "Plug a board in; it is listed on the left.")
-        ident = self.identities.get(p.device)
+        ident = self.app.identities.get(p.device)
         if isinstance(ident, board.Identity):
-            release = f"v{ident.firmware_version}" if ident.firmware_version else "version unknown"
-            label = f"pokeldn firmware · {release}"
-            firmware = (t.badge(label, t.GREEN, "check") if ident.current else
-                        t.badge(f"{label} · unsupported protocol {ident.protocol}", t.RED,
-                                "warning-diamond"))
+            firmware = f"pokeldn v{ident.firmware_version}" if ident.firmware_version else "pokeldn"
             mac = ident.sta_mac
-        elif isinstance(ident, str):
-            firmware, mac = t.badge(ident, t.RED, "warning-diamond"), "unknown"
         else:
-            firmware, mac = t.badge("Not checked yet", t.MUTED), "press Identify"
+            firmware, mac = ident or "not checked yet", "unknown"
 
         def info(label, value):
             return ft.Row([t.text(label, 12, t.MUTED, width=110),
                            value if isinstance(value, ft.Control) else t.text(value, 12.5, font_family=t.MONO)])
 
-        is_radio = p.device == self.app.settings.radio_port
-        name = t.field(value=self.name_of(p.device), hint="Radio, Sniffer...", width=220,
+        name = t.field(value=self.name_of(p.device), hint="Living room, spare...", width=220,
                        disabled=not isinstance(ident, board.Identity), on_submit=self._rename)
         body = ft.Column([
             info("Port", p.device),
             info("USB chip", p.bridge),
-            info("Wi-Fi MAC", mac),
             info("Firmware", firmware),
-            info("Name", ft.Row([name, t.icon_button("check", lambda e: self._rename(e, name),
-                                                     "Save the name")], spacing=4)),
-            ft.Container(height=2),
-            ft.Row([
-                t.button("Identify", self._identify, "lightbulb",
-                         disabled=self.app.busy),
-                t.button("This is my radio" if not is_radio else "Radio board", self._use,
-                         "checkbox" if not is_radio else "checkbox-on",
-                         filled=False, disabled=is_radio),
-            ], spacing=8),
+            info("Wi-Fi MAC", mac),
+            info("Nickname", ft.Row([name, t.icon_button("check", lambda e: self._rename(e, name),
+                                                         "Save the nickname")], spacing=4)),
+            ft.Row([t.secondary_button("Blink the LED", self._blink, "lightbulb",
+                                       disabled=self.app.busy or not isinstance(ident, board.Identity))]),
         ], spacing=10)
-        note = ("Identify reads the firmware and MAC. Opening the port can restart the board. "
-                "A classic ESP32's GPIO2 LED blinks for five seconds; S3 onboard LEDs vary.")
-        return t.card(self.name_of(p.device) or "ESP32 board", body, note)
+        return t.card("Details", body, "Blink the LED shows which board this is: a classic ESP32's blue LED "
+                                       "blinks for five seconds. A nickname helps when several are plugged in.")
 
     def _rename(self, e, field=None) -> None:
         field = field or e.control
-        ident = self.identities.get(self.selected)
+        ident = self.app.identities.get(self.selected)
         if isinstance(ident, board.Identity):
             names = self.app.settings.board_names
             if field.value.strip():
@@ -173,40 +216,21 @@ class BoardView:
     def _use(self, e) -> None:
         self.app.settings.radio_port = self.selected
         self.app.settings.save()
-        self.log.add(f"[app] {self.selected} is the radio for every session.")
+        self.log.add(f"[app] Sessions now use {self.selected}.")
         self.render()
         self.control.update()
 
-    def _identify(self, e) -> None:
-        device = self.selected
+    def _identify(self, e, blink: bool = False) -> None:
         if self.app.busy:
             return
-        self.app.board_busy = True
-        self.log.add(f"[app] Opening {device}; the board may restart.")
+        self.app.identities.pop(self.selected, None)
+        self.log.add(f"[app] Checking {self.selected}; the board may restart.")
+        self.app.check_board(self.selected, blink=blink, log=self.log.add)
         self.render()
         self.control.update()
 
-        def work():
-            try:
-                ident = board.identify(device)
-                self.identities[device] = ident
-                self.log.add(f"[app] {ident.firmware}, protocol {ident.protocol}, chip revision "
-                             f"{ident.chip_revision}, MAC {ident.sta_mac}")
-                if ident.current:
-                    self.log.add("[app] Identified. Classic ESP32 GPIO2 LEDs blink for five seconds.")
-                else:
-                    self.log.add("[app] This firmware uses a different radio protocol. Flash the board.")
-            except serial.SerialException as error:
-                self.identities[device] = "Port busy or not allowed"
-                self.log.add(f"[app] Could not open {device}: {error}")
-            except Exception as error:
-                self.identities[device] = "No pokeldn firmware"
-                self.log.add(f"[app] No pokeldn firmware answered ({error}). Flash the board below.")
-            finally:
-                self.app.board_busy = False
-                self.app.ui(lambda: (self.render(), self.control.update()))
-
-        threading.Thread(target=work, daemon=True).start()
+    def _blink(self, e) -> None:
+        self._identify(e, blink=True)
 
     # Flashing
 
@@ -216,31 +240,41 @@ class BoardView:
             return chosen
         return ""
 
+    def flash_button(self) -> ft.Control:
+        image = self.firmware()
+        available = image or any(os.path.isfile(f) for f in (board.FIRMWARE, board.FIRMWARE_S3, board.FIRMWARE_C3))
+        flashing = bool(self.app.process and self.app.process.running and self.app.process_label == "flash")
+        return t.button("Flashing..." if flashing else "Flash", self._flash, "zap",
+                        disabled=self.app.busy or not available or not self.port())
+
     def flash_card(self) -> ft.Control:
         image = self.firmware()
-        p = self.port()
         available = image or any(os.path.isfile(f) for f in (board.FIRMWARE, board.FIRMWARE_S3, board.FIRMWARE_C3))
         source = ft.Row([
             t.pixel_icon("package", color=t.MUTED),
-            t.text(image or ("Included firmware is selected automatically for ESP32, ESP32-S3 or ESP32-C3." if available
-                            else "This copy of the app has no firmware image."),
+            t.text(f"Custom image: {image}" if image else
+                   "Firmware included with the app: ESP32, ESP32-S3 or ESP32-C3, picked for your chip." if available
+                   else "This copy of the app has no firmware image.",
                    12, t.MUTED if available else t.RED, expand=True),
-            t.secondary_button("Use another file", self._choose_file, "file"),
+            t.secondary_button("Included firmware", self._clear_file, "refresh") if image else
+            t.icon_button("file", self._choose_file, "Use a firmware file of your own"),
         ], spacing=6)
-        flashing = bool(self.app.process and self.app.process.running and self.app.process_label == "flash")
         return t.card("Flash the firmware", ft.Column([
             t.step_list(FLASH_STEPS),
             source,
-            ft.Column([self.progress, self.progress_text], spacing=6),
-            t.button("Flashing..." if flashing else "Flash", self._flash, "zap",
-                     disabled=self.app.busy or not available or not p),
-        ], spacing=14), "Writes pokeldn's radio firmware to the selected board. Takes about thirty seconds.")
+            ft.Column([self.progress, self.progress_text], spacing=6, visible=self.progress.visible),
+            ft.Row([self.flash_button()]),
+        ], spacing=14), "Needed once per board, and again after an app update that says so. "
+                        "Takes about thirty seconds.")
 
     async def _choose_file(self, e) -> None:
         files = await self.app.picker.pick_files(allowed_extensions=["bin"],
                                                  file_type=ft.FilePickerFileType.CUSTOM)
         if files and files[0].path:
             self._set_firmware(files[0].path)
+
+    def _clear_file(self, e) -> None:
+        self._set_firmware("")
 
     def _set_firmware(self, path: str) -> None:
         self.app.settings.firmware = path
@@ -258,6 +292,7 @@ class BoardView:
         self.log.add(f"[app] Flashing {self.selected}.")
         self.progress.visible, self.progress.value = True, None
         self.progress_text.value = "Connecting..."
+        self.progress_text.color = t.MUTED
         env = dict(os.environ, NO_COLOR="1", PYTHONUNBUFFERED="1")
         env.pop("POKELDN_RADIO", None)
         self.app.process_label = "flash"
@@ -268,6 +303,8 @@ class BoardView:
 
     def _flash_line(self, line: str) -> None:
         self.log.add(line)
+        if chip := CHIP.search(line):
+            self.app.chips[self.selected] = chip[1]
         found = PERCENT.findall(line)
         if found and "Writing" in line:
             value = min(float(found[-1]), 100.0) / 100
@@ -280,15 +317,25 @@ class BoardView:
             self.app.ui(show)
 
     def _flashed(self, code: int) -> None:
+        device = self.selected
+
         def done():
             self.progress.value = 1 if code == 0 else 0
-            self.progress_text.value = ("Done. The board restarted with the new firmware." if code == 0 else
-                                        "Flashing failed. Read the activity log; holding BOOT often helps.")
+            self.progress_text.value = ("Done. Checking the board..." if code == 0 else
+                                        "Flashing failed. Hold the BOOT button and press Flash again; the "
+                                        "Activity log has the details.")
             self.progress_text.color = t.GREEN if code == 0 else t.RED
-            self.identities.pop(self.selected, None)
+            self.app.identities.pop(device, None)
             self.render()
             self.control.update()
+            if code == 0:
+                threading.Timer(2.0, lambda: self.app.ui(self._after_flash)).start()
         self.app.ui(done)
+
+    def _after_flash(self) -> None:
+        self.scan(update=False)   # a native-USB board can come back under a new port name
+        self.render()
+        self.control.update()
 
     def help_card(self) -> ft.Control:
         def link(label, url):

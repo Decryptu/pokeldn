@@ -25,7 +25,7 @@ class Field:
     queue: int = 1                # a pokemon field: how many trades one session can carry
     more: str = ""                # a pokemon field: the flag for the second and later offers
     count: str = ""               # a pokemon field: the flag that carries how many there are
-    hidden: bool = False          # applied with its default, set on the All options tab instead of Basic
+    hidden: bool = False          # applied with its default, set on the Advanced tab instead of Basic
 
     @property
     def key(self) -> str:
@@ -135,10 +135,12 @@ FRLG = Game("frlg", "FireRed & LeafGreen", "FRLG", "frlg.md", (
           "Start the host, then pick PkCamp when it appears.",
           "Answer Yes if the console asks to replace its card.",
           "Back out of the search screen between two runs."),
-         (Field("--news", "Send", "choice", choices=(
+         (Field("--news", "Send", "choice", help="A Wonder Card brings a gift; Wonder News is a message "
+                                                 "that can carry a berry.", choices=(
              ("", "A Wonder Card"), ("pkcamp", "Wonder News: one berry in Cerulean City"),
              ("berry", "Wonder News: ten lines, one berry"))),
-          Field("--gift", "Wonder Card", "choice", default="beast-cutscene", when=CARD, choices=(
+          Field("--gift", "Wonder Card", "choice", default="beast-cutscene", when=CARD,
+                help="The gift the card holds.", choices=(
               ("beast-cutscene", "Legendary beast (follows the starter)"),
               ("celebi", "Celebi"), ("master-ball", "Master Ball"),
               ("altering-cave", "Altering Cave"), ("porygon-tm-gift", "Porygon TM gift"),
@@ -161,11 +163,13 @@ FRLG = Game("frlg", "FireRed & LeafGreen", "FRLG", "frlg.md", (
          ("Title screen: Mystery Gift, Wonder Cards, Friend.",
           "Start the host, then pick PkCamp when it appears.",
           "Keep the host running until the log shows the result; a dump is written a few seconds later."),
-         (Field("--buffer-script", "Action", "choice", default="save-dump", choices=(
+         (Field("--buffer-script", "Action", "choice", default="save-dump",
+                help="What the code does on the console. A read leaves the game unchanged.", choices=(
              ("trainer-id-probe", "Read the trainer id (reads only)"),
              ("save-dump", "Read part of the save (reads only)"),
              ("install-resident", "Install a hook until the next reset (writes RAM)"))),
           Field("--dump-block", "Save block", "choice", default="sav2", group="Save dump",
+                help="The part of the save to read, and how many bytes; the file lands in Received.",
                 choices=(("sav2", "Trainer (sav2)"), ("sav1", "Party, bag, flags (sav1)")),
                 when=SAVE_DUMP),
           Field("--dump-size", "Bytes", "number", default="64", group="Save dump", when=SAVE_DUMP),
@@ -174,13 +178,13 @@ FRLG = Game("frlg", "FireRed & LeafGreen", "FRLG", "frlg.md", (
               ("noencounter", "No wild encounters")),
                 help="Applies until the next soft reset.", choice_help=(
                     ("turbo", "Speeds up dialogue text. Movement and battle speed can be adjusted "
-                              "with --resident-param in All options."),
+                              "with --resident-param in Advanced."),
                     ("shiny", "Shows a countdown to the next shiny wild encounter."),
                     ("ivs", "Displays the lead Pokemon's six IVs and nature number on screen."),
                     ("noencounter", "Disables grass, water and roaming encounters. "
                                     "Fishing and Sweet Scent still work."))),
-          Field("--write-unsafe", "Allow writes", "switch", default=False, when=HOOK,
-                help="A hook changes the running game until a soft reset. Docs: Code on the console."),
+          Field("--write-unsafe", "Allow writes", "switch", default=True, when=HOOK, hidden=True,
+                help="A hook needs it: it changes the running game until a soft reset."),
           Field(("--version", "--expect-console"), "Version", "choice", default="firered",
                 choices=VERSIONS, group="Console",
                 help="The console's cartridge: another one is refused before anything is sent."),
@@ -218,16 +222,20 @@ SWSH = Game("swsh", "Sword & Shield", "SwSh", "swsh.md", (
          ("Mystery Gift, Receive a Gift, via local wireless.",
           "Start the host: the card is listed within a few seconds or not at all.",
           "Accept the card, then stop the host."),
-         (Field("--species", "Species", "species", default="25", group="Pokemon"),
+         (Field("--species", "Species", "species", default="25", group="Pokemon",
+                help="The Pokemon on the card and its level."),
           Field("--level", "Level", "number", default="25", group="Pokemon", help="0 lets the game roll one."),
-          Field("--move1", "Move 1", "move", default="84", group="Moves"),
+          Field("--move1", "Move 1", "move", default="84", group="Moves", help="The four moves it knows."),
           Field("--move2", "Move 2", "move", default="45", group="Moves"),
           Field("--move3", "Move 3", "move", default="86", group="Moves"),
           Field("--move4", "Move 4", "move", default="98", group="Moves"),
-          Field("--set", "Held item", "item", template="held_item={}", group="Extras"),
+          Field("--set", "Held item", "item", template="held_item={}", group="Extras",
+                help="Empty for no item and the game's default ball."),
           Field("--set", "Ball", "ball", template="ball={}", group="Extras"),
-          Field("--set", "Shiny", "switch", template="shiny_type=2", default=False),
-          Field("--nickname", "Nickname", default="PKCAMP", group="Names"),
+          Field("--set", "Shiny", "switch", template="shiny_type=2", default=False,
+                help="The Pokemon arrives shiny."),
+          Field("--nickname", "Nickname", default="PKCAMP", group="Names",
+                help="The Pokemon's nickname and the original trainer name it shows."),
           Field("--ot", "OT", default="POKELDN", group="Names"),
           Field("--set", "Other fields", "multi", hidden=True,
                 help="Any other record field, space-separated NAME=VALUE: nature=10 gender=1 iv_hp=31.",
@@ -235,7 +243,8 @@ SWSH = Game("swsh", "Sword & Shield", "SwSh", "swsh.md", (
                                             "the bag screen."),)),
           Field("--card-id", "Card id", "number", default="9999",
                 help="Change it when the console already holds this card."),
-          Field("--record", "Or send a .wc8 file", "file", exts=("wc8",)),
+          Field("--record", "Or send a .wc8 file", "file", exts=("wc8",),
+                help="A Wonder Card file from PKHeX or an event archive. It replaces everything above."),
           Field("--seconds", "Time limit (seconds)", "number", default="300", hidden=True,
                 help="How long the card is advertised after Start.")),
          doc="swsh_gift.md"),

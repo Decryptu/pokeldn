@@ -65,7 +65,7 @@ def test_one_offer_from_an_older_settings_file_still_builds():
 
 
 def test_a_setting_kept_off_the_basic_tab_still_reaches_the_entry_point():
-    """New PID and the time limit live on All options; their defaults must still be passed."""
+    """New PID and the time limit live on Advanced; their defaults must still be passed."""
     tool = next(t for game in GAMES for t in game.tools if t.key == "za-host")
     args = build(tool, {"--trade-offer": {"file": "/tmp/offer.pa9"}}, {}, Settings())
     parsed = parser_of(tool.script).parse_args(args)
@@ -74,3 +74,13 @@ def test_a_setting_kept_off_the_basic_tab_still_reaches_the_entry_point():
                         "--seconds": "1800"}, {}, Settings())
     parsed = parser_of(tool.script).parse_args(args)
     assert not parsed.fresh_pid and parsed.seconds == 1800
+
+
+@pytest.mark.parametrize("action", ["trainer-id-probe", "save-dump", "install-resident"])
+def test_every_console_code_action_the_app_offers_is_accepted_by_the_host(action):
+    """A hook needs --write-unsafe; the app passes it for the player, who has no switch to forget."""
+    import frlg_mg_host
+    tool = next(t for game in GAMES for t in game.tools if t.key == "frlg-code")
+    parser = frlg_mg_host.build_parser()
+    args = parser.parse_args(build(tool, {"--buffer-script": action}, {}, Settings()))
+    frlg_mg_host.build_run_config(parser, args)

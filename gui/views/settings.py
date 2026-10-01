@@ -3,6 +3,7 @@ import os
 import flet as ft
 
 from gui import theme as t
+from gui.app import keys_found
 from pokeldn import __version__
 from pokeldn.app.paths import SESSION
 from pokeldn.app.sprites import CACHE
@@ -14,15 +15,12 @@ LINKS = (("Documentation", "https://decryptu.github.io/pokeldn/"),
          ("Discord", "https://discord.gg/PyvaVYnpXC"))
 
 
-def keys_found(path: str) -> bool:
-    return os.path.isfile(os.path.expanduser(path))
-
-
 class SettingsView:
     def __init__(self, app):
         self.app = app
         self.keys_state = ft.Container()
         self.sprite_state = t.text("", 12, t.MUTED)
+        self.show_advanced = False
         self.column = ft.Column(spacing=t.GAP, width=760)
         self.control = ft.ListView([ft.Row([self.column], alignment=ft.MainAxisAlignment.CENTER)],
                                    padding=ft.Padding(4, 8, 4, 24), expand=True)
@@ -72,36 +70,54 @@ class SettingsView:
         def link(label, url):
             return t.link_button(label, lambda e: self.app.page.run_task(self.app.open_url, url))
 
+        def section(label):
+            return ft.Container(t.text(label, 12, t.MUTED, weight=ft.FontWeight.W_600),
+                                padding=ft.Padding(4, 8, 0, 0))
+
+        advanced = [
+            t.card("Serial speed", speed, "How fast the computer talks to the board. Keep the default unless a "
+                                          "guide says otherwise."),
+            switch("board_trace", "Record the board's serial traffic",
+                   "Adds the board's counters and every serial message to the session record. Only for radio "
+                   "problems someone asked you to report."),
+            t.card("Pokemon sprites", ft.Row([t.button("Clear the cache", self._clear_sprites, "refresh",
+                                                        filled=False), self.sprite_state], spacing=10),
+                   "Pixel-art sprites come from PokeAPI and are kept on this computer after the first download. "
+                   "The app works without them.",
+                   trailing=t.switch(s.sprites, lambda e: self.save("sprites", e.control.value))),
+        ]
         self.column.controls = [
             t.notch(ft.Row([t.pixel_icon("gear", color=t.RED),
                             t.text("Settings", 13, weight=ft.FontWeight.W_600)], spacing=8, tight=True)),
+            section("Your setup"),
             t.card("Switch keys", ft.Column([keys.control, self.keys_state], spacing=8),
-                   "prod.keys from your own console. It decrypts the local wireless advertisements and never "
-                   "leaves this computer."),
+                   "prod.keys dumped from your own console. Needed to talk to the games; it never leaves this "
+                   "computer."),
             t.card("Your trainer", trainer,
-                   "The original trainer of every Pokemon the app builds. The IDs were drawn at random on first "
-                   "launch."),
+                   "The original trainer of every Pokemon the app builds for you. Put your own name and IDs to "
+                   "make them yours; the IDs were drawn at random on first launch."),
             t.card("Received Pokemon", ft.Row([ft.Container(received.control, expand=True),
                                                t.icon_button("external-link",
                                                              lambda e: open_folder(os.path.expanduser(s.received)),
                                                              "Open it")]),
                    "Where the Pokemon a console sends you are saved."),
-            t.card("Serial speed", speed, "How fast the computer talks to the board after connecting."),
-            t.card("Pokemon sprites", ft.Row([t.button("Clear the cache", self._clear_sprites, "refresh",
-                                                        filled=False), self.sprite_state], spacing=10),
-                   "Pixel-art sprites come from PokeAPI and are saved on this computer after the first download, "
-                   "so they keep showing offline. The app works without them.",
-                   trailing=t.switch(s.sprites, lambda e: self.save("sprites", e.control.value))),
-            switch("capture", "Record every session",
-                   "Keeps each session's datagrams. Small, and what a bug report needs."),
-            switch("board_trace", "Record the board's serial traffic",
-                   "Adds the board's counters and every serial message. For radio problems only."),
-            t.card("Session records", ft.Row([t.button("Open the folder", lambda e: open_folder(str(SESSION / "captures")),
-                                                       "folder", filled=False)]),
-                   "Attach the latest file to a bug report."),
+            section("Bug reports"),
+            t.card("Record every session", ft.Row([t.button("Open the records", lambda e: open_folder(
+                str(SESSION / "captures")), "folder", filled=False)]),
+                   "Keeps a small record of each session. When something fails, attach the latest file to your "
+                   "report.",
+                   trailing=t.switch(s.capture, lambda e: self.save("capture", e.control.value))),
+            ft.Row([t.link_button("Hide advanced settings" if self.show_advanced else "Show advanced settings",
+                                  self._toggle_advanced)]),
+            *(advanced if self.show_advanced else []),
             t.card(f"About pokeldn {__version__}", ft.Row([link(label, url) for label, url in LINKS], spacing=4),
                    "pokeldn is AGPLv3. Pokemon are checked with PKHeX.Core (GPLv3)."),
         ]
+
+    def _toggle_advanced(self, e) -> None:
+        self.show_advanced = not self.show_advanced
+        self.render()
+        self.control.update()
 
     def _clear_sprites(self, e) -> None:
         self.sprite_state.value = f"{CACHE.clear()} files removed"
