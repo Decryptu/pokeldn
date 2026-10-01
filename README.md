@@ -69,9 +69,18 @@ Gift below with the tested settings. The only file it asks for is `prod.keys`.
 
 ## Setup
 
+The desktop app flashes the board from its Board page; building the firmware is optional. A copy run
+from source has no image until its Board page's Download the firmware fetches the latest release's
+three images and checks them against its `SHA256SUMS`.
+
+Building it yourself needs ESP-IDF v6.1, which provides `idf.py`; this repository does not ship it:
+
 ```bash
+git clone -b v6.1 --recursive https://github.com/espressif/esp-idf.git ~/esp/esp-idf
+~/esp/esp-idf/install.sh esp32,esp32s3,esp32c3
+. ~/esp/esp-idf/export.sh   # puts idf.py on PATH, once per shell
 cd firmware/esp32
-idf.py set-target esp32   # esp32s3 for an S3, esp32c3 for a C3; ESP-IDF v6.1
+idf.py set-target esp32   # esp32s3 for an S3, esp32c3 for a C3
 idf.py build
 idf.py -p PORT flash
 cd ../..

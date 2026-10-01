@@ -119,11 +119,24 @@ class App:
             except Exception as error:
                 self.identities[device] = NO_FIRMWARE
                 say(f"[app] No pokeldn firmware answered on {device} ({error}).")
+                self._probe_chip(device, say)
             finally:
                 self.board_busy = False
                 self.ui(lambda: [listener() for listener in list(self.board_listeners)])
 
         threading.Thread(target=work, daemon=True).start()
+
+    def _probe_chip(self, device: str, say) -> None:
+        """Through a USB-to-serial bridge, the ROM bootloader still names the chip: an S3 or C3 there
+        is on its UART socket, where the radio firmware never answers."""
+        port = next((p for p in board.ports() if p.device == device), None)
+        if port is None or port.native:
+            return
+        try:
+            self.chips[device] = board.detect_chip(device)
+            say(f"[app] The chip on {device} is an {self.chips[device]}.")
+        except Exception as error:
+            say(f"[app] Could not read the chip type on {device} ({error}).")
 
     def check_if_unknown(self, present: list[board.Port] | None = None) -> None:
         port = self.radio_port(present)

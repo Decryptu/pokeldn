@@ -35,6 +35,7 @@ class BoardView:
         self.ports: list[board.Port] = []
         self.selected: str = ""
         self.visible = False
+        self.downloading = False
         self.list = ft.ListView(spacing=4, padding=8, expand=True)
         self.detail = ft.Column(spacing=t.GAP)
         self.log = Log(app.page, "Checks and flashing show their output here.")
@@ -254,10 +255,13 @@ class BoardView:
             t.pixel_icon("package", color=t.MUTED),
             t.text(f"Custom image: {image}" if image else
                    "Firmware included with the app: ESP32, ESP32-S3 or ESP32-C3, picked for your chip." if available
-                   else "This copy of the app has no firmware image.",
+                   else "No firmware image here yet (a copy run from source). Download the released one; "
+                        "no ESP-IDF needed.",
                    12, t.MUTED if available else t.RED, expand=True),
-            t.secondary_button("Included firmware", self._clear_file, "refresh") if image else
-            t.icon_button("file", self._choose_file, "Use a firmware file of your own"),
+            *([t.secondary_button("Included firmware", self._clear_file, "refresh")] if image else
+              [t.icon_button("file", self._choose_file, "Use a firmware file of your own")] + ([] if available else [
+                  t.button("Downloading..." if self.downloading else "Download the firmware", self._download,
+                           "download", disabled=self.downloading)])),
         ], spacing=6)
         return t.card("Flash the firmware", ft.Column([
             t.step_list(FLASH_STEPS),
@@ -266,6 +270,23 @@ class BoardView:
             ft.Row([self.flash_button()]),
         ], spacing=14), "Needed once per board, and again after an app update that says so. "
                         "Takes about thirty seconds.")
+
+    def _download(self, e) -> None:
+        self.downloading = True
+        self.render()
+        self.control.update()
+
+        def work():
+            try:
+                tag = board.download_firmware(self.log.add)
+                self.log.add(f"[app] Firmware from {tag} is ready. Press Flash.")
+            except Exception as error:
+                self.log.add(f"[app] Could not download the firmware: {error}")
+            finally:
+                self.downloading = False
+                self.app.ui(lambda: (self.render(), self.control.update()))
+
+        threading.Thread(target=work, daemon=True).start()
 
     async def _choose_file(self, e) -> None:
         files = await self.app.picker.pick_files(allowed_extensions=["bin"],

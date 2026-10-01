@@ -28,6 +28,10 @@ GPIO19 (D-) and GPIO20 (D+), as described in
 On C3, native USB uses GPIO18 (D-) and GPIO19 (D+), as described in
 [Espressif's C3 USB guide](https://docs.espressif.com/projects/esp-idf/en/latest/esp32c3/api-guides/usb-serial-jtag-console.html).
 The USB identifier `303a:1001` is shared by several chips; flashing detects the chip with esptool.
+Flashing an S3 through its UART socket (a WCH CH343 bridge on a DevKitC) succeeds, and the firmware
+then never answers on that socket. When no firmware answers through a USB serial bridge, the desktop
+app reads the chip type from the ROM bootloader (esptool `detect_chip`, then a hard reset) and names
+an S3 or C3 found there as plugged into the wrong socket.
 
 The Seeed Studio XIAO ESP32C3 uses its USB-C socket for native USB Serial/JTAG.
 Attach its supplied external antenna before radio use. BOOT is GPIO9, and the onboard LED

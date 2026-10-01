@@ -151,3 +151,69 @@ def test_start_waits_for_keys_and_a_built_offer_but_not_for_a_doubtful_board(tmp
     states = [state for state, *_ in SessionPanel.checklist(panel)]
     assert ("block" in states) == blocked
     assert ("ok" in states) and len(states) >= 2
+
+
+def test_a_board_that_never_answers_on_a_bridge_is_named_by_its_rom_and_sent_to_the_usb_socket(monkeypatch):
+    """No flash this session: the ROM bootloader still says S3, which never answers on a UART socket."""
+    import time
+    monkeypatch.setattr(board_module, "ports", lambda: [UART])
+    monkeypatch.setattr(board_module, "identify", lambda port, blink=False: (_ for _ in ()).throw(
+        RuntimeError("no answer")))
+    monkeypatch.setattr(board_module, "detect_chip", lambda port: "ESP32-S3")
+    app = _app(UART, None)
+    app.process, app.board_busy, app.board_listeners = None, False, []
+    app.ui = lambda fn: fn()
+    app.check_board(UART.device)
+    deadline = time.monotonic() + 5
+    while app.board_busy and time.monotonic() < deadline:
+        time.sleep(0.01)
+    assert app.board_status([UART]).state == "wrong-port"
+
+
+def _release_server(routes: dict):
+    import http.server
+    import threading
+
+    class Handler(http.server.BaseHTTPRequestHandler):
+        def do_GET(self):
+            body = routes.get(self.path)
+            self.send_response(200 if body is not None else 404)
+            self.end_headers()
+            self.wfile.write(body or b"")
+
+        def log_message(self, *args):
+            pass
+
+    server = http.server.ThreadingHTTPServer(("127.0.0.1", 0), Handler)
+    threading.Thread(target=server.serve_forever, daemon=True).start()
+    return server, f"http://127.0.0.1:{server.server_port}"
+
+
+@pytest.mark.parametrize("tamper", [False, True])
+def test_the_released_firmware_lands_only_when_every_image_matches_its_checksum(tmp_path, monkeypatch, tamper):
+    import hashlib
+    import json
+    names = ["pokeldn-radio.bin", "pokeldn-radio-s3.bin", "pokeldn-radio-c3.bin"]
+    images = {n: n.encode() * 100 for n in names}
+    sums = "".join(f"{hashlib.sha256(images[n]).hexdigest()}  {n}\n" for n in names).encode()
+    routes = {f"/{n}": images[n] for n in names} | {"/SHA256SUMS": sums}
+    if tamper:
+        routes["/pokeldn-radio-s3.bin"] = b"swapped in transit"
+    server, base = _release_server(routes)
+    asset = lambda n: {"name": n, "browser_download_url": f"{base}/{n}"}   # noqa: E731
+    every = [asset(n) for n in [*names, "SHA256SUMS"]]
+    routes["/releases"] = json.dumps([{"tag_name": "v9.0.0", "draft": True, "assets": every},
+                                      {"tag_name": "v8.0.0", "assets": [asset("pokeldn-macos-arm64.zip")]},
+                                      {"tag_name": "v7.0.0", "assets": every}]).encode()
+    monkeypatch.setattr(board_module, "RELEASES", f"{base}/releases")
+    try:
+        if tamper:
+            with pytest.raises(OSError, match="SHA256SUMS"):
+                board_module.download_firmware(lambda line: None, str(tmp_path))
+            assert list(tmp_path.iterdir()) == []
+        else:
+            assert board_module.download_firmware(lambda line: None, str(tmp_path)) == "v7.0.0"
+            assert {p.name: p.read_bytes() for p in tmp_path.iterdir()} == images
+    finally:
+        server.shutdown()
+        server.server_close()

@@ -68,6 +68,12 @@ dotnet build -c Release services/pkhex -warnaserror
 python gui/main.py
 ```
 
+A source checkout has no firmware image (`gui/firmware` is build output). The Board page's Download
+the firmware takes the three images from the newest non-draft release that carries them, checks each
+against that release's `SHA256SUMS`, and writes them only when all three match. An image from an
+older release than the checkout can carry an older serial protocol; the board check then reports the
+firmware as out of date.
+
 ## Build a desktop app
 
 To package an app, install ESP-IDF v6.1 for `esp32`, `esp32s3` and `esp32c3` and activate its environment.
