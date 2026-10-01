@@ -13,7 +13,8 @@ from pokeldn.frlg.remote.transport import TransportError, TransportEvent
 class RemoteTradePolicy:
     """Exchange exact game business blocks and stop at the trade menu."""
 
-    def __init__(self, transport, *, log=lambda *_args: None, journal=None):
+    def __init__(self, transport, *, log=lambda *_args: None, journal=None,
+                 phase_gate=None):
         self.transport = transport
         self.log = log
         self.journal = journal
@@ -22,6 +23,9 @@ class RemoteTradePolicy:
         self.failed = None
         self.journal_failure = None
         self.local_game_identity = None
+        self.phase_gate = phase_gate
+        self._phase_gate_held_logged = False
+        self._phase_gate_released_logged = False
 
     def attach_engine(self, engine):
         if self.engine is not None:
@@ -64,6 +68,21 @@ class RemoteTradePolicy:
         self._record("local_block_received", phase=phase, length=len(logical), digest=digest)
 
     def take_remote_block(self, phase):
+        if phase not in self.coordinator.remote_blocks:
+            return None
+        if self.phase_gate is not None:
+            gate_state = self.phase_gate.poll(phase)
+            if gate_state == "held":
+                if not self._phase_gate_held_logged:
+                    self._phase_gate_held_logged = True
+                    self.log(f"P0 test gate holding peer {phase}; create "
+                             f"{self.phase_gate.release_file} to release it.")
+                    self._record("test_gate_held", phase=phase)
+                return None
+            if gate_state == "released" and not self._phase_gate_released_logged:
+                self._phase_gate_released_logged = True
+                self.log(f"P0 test gate released peer {phase}.")
+                self._record("test_gate_released", phase=phase)
         return self.coordinator.take_remote_block(phase)
 
     def phase_settled(self, phase):

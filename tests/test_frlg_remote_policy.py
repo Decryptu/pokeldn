@@ -1,11 +1,15 @@
+import queue
 import json
 from collections import deque
+import threading
+import time
 
 import pytest
 
 from pokeldn.frlg.link import linkplayer
 from pokeldn.frlg.remote.config import RemoteTradeConfig
-from pokeldn.frlg.remote.journal import RemoteJournal
+from pokeldn.frlg.remote.journal import JournalError, RemoteJournal
+from pokeldn.frlg.remote.phase_gate import FilePhaseGate
 from pokeldn.frlg.remote.policy import RemoteTradePolicy
 from pokeldn.frlg.remote.protocol import (
     PHASE_ORDER, PHASE_SIZES, validate_message,
@@ -98,3 +102,65 @@ def test_remote_journal_persists_only_digests_and_rejects_block_data(tmp_path):
     assert len(records) == 1
     assert records[0]["digest"] == "a" * 64
     assert "data" not in records[0]
+
+
+def test_remote_journal_reports_writer_failure(tmp_path):
+    blocked_parent = tmp_path / "not-a-directory"
+    blocked_parent.write_text("occupied", encoding="utf-8")
+    journal = RemoteJournal(RUN, root=blocked_parent)
+    for _ in range(100):
+        if journal.failure is not None:
+            break
+        time.sleep(0.01)
+    assert journal.failure is not None
+    with pytest.raises(JournalError, match="write failed"):
+        journal.append("probe_summary")
+    with pytest.raises(JournalError, match="write failed"):
+        journal.close()
+
+
+def test_remote_journal_reports_a_full_queue_without_blocking(tmp_path, monkeypatch):
+    entered = threading.Event()
+    release = threading.Event()
+
+    def blocked_writer(_journal):
+        entered.set()
+        release.wait(timeout=2)
+
+    monkeypatch.setattr(RemoteJournal, "_writer", blocked_writer)
+    journal = RemoteJournal(RUN, root=tmp_path)
+    assert entered.wait(timeout=1)
+    journal._queue = queue.Queue(maxsize=1)
+    journal.append("one")
+    with pytest.raises(JournalError, match="queue is full"):
+        journal.append("two")
+    journal._queue.get_nowait()
+    release.set()
+    journal.close()
+
+
+def test_policy_holds_only_the_configured_phase_until_local_release(tmp_path):
+    host_transport = MemoryTransport("host")
+    join_transport = MemoryTransport("join")
+    host_transport.peer = join_transport
+    join_transport.peer = host_transport
+    release_file = tmp_path / "release"
+    messages = []
+    host = RemoteTradePolicy(
+        host_transport,
+        log=messages.append,
+        phase_gate=FilePhaseGate("link_player", release_file),
+    )
+    remote = linkplayer.build_block(linkplayer.LinkPlayer(name="Remote")).ljust(200, b"\0")
+
+    RemoteTradePolicy(join_transport).publish_local_block("link_player", remote)
+    host.poll()
+    assert host.take_remote_block("link_player") is None
+    assert host.take_remote_block("link_player") is None
+    assert sum("test gate holding" in message for message in messages) == 1
+
+    release_file.touch()
+    host.phase_gate._next_check = 0.0
+    assert host.take_remote_block("link_player") == remote
+    assert host.take_remote_block("link_player") is None
+    assert sum("test gate released" in message for message in messages) == 1

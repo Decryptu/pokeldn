@@ -33,6 +33,8 @@ python bin/frlg_remote_trade.py join --connect 192.168.1.10 --port 24873 --chann
 
 端口默认为 `24873`，可以显式改成相同的其他端口。`--listen` 和 `--connect` 接受私有、链路本地或回环 IP；绑定指定接口，不监听通配地址。回环仅便于同机协议检查，不能代替双机 LAN 实测。当前 HMAC 提供认证和完整性，不加密业务数据，因此只在可信局域网运行。
 
+双实机测试的启动、经典 ESP32 固件、日志摘要核验和记录模板已打包，见[实机测试包说明](frlg_p0_field_kit_zh.md)。只有经典 ESP32 芯片受支持；包内固件来自官方 `v0.2.2` 发布资产并附校验值。
+
 ## 探针边界与数据
 
 - TCP worker 只发有长度上限、HMAC 认证的 JSON 业务消息；不会转发无线帧、Pia 包、RFU 行、ACK 或按键序列。
@@ -131,8 +133,8 @@ LinkPlayer 的 200 字节缓冲完整传输，但 `logical_bytes()` 只用前 60
 在仓库根目录使用工作区虚拟环境运行：
 
 ```powershell
-# A-01：现有协议、协调器、策略与 P0 保护；包含 A-02 的回环测试。
-.\.venv\Scripts\python.exe -m pytest tests/test_frlg_remote_probe.py tests/test_frlg_remote_policy.py -q
+# A-01：协议、协调器、队列/journal 故障夹具、P0 保护与证据核验；含 A-02 的回环测试。
+.\.venv\Scripts\python.exe -m pytest tests/test_frlg_remote_probe.py tests/test_frlg_remote_policy.py tests/test_frlg_remote_field_kit.py -q
 
 # A-02：需要单独排查配对和 TCP worker 时使用，不能与 A-01 重复计数。
 .\.venv\Scripts\python.exe -m pytest tests/test_frlg_remote_probe.py -k "pairing_handshake or tcp_worker" -q
@@ -153,8 +155,10 @@ git diff --check
 | A-01 协调 / 策略 | 双端七阶段交换、部分顺序拒绝、快照 digest 校验和双快照等待 | 每阶段错序、遗漏、同块重投、异块重投、提前快照、冲突快照、错误 magic |
 | A-02 配对 / worker | 正常挑战应答、正常方向序号、单机 TCP 配对及结构化消息传递 | 错密钥、错 transcript、错方向、旧 room/run、重放/跳号、ACK 倒退/超前、心跳阈值 |
 | A-03 本地回归 | 既有本地交换、取消、关闭及损伤无线模型 | 双远程策略连接两套 `HostSession` 的完整 P0 路径 |
-| S-01 已有离线部分 | `READY_TO_TRADE` / `INIT_BLOCK` 被拒绝、样本队列中无 START、直接 `_commit()` 抛错 | 直接 `_send_linkcmd(START_TRADE)`、迟到 finish、各阶段异常命令及完整运行的出站审计 |
-| F-04 / F-05 前置 | journal 正常写 digest、拒绝直接写入 `data` | 队列耗尽、磁盘写失败、writer 退出、最终 summary 缺失、RFU 不被日志阻塞 |
+| S-01 离线部分 | `READY_TO_TRADE` / `INIT_BLOCK` 被拒绝、START 不进入出站命令计数、直接 `_commit()` 抛错；运行 summary 带命令与动画/保存/commit 计数 | 迟到 finish、全部异常命令及两套真实 RFU 执行器下的完整出站审计 |
+| F-04 | 出站和入站队列满时暴露 `transport.error`，发送方不等待队列 | 双桥完整 RFU 运行中观察队列故障后的本地退场 |
+| F-05 | 临时目录 writer `OSError` 与可控队列满 | 磁盘设备断开、writer 强制卡死和最终 summary 丢失的系统级测试 |
+| 证据核验器 | 双端 run、七阶段长度/顺序/摘要、快照、正常取消报告、命令审计及敏感字段 | Switch 屏幕录像和游戏存档状态的人工复核 |
 
 上表右列是后续测试实现清单，不是已有测试成绩。现有回环只交换一个业务状态事件，不把它称为“完整双端七阶段 TCP + RFU 端到端通过”。
 
@@ -224,7 +228,7 @@ git diff --check
 | C-01e | 双端数据菜单 | A 先完成本地取消，B 暂不操作 10 秒；B 再按本地取消流程退出；反方向重复 |
 | C-01f | 双端数据菜单 | 两侧近同时取消，检查两次连续 CANCEL 及完整退出路径 |
 
-C-01b/c/d 阶段可能很短，游戏也不一定提供取消入口。要精确命中阶段，需第 12 节的测试工具延迟指定业务块，同时让 LAN 心跳及本地 RFU 继续；没有该工具且无法确认命中时，记 `BLOCKED`，不要靠随手断网冒充“阶段取消已通过”。
+C-01b/c/d 阶段可能很短，游戏也不一定提供取消入口。CLI 提供 `--p0-test-hold-phase <phase> --p0-test-release-file <本机路径>`：收到该阶段的远端块时暂停交给 Switch，LAN 心跳和本地 RFU tick 继续运行；确认屏幕确在目标阶段后创建释放文件。要开始下一次测试必须选一个之前不存在的释放路径。若没观察到明确闸门命中，记 `BLOCKED`，不要靠随手断网冒充“阶段取消已通过”。
 
 若本阶段原生不允许取消，记录“不可在此阶段原生取消”，再验证停止后的有界收尾，不将它标成“正常取消成功”。当前 `PROBE_STOP` 接收主要用于记录，不等于远端游戏自动退出；一方正常关闭进程后，另一方也可能报告 LAN 断开。C-01e 必须单独确认剩余一侧仍能通过本地菜单退出。
 
@@ -256,25 +260,25 @@ F-01 只切断两台 PC 的业务 LAN，避免同时拔掉承载 ESP32 的 USB �
 
 ### 12. 精确故障测试的工具前置
 
-当前 CLI **没有** `--pause-phase`、`--inject-fault`、自动取消或指定 `run_id` 的选项。为了执行 F-04/F-05 和完整逐阶段 C-01/F 覆盖，应先补充以下仅供测试的设施，并为测试工具本身记录版本：
+CLI 增加了仅供测试的 `--p0-test-hold-phase` / `--p0-test-release-file` 文件闸门。它暂停单个对端数据块的本机交付，不暂停整个进程；没有通用网络包编辑接口、队列扩大接口、自动取消或指定 `run_id` 的选项。队列满、journal 失败和证据核验器已增加离线夹具，但双桥 `HostSession` 执行器和完整协议故障矩阵仍需补充：
 
 | 测试设施 | 挂接位置 / 操作 | 必须保留的约束 |
 |---|---|---|
-| 业务块闸门 | 在 `publish_local_block` 入 LAN 队列前，或取出指定远端块前暂缓一个阶段；明确记录命中的 run、方向、phase 和相对时间 | 只延迟本用例指定块，不暂停整个进程；PING/PONG、RFU tick 和退出逻辑继续运行 |
-| 双桥离线执行器 | 两套 `HostSession(engine=...)`、两侧独立脚本子机、两套 `RemoteTradePolicy`，加可控传输和时钟 | 两队数据不同；可复用本地无线损伤模型，但禁止复用其自动选择/真实交易脚本来代表 P0 |
-| 队列与日志故障夹具 | pytest monkeypatch、可控消费者和临时目录，分别注入 `queue.Full` / `OSError` | 不填满实际系统磁盘，不阻塞真实 RFU 主循环，不把业务块或密钥写入断言输出 |
-| 时序与命令审计 | 记录单调时间、RFU 活动、LAN 错误、队列峰值、阶段转换、出站 link command 和 `commits` | 默认 journal 没有这些字段；补测结果要附采集方式，不凭普通日志推算缺失指标 |
+| 业务块闸门（已实现） | `--p0-test-hold-phase` 在取出指定远端块时等待本机文件释放 | 仅延迟指定阶段；PING/PONG、RFU tick 和其余进程继续运行 |
+| 双桥离线执行器（待实现） | 两套 `HostSession(engine=...)`、两侧独立脚本子机、两套 `RemoteTradePolicy`，加可控传输和时钟 | 两队数据不同；禁止以自动选择/真实交易脚本代表 P0 |
+| 队列与日志故障夹具（已有基本覆盖） | pytest 可控队列和临时目录分别注入出/入队列满及 journal queue / writer 失败 | 不填满实际系统磁盘，不阻塞真实 RFU 主循环，不把业务块或密钥写入断言输出 |
+| P0 命令审计（已实现） | summary 记录实际出站 link command 计数、被拒绝的 START/commit 尝试、被拒绝的 Switch 命令、交易动画/保存状态进入次数和 commit / received mon 数量 | 记录字段证明引擎路径观察到了什么；仍须结合 Switch 录像，不能证明整台游戏机的所有内部状态 |
 
-离线测试使用明确事件屏障控制注入时点，不依赖不稳定的短 `sleep` 碰运气。真实游戏若在等待期间已经超时，解除闸门也不能强行继续；结束 run 并记录边界。
+文件闸门有意保持 RFU owner thread 非阻塞；它以短间隔检查释放文件，不冻结用户无线会话。真实游戏若在等待期间已经超时，解除闸门也不能强行继续；结束 run 并记录边界。离线 journal 队列夹具用明确的线程屏障稳定命中，不依赖短 `sleep` 碰运气。
 
-这些设施是测试方案的实施前置，当前未新增实现。没有工具不能声称精确阶段/队列故障测试已经完成，但仍可先按本方案执行正常实机路径和可观测的断网测试。
+指定阶段闸门、队列和 journal 基础夹具、命令审计和双端日志核验器已实现；没有双桥执行器的路径不能声称“离线完整 P0 RFU 端到端”已通过。精确阶段取消也只覆盖在零售游戏里观察到的原生行为；闸门本身不制造可取消菜单。
 
 ### 13. S-01：P0 禁止交易与证据审计
 
 对每个正常样本和故障样本都检查：
 
-1. 离线故意注入 `READY_TO_TRADE`、`INIT_BLOCK` 和迟到 `READY_FINISH_TRADE`，验证无 START、无交换确认推进；直接调用 `_send_linkcmd(START_TRADE)` 和 `_commit()` 必须被保护拒绝。尚无对应断言的项按第 4 节补测，不能记成已测。
-2. 在完整执行器中观测 `commits == 0`、`received_mons` 无新增、状态从未进入交易 `H_ANIM/H_SAVE`、出站命令没有 `START_TRADE` 或由提交产生的 `CONFIRM_FINISH_TRADE`。普通本地 A-03 会测试实际交换，不能把那些预期提交混进 P0 审计。
+1. 离线故意注入 `READY_TO_TRADE`、`INIT_BLOCK`，验证 Switch 请求被拒绝；直接调用 `_send_linkcmd(START_TRADE)` 和 `_commit()` 验证调用会被阻止，并检查 audit 分别记录 refused attempt、没有实际 START 出站计数。
+2. 每个运行的 `probe_summary.p0_command_audit` 都应显示 `outbound_linkcmd_counts` 没有 `START_TRADE` / `CONFIRM_FINISH_TRADE`，`start_trade_attempts_refused`、`commit_attempts_refused`、`commits`、`received_mon_count`、`animation_state_entries`、`save_state_entries` 均为 0。这个结构化记录审计 HostTradeEngine 的命令路径，录像继续检查 Switch 画面没有动画和保存。
 3. 两端游戏录像显示只观察和取消，没有宝可梦选择、交换动画或交易保存。日志中 `START_TRADE is disabled` 是说明文字，不是发出 START 的证据；反过来，搜索不到字符串也不是完整出站审计。
 4. 正常实机样本同时具有双端摘要、菜单及退场证据；最终 summary 的 `lan_failure` / `journal_failure` 无未解释错误。一方先正常退出造成另一侧 LAN 断开时，必须用先后顺序和双端正常退场证据解释，不能一律忽略。
 5. 默认 journal 仅保存阶段与摘要等诊断字段，检查没有房间密钥、原始块、Base64 Pokémon 数据或 `prod.keys` 内容。此检查不意味着任意控制台/抓包文件也天然不含敏感数据。
@@ -357,16 +361,23 @@ P0 的 G0 可行性门槛要求 H-01、L-01、G0-A-01、G0-B-01、G0-B-02 的准
 
 ### 16. 本轮执行记录（2026-10-01）
 
-本轮代码基线为 `63aaff74169936ef267606c905ea86153fdcdbca`，修改范围是本文档。以下为本机虚拟环境实际执行结果：
+本轮在 `b675878` 基线上实现 P0 阶段闸门、命令审计和实机测试包设施；下表记录待打包工作区的本机检查结果。最终源码提交号以测试包内 `BUILD_INFO.txt` 为准。
 
 | 检查 | 结果 | 证据范围 |
 |---|---|---|
-| A-01，含 A-02 | `11 passed` | `test_frlg_remote_probe.py` 与 `test_frlg_remote_policy.py` |
+| A-01，含 A-02 与新增 P0 夹具 | `46 passed` | `test_frlg_remote_probe.py`、`test_frlg_remote_policy.py`、`test_frlg_remote_field_kit.py` |
 | A-03 | `23 passed` | `test_host_trade_engine.py`、`test_trade_runtime.py`、`test_host_end_to_end.py` |
-| 原工作区文档检查 | `3 failed, 4 passed, 70 deselected` | 未跟踪的 `docs/frlg_memory_rng_plan_zh.md` 缺 YAML 页头，阻断站点目录检查；本轮未修改该文件 |
-| 待提交内容的文档检查 | `7 passed, 70 deselected` | 将 `git archive HEAD` 导出到临时目录并覆盖本文档后执行，排除未跟踪草稿；检查命令同第 4 节 |
+| 测试包 PowerShell 脚本语法 | `6 个脚本通过` | 使用 PowerShell AST parser 逐个解析 `tests/frlg_remote_p0_field_kit/*.ps1` |
+| Python 编译与 CLI 冒烟 | 通过 | `compileall`；远程探针、日志核验器及打包器 `--help` |
+| 文档检查 | `7 passed, 71 deselected` | 在仅含已提交源码及本轮文档的临时源码树中执行；原工作区还含未跟踪计划草稿，不纳入本轮包 |
 | diff 格式检查 | `git diff --check` 通过 | 不代表实机验收 |
 | H-01 / L-01 / G0-A / G0-B / C-01 | `NOT_RUN` | 本轮没有执行双 PC / 双实机测试，没有可填写的实机 run ID |
 | F-01 至 F-06、S-01 完整审计、自动化补测清单 | `NOT_RUN` | 仅已有测试覆盖的子项通过，完整故障与命令审计尚待实施 |
 
-本轮结论：现有 34 项相关自动化通过，实机支持矩阵仍为“未验证”。下一步由两套已通过本地基线的设备按 H-01 → L-01 → G0-A/G0-B 顺序执行并填写上述记录，不能把这份测试方案的完成当成双实机测试通过。
+本轮结论：A-01/A-02/A-03 自动化结果如上，实机支持矩阵仍为“未验证”。后续执行按 H-01 → L-01 → G0-A/G0-B 顺序开展；本轮新增测试设施和实机包内容另见第 17 节。
+
+### 17. 实机测试设施与打包记录（2026-10-01）
+
+本轮为 P0 CLI 加入本机文件阶段闸门和 JSONL 双端核验器；引擎最终 summary 增加 P0 command audit。模板位于 [tests/frlg_remote_p0_field_kit](../tests/frlg_remote_p0_field_kit/README_zh.md)，包生成器为 [package_frlg_remote_p0_field_kit.py](../scripts/package_frlg_remote_p0_field_kit.py)。生成包绑定已提交源码 tree，只包含当前支持的经典 ESP32 固件，且用官方 `SHA256SUMS` 校验。
+
+新增自动化现已覆盖指定阶段等待/释放、出站和入站队列满、journal writer 与队列失败、START/commit audit、证据核验器正常与异常日志。日志核验 CLI 已验证可从测试包源码根目录直接启动。仍未有双桥 `HostSession` 端到端模拟、全部协议异常分支、硬件基线、两台零售 Switch、G0-A/G0-B 或真实断线测试；这些必须分别记为补测或 `NOT_RUN`，不代表远程交换已经可用。

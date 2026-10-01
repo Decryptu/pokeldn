@@ -214,6 +214,13 @@ class HostTradeEngine:
 
         self.state = H_LINK_PLAYER
         self.state_history = [self.state]
+        self._p0_linkcmd_counts = Counter()
+        self._p0_linkcmd_attempt_counts = Counter()
+        self._p0_refused_console_commands = Counter()
+        self._p0_start_trade_attempts_refused = 0
+        self._p0_commit_attempts_refused = 0
+        self._p0_animation_state_entries = 0
+        self._p0_save_state_entries = 0
         self.round = 0
         self.commits = 0
         self.received_mons = []
@@ -321,6 +328,11 @@ class HostTradeEngine:
 
     def _set_state(self, state):
         if state != self.state:
+            if self.probe_only:
+                if state == H_ANIM:
+                    self._p0_animation_state_entries += 1
+                elif state == H_SAVE:
+                    self._p0_save_state_entries += 1
             self.state = state
             self.state_history.append(state)
             self.trace.append(("state", state))
@@ -462,9 +474,32 @@ class HostTradeEngine:
             raise ValueError(f"unsupported remote block phase: {phase}")
 
     def _send_linkcmd(self, cmd, cursor=0):
-        if self.probe_only and cmd == trade.START_TRADE:
-            raise RuntimeError("P0 probe invariant: START_TRADE is disabled")
+        if self.probe_only:
+            name = trade.LINKCMD_NAMES.get(cmd, f"0x{cmd:04x}")
+            self._p0_linkcmd_attempt_counts[name] += 1
+            if cmd == trade.START_TRADE:
+                self._p0_start_trade_attempts_refused += 1
+                raise RuntimeError("P0 probe invariant: START_TRADE is disabled")
+            self._p0_linkcmd_counts[name] += 1
         self._queue_block(trade.linkcmd_block(cmd, cursor), trade.LINKCMD_NAMES[cmd])
+
+    def p0_command_audit(self):
+        """Return scalar-only evidence for the trade-disabled P0 execution."""
+        if not self.probe_only:
+            raise RuntimeError("P0 command audit is available only in probe mode")
+        return {
+            "probe_only": True,
+            "outbound_linkcmd_counts": dict(sorted(self._p0_linkcmd_counts.items())),
+            "linkcmd_attempt_counts": dict(sorted(self._p0_linkcmd_attempt_counts.items())),
+            "refused_console_command_counts": dict(
+                sorted(self._p0_refused_console_commands.items())),
+            "start_trade_attempts_refused": self._p0_start_trade_attempts_refused,
+            "commit_attempts_refused": self._p0_commit_attempts_refused,
+            "commits": self.commits,
+            "received_mon_count": len(self.received_mons),
+            "animation_state_entries": self._p0_animation_state_entries,
+            "save_state_entries": self._p0_save_state_entries,
+        }
 
     def _enter_cancel_to_leave(self):
         if not (self._host_cancel_ready and self._child_cancel_requested):
@@ -1046,12 +1081,14 @@ class HostTradeEngine:
     def _on_child_linkcmd(self, cmd, cursor):
         self.trace.append(("child_linkcmd", trade.LINKCMD_NAMES.get(cmd, hex(cmd)), cursor))
         if self.probe_only and cmd in (trade.READY_TO_TRADE, trade.INIT_BLOCK):
+            self._p0_refused_console_commands[trade.LINKCMD_NAMES.get(cmd, hex(cmd))] += 1
             # Even a late or unexpected game command cannot authorize a real trade in P0.
             self._send_linkcmd(trade.PLAYER_CANCEL_TRADE)
             self.trace.append(("probe_trade_command_refused", trade.LINKCMD_NAMES.get(cmd, hex(cmd))))
             self.info("P0 probe refused a trade command. No trade animation or save will be started.")
             return
         if self.probe_only and cmd == trade.READY_FINISH_TRADE:
+            self._p0_refused_console_commands[trade.LINKCMD_NAMES.get(cmd, hex(cmd))] += 1
             self.trace.append(("probe_unexpected_finish",))
             self.info("Unexpected finish event in the trade-disabled P0 probe; preserving evidence.")
             return
@@ -1102,6 +1139,7 @@ class HostTradeEngine:
 
     def _commit(self):
         if self.probe_only:
+            self._p0_commit_attempts_refused += 1
             raise RuntimeError("P0 probe invariant: trade commit is disabled")
         host_slot = self.offered_slots[self.round]
         child_slot = self.child_cursor

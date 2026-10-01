@@ -6,6 +6,7 @@ import json
 from pokeldn.frlg.link.host_app import HostApplication
 from pokeldn.frlg.link.host_trade import HostTradeEngine
 from pokeldn.frlg.remote.journal import JournalError, RemoteJournal
+from pokeldn.frlg.remote.phase_gate import FilePhaseGate
 from pokeldn.frlg.remote.policy import RemoteTradePolicy
 from pokeldn.frlg.remote.transport import TransportError
 
@@ -20,11 +21,13 @@ class RemoteAppConfig:
 
 class RemoteProbeApplication(HostApplication):
     def __init__(self, config, lan_transport, *, log=print,
-                 transport_factory=None, injector_factory=None, journal_root=None):
+                 transport_factory=None, injector_factory=None, journal_root=None,
+                 phase_gate: FilePhaseGate | None = None):
         self.lan_transport = lan_transport
         self.journal = RemoteJournal(lan_transport.run_id, root=journal_root)
         self.remote_policy = RemoteTradePolicy(
-            lan_transport, log=getattr(log, "info", log), journal=self.journal)
+            lan_transport, log=getattr(log, "info", log), journal=self.journal,
+            phase_gate=phase_gate)
         kwargs = {}
         if transport_factory is not None:
             kwargs["transport_factory"] = transport_factory
@@ -74,6 +77,9 @@ class RemoteProbeApplication(HostApplication):
             return super().run()
         finally:
             report = self.remote_policy.report()
+            if self.remote_policy.engine is not None:
+                report["p0_command_audit"] = self.remote_policy.engine.p0_command_audit()
+                report["local_close_confirmed"] = self.remote_policy.engine.close_confirmed
             try:
                 if self.lan_transport.error is None:
                     reason = ("link_failed" if self.remote_policy.failed is not None

@@ -21,6 +21,8 @@ from pokeldn.frlg import config as configmod, host_cli  # noqa: E402
 from pokeldn.frlg.link import trade_runtime  # noqa: E402
 from pokeldn.frlg.remote.app import RemoteAppConfig, RemoteProbeApplication  # noqa: E402
 from pokeldn.frlg.remote.config import DEFAULT_PORT, RemoteTradeConfig  # noqa: E402
+from pokeldn.frlg.remote.phase_gate import FilePhaseGate  # noqa: E402
+from pokeldn.frlg.remote.protocol import PHASE_ORDER  # noqa: E402
 from pokeldn.frlg.remote.transport import RemoteTransport, TransportError  # noqa: E402
 
 HOST_TICK_HZ = 59.727
@@ -43,6 +45,12 @@ def build_parser(file_config=None, *, shared_path=None, local_path=None):
             command.add_argument("--connect", required=True,
                                  help="private LAN IP of the room host")
         command.add_argument("--port", type=int, default=DEFAULT_PORT)
+        command.add_argument(
+            "--p0-test-hold-phase", choices=PHASE_ORDER,
+            help="test only: withhold this peer block until the release file is created")
+        command.add_argument(
+            "--p0-test-release-file", metavar="PATH",
+            help="test only: local file whose creation releases --p0-test-hold-phase")
         command.add_argument("--bridge-name", default="LDN-A" if role == "host" else "LDN-B",
                              help="short local discovery name shown by the Switch")
         command.add_argument("--config", metavar="PATH",
@@ -148,15 +156,23 @@ def main(argv=None):
         return 2
     parser = build_parser(file_config, shared_path=shared_path, local_path=local_path)
     args = parser.parse_args(argv)
+    if bool(args.p0_test_hold_phase) != bool(args.p0_test_release_file):
+        parser.error("--p0-test-hold-phase and --p0-test-release-file must be used together")
     if needs_root():
         parser.error("live LDN hosting requires elevated radio permissions")
+    try:
+        phase_gate = (FilePhaseGate(args.p0_test_hold_phase, args.p0_test_release_file)
+                      if args.p0_test_hold_phase else None)
+    except (OSError, ValueError) as exc:
+        parser.error(str(exc))
     app_config, lan_config = build_remote_config(parser, args)
     transport = RemoteTransport(lan_config, log=print)
     try:
         transport.start()
         print("LAN pair ready. Start both Switches at Join Group only after both PCs report ready.")
         app = RemoteProbeApplication(
-            app_config, transport, log=trade_runtime.ConsoleLog(args.verbose))
+            app_config, transport, log=trade_runtime.ConsoleLog(args.verbose),
+            phase_gate=phase_gate)
         joined = app.run()
         return 0 if joined else 130
     except (OSError, TransportError, ValueError, RuntimeError) as exc:
