@@ -43,9 +43,9 @@ class BoardView:
         self.control = ft.Row([
             t.panel(ft.Column([
                 t.panel_header("Boards", t.icon_button("refresh", lambda e: self.scan(), "Scan again")),
-                self.list,
+                t.fade(self.list),
             ], spacing=0, expand=True), width=t.SIDEBAR_WIDTH),
-            ft.ListView([self.detail], padding=ft.Padding(0, 0, 0, 24), expand=True),
+            t.fade(ft.ListView([self.detail], padding=ft.Padding(0, 0, 0, 24), expand=True)),
             t.panel(ft.Column([t.panel_header("Activity"),
                                ft.Container(self.log.control, padding=16, expand=True)],
                               spacing=0, expand=True), width=t.SESSION_WIDTH),

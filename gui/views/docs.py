@@ -61,9 +61,9 @@ class DocsView:
                 t.panel_header("Docs", t.icon_button("external-link",
                                                      lambda e: self.app.page.run_task(self.app.open_url, SITE),
                                                      "Open the docs website")),
-                self.nav,
+                t.fade(self.nav),
             ], spacing=0, expand=True), width=t.SIDEBAR_WIDTH),
-            t.panel(self.scroll, expand=True),
+            t.panel(t.fade(self.scroll), expand=True),
         ], spacing=t.GAP, expand=True, vertical_alignment=ft.CrossAxisAlignment.STRETCH)
         self.show("guide", update=False)
 

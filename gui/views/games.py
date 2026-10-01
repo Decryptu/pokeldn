@@ -52,10 +52,10 @@ class GamesView:
             t.notch(self.tabs,
                     t.icon_button("book-open", self._open_doc, "Read the docs for this game")),
             ft.Container(self.summary, alignment=ft.Alignment.CENTER, padding=ft.Padding(12, 14, 12, 2)),
-            self.body,
+            t.fade(self.body),
         ], spacing=0, expand=True)
         self.control = ft.Row([
-            t.panel(ft.Column([t.panel_header("Games"), self.tree], spacing=0, expand=True), width=t.SIDEBAR_WIDTH),
+            t.panel(ft.Column([t.panel_header("Games"), t.fade(self.tree)], spacing=0, expand=True), width=t.SIDEBAR_WIDTH),
             center,
             self.session.control,
         ], spacing=t.GAP, expand=True, vertical_alignment=ft.CrossAxisAlignment.STRETCH)
@@ -343,7 +343,7 @@ class SessionPanel:
         self.control = t.panel(ft.Column([
             t.panel_header("Session", self.status),
             # The checklist and the steps scroll; Start stays in view below them.
-            ft.Container(ft.Column([self.board_line, self.steps], spacing=14, scroll=ft.ScrollMode.AUTO),
+            ft.Container(t.fade(ft.Column([self.board_line, self.steps], spacing=14, scroll=ft.ScrollMode.AUTO)),
                          padding=ft.Padding(16, 16, 16, 0), expand=3),
             ft.Container(ft.Column([
                 self.action,

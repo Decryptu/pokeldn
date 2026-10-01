@@ -242,6 +242,45 @@ def segmented(options: list[tuple[str, str, str]], value: str, on_change) -> ft.
     return ft.Container(row, bgcolor=BG, border_radius=11, padding=3)
 
 
+def fade(scrollable: ft.ScrollableControl, size: float = 24) -> ft.ShaderMask:
+    """The scrollable, its top and bottom edges fading out over size px while content lies beyond them."""
+    edges = {"height": 0.0, "top": False, "bottom": not getattr(scrollable, "auto_scroll", False)}
+    mask = ft.ShaderMask(content=scrollable, blend_mode=ft.BlendMode.DST_IN, expand=scrollable.expand,
+                         shader=ft.LinearGradient(colors=["#FFFFFFFF", "#FFFFFFFF"]))
+
+    def paint() -> bool:
+        stop = min(size / edges["height"], 0.5) if edges["height"] else 0.0
+        clear, solid = "#00FFFFFF", "#FFFFFFFF"
+        shader = ft.LinearGradient(begin=ft.Alignment.TOP_CENTER, end=ft.Alignment.BOTTOM_CENTER,
+                                   colors=[clear if edges["top"] else solid, solid, solid,
+                                           clear if edges["bottom"] else solid],
+                                   stops=[0, stop, 1 - stop, 1])
+        changed = shader != mask.shader
+        mask.shader = shader
+        return changed
+
+    def resized(e) -> None:
+        edges["height"] = e.height
+        if paint():
+            mask.update()
+
+    previous = scrollable.on_scroll
+
+    def scrolled(e) -> None:
+        top, bottom = e.pixels > e.min_scroll_extent + 1, e.pixels < e.max_scroll_extent - 1
+        if (top, bottom) != (edges["top"], edges["bottom"]):
+            edges["top"], edges["bottom"] = top, bottom
+            if paint():
+                mask.update()
+        if previous:
+            previous(e)
+
+    scrollable.on_scroll = scrolled
+    mask.on_size_change = resized
+    paint()
+    return mask
+
+
 def step_list(steps: list[str]) -> ft.Column:
     rows = []
     for index, step in enumerate(steps):

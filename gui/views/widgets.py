@@ -121,7 +121,7 @@ class Log:
         self.flush_scheduled = False
         self.list = ft.ListView(expand=True, spacing=1, auto_scroll=True, padding=ft.Padding(12, 10, 12, 10))
         self.placeholder = t.text(placeholder, 12, t.FAINT)
-        self.control = ft.Container(ft.Stack([self.list, ft.Container(self.placeholder, padding=12)],
+        self.control = ft.Container(ft.Stack([t.fade(self.list, 16), ft.Container(self.placeholder, padding=12)],
                                              expand=True),
                                     expand=True, bgcolor=t.BG, border_radius=10,
                                     border=ft.Border.all(1, t.BORDER))
