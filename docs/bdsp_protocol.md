@@ -281,6 +281,9 @@ The console broadcasts the emote:
     NetCharacterStateData{state: 0, isRecruiment: 0}     and down again
 
 Gate on `isRecruiment`: state 18 is a console already inside a trade, and approaching it is refused.
+A retail console answered an approach sent 0.0 s after its trade emote, 40 ms later, as it answers one
+sent after 3.0 s: `IsCanTalk 0, IsRecruitment 1, emoticonStateType 4` (`bin/bdsp_host.py
+--approach-delay`, default 0).
 
 The approach is `NetDataTalkReserveData` (0x63), `63 00 01 00`, as the console sends it
 (`bin/bdsp_connect.py --initiate-talk`). The console's player approaching the client's character, in

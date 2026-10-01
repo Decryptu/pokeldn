@@ -526,7 +526,7 @@ class TradePartner:
     is one PB8 or a list, one per trade; the last is offered again once the list runs out."""
 
     def __init__(self, offer, trainer_name="PkCamp", trainer_id=41234, secret_id=23117,
-                 complete=False, approach_delay=2.0, security_repeat=1.0, state=room.STATE_NONE,
+                 complete=False, approach_delay=0.0, security_repeat=1.0, state=room.STATE_NONE,
                  recruiting=0, save_theirs=None, record=None):
         self.offers = [offer] if isinstance(offer, (bytes, bytearray)) else list(offer)
         self.trainer = room.build_trade_traner(trainer_name, trainer_id, secret_id)
