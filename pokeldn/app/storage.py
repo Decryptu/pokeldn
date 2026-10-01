@@ -102,7 +102,8 @@ def scan(settings) -> Inventory:
                         if entry.is_dir(follow_symlinks=False):
                             pending.append(path)
                         else:
-                            info = entry.stat(follow_symlinks=False)
+                            # Windows DirEntry.stat omits file identity; clear uses Path.stat.
+                            info = path.stat(follow_symlinks=False)
                             if (stat.S_ISREG(info.st_mode) and _disposable(path, root, managed)
                                     and (managed != POKEMON or info.st_mtime < recent)):
                                 files.append(File(path, root, info))
