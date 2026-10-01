@@ -38,9 +38,10 @@ Basic shows the fields most runs need; the tested settings for each game are app
 options lists every option the game's session accepts, with its own help text. A value set there
 overrides the Basic field.
 
-Two settings sit at the top of All options. Time limit is how long a session runs before it stops on
-its own. New PID each run, on by default, gives each offered Pokemon a new PID so a save that already
-received it takes it again; turn it off for a file whose PID must stay, such as an event Pokemon.
+The settings most players never change sit at the top of All options, already set: the time limit
+before a session stops on its own, the wireless channel, and New PID each run. New PID gives each
+offered Pokemon a new PID so a save that already received it takes it again; turn it off for a file
+whose PID must stay, such as an event Pokemon.
 
 ## Your own Pokemon files
 
