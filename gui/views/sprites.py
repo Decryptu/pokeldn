@@ -10,6 +10,7 @@ SIZE = 96   # the sprites are 96x96 pixels: shown at 1:1, or at a whole multiple
 ICON = 48   # pixelarticons are drawn on a 24 px grid: 48 is a whole multiple
 MINI = 46   # a small tile: the Pokemon cropped from its canvas at 1:1, or at 1:2 when wider than the tile
 EDGE = 1    # the frame's border sits outside the sprite: a 96 px frame would squeeze it to 94
+OVERHANG = 4   # a sprite this much wider than its tile stays 1:1, trimmed; halved, Eevee (47) fell to 23
 
 
 class Sprite:
@@ -70,7 +71,7 @@ class Sprite:
                             filter_quality=ft.FilterQuality.NONE, anti_alias=False, gapless_playback=True,
                             error_content=self._placeholder())
         x0, y0, x1, y1 = bounds(data) or (0, 0, SIZE, SIZE)
-        scale = 1 if max(x1 - x0, y1 - y0) <= self.size else 0.5
+        scale = 1 if max(x1 - x0, y1 - y0) <= self.size + OVERHANG else 0.5
         # At 1:2 the canvas lands on whole pixels, so each tile pixel averages one 2x2 block.
         image = ft.Image(src=data, width=SIZE * scale, height=SIZE * scale, fit=ft.BoxFit.FILL,
                          left=round(self.size / 2 - (x0 + x1) / 2 * scale),

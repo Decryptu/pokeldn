@@ -131,7 +131,7 @@ required to distribute a card.
 
 ### The Let's Go link code
 
-The Let's Go host's code is three slots. A slot opens the console's ten picker Pokemon as sprites with
+The Let's Go host's code is three slots. A slot opens the console's ten picker Pokemon, two rows of five as on the console, as sprites with
 their names under them, so a sprite that never downloaded still reads; the pick fills the slot and
 opens the next empty one. The value is the three English names, comma-separated, as `--code` takes
 them, and Start waits until all three are set: an empty slot would host under the launcher's default

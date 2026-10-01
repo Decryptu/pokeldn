@@ -448,7 +448,7 @@ class LinkCodePicker:
         self.picks = parse_code(value)
         self.open: int | None = None
         self.slots = ft.Row(spacing=10)
-        self.grid = ft.Row(spacing=6, run_spacing=6, wrap=True, visible=False)
+        self.grid = ft.Column(spacing=6, visible=False, tight=True)
         self.control = ft.Column([self.slots, self.grid], spacing=12, tight=True)
         self._render(update=False)
 
@@ -472,9 +472,11 @@ class LinkCodePicker:
                        lambda e, n=n: self._toggle(n), selected=self.open == n)
             for n, pick in enumerate(self.picks)]
         self.grid.visible = self.open is not None
-        self.grid.controls = [] if self.open is None else [
+        # Two rows of five, as the console lays its picker out.
+        tiles = [] if self.open is None else [
             self._tile(i, name, lambda e, i=i: self._choose(i), selected=self.picks[self.open] == i)
             for i, name in enumerate(CODE_NAMES)]
+        self.grid.controls = [ft.Row(tiles[r:r + 5], spacing=6) for r in range(0, len(tiles), 5)]
         if update:
             try:
                 self.control.update()
