@@ -1108,6 +1108,13 @@ working joiner's burst carries no acknowledgement: the peer's `0xa2` pair arrive
 joiner's single `0xa2` goes at +72 ms, as a reply. A peer that never re-announces never unlinks
 (the per-tick builder's unlink, about 30 ms after linking) and allocates no sequences.
 
+The peer-only re-announcement draws the peer's `0x82` on clone type 1 20 to 60 ms later (4 of 4 in
+two retail host captures), and the `0x82` draws the host's type 4 copy of 32 zeros that the console
+answers with its `1 1 1`. On a retail host run where neither the `0x82` nor any later message for the
+commit clone arrived after one re-announcement, the console stayed on its confirmation screen with
+its trade lock already saved. `pokeldn.ldn.clone` resends the peer-only `0x81` every 100 ms, at most
+20 times, until the `0x82` arrives.
+
 ### What the announce's destination field decides
 
 The command header `0x51f820` lays out `+0x10` as a station bitmap. An 0x81 announcing a clone for

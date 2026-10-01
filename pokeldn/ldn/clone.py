@@ -243,6 +243,8 @@ class Participant:
         self.votes = {}
         self.queue = []
         self.log = []
+        # clone id -> (next resend, resends): our peer-only announcement until the peer's 0x82.
+        self.unrequested = {}
 
     def frame(self, now):
         return int((now - self.t0) * FRAME_HZ) & 0xFFFF
@@ -309,6 +311,8 @@ class Participant:
                 self.held.add(clone_id)
                 continue
             payload = content or b""
+            if kind == COMMAND_ANNOUNCE and qdest is None and clone_id not in self.unrequested:
+                self.unrequested[clone_id] = (now + self.announce_retry, 0)
             if kind == CLOCK_AND_COUNT:
                 # As late as possible: the host's announcements arrive in the same packet as the one
                 # that queued this.
@@ -327,6 +331,14 @@ class Participant:
                         or struct.pack(">I", self.ms(now)))
                 payload = echo + struct.pack(">BBH", 0, 0, self.element_ms(now) & 0xFFFF)
             out.append(self._command(kind, ctype, station, clone_id, now, payload, qdest))
+        for cid, (when, sent) in list(self.unrequested.items()):
+            if now < when or sent is None:
+                continue
+            if sent >= self.announce_retries:
+                self.unrequested[cid] = (when, None)
+                continue
+            self.unrequested[cid] = (now + self.announce_retry, sent + 1)
+            out.append(self._command(COMMAND_ANNOUNCE, 2, self.station, cid, now))
         if (self.participated and self.peer_participated_ack and not self.announced
                 and not self.host_role):
             # A joiner sends this 6 ms after the host's 0x33: an 0xa1 for type-3 clone 0, count 1.
@@ -356,6 +368,10 @@ class Participant:
     publish_on_announce = False
     publish_fallback = 3.0
     announce_in_burst = True
+    # Our announcement to the peer alone goes out once; one lost frame, ours or its 0x82, leaves
+    # both waiting on the confirmation screen (docs/lgpe_session.md, The take-over exchange).
+    announce_retry = 0.1
+    announce_retries = 20
 
     def _mirror_announce(self, c, now, takeover_only=False):
         """Take the host's clone over on three clone types, then announce our own copy of it, in
@@ -616,6 +632,7 @@ class Participant:
             # Unacked, the peer repeats the 0x83 every 100 ms and its player waits on 'interruption
             # de la connexion'. A release on type 2 is acked on type 1 (docs/lgpe_session.md).
             cid = c["clone_id"]
+            self.unrequested.pop(cid, None)
             self.held.discard(cid)
             self.published.discard(cid)
             self.tail.pop(cid, None)
@@ -625,6 +642,7 @@ class Participant:
             return [self._command(COMMAND_END_ACK, 1 if c["ctype"] == 2 else c["ctype"],
                                   0xFD, cid, now)]
         if kind == COMMAND_REQUEST and c["ctype"] == 1:
+            self.unrequested[c["clone_id"]] = (now, None)
             out = [build_data_message(STATE_ACK, 1, 0xFD, c["clone_id"], self.frame(now),
                                       build_ack_record(c["clone_id"], 0, self.ms(now)),
                                       flags=0)]

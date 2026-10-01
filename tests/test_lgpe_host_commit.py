@@ -480,3 +480,33 @@ def test_the_host_releases_its_own_copy_after_the_consoles(stage):
     stage["run"](0.1)
     assert len([1 for p, payload, _ in stage["sent"]
                 if p == clone.PROTOCOL and payload[1] == clone.COMMAND_END]) == 3
+
+
+def test_a_lost_request_for_the_commit_clone_is_drawn_again(stage):
+    """A retail host run stalled on the confirmation screen: the console announced the commit clone,
+    acked our take-over, and its 0x82 never reached us, so the type 4 copy that draws its 1 1 1 never
+    went out. The peer-only re-announcement repeats until the 0x82 arrives."""
+    s, sent = stage["s"], stage["sent"]
+
+    def console(kind, ctype, station, dest, payload=b""):
+        s.handle(clone.PROTOCOL, clone.build_command(kind, ctype, station, 4, 1, dest, payload))
+
+    def announces():
+        return [1 for protocol, payload, _ in sent if protocol == clone.PROTOCOL
+                and (c := clone.parse_command(payload)) and c["type"] == clone.COMMAND_ANNOUNCE]
+
+    console(clone.COMMAND_ANNOUNCE, 2, JOINER, 0x3)
+    for ctype in (4, 1):
+        console(clone.CLOCK_AND_COUNT, ctype, 0xFD, 0x1, b"\0\0\x10\0" + b"\x01\x28\x08\xab")
+    stage["run"](0.06)
+    console(clone.CLOCK_AND_COUNT_2, 2, JOINER, 0x1, b"\0\0\x10\0\0\0\0\0")
+    sent.clear()
+    stage["run"](0.05)
+    assert len(announces()) == 1
+    stage["run"](0.12)                       # the 0x82 is lost
+    assert len(announces()) == 2
+    console(clone.COMMAND_REQUEST, 1, 0xFD, 0x1)
+    assert stage["published"](4, ctype=4)[-1] == [0] * 8
+    sent.clear()
+    stage["run"](1.0)
+    assert announces() == []
