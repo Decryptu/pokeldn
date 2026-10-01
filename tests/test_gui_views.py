@@ -241,6 +241,39 @@ def test_a_pokemon_file_shows_its_own_species_and_shininess(monkeypatch):
     assert (saved[-1]["species"], saved[-1]["shiny"], picker.species.value, picker.shiny.value) == (6, True, "6", True)
 
 
+def test_gift_picker_exports_without_a_board_and_imports_the_saved_file(tmp_path):
+    import asyncio
+    from gui.views.gifts import GiftPicker
+    from pokeldn import gifts
+    from pokeldn.app.catalog import GAMES
+    from pokeldn.app.settings import Settings
+
+    tool = next(tool for game in GAMES for tool in game.tools if tool.key == "frlg-gift")
+    field = next(field for field in tool.fields if field.kind == "gift")
+    path = tmp_path / "celebi.pokegift"
+
+    async def save_file(**kwargs):
+        assert kwargs["allowed_extensions"] == ["pokegift"]
+        return str(path)
+
+    settings = Settings()
+    view = SimpleNamespace(tool=tool, values={"--gift": "celebi"}, extra={},
+        app=SimpleNamespace(settings=settings, picker=SimpleNamespace(save_file=save_file)))
+    changes = []
+    view.set_value = lambda field, path, rebuild: changes.append((field.key, path, rebuild))
+    picker = GiftPicker(view, field)
+    picker.control = SimpleNamespace(update=lambda: None)
+    asyncio.run(picker._save(None))
+    saved = gifts.load(path, game="frlg")
+    assert saved.name == "celebi" and len(saved.variants) == 4
+    picker._changed(str(path))
+    assert picker.detail.value == saved.summary
+    assert changes == [("--gift-file", str(path), True)]
+    view.values["--gift-file"] = str(path)
+    picker._changed("")
+    assert changes[-1] == ("--gift-file", "", True)
+
+
 def test_a_worker_answering_after_its_picker_left_the_page_is_dropped():
     """Picking another tool before the species list loads replaces the picker the worker answers."""
     import asyncio

@@ -57,6 +57,21 @@ Gift below with the tested settings. The only file it asks for is `prod.keys`.
   `python -m pokeldn --radio esp32:auto swsh-host --offer-file offer.pk8`.
   See [code organization](docs/architecture.md) for the shared modules and legality checks.
 
+## Mystery Gift files
+
+The FRLG and Sword/Shield Mystery Gift tools open and save `.pokegift` files, which keep a complete
+distribution and its target game together. Sword/Shield also accepts `.wc8`. In the app, use
+Gift file to browse and Save gift file to export the selected gift without a board.
+
+```bash
+./.venv/bin/python bin/frlg_mg_host.py --gift celebi --export-gift celebi.pokegift
+./.venv/bin/python bin/swsh_gift_host.py --species 25 --export-gift pikachu.pokegift
+./.venv/bin/python -m pokeldn.gifts inspect celebi.pokegift
+```
+
+Both launchers accept `--gift-file FILE`. Native conversion and the file schema are in
+[Mystery Gift files](docs/gifts.md).
+
 ## Requirements
 
 - A classic ESP32 board with a USB serial bridge, or an ESP32-S3 or ESP32-C3 through native USB

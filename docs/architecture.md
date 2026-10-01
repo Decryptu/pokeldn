@@ -10,6 +10,7 @@ formats and timing; shared components belong outside a game directory.
 | --- | --- |
 | `pokeldn/app/` | Tool catalog, argument assembly, parser inspection, settings, paths and child processes |
 | `pokeldn/pokemon.py` | PKHeX service, imports, final offer validation and received files |
+| `pokeldn/gifts.py` | Shared [Mystery Gift file](gifts.md) envelope, reader, writer and native conversion |
 | `services/pkhex/` | Pinned PKHeX.Core dependency; legal encounter generation and game compatibility checks |
 | `pokeldn/ldn/` | Radio transport, IP, Pia, reliability and channel tables |
 | `pokeldn/gba/` | GBA wireless link protocols |

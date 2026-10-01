@@ -14,10 +14,16 @@ def accepted(script: str) -> frozenset[str]:
 
 
 def value_of(field: Field, values: dict):
+    if field.kind == "gift" and field.key not in values:
+        return values.get("--record", field.default)
     return values.get(field.key, field.default)
 
 
 def applies(field: Field, tool: Tool, values: dict) -> bool:
+    if field.unless:
+        source = next(f for f in tool.fields if f.key == field.unless)
+        if value_of(source, values):
+            return False
     if not field.when:
         return True
     flag, wanted = field.when
@@ -93,8 +99,16 @@ def limit_error(field: Field, value) -> str:
 
 
 def problems(tool: Tool, values: dict) -> list[str]:
-    return [error for f in tool.fields if applies(f, tool, values)
+    errors = [error for f in tool.fields if applies(f, tool, values)
             if (error := limit_error(f, value_of(f, values)) if f.limits else code_error(f, value_of(f, values)))]
+    for field in tool.fields:
+        if field.kind == "gift" and (path := value_of(field, values)):
+            from pokeldn.app.gift_files import read
+            try:
+                read(tool, path)
+            except (OSError, ValueError) as exc:
+                errors.append(str(exc))
+    return errors
 
 
 def code_error(field: Field, value) -> str:

@@ -13,6 +13,10 @@ chosen in Settings; the folder button beside Output opens it. Flash detects the 
 its bundled image; a custom image is checked against that chip before writing. Connect an S3
 or C3 through native USB Serial/JTAG. C6 and S2 chips are refused.
 
+Mystery Gift tools share a Gift file control: open a `.pokegift` distribution, or save the selected
+gift without a board. Sword/Shield also opens `.wc8` cards. [Mystery Gift files](gifts.md) describes
+cartridge variants and native-format conversion.
+
 ## Local storage
 
 Settings, Storage shows the space occupied by reclaimable local files. Clear local files asks for

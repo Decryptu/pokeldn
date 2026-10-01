@@ -757,10 +757,11 @@ class MysteryGiftRunConfig:
     def __post_init__(self):
         if not isinstance(self.profile, TrainerProfile):
             raise ValueError("profile must be a TrainerProfile")
+        from pokeldn.frlg.gift.file import FilePayload
         if not isinstance(self.payload,
-                          (MysteryGiftPayload, WonderNewsPayload, BufferScriptPayload)):
+                          (MysteryGiftPayload, WonderNewsPayload, BufferScriptPayload, FilePayload)):
             raise ValueError(
-                "payload must be a MysteryGiftPayload, WonderNewsPayload or BufferScriptPayload")
+                "payload must be a MysteryGiftPayload, WonderNewsPayload, BufferScriptPayload or FilePayload")
         if not isinstance(self.ldn, LdnConfig):
             raise ValueError("ldn must be an LdnConfig")
         if not isinstance(self.role, HostOptions):
@@ -833,7 +834,8 @@ def plan_builds(payload, console_build=CONSOLE_BUILD_AUTO, version=None):
     if not usable:
         raise ValueError(next(iter(built.values())))
     if console_build == CONSOLE_BUILD_AUTO and len(usable) == len(built) \
-            and all(chosen == usable[0] for chosen in usable):
+            and all(chosen == usable[0] for chosen in usable) \
+            and not getattr(payload, "requires_build_selection", False):
         return BuildPlan(usable[0], None)
     if version is not None:
         for code in built:

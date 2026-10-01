@@ -8,7 +8,7 @@ from dataclasses import dataclass
 class Field:
     flag: str | tuple[str, ...]   # "" is positional; a tuple passes the same value to each flag
     label: str
-    kind: str = "text"            # text number choice switch pokemon file multi linkcode, or a PKHeX
+    kind: str = "text"            # text number choice switch pokemon file gift multi linkcode, or a PKHeX
                                   # name list: species move item ball
     help: str = ""
     default: str | bool = ""
@@ -19,6 +19,7 @@ class Field:
     unset: tuple[str, ...] = ()   # arguments passed when the field is left empty
     exts: tuple[str, ...] = ()
     when: tuple[str, str] = ()    # (flag, value): the field applies only while that field has that value
+    unless: str = ""             # hide and omit the field while this source field has a value
     template: str = ""            # the value is passed as template.format(value), e.g. "ball={}"
     limits: tuple[tuple[str, int, str], ...] = ()   # (NAME, highest, why) for NAME=VALUE text
     choice_help: tuple[tuple[str, str], ...] = ()
@@ -136,11 +137,13 @@ FRLG = Game("frlg", "FireRed & LeafGreen", "FRLG", "frlg.md", (
           "Start the host, then pick PkCamp when it appears.",
           "Answer Yes if the console asks to replace its card.",
           "Back out of the search screen between two runs."),
-         (Field("--news", "Send", "choice", help="A Wonder Card brings a gift; Wonder News is a message "
+         (Field("--gift-file", "Gift file", "gift", exts=("pokegift",),
+                help="Open a saved gift, or save the gift selected below. Clear the file to use the built-in gifts."),
+          Field("--news", "Send", "choice", unless="--gift-file", help="A Wonder Card brings a gift; Wonder News is a message "
                                                  "that can carry a berry.", choices=(
              ("", "A Wonder Card"), ("pkcamp", "Wonder News: one berry in Cerulean City"),
              ("berry", "Wonder News: ten lines, one berry"))),
-          Field("--gift", "Wonder Card", "choice", default="beast-cutscene", when=CARD,
+          Field("--gift", "Wonder Card", "choice", default="beast-cutscene", when=CARD, unless="--gift-file",
                 help="The gift the card holds.", choices=(
               ("beast-cutscene", "Legendary beast (follows the starter)"),
               ("celebi", "Celebi"), ("master-ball", "Master Ball"),
@@ -149,7 +152,7 @@ FRLG = Game("frlg", "FireRed & LeafGreen", "FRLG", "frlg.md", (
               ("lunatone-stamp", "Sun and Moon Rally: Lunatone stamp"),
               ("visiting-trainer", "Visiting trainer"), ("battle-count-card", "Battle count card"),
               ("worlds-xp", "Worlds XP"))),
-          Field("--flag-id", "Card flag id", "number", when=CARD, hidden=True,
+          Field("--flag-id", "Card flag id", "number", when=CARD, hidden=True, unless="--gift-file",
                 help="1000 to 1019. A console refuses the id of the card it already holds; "
                      "alternate between two. Empty uses the gift's own."),
           Field(("--version", "--expect-console"), "Version", "choice", default="firered",
@@ -223,30 +226,30 @@ SWSH = Game("swsh", "Sword & Shield", "SwSh", "swsh.md", (
          ("Mystery Gift, Receive a Gift, via local wireless.",
           "Start the host: the card is listed within a few seconds or not at all.",
           "Accept the card, then stop the host."),
-         (Field("--species", "Species", "species", default="25", group="Pokemon",
+         (Field("--gift-file", "Gift file", "gift", exts=("pokegift", "wc8"),
+                help="Open a saved gift or a .wc8 Wonder Card. Clear the file to build a gift below."),
+          Field("--species", "Species", "species", default="25", group="Pokemon", unless="--gift-file",
                 help="The Pokemon on the card and its level."),
-          Field("--level", "Level", "number", default="25", group="Pokemon", help="0 lets the game roll one."),
-          Field("--move1", "Move 1", "move", default="84", group="Moves", help="The four moves it knows."),
-          Field("--move2", "Move 2", "move", default="45", group="Moves"),
-          Field("--move3", "Move 3", "move", default="86", group="Moves"),
-          Field("--move4", "Move 4", "move", default="98", group="Moves"),
-          Field("--set", "Held item", "item", template="held_item={}", group="Extras",
+          Field("--level", "Level", "number", default="25", group="Pokemon", unless="--gift-file", help="0 lets the game roll one."),
+          Field("--move1", "Move 1", "move", default="84", group="Moves", unless="--gift-file", help="The four moves it knows."),
+          Field("--move2", "Move 2", "move", default="45", group="Moves", unless="--gift-file"),
+          Field("--move3", "Move 3", "move", default="86", group="Moves", unless="--gift-file"),
+          Field("--move4", "Move 4", "move", default="98", group="Moves", unless="--gift-file"),
+          Field("--set", "Held item", "item", template="held_item={}", group="Extras", unless="--gift-file",
                 help="Empty for no item and the game's default ball."),
-          Field("--set", "Ball", "ball", template="ball={}", group="Extras"),
-          Field("--set", "Shiny", "switch", template="shiny_type=2", default=False, shiny=True,
+          Field("--set", "Ball", "ball", template="ball={}", group="Extras", unless="--gift-file"),
+          Field("--set", "Shiny", "switch", template="shiny_type=2", default=False, shiny=True, unless="--gift-file",
                 help="The Pokemon arrives shiny."),
-          Field("--nickname", "Nickname", default="PKCAMP", group="Names",
+          Field("--nickname", "Nickname", default="PKCAMP", group="Names", unless="--gift-file",
                 help="The Pokemon's nickname and the original trainer name it shows."),
-          Field("--ot", "OT", default="POKELDN", group="Names"),
-          Field("--set", "Other fields", "multi", hidden=True,
+          Field("--ot", "OT", default="POKELDN", group="Names", unless="--gift-file"),
+          Field("--set", "Other fields", "multi", hidden=True, unless="--gift-file",
                 help="Any other record field, space-separated NAME=VALUE: nature=10 gender=1 iv_hp=31.",
                 limits=(("held_item", 1607, "Sword and Shield have no item above 1607; a higher id crashes "
                                             "the bag screen."),)),
-          Field("--card-id", "Card id", "number", default="9999", hidden=True,
+          Field("--card-id", "Card id", "number", default="9999", hidden=True, unless="--gift-file",
                 help="The id the card carries. A console takes a card built here again under the same "
                      "id; a .wc8 file that allows one copy is refused by a console that received it."),
-          Field("--record", "Or send a .wc8 file", "file", exts=("wc8",),
-                help="A Wonder Card file from PKHeX or an event archive. It replaces everything above."),
           Field("--seconds", "Time limit (seconds)", "number", default="300", hidden=True,
                 help="How long the card is advertised after Start.")),
          doc="swsh_gift.md"),

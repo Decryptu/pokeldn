@@ -14,6 +14,7 @@ from pokeldn.app.catalog import GAMES, Field, Game, Tool
 from pokeldn.app.introspect import flags_of
 from pokeldn.app.paths import SESSION
 from gui.views.pokemon import NAME_LISTS, LinkCodePicker, NamePicker, OfferQueue, PokemonPicker
+from gui.views.gifts import GiftPicker
 from gui.views.sprites import MINI, Sprite
 from gui.views.widgets import CodeBlock, Log, PathField, open_folder
 
@@ -211,6 +212,8 @@ class GamesView:
 
     def input(self, field: Field, grouped: bool = False) -> ft.Control:
         value = command.value_of(field, self.values)
+        if field.kind == "gift":
+            return GiftPicker(self, field).control
         if field.kind == "switch":
             return t.switch(bool(value), lambda e: self.set_value(field, e.control.value, rebuild=True))
         if field.kind == "choice":

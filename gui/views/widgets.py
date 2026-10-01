@@ -170,10 +170,14 @@ class PathField:
     """A path text field with a browse button, for a file or a folder."""
 
     def __init__(self, picker: ft.FilePicker, start_dir: Callable[[], str], value: str = "",
-                 mode: str = "file", exts: tuple = (), on_change: Callable[[str], None] | None = None):
+                 mode: str = "file", exts: tuple = (), on_change: Callable[[str], None] | None = None,
+                 *, single_line: bool = False):
         self.picker, self.start_dir, self.mode, self.exts = picker, start_dir, mode, exts
         self.on_change = on_change
-        self.field = t.field(value=value, mono=True, expand=True, on_change=lambda e: self._changed(e.control.value))
+        options = {"height": t.CONTROL_HEIGHT, "fit_parent_size": False,
+                   "max_lines": 1, "multiline": False} if single_line else {}
+        self.field = t.field(value=value, mono=True, expand=True,
+                             on_change=lambda e: self._changed(e.control.value), **options)
         icon = "folder" if mode == "dir" else "file"
         self.control = ft.Row([self.field, t.icon_button(icon, self._browse, "Browse")], spacing=6)
 

@@ -65,6 +65,9 @@ def build_parser(file_config=None, *, shared_path=None, local_path=None):
         "--gift", choices=gift_registry.GIFT_REGISTRY.live_choices,
         default=GIFT_BEAST_CUTSCENE,
         help=gift_registry.GIFT_REGISTRY.format_live_gift_help())
+    payload_group.add_argument("--gift-file", help="a complete FRLG .pokegift file")
+    parser.add_argument("--export-gift", metavar="FILE",
+                        help="save a .pokegift file and exit without using the radio")
     payload_group.add_argument(
         "--news", nargs="?", const=wonder_news.DEFAULT_NEWS, default=None,
         choices=wonder_news.news_choices(), metavar="NAME",
@@ -589,7 +592,15 @@ def _hunt_definition(parser, args):
 def build_run_config(parser, args):
     profile, ldn, role = host_cli.build_host_config(parser, args)
     try:
-        if args.news is not None:
+        if args.gift_file:
+            from pokeldn import gifts
+            from pokeldn.frlg.gift.file import FilePayload
+            if (args.questionnaire is not None or args.news_id is not None
+                    or getattr(args, "_flag_id_explicit", False) or _hunt_asked(args)
+                    or args.dump_address is not None or args.dump_blocks != 1 or args.dump_scatter is not None):
+                parser.error("A gift file already defines its card, scripts and options; use it without payload overrides")
+            payload = FilePayload(gifts.load(args.gift_file, game="frlg"))
+        elif args.news is not None:
             if args.questionnaire is not None:
                 parser.error(
                     "--questionnaire gates a Wonder Card session; the News server script has no "
@@ -774,7 +785,7 @@ def build_run_config(parser, args):
             idle_timeout_seconds=args.idle_timeout,
             attempt_log_dir=args.attempt_log_dir,
             game_data_log=args.game_data_log)
-    except ValueError as exc:
+    except (OSError, ValueError) as exc:
         parser.error(str(exc))
 
 
@@ -792,15 +803,26 @@ def main(argv=None):
         host_cli.build_host_config(parser, args)
         print(host_cli.format_effective_config(args), end="")
         return 0
-    if not args.live:
+    if not args.live and not args.export_gift:
         parser.error("hosting only supports live mode; omit --no-live")
     config = build_run_config(parser, args)
     try:
         plan = configmod.plan_builds(config.payload, config.console_build, config.console_version)
     except ValueError as exc:
         parser.error(str(exc))
+    if args.export_gift:
+        from pokeldn import gifts
+        from pokeldn.frlg.gift.file import from_payload
+        try:
+            gift = from_payload(config.payload, console_build=config.console_build,
+                                version=config.console_version)
+            gifts.save(args.export_gift, gift)
+        except (OSError, ValueError) as exc:
+            parser.error(str(exc))
+        print(f"Saved {args.export_gift}: {gift.summary}")
+        return 0
     distribution = None
-    if args.make_artifact and args.news is not None:
+    if args.make_artifact and plan.distribution.is_news:
         parser.error("--make-artifact disassembles a delivery RAM script; Wonder News has none")
     if args.make_artifact and args.buffer_script is not None:
         parser.error(
@@ -811,8 +833,8 @@ def main(argv=None):
                          "build; name it with --console-build")
         distribution = plan.distribution
         # --hunt-* composes its own definition; the registry holds the default one.
-        definition = (config.payload.definition
-                      or gift_registry.GIFT_REGISTRY.entry(args.gift).definition)
+        definition = (config.payload.definition or
+                      (gift_registry.GIFT_REGISTRY.entry(args.gift).definition if not args.gift_file else None))
         try:
             artifact_path = gift_artifact.write_artifact(
                 args.artifact_dir, gift=args.gift, flag_id=config.payload.flag_id,
@@ -828,7 +850,7 @@ def main(argv=None):
         factory.NEEDS_RADIO = False
     elif needs_root():
         parser.error("live LDN hosting requires root; run with sudo -E")
-    application = (WonderNewsHostApplication if args.news is not None
+    application = (WonderNewsHostApplication if plan.distribution.is_news
                    else BufferScriptHostApplication if args.buffer_script is not None
                    else MysteryGiftHostApplication)
     app = application(

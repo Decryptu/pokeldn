@@ -8,7 +8,7 @@ from pathlib import Path
 
 def check() -> None:
     from pokeldn import __version__
-    from pokeldn import pokemon
+    from pokeldn import gifts, pokemon
     from pokeldn.app import paths, runner
     import gui.app
     import gui.views.games
@@ -44,6 +44,17 @@ def check() -> None:
         for game in pokemon.EXTENSIONS:
             result = pokemon.SERVICE.make(game, 25, trainer)
             assert result["legal"] and pokemon.SERVICE.check(game, result["file"])["legal"]
+        for game, script, options in (
+                ("frlg", "bin/frlg_mg_host.py", ("--gift", "celebi")),
+                ("swsh", "bin/swsh_gift_host.py", ("--species", "25"))):
+            source, copy = Path(folder) / f"{game}.pokegift", Path(folder) / f"{game}-copy.pokegift"
+            for args in ((*options, "--export-gift", str(source)),
+                         ("--gift-file", str(source), "--export-gift", str(copy))):
+                subprocess.run(runner.command("--run", script, *args),
+                               capture_output=True, text=True, timeout=30, check=True)
+            assert source.read_bytes() == copy.read_bytes()
+            assert gifts.load(copy, game=game).variants
+        print("FRLG and Sword/Shield gift files verified")
     list(list_ports.comports())
     scripts = sorted((Path(paths.ROOT) / "bin").glob("*.py"))
     for path in scripts:

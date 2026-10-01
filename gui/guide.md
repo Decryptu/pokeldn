@@ -60,6 +60,15 @@ whose PID must stay, such as an event Pokemon.
 Or use a Pokemon file takes a file exported from PKHeX. The app checks it with PKHeX and shows whether
 it is legal before you offer it. An illegal Pokemon can crash the other game when it is drawn.
 
+## Your own Mystery Gift files
+
+FireRed/LeafGreen and Sword/Shield share a Gift file control on their Mystery Gift tools. Browse
+opens a `.pokegift` file; Sword/Shield also accepts `.wc8` cards. The file's name and target game
+appear below the path. Clear the path to select a built-in gift again.
+
+Save gift file stores the selected gift for reuse or sharing. It works without a board. FRLG files
+keep the card, delivery script and event extras together, with their supported cartridge variants.
+
 ## When a run fails
 
 - Stop, then back out of the console's search screen and search again. Most games keep a stale session

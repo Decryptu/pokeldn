@@ -142,7 +142,8 @@ class MysteryGiftHostApplication(HostApplication):
                   f"language={int.from_bytes(wire[26:28], 'little')}")
         self.info(f"RFU parent identity: raw={self.session.rfu.host_session_id.hex()} "
                   f"u16=0x{int.from_bytes(self.session.rfu.host_session_id, 'little'):04x}")
-        details = gift_registry.GIFT_REGISTRY.describe(payload.gift)
+        details = ("imported gift file" if hasattr(payload, "file") else
+                   gift_registry.GIFT_REGISTRY.describe(payload.gift))
         card_title = charmap.decode(self.card[10:50])
         self.info(f"Gift: {payload.gift!r}; {details}; card title {card_title!r}; "
                   f"Wonder Card flagId {payload.flag_id} "
@@ -317,7 +318,9 @@ class WonderNewsHostApplication(MysteryGiftHostApplication):
                   f"language={int.from_bytes(wire[26:28], 'little')}")
         self.info(f"RFU parent identity: raw={self.session.rfu.host_session_id.hex()} "
                   f"u16=0x{int.from_bytes(self.session.rfu.host_session_id, 'little'):04x}")
-        self.info(f"News: {payload.news!r}; {payload.spec.description}; "
+        name = payload.gift if hasattr(payload, "file") else payload.news
+        description = "imported gift file" if hasattr(payload, "file") else payload.spec.description
+        self.info(f"News: {name!r}; {description}; "
                   + wonder_news.describe(news) + f", {len(news)}B")
         self.info("A console that already holds these exact 444 bytes answers "
                   "MG_LINKID_RESPONSE with TRUE and keeps what it has; pass --news-id to make the "

@@ -18,7 +18,7 @@ import time
 
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
-from pokeldn import config, pokemon
+from pokeldn import config, gifts, pokemon
 from pokeldn.host_support import write_file
 from pokeldn.ldn import transport
 from pokeldn.ldn.transport import HostTransport
@@ -42,10 +42,8 @@ def build_record(args):
 
 def _base_record(args):
     if args.record:
-        rec = Path(args.record).read_bytes()
-        if len(rec) != wc8.RECORD:
-            raise SystemExit(f"{args.record} is {len(rec)} bytes, not {wc8.RECORD}")
-        return rec
+        from pokeldn.swsh.gift_file import record
+        return record(gifts.load(args.record, game="swsh"))
     fields = {"ot_gender": 2}            # every card a console has taken carried 2 at +0x272
     for item in args.set or ():
         name, _, value = item.partition("=")
@@ -76,7 +74,9 @@ def validate(record, image):
 def build_parser():
     p = argparse.ArgumentParser(description=__doc__,
                                 formatter_class=argparse.RawDescriptionHelpFormatter)
-    p.add_argument("--record", help="a 720-byte record to send instead of building one")
+    p.add_argument("--record", "--gift-file", dest="record",
+                   help="a .pokegift or 720-byte .wc8 record to send instead of building one")
+    p.add_argument("--export-gift", metavar="FILE", help="save a .pokegift file and exit without using the radio")
     p.add_argument("--species", type=int, default=25)
     p.add_argument("--level", type=int, default=25, help="0 makes the game roll one")
     p.add_argument("--form", type=int, default=0)
@@ -121,9 +121,20 @@ def main(argv=None):
     try:
         record = build_record(args)
         pokemon.SERVICE.validate_gift(record)
-    except (pokemon.BuilderError, ValueError, struct.error) as exc:
+    except (OSError, pokemon.BuilderError, ValueError, struct.error) as exc:
         print(str(exc), file=sys.stderr)
         return 1
+    if args.export_gift:
+        from pokeldn.swsh.gift_file import from_record
+        try:
+            gift = (gifts.load(args.record, game="swsh") if args.record and not args.patch else
+                    from_record(record, name=args.nickname or "Sword/Shield gift"))
+            gifts.save(args.export_gift, gift)
+        except (OSError, ValueError) as exc:
+            print(str(exc), file=sys.stderr)
+            return 1
+        print(f"Saved {args.export_gift}: {gift.summary}")
+        return 0
     fragments = beacon.build_message(record)
     print(f"record {len(record)} bytes, checksum {wc8.record_crc(record):#06x}, "
           f"{len(fragments)} fragments")
