@@ -13,7 +13,7 @@ from gui import theme as t
 from pokeldn.app.catalog import GAMES, Field, Game, Tool
 from pokeldn.app.introspect import flags_of
 from pokeldn.app.paths import SESSION
-from gui.views.pokemon import NAME_LISTS, NamePicker, OfferQueue, PokemonPicker
+from gui.views.pokemon import NAME_LISTS, LinkCodePicker, NamePicker, OfferQueue, PokemonPicker
 from gui.views.sprites import MINI, Sprite
 from gui.views.widgets import CodeBlock, Log, PathField, open_folder
 
@@ -232,6 +232,8 @@ class GamesView:
             return PokemonPicker(self.app, self.game.key, first[0] if first else {},
                                  lambda v: self.set_value(field, v),
                                  version=str(self.values.get("--version", ""))).control
+        if field.kind == "linkcode":
+            return LinkCodePicker(self.app, value, lambda v: self.set_value(field, v)).control
         if field.kind == "file":
             return PathField(self.app.picker, lambda: os.path.expanduser("~"), value or "", "file", field.exts,
                              lambda v: self.set_value(field, v)).control

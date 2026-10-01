@@ -129,6 +129,14 @@ items with PKHeX. Custom WC8 cards are distributions, and this structural check 
 official events. The optional `--image` research check uses a user-supplied game binary; it is not
 required to distribute a card.
 
+### The Let's Go link code
+
+The Let's Go host's code is three slots. A slot opens the console's ten picker Pokemon as sprites with
+their names under them, so a sprite that never downloaded still reads; the pick fills the slot and
+opens the next empty one. The value is the three English names, comma-separated, as `--code` takes
+them, and Start waits until all three are set: an empty slot would host under the launcher's default
+code, which the console's search never finds.
+
 ### The trade queue
 
 A tool whose entry point completes several trades on one seat takes up to six Pokemon; "Add a trade"

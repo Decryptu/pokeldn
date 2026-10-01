@@ -303,3 +303,33 @@ def test_start_on_another_tool_stops_the_running_session_then_starts(tmp_path, m
     panel._start(None)
     assert events == [("start", first.script), ("stop", first.script), ("start", second.script)]
     assert panel.running_tool is second and panel.app.process.running and not panel.restart
+
+
+def test_the_link_code_slots_fill_in_order_and_give_the_host_its_scene(monkeypatch):
+    """Three empty slots block Start; picks land in the slot clicked, then the next empty one, and the
+    value is what bin/lgpe_host.py turns into the console's scene id."""
+    from gui.views import pokemon as views
+    from pokeldn.app import command
+    from pokeldn.lgpe.session import scene_id
+    monkeypatch.setattr(views, "Sprite", lambda app, species, shiny=False, size=0: SimpleNamespace(
+        control=__import__("flet").Container()))
+    tool = next(t for t in TOOLS if t.key == "lgpe-host")
+    field = next(f for f in tool.fields if f.kind == "linkcode")
+    values = {}
+    assert "Pick three Pokemon for the link code." in command.problems(tool, values)
+    picker = views.LinkCodePicker(SimpleNamespace(), command.value_of(field, values),
+                                  lambda v: values.__setitem__(field.key, v))
+    assert picker.picks == [None, None, None]
+    picker._toggle(0)
+    picker._choose(1)                       # Eevee in slot 1; slot 2 opens
+    assert picker.open == 1
+    picker._choose(9)
+    picker._choose(0)
+    assert picker.open is None
+    assert values[field.key] == "eevee,diglett,pikachu"
+    assert command.problems(tool, values) == []
+    assert scene_id(values[field.key].split(",")) == 1901
+    picker._toggle(1)
+    picker._choose(4)                       # a filled slot is replaced, nothing else moves
+    assert values[field.key] == "eevee,squirtle,pikachu"
+    assert views.parse_code("evoli,taupiqueur,") == [1, 9, None]

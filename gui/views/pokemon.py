@@ -4,8 +4,9 @@ import flet as ft
 
 from pokeldn import pokemon as builder
 from pokeldn.app.command import offers
+from pokeldn.lgpe.session import CODE_PICKER, code_picks
 from gui import theme as t
-from gui.views.sprites import EDGE, SIZE as SPRITE_SIZE, Sprite
+from gui.views.sprites import EDGE, MINI, SIZE as SPRITE_SIZE, Sprite
 from gui.views.widgets import PixelActivity
 
 VERSIONS = {"firered": "FR", "leafgreen": "LG"}
@@ -428,3 +429,81 @@ class NamePicker:
                 self.dropdown.disabled = False
             self.dropdown.update()
         self.app.ui(show)
+
+
+# The Let's Go link code picker, in its order (pokeldn.lgpe.session.CODE_PICKER): national dex numbers
+# for the sprites and the names shown under them.
+CODE_SPECIES = (25, 133, 1, 4, 7, 16, 10, 19, 39, 50)
+CODE_NAMES = ("Pikachu", "Eevee", "Bulbasaur", "Charmander", "Squirtle",
+              "Pidgey", "Caterpie", "Rattata", "Jigglypuff", "Diglett")
+CODE_TILE = MINI + 2 * EDGE
+
+
+class LinkCodePicker:
+    """Let's Go's link code: three slots, each filled from the ten Pokemon of the console's picker.
+    The value is the three English names, comma-separated, as `--code` takes them."""
+
+    def __init__(self, app, value: str, on_change):
+        self.app, self.on_change = app, on_change
+        self.picks = parse_code(value)
+        self.open: int | None = None
+        self.slots = ft.Row(spacing=10)
+        self.grid = ft.Row(spacing=6, run_spacing=6, wrap=True, visible=False)
+        self.control = ft.Column([self.slots, self.grid], spacing=12, tight=True)
+        self._render(update=False)
+
+    def _tile(self, index: int | None, label: str, on_click, selected: bool = False) -> ft.Control:
+        # The name stays under the sprite: a sprite never downloaded shows only a placeholder.
+        species = CODE_SPECIES[index] if index is not None else 0
+        art = (Sprite(self.app, species, size=MINI).control if index is not None else
+               ft.Container(t.pixel_icon("plus", color=t.FAINT), width=CODE_TILE, height=CODE_TILE,
+                            alignment=ft.Alignment.CENTER, border=ft.Border.all(EDGE, t.DIVIDER),
+                            border_radius=10))
+        return ft.Container(
+            ft.Column([art, t.text(label, 11, t.TEXT if index is not None else t.FAINT,
+                                   max_lines=1, overflow=ft.TextOverflow.ELLIPSIS)],
+                      spacing=4, tight=True, horizontal_alignment=ft.CrossAxisAlignment.CENTER),
+            width=CODE_TILE + 28, padding=ft.Padding(4, 6, 4, 6), border_radius=10,
+            bgcolor=t.SELECTED if selected else None, on_click=on_click, ink=True)
+
+    def _render(self, update: bool = True) -> None:
+        self.slots.controls = [
+            self._tile(pick, CODE_NAMES[pick] if pick is not None else f"Slot {n + 1}",
+                       lambda e, n=n: self._toggle(n), selected=self.open == n)
+            for n, pick in enumerate(self.picks)]
+        self.grid.visible = self.open is not None
+        self.grid.controls = [] if self.open is None else [
+            self._tile(i, name, lambda e, i=i: self._choose(i), selected=self.picks[self.open] == i)
+            for i, name in enumerate(CODE_NAMES)]
+        if update:
+            try:
+                self.control.update()
+            except RuntimeError:    # not on the page yet
+                pass
+
+    def _toggle(self, slot: int) -> None:
+        self.open = None if self.open == slot else slot
+        self._render()
+
+    def _choose(self, index: int) -> None:
+        self.picks[self.open] = index
+        empty = [n for n, pick in enumerate(self.picks) if pick is None]
+        self.open = empty[0] if empty else None
+        self._render()
+        self.on_change(code_value(self.picks))
+
+
+def parse_code(value) -> list[int | None]:
+    """The three slots of a saved `--code` value; a slot that does not read is empty."""
+    parts = [p for p in str(value or "").split(",")][:3]
+    picks: list[int | None] = []
+    for part in parts + [""] * (3 - len(parts)):
+        try:
+            picks.append(code_picks([part, 0, 0])[0] if part.strip() else None)
+        except ValueError:
+            picks.append(None)
+    return picks
+
+
+def code_value(picks: list[int | None]) -> str:
+    return ",".join(CODE_PICKER[p] if p is not None else "" for p in picks)

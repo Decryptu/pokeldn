@@ -8,8 +8,8 @@ from dataclasses import dataclass
 class Field:
     flag: str | tuple[str, ...]   # "" is positional; a tuple passes the same value to each flag
     label: str
-    kind: str = "text"            # text number choice switch pokemon file multi, or a PKHeX name list:
-                                  # species move item ball
+    kind: str = "text"            # text number choice switch pokemon file multi linkcode, or a PKHeX
+                                  # name list: species move item ball
     help: str = ""
     default: str | bool = ""
     choices: tuple[tuple[str, str], ...] = ()
@@ -201,8 +201,8 @@ LGPE = Game("lgpe", "Let's Go Pikachu & Eevee", "LGPE", "lgpe.md", (
          "Host a trade under a link code; the console joins.",
          ("Start the host first.", LGPE_STEPS, "Choose a Pokemon and confirm."),
          (queued("--offer", more="--next-offer"),
-          Field("--code", "Link code", default="pikachu,pikachu,pikachu",
-                help="Three picker names or indices 0 to 9, comma-separated."),
+          Field("--code", "Link code", "linkcode", required=True,
+                help="The three Pokemon the player picks on the console, in the same order."),
           FRESH_PID,
           host_seconds("1200", "A trade under way when it runs out is finished first.")),
          fixed=("--first", "echo", "--received", "{received}/lgpe-{stamp}.pb7"), doc="lgpe.md"),

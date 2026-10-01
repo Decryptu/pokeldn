@@ -5,6 +5,7 @@ from functools import cache
 
 from pokeldn.app.catalog import Field, Tool
 from pokeldn.app.introspect import flags_of
+from pokeldn.lgpe.session import code_picks
 
 
 @cache
@@ -92,8 +93,19 @@ def limit_error(field: Field, value) -> str:
 
 
 def problems(tool: Tool, values: dict) -> list[str]:
-    return [error for f in tool.fields if f.limits and applies(f, tool, values)
-            if (error := limit_error(f, value_of(f, values)))]
+    return [error for f in tool.fields if applies(f, tool, values)
+            if (error := limit_error(f, value_of(f, values)) if f.limits else code_error(f, value_of(f, values)))]
+
+
+def code_error(field: Field, value) -> str:
+    """A Let's Go link code must name three picker Pokemon; a missing one would host under another code."""
+    if field.kind != "linkcode":
+        return ""
+    try:
+        code_picks(str(value or "").split(","))
+    except ValueError:
+        return "Pick three Pokemon for the link code."
+    return ""
 
 
 def missing_offer(tool: Tool, values: dict) -> str:
