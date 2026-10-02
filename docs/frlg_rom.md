@@ -1377,7 +1377,7 @@ installed hook on each image's own `GetMonData` and `GetMonIconPtr`.
 | `shiny` | counts down in grass; R slows it | the followed seed matches `gRngValue`; the Python model agrees on the shiny |
 | `ivs` | the lead's IV word and `personality % 25` match a `save-dump` of `SaveBlock1 + 0x34` | matches `gPlayerParty` (`0x02024280`) |
 | `noencounter` | no wild encounter while walking in grass | none; encounters return after a soft reset |
-| `follower` | | a tile behind on Ryujinx's GBA app (Blastoise's icon, Pidgeot's sprite) and on mGBA (every overworld sprite, an egg, LeafGreen); through doors, a map connection, a battle and the party menu; MOM installs it from the save after a restart |
+| `follower` | the lead (Chansey) walks a tile behind; it is also drawn on the black screen of a door transition | a tile behind on Ryujinx's GBA app (Blastoise's icon, Pidgeot's sprite) and on mGBA (every overworld sprite, an egg, LeafGreen); through doors, a map connection, a battle and the party menu; MOM installs it from the save after a restart |
 
 Unresolved: on the emulator the overlay drew during the recap after CONTINUER but not in interactive
 play, while `field` still sped the game.
