@@ -939,8 +939,8 @@ counter, then argument 3. The host answers each 30 ms later with zeros in the fi
 trailing word plus one, and the argument as the type 4 copy's first word. The console then releases
 its clones with a 0x83 on clone type 4, station 0xFD (clone 0 on clone type 3), repeated (about
 every 100 ms, measured) until a 0x84 answers; the host releases its own (0x83 on clone type 2 under
-its station, and on clone type 4). After the last release (2.45 s measured, a delay no answer moved)
-the console sends a mesh leave request
+its station, and on clone type 4). After the last release, once its clone protocol is idle
+([The wait before leaving](#the-wait-before-leaving)), the console sends a mesh leave request
 on the mesh protocol's reliable port, under the 24-byte reliable header:
 
 ```
@@ -969,7 +969,8 @@ d'annuler l'échange"); a joiner that waits leaves the host repeating 0x13 (five
 ### A host leaving
 
 A console host whose player backs out publishes state 4, argument 3, releases its clones (0x83,
-answered by 0x84), and 2.49 s after the last release sends a mesh migration start on the reliable
+answered by 0x84), and after the last release, once its clone protocol is idle
+([The wait before leaving](#the-wait-before-leaving)), sends a mesh migration start on the reliable
 port, `44 00 01` (host index, next host's index). Its wait (`0x58aeb0`) keeps a flag per connected
 station at `job+0x6e+index` and ends when every flag is clear or 5000 ms (`0x58a8f0`) have passed; a
 migration response `48 <index>` clears that station's flag (handler `0x591e98` -> `0x58b010`), and
@@ -984,6 +985,24 @@ retail runs). An emulated host answered with the ack and `48 01` sent its update
 first 0x13 34 ms later; a retail host answered the same way sent its first 0x13 0.06 s after the
 migration start. `bin/lgpe_join.py` sends both answers and leaves the network on the first
 0x13 (`pokeldn.lgpe.leave.host_departure`).
+
+### The wait before leaving
+
+The game's teardown step `0x116bc0` (state 8 of the link object's update `0x4d9b70`) ends the clone
+session (`0x51bee0`) and then returns at once when the clone protocol state, `& 0xf0`, is `0x10`
+(idle; read by `0x5db760` into `obj+0x16f4`). Otherwise it counts 150 calls (`obj+0x16fc`,
+`cmp 0x95` at `0x116d38`) before calling the leave through `[obj+0x80]` vfunc `0x68`. The count
+ran 2.49 to 2.51 s in nine retail sessions in both roles.
+
+The protocol reaches idle through state `0x41`, which waits while any clone has a data token
+unacknowledged (`0x51b0f0`, `0x5180cc`), then `0x42`, which sends a clone exit (0x32) and waits for
+each station's 0x41. After its clone 0 release (0x83 on clone type 3) a console keeps publishing its
+clone type 2 copies about every 100 ms. A peer that answers each with its own copy keeps them
+unacknowledged: the console sends no 0x32 and leaves after the full count. A peer that answers each
+with an 0xe3 on clone type 1, station 0xFD, carrying the publisher's station and clock, gets a 0x83
+on clone type 2 for every clone, a 0x32, and the leave request 0.11 and 0.29 s after the console's
+last release (two retail host sessions, one with a trade). `pokeldn.ldn.clone.Participant` acks
+after the peer's clone 0 release.
 
 ### What a host does with a joiner that holds no clone data
 

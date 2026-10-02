@@ -113,3 +113,24 @@ def test_a_leave_response_naming_the_leaver_is_ignored_as_the_console_ignores_it
     assert not lv.leave_answered
     lv.receive(mp.PROTOCOL, bytes([mp.LEAVE_RESPONSE, 0]), 100.0)
     assert lv.leave_answered
+
+
+def test_after_the_consoles_clone_0_release_its_shared_copies_are_acked_not_answered():
+    # Retail lgh76, host role: the console's release of clone 0, then its clone type 2 copy of
+    # clone 6. Answered with our own copy, the console resent it every 100 ms and waited the 150
+    # frames of main 0x116d38; acked, it released the clone and left in 0.11 s.
+    release = bytes.fromhex("03830f6f03fd0000000000000000008b0001")
+    copy = bytes.fromhex("03f30f7002010000000000060001785e52506260636664606000e27f71409a8119c2"
+                         "61e081d200000000ffff0300283801bb")
+    part = clone.Participant(100.0, dest=2, own=1, station=0)
+    part.host_role = True
+    before = part.receive(copy, 100.5)
+    assert [m[1] for m in before] == [clone.STATE_DATA]
+    part.receive(release, 101.0)
+    after = part.receive(copy, 101.1)
+    assert [m[1] for m in after] == [clone.STATE_ACK]
+    ack = clone.parse_data_message(after[0])
+    sent = clone.parse_data_message(copy)
+    assert (ack["ctype"], ack["station"], ack["clone_id"]) == (1, 0xFD, 6)
+    assert ack["record"]["station"] == sent["record"]["station"] == 1
+    assert ack["record"]["clock"] == sent["record"]["clock"]

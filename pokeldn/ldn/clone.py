@@ -371,6 +371,8 @@ class Participant:
     ack_peer_clock = False
     ack_re_announcement = False
     publish_once = False
+    # Set once the peer releases clone 0, as it leaves (docs/lgpe_session.md, Leaving).
+    peer_released = False
     publish_delay = 0.09
     ack_in_burst = False
     ack_early = False
@@ -555,7 +557,7 @@ class Participant:
                                                   self.element_ms(now) & 0xFFFF,
                                                   self.own | self.dest))]
             if d["type"] & 0xF0 == 0xF0 and r is not None and r["kind"] == RECORD_STATE:
-                if d["ctype"] == 2 and d["station"] != self.station:
+                if d["ctype"] == 2 and d["station"] != self.station and not self.peer_released:
                     # Answer the shared clone with our copy once: the peer retransmits about ten
                     # times a second, and answering each makes the pair trade publishes all session.
                     seen = self.shared.get(d["clone_id"])
@@ -642,6 +644,8 @@ class Participant:
             # Unacked, the peer repeats the 0x83 every 100 ms and its player waits on 'interruption
             # de la connexion'. A release on type 2 is acked on type 1 (docs/lgpe_session.md).
             cid = c["clone_id"]
+            if c["ctype"] == 3 and cid == 0:
+                self.peer_released = True
             self.unrequested.pop(cid, None)
             self.held.discard(cid)
             self.published.discard(cid)
