@@ -88,11 +88,15 @@ async def main_async(args):
     keys_file = ldn.load_keys(resolve_keys(args.keys))
     phy = find_ap_phy(log=print) if args.phy == "auto" else args.phy
     cleanup()
-    nets = await ldn.scan(keys_file, phyname=phy,
-                          channels=[int(c) for c in args.channels.split(",")],
-                          dwell_time=args.dwell)
     want = int(args.comm_id, 16) if args.comm_id else COMM_ID
-    net = next((n for n in nets if n.local_communication_id == want), None)
+    net = None
+    for _ in range(args.scans):
+        nets = await ldn.scan(keys_file, phyname=phy,
+                              channels=[int(c) for c in args.channels.split(",")],
+                              dwell_time=args.dwell)
+        net = next((n for n in nets if n.local_communication_id == want), None)
+        if net is not None:
+            break
     if net is None:
         print("[cx] target network not seen - is the console sitting in the room right now?")
         return 3
@@ -1509,6 +1513,8 @@ def build_parser():
     ap.add_argument("--phy", default="auto")
     ap.add_argument("--ifname", default="ldnclient")
     ap.add_argument("--channels", default="1,6,11")
+    ap.add_argument("--scans", type=int, default=12,
+                    help="scans for the console's room before giving up; it may not exist yet")
     ap.add_argument("--dwell", type=float, default=1.5,
                     help="seconds per channel in the scan; 0.8 missed a live network twice")
     ap.add_argument("--name", default="PkCamp")

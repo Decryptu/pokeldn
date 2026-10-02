@@ -1191,9 +1191,9 @@ def test_sword_host_and_joiner_trade_on_simulated_boards(tmp_path, monkeypatch):
         daemon=True)
     wlan.set_factory(factory)
     try:
+        threads["join"].start()          # before the host: the joiner rescans until it appears
+        time.sleep(1.5)
         threads["host"].start()
-        time.sleep(2)
-        threads["join"].start()
         threads["join"].join(120)
         threads["host"].join(120)
     finally:
