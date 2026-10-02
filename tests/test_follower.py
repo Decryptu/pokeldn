@@ -1,4 +1,4 @@
-"""The follower hook on each cartridge's own code: the installer puts it in gIntrTable[4], and every
+"""The follower hook on each cartridge's own code: install-kept puts it in gIntrTable[4], and every
 frame it reads the lead through the game's GetMonData, draws the cartridge's own overworld frame or
 the game's party icon, and keeps it a tile behind the player. docs/frlg_rom.md, `follower`."""
 
@@ -9,6 +9,7 @@ import pytest
 from pokeldn.frlg.rom import buffer_script as bs
 from pokeldn.frlg.rom import builds
 from pokeldn.frlg.save.mevent_pokemon import build_party_mon
+from pokeldn.frlg.text import charmap
 
 pytestmark = pytest.mark.skipif(not bs.emulation_available(), reason="needs unicorn")
 
@@ -22,6 +23,9 @@ COORD_OFFSET, PALETTE_FADE = 0x02021BC8, 0x02037AB4
 OBJ_TILE_1008, OBJ_PALETTE_15 = 0x06017E00, 0x020379D4
 OFFSET_X, OFFSET_Y = 0, -40             # gSpriteCoordOffsetX/Y as a town map leaves them
 ANCHOR_X, ANCHOR_Y = -40, -48           # sprite = 16 * tile + anchor, measured on mGBA
+HIDDEN = 0x0200                         # attr0 with affine off and bit 9: not displayed
+OBJ_PALETTE_15_UNFADED = OBJ_PALETTE_15 - 0x400
+NEW_KEYS = 0x2E                         # gMain.newKeys [include/main.h]
 
 
 def word(data, at):
@@ -39,7 +43,8 @@ class World:
             pytest.skip("no cartridge image on this machine")
         self.rom = path.read_bytes()
         self.build = builds.for_game_code(code)
-        machine = bs._Machine(bs.build_install_resident("follower", build=self.build), rom=self.rom,
+        kept = bytes(0xB20) + bs.build_resident_save_blob("follower", build=self.build)
+        machine = bs._Machine(bs.build_install_kept(self.build), rom=self.rom, sav2=kept,
                               build=self.build, memory={
                                   self.build.intr_vblank: (STUB | 1).to_bytes(4, "little"),
                                   STUB: b"\x70\x47"})
@@ -127,7 +132,7 @@ def test_pikachu_walks_one_tile_behind_on_its_own_frames(code):
     world = World(code, 25)
     world.stand(10, 10)
     world.stand(10, 10)
-    assert world.entry() == (0xEEEE, 0xEEEE, 0xEEEE)        # nothing before the first step
+    assert world.entry()[0] == HIDDEN                       # nothing before the first step
     world.walk((10, 10), (0, -1), 2)                         # north
     a0, a1, a2 = world.entry()
     px, py = world.player_oam()
@@ -179,7 +184,7 @@ def test_a_warp_starts_over_and_the_next_step_walks_in_from_behind():
     world.put(world.oam, b"\xEE" * 6)
     world.stand(16, 14)                                     # a warp: every coordinate elsewhere
     world.stand(16, 14)
-    assert world.entry() == (0xEEEE, 0xEEEE, 0xEEEE)
+    assert world.entry()[0] == HIDDEN
     world.place((16, 15), (16, 14), 16 * 16 + ANCHOR_X, 16 * 14 + ANCHOR_Y + 1, 1)  # first pixel south
     a0, a1, _ = world.entry()
     px, py = world.player_oam()
@@ -209,3 +214,71 @@ def test_deoxys_follows_in_its_versions_forme(code, gfx):
     a0, a1, _ = world.entry()
     assert a1 >> 14 == 2                                    # 32x32
     assert world.tiles(0x200) == world.overworld_frame(gfx, 1)
+
+
+def test_a_fade_darkens_it_and_a_black_screen_stays_black():
+    """The palette goes to gPlttBufferUnfaded every frame, to gPlttBufferFaded only at blend y 0: a
+    finished fade-out clears `active` with y 16 [palette.c], and the follower used to light up."""
+    world = World("BPRF", 25)
+    world.stand(10, 10)
+    world.walk((10, 10), (0, -1), 2)
+    colours = world.overworld_palette(120)
+    for y, faded in ((16, False), (8, False), (0, True)):
+        world.put(OBJ_PALETTE_15, b"\0" * 32)
+        world.put(OBJ_PALETTE_15_UNFADED, b"\0" * 32)
+        world.put(PALETTE_FADE + 4, (y << 6 | y << 11).to_bytes(2, "little"))
+        world.stand(10, 9, 2)
+        assert bytes(world.uc.mem_read(OBJ_PALETTE_15_UNFADED, 32)) == colours
+        assert world.palette() == (colours if faded else b"\0" * 32)
+
+
+def test_a_ledge_arc_is_replayed_on_the_next_step():
+    """FRLG jumps a ledge as two one-tile steps with the arc in the player sprite's y2; the
+    follower walks each of those steps one step later, with the same y2 by progress."""
+    world = World("BPRF", 25)
+    world.stand(10, 10, 1)
+    world.walk((10, 10), (0, 1), 1)
+    arc = [-4, -6, -8, -10, -11, -12, -12, -12, -12, -11, -10, -9, -8, -6, -4]
+    for i, y2 in enumerate(arc, 1):                         # the player's step, 11 -> 12
+        world.put(SPRITES + 0x26, y2.to_bytes(2, "little", signed=True))
+        world.place((10, 12), (10, 11), 16 * 10 + ANCHOR_X, 16 * 11 + ANCHOR_Y + i, 1)
+    world.put(SPRITES + 0x26, b"\0\0")
+    world.stand(10, 12, 1)
+    tops = []
+    for i in range(1, 16):                                  # the next step: the follower, 11 -> 12
+        world.place((10, 13), (10, 12), 16 * 10 + ANCHOR_X, 16 * 12 + ANCHOR_Y + i, 1)
+        _, py = world.player_oam()
+        tops.append(((world.entry()[0] - py + 128) & 0xFF) - 128)   # its top less the player's
+    assert tops == arc
+
+
+@pytest.mark.parametrize("code", CARTRIDGES)
+def test_a_facing_it_runs_the_cry_and_the_line(code):
+    world = World(code, 25)
+    calls = []
+    world.uc.hook_add(__import__("unicorn").UC_HOOK_CODE,
+                      lambda uc, address, size, data: calls.append(uc.reg_read(world.arm.UC_ARM_REG_R0)),
+                      begin=world.build.setup_script, end=world.build.setup_script)
+    world.stand(10, 10, 1)
+    world.walk((10, 10), (0, 1), 1)                         # south: it stands north of the player
+    world.put(world.build.gmain + NEW_KEYS, b"\x01\x00")    # A
+    world.stand(10, 11, 1)                                  # facing away
+    assert not calls
+    world.put(OBJECTS + 0x18, bytes([1 << 4 | 2]))           # turned north, in place
+    world.frame()
+    assert len(calls) == 1
+    script = bytes(world.uc.mem_read(calls[0], 20))
+    assert script[0] == 0x69 and script[5] == 0xA1 and script[11] == 0x67     # lockall, cry, message
+    assert int.from_bytes(script[6:8], "little") == 25
+    text = int.from_bytes(script[12:16], "little")
+    line = bytes(world.uc.mem_read(text, 20))
+    first = bs.FOLLOWER_TEXT[world.build.language][0]
+    assert line.startswith(b"\xFD\x02") and charmap.decode(line[2:]).startswith(" " + first)
+    smiley = world.build.emoticons + 11 * 0x80
+    world.put(world.build.gmain + NEW_KEYS, b"\x00\x00")
+    world.frame()
+    assert bytes(world.uc.mem_read(OBJ_TILE_1008 - 0x80, 0x80)) == world.rom[
+        smiley - 0x08000000:smiley - 0x08000000 + 0x80]
+    a0, a1, a2 = (int.from_bytes(world.uc.mem_read(world.oam - 8 + i, 2), "little") for i in (0, 2, 4))
+    f0, f1, _ = world.entry()
+    assert (a0 & 0xFF, a1, a2) == ((f0 - 16) & 0xFF, 0x4000 | f1 & 0x1FF, 0x3EC | 0x0800)

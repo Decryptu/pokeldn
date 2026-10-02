@@ -227,6 +227,7 @@ def test_saved_console_payload_keeps_its_dump_protocol_and_output_path(tmp_path)
     ("install-resident", {"resident_name": "noencounter", "write_unsafe": True}),
     ("memory-dump-scatter", {"dump_addresses": (0x080CE040, 0x0804A2A0), "dump_size": 64}),
     ("rng-trace", {"trace_address": 0x03005000, "trace_samples": 4}),
+    ("save-write", {"write_resident": ("follower", ())}),             # two leads, then install-kept
 ])
 def test_shared_code_files_preserve_built_payloads_and_response_metadata(script, options):
     source = config.BufferScriptPayload(script=script, **options)
@@ -243,7 +244,9 @@ def test_console_code_files_refuse_bad_protocol_options_and_mixed_gift_data():
                           ({"buffer_code": code}, {"buffer_dump_blocks": 2}),
                           ({"buffer_code": code}, {"buffer_decode": "unknown"}),
                           ({"buffer_code": code}, {"buffer_reference": "/local/image.gba"}),
-                          ({"buffer_code": code, "card": bytes(332)}, {})]:
+                          ({"buffer_code": code, "card": bytes(332)}, {}),
+                          ({"buffer_code": code, "buffer_lead_2": code}, {}),
+                          ({"card": bytes(332), "buffer_lead_1": code}, {})]:
         with pytest.raises(ValueError):
             gifts.Gift("frlg", "Bad payload", {"BPRF": gifts.Variant(data, options)})
 

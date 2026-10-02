@@ -383,7 +383,8 @@ copies over a hook that may be live, and on a second visit the installer finds t
 patches nothing. A zero there crashes the console to a black screen after the second conversation.
 
 The RAM script is 394 of 995 bytes whatever the payload. `filler_B20` holds 1024 bytes, the save's
-other unused regions about 700. A larger blob takes more sessions (`save_write_chunks`). At the full
+other unused regions about 700. A larger blob is written in pieces of 936 bytes, one payload each, in
+one session ([`save-write`](#save-write)). At the full
 1024 the blob reaches the top of EWRAM and the counter moves into the 84 bytes below the staging area.
 The staged copy equals the save except the hook's fifth word, and every arming stages the same bytes
 (verified on an emulator, where the counter ran at 60.0 a second).
@@ -922,6 +923,10 @@ answer is what the save now holds. The session ends in `CLI_MSG_BUFFER_SUCCESS`,
     HOST --buffer-script save-write --dump-block sav2 --dump-offset 0xB20 \
         --write-text "some text" --version firered
 
+One payload carries 936 bytes. Longer data is written in pieces of 936, each its own payload, all
+run in turn in the session; the client receives and runs them as its command list says
+[mystery_gift_client.c:145, 236]. The answer is what the save holds under the last piece.
+
 `build_save_write` refuses any span outside `filler_90[8]` at 0x090 and `filler_B20[0x400]` at 0xB20 in
 `struct SaveBlock2` [global.h:345,357], which nothing in `src/` references. Four bytes past
 `filler_B20` is `encryptionKey`, which money is XORed with. `--write-unsafe` overrides. Where the
@@ -1337,36 +1342,74 @@ it in from the tile behind the one the player leaves, which on a straight crossi
 
 | step | effect |
 | --- | --- |
-| idle frame (`gMain.intrCheck` bit 0 clear) | `GetMonData(&gPlayerParty[0], 65)` after `VBlankIntr` |
-| `callback2` other than `CB2_Overworld` | not drawn; the placement is kept, so after a battle, the bag or the party menu it is back in place |
-| `gPaletteFade.active` | not drawn |
+| idle frame (`gMain.intrCheck` bit 0 clear) | `GetMonData(&gPlayerParty[0], 65)` after `VBlankIntr`, then the A check below |
+| `callback2` other than `CB2_Overworld` | not drawn, OAM left alone; the placement is kept, so after a battle, the bag or the party menu it is back in place |
+| `callback2` is `CB2_Overworld` | `gMain.oamBuffer[126]` and `[127]` hidden (`attr0` `0x0200`) before anything is drawn |
 | `gPlayerAvatar.flags & 0x1E` (either bike, surfing, underwater) | not drawn, placement dropped |
 | the player's sprite `invisible` | not drawn |
-| drawn | tiles into OBJ tile 1008 (`0x06017E00`, 0x80 or 0x200 bytes), 32 bytes into OBJ palette 15 of `gPlttBufferFaded` only, `gMain.oamBuffer[127]` with the player's `attr2` priority |
+| drawn | tiles into OBJ tile 1008 (`0x06017E00`, 0x80 or 0x200 bytes), 32 bytes into OBJ palette 15 of `gPlttBufferUnfaded` (`0x020375D4`), and of `gPlttBufferFaded` (`0x020379D4`) only when the blend `y` (`gPaletteFade + 4`, bits 6..10) is 0; `gMain.oamBuffer[127]` with the player's `attr2` priority |
 
 `gMain.oamBuffer[127]` is the last entry, so the follower is behind every other sprite; a 16x16
 follower never overlaps the player from the south. `AddSpritesToOamBuffer` fills unused entries with
-`gDummyOamData` every frame [sprite.c:487], so a screen that builds its own OAM clears it. The game's
-own colours for palette 15 stay in `gPlttBufferUnfaded`.
+`gDummyOamData` only up to `gOamLimit` [sprite.c:487], which `ResetSpriteData` sets to 64
+[sprite.c:297] and which reads 64 in the overworld (`0x02021B44`); entries 126 and 127 keep what was
+last written until a screen resets its sprites, so the hook hides both on every overworld frame.
 
-State, 30 bytes at `0x0203FFC0` (`state=`): s16 pairs `+0` source tile, `+4` target, `+8` the
-player's `currentCoords` last frame, `+12` the anchor, `+16` its `previousCoords` last frame; bytes
-`+20` placed, `+21` direction (0 S, 1 N, 2 W, 3 E), `+22` step parity, `+23` the player's direction
-this step; `+24` species, `+28` the player's `attr2`. Whatever EWRAM held there at install reads as a
-jump and starts over.
+A door or warp fade-out runs `BeginNormalPaletteFade` to `y` 16 and then clears `active` with the
+screen still black [field_weather.c:740, palette.c]. Measured on mGBA walking into a door: `active` set
+for 21 frames, then `y` 16 with `active` clear for four frames before `callback2` leaves the overworld.
+With the palette in `gPlttBufferUnfaded`, the fade builds the follower's faded colours with the map's;
+writing `gPlttBufferFaded` at `y` 16 drew it at full brightness on the black screen.
 
-| cartridge | `gObjectEventGraphicsInfoPointers` | `sObjectEventSpritePalettes` | `gMonIconPaletteIndices` | `gMonIconPalettes` | `GetMonIconPtr` |
-| --- | --- | --- | --- | --- | --- |
-| BPRF | `0x083983C8` | `0x0839D770` | `0x083CBEE8` | `0x083CB7A8` | `0x0809AA74` |
-| BPGF | `0x083983A8` | `0x0839D750` | `0x083CBD24` | `0x083CB5E4` | `0x0809AA48` |
-| BPRE | `0x0839D91C` | `0x083A2CC4` | `0x083D197C` | `0x083D123C` | `0x0809A7B8` |
-| BPGE | `0x0839D8FC` | `0x083A2CA4` | `0x083D17B8` | `0x083D1078` | `0x0809A78C` |
+A ledge jump moves the player two one-tile steps with the arc in its sprite's `y2` (`+0x26`): measured
+-4 to -12 and back to 0 over the two steps, with one frame between them where `currentCoords` equals
+`previousCoords`. The hook records the player's `y2` by progress (1..16) into one of two 16-byte arcs by
+step parity, and adds the other arc's value at the same progress to its own `y` on the next step. A
+frame with no progress keeps the last value. The follower jumps the ledge one step behind the player;
+if the player stops on landing, it stops on the ledge tile.
+
+Pressing A while facing it: in an idle frame, when `.Ldraw` found the player at rest facing back along
+its last step (the follower's tile), `gMain.newKeys` (`+0x2E`) has A, the lead is a species 1..411 (not
+`SPECIES_EGG`, 412, which has no cry), and `ArePlayerFieldControlsLocked` returns 0 (the game's own A,
+a script or a menu took the frame), the hook patches the species and the text pointer into its script
+and calls `ScriptContext_SetupScript`:
+
+    69                lockall
+    7F 00 0000        bufferpartymonnick STR_VAR_1, 0
+    A1 SPEC 0000      playmoncry SPECIES, CRY_MODE_NORMAL
+    00                nop, so the pointer is on a word
+    67 PTR            message: "{STR_VAR_1} saute\nde joie !" (French), "{STR_VAR_1} jumps\nfor joy!" (English)
+    66 6D 6B 02       waitmessage, waitbuttonpress, releaseall, end
+
+`releaseall` hides the message box [scrcmd.c:1231]. For 60 frames the hook draws the cartridge's
+smiley, frame 11 of `sGfx_Emoticons` [trainer_see.c:46, 628], in `gMain.oamBuffer[126]` at OBJ tile
+1004 with palette 0, as the game's own emoticons use [trainer_see.c:565], centred on the follower with
+its bottom on the follower's top.
+
+State, 64 bytes at `0x0203FBB8` (`state=`), below the kept handler and above the highest EWRAM
+symbol's end (`0x0203FBAC`): s16 pairs `+0` source tile, `+4` target, `+8` the player's
+`currentCoords` last frame, `+12` the anchor, `+16` its `previousCoords` last frame; bytes `+20` placed,
+`+21` direction (0 S, 1 N, 2 W, 3 E), `+22` step parity, `+23` the player's direction this step, `+26`
+faced this frame, `+27` smiley frames left, `+31` the arc offset (s8); `+24` species, `+28` the
+player's `attr2`; `+32` and `+48` the two arcs. Whatever EWRAM held there at install reads as a jump and
+starts over; the first placement clears the arcs.
+
+The hook is 984 bytes: past the 876 an `install-resident` session carries, so it is installed from the
+save ([A resident hook kept in the save](#a-resident-hook-kept-in-the-save)).
+
+| cartridge | `gObjectEventGraphicsInfoPointers` | `sObjectEventSpritePalettes` | `gMonIconPaletteIndices` | `gMonIconPalettes` | `GetMonIconPtr` | `ScriptContext_SetupScript` | `ArePlayerFieldControlsLocked` | `sGfx_Emoticons` |
+| --- | --- | --- | --- | --- | --- | --- | --- | --- |
+| BPRF | `0x083983C8` | `0x0839D770` | `0x083CBEE8` | `0x083CB7A8` | `0x0809AA74` | `0x0806D3D4` | `0x0806D248` | `0x083BF068` |
+| BPGF | `0x083983A8` | `0x0839D750` | `0x083CBD24` | `0x083CB5E4` | `0x0809AA48` | `0x0806D3D4` | `0x0806D248` | `0x083BEEA4` |
+| BPRE | `0x0839D91C` | `0x083A2CC4` | `0x083D197C` | `0x083D123C` | `0x0809A7B8` | `0x0806D270` | `0x0806D0E4` | `0x083C45C4` |
+| BPGE | `0x0839D8FC` | `0x083A2CA4` | `0x083D17B8` | `0x083D1078` | `0x0809A78C` | `0x0806D270` | `0x0806D0E4` | `0x083C4400` |
 
 English values are `pokefirered_switch.elf`'s; the French and LeafGreen ones are the same bytes found
 in each image. The EWRAM it reads is the same on all four: `gObjectEvents` `0x02036E34`,
 `gPlayerAvatar` `0x02037074`, `gSprites` `0x0202063C`, `gSpriteCoordOffsetX` `0x02021BC8`,
 `gPaletteFade` `0x02037AB4`, `gPlttBufferFaded` `0x020375F4`. `tests/test_follower.py` runs the
-installed hook on each image's own `GetMonData` and `GetMonIconPtr`.
+hook as `install-kept` installs it, on each image's own `GetMonData`, `GetMonIconPtr`,
+`ArePlayerFieldControlsLocked` and emoticon graphics.
 
 #### Verified
 
@@ -1377,7 +1420,7 @@ installed hook on each image's own `GetMonData` and `GetMonIconPtr`.
 | `shiny` | counts down in grass; R slows it | the followed seed matches `gRngValue`; the Python model agrees on the shiny |
 | `ivs` | the lead's IV word and `personality % 25` match a `save-dump` of `SaveBlock1 + 0x34` | matches `gPlayerParty` (`0x02024280`) |
 | `noencounter` | no wild encounter while walking in grass | none; encounters return after a soft reset |
-| `follower` | the lead (Chansey) walks a tile behind; it is also drawn on the black screen of a door transition | a tile behind on Ryujinx's GBA app (Blastoise's icon, Pidgeot's sprite) and on mGBA (every overworld sprite, an egg, LeafGreen); through doors, a map connection, a battle and the party menu; MOM installs it from the save after a restart |
+| `follower` | the lead (Chansey) walks a tile behind, from an `install-resident` of the 708-byte hook before the door, ledge and A changes; that hook drew it on the black screen of a door transition | a tile behind on Ryujinx's GBA app (Blastoise's icon, Pidgeot's sprite) and on mGBA (every overworld sprite, an egg, LeafGreen); through doors, a map connection, a battle and the party menu. The 984-byte hook on mGBA: black from the end of a door fade-out to the fade-in, the ledge arc one step behind, A while facing it plays the cry, the smiley and the line; A facing away does nothing |
 
 Unresolved: on the emulator the overlay drew during the recap after CONTINUER but not in interactive
 play, while `field` still sped the game.
@@ -1388,30 +1431,65 @@ Every hook runs on LeafGreen with one address changed: `m4aSoundMain` is `0x081D
 The builders take `version=`, the host `--version leafgreen`. Verified on an emulated LeafGreen:
 turbo and `shiny`, music intact.
 
+### `install-kept`
+
+`asm/install-kept.s`, 192 bytes, installs the hook kept in `filler_B20` as `install-resident`
+installs its own: it reads `gSaveBlock2Ptr` (the block moves on every load), checks the magic, a length
+that leaves the checksum inside `filler_B20`, and the sum, then clears REG_IME, keeps the game's
+handler at `0x0203FBFC`, copies the hook, writes its `p_original` and points `gIntrTable[4]` at it.
+The answer is the handler found in the table, or `0xBAD0BAD0` when nothing was installed. The ARM
+entry at +0 is the buffer script's; MOM's RAM script runs the THUMB entry at +8, which points the
+answer at a word in the image. The last two words are patched per cartridge: `&gSaveBlock2Ptr` and
+`&gIntrTable[4]`.
+
+    IP_HOST --buffer-script install-kept --version firered
+
 ### A resident hook kept in the save
 
-Any resident hook can live in `filler_B20` and be installed by talking to MOM after a boot, with no
-link and no host. Two gift sessions set it up:
+Any resident hook can live in `filler_B20` and be installed again by talking to MOM after a boot, with
+no link and no host. Two gift sessions set it up:
 
-    IP_HOST --buffer-script save-write --resident turbo --resident-param field=3 \
-        --resident-param hold=0x100 --resident-param budget=228 --version firered
+    IP_HOST --buffer-script save-write --resident follower --version firered
     IP_HOST --gift resident-save --version firered
 
-The first writes this blob at `SaveBlock2 + 0xB20` (`asm/resident/save-head.s`):
+The first writes this blob at `SaveBlock2 + 0xB20` and installs the hook from it in the same session:
 
-    +0x00  magic     0x53524B50, "PKRS"
-    +0x04  entry     THUMB: base = r0 - 5, sum the words, run the image if the sum matches
-    +0x34  length    bytes summed
-    +0x38  answer    where the installer writes the handler it found
-    +0x3C  image     the install-resident payload, ARM entry and THUMB body, then the hook
-    +length          checksum
+    +0x00  magic     0x32524B50, "PKR2"
+    +0x04  length    the hook's bytes, whole words
+    +0x08  dest      0x0203FC00
+    +0x0C  entry     u16 offset of the hook's entry
+    +0x0E  original  u16 offset of its p_original word
+    +0x10  the hook
+    +len   checksum  the sum of every word before it
 
-The second binds [the save loader](#a-payload-larger-than-a-script-body) to MOM with staging at
-`0x0201C400` (`gDecompressionBuffer + 0x400`, above the 64 staged loader bytes) and magic `PKRS`, so an
-older `PKLD` payload is left alone. The installer then behaves as in a gift session, and a second visit
-chains to the kept handler. Turbo (908 bytes), `ivs`, `noencounter` and `follower` (920 bytes) fit one
-`save-write`; `shiny` does not. Talking to MOM arms the hook; a soft reset removes it until MOM is talked to again.
-Verified with turbo on an emulator and on retail FireRed.
+A blob past one `save-write` (936 bytes) is written by two. The session runs every write and then
+[`install-kept`](#install-kept), each a payload of its own: the client receives and runs buffer scripts
+in turn as its command list says [mystery_gift_client.c:145, 236], and only the last answer travels
+back.
+
+    client  RECV RUN  RECV RUN  RECV RUN LOAD_TOSS_RESPONSE SEND_LOADED  RECV COPY_RECV
+    host    script    write 1   write 2  install-kept   <- the handler found
+
+The session ends in `CLI_MSG_BUFFER_SUCCESS`, which saves, so `filler_B20` reaches flash.
+
+The second binds a RAM script to MOM that stages the 36-byte [ram-jump trampoline](#a-payload-larger-than-a-script-body)
+and branches into `install-kept`'s THUMB entry, carried in the script body at one byte each (428
+bytes of 995). Talking to MOM installs the hook; a second visit chains to the kept handler, and a soft
+reset removes the hook until MOM is talked to again.
+
+| hook | blob | `save-write` payloads |
+| --- | --- | --- |
+| `noencounter` | 48 | 1 |
+| `ivs` | 520 | 1 |
+| `turbo` | 716 | 1 |
+| `shiny` | 888 | 1 |
+| `follower` | 1004 | 2 |
+
+`tests/test_resident_save.py` runs the whole session between the host and the emulated client, and
+MOM's body script on a booted console: a flipped byte, a missing second write, a length past
+`filler_B20` and the older `PKLD` payload install nothing. The earlier `PKRS` blob (a 60-byte head and
+the 148-byte installer in the save) was verified with turbo on an emulator and on retail FireRed; the
+`PKR2` form is offline only.
 
 A new Wonder Card undoes the binding: `SaveWonderCard` calls `ClearSavedWonderCardAndRelated`, which
 calls `ClearRamScript` [mystery_gift.c:172, 160]. `filler_B20` stays as written.

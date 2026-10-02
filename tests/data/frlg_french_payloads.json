@@ -175,10 +175,6 @@
   "BPGF": "1627:7ebc49f9c87325661329dcaf3a4a193b96b2f1882437a7b2b0517b1886bf1808",
   "BPRF": "1627:7ebc49f9c87325661329dcaf3a4a193b96b2f1882437a7b2b0517b1886bf1808"
  },
- "gift:resident-save": {
-  "BPGF": "1239:cfb2f232b117736a3b2a4bc89b628d9cbec71089e9276c1f4cef9cd047e17787",
-  "BPRF": "1239:cfb2f232b117736a3b2a4bc89b628d9cbec71089e9276c1f4cef9cd047e17787"
- },
  "gift:rng-draw-count": {
   "BPGF": "1025:07ef435cce7022014180a5f2f400b9347d30397f17db151e44adaef318e6d068",
   "BPRF": "1025:07ef435cce7022014180a5f2f400b9347d30397f17db151e44adaef318e6d068"
@@ -274,21 +270,5 @@
  "operands:buffer:flash-write-derive-position": {
   "BPGF": "76:426470baf933a8d84a00dce117155c4eb49d384933263844e345c4820b5273fa",
   "BPRF": "76:426470baf933a8d84a00dce117155c4eb49d384933263844e345c4820b5273fa"
- },
- "save-blob:ivs": {
-  "BPGF": "712:3385e6cb66a979e877dd90bb2fedea86bbba21a5f573255ebabb6335bf6de8f8",
-  "BPRF": "712:3385e6cb66a979e877dd90bb2fedea86bbba21a5f573255ebabb6335bf6de8f8"
- },
- "save-blob:noencounter": {
-  "BPGF": "240:194ffc9bc2ccd30e19fe0b813d19620eb177bdda54f398270af14b196c14987c",
-  "BPRF": "240:194ffc9bc2ccd30e19fe0b813d19620eb177bdda54f398270af14b196c14987c"
- },
- "save-blob:turbo": {
-  "BPGF": "908:747805c25e465edeb9dadf63f0aa1398132c428acdafdd1c2f1319aa17bfe9ef",
-  "BPRF": "908:747805c25e465edeb9dadf63f0aa1398132c428acdafdd1c2f1319aa17bfe9ef"
- },
- "save-blob:turbo,field=1,hold=256,budget=228": {
-  "BPGF": "908:3c728dff0b28b5c9328be4629711492bb9c370fb3421b385bd0fdeed10c9471c",
-  "BPRF": "908:3c728dff0b28b5c9328be4629711492bb9c370fb3421b385bd0fdeed10c9471c"
  }
 }

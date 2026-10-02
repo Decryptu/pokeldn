@@ -166,6 +166,7 @@ class MysteryGiftClientEngine:
         self.party_count = 1
         self.national_dex = False
         self.buffer_scripts = []
+        self.sav2 = None            # SaveBlock2 as the last payload left it, for the next
         self.dynamic_msg = None
         self.result = None
         self.close_confirmed = False
@@ -468,7 +469,7 @@ class MysteryGiftClientEngine:
             # Called every frame until it returns 1, on its image as it left it
             # [decomp:src/mystery_gift_client.c:276-280]; memory-scan relies on it.
             repeated = buffer_script.emulate_repeating(
-                code, param=self.param or 0, sav2=self._save_block2_image(),
+                code, param=self.param or 0, sav2=self.sav2 or self._save_block2_image(),
                 send_size=armed_size, send_ident=armed_ident,
                 memory=self.rom_stubs or None)
             run = repeated.final
@@ -478,6 +479,7 @@ class MysteryGiftClientEngine:
             self.info("[mg] BUFFER SCRIPT FAILED: " + str(exc))
             return
         self.param = run.param
+        self.sav2 = run.sav2        # what a later payload in the session finds there
         if repeated.calls > 1:
             self.info(f"[mg] buffer script ran over {repeated.calls} calls "
                       f"({repeated.instructions} instructions): on the console that is "

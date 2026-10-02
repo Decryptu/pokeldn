@@ -61,6 +61,7 @@ def server_keywords(distribution):
         "questionnaire": distribution.questionnaire,
         "denied_message": distribution.denied_message,
         "buffer_code": distribution.buffer_code,
+        "buffer_lead": distribution.buffer_lead,
         "buffer_expect": distribution.buffer_expect,
         "buffer_dump_size": distribution.buffer_dump_size,
         "buffer_dump_blocks": distribution.buffer_dump_blocks,

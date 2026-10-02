@@ -38,6 +38,7 @@ SVR_GET_CARD_STAT = "SVR_GET_CARD_STAT"
 SVR_LOAD_DENIED_MSG = "SVR_LOAD_DENIED_MSG"
 SVR_READ_MEVENT_STATUS = "SVR_READ_MEVENT_STATUS"
 SVR_LOAD_BUFFER_SCRIPT = "SVR_LOAD_BUFFER_SCRIPT"
+SVR_LOAD_BUFFER_LEAD = "SVR_LOAD_BUFFER_LEAD"
 SVR_READ_BUFFER_STATUS = "SVR_READ_BUFFER_STATUS"
 SVR_LOAD_BUFFER_VERDICT_MSG = "SVR_LOAD_BUFFER_VERDICT_MSG"
 SVR_READ_BUFFER_DUMP = "SVR_READ_BUFFER_DUMP"
@@ -411,15 +412,18 @@ SCRIPT_DUMP_MEMORY = (
 )
 
 
-def script_dump_memory(blocks=1):
-    """-> the host script for a dump of `blocks` consecutive kilobytes in ONE session; one
-    MG_LINKID_RESPONSE per block, which SVR_READ_BUFFER_DUMP appends."""
-    if blocks == 1:
+def script_dump_memory(blocks=1, leads=0):
+    """-> the host script for a dump of `blocks` consecutive kilobytes in ONE session, after `leads`
+    payloads sent and run first; one MG_LINKID_RESPONSE per block, which SVR_READ_BUFFER_DUMP
+    appends."""
+    if blocks == 1 and not leads:
         return SCRIPT_DUMP_MEMORY
     return (
         *_GAME_DATA_PREFIX,
-        (SVR_LOAD_CLIENT_SCRIPT, mg_script.client_script_dump_memory(blocks)),
+        (SVR_LOAD_CLIENT_SCRIPT, mg_script.client_script_dump_memory(blocks, leads)),
         (SVR_SEND,),
+        *[step for index in range(leads)
+          for step in ((SVR_LOAD_BUFFER_LEAD, index), (SVR_SEND,))],
         (SVR_LOAD_BUFFER_SCRIPT,),
         (SVR_SEND,),
         *[step for _ in range(blocks)
@@ -439,6 +443,26 @@ SCRIPT_RUN_BUFFER_SCRIPT = (
     (SVR_GOTO_IF_EQ, True, _SCRIPT_BUFFER_SUCCESS),
     (SVR_GOTO, _SCRIPT_BUFFER_FAILURE),
 )
+
+
+def script_run_buffer_script(leads=0):
+    """-> SCRIPT_RUN_BUFFER_SCRIPT with `leads` payloads sent and run first, in one session (a
+    save-write before install-kept); the verdict is the last payload's answer."""
+    if not leads:
+        return SCRIPT_RUN_BUFFER_SCRIPT
+    return (
+        *_GAME_DATA_PREFIX,
+        (SVR_LOAD_CLIENT_SCRIPT, mg_script.client_script_run_buffer(leads)),
+        (SVR_SEND,),
+        *[step for index in range(leads)
+          for step in ((SVR_LOAD_BUFFER_LEAD, index), (SVR_SEND,))],
+        (SVR_LOAD_BUFFER_SCRIPT,),
+        (SVR_SEND,),
+        (SVR_RECV, MG_LINKID_RESPONSE),
+        (SVR_READ_BUFFER_STATUS,),
+        (SVR_GOTO_IF_EQ, True, _SCRIPT_BUFFER_SUCCESS),
+        (SVR_GOTO, _SCRIPT_BUFFER_FAILURE),
+    )
 
 
 # sServerScript_TossPrompt [decomp:src/mystery_gift_scripts.c:151]
@@ -493,7 +517,8 @@ class MysteryGiftServer:
 
     def __init__(self, card=None, ram_script=None, *, news=None, stamp=None,
                  activation_script=None, install_activation_script=None, trainer=None,
-                 mevent=None, buffer_code=None, buffer_expect=None, buffer_dump_size=None,
+                 mevent=None, buffer_code=None, buffer_lead=(), buffer_expect=None,
+                 buffer_dump_size=None,
                  buffer_dump_blocks=1, buffer_dump_address=0, buffer_dump_addresses=(),
                  buffer_decode=None, buffer_reference=None,
                  buffer_success_message=None, buffer_failure_message=None,
@@ -584,6 +609,12 @@ class MysteryGiftServer:
                 raise MysteryGiftServerError(
                     "a buffer script runs on its own: no card, news, stamp rally, visiting "
                     "trainer or Mystery Event script in the same session")
+        # Payloads run before buffer_code in the same session; their answers are not read.
+        self.buffer_lead = tuple(bytes(code) for code in buffer_lead)
+        for code in self.buffer_lead:
+            buffer_script.validate(code)
+        if self.buffer_lead and self.buffer_code is None:
+            raise MysteryGiftServerError("payloads run ahead of the last one, and there is none")
         self.buffer_dump_size = None if buffer_dump_size is None else int(buffer_dump_size)
         # Only memory-dump-multi uses these; every other payload answers once.
         self.buffer_dump_blocks = int(buffer_dump_blocks)
@@ -680,9 +711,9 @@ class MysteryGiftServer:
         elif self.is_mevent_distribution:
             self.script = SCRIPT_SEND_MYSTERY_EVENT
         elif self.is_buffer_distribution:
-            self.script = (script_dump_memory(self.buffer_dump_blocks)
+            self.script = (script_dump_memory(self.buffer_dump_blocks, len(self.buffer_lead))
                            if self.buffer_dump_size is not None
-                           else SCRIPT_RUN_BUFFER_SCRIPT)
+                           else script_run_buffer_script(len(self.buffer_lead)))
         else:
             self.script = SCRIPT_SEND_WONDER_CARD
         if self.questionnaire is not None and script is None:
@@ -808,7 +839,7 @@ class MysteryGiftServer:
             "search screen and launch again, or drop --expect-console if the run does not care.")
 
     BUILD_FIELDS = ("card", "ram_script", "news", "stamp", "activation_script",
-                    "install_activation_script", "trainer", "mevent", "buffer_code",
+                    "install_activation_script", "trainer", "mevent", "buffer_code", "buffer_lead",
                     "buffer_expect", "buffer_dump_size", "buffer_dump_blocks",
                     "buffer_dump_address", "buffer_dump_addresses", "buffer_decode",
                     "buffer_reference")
@@ -943,6 +974,12 @@ class MysteryGiftServer:
         self.info(f"Mystery Event script status: {self.mevent_status} "
                   f"({MEVENT_STATUS_NAMES.get(self.mevent_status, 'set by our own setstatus')})")
 
+    def _do_svr_load_buffer_lead(self, index):
+        code = self.buffer_lead[index]
+        self._loaded = (MG_LINKID_RAM_SCRIPT, code, len(code))
+        self.info(f"buffer script {index + 1} of {len(self.buffer_lead) + 1} (native ARM code): "
+                  + buffer_script.describe(code))
+
     def _do_svr_load_buffer_script(self):
         self._loaded = (MG_LINKID_RAM_SCRIPT, self.buffer_code, len(self.buffer_code))
         self.info("buffer script (native ARM code): "
@@ -957,7 +994,14 @@ class MysteryGiftServer:
                 (buffer_script.FLASH_WRITE, buffer_script.FLASH_PATCH)):
             self.info(f"Buffer script status: 0x{self.buffer_status:08X}, {refusal}")
         expected, mask, why = self._expected_buffer_status()
-        if expected is None:
+        installer = buffer_script.describe(self.buffer_code).startswith(
+            (buffer_script.INSTALL_KEPT, buffer_script.INSTALL_RESIDENT))
+        if expected is None and installer and self.buffer_status == buffer_script.INSTALL_REFUSED:
+            # Nothing installed: a kept blob that did not sum, or no handler to chain to. The
+            # failure exit does not save [mystery_gift_menu.c:1379].
+            self.buffer_matched = False
+            self.info(f"Buffer script status: 0x{self.buffer_status:08X} - nothing was installed")
+        elif expected is None:
             self.buffer_matched = True
             self.info(f"Buffer script status: 0x{self.buffer_status:08X} "
                       f"({self.buffer_status}) - the payload returned 1 and answered")

@@ -1052,11 +1052,14 @@ GIFT_RESIDENT_SAVE = "resident-save"
 
 
 def build_resident_save_script(build=None, **kwargs):
+    """MOM runs install-kept out of the RAM script body, through the ram-jump trampoline."""
     from pokeldn.frlg.rom import buffer_script
+    tail = (bytes([native_script.SCR_PLAYSE]) + native_script.SE_SUCCESS.to_bytes(2, "little")
+            + bytes([native_script.SCR_WAITSE, native_script.SCR_END]))
     return build_mevent_npc_script(
-        field_script=native_script.build_loader_script(
-            base=buffer_script.RESIDENT_SAVE_STAGING, size=buffer_script.RESIDENT_SAVE_SIZE,
-            magic=buffer_script.RESIDENT_SAVE_MAGIC, build=build), **_at_mom(kwargs))
+        field_script=native_script.build_body_script(
+            buffer_script.build_install_kept(build)[buffer_script.INSTALL_KEPT_THUMB_ENTRY:],
+            tail, build=build), **_at_mom(kwargs))
 
 
 RESIDENT_SAVE_GIFT = WonderGift(

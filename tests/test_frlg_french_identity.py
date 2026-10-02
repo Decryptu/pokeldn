@@ -1,7 +1,8 @@
 """French cartridges get the bytes recorded in tests/data/frlg_french_payloads.json before builds.py.
 
 Three differences are intended: the flash images' asm range guard, French LeafGreen's callable names
-past 0x0807CF68 (AddBagItem 0x0809DA44), and LeafGreen's own Enigma berry description pointers.
+past 0x0807CF68 (AddBagItem 0x0809DA44), and LeafGreen's own Enigma berry description pointers. The
+resident save blobs and MOM's resident-save card left the recording when their format became PKR2.
 """
 
 import dataclasses
@@ -22,7 +23,7 @@ FRENCH = (builds.BPRF, builds.BPGF)
 
 
 # Fields added after the recording; at their default they are left out of the digest.
-NEWER_FIELDS = {"buffer_reference": None}
+NEWER_FIELDS = {"buffer_reference": None, "buffer_lead": ()}
 
 
 def digest(value):
@@ -115,10 +116,6 @@ def _cases():
             lambda build, name=name, params=params: config.BufferScriptPayload(
                 script=bs.INSTALL_RESIDENT, resident_name=name, resident_params=params,
                 write_unsafe=True).build_code(build))
-        if name != "shiny":             # 1080 bytes: past one save-write
-            cases[f"save-blob:{label}"] = (
-                lambda build, name=name, params=params:
-                bs.build_resident_save_blob(name, build=build, **dict(params)))
     for case, script in FLASH_IMAGES.items():
         cases[f"operands:{case}"] = (
             lambda build, case=case, script=script: b"".join(
@@ -169,7 +166,7 @@ def _substitute(blob, words):
 
 def test_every_recorded_case_has_a_builder():
     assert sorted(set(REFERENCE) - set(CASES)) == []
-    assert len(REFERENCE) == 69 + len(FLASH_IMAGES)
+    assert len(REFERENCE) == 64 + len(FLASH_IMAGES)
 
 
 # Every recorded row but the three intended changes, which the two tests below hold instead.

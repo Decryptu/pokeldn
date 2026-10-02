@@ -455,12 +455,12 @@ class BufferScriptPayload:
             name, params = self.write_resident
             object.__setattr__(self, "write_data",
                                buffer_script.build_resident_save_blob(name, **dict(params)))
-        if self.script == buffer_script.SAVE_WRITE:
+        if self.script == buffer_script.SAVE_WRITE and self.write_resident is None:
             if not self.write_data:
                 raise ValueError(
                     f"{buffer_script.SAVE_WRITE} needs the bytes to write (--write-text/--write-hex)")
-            object.__setattr__(self, "dump_size", len(self.write_data))
-        elif self.write_data is not None:
+            object.__setattr__(self, "dump_size", len(self._write_chunks()[-1][1]))
+        elif self.write_data is not None and self.write_resident is None:
             raise ValueError(
                 f"bytes to write are only meaningful with {buffer_script.SAVE_WRITE}")
         if self.script == buffer_script.FLASH_PATCH:
@@ -584,8 +584,9 @@ class BufferScriptPayload:
 
     @property
     def is_dump(self):
-        """Anything whose answer comes back as bytes on ident 19 rather than the 4-byte channel."""
-        return self.script in buffer_script.DUMP_SCRIPTS
+        """Anything whose answer comes back as bytes on ident 19 rather than the 4-byte channel. A
+        resident hook's save-write ends in install-kept, which answers on the channel."""
+        return self.script in buffer_script.DUMP_SCRIPTS and self.write_resident is None
 
     @property
     def spec(self):
@@ -645,13 +646,14 @@ class BufferScriptPayload:
                               if self.create_mon_append_dry_run
                               else buffer_script.PARTY_APPEND_WRITE if self.create_mon_append
                               else buffer_script.PARTY_APPEND_NO))
+        if self.script == buffer_script.SAVE_WRITE and self.write_resident is not None:
+            return buffer_script.build_install_kept(build)
+        if self.script == buffer_script.INSTALL_KEPT:
+            return buffer_script.build_install_kept(build)
         if self.script == buffer_script.SAVE_WRITE:
-            data = self.write_data
-            if self.write_resident is not None:
-                name, params = self.write_resident
-                data = buffer_script.build_resident_save_blob(name, build=build, **dict(params))
+            offset, data = self._write_chunks()[-1]
             return buffer_script.build_save_write(
-                data, self.dump_block, self.dump_offset, unsafe=self.write_unsafe)
+                data, self.dump_block, offset, unsafe=self.write_unsafe)
         if self.script == buffer_script.INSTALL_RESIDENT:
             return buffer_script.build_install_resident(
                 self.resident_name, build=build, **dict(self.resident_params))
@@ -677,9 +679,28 @@ class BufferScriptPayload:
                 build=build)
         return buffer_script.payload(self.script)
 
+    def _write_chunks(self):
+        """save-write's data as (offset, bytes) pieces of one payload each, in order."""
+        size = buffer_script.MAX_SAVE_WRITE_BYTES
+        return [(self.dump_offset + at, self.write_data[at:at + size])
+                for at in range(0, len(self.write_data), size)]
+
+    def build_lead(self, build=None):
+        """The payloads run before build_code's in the same session: a resident hook's
+        save-writes, or every piece but the last of a write past one payload."""
+        if self.write_resident is not None:
+            name, params = self.write_resident
+            return buffer_script.build_resident_save_session(name, build=build, **dict(params))[0]
+        if self.script == buffer_script.SAVE_WRITE:
+            return tuple(buffer_script.build_save_write(data, self.dump_block, offset,
+                                                        unsafe=self.write_unsafe)
+                         for offset, data in self._write_chunks()[:-1])
+        return ()
+
     def build_distribution(self, build=None):
         return MysteryGiftDistribution(
-            None, None, buffer_code=self.build_code(build), buffer_expect=self.expect,
+            None, None, buffer_code=self.build_code(build), buffer_lead=self.build_lead(build),
+            buffer_expect=self.expect,
             buffer_dump_size=self.dump_size if self.is_dump else None,
             buffer_dump_blocks=self.dump_blocks,
             buffer_dump_address=(self.dump_address or

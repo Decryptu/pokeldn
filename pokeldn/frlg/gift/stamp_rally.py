@@ -67,6 +67,8 @@ class MysteryGiftDistribution:
     # Native ARM code, run by CLI_RUN_BUFFER_SCRIPT [buffer_script.py], and its expected answer
     # (mg_server.BUFFER_EXPECT_TRAINER_ID, a u32, or None for any answer).
     buffer_code: bytes | None = None
+    # Payloads run before buffer_code in the same session, their answers unread.
+    buffer_lead: tuple = ()
     buffer_expect: object | None = None
     # Set when the payload repoints the console's outgoing message: how many bytes
     # MG_LINKID_RESPONSE carries instead of 4.

@@ -461,6 +461,25 @@ CLIENT_SCRIPT_RUN_BUFFER = client_script(
     CLI_COPY_RECV,
 )
 
+
+
+def client_script_run_buffer(leads=0):
+    """-> CLIENT_SCRIPT_RUN_BUFFER with `leads` payloads received and run before it, in one session:
+    CLI_RUN_BUFFER_SCRIPT copies the receive buffer each time [mystery_gift_client.c:236]. Only the
+    last payload's answer travels back."""
+    leads = int(leads)
+    if not leads:
+        return CLIENT_SCRIPT_RUN_BUFFER
+    return client_script(*[step for _ in range(leads)
+                           for step in ((CLI_RECV, MG_LINKID_RAM_SCRIPT), CLI_RUN_BUFFER_SCRIPT)],
+                         (CLI_RECV, MG_LINKID_RAM_SCRIPT),
+                         CLI_RUN_BUFFER_SCRIPT,
+                         CLI_LOAD_TOSS_RESPONSE,
+                         CLI_SEND_LOADED,
+                         (CLI_RECV, MG_LINKID_CLIENT_SCRIPT),
+                         CLI_COPY_RECV)
+
+
 # sClientScript_DynamicSuccess [decomp:src/mystery_gift_scripts.c:87]: the console prints our
 # 64-byte message [mystery_gift_menu.c:943] and CLI_MSG_BUFFER_SUCCESS saves [:1379];
 # CLI_MSG_BUFFER_FAILURE (CLIENT_SCRIPT_DYNAMIC_ERROR) returns to the menu without saving.
@@ -491,19 +510,21 @@ CLIENT_SCRIPT_DUMP_MEMORY = client_script(
 MAX_DUMP_BLOCKS = 32
 
 
-def client_script_dump_memory(blocks=1):
-    """-> the client script that pulls `blocks` consecutive kilobytes in ONE session; 1 is
-    CLIENT_SCRIPT_DUMP_MEMORY exactly."""
+def client_script_dump_memory(blocks=1, leads=0):
+    """-> the client script that pulls `blocks` consecutive kilobytes in ONE session, after `leads`
+    payloads received and run first; 1 block and no leads is CLIENT_SCRIPT_DUMP_MEMORY exactly."""
     blocks = int(blocks)
     if not 1 <= blocks <= MAX_DUMP_BLOCKS:
         raise ValueError(f"a session carries 1..{MAX_DUMP_BLOCKS} blocks, asked for {blocks}")
-    if blocks == 1:
+    if blocks == 1 and not leads:
         return CLIENT_SCRIPT_DUMP_MEMORY
     body = []
     for _ in range(blocks):
         # InitSend first, then the payload repoints the send; swapped, nothing happens.
         body += [CLI_LOAD_TOSS_RESPONSE, CLI_RUN_BUFFER_SCRIPT, CLI_SEND_LOADED]
     script = client_script(
+        *[step for _ in range(int(leads))
+          for step in ((CLI_RECV, MG_LINKID_RAM_SCRIPT), CLI_RUN_BUFFER_SCRIPT)],
         (CLI_RECV, MG_LINKID_RAM_SCRIPT),
         *body,
         (CLI_RECV, MG_LINKID_CLIENT_SCRIPT),

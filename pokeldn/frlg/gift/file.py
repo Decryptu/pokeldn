@@ -12,16 +12,25 @@ from pokeldn.frlg.rom import buffer_script
 COMPONENTS = ("card", "ram_script", "stamp", "activation_script", "install_activation_script",
               "trainer", "news", "mevent", "buffer_code")
 OPTIONS = ("questionnaire", "denied_message")
+# Payloads run before buffer_code in the same session, in this order: buffer_lead_1, buffer_lead_2...
+MAX_LEADS = 8
+LEADS = tuple(f"buffer_lead_{n}" for n in range(1, MAX_LEADS + 1))
 CODE_OPTIONS = ("buffer_expect", "buffer_dump_size", "buffer_dump_blocks", "buffer_dump_address",
                 "buffer_dump_addresses", "buffer_decode")
 
 
 def distribution(variant):
     code = "buffer_code" in variant.data
-    if set(variant.data) - set(COMPONENTS) or set(variant.options) - set(CODE_OPTIONS if code else OPTIONS):
+    data = dict(variant.data)
+    leads = tuple(data.pop(key) for key in LEADS if key in data)
+    if any(key in variant.data for key in LEADS[len(leads):]):
+        raise ValueError("Console code leads are numbered from buffer_lead_1 with no gap.")
+    if set(data) - set(COMPONENTS) or set(variant.options) - set(CODE_OPTIONS if code else OPTIONS):
         raise ValueError("Unknown FRLG gift component or option.")
+    if leads and not code:
+        raise ValueError("Console code leads need the buffer_code they run before.")
     if code:
-        if set(variant.data) != {"buffer_code"}:
+        if set(data) != {"buffer_code"}:
             raise ValueError("Console code travels alone, without cards or gift scripts.")
         for key in ("buffer_dump_size", "buffer_dump_blocks", "buffer_dump_address"):
             if key in variant.options and type(variant.options[key]) is not int:
@@ -43,8 +52,8 @@ def distribution(variant):
             raise ValueError("Unknown console-code response decoder.")
         if (blocks != 1 or addresses or "buffer_decode" in variant.options) and "buffer_dump_size" not in variant.options:
             raise ValueError("Console-code dump options require buffer_dump_size.")
-    result = MysteryGiftDistribution(**{"card": None, "ram_script": None,
-                                        **variant.data, **variant.options})
+    result = MysteryGiftDistribution(**{"card": None, "ram_script": None, "buffer_lead": leads,
+                                        **data, **variant.options})
     if code:
         pass
     elif result.news is not None:
@@ -68,7 +77,7 @@ def distribution(variant):
             raise ValueError("A refusal message needs a questionnaire.")
     # The runtime also validates trainer checksums, script sizes and event termination.
     try:
-        mg_server.MysteryGiftServer(**variant.data, **variant.options)
+        mg_server.MysteryGiftServer(**data, buffer_lead=leads, **variant.options)
     except (mg_server.MysteryGiftServerError, struct.error) as exc:
         raise ValueError(str(exc)) from exc
     return result
@@ -107,6 +116,9 @@ def from_distributions(name, per_build):
     variants = {}
     for code, chosen in per_build.items():
         data = {key: bytes(value) for key in COMPONENTS if (value := getattr(chosen, key)) is not None}
+        if len(chosen.buffer_lead) > MAX_LEADS:
+            raise ValueError(f"A gift file carries at most {MAX_LEADS} console code leads.")
+        data.update(zip(LEADS, (bytes(code) for code in chosen.buffer_lead)))
         keys = CODE_OPTIONS if chosen.buffer_code is not None else OPTIONS
         options = {key: value for key in keys if (value := getattr(chosen, key)) is not None}
         variants[code] = gifts.Variant(data, options)

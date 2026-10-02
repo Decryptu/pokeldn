@@ -165,13 +165,15 @@ meaning. Export sorts fields for deterministic files.
 | Game | Variant keys | Data components | Options |
 | --- | --- | --- | --- |
 | FRLG gifts | supported cartridge codes | `card`, `ram_script`, `stamp`, `activation_script`, `install_activation_script`, `trainer`, `news`, `mevent` | `questionnaire`, `denied_message` |
-| FRLG console code | supported cartridge codes | `buffer_code` | response settings below |
+| FRLG console code | supported cartridge codes | `buffer_code`, `buffer_lead_1`.. | response settings below |
 | Sword/Shield | `swsh` | `wc8` | none |
 
 FRLG card variants carry the same flag ID and gift type. Wonder News and console code each travel
 alone. Captures, keys, filesystem paths and session timing are outside this format.
 
-An FRLG console-code variant has exactly one `buffer_code` component. Its optional response
+An FRLG console-code variant has exactly one `buffer_code` component, and up to eight payloads run
+before it in the same session as `buffer_lead_1`, `buffer_lead_2` and on, numbered with no gap (a
+resident hook kept in the save writes `filler_B20` with them, then installs it). Its optional response
 settings are `buffer_expect` (a 32-bit unsigned integer or `trainer-id`), `buffer_dump_size`,
 `buffer_dump_blocks`, `buffer_dump_address`, `buffer_dump_addresses` and `buffer_decode`.
 Dump sizes are 1 to 1024 bytes per block, with at most 32 blocks; a scatter dump names one address
