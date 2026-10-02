@@ -22,6 +22,9 @@ or Switch keys. FRLG exports include every supported cartridge variant that the 
 can build. The console's game code chooses the variant during the gift handshake; a cartridge
 absent from the file is refused before gift data is sent.
 
+Export errors show the launcher's validation message. FRLG's Advanced, Card flag id accepts
+1000 to 1019; clearing it uses the selected gift's default ID.
+
 The app does not modify gift files on import. Files remain at the chosen paths.
 
 ## Command line

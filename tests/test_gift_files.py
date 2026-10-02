@@ -158,6 +158,28 @@ def test_gui_file_source_omits_the_previous_preset_and_uses_the_same_exporter(tm
     assert command.problems(TOOLS["swsh-gift"], {"--gift-file": str(path)})
 
 
+@pytest.mark.parametrize("flag_id,message", [
+    ("10001", "card flagId 10001 out of range"),
+    ("abc", "argument --flag-id: invalid int value"),
+])
+def test_gui_export_reports_the_invalid_card_id_and_recovers(tmp_path, flag_id, message):
+    tool, settings = TOOLS["frlg-gift"], Settings()
+    values = {"--gift": "beast-cutscene", "--flag-id": flag_id}
+    with pytest.raises(ValueError, match=message):
+        gift_files.build(tool, values, {}, settings)
+    values["--flag-id"] = ""
+    path = tmp_path / "beast.pokegift"
+    gifts.save(path, gift_files.build(tool, values, {}, settings))
+    parser = frlg_mg_host.build_parser()
+    run = frlg_mg_host.build_run_config(parser, parser.parse_args(["--gift-file", str(path)]))
+    host, console = _session(run, game_code=b"BPRF", version="firered")
+    _drive(host, console)
+    expected = config.MysteryGiftPayload(gift="beast-cutscene").build_distribution(builds.BPRF)
+    assert console.error is None
+    assert console.saved_card == expected.card
+    assert console.saved_ram_script == expected.ram_script.ljust(1024, b"\0")
+
+
 def test_old_wc8_gui_settings_still_reach_the_launcher(tmp_path):
     native = tmp_path / "gift.wc8"
     native.write_bytes(wc8.pokemon_card(25))

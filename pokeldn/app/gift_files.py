@@ -7,6 +7,10 @@ from pokeldn.app.introspect import _load
 GAMES = {"frlg-gift": "frlg", "frlg-code": "frlg", "swsh-gift": "swsh"}
 
 
+def _invalid_options(message):
+    raise ValueError(message)
+
+
 def read(tool, path):
     gift = gifts.load(path, game=GAMES[tool.key])
     if gift.game == "frlg":
@@ -20,6 +24,7 @@ def build(tool, values, extra, settings):
     game = GAMES[tool.key]
     module = _load(tool.script)
     parser = module.build_parser()
+    parser.error = _invalid_options
     try:
         args = parser.parse_args(command.build(tool, values, extra, settings))
         if game == "frlg":
