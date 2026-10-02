@@ -34,7 +34,8 @@ The FRLG form builds a Wonder Card, Wonder News or console code.
 
 Each step is its own delivery stage, so a full party or bag stops at that step and the player
 retries only what is left. A person other than the delivery man holds the steps through an
-`initramscript` binding; the card is not shown while it is bound. Species use the cartridge's
+`initramscript` binding; the card is not shown while it is bound. A bound script carries no
+receipt flag: that person gives the steps every time until another gift replaces the binding. Species use the cartridge's
 internal numbering (`pokeldn/frlg/save/species_names.py`). Card and news compile for all four
 cartridges; console code compiles for all four or for the one chosen.
 

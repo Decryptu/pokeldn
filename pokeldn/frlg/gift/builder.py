@@ -287,7 +287,11 @@ def describe(state, name=lambda kind, n: f"{kind} #{n}"):
                  "The card is not shown while that person holds the gift.")
     lines = [_step_line(step, name) for step in state.get("steps", [])]
     card = state.get("card", {})
-    lines.append("Can be received again" if card.get("repeatable") else "Received once per save")
+    if giver[0] != "deliveryman":
+        # build_bound_script ends in `end` with no receipt flag [gift_composer.py].
+        lines.append(f"Every time the player talks to {giver[1].lower()}, until another gift is received")
+    else:
+        lines.append("Can be received again" if card.get("repeatable") else "Received once per save")
     if card.get("shareable"):
         lines.append("The player can pass the card on")
     return when, lines
