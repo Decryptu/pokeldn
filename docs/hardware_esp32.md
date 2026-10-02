@@ -68,7 +68,7 @@ firmware uses, with the same `lmacConfMib` offsets as the C3.
 A XIAO ESP32C6 revision 0.2 over native USB on macOS carries a 2,000,000-byte BENCH transfer as
 1429 messages with none missing and no bad checksum, at 824.6 KB/s, and takes 5000 of 5000 uplink
 commands with none lost. Its idle free heap at start is 255196 bytes. On its ceramic antenna it
-trades as FireRed joiner and as Sword host: received PK3 and PK8 records are valid, the player saw
+trades as FireRed joiner and as Sword and Scarlet host: received PK3 and PK8 records are valid, the player saw
 no error, and the console left cleanly. A FireRed joiner session counted 5155 of 5155 host ETH_TX
 commands on the board, with no bad wire frame and no USB resync.
 
