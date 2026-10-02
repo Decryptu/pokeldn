@@ -251,7 +251,8 @@ def build_parser():
     ap.add_argument("--stay-after-leave", action="store_true",
                     help="keep the network up and go silent after the leave instead of ending the "
                          "run; separates what a console reads in the leave from what it reads in "
-                         "the network going down")
+                         "the network going down. Also keeps the run (and BOOT marks) after a "
+                         "console leaves following a trade")
     ap.add_argument("--data-exchange-skip-source-check", action="store_true",
                     help="put the skip-source-check flag on the record, where a reference host "
                          "sends none; one variable if a run shows the record is not dispatched")
@@ -452,6 +453,7 @@ def main():
         else:
             print(f"[pla] {src_ip}: stopping WITHOUT a leave request (--leave-sends 0)")
 
+    gone = False
     try:
         while time.time() < deadline:
             now = time.time()
@@ -467,9 +469,12 @@ def main():
             # WaitConnected.
             for entry in list(transport.participants):
                 seen_ips.add(entry[1])
-            if left_after_trade(transport.participants):
-                print("[pla] the console left after the trade; closing")
-                break
+            if not gone and left_after_trade(transport.participants):
+                gone = True
+                if not args.stay_after_leave:
+                    print("[pla] the console left after the trade; closing")
+                    break
+                print("[pla] the console left after the trade; staying up (--stay-after-leave)")
             if not args.no_net_probe:
                 for ip in list(seen_ips):
                     if ip == transport.our_ip or ip in left:

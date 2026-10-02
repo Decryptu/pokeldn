@@ -377,6 +377,8 @@ zlib bodies: all 1,774 in three retail joiner captures inflate to 99 bytes; a 38
 (6.3 a second, then none, against 115 to 257 a second under plain 0xA0). Both retail stations flag
 bulk acks 0xA0 and send them to the LDN broadcast of their /24; `bin/sv_join.py` compresses the
 body when it sets bit 5 (`--ack-flags`, `--ack-entries`, `--ack-dest-bits`, `--ack-sweep`).
+With compressed 0xA0 bulk acks (883 sent on one seat), a retail Scarlet host completed two trades
+with the joiner, every one of 550 datagrams authenticated.
 
 ### The first record on a stream carries INITIALIZED
 

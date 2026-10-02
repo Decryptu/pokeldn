@@ -1174,7 +1174,19 @@ station (`0x735b90`). The type-4 handler `0x738280` sets the job's done flag `[j
 | host | first leave to deauthentication |
 |---|---|
 | `bin/pla_host.py` before the type-4 response, eight retail departures, started directly or by `bin/pla_join.py` taking the host role | 2.02 to 2.07 s, four requests 0.49 to 0.55 s apart |
-| `bin/pla_host.py` answering with the type 4, one retail departure | 0.066 s, one request |
+| `bin/pla_host.py` answering with the type 4, two retail departures | 0.046 and 0.066 s, one request |
+
+The screen time of a departure, marked with the board's BOOT button by the player (two retail
+departures, host answering with the type 4):
+
+| interval | measured |
+|---|---|
+| player confirms the quit to the first type 3 | the type 3 precedes the mark by 0.07 and 0.15 s, within reaction time |
+| first type 3 to deauthentication | 0.046 and 0.066 s |
+| player confirms the quit to the field back on screen | 3.70 s |
+
+The wire is done within a tenth of a second of the confirmation; the rest of the delay before the
+field returns is spent on the console after the station has left the network.
 
 No timer inside Pia precedes the first type 3 ([pia.md](pia.md), Leaving a session). The only
 caller of `Session::LeaveAsync` is the game's leave request, update `0x2ca0a10` (vtable `0x4198ef8`,
@@ -1201,7 +1213,8 @@ nothing offered:
 | network up and silent, with or without a leave (`--leave-sends 0`) | "Your trade partner chose not to continue trading" ("L'autre joueur a choisi d'annuler l'échange"), then Communicating, then `DisconnectedByUser`, no error code (measured: the message about 13 s in, about 3 s of Communicating after A) |
 
 `--leave-after SECONDS` makes `bin/pla_host.py` send the leave with its own ids to each joined
-station and end the run; `--stay-after-leave` keeps the network up, silent. Its shape is pinned
+station and end the run; `--stay-after-leave` keeps the network up, silent, and keeps the run going
+after a console leaves following a trade. Its shape is pinned
 against the four captured console leaves.
 
 ## Unresolved
@@ -1209,7 +1222,6 @@ against the four captured console leaves.
 - The code path by which a console hosting a search hands the host role to the station that joins,
   and whether it ever answers a Session join request itself.
 - The deadline constant behind the Matching timeout `0x26d4ae8` (10.2 s measured).
-- The screen time of a departure: from the player's confirmation to the first type 3, and from the
-  LDN leave to the field.
+- What the console does in the 3.6 s between leaving the network and showing the field.
 - The keepalive timeout a silent host trips in Legends Arceus, by its setting constant (Z-A's is
   10000 ms at `0x199eb48`, [za.md](za.md), The kick).
