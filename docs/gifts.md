@@ -8,22 +8,52 @@ Sword/Shield, or an FRLG ARM console payload, with its target game and native re
 
 ## Desktop app
 
-Games, Mystery Gift has the same Gift file control for both supported games. Browse opens a
-`.pokegift` file and shows its name, game and cartridge variants. Sword/Shield also opens `.wc8`
-files. Selecting a file hides the built-in gift fields and sends the file's data. Clearing the
-path restores those fields. Existing Sword/Shield settings containing a `.wc8` path still work.
+Games, Mystery Gift is one tool per game with three ways to choose the gift. The same builder serves
+FireRed/LeafGreen and Sword/Shield; each game's module supplies its presets and its form
+(`pokeldn/frlg/gift/builder.py`, `pokeldn/swsh/gift_builder.py`, bound in `pokeldn/app/gift_builder.py`).
 
-FRLG, Console code has a Payload file control and Save payload file button. They import a shared
-ARM payload or export the selected built-in action, including its response settings. Imported
-code files belong on Console code; cards and news belong on Mystery Gift.
+| mode | what it sends |
+|---|---|
+| Use a preset | a built-in gift; FRLG Wonder Cards, Wonder News and console code go to the launcher as flags |
+| Build your own | the form, compiled to `session/gifts/<tool>.pokegift` at Start and passed as `--gift-file` |
+| Open a file | a shared `.pokegift`, or a `.wc8` on Sword/Shield |
 
-Save gift file writes the selected built-in gift or imported file as `.pokegift`. It needs no board
-or Switch keys. FRLG exports include every supported cartridge variant that the selected options
-can build. The console's game code chooses the variant during the gift handshake; a cartridge
-absent from the file is refused before gift data is sent.
+Customize copies a preset into the form. A FRLG card preset offers it only when the form expresses
+every step: unconditional stages of Pokemon, item, egg, wild battle and message steps, no event
+script and no visiting trainer. Every Sword/Shield preset is a form state.
 
-Export errors show the launcher's validation message. FRLG's Advanced, Card flag id accepts
-1000 to 1019; clearing it uses the selected gift's default ID.
+The FRLG form builds a Wonder Card, Wonder News or console code.
+
+| part | contents |
+|---|---|
+| card | title, subtitle, four text lines, icon species, card id 1000 to 1019, received again, shareable |
+| who hands it over | the delivery man in any Pokemon Center, Mom in the player's house, or the man in south Pallet Town |
+| steps | Pokemon (species, level, held item, four moves), item and quantity, egg, wild battle, message |
+| news | title, up to ten lines, news id |
+| console code | ARM source or a prebuilt `.bin`, the cartridge it is built for, expected answer, bytes sent back |
+
+Each step is its own delivery stage, so a full party or bag stops at that step and the player
+retries only what is left. A person other than the delivery man holds the steps through an
+`initramscript` binding; the card is not shown while it is bound. Species use the cartridge's
+internal numbering (`pokeldn/frlg/save/species_names.py`). Card and news compile for all four
+cartridges; console code compiles for all four or for the one chosen.
+
+Console code is assembled with `arm-none-eabi-as` when it is on the PATH; without it, the form takes a
+prebuilt `.bin`. Check offline runs the code once on the simulated console
+(`pokeldn/frlg/rom/custom_code.py`) and shows the answer and the bytes. The same check runs before
+Start and before a file is saved: code that faults, or never returns 1, is refused.
+
+The Sword/Shield form builds a Pokemon, an egg, up to six bag items, or Battle Points, with a card
+id. Each kind writes the bytes of a record a retail Sword listed and redeemed
+([Sword and Shield Mystery Gift](swsh_gift.md#a-card-delivered-to-a-retail-console)); the
+Pikachu preset is byte for byte the launcher's own default record.
+
+Before you send lists what the console gets, when it runs, and the cartridges the gift serves. Save
+gift file writes the selected gift as `.pokegift` with no board and no Switch keys. FRLG presets go
+through the launcher's own builder, so the file holds every cartridge variant they build. The
+console's game code chooses the variant during the gift handshake; a cartridge absent from the file
+is refused before gift data is sent. A preset's card id is on the Advanced tab (`--flag-id`, 1000 to
+1019).
 
 The app does not modify gift files on import. Files remain at the chosen paths.
 
@@ -81,7 +111,7 @@ frame until it returns 1. See [Console code](frlg_rom.md) for the execution cont
 `--expect`, any returned parameter is accepted. A payload that repoints the response to a byte
 buffer uses `--dump-size N` when packaged.
 
-Share the `.pokegift` file. The recipient imports it on FRLG, Console code, or launches with
+Share the `.pokegift` file. The recipient opens it on FRLG, Mystery Gift, or launches with
 `--gift-file custom.pokegift`. `--dump-file PATH` chooses where the host writes a returned dump.
 Cartridge variants are enforced before code is sent. Packaging verifies structure and size;
 authors must execute new payloads offline with `buffer_script.emulate_repeating` before a live

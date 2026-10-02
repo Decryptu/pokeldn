@@ -13,7 +13,7 @@ from pokeldn.app.catalog import GAMES
 from pokeldn.app.settings import Settings
 from pokeldn.frlg import config
 from pokeldn.frlg.gift import gift_to_bin, mg_server
-from pokeldn.frlg.gift import file as frlg_file
+from pokeldn.frlg.gift import builder as frlg_builder, file as frlg_file
 from pokeldn.frlg.rom import builds
 from pokeldn.frlg.rom import buffer_script
 from pokeldn.swsh import beacon, wc8
@@ -73,8 +73,7 @@ def test_equal_frlg_variants_still_refuse_an_undeclared_cartridge(tmp_path):
     assert console.saved_card is None and console.saved_ram_script is None
 
 
-@pytest.mark.parametrize("gift", [key for key, _ in next(
-    f for f in TOOLS["frlg-gift"].fields if f.key == "--gift").choices])
+@pytest.mark.parametrize("gift", [p.args[1] for p in frlg_builder.PRESETS if p.args[0] == "--gift"])
 def test_every_gui_frlg_preset_preserves_all_distribution_components(gift, tmp_path):
     payload = config.MysteryGiftPayload(gift=gift, questionnaire=(1, 2, 3, 4), denied_message="HELLO")
     saved = gifts.loads(gifts.dumps(frlg_file.from_payload(payload)))
@@ -147,12 +146,12 @@ def test_corrupt_native_pairs_cannot_be_imported():
 def test_gui_file_source_omits_the_previous_preset_and_uses_the_same_exporter(tmp_path):
     tool = TOOLS["frlg-gift"]
     settings = Settings()
-    gift = gift_files.build(tool, {"--gift": "celebi"}, {}, settings)
+    gift = gift_files.build(tool, {"--gift-file": {"mode": "preset", "preset": "celebi"}}, {}, settings)
     path = tmp_path / "gift.pokegift"
     gifts.save(path, gift)
-    values = {"--gift-file": str(path), "--gift": "master-ball", "--news": "berry", "--flag-id": "1012"}
+    values = {"--gift-file": {"mode": "file", "preset": "master-ball", "file": str(path)}}
     args = command.build(tool, values, {}, settings)
-    assert not {"--gift", "--news", "--flag-id"}.intersection(args)
+    assert not {"--gift", "--news"}.intersection(args)
     assert command.problems(tool, values) == []
     assert gifts.dumps(gift_files.build(tool, values, {}, settings)) == gifts.dumps(gift)
     assert command.problems(TOOLS["swsh-gift"], {"--gift-file": str(path)})
@@ -164,10 +163,9 @@ def test_gui_file_source_omits_the_previous_preset_and_uses_the_same_exporter(tm
 ])
 def test_gui_export_reports_the_invalid_card_id_and_recovers(tmp_path, flag_id, message):
     tool, settings = TOOLS["frlg-gift"], Settings()
-    values = {"--gift": "beast-cutscene", "--flag-id": flag_id}
+    values = {"--gift-file": {"mode": "preset", "preset": "beast-cutscene"}}
     with pytest.raises(ValueError, match=message):
-        gift_files.build(tool, values, {}, settings)
-    values["--flag-id"] = ""
+        gift_files.build(tool, values, {"--flag-id": flag_id}, settings)
     path = tmp_path / "beast.pokegift"
     gifts.save(path, gift_files.build(tool, values, {}, settings))
     parser = frlg_mg_host.build_parser()
@@ -250,16 +248,15 @@ def test_console_code_files_refuse_bad_protocol_options_and_mixed_gift_data():
             gifts.Gift("frlg", "Bad payload", {"BPRF": gifts.Variant(data, options)})
 
 
-def test_console_code_gui_sources_are_exclusive_and_old_gift_files_still_load(tmp_path):
-    tool = TOOLS["frlg-code"]
-    gift = gift_files.build(tool, {"--buffer-script": "trainer-id-probe"}, {}, Settings())
+def test_a_saved_console_code_file_replaces_the_preset_and_old_gift_files_still_load(tmp_path):
+    tool = TOOLS["frlg-gift"]
+    gift = gift_files.build(tool, {"--gift-file": {"mode": "preset", "preset": "trainer-id"}}, {}, Settings())
     path = tmp_path / "code.pokegift"
     gifts.save(path, gift)
-    values = {"--gift-file": str(path), "--buffer-script": "install-resident"}
+    values = {"--gift-file": {"mode": "file", "preset": "hook-turbo", "file": str(path)}}
     assert "--buffer-script" not in command.build(tool, values, {}, Settings())
     assert command.problems(tool, values) == []
     assert gifts.dumps(gift_files.build(tool, values, {}, Settings())) == gifts.dumps(gift)
-    assert command.problems(TOOLS["frlg-gift"], values)
     parser = frlg_mg_host.build_parser()
     with pytest.raises(SystemExit):
         frlg_mg_host.build_run_config(parser, parser.parse_args(

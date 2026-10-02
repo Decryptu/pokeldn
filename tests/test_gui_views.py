@@ -242,39 +242,43 @@ def test_a_pokemon_file_shows_its_own_species_and_shininess(monkeypatch):
     assert (saved[-1]["species"], saved[-1]["shiny"], picker.species.value, picker.shiny.value) == (6, True, "6", True)
 
 
-@pytest.mark.parametrize("key,values,name", [("frlg-gift", {"--gift": "celebi"}, "celebi"),
-    ("frlg-code", {"--buffer-script": "trainer-id-probe"}, "trainer-id-probe")])
-def test_gift_picker_exports_without_a_board_and_imports_the_saved_file(tmp_path, key, values, name):
+@pytest.mark.parametrize("key", ["frlg-gift", "swsh-gift"])
+def test_the_gift_builder_renders_every_mode_and_kind_and_exports_what_it_shows(tmp_path, monkeypatch, key):
     import asyncio
-    from gui.views.gifts import GiftPicker
+    from gui.views import gifts as view_module
     from pokeldn import gifts
+    from pokeldn.app import gift_builder
     from pokeldn.app.catalog import GAMES
     from pokeldn.app.settings import Settings
 
+    monkeypatch.setattr(pokemon.NamePicker, "_load", lambda self: None)
     tool = next(tool for game in GAMES for tool in game.tools if tool.key == key)
-    field = next(field for field in tool.fields if field.kind == "gift")
-    path = tmp_path / "celebi.pokegift"
+    field = next(field for field in tool.fields if field.kind == "builder")
+    path = tmp_path / "gift.pokegift"
 
     async def save_file(**kwargs):
         assert kwargs["allowed_extensions"] == ["pokegift"]
         return str(path)
 
-    settings = Settings()
-    view = SimpleNamespace(tool=tool, values=values, extra={},
-        app=SimpleNamespace(settings=settings, picker=SimpleNamespace(save_file=save_file)))
-    changes = []
-    view.set_value = lambda field, path, rebuild: changes.append((field.key, path, rebuild))
-    picker = GiftPicker(view, field)
-    picker.control = SimpleNamespace(update=lambda: None)
-    asyncio.run(picker._save(None))
-    saved = gifts.load(path, game="frlg")
-    assert saved.name == name and len(saved.variants) == 4
-    picker._changed(str(path))
-    assert picker.detail.value == saved.summary
-    assert changes == [("--gift-file", str(path), True)]
-    view.values["--gift-file"] = str(path)
-    picker._changed("")
-    assert changes[-1] == ("--gift-file", "", True)
+    view = SimpleNamespace(tool=tool, values={}, extra={},
+        app=SimpleNamespace(settings=Settings(), picker=SimpleNamespace(save_file=save_file), ui=lambda f: None))
+    view.set_value = lambda field, value, rebuild=False: view.values.__setitem__(field.key, value)
+    module = gift_builder.module(gift_builder.GAMES[key])
+    builder = view_module.GiftBuilder(view, field)
+    for mode, *_ in gift_builder.MODES:
+        builder.value["mode"] = mode
+        assert len(builder.cards()) == 2
+    builder.value["mode"] = "build"
+    for kind, *_ in module.KINDS:
+        builder.state["kind"] = kind
+        builder.cards()
+        assert builder.status.color != view_module.t.RED or kind == "code", builder.status.value
+    builder.state["kind"] = module.KINDS[0][0]
+    builder.commit = lambda rebuild=False: None
+    for control in (builder.status, builder.save_button):
+        control.update = lambda: None
+    asyncio.run(builder._save(None))
+    assert gifts.dumps(gifts.load(path)) == gifts.dumps(module.compile(builder.state))
 
 
 def test_a_worker_answering_after_its_picker_left_the_page_is_dropped():

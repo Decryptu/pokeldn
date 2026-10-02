@@ -60,19 +60,21 @@ whose PID must stay, such as an event Pokemon.
 Or use a Pokemon file takes a file exported from PKHeX. The app checks it with PKHeX and shows whether
 it is legal before you offer it. An illegal Pokemon can crash the other game when it is drawn.
 
-## Your own Mystery Gift files
+## Mystery Gift
 
-FireRed/LeafGreen and Sword/Shield share a Gift file control on their Mystery Gift tools. Browse
-opens a `.pokegift` file; Sword/Shield also accepts `.wc8` cards. The file's name and target game
-appear below the path. Clear the path to select a built-in gift again.
+Each Mystery Gift tool starts with three choices. Use a preset sends a ready-made gift. Build your
+own opens a form: on FireRed/LeafGreen a Wonder Card with its text, who hands it over and what it
+gives, a Wonder News, or your own ARM code; on Sword/Shield a Pokemon, an egg, items or Battle
+Points. Open a file sends a `.pokegift` someone shared, or a `.wc8` card on Sword/Shield.
 
-Save gift file stores the selected gift for reuse or sharing. It works without a board. FRLG files
-keep the card, delivery script and event extras together, with their supported cartridge variants.
+Customize turns a preset into a form you can change. Before you send shows what the console gets,
+when it happens and which cartridges it works on; a problem shows there in red and Start stays off.
 
-FireRed/LeafGreen, Console code uses Payload file and Save payload file for compiled ARM payloads.
-Built-in actions can be saved and shared. Custom payload files carry their cartridge targets and
-response settings; importing one hides the action composer. Native code can change the running
-game or its save. Use payloads whose source and behavior you have checked.
+Console code runs inside the game while it receives the gift. Check offline runs it on a simulated
+console first; code that would hang the menu is refused. Native code can change the running game or
+its save. Send only code whose source and behavior you have checked.
+
+Save gift file stores the selected gift for reuse or sharing. It works without a board.
 
 ## When a run fails
 

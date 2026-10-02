@@ -76,16 +76,6 @@ def test_a_setting_kept_off_the_basic_tab_still_reaches_the_entry_point():
     assert not parsed.fresh_pid and parsed.seconds == 1800
 
 
-@pytest.mark.parametrize("action", ["trainer-id-probe", "save-dump", "install-resident"])
-def test_every_console_code_action_the_app_offers_is_accepted_by_the_host(action):
-    """A hook needs --write-unsafe; the app passes it for the player, who has no switch to forget."""
-    import frlg_mg_host
-    tool = next(t for game in GAMES for t in game.tools if t.key == "frlg-code")
-    parser = frlg_mg_host.build_parser()
-    args = parser.parse_args(build(tool, {"--buffer-script": action}, {}, Settings()))
-    frlg_mg_host.build_run_config(parser, args)
-
-
 SAVING = [(game, tool) for game in GAMES for tool in game.tools
           if not tool.unavailable and any("{received}" in arg and not arg.endswith(".bin") for arg in tool.fixed)]
 

@@ -524,8 +524,11 @@ EMPTY = "-"
 class NamePicker:
     """A searchable list of the species, moves, items or balls a game has, by name; the value is the id."""
 
-    def __init__(self, app, game: str, kind: str, value: str, on_change, optional: bool = True):
+    def __init__(self, app, game: str, kind: str, value: str, on_change, optional: bool = True,
+                 names: list[dict] | None = None):
+        """`names` ([{"id", "name"}]) replaces the PKHeX list, for a game whose ids differ from it."""
         self.app, self.game, self.kind, self.optional = app, game, NAME_LISTS[kind], optional
+        self.names = names
         self.dropdown = t.dropdown([], None, on_select=lambda e: on_change("" if e.control.value == EMPTY
                                                                            else e.control.value),
                                    enable_filter=True, editable=True, menu_height=320,
@@ -537,7 +540,7 @@ class NamePicker:
 
     def _load(self) -> None:
         try:
-            names = builder.SERVICE.names(self.game, self.kind)
+            names = self.names if self.names is not None else builder.SERVICE.names(self.game, self.kind)
         except Exception:
             names = None
 

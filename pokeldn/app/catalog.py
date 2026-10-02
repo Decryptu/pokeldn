@@ -8,7 +8,7 @@ from dataclasses import dataclass
 class Field:
     flag: str | tuple[str, ...]   # "" is positional; a tuple passes the same value to each flag
     label: str
-    kind: str = "text"            # text number choice switch pokemon file gift multi linkcode, or a PKHeX
+    kind: str = "text"            # text number choice switch pokemon file builder multi linkcode, or a PKHeX
                                   # name list: species move item ball
     help: str = ""
     default: str | bool = ""
@@ -101,9 +101,6 @@ def queued(flag: str = "", help: str = "", **kw) -> Field:
                  queue=QUEUE, **kw)
 
 
-CARD = ("--news", "")
-SAVE_DUMP = ("--buffer-script", "save-dump")
-HOOK = ("--buffer-script", "install-resident")
 FRLG_PATH = "Pokemon Center 2F, third attendant, Direct Corner, Trade Center"
 
 FRLG = Game("frlg", "FireRed & LeafGreen", "FRLG", "frlg.md", (
@@ -132,71 +129,20 @@ FRLG = Game("frlg", "FireRed & LeafGreen", "FRLG", "frlg.md", (
          fixed=("--live", "--phy", "auto", "--slot", "0", "--out", "{received}/frlg-{stamp}.pk3"),
          doc="frlg_link.md"),
     Tool("frlg-gift", "Mystery Gift", "bin/frlg_mg_host.py",
-         "Send a Wonder Card or Wonder News. Collect the gift from the delivery man in any Pokemon Center.",
+         "Send a Wonder Card, Wonder News or console code: pick a preset or build your own.",
          ("Title screen: Mystery Gift, Wonder Cards, Friend. For news: the second entry, Wonder News.",
           "Start the host, then pick PkCamp when it appears.",
           "Answer Yes if the console asks to replace its card.",
+          "Console code: keep the host running until the log shows the result.",
           "Back out of the search screen between two runs."),
-         (Field("--gift-file", "Gift file", "gift", exts=("pokegift",),
-                help="Open a saved gift, or save the gift selected below. Clear the file to use the built-in gifts."),
-          Field("--news", "Send", "choice", unless="--gift-file", help="A Wonder Card brings a gift; Wonder News is a message "
-                                                 "that can carry a berry.", choices=(
-             ("", "A Wonder Card"), ("pkcamp", "Wonder News: one berry in Cerulean City"),
-             ("berry", "Wonder News: ten lines, one berry"))),
-          Field("--gift", "Wonder Card", "choice", default="beast-cutscene", when=CARD, unless="--gift-file",
-                help="The gift the card holds.", choices=(
-              ("beast-cutscene", "Legendary beast (follows the starter)"),
-              ("celebi", "Celebi"), ("master-ball", "Master Ball"),
-              ("altering-cave", "Altering Cave"), ("porygon-tm-gift", "Porygon TM gift"),
-              ("solrock-stamp", "Sun and Moon Rally: Solrock stamp"),
-              ("lunatone-stamp", "Sun and Moon Rally: Lunatone stamp"),
-              ("visiting-trainer", "Visiting trainer"), ("battle-count-card", "Battle count card"),
-              ("worlds-xp", "Worlds XP"))),
-          Field("--flag-id", "Card flag id", "number", when=CARD, hidden=True, unless="--gift-file",
-                help="1000 to 1019. A console refuses the id of the card it already holds; "
-                     "alternate between two. Empty uses the gift's own."),
+         (Field("--gift-file", "Gift", "builder"),
           Field(("--version", "--expect-console"), "Version", "choice", default="firered",
                 choices=VERSIONS, group="Console",
                 help="The console's cartridge: another one is refused before anything is sent."),
           Field("--language", "Language", "choice", default="english", choices=LANGUAGES, hidden=True,
                 help="The language pokeldn's own trainer reports on the link."),
           Field("--channel", "Channel", "choice", default="11", choices=CHANNELS, help=CHANNEL_HELP, hidden=True)),
-         fixed=("--live",), doc="frlg_gift.md"),
-    Tool("frlg-code", "Console code", "bin/frlg_mg_host.py",
-         "Run native code on the console through Mystery Gift: read the save, or install a per-frame hook.",
-         ("Title screen: Mystery Gift, Wonder Cards, Friend.",
-          "Start the host, then pick PkCamp when it appears.",
-          "Keep the host running until the log shows the result; a dump is written a few seconds later."),
-         (Field("--gift-file", "Payload file", "gift", exts=("pokegift",),
-                help="Import a shared ARM payload with its cartridge targets and response settings."),
-          Field("--buffer-script", "Action", "choice", default="save-dump", unless="--gift-file",
-                help="What the code does on the console. A read leaves the game unchanged.", choices=(
-             ("trainer-id-probe", "Read the trainer id (reads only)"),
-             ("save-dump", "Read part of the save (reads only)"),
-             ("install-resident", "Install a hook until the next reset (writes RAM)"))),
-          Field("--dump-block", "Save block", "choice", default="sav2", group="Save dump", unless="--gift-file",
-                help="The part of the save to read, and how many bytes; the file lands in Received.",
-                choices=(("sav2", "Trainer (sav2)"), ("sav1", "Party, bag, flags (sav1)")),
-                when=SAVE_DUMP),
-          Field("--dump-size", "Bytes", "number", default="64", group="Save dump", when=SAVE_DUMP, unless="--gift-file"),
-          Field("--resident", "Hook", "choice", default="turbo", when=HOOK, unless="--gift-file", choices=(
-              ("turbo", "Turbo"), ("shiny", "Shiny encounters"), ("ivs", "IVs on screen"),
-              ("noencounter", "No wild encounters")),
-                help="Applies until the next soft reset.", choice_help=(
-                    ("turbo", "Speeds up dialogue text. Movement and battle speed can be adjusted "
-                              "with --resident-param in Advanced."),
-                    ("shiny", "Shows a countdown to the next shiny wild encounter."),
-                    ("ivs", "Displays the lead Pokemon's six IVs and nature number on screen."),
-                    ("noencounter", "Disables grass, water and roaming encounters. "
-                                    "Fishing and Sweet Scent still work."))),
-          Field("--write-unsafe", "Allow writes", "switch", default=True, when=HOOK, hidden=True, unless="--gift-file",
-                help="A hook needs it: it changes the running game until a soft reset."),
-          Field(("--version", "--expect-console"), "Version", "choice", default="firered",
-                choices=VERSIONS, group="Console",
-                help="The console's cartridge: another one is refused before anything is sent."),
-          Field("--language", "Language", "choice", default="english", choices=LANGUAGES, hidden=True,
-                help="The language pokeldn's own trainer reports on the link.")),
-         fixed=("--live", "--dump-file", "{received}/frlg-dump-{stamp}.bin"), doc="frlg_rom.md"),
+         fixed=("--live", "--dump-file", "{received}/frlg-dump-{stamp}.bin"), doc="frlg_gift.md"),
 ))
 
 LGPE_STEPS = "X, Communicate, Local Communication, Trade, enter the same link code, then search."
@@ -224,34 +170,11 @@ LGPE = Game("lgpe", "Let's Go Pikachu & Eevee", "LGPE", "lgpe.md", (
 
 SWSH = Game("swsh", "Sword & Shield", "SwSh", "swsh.md", (
     Tool("swsh-gift", "Mystery Gift", "bin/swsh_gift_host.py",
-         "Advertise a Wonder Card. Nothing joins; the console reads it off the air.",
+         "Advertise a Wonder Card: pick a preset or build your own. The console reads it off the air.",
          ("Mystery Gift, Receive a Gift, via local wireless.",
           "Start the host: the card is listed within a few seconds or not at all.",
           "Accept the card, then stop the host."),
-         (Field("--gift-file", "Gift file", "gift", exts=("pokegift", "wc8"),
-                help="Open a saved gift or a .wc8 Wonder Card. Clear the file to build a gift below."),
-          Field("--species", "Species", "species", default="25", group="Pokemon", unless="--gift-file",
-                help="The Pokemon on the card and its level."),
-          Field("--level", "Level", "number", default="25", group="Pokemon", unless="--gift-file", help="0 lets the game roll one."),
-          Field("--move1", "Move 1", "move", default="84", group="Moves", unless="--gift-file", help="The four moves it knows."),
-          Field("--move2", "Move 2", "move", default="45", group="Moves", unless="--gift-file"),
-          Field("--move3", "Move 3", "move", default="86", group="Moves", unless="--gift-file"),
-          Field("--move4", "Move 4", "move", default="98", group="Moves", unless="--gift-file"),
-          Field("--set", "Held item", "item", template="held_item={}", group="Extras", unless="--gift-file",
-                help="Empty for no item and the game's default ball."),
-          Field("--set", "Ball", "ball", template="ball={}", group="Extras", unless="--gift-file"),
-          Field("--set", "Shiny", "switch", template="shiny_type=2", default=False, shiny=True, unless="--gift-file",
-                help="The Pokemon arrives shiny."),
-          Field("--nickname", "Nickname", default="PKCAMP", group="Names", unless="--gift-file",
-                help="The Pokemon's nickname and the original trainer name it shows."),
-          Field("--ot", "OT", default="POKELDN", group="Names", unless="--gift-file"),
-          Field("--set", "Other fields", "multi", hidden=True, unless="--gift-file",
-                help="Any other record field, space-separated NAME=VALUE: nature=10 gender=1 iv_hp=31.",
-                limits=(("held_item", 1607, "Sword and Shield have no item above 1607; a higher id crashes "
-                                            "the bag screen."),)),
-          Field("--card-id", "Card id", "number", default="9999", hidden=True, unless="--gift-file",
-                help="The id the card carries. A console takes a card built here again under the same "
-                     "id; a .wc8 file that allows one copy is refused by a console that received it."),
+         (Field("--gift-file", "Gift", "builder"),
           Field("--seconds", "Time limit (seconds)", "number", default="300", hidden=True,
                 help="How long the card is advertised after Start.")),
          doc="swsh_gift.md"),

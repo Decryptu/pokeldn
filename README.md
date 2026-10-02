@@ -59,10 +59,10 @@ Gift below with the tested settings. The only file it asks for is `prod.keys`.
 
 ## Mystery Gift files
 
-The FRLG and Sword/Shield Mystery Gift tools open and save `.pokegift` files, which keep a complete
-distribution and its target game together. Sword/Shield also accepts `.wc8`. In the app, use
-Gift file to browse and Save gift file to export the selected gift without a board. FRLG, Console
-code uses Payload file and Save payload file for built-in or custom ARM payloads.
+The FRLG and Sword/Shield Mystery Gift tools send a preset, a gift built in the app, or a shared
+`.pokegift` file; Sword/Shield also accepts `.wc8`. FRLG builds Wonder Cards, Wonder News and ARM
+console code; Sword/Shield builds Pokemon, eggs, items and Battle Points. Save gift file exports the
+selected gift without a board.
 
 ```bash
 ./.venv/bin/python bin/frlg_mg_host.py --gift celebi --export-gift celebi.pokegift

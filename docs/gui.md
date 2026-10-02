@@ -13,10 +13,10 @@ chosen in Settings; the folder button beside Output opens it. Flash detects the 
 its bundled image; a custom image is checked against that chip before writing. Connect an S3
 or C3 through native USB Serial/JTAG. C6 and S2 chips are refused.
 
-Mystery Gift tools share a Gift file control: open a `.pokegift` distribution, or save the selected
-gift without a board. Sword/Shield also opens `.wc8` cards. [Mystery Gift files](gifts.md) describes
-cartridge variants and native-format conversion. FRLG, Console code imports and saves shared ARM
-payloads through Payload file and Save payload file.
+Mystery Gift tools share one builder: use a preset, build your own, or open a `.pokegift` file;
+Sword/Shield also opens `.wc8` cards. Save gift file exports the selected gift without a board.
+[Mystery Gift files](gifts.md#desktop-app) describes the forms, cartridge variants and native-format
+conversion.
 
 ## Local storage
 

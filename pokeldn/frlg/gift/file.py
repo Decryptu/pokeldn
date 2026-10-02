@@ -96,16 +96,21 @@ def from_payload(payload, *, console_build="auto", version=None, name=None):
     candidates = plan.per_build or {code: plan.distribution for code in builds.GAME_CODES}
     if console_build != "auto":
         candidates = {console_build: plan.distribution}
+    return from_distributions(name or getattr(payload, "script", getattr(payload, "gift",
+                              getattr(payload, "news", "Wonder News"))),
+                              {code: chosen for code, chosen in candidates.items()
+                               if not isinstance(chosen, str)})
+
+
+def from_distributions(name, per_build):
+    """{game code: MysteryGiftDistribution} -> a gift file with one variant per cartridge."""
     variants = {}
-    for code, chosen in candidates.items():
-        if isinstance(chosen, str):
-            continue
+    for code, chosen in per_build.items():
         data = {key: bytes(value) for key in COMPONENTS if (value := getattr(chosen, key)) is not None}
         keys = CODE_OPTIONS if chosen.buffer_code is not None else OPTIONS
         options = {key: value for key in keys if (value := getattr(chosen, key)) is not None}
         variants[code] = gifts.Variant(data, options)
-    return gifts.Gift("frlg", name or getattr(payload, "script", getattr(payload, "gift",
-                      getattr(payload, "news", "Wonder News"))), variants)
+    return gifts.Gift("frlg", name, variants)
 
 
 @dataclass(frozen=True)

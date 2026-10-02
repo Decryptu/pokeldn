@@ -10,27 +10,19 @@ re-assembles and compares when arm-none-eabi-as is installed.
 import argparse
 import hashlib
 import pathlib
-import subprocess
 import sys
-import tempfile
 
 ROOT = pathlib.Path(__file__).resolve().parent.parent
+sys.path.insert(0, str(ROOT))
+from pokeldn.frlg.rom import custom_code  # noqa: E402
+
 ASM_DIR = ROOT / "asm"
 OUT = ROOT / "pokeldn" / "frlg" / "rom" / "buffer_payloads.py"
 
-AS = "arm-none-eabi-as"
-OBJCOPY = "arm-none-eabi-objcopy"
-AS_FLAGS = ["-march=armv4t", "-mcpu=arm7tdmi"]
-
 
 def assemble(source_path):
-    """Assemble one ARM source to raw bytes. Raises FileNotFoundError without a toolchain."""
-    with tempfile.TemporaryDirectory() as tmp:
-        tmp = pathlib.Path(tmp)
-        obj, binary = tmp / "a.o", tmp / "a.bin"
-        subprocess.run([AS, *AS_FLAGS, "-o", str(obj), str(source_path)], check=True)
-        subprocess.run([OBJCOPY, "-O", "binary", str(obj), str(binary)], check=True)
-        return binary.read_bytes()
+    """Assemble one ARM source to raw bytes. Raises CodeError without a toolchain."""
+    return custom_code.assemble(source_path.read_text())
 
 
 def render():

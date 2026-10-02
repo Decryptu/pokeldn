@@ -14,12 +14,11 @@ from pokeldn.app.catalog import GAMES, Field, Game, Tool
 from pokeldn.app.introspect import flags_of
 from pokeldn.app.paths import SESSION
 from gui.views.pokemon import NAME_LISTS, LinkCodePicker, NamePicker, OfferQueue, PokemonPicker
-from gui.views.gifts import GiftPicker
+from gui.views.gifts import GiftBuilder
 from gui.views.sprites import MINI, Sprite
 from gui.views.widgets import CodeBlock, Log, PathField, open_folder
 
-TOOL_ICONS = {"Trade": "arrows-horizontal", "Mystery Gift": "gift",
-              "Console code": "cpu"}
+TOOL_ICONS = {"Trade": "arrows-horizontal", "Mystery Gift": "gift"}
 EMPTY = "-"   # a dropdown option cannot carry an empty key
 ADVANCED_NOTE = ("The tested defaults work for most players. Change these only when a guide or a bug report "
                  "asks you to. A value set here overrides the Basic tab.")
@@ -174,7 +173,9 @@ class GamesView:
         out = []
         self.sprites = {}
         for kind, item in cards:
-            if kind == "field" and item.kind == "switch":
+            if kind == "field" and item.kind == "builder":
+                out.extend(GiftBuilder(self, item).cards())
+            elif kind == "field" and item.kind == "switch":
                 out.append(t.card(item.label, None, item.help, trailing=self.input(item)))
             elif kind == "field":
                 out.append(t.card(item.label, self.input(item), self.description(item),
@@ -212,8 +213,6 @@ class GamesView:
 
     def input(self, field: Field, grouped: bool = False) -> ft.Control:
         value = command.value_of(field, self.values)
-        if field.kind == "gift":
-            return GiftPicker(self, field).control
         if field.kind == "switch":
             return t.switch(bool(value), lambda e: self.set_value(field, e.control.value, rebuild=True))
         if field.kind == "choice":
@@ -601,6 +600,13 @@ class SessionPanel:
         if problems:
             for p in problems:
                 self.log.add(f"[app] {p}")
+            self.set_status("Not started", t.RED)
+            self.refresh()
+            return
+        try:
+            command.prepare(tool, self.games.values)
+        except (OSError, ValueError) as error:
+            self.log.add(f"[app] {error}")
             self.set_status("Not started", t.RED)
             self.refresh()
             return
