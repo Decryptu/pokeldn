@@ -589,6 +589,17 @@ from `STA_JOIN` to `LINK`, where the rtw88 adapter needed 30 to 60 refused attem
 was answered at 0.93 s and the announcement came 5.8 to 7.7 s after the seat. The console's first
 burst of 46 records (about 50 KB) saturates board-to-host at 92 KB/s.
 
+### Joining
+
+`STA_JOIN` makes one association attempt: a fast scan on the given channel and BSSID, then open
+authentication and association. A retail Sword's matching network failed the attempt in 2 of 10
+board joins, `LINK` down with reason `0xc9` (no access point found, 2.4 s after `STA_JOIN`) or
+`0x2` (authentication expired, 1.3 s after), while the board went on hearing its advertisements on
+that channel; a new `STA_JOIN` on the same search associated. A successful join reports `LINK` up
+0.23 to 0.34 s after `STA_JOIN`. The host sends `STA_JOIN` up to three times
+(`pokeldn.ldn.esp32_wlan.JOIN_ATTEMPTS`) within the join timeout. Why the console's network
+misses a given attempt is unknown.
+
 ## Unresolved
 
 - The softAP negotiates WMM, which a Switch host does not; trades complete with and without it.

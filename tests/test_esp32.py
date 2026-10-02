@@ -225,9 +225,10 @@ _radio = contextvars.ContextVar("radio")
 
 
 @contextlib.contextmanager
-def _two_boards():
+def _two_boards(refuse_joins=0):
     air = esp32_sim.Air()
     host_board, station_board = esp32_sim.SimulatedBoard(air), esp32_sim.SimulatedBoard(air)
+    station_board.refuse_joins = refuse_joins
     radios = esp32.Radio(host_board.host_stream()), esp32.Radio(station_board.host_stream())
     ports = {}
 
@@ -295,9 +296,12 @@ def _udp_frame(target: bytes, source: bytes, payload: bytes) -> bytes:
     return target + source + b"\x08\x00" + ip + struct.pack(">HHHH", 12345, 12345, 8 + len(payload), 0) + payload
 
 
-def test_ldn_host_and_station_run_on_simulated_boards():
+# A retail Sword's network refused a board's join with 0xc9 or 0x2 while still advertising; the
+# next STA_JOIN was taken (docs/hardware_esp32.md, Joining).
+@pytest.mark.parametrize("refused", [0, 2])
+def test_ldn_host_and_station_run_on_simulated_boards(refused):
     async def main():
-        with _two_boards() as ((host_radio, station_radio), ports, host_board):
+        with _two_boards(refused) as ((host_radio, station_radio), ports, host_board):
             host_up = trio.Event()
             joined = []
             received = []

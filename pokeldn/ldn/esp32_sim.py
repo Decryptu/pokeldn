@@ -63,6 +63,7 @@ class SimulatedBoard:
         self.sta_mac = mac or bytes([0x24, 0x6F, 0x28] + random.sample(range(256), 3))
         self.ap_mac = self.sta_mac[:5] + bytes([(self.sta_mac[5] + 1) & 0xFF])
         self.mode = IDLE
+        self.refuse_joins = 0        # STA_JOINs answered as a retail join failure, 0xc9
         self.channel = 1
         self.bssid = b""
         self.ssid = b""
@@ -117,6 +118,10 @@ class SimulatedBoard:
                 self.sta_mac = mac
             self._result(t)
             ap = self.air.access_point(self.bssid, self.channel, self.ssid)
+            if ap is not None and self.refuse_joins:
+                self.refuse_joins -= 1
+                self._emit(esp32.MSG_LINK, b"\x00" + struct.pack("<H", 0xC9) + self.sta_mac)
+                return
             if ap is None:
                 self._emit(esp32.MSG_LINK, b"\x00" + struct.pack("<H", esp32.LINK_TIMEOUT) + self.sta_mac)
                 return

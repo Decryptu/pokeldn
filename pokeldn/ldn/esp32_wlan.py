@@ -17,6 +17,8 @@ from ldn import wlan
 from pokeldn.ldn import esp32, userspace_ip
 
 ETH_P_LDN = 0x88B7
+# A console still advertising refused one join (0xc9, 0x2) and took the next [docs/hardware_esp32.md].
+JOIN_ATTEMPTS = 3
 BROADCAST = wlan.MACAddress("ff:ff:ff:ff:ff:ff")
 
 
@@ -241,17 +243,19 @@ class EspStation:
     @contextlib.asynccontextmanager
     async def connect(self):
         radio, router = self._factory.radio, self._factory.router
-        await trio.to_thread.run_sync(
-            radio.sta_join, self._channel, self._bssid, self._ssid, self._key, self._address)
         with trio.fail_after(self._factory.join_timeout):
-            while True:
-                msg_type, payload = await router.control.receive()
-                if msg_type != esp32.MSG_LINK:
-                    continue
+            for attempt in range(1, JOIN_ATTEMPTS + 1):
+                await trio.to_thread.run_sync(
+                    radio.sta_join, self._channel, self._bssid, self._ssid, self._key, self._address)
+                while True:
+                    msg_type, payload = await router.control.receive()
+                    if msg_type == esp32.MSG_LINK:
+                        break
                 link = esp32.Link.parse(payload)
-                if not link.up:
+                if link.up:
+                    break
+                if attempt == JOIN_ATTEMPTS:
                     raise ConnectionError(f"the board could not join (reason {link.reason:#x})")
-                break
         try:
             async with trio.open_nursery() as nursery:
                 nursery.start_soon(self._pump_control)
