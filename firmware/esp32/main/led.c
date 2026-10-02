@@ -1,6 +1,6 @@
-/* The blue LED: LEDC PWM on GPIO2, recomputed every 10 ms by a priority-1 task on core 1, below the
-   wire tasks (19 to 21). It reads counters the radio already keeps and adds nothing to the frame
-   paths. docs/hardware_esp32.md, The board's LED and buttons. */
+/* The LED: LEDC PWM on GPIO2 (classic ESP32) or GPIO15 (XIAO ESP32C6), recomputed every 10 ms by
+   a priority-1 task on the last core, below the wire tasks (19 to 21). It reads counters the radio
+   already keeps. docs/hardware_esp32.md, The board's LED and buttons. */
 #include <math.h>
 #include <stdbool.h>
 
@@ -12,8 +12,14 @@
 
 #include "led.h"
 
+#if CONFIG_IDF_TARGET_ESP32
 #define LED_GPIO 2
-#if CONFIG_IDF_TARGET_ESP32C3
+#define LED_INVERT 0
+#elif CONFIG_IDF_TARGET_ESP32C6
+#define LED_GPIO 15     /* the XIAO ESP32C6's yellow LED, lit while low */
+#define LED_INVERT 1
+#endif
+#if CONFIG_IDF_TARGET_ESP32C3 || CONFIG_IDF_TARGET_ESP32C6
 #define BUTTON_GPIO 9
 #else
 #define BUTTON_GPIO 0   /* BOOT: low while pressed, pulled up */
@@ -138,7 +144,7 @@ static void led_task(void *arg)
         flash *= 0.8f;
         press_flash *= 0.9f;
 
-#if CONFIG_IDF_TARGET_ESP32
+#ifdef LED_GPIO
         ledc_set_duty(LEDC_LOW_SPEED_MODE, LEDC_CHANNEL_0,
                       (uint32_t)lroundf(powf(clamp01(shown_level), 2.2f) * DUTY_MAX));
         ledc_update_duty(LEDC_LOW_SPEED_MODE, LEDC_CHANNEL_0);
@@ -171,14 +177,14 @@ void led_start(led_state_t state, led_button_t button)
         .intr_type = GPIO_INTR_DISABLE,
     };
     gpio_config(&input);
-#if CONFIG_IDF_TARGET_ESP32
+#ifdef LED_GPIO
     const ledc_timer_config_t timer = {
         .speed_mode = LEDC_LOW_SPEED_MODE, .duty_resolution = LEDC_TIMER_13_BIT,
         .timer_num = LEDC_TIMER_0, .freq_hz = 5000, .clk_cfg = LEDC_AUTO_CLK,
     };
     const ledc_channel_config_t channel = {
         .gpio_num = LED_GPIO, .speed_mode = LEDC_LOW_SPEED_MODE, .channel = LEDC_CHANNEL_0,
-        .timer_sel = LEDC_TIMER_0, .duty = 0, .hpoint = 0,
+        .timer_sel = LEDC_TIMER_0, .duty = 0, .hpoint = 0, .flags.output_invert = LED_INVERT,
     };
     /* A board without the LED still runs: the radio never depends on it. */
     if (ledc_timer_config(&timer) != ESP_OK || ledc_channel_config(&channel) != ESP_OK) return;

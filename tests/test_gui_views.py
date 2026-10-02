@@ -136,6 +136,7 @@ def _app(port, ident, chip=""):
 @pytest.mark.parametrize("port, ident, chip, state", [
     (UART, NO_FIRMWARE, "ESP32-S3", "wrong-port"),   # flashed through the UART socket: it never answers there
     (UART, NO_FIRMWARE, "ESP32-C3", "wrong-port"),
+    (UART, NO_FIRMWARE, "ESP32-C6", "wrong-port"),
     (NATIVE, NO_FIRMWARE, "ESP32-S3", "flash"),      # the right socket: reset or flash, never "move the cable"
     (UART, NO_FIRMWARE, "ESP32", "flash"),           # a classic ESP32 talks over its bridge
     (UART, NO_FIRMWARE, "", "flash"),                # nothing flashed this session: no guess about the socket
@@ -215,10 +216,13 @@ def _release_server(routes: dict):
 
 
 @pytest.mark.parametrize("tamper", [False, True])
-def test_the_released_firmware_lands_only_when_every_image_matches_its_checksum(tmp_path, monkeypatch, tamper):
+@pytest.mark.parametrize("names", [   # a release from before the C6 image, and one carrying it
+    ["pokeldn-radio.bin", "pokeldn-radio-s3.bin", "pokeldn-radio-c3.bin"],
+    ["pokeldn-radio.bin", "pokeldn-radio-s3.bin", "pokeldn-radio-c3.bin", "pokeldn-radio-c6.bin"]])
+def test_the_released_firmware_lands_only_when_every_image_matches_its_checksum(tmp_path, monkeypatch, tamper,
+                                                                                names):
     import hashlib
     import json
-    names = ["pokeldn-radio.bin", "pokeldn-radio-s3.bin", "pokeldn-radio-c3.bin"]
     images = {n: n.encode() * 100 for n in names}
     sums = "".join(f"{hashlib.sha256(images[n]).hexdigest()}  {n}\n" for n in names).encode()
     routes = {f"/{n}": images[n] for n in names} | {"/SHA256SUMS": sums}

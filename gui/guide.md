@@ -5,9 +5,10 @@ the radio. Nothing is installed on the console.
 
 ## What you need
 
-- A classic ESP32 board (ESP32-D0WD, WROOM-32E) with a USB serial bridge, or an ESP32-S3 or
-  ESP32-C3 connected through its native USB port. All use 2.4 GHz. C6 and S2 boards are unsupported.
-  Attach the supplied antenna on a Seeed Studio XIAO ESP32C3.
+- A classic ESP32 board (ESP32-D0WD, WROOM-32E) with a USB serial bridge, or an ESP32-S3,
+  ESP32-C3 or ESP32-C6 connected through its native USB port. All use 2.4 GHz. S2 boards are
+  unsupported. Attach the supplied antenna on a Seeed Studio XIAO ESP32C3; a XIAO ESP32C6 uses its
+  built-in antenna.
 - A USB data cable. Charge-only cables show no port.
 - `prod.keys` dumped from your own Switch. The app asks for it once.
 - One of the seven games on the Games page.
@@ -23,7 +24,7 @@ the radio. Nothing is installed on the console.
 4. Before you start, in the Session panel, lists anything still missing, with a button to fix it.
    Follow the steps under On the console, then press Start.
 
-An ESP32-S3 or C3 board with two USB ports talks to the app only through the port marked USB. Flashing
+An ESP32-S3, C3 or C6 board with two USB ports talks to the app only through the port marked USB. Flashing
 through the other one (COM or UART) works, but the board then never answers; the Board page says so.
 With several boards plugged in, Use this board picks the one sessions use.
 

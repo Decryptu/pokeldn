@@ -30,6 +30,7 @@ DRIVERS = {
 FIRMWARE = os.path.join(ROOT, "gui", "firmware", "pokeldn-radio.bin")   # written by the release build
 FIRMWARE_S3 = os.path.join(ROOT, "gui", "firmware", "pokeldn-radio-s3.bin")
 FIRMWARE_C3 = os.path.join(ROOT, "gui", "firmware", "pokeldn-radio-c3.bin")
+FIRMWARE_C6 = os.path.join(ROOT, "gui", "firmware", "pokeldn-radio-c6.bin")
 
 
 RELEASES = os.environ.get("POKELDN_RELEASES_URL", "https://api.github.com/repos/Decryptu/pokeldn/releases")
@@ -38,7 +39,7 @@ IMAGE_BYTES = 4 * 1024 * 1024   # a merged image fills at most the 4 MB flash
 
 def bundled_firmware(chip: str) -> str:
     """Select by the chip esptool detected; native USB IDs are shared by S3, C3 and C6."""
-    return {"ESP32": FIRMWARE, "ESP32-S3": FIRMWARE_S3, "ESP32-C3": FIRMWARE_C3}[chip]
+    return {"ESP32": FIRMWARE, "ESP32-S3": FIRMWARE_S3, "ESP32-C3": FIRMWARE_C3, "ESP32-C6": FIRMWARE_C6}[chip]
 
 
 @dataclass(frozen=True)
@@ -50,8 +51,8 @@ class Port:
 
 
 def wrong_port(port: Port, chip: str) -> bool:
-    """S3 and C3 firmware talks over native USB only; flashing through a UART bridge still works."""
-    return chip in ("ESP32-S3", "ESP32-C3") and not port.native
+    """S3, C3 and C6 firmware talks over native USB only; flashing through a UART bridge still works."""
+    return chip in ("ESP32-S3", "ESP32-C3", "ESP32-C6") and not port.native
 
 
 @dataclass(frozen=True)
@@ -130,17 +131,19 @@ def _get(url: str, limit: int) -> bytes:
 
 
 def download_firmware(say=print, folder: str = os.path.dirname(FIRMWARE)) -> str:
-    """A source checkout has no firmware image: fetch the three from the newest published release,
-    check each against its SHA256SUMS, and write them only when all match. Returns the release tag."""
+    """A source checkout has no firmware image: fetch every image the newest published release carries
+    (a release predating a chip lacks its image), check each against its SHA256SUMS, and write them
+    only when all match. Returns the release tag."""
     import hashlib
     import json
 
     releases = json.loads(_get(RELEASES, 1_000_000))
-    names = [os.path.basename(f) for f in (FIRMWARE, FIRMWARE_S3, FIRMWARE_C3)]
+    known = [os.path.basename(f) for f in (FIRMWARE, FIRMWARE_S3, FIRMWARE_C3, FIRMWARE_C6)]
     for release in releases:
         files = {a.get("name"): a.get("browser_download_url") for a in release.get("assets") or []}
-        if release.get("draft") or not all(n in files for n in [*names, "SHA256SUMS"]):
+        if release.get("draft") or not all(n in files for n in (known[0], "SHA256SUMS")):
             continue
+        names = [n for n in known if n in files]
         sums = {name.lstrip("*"): digest.lower() for digest, name in
                 (line.split() for line in _get(files["SHA256SUMS"], 100_000).decode().splitlines()
                  if len(line.split()) == 2)}
@@ -166,8 +169,8 @@ def flash(port: str, firmware: str = "") -> None:
     from esptool.bin_image import LoadFirmwareImage
 
     with esptool.detect_chip(port) as chip:
-        if chip.CHIP_NAME not in ("ESP32", "ESP32-S3", "ESP32-C3"):
-            raise esptool.FatalError(f"{chip.CHIP_NAME} is not supported. Use an ESP32, ESP32-S3 or ESP32-C3.")
+        if chip.CHIP_NAME not in ("ESP32", "ESP32-S3", "ESP32-C3", "ESP32-C6"):
+            raise esptool.FatalError(f"{chip.CHIP_NAME} is not supported. Use an ESP32, ESP32-S3, ESP32-C3 or ESP32-C6.")
         path = firmware or bundled_firmware(chip.CHIP_NAME)
         if not os.path.isfile(path):
             raise esptool.FatalError(f"Missing firmware for {chip.CHIP_NAME}: {path}")

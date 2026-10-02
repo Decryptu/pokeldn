@@ -18,10 +18,11 @@ host. `pokeldn.ldn.esp32_wlan` gives the LDN library a factory backed by the boa
 | classic ESP32 (ESP32-D0WD, WROOM-32E) | UART0 through a USB serial bridge | `pokeldn-radio.bin` |
 | ESP32-S3 | native USB Serial/JTAG | `pokeldn-radio-s3.bin` |
 | ESP32-C3 | native USB Serial/JTAG | `pokeldn-radio-c3.bin` |
+| ESP32-C6 | native USB Serial/JTAG | `pokeldn-radio-c6.bin` |
 
-All targets use 2.4 GHz. ESP32-C6 and S2 are unsupported. The Seeed Studio XIAO ESP32C3 and XIAO
+All targets use 2.4 GHz. ESP32-S2 is unsupported. The Seeed Studio XIAO ESP32C3 and XIAO
 ESP32S3 have no onboard antenna and need their supplied external one attached; larger S3 boards
-such as the N8R2 and N16R8 carry an onboard antenna. An S3 or C3 board with separate UART
+such as the N8R2 and N16R8 carry an onboard antenna. An S3, C3 or C6 board with separate UART
 and native USB sockets needs the native socket for radio communication. USB Serial/JTAG uses
 GPIO19 (D-) and GPIO20 (D+), as described in
 [Espressif's USB guide](https://docs.espressif.com/projects/esp-idf/en/v5.2/esp32s3/api-guides/usb-serial-jtag-console.html).
@@ -31,7 +32,7 @@ The USB identifier `303a:1001` is shared by several chips; flashing detects the 
 Flashing an S3 through its UART socket (a WCH CH343 bridge on a DevKitC) succeeds, and the firmware
 then never answers on that socket. When no firmware answers through a USB serial bridge, the desktop
 app reads the chip type from the ROM bootloader (esptool `detect_chip`, then a hard reset) and names
-an S3 or C3 found there as plugged into the wrong socket.
+an S3, C3 or C6 found there as plugged into the wrong socket.
 
 The Seeed Studio XIAO ESP32C3 uses its USB-C socket for native USB Serial/JTAG.
 Attach its supplied external antenna before radio use. BOOT is GPIO9, and the onboard LED
@@ -45,6 +46,25 @@ A XIAO ESP32C3 revision 0.4 over native USB on macOS carries a 2,000,000-byte BE
 1429 messages with none missing and no bad checksum, at 880.1 KB/s with the host baud setting at
 115200 and 878.3 KB/s at 1500000: the host baud setting does not change USB speed. Its idle free
 heap at start is 152656 bytes.
+
+The Seeed Studio XIAO ESP32C6 (ESP32-C6FH4, 4 MB embedded flash) uses its USB-C socket for native
+USB Serial/JTAG. Its RF switch is powered while GPIO3 is low, and GPIO14 selects the ceramic antenna
+(low) or the U.FL socket (high) ([Seeed's board guide](https://wiki.seeedstudio.com/xiao_esp32c6_getting_started/));
+the C6 firmware drives both low before Wi-Fi starts, so the board radiates from its ceramic antenna.
+BOOT is GPIO9; the yellow user LED on GPIO15 (lit while low) shows the LED looks; the red LED is the
+charge indicator. The build runs at 160 MHz with the wire and button tasks on core 0, as on the C3.
+
+The C6 is a Wi-Fi 6 chip. Its station is held to 11b/g/n so its association request carries no HE
+elements, as on every other target. Its receive header (`esp_wifi_he_types.h`) has no `sig_mode`,
+`mcs` or `cwb`; the firmware derives RX_SNIFF and RX_CENSUS `sig_mode` from `cur_bb_format` and the
+HT MCS byte from the HT-SIG in `he_siga1`. Its rate byte is the L-SIG rate code for an OFDM frame,
+not a `wifi_phy_rate_t`. The ESP-IDF v6.1 C6 Wi-Fi libraries export every private symbol the
+firmware uses, with the same `lmacConfMib` offsets as the C3.
+
+A XIAO ESP32C6 revision 0.2 over native USB on macOS carries a 2,000,000-byte BENCH transfer as
+1429 messages with none missing and no bad checksum, at 824.6 KB/s, and takes 5000 of 5000 uplink
+commands with none lost. Its idle free heap at start is 255196 bytes. No console run has been made
+on a C6.
 
 Gr3nSkyDragon reports a completed FireRed joiner trade on an ESP32-S3 under Windows in
 [the S3 contribution](https://github.com/Decryptu/pokeldn/pull/2). The classic ESP32 measurements
@@ -430,8 +450,9 @@ None for a kernel interface, which is how every launcher picks its path.
 
 ## The board's LED and buttons
 
-GPIO2 LED patterns apply to classic ESP32 boards. The S3 and C3 firmware leaves LED pins
-alone. BOOT trace markers use GPIO0 on classic ESP32 and S3, and GPIO9 on C3.
+LED patterns drive GPIO2 on classic ESP32 boards and GPIO15, inverted, on the C6 (the XIAO ESP32C6's
+yellow LED). The S3 and C3 firmware leaves LED pins alone. BOOT trace markers use GPIO0 on classic
+ESP32 and S3, and GPIO9 on C3 and C6.
 
 The ELEGOO ESP-32 Type-C board (CP2102, ESP32-D0WD-V3) carries an unbranded module with a PCB antenna
 and no Espressif module name:
@@ -479,34 +500,34 @@ no such moment. `tools/ldn/esp32_led.py --port PORT PATTERN` sets a look; `--dem
 
 ## Building and flashing
 
-Firmware releases use `major.minor.patch` in `firmware/esp32/version.txt`, shared by ESP32, S3 and
-C3. Increment patch for fixes, minor for compatible features and major for incompatible changes
+Firmware releases use `major.minor.patch` in `firmware/esp32/version.txt`, shared by ESP32, S3, C3
+and C6. Increment patch for fixes, minor for compatible features and major for incompatible changes
 before building a release. ESP-IDF embeds the version in the application descriptor; INFO reports
 it as `version=...`, and Boards displays it once its check of the board returns. Unversioned builds show `version unknown`
 and remain usable when their serial protocol matches. The serial protocol and desktop app versions
 are independent; increment the protocol number when its wire contract changes.
 
-ESP-IDF v6.1 (tag `v6.1`, commit `fff9895c82d744c7237be8847347bdd1b07c6643`) builds all three targets.
-Install its tools with `install.sh esp32,esp32s3,esp32c3`, then activate the IDF environment.
+ESP-IDF v6.1 (tag `v6.1`, commit `fff9895c82d744c7237be8847347bdd1b07c6643`) builds all four targets.
+Install its tools with `install.sh esp32,esp32s3,esp32c3,esp32c6`, then activate the IDF environment.
 
     cd firmware/esp32
-    idf.py set-target esp32   # esp32s3 for an S3, esp32c3 for a C3
+    idf.py set-target esp32   # esp32s3, esp32c3 or esp32c6 for those chips
     idf.py build
     idf.py -p <port> flash
 
 Console output is off (`CONFIG_ESP_CONSOLE_NONE`, `CONFIG_ESP_CONSOLE_SECONDARY_NONE`). On classic
 ESP32, UART0 is the host link, so the firmware assigns GPIO1 and GPIO3 itself (`uart_set_pin`).
-On S3, the firmware installs the USB Serial/JTAG driver on core 1; C3 installs it on core 0.
+On S3, the firmware installs the USB Serial/JTAG driver on core 1; C3 and C6 install it on core 0.
 
 The desktop app detects the chip with esptool on the same connection used for flashing.
 It validates the merged image's bootloader at the chip's flash offset (ESP32: `0x1000`,
-S3 and C3: `0x0`) before writing, including custom images. esptool 5.4.0's `write_flash` can skip its
+S3, C3 and C6: `0x0`) before writing, including custom images. esptool 5.4.0's `write_flash` can skip its
 chip check when a merged image starts with padding. Never choose firmware from a USB bridge ID.
-[Desktop builds](gui.md) covers packaging all three images.
+[Desktop builds](gui.md) covers packaging all four images.
 
 ### The USB host link
 
-The S3 and C3 use the same COBS, CRC and CREDIT protocol over USB Serial/JTAG. Both driver rings are
+The S3, C3 and C6 use the same COBS, CRC and CREDIT protocol over USB Serial/JTAG. Both driver rings are
 16 KB. IDF v6.1's `usb_serial_jtag_write_bytes` enqueues a whole frame or returns zero after its
 timeout; the writer retries with 20 ms waits and counts a dropped message after 500 ms without
 progress. `write_max_us` includes this wait. The reader takes available bytes with a 20 ms

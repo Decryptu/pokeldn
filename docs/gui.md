@@ -3,15 +3,16 @@ title: Desktop builds
 ---
 # Desktop builds
 
-Released apps include PKHeX and merged radio firmware for ESP32, ESP32-S3 and ESP32-C3.
+Released apps include PKHeX and merged radio firmware for ESP32, ESP32-S3, ESP32-C3
+and ESP32-C6.
 Users provide their own `prod.keys`.
 
 Open the app and choose `prod.keys` in Settings. On the Board page, select the USB board to use
 as the radio and flash its firmware. Choose a game and a tool, prepare a Pokemon or select a file,
 then follow the console instructions and press Start. Received Pokemon are saved to the folder
 chosen in Settings; the folder button beside Output opens it. Flash detects the chip and selects
-its bundled image; a custom image is checked against that chip before writing. Connect an S3
-or C3 through native USB Serial/JTAG. C6 and S2 chips are refused.
+its bundled image; a custom image is checked against that chip before writing. Connect an S3,
+C3 or C6 through native USB Serial/JTAG. S2 chips are refused.
 
 Mystery Gift tools share one builder: use a preset, build your own, or open a `.pokegift` file;
 Sword/Shield also opens `.wc8` cards. Save gift file exports the selected gift without a board.
@@ -109,15 +110,16 @@ python gui/main.py
 ```
 
 A source checkout has no firmware image (`gui/firmware` is build output). The Board page's Download
-the firmware takes the three images from the newest non-draft release that carries them, checks each
-against that release's `SHA256SUMS`, and writes them only when all three match. An image from an
+the firmware takes every known image from the newest non-draft release that carries the classic
+ESP32 image and `SHA256SUMS`, checks each against that release's `SHA256SUMS`, and writes them only
+when all match. A release that predates a chip carries no image for it. An image from an
 older release than the checkout can carry an older serial protocol; the board check then reports the
 firmware as out of date.
 
 ## Build a desktop app
 
-To package an app, install ESP-IDF v6.1 for `esp32`, `esp32s3` and `esp32c3` and activate its environment.
-Build all three images with separate configurations:
+To package an app, install ESP-IDF v6.1 for `esp32`, `esp32s3`, `esp32c3` and `esp32c6` and activate its
+environment. Build all four images with separate configurations:
 
 ```sh
 mkdir -p gui/firmware
@@ -132,20 +134,23 @@ idf.py -B build/esp32s3 merge-bin -o "$POKELDN_IMAGES/pokeldn-radio-s3.bin"
 idf.py -B build/esp32c3 -D SDKCONFIG="$PWD/build/esp32c3/sdkconfig" set-target esp32c3
 idf.py -B build/esp32c3 -D SDKCONFIG="$PWD/build/esp32c3/sdkconfig" build
 idf.py -B build/esp32c3 merge-bin -o "$POKELDN_IMAGES/pokeldn-radio-c3.bin"
+idf.py -B build/esp32c6 -D SDKCONFIG="$PWD/build/esp32c6/sdkconfig" set-target esp32c6
+idf.py -B build/esp32c6 -D SDKCONFIG="$PWD/build/esp32c6/sdkconfig" build
+idf.py -B build/esp32c6 merge-bin -o "$POKELDN_IMAGES/pokeldn-radio-c6.bin"
 cd ../..
 python scripts/pack_app.py
 ```
 
-The absolute output paths keep the images in `gui/firmware`. The packer requires all three images;
+The absolute output paths keep the images in `gui/firmware`. The packer requires all four images;
 the frozen app check verifies all are included. The release workflow builds each target separately
-and supplies all three images to every desktop packer.
+and supplies all four images to every desktop packer.
 
 The app version is `pokeldn.__version__`. It appears in Settings and in the macOS and Windows
 package metadata. Update it and `.github/release-notes.md` together before preparing a release.
-The workflow produces `SHA256SUMS` for the three desktop downloads and three firmware images.
+The workflow produces `SHA256SUMS` for the three desktop downloads and four firmware images.
 Manual workflow runs produce artifacts; `v*` tags publish a release named `pokeldn vX.Y.Z` with
 `.github/release-notes.md` as its body, whose first line must be `# pokeldn X.Y.Z` (the workflow and
-`tests/test_release.py` check it), and with the same seven files every time.
+`tests/test_release.py` check it), and with the same eight files every time.
 Only tags with a hyphen, such as `v0.3.0-rc1`, are marked as pre-releases; GitHub shows the
 newest other release as Latest in the repository sidebar.
 

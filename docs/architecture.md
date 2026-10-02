@@ -223,7 +223,7 @@ inventory, rechecks current selections and preserves changed files. Cleanup hold
 state, so sessions and flashes cannot start during deletion.
 
 The packer takes tracked runtime files, the published self-contained PKHeX executable and the merged
-radio firmware for ESP32, ESP32-S3 and ESP32-C3. Any missing image stops the build.
+radio firmware for ESP32, ESP32-S3, ESP32-C3 and ESP32-C6. Any missing image stops the build.
 It excludes machine configuration and notes.
 Windows builds keep standard input and output for child-process logs and stop handling, with the
 owned console hidden. PyInstaller's windowed mode removes those streams on Windows.

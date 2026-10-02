@@ -11,7 +11,7 @@ from pokeldn.ldn import esp32
 
 
 # ESP-IDF image format: one four-byte RAM segment, checksum 0xeb, no SHA digest.
-# Chip IDs and bootloader offsets: esptool's ESP32, ESP32-S3 and ESP32-C3 ROM definitions.
+# Chip IDs and bootloader offsets: esptool's ESP32, ESP32-S3, ESP32-C3 and ESP32-C6 ROM definitions.
 BOOTLOADERS = {
     "ESP32": bytes.fromhex(
         "e9 01 00 20 00000040 ff000000 0000 00 0000 ffff 00000000 00 "
@@ -22,6 +22,9 @@ BOOTLOADERS = {
     "ESP32-C3": bytes.fromhex(
         "e9 01 00 20 00000040 ff000000 0500 00 0000 ffff 00000000 00 "
         "0000c83f 04000000 01020304 0000000000000000000000 eb"),
+    "ESP32-C6": bytes.fromhex(
+        "e9 01 00 20 00000040 ff000000 0d00 00 0000 ffff 00000000 00 "
+        "00008040 04000000 01020304 0000000000000000000000 eb"),
 }
 
 
@@ -73,7 +76,7 @@ class Chip:
     def __init__(self, name):
         self.CHIP_NAME = name
         self.BOOTLOADER_FLASH_OFFSET = 0x1000 if name == "ESP32" else 0
-        self.IMAGE_CHIP_ID = {"ESP32": 0, "ESP32-S3": 9, "ESP32-C3": 5}.get(name, -1)
+        self.IMAGE_CHIP_ID = {"ESP32": 0, "ESP32-S3": 9, "ESP32-C3": 5, "ESP32-C6": 13}.get(name, -1)
         self.closed = False
 
     def __enter__(self):
@@ -93,6 +96,7 @@ def flasher(monkeypatch, tmp_path):
     monkeypatch.setattr(board, "FIRMWARE", str(images["ESP32"]))
     monkeypatch.setattr(board, "FIRMWARE_S3", str(images["ESP32-S3"]))
     monkeypatch.setattr(board, "FIRMWARE_C3", str(images["ESP32-C3"]))
+    monkeypatch.setattr(board, "FIRMWARE_C6", str(images["ESP32-C6"]))
     writes, connections = [], []
 
     def detect(port):
@@ -117,7 +121,7 @@ def test_flash_uses_the_detected_chip_on_one_connection(flasher, name):
     assert flasher.chip.closed
 
 
-@pytest.mark.parametrize("name", ["ESP32-C6", "ESP32-S2"])
+@pytest.mark.parametrize("name", ["ESP32-S2", "ESP32-H2"])
 def test_unsupported_chip_is_refused_before_writing(flasher, name):
     flasher.chip = Chip(name)
     with pytest.raises(esptool.FatalError, match="not supported"):

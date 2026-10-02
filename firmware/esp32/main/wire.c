@@ -6,9 +6,9 @@
 #include <stdlib.h>
 #include <string.h>
 
-/* S3 and C3 use native USB Serial/JTAG; ESP32 uses UART0. Connect the matching USB port.
+/* S3, C3 and C6 use native USB Serial/JTAG; ESP32 uses UART0. Connect the matching USB port.
    docs/hardware_esp32.md, Supported boards. */
-#if CONFIG_IDF_TARGET_ESP32S3 || CONFIG_IDF_TARGET_ESP32C3
+#if CONFIG_IDF_TARGET_ESP32S3 || CONFIG_IDF_TARGET_ESP32C3 || CONFIG_IDF_TARGET_ESP32C6
 #define WIRE_USB 1
 #include "driver/usb_serial_jtag.h"
 #else
@@ -302,7 +302,7 @@ static void deliver(const uint8_t *encoded, size_t used)
     if (took > 50000) wire_log("slow command 0x%02x: %u ms", frame[0], (unsigned)(took / 1000));
 }
 
-/* Dual-core targets install the host link on core 1 to separate Wi-Fi interrupts; C3 uses core 0.
+/* Dual-core targets install the host link on core 1 to separate Wi-Fi interrupts; C3 and C6 use core 0.
    Moving classic UART interrupts to core 0 lost 500 host commands in 7 s under a receive flood.
    docs/hardware_esp32.md, The serial ceiling. */
 static void reader(void *arg)

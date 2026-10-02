@@ -76,7 +76,7 @@ Both launchers accept `--gift-file FILE`. Native conversion and the file schema 
 
 ## Requirements
 
-- A classic ESP32 board with a USB serial bridge, or an ESP32-S3 or ESP32-C3 through native USB
+- A classic ESP32 board with a USB serial bridge, or an ESP32-S3, ESP32-C3 or ESP32-C6 through native USB
   Serial/JTAG, flashed with [`firmware/esp32`](firmware/esp32) for its chip. All use 2.4 GHz.
   Board requirements and hardware verification are on [ESP32 radio](docs/hardware_esp32.md#supported-boards).
 - Python 3.11+ and a venv with `requirements.txt` installed. No root. The bundled
@@ -90,17 +90,17 @@ Both launchers accept `--gift-file FILE`. Native conversion and the file schema 
 ## Setup
 
 The desktop app flashes the board from its Board page; building the firmware is optional. A copy run
-from source has no image until its Board page's Download the firmware fetches the latest release's
-three images and checks them against its `SHA256SUMS`.
+from source has no image until its Board page's Download the firmware fetches the firmware images
+of the latest release and checks them against its `SHA256SUMS`.
 
 Building it yourself needs ESP-IDF v6.1, which provides `idf.py`; this repository does not ship it:
 
 ```bash
 git clone -b v6.1 --recursive https://github.com/espressif/esp-idf.git ~/esp/esp-idf
-~/esp/esp-idf/install.sh esp32,esp32s3,esp32c3
+~/esp/esp-idf/install.sh esp32,esp32s3,esp32c3,esp32c6
 . ~/esp/esp-idf/export.sh   # puts idf.py on PATH, once per shell
 cd firmware/esp32
-idf.py set-target esp32   # esp32s3 for an S3, esp32c3 for a C3
+idf.py set-target esp32   # esp32s3, esp32c3 or esp32c6 for those chips
 idf.py build
 idf.py -p PORT flash
 cd ../..
@@ -111,7 +111,7 @@ export POKELDN_RADIO=esp32:auto
 `PORT` is the board's serial device (`/dev/cu.usbserial-*` or `/dev/cu.usbmodem*` on macOS,
 `/dev/ttyUSB*` or `/dev/ttyACM*` on Linux, `COM4` on Windows) and follows the USB socket.
 `esp32:auto` takes the only USB serial port present; `esp32:PORT` names one.
-An S3 or C3 board with two USB sockets needs its native USB socket for radio communication.
+An S3, C3 or C6 board with two USB sockets needs its native USB socket for radio communication.
 `POKELDN_ESP32_TRACE=FILE` records every serial message and the board's counters. The exact IDF
 version is on [ESP32 radio](docs/hardware_esp32.md).
 

@@ -12,6 +12,7 @@
 #include "esp_random.h"
 #include "esp_timer.h"
 #include "esp_wifi.h"
+#include "driver/gpio.h"
 #include "freertos/FreeRTOS.h"
 #include "freertos/queue.h"
 #include "freertos/task.h"
@@ -93,6 +94,27 @@ static wifi_interface_t current_interface(void)
     return atomic_load(&s_mode) == MODE_AP ? WIFI_IF_AP : WIFI_IF_STA;
 }
 
+/* The PHY byte pair of RX_SNIFF and RX_CENSUS: sig_mode (0 legacy, 1 HT, 3 VHT), then mcs|cwb<<7.
+   An HE chip reports cur_bb_format and the HT-SIG instead (esp_wifi_he_types.h); its rate field
+   is the L-SIG rate code for an OFDM frame. docs/hardware_esp32.md, Supported boards. */
+static uint8_t rx_sig_mode(const wifi_pkt_rx_ctrl_t *c)
+{
+#if CONFIG_SOC_WIFI_HE_SUPPORT
+    return c->cur_bb_format == RX_BB_FORMAT_HT ? 1 : c->cur_bb_format == RX_BB_FORMAT_VHT ? 3 : 0;
+#else
+    return c->sig_mode;
+#endif
+}
+
+static uint8_t rx_mcs_cwb(const wifi_pkt_rx_ctrl_t *c)
+{
+#if CONFIG_SOC_WIFI_HE_SUPPORT
+    return c->cur_bb_format == RX_BB_FORMAT_HT ? (c->he_siga1 & 0x7f) | (c->he_siga1 & 0x80) : 0;
+#else
+    return c->mcs | (c->cwb << 7);
+#endif
+}
+
 /* Census: u32 receive time, i8 RSSI, i8 noise floor, u8 rx_state (0 good), u8 packet type,
    u8 sig_mode, u8 rate, u8 mcs|cwb<<7, u16 sig_len, then the frame's first 16 bytes. */
 static void census_send(const wifi_promiscuous_pkt_t *packet, wifi_promiscuous_pkt_type_t type)
@@ -103,8 +125,8 @@ static void census_send(const wifi_promiscuous_pkt_t *packet, wifi_promiscuous_p
     uint8_t head[13];
     memcpy(head, &stamp, 4);
     head[4] = (uint8_t)c->rssi; head[5] = (uint8_t)c->noise_floor; head[6] = c->rx_state;
-    head[7] = (uint8_t)type; head[8] = c->sig_mode; head[9] = c->rate;
-    head[10] = c->mcs | (c->cwb << 7);
+    head[7] = (uint8_t)type; head[8] = rx_sig_mode(c); head[9] = c->rate;
+    head[10] = rx_mcs_cwb(c);
     memcpy(head + 11, &sig_len, 2);
     atomic_fetch_add(&s_rx_sniff, 1);
     wire_send(MSG_RX_CENSUS, head, sizeof(head), packet->payload, sig_len < 16 ? sig_len : 16);
@@ -132,16 +154,16 @@ static void promiscuous_rx(void *buffer, wifi_promiscuous_pkt_type_t type)
             (!memcmp(frame + 4, s_sniff_mac, 6) || !memcmp(frame + 10, s_sniff_mac, 6))) {
             /* The PHY fields: a flood's airtime is its bytes over its rate. */
             const uint8_t head[5] = {packet->rx_ctrl.channel, (uint8_t)packet->rx_ctrl.rssi,
-                                     packet->rx_ctrl.sig_mode, packet->rx_ctrl.rate,
-                                     packet->rx_ctrl.mcs | (packet->rx_ctrl.cwb << 7)};
+                                     rx_sig_mode(&packet->rx_ctrl), packet->rx_ctrl.rate,
+                                     rx_mcs_cwb(&packet->rx_ctrl)};
             atomic_fetch_add(&s_rx_sniff, 1);
             wire_send(MSG_RX_SNIFF, head, sizeof(head), frame, length);
         } else if (type == WIFI_PKT_CTRL && length == 10 && frame[0] == 0xD4) {
             /* Every ACK on the channel: it names only its receiver. Whether a data frame was
                acknowledged is read off the one that follows it. docs/hardware_esp32.md */
             const uint8_t head[5] = {packet->rx_ctrl.channel, (uint8_t)packet->rx_ctrl.rssi,
-                                     packet->rx_ctrl.sig_mode, packet->rx_ctrl.rate,
-                                     packet->rx_ctrl.mcs | (packet->rx_ctrl.cwb << 7)};
+                                     rx_sig_mode(&packet->rx_ctrl), packet->rx_ctrl.rate,
+                                     rx_mcs_cwb(&packet->rx_ctrl)};
             atomic_fetch_add(&s_rx_sniff, 1);
             wire_send(MSG_RX_SNIFF, head, sizeof(head), frame, length);
         }
@@ -348,6 +370,10 @@ static esp_err_t sta_join(const uint8_t *p, size_t n)
     }
     esp_wifi_stop();
     esp_err_t r = esp_wifi_set_mac(WIFI_IF_STA, s_sta_mac);
+#if CONFIG_SOC_WIFI_HE_SUPPORT
+    /* An HE station adds Wi-Fi 6 elements to its association request; the other targets send none. */
+    if (r == ESP_OK) r = esp_wifi_set_protocol(WIFI_IF_STA, WIFI_PROTOCOL_11B | WIFI_PROTOCOL_11G | WIFI_PROTOCOL_11N);
+#endif
     if (r != ESP_OK) return r;
     esp_wifi_start();
     esp_wifi_set_tx_done_cb(tx_done);
@@ -743,8 +769,23 @@ static void command(uint8_t type, const uint8_t *p, size_t n)
     }
 }
 
+#if CONFIG_IDF_TARGET_ESP32C6
+/* XIAO ESP32C6: GPIO3 low powers the RF switch, GPIO14 low picks the ceramic antenna and high the
+   U.FL socket (Seeed's board guide). docs/hardware_esp32.md, Supported boards. */
+static void rf_switch_on(void)
+{
+    const gpio_config_t out = {.pin_bit_mask = (1ULL << 3) | (1ULL << 14), .mode = GPIO_MODE_OUTPUT};
+    gpio_config(&out);
+    gpio_set_level(3, 0);
+    gpio_set_level(14, 0);
+}
+#endif
+
 void app_main(void)
 {
+#if CONFIG_IDF_TARGET_ESP32C6
+    rf_switch_on();
+#endif
     esp_err_t r = nvs_flash_init();
     if (r == ESP_ERR_NVS_NO_FREE_PAGES || r == ESP_ERR_NVS_NEW_VERSION_FOUND) {
         ESP_ERROR_CHECK(nvs_flash_erase());

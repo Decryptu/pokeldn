@@ -13,10 +13,10 @@ from gui import theme as t
 from gui.views.widgets import CodeBlock, Log, PixelActivity
 
 PERCENT = re.compile(r"(\d{1,3}(?:\.\d)?)\s?%")
-CHIP = re.compile(r"Firmware for (ESP32(?:-S3|-C3)?):")
+CHIP = re.compile(r"Firmware for (ESP32(?:-S3|-C3|-C6)?):")
 
 FLASH_STEPS = [
-    "ESP32-S3 or C3 with two USB ports: plug into the one marked USB, not COM or UART.",
+    "ESP32-S3, C3 or C6 with two USB ports: plug into the one marked USB, not COM or UART.",
     "Press Flash. The app picks the firmware for your chip and checks the board afterwards.",
     "Stuck on 'Connecting'? Hold the board's BOOT button until writing starts, then let go.",
 ]
@@ -243,18 +243,18 @@ class BoardView:
 
     def flash_button(self) -> ft.Control:
         image = self.firmware()
-        available = image or any(os.path.isfile(f) for f in (board.FIRMWARE, board.FIRMWARE_S3, board.FIRMWARE_C3))
+        available = image or any(os.path.isfile(f) for f in (board.FIRMWARE, board.FIRMWARE_S3, board.FIRMWARE_C3, board.FIRMWARE_C6))
         flashing = bool(self.app.process and self.app.process.running and self.app.process_label == "flash")
         return t.button("Flashing..." if flashing else "Flash", self._flash, "zap", filled=not self.status().ready,
                         disabled=self.app.busy or not available or not self.port())
 
     def flash_card(self) -> ft.Control:
         image = self.firmware()
-        available = image or any(os.path.isfile(f) for f in (board.FIRMWARE, board.FIRMWARE_S3, board.FIRMWARE_C3))
+        available = image or any(os.path.isfile(f) for f in (board.FIRMWARE, board.FIRMWARE_S3, board.FIRMWARE_C3, board.FIRMWARE_C6))
         source = ft.Row([
             t.pixel_icon("package", color=t.MUTED),
             t.text(f"Custom image: {image}" if image else
-                   "Firmware included with the app: ESP32, ESP32-S3 or ESP32-C3, picked for your chip." if available
+                   "Firmware included with the app: ESP32, ESP32-S3, ESP32-C3 or ESP32-C6, picked for your chip." if available
                    else "No firmware image here yet (a copy run from source). Download the released one; "
                         "no ESP-IDF needed.",
                    12, t.MUTED if available else t.RED, expand=True),
@@ -370,6 +370,6 @@ class BoardView:
                     link("CH340", board.DRIVERS["WCH CH340"])], spacing=6, wrap=True),
             t.text("Linux: allow serial ports, then log out and back in:", 13),
             CodeBlock(self.app, "sudo usermod -aG dialout $USER").control,
-            t.text("Use a classic ESP32 (ESP32-D0WD, WROOM-32E), or an ESP32-S3 or C3 through its native USB port. "
-                   "C6 and S2 boards are not supported.", 13, t.MUTED),
+            t.text("Use a classic ESP32 (ESP32-D0WD, WROOM-32E), or an ESP32-S3, C3 or C6 through its native USB port. "
+                   "S2 boards are not supported.", 13, t.MUTED),
         ], spacing=8))

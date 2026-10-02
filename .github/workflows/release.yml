@@ -24,6 +24,8 @@ jobs:
             file: pokeldn-radio-s3.bin
           - target: esp32c3
             file: pokeldn-radio-c3.bin
+          - target: esp32c6
+            file: pokeldn-radio-c6.bin
     steps:
       - uses: actions/checkout@v7
       - name: Build and merge the image
@@ -71,6 +73,10 @@ jobs:
       - uses: actions/download-artifact@v8
         with:
           name: firmware-esp32c3
+          path: gui/firmware
+      - uses: actions/download-artifact@v8
+        with:
+          name: firmware-esp32c6
           path: gui/firmware
       - name: Install
         run: python -m pip install -r gui/requirements.txt

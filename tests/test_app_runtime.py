@@ -42,11 +42,12 @@ def test_packer_uses_tracked_defaults_and_requires_firmware(monkeypatch, tmp_pat
     monkeypatch.setattr(pack, "FIRMWARE", tmp_path / "absent.bin")
     monkeypatch.setattr(pack, "FIRMWARE_S3", tmp_path / "absent-s3.bin")
     monkeypatch.setattr(pack, "FIRMWARE_C3", tmp_path / "absent-c3.bin")
+    monkeypatch.setattr(pack, "FIRMWARE_C6", tmp_path / "absent-c6.bin")
     import pytest
     with pytest.raises(SystemExit, match="Missing"):
         pack.main()
     # A release missing any target must fail before invoking the packer.
-    images = (pack.FIRMWARE, pack.FIRMWARE_S3, pack.FIRMWARE_C3)
+    images = (pack.FIRMWARE, pack.FIRMWARE_S3, pack.FIRMWARE_C3, pack.FIRMWARE_C6)
     for missing in images:
         for present in images:
             if present != missing:
