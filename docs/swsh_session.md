@@ -102,7 +102,11 @@ The 384 bytes of application data:
              ([the protocol page](swsh_protocol.md#the-player-profile)); zero to the end
 
 `Connect failed with status code 1` is a refused association; the next attempt on the same search
-can associate (about one attempt in two over the ESP32 board). After pokeldn's station left a
+can associate. A searching Sword advertises two networks under one comm id: its Y-Comm beacon at
+scene 65535 and, past the second message, its matching network at scene 60001. A station on the
+beacon reached the trade box in 0 of 16 joins (mesh join refused with reason 1, or the advertisement
+changed under it); `bin/swsh_connect.py` joins scene 60001 only and rescans until it appears. Over the
+ESP32 board, 6 of 8 joins on scene 60001 reached the trade box; the other two failed to associate. After pokeldn's station left a
 console-hosted session, the console's advertisement was gone within a minute; what ends it is
 unread. After association the console broadcasts Pia to `169.254.x.255:12345` (about ten packets a
 second measured); the screen shows nothing. On a

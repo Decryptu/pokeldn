@@ -1315,7 +1315,9 @@ class STANetwork:
             
             elif isinstance(event, wlan.CustomFrameEvent):
                 disconnect_frame = DisconnectFrame()
-                disconnect_frame.decode(event.data)
+                try: disconnect_frame.decode(event.data)
+                except ValueError:
+                    continue
                 await self._events.put(DisconnectEvent(disconnect_frame.reason))
             
             elif isinstance(event, wlan.DisassociationEvent):

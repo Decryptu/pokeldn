@@ -145,9 +145,9 @@ after the joiner's 4, and the joiner launcher sends its 4 in answer to the host'
 Every later trade repeats the trade's own part: both offers and box command 1, the two box command
 4s in that order, ping 130 (the joiner pings first), a new content 50 at phase 0, ping 120, a new
 content 40 from phase 0 to 4. No 0x84 snapshot, ping 97 or 110, box command 3 or content 30 publish
-comes between trades. `bin/swsh_host.py` with a repeated `--offer-file` traded two queued records
-with a retail Sword joiner on one session this way, and `bin/swsh_connect.py` with a repeated
-`--offer-file` traded two with a retail Sword host on one session.
+comes between trades. `bin/swsh_host.py` with a repeated `--offer-file` traded three queued records
+with a retail Sword joiner on one session this way, then closed when the console left, and `bin/swsh_connect.py` with a repeated
+`--offer-file` traded three with a retail Sword host on one session.
 
 `bin/swsh_connect.py` with a repeated `--offer-file` takes the console's offer after a finished
 ladder (phase 4 on 40040) as the next trade. It answers that offer with its next record, so the

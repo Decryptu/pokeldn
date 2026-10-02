@@ -27,7 +27,9 @@ from pokeldn.swsh import pokemon as swsh_pokemon
 from pokeldn.swsh import trade_payload
 from pokeldn.ldn import show_done
 
-SCENE_ACCEPTING = 60001           # logged, never a gate
+# Only a matching search's network takes a seat; its Y-Comm beacon (65535) never reached the trade
+# box in 16 of 16 joins [docs/swsh_session.md, How a searching Sword finds a partner].
+SCENE_ACCEPTING = 60001
 
 
 def _expand(spec):
@@ -89,17 +91,22 @@ async def main_async(args):
     keys_file = ldn.load_keys(resolve_keys(args.keys))
     phy = find_ap_phy(log=print) if args.phy == "auto" else args.phy
     cleanup()
-    nets = await ldn.scan(keys_file, phyname=phy,
-                          channels=[int(c) for c in args.channels.split(",")],
-                          dwell_time=args.dwell)
     want = int(args.comm_id, 16) if args.comm_id else COMM_ID
-    for n in nets:
-        print(f"[cx] saw comm_id=0x{n.local_communication_id:016x} ch={n.channel} "
-              f"scene={n.scene_id} {n.num_participants}/{n.max_participants}")
-    net = next((n for n in nets if n.local_communication_id == want), None)
+    net = None
+    for _ in range(args.scans):
+        nets = await ldn.scan(keys_file, phyname=phy,
+                              channels=[int(c) for c in args.channels.split(",")],
+                              dwell_time=args.dwell)
+        for n in nets:
+            print(f"[cx] saw comm_id=0x{n.local_communication_id:016x} ch={n.channel} "
+                  f"scene={n.scene_id} {n.num_participants}/{n.max_participants}")
+        net = next((n for n in nets if n.local_communication_id == want
+                    and n.scene_id == SCENE_ACCEPTING), None)
+        if net is not None:
+            break
     if net is None:
-        print("[cx] target not on the air - is the console on Y-Comm -> Link Trade -> local RIGHT "
-              "NOW? It stops advertising a minute or so after a seat is released.")
+        print("[cx] no matching search on the air - is the console on Y-Comm -> Link Trade, past BOTH "
+              "messages? It stops advertising a minute or so after a seat is released.")
         return 3
     if net.num_participants >= net.max_participants:
         print("[cx] the session is FULL, no seat to take")
@@ -1735,6 +1742,8 @@ def build_parser():
     ap.add_argument("--ifname", default="ldnclient")
     ap.add_argument("--channels", default="1,6,11")
     ap.add_argument("--dwell", type=float, default=1.5)
+    ap.add_argument("--scans", type=int, default=8,
+                    help="scans for a matching search (scene 60001) before giving up")
     ap.add_argument("--name", default="PkCamp")
     ap.add_argument("--listen-first", type=float, default=6.0,
                     help="seconds of listening before the first packet out, so the capture holds "
