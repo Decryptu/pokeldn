@@ -601,6 +601,10 @@ emulator cannot test these variables.
 |---|---|---|
 | 1 | `+0x245` = 1, level-1 Pikachu, title index 1 | listed "Oeuf de Pokemon", an egg in the party |
 | 2 | item id at `+0x20`, quantity at `+0x22`: `01 00 03 00`, title index 3 | listed "Master Ball", three in the bag |
+| 3 | amount 10 at `+0x20`, title index 1 | listed with the title "Oeuf de Pokemon", 10 BP added |
+| 3 | amount 10 at `+0x20`, title index 39, as the EventsGallery Battle Points cards carry | listed "Points de Combat", 10 BP added |
+
+The title comes from `+0x15` alone, whatever the kind; the kind decides what is delivered.
 
 A kind-2 record needs only the kind, the item pairs and a quantity. The parser copies exactly six
 id/quantity pairs from record `+0x20..+0x37` to header `+0x30..+0x47` (`0x010b6024..0x010b6080`) and

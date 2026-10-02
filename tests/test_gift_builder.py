@@ -144,8 +144,10 @@ def test_sword_item_and_egg_cards_carry_the_bytes_a_retail_sword_redeemed():
     assert (items[0x11], items[0x15], items[0x20:0x24]) == (2, 3, bytes.fromhex("01000300"))
     egg = swsh.record(swsh.PRESET["egg"].state)
     assert (egg[0x11], egg[0x15], egg[0x244], egg[0x245]) == (1, 1, 1, 1)
+    # Battle Points: the EventsGallery "Battle Points x10" card carries kind 3, title 39, 10 at +0x20
+    # and zero at +0x1C; with title 1 a retail Sword listed the card as a Pokemon egg.
     bp = swsh.record(swsh.PRESET["bp"].state)
-    assert (bp[0x11], struct.unpack_from("<I", bp, 0x20)[0]) == (3, 10)
+    assert (bp[0x11], bp[0x15], bp[0x1C], struct.unpack_from("<I", bp, 0x20)[0]) == (3, 39, 0, 10)
 
 
 def test_a_stored_path_and_a_bad_file_are_read_as_an_opened_file(tmp_path):

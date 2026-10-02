@@ -9,7 +9,9 @@ from pokeldn.swsh import gift_file, wc8
 KINDS = (("pokemon", "Pokemon", "gift"), ("egg", "Egg", "package"), ("items", "Items", "bulletlist"),
          ("bp", "Battle Points", "zap"))
 MAX_ITEM = 1607          # the 1.3.2 item table; a higher id crashes the bag screen
-TITLE_AT, KIND_FLAG_AT, PAYLOAD_AT = 0x15, 0x1C, 0x20
+TITLE_AT, PAYLOAD_AT = 0x15, 0x20
+# Title indexes into text_wondercard8 [docs/swsh_gift.md]: 1 Pokemon egg, 3 the item's name, 39 Battle Points.
+TITLE_EGG, TITLE_ITEM, TITLE_BP = 1, 3, 39
 
 
 @dataclass(frozen=True)
@@ -70,7 +72,7 @@ def record(state):
         except ValueError as exc:
             raise ValueError(f"Names: {exc}") from None
         if egg:
-            raw = _patch(raw, {TITLE_AT: b"\x01"})
+            raw = _patch(raw, {TITLE_AT: bytes([TITLE_EGG])})
         return raw
     if kind == "items":
         pairs = [(int(i or 0), int(q or 0)) for i, q in state.get("items", ()) if int(i or 0)]
@@ -84,14 +86,14 @@ def record(state):
             if not 0 < quantity <= 999:
                 raise ValueError("Each quantity is 1 to 999.")
         payload = b"".join(struct.pack("<HH", i, q) for i, q in pairs)
-        return wc8.build(card_id=card_id, extra={wc8.GIFT_KIND_AT: b"\x02", TITLE_AT: b"\x03",
+        return wc8.build(card_id=card_id, extra={wc8.GIFT_KIND_AT: b"\x02", TITLE_AT: bytes([TITLE_ITEM]),
                                                  PAYLOAD_AT: payload})
     if kind == "bp":
         amount = _int(state, "bp")
         if not 0 < amount <= 9999:
             raise ValueError("Battle Points are 1 to 9999.")
-        return wc8.build(card_id=card_id, extra={wc8.GIFT_KIND_AT: b"\x03", TITLE_AT: b"\x01",
-                                                 KIND_FLAG_AT: b"\x01", PAYLOAD_AT: struct.pack("<I", amount)})
+        return wc8.build(card_id=card_id, extra={wc8.GIFT_KIND_AT: b"\x03", TITLE_AT: bytes([TITLE_BP]),
+                                                 PAYLOAD_AT: struct.pack("<I", amount)})
     raise ValueError(f"Unknown gift kind {kind!r}.")
 
 
