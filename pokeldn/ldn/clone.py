@@ -250,6 +250,18 @@ class Participant:
         self.withhold_clone0_answers = set()
         # clone id -> the session host's clone type 4 data: A, the agreed argument, first.
         self.agreed = {}
+        # (clone type, clone id) -> the clock of our last record there.
+        self.record_clocks = {}
+
+    def record_clock(self, ctype, clone_id, now):
+        """The clock for our next record on a clone: a peer keeps its stored copy for a clock that
+        is not newer (Let's Go main 0x52184c), and mesh_ms moves only once a loop pass."""
+        clock = self.ms(now)
+        last = self.record_clocks.get((ctype, clone_id))
+        if last is not None and clock <= last:
+            clock = last + 1
+        self.record_clocks[(ctype, clone_id)] = clock
+        return clock
 
     def frame(self, now):
         return int((now - self.t0) * FRAME_HZ) & 0xFFFF
@@ -310,7 +322,7 @@ class Participant:
                 self.published.add(clone_id)
                 out.append(build_data_message(
                     STATE_DATA, ctype, station, clone_id, self.frame(now),
-                    build_state_record(clone_id, station, 3, self.ms(now),
+                    build_state_record(clone_id, station, 3, self.record_clock(ctype, clone_id, now),
                                        self.our_data(clone_id)),
                     flags=3))
                 self.held.add(clone_id)
@@ -456,12 +468,13 @@ class Participant:
         for cid in sorted(self.held):
             out.append(build_data_message(
                 STATE_DATA, 2, self.station, cid, self.frame(now),
-                build_state_record(cid, self.station, 3, self.ms(now), self.our_data(cid)),
+                build_state_record(cid, self.station, 3, self.record_clock(2, cid, now),
+                                   self.our_data(cid)),
                 flags=3))
             if self.publish_type4:
                 out.append(build_data_message(
                     STATE_DATA, 4, 0xFD, cid, self.frame(now),
-                    build_state_record(cid, self.station, 3, self.ms(now),
+                    build_state_record(cid, self.station, 3, self.record_clock(4, cid, now),
                                        self.type4_data(cid)), flags=3))
         return out
 
@@ -493,14 +506,16 @@ class Participant:
             if self.publish_type4:
                 out.append(build_data_message(
                     STATE_DATA, 4, 0xFD, cid, self.frame(now),
-                    build_state_record(cid, self.station, self.dest, self.ms(now), bytes(32)),
+                    build_state_record(cid, self.station, self.dest,
+                                       self.record_clock(4, cid, now), bytes(32)),
                     flags=self.dest))
             return out
         out.append(self._command(COMMAND_REQUEST, 1, 0xFD, cid, now))
         self.published.add(cid)
         out.append(build_data_message(
             STATE_DATA, 2, self.station, cid, self.frame(now),
-            build_state_record(cid, self.station, 3, self.ms(now), self.our_data(cid)),
+            build_state_record(cid, self.station, 3, self.record_clock(2, cid, now),
+                               self.our_data(cid)),
             flags=3))
         return out
 
@@ -574,7 +589,8 @@ class Participant:
                         return [build_data_message(
                             STATE_DATA, 2, self.station, d["clone_id"], self.frame(now),
                             build_state_record(r["clone_id"], self.station, r["participants"],
-                                               self.ms(now), self.our_data(d["clone_id"])),
+                                               self.record_clock(2, d["clone_id"], now),
+                                               self.our_data(d["clone_id"])),
                             flags=r["participants"])]
                 # A clone type 2 copy is acked on clone type 1, station 0xFD, with the publisher's
                 # station in the header byte (docs/lgpe_session.md).
@@ -670,7 +686,8 @@ class Participant:
                 self.published.add(c["clone_id"])
                 out.append(build_data_message(
                     STATE_DATA, 2, self.station, c["clone_id"], self.frame(now),
-                    build_state_record(c["clone_id"], self.station, 3, self.ms(now),
+                    build_state_record(c["clone_id"], self.station, 3,
+                                       self.record_clock(2, c["clone_id"], now),
                                        self.our_data(c["clone_id"])),
                     flags=3))
                 if self.request_publishes_type4 and self.publish_type4:
@@ -679,8 +696,8 @@ class Participant:
                     # it.
                     out.append(build_data_message(
                         STATE_DATA, 4, 0xFD, c["clone_id"], self.frame(now),
-                        build_state_record(c["clone_id"], self.station, self.dest, self.ms(now),
-                                           bytes(32)),
+                        build_state_record(c["clone_id"], self.station, self.dest,
+                                           self.record_clock(4, c["clone_id"], now), bytes(32)),
                         flags=self.dest))
             return out
         if key == (3, 0xFD, 0):

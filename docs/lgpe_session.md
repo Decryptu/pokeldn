@@ -967,8 +967,13 @@ d'annuler l'échange"); a joiner that waits leaves the host repeating 0x13 (five
 `bin/lgpe_join.py --leave-after SECONDS` runs the exit (`pokeldn.lgpe.leave`).
 
 Once both stations publish state 1 with one argument on a clone, a console host's type 4 copy moves
-A to it within 0.27 s (nine retail joiner sessions). In one retail session it never did on the
-commit clone, and the console's player sat on the trade screen until the joiner was stopped.
+A to it within 0.27 s (nine retail joiner sessions). The authority reads each station's stored copy
+(`container + 0x8d8 + i*0x260`, i below the session's station count). A copy is replaced only by a
+record with a strictly newer clock (`0x52184c`); an equal clock acks and keeps the old data. In one
+retail session the joiner sent its vote on the commit clone under the clock of its previous record
+on that clone (both inside one mesh clock tick), the console kept the old copy, and its player sat
+on the trade screen until the joiner was stopped. `pokeldn.ldn.clone.Participant.record_clock`
+gives every record on a clone a clock above the last.
 `bin/lgpe_join.py` runs the exit when such a vote stands unagreed for `--stall-leave` seconds
 (default 5) before any kind 3 (`pokeldn.lgpe.leave.unagreed_vote`). The exit ends the wait; it does
 not lift the trade lock, which the sync save wrote before the commit clone vote (state 0 of

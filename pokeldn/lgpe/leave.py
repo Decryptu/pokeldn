@@ -45,7 +45,8 @@ class Leaver:
         self.counter += 1
         data = (b"\x04\0\0\0" + struct.pack("<III", arg, self.counter, self.step)
                 + struct.pack("<I", self.tail))
-        rec = clone.build_state_record(self.offered, self.station, 3, self.p.ms(now), data)
+        rec = clone.build_state_record(self.offered, self.station, 3,
+                                         self.p.record_clock(2, self.offered, now), data)
         return clone.build_data_message(clone.STATE_DATA, 2, self.station, self.offered,
                                         self.p.frame(now), rec, flags=3)
 

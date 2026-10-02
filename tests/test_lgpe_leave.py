@@ -158,3 +158,19 @@ def test_a_vote_the_console_host_never_agrees_is_seen_and_an_agreed_one_is_not()
     assert unagreed_vote(agreed) == 4
     agreed.receive(agreed_t4, 100.25)
     assert unagreed_vote(agreed) is None
+
+
+def test_a_new_copy_within_one_mesh_clock_tick_still_carries_a_newer_clock():
+    # Retail lgp37: the console's zeros then its vote on commit clone 4, answered in one mesh clock
+    # tick. Our vote went out under the clock of our zeros; the console keeps its stored copy for a
+    # clock that is not newer (main 0x52184c), so its authority never saw our vote.
+    zeros = bytes.fromhex("03f3281d02000000000000040003785e52506260616600022051b9970109f0426900"
+                          "000000ffff030024340190")
+    vote = bytes.fromhex("03f3281f02000000000000040003785e52506260616600022051f99f11c880615e06"
+                         "0800000000ffff030029ce01d5")
+    part = clone.Participant(100.0, dest=1, own=2, station=1)
+    part.mesh_ms = 31231
+    first = clone.parse_data_message(part.receive(zeros, 100.1)[0])["record"]
+    second = clone.parse_data_message(part.receive(vote, 100.12)[0])["record"]
+    assert words(second["data"])[:3] == [1, 1, 1]
+    assert second["clock"] > first["clock"]
