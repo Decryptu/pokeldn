@@ -1007,7 +1007,8 @@ clone type 2 copies about every 100 ms. A peer that answers each with its own co
 unacknowledged: the console sends no 0x32 and leaves after the full count. A peer that answers each
 with an 0xe3 on clone type 1, station 0xFD, carrying the publisher's station and clock, gets a 0x83
 on clone type 2 for every clone, a 0x32, and the leave request 0.11 and 0.29 s after the console's
-last release (two retail host sessions, one with a trade). `pokeldn.ldn.clone.Participant` acks
+last release (two retail host sessions, one with a trade); a console host sent its migration start
+0.13 s after its last release (one retail joiner session). `pokeldn.ldn.clone.Participant` acks
 after the peer's clone 0 release.
 
 ### What a host does with a joiner that holds no clone data
