@@ -879,13 +879,24 @@ type-3 join, sends the four identity messages after the console opens key 0x80, 
 
 #### What decides a seat
 
-With the joiner's whole opening delivered, a retail console hosting from its search either hands
-the host role to the joiner or runs the game. Handing it over, it sends Session type 7 naming the
-joiner (`LeaveMeshWithHostMigrationJob`), then only NetStartHostMigration `01400000`, every 0.3 s
-for up to 4 s ([Leaving](#leaving)); taking the host role needs the new host to create an LDN network. The handover has been
-measured anywhere from 22 ms after the accept to about eight seconds after the seat, and after a
-completed trade (three seats measured); what decides it is unresolved. Running the game, the
-console sends, in order:
+A retail console hosting from its search either runs the game or hands the host role to its joiner.
+The game hosts once after 3 to 7 browse attempts (`RandomMatchingSeq` `0x26e182c`, counter
+`rand%5+4`) and waits for a member for 3000 + rand%1000 ms, plus 5000 ms per member that joins
+(WaitMember, `0x26df898`). A wait that times out ends in JoinRandomRecover `0x26f507c`, which
+leaves the session. A host leaving with another station in it runs `LeaveMeshWithHostMigrationJob`
+(started only from mesh leave `0x6d4040`): it sends Session type 7 to the station with the lowest
+Net ranking (`0x6a012c`), then NetStartHostMigration `01400000`, every 0.3 s for up to 4 s
+([Leaving](#leaving)). A joiner whose join is accepted inside WaitMember sees the game run; one
+accepted after it, during the leave, gets the type 7 a frame or two after the accept. The joiner's
+opening plays no part. `--join-delay 5` drew the type 7 on the first seat with a retail Scarlet; a
+console player backing out after the announcement sends it too.
+
+The console that handed the role over destroys its network and browses again. `--take-host`
+(default) makes `bin/sv_join.py`, on a type 7 received before the announcement, run
+`bin/sv_host.py` on the seat's channel and code with the app's host flags, as `bin/pla_join.py`
+does for Legends Arceus; a retail Scarlet joined that host and completed a trade.
+
+Running the game, the console sends, in order:
 
 | | |
 |---|---|
@@ -952,11 +963,6 @@ resume scanning ([Ending a run](architecture.md#ending-a-run)).
   on the air. A sender that advanced its own `lowest_pending` to 47 before the acknowledgement hides
   it: a bulk ack does not show StreamData completion. Dropping one outgoing chunk reproduces the
   symptom in the emulator.
-- What makes a console hosting from its search hand the host role to its joiner on one seat and run
-  the game on another. A player id above the host's own drew no type 7 on one seat; a lower one drew
-  it 22 to 28 ms after the accept on two, and another seat with a lower id did not migrate.
-- Whether a seat can carry another trade after the console asks `bin/sv_join.py` to take the host
-  role (`--answer-migration`; [Several trades in one seat](#several-trades-in-one-seat)).
 - Whether the game checks a joiner's Link Code when it hosts under one: a retail console hosting
   under a code accepted a joiner advertising none.
 - Why a console joined to `bin/sv_host.py` can acknowledge the host's announcement and never send its

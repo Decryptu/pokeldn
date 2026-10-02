@@ -342,11 +342,19 @@ def build_parser():
                          "seconds after the seat, and go back to scanning. A seat can carry every "
                          "stream to completion and never be announced (docs/sv.md, Unresolved); "
                          "board seats that traded announced at 5.8 and 7.7 s")
+    ap.add_argument("--take-host", action=argparse.BooleanOptionalAction, default=True,
+                    help="when the console hands us the host role before the announcement (not a player leaving), leave "
+                         "its network and become the host with bin/sv_host.py on the same channel "
+                         "and code, as bin/pla_join.py does; needs --answer-migration")
     ap.add_argument("--answer-migration", action="store_true",
                     help="answer the host's type-7 leave-with-host-migration with a type-8 ack, "
                          "telling it we accept the host role it is handing over")
     ap.add_argument("--no-update-ack", action="store_true",
                     help="do not answer a Session type-5 station update with the type 6")
+    ap.add_argument("--join-delay", type=float, default=0.0, metavar="SECONDS",
+                    help="hold the Session join request this long after the seat. A console whose "
+                         "WaitMember (3 to 4 s) ends unjoined leaves with host migration, so a join "
+                         "accepted in its leave wait draws the type 7 (docs/sv.md, What decides a seat)")
     ap.add_argument("--join-repeat", type=float, default=2.0,
                     help="with --session-join, re-send it every N seconds (0 sends it once)")
     ap.add_argument("--join-player-id", default="arceus",
@@ -475,6 +483,7 @@ def main(argv=None):
 
     deadline = time.time() + args.seconds
     scans = seats = 0
+    take = None
     try:
         while time.time() < deadline:
             scans += 1
@@ -539,8 +548,10 @@ def main(argv=None):
                         record(rec="seat", ssid=info.ssid.hex(), host_ip=host_ip,
                                host_mac=host_mac.hex(), our_ip=our_ip, our_mac=our_mac.hex(),
                                t=time.time())
-                        await run_session(args, keys, host_ip, host_mac, our_ip, our_mac, record)
+                        outcome.update(await run_session(args, keys, host_ip, host_mac,
+                                                         our_ip, our_mac, record))
 
+            outcome = {}
             try:
                 trio.run(seat)
                 seats += 1
@@ -555,13 +566,44 @@ def main(argv=None):
             if trades_done():
                 print("[sv] the seat ended after a trade; closing")
                 break
+            if args.take_host and outcome.get("handed"):
+                take = (target.channel, deadline - time.time())
+                break
     except KeyboardInterrupt:
         print("\n[sv] interrupted")
     finally:
         if cap:
             cap.close()
     print(f"[sv] {scans} scan(s), {seats} seat(s)")
+    if take:
+        argv = host_argv(args, *take)
+        print("[sv] *** TAKING THE HOST ROLE *** " + " ".join(argv[2:]))
+        sys.stdout.flush()
+        os.execv(argv[0], argv)
     return 0
+
+
+def host_argv(args, channel, seconds):
+    """-> bin/sv_host.py's command line for the host role a console handed over: the app's own
+    host flags (pokeldn.app.catalog) on the seat's channel and code."""
+    from pokeldn.app import catalog
+    from pokeldn.app.runner import command
+    tool = next(t for t in catalog.SV.tools if t.key == "sv-host")
+    fixed = list(tool.fixed)
+    fixed[fixed.index("--channel") + 1] = str(channel)
+    fixed[fixed.index("--seconds") + 1] = str(int(max(seconds, 60)))
+    del fixed[fixed.index("--offer-out"):fixed.index("--offer-out") + 2]
+    code = next(f for f in tool.fields if f.flag == "--code")
+    argv = command("--run", "bin/sv_host.py", "--keys", args.keys, *fixed,
+                   *(["--code", args.code] if args.code else code.unset))
+    for path in args.trade_offer:
+        argv += ["--trade-offer", path]
+    if args.offer_out:
+        argv += ["--offer-out", args.offer_out]
+    if args.capture:
+        root, ext = os.path.splitext(args.capture)
+        argv += ["--capture", f"{root}_host{ext or '.jsonl'}"]
+    return argv
 
 
 def main_ip(args):
@@ -646,6 +688,7 @@ async def run_session(args, keys, host_ip, host_mac, our_ip, our_mac, record):
     pending_update = None       # a type-5 update that arrived before the join response
     migration_sent = 0
     migration_at = None
+    handed = False
     identity = None
     if args.send_record:
         identity = streams.compress(Path(args.send_record).read_bytes())
@@ -839,7 +882,7 @@ async def run_session(args, keys, host_ip, host_mac, our_ip, our_mac, record):
                 not args.session_join or (joined_at and now - joined_at >= args.open_delay)):
             opened = True
             send_opening()
-        if args.session_join and host_var is not None and not joined and (
+        if args.session_join and host_var is not None and not joined and elapsed >= args.join_delay and (
                 join_sent == 0.0 or (args.join_repeat and now - join_sent >= args.join_repeat)):
             join_sent = now
             send_join()
@@ -1070,6 +1113,8 @@ async def run_session(args, keys, host_ip, host_mac, our_ip, our_mac, record):
                         send(out(ack, host_var or 0, protocol=PROTO_SESSION),
                              "migration ack", to=host_ip)
                         print(f"[sv] -> {host_ip}: start-host-migration ack (type 8)")
+                        # Before the announcement it is the seat decision; after, the player leaving.
+                        handed = handed or not channel["port2"]
             if msg.protocol == PROTO_CLOCK:
                 print(f"[sv] <- the host answered the clone clock: {msg.payload.hex()}")
             if not args.no_rtt and msg.protocol == PROTO_RTT and msg.payload and msg.payload[0] == 0:
@@ -1235,6 +1280,7 @@ async def run_session(args, keys, host_ip, host_mac, our_ip, our_mac, record):
     sock.close()
     print(f"[sv] seat over: {seen} datagram(s) in, {authed} authenticated. messages by protocol: "
           + " ".join(f"0x{p:02x}={n}" for p, n in sorted(counts.items())))
+    return {"handed": handed}
 
 
 if __name__ == "__main__":

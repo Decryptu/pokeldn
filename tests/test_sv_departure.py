@@ -223,11 +223,16 @@ def test_the_joiner_leaves_at_the_consoles_first_net_start_host_migration(monkey
     monkeypatch.setattr(trio.lowlevel, 'wait_readable', wait_readable)
     args = sv_join.build_parser().parse_args([
         '--ip-join', '--hold', '10', '--no-clock', '--rtt-period', '0', '--answer-migration'])
-    trio.run(sv_join.run_session, args, keys, HOST_IP, HOST_MAC, JOIN_IP, JOIN_MAC,
-             lambda **row: rows.append(row))
+    seat = trio.run(sv_join.run_session, args, keys, HOST_IP, HOST_MAC, JOIN_IP, JOIN_MAC,
+                    lambda **row: rows.append(row))
     left = [r['t'] - start for r in rows if r['rec'] == 'left_on_host_migration']
     assert left, "the joiner held the seat through the console's NetStartHostMigration"
     assert state['destroys'] == 1
     assert left[0] - state['first'] < DESTROY_RESEND
     acks = [p for proto, p in sent if proto == sv_join.PROTO_SESSION and p[0] == 8]
     assert acks, "the type 7 went unanswered: the console resends it for up to 5 s (`0x6defb8`)"
+    # With --take-host the run becomes bin/sv_host.py on the seat's channel, as bin/pla_join.py does.
+    assert seat == {'handed': True}
+    argv = sv_join.host_argv(args, 11, 30)
+    host = sv_host.build_parser().parse_args(argv[argv.index('bin/sv_host.py') + 1:])
+    assert (host.channel, host.seconds, host.code) == (11, 60, '')
