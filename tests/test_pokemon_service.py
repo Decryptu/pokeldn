@@ -202,3 +202,87 @@ def test_gifts_need_no_game_image_and_reject_unsafe_ids(service):
             service.validate_gift(wc8.pokemon_card(**args))
     with pytest.raises(pokemon.BuilderError, match="species"):
         service.validate_gift(wc8.pokemon_card(1, form=255))
+
+
+GARCHOMP = """Garchomp @ Choice Scarf
+Ability: Rough Skin
+Tera Type: Steel
+EVs: 252 Atk / 4 SpD / 252 Spe
+Jolly Nature
+- Outrage
+- Earthquake
+- Stone Edge
+- Spikes
+"""
+ROTOM = """Sparky (Rotom-Wash) (M) @ Leftovers
+Ability: Levitate
+Level: 50
+Shiny: Yes
+EVs: 252 HP / 252 SpA / 4 Spe
+Modest Nature
+IVs: 0 Atk
+- Hydro Pump
+- Volt Switch
+- Will-O-Wisp
+- Protect
+"""
+CHARIZARD = """Charizard @ Leftovers
+Ability: Blaze
+Timid Nature
+- Flamethrower
+- Fly
+- Dragon Claw
+"""
+
+
+@pytest.mark.parametrize("game, text, expect", [
+    ("sv", GARCHOMP, {"species": "Garchomp", "nature": "Jolly", "ability": "Rough Skin", "level": 100,
+                      "held_item": "Choice Scarf", "moves": ["Outrage", "Earthquake", "Stone Edge", "Spikes"]}),
+    ("swsh", ROTOM, {"species": "Rotom", "form": "Wash", "nickname": "Sparky", "shiny": True, "level": 50,
+                     "nature": "Modest", "held_item": "Leftovers",
+                     "moves": ["Hydro Pump", "Volt Switch", "Will-O-Wisp", "Protect"]}),
+    ("frlg", CHARIZARD, {"species": "Charizard", "nature": "Timid", "held_item": "Leftovers",
+                         "moves": ["Flamethrower", "Fly", "Dragon Claw"]}),
+])
+def test_a_showdown_set_builds_a_legal_pokemon_carrying_what_it_names(service, game, text, expect):
+    found, = service.paste(game, text, TRAINER)
+    assert found["errors"] == []
+    built = service.make(game, found["species_id"], TRAINER, found["level"], found["shiny"], found["nickname"],
+                         options=found["options"])
+    assert built["legal"]
+    for key, value in expect.items():
+        assert built[key] == value, key
+
+
+def test_a_paste_reads_stats_in_the_order_its_text_names_them(service):
+    """PKHeX's parser holds Speed fourth; the text says 252 Spe and 4 SpD."""
+    found, = service.paste("sv", GARCHOMP, TRAINER)
+    assert found["options"]["effort"] == {"hp": 0, "atk": 252, "def": 0, "spe": 252, "spa": 0, "spd": 4}
+    rotom, = service.paste("swsh", ROTOM, TRAINER)
+    assert rotom["options"]["ivs"]["atk"] == 0 and rotom["options"]["ivs"]["spe"] == 31
+
+
+@pytest.mark.parametrize("game, text, error", [
+    ("frlg", GARCHOMP, "Garchomp is not in this game."),
+    ("sv", "Pikachu\nAbility: Levitate", "Pikachu cannot have Levitate."),
+    ("sv", "Pikachu\n- Thunderbolt\n- Flarp", "Move not recognized: Flarp"),
+    ("sv", "hello\nfoo", "The first line names no Pokemon."),
+])
+def test_a_set_the_game_cannot_take_is_refused_with_the_reason(service, game, text, error):
+    found = service.paste(game, text, TRAINER)[0]
+    assert error in found["errors"]
+
+
+@pytest.mark.parametrize("game, text, note", [
+    ("sv", GARCHOMP, "Tera Type"),
+    ("lgpe", "Pikachu\nEVs: 252 Spe\n- Thunderbolt", "no EVs"),
+])
+def test_a_value_the_builder_does_not_set_is_reported(service, game, text, note):
+    found, = service.paste(game, text, TRAINER)
+    assert any(note in n for n in found["notes"])
+    assert "effort" not in found["options"] or game != "lgpe"
+
+
+def test_a_team_paste_returns_every_set_in_order(service):
+    sets = service.paste("sv", GARCHOMP + "\n\n" + ROTOM, TRAINER)
+    assert [s["species"] for s in sets] == ["Garchomp", "Rotom"]

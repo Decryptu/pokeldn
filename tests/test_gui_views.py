@@ -25,15 +25,16 @@ def test_choice_card_includes_help_for_the_saved_selection():
 
 def test_options_the_new_species_cannot_have_are_dropped_before_a_build():
     picker = SimpleNamespace(value={"species": 132, "options": {"ability": 31, "ball": 2, "gender": 1,
-                                                                 "held_item": 236, "nature": 3}})
+                                                                 "held_item": 236, "nature": 3, "form": 2}})
     options = OfferOptions(picker)
     options._form({"natures": [], "abilities": [{"id": 7, "name": "Limber"}], "gendered": False,
+                   "forms": [{"id": 0, "name": ""}], "move_names": [],
                    "balls": [{"id": 2, "name": "Ultra Ball"}], "held": [{"id": 236, "name": "Light Ball"}],
                    "effort": {"kind": "evs", "max": 252, "total": 510}})
     assert picker.value["options"] == {"ball": 2, "held_item": 236, "nature": 3}
 
 
-FOUND = {"natures": [], "abilities": [], "gendered": True, "balls": [], "held": []}
+FOUND = {"natures": [], "abilities": [], "gendered": True, "balls": [], "held": [], "forms": [], "move_names": []}
 
 
 @pytest.mark.parametrize("effort, values, refused", [

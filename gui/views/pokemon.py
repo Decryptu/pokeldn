@@ -47,7 +47,8 @@ class PokemonPicker:
             ft.Row([tile, form], spacing=14, vertical_alignment=ft.CrossAxisAlignment.START),
             self.options.control,
             self.result,
-            t.secondary_button("Or use a Pokemon file", self._use_file, "file"),
+            ft.Row([t.secondary_button("Or use a Pokemon file", self._use_file, "file"),
+                    t.secondary_button("Import paste", self._paste, "bulletlist")], spacing=10, wrap=True),
         ], spacing=10)
         self._show_result()
         threading.Thread(target=self._load_species, daemon=True).start()
@@ -57,6 +58,9 @@ class PokemonPicker:
 
     def _pick(self, e) -> None:
         self.value["species"] = int(e.control.value)
+        # A form or moveset chosen for the previous species rarely fits this one.
+        self.options.chosen.pop("form", None)
+        self.options.chosen.pop("moves", None)
         self.sprite.show(self.value["species"], bool(self.value.get("shiny")))
         self.options.species_changed()
 
@@ -142,6 +146,87 @@ class PokemonPicker:
         self.options.species_changed()
         self.on_change(dict(self.value))
         self._show_result()
+        self.control.update()
+
+    def _paste(self, e) -> None:
+        """A Showdown or Smogon set fills the form; Build then makes it. A paste of a team takes its first set."""
+        editor = t.field(multiline=True, min_lines=12, max_lines=18, mono=True, autofocus=True,
+                         hint="Garchomp @ Choice Scarf\nAbility: Rough Skin\nEVs: 252 Atk / 4 SpD / 252 Spe\n"
+                              "Jolly Nature\n- Earthquake\n- Outrage")
+        status = ft.Container()
+        apply = t.button("Apply", None)
+
+        def close(_=None):
+            self.app.page.pop_dialog()
+
+        def show(lines: list[str], color: str):
+            status.content = ft.Column([t.text(line, 12, color, selectable=True) for line in lines], spacing=2)
+
+        def submit(_):
+            text = editor.value or ""
+            if not text.strip():
+                show(["Paste a set first."], t.RED)
+                status.update()
+                return
+            apply.disabled = True
+            status.content = ft.Row([PixelActivity("Reading the set"), t.text("Reading the set...", 12, t.MUTED)],
+                                    spacing=8)
+            status.update()
+            apply.update()
+
+            def work():
+                try:
+                    sets, error = builder.SERVICE.paste(self.game, text, self.app.settings.trainer(),
+                                                        VERSIONS.get(self.version, "")), ""
+                except Exception as exc:
+                    sets, error = [], str(exc)
+
+                def done():
+                    apply.disabled = False
+                    problems = [error] if error else sets[0]["errors"]
+                    if problems:
+                        show(problems, t.RED)
+                        status.update()
+                        apply.update()
+                        return
+                    close()
+                    notes = list(sets[0]["notes"])
+                    if len(sets) > 1:
+                        notes.insert(0, f"The paste holds {len(sets)} Pokemon; the first was imported.")
+                    self._apply_set(sets[0], notes)
+                self.app.ui(done)
+            threading.Thread(target=work, daemon=True).start()
+
+        apply.on_click = submit
+        self.app.page.show_dialog(t.dialog(
+            title=t.text("Import a Showdown set", 17, weight=ft.FontWeight.W_600),
+            content=ft.Container(ft.Column([
+                t.text("Paste a set exported from Pokemon Showdown, Smogon or PKHeX. Its values fill the form; "
+                       "press Build to make a legal Pokemon from them.", 13, t.MUTED),
+                editor, status], spacing=10, tight=True,
+                horizontal_alignment=ft.CrossAxisAlignment.STRETCH), width=520),
+            actions=[t.secondary_button("Cancel", close), apply],
+        ))
+
+    def _apply_set(self, found: dict, notes: list[str]) -> None:
+        for key in ("file", "summary", "legal", "encounter", "moves", "report"):
+            self.value.pop(key, None)
+        self.value.update(species=found["species_id"], level=str(found["level"]), shiny=found["shiny"],
+                          nickname=found["nickname"])
+        self.options.chosen.clear()
+        self.options.chosen.update(found["options"])
+        if self.species.options:
+            self.species.value = str(found["species_id"])
+        self.level.value = self.value["level"]
+        self.shiny.value = found["shiny"]
+        self.nickname.value = found["nickname"]
+        self.sprite.show(found["species_id"], found["shiny"], update=False)
+        self.options.reveal()
+        self.on_change(dict(self.value))
+        name = f"{found['species']}-{found['form']}" if found["form"] else found["species"]
+        lines = [t.text(f"Imported {name}. Check the options below, then press Build.", 12, t.MUTED)]
+        lines += [t.text(note, 12, t.AMBER) for note in notes]
+        self.result.content = ft.Column(lines, spacing=2)
         self.control.update()
 
     def _message(self, text: str, color: str, busy: bool = False) -> None:
@@ -260,12 +345,21 @@ class OfferOptions:
         self.label.value = f"{count} set" if count else "random"
 
     def _toggle(self, e) -> None:
-        self.open = not self.open
+        self._show(not self.open)
+        self.control.update()
+
+    def _show(self, open: bool) -> None:
+        self.open = open
         self.chevron.src = f"icons/chevron-{'down' if self.open else 'right'}.svg"
         self.body.visible = self.open
         if self.open:
             self._load()
-        self.control.update()
+
+    def reveal(self) -> None:
+        """Opens the options on what an import chose."""
+        self.loaded_for = None
+        self._show(True)
+        self._label()
 
     def species_changed(self) -> None:
         self.loaded_for = None
@@ -278,22 +372,24 @@ class OfferOptions:
         if not species:
             self.body.controls = [t.text("Pick a species first.", 12, t.MUTED)]
             return
-        if self.loaded_for == species:
+        target = (species, int(self.chosen.get("form") or 0))
+        if self.loaded_for == target:
             return
-        self.loaded_for = species
+        self.loaded_for = target
         self.body.controls = [ft.Row([PixelActivity("Loading options"),
                                       t.text("Reading what this species can have...", 12, t.MUTED)], spacing=8)]
         app = self.picker.app
 
         def work():
             try:
-                found, error = builder.SERVICE.options(self.picker.game, species, app.settings.trainer(),
-                                                       VERSIONS.get(self.picker.version, "")), ""
+                found = builder.SERVICE.options(self.picker.game, species, app.settings.trainer(),
+                                                VERSIONS.get(self.picker.version, ""), target[1])
+                found["move_names"], error = builder.SERVICE.names(self.picker.game, "moves"), ""
             except Exception as exc:
                 found, error = None, str(exc)
 
             def show():
-                if self.loaded_for != species:
+                if self.loaded_for != target:
                     return
                 self.body.controls = [t.text(error, 12, t.RED)] if error else self._form(found)
                 self._label()
@@ -308,7 +404,12 @@ class OfferOptions:
                 self.chosen.pop(key)
         if not found["gendered"]:
             self.chosen.pop("gender", None)
+        if all(f["id"] != self.chosen.get("form", 0) for f in found["forms"]):
+            self.chosen.pop("form", None)
         first = [t.labeled_control("Nature", self._choice("nature", found["natures"]), expand=True)]
+        if len(found["forms"]) > 1:
+            first.insert(0, t.labeled_control("Form", self._choice("form", found["forms"], reload=True),
+                                              expand=True))
         if len(found["abilities"]) > 1:
             first.append(t.labeled_control("Ability", self._choice("ability", found["abilities"]), expand=True))
         if found["gendered"]:
@@ -324,6 +425,7 @@ class OfferOptions:
         return [
             ft.Row(first, spacing=10),
             ft.Row(second, spacing=10),
+            self._moves(found["move_names"]),
             self._stats("ivs", "IVs", 31, "0-31"),
             self._stats("effort", EFFORT[effort["kind"]], effort["max"], limit, effort.get("total")),
             ft.Row([t.text("Empty means random. The build is checked by PKHeX's legality analysis.", 12, t.FAINT,
@@ -331,7 +433,7 @@ class OfferOptions:
                     t.link_button("Clear", self._clear)]),
         ]
 
-    def _choice(self, key: str, names: list[dict], search: bool = False) -> ft.Dropdown:
+    def _choice(self, key: str, names: list[dict], search: bool = False, reload: bool = False) -> ft.Dropdown:
         current = self.chosen.get(key)
 
         def picked(e):
@@ -340,11 +442,35 @@ class OfferOptions:
             else:
                 self.chosen[key] = int(e.control.value)
             self._label()
-            self.label.update()
+            if reload:      # a form has its own abilities
+                self._load()
+                self.control.update()
+            else:
+                self.label.update()
         options = [(ANY, "Random")] + [(str(n["id"]), n["name"]) for n in
                                        (sorted(names, key=lambda n: n["name"]) if search else names)]
         return t.dropdown(options, ANY if current is None else str(current), on_select=picked,
                           enable_filter=search, editable=search, menu_height=320)
+
+    def _moves(self, names: list[dict]) -> ft.Control:
+        moves = (list(self.chosen.get("moves", [])) + [0] * 4)[:4]
+        options = [(ANY, "Any")] + [(str(n["id"]), n["name"]) for n in names]
+
+        def picked(e, slot):
+            moves[slot] = 0 if e.control.value == ANY else int(e.control.value)
+            if any(moves):
+                self.chosen["moves"] = [m for m in moves if m]
+            else:
+                self.chosen.pop("moves", None)
+            self._label()
+            self.label.update()
+        boxes = [t.dropdown(options, str(m) if m else ANY, on_select=lambda e, n=n: picked(e, n),
+                            enable_filter=True, editable=True, menu_height=320)
+                 for n, m in enumerate(moves)]
+        for box in boxes:
+            box.expand = True
+        return ft.Column([t.text("Moves (empty means the encounter's own)", 12, t.MUTED),
+                          ft.Row(boxes[:2], spacing=6), ft.Row(boxes[2:], spacing=6)], spacing=4)
 
     def _stats(self, group: str, title: str, top: int, limit: str, total: int | None = None) -> ft.Control:
         values = self.chosen.setdefault(group, {})

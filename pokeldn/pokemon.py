@@ -80,22 +80,28 @@ class Service:
             self.species_cache[key] = sorted(names, key=lambda n: n["name"])
         return self.species_cache[key]
 
-    def options(self, game: str, species: int, trainer: dict, version: str = "") -> dict:
-        """The natures, abilities, held items, balls and effort kind an offer of this species can ask for."""
-        key = f"{game}:options:{species}:{version}"
+    def options(self, game: str, species: int, trainer: dict, version: str = "", form: int = 0) -> dict:
+        """The forms, natures, abilities, held items, balls and effort kind an offer of this species can ask for."""
+        key = f"{game}:options:{species}:{form}:{version}"
         if key not in self.species_cache:
             self.species_cache[key] = self._ask({"cmd": "options", "game": game, "species": species,
-                                                 "trainer": trainer, "version": version})
+                                                 "form": form, "trainer": trainer, "version": version})
         return self.species_cache[key]
 
     def make(self, game: str, species: int, trainer: dict, level: int = 0, shiny: bool = False,
              nickname: str = "", version: str = "", options: dict | None = None) -> dict:
-        """options: nature, ability, gender, held_item, ball (ids), and ivs / effort as {hp, atk, def, spa, spd, spe}."""
+        """options: form, nature, ability, gender, held_item, ball (ids), moves (up to four ids), and ivs / effort
+        as {hp, atk, def, spa, spd, spe}."""
         reply = self._ask({"cmd": "make", "game": game, "species": species, "level": level, "shiny": shiny,
                            "nickname": nickname, "trainer": trainer, "version": version,
                            "options": options or {}})
         reply["file"] = self._save(game, reply)
         return reply
+
+    def paste(self, game: str, text: str, trainer: dict, version: str = "") -> list[dict]:
+        """The Showdown sets in `text`, each as make's values with its errors and notes (services/pkhex Paste)."""
+        return self._ask({"cmd": "paste", "game": game, "text": text, "trainer": trainer,
+                          "version": version})["sets"]
 
     def check_bytes(self, game: str, data: bytes, *, fresh=False, fields=None) -> dict:
         data = entity_bytes(game, data)
@@ -153,7 +159,7 @@ atexit.register(SERVICE.close)
 
 
 def summary(info: dict) -> str:
-    parts = [info["species"], f"level {info['level']}"]
+    parts = [f"{info['species']}-{info['form']}" if info.get("form") else info["species"], f"level {info['level']}"]
     if info.get("shiny"):
         parts.append("shiny")
     if info.get("nickname") and info["nickname"].lower() != info["species"].lower():

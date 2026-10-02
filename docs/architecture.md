@@ -91,7 +91,8 @@ handling trainer, PKHeX's evolution chain stops at Milotic; the game's records r
 
 ### Offer options
 
-A build can also ask for a nature, ability, gender, held item, ball, IVs and effort values. Nature,
+A build can also ask for a form, nature, ability, gender, held item, ball, up to four moves, IVs and
+effort values. Moves and form narrow the encounter search to encounters that can carry them. Nature,
 ability, gender and IVs go into the encounter criteria, so the record is generated with them; a
 Generation 3 PID is searched for the requested nature. When an encounter rolls something else, the
 record is moved to the request the way a player would, and the legality analysis judges the result:
@@ -100,7 +101,8 @@ record is moved to the request the way a player would, and the legality analysis
 |---|---|
 | nature | a mint sets the stat nature, Generation 8 onward |
 | ability | the slot that holds the ability (capsule or patch) |
-| an IV asked to be 31 | hyper training |
+| an IV asked to be 31 | hyper training, at level 100 (Generations 7 and 8) or 50 (Generation 9) |
+| form | set on species whose form the player changes, such as Rotom's appliances |
 
 Held item, ball and effort values are set after the build. A Generation 3 or 4 EV above 100 is legal
 only once the Pokémon has gained experience since it was met, so such a record gets one experience
@@ -128,6 +130,20 @@ gift Melmetal.
 Custom offer options are also verified by a retail Sword round trip: the received Pokemon was
 traded back on the next queued exchange and its saved record compared with the outgoing offer
 ([The offered record](swsh_trade.md#the-offered-record)).
+
+### Showdown sets
+
+Import paste reads a Pokémon Showdown, Smogon or PKHeX set with PKHeX's own parser
+(`ShowdownParsing.GetShowdownSets`) and fills the build form; Build
+then makes the record. The text follows Showdown's defaults: no `Level:` line means level 100, and
+an IV the `IVs:` line leaves out is 31. The parser keeps stats in PKHeX's order, Speed fourth.
+
+| the set names | result |
+|---|---|
+| a line the parser cannot read, a species or form absent from the game, an ability the species lacks, an item the game cannot hold, a move the game lacks, EVs over 510 | refused with the reason; nothing is filled |
+| Tera Type, Gigantamax, Dynamax level, Friendship, Hidden Power type | filled without it, with a note |
+| EVs in Let's Go or Legends Arceus, an ability in Legends Z-A | left out, with a note |
+| several sets | the first fills the form, with a note |
 
 Sword/Shield Mystery Gift validates the WC8 seal and checks supported species, forms, moves and safe
 items with PKHeX. Custom WC8 cards are distributions, and this structural check does not make them
