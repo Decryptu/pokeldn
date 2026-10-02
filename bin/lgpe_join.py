@@ -301,7 +301,8 @@ def build_parser():
                          "this long after the first trade step we answered (docs/lgpe_session.md)")
     ap.add_argument("--stall-leave", type=float, default=5.0, metavar="SECONDS",
                     help="leave the way a console backs out when both players have voted and the "
-                         "host has not agreed for this long, before any commit; 0 never")
+                         "host has not agreed for this long, before any commit; 0 never. It ends "
+                         "the wait, not the trade lock a confirmed trade already saved")
     ap.add_argument("--received", help="write the peer's offered PB7 here")
     ap.add_argument("--fresh-pid", action="store_true",
                     help="offer every --offer structure under a new PID and encryption constant, "

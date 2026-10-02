@@ -967,10 +967,12 @@ d'annuler l'échange"); a joiner that waits leaves the host repeating 0x13 (five
 `bin/lgpe_join.py --leave-after SECONDS` runs the exit (`pokeldn.lgpe.leave`).
 
 Once both stations publish state 1 with one argument on a clone, a console host's type 4 copy moves
-A to it within 0.27 s (nine retail joiner sessions). In one retail session it never did, and the
-console's player sat on the trade screen until the joiner was stopped, which locked trading on that
-console. `bin/lgpe_join.py` runs the exit when such a vote stands unagreed for `--stall-leave`
-seconds (default 5) before any commit (`pokeldn.lgpe.leave.unagreed_vote`).
+A to it within 0.27 s (nine retail joiner sessions). In one retail session it never did on the
+commit clone, and the console's player sat on the trade screen until the joiner was stopped.
+`bin/lgpe_join.py` runs the exit when such a vote stands unagreed for `--stall-leave` seconds
+(default 5) before any kind 3 (`pokeldn.lgpe.leave.unagreed_vote`). The exit ends the wait; it does
+not lift the trade lock, which the sync save wrote before the commit clone vote (state 0 of
+`0x838070`).
 
 ### A host leaving
 
