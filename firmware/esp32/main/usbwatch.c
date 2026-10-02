@@ -87,7 +87,8 @@ void usbwatch_report(void)
 
 void usbwatch_start(void)
 {
-    if (esp_reset_reason() != ESP_RST_SW) s_report.magic = 0;
+    /* A port open resets the chip over USB (reason 11): the report must outlive that. */
+    if (esp_reset_reason() == ESP_RST_POWERON) s_report.magic = 0;
     xTaskCreate(watch_task, "usbwatch", 2048, NULL, 2, NULL);
 }
 #else

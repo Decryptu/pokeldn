@@ -51,6 +51,10 @@ The Seeed Studio XIAO ESP32C6 (ESP32-C6FH4, 4 MB embedded flash) uses its USB-C 
 USB Serial/JTAG. Its RF switch is powered while GPIO3 is low, and GPIO14 selects the ceramic antenna
 (low) or the U.FL socket (high) ([Seeed's board guide](https://wiki.seeedstudio.com/xiao_esp32c6_getting_started/));
 the C6 firmware drives both low before Wi-Fi starts, so the board radiates from its ceramic antenna.
+The image is the same for every C6 board and needs no antenna attached. On the ESP32-C6-DevKitC-1,
+GPIO3 and GPIO15 reach only the pin headers, GPIO14 is not broken out, and the addressable RGB LED
+is on GPIO8 ([Espressif's user guide](https://docs.espressif.com/projects/esp-dev-kits/en/latest/esp32c6/esp32-c6-devkitc-1/user_guide.html)),
+so the XIAO pin settings leave that board's radio and parts untouched.
 BOOT is GPIO9; the yellow user LED on GPIO15 (lit while low) shows the LED looks; the red LED is the
 charge indicator. The build runs at 160 MHz with the wire and button tasks on core 0, as on the C3.
 
