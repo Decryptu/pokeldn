@@ -58,6 +58,10 @@ is refused before gift data is sent. A preset's card id is on the Advanced tab (
 
 The app does not modify gift files on import. Files remain at the chosen paths.
 
+Opened files have been delivered to retail consoles: a French FireRed received a Celebi card file,
+and a console code file that answered with the value it was built for; a Sword received a
+Pikachu card file. Console code built in the form answered with the save's trainer id.
+
 ## Command line
 
 Both gift launchers accept `--gift-file FILE`. Sword/Shield retains `--record` as an alias.
