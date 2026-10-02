@@ -1,1 +1,4 @@
 CONFIG_ESP_DEFAULT_CPU_FREQ_MHZ_240=y
+# The startup BBPLL recalibration stops the PLL that clocks USB Serial/JTAG, as on the C6.
+# Our bootloader is v6.1. docs/hardware_esp32.md, Supported boards.
+CONFIG_ESP_SYSTEM_BBPLL_RECALIB=n

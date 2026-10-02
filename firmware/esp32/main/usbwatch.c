@@ -1,7 +1,7 @@
-/* C6 USB watch: a XIAO ESP32C6's USB Serial/JTAG device went deaf twice as a console left a trade
-   while the firmware ran on. Samples the SOF frame number every 5 ms; once frames have counted and
-   then stop for 2 s, keeps the registers from before and after in RTC memory, restarts, and reports
-   them as LOG lines on the next HELLO. docs/hardware_esp32.md, Supported boards. */
+/* C6 USB watch: a XIAO ESP32C6's USB Serial/JTAG device went deaf with the firmware running on.
+   Samples the SOF frame number every 5 ms; once frames have counted or the host has sent a byte,
+   a 2 s stall keeps the registers from before and after in RTC memory, restarts, and reports them
+   as LOG lines on the next HELLO. docs/hardware_esp32.md, Supported boards. */
 #include "usbwatch.h"
 
 #include "sdkconfig.h"
@@ -75,7 +75,7 @@ static void watch_task(void *arg)
     uint32_t healthy[NREGS];
     int64_t healthy_us = 0, last_change = esp_timer_get_time();
     uint32_t last_frame = *(volatile uint32_t *)USB_SERIAL_JTAG_FRAM_NUM_REG & 0x7ff;
-    bool armed = false;   /* a board on a charger never sees a frame: never restart it */
+    bool armed = false;   /* a board on a charger sees no frame and no host byte: never restart it */
     uint32_t frames = 0, ticks = 0;
     for (;;) {
         const uint32_t frame = *(volatile uint32_t *)USB_SERIAL_JTAG_FRAM_NUM_REG & 0x7ff;
@@ -87,7 +87,7 @@ static void watch_task(void *arg)
             last_change = now;
             snap(healthy);
             healthy_us = now;
-        } else if (armed && now - last_change > STALL_US) {
+        } else if ((armed || wire_consumed()) && now - last_change > STALL_US) {
             s_report.stalls = s_report.magic == WATCH_MAGIC ? s_report.stalls + 1 : 1;
             s_report.healthy_us = healthy_us;
             s_report.stalled_us = now;

@@ -72,24 +72,44 @@ trades as FireRed joiner and as Sword and Scarlet host: received PK3 and PK8 rec
 no error, and the console left cleanly. A FireRed joiner session counted 5155 of 5155 host ETH_TX
 commands on the board, with no bad wire frame and no USB resync.
 
-On firmware without the USB watch, the XIAO ESP32C6's USB device went silent within 0.15 s of the
-session's end in both console runs (FireRed joiner, Sword host) and in 1 of 3 two-board desk runs
-of 60 s: the firmware ran on (its LED showed the alarm look as `wire_dropped` rose), the board read
-no further host bytes, and esptool's USB reset got no answer until the board was unplugged. The
-cause is unknown. The C6 build carries a USB watch (`usbwatch.c`): it samples the USB SOF frame
-number every 5 ms and, once frames have counted and then stop for 2 s, restarts the chip and reports
-the USB and clock registers from before and after the stall as LOG lines on the next HELLO. With
-the watch built in, 2 console runs and 6 desk runs ended with no stall and no restart; its restart
-path has not fired on hardware. One wedge in a desk run with the watch built in did not end: the watch did not restart
-the chip, so the SOF frame number is not a sufficient signal. Built with `POKELDN_USB_BEACON=1` in
-the environment of `idf.py`, the C6 image also sends those registers, the SOF changes it has seen
-and the host bytes it has read once a second, as a vendor action frame (category 127, OUI
-`02:55:53`) to the group address `03:55:53:42:57:00`; a sniffing board keeps them with
-`esp32_sniff.py --mac 03:55:53:42:57:00` while the USB link is dead.
-
 Gr3nSkyDragon reports a completed FireRed joiner trade on an ESP32-S3 under Windows in
 [the S3 contribution](https://github.com/Decryptu/pokeldn/pull/2). The classic ESP32 measurements
 below use the ELEGOO ESP32-D0WD-V3 board unless another board is named.
+
+### The USB link after a reset (C6, S3)
+
+Opening the port resets a C6 or S3 through USB Serial/JTAG (reset reason 11, a core reset). With
+`CONFIG_ESP_SYSTEM_BBPLL_RECALIB=y`, the ESP-IDF default on both chips, the application's startup
+runs `recalib_bbpll()` (`esp_system/port/soc/esp32c6/clk.c`, the same on S3): on any reset other
+than a CPU reset it calls `rtc_clk_cpu_freq_set_xtal()`, which stops the BBPLL with no check for its
+USB consumer, then restarts it. USB Serial/JTAG takes its 48 MHz clock from that PLL while the host
+is talking to it. On a XIAO ESP32C6 the link then sometimes came up garbled and stayed so until the
+board was unplugged: the firmware ran on, the SOF frame number never moved after that boot,
+`USB_SERIAL_JTAG_INT_RAW` held PID, CRC5 and bit-stuffing errors (`0000b5b2` against `0000b50a`
+healthy) with the reply stuck in the IN FIFO, the clock-enable, pad and PCR registers matched a
+healthy board, GET_CONFIGURATION over EP0 failed, and esptool's USB reset got no answer.
+
+| C6 image | port opens (reset and boot) | link dead until unplugged |
+|---|---|---|
+| recalibration on | 113 | 1, at open 113 |
+| recalibration off | 900 | 0 |
+
+The C6 and S3 builds set `CONFIG_ESP_SYSTEM_BBPLL_RECALIB=n`; its Kconfig help allows that for a
+bootloader built with ESP-IDF v5.2 or later, and every merged image carries its own v6.1
+bootloader. The S3 change is untested on an S3. The C3 has no such option and never showed the
+fault. With recalibration off, 4 of 600 opens on a C6 found no answer once and a working link on
+the next open, after macOS re-enumerated the device ("Device not configured").
+
+Both of the C6's retail sessions that seemed to end in a dead link were first found dead at the
+next port open. The C6 build also carries a USB watch (`usbwatch.c`): it samples the SOF frame
+number every 5 ms and, once frames have counted or the host has sent a byte, restarts the chip
+after a 2 s stall and reports the USB and clock registers from before and after it as LOG lines on
+the next HELLO. Built with `POKELDN_USB_BEACON=1` in the environment of `idf.py`, the C6 image also
+sends those registers, the SOF changes it has seen and the host bytes it has read once a second, as
+a vendor action frame (category 127, OUI `02:55:53`) to the group address `03:55:53:42:57:00`; a
+sniffing board keeps them with `esp32_sniff.py --mac 03:55:53:42:57:00` while the USB link is dead.
+The frame body after the 4-byte vendor header is u32 little-endian: uptime ms, SOF changes, host
+bytes, `wire_dropped`, stall count, then the sixteen registers listed in `usbwatch.c`.
 
 ## Roles
 
