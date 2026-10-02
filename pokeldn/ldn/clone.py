@@ -247,6 +247,7 @@ class Participant:
         self.unrequested = {}
         # Resends and withheld frames, for the launcher to print.
         self.events = []
+        self.withhold_clone0_answers = set()
 
     def frame(self, now):
         return int((now - self.t0) * FRAME_HZ) & 0xFFFF
@@ -677,6 +678,12 @@ class Participant:
         if key == (3, 0xFD, 0):
             # The measured joiner on the type-3 clone: a2 echoes a1's clock with count 1, c1 echoes
             # b1's with its bitmap, 0x84 answers 0x83.
+            if (kind in (CLOCK_AND_COUNT, CLOCK_AND_PARTICIPANT)
+                    and kind in self.withhold_clone0_answers):
+                # Test only: as if the answer were lost, to see whether the owner repeats its pair.
+                self.withhold_clone0_answers.discard(kind)
+                self.events.append(f"withheld our answer to the peer's clone 0 {kind:#04x}")
+                return []
             if kind == CLOCK_AND_COUNT and len(c["payload"]) >= 8:
                 if self.host_role:
                     # The reference host answers the joiner's clone 0 announcement with a 0x91

@@ -510,3 +510,26 @@ def test_a_lost_request_for_the_commit_clone_is_drawn_again(stage):
     sent.clear()
     stage["run"](1.0)
     assert announces() == []
+
+
+def test_an_unanswered_clone_0_pair_is_repeated_until_the_console_answers(stage):
+    """A retail host stalled on "vous allez bientôt être connecté" when its one clone 0 pair went
+    unanswered; a retail console host repeats its own pair about 110 ms later."""
+    s, sent, clk = stage["s"], stage["sent"], stage["clk"]
+    s.clone_0_announced, s.publish_clone_0_at = False, None
+    s.announce_clone_0_at = clk.t
+
+    def pairs():
+        return sum(1 for protocol, payload, _ in sent if protocol == clone.PROTOCOL
+                   and (c := clone.parse_command(payload)) and c["type"] == clone.CLOCK_AND_PARTICIPANT
+                   and (c["ctype"], c["clone_id"]) == (3, 0))
+
+    stage["run"](0.05)
+    assert pairs() == 1
+    stage["run"](0.12)
+    assert pairs() == 2
+    s.handle(clone.PROTOCOL, clone.build_command(clone.CLOCK_AND_COUNT_2, 3, 0xFD, 0, 9, 0x1,
+                                                 b"\0\0\x10\0\x01\0\0\0"))
+    sent.clear()
+    stage["run"](1.0)
+    assert pairs() == 0

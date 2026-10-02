@@ -413,6 +413,16 @@ word `+0x40`:
 In state `0x22` the protocol waits for the mask to empty before moving to `0x31`
 (`0x51b074..0x51b084`).
 
+### The clone 0 pair
+
+The owner of clone 0 on clone type 3 announces it with an 0xa1 and an 0xb1; the other station
+answers 0xa2 and 0xc1, and only then does the owner publish. A retail console host left without an
+answer (`--withhold-clone0-answer` on `bin/lgpe_join.py`, test only) sent 0xb1 and 0xa1 again 114 ms
+after its first 0xa1, and 0xb1 alone 108 ms after that; it took the answer to the repeat and the
+trade completed. A host that sends the pair once and loses the answer leaves the console on "vous
+allez bientôt être connecté" with nothing past clock traffic. `bin/lgpe_host.py` repeats the pair
+every 110 ms, at most 20 times, until the console's 0xa2, 0xc1 or 0x91 arrives.
+
 ### The game's messages on the reliable protocol
 
 Every message on `0x7c` is a 16-byte header and a body:
@@ -1116,8 +1126,10 @@ its trade lock already saved. `pokeldn.ldn.clone` resends the peer-only `0x81` e
 20 times, until the `0x82` arrives.
 
 In a three-trade retail host session, the peer answered the first peer-only announcements for
-commit clones 4, 7 and 10 after 63, 26 and 62 ms. No retry fired; recovery after an unanswered
-announcement remains unverified on retail.
+commit clones 4, 7 and 10 after 63, 26 and 62 ms. With the first peer-only `0x81` withheld
+(`--withhold-announce 1` on `bin/lgpe_host.py` and `bin/lgpe_join.py`, test only), the resend
+100 ms later drew the console's `0x82` and the session went on to three trades, in each role. In the
+host session the resend also fired once for clone 5 with nothing withheld, and that trade completed.
 
 ### What the announce's destination field decides
 

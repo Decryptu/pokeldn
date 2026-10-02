@@ -133,6 +133,9 @@ def build_parser():
                     help="seconds after the second commit to send the result, the next trade's "
                          "first slot, with two clones announced 0.5 s before it; a retail host sent "
                          "it 26.8 s after, behind its trade animation")
+    ap.add_argument("--ignore-clone0-answer", action="store_true",
+                    help="test only: ignore the console's first answer to our clone 0 pair, as if "
+                         "lost, so the pair goes again")
     ap.add_argument("--withhold-announce", type=int, default=0, metavar="N",
                     help="test only: skip the first N of our announcements to the console alone, as "
                          "if lost, so the resend carries them")
@@ -278,6 +281,7 @@ class Session:
         # Each step is timed 30 ms off the console's answer to the last (docs/lgpe_session.md).
         self.announce_clone_0_at = None
         self.clone_0_announced = False
+        self.clone_0_resend_at, self.clone_0_resends = 0.0, 0
         self.publish_clone_0_at = None
         self.clone_0_published = False
         self.clone_0_acked = False
@@ -421,6 +425,14 @@ class Session:
             if (self.announce_clone_0_at is not None and not self.clone_0_announced
                     and now >= self.announce_clone_0_at):
                 self.clone_0_announced = True
+                self.announce_clone_0(now)
+                self.clone_0_resend_at, self.clone_0_resends = now + 0.11, 0
+            if (self.clone_0_announced and self.publish_clone_0_at is None
+                    and now >= self.clone_0_resend_at and self.clone_0_resends < 20):
+                # A retail console host repeats an unanswered pair about 110 ms later
+                # (docs/lgpe_session.md, The clone 0 pair).
+                self.clone_0_resend_at, self.clone_0_resends = now + 0.11, self.clone_0_resends + 1
+                print(f"[lgh] clone: no answer to the clone 0 pair; resent ({self.clone_0_resends})")
                 self.announce_clone_0(now)
             if (self.publish_clone_0_at is not None and not self.clone_0_acked
                     and now >= self.publish_clone_0_at and now >= self.next_clone_0):
@@ -805,7 +817,11 @@ class Session:
                 and self.publish_clone_0_at is None:
             # A 0x91 here is what a console gave when the pair reached it before its own a1.
             c = clone.parse_command(pl)
-            if c and (c["ctype"], c["station"], c["clone_id"]) == (3, 0xFD, 0):
+            if c and (c["ctype"], c["station"], c["clone_id"]) == (3, 0xFD, 0) \
+                    and self.args.ignore_clone0_answer and self.clone_0_resends == 0:
+                # Test only: as if the answers were lost, so the console gets the pair twice.
+                print(f"[lgh] clone: ignored the console's {kind:#04x} to the clone 0 pair")
+            elif c and (c["ctype"], c["station"], c["clone_id"]) == (3, 0xFD, 0):
                 self.publish_clone_0_at = now + 0.03
                 print(f"[lgh] clone: the console answered the clone 0 pair with {kind:#04x}")
         elif kind == clone.EXIT_REQUEST:

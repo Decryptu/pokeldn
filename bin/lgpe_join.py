@@ -312,6 +312,9 @@ def build_parser():
     ap.add_argument("--withhold-announce", type=int, default=0, metavar="N",
                     help="test only: skip the first N of our announcements to the host alone, as "
                          "if lost, so the resend carries them")
+    ap.add_argument("--withhold-clone0-answer", action="store_true",
+                    help="test only: send no answer to the host's first clone 0 pair (0xa1, 0xb1), "
+                         "as if lost, to see whether the host repeats it")
     ap.add_argument("--ack-re-announce", action="store_true",
                     help="answer a peer re-announcement with an acknowledgement carrying its "
                          "clock rather than a second take-over. A reference joiner takes a clone "
@@ -691,6 +694,9 @@ def _run(args, net, keys, facts, opener):
                         state["clone"].publish_on_announce = args.publish_on_announce
                         state["clone"].publish_fallback = args.publish_fallback
                         state["clone"].withhold_announces = args.withhold_announce
+                        if args.withhold_clone0_answer:
+                            state["clone"].withhold_clone0_answers = {clone.CLOCK_AND_COUNT,
+                                                                      clone.CLOCK_AND_PARTICIPANT}
                         print("[lg] clone: sending clock requests every 0.2 s")
                     sc = state.get("sync")
                     if sc is not None and sc.now_ms(now) is not None:
