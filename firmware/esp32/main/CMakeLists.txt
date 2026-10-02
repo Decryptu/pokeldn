@@ -8,6 +8,6 @@ else()
 endif()
 
 idf_component_register(
-    SRCS "radio.c" "wire.c" "led.c"
+    SRCS "radio.c" "wire.c" "led.c" "usbwatch.c"
     INCLUDE_DIRS "."
     PRIV_REQUIRES esp_app_format esp_wifi wpa_supplicant ${wire_driver} esp_driver_ledc esp_driver_gpio esp_timer nvs_flash esp_event)

@@ -20,6 +20,7 @@
 
 #include "led.h"
 #include "private_wifi.h"
+#include "usbwatch.h"
 #include "wire.h"
 
 #define PROTOCOL_VERSION 1
@@ -669,6 +670,7 @@ static void send_info(void)
     snprintf(text, sizeof(text), "pokeldn-radio " CONFIG_IDF_TARGET " version=%s idf=" IDF_VER,
              esp_app_get_description()->version);
     wire_send(MSG_INFO, head, sizeof(head), text, strlen(text));
+    usbwatch_report();
 }
 
 static void command(uint8_t type, const uint8_t *p, size_t n)
@@ -804,6 +806,7 @@ void app_main(void)
     esp_wifi_set_ps(WIFI_PS_NONE);
     start_sniffer();
     wire_start(command);
+    usbwatch_start();
     led_start(led_state, button_pressed);
     send_info();
 
