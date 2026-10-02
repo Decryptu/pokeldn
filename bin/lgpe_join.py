@@ -309,6 +309,9 @@ def build_parser():
                          "232-byte structure, encrypted or not. Repeatable, one per trade on the "
                          "seat; trade N writes what it received to --received with -N. After the "
                          "last, a further trade is not answered and the player backs out")
+    ap.add_argument("--withhold-announce", type=int, default=0, metavar="N",
+                    help="test only: skip the first N of our announcements to the host alone, as "
+                         "if lost, so the resend carries them")
     ap.add_argument("--ack-re-announce", action="store_true",
                     help="answer a peer re-announcement with an acknowledgement carrying its "
                          "clock rather than a second take-over. A reference joiner takes a clone "
@@ -687,6 +690,7 @@ def _run(args, net, keys, facts, opener):
                         state["clone"].ack_re_announcement = args.ack_re_announce
                         state["clone"].publish_on_announce = args.publish_on_announce
                         state["clone"].publish_fallback = args.publish_fallback
+                        state["clone"].withhold_announces = args.withhold_announce
                         print("[lg] clone: sending clock requests every 0.2 s")
                     sc = state.get("sync")
                     if sc is not None and sc.now_ms(now) is not None:
@@ -696,6 +700,9 @@ def _run(args, net, keys, facts, opener):
                         if out[1] == clone.PARTICIPATE:
                             print(f"[lg] clone: *** PARTICIPATE sent after "
                                   f"{state['clone'].answered} answered requests ***")
+                    for event in state["clone"].events:
+                        print(f"[lg] clone: {event}")
+                    state["clone"].events.clear()
                 if args.connect and state["host_accepted"] and not state["mesh_joined"] \
                         and time.monotonic() - t0 >= next_tx:
                     jr = pia3.build_message(mp.build_join_request(state["our_ack"][0]),

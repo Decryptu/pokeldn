@@ -245,6 +245,8 @@ class Participant:
         self.log = []
         # clone id -> (next resend, resends): our peer-only announcement until the peer's 0x82.
         self.unrequested = {}
+        # Resends and withheld frames, for the launcher to print.
+        self.events = []
 
     def frame(self, now):
         return int((now - self.t0) * FRAME_HZ) & 0xFFFF
@@ -313,6 +315,11 @@ class Participant:
             payload = content or b""
             if kind == COMMAND_ANNOUNCE and qdest is None and clone_id not in self.unrequested:
                 self.unrequested[clone_id] = (now + self.announce_retry, 0)
+                if self.withhold_announces > 0:
+                    # Test only: as if this frame were lost, so the resend below carries it.
+                    self.withhold_announces -= 1
+                    self.events.append(f"withheld our announcement of clone {clone_id}")
+                    continue
             if kind == CLOCK_AND_COUNT:
                 # As late as possible: the host's announcements arrive in the same packet as the one
                 # that queued this.
@@ -338,6 +345,7 @@ class Participant:
                 self.unrequested[cid] = (when, None)
                 continue
             self.unrequested[cid] = (now + self.announce_retry, sent + 1)
+            self.events.append(f"resent our announcement of clone {cid} ({sent + 1})")
             out.append(self._command(COMMAND_ANNOUNCE, 2, self.station, cid, now))
         if (self.participated and self.peer_participated_ack and not self.announced
                 and not self.host_role):
@@ -372,6 +380,7 @@ class Participant:
     # both waiting on the confirmation screen (docs/lgpe_session.md, The take-over exchange).
     announce_retry = 0.1
     announce_retries = 20
+    withhold_announces = 0
 
     def _mirror_announce(self, c, now, takeover_only=False):
         """Take the host's clone over on three clone types, then announce our own copy of it, in

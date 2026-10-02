@@ -441,6 +441,27 @@ def test_a_new_sequence_gets_a_fresh_take_over():
     assert takeover_clocks(1.2) == []
 
 
+def test_a_lost_announcement_to_the_peer_is_resent_until_its_0x82():
+    """docs/lgpe_session.md, The take-over exchange: one lost frame leaves both on the confirmation
+    screen. `withhold_announces` drops ours as the air would."""
+    from pokeldn.ldn import clone
+    p = clone.Participant(0.0, dest=0x0001, own=0x0002, station=1)
+    p.participated = p.peer_participated_ack = p.announced = True
+    p.withhold_announces = 1
+    p.receive(clone.build_command(clone.CLOCK_AND_COUNT_2, 2, 0x00, 4, 7, 2, bytes(8)), 1.0)
+
+    def announces(t):
+        return [m for m in p.poll(t) if m[1] == clone.COMMAND_ANNOUNCE]
+
+    assert announces(1.04) == []
+    resent = announces(1.15)
+    assert [clone.parse_command(m)["clone_id"] for m in resent] == [4]
+    assert announces(1.2) == []
+    assert len(announces(1.26)) == 1
+    p.receive(clone.build_command(clone.COMMAND_REQUEST, 1, 0xFD, 4, 8, 2), 1.3)
+    assert announces(1.5) == [] and announces(3.0) == []
+
+
 def test_a_retransmitted_publish_is_answered_once_with_a_copy_then_acknowledged():
     """A retransmitted publish gets one copy of ours, then acknowledgements."""
     from pokeldn.ldn import clone

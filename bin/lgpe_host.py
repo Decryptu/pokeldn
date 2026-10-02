@@ -133,6 +133,9 @@ def build_parser():
                     help="seconds after the second commit to send the result, the next trade's "
                          "first slot, with two clones announced 0.5 s before it; a retail host sent "
                          "it 26.8 s after, behind its trade animation")
+    ap.add_argument("--withhold-announce", type=int, default=0, metavar="N",
+                    help="test only: skip the first N of our announcements to the console alone, as "
+                         "if lost, so the resend carries them")
     ap.add_argument("--lead", type=float, default=None, metavar="SECONDS",
                     help="test only, for bin/lgpe_join.py: act as a console host's player, each "
                          "step this many seconds after the last. Offer unprompted after the party "
@@ -412,6 +415,9 @@ class Session:
                 if out[1] == clone.PARTICIPATE:
                     print("[lgh] clone: PARTICIPATE sent, 1.1 s after the console's")
                 self.send(out, clone.PROTOCOL)
+            for event in self.clone.events:
+                print(f"[lgh] clone: {event}")
+            self.clone.events.clear()
             if (self.announce_clone_0_at is not None and not self.clone_0_announced
                     and now >= self.announce_clone_0_at):
                 self.clone_0_announced = True
@@ -781,6 +787,7 @@ class Session:
         # A retail station answers every clone type 2 publish with its own copy, about ten a second
         # for the whole session (docs/lgpe_session.md).
         self.clone.publish_once = False
+        self.clone.withhold_announces = self.args.withhold_announce
 
     def clone_step(self, pl, now):
         kind = pl[1] if len(pl) > 1 else -1
