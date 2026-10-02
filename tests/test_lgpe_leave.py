@@ -134,3 +134,27 @@ def test_after_the_consoles_clone_0_release_its_shared_copies_are_acked_not_answ
     assert (ack["ctype"], ack["station"], ack["clone_id"]) == (1, 0xFD, 6)
     assert ack["record"]["station"] == sent["record"]["station"] == 1
     assert ack["record"]["clock"] == sent["record"]["clock"]
+
+
+def test_a_vote_the_console_host_never_agrees_is_seen_and_an_agreed_one_is_not():
+    # Retail lgp37: both stations at 1 1 1 on commit clone 4 and the console host's type 4 copy
+    # left at A 0 until the player was locked out. Retail lgp35: the same vote, then its A 1 copy.
+    from pokeldn.lgpe.leave import unagreed_vote
+    zeros_t4 = bytes.fromhex("03f3281d04fd0000000000040002785e52d0636061660002260686ca3d0c0400"
+                             "000000ffff030037c6018d")
+    vote_37 = bytes.fromhex("03f3281f02000000000000040003785e52506260616600022051f99f11c880615e"
+                            "060800000000ffff030029ce01d5")
+    vote_35 = bytes.fromhex("03f311bb02000000000000040003785e52506260616600022011a4cc0864c03017"
+                            "030400000000ffff0300145000cf")
+    agreed_t4 = bytes.fromhex("03f311bd04fd0000000000040003785e52d06360616600022011a4ccc8801d70"
+                              "0131480e000000ffff03001f7800da")
+    stalled = clone.Participant(100.0, dest=1, own=2, station=1)
+    stalled.receive(zeros_t4, 100.1)
+    assert unagreed_vote(stalled) is None
+    stalled.receive(vote_37, 100.2)
+    assert unagreed_vote(stalled) == 4
+    agreed = clone.Participant(100.0, dest=1, own=2, station=1)
+    agreed.receive(vote_35, 100.2)
+    assert unagreed_vote(agreed) == 4
+    agreed.receive(agreed_t4, 100.25)
+    assert unagreed_vote(agreed) is None

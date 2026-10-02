@@ -966,6 +966,12 @@ the leave response arrives returns the host's player to the menu ("l'autre joueu
 d'annuler l'échange"); a joiner that waits leaves the host repeating 0x13 (five seconds, measured).
 `bin/lgpe_join.py --leave-after SECONDS` runs the exit (`pokeldn.lgpe.leave`).
 
+Once both stations publish state 1 with one argument on a clone, a console host's type 4 copy moves
+A to it within 0.27 s (nine retail joiner sessions). In one retail session it never did, and the
+console's player sat on the trade screen until the joiner was stopped, which locked trading on that
+console. `bin/lgpe_join.py` runs the exit when such a vote stands unagreed for `--stall-leave`
+seconds (default 5) before any commit (`pokeldn.lgpe.leave.unagreed_vote`).
+
 ### A host leaving
 
 A console host whose player backs out publishes state 4, argument 3, releases its clones (0x83,

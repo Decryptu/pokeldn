@@ -248,6 +248,8 @@ class Participant:
         # Resends and withheld frames, for the launcher to print.
         self.events = []
         self.withhold_clone0_answers = set()
+        # clone id -> the session host's clone type 4 data: A, the agreed argument, first.
+        self.agreed = {}
 
     def frame(self, now):
         return int((now - self.t0) * FRAME_HZ) & 0xFFFF
@@ -557,6 +559,8 @@ class Participant:
                                                   self.element_ms(now) & 0xFFFF,
                                                   self.own | self.dest))]
             if d["type"] & 0xF0 == 0xF0 and r is not None and r["kind"] == RECORD_STATE:
+                if d["ctype"] == 4 and r["station"] != self.station:
+                    self.agreed[d["clone_id"]] = r["data"]
                 if d["ctype"] == 2 and d["station"] != self.station and not self.peer_released:
                     # Answer the shared clone with our copy once: the peer retransmits about ten
                     # times a second, and answering each makes the pair trade publishes all session.

@@ -40,7 +40,7 @@ from pokeldn.lgpe import (COMM_ID_PIKACHU, PASSPHRASE, PIA_PORT, PIA_VERSION, pa
                           session_keys)
 from pokeldn.lgpe.session import APP_HEADER_SIZE
 from pokeldn.lgpe import pb7, reference
-from pokeldn.lgpe.leave import Leaver, host_departure
+from pokeldn.lgpe.leave import Leaver, unagreed_vote, host_departure
 from pokeldn.lgpe.trade import (TRADE_IN_PROGRESS, _answer_commit, _answer_offer,  # noqa: F401
                                 _note_result, _send_step, _warn_if_mid_trade, answer_console)
 
@@ -299,6 +299,9 @@ def build_parser():
     ap.add_argument("--leave-after", type=float, default=None, metavar="SECONDS",
                     help="leave the session the way a console backs out of its trade screen, "
                          "this long after the first trade step we answered (docs/lgpe_session.md)")
+    ap.add_argument("--stall-leave", type=float, default=5.0, metavar="SECONDS",
+                    help="leave the way a console backs out when both players have voted and the "
+                         "host has not agreed for this long, before any commit; 0 never")
     ap.add_argument("--received", help="write the peer's offered PB7 here")
     ap.add_argument("--fresh-pid", action="store_true",
                     help="offer every --offer structure under a new PID and encryption constant, "
@@ -611,6 +614,16 @@ def _run(args, net, keys, facts, opener):
                         and state.get("answered_step")):
                     state["leave_at"] = time.monotonic() + args.leave_after
                     print(f"[lg] leaving in {args.leave_after:.0f} s")
+                if (args.stall_leave and state.get("leave_at") is None
+                        and state.get("clone") is not None and not TRADE_IN_PROGRESS["commit"]):
+                    cid = unagreed_vote(state["clone"])
+                    now = time.monotonic()
+                    if cid is None:
+                        state.pop("stall_since", None)
+                    elif now - state.setdefault("stall_since", now) >= args.stall_leave:
+                        state["leave_at"] = now
+                        print(f"[lg] *** STALLED *** both voted on clone {cid}, no agreement in "
+                              f"{args.stall_leave:.0f} s; leaving before any commit")
                 if (state.get("leave_at") is not None and state.get("leaver") is None
                         and time.monotonic() >= state["leave_at"]):
                     part = state["clone"]

@@ -8,7 +8,7 @@ from pokeldn.ldn import mesh_protocol as mp
 from pokeldn.ldn.station_protocol import DISCONNECTION_REQUEST, DISCONNECTION_RESPONSE
 from pokeldn.ldn import station9
 
-__all__ = ["Leaver", "host_departure"]
+__all__ = ["Leaver", "host_departure", "unagreed_vote"]
 
 RELEASE_ORDER = (1, 0, 2, 3)
 # The console's pause between its last release and its leave request, measured three times.
@@ -139,3 +139,17 @@ def host_departure(protocol, payload, station_index):
             return [], False
         return [], kind == lp.START_HOST_MIGRATION
     return [], False
+
+
+def unagreed_vote(participant):
+    """-> the clone both stations vote on with one argument while the session host's A differs,
+    else None. The host's authority (main 0x11b6c0) moves A within one tick of agreement
+    (docs/lgpe_session.md, The two clone records a trade walks)."""
+    p = participant
+    for cid, theirs in p.shared.items():
+        ours = p.our_data(cid)
+        if (len(theirs) >= 20 and theirs[:4] == ours[:4] == b"\x01\0\0\0"
+                and theirs[4:8] == ours[4:8] and theirs[16:20] == ours[16:20]
+                and p.agreed.get(cid, bytes(4))[:4] != theirs[4:8]):
+            return cid
+    return None
