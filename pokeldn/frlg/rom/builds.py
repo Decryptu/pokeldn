@@ -57,8 +57,12 @@ class Build:
     mon_icon_palettes: int          # gMonIconPalettes
     get_mon_icon: int               # GetMonIconPtr, a ROM function
     setup_script: int               # ScriptContext_SetupScript
-    controls_locked: int            # ArePlayerFieldControlsLocked
-    emoticons: int                  # sGfx_Emoticons [src/trainer_see.c:46]
+    selected_object: int            # gSelectedObjectEvent, IWRAM
+    spawn_object: int               # SpawnSpecialObjectEventParameterized
+    set_held_movement: int          # ObjectEventSetHeldMovement
+    clear_held_movement: int        # ObjectEventClearHeldMovement
+    move_object_to: int             # MoveObjectEventToMapCoords
+    remove_object: int              # RemoveObjectEvent
     callable: MappingProxyType = field(repr=False)
 
     @property
@@ -95,8 +99,10 @@ class Build:
                 "obj_palettes": self.obj_palettes, "get_mon_icon": self.get_mon_icon | 1,
                 "icon_pal_indices": self.mon_icon_pal_indices,
                 "icon_palettes": self.mon_icon_palettes, "setup_script": self.setup_script | 1,
-                "controls_locked": self.controls_locked | 1,
-                "smiley": self.emoticons + 11 * 0x80}  # the smiley's last frame [trainer_see.c:628]
+                "selected_object": self.selected_object, "spawn_object": self.spawn_object | 1,
+                "set_held_movement": self.set_held_movement | 1,
+                "clear_held_movement": self.clear_held_movement | 1,
+                "move_object_to": self.move_object_to | 1, "remove_object": self.remove_object | 1}
 
     def callable_function(self, name):
         """-> the THUMB pointer for one of `callable`, by the decomp's name, case-insensitively."""
@@ -125,7 +131,9 @@ BPRF = Build(
     save_slot_layout=0x083F58C4, enigma_desc=(0x083D5CE8, 0x083D5CF8),
     obj_gfx_info=0x083983C8, obj_palettes=0x0839D770, mon_icon_pal_indices=0x083CBEE8,
     mon_icon_palettes=0x083CB7A8, get_mon_icon=0x0809AA74, setup_script=0x0806D3D4,
-    controls_locked=0x0806D248, emoticons=0x083BF068,
+    selected_object=0x03004294, spawn_object=0x08062130,
+    set_held_movement=0x080675A4, clear_held_movement=0x08067634, move_object_to=0x08063024,
+    remove_object=0x08061DB4,
     callable=MappingProxyType(dict(rom_map.CALLABLE)))
 
 # French LeafGreen: FireRed's RAM; ROM past 0x0807CF68 moves by rom_map.LEAFGREEN_DELTA_SEGMENTS.
@@ -143,7 +151,9 @@ BPGF = Build(
     save_slot_layout=0x083F5700, enigma_desc=(0x083D5B24, 0x083D5B34),
     obj_gfx_info=0x083983A8, obj_palettes=0x0839D750, mon_icon_pal_indices=0x083CBD24,
     mon_icon_palettes=0x083CB5E4, get_mon_icon=0x0809AA48, setup_script=0x0806D3D4,
-    controls_locked=0x0806D248, emoticons=0x083BEEA4,
+    selected_object=0x03004294, spawn_object=0x08062130,
+    set_held_movement=0x080675A4, clear_held_movement=0x08067634, move_object_to=0x08063024,
+    remove_object=0x08061DB4,
     callable=_callable(
         Random=0x080486B0, SeedRng=0x080486D0, CreateMon=0x08041150, VarGet=0x08071DDC,
         VarSet=0x08071DF8, GetVarPointer=0x08071CC8, AddBagItem=0x0809DA44,
@@ -171,7 +181,9 @@ BPRE = Build(
     enigma_desc=(0x083DD2C0, 0x083DD2D0),
     obj_gfx_info=0x0839D91C, obj_palettes=0x083A2CC4, mon_icon_pal_indices=0x083D197C,
     mon_icon_palettes=0x083D123C, get_mon_icon=0x0809A7B8, setup_script=0x0806D270,
-    controls_locked=0x0806D0E4, emoticons=0x083C45C4,
+    selected_object=0x03004344, spawn_object=0x08061FD4,
+    set_held_movement=0x08067448, clear_held_movement=0x080674D8, move_object_to=0x08062EC8,
+    remove_object=0x08061C58,
     callable=_callable(
         Random=0x08048670, SeedRng=0x08048690, CreateMon=0x080411FC, VarGet=0x08071CD4,
         VarSet=0x08071CF0, GetVarPointer=0x08071BC0, AddBagItem=0x0809D7E8,
@@ -198,7 +210,9 @@ BPGE = Build(
     save_slot_layout=0x083FC594, enigma_desc=(0x083DD0FC, 0x083DD10C),
     obj_gfx_info=0x0839D8FC, obj_palettes=0x083A2CA4, mon_icon_pal_indices=0x083D17B8,
     mon_icon_palettes=0x083D1078, get_mon_icon=0x0809A78C, setup_script=0x0806D270,
-    controls_locked=0x0806D0E4, emoticons=0x083C4400,
+    selected_object=0x03004344, spawn_object=0x08061FD4,
+    set_held_movement=0x08067448, clear_held_movement=0x080674D8, move_object_to=0x08062EC8,
+    remove_object=0x08061C58,
     callable=_callable(
         Random=0x08048670, SeedRng=0x08048690, CreateMon=0x080411FC, VarGet=0x08071CD4,
         VarSet=0x08071CF0, GetVarPointer=0x08071BC0, AddBagItem=0x0809D7BC,

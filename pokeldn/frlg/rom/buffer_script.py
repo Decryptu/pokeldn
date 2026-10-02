@@ -2127,11 +2127,11 @@ RESIDENT_HOOKS = {
     "ivs": ("ivs_hook", {"mon": 0x02024280, "words": 0x0203FF80, "overlay": 0x0203FF80,
                          "overlay2": 0x0203FF84}),
     "noencounter": ("noencounter_hook", {"flag": 0x020386D8}),
-    "follower": ("follower_hook", {"state": 0x0203FBB8, "deoxys": None}),
+    "follower": ("follower_hook", {"state": 0x0203FFDC, "images": 0x0203FBB4, "deoxys": None}),
 }
 # A hook's IWRAM and ROM words are the build's [Build.hook_literals]. RESIDENT_DATA: the data a hook
 # keeps past its code, in bytes.
-RESIDENT_DATA = {"p_frames": 20, "p_ring": 140, "p_state": 64, "p_words": 12}
+RESIDENT_DATA = {"p_frames": 20, "p_ring": 140, "p_state": 36, "p_words": 12, "p_images": 72}
 # Above the highest EWRAM symbol's end, 0x0203FBAC, and below the kept handler at 0x0203FBFC.
 RESIDENT_DATA_FLOOR = 0x0203FBB4
 # The follower's line when A is pressed facing it, by cartridge language: FD 02 is STR_VAR_1, the

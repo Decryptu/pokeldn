@@ -1311,105 +1311,78 @@ stop; fishing and Sweet Scent take their own paths.
 
 #### `follower`
 
-`asm/resident/follower.s` draws the lead Pokemon one tile behind the player. It is one OAM entry, not an
-object event: an active object on the tile the player just left blocks the step back, since
-`DoesObjectCollideWithObjectAt` tests every object's current and previous coordinates
-[event_object_movement.c:4899].
+`asm/resident/follower.s` walks the lead Pokemon one tile behind the player as a real object event,
+moved by the game's own movement actions, so the game draws its steps, runs, ledge jumps (arc, shadow,
+landing dust), door fades and sprite priority. The design follows GB-Link's `cards/follow.s`
+(GPL-3.0). It is 984 bytes, past one `install-resident` session, so it is installed from the save
+([A resident hook kept in the save](#a-resident-hook-kept-in-the-save)).
 
-| lead | picture |
+On each idle overworld frame (`gMain.intrCheck` bit 0 clear, `callback2` `CB2_Overworld`), after
+`VBlankIntr`:
+
+| step | what the hook does |
 | --- | --- |
-| one of the 40 species with an overworld sprite (`OBJ_EVENT_GFX_SNORLAX` 109 to `KABUTO` 147; Deoxys in its version's forme, `DEOXYS_A` 149 on FireRed, `DEOXYS_D` 148 on LeafGreen, the builder's `deoxys=`) | its own nine frames on `sAnimTable_Standard`: standing 0 S, 1 N, 2 W; walking 3/4, 5/6, 7/8 for the first half of a step; east is west flipped [object_event_anims.h:1022] |
-| any other species, an egg (`MON_DATA_SPECIES_OR_EGG`, 65), Unown by letter | its party icon from `GetMonIconPtr`, 32x32, frames 0 and 1 alternating every 16 V-blanks; palette `gMonIconPalettes[gMonIconPaletteIndices[species]]` [pokemon_icon.c:1116] |
+| find it | the active object event of local id `0xF0`, a local id no map uses; none after a map load |
+| spawn | `SpawnSpecialObjectEventParameterized(gfx, MOVEMENT_TYPE_NONE, 0xF0, x, y, elevation)` on the player's tile, hidden until the player's first step |
+| every frame | its current elevation set to 14, which no tile has: the player walks back through it and nothing talks to it [event_object_movement.c:4899]; `fixedPriority` set while the field is locked, so a load keeps that elevation |
+| a player step | the tile the player left becomes its target; one tile away it gets the player's own action family (a run becomes `WALK_FAST`), off line it is moved straight there with `MoveObjectEventToMapCoords` |
+| a ledge | the player's `JUMP_2` moves its coordinates twice: the first takes the follower to the edge, the second leaves it there; on the player's next step it does `JUMP_2` itself, two tiles; two tiles in a line with no ledge pending, it closes up with `WALK_FASTER` (0x35), one tile at a time |
+| a menu | `sLockFieldControls` (`0x0300109C`) set with `sGlobalScriptContextStatus` (`0x03000FA8`) at `CONTEXT_SHUTDOWN`: `RemoveObjectEvent`, so a save never holds it; it is spawned again after |
+| bike, surf, dive | hidden on the player's tile |
+| a new lead | removed and spawned again |
+| a bump | the player bumping into it on an elevation-0 tile puts it on the player's tile |
 
-The overworld sprites use palette tags `0x1103..0x1106`, the first four entries of
-`sObjectEventSpritePalettes`; 16x16 sprites take 0x80 bytes a frame, the 32x32 ones (Snorlax, the birds,
-Lugia, Ho-Oh, Deoxys) 0x200.
-
-The player's object event keeps `currentCoords` on a step's target and `previousCoords` on its source
-until the sprite reaches the target; at rest both are equal. Measured on a walking step: the sprite
-moves a pixel a frame, `previousCoords` catches up on the 16th. At rest the hook keeps
-`anchor = sprite - 16 * tile` for both axes; mid-step the progress is
-`|sprite - (anchor + 16 * previousCoords)|`, clamped at 16 (a ledge jump's two tiles finish in one).
-When a step starts, the follower walks from its tile to the player's `previousCoords`, in the player's
-`movementDirection` of the step before. Its OAM position is
-`anchor + 16 * source + progress * (target - source) + gSpriteCoordOffset`, x less half the width, y
-plus 16 less the height.
-
-A map connection adds the offset between the two maps to every object's coordinates while the sprites
-stay put. The hook takes any `previousCoords` jump of more than two tiles in a frame as a warp or a
-connection: the follower starts over, the anchor moves by `-16` times the jump, and the next step brings
-it in from the tile behind the one the player leaves, which on a straight crossing is where it was.
-
-| step | effect |
+| lead | object |
 | --- | --- |
-| idle frame (`gMain.intrCheck` bit 0 clear) | `GetMonData(&gPlayerParty[0], 65)` after `VBlankIntr`, then the A check below |
-| `callback2` other than `CB2_Overworld` | not drawn, OAM left alone; the placement is kept, so after a battle, the bag or the party menu it is back in place |
-| `callback2` is `CB2_Overworld` | `gMain.oamBuffer[126]` and `[127]` hidden (`attr0` `0x0200`) before anything is drawn |
-| `gPlayerAvatar.flags & 0x1E` (either bike, surfing, underwater) | not drawn, placement dropped |
-| the player's sprite `invisible` | not drawn |
-| drawn | tiles into OBJ tile 1008 (`0x06017E00`, 0x80 or 0x200 bytes), 32 bytes into OBJ palette 15 of `gPlttBufferUnfaded` (`0x020375D4`), and of `gPlttBufferFaded` (`0x020379D4`) only when the blend `y` (`gPaletteFade + 4`, bits 6..10) is 0; `gMain.oamBuffer[127]` with the player's `attr2` priority |
+| one of the 42 species with an overworld sprite (`OBJ_EVENT_GFX_SNORLAX` 109 to `DEOXYS_N`; Deoxys in its version's forme, the builder's `deoxys=`) | its own graphics id |
+| any other species, an egg, Unown by letter | Snorlax's 32x32 frame (109, `sAnimTable_Standard`); its sprite's `images` points at nine `SpriteFrameImage` at `0x0203FBB4` (standing 0..2: icon frame 0, walking 3..8: frame 1, 0x200 bytes each, from `GetMonIconPtr`) on OBJ palette 15 |
 
-`gMain.oamBuffer[127]` is the last entry, so the follower is behind every other sprite; a 16x16
-follower never overlaps the player from the south. `AddSpritesToOamBuffer` fills unused entries with
-`gDummyOamData` only up to `gOamLimit` [sprite.c:487], which `ResetSpriteData` sets to 64
-[sprite.c:297] and which reads 64 in the overworld (`0x02021B44`); entries 126 and 127 keep what was
-last written until a screen resets its sprites, so the hook hides both on every overworld frame.
+The icon's palette goes to `gPlttBufferUnfaded` OBJ palette 15 (`0x020375D4`) each idle frame, and to
+`gPlttBufferFaded` (`0x020379D4`) only when the blend `y` (`gPaletteFade + 4`, bits 6..10) is 0. A door
+fade-out runs `BeginNormalPaletteFade` to `y` 16 and then clears `active` with the screen still black
+[field_weather.c:740, palette.c]; measured on mGBA walking into a door, `active` stays set 21 frames,
+then `y` 16 with `active` clear for four frames before `callback2` leaves the overworld.
 
-A door or warp fade-out runs `BeginNormalPaletteFade` to `y` 16 and then clears `active` with the
-screen still black [field_weather.c:740, palette.c]. Measured on mGBA walking into a door: `active` set
-for 21 frames, then `y` 16 with `active` clear for four frames before `callback2` leaves the overworld.
-With the palette in `gPlttBufferUnfaded`, the fade builds the follower's faded colours with the map's;
-writing `gPlttBufferFaded` at `y` 16 drew it at full brightness on the black screen.
+A in the field while the tile in front of the player is the follower's and the field is not locked
+(the game's own A, a script or a menu take the frame first): `gSelectedObjectEvent` is set to it and
+`ScriptContext_SetupScript` runs, with the species written in (none for `SPECIES_EGG`, 412, which has
+no cry):
 
-A ledge jump moves the player two one-tile steps with the arc in its sprite's `y2` (`+0x26`): measured
--4 to -12 and back to 0 over the two steps, with one frame between them where `currentCoords` equals
-`previousCoords`. The hook records the player's `y2` by progress (1..16) into one of two 16-byte arcs by
-step parity, and adds the other arc's value at the same progress to its own `y` on the next step. A
-frame with no progress keeps the last value. The follower jumps the ledge one step behind the player;
-if the player stops on landing, it stops on the ledge tile.
-
-Pressing A while facing it: in an idle frame, when `.Ldraw` found the player at rest facing back along
-its last step (the follower's tile), `gMain.newKeys` (`+0x2E`) has A, the lead is a species 1..411 (not
-`SPECIES_EGG`, 412, which has no cry), and `ArePlayerFieldControlsLocked` returns 0 (the game's own A,
-a script or a menu took the frame), the hook patches the species and the text pointer into its script
-and calls `ScriptContext_SetupScript`:
-
-    69                lockall
-    7F 00 0000        bufferpartymonnick STR_VAR_1, 0
+    6A                lock
     A1 SPEC 0000      playmoncry SPECIES, CRY_MODE_NORMAL
-    00                nop, so the pointer is on a word
+    5A                faceplayer
+    4F F000 PTR       applymovement 0xF0: 66 FE (MOVEMENT_ACTION_EMOTE_SMILE, step_end)
+    51 0000           waitmovement 0
+    C5                waitmoncry
+    7F 00 0000        bufferpartymonnick STR_VAR_1, 0
     67 PTR            message: "{STR_VAR_1} saute\nde joie !" (French), "{STR_VAR_1} jumps\nfor joy!" (English)
-    66 6D 6B 02       waitmessage, waitbuttonpress, releaseall, end
+    66 6D 6C 02       waitmessage, waitbuttonpress, release, end
 
-`releaseall` hides the message box [scrcmd.c:1231]. For 60 frames the hook draws the cartridge's
-smiley, frame 11 of `sGfx_Emoticons` [trainer_see.c:46, 628], in `gMain.oamBuffer[126]` at OBJ tile
-1004 with palette 0, as the game's own emoticons use [trainer_see.c:565], centred on the follower with
-its bottom on the follower's top.
+State, 17 bytes at `0x0203FFDC` (`state=`): `+0` its object event or `0xFF`, `+1` a step pending, `+2`
+showing an icon, `+3` the movement family, `+4` the player's coordinates last seen, `+8` its target,
+`+12` the lead's species, `+14` the species it was spawned for, `+16` a ledge pending. The icon's frame
+table is 72 bytes at `0x0203FBB4` (`images=`), below the handler the installer keeps at `0x0203FBFC`.
 
-State, 64 bytes at `0x0203FBB8` (`state=`), below the kept handler and above the highest EWRAM
-symbol's end (`0x0203FBAC`): s16 pairs `+0` source tile, `+4` target, `+8` the player's
-`currentCoords` last frame, `+12` the anchor, `+16` its `previousCoords` last frame; bytes `+20` placed,
-`+21` direction (0 S, 1 N, 2 W, 3 E), `+22` step parity, `+23` the player's direction this step, `+26`
-faced this frame, `+27` smiley frames left, `+31` the arc offset (s8); `+24` species, `+28` the
-player's `attr2`; `+32` and `+48` the two arcs. Whatever EWRAM held there at install reads as a jump and
-starts over; the first placement clears the arcs.
+| cartridge | `SpawnSpecialObjectEventParameterized` | `ObjectEventSetHeldMovement` | `ObjectEventClearHeldMovement` | `MoveObjectEventToMapCoords` | `RemoveObjectEvent` | `ScriptContext_SetupScript` | `gSelectedObjectEvent` |
+| --- | --- | --- | --- | --- | --- | --- | --- |
+| BPRF, BPGF | `0x08062130` | `0x080675A4` | `0x08067634` | `0x08063024` | `0x08061DB4` | `0x0806D3D4` | `0x03004294` |
+| BPRE, BPGE | `0x08061FD4` | `0x08067448` | `0x080674D8` | `0x08062EC8` | `0x08061C58` | `0x0806D270` | `0x03004344` |
 
-The hook is 984 bytes: past the 876 an `install-resident` session carries, so it is installed from the
-save ([A resident hook kept in the save](#a-resident-hook-kept-in-the-save)).
+| cartridge | `gMonIconPaletteIndices` | `gMonIconPalettes` | `GetMonIconPtr` |
+| --- | --- | --- | --- |
+| BPRF | `0x083CBEE8` | `0x083CB7A8` | `0x0809AA74` |
+| BPGF | `0x083CBD24` | `0x083CB5E4` | `0x0809AA48` |
+| BPRE | `0x083D197C` | `0x083D123C` | `0x0809A7B8` |
+| BPGE | `0x083D17B8` | `0x083D1078` | `0x0809A78C` |
 
-| cartridge | `gObjectEventGraphicsInfoPointers` | `sObjectEventSpritePalettes` | `gMonIconPaletteIndices` | `gMonIconPalettes` | `GetMonIconPtr` | `ScriptContext_SetupScript` | `ArePlayerFieldControlsLocked` | `sGfx_Emoticons` |
-| --- | --- | --- | --- | --- | --- | --- | --- | --- |
-| BPRF | `0x083983C8` | `0x0839D770` | `0x083CBEE8` | `0x083CB7A8` | `0x0809AA74` | `0x0806D3D4` | `0x0806D248` | `0x083BF068` |
-| BPGF | `0x083983A8` | `0x0839D750` | `0x083CBD24` | `0x083CB5E4` | `0x0809AA48` | `0x0806D3D4` | `0x0806D248` | `0x083BEEA4` |
-| BPRE | `0x0839D91C` | `0x083A2CC4` | `0x083D197C` | `0x083D123C` | `0x0809A7B8` | `0x0806D270` | `0x0806D0E4` | `0x083C45C4` |
-| BPGE | `0x0839D8FC` | `0x083A2CA4` | `0x083D17B8` | `0x083D1078` | `0x0809A78C` | `0x0806D270` | `0x0806D0E4` | `0x083C4400` |
+English values are `pokefirered_switch.elf`'s; the French ones are the same bytes found in each image.
+`tests/test_follower.py` runs the hook as `install-kept` installs it on each image, with the object
+functions stood in for: the spawn, a walk, the icon frames and palette, the ledge wait and the single
+jump, the talk script, the removal under a menu.
 
-English values are `pokefirered_switch.elf`'s; the French and LeafGreen ones are the same bytes found
-in each image. The EWRAM it reads is the same on all four: `gObjectEvents` `0x02036E34`,
-`gPlayerAvatar` `0x02037074`, `gSprites` `0x0202063C`, `gSpriteCoordOffsetX` `0x02021BC8`,
-`gPaletteFade` `0x02037AB4`, `gPlttBufferFaded` `0x020375F4`. `tests/test_follower.py` runs the
-hook as `install-kept` installs it, on each image's own `GetMonData`, `GetMonIconPtr`,
-`ArePlayerFieldControlsLocked` and emoticon graphics.
+`AddSpritesToOamBuffer` fills unused OAM entries with `gDummyOamData` only up to `gOamLimit`
+[sprite.c:487], which `ResetSpriteData` sets to 64 [sprite.c:297] and which reads 64 in the overworld
+(`0x02021B44`): an entry above 64 written by a hook stays on screen until a screen resets its sprites.
 
 #### Verified
 
@@ -1420,14 +1393,14 @@ hook as `install-kept` installs it, on each image's own `GetMonData`, `GetMonIco
 | `shiny` | counts down in grass; R slows it | the followed seed matches `gRngValue`; the Python model agrees on the shiny |
 | `ivs` | the lead's IV word and `personality % 25` match a `save-dump` of `SaveBlock1 + 0x34` | matches `gPlayerParty` (`0x02024280`) |
 | `noencounter` | no wild encounter while walking in grass | none; encounters return after a soft reset |
-| `follower` | the lead (Chansey) walks a tile behind, from an `install-resident` of the 708-byte hook before the door, ledge and A changes; that hook drew it on the black screen of a door transition | a tile behind on Ryujinx's GBA app (Blastoise's icon, Pidgeot's sprite) and on mGBA (every overworld sprite, an egg, LeafGreen); through doors, a map connection, a battle and the party menu. The 984-byte hook on mGBA: black from the end of a door fade-out to the fade-in, the ledge arc one step behind, A while facing it plays the cry, the smiley and the line; A facing away does nothing |
+| `follower` | walks a tile behind, waits at a ledge's edge and jumps it after the player steps off the landing tile, with the game's shadow and dust; running and running over a ledge without flicker; A facing it: cry, smile, line; the start menu and doors; one session writes it to the save and installs it | the same on mGBA with Chansey's sprite and Blastoise's icon |
 
 Unresolved: on the emulator the overlay drew during the recap after CONTINUER but not in interactive
 play, while `field` still sped the game.
 
 Every hook runs on LeafGreen with one address changed: `m4aSoundMain` is `0x081DF518` (the `bl` in its
 `VBlankIntr` at `0x08000772`); every other constant maps identically through FireRed's own references.
-`follower` also reads ROM tables that move, listed in its section.
+`follower` also reads ROM tables and functions that move, listed in its section.
 The builders take `version=`, the host `--version leafgreen`. Verified on an emulated LeafGreen:
 turbo and `shiny`, music intact.
 
