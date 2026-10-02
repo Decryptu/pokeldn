@@ -174,8 +174,9 @@ class PathField:
                  *, single_line: bool = False):
         self.picker, self.start_dir, self.mode, self.exts = picker, start_dir, mode, exts
         self.on_change = on_change
-        options = {"height": t.CONTROL_HEIGHT, "fit_parent_size": False,
-                   "max_lines": 1, "multiline": False} if single_line else {}
+        # A single-line field does not fill its height; the padding brings it to the button row's 34 px.
+        options = {"height": t.CONTROL_HEIGHT, "fit_parent_size": False, "max_lines": 1, "multiline": False,
+                   "content_padding": ft.Padding(12, 11, 12, 11)} if single_line else {}
         self.field = t.field(value=value, mono=True, expand=True,
                              on_change=lambda e: self._changed(e.control.value), **options)
         icon = "folder" if mode == "dir" else "file"

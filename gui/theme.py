@@ -153,12 +153,13 @@ def field(label: str = "", value: str = "", hint: str = "", mono: bool = False, 
         kwargs.setdefault("height", CONTROL_HEIGHT)
         kwargs.setdefault("fit_parent_size", True)
     kwargs.setdefault("size_constraints", ft.BoxConstraints(min_height=CONTROL_HEIGHT))
+    kwargs.setdefault("content_padding", CONTROL_PADDING)
     control = _Field if uniform else ft.TextField
     return control(value=value, label=label or None, hint_text=hint or None, text_style=style,
                    label_style=ft.TextStyle(size=12, color=MUTED), dense=True,
                    hint_style=ft.TextStyle(size=13, color=FAINT), bgcolor=FIELD, filled=True,
                    border=_border(), cursor_color=BLUE,
-                   content_padding=CONTROL_PADDING, text_vertical_align=ft.VerticalAlignment.CENTER, **kwargs)
+                   text_vertical_align=ft.VerticalAlignment.CENTER, **kwargs)
 
 
 def dropdown(options: list[tuple[str, str]], value: str | None, on_select=None, **kwargs) -> ft.Dropdown:
