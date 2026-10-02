@@ -43,6 +43,10 @@ Pikachu, Eevee and Onix in order. All three queue entries were marked complete, 
 checksummed 260-byte received files were saved, and the host exited with code 0 after the console left.
 In the joiner role, three queued trades completed on one retail seat without an error.
 
+A Pikachu built by `pokeldn.pokemon` with chosen options (level 30, female, Adamant, Ultra Ball,
+IVs and AVs set) and offered by `bin/lgpe_host.py --fresh-pid` arrived on a retail Let's Go Pikachu
+showing female, Adamant and Ultra Ball on its summary screen.
+
 A console leaves the seat when its player presses Retour. `bin/lgpe_join.py --leave-after SECONDS`
 runs the same exit that long after its first answered trade step, and `bin/lgpe_host.py` answers a
 console's Retour ([A joiner leaving](lgpe_session.md#a-joiner-leaving)).
