@@ -80,7 +80,12 @@ cause is unknown. The C6 build carries a USB watch (`usbwatch.c`): it samples th
 number every 5 ms and, once frames have counted and then stop for 2 s, restarts the chip and reports
 the USB and clock registers from before and after the stall as LOG lines on the next HELLO. With
 the watch built in, 2 console runs and 6 desk runs ended with no stall and no restart; its restart
-path has not fired on hardware.
+path has not fired on hardware. One wedge in a desk run with the watch built in did not end: the watch did not restart
+the chip, so the SOF frame number is not a sufficient signal. Built with `POKELDN_USB_BEACON=1` in
+the environment of `idf.py`, the C6 image also sends those registers, the SOF changes it has seen
+and the host bytes it has read once a second, as a vendor action frame (category 127, OUI
+`02:55:53`) to the group address `03:55:53:42:57:00`; a sniffing board keeps them with
+`esp32_sniff.py --mac 03:55:53:42:57:00` while the USB link is dead.
 
 Gr3nSkyDragon reports a completed FireRed joiner trade on an ESP32-S3 under Windows in
 [the S3 contribution](https://github.com/Decryptu/pokeldn/pull/2). The classic ESP32 measurements

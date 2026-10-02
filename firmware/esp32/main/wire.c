@@ -51,6 +51,7 @@ static QueueHandle_t s_uart_events;
 #endif
 static wire_handler_t s_handler;
 static atomic_uint s_dropped, s_rx_bad, s_rx_fifo_ovf, s_rx_buffer_full, s_rx_frame_err, s_events_full;
+static atomic_uint s_consumed_total;   /* every host byte taken since boot */
 static uint32_t s_consumed, s_credited;   /* the reader task's own; the handler runs on it */
 /* Maxima for STATUS: a LOG line is refused at the heap floor, which is when the reader stalls.
    docs/hardware_esp32.md, The serial ceiling. */
@@ -120,6 +121,7 @@ void wire_log(const char *format, ...)
 }
 
 uint32_t wire_dropped(void) { return atomic_load(&s_dropped); }
+uint32_t wire_consumed(void) { return atomic_load(&s_consumed_total); }
 uint32_t wire_rx_bad(void) { return atomic_load(&s_rx_bad); }
 uint32_t wire_rx_fifo_ovf(void) { return atomic_load(&s_rx_fifo_ovf); }
 uint32_t wire_rx_buffer_full(void) { return atomic_load(&s_rx_buffer_full); }
@@ -358,7 +360,8 @@ static void reader(void *arg)
             send_credit();
         }
         for (int i = 0; i < n; ++i) {
-            ++s_consumed;   /* before the handler, so a HELLO's reset excludes its own delimiter */
+            ++s_consumed;
+            atomic_fetch_add(&s_consumed_total, 1);   /* before the handler, so a HELLO's reset excludes its own delimiter */
             if (chunk[i]) {
                 if (used < sizeof(encoded)) encoded[used++] = chunk[i]; else overflow = true;
                 continue;

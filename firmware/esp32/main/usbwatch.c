@@ -13,6 +13,7 @@
 #include "esp_attr.h"
 #include "esp_system.h"
 #include "esp_timer.h"
+#include "esp_wifi.h"
 #include "freertos/FreeRTOS.h"
 #include "freertos/task.h"
 #include "soc/io_mux_reg.h"
@@ -46,16 +47,41 @@ static void snap(uint32_t *out)
     for (size_t i = 0; i < NREGS; ++i) out[i] = *(volatile uint32_t *)REGS[i];
 }
 
+#ifdef POKELDN_USB_BEACON
+/* Diagnostic build only: once a second, the registers and wire counters as a vendor action frame to
+   the group address 03:55:53:42:57:00, so a sniffing board records them while USB is dead. */
+static void beacon(uint32_t frames)
+{
+    uint8_t frame[24 + 4 + 4 * (5 + NREGS)] = {0xd0, 0, 0, 0, 0x03, 0x55, 0x53, 0x42, 0x57, 0x00};
+    wifi_mode_t mode = WIFI_MODE_NULL;
+    if (esp_wifi_get_mode(&mode) != ESP_OK) return;
+    const wifi_interface_t ifx = mode == WIFI_MODE_AP ? WIFI_IF_AP : WIFI_IF_STA;
+    if (esp_wifi_get_mac(ifx, frame + 10) != ESP_OK) return;
+    memcpy(frame + 16, frame + 10, 6);
+    memcpy(frame + 24, "\x7f\x02\x55\x53", 4);   /* vendor specific, a local OUI */
+    uint32_t *body = (uint32_t *)(frame + 28);
+    body[0] = (uint32_t)(esp_timer_get_time() / 1000);
+    body[1] = frames;
+    body[2] = wire_consumed();
+    body[3] = wire_dropped();
+    body[4] = s_report.magic == WATCH_MAGIC ? s_report.stalls : 0;
+    snap(body + 5);
+    esp_wifi_80211_tx(ifx, frame, sizeof(frame), true);
+}
+#endif
+
 static void watch_task(void *arg)
 {
     uint32_t healthy[NREGS];
     int64_t healthy_us = 0, last_change = esp_timer_get_time();
     uint32_t last_frame = *(volatile uint32_t *)USB_SERIAL_JTAG_FRAM_NUM_REG & 0x7ff;
     bool armed = false;   /* a board on a charger never sees a frame: never restart it */
+    uint32_t frames = 0, ticks = 0;
     for (;;) {
         const uint32_t frame = *(volatile uint32_t *)USB_SERIAL_JTAG_FRAM_NUM_REG & 0x7ff;
         const int64_t now = esp_timer_get_time();
         if (frame != last_frame) {
+            ++frames;
             armed = true;
             last_frame = frame;
             last_change = now;
@@ -70,6 +96,11 @@ static void watch_task(void *arg)
             s_report.magic = WATCH_MAGIC;
             esp_restart();
         }
+#ifdef POKELDN_USB_BEACON
+        if (++ticks % 200 == 0) beacon(frames);
+#else
+        (void)ticks;
+#endif
         vTaskDelay(pdMS_TO_TICKS(5));
     }
 }
