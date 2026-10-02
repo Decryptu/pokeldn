@@ -1304,6 +1304,70 @@ the call is made only in an idle overworld frame.
 `DisableWildEncounters` (`0x08085FAC`) is its only other writer. Grass, water and roamer encounters
 stop; fishing and Sweet Scent take their own paths.
 
+#### `follower`
+
+`asm/resident/follower.s` draws the lead Pokemon one tile behind the player. It is one OAM entry, not an
+object event: an active object on the tile the player just left blocks the step back, since
+`DoesObjectCollideWithObjectAt` tests every object's current and previous coordinates
+[event_object_movement.c:4899].
+
+| lead | picture |
+| --- | --- |
+| one of the 40 species with an overworld sprite (`OBJ_EVENT_GFX_SNORLAX` 109 to `KABUTO` 147; Deoxys in its version's forme, `DEOXYS_A` 149 on FireRed, `DEOXYS_D` 148 on LeafGreen, the builder's `deoxys=`) | its own nine frames on `sAnimTable_Standard`: standing 0 S, 1 N, 2 W; walking 3/4, 5/6, 7/8 for the first half of a step; east is west flipped [object_event_anims.h:1022] |
+| any other species, an egg (`MON_DATA_SPECIES_OR_EGG`, 65), Unown by letter | its party icon from `GetMonIconPtr`, 32x32, frames 0 and 1 alternating every 16 V-blanks; palette `gMonIconPalettes[gMonIconPaletteIndices[species]]` [pokemon_icon.c:1116] |
+
+The overworld sprites use palette tags `0x1103..0x1106`, the first four entries of
+`sObjectEventSpritePalettes`; 16x16 sprites take 0x80 bytes a frame, the 32x32 ones (Snorlax, the birds,
+Lugia, Ho-Oh, Deoxys) 0x200.
+
+The player's object event keeps `currentCoords` on a step's target and `previousCoords` on its source
+until the sprite reaches the target; at rest both are equal. Measured on a walking step: the sprite
+moves a pixel a frame, `previousCoords` catches up on the 16th. At rest the hook keeps
+`anchor = sprite - 16 * tile` for both axes; mid-step the progress is
+`|sprite - (anchor + 16 * previousCoords)|`, clamped at 16 (a ledge jump's two tiles finish in one).
+When a step starts, the follower walks from its tile to the player's `previousCoords`, in the player's
+`movementDirection` of the step before. Its OAM position is
+`anchor + 16 * source + progress * (target - source) + gSpriteCoordOffset`, x less half the width, y
+plus 16 less the height.
+
+A map connection adds the offset between the two maps to every object's coordinates while the sprites
+stay put. The hook takes any `previousCoords` jump of more than two tiles in a frame as a warp or a
+connection: the follower starts over, the anchor moves by `-16` times the jump, and the next step brings
+it in from the tile behind the one the player leaves, which on a straight crossing is where it was.
+
+| step | effect |
+| --- | --- |
+| idle frame (`gMain.intrCheck` bit 0 clear) | `GetMonData(&gPlayerParty[0], 65)` after `VBlankIntr` |
+| `callback2` other than `CB2_Overworld` | not drawn; the placement is kept, so after a battle, the bag or the party menu it is back in place |
+| `gPaletteFade.active` | not drawn |
+| `gPlayerAvatar.flags & 0x1E` (either bike, surfing, underwater) | not drawn, placement dropped |
+| the player's sprite `invisible` | not drawn |
+| drawn | tiles into OBJ tile 1008 (`0x06017E00`, 0x80 or 0x200 bytes), 32 bytes into OBJ palette 15 of `gPlttBufferFaded` only, `gMain.oamBuffer[127]` with the player's `attr2` priority |
+
+`gMain.oamBuffer[127]` is the last entry, so the follower is behind every other sprite; a 16x16
+follower never overlaps the player from the south. `AddSpritesToOamBuffer` fills unused entries with
+`gDummyOamData` every frame [sprite.c:487], so a screen that builds its own OAM clears it. The game's
+own colours for palette 15 stay in `gPlttBufferUnfaded`.
+
+State, 30 bytes at `0x0203FFC0` (`state=`): s16 pairs `+0` source tile, `+4` target, `+8` the
+player's `currentCoords` last frame, `+12` the anchor, `+16` its `previousCoords` last frame; bytes
+`+20` placed, `+21` direction (0 S, 1 N, 2 W, 3 E), `+22` step parity, `+23` the player's direction
+this step; `+24` species, `+28` the player's `attr2`. Whatever EWRAM held there at install reads as a
+jump and starts over.
+
+| cartridge | `gObjectEventGraphicsInfoPointers` | `sObjectEventSpritePalettes` | `gMonIconPaletteIndices` | `gMonIconPalettes` | `GetMonIconPtr` |
+| --- | --- | --- | --- | --- | --- |
+| BPRF | `0x083983C8` | `0x0839D770` | `0x083CBEE8` | `0x083CB7A8` | `0x0809AA74` |
+| BPGF | `0x083983A8` | `0x0839D750` | `0x083CBD24` | `0x083CB5E4` | `0x0809AA48` |
+| BPRE | `0x0839D91C` | `0x083A2CC4` | `0x083D197C` | `0x083D123C` | `0x0809A7B8` |
+| BPGE | `0x0839D8FC` | `0x083A2CA4` | `0x083D17B8` | `0x083D1078` | `0x0809A78C` |
+
+English values are `pokefirered_switch.elf`'s; the French and LeafGreen ones are the same bytes found
+in each image. The EWRAM it reads is the same on all four: `gObjectEvents` `0x02036E34`,
+`gPlayerAvatar` `0x02037074`, `gSprites` `0x0202063C`, `gSpriteCoordOffsetX` `0x02021BC8`,
+`gPaletteFade` `0x02037AB4`, `gPlttBufferFaded` `0x020375F4`. `tests/test_follower.py` runs the
+installed hook on each image's own `GetMonData` and `GetMonIconPtr`.
+
 #### Verified
 
 | hook | retail French FireRed, ESP32 radio (each install answers `0x0800071D`) | emulator |
@@ -1313,12 +1377,14 @@ stop; fishing and Sweet Scent take their own paths.
 | `shiny` | counts down in grass; R slows it | the followed seed matches `gRngValue`; the Python model agrees on the shiny |
 | `ivs` | the lead's IV word and `personality % 25` match a `save-dump` of `SaveBlock1 + 0x34` | matches `gPlayerParty` (`0x02024280`) |
 | `noencounter` | no wild encounter while walking in grass | none; encounters return after a soft reset |
+| `follower` | | a tile behind on Ryujinx's GBA app (Blastoise's icon, Pidgeot's sprite) and on mGBA (every overworld sprite, an egg, LeafGreen); through doors, a map connection, a battle and the party menu; MOM installs it from the save after a restart |
 
 Unresolved: on the emulator the overlay drew during the recap after CONTINUER but not in interactive
 play, while `field` still sped the game.
 
 Every hook runs on LeafGreen with one address changed: `m4aSoundMain` is `0x081DF518` (the `bl` in its
 `VBlankIntr` at `0x08000772`); every other constant maps identically through FireRed's own references.
+`follower` also reads ROM tables that move, listed in its section.
 The builders take `version=`, the host `--version leafgreen`. Verified on an emulated LeafGreen:
 turbo and `shiny`, music intact.
 
@@ -1343,8 +1409,8 @@ The first writes this blob at `SaveBlock2 + 0xB20` (`asm/resident/save-head.s`):
 The second binds [the save loader](#a-payload-larger-than-a-script-body) to MOM with staging at
 `0x0201C400` (`gDecompressionBuffer + 0x400`, above the 64 staged loader bytes) and magic `PKRS`, so an
 older `PKLD` payload is left alone. The installer then behaves as in a gift session, and a second visit
-chains to the kept handler. Turbo (908 bytes), `ivs` and `noencounter` fit one `save-write`; `shiny`
-does not. Talking to MOM arms the hook; a soft reset removes it until MOM is talked to again.
+chains to the kept handler. Turbo (908 bytes), `ivs`, `noencounter` and `follower` (920 bytes) fit one
+`save-write`; `shiny` does not. Talking to MOM arms the hook; a soft reset removes it until MOM is talked to again.
 Verified with turbo on an emulator and on retail FireRed.
 
 A new Wonder Card undoes the binding: `SaveWonderCard` calls `ClearSavedWonderCardAndRelated`, which

@@ -51,6 +51,11 @@ class Build:
     # ROM data
     save_slot_layout: int           # sSaveSlotLayout
     enigma_desc: tuple              # sBerryDescriptionPart{1,2}_Enigma
+    obj_gfx_info: int               # gObjectEventGraphicsInfoPointers
+    obj_palettes: int               # sObjectEventSpritePalettes
+    mon_icon_pal_indices: int       # gMonIconPaletteIndices
+    mon_icon_palettes: int          # gMonIconPalettes
+    get_mon_icon: int               # GetMonIconPtr, a ROM function
     callable: MappingProxyType = field(repr=False)
 
     @property
@@ -67,6 +72,10 @@ class Build:
         return self.gmain + 0x3F8           # gMain.oamBuffer[120] [include/main.h:38]
 
     @property
+    def last_oam(self):
+        return self.gmain + 0x430           # gMain.oamBuffer[127]
+
+    @property
     def client_return(self):
         return self.client_run_buffer_script + 0x14     # after `bl _call_via_r3`
 
@@ -78,7 +87,11 @@ class Build:
                 "cb2_overworld": self.cb2_overworld | 1, "cb1_overworld": self.cb1_overworld | 1,
                 "cb1_battle": self.battle_cb1 | 1, "cb2_battle": self.battle_cb2 | 1,
                 "run_text": self.run_text_printers | 1, "get_mon_data": self.get_mon_data | 1,
-                "sound_main": self.sound_main | 1, "original": self.vblank_intr | 1}
+                "sound_main": self.sound_main | 1, "original": self.vblank_intr | 1,
+                "oam": self.last_oam, "gfx_info": self.obj_gfx_info,
+                "obj_palettes": self.obj_palettes, "get_mon_icon": self.get_mon_icon | 1,
+                "icon_pal_indices": self.mon_icon_pal_indices,
+                "icon_palettes": self.mon_icon_palettes}
 
     def callable_function(self, name):
         """-> the THUMB pointer for one of `callable`, by the decomp's name, case-insensitively."""
@@ -105,6 +118,8 @@ BPRF = Build(
     client_run_buffer_script=rom_map.CLIENT_RUN_BUFFER_SCRIPT,
     standard_wild_encounter=0x08086528, get_header_id=0x080861A0,
     save_slot_layout=0x083F58C4, enigma_desc=(0x083D5CE8, 0x083D5CF8),
+    obj_gfx_info=0x083983C8, obj_palettes=0x0839D770, mon_icon_pal_indices=0x083CBEE8,
+    mon_icon_palettes=0x083CB7A8, get_mon_icon=0x0809AA74,
     callable=MappingProxyType(dict(rom_map.CALLABLE)))
 
 # French LeafGreen: FireRed's RAM; ROM past 0x0807CF68 moves by rom_map.LEAFGREEN_DELTA_SEGMENTS.
@@ -120,6 +135,8 @@ BPGF = Build(
     read_flash=0x081E0EC8, client_run_buffer_script=0x08148C3C,
     standard_wild_encounter=0x080864FC, get_header_id=0x08086174,
     save_slot_layout=0x083F5700, enigma_desc=(0x083D5B24, 0x083D5B34),
+    obj_gfx_info=0x083983A8, obj_palettes=0x0839D750, mon_icon_pal_indices=0x083CBD24,
+    mon_icon_palettes=0x083CB5E4, get_mon_icon=0x0809AA48,
     callable=_callable(
         Random=0x080486B0, SeedRng=0x080486D0, CreateMon=0x08041150, VarGet=0x08071DDC,
         VarSet=0x08071DF8, GetVarPointer=0x08071CC8, AddBagItem=0x0809DA44,
@@ -145,6 +162,8 @@ BPRE = Build(
     client_run_buffer_script=0x0814895C, standard_wild_encounter=0x08086420,
     get_header_id=0x08086098, save_slot_layout=0x083FC758,
     enigma_desc=(0x083DD2C0, 0x083DD2D0),
+    obj_gfx_info=0x0839D91C, obj_palettes=0x083A2CC4, mon_icon_pal_indices=0x083D197C,
+    mon_icon_palettes=0x083D123C, get_mon_icon=0x0809A7B8,
     callable=_callable(
         Random=0x08048670, SeedRng=0x08048690, CreateMon=0x080411FC, VarGet=0x08071CD4,
         VarSet=0x08071CF0, GetVarPointer=0x08071BC0, AddBagItem=0x0809D7E8,
@@ -169,6 +188,8 @@ BPGE = Build(
     read_flash=0x081E2174, client_run_buffer_script=0x08148938,
     standard_wild_encounter=0x080863F4, get_header_id=0x0808606C,
     save_slot_layout=0x083FC594, enigma_desc=(0x083DD0FC, 0x083DD10C),
+    obj_gfx_info=0x0839D8FC, obj_palettes=0x083A2CA4, mon_icon_pal_indices=0x083D17B8,
+    mon_icon_palettes=0x083D1078, get_mon_icon=0x0809A78C,
     callable=_callable(
         Random=0x08048670, SeedRng=0x08048690, CreateMon=0x080411FC, VarGet=0x08071CD4,
         VarSet=0x08071CF0, GetVarPointer=0x08071BC0, AddBagItem=0x0809D7BC,

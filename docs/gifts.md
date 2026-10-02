@@ -18,6 +18,12 @@ FireRed/LeafGreen and Sword/Shield; each game's module supplies its presets and 
 | Build your own | the form, compiled to `session/gifts/<tool>.pokegift` at Start and passed as `--gift-file` |
 | Open a file | a shared `.pokegift`, or a `.wc8` on Sword/Shield |
 
+The FRLG console code presets include the resident hooks
+([`install-resident`](frlg_rom.md#install-resident)). Pokemon follower installs the follower until a
+soft reset.
+Keep the follower in the save writes it into `filler_B20`; Mom keeps a hook then binds Mom's loader, and
+talking to Mom after any boot installs whichever hook the save holds. Each is one Mystery Gift session.
+
 Customize copies a preset into the form. A FRLG card preset offers it only when the form expresses
 every step: unconditional stages of Pokemon, item, egg, wild battle and message steps, no event
 script and no visiting trainer. Every Sword/Shield preset is a form state.

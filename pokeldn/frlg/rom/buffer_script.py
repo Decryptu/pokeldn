@@ -2120,6 +2120,7 @@ RESIDENT_HOOKS = {
     "ivs": ("ivs_hook", {"mon": 0x02024280, "words": 0x0203FF80, "overlay": 0x0203FF80,
                          "overlay2": 0x0203FF84}),
     "noencounter": ("noencounter_hook", {"flag": 0x020386D8}),
+    "follower": ("follower_hook", {"state": 0x0203FFC0, "deoxys": None}),
 }
 # A hook's IWRAM and ROM words are the build's [Build.hook_literals]. RESIDENT_DATA: the data a hook
 # keeps past its code, in bytes.
@@ -2145,6 +2146,10 @@ def resident_blob(name, *, build=None, **params):
         params["help"] = HELP_R_DISABLED  # held R would open the Help System
     if name == "shiny" and "state" in explicit and "overlay" not in explicit:
         params["overlay"] = params["state"] + 24  # the word the hook shows
+    if name == "follower" and params["deoxys"] is None:
+        # the version's form: Attack on FireRed, Defense on LeafGreen [asm/resident/follower.s]
+        firered = builds.resolve(build).version == "firered"
+        params["deoxys"] = 0x00FDFCFD if firered else 0x00FDFDFC
     if name == "ivs" and "words" in explicit:
         params["overlay"], params["overlay2"] = params["words"], params["words"] + 4
     symbols = STUBS[name][2]

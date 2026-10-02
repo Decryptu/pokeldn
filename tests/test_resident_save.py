@@ -59,7 +59,7 @@ def _read(uc, at):
     return int.from_bytes(uc.mem_read(at, 4), "little")
 
 
-@pytest.mark.parametrize("name, params", [("noencounter", {}), ("ivs", {}),
+@pytest.mark.parametrize("name, params", [("noencounter", {}), ("ivs", {}), ("follower", {}),
                                           ("turbo", {"field": 1, "hold": 0x100, "budget": 228})])
 def test_mom_installs_the_hook_from_the_save_and_it_runs(name, params):
     blob = bs.build_resident_save_blob(name, **params)
@@ -102,7 +102,7 @@ def test_a_blob_that_did_not_all_arrive_installs_nothing(damage):
 
 
 def test_every_hook_that_fits_one_save_write_and_the_one_that_does_not():
-    for name in ("turbo", "ivs", "noencounter"):
+    for name in ("turbo", "ivs", "noencounter", "follower"):
         assert len(bs.build_resident_save_blob(name)) <= bs.MAX_SAVE_WRITE_BYTES
     with pytest.raises(bs.BufferScriptError, match="one save-write carries"):
         bs.build_resident_save_blob("shiny")

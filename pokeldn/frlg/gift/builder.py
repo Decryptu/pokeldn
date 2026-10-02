@@ -94,6 +94,13 @@ PRESETS = (
           *HOOK, "ivs"),
     _code("hook-noencounter", "No wild encounters", "Writes RAM until a soft reset: no grass, water or "
           "roaming encounters.", *HOOK, "noencounter"),
+    _code("hook-follower", "Pokemon follower", "Writes RAM until a soft reset: the lead Pokemon walks "
+          "behind you.", *HOOK, "follower"),
+    _code("save-follower", "Keep the follower in the save", "Writes the save's free area. Then send "
+          "Mom keeps a hook, and talking to Mom brings the follower back after every boot.",
+          "--buffer-script", "save-write", "--resident", "follower"),
+    _code("mom-resident", "Mom keeps a hook", "A card for Mom: talking to her installs the hook kept in "
+          "the save. Send it after a Keep ... in the save gift.", "--gift", "resident-save"),
 )
 PRESET = {p.key: p for p in PRESETS}
 
