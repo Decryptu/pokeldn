@@ -97,7 +97,7 @@ def notch(*controls: ft.Control) -> ft.Row:
 def panel_header(title: str, *actions: ft.Control) -> ft.Container:
     return ft.Container(
         ft.Row([text(title, 15, weight=ft.FontWeight.W_600), ft.Row(list(actions), spacing=2)],
-               alignment=ft.MainAxisAlignment.SPACE_BETWEEN),
+               alignment=ft.MainAxisAlignment.SPACE_BETWEEN, vertical_alignment=ft.CrossAxisAlignment.CENTER),
         padding=ft.Padding(18, 14, 12, 6), height=52)
 
 
@@ -116,7 +116,7 @@ def card(title: str, body: ft.Control | None = None, description: str = "",
         head.append(pixel_icon("circle-info", color=FAINT, tooltip=tip))
     if trailing:
         head.append(trailing)
-    rows: list[ft.Control] = [ft.Row(head, spacing=8)]
+    rows: list[ft.Control] = [ft.Row(head, spacing=8, vertical_alignment=ft.CrossAxisAlignment.CENTER)]
     if description:
         rows.append(text(description, 12, MUTED))
     if body:

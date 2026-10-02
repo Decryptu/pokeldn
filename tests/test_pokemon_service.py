@@ -233,6 +233,21 @@ Timid Nature
 - Fly
 - Dragon Claw
 """
+# PKHeX's own French and Japanese exports (ShowdownSet.GetText) of CHARIZARD and of part of GARCHOMP.
+CHARIZARD_FR = """Dracaufeu @ Restes
+Talent : Brasier
+Nature : Timide
+- Lance-Flammes
+- Vol
+- Draco-Griffe
+"""
+GARCHOMP_JA = """ガブリアス @ こだわりスカーフ
+特性 さめはだ
+努力値 252 攻撃 / 4 特防 / 252 素早さ
+ようき性格
+- げきりん
+- じしん
+"""
 
 
 @pytest.mark.parametrize("game, text, expect", [
@@ -243,6 +258,10 @@ Timid Nature
                      "moves": ["Hydro Pump", "Volt Switch", "Will-O-Wisp", "Protect"]}),
     ("frlg", CHARIZARD, {"species": "Charizard", "nature": "Timid", "held_item": "Leftovers",
                          "moves": ["Flamethrower", "Fly", "Dragon Claw"]}),
+    ("frlg", CHARIZARD_FR, {"species": "Charizard", "nature": "Timid", "held_item": "Leftovers",
+                            "moves": ["Flamethrower", "Fly", "Dragon Claw"]}),
+    ("sv", GARCHOMP_JA, {"species": "Garchomp", "nature": "Jolly", "ability": "Rough Skin",
+                         "held_item": "Choice Scarf", "moves": ["Outrage", "Earthquake"]}),
 ])
 def test_a_showdown_set_builds_a_legal_pokemon_carrying_what_it_names(service, game, text, expect):
     found, = service.paste(game, text, TRAINER)
@@ -284,5 +303,7 @@ def test_a_value_the_builder_does_not_set_is_reported(service, game, text, note)
 
 
 def test_a_team_paste_returns_every_set_in_order(service):
-    sets = service.paste("sv", GARCHOMP + "\n\n" + ROTOM, TRAINER)
-    assert [s["species"] for s in sets] == ["Garchomp", "Rotom"]
+    """Showdown's team export opens with a header line, and a paste may mix languages."""
+    sets = service.paste("sv", "=== [gen9] Team ===\n\n" + GARCHOMP + "\n\n" + ROTOM + "\n" + GARCHOMP_JA, TRAINER)
+    assert [s["species"] for s in sets] == ["Garchomp", "Rotom", "Garchomp"]
+    assert all(s["errors"] == [] for s in sets)

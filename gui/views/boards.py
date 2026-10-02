@@ -193,7 +193,8 @@ class BoardView:
             info("Firmware", firmware),
             info("Wi-Fi MAC", mac),
             info("Nickname", ft.Row([name, t.icon_button("check", lambda e: self._rename(e, name),
-                                                         "Save the nickname")], spacing=4)),
+                                                         "Save the nickname")], spacing=4,
+                                               vertical_alignment=ft.CrossAxisAlignment.CENTER)),
             ft.Row([t.secondary_button("Blink the LED", self._blink, "lightbulb",
                                        disabled=self.app.busy or not isinstance(ident, board.Identity))]),
         ], spacing=10)

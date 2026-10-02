@@ -16,8 +16,10 @@ ROW_GAP = SPRITE_SIZE + 2 * EDGE - 2 * t.CONTROL_HEIGHT   # the species and nick
 class PokemonPicker:
     """Pick a species and PKHeX builds a legal one for the game; or check a file someone brings."""
 
-    def __init__(self, app, game: str, value: dict | None, on_change, version: str = ""):
+    def __init__(self, app, game: str, value: dict | None, on_change, version: str = "", on_team=None):
+        """`on_team(sets)` places the sets after the first of a pasted team and says where they went."""
         self.app, self.game, self.on_change, self.version = app, game, on_change, version
+        self.on_team = on_team
         self.value = dict(value or {})
         self.species = t.dropdown([], None, on_select=self._pick, enable_filter=True, editable=True,
                                   menu_height=320, hint_text="Loading species...", disabled=True)
@@ -149,7 +151,8 @@ class PokemonPicker:
         self.control.update()
 
     def _paste(self, e) -> None:
-        """A Showdown or Smogon set fills the form; Build then makes it. A paste of a team takes its first set."""
+        """A Showdown or Smogon set fills the form; Build then makes it. In a queue a team fills the trades
+        after this one; anywhere else a team gives its first set."""
         editor = t.field(multiline=True, min_lines=12, max_lines=18, mono=True, autofocus=True,
                          hint="Garchomp @ Choice Scarf\nAbility: Rough Skin\nEVs: 252 Atk / 4 SpD / 252 Spe\n"
                               "Jolly Nature\n- Earthquake\n- Outrage")
@@ -183,7 +186,10 @@ class PokemonPicker:
 
                 def done():
                     apply.disabled = False
-                    problems = [error] if error else sets[0]["errors"]
+                    used = sets if self.on_team else sets[:1]
+                    problems = [error] if error else [
+                        f"{found.get('species') or f'Set {n}'}: {problem}" if len(used) > 1 else problem
+                        for n, found in enumerate(used, start=1) for problem in found["errors"]]
                     if problems:
                         show(problems, t.RED)
                         status.update()
@@ -192,7 +198,8 @@ class PokemonPicker:
                     close()
                     notes = list(sets[0]["notes"])
                     if len(sets) > 1:
-                        notes.insert(0, f"The paste holds {len(sets)} Pokemon; the first was imported.")
+                        notes.insert(0, self.on_team(sets[1:]) if self.on_team else
+                                     f"The paste holds {len(sets)} Pokemon; the first was imported.")
                     self._apply_set(sets[0], notes)
                 self.app.ui(done)
             threading.Thread(target=work, daemon=True).start()
@@ -263,19 +270,24 @@ class OfferQueue:
         self.rows = ft.Column(spacing=10)
         self.add_button = t.secondary_button("Add a trade", self._add, "plus")
         self.count = t.text("", 12, t.MUTED)
-        self.control = ft.Column([self.rows, ft.Row([self.add_button, self.count], spacing=12)], spacing=12)
+        self.control = self.rows
+        # Placed by the caller under the card that holds `control`.
+        self.footer = ft.Row([self.add_button, self.count], spacing=12,
+                             vertical_alignment=ft.CrossAxisAlignment.CENTER)
         for entry in (offers(value)[:limit] or [{}]):
             self._slot(entry)
         self._render()
 
-    def _slot(self, entry: dict) -> None:
+    def _slot(self, entry: dict, at: int | None = None) -> dict:
         slot = {"value": dict(entry), "title": t.text("", 13, weight=ft.FontWeight.W_600, expand=True)}
         slot["picker"] = PokemonPicker(self.app, self.game, entry, lambda v, s=slot: self._changed(s, v),
-                                       version=self.version)
+                                       version=self.version, on_team=lambda sets, s=slot: self._team(s, sets))
         slot["remove"] = t.icon_button("close", lambda e, s=slot: self._remove(s), "Remove this trade")
-        slot["header"] = ft.Row([slot["title"], slot["remove"]], spacing=8)
+        slot["header"] = ft.Row([slot["title"], slot["remove"]], spacing=8,
+                                vertical_alignment=ft.CrossAxisAlignment.CENTER)
         slot["box"] = ft.Container(ft.Column([slot["header"], slot["picker"].control], spacing=8))
-        self.slots.append(slot)
+        self.slots.insert(len(self.slots) if at is None else at, slot)
+        return slot
 
     def _render(self) -> None:
         several = len(self.slots) > 1
@@ -289,6 +301,33 @@ class OfferQueue:
         self.add_button.disabled = len(self.slots) >= self.limit
         self.count.value = (f"{len(self.slots)} of {self.limit}, traded in this order" if several
                             else f"Up to {self.limit} Pokemon in one session")
+
+    def _team(self, first: dict, sets: list[dict]) -> str:
+        """The rest of a pasted team goes into the trades after `first`: an untouched trade is filled,
+        otherwise a new one is inserted, up to the session's limit."""
+        at = self.slots.index(first)
+        placed = []
+        for found in sets:
+            at += 1
+            following = self.slots[at] if at < len(self.slots) else None
+            if following is not None and not following["value"].get("species"):
+                placed.append((following, found))
+            elif len(self.slots) < self.limit:
+                placed.append((self._slot({}, at), found))
+            else:
+                break
+        self._render()
+        self.rows.update()
+        self.footer.update()
+        for slot, found in placed:
+            slot["picker"]._apply_set(found, list(found["notes"]))
+        numbers = [self.slots.index(slot) + 1 for slot, _ in placed]
+        message = (f"The paste holds {len(sets) + 1} Pokemon; the others went to "
+                   f"{'trade' if len(numbers) == 1 else 'trades'} {', '.join(map(str, numbers))}." if numbers else
+                   f"The paste holds {len(sets) + 1} Pokemon; only the first fit.")
+        if len(placed) < len(sets):
+            message += f" {len(sets) - len(placed)} did not fit: one session trades at most {self.limit}."
+        return message
 
     def _save(self) -> None:
         self.on_change([dict(slot["value"]) for slot in self.slots])
@@ -304,6 +343,7 @@ class OfferQueue:
         self._render()
         self._save()
         self.control.update()
+        self.footer.update()
 
     def _remove(self, slot: dict) -> None:
         if len(self.slots) > 1:
@@ -311,6 +351,7 @@ class OfferQueue:
             self._render()
             self._save()
             self.control.update()
+            self.footer.update()
 
 
 STATS = (("hp", "HP"), ("atk", "Atk"), ("def", "Def"), ("spa", "SpA"), ("spd", "SpD"), ("spe", "Spe"))

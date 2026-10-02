@@ -48,14 +48,38 @@ def test_effort_over_the_games_total_is_refused_before_the_builder_is_asked(effo
     assert bool(options.problem()) == refused
 
 
-def test_a_queue_keeps_each_trades_pokemon_in_order_through_add_and_remove(monkeypatch):
-    class Picker:
-        def __init__(self, app, game, value, on_change, version=""):
-            self.on_change, self.control = on_change, SimpleNamespace()
-    monkeypatch.setattr(pokemon, "PokemonPicker", Picker)
+class StubPicker:
+    def __init__(self, app, game, value, on_change, version="", on_team=None):
+        self.on_change, self.on_team, self.control, self.applied = on_change, on_team, SimpleNamespace(), None
+
+    def _apply_set(self, found, notes):
+        self.applied = found
+        self.on_change({"species": found["species_id"]})
+
+
+def stub_queue(value, limit, on_change):
+    queue = OfferQueue(None, "sv", value, limit, on_change)
+    queue.control = queue.rows = queue.footer = SimpleNamespace(update=lambda: None)
+    return queue
+
+
+def test_a_pasted_team_fills_the_trades_after_its_picker_up_to_the_limit(monkeypatch):
+    """An untouched trade after the picker is reused, a chosen one is kept, and the rest are counted."""
+    monkeypatch.setattr(pokemon, "PokemonPicker", StubPicker)
     saved = []
-    queue = OfferQueue(None, "sv", {"file": "a.pk9"}, 3, saved.append)
-    queue.control = SimpleNamespace(update=lambda: None)
+    queue = stub_queue([{"species": 1}, {}, {"species": 4}], 4, saved.append)
+    sets = [{"species_id": n, "notes": []} for n in (25, 133, 150)]
+    message = queue.slots[0]["picker"].on_team(sets)
+    assert saved[-1] == [{"species": 1}, {"species": 25}, {"species": 133}, {"species": 4}]
+    assert [s["title"].value for s in queue.slots] == ["Trade 1", "Trade 2", "Trade 3", "Trade 4"]
+    assert "trades 2, 3" in message and "1 did not fit" in message
+    assert queue.add_button.disabled
+
+
+def test_a_queue_keeps_each_trades_pokemon_in_order_through_add_and_remove(monkeypatch):
+    monkeypatch.setattr(pokemon, "PokemonPicker", StubPicker)
+    saved = []
+    queue = stub_queue({"file": "a.pk9"}, 3, saved.append)
     assert not queue.slots[0]["header"].visible
     for name in ("b.pk9", "c.pk9"):
         queue._add(None)

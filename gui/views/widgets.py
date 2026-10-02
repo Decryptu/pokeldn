@@ -179,7 +179,8 @@ class PathField:
         self.field = t.field(value=value, mono=True, expand=True,
                              on_change=lambda e: self._changed(e.control.value), **options)
         icon = "folder" if mode == "dir" else "file"
-        self.control = ft.Row([self.field, t.icon_button(icon, self._browse, "Browse")], spacing=6)
+        self.control = ft.Row([self.field, t.icon_button(icon, self._browse, "Browse")], spacing=6,
+                              vertical_alignment=ft.CrossAxisAlignment.CENTER)
 
     def _changed(self, value: str) -> None:
         if self.on_change:

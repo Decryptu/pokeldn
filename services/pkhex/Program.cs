@@ -477,6 +477,9 @@ JsonObject Paste(Game game, JsonObject request)
             errors.Add(invalid.Humanize(errorText));
         var species = set.Species;
         var name = species < strings.specieslist.Length ? strings.specieslist[species] : "";
+        // A team export opens with a "=== [gen9] Team ===" line, read as a set with nothing in it.
+        if (species == 0 && set.InvalidLines.Count == 0)
+            continue;
         if (species == 0)
         {
             errors.Add("The first line names no Pokemon.");

@@ -215,7 +215,8 @@ class GiftBuilder:
                         t.icon_button("chevron-down", lambda e: self._move_step(n, 1), "Later",
                                       disabled=n == len(self.state["steps"]) - 1),
                         t.icon_button("close", lambda e: self._remove_step(n), "Remove")], spacing=0)
-        head = ft.Row([t.text(f"{n + 1}. {label}", 12, t.SOFT, weight=ft.FontWeight.W_600, expand=True), tools])
+        head = ft.Row([t.text(f"{n + 1}. {label}", 12, t.SOFT, weight=ft.FontWeight.W_600, expand=True), tools],
+                      vertical_alignment=ft.CrossAxisAlignment.CENTER)
         return ft.Container(ft.Column([head, *fields], spacing=8), padding=12, border_radius=10,
                             border=ft.Border.all(1, t.BORDER))
 
@@ -335,8 +336,9 @@ class GiftBuilder:
                                                                 item, optional=False).control, expand=True),
                            t.labeled_control("How many", t.field(value=str(items[n][1]), mono=True, width=72,
                                                                  on_change=quantity)),
-                           ft.Container(t.icon_button("close", remove, "Remove"), padding=ft.Padding(0, 20, 0, 0))],
-                          spacing=10)
+                           ft.Container(t.icon_button("close", remove, "Remove"), height=t.CONTROL_HEIGHT,
+                                        alignment=ft.Alignment.CENTER)],
+                          spacing=10, vertical_alignment=ft.CrossAxisAlignment.END)
 
         def add(e):
             items.append([1, 1])

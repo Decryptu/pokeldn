@@ -135,7 +135,10 @@ traded back on the next queued exchange and its saved record compared with the o
 
 Import paste reads a Pokémon Showdown, Smogon or PKHeX set with PKHeX's own parser
 (`ShowdownParsing.GetShowdownSets`) and fills the build form; Build
-then makes the record. The text follows Showdown's defaults: no `Level:` line means level 100, and
+then makes the record. The parser reads a set in any language PKHeX exports (English, French,
+German, Italian, Spanish, Japanese, Korean, Chinese); a hand-typed token outside PKHeX's own
+spelling, such as `Nature Rigide` for `Nature : Rigide`, is a line it cannot read. A team export's
+`=== [gen9] Team ===` header is skipped. The text follows Showdown's defaults: no `Level:` line means level 100, and
 an IV the `IVs:` line leaves out is 31. The parser keeps stats in PKHeX's order, Speed fourth.
 
 | the set names | result |
@@ -143,7 +146,8 @@ an IV the `IVs:` line leaves out is 31. The parser keeps stats in PKHeX's order,
 | a line the parser cannot read, a species or form absent from the game, an ability the species lacks, an item the game cannot hold, a move the game lacks, EVs over 510 | refused with the reason; nothing is filled |
 | Tera Type, Gigantamax, Dynamax level, Friendship, Hidden Power type | filled without it, with a note |
 | EVs in Let's Go or Legends Arceus, an ability in Legends Z-A | left out, with a note |
-| several sets | the first fills the form, with a note |
+| several sets, in a trade queue | each fills a trade in order from the picker it was pasted into: an untouched picker after it is reused, otherwise one is inserted, up to the queue's limit; a set that does not fit is counted in a note. A refusal in any set refuses the paste |
+| several sets, outside a queue | the first fills the form, with a note |
 
 Sword/Shield Mystery Gift validates the WC8 seal and checks supported species, forms, moves and safe
 items with PKHeX. Custom WC8 cards are distributions, and this structural check does not make them

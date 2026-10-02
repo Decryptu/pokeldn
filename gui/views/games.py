@@ -177,6 +177,11 @@ class GamesView:
                 out.extend(GiftBuilder(self, item).cards())
             elif kind == "field" and item.kind == "switch":
                 out.append(t.card(item.label, None, item.help, trailing=self.input(item)))
+            elif kind == "field" and item.kind == "pokemon" and item.queue > 1:
+                # "Add a trade" sits under the card, outside it.
+                queue = self.offer_queue(item)
+                out.append(t.card(item.label, queue.control, self.description(item)))
+                out.append(queue.footer)
             elif kind == "field":
                 out.append(t.card(item.label, self.input(item), self.description(item),
                                   trailing=self.species_sprite([item])))
@@ -211,6 +216,10 @@ class GamesView:
         detail = dict(field.choice_help).get(selected, "") if field.kind == "choice" else ""
         return " ".join(part for part in (field.help, detail) if part)
 
+    def offer_queue(self, field: Field) -> OfferQueue:
+        return OfferQueue(self.app, self.game.key, command.value_of(field, self.values), field.queue,
+                          lambda v: self.set_value(field, v), version=str(self.values.get("--version", "")))
+
     def input(self, field: Field, grouped: bool = False) -> ft.Control:
         value = command.value_of(field, self.values)
         if field.kind == "switch":
@@ -227,8 +236,7 @@ class GamesView:
             return NamePicker(self.app, self.game.key, field.kind, value, picked,
                               optional=not field.default).control
         if field.kind == "pokemon" and field.queue > 1:
-            return OfferQueue(self.app, self.game.key, value, field.queue, lambda v: self.set_value(field, v),
-                              version=str(self.values.get("--version", ""))).control
+            return self.offer_queue(field).control
         if field.kind == "pokemon":
             first = command.offers(value)
             return PokemonPicker(self.app, self.game.key, first[0] if first else {},
