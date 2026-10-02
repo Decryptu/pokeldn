@@ -421,7 +421,9 @@ answer (`--withhold-clone0-answer` on `bin/lgpe_join.py`, test only) sent 0xb1 a
 after its first 0xa1, and 0xb1 alone 108 ms after that; it took the answer to the repeat and the
 trade completed. A host that sends the pair once and loses the answer leaves the console on "vous
 allez bientôt être connecté" with nothing past clock traffic. `bin/lgpe_host.py` repeats the pair
-every 110 ms, at most 20 times, until the console's 0xa2, 0xc1 or 0x91 arrives.
+every 110 ms, at most 20 times, until the console's 0xa2, 0xc1 or 0x91 arrives. A retail console
+that had answered the first pair (answers ignored with `--ignore-clone0-answer`, test only)
+answered the repeat with 0xa2, and the trade completed.
 
 ### The game's messages on the reliable protocol
 
