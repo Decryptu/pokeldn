@@ -598,6 +598,50 @@ original instruction. At the `Sio32IDMain` patch (`0x081E1696`) it resolves gues
 [librfu_sio32id.c]. A `bkpt #0x52` at any other address re-keys the second record (the `0x081E187C`
 patch) to itself for the rest of the session.
 
+#### The record resolver (`main + 0x03E850`)
+
+The hook `main + 0x05499C` writes the `bkpt` itself into `insn`, then calls the virtual function at
+`[[x0 - 0x60] + 0x98]` with `x0 - 0x60` as `this` (disassembly, `main + 0x549c4`-`0x549cc`); for the
+Sloop component that resolves to `main + 0x056368`, which derives the record holder `[component +
+0x40] -> [+0xA8] + 0x68` and tail-calls the resolver `main + 0x03E850` with it, `&insn`, the
+`bkpt`'s address and the CPU (`0x3e850` has exactly one caller in the image, `0x56378`). The guest
+`r0`'s top byte selects a region only later, inside the resolver's Sio32ID emulation below. The
+resolver:
+
+- matches record 1 (holder `+0x120`) through `main + 0x0546C0`: a match increments the hit count at
+  `+0x0C` and copies the original at `+0x4` into `insn`, which the core then executes;
+- on a record-1 match continues into the Sio32ID emulation: guest `r0` is folded through the
+  region table, the folded offset is bounds-checked only against `offset < region size`
+  (`+0x20`), and with the flag byte at holder `+0x108` set, `strh` stores `0x8001` at
+  `backing + offset + 0xA` and `main + 0x2209C` writes the byte at `backing + offset + 1` into
+  guest `r1` (`str w2, [regfile + 4 + 0x48]`). The `+0xA` is not covered by the bounds check, so
+  an offset in the last `0xA` bytes of a region writes past the region's backing allocation, up
+  to 11 bytes past its end; with the flag set and an out-of-range offset the backing pointer is
+  null and the wrapper faults reading address `0x1`. With the flag clear the resolver returns
+  without the write. Holder `+0x108` is `[+0xA8] + 0x170` (holder is `[+0xA8] + 0x68`), the same
+  byte as the adapter power switch below: three live reads through `main + 0x03E850` during the
+  console's own Mystery Gift search (`ldn_bridge/tools/bp038.py --bp resolver=main+0x3E850`) found
+  it `0x1` every time, so `swi 0x40` alone arms the write path.
+- on a record-1 mismatch re-keys record 2 (holder `+0x148`): `record2.pc := the bkpt address`,
+  then matches it, so the core executes record 2's original, which is never updated: the stale
+  `0x081E187C` original `e59f3050` (`ldr r3, [pc, #0x50]`), at any address the guest executes a
+  `bkpt #0x52` from, in whatever CPU mode the guest is in. On the console's own Mystery Gift
+  search, every dispatch re-keys through this path: record 2's hit count (holder `+0x154`)
+  advanced about 20 per 0.33 s across three live reads, record 1's did not move, so the STWI
+  driver's own `bkpt #0x52` at `0x081E187C`'s runtime IWRAM copy, not the `Sio32IDMain` ROM site,
+  is what the search screen runs once a frame.
+- on a record-2 match with the `+0x108` flag set, falls into `main + 0x03E954`: it folds the
+  address stored at holder `+0x170`, reads a word at the folded address, and uses the word's top
+  byte as a region selector and the word itself as the address to fold again, bounds-checked,
+  decrementing a counter at holder `+0x42B8 + 0x7C`.
+
+The guest controls the whole trigger: a payload that branches to `0x081E1696` (the patched site,
+THUMB) with a chosen `r0` makes the wrapper write `0x8001` at `fold(r0) + 0xA` and set `r1` to the
+byte at `fold(r0) + 1`; a payload that executes a `bkpt #0x52` anywhere else executes the stale
+`e59f3050` there. Both are guest-relative; the `+0xA` write is the one path that leaves the
+guest's regions: it can write `0x8001` two constant bytes up to 11 bytes past any region's
+backing allocation, including the 16 MB ROM copy's.
+
 The hook acts only while the byte at `[component + 0x40] -> [+0xA8] + 0x170` is set: the virtual
 adapter's power switch. `swi 0x40` sets it, `swi 0x41` clears it (handler `main + 0x05706C` stores
 `number == 0x40`; "unreferenced flag setters" in [sloopsvc.c:23]). `swi 0x41` from the Mystery Gift
@@ -632,6 +676,16 @@ Answer-only syscalls issued with a pointer in `r0` return 0 (0x49, 0x4A, 0x4B, 0
 launched: count 1, pointer `main + 0x1E8D20`, an array of pointers with two nulls after the one
 populated slot. The dispatcher's mismatch path (`main + 0x50618`) checks a second tag, `0x59`, with a
 third argument (`x2`) no known syscall supplies; what it reaches is unknown.
+
+The tagged-property dispatcher `main + 0x4EBD0` walks a listener list on the component: entries of
+`0xd0` at `component + 0x10`, the count at `+0x688`, the enabled byte at `+0x690`; for each entry
+whose first word is 2 it calls the component vtable slot `+0x50` with the 8 bytes at `entry - 8`
+and the tagged entry. The setter `main + 0x058BB4` is the `0x4757` listener; the `0x59` listener at
+`main + 0x50618` writes its value at `component + 0x3324 + index * 4` with the index bounded 0..7 by
+`main + 0x4DB0C`. The count the `0x4757` listener stores at `component + 0x6052A0` has no reader
+but the getter `main + 0x058BA4` (`swi 0x50`): every other code site that forms the offset
+`0x6052A0` or `0x6052A8` in the image writes it or the pointer beside it at init. The value the
+`0x4F` caller supplies is inert.
 
 The console's own Mystery Gift search issues `swi 0x47` before any buffer script, advertising
 `activity` 0x15 (`ACTIVITY_WONDER_CARD` [include/constants/union_room.h:46]); a payload's call
@@ -675,7 +729,11 @@ the internal-to-national table at `main + 0x17DA8C`); the printed JSON carries a
 table and omits `MonsSelect`. `swi 0x62` increments `component + 0xE1B0`, which becomes `CommsError`:
 each call adds one to `CommsError` in the next report Ryujinx's `ServicePrepo ProcessPlayReport`
 prints to the host log. The one reader of the SaveBlock2 pointer `swi 0x55` stores
-at `component + 0xE1BC` is `main + 0x0577D8`, which tests `optionsButtonMode == 2` (L=A).
+at `component + 0xE1BC` is `main + 0x0577D8`, which tests `optionsButtonMode == 2` (L=A). The store
+site is the handler itself, `main + 0x057308`: the dispatcher sets `x8 = component + 0xE1B0` at
+`main + 0x057058`, and the handler stores the raw guest `r0` at `[x8 + 0xC]`. The reader folds the
+stored word through the region table, bounds-checks it and reads one byte, `+0x13` into the
+folded region: both are guest-relative and bounds-checked.
 
 `main + 0x059CE4` picks the table from the game code; the application carries all five:
 
