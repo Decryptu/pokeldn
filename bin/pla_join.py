@@ -135,10 +135,11 @@ async def run_session(args, keys, sock, host_ip, our_ip, our_mac, offer, exchang
     session = joiner.JoinerSession(keys, our_ip, our_mac, offer, exchange,
                                    player_id=bytes.fromhex(args.join_player_id),
                                    drive=args.drive, net_answer=not args.no_net_answer,
-                                   join_delay=args.join_delay, log=print)
+                                   join_delay=args.join_delay, log=print,
+                                   next_offers=getattr(args, "next_offers", ()))
     end = time.monotonic() + args.hold
     traded_at = None
-    seen = authed = 0
+    seen = authed = written = 0
 
     def send(packets, note=""):
         for pkt in packets:
@@ -147,6 +148,9 @@ async def run_session(args, keys, sock, host_ip, our_ip, our_mac, offer, exchang
 
     try:
         while time.monotonic() < end and not session.host_left:
+            if session.migration_asked is not None and session.traded:
+                print("[pla] the console is leaving after the trade")
+                break
             if args.take_host and session.migration_asked is not None:
                 print("[pla] leaving the seat to take the host role")
                 break
@@ -181,16 +185,25 @@ async def run_session(args, keys, sock, host_ip, our_ip, our_mac, offer, exchang
                     print(f"[pla] the joiner raised on a message, still seated: "
                           f"{type(exc).__name__}: {exc}")
             send(session.poll())
-            if session.traded and traded_at is None:
+            while written < len(session.trades):
+                written += 1
                 traded_at = time.monotonic()
-                if args.offer_out and session.received is not None:
-                    with open_output(args.offer_out, "wb") as fh:
-                        fh.write(session.received)
-                    print(f"[pla] wrote the record the console traded, {args.offer_out}")
-            if traded_at is not None and time.monotonic() - traded_at >= args.after_trade:
+                received = session.trades[written - 1]
+                path = pokemon_service.trade_path(args.offer_out, written)
+                if path and received is not None:
+                    with open_output(path, "wb") as fh:
+                        fh.write(received)
+                    print(f"[pla] wrote the record the console traded, {path}")
+            if (traded_at is not None and args.hold_after_trade is not None
+                    and not session.next_offers
+                    and time.monotonic() - traded_at >= args.hold_after_trade):
                 send(session.leave(), note="leave")
-                print("[pla] left the session after the trade")
+                print(f"[pla] left the session {args.hold_after_trade:.0f}s after the trade")
                 break
+        else:
+            if session.seated and not session.host_left:
+                send(session.leave(), note="leave")
+                print("[pla] --hold is over: left the session")
     finally:
         if args.collect:
             os.makedirs(args.collect, exist_ok=True)
@@ -407,14 +420,15 @@ def build_parser():
                          "run, shiny state kept, so a save that took it before takes it again")
     ap.add_argument("--offer", action="append", default=[],
                     help="the record to trade away, stored or party, encrypted or not; the "
-                         "default is the reference Azelf under our player name. Repeatable: the "
-                         "host role, once taken, offers one per trade in order")
+                         "default is the reference Azelf under our player name. Repeatable: one per "
+                         "trade in order, on this seat or in the host role once taken")
     ap.add_argument("--offer-out", default=None,
                     help="write the record the console traded to this file")
     ap.add_argument("--collect", default=None,
                     help="write every record the console showed or offered to this directory")
-    ap.add_argument("--after-trade", type=float, default=5.0,
-                    help="seconds to stay seated after the trade before leaving")
+    ap.add_argument("--hold-after-trade", type=float, default=None, metavar="SECONDS",
+                    help="leave this long after the last queued trade; by default the seat is kept until the "
+                         "console's player backs out or --hold ends")
     ap.add_argument("--drive", action="store_true",
                     help="act as the player too: offer once the host shows, confirm once it "
                          "offers, then selector 7; without it the console's player leads")
@@ -465,6 +479,8 @@ def main(argv=None):
     exchange = data_exchange.build_record(player_id=bytes.fromhex(args.player_id),
                                           name=args.player_name)
     offer = pokemon_service.validate("pla", build_offer(args, exchange))
+    args.next_offers = [pokemon_service.validate("pla", pla_pokemon.encrypt(pla_pokemon.load(
+        Path(os.path.expanduser(path)).read_bytes()))) for path in args.offer[1:]]
     print(f"[pla] offering {trade_box.describe(offer)}")
     screen.offer("pla", offer)
     cap = open_output(args.capture, "w") if args.capture else None

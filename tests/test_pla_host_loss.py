@@ -221,24 +221,11 @@ class TwoTrades(Console):
 
     count = 2
 
-    def __init__(self, *a, **k):
-        super().__init__(*a, **k)
-        self.trades = []
-
-    def _advance(self):
-        out = super()._advance()
-        if self.traded and len(self.trades) < self.count:
-            self.trades.append(self.received)
-            if len(self.trades) < self.count:
-                self.traded = False
-                self.offer, self.received = self.received, None
-                self.shown = self.host_showed = self.offered = self.confirmed = False
-                self.host_confirmed_at, self.sent_seven = None, False
-                self.phase_index, self.phase_ready_at, self.host_phase = 0, None, 0
-                self.phase_closed = False
-                self.answered = {a for a in self.answered if a[0] not in ("step", "ours", "box")}
-                out += self._advance()
-        return out
+    def _next_round(self):
+        if len(self.trades) < self.count:
+            self.next_offers = [self.received]     # it offers back what it took
+            super()._next_round()
+            self.shown = False                     # back on its box, it shows again
 
 
 def test_a_second_trade_in_the_same_session_completes(monkeypatch, capsys):

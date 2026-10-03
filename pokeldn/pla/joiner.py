@@ -56,7 +56,8 @@ class JoinerSession:
 
     def __init__(self, keys, our_ip, our_mac, offer, exchange, *, name=" ",
                  player_id=pia6.DEFAULT_PLAYER_ID, our_var=None, phase_waits=PHASE_WAITS,
-                 drive=False, net_answer=True, join_delay=0.0, log=print, clock=time.monotonic):
+                 drive=False, net_answer=True, join_delay=0.0, log=print, clock=time.monotonic,
+                 next_offers=()):
         self.net_answer = net_answer   # False: no Net 0x12 (docs/pla.md, Unresolved)
         self.join_delay = join_delay   # after the first Net 0x11 (docs/pla.md, Joining)
         self.keys, self.our_ip, self.offer, self.exchange = keys, our_ip, bytes(offer), exchange
@@ -88,13 +89,15 @@ class JoinerSession:
         self.received = None           # the record the host offered, the one a trade delivers
         self.phase_index = 0           # the next of PHASES to send
         self.phase_ready_at = None
-        self.host_phase = 0
+        self.host_phase = 0            # the highest phase the host answered with selector 2
         self.phase_closed = False
         self.traded = False
+        self.trades = []               # the record each completed trade delivered, in order
+        self.next_offers = [bytes(o) for o in next_offers]   # one per later trade on this seat
         self.arriving = False          # the trade's animation is running on the console
         # With `drive` the joiner plays: it offers after the host shows, confirms after it offers,
         # and sends selector 7 after the game's 1.5 s stopwatch; without it the console leads.
-        self.host_showed = self.offered = self.confirmed = False
+        self.host_showed = self.host_offered = self.offered = self.confirmed = False
         self.host_confirmed_at = None
         self.sent_seven = False
 
@@ -380,6 +383,7 @@ class JoinerSession:
                                          offered["record"]))
             if offered["selector"] == trade_box.SELECTOR_OFFERING:
                 self.received = offered["record"]
+                self.host_offered = True
             else:
                 self.host_showed = True
             self.log(f"[pla] <- the host is {trade_box.selector_name(offered['selector'])} "
@@ -412,7 +416,10 @@ class JoinerSession:
             return out + self._advance()
         phase = trade_box.read_phase(payload)
         if phase is not None:
-            self.host_phase = max(self.host_phase, phase[1])
+            # A console host announces each phase (selector 1) before ours arrives; only its
+            # selector 2 answers it (docs/pla.md, The phase protocol).
+            if phase[0] == trade_box.PHASE_SELECTOR_HOST:
+                self.host_phase = max(self.host_phase, phase[1])
             self.log(f"[pla] <- the host's phase, selector {phase[0]}, phase {phase[1]}")
             return out + self._advance()
         self.log(f"[pla] <- game channel port {port} key {key.hex()} body {body.hex()}")
@@ -451,13 +458,29 @@ class JoinerSession:
                     self.log(f"[pla] -> our phase {phase}")
         elif self.host_phase >= PHASES[-1]:
             self.phase_closed = self.traded = True
+            self.trades.append(self.received)
             show_done()
             screen.received("pla", self.received)
             self.arriving = True
             out.append(self._announce(trade_box.PHASE_KEY, opened=False))
             self.log("[pla] *** the host answered every phase: the trade is carried out; "
                      "the phase key closed ***")
+            self._next_round()
         return out
+
+    def _next_round(self):
+        """Ready the seat for the console's next trade: it repeats the showing, the offer,
+        selectors 5 and 7 and the phases byte for byte (docs/pla.md, The phase protocol)."""
+        if self.next_offers:
+            self.offer = self.next_offers.pop(0)
+            screen.offer("pla", self.offer)
+            self.log(f"[pla] the next trade offers {trade_box.describe(self.offer)}")
+        self.answered = {a for a in self.answered if a[0] not in ("box", "ours", "step")}
+        self.phase_index, self.phase_ready_at, self.host_phase = 0, None, 0
+        self.phase_closed = False
+        self.host_showed = self.host_offered = self.offered = self.confirmed = False
+        self.sent_seven = False
+        self.host_confirmed_at = None
 
     def _drive(self, now):
         out = []
@@ -467,7 +490,7 @@ class JoinerSession:
             self.answered.add(("ours", trade_box.SELECTOR_OFFERING, 0))
             out.append(self._send_box(trade_box.SELECTOR_OFFERING, 0))
             self.log("[pla] -> offering ours (drive)")
-        if self.offered and self.received is not None and not self.confirmed:
+        if self.offered and self.host_offered and not self.confirmed:
             self.confirmed = True
             self.answered.add(("step", b"\x05\x00"))
             out.append(self._send_game(zero, b"\x05\x00"))

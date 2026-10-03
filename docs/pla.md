@@ -1131,7 +1131,17 @@ message whose second location id is the console's own; `0x73f0a8` then sets the 
     08 | joiner location id (12) | host location id (12)
 
 A joiner sends its next phase once the host answers, after a few tenths of a second except across the
-trade animation (several seconds). It repeats its 0x81 acknowledgement on ports 0 and 1 about once a second:
+trade animation (several seconds).
+
+A retail console hosting announces each phase with selector 1 before the joiner's arrives, then
+answers the joiner's with selector 2, 0.02 to 0.04 s later (one retail seat). Only the selector 2 answers a phase. A
+joiner that closed its phase key after sending its `01 0e`, on the console's own `01 0e` and before
+its `02 0e`, never received the `02 0e`; leaving 5 s later, the console showed 2-AW7KA-0007, kept
+its own Pokemon and held the ten-minute restriction ([The trade restriction](#the-trade-restriction)).
+`bin/pla_join.py` closes the key on the `02 0e` and keeps the seat after a trade until the
+console's player backs out, or `--hold` ends; `--hold-after-trade N` leaves N seconds after the last
+queued trade. A later trade on the same seat repeats every step byte for byte, so the joiner forgets
+the steps it answered once a trade completes and shows the next `--offer`. It repeats its 0x81 acknowledgement on ports 0 and 1 about once a second:
 
     0000002c ffff 0002 01 00000001       header: size 0x2c, lowest pending 2, bitmap 1
     00 02                                type 0 on the first, 1 on every later one; two entries

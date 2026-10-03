@@ -116,8 +116,84 @@ def test_the_stream_acknowledgement_is_the_retail_joiners():
     assert announce["payload"] == game_channel.JOINER_OPEN_PAYLOAD
 
 
-def test_a_whole_trade_against_a_scripted_console_host():
+def _console_trade(keys, clock, s, theirs, seq):
+    """One trade as a retail console host plays it, from its offer to its phase key closed.
+    `seq` holds the console's next sequence id per port. -> the phase key tables the joiner sent."""
+    zero = bytes(game_channel.KEY_SIZE)
+
+    def take(port):
+        seq[port] += 1
+        return seq[port] - 1
+
+    # The console's player offers; the joiner offers back under the same selector and counter.
+    offer = trade_box.build_message(theirs, sequence_id=take(0))
+    sent = _open(keys, s.receive([_msg(offer, 0x7C, 0)]))
+    back = trade_box.read_payload(_data(sent, 0x7C, 0)[0]["payload"])
+    assert back["selector"] == trade_box.SELECTOR_OFFERING and back["counter"] == 0
+    assert back["record"] == s.offer and s.received == theirs
+    assert not _data(_open(keys, s.receive([_msg(offer, 0x7C, 0)])), 0x7C, 0)
+
+    # Confirmation and selector 7 are mirrored; after 7 the phase key opens on port 1.
+    for body in (b"\x05\x00", b"\x07\x00"):
+        sent = _open(keys, s.receive([_game(zero + body, 0, take(0), flags=0x07)]))
+        assert _data(sent, 0x7C, 0)[0]["payload"] == zero + body
+    table = channel_table.parse(_data(sent, 0x7C, 1)[0]["payload"])
+    assert table == [(trade_box.PHASE_KEY, True)]
+
+    # The joiner walks its phases, each after the host's answer to the one before and the retail
+    # joiner's wait. The console host announces each phase first and answers ours with selector 2
+    # only while our phase key is open (pj16: a joiner that closed on the announced 0x0e left the
+    # console waiting for its own 02 0e, and the trade did not settle).
+    _open(keys, s.receive([_game(channel_table.build([(trade_box.PHASE_KEY, True)]), 1, take(1),
+                                 flags=0x07)]))
+    tables, ours, answered, closed, done = [], [], [], False, len(s.trades)
+    heard = set(range(s.seq[(joiner.PROTO_GAME, 1)]))     # what port 1 carried before
+
+    def note(sent):
+        nonlocal closed
+        for m in _data(sent, 0x7C, 1):
+            if m["sequence_id"] in heard:
+                continue                      # a resend
+            heard.add(m["sequence_id"])
+            tables.append(channel_table.parse(m["payload"]))
+            closed = closed or (trade_box.PHASE_KEY, False) in tables[-1]
+        return sent
+
+    def host(selector, phase):
+        note(_open(keys, s.receive([_msg(trade_box.build_phase(selector, phase, take(0)),
+                                         0x7C, 0)])))
+
+    host(trade_box.PHASE_SELECTOR_MINE, 3)
+    for _ in range(40):
+        clock.t += 0.5
+        for m in _data(note(_open(keys, s.poll())), 0x7C, 0):
+            phase = trade_box.read_phase(m["payload"])
+            if phase is None or phase in ours:
+                continue
+            ours.append(phase)
+            assert len(s.trades) == done
+            # The console's answer comes 30 to 150 ms later; the joiner polls meanwhile.
+            clock.t += 0.05
+            note(_open(keys, s.poll()))
+            if not closed:
+                answered.append(phase[1])
+                host(trade_box.PHASE_SELECTOR_HOST, phase[1])
+                if phase[1] < 14:
+                    host(trade_box.PHASE_SELECTOR_MINE, joiner.PHASES[len(ours)])
+        if closed:
+            break
+    assert ours == [(1, 3), (1, 6), (1, 11), (1, 14)]
+    assert answered == [3, 6, 11, 14]
+    assert s.trades[done:] == [theirs]
+    _open(keys, s.receive([_game(channel_table.build([(trade_box.PHASE_KEY, False)]), 1, take(1),
+                                 flags=0x07)]))
+    return tables
+
+
+def test_two_trades_on_one_seat_against_a_scripted_console_host():
     keys, clock, s = _session()
+    second = pokemon.encrypt(pokemon.write(pokemon.decrypt(s.offer), level=12))
+    s.next_offers = [second]
     _seat(keys, s)
     s.receive([_msg(data_exchange.build_content_message(data_exchange.REFERENCE_RECORD, 0x02),
                     joiner.PROTO_STREAM, port=0)])
@@ -136,40 +212,22 @@ def test_a_whole_trade_against_a_scripted_console_host():
     again = game_channel.build_open(game_channel.HOST_OPEN_PAYLOAD, sequence_id=2)
     assert not _data(_open(keys, s.receive([_msg(again, 0x7C, 0)])), 0x7C, 0)
 
-    # The console's player offers; the joiner offers back under the same selector and counter.
-    theirs = pokemon.encrypt(pokemon.write(pokemon.decrypt(trade_box.REFERENCE_RECORD), level=33))
-    sent = _open(keys, s.receive([_msg(trade_box.build_message(theirs, sequence_id=3), 0x7C, 0)]))
-    back = trade_box.read_payload(_data(sent, 0x7C, 0)[0]["payload"])
-    assert back["selector"] == trade_box.SELECTOR_OFFERING and back["counter"] == 0
-    assert s.received == theirs
-    sent = _open(keys, s.receive([_msg(trade_box.build_message(theirs, sequence_id=3), 0x7C, 0)]))
-    assert not _data(sent, 0x7C, 0)
+    first = s.offer
+    seq = {0: 3, 1: 2}
+    theirs = [pokemon.encrypt(pokemon.write(pokemon.decrypt(trade_box.REFERENCE_RECORD), level=n))
+              for n in (33, 34)]
+    assert _console_trade(keys, clock, s, theirs[0], seq) == [[(trade_box.PHASE_KEY, False)]]
+    assert s.offer == second != first
 
-    # Confirmation and selector 7 are mirrored; after 7 the phase key opens on port 1.
-    for seq, body in ((4, b"\x05\x00"), (5, b"\x07\x00")):
-        sent = _open(keys, s.receive([_game(zero + body, 0, seq, flags=0x07)]))
-        assert _data(sent, 0x7C, 0)[0]["payload"] == zero + body
-    table = channel_table.parse(_data(sent, 0x7C, 1)[0]["payload"])
-    assert table == [(trade_box.PHASE_KEY, True)]
-
-    # The joiner walks its phases, each after the host's answer to the one before and the retail
-    # joiner's wait.
-    sent = _open(keys, s.receive([_game(channel_table.build([(trade_box.PHASE_KEY, True)]),
-                                        1, 2, flags=0x07)]))
-    phases, host_seq, tables = [], 6, []
-    for _ in range(40):
-        clock.t += 0.5
-        for m in _data(_open(keys, s.poll()), 0x7C, 0):
-            phase = trade_box.read_phase(m["payload"])
-            if phase is not None and phase not in phases:
-                phases.append(phase)
-                answer = trade_box.build_phase(trade_box.PHASE_SELECTOR_HOST, phase[1], host_seq)
-                sent = _open(keys, s.receive([_msg(answer, 0x7C, 0)]))
-                tables += [channel_table.parse(m["payload"]) for m in _data(sent, 0x7C, 1)]
-                host_seq += 1
-    assert phases == [(1, 3), (1, 6), (1, 11), (1, 14)]
-    assert s.traded and s.phase_closed
-    assert tables == [[(trade_box.PHASE_KEY, False)]]
+    # Back on its box the console shows again; the next trade repeats every step byte for byte.
+    showing = trade_box.build_message(theirs[0], sequence_id=seq[0],
+                                      selector=trade_box.SELECTOR_SHOWING)
+    seq[0] += 1
+    back = trade_box.read_payload(_data(_open(keys, s.receive([_msg(showing, 0x7C, 0)])),
+                                        0x7C, 0)[0]["payload"])
+    assert back["selector"] == trade_box.SELECTOR_SHOWING and back["record"] == second
+    assert _console_trade(keys, clock, s, theirs[1], seq) == [[(trade_box.PHASE_KEY, False)]]
+    assert s.trades == theirs
 
 
 def test_unacknowledged_messages_are_sent_again_and_acknowledged_ones_are_not():

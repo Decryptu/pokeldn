@@ -99,8 +99,18 @@ A capture of both ends of an emulated pair (768 packets) gives the opening:
   second carries its own source id, zstd-compressed;
 - the host's next packet is addressed to that id and carries the two-byte recipient footer.
 
-An emulated joiner left unanswered after admission disconnected cleanly after about 8 s in that
-capture; the timer behind it is unresolved.
+An emulated joiner whose LDN connect succeeded on a network with no Pia host behind it sent and
+received nothing for 7.94 s, then disconnected cleanly. The timer is the Net connect deadline, 8000 ms:
+
+    0x251b1bc   LdnProtocol vtable 0x3c8aef8 slot 0x1d8: mov w0, #0x1f40
+    0x2513520   NetBackgroundProcessJob StartConnectNetwork: job+0xa0 = now + ticks_per_ms * 8000
+    0x25141c4   the WaitConnected step 0x25140bc, while the host is unknown: deadline against now
+    0x25143a0   expiry: result 0x647a, state byte +0x100 = 5, a 5000 ms deadline (slot 0x1e8),
+                then StartDisconnectNetwork
+
+The deadline starts before the LDN connect completes, which accounts for the 0.06 s short of 8 s.
+LdnProtocol's timing slots 0x1b0 to 0x1f8 return 6000, 1000, 500, 10500, 4500, 8000, 20000, 5000,
+5000 and 10000 ms; only 0x1d8 and 0x1e8 are identified.
 
 ## The session, on a retail console
 
@@ -908,9 +918,15 @@ is no local-wireless path.
   language-select table `[x0+0x50]` holds (breakpoint `0x16734c0`, read at `0x2c204ac`).
 - What writes the exchange worker's error word +0x10, which selects own state 7 (a watchpoint during
   an emulated trade cancelled after the steps start).
-- What timer ends an emulated joiner left unanswered after admission (about 8 s measured), and what
-  ends a session whose game messages go unanswered (host migration at 27 s measured), against the
-  10 s kick (The kick).
+- What ends a hosted session whose game messages go unanswered (host migration at 27 s measured).
+  Two readings fit: CloseSession's P2P wait giving up at 15001 ms (`0x255c7a4`, result `0x2c18`)
+  followed by the 10.8 s leave with migration, or the 10 s kick (The kick) followed by a game-side
+  reaction that is unread. Breakpoints at `0x255c7a4`, `0x2547dd0` and `0x255b4a0` on an emulated
+  host would tell them apart.
+- Whether the host migration 8.7 s after a seat whose join listed the wrong protocols is WaitMember
+  (3000 + rand%1000 ms, retry body `0x19ae124`) expiring, then LeaveMeshWithHostMigration's
+  8000 ms poll for a next host (`0x255a520`) ending with no session station to hand to
+  (`0x255a848..0x255a878`).
 - Whether an optional timed close (`--hold-after-trade`) can leave the console without an error
   while it is still seated. The default host waits for the console's departure ([Hosting](#hosting)).
   A leaving retail host sends the type 9 first ([A host leaving](#a-host-leaving)); the timed close
