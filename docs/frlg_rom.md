@@ -1309,6 +1309,31 @@ the call is made only in an idle overworld frame.
 `DisableWildEncounters` (`0x08085FAC`) is its only other writer. Grass, water and roamer encounters
 stop; fishing and Sweet Scent take their own paths.
 
+#### `noclip`
+
+`noclip` (`asm/resident/noclip.s`, 304 bytes) lets the player walk through walls while every button
+in `hold` (default `0x100`, R) is held. On each idle overworld frame (`gMain.intrCheck` bit 0 clear,
+`callback2` `CB2_Overworld`) it rewrites the four blocks around the player's `currentCoords` in the
+map grid, `VMap.map` (`gBackupMapData`, `0x02031DF8`), to collision 0 and elevation 15, keeping the
+metatile id. `VMap` is `{s32 Xsize, s32 Ysize, u16 *map}` at `0x03004260` (French) or `0x03004310`
+(English), the literal in `MapGridGetCollisionAt`. A block is `metatile | collision << 10 |
+elevation << 12` [global.fieldmap.h:7]; `GetCollisionAtCoords` blocks on a collision bit, then on
+`IsElevationMismatchAt`, which passes elevation 15, and `ObjectEventUpdateElevation` leaves the
+player's own elevation unchanged on a 15 tile [event_object_movement.c:4830, 8346, 8400].
+
+The next idle frame puts each block back, only while `gMapHeader.mapLayout` (`0x02036DF8`) is the
+layout it changed and the block still has its metatile id with elevation 15 and collision 0: a warp
+or a metatile the game rewrote keeps the new block. A block equal to `MAPGRID_UNDEFINED` (`0x3FF`)
+stays, or the player would leave the map. Object events still block (`DoesObjectCollideWithObjectAt`),
+ledges still jump, and a wandering object event beside the player can step onto an opened block. Held
+R would open the Help System, so the hook stores 1 every frame into `0x0203F171` (see `turbo`).
+State is 24 bytes at `0x0203FF80`: the layout, a count and four `{u16 index, u16 block}`.
+
+`tests/test_noclip.py` installs it through each cartridge's own client and reads the result with the
+cartridge's own `MapGridGetCollisionAt` and `MapGridGetElevationAt`.
+Measured on mGBA with the French cartridge in Pallet Town: walking south, the player stops at the
+fence without R and passes six tiles through it with R held; an object event still stops it.
+
 #### `follower`
 
 `asm/resident/follower.s` walks the lead Pokemon one tile behind the player as a real object event,

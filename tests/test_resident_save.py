@@ -45,7 +45,7 @@ def _session(name, ticks=20000, payload=None):
     raise AssertionError(f"the session did not finish: host={host.state} client={client.status()}")
 
 
-@pytest.mark.parametrize("name", ["follower", "shiny", "noencounter"])
+@pytest.mark.parametrize("name", ["follower", "shiny", "noencounter", "noclip"])
 def test_one_session_keeps_the_hook_in_the_save_and_installs_it(name):
     host, client = _session(name)
     blob = bs.build_resident_save_blob(name)
@@ -117,7 +117,7 @@ def _read(uc, at):
 
 
 @pytest.mark.parametrize("name, params", [("noencounter", {}), ("ivs", {}), ("follower", {}),
-                                          ("shiny", {}),
+                                          ("shiny", {}), ("noclip", {}),
                                           ("turbo", {"field": 1, "hold": 0x100, "budget": 228})])
 def test_mom_installs_the_hook_from_the_save(name, params):
     uc, _ = _booted_console(bs.build_resident_save_blob(name, **params))

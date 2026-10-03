@@ -12,6 +12,11 @@ STUBS = {
         '99e9c10f736ee08a152396a44b1c274a796294bb4e35dd94b619ec8aa74dfbd0',
         {'OVERLAY_TWO_ROWS': 1, 'ivs_hook': 0, 'p_cb2_overworld': 464, 'p_get_mon_data': 472, 'p_gmain': 460, 'p_intr_check': 456, 'p_mon': 468, 'p_original': 452, 'p_overlay': 480, 'p_overlay2': 484, 'p_overlay_oam': 496, 'p_overlay_pal': 492, 'p_overlay_tiles': 488, 'p_words': 476},
     ),
+    'noclip': (
+        bytes.fromhex('f0b54248818b4068414a5040c907084301b43d4b00f008f801bc002801d100f004f8f0bc01bc0047184700b53b48012101703b4c374dae683a4800682168626800236360884212d127000837002a0ed0388840007988335a4b409b0504d1335a9b0a3c2b00d131520437013aeee72748808d29490840884220d12a48006820602948407924214843284f3f181022b85e0232b95e070002b4781e00f011f8781c009900f00df800990139380000f008f800990131380000f003f801b001bc004700281fdb2a6890421cda00291adb6b68994217da4a4312185300f05a8105890d0131890a0ed18105890d04b40f221203114304bcf15261688b001b191a815881013161607047c0461d070008d0220003c99e0508604200030001000071f1030280ff0302f86d030274700302346e0302'),
+        'addbc52903623386b52f1ea6c1d08145bb20b9dcc6272f0cd5e458ba602724fc',
+        {'COUNT': 4, 'ENTRIES': 8, 'FREE': 60, 'LAYOUT': 0, 'OBJ_CURRENT': 16, 'OBJ_SIZE': 36, 'VMAP_MAP': 8, 'VMAP_XSIZE': 0, 'VMAP_YSIZE': 4, 'call_r3': 40, 'free_tile': 192, 'noclip_hook': 0, 'p_avatar': 296, 'p_cb2_overworld': 272, 'p_gmain': 268, 'p_help': 284, 'p_hold': 280, 'p_map_header': 292, 'p_objects': 300, 'p_original': 264, 'p_state': 288, 'p_vmap': 276, 'walls': 42},
+    ),
     'noencounter': (
         bytes.fromhex('00b5054801210170024b00f002f801bc004718471d070008d8860302'),
         'c19c81fbb1d8ec98309a82cbeeef139397f88c7f5027671a188a07b658ecfe46',

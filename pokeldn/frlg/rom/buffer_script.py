@@ -2127,6 +2127,7 @@ RESIDENT_HOOKS = {
     "ivs": ("ivs_hook", {"mon": 0x02024280, "words": 0x0203FF80, "overlay": 0x0203FF80,
                          "overlay2": 0x0203FF84}),
     "noencounter": ("noencounter_hook", {"flag": 0x020386D8}),
+    "noclip": ("noclip_hook", {"hold": 0x100, "help": 0x0203F171, "state": 0x0203FF80}),
     "follower": ("follower_hook", {"state": 0x0203FFDC, "images": 0x0203FBB4, "deoxys": None}),
 }
 # A hook's IWRAM and ROM words are the build's [Build.hook_literals]. RESIDENT_DATA: the data a hook

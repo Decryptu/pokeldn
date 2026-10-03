@@ -94,6 +94,8 @@ PRESETS = (
           *HOOK, "ivs"),
     _code("hook-noencounter", "No wild encounters", "Writes RAM until a soft reset: no grass, water or "
           "roaming encounters.", *HOOK, "noencounter"),
+    _code("hook-noclip", "Walk through walls", "Writes RAM until a soft reset: hold R to walk through "
+          "walls, trees and water; people still block the way.", *HOOK, "noclip"),
     _code("hook-follower", "Pokemon follower", "Writes the save's free area and starts it at once: the "
           "lead Pokemon walks behind you, hops ledges with you, and smiles and cries when you face "
           "it and press A. Send Mom keeps a hook to bring it back after every boot.",
@@ -101,6 +103,9 @@ PRESETS = (
     _code("save-shiny", "Keep the shiny countdown in the save", "Writes the save's free area and "
           "starts the countdown at once. Send Mom keeps a hook to bring it back after every boot.",
           "--buffer-script", "save-write", "--resident", "shiny"),
+    _code("save-noclip", "Keep walking through walls in the save", "Writes the save's free area and "
+          "starts it at once: hold R to walk through walls. Send Mom keeps a hook to bring it back "
+          "after every boot.", "--buffer-script", "save-write", "--resident", "noclip"),
     _code("mom-resident", "Mom keeps a hook", "A card for Mom: talking to her installs the hook kept in "
           "the save. Send it after a gift that writes the save's free area.", "--gift", "resident-save"),
 )
