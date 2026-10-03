@@ -141,16 +141,39 @@ run. A file hash does not prove that native code returns or leaves the save inta
 
 ### Native formats
 
-The converter imports Sword/Shield WC8 records and paired FRLG files used by
-`pokemon-gen3-mysterygift-tool`. FRLG import requires the cartridge code the script targets:
-`BPRF`, `BPGF`, `BPRE` or `BPGE`. It cannot infer a script's target from its bytes.
+The converter imports Sword/Shield WC8 records, FRLG `.wc3` files and paired FRLG files used by
+`pokemon-gen3-mysterygift-tool`. A `.wc3` or `.wc8` also opens directly, in the app's Open a file and
+in `--gift-file`.
+
+An FRLG script whose reachable code holds no absolute address serves all four cartridges (`BPRF`,
+`BPGF`, `BPRE`, `BPGE`): its jumps and text are `vgoto`/`vmessage` operands relative to its own
+`setvaddress` [scrcmd.c:171], and items come through `callstd`. A script with a `goto`, `call`,
+`message`, `callnative` or other absolute pointer belongs to one cartridge and needs `--build`; a
+`.wc3` of that kind is refused when opened directly.
 
 ```bash
 ./.venv/bin/python -m pokeldn.gifts import --game swsh --record event.wc8 -o event.pokegift
+./.venv/bin/python -m pokeldn.gifts import --game frlg --wc3 "FL - Item AuroraTicket (FRE).wc3" -o aurora.pokegift
 ./.venv/bin/python -m pokeldn.gifts import --game frlg --card WonderCard.bin \
-  --script Script.bin --build BPRF --name "Event gift" -o event.pokegift
+  --script Script.bin --name "Event gift" -o event.pokegift
 ./.venv/bin/python -m pokeldn.gifts export celebi.pokegift --build BPRF --out-dir native-gift
 ```
+
+A `.wc3` is 1420 bytes (`0x58C`):
+
+| offset | size | content |
+| --- | --- | --- |
+| `0x000` | 336 | CRC16 of the card, 2 pad bytes, the 332-byte `struct WonderCard` |
+| `0x150` | 80 | save-side card metadata; not read |
+| `0x1A0` | 1004 | CRC16, 2 pad bytes, `struct RamScriptData` (magic 51, map group, map number, object id, 995-byte script), 1 pad byte |
+
+The script CRC in the files covers 1000 bytes, pad byte included, in all 54 international files of
+Project Pokemon's EventsGallery; the game's own covers 999 [script.c:488]. Import accepts either.
+Japanese `.wc3` files are 1252 bytes (`0x4E4`) and are refused: the Switch cartridges are French and
+English. Every international gallery script is relative and serves all four cartridges. The gallery's
+debug cards with flag ids 4 to 8 are refused: the delivery man hands a gift only for flag ids 1000 to
+1019 [mystery_gift.c:241]. The Aurora and Mystic Tickets are no-ops on a save past its first Hall of
+Fame ([The Aurora and Mystic Tickets](frlg_gift.md#the-aurora-and-mystic-tickets)).
 
 The FRLG pair contains a 336-byte card and a 1004-byte RAM-script structure. Import verifies both
 CRCs and the script's unbound Mystery Gift header. The native pair cannot carry stamps, visiting

@@ -12,10 +12,10 @@ from pokeldn.app import command, gift_files
 from pokeldn.app.catalog import GAMES
 from pokeldn.app.settings import Settings
 from pokeldn.frlg import config
-from pokeldn.frlg.gift import gift_to_bin, mg_server
+from pokeldn.frlg.gift import gift_to_bin, mg_server, mystery_gift
 from pokeldn.frlg.gift import builder as frlg_builder, file as frlg_file
 from pokeldn.frlg.rom import builds
-from pokeldn.frlg.rom import buffer_script
+from pokeldn.frlg.rom import buffer_script, scrcmd
 from pokeldn.swsh import beacon, wc8
 from tests.test_frlg_build_selection import _drive, _session
 from tests.test_mystery_gift_end_to_end import _run_full_stack
@@ -141,6 +141,43 @@ def test_corrupt_native_pairs_cannot_be_imported():
     for bad_card, bad_script in ((card[:-1], script), (bytes(336), script), (card, bytes(1004))):
         with pytest.raises(ValueError):
             frlg_file.from_bins(bad_card, bad_script, build="BPRF")
+
+
+def _wc3(card, script):
+    """A .wc3 laid out as Project Pokemon's gallery files are: card bin, 0x50 metadata bytes, then
+    the RamScript with its CRC16 over 1000 bytes."""
+    card_bin, script_bin = gift_to_bin.build_gift_bins(card, script)
+    script_bin = mystery_gift.crc16(script_bin[4:1004]).to_bytes(2, "little") + script_bin[2:]
+    return card_bin + bytes(0x50) + script_bin
+
+
+@pytest.mark.parametrize("code,version", [("BPRF", "firered"), ("BPGE", "leafgreen")])
+def test_wc3_file_reaches_any_cartridge_through_the_launcher(tmp_path, code, version):
+    source = config.MysteryGiftPayload(gift="celebi").build_distribution(builds.BPRF)
+    path = tmp_path / "celebi.wc3"
+    path.write_bytes(_wc3(source.card, source.ram_script))
+    parser = frlg_mg_host.build_parser()
+    run = frlg_mg_host.build_run_config(parser, parser.parse_args(["--gift-file", str(path)]))
+    host, console = _session(run, game_code=code.encode(), version=version)
+    _drive(host, console)
+    assert console.error is None
+    assert console.saved_card == source.card
+    assert console.saved_ram_script == source.ram_script.ljust(1024, b"\0")
+    assert host.server.build.game_code == code
+
+
+def test_wc3_refuses_japanese_files_corruption_and_cartridge_addresses():
+    source = config.MysteryGiftPayload(gift="celebi").build_distribution(builds.BPRF)
+    raw = _wc3(source.card, source.ram_script)
+    with pytest.raises(ValueError, match="Japanese"):
+        frlg_file.from_wc3(raw[:frlg_file.WC3_JAPANESE_SIZE])
+    with pytest.raises(ValueError, match="script checksum"):
+        frlg_file.from_wc3(raw[:-1] + b"\1")
+    rom_goto = bytes([scrcmd.OP_GOTO]) + (0x08160000).to_bytes(4, "little")
+    tied = _wc3(source.card, rom_goto)
+    with pytest.raises(ValueError, match="0x08160000"):
+        frlg_file.from_wc3(tied)
+    assert set(frlg_file.from_wc3(tied, build="BPRE").variants) == {"BPRE"}
 
 
 def test_gui_file_source_omits_the_previous_preset_and_uses_the_same_exporter(tmp_path):

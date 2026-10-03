@@ -336,3 +336,45 @@ def dump_plan(referenced, window=1024):
                      f"{len(addresses)} address{'es' if len(addresses) > 1 else ''} "
                      f"({', '.join(kinds)})")
     return lines
+
+
+VIRTUAL = {0xB9, 0xBA, 0xBB, 0xBC, 0xBD, 0xBE, 0xBF}
+POINTER_PARAMS = DATA_PARAMS | {"destination", "func"}
+
+
+def absolute_pointers(script):
+    """-> [(offset, command, value)] for each absolute address the code reachable from offset 0
+    uses; empty means every cartridge runs it alike. v-commands are relative to setvaddress
+    [scrcmd.c:171]. Raises ValueError on a script it cannot walk to an end."""
+    from pokeldn.frlg.rom import scrcmd_args, scrcmd_names
+    queue, seen, found, offset = [0], set(), [], None
+    while queue:
+        cursor = queue.pop()
+        while cursor not in seen:
+            seen.add(cursor)
+            measured = shape(script, 0, cursor)
+            if measured is None:
+                raise ValueError(f"The script has no command the game knows at byte {cursor}.")
+            opcode, (name, operands, length) = script[cursor], measured
+            params = scrcmd_args.VARIABLE.get(opcode) and ("pointer",) * len(operands) \
+                or scrcmd_args.PARAMS.get(opcode) or ()
+            for index, (width, value) in enumerate(operands):
+                param = params[index] if index < len(params) else None
+                if opcode == OP_SETVADDRESS:
+                    if offset not in (None, value - cursor):
+                        raise ValueError("The script sets two different virtual bases.")
+                    offset = value - cursor
+                elif opcode in VIRTUAL and param in ("destination", "text"):
+                    if offset is None:
+                        raise ValueError("The script uses a v-command before setvaddress.")
+                    if not 0 <= value - offset < len(script):
+                        raise ValueError(f"The script's {name} at byte {cursor} points outside it.")
+                    if param == "destination":
+                        queue.append(value - offset)
+                elif width == 4 and value and (param in POINTER_PARAMS
+                                               or (param == "value" and 0x02000000 <= value < ROM_END)):
+                    found.append((cursor, name, value))
+            if opcode in TERMINATORS or opcode in (0x0C, 0x0D, OP_VGOTO):
+                break
+            cursor += length
+    return found

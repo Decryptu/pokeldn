@@ -131,7 +131,11 @@ def load(path, *, game=None):
         if game not in (None, "swsh"):
             raise ValueError(f"This gift is for swsh, not {game}.")
         return adapter("swsh").from_record(raw, name=path.stem)
-    raise ValueError("Choose a .pokegift file, or a .wc8 file for Sword/Shield.")
+    if game == "frlg" or path.suffix.lower() == ".wc3":
+        if game not in (None, "frlg"):
+            raise ValueError(f"This gift is for frlg, not {game}.")
+        return adapter("frlg").from_wc3(raw, name=path.stem)
+    raise ValueError("Choose a .pokegift file, a .wc3 file for FireRed/LeafGreen or a .wc8 file for Sword/Shield.")
 
 
 def save(path, gift):
@@ -152,10 +156,12 @@ def main(argv=None):
     convert.add_argument("--record", help="Sword/Shield .wc8")
     convert.add_argument("--card", help="FRLG WonderCard.bin")
     convert.add_argument("--script", help="FRLG Script.bin")
+    convert.add_argument("--wc3", help="FRLG .wc3 Wonder Card file")
     convert.add_argument("--code", help="FRLG raw ARM console payload (.bin)")
     convert.add_argument("--expect", help="console-code result: trainer-id or a 32-bit integer")
     convert.add_argument("--dump-size", type=int, help="console-code response length when it returns a dump")
-    convert.add_argument("--build", help="FRLG cartridge game code, e.g. BPRF")
+    convert.add_argument("--build", help="FRLG cartridge game code, e.g. BPRF; a card or .wc3 whose "
+                         "script holds no absolute address serves every cartridge without it")
     convert.add_argument("--name")
     convert.add_argument("-o", "--out", required=True)
     export = commands.add_parser("export", help="export native records from a gift")
@@ -166,7 +172,7 @@ def main(argv=None):
     try:
         if args.command == "import":
             if args.game == "swsh":
-                if (not args.record or args.card or args.script or args.build or args.code
+                if (not args.record or args.card or args.script or args.wc3 or args.build or args.code
                         or args.expect is not None or args.dump_size is not None):
                     raise ValueError("Sword/Shield import requires --record only.")
                 gift = load(args.record, game="swsh")
@@ -174,7 +180,7 @@ def main(argv=None):
                     gift = Gift(gift.game, args.name, dict(gift.variants))
             else:
                 if args.code:
-                    if args.card or args.script or args.record or not args.build:
+                    if args.card or args.script or args.wc3 or args.record or not args.build:
                         raise ValueError("FRLG code import requires --code and --build only, plus response options.")
                     expect = (args.expect if args.expect == "trainer-id" else
                               int(args.expect, 0) if args.expect is not None else None)
@@ -185,11 +191,17 @@ def main(argv=None):
                     return 0
                 if args.expect is not None or args.dump_size is not None:
                     raise ValueError("Response options require --code.")
-                if not args.card or not args.script or not args.build or args.record:
-                    raise ValueError("FRLG import requires --card, --script and --build.")
-                gift = adapter("frlg").from_bins(Path(args.card).read_bytes(),
-                    Path(args.script).read_bytes(), build=args.build,
-                    name=args.name or Path(args.card).stem)
+                if args.wc3:
+                    if args.card or args.script or args.record:
+                        raise ValueError("FRLG .wc3 import takes --wc3 alone, plus --build.")
+                    gift = adapter("frlg").from_wc3(Path(args.wc3).read_bytes(), build=args.build,
+                        name=args.name or Path(args.wc3).stem)
+                else:
+                    if not args.card or not args.script or args.record:
+                        raise ValueError("FRLG import requires --wc3, or --card and --script.")
+                    gift = adapter("frlg").from_bins(Path(args.card).read_bytes(),
+                        Path(args.script).read_bytes(), build=args.build,
+                        name=args.name or Path(args.card).stem)
             save(args.out, gift)
             print(f"Saved {args.out}: {gift.summary}")
         else:

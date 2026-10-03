@@ -10,7 +10,7 @@ from pokeldn.app.paths import LOGS, POKEMON, SESSION
 from pokeldn.app.settings import PATH
 
 RECORDS = {".pk3", ".ek3", ".pb7", ".pk8", ".pb8", ".pa8", ".pk9", ".pa9", ".bin", ".hex",
-           ".pokegift", ".wc8"}
+           ".pokegift", ".wc3", ".wc8"}
 BUILT = re.compile(r".+-\d{8}-\d{6}-[0-9a-f]{8}\.(?:pk3|pb7|pk8|pb8|pa8|pk9|pa9)$")
 PREPARED = re.compile(r"(?:frlg|lgpe|bdsp|swsh|pla|sv|za)-[0-9a-f]{32}\.(?:pk3|pb7|pk8|pb8|pa8|pk9|bin)$")
 

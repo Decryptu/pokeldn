@@ -7,7 +7,7 @@ from pokeldn.frlg.gift import gift_to_bin, mg_server, wonder_card, wonder_news
 from pokeldn.frlg.gift.mystery_gift import crc16
 from pokeldn.frlg.gift.stamp_rally import MysteryGiftDistribution
 from pokeldn.frlg.rom import builds
-from pokeldn.frlg.rom import buffer_script
+from pokeldn.frlg.rom import buffer_script, scrcmd
 
 COMPONENTS = ("card", "ram_script", "stamp", "activation_script", "install_activation_script",
               "trainer", "news", "mevent", "buffer_code")
@@ -168,17 +168,56 @@ class FilePayload:
         return chosen.card, chosen.ram_script
 
 
-def from_bins(card, script, *, build, name="FRLG gift"):
+# A .wc3 (PKHeX's WC3 plugin, the Mystery Gift Tool, Project Pokemon's gallery): the card with its
+# CRC, 0x50 bytes of save-side metadata, then the RamScript with a CRC16 over 1000 bytes (54 of 54
+# gallery files), where the game sums 999 [script.c:488]. Japanese files are 0x4E4 bytes.
+WC3_SIZE, WC3_JAPANESE_SIZE, WC3_SCRIPT_AT = 0x58C, 0x4E4, 0x1A0
+
+
+def _gift(name, card, ram_script, build):
+    """One variant for `build`, or for every cartridge when the script holds no absolute address."""
+    if build is None:
+        if pointers := scrcmd.absolute_pointers(ram_script):
+            offset, command, value = pointers[0]
+            raise ValueError(f"The script's {command} at byte {offset} points at 0x{value:08X}, an "
+                             "address of one cartridge; choose the cartridge it was written for.")
+        codes = builds.GAME_CODES
+    else:
+        codes = (builds.resolve(build).game_code,)
+    gift = gifts.Gift("frlg", name, {code: gifts.Variant({"card": bytes(card),
+                                                          "ram_script": bytes(ram_script)})
+                                     for code in codes})
+    distribution(gift.variants[codes[0]])
+    return gift
+
+
+def _unbound(script):
+    if script[4:8] != bytes((51, 255, 255, 255)):
+        raise ValueError("The script is not an unbound Mystery Gift delivery script.")
+    return script[8:1003]
+
+
+def from_bins(card, script, *, build=None, name="FRLG gift"):
     if len(card) != gift_to_bin.WONDER_CARD_BIN_SIZE or len(script) != gift_to_bin.SCRIPT_BIN_SIZE:
         raise ValueError("FRLG import needs a 336-byte WonderCard.bin and a 1004-byte Script.bin.")
     if int.from_bytes(card[:2], "little") != crc16(card[4:]):
         raise ValueError("WonderCard.bin checksum failed.")
     if int.from_bytes(script[:2], "little") != crc16(script[4:1003]):
         raise ValueError("Script.bin checksum failed.")
-    if script[4:8] != bytes((51, 255, 255, 255)):
-        raise ValueError("Script.bin is not an unbound Mystery Gift delivery script.")
-    return gifts.Gift("frlg", name, {build: gifts.Variant({"card": bytes(card[4:]),
-                                                         "ram_script": bytes(script[8:1003])})})
+    return _gift(name, card[4:], _unbound(script), build)
+
+
+def from_wc3(raw, *, build=None, name="FRLG gift"):
+    if len(raw) == WC3_JAPANESE_SIZE:
+        raise ValueError("This .wc3 is for the Japanese games; the Switch cartridges are French and English.")
+    if len(raw) != WC3_SIZE:
+        raise ValueError(f"A .wc3 has {WC3_SIZE} bytes; this file has {len(raw)}.")
+    card, script = raw[:gift_to_bin.WONDER_CARD_BIN_SIZE], raw[WC3_SCRIPT_AT:]
+    if int.from_bytes(card[:2], "little") != crc16(card[4:]):
+        raise ValueError("The .wc3 card checksum failed.")
+    if int.from_bytes(script[:2], "little") not in (crc16(script[4:1004]), crc16(script[4:1003])):
+        raise ValueError("The .wc3 script checksum failed.")
+    return _gift(name, card[4:], _unbound(script), build)
 
 
 def from_code(code, *, build, name="Console code", expect=None, dump_size=None):

@@ -100,11 +100,12 @@ class GiftBuilder:
         self.commit(rebuild=True)
 
     def file(self) -> ft.Control:
-        exts = ("pokegift", "wc8") if self.game == "swsh" else ("pokegift",)
+        exts = ("pokegift", "wc8") if self.game == "swsh" else ("pokegift", "wc3")
         path = PathField(self.app.picker, lambda: os.path.expanduser("~"), self.value["file"], "file",
                          exts, self._file, single_line=True)
-        return ft.Column([t.text("A .pokegift someone shared" + (", or a .wc8 Wonder Card." if self.game == "swsh"
-                                                                 else "."), 12, t.MUTED), path.control],
+        return ft.Column([t.text("A .pokegift someone shared, or a " + ("Sword/Shield .wc8" if self.game == "swsh"
+                                                                       else ".wc3") + " Wonder Card.", 12, t.MUTED),
+                          path.control],
                          spacing=8)
 
     def _file(self, path) -> None:

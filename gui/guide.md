@@ -66,7 +66,8 @@ it is legal before you offer it. An illegal Pokemon can crash the other game whe
 Each Mystery Gift tool starts with three choices. Use a preset sends a ready-made gift. Build your
 own opens a form: on FireRed/LeafGreen a Wonder Card with its text, who hands it over and what it
 gives, a Wonder News, or your own ARM code; on Sword/Shield a Pokemon, an egg, items or Battle
-Points. Open a file sends a `.pokegift` someone shared, or a `.wc8` card on Sword/Shield.
+Points. Open a file sends a `.pokegift` someone shared, a `.wc3` card on FireRed/LeafGreen or a
+`.wc8` card on Sword/Shield.
 
 Customize turns a preset into a form you can change. Before you send shows what the console gets,
 when it happens and which cartridges it works on; a problem shows there in red and Start stays off.

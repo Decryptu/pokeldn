@@ -65,7 +65,7 @@ def build_parser(file_config=None, *, shared_path=None, local_path=None):
         "--gift", choices=gift_registry.GIFT_REGISTRY.live_choices,
         default=GIFT_BEAST_CUTSCENE,
         help=gift_registry.GIFT_REGISTRY.format_live_gift_help())
-    payload_group.add_argument("--gift-file", help="a complete FRLG .pokegift file")
+    payload_group.add_argument("--gift-file", help="a complete FRLG .pokegift file, or a .wc3 Wonder Card")
     parser.add_argument("--export-gift", metavar="FILE",
                         help="save a .pokegift file and exit without using the radio")
     payload_group.add_argument(
