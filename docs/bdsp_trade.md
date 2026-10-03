@@ -224,8 +224,8 @@ in its select window at box phase 5 or below, which resets through the same path
 shows `SS_box_588`. It asks for no answer (a `{1}` answer draws a `{0}` and a reset of an already
 clear round). In 26 of 26 captured trades whose client repeated its state once a second through the
 animation, a `{0}` followed one of the client's 0x21 by 25 to 300 ms, and the player saw
-`SS_box_588`; with no 0x21 after the console's SEND_READYOK, in 3 of 3 retail trades (two of them
-queued in one association), the console sent no 0x45 and showed no cancel. `TradeSelectPokeModel$$SendReturnSelectPoke` [0x01c27c20] builds it (`isReturnSelect` = not
+`SS_box_588`; with no 0x21 after the console's SEND_READYOK, in 5 of 5 retail trades in both roles
+(two queued in one association in each), the console sent no 0x45 and showed no cancel. `TradeSelectPokeModel$$SendReturnSelectPoke` [0x01c27c20] builds it (`isReturnSelect` = not
 its argument, to `tradeTargetIndex` +0x48); it has no direct `bl` caller.
 
 Trades chain in one association, each looping from the select window with no second approach or
