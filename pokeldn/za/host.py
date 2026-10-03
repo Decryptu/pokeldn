@@ -7,6 +7,7 @@ from types import SimpleNamespace
 
 from pokeldn import za
 from pokeldn.ldn import crypto, host_pia, pia_connect, reliable, show_done
+from pokeldn.app import screen
 from pokeldn.ldn.channel_table import TUPLE, decode_uint, encode_uint
 from pokeldn.za import streams
 
@@ -96,6 +97,7 @@ class HostSession:
         self.offer = self.preview = None
         if self.offers:
             self._load_offer(self.offers[0])
+            screen.offer("za", self.offer)
         # Seconds after the preview to make our pick unprompted; None waits for the console's.
         self.offer_at = offer_at
         self.host_var = host_var or int.from_bytes(os.urandom(2), "big") % 0xFFF0 + 0x0002
@@ -362,8 +364,11 @@ class HostSession:
                 self.trade_steps = 0
                 self.round = 0      # the next trade in the seat confirms under round 0
                 self.offer_sent = self.confirmed = self.committed = False
+                show_done()
+                screen.received("za", self.console_pick)
                 if self.trades < len(self.offers):
                     self._load_offer(self.offers[self.trades])
+                    screen.offer("za", self.offer)
                     # A station sends a preview each time its cursor moves to another Pokemon.
                     self._schedule(now, PREVIEW_DELAY, self.preview, "preview offer")
                     if self.offer_at is not None:
@@ -371,7 +376,7 @@ class HostSession:
                         self._schedule(now, self.offer_at, self.offer, "our offer")
                 elif self.renew_offer and self.offer:
                     self._load_offer(self.renew_offer(self.offer))
-                show_done()
+                    screen.offer("za", self.offer)
                 self.log(f"[za-host] trade_complete: the console sent its four steps (trade {self.trades})")
 
     def _load_offer(self, offer):

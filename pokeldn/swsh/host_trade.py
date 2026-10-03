@@ -9,6 +9,7 @@ import zlib
 from pokeldn.ldn import broadcast4, reliable4
 from pokeldn.swsh import trade
 from pokeldn.ldn import show_done
+from pokeldn.app import screen
 
 PORT_CONTENT = 0                      # holders, pings, box commands
 PORT_ELEMENT = 1                      # the 40000-family envelopes
@@ -404,6 +405,7 @@ class HostTrade:
             self.trades += 1
             self.log(f"[trade] the ladder reached phase 4 (trade {self.trades})")
             show_done()
+            screen.received("swsh", self.peer_pk8)
             self.goto("saving")
             return
         if self.ladder_sent < el.phase and el.peer_pair is not None:
@@ -419,6 +421,7 @@ class HostTrade:
             offer = self.next_offer(self.trades + 1)
             if offer is not None:
                 self.offer_pk8 = bytes(offer)
+        screen.offer("swsh", self.offer_pk8)
         # Contents 50 and 40 and their pings 130 and 120 are built anew for every trade
         # (0x010d4d90, 0x010da470, 0x006d46d0); content 30 and ping 110 last the session.
         self.box = {"our_offer": False, "our_accept": False, "peer_pk8": None, "peer_cmds": []}

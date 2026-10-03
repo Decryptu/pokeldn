@@ -28,6 +28,7 @@ from pokeldn.ldn.transport import board_radio, find_ap_phy
 UNRELIABLE_PROTOCOL = 0x68  # its payload is the game's live state
 from pokeldn.host_support import resolve_keys, needs_root
 from pokeldn.ldn import show_done
+from pokeldn.app import screen
 
 
 def cleanup():
@@ -157,7 +158,7 @@ async def main_async(args):
               "reserve_accepted": False, "room_done": False, "their_traner": None,
               "requests_sent": 0, "requested_answers": {}, "rel_rx": rl.Reassembler(), "their_zone": None,
               "rel_repeats": 0,
-              "their_poke": None, "their_pokes": 0, "our_pokes": [], "trades": 0, "answered_with": set(), "trade_replies": 0, "check_oks": 0,
+              "their_poke": None, "their_raw": None, "their_pokes": 0, "our_pokes": [], "trades": 0, "answered_with": set(), "trade_replies": 0, "check_oks": 0,
               "their_ready_ok": None, "ready_oks_sent": 0, "their_security_state": None,
               "our_security_state": 0, "our_next_seq": 0, "return_selects": 0,
               "departure_answers": 0, "leaving": False, "hold_scope": None}
@@ -175,6 +176,8 @@ async def main_async(args):
             offered = pokemon.read(poke)
             print(f"[cx] trade {n} offers species {offered['species']}, {offered['nickname']!r}, "
                   f"OT {offered['ot_name']!r}, IVs {offered['ivs']}, pid {offered['pid']:08x}")
+        if st["our_pokes"]:
+            screen.offer("bdsp", st["our_pokes"][0])
 
         # Read now, so a missing file fails before the console waits on us.
         answer_with = {}
@@ -1107,6 +1110,9 @@ async def main_async(args):
                     st["trades"] += 1
                     print(f"[cx]   trade {st['trades']} complete - security phase over, repeater quiet")
                     show_done()
+                    screen.received("bdsp", st["their_raw"])
+                    if st["our_pokes"]:
+                        screen.offer("bdsp", st["our_pokes"][min(st["trades"], len(st["our_pokes"]) - 1)])
                     record(rec="security_phase_end", t=now)
                 st["our_security_state"] = 0
                 st["their_security_state"] = None
@@ -1173,6 +1179,7 @@ async def main_async(args):
                 st["their_pokes"] += 1
                 out = pokemon_service.trade_path(args.trade_save_poke, st["trades"] + 1)
                 pathlib.Path(out).write_bytes(payload[room.HEADER_SIZE:])
+                st["their_raw"] = payload[room.HEADER_SIZE:]
                 print(f"[cx]   saved their Pokemon -> {out}")
                 if not st["our_pokes"]:
                     print("[cx] no --trade-template, so nothing to offer back")

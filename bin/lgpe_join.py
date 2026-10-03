@@ -42,7 +42,8 @@ from pokeldn.lgpe.session import APP_HEADER_SIZE
 from pokeldn.lgpe import pb7, reference
 from pokeldn.lgpe.leave import Leaver, unagreed_vote, host_departure
 from pokeldn.lgpe.trade import (TRADE_IN_PROGRESS, _answer_commit, _answer_offer,  # noqa: F401
-                                _note_result, _send_step, _warn_if_mid_trade, answer_console)
+                                _note_result, _send_step, _warn_if_mid_trade, answer_console,
+                                show_offer)
 
 
 def _survive_netlink_overflow():
@@ -371,6 +372,7 @@ def main(argv=None):
                    pokemon_service.prepare_file("lgpe", path, fresh=args.fresh_pid)
                    for path in args.offer or ()]
     args.offer = args.offers[0] if args.offers else None
+    show_offer(args.offer)
     args.fresh_pid = False
     if args.over_ip:
         if not args.our_mac:

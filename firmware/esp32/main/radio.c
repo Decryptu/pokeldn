@@ -18,6 +18,7 @@
 #include "freertos/task.h"
 #include "nvs_flash.h"
 
+#include "display.h"
 #include "led.h"
 #include "private_wifi.h"
 #include "usbwatch.h"
@@ -28,7 +29,7 @@
 enum {
     CMD_HELLO = 0x01, CMD_BAUD = 0x02, CMD_CHANNEL = 0x03, CMD_STA_JOIN = 0x04, CMD_STOP = 0x05,
     CMD_AP_START = 0x06, CMD_AP_KICK = 0x07, CMD_ETH_TX = 0x08, CMD_RAW_TX = 0x09,
-    CMD_SNIFF = 0x0A, CMD_STATUS = 0x0B, CMD_BENCH = 0x0C, CMD_LED = 0x0D,
+    CMD_SNIFF = 0x0A, CMD_STATUS = 0x0B, CMD_BENCH = 0x0C, CMD_LED = 0x0D, CMD_DISPLAY = 0x0E,
 };
 enum {
     MSG_INFO = 0x81, MSG_RESULT = 0x82, MSG_RX_MGMT = 0x84, MSG_RX_ETH = 0x85, MSG_LINK = 0x86,
@@ -604,6 +605,19 @@ static void led_state(led_look_t *look, uint32_t *activity, uint32_t *alarm)
              wire_rx_buffer_full();
 }
 
+static void display_state(scene_radio_t *state)
+{
+    static const uint8_t SCENES[] = {
+        [MODE_IDLE] = SCENE_IDLE, [MODE_STA_JOINING] = SCENE_JOINING, [MODE_STA] = SCENE_JOINED,
+        [MODE_AP] = SCENE_HOSTING, [MODE_SNIFF] = SCENE_SNIFFING,
+    };
+    state->mode = SCENES[atomic_load(&s_mode)];
+    const int stations = atomic_load(&s_ap_stations);
+    state->stations = stations > 0 ? (uint8_t)stations : 0;
+    state->rx = atomic_load(&s_rx_eth);
+    state->tx = atomic_load(&s_tx_acked) + atomic_load(&s_tx_unacked);
+}
+
 static void send_status(void)
 {
     char text[768];
@@ -676,7 +690,7 @@ static void send_info(void)
 static void command(uint8_t type, const uint8_t *p, size_t n)
 {
     switch (type) {
-    case CMD_HELLO: wire_credit_reset(); send_info(); break;
+    case CMD_HELLO: wire_credit_reset(); display_reset(); send_info(); break;
     case CMD_BAUD: {
         uint32_t baud;
         if (n != 4) { result(type, ESP_ERR_INVALID_SIZE); break; }
@@ -767,6 +781,9 @@ static void command(uint8_t type, const uint8_t *p, size_t n)
         result(type, led_set(p[0], p[1], period, duration) ? 0 : ESP_ERR_INVALID_ARG);
         break;
     }
+    case CMD_DISPLAY:   /* scene.h; ESP_ERR_NOT_FOUND without a screen */
+        result(type, display_command(p, n) ? 0 : ESP_ERR_NOT_FOUND);
+        break;
     default: result(type, ESP_ERR_NOT_SUPPORTED);
     }
 }
@@ -808,6 +825,7 @@ void app_main(void)
     wire_start(command);
     usbwatch_start();
     led_start(led_state, button_pressed);
+    display_start(display_state);
     send_info();
 
     int64_t last_status = 0;

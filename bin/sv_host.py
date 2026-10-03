@@ -28,6 +28,7 @@ from pokeldn.ldn.ldn_mitm_host import IpHostTransport
 from pokeldn.ldn.transport import HostTransport, board_radio, find_ap_phy
 from pokeldn.host_support import resolve_keys, needs_root
 from pokeldn.ldn import left_after_trade, show_done
+from pokeldn.app import screen
 
 PROTOCOL_NAMES = {
     0x08: "keep alive", 0x2C: "net", 0x30: "turn", 0x58: "rtt", 0x65: "sync",
@@ -374,6 +375,7 @@ def main():
                     fh.write(one.hex() + "\n")
             print(f"[sv] offer written to {args.offer_dump}")
             return 0
+        screen.offer("sv", trade_offers[0])
     elif args.offer_set or args.offer_dump:
         ap.error("--offer-set and --offer-dump need --trade-offer")
     def report_offer(ip, body, n):
@@ -872,10 +874,12 @@ def main():
                                     if st.trades > trades_done.get(src_ip, 0):
                                         trades_done[src_ip] = st.trades
                                         show_done()
+                                        screen.received("sv", (st.joiner_offers or [None])[-1])
                                         if st.done:
                                             print(f"[sv] {src_ip}: TRADE {st.trades} COMPLETE; "
                                                   f"no record left to offer")
                                         else:
+                                            screen.offer("sv", st.offer)
                                             print(f"[sv] {src_ip}: TRADE {st.trades} COMPLETE; "
                                                   f"offering the next record")
                                             if args.offer_after_open is not None \

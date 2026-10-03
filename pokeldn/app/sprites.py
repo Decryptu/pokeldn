@@ -42,10 +42,10 @@ def valid(data: bytes) -> bool:
 CHANNELS = {0: 1, 2: 3, 3: 1, 4: 2, 6: 4}
 
 
-@lru_cache(maxsize=512)
-def bounds(data: bytes) -> tuple[int, int, int, int] | None:
-    """(x0, y0, x1, y1) around a PNG's visible pixels, x1 and y1 exclusive; None for an empty image or
-    one this does not read (16-bit, interlaced). Pillow is not in the packaged app."""
+@lru_cache(maxsize=64)
+def pixels(data: bytes) -> tuple[int, int, tuple[tuple[tuple[int, int, int, int], ...], ...]] | None:
+    """(width, height, rows of (r, g, b, a)) of a PNG; None for one this does not read (16-bit,
+    interlaced). Pillow is not in the packaged app."""
     try:
         chunks, pos = {}, 8
         while pos < len(data):
@@ -61,12 +61,12 @@ def bounds(data: bytes) -> tuple[int, int, int, int] | None:
         return None
     channels = CHANNELS[color]
     step, stride = max(1, channels * depth // 8), (width * channels * depth + 7) // 8
-    trns = chunks.get(b"tRNS", b"")
+    trns, palette = chunks.get(b"tRNS", b""), chunks.get(b"PLTE", b"")
     # A pixel is clear when its alpha is 0, or it is the colour (or palette entry) tRNS marks clear.
     clear_key = struct.unpack(">H", trns[:2])[0] if color == 0 and len(trns) >= 2 else None
     rgb_key = struct.unpack(">HHH", trns[:6]) if color == 2 and len(trns) >= 6 else None
     previous = bytearray(stride)
-    xs, ys = [], []
+    rows = []
     for y in range(height):
         start = y * (stride + 1)
         kind, line = raw[start], bytearray(raw[start + 1:start + 1 + stride])
@@ -86,19 +86,39 @@ def bounds(data: bytes) -> tuple[int, int, int, int] | None:
                 pa, pb, pc = abs(p - a), abs(p - b), abs(p - c)
                 line[i] = (line[i] + (a if pa <= pb and pa <= pc else b if pb <= pc else c)) & 0xFF
         previous = line
+        row = []
         for x in range(width):
-            if color in (4, 6):
-                seen = line[x * channels + channels - 1] != 0
-            elif color == 3:
-                bit = x * depth
-                index = (line[bit // 8] >> (8 - depth - bit % 8)) & ((1 << depth) - 1)
-                seen = index >= len(trns) or trns[index] != 0
+            if color == 6:
+                row.append(tuple(line[x * 4:x * 4 + 4]))
+            elif color == 4:
+                row.append((line[x * 2],) * 3 + (line[x * 2 + 1],))
             elif color == 2:
-                seen = rgb_key is None or tuple(line[x * 3:x * 3 + 3]) != rgb_key
+                rgb = tuple(line[x * 3:x * 3 + 3])
+                row.append(rgb + (0 if rgb == rgb_key else 255,))
             else:
                 bit = x * depth
-                seen = clear_key is None or ((line[bit // 8] >> (8 - depth - bit % 8)) & ((1 << depth) - 1)) != clear_key
-            if seen:
+                value = (line[bit // 8] >> (8 - depth - bit % 8)) & ((1 << depth) - 1)
+                if color == 3:
+                    rgb = tuple(palette[value * 3:value * 3 + 3]) or (0, 0, 0)
+                    row.append(rgb + (trns[value] if value < len(trns) else 255,))
+                else:
+                    grey = value * 255 // ((1 << depth) - 1)
+                    row.append((grey, grey, grey, 0 if value == clear_key else 255))
+        rows.append(tuple(row))
+    return width, height, tuple(rows)
+
+
+@lru_cache(maxsize=512)
+def bounds(data: bytes) -> tuple[int, int, int, int] | None:
+    """(x0, y0, x1, y1) around a PNG's visible pixels, x1 and y1 exclusive; None for an empty image or
+    one this does not read."""
+    image = pixels(data)
+    if image is None:
+        return None
+    xs, ys = [], []
+    for y, row in enumerate(image[2]):
+        for x, pixel in enumerate(row):
+            if pixel[3]:
                 xs.append(x)
                 ys.append(y)
     if not xs:

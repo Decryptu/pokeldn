@@ -3,6 +3,7 @@ peer's offer and to its commit, under this station's own step counter (docs/lgpe
 game's messages on the reliable protocol")."""
 from pathlib import Path
 from pokeldn.ldn import reliable3, show_done
+from pokeldn.app import screen
 from pokeldn.lgpe import pb7
 
 # Set once the peer has offered: a run ending after this locks the retail save out of the next trade
@@ -26,6 +27,12 @@ def fresh_offer(args, tag="[lg]"):
     pid = int.from_bytes(pb7.decrypt(body)[pb7.OFF_PID:pb7.OFF_PID + 4], "little")
     print(f"{tag} offer: {args.offer} under pid {pid:08x}, written to {path}")
     args.offer = path
+
+
+def show_offer(path):
+    """The board's screen shows the record a --offer file holds; 'echo' has none of its own."""
+    if path and path != "echo":
+        screen.offer("lgpe", Path(path).read_bytes())
 
 
 def _warn_if_mid_trade(tag="[lg]"):
@@ -53,6 +60,7 @@ def _note_result(tag="[lg]", state=None):
     if state is not None:
         state["mid_trade"] = False
     show_done()
+    screen.received("lgpe", (state or {}).get("peer_offer"))
     print(f"{tag} game: *** THE RESULT *** the trade has gone through on the console")
     return True
 
@@ -94,6 +102,7 @@ def answer_console(args, state, msg, send, tag="[lg]"):
         state.pop("sent_second_commit", None)
         state.setdefault("received", getattr(args, "received", None))
         args.offer = queue[r + 1]
+        show_offer(args.offer)
         args.received = trade_path(state["received"], r + 2)
         print(f"{tag} game: trade {r + 2} offers on kind {kind}, commits on kind {kind + 1}")
         _answer_offer(args, state, msg, send, tag, kind=kind)
@@ -109,6 +118,7 @@ def _answer_offer(args, state, msg, send, tag="[lg]", kind=pb7.OFFER_MESSAGE):
     if getattr(args, "received", None):
         from pokeldn.pokemon import save_received
         save_received("lgpe", args.received, msg["body"])
+    state["peer_offer"] = msg["body"]
     plain = pb7.decrypt(msg["body"])
     peer_species = int.from_bytes(plain[8:10], "little")
     print(f"{tag} offer: the peer holds species "

@@ -1,21 +1,21 @@
-# pokeldn 0.5.1
+# pokeldn 0.6.0
 
 This desktop app trades with seven Pokemon game families on a Switch or Switch 2
 through an ESP32 radio connected by USB. Nothing is installed on the console.
 
 ## What is new
 
-- Linux: the app opens on Fedora 44 and other recent distributions under Wayland. 0.5.0 stopped at
-  `No provider of eglGetPlatformDisplayEXT found`. It also uses the window build it ships instead
-  of downloading one.
-- FireRed console code: Check offline works in the downloaded app, which now includes the
-  emulator it needs. When the ARM assembler is missing, the form shows the command that installs it
-  on your system, with a copy button and Check again.
-- Brilliant Diamond/Shining Pearl: both roles send your trainer language, as a retail console does.
-- Building a Pokemon refuses a nickname longer than the game holds instead of cutting it, and names
-  a move set no legal Pokemon knows together.
+- An optional screen on the radio board: a 0.96" 128x64 SSD1306 I2C OLED (four wires: VCC to 3V3,
+  GND, SCL, SDA). It shows the radio's traffic as bits running along a link cable, the Pokemon each
+  trade offers, a GBA-style exchange animation and the Pokemon that arrived, and the Wonder Card a
+  Mystery Gift delivers. On a classic ESP32 board SDA is D21 and SCL is D22; the pins of the other
+  boards are in the [setup documentation](https://decryptu.github.io/pokeldn/hardware_esp32.html#the-screen).
+  A board without a screen behaves as before. Sprites come from PokeAPI when sprite downloads are on.
+- FireRed/LeafGreen: walk through walls while R is held, as a hook kept in the save like the others.
+- FireRed/LeafGreen Mystery Gift: open `.wc3` Wonder Card files and choose the card's icon.
+- Every title uses one default trainer and nickname, POKELDN.
 
-The firmware is unchanged since 0.5.0.
+The firmware is 1.1.0: reflash the board from the Board page to get the screen.
 
 ## Downloads
 

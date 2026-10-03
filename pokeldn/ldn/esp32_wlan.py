@@ -526,6 +526,15 @@ def led(pattern: str, peak: int = 255, period_ms: int = 0, duration_ms: int = 0)
     return True
 
 
+def display(payload: bytes) -> bool:
+    """Queues a DISPLAY command (esp32.display_*_payload) and never waits; a board without a screen
+    answers ESP_ERR_NOT_FOUND. False when the process has no board."""
+    if _radio is None:
+        return False
+    _radio.send(esp32.CMD_DISPLAY, payload)
+    return True
+
+
 def show_done() -> bool:
     """Flashes the board's LED for a completed trade or delivery (docs/hardware_esp32.md)."""
     return led(*DONE_LOOK)

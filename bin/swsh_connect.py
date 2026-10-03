@@ -26,6 +26,7 @@ from pokeldn import gen8
 from pokeldn.swsh import pokemon as swsh_pokemon
 from pokeldn.swsh import trade_payload
 from pokeldn.ldn import show_done
+from pokeldn.app import screen
 
 # Only a matching search's network takes a seat; its Y-Comm beacon (65535) never reached the trade
 # box in 16 of 16 joins [docs/swsh_session.md, How a searching Sword finds a partner].
@@ -270,6 +271,7 @@ async def main_async(args):
             for envelope in per_trade:
                 st["rpc_pair_delta"].pop(envelope, None)
             ours = swsh_pokemon.read(st["our_pk8"])
+            screen.offer("swsh", st["our_pk8"])
             print(f"\n[tx] *** TRADE {n}: THE CONSOLE OFFERS AGAIN *** we offer species "
                   f"{ours['species']} {ours['nickname']!r} level {ours['level']}")
             record(rec="next_trade", trade=n, our_pk8=st["our_pk8"].hex())
@@ -351,6 +353,7 @@ async def main_async(args):
                             if not st["ladder_finished"]:
                                 st["trades"] += 1
                                 show_done()
+                                screen.received("swsh", st["offered_pk8"])
                                 print(f"\n[rx] *** THE LADDER IS FINISHED - phase {step[0]} is the "
                                       f"teardown rung, THE ABORT STANDS DOWN *** "
                                       f"{member['body'].hex()} at t={now:.2f}")
@@ -1305,6 +1308,7 @@ async def main_async(args):
                 raw = validated(raw)
                 payload = payload[:at] + raw + payload[at + swsh_pokemon.SIZE_PARTY:]
                 st["our_pk8"] = st["first_pk8"] = raw
+                screen.offer("swsh", raw)
                 ours = swsh_pokemon.read(st["our_pk8"])
                 print(f"[tx] we will offer slot {args.offer_slot}: species {ours['species']} "
                       f"{ours['nickname']!r} level {ours['level']}")

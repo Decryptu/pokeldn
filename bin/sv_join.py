@@ -38,6 +38,7 @@ from pokeldn.ldn import game_channel
 from pokeldn.ldn.transport import board_radio, find_ap_phy
 from pokeldn.host_support import resolve_keys, needs_root
 from pokeldn.ldn import show_done, trades_done
+from pokeldn.app import screen
 
 PROTO_NET = 0x2C
 PROTO_RTT = 0x58
@@ -703,6 +704,7 @@ async def run_session(args, keys, host_ip, host_mac, our_ip, our_mac, record):
             confirm_delay=args.confirm_delay, commit_delay=args.commit_delay)
         for n, one in enumerate(stage.offers, 1):
             print(f"[sv] offer {n} of {len(stage.offers)}: {describe_offer(one)}")
+        screen.offer("sv", stage.offer)
     pending_trade = []          # (due, port, payload) the trade stage asked to send
 
     def schedule_trade(delay, port, payload):
@@ -1183,10 +1185,12 @@ async def run_session(args, keys, host_ip, host_mac, our_ip, our_mac, record):
                         if stage.trades > trades_done:
                             trades_done = stage.trades
                             show_done()
+                            screen.received("sv", (stage.host_offers or [None])[-1])
                             record(rec="trade_done", n=trades_done, t=time.time())
                             if stage.done:
                                 print(f"[sv] TRADE {trades_done} COMPLETE; no record left to offer")
                             else:
+                                screen.offer("sv", stage.offer)
                                 print(f"[sv] TRADE {trades_done} COMPLETE; offering "
                                       f"{describe_offer(stage.offer)} next")
                                 if args.offer_after_open is not None:

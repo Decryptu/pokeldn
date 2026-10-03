@@ -19,6 +19,7 @@ from pokeldn.ldn.pia5 import (PiaHeader5, build_message, ciphertext, decrypt_pay
                               encrypt_payload, gcm_iv, is_pia5, ldn_nonce_crc, pad_payload,
                               parse_messages)
 from pokeldn.ldn import show_done
+from pokeldn.app import screen
 
 SCENE_UNION_ROOM = 0x1100
 SCENE_UNION_ROOM_PASSWORD = 0x1400    # the room entered "avec un mot de passe"
@@ -542,7 +543,10 @@ class TradePartner:
         self.their_security = None
         self.next_security = 0.0
         self.their_pokes = 0
+        self.their_poke = None             # the record the console last offered, what a trade delivers
         self.trades = 0
+        if self.offer:
+            screen.offer("bdsp", self.offer)
 
     @property
     def offer(self):
@@ -580,6 +584,7 @@ class TradePartner:
             self.their_pokes += 1
             # A reselection within one trade replaces that trade's file.
             self.save_theirs(self.trades + 1, body)
+            self.their_poke = body
             self.record(rec="their_poke", t=now, n=self.their_pokes)
             return [room.build_trade_poke(self.offer)]
         if data_id == room.TRADE_POKE_CHECK_OK:
@@ -601,6 +606,9 @@ class TradePartner:
                 self.trades += 1
                 self.record(rec="trade_complete", t=now, trades=self.trades)
                 show_done()
+                screen.received("bdsp", self.their_poke)
+                if self.offer:
+                    screen.offer("bdsp", self.offer)
             self.our_security, self.their_security = 0, None
             return []
         return []

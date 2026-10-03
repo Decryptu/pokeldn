@@ -23,6 +23,7 @@ from pokeldn import config
 from pokeldn import gen8, pla
 from pokeldn.ldn import left_after_trade, pia6, pia_connect, reliable5, rtt_protocol, show_done
 from pokeldn.ldn import channel_table
+from pokeldn.app import screen
 from pokeldn.pla import data_exchange, game_channel, trade_box
 from pokeldn.pla import pokemon as pla_pokemon
 from pokeldn.ldn.ldn_mitm_host import IpHostTransport
@@ -372,6 +373,7 @@ def main():
     if args.trade_box:
         for n, state in enumerate(box_states, start=1):
             print(f"[pla] trade {n} offers {pla_pokemon.describe(pla_pokemon.decrypt(state['record']))}")
+        screen.offer("pla", box_states[0]["record"])
     if args.trade_box_collect:
         os.makedirs(os.path.expanduser(args.trade_box_collect), exist_ok=True)
     collected = set()
@@ -708,7 +710,10 @@ def main():
                                         # the phase key closes once the trade is written
                                         if not opened and ckey == trade_box.PHASE_KEY:
                                             show_done()
+                                            screen.received("pla", console_offer.get(src_ip))
                                             trades[0] += 1
+                                            if args.trade_box:
+                                                screen.offer("pla", offer_record())
                                             print(f"[pla] {src_ip}: trade {trades[0]} complete, the "
                                                   "phase key closed")
                                             if args.offer_out and src_ip in console_offer:

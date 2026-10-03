@@ -3,6 +3,7 @@
 import os
 import time
 
+from pokeldn.app import screen
 from pokeldn.frlg.save import mon as monmod
 
 
@@ -49,6 +50,20 @@ def load_party(paths, log=lambda *parts: None):
     for index, pokemon in enumerate(party):
         log(f"  party slot {index}: {pokemon.describe()}")
     return party
+
+
+def show_offer(engine):
+    """The party entry this round offers, on the board's screen (docs/hardware_esp32.md)."""
+    if engine.round < engine.trades:
+        offered = engine.party[engine.offered_slots[engine.round]]
+        screen.offer("frlg", monmod.to_decrypted(offered.raw))
+
+
+def show_received(engine):
+    """The Pokemon the last commit brought, then the next round's offer."""
+    mons = engine.received_mons
+    screen.received("frlg", monmod.to_decrypted(mons[-1].raw) if mons else None)
+    show_offer(engine)
 
 
 def received_paths(mons, output_path, output_format, trades):

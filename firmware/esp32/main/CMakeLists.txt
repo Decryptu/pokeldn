@@ -8,9 +8,9 @@ else()
 endif()
 
 idf_component_register(
-    SRCS "radio.c" "wire.c" "led.c" "usbwatch.c"
+    SRCS "radio.c" "wire.c" "led.c" "usbwatch.c" "display.c" "scene.c" "screen.c"
     INCLUDE_DIRS "."
-    PRIV_REQUIRES esp_app_format esp_wifi wpa_supplicant ${wire_driver} esp_driver_ledc esp_driver_gpio esp_timer nvs_flash esp_event)
+    PRIV_REQUIRES esp_app_format esp_wifi wpa_supplicant ${wire_driver} esp_driver_ledc esp_driver_gpio esp_driver_i2c esp_timer nvs_flash esp_event)
 
 # A diagnostic build: POKELDN_USB_BEACON=1 in the environment of idf.py (usbwatch.c).
 if(DEFINED ENV{POKELDN_USB_BEACON})

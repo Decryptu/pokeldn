@@ -19,6 +19,7 @@ import time
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
 from pokeldn import config, gifts, pokemon
+from pokeldn.app import screen
 from pokeldn.host_support import write_file
 from pokeldn.ldn import transport
 from pokeldn.ldn.transport import HostTransport
@@ -55,6 +56,17 @@ def _base_record(args):
         moves=(args.move1, args.move2, args.move3, args.move4),
         nickname=args.nickname, ot=args.ot, card_id=args.card_id,
         region_mask=args.region_mask, ribbons=args.ribbon or (), **fields)
+
+
+def show_card(args, record):
+    """The card on the board's screen: the gift file's name, or the Pokemon this run built, drawn
+    when the record carries one (kind 1)."""
+    off, fmt = wc8.POKEMON["species"]
+    species = (struct.unpack_from("<" + fmt, record, off)[0]
+               if record[wc8.GIFT_KIND_AT] == wc8.GIFT_KIND_POKEMON else None)
+    line = (gifts.load(args.record, game="swsh").name if args.record else
+            args.nickname or (f"Pokemon #{species}" if species else ""))
+    screen.gift("Mystery Gift", line, species=species)
 
 
 def validate(record, image):
@@ -165,6 +177,7 @@ def main(argv=None):
     host = make_host(args, fragments, os.path.expanduser(args.keys or machine.keys_path), phy,
                      machine)
     host.start()  # raises when the AP does not come up
+    show_card(args, record)
     print(f"advertising comm id {COMM_ID:#018x}, scene {args.scene_id}, protocol {args.protocol}, "
           f"walking {len(fragments)} fragments every {args.dwell}s")
     i = 0

@@ -24,7 +24,8 @@ from pokeldn import pokemon as pokemon_service
 from pokeldn.ldn import clone, pia3, pia4, reliable3, station4, station9, sync_clock
 from pokeldn.lgpe import pb7
 from pokeldn.lgpe.trade import (TRADE_IN_PROGRESS, _answer_offer, _send_step,
-                                _warn_if_mid_trade)
+                                _warn_if_mid_trade, show_offer)
+from pokeldn.app import screen
 from pokeldn.ldn import local_protocol as lp
 from pokeldn.ldn import mesh_protocol as mp
 from pokeldn.ldn import rtt_protocol as rtt
@@ -178,6 +179,7 @@ def main(argv=None):
             if not pb7.valid(fh.read()):
                 print(f"[lgh] next offer {path} is not a valid {pb7.BOX_SIZE}-byte box structure")
                 return 2
+    show_offer(args.offer)
     if needs_root():
         print("[lgh] must run as root (LDN needs the raw radio)"); return 1
     phy = find_ap_phy(log=print) if args.phy == "auto" else args.phy
@@ -557,6 +559,7 @@ class Session:
     def next_round(self, result_step):
         self.round += 1
         self.args.offer = self.args.next_offer[self.round - 1]
+        show_offer(self.args.offer)
         self.args.received = pokemon_service.trade_path(self.received, self.round + 1)
         self.trade["answered_step"] = result_step
         self.commit_clone = None
@@ -750,8 +753,10 @@ class Session:
             self.led = False
             self.trade["answered_step"] = max(self.trade.get("answered_step", 0), msg["step"])
             self.trade["done"] = False
-            if self.args.received and pb7.valid(msg["body"]):
-                pokemon_service.save_received("lgpe", self.args.received, msg["body"])
+            if pb7.valid(msg["body"]):
+                self.trade["peer_offer"] = msg["body"]
+                if self.args.received:
+                    pokemon_service.save_received("lgpe", self.args.received, msg["body"])
             print(f"[lgh] offer: the peer answered ours under step {msg['step']}")
             if self.args.lead is not None:
                 self.lead_vote_at = time.monotonic() + self.args.lead
@@ -778,6 +783,7 @@ class Session:
                 return
             self.trade["done"] = True
             show_done()
+            screen.received("lgpe", self.trade.get("peer_offer"))
             TRADE_IN_PROGRESS["offer"] = TRADE_IN_PROGRESS["commit"] = False
             print("[lgh] game: *** THE RESULT *** the trade has gone through on the console")
             self.send_result()

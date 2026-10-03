@@ -30,6 +30,7 @@ from pokeldn.ldn.transport import HostTransport, board_radio, find_ap_phy
 from pokeldn.swsh import beacon, host_trade, league_card, pokemon as swsh_pokemon, trade_payload
 from pokeldn.ldn.pia5 import password_crc
 from pokeldn.swsh.session import COMM_ID, PASSPHRASE, session_keys
+from pokeldn.app import screen
 
 SCENE_ID = 60001  # a retail Sword's Link Trade network
 APP_VERSION = 7
@@ -221,8 +222,10 @@ def main(argv=None):
         return args.offer_file[min(n, len(args.offer_file) - 1)] if args.offer_file else None
 
     def build_snapshot(source, n):
-        return prepare_snapshot(source, args, app_data, offer_file(n),
-                                renew=args.renew_offer and n >= len(args.offer_file))
+        snapshot, offer = prepare_snapshot(source, args, app_data, offer_file(n),
+                                           renew=args.renew_offer and n >= len(args.offer_file))
+        screen.offer("swsh", offer)
+        return snapshot, offer
 
     class Net:
         application_data = app_data

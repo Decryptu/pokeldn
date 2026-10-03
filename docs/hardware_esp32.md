@@ -181,6 +181,7 @@ the ROM's boot text included, fails the checksum and is discarded.
 | `0x0B` STATUS | host | none; answered by STATUS |
 | `0x0C` BENCH | host | u32 bytes, u16 message size (8 to 1600); RESULT, then BENCH messages as fast as the UART takes them |
 | `0x0D` LED | host | u8 pattern, u8 peak brightness, u16 period ms (0: the pattern's default), u16 duration ms (0: until the next LED); RESULT. Older firmware answers `0x106` |
+| `0x0E` DISPLAY | host | a screen command ([The screen](#the-screen)); RESULT `0x105` (`ESP_ERR_NOT_FOUND`) without a screen, `0x106` from older firmware |
 | `0x81` INFO | board | u8 protocol version (1), 6 station MAC, 6 AP MAC, u8 chip revision, text |
 | `0x82` RESULT | board | u8 command, i32 `esp_err_t` |
 | `0x83` LOG | board | text |
@@ -538,6 +539,63 @@ A failed join (LINK `0xFFFF`, `0xFFFE`), a refused key, a dropped board-to-host 
 command plays flash3 for 1.5 s. A completed trade or Mystery Gift delivery ramps up to full over
 800 ms, held until 3 s (`pokeldn.ldn.show_done`); the Sword gift host, a beacon with no read-back, has
 no such moment. `tools/ldn/esp32_led.py --port PORT PATTERN` sets a look; `--demo` shows each.
+
+## The screen
+
+An SSD1306 128x64 one-bit OLED on I2C is optional. At boot the firmware probes 0x3C, then 0x3D;
+when neither answers it frees the pins and starts nothing. With a screen, a priority-1 task on the
+last core draws a frame every 50 ms and sends it at 400 kHz (1031 bytes, about 23 ms).
+
+| target | SDA | SCL | board pins |
+|---|---|---|---|
+| ESP32 | GPIO21 | GPIO22 | DevKit V1 D21, D22 |
+| ESP32-S3 | GPIO8 | GPIO9 | |
+| ESP32-C3 | GPIO6 | GPIO7 | XIAO D4, D5 |
+| ESP32-C6 | GPIO22 | GPIO23 | XIAO D4, D5 |
+
+VCC goes to 3V3 and GND to GND. The common four-pin module (GND, VCC, SCL, SDA) carries its own
+3.3 V regulator and 4.7 k pull-ups on SCL and SDA; its address resistor selects 0x3C (silkscreen
+0x78) or 0x3D (0x7A). Its panel maps segment 127 to column 1 and COM0 to row 63, so the firmware sets
+segment remap (`A1`), reversed COM scan (`C8`) and alternative COM pins (`DA 12`).
+
+Without host commands the screen shows the radio's state: idle, joining or hosting (rings around a
+Poke Ball), and linked, where a cable between a console and a Poke Ball carries one digit per frame
+the radio counted in each direction, at most one per 70 ms, with the totals below.
+
+DISPLAY (`0x0E`) carries one op:
+
+| op | layout |
+|---|---|
+| `0` SHOW | u8 show, u16 hold s (0: until the next show), title, NUL, line, NUL; each text at most 21 ASCII characters |
+| `1` SPRITE | u8 slot (0 ours, 1 theirs, 2 gift), u8 width <= 64, u8 height <= 64, rows of `(width + 7) / 8` bytes, MSB first; width 0 empties the slot |
+
+| show | id | drawn |
+|---|---|---|
+| auto | 0 | the radio's state |
+| trade | 1 | slot 0 on the right half, "offering" and the line on the left, the cable below |
+| traded | 2 | slot 0 flashes and returns to its ball, the ball leaves, packets cross, a ball arrives and opens (4.7 s); then slot 1 with "you got" and the line |
+| gift | 3 | a Wonder Card holding slot 2 (a gift box when empty), the line beside it |
+| gifted | 4 | the card leaves to the right, then "delivered!" |
+
+A trade or gift show sent during a traded or gifted hold waits for the hold to end. A trade or gift
+show ends when the radio returns to idle after being active; one sent before the radio starts stays.
+HELLO resets the screen to the radio's state with empty slots.
+
+`pokeldn.app.screen` is the launchers' side: `offer`, `received`, `gift` and `delivered` return at
+once and run in order on one thread. A record goes through the PKHeX helper for its national species
+and name; the sprite is PokeAPI's FireRed/LeafGreen one (64x64) up to species 386 and the default one
+after, through the app's sprite cache and its download setting. A sprite becomes one bit per pixel:
+
+1. Cropped to its visible pixels; larger than 64 (40 on a card) it is scaled down by area, each
+   output pixel taking the darker third of its box.
+2. Lit where its luminance exceeds a cutoff: the luminance at the darkest eighth of its visible pixels
+   plus 6, clamped to 20..60, so the outline is dark and a dark Pokemon's body stays lit.
+3. Dark where a lit pixel is more than 40 below and under 0.72 of its brightest four-neighbour: the
+   inner lines.
+
+`tools/ldn/esp32_screen.py --port PORT` plays a trade and a gift on a board, no radio traffic.
+`tools/ldn/screen_preview.py OUT.gif` builds `scene.c` and `screen.c` for the host and renders a
+scripted session offline.
 
 ## Building and flashing
 

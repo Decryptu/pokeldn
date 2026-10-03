@@ -35,6 +35,7 @@ from pokeldn.ldn import crypto, host_pia, ldn_mitm, pia_connect, reliable
 from pokeldn.ldn.transport import board_radio, find_ap_phy
 from pokeldn.host_support import resolve_keys, needs_root
 from pokeldn.ldn import show_done
+from pokeldn.app import screen
 
 # Ours until the host names one in the footer of its first mesh-addressed packet.
 OUR_VAR = 0xC493
@@ -137,8 +138,10 @@ class GameStreams:
         paths = args.trade_offer or []
         self.offers = [Path(p).read_bytes() for p in ([paths] if isinstance(paths, str) else paths)]
         self.offer = self.preview = None
+        self.received = None          # the console's pick, the record a trade delivers
         if self.offers:
             self._load_offer(self.offers[0], renew=getattr(args, "fresh_pid", False))
+            screen.offer("za", self.offer)
         self.seen = {}
         self.dst_var = 0
         self.src_var = 0
@@ -227,6 +230,7 @@ class GameStreams:
                 self.traded_at = elapsed
                 self.trades += 1
                 show_done()
+                screen.received("za", self.received)
                 print(f"[za] trade_complete at {elapsed:.2f}s (trade {self.trades})")
                 self._next_trade(elapsed)
 
@@ -237,9 +241,11 @@ class GameStreams:
         self.picked = False
         if self.trades < len(self.offers):
             self._load_offer(self.offers[self.trades])
+            screen.offer("za", self.offer)
             self.scheduled.append((elapsed + za_host.PREVIEW_DELAY, self.preview))
         elif self.offer and getattr(self.args, "renew_offer", False):
             self._load_offer(self.offer, renew=True)
+            screen.offer("za", self.offer)
 
     def _answer_trade(self, inner, elapsed):
         """A console sends a preview each time its cursor moves, so the pick is keyed on the mark.
@@ -253,6 +259,8 @@ class GameStreams:
             print(f"[za] the console cancelled; round {self.round}")
         elif head == "0101":
             self.host_offers += 1
+            if inner[-1:] == bytes([OFFER_PICK]):
+                self.received = bytes(inner)
             # A preview is the console's cursor on its box; only its pick is what it trades.
             if (getattr(self.args, "offer_out", None) and len(inner) == za.pokemon.OFFER_SIZE
                     and inner[-1] == OFFER_PICK):

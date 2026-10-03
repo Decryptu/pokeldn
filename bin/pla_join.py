@@ -38,6 +38,7 @@ from pokeldn.ldn import ldn_mitm, pia6
 from pokeldn.ldn.transport import board_radio, find_ap_phy
 from pokeldn.pla import data_exchange, joiner, trade_box
 from pokeldn.pla import pokemon as pla_pokemon
+from pokeldn.app import screen
 
 STALE_VIFS = ["ldn", "ldn-mon", "ldn-tap", "ldnclient"]
 
@@ -460,6 +461,7 @@ def main(argv=None):
                                           name=args.player_name)
     offer = pokemon_service.validate("pla", build_offer(args, exchange))
     print(f"[pla] offering {trade_box.describe(offer)}")
+    screen.offer("pla", offer)
     cap = open_output(args.capture, "w") if args.capture else None
 
     def record(**row):

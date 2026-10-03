@@ -27,6 +27,7 @@ CMD_SNIFF = 0x0A
 CMD_STATUS = 0x0B
 CMD_BENCH = 0x0C
 CMD_LED = 0x0D
+CMD_DISPLAY = 0x0E
 
 # The LED's patterns (firmware/esp32/main/led.h); "auto" hands the LED back to the radio's state.
 LED_PATTERNS = ("auto", "off", "on", "breathe", "blink", "flash3", "ramp-up", "ramp-down", "pulse")
@@ -34,6 +35,31 @@ LED_PATTERNS = ("auto", "off", "on", "breathe", "blink", "flash3", "ramp-up", "r
 
 def led_payload(pattern: str, peak: int = 255, period_ms: int = 0, duration_ms: int = 0) -> bytes:
     return struct.pack("<BBHH", LED_PATTERNS.index(pattern), peak, period_ms, duration_ms)
+
+
+# The screen's shows and sprite slots (firmware/esp32/main/scene.h).
+DISPLAY_SHOWS = ("auto", "trade", "traded", "gift", "gifted")
+DISPLAY_SLOTS = ("ours", "theirs", "gift")
+SPRITE_MAX = (64, 64)
+DISPLAY_TEXT = 21
+
+
+def display_show_payload(show: str, hold_s: int = 0, title: str = "", line: str = "") -> bytes:
+    """SHOW: the scene, how long it holds (0: until the next show) and two lines of ASCII text."""
+    text = b"".join(t.encode("ascii", "replace")[:DISPLAY_TEXT] + b"\0" for t in (title, line))
+    return struct.pack("<BBH", 0, DISPLAY_SHOWS.index(show), hold_s) + text
+
+
+def display_sprite_payload(slot: str, rows: list[list[bool]]) -> bytes:
+    """SPRITE: one-bit rows, MSB first, each padded to whole bytes."""
+    height, width = len(rows), len(rows[0]) if rows else 0
+    if width > SPRITE_MAX[0] or height > SPRITE_MAX[1]:
+        raise ValueError(f"a {width}x{height} sprite is larger than {SPRITE_MAX}")
+    bits = bytearray()
+    for row in rows:
+        for start in range(0, width, 8):
+            bits.append(sum(0x80 >> i for i, on in enumerate(row[start:start + 8]) if on))
+    return struct.pack("<BBBB", 1, DISPLAY_SLOTS.index(slot), width, height) + bytes(bits)
 
 MSG_INFO = 0x81
 MSG_RESULT = 0x82

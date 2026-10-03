@@ -9,6 +9,7 @@ from pokeldn.ldn import pia6, pia_connect, reliable5
 from pokeldn.ldn import channel_table
 from pokeldn.pla import data_exchange, game_channel, trade_box
 from pokeldn.ldn import show_done
+from pokeldn.app import screen
 
 PROTO_NET = 0x2C
 PROTO_RTT = 0x58
@@ -419,6 +420,7 @@ class JoinerSession:
         elif self.host_phase >= PHASES[-1]:
             self.phase_closed = self.traded = True
             show_done()
+            screen.received("pla", self.received)
             out.append(self._announce(trade_box.PHASE_KEY, opened=False))
             self.log("[pla] *** the host answered every phase: the trade is carried out; "
                      "the phase key closed ***")

@@ -20,6 +20,7 @@ from pokeldn.frlg.gift.mg_server import (
     BUFFER_EXPECT_TRAINER_ID, SERVER_RESULT_NAMES, SVR_MSG_CARD_SENT, SVR_MSG_GIFT_SENT_1,
     SVR_MSG_NEWS_SENT, SVR_MSG_STAMP_SENT)
 from pokeldn.ldn import show_done
+from pokeldn.app import screen
 
 MysteryGiftPayload = configmod.MysteryGiftPayload
 MysteryGiftDistribution = configmod.MysteryGiftDistribution
@@ -188,6 +189,17 @@ class MysteryGiftHostApplication(HostApplication):
         return ("Hosting Mystery Gift. On the Switch choose "
                 "Mystery Gift -> Wonder Cards -> Friend.")
 
+    def _screen_card(self):
+        """-> (header, line, species) for the board's screen. The card's icon is a Gen-3 internal
+        species, equal to the national number only up to 251 [wonder_card.py]."""
+        icon = int.from_bytes(self.card[2:4], "little")
+        species = icon if 1 <= icon <= 251 else None
+        return "Mystery Gift", charmap.decode(self.card[10:50]).strip(), species
+
+    def _show_screen(self):
+        title, line, species = self._screen_card()
+        screen.gift(title, line, species=species)
+
     def _rfu_ready_message(self):
         return ("RFU NI handshake complete; parent UNI and Mystery Gift "
                 "LinkPlayer startup are active.")
@@ -255,6 +267,8 @@ class MysteryGiftHostApplication(HostApplication):
             self.delivery_succeeded = False
         if self.delivery_succeeded:
             show_done("delivery")
+            screen.delivered(self._screen_card()[1])
+            screen.drain()
             print(self._success_message(engine.result))
         elif (engine is not None and self.distribution is not None
               and self.distribution.has_mevent and engine.server.mevent_status is not None):
@@ -332,6 +346,9 @@ class WonderNewsHostApplication(MysteryGiftHostApplication):
     def _hosting_instructions(self):
         return ("Hosting Wonder News. On the Switch choose "
                 "Mystery Gift -> Wonder News -> Friend.")
+
+    def _screen_card(self):
+        return "Wonder News", wonder_news.parse(self.distribution.news)["title"].strip(), None
 
     def _success_message(self, result):
         return ("Wonder News delivered. On the Switch it is under Mystery Gift -> Wonder News; "
@@ -443,6 +460,9 @@ class BufferScriptHostApplication(MysteryGiftHostApplication):
     def _hosting_instructions(self):
         return ("Hosting a buffer script. On the Switch choose "
                 "Mystery Gift -> Wonder Cards -> Friend.")
+
+    def _screen_card(self):
+        return "Mystery Gift", self.config.payload.script, None
 
     def run(self):
         joined = super().run()
