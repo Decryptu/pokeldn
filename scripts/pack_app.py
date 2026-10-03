@@ -46,6 +46,21 @@ def platform_excludes():
     return excluded
 
 
+def clear_cfg(exe: Path) -> None:
+    """PyInstaller's Windows bootloader enables Control Flow Guard; Unicorn faults in a CFG process
+    (unicorn-engine/unicorn#2281), python.exe has it off. Clear GUARD_CF in DllCharacteristics."""
+    with exe.open("r+b") as f:
+        f.seek(0x3C)
+        pe = int.from_bytes(f.read(4), "little")
+        f.seek(pe)
+        assert f.read(4) == b"PE\0\0", exe
+        field = pe + 24 + 70
+        f.seek(field)
+        flags = int.from_bytes(f.read(2), "little")
+        f.seek(field)
+        f.write((flags & ~0x4000).to_bytes(2, "little"))
+
+
 def main() -> int:
     firmware = (FIRMWARE, FIRMWARE_S3, FIRMWARE_C3, FIRMWARE_C6)
     missing = [str(path) for path in firmware if not path.is_file()]
@@ -114,6 +129,8 @@ def main() -> int:
             with info_path.open("wb") as dest:
                 plistlib.dump(info, dest)
             subprocess.run(["codesign", "--force", "--deep", "--sign", "-", str(expected)], check=True)
+        if result == 0 and sys.platform == "win32":
+            clear_cfg(expected)
         if result == 0 and sys.platform.startswith("linux"):
             (ROOT / "dist" / f"{APP_ID}.desktop").unlink(missing_ok=True)
         return result
