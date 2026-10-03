@@ -312,9 +312,10 @@ entered with that password. See [Brilliant Diamond and Shining Pearl](docs/bdsp.
 
 ### Legends Arceus
 
-A console hosting a trade hands the host role to the station that joins ([Legends Arceus](docs/pla.md)).
-`bin/pla_host.py` hosts and the console joins by link code; `bin/pla_join.py` joins the console's
-search and takes the host role it is handed.
+A console hosting a trade runs it with the station that joins, or hands that station the host role
+when the join lands late ([Legends Arceus](docs/pla.md)). `bin/pla_host.py` hosts and the console
+joins by link code; `bin/pla_join.py` joins the console's search, trades one repeated `--offer` per
+trade on the seat, and takes the host role when it is handed.
 
 ```bash
 ./.venv/bin/python bin/pla_host.py --code 00000000 --channel 6 --seconds 1800 \
