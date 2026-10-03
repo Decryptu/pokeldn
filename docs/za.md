@@ -136,6 +136,16 @@ Reliable message and no game message (`bin/za_join.py` without `--game`) kept a 
 for 150 s, until it left: the console sent about 32 packets a second throughout, answered the leave,
 then showed "no partner found".
 
+A join whose protocol count differs from the host's is dropped by the type-0 handler `0x254a030`
+(`0x254a090`, against `0x256c9f0`) with no answer and no station; a wrong protocol version or
+application version is answered with a 37-byte type 2, result 3 (`0x254a2e4`) or 4 (`0x254a290`).
+The host's WaitMember draws 3000 ± 999 ms (the random u64 is read signed). On its expiry, with the
+joiner on the Net layer and not in the session, LeaveMeshWithHostMigration polls 8000 ms for a next
+host (`0x255a520`), then sends Net 0x11 sequence 3 and Net 0x40. Ten seats of a retail search by a
+joiner listing nine of the ten protocols drew no Session message; the first Net 0x40 came 8.74 to
+11.01 s after the seat, within the predicted 8.05 to 12.1 s, and the console opened a new network
+under a new SSID each time, still searching. The 8.7 s measured earlier is this path.
+
 The same joiner sending no RTT answer, and so nothing at all after its type 6 at 1.16 s, is kicked
 (The kick): Session type 13 from 14.24 s, nine of them about 0.5 s apart, then Net 0x11 sequence 3
 every 0.5 s from 19.31 s, Net 0x40 every 0.3 s from 23.31 s, the last packet at 25.13 s, then "no
@@ -927,13 +937,6 @@ is no local-wireless path.
   language-select table `[x0+0x50]` holds (breakpoint `0x16734c0`, read at `0x2c204ac`).
 - What writes the exchange worker's error word +0x10, which selects own state 7 (a watchpoint during
   an emulated trade cancelled after the steps start).
-- Which event the 8.7 s after a seat with the GBA protocol list timed. The type-0 handler `0x254a030`
-  drops a join whose protocol count differs from the host's (`0x254a090`, against `0x256c9f0`)
-  with no answer and no station; a wrong protocol version or application version is answered with
-  a 37-byte type 2, result 3 (`0x254a2e4`) or 4 (`0x254a290`). WaitMember draws 3000 ± 999 ms (the
-  random u64 is read signed). With a station on the Net layer but not in the session,
-  LeaveMeshWithHostMigration polls 8000 ms for a next host (`0x255a520`) before the Net 0x11
-  sequence 3, which predicts it 8.05 to 12.1 s after the seat; a first Net 0x40 at 8.7 s would not fit.
 - Whether an optional timed close (`--hold-after-trade`) can leave the console without an error
   while it is still seated. The default host waits for the console's departure ([Hosting](#hosting)).
   A leaving retail host sends the type 9 first ([A host leaving](#a-host-leaving)); the timed close
