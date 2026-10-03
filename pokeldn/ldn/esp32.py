@@ -403,8 +403,10 @@ class Radio:
                 msg_type, payload, frame = self._out.popleft()
                 self._writing = True
                 last, since = self._credited, time.monotonic()
+                # A HELLO restarts the board's count, so it waits until nothing is in flight.
                 while (self._flow and not self._closed
-                       and self._written - self._credited + len(frame) > FLOW_WINDOW):
+                       and (self._written > self._credited if msg_type == CMD_HELLO
+                            else self._written - self._credited + len(frame) > FLOW_WINDOW)):
                     quiet = time.monotonic() - since
                     if self._credited != last:
                         last, since = self._credited, time.monotonic()
@@ -428,9 +430,9 @@ class Radio:
             with self._out_cv:
                 self._written += len(frame)
                 if msg_type == CMD_HELLO:
-                    # The board restarts its count after a HELLO's delimiter; so does the host.
+                    # The board restarts its count after a HELLO's delimiter and answers CREDIT 0
+                    # (firmware wire_credit_reset); the window stays shut across it.
                     self._written = self._credited = self._lost = 0
-                    self._flow = False
                 self._writing = False
                 self._out_cv.notify_all()
 

@@ -81,7 +81,7 @@ POKEMON = {
     "relearn3": (0x23C, "H"), "relearn4": (0x23E, "H"),
     "species": (0x240, "H"),
     "form": (0x242, "B"),
-    "gender": (0x243, "B"),            # 0 male, 1 female, 2 random
+    "gender": (0x243, "B"),            # 0 male, 1 female, 2 genderless, 3 random
     "level": (0x244, "B"),             # zero makes the game roll one
     "egg": (0x245, "B"),
     "nature": (0x246, "B"),
@@ -95,6 +95,9 @@ POKEMON = {
     "ev_hp": (0x273, "B"), "ev_atk": (0x274, "B"), "ev_def": (0x275, "B"),
     "ev_spe": (0x276, "B"), "ev_spa": (0x277, "B"), "ev_spd": (0x278, "B"),
 }
+# What the builder 0x010b6110 rolls; zero is male, Hardy, slot 1, IV 0 (docs/swsh_gift.md)
+ROLLED = {"gender": 3, "nature": 0xFF, "ability_type": 3,
+          **{f"iv_{s}": 0xFF for s in ("hp", "atk", "def", "spe", "spa", "spd")}}
 RIBBONS_AT, RIBBONS_LEN = 0x24C, 0x20     # ribbon indices; 0xFF ends the list
 NICKNAMES = 0x030       # 9 entries of 0x1C: 0x1A bytes of UTF-16, then a language byte at +0x1A
 OT_NAMES = 0x12C        # 9 entries of 0x1C: 0x1A bytes of UTF-16
@@ -119,7 +122,7 @@ def pokemon_card(species, level=5, moves=(0, 0, 0, 0), form=0, nickname=None, ot
     if met_level is None:
         met_level = level
     values = dict(species=species, level=level, form=form, met_level=met_level,
-                  move1=moves[0], move2=moves[1], move3=moves[2], move4=moves[3])
+                  move1=moves[0], move2=moves[1], move3=moves[2], move4=moves[3], **ROLLED)
     values.update(fields)
     for name, value in values.items():
         off, fmt = POKEMON[name]

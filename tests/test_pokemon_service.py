@@ -194,6 +194,10 @@ def test_full_pb7_import_is_saved_in_the_launchers_box_format(service, tmp_path)
 def test_gifts_need_no_game_image_and_reject_unsafe_ids(service):
     good = wc8.pokemon_card(25, level=25)
     assert service.validate_gift(good)["valid"]
+    # 3 is the game's random gender (main 0x010b62ac); 4 has no meaning
+    assert service.validate_gift(wc8.pokemon_card(25, gender=3))["valid"]
+    with pytest.raises(pokemon.BuilderError, match="gender"):
+        service.validate_gift(wc8.pokemon_card(25, gender=4))
     with pytest.raises(pokemon.BuilderError, match="checksum"):
         service.validate_gift(bytes(720))
     for fields in ({"held_item": 65535}, {"move1": 65535}, {"species": 9999}):

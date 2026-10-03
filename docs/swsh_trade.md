@@ -576,10 +576,15 @@ and the offer agree; the identity rewrite runs first and `party_matches_trainer`
 `pokeldn.swsh.pokemon.build_from` rewrites the checksum, reshuffles under the new encryption
 constant, and keeps every unnamed byte (ribbons, memories, met data, handler records).
 
-A French Sword 1.3.2 accepted a record its save already held (same PID and EC) in four trades;
-whether Sword checks for a duplicate is unread. `bin/swsh_host.py --fresh-pid` draws a new
-encryption constant and PID, as does `bin/swsh_connect.py --fresh-pid`. Brilliant Diamond flags a
-duplicate as illegal ([the BDSP trade page](bdsp_trade.md#duplicate-detection)).
+A French Sword 1.3.2 accepted a record its save already held (same PID and EC) in four trades and
+traded it on. No duplicate check exists on the paths read in Shield 1.3.2: the PID getter
+(`0x0076bc20`, block A + 0x14) is called only by the shiny tests; the encryption constant getter
+(`0x0077ec90`) is read at 12 sites, none of which walks the boxes; the box code
+(`obj+0x60 + box*0x2850 + slot*0x158`) reads only species and the egg flag; and no accessor touches
+PK8 byte 0x52, where Brilliant Diamond keeps its illegal flag
+([the BDSP trade page](bdsp_trade.md#duplicate-detection)). `bin/swsh_host.py --fresh-pid` and
+`bin/swsh_connect.py --fresh-pid` draw a new encryption constant and PID; on Sword this is a
+precaution.
 
     --offer-slot 1 --offer-nickname POKELDN --offer-ivs 31,31,31,31,31,31
 

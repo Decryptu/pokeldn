@@ -283,6 +283,21 @@ A searching console joins only a host advertising its code (`bin/sv_host.py --co
 console hosting under a code accepted a joiner advertising none. `bin/sv_join.py --code` joins only
 a console searching with that code.
 
+Only the searching console checks the code, on the networks it scans. Its selector `0x26e955c`
+(called from `0x272d838` before the join) skips a network with no password when searching with a
+code (`0x26e95f4`) and a network with a password when searching without one (`0x26e960c`). It then
+hashes the game bytes from +0x00 to the first NUL and its own code with FNV-1a 64 (prime
+`0x100000001b3`, offset basis `0xcbf29ce484222645` loaded at `0x26e96c8`, not the standard
+basis) and skips the network unless the two are equal (`0x26e972c`). It reads neither the password's
+value nor the length at +0x24.
+
+A host compares nothing a joiner sends. The LDN association uses the fixed passphrase and the
+Session join request has no password field. Pia's password check on a connecting station, result 7
+in the Net 0x32 handler `0x69ec50` (`0x69ee5c`, `0x69ee70`), needs a Net 0x32, and its only sender
+`0x69d42c` is gated on protocol vfunc 48: 0 in `LdnProtocol` (`0x6a2fac`), 1 in `LanProtocol`
+(`0x6ba278`). On the joining side the LDN connect runs Pia's network check `0x6a22c4` with its
+password comparison (`0x6a24a4`) switched off (`0x6b0d90`).
+
 ## Where the code is
 
 RTTI names come from the binary's type_info records (`tools/switch/rtti_names.py`, 208 `nn::pia`
@@ -969,8 +984,8 @@ resume scanning ([Ending a run](architecture.md#ending-a-run)).
   on the air. A sender that advanced its own `lowest_pending` to 47 before the acknowledgement hides
   it: a bulk ack does not show StreamData completion. Dropping one outgoing chunk reproduces the
   symptom in the emulator.
-- Whether the game checks a joiner's Link Code when it hosts under one: a retail console hosting
-  under a code accepted a joiner advertising none.
+- Whether a console joined to a coded host checks the code again in the host's Net 0x50, which
+  carries the 40 game bytes ([The link code](#the-link-code)).
 - Why a console joined to `bin/sv_host.py` can acknowledge the host's announcement and never send its
   port-2 join (one board run of two).
 - Whether a master-only leave event, without the client's own leave event, can hold a type-2

@@ -101,8 +101,7 @@ The NetStation is 21 bytes at this band, where 6.39 has 22:
 Both entries carry port 12345, ranking 0 for the console and 1 for the joiner.
 
 A console hosting a trade sent no Session (0x98) message and left the join request unanswered in
-every captured session; it asked the joined station to take the host role instead. The code path that
-hands the role away is untraced ([Unresolved](#unresolved)):
+every captured session; it asked the joined station to take the host role instead:
 
 | joiner behaviour | console |
 |---|---|
@@ -121,6 +120,22 @@ Each Net message has a named header class with a serializer. `NetUpdateNetworkHo
 (`0x6fd9dc`) maps object +0x0c, +0x10, +0x18, +0x20, +0x28, +0x2a to wire +4, +8, +0xa, +0x12,
 +0x1a, +0x1b. `nn::pia::session::ClusterPacketWriter` (0x732264 to 0x7336e8) writes Session messages
 inline.
+
+A console hosting a search hands the host role away by leaving. `Session::LeaveAsync` starts
+`LeaveSessionJob`, whose DisconnectNetwork step (`0x72c9dc`) calls the network facade's slot 15; on
+the network host that starts `NetDestroyNetworkJob` (`0x7069d0`) with host migration whenever
+`NetProtocol+0x248` is set, and the constructor `0x6f48fc` sets it to 1 (`0x6f4a14`), its only
+writer. The job sends Net 0x11 with a new sequence id and `is migrating host` 1 (`0x6f6af0`), waits
+up to 4000 ms for every 0x12 (`0x706b34`), then sends `NetStartHostMigrationMessage` (`0x6f7674`)
+every 300 ms until it is the only station or a deadline passes: 4000 ms after a fully acknowledged
+0x11, 2000 ms after one that timed out (`0x706df0`, `0x706e98`). Then it destroys the LDN network,
+and the station still on it inherits the host role. Over fourteen seats of `bin/pla_join.py` the
+first migrating 0x11 came 8.3 to 10.3 s after the seat, repeated for 4.0 s, then the 0x40 for 2.0 s.
+
+The console creates the mesh as a full mesh host (`CreateSessionJob`, no wait). A mesh host answers a
+join request in every rejecting branch except seven silent drops: the dispatcher gate `0x7354c0` and
+the handler's host, protocol-count, destination-id and self-source tests (`0x736510`, `0x7365bc`,
+`0x736820`, `0x736838`, `0x736850`, `0x73686c`). Which one drops a joiner's request is unread.
 
 ## The packet crypto
 
@@ -298,6 +313,17 @@ one; its ack, about once a second, carries a host-stream id that climbs while th
 with the destination bitmap bit of the console's station index (bit 1, count 2) is applied; the
 wrong bit is dropped at the sender-station check.
 
+### The silent-station check
+
+The Session start `0x729d3c` copies the startup setting's `+0x28c` into `SessionProtocol+0xd8`
+(`0x72a098`) with no lower bound (Z-A's has a 4000 ms floor), and passes `+0x290` to the send-silence
+limit (`0x746fe4`: negative fails with 0x10407, 0 becomes 1000 ms). Every update `0x73564c` lists each
+station in state 2 whose last packet (`ClusterStation+0x88`) is older than `[SessionProtocol+0xd8]`
+ms, on the host and on a joiner alike. Once the first entry is 3000 ms old (`0x735364`), `0x7359ac`
+acts on the list: the host hands each station to `KickoutManageJob` (`0x73cad4`); a joiner whose list
+names the host treats the host as gone (`0x735b28`). A silent host on the box screen drew the
+partner-left message about 13 s in.
+
 ## The game's reader and the pre-handler phase
 
 The game polls its reader at `main+0x2ca4f30` (`0x741494`) (365 calls in one measured window): two
@@ -335,10 +361,18 @@ from InputDecide and InputBack (`0x13dc7b4`, `0x13dc7ec`, `0x13dd3ec`, installed
 `0x13dc1a0`, `0x13dc9a0`), 2 and 3 for `button_00` and `button_01` (`0x13ddcb4`), which set
 `[obj+0x7c] = 2` and `[obj+0x84]`. The first gate, the child counter, reads 0 at `0x13d6130`.
 
-The timeout is `gflnet::request::Error::Timeout` at `0x26d4ae8`, measured 10.2 s after the join
-request; the deadline constant is untraced:
+The Matching child's start `0x26c5288` stores the data-exchange object at `[matching+0x118]` and
+starts a stopwatch at `[matching+0x120]` on the OS tick (`0x26c539c`). Its update `0x26c6988`
+completes once at least two stations' records have arrived and every occupied slot has one
+(`0x26c6b70`, `0x26c6c04`); otherwise it compares the elapsed seconds with the literal 10.0
+(`fmov d1, #10.0` at `0x26c6a94`, measured 10.2 s after the join request) and fails the request with
+`net_contents::p2p::ErrorLeaveAnyone` (vtable `0x416c628`, built by `0x26c6d30`). The failure runs
 `0x13d654c -> 0x13d6384 -> 0x2c43d78 -> 0x2ca0a10 -> Session::LeaveAsync (0x72a6dc)`, then the
-Error 7 dialog. The completion callback is `[request+0x90] -> 0x26d69e8 -> 0x26d6a88`.
+Error 7 dialog. `0x26d4ae8` is in the result callback `0x26d4aa0`, which tests the error against
+`gflnet::request::Error::Timeout`, then `ErrorLeaveAnyone` (`0x26d4e04`), then
+`gflnet::npln::NplnResult`; every error passes it. The only `Error::Timeout` producer is the watcher
+`0x2bdb754`, armed by `0x2bda8cc` in two WaitMember steps: 25000 ms (`0x2bda24c`) and
+`3000 + rand % 1000` ms (`0x2c491b8`). The completion callback is `[request+0x90] -> 0x26d69e8 -> 0x26d6a88`.
 
 The Matching child waits for a two-round data exchange on Stream Broadcast Reliable (0x81), ports 0
 and 1, after the mesh join: each station opens the stream with a type-0x0f message, sends a 44-byte
@@ -1224,9 +1258,11 @@ against the four captured console leaves.
 
 ## Unresolved
 
-- The code path by which a console hosting a search hands the host role to the station that joins,
-  and whether it ever answers a Session join request itself.
-- The deadline constant behind the Matching timeout `0x26d4ae8` (10.2 s measured).
+- Which check drops the Session join request a console hosting a search receives
+  ([The Net Protocol, measured](#the-net-protocol-measured)). Breakpoints at `0x7354d8`,
+  `0x7364e4`, `0x736534`, `0x736824` and `0x73683c` on an emulated host name it.
+- Whether a seated hosting slot ends on the 10.0 s Matching deadline or on a WaitMember timer.
 - What the console does in the 3.6 s between leaving the network and showing the field.
-- The keepalive timeout a silent host trips in Legends Arceus, by its setting constant (Z-A's is
-  10000 ms at `0x199eb48`, [za.md](za.md), The kick).
+- The value of the startup setting's `+0x28c`, the silent-station timeout
+  ([The silent-station check](#the-silent-station-check)); a breakpoint at `0x72a098` reads it in
+  `w9`. Z-A's is 10000 ms at `0x199eb48` ([za.md](za.md), The kick).

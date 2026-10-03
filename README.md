@@ -49,7 +49,7 @@ Gift below with the tested settings. The only file it asks for is `prod.keys`.
   and confirm with your password. Later launches open normally.
 - Windows: SmartScreen may stop the unsigned app; choose More info, then Run anyway.
 - Linux: it needs GTK 3 and libsecret, present on desktop distributions, and serial access
-  (`sudo usermod -aG dialout $USER`).
+  (`sudo usermod -aG dialout $USER`; the group is `uucp` on Arch).
 - From source: `pip install -r gui/requirements.txt`, then `python gui/main.py`; the Pokemon builder
   needs `dotnet build -c Release services/pkhex` (.NET 10 SDK), and file drops need the client
   `python scripts/build_client.py` builds (Flutter). `python scripts/pack_app.py` builds the

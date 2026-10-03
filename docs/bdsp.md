@@ -58,8 +58,9 @@ Proven on retail hardware, end to end:
   ([the protocol page](bdsp_protocol.md#the-grand-underground)).
 - What makes a console in the Union Room stop advertising with no change on screen
   ([Taking a seat](bdsp_session.md#taking-a-seat)).
-- What `PokeDupeChecker` compares. `opendpr` stubs its bodies; the illegal flag on a duplicate is
-  measured, not read ([Duplicate detection](bdsp_trade.md#duplicate-detection)).
+- The text of `SS_box_182`, the message `BoxWindow.SetSendPokemon` selects for a flagged Pokemon in
+  a trade, and what `RequestValidateTrade` checks for an online trade
+  ([Duplicate detection](bdsp_trade.md#duplicate-detection)).
 - Where the Unity player takes `Screen.width` from. The 2D grid positions rest on it being the
   1280 x 720 default that `0x6062e8` keeps when `/Data/rawsettings` +0x1c is 0
   ([the protocol page](bdsp_protocol.md#the-grand-underground)); another source, such as the

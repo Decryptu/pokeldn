@@ -204,6 +204,34 @@ def test_a_reader_held_silent_is_waited_for_not_overrun():
     assert (board.overflowed, radio.flow_resyncs, board.frames) == (0, 0, 600)
 
 
+def test_a_hello_mid_session_does_not_open_the_window():
+    """A HELLO sent with ETH_TX queued behind it, to a reader held as it arrives, overran the 16 KB
+    ring by 76423 bytes when the host dropped flow control until the board's CREDIT 0."""
+    frame = b"\xff" * 6 + bytes(6) + b"\x08\x00" + bytes(range(200))
+    length = len(esp32.encode_frame(esp32.CMD_ETH_TX, frame))
+    board = _RingBoard(holds=[(400 * length - 50, 0.5)])
+    radio = esp32.Radio(board)
+    try:
+        radio.send(esp32.CMD_HELLO)
+        time.sleep(0.1)
+        for i in range(400):
+            radio.send_ethernet(frame)
+            if i % 200 == 199:
+                assert radio.drain(30)
+        radio.send(esp32.CMD_HELLO)
+        for _ in range(400):
+            radio.send_ethernet(frame)
+        assert radio.drain(30)
+        deadline = time.monotonic() + 10
+        while board.ring and time.monotonic() < deadline:
+            time.sleep(0.01)
+        time.sleep(0.3)
+    finally:
+        radio.close()
+        board.close()
+    assert (board.overflowed, board.frames) == (0, 800)
+
+
 def test_radio_commands_against_the_simulated_board():
     board = esp32_sim.SimulatedBoard(esp32_sim.Air())
     radio = esp32.Radio(board.host_stream())

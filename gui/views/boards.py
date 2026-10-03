@@ -377,6 +377,7 @@ class BoardView:
                     link("CH340", board.DRIVERS["WCH CH340"])], spacing=6, wrap=True),
             t.text("Linux: allow serial ports, then log out and back in:", 13),
             CodeBlock(self.app, "sudo usermod -aG dialout $USER").control,
+            t.text("Arch and its derivatives name the group uucp instead of dialout.", 13, t.MUTED),
             t.text("Use a classic ESP32 (ESP32-D0WD, WROOM-32E), or an ESP32-S3, C3 or C6 through its native USB port. "
                    "S2 boards are not supported.", 13, t.MUTED),
         ], spacing=8))

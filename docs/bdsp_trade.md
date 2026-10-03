@@ -284,16 +284,45 @@ turns false.
 
 ### Duplicate detection
 
-On a retail console, a locally traded Pokemon duplicating one in the save was flagged illegal and
-could not be traded on ("Un probleme avec votre Pokemon rend tout echange impossible."). `opendpr`
-names the machinery, all bodies stubbed: `PokeDupeChecker` (a 1.3.0 addition) with `CheckDuplicate`,
-`IsDuplicatedPokemonParam(pp0, List<PokemonParam>)`, `UpdateIllegalFlagAll`,
-`IsLocalKoukanPokemonParam` and `ClearIllegalFlagAll`.
+`PokeDupeChecker` (added in 1.3.0) sets an illegal flag on a duplicated Pokemon. The flag is bit 0
+of decrypted PB8 byte 0x52 (block A + 0x4A, `CoreDataBlockA.set_dpr_illegal_flag` `0x027bb040`);
+PKHeX reads it as `PB8.IsDprIllegal`. A flagged Pokemon cannot be traded on ("Un probleme avec votre
+Pokemon rend tout echange impossible.").
 
-Never build an offer from a console's own Pokemon without changing the PID. The same record under a
-new PID and encryption constant, shiny state kept, traded into a save holding the original
-(`bin/bdsp_host.py --fresh-pid`) and carried no illegal flag. What `PokeDupeChecker` compares is
-unread.
+`UpdateIllegalFlagAll` [`0x01de5860`] runs `CheckDuplicate` [`0x01de59d0`] over the party, boxes 1
+to 40 and the daycare, in that order. A Pokemon takes part when its origin game is Brilliant Diamond
+or Shining Pearl (`version & ~1 == 0x30`), it is not an egg, its flag is clear, and it is not an
+in-game trade Pokemon (`IsLocalKoukanPokemonParam` [`0x01de66d0`]: met location 30001 with trainer
+id, encryption constant and nature matching a `LocalKoukanData` entry). Each one is compared with
+every earlier one; the first copy stays clean and every later copy is flagged.
+
+`IsDuplicatedPokemonParam` [`0x01de62f0`] matches on all of:
+
+| field | accessor | PB8 offset |
+|---|---|---|
+| encryption constant | `GetPersonalRnd` | 0x00 |
+| PID | `GetColorRnd` | 0x1C |
+| trainer id (TID16, SID16) | `GetID` | 0x0C |
+| nature | `GetSeikaku` | 0x20 |
+| the six IVs | `GetTalentHp` .. | 0x8C |
+
+A Ninjask (291) and Shedinja (292) pair is never a duplicate. Species, form, nickname and OT name
+are not compared.
+
+`UpdateIllegalSpecialTraining` [`0x01de6830`] flags a Brilliant Diamond or Shining Pearl Pokemon at
+level 99 or lower with any hyper-training bit set.
+
+The check runs on save load (`PlayerWork.OnPostLoad_NeedMD`), on each pick in the trade box
+(`TradeSelectPokeModel` [`0x01c28310`]) and before the Wonder Trade save (`Dpr.GMS`); nothing runs
+when a trade is received. A flagged pick in a local trade sets `UnionWork.boxState` to
+`INVALID_DATA` and the box refuses it; an online trade sends the pick to
+`NetworkManager.RequestValidateTrade` instead. `ClearIllegalFlagAll` has no caller, so a flag is
+never cleared.
+
+Never offer a Brilliant Diamond or Shining Pearl record whose encryption constant, PID, trainer id,
+nature and IVs all match a Pokemon in the receiving save. `bin/bdsp_host.py --fresh-pid` draws a new
+encryption constant and PID, shiny state kept; a record traded that way into a save holding the
+original carried no flag.
 
 ## The disconnect penalty
 

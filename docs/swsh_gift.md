@@ -522,10 +522,10 @@ what a retail console produced.
 | `+0x238` | 8 | four relearn moves | |
 | `+0x240` | 2 | species, national index | 25 gave Pikachu |
 | `+0x242` | 1 | form | 77 with 1 gave a Galarian Ponyta |
-| `+0x243` | 1 | gender, 0 male, 1 female, 2 random; header `+0x64` | 1 gave a female |
+| `+0x243` | 1 | gender, 0 male, 1 female, 2 genderless, 3 random (`0x010b62ac`); header `+0x64` | 1 gave a female |
 | `+0x244` | 1 | level, 0 rolls one | |
 | `+0x245` | 1 | egg; header `+0x12` | 1 gave an egg |
-| `+0x246` | 1 | nature | 10 gave Timid |
+| `+0x246` | 1 | nature, `0xFF` random below 25 (`0x7672c8`) | 10 gave Timid |
 | `+0x247` | 1 | ability, 0/1/2 slot 1/2/hidden, 3 random of two, 4 random of three | 2 gave Lightning Rod |
 | `+0x248` | 1 | shiny, 0 never, 1 random, 2 star, 3 square, 4 the PID as given | 3 gave a shiny |
 | `+0x249` | 1 | met level | |
@@ -559,6 +559,10 @@ writes 31 to that many distinct random positions (`0x00766a50..0x00766b04`); a c
 (out of a card's reach) gives no 31 (`0x00766a2c..0x00766a44`). Every IV still `0xFFFF` is rolled
 0..31 (`0x00766de8`, `0x007660d0(0x20)`, the game's random below `n`). So `0xFC`, `0xFD` or `0xFE` in
 any IV byte gives exactly 1, 2 or 3 random IVs of 31.
+
+A record left at zero gives a male, Hardy Pokemon with its first ability and IVs of 0, as the
+builder run under unicorn showed. `pokeldn.swsh.wc8.pokemon_card` writes gender 3, nature `0xFF`,
+ability 3 and every IV byte `0xFF` unless the field is given, so the game rolls each one.
 
 ## A card delivered by beacon, end to end
 
@@ -714,6 +718,28 @@ calls `0x01449470`, `0x014494a0`, `0x01449560`, `0x01444f80`, `0x018fdc60`, `0x0
 `0x01445000` and `0x01444de0`, none of which reads the Pokemon; `0x00ff13f0` then writes the current
 time (`0x01449ca0` -> `0x01900050`) to `card+0x70` for routes 1 to 4, or copies `card+0xd8` there for
 route 0, and files the card (`0x014480f0`). The keep path checks no legality.
+
+The build and the redemption check no move, relearn move, nature, ball, held item or form against
+the species. The builder `0x010b6110` has one exit and no refusal: it stores the four moves and the
+four relearn moves as given (`0x77bfb0`, `0x77b9a0`; the store at `0x770c7c`), and a move id above
+826 changes only the PP lookup (`0x00781490`). The redemption `0x010159d0` tests only the kind byte,
+a non-null build and room in the party (`0x7840f0` refuses species 0 or a full party) or the boxes
+(`0x1406b00` needs an empty slot). Run under unicorn with the 1.3.2 personal table, the builder kept
+Pikachu's illegal moves 14, 337, 57, 900 and relearn moves 1, 2, 3, 9999, nature 200, ball 200 and
+item 9999 as given.
+
+The one species test is in the PokemonParam constructor `0x777f40` (`0x778118..0x778148`): a
+species whose personal entry has bit 6 of byte 0x21 clear (`0x764990`, `0x77f530`) gets bit 2 of
+the record's `+0x04` word set (`0x76eb40`). With that bit set, every accessor reads and writes a
+static stand-in whose species is 0x383 (`0x776c50`). A species above 898 reads personal entry 0,
+which is marked present, and a form at or above the species' form count reads the base species, so
+neither is flagged. Never send a species absent from Sword and Shield; the PKHeX check in the
+desktop app refuses one.
+
+Gender is the one field the build corrects (`0x777490`, personal field 0x14 read at `0x7774a4`):
+ratios 0, 254 and 255 force male, female and genderless (table `0x1c4d2d0`); on any other ratio a
+requested 2 becomes 0 (`0x7774d8`). The builder turns record gender 3 into 0xFF, random
+(`0x010b62ac`).
 
 ## The card's date
 

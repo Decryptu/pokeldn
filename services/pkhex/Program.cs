@@ -598,7 +598,7 @@ JsonObject Gift(byte[] data)
                 throw new InvalidDataException("This move is unavailable in Sword/Shield.");
         if (card.Level > 100 || card.Ball > blank.MaxBallID || !ValidItem(card.HeldItem))
             throw new InvalidDataException("Invalid gift level, ball or held item.");
-        if (data[0x243] > 2 || (data[0x246] > 24 && data[0x246] != 255) ||
+        if (data[0x243] > 3 || (data[0x246] > 24 && data[0x246] != 255) ||
             data[0x247] > 4 || data[0x248] > 4 || data[0x24A] > 10)
             throw new InvalidDataException("Invalid gift gender, nature, ability, shininess or Dynamax level.");
     }

@@ -292,7 +292,23 @@ RX_ETH. A board without CREDIT never opens the window and the host writes unthro
 command over 50 ms (`slow command`) and a reader turn over 100 ms (`reader held`).
 
 With the idle count and the CREDIT ahead of the queue, the board counts every ETH_TX the host hands
-it: 35514 of 35514 over 26 seats (Scarlet both roles, Sword host), every overflow counter 0.
+it: 520315 of 520315 over 228 board sessions (classic ESP32 up to firmware 1.2.0, C3, C6 1.0.0), every
+overflow and wire counter 0, every repeated idle count equal to the bytes written. Six of those seats
+had the host writing over 500 ETH_TX a second while the board-to-host line ran at 148 to 152 KB/s.
+
+Three seats on firmware before the idle count lost a few host commands with no overflow counted: 6
+of 2333 at 921600 with no CREDIT and 10 of 1691 at 1500000 with the CREDIT at the back of the queue,
+each with `wire_rx_bad` 1 and `tx_eth_retried` 0, and 1 of 836 on a seat with no trace. In the two
+traced seats the loss fell in the host's first burst with the board-to-host line at its ceiling
+(91.4 KB in one second at 921600). That firmware's writer spun on a full TX ring above the reader,
+and only the reader drained the UART event queue, so an overflow during a starved read was never
+counted. One `wire_rx_bad` for several lost commands fits one contiguous lost span. Which buffer
+dropped the bytes is unmeasured: those traces carry no CREDIT.
+
+A HELLO restarts both counts, so the host holds it until nothing is in flight and keeps the window
+shut across it until the board's CREDIT 0. A host that wrote unthrottled after a mid-session HELLO
+(a scan sends one, `EspFactory.create_monitor`) overran a simulated 16 KB ring held for 0.5 s by
+76423 bytes; `tests/test_esp32.py::test_a_hello_mid_session_does_not_open_the_window` pins it.
 `tools/ldn/esp32_cmd_loss.py TRACE` reconciles a trace: ETH_TX written against `tx_eth +
 tx_eth_failed`, bytes written since HELLO against the last CREDIT.
 
@@ -669,6 +685,9 @@ The S3, C3 and C6 use the same COBS, CRC and CREDIT protocol over USB Serial/JTA
 timeout; the writer retries with 20 ms waits and counts a dropped message after 500 ms without
 progress. `write_max_us` includes this wait. The reader takes available bytes with a 20 ms
 timeout. UART overflow and framing counters stay zero on this path; they do not measure USB loss.
+The receive interrupt drops a 64-byte packet when the 16 KB RX ring is full and counts nothing
+(`usb_serial_jtag.c:144` ignores `xRingbufferSendFromISR`'s result). The CREDIT window keeps the ring
+from filling; a loss there shows only as bytes written past the board's last CREDIT.
 `POKELDN_ESP32_BAUD` is accepted on all targets and only changes the classic ESP32's line rate.
 
 ## Running
@@ -769,9 +788,6 @@ misses a given attempt is unknown.
   the setting.
 - ESP32-S3 throughput, and S3 trades in the host role or with titles other than FireRed, are
   unmeasured on a local board.
-- A few host commands were lost with no overflow counted (6 of 2333, 10 of 1691, 1 of 836), all in
-  the host's first burst after the link came up, on firmware without the idle CREDIT and the CREDIT
-  ahead of the queue. The cause is unmeasured.
 - A Scarlet console joined to the board's access point acknowledged the announcement and never sent
   its port 2 join in one of two seats. The cause is unknown.
 - What in the access point's receive path misses 1 to 22% of a station's OFDM first copies, and ACKs
