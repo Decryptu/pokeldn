@@ -14,14 +14,13 @@ from pathlib import Path
 
 ROOT = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(ROOT))
-from gui.drop import CLIENT, MARKER, platform_key  # noqa: E402
+from gui.flet_client import CLIENT, MARKER, platform_key  # noqa: E402
 
 SOURCE = CLIENT / "flet"
 EXTENSION = ROOT / "gui" / "flet_drop"
 
 
 def flet_versions() -> tuple[str, str]:
-    import flet_cli  # noqa: F401  (the version command lives there)
     out = subprocess.check_output([sys.executable, "-m", "flet_cli.cli", "--version", "--json"], text=True)
     found = json.loads(out)
     return found["flet"], found["flutter"]

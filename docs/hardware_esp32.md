@@ -214,13 +214,15 @@ the ROM's boot text included, fails the checksum and is discarded.
 | `tx_eth_max_us`, `tx_eth_total_us`, `tx_eth_slow` | ETH_TX in `esp_wifi_internal_tx`, retries included: longest, sum, count over 5 ms |
 
 EtherType `0x88B7` frames are LDN authentication; `esp32_wlan` turns them into the LDN library's
-`CustomFrameEvent`. Every other Ethernet frame goes to an L2 port, chosen by platform or by
-`POKELDN_L2=tap|userspace`:
+`CustomFrameEvent`. Every other Ethernet frame goes to an L2 port, chosen by `POKELDN_L2=tap|userspace`:
 
 | port | where | the launchers' sockets |
 |---|---|---|
-| kernel TAP named after the interface | Linux | kernel sockets, `SO_BINDTODEVICE` and `AF_PACKET` unchanged |
-| `userspace_ip` stack | macOS and Windows | `userspace_ip.udp_socket` and `packet_socket` |
+| `userspace_ip` stack | the default, every platform | `userspace_ip.udp_socket` and `packet_socket` |
+| kernel TAP named after the interface | Linux, `POKELDN_L2=tap` only | kernel sockets, `SO_BINDTODEVICE` and `AF_PACKET` unchanged |
+
+Creating a TAP needs `CAP_NET_ADMIN`. The desktop app runs as the user, so on Linux a TAP default
+fails before the board joins anything.
 | `MemoryPort` | tests | none |
 
 ## The serial ceiling

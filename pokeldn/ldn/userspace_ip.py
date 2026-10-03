@@ -1,4 +1,4 @@
-"""IPv4, UDP and ARP in the host process, for a radio with no kernel interface (the ESP32 on macOS).
+"""IPv4, UDP and ARP in the host process, for a radio with no kernel interface (the ESP32 board).
 `udp_socket` and `packet_socket` stand in for sockets bound to the interface name, with real file
 descriptors for `select` and trio; `lookup(name)` is None for a kernel interface.
 """

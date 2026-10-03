@@ -13,7 +13,7 @@ from pathlib import Path
 ROOT = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(ROOT))
 from pokeldn import __version__
-from gui.drop import CLIENT, MARKER, platform_key
+from gui.flet_client import CLIENT, MARKER, platform_key
 
 FIRMWARE = ROOT / "gui" / "firmware" / "pokeldn-radio.bin"
 FIRMWARE_S3 = ROOT / "gui" / "firmware" / "pokeldn-radio-s3.bin"

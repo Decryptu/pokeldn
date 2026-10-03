@@ -56,7 +56,7 @@ def cleanup_stale():
 
 
 def make_socket(ifname, our_ip=None):
-    from pokeldn.ldn import userspace_ip  # no kernel interface (ESP32 on macOS)
+    from pokeldn.ldn import userspace_ip  # no kernel interface on the ESP32
     if our_ip is None and (user := userspace_ip.udp_socket(ifname, za.PIA_PORT)) is not None:
         user.setblocking(False)
         return user

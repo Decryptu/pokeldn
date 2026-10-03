@@ -451,8 +451,8 @@ async def kernel_tap(name: str, address: wlan.MACAddress):
 
 
 def default_port_factory():
-    """`POKELDN_L2=tap|userspace` overrides the platform's choice."""
-    choice = os.environ.get("POKELDN_L2") or ("tap" if sys.platform.startswith("linux") else "userspace")
+    """`POKELDN_L2=tap` opts into a Linux kernel TAP, which needs CAP_NET_ADMIN; the app runs unprivileged."""
+    choice = os.environ.get("POKELDN_L2") or "userspace"
     return kernel_tap if choice == "tap" else userspace_ip.userspace_port
 
 

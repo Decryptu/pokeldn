@@ -1207,3 +1207,14 @@ def test_sword_host_and_joiner_trade_on_simulated_boards(tmp_path, monkeypatch):
         return pokemon.read(pokemon.encrypt(gen8.load((tmp_path / name).read_bytes())))["species"]
     assert [species(n) for n in ("join.pk8", "join-2.pk8")] == [94, 95]
     assert [species(n) for n in ("host.pk8", "host-2.pk8")] == [96, 97]
+
+
+@pytest.mark.parametrize("platform", ["linux", "darwin", "win32"])
+def test_the_board_needs_no_privilege_on_any_platform(monkeypatch, platform):
+    """A kernel TAP needs CAP_NET_ADMIN, which the desktop app never has; it is opt-in on Linux."""
+    from pokeldn.ldn import userspace_ip
+    monkeypatch.delenv("POKELDN_L2", raising=False)
+    monkeypatch.setattr(esp32_wlan.sys, "platform", platform)
+    assert esp32_wlan.default_port_factory() is userspace_ip.userspace_port
+    monkeypatch.setenv("POKELDN_L2", "tap")
+    assert esp32_wlan.default_port_factory() is esp32_wlan.kernel_tap

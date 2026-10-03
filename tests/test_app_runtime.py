@@ -56,6 +56,12 @@ def test_packer_uses_tracked_defaults_and_requires_firmware(monkeypatch, tmp_pat
             pack.main()
         for present in images:
             present.unlink(missing_ok=True)
+    # So must one without the Flet client that takes file drops.
+    for present in images:
+        present.write_bytes(b"firmware")
+    monkeypatch.setattr(pack, "CLIENT", tmp_path / "client")
+    with pytest.raises(SystemExit, match="Flet client"):
+        pack.main()
 
 
 def test_board_backend_does_not_require_unix_user_ids(monkeypatch):

@@ -11,21 +11,7 @@ from typing import Callable, Optional
 import flet as ft
 
 from gui import theme as t
-
-CLIENT = Path(__file__).resolve().parent / "client"
-MARKER = "pokeldn-drop"
-
-
-def platform_key() -> str:
-    return {"darwin": "macos", "win32": "windows"}.get(sys.platform, "linux")
-
-
-def view_path() -> Path | None:
-    """The built client's folder as flet_desktop takes it in FLET_VIEW_PATH, or None if it is not built."""
-    out = CLIENT / platform_key()
-    if not (out / MARKER).is_file():
-        return None
-    return out if platform_key() == "macos" else out / "flet"
+from gui.flet_client import view_path
 
 
 def use_client() -> bool:
