@@ -269,11 +269,17 @@ def test_scripted_trades_are_answered_through_the_save_each_with_the_next_offer(
         assert ok == room.build_fields(room.TRADE_POKE_CHECK_OK, 1)
         [ready] = say(room.build_trade_ready_ok(room.TRADE_STATE_WAIT, 0), t + 1.5)
         assert ready == room.build_trade_ready_ok()
-        # Each security-phase state is mirrored and repeated once a second.
-        for dt, state in ((2.5, 1), (2.7, 2), (2.9, 3), (3.1, 4), (3.3, 5), (3.5, 6)):
+        # Each security-phase state is mirrored; it is repeated once a second until SEND_READYOK.
+        for dt, state in ((2.5, 1), (2.7, 2), (2.9, 3), (3.1, 4)):
             [mine] = say(room.build_trade_ready_ok(state, 1), t + dt)
             assert mine == room.build_trade_ready_ok(room.mirror_trade_state(state), 1)
-        assert _game_out(c.read(s.tick(t + 4.6)))
+        assert _game_out(c.read(s.tick(t + 4.2))) == [room.build_trade_ready_ok(5, 1)]
+        for dt, state in ((4.3, 5), (4.5, 6)):
+            [mine] = say(room.build_trade_ready_ok(state, 1), t + dt)
+            assert mine == room.build_trade_ready_ok(room.mirror_trade_state(state), 1)
+        # A repeat while the console saves and animates lands in its select window (docs/bdsp_trade.md).
+        for dt in (6.0, 12.0, 24.0):
+            assert not _game_out(c.read(s.tick(t + dt)))
         say(room.build_fields(room.RETURN_SELECT, 0), t + 24.5)
         assert p.trades == trade
         assert saved[-1] == (trade, theirs[:1])

@@ -62,15 +62,21 @@ class Console:
         self.send("state", self.state)
 
 
-def run(role, mirror, seed, repeat=1.0, seconds=60.0):
-    """-> the time the console reached START_WRITE_SAVE, or None."""
+def run(role, mirror, seed, repeat=1.0, seconds=60.0, repeats=lambda theirs: True, after=0.0):
+    """-> the time the console reached START_WRITE_SAVE, or None. With `after`, the run goes on that
+    long past the save and returns (the save time, client states delivered more than 1 s after it)."""
     rng = random.Random(seed)
     now, wire, seq = 0.0, [], 0
+    saved, late = None, 0
+
+    last = {"client": 0.0, "console": 0.0}
 
     def post(to, kind, value):
+        # the reliable stream delivers in order (pokeldn.ldn.reliable5.Reassembler)
         nonlocal seq
         seq += 1
-        heapq.heappush(wire, (now + rng.uniform(0.02, 0.25), seq, to, kind, value))
+        last[to] = max(last[to], now + rng.uniform(0.02, 0.25))
+        heapq.heappush(wire, (last[to], seq, to, kind, value))
 
     client = {"ours": 0, "theirs": None, "last_repeat": 0.0}
     console = Console(role, lambda k, v: post("client", k, v), rng)
@@ -78,7 +84,9 @@ def run(role, mirror, seed, repeat=1.0, seconds=60.0):
         now += FRAME
         while wire and wire[0][0] <= now:
             _, _, to, kind, value = heapq.heappop(wire)
-            if to == "console":
+            if to == "console" and saved is not None:
+                late += kind == "state" and now > saved + 1.0
+            elif to == "console":
                 console.receive_state(value) if kind == "state" else console.receive_poke()
             elif kind == "poke":
                 post("console", "poke", None)
@@ -86,13 +94,16 @@ def run(role, mirror, seed, repeat=1.0, seconds=60.0):
                 client["theirs"] = value
                 client["ours"] = mirror(value)
                 post("console", "state", client["ours"])
-        if client["theirs"] is not None and client["ours"] and now - client["last_repeat"] >= repeat:
+        if (client["theirs"] is not None and client["ours"] and repeats(client["theirs"])
+                and now - client["last_repeat"] >= repeat):
             client["last_repeat"] = now
             post("console", "state", client["ours"])
         console.tick(FRAME)
-        if console.state == START_WRITE_SAVE:
-            return now
-    return None
+        if saved is None and console.state == START_WRITE_SAVE:
+            if not after:
+                return now
+            saved, seconds = now, now + after
+    return (saved, late) if after else None
 
 
 def echo(theirs):
@@ -116,3 +127,19 @@ def test_echoing_wait_poke_deadlocks_a_child_console(seed):
 def test_echoing_still_completes_as_parent(seed):
     """Every completed retail trade had the console as PARENT, which is why the echo worked."""
     assert run(PARENT, echo, seed) is not None
+
+
+@pytest.mark.parametrize("seed", range(20))
+@pytest.mark.parametrize("role", [PARENT, CHILD])
+def test_the_repeat_stops_at_send_readyok_and_still_reaches_the_save(role, seed):
+    """The save is reached with no repeat after the console's SEND_READYOK, and nothing reaches the
+    console once it is saving: a late 0x21 lands in its select window and cancels the next round."""
+    saved, late = run(role, room.mirror_trade_state, seed, repeats=room.repeats_trade_state,
+                      after=30.0)
+    assert saved is not None and late == 0
+
+
+@pytest.mark.parametrize("role", [PARENT, CHILD])
+def test_a_repeat_that_never_stops_reaches_a_saving_console(role):
+    saved, late = run(role, room.mirror_trade_state, 0, after=30.0)
+    assert saved is not None and late > 20

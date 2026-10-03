@@ -1212,11 +1212,12 @@ async def main_async(args):
             record(rec="trade_reply", t=now, label=label, seq=seq, length=len(reply))
 
         async def repeat_the_security_state():
-            """Repeat our security state every second: a console leaves its wait state only on a
-            message arriving in it (`TradeParentStateModel$$StateProc`, docs/bdsp_trade.md)."""
+            """Repeat our security state every second until the console's SEND_READYOK: a CHILD
+            leaves it only on a message arriving in it (docs/bdsp_trade.md)."""
             while True:
                 await trio.sleep(args.security_repeat)
-                if st["their_security_state"] is None or not st["our_security_state"]:
+                if (not room.repeats_trade_state(st["their_security_state"])
+                        or not st["our_security_state"]):
                     continue
                 if st["their_ack_id"] < st["our_next_seq"]:
                     # Something we sent is still unacked; more would only fill the window.
@@ -1593,9 +1594,9 @@ def build_parser():
                          "PlayerSave. The Pokemon the player picked leaves their box and ours takes "
                          "its place. Needs --trade-reply. ASK THE USER FIRST")
     ap.add_argument("--security-repeat", type=float, default=1.0, metavar="S",
-                    help="seconds between repeats of our security-phase state. The console's "
-                         "WAIT_READYOK only ends when a message ARRIVES inside it, and it enters "
-                         "that state on its own countdown, so the answer has to keep coming")
+                    help="seconds between repeats of our security-phase state, until the console "
+                         "reports SEND_READYOK. A CHILD console's SEND_READYOK only ends when a "
+                         "message arrives inside it")
     ap.add_argument("--fresh-pid", action="store_true",
                     help="offer it under a new PID and encryption constant, shiny state kept, so a "
                          "save that took it before takes it again")

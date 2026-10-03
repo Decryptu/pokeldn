@@ -564,8 +564,14 @@ def test_userspace_socket_readiness_tracks_queued_datagrams(monkeypatch, tcp):
     import socket
     from pokeldn.ldn.userspace_ip import _Readable
 
+    def tcp_pair():
+        # Windows' socketpair is a loopback TCP pair; 3.13.15's own fallback fails on macOS
+        with socket.create_server(("127.0.0.1", 0)) as server:
+            client = socket.create_connection(server.getsockname())
+            return server.accept()[0], client
+
     if tcp:
-        monkeypatch.setattr(socket, "socketpair", socket._fallback_socketpair)
+        monkeypatch.setattr(socket, "socketpair", tcp_pair)
     with _Readable() as queue:
         if tcp:
             assert queue._w.getsockopt(socket.IPPROTO_TCP, socket.TCP_NODELAY)

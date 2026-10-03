@@ -340,6 +340,13 @@ def mirror_trade_state(their_state):
     return their_state
 
 
+def repeats_trade_state(their_state):
+    """-> whether our security state is still re-said: the answer to a console's SEND_READYOK lands
+    in its WAIT_READYOK in either role, and a later repeat can land in its select window and cancel
+    the next round (docs/bdsp_trade.md, The completed trade)."""
+    return their_state is not None and their_state < TRADE_STATE_SEND_READYOK
+
+
 def build_trade_ready_ok(trade_state=TRADE_STATE_WAIT, is_trade_ok=0):
     """The 0x21 that lets the console write its save; only `tradeState` is read
     [`TradeSelectPokeModel$$ReciveReadyOk` main.bin 0x1cd4860]. Defaults give the console's own

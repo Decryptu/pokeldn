@@ -627,10 +627,9 @@ class TradePartner:
             self.approach_at = None
             self.record(rec="approach", t=now)
             out.append(room.build_talk_reserve())
-        # a state is re-said once a second: WAIT_READYOK and a CHILD's SEND_READYOK only end on a
-        # message arriving inside them, and the repeat stops at the return to the select window
-        if (self.our_security and self.their_security is not None and now >= self.next_security
-                and not joiner.tx_pending):
+        # a CHILD's SEND_READYOK ends only on a message arriving inside it (docs/bdsp_trade.md)
+        if (self.our_security and room.repeats_trade_state(self.their_security)
+                and now >= self.next_security and not joiner.tx_pending):
             self.next_security = now + self.security_repeat
             out.append(room.build_trade_ready_ok(self.our_security, is_trade_ok=1))
         return out

@@ -201,10 +201,15 @@ client's answer):
     WAIT_READYOK  ->  SEND_READYOK
 
 After WAIT_READYOK the console writes the save, plays the animation and runs `ReplacePoke`, sending
-only `NetCharacterStateData`. Leaving WAIT_READYOK needs one more message from the peer, which the
-client's once-a-second state repeat supplies. The station must not leave in this window: a drop
-lands the console between `FirstSave` and `SecondSave`. The same sequence runs with the console as
-the room's joiner and pokeldn as host.
+only `NetCharacterStateData`. Leaving WAIT_READYOK needs one more message from the peer. The console
+reports SEND_READYOK as it enters WAIT_READYOK in either role (a PARENT from `StateProc` case 5, a
+CHILD from `ReciveState` case 5), so the client's answer to that report arrives inside it. In 25 of
+25 retail trades, in both roles, the console's next reliable message followed its SEND_READYOK by
+0.16 to 0.24 s, before any repeat; a PARENT's WAIT_READYOK report followed it by 0.02 to 0.06 s
+(19 of 19). The client repeats its state once a second only before the console's SEND_READYOK
+(`room.repeats_trade_state`): before it, a CHILD's SEND_READYOK ends only on a message arriving
+inside it. The station must not leave in this window: a drop lands the console between `FirstSave`
+and `SecondSave`. The same sequence runs with the console as the room's joiner and pokeldn as host.
 
 Measured once with a retail BDSP joining `bin/bdsp_host.py`, from the console's `tradeState` 6: the
 animation started at about 2.7 s, the received Pokemon appeared at about 18.6 s (hand-pressed
@@ -224,9 +229,8 @@ trainer record: a retail console traded three times back to back with `bin/bdsp_
 its box screen came back after every trade, and two queued trades completed in one association
 with `bin/bdsp_host.py` hosting. `TradeStateModel$$ReturnTradePokeSelectWindow`
 [0x01c29590] runs `PlayerSave`, then the model's callback at +0x80; its caller is not traced. A
-second trade reads back what the console stored. The client's security-state repeater must stop when
-a trade completes: a SEND_READYOK (5) 0x21 landing while the player picks (box phase 5 or below)
-resets the round.
+second trade reads back what the console stored. A SEND_READYOK (5) 0x21 landing while the player
+picks (box phase 5 or below) resets the round, so no repeat follows the console's SEND_READYOK.
 
 ## The Pokemon
 
