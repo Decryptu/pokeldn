@@ -118,7 +118,7 @@ class TrainerProfile:
 
 
 DEFAULT_TRAINER = TrainerProfile(
-    name="PkCamp", tid=0x8822, sid=0x47ED, gender=0,
+    name="POKELDN", tid=0x8822, sid=0x47ED, gender=0,
     version="leafgreen", language="english",
     has_national_dex=True, has_completed_game=True)
 

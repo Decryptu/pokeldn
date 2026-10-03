@@ -119,11 +119,11 @@ def test_the_whole_entry_runs_block_for_block():
     h._begin_seated_activity()
 
     theirs = DEFAULT_TRAINER.to_link_player()
-    theirs.trainer_id = 0xE5BBDF65
+    theirs.trainer_id = 0x0AE73039
     h._after_child_block(cable_club.COUNT_LOCAL, cable_club.local_link_player_block(theirs))
     assert _sent(h) == [cable_club.local_link_player_block(h.lp, name_pad=0xFF)]
     assert h._expected == "battle_header"
-    assert h.child_link_player.trainer_id == 0xE5BBDF65
+    assert h.child_link_player.trainer_id == 0x0AE73039
 
     h._blocks.clear()
     h._after_child_block(ub.COUNT_HEADER, ub.battler_header(ub.VERSION_FIRERED))

@@ -511,7 +511,7 @@ the joiner (here the client) at every rung:
 | the joiner sends | the console does |
 |---|---|
 | `NetDataTalkData{GREETING}` | shows "Un combat ? OK ! Donne-moi juste une minute !" and waits |
-| `NetDataSelectData{0}` (0x08) | shows "PkCamp est en train de choisir quoi faire..." and waits |
+| `NetDataSelectData{0}` (0x08) | shows "POKELDN est en train de choisir quoi faire..." and waits |
 | `NetDataBattleTypeData{0}` (0x09, `BattleModeID.Single`) | asks its player "voulez-vous faire un combat selon ces règles ?"; on yes sends `NetDataTransitionData{17, 0}`, state byte 17, and opens the solo lobby at "connexion en cours" |
 | `NetDataBattleMatchingJoin` (0x30) `{uint id, byte stationIndex, index, language, colorId, avatarId, sexId, cassetVersion}` | answers with its own join (`id` its trainer id, station 0, index 0) and relays the joiner's back; the joiner's character appears in the lobby's second slot |
 | `NetDataBattleMatchingReady` (0x32, empty) | `BattleMatchingManager$$ReceiveReadyData`: when every member is ready, `NetDataBattleMatchingState{0, 6}` (0x33), `MatchingState.SelectBattleTeam` (4 and 5 skipped for a solo battle), and its player gets the team-selection button |

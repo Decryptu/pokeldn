@@ -222,7 +222,7 @@ the first trade step, the way a player leaves the trade screen; without it the s
 later trades.
 
 ```bash
-./.venv/bin/python bin/lgpe_host.py --seconds 600 --player-name PkCamp \
+./.venv/bin/python bin/lgpe_host.py --seconds 600 --player-name POKELDN \
   --first echo --our-trainer 41234:12345 --offer offer.pb7
 ./.venv/bin/python bin/lgpe_join.py --connect --connect-seconds 300 \
   --ack-peer-clock --ack-re-announce \
@@ -259,7 +259,7 @@ Mystery Gift → receive a gift → via local wireless.
 
 ```bash
 ./.venv/bin/python bin/swsh_gift_host.py --species 25 --level 25 \
-  --move1 84 --move2 45 --move3 86 --move4 98 --nickname PKCAMP --ot POKELDN --seconds 300
+  --move1 84 --move2 45 --move3 86 --move4 98 --nickname POKELDN --ot POKELDN --seconds 300
 ./.venv/bin/python bin/swsh_gift_host.py --record card.wc8 --seconds 300
 ```
 
@@ -281,7 +281,7 @@ walls.
   --room-walk-steps 0 --join-avatar 0 --answer-requests --state 0 --recruiting 0 \
   --answer-talk --can-talk 0 --initiate-talk --initiate-delay 3 \
   --after-approach 0x06:0001000000 --trade-reply --complete-trade \
-  --trade-template offer.pb8 --trade-nickname PKCAMP --src-var 0x2B7F4C12
+  --trade-template offer.pb8 --trade-nickname POKELDN --src-var 0x2B7F4C12
 ```
 
 Association can fail (`Connect failed with status code 1`); retry the run before diagnosing
@@ -331,7 +331,7 @@ The offline Link Trade search alternates scanning and hosting, so pokeldn hosts 
 joins (`bin/sv_join.py`).
 
 ```bash
-./.venv/bin/python bin/sv_host.py --seconds 240 --player-name RyuPlayer \
+./.venv/bin/python bin/sv_host.py --seconds 240 --player-name POKELDN \
   --rtt-probe --net-property --clock --net-stations 4 --scarlet-response \
   --record-delay 0.17 --announce --announce-delay 5.25 \
   --send-at 6.00:0x7c:1:b90101b902b90280800001 \

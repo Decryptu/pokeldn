@@ -31,11 +31,11 @@ def test_the_tool_builds_arguments_its_entry_point_accepts(tool):
 
 def test_sword_host_uses_the_apps_trainer_and_a_built_offer():
     tool = next(t for game in GAMES for t in game.tools if t.key == "swsh-host")
-    settings = Settings(ot="PkCamp", tid=41234, sid=12345)
+    settings = Settings(ot="POKELDN", tid=41234, sid=12345)
     args = build(tool, {"--offer-file": {"file": "/tmp/chosen.pk8"}}, {}, settings,
                  stamp="fixed")
-    assert args[args.index("--player-name") + 1] == "PkCamp"
-    assert args[args.index("--trainer-name") + 1] == "PkCamp"
+    assert args[args.index("--player-name") + 1] == "POKELDN"
+    assert args[args.index("--trainer-name") + 1] == "POKELDN"
     assert args[args.index("--trainer-tid") + 1] == "41234"
     assert args[args.index("--trainer-sid") + 1] == "12345"
     assert args[args.index("--offer-file") + 1] == "/tmp/chosen.pk8"

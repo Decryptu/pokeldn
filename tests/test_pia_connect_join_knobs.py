@@ -12,7 +12,7 @@ def _net_0x11(host_var=0x7620):
 
 def _cm(**kw):
     return pia_connect.ConnectionManager(b"\x58\xd8\x12\x21\x49\xa2", b"\x02\x00\x00\x00\x00\x01",
-                                         "169.254.1.2", "169.254.1.1", player_name="PkCamp", **kw)
+                                         "169.254.1.2", "169.254.1.1", player_name="POKELDN", **kw)
 
 
 def test_defaults_send_the_join_once_and_ignore_rtt_before_finalize():

@@ -9,7 +9,7 @@ from pokeldn.frlg.text import charmap, easychat
 
 
 def _game_data(*, flag_id=0, questionnaire=(), profile=(), battles_won=0, battles_lost=0,
-               trades=0, name="PLAYER", trainer_id=57189, stamps=(), version_code=1):
+               trades=0, name="PLAYER", trainer_id=12345, stamps=(), version_code=1):
     raw = bytearray(mg_script.GAME_DATA_SIZE)
     raw[0:4] = mg.GAME_DATA_VALID_VAR.to_bytes(4, "little")
     raw[4] = raw[8] = raw[0x0C] = 1
@@ -41,7 +41,7 @@ def test_the_record_carries_the_console_identity_and_the_card_counters():
 
     assert entry["tag"] == "mev25"
     assert entry["player_name"] == "PLAYER"
-    assert entry["trainer_id"] == 57189
+    assert entry["trainer_id"] == 12345
     assert entry["version"] == "FireRed" and entry["game_code"] == "BPRF"
     assert (entry["flag_id"], entry["battles_won"], entry["battles_lost"], entry["num_trades"]) \
         == (1009, 3, 1, 2)
@@ -52,7 +52,7 @@ def test_a_seven_character_name_reports_no_trainer_id_rather_than_a_wrong_one():
     id is reported."""
     entry = game_data_log.record(_game_data(name="PLAYERO"))
     assert entry["trainer_id"] is None
-    assert game_data_log.record(_game_data(name="PLAYER"))["trainer_id"] == 57189
+    assert game_data_log.record(_game_data(name="PLAYER"))["trainer_id"] == 12345
 
 
 def test_the_raw_bytes_survive_so_a_later_question_costs_no_run():

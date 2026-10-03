@@ -52,7 +52,7 @@ def _game(body, port, seq, flags=None):
 def _session():
     keys = pla.session_keys(SSID)
     clock = Clock()
-    exchange = data_exchange.build_record(player_id=bytes.fromhex("504b4c44"), name="PkCamp")
+    exchange = data_exchange.build_record(player_id=bytes.fromhex("504b4c44"), name="POKELDN")
     offer = trade_box.build_our_record(**data_exchange.read_record(exchange))
     s = joiner.JoinerSession(keys, OUR_IP, OUR_MAC, offer, exchange, our_var=0x687E,
                              log=lambda *a: None, clock=clock)
@@ -103,7 +103,7 @@ def test_the_stream_acknowledgement_is_the_retail_joiners():
     record = [m for m in sent if m[0] == 0x81 and m[1] == 1][0]
     rm = reliable5.parse(record[3])
     assert rm["flags"] == 0x1F and rm["sequence_id"] == 1 and rm["bitmap"] == [1]
-    assert data_exchange.read_record(data_exchange.decompress(rm["payload"]))["name"] == "PkCamp"
+    assert data_exchange.read_record(data_exchange.decompress(rm["payload"]))["name"] == "POKELDN"
     announce = _data(sent, 0x7C, 1)[0]
     assert announce["flags"] == 0x0F
     assert announce["payload"] == game_channel.JOINER_OPEN_PAYLOAD

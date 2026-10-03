@@ -152,7 +152,7 @@ def build_parser():
                     help="host over ldn_mitm on the LAN for an emulator; no radio and no root")
     ap.add_argument("--net-protocol", type=lambda v: int(v, 0), default=PROTO_NET,
                     help="the Net protocol id to send the connection request under")
-    ap.add_argument("--player-name", default="PkCamp",
+    ap.add_argument("--player-name", default="POKELDN",
                     help="the LDN node name; a retail console publishes its profile name here")
     ap.add_argument("--rtt-probe", action="store_true",
                     help="also send an RTT request, which a peer answers with no state at all")
@@ -183,7 +183,7 @@ def build_parser():
     ap.add_argument("--hello-protocol", type=lambda v: int(v, 0), default=PROTO_BROADCAST_RELIABLE,
                     help="the protocol the host sends its reliable game data on; the game's own reader "
                          "polls 0x80 (BroadcastReliable), so 0x80 puts data where the game drains it")
-    ap.add_argument("--host-player-name", default="PkCamp",
+    ap.add_argument("--host-player-name", default="POKELDN",
                     help="the host's player name in the station-list update, which the game reads as "
                          "identity; a real name in place of the placeholder single space")
     ap.add_argument("--host-player-id", default="00000000000000020000000000000000",
@@ -200,7 +200,8 @@ def build_parser():
                     help="send the host's own record on the 0x81 data exchange once the console "
                          "opens its stream; the exchange the trade scene is the success branch of")
     ap.add_argument("--data-exchange-name", default=None,
-                    help="the player name in that record; the game shows it as the trade partner")
+                    help="the player name in that record; the game shows it as the trade partner "
+                         "(default --player-name)")
     ap.add_argument("--data-exchange-id", default=None,
                     help="hex: the four-byte player id in that record")
     ap.add_argument("--game-channel", action="store_true",
@@ -324,7 +325,7 @@ def main():
     else:
         exchange_record = data_exchange.build_record(
             player_id=(bytes.fromhex(args.data_exchange_id) if args.data_exchange_id else None),
-            name=args.data_exchange_name)
+            name=args.data_exchange_name or args.player_name)
     exchange_sent = set()
     box_edits = {k: v for k, v in dict(
         level=args.trade_box_level, experience=args.trade_box_experience,
@@ -339,7 +340,7 @@ def main():
         """-> the encrypted offer; a rebuild keeps the run's one --fresh-pid draw."""
         template = (pla_pokemon.encrypt(pla_pokemon.load(Path(box_file).read_bytes()))
                     if box_file else trade_box.REFERENCE_RECORD)
-        if args.trade_box_ours:
+        if args.trade_box_ours or not box_file:
             template = trade_box.build_our_record(
                 template=template, **data_exchange.read_record(exchange_record))
         if box_edits:

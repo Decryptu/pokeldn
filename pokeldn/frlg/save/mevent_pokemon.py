@@ -42,7 +42,7 @@ class MysteryEventPokemonError(Exception):
     """A payload the console would not accept, or would accept and then misread."""
 
 
-def build_mail(words=(), *, player_name="PkCamp", trainer_id=0, species=0,
+def build_mail(words=(), *, player_name="POKELDN", trainer_id=0, species=0,
                item_id=ITEM_ORANGE_MAIL):
     """A `struct Mail`; GiveMailToMon2 copies all of it over the player's defaults."""
     if item_id not in MAIL_ITEMS:
@@ -78,7 +78,7 @@ def exp_for_level(species, level):
     return low
 
 
-def build_party_mon(species, level, *, moves=(), pp=(), nickname=None, ot_name="PkCamp",
+def build_party_mon(species, level, *, moves=(), pp=(), nickname=None, ot_name="POKELDN",
                     ot_id=0x47ED8822, personality=None, held_item=0, friendship=70,
                     ivs=31, evs=(0,) * 6, language, met_location=0xFF,
                     met_level=None, poke_ball=POKE_BALL, met_game=VERSION_FIRE_RED):

@@ -73,10 +73,10 @@ def test_the_block_order_follows_the_encryption_constant():
 def test_building_from_a_template_changes_only_what_was_asked_for():
     """A Pokemon we send is a real one with named fields moved - every other byte stays a console's."""
     template = pokemon.encrypt(a_body())
-    made = pokemon.build_from(template, species=25, nickname="PIKA", ot_name="PkCamp",
+    made = pokemon.build_from(template, species=25, nickname="PIKA", ot_name="POKELDN",
                               ivs=(31, 31, 31, 31, 31, 31))
     r = pokemon.read(made)
-    assert (r["species"], r["nickname"], r["ot_name"]) == (25, "PIKA", "PkCamp")
+    assert (r["species"], r["nickname"], r["ot_name"]) == (25, "PIKA", "POKELDN")
     assert r["ivs"] == (31, 31, 31, 31, 31, 31)
     assert r["trainer_id"] == 44466 and r["secret_id"] == 4080
     before, after = pokemon.decrypt(template), pokemon.decrypt(made)
@@ -107,14 +107,14 @@ def test_a_nickname_sets_the_flag_that_makes_the_console_draw_it():
     template = pokemon.encrypt(bytes(plain))
     assert pokemon.read(template)["is_nicknamed"] is False
 
-    made = pokemon.build_from(template, nickname="PKCAMP")
+    made = pokemon.build_from(template, nickname="POKELDN")
     r = pokemon.read(made)
-    assert r["nickname"] == "PKCAMP" and r["is_nicknamed"] is True
+    assert r["nickname"] == "POKELDN" and r["is_nicknamed"] is True
     assert r["ivs"] == pokemon.read(template)["ivs"], "the IVs share the word with the flag"
 
     # An explicit value after the nickname still wins.
-    quiet = pokemon.read(pokemon.build_from(template, nickname="PKCAMP", is_nicknamed=False))
-    assert quiet["nickname"] == "PKCAMP" and quiet["is_nicknamed"] is False
+    quiet = pokemon.read(pokemon.build_from(template, nickname="POKELDN", is_nicknamed=False))
+    assert quiet["nickname"] == "POKELDN" and quiet["is_nicknamed"] is False
 
 
 def test_the_fields_pkhex_names_survive_a_round_trip():

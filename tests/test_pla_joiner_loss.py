@@ -75,7 +75,7 @@ def run(monkeypatch, capsys, drop_host=None, drop_joiner=None):
     `drop_joiner` lose the first matching 0x7c data message. -> .joiner, .log, .jlog, .lost, .copies, .receiver"""
     clock = Clock()
     keys = pla.session_keys(SSID)
-    exchange = data_exchange.build_record(player_id=bytes.fromhex("504b4c44"), name="PkCamp")
+    exchange = data_exchange.build_record(player_id=bytes.fromhex("504b4c44"), name="POKELDN")
     offer = trade_box.build_our_record(**data_exchange.read_record(exchange))
     jlog = []
     r = types.SimpleNamespace(

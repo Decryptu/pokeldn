@@ -28,7 +28,7 @@ TOOLS = {t.key: t for g in GAMES for t in g.tools}
 
 @pytest.fixture
 def settings(tmp_path):
-    return Settings(ot="PkCamp", tid=41234, sid=12345, language=2, received=str(tmp_path / "Received"),
+    return Settings(ot="POKELDN", tid=41234, sid=12345, language=2, received=str(tmp_path / "Received"),
                     keys=str(tmp_path / "prod.keys"), capture=False)
 
 
@@ -54,7 +54,7 @@ def _check_options(read, level_of):
     assert [m for m in read["moves"] if m] == OPTIONS["moves"]
     assert dict(zip(STORED, read["ivs"])) == OPTIONS["ivs"]
     assert dict(zip(STORED, read["evs"])) == OPTIONS["effort"]
-    assert (read["trainer_id"], read["secret_id"], read["ot_name"]) == (41234, 12345, "PkCamp")
+    assert (read["trainer_id"], read["secret_id"], read["ot_name"]) == (41234, 12345, "POKELDN")
 
 
 def _same_but_identity(sent, built, size):

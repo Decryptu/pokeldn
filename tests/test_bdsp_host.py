@@ -20,8 +20,9 @@ def _ref(b64):
 UPDATE_SESSION = _ref("eNpjFPRkgAEmIH6RwmCwJNLh+uJD1ZEQUY+PCkqzXzNC1az8V8BoYAlhMIEYMAmG/6QxAEm/FCc=")
 REQUEST = _ref("eNpjZGB5PVtJ4aMHA8N1h8glnP8Z0CGDBhvbyn8FTAaWEJIBDCI6e168OMXAoF1f77FPKMqYlZGBkYEIwAgEAdnO"
                "ibkFDFQDjFRXSIxZAE50HHI=")
+# The retail host's response, its player's name replaced by POKELDN.
 RESPONSE = _ref("eNpjYmCJ6Ox58eIUA4N2fb0HpwiTBLMMgwpDBHMGYw3zFMYlDAwqTGwMDCv/FTAaWDKAwevZSgofPRgYrjtE"
-                "LomsPrQYKMTIQADk6dzvZwQC99KissQ8BvoDZoZRMAqGPritFGwGAIs2GHk=")
+                "LomsPrQYKMTIQADk6dzvZwSCAH9vVx8XPwa6A2aGUTAKhj64rRRsBgA+AhgT")
 JOIN_RESPONSE = _ref("eNpjYmJgZGRgYuAAQhBgYmNgWPmvgNHAEsxleD1bSeGjBwPDdYfIJZHVhxYDhRgZCAA2NqAJTAaWEBIi"
                      "FtHZ8+LFKQYG7fp6j31CUcasjLjNAUndVgo2BwA/Mhdm")
 UPDATE_MESH = _ref("eNpTYGIAAUZGBiYGJjYGhpX/ChgNLMFiDK9nKyl89GBguO4QuSSy+tBikDoGAoCNDWgCk4ElhISIRXT2"
@@ -54,7 +55,7 @@ def test_update_session_is_the_retail_hosts():
 
 def test_connection_response_is_the_retail_hosts():
     assert host.build_connection_response(stp.ldn_constant_id(JOINER_MAC), JOINER_VAR,
-                                          _host_location(), 0x6E2CDF8F, ["Gurvan"],
+                                          _host_location(), 0x6E2CDF8F, ["POKELDN"],
                                           0xDB225336) == RESPONSE
 
 
@@ -77,7 +78,7 @@ def test_connection_request_parses():
     req = host.parse_connection_request(REQUEST)
     assert req["target_variable_id"] == HOST_VAR
     assert req["location"]["variable_id"] == JOINER_VAR
-    assert req["player_names"] == ["PkCamp"]
+    assert req["player_names"] == ["PkCamp"]               # the recorded request
 
 
 class Console:
@@ -108,13 +109,13 @@ class Console:
         loc = stp.station_location(self.ip, 12345, stp.ldn_constant_id(self.mac), self.var,
                                    stp.ldn_service_variable_id(self.mac))
         return stp.build_connection_request(host_const, host_var, host.PROTOCOLS, loc,
-                                            player_infos=[stp.player_info("Gurvan", "", 3)],
+                                            player_infos=[stp.player_info("POKELDN", "", 3)],
                                             ack_id=7)
 
 
 def _session(record=None):
     adv = host.Advertisement(0x6E2CDF8F, 0x03326B15)
-    return host.HostSession(adv.keys, adv, "169.254.112.1", HOST_MAC, HOST_VAR, name="PkCamp",
+    return host.HostSession(adv.keys, adv, "169.254.112.1", HOST_MAC, HOST_VAR, name="POKELDN",
                             record=record)
 
 
@@ -257,7 +258,7 @@ def test_scripted_trades_are_answered_through_the_save_each_with_the_next_offer(
     [talk] = say(room.build_talk_reserve_result(can_talk=0, is_recruitment=1, emoticon_state=4),
                  4.2)
     assert talk == bytes.fromhex("0600050001000000")
-    [traner] = say(room.build_trade_traner("Gurvan", 44466, 4080), 5.0)
+    [traner] = say(room.build_trade_traner("POKELDN", 24680, 13579), 5.0)
     assert traner[0] == room.TRADE_TRANER and len(traner) == 35
     t = 5.5
     for trade, ours in enumerate([*offers, offers[-1]], start=1):

@@ -47,7 +47,7 @@ def check() -> None:
             assert entitlements.get("com.apple.security.files.user-selected.read-write"), entitlements
             subprocess.run(["codesign", "--verify", "--deep", "--strict", str(bundle)],
                            capture_output=True, check=True)
-    trainer = {"ot": "PkCamp", "tid": 12345, "sid": 54321, "language": 2, "gender": 0}
+    trainer = {"ot": "POKELDN", "tid": 12345, "sid": 54321, "language": 2, "gender": 0}
     with tempfile.TemporaryDirectory(prefix="pokeldn-check-") as folder:
         pokemon.POKEMON = Path(folder)
         for game in pokemon.EXTENSIONS:

@@ -141,7 +141,7 @@ def test_every_field_a_retail_record_uses_has_a_name():
 
 def test_a_fresh_offer_is_drawn_after_the_settings_and_keeps_them():
     """`--offer-set shiny --fresh-pid` keeps the rolled square and the named fields under the new constant."""
-    base = pokemon.to_wire(pokemon.build(species=132, trainer_id=57189, secret_id=58811,
+    base = pokemon.to_wire(pokemon.build(species=132, trainer_id=12345, secret_id=2791,
                                          pid=0x12345678, encryption_constant=0x9C96AA87))
     one = pokemon.read(pokemon.from_wire(trade.load_offer(base, ["shiny", "nickname=PKJOIN"])))
     two = pokemon.read(pokemon.from_wire(trade.load_offer(base, ["shiny", "nickname=PKJOIN"],

@@ -85,7 +85,7 @@ def test_nothing_that_yields_sits_between_the_seed_and_the_generation():
 
 def test_the_chosen_seed_makes_a_shiny_ditto_for_this_console():
     from pokeldn.frlg.gift import wonder_card_events
-    got = rng_script.predict_wild_mon(wonder_card_events.RNG_DITTO_SEED, 57189, 58811)
+    got = rng_script.predict_wild_mon(wonder_card_events.RNG_DITTO_SEED, 12345, 2791)
     assert got["shiny"] is True
     assert got["low_first"]["shiny_value"] == got["high_first"]["shiny_value"] == 3
     assert got["ivs"] == (31, 23, 27, 18, 30, 30)
@@ -94,7 +94,7 @@ def test_the_chosen_seed_makes_a_shiny_ditto_for_this_console():
 
 def test_shininess_and_ivs_do_not_depend_on_the_half_order_but_nature_does():
     """Random32 is `Random() | (Random() << 16)`; the shiny test XORs both halves and the IVs come after."""
-    got = rng_script.predict_wild_mon(0x81F6816D, 57189, 58811)
+    got = rng_script.predict_wild_mon(0x81F6816D, 12345, 2791)
     assert got["low_first"]["shiny"] == got["high_first"]["shiny"]
     assert got["low_first"]["personality"] != got["high_first"]["personality"]
     assert got["low_first"]["nature"] != got["high_first"]["nature"]
@@ -126,7 +126,7 @@ def test_mev07_the_console_built_exactly_what_was_predicted():
     """Measured: the console built the predicted mon; nature 17 (QUIET) shows `Random32()` takes its
     low half first."""
     from pokeldn.frlg.gift import wonder_card_events
-    got = rng_script.predict_wild_mon(wonder_card_events.RNG_DITTO_SEED, 57189, 58811)
+    got = rng_script.predict_wild_mon(wonder_card_events.RNG_DITTO_SEED, 12345, 2791)
     assert got["low_first"]["personality"] == 0x026F38B2
     assert got["low_first"]["nature"] == 17
     assert got["ivs"] == (31, 23, 27, 18, 30, 30)

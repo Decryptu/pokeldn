@@ -30,7 +30,7 @@ def _session(name, ticks=20000, payload=None):
         link_player=linkplayer.LinkPlayer(name="EMU", version=linkplayer.VERSION_FIRE_RED),
         timing=host_mystery_gift.MysteryGiftTiming(client_ready_idle_frames=10))
     client = mg_client.MysteryGiftClientEngine(
-        linkplayer.LinkPlayer(name="PkCamp", version=linkplayer.VERSION_FIRE_RED))
+        linkplayer.LinkPlayer(name="POKELDN", version=linkplayer.VERSION_FIRE_RED))
     slot, child_slot = rfu.SlotBuilder(), rfu.idle_slot()
     for t in range(ticks):
         table = rfu.pack_recv_cmds([rfu.serialize(host.tick()), child_slot])

@@ -213,11 +213,11 @@ def test_the_success_message_reads_the_status_off_the_running_engine():
 
     app = SimpleNamespace(
         session=SimpleNamespace(activity=SimpleNamespace(
-            server=SimpleNamespace(buffer_status=0xE5BBDF65))))
+            server=SimpleNamespace(buffer_status=0x0AE73039))))
 
     message = BufferScriptHostApplication._success_message(app, mg_server.SVR_MSG_GIFT_SENT_1)
 
-    assert "0xE5BBDF65" in message
+    assert "0x0AE73039" in message
     assert BufferScriptHostApplication._success_message(
         SimpleNamespace(session=None), mg_server.SVR_MSG_GIFT_SENT_1)
 
@@ -265,14 +265,14 @@ def test_the_trainer_id_probe_reports_the_secret_id():
         buffer_code=buffer_script.payload(buffer_script.TRAINER_ID_PROBE),
         buffer_expect=mg_server.BUFFER_EXPECT_TRAINER_ID,
         log=lines.append)
-    server.game_data = mg_script.parse_link_game_data(_game_data_with_trainer_id(0xE5BBDF65))
-    server._received = (0xE5BBDF65).to_bytes(4, "little")
+    server.game_data = mg_script.parse_link_game_data(_game_data_with_trainer_id(0x0AE73039))
+    server._received = (0x0AE73039).to_bytes(4, "little")
 
     server._do_svr_read_buffer_status()
 
     assert server.buffer_matched is True
-    assert "TID (public) 57189" in "\n".join(lines)
-    assert "SID (SECRET) 58811" in "\n".join(lines)
+    assert "TID (public) 12345" in "\n".join(lines)
+    assert "SID (SECRET) 2791" in "\n".join(lines)
 
 
 def _game_data_with_trainer_id(trainer_id):
@@ -384,7 +384,7 @@ def test_the_save_dump_reads_either_block_without_knowing_any_address():
     """The console hands the payload gSaveBlock2Ptr and gSaveBlock1Ptr; no address is needed."""
     sav2 = bytearray(0x1000)
     sav2[buffer_script.SAV2_PLAYER_TRAINER_ID:
-         buffer_script.SAV2_PLAYER_TRAINER_ID + 4] = (0xE5BBDF65).to_bytes(4, "little")
+         buffer_script.SAV2_PLAYER_TRAINER_ID + 4] = (0x0AE73039).to_bytes(4, "little")
     sav1 = bytearray(0x1000)
     sav1[0x290:0x294] = (0x1234ABCD).to_bytes(4, "little")   # SaveBlock1.money [global.h:774]
 
@@ -397,7 +397,7 @@ def test_the_save_dump_reads_either_block_without_knowing_any_address():
 
     assert int.from_bytes(
         from_sav2.pending_send[buffer_script.SAV2_PLAYER_TRAINER_ID:
-                               buffer_script.SAV2_PLAYER_TRAINER_ID + 4], "little") == 0xE5BBDF65
+                               buffer_script.SAV2_PLAYER_TRAINER_ID + 4], "little") == 0x0AE73039
     assert int.from_bytes(from_sav1.pending_send[:4], "little") == 0x1234ABCD
 
 
@@ -1458,7 +1458,7 @@ def test_the_cli_refuses_a_gather_without_an_array_and_an_array_without_a_gather
 # back from where the console's prologue does.
 
 CREATE_MON_ADDRESS = rom_map.thumb(rom_map.CREATE_MON)
-CONSOLE_OT_ID = 0xE5BBDF65               # measured: TID 57189, SID 58811
+CONSOLE_OT_ID = 0x0AE73039               # measured: TID 12345, SID 2791
 
 
 def _create_mon_args(code, **kwargs):
@@ -1634,7 +1634,7 @@ def test_the_check_names_the_argument_that_disagreed():
 
 
 def test_a_shiny_personality_is_shiny_for_the_trainer_it_was_aimed_at():
-    personality = buffer_script.shiny_personality(57189, 58811)
+    personality = buffer_script.shiny_personality(12345, 2791)
 
     assert buffer_script.is_shiny(CONSOLE_OT_ID, personality)
     assert buffer_script.shiny_value(CONSOLE_OT_ID, personality) == 0

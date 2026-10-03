@@ -97,7 +97,7 @@ def test_news_file_selects_the_news_flow_and_preserves_the_message(tmp_path):
 
 def test_wc8_round_trip_reassembles_the_original_record(tmp_path, monkeypatch):
     from pokeldn import pokemon
-    raw = wc8.pokemon_card(25, level=45, nickname="PKCAMP", ot="POKELDN", date=1539879960)
+    raw = wc8.pokemon_card(25, level=45, nickname="POKELDN", ot="POKELDN", date=1539879960)
     native = tmp_path / "event.wc8"
     native.write_bytes(raw)
     path = tmp_path / "event.pokegift"

@@ -27,7 +27,7 @@ def test_the_word_encoding_matches_the_decomp_macro():
 
 def test_the_default_card_no_longer_carries_the_word_that_prints_question_marks():
     card = linkplayer.build_trainer_card(
-        linkplayer.LinkPlayer(name="PkCamp", version=linkplayer.VERSION_FIRE_RED))
+        linkplayer.LinkPlayer(name="POKELDN", version=linkplayer.VERSION_FIRE_RED))
     words = _quote_of(card)
     assert 0 not in words, "word 0 is rejected by IsECWordInvalid and prints as ???"
     assert words == list(easychat.resolve_quote())
@@ -48,7 +48,7 @@ def test_an_unknown_or_oversized_quote_is_refused():
 
 
 def test_the_quote_does_not_disturb_the_rest_of_the_card():
-    p = linkplayer.LinkPlayer(name="PkCamp", version=linkplayer.VERSION_FIRE_RED)
+    p = linkplayer.LinkPlayer(name="POKELDN", version=linkplayer.VERSION_FIRE_RED)
     plain = bytearray(linkplayer.build_trainer_card(p, mon_species=[1, 2, 3]))
     quoted = bytearray(linkplayer.build_trainer_card(p, mon_species=[1, 2, 3], quote="hi"))
     lo, hi = easychat_off, easychat_off + 2 * easychat.PROFILE_LENGTH

@@ -194,10 +194,10 @@ def test_post_join_advertisement_sets_started_activity_by_default():
 
 
 
-# One console's record before and after registering Chansey lv26 asking for FEU. Byte 10 is its
-# re-rolled RFU session id.
-CONSOLE_BASELINE = bytes.fromhex("65dfc1cfccd0bbc8ff00805d00000000401c030100000000")
-CONSOLE_REGISTERED = bytes.fromhex("65dfc1cfccd0bbc8ff00815d00000000401c2b3500007100")
+# One console's record before and after registering Chansey lv26 asking for FEU, its name and
+# trainer id replaced. Byte 10 is its re-rolled RFU session id.
+CONSOLE_BASELINE = bytes.fromhex("3930cac9c5bfc6bec8ff805d00000000401c030100000000")
+CONSOLE_REGISTERED = bytes.fromhex("3930cac9c5bfc6bec8ff815d00000000401c2b3500007100")
 
 
 def test_trade_board_registration_reproduces_the_console_diff():

@@ -42,10 +42,11 @@ def test_the_local_communication_id_is_swords_not_shields():
     assert COMM_ID == 0x0100ABF008968000
 
 
-# A retail Sword searching for a Link Trade with code 12345678, read off the air with ldn_scan.py.
+# A retail Sword searching for a Link Trade with code 12345678, read off the air with ldn_scan.py;
+# its player's name replaced by POKELDN and the record's CRC recomputed.
 SWORD_CODE_ADVERT = bytes.fromhex(
-    "85a74f37afdae09a05180000a63e7a2a00000000000000000f2d700d000002c8536f0b06a95bcb953b778dba186a95e0"
-    "4355a2d47b0410a2f2b11ac7e5ce57733612624ec1cbda470075007200760061006e0000006a95e04355a2d47b04100c"
+    "85a74f37afdae09a05180000a63e7a2a00000000000000000765700d000002c8536f0b06a95bcb953b778dba186a95e0"
+    "4355a2d47b0410a2f2b11ac7e5ce57733612624ec1cbda50004f004b0045004c0044004e000000e04355a2d47b04100c"
     "11011c610000040400801540dc80830e5c745004020320020250074d20b64447d35cd84294025e472ccdb6bf4c20b644"
     "47d35cd84294025e472ccdb6bf4b20b64447d35cd84294025e472ccdb6bf010d00000000000000000000000000000000"
     "0000000000000000000000000000000000aa000100000000000000000000000000000000000000000000000000000000"
@@ -69,7 +70,7 @@ def test_the_host_builds_a_station_advert_without_a_saved_console_record():
     from pokeldn.swsh import beacon, trade_payload
 
     advert = swsh_host.build_advert(network_id=bytes.fromhex("0102ffff"),
-                                   session_param=0x12345678, player_name="PkCamp")
+                                   session_param=0x12345678, player_name="POKELDN")
     record = beacon.decode(advert)
     assert advert[:4] == bytes.fromhex("0102ffff")
     assert advert[4:8] == bytes(4)
@@ -79,7 +80,7 @@ def test_the_host_builds_a_station_advert_without_a_saved_console_record():
     profile = advert[0x1F:0x1F + trade_payload.PROFILE_LENGTH]
     assert any(profile[:16]) and any(profile[16:32])
     assert profile[trade_payload.TAIL_NAME_OFFSET:
-                   trade_payload.TAIL_NAME_OFFSET + 12] == "PkCamp".encode("utf-16-le")
+                   trade_payload.TAIL_NAME_OFFSET + 14] == "POKELDN".encode("utf-16-le")
     assert profile[trade_payload.TAIL_ACTIVITY] == 13
 
 
@@ -97,13 +98,13 @@ def test_the_host_uses_the_live_snapshot_and_replaces_the_offered_slot(tmp_path,
     offer_path = tmp_path / "chosen.pk8"
     offer_path.write_bytes(chosen[:gen8.SIZE_STORED])
     args = swsh_host.build_parser().parse_args(["--offer-file", str(offer_path),
-                                                "--trainer-name", "PkCamp", "--trainer-tid", "12345",
+                                                "--trainer-name", "POKELDN", "--trainer-tid", "12345",
                                                 "--trainer-sid", "54321", "--fresh-pid"])
-    advert = swsh_host.build_advert(player_name="PkCamp")
+    advert = swsh_host.build_advert(player_name="POKELDN")
     snapshot, offer = swsh_host.prepare_snapshot(peer, args, advert, args.offer_file[0])
     fields = trade_payload.read(snapshot)
     profile = trade_payload.read_tail(snapshot)
-    assert fields["trainer_name"] == fields["card_name"] == "PkCamp"
+    assert fields["trainer_name"] == fields["card_name"] == "POKELDN"
     assert (fields["trainer_id"], fields["secret_id"]) == (12345, 54321)
     assert fields["party_count"] == 2
     assert fields["party"][1]["species"] == trade_payload.read(peer)["party"][1]["species"]

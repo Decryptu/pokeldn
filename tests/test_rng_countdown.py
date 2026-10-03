@@ -7,7 +7,7 @@ from pokeldn.frlg.rom import lcg, rng_countdown, rng_script
 MEV11_BEFORE = 0x9A4F5DAA
 MEV11_PID = 0x0BF87DD1
 MEV11_IVS = (25, 10, 28, 9, 19, 3)
-CONSOLE_TID, CONSOLE_SID = 57189, 58811
+CONSOLE_TID, CONSOLE_SID = 12345, 2791
 
 
 def test_the_mon_it_computes_is_the_one_the_console_actually_built():

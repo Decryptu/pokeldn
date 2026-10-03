@@ -47,9 +47,9 @@ def test_a_station_location_is_forty_bytes_and_inside_the_accepted_range():
 
 
 def test_a_player_info_is_195_bytes_with_the_5_27_field_order():
-    info = stp.player_info("PkCamp", language=2, principal_id=7)
+    info = stp.player_info("POKELDN", language=2, principal_id=7)
     assert len(info) == 0xC3
-    assert info[0] == 1 and info[1:7] == b"PkCamp"            # encoding BEFORE the string
+    assert info[0] == 1 and info[1:8] == b"POKELDN"            # encoding BEFORE the string
     assert info[0x51] == 1
     assert info[0x7A] == 2
     assert struct.unpack_from("<Q", info, 0xBB)[0] == 7
@@ -59,7 +59,7 @@ def _request(n=8, **kw):
     loc = stp.station_location("169.254.49.2", 12345, 0x1122334455667788, 0xAABBCCDD, 0x12345678)
     return stp.build_connection_request(
         stp.ldn_constant_id(CONSOLE_MAC), HOST_VAR, [(0xFF, 1)] * n, loc,
-        player_infos=[stp.player_info("PkCamp")], **kw)
+        player_infos=[stp.player_info("POKELDN")], **kw)
 
 
 def test_the_request_lands_every_field_where_the_console_reads_it():

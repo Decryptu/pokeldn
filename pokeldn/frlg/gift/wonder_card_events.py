@@ -280,7 +280,7 @@ PORYGON_TM_GIFT = WonderGift(
             "Visit the deliveryman on the",
             "2nd floor of a Pokemon Center.",
         ),
-        footer1=" - MercuryEnigma",
+        footer1=" - POKELDN",
         default_flag_id=PORYGON_TM_GIFT_FLAG_ID,
     ),
     intro_message="A special CLEFAIRY delivery has arrived!",
@@ -320,7 +320,7 @@ WORLDS_XP_GIFT = WonderGift(
             "a LEGENDARY aura.",
             "We hope you enjoy this fan-made event!",
         ),
-        footer1=" - MercuryEnigma.github.io/pkcamp",
+        footer1=" - decryptu.github.io/pokeldn",
         footer2="NOTE. not official use at your own risk",
         default_flag_id=WORLDS_XP_GIFT_FLAG_ID,
     ),
@@ -421,7 +421,7 @@ WORLDS_XP_GIFT = WonderGift(
             ))),
         ),
     )),
-    completed_message="Visit MercuryEnigma.github.io/pkcamp",
+    completed_message="Visit decryptu.github.io/pokeldn",
 )
 
 
@@ -546,11 +546,11 @@ def build_mevent_celebi_script(*, nickname="CELEBI", level=30, build=None):
         moves=(MOVE_CONFUSION, MOVE_RECOVER, MOVE_HEAL_BELL, MOVE_ANCIENT_POWER),
         pp=(25, 20, 5, 5),
         nickname=nickname,
-        ot_name="PkCamp",
+        ot_name="POKELDN",
         held_item=mevent_pokemon.ITEM_ORANGE_MAIL,
         language=builds.resolve(build).language_id)
     mail = mevent_pokemon.build_mail(
-        MEVENT_CELEBI_MAIL_WORDS, player_name="PkCamp",
+        MEVENT_CELEBI_MAIL_WORDS, player_name="POKELDN",
         species=SPECIES_CELEBI_MEVENT, item_id=mevent_pokemon.ITEM_ORANGE_MAIL)
     payload = mevent_pokemon.build_givepokemon_payload(mon, mail)
 
@@ -896,7 +896,7 @@ MEVENT_SWEEP_MARK_RAREWORD = 41
 MEVENT_SWEEP_MARK_TRAINER = 42
 
 
-def build_sweep_berry(name="PKCAMP", build=None):
+def build_sweep_berry(name="PKLDN", build=None):
     """struct Berry2, 28 bytes: the console's own growth data under a name of ours."""
     desc1, desc2 = builds.resolve(build).enigma_desc
     encoded = charmap.encode(name).ljust(6, b"\x00")[:6] + b"\xFF"

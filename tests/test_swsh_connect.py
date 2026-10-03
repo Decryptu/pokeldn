@@ -276,10 +276,10 @@ def test_no_offer_flags_means_the_record_goes_as_it_came():
 
 
 def test_the_offer_flags_become_gen8_write_fields():
-    args = _OfferArgs(offer_species=25, offer_nickname="PKCAMP", offer_ot="PkCamp",
+    args = _OfferArgs(offer_species=25, offer_nickname="POKELDN", offer_ot="POKELDN",
                       offer_ivs="31,31,31,31,31,31")
-    assert swsh_connect.offer_edits(args) == {"species": 25, "nickname": "PKCAMP",
-                                              "ot_name": "PkCamp", "ivs": [31] * 6}
+    assert swsh_connect.offer_edits(args) == {"species": 25, "nickname": "POKELDN",
+                                              "ot_name": "POKELDN", "ivs": [31] * 6}
 
 
 def test_an_ability_and_four_moves_ride_with_the_species():

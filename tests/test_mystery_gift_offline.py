@@ -89,7 +89,7 @@ def test_default_gift_bundle():
     assert wonder_card.DEFAULT_GIFT_ITEM is None
     assert int.from_bytes(card[2:4], "little") == wonder_card.SPECIES_CELEBI
     assert int.from_bytes(card[4:8], "little") == 3
-    assert charmap.decode(card[250:290]).endswith("MercuryEnigma")
+    assert charmap.decode(card[250:290]).endswith("POKELDN")
     assert script == wonder_card.build_delivery_ram_script(item=None, flag_id=1003)
 
 

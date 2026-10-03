@@ -43,7 +43,7 @@ def test_wonder_card_advertisement_matches_the_proven_friend_control():
     (docs/frlg_gift.md)."""
     inactive, _active = build_wonder_card_app_data(DEFAULT_TRAINER, SESSION_ID)
     record = _record(inactive)
-    assert record.hex() == "2288cadfbdd5e1e4ffff7bf1000000009515000000000000"
+    assert record.hex() == "2288cac9c5bfc6bec8ff7bf1000000009515000000000000"
 
 
 def test_advertisement_declares_activity_wonder_card_and_is_joinable():
@@ -76,7 +76,7 @@ def test_trade_advertisement_is_unchanged_by_the_gift_host():
     """The trade host is proven on hardware and must stay bit-identical."""
     inactive, _active = build_trade_app_data(DEFAULT_TRAINER, SESSION_ID)
     record = _record(inactive)
-    assert record.hex() == "2288cadfbdd5e1e4ffff7bf1000000008415000000000000"
+    assert record.hex() == "2288cac9c5bfc6bec8ff7bf1000000008415000000000000"
     assert record[beacon.SEARCH_WORD_OFFSET] & beacon.SEARCH_ACTIVITY_MASK \
         == beacon.ACTIVITY_TRADE
 
@@ -96,7 +96,7 @@ def test_default_config_selects_the_self_contained_celebi_gift():
     assert charmap.decode(card[10:50]).startswith("CELEBI GIFT")
     assert int.from_bytes(card[2:4], "little") == wonder_card.SPECIES_CELEBI
     assert int.from_bytes(card[4:8], "little") == 3
-    assert charmap.decode(card[250:290]).endswith("MercuryEnigma")
+    assert charmap.decode(card[250:290]).endswith("POKELDN")
     assert 0 < len(script) <= gift_composer.MAX_RAM_SCRIPT_SIZE
     assert script != wonder_card.build_delivery_ram_script(item=None, flag_id=1003)
 

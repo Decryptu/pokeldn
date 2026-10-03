@@ -45,7 +45,7 @@ STATION_PROFILE_OFF = 0x1F
 NETWORK_ID_HIGH = b"\xff\xff"
 
 
-def build_advert(template=None, network_id=None, session_param=None, code="", player_name="PkCamp"):
+def build_advert(template=None, network_id=None, session_param=None, code="", player_name="POKELDN"):
     """-> the 384 advertise bytes: rebuild the Pia header and use a station record at 0x18,
     either fresh or copied from a console (docs/swsh_session.md)."""
     if template is None:
@@ -158,11 +158,11 @@ def build_parser():
     ap.add_argument("--advert", default=None,
                     help="optional Sword advertisement (hex, raw, or swsh_net_facts.json); "
                          "without one, build a fresh station record")
-    ap.add_argument("--player-name", default="PkCamp")
+    ap.add_argument("--player-name", default="POKELDN")
     ap.add_argument("--snapshot", default=None,
                     help="optional saved Sword 0x84 snapshot; otherwise use the joining console's "
                          "snapshot from this session")
-    ap.add_argument("--trainer-name", default="PkCamp")
+    ap.add_argument("--trainer-name", default="POKELDN")
     ap.add_argument("--trainer-tid", type=lambda s: int(s, 0), default=12345)
     ap.add_argument("--trainer-sid", type=lambda s: int(s, 0), default=54321)
     ap.add_argument("--offer-slot", type=int, default=1, help="the party slot we offer")

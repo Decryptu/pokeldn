@@ -514,7 +514,7 @@ Against an emulated Shield holding the host's card:
 | unchanged | no |
 | trainer id 848973 -> 111111 | yes; filed in a new slot beside the first |
 | Pokédex count 400 -> 401 | no |
-| name PkCamp -> PkCampX | no |
+| the name, one letter added | no |
 | timestamp_printed, only byte 0x1A8 changed | yes |
 
 A retail Sword draws the date received, the logo of `game` (0x24, 0 Sword) top left, the three
@@ -573,7 +573,7 @@ whether Sword checks for a duplicate is unread. `bin/swsh_host.py --fresh-pid` d
 encryption constant and PID, as does `bin/swsh_connect.py --fresh-pid`. Brilliant Diamond flags a
 duplicate as illegal ([the BDSP trade page](bdsp_trade.md#duplicate-detection)).
 
-    --offer-slot 1 --offer-nickname PKCAMP --offer-ivs 31,31,31,31,31,31
+    --offer-slot 1 --offer-nickname POKELDN --offer-ivs 31,31,31,31,31,31
 
 | flag | effect |
 |---|---|

@@ -52,7 +52,7 @@ crypto.
 `bin/bdsp_join.py` scans, associates and reports the participant table:
 
     participant 0: ip=169.254.54.1  mac=48f1eb209b22                 <- the console
-    participant 1: ip=169.254.54.2  mac=58d8122149a2  name=b'PkCamp'  <- the client
+    participant 1: ip=169.254.54.2  mac=58d8122149a2  name=b'POKELDN' <- the client
 
 The console assigns the IP. The Union Room's eight seats are the LDN `max_participants`. An LDN seat
 is below the game: nothing appears on screen, and it is not a seat in the Pia session.

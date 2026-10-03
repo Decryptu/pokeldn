@@ -106,7 +106,7 @@ def test_our_snapshot_survives_the_round_trip_the_console_will_put_it_through():
     """Build, frame on 0x84, reassemble as a receiver does, read back."""
     from pokeldn.ldn import broadcast4
 
-    ours = trade_payload.rewrite(a_payload(count=3), trainer_name="PkCamp",
+    ours = trade_payload.rewrite(a_payload(count=3), trainer_name="POKELDN",
                                  trainer_id=12345, secret_id=54321)
     messages = broadcast4.Sender().transfer(ours)
     control = broadcast4.parse(messages[0][0])
@@ -120,10 +120,10 @@ def test_our_snapshot_survives_the_round_trip_the_console_will_put_it_through():
     assert trade_payload.reassemble(fragments) == ours
 
     back = trade_payload.read(ours)
-    assert back["trainer_name"] == back["card_name"] == "PkCamp"
+    assert back["trainer_name"] == back["card_name"] == "POKELDN"
     assert (back["trainer_id"], back["secret_id"]) == (12345, 54321)
     assert trade_payload.party_matches_trainer(back), "the party must name the trainer we became"
-    assert [p["ot_name"] for p in back["party"] if p] == ["PkCamp"] * 3
+    assert [p["ot_name"] for p in back["party"] if p] == ["POKELDN"] * 3
     assert back["party_count"] == 3
 
 
@@ -136,12 +136,12 @@ def test_a_short_session_58_payload_is_repaired_and_anything_else_is_refused():
         trade_payload.inflate_short(b"\x00" * 100)
 
 
-# A retail Sword's profile, ids zeroed and post-terminator slack cleared (docs/swsh_protocol.md, The
-# player profile).
+# A retail Sword's profile, ids zeroed, its name replaced by RIVAL and post-terminator slack
+# cleared (docs/swsh_protocol.md, The player profile).
 
 PROFILE = bytes.fromhex(
     "00" * 0x28
-    + "470075007200760061006e00" + "00" * 12                     # the name, 24 bytes
+    + "52004900560041004c00" + "00" * 14                     # the name, 24 bytes
     + "0c11011c610000040400801540dc80830e5c7450040203200202"     # appearance, bit-packed
     + "c607"                                                     # sample header
     + "4b607044478ba5c6425c9a5d477c7c24bf"                       # three samples, counters 11 10 9
@@ -154,14 +154,14 @@ assert len(PROFILE) == trade_payload.PROFILE_LENGTH
 
 
 def a_payload_with_the_profile(**kw):
-    out = bytearray(a_payload(name="Gurvan", **kw))
+    out = bytearray(a_payload(name="RIVAL", **kw))
     out[trade_payload.TAIL_OFFSET:] = PROFILE.ljust(trade_payload.TAIL_LENGTH, b"\x00")
     return bytes(out)
 
 
 def test_the_profile_reads_back_field_by_field():
     t = trade_payload.read_tail(a_payload_with_the_profile())
-    assert t["name"] == "Gurvan"
+    assert t["name"] == "RIVAL"
     assert (t["gender"], t["language"]) == (0, 3)                 # male, French
     assert t["appearance"] == [1, 71, 6, 0, 4, 1, 0, 86, 64, 55, 56, 58, 92, 29, 69, 8, 3]
     assert t["appearance_tail"] == (0, 2, 8)
@@ -185,11 +185,11 @@ def test_the_profile_name_is_the_fourth_copy_and_moves_with_the_others():
     payload = a_payload_with_the_profile()
     at = trade_payload.TAIL_OFFSET + trade_payload.TAIL_NAME_OFFSET
     assert at == 0xB14
-    out = trade_payload.rewrite(payload, trainer_name="PkCamp", trainer_id=12345, secret_id=54321)
-    assert out.find("Gurvan".encode("utf-16-le")) < 0            # nowhere in the payload at all
-    assert out.count("PkCamp".encode("utf-16-le")) == 3          # status, card, and the profile
-    assert out[at:at + 24] == "PkCamp".encode("utf-16-le") + b"\x00" * 12
-    assert trade_payload.read_tail(out)["name"] == "PkCamp"
+    out = trade_payload.rewrite(payload, trainer_name="POKELDN", trainer_id=12345, secret_id=54321)
+    assert out.find("RIVAL".encode("utf-16-le")) < 0            # nowhere in the payload at all
+    assert out.count("POKELDN".encode("utf-16-le")) == 3          # status, card, and the profile
+    assert out[at:at + 24] == "POKELDN".encode("utf-16-le") + b"\x00" * 10
+    assert trade_payload.read_tail(out)["name"] == "POKELDN"
     assert trade_payload.party_matches_trainer(trade_payload.read(out))
     changed = {i for i in range(0xAEC, 0xD80) if payload[i] != out[i]}
     assert changed <= set(range(at, at + 24))

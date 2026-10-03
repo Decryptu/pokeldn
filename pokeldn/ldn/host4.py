@@ -42,7 +42,7 @@ def packet_iv(network_id_le, sender_mac, nonce8, source_id=0):
 
 
 def build_host_response(joiner_constant, joiner_variable, ack_id, account=None, session=None,
-                        name="PkCamp", token=None):
+                        name="POKELDN", token=None):
     """The 840-byte accepted 0x14 connection response a retail Sword sends a joiner; 0x37 is the
     gate the receiver checks under 5, and the ack id closes the message."""
     out = bytearray(RESPONSE_SIZE)
@@ -96,7 +96,7 @@ class Pia4Host:
     """Everything below the game: seat a joiner, keep the mesh, carry both reliable windows."""
 
     def __init__(self, network_id_le, session_key, our_ip, our_mac, send, log=print,
-                 on_data=None, on_other=None, name="PkCamp", account=None, token=None,
+                 on_data=None, on_other=None, name="POKELDN", account=None, token=None,
                  session=None, capture=None, on_broadcast=None):
         self.network_id_le = bytes(network_id_le)
         self.session_key = bytes(session_key)

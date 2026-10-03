@@ -70,11 +70,11 @@ def test_update_mesh_is_the_join_table_at_full_size():
 def test_host_response_layout():
     got = host4.build_host_response(stp.ldn_constant_id(JOINER_MAC), JOINER_VAR, 0x69802540,
                                     account=bytes(16), session=bytes(4), token=bytes(52),
-                                    name="PkCamp")
+                                    name="POKELDN")
     assert len(got) == host4.RESPONSE_SIZE
     assert got[:0x11].hex() == "0200090400990f2247ad2e0000f7a08de0"
     assert got[station4.OFF_RESPONSE_GATE] < station4.RESPONSE_GATE_MAX
-    assert got[0x88:0x8f] == b"\x01PkCamp"
+    assert got[0x88:0x90] == b"\x01POKELDN"
     assert station4.ack_id_of(got) == 0x69802540
 
 

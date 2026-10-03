@@ -52,7 +52,7 @@ def build_parser():
     ap.add_argument("--password", default="",
                     help="host the room the player enters with this password, e.g. 00000000")
     ap.add_argument("--app-version", type=int, default=APP_VERSION)
-    ap.add_argument("--name", default="PkCamp", help="the player name our side carries")
+    ap.add_argument("--name", default="POKELDN", help="the player name our side carries")
     ap.add_argument("--language", type=int, default=3, help="3 is French")
     ap.add_argument("--variable-id", type=lambda s: int(s, 0), default=None,
                     help="our Pia variable id; random by default")
@@ -73,7 +73,7 @@ def build_parser():
                          "order, the last offered again after the list")
     ap.add_argument("--complete-trade", action="store_true",
                     help="answer the ready-ok, after which the console writes its save")
-    ap.add_argument("--trainer", default="PkCamp:41234:23117", metavar="NAME:TID:SID",
+    ap.add_argument("--trainer", default="POKELDN:41234:23117", metavar="NAME:TID:SID",
                     help="our trade trainer record")
     ap.add_argument("--save-theirs", default=None, metavar="PREFIX",
                     help="write the Pokemon the console offers in trade N to PREFIX_N.pb8")

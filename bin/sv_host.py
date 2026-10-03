@@ -187,7 +187,7 @@ def build_parser():
     ap.add_argument("--ip-host", action="store_true",
                     help="host over ldn_mitm on the LAN for an emulator; no radio and no root")
     ap.add_argument("--our-ip", default=None)
-    ap.add_argument("--player-name", default="PkCamp", help="the LDN node name")
+    ap.add_argument("--player-name", default="POKELDN", help="the LDN node name")
     ap.add_argument("--no-net-probe", action="store_true")
     ap.add_argument("--no-session-ack", action="store_true")
     ap.add_argument("--no-session-response", action="store_true")
@@ -196,7 +196,7 @@ def build_parser():
                     help="leave a console's Session type-3 leave request unanswered; it then "
                          "resends it every 0.5 s and leaves after the fourth (docs/sv.md, Leaving)")
     ap.add_argument("--join-seq", type=int, default=1)
-    ap.add_argument("--host-player-name", default="PkCamp")
+    ap.add_argument("--host-player-name", default="POKELDN")
     ap.add_argument("--host-player-id", default="00000000000000020000000000000000")
     ap.add_argument("--no-rtt", action="store_true", help="do not answer RTT requests")
     ap.add_argument("--no-ack", action="store_true", help="do not acknowledge reliable streams")

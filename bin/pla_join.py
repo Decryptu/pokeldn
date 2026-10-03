@@ -391,10 +391,10 @@ def build_parser():
     ap.add_argument("--connect-timeout", type=float, default=6.0)
     ap.add_argument("--mac", default=None, help="give the board this station MAC first")
     ap.add_argument("--code", default="00000000", help="the eight digits; '' joins any code")
-    ap.add_argument("--name", default="PkCamp", help="the LDN node name we publish")
+    ap.add_argument("--name", default="POKELDN", help="the LDN node name we publish")
     ap.add_argument("--seconds", type=float, default=900.0, help="the whole run")
     ap.add_argument("--hold", type=float, default=600.0, help="how long one seat is held")
-    ap.add_argument("--player-name", default="PkCamp",
+    ap.add_argument("--player-name", default="POKELDN",
                     help="the name in our data exchange record; the console shows it")
     ap.add_argument("--player-id", default="504b4c44",
                     help="hex, four bytes: the player id in our data exchange record")

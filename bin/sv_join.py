@@ -238,7 +238,7 @@ def build_parser():
     ap.add_argument("--seconds", type=float, default=600.0, help="how long to keep trying")
     ap.add_argument("--hold", type=float, default=60.0,
                     help="how long to stay in one joined session before scanning again")
-    ap.add_argument("--name", default="PkCamp", help="the LDN node name we publish")
+    ap.add_argument("--name", default="POKELDN", help="the LDN node name we publish")
     ap.add_argument("--platform", type=int, default=sv.PLATFORM,
                     help="the station platform byte we publish; 1 is what a Switch 2 sends")
     ap.add_argument("--mac", default=None,

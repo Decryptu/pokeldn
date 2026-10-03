@@ -181,7 +181,7 @@ class HostSession:
     """A BDSP room hosted for one console. `receive` and `tick` return [(packet, ip)]; `on_game`
     returns game messages to send back reliably."""
 
-    def __init__(self, keys, adv, our_ip, our_mac, variable_id, name="PkCamp", language=3,
+    def __init__(self, keys, adv, our_ip, our_mac, variable_id, name="POKELDN", language=3,
                  join=None, on_game=None, on_tick=None, record=None, nonce_start=0):
         self.keys, self.adv = keys, adv
         self.our_ip, self.our_mac = our_ip, bytes(our_mac)
@@ -525,7 +525,7 @@ class TradePartner:
     `complete` gates the answer to the ready-ok, after which the console writes its save. `offer`
     is one PB8 or a list, one per trade; the last is offered again once the list runs out."""
 
-    def __init__(self, offer, trainer_name="PkCamp", trainer_id=41234, secret_id=23117,
+    def __init__(self, offer, trainer_name="POKELDN", trainer_id=41234, secret_id=23117,
                  complete=False, approach_delay=0.0, security_repeat=1.0, state=room.STATE_NONE,
                  recruiting=0, save_theirs=None, record=None):
         self.offers = [offer] if isinstance(offer, (bytes, bytearray)) else list(offer)

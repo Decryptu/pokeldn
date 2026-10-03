@@ -100,7 +100,7 @@ def _bcd(nature, count):
 
 @pytest.mark.parametrize("seed, tid, sid, method", [
     (0x12345678, 50425, 50923, 0),          # the emulated save's IDs
-    (0xDEADBEEF, 57189, 58811, 0),          # the retail FireRed's
+    (0xDEADBEEF, 12345, 2791, 0),          # the retail FireRed's
     (0x00C0FFEE, 50425, 50923, 1),
 ])
 def test_the_target_and_countdown_match_the_model_while_the_game_advances_two_calls_a_frame(

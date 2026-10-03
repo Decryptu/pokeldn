@@ -16,7 +16,7 @@ AS = "arm-none-eabi-as"
 OBJCOPY = "arm-none-eabi-objcopy"
 AS_FLAGS = ("-march=armv4t", "-mcpu=arm7tdmi")
 # The trainer id the simulated console holds; a payload reading SaveBlock2 returns it.
-SAMPLE_TRAINER_ID = 0xE5BBDF65
+SAMPLE_TRAINER_ID = 0x0AE73039
 TEMPLATE = """\
 @ Called once a frame until it returns 1.
 @ r0 = &param (sent back to the host)

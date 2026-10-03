@@ -98,10 +98,10 @@ class WonderNewsSpec:
             send_type=self.send_type, bg_type=self.bg_type)
 
 
-PKCAMP_NEWS = WonderNewsSpec(
-    slug="pkcamp",
+POKELDN_NEWS = WonderNewsSpec(
+    slug="pokeldn",
     news_id=1,
-    title="PKCAMP NEWS",
+    title="POKELDN NEWS",
     body=(
         "This news travelled to your",
         "GAME BOY ADVANCE over a",
@@ -136,8 +136,8 @@ BERRY_NEWS = WonderNewsSpec(
     description="a ten-line news that exercises the console's scroll indicator",
 )
 
-NEWS_REGISTRY = {spec.slug: spec for spec in (PKCAMP_NEWS, BERRY_NEWS)}
-DEFAULT_NEWS = PKCAMP_NEWS.slug
+NEWS_REGISTRY = {spec.slug: spec for spec in (POKELDN_NEWS, BERRY_NEWS)}
+DEFAULT_NEWS = POKELDN_NEWS.slug
 
 
 def news_choices():

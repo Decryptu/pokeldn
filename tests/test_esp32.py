@@ -270,7 +270,7 @@ def test_the_lets_go_host_finds_the_channel_a_console_searches_on(console_scene,
                 _radio.set(console_radio)
                 param = ldn.CreateNetworkParam(
                     keys=KEYS, channel=11, local_communication_id=COMM_ID_PIKACHU,
-                    scene_id=console_scene, name=b"GURVAN", app_version=0)
+                    scene_id=console_scene, name=b"POKELDN", app_version=0)
                 async with ldn.create_network(param):
                     up.set()
                     while not result:
@@ -310,7 +310,7 @@ def test_ldn_host_and_station_run_on_simulated_boards(refused):
                 _radio.set(host_radio)
                 param = ldn.CreateNetworkParam(
                     keys=KEYS, channel=6, local_communication_id=0x0100ABCD00000000,
-                    name=b"PkCamp", app_version=1, application_data=b"esp32 test")
+                    name=b"POKELDN", app_version=1, application_data=b"esp32 test")
                 async with ldn.create_network(param) as network:
                     host_up.set()
                     event = await network.next_event()
@@ -374,7 +374,7 @@ def test_userspace_stack_carries_udp_both_ways_on_simulated_boards():
             _radio.set(radios[0])
             param = ldn.CreateNetworkParam(
                 keys=KEYS, channel=6, local_communication_id=0x0100ABCD00000000,
-                name=b"PkCamp", app_version=1, application_data=b"esp32 test")
+                name=b"POKELDN", app_version=1, application_data=b"esp32 test")
             async with ldn.create_network(param) as network:
                 sock = userspace_ip.udp_socket("ldn-tap", 12345)
                 raw = userspace_ip.packet_socket("ldn-tap")
@@ -497,7 +497,7 @@ def test_first_contact_sees_and_decodes_a_simulated_host():
         async def run():
             param = ldn.CreateNetworkParam(
                 keys=KEYS, channel=6, local_communication_id=0x0100ABCD00000000,
-                name=b"PkCamp", app_version=1, application_data=b"first contact")
+                name=b"POKELDN", app_version=1, application_data=b"first contact")
             async with ldn.create_network(param):
                 up.set()
                 await trio.to_thread.run_sync(done.wait)
@@ -834,7 +834,7 @@ def test_the_sword_gift_walks_its_fragments_on_a_simulated_board(tmp_path, monke
     keys_file = tmp_path / "prod.keys"
     keys_file.write_text("".join(f"{k} = {v.hex()}\n" for k, v in KEYS.items()))
     args = swsh_gift_host.build_parser().parse_args(
-        ["--species", "25", "--level", "25", "--nickname", "PKCAMP", "--ot", "POKELDN",
+        ["--species", "25", "--level", "25", "--nickname", "POKELDN", "--ot", "POKELDN",
          "--channel", "6"])
     record = swsh_gift_host.build_record(args)
     fragments = beacon.build_message(record)

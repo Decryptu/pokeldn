@@ -126,7 +126,7 @@ def test_revisit_requires_the_kanto_pokedex_then_gives_celebi():
     ).run()
     assert later.eggs == later.mons == later.battles == later.items == []
     assert [charmap.decode(line) for line in later.messages[-1].split(b"\xfe")] == [
-        "Visit MercuryEnigma.github.io/pkcamp",
+        "Visit decryptu.github.io/pokeldn",
     ]
 
 

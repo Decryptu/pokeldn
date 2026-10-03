@@ -419,7 +419,7 @@ screen, where the console joins it and completes a session.
         return TRUE;
 
 as an exact equality. `IN_UNION_ROOM | ACTIVITY_TRADE` (0x44) spawns the avatar, but talking to it
-prints "Communication avec PkCamp" then "le DRESSEUR est occupé" with no packet on the air: the connect
+prints "Communication avec POKELDN" then "le DRESSEUR est occupé" with no packet on the air: the connect
 is refused inside `Task_TryConnectToUnionRoomParent` [link_rfu_2.c:2963]. The trade intent lives in
 `sPlayerCurrActivity`, negotiated after the link is up. The bare `IN_UNION_ROOM` (0x40) connects. The
 avatar tracks the beacon live: it walks out and back in when the host restarts.
@@ -467,7 +467,7 @@ host's last). Nothing releases it early.
     ... then, if sPlayerCurrActivity == (ACTIVITY_TRADE | IN_UNION_ROOM),
         UR_STATE_SEND_TRADE_REQUST
 
-The prompt reads "PkCamp: oh bonjour \<name>, vous désirez quelque chose ?" with Salut / Combat /
+The prompt reads "POKELDN: oh bonjour \<name>, vous désirez quelque chose ?" with Salut / Combat /
 Tchat / Retour. Each choice sends one `SEND_PACKET` and waits
 [UR_STATE_HANDLE_ACTIVITY_REQUEST, union_room.c:3151]:
 
@@ -491,7 +491,7 @@ and stays in the room with no error.
 The board lists partners whose advertisement carries `tradeSpecies`, `tradeType` and `tradeLevel`
 [union_room.c:3400]: record byte 18 (`type << 2`), 19 (`gender | level << 1`) and 22:24 (little-endian
 `tradeSpecies:10` of `RfuGameData` [include/link_rfu.h:107]). Species 277 (Treecko; low byte alone 21,
-Spearow) listed "PkCamp / NORMAL / ARCKO / 26", which measures byte 23.
+Spearow) listed "POKELDN / NORMAL / ARCKO / 26", which measures byte 23.
 
 A trading-board trade is one trade per link. `Task_StartUnionRoomTrade` sets `gMain.savedCallback =
 CB2_ReturnToField` before `CB2_LinkTrade` [union_room.c:1744], and `CB2_SaveAndEndTrade` keeps the

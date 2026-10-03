@@ -1722,7 +1722,7 @@ _TRANSPORT = (
 PRESETS = {
     "capture": _TRANSPORT + " --hold 90",
     "trade": (_TRANSPORT + " --snapshot-port 1 --rpc-port-answers --rpc-pair --rpc-bodies "
-              "--selection-final-delta 9 --selection-offer --offer-slot 1 --offer-nickname PKCAMP "
+              "--selection-final-delta 9 --selection-offer --offer-slot 1 --offer-nickname POKELDN "
               "--open-content 30,50 --open-content-offer --box-commands 1 --box-on-accept 4 "
               "--box-period 0.35 --confirm-commands 0,1,2,3,0,1,2,3,0,1,2,3 "
               "--confirm-final-delta 9 --abort-on-stall 15 --hold 240 --send-seconds 0 "
@@ -1744,7 +1744,7 @@ def build_parser():
     ap.add_argument("--dwell", type=float, default=1.5)
     ap.add_argument("--scans", type=int, default=8,
                     help="scans for a matching search (scene 60001) before giving up")
-    ap.add_argument("--name", default="PkCamp")
+    ap.add_argument("--name", default="POKELDN")
     ap.add_argument("--listen-first", type=float, default=6.0,
                     help="seconds of listening before the first packet out, so the capture holds "
                          "the console's own rate to compare against")
@@ -2129,7 +2129,7 @@ def build_parser():
                          "from this session. A short "
                          "2965-byte payload is inflated first. The identity is rewritten by "
                          "--snapshot-name/-tid/-sid")
-    ap.add_argument("--snapshot-name", default="PkCamp")
+    ap.add_argument("--snapshot-name", default="POKELDN")
     ap.add_argument("--snapshot-tid", type=lambda s: int(s, 0), default=12345)
     ap.add_argument("--snapshot-sid", type=lambda s: int(s, 0), default=54321)
     ap.add_argument("--snapshot-port", default="0",

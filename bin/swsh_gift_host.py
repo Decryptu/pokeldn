@@ -4,7 +4,7 @@
 The gift screen scans and never joins: the card rides the 0x180-byte advertise data, one fragment
 per advertisement.
 
-    sudo ./bin/swsh_gift_host.py --species 25 --level 25 --nickname PKCAMP --ot POKELDN
+    sudo ./bin/swsh_gift_host.py --species 25 --level 25 --nickname POKELDN --ot POKELDN
     sudo ./bin/swsh_gift_host.py --record scratchpad/card.bin --dwell 0.5
 
     (them) Mystery Gift -> Recevoir un Cadeau Mystere -> Via communication sans fil locale
@@ -101,7 +101,7 @@ def build_parser():
     p.add_argument("--seconds", type=float, default=300)
     p.add_argument("--channel", type=int, default=None)
     p.add_argument("--phy", default="auto", help="the phy renumbers on every driver reload")
-    p.add_argument("--nickname-host", default="PkCamp", help="the network's own name")
+    p.add_argument("--nickname-host", default="POKELDN", help="the network's own name")
     p.add_argument("--keys", default=None, help="prod.keys; default from config/host.toml")
     p.add_argument("--scene-id", type=int, default=SCENE_ID)
     p.add_argument("--app-version", type=int, default=APP_VERSION)

@@ -10,7 +10,7 @@ from pokeldn import gen8, gen9, pokemon
 from pokeldn.pla import pokemon as pa8
 from pokeldn.swsh import wc8
 
-TRAINER = {"ot": "PkCamp", "tid": 12345, "sid": 54321, "language": 2, "gender": 0}
+TRAINER = {"ot": "POKELDN", "tid": 12345, "sid": 54321, "language": 2, "gender": 0}
 FORMATS = {"frlg": "PK3", "lgpe": "PB7", "swsh": "PK8", "bdsp": "PB8", "pla": "PA8", "sv": "PK9", "za": "PA9"}
 
 

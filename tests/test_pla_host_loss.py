@@ -96,7 +96,7 @@ def run_host(monkeypatch, capsys, console_class, goal, drop=None, extra=()):
     `drop(port, payload)` loses the first matching host 0x7c message. -> .console, .log, .sent, .copies, .lost"""
     clock = Clock()
     keys = pla.session_keys(SSID)
-    exchange = data_exchange.build_record(player_id=bytes.fromhex("504b4c44"), name="PkCamp")
+    exchange = data_exchange.build_record(player_id=bytes.fromhex("504b4c44"), name="POKELDN")
     offer = trade_box.build_our_record(**data_exchange.read_record(exchange))
     run = types.SimpleNamespace(
         console=console_class(keys, CONSOLE_IP, CONSOLE_MAC, offer, exchange, drive=True,

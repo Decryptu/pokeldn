@@ -1518,7 +1518,7 @@ def build_parser():
                     help="scans for the console's room before giving up; it may not exist yet")
     ap.add_argument("--dwell", type=float, default=1.5,
                     help="seconds per channel in the scan; 0.8 missed a live network twice")
-    ap.add_argument("--name", default="PkCamp")
+    ap.add_argument("--name", default="POKELDN")
     ap.add_argument("--language", type=int, default=3,
                     help="the PlayerInfo language byte, a MsgLangId (3 is French); 1, 8, 9 and 10 cap "
                          "the greeting's name at 6 characters, others at 12 (docs/bdsp_protocol.md)")
@@ -1602,10 +1602,10 @@ def build_parser():
                          "with [0x1c27f48]; a {1} reads as our back-out and, past phase 2, shows "
                          "'the partner canceled the trade')")
     ap.add_argument("--trade-ot", metavar="TEXT", help="OT name for the offered Pokemon")
-    ap.add_argument("--trade-name", default="PkCamp", metavar="TEXT",
+    ap.add_argument("--trade-name", default="POKELDN", metavar="TEXT",
                     help="the name in OUR trainer record")
-    ap.add_argument("--trade-tid", type=int, default=44466, metavar="N")
-    ap.add_argument("--trade-sid", type=int, default=4080, metavar="N")
+    ap.add_argument("--trade-tid", type=int, default=41234, metavar="N")
+    ap.add_argument("--trade-sid", type=int, default=23117, metavar="N")
     ap.add_argument("--trade-save-poke", default="received.pb8", metavar="FILE",
                     help="where to write the Pokemon the console offers; trade N > 1 writes "
                          "FILE-N")

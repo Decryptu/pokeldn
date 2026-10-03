@@ -26,14 +26,14 @@ class Preset:
 
 def blank(**changes):
     state = {"kind": "pokemon", "species": 25, "level": 25, "form": 0, "moves": [84, 45, 86, 98],
-             "item": 0, "ball": 0, "shiny": False, "nickname": "PKCAMP", "ot": "POKELDN",
+             "item": 0, "ball": 0, "shiny": False, "nickname": "POKELDN", "ot": "POKELDN",
              "items": [[1, 3]], "bp": 10, "card_id": 9999}
     state.update(changes)
     return state
 
 
 PRESETS = (
-    Preset("pikachu", "Pikachu", "Pokemon", "A level 25 Pikachu nicknamed PKCAMP.", blank()),
+    Preset("pikachu", "Pikachu", "Pokemon", "A level 25 Pikachu nicknamed POKELDN.", blank()),
     Preset("egg", "Pikachu egg", "Pokemon", "An egg that hatches into Pikachu.",
            blank(kind="egg", level=1, nickname="")),
     Preset("master-balls", "Three Master Balls", "Items", "Three Master Balls in the bag.",

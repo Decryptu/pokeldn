@@ -137,7 +137,7 @@ def test_a_name_longer_than_the_field_is_refused_and_five_characters_are_display
     with pytest.raises(EReaderTrainerError):
         _trainer(name="ABCDEFGH").pack()
     # CopyEReaderTrainerName5 shows five [decomp:src/battle_tower.c:1343].
-    assert _trainer(name="MERCURY").display_name == "MERCU"
+    assert _trainer(name="POKELDN").display_name == "POKEL"
 
 
 def test_personality_picks_the_nature_and_can_force_a_shiny():

@@ -84,13 +84,13 @@ def test_the_record_round_trips_through_an_offer():
     assert info["ot_name"] == "Player"
 
 
-@pytest.mark.parametrize("pid", [0x12345678, 0xE5BBDF65 ^ 0x0000FFFF])
+@pytest.mark.parametrize("pid", [0x12345678, 0x0AE73039 ^ 0x0000FFFF])
 def test_a_fresh_offer_changes_the_identity_and_nothing_else(pid):
     """A fresh offer changes PID and constant only; the species, names and shiny state survive."""
     from pokeldn.sv import pokemon as svp
     from pokeldn.za import pokemon as zp
 
-    plain = bytearray(svp.build(species=716, trainer_id=57189, secret_id=58811, pid=pid,
+    plain = bytearray(svp.build(species=716, trainer_id=12345, secret_id=2791, pid=pid,
                                 encryption_constant=0x9C96AA87))
     plain[zp.OFF_NICKNAME:zp.OFF_NICKNAME + 12] = "PKHOST".encode("utf-16-le")
     offer = zp.build_offer(bytes.fromhex("0101b90300bc815801"), bytes(plain), b"\x01")

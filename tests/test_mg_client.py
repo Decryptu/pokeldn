@@ -31,7 +31,7 @@ def _drive(client, *, holding=None, flag_id=1005, ticks=6000):
 
 def _client(**kw):
     return mg_client.MysteryGiftClientEngine(
-        linkplayer.LinkPlayer(name="PkCamp", version=linkplayer.VERSION_FIRE_RED), **kw)
+        linkplayer.LinkPlayer(name="POKELDN", version=linkplayer.VERSION_FIRE_RED), **kw)
 
 
 def test_client_receives_card_and_ram_script_and_closes():
@@ -78,12 +78,13 @@ def test_client_keeping_its_card_gets_the_canceled_message():
 
 def test_link_game_data_matches_what_the_console_validates():
     data = mg_client.build_link_game_data(
-        linkplayer.LinkPlayer(name="PkCamp", trainer_id=0x47ED8822),
+        linkplayer.LinkPlayer(name="POKELDN", trainer_id=0x47ED8822),
         version_code=mg.VERSION_CODE_FIRERED, flag_id=1017, game_code=b"BPRF")
     parsed = mg_script.parse_link_game_data(data)
     assert mg_script.validate_link_game_data(parsed)
-    assert parsed.flag_id == 1017 and parsed.player_name == "PkCamp"
-    assert parsed.trainer_id == 0x47ED8822 and parsed.game_code == b"BPRF"
+    assert parsed.flag_id == 1017 and parsed.player_name == "POKELDN"
+    # A 7-character name spills its 0xFF over the id's low byte, as the game does.
+    assert parsed.trainer_id == 0x47ED88FF and parsed.game_code == b"BPRF"
     assert parsed.version_name == "FireRed"
 
 

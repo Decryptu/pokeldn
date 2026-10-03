@@ -22,7 +22,7 @@ from tests.test_mystery_gift_flow import ConsoleClientModel, _drive  # noqa: E40
 
 
 def _news(**overrides):
-    return wonder_news.PKCAMP_NEWS.build(**overrides)
+    return wonder_news.POKELDN_NEWS.build(**overrides)
 
 
 def _distribution(news=None):
@@ -34,13 +34,13 @@ def test_the_news_struct_is_the_444_byte_layout_the_console_memcpys():
     news = _news()
     assert len(news) == wonder_news.WONDER_NEWS_SIZE == 444
     # u16 id; u8 sendType; u8 bgType; u8 titleText[40]; u8 bodyText[10][40] [global.h:646].
-    assert int.from_bytes(news[0:2], "little") == wonder_news.PKCAMP_NEWS.news_id
-    assert news[2] == wonder_news.PKCAMP_NEWS.send_type
-    assert news[3] == wonder_news.PKCAMP_NEWS.bg_type
+    assert int.from_bytes(news[0:2], "little") == wonder_news.POKELDN_NEWS.news_id
+    assert news[2] == wonder_news.POKELDN_NEWS.send_type
+    assert news[3] == wonder_news.POKELDN_NEWS.bg_type
     assert 4 + 40 + 10 * 40 == wonder_news.WONDER_NEWS_SIZE
     parsed = wonder_news.parse(news)
-    assert parsed["title"] == wonder_news.PKCAMP_NEWS.title
-    assert parsed["body"][:len(wonder_news.PKCAMP_NEWS.body)] == wonder_news.PKCAMP_NEWS.body
+    assert parsed["title"] == wonder_news.POKELDN_NEWS.title
+    assert parsed["body"][:len(wonder_news.POKELDN_NEWS.body)] == wonder_news.POKELDN_NEWS.body
     # EOS-terminated and 0xFF-padded; the console appends its own EOS
     # [mystery_gift_show_news.c:338].
     title = news[4:44]
@@ -145,7 +145,7 @@ def test_a_console_that_already_holds_the_same_news_keeps_it():
 def test_one_changed_byte_makes_the_same_news_new_again():
     """IsWonderNewsSameAsSaved compares the whole struct [mystery_gift.c:140]; --news-id makes it new."""
     held = _news()
-    fresh = _news(news_id=wonder_news.PKCAMP_NEWS.news_id + 1)
+    fresh = _news(news_id=wonder_news.POKELDN_NEWS.news_id + 1)
     assert fresh != held
     console = ConsoleClientModel(flag_id=0, saved_news=held)
     engine, _frames = _drive(console, distribution=_distribution(fresh))

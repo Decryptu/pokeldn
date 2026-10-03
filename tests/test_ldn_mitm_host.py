@@ -21,7 +21,7 @@ def _info(**kw):
     args = dict(local_comm_id=COMM_ID, scene_id=22287, host_ip=HOST_IP,
                 host_mac=bytes.fromhex("021122334455"),
                 session_id=bytes(range(16)), advertise_data=b"\xde\xad\xbe\xef",
-                host_name=b"PkCamp")
+                host_name=b"POKELDN")
     args.update(kw)
     return ldn_mitm_host.build_network_info(**args)
 
@@ -56,7 +56,7 @@ def test_network_info_reads_back_through_the_joiner_side():
     assert ldn_mitm.host_mac(info) == bytes.fromhex("021122334455")
     assert ldn_mitm.advertise_data(info) == b"\xde\xad\xbe\xef"
     ip, mac, node_id, connected, name = ldn_mitm_host.read_node(info, 0)
-    assert (ip, node_id, connected, name) == (HOST_IP, 0, 1, b"PkCamp")
+    assert (ip, node_id, connected, name) == (HOST_IP, 0, 1, b"POKELDN")
     assert mac == bytes.fromhex("021122334455")
 
 
@@ -78,7 +78,7 @@ def _wait(predicate, seconds=3):
 
 @pytest.fixture
 def host():
-    h = ldn_mitm_host.IpHostTransport(app_data=b"\x01\x02\x03", nickname="PkCamp",
+    h = ldn_mitm_host.IpHostTransport(app_data=b"\x01\x02\x03", nickname="POKELDN",
                                       our_ip=HOST_IP, log=lambda *_a, **_k: None,
                                       discovery_port=DISCOVERY_PORT, pia_port=PIA_PORT)
     h.start()

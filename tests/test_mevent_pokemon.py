@@ -20,13 +20,13 @@ def _celebi(**kwargs):
 
 
 def test_a_built_mon_round_trips_through_the_wire_decoder():
-    mon = _celebi(moves=(93, 105), pp=(25, 20), ot_name="PkCamp")
+    mon = _celebi(moves=(93, 105), pp=(25, 20), ot_name="POKELDN")
     decoded = mon.decode()
 
     assert decoded["checksum_ok"]
     assert decoded["species"] == 251
     assert decoded["nickname"] == "CELEBI"
-    assert decoded["otName"] == "PkCamp"
+    assert decoded["otName"] == "POKELDN"
     assert decoded["level"] == 30
     assert decoded["moves"][:2] == [93, 105]
     assert len(mon.party_bytes()) == monmod.PARTY_MON_SIZE
@@ -72,13 +72,13 @@ def test_a_species_with_no_base_stats_is_refused_rather_than_shipped_flat():
 
 
 def test_mail_is_the_struct_the_console_reads():
-    mail = mp.build_mail(("hello", "friend"), player_name="PkCamp", trainer_id=0x1234,
+    mail = mp.build_mail(("hello", "friend"), player_name="POKELDN", trainer_id=0x1234,
                          species=251, item_id=mp.ITEM_ORANGE_MAIL)
     assert len(mail) == mp.MAIL_SIZE
     words = [int.from_bytes(mail[i * 2:i * 2 + 2], "little") for i in range(9)]
     assert words[:2] == list(easychat.resolve_words(("hello", "friend"), 2))
     assert words[2:] == [easychat.UNDEFINED] * 7           # never 0: word 0 prints "???"
-    assert charmap.decode(mail[0x12:0x1A]) == "PkCamp"
+    assert charmap.decode(mail[0x12:0x1A]) == "POKELDN"
     assert int.from_bytes(mail[0x1A:0x1E], "little") == 0x1234
     assert int.from_bytes(mail[0x1E:0x20], "little") == 251
     assert int.from_bytes(mail[0x20:0x22], "little") == mp.ITEM_ORANGE_MAIL

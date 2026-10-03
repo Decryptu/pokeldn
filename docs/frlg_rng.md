@@ -85,10 +85,10 @@ if ((svc_4b() & SVC4B_RESEED_RNG) != 0)
 ```
 
 [link_rfu_2.c:2114, `#if REVISION >= 0xA`]. `RfuMain1` runs every frame while RFU is up, so a set
-bit would pin the state near the advertised `playerTrainerId` (`0xDF65` on the measured console). No
+bit would pin the state near the advertised `playerTrainerId`. No
 state measured descends from it, so the bit was clear in both samples: the first sample at the
-Mystery Gift menu was 1,374,895,295 turns from `0xDF65`, and an encounter after a Union Room session
-2,098,390,873 turns from it. When the bit is set is unknown; a state descending from the console's
+Mystery Gift menu was 1.37 billion turns from the console's `playerTrainerId`, and an encounter after
+a Union Room session 2.10 billion turns from it. When the bit is set is unknown; a state descending from the console's
 `playerTrainerId` would name this hook.
 
 Timing START cannot choose a seed. Timer 1 runs at F/1 and a frame is 280,896 cycles, so frame-aligned

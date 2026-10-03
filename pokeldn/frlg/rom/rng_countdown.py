@@ -79,8 +79,8 @@ def main(argv=None):
     parser = argparse.ArgumentParser(description=__doc__.splitlines()[0])
     parser.add_argument("low", type=lambda v: int(v, 0), help="RNG LO, as the NPC printed it")
     parser.add_argument("high", type=lambda v: int(v, 0), help="RNG HI, as the NPC printed it")
-    parser.add_argument("--tid", type=int, default=57189)
-    parser.add_argument("--sid", type=int, default=58811)
+    parser.add_argument("--tid", type=int, default=12345)
+    parser.add_argument("--sid", type=int, default=2791)
     parser.add_argument("--frames", type=int, default=20000)
     parser.add_argument("--target-frames", type=int, default=None, metavar="N",
                         help="not a hunt, a CALIBRATION: print the state N frames ahead and when "

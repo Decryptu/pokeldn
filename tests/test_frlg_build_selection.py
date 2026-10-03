@@ -28,7 +28,7 @@ def _session(config, *, game_code, version):
         link_player=linkplayer.LinkPlayer(name="EMU", version=linkplayer.VERSION_FIRE_RED),
         timing=host_mystery_gift.MysteryGiftTiming(client_ready_idle_frames=10))
     client = mg_client.MysteryGiftClientEngine(
-        linkplayer.LinkPlayer(name="PkCamp", version=linkplayer.VERSION_FIRE_RED),
+        linkplayer.LinkPlayer(name="POKELDN", version=linkplayer.VERSION_FIRE_RED),
         version=version, game_code=game_code)
     return host, client
 

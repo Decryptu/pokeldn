@@ -22,9 +22,9 @@ except ImportError:
 needs_unicorn = pytest.mark.skipif(not _HAVE_UNICORN,
                                    reason="offline execution needs unicorn")
 
-# Read off the console: trainer-id-probe returned 0xE5BBDF65; the trainer card shows 57189.
-CONSOLE_TID = 0xDF65
-CONSOLE_SID = 0xE5BB
+# Read off the console: trainer-id-probe returned 0x0AE73039; the trainer card shows 12345.
+CONSOLE_TID = 0x3039
+CONSOLE_SID = 0x0AE7
 _SAV2 = 0x02030000
 
 

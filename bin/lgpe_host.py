@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """Host a Let's Go Pikachu trade session: the console joins us and speaks first.
 
-    sudo ./.venv/bin/python bin/lgpe_host.py --seconds 180 --player-name PkCamp
+    sudo ./.venv/bin/python bin/lgpe_host.py --seconds 180 --player-name POKELDN
 
     (them) Let's Go Pikachu: menu -> Communiquer -> Communication locale -> Echange,
            link code Pikachu, Pikachu, Pikachu, then wait on the search screen.
@@ -64,7 +64,7 @@ def build_parser():
     ap = argparse.ArgumentParser(description=__doc__,
                                  formatter_class=argparse.RawDescriptionHelpFormatter)
     ap.add_argument("--seconds", type=float, default=180.0, help="how long to host")
-    ap.add_argument("--player-name", default="PkCamp",
+    ap.add_argument("--player-name", default="POKELDN",
                     help="the nickname our connection response carries")
     ap.add_argument("--phy", default="auto")
     ap.add_argument("--ifname", default="ldn-tap")

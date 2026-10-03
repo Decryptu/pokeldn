@@ -151,7 +151,7 @@ def build_parser():
     ap.add_argument("--phy", default="auto")
     ap.add_argument("--ifname", default="ldnclient")
     ap.add_argument("--channels", default="6")
-    ap.add_argument("--name", default="PkCamp")
+    ap.add_argument("--name", default="POKELDN")
     ap.add_argument("--hold", type=float, default=60.0)
     ap.add_argument("--listen-first", type=float, default=5.0)
     ap.add_argument("--gap", type=float, default=1.5)

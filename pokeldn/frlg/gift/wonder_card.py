@@ -77,7 +77,7 @@ DEFAULT_GIFT_BODY = (
     "Visit the deliveryman on the",
     "2nd floor to receive CELEBI.",
 )
-DEFAULT_GIFT_SIGNATURE = " - MercuryEnigma"
+DEFAULT_GIFT_SIGNATURE = " - POKELDN"
 DEFAULT_GIFT_ICON_SPECIES = SPECIES_CELEBI
 DEFAULT_GIFT_ITEM = None
 

@@ -229,7 +229,7 @@ def build_parser():
     ap.add_argument("--dwell", type=float, default=0.8)
     ap.add_argument("--scan-seconds", type=float, default=300.0,
                     help="keep scanning this long for a console before giving up")
-    ap.add_argument("--name", default="PkCamp")
+    ap.add_argument("--name", default="POKELDN")
     ap.add_argument("--passphrase", default=None, help="override, as ASCII")
     ap.add_argument("--hold", type=float, default=60.0)
     ap.add_argument("--scan-only", action="store_true")
@@ -246,7 +246,7 @@ def build_parser():
     ap.add_argument("--grace", type=float, default=300.0,
                     help="seconds past --connect-seconds or --hold to keep a seat whose trade is half "
                          "done: a trade left mid-way locks the console out of trading")
-    ap.add_argument("--player-name", default="PkCamp",
+    ap.add_argument("--player-name", default="POKELDN",
                     help="the nickname the connection response carries, what the console shows as "
                          "the partner (a real station sends its Switch profile's)")
     ap.add_argument("--short-response", action="store_true",

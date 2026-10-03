@@ -14,7 +14,7 @@ def test_constants_agree_with_the_payload_builder():
 
 
 def test_unstep_inverts_step_everywhere():
-    for value in (0, 1, 0xDF65, 0xFFFFFFFF, 0x3C22BA3A):
+    for value in (0, 1, 0x3039, 0xFFFFFFFF, 0x3C22BA3A):
         assert lcg.unstep(lcg.step(value)) == value
         assert lcg.step(lcg.unstep(value)) == value
 
@@ -31,14 +31,14 @@ def test_advance_matches_stepping_one_at_a_time():
 
 @pytest.mark.parametrize("n", [0, 1, 2, 96, 34962, 1 << 20, (1 << 32) - 1])
 def test_distance_is_exact_at_any_range(n):
-    start = 0xDF65
+    start = 0x3039
     assert lcg.distance(start, lcg.advance(start, n)) == n
 
 
 def test_distance_between_unrelated_states_is_huge_and_that_is_the_point():
     # Against the trainer id the Switch-only RfuMain1 hook would seed with
     # [decomp:src/link_rfu_2.c:2116]: no reseed.
-    assert lcg.distance(0xDF65, 0x3C22BA3A) > 1 << 30
+    assert lcg.distance(0x3039, 0x3C22BA3A) > 1 << 30
 
 
 def test_predecessors_finds_a_planted_seed_at_the_right_distance():
@@ -153,7 +153,7 @@ def test_the_seed_we_set_in_bs50_is_not_where_the_weedle_came_from():
     """The title screen re-seeds on the way out of Mystery Gift [mystery_gift_menu.c:463,
     title_screen.c:735]."""
     assert lcg.distance(0xC0DE, BS51_WEEDLE_STATE) > 1 << 30
-    assert lcg.distance(0xDF65, BS51_WEEDLE_STATE) > 1 << 30      # nor did RfuMain1 reseed
+    assert lcg.distance(0x3039, BS51_WEEDLE_STATE) > 1 << 30      # nor did RfuMain1 reseed
 
 
 # Methods 1, 2 and 4, all observed on one cartridge; the recovery searches both gaps.
@@ -187,7 +187,7 @@ def test_the_scripted_battle_recovers_to_the_seed_we_actually_wrote():
 
 def test_the_union_room_does_not_reseed_either():
     """Measured: after a full Union Room session the state is 2.1 billion turns from the trainer-id seed."""
-    assert lcg.distance(0xDF65, CONSOLE_MONS["bs54 Mankey"][2]) > 1 << 30
+    assert lcg.distance(0x3039, CONSOLE_MONS["bs54 Mankey"][2]) > 1 << 30
 
 
 def test_the_overworld_never_stops_turning_the_rng():

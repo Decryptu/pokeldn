@@ -241,11 +241,11 @@ def test_gate_1_legacy_serialized_fixtures_are_byte_identical():
     card, script = wonder_card.build_default_gift()
     inactive, active = build_wonder_card_app_data(config.DEFAULT_TRAINER, SESSION_ID)
     assert (len(card), _sha256(card)) == (
-        332, "1afdef737ebf3be077e6cf19d9f85a90d6bdba97e434c0784cdad967a8550025")
+        332, "776d366da95ca1bb8f783c3104181c48a5f10e537d7ebce77d2936de313eb12f")
     assert (len(script), _sha256(script)) == (
         251, "e8d48201cbffea57bba27e65fa91464da0949e5f8fb0e230424ea7661c898a33")
-    assert _sha256(inactive) == "20c2ef2c91edba901398d032e0bb1283e4ed6e941ca5350bba55b8e32c901a61"
-    assert _sha256(active) == "406f45e17719e069e820c3751ee2dd1aaf18125895cf8c9112ba7e7a79330f19"
+    assert _sha256(inactive) == "1fcef9bab738b0862fe74b983f4243880471c3d2936494a371ec1d1547e958d5"
+    assert _sha256(active) == "e0b9ec1287b591207c3610184f4b5663d713d37e06d4f421ed38249e81a18366"
     assert _sha256(mg_script.CLIENT_SCRIPT_SEND_GAME_DATA) \
         == "9ae8de594f9c19e473ace3b34816f337fea3e60f9c9ac64cfb37d87b610d50de"
     assert _sha256(mg_script.CLIENT_SCRIPT_SAVE_CARD) \

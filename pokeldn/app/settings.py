@@ -23,7 +23,7 @@ class Settings:
     check_updates: bool = True   # ask GitHub for a newer release at launch
     firmware: str = ""
     # Trainer used for generated encounters.
-    ot: str = "PkCamp"
+    ot: str = "POKELDN"
     tid: int = field(default_factory=lambda: random.randint(1, 65535))
     sid: int = field(default_factory=lambda: random.randint(1, 65535))
     language: int = 2
@@ -50,4 +50,6 @@ def load() -> Settings:
         settings.save()   # keeps the trainer ids drawn above
         return settings
     known = Settings.__dataclass_fields__
+    if data.get("ot") == "PkCamp":   # the default before POKELDN
+        data["ot"] = Settings.ot
     return Settings(**{k: v for k, v in data.items() if k in known})

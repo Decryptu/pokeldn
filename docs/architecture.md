@@ -57,7 +57,7 @@ first legal result is kept:
 2. Moves, relearn moves, TM and TR record flags, plus-move flags, mastery flags and Legends Arceus size
    are refitted. A suggested moveset holds TM and TR moves that are legal only with their record flags.
 3. An evolved record's ability is refreshed to the evolved species in the slot it was caught with.
-4. A record with no handling trainer receives a second one, `PkCamp`: a trade evolution has been traded,
+4. A record with no handling trainer receives a second one, `POKELDN`: a trade evolution has been traded,
    and some gifts (Magearna in Legends Z-A) arrive already handled.
 5. An evolution that counts something (critical hits, damage taken, Rage Fist uses, coins) starts from
    that count.

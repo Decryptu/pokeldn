@@ -49,28 +49,28 @@ def _labels(h):
 
 def test_join_block_has_the_decomp_layout():
     """PrepareSendBuffer_Join: [0] command, [1..8] name, [1 + PLAYER_NAME_LENGTH + 1] mpid."""
-    b = uroom_chat.build(uroom_chat.JOIN, "PkCamp", multiplayer_id=0)
+    b = uroom_chat.build(uroom_chat.JOIN, "POKELDN", multiplayer_id=0)
     assert len(b) == uroom_chat.BLOCK_SIZE == 0x28
     assert b[0] == uroom_chat.JOIN == 2
-    assert b[1:1 + 6] == charmap.encode("PkCamp")
+    assert b[1:1 + 7] == charmap.encode("POKELDN")
     assert b[1 + uroom_chat.NAME_FIELD - 1] == charmap.EOS   # the name field is EOS-terminated
     assert b[uroom_chat.PAYLOAD_OFF] == 0
 
 
 def test_chat_block_carries_the_text_after_the_name_field():
-    b = uroom_chat.build(uroom_chat.CHAT, "PkCamp", text="HELLO")
+    b = uroom_chat.build(uroom_chat.CHAT, "POKELDN", text="HELLO")
     assert b[0] == uroom_chat.CHAT == 1
     assert b[uroom_chat.PAYLOAD_OFF:uroom_chat.PAYLOAD_OFF + 5] == charmap.encode("HELLO")
-    assert uroom_chat.parse(b) == {"cmd": uroom_chat.CHAT, "name": "PkCamp",
+    assert uroom_chat.parse(b) == {"cmd": uroom_chat.CHAT, "name": "POKELDN",
                                    "multiplayer_id": None, "text": "HELLO"}
-    assert uroom_chat.describe(uroom_chat.parse(b)) == "PkCamp: HELLO"
+    assert uroom_chat.describe(uroom_chat.parse(b)) == "POKELDN: HELLO"
 
 
 def test_a_full_length_line_still_fits_the_block():
     """messageEntryBuffer is 2 * MESSAGE_BUFFER_NCHAR + 1 = 31 bytes, the block's tail."""
     assert uroom_chat.TEXT_FIELD == 31
     text = "A" * uroom_chat.MESSAGE_NCHAR
-    assert uroom_chat.parse(uroom_chat.build(uroom_chat.CHAT, "PkCamp", text=text))["text"] == text
+    assert uroom_chat.parse(uroom_chat.build(uroom_chat.CHAT, "POKELDN", text=text))["text"] == text
 
 
 def test_a_line_longer_than_the_consoles_own_keyboard_is_refused():

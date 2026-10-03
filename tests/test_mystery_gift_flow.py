@@ -138,8 +138,8 @@ _RETAIL_PAU = bytes.fromhex(
 
 @pytest.mark.parametrize("name_bytes, reliable", [
     (_RETAIL_PAU[0x45:0x4C], True),                 # a short name arrives zero-padded
-    (bytes.fromhex("c1cfccd0bbc8ff"), True),        # six characters, the terminator fits
-    (bytes.fromhex("c1cfccd0bbc8bb"), False),       # seven: the terminator lands on the id
+    (bytes.fromhex("ceccbbbebfccff"), True),        # six characters, the terminator fits
+    (bytes.fromhex("ceccbbbebfccbb"), False),       # seven: the terminator lands on the id
 ])
 def test_the_trainer_id_is_trusted_whenever_the_name_terminator_fits(name_bytes, reliable):
     data = bytearray(_RETAIL_PAU)

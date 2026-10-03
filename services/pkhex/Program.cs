@@ -325,7 +325,7 @@ LegalityAnalysis Mend(PKM pk, bool evolved, IEncounterTemplate encounter, ITrain
         {
             // A trade evolution has been through a trade, and some gifts (Z-A's Magearna) arrive already handled.
             pk.CurrentHandler = 1;
-            pk.HandlingTrainerName = "PkCamp";
+            pk.HandlingTrainerName = "POKELDN";
             pk.HandlingTrainerGender = (byte)(1 - trainer.Gender);
             if (pk is IHandlerLanguage language)
                 language.HandlingTrainerLanguage = (byte)trainer.Language;

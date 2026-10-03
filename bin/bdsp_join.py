@@ -63,7 +63,7 @@ def build_parser():
     ap.add_argument("--ifname", default="ldnclient")
     ap.add_argument("--channels", default="1,6,11,36,40,44,48")
     ap.add_argument("--dwell", type=float, default=0.8)
-    ap.add_argument("--name", default="PkCamp", help="our display name in the session")
+    ap.add_argument("--name", default="POKELDN", help="our display name in the session")
     ap.add_argument("--pw-mode", default="all", choices=["all", "raw", "pad64", "pad32"])
     ap.add_argument("--passphrase", default=None,
                     help="override, as ASCII (default: the BDSP wiki value)")

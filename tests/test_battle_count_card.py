@@ -97,7 +97,7 @@ def test_a_count_past_three_is_not_a_prize_either():
 
 def test_our_trainer_card_is_what_arms_the_console():
     profile = configmod.TrainerProfile(
-        name="PkCamp", tid=0x8822, sid=0x47ED, card_flag_id=event.BATTLE_COUNT_FLAG_ID)
+        name="POKELDN", tid=0x8822, sid=0x47ED, card_flag_id=event.BATTLE_COUNT_FLAG_ID)
     card = profile.build_trainer_card()
 
     assert len(card) == linkplayer.TRAINER_CARD_BLOCK_SIZE == 100

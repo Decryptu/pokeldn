@@ -20,13 +20,13 @@ def test_record_checksum_is_ccitt_false_over_the_zeroed_field():
 
 
 def test_names_go_where_the_console_read_them():
-    rec = wc8.pokemon_card(25, level=30, nickname="PKCAMP", ot="POKELDN")
+    rec = wc8.pokemon_card(25, level=30, nickname="POKELDN", ot="POKELDN")
     fields = wc8.read(rec)
-    assert (fields["nickname"], fields["ot"]) == ("PKCAMP", "POKELDN")
-    assert rec[0x030:0x03C] == "PKCAMP".encode("utf-16-le")
+    assert (fields["nickname"], fields["ot"]) == ("POKELDN", "POKELDN")
+    assert rec[0x030:0x03E] == "POKELDN".encode("utf-16-le")
     assert rec[0x12C:0x13A] == "POKELDN".encode("utf-16-le")
     for i in range(9):                                     # every language slot carries the same name
-        assert rec[0x030 + i * 0x1C:0x030 + i * 0x1C + 12] == "PKCAMP".encode("utf-16-le")
+        assert rec[0x030 + i * 0x1C:0x030 + i * 0x1C + 14] == "POKELDN".encode("utf-16-le")
 
 
 def test_date_bitfield_matches_the_three_album_readings():
@@ -41,7 +41,7 @@ def test_date_bitfield_matches_the_three_album_readings():
 
 
 def test_pokemon_fields_as_the_retail_console_showed_them():
-    rec = wc8.pokemon_card(25, level=45, moves=(84, 45, 86, 98), nickname="PKCAMP", ot="POKELDN",
+    rec = wc8.pokemon_card(25, level=45, moves=(84, 45, 86, 98), nickname="POKELDN", ot="POKELDN",
                            tid=12345, sid=54321, ball=1, held_item=236, gender=1, nature=10,
                            ability_type=2, shiny_type=3, dynamax_level=10, gigantamax=1,
                            iv_hp=31, iv_atk=31, iv_def=31, iv_spe=31, iv_spa=31, iv_spd=31)
@@ -62,7 +62,7 @@ def test_unknown_field_is_refused():
 
 
 def test_a_card_is_three_fragments_sharing_one_pia_header():
-    rec = wc8.pokemon_card(25, level=25, nickname="PKCAMP", ot="POKELDN")
+    rec = wc8.pokemon_card(25, level=25, nickname="POKELDN", ot="POKELDN")
     blobs = beacon.build_message(rec)
     assert len(blobs) == 3 and all(len(b) == 0x180 for b in blobs)
     heads = {b[:0x18] for b in blobs}
@@ -107,7 +107,7 @@ def test_the_host_sends_only_what_the_games_own_validator_accepts(tmp_path, monk
     """The game's validator 0x010b5de0 runs under unicorn: a built card passes, one flipped byte
     returns the checksum error, and the host then refuses before it writes or sends anything."""
     import swsh_gift_host
-    rec = wc8.pokemon_card(25, level=25, nickname="PKCAMP", ot="POKELDN")
+    rec = wc8.pokemon_card(25, level=25, nickname="POKELDN", ot="POKELDN")
     assert swsh_gift_host.validate(rec, SWORD_IMAGE) == 0
     bad = bytearray(rec)
     bad[0x10] ^= 1
