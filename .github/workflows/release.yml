@@ -47,7 +47,8 @@ jobs:
       fail-fast: false
       matrix:
         include:
-          - os: macos-14
+          # Flet's own CI builds its macOS client here; macos-14's rsync 2.6.9 fails Flutter's plugin copy.
+          - os: macos-26
             asset: pokeldn-macos-arm64.zip
           - os: windows-latest
             asset: pokeldn-windows-x64.exe

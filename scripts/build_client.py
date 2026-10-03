@@ -78,10 +78,11 @@ def main() -> int:
     if not shutil.which("flutter"):
         raise SystemExit("Install Flutter first: https://docs.flutter.dev/get-started/install")
     flet, flutter = flet_versions()
-    have = subprocess.check_output(["flutter", "--version", "--machine"], text=True, shell=os.name == "nt")
-    if json.loads(have)["frameworkVersion"] != flutter:
-        print(f"Warning: Flet {flet} is built with Flutter {flutter}, this is "
-              f"{json.loads(have)['frameworkVersion']}.", file=sys.stderr)
+    out = subprocess.check_output(["flutter", "--version", "--machine"], text=True, shell=os.name == "nt")
+    # A first run on a CI runner prints a banner before the JSON.
+    have = json.loads(out[out.index("{"):out.rindex("}") + 1])["frameworkVersion"]
+    if have != flutter:
+        print(f"Warning: Flet {flet} is built with Flutter {flutter}, this is {have}.", file=sys.stderr)
     tag = f"v{flet}"
     if not (SOURCE / ".git").is_dir():
         CLIENT.mkdir(parents=True, exist_ok=True)
