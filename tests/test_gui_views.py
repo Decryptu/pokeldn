@@ -1,3 +1,5 @@
+import os
+import sys
 from types import SimpleNamespace
 
 import pytest
@@ -215,6 +217,51 @@ def test_a_board_that_never_answers_on_a_bridge_is_named_by_its_rom_and_sent_to_
     while app.board_busy and time.monotonic() < deadline:
         time.sleep(0.01)
     assert app.board_status([UART]).state == "wrong-port"
+
+
+@pytest.mark.skipif(os.name != "posix" or os.geteuid() == 0, reason="needs a POSIX user without root")
+def test_a_port_the_user_may_not_open_names_the_group_not_a_busy_port(tmp_path, monkeypatch):
+    """pyserial's own EACCES, from a node this user cannot open: on Linux that is a missing dialout
+    group, which "another program holds the port" would send the player the wrong way."""
+    import time
+    node = tmp_path / "ttyUSB0"
+    node.write_bytes(b"")
+    node.chmod(0)
+    denied = board_module.Port(str(node), "WCH CH340", "3")
+    monkeypatch.setattr(board_module, "ports", lambda: [denied])
+    monkeypatch.setattr(sys, "platform", "linux")
+    app = _app(denied, None)
+    app.process, app.board_busy, app.board_listeners = None, False, []
+    app.ui = lambda fn: fn()
+    app.check_board(denied.device)
+    deadline = time.monotonic() + 5
+    while app.board_busy and time.monotonic() < deadline:
+        time.sleep(0.01)
+    status = app.board_status([denied])
+    assert status.state == "denied" and "usermod -aG" in status.detail
+
+
+@pytest.mark.parametrize("tty, title", [
+    (None, "Board found without a serial port"),          # brltty took it: no tty under the interface
+    ("ttyUSB0", "No board plugged in"),                    # usb-serial: <interface>/ttyUSB0
+    ("tty/ttyACM0", "No board plugged in"),                # cdc-acm: <interface>/tty/ttyACM0
+])
+def test_a_ch340_on_usb_with_no_tty_names_brltty_on_linux(tmp_path, monkeypatch, tty, title):
+    device = tmp_path / "1-1"
+    (device / "1-1:1.0").mkdir(parents=True)
+    (device / "idVendor").write_text("1a86\n")
+    (device / "idProduct").write_text("7523\n")
+    (tmp_path / "usb1").mkdir()                            # a root hub: no known ids
+    (tmp_path / "usb1" / "idVendor").write_text("1d6b\n")
+    (tmp_path / "usb1" / "idProduct").write_text("0002\n")
+    if tty:
+        (device / "1-1:1.0" / tty).mkdir(parents=True)
+    real = board_module.bridges_without_port
+    monkeypatch.setattr(board_module, "bridges_without_port", lambda: real(str(tmp_path)))
+    monkeypatch.setattr(sys, "platform", "linux")
+    status = _app(UART, None).board_status([])
+    assert status.state == "missing" and status.title == title
+    assert ("apt remove brltty" in status.detail) == (tty is None)
 
 
 def _release_server(routes: dict):

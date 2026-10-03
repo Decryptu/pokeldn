@@ -19,6 +19,23 @@ Sword/Shield also opens `.wc8` cards. Save gift file exports the selected gift w
 [Mystery Gift files](gifts.md#desktop-app) describes the forms, cartridge variants and native-format
 conversion.
 
+## Linux serial ports
+
+The app opens the board as the user, with no root and no kernel networking: the v0.6.2 Linux bundle,
+run by an unprivileged user in an amd64 Ubuntu 24.04 container, completed a retail Sword host trade
+over a XIAO ESP32-C6. Opening the port needs the `dialout` group (`uucp` on Arch); a port the user
+may not open fails with `EACCES`, and the Board page then names the group instead of a busy port.
+
+| service | board | effect |
+|---|---|---|
+| brltty 6.4 (Ubuntu 22.04) | CH340 `1a86:7523` | claimed by `85-brltty.rules`; no `/dev/ttyUSB*` appears while brltty is installed ([LP 1990357](https://bugs.launchpad.net/bugs/1990357)). Fix: `sudo apt remove brltty` |
+| brltty 6.6 (Ubuntu 24.04) | CP210x `10c4:ea60`, CH340 | CP210x rules commented out ([LP 1958224](https://bugs.launchpad.net/bugs/1958224)); CH340 claimed only behind a `1a40:0101` hub |
+| ModemManager 1.23 (Ubuntu 24.04) | all | no ignore rule for `10c4`, `1a86` or `303a`; its strict filter passes a `cdc_acm` port only with interface protocol 1 to 6 (`mm-filter.c`) |
+
+With no serial port listed on Linux, the Board page reads `/sys/bus/usb/devices` and names a known
+bridge that has no tty under its interfaces, with the brltty fix for a CH340
+(`gui/board.py` `bridges_without_port`).
+
 ## Local storage
 
 Settings, Storage shows the space occupied by reclaimable local files. Clear local files asks for

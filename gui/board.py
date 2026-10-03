@@ -82,6 +82,22 @@ def ports() -> list[Port]:
     return sorted(found, key=lambda p: p.device)
 
 
+def bridges_without_port(sysfs: str = "/sys/bus/usb/devices") -> list[str]:
+    """Linux: the known bridges on USB that no driver gave a tty. Ubuntu 22.04's brltty claims every
+    CH340 and its node never appears (docs/gui.md, Linux serial ports)."""
+    import glob
+    found = []
+    for device in sorted(glob.glob(os.path.join(sysfs, "*"))):
+        try:
+            with open(os.path.join(device, "idVendor")) as v, open(os.path.join(device, "idProduct")) as p:
+                ids = (int(v.read(), 16), int(p.read(), 16))
+        except (OSError, ValueError):
+            continue
+        if ids in BRIDGES and not glob.glob(os.path.join(device, "*:*", "tty*")):
+            found.append(BRIDGES[ids])
+    return found
+
+
 def identify(port: str, blink: bool = True) -> Identity:
     """HELLO, then blink GPIO2 on classic boards to identify them (docs/hardware_esp32.md).
     Raises esp32.RadioError when no pokeldn firmware answers. Opening the port can reset it."""

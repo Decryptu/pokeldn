@@ -111,7 +111,7 @@ class BoardView:
         for p in self.ports:
             active = p.device == self.selected
             state = self.app.board_status(self.ports, p.device)
-            dot = t.GREEN if state.ready else t.RED if state.state in ("flash", "wrong-port", "busy") else t.FAINT
+            dot = t.GREEN if state.ready else t.RED if state.state in ("flash", "wrong-port", "busy", "denied") else t.FAINT
             rows.append(ft.Container(ft.Row([
                 t.pixel_icon("cpu", color=t.BLUE if active else t.FAINT),
                 ft.Column([
@@ -157,7 +157,7 @@ class BoardView:
         if status.ready:
             actions.append(t.button("Go to Games", lambda e: self.app.navigate("games"), "gamepad",
                                     filled=not actions))
-        if status.state in ("flash", "wrong-port", "busy"):
+        if status.state in ("flash", "wrong-port", "busy", "denied"):
             actions.append(t.secondary_button("Check again", self._identify, "refresh", disabled=self.app.busy))
         detail = status.detail
         if status.ready and several:

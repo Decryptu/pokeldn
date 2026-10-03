@@ -1,4 +1,6 @@
+import errno
 import os
+import sys
 import threading
 from dataclasses import dataclass
 
@@ -12,11 +14,12 @@ from gui.views.widgets import on_ui
 
 NO_FIRMWARE = "No pokeldn firmware"
 PORT_BUSY = "Port busy or not allowed"
+PORT_DENIED = "Port not allowed"
 
 
 @dataclass(frozen=True)
 class BoardStatus:
-    state: str     # missing, choose, checking, ready, flash, wrong-port, busy
+    state: str     # missing, choose, checking, ready, flash, wrong-port, busy, denied
     title: str
     detail: str
     port: str = ""
@@ -70,6 +73,13 @@ class App:
         for device in set(self.identities) - {p.device for p in present}:
             self.identities.pop(device)   # unplugged: check again when it returns
         if not present:
+            hidden = board.bridges_without_port() if sys.platform.startswith("linux") else []
+            if hidden:
+                fix = ("Ubuntu 22.04's braille service takes CH340 boards: sudo apt remove brltty, then "
+                       "unplug and replug the board." if "WCH CH340" in hidden else
+                       "Unplug and replug it; the kernel log (sudo dmesg) says why.")
+                return BoardStatus("missing", "Board found without a serial port",
+                                   f"Linux gave the {hidden[0]} no serial port. {fix}")
             return BoardStatus("missing", "No board plugged in",
                                "Plug the ESP32 in with a USB data cable. Charge-only cables show nothing.")
         port = device or self.radio_port(present)
@@ -86,6 +96,11 @@ class App:
                 return BoardStatus("ready", "Board ready", f"pokeldn firmware{version} answered.", port)
             return BoardStatus("flash", "Firmware out of date",
                                "Flash the board to update it.", port)
+        if ident == PORT_DENIED:
+            group = "uucp" if os.path.exists("/etc/arch-release") else "dialout"
+            fix = (f"Add yourself to the {group} group (sudo usermod -aG {group} $USER), then log out and "
+                   "back in." if sys.platform.startswith("linux") else "Unplug and replug the board.")
+            return BoardStatus("denied", "No permission to open the board", fix, port)
         if ident == PORT_BUSY:
             return BoardStatus("busy", "Board port busy",
                                "Another program holds the port. Close it, or unplug and replug the board.",
@@ -116,7 +131,8 @@ class App:
                 if not ident.current:
                     say("[app] This firmware uses a different radio protocol. Flash the board.")
             except serial.SerialException as error:
-                self.identities[device] = PORT_BUSY
+                # pyserial keeps the open's errno: EACCES is a missing group on Linux, not a busy port.
+                self.identities[device] = PORT_DENIED if error.errno == errno.EACCES else PORT_BUSY
                 say(f"[app] Could not open {device}: {error}")
             except Exception as error:
                 self.identities[device] = NO_FIRMWARE
