@@ -95,9 +95,9 @@ class JoinerSession:
         self.host_confirmed_at = None
         self.sent_seven = False
 
-    def _packet(self, body, protocol, port=0, flags=FLAGS):
+    def _packet(self, body, protocol, port=0, flags=FLAGS, dst=None):
         msg = pia6.build_message(body, protocol=protocol, port=port, message_flags=flags)
-        dst, footer = self.host_var or 0, ()
+        dst, footer = (self.host_var or 0) if dst is None else dst, ()
         if protocol in MESH_ADDRESSED:
             dst, footer = MESH_DESTINATION, (self.host_var or 0,)
         return pia6.build_packet(self.keys.session_key, self.keys.network_id, self.our_ip, msg,
@@ -129,7 +129,9 @@ class JoinerSession:
                                        self.host_var, self.name, os.urandom(4),
                                        player_id=self.player_id)
         self.join_sent_at = self.clock()
-        return self._packet(body, PROTO_SESSION)
+        # Header destination 0, as a retail joiner sends it: the host's reader 0x744644 drops a
+        # packet addressed to it from a variable id it has not registered (docs/pla.md).
+        return self._packet(body, PROTO_SESSION, dst=0)
 
     def leave(self, sends=4):
         """-> the type-3 leave a console bursts when its player quits, `sends` times."""

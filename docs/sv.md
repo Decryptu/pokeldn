@@ -298,6 +298,17 @@ in the Net 0x32 handler `0x69ec50` (`0x69ee5c`, `0x69ee70`), needs a Net 0x32, a
 (`0x6ba278`). On the joining side the LDN connect runs Pia's network check `0x6a22c4` with its
 password comparison (`0x6a24a4`) switched off (`0x6b0d90`).
 
+A joined console does not check the code again. The Net 0x50 handler `0x69ea3c` validates the system
+property size (0x5c), the application data size (at most 0x124) and four Pia identity fields
+(`0x69d9d8`), copies the bytes into the network property (`0x69d8a4`) and acks with Net 0x51; it
+compares no byte of the system property or the game bytes. Over LDN the copy lands in the cached
+advertise data and the next `nn::ldn::GetNetworkInfo` (`0x6b30d4`) overwrites it. The game reads the
+first 0x28 game bytes of a session only in the selector and in UpdateSessionSetting (`0x26e63b8`),
+which rewrites its own session; two other readers (`0x268e988`, `0x268e9bc`) read only past +0x28. The
+joining console keeps its code as its own Pia station password (join object vfunc `0x274bdb8`,
+setter `0x6a208c`), which it advertises only when it hosts. A Link Trade's port-2 type 1 comes from
+the BoxTrade job's state 2 (`0x1e51b68`): kind 1, the static empty name `[0x46d3e30]`, no data.
+
 ## Where the code is
 
 RTTI names come from the binary's type_info records (`tools/switch/rtti_names.py`, 208 `nn::pia`
@@ -984,8 +995,6 @@ resume scanning ([Ending a run](architecture.md#ending-a-run)).
   on the air. A sender that advanced its own `lowest_pending` to 47 before the acknowledgement hides
   it: a bulk ack does not show StreamData completion. Dropping one outgoing chunk reproduces the
   symptom in the emulator.
-- Whether a console joined to a coded host checks the code again in the host's Net 0x50, which
-  carries the 40 game bytes ([The link code](#the-link-code)).
 - Why a console joined to `bin/sv_host.py` can acknowledge the host's announcement and never send its
   port-2 join (one board run of two).
 - Whether a master-only leave event, without the client's own leave event, can hold a type-2

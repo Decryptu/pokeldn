@@ -101,7 +101,8 @@ The NetStation is 21 bytes at this band, where 6.39 has 22:
 Both entries carry port 12345, ranking 0 for the console and 1 for the joiner.
 
 A console hosting a trade sent no Session (0x98) message and left the join request unanswered in
-every captured session; it asked the joined station to take the host role instead:
+every captured session where the request was addressed to its variable id (see below); it asked the
+joined station to take the host role instead:
 
 | joiner behaviour | console |
 |---|---|
@@ -132,10 +133,17 @@ every 300 ms until it is the only station or a deadline passes: 4000 ms after a 
 and the station still on it inherits the host role. Over fourteen seats of `bin/pla_join.py` the
 first migrating 0x11 came 8.3 to 10.3 s after the seat, repeated for 4.0 s, then the 0x40 for 2.0 s.
 
-The console creates the mesh as a full mesh host (`CreateSessionJob`, no wait). A mesh host answers a
-join request in every rejecting branch except seven silent drops: the dispatcher gate `0x7354c0` and
-the handler's host, protocol-count, destination-id and self-source tests (`0x736510`, `0x7365bc`,
-`0x736820`, `0x736838`, `0x736850`, `0x73686c`). Which one drops a joiner's request is unread.
+The console creates the mesh as a full mesh host (`CreateSessionJob`, no wait). A joining console
+sends its Session join request to header destination 0, from its own variable id. The host's
+`ClusterPacketReader` gate `0x744644` (called through vfunc `0x98`, `0x731edc`, at `0x743ec0`)
+looks up a unicast packet's source variable id among its stations (`0x744718`, manager vfunc
+`0x48`) and drops the packet when none matches (`0x7447a8`); a packet to destination 0 or 1 with no
+footer, or from source variable id 0, skips the lookup. A join request addressed to the host's
+variable id from a joiner not yet registered is therefore dropped after its decrypt, before the
+Session dispatcher. Sent to destination 0, it draws the join response and the type-5 station list.
+On an emulated console hosting a search, a joiner seated that way that did not send its data
+exchange record saw the console leave with migration about 10 s later and return to its search with
+no error shown.
 
 ## The packet crypto
 
@@ -321,8 +329,9 @@ limit (`0x746fe4`: negative fails with 0x10407, 0 becomes 1000 ms). Every update
 station in state 2 whose last packet (`ClusterStation+0x88`) is older than `[SessionProtocol+0xd8]`
 ms, on the host and on a joiner alike. Once the first entry is 3000 ms old (`0x735364`), `0x7359ac`
 acts on the list: the host hands each station to `KickoutManageJob` (`0x73cad4`); a joiner whose list
-names the host treats the host as gone (`0x735b28`). A silent host on the box screen drew the
-partner-left message about 13 s in.
+names the host treats the host as gone (`0x735b28`). The setting's `+0x28c` reads 10000 ms
+(`w9 = 0x2710` at `0x72a09c` on an emulated console hosting a search), as in Z-A. A silent host on
+the box screen drew the partner-left message about 13 s in: 10000 ms and the 3000 ms grace.
 
 ## The game's reader and the pre-handler phase
 
@@ -1258,11 +1267,9 @@ against the four captured console leaves.
 
 ## Unresolved
 
-- Which check drops the Session join request a console hosting a search receives
-  ([The Net Protocol, measured](#the-net-protocol-measured)). Breakpoints at `0x7354d8`,
-  `0x7364e4`, `0x736534`, `0x736824` and `0x73683c` on an emulated host name it.
+- What a joiner seated on a console's own session must send for Matching to complete there: a
+  joining console's stream open, 44-byte state record and content record are measured
+  ([The game's reader and the pre-handler phase](#the-games-reader-and-the-pre-handler-phase)), the
+  host's reply to them is not.
 - Whether a seated hosting slot ends on the 10.0 s Matching deadline or on a WaitMember timer.
 - What the console does in the 3.6 s between leaving the network and showing the field.
-- The value of the startup setting's `+0x28c`, the silent-station timeout
-  ([The silent-station check](#the-silent-station-check)); a breakpoint at `0x72a098` reads it in
-  `w9`. Z-A's is 10000 ms at `0x199eb48` ([za.md](za.md), The kick).

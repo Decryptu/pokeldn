@@ -82,7 +82,9 @@ def test_the_joiner_answers_the_net_request_and_joins_as_the_retail_joiner_does(
     assert join[0] == 0x98 and join[2] == 0x01 and len(join[3]) == 115
     parsed = pia_connect.parse_session_join_v11(join[3])
     assert parsed["source_var"] == 0x687E and parsed["destination_var"] == HOST_VAR
-    assert join[4].src_var == 0x687E and join[4].dst_var == HOST_VAR
+    # A retail Arceus joining a host sends its join request to header destination 0; the host's
+    # reader 0x744644 drops one addressed to it from a variable id it has not registered.
+    assert join[4].src_var == 0x687E and join[4].dst_var == 0
     # Seated: the type 6 carries the update's sequence, then the 0x81 stream opens on port 0.
     ack = [m for m in sent if m[0] == 0x98 and m[3][0] == 6][0]
     assert ack[3] == bytes([6]) + pia_connect.ldn_constant_id(OUR_MAC) + bytes(4)
