@@ -1,21 +1,17 @@
-# pokeldn 0.6.0
+# pokeldn 0.6.1
 
 This desktop app trades with seven Pokemon game families on a Switch or Switch 2
 through an ESP32 radio connected by USB. Nothing is installed on the console.
 
 ## What is new
 
-- An optional screen on the radio board: a 0.96" 128x64 SSD1306 I2C OLED (four wires: VCC to 3V3,
-  GND, SCL, SDA). It shows the radio's traffic as bits running along a link cable, the Pokemon each
-  trade offers, a GBA-style exchange animation and the Pokemon that arrived, and the Wonder Card a
-  Mystery Gift delivers. On a classic ESP32 board SDA is D21 and SCL is D22; the pins of the other
-  boards are in the [setup documentation](https://decryptu.github.io/pokeldn/hardware_esp32.html#the-screen).
-  A board without a screen behaves as before. Sprites come from PokeAPI when sprite downloads are on.
-- FireRed/LeafGreen: walk through walls while R is held, as a hook kept in the save like the others.
-- FireRed/LeafGreen Mystery Gift: open `.wc3` Wonder Card files and choose the card's icon.
-- Every title uses one default trainer and nickname, POKELDN.
+- The radio board's screen: after a trade it reads "received" and the Pokemon the board got, the
+  board's side of the trade as "offering" is. It read "you got" in 0.6.0. Game titles are shortened
+  so they no longer run under the Pokemon's sprite.
 
-The firmware is 1.1.0: reflash the board from the Board page to get the screen.
+The firmware is 1.1.1: reflash the board from the Board page. Boards without a screen gain nothing
+from it. What the screen shows and how to wire it are in the
+[setup documentation](https://decryptu.github.io/pokeldn/hardware_esp32.html#the-screen).
 
 ## Downloads
 
