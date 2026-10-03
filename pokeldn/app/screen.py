@@ -12,8 +12,9 @@ import unicodedata
 from pokeldn.app.sprites import BASE, SpriteCache, pixels
 from pokeldn.app.paths import DATA
 
-TITLES = {"frlg": "FireRed/LG", "lgpe": "Let's Go", "bdsp": "BD/SP", "swsh": "Sword/Shield",
-          "pla": "Legends Arceus", "sv": "Scarlet/Violet", "za": "Legends Z-A"}
+# At most 10 characters: the title shares the top row with a 64-pixel sprite.
+TITLES = {"frlg": "FR/LG", "lgpe": "Let's Go", "bdsp": "BD/SP", "swsh": "Sw/Sh", "pla": "Arceus",
+          "sv": "Sc/Vi", "za": "Legends ZA"}
 TRADED_HOLD_S = 10          # the exchange animation takes 4.7 s; the received Pokemon stays after it
 GIFTED_HOLD_S = 6
 GBA_LAST = 386              # FireRed/LeafGreen draw every species to Deoxys, 64x64

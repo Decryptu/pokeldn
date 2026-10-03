@@ -85,10 +85,10 @@ def session(scene: Scene, offer: int, receive: int, gift: int, frame_ms: int = 5
     scene.radio.stations = 1
     play(1500, 2, 2)
     scene.command(esp32.display_sprite_payload("ours", sprite_bits(offer) or []))
-    scene.command(esp32.display_show_payload("trade", 0, "Sword/Shield", "Pikachu"))
+    scene.command(esp32.display_show_payload("trade", 0, "Sw/Sh", "Pikachu"))
     play(3000, 2, 1)
     scene.command(esp32.display_sprite_payload("theirs", sprite_bits(receive) or []))
-    scene.command(esp32.display_show_payload("traded", 10, "Sword/Shield", "Mewtwo"))
+    scene.command(esp32.display_show_payload("traded", 10, "Sw/Sh", "Mewtwo"))
     play(8000, 1, 1)
     scene.command(esp32.display_sprite_payload("gift", sprite_bits(gift, 40) or []))
     scene.command(esp32.display_show_payload("gift", 0, "Mystery Gift", "Mew from the event"))

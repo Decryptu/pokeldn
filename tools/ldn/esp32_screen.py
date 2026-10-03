@@ -24,7 +24,7 @@ def main(argv=None):
     ap.add_argument("--receive", type=int, default=150)
     ap.add_argument("--gift", type=int, default=151)
     ap.add_argument("--names", default="Pikachu,Mewtwo,Mew", help="the three names shown")
-    ap.add_argument("--title", default="Sword/Shield")
+    ap.add_argument("--title", default="Sw/Sh")
     args = ap.parse_args(argv)
     offer_name, receive_name, gift_name = args.names.split(",")
     radio = esp32.Radio.open_serial(args.port)

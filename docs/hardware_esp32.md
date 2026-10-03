@@ -573,7 +573,7 @@ DISPLAY (`0x0E`) carries one op:
 |---|---|---|
 | auto | 0 | the radio's state |
 | trade | 1 | slot 0 on the right half, "offering" and the line on the left, the cable below |
-| traded | 2 | slot 0 flashes and returns to its ball, the ball leaves, packets cross, a ball arrives and opens (4.7 s); then slot 1 with "you got" and the line |
+| traded | 2 | slot 0 flashes and returns to its ball, the ball leaves, packets cross, a ball arrives and opens (4.7 s); then slot 1 with "received" and the line: the board's side, as "offering" is |
 | gift | 3 | a Wonder Card holding slot 2 (a gift box when empty), the line beside it |
 | gifted | 4 | the card leaves to the right, then "delivered!" |
 

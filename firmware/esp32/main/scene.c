@@ -114,7 +114,7 @@ static void sparkle(uint8_t *fb, int x, int y, int size)
 /* Twinkling stars around a box: each one grows and fades on its own phase. */
 static void sparkles(uint8_t *fb, int x, int y, int w, int h, uint32_t t)
 {
-    static const int8_t SPOTS[6][2] = {{4, 8}, {98, 14}, {2, 64}, {100, 80}, {56, 2}, {40, 96}};
+    static const int8_t SPOTS[6][2] = {{4, 40}, {98, 14}, {2, 72}, {100, 80}, {56, 2}, {40, 96}};
     for (int i = 0; i < 6; ++i) {
         const int phase = (int)((t + i * 377) % 1200);
         const int size = phase < 300 ? phase / 100 : phase < 600 ? (600 - phase) / 100 : -1;
@@ -246,7 +246,9 @@ static void radio_scene(uint8_t *fb, const scene_radio_t *r, uint32_t now)
 /* A title over the left half: the right half is the sprite's, all 64 rows of it. */
 static void half_header(uint8_t *fb, const char *title)
 {
-    fb_text(fb, 0, 0, title, 1);
+    char cut[11];
+    snprintf(cut, sizeof(cut), "%s", title);   /* 10 characters stop at the sprite's half */
+    fb_text(fb, 0, 0, cut, 1);
     fb_fill(fb, 0, 9, 62, 1, true);
 }
 
@@ -300,7 +302,7 @@ static void traded_scene(uint8_t *fb, uint32_t now)
         half_header(fb, s.now.title[0] ? s.now.title : "trade");
         if (!sprite_draw(fb, SLOT_THEIRS, 96, 64)) poke_ball(fb, 96, 34, 12);
         sparkles(fb, 68, 4, 56, 56, t);
-        fb_text(fb, 0, 18, "you got", 1);
+        fb_text(fb, 0, 18, "received", 1);
         text_wrapped(fb, 0, 30, 10, s.now.line);
     }
 }

@@ -37,7 +37,7 @@ def test_a_sprite_lands_bit_for_bit_where_the_trade_scene_draws_it(scene):
     # Odd width and a pattern in each row: a wrong bit order, stride or row order moves pixels.
     rows = [[(x * 3 + y * 5) % 7 < 3 for x in range(13)] for y in range(9)]
     assert scene.command(esp32.display_sprite_payload("ours", rows))
-    assert scene.command(esp32.display_show_payload("trade", 0, "Sword/Shield", "Pikachu"))
+    assert scene.command(esp32.display_show_payload("trade", 0, "Sw/Sh", "Pikachu"))
     fb = scene.frame()            # now 1000: the bob is at rest
     x0, y0 = 96 - 13 // 2, 64 - 9
     assert [[lit(fb, x0 + x, y0 + y) for x in range(13)] for y in range(9)] == rows
@@ -69,8 +69,8 @@ def frame_of(built, show_payloads, now):
 
 @needs_cc
 def test_a_next_offer_waits_for_the_received_animation(scene, built):
-    traded = esp32.display_show_payload("traded", 10, "Sword/Shield", "Mewtwo")
-    trade = esp32.display_show_payload("trade", 0, "Sword/Shield", "Eevee")
+    traded = esp32.display_show_payload("traded", 10, "Sw/Sh", "Mewtwo")
+    trade = esp32.display_show_payload("trade", 0, "Sw/Sh", "Eevee")
     scene.command(traded)
     scene.advance(2000)
     scene.command(trade)              # the launcher's next queued offer, sent at once
@@ -82,7 +82,7 @@ def test_a_next_offer_waits_for_the_received_animation(scene, built):
 
 @needs_cc
 def test_a_trade_scene_ends_when_the_session_does_and_not_before_it_starts(scene, built):
-    trade = esp32.display_show_payload("trade", 0, "Scarlet/Violet", "Sprigatito")
+    trade = esp32.display_show_payload("trade", 0, "Sc/Vi", "Sprigatito")
     scene.command(trade)              # a launcher shows its offer before starting the radio
     assert scene.frame() == frame_of(built, [trade], scene.now)
     scene.radio.mode = 3              # hosting
@@ -151,7 +151,7 @@ def test_an_offer_reaches_the_screen_through_the_launchers_radio(monkeypatch, sc
     finally:
         esp32_wlan._radio.close()
     assert board.displays == [esp32.display_sprite_payload("ours", rows),
-                              esp32.display_show_payload("trade", 0, "Sword/Shield", "Pikachu")]
+                              esp32.display_show_payload("trade", 0, "Sw/Sh", "Pikachu")]
     for payload in board.displays:
         assert scene.command(payload)
     fb = scene.frame()
