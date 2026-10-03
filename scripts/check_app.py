@@ -24,13 +24,13 @@ def _windows_diagnostics(custom_code) -> None:
     print(f"[diag] {sys.executable}: {_pe_header(sys.executable)}, CFG policy flags {flags.value:#x}",
           file=sys.stderr, flush=True)
     outcome = []
-    threading.stack_size(256 << 20)
+    threading.stack_size(64 << 20)
     worker = threading.Thread(target=lambda: outcome.append(
         custom_code.check(bytes.fromhex("0100a0e31eff2fe1")).frames))
     worker.start()
     worker.join()
     threading.stack_size(0)
-    print(f"[diag] on a 256 MiB thread stack: {outcome}", file=sys.stderr, flush=True)
+    print(f"[diag] on a 64 MiB thread stack: {outcome}", file=sys.stderr, flush=True)
 
 
 def check() -> None:

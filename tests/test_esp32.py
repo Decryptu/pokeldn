@@ -867,7 +867,8 @@ def test_the_sword_gift_walks_its_fragments_on_a_simulated_board(tmp_path, monke
         seen = {}
         deadline = time.time() + 20
         while len(seen) < 3 and time.time() < deadline:
-            for net in trio.run(lambda: ldn.scan(KEYS, channels=[6], dwell_time=0.3)):
+            # A 0.3 s scan locks to the 0.6 s walk and samples fragments 0 and 1 only; 0.27 s drifts.
+            for net in trio.run(lambda: ldn.scan(KEYS, channels=[6], dwell_time=0.27)):
                 assert net.local_communication_id == COMM_ID and net.max_participants == 8
                 seen[bytes(net.application_data)] = True
     finally:
