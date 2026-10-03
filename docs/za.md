@@ -824,6 +824,13 @@ host test (`0x2a49218`, from `0x915630`, `0x2cb5238`, `0xae0eb8`). The local dri
 (`0x19a1310`) runs the sequence `0x19a1470`; its CloseSession step passes bit 0 of slot 13's fourth
 argument to `0x19d7a70`, which builds the task when set and names "NoNeedToClose" when clear.
 
+An emulated console hosting a Link Trade search under code 00000000 ran slot 13 once a joiner was
+admitted, called from `0xc8a198` with the fourth argument the constant 1 (`mov w3, #1` at
+`0xc8a194`). About 10 s later the task builder `0x1a228f0` was entered from the CloseSession step
+`0x19d7a70` (return address `0x19d7acc`), and facade index 19 from CloseParticipation (return
+address `0x255c490`), while the joiner stayed seated and the trade box opened. Backing out of the
+box reached neither again.
+
 On a retail console's Link Trade search the advertisement holds policy 0 with 2 of 2 nodes at the
 seat, the Pia player count (advertise data +0x16, `e1 01 01 00` to `e1 01 02 00`, the only changing
 byte) moves to 2, then policy 1 is advertised just before the console's one Net 0x50 (150 bytes,
@@ -895,11 +902,8 @@ is no local-wireless path.
 
 ## Unresolved
 
-- Which "CloseSession" builder (`0x19a7590`, `0x1a2ab10`, `0x19d7a70`, `0x1a35710`) a Link Trade
-  search runs, and slot 13's (`0x19a1310`) fourth argument. Breakpoints at `0x1a228f0` (x30) and
-  `0x19a1310` (w3) on an emulated host.
-- Whether game code reaches facade index 19 other than through session+0x30 (framework+0xb8, a
-  facade getter). A breakpoint on `0x25183bc` (x30).
+- Whether game code reaches facade index 19 other than through CloseParticipation. A hosted Link
+  Trade search with one joiner reached it once, from CloseParticipation.
 - Whether a shipped script calls the binding `0x1673170` that stores any integer into L, and what the
   language-select table `[x0+0x50]` holds (breakpoint `0x16734c0`, read at `0x2c204ac`).
 - What writes the exchange worker's error word +0x10, which selects own state 7 (a watchpoint during
