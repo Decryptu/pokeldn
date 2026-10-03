@@ -8,6 +8,8 @@ from pathlib import Path
 
 
 def check() -> None:
+    import faulthandler
+    faulthandler.enable()   # a native crash (a DLL) prints where it happened instead of nothing
     from pokeldn import __version__
     from pokeldn import gifts, pokemon
     from pokeldn.app import paths, runner

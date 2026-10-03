@@ -81,6 +81,10 @@ def main() -> int:
         data += [(stage / "gui/guide.md", "gui"), (executable, "services/pkhex/dist")]
         data += [(stage / "LICENSE", "."), (stage / "vendor/LDN/LICENSE", "vendor/LDN")]
         data += [(path, "gui/firmware") for path in firmware]
+        # PyInstaller's library patterns miss Linux's libunicorn.so.2; unicorn looks in its own lib/.
+        import unicorn
+        data += [(path, "unicorn/lib") for path in (Path(unicorn.__file__).parent / "lib").iterdir()
+                 if path.suffix in (".dll", ".dylib") or ".so" in path.suffixes]
         args = [sys.executable, str(ROOT / "scripts/pack_flet.py"), "pack", str(ROOT / "gui" / "main.py"),
                 "--name", "pokeldn", "-y",
                 "--distpath", str(ROOT / "dist"), "--product-name", "pokeldn",
@@ -94,8 +98,7 @@ def main() -> int:
         for option in (f"--paths={dependencies}", f"--paths={ROOT}", f"--paths={ROOT / 'bin'}", f"--paths={ROOT / 'vendor' / 'LDN'}",
                        *console,
                        *[f"--hidden-import={s}" for s in scripts],
-                       *[f"--exclude-module={m}" for m in platform_excludes()], "--collect-all=esptool", "--collect-binaries=unicorn",
-                       "--collect-submodules=unicorn",
+                       *[f"--exclude-module={m}" for m in platform_excludes()], "--collect-all=esptool", "--collect-submodules=unicorn",
                        "--collect-all=esp_pylib", "--collect-submodules=pokeldn",
                        "--collect-submodules=ldn"):
             args.append(f"--pyinstaller-build-args={option}")
