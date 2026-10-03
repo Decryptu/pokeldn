@@ -133,7 +133,8 @@ migration (8.7 s after the seat, measured). A join with the ten protocols above 
 go unanswered ended in host migration and "no partner found" 27 s after the seat, measured with an
 early joiner whose other answers are not recorded. A joiner answering every Net, Session, RTT and
 Reliable message and no game message (`bin/za_join.py` without `--game`) kept a retail search's seat
-for 150 s, until it left; the console stayed on "searching" and answered the leave.
+for 150 s, until it left: the console sent about 32 packets a second throughout, answered the leave,
+then showed "no partner found".
 
 ## The game's own exchange
 
