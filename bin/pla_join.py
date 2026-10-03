@@ -134,7 +134,8 @@ async def run_session(args, keys, sock, host_ip, our_ip, our_mac, offer, exchang
     """Wait in trio, never in select() (docs/hardware_esp32.md, The userspace stack)."""
     session = joiner.JoinerSession(keys, our_ip, our_mac, offer, exchange,
                                    player_id=bytes.fromhex(args.join_player_id),
-                                   drive=args.drive, net_answer=not args.no_net_answer, log=print)
+                                   drive=args.drive, net_answer=not args.no_net_answer,
+                                   join_delay=args.join_delay, log=print)
     end = time.monotonic() + args.hold
     traded_at = None
     seen = authed = 0
@@ -421,6 +422,10 @@ def build_parser():
     ap.add_argument("--no-net-answer", action="store_true",
                     help="send the Session join request with no Net 0x12 answer to the host's 0x11; "
                          "the 0x12 is what a console answers by asking for host migration")
+    ap.add_argument("--join-delay", type=float, default=0.0, metavar="SECONDS",
+                    help="hold the Session join request this long after the host's first Net "
+                         "0x11. A join the console accepts after its WaitMember draws the type 7 "
+                         "that hands us the host role (docs/pla.md, Joining a console's network)")
     ap.add_argument("--take-host", action=argparse.BooleanOptionalAction, default=True,
                     help="when the console hands us the host role, leave its network and become "
                          "the host with bin/pla_host.py on the same code and channel")

@@ -110,11 +110,15 @@ joined station to take the host role instead:
 | sends the join request, never answers 0x11 | the same 0x11 every 0.5 s, then `is migrating host` set, then `01 40 00 00`, then the network dropped (measured: 8.6 to 10.1, 13.5 to 14.1 and 16.8 to 17.5 s after association) |
 | answers with `NetUpdateNetworkHostMessage` | keeps repeating 0x40 |
 
-A searching console asked its joined station to take the host role in every captured session (table
-above). The new host completes the migration by creating a network on the same code:
-the console drops its own network (3 to 6 s after asking, measured), joins the new one and trades as
-joiner. `bin/pla_join.py` leaves the seat on the first 0x40 and runs `bin/pla_host.py` on the same
-code and channel (`--take-host`, on by default).
+A searching console asked its joined station to take the host role in every captured session where
+the join request was dropped (table above). Seated with the request to destination 0, an emulated
+console hosting its search either ran the game (a trade completed) or, with the request held 4.5 s
+after its first 0x11, sent Session type 7 naming the joiner its successor 0.02 s after the station
+list, in 4 of 4 seats ([Joining a console's network](#joining-a-consoles-network)). The new host
+completes the migration by creating a network on the same code: the console drops its own network
+(3 to 6 s after asking, measured), joins the new one and trades as joiner. `bin/pla_join.py` leaves
+the seat on the first 0x40 and runs `bin/pla_host.py` on the same code and channel (`--take-host`,
+on by default).
 
 Each Net message has a named header class with a serializer. `NetUpdateNetworkHostMessageHeader`
 (`0x6fe03c`): u64 at wire +4, u64 at +0xc, u16 at +0x14, size 0x16, big-endian. The 0x11 header
@@ -384,13 +388,14 @@ Error 7 dialog. `0x26d4ae8` is in the result callback `0x26d4aa0`, which tests t
 `3000 + rand % 1000` ms (`0x2c491b8`). The completion callback is `[request+0x90] -> 0x26d69e8 -> 0x26d6a88`.
 
 The Matching child waits for a two-round data exchange on Stream Broadcast Reliable (0x81), ports 0
-and 1, after the mesh join: each station opens the stream with a type-0x0f message, sends a 44-byte
-state record (`0000002c ffff`, a station index and per-station counters, flags 0xa0) and one 74-byte
-type-0x1f content record carrying a 64-byte payload beginning `484b6264`. Matching completes on the
+and 1, after the mesh join: each station opens the stream with a type-0x0f message, acknowledges with the 44-byte
+`0000002c ffff` message under flags 0xa0 ([Joining a console's network](#joining-a-consoles-network))
+and sends one 74-byte type-0x1f content record carrying a 64-byte payload beginning `484b6264`. Matching completes on the
 peer's second-round record (17 ms after it, measured), enqueuing `OnSuccess` (`0x26d5f64`); a host
 that only acknowledges the stream gets the timeout. A joining console opens its stream unprompted and
-retransmits its record about once a second until Matching completes or times out. The trade box (a 399-byte type-7
-record) crosses later on 0x7c.
+sends its content record after the host's (86 ms after it, measured); a hosting console sends its
+record first, on the joiner's stream open. The trade box (a 399-byte type-7 record) crosses later on
+0x7c.
 
 A message ends where its payload ends; this band does not align messages to four bytes (5.27-5.45
 does), and only the packet pads ([Reading and writing a packet](#reading-and-writing-a-packet)). A
@@ -1099,8 +1104,9 @@ emulated host); `pokeldn.pla.joiner` sends them.
 
 | the host sends | the joiner answers |
 |---|---|
-| Net 0x11 | Net 0x12 echoing the sequence id, message flags `0x11`; the first time, the Session join request (type 0), flags `0x01` |
-| Net 0x50 | Net 0x51 echoing the sequence id |
+| Net 0x11 | Net 0x12 echoing the sequence id, message flags `0x11`, header destination 0; the first time, the Session join request (type 0), flags `0x01`, header destination 0 |
+| Net 0x50 | Net 0x51 echoing the sequence id, header destination 0 |
+| Session type 7 naming the joiner | type 8: the location id the type 7 names as target, then the host's own |
 | Session type 5 | type 6: its own constant id, two zero bytes, the update's sequence |
 | the first type 5 | the 0x81 stream open on port 0, `0f00000b 0001 0001 01 00000001 0000000000008000000000` |
 | its 0x81 record on port 0 | the acknowledgement, its own record on port 1 (flags `0x1f`, sequence 1, bitmap `0x01`), then the key-zero open on 0x7c port 1, initialized flags |
@@ -1109,6 +1115,20 @@ emulated host); `pokeldn.pla.joiner` sends them.
 | selectors 5 and 7 | the same two bytes; after 7, the phase key open on port 1 |
 | the phase key open | phases 3, 6, 11, 14 (selector 1), each after the host's answer, then the phase key closed |
 | RTT kind 0 | kind 1, timestamp echoed, the requester's variable id in the last two bytes |
+
+A retail joiner sent all 108 of its Net 0x12 to header destination 0. The reader gate drops one
+addressed to the host's variable id: an emulated console then resent its migrating 0x11 every 0.5 s
+for 4 s and sent its first 0x40 4.1 s after its type 7. Addressed to 0, the 0x11 went once and the
+first 0x40 followed 0.10 s after the type 7 (4 of 4 seats); with no type 8 at all, 9.1 s.
+
+The type 7 comes from `LeaveMeshWithHostMigrationJob` when the console's WaitMember (3000 +
+rand%1000 ms, `0x2c491b8`) ends before the join request is accepted, as on Scarlet
+([docs/sv.md](sv.md#what-decides-a-seat)); `bin/pla_join.py --join-delay 4.5` draws it. The console
+resends it every second until a type 8 arrives. Its type-8 handler `0x739b08` takes only a 25-byte
+message whose second location id is the console's own; `0x73f0a8` then sets the job's done flag
+`+0xb0` when the first equals the target the job holds at `+0x68`:
+
+    08 | joiner location id (12) | host location id (12)
 
 A joiner sends its next phase once the host answers, after a few tenths of a second except across the
 trade animation (several seconds). It repeats its 0x81 acknowledgement on ports 0 and 1 about once a second:
@@ -1267,9 +1287,5 @@ against the four captured console leaves.
 
 ## Unresolved
 
-- What a joiner seated on a console's own session must send for Matching to complete there: a
-  joining console's stream open, 44-byte state record and content record are measured
-  ([The game's reader and the pre-handler phase](#the-games-reader-and-the-pre-handler-phase)), the
-  host's reply to them is not.
 - Whether a seated hosting slot ends on the 10.0 s Matching deadline or on a WaitMember timer.
 - What the console does in the 3.6 s between leaving the network and showing the field.

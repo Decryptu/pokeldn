@@ -26,6 +26,7 @@ SESSION_JOIN_RESPONSE = 2
 SESSION_LEAVE = 3
 SESSION_UPDATE = 5
 SESSION_UPDATE_ACK = 6
+SESSION_HOST_MIGRATION = 7
 
 # The flags the retail joiner puts on its messages: 0x11 on the Net answers, 0x01 on the join
 # request. Everything else goes out under 0x01, as the host that traded with a console sends it.
@@ -55,8 +56,9 @@ class JoinerSession:
 
     def __init__(self, keys, our_ip, our_mac, offer, exchange, *, name=" ",
                  player_id=pia6.DEFAULT_PLAYER_ID, our_var=None, phase_waits=PHASE_WAITS,
-                 drive=False, net_answer=True, log=print, clock=time.monotonic):
+                 drive=False, net_answer=True, join_delay=0.0, log=print, clock=time.monotonic):
         self.net_answer = net_answer   # False: no Net 0x12 (docs/pla.md, Unresolved)
+        self.join_delay = join_delay   # after the first Net 0x11 (docs/pla.md, Joining)
         self.keys, self.our_ip, self.offer, self.exchange = keys, our_ip, bytes(offer), exchange
         self.our_cid = pia_connect.ldn_constant_id(our_mac)
         self.name, self.player_id, self.phase_waits = name, player_id, tuple(phase_waits)
@@ -64,9 +66,10 @@ class JoinerSession:
             int.from_bytes(os.urandom(2), "big") % 0xFFF0 + 0x10)
         self.log, self.clock, self.drive = log, clock, drive
         self.host_var = self.host_cid = None
-        self.join_sent_at = None
+        self.join_sent_at = self.join_due = None
         self.accepted = self.seated = self.host_left = False
         self.migration_asked = None    # when the host first sent NetStartHostMigration
+        self.handed_at = None          # when the host first named us its successor (type 7)
         self.last_rtt = self.last_clock = self.last_stream_ack = 0.0
         self.clock_seq = 0
         self.stream_high = {}          # 0x81 port -> the host's highest sequence
@@ -167,18 +170,22 @@ class JoinerSession:
             if req is None:
                 return []
             host_var, host_cid, seq = req
+            # Destination 0, as a retail joiner sends all 108 of its 0x12: the reader gate drops
+            # one addressed to the host's variable id (docs/pla.md, The Net Protocol).
             out = [self._packet(pia_connect.build_net_response(seq), PROTO_NET,
-                                flags=NET_ANSWER_FLAGS)] if self.net_answer else []
+                                flags=NET_ANSWER_FLAGS, dst=0)] if self.net_answer else []
             if self.host_var is None:
                 self.host_var, self.host_cid = host_var, host_cid
                 self.log(f"[pla] the host is var {host_var:#06x}, constant id {host_cid.hex()}; "
                          f"joining as var {self.our_var:#06x}")
-                out.append(self._join_request())
+                self.join_due = self.clock() + self.join_delay
+                if not self.join_delay:
+                    out.append(self._join_request())
             return out
         if p[1] == NET_PROPERTY:
             seq = int.from_bytes(p[4:8], "big")
             return [self._packet(pia_connect.build_net_property_ack(seq), PROTO_NET,
-                                 flags=NET_ANSWER_FLAGS)]
+                                 flags=NET_ANSWER_FLAGS, dst=0)]
         return []
 
     def _session(self, msg):
@@ -203,6 +210,19 @@ class JoinerSession:
                 out.append(self._reliable(data_exchange.build_stream_open(HOST_BITMAP, seq_id),
                                           PROTO_STREAM, data_exchange.HOST_PORT, seq_id))
             return out
+        elif p[0] == SESSION_HOST_MIGRATION:
+            # The host leaving names its successor and resends until a type 8 from it; answered,
+            # NetStartHostMigration follows at once instead of ~9 s later (docs/pla.md, Joining).
+            mig = pia_connect.parse_session_migration_v11(p)
+            if mig is None or mig["target_var"] != self.our_var:
+                return []
+            if self.handed_at is None:
+                self.handed_at = self.clock()
+                self.log("[pla] <- the host is leaving and hands us the host role (type 7); "
+                         "-> type 8")
+            return [self._packet(pia_connect.build_session_migration_ack_v11(
+                mig["target_constant_id"], mig["target_var"], mig["host_constant_id"],
+                mig["host_var"]), PROTO_SESSION)]
         elif p[0] == SESSION_LEAVE:
             if not self.host_left:
                 self.log("[pla] <- the host left the session (type 3)")
@@ -470,7 +490,10 @@ class JoinerSession:
         now = self.clock()
         if self.host_var is None:
             return out
-        if not self.accepted and not self.seated and now - self.join_sent_at >= JOIN_REPEAT:
+        if self.join_sent_at is None:
+            if now >= self.join_due:
+                out.append(self._join_request())
+        elif not self.accepted and not self.seated and now - self.join_sent_at >= JOIN_REPEAT:
             out.append(self._join_request())
         if not self.seated:
             return out

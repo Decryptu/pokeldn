@@ -1,5 +1,10 @@
 """The Legends Arceus joiner against a scripted console host (`docs/pla.md`, Joining a console's network)."""
 
+import os
+import struct
+
+import pytest
+
 from pokeldn import pla
 from pokeldn.ldn import pia6, pia_connect, reliable5
 from pokeldn.pla import channel_table, data_exchange, game_channel, joiner, pokemon, trade_box
@@ -222,6 +227,72 @@ def test_driving_offers_once_and_confirms_after_the_host_offers():
     assert channel_table.parse(_data(sent, 0x7C, 1)[-1]["payload"]) == [(trade_box.PHASE_KEY, True)]
 
 
+MAIN = os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))),
+                    "scratchpad", "pla", "main_111.bin")                 # Legends Arceus 1.1.1
+# An emulated console hosting its search, 0.04 s after seating our joiner (variable id 0xcf75):
+# Session type 7, naming us its successor, resent every second.
+CONSOLE_TYPE7 = bytes.fromhex("077f000200000200000000263c007f00000230397f000300000200000000cf750000")
+CONSOLE_CID, CONSOLE_VAR = bytes.fromhex("7f00020000020000"), 0x263C
+SUCCESSOR_CID, SUCCESSOR_VAR = bytes.fromhex("7f00030000020000"), 0xCF75
+
+
+def _type8s(keys, packets):
+    return [p for proto, _, _, p, _, _ in _open(keys, packets)
+            if proto == joiner.PROTO_SESSION and p[:1] == b"\x08"]
+
+
+def test_the_console_handing_us_the_host_role_is_answered_with_a_type_8():
+    """Every copy of the console's type 7 naming us draws a type 8; one naming another does not."""
+    keys, clock, s = _session()
+    s.our_var = SUCCESSOR_VAR
+    _seat(keys, s)
+    first = _type8s(keys, s.receive([_msg(CONSOLE_TYPE7, joiner.PROTO_SESSION)]))
+    assert first == [b"\x08" + SUCCESSOR_CID + b"\0\0" + SUCCESSOR_VAR.to_bytes(2, "big")
+                     + CONSOLE_CID + b"\0\0" + CONSOLE_VAR.to_bytes(2, "big")]
+    assert s.handed_at == clock.t and s.migration_asked is None
+    clock.t += 1.0
+    assert _type8s(keys, s.receive([_msg(CONSOLE_TYPE7, joiner.PROTO_SESSION)])) == first
+    assert s.handed_at == clock.t - 1.0
+    other = CONSOLE_TYPE7[:-4] + b"\x12\x34\0\0"
+    assert _type8s(keys, s.receive([_msg(other, joiner.PROTO_SESSION)])) == []
+
+
+@pytest.mark.skipif(not os.path.exists(MAIN), reason="needs the Legends Arceus 1.1.1 main")
+def test_the_consoles_own_handler_accepts_the_type_8():
+    """The type-8 handler `0x739b08` takes a 25-byte message whose second location id is the
+    console's own, and `0x73f0a8` sets the migration job's `+0xb0` when the first is its target."""
+    from nso_run import Runner, SCRATCH
+    keys, clock, s = _session()
+    s.our_var = SUCCESSOR_VAR
+    _seat(keys, s)
+    answer = _type8s(keys, s.receive([_msg(CONSOLE_TYPE7, joiner.PROTO_SESSION)]))[0]
+    runner = Runner(MAIN)
+    manager, reader, job, buf = (SCRATCH + 0x10000 + n * 0x1000 for n in range(4))
+
+    def accepted(message, target_var=SUCCESSOR_VAR, job_state=2):
+        runner.write(manager, bytes(0x400))
+        runner.write(reader, bytes(0x200))
+        runner.write(job, bytes(0x100))
+        runner.write(0x42a5590, struct.pack("<Q", manager))      # the global behind GOT `0x4277550`
+        runner.write(manager + 0x178 + 8, struct.pack("<Q", int.from_bytes(CONSOLE_CID, "big")))
+        runner.write(manager + 0x178 + 0x10, struct.pack("<H", CONSOLE_VAR))
+        runner.write(reader + 0x40, struct.pack("<Q", 1))         # the packet's station `0x747388`
+        runner.write(reader + 0x50, struct.pack("<Q", 1))         # the session's `0x7473ec`
+        runner.write(reader + 0xb8, struct.pack("<Q", job))
+        runner.write(job + 8, struct.pack("<I", job_state))       # running: `0x6e5f0c`
+        runner.write(job + 0x68 + 8, struct.pack("<Q", int.from_bytes(SUCCESSOR_CID, "big")))
+        runner.write(job + 0x68 + 0x10, struct.pack("<H", target_var))
+        runner.write(buf, message)
+        runner.call(0x739b08, (reader, buf, len(message)))
+        return runner.uc.mem_read(job + 0xb0, 1)[0] == 1
+
+    assert accepted(answer)
+    assert not accepted(answer, job_state=0)
+    assert not accepted(answer, target_var=0x1234)
+    assert not accepted(answer[:-1] + bytes([answer[-1] ^ 1]))   # not the console's own location
+    assert not accepted(answer + b"\0")
+
+
 def test_the_console_s_migration_request_is_noted_and_left_unanswered():
     """The console's migration request is noted once; only the Net request is answered."""
     keys, clock, s = _session()
@@ -237,6 +308,9 @@ def test_the_console_s_migration_request_is_noted_and_left_unanswered():
                                   _msg(bytes.fromhex("01400000"), joiner.PROTO_NET, flags=0x31)]))
     assert s.migration_asked == clock.t
     assert [m[0] for m in sent] == [0x2C]
+    # Every 0x12 to header destination 0, as a retail joiner's 108 of 108: one to the host's
+    # variable id is dropped, and the console resends its 0x11 for 4 s before migrating.
+    assert sent[0][3] == bytes.fromhex("0112000000000003") and sent[0][4].dst_var == 0
     clock.t += 0.5
     s.receive([_msg(bytes.fromhex("01400000"), joiner.PROTO_NET, flags=0x31)])
     assert s.migration_asked == clock.t - 0.5
