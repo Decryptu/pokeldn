@@ -927,10 +927,13 @@ is no local-wireless path.
   language-select table `[x0+0x50]` holds (breakpoint `0x16734c0`, read at `0x2c204ac`).
 - What writes the exchange worker's error word +0x10, which selects own state 7 (a watchpoint during
   an emulated trade cancelled after the steps start).
-- Whether the host migration 8.7 s after a seat whose join listed the wrong protocols is WaitMember
-  (3000 + rand%1000 ms, retry body `0x19ae124`) expiring, then LeaveMeshWithHostMigration's
-  8000 ms poll for a next host (`0x255a520`) ending with no session station to hand to
-  (`0x255a848..0x255a878`).
+- Which event the 8.7 s after a seat with the GBA protocol list timed. The type-0 handler `0x254a030`
+  drops a join whose protocol count differs from the host's (`0x254a090`, against `0x256c9f0`)
+  with no answer and no station; a wrong protocol version or application version is answered with
+  a 37-byte type 2, result 3 (`0x254a2e4`) or 4 (`0x254a290`). WaitMember draws 3000 ± 999 ms (the
+  random u64 is read signed). With a station on the Net layer but not in the session,
+  LeaveMeshWithHostMigration polls 8000 ms for a next host (`0x255a520`) before the Net 0x11
+  sequence 3, which predicts it 8.05 to 12.1 s after the seat; a first Net 0x40 at 8.7 s would not fit.
 - Whether an optional timed close (`--hold-after-trade`) can leave the console without an error
   while it is still seated. The default host waits for the console's departure ([Hosting](#hosting)).
   A leaving retail host sends the type 9 first ([A host leaving](#a-host-leaving)); the timed close
