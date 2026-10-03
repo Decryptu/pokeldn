@@ -7,6 +7,32 @@ import tempfile
 from pathlib import Path
 
 
+def _pe_header(exe) -> str:
+    import struct
+    data = Path(exe).read_bytes()[:4096]
+    opt = struct.unpack_from("<I", data, 0x3C)[0] + 24
+    return (f"DllCharacteristics 0x{struct.unpack_from('<H', data, opt + 70)[0]:04X}, "
+            f"stack reserve {struct.unpack_from('<Q', data, opt + 72)[0]:#x}")
+
+
+def _windows_diagnostics(custom_code) -> None:
+    """Temporary: why Unicorn faults in the frozen Windows app. Printed before anything can crash."""
+    import ctypes
+    import threading
+    flags = ctypes.c_uint32()
+    ctypes.windll.kernel32.GetProcessMitigationPolicy(ctypes.c_void_p(-1), 7, ctypes.byref(flags), 4)
+    print(f"[diag] {sys.executable}: {_pe_header(sys.executable)}, CFG policy flags {flags.value:#x}",
+          file=sys.stderr, flush=True)
+    outcome = []
+    threading.stack_size(256 << 20)
+    worker = threading.Thread(target=lambda: outcome.append(
+        custom_code.check(bytes.fromhex("0100a0e31eff2fe1")).frames))
+    worker.start()
+    worker.join()
+    threading.stack_size(0)
+    print(f"[diag] on a 256 MiB thread stack: {outcome}", file=sys.stderr, flush=True)
+
+
 def check() -> None:
     import faulthandler
     faulthandler.enable()   # a native crash (a DLL) prints where it happened instead of nothing
@@ -30,6 +56,8 @@ def check() -> None:
     assert (root / "LICENSE").is_file()
     assert (root / "vendor/LDN/LICENSE").is_file()
     from pokeldn.frlg.rom import custom_code
+    if sys.platform == "win32":
+        _windows_diagnostics(custom_code)
     # mov r0, #1; bx lr: Check offline runs it under the bundled Unicorn.
     assert custom_code.check(bytes.fromhex("0100a0e31eff2fe1")).frames == 1
     if sys.platform.startswith("linux"):
@@ -90,7 +118,9 @@ if __name__ == "__main__":
 
         result = subprocess.run([sys.argv[1], "--run", str(Path(__file__).resolve())],
                                 capture_output=True, text=True, timeout=180)
-        assert result.returncode == 0, (result.stdout, result.stderr)
+        if sys.platform == "win32":
+            print(f"[diag] {sys.argv[1]}: {_pe_header(sys.argv[1])}", flush=True)
+        assert result.returncode == 0, (hex(result.returncode & 0xFFFFFFFF), result.stdout, result.stderr)
         assert "seven Pokemon formats verified" in result.stdout, (result.stdout, result.stderr)
         assert not result.stderr, result.stderr
         assert f"pokeldn {__version__}\n" in result.stdout, result.stdout
