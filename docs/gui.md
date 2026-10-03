@@ -169,5 +169,11 @@ The frozen check asserts both on Linux.
 
 The app bundles Unicorn for Check offline. It loads its architecture modules by name, so the
 packer collects its submodules and adds the platform's library to `unicorn/lib` itself: PyInstaller's
-library patterns match `lib*.so`, not Linux's `libunicorn.so.2`. The frozen check runs a payload
-under it.
+library patterns match `lib*.so`, not Linux's `libunicorn.so.2`. PyInstaller's Windows bootloader
+is linked with Control Flow Guard (DllCharacteristics `0xC160`), and Unicorn ends a CFG process
+with `0xC0000409` on its first `uc_mem_map`
+([unicorn#2281](https://github.com/unicorn-engine/unicorn/issues/2281)); a 64 MiB thread stack
+does not change it. The packer clears `GUARD_CF` in `pokeldn.exe`, giving `0x8160`, the flags of
+`python.exe`. The frozen check runs a payload under Unicorn on every platform. Unicorn raises and
+handles an access violation of its own there: never enable `faulthandler` in the frozen check, it
+logs that exception to stderr and fails the check.
