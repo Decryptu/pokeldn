@@ -130,8 +130,10 @@ The join owes, over the Net acknowledgement: ten protocols
 identification token `0x06` then zeroes, and a PlayerInfo name of one space. A join listing
 the GBA application's six protocols and version 0x58 goes unanswered and the console starts host
 migration (8.7 s after the seat, measured). A join with the ten protocols above whose game messages
-go unanswered ended in host migration and "no partner found" 27 s after the seat, measured; the timer
-behind either is unresolved.
+go unanswered ended in host migration and "no partner found" 27 s after the seat, measured with an
+early joiner whose other answers are not recorded. A joiner answering every Net, Session, RTT and
+Reliable message and no game message (`bin/za_join.py` without `--game`) kept a retail search's seat
+for 150 s, until it left; the console stayed on "searching" and answered the leave.
 
 ## The game's own exchange
 
@@ -918,14 +920,10 @@ is no local-wireless path.
   language-select table `[x0+0x50]` holds (breakpoint `0x16734c0`, read at `0x2c204ac`).
 - What writes the exchange worker's error word +0x10, which selects own state 7 (a watchpoint during
   an emulated trade cancelled after the steps start).
-- What ends a hosted session whose game messages go unanswered (host migration at 27 s measured).
-  Two readings fit: CloseSession's P2P wait giving up at 15001 ms (`0x255c7a4`, result `0x2c18`)
-  followed by the 10.8 s leave with migration, or the 10 s kick (The kick) followed by a game-side
-  reaction that is unread. An emulated host seating `bin/za_join.py` without `--game` (every Net,
-  Session, RTT and Reliable acknowledgement answered, no game message) kept the seat for 90 s and
-  for 120 s until the joiner left, its screen on "Searching for a trade partner", and polled
-  WaitP2pStable (`0x255c6c0`) from the seat; its failure branch is `0x255c7b4`, success `0x255c718`.
-  What the retail joiner of the 27 s measurement left unanswered is not recorded.
+- What the early joiner of the 27 s ending left unanswered. With every transport message answered,
+  a retail search (150 s) and an emulated host (90 s, 120 s) kept the seat, polling WaitP2pStable
+  (`0x255c6c0`; failure branch `0x255c7b4` at 15001 ms, success `0x255c718`). Candidates for the
+  27 s: that wait failing, or the 10 s kick (The kick) followed by an unread game-side reaction.
 - Whether the host migration 8.7 s after a seat whose join listed the wrong protocols is WaitMember
   (3000 + rand%1000 ms, retry body `0x19ae124`) expiring, then LeaveMeshWithHostMigration's
   8000 ms poll for a next host (`0x255a520`) ending with no session station to hand to
