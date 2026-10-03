@@ -169,6 +169,10 @@ A `.wc3` is 1420 bytes (`0x58C`):
 
 The script CRC in the files covers 1000 bytes, pad byte included, in all 54 international files of
 Project Pokemon's EventsGallery; the game's own covers 999 [script.c:488]. Import accepts either.
+`--icon N` on import, or Card icon under Open a file in the app, sets the card's `iconSpecies`
+(offset 2 of the card) to an internal species id from 0 to 411; 0 draws no icon
+[mystery_gift_show_card.c:466].
+
 Japanese `.wc3` files are 1252 bytes (`0x4E4`) and are refused: the Switch cartridges are French and
 English. Every international gallery script is relative and serves all four cartridges. The gallery's
 debug cards with flag ids 4 to 8 are refused: the delivery man hands a gift only for flag ids 1000 to

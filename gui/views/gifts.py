@@ -103,10 +103,20 @@ class GiftBuilder:
         exts = ("pokegift", "wc8") if self.game == "swsh" else ("pokegift", "wc3")
         path = PathField(self.app.picker, lambda: os.path.expanduser("~"), self.value["file"], "file",
                          exts, self._file, single_line=True)
-        return ft.Column([t.text("A .pokegift someone shared, or a " + ("Sword/Shield .wc8" if self.game == "swsh"
-                                                                       else ".wc3") + " Wonder Card.", 12, t.MUTED),
-                          path.control],
-                         spacing=8)
+        controls = [t.text("A .pokegift someone shared, or a " + ("Sword/Shield .wc8" if self.game == "swsh"
+                                                                  else ".wc3") + " Wonder Card.", 12, t.MUTED),
+                    path.control]
+        if self.game == "frlg":
+            icon = NamePicker(self.app, self.game, "species", str(self.value.get("icon") or ""),
+                              self._icon, optional=True, names=SPECIES_FRLG)
+            controls.append(t.labeled_control("Card icon", icon.control))
+            controls.append(t.text("Leave empty to keep the file's own icon.", 12, t.MUTED))
+        return ft.Column(controls, spacing=8)
+
+    def _icon(self, value) -> None:
+        number = _number(value)
+        self.value["icon"] = number if number else None
+        self.commit()
 
     def _file(self, path) -> None:
         self.value["file"] = path

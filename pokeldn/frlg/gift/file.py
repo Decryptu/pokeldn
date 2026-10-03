@@ -220,6 +220,22 @@ def from_wc3(raw, *, build=None, name="FRLG gift"):
     return _gift(name, card[4:], _unbound(script), build)
 
 
+def with_icon(gift, species):
+    """The gift with every variant's card showing `species`' icon; 0 shows none. Above 411 the game
+    draws the question mark [mystery_gift_show_card.c:466, pokemon_icon.c:1102]."""
+    from pokeldn.frlg.gift.gift_composer import MAX_POKEMON_SPECIES
+    if type(species) is not int or not 0 <= species <= MAX_POKEMON_SPECIES:
+        raise ValueError(f"A card icon is a species from 0 to {MAX_POKEMON_SPECIES}.")
+    variants = {}
+    for code, variant in gift.variants.items():
+        card = variant.data.get("card")
+        if card is None:
+            raise ValueError("Only a Wonder Card has an icon.")
+        variants[code] = gifts.Variant({**variant.data, "card": card[:2] + species.to_bytes(2, "little")
+                                        + card[4:]}, dict(variant.options))
+    return gifts.Gift(gift.game, gift.name, variants)
+
+
 def from_code(code, *, build, name="Console code", expect=None, dump_size=None):
     options = {}
     if expect is not None:

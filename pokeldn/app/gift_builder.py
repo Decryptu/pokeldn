@@ -51,7 +51,9 @@ def args(tool, value):
     game = GAMES[tool.key]
     value = normalized(game, value)
     if value["mode"] == "file":
-        return ["--gift-file", value["file"]] if value["file"] else []
+        if not value["file"]:
+            return []
+        return ["--gift-file", output(tool) if value.get("icon") is not None else value["file"]]
     if _built_state(game, value) is None:
         return list(module(game).PRESET[value["preset"]].args)
     return ["--gift-file", output(tool)]
@@ -63,7 +65,10 @@ def compile(tool, value):
     if value["mode"] == "file":
         if not value["file"]:
             raise ValueError("Open a gift file, or choose a preset.")
-        return gifts.load(value["file"], game=game)
+        gift = gifts.load(value["file"], game=game)
+        if value.get("icon") is not None:
+            gift = gifts.adapter(game).with_icon(gift, value["icon"])
+        return gift
     return module(game).compile(_built_state(game, value))
 
 
@@ -71,7 +76,7 @@ def prepare(tool, value):
     """Write the built gift where args() points the launcher. A preset sent as flags needs nothing."""
     game = GAMES[tool.key]
     value = normalized(game, value)
-    if _built_state(game, value) is None:
+    if _built_state(game, value) is None and not (value["mode"] == "file" and value.get("icon") is not None):
         return
     path = output(tool)
     os.makedirs(os.path.dirname(path), exist_ok=True)

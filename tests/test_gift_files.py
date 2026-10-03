@@ -180,6 +180,25 @@ def test_wc3_refuses_japanese_files_corruption_and_cartridge_addresses():
     assert set(frlg_file.from_wc3(tied, build="BPRE").variants) == {"BPRE"}
 
 
+def test_gui_card_icon_reaches_the_console_and_changes_only_the_icon(tmp_path, monkeypatch):
+    from pokeldn.app import gift_builder
+    monkeypatch.setattr(gift_builder, "SESSION", tmp_path)
+    source = config.MysteryGiftPayload(gift="celebi").build_distribution(builds.BPRF)
+    path = tmp_path / "celebi.wc3"
+    path.write_bytes(_wc3(source.card, source.ram_script))
+    tool, values = TOOLS["frlg-gift"], {"--gift-file": {"mode": "file", "file": str(path), "icon": 6}}
+    command.prepare(tool, values)
+    args = command.build(tool, values, {}, Settings())
+    parser = frlg_mg_host.build_parser()
+    run = frlg_mg_host.build_run_config(parser, parser.parse_args(args[args.index("--gift-file"):][:2]))
+    host, console = _session(run, game_code=b"BPRF", version="firered")
+    _drive(host, console)
+    assert console.saved_card == source.card[:2] + (6).to_bytes(2, "little") + source.card[4:]
+    assert console.saved_ram_script == source.ram_script.ljust(1024, b"\0")
+    with pytest.raises(ValueError, match="species from 0 to 411"):
+        frlg_file.with_icon(frlg_file.from_wc3(path.read_bytes()), 412)
+
+
 def test_gui_file_source_omits_the_previous_preset_and_uses_the_same_exporter(tmp_path):
     tool = TOOLS["frlg-gift"]
     settings = Settings()

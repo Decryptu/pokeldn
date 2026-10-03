@@ -157,6 +157,7 @@ def main(argv=None):
     convert.add_argument("--card", help="FRLG WonderCard.bin")
     convert.add_argument("--script", help="FRLG Script.bin")
     convert.add_argument("--wc3", help="FRLG .wc3 Wonder Card file")
+    convert.add_argument("--icon", type=int, help="FRLG card icon species, 0 for none")
     convert.add_argument("--code", help="FRLG raw ARM console payload (.bin)")
     convert.add_argument("--expect", help="console-code result: trainer-id or a 32-bit integer")
     convert.add_argument("--dump-size", type=int, help="console-code response length when it returns a dump")
@@ -202,6 +203,10 @@ def main(argv=None):
                     gift = adapter("frlg").from_bins(Path(args.card).read_bytes(),
                         Path(args.script).read_bytes(), build=args.build,
                         name=args.name or Path(args.card).stem)
+            if args.icon is not None:
+                if args.game != "frlg" or args.code:
+                    raise ValueError("--icon sets an FRLG Wonder Card's icon.")
+                gift = adapter("frlg").with_icon(gift, args.icon)
             save(args.out, gift)
             print(f"Saved {args.out}: {gift.summary}")
         else:
