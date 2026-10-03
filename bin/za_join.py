@@ -345,6 +345,9 @@ def build_parser():
                     help="send the band's Net connection request once seated")
     ap.add_argument("--no-answer", action="store_true",
                     help="stay silent; the run then measures what the console sends on its own")
+    ap.add_argument("--withhold", action="append", default=[], choices=("rtt", "update-ack"),
+                    help="never send this answer, to find what a seat needs (docs/za.md, "
+                         "Unresolved); repeatable")
     ap.add_argument("--session-join", action="store_true",
                     help="send the Session join request once the console's Net is acknowledged")
     ap.add_argument("--join-repeat", type=int, default=30,
@@ -440,6 +443,8 @@ async def run_session(args, keys, host_ip, host_mac, our_ip, our_mac, record):
                       establishing=False, unicast=True, pktid=None, footer_var=None, note=""):
         """One Pia packet carrying N messages, tiled in the order written."""
         nonlocal sent
+        if "rtt" in args.withhold and items[0][0] == pia_connect.PROTO_RTT:
+            return
         body = b"".join(reliable.build_message(proto, payload, msgflags)
                         for proto, payload, msgflags in items)
         proto = items[0][0]
@@ -649,7 +654,8 @@ async def run_session(args, keys, host_ip, host_mac, our_ip, our_mac, record):
             if (migrated_at is not None and m.proto == pia_connect.PROTO_NET
                     and m.payload[:2] == bytes([1, pia_connect.NET_START_HOST_MIGRATION])):
                 destroyed = True
-            if m.proto == pia_connect.PROTO_SESSION and m.payload[:1] == b"\x05" and conn is not None:
+            if (m.proto == pia_connect.PROTO_SESSION and m.payload[:1] == b"\x05" and conn is not None
+                    and "update-ack" not in args.withhold):
                 sequence = za.session_encoding.session_update_sequence(m.payload) \
                     if False else za.session_update_sequence(m.payload)
                 ack = za.build_session_update_ack(pia_connect.ldn_constant_id(our_mac), sequence)

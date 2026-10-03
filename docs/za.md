@@ -136,6 +136,12 @@ Reliable message and no game message (`bin/za_join.py` without `--game`) kept a 
 for 150 s, until it left: the console sent about 32 packets a second throughout, answered the leave,
 then showed "no partner found".
 
+The same joiner sending no RTT answer, and so nothing at all after its type 6 at 1.16 s, is kicked
+(The kick): Session type 13 from 14.24 s, nine of them about 0.5 s apart, then Net 0x11 sequence 3
+every 0.5 s from 19.31 s, Net 0x40 every 0.3 s from 23.31 s, the last packet at 25.13 s, then "no
+partner found" on the console. The 27 s ending is this sequence: a joiner that sends nothing from
+its own variable id for 10 s.
+
 ## The game's own exchange
 
 Above Pia the game runs on Reliable (protocol 10) and Broadcast Reliable (protocol 11), the
@@ -921,10 +927,6 @@ is no local-wireless path.
   language-select table `[x0+0x50]` holds (breakpoint `0x16734c0`, read at `0x2c204ac`).
 - What writes the exchange worker's error word +0x10, which selects own state 7 (a watchpoint during
   an emulated trade cancelled after the steps start).
-- What the early joiner of the 27 s ending left unanswered. With every transport message answered,
-  a retail search (150 s) and an emulated host (90 s, 120 s) kept the seat, polling WaitP2pStable
-  (`0x255c6c0`; failure branch `0x255c7b4` at 15001 ms, success `0x255c718`). Candidates for the
-  27 s: that wait failing, or the 10 s kick (The kick) followed by an unread game-side reaction.
 - Whether the host migration 8.7 s after a seat whose join listed the wrong protocols is WaitMember
   (3000 + rand%1000 ms, retry body `0x19ae124`) expiring, then LeaveMeshWithHostMigration's
   8000 ms poll for a next host (`0x255a520`) ending with no session station to hand to
