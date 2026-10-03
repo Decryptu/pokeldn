@@ -118,6 +118,63 @@ def test_a_trade_scene_ends_when_the_session_does_and_not_before_it_starts(scene
     assert scene.frame() == frame_of(built, [], scene.now)
 
 
+ON, DIM, OFF = 0, 1, 2
+
+
+def power_after(scene, ms):
+    scene.advance(ms)
+    scene.frame()
+    return scene.power
+
+
+@needs_cc
+def test_an_idle_screen_dims_after_a_minute_and_goes_dark_after_ten(scene):
+    assert power_after(scene, 0) == ON
+    assert power_after(scene, 59_000) == ON
+    assert power_after(scene, 2_000) == DIM
+    assert power_after(scene, 538_000) == DIM
+    assert power_after(scene, 2_000) == OFF
+
+
+@needs_cc
+def test_a_running_radio_keeps_the_screen_lit_for_a_minute_past_its_session(scene):
+    scene.radio.mode = 3              # a host waiting twenty minutes for a console
+    for _ in range(20):
+        assert power_after(scene, 60_000) == ON
+    scene.radio.mode = 0
+    assert power_after(scene, 59_000) == ON
+    assert power_after(scene, 2_000) == DIM
+
+
+@pytest.mark.parametrize("wake", ["command", "session", "button", "radio"])
+@needs_cc
+def test_anything_happening_wakes_a_dark_screen_on_its_next_frame(scene, wake):
+    scene.frame()
+    assert power_after(scene, 700_000) == OFF
+    if wake == "command":
+        scene.command(esp32.display_show_payload("trade", 0, "FR/LG", "Pikachu"))
+    elif wake == "session":
+        scene.lib.scene_reset()       # HELLO
+    elif wake == "button":
+        scene.radio.presses += 1
+    else:
+        scene.radio.mode = 1
+    assert power_after(scene, 50) == ON
+    scene.radio.mode = 0
+    assert power_after(scene, 59_000) == ON
+
+
+@needs_cc
+def test_the_idle_scene_moves_two_pixels_a_minute_and_a_trade_does_not(scene, built):
+    first = scene.frame()
+    scene.advance(60_000)             # the Poke Ball's bob is in the same phase
+    moved = scene.frame()
+    assert moved != first
+    assert all(lit(moved, x + 2, y) == lit(first, x, y) for x in range(126) for y in range(64))
+    trade = esp32.display_show_payload("trade", 0, "FR/LG", "Pikachu")
+    assert frame_of(built, [trade], 1000) == frame_of(built, [trade], 61_000)
+
+
 def png(rows, palette):
     """An 8-bit palette PNG with entry 0 clear."""
     raw = b"".join(b"\0" + bytes(r) for r in rows)

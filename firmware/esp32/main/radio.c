@@ -68,6 +68,7 @@ static atomic_uint s_rx_mgmt, s_rx_eth, s_tx_eth, s_tx_eth_failed, s_tx_raw, s_t
 static atomic_uint s_tx_acked, s_tx_unacked;
 static atomic_uint s_rx_sniff;   /* frames RX_SNIFF carried: the LED's activity while sniffing */
 static atomic_int s_ap_stations;
+static atomic_uint s_presses;   /* BOOT presses: each wakes the screen */
 static atomic_uint s_led_alarm;   /* a join that failed or a key refused: the LED's warning */
 static atomic_uint s_tx_eth_retried;   /* ETH_TX calls that found the driver's queue full */
 static atomic_int s_tx_eth_last_err;
@@ -582,6 +583,7 @@ static void button_pressed(uint32_t count, int64_t press_us)
     uint8_t head[6];
     const uint32_t us = (uint32_t)press_us;
     const uint16_t n = (uint16_t)count;
+    atomic_store(&s_presses, count);
     memcpy(head, &us, 4);
     memcpy(head + 4, &n, 2);
     wire_send(MSG_BUTTON, head, sizeof(head), NULL, 0);
@@ -616,6 +618,7 @@ static void display_state(scene_radio_t *state)
     state->stations = stations > 0 ? (uint8_t)stations : 0;
     state->rx = atomic_load(&s_rx_eth);
     state->tx = atomic_load(&s_tx_acked) + atomic_load(&s_tx_unacked);
+    state->presses = atomic_load(&s_presses);
 }
 
 static void send_status(void)

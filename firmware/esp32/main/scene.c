@@ -12,6 +12,9 @@
 #define LEAVE_MS 2100       /* ours flashes, returns to its ball and leaves */
 #define REVEAL_MS 1600      /* theirs comes in and its ball opens */
 #define RECEIVED_MS 10000   /* then it stays */
+#define DIM_MS 60000        /* an idle radio's screen dims after a minute with nothing happening */
+#define OFF_MS 600000       /* and goes dark after ten */
+#define ORBIT_MS 60000      /* the idle scene moves one step of ORBIT a minute: no pixel lit for hours */
 
 typedef struct {
     uint8_t w, h;
@@ -40,6 +43,12 @@ static struct {
     uint8_t bit[DOTS];
     uint32_t rx, tx, last_ms, rx_ms, tx_ms, seed;
 } d;
+
+/* Kept across scene_reset: a new host session is activity, not a new boot. */
+static struct {
+    bool seen, pending;
+    uint32_t presses, last_ms;
+} wake;
 
 static uint32_t elapsed(uint32_t now) { return now - s.started; }
 
@@ -208,6 +217,11 @@ static void header(uint8_t *fb, const char *left, const char *right)
     fb_fill(fb, 0, 9, SCREEN_W, 1, true);
 }
 
+static void centered(uint8_t *fb, const int8_t *o, int y, const char *text)
+{
+    fb_text(fb, (SCREEN_W - fb_text_width(text, 1)) / 2 + o[0], y + o[1], text, 1);
+}
+
 static void radio_scene(uint8_t *fb, const scene_radio_t *r, uint32_t now)
 {
     char text[32];
@@ -234,16 +248,18 @@ static void radio_scene(uint8_t *fb, const scene_radio_t *r, uint32_t now)
         fb_text_centered(fb, 56, r->mode == SCENE_JOINING ? "looking for a console" : "waiting for a console", 1);
         return;
     }
-    poke_ball(fb, 14, 15 + (int)(now / 400 % 2), 9);
-    fb_text(fb, 30, 9, "pokeldn", 2);
-    fb_fill(fb, 0, 28, SCREEN_W, 1, true);
+    static const int8_t ORBIT[][2] = {{-1, -1}, {1, -1}, {1, 1}, {-1, 1}};
+    const int8_t *o = ORBIT[now / ORBIT_MS % 4];
+    poke_ball(fb, 14 + o[0], 15 + o[1] + (int)(now / 400 % 2), 9);
+    fb_text(fb, 30 + o[0], 9 + o[1], "pokeldn", 2);
+    fb_fill(fb, 0, 28 + o[1], SCREEN_W, 1, true);
     if (r->mode == SCENE_SNIFFING) {
-        fb_text_centered(fb, 36, "sniffing", 1);
+        centered(fb, o, 36, "sniffing");
         snprintf(text, sizeof(text), "%lu frames", (unsigned long)r->rx);
-        fb_text_centered(fb, 50, text, 1);
+        centered(fb, o, 50, text);
     } else {
-        fb_text_centered(fb, 36, "radio ready", 1);
-        fb_text_centered(fb, 50, "start a trade or gift", 1);
+        centered(fb, o, 36, "radio ready");
+        centered(fb, o, 50, "start a trade or gift");
     }
 }
 
@@ -374,6 +390,7 @@ static void start(const show_t *show, uint32_t now)
 
 bool scene_command(const uint8_t *p, size_t n, uint32_t now)
 {
+    wake.pending = true;
     if (n < 1) return false;
     if (p[0] == DISPLAY_OP_SPRITE) {
         if (n < 4 || p[1] >= SLOTS || p[2] > SPRITE_W || p[3] > SPRITE_H) return false;
@@ -410,9 +427,24 @@ bool scene_command(const uint8_t *p, size_t n, uint32_t now)
 void scene_reset(void)
 {
     memset(&s, 0, sizeof(s));
+    wake.pending = true;
 }
 
-void scene_draw(uint8_t *fb, const scene_radio_t *radio, uint32_t now)
+/* Anything happening restarts the clock: a running radio, a trade or gift animation, a host
+   command or session, a BOOT press. */
+static uint8_t power(const scene_radio_t *radio, uint32_t now)
+{
+    if (!wake.seen || wake.pending || radio->presses != wake.presses || radio->mode != SCENE_IDLE ||
+        s.now.show == SHOW_TRADED || s.now.show == SHOW_GIFTED)
+        wake.last_ms = now;
+    wake.seen = true;
+    wake.pending = false;
+    wake.presses = radio->presses;
+    const uint32_t quiet = now - wake.last_ms;
+    return quiet < DIM_MS ? SCENE_ON : quiet < OFF_MS ? SCENE_DIM : SCENE_OFF;
+}
+
+uint8_t scene_draw(uint8_t *fb, const scene_radio_t *radio, uint32_t now)
 {
     if (ends() && elapsed(now) >= ends()) {
         const show_t none = {.show = SHOW_AUTO};
@@ -434,4 +466,5 @@ void scene_draw(uint8_t *fb, const scene_radio_t *radio, uint32_t now)
     case SHOW_GIFTED: gifted_scene(fb, now); break;
     default: radio_scene(fb, radio, now); break;
     }
+    return power(radio, now);
 }

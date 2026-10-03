@@ -23,7 +23,7 @@ MODES = {"idle": 0, "joining": 1, "joined": 2, "hosting": 3, "sniffing": 4}
 
 class Radio(ctypes.Structure):
     _fields_ = [("mode", ctypes.c_uint8), ("stations", ctypes.c_uint8),
-                ("rx", ctypes.c_uint32), ("tx", ctypes.c_uint32)]
+                ("rx", ctypes.c_uint32), ("tx", ctypes.c_uint32), ("presses", ctypes.c_uint32)]
 
 
 class Scene:
@@ -36,6 +36,7 @@ class Scene:
                         "-o", str(lib), *map(str, SOURCES)], check=True)
         self.lib = ctypes.CDLL(str(lib))
         self.lib.scene_command.restype = ctypes.c_bool
+        self.lib.scene_draw.restype = ctypes.c_uint8
         self.lib.scene_reset()
         self.radio = Radio()
         self.now = 1000
@@ -45,7 +46,7 @@ class Scene:
 
     def frame(self) -> bytes:
         fb = ctypes.create_string_buffer(1024)
-        self.lib.scene_draw(fb, ctypes.byref(self.radio), self.now)
+        self.power = self.lib.scene_draw(fb, ctypes.byref(self.radio), self.now)
         return fb.raw
 
     def advance(self, ms: int) -> None:

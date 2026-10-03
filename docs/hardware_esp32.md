@@ -506,7 +506,7 @@ and no Espressif module name:
 | red LED | the 3.3 V rail | no, lit whenever the board has power |
 | blue LED | GPIO2, lit when high | yes |
 | EN button | the chip's reset | no |
-| BOOT button | GPIO0 | yes: each press sends BUTTON (`0x8E`) and flashes the LED |
+| BOOT button | GPIO0 | yes: each press sends BUTTON (`0x8E`), flashes the LED and wakes the screen |
 
 GPIO2 and GPIO0 are strapping pins (low or floating at reset for download mode); the firmware drives
 GPIO2 only after boot. From the ROM bootloader the LED lights by writing GPIO2's IO_MUX
@@ -563,6 +563,14 @@ segment remap (`A1`), reversed COM scan (`C8`) and alternative COM pins (`DA 12`
 Without host commands the screen shows the radio's state: idle, joining or hosting (rings around a
 Poke Ball), and linked, where a cable between a console and a Poke Ball carries one digit per frame
 the radio counted in each direction, at most one per 70 ms, with the totals below.
+
+OLED pixels age with the time they are lit, so the screen limits how long a still image stays on.
+It is at full brightness while the radio is joining, joined, hosting or sniffing, while a traded or
+gifted animation plays, and for 60 s after the last of these, a DISPLAY command, a HELLO or a BOOT
+press. After that it dims to contrast 0 (`81 00`), and after 600 s it turns off (`AE`); the panel
+keeps its RAM. The next of those events lights it on the following frame, which is sent before the
+`AF`. The idle scene moves 2 pixels every 60 s around a 2x2 square. `scene_draw` returns the
+brightness; `tests/test_esp32_screen.py` holds the timings.
 
 DISPLAY (`0x0E`) carries one op:
 

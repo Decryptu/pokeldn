@@ -12,7 +12,12 @@ typedef struct {
     uint8_t mode;          /* enum scene_mode */
     uint8_t stations;      /* consoles seated while hosting */
     uint32_t rx, tx;       /* data frames received and sent since boot */
+    uint32_t presses;      /* BOOT presses since boot: each wakes the screen */
 } scene_radio_t;
+
+/* The panel's brightness, which scene_draw returns: full while anything happens, dimmed after a
+   minute of an idle radio, off after ten. */
+enum scene_power { SCENE_ON, SCENE_DIM, SCENE_OFF };
 
 /* DISPLAY ops. SHOW: u8 show, u16 hold s (0: until the next show; traded: the wait before theirs
    comes in), title, NUL, line, NUL. ARRIVED cuts a traded show's wait short.
@@ -27,4 +32,4 @@ enum { SLOT_OURS, SLOT_THEIRS, SLOT_GIFT, SLOTS };
 bool scene_command(const uint8_t *payload, size_t length, uint32_t now_ms);
 /* Back to the radio's own scenes and no sprites: a new host session. */
 void scene_reset(void);
-void scene_draw(uint8_t *fb, const scene_radio_t *radio, uint32_t now_ms);
+uint8_t scene_draw(uint8_t *fb, const scene_radio_t *radio, uint32_t now_ms);

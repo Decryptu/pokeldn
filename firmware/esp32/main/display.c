@@ -33,6 +33,9 @@ static const uint8_t INIT[] = {
     0xda, 0x12, 0x81, 0xcf, 0xd9, 0xf1, 0xdb, 0x40, 0xa4, 0xa6, 0x2e, 0xaf,
 };
 static const uint8_t WINDOW[] = {0x00, 0x21, 0x00, 0x7f, 0x22, 0x00, 0x07};
+/* By enum scene_power: INIT's contrast, contrast 0 (Adafruit_SSD1306 dim()), display off. RAM is kept. */
+static const uint8_t POWER[][4] = {{0x00, 0x81, 0xcf, 0xaf}, {0x00, 0x81, 0x00, 0xaf}, {0x00, 0xae}};
+static const size_t POWER_LEN[] = {4, 4, 2};
 
 typedef struct {
     uint16_t length;       /* 0: reset */
@@ -42,6 +45,7 @@ typedef struct {
 static i2c_master_dev_handle_t s_dev;
 static QueueHandle_t s_commands;
 static display_state_t s_state;
+static uint8_t s_power = SCENE_ON;   /* INIT's */
 static uint8_t s_frame[1 + SCREEN_BYTES] = {0x40};   /* control byte: data follows */
 
 static void display_task(void *arg)
@@ -57,9 +61,12 @@ static void display_task(void *arg)
         }
         scene_radio_t state = {0};
         if (s_state) s_state(&state);
-        scene_draw(s_frame + 1, &state, now);
-        if (i2c_master_transmit(s_dev, WINDOW, sizeof(WINDOW), 50) == ESP_OK)
+        const uint8_t power = scene_draw(s_frame + 1, &state, now);
+        /* The frame goes before the panel lights, so waking never shows the last one. */
+        if (power != SCENE_OFF && i2c_master_transmit(s_dev, WINDOW, sizeof(WINDOW), 50) == ESP_OK)
             i2c_master_transmit(s_dev, s_frame, sizeof(s_frame), 100);
+        if (power != s_power && i2c_master_transmit(s_dev, POWER[power], POWER_LEN[power], 50) == ESP_OK)
+            s_power = power;
         vTaskDelayUntil(&wake, pdMS_TO_TICKS(FRAME_MS));
     }
 }
