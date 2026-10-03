@@ -1,5 +1,6 @@
 #!/usr/bin/env python3
 """Check a frozen desktop app without keys or a connected board."""
+import os
 import subprocess
 import sys
 import tempfile
@@ -26,6 +27,10 @@ def check() -> None:
     assert not (root / "scratchpad").exists()
     assert (root / "LICENSE").is_file()
     assert (root / "vendor/LDN/LICENSE").is_file()
+    if sys.platform.startswith("linux"):
+        import flet_desktop
+        assert str(root) not in os.environ.get("LD_LIBRARY_PATH", ""), os.environ["LD_LIBRARY_PATH"]
+        assert (Path(flet_desktop.get_package_bin_dir()) / flet_desktop.get_artifact_filename()).is_file()
     if sys.platform == "darwin":
         import plistlib
         import tarfile

@@ -158,3 +158,11 @@ Flet 1.0.2's packer re-signs the macOS viewer without its existing entitlements.
 wrapper in `scripts/pack_flet.py` retains them when signing the viewer after its metadata changes.
 The frozen check reads the sealed `com.apple.security.files.user-selected.read-write` entitlement
 from the embedded viewer; without it, choosing `prod.keys` raises `ENTITLEMENT_NOT_FOUND`.
+
+The Linux bootloader sets `LD_LIBRARY_PATH` to the unpacked bundle, which carries the build
+machine's `libstdc++.so.6` (Ubuntu 22.04). Loaded first, it leaves Fedora 44's Mesa with no EGL
+client extensions and the Flet viewer aborts in libepoxy (`No provider of eglGetPlatformDisplayEXT`).
+`pokeldn/app/paths.py` restores the user's `LD_LIBRARY_PATH` for every program the app starts, and
+sets `FLET_LINUX_DISTRO` to the bundled viewer's build: Flet otherwise picks a viewer by glibc and
+downloads one the bundle does not carry. The Ubuntu 22.04 viewer runs on Fedora 44 under Wayland.
+The frozen check asserts both on Linux.

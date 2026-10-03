@@ -8,6 +8,16 @@ for folder in (ROOT, os.path.join(ROOT, "vendor", "LDN")):
     if folder not in sys.path:
         sys.path.insert(0, folder)
 
+# The bundle's libstdc++ on LD_LIBRARY_PATH aborts the Flet viewer in libepoxy on Fedora 44; keep the
+# bundled viewer instead of a downloaded one. docs/gui.md, Build a desktop app.
+if sys.platform.startswith("linux") and getattr(sys, "frozen", False):
+    if "LD_LIBRARY_PATH_ORIG" in os.environ:
+        os.environ["LD_LIBRARY_PATH"] = os.environ.pop("LD_LIBRARY_PATH_ORIG")
+    else:
+        os.environ.pop("LD_LIBRARY_PATH", None)
+    for _client in Path(ROOT, "flet_desktop", "app").glob("flet-linux-*-light-*.tar.gz"):
+        os.environ.setdefault("FLET_LINUX_DISTRO", _client.name.split("-")[2])
+
 
 def _data_dir() -> Path:
     if os.environ.get("POKELDN_DATA"):
