@@ -33,9 +33,12 @@ static const uint8_t INIT[] = {
     0xda, 0x12, 0x81, 0xcf, 0xd9, 0xf1, 0xdb, 0x40, 0xa4, 0xa6, 0x2e, 0xaf,
 };
 static const uint8_t WINDOW[] = {0x00, 0x21, 0x00, 0x7f, 0x22, 0x00, 0x07};
-/* By enum scene_power: INIT's contrast, contrast 0 (Adafruit_SSD1306 dim()), display off. RAM is kept. */
-static const uint8_t POWER[][4] = {{0x00, 0x81, 0xcf, 0xaf}, {0x00, 0x81, 0x00, 0xaf}, {0x00, 0xae}};
-static const size_t POWER_LEN[] = {4, 4, 2};
+/* By enum scene_power: INIT's contrast and pre-charge; dim; off, RAM kept. On the 0.96-inch module
+   contrast 0 is black and pre-charge 1+1 clocks (D9 11) flickers. docs/hardware_esp32.md, The screen. */
+static const uint8_t POWER[][6] = {
+    {0x00, 0x81, 0xcf, 0xd9, 0xf1, 0xaf}, {0x00, 0x81, 0x01, 0xd9, 0x22, 0xaf}, {0x00, 0xae},
+};
+static const size_t POWER_LEN[] = {6, 6, 2};
 
 typedef struct {
     uint16_t length;       /* 0: reset */

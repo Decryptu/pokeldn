@@ -567,10 +567,22 @@ the radio counted in each direction, at most one per 70 ms, with the totals belo
 OLED pixels age with the time they are lit, so the screen limits how long a still image stays on.
 It is at full brightness while the radio is joining, joined, hosting or sniffing, while a traded or
 gifted animation plays, and for 60 s after the last of these, a DISPLAY command, a HELLO or a BOOT
-press. After that it dims to contrast 0 (`81 00`), and after 600 s it turns off (`AE`); the panel
-keeps its RAM. The next of those events lights it on the following frame, which is sent before the
+press. After that it dims to contrast 1 with a 2+2-clock pre-charge (`81 01 D9 22`), and after 600 s
+it turns off (`AE`); the panel keeps its RAM. The next of those events lights it on the following frame, which is sent before the
 `AF`. The idle scene moves 2 pixels every 60 s around a 2x2 square. `scene_draw` returns the
 brightness; `tests/test_esp32_screen.py` holds the timings.
+
+Measured on the four-pin 0.96-inch module, by eye, from INIT's `81 CF D9 F1 DB 40`:
+
+| setting | seen |
+|---|---|
+| contrast `80` | no change |
+| contrast `40`, `20` | each a step dimmer |
+| contrast `10` down to `01` | no further change, readable |
+| contrast `00` | black |
+| contrast `01`, pre-charge `22` | dimmer again, readable, steady |
+| contrast `01`, pre-charge `11` | flickers; with VCOMH `20` or `00`, unreadable |
+| contrast `01`, VCOMH `00` | looked normal, steady |
 
 DISPLAY (`0x0E`) carries one op:
 
