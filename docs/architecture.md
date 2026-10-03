@@ -130,6 +130,10 @@ gift Melmetal.
 Custom offer options are also verified by a retail Sword round trip: the received Pokemon was
 traded back on the next queued exchange and its saved record compared with the outgoing offer
 ([The offered record](swsh_trade.md#the-offered-record)).
+On a retail Brilliant Diamond (host, then traded back) and a retail Scarlet (host), a shiny level 37
+Pikachu built with a nickname, nature, hidden ability, gender, held item, ball, four moves, IVs and
+effort values showed every option and the stats they produce on its summary screen; the BDSP record
+traded back matched all twelve. Six queued trades completed on one BDSP hosted session.
 
 ### Showdown sets
 
