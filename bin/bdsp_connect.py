@@ -1103,17 +1103,8 @@ async def main_async(args):
                 reply = room.build_fields(room.TRADE_POKE_CHECK_OK, 1)
                 label = "our check-ok"
             elif g["data_id"] == room.RETURN_SELECT:
-                # The post-trade question repeats every second; answer the first. It ends the
-                # security phase: a repeater still sending SEND_READYOK(5) holds the next trade in
-                # the box window (docs/bdsp_trade.md).
-                if st["our_security_state"] or st["their_security_state"] is not None:
-                    st["trades"] += 1
-                    print(f"[cx]   trade {st['trades']} complete - security phase over, repeater quiet")
-                    show_done()
-                    screen.arrived()
-                    if st["our_pokes"]:
-                        screen.offer("bdsp", st["our_pokes"][min(st["trades"], len(st["our_pokes"]) - 1)])
-                    record(rec="security_phase_end", t=now)
+                # A reset of the round: the console's back-out, or its answer to a stray 0x21
+                # (docs/bdsp_trade.md).
                 st["our_security_state"] = 0
                 st["their_security_state"] = None
                 st["arriving"] = False
@@ -1122,7 +1113,7 @@ async def main_async(args):
                     if st["return_selects"] == 2:
                         print(f"[cx]   NetDataReturnSelectData again - answered once, not repeating")
                     return
-                print(f"\n[rx] t={now:6.2f} *** THE POST-TRADE QUESTION - "
+                print(f"\n[rx] t={now:6.2f} *** A ROUND RESET - "
                       f"NetDataReturnSelectData {payload.hex(' ')} ***")
                 record(rec="their_return_select", t=now, payload=payload.hex(),
                        fields=g.get("fields"))
@@ -1140,10 +1131,16 @@ async def main_async(args):
                     record(rec="security_state_declined", t=now)
                     return
                 st["our_security_state"] = room.mirror_trade_state(their)
-                # WAIT_READYOK: the console writes its save and animates next (docs/bdsp_trade.md).
-                if their >= room.TRADE_STATE_WAIT_READYOK and not st["arriving"]:
+                # this answer lands in its WAIT_READYOK; it writes its save next (docs/bdsp_trade.md)
+                if their >= room.TRADE_STATE_SEND_READYOK and not st["arriving"]:
                     st["arriving"] = True
+                    st["trades"] += 1
+                    print(f"[cx]   trade {st['trades']} complete - the console saves next, repeater quiet")
+                    show_done()
+                    record(rec="security_phase_end", t=now)
                     screen.received("bdsp", st["their_raw"])
+                    if st["our_pokes"]:
+                        screen.offer("bdsp", st["our_pokes"][min(st["trades"], len(st["our_pokes"]) - 1)])
                 reply = room.build_trade_ready_ok(st["our_security_state"], is_trade_ok=1)
                 st["ready_oks_sent"] += 1
                 label = (f"our state {room.TRADE_STATE_NAMES.get(st['our_security_state'])} "
@@ -1181,6 +1178,9 @@ async def main_async(args):
                 record(rec="their_poke", t=now, fields=theirs)
                 # One association carries many trades, each to its own file; a reselection within
                 # one trade replaces that trade's file.
+                if st["arriving"]:                 # the next round's first Pokemon
+                    st["our_security_state"], st["their_security_state"] = 0, None
+                    st["arriving"] = False
                 st["their_pokes"] += 1
                 out = pokemon_service.trade_path(args.trade_save_poke, st["trades"] + 1)
                 pathlib.Path(out).write_bytes(payload[room.HEADER_SIZE:])
@@ -1608,8 +1608,8 @@ def build_parser():
                          "again after the list")
     ap.add_argument("--trade-nickname", metavar="TEXT", help="nickname for the offered Pokemon")
     ap.add_argument("--answer-return-select", action="store_true",
-                    help="answer the NetDataReturnSelectData a completed trade ends on, ONCE. "
-                         "It is an announcement; the answer has no measured effect")
+                    help="answer the console's NetDataReturnSelectData, a round reset, ONCE; "
+                         "the answer has no measured effect")
     ap.add_argument("--return-select-value", type=int, default=0, metavar="N",
                     help="the byte to answer it with (default 0, what a console answers a {1} "
                          "with [0x1c27f48]; a {1} reads as our back-out and, past phase 2, shows "

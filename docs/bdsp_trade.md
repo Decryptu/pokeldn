@@ -213,16 +213,20 @@ and `SecondSave`. The same sequence runs with the console as the room's joiner a
 
 Measured once with a retail BDSP joining `bin/bdsp_host.py`, from the console's `tradeState` 6: the
 animation started at about 2.7 s, the received Pokemon appeared at about 18.6 s (hand-pressed
-marks, up to 2 s late), and `NetDataReturnSelectData{0}` arrived at 29.1 s, about when the player
-had control. A host ready-ok repeat sent 64 ms before that ReturnSelect reached the console in its
-select window, which showed `SS_box_588` while keeping the box open.
+marks, up to 2 s late), and the player had control at about 29 s.
 
-`NetDataReturnSelectData` (0x45), `45 00 01 00` (`{isReturnSelect: 0}`), announces the console's
-return to its select window. It asks for no answer (a `{1}` answer draws a `{0}` and a reset of an
-already clear round). The console repeats it, about once a second as measured, while its player is
-in the select window. `TradeSelectPokeModel$$SendReturnSelectPoke` [0x01c27c20] builds it
-(`isReturnSelect` = not its argument, to `tradeTargetIndex` +0x48); it has no direct `bl` caller,
-and what repeats it is not traced.
+A completed trade ends with no message. The client counts it when it answers the console's
+SEND_READYOK; the next round starts with the console's next `NetTradePokeData`.
+
+`NetDataReturnSelectData` (0x45), `45 00 01 00` (`{isReturnSelect: 0}`), is the console's answer to
+a reset ([Box phases](#box-phases-and-the-messages-that-reset-a-round)): a `{1}`, or a 0x21 landing
+in its select window at box phase 5 or below, which resets through the same path [0x1c3440c] and
+shows `SS_box_588`. It asks for no answer (a `{1}` answer draws a `{0}` and a reset of an already
+clear round). In 26 of 26 captured trades whose client repeated its state once a second through the
+animation, a `{0}` followed one of the client's 0x21 by 25 to 300 ms, and the player saw
+`SS_box_588`; with no 0x21 after the console's SEND_READYOK, the console sent no 0x45 and showed no
+cancel. `TradeSelectPokeModel$$SendReturnSelectPoke` [0x01c27c20] builds it (`isReturnSelect` = not
+its argument, to `tradeTargetIndex` +0x48); it has no direct `bl` caller.
 
 Trades chain in one association, each looping from the select window with no second approach or
 trainer record: a retail console traded three times back to back with `bin/bdsp_connect.py`, and

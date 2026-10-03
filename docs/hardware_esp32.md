@@ -594,7 +594,7 @@ to the received Pokemon appearing on the console, less 2.5 s so the ball opens w
 | FireRed/LeafGreen | START_TRADE | 22.7 s | READY_FINISH_TRADE ([FireRed link](frlg_link.md)) |
 | Let's Go | step `0e` | 15.3 s | the type 4 payload ([Let's Go session](lgpe_session.md#the-trade-animation)) |
 | Sword/Shield | the last syncCommand 40 | 15.0 s | none ([Sword trade](swsh_trade.md#the-trade-animation)) |
-| BD/SP | `tradeState` 6 | 18.6 s | `NetDataReturnSelectData` ([BDSP trade](bdsp_trade.md)) |
+| BD/SP | `tradeState` 5 | 18.6 s | none ([BDSP trade](bdsp_trade.md#the-completed-trade)) |
 | Legends Arceus | `01 0e` | 28.5 s | the box message `00 02` ([Legends Arceus](pla.md#the-completed-trade)) |
 | Scarlet/Violet | `8001010e` | 19.8 s | none ([Scarlet and Violet](sv.md#the-trade)) |
 | Legends Z-A | the fourth step | 26.2 s | the next `01 01` preview ([Legends Z-A](za.md#a-trade-with-a-retail-console)) |
@@ -710,7 +710,7 @@ has traded with retail Switch 2 consoles:
 | access point | Legends Arceus | trade through the four host phases (3, 6, 11, 14) |
 | station | Sword | trade; late-ack resends arrive out of order ([Sword session](swsh_session.md)) |
 | access point | Sword | trade and Mystery Gift |
-| station | Brilliant Diamond | Union Room trade to `NetDataReturnSelectData` and the save. A client that stops without leaving stays a station in the room; the console refuses the same variable id (result 7) until the player re-enters the room or a fresh id is used ([The Pia layer](pia.md#the-version-9-connection-request)) |
+| station | Brilliant Diamond | Union Room trade to the save. A client that stops without leaving stays a station in the room; the console refuses the same variable id (result 7) until the player re-enters the room or a fresh id is used ([The Pia layer](pia.md#the-version-9-connection-request)) |
 | access point | Brilliant Diamond | a Shining Pearl entered the hosted room and traded to the save ([Hosting](bdsp_session.md#hosting)) |
 
 A FireRed console joining the board's access point lists the network (it accepts the zero-length

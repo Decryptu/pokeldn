@@ -58,10 +58,6 @@ Proven on retail hardware, end to end:
   ([the protocol page](bdsp_protocol.md#the-grand-underground)).
 - What makes a console in the Union Room stop advertising with no change on screen
   ([Taking a seat](bdsp_session.md#taking-a-seat)).
-- What sends `NetDataReturnSelectData{0}` once a second after a trade, and what stops it.
-  `TradeSelectPokeModel$$SendReturnSelectPoke` [0x01c27c20] has no direct `bl` caller, and the
-  caller of `TradeStateModel$$ReturnTradePokeSelectWindow` [0x01c29590] is not traced
-  ([The completed trade](bdsp_trade.md#the-completed-trade)).
 - What `PokeDupeChecker` compares. `opendpr` stubs its bodies; the illegal flag on a duplicate is
   measured, not read ([Duplicate detection](bdsp_trade.md#duplicate-detection)).
 - Where the Unity player takes `Screen.width` from. The 2D grid positions rest on it being the

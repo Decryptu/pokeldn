@@ -35,6 +35,7 @@ SHOWN = {"seat", "left", "session_ack", "connection_request", "request_not_ours"
          "connection_acked", "join_request", "join_acked", "mesh_rx", "rx_bad", "their_emote",
          "approach", "approach_result", "talked_to", "their_trainer", "their_poke",
          "their_check_ok", "their_ready_ok", "their_security_state", "trade_complete",
+         "their_return_select",
          "leave_request", "disconnection_request"}
 
 

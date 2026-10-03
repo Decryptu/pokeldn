@@ -277,13 +277,12 @@ def test_scripted_trades_are_answered_through_the_save_each_with_the_next_offer(
         for dt, state in ((4.3, 5), (4.5, 6)):
             [mine] = say(room.build_trade_ready_ok(state, 1), t + dt)
             assert mine == room.build_trade_ready_ok(room.mirror_trade_state(state), 1)
-        # A repeat while the console saves and animates lands in its select window (docs/bdsp_trade.md).
-        for dt in (6.0, 12.0, 24.0):
-            assert not _game_out(c.read(s.tick(t + dt)))
-        say(room.build_fields(room.RETURN_SELECT, 0), t + 24.5)
+        # The answer to SEND_READYOK seals the trade; a repeat while the console saves and
+        # animates lands in its select window (docs/bdsp_trade.md).
         assert p.trades == trade
         assert saved[-1] == (trade, theirs[:1])
-        assert not _game_out(c.read(s.tick(t + 26.5)))
+        for dt in (6.0, 12.0, 24.0, 29.0):
+            assert not _game_out(c.read(s.tick(t + dt)))
         t += 30.0
 
 

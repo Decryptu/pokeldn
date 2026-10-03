@@ -261,8 +261,8 @@ TRADE_POKE_CHECK_OK = 0x46        # NetDataTradePokeCheckOkData
 TRADE_READY_OK = 0x21             # NetDataTradeReadyOkData: past this the console writes its save
 TRADE_TRANER = 0x24               # NetDataTradeTranerData
 TRADE_POKE = 0x13                 # NetTradePokeData: a whole Pokemon, 328 bytes
-RETURN_SELECT = 0x45              # NetDataReturnSelectData: back in the select window after a
-                                  # trade, once a second; answering it changes nothing
+RETURN_SELECT = 0x45              # NetDataReturnSelectData: a round reset; {0} answers a {1}
+                                  # or a 0x21 landing in the select window (docs/bdsp_trade.md)
 
 
 def parse_trade_traner(body):

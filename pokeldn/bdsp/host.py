@@ -545,7 +545,7 @@ class TradePartner:
         self.their_pokes = 0
         self.their_poke = None             # the record the console last offered, what a trade delivers
         self.trades = 0
-        self.arriving = False              # the console is saving and animating this trade
+        self.arriving = False              # sealed: the console is saving and animating this trade
         if self.offer:
             screen.offer("bdsp", self.offer)
 
@@ -582,6 +582,8 @@ class TradePartner:
             self.record(rec="their_trainer", t=now, fields=room.parse_trade_traner(body))
             return [self.trainer]
         if data_id == room.TRADE_POKE:
+            if self.arriving:                  # the next round's first Pokemon
+                self.our_security, self.their_security, self.arriving = 0, None, False
             self.their_pokes += 1
             # A reselection within one trade replaces that trade's file.
             self.save_theirs(self.trades + 1, body)
@@ -598,24 +600,23 @@ class TradePartner:
                 return []
             self.our_security = room.mirror_trade_state(self.their_security)
             self.next_security = now + self.security_repeat
-            # WAIT_READYOK: the console writes its save and animates next (docs/bdsp_trade.md).
-            if self.their_security >= room.TRADE_STATE_WAIT_READYOK and not self.arriving:
+            # this answer lands in its WAIT_READYOK; it writes its save next (docs/bdsp_trade.md)
+            if self.their_security >= room.TRADE_STATE_SEND_READYOK and not self.arriving:
                 self.arriving = True
+                self.trades += 1
+                self.record(rec="trade_complete", t=now, trades=self.trades)
+                show_done()
                 screen.received("bdsp", self.their_poke)
+                if self.offer:
+                    screen.offer("bdsp", self.offer)
             return [room.build_trade_ready_ok(self.our_security, is_trade_ok=1)]
         if data_id == room.TRADE_READY_OK:
             self.record(rec="their_ready_ok", t=now, fields=fields, answered=self.complete)
             return [room.build_trade_ready_ok()] if self.complete else []
         if data_id == room.RETURN_SELECT:
-            if self.our_security or self.their_security is not None:
-                self.trades += 1
-                self.record(rec="trade_complete", t=now, trades=self.trades)
-                show_done()
-                screen.arrived()
-                if self.offer:
-                    screen.offer("bdsp", self.offer)
-            self.our_security, self.their_security = 0, None
-            self.arriving = False
+            # a reset of the round: the console's back-out, or its answer to a stray 0x21
+            self.record(rec="their_return_select", t=now, fields=fields)
+            self.our_security, self.their_security, self.arriving = 0, None, False
             return []
         return []
 
