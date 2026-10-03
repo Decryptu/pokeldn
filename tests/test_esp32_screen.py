@@ -51,7 +51,7 @@ def test_malformed_commands_are_refused(scene):
     assert not scene.command(good[:-1])                               # rows cut short
     assert not scene.command(bytes([1, 1, 65, 1]) + bytes(9))         # wider than 64
     assert not scene.command(bytes([1, 3, 8, 1, 0]))                  # no such slot
-    assert not scene.command(bytes([0, 5, 0, 0]))                     # no such show
+    assert not scene.command(bytes([0, 6, 0, 0]))                     # no such show
     assert not scene.command(b"")
     with pytest.raises(ValueError):
         esp32.display_sprite_payload("ours", [[True] * 65])
@@ -69,15 +69,40 @@ def frame_of(built, show_payloads, now):
 
 @needs_cc
 def test_a_next_offer_waits_for_the_received_animation(scene, built):
-    traded = esp32.display_show_payload("traded", 10, "Sw/Sh", "Mewtwo")
+    traded = esp32.display_show_payload("traded", 10, "Sw/Sh", "Mewtwo")    # reveal at 10 s
     trade = esp32.display_show_payload("trade", 0, "Sw/Sh", "Eevee")
     scene.command(traded)
     scene.advance(2000)
     scene.command(trade)              # the launcher's next queued offer, sent at once
-    scene.advance(3000)
+    scene.advance(17000)              # the received Pokemon is on screen
     assert scene.frame() != frame_of(built, [trade], scene.now)
-    scene.advance(5500)               # past the 10 s hold
+    scene.advance(3000)               # past the reveal, 1.6 s of ball and 10 s of the Pokemon
     assert scene.frame() == frame_of(built, [trade], scene.now)
+
+
+def played(built, payloads_at, until):
+    """The frame at `until` ms of a scene given each payload at its own ms."""
+    from screen_preview import Radio, Scene
+    s = Scene.__new__(Scene)
+    s.lib, s.radio, s.now = built, Radio(), 1000
+    built.scene_reset()
+    for at, payload in payloads_at:
+        s.now = 1000 + at
+        s.command(payload)
+    s.now = 1000 + until
+    return s.frame()
+
+
+@needs_cc
+def test_the_console_finishing_early_brings_the_pokemon_in_at_once(built):
+    def traded(wait):
+        return esp32.display_show_payload("traded", wait, "BD/SP", "Zubat")
+    arrived = esp32.display_show_payload("arrived")
+    # A 20 s wait cut at 5 s shows at 7 s what a 5 s wait shows; uncut, it is still trading.
+    assert played(built, [(0, traded(20)), (5000, arrived)], 7000) == played(built, [(0, traded(5))], 7000)
+    assert played(built, [(0, traded(20))], 7000) != played(built, [(0, traded(5))], 7000)
+    # After the reveal it changes nothing.
+    assert played(built, [(0, traded(5)), (9000, arrived)], 9500) == played(built, [(0, traded(5))], 9500)
 
 
 @needs_cc

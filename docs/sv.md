@@ -714,6 +714,12 @@ sent them in that order crashed (black screen, system error), the record itself 
 the offer on the peer's key-0x80 announcement, and neither queues a trade message ahead of one
 already queued for the same station and port.
 
+The trade animation follows the console's last step `8001010e` and carries no trade message.
+Measured once with a retail Scarlet joining `bin/sv_host.py`, from that step: the animation started
+at 1.9 s, the received Pokemon appeared at about 19.8 s (hand-pressed marks, up to 2 s late) and
+the player had control at about 25.4 s. After its status `b90101b902b90280800100` at 0.2 s the
+console sent no application data until the player backed out.
+
 ### Several trades in one seat
 
 Key 0x0080 stays open; key 0x0180 opens and closes per trade. A second trade repeats the cycle with

@@ -203,6 +203,7 @@ class HostTradeEngine:
         self.state_history = [self.state]
         self.round = 0
         self.commits = 0
+        self.anim_starts = 0
         self.received_mons = []
         self.child_link_player = None
         self.child_card = None
@@ -554,6 +555,7 @@ class HostTradeEngine:
             self._expected = None
             self._child_finish = False
             self._set_state(H_ANIM)
+            self.anim_starts += 1
             self._anim_wait = self.anim_delay
             self.info("Union Room trade: mail exchanged; the trade animation runs now.")
             return
@@ -922,6 +924,7 @@ class HostTradeEngine:
             self._send_linkcmd(trade.SET_MONS_TO_TRADE, self.offered_slots[self.round])
         elif cmd == trade.INIT_BLOCK and self.state == H_CONFIRM:
             self._set_state(H_ANIM)
+            self.anim_starts += 1
             self._anim_wait = self.anim_delay
             self._send_linkcmd(trade.START_TRADE)
         elif cmd == trade.READY_FINISH_TRADE and self.state == H_ANIM:
@@ -951,13 +954,19 @@ class HostTradeEngine:
                 "Switch selected another trade; Linux declined it. Dismiss the message, then "
                 "select CANCEL and confirm YES to leave.")
 
+    def incoming_mon(self):
+        """The console's chosen Pokemon, the one `_commit` takes, or None before it chose."""
+        if self.child_cursor is None:
+            return None
+        off = self.child_cursor * monmod.PARTY_MON_SIZE
+        return monmod.Mon(bytes(self.child_party[off:off + monmod.PARTY_MON_SIZE]))
+
     def _commit(self):
         host_slot = self.offered_slots[self.round]
         child_slot = self.child_cursor
-        if child_slot is None:
+        received = self.incoming_mon()
+        if received is None:
             raise RuntimeError("cannot commit without child selection")
-        off = child_slot * monmod.PARTY_MON_SIZE
-        received = monmod.Mon(bytes(self.child_party[off:off + monmod.PARTY_MON_SIZE]))
         self.received_mons.append(received)
         self.party[host_slot] = received
         self.round += 1

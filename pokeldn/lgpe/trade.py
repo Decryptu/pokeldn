@@ -59,8 +59,9 @@ def _note_result(tag="[lg]", state=None):
     TRADE_IN_PROGRESS["offer"] = TRADE_IN_PROGRESS["commit"] = False
     if state is not None:
         state["mid_trade"] = False
+        state.pop("arriving", None)
     show_done()
-    screen.received("lgpe", (state or {}).get("peer_offer"))
+    screen.arrived()
     print(f"{tag} game: *** THE RESULT *** the trade has gone through on the console")
     return True
 
@@ -79,6 +80,11 @@ def _answer_commit(args, state, msg, send, tag="[lg]", kind=pb7.COMMIT_MESSAGE):
         state["sent_second_commit"] = True
         step = _send_step(state, send, kind, b"\2\0\0\0")
         print(f"{tag} offer: *** COMMITTED 2 step {step} *** a special species is in the trade")
+    # The 2 commits: the console saves and animates next (docs/lgpe_session.md).
+    if ((msg["body"][:4] == b"\2\0\0\0" or state.get("sent_second_commit"))
+            and not state.get("arriving")):
+        state["arriving"] = True
+        screen.received("lgpe", state.get("peer_offer"))
 
 
 def answer_console(args, state, msg, send, tag="[lg]"):

@@ -160,7 +160,7 @@ async def main_async(args):
               "rel_repeats": 0,
               "their_poke": None, "their_raw": None, "their_pokes": 0, "our_pokes": [], "trades": 0, "answered_with": set(), "trade_replies": 0, "check_oks": 0,
               "their_ready_ok": None, "ready_oks_sent": 0, "their_security_state": None,
-              "our_security_state": 0, "our_next_seq": 0, "return_selects": 0,
+              "our_security_state": 0, "our_next_seq": 0, "return_selects": 0, "arriving": False,
               "departure_answers": 0, "leaving": False, "hold_scope": None}
 
         # Build the offer before the radio is touched, so a bad template or nickname fails here.
@@ -1110,12 +1110,13 @@ async def main_async(args):
                     st["trades"] += 1
                     print(f"[cx]   trade {st['trades']} complete - security phase over, repeater quiet")
                     show_done()
-                    screen.received("bdsp", st["their_raw"])
+                    screen.arrived()
                     if st["our_pokes"]:
                         screen.offer("bdsp", st["our_pokes"][min(st["trades"], len(st["our_pokes"]) - 1)])
                     record(rec="security_phase_end", t=now)
                 st["our_security_state"] = 0
                 st["their_security_state"] = None
+                st["arriving"] = False
                 st["return_selects"] += 1
                 if not args.answer_return_select or st["return_selects"] > 1:
                     if st["return_selects"] == 2:
@@ -1139,6 +1140,10 @@ async def main_async(args):
                     record(rec="security_state_declined", t=now)
                     return
                 st["our_security_state"] = room.mirror_trade_state(their)
+                # WAIT_READYOK: the console writes its save and animates next (docs/bdsp_trade.md).
+                if their >= room.TRADE_STATE_WAIT_READYOK and not st["arriving"]:
+                    st["arriving"] = True
+                    screen.received("bdsp", st["their_raw"])
                 reply = room.build_trade_ready_ok(st["our_security_state"], is_trade_ok=1)
                 st["ready_oks_sent"] += 1
                 label = (f"our state {room.TRADE_STATE_NAMES.get(st['our_security_state'])} "

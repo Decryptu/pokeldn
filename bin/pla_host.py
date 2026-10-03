@@ -437,6 +437,12 @@ def main():
     station_ids = {}
     left = set()
     phase3_sent = set()
+    arriving = set()        # stations whose trade animation is running
+
+    def arrived(src_ip):
+        if src_ip in arriving:
+            arriving.discard(src_ip)
+            screen.arrived()
 
     def leave(src_ip):
         """The type-3 leave burst; only a host answers it (`0x738000`, docs/pla.md, Leaving)."""
@@ -474,6 +480,8 @@ def main():
                 seen_ips.add(entry[1])
             if not gone and left_after_trade(transport.participants):
                 gone = True
+                for ip in list(arriving):
+                    arrived(ip)
                 if not args.stay_after_leave:
                     print("[pla] the console left after the trade; closing")
                     break
@@ -553,6 +561,7 @@ def main():
                                    hex=pkt.hex(), t=time.time())
                             print(f"[pla] -> {src_ip}: session leave response (type 4); "
                                   f"the console is leaving")
+                            arrived(src_ip)
                         if (msg.protocol == PROTO_SESSION and msg.payload
                                 and msg.payload[0] == SESSION_JOIN_REQUEST):
                             j = pia_connect.parse_session_join_v11(msg.payload)
@@ -677,6 +686,8 @@ def main():
                                          f"{len(payload_body)}B)"))
                                 offered = trade_box.read_payload(cm["payload"])
                                 if offered is not None:
+                                    # Its first after a trade: back on its box (docs/pla.md).
+                                    arrived(src_ip)
                                     print(f"[pla] <- {src_ip}: trade box, "
                                           f"{trade_box.selector_name(offered['selector'])} "
                                           f"{trade_box.describe(offered['record'])}")
@@ -711,6 +722,7 @@ def main():
                                         if not opened and ckey == trade_box.PHASE_KEY:
                                             show_done()
                                             screen.received("pla", console_offer.get(src_ip))
+                                            arriving.add(src_ip)
                                             trades[0] += 1
                                             if args.trade_box:
                                                 screen.offer("pla", offer_record())

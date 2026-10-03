@@ -88,7 +88,9 @@ def session(scene: Scene, offer: int, receive: int, gift: int, frame_ms: int = 5
     scene.command(esp32.display_show_payload("trade", 0, "Sw/Sh", "Pikachu"))
     play(3000, 2, 1)
     scene.command(esp32.display_sprite_payload("theirs", sprite_bits(receive) or []))
-    scene.command(esp32.display_show_payload("traded", 10, "Sw/Sh", "Mewtwo"))
+    scene.command(esp32.display_show_payload("traded", 30, "Sw/Sh", "Mewtwo"))   # a 30 s wait
+    play(6000, 1, 1)
+    scene.command(esp32.display_show_payload("arrived"))                        # cut short
     play(8000, 1, 1)
     scene.command(esp32.display_sprite_payload("gift", sprite_bits(gift, 40) or []))
     scene.command(esp32.display_show_payload("gift", 0, "Mystery Gift", "Mew from the event"))

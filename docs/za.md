@@ -708,6 +708,12 @@ and picks it on the console's next pick, under round 0. `bin/za_join.py` and `bi
 queue of records in order over ldn_mitm (`tests/test_za_host.py` scripts the joiner's side), and the
 joiner traded two queued records with a retail Z-A host on one seat.
 
+The console's trade animation runs after its fourth step and carries no trade command. Measured once
+with a retail Z-A joining `bin/za_host.py`, from the fourth step: the animation started at 1.1 s, the
+received Pokemon appeared at about 26 s (hand-pressed marks, up to 2 s late), the console's next
+preview (`01 01`, 354 bytes) arrived at 30.2 s, and the player had control at about 31.7 s. Between
+the fourth step and that preview the console sent no protocol-10 message.
+
 A seat formed late in the console's host phase is handed over: the first datagram comes late, no
 update sequence 1 follows, and the console repeats Session type 9 once a second (start host migration
 in the wiki's numbering, which puts the kick at 12 where Z-A uses 13) until it restarts its Net

@@ -138,6 +138,7 @@ class HostSession:
         self.console_pick = None      # the last offer the player chose; a preview is only the cursor
         self.trade_complete = False
         self.trades = 0
+        self.arriving = False         # a trade's animation is running on the console
         self.trade_steps = 0
         self.leave_requests = 0
         # called on our offer after each trade; a console refuses a PID its save already holds
@@ -242,6 +243,7 @@ class HostSession:
                          za.build_leave_response(payload, os.urandom(4)), None)],
                        dst=header.src, note="session leave response")
             self.log(f"[za-host] the console asked to leave at {self._elapsed(now):.2f}s; answered")
+            self._arrived()
         else:
             self.log(f"[za-host] Session type {kind} ({len(payload)} bytes) at "
                      f"{self._elapsed(now):.2f}s: {payload[:16].hex()}")
@@ -326,6 +328,8 @@ class HostSession:
         if proto != streams.PROTO_RELIABLE:
             return
         if head == MSG_OFFER:
+            # Its first after a trade: back on its box, the animation over (docs/za.md).
+            self._arrived()
             self.console_offers += 1
             self.console_offer = bytes(inner)
             if inner[-1] == OFFER_PICK:
@@ -366,6 +370,7 @@ class HostSession:
                 self.offer_sent = self.confirmed = self.committed = False
                 show_done()
                 screen.received("za", self.console_pick)
+                self.arriving = True
                 if self.trades < len(self.offers):
                     self._load_offer(self.offers[self.trades])
                     screen.offer("za", self.offer)
@@ -378,6 +383,11 @@ class HostSession:
                     self._load_offer(self.renew_offer(self.offer))
                     screen.offer("za", self.offer)
                 self.log(f"[za-host] trade_complete: the console sent its four steps (trade {self.trades})")
+
+    def _arrived(self):
+        if self.arriving:
+            self.arriving = False
+            screen.arrived()
 
     def _load_offer(self, offer):
         self.offer = bytes(offer[:-1]) + bytes([OFFER_PICK])

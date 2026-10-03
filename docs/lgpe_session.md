@@ -679,6 +679,14 @@ A trade between two retail consoles carries no clone data on clone types 4 and 1
 direction; a host publishing none there leaves a joining console short of the gate `0x11b080`, on
 its search screen.
 
+### The trade animation
+
+The console plays its trade animation after its step `0e` and sends no trade payload during it.
+Measured once with a retail Let's Go hosting `bin/lgpe_join.py`, from that step: the animation
+started at about 1.7 s, the received Pokemon appeared at about 15.3 s (hand-pressed marks, up to
+2 s late), the console's type 4 payload (248 bytes) came at 27.0 s and the player had control at
+about 28.8 s.
+
 ### The commit and the trade lock
 
 The trade lock is a u32 countdown in seconds in the save's MyStatus block. A trade's save sets it to

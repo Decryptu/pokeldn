@@ -817,6 +817,11 @@ slots, both ExtraData files.
 The console then sends a fresh selector 2 (whatever the cursor is on), which the host answers with a
 showing, and the phase key close `b9 01 01 b9 02 b9 02 01 00 00`, which it does not answer.
 
+Measured once with a retail Legends Arceus joining `bin/pla_host.py`, from the console's `01 0e`:
+the animation started at about 2.8 s, the received Pokemon appeared at about 28.5 s (hand-pressed
+marks, up to 2 s late), and the console's next port-0 message (`00 02`, the box again) came at
+37.2 s, about when the player had control.
+
 ## A second trade in one session
 
 A session carries any number of trades: after a completed trade the scene resets the trade object

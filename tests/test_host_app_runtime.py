@@ -192,7 +192,7 @@ class _Peer:
 
 def _session():
     trade = SimpleNamespace(
-        state="test", commits=0, received_mons=[], established=False,
+        state="test", commits=0, anim_starts=0, received_mons=[], established=False,
         close_confirmed=False, done=False)
     rfu = SimpleNamespace(host_session_id=b"\x12\x34", ni_complete=False)
     result = SimpleNamespace(trade=trade, rfu=rfu, leave_calls=0)

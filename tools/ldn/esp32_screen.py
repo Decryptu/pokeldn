@@ -40,8 +40,10 @@ def main(argv=None):
         display(esp32.display_show_payload("trade", 0, args.title, offer_name), "trade")
         time.sleep(6)
         display(esp32.display_sprite_payload("theirs", sprite_bits(args.receive) or []), f"receive #{args.receive}")
-        display(esp32.display_show_payload("traded", 10, args.title, receive_name), "traded")
-        time.sleep(12)
+        display(esp32.display_show_payload("traded", 30, args.title, receive_name), "traded")
+        time.sleep(8)       # the console's animation, cut short as a console that finished
+        display(esp32.display_show_payload("arrived"), "arrived")
+        time.sleep(8)
         display(esp32.display_sprite_payload("gift", sprite_bits(args.gift, 40) or []), f"gift #{args.gift}")
         display(esp32.display_show_payload("gift", 0, "Mystery Gift", f"{gift_name} from the event"), "gift")
         time.sleep(6)

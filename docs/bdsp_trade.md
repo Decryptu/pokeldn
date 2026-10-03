@@ -206,6 +206,12 @@ client's once-a-second state repeat supplies. The station must not leave in this
 lands the console between `FirstSave` and `SecondSave`. The same sequence runs with the console as
 the room's joiner and pokeldn as host.
 
+Measured once with a retail BDSP joining `bin/bdsp_host.py`, from the console's `tradeState` 6: the
+animation started at about 2.7 s, the received Pokemon appeared at about 18.6 s (hand-pressed
+marks, up to 2 s late), and `NetDataReturnSelectData{0}` arrived at 29.1 s, about when the player
+had control. A host ready-ok repeat sent 64 ms before that ReturnSelect reached the console in its
+select window, which showed `SS_box_588` while keeping the box open.
+
 `NetDataReturnSelectData` (0x45), `45 00 01 00` (`{isReturnSelect: 0}`), announces the console's
 return to its select window. It asks for no answer (a `{1}` answer draws a `{0}` and a reset of an
 already clear round). The console repeats it, about once a second as measured, while its player is

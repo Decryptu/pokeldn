@@ -305,6 +305,7 @@ class TradeEngine:
         self._cancel_wait = None  # [S6]
         self._cancel_after_send = False
         self.commits = 0
+        self.anim_starts = 0
         self._finish_sent_at_last_commit = False
         self.done = False
         self.cancelled = False
@@ -639,6 +640,8 @@ class TradeEngine:
             if self.cancelled:
                 return
             # anim_delay frames before READY_FINISH [trade.c:1659-1661; trade_scene.c:2527-2536].
+            if self.state != S7_ANIM:
+                self.anim_starts += 1
             self.state = S7_ANIM
             self._anim_wait = self.anim_delay
         elif cmd == CONFIRM_FINISH_TRADE:
@@ -755,18 +758,22 @@ class TradeEngine:
             self._cancel_wait = INVALID_CANCEL_DELAY
             self.cancelled = True
 
+    def incoming_mon(self):
+        """The host's chosen Pokemon, the one `_commit` takes, or None before it chose."""
+        if self.host_cursor is None:
+            return None
+        off = self.host_cursor % PARTY_SIZE * monmod.PARTY_MON_SIZE
+        return monmod.Mon(bytes(self._host_party[off:off + monmod.PARTY_MON_SIZE]))
+
     def _commit(self):
         """TradeMons [trade_scene.c:1054-1083]: host party[host_cursor % PARTY_SIZE] into our
         offered slot. More trades re-arm (BufferTradeParties re-runs [trade.c:935]), else leave."""
         # Capture READY_FINISH-before-commit before _reset_round_state clears it.
         self._finish_sent_at_last_commit = self._finish_sent
         self.commits += 1
-        received = None
         offered_slot = self.offered_slots[self.round]
-        if self.host_cursor is not None:
-            idx = self.host_cursor % PARTY_SIZE
-            off = idx * monmod.PARTY_MON_SIZE
-            received = monmod.Mon(bytes(self._host_party[off:off + 100]))
+        received = self.incoming_mon()
+        if received is not None:
             self.received_mon = received
             self.received_mons.append(received)
             self.info("Trade confirmed.")

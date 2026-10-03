@@ -5,11 +5,13 @@ through an ESP32 radio connected by USB. Nothing is installed on the console.
 
 ## What is new
 
-- The radio board's screen: after a trade it reads "received" and the Pokemon the board got, the
-  board's side of the trade as "offering" is. It read "you got" in 0.6.0. Game titles are shortened
-  so they no longer run under the Pokemon's sprite.
+- The radio board's screen follows the console's trade animation in every game: the board sends its
+  Pokemon away, shows the exchange while the console animates, and opens its ball as the received
+  Pokemon appears on the console, then reads "received" and its name. In 0.6.0 the board finished
+  its animation long before the console did.
+- Game titles on the screen are shortened so they no longer run under the Pokemon's sprite.
 
-The firmware is 1.1.1: reflash the board from the Board page. Boards without a screen gain nothing
+The firmware is 1.2.0: reflash the board from the Board page. Boards without a screen gain nothing
 from it. What the screen shows and how to wire it are in the
 [setup documentation](https://decryptu.github.io/pokeldn/hardware_esp32.html#the-screen).
 

@@ -88,6 +88,7 @@ class JoinerSession:
         self.host_phase = 0
         self.phase_closed = False
         self.traded = False
+        self.arriving = False          # the trade's animation is running on the console
         # With `drive` the joiner plays: it offers after the host shows, confirms after it offers,
         # and sends selector 7 after the game's 1.5 s stopwatch; without it the console leads.
         self.host_showed = self.offered = self.confirmed = False
@@ -156,6 +157,7 @@ class JoinerSession:
             # host creates the network (docs/pla.md, The Net Protocol). The message is 4 bytes.
             self.migration_asked = self.clock()
             self.log("[pla] the host asked for host migration")
+            self._arrived()
         if len(p) < 8:
             return []
         if p[1] == NET_CONN_REQUEST:
@@ -203,6 +205,7 @@ class JoinerSession:
             if not self.host_left:
                 self.log("[pla] <- the host left the session (type 3)")
             self.host_left = True
+            self._arrived()
         return []
 
     def _rtt(self, msg):
@@ -349,6 +352,8 @@ class JoinerSession:
             return out + self._advance()
         offered = trade_box.read_payload(payload)
         if offered is not None:
+            # Its first after a trade: back on its box (docs/pla.md).
+            self._arrived()
             self.console_records.append((offered["selector"], offered["counter"],
                                          offered["record"]))
             if offered["selector"] == trade_box.SELECTOR_OFFERING:
@@ -391,6 +396,11 @@ class JoinerSession:
         self.log(f"[pla] <- game channel port {port} key {key.hex()} body {body.hex()}")
         return out
 
+    def _arrived(self):
+        if self.arriving:
+            self.arriving = False
+            screen.arrived()
+
     def _advance(self):
         out = []
         now = self.clock()
@@ -421,6 +431,7 @@ class JoinerSession:
             self.phase_closed = self.traded = True
             show_done()
             screen.received("pla", self.received)
+            self.arriving = True
             out.append(self._announce(trade_box.PHASE_KEY, opened=False))
             self.log("[pla] *** the host answered every phase: the trade is carried out; "
                      "the phase key closed ***")

@@ -515,6 +515,7 @@ class Session:
                 self.committed_2 = True
                 step = _send_step(self.trade, self.send, self.commit_kind, b"\x02\0\0\0")
                 self.publish_step()
+                screen.received("lgpe", self.trade.get("peer_offer"))
                 # A retail host sent its result 26.8 s after this (docs/lgpe_session.md).
                 self.result_clones_at = now + self.args.result_after - 0.5
                 self.result_at = now + self.args.result_after
@@ -783,7 +784,7 @@ class Session:
                 return
             self.trade["done"] = True
             show_done()
-            screen.received("lgpe", self.trade.get("peer_offer"))
+            screen.arrived()
             TRADE_IN_PROGRESS["offer"] = TRADE_IN_PROGRESS["commit"] = False
             print("[lgh] game: *** THE RESULT *** the trade has gone through on the console")
             self.send_result()

@@ -9,6 +9,9 @@
 #define DOTS 24
 #define DOT_MS 900          /* a packet's time from one end of a cable to the other */
 #define DOT_GAP_MS 70       /* at most one packet drawn per direction per gap */
+#define LEAVE_MS 2100       /* ours flashes, returns to its ball and leaves */
+#define REVEAL_MS 1600      /* theirs comes in and its ball opens */
+#define RECEIVED_MS 10000   /* then it stays */
 
 typedef struct {
     uint8_t w, h;
@@ -26,6 +29,7 @@ static struct {
     bool has_next;
     uint8_t radio_mode;     /* the last frame's, to see a session end */
     uint32_t started;
+    uint32_t reveal;        /* a traded show: ms after its start when theirs starts coming in */
     sprite_t sprite[SLOTS];
 } s;
 
@@ -278,22 +282,22 @@ static void traded_scene(uint8_t *fb, uint32_t now)
             }
         }
         fb_text_centered(fb, 0, "go!", 1);
-    } else if (t < 2100) {   /* up and away through the link */
+    } else if (t < LEAVE_MS) {   /* up and away through the link */
         const float x = (t - 1100) / 1000.0f;
         const int bx = lerp(64, 140, x), by = lerp(36, 6, x);
         poke_ball(fb, bx, by, 6);
         for (int k = 1; k < 4; ++k) bit_glyph(fb, bx - 10 * k, by + 4 * k, (t / 90 + k) % 2);
-    } else if (t < 3100) {   /* the exchange: packets both ways */
+    } else if (t < s.reveal) {   /* the exchange, for as long as the console's animation runs */
         fb_text_centered(fb, 6, "trading...", 1);
         console_icon(fb, 2, 26);
         poke_ball(fb, 118, 32, 7);
         if (t / 60 % 2) dot_spawn(t / 120 % 2 ? 1 : -1);
         cable(fb, 27, 108, 38);
-    } else if (t < 4100) {   /* theirs comes in */
-        const float x = (t - 3100) / 1000.0f;
+    } else if (t < s.reveal + 1000) {   /* theirs comes in */
+        const float x = (t - s.reveal) / 1000.0f;
         poke_ball(fb, lerp(-12, 64, x), lerp(6, 36, x), 6);
-    } else if (t < 4700) {   /* and opens */
-        const int k = (int)(t - 4100);
+    } else if (t < s.reveal + REVEAL_MS) {   /* and opens */
+        const int k = (int)(t - s.reveal - 1000);
         open_ball(fb, 64, 40, 8, k / 60);
         const int flash = k * 70 / 600;
         fb_circle(fb, 64, 36, flash, true, true);
@@ -352,12 +356,20 @@ static void copy_text(char *dst, const char **p, const char *end)
     if (*p < end) ++*p;
 }
 
-static bool timed(uint8_t show) { return show == SHOW_TRADED || show == SHOW_GIFTED; }
+/* When the current show ends, in ms after its start; 0 while it lasts until the next show. */
+static uint32_t ends(void)
+{
+    if (s.now.show == SHOW_TRADED) return s.reveal + REVEAL_MS + RECEIVED_MS;
+    return s.now.hold_s * 1000u;
+}
 
 static void start(const show_t *show, uint32_t now)
 {
     s.now = *show;
     s.started = now;
+    /* A traded show's hold is the wait before theirs comes in: the console's animation. */
+    const uint32_t wait = show->hold_s * 1000u;
+    s.reveal = wait > LEAVE_MS + 1000 ? wait : LEAVE_MS + 1000;
 }
 
 bool scene_command(const uint8_t *p, size_t n, uint32_t now)
@@ -374,12 +386,18 @@ bool scene_command(const uint8_t *p, size_t n, uint32_t now)
         return true;
     }
     if (p[0] != DISPLAY_OP_SHOW || n < 4 || p[1] >= SHOWS) return false;
+    if (p[1] == SHOW_ARRIVED) {   /* the console's animation is over: theirs comes in now */
+        if (s.now.show == SHOW_TRADED && elapsed(now) < s.reveal)
+            s.reveal = elapsed(now) > LEAVE_MS ? elapsed(now) : LEAVE_MS;
+        return true;
+    }
     show_t show = {.show = p[1], .hold_s = (uint16_t)(p[2] | p[3] << 8)};
     const char *text = (const char *)p + 4, *end = (const char *)p + n;
     copy_text(show.title, &text, end);
     copy_text(show.line, &text, end);
     /* A lasting show waits for a timed one to finish rather than cutting its animation short. */
-    if (timed(s.now.show) && !timed(show.show) && s.now.hold_s && elapsed(now) < s.now.hold_s * 1000u) {
+    const bool timed = show.show == SHOW_TRADED || show.show == SHOW_GIFTED;
+    if (ends() && !timed && elapsed(now) < ends()) {
         s.next = show;
         s.has_next = true;
     } else {
@@ -396,11 +414,10 @@ void scene_reset(void)
 
 void scene_draw(uint8_t *fb, const scene_radio_t *radio, uint32_t now)
 {
-    if (s.now.hold_s && elapsed(now) >= s.now.hold_s * 1000u) {
-        if (s.has_next) start(&s.next, now);
-        else s.now.show = SHOW_AUTO;
+    if (ends() && elapsed(now) >= ends()) {
+        const show_t none = {.show = SHOW_AUTO};
+        start(s.has_next ? &s.next : &none, now);
         s.has_next = false;
-        s.now.hold_s = s.now.show == SHOW_AUTO ? 0 : s.now.hold_s;
     }
     /* A lasting show belongs to a session: a radio going back to idle has ended it. A show sent
        before the radio started stays. */

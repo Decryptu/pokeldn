@@ -15,7 +15,13 @@ from pokeldn.app.paths import DATA
 # At most 10 characters: the title shares the top row with a 64-pixel sprite.
 TITLES = {"frlg": "FR/LG", "lgpe": "Let's Go", "bdsp": "BD/SP", "swsh": "Sw/Sh", "pla": "Arceus",
           "sv": "Sc/Vi", "za": "Legends ZA"}
-TRADED_HOLD_S = 10          # the exchange animation takes 4.7 s; the received Pokemon stays after it
+# Seconds from the moment a launcher calls `received` (each title's last trade step, FRLG's START_TRADE)
+# to the received Pokemon appearing on the console, measured once per title with hand-pressed marks
+# (docs/<title> pages, "trade animation"). The board's ball starts in REVEAL_LEAD s before it, so it
+# opens with the console's; a mark is late rather than early.
+ARRIVAL_S = {"frlg": 22.7, "lgpe": 15.3, "bdsp": 18.6, "swsh": 15.0, "pla": 28.5, "sv": 19.8,
+             "za": 26.2}
+REVEAL_LEAD = 2.5
 GIFTED_HOLD_S = 6
 GBA_LAST = 386              # FireRed/LeafGreen draw every species to Deoxys, 64x64
 
@@ -152,9 +158,16 @@ def offer(game: str, record: bytes | None = None, *, species: int | None = None,
 
 
 def received(game: str, record: bytes | None = None, *, species: int | None = None, name: str = "") -> bool:
-    """A completed trade: the exchange animation, then the Pokemon that arrived."""
-    return _submit(lambda: _pokemon("theirs", "traded", TRADED_HOLD_S, game, record, species,
-                                    ascii_text(name)))
+    """The trade is sealed: ours leaves, the exchange runs while the console animates, then the
+    Pokemon that arrived. Called at the trade's last step, before the console's animation."""
+    wait = max(0, round(ARRIVAL_S.get(game, 0) - REVEAL_LEAD))
+    return _submit(lambda: _pokemon("theirs", "traded", wait, game, record, species, ascii_text(name)))
+
+
+def arrived() -> bool:
+    """The console's animation is over: the received Pokemon comes in now if it has not yet."""
+    from pokeldn.ldn import esp32
+    return _submit(lambda: _send(esp32.display_show_payload("arrived")))
 
 
 def gift(title: str, line: str, *, species: int | None = None) -> bool:

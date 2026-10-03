@@ -129,6 +129,7 @@ class GameStreams:
         self.last_selection = 0.0
         self.traded_at = None
         self.trades = 0
+        self.arriving = False         # a trade's animation is running on the console
         self.ref = {}
         for name in za.reference.NAMES:
             if os.path.exists(os.path.join(args.game_dir, f"{name}.bin")):
@@ -231,8 +232,14 @@ class GameStreams:
                 self.trades += 1
                 show_done()
                 screen.received("za", self.received)
+                self.arriving = True
                 print(f"[za] trade_complete at {elapsed:.2f}s (trade {self.trades})")
                 self._next_trade(elapsed)
+
+    def arrived(self):
+        if self.arriving:
+            self.arriving = False
+            screen.arrived()
 
     def _next_trade(self, elapsed):
         """Back on its box the console trades again under round 0; the next queued record is
@@ -258,6 +265,8 @@ class GameStreams:
             self.picked = False
             print(f"[za] the console cancelled; round {self.round}")
         elif head == "0101":
+            # Its first after a trade: back on its box, the animation over (docs/za.md).
+            self.arrived()
             self.host_offers += 1
             if inner[-1:] == bytes([OFFER_PICK]):
                 self.received = bytes(inner)
@@ -618,6 +627,8 @@ async def run_session(args, keys, host_ip, host_mac, our_ip, our_mac, record):
                 send(pia_connect.PROTO_SESSION, za.build_migration_ack(m.payload), dst_var=0,
                      src_var=our_var, footer=False, establishing=True, pktid=0,
                      note="start host migration acknowledgement")
+                if game is not None:
+                    game.arrived()
                 if migrated_at is None:
                     migrated_at = now - t0
                     print(f"[za] the console is leaving and named us the next host at "

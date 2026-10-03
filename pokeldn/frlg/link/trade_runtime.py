@@ -59,10 +59,15 @@ def show_offer(engine):
         screen.offer("frlg", monmod.to_decrypted(offered.raw))
 
 
+def show_trade_started(engine):
+    """START_TRADE: the console's animation begins with the Pokemon it is about to deliver."""
+    incoming = engine.incoming_mon()
+    screen.received("frlg", monmod.to_decrypted(incoming.raw) if incoming else None)
+
+
 def show_received(engine):
-    """The Pokemon the last commit brought, then the next round's offer."""
-    mons = engine.received_mons
-    screen.received("frlg", monmod.to_decrypted(mons[-1].raw) if mons else None)
+    """The commit, after the console's animation: the Pokemon is in, then the next round's offer."""
+    screen.arrived()
     show_offer(engine)
 
 

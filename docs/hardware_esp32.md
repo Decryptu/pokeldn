@@ -573,16 +573,32 @@ DISPLAY (`0x0E`) carries one op:
 |---|---|---|
 | auto | 0 | the radio's state |
 | trade | 1 | slot 0 on the right half, "offering" and the line on the left, the cable below |
-| traded | 2 | slot 0 flashes and returns to its ball, the ball leaves, packets cross, a ball arrives and opens (4.7 s); then slot 1 with "received" and the line: the board's side, as "offering" is |
+| traded | 2 | slot 0 flashes and returns to its ball, the ball leaves (2.1 s), packets cross until the hold (at least 3.1 s), a ball arrives and opens (1.6 s), then slot 1 with "received" and the line for 10 s: the board's side, as "offering" is |
 | gift | 3 | a Wonder Card holding slot 2 (a gift box when empty), the line beside it |
 | gifted | 4 | the card leaves to the right, then "delivered!" |
+| arrived | 5 | no scene: a traded show still waiting brings its ball in now |
 
-A trade or gift show sent during a traded or gifted hold waits for the hold to end. A trade or gift
+A trade or gift show sent before a traded or gifted show has ended waits for it to end. A trade or gift
 show ends when the radio returns to idle after being active; one sent before the radio starts stays.
 HELLO resets the screen to the radio's state with empty slots.
 
-`pokeldn.app.screen` is the launchers' side: `offer`, `received`, `gift` and `delivered` return at
-once and run in order on one thread. A record goes through the PKHeX helper for its national species
+`pokeldn.app.screen` is the launchers' side: `offer`, `received`, `arrived`, `gift` and `delivered`
+return at once and run in order on one thread. Every launcher calls `received` at the trade's last
+step, before the console's trade animation, with a hold of the title's measured time from that step
+to the received Pokemon appearing on the console, less 2.5 s so the ball opens with the console's:
+
+| title | from | received Pokemon on the console | first message after the animation |
+|---|---|---|---|
+| FireRed/LeafGreen | START_TRADE | 22.7 s | READY_FINISH_TRADE ([FireRed link](frlg_link.md)) |
+| Let's Go | step `0e` | 15.3 s | the type 4 payload ([Let's Go session](lgpe_session.md#the-trade-animation)) |
+| Sword/Shield | the last syncCommand 40 | 15.0 s | none ([Sword trade](swsh_trade.md#the-trade-animation)) |
+| BD/SP | `tradeState` 6 | 18.6 s | `NetDataReturnSelectData` ([BDSP trade](bdsp_trade.md)) |
+| Legends Arceus | `01 0e` | 28.5 s | the box message `00 02` ([Legends Arceus](pla.md#the-completed-trade)) |
+| Scarlet/Violet | `8001010e` | 19.8 s | none ([Scarlet and Violet](sv.md#the-trade)) |
+| Legends Z-A | the fourth step | 26.2 s | the next `01 01` preview ([Legends Z-A](za.md#a-trade-with-a-retail-console)) |
+
+Each time is one run marked by hand, up to 2 s late. Where the console sends a message after its
+animation, the launcher calls `arrived` there. A record goes through the PKHeX helper for its national species
 and name; the sprite is PokeAPI's FireRed/LeafGreen one (64x64) up to species 386 and the default one
 after, through the app's sprite cache and its download setting. A sprite becomes one bit per pixel:
 

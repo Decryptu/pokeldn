@@ -86,6 +86,7 @@ class HostApplication:
         chat_file = getattr(self.options, "chat_file", None)
         self.chat_watcher = ChatFileWatcher(chat_file, log=log) if chat_file else None
         self._saved_commits = 0
+        self._shown_anims = 0
         self._last_trade_state = None
         self._absence_logged = False
         self._absence_since = None
@@ -322,6 +323,10 @@ class HostApplication:
                 slots = activity.format_child_slots()
                 if slots:
                     self.info("child slot stream (op x run-length):\n" + slots)
+        if activity.anim_starts > self._shown_anims:
+            self._shown_anims = activity.anim_starts
+            if self._trades():
+                trade_runtime.show_trade_started(activity)
         if activity.commits > self._saved_commits:
             self._saved_commits = activity.commits
             show_done()

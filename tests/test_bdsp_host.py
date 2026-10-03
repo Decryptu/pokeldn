@@ -270,10 +270,10 @@ def test_scripted_trades_are_answered_through_the_save_each_with_the_next_offer(
         [ready] = say(room.build_trade_ready_ok(room.TRADE_STATE_WAIT, 0), t + 1.5)
         assert ready == room.build_trade_ready_ok()
         # Each security-phase state is mirrored and repeated once a second.
-        for dt, state in ((2.5, 1), (2.7, 2), (2.9, 3), (3.1, 4)):
+        for dt, state in ((2.5, 1), (2.7, 2), (2.9, 3), (3.1, 4), (3.3, 5), (3.5, 6)):
             [mine] = say(room.build_trade_ready_ok(state, 1), t + dt)
             assert mine == room.build_trade_ready_ok(room.mirror_trade_state(state), 1)
-        assert _game_out(c.read(s.tick(t + 4.2)))
+        assert _game_out(c.read(s.tick(t + 4.6)))
         say(room.build_fields(room.RETURN_SELECT, 0), t + 24.5)
         assert p.trades == trade
         assert saved[-1] == (trade, theirs[:1])

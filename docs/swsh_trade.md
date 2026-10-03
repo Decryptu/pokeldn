@@ -117,6 +117,14 @@ The application layer, after the [ping handshake](swsh_session.md) both ways:
     120   the host pings first
     40    the ladder: host commands as element 0, the joiner's 10040 as element 1, phases 0 to 4
 
+## The trade animation
+
+The console plays its trade animation after its last syncCommand 40 (`3`), with no trade message
+during it. Measured once with a retail Sword joining `bin/swsh_host.py`, from that syncCommand: the
+animation started at 1.2 s, the received Pokemon appeared at about 15 s (hand-pressed marks, up to
+2 s late) and the player had control at about 24 s. The console sent no application message until
+the player backed out of the box (box command 3).
+
 ## Trades in a row on one session
 
 A session carries one trade after another. Trade state 9 sends event 7 (success) or 8 (failure)

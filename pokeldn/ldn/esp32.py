@@ -38,7 +38,7 @@ def led_payload(pattern: str, peak: int = 255, period_ms: int = 0, duration_ms: 
 
 
 # The screen's shows and sprite slots (firmware/esp32/main/scene.h).
-DISPLAY_SHOWS = ("auto", "trade", "traded", "gift", "gifted")
+DISPLAY_SHOWS = ("auto", "trade", "traded", "gift", "gifted", "arrived")
 DISPLAY_SLOTS = ("ours", "theirs", "gift")
 SPRITE_MAX = (64, 64)
 DISPLAY_TEXT = 21

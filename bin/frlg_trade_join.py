@@ -124,6 +124,7 @@ class _LiveJoiner:
         self.announced_entry = self.announced_menu = False
         self.announced_established = False
         self.saved_commits = 0  # saved at commit, not only at run end
+        self.shown_anims = 0
         self.connect_ticks = 0
         self.ni_wait_ticks = 0
         self.entry_ticks = 0
@@ -168,6 +169,9 @@ class _LiveJoiner:
     def save_at_commit(self):
         # The post-trade tail can stall or be interrupted; the mon is already valid.
         engine, lg = self.engine, self.lg
+        if engine.anim_starts > self.shown_anims:
+            self.shown_anims = engine.anim_starts
+            runtime.show_trade_started(engine)
         if engine.commits > self.saved_commits:
             self.saved_commits = engine.commits
             show_done()

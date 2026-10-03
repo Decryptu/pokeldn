@@ -545,6 +545,7 @@ class TradePartner:
         self.their_pokes = 0
         self.their_poke = None             # the record the console last offered, what a trade delivers
         self.trades = 0
+        self.arriving = False              # the console is saving and animating this trade
         if self.offer:
             screen.offer("bdsp", self.offer)
 
@@ -597,6 +598,10 @@ class TradePartner:
                 return []
             self.our_security = room.mirror_trade_state(self.their_security)
             self.next_security = now + self.security_repeat
+            # WAIT_READYOK: the console writes its save and animates next (docs/bdsp_trade.md).
+            if self.their_security >= room.TRADE_STATE_WAIT_READYOK and not self.arriving:
+                self.arriving = True
+                screen.received("bdsp", self.their_poke)
             return [room.build_trade_ready_ok(self.our_security, is_trade_ok=1)]
         if data_id == room.TRADE_READY_OK:
             self.record(rec="their_ready_ok", t=now, fields=fields, answered=self.complete)
@@ -606,10 +611,11 @@ class TradePartner:
                 self.trades += 1
                 self.record(rec="trade_complete", t=now, trades=self.trades)
                 show_done()
-                screen.received("bdsp", self.their_poke)
+                screen.arrived()
                 if self.offer:
                     screen.offer("bdsp", self.offer)
             self.our_security, self.their_security = 0, None
+            self.arriving = False
             return []
         return []
 
