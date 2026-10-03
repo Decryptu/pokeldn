@@ -68,7 +68,8 @@ def build(tool: Tool, values: dict, extra: dict, settings, stamp: str | None = N
     stamp = stamp or time.strftime("%Y%m%d-%H%M%S")
     tokens = {"{received}": os.path.expanduser(settings.received), "{stamp}": stamp,
               "{src_var}": f"0x{random.getrandbits(32):08x}",
-              "{ot}": settings.ot, "{tid}": str(settings.tid), "{sid}": str(settings.sid)}
+              "{ot}": settings.ot, "{tid}": str(settings.tid), "{sid}": str(settings.sid),
+              "{language}": str(settings.language)}
     args = []
     for arg in tool.fixed:
         for token, value in tokens.items():

@@ -219,15 +219,17 @@ class TwoTrades(Console):
     """The console's reset `0x26d8fd0` zeroes its counters, so the second trade repeats the first's
     messages byte for byte."""
 
+    count = 2
+
     def __init__(self, *a, **k):
         super().__init__(*a, **k)
         self.trades = []
 
     def _advance(self):
         out = super()._advance()
-        if self.traded and len(self.trades) < 2:
+        if self.traded and len(self.trades) < self.count:
             self.trades.append(self.received)
-            if len(self.trades) == 1:
+            if len(self.trades) < self.count:
                 self.traded = False
                 self.offer, self.received = self.received, None
                 self.shown = self.host_showed = self.offered = self.confirmed = False
@@ -249,18 +251,26 @@ def test_a_second_trade_in_the_same_session_completes(monkeypatch, capsys):
     assert [run.log.count(f"trade phase {p} as the host") for p in joiner.PHASES] == [2, 2, 2, 2]
 
 
-def test_each_trade_in_the_session_offers_the_next_record(monkeypatch, capsys, tmp_path):
+class SixTrades(TwoTrades):
+    count = 6
+
+
+@pytest.mark.parametrize("console_class, names", [
+    (TwoTrades, ["ONE", "TWO"]),
+    (SixTrades, ["ONE", "TWO", "THREE", "FOUR", "FIVE", "SIX"])])
+def test_each_trade_in_the_session_offers_the_next_record(monkeypatch, capsys, tmp_path,
+                                                          console_class, names):
     """--trade-box-record repeated: the first trade gives the first record, the second the next."""
-    names = ["ONE", "TWO"]
     extra = []
     for name in names:
         path = tmp_path / f"{name}.pa8"
         path.write_bytes(pla_pokemon.encrypt(pla_pokemon.write(
             pla_pokemon.decrypt(trade_box.REFERENCE_RECORD), nickname=name, is_nicknamed=1)))
         extra += ["--trade-box-record", str(path)]
-    run = run_host(monkeypatch, capsys, TwoTrades, lambda c: len(c.trades) == 2, extra=extra)
+    run = run_host(monkeypatch, capsys, console_class, lambda c: len(c.trades) == len(names),
+                   extra=extra)
     assert [pla_pokemon.read(pla_pokemon.decrypt(r))["nickname"] for r in run.console.trades] == names
-    assert "trade 2 complete, the phase key closed" in run.log
+    assert f"trade {len(names)} complete, the phase key closed" in run.log
 
 
 class BrowsesThenTwoTrades(TwoTrades):

@@ -254,7 +254,8 @@ def test_the_result_carries_our_own_structure(stage, tmp_path):
     assert pb7.valid(body)
 
 
-def test_each_later_trade_offers_the_next_record_on_its_own_kinds_and_clones(stage, tmp_path):
+@pytest.mark.parametrize("later", [2, 5])
+def test_each_later_trade_offers_the_next_record_on_its_own_kinds_and_clones(stage, tmp_path, later):
     """Round r answers offers on kind 2 + 2r, commits on 3 + 2r on clone 4 + 3r, and ends on kind
     4 + 2r; it offers the r-th --next-offer and writes what it received to a numbered file."""
     def record(ec, species):
@@ -265,7 +266,7 @@ def test_each_later_trade_offers_the_next_record_on_its_own_kinds_and_clones(sta
 
     s = stage["s"]
     offers = []
-    for n in (1, 2):
+    for n in range(1, later + 1):
         path = tmp_path / f"next{n}.bin"
         path.write_bytes(record(0x1000 + n, 25 + n))
         offers.append(str(path))
@@ -304,7 +305,7 @@ def test_each_later_trade_offers_the_next_record_on_its_own_kinds_and_clones(sta
         stage["console_says"](4 + 2 * r, theirs, step=step + 2)
         assert s.trade["done"]
         step += 3
-    assert s.round == 2
+    assert s.round == later
 
 
 def test_the_offered_clone_walks_on_to_01_02_02_and_the_trailing_word_2(stage):

@@ -227,10 +227,12 @@ def _game_out(got):
     return out
 
 
-def test_scripted_trades_are_answered_through_the_save_each_with_the_next_offer():
-    """One association, three trades: each answers the console's Pokemon with the next offer (the
-    last again once they run out) and files the console's under that trade's number."""
-    offers = [bytes([n]) * 328 for n in (1, 2)]
+@pytest.mark.parametrize("queued", [2, 6])
+def test_scripted_trades_are_answered_through_the_save_each_with_the_next_offer(queued):
+    """One association, a trade per offer and one more: each answers the console's Pokemon with the
+    next offer (the last again once they run out) and files the console's under that trade's
+    number."""
+    offers = [bytes([n]) * 328 for n in range(1, queued + 1)]
     saved = []
     p = host.TradePartner(offers, complete=True, approach_delay=3.0,
                           save_theirs=lambda n, raw: saved.append((n, raw[:1])))

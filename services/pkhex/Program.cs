@@ -193,6 +193,9 @@ JsonObject Make(Game game, JsonObject request)
     var form = wish.Form ?? 0;
     if (!game.Table.IsPresentInGame(species, form))
         throw new ArgumentException("This form is absent from the selected game.");
+    // SetNickname cuts a longer name without saying so; the record would not carry what was asked.
+    if (nickname.Length > game.Blank().MaxStringLengthNickname)
+        throw new ArgumentException($"A nickname is at most {game.Blank().MaxStringLengthNickname} characters in this game.");
     var (versions, trainer) = Trainer(game, request);
     var blank = game.Blank();
     blank.Species = species;
@@ -296,7 +299,9 @@ JsonObject Make(Game game, JsonObject request)
             ? $"{name} cannot be lower than level {lowest} in this game."
             : shinyLocked
                 ? $"{name} cannot be shiny in this game."
-                : $"PKHeX has no legal {name} for this game.");
+                : wish.Moves.Length > 1
+                    ? $"No legal {name} in this game can know these moves together."
+                    : $"PKHeX has no legal {name} for this game.");
 }
 
 // Repairs a built record one step at a time, each step on top of the last, and stops at the first that is legal.

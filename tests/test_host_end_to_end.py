@@ -7,6 +7,8 @@ from dataclasses import dataclass
 import os
 import sys
 
+import pytest
+
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
 from pokeldn.frlg.link import linkplayer, trade
@@ -313,9 +315,9 @@ class ScriptedFireRedChild:
 
 
 class LeaderStack:
-    def __init__(self, party):
+    def __init__(self, party, trades=2):
         self.session = HostSession(
-            party, trades=2, offered_slots=[0, 1], anim_delay=1,
+            party, trades=trades, offered_slots=list(range(trades)), anim_delay=1,
             reliable_kwargs={"ack_period_ms": 5, "rto_bootstrap_ms": 20},
             rfu_kwargs={"host_session_id": b"\xb7\xf1"})
         self.rel = self.session.reliable
@@ -338,11 +340,12 @@ class LeaderStack:
         return self.session.tick(now)
 
 
-def _run_full_stack(max_ms=12000):
-    host_original = [_mon(0x11), _mon(0x12)]
-    child_original = [_mon(0x21), _mon(0x22)]
-    host = LeaderStack(host_original)
-    child = ScriptedFireRedChild(child_original)
+def _run_full_stack(trades=2):
+    max_ms = 6000 * trades
+    host_original = [_mon(0x11 + n) for n in range(trades)]
+    child_original = [_mon(0x21 + n) for n in range(trades)]
+    host = LeaderStack(host_original, trades)
+    child = ScriptedFireRedChild(child_original, offered=range(trades), trades=trades)
     radio = ImpairedRadio()
 
     for emission in child.start(0):
@@ -371,8 +374,9 @@ def _run_full_stack(max_ms=12000):
         f"inflight={host.rel.inflight}/{child.rel.inflight}")
 
 
-def test_two_trades_survive_loss_duplicate_reordering_and_close_cleanly():
-    host, child, radio, host_original, child_original, elapsed = _run_full_stack()
+@pytest.mark.parametrize("trades", [2, 6])
+def test_queued_trades_survive_loss_duplicate_reordering_and_close_cleanly(trades):
+    host, child, radio, host_original, child_original, elapsed = _run_full_stack(trades)
 
     assert host.rel.local_opened and host.rel.peer_opened
     assert child.rel.local_opened and child.rel.peer_opened
@@ -389,13 +393,10 @@ def test_two_trades_survive_loss_duplicate_reordering_and_close_cleanly():
     assert host.rfu.uni_in > 0 and host.rfu.uni_out > 0
     assert child.uni_frames_in > 0 and child.uni_frames_out > 0
 
-    assert host.trade.commits == child.confirmed == 2
-    assert [m.raw for m in host.trade.received_mons] == [
-        child_original[0].raw, child_original[1].raw]
-    assert [m.raw for m in host.trade.party] == [
-        child_original[0].raw, child_original[1].raw]
-    assert [m.raw for m in child.party] == [
-        host_original[0].raw, host_original[1].raw]
+    assert host.trade.commits == child.confirmed == trades
+    assert [m.raw for m in host.trade.received_mons] == [m.raw for m in child_original]
+    assert [m.raw for m in host.trade.party] == [m.raw for m in child_original]
+    assert [m.raw for m in child.party] == [m.raw for m in host_original]
 
     assert child.cancel_seen and child.close_seen and child.disconnect_seen
     assert child.ready_keys_seen == 1 and child.exit_keys_seen == 1
@@ -407,7 +408,7 @@ def test_two_trades_survive_loss_duplicate_reordering_and_close_cleanly():
     assert set(radio.duplicated) == radio.duplicate_once
     assert radio.reordered > 0
     assert all(radio.attempts[key] >= 2 for key in radio.drop_once)
-    assert elapsed < 12000
+    assert elapsed < 6000 * trades
 
 
 def test_leader_cumulatively_acks_connect_before_opening_with_a():

@@ -225,7 +225,7 @@ BDSP = Game("bdsp", "Brilliant Diamond & Shining Pearl", "BDSP", "bdsp.md", (
                 "--recruiting", "0", "--answer-talk", "--can-talk", "0", "--initiate-talk",
                 "--initiate-delay", "3", "--after-approach", "0x06:0001000000", "--trade-reply",
                 "--complete-trade", "--src-var", "{src_var}",
-                "--trade-save-poke", "{received}/bdsp-{stamp}.pb8"),
+                "--trade-save-poke", "{received}/bdsp-{stamp}.pb8", "--language", "{language}"),
          doc="bdsp_trade.md"),
     Tool("bdsp-host", "Trade (Host)", "bin/bdsp_host.py",
          "Host a Union Room the console enters.",
@@ -236,7 +236,8 @@ BDSP = Game("bdsp", "Brilliant Diamond & Shining Pearl", "BDSP", "bdsp.md", (
           FRESH_PID,
           Field("--password", "Room password", help="Eight digits. Empty for the plain room."),
           host_seconds("1500")),
-         fixed=("--ldn-protocol", "1", "--complete-trade", "--save-theirs", "{received}/bdsp-{stamp}"),
+         fixed=("--ldn-protocol", "1", "--complete-trade", "--save-theirs", "{received}/bdsp-{stamp}",
+                "--language", "{language}"),
          doc="bdsp_trade.md"),
 ))
 

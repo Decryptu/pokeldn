@@ -42,6 +42,15 @@ def test_sword_host_uses_the_apps_trainer_and_a_built_offer():
     assert "--advert" not in args and "--snapshot" not in args
 
 
+@pytest.mark.parametrize("key", ["bdsp-join", "bdsp-host"])
+def test_bdsp_reports_the_apps_trainer_language_in_both_roles(key):
+    """PlayerInfo byte 0x7A sets the name limit on the console's greeting (docs/bdsp_protocol.md)."""
+    tool = next(t for game in GAMES for t in game.tools if t.key == key)
+    args = build(tool, {f.key: {"file": "/tmp/offer.pb8"} for f in tool.fields if f.kind == "pokemon"},
+                 {}, Settings(language=5))
+    assert parser_of(tool.script).parse_args(args).language == 5
+
+
 QUEUES = [(tool, f) for tool in TOOLS for f in tool.fields if f.kind == "pokemon" and f.queue > 1]
 
 

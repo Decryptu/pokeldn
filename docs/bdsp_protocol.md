@@ -418,9 +418,17 @@ A console sends its own `MessageManager$$get_UserLanguageID` and its `CheckNGTra
 PlayerInfo writer puts +0x480 at byte 0x7A [0x01550e98]. A French console's connection response
 (station protocol kind 2) carries encoding 1, its name, byte 0x79 0 and byte 0x7A 3.
 
-`station_protocol.player_info` writes the UTF-8 name at offset 1 and the language at 122.
-`bin/bdsp_connect.py --name` (default `PkCamp`) sends `--language`, default 1 (`JPN`: a 6-unit limit,
-Japanese font); `pokeldn/bdsp/host.py` sends 3, under which an 11-character name shows whole.
+The language is the sender's game text language, save `CONFIG.msg_lang_id` (PlayerWork +0xac,
+`get_msgLangID` [0x0237e100]); `GameManager.<OnetimeInitializeOperation>` [0x01e0eb44] fills it from
+the system language (`GetCurrentIetfCode`) only when the stored value is outside 1..10. The own
+station record's +0x480 is written by `strb w8, [x23, x22]` [0x0154956c] in `0x015494f0`, from
+`JoinMeshJob::SetupLocalPlayerInfo` [0x0155b988], out of the Pia session entry the setting builder
+[0x0156fa08] filled (entry +0x80, stride 0x98). A French console sent byte 0x7A 3 and byte 0x51 0 in
+30 of 30 PlayerInfos (17 connection responses, 13 connection requests).
+
+Both `bin/bdsp_connect.py` and `bin/bdsp_host.py` build the PlayerInfo with `pokeldn/bdsp/host.py`
+`player_info` (encoding 1, the UTF-8 name, byte 0x51 0) and send `--language`, default 3; the desktop
+app passes its trainer language. Under 3 an 11-character name shows whole.
 
 The substitute depends on the talked-to character's `CharaData.cassetVersion`, byte 2 of its
 `NetJoinData`, which both callers of the greeting (`SwitchSpokenStateMine` 0x01e53b58,

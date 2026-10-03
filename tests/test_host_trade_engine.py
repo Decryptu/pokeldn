@@ -189,19 +189,21 @@ class ScriptedChild:
             self.send_linkcmd(trade.REQUEST_CANCEL)
 
 
+@pytest.mark.parametrize("trades", [2, 6])
 @pytest.mark.parametrize("early_cancel", [False, True])
-def test_two_trades_then_graceful_cancel_and_close(early_cancel):
+def test_queued_trades_then_graceful_cancel_and_close(early_cancel, trades):
     """early_cancel: the console's player cancels as soon as the menu is back, as retail FireRed did
     1.5 to 4.2 s after the final party refresh, and waited on "waiting for friend" until the end of
     the host's menu wait. Its REQUEST_CANCEL comes from its live menu [trade.c:2049]."""
-    host_original = [_mon(0x11), _mon(0x12)]
-    child_original = [_mon(0x21), _mon(0x22)]
-    h = HostTradeEngine(host_original, trades=2, offered_slots=[0, 1], anim_delay=1)
-    c = ScriptedChild(h, child_original, early_cancel=early_cancel)
+    slots = list(range(trades))
+    host_original = [_mon(0x11 + n) for n in slots]
+    child_original = [_mon(0x21 + n) for n in slots]
+    h = HostTradeEngine(host_original, trades=trades, offered_slots=slots, anim_delay=1)
+    c = ScriptedChild(h, child_original, offered=slots, early_cancel=early_cancel)
 
     # LinkPlayer completes before the child initiates warp standby count 0.
     sent_warp0 = False
-    for _ in range(4000):
+    for _ in range(4000 * trades // 2):
         c.consume_host_words(h.tick())
         if h.established and not sent_warp0:
             sent_warp0 = True
@@ -213,23 +215,20 @@ def test_two_trades_then_graceful_cancel_and_close(early_cancel):
     else:
         raise AssertionError(f"leader did not finish: state={h.state}, trace={h.trace[-20:]}")
 
-    assert h.commits == 2
-    assert [m.raw for m in h.received_mons] == [child_original[0].raw, child_original[1].raw]
-    assert [m.raw for m in h.party] == [child_original[0].raw, child_original[1].raw]
-    assert c.confirmed == 2
+    assert h.commits == trades
+    assert [m.raw for m in h.received_mons] == [m.raw for m in child_original]
+    assert [m.raw for m in h.party] == [m.raw for m in child_original]
+    assert c.confirmed == trades
     assert c.cancel_seen and c.closed and h.disconnect_requested and h.done and h.state == H_DONE
 
     child_cmds = [x[1] for x in h.trace if x[0] == "child_linkcmd"]
-    assert child_cmds == [
-        "READY_TO_TRADE", "INIT_BLOCK", "READY_FINISH_TRADE",
-        "READY_TO_TRADE", "INIT_BLOCK", "READY_FINISH_TRADE",
-        "REQUEST_CANCEL",
-    ]
+    assert child_cmds == ["READY_TO_TRADE", "INIT_BLOCK", "READY_FINISH_TRADE"] * trades + [
+        "REQUEST_CANCEL"]
     queued = [x[1] for x in h.trace if x[0] == "queue_block"]
     assert "host:link_player_menu" not in queued
-    assert queued.count("SET_MONS_TO_TRADE") == 2
-    assert queued.count("START_TRADE") == 2
-    assert queued.count("CONFIRM_FINISH_TRADE") == 2
+    assert queued.count("SET_MONS_TO_TRADE") == trades
+    assert queued.count("START_TRADE") == trades
+    assert queued.count("CONFIRM_FINISH_TRADE") == trades
     assert queued[-1] == "BOTH_CANCEL_TRADE"
     assert any(x[0] == "mail_wait_idle" for x in h.trace)
     assert any(x[0] == "ribbons_wait_idle" for x in h.trace)
