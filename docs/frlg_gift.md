@@ -507,6 +507,11 @@ Trainer Tower sets and `CEReaderTool_SaveTrainerTower`: `ereader_screen.c` opens
 The distribution scripts are in `data/mystery_event_msg.s:200`, but the Switch release grants both
 tickets and both `FLAG_RECEIVED_*` flags on the first Hall of Fame entry
 [post_battle_event_funcs.c:52, `#if REVISION >= 0xA`], so on a completed save the script is a no-op.
+The gallery's `FL - Item AuroraTicket` script tests `FLAG_RECEIVED_AURORA_TICKET` first; on a retail
+French FireRed past its Hall of Fame the delivery man said only "Merci d'utiliser le système CADEAU
+MYST." and gave nothing. That card's `iconSpecies` is `0xFFFF`: any value but `SPECIES_NONE` draws an
+icon, and a species past `SPECIES_UNOWN_B - 1` draws `SPECIES_NONE`'s question mark
+[mystery_gift_show_card.c:466, pokemon_icon.c:1102].
 The Old Sea Map is Emerald-only [mystery_gift.c:30].
 
 ## Traps
