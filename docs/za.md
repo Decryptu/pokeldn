@@ -921,8 +921,11 @@ is no local-wireless path.
 - What ends a hosted session whose game messages go unanswered (host migration at 27 s measured).
   Two readings fit: CloseSession's P2P wait giving up at 15001 ms (`0x255c7a4`, result `0x2c18`)
   followed by the 10.8 s leave with migration, or the 10 s kick (The kick) followed by a game-side
-  reaction that is unread. Breakpoints at `0x255c7a4`, `0x2547dd0` and `0x255b4a0` on an emulated
-  host would tell them apart.
+  reaction that is unread. An emulated host seating `bin/za_join.py` without `--game` (every Net,
+  Session, RTT and Reliable acknowledgement answered, no game message) kept the seat for 90 s and
+  for 120 s until the joiner left, its screen on "Searching for a trade partner", and polled
+  WaitP2pStable (`0x255c6c0`) from the seat; its failure branch is `0x255c7b4`, success `0x255c718`.
+  What the retail joiner of the 27 s measurement left unanswered is not recorded.
 - Whether the host migration 8.7 s after a seat whose join listed the wrong protocols is WaitMember
   (3000 + rand%1000 ms, retry body `0x19ae124`) expiring, then LeaveMeshWithHostMigration's
   8000 ms poll for a next host (`0x255a520`) ending with no session station to hand to
