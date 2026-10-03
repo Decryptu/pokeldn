@@ -95,3 +95,6 @@ EVAL_RUN_NOTES.txt
 /gui/firmware/
 /dist/
 /*.spec
+
+# The Flet client scripts/build_client.py builds, with its Flet checkout.
+/gui/client/

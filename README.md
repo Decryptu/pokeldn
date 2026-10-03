@@ -51,8 +51,9 @@ Gift below with the tested settings. The only file it asks for is `prod.keys`.
 - Linux: it needs GTK 3 and libsecret, present on desktop distributions, and serial access
   (`sudo usermod -aG dialout $USER`).
 - From source: `pip install -r gui/requirements.txt`, then `python gui/main.py`; the Pokemon builder
-  needs `dotnet build -c Release services/pkhex` (.NET 10 SDK). `python scripts/pack_app.py` builds the
-  app for the current OS into `dist/`, with firmware required. See [desktop builds](docs/gui.md).
+  needs `dotnet build -c Release services/pkhex` (.NET 10 SDK), and file drops need the client
+  `python scripts/build_client.py` builds (Flutter). `python scripts/pack_app.py` builds the
+  app for the current OS into `dist/`, with firmware and that client required. See [desktop builds](docs/gui.md).
 - `python -m pokeldn --list` lists the shared GUI/CLI presets. For example,
   `python -m pokeldn --radio esp32:auto swsh-host --offer-file offer.pk8`.
   See [code organization](docs/architecture.md) for the shared modules and legality checks.

@@ -16,7 +16,7 @@ os.environ.pop("POKELDN_RADIO", None)
 
 import flet as ft  # noqa: E402
 
-from gui import screen, theme as t  # noqa: E402
+from gui import drop, screen, theme as t  # noqa: E402
 from gui.app import App  # noqa: E402
 from pokeldn import __version__  # noqa: E402
 from pokeldn.app.paths import ROOT  # noqa: E402
@@ -155,13 +155,20 @@ def welcome(app: App) -> None:
     def close(e):
         app.page.pop_dialog()
 
+    def use(path: str) -> None:
+        app.settings.keys = path
+        app.settings.save()
+        app.page.pop_dialog()
+        app.navigate("games")
+
     async def choose(e):
         files = await app.picker.pick_files(allowed_extensions=["keys"], file_type=ft.FilePickerFileType.CUSTOM)
         if files and files[0].path:
-            app.settings.keys = files[0].path
-            app.settings.save()
-            app.page.pop_dialog()
-            app.navigate("games")
+            use(files[0].path)
+
+    def dropped(paths: list[str]) -> None:
+        if path := next((p for p in paths if drop.suffix(p) == "keys"), ""):
+            use(path)
 
     def instructions(e):
         app.page.pop_dialog()
@@ -186,19 +193,21 @@ def welcome(app: App) -> None:
         modal=True, content_padding=0, actions_padding=0, inset_padding=32,
         clip_behavior=ft.ClipBehavior.ANTI_ALIAS,
         semantics_label="Welcome to pokeldn",
-        content=ft.Container(ft.Column([
+        content=drop.target(ft.Container(ft.Column([
             ft.Container(body, padding=ft.Padding(28, 22, 18, 8)),
             ft.Container(ft.Row([
-                t.text("Add keys later in Settings.", 12, t.FAINT, expand=True),
+                t.text("Drop prod.keys here, or add keys later in Settings." if drop.AVAILABLE else
+                       "Add keys later in Settings.", 12, t.FAINT, expand=True),
                 t.secondary_button("Later", close),
                 t.button("Choose prod.keys", choose, "key"),
             ], spacing=8), padding=ft.Padding(28, 12, 24, 24)),
-        ], spacing=0, tight=True), width=500),
+        ], spacing=0, tight=True), width=500, border_radius=20), dropped),
     ))
 
 
 def run() -> None:
     assets = os.path.join(ROOT, "gui", "assets")
+    drop.use_client()
     if os.environ.get("POKELDN_GUI_WEB"):   # a browser preview, for screenshots
         ft.run(main, assets_dir=assets, view=ft.AppView.WEB_BROWSER, no_cdn=True,
                port=int(os.environ["POKELDN_GUI_WEB"]))

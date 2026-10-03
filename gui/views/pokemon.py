@@ -1,11 +1,12 @@
 import threading
+from pathlib import Path
 
 import flet as ft
 
 from pokeldn import pokemon as builder
 from pokeldn.app.command import offers
 from pokeldn.lgpe.session import CODE_PICKER, code_picks
-from gui import theme as t
+from gui import drop, theme as t
 from gui.views.sprites import EDGE, MINI, SIZE as SPRITE_SIZE, Sprite
 from gui.views.widgets import PixelActivity
 
@@ -16,10 +17,12 @@ ROW_GAP = SPRITE_SIZE + 2 * EDGE - 2 * t.CONTROL_HEIGHT   # the species and nick
 class PokemonPicker:
     """Pick a species and PKHeX builds a legal one for the game; or check a file someone brings."""
 
-    def __init__(self, app, game: str, value: dict | None, on_change, version: str = "", on_team=None):
-        """`on_team(sets)` places the sets after the first of a pasted team and says where they went."""
+    def __init__(self, app, game: str, value: dict | None, on_change, version: str = "", on_team=None,
+                 on_more=None, glow=None):
+        """`on_team(sets)` places the sets after the first of a pasted team and says where they went;
+        `on_more(paths)` places the files dropped with the first. `glow()` is what lights under a drag."""
         self.app, self.game, self.on_change, self.version = app, game, on_change, version
-        self.on_team = on_team
+        self.on_team, self.on_more = on_team, on_more
         self.value = dict(value or {})
         self.species = t.dropdown([], None, on_select=self._pick, enable_filter=True, editable=True,
                                   menu_height=320, hint_text="Loading species...", disabled=True)
@@ -45,13 +48,16 @@ class PokemonPicker:
         ], spacing=ROW_GAP, expand=True)
         # The tile runs from the top of the species box to the bottom of the nickname box, below the 20 px label.
         tile = ft.Container(self.sprite.control, margin=ft.Margin(0, 20, 0, 0))
-        self.control = ft.Column([
+        self.body = ft.Container(ft.Column([
             ft.Row([tile, form], spacing=14, vertical_alignment=ft.CrossAxisAlignment.START),
             self.options.control,
             self.result,
             ft.Row([t.secondary_button("Or use a Pokemon file", self._use_file, "file"),
-                    t.secondary_button("Import paste", self._paste, "bulletlist")], spacing=10, wrap=True),
-        ], spacing=10)
+                    t.secondary_button("Import paste", self._paste, "bulletlist"),
+                    *([t.text("or drop either here", 12, t.FAINT)] if drop.AVAILABLE else [])],
+                   spacing=10, wrap=True, vertical_alignment=ft.CrossAxisAlignment.CENTER),
+        ], spacing=10), border_radius=12)
+        self.control = drop.target(self.body, self._dropped, glow=glow or self.body)
         self._show_result()
         threading.Thread(target=self._load_species, daemon=True).start()
 
@@ -128,9 +134,29 @@ class PokemonPicker:
         files = await self.app.picker.pick_files(
             allowed_extensions=[builder.EXTENSIONS[self.game], "bin", "hex", "ek3"],
             file_type=ft.FilePickerFileType.CUSTOM)
-        if not files or not files[0].path:
+        if files and files[0].path:
+            self.load(files[0].path)
+
+    def _dropped(self, paths: list[str]) -> None:
+        self.load(paths[0])
+        if len(paths) > 1:
+            if self.on_more:
+                self.on_more(paths[1:])
+            else:
+                self.result.content = t.text(f"{len(paths)} files dropped; the first was used.", 12, t.AMBER)
+                self.control.update()
+
+    def load(self, path: str) -> None:
+        """A Pokemon file, or a text file of Showdown sets (a team fills the trades after this one)."""
+        if drop.suffix(path) == "txt":
+            try:
+                text = Path(path).read_text(encoding="utf-8", errors="replace")
+            except OSError as exc:
+                self._message(f"Could not read {Path(path).name}: {exc}", t.RED)
+                self.control.update()
+                return
+            self._paste(None, text)
             return
-        path = files[0].path
         try:
             info = builder.SERVICE.import_file(self.game, path)
         except Exception as exc:
@@ -150,10 +176,10 @@ class PokemonPicker:
         self._show_result()
         self.control.update()
 
-    def _paste(self, e) -> None:
+    def _paste(self, e, text: str = "") -> None:
         """A Showdown or Smogon set fills the form; Build then makes it. In a queue a team fills the trades
-        after this one; anywhere else a team gives its first set."""
-        editor = t.field(multiline=True, min_lines=12, max_lines=18, mono=True, autofocus=True,
+        after this one; anywhere else a team gives its first set. A `text` given is read at once."""
+        editor = t.field(value=text, multiline=True, min_lines=12, max_lines=18, mono=True, autofocus=True,
                          hint="Garchomp @ Choice Scarf\nAbility: Rough Skin\nEVs: 252 Atk / 4 SpD / 252 Spe\n"
                               "Jolly Nature\n- Earthquake\n- Outrage")
         status = ft.Container()
@@ -214,6 +240,8 @@ class PokemonPicker:
                 horizontal_alignment=ft.CrossAxisAlignment.STRETCH), width=520),
             actions=[t.secondary_button("Cancel", close), apply],
         ))
+        if text.strip():
+            submit(None)
 
     def _apply_set(self, found: dict, notes: list[str]) -> None:
         for key in ("file", "summary", "legal", "encounter", "moves", "report"):
@@ -268,12 +296,16 @@ class OfferQueue:
         self.app, self.game, self.limit, self.on_change, self.version = app, game, limit, on_change, version
         self.slots: list[dict] = []
         self.rows = ft.Column(spacing=10)
-        self.add_button = t.secondary_button("Add a trade", self._add, "plus")
         self.count = t.text("", 12, t.MUTED)
+        self.add_icon = t.pixel_icon("plus", color=t.BLUE)
+        self.add_box = t.surface(ft.Container(ft.Row([
+            self.add_icon,
+            ft.Column([t.text("Add a trade", 13, weight=ft.FontWeight.W_600), self.count], spacing=0, tight=True),
+        ], spacing=12, tight=True), padding=ft.Padding(16, 10, 22, 10)), on_click=self._add, ink=True)
         self.control = self.rows
-        # Placed by the caller under the card that holds `control`.
-        self.footer = ft.Row([self.add_button, self.count], spacing=12,
-                             vertical_alignment=ft.CrossAxisAlignment.CENTER)
+        self.card: ft.Container | None = None    # the caller's card around `control`; it lights for one trade
+        # Placed by the caller under that card.
+        self.footer = ft.Row([drop.target(self.add_box, self._append)], alignment=ft.MainAxisAlignment.CENTER)
         for entry in (offers(value)[:limit] or [{}]):
             self._slot(entry)
         self._render()
@@ -281,7 +313,9 @@ class OfferQueue:
     def _slot(self, entry: dict, at: int | None = None) -> dict:
         slot = {"value": dict(entry), "title": t.text("", 13, weight=ft.FontWeight.W_600, expand=True)}
         slot["picker"] = PokemonPicker(self.app, self.game, entry, lambda v, s=slot: self._changed(s, v),
-                                       version=self.version, on_team=lambda sets, s=slot: self._team(s, sets))
+                                       version=self.version, on_team=lambda sets, s=slot: self._team(s, sets),
+                                       on_more=lambda paths, s=slot: self._more(s, paths),
+                                       glow=lambda s=slot: s["box"] if len(self.slots) > 1 else self.card)
         slot["remove"] = t.icon_button("close", lambda e, s=slot: self._remove(s), "Remove this trade")
         slot["header"] = ft.Row([slot["title"], slot["remove"]], spacing=8,
                                 vertical_alignment=ft.CrossAxisAlignment.CENTER)
@@ -298,27 +332,55 @@ class OfferQueue:
             slot["box"].border_radius = 12 if several else None
             slot["box"].padding = ft.Padding(12, 6, 6, 12) if several else None
         self.rows.controls = [slot["box"] for slot in self.slots]
-        self.add_button.disabled = len(self.slots) >= self.limit
+        full = len(self.slots) >= self.limit
+        self.add_box.disabled = full
+        self.add_box.opacity = 0.5 if full else 1.0
         self.count.value = (f"{len(self.slots)} of {self.limit}, traded in this order" if several
                             else f"Up to {self.limit} Pokemon in one session")
+        if drop.AVAILABLE and not full:
+            self.count.value += "; or drop files here"
+        self.count.color = t.MUTED
 
-    def _team(self, first: dict, sets: list[dict]) -> str:
-        """The rest of a pasted team goes into the trades after `first`: an untouched trade is filled,
-        otherwise a new one is inserted, up to the session's limit."""
-        at = self.slots.index(first)
+    def _spread(self, at: int, items: list) -> list[tuple[dict, object]]:
+        """Places `items` from trade `at` on: an untouched trade is filled, otherwise a new one is inserted,
+        up to the session's limit. Redraws the queue."""
         placed = []
-        for found in sets:
-            at += 1
+        for item in items:
             following = self.slots[at] if at < len(self.slots) else None
             if following is not None and not following["value"].get("species"):
-                placed.append((following, found))
+                placed.append((following, item))
             elif len(self.slots) < self.limit:
-                placed.append((self._slot({}, at), found))
+                placed.append((self._slot({}, at), item))
             else:
                 break
+            at += 1
         self._render()
+        self._save()
         self.rows.update()
         self.footer.update()
+        return placed
+
+    def _more(self, first: dict, paths: list[str]) -> None:
+        self._load(self._spread(self.slots.index(first) + 1, paths), len(paths))
+
+    def _append(self, paths: list[str]) -> None:
+        """Files dropped on "Add a trade" fill the untouched trades at the end, then new ones."""
+        at = len(self.slots)
+        while at > 0 and not self.slots[at - 1]["value"].get("species"):
+            at -= 1
+        self._load(self._spread(at, paths), len(paths))
+
+    def _load(self, placed: list[tuple[dict, str]], dropped: int) -> None:
+        for slot, path in placed:
+            slot["picker"].load(path)
+        if len(placed) < dropped:
+            self.count.value = f"{dropped - len(placed)} did not fit: one session trades at most {self.limit}."
+            self.count.color = t.AMBER
+            self.count.update()
+
+    def _team(self, first: dict, sets: list[dict]) -> str:
+        """The rest of a pasted team goes into the trades after `first`."""
+        placed = self._spread(self.slots.index(first) + 1, sets)
         for slot, found in placed:
             slot["picker"]._apply_set(found, list(found["notes"]))
         numbers = [self.slots.index(slot) + 1 for slot, _ in placed]

@@ -13,6 +13,7 @@ from pathlib import Path
 ROOT = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(ROOT))
 from pokeldn import __version__
+from gui.drop import CLIENT, MARKER, platform_key
 
 FIRMWARE = ROOT / "gui" / "firmware" / "pokeldn-radio.bin"
 FIRMWARE_S3 = ROOT / "gui" / "firmware" / "pokeldn-radio-s3.bin"
@@ -67,6 +68,10 @@ def main() -> int:
     if missing:
         raise SystemExit(f"Missing firmware: {', '.join(missing)}. Build all four images "
                          "as described in docs/gui.md before packing.")
+    client = CLIENT / platform_key()
+    if not (client / MARKER).is_file():
+        raise SystemExit("Missing the Flet client that takes file drops. Build it with "
+                         "python scripts/build_client.py (needs Flutter) before packing.")
     if importlib.util.find_spec("PyInstaller") is None:
         raise SystemExit("Install desktop build dependencies: python -m pip install -r gui/requirements.txt")
     service = ROOT / "services" / "pkhex"
@@ -117,7 +122,7 @@ def main() -> int:
                        "--collect-all=esp_pylib", "--collect-submodules=pokeldn",
                        "--collect-submodules=ldn"):
             args.append(f"--pyinstaller-build-args={option}")
-        result = subprocess.run(args, cwd=stage).returncode
+        result = subprocess.run(args, cwd=stage, env=dict(os.environ, FLET_VIEW_PATH=str(client))).returncode
         expected = ROOT / "dist" / ({"darwin": "pokeldn.app", "win32": "pokeldn.exe"}.get(sys.platform, "pokeldn"))
         if result == 0 and not expected.exists():
             raise SystemExit("The packer produced no desktop application.")

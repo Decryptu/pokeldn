@@ -7,7 +7,7 @@ from typing import Callable
 
 import flet as ft
 
-from gui import theme as t
+from gui import drop, theme as t
 
 
 class PixelActivity(ft.Container):
@@ -171,7 +171,8 @@ class PathField:
 
     def __init__(self, picker: ft.FilePicker, start_dir: Callable[[], str], value: str = "",
                  mode: str = "file", exts: tuple = (), on_change: Callable[[str], None] | None = None,
-                 *, single_line: bool = False):
+                 *, single_line: bool = False, droppable: bool = True):
+        """`droppable=False` leaves file drops to an enclosing target."""
         self.picker, self.start_dir, self.mode, self.exts = picker, start_dir, mode, exts
         self.on_change = on_change
         # A single-line field does not fill its height; the padding brings it to the button row's 34 px.
@@ -180,8 +181,19 @@ class PathField:
         self.field = t.field(value=value, mono=True, expand=True,
                              on_change=lambda e: self._changed(e.control.value), **options)
         icon = "folder" if mode == "dir" else "file"
-        self.control = ft.Row([self.field, t.icon_button(icon, self._browse, "Browse")], spacing=6,
-                              vertical_alignment=ft.CrossAxisAlignment.CENTER)
+        row = ft.Row([self.field, t.icon_button(icon, self._browse, "Browse")], spacing=6,
+                     vertical_alignment=ft.CrossAxisAlignment.CENTER)
+        self.control = (drop.target(ft.Container(row, border_radius=t.CONTROL_RADIUS), self._dropped)
+                        if droppable else row)
+
+    def _dropped(self, paths: list[str]) -> None:
+        """The first dropped file this field takes; a folder field takes a file's folder."""
+        if self.mode == "dir":
+            path = next((p if os.path.isdir(p) else os.path.dirname(p) for p in paths), "")
+        else:
+            path = next((p for p in paths if not self.exts or drop.suffix(p) in self.exts), "")
+        if path:
+            self.set(path)
 
     def _changed(self, value: str) -> None:
         if self.on_change:
@@ -198,9 +210,12 @@ class PathField:
                 file_type=ft.FilePickerFileType.CUSTOM if self.exts else ft.FilePickerFileType.ANY)
             path = files[0].path if files else None
         if path:
-            self.field.value = path
-            self.field.update()
-            self._changed(path)
+            self.set(path)
+
+    def set(self, path: str) -> None:
+        self.field.value = path
+        self.field.update()
+        self._changed(path)
 
 
 def open_folder(path: str) -> None:

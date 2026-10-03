@@ -49,17 +49,21 @@ def test_effort_over_the_games_total_is_refused_before_the_builder_is_asked(effo
 
 
 class StubPicker:
-    def __init__(self, app, game, value, on_change, version="", on_team=None):
-        self.on_change, self.on_team, self.control, self.applied = on_change, on_team, SimpleNamespace(), None
+    def __init__(self, app, game, value, on_change, version="", on_team=None, on_more=None, glow=None):
+        self.on_change, self.on_team, self.on_more = on_change, on_team, on_more
+        self.control, self.applied = SimpleNamespace(), None
 
     def _apply_set(self, found, notes):
         self.applied = found
         self.on_change({"species": found["species_id"]})
 
+    def load(self, path):
+        self.on_change({"species": 1, "file": path})
+
 
 def stub_queue(value, limit, on_change):
     queue = OfferQueue(None, "sv", value, limit, on_change)
-    queue.control = queue.rows = queue.footer = SimpleNamespace(update=lambda: None)
+    queue.control = queue.rows = queue.footer = queue.count = SimpleNamespace(update=lambda: None)
     return queue
 
 
@@ -73,7 +77,7 @@ def test_a_pasted_team_fills_the_trades_after_its_picker_up_to_the_limit(monkeyp
     assert saved[-1] == [{"species": 1}, {"species": 25}, {"species": 133}, {"species": 4}]
     assert [s["title"].value for s in queue.slots] == ["Trade 1", "Trade 2", "Trade 3", "Trade 4"]
     assert "trades 2, 3" in message and "1 did not fit" in message
-    assert queue.add_button.disabled
+    assert queue.add_box.disabled
 
 
 def test_a_queue_keeps_each_trades_pokemon_in_order_through_add_and_remove(monkeypatch):
@@ -85,16 +89,33 @@ def test_a_queue_keeps_each_trades_pokemon_in_order_through_add_and_remove(monke
         queue._add(None)
         queue.slots[-1]["picker"].on_change({"file": name})
     assert saved[-1] == [{"file": "a.pk9"}, {"file": "b.pk9"}, {"file": "c.pk9"}]
-    assert queue.add_button.disabled
+    assert queue.add_box.disabled
     queue._add(None)
     assert len(queue.slots) == 3
     queue._remove(queue.slots[1])
     assert saved[-1] == [{"file": "a.pk9"}, {"file": "c.pk9"}]
     assert [s["title"].value for s in queue.slots] == ["Trade 1", "Trade 2"]
-    assert not queue.add_button.disabled
+    assert not queue.add_box.disabled
     queue._remove(queue.slots[0])
     queue._remove(queue.slots[0])
     assert saved[-1] == [{"file": "c.pk9"}]
+
+
+def test_files_dropped_on_a_trade_or_on_add_a_trade_fill_untouched_trades_then_new_ones(monkeypatch):
+    """Files after the first on a trade go to the trades after it; on Add a trade they start at the
+    untouched trades at the end. What does not fit is counted, never dropped silently."""
+    monkeypatch.setattr(pokemon, "PokemonPicker", StubPicker)
+    saved = []
+    queue = stub_queue([{"species": 1}, {}, {"species": 4}], 5, saved.append)
+    queue.slots[0]["picker"].on_more(["b.pk9"])
+    assert [v.get("file") for v in saved[-1]] == [None, "b.pk9", None]
+    queue._append(["c.pk9", "d.pk9", "e.pk9"])
+    assert [v.get("file") for v in saved[-1]] == [None, "b.pk9", None, "c.pk9", "d.pk9"]
+    assert queue.count.value.startswith("1 did not fit")
+
+    queue = stub_queue([{"species": 1}, {}, {}], 6, saved.append)
+    queue._append(["f.pk9"])
+    assert [v.get("file") for v in saved[-1]] == [None, "f.pk9", None]
 
 
 from pokeldn.app.catalog import GAMES  # noqa: E402

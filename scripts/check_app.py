@@ -7,6 +7,10 @@ import tempfile
 from pathlib import Path
 
 
+# scripts/build_client.py compiles gui/flet_drop into the client; Flet's own client lacks it.
+DROP = b"package:flet_drop"
+
+
 def check() -> None:
     from pokeldn import __version__
     from pokeldn import gifts, pokemon
@@ -32,8 +36,16 @@ def check() -> None:
     assert custom_code.check(bytes.fromhex("0100a0e31eff2fe1")).frames == 1
     if sys.platform.startswith("linux"):
         import flet_desktop
+        import tarfile
         assert str(root) not in os.environ.get("LD_LIBRARY_PATH", ""), os.environ["LD_LIBRARY_PATH"]
-        assert (Path(flet_desktop.get_package_bin_dir()) / flet_desktop.get_artifact_filename()).is_file()
+        client = Path(flet_desktop.get_package_bin_dir()) / flet_desktop.get_artifact_filename()
+        with tarfile.open(client) as archive:
+            assert DROP in archive.extractfile("flet/lib/libapp.so").read()
+    if sys.platform == "win32":
+        import flet_desktop
+        import zipfile
+        with zipfile.ZipFile(Path(flet_desktop.get_package_bin_dir()) / "flet-windows.zip") as archive:
+            assert DROP in archive.read("flet/data/app.so")
     if sys.platform == "darwin":
         import plistlib
         import tarfile
@@ -41,6 +53,7 @@ def check() -> None:
             with tarfile.open(root / "flet_desktop/app/flet-macos.tar.gz") as archive:
                 archive.extractall(folder, filter="data")
             bundle, = Path(folder).glob("*.app")
+            assert DROP in (bundle / "Contents/Frameworks/App.framework/App").read_bytes()
             result = subprocess.run(["codesign", "--display", "--entitlements", "-", "--xml", str(bundle)],
                                     capture_output=True, check=True)
             entitlements = plistlib.loads(result.stdout) if result.stdout else {}

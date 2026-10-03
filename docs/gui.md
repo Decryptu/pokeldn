@@ -97,6 +97,28 @@ Pokemon live outside it.
 The request carries no user data. GitHub allows 60 unauthenticated requests per hour per address.
 `POKELDN_UPDATE_URL` replaces the endpoint, for tests (`tests/test_app_update.py`).
 
+## File drops
+
+Files dragged from the desktop land on these targets:
+
+| target | takes |
+|---|---|
+| a trade's Pokemon to offer | a Pokemon file (imported as Or use a Pokemon file does) or a `.txt` of Showdown sets (read as Import paste); further files go to the following trades |
+| Add a trade | one new trade per file, filling untouched trades at the end first, up to the session's limit |
+| the Gift card of a Mystery Gift tool | a `.pokegift`, or a `.wc8` (Sword/Shield) or `.wc3` (FireRed/LeafGreen) card; it switches to Open a file |
+| Flash the firmware | a `.bin`, used as the custom image |
+| any path field, the welcome dialog | the file the field asks for; a folder field takes a dropped file's folder |
+
+Flet 1.0.2's desktop client takes no file drops. `scripts/build_client.py` checks out Flet's source
+at the installed version, adds `gui/flet_drop` (a Flet extension around
+[desktop_drop](https://pub.dev/packages/desktop_drop)) to its client, and builds it into
+`gui/client/<platform>`. `gui/drop.py` declares the matching `FileDrop` control. `gui/main.py` runs
+that client when it is built and otherwise runs Flet's own, where no target is shown; a frozen app
+always carries the built one. The script needs Flutter, at the version
+`python -m flet_cli.cli --version --json` names (3.44.8 for Flet 1.0.2). It raises the macOS client's
+deployment target from 11.0 to 12.0: Xcode 27 builds nothing older. The Linux client is Flet's light
+flavor, as Flet's own CI builds it.
+
 ## Run from source
 
 For source development, install Python 3.13 and the .NET 10 SDK:
@@ -106,6 +128,7 @@ python3 -m venv .venv
 source .venv/bin/activate
 python -m pip install -r gui/requirements.txt
 dotnet build -c Release services/pkhex -warnaserror
+python scripts/build_client.py    # optional: file drops; needs Flutter
 python gui/main.py
 ```
 
@@ -138,11 +161,13 @@ idf.py -B build/esp32c6 -D SDKCONFIG="$PWD/build/esp32c6/sdkconfig" set-target e
 idf.py -B build/esp32c6 -D SDKCONFIG="$PWD/build/esp32c6/sdkconfig" build
 idf.py -B build/esp32c6 merge-bin -o "$POKELDN_IMAGES/pokeldn-radio-c6.bin"
 cd ../..
+python scripts/build_client.py
 python scripts/pack_app.py
 ```
 
-The absolute output paths keep the images in `gui/firmware`. The packer requires all four images;
-the frozen app check verifies all are included. The release workflow builds each target separately
+The absolute output paths keep the images in `gui/firmware`. The packer requires all four images
+and the client from `scripts/build_client.py`; the frozen app check verifies all are included and
+that the bundled client carries `flet_drop`. The release workflow builds each target separately
 and supplies all four images to every desktop packer.
 
 The app version is `pokeldn.__version__`. It appears in Settings and in the macOS and Windows

@@ -9,7 +9,7 @@ from gui import board
 from gui.app import BoardStatus
 from pokeldn.app import runner
 from pokeldn.app.paths import SESSION
-from gui import theme as t
+from gui import drop, theme as t
 from gui.views.widgets import CodeBlock, Log, PixelActivity
 
 PERCENT = re.compile(r"(\d{1,3}(?:\.\d)?)\s?%")
@@ -259,17 +259,24 @@ class BoardView:
                         "no ESP-IDF needed.",
                    12, t.MUTED if available else t.RED, expand=True),
             *([t.secondary_button("Included firmware", self._clear_file, "refresh")] if image else
-              [t.icon_button("file", self._choose_file, "Use a firmware file of your own")] + ([] if available else [
+              [t.icon_button("file", self._choose_file, "Use a firmware file of your own"
+                                                         + (", or drop a .bin on this card" if drop.AVAILABLE else ""))] + ([] if available else [
                   t.button("Downloading..." if self.downloading else "Download the firmware", self._download,
                            "download", disabled=self.downloading)])),
         ], spacing=6)
-        return t.card("Flash the firmware", ft.Column([
+        return drop.target(t.card("Flash the firmware", ft.Column([
             t.step_list(FLASH_STEPS),
             source,
             ft.Column([self.progress, self.progress_text], spacing=6, visible=self.progress.visible),
             ft.Row([self.flash_button()]),
         ], spacing=14), "Needed once per board, and again after an app update that says so. "
-                        "Takes about thirty seconds.")
+                        "Takes about thirty seconds."), self._dropped)
+
+    def _dropped(self, paths: list[str]) -> None:
+        """A firmware image dropped on the card becomes the custom image."""
+        path = next((p for p in paths if drop.suffix(p) == "bin"), "")
+        if path and not self.app.busy:
+            self._set_firmware(path)
 
     def _download(self, e) -> None:
         self.downloading = True

@@ -1,0 +1,15 @@
+name: flet_drop
+description: Files dragged from the desktop onto a Flet control.
+version: 0.1.0
+publish_to: none
+
+environment:
+  sdk: '>=3.2.3 <4.0.0'
+  flutter: ">=1.17.0"
+
+dependencies:
+  flutter:
+    sdk: flutter
+  desktop_drop: ^0.7.0
+  # The client pins it with a dependency override (scripts/build_client.py).
+  flet: any

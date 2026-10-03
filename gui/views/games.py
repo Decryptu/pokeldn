@@ -180,7 +180,8 @@ class GamesView:
             elif kind == "field" and item.kind == "pokemon" and item.queue > 1:
                 # "Add a trade" sits under the card, outside it.
                 queue = self.offer_queue(item)
-                out.append(t.card(item.label, queue.control, self.description(item)))
+                queue.card = t.card(item.label, queue.control, self.description(item))
+                out.append(queue.card)
                 out.append(queue.footer)
             elif kind == "field":
                 out.append(t.card(item.label, self.input(item), self.description(item),

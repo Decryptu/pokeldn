@@ -36,6 +36,10 @@ reason.
 Add a trade, below the Pokemon, queues up to six for one session; each completed trade offers the
 next. It shows on every trade tool. Each trade's received Pokemon gets its own file.
 
+Files can be dragged onto the app: a Pokemon file or a Showdown team (`.txt`) onto a trade fills it,
+and onto Add a trade queues one trade per file. A gift file dropped on the Gift card opens it, and a
+`.bin` dropped on Flash the firmware becomes the custom image.
+
 The Pokemon the console sends you are saved in `Documents/pokeldn/Received`.
 
 ## Free up storage

@@ -8,7 +8,7 @@ import threading
 
 import flet as ft
 
-from gui import theme as t
+from gui import drop, theme as t
 from gui.views.pokemon import NamePicker
 from gui.views.widgets import PathField
 from pokeldn import gifts, pokemon
@@ -65,7 +65,18 @@ class GiftBuilder:
             actions.insert(0, t.secondary_button("Customize", self._customize, "sliders-horizontal"))
         summary = ft.Column([self.when, self.effects, self.status,
                              ft.Row(actions, alignment=ft.MainAxisAlignment.END)], spacing=10)
-        return [t.card("Gift", ft.Column([modes, body], spacing=14)), t.card("Before you send", summary)]
+        gift = drop.target(t.card("Gift", ft.Column([modes, body], spacing=14)), self._dropped)
+        return [gift, t.card("Before you send", summary)]
+
+    def exts(self) -> tuple[str, ...]:
+        return ("pokegift", "wc8") if self.game == "swsh" else ("pokegift", "wc3")
+
+    def _dropped(self, paths: list[str]) -> None:
+        """A gift file dropped anywhere on the card opens it."""
+        path = next((p for p in paths if drop.suffix(p) in self.exts()), "")
+        if path:
+            self.value["mode"], self.value["file"] = "file", path
+            self.commit(rebuild=True)
 
     def _mode(self, key) -> None:
         self.value["mode"] = key
@@ -100,9 +111,8 @@ class GiftBuilder:
         self.commit(rebuild=True)
 
     def file(self) -> ft.Control:
-        exts = ("pokegift", "wc8") if self.game == "swsh" else ("pokegift", "wc3")
         path = PathField(self.app.picker, lambda: os.path.expanduser("~"), self.value["file"], "file",
-                         exts, self._file, single_line=True)
+                         self.exts(), self._file, single_line=True, droppable=False)
         controls = [t.text("A .pokegift someone shared, or a " + ("Sword/Shield .wc8" if self.game == "swsh"
                                                                   else ".wc3") + " Wonder Card.", 12, t.MUTED),
                     path.control]
