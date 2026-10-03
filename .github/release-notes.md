@@ -1,19 +1,21 @@
-# pokeldn 0.6.1
+# pokeldn 0.6.2
 
 This desktop app trades with seven Pokemon game families on a Switch or Switch 2
 through an ESP32 radio connected by USB. Nothing is installed on the console.
 
 ## What is new
 
-- The radio board's screen follows the console's trade animation in every game: the board sends its
-  Pokemon away, shows the exchange while the console animates, and opens its ball as the received
-  Pokemon appears on the console, then reads "received" and its name. In 0.6.0 the board finished
-  its animation long before the console did.
-- Game titles on the screen are shortened so they no longer run under the Pokemon's sprite.
+- Linux: sessions over the radio board no longer need root. In 0.6.1 and earlier the Linux app
+  created a kernel network interface for the board, which an ordinary user may not do, so a session
+  stopped right after it started even though flashing worked. The app now uses its own network stack
+  on Linux, as it already did on macOS and Windows.
+- Files can be dragged from the desktop onto the app. A Pokemon file or a Showdown team (`.txt`)
+  dropped on a trade fills it, and extra files go to the following trades. Files dropped on Add a
+  trade queue one trade each. A gift file dropped on the Gift card opens it, a `.bin` dropped on
+  Flash the firmware becomes the custom image, and every file field takes the file it asks for.
+- Add a trade is a small card centered under the Pokemon to offer.
 
-The firmware is 1.2.0: reflash the board from the Board page. Boards without a screen gain nothing
-from it. What the screen shows and how to wire it are in the
-[setup documentation](https://decryptu.github.io/pokeldn/hardware_esp32.html#the-screen).
+The firmware is unchanged (1.2.0); a board flashed by 0.6.1 needs no reflash.
 
 ## Downloads
 
@@ -54,7 +56,7 @@ Received Pokemon are saved in `Documents/pokeldn/Received`, with a configurable 
 
 ## Platform notes
 
-macOS requires Apple silicon. Linux requires GTK 3, libsecret and access
+macOS requires Apple silicon and macOS 12 or later. Linux requires GTK 3, libsecret and access
 to the serial port; on distributions using the `dialout` group, run `sudo usermod -aG dialout "$USER"`
 and log out and back in. ESP32-S2 is unsupported.
 
