@@ -34,7 +34,7 @@ def runtime_files() -> list[str]:
 
 
 def platform_excludes():
-    excluded = ["pytest", "unicorn", "PyInstaller", "flet_cli", "pip", "setuptools",
+    excluded = ["pytest", "PyInstaller", "flet_cli", "pip", "setuptools",
                 "pycparser.lextab", "pycparser.yacctab"]
     if sys.platform != "win32":
         excluded += ["serial.tools.list_ports_windows", "serial.serialwin32", "serial.win32",
@@ -94,7 +94,8 @@ def main() -> int:
         for option in (f"--paths={dependencies}", f"--paths={ROOT}", f"--paths={ROOT / 'bin'}", f"--paths={ROOT / 'vendor' / 'LDN'}",
                        *console,
                        *[f"--hidden-import={s}" for s in scripts],
-                       *[f"--exclude-module={m}" for m in platform_excludes()], "--collect-all=esptool",
+                       *[f"--exclude-module={m}" for m in platform_excludes()], "--collect-all=esptool", "--collect-binaries=unicorn",
+                       "--collect-submodules=unicorn",
                        "--collect-all=esp_pylib", "--collect-submodules=pokeldn",
                        "--collect-submodules=ldn"):
             args.append(f"--pyinstaller-build-args={option}")

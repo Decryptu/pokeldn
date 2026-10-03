@@ -1,5 +1,4 @@
 -r requirements.txt
 pytest
-unicorn==2.1.4
 capstone==5.0.9
 esptool==5.4.0

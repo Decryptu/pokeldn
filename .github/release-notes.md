@@ -1,33 +1,21 @@
-# pokeldn 0.5.0
+# pokeldn 0.5.1
 
 This desktop app trades with seven Pokemon game families on a Switch or Switch 2
 through an ESP32 radio connected by USB. Nothing is installed on the console.
 
 ## What is new
 
-- ESP32-C6 boards are supported, the Seeed Studio XIAO ESP32C6 included: the app flashes and checks
-  them, and the board uses its ceramic antenna. FireRed, Sword and Scarlet trades are verified on it.
-  The C6 and S3 keep their USB link through restarts.
-- One Mystery Gift builder for FireRed and Sword/Shield: start from a preset, build a gift in a form,
-  or open a file. FireRed builds Wonder Cards (who hands it over, and Pokemon, item, egg, battle and
-  message steps), Wonder News and console code; Sword builds Pokemon, eggs, items, Battle Points and
-  clothing cards.
-- Gift files: save any gift as a `.pokegift` file and open it later or share it; FireRed and Sword
-  files share one format, and native card files convert both ways.
-- Import paste: a Showdown, Smogon or PKHeX set fills the build form (species, form, nature,
-  ability, item, moves, IVs, EVs); a pasted team fills the trade queue in order.
-- Settings, Storage, Clear local files: frees old session records and unused prepared Pokemon,
-  keeping your queues, received Pokemon, keys and firmware.
-- Sword/Shield: joining finds the console's trade search and no longer stops at its Y-Comm
-  beacon; a Battle Points card is listed as Battle Points.
-- Scarlet/Violet: when a searching console hands over the host role, pokeldn takes it and the trade
-  goes on.
-- Let's Go: queued trades no longer stall when one message is lost, and leaving mid-vote no longer
-  locks the console out of trading.
-- Brilliant Diamond/Shining Pearl: joining waits for the console's Union Room instead of giving up.
-- A board that misses one association with the console's network tries again on its own.
+- Linux: the app opens on Fedora 44 and other recent distributions under Wayland. 0.5.0 stopped at
+  `No provider of eglGetPlatformDisplayEXT found`. It also uses the window build it ships instead
+  of downloading one.
+- FireRed console code: Check offline works in the downloaded app, which now includes the
+  emulator it needs. When the ARM assembler is missing, the form shows the command that installs it
+  on your system, with a copy button and Check again.
+- Brilliant Diamond/Shining Pearl: both roles send your trainer language, as a retail console does.
+- Building a Pokemon refuses a nickname longer than the game holds instead of cutting it, and names
+  a move set no legal Pokemon knows together.
 
-The firmware changed: flash the board again from Board after updating.
+The firmware is unchanged since 0.5.0.
 
 ## Downloads
 

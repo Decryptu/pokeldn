@@ -6,6 +6,7 @@ import pathlib
 import re
 import shutil
 import subprocess
+import sys
 import tempfile
 from dataclasses import dataclass
 
@@ -43,19 +44,56 @@ class CodeError(ValueError):
 SEARCH = ("/opt/homebrew/bin", "/usr/local/bin", "/usr/bin")
 
 
+# Arm's download page; it redirects to the toolchain's current home.
+ARM_DOWNLOADS = "https://developer.arm.com/downloads/-/arm-gnu-toolchain-downloads"
+
+
+def _windows_installs():
+    """Arm's installer puts bin/ under Program Files; an app started before it ran has the old PATH."""
+    bases = filter(None, (os.environ.get("ProgramFiles"), os.environ.get("ProgramFiles(x86)")))
+    return [str(p) for base in bases for pattern in ("Arm*/bin", "Arm*/*/bin")
+            for p in pathlib.Path(base).glob(pattern)]
+
+
 def toolchain():
     """-> (as, objcopy) paths, or None when the GNU Arm toolchain is not installed."""
-    path = os.pathsep.join([os.environ.get("PATH", ""), *SEARCH])
+    extra = _windows_installs() if sys.platform == "win32" else []
+    path = os.pathsep.join([os.environ.get("PATH", ""), *SEARCH, *extra])
     tools = shutil.which(AS, path=path), shutil.which(OBJCOPY, path=path)
     return tools if all(tools) else None
+
+
+def _linux_family(release="/etc/os-release"):
+    try:
+        fields = dict(line.split("=", 1) for line in pathlib.Path(release).read_text().splitlines()
+                      if "=" in line)
+    except OSError:
+        return set()
+    return {word.strip('"') for key in ("ID", "ID_LIKE") for word in fields.get(key, "").strip('"').split()}
+
+
+def install_hint(platform=sys.platform, release="/etc/os-release"):
+    """-> (command to paste or None, page) that installs the assembler on this system. Package names
+    checked against Homebrew, Ubuntu 24.04, Fedora 44 and winget."""
+    if platform == "darwin":
+        return "brew install arm-none-eabi-binutils", "https://brew.sh"
+    if platform == "win32":
+        return "winget install Arm.ArmGnuToolchain", ARM_DOWNLOADS
+    family = _linux_family(release)
+    if "fedora" in family:
+        return "sudo dnf install arm-none-eabi-binutils-cs", ARM_DOWNLOADS
+    if family & {"debian", "ubuntu"}:
+        return "sudo apt install binutils-arm-none-eabi", ARM_DOWNLOADS
+    return None, ARM_DOWNLOADS
 
 
 def assemble(source):
     """ARM source -> machine code. Raises CodeError with the first diagnostic line."""
     tools = toolchain()
     if tools is None:
-        raise CodeError("Assembling needs the GNU Arm toolchain (arm-none-eabi-as). "
-                        "Install it, or open a prebuilt .bin instead.")
+        command, page = install_hint()
+        raise CodeError("Assembling needs the GNU Arm assembler: install it with "
+                        f"{command or 'the toolchain from ' + page}, or open a prebuilt .bin.")
     with tempfile.TemporaryDirectory() as tmp:
         src, obj, binary = (pathlib.Path(tmp) / name for name in ("a.s", "a.o", "a.bin"))
         src.write_text(source if source.endswith("\n") else source + "\n")

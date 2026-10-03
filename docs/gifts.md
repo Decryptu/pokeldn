@@ -45,8 +45,19 @@ receipt flag: that person gives the steps every time until another gift replaces
 internal numbering (`pokeldn/frlg/save/species_names.py`). Card and news compile for all four
 cartridges; console code compiles for all four or for the one chosen.
 
-Console code is assembled with `arm-none-eabi-as` when it is on the PATH; without it, the form takes a
-prebuilt `.bin`. Check offline runs the code once on the simulated console
+Console code is assembled with `arm-none-eabi-as` when it is on the PATH, in Homebrew's folders or
+under Arm's Windows install folder; without it, the form takes a prebuilt `.bin` and shows the
+command that installs the assembler on this system:
+
+| system | command |
+|---|---|
+| macOS | `brew install arm-none-eabi-binutils` |
+| Fedora | `sudo dnf install arm-none-eabi-binutils-cs` |
+| Debian, Ubuntu and derivatives | `sudo apt install binutils-arm-none-eabi` |
+| Windows | `winget install Arm.ArmGnuToolchain` |
+
+Another Linux distribution gets Arm's download page. The Fedora 44 and Ubuntu 24.04 packages
+assemble the default template to `01 00 a0 e3 1e ff 2f e1`. Check offline runs the code once on the simulated console
 (`pokeldn/frlg/rom/custom_code.py`) and shows the answer and the bytes. The same check runs before
 Start and before a file is saved: code that faults, or never returns 1, is refused.
 

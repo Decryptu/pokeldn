@@ -166,3 +166,6 @@ client extensions and the Flet viewer aborts in libepoxy (`No provider of eglGet
 sets `FLET_LINUX_DISTRO` to the bundled viewer's build: Flet otherwise picks a viewer by glibc and
 downloads one the bundle does not carry. The Ubuntu 22.04 viewer runs on Fedora 44 under Wayland.
 The frozen check asserts both on Linux.
+
+The app bundles Unicorn for Check offline. It loads its architecture modules by name, so the
+packer collects its submodules as well as its library; the frozen check runs a payload under it.

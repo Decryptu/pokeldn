@@ -260,15 +260,11 @@ class GiftBuilder:
                          on_blur=lambda e: self.commit())
         binary = PathField(self.app.picker, lambda: os.path.expanduser("~"), code.get("binary", ""), "file",
                            ("bin",), lambda v: self.edit("binary", v, target=code), single_line=True)
-        tools = custom_code.toolchain()
-        origin = ("Assembled with the GNU Arm toolchain on this computer." if tools else
-                  "The GNU Arm toolchain (arm-none-eabi-as) is not installed: open a prebuilt .bin, "
-                  "or install it to assemble here.")
         return ft.Column([
             t.text("ARM code runs on the console while it receives, every frame until it returns 1. "
                    "A fault or a loop hangs the Mystery Gift menu, so it is run offline first.", 12, t.MUTED),
             t.labeled_control("Assembly", source, horizontal_alignment=ft.CrossAxisAlignment.STRETCH),
-            t.text(origin, 12, t.MUTED if tools else t.AMBER),
+            self._toolchain_status(),
             t.labeled_control("Or a prebuilt .bin (used instead of the assembly)", binary.control),
             ft.Row([t.labeled_control("Built for", t.dropdown(
                         [("any", "Any cartridge")] + list(frlg.CARTRIDGES.items()), code.get("build") or "any",
@@ -280,6 +276,27 @@ class GiftBuilder:
                                                                                             expand=True)]),
             self.hex_view,
         ], spacing=10)
+
+    def _toolchain_status(self) -> ft.Control:
+        if custom_code.toolchain():
+            return t.text("Assembled with the GNU Arm toolchain on this computer.", 12, t.MUTED)
+        command, page = custom_code.install_hint()
+        run = self.app.page.run_task
+        if command:
+            how = ft.Row([ft.Container(t.text(command, 12, t.TEXT, font_family=t.MONO, selectable=True),
+                                       expand=True),
+                          t.icon_button("copy", lambda e: run(self.app.copy, command), "Copy")],
+                         vertical_alignment=ft.CrossAxisAlignment.CENTER)
+            steps = "paste this in a terminal, then check again"
+        else:
+            how, steps = None, "download it from Arm's page, then check again"
+        actions = ft.Row([t.secondary_button("Check again", lambda e: self.commit(rebuild=True), "refresh"),
+                          t.link_button("Homebrew" if page == "https://brew.sh" else "Arm's download page",
+                                        lambda e: run(self.app.open_url, page))], spacing=8)
+        return t.surface(ft.Column([
+            t.text("Typing assembly here needs the free GNU Arm assembler. Install it once: "
+                   f"{steps}. A prebuilt .bin works without it.", 12, t.AMBER),
+            *([how] if how else []), actions], spacing=8), padding=12)
 
     def _check(self, e) -> None:
         self.check_line.value, self.check_line.color = "Checking…", t.MUTED

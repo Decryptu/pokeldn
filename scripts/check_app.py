@@ -27,6 +27,9 @@ def check() -> None:
     assert not (root / "scratchpad").exists()
     assert (root / "LICENSE").is_file()
     assert (root / "vendor/LDN/LICENSE").is_file()
+    from pokeldn.frlg.rom import custom_code
+    # mov r0, #1; bx lr: Check offline runs it under the bundled Unicorn.
+    assert custom_code.check(bytes.fromhex("0100a0e31eff2fe1")).frames == 1
     if sys.platform.startswith("linux"):
         import flet_desktop
         assert str(root) not in os.environ.get("LD_LIBRARY_PATH", ""), os.environ["LD_LIBRARY_PATH"]
