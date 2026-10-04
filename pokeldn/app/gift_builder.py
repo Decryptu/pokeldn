@@ -19,18 +19,31 @@ def module(game):
 
 
 def normalized(game, value):
-    """Any stored value -> {"mode", "preset", "build", "file"}; a bare path is an opened file."""
+    """Any stored value -> {"mode", "preset", "options", "build", "file"}; a bare path is an opened file.
+    "options" holds each preset's settings by preset key."""
     builder = module(game)
     if isinstance(value, str):
         value = {"mode": "file" if value else "preset", "file": value}
     value = dict(value or {})
     value.setdefault("mode", "preset")
+    if not isinstance(value.get("options"), dict):
+        value["options"] = {}
+    if value.get("preset") in getattr(builder, "ALIASES", {}):
+        value["preset"], settings = builder.ALIASES[value["preset"]]
+        value["options"][value["preset"]] = {**value["options"].get(value["preset"], {}), **settings}
     if value.get("preset") not in builder.PRESET:
         value["preset"] = builder.PRESETS[0].key
     value.setdefault("file", "")
     if not isinstance(value.get("build"), dict):
         value["build"] = builder.blank()
     return value
+
+
+def preset_args(game, value):
+    """The flags a preset sent as flags passes, its settings applied."""
+    preset = module(game).PRESET[value["preset"]]
+    arguments = getattr(preset, "arguments", None)
+    return list(arguments(value["options"].get(preset.key)) if arguments else preset.args)
 
 
 def output(tool):
@@ -55,7 +68,7 @@ def args(tool, value):
             return []
         return ["--gift-file", output(tool) if value.get("icon") is not None else value["file"]]
     if _built_state(game, value) is None:
-        return list(module(game).PRESET[value["preset"]].args)
+        return preset_args(game, value)
     return ["--gift-file", output(tool)]
 
 
@@ -88,7 +101,9 @@ def problem(tool, value) -> str:
     game = GAMES[tool.key]
     value = normalized(game, value)
     if value["mode"] == "preset" and _built_state(game, value) is None:
-        return ""
+        preset = module(game).PRESET[value["preset"]]
+        check = getattr(preset, "problem", None)
+        return check(value["options"].get(preset.key)) if check else ""
     try:
         compile(tool, value)
     except (OSError, ValueError) as exc:

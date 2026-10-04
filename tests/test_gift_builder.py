@@ -170,3 +170,56 @@ def test_a_code_gift_that_hangs_cannot_start_and_a_chosen_cartridge_is_its_only_
     assert "hang" in command.problems(tool, {"--gift-file": {"mode": "build", "build": state}})[0]
     binary.write_bytes(ANSWER_66)
     assert set(frlg.compile(state).variants) == {"BPGE"}
+
+
+B, SELECT = 0x2, 0x4
+
+
+@pytest.mark.skipif(not buffer_script.emulation_available(), reason="offline execution needs Unicorn")
+@pytest.mark.parametrize("preset,settings,name,params", [
+    ("hook-turbo", {"speed": "3", "button": "0x2", "keep": True}, "turbo",
+     {"extra": 4, "field": 2, "battle": 2, "hold": B, "budget": 228}),
+    ("hook-turbo", {"speed": "4", "where": "battle", "text": False, "button": "always", "keep": True}, "turbo",
+     {"extra": 0, "field": 0, "battle": 3, "hold": 0, "budget": 228}),
+    ("hook-shiny", {"button": "0x4", "slower": "7", "keep": True}, "shiny", {"slow": SELECT, "slow_frames": 7}),
+    ("hook-noclip", {"button": "0x2", "keep": True}, "noclip", {"hold": B}),
+    ("save-noclip", {}, "noclip", {"hold": 0x100}),            # a preset an older settings file names
+    ("hook-follower", {"keep": False}, "follower", {}),        # too large for one session: always kept
+])
+def test_a_boost_kept_in_the_save_carries_its_settings(preset, settings, name, params, monkeypatch, tmp_path):
+    from tests.test_resident_save import _session as kept_session
+    value = {"mode": "preset", "preset": preset, "options": {preset: settings}}
+    args = _launch(TOOLS["frlg-gift"], value, monkeypatch, tmp_path)
+    host, client = kept_session(None, payload=_frlg_run(args).payload)
+    blob = buffer_script.build_resident_save_blob(name, **params)
+    assert client.sav2[0xB20:0xB20 + len(blob)] == blob
+    assert host.server.buffer_status == builds.BPRF.vblank_intr | 1
+
+
+@pytest.mark.skipif(not buffer_script.emulation_available(), reason="offline execution needs Unicorn")
+def test_a_boost_left_out_of_the_save_installs_its_settings_until_a_reset(monkeypatch, tmp_path):
+    value = {"mode": "preset", "preset": "hook-turbo", "options": {"hook-turbo": {"speed": "2", "where": "field"}}}
+    payload = _frlg_run(_launch(TOOLS["frlg-gift"], value, monkeypatch, tmp_path)).payload
+    code = buffer_script.build_install_resident("turbo", build=builds.BPRF, extra=4, field=1, battle=0, hold=0x100)
+    assert payload.build_distribution(builds.BPRF).buffer_code == code
+    run = _run_full_stack(payload=payload.build_distribution(builds.BPRF))
+    assert run.engine.server.buffer_status == builds.BPRF.vblank_intr | 1   # the game's handler, chained
+
+
+def _combinations(preset):
+    import itertools
+    choices = [[(o.key, v) for v in ((True, False) if not o.choices else [k for k, _ in o.choices])]
+               for o in preset.options]
+    return [dict(combo) for combo in itertools.product(*choices)]
+
+
+@pytest.mark.parametrize("preset", [p for p in frlg.PRESETS if p.options], ids=lambda p: p.key)
+def test_every_combination_of_boost_settings_fits_every_cartridge_and_the_launcher(preset):
+    for settings in _combinations(preset):
+        if preset.key == "hook-turbo" and settings["speed"] == "1" and not settings["text"]:
+            assert preset.problem(settings)              # nothing would change: refused
+            continue
+        assert preset.problem(settings) == "", settings
+        config = _frlg_run([*preset.arguments(settings), "--version", "firered"]).payload
+        for code in frlg.CARTRIDGES:
+            config.build_distribution(builds.BUILDS[code])
