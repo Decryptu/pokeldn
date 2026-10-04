@@ -569,11 +569,12 @@ class GiftBuilder:
         values = {**self.games.values, self.field.key: copy.deepcopy(self.value)}
         try:
             gift = await asyncio.to_thread(gift_files.build, tool, values, extra, self.app.settings)
+            native = "wc8" if self.game == "swsh" else "wc3"
             path = await self.app.picker.save_file(
                 dialog_title="Save Mystery Gift", file_name=f"{tool.key}.pokegift",
-                file_type=ft.FilePickerFileType.CUSTOM, allowed_extensions=[gifts.EXTENSION])
+                file_type=ft.FilePickerFileType.CUSTOM, allowed_extensions=[gifts.EXTENSION, native])
             if path:
-                path += "" if path.lower().endswith(".pokegift") else ".pokegift"
+                path += "" if path.lower().endswith((".pokegift", f".{native}")) else ".pokegift"
                 gifts.save(path, gift)
                 self.status.value = f"Saved {path}"
             else:

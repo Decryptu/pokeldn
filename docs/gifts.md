@@ -174,7 +174,16 @@ An FRLG script whose reachable code holds no absolute address serves all four ca
 ./.venv/bin/python -m pokeldn.gifts import --game frlg --card WonderCard.bin \
   --script Script.bin --name "Event gift" -o event.pokegift
 ./.venv/bin/python -m pokeldn.gifts export celebi.pokegift --build BPRF --out-dir native-gift
+./.venv/bin/python -m pokeldn.gifts export celebi.pokegift --wc3 --out-dir native-gift
+./.venv/bin/python bin/frlg_mg_host.py --gift celebi --export-gift celebi.wc3
 ```
+
+Saving to a path ending in `.wc3` or `.wc8` writes that native file instead of a `.pokegift`: in
+`--export-gift`, in Save gift file and in `pokeldn.gifts.save`. A `.wc3` holds one cartridge's card
+and script; without `--build` every variant of the gift must carry the same bytes, as a relative
+script's do. The `.wc3` metadata block is written as zero except its icon, which repeats the card's.
+Every international gallery file the game accepts comes back with the same card, script and icon
+bytes after an import and an export.
 
 A `.wc3` is 1420 bytes (`0x58C`):
 

@@ -15,7 +15,8 @@ its bundled image; a custom image is checked against that chip before writing. C
 C3 or C6 through native USB Serial/JTAG. S2 chips are refused.
 
 Mystery Gift tools share one builder: use a preset, build your own, or open a `.pokegift` file;
-Sword/Shield also opens `.wc8` cards. Save gift file exports the selected gift without a board.
+Sword/Shield also opens `.wc8` cards. Save gift file exports the selected gift without a board, as
+a `.pokegift` or, by its extension, a `.wc3` (FireRed/LeafGreen) or `.wc8` (Sword/Shield).
 [Mystery Gift files](gifts.md#desktop-app) describes the forms, cartridge variants and native-format
 conversion.
 

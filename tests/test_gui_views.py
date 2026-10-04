@@ -353,10 +353,11 @@ def test_the_gift_builder_renders_every_mode_and_kind_and_exports_what_it_shows(
     monkeypatch.setattr(swsh_builder, "card_gender", lambda species, form=0: 0)
     tool = next(tool for game in GAMES for tool in game.tools if tool.key == key)
     field = next(field for field in tool.fields if field.kind == "builder")
+    native = "wc8" if key == "swsh-gift" else "wc3"
     path = tmp_path / "gift.pokegift"
 
     async def save_file(**kwargs):
-        assert kwargs["allowed_extensions"] == ["pokegift"]
+        assert kwargs["allowed_extensions"] == ["pokegift", native]
         return str(path)
 
     view = SimpleNamespace(tool=tool, values={}, extra={},
@@ -385,6 +386,12 @@ def test_the_gift_builder_renders_every_mode_and_kind_and_exports_what_it_shows(
         control.update = lambda: None
     asyncio.run(builder._save(None))
     assert gifts.dumps(gifts.load(path)) == gifts.dumps(module.compile(builder.state))
+    path = tmp_path / f"gift.{native}"                # the native file the extension names
+    asyncio.run(builder._save(None))
+    built = next(iter(module.compile(builder.state).variants.values())).data
+    loaded = next(iter(gifts.load(path).variants.values())).data
+    # A .wc3 carries the script padded to its 995-byte slot.
+    assert {k: v.rstrip(b"\0") for k, v in loaded.items()} == {k: v.rstrip(b"\0") for k, v in built.items()}
 
 
 def test_a_worker_answering_after_its_picker_left_the_page_is_dropped():

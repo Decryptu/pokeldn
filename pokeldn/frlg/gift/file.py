@@ -172,6 +172,7 @@ class FilePayload:
 # CRC, 0x50 bytes of save-side metadata, then the RamScript with a CRC16 over 1000 bytes (54 of 54
 # gallery files), where the game sums 999 [script.c:488]. Japanese files are 0x4E4 bytes.
 WC3_SIZE, WC3_JAPANESE_SIZE, WC3_SCRIPT_AT = 0x58C, 0x4E4, 0x1A0
+WC3_METADATA_ICON_AT = 0x15A   # WonderCardMetadata.iconSpecies after a CRC and pad [global.h:671, mystery_gift.c:176]
 
 
 def _gift(name, card, ram_script, build):
@@ -247,16 +248,32 @@ def from_code(code, *, build, name="Console code", expect=None, dump_size=None):
     return gifts.Gift("frlg", name, {build: gifts.Variant({"buffer_code": bytes(code)}, options)})
 
 
-def export_native(gift, directory, *, build=None):
+def _native(gift, build, what):
+    """The one card and script a native file holds; without `build`, every variant must carry the same."""
     if build is None:
-        if len(gift.variants) != 1:
-            raise ValueError("Choose --build for a gift with several cartridge variants.")
+        if len({(v.data.get("card"), v.data.get("ram_script")) for v in gift.variants.values()}) != 1:
+            raise ValueError("This gift differs per cartridge; choose --build for the one to export.")
         build = next(iter(gift.variants))
     if build not in gift.variants:
         raise ValueError(f"This gift has no {build} variant.")
     chosen = distribution(gift.variants[build])
     if chosen.buffer_code is not None:
-        raise ValueError("Native gift files cannot preserve console code and its response settings; use .pokegift.")
+        raise ValueError(f"{what} cannot preserve console code and its response settings; use .pokegift.")
     if chosen.is_news or chosen.is_stamp or chosen.has_trainer or chosen.has_mevent or chosen.is_gated:
-        raise ValueError("The two-file native format cannot preserve this gift's extras; use .pokegift.")
+        raise ValueError(f"{what} cannot preserve this gift's extras; use .pokegift.")
+    return chosen
+
+
+def export_native(gift, directory, *, build=None):
+    chosen = _native(gift, build, "The two-file native format")
     return gift_to_bin.write_gift_bins(directory, "Gift", chosen.card, chosen.ram_script)
+
+
+def to_wc3(gift, *, build=None):
+    """-> the 1420-byte .wc3 from_wc3 reads; the metadata block is zero but for the card's icon."""
+    chosen = _native(gift, build, "A .wc3")
+    metadata = bytearray(WC3_SCRIPT_AT - gift_to_bin.WONDER_CARD_BIN_SIZE)
+    icon = WC3_METADATA_ICON_AT - gift_to_bin.WONDER_CARD_BIN_SIZE
+    metadata[icon:icon + 2] = chosen.card[2:4]
+    return (gift_to_bin.build_wonder_card_bin(chosen.card) + bytes(metadata)
+            + gift_to_bin.build_script_bin(chosen.ram_script))

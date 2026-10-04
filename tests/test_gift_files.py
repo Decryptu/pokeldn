@@ -95,6 +95,57 @@ def test_news_file_selects_the_news_flow_and_preserves_the_message(tmp_path):
     assert run.console.saved_card is None
 
 
+@pytest.mark.parametrize("code,version", [("BPRF", "firered"), ("BPGE", "leafgreen")])
+def test_a_wc3_saved_by_the_launcher_delivers_on_every_cartridge(tmp_path, code, version):
+    """One .wc3 serves all four cartridges when the script is relative; reopened through
+    --gift-file it reaches the simulated console unchanged."""
+    path = tmp_path / "celebi.wc3"
+    assert frlg_mg_host.main(["--gift", "celebi", "--export-gift", str(path)]) == 0
+    raw = path.read_bytes()
+    expected = config.MysteryGiftPayload(gift="celebi").build_distribution(builds.BUILDS[code])
+    assert len(raw) == frlg_file.WC3_SIZE and raw[0x15A:0x15C] == expected.card[2:4]
+    assert int.from_bytes(raw[0x1A0:0x1A2], "little") == mystery_gift.crc16(raw[0x1A4:0x1A4 + 1000])
+    parser = frlg_mg_host.build_parser()
+    run = frlg_mg_host.build_run_config(parser, parser.parse_args(["--gift-file", str(path)]))
+    host, console = _session(run, game_code=code.encode(), version=version)
+    _drive(host, console)
+    assert console.error is None
+    assert console.saved_card == expected.card
+    assert console.saved_ram_script == expected.ram_script.ljust(1024, b"\0")
+
+
+GALLERY_WC3 = sorted(Path("scratchpad/wc3").glob("*.wc3"))
+
+
+@pytest.mark.skipif(not GALLERY_WC3, reason="needs EventsGallery's .wc3 files in scratchpad/wc3")
+def test_every_gallery_wc3_the_game_accepts_comes_back_byte_for_byte():
+    """Card, script and the metadata's icon come back as the gallery wrote them; the rest of the
+    80-byte metadata is save-side and written as zero."""
+    kept = 0
+    for path in GALLERY_WC3:
+        raw = path.read_bytes()
+        try:
+            gift = frlg_file.from_wc3(raw, build="BPRE")
+        except ValueError:
+            continue                  # Japanese files and debug flag ids 4 to 8 (docs/gifts.md)
+        out = frlg_file.to_wc3(gift)
+        assert (out[:0x150], out[0x15A:0x15C], out[0x1A0:]) == (raw[:0x150], raw[0x15A:0x15C], raw[0x1A0:]), path
+        kept += 1
+    assert kept >= 28
+
+
+def test_a_native_file_refuses_another_game_and_extras_it_cannot_hold(tmp_path):
+    pikachu = gifts.adapter("swsh").from_record(wc8.pokemon_card(25))
+    with pytest.raises(ValueError, match="holds a frlg gift"):
+        gifts.save(tmp_path / "x.wc3", pikachu)
+    gifts.save(tmp_path / "x.wc8", pikachu)
+    assert (tmp_path / "x.wc8").read_bytes() == pikachu.variants["swsh"].data["wc8"]
+    stamp = next(p.args[1] for p in frlg_builder.PRESETS if p.args[0] == "--gift"
+                 and config.MysteryGiftPayload(gift=p.args[1]).build_distribution(builds.BPRF).is_stamp)
+    with pytest.raises(ValueError, match="cannot preserve"):
+        gifts.save(tmp_path / "stamp.wc3", frlg_file.from_payload(config.MysteryGiftPayload(gift=stamp)))
+
+
 def test_wc8_round_trip_reassembles_the_original_record(tmp_path, monkeypatch):
     from pokeldn import pokemon
     raw = wc8.pokemon_card(25, level=45, nickname="POKELDN", ot="POKELDN", date=1539879960)

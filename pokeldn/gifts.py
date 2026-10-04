@@ -12,6 +12,7 @@ VERSION = 2
 EXTENSION = "pokegift"
 MAX_FILE_SIZE = 256 * 1024
 ADAPTERS = {"frlg": "pokeldn.frlg.gift.file", "swsh": "pokeldn.swsh.gift_file"}
+NATIVE = {".wc3": ("frlg", "to_wc3"), ".wc8": ("swsh", "record")}   # suffix -> game, writer
 
 
 def adapter(game):
@@ -139,10 +140,18 @@ def load(path, *, game=None):
 
 
 def save(path, gift):
+    """A .pokegift, or the native single file a .wc3 or .wc8 path names."""
+    path = Path(path).expanduser()
+    if path.suffix.lower() in NATIVE:
+        game, writer = NATIVE[path.suffix.lower()]
+        if gift.game != game:
+            raise ValueError(f"A {path.suffix.lower()} file holds a {game} gift, not {gift.game}.")
+        path.write_bytes(getattr(adapter(game), writer)(gift))
+        return
     source = dumps(gift)
     if len(source.encode("utf-8")) > MAX_FILE_SIZE:
         raise ValueError("Gift file exceeds 256 KiB.")
-    Path(path).expanduser().write_text(source, encoding="utf-8")
+    path.write_text(source, encoding="utf-8")
 
 
 def main(argv=None):
@@ -169,6 +178,7 @@ def main(argv=None):
     export.add_argument("file")
     export.add_argument("--build", help="FRLG cartridge game code")
     export.add_argument("--out-dir", required=True)
+    export.add_argument("--wc3", action="store_true", help="write one FRLG Gift.wc3 instead of the .bin pair")
     args = parser.parse_args(argv)
     try:
         if args.command == "import":
@@ -213,6 +223,13 @@ def main(argv=None):
             gift = load(args.file)
             if args.command == "inspect":
                 print(gift.summary)
+            elif args.wc3:
+                if gift.game != "frlg":
+                    raise ValueError("--wc3 exports a FireRed/LeafGreen gift.")
+                path = Path(args.out_dir) / "Gift.wc3"
+                path.parent.mkdir(parents=True, exist_ok=True)
+                path.write_bytes(adapter("frlg").to_wc3(gift, build=args.build))
+                print(f"Saved {path}")
             else:
                 for path in adapter(gift.game).export_native(gift, args.out_dir, build=args.build):
                     print(f"Saved {path}")
