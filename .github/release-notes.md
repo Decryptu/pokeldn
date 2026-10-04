@@ -1,20 +1,19 @@
-# pokeldn 0.8.0
+# pokeldn 0.8.1
 
 This desktop app trades with seven Pokemon game families on a Switch or Switch 2
 through an ESP32 radio connected by USB. Nothing is installed on the console.
 
 ## What is new
 
-- FireRed/LeafGreen Mystery Gift: the official distribution eggs and Gen 3 event Pokemon, made legal
-  by PKHeX and delivered straight into the party; a starter egg, rare berries and National Pokedex
-  cards; and the GB-Link Team's 44 custom cards (nature mint, ability capsule, IV/EV judge, PC
-  anywhere, reusable TMs and more) on all four cartridges.
-- Sword/Shield Mystery Gift: official outfits (Pikachu and Eevee uniforms, tracksuit, Leon's cap and
-  tights, backpack, tees), pocket money, Pokemon that can Gigantamax, and more item presets.
-- The app explains game boosts and save reads in plain words, and every game lists Trade (Host),
-  Trade (Join), then Mystery Gift.
+- Save gift file also writes native files: a FireRed/LeafGreen gift as `.wc3` and a Sword/Shield
+  gift as `.wc8`, chosen by the file name's extension. `--export-gift FILE.wc3` does the same from
+  the command line. A `.wc3` holds a Wonder Card and its delivery script; gifts with stamps,
+  visiting trainers, Mystery Event scripts or Wonder News stay `.pokegift`.
 
-The firmware is unchanged (1.4.0); a board flashed by 0.7.0 needs no reflash.
+Everything from 0.8.0 is included: the official FireRed/LeafGreen distribution eggs and event
+Pokemon, the GB-Link Team's custom cards, and Sword/Shield outfits, money and Gigantamax Pokemon.
+
+The firmware is unchanged (1.4.0); a board flashed by 0.7.0 or later needs no reflash.
 
 pokeldn is an unofficial fan project, not affiliated with Nintendo or The Pokemon Company. It is not
 meant for commercial or promotional use; see the License section of the README.
