@@ -1,5 +1,6 @@
 """The app's gift builder: what it builds reaches the simulated console through the real launcher."""
 
+import random
 import struct
 
 import pytest
@@ -134,8 +135,31 @@ def test_the_sword_pikachu_preset_is_the_record_the_launcher_builds():
     args = swsh_gift_host.build_parser().parse_args(
         ["--species", "25", "--level", "25", "--move1", "84", "--move2", "45", "--move3", "86",
          "--move4", "98", "--nickname", "POKELDN", "--ot", "POKELDN"])
+    random.seed(7)
     built = swsh.record(swsh.PRESET["pikachu"].state)
+    random.seed(7)
     assert built[8:] == swsh_gift_host.build_record(args)[8:]   # +0x00 is the date
+
+
+def _pkhex_available():
+    from pokeldn import pokemon
+    try:
+        pokemon._command()
+    except pokemon.BuilderError:
+        return False
+    return True
+
+
+@pytest.mark.skipif(not _pkhex_available(), reason="needs the PKHeX helper")
+def test_a_built_card_fixes_the_gender_so_the_reveal_and_the_party_agree():
+    """Gender 3 rolls once for the reveal and once for the party: a retail Sword showed a female and
+    gave a male. A card that fixes 0 or 1 skips both rolls."""
+    from pokeldn.swsh import wc8
+    off = wc8.POKEMON["gender"][0]
+    pikachu = {swsh.record(dict(swsh.PRESET["pikachu"].state))[off] for _ in range(40)}
+    assert pikachu == {0, 1}
+    chansey = swsh.record(dict(swsh.PRESET["pikachu"].state, species=113))[off]
+    assert chansey == 0          # female only: the game's build forces it
 
 
 def test_sword_item_and_egg_cards_carry_the_bytes_a_retail_sword_redeemed():

@@ -45,7 +45,9 @@ def _base_record(args):
     if args.record:
         from pokeldn.swsh.gift_file import record
         return record(gifts.load(args.record, game="swsh"))
-    fields = {"ot_gender": 2}            # every card a console has taken carried 2 at +0x272
+    from pokeldn.swsh.gift_builder import card_gender
+    fields = {"ot_gender": 2,            # every card a console has taken carried 2 at +0x272
+              "gender": card_gender(args.species, args.form)}
     for item in args.set or ():
         name, _, value = item.partition("=")
         if name not in wc8.POKEMON:

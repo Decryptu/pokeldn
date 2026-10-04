@@ -43,6 +43,16 @@ PRESETS = (
 PRESET = {p.key: p for p in PRESETS}
 
 
+def card_gender(species, form=0):
+    """A gender drawn now from the species' ratio, so the reveal and the party agree; 3 (the game
+    rolls each build apart) when PKHeX is missing."""
+    from pokeldn import pokemon
+    try:
+        return wc8.roll_gender(pokemon.SERVICE.gender_ratio("swsh", species, form))
+    except pokemon.BuilderError:
+        return 3
+
+
 def _int(state, key, default=0):
     return int(state.get(key) or default)
 
@@ -60,13 +70,15 @@ def record(state):
         if (item := _int(state, "item")) > MAX_ITEM:
             raise ValueError(f"Sword and Shield have no item above {MAX_ITEM}.")
         moves = [int(m or 0) for m in (list(state.get("moves", ())) + [0] * 4)[:4]]
-        fields = {"ot_gender": 2, "held_item": item, "ball": _int(state, "ball")}
+        species, form = _int(state, "species", 25), _int(state, "form")
+        fields = {"ot_gender": 2, "held_item": item, "ball": _int(state, "ball"),
+                  "gender": card_gender(species, form)}
         if state.get("shiny") and not egg:
             fields["shiny_type"] = 2
         if egg:
             fields["egg"] = 1
         try:
-            raw = wc8.pokemon_card(_int(state, "species", 25), level=level, form=_int(state, "form"),
+            raw = wc8.pokemon_card(species, level=level, form=form,
                                    moves=moves, nickname=state.get("nickname") or None,
                                    ot=None if egg else state.get("ot") or None, card_id=card_id, **fields)
         except ValueError as exc:

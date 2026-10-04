@@ -88,6 +88,10 @@ class Service:
                                                  "form": form, "trainer": trainer, "version": version})
         return self.species_cache[key]
 
+    def gender_ratio(self, game: str, species: int, form: int = 0) -> int:
+        """The species' personal gender byte: 0 male only, 254 female only, 255 genderless."""
+        return self._ask({"cmd": "gender_ratio", "game": game, "species": species, "form": form})["ratio"]
+
     def make(self, game: str, species: int, trainer: dict, level: int = 0, shiny: bool = False,
              nickname: str = "", version: str = "", options: dict | None = None) -> dict:
         """options: form, nature, ability, gender, held_item, ball (ids), moves (up to four ids), and ivs / effort

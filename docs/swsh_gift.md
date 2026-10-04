@@ -564,6 +564,14 @@ A record left at zero gives a male, Hardy Pokemon with its first ability and IVs
 builder run under unicorn showed. `pokeldn.swsh.wc8.pokemon_card` writes gender 3, nature `0xFF`,
 ability 3 and every IV byte `0xFF` unless the field is given, so the game rolls each one.
 
+Gender 3 is rolled once per build, and a claim builds the Pokemon twice: the reveal state
+`0x00fe3720` builds one from the record (`0x00fe3a50`) and reads its sex for the model, and the
+redemption `0x010159d0` builds the one the party receives (`0x01015a0c`). On a retail Sword one claim
+showed a female and gave a male. Gender 0, 1 or 2 skips the roll (`0x00766d94`), so both builds
+agree; a retail Sword showed and gave a male for 0 and a female for 1. The app and `bin/swsh_gift_host.py` draw the gender once when the card is built, as the game
+draws it (female when `r + 1 < ratio`, `r` below 253, the species' personal ratio from PKHeX);
+`--set gender=3` restores the game's own rolls.
+
 ## A card delivered by beacon, end to end
 
 A 720-byte record split into three fragments and served from a synthesised beacon reaches the

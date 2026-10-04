@@ -27,6 +27,7 @@ while (Console.ReadLine() is { } line)
             "species" => Species(game),
             "names" => Names(game, (string)request["list"]!),
             "options" => Options(game, request),
+            "gender_ratio" => GenderRatio(game, request),
             "make" => Make(game, request),
             "paste" => Paste(game, request),
             "check" => Check(game, Convert.FromBase64String((string)request["data"]!), request),
@@ -49,6 +50,15 @@ JsonObject Species(Game game)
         if (game.Table.IsPresentInGame(s, 0))
             list.Add(new JsonObject { ["id"] = s, ["name"] = strings.specieslist[s] });
     return new JsonObject { ["species"] = list };
+}
+
+JsonObject GenderRatio(Game game, JsonObject request)
+{
+    var species = checked((ushort)(int)request["species"]!);
+    var form = checked((byte)((int?)request["form"] ?? 0));
+    if (!game.Table.IsPresentInGame(species, form))
+        form = 0;
+    return new JsonObject { ["ratio"] = (int)game.Table.GetFormEntry(species, form).Gender };
 }
 
 JsonObject Names(Game game, string list)

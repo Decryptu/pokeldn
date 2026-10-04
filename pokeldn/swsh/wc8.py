@@ -2,6 +2,7 @@
 CRC-16/CCITT-FALSE at +0x2CC, checked at 0x010b5de0 (docs/swsh_gift.md, "What a record must carry").
 Trap: the nickname array is at 0x030 and the trainer array at 0x12C, as a console shows them.
 """
+import random
 import struct
 import time
 
@@ -104,6 +105,14 @@ OT_NAMES = 0x12C        # 9 entries of 0x1C: 0x1A bytes of UTF-16
 LANG_STRIDE = 0x1C
 LANG_COUNT = 9
 NAME_BYTES = 0x1A
+
+
+def roll_gender(ratio, rng=random):
+    """-> a fixed gender byte drawn as the game draws one (`0x00766d8c`: female when r + 1 < ratio,
+    r below 253). Gender 3 rolls twice, once for the reveal and once for the party (docs/swsh_gift.md)."""
+    if ratio in (0, 254, 255):
+        return 0                # the build forces these ratios (`0x777490`)
+    return 1 if rng.randrange(253) + 1 < ratio else 0
 
 
 def utf16(text, size=NAME_BYTES):
