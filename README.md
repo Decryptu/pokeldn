@@ -391,4 +391,12 @@ because Z-A's layout is Scarlet's. See [Legends Z-A](docs/za.md).
 
 ## License
 
-AGPLv3
+The code is licensed under AGPLv3. The license covers this repository's code and nothing else.
+
+pokeldn is an unofficial fan project. It is not affiliated with, endorsed by or sponsored by
+Nintendo, The Pokemon Company, Game Freak or Creatures. Pokemon, Nintendo Switch and the related
+names and characters are trademarks of their owners. Under section 7(e) of the AGPL, no right to
+use those trademarks or any other Pokemon intellectual property is granted.
+
+The authors do not endorse using pokeldn for commercial, promotional or branded events, including
+Mystery Gift distributions. Anyone who does so is responsible for obtaining the rights it requires.

@@ -1,23 +1,23 @@
-# pokeldn 0.7.0
+# pokeldn 0.8.0
 
 This desktop app trades with seven Pokemon game families on a Switch or Switch 2
 through an ESP32 radio connected by USB. Nothing is installed on the console.
 
 ## What is new
 
-- Your trainer, set once in Settings with a six-digit trainer ID for the Switch titles, is the one
-  every game sees: its name shows as your trade partner in every title and both roles.
-- Legends Z-A: a trainer name other than the recorded one no longer leaves the console searching.
-- Legends Arceus: joining the console's search completes when the console hands the host role over,
-  and two queued trades complete on one seat.
-- Sword/Shield Mystery Gift: a built card rolls nature, ability and IVs like an official one, and
-  the gender shown when the gift box opens is the gender you receive.
-- FireRed/LeafGreen Mystery Gift: several game boosts at once, each with its settings.
-- Brilliant Diamond/Shining Pearl: trades end without a late cancel.
+- FireRed/LeafGreen Mystery Gift: the official distribution eggs and Gen 3 event Pokemon, made legal
+  by PKHeX and delivered straight into the party; a starter egg, rare berries and National Pokedex
+  cards; and the GB-Link Team's 44 custom cards (nature mint, ability capsule, IV/EV judge, PC
+  anywhere, reusable TMs and more) on all four cartridges.
+- Sword/Shield Mystery Gift: official outfits (Pikachu and Eevee uniforms, tracksuit, Leon's cap and
+  tights, backpack, tees), pocket money, Pokemon that can Gigantamax, and more item presets.
+- The app explains game boosts and save reads in plain words, and every game lists Trade (Host),
+  Trade (Join), then Mystery Gift.
 
-Firmware 1.4.0: a board whose app has stopped leaves the console's network after 5 s, and the
-optional OLED screen dims after a minute idle and turns off after ten. Reflash a board on Board,
-Flash.
+The firmware is unchanged (1.4.0); a board flashed by 0.7.0 needs no reflash.
+
+pokeldn is an unofficial fan project, not affiliated with Nintendo or The Pokemon Company. It is not
+meant for commercial or promotional use; see the License section of the README.
 
 ## Downloads
 
