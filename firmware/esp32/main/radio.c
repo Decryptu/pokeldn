@@ -30,7 +30,11 @@ enum {
     CMD_HELLO = 0x01, CMD_BAUD = 0x02, CMD_CHANNEL = 0x03, CMD_STA_JOIN = 0x04, CMD_STOP = 0x05,
     CMD_AP_START = 0x06, CMD_AP_KICK = 0x07, CMD_ETH_TX = 0x08, CMD_RAW_TX = 0x09,
     CMD_SNIFF = 0x0A, CMD_STATUS = 0x0B, CMD_BENCH = 0x0C, CMD_LED = 0x0D, CMD_DISPLAY = 0x0E,
+    CMD_ALIVE = 0x0F,
 };
+/* A host that sent CMD_ALIVE and then nothing for this long is gone: the board leaves the network,
+   so the console does not keep a seat nobody answers. docs/hardware_esp32.md, The host watchdog. */
+#define HOST_SILENT_US 5000000
 enum {
     MSG_INFO = 0x81, MSG_RESULT = 0x82, MSG_RX_MGMT = 0x84, MSG_RX_ETH = 0x85, MSG_LINK = 0x86,
     MSG_STA_JOINED = 0x87, MSG_STA_LEFT = 0x88, MSG_STATUS = 0x89, MSG_BENCH = 0x8A,
@@ -690,10 +694,16 @@ static void send_info(void)
     usbwatch_report();
 }
 
+static _Atomic int64_t s_host_seen;   /* when the host last sent a command */
+static atomic_bool s_host_watched;    /* armed by CMD_ALIVE, disarmed by HELLO: an older host never sends it */
+
 static void command(uint8_t type, const uint8_t *p, size_t n)
 {
+    atomic_store(&s_host_seen, esp_timer_get_time());
+    wire_set_host_away(false);
     switch (type) {
-    case CMD_HELLO: wire_credit_reset(); display_reset(); send_info(); break;
+    case CMD_HELLO: atomic_store(&s_host_watched, false); wire_credit_reset(); display_reset(); send_info(); break;
+    case CMD_ALIVE: atomic_store(&s_host_watched, true); break;   /* no reply: it only keeps the watch fed */
     case CMD_BAUD: {
         uint32_t baud;
         if (n != 4) { result(type, ESP_ERR_INVALID_SIZE); break; }
@@ -840,6 +850,12 @@ void app_main(void)
         uint8_t joined[6];
         while (xQueueReceive(s_ap_joins, joined, 0) == pdTRUE) {
             if (atomic_load(&s_mode) == MODE_AP) ap_open_station(joined);
+        }
+        if (atomic_load(&s_host_watched) && atomic_load(&s_mode) != MODE_IDLE &&
+            esp_timer_get_time() - atomic_load(&s_host_seen) > HOST_SILENT_US) {
+            atomic_store(&s_host_watched, false);
+            go_idle();
+            wire_set_host_away(true);   /* its queue and what is heard next go nowhere: no alarm */
         }
         if (atomic_load(&s_mode) == MODE_STA_JOINING) {
             if (atomic_load(&s_assoc_seen) && esp_wifi_sta_is_running_internal()) {

@@ -23,6 +23,9 @@ void wire_set_baud(uint32_t baud);
    handler, so the count starts after the HELLO frame on both sides. */
 void wire_credit_reset(void);
 uint32_t wire_dropped(void);
+/* True once the host watchdog judges the host gone: every message is discarded, uncounted, until the
+   host sends a command again. */
+void wire_set_host_away(bool away);
 /* Host bytes the reader has taken since boot (the CREDIT count before any reset of it). */
 uint32_t wire_consumed(void);
 /* Host commands lost: frames that failed COBS or their CRC; the 128-byte hardware FIFO

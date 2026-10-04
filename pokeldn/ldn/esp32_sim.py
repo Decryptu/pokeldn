@@ -7,6 +7,7 @@ import queue
 import random
 import struct
 import threading
+import time
 
 from pokeldn.ldn import esp32
 
@@ -75,6 +76,10 @@ class SimulatedBoard:
         self.sent_raw: list[bytes] = []
         self.led_looks: list[bytes] = []
         self.displays: list[bytes] = []
+        self.version = ""                 # the firmware version HELLO reports, "" for none
+        self.host_silent_after = 5.0      # the firmware's HOST_SILENT_US
+        self._host_seen = 0.0
+        self._watched = False
         air.attach(self)
 
     def host_stream(self) -> _HostStream:
@@ -100,9 +105,16 @@ class SimulatedBoard:
         self._emit(esp32.MSG_CREDIT, struct.pack("<I", self._consumed))
 
     def _command(self, t: int, p: bytes) -> None:
+        self._host_seen = time.monotonic()
         if t == esp32.CMD_HELLO:
+            self._watched = False
+            text = "pokeldn-radio simulated" + (f" version={self.version}" if self.version else "")
             self._emit(esp32.MSG_INFO, bytes([esp32.PROTOCOL_VERSION]) + self.sta_mac + self.ap_mac
-                       + b"\x03" + b"pokeldn-radio simulated")
+                       + b"\x03" + text.encode())
+        elif t == esp32.CMD_ALIVE and self.version:
+            if not self._watched:
+                self._watched = True
+                threading.Thread(target=self._watch_host, daemon=True).start()
         elif t == esp32.CMD_BAUD:
             self._result(t)
         elif t == esp32.CMD_CHANNEL:
@@ -168,6 +180,16 @@ class SimulatedBoard:
             self._emit(esp32.MSG_BENCH, struct.pack("<II", 0xFFFFFFFF, 0))
         else:
             self._result(t, 0x106)
+
+    def _watch_host(self) -> None:
+        """The firmware's host watchdog: a host silent past host_silent_after leaves the network."""
+        while self._watched:
+            time.sleep(0.02)
+            with self.air.lock:
+                if self._watched and self.mode != IDLE and time.monotonic() - self._host_seen > self.host_silent_after:
+                    self._watched = False
+                    self._go_idle()
+                    self._emit(esp32.MSG_LOG, b"host silent: left the network")
 
     def _go_idle(self) -> None:
         if self.mode == STA and self.ap is not None:

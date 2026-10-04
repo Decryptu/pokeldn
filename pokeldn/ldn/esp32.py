@@ -28,6 +28,11 @@ CMD_STATUS = 0x0B
 CMD_BENCH = 0x0C
 CMD_LED = 0x0D
 CMD_DISPLAY = 0x0E
+# Sent every ALIVE_EVERY s to firmware ALIVE_FIRMWARE and later, which leaves the network once it
+# stops for 5 s; older firmware answers an unknown command. docs/hardware_esp32.md, The host watchdog.
+CMD_ALIVE = 0x0F
+ALIVE_FIRMWARE = (1, 4, 0)
+ALIVE_EVERY = 1.0
 
 # The LED's patterns (firmware/esp32/main/led.h); "auto" hands the LED back to the radio's state.
 LED_PATTERNS = ("auto", "off", "on", "breathe", "blink", "flash3", "ramp-up", "ramp-down", "pulse")
@@ -218,6 +223,14 @@ class Info:
         return cls(payload[0], payload[1:7], payload[7:13], payload[13], payload[14:].decode(errors="replace"))
 
 
+def firmware_version(info: "Info") -> tuple:
+    """The board's "version=1.4.0" as (1, 4, 0); () when it names none."""
+    try:
+        return tuple(int(part) for part in info.firmware_version.split("."))
+    except ValueError:
+        return ()
+
+
 @dataclass
 class Link:
     up: bool
@@ -320,7 +333,7 @@ class Radio:
             except RadioError:
                 if attempt == 4:
                     raise
-        radio.hello()
+        info = radio.hello()
         if fast_baud and fast_baud != baud:
             radio.request(CMD_BAUD, struct.pack("<I", fast_baud), MSG_RESULT)
             radio.drain()
@@ -335,11 +348,21 @@ class Radio:
                 except RadioError:
                     if attempt == 4:
                         raise
-            radio.hello()
+            info = radio.hello()
+        if firmware_version(info) >= ALIVE_FIRMWARE:
+            threading.Thread(target=radio._keep_alive, name="esp32-alive", daemon=True).start()
         if radio._trace:
             # The board's counters (tx_eth_failed, wire_dropped) land in the trace every 5 s.
             threading.Thread(target=radio._poll_status, name="esp32-status", daemon=True).start()
         return radio
+
+    def _keep_alive(self) -> None:
+        while not self._closed:
+            try:
+                self.send(CMD_ALIVE)
+            except Exception:
+                return
+            time.sleep(ALIVE_EVERY)
 
     def _poll_status(self) -> None:
         while not self._closed:

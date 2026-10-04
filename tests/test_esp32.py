@@ -1152,6 +1152,58 @@ def test_the_fast_rate_comes_from_the_environment(monkeypatch):
     assert rates[-1] == 921600 and 2000000 in rates
 
 
+@pytest.mark.parametrize("version", ["1.4.0", ""])
+def test_a_board_whose_host_dies_leaves_the_network_and_an_older_board_is_never_fed(monkeypatch, version):
+    """A host killed mid-seat stops sending ALIVE; the board leaves and the console's AP sees the
+    station go. Firmware that names no version answers ALIVE as unknown, so it is never sent."""
+    import serial
+    air = esp32_sim.Air()
+    ap_board, station_board = esp32_sim.SimulatedBoard(air), esp32_sim.SimulatedBoard(air)
+    station_board.version, station_board.host_silent_after = version, 0.3
+    commands = []
+    command = station_board._command
+    station_board._command = lambda t, p: (commands.append(t), command(t, p))
+
+    class Port:
+        def __init__(self):
+            self.board, self.baudrate = station_board.host_stream(), 115200
+
+        def open(self):
+            pass
+
+        def read(self, n):
+            return self.board.read(n)
+
+        def write(self, data):
+            self.board.write(data)
+
+        def flush(self):
+            pass
+
+        def close(self):
+            self.board.close()
+
+    monkeypatch.setattr(serial, "Serial", Port)
+    monkeypatch.setattr(esp32, "ALIVE_EVERY", 0.05)
+    ap = esp32.Radio(ap_board.host_stream())
+    station = esp32.Radio.open_serial("sim", fast_baud=115200)
+    try:
+        ap.ap_start(6, b"\x02" * 6, "0" * 32, bytes(16))
+        station.sta_join(6, b"\x02" * 6, "0" * 32, bytes(16))
+        time.sleep(0.6)                                  # twice the silence the board allows
+        assert ap_board.stations                             # fed, still seated
+        station._closed = True                            # the process is gone: nothing more is sent
+        deadline = time.monotonic() + 2
+        while ap_board.stations and time.monotonic() < deadline:
+            time.sleep(0.02)
+        assert (not ap_board.stations) == bool(version)
+        assert (esp32.CMD_ALIVE in commands) == bool(version)
+    finally:
+        station._closed = False
+        station.close()
+        ap.close()
+
+
 def test_auto_port_takes_the_one_serial_port_and_refuses_to_guess():
     from pokeldn.ldn import esp32_wlan
     assert esp32_wlan.auto_port(["/dev/cu.usbserial-7"]) == "/dev/cu.usbserial-7"

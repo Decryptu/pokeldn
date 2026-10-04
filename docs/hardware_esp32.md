@@ -182,6 +182,7 @@ the ROM's boot text included, fails the checksum and is discarded.
 | `0x0C` BENCH | host | u32 bytes, u16 message size (8 to 1600); RESULT, then BENCH messages as fast as the UART takes them |
 | `0x0D` LED | host | u8 pattern, u8 peak brightness, u16 period ms (0: the pattern's default), u16 duration ms (0: until the next LED); RESULT. Older firmware answers `0x106` |
 | `0x0E` DISPLAY | host | a screen command ([The screen](#the-screen)); RESULT `0x105` (`ESP_ERR_NOT_FOUND`) without a screen, `0x106` from older firmware |
+| `0x0F` ALIVE | host | none, no reply; arms [the host watchdog](#the-host-watchdog). Firmware before 1.4.0 answers `0x106`, so the host sends it only to 1.4.0 and later |
 | `0x81` INFO | board | u8 protocol version (1), 6 station MAC, 6 AP MAC, u8 chip revision, text |
 | `0x82` RESULT | board | u8 command, i32 `esp_err_t` |
 | `0x83` LOG | board | text |
@@ -220,10 +221,24 @@ EtherType `0x88B7` frames are LDN authentication; `esp32_wlan` turns them into t
 |---|---|---|
 | `userspace_ip` stack | the default, every platform | `userspace_ip.udp_socket` and `packet_socket` |
 | kernel TAP named after the interface | Linux, `POKELDN_L2=tap` only | kernel sockets, `SO_BINDTODEVICE` and `AF_PACKET` unchanged |
+| `MemoryPort` | tests | none |
 
 Creating a TAP needs `CAP_NET_ADMIN`. The desktop app runs as the user, so on Linux a TAP default
 fails before the board joins anything.
-| `MemoryPort` | tests | none |
+
+### The host watchdog
+
+From firmware 1.4.0 the host sends ALIVE every second (`esp32.ALIVE_EVERY`), chosen from INFO's
+`version=` text. The first ALIVE after a HELLO arms the watch; HELLO disarms it, so a host that never
+sends ALIVE is never watched. Armed, a board out of idle that reads no host command for 5 s
+(`HOST_SILENT_US`) runs STOP's teardown: an access point stops beaconing and its stations drop, a
+station disconnects. It then discards every message for the host, uncounted, until the host sends a
+command again: a host gone from a USB board otherwise turns each queued or overheard message into a
+500 ms write and a `wire_dropped`, and the LED's alarm into a constant `flash3`.
+
+Measured on a XIAO ESP32C6 with a retail FireRed in the trade room of `frlg_trade_host.py`, the host
+killed with SIGKILL: the console showed 2318-0006, a JOIN search afterwards listed no host, and the
+LED returned to its idle look. Without the discard the LED kept `flash3`.
 
 ## The serial ceiling
 
