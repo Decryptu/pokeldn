@@ -696,6 +696,7 @@ The flags at `+0x10` set how often a console takes a card ([What the menu refuse
 | bit 2 | 13 | once per card date, at most ten a day |
 | neither | 46 | every time |
 
+A retail Sword received Jungle Zarude (Western Release, flags 0) from the list into its party.
 A console that already took an official card with bit 0 set refuses it again. Two Pokemon cards
 carry a version mask of 1 or 2 and are skipped by the other version.
 
