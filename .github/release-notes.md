@@ -1,21 +1,23 @@
-# pokeldn 0.6.2
+# pokeldn 0.7.0
 
 This desktop app trades with seven Pokemon game families on a Switch or Switch 2
 through an ESP32 radio connected by USB. Nothing is installed on the console.
 
 ## What is new
 
-- Linux: sessions over the radio board no longer need root. In 0.6.1 and earlier the Linux app
-  created a kernel network interface for the board, which an ordinary user may not do, so a session
-  stopped right after it started even though flashing worked. The app now uses its own network stack
-  on Linux, as it already did on macOS and Windows.
-- Files can be dragged from the desktop onto the app. A Pokemon file or a Showdown team (`.txt`)
-  dropped on a trade fills it, and extra files go to the following trades. Files dropped on Add a
-  trade queue one trade each. A gift file dropped on the Gift card opens it, a `.bin` dropped on
-  Flash the firmware becomes the custom image, and every file field takes the file it asks for.
-- Add a trade is a small card centered under the Pokemon to offer.
+- Your trainer, set once in Settings with a six-digit trainer ID for the Switch titles, is the one
+  every game sees: its name shows as your trade partner in every title and both roles.
+- Legends Z-A: a trainer name other than the recorded one no longer leaves the console searching.
+- Legends Arceus: joining the console's search completes when the console hands the host role over,
+  and two queued trades complete on one seat.
+- Sword/Shield Mystery Gift: a built card rolls nature, ability and IVs like an official one, and
+  the gender shown when the gift box opens is the gender you receive.
+- FireRed/LeafGreen Mystery Gift: several game boosts at once, each with its settings.
+- Brilliant Diamond/Shining Pearl: trades end without a late cancel.
 
-The firmware is unchanged (1.2.0); a board flashed by 0.6.1 needs no reflash.
+Firmware 1.4.0: a board whose app has stopped leaves the console's network after 5 s, and the
+optional OLED screen dims after a minute idle and turns off after ten. Reflash a board on Board,
+Flash.
 
 ## Downloads
 
