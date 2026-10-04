@@ -304,6 +304,8 @@ On a retail French FireRed, `nature-mint` (flag id 1011) was saved and the deliv
 party Pokemon's nature from the stats picked. `pc-anywhere` (flag id 1012): after the delivery man, R in the
 field opened the Pokemon boxes. `rival-name` (flag id 1013): the naming screen's new name became the
 rival's, `svc_BadWordCheck` passing it on the console.
+With `noclip` installed (`Buffer script status: 0x0800071D`), the delivery man ran `nature-mint` through
+its relocation and R still walked through walls afterwards.
 
 `colosseum-pikachu` and `ageto-celebi` carry their Japanese trainer names, which a European cartridge
 draws as dots; PKHeX reports all four event Pokemon legal.
