@@ -75,10 +75,14 @@ assemble the default template to `01 00 a0 e3 1e ff 2f e1`. Check offline runs t
 (`pokeldn/frlg/rom/custom_code.py`) and shows the answer and the bytes. The same check runs before
 Start and before a file is saved: code that faults, or never returns 1, is refused.
 
-The Sword/Shield form builds a Pokemon, an egg, up to six bag items, or Battle Points, with a card
-id. Each kind writes the bytes of a record a retail Sword listed and redeemed
+The Sword/Shield form builds a Pokemon (optionally able to Gigantamax), an egg, up to six bag items,
+official outfits, Battle Points or money, with a card id. The Pokemon, egg, item, clothing and Battle
+Points kinds write the bytes of a record a retail Sword listed and redeemed
 ([Sword and Shield Mystery Gift](swsh_gift.md#a-card-delivered-to-a-retail-console)); the
-Pikachu preset is byte for byte the launcher's own default record.
+Pikachu preset is byte for byte the launcher's own default record. Clothing comes from the pairs of
+the official outfit cards ([Clothing](swsh_gift.md#clothing)), at most six pieces for each player
+gender. The money kind is checked under the game's own redemption only; no retail Sword has received
+one. PKHeX refuses a Gigantamax flag on a species without a Gigantamax form.
 
 Before you send lists what the console gets, when it runs, and the cartridges the gift serves. Save
 gift file writes the selected gift as `.pokegift` with no board and no Switch keys. FRLG presets go

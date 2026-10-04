@@ -63,7 +63,8 @@ Gift below with the tested settings. The only file it asks for is `prod.keys`.
 
 The FRLG and Sword/Shield Mystery Gift tools send a preset, a gift built in the app, or a shared
 `.pokegift` file; FRLG also accepts `.wc3` and Sword/Shield `.wc8`. FRLG builds Wonder Cards, Wonder News and ARM
-console code; Sword/Shield builds Pokemon, eggs, items and Battle Points. Save gift file exports the
+console code; Sword/Shield builds Pokemon (Gigantamax included), eggs, items, clothing, Battle
+Points and money. Save gift file exports the
 selected gift without a board.
 
 ```bash

@@ -283,3 +283,18 @@ def test_every_setting_of_a_boost_fits_every_cartridge_and_the_launcher(boost):
         config = _frlg_run([*boosts.arguments(chosen), "--version", "firered"]).payload
         for code in frlg.CARTRIDGES:
             config.build_distribution(builds.BUILDS[code])
+
+
+@pytest.mark.skipif(not _pkhex_available(), reason="needs the PKHeX helper")
+def test_pkhex_takes_every_sword_preset_and_refuses_what_the_game_cannot_hold():
+    from pokeldn import pokemon
+    for preset in swsh.PRESETS:
+        pokemon.SERVICE.validate_gift(swsh.record(preset.state))
+    gmax = swsh.record(swsh.PRESET["gmax-pikachu"].state)
+    assert (gmax[0x15], gmax[wc8.POKEMON["gigantamax"][0]], gmax[wc8.POKEMON["dynamax_level"][0]]) == (21, 1, 10)
+    with pytest.raises(pokemon.BuilderError, match="Gigantamax"):
+        pokemon.SERVICE.validate_gift(swsh.record(dict(swsh.PRESET["gmax-pikachu"].state, species=26)))
+    cape = bytearray(swsh.record(swsh.PRESET["gold-backpack"].state))
+    struct.pack_into("<II", cape, 0x20, 15, 0)                # the setter 0x0143a450 takes categories 0..14
+    with pytest.raises(pokemon.BuilderError, match="clothing"):
+        pokemon.SERVICE.validate_gift(wc8.seal(cape))

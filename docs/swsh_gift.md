@@ -492,7 +492,8 @@ with `a5 6a` at `+0x0C` was received. Nothing read touches `+0x0C`. All 161 SwSh
 projectpokemon's EventsGallery carry zero at `+0x0A` and at `+0x0C` either 3 or their title index.
 
 Title: `+0x15` indexes the title table PKHeX ships as `text_wondercard8_<lang>.txt`, shown in the
-list before the card is accepted. Index 0 is the species name alone (a record with `0b 00` at `+0x0C`
+list before the card is accepted. Indices the builder uses: 1 Pokemon egg, 3 the item's name, 21
+"{species} (Gigantamax Pokemon)", 34 pocket money, 36 clothing, 39 Battle Points. Index 0 is the species name alone (a record with `0b 00` at `+0x0C`
 and title 0 was listed as "Pikachu"); index 11 is "{species} de {original trainer}", listed and kept
 as "Pikachu de POKELDN" on a French console.
 
@@ -616,6 +617,8 @@ emulator cannot test these variables.
 | 3 | amount 10 at `+0x20`, title index 1 | listed with the title "Oeuf de Pokemon", 10 BP added |
 | 3 | amount 10 at `+0x20`, title index 39, as the EventsGallery Battle Points cards carry | listed "Points de Combat", 10 BP added |
 
+| 4 | EventsGallery's Casual Tee (Pokemon Quest) card, title index 36 | listed, the tee in the wardrobe |
+
 The title comes from `+0x15` alone, whatever the kind; the kind decides what is delivered.
 
 A kind-2 record needs only the kind, the item pairs and a quantity. The parser copies exactly six
@@ -625,9 +628,7 @@ calls `Bag::AddItem` per pair with a non-zero quantity (`0x01015d00..0x01015dd0`
 table has 1607 entries; those whose name in `bin/message/<lang>/common/itemname.dat` starts with `★`
 are dummies (1279 to 1578 among them).
 
-Kind 4 (clothing) passes up to twelve category/index pairs to `0x0143a450`
-(`0x01015eb0..0x010160a8`), which accepts categories 0..14 and indices 0..1023 and sets one bit in
-the clothing block. Kinds 3 and 5 add the word at `+0x20` to clamped counters in the status object
+Kind 4 is clothing ([Clothing](#clothing)). Kinds 3 and 5 add the word at `+0x20` to clamped counters in the status object
 `[[0x2610798]+0x208]`:
 
     kind 3  0x01015e00   [status+0x17c] = min(old + amount, 9999)                  0x014390fc
@@ -635,7 +636,10 @@ the clothing block. Kinds 3 and 5 add the word at `+0x20` to clamped counters in
                          otherwise old + amount, clamped to 9,999,999              0x01438f2c
 
 `status+0x64` is pocket money: `AddPocketMoney_` (`0x014ad5e0`) calls the same `0x01438f20`
-(`0x014ad624`) and `GetPocketMoney_` (`0x014ad700`) reads it through `0x01438ef0`.
+(`0x014ad624`) and `GetPocketMoney_` (`0x014ad700`) reads it through `0x01438ef0`. Both redemptions read
+the amount at header-and-record `+0x88`, record `+0x20`. Under unicorn, `0x010160b0` on a kind-5
+record of 100,000 took the money from 0 to 100,000 and from 9,950,000 to 9,999,999. No retail console
+has received a kind-5 record, and EventsGallery holds none.
 
 The kind-1 redemption `0x010159d0` builds the Pokemon (`0x010b6110`; null returns 0) and offers it to
 the party (`0x01015b78`, virtual `+0x28`). If the party refuses, it asks the box store
@@ -662,6 +666,41 @@ id in bits 0-14, count in bits 15-29, bit 30 the new-item flag. The save block i
 | 6 | Treasures | 100 |
 | 7 | Ingredients | 100 |
 | 8 | Key | 64 |
+
+## Clothing
+
+A kind-4 record carries twelve pairs of u32 from `+0x20`, a category then an index: the first six
+(`+0x20..+0x4F`) for a player whose status byte `+0x105` is zero, the last six (`+0x50..+0x7F`)
+otherwise. That byte is read by `0x01424c20` on the status object `[[0x2610798]+0x1e8]`. PKHeX's
+`MyStatus8` keeps the player's gender at block offset `0xA5`, `0x60` below it; that the object holds
+the block at `+0x60` is unverified.
+
+The parser `0x010b5bb0` copies the player's six pairs to header `+0x30..+0x5F` and the count of
+pairs whose index is not `0xFFFFFFFF` to header `+0x0D`. The redemption `0x01015eb0` reads the
+record's pairs again by the same test (`0x01015f14`; record `+0x20` is header-and-record `+0x88`)
+and, for each pair whose index is not `0xFFFFFFFF`, calls `0x0143a450(wardrobe, category, index, 1)`
+on the wardrobe `[[0x2610798]+0x218]`. That setter refuses a category above 14 or an index above
+1023 and otherwise sets bit `index & 7` of byte `wardrobe + 0x68 + category * 0x80 + index / 8`.
+A pair `(0, 0)` sets bit 0 of category 0; skip a slot with index `0xFFFFFFFF`.
+
+Run under unicorn with the status byte at 0 and at 1, the validator, the parser and the redemption
+set exactly the record's first and last six pairs as wardrobe bits for every outfit the app offers
+(`tests/test_swsh_gift.py`). The pairs come from projectpokemon EventsGallery's fourteen official
+clothing cards:
+
+| outfit | card | first six | last six |
+|---|---|---|---|
+| Pikachu uniform | 1607 | (9,20) (11,21) (12,20) (13,20) (14,19) | (9,2) (11,3) (12,2) (13,2) (14,19) |
+| Eevee uniform | 1608 | (9,21) (11,22) (12,21) (13,21) (14,20) | (9,3) (11,4) (12,3) (13,3) (14,20) |
+| Tracksuit | 1605 | (7,0) (8,0) (12,24) (10,0) (11,25) (13,26) | (7,0) (8,0) (12,24) (10,0) (11,25) (13,25) |
+| Leon's cap and tights | 1624 | (7,80) (13,89) | (7,80) (13,121) |
+| Gold studded backpack | 1606 | (10,45) | (10,48) |
+| Casual Tee, Poke Ball Guy | 0001 | (9,101) | (9,89) |
+| Casual Tee, Great Ball Guy | 0001 | (9,102) | (9,90) |
+| Casual Tee, Ultra Ball Guy | 0001 | (9,103) | (9,91) |
+| Casual Tee, Pokemon Quest | 0105 | (9,104) | (9,92) |
+
+Every official clothing card carries title 36 or 38 and flag bit 0 (once per card id).
 
 ## What the menu refuses
 

@@ -119,3 +119,75 @@ def test_the_host_sends_only_what_the_games_own_validator_accepts(tmp_path, monk
                                      "--image", SWORD_IMAGE, "--dump", str(out)])
     assert swsh_gift_host.main() == 1
     assert not out.exists()
+
+
+def _sword_with_a_player(runner, gender):
+    """Stand-ins for the objects the kind-4 and kind-5 code reaches through [[0x2610798]]: the player
+    status (+0x1e8, gender byte +0x105), the wardrobe (+0x218) and the money holder (+0x208), each
+    with lock slots that return at once."""
+    from nso_run import SCRATCH
+    ret, game, vtable = 0x01424c24, SCRATCH + 0x10000, SCRATCH + 0x12000
+    objects = {"status": SCRATCH + 0x11000, "wardrobe": SCRATCH + 0x13000, "money": SCRATCH + 0x15000}
+    runner.write(struct.unpack_from("<Q", runner.img, 0x2610798)[0], struct.pack("<Q", game))
+    runner.write(vtable, struct.pack("<4Q", ret, ret, ret, ret))
+    for at, name in ((0x1e8, "status"), (0x218, "wardrobe"), (0x208, "money")):
+        runner.write(game + at, struct.pack("<Q", objects[name]))
+        runner.write(objects[name], bytes(0x800))
+        runner.write(objects[name] + 0x48, struct.pack("<Q", vtable))
+    runner.write(objects["status"] + 0x105, bytes([gender]))
+    return objects
+
+
+def _redeem(runner, record, redemption):
+    """The validator fills the 0x68-byte header, then the redemption runs on header + record."""
+    import swsh_gift_host
+    from nso_run import SCRATCH
+    card, header, rec, pair = SCRATCH + 0x1000, SCRATCH + 0x3000, SCRATCH + 0x4000, SCRATCH + 0x14000
+    runner.write(card, bytes(0x3A8))
+    runner.write(header, bytes(0x68))
+    runner.write(rec, record)
+    assert runner.call(swsh_gift_host.VALIDATOR, (0, card, header, rec, len(record)))[0] == 0
+    runner.write(pair, bytes(runner.uc.mem_read(header, 0x68)) + record)
+    runner.call(redemption, (pair,))
+
+
+@pytest.mark.skipif(not __import__("os").path.exists(SWORD_IMAGE),
+                    reason="needs Sword's extracted main NSO")
+@pytest.mark.parametrize("gender", (0, 1))
+def test_a_clothing_card_puts_its_outfit_for_the_players_gender_in_the_wardrobe(gender):
+    """The game's own kind-4 redemption 0x01015eb0 under unicorn sets one wardrobe bit per pair
+    (0x0143a450: 0x80 bytes per category from +0x68), the first six pairs for gender byte 0 and the
+    last six otherwise; an index of -1 sets nothing."""
+    from nso_run import Runner
+    from pokeldn.swsh import gift_builder as swsh
+    runner = Runner(SWORD_IMAGE)
+    for preset in (p for p in swsh.PRESETS if p.state["kind"] == "clothing"):
+        wardrobe = _sword_with_a_player(runner, gender)["wardrobe"]
+        _redeem(runner, swsh.record(preset.state), 0x01015eb0)
+        bits = bytes(runner.uc.mem_read(wardrobe + 0x68, 15 * 0x80))
+        got = sorted((n // 0x80, n % 0x80 * 8 + k) for n, b in enumerate(bits) for k in range(8) if b >> k & 1)
+        outfits = [swsh.OUTFIT[k] for k in preset.state["outfits"]]
+        assert got == sorted(pair for o in outfits for pair in (o.female if gender else o.male)), preset.key
+
+
+@pytest.mark.skipif(not __import__("os").path.exists(SWORD_IMAGE),
+                    reason="needs Sword's extracted main NSO")
+def test_a_money_card_adds_its_amount_up_to_the_games_cap():
+    from nso_run import Runner
+    from pokeldn.swsh import gift_builder as swsh
+    runner = Runner(SWORD_IMAGE)
+    for start, after in ((0, 100_000), (9_950_000, 9_999_999)):
+        money = _sword_with_a_player(runner, 0)["money"]
+        runner.write(money + 0x64, struct.pack("<I", start))
+        _redeem(runner, swsh.record(swsh.PRESET["money"].state), 0x010160b0)
+        assert struct.unpack("<I", bytes(runner.uc.mem_read(money + 0x64, 4)))[0] == after
+
+
+def test_a_card_refuses_outfits_that_overflow_six_pieces_and_unknown_ones():
+    from pokeldn.swsh import gift_builder as swsh
+    with pytest.raises(ValueError, match="6 pieces"):
+        swsh.record(swsh.blank(kind="clothing", outfits=["pikachu-uniform", "leon-cap-tights"]))
+    with pytest.raises(ValueError, match="Unknown outfit"):
+        swsh.record(swsh.blank(kind="clothing", outfits=["cape"]))
+    with pytest.raises(ValueError, match="Money is 1"):
+        swsh.record(swsh.blank(kind="money", money=10_000_000))

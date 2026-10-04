@@ -672,6 +672,8 @@ JsonObject Gift(byte[] data)
         if (data[0x243] > 3 || (data[0x246] > 24 && data[0x246] != 255) ||
             data[0x247] > 4 || data[0x248] > 4 || data[0x24A] > 10)
             throw new InvalidDataException("Invalid gift gender, nature, ability, shininess or Dynamax level.");
+        if (data[0x24B] > 1 || (data[0x24B] == 1 && !Gigantamax.CanToggle(card.Species, card.Form)))
+            throw new InvalidDataException("This species has no Gigantamax form.");
     }
     else if (card.IsItem)
     {
@@ -679,8 +681,25 @@ JsonObject Gift(byte[] data)
             if (!ValidItem(card.GetItem(i)) || (card.GetItem(i) != 0 && card.GetQuantity(i) is < 1 or > 999))
                 throw new InvalidDataException("Invalid gift item or quantity; bag items only, up to 999.");
     }
+    else if (card.CardType == WC8.GiftType.Clothing)
+    {
+        // Twelve u32 (category, index) pairs from +0x20; the setter 0x0143a450 takes categories 0..14
+        // and indices 0..1023, and the redemption skips index 0xFFFFFFFF (docs/swsh_gift.md).
+        for (var i = 0; i < 12; i++)
+        {
+            var category = BitConverter.ToUInt32(data, 0x20 + 8 * i);
+            var index = BitConverter.ToUInt32(data, 0x24 + 8 * i);
+            if (index != uint.MaxValue && (category > 14 || index > 1023))
+                throw new InvalidDataException("Invalid clothing category or index.");
+        }
+    }
+    else if (data[0x11] == 5)
+    {
+        if (BitConverter.ToUInt32(data, 0x20) is < 1 or > 9_999_999)
+            throw new InvalidDataException("Money is 1 to 9,999,999.");
+    }
     else if (card.CardType != WC8.GiftType.BP)
-        throw new InvalidDataException("Supported WC8 gifts are Pokemon, bag items and BP.");
+        throw new InvalidDataException("Supported WC8 gifts are Pokemon, bag items, BP, clothing and money.");
     return new JsonObject { ["valid"] = true };
 }
 

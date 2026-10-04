@@ -15,6 +15,7 @@ from pokeldn import gifts, pokemon
 from pokeldn.app import command, gift_builder, gift_files
 from pokeldn.frlg.gift import builder as frlg
 from pokeldn.frlg.rom import custom_code
+from pokeldn.swsh import gift_builder as swsh
 
 SPECIES_FRLG = [{"id": n, "name": name} for n, name in frlg.species_names()]
 
@@ -445,7 +446,9 @@ class GiftBuilder:
             rows += [ft.Row([self.name_field("Held item", "item", "item"), self.name_field("Ball", "ball", "ball")],
                             spacing=10),
                      ft.Row([self.text_field("Nickname", "nickname"), self.text_field("OT", "ot")], spacing=10),
-                     self.switch_row("Shiny", "shiny", "The Pokemon arrives shiny.")]
+                     self.switch_row("Shiny", "shiny", "The Pokemon arrives shiny."),
+                     self.switch_row("Gigantamax", "gigantamax",
+                                     "It can Gigantamax; only species with a Gigantamax form.")]
         rows += [self.moves(self.state), self.number_field("Card id", "card_id")]
         return ft.Column(rows, spacing=10)
 
@@ -481,6 +484,26 @@ class GiftBuilder:
         adder = [t.secondary_button("Add an item", add, "plus")] if len(items) < 6 else []
         return ft.Column([*(row(n) for n in range(len(items))), *adder, self.number_field("Card id", "card_id")],
                          spacing=10)
+
+    def swsh_clothing(self) -> ft.Control:
+        chosen = self.state.setdefault("outfits", [])
+
+        def toggle(key, on):
+            if on and key not in chosen:
+                chosen.append(key)
+            elif not on and key in chosen:
+                chosen.remove(key)
+            self.commit()
+        rows = [ft.Row([t.text(o.label, 13, expand=True),
+                        t.switch(o.key in chosen, lambda e, k=o.key: toggle(k, e.control.value))])
+                for o in swsh.OUTFITS]
+        return ft.Column([t.text("Official outfits. A card holds six pieces for each gender; the player gets the "
+                                 "version for their own.", 12, t.MUTED), *rows,
+                          self.number_field("Card id", "card_id")], spacing=8)
+
+    def swsh_money(self) -> ft.Control:
+        return ft.Row([self.number_field("Money", "money", width=120), self.number_field("Card id", "card_id")],
+                      spacing=10)
 
     def swsh_bp(self) -> ft.Control:
         return ft.Row([self.number_field("Battle Points", "bp"), self.number_field("Card id", "card_id")],
