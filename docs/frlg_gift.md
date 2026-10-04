@@ -306,6 +306,8 @@ field opened the Pokemon boxes. `rival-name` (flag id 1013): the naming screen's
 rival's, `svc_BadWordCheck` passing it on the console.
 With `noclip` installed (`Buffer script status: 0x0800071D`), the delivery man ran `nature-mint` through
 its relocation and R still walked through walls afterwards.
+With `noclip` installed again, `pc-anywhere` took the V-blank hook over: R opened the boxes and no longer
+walked through walls, and the game ran on.
 
 `colosseum-pikachu` and `ageto-celebi` carry their Japanese trainer names, which a European cartridge
 draws as dots; PKHeX reports all four event Pokemon legal.
