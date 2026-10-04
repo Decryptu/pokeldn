@@ -64,11 +64,15 @@ turbo_hook:
     mov     r1, #1
     strb    r1, [r0]                @ R stays off the Help System
 .Lhelp_done:
+.ifndef TURBO_LITE
     bl      .Lring
     bl      .Loverlay_oam           @ into the game's buffers, before it copies them
+.endif
     ldr     r3, p_original
     bl      .Lcall                  @ the game's VBlankIntr, unchanged
+.ifndef TURBO_LITE
     bl      .Loverlay_tiles
+.endif
     mov     r0, #1
     tst     r4, r0
     bne     .Lout                   @ a lag frame: leave the game alone
@@ -198,11 +202,14 @@ turbo_hook:
     pop     {r0}
     bx      r0
 
+.ifndef TURBO_LITE
     .include "overlay.inc"
+.endif
 
 .Lcall:
     bx      r3
 
+.ifndef TURBO_LITE
 @ The RNG history, when p_ring names one: {state, watched at arming, frames, seeds[32]}. Each frame
 @ keeps gRngValue as VBlankIntr finds it, until the word at p_watch changes; state 2 is frozen.
 .Lring:
@@ -236,6 +243,7 @@ turbo_hook:
     str     r2, [r0]                @ the watched word changed: keep this history
 .Lring_done:
     bx      lr
+.endif
 
 @ -> r0 = scanlines since V-blank began: REG_VCOUNT runs 0..227 and V-blank starts at 160.
 .Lline:
@@ -250,8 +258,10 @@ turbo_hook:
     .align 2
     .global p_original, p_intr_check, p_run_text, p_extra, p_frames, p_printers
     .global p_field, p_battle, p_gmain, p_cb1_overworld, p_cb2_overworld, p_cb1_battle, p_cb2_battle
-    .global p_palette_fade, p_overlay, p_overlay_tiles, p_overlay_pal, p_overlay_oam
-    .global p_hold, p_help, p_budget, p_vcount, p_ring, p_watch, p_rng
+    .global p_palette_fade, p_hold, p_help, p_budget, p_vcount
+.ifndef TURBO_LITE
+    .global p_overlay, p_overlay_tiles, p_overlay_pal, p_overlay_oam, p_ring, p_watch, p_rng
+.endif
 p_original:
     .word   0x0800071D              @ patched by the installer: the handler this one replaced
 p_intr_check:
@@ -280,6 +290,7 @@ p_cb2_battle:
     .word   0x08014889              @ BattleMainCB2, THUMB
 p_palette_fade:
     .word   0x02037AB4              @ gPaletteFade (French FireRed, CB2_Overworld's literal)
+.ifndef TURBO_LITE
 p_overlay:
     .word   0                       @ patched: the address whose word is shown, 0 for no overlay
 p_overlay_tiles:
@@ -288,6 +299,7 @@ p_overlay_pal:
     .word   0x020379D6              @ gPlttBufferFaded (0x020375F4) + OBJ palette 15 colour 1
 p_overlay_oam:
     .word   0x030026C8              @ gMain.oamBuffer[120] (gMain + 0x38 + 120 * 8)
+.endif
 p_hold:
     .word   0                       @ patched: buttons held to run the passes (R 0x100), 0 for always
 p_help:
@@ -296,9 +308,11 @@ p_budget:
     .word   0                       @ patched: scanlines a frame's passes and the game may use, 0 for off
 p_vcount:
     .word   0x04000006              @ REG_VCOUNT
+.ifndef TURBO_LITE
 p_ring:
     .word   0                       @ patched: the RNG history, 140 bytes (0x0203FF74 ends at EWRAM's top), 0 for none
 p_watch:
     .word   0x02024028              @ patched: gEnemyParty[0].personality (French FireRed)
 p_rng:
     .word   0x03004220              @ gRngValue
+.endif

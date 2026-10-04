@@ -110,47 +110,89 @@ class GiftBuilder:
         selected = self.module.PRESET[self.value["preset"]]
         sections = []
         for group, items in groups.items():
-            body = [ft.ResponsiveRow([self._preset_row(p, p is selected) for p in items], spacing=6, run_spacing=6)]
-            if selected in items and getattr(selected, "options", ()):
-                body.append(self.preset_settings(selected))
+            tiles, body = [], []
+            for preset in items:
+                if not hasattr(preset, "members"):
+                    tiles.append(self._tile(preset.label, preset.summary, preset is selected,
+                                            lambda e, k=preset.key: self._pick(k)))
+                    continue
+                on = preset.settings(self.value["options"].get(preset.key))["on"] if preset is selected else []
+                tiles += [self._tile(b.label, b.summary, b.key in on, lambda e, p=preset, k=b.key: self._toggle(p, k),
+                                     settings=bool(b.options)) for b in preset.members]
+                if preset is selected:
+                    body.append(self.boost_settings(preset))
+            body.insert(0, ft.ResponsiveRow(tiles, spacing=6, run_spacing=6))
             sections.append(t.section(group, ft.Column(body, spacing=10)))
         return ft.Column(sections, spacing=14)
 
-    def _preset_row(self, preset, active) -> ft.Control:
+    def _tile(self, label, summary, active, on_click, settings=False) -> ft.Control:
         """One line of title and one of summary, so every tile in a row has the same height."""
-        head = [t.text(preset.label, 13, weight=ft.FontWeight.W_600, max_lines=1,
-                       overflow=ft.TextOverflow.ELLIPSIS, expand=True)]
-        if getattr(preset, "options", ()):
+        head = [t.text(label, 13, weight=ft.FontWeight.W_600, max_lines=1, overflow=ft.TextOverflow.ELLIPSIS,
+                       expand=True)]
+        if settings:
             head.append(t.pixel_icon("sliders-horizontal", color=t.BLUE if active else t.FAINT,
                                      tooltip="Has settings"))
         return ft.Container(ft.Row([
             t.pixel_icon("checkbox-on" if active else "checkbox", color=t.BLUE if active else t.FAINT),
             ft.Column([ft.Row(head, spacing=6),
-                       t.text(preset.summary, 12, t.MUTED, max_lines=1, overflow=ft.TextOverflow.ELLIPSIS)],
+                       t.text(summary, 12, t.MUTED, max_lines=1, overflow=ft.TextOverflow.ELLIPSIS)],
                       spacing=1, expand=True),
         ], spacing=10), padding=ft.Padding(10, 8, 10, 8), border_radius=10, col={"xs": 12, "md": 6},
-            tooltip=preset.summary, border=ft.Border.all(1, t.BLUE if active else t.BORDER),
-            bgcolor=t.SELECTED if active else None, on_click=lambda e, k=preset.key: self._pick(k))
+            tooltip=summary, border=ft.Border.all(1, t.BLUE if active else t.BORDER),
+            bgcolor=t.SELECTED if active else None, on_click=on_click)
 
-    def preset_settings(self, preset) -> ft.Control:
-        """The selected preset's settings; each change redraws the summary."""
+    def _toggle(self, preset, key) -> None:
+        """Tick or untick a boost; the first tick from another gift starts the set with that one."""
+        chosen = preset.settings(self.value["options"].get(preset.key))
+        if self.value["preset"] != preset.key:
+            chosen["on"] = [key]
+        elif key in chosen["on"]:
+            chosen["on"].remove(key)
+        else:
+            chosen["on"].append(key)
+        self.value["preset"], self.value["options"][preset.key] = preset.key, chosen
+        self.commit(rebuild=True)
+
+    def boost_settings(self, preset) -> ft.Control:
+        """A panel per ticked boost with settings, then the save switch and the room they take."""
         chosen = preset.settings(self.value["options"].get(preset.key))
         self.value["options"][preset.key] = chosen
-        rows = []
-        for option in preset.options:
-            if not option.choices:
-                rows.append(self.switch_row(option.label, option.key, option.help, chosen))
-            elif all(len(label) <= 24 for _, label in option.choices):
-                rows.append(t.labeled_control(option.label, _chips(
-                    option.choices, chosen[option.key], lambda v, k=option.key: self.edit(k, v, target=chosen))))
-            else:
-                rows.append(t.labeled_control(option.label, t.dropdown(
-                    list(option.choices), chosen[option.key],
-                    on_select=lambda e, k=option.key: self.edit(k, e.control.value, target=chosen))))
-        rows.append(t.text("One boost runs at a time: sending another replaces it.", 12, t.MUTED))
-        return ft.Container(ft.Column([t.text(f"{preset.label}: settings", 13, weight=ft.FontWeight.W_600),
-                                       *rows], spacing=12),
-                            padding=14, border_radius=10, border=ft.Border.all(1, t.BORDER))
+        panels = []
+        for boost in preset.members:
+            if boost.key not in chosen["on"] or not boost.options:
+                continue
+            mine = chosen[boost.key]
+            rows = []
+            for option in boost.options:
+                if not option.choices:
+                    rows.append(self.switch_row(option.label, option.key, option.help, mine))
+                elif all(len(label) <= 24 for _, label in option.choices):
+                    rows.append(t.labeled_control(option.label, _chips(
+                        option.choices, mine[option.key], lambda v, k=option.key, m=mine: self.edit(k, v, target=m))))
+                else:
+                    rows.append(t.labeled_control(option.label, t.dropdown(
+                        list(option.choices), mine[option.key],
+                        on_select=lambda e, k=option.key, m=mine: self.edit(k, e.control.value, target=m))))
+            panels.append(ft.Container(ft.Column([t.text(boost.label, 13, weight=ft.FontWeight.W_600), *rows],
+                                                 spacing=12),
+                                       padding=14, border_radius=10, border=ft.Border.all(1, t.BORDER)))
+        used, room = preset.size(chosen), frlg.RESIDENT_AREA
+        try:
+            too_large = preset.built(chosen)[2]
+        except ValueError:
+            too_large = False
+        keep = (t.text("Kept in the save: together they are too large to send any other way.", 12, t.MUTED)
+                if too_large or "hook-follower" in chosen["on"]
+                else self.switch_row(frlg.KEEP.label, "keep", frlg.KEEP.help, chosen))
+        meter = ft.Column([
+            ft.Row([t.text("Room on the console", 12, t.MUTED, expand=True),
+                    t.text(f"{used} of {room} bytes", 12, t.RED if used > room else t.MUTED)]),
+            ft.ProgressBar(value=min(used / room, 1), color=t.RED if used > room else t.BLUE,
+                           bgcolor=t.BORDER, bar_height=4, border_radius=2)], spacing=4)
+        common = ft.Container(ft.Column([keep, meter, t.text(
+            "Tick several to run them together. Sending boosts again replaces the ones running.", 12, t.MUTED)],
+            spacing=12), padding=14, border_radius=10, border=ft.Border.all(1, t.BORDER))
+        return ft.Column([*panels, common], spacing=10)
 
     def _pick(self, key) -> None:
         self.value["preset"] = key
@@ -467,7 +509,7 @@ class GiftBuilder:
         elif mode == "preset":
             preset = self.module.PRESET[self.value["preset"]]
             when, lines = "", [preset.summary]
-            if getattr(preset, "compose", None):
+            if hasattr(preset, "members"):
                 when = "Starts on the console as soon as it is received."
                 lines = preset.effects(self.value["options"].get(preset.key))
             elif preset.state is not None:

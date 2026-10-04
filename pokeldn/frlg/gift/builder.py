@@ -42,25 +42,12 @@ def species_name(n):
 
 
 @dataclass(frozen=True)
-class Option:
-    """One setting of a preset: a switch when `choices` is empty, else (value, label) pairs."""
-    key: str
-    label: str
-    default: object
-    choices: tuple = ()
-    help: str = ""
-
-
-@dataclass(frozen=True)
 class Preset:
     key: str
     label: str
     group: str
     summary: str
     args: tuple
-    options: tuple = ()
-    # (settings) -> (launcher args, [what the console gets]); args above are the defaults' args.
-    compose: Callable | None = field(default=None, compare=False)
 
     @property
     def state(self):
@@ -68,40 +55,6 @@ class Preset:
         if self.args[0] != "--gift":
             return None
         return state_of(GIFT_REGISTRY.entry(self.args[1]).definition)
-
-    def settings(self, chosen=None) -> dict:
-        """`chosen` with every unknown or missing setting at its default."""
-        chosen = chosen or {}
-        out = {}
-        for option in self.options:
-            value = chosen.get(option.key, option.default)
-            valid = (isinstance(value, bool) if not option.choices
-                     else value in {key for key, _ in option.choices})
-            out[option.key] = value if valid else option.default
-        return out
-
-    def _composed(self, chosen):
-        try:
-            return self.compose(self.settings(chosen))
-        except ValueError:
-            return self.args, []
-
-    def arguments(self, chosen=None) -> tuple:
-        """The launcher's flags; settings problem() refuses fall back to the defaults'."""
-        return self._composed(chosen)[0] if self.compose else self.args
-
-    def effects(self, chosen=None) -> list:
-        return self._composed(chosen)[1] if self.compose else [self.summary]
-
-    def problem(self, chosen=None) -> str:
-        """Why these settings cannot be sent, or ""."""
-        if self.compose is None:
-            return ""
-        try:
-            _check_hook(self.compose(self.settings(chosen))[0])
-        except (ValueError, buffer_script.BufferScriptError) as exc:
-            return str(exc)
-        return ""
 
 
 def _card(slug, label, summary):
@@ -112,19 +65,108 @@ def _code(key, label, summary, *args):
     return Preset(key, label, "Read the save", summary, args)
 
 
-# Resident hooks [docs/frlg_rom.md, install-resident]. One runs at a time: each install replaces the last.
+@dataclass(frozen=True)
+class Option:
+    """One setting: a switch when `choices` is empty, else (value, label) pairs."""
+    key: str
+    label: str
+    default: object
+    choices: tuple = ()
+    help: str = ""
+
+
+def _settings(options, chosen):
+    """`chosen` with every unknown or missing setting at its default."""
+    chosen = chosen if isinstance(chosen, dict) else {}
+    out = {}
+    for option in options:
+        value = chosen.get(option.key, option.default)
+        valid = isinstance(value, bool) if not option.choices else value in {k for k, _ in option.choices}
+        out[option.key] = value if valid else option.default
+    return out
+
+
+@dataclass(frozen=True)
+class Boost:
+    """One resident hook [docs/frlg_rom.md, install-resident] and the settings the app shows for it."""
+    key: str
+    label: str
+    summary: str
+    hook: str
+    compose: Callable = field(compare=False)    # settings -> (hook parameters, [what the console gets])
+    options: tuple = ()
+
+
+# Several hooks run at once as a chain [buffer_script.CHAIN]; the save keeps one set.
 BOOSTS = "Game boosts"
 R, B, SELECT = "0x100", "0x2", "0x4"
 # L opens the Help System; only R's toggle has a flag the hooks hold off [docs/frlg_rom.md, turbo].
 BUTTONS = ((R, "Hold R"), (B, "Hold B (also runs)"), (SELECT, "Hold Select (also uses the registered item)"))
 BUTTON_NAME = {R: "R", B: "B", SELECT: "Select"}
-KEEP = Option("keep", "Keep it after a reset", False, help="Also writes it into the save. After a reset or "
-              "power-off, talk to Mom to turn it back on; send Mom turns boosts back on once for that.")
+KEEP = Option("keep", "Keep them after a reset", False, help="Also writes them into the save. After a reset "
+              "or power-off, talk to Mom to turn them back on; send Mom turns boosts back on once for that.")
 SPEEDS = (("1", "x1"), ("2", "x2"), ("3", "x3"), ("4", "x4"))
 WHERE = (("both", "Overworld and battles"), ("field", "Overworld only"), ("battle", "Battles only"))
 SLOWER = (("1", "x2 slower"), ("3", "x4 slower"), ("7", "x8 slower"))
 # A pass budget in scanlines: measured smooth at field=3 battle=3, stuttering without it [frlg_rom.md].
 BUDGET = 228
+RESIDENT_AREA = 0x400                       # 0x0203FC00..0x02040000
+
+
+def _turbo(o):
+    speed, text = int(o["speed"]), o["text"]
+    if speed == 1 and not text:
+        raise ValueError("Speed up the game: pick a speed above x1 or faster text.")
+    params = {"extra": 4 if text else 0,
+              "field": speed - 1 if o["where"] in ("both", "field") else 0,
+              "battle": speed - 1 if o["where"] in ("both", "battle") else 0,
+              "hold": 0 if o["button"] == "always" else int(o["button"], 0)}
+    if speed >= 3:
+        params["budget"] = BUDGET
+    lines = []
+    if speed > 1:
+        how = "all the time" if o["button"] == "always" else f"while {BUTTON_NAME[o['button']]} is held"
+        lines.append(f"{dict(WHERE)[o['where']]} run up to x{speed} {how}")
+    if text:
+        lines.append("Text prints faster")
+    return params, lines
+
+
+def _shiny(o):
+    return {"slow": int(o["button"], 0), "slow_frames": int(o["slower"])}, [
+        "Counts down to the next shiny wild Pokemon in the grass, top right of the screen",
+        f"The game runs {dict(SLOWER)[o['slower']]} while {BUTTON_NAME[o['button']]} is held, to hit the frame"]
+
+
+def _noclip(o):
+    return {"hold": int(o["button"], 0)}, [
+        f"Walk through walls, trees and water while {BUTTON_NAME[o['button']]} is held; people still block the way"]
+
+
+def _plain(*lines):
+    return lambda o: ({}, list(lines))
+
+
+BOOST_LIST = (
+    Boost("hook-turbo", "Speed up the game", "x2, x3 or x4 in the overworld and in battle, and faster text.",
+          "turbo-lite", _turbo, (Option("speed", "Game speed", "2", SPEEDS), Option("where", "Where", "both", WHERE),
+                            Option("button", "When", R, (("always", "Always on"),) + BUTTONS),
+                            Option("text", "Faster text", True, help="Dialogue prints several letters a frame."))),
+    Boost("hook-noclip", "Walk through walls", "Hold a button to walk through walls, trees and water.",
+          "noclip", _noclip, (Option("button", "When", R, BUTTONS),)),
+    Boost("hook-noencounter", "No wild encounters", "No grass, water or roaming encounters.", "noencounter",
+          _plain("No grass, water or roaming encounters; fishing and Sweet Scent still work")),
+    Boost("hook-shiny", "Shiny countdown", "Counts down to the next shiny in the grass.", "shiny", _shiny,
+          (Option("button", "Slow the game down", R, BUTTONS), Option("slower", "By", "3", SLOWER))),
+    Boost("hook-ivs", "Lead's IVs on screen", "The lead Pokemon's IVs and nature, top right.", "ivs",
+          _plain("The lead Pokemon's six IVs and its nature, top right of the overworld")),
+    Boost("hook-follower", "Pokemon follower", "Your lead Pokemon walks behind you.", "follower",
+          _plain("The lead Pokemon walks behind you, hops ledges with you, and smiles and cries when you face "
+                 "it and press A")),
+)
+BOOST = {b.key: b for b in BOOST_LIST}
+# Each draws in the top-right corner [docs/frlg_rom.md, turbo overlay]; one at a time.
+DRAWING = ("hook-shiny", "hook-ivs")
 
 
 def _hook_args(name, params, keep):
@@ -136,66 +178,90 @@ def _hook_args(name, params, keep):
     return tuple(out)
 
 
-def _check_hook(args):
-    """Build the hook for every cartridge as the launcher would; raises with what does not fit."""
-    name = args[args.index("--resident") + 1]
-    params = {}
-    for at, arg in enumerate(args):
-        if arg == "--resident-param":
-            key, value = args[at + 1].split("=", 1)
-            params[key] = int(value, 0)
-    for code in CARTRIDGES:
-        if "save-write" in args:
-            buffer_script.build_resident_save_blob(name, build=code, **params)
-        else:
-            buffer_script.build_install_resident(name, build=code, **params)
+@dataclass(frozen=True)
+class Boosts:
+    """The Game boosts preset: the ticked boosts, each with its settings, sent as one chain. Settings:
+    {"on": [boost keys], "keep": bool, boost key: {its settings}}."""
+    key: str = "boosts"
+    label: str = "Game boosts"
+    group: str = BOOSTS
+    summary: str = "Tick one or several: they run together until a reset, or stay in the save."
+    members: tuple = BOOST_LIST
+    state = None
 
+    @property
+    def args(self):
+        return self.arguments()
 
-def _lasting(keep):
-    return ("Kept in the save: after a reset, talk to Mom to turn it back on (send Mom turns boosts back on "
-            "once)" if keep else "Lasts until a soft reset or power-off")
+    def settings(self, chosen=None) -> dict:
+        chosen = chosen if isinstance(chosen, dict) else {}
+        on = chosen.get("on", ["hook-turbo"])
+        out = {"on": [b.key for b in self.members if isinstance(on, list) and b.key in on],
+               **_settings((KEEP,), chosen)}
+        for boost in self.members:
+            out[boost.key] = _settings(boost.options, chosen.get(boost.key))
+        return out
 
+    def size(self, chosen=None) -> int:
+        """Bytes of the resident area the ticked boosts take."""
+        from pokeldn.frlg.rom.resident_stubs import STUBS
+        return sum(len(STUBS[BOOST[key].hook][0]) for key in self.settings(chosen)["on"])
 
-def _turbo(o):
-    speed, text = int(o["speed"]), o["text"]
-    if speed == 1 and not text:
-        raise ValueError("Pick a speed above x1 or faster text.")
-    field_, battle = (speed - 1 if o["where"] in ("both", "field") else 0,
-                      speed - 1 if o["where"] in ("both", "battle") else 0)
-    params = {"extra": 4 if text else 0, "field": field_, "battle": battle,
-              "hold": 0 if o["button"] == "always" else int(o["button"], 0)}
-    if speed >= 3:
-        params["budget"] = BUDGET
-    lines = []
-    if speed > 1:
-        how = "all the time" if o["button"] == "always" else f"while {BUTTON_NAME[o['button']]} is held"
-        lines.append(f"{dict(WHERE)[o['where']]} run up to x{speed} {how}")
-    if text:
-        lines.append("Text prints faster")
-    return _hook_args("turbo", params, o["keep"]), lines + [_lasting(o["keep"])]
+    def built(self, chosen=None):
+        """-> (launcher args, [what the console gets], kept because too large); raises ValueError."""
+        s = self.settings(chosen)
+        on = [BOOST[key] for key in s["on"]]
+        if not on:
+            raise ValueError("Tick at least one boost.")
+        if len(on) > 1 and BOOST["hook-follower"] in on:
+            raise ValueError("The Pokemon follower runs alone: untick the other boosts.")
+        drawing = [b.label for b in on if b.key in DRAWING]
+        if len(drawing) > 1:
+            raise ValueError(f"{' and '.join(drawing)} both draw in the top-right corner: untick one.")
+        if self.size(s) > RESIDENT_AREA:
+            raise ValueError(f"These boosts take {self.size(s)} bytes together; the console has room for "
+                             f"{RESIDENT_AREA}. Untick one.")
+        name = buffer_script.CHAIN.join(b.hook for b in on)
+        params, lines = {}, []
+        for boost in on:
+            own, said = boost.compose(s[boost.key])
+            params.update({(f"{boost.hook}.{k}" if len(on) > 1 else k): v for k, v in own.items()})
+            lines += said
+        too_large = False
+        try:
+            for code in CARTRIDGES:
+                buffer_script.build_resident_save_blob(name, build=code, **params)
+            buffer_script.build_install_resident(name, build="BPRF", **params)
+        except buffer_script.BufferScriptError as exc:
+            if "receive buffer" not in str(exc):
+                raise ValueError(str(exc)) from None
+            too_large = True
+        keep = s["keep"] or too_large
+        lines.append(("Kept in the save: too large to send any other way. " if too_large else
+                      "Kept in the save. " if keep else "Lasts until a soft reset or power-off")
+                     + ("After a reset, talk to Mom to turn it back on (send Mom turns boosts back on once)"
+                        if keep else ""))
+        return _hook_args(name, params, keep), lines, too_large
 
+    def arguments(self, chosen=None) -> tuple:
+        """The launcher's flags; settings problem() refuses fall back to the defaults'."""
+        try:
+            return self.built(chosen)[0]
+        except ValueError:
+            return self.built()[0]
 
-def _shiny(o):
-    return _hook_args("shiny", {"slow": int(o["button"], 0), "slow_frames": int(o["slower"])}, o["keep"]), [
-        "Counts down to the next shiny wild Pokemon in the grass, top right of the screen",
-        f"The game runs {dict(SLOWER)[o['slower']]} while {BUTTON_NAME[o['button']]} is held, to hit the frame",
-        _lasting(o["keep"])]
+    def effects(self, chosen=None) -> list:
+        try:
+            return self.built(chosen)[1]
+        except ValueError:
+            return []
 
-
-def _noclip(o):
-    return _hook_args("noclip", {"hold": int(o["button"], 0)}, o["keep"]), [
-        f"Walk through walls, trees and water while {BUTTON_NAME[o['button']]} is held; people still block "
-        "the way", _lasting(o["keep"])]
-
-
-def _plain(name, line):
-    return lambda o: (_hook_args(name, {}, o["keep"]), [line, _lasting(o["keep"])])
-
-
-def _boost(key, label, summary, compose, *options, keep=True):
-    options = (*options, KEEP) if keep else options
-    defaults = compose(Preset(key, label, BOOSTS, summary, (), options).settings())[0]
-    return Preset(key, label, BOOSTS, summary, defaults, options, compose)
+    def problem(self, chosen=None) -> str:
+        try:
+            self.built(chosen)
+        except ValueError as exc:
+            return str(exc)
+        return ""
 
 
 PRESETS = (
@@ -214,28 +280,8 @@ PRESETS = (
            "A short news; the man in Cerulean City hands over a berry.", ("--news", "pokeldn")),
     Preset("news-berry", "Ten-line news", "Wonder News", "A long news that scrolls, with a berry.",
            ("--news", "berry")),
-    _boost("hook-turbo", "Speed up the game", "x2, x3 or x4 in the overworld and in battle, and faster text.",
-           _turbo,
-           Option("speed", "Game speed", "2", SPEEDS),
-           Option("where", "Where", "both", WHERE),
-           Option("button", "When", R, (("always", "Always on"),) + BUTTONS),
-           Option("text", "Faster text", True, help="Dialogue prints several letters a frame.")),
-    _boost("hook-noclip", "Walk through walls", "Hold a button to walk through walls, trees and water.",
-           _noclip, Option("button", "When", R, BUTTONS)),
-    _boost("hook-noencounter", "No wild encounters", "No grass, water or roaming encounters.",
-           _plain("noencounter", "No grass, water or roaming encounters; fishing and Sweet Scent still work")),
-    _boost("hook-shiny", "Shiny countdown", "Counts down to the next shiny in the grass.", _shiny,
-           Option("button", "Slow the game down", R, BUTTONS),
-           Option("slower", "By", "3", SLOWER)),
-    _boost("hook-ivs", "Lead's IVs on screen", "The lead Pokemon's IVs and nature, top right.",
-           _plain("ivs", "The lead Pokemon's six IVs and its nature, top right of the overworld")),
-    _boost("hook-follower", "Pokemon follower", "Your lead Pokemon walks behind you.",
-           lambda o: (_hook_args("follower", {}, True), [
-               "The lead Pokemon walks behind you, hops ledges with you, and smiles and cries when you face "
-               "it and press A",
-               "Always kept in the save: it is too large to send any other way. After a reset, talk to Mom to "
-               "turn it back on (send Mom turns boosts back on once)"]), keep=False),
-    Preset("mom-resident", "Mom turns boosts back on", BOOSTS, "Send once after a boost kept in the save.",
+    Boosts(),
+    Preset("mom-resident", "Mom turns boosts back on", BOOSTS, "Send once after boosts kept in the save.",
            ("--gift", "resident-save")),
     _code("trainer-id", "Read the trainer id", "Reads only. The answer is the save's trainer id.",
           "--buffer-script", "trainer-id-probe"),
@@ -246,7 +292,9 @@ PRESETS = (
 )
 PRESET = {p.key: p for p in PRESETS}
 # Presets an older settings file may name -> (preset, settings).
-ALIASES = {"save-shiny": ("hook-shiny", {"keep": True}), "save-noclip": ("hook-noclip", {"keep": True})}
+ALIASES = {**{b.key: ("boosts", {"on": [b.key]}) for b in BOOST_LIST},
+           "save-shiny": ("boosts", {"on": ["hook-shiny"], "keep": True}),
+           "save-noclip": ("boosts", {"on": ["hook-noclip"], "keep": True})}
 
 
 def blank():

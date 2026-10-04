@@ -1429,6 +1429,28 @@ Every hook runs on LeafGreen with one address changed: `m4aSoundMain` is `0x081D
 The builders take `version=`, the host `--version leafgreen`. Verified on an emulated LeafGreen:
 turbo and `shiny`, music intact.
 
+### Several hooks at once
+
+Every hook calls the handler it replaced as a function (`bl` to a `bx r3` on `p_original`) and
+returns through its own pushed `lr`, so a hook's `p_original` may name another hook. `--resident
+turbo-lite+noclip+noencounter` lays the hooks out back to back from `0x0203FC00`, writes each one's
+`p_original` as the next one's entry (Thumb bit set), and hands the installers one blob whose entry
+is the first hook's and whose `p_original` is the last one's. `install-resident`, `install-kept` and
+MOM's loader are unchanged. A setting names its hook: `--resident-param turbo-lite.hold=2`.
+
+| rule | why |
+|---|---|
+| order turbo, noclip, shiny, ivs, noencounter | turbo's callback passes run after the other hooks have finished with the frame |
+| each hook's data is placed in `0x0203FBB4..0x0203FBFC`, then above the code | the defaults overlap: `shiny`, `ivs` and `noclip` all keep state at `0x0203FF80` |
+| at most one of `shiny`, `ivs` and turbo's `overlay` | each draws in `gMain.oamBuffer[120..127]` and OBJ palette 15 |
+| `follower` runs alone | 984 bytes: with any other hook it passes the 1004 the save holds |
+| the code fits `0x0203FC00..0x02040000` | 1024 bytes; past 876 the set goes through the save, past 1004 nowhere |
+
+`turbo-lite` (`asm/resident/turbo-lite.s`) is `turbo.s` assembled with `TURBO_LITE` set: the same
+passes, gates, hold and budget with no overlay and no RNG history, 356 bytes against 696. Every turbo
+frame test runs on it (`tests/test_turbo_lite.py`); a frame through a chain runs each hook and
+`VBlankIntr` once (`tests/test_resident_chain.py`).
+
 ### `install-kept`
 
 `asm/install-kept.s`, 192 bytes, installs the hook kept in `filler_B20` as `install-resident`
@@ -1479,6 +1501,7 @@ reset removes the hook until MOM is talked to again.
 | --- | --- | --- |
 | `noencounter` | 48 | 1 |
 | `ivs` | 520 | 1 |
+| `turbo-lite` | 376 | 1 |
 | `turbo` | 716 | 1 |
 | `shiny` | 888 | 1 |
 | `follower` | 1004 | 2 |

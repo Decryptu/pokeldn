@@ -172,23 +172,34 @@ def test_a_code_gift_that_hangs_cannot_start_and_a_chosen_cartridge_is_its_only_
     assert set(frlg.compile(state).variants) == {"BPGE"}
 
 
+
 B, SELECT = 0x2, 0x4
 
 
+def _boosts(on, keep=None, **settings):
+    chosen = {"on": on, **settings}
+    if keep is not None:
+        chosen["keep"] = keep
+    return {"mode": "preset", "preset": "boosts", "options": {"boosts": chosen}}
+
+
 @pytest.mark.skipif(not buffer_script.emulation_available(), reason="offline execution needs Unicorn")
-@pytest.mark.parametrize("preset,settings,name,params", [
-    ("hook-turbo", {"speed": "3", "button": "0x2", "keep": True}, "turbo",
+@pytest.mark.parametrize("value,name,params", [
+    (_boosts(["hook-turbo"], True, **{"hook-turbo": {"speed": "3", "button": "0x2"}}), "turbo-lite",
      {"extra": 4, "field": 2, "battle": 2, "hold": B, "budget": 228}),
-    ("hook-turbo", {"speed": "4", "where": "battle", "text": False, "button": "always", "keep": True}, "turbo",
+    (_boosts(["hook-turbo"], True, **{"hook-turbo": {"speed": "4", "where": "battle", "text": False,
+                                                    "button": "always"}}), "turbo-lite",
      {"extra": 0, "field": 0, "battle": 3, "hold": 0, "budget": 228}),
-    ("hook-shiny", {"button": "0x4", "slower": "7", "keep": True}, "shiny", {"slow": SELECT, "slow_frames": 7}),
-    ("hook-noclip", {"button": "0x2", "keep": True}, "noclip", {"hold": B}),
-    ("save-noclip", {}, "noclip", {"hold": 0x100}),            # a preset an older settings file names
-    ("hook-follower", {"keep": False}, "follower", {}),        # too large for one session: always kept
+    (_boosts(["hook-shiny"], True, **{"hook-shiny": {"button": "0x4", "slower": "7"}}), "shiny",
+     {"slow": SELECT, "slow_frames": 7}),
+    (_boosts(["hook-noclip", "hook-turbo"], True, **{"hook-noclip": {"button": "0x2"}}), "turbo-lite+noclip",
+     {"turbo-lite.extra": 4, "turbo-lite.field": 1, "turbo-lite.battle": 1, "turbo-lite.hold": 0x100,
+      "noclip.hold": B}),
+    ({"mode": "preset", "preset": "save-noclip"}, "noclip", {"hold": 0x100}),   # an older settings file
+    (_boosts(["hook-follower"], False), "follower", {}),        # too large for one session: always kept
 ])
-def test_a_boost_kept_in_the_save_carries_its_settings(preset, settings, name, params, monkeypatch, tmp_path):
+def test_boosts_kept_in_the_save_carry_their_settings(value, name, params, monkeypatch, tmp_path):
     from tests.test_resident_save import _session as kept_session
-    value = {"mode": "preset", "preset": preset, "options": {preset: settings}}
     args = _launch(TOOLS["frlg-gift"], value, monkeypatch, tmp_path)
     host, client = kept_session(None, payload=_frlg_run(args).payload)
     blob = buffer_script.build_resident_save_blob(name, **params)
@@ -197,29 +208,54 @@ def test_a_boost_kept_in_the_save_carries_its_settings(preset, settings, name, p
 
 
 @pytest.mark.skipif(not buffer_script.emulation_available(), reason="offline execution needs Unicorn")
-def test_a_boost_left_out_of_the_save_installs_its_settings_until_a_reset(monkeypatch, tmp_path):
-    value = {"mode": "preset", "preset": "hook-turbo", "options": {"hook-turbo": {"speed": "2", "where": "field"}}}
+def test_three_boosts_left_out_of_the_save_install_together_in_one_session(monkeypatch, tmp_path):
+    value = _boosts(["hook-noencounter", "hook-noclip", "hook-turbo"],
+                    **{"hook-turbo": {"speed": "2", "where": "field"}})
     payload = _frlg_run(_launch(TOOLS["frlg-gift"], value, monkeypatch, tmp_path)).payload
-    code = buffer_script.build_install_resident("turbo", build=builds.BPRF, extra=4, field=1, battle=0, hold=0x100)
+    code = buffer_script.build_install_resident("turbo-lite+noclip+noencounter", build=builds.BPRF, **{
+        "turbo-lite.extra": 4, "turbo-lite.field": 1, "turbo-lite.battle": 0, "turbo-lite.hold": 0x100,
+        "noclip.hold": 0x100})
     assert payload.build_distribution(builds.BPRF).buffer_code == code
     run = _run_full_stack(payload=payload.build_distribution(builds.BPRF))
     assert run.engine.server.buffer_status == builds.BPRF.vblank_intr | 1   # the game's handler, chained
 
 
-def _combinations(preset):
+def _combinations(options):
     import itertools
     choices = [[(o.key, v) for v in ((True, False) if not o.choices else [k for k, _ in o.choices])]
-               for o in preset.options]
+               for o in options]
     return [dict(combo) for combo in itertools.product(*choices)]
 
 
-@pytest.mark.parametrize("preset", [p for p in frlg.PRESETS if p.options], ids=lambda p: p.key)
-def test_every_combination_of_boost_settings_fits_every_cartridge_and_the_launcher(preset):
-    for settings in _combinations(preset):
-        if preset.key == "hook-turbo" and settings["speed"] == "1" and not settings["text"]:
-            assert preset.problem(settings)              # nothing would change: refused
+def test_every_set_of_boosts_is_sent_or_refused_with_a_reason():
+    import itertools
+    boosts = frlg.PRESET["boosts"]
+    keys = [b.key for b in frlg.BOOST_LIST]
+    sent = set()
+    for count in range(1, len(keys) + 1):
+        for on in itertools.combinations(keys, count):
+            for keep in (False, True):
+                chosen = {"on": list(on), "keep": keep}
+                if boosts.problem(chosen):
+                    continue
+                config = _frlg_run([*boosts.arguments(chosen), "--version", "firered"]).payload
+                for code in frlg.CARTRIDGES:
+                    config.build_distribution(builds.BUILDS[code])
+                sent.add(on)
+    assert ("hook-turbo", "hook-noclip", "hook-noencounter") in sent
+    assert all(len(on) == 1 for on in sent if "hook-follower" in on)
+    assert not any({"hook-shiny", "hook-ivs"} <= set(on) for on in sent)
+
+
+@pytest.mark.parametrize("boost", [b for b in frlg.BOOST_LIST if b.options], ids=lambda b: b.key)
+def test_every_setting_of_a_boost_fits_every_cartridge_and_the_launcher(boost):
+    boosts = frlg.PRESET["boosts"]
+    for settings in _combinations(boost.options):
+        chosen = {"on": [boost.key], boost.key: settings}
+        if boost.key == "hook-turbo" and settings["speed"] == "1" and not settings["text"]:
+            assert boosts.problem(chosen)              # nothing would change: refused
             continue
-        assert preset.problem(settings) == "", settings
-        config = _frlg_run([*preset.arguments(settings), "--version", "firered"]).payload
+        assert boosts.problem(chosen) == "", settings
+        config = _frlg_run([*boosts.arguments(chosen), "--version", "firered"]).payload
         for code in frlg.CARTRIDGES:
             config.build_distribution(builds.BUILDS[code])

@@ -2121,6 +2121,9 @@ RESIDENT_HOOKS = {
     "turbo": ("turbo_hook", {"extra": 4, "field": 0, "battle": 0, "overlay": 0, "hold": 0,
                              "help": 0, "budget": 0, "ring": 0,
                              "watch": 0x02024028, "frames": 0x0203FF60}),
+    # turbo with no overlay and no RNG history [asm/resident/turbo-lite.s]
+    "turbo-lite": ("turbo_hook", {"extra": 4, "field": 0, "battle": 0, "hold": 0, "help": 0, "budget": 0,
+                                  "frames": 0x0203FF60}),
     "shiny": ("shiny_hook", {"method": 0, "offset": 4, "search": 16, "slow": 0x100,
                              "slow_frames": 3, "help": 0x0203F171, "state": 0x0203FF80,
                              "overlay": 0x0203FF98}),
@@ -2144,10 +2147,80 @@ R_BUTTON = 0x100
 HELP_R_DISABLED = 0x0203F171
 
 
-def resident_blob(name, *, build=None, **params):
-    """-> (THUMB bytes, entry offset, p_original offset) for one of RESIDENT_HOOKS, on `build`."""
+# Several hooks resident at once: "turbo+noencounter", settings as "turbo.field=2". Laid out back to
+# back from RESIDENT_BASE, each one's p_original the next one's entry, so the installers see one hook.
+CHAIN = "+"
+CHAIN_ORDER = ("turbo", "turbo-lite", "noclip", "shiny", "ivs", "noencounter")   # turbo's passes last
+# Data a hook keeps outside its code, by parameter, and its size.
+CHAIN_DATA = {"turbo": {"frames": 20}, "turbo-lite": {"frames": 20}, "shiny": {"state": 36}, "ivs": {"words": 12}, "noclip": {"state": 24}}
+# The free word range under the kept handler: RESIDENT_DATA_FLOOR..0x0203FBFC.
+CHAIN_LOW = (RESIDENT_DATA_FLOOR, 0x0203FBFC)
+
+
+def chain_names(name):
+    """The hooks a --resident value names, in the order they run."""
+    names = name.split(CHAIN)
+    if len(names) == 1:
+        return names
+    unknown = [n for n in names if n not in CHAIN_ORDER]
+    if unknown:
+        runs_alone = [n for n in unknown if n in RESIDENT_HOOKS]
+        raise BufferScriptError(f"{', '.join(runs_alone)} runs alone" if runs_alone else
+                                f"unknown resident hook {unknown[0]!r}; have {sorted(RESIDENT_HOOKS)}")
+    if len(set(names)) != len(names):
+        raise BufferScriptError(f"{name} names a hook twice")
+    return sorted(names, key=CHAIN_ORDER.index)
+
+
+def _chain_blob(names, build, params):
+    """-> (THUMB bytes, entry offset, p_original offset, [(data address, size)]) for hooks run in turn."""
     from pokeldn.frlg.rom import native_script
     from pokeldn.frlg.rom.resident_stubs import STUBS
+    own = {n: {} for n in names}
+    for key, value in params.items():
+        hook, _, field = key.partition(".")
+        if hook not in own or not field:
+            raise BufferScriptError(f"{key}: a setting of a chain is HOOK.NAME, HOOK one of {names}")
+        own[hook][field] = value
+    drawing = [n for n in names if n in ("shiny", "ivs") or (n == "turbo" and own[n].get("overlay"))]
+    if len(drawing) > 1:
+        raise BufferScriptError(f"{' and '.join(drawing)} both draw in the screen's top-right corner")
+    sizes = [len(STUBS[n][0]) for n in names]
+    end = native_script.RESIDENT_BASE + sum(sizes)
+    if end > 0x02040000:
+        raise BufferScriptError(f"{CHAIN.join(names)} is {sum(sizes)} bytes; the resident area holds "
+                                f"{0x02040000 - native_script.RESIDENT_BASE}")
+    free = [list(CHAIN_LOW), [end, 0x02040000]]
+    data = []
+    for n in names:
+        for field, size in CHAIN_DATA.get(n, {}).items():
+            if field in own[n]:
+                continue
+            region = next((r for r in free if r[1] - r[0] >= size), None)
+            if region is None:
+                raise BufferScriptError(f"{CHAIN.join(names)} leaves no room for {n}'s {field}")
+            own[n][field] = region[0]
+            data.append((region[0], size))
+            region[0] += size
+    blob, at, links = bytearray(), 0, []
+    for n, size in zip(names, sizes):
+        part, entry, original = resident_blob(n, build=build, **own[n])
+        links.append((at + entry, at + original))
+        blob += part
+        at += size
+    for (_, original), (entry, _) in zip(links, links[1:]):
+        blob[original:original + 4] = (native_script.RESIDENT_BASE + entry + 1).to_bytes(4, "little")
+    return bytes(blob), links[0][0], links[-1][1], data
+
+
+def resident_blob(name, *, build=None, **params):
+    """-> (THUMB bytes, entry offset, p_original offset) for one of RESIDENT_HOOKS, or a chain of
+    them (CHAIN), on `build`."""
+    from pokeldn.frlg.rom import native_script
+    from pokeldn.frlg.rom.resident_stubs import STUBS
+    names = chain_names(name)
+    if len(names) > 1:
+        return _chain_blob(names, build, params)[:3]
     if name not in RESIDENT_HOOKS:
         raise BufferScriptError(f"unknown resident hook {name!r}; have {sorted(RESIDENT_HOOKS)}")
     entry, defaults = RESIDENT_HOOKS[name]
@@ -2156,7 +2229,7 @@ def resident_blob(name, *, build=None, **params):
     if unknown:
         raise BufferScriptError(f"{name} takes {sorted(defaults)}, not {sorted(unknown)}")
     params = {**defaults, **params}
-    if name == "turbo" and params["hold"] & R_BUTTON and "help" not in explicit:
+    if name in ("turbo", "turbo-lite") and params["hold"] & R_BUTTON and "help" not in explicit:
         params["help"] = HELP_R_DISABLED  # held R would open the Help System
     if name == "shiny" and "state" in explicit and "overlay" not in explicit:
         params["overlay"] = params["state"] + 24  # the word the hook shows
@@ -2185,20 +2258,33 @@ def resident_blob(name, *, build=None, **params):
 
 def _check_resident_layout(name, blob, dest):
     """Refuse a hook outside 0x0203FC00..0x02040000, or whose data overlaps its code, the kept
-    handler below it, or a claimed symbol."""
+    handler below it, a claimed symbol, or another hook's data in a chain."""
+    from pokeldn.frlg.rom import native_script
     from pokeldn.frlg.rom.resident_stubs import STUBS
     if dest % 4 or not (0x0203FC00 <= dest and dest + len(blob) <= 0x02040000):
         raise BufferScriptError(
             f"0x{dest:08X} is not word-aligned space inside 0x0203FC00..0x02040000, the only EWRAM "
             "no symbol claims")
-    for data, size in RESIDENT_DATA.items():  # the hook's data lies outside its code
-        at = STUBS[name][2].get(data)
-        address = int.from_bytes(blob[at:at + 4], "little") if at is not None else 0
-        if address and (dest - 4 < address + size and address < dest + len(blob)
-                        or address + size > 0x02040000 or address < RESIDENT_DATA_FLOOR):
-            raise BufferScriptError(
-                f"{name} is {len(blob)} bytes from 0x{dest:08X} and runs into its {data[2:]} "
-                f"at 0x{address:08X}, or that leaves the unclaimed EWRAM")
+    names = chain_names(name)
+    if len(names) > 1 and dest != native_script.RESIDENT_BASE:
+        raise BufferScriptError(f"a chain links its hooks at 0x{native_script.RESIDENT_BASE:08X}")
+    taken, at = [], 0
+    for n in names:
+        part = blob[at:at + len(STUBS[n][0])]
+        for data, size in RESIDENT_DATA.items():  # the hook's data lies outside its code
+            where = STUBS[n][2].get(data)
+            address = int.from_bytes(part[where:where + 4], "little") if where is not None else 0
+            if not address:
+                continue
+            size = CHAIN_DATA.get(n, {}).get(data[2:], size) if len(names) > 1 else size
+            if (dest - 4 < address + size and address < dest + len(blob)
+                    or address + size > 0x02040000 or address < RESIDENT_DATA_FLOOR
+                    or any(a < address + size and address < a + s for a, s in taken)):
+                raise BufferScriptError(
+                    f"{name} is {len(blob)} bytes from 0x{dest:08X} and runs into its {data[2:]} "
+                    f"at 0x{address:08X}, or that leaves the unclaimed EWRAM")
+            taken.append((address, size))
+        at += len(part)
 
 
 def build_install_resident(name, *, dest=None, table=None, build=None, **params):

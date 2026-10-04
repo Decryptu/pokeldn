@@ -16,6 +16,7 @@ GMAIN = 0x030022D0
 PALETTE_FADE = 0x02037AB4
 CB1_OVERWORLD = 0x08059E48
 CB2_OVERWORLD = 0x08059EC8
+HOOK = "turbo"                         # tests/test_turbo_lite.py runs the frame tests on turbo-lite
 
 
 def _counting_stub(counter):
@@ -57,8 +58,8 @@ def _run_hook(intr_check, extra, printers=b"", field=0, callbacks=None, cb1_stub
     from unicorn import UC_HOOK_CODE
     from unicorn import arm_const as a
     counters = 0x0203FFA0
-    code = bs.build_install_resident("turbo", extra=extra, field=field, battle=battle,
-                                     overlay=overlay, **extra_params)
+    code = bs.build_install_resident(HOOK, extra=extra, field=field, battle=battle,
+                                     **({"overlay": overlay} if overlay else {}), **extra_params)
     memory = {ns.GINTRTABLE_VBLANK: (VBLANK_INTR | 1).to_bytes(4, "little"),
               VBLANK_INTR: vblank or _counting_stub(counters),
               RUN_TEXT_PRINTERS: _counting_stub(counters + 4),

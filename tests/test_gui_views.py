@@ -364,6 +364,13 @@ def test_the_gift_builder_renders_every_mode_and_kind_and_exports_what_it_shows(
     for mode, *_ in gift_builder.MODES:
         builder.value["mode"] = mode
         assert len(builder.cards()) == 2
+    builder.value["mode"] = "preset"
+    for preset in module.PRESETS:
+        builder.value["preset"] = preset.key
+        builder.cards()
+        for member in getattr(preset, "members", ()):   # every boost ticked: refused, still drawn
+            builder.value["options"][preset.key]["on"].append(member.key)
+            builder.cards()
     builder.value["mode"] = "build"
     for kind, *_ in module.KINDS:
         builder.state["kind"] = kind

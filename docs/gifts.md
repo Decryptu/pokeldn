@@ -18,22 +18,25 @@ FireRed/LeafGreen and Sword/Shield; each game's module supplies its presets and 
 | Build your own | the form, compiled to `session/gifts/<tool>.pokegift` at Start and passed as `--gift-file` |
 | Open a file | a shared `.pokegift`, or a `.wc8` on Sword/Shield |
 
-The FRLG Game boosts presets are the resident hooks ([`install-resident`](frlg_rom.md#install-resident)).
-Each carries settings that become the launcher's `--resident-param` flags; every combination is built
-for all four cartridges before it can be sent (`tests/test_gift_builder.py`).
+The FRLG Game boosts are the resident hooks ([`install-resident`](frlg_rom.md#install-resident)).
+Several can be ticked at once; they run as one chain ([Several hooks at once](frlg_rom.md#several-hooks-at-once)).
+Each carries settings that become the launcher's `--resident-param` flags, and the panel shows the
+bytes the ticked set takes of the 1024 the console has.
 
-| preset | settings | parameters |
+| boost | settings | parameters |
 |---|---|---|
-| Speed up the game | speed x1 to x4; overworld, battles or both; always on or while R, B or Select is held; faster text | `field` and `battle` = speed - 1, `budget=228` from x3, `hold`, `extra=4` |
+| Speed up the game (`turbo-lite`) | speed x1 to x4; overworld, battles or both; always on or while R, B or Select is held; faster text | `field` and `battle` = speed - 1, `budget=228` from x3, `hold`, `extra=4` |
 | Walk through walls | R, B or Select | `hold` |
 | Shiny countdown | the slow-down button; x2, x4 or x8 slower | `slow`, `slow_frames` 1, 3 or 7 |
-| No wild encounters, Lead's IVs on screen | none | |
+| No wild encounters, Lead's IVs on screen, Pokemon follower | none | |
 
-L is not offered: only R's Help System toggle has a flag the hooks hold off. Keep it after a reset
-sends `save-write --resident` in place of `install-resident`: the hook goes into `filler_B20` and is
-installed in the same session. Pokemon follower is always kept, being past one `install-resident`
-session. Mom turns boosts back on binds Mom's loader, and talking to Mom after any boot installs
-whichever hook the save holds. Each is one Mystery Gift session; one hook is resident at a time.
+L is not offered: only R's Help System toggle has a flag the hooks hold off. Keep them after a reset
+sends `save-write --resident` in place of `install-resident`: the set goes into `filler_B20` and is
+installed in the same session. A set past one `install-resident` session (876 bytes), and the
+follower, always go through the save. Mom turns boosts back on binds Mom's loader, and talking to Mom
+after any boot installs whatever set the save holds. Sending boosts again replaces the set running.
+`tests/test_gift_builder.py` sends every combination of boosts, and every setting of each, through the
+launcher for all four cartridges.
 
 Customize copies a preset into the form. A FRLG card preset offers it only when the form expresses
 every step: unconditional stages of Pokemon, item, egg, wild battle and message steps, no event
