@@ -79,8 +79,8 @@ class GiftBuilder:
 
     def cards(self) -> list[ft.Control]:
         mode = self.value["mode"]
-        modes = t.segmented(list(gift_builder.MODES), mode, self._mode)
-        body = {"preset": self.presets, "build": self.editor, "file": self.file}[mode]()
+        modes = t.segmented(gift_builder.modes(self.game), mode, self._mode)
+        body = {"preset": self.presets, "event": self.events, "build": self.editor, "file": self.file}[mode]()
         self.show_summary()
         actions = [self.save_button]
         if mode == "preset" and self.module.PRESET[self.value["preset"]].state is not None:
@@ -201,6 +201,46 @@ class GiftBuilder:
 
     def _pick(self, key) -> None:
         self.value["preset"] = key
+        self.commit(rebuild=True)
+
+    # Official events
+
+    def events(self) -> ft.Control:
+        """Every official card the game's builder ships, filtered by a search and a group."""
+        cards = self.module.OFFICIAL.load()
+        tiles = ft.ResponsiveRow(spacing=6, run_spacing=6)
+        search = t.field(hint="Search: Pikachu, Master Ball, shiny...", value=self.value.get("event_search", ""))
+        group = {"value": self.value.get("event_group", "")}
+
+        def render(update=True):
+            words = search.value.casefold().split()
+            shown = [c for c in cards if (not group["value"] or c["group"] == group["value"])
+                     and all(w in f"{c['label']} {c['group']} {c['summary']}".casefold() for w in words)]
+            tiles.controls = [self._tile(c["label"], c["summary"], c["key"] == self.value["event"],
+                                         lambda e, k=c["key"]: self._event(k)) for c in shown]
+            count.value = f"{len(shown)} of {len(cards)} cards"
+            if update:
+                tiles.update()
+                count.update()
+
+        def filtered(key, value):
+            self.value[key] = value
+            if key == "event_group":
+                group["value"] = value
+            render()
+
+        search.on_change = lambda e: filtered("event_search", search.value)
+        count = t.text("", 12, t.MUTED)
+        render(update=False)
+        groups = _chips([("", "All")] + [(g, g) for g in self.module.OFFICIAL.GROUPS], group["value"],
+                        lambda k: filtered("event_group", k))
+        intro = t.text("Real event cards from the projectpokemon EventsGallery archive. Each one passed the "
+                       "game's own card check.", 12, t.MUTED)
+        listing = ft.Container(ft.Column([tiles], scroll=ft.ScrollMode.AUTO), height=440)
+        return ft.Column([intro, search, groups, count, listing], spacing=10)
+
+    def _event(self, key) -> None:
+        self.value["event"] = key
         self.commit(rebuild=True)
 
     def _customize(self, e) -> None:
@@ -541,6 +581,9 @@ class GiftBuilder:
                 lines = preset.effects(self.value["options"].get(preset.key))
             elif preset.state is not None:
                 when, lines = self.module.describe(preset.state, self.name)
+        elif mode == "event":
+            when, lines = self.module.OFFICIAL.describe(self.module.OFFICIAL.by_key()[self.value["event"]]["record"],
+                                                      self.name)
         else:
             when, lines = "", []
         problem = gift_builder.problem(self.tool, self.value)

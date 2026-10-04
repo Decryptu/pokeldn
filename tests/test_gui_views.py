@@ -365,9 +365,15 @@ def test_the_gift_builder_renders_every_mode_and_kind_and_exports_what_it_shows(
     view.set_value = lambda field, value, rebuild=False: view.values.__setitem__(field.key, value)
     module = gift_builder.module(gift_builder.GAMES[key])
     builder = view_module.GiftBuilder(view, field)
-    for mode, *_ in gift_builder.MODES:
+    for mode, *_ in gift_builder.modes(gift_builder.GAMES[key]):
         builder.value["mode"] = mode
         assert len(builder.cards()) == 2
+    if key == "swsh-gift":
+        builder.value["mode"] = "event"
+        for event in module.OFFICIAL.load():
+            builder.value["event"] = event["key"]
+            builder.cards()
+            assert builder.status.color != view_module.t.RED, (event["key"], builder.status.value)
     builder.value["mode"] = "preset"
     for preset in module.PRESETS:
         builder.value["preset"] = preset.key

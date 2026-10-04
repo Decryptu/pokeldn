@@ -67,7 +67,9 @@ it is legal before you offer it. An illegal Pokemon can crash the other game whe
 
 ## Mystery Gift
 
-Each Mystery Gift tool starts with three choices. Use a preset sends a ready-made gift. Build your
+Each Mystery Gift tool starts with three choices, four on Sword/Shield. Use a preset sends a ready-made gift. On
+Sword/Shield, Official events lists real event cards (Pokemon, items, clothing, Battle Points) with
+a search box. Build your
 own opens a form: on FireRed/LeafGreen a Wonder Card with its text, who hands it over and what it
 gives, a Wonder News, or your own ARM code; on Sword/Shield a Pokemon, an egg, items or Battle
 Points. Open a file sends a `.pokegift` someone shared, a `.wc3` card on FireRed/LeafGreen or a

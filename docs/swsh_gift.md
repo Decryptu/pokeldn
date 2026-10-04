@@ -670,6 +670,35 @@ id in bits 0-14, count in bits 15-29, bit 30 the new-item flag. The save block i
 | 7 | Ingredients | 100 |
 | 8 | Key | 64 |
 
+## Official event cards
+
+The desktop app's Official events mode offers 171 cards from projectpokemon EventsGallery
+(`pokeldn/swsh/data/events.json`, built by `scripts/gen_swsh_events.py` from a folder of its `.wc8`
+files; `pokeldn/swsh/events.py` reads it). Each one is sent as it was distributed, byte for byte.
+
+| group | cards |
+|---|---|
+| Pokemon | 87 |
+| Items | 69 |
+| Clothing | 9 |
+| Battle Points | 6 |
+
+Of the gallery's 949 Sword/Shield cards, all 949 pass the validator `0x010b5de0`. Left out: 740
+whose gift repeats a kept card with only the date or card id changed (mostly ranked-battle rewards),
+24 simulated cards, 12 whose items are ★ dummies, and 2 HOME Gigantamax gifts of a species with no
+Gigantamax form, which the PKHeX check refuses.
+
+The flags at `+0x10` set how often a console takes a card ([What the menu refuses](#what-the-menu-refuses)):
+
+| flags | cards | receipt |
+|---|---|---|
+| bit 0 | 112 | once per card id, refused afterwards with message 7 |
+| bit 2 | 13 | once per card date, at most ten a day |
+| neither | 46 | every time |
+
+A console that already took an official card with bit 0 set refuses it again. Two Pokemon cards
+carry a version mask of 1 or 2 and are skipped by the other version.
+
 ## Clothing
 
 A kind-4 record carries twelve pairs of u32 from `+0x20`, a category then an index: the first six

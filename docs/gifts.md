@@ -8,13 +8,14 @@ Sword/Shield, or an FRLG ARM console payload, with its target game and native re
 
 ## Desktop app
 
-Games, Mystery Gift is one tool per game with three ways to choose the gift. The same builder serves
+Games, Mystery Gift is one tool per game with three ways to choose the gift, four on Sword/Shield. The same builder serves
 FireRed/LeafGreen and Sword/Shield; each game's module supplies its presets and its form
 (`pokeldn/frlg/gift/builder.py`, `pokeldn/swsh/gift_builder.py`, bound in `pokeldn/app/gift_builder.py`).
 
 | mode | what it sends |
 |---|---|
 | Use a preset | a built-in gift; FRLG Wonder Cards, Wonder News and console code go to the launcher as flags |
+| Official events | a real Sword/Shield event card ([Official event cards](swsh_gift.md#official-event-cards)), compiled like a built gift |
 | Build your own | the form, compiled to `session/gifts/<tool>.pokegift` at Start and passed as `--gift-file` |
 | Open a file | a shared `.pokegift`, or a `.wc8` on Sword/Shield |
 

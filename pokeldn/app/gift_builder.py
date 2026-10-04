@@ -10,8 +10,13 @@ from pokeldn.app.paths import SESSION
 
 GAMES = {"frlg-gift": "frlg", "swsh-gift": "swsh"}
 MODULES = {"frlg": "pokeldn.frlg.gift.builder", "swsh": "pokeldn.swsh.gift_builder"}
-MODES = (("preset", "Use a preset", "gift"), ("build", "Build your own", "sliders-horizontal"),
-         ("file", "Open a file", "folder"))
+MODES = (("preset", "Use a preset", "gift"), ("event", "Official events", "book-open"),
+         ("build", "Build your own", "sliders-horizontal"), ("file", "Open a file", "folder"))
+
+
+def modes(game):
+    """The modes a game's tool offers: official events only where the builder ships them."""
+    return [m for m in MODES if m[0] != "event" or hasattr(module(game), "OFFICIAL")]
 
 
 def module(game):
@@ -31,6 +36,10 @@ def normalized(game, value):
     if value.get("preset") in getattr(builder, "ALIASES", {}):
         value["preset"], settings = builder.ALIASES[value["preset"]]
         value["options"][value["preset"]] = {**value["options"].get(value["preset"], {}), **settings}
+    if value["mode"] not in {m[0] for m in modes(game)}:
+        value["mode"] = "preset"
+    if hasattr(builder, "OFFICIAL") and value.get("event") not in builder.OFFICIAL.by_key():
+        value["event"] = builder.OFFICIAL.load()[0]["key"]
     if value.get("preset") not in builder.PRESET:
         value["preset"] = builder.PRESETS[0].key
     value.setdefault("file", "")
@@ -52,6 +61,8 @@ def output(tool):
 
 def _built_state(game, value):
     """The form state the launcher gets as a file, or None when a preset goes as flags."""
+    if value["mode"] == "event":
+        return {}
     if value["mode"] == "build":
         return value["build"]
     if value["mode"] == "preset":
@@ -82,6 +93,8 @@ def compile(tool, value):
         if value.get("icon") is not None:
             gift = gifts.adapter(game).with_icon(gift, value["icon"])
         return gift
+    if value["mode"] == "event":
+        return module(game).OFFICIAL.gift(value["event"])
     return module(game).compile(_built_state(game, value))
 
 
