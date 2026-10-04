@@ -222,6 +222,9 @@ original scripts set them. A full party refuses before the draw and the card sta
 On the French FireRed ROM under mGBA, each card bound to the mother gave its egg with the listed moves,
 `modernFatefulEncounter` 1 and met location 0xFF; four delays drew Whismur, Minun, Corphish and
 Psyduck from the PokePark card.
+On a retail French FireRed the PokePark card was received and saved, and the delivery man gave an egg
+whose summary read "Drôle d'ŒUF de POKéMON obtenu dans un bel endroit.", the line the summary screen
+picks for met location 0xFF or the fateful-encounter bit [pokemon_summary_screen.c:2799].
 
 ### The Battle Count Card
 
