@@ -17,7 +17,8 @@ VERSIONS = {1: "Sword only", 2: "Shield only"}
 
 @functools.cache
 def load() -> tuple[dict, ...]:
-    return tuple({**e, "record": base64.b64decode(e["record"])} for e in json.loads(DATA.read_text()))
+    cards = json.loads(DATA.read_text(encoding="utf-8"))      # Windows reads cp1252 by default
+    return tuple({**e, "record": base64.b64decode(e["record"])} for e in cards)
 
 
 @functools.cache

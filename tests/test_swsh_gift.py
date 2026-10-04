@@ -234,3 +234,19 @@ def test_the_app_sends_an_official_event_card_byte_for_byte_and_the_game_accepts
         assert swsh_gift_host.main([*gift_builder.args(tool, value), "--image", SWORD_IMAGE,
                                     "--dump", str(out)]) == 0
         assert out.read_bytes() == event["record"]
+
+
+def test_the_event_list_loads_where_text_defaults_to_cp1252(monkeypatch):
+    """Windows opens text as cp1252; the list carries Japanese and Korean names."""
+    import pathlib
+    from pokeldn.swsh import events
+    read = pathlib.Path.read_text
+    monkeypatch.setattr(pathlib.Path, "read_text",
+                        lambda self, encoding=None, errors=None: read(self, encoding or "cp1252", errors))
+    events.load.cache_clear()
+    events.by_key.cache_clear()
+    try:
+        assert len(events.load()) == 171
+    finally:
+        events.load.cache_clear()
+        events.by_key.cache_clear()

@@ -102,7 +102,7 @@ def main():
         e["key"] = key if used[key] == 1 else f"{key}-{used[key]}"
     OUT.parent.mkdir(exist_ok=True)
     OUT.write_text(json.dumps([{k: e[k] for k in ("key", "label", "group", "summary", "record")} for e in kept],
-                              ensure_ascii=False, indent=0) + "\n")
+                              ensure_ascii=False, indent=0) + "\n", encoding="utf-8")
     print(f"{len(kept)} cards -> {OUT.relative_to(ROOT)}; left out: {left}")
 
 
