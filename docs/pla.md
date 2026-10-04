@@ -121,7 +121,9 @@ the seat on the first 0x40 and runs `bin/pla_host.py` on the same code and chann
 `--ip-join` (`--take-host`, on by default). Against an emulated console hosting its search, with the
 join request held 4.5 s: type 7, type 8, the joiner's host up 5.2 s after its last packet, the
 console joined it 0.02 s later and a trade completed, 550 of 550 packets authenticated, and the
-console left with a leave request when its player backed out.
+console left with a leave request when its player backed out. A retail console hosting its search, with the
+join request held 4.5 s over the ESP32 board, sent type 7, joined the new host, saved the trade and left
+by deauthentication.
 
 Each Net message has a named header class with a serializer. `NetUpdateNetworkHostMessageHeader`
 (`0x6fe03c`): u64 at wire +4, u64 at +0xc, u16 at +0x14, size 0x16, big-endian. The 0x11 header

@@ -137,6 +137,10 @@ class GameStreams:
         for name, prefix in (("identity10", 0), ("identity11", streams.PREFIX_SIZE)):
             if name in self.ref:
                 self.ref[name] = za.reference.named(self.ref[name], args.trainer_name, prefix)
+        if "identity11" in self.ref and "identity11b" in self.ref:
+            self.ref["identity11b"] = (self.ref["identity11b"][:streams.PREFIX_SIZE]
+                                       + za.reference.sync_message(self.ref["identity11"],
+                                                                   streams.PREFIX_SIZE))
         # The preview marked 1, the pick marked 0 (docs/za.md, Hosting). One per queued trade; the
         # last serves every later trade.
         paths = args.trade_offer or []

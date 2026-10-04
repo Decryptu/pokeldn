@@ -169,9 +169,11 @@ def test_the_host_identity_carries_the_apps_trainer_name():
 
     tool = _za_tool("za-host")
     args = parser_of(tool.script).parse_args(build(tool, {}, {}, Settings(ot="ASH"), stamp="t"))
-    identity, *_ = za_host.load_payloads(args)
+    identity, tail, *_ = za_host.load_payloads(args)
     assert za.reference.player_name(identity) == "ASH"
     _only_the_name_differs(identity, za.reference.load("identity10"))
+    # a 1403 that does not match the identity stalls a retail console before its 0100
+    assert tail == za.reference.sync_message(identity) != za.reference.load("identity11b")[4:]
 
 
 def test_the_joiner_identity_carries_the_apps_trainer_name():
@@ -194,6 +196,15 @@ def test_the_joiner_identity_carries_the_apps_trainer_name():
         _only_the_name_differs(named, recorded, prefix)
         assert any(named in body for body in sent), name
         assert not any(recorded in body for body in sent), name
+    sync = za.reference.sync_message(za.reference.named(za.reference.load("identity11"), "ASH", 4), 4)
+    assert any(sync in body for body in sent)
+    assert not any(za.reference.load("identity11b")[4:] in body for body in sent)
+
+
+def test_the_sync_message_is_the_checksum_a_console_sent_for_its_identity():
+    """`identity11b` is the 1403 a Z-A station sent after the recorded identity (player Player)."""
+    assert za.reference.sync_message(za.reference.load("identity10")) == \
+        za.reference.load("identity11b")[4:] == bytes.fromhex("1403b9018269fb308f")
 
 
 @pytest.mark.parametrize("name", ["", "THIRTEENCHARS"])

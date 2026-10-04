@@ -69,8 +69,8 @@ def build_parser():
 
 def load_payloads(args):
     identity = za.reference.named(za.reference.load("identity10", args.game_dir), args.trainer_name)
-    # The nine-byte message after the identity on protocol 11, stored with the joiner's prefix.
-    tail = za.reference.load("identity11b", args.game_dir)[streams.PREFIX_SIZE:]
+    # The 1403 checksum of the identity, sent after it on protocol 11.
+    tail = za.reference.sync_message(identity)
     selection = za.reference.load("selection", args.game_dir)
     offers = []
     for n, path in enumerate(args.trade_offer, start=1):

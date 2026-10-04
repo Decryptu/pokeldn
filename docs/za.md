@@ -163,7 +163,7 @@ id, in order of first appearance:
 | id | bytes | what it carries |
 |---|---|---|
 | `1400` | 106 | the station's identity, player name in UTF-16 |
-| `1403` | 9 | a short follow-up to the identity |
+| `1403` | 9 | the identity's checksum (SyncDataSet), below |
 | `0100` | 1211 | the record the selection screen is drawn from |
 | `0101` | 354 | the offer: nine-byte header, 344-byte Pokemon record, one trailing byte |
 | `0102`, `0104` | 5 | step messages |
@@ -183,6 +183,18 @@ The name is 26 bytes, UTF-16LE, NUL-padded: at most twelve characters, at offset
 protocol-10 message (0x1c behind the protocol-11 station prefix). With the recorded `Player` there,
 a retail console showed `Player` for its trade partner. Both launchers write `--trainer-name`
 (default `POKELDN`) into it (`pokeldn.za.reference.named`).
+
+Channel 0x14 carries a key-value store the game keeps in sync between stations
+(`gfa::network::p2p`, built at `0x7796a0`; message id `0x1400 | index`): 1400 is UpdateValue
+(`0xc1bdf4`), 1402 DeleteAllValues and 1403 SyncDataSet (`0xc4b1b4`). The identity's outer u32
+`0x2abe85e2` is the value's key, a constant at `0xdf1b30`. 1403 carries one u32 over the sender's
+values sorted by key, `h = crc32(le32(fnv1a32(value) + h))` from `h = 0` (`0xc4b270`, FNV-1a at
+`0xc4b31c`, standard CRC-32 at `0xc4b420`); for the identity the value is the 0x5d bytes after `bc5d`.
+The receiver recomputes it and moves on only when every station's matches (`0xb8c724`, `0xb8c660`).
+The recorded `Player` identity gives `1403b9018269fb308f`, the recorded message. A renamed identity
+sent with that stale 1403 left a retail console on its search screen in 4 of 4 sessions: it sent its
+1400s and 1403 but never its 0100. `pokeldn.za.reference.sync_message` builds the 1403 for the
+identity sent.
 
 ### The trade commands
 

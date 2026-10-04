@@ -4,6 +4,8 @@ record (docs/za.md). identity11b is stored with the joiner's four-byte station p
 another player name in an identity.
 """
 import os
+import struct
+import zlib
 
 from pokeldn.ldn.channel_table import TUPLE, decode_uint
 
@@ -49,6 +51,18 @@ def named(identity, name, prefix=0):
         raise ValueError(f"a Z-A player name is 1 to {(NAME_SIZE - 2) // 2} characters, not {name!r}")
     at = name_offset(identity, prefix)
     return identity[:at] + raw.ljust(NAME_SIZE, b"\0") + identity[at + NAME_SIZE:]
+
+
+def sync_message(identity, prefix=0):
+    """-> the 1403 SyncDataSet for a 1400 identity: crc32(le32(fnv1a32(value))) over its one value
+    (`0xc4b270`, docs/za.md, The game's own exchange). A stale one stalls the console before 0100."""
+    at = name_offset(identity, prefix) - 11      # b906 82<u32> 01 02 bc1a, then the name
+    if identity[at - 2:at] != b"\xbc\x5d":
+        raise ValueError("not a 1400 identity with a 0x5d-byte value")
+    h = 0x811C9DC5
+    for c in identity[at:at + 0x5D]:
+        h = ((h ^ c) * 0x01000193) & 0xFFFFFFFF
+    return b"\x14\x03\xb9\x01\x82" + struct.pack("<I", zlib.crc32(struct.pack("<I", h)))
 
 
 def player_name(identity, prefix=0):
