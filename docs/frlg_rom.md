@@ -1418,6 +1418,7 @@ jump, the talk script, the removal under a menu.
 | `shiny` | counts down in grass; R slows it | the followed seed matches `gRngValue`; the Python model agrees on the shiny |
 | `ivs` | the lead's IV word and `personality % 25` match a `save-dump` of `SaveBlock1 + 0x34` | matches `gPlayerParty` (`0x02024280`) |
 | `noencounter` | no wild encounter while walking in grass | none; encounters return after a soft reset |
+| `turbo-lite+noclip+noencounter`, `turbo-lite.field=2 battle=2 hold=0x2`, `noclip.hold=0x100` | one session answered `0x0800071D`; B held fast-forwards, R held walks through walls, no grass encounters, both buttons at once walk fast through walls | |
 | `follower` | walks a tile behind, waits at a ledge's edge and jumps it after the player steps off the landing tile, with the game's shadow and dust; running and running over a ledge without flicker; A facing it: cry, smile, line; the start menu and doors; one session writes it to the save and installs it | the same on mGBA with Chansey's sprite and Blastoise's icon |
 
 Unresolved: on the emulator the overlay drew during the recap after CONTINUER but not in interactive
