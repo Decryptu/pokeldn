@@ -43,10 +43,9 @@ characters; a longer name is cut to seven, and a name outside the Gen III charac
 
 ## Linux serial ports
 
-The app opens the board as the user, with no root and no kernel networking: the v0.6.2 Linux bundle,
-run by an unprivileged user in an amd64 Ubuntu 24.04 container, completed a retail Sword host trade
-over a XIAO ESP32-C6. Opening the port needs the `dialout` group (`uucp` on Arch); a port the user
-may not open fails with `EACCES`, and the Board page then names the group instead of a busy port.
+The app opens the board as the user, with no root and no kernel networking. Opening the port needs
+the `dialout` group (`uucp` on Arch); a port the user may not open fails with `EACCES`, and the Board
+page then names the group instead of a busy port.
 
 | service | board | effect |
 |---|---|---|
@@ -81,8 +80,7 @@ can be retried. The Pokemon sprites cache has its own Clear the cache button und
 
 The sprites are the 96x96 PNGs behind `sprites.front_default` and `sprites.front_shiny` of
 `https://pokeapi.co/api/v2/pokemon/{id}`, read from `raw.githubusercontent.com/PokeAPI/sprites`
-(`sprites/pokemon/{id}.png`, `sprites/pokemon/shiny/{id}.png`). The JSON is not fetched: it is 300 KB
-per species, and the sprite path is fixed by the id. Twelve National Dex numbers sampled from 1 to 1025
+(`sprites/pokemon/{id}.png`, `sprites/pokemon/shiny/{id}.png`). The JSON (300 KB per species) is not fetched; the sprite path is fixed by the id. Twelve National Dex numbers sampled from 1 to 1025
 all have both sprites; 1026 returns 404. When a shiny sprite is missing, the normal one is shown.
 
 | where | size |
@@ -225,11 +223,10 @@ from the embedded viewer; without it, choosing `prod.keys` raises `ENTITLEMENT_N
 
 The Linux bootloader sets `LD_LIBRARY_PATH` to the unpacked bundle, which carries the build
 machine's `libstdc++.so.6` (Ubuntu 22.04). Loaded first, it leaves Fedora 44's Mesa with no EGL
-client extensions and the Flet viewer aborts in libepoxy (`No provider of eglGetPlatformDisplayEXT`).
+client extensions, and the Flet viewer aborts in libepoxy (`No provider of eglGetPlatformDisplayEXT`).
 `pokeldn/app/paths.py` restores the user's `LD_LIBRARY_PATH` for every program the app starts, and
 sets `FLET_LINUX_DISTRO` to the bundled viewer's build: Flet otherwise picks a viewer by glibc and
-downloads one the bundle does not carry. The Ubuntu 22.04 viewer runs on Fedora 44 under Wayland.
-The frozen check asserts both on Linux.
+downloads one the bundle does not carry. The frozen check asserts both on Linux.
 
 The app bundles Unicorn for Check offline. It loads its architecture modules by name, so the
 packer collects its submodules and adds the platform's library to `unicorn/lib` itself: PyInstaller's

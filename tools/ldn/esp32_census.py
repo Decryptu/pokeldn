@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """What else is on the air: one board visits each channel and counts every frame it receives,
 corrupted ones (FCS failures) included, with their airtime, RSSI and the radio's noise floor.
-docs/hardware_esp32.md, Two boards reproduce the misses.
+docs/hardware_esp32.md, Receive misses on two boards.
 
     ./.venv/bin/python tools/ldn/esp32_census.py --port /dev/cu.usbserial-XXXX \\
         [--channels 1,3,5,6,7,9,11] [--dwell 30] [--passes 1] [--out FILE]

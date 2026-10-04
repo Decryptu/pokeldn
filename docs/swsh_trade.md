@@ -23,8 +23,8 @@ and the PK8 are on [The sync framework](swsh_protocol.md).
     10 the console writes its save
 
 The hosting console does not ack a joiner's snapshot sent on port 0; the joiner's goes on port 1.
-Until its 0x84 is answered the console sends nothing else and retransmits it (19142 messages over
-one unanswered session; 13 once acked). `pokeldn/ldn/broadcast4.py` implements all four kinds.
+Until its 0x84 is answered the console sends nothing else and retransmits it indefinitely.
+`pokeldn/ldn/broadcast4.py` implements all four kinds.
 
 What follows the save is under [Hosting a trade](#hosting-a-trade) and
 [Host migration](#host-migration).
@@ -68,20 +68,20 @@ host (`nn::pia::mesh::LeaveWithHostMigrationJob`). The named client must broadca
 With `--answer-migration --update-mesh`, the client sends the finish and publishes mesh updates
 under its new host index. Retaining a session after the handover is unverified.
 
-Measured sends of MIGRATION_START by a hosting retail Sword, each sent once:
+A hosting retail Sword sends MIGRATION_START once, in two situations:
 
 | when | condition |
 |---|---|
-| 0.8 s after its box command 3, 26 s after phase 4 | a completed trade; what the player pressed after the save is not recorded |
-| a few seconds after the player accepted, before the console tore down with `2-ALZAA-0016` | trades that failed before the ladder, the joiner sending no confirmation command |
+| 0.8 s after its box command 3 | after a completed trade |
+| a few seconds after the player accepted, before the console tears down with `2-ALZAA-0016` | a trade that failed before the ladder, the joiner sending no confirmation command |
 
 `bin/swsh_host.py --migrate` ends its own hosted trade with box command 3 and MIGRATION_START; an
-emulated Shield joiner then showed the interrupted-communication message after its save. By
-default the host keeps the session.
+emulated Shield joiner then shows the interrupted-communication message after its save. By default
+the host keeps the session.
 
 ## Hosting a trade
 
-`bin/swsh_host.py` hosts and `pokeldn/swsh/host_trade.py` leads as a hosting Sword does; a retail
+`bin/swsh_host.py` hosts and `pokeldn/swsh/host_trade.py` leads as a hosting Sword does. A retail
 French Sword 1.3.2 and an emulated Shield 1.3.2 each join it and trade. The details below are read
 from a trade between two emulated Shields 1.3.2.
 
@@ -120,10 +120,9 @@ The application layer, after the [ping handshake](swsh_session.md) both ways:
 ## The trade animation
 
 The console plays its trade animation after its last syncCommand 40 (`3`), with no trade message
-during it. Measured once with a retail Sword joining `bin/swsh_host.py`, from that syncCommand: the
-animation started at 1.2 s, the received Pokemon appeared at about 15 s (hand-pressed marks, up to
-2 s late) and the player had control at about 24 s. The console sent no application message until
-the player backed out of the box (box command 3).
+during it. A retail Sword joining `bin/swsh_host.py` started the animation 1.2 s after that
+syncCommand and gave the player control at about 24 s. It sent no application message until the
+player backed out of the box (box command 3).
 
 ## Trades in a row on one session
 
@@ -153,9 +152,9 @@ after the joiner's 4, and the joiner launcher sends its 4 in answer to the host'
 Every later trade repeats the trade's own part: both offers and box command 1, the two box command
 4s in that order, ping 130 (the joiner pings first), a new content 50 at phase 0, ping 120, a new
 content 40 from phase 0 to 4. No 0x84 snapshot, ping 97 or 110, box command 3 or content 30 publish
-comes between trades. `bin/swsh_host.py` with a repeated `--offer-file` traded three queued records
-with a retail Sword joiner on one session this way, then closed when the console left, and `bin/swsh_connect.py` with a repeated
-`--offer-file` traded three with a retail Sword host on one session.
+comes between trades. `bin/swsh_host.py` and `bin/swsh_connect.py` with a repeated `--offer-file`
+trade one queued record per trade on one session with a retail Sword joiner and host respectively;
+the host closes when the console leaves.
 
 `bin/swsh_connect.py` with a repeated `--offer-file` takes the console's offer after a finished
 ladder (phase 4 on 40040) as the next trade. It answers that offer with its next record, so the
@@ -164,11 +163,11 @@ the 40050 and 40040 pairs and bodies answered, the confirmation command queue, t
 latch. The 40030 pair and the ping answers carry over. `bin/swsh_host.py --accept-first --lead
 SECONDS` plays a console host's player (accepts first, offers its next queued record from the box
 after a trade), and the two launchers trade two records each way on one session on simulated boards
-(`tests/test_esp32.py`). Two trades against a retail console host also completed on one session.
+(`tests/test_esp32.py`).
 
-When that retail joiner's player then pressed B in the box, the console sent box commands 2 and 3
-and mesh `0401` and deauthenticated, with no error; its next search joined the same hosted network
-(same network id). A searching console joins any network that passes the
+When a retail joiner's player presses B in the box, the console sends box commands 2 and 3 and mesh
+`0401` and deauthenticates with no error; its next search can join the same hosted network (same
+network id). A searching console joins any network that passes the
 [matching rules](swsh_session.md#how-a-searching-sword-finds-a-partner).
 
 ## The box state machine
@@ -185,8 +184,8 @@ sender emits 1..5.
 
 The listener `0x00c8d900` sets `[owner + 0x218 + code] = 1`; code 2 first clears code 1's flag
 (`+0x219`), code 5 code 4's (`+0x21c`). 1 offers, 2 withdraws the offer; 4 confirms, 5 withdraws a
-4. When a joiner sent command 1 then 2 to a hosting console whose player sat on the confirmation
-screen pressing nothing, the console began leaving four seconds later.
+4. A hosting console whose player is on the confirmation screen began leaving four seconds after
+a joiner sent command 1 then 2.
 
 The sender `0x010cda70(content, command)` sits behind wrappers `0x010cde90` .. `0x010cded0`
 (commands 1 to 5), driven by the scene's jump table `0x00a96d10` on its action `+0x78`:
@@ -506,7 +505,7 @@ sends nothing.
 Oui files it unchanged in save block `0x28e707f5`: 300 slots of 0x1d0 from `album+0x230`, loaded as
 one `0x21fc0`-byte block (`0x013fad4c`), free while `+0x1c8` is non-zero. `0x013fbab0` fills the
 first free slot: 0x1c4 bytes, `+0x1c8`/`+0x1c9` zeroed, year `+0x1ca` (`tm_year + 0x76c`), month + 1
-`+0x1cc`, day `+0x1cd`, `+0x1ce`/`+0x1cf` from arguments (`00 00 ea 07 09 1a 02 00` for 26 September 2026).
+`+0x1cc`, day `+0x1cd`, `+0x1ce`/`+0x1cf` from arguments (`00 00 ea 07 09 1a 02 00`: year 0x07ea, month 9, day 0x1a).
 `0x013fbc00` returns 1 when all 300 are used.
 
 `0x013fbc40(album, card)` (callers `0x00aa6414`, `0x0106612c`, `0x015253f0`, `0x01543868`) skips the
@@ -556,9 +555,9 @@ DesignLevel 5, language 6, GlossIndex 9. `bin/swsh_host.py --card-set FIELD=VALU
 
 ## The offered record
 
-An app-built Pikachu traded to a retail Sword and back in the second trade on the same session
-kept every requested offer option. Its returned PK8 has a valid checksum and passes PKHeX legality;
-the PID, original trainer ids, all six IVs and all six EVs match the first outgoing offer.
+A built Pikachu traded to a retail Sword and back keeps every requested offer option. The returned
+PK8 has a valid checksum and passes PKHeX legality; PID, original trainer ids, IVs and EVs match
+the outgoing offer.
 
 | requested field | returned record |
 |---|---|
@@ -637,17 +636,15 @@ new PID with `--fresh-pid`, and trade N writes `--save-offered` with `-N`. A tra
 offered and whose ladder has not finished holds the session up to `--grace` seconds (300) past
 `--hold`.
 A stored-format record with no party stats trades; the console computes the level from the
-experience. On a Linux card, drop
-`POKELDN_RADIO` and prime the kernel's BSS table with `iw dev IFACE scan` before the run
-([The cartridge and the session](swsh_session.md)).
+experience.
 
 ## The penalty, and ending a run cleanly
 
 A trade timing out with the link alive is a failed trade and locks the console out of trading
 (`msg_ui_live_comm_app_alert_00`, line 331 of `/bin/message/French/common/live_comm.dat`). The text
-names no duration and the label is absent from `main.bin`; the lock's length is unread. When
-`--abort-on-stall` cut the link 15 s after `04000400`, during the save, the console showed the
-communication error `2-ALZAA-0016`, took no trade lock, and started a new local search at once.
+names no duration and the label is absent from `main.bin`; the lock's length is unread. Cutting
+the link 15 s after `04000400`, during the save, shows the communication error `2-ALZAA-0016`,
+takes no trade lock and starts a new local search at once.
 
 `bin/swsh_connect.py --abort-on-stall SECONDS` drops the link once the ladder has started and SECONDS
 pass with no new body. It stands down at phase 4, the silent teardown rung (`stall_abort()`,

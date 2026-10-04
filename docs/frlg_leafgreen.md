@@ -34,13 +34,12 @@ The measurements run inside the Mystery Gift menu, so the console never leaves i
 not in the table instead of falling back to FireRed.
 
 Every IWRAM and EWRAM address measured is identical (link-time globals of the same code); every ROM
-address above 0x080486C8 differs. Fifteen symbols confirm it; measure every new one rather than
-predicting it.
+address above 0x080486C8 differs. Fifteen symbols confirm it; a new ROM symbol is measured, not predicted.
 
-## The delta is a property of a region
+## The delta by region
 
-The offset from a FireRed address to its LeafGreen twin is piecewise constant, in at least eight
-segments, and not monotonic (the four low segments each diverge four bytes less than the one below):
+The offset from a FireRed address to its LeafGreen twin is piecewise constant over at least eight
+segments and not monotonic (the four low segments each diverge four bytes less than the one below):
 
     +0x0   -0x2C   -0x28   -0x24   -0x20   -0x1C4   -0x124C   -0x1240   -0x12D8
 
@@ -66,7 +65,7 @@ window matching the old delta to the first matching the new one. `rom_map.LEAFGR
 holds them; a test asserts the boundary and segment tables agree. Above 0x0843C800 the cartridges
 hold different bytes (version-specific graphics), so the delta there is undefined by content.
 
-## The methods, in order of cost
+## Measurement methods
 
 ### Paired constants
 
@@ -97,8 +96,8 @@ place's address there. Two runs a point, anywhere in the ROM:
 | 0x086003E0 | 0x085FF108 | 0xE1926F4D | −0x12D8 |
 | 0x086803FC | 0x0867F124 | 0xC35D61AE | −0x12D8 |
 
-Each scan returned one match in a 2 MB window. Two agreeing points do not constrain the range
-between them; a control must. The script-layer scans:
+Each scan returned one match in a 2 MB window. Two agreeing points leave the range between them
+unconstrained, so a control point is needed. The script-layer scans:
 
 | needle | taken from | found on LeafGreen at | delta |
 |---|---|---|---|
@@ -194,15 +193,15 @@ between frames fails its CRC; a ROM region of the same size does not. Mechanism 
 Starting 4 bytes higher reads the save-block pointers. Both move together, by one shared 4-aligned
 offset inside the 0..124 range `SetSaveBlocksPointers` rolls [load_save.c:75].
 
-## The English build as an instrument
+## The English build
 
 `pret/pokefirered` builds both cartridges at REVISION 10, the Switch release's revision:
 
     make firered_switch     -> pokefirered_switch.gba    baa452d0b24629dd7782cfc07a8984085dde1311
     make leafgreen_switch   -> pokeleafgreen_switch.gba  62b9fc77549dbc67032eb6cbd0ea6ad3b825690f
 
-Both match the decomp's sha1 when built with binutils and `pret/agbcc` (about two minutes); a build
-that does not match is unusable. The ROM is never committed.
+Both match the decomp's sha1 when built with binutils and `pret/agbcc`; a build that does not match
+is unusable. The ROM is never committed.
 
 It is the English release: at the same address a French console and the English build agree on 3.7%
 of bytes, since French strings differ in length. It serves as a second cartridge pair from the same
@@ -229,7 +228,7 @@ keeps every name an address carries.
 
     ./.venv/bin/python tools/frlg/english_build.py --check
 
-A name from here is a deduction. `rom_map.CALLABLE` means called on hardware with an effect;
+A name from the English build is inferred. `rom_map.CALLABLE` means called on hardware with an effect;
 `worker_names` means the console's own body called it in source order. `pokeldn/frlg/rom/english_names.py`
 holds 7573 French function addresses named this way (`scripts/gen_english_names.py`), with the offset
 runs. `rom_functions` reads them last, marked `[english]`, so a deduction never overrules a body the
@@ -263,10 +262,10 @@ inside the brackets measured on hardware.
   `french delta = offsetFR - offsetLG + english delta`.
 - Regenerate `english_names.py` with `scripts/gen_english_names.py` after any new dump.
 
-## What did not work
+## Unusable references
 
-`gSongTable` (347 `{header, ms, me}` entries) packs 122 song headers inside 9 KB, so it measures one
-place, not many.
+`gSongTable` (347 `{header, ms, me}` entries) packs 122 song headers inside 9 KB, so it fixes one
+place only.
 
 FireRed's ROM data ends between 0x086ABE68 (the last song header) and 0x08800000: 0x08800000 reads
 all `0xFF`, 0x08E00000 all `0x00`, 0x08680000 is high-entropy data.

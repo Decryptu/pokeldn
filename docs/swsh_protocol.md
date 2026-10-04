@@ -265,7 +265,7 @@ The signature is RSA-2048, PKCS#1 v1.5, SHA-256, checked by `0x011aedf0(team, v,
 
 The console holds only the public key; the image carries
 `https://v3-lp1.vp.n.srv.nintendo.net/v1/public_key` (`0x01bd7d41`) and `.../v1/validate`
-(`0x01c11a93`), so a Nintendo server signs (deduced). Link Trade never reaches the check.
+(`0x01c11a93`), so a Nintendo server presumably signs. Link Trade never reaches the check.
 
 `v1/validate` (`0x011a2a70`) sends a NUL-terminated string (all of `v1/public_key`'s body), the key
 version as BE u16 (key holder `+0x68`, set from the `v1/public_key` reply by `0x0144fb90`), the

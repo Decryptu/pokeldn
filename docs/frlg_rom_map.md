@@ -27,9 +27,9 @@ The Switch release carries the GBA ROM as the only file in its RomFS.
 
 The header at 0xA0 reads `POKEMON FIRE` `BPRF` and `POKEMON LEAF` `BPGF`, version 0x0A.
 
-The French FireRed 1.0.1 update leaves the cartridge unchanged. Its guest ROM, read on a retail console
-through `rom-checksum` and a byte read of the one differing stretch, equals `FireRed_f.gba` across
-`0x08000000..0x09000000` apart from the wrapper's three load-time patches ([frlg_rom.md](frlg_rom.md),
+The French FireRed 1.0.1 update leaves the cartridge unchanged: its guest ROM, read on a retail
+console through `rom-checksum` and a byte read of the one differing stretch, equals `FireRed_f.gba`
+across `0x08000000..0x09000000` apart from the wrapper's three load-time patches ([frlg_rom.md](frlg_rom.md),
 The breakpoint hooks); `0x09000000..0x0A000000` reads the open bus (each halfword its own address
 halved) on both.
 
@@ -58,8 +58,8 @@ independently agree with `pokefirered_switch.elf`:
 IWRAM does not transfer: `gSaveBlock1Ptr` is 0x030042D8 in the English build and 0x03004228 on the
 cartridge.
 
-Every sized EWRAM symbol in the ELF, subtracted from the region, leaves one span no symbol claims, in
-every game state (`nm -S pokefirered_switch.elf`, `scratchpad/ram_survey.py`):
+Subtracting every sized EWRAM symbol in the ELF from the region leaves one span no symbol claims
+(`nm -S pokefirered_switch.elf`, `scratchpad/ram_survey.py`):
 
     highest symbol end   0x0203FBAC
     EWRAM end            0x02040000
@@ -167,7 +167,7 @@ in one run: `gSpecialVars` = 0x081639A8, `gSpecialVar_0x8000` = 0x020370B4, the 
 [ld_script_rev10.ld:318] and `.rodata` starts below `gSpeciesInfo`. `gSpecialVar_0x8000` is
 `EWRAM_DATA`, a link-time global safe to name as a constant.
 
-### `gScriptCmdTable`, derived rather than searched
+### `gScriptCmdTable`
 
 `script_data` opens with `gScriptCmdTable` (214 four-byte entries) and puts `gSpecialVars` right after it
 [ld_script_rev10.ld:318], so it starts at 0x08163650 and one 856-byte dump reads it. All 214 words are
@@ -286,7 +286,7 @@ Reading the source:
   emits no `bl`, and it appears in 151 bodies.
 - `NDEBUG` holds: `ScrCmd_special` makes two calls on the cartridge, and the assert would add a third.
 
-Names coined here that the decomp already has, confirmed by every body reaching the address
+`rom_map` names that the decomp also has, confirmed by every body reaching the address
 (`rom_map.DECOMP_NAMES` is the join):
 
 | `rom_map` name | the decomp | bodies agreeing |
@@ -301,8 +301,8 @@ Names coined here that the decomp already has, confirmed by every body reaching 
 `GetMonData` is a macro dispatching on argument count [include/pokemon.h:343]; `GetMonData2` is
 `__attribute__((alias("GetMonData3")))` [pokemon.c:2970]: one address, three names.
 
-A worker reached by exactly as many commands as the decomp says call it is a measurement: `Compare` came
-back with the eight `compare_*` commands, `StringCopy` with the seven `buffer*` ones plus the two specials
+A worker reached by exactly as many commands as the decomp says call it is confirmed: `Compare` is
+reached by the eight `compare_*` commands, `StringCopy` by the seven `buffer*` ones plus the two specials
 that build a name from `gText_BigGuy`. `0x0806D0EC` is `StopScript(ctx)` [script.c:76], `ScrCmd_end`'s
 call; `ScriptContext_Stop(void)` [:360] is 0x0806D418, called by twelve handlers and the whole of
 `ScrCmd_waitstate` besides `return TRUE`.
@@ -364,7 +364,7 @@ two is `VarGet`'s body.
 The call veneers are `bx rN` plus alignment, four bytes each: r0 0x081E2224, r1 0x081E2228 and r3
 0x081E2230 measured, so 0x081E2234 is `_call_via_r4` and 0x081E223C `_call_via_r6`.
 
-# Reading the console's scripts as scripts
+# Reading the console's scripts
 
 With `gScriptCmdTable` measured and operand widths generated from the decomp's macros
 (`scripts/gen_scrcmd_args.py` → `pokeldn/frlg/rom/scrcmd_args.py`: each `.macro` emits its opcode as a
@@ -405,13 +405,8 @@ starts with its own literal opcode byte and reaches no other command macro.
 `trainerbattle` has a head of type, trainer and localId, then one to four pointers chosen by the type. It
 is `scrcmd_args.VARIABLE`; a type outside the decomp's ten makes `scrcmd.shape` answer `None`.
 
-0x081A7699..0x081A77A3 is `data/scripts/trainer_battle.inc`. Before the conditional macros:
-
-    0x081A76A8  4F  applymovement 0x800F, 0x081A77B0, 0x51, 0x0000, 0x36800D26
-    0x081A76B6  00  nop
-    0x081A76B7  21  compare_var_to_value 0x800D, 0x0000
-
-After:
+0x081A7699..0x081A77A3 is `data/scripts/trainer_battle.inc`. The macros make `applymovement` 7 bytes and `waitmovement` 3; reading them as fixed-width commands
+desynchronises the region. Read correctly:
 
     0x081A76A8  4F  applymovement 0x800F, 0x081A77B0     @ VAR_LAST_TALKED, Movement_RevealTrainer
     0x081A76AF  51  waitmovement 0x0000
@@ -462,8 +457,8 @@ A known command whose operands run past the dump's end means the dump is short, 
 
 `gSpeciesInfo` = 0x0824CDFC, stride 28.
 
-A needle of `friendship`, `growthRate` and `eggGroups` at the decomp's 26-byte stride (widest member
-`u16`) matched nothing in 16 MB. The data itself matches the English decomp: `CalculateMonStats`
+A needle of `friendship`, `growthRate` and `eggGroups` at the decomp's 26-byte stride matches nothing
+in 16 MB; the cartridge's stride is 28. The data matches the English decomp: `CalculateMonStats`
 [pokemon.c:2095] recomputed from five party mons' base stats, level, IVs, EVs and nature reproduced 30 of
 30 stored stats.
 
@@ -485,8 +480,8 @@ Traps in modelling the decomp: `[SPECIES_NONE] = {0},` is a one-line block a mul
 
 Scanning for `0x0824CDFC` finds every literal pool holding `&gSpeciesInfo`: 31 hits in
 `0x08028000..0x08048800`, below `Random` at 0x080486B0. Five sit exactly `0x14` apart, one function with
-several pools, so the count is no evidence; object boundaries are. The largest gap (37 KB) is not the
-`pokemon.o` boundary: the hit above it is `battle_ai_switch_items.c:88`. The next gap, 15.6 KB, is
+several pools, so the count is no evidence; object boundaries are. The largest gap (37 KB) lies below
+`battle_ai_switch_items.c:88`, not at `pokemon.o`. The next gap, 15.6 KB, is
 `src/battle_controller_link_opponent.o`, which never references `gSpeciesInfo`.
 
 The first hit of `pokemon.o`'s block is `CreateMon` [pokemon.c:1755], instruction for instruction:
@@ -504,13 +499,13 @@ The first hit of `pokemon.o`'s block is `CreateMon` [pokemon.c:1755], instructio
 All 1006 language-dependent Easy Chat words are read out of the console's ROM.
 `pokeldn/frlg/text/easychat_french_words.py` is the table; `easychat_french.french(id)` answers from it.
 
-## The problem
+## The slot problem
 
 An Easy Chat id is `(group << 9) | index`, a slot. `pokeldn/frlg/text/easychat_words.py` comes from the
 English decomp and names what the English ROM keeps there; each localized ROM has its own
 `gEasyChatGroup_*` tables. Mail, the trainer card quote, the visiting trainer's lines,
 `--denied-message` and the questionnaire gate all depend on the French one. Rendered on the console,
-`EC_WORD_ENJOY` printed STRESSE, `EC_WORD_DONE` FURAX, `SPEECH/12` LES.
+`EC_WORD_ENJOY` renders as STRESSE, `EC_WORD_DONE` as FURAX, `SPEECH/12` as LES.
 
 ## Finding the table
 
@@ -542,7 +537,7 @@ Divergence from the English table depends on the group:
 - `EC_GROUP_SPEECH`: `but`→MAIS, `however`→CEPENDANT, `how`→COMMENT, `the`→LE line up, and LES and L'
   took the slots English spends on `case` and `miss`.
 
-Proper-noun groups barely moved; ordinary vocabulary moved a lot. An id alone does not tell.
+Proper-noun groups barely differ; ordinary vocabulary differs widely.
 
 807 slots need no reading: `EC_GROUP_POKEMON`, `POKEMON_2`, `MOVE_1` and `MOVE_2` print from
 `gSpeciesNames` / `gMoveNames` [easy_chat.c:155], localized by the console. `easychat.species_word(55)`

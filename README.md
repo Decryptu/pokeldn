@@ -122,9 +122,7 @@ An S3, C3 or C6 board with two USB sockets needs its native USB socket for radio
 `POKELDN_ESP32_TRACE=FILE` records every serial message and the board's counters. The exact IDF
 version is on [ESP32 radio](docs/hardware_esp32.md).
 
-A Linux Wi-Fi card (TP-Link Archer T3U, ALFA AWUS036ACHM, Realtek RTL8821CE) still works as root
-without `POKELDN_RADIO`, with NetworkManager kept off the LDN interfaces; it is no longer developed.
-See [Adapters](docs/hardware_adapters.md).
+A Linux Wi-Fi card (legacy, root, no `POKELDN_RADIO`) is covered on [Adapters](docs/hardware_adapters.md).
 
 ## Layout
 
@@ -209,7 +207,7 @@ news only if it differs from what it holds; `--news-id N` forces a new one.
 live save back (secret ID, every party Pokémon's PID, IVs and nature); nothing is written.
 `flash-patch` edits one field: it reads the save sector, changes only the named bytes, recomputes the
 checksum, writes the sector back and bumps a counter so the game loads it. It edits a real save; read
-[A RAM snapshot is not a save](docs/frlg_rom.md) first. Payloads: [Code on the console](docs/frlg_rom.md).
+[Composing a sector from a RAM snapshot](docs/frlg_rom.md#composing-a-sector-from-a-ram-snapshot) first. Payloads: [Code on the console](docs/frlg_rom.md).
 
 ```bash
 ./.venv/bin/python -u bin/frlg_mg_host.py --buffer-script save-dump --dump-block sav2 --dump-size 64 --dump-file dump.bin
@@ -304,7 +302,7 @@ To host instead, start the host first, then the player enters the room the same 
 trade emote (Y → communication menu → trade Pokémon):
 
 ```bash
-./.venv/bin/python bin/bdsp_host.py --offer offer.pb8 --complete-trade --capture bh01.jsonl
+./.venv/bin/python bin/bdsp_host.py --offer offer.pb8 --complete-trade --capture host.jsonl
 ```
 
 `--offer` must be a legal PB8 whose PID the save does not hold; repeated, it queues one per trade,

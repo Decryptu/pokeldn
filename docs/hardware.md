@@ -8,7 +8,7 @@ has_children: true
 
 The radio is an ESP32 board on USB serial running `firmware/esp32`; LDN, Pia and the games run in
 Python on the host, which needs no root and no Wi-Fi driver. Every title trades through it. A
-Linux host can instead drive an AP-capable Wi-Fi card directly; that path is no longer developed.
+Linux host can instead drive an AP-capable Wi-Fi card directly; that path is legacy.
 
 ## Pages
 

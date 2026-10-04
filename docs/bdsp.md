@@ -14,23 +14,21 @@ left attendant, the plain "yes") and in the Grand Underground.
 
 ## Status
 
-Proven on retail hardware, end to end:
+Working on retail hardware:
 
 - A seat in the console's session with only `prod.keys` and the LDN passphrase; every packet
   decrypted; the send path byte-exact against the console's own ciphertext.
-- The Local, Mesh Station and Mesh Protocol handshakes, the RTT timer answered, the reliable
-  transport acknowledged both ways.
-- A character of pokeldn's own choosing walking in a retail Union Room, showing a trade emote, and
-  running the game's own greeting dialogue with the player.
-- A complete trade with a character of pokeldn's: the console's offer, pokeldn's assembled Pokemon
-  accepted, the save written; the console then returns to its select window, and trades chain in
-  one association ([Trading](bdsp_trade.md#the-completed-trade)).
+- The Local, Mesh Station and Mesh Protocol handshakes, the RTT timer and the reliable transport
+  in both directions.
+- A character walking in a retail Union Room, showing a trade emote, and running the game's own
+  greeting dialogue with the player.
+- A complete trade: the console's offer, an assembled Pokemon accepted, the save written; trades
+  chain in one association ([Trading](bdsp_trade.md#the-completed-trade)).
 - Hosting: a console entering the Union Room joins a room pokeldn hosts, draws its character, and
   completes a trade with it ([Hosting](bdsp_session.md#hosting)).
-- A ball capsule composed by pokeldn exchanged in the Union Room: the console stores it in its
-  collection with the seals the player has in stock ([the protocol page](bdsp_protocol.md)).
-- Record mixing and a battle lobby driven to the point where the console sends its record and its
-  six chosen Pokemon.
+- A composed ball capsule exchanged in the Union Room; the console stores it in its collection with
+  the seals the player has in stock ([the protocol page](bdsp_protocol.md)).
+- Record mixing and a battle lobby, up to the console's record and its six chosen Pokemon.
 - A character walking on the Grand Underground floor, and the console's secret base read out.
 
 ## Pages
@@ -47,14 +45,14 @@ Proven on retail hardware, end to end:
   ([The name in the greeting](bdsp_protocol.md#the-name-in-the-greeting)). How `StartupSessionJob`
   fills the own station's record at +0x480 from the startup setting is untraced.
 - Whether a 0x08 to a console that has never recruited a battle faults it on hardware. The code
-  writes through a null model; the 0x08s sent to such a console went out under sequence ids the
-  client's own 0x64 answers already held, and the reliable window discarded them ([The battle
+  writes through a null model; no 0x08 has reached that path, because those sent went out under
+  sequence ids the reliable window had already seen ([The battle
   ladder](bdsp_protocol.md#the-battle-ladder)). Whether leaving the Union Room destroys the
   `UnionRoomManager` is unread (`UnionRoomManager$$OnDestroy` `0x1e4c540` exists; its caller is not
   known).
 - Whether a retail console that is not the Grand Underground session host adopts a 0x61 from
-  pokeldn. Every Underground session measured had the console as host, and pokeldn does not host one. The
-  common dispatch and the `UgNetworkManager` handler have no sender filter
+  pokeldn; the Underground sessions measured had the console as host, and pokeldn does not host one.
+  The common dispatch and the `UgNetworkManager` handler have no sender filter
   ([the protocol page](bdsp_protocol.md#the-grand-underground)).
 - What makes a console in the Union Room stop advertising with no change on screen
   ([Taking a seat](bdsp_session.md#taking-a-seat)).

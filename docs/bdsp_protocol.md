@@ -95,10 +95,9 @@ eight thousand) is a well-formed message whose length accounts exactly for its b
 | `NetDataIsMatchWaitData` (0x23) | 4333 |
 | `NetCharacterStateData` (0x04) | 55 |
 
-The console requests 0x04 only for a character it has created (55 requests, none across 265 joins
-that drew no character). The game asks each character's station for its state when it creates the
-character, so a 0x04 request signals that a character exists; `bin/bdsp_connect.py` prints it as the
-verdict. The console repeats its 0x23 request until the client acknowledges its reliable window;
+The game asks each character's station for its state when it creates the character, so a 0x04
+request signals that a character exists (55 requests, none across 265 joins that drew no
+character); `bin/bdsp_connect.py` prints it as the verdict. The console repeats its 0x23 request until the client acknowledges its reliable window;
 unacknowledged, 487 requests came in 75 seconds.
 
 `UnionRoomManager$$SetNetData` [1.3.0 main 0x01e50700] answers a `NetRequestData` for six ids and
@@ -267,9 +266,8 @@ twentieth of a unit, x negated. A remote character collides with walls (the play
 with it) and keeps `rot_y` literally. Keep a walk within the room: sixty messages at the console's
 stride cross it and leave through the far wall, `--room-walk-steps 8` stays inside.
 
-A walk is not needed to trade. A retail console asked for `NetCharacterStateData`, accepted the talk
-and completed two trades with a client character that sent no `NetPosData` at all
-(`--room-walk-steps 0`, the default on the trade path).
+A trade needs no walk: a retail console completed two trades with a client character that sent no
+`NetPosData` (`--room-walk-steps 0`, the default on the trade path).
 
 ## Being talked to
 
@@ -549,9 +547,9 @@ when the player recruits a battle (`stateModelType` 0; the A press passes 1 and 
 
 The ladder's 0x08 row was measured on a console that had recruited the battle. A 0x08 under a
 sequence id the client already used is discarded by the reliable window ([the Pia
-page](pia.md#what-the-receiver-discards-in-silence)). The 22 sent to a talking console that had not
-recruited went out under an id one of the client's own 0x64 answers already held, so none has
-reached the null path.
+page](pia.md#what-the-receiver-discards-in-silence)); the 22 sent to a talking console that had not
+recruited went out under an id one of the client's own 0x64 answers already held, so none reached
+the null path.
 
 Never send 0x08 unless the console's own 0x04 says state 3 with `isRecruiment` 1.
 

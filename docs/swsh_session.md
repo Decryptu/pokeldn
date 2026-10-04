@@ -105,13 +105,9 @@ The 384 bytes of application data:
 can associate. A searching Sword advertises two networks under one comm id: its Y-Comm beacon at
 scene 65535 and, past the second message, its matching network at scene 60001. A station on the
 beacon reached the trade box in 0 of 16 joins (mesh join refused with reason 1, or the advertisement
-changed under it); `bin/swsh_connect.py` joins scene 60001 only and rescans until it appears. Over the
-ESP32 board, 6 of 8 joins on scene 60001 reached the trade box; the other two failed to associate. After pokeldn's station left a
-console-hosted session, the console's advertisement was gone within a minute; what ends it is
-unread. After association the console broadcasts Pia to `169.254.x.255:12345` (about ten packets a
-second measured); the screen shows nothing. On a
-Linux card, status 1 with no auth frame is cfg80211 missing the BSS; `iw dev IFACE scan` primes it
-(`--dwell 2.5`).
+changed under it); `bin/swsh_connect.py` joins scene 60001 only and rescans until it appears. After
+association the console broadcasts Pia to `169.254.x.255:12345` (about ten packets a second); the
+screen shows nothing. What ends a console's advertisement after a joined station leaves is unread.
 
 ## How a searching Sword finds a partner
 
@@ -151,7 +147,7 @@ tables the joiner before it speaks Pia.
     a9fe0e02 3039 ... 01      169.254.14.2:12345   station 1, the seat, ranking 1
 
 The host repeats an update session until each station acks it (0x21). An ack carrying its sequence
-id stops the rebroadcast (within 13 ms measured); an ack with another sequence id does not
+id stops the rebroadcast (within 13 ms); an ack with another sequence id does not
 (`bin/swsh_connect.py --seq-delta`). Header byte 0x05 and the IV's source id are 0, as in the
 console's own (`--station-sweep` walks others).
 
@@ -236,8 +232,8 @@ id moves off 1; 0x7C acks at all.
 
 ## The ping handshake
 
-A payload is a four-byte little-endian message id and a protobuf body. A whole handshake carries
-these five and no others (the right column counts each in one captured handshake):
+A payload is a four-byte little-endian message id and a protobuf body. A handshake carries
+these five and no others (the right column counts each in one capture):
 
     0x7C  61000000 0a00      97 SyncPingDataHolder, field 1 ping {}           x20
     0x7C  61000000 1200      97, field 2 pingReply {}                          x2
@@ -278,10 +274,9 @@ A joined Sword leaving a host:
 | station disconnection | `03` on 0x14, every 0.5 s | `04` | 8 requests, 3.6 s |
 | LDN | leaves the network | | |
 
-Eleven host captures (retail Sword and emulated Shield, the host answering neither) measure 9.0 to
-9.1 s from LEAVE_REQUEST to the LDN leave.
-With `08 00` twice and `04` answered, a retail Sword sent one `03` 0.04 s after LEAVE_REQUEST and
-left the network 0.14 s after it.
+With neither answered, a Sword (retail or emulated Shield) leaves the LDN network 9.0 to 9.1 s
+after LEAVE_REQUEST. With `08 00` sent twice and `04` answered, a retail Sword sent one `03` 0.04 s
+after LEAVE_REQUEST and left 0.14 s after it.
 
 - The version-4 host handler `0x017c19a0` (mesh type 4, table `0x02081564`) sends `08` and its own
   index through `0x017c2450`, two unreliable copies (`0x01851200` with the no-bundle flag 0, then
@@ -309,8 +304,8 @@ Measured on a retail Sword, from MIGRATION_START to its last packet:
 | MIGRATION_FINISH (acked), the ack, the leave | 5.0 s | 5.07 s |
 | MIGRATION_FINISH, UPDATE_MESH as host, the ack, the leave | 0.07 s | 0.17 s |
 
-With the finish alone acked, the console went on acknowledging the client's data for 4.8 s; with
-the UPDATE_MESH it went quiet 0.07 s after the start.
+With the finish alone acked, the console acknowledges the client's data for 4.8 s; with the
+UPDATE_MESH it goes quiet 0.07 s after the start.
 
 - `LocalDestroyNetworkJob::WaitUntilAllClientsDisconnection` (`0x017acd70`) counts the network's
   connected nodes (`0x017a9b20`, eight slots) and destroys it when only the host remains or after
@@ -330,7 +325,5 @@ network on START_HOST_MIGRATION.
 - Never pass `--verbose` live; use `--capture FILE`.
 - The console's channel changes between sessions (1 and 6 seen); the scan keeps the busiest
   ([channels](ldn.md#channels)).
-- Linux card: a hard-killed run leaves the `ldnclient` vif (later attempts look like refusals); an
-  interface left up holds the channel (`Errno 16 Device or resource busy`).
 - `0x2D0` (allocations at `0x006a970c`, `0x006a9740`) is the session singleton's size
   (`0x006b4410`, global `main+0x02616758`), not a 720-byte Wonder Card.

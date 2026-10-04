@@ -27,8 +27,8 @@ Jigglypuff, Diglett. The code sets the advertisement's scene id
 
 ## What works
 
-A retail Let's Go Pikachu trades in both directions: `bin/lgpe_join.py` joins the console's session,
-`bin/lgpe_host.py` hosts one the console joins. A seat carries one trade after another: after each
+`bin/lgpe_join.py` joins a console's session and `bin/lgpe_host.py` hosts one the console joins. A
+seat carries one trade after another: after each
 trade's normal save the trade dispatcher goes from state 7 back to state 1 unless the save reports
 that the link ends (`0x886908`), and the save re-creates the party-offer object on a new channel
 (`0x8375a4`) ([the session page](lgpe_session.md#the-trade-dispatcher)). Both launchers take a queue
@@ -38,14 +38,10 @@ The Clone Protocol's take-over exchange passes the game's `0x11b080` gate, and t
 carries identity, offer, commit and kind 4 (the next trade's selection); `pokeldn.lgpe.pb7` reads and
 writes the 232-byte box structure the offer and kind 4 carry.
 
-A retail console joined to the app's host completed three queued trades on one seat, receiving
-Pikachu, Eevee and Onix in order. All three queue entries were marked complete, exactly three
-checksummed 260-byte received files were saved, and the host exited with code 0 after the console left.
-In the joiner role, three queued trades completed on one retail seat without an error.
-
-A Pikachu built by `pokeldn.pokemon` with chosen options (level 30, female, Adamant, Ultra Ball,
-IVs and AVs set) and offered by `bin/lgpe_host.py --fresh-pid` arrived on a retail Let's Go Pikachu
-showing female, Adamant and Ultra Ball on its summary screen.
+Three queued trades complete on one seat in both roles. Each completed entry is saved as a
+checksummed 260-byte file, and the host exits with code 0 after the console leaves. A record built by
+`pokeldn.pokemon` (level, gender, nature, ball, IVs and AVs chosen) and offered by `bin/lgpe_host.py
+--fresh-pid` shows those fields on the receiving summary screen.
 
 A console leaves the seat when its player presses Retour. `bin/lgpe_join.py --leave-after SECONDS`
 runs the same exit that long after its first answered trade step, and `bin/lgpe_host.py` answers a
@@ -77,6 +73,6 @@ ten minutes of counted play time), then the fatal error screen.
   `seq+0xb8` is released after an aborted commit.
 - Whether the channel counter or the 16-entry channel table bounds a long seat. `0x116e80` hands out
   ids from `mgr+0x270` and returns 0 with 16 channels registered; `0x117920` compacts out dead ones.
-  A hosted retail seat carried three trades. The limit beyond that is unmeasured.
+  Three trades on a hosted seat were measured; the limit beyond that is unmeasured.
 - Whether the dispatcher's modes 1 and 2 are link battles. The reading rests on the scene they build;
   a capture of a link battle's session, with the mode word `+0x8c`, settles it.

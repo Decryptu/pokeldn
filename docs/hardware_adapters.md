@@ -7,7 +7,7 @@ nav_order: 3
 # Wi-Fi adapters
 
 A Linux host can drive an AP-capable Wi-Fi card directly, as root, in place of the
-[ESP32 radio](hardware_esp32.md). This path is legacy and no longer developed.
+[ESP32 radio](hardware_esp32.md). This path is legacy and not developed further.
 
 | symptom | cause |
 |---|---|

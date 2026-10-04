@@ -31,7 +31,7 @@ FireRed's two ROM server scripts.
 The host issues one LinkPlayer block request, waits for the console's valid block, sends its own,
 then waits for the standby barrier.
 
-### Two framing rules that are easy to get wrong
+### Framing rules
 
 Size 0 means 1024: `MysteryGiftLink_InitSend` [mystery_gift_link.c:55] expands it to
 `MG_LINK_BUFFER_SIZE`, and `SVR_COPY_SAVED_RAM_SCRIPT` never sets `ramScriptSize`
@@ -74,8 +74,9 @@ Under `pokeldn/frlg/gift/` unless stated:
 
 Radio setup: [The ESP32 radio](hardware_esp32.md). `bin/frlg_mg_host.py` serves one console per run
 and stops once it has left LDN ([Host implementation](frlg_host.md), Shutdown and cleanup); a second
-console needs a new run. `tests/test_mystery_gift_flow.py` models the block-receive gate, `MGL_Receive` and one client command
-per frame; `tests/test_mystery_gift_end_to_end.py` adds an impaired Reliable/RFU path.
+console needs a new run. `tests/test_mystery_gift_flow.py` models the block-receive gate, `MGL_Receive`
+and one client command per frame; `tests/test_mystery_gift_end_to_end.py` adds an impaired
+Reliable/RFU path.
 
 ## What the link can carry
 
@@ -224,12 +225,8 @@ original scripts set them. A full party refuses before the draw and the card sta
 | `pokepark-egg` (PokePark Market Fantasia) | Cacnea, Corphish, Corsola, Igglybuff, Minun, Pichu, Plusle, Psyduck, Skitty, Spinda, Spoink, Surskit, Taillow, Whismur, Wynaut |
 | `pc-japan-egg` (Pokemon Center Japan) | Bellsprout (Teeter Dance), Meowth (Petal Dance), Oddish (Leech Seed), Poliwag (Sweet Kiss) |
 
-On the French FireRed ROM under mGBA, each card bound to the mother gave its egg with the listed moves,
-`modernFatefulEncounter` 1 and met location 0xFF; four delays drew Whismur, Minun, Corphish and
-Psyduck from the PokePark card.
-On a retail French FireRed the PokePark card was received and saved, and the delivery man gave an egg
-whose summary read "Drôle d'ŒUF de POKéMON obtenu dans un bel endroit.", the line the summary screen
-picks for met location 0xFF or the fateful-encounter bit [pokemon_summary_screen.c:2799].
+The summary screen shows "Drôle d'ŒUF de POKéMON obtenu dans un bel endroit." for met location 0xFF or
+the fateful-encounter bit [pokemon_summary_screen.c:2799].
 
 ### Event Pokemon
 
@@ -240,8 +237,6 @@ fateful-encounter bit, and its legality check must pass. The record goes into th
 Mystery Event `givepokemon` the moment the card is saved, as `mystery-event-celebi` does; a full party
 answers status 3 and gets nothing, and the card can be received again. Without `--event-pokemon`
 the card sends a stored WISHMKR Jirachi.
-On a retail French FireRed a WISHMKR Jirachi made this way arrived in the party with trainer WISHMKR,
-id 20043, after `givepokemon` answered status 2.
 
 `NAME` is the trainer name, a space and the species: `WISHMKR Jirachi`, `CHANNEL Jirachi`,
 `Aura Mew`, `MYSTRY Mew`, `DOEL Deoxys`, `SPACE C Deoxys`, `ROCKS Metang`, `10 ANIV Pikachu` and every
@@ -258,9 +253,8 @@ id without `custom-` (`--gift nature-mint`). With their unmodified sources and t
 generator reproduces their own `BPRE 1.10` payloads byte for byte, all 44 of them.
 
 `starter-egg`, `rare-berries` and `national-dex` are their three cards that need no native code,
-rebuilt with the composer: on the French FireRed ROM under mGBA the berries landed in the Berries pocket
-(items 173, 174, 175), the starter card gave a Chikorita egg, and the National Pokedex card set
-`FLAG_SYS_NATIONAL_DEX` (0x840) again after it was cleared in RAM. Their event Pokemon come from PKHeX
+rebuilt with the composer: berries are items 173, 174 and 175, and the National Pokedex card sets
+`FLAG_SYS_NATIONAL_DEX` (0x840). Their event Pokemon come from PKHeX
 (see Event Pokemon) except the four PKHeX's table leaves out; their follower, Master Ball, speed-up and
 encounter hooks are covered by this project's own.
 
@@ -291,23 +285,11 @@ What differs from their build:
 - Two texts are four and six characters shorter (`hm-moves`, `physical-special-split`) to fit 995
   bytes after the installer change.
 
-Every card was run bound to Mom under mGBA on all four cartridges, its dialogue answered with A. On the
-French FireRed the native code drew French menus (stat, Poke Ball and type names from the ROM), changed
-the party (nature `HARDI`, gender, Hidden Power to `COMBAT` 70, maximum EVs), opened the move relearner
-and the slot machine, and `trainer-ids` read TID 50425 and SID 50923 off the save; R after
-`pc-anywhere` opened the boxes. The other three cartridges drew the same screens, pixel for pixel on
-French LeafGreen. A LeafGreen payload on a FireRed answered "This gift doesn't work with this version
-of the game." With a resident hook running, `nature-mint` left `0x0203FC00..0x02040000` untouched and
-`pc-anywhere` took over `gIntrTable[4]` with `0x0800071D` kept at `0x0203FBFC`.
-
-On a retail French FireRed, `nature-mint` (flag id 1011) was saved and the delivery man changed a
-party Pokemon's nature from the stats picked. `pc-anywhere` (flag id 1012): after the delivery man, R in the
-field opened the Pokemon boxes. `rival-name` (flag id 1013): the naming screen's new name became the
-rival's, `svc_BadWordCheck` passing it on the console.
-With `noclip` installed (`Buffer script status: 0x0800071D`), the delivery man ran `nature-mint` through
-its relocation and R still walked through walls afterwards.
-With `noclip` installed again, `pc-anywhere` took the V-blank hook over: R opened the boxes and no longer
-walked through walls, and the game ran on.
+Every card has run bound to Mom under mGBA on all four cartridges; `nature-mint`, `pc-anywhere` and
+`rival-name` have also run on a retail French FireRed. A payload sent to the other game's cartridge
+answers "This gift doesn't work with this version of the game." With a resident hook running,
+`nature-mint` leaves `0x0203FC00..0x02040000` untouched and `pc-anywhere` takes over `gIntrTable[4]`
+with `0x0800071D` kept at `0x0203FBFC`.
 
 `colosseum-pikachu` and `ageto-celebi` carry their Japanese trainer names, which a European cartridge
 draws as dots; PKHeX reports all four event Pokemon legal.
@@ -396,7 +378,7 @@ News from a Friend rolls a berry between `ITEM_RAZZ_BERRY` and `ITEM_NOMEL_BERRY
 then 500 steps [`MAX_REWARD`]. The four-berry reward needs `WONDER_NEWS_RECV_WIRELESS`, a closed path.
 
 `--news` (`--news berry`, `--news-id N`); the player picks Wonder News, "input one?", Friend (a
-console holding news shows it: A, then Receive). One session (about 18 s):
+console holding news shows it: A, then Receive). Message order of one session (about 18 s):
 
     ident 16  sClientScript_SendGameData
     ident 17  MysteryGiftLinkGameData
@@ -512,7 +494,7 @@ stages are allowed as terminal alternatives.
 | `"once"` | can be shared once; the receiving game flips the card to not shareable |
 | `"always"` | can continue to be shared after receipt |
 
-### Event mons that look like event mons
+### Fateful-encounter marking
 
 `GivePokemon(..., fateful_encounter=True)` (and `GiveEgg`) emits the official Surf Pichu pair:
 `setmonmodernfatefulencounter` (`0xCD`) and `setmonmetlocation` (`0xD2`, `METLOC_FATEFUL_ENCOUNTER` =
@@ -591,7 +573,7 @@ fields:
 
 ```
 50 10 | c1 cc bf bf c8 ff 00 00 | 65 ac | 00 00 00 00 | 84 15 | 00 00 00 00 00 00
-TID   | uname                   | parent| UNEXPLAINED | search| UNEXPLAINED
+TID   | uname                   | parent| unexplained | search| unexplained
 ```
 
 `svc_47` [sloopsvc.c:34] takes `{u8 HostRfuGameData[0x10]; u8 HostRfuUsername[8]}`, 24 bytes with no
@@ -623,9 +605,9 @@ Trainer Tower sets and `CEReaderTool_SaveTrainerTower`: `ereader_screen.c` opens
 A ticket card does nothing on the Switch release. The distribution scripts are in `data/mystery_event_msg.s:200`, but the Switch release grants both
 tickets and both `FLAG_RECEIVED_*` flags on the first Hall of Fame entry
 [post_battle_event_funcs.c:52, `#if REVISION >= 0xA`], so on a completed save the script is a no-op.
-The gallery's `FL - Item AuroraTicket` script tests `FLAG_RECEIVED_AURORA_TICKET` first; on a retail
-French FireRed past its Hall of Fame the delivery man said only "Merci d'utiliser le système CADEAU
-MYST." and gave nothing. That card's `iconSpecies` is `0xFFFF`: any value but `SPECIES_NONE` draws an
+The gallery's `FL - Item AuroraTicket` script tests `FLAG_RECEIVED_AURORA_TICKET` first; past the Hall
+of Fame the delivery man says only "Merci d'utiliser le système CADEAU MYST." and gives nothing. That
+card's `iconSpecies` is `0xFFFF`: any value but `SPECIES_NONE` draws an
 icon, and a species past `SPECIES_UNOWN_B - 1` draws `SPECIES_NONE`'s question mark
 [mystery_gift_show_card.c:466, pokemon_icon.c:1102].
 The Old Sea Map is Emerald-only [mystery_gift.c:30].

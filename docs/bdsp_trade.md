@@ -29,7 +29,7 @@ onDecide, onConfirm, onComplete, onCancelSelect, ...)` (lambdas `b__54_1` to `b_
 
 `TradeSelectPokeModel$$PokeSelectWait` [0x1c26070] shows the peer's Pokemon once the box phase is
 past 2 and both the received (+0x78) and own-pick (+0x79) flags are set; nothing checks it. `TradePokeCheckOkWait` [0x1c25f50] moves on when both check states
-(+0x80 own, +0x84 peer) are 6. A Pokemon the reliable window acknowledges and never delivers leaves
+(+0x80 own, +0x84 peer) are 6. A Pokemon the reliable window acknowledges without delivering leaves
 the player on "en attente d'une réponse" with no error
 ([The Pia layer](pia.md#what-the-receiver-discards-in-silence)).
 
@@ -106,8 +106,8 @@ phase [0x1c33e9c]); the partner's `{0}` does not release it.
 
 - Answer each console check-ok once. A copy answered after the first answer moved the box to
   `LastConfirm` resets the round. The reliable window keeps the first message for an id
-  ([the Pia page](pia.md#what-the-receiver-discards-in-silence)); the 322 repeated ids among 12858
-  console reliable messages captured were byte-identical copies. A receiver drops an id already
+  ([the Pia page](pia.md#what-the-receiver-discards-in-silence)); among 12858 console reliable messages captured, the 322 repeated ids were
+  byte-identical copies. A receiver drops an id already
   delivered; `pokeldn.ldn.reliable5.Reassembler` does, and `bin/bdsp_connect.py` uses it.
 - Answer a console's `45 0001 01` with `45 0001 00`; a `{1}` back is a back-out of the client's own.
   Never send a 0x45 after the replacement Pokemon has gone out or after the console's re-pick: it
@@ -127,7 +127,7 @@ Then `TradeSecurityController` -> `CreateTradeStateModel` -> `TradeStateModel`, 
 `TradeStateModel$$InitState` calls `PlayerSave` first. `WriteSaveData` tail-calls `ReplacePoke`; both
 are reached only as registered delegates. `FirstSave` arms the disconnect penalty before it writes.
 
-The security phase's Pokemon message is a trigger. `UnionRoomManager$$RecivePokeData` in
+In the security phase the Pokemon message only triggers the next step. `UnionRoomManager$$RecivePokeData` in
 SECURIY_TRADE drops the decoded Pokemon and calls `SetSecurityTradeParam()`, which feeds
 `manager.targetPokemonParam` (+0x48, set when the player confirms on the full-screen view) to the
 security controller. Until the player confirms it is null and WAIT_POKE never ends.
@@ -211,9 +211,9 @@ CHILD from `ReciveState` case 5), so the client's answer to that report arrives 
 inside it. The station must not leave in this window: a drop lands the console between `FirstSave`
 and `SecondSave`. The same sequence runs with the console as the room's joiner and pokeldn as host.
 
-Measured once with a retail BDSP joining `bin/bdsp_host.py`, from the console's `tradeState` 6: the
-animation started at about 2.7 s, the received Pokemon appeared at about 18.6 s (hand-pressed
-marks, up to 2 s late), and the player had control at about 29 s.
+Timeline from the console's `tradeState` 6 with a retail BDSP joining `bin/bdsp_host.py`: the
+animation starts at about 2.7 s, the received Pokemon appears at about 18.6 s and the player has
+control at about 29 s (hand-pressed marks, up to 2 s late).
 
 A completed trade ends with no message. The client counts it when it answers the console's
 SEND_READYOK; the next round starts with the console's next `NetTradePokeData`.
@@ -229,9 +229,8 @@ animation, a `{0}` followed one of the client's 0x21 by 25 to 300 ms, and the pl
 its argument, to `tradeTargetIndex` +0x48); it has no direct `bl` caller.
 
 Trades chain in one association, each looping from the select window with no second approach or
-trainer record: a retail console traded three times back to back with `bin/bdsp_connect.py`, and
-its box screen came back after every trade, and two queued trades completed in one association
-with `bin/bdsp_host.py` hosting. `TradeStateModel$$ReturnTradePokeSelectWindow`
+trainer record: three trades completed back to back with `bin/bdsp_connect.py` (the box screen
+returned after each) and two with `bin/bdsp_host.py` hosting. `TradeStateModel$$ReturnTradePokeSelectWindow`
 [0x01c29590] runs `PlayerSave`, then the model's callback at +0x80; its caller is not traced. A
 second trade reads back what the console stored. A SEND_READYOK (5) 0x21 landing while the player
 picks (box phase 5 or below) resets the round, so no repeat follows the console's SEND_READYOK.
@@ -251,7 +250,7 @@ cassetVersion; byte langId` ([Framing](bdsp_protocol.md#framing)):
     0x1e   1  cassetVersion, the Pokemon's version (49)
     0x1f   1  langId, the Pokemon's language (3)
 
-The trade screen names the partner from this record, not from the Pia player name the greeting uses
+The trade screen names the partner from this record; the greeting uses the Pia player name
 ([the protocol page](bdsp_protocol.md#the-name-in-the-greeting)): the 0x24 branch of
 `UnionRoomManager$$SetNetData` [1.3.0 main.bin 0x1e51940] takes all four fields from the message and
 only the font language from `GetGamerData(...).nameStringLanguage`, wraps the name in

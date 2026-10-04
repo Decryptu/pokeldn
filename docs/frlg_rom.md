@@ -11,8 +11,7 @@ The Mystery Gift client runs code sent to it through two interpreters: `CLI_RUN_
 Neither needs a glitch, a prepared save or any setup; the console stays on its Mystery Gift menu.
 
 Addresses on this page are French FireRed, cartridge BPRF, software version 0x0A. LeafGreen's are on
-[LeafGreen](frlg_leafgreen.md); the tables and how they were found are on
-[The ROM map](frlg_rom_map.md).
+[LeafGreen](frlg_leafgreen.md); the tables are on [The ROM map](frlg_rom_map.md).
 
 # The Mystery Event VM
 
@@ -148,8 +147,7 @@ field_control_avatar.c:458], which runs the script in place of the object's own 
 
 It costs the Wonder Card ([the one RAM script slot](frlg_gift.md#the-one-ram-script-slot)); sessions
 log "holding no Wonder Card" until the next ordinary card takes the slot back. The object loses its
-own script while bound: bound to a static encounter's object (Mewtwo in Cerulean Cave B1F), the script
-replaces the encounter.
+own script while bound: bound to a static encounter's object, the script replaces the encounter.
 
 ## Traps
 
@@ -274,8 +272,8 @@ A soft reset clears EWRAM twice: `DoSoftReset` calls `SoftReset(RESET_ALL & ~RES
 `RegisterRamReset(RESET_ALL)` [main.c:134]; bit 0 of 0xFF is `RESET_EWRAM` [include/gba/syscall.h:4,12].
 The Switch wrapper also restarts the emulated console, so `AgbMain` runs twice: `gIntrTable` and
 `INTR_VECTOR` (0x03007FFC) are cleared and rebuilt twice per boot, entries 1, 2 and 7 taking wireless
-values in between (sampled at 328000 a second on one boot: 33.3 ms, then 133.6 ms to the second clear,
-33.6 ms to its rebuild). The boot rebuilds nothing above 0x0203B0E8. Nothing between two boots writes
+values in between (sampled at 328000 a second: 33.3 ms, then 133.6 ms to the second clear, 33.6 ms to
+its rebuild). The boot rebuilds nothing above 0x0203B0E8. Nothing between two boots writes
 0x0203FC00..0x02040000: a marker there persists across the title screen, a reload, menus, a save, a
 map change, a battle and a PC box, and a soft reset (A+B+START+SELECT) clears it.
 
@@ -335,7 +333,7 @@ A `call-chain` installs it: the five words first, entry 4 last, every write read
     read32  [0x0203FC40]                the counter
 
 The hook runs once per frame in every game state: over 19995 frames it counted 59.0 to 63.3 calls
-a second on the menu, title screen, overworld, party menu and a wild battle, and across an in-game
+a second on the menu, title screen, overworld, party menu, a wild battle and across an in-game
 restart. A soft reset ends it: `InitIntrHandlers` rewrites entry 4 [main.c:339] (`gIntrTable[4]`
 reads zero, then 0x0800071D). Mystery Gift is reachable only after a boot, which clears EWRAM, so a payload that
 must be present without a fresh session needs its installer in the save.
@@ -361,8 +359,8 @@ The tail target comes from the table, so the hook chains whatever handler is the
 top is required: installing twice makes the stub tail-branch to itself, which spins inside an
 interrupt handler and freezes the overworld.
 
-The script block at `SaveBlock1 + 0x32E0` survives a soft reset at the re-rolled pointer; talking to
-her after any boot arms the hook within the conversation, with no host (verified on an emulator).
+The script block at `SaveBlock1 + 0x32E0` survives a soft reset at the re-rolled pointer (verified on
+an emulator).
 
 The script rebuilds the code on every arming, so the code is bounded by a script body: 162 bytes
 staged, or about 755 appended after the last command and reached with a trampoline.
@@ -629,8 +627,7 @@ resolver:
   null and the wrapper faults reading address `0x1`. With the flag clear the resolver returns
   without the write. Holder `+0x108` is `[+0xA8] + 0x170` (holder is `[+0xA8] + 0x68`), the same
   byte as the adapter power switch below: three live reads through `main + 0x03E850` during the
-  console's own Mystery Gift search (`ldn_bridge/tools/bp038.py --bp resolver=main+0x3E850`) found
-  it `0x1` every time, so `swi 0x40` alone arms the write path.
+  console's own Mystery Gift search found it `0x1` every time, so `swi 0x40` alone arms the write path.
 - on a record-1 mismatch re-keys record 2 (holder `+0x148`): `record2.pc := the bkpt address`,
   then matches it, so the core executes record 2's original, which is never updated: the stale
   `0x081E187C` original `e59f3050` (`ldr r3, [pc, #0x50]`), at any address the guest executes a
@@ -1518,9 +1515,7 @@ reset removes the hook until MOM is talked to again.
 
 `tests/test_resident_save.py` runs the whole session between the host and the emulated client, and
 MOM's body script on a booted console: a flipped byte, a missing second write, a length past
-`filler_B20` and the older `PKLD` payload install nothing. The earlier `PKRS` blob (a 60-byte head and
-the 148-byte installer in the save) was verified with turbo on an emulator and on retail FireRed; the
-`PKR2` form is offline only.
+`filler_B20` install nothing. The `PKR2` form is verified offline only.
 
 A new Wonder Card undoes the binding: `SaveWonderCard` calls `ClearSavedWonderCardAndRelated`, which
 calls `ClearRamScript` [mystery_gift.c:172, 160]. `filler_B20` stays as written.
@@ -1588,7 +1583,7 @@ belong to a [field stub](frlg_rng.md#the-payload-in-the-script-body).
 
 Everything below was measured on the emulator.
 
-### The checksum covers the id's chunk, not the data area
+### The checksum covers the id's chunk
 
 `CalculateChecksum(data, size)` sums `size` bytes as little-endian u32 words and folds
 `(sum >> 16) + sum` to u16 [decomp:src/save.c]. `size` is the id's own chunk from `sSaveSlotLayout`,
@@ -1647,10 +1642,10 @@ the session's save writes the other one. To be adopted,
 a sector sits at band position 13 with counter `gSaveCounter + 2`, one above the session's
 `gSaveCounter + 1`. The id at position 13 is `(13 - gLastWrittenSector) % 14`, derived on the console.
 
-### A RAM snapshot is not a save
+### Composing a sector from a RAM snapshot
 
-The save routine serializes at save time, so SaveBlock2's live contents are not what it would write.
-Every checksum passes and `gDamagedSaveSectors` stays 0 in both cases below:
+The save routine serializes at save time, so SaveBlock2's live contents differ from what it would
+write. Every checksum passes and `gDamagedSaveSectors` stays 0 in both cases below:
 
 - The encryption key is re-rolled on load. `LoadGameSave` restores the blocks, makes a new key,
   applies it to every encrypted field in RAM and stores it in SaveBlock2

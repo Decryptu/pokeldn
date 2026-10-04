@@ -7,7 +7,7 @@ has_children: true
 # Legends Arceus
 
 Pokemon Legends: Arceus (2022, title id `01001f5010dfa000`) is a native Switch title with Pia
-statically linked into `main`. A host built here has completed trades with a retail console.
+statically linked into `main`.
 
 Addresses are offsets into the decompressed `main` of update 1.1.1, as `tools/switch/nso_read.py`
 lays it out (text `0x0..0x32a5690`, rodata from `0x32a6000`, data from `0x401a000`).
@@ -100,30 +100,24 @@ The NetStation is 21 bytes at this band, where 6.39 has 22:
 
 Both entries carry port 12345, ranking 0 for the console and 1 for the joiner.
 
-A console hosting a trade sent no Session (0x98) message and left the join request unanswered in
-every captured session where the request was addressed to its variable id (see below); it asked the
-joined station to take the host role instead:
+A console hosting a trade answers no Session (0x98) join request addressed to its variable id (the
+reader gate below drops it). It asks the joined station to take the host role:
 
 | joiner behaviour | console |
 |---|---|
 | answers 0x11 with the 0x12 ack | 0x11 again with a fresh sequence id and `is migrating host` 1, then `01 40 00 00` (a bare `NetStartHostMigrationMessage`) about twice a second |
-| sends the join request, never answers 0x11 | the same 0x11 every 0.5 s, then `is migrating host` set, then `01 40 00 00`, then the network dropped (measured: 8.6 to 10.1, 13.5 to 14.1 and 16.8 to 17.5 s after association) |
+| sends the join request, never answers 0x11 | the same 0x11 every 0.5 s, then `is migrating host` set, then `01 40 00 00`, then the network drops (8.6 to 10.1, 13.5 to 14.1 and 16.8 to 17.5 s after association) |
 | answers with `NetUpdateNetworkHostMessage` | keeps repeating 0x40 |
 
-A searching console asked its joined station to take the host role in every captured session where
-the join request was dropped (table above). Seated with the request to destination 0, an emulated
-console hosting its search either ran the game (a trade completed) or, with the request held 4.5 s
-after its first 0x11, sent Session type 7 naming the joiner its successor 0.02 s after the station
-list, in 4 of 4 seats ([Joining a console's network](#joining-a-consoles-network)). The new host
-completes the migration by creating a network on the same code: the console drops its own network
-(3 to 6 s after asking, measured), joins the new one and trades as joiner. `bin/pla_join.py` leaves
-the seat on the first 0x40 and runs `bin/pla_host.py` on the same code and channel, or over IP with
-`--ip-join` (`--take-host`, on by default). Against an emulated console hosting its search, with the
-join request held 4.5 s: type 7, type 8, the joiner's host up 5.2 s after its last packet, the
-console joined it 0.02 s later and a trade completed, 550 of 550 packets authenticated, and the
-console left with a leave request when its player backed out. A retail console hosting its search, with the
-join request held 4.5 s over the ESP32 board, sent type 7, joined the new host, saved the trade and left
-by deauthentication.
+A joiner seated with its join request to destination 0 and held 4.5 s after the console's first 0x11
+receives Session type 7 naming it the successor, 0.02 s after the station list (4 of 4 seats on an
+emulated console; one retail seat over the ESP32 board). The new host completes the migration by
+creating a network on the same code: the console drops its own network 3 to 6 s after asking, joins
+the new one and trades as joiner. `bin/pla_join.py` leaves the seat on the first 0x40 and runs
+`bin/pla_host.py` on the same code and channel, or over IP with `--ip-join` (`--take-host`, on by
+default). Sequence against an emulated console: type 7, type 8, the joiner's host up 5.2 s after its
+last packet, the console joined it 0.02 s later ([Joining a console's
+network](#joining-a-consoles-network)).
 
 Each Net message has a named header class with a serializer. `NetUpdateNetworkHostMessageHeader`
 (`0x6fe03c`): u64 at wire +4, u64 at +0xc, u16 at +0x14, size 0x16, big-endian. The 0x11 header
@@ -150,9 +144,8 @@ looks up a unicast packet's source variable id among its stations (`0x744718`, m
 footer, or from source variable id 0, skips the lookup. A join request addressed to the host's
 variable id from a joiner not yet registered is therefore dropped after its decrypt, before the
 Session dispatcher. Sent to destination 0, it draws the join response and the type-5 station list.
-On an emulated console hosting a search, a joiner seated that way that did not send its data
-exchange record saw the console leave with migration about 10 s later and return to its search with
-no error shown.
+An emulated console hosting a search leaves with migration about 10 s after a joiner seated that way
+that sends no data exchange record, and returns to its search with no error shown.
 
 ## The packet crypto
 
@@ -339,8 +332,8 @@ station in state 2 whose last packet (`ClusterStation+0x88`) is older than `[Ses
 ms, on the host and on a joiner alike. Once the first entry is 3000 ms old (`0x735364`), `0x7359ac`
 acts on the list: the host hands each station to `KickoutManageJob` (`0x73cad4`); a joiner whose list
 names the host treats the host as gone (`0x735b28`). The setting's `+0x28c` reads 10000 ms
-(`w9 = 0x2710` at `0x72a09c` on an emulated console hosting a search), as in Z-A. A silent host on
-the box screen drew the partner-left message about 13 s in: 10000 ms and the 3000 ms grace.
+(`w9 = 0x2710` at `0x72a09c` on an emulated console hosting a search), as in Z-A. A silent host on the
+box screen draws the partner-left message about 13 s in: 10000 ms and the 3000 ms grace.
 
 ## The game's reader and the pre-handler phase
 
@@ -651,9 +644,8 @@ The record is the Gen-8 entity (`pokeldn.gen8` header, LCG, block permutation an
 with 0x58-byte blocks: 0x168 stored, 0x178 in the party. `gen8.BLOCK_ORDER[(ec >> 13) & 31]` is
 applied as it stands when decrypting and inverted when encrypting. The checksum cannot tell the two
 apart; the names can: read directly, the nickname is at 0x60 (second block) and the trainer name at
-0x110 (fourth). Read inverted, both land one block early. A captured record decrypts to a level-70
-Azelf: species 482 at 0x08, experience 428750 at 0x10 (slow curve at the level at 0x168); its trainer
-id at 0x0c and trainer name are the player id and name the data exchange carries.
+0x110 (fourth). Read inverted, both land one block early. The trainer id at 0x0c and the trainer name are the
+player id and name the data exchange carries.
 
 ## Confirming the trade
 
@@ -809,8 +801,7 @@ The countdown is registered by `0x277c530` in the system list at `0x42eced0` (ca
 
 10 is ten minutes of the game running, on the OS tick: clock settings play no part and time with the
 game closed is not counted. The ticker runs in the field: the restriction clears ten minutes of play
-after it was set (a retail console left in the field after a host dropped between phases 3 and 6
-reopened Link Trade within 667 s of phase 6).
+after it was set (667 s measured on a retail console left in the field).
 
 `0x13d67b0` is the non-zero method's only caller (`0x13d67e8..0x13d67f0`). In Link Trade's
 partner-choice menu, `0x13d55fc` and `0x13d56ac` (inside `0x13d55dc`, called by `0x13d53c0`, asserts
@@ -869,11 +860,6 @@ slots, both ExtraData files.
 
 The console then sends a fresh selector 2 (whatever the cursor is on), which the host answers with a
 showing, and the phase key close `b9 01 01 b9 02 b9 02 01 00 00`, which it does not answer.
-
-Measured once with a retail Legends Arceus joining `bin/pla_host.py`, from the console's `01 0e`:
-the animation started at about 2.8 s, the received Pokemon appeared at about 28.5 s (hand-pressed
-marks, up to 2 s late), and the console's next port-0 message (`00 02`, the box again) came at
-37.2 s, about when the player had control.
 
 ## A second trade in one session
 
@@ -1016,9 +1002,8 @@ trade in and display as sent. Stored, they differ from what was sent only in the
 fields [What a trade rewrites](#what-a-trade-rewrites) lists; a tail carrying the stats the game
 computes leaves 14 bytes changed (checksum and handler fields).
 
-A received record whose encryption constant and personality value the save already holds is stored:
-box block `0x47E1CEAB` held two with EC `0x444C4B50` and PID `0x2A694C4B` (slots 690 and 570), both
-checksums good.
+A received record whose encryption constant and personality value the save already holds is stored
+(box block `0x47E1CEAB`).
 
 `bin/pla_host.py` processes each `(port, sequence id)` once, in order, and resends unacknowledged
 answers. A showing comes on every cursor move, and a cancelled offer is re-offered as `04 01`.
@@ -1096,9 +1081,9 @@ SSID and prints each Pia message by protocol id.
     POKELDN_RADIO=esp32:auto ./.venv/bin/python -u bin/pla_host.py --keys PROD_KEYS \
         --code 00000000 --seconds 240
 
-A console on the search screen alternates scanning as a station (it associates with a host found
-then; its deauthentication, reason 3, ends the scan and is no rejection) and hosting under a new SSID;
-measured, a cycle of about five seconds, one scanning and two to four hosting. An associated joiner stays silent until
+A console on the search screen alternates scanning as a station (it associates with a host it finds;
+its deauthentication, reason 3, ends the scan) and hosting under a new SSID, a cycle of about five
+seconds: one scanning, two to four hosting. An associated joiner stays silent until
 the host sends the Net 0x2C connection request (`host_pia.build_net_probe`'s message at 6.32), every
 500 ms until answered; `--no-net-probe` holds it back.
 
@@ -1121,10 +1106,10 @@ emulated host); `pokeldn.pla.joiner` sends them.
 | the phase key open | phases 3, 6, 11, 14 (selector 1), each after the host's answer, then the phase key closed |
 | RTT kind 0 | kind 1, timestamp echoed, the requester's variable id in the last two bytes |
 
-A retail joiner sent all 108 of its Net 0x12 to header destination 0. The reader gate drops one
-addressed to the host's variable id: an emulated console then resent its migrating 0x11 every 0.5 s
-for 4 s and sent its first 0x40 4.1 s after its type 7. Addressed to 0, the 0x11 went once and the
-first 0x40 followed 0.10 s after the type 7 (4 of 4 seats); with no type 8 at all, 9.1 s.
+A retail joiner sends its Net 0x12 to header destination 0 (108 of 108). The reader gate drops one
+addressed to the host's variable id: an emulated console then resends its migrating 0x11 every 0.5 s
+for 4 s and sends its first 0x40 4.1 s after its type 7. Addressed to 0, the 0x11 goes once and the
+first 0x40 follows 0.10 s after the type 7 (4 of 4 seats); with no type 8 at all, 9.1 s.
 
 The type 7 comes from `LeaveMeshWithHostMigrationJob` when the console's WaitMember (3000 +
 rand%1000 ms, `0x2c491b8`) ends before the join request is accepted, as on Scarlet
@@ -1139,14 +1124,15 @@ A joiner sends its next phase once the host answers, after a few tenths of a sec
 trade animation (several seconds).
 
 A retail console hosting announces each phase with selector 1 before the joiner's arrives, then
-answers the joiner's with selector 2, 0.02 to 0.04 s later (one retail seat). Only the selector 2 answers a phase. A
-joiner that closed its phase key after sending its `01 0e`, on the console's own `01 0e` and before
-its `02 0e`, never received the `02 0e`; leaving 5 s later, the console showed 2-AW7KA-0007, kept
-its own Pokemon and held the ten-minute restriction ([The trade restriction](#the-trade-restriction)).
+answers the joiner's with selector 2, 0.02 to 0.04 s later. Only the selector 2 answers a phase. A
+joiner that closes its phase key on the console's own `01 0e`, before its `02 0e`, never receives the
+`02 0e`: the trade does not complete, the console shows error 2-AW7KA-0007 on leaving and holds the
+ten-minute restriction ([The trade restriction](#the-trade-restriction)).
 `bin/pla_join.py` closes the key on the `02 0e` and keeps the seat after a trade until the
 console's player backs out, or `--hold` ends; `--hold-after-trade N` leaves N seconds after the last
 queued trade. A later trade on the same seat repeats every step byte for byte, so the joiner forgets
-the steps it answered once a trade completes and shows the next `--offer`. It repeats its 0x81 acknowledgement on ports 0 and 1 about once a second:
+the steps it answered once a trade completes and shows the next `--offer`. It repeats its 0x81
+acknowledgement on ports 0 and 1 about once a second:
 
     0000002c ffff 0002 01 00000001       header: size 0x2c, lowest pending 2, bitmap 1
     00 02                                type 0 on the first, 1 on every later one; two entries
@@ -1217,16 +1203,13 @@ The keystream does not change with SSID, channel, code or game restart. `pokeldn
 code against the decoded password). The setter is Pia's, so every title of the band encrypts this way
 ([the wireless layer](ldn.md)).
 
-## Retail
+## Retail notes
 
-A retail console runs the same chain as an emulated one, with or without a link code, in both roles. A French save writes handler language 3 where an English one writes 2.
-`--fresh-pid` re-sends a record the save already holds under a new PID and encryption constant.
-
-On a Linux card whose monitor interface hands up decrypted frames still carrying the CCMP header and
-MIC (TP-Link Archer T3U), `config/host.toml` needs `skip_encryption` and `accept_decrypted_ccmp`.
-
-A console whose host restarted under it showed error 2318-0006 on its next search, before the trade
-warning screen, with no restriction; leaving the trade menu and searching again recovered it. The host re-reads its offer file between offers; a flag change needs a restart.
+A retail console runs the same chain as an emulated one, with or without a link code, in both roles.
+A French save writes handler language 3 where an English one writes 2. `--fresh-pid` re-sends a
+record the save already holds under a new PID and encryption constant. The host re-reads its offer
+file between offers; a flag change needs a restart. A console whose host restarted under it shows
+error 2318-0006 on its next search; leaving the trade menu and searching again clears it.
 
 ## Leaving
 
@@ -1256,20 +1239,11 @@ station (`0x735b90`). The type-4 handler `0x738280` sets the job's done flag `[j
 
 | host | first leave to deauthentication |
 |---|---|
-| `bin/pla_host.py` before the type-4 response, eight retail departures, started directly or by `bin/pla_join.py` taking the host role | 2.02 to 2.07 s, four requests 0.49 to 0.55 s apart |
-| `bin/pla_host.py` answering with the type 4, two retail departures | 0.046 and 0.066 s, one request |
+| `bin/pla_host.py` before the type-4 response (eight retail departures) | 2.02 to 2.07 s, four requests 0.49 to 0.55 s apart |
+| `bin/pla_host.py` answering with the type 4 (two retail departures) | 0.046 and 0.066 s, one request |
 
-The screen time of a departure, marked with the board's BOOT button by the player (two retail
-departures, host answering with the type 4):
-
-| interval | measured |
-|---|---|
-| player confirms the quit to the first type 3 | the type 3 precedes the mark by 0.07 and 0.15 s, within reaction time |
-| first type 3 to deauthentication | 0.046 and 0.066 s |
-| player confirms the quit to the field back on screen | 3.70 s |
-
-The wire is done within a tenth of a second of the confirmation; the rest of the delay before the
-field returns is spent on the console after the station has left the network.
+With the type-4 answer the first type 3 comes within 0.15 s of the player confirming the quit
+(BOOT-marked, two departures) and the field is back on screen 3.70 s after the confirmation.
 
 No timer inside Pia precedes the first type 3 ([pia.md](pia.md), Leaving a session). The only
 caller of `Session::LeaveAsync` is the game's leave request, update `0x2ca0a10` (vtable `0x4198ef8`,
@@ -1277,28 +1251,27 @@ state `[req+0x88]`, jump table `0x3985448`): its first update calls `LeaveAsync`
 unless a Session job is already running (`0x72a280`), and its next updates wait for the job's result
 (`0x72a294`).
 
-From the console's last game message on 0x7C to its first type 3, nine host departures measured
-1.91, 2.00, 3.02, 3.26, 4.07, 12.0, 15.3, 23.7 and 83.4 s, the player's input included. In each, the
-console sent nothing in that window except RTT, Net answers, its periodic 0x81 records and acks of
-the host's trade box. No fixed delay precedes the leave on the wire, and none is owed a reply.
+From the console's last game message on 0x7C to its first type 3 is 1.91 to 83.4 s over nine host
+departures, the player's input included. In that window the console sends only RTT, Net answers, its
+periodic 0x81 records and acks of the host's trade box. No fixed delay precedes the leave on the
+wire, and none is owed a reply.
 
 `bin/pla_host.py` answers every type-3 request with the type-4 response. The scripted console in
 `tests/test_pla_host_loss.py` runs the job's timing, and the host's answer goes through `0x738280`
 under unicorn.
 
-A received leave changed nothing on the console's screen in the two cases below; the console acted
-on the network vanishing or on its partner going silent. With the console on the box screen and
-nothing offered:
+A received leave changes nothing on the console's screen; the console acts on the network vanishing
+or on its partner going silent. With the console on the box screen and nothing offered:
 
 | host | console |
 |---|---|
 | network down, with or without a leave | "code d'erreur 2318-0006" within a second |
-| network up and silent, with or without a leave (`--leave-sends 0`) | "Your trade partner chose not to continue trading" ("L'autre joueur a choisi d'annuler l'échange"), then Communicating, then `DisconnectedByUser`, no error code (measured: the message about 13 s in, about 3 s of Communicating after A) |
+| network up and silent, with or without a leave (`--leave-sends 0`) | "Your trade partner chose not to continue trading" ("L'autre joueur a choisi d'annuler l'échange"), then Communicating, then `DisconnectedByUser`, no error code (message about 13 s in, about 3 s of Communicating after A) |
 
 `--leave-after SECONDS` makes `bin/pla_host.py` send the leave with its own ids to each joined
 station and end the run; `--stay-after-leave` keeps the network up, silent, and keeps the run going
-after a console leaves following a trade. Its shape is pinned
-against the four captured console leaves.
+after a console leaves following a trade. The leave's shape is pinned against the four captured
+console leaves.
 
 ## Unresolved
 

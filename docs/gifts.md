@@ -8,8 +8,8 @@ Sword/Shield, or an FRLG ARM console payload, with its target game and native re
 
 ## Desktop app
 
-Games, Mystery Gift is one tool per game with three ways to choose the gift, four on Sword/Shield. The same builder serves
-FireRed/LeafGreen and Sword/Shield; each game's module supplies its presets and its form
+Games, Mystery Gift is one tool per game with three ways to choose the gift, four on Sword/Shield.
+One builder serves both games; each game's module supplies its presets and its form
 (`pokeldn/frlg/gift/builder.py`, `pokeldn/swsh/gift_builder.py`, bound in `pokeldn/app/gift_builder.py`).
 
 | mode | what it sends |
@@ -93,9 +93,8 @@ is refused before gift data is sent. A preset's card id is on the Advanced tab (
 
 The app does not modify gift files on import. Files remain at the chosen paths.
 
-Opened files have been delivered to retail consoles: a French FireRed received a Celebi card file,
-and a console code file that answered with the value it was built for; a Sword received a
-Pikachu card file. Console code built in the form answered with the save's trainer id.
+Delivered from an opened file on retail consoles: a Celebi card and a console code file on a French
+FireRed, a Pikachu card on a Sword. Console code built in the form answered with the save's trainer id.
 
 ## Command line
 

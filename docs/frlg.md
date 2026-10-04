@@ -53,8 +53,8 @@ are on [LeafGreen](frlg_leafgreen.md). Never predict an address across an unbrac
 
 ## Rules that hold across all of it
 
-- The decomp's link order is evidence; its addresses are not. `pokeldn/frlg/rom/rom_map.py` records
-  how each address was obtained.
+- The decomp's link order is evidence; its addresses need measuring on the cartridge.
+  `pokeldn/frlg/rom/rom_map.py` records how each address was obtained.
 - A payload runs offline under unicorn (`buffer_script.emulate`, `emulate_repeating`, both simulated
   consoles) before it is sent. One that faults or never returns 1 hangs the Mystery Gift menu with
   no way out; a field stub that loops forever freezes the overworld.
