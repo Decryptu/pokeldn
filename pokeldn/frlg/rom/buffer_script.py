@@ -1704,6 +1704,13 @@ def build_save_dump(block=SAVE_BLOCK_2, offset=0, size=MAX_BUFFER_SCRIPT_SIZE):
     return bytes(code)
 
 
+def save_dump_parameters(code):
+    """-> {block, offset, size}: what build_save_dump patched in."""
+    word = lambda at: int.from_bytes(code[at:at + 4], "little")
+    return {"block": SAVE_BLOCK_2 if word(SAVE_DUMP_WHICH_OFFSET) == 0 else SAVE_BLOCK_1,
+            "offset": word(SAVE_DUMP_OFFSET_OFFSET), "size": word(SAVE_DUMP_SIZE_OFFSET)}
+
+
 def scratch_regions(block):
     """-> the (offset, length) spans of that block the game never reads."""
     return SAVE_SCRATCH.get(block, ())

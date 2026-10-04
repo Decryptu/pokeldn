@@ -1714,7 +1714,10 @@ appears nowhere) reads back in EWRAM, 500 consecutive words at each of two sites
 # Reading the save
 
 A Mystery Gift session reads the live save: the secret ID, and every party Pokemon's PID, IVs and
-nature. Nothing is written and no card changes hands.
+nature. Nothing is written and no card changes hands. The host's log decodes a `save-dump` of
+SaveBlock2 from offset 0 (name, gender, TID, SID, play time) or of SaveBlock1 covering 0x38 (each
+party Pokemon's nature, IVs and EVs) through `pokeldn.frlg.save.readout`, and a `trainer-id-probe`
+answer as TID and SID.
 
 ## Trainer ID and secret ID
 
@@ -1744,8 +1747,7 @@ SaveBlock1 0x34 is `playerPartyCount`, then `playerParty[6]` at 0x38, 100 bytes 
         --buffer-script save-dump --dump-block sav1 --dump-offset 0x34 \
         --dump-size 608 --dump-file party.bin
 
-    ./.venv/bin/python tools/frlg/dump_read.py party.bin --block sav1 --offset 0x34 \
-        --tid 22136 --sid 4660
+    ./.venv/bin/python tools/frlg/dump_read.py party.bin --block sav1 --offset 0x34
 
     party.bin: 608 bytes from sav1 + 0x34
       playerPartyCount 5
@@ -1754,7 +1756,7 @@ SaveBlock1 0x34 is `playerPartyCount`, then `playerParty[6]` at 0x38, 100 bytes 
 
 (Illustrative values.)
 
-IVs read HP, ATK, DEF, SPE, SPA, SPD. `--tid`/`--sid` fill the shiny column. `checksum ok` on every slot
+IVs read HP, ATK, DEF, SPE, SPA, SPD. The shiny column compares each mon's PID with its own OTID. `checksum ok` on every slot
 means a real party. Party mons are stored as a `.pk3`/`.ek3` stores them (`pokeldn.frlg.save.mon`): the
 48 bytes at 0x20 XORed with `PID ^ OTID`, the four substructs ordered by `PID % 24`.
 

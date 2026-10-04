@@ -4,6 +4,7 @@ run() advances until it blocks and publishes ``action`` as ("send", ident, paylo
 
 from pokeldn.frlg.gift import ereader_trainer, mg_script, wonder_news
 from pokeldn.frlg.rom import buffer_script, builds, mystery_event
+from pokeldn.frlg.save import readout
 from pokeldn.frlg.text import charmap, easychat
 from pokeldn.frlg.gift.mystery_gift import (
     MG_LINKID_CARD, MG_LINKID_CLIENT_SCRIPT, MG_LINKID_DYNAMIC_MSG,
@@ -1010,10 +1011,10 @@ class MysteryGiftServer:
             verdict = "MATCHES" if self.buffer_matched else "DOES NOT MATCH"
             self.info(f"Buffer script status: 0x{self.buffer_status:08X} {verdict} "
                       f"0x{expected:08X} ({why})")
-            if self.buffer_expect == BUFFER_EXPECT_TRAINER_ID and self.buffer_matched:
+            if self.buffer_expect == BUFFER_EXPECT_TRAINER_ID:
                 # playerTrainerId: TID low half, SID high half. The SID travels in no link message.
-                self.info(f"  -> TID (public) {self.buffer_status & 0xFFFF}, "
-                          f"SID (SECRET) {self.buffer_status >> 16}")
+                self.info(f"  Trainer ID {self.buffer_status & 0xFFFF}, "
+                          f"Secret ID {self.buffer_status >> 16}")
         self.param = self.buffer_matched
         self.trace.append(("buffer_status", self.buffer_status, self.buffer_matched))
 
@@ -1158,6 +1159,10 @@ class MysteryGiftServer:
             return
         if self.buffer_dump_size == buffer_script.ANCHORS_SIZE:
             for line in buffer_script.describe_anchors(self.buffer_dump):
+                self.info(f"  {line}")
+        if buffer_script.describe(self.buffer_code).startswith(buffer_script.SAVE_DUMP + " "):
+            asked = buffer_script.save_dump_parameters(self.buffer_code)
+            for line in readout.describe(asked["block"], asked["offset"], self.buffer_dump):
                 self.info(f"  {line}")
 
     def _do_svr_load_buffer_verdict_msg(self):

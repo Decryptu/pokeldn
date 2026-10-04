@@ -109,12 +109,17 @@ class Boost:
 
 # Several hooks run at once as a chain [buffer_script.CHAIN]; the save keeps one set.
 BOOSTS = "Game boosts"
+BOOSTS_INTRO = ("A game boost is a change to how your game plays, such as walking through walls or a faster "
+                "game. Tick the ones you want and send: they start at once and stop when the game is reset "
+                "or the console is turned off.")
+MOM = "Mom restores your boosts"
 R, B, SELECT = "0x100", "0x2", "0x4"
 # L opens the Help System; only R's toggle has a flag the hooks hold off [docs/frlg_rom.md, turbo].
 BUTTONS = ((R, "Hold R"), (B, "Hold B (also runs)"), (SELECT, "Hold Select (also uses the registered item)"))
 BUTTON_NAME = {R: "R", B: "B", SELECT: "Select"}
-KEEP = Option("keep", "Keep them after a reset", False, help="Also writes them into the save. After a reset "
-              "or power-off, talk to Mom to turn them back on; send Mom turns boosts back on once for that.")
+KEEP = Option("keep", "Save them in the game", False, help="The boosts also go into your save. After a reset "
+              "or power-off they are off until you talk to Mom at home in Pallet Town. She can turn them back "
+              f"on once she has the gift \"{MOM}\": send it once, after this.")
 SPEEDS = (("1", "x1"), ("2", "x2"), ("3", "x3"), ("4", "x4"))
 WHERE = (("both", "Overworld and battles"), ("field", "Overworld only"), ("battle", "Battles only"))
 SLOWER = (("1", "x2 slower"), ("3", "x4 slower"), ("7", "x8 slower"))
@@ -195,7 +200,7 @@ class Boosts:
     key: str = "boosts"
     label: str = "Game boosts"
     group: str = BOOSTS
-    summary: str = "Tick one or several: they run together until a reset, or stay in the save."
+    summary: str = "Tick one or several: they run at the same time until a reset, or stay in your save."
     members: tuple = BOOST_LIST
     state = None
 
@@ -247,9 +252,9 @@ class Boosts:
                 raise ValueError(str(exc)) from None
             too_large = True
         keep = s["keep"] or too_large
-        lines.append(("Kept in the save: too large to send any other way. " if too_large else
-                      "Kept in the save. " if keep else "Lasts until a soft reset or power-off")
-                     + ("After a reset, talk to Mom to turn it back on (send Mom turns boosts back on once)"
+        lines.append(("Saved in your game: too large to send any other way. " if too_large else
+                      "Saved in your game. " if keep else "Stops when the game is reset or the console is off")
+                     + (f"After a reset, talk to Mom at home to turn them back on (send \"{MOM}\" once)"
                         if keep else ""))
         return _hook_args(name, params, keep), lines, too_large
 
@@ -308,14 +313,17 @@ PRESETS = (
     Preset("news-berry", "Ten-line news", "Wonder News", "A long news that scrolls, with a berry.",
            ("--news", "berry")),
     Boosts(),
-    Preset("mom-resident", "Mom turns boosts back on", BOOSTS, "Send once after boosts kept in the save.",
+    Preset("mom-resident", MOM, BOOSTS, "After boosts saved in the game: send once, then talking to Mom at home "
+           "turns them back on after a reset. Send it again after any other Wonder Card.",
            ("--gift", "resident-save")),
-    _code("trainer-id", "Read the trainer id", "Reads only. The answer is the save's trainer id.",
-          "--buffer-script", "trainer-id-probe"),
-    _code("dump-sav2", "Read the trainer block", "Reads only. The first bytes of SaveBlock2 land in "
-          "Received; the size is on the Advanced tab.", "--buffer-script", "save-dump", "--dump-block", "sav2"),
-    _code("dump-sav1", "Read party, bag and flags", "Reads only. The first bytes of SaveBlock1 land in "
-          "Received.", "--buffer-script", "save-dump", "--dump-block", "sav1"),
+    _code("trainer-id", "Trainer ID and Secret ID", "Reads only, changes nothing. The log shows your Trainer ID "
+          "and your Secret ID.", "--buffer-script", "trainer-id-probe"),
+    _code("dump-sav2", "Trainer name, IDs and play time", "Reads only. The log shows your name, Trainer ID, "
+          "Secret ID and play time; the raw bytes go to Received.",
+          "--buffer-script", "save-dump", "--dump-block", "sav2"),
+    _code("dump-sav1", "Your party's IVs and natures", "Reads only. The log shows each party Pokemon's nature, "
+          "IVs and EVs; the raw bytes go to Received.",
+          "--buffer-script", "save-dump", "--dump-block", "sav1", "--dump-offset", "0x34", "--dump-size", "608"),
 )
 PRESET = {p.key: p for p in PRESETS}
 # Presets an older settings file may name -> (preset, settings).

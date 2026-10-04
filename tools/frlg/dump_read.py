@@ -15,48 +15,23 @@ import sys
 
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__)))))
 
-from pokeldn.frlg.save import mon as monlib
+from pokeldn.frlg.save import readout
 from pokeldn.frlg.text import charmap
-from pokeldn.frlg.rom.rng_countdown import NATURE_NAMES
 
-PARTY_OFFSET = 0x38
-PARTY_COUNT_OFFSET = 0x34
-
-
-def _substructs(raw):
-    """The decrypted, unshuffled 48 bytes as {G, A, E, M}."""
-    pid = int.from_bytes(raw[0:4], "little")
-    key = pid ^ int.from_bytes(raw[4:8], "little")
-    sec = bytearray(raw[32:80])
-    for i in range(12):
-        v = int.from_bytes(sec[i * 4:i * 4 + 4], "little") ^ key
-        sec[i * 4:i * 4 + 4] = (v & 0xFFFFFFFF).to_bytes(4, "little")
-    order = monlib.SUBSTRUCT_ORDER[pid % 24]
-    return {k: bytes(sec[order.index(k) * 12:][:12]) for k in "GAEM"}
+PARTY_OFFSET = readout.PARTY_OFFSET
+PARTY_COUNT_OFFSET = readout.PARTY_COUNT_OFFSET
 
 
-def read_party(data, first_offset, tid, sid):
-    """first_offset is where SaveBlock1 0x38 lands inside this dump."""
-    rows = []
-    for slot in range(6):
-        start = first_offset + slot * monlib.PARTY_MON_SIZE
-        raw = data[start:start + monlib.PARTY_MON_SIZE]
-        if len(raw) < 80:
-            rows.append((slot, None, f"only {len(raw)} of 100 bytes in this dump"))
-            break
-        info = monlib.decode_mon(raw)
-        if info is None or info["species"] == 0:
-            rows.append((slot, None, "empty"))
-            continue
-        sub = _substructs(raw)
-        ivs_word = int.from_bytes(sub["M"][4:8], "little")
-        ivs = [(ivs_word >> (5 * i)) & 31 for i in range(6)]      # HP ATK DEF SPE SPA SPD
-        pid = info["pid"]
-        shiny = (tid ^ sid ^ (pid >> 16) ^ (pid & 0xFFFF)) < 8 if tid is not None else None
-        info.update(ivs=ivs, is_egg=bool((ivs_word >> 30) & 1), shiny=shiny,
-                    nature=NATURE_NAMES[pid % len(NATURE_NAMES)],
-                    friendship=sub["G"][9], ppbonus=sub["A"][8])
-        rows.append((slot, info, None))
+_substructs = readout._substructs
+
+
+def read_party(data, first_offset, tid=None, sid=None):
+    """first_offset is where SaveBlock1 0x38 lands inside this dump; IVs as a list, HP ATK DEF SPE SPA
+    SPD. The shiny test uses the mon's own OTID; tid/sid are kept for older callers."""
+    rows = readout.read_party(data, first_offset)
+    for _slot, info, _why in rows:
+        if info is not None:
+            info["ivs"] = [info["ivs"][name] for name in readout.GAME_ORDER]
     return rows
 
 
@@ -70,8 +45,6 @@ def _print_trainer(data):
 
 
 def _print_party(data, offset, tid, sid):
-    if tid is None:
-        print("  no trainer id given (--tid/--sid); the shiny column is left blank")
     if offset <= PARTY_COUNT_OFFSET < offset + len(data):
         print(f"  playerPartyCount {data[PARTY_COUNT_OFFSET - offset]}")
     party_at = PARTY_OFFSET - offset
@@ -97,9 +70,8 @@ def build_parser():
                     help="which save block the dump came from (default: guessed)")
     ap.add_argument("--offset", type=lambda v: int(v, 0), default=0,
                     help="the --dump-offset the run used")
-    ap.add_argument("--tid", type=int, default=None,
-                    help="trainer id for the shiny test, if this dump does not carry it")
-    ap.add_argument("--sid", type=int, default=None, help="secret id, likewise")
+    ap.add_argument("--tid", type=int, default=None, help="ignored; the shiny test uses each mon's OTID")
+    ap.add_argument("--sid", type=int, default=None, help="ignored, likewise")
     return ap
 
 

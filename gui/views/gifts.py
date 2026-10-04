@@ -122,6 +122,9 @@ class GiftBuilder:
                 if on:
                     body.append(self.boost_settings(preset))
             body.insert(0, ft.ResponsiveRow(tiles, spacing=6, run_spacing=6))
+            intro = getattr(self.module, "BOOSTS_INTRO", "") if group == getattr(self.module, "BOOSTS", None) else ""
+            if intro:
+                body.insert(0, t.text(intro, 12, t.MUTED))
             sections.append(t.section(group, ft.Column(body, spacing=10)))
         return ft.Column(sections, spacing=14)
 
@@ -181,7 +184,7 @@ class GiftBuilder:
             too_large = preset.built(chosen)[2]
         except ValueError:
             too_large = False
-        keep = (t.text("Kept in the save: together they are too large to send any other way.", 12, t.MUTED)
+        keep = (t.text("Saved in your game: together they are too large to send any other way.", 12, t.MUTED)
                 if too_large or "hook-follower" in chosen["on"]
                 else self.switch_row(frlg.KEEP.label, "keep", frlg.KEEP.help, chosen))
         meter = ft.Column([
@@ -190,7 +193,8 @@ class GiftBuilder:
             ft.ProgressBar(value=min(used / room, 1), color=t.RED if used > room else t.BLUE,
                            bgcolor=t.BORDER, bar_height=4, border_radius=2)], spacing=4)
         common = ft.Container(ft.Column([keep, meter, t.text(
-            "Tick several to run them together. Sending boosts again replaces the ones running.", 12, t.MUTED)],
+            "Every ticked boost runs at the same time. Sending boosts again stops the ones already running "
+            "and starts the ticked ones.", 12, t.MUTED)],
             spacing=12), padding=14, border_radius=10, border=ft.Border.all(1, t.BORDER))
         return ft.Column([*panels, common], spacing=10)
 
