@@ -37,7 +37,7 @@ parts of the code.
 
 ## Desktop app
 
-<img src=".github/assets/desktop-app.png" alt="The pokeldn desktop app offering a shiny Ditto for a FireRed trade" width="100%">
+<img src=".github/assets/desktop-app.webp" alt="The pokeldn desktop app offering a shiny Chansey for a FireRed trade" width="100%">
 
 The [releases](https://github.com/Decryptu/pokeldn/releases) carry a desktop app for macOS (Apple
 silicon), Windows and Linux. It includes the radio firmware and flashes the board, builds legal
