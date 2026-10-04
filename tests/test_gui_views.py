@@ -476,3 +476,40 @@ def test_the_link_code_slots_fill_in_order_and_give_the_host_its_scene(monkeypat
     picker._choose(4)                       # a filled slot is replaced, nothing else moves
     assert values[field.key] == "eevee,squirtle,pikachu"
     assert views.parse_code("evoli,taupiqueur,") == [1, 9, None]
+
+
+def test_settings_keep_a_six_digit_switch_id_beside_the_five_digit_one(tmp_path, monkeypatch):
+    """A Switch title shows its trainer id as six digits; FireRed shows five (docs/gui.md, Your trainer)."""
+    import flet as ft
+    from gui.views.settings import SettingsView
+    from pokeldn.app import settings as settings_module
+
+    monkeypatch.setattr(settings_module, "PATH", tmp_path / "settings.json")
+    app = SimpleNamespace(settings=settings_module.Settings(tid=1, sid=2), update=None, update_state="",
+                          update_listeners=[], picker=None, page=None, ui=lambda fn: fn())
+    view = SettingsView(app)
+
+    def walk(control):
+        yield control
+        inner = getattr(control, "controls", None) or [getattr(control, "content", None)]
+        for child in inner:
+            if isinstance(child, ft.Control):
+                yield from walk(child)
+
+    fields = {}
+    for column in walk(view.column):
+        if isinstance(column, ft.Column) and len(column.controls) == 2 \
+                and isinstance(column.controls[1], ft.TextField):
+            fields.setdefault(column.controls[0].value, []).append(column.controls[1])
+
+    def type_into(label, text, at=0):
+        fields[label][at].on_change(SimpleNamespace(control=SimpleNamespace(value=text)))
+
+    type_into("ID, Switch games", "967295")
+    type_into("Secret ID", "4294", at=1)
+    type_into("ID, Switch games", "1000000")      # seven digits
+    type_into("Secret ID", "4295", at=1)          # past 32 bits
+    type_into("ID, FireRed and LeafGreen", "65536")
+    saved = settings_module.load()
+    assert (saved.tid, saved.sid, saved.switch_tid, saved.switch_sid) == (1, 2, 967295, 4294)
+    assert saved.ids("frlg") == (1, 2) and saved.ids("za") == (0xFFFF, 0xFFFF)

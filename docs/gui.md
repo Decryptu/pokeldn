@@ -19,6 +19,21 @@ Sword/Shield also opens `.wc8` cards. Save gift file exports the selected gift w
 [Mystery Gift files](gifts.md#desktop-app) describes the forms, cartridge variants and native-format
 conversion.
 
+## Your trainer
+
+Settings, Your trainer is the original trainer of every Pokemon the app builds: a name, a language
+and two ID pairs, entered as the games show them. A record stores the trainer as a 16-bit TID and a
+16-bit SID, the low and high halves of one 32-bit id.
+
+| games | ID shown | secret ID | stored id |
+|---|---|---|---|
+| FireRed, LeafGreen | the TID, 0 to 65535 | the SID, 0 to 65535 | `SID << 16 \| TID` |
+| Let's Go, Sword/Shield, BDSP, Legends Arceus, Scarlet/Violet, Legends Z-A | id mod 10^6, six digits | id div 10^6, 0 to 4294 | `secret * 10^6 + ID`, below 2^32 |
+
+The Switch pair is converted per game in `pokeldn/app/settings.py` `Settings.ids`; the Sword host
+also reports it as its own trainer. Settings saved before the Switch pair existed derive it from the
+first pair, so records built from them keep the same stored id.
+
 ## Linux serial ports
 
 The app opens the board as the user, with no root and no kernel networking: the v0.6.2 Linux bundle,

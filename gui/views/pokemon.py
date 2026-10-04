@@ -115,7 +115,7 @@ class PokemonPicker:
 
         def work():
             try:
-                info = builder.SERVICE.make(self.game, self.value["species"], self.app.settings.trainer(),
+                info = builder.SERVICE.make(self.game, self.value["species"], self.app.settings.trainer(self.game),
                                             level, bool(self.value.get("shiny")),
                                             self.value.get("nickname", ""), VERSIONS.get(self.version, ""),
                                             self.value.get("options"))
@@ -205,7 +205,7 @@ class PokemonPicker:
 
             def work():
                 try:
-                    sets, error = builder.SERVICE.paste(self.game, text, self.app.settings.trainer(),
+                    sets, error = builder.SERVICE.paste(self.game, text, self.app.settings.trainer(self.game),
                                                         VERSIONS.get(self.version, "")), ""
                 except Exception as exc:
                     sets, error = [], str(exc)
@@ -485,7 +485,7 @@ class OfferOptions:
 
         def work():
             try:
-                found = builder.SERVICE.options(self.picker.game, species, app.settings.trainer(),
+                found = builder.SERVICE.options(self.picker.game, species, app.settings.trainer(self.picker.game),
                                                 VERSIONS.get(self.picker.version, ""), target[1])
                 found["move_names"], error = builder.SERVICE.names(self.picker.game, "moves"), ""
             except Exception as exc:

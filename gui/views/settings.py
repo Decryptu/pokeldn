@@ -9,7 +9,7 @@ from gui.app import keys_found
 from pokeldn import __version__
 from pokeldn.app.paths import SESSION
 from pokeldn.app.sprites import CACHE
-from pokeldn.app.settings import LANGUAGES
+from pokeldn.app.settings import LANGUAGES, switch_ids_valid
 from pokeldn.app import storage
 from gui.views.widgets import PathField, open_folder
 
@@ -60,29 +60,36 @@ class SettingsView:
         speed = t.dropdown([("921600", "921600 (default)"), ("1500000", "1500000 (faster, needs a good cable)")],
                            str(s.baud), on_select=lambda e: self.save("baud", int(e.control.value)))
 
-        def number(name, label):
+        def number(name, label, valid):
             def store(e):
                 try:
                     value = int(e.control.value)
                 except ValueError:
                     return
-                if 0 <= value <= 65535:
+                if valid(value):
                     self.save(name, value)
             return ft.Column([t.text(label, 11, t.MUTED),
                               t.field(value=str(getattr(s, name)), mono=True, on_change=store)],
                              spacing=4, expand=True)
 
-        trainer = ft.Row([
-            ft.Column([t.text("Name", 11, t.MUTED),
-                       t.field(value=s.ot, on_change=lambda e: self.save("ot", e.control.value[:12]))],
-                      spacing=4, expand=2),
-            number("tid", "Trainer ID"),
-            number("sid", "Secret ID"),
-            ft.Column([t.text("Language", 11, t.MUTED),
-                       t.dropdown(list(LANGUAGES), str(s.language),
-                                  on_select=lambda e: self.save("language", int(e.control.value)))],
-                      spacing=4, expand=2),
-        ], spacing=10, vertical_alignment=ft.CrossAxisAlignment.START)
+        gba = lambda v: 0 <= v <= 65535   # noqa: E731
+        trainer = ft.Column([
+            ft.Row([
+                ft.Column([t.text("Name", 11, t.MUTED),
+                           t.field(value=s.ot, on_change=lambda e: self.save("ot", e.control.value[:12]))],
+                          spacing=4, expand=True),
+                ft.Column([t.text("Language", 11, t.MUTED),
+                           t.dropdown(list(LANGUAGES), str(s.language),
+                                      on_select=lambda e: self.save("language", int(e.control.value)))],
+                          spacing=4, expand=True),
+            ], spacing=10, vertical_alignment=ft.CrossAxisAlignment.START),
+            ft.Row([
+                number("tid", "ID, FireRed and LeafGreen", gba),
+                number("sid", "Secret ID", gba),
+                number("switch_tid", "ID, Switch games", lambda v: switch_ids_valid(v, s.switch_sid)),
+                number("switch_sid", "Secret ID", lambda v: switch_ids_valid(s.switch_tid, v)),
+            ], spacing=10, vertical_alignment=ft.CrossAxisAlignment.START),
+        ], spacing=10)
 
         def switch(name, label, help_):
             return t.card(label, None, help_,
@@ -117,7 +124,8 @@ class SettingsView:
                    "computer."),
             t.card("Your trainer", trainer,
                    "The original trainer of every Pokemon the app builds for you. Put your own name and IDs to "
-                   "make them yours; the IDs were drawn at random on first launch."),
+                   "make them yours: FireRed and LeafGreen show a five-digit ID, the Switch games a six-digit "
+                   "one. The IDs were drawn at random on first launch."),
             t.card("Received Pokemon", ft.Row([ft.Container(received.control, expand=True),
                                                t.icon_button("external-link",
                                                              lambda e: open_folder(os.path.expanduser(s.received)),

@@ -33,7 +33,7 @@ def settings(tmp_path):
 
 
 def _made(service, game, settings, options=OPTIONS):
-    info = service.make(game, 25, settings.trainer(), LEVEL, True, NICKNAME, "", options)
+    info = service.make(game, 25, settings.trainer(game), LEVEL, True, NICKNAME, "", options)
     assert info["legal"]
     return info
 
@@ -157,12 +157,12 @@ def test_scarlet_entry_points_offer_the_record_the_app_built(service, settings, 
 
 @pytest.mark.parametrize("game", ["bdsp", "sv"])
 def test_a_nickname_the_record_cannot_hold_is_refused_not_cut(service, settings, game):
-    assert service.make(game, 25, settings.trainer(), 30, False, "A" * 12)["nickname"] == "A" * 12
+    assert service.make(game, 25, settings.trainer(game), 30, False, "A" * 12)["nickname"] == "A" * 12
     with pytest.raises(pokemon.BuilderError, match="at most 12 characters"):
-        service.make(game, 25, settings.trainer(), 30, False, "A" * 13)
+        service.make(game, 25, settings.trainer(game), 30, False, "A" * 13)
 
 
 @pytest.mark.parametrize("game", ["bdsp", "sv"])
 def test_moves_no_legal_pokemon_knows_together_are_refused_in_words(service, settings, game):
     with pytest.raises(pokemon.BuilderError, match="can know these moves together"):
-        service.make(game, 25, settings.trainer(), 5, False, "", "", {"moves": [56, 57, 89, 15]})
+        service.make(game, 25, settings.trainer(game), 5, False, "", "", {"moves": [56, 57, 89, 15]})

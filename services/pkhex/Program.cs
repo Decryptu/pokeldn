@@ -631,6 +631,8 @@ JsonObject Describe(Game game, PKM pk, LegalityAnalysis la)
         ["shiny"] = pk.IsShiny,
         ["nickname"] = pk.Nickname,
         ["ot"] = pk.OriginalTrainerName,
+        ["trainer_id"] = pk.DisplayTID,
+        ["secret_id"] = pk.DisplaySID,
         ["nature"] = strings.natures[(int)pk.StatAlignment],
         ["ball"] = strings.balllist[pk.Ball],
         ["ability"] = game.Context == EntityContext.Gen9a ? "" : strings.abilitylist[pk.Ability],
