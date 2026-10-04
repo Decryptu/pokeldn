@@ -1,6 +1,6 @@
 """Paired .bin files for comradesean's pokemon-gen3-mysterygift-tool (WONDERCARD_STRUCTURE.md):
 WonderCard.bin = u16 crc16(card) LE + u16 pad + 332-B card (336 B); Script.bin = u16
-crc16(RamScriptData) LE + u16 pad + 999-B RamScriptData + 1 pad (1004 B = sizeof RamScript)."""
+crc16(RamScriptData and its zero pad) LE + u16 pad + 999-B RamScriptData + 1 pad (1004 B = sizeof RamScript)."""
 
 import os
 

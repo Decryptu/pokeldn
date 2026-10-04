@@ -173,6 +173,9 @@ def build_default_registry():
     registry.register_definition(wonder_card_events.MASTER_BALL_GIFT)
     registry.register_definition(wonder_card_events.ALTERING_CAVE_GIFT)
     registry.register_definition(wonder_card_events.BATTLE_COUNT_GIFT)
+    registry.register_definition(wonder_card_events.WISH_EGG_GIFT)
+    registry.register_definition(wonder_card_events.POKEPARK_EGG_GIFT)
+    registry.register_definition(wonder_card_events.PC_JAPAN_EGG_GIFT)
     return registry
 
 

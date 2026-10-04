@@ -104,6 +104,13 @@ buffer script sends no card and leaves the slot alone. An ordinary card delivere
 rewrites the card at +0x32E0 and the RAM script at +0x361C, both in one save sector, and nothing in
 SaveBlock2; measured, 564 of the 15872 bytes of SaveBlock1 differed.
 
+The slot's checksum (`ramScript.checksum`, SaveBlock1 + 0x361C) is `CalcCRC16WithTable` over
+`sizeof(RamScriptData)`, which is 1000 bytes: the 999 declared bytes and one padding byte that
+`InitRamScript` zeroes first [script.c:500]. `CalculateRamScriptChecksum` passes `250 << 2`
+(`0x0806D43C` BPRE, `0x0806D5A0` BPRF). Every game-written slot read back carries the 1000-byte CRC. A
+slot whose CRC covers only 999 bytes is wiped by `GetRamScript` the first time its object is talked to
+[script.c:526].
+
 ## The gift catalogue
 
 `--gift NAME`; `--help` lists flag ids (1000..1019). Only the held card matters: the same id means
@@ -116,6 +123,7 @@ SaveBlock2; measured, 564 of the 15872 bytes of SaveBlock1 differed.
 | `porygon-tm-gift` | a Porygon card, a Clefairy scene, TM29 Psychic then TM46 Thief |
 | `solrock-stamp` / `lunatone-stamp` | the two halves of one Stamp Rally card |
 | `altering-cave` | the official Altering Cave event, ported |
+| `wish-egg`, `pokepark-egg`, `pc-japan-egg` | the official distribution eggs; see Distribution eggs |
 | `battle-count-card` | the official Battle Count Card |
 | `visiting-trainer` | a Battle Tower trainer as ident 26 (FireRed only) |
 | `mystery-event-probe` | `givenationaldex; setstatus 42; checksum`, the VM's own self-test |
@@ -197,6 +205,23 @@ FireRed).
 | 2 | Pineco | | 7 | Stantler |
 | 3 | Houndour | | 8 | Smeargle |
 | 4 | Teddiursa | | | |
+
+### Distribution eggs
+
+Three Japanese distributions, ported from the bytes GB-Link-Switch-LDN carries (`web/js/gift/official.js`).
+Each card holds every egg of its distribution and the console picks one with `random` [scrcmd.c:455];
+the egg gets the distribution's four moves, the fateful-encounter bit and met location 0xFF, as the
+original scripts set them. A full party refuses before the draw and the card stays open.
+
+| card | eggs |
+|---|---|
+| `wish-egg` (Pokemon Center New York) | Chansey, Drowzee, Exeggcute, Farfetch'd, Kangaskhan, Lickitung; each knows Wish |
+| `pokepark-egg` (PokePark Market Fantasia) | Cacnea, Corphish, Corsola, Igglybuff, Minun, Pichu, Plusle, Psyduck, Skitty, Spinda, Spoink, Surskit, Taillow, Whismur, Wynaut |
+| `pc-japan-egg` (Pokemon Center Japan) | Bellsprout (Teeter Dance), Meowth (Petal Dance), Oddish (Leech Seed), Poliwag (Sweet Kiss) |
+
+On the French FireRed ROM under mGBA, each card bound to the mother gave its egg with the listed moves,
+`modernFatefulEncounter` 1 and met location 0xFF; four delays drew Whismur, Minun, Corphish and
+Psyduck from the PokePark card.
 
 ### The Battle Count Card
 
@@ -357,7 +382,9 @@ The compiler shows `intro_message`, resumes the stages from `VAR_MYSTERY_GIFT_1`
 Each `DeliveryStage` is one checkpoint: a failed reward re-offers that stage and skips the successful
 ones before it. Never put two fallible rewards (`GiveItem`, `GivePokemon`, `GiveEgg`) in one stage.
 `GiveEgg` takes the same `moves=(...)` as `GivePokemon`; a move-bearing egg needs a party slot, so a
-full party retries later instead of sending it to the PC.
+full party retries later instead of sending it to the PC. A move of 0 after the first empties that
+slot. `GiveRandomEgg(eggs)` takes `(species, moves)` pairs and gives one picked by `random`: a jump
+table, so fifteen eggs with four moves each fit one RAM script (944 bytes).
 
 `condition=` (`VarEquals`, `FlagSet`, `Not`, `AllOf`, `AnyOf`) skips a stage's actions when false but
 still advances the cursor, for mutually exclusive branches. `RequireSpecialResult(...)` calls a field
@@ -504,7 +531,7 @@ Trainer Tower sets and `CEReaderTool_SaveTrainerTower`: `ereader_screen.c` opens
 
 ### The Aurora and Mystic Tickets
 
-The distribution scripts are in `data/mystery_event_msg.s:200`, but the Switch release grants both
+A ticket card does nothing on the Switch release. The distribution scripts are in `data/mystery_event_msg.s:200`, but the Switch release grants both
 tickets and both `FLAG_RECEIVED_*` flags on the first Hall of Fame entry
 [post_battle_event_funcs.c:52, `#if REVISION >= 0xA`], so on a completed save the script is a no-op.
 The gallery's `FL - Item AuroraTicket` script tests `FLAG_RECEIVED_AURORA_TICKET` first; on a retail

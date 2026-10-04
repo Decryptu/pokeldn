@@ -29,7 +29,7 @@ from pokeldn.frlg.rom.scrcmd import (
     OP_DOWILDBATTLE as _OP_DOWILDBATTLE, OP_END as _OP_END, OP_FACEPLAYER as _OP_FACEPLAYER,
     OP_GETPARTYSIZE as _OP_GETPARTYSIZE, OP_GETPLAYERXY as _OP_GETPLAYERXY,
     OP_GIVEEGG as _OP_GIVEEGG, OP_GIVEMON as _OP_GIVEMON, OP_LOCK as _OP_LOCK,
-    OP_PLAYFANFARE as _OP_PLAYFANFARE, OP_RELEASE as _OP_RELEASE, OP_SETFLAG as _OP_SETFLAG,
+    OP_PLAYFANFARE as _OP_PLAYFANFARE, OP_RANDOM as _OP_RANDOM, OP_RELEASE as _OP_RELEASE, OP_SETFLAG as _OP_SETFLAG,
     OP_SETMONMETLOCATION as _OP_SETMONMETLOCATION,
     OP_SETMONMODERNFATEFULENCOUNTER as _OP_SETMONMODERNFATEFULENCOUNTER,
     OP_SETMONMOVE as _OP_SETMONMOVE, OP_SETVADDRESS as _OP_SETVADDRESS, OP_SETVAR as _OP_SETVAR,
@@ -243,6 +243,18 @@ class ReadSpecial:
 
 
 @dataclass(frozen=True)
+class GiveRandomEgg:
+    """One of `eggs`, (species, four moves; 0 empties a slot), picked on the console by `random`
+    [ScrCmd_random, decomp:src/scrcmd.c:455]: a jump table, so fifteen eggs fit one RAM script."""
+    eggs: tuple[tuple[int, tuple[int, ...]], ...]
+    fateful_encounter: bool = False
+    failure_message: str | None = None
+
+    def __post_init__(self):
+        object.__setattr__(self, "eggs", tuple((species, tuple(moves)) for species, moves in self.eggs))
+
+
+@dataclass(frozen=True)
 class Exit:
     pass
 
@@ -283,8 +295,8 @@ Condition: TypeAlias = VarEquals | FlagSet | Not | AllOf | AnyOf
 GiftAction: TypeAlias = (
     Message | GiveItem | GivePokemon | GiveEgg | ShowSprite
     | BattlePokemon | BattleLegendary | RequireSpecialResult | SetVar | AddVar
-    | ReadSpecial | Exit)
-_FALLIBLE_REWARD_TYPES = (GiveItem, GivePokemon, GiveEgg)
+    | ReadSpecial | GiveRandomEgg | Exit)
+_FALLIBLE_REWARD_TYPES = (GiveItem, GivePokemon, GiveEgg, GiveRandomEgg)
 _BATTLE_TYPES = (BattlePokemon, BattleLegendary)
 
 
@@ -463,7 +475,7 @@ def _validate_action(action, path):
         if len(action.moves) > 4:
             _fail(f"{path}.moves", "a Pokémon may define at most four moves")
         for index, move in enumerate(action.moves):
-            _validate_int(move, 1, MAX_MOVE, f"{path}.moves[{index}]", "move")
+            _validate_int(move, 0 if index else 1, MAX_MOVE, f"{path}.moves[{index}]", "move")
         if action.failure_message is not None:
             _validate_message(action.failure_message, f"{path}.failure_message")
     elif isinstance(action, GiveEgg):
@@ -472,7 +484,7 @@ def _validate_action(action, path):
         if len(action.moves) > 4:
             _fail(f"{path}.moves", "an egg may define at most four moves")
         for index, move in enumerate(action.moves):
-            _validate_int(move, 1, MAX_MOVE, f"{path}.moves[{index}]", "move")
+            _validate_int(move, 0 if index else 1, MAX_MOVE, f"{path}.moves[{index}]", "move")
         if action.failure_message is not None:
             _validate_message(action.failure_message, f"{path}.failure_message")
     elif isinstance(action, ShowSprite):
@@ -501,6 +513,17 @@ def _validate_action(action, path):
     elif isinstance(action, ReadSpecial):
         _validate_variable_id(action.variable, f"{path}.variable")
         _validate_int(action.special_id, 0, 0xFFFF, f"{path}.special_id", "special ID")
+    elif isinstance(action, GiveRandomEgg):
+        if not action.eggs:
+            _fail(f"{path}.eggs", "at least one egg is needed")
+        for index, (species, moves) in enumerate(action.eggs):
+            _validate_int(species, 1, MAX_POKEMON_SPECIES, f"{path}.eggs[{index}]", "species")
+            if len(moves) > 4:
+                _fail(f"{path}.eggs[{index}]", "an egg may define at most four moves")
+            for slot, move in enumerate(moves):
+                _validate_int(move, 0 if slot else 1, MAX_MOVE, f"{path}.eggs[{index}]", "move")
+        if action.failure_message is not None:
+            _validate_message(action.failure_message, f"{path}.failure_message")
     elif isinstance(action, Exit):
         return
     else:
@@ -984,6 +1007,26 @@ def _emit_action(builder, action, *, sprite_id, failure_label, completed_label):
         builder.emit(bytes([_OP_ADDVAR]) + _u16(action.variable) + _u16(action.value))
     elif isinstance(action, ReadSpecial):
         builder.emit(_specialvar(action.variable, action.special_id))
+    elif isinstance(action, GiveRandomEgg):
+        # The party guard runs first, so `giveegg` cannot fail after the pick.
+        builder.emit(bytes([_OP_GETPARTYSIZE]))
+        builder.emit(_save_party_slot())
+        builder.emit(_compare(_VAR_RESULT, PARTY_SIZE))
+        builder.vgoto_if(_COMPARE_EQ, failure_label)
+        builder.emit(bytes([_OP_RANDOM]) + _u16(len(action.eggs)))
+        for index in range(len(action.eggs)):
+            builder.emit(_compare(_VAR_RESULT, index))
+            builder.vgoto_if(_COMPARE_EQ, f"{failure_label}_egg_{index}")
+        for index, (species, moves) in enumerate(action.eggs):
+            builder.label(f"{failure_label}_egg_{index}")
+            builder.emit(bytes([_OP_GIVEEGG]) + _u16(species))
+            for slot, move in enumerate(moves):
+                builder.emit(bytes([_OP_SETMONMOVE, LAST_PARTY_MON_INDEX, slot]) + _u16(move))
+            builder.vgoto(f"{failure_label}_given")
+        builder.label(f"{failure_label}_given")
+        if action.fateful_encounter:
+            builder.emit(_mark_fateful_encounter())
+        builder.emit(bytes([_OP_PLAYFANFARE]) + _u16(MUS_OBTAIN_ITEM))
     elif isinstance(action, Exit):
         builder.vgoto(completed_label)
     else:  # pragma: no cover - validation prevents this path.
@@ -993,6 +1036,8 @@ def _emit_action(builder, action, *, sprite_id, failure_label, completed_label):
 def _failure_message(action):
     if isinstance(action, GiveItem):
         return action.failure_message or DEFAULT_BAG_FULL_MESSAGE
+    if isinstance(action, GiveRandomEgg):
+        return action.failure_message or DEFAULT_PARTY_FULL_MESSAGE
     if isinstance(action, (GivePokemon, GiveEgg)):
         if action.failure_message:
             return action.failure_message
@@ -1435,7 +1480,7 @@ __all__ = [
     "DeliveryStage",
     "Exit", "FlagSet", "GiftSpec", "GiftValidationError", "GiveEgg", "GiveItem",
     "GivePokemon", "MapPosition", "Message", "ReadSpecial", "RelativeToPlayer",
-    "SetVar", "AddVar",
+    "SetVar", "AddVar", "GiveRandomEgg",
     "ShowSprite",
     "Not", "RequireSpecialResult", "SHARE_ALWAYS", "SHARE_NEVER", "SHARE_ONCE",
     "CARD_TYPE_GIFT", "CARD_TYPE_LINK_STAT",

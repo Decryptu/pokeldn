@@ -49,8 +49,6 @@ def test_cutscene_matches_the_authoritative_hardware_tested_payload():
     assert hashlib.sha256(card).hexdigest() == CARD_SHA256
     assert hashlib.sha256(script).hexdigest() == SCRIPT_SHA256
     assert mystery_gift.crc16(card) == 0x2B10
-    _ram_data, ram_crc = save_inject.build_ram_script_struct(script)
-    assert ram_crc == 0x4C2E
 
 
 def test_starter_branches_select_the_preserved_beasts_and_graphics():
@@ -127,7 +125,9 @@ def test_exported_binary_geometry_and_checksums():
     assert card_bin[:2] == bytes.fromhex("102b") and card_bin[2:4] == b"\x00\x00"
     assert card_bin[4:] == card
     assert len(script_bin) == gift_to_bin.SCRIPT_BIN_SIZE == 1004
-    assert script_bin[:2] == bytes.fromhex("2e4c") and script_bin[2:4] == b"\x00\x00"
+    # The game's CRC covers RamScriptData and its zero pad byte (docs/frlg_gift.md).
+    assert script_bin[:2] == mystery_gift.crc16(script_bin[4:1004]).to_bytes(2, "little")
+    assert script_bin[2:4] == b"\x00\x00"
     ram_data, _crc = save_inject.build_ram_script_struct(script)
     assert script_bin[4:1003] == ram_data and script_bin[1003:] == b"\x00"
 

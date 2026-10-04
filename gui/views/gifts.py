@@ -119,7 +119,7 @@ class GiftBuilder:
                 on = preset.settings(self.value["options"].get(preset.key))["on"] if preset is selected else []
                 tiles += [self._tile(b.label, b.summary, b.key in on, lambda e, p=preset, k=b.key: self._toggle(p, k),
                                      settings=bool(b.options)) for b in preset.members]
-                if preset is selected:
+                if on:
                     body.append(self.boost_settings(preset))
             body.insert(0, ft.ResponsiveRow(tiles, spacing=6, run_spacing=6))
             sections.append(t.section(group, ft.Column(body, spacing=10)))

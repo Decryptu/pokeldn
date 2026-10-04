@@ -20,7 +20,7 @@ class ScriptVM:
     BASE = 0x08000000
 
     def __init__(self, script, *, variables=None, flags=None, bag_space=True,
-                 mon_results=(), party_size=1, special_results=None):
+                 mon_results=(), party_size=1, special_results=None, random_values=()):
         self.script = script
         self.pc = 0
         self.vars = dict(variables or {})
@@ -29,6 +29,8 @@ class ScriptVM:
         self.mon_results = list(mon_results)
         self.party_size = party_size
         self.special_results = dict(special_results or {})
+        self.random_values = list(random_values)
+        self.random_limits = []
         self.comparison = 0
         self.items = []
         self.mons = []
@@ -120,6 +122,10 @@ class ScriptVM:
             elif op == 0x42:  # getplayerxy
                 x, y = self.u16(), self.u16()
                 self.vars[x], self.vars[y] = 10, 20
+            elif op == 0x8F:  # random - `Random() % VarGet(limit)` into VAR_RESULT
+                limit = self.var_get(self.u16())
+                self.random_limits.append(limit)
+                self.vars[0x800D] = (self.random_values.pop(0) if self.random_values else 0) % limit
             elif op == 0x43:  # getpartysize
                 self.vars[0x800D] = self.party_size
             elif op == 0x46:  # checkitemspace

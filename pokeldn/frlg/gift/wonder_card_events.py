@@ -3,10 +3,12 @@ from pokeldn.frlg.gift.gift_composer import (
     AllOf,
     CARD_TYPE_LINK_STAT,
     GET_CARD_BATTLES_WON,
+    GiveRandomEgg,
     ReadSpecial,
     SPECIAL_GET_MYSTERY_GIFT_CARD_STAT,
     VAR_MYSTERY_GIFT_2,
     AnyOf,
+    FlagSet,
     BattleLegendary,
     DeliveryPlan,
     DeliveryStage,
@@ -1596,6 +1598,80 @@ MASTER_BALL_GIFT = WonderGift(
 )
 
 
+# The JPAJ distribution eggs, ported from the bytes in GB-Link-Switch-LDN `web/js/gift/official.js`
+# (github.com/GB-Link). Plain field scripts: one build serves all four cartridges.
+SPECIES_EGG = 412
+MOVE_WISH = 273
+DISTRIBUTION_INTRO = "Thank you for using the MYSTERY\nGIFT System."
+
+# (species, the egg's four moves; 0 empties a slot). Each list is one distribution's eggs, a payload
+# per species in official.js; the console picks one here with `random`.
+WISH_EGGS = (
+    (113, (230, MOVE_WISH, 0, 0)),      # CHANSEY: SWEET_SCENT
+    (96, (187, MOVE_WISH, 0, 0)),       # DROWZEE: BELLY_DRUM
+    (102, (230, MOVE_WISH, 0, 0)),      # EXEGGCUTE: SWEET_SCENT
+    (83, (281, MOVE_WISH, 0, 0)),       # FARFETCHD: YAWN
+    (115, (281, MOVE_WISH, 0, 0)),      # KANGASKHAN: YAWN
+    (108, (215, MOVE_WISH, 0, 0)),      # LICKITUNG: HEAL_BELL
+)
+POKEPARK_EGGS = (
+    (344, (40, 43, 71, 227)),           # CACNEA: POISON_STING LEER ABSORB ENCORE
+    (326, (145, 346, 0, 0)),            # CORPHISH: BUBBLE WATER_SPORT
+    (351, (150, 253, 0, 0)),            # SPOINK: SPLASH UPROAR
+    (311, (145, 300, 0, 0)),            # SURSKIT: BUBBLE MUD_SPORT
+    (304, (64, 45, 116, 297)),          # TAILLOW: PECK GROWL FOCUS_ENERGY FEATHER_DANCE
+    (370, (1, 253, 298, 0)),            # WHISMUR: POUND UPROAR TEETER_DANCE
+    (360, (150, 204, 227, 321)),        # WYNAUT: SPLASH CHARM ENCORE TICKLE
+    (222, (33, 300, 0, 0)),             # CORSOLA: TACKLE MUD_SPORT
+    (174, (47, 204, 111, 321)),         # IGGLYBUFF: SING CHARM DEFENSE_CURL TICKLE
+    (354, (45, 86, 300, 0)),            # MINUN: GROWL THUNDER_WAVE MUD_SPORT
+    (172, (84, 204, 266, 0)),           # PICHU: THUNDER_SHOCK CHARM FOLLOW_ME
+    (353, (45, 86, 346, 0)),            # PLUSLE: GROWL THUNDER_WAVE WATER_SPORT
+    (54, (346, 10, 39, 300)),           # PSYDUCK: WATER_SPORT SCRATCH TAIL_WHIP MUD_SPORT
+    (315, (45, 33, 39, 205)),           # SKITTY: GROWL TACKLE TAIL_WHIP ROLLOUT
+    (308, (33, 253, 47, 0)),            # SPINDA: TACKLE UPROAR SING
+)
+PC_JAPAN_EGGS = (
+    (69, (22, 298, 0, 0)),              # BELLSPROUT: VINE_WHIP TEETER_DANCE
+    (52, (10, 45, 80, 0)),              # MEOWTH: SCRATCH GROWL PETAL_DANCE
+    (43, (71, 73, 0, 0)),               # ODDISH: ABSORB LEECH_SEED
+    (60, (145, 186, 0, 0)),             # POLIWAG: BUBBLE SWEET_KISS
+)
+def _egg_gift(slug, title, subtitle, eggs, flag_id):
+    return WonderGift(
+        slug=slug,
+        card=WonderCardSpec(
+            icon_species=SPECIES_EGG,
+            title=title,
+            subtitle=subtitle,
+            body=("Go to the second floor of the POKéMON",
+                  "CENTER and meet the delivery person in",
+                  "green. Receive the POKéMON EGG and",
+                  "then save the game!!"),
+            footer1="Do not toss this Present Card",
+            footer2="before receiving the POKéMON EGG!!",
+            default_flag_id=flag_id,
+        ),
+        intro_message=DISTRIBUTION_INTRO,
+        event=GiftSpec(),
+        delivery=DeliveryPlan(delivery=(
+            DeliveryStage(
+                GiveRandomEgg(eggs, fateful_encounter=True,
+                              failure_message="Oh, your party appears to be full.\n"
+                                              "Please store a POKéMON on a PC."),
+                Message("Please raise it with love and\nkindness."),
+            ),
+        )),
+    )
+
+
+WISH_EGG_GIFT = _egg_gift("wish-egg", "“WISH EGG”", "POKéMON CENTER NEW YORK", WISH_EGGS, 1005)
+POKEPARK_EGG_GIFT = _egg_gift("pokepark-egg", "POKéMON EGG Present Card", "POKéPARK MARKET FANTASIA",
+                              POKEPARK_EGGS, 1003)
+PC_JAPAN_EGG_GIFT = _egg_gift("pc-japan-egg", "POKéMON EGG Present Card", "POKéMON CENTER JAPAN",
+                              PC_JAPAN_EGGS, 1003)
+
+
 __all__ = [
     "CELEBI_GIFT", "DIR_WEST", "GIFT_MEVENT_PROBE", "GIFT_PORYGON_TMS",
     "GIFT_VISITING_TRAINER",
@@ -1603,6 +1679,7 @@ __all__ = [
     "GIFT_MEVENT_NPC", "MEVENT_NPC_GIFT", "MEVENT_NPC_FLAG_ID",
     "GIFT_MASTER_BALL", "MASTER_BALL_GIFT", "MASTER_BALL_FLAG_ID",
     "GIFT_ALTERING_CAVE", "ALTERING_CAVE_GIFT", "ALTERING_CAVE_FLAG_ID",
+    "WISH_EGG_GIFT", "POKEPARK_EGG_GIFT", "PC_JAPAN_EGG_GIFT", "WISH_EGGS", "POKEPARK_EGGS", "PC_JAPAN_EGGS",
     "GIFT_BATTLE_COUNT", "BATTLE_COUNT_GIFT", "BATTLE_COUNT_FLAG_ID",
     "BATTLE_COUNT_PRIZE_WINS", "BATTLE_COUNT_PRIZE_TAKEN", "ITEM_POTION",
     "VAR_ALTERING_CAVE_WILD_SET", "NUM_ALTERING_CAVE_TABLES", "ALTERING_CAVE_WRAP",

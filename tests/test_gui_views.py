@@ -513,3 +513,34 @@ def test_settings_keep_a_six_digit_switch_id_beside_the_five_digit_one(tmp_path,
     saved = settings_module.load()
     assert (saved.tid, saved.sid, saved.switch_tid, saved.switch_sid) == (1, 2, 967295, 4294)
     assert saved.ids("frlg") == (1, 2) and saved.ids("za") == (0xFFFF, 0xFFFF)
+
+
+def test_the_boost_settings_leave_with_the_last_unticked_boost(monkeypatch):
+    from gui.views import gifts as view_module
+    from pokeldn.app import gift_builder
+    from pokeldn.app.catalog import GAMES
+    from pokeldn.app.settings import Settings
+    from pokeldn.frlg.gift import builder as frlg_builder
+
+    def texts(control):
+        if isinstance(getattr(control, "value", None), str):
+            yield control.value
+        for child in [*(getattr(control, "controls", None) or []), getattr(control, "content", None)]:
+            if child is not None:
+                yield from texts(child)
+
+    monkeypatch.setattr(pokemon.NamePicker, "_load", lambda self: None)
+    tool = next(tool for game in GAMES for tool in game.tools if tool.key == "frlg-gift")
+    field = next(field for field in tool.fields if field.kind == "builder")
+    view = SimpleNamespace(tool=tool, values={}, extra={},
+                           app=SimpleNamespace(settings=Settings(), picker=None, ui=lambda f: None))
+    view.set_value = lambda field, value, rebuild=False: view.values.__setitem__(field.key, value)
+    builder = view_module.GiftBuilder(view, field)
+    builder.commit = lambda rebuild=False: None
+    builder.value["mode"] = "preset"
+    preset = next(p for p in gift_builder.module(gift_builder.GAMES["frlg-gift"]).PRESETS if hasattr(p, "members"))
+    member = preset.members[0]
+    builder._toggle(preset, member.key)
+    assert frlg_builder.KEEP.label in texts(builder.presets())
+    builder._toggle(preset, member.key)
+    assert frlg_builder.KEEP.label not in texts(builder.presets())

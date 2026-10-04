@@ -7,7 +7,7 @@ from pokeldn.frlg.gift import ereader_trainer
 from pokeldn.frlg.text import charmap
 from pokeldn.frlg.gift.gift_composer import (
     BattleLegendary, BattlePokemon, GiftSpec, GiveEgg, GiveItem, GivePokemon,
-    AddVar, Message, ReadSpecial, RequireSpecialResult, SetVar, ShowSprite,
+    AddVar, GiveRandomEgg, Message, ReadSpecial, RequireSpecialResult, SetVar, ShowSprite,
     StampRallySpec,
     SPECIAL_START_LEGENDARY_BATTLE,
 )
@@ -86,6 +86,8 @@ def _action_summary(action):
         return f"AddVar(0x{action.variable:04X}, +{action.value})"
     if isinstance(action, ReadSpecial):
         return f"ReadSpecial(0x{action.variable:04X}, special {action.special_id})"
+    if isinstance(action, GiveRandomEgg):
+        return f"GiveRandomEgg(species={[species for species, _ in action.eggs]})"
     return type(action).__name__ + "()"
 
 

@@ -44,6 +44,9 @@ RAM_SCRIPT_MAP_UNDEFINED_BYTE = 0xFF                     # MAP_GROUP/MAP_NUM(MAP
 RAM_SCRIPT_OBJECT_ID = 0xFF                              # InitRamScript_NoObjectEvent
 RAM_SCRIPT_BODY_MAX = 995                                # sizeof RamScriptData.script
 RAM_SCRIPT_DATA_SIZE = 4 + RAM_SCRIPT_BODY_MAX          # magic+mapGroup+mapNum+objectId + script = 999
+# The game checksums sizeof(RamScriptData) = 1000, its padding byte included (`movs r1,#250; lsls r1,#2`
+# in CalculateRamScriptChecksum, 0x0806D43C BPRE); InitRamScript zeroes that byte first [script.c:500].
+RAM_SCRIPT_CRC_SIZE = RAM_SCRIPT_DATA_SIZE + 1
 
 
 def sb1_chunk_size(chunk_index):
@@ -63,7 +66,8 @@ def sector_checksum(sector_data, size):
 
 
 def build_ram_script_struct(script_bytes):
-    """Returns (RamScriptData_999, crc16): magic 51, MAP_UNDEFINED bytes, objectId 0xFF, zero-padded script."""
+    """Returns (RamScriptData_999, crc16): magic 51, MAP_UNDEFINED bytes, objectId 0xFF, zero-padded script;
+    the crc covers the zero padding byte after it, as the game's does."""
     if len(script_bytes) > RAM_SCRIPT_BODY_MAX:
         raise ValueError(f"RAM script body {len(script_bytes)} B > {RAM_SCRIPT_BODY_MAX} B max")
     body = bytearray(RAM_SCRIPT_BODY_MAX)
@@ -72,7 +76,7 @@ def build_ram_script_struct(script_bytes):
                   RAM_SCRIPT_MAP_UNDEFINED_BYTE, RAM_SCRIPT_MAP_UNDEFINED_BYTE,
                   RAM_SCRIPT_OBJECT_ID]) + bytes(body)
     assert len(data) == RAM_SCRIPT_DATA_SIZE, len(data)
-    return data, crc16(data)
+    return data, crc16(data + b"\x00")
 
 
 def _footer(sav, phys):
@@ -122,7 +126,7 @@ def inject_gift(sav_bytes, card, script):
     sav[base + cardcrc_off:base + cardcrc_off + 4] = card_crc.to_bytes(4, "little")
     sav[base + card_off:base + card_off + WONDER_CARD_SIZE] = card
     sav[base + ramchk_off:base + ramchk_off + 4] = ram_crc.to_bytes(4, "little")
-    sav[base + ramdata_off:base + ramdata_off + RAM_SCRIPT_DATA_SIZE] = ram_data
+    sav[base + ramdata_off:base + ramdata_off + RAM_SCRIPT_CRC_SIZE] = ram_data + b"\x00"
 
     size = sb1_chunk_size(SAVEBLOCK1_END_CHUNK)
     chk = sector_checksum(sav[base:base + SECTOR_DATA_SIZE], size)
@@ -171,7 +175,7 @@ def get_saved_ram_script_if_valid(sav):
     base = phys * SECTOR_SIZE
     ramchk_off = SB1_RAMSCRIPT_OFF - SAVEBLOCK1_END_CHUNK_BASE
     ramdata_off = ramchk_off + 4
-    data = bytes(sav[base + ramdata_off:base + ramdata_off + RAM_SCRIPT_DATA_SIZE])
+    data = bytes(sav[base + ramdata_off:base + ramdata_off + RAM_SCRIPT_CRC_SIZE])
     stored_chk = int.from_bytes(sav[base + ramchk_off:base + ramchk_off + 2], "little")
     magic, map_group, map_num, object_id = data[0], data[1], data[2], data[3]
     if magic != RAM_SCRIPT_MAGIC:
@@ -182,7 +186,7 @@ def get_saved_ram_script_if_valid(sav):
         return None
     if crc16(data) != stored_chk:
         return None
-    return data[4:]
+    return data[4:RAM_SCRIPT_DATA_SIZE]
 
 
 def build_parser():

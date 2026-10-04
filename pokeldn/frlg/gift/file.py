@@ -202,7 +202,9 @@ def from_bins(card, script, *, build=None, name="FRLG gift"):
         raise ValueError("FRLG import needs a 336-byte WonderCard.bin and a 1004-byte Script.bin.")
     if int.from_bytes(card[:2], "little") != crc16(card[4:]):
         raise ValueError("WonderCard.bin checksum failed.")
-    if int.from_bytes(script[:2], "little") != crc16(script[4:1003]):
+    # The game's CRC covers the pad byte too (docs/frlg_gift.md, The one RAM script slot); older
+    # exports covered 999 bytes.
+    if int.from_bytes(script[:2], "little") not in (crc16(script[4:1004]), crc16(script[4:1003])):
         raise ValueError("Script.bin checksum failed.")
     return _gift(name, card[4:], _unbound(script), build)
 
