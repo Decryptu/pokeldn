@@ -177,6 +177,9 @@ def build_default_registry():
     registry.register_definition(wonder_card_events.POKEPARK_EGG_GIFT)
     registry.register_definition(wonder_card_events.PC_JAPAN_EGG_GIFT)
     registry.register_definition(wonder_card_events.EVENT_POKEMON_GIFT)
+    registry.register_definition(wonder_card_events.NATIONAL_DEX_GIFT)
+    registry.register_definition(wonder_card_events.RARE_BERRIES_GIFT)
+    registry.register_definition(wonder_card_events.STARTER_EGG_GIFT)
     return registry
 
 

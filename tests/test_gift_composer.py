@@ -31,6 +31,7 @@ class ScriptVM:
         self.special_results = dict(special_results or {})
         self.random_values = list(random_values)
         self.random_limits = []
+        self.specials = []
         self.comparison = 0
         self.items = []
         self.mons = []
@@ -109,6 +110,7 @@ class ScriptVM:
             elif op == 0x26:  # specialvar
                 variable, special_id = self.u16(), self.u16()
                 self.vars[variable] = self.special_results.get(special_id, 0)
+                self.specials.append(special_id)
             elif op == 0x28:  # delay
                 self.u16()
             elif op == 0x29:  # setflag

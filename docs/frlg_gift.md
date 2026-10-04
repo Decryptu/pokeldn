@@ -125,6 +125,9 @@ slot whose CRC covers only 999 bytes is wiped by `GetRamScript` the first time i
 | `altering-cave` | the official Altering Cave event, ported |
 | `wish-egg`, `pokepark-egg`, `pc-japan-egg` | the official distribution eggs; see Distribution eggs |
 | `event-pokemon` | a Gen 3 distribution Pokemon, straight into the party; see Event Pokemon |
+| `starter-egg` | an egg of one of the nine first partners, drawn by `random` |
+| `rare-berries` | an Enigma, a Lansat and a Starf Berry, one stage each |
+| `national-dex` | `EnableNationalPokedex` (special 367) unless `IsNationalPokedexEnabled` (403) answers 1 |
 | `battle-count-card` | the official Battle Count Card |
 | `visiting-trainer` | a Battle Tower trainer as ident 26 (FireRed only) |
 | `mystery-event-probe` | `givenationaldex; setstatus 42; checksum`, the VM's own self-test |
@@ -243,6 +246,11 @@ id 20043, after `givepokemon` answered status 2.
 `Aura Mew`, `MYSTRY Mew`, `DOEL Deoxys`, `SPACE C Deoxys`, `ROCKS Metang`, `10 ANIV Pikachu` and every
 other `10 ANIV` species, the European `10ANNIV`, `10JAHRE`, `10ANNI` and `10ANIV` releases. Where an
 event was released in several languages, the one matching `--language` is sent.
+
+The last three come from the GB-Link Team cards (GB-Link-Switch-LDN `cards/build.mjs`), which need no
+native code. On the French FireRed ROM under mGBA the berries landed in the Berries pocket (items 173,
+174, 175), the starter card gave a Chikorita egg, and the National Pokedex card set
+`FLAG_SYS_NATIONAL_DEX` (0x840) again after it was cleared in RAM.
 
 ### The Battle Count Card
 

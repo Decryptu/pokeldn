@@ -85,3 +85,30 @@ def test_the_stored_jirachi_and_every_preset_event_are_legal_distributions():
         assert pokemon.SERVICE.check_bytes("frlg", pk3)["legal"], name
         status, raw = _given(event.build_event_pokemon_gift(pk3, name=name))
         assert status == 2 and decode_mon(raw)["otName"] == name.rsplit(" ", 1)[0], name
+
+
+def test_the_national_dex_card_enables_it_once_and_only_where_it_is_off():
+    script = compile_definition(event.NATIONAL_DEX_GIFT).ram_script
+    off = ScriptVM(script)
+    off.run()
+    assert event.SPECIAL_ENABLE_NATIONAL_POKEDEX in off.specials
+    on = ScriptVM(script, special_results={event.SPECIAL_IS_NATIONAL_POKEDEX_ENABLED: 1})
+    on.run()
+    assert event.SPECIAL_ENABLE_NATIONAL_POKEDEX not in on.specials
+
+
+def test_the_rare_berries_card_gives_all_three_and_retries_a_full_pocket():
+    script = compile_definition(event.RARE_BERRIES_GIFT).ram_script
+    full = ScriptVM(script, bag_space=[True, False])
+    full.run()
+    assert full.items == [(event.ITEM_ENIGMA_BERRY, 1)] and FLAG_MYSTERY_GIFT_DONE not in full.flags
+    rest = ScriptVM(script, variables=full.vars, flags=full.flags)
+    rest.run()
+    assert rest.items == [(event.ITEM_LANSAT_BERRY, 1), (event.ITEM_STARF_BERRY, 1)]
+
+
+@pytest.mark.parametrize("pick", range(len(event.STARTERS)))
+def test_the_starter_egg_card_draws_one_of_nine_and_keeps_its_own_moves(pick):
+    vm = ScriptVM(compile_definition(event.STARTER_EGG_GIFT).ram_script, random_values=[pick])
+    vm.run()
+    assert vm.random_limits == [9] and vm.eggs == [event.STARTERS[pick]] and vm.moves == []

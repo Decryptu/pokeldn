@@ -1717,6 +1717,75 @@ def build_event_pokemon_gift(pk3=WISHMKR_JIRACHI_PK3, *, name="WISHMKR Jirachi")
 EVENT_POKEMON_GIFT = build_event_pokemon_gift()
 
 
+# GB-Link Team cards with no native code (GB-Link-Switch-LDN `cards/build.mjs`), ported to the composer.
+SPECIAL_ENABLE_NATIONAL_POKEDEX = 367       # counted in data/specials.inc
+SPECIAL_IS_NATIONAL_POKEDEX_ENABLED = 403
+DEX_STATE_VAR = 0x8008
+
+NATIONAL_DEX_GIFT = WonderGift(
+    slug="national-dex",
+    card=WonderCardSpec(
+        icon_species=137,
+        title="NATIONAL POKéDEX",
+        subtitle="Every POKéMON, right away",
+        body=("Upgrade your POKéDEX to the", "NATIONAL POKéDEX now. Visit", "the delivery man on the 2nd",
+              "floor of a POKéMON CENTER."),
+        footer1="pokeldn",
+        default_flag_id=1007,
+    ),
+    intro_message=DISTRIBUTION_INTRO,
+    event=GiftSpec(),
+    delivery=DeliveryPlan(delivery=(
+        DeliveryStage(ReadSpecial(DEX_STATE_VAR, SPECIAL_IS_NATIONAL_POKEDEX_ENABLED)),
+        DeliveryStage(Exit(), condition=Not(VarEquals(DEX_STATE_VAR, 0))),
+        # EnableNationalPokedex returns nothing; the var only receives what r0 held.
+        DeliveryStage(ReadSpecial(DEX_STATE_VAR, SPECIAL_ENABLE_NATIONAL_POKEDEX),
+                      Message("Done! Your POKéDEX is now the\nNATIONAL POKéDEX.")),
+    )),
+    completed_message="Your POKéDEX is the\nNATIONAL POKéDEX!",
+)
+
+ITEM_LANSAT_BERRY, ITEM_STARF_BERRY, ITEM_ENIGMA_BERRY = 173, 174, 175
+RARE_BERRIES_GIFT = WonderGift(
+    slug="rare-berries",
+    card=WonderCardSpec(
+        icon_species=288,
+        title="RARE BERRIES",
+        subtitle="ENIGMA, LANSAT and STARF",
+        body=("Three BERRIES that were only", "ever given out at events.", "Visit the delivery man on 2F",
+              "of a POKéMON CENTER."),
+        footer1="pokeldn",
+        default_flag_id=1008,
+    ),
+    intro_message=DISTRIBUTION_INTRO,
+    event=GiftSpec(),
+    delivery=DeliveryPlan(delivery=tuple(DeliveryStage(GiveItem(item)) for item in
+                                         (ITEM_ENIGMA_BERRY, ITEM_LANSAT_BERRY, ITEM_STARF_BERRY))),
+)
+
+# Bulbasaur, Charmander, Squirtle, Chikorita, Cyndaquil, Totodile, Treecko, Torchic, Mudkip; each egg
+# keeps the moves `giveegg` gives it.
+STARTERS = (1, 4, 7, 152, 155, 158, 277, 280, 283)
+STARTER_EGG_GIFT = WonderGift(
+    slug="starter-egg",
+    card=WonderCardSpec(
+        icon_species=SPECIES_EGG,
+        title="STARTER EGG",
+        subtitle="Which one will hatch?",
+        body=("An EGG with one of the nine", "first partners inside. Visit", "the delivery man on the 2nd",
+              "floor of a POKéMON CENTER."),
+        footer1="pokeldn",
+        default_flag_id=1009,
+    ),
+    intro_message=DISTRIBUTION_INTRO,
+    event=GiftSpec(),
+    delivery=DeliveryPlan(delivery=(
+        DeliveryStage(GiveRandomEgg(tuple((species, ()) for species in STARTERS)),
+                      Message("Take good care of it!")),
+    )),
+)
+
+
 __all__ = [
     "CELEBI_GIFT", "DIR_WEST", "GIFT_MEVENT_PROBE", "GIFT_PORYGON_TMS",
     "GIFT_VISITING_TRAINER",
@@ -1725,7 +1794,7 @@ __all__ = [
     "GIFT_MASTER_BALL", "MASTER_BALL_GIFT", "MASTER_BALL_FLAG_ID",
     "GIFT_ALTERING_CAVE", "ALTERING_CAVE_GIFT", "ALTERING_CAVE_FLAG_ID",
     "WISH_EGG_GIFT", "POKEPARK_EGG_GIFT", "PC_JAPAN_EGG_GIFT", "GIFT_EVENT_POKEMON",
-    "EVENT_POKEMON_GIFT", "EVENT_POKEMON_FLAG_ID", "build_event_pokemon_gift", "WISH_EGGS", "POKEPARK_EGGS", "PC_JAPAN_EGGS",
+    "EVENT_POKEMON_GIFT", "NATIONAL_DEX_GIFT", "RARE_BERRIES_GIFT", "STARTER_EGG_GIFT", "STARTERS", "EVENT_POKEMON_FLAG_ID", "build_event_pokemon_gift", "WISH_EGGS", "POKEPARK_EGGS", "PC_JAPAN_EGGS",
     "GIFT_BATTLE_COUNT", "BATTLE_COUNT_GIFT", "BATTLE_COUNT_FLAG_ID",
     "BATTLE_COUNT_PRIZE_WINS", "BATTLE_COUNT_PRIZE_TAKEN", "ITEM_POTION",
     "VAR_ALTERING_CAVE_WILD_SET", "NUM_ALTERING_CAVE_TABLES", "ALTERING_CAVE_WRAP",
