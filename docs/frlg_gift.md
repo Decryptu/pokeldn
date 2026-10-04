@@ -128,6 +128,7 @@ slot whose CRC covers only 999 bytes is wiped by `GetRamScript` the first time i
 | `starter-egg` | an egg of one of the nine first partners, drawn by `random` |
 | `rare-berries` | an Enigma, a Lansat and a Starf Berry, one stage each |
 | `national-dex` | `EnableNationalPokedex` (special 367) unless `IsNationalPokedexEnabled` (403) answers 1 |
+| `nature-mint`, `pc-anywhere` and 42 more | the GB-Link Team cards; see GB-Link Team cards |
 | `battle-count-card` | the official Battle Count Card |
 | `visiting-trainer` | a Battle Tower trainer as ident 26 (FireRed only) |
 | `mystery-event-probe` | `givenationaldex; setstatus 42; checksum`, the VM's own self-test |
@@ -247,10 +248,60 @@ id 20043, after `givepokemon` answered status 2.
 other `10 ANIV` species, the European `10ANNIV`, `10JAHRE`, `10ANNI` and `10ANIV` releases. Where an
 event was released in several languages, the one matching `--language` is sent.
 
-The last three come from the GB-Link Team cards (GB-Link-Switch-LDN `cards/build.mjs`), which need no
-native code. On the French FireRed ROM under mGBA the berries landed in the Berries pocket (items 173,
-174, 175), the starter card gave a Chikorita egg, and the National Pokedex card set
-`FLAG_SYS_NATIONAL_DEX` (0x840) again after it was cleared in RAM.
+### GB-Link Team cards
+
+The GB-Link Team's custom Wonder Cards (GB-Link-Switch-LDN `cards/`, GPL-3.0) are a Wonder Card plus a
+delivery-man RAM script that carries THUMB code, called through `callnative`. Their ARM sources are in
+`vendor/gblink-cards/`; `scripts/gen_team_cards.py` assembles them for the four cartridges into
+`pokeldn/frlg/data/team_cards.json`, and `pokeldn/frlg/gift/team_cards.py` registers each card under its
+id without `custom-` (`--gift nature-mint`). With their unmodified sources and their RAM addresses the
+generator reproduces their own `BPRE 1.10` payloads byte for byte, all 44 of them.
+
+`starter-egg`, `rare-berries` and `national-dex` are their three cards that need no native code,
+rebuilt with the composer: on the French FireRed ROM under mGBA the berries landed in the Berries pocket
+(items 173, 174, 175), the starter card gave a Chikorita egg, and the National Pokedex card set
+`FLAG_SYS_NATIONAL_DEX` (0x840) again after it was cleared in RAM. Their event Pokemon come from PKHeX
+(see Event Pokemon) except the four PKHeX's table leaves out; their follower, Master Ball, speed-up and
+encounter hooks are covered by this project's own.
+
+| group | cards |
+|---|---|
+| change a Pokemon | `nature-mint`, `ability-capsule`, `poke-ball-changer`, `pokemon-gender`, `nickname`, `stat-judge`, `hidden-power`, `hidden-power-type`, `ev-training`, `friendship`, `pp-max`, `max-conditions`, `pokerus`, `unown-letters`, `trade-evolution`, `espeon-umbreon`, `move-tutor` |
+| per-frame hooks | `speed-2`, `speed-3`, `speed-4`, `speed-0-75`, `speed-0-5`, `fast-text`, `travel-anywhere`, `pc-anywhere`, `hm-moves`, `reusable-tms`, `physical-special-split`, `exp-share`, `shiny-hunting`, `roamer` |
+| other | `no-encounters`, `legendary-respawn`, `instant-eggs`, `gift-box`, `pocket-casino`, `gift-ribbons`, `trainer-ids`, `gender-swap`, `rival-name` |
+| event Pokemon | `box-eggs`, `colosseum-pikachu`, `ageto-celebi`, `mattle-ho-oh` |
+
+What differs from their build:
+
+- French cartridges. The 167 addresses the sources take are found on `BPRF`/`BPGF` from the English
+  symbol tables: a function by unique byte windows of its body, RAM and pointer-bearing data by the
+  literal pools of mapped functions, a field-script label by its script's start with pointers masked.
+  `vendor/gblink-cards/symbols.json` holds all four; `tests/test_team_cards.py` checks 25 of them
+  against `builds.py` on every cartridge. Each script checks the header's game letter, language letter
+  and revision, so a payload sent to another cartridge only says the gift does not work.
+- The relocated script (996 bytes) and the menu list (80 bytes) go to `0x0203F768` and `0x0203FB50`,
+  newlib's malloc state, instead of `0x0203FC00`, where this project's resident hooks run; see
+  [Where a payload can live](frlg_rom.md#where-a-payload-can-live).
+- The hook cards' installers point `gIntrTable[4]` at `VBlankIntr` before their copy, chain to it
+  rather than to the handler they find, and store it at `0x0203FBFC`, where this project's resident
+  installs look. A hook card replaces a running game boost and the reverse; neither chains to a stale
+  copy. Their state is at `0x0203FF60`, their copy ends below it.
+- Their ids above 1019 have no `sReceivedGiftFlags` bit; the registry sends 1000 + the card's id
+  number mod 20 for those.
+- Two texts are four and six characters shorter (`hm-moves`, `physical-special-split`) to fit 995
+  bytes after the installer change.
+
+Every card was run bound to Mom under mGBA on all four cartridges, its dialogue answered with A. On the
+French FireRed the native code drew French menus (stat, Poke Ball and type names from the ROM), changed
+the party (nature `HARDI`, gender, Hidden Power to `COMBAT` 70, maximum EVs), opened the move relearner
+and the slot machine, and `trainer-ids` read TID 50425 and SID 50923 off the save; R after
+`pc-anywhere` opened the boxes. The other three cartridges drew the same screens, pixel for pixel on
+French LeafGreen. A LeafGreen payload on a FireRed answered "This gift doesn't work with this version
+of the game." With a resident hook running, `nature-mint` left `0x0203FC00..0x02040000` untouched and
+`pc-anywhere` took over `gIntrTable[4]` with `0x0800071D` kept at `0x0203FBFC`.
+
+`colosseum-pikachu` and `ageto-celebi` carry their Japanese trainer names, which a European cartridge
+draws as dots; PKHeX reports all four event Pokemon legal.
 
 ### The Battle Count Card
 

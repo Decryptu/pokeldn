@@ -254,6 +254,14 @@ outlives the menu goes where the game never writes:
 The highest sized EWRAM symbol ends at 0x0203FBAC ([EWRAM is at the same addresses in both
 builds](frlg_rom_map.md)). Named from the decomp (`gHeap`'s 114688 bytes carry no size in the symbol
 table), this is the only unclaimed EWRAM span; the rest are three- and eight-byte alignment holes.
+
+    0x0203F768 .. 0x0203FBAC    1092 bytes, newlib's malloc state
+
+`__malloc_av_` and the malloc counters after it are reached only from newlib's stdio, which only
+`AGBPrintf`, unused in a release build, calls (pokefirered_switch.elf: the only `bl` to `_malloc_r`,
+`_calloc_r` and `_free_r` are inside libc). A 0xA5 fill there survived menus, walking and a whole wild
+battle on the French FireRed under mGBA. The GB-Link Team cards keep their relocated script there
+([frlg_gift.md](frlg_gift.md#gb-link-team-cards)).
 `scratchpad/ewram_symbol.py ADDR LEN` checks an address.
 
 Never pick an address because it reads zero. 0x0202B280, 0x020185C4 and 0x0203B0E9 read tens of
@@ -783,7 +791,8 @@ In FireRed and LeafGreen both flags are set by the tickets' Mystery Event script
 `swi 0x4D`, handler `main + 0x0571FC`, resolves `r0` as a GBA address, requires 256 bytes behind it,
 converts the ASCII string to UTF-16 and runs the platform's profanity check, rewriting the string in
 place. `r1` non-zero selects a second mode the game never uses (`r1` = 1 masked the same way). The game
-calls it through `svc_BadWordCheck`, converting the name to ASCII and back [sloopsvc.c:211].
+calls it through `svc_BadWordCheck`, converting the name to ASCII and back [sloopsvc.c:211]. The naming
+screen saves the typed name only when it answers 0 [naming_screen.c:686].
 
 | string sent | `r0` | string after |
 | --- | --- | --- |

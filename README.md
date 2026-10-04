@@ -385,6 +385,8 @@ because Z-A's layout is Scarlet's. See [Legends Z-A](docs/za.md).
   and the [NintendoClients wiki](https://github.com/kinnay/NintendoClients/wiki)
 - [pokefirered](https://github.com/pret/pokefirered): decompilation of FireRed/LeafGreen, including
   the Switch port
+- [GB-Link Team](https://github.com/GB-Link/GB-Link-Switch-LDN): the custom FireRed/LeafGreen Wonder
+  Cards in `vendor/gblink-cards/` (GPL-3.0)
 
 ## License
 

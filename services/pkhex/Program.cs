@@ -627,9 +627,17 @@ JsonObject Event(Game game, JsonObject request)
     {
         Language = language is > 0 and <= 7 ? language : (int)LanguageID.English,
     };
-    var pk = encounter.ConvertToPKM(trainer, EncounterCriteria.Unrestricted);
-    pk.ResetPartyStats();
-    var la = new LegalityAnalysis(pk);
+    // A random roll can land on a PID its own check rejects (seen on 10 ANIV Entei): roll again.
+    PKM pk = null!;
+    LegalityAnalysis la = null!;
+    for (var attempt = 0; attempt < 32; attempt++)
+    {
+        pk = encounter.ConvertToPKM(trainer, EncounterCriteria.Unrestricted);
+        pk.ResetPartyStats();
+        la = new LegalityAnalysis(pk);
+        if (la.Valid)
+            break;
+    }
     if (!la.Valid)
         throw new InvalidDataException($"PKHeX made an illegal {name}: {la.Report()}");
     return new JsonObject

@@ -48,6 +48,7 @@ class Preset:
     group: str
     summary: str
     args: tuple
+    when: str = ""                  # where the player uses it, shown before sending
 
     @property
     def state(self):
@@ -69,6 +70,19 @@ def _event(name, summary, group=EVENTS):
     """A fresh copy PKHeX makes at launch [docs/frlg_gift.md, Event Pokemon]."""
     key = "event-" + re.sub(r"[^a-z0-9]+", "-", name.lower()).strip("-")
     return Preset(key, name, group, summary, ("--gift", events.GIFT_EVENT_POKEMON, "--event-pokemon", name))
+
+
+POKEMON_TOOLS = "Change a Pokemon"
+GAME_CHANGES = "Game changes"
+MORE_GIFTS = "More gifts"
+# A card the delivery man turns into a per-frame hook; it stops any game boost [docs/frlg_gift.md].
+STOPS_BOOSTS = " Turns off any game boost that is on."
+DELIVERY_MAN = "After the card is saved, talk to the delivery man on 2F of any Pokemon Center."
+
+
+def _team(slug, label, group, summary):
+    """A GB-Link Team card [team_cards.py]: the player talks to the delivery man to use it."""
+    return Preset(slug, label, group, summary, ("--gift", slug), when=DELIVERY_MAN)
 
 
 def _code(key, label, summary, *args):
@@ -297,6 +311,57 @@ PRESETS = (
     _card("visiting-trainer", "Visiting trainer", "A trainer who waits in the Pokemon Center."),
     _card("battle-count-card", "Battle count card", "A card that counts link battles."),
     _card("worlds-xp", "Worlds XP", "The Worlds card."),
+    _team("nature-mint", "Nature mint", POKEMON_TOOLS, "Pick which stat a Pokemon's nature raises and lowers."),
+    _team("ability-capsule", "Ability capsule", POKEMON_TOOLS, "Switches a Pokemon to its other ability."),
+    _team("poke-ball-changer", "Poke Ball changer", POKEMON_TOOLS, "Moves a Pokemon into the ball you choose."),
+    _team("pokemon-gender", "Gender change", POKEMON_TOOLS, "Switches a Pokemon between male and female."),
+    _team("nickname", "Nickname change", POKEMON_TOOLS, "A new nickname, or the species name back."),
+    _team("stat-judge", "IV and EV judge", POKEMON_TOOLS, "Shows a Pokemon's nature, six IVs and EVs on screen."),
+    _team("hidden-power", "Hidden Power and max IVs", POKEMON_TOOLS,
+          "Shows its Hidden Power, then can set every IV to 31."),
+    _team("hidden-power-type", "Hidden Power type", POKEMON_TOOLS, "Gives Hidden Power the type you pick."),
+    _team("ev-training", "EV training", POKEMON_TOOLS, "Resets EVs or maxes the stats you pick, no battles."),
+    _team("friendship", "Friendship checker", POKEMON_TOOLS, "Shows friendship and can max it."),
+    _team("pp-max", "PP Max", POKEMON_TOOLS, "Every move in the party gets its most PP."),
+    _team("max-conditions", "Max conditions", POKEMON_TOOLS, "Contest stats to the max; Feebas then evolves."),
+    _team("pokerus", "Pokerus", POKEMON_TOOLS, "The party catches Pokerus, which doubles EVs earned."),
+    _team("unown-letters", "Unown letter", POKEMON_TOOLS, "Gives an Unown any letter."),
+    _team("trade-evolution", "Trade evolution", POKEMON_TOOLS, "Evolves a trade-evolution Pokemon, no trade."),
+    _team("espeon-umbreon", "Espeon or Umbreon", POKEMON_TOOLS, "A friendly Eevee evolves into the one you pick."),
+    _team("move-tutor", "Move relearner and deleter", POKEMON_TOOLS,
+          "Relearn or forget a move; the move tutors teach again."),
+    _team("speed-2", "Double speed", GAME_CHANGES, "R turns double speed on and off." + STOPS_BOOSTS),
+    _team("speed-3", "Triple speed", GAME_CHANGES, "R turns triple speed on and off." + STOPS_BOOSTS),
+    _team("speed-4", "Quadruple speed", GAME_CHANGES, "R turns x4 speed on and off." + STOPS_BOOSTS),
+    _team("speed-0-75", "Slower game", GAME_CHANGES, "R plays a little slower." + STOPS_BOOSTS),
+    _team("speed-0-5", "Half speed", GAME_CHANGES, "R plays at half speed." + STOPS_BOOSTS),
+    _team("fast-text", "Fast text", GAME_CHANGES, "All text prints at once until the game is reset."
+          + STOPS_BOOSTS),
+    _team("travel-anywhere", "Fly with R", GAME_CHANGES, "R flies from outdoors, no HM; run and bike anywhere."
+          + STOPS_BOOSTS),
+    _team("pc-anywhere", "PC anywhere", GAME_CHANGES, "R opens the Pokemon boxes from anywhere." + STOPS_BOOSTS),
+    _team("hm-moves", "HM moves without HMs", GAME_CHANGES, "Cut, Surf, Strength and more with only the badge."
+          + STOPS_BOOSTS),
+    _team("reusable-tms", "Reusable TMs", GAME_CHANGES, "Teaching a TM no longer uses it up." + STOPS_BOOSTS),
+    _team("physical-special-split", "Physical/special split", GAME_CHANGES,
+          "Each move is physical or special as in later games." + STOPS_BOOSTS),
+    _team("exp-share", "Exp. Share for all", GAME_CHANGES, "The whole party gets Exp. from every battle."
+          + STOPS_BOOSTS),
+    _team("shiny-hunting", "Shiny chain", GAME_CHANGES, "Meeting one species again and again makes it shiny "
+          "more often; R shows the chain." + STOPS_BOOSTS),
+    _team("roamer", "Roaming Pokemon finder", GAME_CHANGES, "Says where the roaming Pokemon is and can lure it."
+          + STOPS_BOOSTS),
+    _team("no-encounters", "No encounters or repel", GAME_CHANGES, "No wild Pokemon, or only stronger ones, "
+          "until the game is reset."),
+    _team("legendary-respawn", "Legendary respawn", GAME_CHANGES, "Legendaries you beat without catching come back."),
+    _team("instant-eggs", "Instant eggs", GAME_CHANGES, "Hatches the eggs you carry, or readies the Day Care egg."),
+    _team("gift-box", "Gift box", MORE_GIFTS, "100,000 money, 99 Rare Candies and 1,000 coins."),
+    _team("pocket-casino", "Pocket casino", MORE_GIFTS, "Play the slot machines from the delivery man."),
+    _team("gift-ribbons", "Gift ribbons", MORE_GIFTS, "The party gets the seven event ribbons."),
+    _team("trainer-ids", "Trainer ID and Secret ID on screen", MORE_GIFTS,
+          "The delivery man tells your Trainer ID and Secret ID."),
+    _team("gender-swap", "New trainer name or look", MORE_GIFTS, "Rename yourself, or switch between boy and girl."),
+    _team("rival-name", "Rename your rival", MORE_GIFTS, "Gives your rival a new name."),
     _event("WISHMKR Jirachi", "The Colosseum Bonus Disc Jirachi, level 5."),
     _event("CHANNEL Jirachi", "The Pokemon Channel Jirachi, level 5."),
     _event("Aura Mew", "The Aura Mew, level 10."),
@@ -308,6 +373,10 @@ PRESETS = (
       for name in ("Bulbasaur", "Charizard", "Blastoise", "Pikachu", "Alakazam", "Articuno", "Zapdos",
                    "Moltres", "Dragonite", "Typhlosion", "Espeon", "Umbreon", "Raikou", "Entei", "Suicune",
                    "Tyranitar", "Celebi", "Blaziken", "Absol", "Latias", "Latios")),
+    _team("box-eggs", "Pokemon Box eggs", EVENTS, "A Swablu, Zigzagoon, Skitty or Pichu egg with a special move."),
+    _team("colosseum-pikachu", "Colosseum Pikachu", EVENTS, "The Japanese Colosseum bonus disc Pikachu. Its Japanese trainer name shows as dots."),
+    _team("ageto-celebi", "AGETO Celebi", EVENTS, "The Japanese Colosseum bonus disc Celebi. Its Japanese trainer name shows as dots."),
+    _team("mattle-ho-oh", "MATTLE Ho-Oh", EVENTS, "The Ho-Oh Colosseum gave for 100 Mt. Battle wins."),
     Preset("news-pokeldn", "One berry in Cerulean City", "Wonder News",
            "A short news; the man in Cerulean City hands over a berry.", ("--news", "pokeldn")),
     Preset("news-berry", "Ten-line news", "Wonder News", "A long news that scrolls, with a berry.",

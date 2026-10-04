@@ -1,7 +1,7 @@
 import argparse
 from dataclasses import dataclass
 
-from pokeldn.frlg.gift import wonder_card_events
+from pokeldn.frlg.gift import team_cards, wonder_card_events
 from pokeldn.frlg.gift.gift_composer import (
     GiftSpec, StampRallySpec, WonderGift, compile_definition, validate_definition,
 )
@@ -180,6 +180,11 @@ def build_default_registry():
     registry.register_definition(wonder_card_events.NATIONAL_DEX_GIFT)
     registry.register_definition(wonder_card_events.RARE_BERRIES_GIFT)
     registry.register_definition(wonder_card_events.STARTER_EGG_GIFT)
+    for card in team_cards.cards().values():
+        registry.register(GiftCatalogEntry(
+            slug=card.slug, default_flag_id=card.default_flag_id, live=True, static=True,
+            description=f"GB-Link Team card {card.title!r}",
+            builder=lambda flag_id, build=None, card=card: card.distribution(flag_id, build)))
     return registry
 
 

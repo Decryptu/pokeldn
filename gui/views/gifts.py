@@ -512,7 +512,7 @@ class GiftBuilder:
             when, lines = self.module.describe(self.state, self.name)
         elif mode == "preset":
             preset = self.module.PRESET[self.value["preset"]]
-            when, lines = "", [preset.summary]
+            when, lines = getattr(preset, "when", ""), [preset.summary]
             if hasattr(preset, "members"):
                 when = "Starts on the console as soon as it is received."
                 lines = preset.effects(self.value["options"].get(preset.key))
