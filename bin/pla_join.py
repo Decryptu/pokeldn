@@ -265,6 +265,8 @@ def main_ip(args, offer, exchange, record):
             tcp.close()
         if session.traded:
             break
+        if args.take_host and session.migration_asked is not None:
+            return {"take_host": None, "remaining": deadline - time.time()}
     print(f"[pla] {attempts} scan(s), {joined} join(s)")
     return 0
 
@@ -449,8 +451,9 @@ def build_parser():
 def host_argv(args, channel, seconds):
     """-> bin/pla_host.py's command line for the host role a console handed over."""
     from pokeldn.app.runner import command
+    where = ["--ip-host", "--our-ip", args.our_ip] if args.ip_join else ["--channel", str(channel)]
     argv = command("--run", "bin/pla_host.py", "--keys", args.keys, "--code", args.code,
-            "--channel", str(channel), "--seconds", str(int(max(seconds, 60))),
+            *where, "--seconds", str(int(max(seconds, 60))),
             "--player-name", args.player_name, "--session-update", "--sustain", "--clock",
             "--data-exchange", "--game-channel", "--trade-box")
     for path in args.offer:
@@ -491,9 +494,7 @@ def main(argv=None):
             cap.flush()
 
     try:
-        if args.ip_join:
-            return main_ip(args, offer, exchange, record)
-        result = main_radio(args, offer, exchange, record)
+        result = (main_ip if args.ip_join else main_radio)(args, offer, exchange, record)
         if isinstance(result, dict) and "take_host" in result:
             argv = host_argv(args, result["take_host"], result["remaining"])
             print("[pla] *** TAKING THE HOST ROLE *** " + " ".join(argv[2:]))
