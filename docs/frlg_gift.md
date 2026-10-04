@@ -236,6 +236,8 @@ fateful-encounter bit, and its legality check must pass. The record goes into th
 Mystery Event `givepokemon` the moment the card is saved, as `mystery-event-celebi` does; a full party
 answers status 3 and gets nothing, and the card can be received again. Without `--event-pokemon`
 the card sends a stored WISHMKR Jirachi.
+On a retail French FireRed a WISHMKR Jirachi made this way arrived in the party with trainer WISHMKR,
+id 20043, after `givepokemon` answered status 2.
 
 `NAME` is the trainer name, a space and the species: `WISHMKR Jirachi`, `CHANNEL Jirachi`,
 `Aura Mew`, `MYSTRY Mew`, `DOEL Deoxys`, `SPACE C Deoxys`, `ROCKS Metang`, `10 ANIV Pikachu` and every
