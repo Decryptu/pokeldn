@@ -74,7 +74,7 @@ def check() -> None:
             for args in ((*options, "--export-gift", str(source)),
                          ("--gift-file", str(source), "--export-gift", str(copy))):
                 subprocess.run(runner.command("--run", script, *args),
-                               capture_output=True, text=True, timeout=30, check=True)
+                               capture_output=True, text=True, encoding="utf-8", timeout=30, check=True)
             assert source.read_bytes() == copy.read_bytes()
             assert gifts.load(copy, game="frlg" if game == "frlg-code" else game).variants
         print("FRLG gifts, console code and Sword/Shield gift files verified")
@@ -82,13 +82,13 @@ def check() -> None:
     scripts = sorted((Path(paths.ROOT) / "bin").glob("*.py"))
     for path in scripts:
         result = subprocess.run(runner.command("--run", str(path), "--help"),
-                                capture_output=True, text=True, timeout=30, check=True)
+                                capture_output=True, text=True, encoding="utf-8", timeout=30, check=True)
         assert "usage:" in result.stdout and not result.stderr, (path.name, result.stdout, result.stderr)
     result = subprocess.run(runner.command("--module", "esptool", "version"),
-                            capture_output=True, text=True, timeout=30, check=True)
+                            capture_output=True, text=True, encoding="utf-8", timeout=30, check=True)
     assert "esptool" in result.stdout and not result.stderr, (result.stdout, result.stderr)
     result = subprocess.run(runner.command("--module", "gui.board", "--help"),
-                            capture_output=True, text=True, timeout=30, check=True)
+                            capture_output=True, text=True, encoding="utf-8", timeout=30, check=True)
     assert "--firmware" in result.stdout and not result.stderr, (result.stdout, result.stderr)
     print(f"{len(scripts)} launchers and seven Pokemon formats verified")
     print(f"pokeldn {__version__}")
@@ -100,7 +100,7 @@ if __name__ == "__main__":
         from pokeldn import __version__
 
         result = subprocess.run([sys.argv[1], "--run", str(Path(__file__).resolve())],
-                                capture_output=True, text=True, timeout=180)
+                                capture_output=True, text=True, encoding="utf-8", timeout=180)
         assert result.returncode == 0, (hex(result.returncode & 0xFFFFFFFF), result.stdout, result.stderr)
         assert "seven Pokemon formats verified" in result.stdout, (result.stdout, result.stderr)
         assert not result.stderr, result.stderr
