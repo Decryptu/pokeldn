@@ -173,6 +173,17 @@ id, in order of first appearance:
 record, recorded from an emulated pair whose player is `Player`; `bin/za_join.py` and
 `bin/za_host.py` send them (`--game-dir` names another set).
 
+The identity is a `b9` tuple of two: a u32, then a one-member tuple holding a 0x5d-byte `bc` blob.
+The blob is a six-member tuple: a u32, two small integers, the player name and a 32-byte field of
+zeroes, then the rest.
+
+    1400 b902 82<u32> b901 bc5d b906 82<u32> 01 02 bc1a <name> bc20 <32 bytes> ...
+
+The name is 26 bytes, UTF-16LE, NUL-padded: at most twelve characters, at offset 0x18 of the
+protocol-10 message (0x1c behind the protocol-11 station prefix). With the recorded `Player` there,
+a retail console showed `Player` for its trade partner. Both launchers write `--trainer-name`
+(default `POKELDN`) into it (`pokeldn.za.reference.named`).
+
 ### The trade commands
 
 The trade session setup `0xca2928` subscribes five command types (named by ctti strings) on the

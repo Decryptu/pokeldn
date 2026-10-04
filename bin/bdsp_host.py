@@ -130,7 +130,7 @@ def main(argv=None):
     if args.complete_trade:
         print("[bh] *** --complete-trade: the console WRITES ITS SAVE and the Pokemon the player "
               "picks LEAVES THEIR BOX ***")
-    tname, tid, sid = args.trainer.split(":")
+    tname, tid, sid = args.trainer.rsplit(":", 2)
     prefix = args.save_theirs or (args.capture.rsplit(".", 1)[0] + "_theirs" if args.capture
                                   else None)
 

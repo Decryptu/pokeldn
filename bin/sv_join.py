@@ -272,6 +272,8 @@ def build_parser():
                          "writes one from a station's own log, so a whole real identity can be "
                          "replayed rather than the host's mirrored back; by default the recorded "
                          "set in pokeldn.sv.reference")
+    ap.add_argument("--trainer-name", default="POKELDN",
+                    help="the player name record 1 of our identity carries, the one the trade screen shows")
     ap.add_argument("--no-identity", action="store_true",
                     help="send no station identity unless --record-set or --send-on-open names "
                          "one; by default the recorded one in pokeldn.sv.reference")
@@ -722,7 +724,9 @@ async def run_session(args, keys, host_ip, host_mac, our_ip, our_mac, record):
     if args.record_set:
         for name in sorted(os.listdir(args.record_set)):
             if name.endswith(".bin"):
-                record_set.append((int(name[:-4]), Path(os.path.join(args.record_set, name)).read_bytes()))
+                seq, payload = int(name[:-4]), Path(os.path.join(args.record_set, name)).read_bytes()
+                record_set.append((seq, reference.named_record(payload, args.trainer_name) if seq == 1
+                                   else payload))
         print(f"[sv] the record set holds {len(record_set)} record(s), "
               f"sequence ids {record_set[0][0]}..{record_set[-1][0]}")
     set_sent = False

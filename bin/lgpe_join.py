@@ -293,6 +293,8 @@ def build_parser():
                     help="carry the peer's announcement clock in our acknowledgement on clone type "
                          "2 rather than the clock round-tripped from our own announcement, which "
                          "is what a reference joiner carries")
+    ap.add_argument("--trainer-name", default="POKELDN",
+                    help="the player name our identity carries, the one the trade screen shows")
     ap.add_argument("--our-trainer", metavar="TID:SID",
                     help="replace the trainer id pair in the first message. A payload captured "
                          "between two emulators that share a save carries the host's own pair, "
@@ -673,16 +675,17 @@ def _run(args, net, keys, facts, opener):
                     path = state["payloads"].pop(0)
                     state["next_payload"] = time.monotonic() + args.reliable_interval
                     body = Path(path).read_bytes()
-                    if args.our_trainer:
-                        # A capture between two emulators sharing a save carries the host's own
-                        # trainer id.
-                        msg = pb7.parse_message(body)
-                        tid, sid = (int(v, 0) for v in args.our_trainer.split(":"))
-                        if msg:
-                            body = pb7.build_message(
-                                msg["kind"], pb7.set_trainer_id(msg["body"], tid, sid))
+                    msg = pb7.parse_message(body)
+                    if msg and msg["kind"] == pb7.FIRST_MESSAGE:
+                        inner = pb7.set_trainer_name(msg["body"], args.trainer_name)
+                        if args.our_trainer:
+                            # A capture between two emulators sharing a save carries the host's own
+                            # trainer id.
+                            tid, sid = (int(v, 0) for v in args.our_trainer.split(":"))
+                            inner = pb7.set_trainer_id(inner, tid, sid)
                             print(f"[lg] reliable: trainer id "
                                   f"{pb7.trainer_id(msg['body'])} -> ({tid}, {sid})")
+                        body = pb7.build_message(msg["kind"], inner)
                     to_host_bitmap(state["window"].send(body), reliable3.PROTOCOL)
                     print(f"[lg] reliable: sent {len(body)} B from {path}")
                 if args.connect and not args.no_rtt and state["mesh_joined"] and not left \

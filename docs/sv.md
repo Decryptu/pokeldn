@@ -196,7 +196,7 @@ byte `floor(k * 1384 * 100 / 62344)` (2, 4, 6, 8, 0x0b, ..., 0x37 at 25, 0x52 at
 first chunk carries the partner shown on screen:
 
     +0x0b  5   unread
-    +0x13  26  the player name, UTF-16 little-endian, NUL-padded
+    +0x13  26  the player name, UTF-16 little-endian, NUL-padded; --trainer-name on both launchers
     +0x2d  22  the account identifier, ASCII, `u-` and twenty characters
     +0x53  1   5
 

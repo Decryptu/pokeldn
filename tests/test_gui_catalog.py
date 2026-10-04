@@ -29,6 +29,19 @@ def test_the_tool_builds_arguments_its_entry_point_accepts(tool):
             _check(tool, {**base, choice.key: key})
 
 
+LINKED = [tool for tool in TOOLS if tool.key != "swsh-gift"]   # the gift host advertises a card, no player
+
+
+@pytest.mark.parametrize("tool", LINKED, ids=[t.key for t in LINKED])
+def test_every_linked_tool_presents_the_apps_trainer(tool):
+    """Every title is built the same: the console sees the trainer named in Settings, never a
+    recorded one."""
+    args = build(tool, {f.key: {"file": "/tmp/offer.bin"} for f in tool.fields if f.kind == "pokemon"},
+                 {}, Settings(ot="ASH"))
+    parser_of(tool.script).parse_args(args)
+    assert "ASH" in args or any(a.startswith("ASH:") for a in args)
+
+
 def test_sword_host_uses_the_apps_trainer_and_a_built_offer():
     tool = next(t for game in GAMES for t in game.tools if t.key == "swsh-host")
     settings = Settings(ot="POKELDN", tid=41234, sid=12345)

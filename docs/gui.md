@@ -30,9 +30,15 @@ and two ID pairs, entered as the games show them. A record stores the trainer as
 | FireRed, LeafGreen | the TID, 0 to 65535 | the SID, 0 to 65535 | `SID << 16 \| TID` |
 | Let's Go, Sword/Shield, BDSP, Legends Arceus, Scarlet/Violet, Legends Z-A | id mod 10^6, six digits | id div 10^6, 0 to 4294 | `secret * 10^6 + ID`, below 2^32 |
 
-The Switch pair is converted per game in `pokeldn/app/settings.py` `Settings.ids`; the Sword host
-also reports it as its own trainer. Settings saved before the Switch pair existed derive it from the
-first pair, so records built from them keep the same stored id.
+The Switch pair is converted per game in `pokeldn/app/settings.py` `Settings.ids`. Settings saved
+before the Switch pair existed derive it from the first pair, so records built from them keep the
+same stored id.
+
+Every tool that links to a console presents this trainer as its own player, in place of the name a
+recorded message carries (`tests/test_gui_catalog.py`). The ids go wherever a launcher takes them:
+FireRed and LeafGreen, Let's Go, Sword/Shield and BDSP. FireRed and LeafGreen hold seven Gen III
+characters; a longer name is cut to seven, and a name outside the Gen III characters becomes
+`POKELDN` (`Settings.name`).
 
 ## Linux serial ports
 

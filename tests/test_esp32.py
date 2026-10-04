@@ -963,7 +963,8 @@ def test_the_firered_gift_host_comes_up_and_advertises_on_a_simulated_board(tmp_
 
 
 def test_the_lets_go_joiner_reaches_the_game_on_simulated_boards(tmp_path, monkeypatch):
-    """bin/lgpe_join.py against bin/lgpe_host.py: association through the kind-1 identity both ways."""
+    """bin/lgpe_join.py against bin/lgpe_host.py: association through the kind-1 identity both ways,
+    each under its own trainer's name."""
     import threading
 
     import lgpe_host
@@ -994,12 +995,13 @@ def test_the_lets_go_joiner_reaches_the_game_on_simulated_boards(tmp_path, monke
     result = {}
     threads["host"] = threading.Thread(target=lambda: result.setdefault("host", lgpe_host.main(
         ["--keys", str(keys_file), "--channel", "6", "--seconds", "14", "--grace", "0",
-         "--first", "echo", "--capture", str(tmp_path / "host.jsonl")])), daemon=True)
+         "--first", "echo", "--trainer-name", "HOSTER", "--capture", str(tmp_path / "host.jsonl")])),
+        daemon=True)
     threads["join"] = threading.Thread(target=lambda: result.setdefault("join", lgpe_join.main(
         ["--keys", str(keys_file), "--channels", "6", "--dwell", "0.5", "--connect",
          "--connect-seconds", "10", "--facts", str(tmp_path / "facts.json"),
          "--capture", str(tmp_path / "join.jsonl"),
-         "--reliable-payload", str(tmp_path / "identity.bin"),
+         "--reliable-payload", str(tmp_path / "identity.bin"), "--trainer-name", "JOINER",
          "--ack-peer-clock", "--ack-re-announce"])), daemon=True)
     wlan.set_factory(factory)
     try:
@@ -1013,8 +1015,11 @@ def test_the_lets_go_joiner_reaches_the_game_on_simulated_boards(tmp_path, monke
         host_radio.close()
         join_radio.close()
     assert result == {"host": 0, "join": 0}
-    assert (tmp_path / "host.jsonl.payload1.bin").read_bytes() == identity
-    assert (tmp_path / "join.jsonl.payload1.bin").read_bytes() == identity
+
+    def named(name):
+        return pb7.build_message(pb7.FIRST_MESSAGE, pb7.set_trainer_name(identity[pb7.HEADER_SIZE:], name))
+    assert (tmp_path / "host.jsonl.payload1.bin").read_bytes() == named("JOINER")
+    assert (tmp_path / "join.jsonl.payload1.bin").read_bytes() == named("HOSTER")
 
 
 def test_the_lets_go_joiner_trades_its_queue_on_one_seat_on_simulated_boards(tmp_path, monkeypatch):

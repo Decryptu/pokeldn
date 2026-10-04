@@ -254,6 +254,8 @@ def build_parser():
                          "INITIALIZED and every one is already zlib "
                          "(scratchpad/sv_extract_records.py writes such a set); by default the "
                          "recorded set in pokeldn.sv.reference")
+    ap.add_argument("--trainer-name", default="POKELDN",
+                    help="the player name record 1 of our identity carries, the one the trade screen shows")
     ap.add_argument("--no-identity", action="store_true",
                     help="send no station identity unless --record-set or --send-on-open names "
                          "one; by default the recorded one in pokeldn.sv.reference")
@@ -616,6 +618,8 @@ def main():
                         continue
                     payload = Path(path).read_bytes()
                     seq = int(name.split(".")[0])
+                    if seq == 1:
+                        payload = reference.named_record(payload, args.trainer_name)
                     flags = (reliable5.FLAG_APPLICATION_DATA | reliable5.FLAG_MESSAGE_START
                              | reliable5.FLAG_MESSAGE_END | reliable5.FLAG_ZLIB
                              | (reliable5.FLAG_IS_INITIALIZED if seq == 1 else 0))

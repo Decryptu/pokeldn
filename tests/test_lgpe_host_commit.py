@@ -8,7 +8,7 @@ import struct
 import pytest
 
 from pokeldn.ldn import clone, reliable3
-from pokeldn.lgpe import pb7
+from pokeldn.lgpe import pb7, reference
 from pokeldn.lgpe.trade import _send_step
 
 ROOT = os.path.join(os.path.dirname(__file__), "..")
@@ -534,3 +534,26 @@ def test_an_unanswered_clone_0_pair_is_repeated_until_the_console_answers(stage)
     sent.clear()
     stage["run"](1.0)
     assert pairs() == 0
+
+
+def test_the_echoed_identity_names_our_trainer(monkeypatch):
+    """The host answers the console's kind 1 with that message under our trainer's name and ids,
+    the rest of it the console's own."""
+    monkeypatch.setattr(lgpe_host.time, "monotonic", Clock())
+    args = lgpe_host.build_parser().parse_args(
+        ["--first", "echo", "--trainer-name", "ASH", "--our-trainer", "41234:12345"])
+    s = lgpe_host.Session(Radio(), lgpe_host.Advertisement(0x2952124b, 0xe28ef1be), args, lambda **kw: None)
+    s.peer_ip, s.peer_mac, s.joined = "169.254.38.2", bytes.fromhex("48f1eb209b22"), True
+    s.new_clone()
+    sent = []
+    monkeypatch.setattr(s, "send", lambda payload, protocol, **kw: sent.append((protocol, payload)))
+    console = pb7.parse_message(Path(reference.IDENTITY).read_bytes())["body"]
+    console = pb7.set_trainer_id(pb7.set_trainer_name(console, "CONSOLE"), 1, 2)
+    s.handle(reliable3.PROTOCOL, reliable3.build(pb7.build_message(pb7.FIRST_MESSAGE, console),
+                                                 reliable3.FIRST_SEQUENCE, reliable3.FIRST_SEQUENCE))
+    ours = [pb7.parse_message(r["payload"]) for p, payload in sent if p == reliable3.PROTOCOL
+            for r in [reliable3.parse(payload)] if r and r["size"]]
+    assert [m["kind"] for m in ours] == [pb7.FIRST_MESSAGE]
+    body = ours[0]["body"]
+    assert pb7.trainer_name(body) == "ASH" and pb7.trainer_id(body) == (41234, 12345)
+    assert pb7.set_trainer_id(pb7.set_trainer_name(body, "CONSOLE"), 1, 2) == console

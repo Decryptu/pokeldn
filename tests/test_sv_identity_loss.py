@@ -1,4 +1,7 @@
-"""The live SV senders recover a missing identity chunk without declaring it obsolete."""
+"""The live SV senders recover a missing identity chunk without declaring it obsolete, and name
+their player in it."""
+from pathlib import Path
+
 import pytest
 import trio
 
@@ -6,7 +9,7 @@ import sv_host
 import sv_join
 from pokeldn import sv
 from pokeldn.ldn import pia6, pia_connect, reliable5
-from pokeldn.sv import streams
+from pokeldn.sv import reference, streams
 
 HOST_IP, JOIN_IP = '127.0.0.2', '127.0.0.3'
 HOST_MAC, JOIN_MAC = bytes.fromhex('02007f000002'), bytes.fromhex('02007f000003')
@@ -28,6 +31,7 @@ class Peer:
         self.clock, self.sender_index, self.lost = clock, sender_index, lost
         self.keys = sv.session_keys(SSID)
         self.queue, self.received, self.records, self.retries = [], set(), set(), []
+        self.payloads = {}
         self.dropped, self.initialized, self.low = False, False, 1
         self.ip = HOST_IP if sender_index == 1 else JOIN_IP
         self.sender_ip = JOIN_IP if sender_index == 1 else HOST_IP
@@ -59,6 +63,7 @@ class Peer:
                     continue
                 if seq >= self.low:
                     self.records.add(seq)
+                    self.payloads[seq] = rm['payload']
                     self.received.add(seq)
             through, mask = streams.ack_position(self.received)
             ack = streams.build_ack({self.sender_index: through}, 2, 1 - self.sender_index,
@@ -69,13 +74,20 @@ class Peer:
         self.clock.now += 0.05
 
 
+def _record_set(folder, ids):
+    """Record 1 is the recorded one, the player name it carries the one the console shows."""
+    for seq in ids:
+        payload = streams.compress(bytes([1, seq])) if seq != 1 else \
+            (Path(reference.RECORDS) / '001.bin').read_bytes()
+        (folder / f'{seq:03d}.bin').write_bytes(payload)
+
+
 @pytest.mark.parametrize('lost', [1, 10, None])
 def test_joiner_identity_survives_loss(monkeypatch, tmp_path, lost):
     clock = Clock()
     peer = Peer(clock, 1, lost)
     ids = [1, 2, 3, 4, 7, 8, 10, 46]
-    for seq in ids:
-        (tmp_path / f'{seq:03d}.bin').write_bytes(streams.compress(bytes([1, seq])))
+    _record_set(tmp_path, ids)
     response = pia_connect.build_session_join_response_v11(
         pia_connect.ldn_constant_id(HOST_MAC), 1, pia_connect.ldn_constant_id(JOIN_MAC), 2,
         version=11, route=None)
@@ -102,13 +114,14 @@ def test_joiner_identity_survives_loss(monkeypatch, tmp_path, lost):
     monkeypatch.setattr(trio.lowlevel, 'wait_readable', wait_readable)
     args = sv_join.build_parser().parse_args([
         '--ip-join', '--hold', '2', '--record-set', str(tmp_path), '--record-delay', '0',
-        '--no-clock', '--rtt-period', '0'])
+        '--no-clock', '--rtt-period', '0', '--trainer-name', 'ASH'])
     trio.run(sv_join.run_session, args, peer.keys, HOST_IP, HOST_MAC, JOIN_IP, JOIN_MAC,
              lambda **row: None)
     assert peer.records == set(ids)
     assert peer.low == 47
     expected = ids if lost == 1 else [] if lost is None else [lost]
     assert sorted(peer.retries) == sorted(expected)
+    assert reference.player_name(peer.payloads[1]) == 'ASH'
 
 
 @pytest.mark.parametrize('lost', [1, 10, None])
@@ -116,8 +129,7 @@ def test_host_identity_survives_loss(monkeypatch, tmp_path, lost):
     clock = Clock()
     peer = Peer(clock, 0, lost)
     ids = [1, 2, 3, 46, 4, 7, 10, 8]
-    for seq in ids:
-        (tmp_path / f'{seq:03d}.bin').write_bytes(streams.compress(bytes([1, seq])))
+    _record_set(tmp_path, ids)
     (tmp_path / 'order').write_text('\n'.join(map(str, ids)))
     join = pia6.build_session_join(pia_connect.ldn_constant_id(JOIN_MAC), 2, JOIN_IP,
                                    pia_connect.ldn_constant_id(HOST_MAC), 1, 'Player', bytes(4))
@@ -154,9 +166,10 @@ def test_host_identity_survives_loss(monkeypatch, tmp_path, lost):
     monkeypatch.setattr('sys.argv', [
         'sv_host', '--ip-host', '--seconds', '2', '--record-set', str(tmp_path),
         '--record-delay', '0', '--no-net-probe', '--records-per-packet', '3',
-        '--scarlet-response', '--no-session-update'])
+        '--scarlet-response', '--no-session-update', '--trainer-name', 'ASH'])
     assert sv_host.main() == 0
     assert peer.records == set(ids)
     assert peer.low == 47
     expected = ids if lost == 1 else [] if lost is None else [lost]
     assert sorted(peer.retries) == sorted(expected)
+    assert reference.player_name(peer.payloads[1]) == 'ASH'

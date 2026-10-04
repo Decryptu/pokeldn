@@ -117,7 +117,8 @@ FRLG = Game("frlg", "FireRed & LeafGreen", "FRLG", "frlg.md", (
           Field("--language", "Language", "choice", default="english", choices=LANGUAGES, hidden=True,
                 help="The language pokeldn's own trainer reports on the link."),
           Field("--channel", "Channel", "choice", default="11", choices=CHANNELS, help=CHANNEL_HELP, hidden=True)),
-         fixed=("--live", "--phy", "auto", "--slot", "0", "--out", "{received}/frlg-{stamp}.pk3"),
+         fixed=("--live", "--phy", "auto", "--slot", "0", "--ot", "{ot}", "--id", "{tid}:{sid}",
+                "--out", "{received}/frlg-{stamp}.pk3"),
          doc="frlg_link.md"),
     Tool("frlg-trade-join", "Trade (Join)", "bin/frlg_trade_join.py",
          "Join a trade group the console leads.",
@@ -126,7 +127,8 @@ FRLG = Game("frlg", "FireRed & LeafGreen", "FRLG", "frlg.md", (
           "Accept POKELDN when it appears, then choose and confirm.",
           "With several queued, trade again after each save; the joiner offers the next one."),
          (queued(count="--trades"),),
-         fixed=("--live", "--phy", "auto", "--slot", "0", "--out", "{received}/frlg-{stamp}.pk3"),
+         fixed=("--live", "--phy", "auto", "--slot", "0", "--ot", "{ot}", "--id", "{tid}:{sid}",
+                "--out", "{received}/frlg-{stamp}.pk3"),
          doc="frlg_link.md"),
     Tool("frlg-gift", "Mystery Gift", "bin/frlg_mg_host.py",
          "Send a Wonder Card, Wonder News or console code: pick a preset or build your own.",
@@ -142,7 +144,8 @@ FRLG = Game("frlg", "FireRed & LeafGreen", "FRLG", "frlg.md", (
           Field("--language", "Language", "choice", default="english", choices=LANGUAGES, hidden=True,
                 help="The language pokeldn's own trainer reports on the link."),
           Field("--channel", "Channel", "choice", default="11", choices=CHANNELS, help=CHANNEL_HELP, hidden=True)),
-         fixed=("--live", "--dump-file", "{received}/frlg-dump-{stamp}.bin"), doc="frlg_gift.md"),
+         fixed=("--live", "--ot", "{ot}", "--id", "{tid}:{sid}", "--dump-file",
+                "{received}/frlg-dump-{stamp}.bin"), doc="frlg_gift.md"),
 ))
 
 LGPE_STEPS = "X, Communicate, Local Communication, Trade, enter the same link code, then search."
@@ -156,7 +159,8 @@ LGPE = Game("lgpe", "Let's Go Pikachu & Eevee", "LGPE", "lgpe.md", (
                 help="The three Pokemon the player picks on the console, in the same order."),
           FRESH_PID,
           host_seconds("1200", "A trade under way when it runs out is finished first.")),
-         fixed=("--first", "echo", "--received", "{received}/lgpe-{stamp}.pb7"), doc="lgpe.md"),
+         fixed=("--first", "echo", "--trainer-name", "{ot}", "--our-trainer", "{tid}:{sid}",
+                "--received", "{received}/lgpe-{stamp}.pb7"), doc="lgpe.md"),
     Tool("lgpe-join", "Trade (Join)", "bin/lgpe_join.py",
          "Join the console's trade search.",
          ("Start the joiner: it scans for up to five minutes.", LGPE_STEPS,
@@ -164,6 +168,7 @@ LGPE = Game("lgpe", "Let's Go Pikachu & Eevee", "LGPE", "lgpe.md", (
          (queued("--offer"), FRESH_PID),
          fixed=("--channels", "1,6,11", "--dwell", "2.5", "--connect", "--connect-seconds", "1800",
                 "--ack-peer-clock", "--ack-re-announce", "--facts", "lgpe_net_facts.json",
+                "--trainer-name", "{ot}", "--our-trainer", "{tid}:{sid}",
                 "--received", "{received}/lgpe-{stamp}.pb7"),
          doc="lgpe_session.md"),
 ))
@@ -189,6 +194,7 @@ SWSH = Game("swsh", "Sword & Shield", "SwSh", "swsh.md", (
           FRESH_PID,
           join_seconds("900")),
          fixed=("--preset", "trade", "--send-snapshot", "live",
+                "--snapshot-name", "{ot}", "--snapshot-tid", "{tid}", "--snapshot-sid", "{sid}",
                 "--save-offered", "{received}/swsh-{stamp}.pk8"),
          doc="swsh_trade.md"),
     Tool("swsh-host", "Trade (Host)", "bin/swsh_host.py", "Host a Link Trade the console joins.",
@@ -225,7 +231,8 @@ BDSP = Game("bdsp", "Brilliant Diamond & Shining Pearl", "BDSP", "bdsp.md", (
                 "--recruiting", "0", "--answer-talk", "--can-talk", "0", "--initiate-talk",
                 "--initiate-delay", "3", "--after-approach", "0x06:0001000000", "--trade-reply",
                 "--complete-trade", "--src-var", "{src_var}",
-                "--trade-save-poke", "{received}/bdsp-{stamp}.pb8", "--language", "{language}"),
+                "--trade-save-poke", "{received}/bdsp-{stamp}.pb8", "--language", "{language}",
+                "--name", "{ot}", "--trade-name", "{ot}", "--trade-tid", "{tid}", "--trade-sid", "{sid}"),
          doc="bdsp_trade.md"),
     Tool("bdsp-host", "Trade (Host)", "bin/bdsp_host.py",
          "Host a Union Room the console enters.",
@@ -237,7 +244,7 @@ BDSP = Game("bdsp", "Brilliant Diamond & Shining Pearl", "BDSP", "bdsp.md", (
           Field("--password", "Room password", help="Eight digits. Empty for the plain room."),
           host_seconds("1500")),
          fixed=("--ldn-protocol", "1", "--complete-trade", "--save-theirs", "{received}/bdsp-{stamp}",
-                "--language", "{language}"),
+                "--language", "{language}", "--name", "{ot}", "--trainer", "{ot}:{tid}:{sid}"),
          doc="bdsp_trade.md"),
 ))
 
@@ -255,7 +262,8 @@ PLA = Game("pla", "Legends Arceus", "PLA", "pla.md", (
           FRESH_PID,
           host_seconds("900")),
          fixed=("--channel", "6", "--session-update", "--sustain", "--clock", "--data-exchange",
-                "--game-channel", "--trade-box", "--offer-out", "{received}/pla-{stamp}.pa8"),
+                "--game-channel", "--trade-box", "--player-name", "{ot}",
+                "--offer-out", "{received}/pla-{stamp}.pa8"),
          doc="pla.md"),
     Tool("pla-join", "Trade (Join)", "bin/pla_join.py",
          "Join the console's search. It hands pokeldn the host role, which the joiner takes on its own.",
@@ -263,7 +271,7 @@ PLA = Game("pla", "Legends Arceus", "PLA", "pla.md", (
          (queued("--offer", required=False, help=PLA_OFFER_HELP),
           Field("--code", "Link code", default="00000000", help=CODE_HELP),
           FRESH_PID),
-         fixed=("--offer-out", "{received}/pla-{stamp}.pa8"),
+         fixed=("--player-name", "{ot}", "--offer-out", "{received}/pla-{stamp}.pa8"),
          doc="pla.md"),
 ))
 
@@ -281,7 +289,7 @@ SV = Game("sv", "Scarlet & Violet", "SV", "sv.md", (
                 "--dwell", "0.4", "--connect-timeout", "6", "--open-delay", "0.3", "--record-delay", "0.3",
                 "--session-join", "--answer-migration", "--net-ack", "--ack-flags", "0x00",
                 "--game-channel", "--announce-timeout", "20", "--rtt-delay", "0.3",
-                "--offer-out", "{received}/sv-{stamp}.pk9"), doc="sv.md"),
+                "--trainer-name", "{ot}", "--offer-out", "{received}/sv-{stamp}.pk9"), doc="sv.md"),
     Tool("sv-host", "Trade (Host)", "bin/sv_host.py",
          "Host a trade the searching console joins.",
          ("Start the host first.", SV_SEARCH, "Offer and confirm on the trade screen."),
@@ -300,7 +308,7 @@ SV = Game("sv", "Scarlet & Violet", "SV", "sv.md", (
                 "--send-at", "0.04:0x81:5:000500000ff00800000000",
                 "--announce", "--announce-delay", "5.25",
                 "--send-at", "6.00:0x7c:1:b90101b902b90280800001", "--offer-after-open", "2",
-                "--offer-out", "{received}/sv-{stamp}.pk9"),
+                "--trainer-name", "{ot}", "--offer-out", "{received}/sv-{stamp}.pk9"),
          doc="sv.md"),
 ))
 
@@ -309,13 +317,13 @@ ZA = Game("za", "Legends Z-A", "PLZA", "za.md", (
          "Join the console's Link Trade search.",
          ("Link Trade, local communication, search with the link code.",
           "Start the joiner. Refusals while seating are normal; let it run.",
-          "Pick on the trade box and confirm once PKLDN appears. Queued Pokemon follow, one per trade."),
+          "Pick on the trade box and confirm once POKELDN appears. Queued Pokemon follow, one per trade."),
          (queued("--trade-offer"),
           Field("--code", "Link code", default="00000000", help=CODE_HELP),
           FRESH_PID),
          fixed=("--channels", "1,6,11", "--dwell", "0.35", "--seconds", "1200", "--hold", "900",
                 "--quiet-seat", "25", "--connect-timeout", "6", "--mac", "02:11:32:54:76:98", "--game",
-                "--offer-delay", "4", "--offer-out", "{received}/za-{stamp}.pa9"),
+                "--offer-delay", "4", "--trainer-name", "{ot}", "--offer-out", "{received}/za-{stamp}.pa9"),
          doc="za.md"),
     Tool("za-host", "Trade (Host)", "bin/za_host.py",
          "Host a trade the searching console joins.",
@@ -327,7 +335,7 @@ ZA = Game("za", "Legends Z-A", "PLZA", "za.md", (
           Field("--code", "Link code", default="00000000", help=CODE_HELP),
           FRESH_PID,
           host_seconds("900")),
-         fixed=("--offer-out", "{received}/za-{stamp}.pa9"), doc="za.md"),
+         fixed=("--trainer-name", "{ot}", "--offer-out", "{received}/za-{stamp}.pa9"), doc="za.md"),
 ))
 
 GAMES = (FRLG, LGPE, SWSH, BDSP, PLA, SV, ZA)

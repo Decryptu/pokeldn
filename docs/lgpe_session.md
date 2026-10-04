@@ -468,7 +468,7 @@ offsets:
 
 ```
 +0x34  2  0x0002
-+0x38 16  trainer name
++0x38 26  trainer name, up to the Pokemon name; --trainer-name on both launchers
 +0x52 16  Pokemon name
 ```
 

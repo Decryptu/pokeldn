@@ -38,6 +38,8 @@ def build_parser():
     ap.add_argument("--capture", default=None, help="every datagram as one JSON line")
     ap.add_argument("--player-name", default=" ",
                     help="the LDN node name; a searching console advertises one space")
+    ap.add_argument("--trainer-name", default="POKELDN",
+                    help="the player name our identity carries, the one the trade screen shows")
     ap.add_argument("--game-dir", default=za.reference.DIR,
                     help="where identity10.bin, identity11b.bin and selection.bin live; by "
                          "default the ones pokeldn.za.reference ships")
@@ -66,7 +68,7 @@ def build_parser():
 
 
 def load_payloads(args):
-    identity = za.reference.load("identity10", args.game_dir)
+    identity = za.reference.named(za.reference.load("identity10", args.game_dir), args.trainer_name)
     # The nine-byte message after the identity on protocol 11, stored with the joiner's prefix.
     tail = za.reference.load("identity11b", args.game_dir)[streams.PREFIX_SIZE:]
     selection = za.reference.load("selection", args.game_dir)

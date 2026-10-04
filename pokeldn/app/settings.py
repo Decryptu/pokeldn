@@ -51,9 +51,19 @@ class Settings:
         whole = self.switch_sid * SWITCH_TID_LIMIT + self.switch_tid
         return whole & 0xFFFF, whole >> 16
 
+    def name(self, game: str) -> str:
+        """The trainer name `game` can hold: FireRed takes seven Gen III characters."""
+        if game != "frlg":
+            return self.ot
+        from pokeldn.frlg.text import charmap
+        for name in (self.ot, self.ot[:7]):
+            if name and charmap.decode(charmap.encode(name)) == name and len(charmap.encode(name)) <= 7:
+                return name
+        return Settings.ot
+
     def trainer(self, game: str) -> dict:
         tid, sid = self.ids(game)
-        return {"ot": self.ot, "tid": tid, "sid": sid, "language": self.language, "gender": 0}
+        return {"ot": self.name(game), "tid": tid, "sid": sid, "language": self.language, "gender": 0}
 
 
 def switch_ids_valid(tid: int, sid: int) -> bool:

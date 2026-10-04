@@ -66,10 +66,11 @@ def _args(field: Field, value, tool: Tool) -> list[str]:
 def build(tool: Tool, values: dict, extra: dict, settings, stamp: str | None = None) -> list[str]:
     """The entry point's argument list: tested flags, the tool's fields, then the All tab's."""
     stamp = stamp or time.strftime("%Y%m%d-%H%M%S")
-    tid, sid = settings.ids(tool.key.split("-")[0])
+    game = tool.key.split("-")[0]
+    tid, sid = settings.ids(game)
     tokens = {"{received}": os.path.expanduser(settings.received), "{stamp}": stamp,
               "{src_var}": f"0x{random.getrandbits(32):08x}",
-              "{ot}": settings.ot, "{tid}": str(tid), "{sid}": str(sid),
+              "{ot}": settings.name(game), "{tid}": str(tid), "{sid}": str(sid),
               "{language}": str(settings.language)}
     args = []
     for arg in tool.fixed:

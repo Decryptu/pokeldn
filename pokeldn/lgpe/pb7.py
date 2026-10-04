@@ -21,9 +21,10 @@ BLOCK_ORDER = [
 __all__ = ["BOX_SIZE", "HEADER_SIZE", "FIRST_MESSAGE", "OFFER_MESSAGE", "COMMIT_MESSAGE", "RESULT_MESSAGE",
            "shuffle_value",
            "crypt", "checksum", "decrypt", "encrypt", "parse_message", "build_message",
-           "TRAINER_ID", "trainer_id", "set_trainer_id"]
+           "TRAINER_ID", "trainer_id", "set_trainer_id", "TRAINER_NAME", "trainer_name", "set_trainer_name"]
 
 TRAINER_ID = 0x00
+TRAINER_NAME, NAME_SIZE = 0x38, 26   # a first message's name, up to its partner's (docs/lgpe_session.md)
 BOX_TRAINER_ID = 0x0C
 OFF_PID = 0x18                      # PKHeX PB7.cs; the encryption constant is at 0x00
 
@@ -113,6 +114,18 @@ def set_trainer_id(body, tid, sid, offset=TRAINER_ID):
     out = bytearray(body)
     struct.pack_into("<HH", out, offset, tid & 0xFFFF, sid & 0xFFFF)
     return bytes(out)
+
+
+def trainer_name(body):
+    return body[TRAINER_NAME:TRAINER_NAME + NAME_SIZE].decode("utf-16-le").split("\0", 1)[0]
+
+
+def set_trainer_name(body, name):
+    """-> a first message's `body` naming its trainer `name`, at most twelve characters."""
+    raw = name.encode("utf-16-le")
+    if not name or len(raw) > NAME_SIZE - 2:
+        raise ValueError(f"a trainer name is 1 to {(NAME_SIZE - 2) // 2} characters, not {name!r}")
+    return body[:TRAINER_NAME] + raw.ljust(NAME_SIZE, b"\0") + body[TRAINER_NAME + NAME_SIZE:]
 
 
 def fresh(raw, rand=None):

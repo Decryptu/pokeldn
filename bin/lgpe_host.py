@@ -98,6 +98,8 @@ def build_parser():
     ap.add_argument("--first", metavar="echo|PATH",
                     help="our kind-1 identity message, sent when the console's arrives: a captured "
                          "376-byte message, header included, or echo for the console's own back")
+    ap.add_argument("--trainer-name", default="POKELDN",
+                    help="the player name our identity carries, the one the trade screen shows")
     ap.add_argument("--our-trainer", metavar="TID:SID",
                     help="the trainer id pair written over the identity's")
     ap.add_argument("--scene-id", type=int, default=None,
@@ -735,9 +737,13 @@ class Session:
             body = (pb7.build_message(msg["kind"], msg["body"]) if self.args.first == "echo"
                     else Path(self.args.first).read_bytes())
             first = pb7.parse_message(body)
-            if first and self.args.our_trainer:
-                tid, sid = (int(v, 0) for v in self.args.our_trainer.split(":"))
-                body = pb7.build_message(first["kind"], pb7.set_trainer_id(first["body"], tid, sid))
+            if first:
+                inner = pb7.set_trainer_name(first["body"], self.args.trainer_name)
+                if self.args.our_trainer:
+                    tid, sid = (int(v, 0) for v in self.args.our_trainer.split(":"))
+                    inner = pb7.set_trainer_id(inner, tid, sid)
+                body = pb7.build_message(first["kind"], inner)
+                first = pb7.parse_message(body)
             self.send(self.window.send(body), reliable3.PROTOCOL)
             self.trade["step"] = 1
             self.publish_step()

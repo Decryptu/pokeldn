@@ -134,6 +134,9 @@ class GameStreams:
         for name in za.reference.NAMES:
             if os.path.exists(os.path.join(args.game_dir, f"{name}.bin")):
                 self.ref[name] = za.reference.load(name, args.game_dir)
+        for name, prefix in (("identity10", 0), ("identity11", streams.PREFIX_SIZE)):
+            if name in self.ref:
+                self.ref[name] = za.reference.named(self.ref[name], args.trainer_name, prefix)
         # The preview marked 1, the pick marked 0 (docs/za.md, Hosting). One per queued trade; the
         # last serves every later trade.
         paths = args.trade_offer or []
@@ -361,6 +364,8 @@ def build_parser():
     ap.add_argument("--player-name", default=" ",
                     help="the name the Session join's PlayerInfo carries; a reference joiner "
                          "sends one space")
+    ap.add_argument("--trainer-name", default="POKELDN",
+                    help="the player name our identity carries, the one the trade screen shows")
     ap.add_argument("--source-id", choices=("ldn", "raw"), default="ldn",
                     help="our own constant id in the Session join: the LDN permutation of our MAC, "
                          "which is the form the console publishes for itself, or the MAC as it is")
