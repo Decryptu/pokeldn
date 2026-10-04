@@ -301,7 +301,8 @@ of the game." With a resident hook running, `nature-mint` left `0x0203FC00..0x02
 `pc-anywhere` took over `gIntrTable[4]` with `0x0800071D` kept at `0x0203FBFC`.
 
 On a retail French FireRed, `nature-mint` (flag id 1011) was saved and the delivery man changed a
-party Pokemon's nature from the stats picked.
+party Pokemon's nature from the stats picked. `pc-anywhere` (flag id 1012): after the delivery man, R in the
+field opened the Pokemon boxes.
 
 `colosseum-pikachu` and `ageto-celebi` carry their Japanese trainer names, which a European cartridge
 draws as dots; PKHeX reports all four event Pokemon legal.
