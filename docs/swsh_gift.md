@@ -618,6 +618,9 @@ emulator cannot test these variables.
 | 3 | amount 10 at `+0x20`, title index 39, as the EventsGallery Battle Points cards carry | listed "Points de Combat", 10 BP added |
 
 | 4 | EventsGallery's Casual Tee (Pokemon Quest) card, title index 36 | listed, the tee in the wardrobe |
+| 4 | the Pikachu uniform's pairs, title index 36 | received five pieces: haut, gants, short, bas and chaussures de sport |
+| 5 | amount 100,000 at `+0x20`, title index 34 | listed "Argent de poche", money up by 100,000 |
+| 1 | Pikachu with `+0x24B` = 1, Dynamax level 10, title index 21 | listed "Pikachu (Pokemon Gigamax)", the Gigantamax mark in its summary |
 
 The title comes from `+0x15` alone, whatever the kind; the kind decides what is delivered.
 
@@ -638,8 +641,8 @@ Kind 4 is clothing ([Clothing](#clothing)). Kinds 3 and 5 add the word at `+0x20
 `status+0x64` is pocket money: `AddPocketMoney_` (`0x014ad5e0`) calls the same `0x01438f20`
 (`0x014ad624`) and `GetPocketMoney_` (`0x014ad700`) reads it through `0x01438ef0`. Both redemptions read
 the amount at header-and-record `+0x88`, record `+0x20`. Under unicorn, `0x010160b0` on a kind-5
-record of 100,000 took the money from 0 to 100,000 and from 9,950,000 to 9,999,999. No retail console
-has received a kind-5 record, and EventsGallery holds none.
+record of 100,000 took the money from 0 to 100,000 and from 9,950,000 to 9,999,999. EventsGallery
+holds no kind-5 card.
 
 The kind-1 redemption `0x010159d0` builds the Pokemon (`0x010b6110`; null returns 0) and offers it to
 the party (`0x01015b78`, virtual `+0x28`). If the party refuses, it asks the box store

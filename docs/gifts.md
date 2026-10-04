@@ -81,8 +81,7 @@ Points kinds write the bytes of a record a retail Sword listed and redeemed
 ([Sword and Shield Mystery Gift](swsh_gift.md#a-card-delivered-to-a-retail-console)); the
 Pikachu preset is byte for byte the launcher's own default record. Clothing comes from the pairs of
 the official outfit cards ([Clothing](swsh_gift.md#clothing)), at most six pieces for each player
-gender. The money kind is checked under the game's own redemption only; no retail Sword has received
-one. PKHeX refuses a Gigantamax flag on a species without a Gigantamax form.
+gender. PKHeX refuses a Gigantamax flag on a species without a Gigantamax form.
 
 Before you send lists what the console gets, when it runs, and the cartridges the gift serves. Save
 gift file writes the selected gift as `.pokegift` with no board and no Switch keys. FRLG presets go
