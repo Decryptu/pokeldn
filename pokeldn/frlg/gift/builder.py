@@ -52,13 +52,23 @@ class Preset:
     @property
     def state(self):
         """The preset as an editable form, or None when the form cannot express it."""
-        if self.args[0] != "--gift":
+        if self.args[0] != "--gift" or "--event-pokemon" in self.args:
             return None
         return state_of(GIFT_REGISTRY.entry(self.args[1]).definition)
 
 
 def _card(slug, label, summary):
     return Preset(slug, label, "Wonder Cards", summary, ("--gift", slug))
+
+
+EVENTS = "Event Pokemon"
+ANNIVERSARY = "10th Anniversary Pokemon"
+
+
+def _event(name, summary, group=EVENTS):
+    """A fresh copy PKHeX makes at launch [docs/frlg_gift.md, Event Pokemon]."""
+    key = "event-" + re.sub(r"[^a-z0-9]+", "-", name.lower()).strip("-")
+    return Preset(key, name, group, summary, ("--gift", events.GIFT_EVENT_POKEMON, "--event-pokemon", name))
 
 
 def _code(key, label, summary, *args):
@@ -279,6 +289,17 @@ PRESETS = (
     _card("visiting-trainer", "Visiting trainer", "A trainer who waits in the Pokemon Center."),
     _card("battle-count-card", "Battle count card", "A card that counts link battles."),
     _card("worlds-xp", "Worlds XP", "The Worlds card."),
+    _event("WISHMKR Jirachi", "The Colosseum Bonus Disc Jirachi, level 5."),
+    _event("CHANNEL Jirachi", "The Pokemon Channel Jirachi, level 5."),
+    _event("Aura Mew", "The Aura Mew, level 10."),
+    _event("MYSTRY Mew", "The MYSTRY Mew, level 10."),
+    _event("DOEL Deoxys", "The DOEL Deoxys, level 70."),
+    _event("SPACE C Deoxys", "The SPACE C Deoxys, level 70."),
+    _event("ROCKS Metang", "The ROCKS Metang, level 30, with the National Ribbon."),
+    *(_event(f"10 ANIV {name}", "Level 70, from the 10th anniversary.", ANNIVERSARY)
+      for name in ("Bulbasaur", "Charizard", "Blastoise", "Pikachu", "Alakazam", "Articuno", "Zapdos",
+                   "Moltres", "Dragonite", "Typhlosion", "Espeon", "Umbreon", "Raikou", "Entei", "Suicune",
+                   "Tyranitar", "Celebi", "Blaziken", "Absol", "Latias", "Latios")),
     Preset("news-pokeldn", "One berry in Cerulean City", "Wonder News",
            "A short news; the man in Cerulean City hands over a berry.", ("--news", "pokeldn")),
     Preset("news-berry", "Ten-line news", "Wonder News", "A long news that scrolls, with a berry.",

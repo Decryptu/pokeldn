@@ -425,6 +425,12 @@ def build_parser(file_config=None, *, shared_path=None, local_path=None):
               "screen shows."
               % (wonder_card_events.GIFT_RNG_MON_HUNT, ", ".join(native_script.IV_FIELDS))))
     parser.add_argument(
+        "--event-pokemon", metavar="NAME", default=None,
+        help=("with --gift %s: a fresh copy of a Gen 3 distribution, made by PKHeX by that event's\n"
+              "own PID/IV method, e.g. \"WISHMKR Jirachi\", \"10 ANIV Pikachu\", \"Aura Mew\". The\n"
+              "release in --language is preferred. Without it the card sends a stored WISHMKR Jirachi."
+              % wonder_card_events.GIFT_EVENT_POKEMON))
+    parser.add_argument(
         "--hunt-cap", type=lambda v: int(v, 0), default=None, metavar="N",
         help=("with --gift %s: how many states the stub may try before giving up and leaving the\n"
               "rng alone. The default is the smallest cap that finds one %d times in 100."
@@ -551,6 +557,21 @@ def _hunt_asked(args):
                                                args.hunt_species, args.hunt_level,
                                                args.ram_script_map_group, args.ram_script_map_num,
                                                args.ram_script_object))
+
+
+def _event_definition(parser, args):
+    """-> the event Pokemon card for --event-pokemon NAME, made now so a bad name fails here."""
+    if args.event_pokemon is None:
+        return None
+    if args.gift != wonder_card_events.GIFT_EVENT_POKEMON:
+        parser.error(f"--event-pokemon belongs to --gift {wonder_card_events.GIFT_EVENT_POKEMON}")
+    from pokeldn.pokemon import SERVICE, BuilderError
+    try:
+        pk3, summary = SERVICE.event(args.event_pokemon, configmod.LANGUAGES.get(args.language, 0))
+    except BuilderError as exc:
+        parser.error(str(exc))
+    print(f"event Pokemon: {summary}")
+    return wonder_card_events.build_event_pokemon_gift(pk3, name=args.event_pokemon)
 
 
 def _hunt_definition(parser, args):
@@ -774,7 +795,7 @@ def build_run_config(parser, args):
             payload = configmod.MysteryGiftPayload(
                 gift=args.gift, flag_id=gift_registry.resolve_flag_id(args),
                 questionnaire=phrase, denied_message=args.denied_message,
-                definition=_hunt_definition(parser, args))
+                definition=_event_definition(parser, args) or _hunt_definition(parser, args))
         return configmod.MysteryGiftRunConfig(
             profile=profile, ldn=ldn, role=role,
             payload=payload, expect_console=args.expect_console,

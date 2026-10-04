@@ -124,6 +124,7 @@ slot whose CRC covers only 999 bytes is wiped by `GetRamScript` the first time i
 | `solrock-stamp` / `lunatone-stamp` | the two halves of one Stamp Rally card |
 | `altering-cave` | the official Altering Cave event, ported |
 | `wish-egg`, `pokepark-egg`, `pc-japan-egg` | the official distribution eggs; see Distribution eggs |
+| `event-pokemon` | a Gen 3 distribution Pokemon, straight into the party; see Event Pokemon |
 | `battle-count-card` | the official Battle Count Card |
 | `visiting-trainer` | a Battle Tower trainer as ident 26 (FireRed only) |
 | `mystery-event-probe` | `givenationaldex; setstatus 42; checksum`, the VM's own self-test |
@@ -225,6 +226,21 @@ Psyduck from the PokePark card.
 On a retail French FireRed the PokePark card was received and saved, and the delivery man gave an egg
 whose summary read "Drôle d'ŒUF de POKéMON obtenu dans un bel endroit.", the line the summary screen
 picks for met location 0xFF or the fateful-encounter bit [pokemon_summary_screen.c:2799].
+
+### Event Pokemon
+
+`--gift event-pokemon --event-pokemon NAME` sends a fresh copy of a Gen 3 distribution: PKHeX.Core
+makes it from its own event table (`EncounterGift3`, the non-egg, non-Japanese entries) by that
+event's PID/IV method, with its trainer name, trainer id, level, moves, held item, ribbons and
+fateful-encounter bit, and its legality check must pass. The record goes into the party through the
+Mystery Event `givepokemon` the moment the card is saved, as `mystery-event-celebi` does; a full party
+answers status 3 and gets nothing, and the card can be received again. Without `--event-pokemon`
+the card sends a stored WISHMKR Jirachi.
+
+`NAME` is the trainer name, a space and the species: `WISHMKR Jirachi`, `CHANNEL Jirachi`,
+`Aura Mew`, `MYSTRY Mew`, `DOEL Deoxys`, `SPACE C Deoxys`, `ROCKS Metang`, `10 ANIV Pikachu` and every
+other `10 ANIV` species, the European `10ANNIV`, `10JAHRE`, `10ANNI` and `10ANIV` releases. Where an
+event was released in several languages, the one matching `--language` is sent.
 
 ### The Battle Count Card
 

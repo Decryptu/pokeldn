@@ -348,6 +348,9 @@ def test_the_gift_builder_renders_every_mode_and_kind_and_exports_what_it_shows(
     from pokeldn.app.settings import Settings
 
     monkeypatch.setattr(pokemon.NamePicker, "_load", lambda self: None)
+    # A Sword card draws its gender per build; the export and the compile below must draw alike.
+    from pokeldn.swsh import gift_builder as swsh_builder
+    monkeypatch.setattr(swsh_builder, "card_gender", lambda species, form=0: 0)
     tool = next(tool for game in GAMES for tool in game.tools if tool.key == key)
     field = next(field for field in tool.fields if field.kind == "builder")
     path = tmp_path / "gift.pokegift"

@@ -43,7 +43,7 @@ from pokeldn.frlg.rom import builds, native_script
 from pokeldn.frlg.rom import rng_script
 from pokeldn.frlg.gift import ereader_trainer, stamp_rally, wonder_card
 from pokeldn.frlg.rom import mystery_event
-from pokeldn.frlg.save import mevent_pokemon
+from pokeldn.frlg.save import mevent_pokemon, mon as monmod
 from pokeldn.frlg.text import charmap
 from pokeldn.frlg.rom.scrcmd import VAR_0x8008, VAR_RESULT
 
@@ -1672,6 +1672,51 @@ PC_JAPAN_EGG_GIFT = _egg_gift("pc-japan-egg", "POKéMON EGG Present Card", "POK�
                               PC_JAPAN_EGGS, 1003)
 
 
+GIFT_EVENT_POKEMON = "event-pokemon"
+EVENT_POKEMON_FLAG_ID = 1010
+# A WISHMKR Jirachi PKHeX made by the event's own PID/IV method (EncounterGift3, BACD_R): the card
+# `--gift event-pokemon` sends when no `--event-pokemon NAME` asks PKHeX for a fresh one.
+WISHMKR_JIRACHI_PK3 = bytes.fromhex(
+    "b6d580654b4e0000c4c3ccbbbdc2c3ff00000202d1c3cdc2c7c5cc009f3d00009901aa009c0000000064000011015d00"
+    "9c0000000a190a0000000000000000000000000000ff0521e979b42100000000000000000500190019000f0011000f00"
+    "10000d00")
+
+
+def build_event_pokemon_gift(pk3=WISHMKR_JIRACHI_PK3, *, name="WISHMKR Jirachi"):
+    """A distribution Pokemon as `givepokemon` [decomp:src/mystery_event_script.c:234]: the record
+    goes into the party as it is, PID, IVs, OT and ribbons kept. Relative blob offsets, so one
+    build serves every cartridge."""
+    raw = bytearray(monmod.Mon.from_pk3(pk3).party_bytes())
+    raw[85] = mevent_pokemon.MAIL_NONE
+    script = mystery_event.MysteryEventScript()
+    script.givepokemon(script.blob(mevent_pokemon.build_givepokemon_payload(bytes(raw)))).end()
+    species = monmod.decode_mon(bytes(raw))["species"]
+    return WonderGift(
+        slug=GIFT_EVENT_POKEMON,
+        card=WonderCardSpec(
+            icon_species=species,
+            title="EVENT POKéMON",
+            subtitle=name.upper(),
+            body=("A POKéMON from a past event has",
+                  "been sent straight to your party.",
+                  "With a full party, make room and",
+                  "receive this card again."),
+            footer1="pokeldn",
+            default_flag_id=EVENT_POKEMON_FLAG_ID,
+        ),
+        intro_message=DISTRIBUTION_INTRO,
+        event=GiftSpec(repeatable=True),
+        delivery=DeliveryPlan(delivery=(
+            DeliveryStage(Message("The POKéMON was sent straight to\nyour party, {PLAYER}.")),
+        )),
+        completed_message="The POKéMON was sent straight to\nyour party, {PLAYER}.",
+        mevent=script.assemble(),
+    )
+
+
+EVENT_POKEMON_GIFT = build_event_pokemon_gift()
+
+
 __all__ = [
     "CELEBI_GIFT", "DIR_WEST", "GIFT_MEVENT_PROBE", "GIFT_PORYGON_TMS",
     "GIFT_VISITING_TRAINER",
@@ -1679,7 +1724,8 @@ __all__ = [
     "GIFT_MEVENT_NPC", "MEVENT_NPC_GIFT", "MEVENT_NPC_FLAG_ID",
     "GIFT_MASTER_BALL", "MASTER_BALL_GIFT", "MASTER_BALL_FLAG_ID",
     "GIFT_ALTERING_CAVE", "ALTERING_CAVE_GIFT", "ALTERING_CAVE_FLAG_ID",
-    "WISH_EGG_GIFT", "POKEPARK_EGG_GIFT", "PC_JAPAN_EGG_GIFT", "WISH_EGGS", "POKEPARK_EGGS", "PC_JAPAN_EGGS",
+    "WISH_EGG_GIFT", "POKEPARK_EGG_GIFT", "PC_JAPAN_EGG_GIFT", "GIFT_EVENT_POKEMON",
+    "EVENT_POKEMON_GIFT", "EVENT_POKEMON_FLAG_ID", "build_event_pokemon_gift", "WISH_EGGS", "POKEPARK_EGGS", "PC_JAPAN_EGGS",
     "GIFT_BATTLE_COUNT", "BATTLE_COUNT_GIFT", "BATTLE_COUNT_FLAG_ID",
     "BATTLE_COUNT_PRIZE_WINS", "BATTLE_COUNT_PRIZE_TAKEN", "ITEM_POTION",
     "VAR_ALTERING_CAVE_WILD_SET", "NUM_ALTERING_CAVE_TABLES", "ALTERING_CAVE_WRAP",

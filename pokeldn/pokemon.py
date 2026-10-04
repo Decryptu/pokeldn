@@ -130,6 +130,15 @@ class Service:
             print(f"[pokemon] the offer {reply['note']}", flush=True)
         return base64.b64decode(reply["data"])
 
+    def events(self) -> list[dict]:
+        """PKHeX's Gen 3 event gifts a FireRed/LeafGreen can be sent."""
+        return self._ask({"cmd": "events", "game": "frlg"})["events"]
+
+    def event(self, name: str, language: int = 0) -> tuple[bytes, str]:
+        """-> (decrypted .pk3 party record, summary): a fresh legal copy of the named event."""
+        reply = self._ask({"cmd": "event", "game": "frlg", "name": name, "language": language})
+        return base64.b64decode(reply["data"]), reply["summary"]
+
     def validate_gift(self, data):
         from pokeldn.swsh import wc8
         if not wc8.sealed(data):

@@ -1,3 +1,4 @@
+using System.Reflection;
 using System.Text.Json.Nodes;
 using PKHeX.Core;
 using static PKHeX.Core.GameVersion;
@@ -32,6 +33,8 @@ while (Console.ReadLine() is { } line)
             "paste" => Paste(game, request),
             "check" => Check(game, Convert.FromBase64String((string)request["data"]!), request),
             "gift" => Gift(Convert.FromBase64String((string)request["data"]!)),
+            "events" => Events(),
+            "event" => Event(game, request),
             var other => throw new ArgumentException($"unknown command {other}"),
         };
         reply["ok"] = true;
@@ -586,6 +589,56 @@ JsonObject Paste(Game game, JsonObject request)
     if (sets.Count == 0)
         throw new ArgumentException("The text holds no Pokemon set.");
     return new JsonObject { ["sets"] = sets };
+}
+
+// PKHeX's Gen 3 event table (internal, read by name: pin the package before renaming it). Japanese
+// distributions are left out: their names do not render on a European cartridge.
+IEnumerable<EncounterGift3> Gen3Events() =>
+    ((EncounterGift3[])typeof(PK3).Assembly.GetType("PKHeX.Core.EncountersWC3")!
+        .GetField("Encounter_WC3", BindingFlags.Public | BindingFlags.NonPublic | BindingFlags.Static)!
+        .GetValue(null)!).Where(e => !e.IsEgg && e.Language != (byte)LanguageID.Japanese);
+
+string EventName(EncounterGift3 e) => $"{e.OriginalTrainerName} {strings.specieslist[e.Species]}";
+
+JsonObject Events()
+{
+    var list = new JsonArray();
+    foreach (var e in Gen3Events())
+        list.Add(new JsonObject
+        {
+            ["name"] = EventName(e), ["species"] = e.Species, ["level"] = e.Level,
+            ["language"] = e.Language, ["trainer_id"] = e.TID16,
+        });
+    return new JsonObject { ["events"] = list };
+}
+
+// A fresh copy of one event, made by PKHeX's own PID/IV method for it. `language` picks among the
+// event's language releases (0 takes any); an event released in every language takes it too.
+JsonObject Event(Game game, JsonObject request)
+{
+    var name = (string)request["name"]!;
+    var language = (int?)request["language"] ?? 0;
+    var matches = Gen3Events().Where(e => EventName(e) == name).ToList();
+    if (matches.Count == 0)
+        throw new ArgumentException($"No Gen 3 event is named {name}.");
+    var encounter = matches.FirstOrDefault(e => e.Language == language)
+                    ?? matches.FirstOrDefault(e => e.Language == (byte)LanguageID.English) ?? matches[0];
+    var trainer = new SimpleTrainerInfo(GameVersion.FR)
+    {
+        Language = language is > 0 and <= 7 ? language : (int)LanguageID.English,
+    };
+    var pk = encounter.ConvertToPKM(trainer, EncounterCriteria.Unrestricted);
+    pk.ResetPartyStats();
+    var la = new LegalityAnalysis(pk);
+    if (!la.Valid)
+        throw new InvalidDataException($"PKHeX made an illegal {name}: {la.Report()}");
+    return new JsonObject
+    {
+        ["data"] = Convert.ToBase64String(game.Write(pk)),
+        ["name"] = name, ["language"] = pk.Language,
+        ["summary"] = $"{strings.specieslist[pk.Species]} Lv{pk.CurrentLevel} {strings.natures[(int)pk.Nature]}, "
+                      + $"OT {pk.OriginalTrainerName} {pk.TID16:00000}, PID {pk.PID:X8}",
+    };
 }
 
 JsonObject Gift(byte[] data)
