@@ -1515,7 +1515,7 @@ reset removes the hook until MOM is talked to again.
 
 `tests/test_resident_save.py` runs the whole session between the host and the emulated client, and
 MOM's body script on a booted console: a flipped byte, a missing second write, a length past
-`filler_B20` install nothing. The `PKR2` form is verified offline only.
+`filler_B20` install nothing. A retail FireRed installs the follower from its `PKR2` blob.
 
 A new Wonder Card undoes the binding: `SaveWonderCard` calls `ClearSavedWonderCardAndRelated`, which
 calls `ClearRamScript` [mystery_gift.c:172, 160]. `filler_B20` stays as written.
