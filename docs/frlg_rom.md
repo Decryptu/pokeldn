@@ -688,17 +688,16 @@ a soft reset, so the next wireless menu reports "L'adaptateur sans fil GBA n'est
 byte survives a soft reset; relaunching, or
 `swi 0x40`, restores it. It is read per frame: `swi 0x41` then `swi 0x40` in one payload is harmless.
 
-#### The dispatch chain and the plant's consumers
+#### The chain from a bkpt to the resolver
 
-The image's relocations matter for reading the vtables: an NSO's vtable slots are unrelocated
-addends in the file, the loader adds the image base. With the base applied (`main` at
-`0x8506000`), the chain from a guest `bkpt #0x52` is:
+An NSO's vtable slots hold unrelocated addends in the file; the loader adds the image base
+(`main` at `0x8506000`). With that base applied, a guest `bkpt #0x52` runs this chain:
 
 - both decode paths (THUMB `main + 0x1EFE0`, ARM `main + 0x1B7B8`) call the dispatcher
   `main + 0x1F820` as `(CPU, bkpt address, immediate, &insn)`;
-- the dispatcher takes hook = `[CPU + (imm & 0xff) * 8 + 0x170]` — for `bkpt #0x52` that is
+- the dispatcher takes hook = `[CPU + (imm & 0xff) * 8 + 0x170]`; for `bkpt #0x52` that is
   `component + 0x60`, a sub-object of the component (the component is the GBA CPU object: `+0x84`
-  current pc, `+0x170` hook table, `+0x960` a second bus table, `+0xE0` the bus object) — reads
+  current pc, `+0x170` hook table, `+0x960` a second bus table, `+0xE0` the bus object). It reads
   the hook's own vtable (`main + 0x1C3948`) slot `+0x10`, and calls it as
   `f(hook, &insn, bkpt address, CPU)`. Slot `+0x10` is `main + 0x5499C` directly;
 - `main + 0x5499C` writes `0xE1200572` into `insn`, then loads `[component]` and tail-calls the
@@ -706,24 +705,12 @@ addends in the file, the loader adds the image base. With the base applied (`mai
   of `main + 0x1C3878` is `main + 0x56368`, which derives the record holder and reaches the
   resolver `main + 0x03E850`.
 
-So a plant over the component's first ten bytes is consumed at slot `+0x98`, not `+0x10`; the
-`+0x10` read happens on the hook sub-object, which the seam write cannot reach. The resolver's
-write target itself is `buffer_data + fold + 0xA`, where the fold comes from the selected
-region object's vtable slot `+0x48`: the ROM class's fold is `and w0, w1, [this + 0x34]`
-(`main + 0x33B00`, the mask fold), the EWRAM class folds `r0 & 0x3ffff` (`main + 0x34B7C`) and
-the IO class folds `r0 & 0xffffff` (`main + 0x1F7D8`), all bounds-checked afterwards against the
-object's size at `+0x20`.
+A store over the component's first ten bytes is therefore consumed at slot `+0x98`; the
+`+0x10` read happens on the hook sub-object, outside those ten bytes. The resolver's write
+target is `buffer_data + fold + 0xA`, the fold being the selected region's slot 9
+([`swi 0x52` and `swi 0x55`: the memory bus](#swi-0x52-and-swi-0x55-the-memory-bus)).
 
-The bus dispatch for a guest memory access computes
-`region = [bus + ((addr >> 21) & 0x7F8) + 0x50]` with `bus = [component + 0xE0]`, then calls the
-region's vtable at slot `+0x18` (read 16), `+0x20` (read 32), `+0x28` (read 8), `+0x30`, `+0x38`
-and `+0x40` (the three stores), `+0x48` and `+0x68` (special paths), the region object in `x0`.
-210 call sites. The bus table is indexed by the address's top byte (16 entries), and window 4,
-the GBA IO registers, maps to a 0x400-byte region object that sits immediately behind its own
-backing allocation (bus `+0x14C0` is the backing, bus `+0x18C0` the object, the key-interrupt
-sub-object embedded at object `+0x88`).
-
-#### What a seam plant does: the measured hijacks
+#### What a plant over a seam does
 
 With `fold = size - 0xB` (in range) the write pair is `(size-1, size)`: the region's last byte
 gets `0x01` and the first byte of the neighbouring allocation gets `0x80`. With
@@ -732,21 +719,27 @@ bytes. One Mystery Gift session buys one chosen fold; the payload's branch into 
 does not return, and the body loops afterwards with the same parked `r0`, re-writing the same
 pair.
 
-Measured live on the emulated console:
+Window 4, the GBA IO registers, maps to a 0x400-byte region object that sits immediately behind
+its own backing allocation: the backing is at bus `+0x14C0`, the object at bus `+0x18C0`, and
+the key-interrupt sub-object is embedded at object `+0x88`. The plant therefore lands on the
+object the bus dispatches every IO access through. The image's CPU core has 210 call sites in
+the accessor shape ([`swi 0x52` and `swi 0x55`: the memory bus](#swi-0x52-and-swi-0x55-the-memory-bus)).
+
+On the emulated console:
 
 | plant | consumed at | outcome |
 | --- | --- | --- |
-| component byte pair `01 80` (`0x086C8001`) | slot `+0x98` read at `main + 0x1C2099`, unaligned, unrelocated: `0x1f7` | the wrapper branches to an unmapped PC; the whole process dies (`InstructionAbortLowerEl`) |
+| component byte pair `01 80` (`0x086C8001`) | the slot `+0x98` read at `main + 0x1C2099`, unrelocated, `0x1f7` ([above](#what-follows-the-rom-buffer-the-sloop-component)) | |
 | component byte 0 `0x80` (`0x086C9880`) | `main + 0x5492C`, the same method without the `-0x60` | it re-reads `[x0] + 0x98` on the still-planted component and recurses into itself; the thread stack exhausts and the process dies with a data abort (`InvalidMemoryRegionException`) |
 | IO object byte 0 `0x80` (`0x086C8480`) | the bus's store slots `+0x38`/`+0x40`, whose planted targets are raw `0xffffffffffffe5e0` and `0` | the first IO store after the plant aborts the process within ~30 ms; the load targets (`main + 0x30EAC`, `main + 0x31114`, `main + 0x36D54`) never run |
-| name-hash block byte 0 (`0x80`) | the block is an SDK binder/surface descriptor object (`android.gui.IGraphicBufferProducer` and friends are static strings in the SDK image), not a dispatched object | no guest-visible or emulator-visible reaction; the game runs to its own clean exit |
+| name-hash block byte 0 (`0x80`) | the block is an SDK binder/surface descriptor object (`android.gui.IGraphicBufferProducer` and friends are static strings in the SDK image), not a dispatched object | no reaction; the game runs to its own clean exit |
 
-The plant that would survive and keep dispatching (`0x086C8080`, bytes `80 80`: every
-`bkpt #0x52` then runs a pure counter getter, `main + 0x1F7F0`, and becomes a no-op) needs two
-writes with no dispatch in between, and one session buys one write; both single-write states on
-the way kill the process. Held via the debugger instead, the planted pointer stayed in place for
-five minutes with the game running and the process alive: no restore mechanism rewrites a
-wrapper object's header, so guest-reachable corruption of the wrapper's objects is durable.
+The plant `0x086C8080` (bytes `80 80`: every `bkpt #0x52` then runs the pure counter getter
+`main + 0x1F7F0`, so each bkpt becomes a no-op) needs two writes with no dispatch in between;
+one session buys one write, and both single-write states on the way kill the process. Planted
+through the debugger instead, that pointer stayed in place for five minutes with the game
+running and the process alive. No code site in the image writes a wrapper object's header after
+init.
 
 #### The remaining syscalls
 
@@ -755,35 +748,50 @@ column is what one issue from the Mystery Gift client with `sloop-svc` showed.
 
 | swi | handler, callee | what it does | observed when issued once |
 | --- | --- | --- | --- |
+| 0x40, 0x41 | `main + 0x05706C` | the adapter power switch: stores `r0 == 0x40` at `[component + 0x40] -> [+0xA8] + 0x170` | swi 0x41 from the Mystery Gift menu raises the link error and leaves LDN ([above](#what-follows-the-rom-buffer-the-sloop-component)) |
 | 0x42 | mode switch `main + 0x0588A0` | `rfu_REQ_startSearchChild` [sloopsvc.c:49]; sets the network manager to mode 2 | ends the session with the link error; no access point opens |
 | 0x43 | `main + 0x0570EC` -> `main + 0x058AD0` | `rfu_REQ_startConnectParent`, 16-bit PID in `r0` [sloopsvc.c:91]; the same mode switch | the buffer script answered, then "Erreur de connexion" at close |
 | 0x44 | `main + 0x057100` -> `main + 0x058B0C` | `rfu_REQ_stopMode`, no arguments [sloopsvc.c:102] | after 0x43, no visible change |
 | 0x45 | `main + 0x057110` -> `main + 0x058900` | `rfu_REQ_startSearchParent`, `rfu_STC_readParentCandidateList` with `&gRfuLinkStatus` [sloopsvc.c:67-75]; copies the wrapper's scan result through the region table into `struct RfuLinkStatus`, `findParentCount` [include/librfu.h] at offset 8 first | 220 zeroed bytes stayed zero (no parent search in a gift session) |
+| 0x46 | jump-table entry `0x147` | falls through to the dispatcher's exit: the syscall does nothing | |
 | 0x47 | `main + 0x05715C` -> `main + 0x058680` | `rfu_REQ_configGameData`, `r0` points to `struct RfuGameData` (16 bytes) and the username (8, `RFU_USER_NAME_LENGTH`) [sloopsvc.c:34-46; include/link_rfu.h:103-115,232]; copies all 24 to `component + 0x6050D8` and `activity` (bits 16-22 of the second 64-bit word) to `component + 0x605360` if changed | `activity` 0x30 landed byte for byte at both |
+| 0x48, 0x56 | `main + 0x057084` | the flash-sector copy: the destination sector is guest `r0`, the source is `fold(guest r1)` through the same region table and bounds-checked against the region's size, up to 4 KB | [The flash sector path](#the-flash-sector-path) |
+| 0x49 | `main + 0x0571A8` -> `main + 0x0588D0` | calls `main + 0x0588D0` on the `component + 0xD0` object; takes no guest argument | returns 0 |
+| 0x4A | `main + 0x0571B8` -> `main + 0x058AB8` | the same shape on `component + 0xD0` | returns 0 |
 | 0x4B | `main + 0x0572C4` | no argument; bit 1 makes `RfuMain1` reseed the RNG from `gHostRfuGameData->compatibility.playerTrainerId`, bit 0 clear makes `SpawnGroupLeaderAndMembers` exit early for a leader [sloopsvc.c:132-145] | 0 |
-| 0x4D | `main + 0x0571FC` | the bad-word filter, below | |
+| 0x4C | `main + 0x0571CC` | calls `main + 0x05D930` on `[component + 0xE8] + 0xA0`, and when it answers 0 calls `main + 0x049D28` on a global pointer; no guest data reaches either | returns 0 |
+| 0x4D | `main + 0x0571FC` | the bad-word filter: resolves `r0` and reads up to 256 bytes at `fold(r0)`, [below](#the-bad-word-filter) | |
+| 0x4E | jump-table entry `0x147` | falls through to the dispatcher's exit: the syscall does nothing | |
 | 0x4F | `main + 0x057248` -> `main + 0x058B54` | builds `{u16 tag 0x4757; u32 value = r0}` on its stack; the tagged-property dispatcher `main + 0x4EBD0` and setter `main + 0x058BB4` store the value unvalidated at `component + 0x6052A0` | writing 3 and `0x7FFFFFFF`, each followed by 0x49 and 0x4A, changed nothing observable |
 | 0x50 | getter `main + 0x058BA4` | reads the same 4-byte count back | |
 | 0x51 | `main + 0x057270` -> `main + 0x0511BC` | reads `component + 0x3404` into an out-parameter and clears it; the out-parameter is always the dispatcher's own stack slot | |
+| 0x52 | `main + 0x05728C` | loads `[bus vtable + (r1 >> 24) * 8 + 0x50]` with the index unbounded 0..255, calls the load's `+0x48` virtual, and discards the result: guest `r1` reads back 0. On a fresh boot no index loads an object pointer with a real `+0x48` method | |
+| 0x53 | `main + 0x0572D4` | answers `component + 0x2770 == 0` (through `[component + 0xD0]`) | |
+| 0x54 | `main + 0x0572EC` | `svc_CommsAllowedByParentalControls` [sloopsvc.c:182] | returns 1 |
+| 0x55 | `main + 0x057304` | stores `r0` at `component + 0xE1BC`, folds the stored word through the region table and reads one byte back ([What the play reports are built from](#what-the-play-reports-are-built-from)) | |
+| 0x57 | `main + 0x057330` | `MonsSelect` into the report copy at `component + 0x140` | |
+| 0x58 to 0x60 | jump-table entry `0x147` | falls through to the dispatcher's exit: the syscall does nothing | |
 | 0x61 | `main + 0x057340` -> `main + 0x058B2C` | `svc_SetActivity`; writes `r0` to `component + 0x605360` only for 0x41 to 0x48, the Union Room activity codes | 0x45: a breakpoint on the callee's `ret` (`main + 0x058B50`) read `w1` and the field as 0x45; normal close |
+| 0x62 | `main + 0x057354` | adds 1 to `component + 0xE1B0`, the next report's `CommsError` | |
 
-Answer-only syscalls issued with a pointer in `r0` return 0 (0x49, 0x4A, 0x4B, 0x51, 0x53) or 1
-(0x50, 0x54), with `r1` to `r3` as passed.
+Answers come back through `main + 0x2209C`: guest `r0` = 1 when the number is above 0x2A, guest
+`r1` = the handler's answer word. No handler's answer carries a wrapper address.
 
 `component + 0x6052A0` is 16 bytes: a 4-byte count, 4 unused, an 8-byte pointer into `main`. Freshly
 launched: count 1, pointer `main + 0x1E8D20`, an array of pointers with two nulls after the one
-populated slot. The dispatcher's mismatch path (`main + 0x50618`) checks a second tag, `0x59`, with a
-third argument (`x2`) no known syscall supplies; what it reaches is unknown.
+populated slot.
 
 The tagged-property dispatcher `main + 0x4EBD0` walks a listener list on the component: entries of
 `0xd0` at `component + 0x10`, the count at `+0x688`, the enabled byte at `+0x690`; for each entry
 whose first word is 2 it calls the component vtable slot `+0x50` with the 8 bytes at `entry - 8`
-and the tagged entry. The setter `main + 0x058BB4` is the `0x4757` listener; the `0x59` listener at
-`main + 0x50618` writes its value at `component + 0x3324 + index * 4` with the index bounded 0..7 by
-`main + 0x4DB0C`. The count the `0x4757` listener stores at `component + 0x6052A0` has no reader
-but the getter `main + 0x058BA4` (`swi 0x50`): every other code site that forms the offset
-`0x6052A0` or `0x6052A8` in the image writes it or the pointer beside it at init. The value the
-`0x4F` caller supplies is inert.
+and the tagged entry. The setter `main + 0x058BB4` is the `0x4757` listener. The `0x59` listener
+at `main + 0x50618` writes the value at `[tagged entry + 4]` to `component + 0x3324 + index * 4`,
+the index read from `[x2]` and bounded 0..7 by `main + 0x4DB0C`. No syscall builds a `0x59`
+entry or supplies that third argument, and the twelve calls of the dispatcher build their
+entries from wrapper-internal fields. The count the `0x4757` listener stores at
+`component + 0x6052A0` has no reader but the getter `main + 0x058BA4` (`swi 0x50`): every other
+code site that forms the offset `0x6052A0` or `0x6052A8` in the image writes it or the pointer
+beside it at init. The value the `0x4F` caller supplies is inert.
 
 The console's own Mystery Gift search issues `swi 0x47` before any buffer script, advertising
 `activity` 0x15 (`ACTIVITY_WONDER_CARD` [include/constants/union_room.h:46]); a payload's call
@@ -799,43 +807,6 @@ The per-candidate layout 0x45 writes is unsettled: the copy loop's byte count do
 `main + 0x0511CC` and `main + 0x0511F4`, which no syscall reaches. `main + 0x0511F4` compares it with
 10 and, at or past it, atomically loads a flag at `component + 0x2790`; a set flag enters
 `main + 0x057250`'s continuation, which tests a third argument for null. Its caller is unidentified.
-
-The full audit, done statically and closed:
-
-| swi | handler | what it does |
-| --- | --- | --- |
-| 0x40, 0x41 | `main + 0x05706C` | the adapter switch |
-| 0x42 | `main + 0x0570DC` -> `main + 0x0588A0` | `rfu_REQ_startSearchChild` |
-| 0x43 | `main + 0x0570EC` -> `main + 0x058AD0` | `rfu_REQ_startConnectParent`, `r0` = the PID |
-| 0x44 | `main + 0x057100` -> `main + 0x058B0C` | `rfu_REQ_stopMode` |
-| 0x45 | `main + 0x057110` | folds `r0` through the region table, copies up to 0x1000 bytes into the guest |
-| 0x46 | jump-table entry `0x147` | the dispatcher's exit: a no-op |
-| 0x47 | `main + 0x05715C` | `rfu_REQ_configGameData`, 24 bytes |
-| 0x48, 0x56 | `main + 0x057084` | the flash-sector copy: sector = guest `r0`, source = `fold(guest r1)` through the same region table, bounds-checked, up to 4 KB |
-| 0x49 | `main + 0x0571A8` -> `main + 0x0588D0` | a call on the `component + 0xD0` object, no guest argument |
-| 0x4A | `main + 0x0571B8` -> `main + 0x058AB8` | the same shape, no guest argument |
-| 0x4B | `main + 0x0572C4` | the RNG/leader flag |
-| 0x4C | `main + 0x0571CC` | two internal calls (`main + 0x05D930` on `[component + 0xE8] + 0xA0`, then `main + 0x049D28` on a global), no guest data |
-| 0x4D | `main + 0x0571FC` | the bad-word filter: reads up to 256 bytes at `fold(r0)` |
-| 0x4E | jump-table entry `0x147` | a no-op |
-| 0x4F, 0x50 | `main + 0x057248` | the `0x4757` tagged-property set/get |
-| 0x51 | `main + 0x057270` | reads `component + 0x3404` |
-| 0x52 | `main + 0x05728C` | loads `[bus vtable + (r1 >> 24) * 8 + 0x50]` (the index unbounded 0..255), folds, and discards the result: guest `r1` reads back 0. A live scan of all 256 indices on a fresh boot found none whose load is an object pointer with a real `+0x48` method, so no index turns this into a real call |
-| 0x53 | `main + 0x0572D4` | `component + 0x2770` == 0 |
-| 0x54 | `main + 0x0572EC` | `svc_CommsAllowedByParentalControls` |
-| 0x55 | `main + 0x057304` | stores `r0` at `component + 0xE1BC`, reads one folded byte back |
-| 0x57 | `main + 0x057330` | `MonsSelect` into the report at `component + 0x140` |
-| 0x58 to 0x60 | jump-table entry `0x147` | no-ops |
-| 0x61 | `main + 0x057340` | `svc_SetActivity` |
-| 0x62 | `main + 0x057354` | the `CommsError` counter |
-
-The answers come back through `main + 0x2209C`: guest `r0` = 1 when the number is above 0x2A,
-guest `r1` = the handler's answer word. No handler returns a wrapper pointer to the guest (0x52's
-is discarded), so the guest never learns a wrapper address through a syscall. The `0x59`
-tagged-property listener (`main + 0x050618`), which would write a guest-chosen 32-bit value at
-`component + 0x3324 + index * 4`, has no supplier: no syscall builds a `0x59` entry or the third
-argument its index reads from `[x2]`, and the twelve calls of the tagged-property dispatcher all
-build their entries from wrapper-internal fields. It is unreachable from the guest.
 
 The `bkpt #0x52` component also owns the dispatcher (slot 21 of its vtable) and 2324 species names,
 six languages each, hashed with djb2 (`main + 0x056540`, strings at `main + 0x1C4470`). The
@@ -907,20 +878,6 @@ Game stats are XORed with the money key where the game has one.
 In FireRed and LeafGreen both flags are set by the tickets' Mystery Event scripts
 [mystery_event_msg.s:222,281] and by the Switch release's Hall of Fame grant
 [post_battle_event_funcs.c:58]; a save carried over with its Hall of Fame already entered reports 0.
-
-### Where the boundary stands
-
-Every guest-reachable path into the wrapper is now audited. The guest can: run ARM code, call all
-23 Sloop syscalls with chosen operands, write the adapter switch and the activity, compose flash
-sectors from `fold(guest r1)`, store guest-chosen words at `component + 0xE1BC` and
-`component + 0x6052A0` (both with guest-relative readers or none), and fire the resolver's
-`0x8001` seam writes up to 11 bytes past any region's backing. What the guest cannot do: learn a
-wrapper address (no handler returns one), call a wrapper function with a guest-chosen target
-(the only plantable vtable pointers resolve to an abort, a self-recursion, or an inert counter
-getter), or reach any wrapper state the region folds do not cover. The wrapper's own objects
-accept durable corruption from guest code and nothing in the image restores them, so the
-corruption is lasting, but every dispatched consumer of a corrupted object kills the process.
-Escalation past the wrapper, from the guest, through this surface, is closed.
 
 ### The bad-word filter
 
