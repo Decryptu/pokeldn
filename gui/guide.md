@@ -78,6 +78,19 @@ Points. Open a file sends a `.pokegift` someone shared, a `.wc3` card on FireRed
 Customize turns a preset into a form you can change. Before you send shows what the console gets,
 when it happens and which cartridges it works on; a problem shows there in red and Start stays off.
 
+On FireRed/LeafGreen, Game boosts lets you change how the game plays, such as speeding it up or adding a
+Pokemon follower. Select the boosts and send them; they start immediately and stop when the game
+restarts. To use them again after a restart, enable Save boosts for later, send the boosts, then send
+Mom restores your boosts. Talk to Mom at home in Pallet Town after each restart to turn them back
+on. The follower is always saved. Receiving another Wonder Card replaces Mom's gift; send it again
+to restore her ability to turn the saved boosts on.
+
+Read the save shows results in the Session log. Trainer ID (TID) is the number on your Trainer Card;
+Secret ID (SID) is normally hidden. The party readout shows each Pokemon in your last saved party,
+with its nature, six IVs (individual stat values from 0 to 31) and EVs (training points). These tools
+keep your save and Wonder Card unchanged. The trainer-details and party tools also save a copy of
+the read data in Received.
+
 Console code runs inside the game while it receives the gift. Check offline runs it on a simulated
 console first; code that would hang the menu is refused. Native code can change the running game or
 its save. Send only code whose source and behavior you have checked.

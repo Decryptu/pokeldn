@@ -123,23 +123,22 @@ class GiftBuilder:
                 if on:
                     body.append(self.boost_settings(preset))
             body.insert(0, ft.ResponsiveRow(tiles, spacing=6, run_spacing=6))
-            intro = getattr(self.module, "BOOSTS_INTRO", "") if group == getattr(self.module, "BOOSTS", None) else ""
+            intro = getattr(self.module, "GROUP_INTROS", {}).get(group, "")
             if intro:
                 body.insert(0, t.text(intro, 12, t.MUTED))
             sections.append(t.section(group, ft.Column(body, spacing=10)))
         return ft.Column(sections, spacing=14)
 
     def _tile(self, label, summary, active, on_click, settings=False) -> ft.Control:
-        """One line of title and one of summary, so every tile in a row has the same height."""
-        head = [t.text(label, 13, weight=ft.FontWeight.W_600, max_lines=1, overflow=ft.TextOverflow.ELLIPSIS,
-                       expand=True)]
+        """The preset's name and full description, including any steps needed to use it."""
+        head = [t.text(label, 13, weight=ft.FontWeight.W_600, expand=True)]
         if settings:
             head.append(t.pixel_icon("sliders-horizontal", color=t.BLUE if active else t.FAINT,
                                      tooltip="Has settings"))
         return ft.Container(ft.Row([
             t.pixel_icon("checkbox-on" if active else "checkbox", color=t.BLUE if active else t.FAINT),
             ft.Column([ft.Row(head, spacing=6),
-                       t.text(summary, 12, t.MUTED, max_lines=1, overflow=ft.TextOverflow.ELLIPSIS)],
+                       t.text(summary, 12, t.MUTED)],
                       spacing=1, expand=True),
         ], spacing=10), padding=ft.Padding(10, 8, 10, 8), border_radius=10, col={"xs": 12, "md": 6},
             tooltip=summary, border=ft.Border.all(1, t.BLUE if active else t.BORDER),
@@ -185,7 +184,7 @@ class GiftBuilder:
             too_large = preset.built(chosen)[2]
         except ValueError:
             too_large = False
-        keep = (t.text("Saved in your game: together they are too large to send any other way.", 12, t.MUTED)
+        keep = (t.text("These boosts are always saved in your game. " + frlg.MOM_STEPS, 12, t.MUTED)
                 if too_large or "hook-follower" in chosen["on"]
                 else self.switch_row(frlg.KEEP.label, "keep", frlg.KEEP.help, chosen))
         meter = ft.Column([
@@ -194,8 +193,8 @@ class GiftBuilder:
             ft.ProgressBar(value=min(used / room, 1), color=t.RED if used > room else t.BLUE,
                            bgcolor=t.BORDER, bar_height=4, border_radius=2)], spacing=4)
         common = ft.Container(ft.Column([keep, meter, t.text(
-            "Every ticked boost runs at the same time. Sending boosts again stops the ones already running "
-            "and starts the ticked ones.", 12, t.MUTED)],
+            "The selected boosts run together. Sending a new selection replaces the boosts already running.",
+            12, t.MUTED)],
             spacing=12), padding=14, border_radius=10, border=ft.Border.all(1, t.BORDER))
         return ft.Column([*panels, common], spacing=10)
 

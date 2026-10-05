@@ -266,6 +266,13 @@ RTT samples enable retransmission; the announcement job has no RTT gate. A loss-
 Scarlet 4.0.0 host announces and completes a trade with no RTT requests or answers. A missing identity record holds the BoxTrade job in state 1 (`+0xb8`); the finished-slot
 count at `0x1e51ae8` remains 1 against a required 2 until retransmission completes the set.
 
+Both launchers retry pending identity records. Dropped initializer and middle-record cases complete
+through the launchers in `tests/test_sv_identity_loss.py`. The patched emulator completed trades
+with those losses; a retail console completed two trades per role with pending identity records
+retried and acknowledged, followed by clean departure.
+The earlier unannounced seat whose acknowledgement reached 47 has no independent air capture
+establishing which outgoing chunk, if any, was lost.
+
 ### A-MSDU frames in a capture
 
 Both consoles pack several MSDUs into one A-MSDU frame. A passive capture must unpack the subframes
@@ -978,10 +985,6 @@ lets `bin/sv_join.py` resume scanning ([Ending a run](architecture.md#ending-a-r
 
 ## Unresolved
 
-- Whether an unannounced seat whose identity set reached acknowledgement 47 lost an outgoing chunk
-  on the air. A sender that advanced its own `lowest_pending` to 47 before the acknowledgement hides
-  it: a bulk ack does not show StreamData completion. Dropping one outgoing chunk reproduces the
-  symptom in the emulator.
 - Why a console joined to `bin/sv_host.py` can acknowledge the host's announcement and never send its
   port-2 join.
 - Whether a master-only leave event, without the client's own leave event, can hold a type-2

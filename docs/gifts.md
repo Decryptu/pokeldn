@@ -31,13 +31,21 @@ bytes the ticked set takes of the 1024 the console has.
 | Shiny countdown | the slow-down button; x2, x4 or x8 slower | `slow`, `slow_frames` 1, 3 or 7 |
 | No wild encounters, Lead's IVs on screen, Pokemon follower | none | |
 
-L is not offered: only R's Help System toggle has a flag the hooks hold off. Save them in the game
+L is not offered: only R's Help System toggle has a flag the hooks hold off. Save boosts for later
 sends `save-write --resident` in place of `install-resident`: the set goes into `filler_B20` and is
 installed in the same session. A set past one `install-resident` session (876 bytes), and the
 follower, always go through the save. Mom restores your boosts binds Mom's loader, and talking to Mom
 after any boot installs whatever set the save holds. Sending boosts again replaces the set running.
+The app shows the restore steps beside the save option and in Before you send, including for sets
+that must be saved. Preset names and descriptions wrap so their instructions remain visible.
 `tests/test_gift_builder.py` sends every combination of boosts, and every setting of each, through the
 launcher for all four cartridges.
+
+Read the save offers Trainer ID (TID) and Secret ID (SID), trainer details and play time, and the
+last saved party's natures, IVs and EVs. Results appear in the Session log; the two dump presets
+also write the read data into Received. The group explains the normally hidden SID, IVs as six
+individual values from 0 to 31, and EVs as training points. These reads preserve the save and
+Wonder Card ([Reading the save](frlg_rom.md#reading-the-save)).
 
 Customize copies a preset into the form. A FRLG card preset offers it only when the form expresses
 every step: unconditional stages of Pokemon, item, egg, wild battle and message steps, no event

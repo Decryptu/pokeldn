@@ -86,7 +86,9 @@ def _team(slug, label, group, summary):
 
 
 def _code(key, label, summary, *args):
-    return Preset(key, label, "Read the save", summary, args)
+    return Preset(key, label, "Read the save", summary, args,
+                  when="Receive it through Mystery Gift, then read the results in the Session log. "
+                       "Your save and Wonder Card are kept.")
 
 
 @dataclass(frozen=True)
@@ -124,16 +126,25 @@ class Boost:
 # Several hooks run at once as a chain [buffer_script.CHAIN]; the save keeps one set.
 BOOSTS = "Game boosts"
 BOOSTS_INTRO = ("A game boost is a change to how your game plays, such as walking through walls or a faster "
-                "game. Tick the ones you want and send: they start at once and stop when the game is reset "
-                "or the console is turned off.")
+                "game. Select the boosts and send them through Mystery Gift. They start immediately and "
+                "stop when you restart the game or turn off the console. To restore them later, save them "
+                "in the game and send Mom's gift below.")
+GROUP_INTROS = {
+    BOOSTS: BOOSTS_INTRO,
+    "Read the save": "Read your Trainer ID (TID), Secret ID (SID), or your party's stats in the Session log. "
+                     "The TID appears on your Trainer Card; the SID is normally hidden. IVs are a Pokemon's "
+                     "six individual stat values, from 0 to 31. EVs are stat points gained through training. "
+                     "These tools keep your save and Wonder Card unchanged.",
+}
 MOM = "Mom restores your boosts"
 R, B, SELECT = "0x100", "0x2", "0x4"
 # L opens the Help System; only R's toggle has a flag the hooks hold off [docs/frlg_rom.md, turbo].
 BUTTONS = ((R, "Hold R"), (B, "Hold B (also runs)"), (SELECT, "Hold Select (also uses the registered item)"))
 BUTTON_NAME = {R: "R", B: "B", SELECT: "Select"}
-KEEP = Option("keep", "Save them in the game", False, help="The boosts also go into your save. After a reset "
-              "or power-off they are off until you talk to Mom at home in Pallet Town. She can turn them back "
-              f"on once she has the gift \"{MOM}\": send it once, after this.")
+MOM_STEPS = (f'After sending the saved boosts, send "{MOM}" once. After each restart, talk to Mom at home '
+             "in Pallet Town to turn them back on. Send Mom's gift again if you receive another Wonder Card.")
+KEEP = Option("keep", "Save boosts for later", False,
+              help="Keep a copy of these boosts in your save. " + MOM_STEPS)
 SPEEDS = (("1", "x1"), ("2", "x2"), ("3", "x3"), ("4", "x4"))
 WHERE = (("both", "Overworld and battles"), ("field", "Overworld only"), ("battle", "Battles only"))
 SLOWER = (("1", "x2 slower"), ("3", "x4 slower"), ("7", "x8 slower"))
@@ -214,7 +225,7 @@ class Boosts:
     key: str = "boosts"
     label: str = "Game boosts"
     group: str = BOOSTS
-    summary: str = "Tick one or several: they run at the same time until a reset, or stay in your save."
+    summary: str = "Select boosts to run together. Save them for Mom to restore after a restart."
     members: tuple = BOOST_LIST
     state = None
 
@@ -266,10 +277,8 @@ class Boosts:
                 raise ValueError(str(exc)) from None
             too_large = True
         keep = s["keep"] or too_large
-        lines.append(("Saved in your game: too large to send any other way. " if too_large else
-                      "Saved in your game. " if keep else "Stops when the game is reset or the console is off")
-                     + (f"After a reset, talk to Mom at home to turn them back on (send \"{MOM}\" once)"
-                        if keep else ""))
+        lines.append(("These boosts are saved in your game. " + MOM_STEPS) if keep else
+                     "These boosts stop when you restart the game or turn off the console.")
         return _hook_args(name, params, keep), lines, too_large
 
     def arguments(self, chosen=None) -> tuple:
@@ -382,16 +391,20 @@ PRESETS = (
     Preset("news-berry", "Ten-line news", "Wonder News", "A long news that scrolls, with a berry.",
            ("--news", "berry")),
     Boosts(),
-    Preset("mom-resident", MOM, BOOSTS, "After boosts saved in the game: send once, then talking to Mom at home "
-           "turns them back on after a reset. Send it again after any other Wonder Card.",
-           ("--gift", "resident-save")),
-    _code("trainer-id", "Trainer ID and Secret ID", "Reads only, changes nothing. The log shows your Trainer ID "
-          "and your Secret ID.", "--buffer-script", "trainer-id-probe"),
-    _code("dump-sav2", "Trainer name, IDs and play time", "Reads only. The log shows your name, Trainer ID, "
-          "Secret ID and play time; the raw bytes go to Received.",
+    Preset("mom-resident", MOM, BOOSTS, "Send after saving your boosts. Talk to Mom in Pallet Town to restore "
+           "them after each restart. Another Wonder Card replaces this gift.",
+           ("--gift", "resident-save"),
+           when="First send boosts saved in your game, using Save boosts for later when available. "
+                "Then send this gift. After each restart, talk to Mom at home in Pallet Town to turn the "
+                "boosts back on. Send this gift again if you receive another Wonder Card."),
+    _code("trainer-id", "Trainer ID (TID) and Secret ID (SID)",
+          "Shows both IDs in the Session log: your Trainer Card's ID and the normally hidden Secret ID.",
+          "--buffer-script", "trainer-id-probe"),
+    _code("dump-sav2", "Trainer name, IDs and play time", "Shows your name, Trainer ID (TID), Secret ID (SID) "
+          "and play time in the Session log. Saves a copy of the read data in Received.",
           "--buffer-script", "save-dump", "--dump-block", "sav2"),
-    _code("dump-sav1", "Your party's IVs and natures", "Reads only. The log shows each party Pokemon's nature, "
-          "IVs and EVs; the raw bytes go to Received.",
+    _code("dump-sav1", "Your party's IVs and natures", "Shows each Pokemon in your last saved party: nature, "
+          "six IVs (0-31) and EVs in the Session log. Saves a copy of the read data in Received.",
           "--buffer-script", "save-dump", "--dump-block", "sav1", "--dump-offset", "0x34", "--dump-size", "608"),
 )
 PRESET = {p.key: p for p in PRESETS}
