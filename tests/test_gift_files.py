@@ -146,6 +146,19 @@ def test_a_native_file_refuses_another_game_and_extras_it_cannot_hold(tmp_path):
         gifts.save(tmp_path / "stamp.wc3", frlg_file.from_payload(config.MysteryGiftPayload(gift=stamp)))
 
 
+@pytest.mark.parametrize("suffix", [".wc8", ".WC8"])
+@pytest.mark.parametrize("game", [None, "swsh"])
+def test_native_wc8_with_a_json_like_seal_imports_unchanged(tmp_path, suffix, game):
+    raw = bytes.fromhex((Path(__file__).parent / "data/wc8_json_prefix.hex").read_text())
+    assert raw.startswith(b"{") and wc8.sealed(raw)
+    path = tmp_path / f"gift{suffix}"
+    path.write_bytes(raw)
+    loaded = gifts.load(path, game=game)
+    assert loaded.variants["swsh"].data["wc8"] == raw
+    with pytest.raises(ValueError, match="for swsh, not frlg"):
+        gifts.load(path, game="frlg")
+
+
 def test_wc8_round_trip_reassembles_the_original_record(tmp_path, monkeypatch):
     from pokeldn import pokemon
     raw = wc8.pokemon_card(25, level=45, nickname="POKELDN", ot="POKELDN", date=1539879960)

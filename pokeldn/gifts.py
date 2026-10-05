@@ -126,7 +126,8 @@ def load(path, *, game=None):
         raw = stream.read(MAX_FILE_SIZE + 1)
     if len(raw) > MAX_FILE_SIZE:
         raise ValueError("Gift file exceeds 256 KiB.")
-    if path.suffix.lower() == ".pokegift" or raw.lstrip().startswith(b"{"):
+    if path.suffix.lower() == ".pokegift" or (
+            path.suffix.lower() not in NATIVE and raw.lstrip().startswith(b"{")):
         return loads(raw, game=game)
     if game == "swsh" or path.suffix.lower() == ".wc8":
         if game not in (None, "swsh"):

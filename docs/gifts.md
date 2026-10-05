@@ -47,6 +47,10 @@ also write the read data into Received. The group explains the normally hidden S
 individual values from 0 to 31, and EVs as training points. These reads preserve the save and
 Wonder Card ([Reading the save](frlg_rom.md#reading-the-save)).
 
+Native `.wc3` and `.wc8` extensions select the game's binary reader before JSON detection.
+A WC8's binary seal can start with `{`; it remains a native record. `.pokegift` files use the
+JSON reader, and an unknown extension with a JSON opening brace can still hold a shared gift.
+
 Customize copies a preset into the form. A FRLG card preset offers it only when the form expresses
 every step: unconditional stages of Pokemon, item, egg, wild battle and message steps, no event
 script and no visiting trainer. Every Sword/Shield preset is a form state.
