@@ -1,13 +1,21 @@
 #!/usr/bin/env bash
 set -eu
 
-if [[ $# -lt 1 || $# -gt 2 || ! $1 =~ ^[[:xdigit:]]{8}$ ]]; then
-    echo "usage: $0 8-DIGIT-HEX-SEED [original|full|handoff20|seq12forret|seq12forretfull|seq1112forret|stop18|stop20|stop21|stop22|stop23|delay23|skip23]" >&2
+if [[ $# -lt 1 || $# -gt 3 || ! $1 =~ ^[[:xdigit:]]{8}$ ]]; then
+    echo "usage: $0 8-DIGIT-FIGHT-SEED [original|full|handoff20|seq12forret|seq12forretfull|seq1112forret|twoseed|stop18|stop20|stop21|stop22|stop23|delay23|skip23] [8-DIGIT-REWARD-SEED]" >&2
     exit 2
 fi
 
 seed=${1^^}
 mode=${2:-full}
+reward_seed=${3:-}
+if [[ -n $reward_seed ]]; then
+    reward_seed=${reward_seed^^}
+    if [[ ! $reward_seed =~ ^[[:xdigit:]]{8}$ ]]; then
+        echo "reward seed must be exactly eight hexadecimal digits" >&2
+        exit 2
+    fi
+fi
 script_dir=$(cd -- "$(dirname -- "$0")" && pwd)
 cd "$script_dir"
 
@@ -70,6 +78,26 @@ case $mode in
                              --raid-replay-stop-after-seq 20
                              --raid-replay-disconnect-after-stop 30)
         ;;
+    twoseed)
+        if [[ -z $reward_seed ]]; then
+            echo "twoseed mode requires an 8-digit reward seed as its third argument" >&2
+            exit 2
+        fi
+        if [[ $reward_seed != FDAE7B7D ]]; then
+            echo "twoseed currently supports reward seed FDAE7B7D only: its coherent Forretress bootstrap is the proven hardware template" >&2
+            exit 2
+        fi
+        # Generate the fight/catch boss from the first seed.  For this milestone the wire-level
+        # reward state comes from the matching captured Forretress bootstrap; --raid-reward-seed
+        # independently regenerates and prints its encounter and exact ordered reward roll.
+        raid_patch_args=(--raid-runtime-clear-commands
+                         --raid-reward-seed "$reward_seed")
+        capture_suffix="fight_${seed}_reward_${reward_seed}_seed_only_handoff20"
+        replay_control_args=(--raid-replay-seq11-12-template-trace
+                             tera_raid_retail_controlled_tinkatink_first_moves.jsonl
+                             --raid-replay-stop-after-seq 20
+                             --raid-replay-disconnect-after-stop 30)
+        ;;
     stop18|stop20|stop21|stop22|stop23)
         stop_sequence=${mode#stop}
         capture_suffix="stop_after_${stop_sequence}"
@@ -88,6 +116,11 @@ case $mode in
         exit 2
         ;;
 esac
+
+if [[ $mode != twoseed && -n $reward_seed ]]; then
+    echo "a reward seed is only accepted in twoseed mode" >&2
+    exit 2
+fi
 
 exec "$python_bin" -u sv_host.py \
     --keys /home/ismail/Downloads/switchkeys.io-v22.5.0/prod.keys \

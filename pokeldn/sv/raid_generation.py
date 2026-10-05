@@ -66,7 +66,7 @@ def _stars(rand: Xoroshiro128Plus, progress: str) -> int:
     raise AssertionError("unreachable raid star roll")
 
 
-def _gender(ratio: int, roll: int) -> int:
+def _gender(ratio: int, rand: Xoroshiro128Plus) -> int:
     # PK9 gender: 0 male, 1 female, 2 genderless.
     if ratio == 0xFF:
         return 2
@@ -74,6 +74,7 @@ def _gender(ratio: int, roll: int) -> int:
         return 1
     if ratio == 0x00:
         return 0
+    roll = rand.next_int(100)
     cutoffs = {0x1F: 12, 0x3F: 25, 0x7F: 50, 0xBF: 75, 0xE1: 89}
     try:
         return 1 if roll < cutoffs[ratio] else 0
@@ -197,7 +198,9 @@ def generate_raid(seed: int, context: dict) -> dict:
     else:
         raise ValueError(f"unknown ability mode {ability_mode!r}")
     ability = personal["abilities"][ability_index]
-    gender = _gender(personal["gender_ratio"], rand.next_int(100))
+    gender_mode = encounter.get("gender", "random")
+    gender = (_gender(personal["gender_ratio"], rand)
+              if gender_mode == "random" else int(gender_mode))
     nature = encounter.get("nature")
     if nature is None:
         nature = rand.next_int(25)
@@ -212,6 +215,7 @@ def generate_raid(seed: int, context: dict) -> dict:
         "species": encounter["species"],
         "nickname": encounter.get("nickname", ""),
         "form": encounter.get("form", 0),
+        "held_item": encounter.get("held_item", 0),
         "level": level,
         "met_level": level,
         "experience": _experience(level, personal["growth"]),
@@ -251,6 +255,63 @@ def generate_raid(seed: int, context: dict) -> dict:
             "lottery": encounter.get("lottery_rewards", []),
         },
     }
+
+
+def generate_seed_raid(seed: int, *, version: str = "violet", progress: str = "4star",
+                       map_name: str = "paldea", content: str = "standard") -> dict:
+    """Generate an encounter, PK9 profile, and ordered rewards from the bundled retail tables.
+
+    Unlike :func:`generate_raid`, this needs no caller-authored encounter context.  The remaining
+    arguments are game state, not additional encounter data: the same seed legitimately resolves
+    differently between versions, maps, progress stages, and standard/black tables.
+    """
+    # Imported here to keep raid_catalog's use of Xoroshiro128Plus free of an import cycle.
+    from pokeldn.sv import raid_catalog
+
+    catalog = raid_catalog.load_catalog()
+    resolved = raid_catalog.resolve_raid(
+        seed, version=version, progress=progress, map_name=map_name, content=content)
+    source = resolved["encounter"]
+    personal = raid_catalog.personal_entry(source["species"], source["form"], catalog=catalog)
+    ability = {0: "any12", 1: "any12h", 2: "fixed0", 3: "fixed1", 4: "fixed2"}[
+        source["ability"]]
+    tera = ("default" if source["tera"] == 0 else "random" if source["tera"] == 1
+            else source["tera"] - 2)
+    gender = "random" if source["gender"] == 0 else source["gender"] - 1
+    shiny = {0: "random", 1: "never", 2: "always"}[source["shiny"]]
+    encounter = {
+        "identifier": source["identifier"],
+        "species": source["species"],
+        "nickname": resolved["species_name"],
+        "form": source["form"],
+        "stars": source["stars"],
+        "rate": 1,
+        "rate_min": {version: 0},
+        "flawless_ivs": source["flawless_ivs"],
+        "ability": ability,
+        "gender": gender,
+        "shiny": shiny,
+        "level": source["level"],
+        "moves": source["moves"],
+        "move_pp": [catalog["move_pp"][move] for move in source["moves"]],
+        "tera": tera,
+        "held_item": source["held_item"],
+        "personal": personal,
+    }
+    # The ordinary generator's encounter selection is already resolved above.  A one-entry
+    # context with a deterministic rate roll lets it retain a single profile-generation path.
+    context_data = {
+        "version": version,
+        "progress": progress,
+        "rate_totals": {str(source["stars"]): {version: 1}},
+        "encounters": [encounter],
+    }
+    # _select_encounter would roll stars again, which is appropriate but then its second draw must
+    # fit the one-entry table.  The selected stars are guaranteed to agree with the same seed.
+    generated = generate_raid(seed, context_data)
+    generated["rewards"] = resolved["rewards"]
+    generated["encounter"] = source
+    return generated
 
 
 def load_context(path: str | Path) -> dict:

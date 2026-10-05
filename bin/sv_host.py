@@ -364,7 +364,17 @@ def build_parser():
                          "used (default: full)")
     ap.add_argument("--raid-context", type=Path,
                     help="JSON encounter context used to generate --raid-seed before hosting; "
-                         "see bin/sv_raid_profile.py")
+                         "omit to use the bundled retail encounter tables")
+    ap.add_argument("--raid-version", choices=("scarlet", "violet"), default="violet")
+    ap.add_argument("--raid-progress", choices=("beginning", "tera", "3star", "4star",
+                                                 "5star", "6star"), default="4star")
+    ap.add_argument("--raid-map", choices=("paldea", "kitakami", "blueberry"),
+                    default="paldea")
+    ap.add_argument("--raid-content", choices=("standard", "black"), default="standard")
+    ap.add_argument("--raid-reward-seed", type=lambda value: int(value, 16), metavar="HEX",
+                    help="independent seed whose encounter and ordered rewards are calculated; "
+                         "the current hardware milestone still requires its matching coherent "
+                         "sequence-11/12 template")
     ap.add_argument("--raid-runtime-source-move", action="store_true",
                     help="diagnostic: keep the source replay's opening boss move in the generated "
                          "boss PK9 so it agrees with the capture-backed battle-command stream")
@@ -574,9 +584,28 @@ def main():
                 if args.raid_context is not None:
                     generated_raid = raid_generation.generate_raid(
                         args.raid_seed, raid_generation.load_context(args.raid_context))
-                    metadata = generated_raid["metadata"]
-                    print(f"[sv] generated raid profile: species {metadata['species']}, "
-                          f"{metadata['stars']} star(s), Tera {metadata['tera_type']}")
+                else:
+                    generated_raid = raid_generation.generate_seed_raid(
+                        args.raid_seed, version=args.raid_version, progress=args.raid_progress,
+                        map_name=args.raid_map, content=args.raid_content)
+                metadata = generated_raid["metadata"]
+                print(f"[sv] generated fight raid: seed {args.raid_seed:08X}, "
+                      f"species {metadata['species']}, {metadata['stars']} star(s), "
+                      f"Tera {metadata['tera_type']}")
+                if args.raid_reward_seed is not None:
+                    reward_raid = raid_generation.generate_seed_raid(
+                        args.raid_reward_seed, version=args.raid_version,
+                        progress=args.raid_progress, map_name=args.raid_map,
+                        content=args.raid_content)
+                    reward_metadata = reward_raid["metadata"]
+                    print(f"[sv] generated reward raid: seed {args.raid_reward_seed:08X}, "
+                          f"species {reward_metadata['species']}, "
+                          f"{reward_metadata['stars']} star(s), "
+                          f"Tera {reward_metadata['tera_type']}")
+                    for index, reward in enumerate(reward_raid["rewards"], 1):
+                        print(f"[sv]   reward {index:02d}: {reward['amount']}x "
+                              f"{reward['name']} (item {reward['item']}, "
+                              f"{reward['source']}, subject {reward['subject']})")
                 boss_audit = raid_seed.audit_boss_fields(
                     raid_replay_events, args.raid_base_seed)
                 patched_boss_location = boss_audit["pk9"][1]

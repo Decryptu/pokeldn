@@ -169,3 +169,28 @@ The variable payload is therefore a serialized command stream, not a fixed boss 
 not contain the boss species, EC, ability, nature, Tera type, or stats as direct integers. Arbitrary
 raid hosting now requires either constructing this command stream or replacing the replay-backed
 battle phase with a live authoritative battle-state implementation.
+
+## Seed-only generation milestone
+
+The branch `sv-raid-seed-generation` now bundles normalized retail encounter, personal, move, and
+reward tables in `pokeldn/sv/data/raid_base.json`. `generate_seed_raid()` resolves a standard or
+black raid directly from its seed plus the real game-state dimensions (version, story progress,
+map, and content type), generates the boss PK9 profile, and produces the ordered fixed and lottery
+reward roll. No hand-authored encounter context is needed.
+
+The generator reproduces the captured Growlithe, Mareep, two Tinkatink, Pawniard, and Forretress
+encounters. Generated PK9 fields match the five captured retail bosses for which complete profile
+data is available. Its guest-visible Growlithe reward order exactly matches the eight entries
+observed on hardware, including duplicates.
+
+The first guarded two-seed hardware test is:
+
+```bash
+./sv_seed_test.sh 000F34C3 twoseed FDAE7B7D
+```
+
+This generates the Pawniard fight/catch profile from `000F34C3` and independently calculates and
+prints the Forretress encounter/rewards from `FDAE7B7D`. On the wire it deliberately uses the
+captured coherent Forretress sequence-11/12 bootstrap, because arbitrary serialization of that
+coupled state is not solved yet. The runner rejects any other reward seed in `twoseed` mode rather
+than silently claiming that an unimplemented seed-to-wire conversion works.
