@@ -38,9 +38,11 @@ The guest-to-wrapper boundary is decoded ([Code on the
 console](frlg_rom.md#where-the-boundary-stands)): the guest's one store past a region's backing
 is byte-precise and constant-valued, a planted pointer's consumers read their targets from
 `main`'s own data at static addresses, and the syscalls' stores into the component are read
-back as counts and GBA addresses, every address bounds-checked. The next surface is the
-wrapper's own LDN parsing: the emulator is a Pia client of the ldn user service, and the other
-seat's advertisement bytes reach it in native form.
+back as counts and GBA addresses, every address bounds-checked. The wrapper's own scan
+pipeline is decoded to its first stage ([The wrapper's own scan
+pipeline](frlg_rom.md#the-wrappers-own-scan-pipeline)): the scan results, the consume loop
+and the parent-candidate list are all fixed-shape and bounded, and the one length-taking
+path (a station name, at most `0x40`) is clamped at its caller.
 
 ## Pages
 

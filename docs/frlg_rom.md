@@ -543,12 +543,13 @@ Guest `r0` is a 4 KB sector number, guest `r1` the source:
     source      = r1, resolved through the region table and folded
     destination = 0x0E000000 + r0 * 0x1000, resolved the same way
 
-The destination address is formed in 32-bit arithmetic [main + 0x05737C], and the region entry
-is that address's top byte [main + 0x057384], so `r0` selects the region: the entry is `0x0E +
-(r0 >> 20)` mod 256. A destination in EWRAM, IWRAM or the cartridge buffer passes both bounds
-checks (`fold < size`, `size - fold >= 0x1000`); with `r0 >> 20 = 0xFA` the destination folds
-into the ROM copy, 4 KB at a time from any source region. The cartridge buffer sits inside the
-guest's RAM footprint; the live behaviour of a ROM destination is unmeasured.
+The destination address is formed in 32-bit arithmetic [main + 0x05737C]:
+`0x0E000000 + ((r0 & 0xFFFFF) << 12)`, and the region entry is that address's top byte
+[main + 0x057384]: `0x0E + ((r0 & 0xFFFFF) >> 12)` mod 256, so `r0` selects the region. A
+destination in EWRAM, IWRAM or the cartridge buffer passes both bounds checks (`fold < size`,
+`size - fold >= 0x1000`); with `r0 = 0xFA000 + n` the destination folds into the ROM copy's
+4 KB at `n * 0x1000` (`n` 0..0xFFF), from any source region. The cartridge buffer sits inside
+the guest's RAM footprint; the live behaviour of a ROM destination is unmeasured.
 
 Each side is rejected (pointer set to null) if the region's backing pointer at `+0x10` is null, the
 folded offset is at or past the size at `+0x20`, or fewer than `0x1000` bytes remain. Both sides
@@ -948,6 +949,46 @@ runs from that buffer into a `0x200`-byte buffer at `sp + 0x10` ([main + 0x855F1
 0x86664C0`], and the masked string is copied back to the guest fold. Both buffers end inside
 the dispatcher's own `0x310`-byte frame (`sp + 0x210` and `sp + 0x310`); the copy reaches
 neither the saved registers nor past the frame. The replacement byte is the constant `0xA1`.
+
+### The wrapper's own scan pipeline
+
+The wrapper scans networks with `nn::ldn::Scan` through its own PLT (`main + 0x160B70`;
+`ScanPrivate` at `main + 0x160B60`), from the manager object `x23` at the call sites
+`main + 0x80944`/`0x8095C` with `w2 = 0x18` networks, into an inline array at
+`manager + 0x14C0`, 24 entries x `0x480` (zero-filled once at init, `main + 0x7E290`).
+The emulator's own ldn service casts the wire `ScanResponse` body into `NetworkInfo` without
+a length check, so the other seat's field values reach the wrapper verbatim.
+
+A consume loop (`main + 0x80A20..0x80B9C`) walks the array: it zeroes a `0x480`-byte record at
+`sp + 0x128` (`main + 0x874A0`), converts the entry into it (`main + 0x87374`: one memcpy of
+the whole `0x480` to `record + 0xB8`, then bit-precise field reads: source `+0xA`, `+0x11`
+(a 15-byte integer parse, `main + 0xA9830`, hex/oct/dec/bin with `b`/`x` prefixes,
+bound-checked at every advance), `+0x26A` (the advertise data size), `+0x281`/`+0x282`,
+`+0x11A..0x11F`; stores to record `+0x90`, `+0xA0`, `+0xA2`, `+0xA4`, `+0xA6`, `+0xB0`), then
+passes the record through a filter virtual and an accept virtual (`main + 0x80A88..0x80A94`).
+
+The accepted networks land in the parent-candidate list: 16 slots x `0x1A` bytes at
+`owner + 0x6050F2`, the write index at `owner + 0x605294` capped at 15 (`cmp w8, #0xf; b.le`
+[main + 0x58C3C]); the array ends at `+0x605292`, tight against the index. The fill is the
+owner class's (vtable `main + 0x1C3B30`) slot `+0xA0`, `main + 0x58BF8`, called per
+scan-result station by `main + 0x536A4`; the station's name length comes from the station's
+own virtual [slot `+0x50`], and `sub w8, w0, #1; cmp w8, #0x3f; b.hi` [main + 0x5364C] drops
+`x6 > 0x40` before the call. Inside the fill, a `0x41`-byte stack buffer at `sp + 7` receives
+`memcpy(sp + 7, x5, x6)` with the tail-zeroing memset skipped when `x6 > 0x40` [main +
+0x58C68]: for `x6 > 0x40` the copy reaches the frame's saved `x29`/`x30` (buffer offsets
+`0x59`/`0x61`). The one caller decoded clamps first, so the length through it is at most
+`0x40`; of the image's eight sites loading a class's slot `+0xA0`, `main + 0x536A4` is the
+one confirmed to dispatch on this class.
+
+Measured on the emulated console, one host advertising: count 1, slot 0 = the host's
+advertisement byte for byte: the 16-byte game data (activity `0x15`), the 8-byte display
+name, the parent id u16 (`0x59f1`).
+
+In `main` the list is written only through the fill family (`main + 0x58BB4`, `0x58BE4`,
+`0x58BF8`), all virtual; every other component-anchored access in the image is a read. The
+owner class's vtable pointer `main + 0x1C3B30` is formed by no `main`-side idiom (adrp/add,
+movz/movk, literal pool, reloc addend all absent): owner-class objects are constructed
+outside `main`.
 
 ## Repointing the console's outgoing message
 
