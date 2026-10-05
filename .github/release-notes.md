@@ -1,17 +1,18 @@
-# pokeldn 0.8.1
+# pokeldn 0.9.0
 
 This desktop app trades with seven Pokemon game families on a Switch or Switch 2
 through an ESP32 radio connected by USB. Nothing is installed on the console.
 
 ## What is new
 
-- Save gift file also writes native files: a FireRed/LeafGreen gift as `.wc3` and a Sword/Shield
-  gift as `.wc8`, chosen by the file name's extension. `--export-gift FILE.wc3` does the same from
-  the command line. A `.wc3` holds a Wonder Card and its delivery script; gifts with stamps,
-  visiting trainers, Mystery Event scripts or Wonder News stay `.pokegift`.
+- Sword/Shield Mystery Gift: an Official events mode lists 171 real event Wonder Cards (Pokemon,
+  items, clothing, Battle Points), searchable, sent byte for byte. Each card says whether a console
+  takes it once, once per date or every time, and which version it needs.
+- The documentation site is rewritten as a plain reference.
 
-Everything from 0.8.0 is included: the official FireRed/LeafGreen distribution eggs and event
-Pokemon, the GB-Link Team's custom cards, and Sword/Shield outfits, money and Gigantamax Pokemon.
+Everything from 0.8.1 is included: native `.wc3` and `.wc8` gift files, the official FireRed/LeafGreen
+distribution eggs and event Pokemon, the GB-Link Team's custom cards, and Sword/Shield outfits, money
+and Gigantamax Pokemon.
 
 The firmware is unchanged (1.4.0); a board flashed by 0.7.0 or later needs no reflash.
 
