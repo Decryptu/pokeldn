@@ -738,6 +738,7 @@ JsonObject Describe(Game game, PKM pk, LegalityAnalysis la)
         ["held_item"] = pk.HeldItem == 0 ? "" : strings.GetItemStrings(game.Context, game.Versions[0])[pk.HeldItem],
         ["moves"] = moves,
         ["encounter"] = la.EncounterOriginal.LongName,
+        ["parsed"] = la.Parsed,
         ["legal"] = la.Valid,
         ["report"] = la.Report(),
     };

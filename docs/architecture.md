@@ -34,6 +34,11 @@ identities are checked after they are applied. Incompatible formats, unavailable
 illegal final records are refused. A session's trainer identity does not overwrite an imported
 Pokémon's original trainer.
 
+PKHeX's `LegalityAnalysis.Parsed` records whether analysis completed. The helper returns it as
+`parsed`. A check with `parsed: false` restarts the helper and repeats the same request once;
+a second incomplete analysis raises a validator error. Completed checks that reject a record
+remain refused. The service lock covers the first check, restart and retry.
+
 PID and encryption-constant changes can invalidate encounter correlations, especially events and
 raids. Fresh identity is opt-in and must pass PKHeX; a fixed event trainer is preserved. A record legal
 as supplied and illegal under a fresh identity keeps its own PID and encryption constant, and the

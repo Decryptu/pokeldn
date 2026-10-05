@@ -1,7 +1,9 @@
 """The shared service validates the bytes every game adapter actually sends."""
 import base64
+import json
 import shutil
 import subprocess
+import sys
 from pathlib import Path
 
 import pytest
@@ -13,6 +15,54 @@ from pokeldn.swsh import wc8
 
 TRAINER = {"ot": "POKELDN", "tid": 12345, "sid": 54321, "language": 2, "gender": 0}
 FORMATS = {"frlg": "PK3", "lgpe": "PB7", "swsh": "PK8", "bdsp": "PB8", "pla": "PA8", "sv": "PK9", "za": "PA9"}
+
+
+@pytest.mark.parametrize("failure, error, requests", [
+    ("interrupted", None, 2),
+    ("persistent", "could not complete its legality analysis after restarting", 2),
+    ("illegal", "Invalid: encounter mismatch", 1),
+    ("interrupted-then-illegal", "Invalid: encounter mismatch", 2),
+])
+def test_an_interrupted_analysis_is_retried_in_a_fresh_process(tmp_path, monkeypatch,
+                                                             failure, error, requests):
+    """A JSON-line validator whose analysis fails until restart; completed illegal checks stay refused."""
+    helper = tmp_path / "validator.py"
+    trace = tmp_path / "requests.jsonl"
+    helper.write_text('''import json, sys
+from pathlib import Path
+from uuid import uuid4
+
+trace, failure = Path(sys.argv[1]), sys.argv[2]
+first_process = not trace.exists()
+process = uuid4().hex
+for line in sys.stdin:
+    request = json.loads(line)
+    with trace.open("a") as out:
+        out.write(json.dumps({"process": process, "request": request}) + "\\n")
+    parsed = not (failure == "persistent" or (first_process and failure.startswith("interrupted")))
+    legal = parsed and "illegal" not in failure
+    print(json.dumps({"ok": True, "parsed": parsed, "legal": legal, "data": request["data"],
+                      "report": "Legal!" if legal else "Invalid: encounter mismatch" if parsed else
+                                "Analysis not available for this Pokémon."}), flush=True)
+''', encoding="utf-8")
+    monkeypatch.setattr(pokemon, "_command", lambda: [sys.executable, str(helper), str(trace), failure])
+    from pokeldn.pla.trade_box import REFERENCE_RECORD
+    instance = pokemon.Service()
+    try:
+        if error:
+            with pytest.raises(pokemon.BuilderError, match=error):
+                instance.prepare("pla", REFERENCE_RECORD, fresh=True, fields={"ot_name": "HOST"})
+        else:
+            assert instance.prepare("pla", REFERENCE_RECORD, fresh=True,
+                                    fields={"ot_name": "HOST"}) == REFERENCE_RECORD
+    finally:
+        instance.close()
+    recorded = [json.loads(line) for line in trace.read_text().splitlines()]
+    assert len(recorded) == requests
+    assert len({row["process"] for row in recorded}) == requests
+    assert all(row["request"] == {"cmd": "check", "game": "pla", "fresh": True,
+                                  "data": base64.b64encode(REFERENCE_RECORD).decode(),
+                                  "fields": {"ot_name": "HOST"}} for row in recorded)
 
 
 @pytest.fixture(scope="module")

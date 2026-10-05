@@ -48,23 +48,26 @@ class Service:
 
     def _ask(self, request: dict) -> dict:
         with self.lock:
-            if self.proc is None or self.proc.poll() is not None:
-                if self.proc is not None:
-                    self.proc.stdin.close()
-                    self.proc.stdout.close()
-                flags = subprocess.CREATE_NO_WINDOW if sys.platform == "win32" else 0
-                self.proc = subprocess.Popen(_command(), stdin=subprocess.PIPE, stdout=subprocess.PIPE,
-                                             stderr=subprocess.DEVNULL, text=True, encoding="utf-8",
-                                             creationflags=flags)
-            self.proc.stdin.write(json.dumps(request) + "\n")
-            self.proc.stdin.flush()
-            line = self.proc.stdout.readline()
-        if not line:
-            raise BuilderError("The Pokemon builder stopped.")
-        reply = json.loads(line)
-        if not reply.get("ok"):
-            raise BuilderError(reply.get("error", "unknown error"))
-        return reply
+            for attempt in range(2):
+                if self.proc is None or self.proc.poll() is not None:
+                    self._close()
+                    flags = subprocess.CREATE_NO_WINDOW if sys.platform == "win32" else 0
+                    self.proc = subprocess.Popen(_command(), stdin=subprocess.PIPE, stdout=subprocess.PIPE,
+                                                 stderr=subprocess.DEVNULL, text=True, encoding="utf-8",
+                                                 creationflags=flags)
+                self.proc.stdin.write(json.dumps(request) + "\n")
+                self.proc.stdin.flush()
+                line = self.proc.stdout.readline()
+                if not line:
+                    raise BuilderError("The Pokemon builder stopped.")
+                reply = json.loads(line)
+                if not reply.get("ok"):
+                    raise BuilderError(reply.get("error", "unknown error"))
+                if request.get("cmd") != "check" or reply.get("parsed") is not False:
+                    return reply
+                self._close()
+                if attempt:
+                    raise BuilderError("PKHeX could not complete its legality analysis after restarting the builder.")
 
     def species(self, game: str) -> list[dict]:
         if game not in self.species_cache:
@@ -147,15 +150,18 @@ class Service:
 
     def close(self):
         with self.lock:
-            if self.proc is not None:
-                self.proc.stdin.close()
-                try:
-                    self.proc.wait(timeout=2)
-                except subprocess.TimeoutExpired:
-                    self.proc.kill()
-                    self.proc.wait()
-                self.proc.stdout.close()
-                self.proc = None
+            self._close()
+
+    def _close(self):
+        if self.proc is not None:
+            self.proc.stdin.close()
+            try:
+                self.proc.wait(timeout=2)
+            except subprocess.TimeoutExpired:
+                self.proc.kill()
+                self.proc.wait()
+            self.proc.stdout.close()
+            self.proc = None
 
     def _save(self, game: str, reply: dict) -> str:
         data = base64.b64decode(reply["data"])
