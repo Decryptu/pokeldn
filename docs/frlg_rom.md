@@ -820,7 +820,7 @@ The full audit, done statically and closed:
 | 0x4E | jump-table entry `0x147` | a no-op |
 | 0x4F, 0x50 | `main + 0x057248` | the `0x4757` tagged-property set/get |
 | 0x51 | `main + 0x057270` | reads `component + 0x3404` |
-| 0x52 | `main + 0x05728C` | loads `[bus vtable + (r1 >> 24) * 8 + 0x50]` (the index unbounded 0..255), folds, and discards the result: guest `r1` reads back 0 |
+| 0x52 | `main + 0x05728C` | loads `[bus vtable + (r1 >> 24) * 8 + 0x50]` (the index unbounded 0..255), folds, and discards the result: guest `r1` reads back 0. A live scan of all 256 indices on a fresh boot found none whose load is an object pointer with a real `+0x48` method, so no index turns this into a real call |
 | 0x53 | `main + 0x0572D4` | `component + 0x2770` == 0 |
 | 0x54 | `main + 0x0572EC` | `svc_CommsAllowedByParentalControls` |
 | 0x55 | `main + 0x057304` | stores `r0` at `component + 0xE1BC`, reads one folded byte back |
