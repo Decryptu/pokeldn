@@ -688,6 +688,66 @@ a soft reset, so the next wireless menu reports "L'adaptateur sans fil GBA n'est
 byte survives a soft reset; relaunching, or
 `swi 0x40`, restores it. It is read per frame: `swi 0x41` then `swi 0x40` in one payload is harmless.
 
+#### The dispatch chain and the plant's consumers
+
+The image's relocations matter for reading the vtables: an NSO's vtable slots are unrelocated
+addends in the file, the loader adds the image base. With the base applied (`main` at
+`0x8506000`), the chain from a guest `bkpt #0x52` is:
+
+- both decode paths (THUMB `main + 0x1EFE0`, ARM `main + 0x1B7B8`) call the dispatcher
+  `main + 0x1F820` as `(CPU, bkpt address, immediate, &insn)`;
+- the dispatcher takes hook = `[CPU + (imm & 0xff) * 8 + 0x170]` — for `bkpt #0x52` that is
+  `component + 0x60`, a sub-object of the component (the component is the GBA CPU object: `+0x84`
+  current pc, `+0x170` hook table, `+0x960` a second bus table, `+0xE0` the bus object) — reads
+  the hook's own vtable (`main + 0x1C3948`) slot `+0x10`, and calls it as
+  `f(hook, &insn, bkpt address, CPU)`. Slot `+0x10` is `main + 0x5499C` directly;
+- `main + 0x5499C` writes `0xE1200572` into `insn`, then loads `[component]` and tail-calls the
+  virtual at `[that pointer + 0x98]` with `(component, &insn, bkpt address, CPU)`: slot `+0x98`
+  of `main + 0x1C3878` is `main + 0x56368`, which derives the record holder and reaches the
+  resolver `main + 0x03E850`.
+
+So a plant over the component's first ten bytes is consumed at slot `+0x98`, not `+0x10`; the
+`+0x10` read happens on the hook sub-object, which the seam write cannot reach. The resolver's
+write target itself is `buffer_data + fold + 0xA`, where the fold comes from the selected
+region object's vtable slot `+0x48`: the ROM class's fold is `and w0, w1, [this + 0x34]`
+(`main + 0x33B00`, the mask fold), the EWRAM class folds `r0 & 0x3ffff` (`main + 0x34B7C`) and
+the IO class folds `r0 & 0xffffff` (`main + 0x1F7D8`), all bounds-checked afterwards against the
+object's size at `+0x20`.
+
+The bus dispatch for a guest memory access computes
+`region = [bus + ((addr >> 21) & 0x7F8) + 0x50]` with `bus = [component + 0xE0]`, then calls the
+region's vtable at slot `+0x18` (read 16), `+0x20` (read 32), `+0x28` (read 8), `+0x30`, `+0x38`
+and `+0x40` (the three stores), `+0x48` and `+0x68` (special paths), the region object in `x0`.
+210 call sites. The bus table is indexed by the address's top byte (16 entries), and window 4,
+the GBA IO registers, maps to a 0x400-byte region object that sits immediately behind its own
+backing allocation (bus `+0x14C0` is the backing, bus `+0x18C0` the object, the key-interrupt
+sub-object embedded at object `+0x88`).
+
+#### What a seam plant does: the measured hijacks
+
+With `fold = size - 0xB` (in range) the write pair is `(size-1, size)`: the region's last byte
+gets `0x01` and the first byte of the neighbouring allocation gets `0x80`. With
+`fold = size - 0xA` the pair is `(size, size+1)`: `0x01 0x80` onto the neighbour's first two
+bytes. One Mystery Gift session buys one chosen fold; the payload's branch into the patched site
+does not return, and the body loops afterwards with the same parked `r0`, re-writing the same
+pair.
+
+Measured live on the emulated console:
+
+| plant | consumed at | outcome |
+| --- | --- | --- |
+| component byte pair `01 80` (`0x086C8001`) | slot `+0x98` read at `main + 0x1C2099`, unaligned, unrelocated: `0x1f7` | the wrapper branches to an unmapped PC; the whole process dies (`InstructionAbortLowerEl`) |
+| component byte 0 `0x80` (`0x086C9880`) | `main + 0x5492C`, the same method without the `-0x60` | it re-reads `[x0] + 0x98` on the still-planted component and recurses into itself; the thread stack exhausts and the process dies with a data abort (`InvalidMemoryRegionException`) |
+| IO object byte 0 `0x80` (`0x086C8480`) | the bus's store slots `+0x38`/`+0x40`, whose planted targets are raw `0xffffffffffffe5e0` and `0` | the first IO store after the plant aborts the process within ~30 ms; the load targets (`main + 0x30EAC`, `main + 0x31114`, `main + 0x36D54`) never run |
+| name-hash block byte 0 (`0x80`) | the block is an SDK binder/surface descriptor object (`android.gui.IGraphicBufferProducer` and friends are static strings in the SDK image), not a dispatched object | no guest-visible or emulator-visible reaction; the game runs to its own clean exit |
+
+The plant that would survive and keep dispatching (`0x086C8080`, bytes `80 80`: every
+`bkpt #0x52` then runs a pure counter getter, `main + 0x1F7F0`, and becomes a no-op) needs two
+writes with no dispatch in between, and one session buys one write; both single-write states on
+the way kill the process. Held via the debugger instead, the planted pointer stayed in place for
+five minutes with the game running and the process alive: no restore mechanism rewrites a
+wrapper object's header, so guest-reachable corruption of the wrapper's objects is durable.
+
 #### The remaining syscalls
 
 Handler addresses are `main + 0x05706C + entry * 4` from the jump table at `main + 0x17D7F6`. The last
