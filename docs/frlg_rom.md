@@ -648,6 +648,38 @@ byte at `fold(r0) + 1`; a payload that executes a `bkpt #0x52` anywhere else exe
 guest's regions: it can write `0x8001` two constant bytes up to 11 bytes past any region's
 backing allocation, including the 16 MB ROM copy's.
 
+#### What follows the ROM buffer: the Sloop component
+
+The ROM objects' mask (`+0x34`) is `0x1ffffff` while the cartridge occupies `0x1000000` bytes, so
+folds `0xFFFFF6..0xFFFFFF` pass the bounds check and put the write on the ten bytes immediately
+behind the ROM buffer. The object there is the Sloop component
+([The breakpoint hooks](#the-breakpoint-hooks)): its first word is the vtable pointer
+`main + 0x1C3878`, `+8` `0x000004bf`, `+0xC` `0x0A828400`, `+0x18` and `+0x20` `main + 0x16EB83`,
+`+0x28` a `0x655db` heap pointer, `+0x60` and `+0x88` further vtables (`main + 0x1C3948`,
+`main + 0x1C3978`), `+0xE0` the CPU-bus object.
+
+At the patched site the cartridge's own code parks its own `r0` (`ldr r0, [pc, #0x10]` loads
+`0x0300744A`, its own `&gRfuSIO32Id`, IWRAM), so the game's own dispatches always fold to the
+game's own struct: the wrapper's `0x8001` store is the adapter id reaching
+`gRfuSIO32Id.lastId` (`RFU_ID = 0x8001` [librfu.h]), the value `AgbRFU_checkID` waits for. A
+payload that branches to `0x081E1696` directly skips that load and parks its own `r0`, which is
+what moves the store instead.
+
+Instrumented on the strh itself (`main + 0x3E928`) and its continuation: with a direct branch
+and `r0 = 0x08FFFFF6`, the store's `x8` is `backing + 0xFFFFF6` (`0x66209f9ff6`, the tail's
+`ff` padding behind it), and the pre/post dumps read `0x66209fa000` as `78 98 6c 08 ...` before
+the store and `01 80 6c 08 ...` after it: two stores about 90 ms apart (the payload's trigger,
+then a second dispatch through the same site with the parked `r0`).
+
+A write over the component's first two bytes plants the vtable pointer `0x086C8001`, and the
+dispatcher `main + 0x1F820` then reads hook slot 19 (offset `+0x98`) from it: the eight bytes at
+`main + 0x1C2099` are `f7 01 00 00 00 00 00 00`, so the wrapper's next virtual call executes at
+guest PC `0x1F7`, an unmapped address no guest path otherwise reaches. On the emulator this
+aborts the process (`Unhandled guest exception InstructionAbortLowerEl`); the same trigger with
+the fold inside a region ends the session in the local fold's write only, no such dispatch. The
+cartridge's own code at the site rules out the other candidate: `mov ip, r1` stores `ip` as a
+value (`mov r0, ip; strh r0, [r4]`), it is never branched through.
+
 The hook acts only while the byte at `[component + 0x40] -> [+0xA8] + 0x170` is set: the virtual
 adapter's power switch. `swi 0x40` sets it, `swi 0x41` clears it (handler `main + 0x05706C` stores
 `number == 0x40`; "unreferenced flag setters" in [sloopsvc.c:23]). `swi 0x41` from the Mystery Gift
