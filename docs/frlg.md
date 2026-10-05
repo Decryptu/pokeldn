@@ -34,6 +34,14 @@ eight arguments, and a Pokemon chosen by the host built by its own `CreateMon` a
 player's party. The RNG is closed end to end; an aimed shiny encounter costs one A press per
 attempt.
 
+The guest-to-wrapper boundary is decoded ([Code on the
+console](frlg_rom.md#where-the-boundary-stands)): the guest's one store past a region's backing
+is byte-precise and constant-valued, a planted pointer's consumers read their targets from
+`main`'s own data at static addresses, and the syscalls' stores into the component are read
+back as counts and GBA addresses, every address bounds-checked. The next surface is the
+wrapper's own LDN parsing: the emulator is a Pia client of the ldn user service, and the other
+seat's advertisement bytes reach it in native form.
+
 ## Pages
 
 | page | contents |

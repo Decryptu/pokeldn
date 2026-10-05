@@ -543,6 +543,13 @@ Guest `r0` is a 4 KB sector number, guest `r1` the source:
     source      = r1, resolved through the region table and folded
     destination = 0x0E000000 + r0 * 0x1000, resolved the same way
 
+The destination address is formed in 32-bit arithmetic [main + 0x05737C], and the region entry
+is that address's top byte [main + 0x057384], so `r0` selects the region: the entry is `0x0E +
+(r0 >> 20)` mod 256. A destination in EWRAM, IWRAM or the cartridge buffer passes both bounds
+checks (`fold < size`, `size - fold >= 0x1000`); with `r0 >> 20 = 0xFA` the destination folds
+into the ROM copy, 4 KB at a time from any source region. The cartridge buffer sits inside the
+guest's RAM footprint; the live behaviour of a ROM destination is unmeasured.
+
 Each side is rejected (pointer set to null) if the region's backing pointer at `+0x10` is null, the
 folded offset is at or past the size at `+0x20`, or fewer than `0x1000` bytes remain. Both sides
 resolve before `0x1000` bytes are copied. `swi 0x56` then stores `0xFF` at destination `+0xFF8` with
@@ -598,6 +605,12 @@ read through the Mystery Gift client, retail and emulated):
 | `0x081E187C` | ARM `ldr r3, [pc, #0x50]` (`e59f3050`) | `bkpt #0x52` (`e1200572`) |
 | `0x081E1F90` | ARM `mov lr, r0, lsr #14` (`e1a0e720`) | `b 0x081E1FB8` (`ea000008`) |
 
+The third patch removes a wait loop. The function at `0x081E1F74` polls `REG_SIOCNT`
+(`0x04000128`) bit 2 against the caller's `r0` (`r0` masked to u16, `lr = r0 >> 14`), and
+returns early when the byte at `[*(0x03000030) + 0x10]` is 1, clearing it and answering 1. In
+emulation the poll never matches, so the wrapper replaces the body with `mov r0, #0; return`:
+the wait answers 0 at once.
+
 `bkpt #0x52` is keyed by address: its hook holds two records `{u32 pc, u32 original insn, ..., u32
 hits at +0x0C}` at `+0x120` and `+0x148`, and `main + 0x0546C0` matches the address and returns the
 original instruction. At the `Sio32IDMain` patch (`0x081E1696`) it resolves guest `r0`
@@ -640,6 +653,11 @@ resolver:
   address stored at holder `+0x170`, reads a word at the folded address, and uses the word's top
   byte as a region selector and the word itself as the address to fold again, bounds-checked,
   decrementing a counter at holder `+0x42B8 + 0x7C`.
+- on a record-2 match with the `+0x108` flag clear, falls into `main + 0x03E960`: it folds the
+  address stored at holder `+0x170`, reads a word there, and tests its bits 15 to 26 against
+  `0x600`. On a match it folds the word's low 24 bits through the same region table,
+  bounds-checked, and decrements the counter at holder `+0x42B8 + 0x7C`; on a mismatch,
+  nothing.
 
 The guest controls the whole trigger: a payload that branches to `0x081E1696` (the patched site,
 THUMB) with a chosen `r0` makes the wrapper write `0x8001` at `fold(r0) + 0xA` and set `r1` to the
@@ -657,6 +675,12 @@ behind the ROM buffer. The object there is the Sloop component
 `main + 0x1C3878`, `+8` `0x000004bf`, `+0xC` `0x0A828400`, `+0x18` and `+0x20` `main + 0x16EB83`,
 `+0x28` a `0x655db` heap pointer, `+0x60` and `+0x88` further vtables (`main + 0x1C3948`,
 `main + 0x1C3978`), `+0xE0` the CPU-bus object.
+
+The neighbour changes between boots: one boot's ROM neighbour is an object whose first word is
+the vtable `main + 0x1C36D8` and whose `+0x60` is the vtable `main + 0x1C3790`. The constructor
+`main + 0x547CC` writes exactly that pair, reading the static pointer at `main + 0x86D67E8`
+(addend `main + 0x1C36C8` [main_relocs.json]). That class's fields are written by its own
+constructor and its own code; no store from a guest session reaches them.
 
 At the patched site the cartridge's own code parks its own `r0` (`ldr r0, [pc, #0x10]` loads
 `0x0300744A`, its own `&gRfuSIO32Id`, IWRAM), so the game's own dispatches always fold to the
@@ -741,6 +765,22 @@ through the debugger instead, that pointer stayed in place for five minutes with
 running and the process alive. No code site in the image writes a wrapper object's header after
 init.
 
+### Where the boundary stands
+
+Every guest path into the wrapper's own memory is decoded on this page. The one store past a
+region's backing is the resolver's `0x8001` strh at `fold + 0xA`; a planted pointer's consumers
+read their targets from `main`'s own data at static addresses ([What a plant over a seam
+does](#what-a-plant-over-a-seam-does)). The syscalls' stores into the component and their
+readers are in [The remaining syscalls](#the-remaining-syscalls); the `main + 0x1C36C8` class's
+fields are written by its own constructor and its own code ([What follows the ROM
+buffer](#what-follows-the-rom-buffer-the-sloop-component)). The third load-time patch replaces
+a wait loop. The bad-word filter's two buffers are length-bounded inside the dispatcher's own
+frame ([The bad-word filter](#the-bad-word-filter)); the flash-sector path's bounds are in
+[The flash sector path](#the-flash-sector-path).
+
+The next surface is the wrapper's own LDN parsing: the emulator is a Pia client of the ldn user
+service, and the other seat's advertisement bytes reach it in native form.
+
 #### The remaining syscalls
 
 Handler addresses are `main + 0x05706C + entry * 4` from the jump table at `main + 0x17D7F6`. The last
@@ -802,6 +842,11 @@ live addresses differ by `0x100000000`.
 
 The per-candidate layout 0x45 writes is unsettled: the copy loop's byte count does not match
 `sizeof(struct RfuTgtData)`; read it live before depending on it.
+
+`component + 0x6050D8`, the 24 bytes `swi 0x47` copies ([main + 0x058694], a pre-indexed
+store from the guest's `r0` buffer), has no reader in the image. `component + 0x605360`'s
+readers are the activity diff `main + 0x058698` (through `component + 0x6050E0`) and
+`svc_SetActivity`'s setter `main + 0x058B40`; both compare or store the activity code.
 
 `component + 0x2770` (through `[component + 0xD0]`) is read by `swi 0x53` (a boolean) and by
 `main + 0x0511CC` and `main + 0x0511F4`, which no syscall reaches. `main + 0x0511F4` compares it with
@@ -894,6 +939,15 @@ screen saves the typed name only when it answers 0 [naming_screen.c:686].
 | `POKELDN` | 0 | unchanged |
 | `ASSASSIN` | 0 | unchanged |
 | `NINTENDO` | 0 | unchanged |
+
+The path [main + 0x0571FC -> main + 0x057458]: the handler folds `r0`, requires `0x100` bytes
+behind the fold, and copies the string into a `0x100`-byte stack buffer at frame `-0x100` (the
+copy at `main + 0x85645F0` is bounded by its `w1 = 0x100` argument). The conversion to UTF-16
+runs from that buffer into a `0x200`-byte buffer at `sp + 0x10` ([main + 0x855F100], `w2 =
+0x200`), the profanity check runs through a global pointer [main + 0x574AC, callee `main +
+0x86664C0`], and the masked string is copied back to the guest fold. Both buffers end inside
+the dispatcher's own `0x310`-byte frame (`sp + 0x210` and `sp + 0x310`); the copy reaches
+neither the saved registers nor past the frame. The replacement byte is the constant `0xA1`.
 
 ## Repointing the console's outgoing message
 
