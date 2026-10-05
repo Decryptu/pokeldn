@@ -800,9 +800,42 @@ The per-candidate layout 0x45 writes is unsettled: the copy loop's byte count do
 10 and, at or past it, atomically loads a flag at `component + 0x2790`; a set flag enters
 `main + 0x057250`'s continuation, which tests a third argument for null. Its caller is unidentified.
 
-Unresolved: the effect of 0x46, 0x4E, 0x58 to 0x60, 0x48, 0x4C, 0x51, 0x53 past its `+0x2770` read,
-0x55 and 0x56 issued from the Mystery Gift client is unknown, and the source side of the flash-sector
-fold of 0x48 and 0x56 is unread.
+The full audit, done statically and closed:
+
+| swi | handler | what it does |
+| --- | --- | --- |
+| 0x40, 0x41 | `main + 0x05706C` | the adapter switch |
+| 0x42 | `main + 0x0570DC` -> `main + 0x0588A0` | `rfu_REQ_startSearchChild` |
+| 0x43 | `main + 0x0570EC` -> `main + 0x058AD0` | `rfu_REQ_startConnectParent`, `r0` = the PID |
+| 0x44 | `main + 0x057100` -> `main + 0x058B0C` | `rfu_REQ_stopMode` |
+| 0x45 | `main + 0x057110` | folds `r0` through the region table, copies up to 0x1000 bytes into the guest |
+| 0x46 | jump-table entry `0x147` | the dispatcher's exit: a no-op |
+| 0x47 | `main + 0x05715C` | `rfu_REQ_configGameData`, 24 bytes |
+| 0x48, 0x56 | `main + 0x057084` | the flash-sector copy: sector = guest `r0`, source = `fold(guest r1)` through the same region table, bounds-checked, up to 4 KB |
+| 0x49 | `main + 0x0571A8` -> `main + 0x0588D0` | a call on the `component + 0xD0` object, no guest argument |
+| 0x4A | `main + 0x0571B8` -> `main + 0x058AB8` | the same shape, no guest argument |
+| 0x4B | `main + 0x0572C4` | the RNG/leader flag |
+| 0x4C | `main + 0x0571CC` | two internal calls (`main + 0x05D930` on `[component + 0xE8] + 0xA0`, then `main + 0x049D28` on a global), no guest data |
+| 0x4D | `main + 0x0571FC` | the bad-word filter: reads up to 256 bytes at `fold(r0)` |
+| 0x4E | jump-table entry `0x147` | a no-op |
+| 0x4F, 0x50 | `main + 0x057248` | the `0x4757` tagged-property set/get |
+| 0x51 | `main + 0x057270` | reads `component + 0x3404` |
+| 0x52 | `main + 0x05728C` | loads `[bus vtable + (r1 >> 24) * 8 + 0x50]` (the index unbounded 0..255), folds, and discards the result: guest `r1` reads back 0 |
+| 0x53 | `main + 0x0572D4` | `component + 0x2770` == 0 |
+| 0x54 | `main + 0x0572EC` | `svc_CommsAllowedByParentalControls` |
+| 0x55 | `main + 0x057304` | stores `r0` at `component + 0xE1BC`, reads one folded byte back |
+| 0x57 | `main + 0x057330` | `MonsSelect` into the report at `component + 0x140` |
+| 0x58 to 0x60 | jump-table entry `0x147` | no-ops |
+| 0x61 | `main + 0x057340` | `svc_SetActivity` |
+| 0x62 | `main + 0x057354` | the `CommsError` counter |
+
+The answers come back through `main + 0x2209C`: guest `r0` = 1 when the number is above 0x2A,
+guest `r1` = the handler's answer word. No handler returns a wrapper pointer to the guest (0x52's
+is discarded), so the guest never learns a wrapper address through a syscall. The `0x59`
+tagged-property listener (`main + 0x050618`), which would write a guest-chosen 32-bit value at
+`component + 0x3324 + index * 4`, has no supplier: no syscall builds a `0x59` entry or the third
+argument its index reads from `[x2]`, and the twelve calls of the tagged-property dispatcher all
+build their entries from wrapper-internal fields. It is unreachable from the guest.
 
 The `bkpt #0x52` component also owns the dispatcher (slot 21 of its vtable) and 2324 species names,
 six languages each, hashed with djb2 (`main + 0x056540`, strings at `main + 0x1C4470`). The
@@ -874,6 +907,20 @@ Game stats are XORed with the money key where the game has one.
 In FireRed and LeafGreen both flags are set by the tickets' Mystery Event scripts
 [mystery_event_msg.s:222,281] and by the Switch release's Hall of Fame grant
 [post_battle_event_funcs.c:58]; a save carried over with its Hall of Fame already entered reports 0.
+
+### Where the boundary stands
+
+Every guest-reachable path into the wrapper is now audited. The guest can: run ARM code, call all
+23 Sloop syscalls with chosen operands, write the adapter switch and the activity, compose flash
+sectors from `fold(guest r1)`, store guest-chosen words at `component + 0xE1BC` and
+`component + 0x6052A0` (both with guest-relative readers or none), and fire the resolver's
+`0x8001` seam writes up to 11 bytes past any region's backing. What the guest cannot do: learn a
+wrapper address (no handler returns one), call a wrapper function with a guest-chosen target
+(the only plantable vtable pointers resolve to an abort, a self-recursion, or an inert counter
+getter), or reach any wrapper state the region folds do not cover. The wrapper's own objects
+accept durable corruption from guest code and nothing in the image restores them, so the
+corruption is lasting, but every dispatched consumer of a corrupted object kills the process.
+Escalation past the wrapper, from the guest, through this surface, is closed.
 
 ### The bad-word filter
 
