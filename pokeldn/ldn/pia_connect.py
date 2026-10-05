@@ -337,7 +337,7 @@ def parse_session_join_v11(payload, *, header_end=None):
         protocols = [(payload[2 + i * 2], payload[2 + i * 2 + 1]) for i in range(nprotocols)]
         if header_end is not None:
             p = header_end
-        if p + 4 + 12 + 32 + 3 + 6 + 12 > len(payload):
+        if p + 4 + 12 + 32 + 3 + 6 + 12 + 2 > len(payload):
             return None
         app4 = bytes(payload[p:p + 4])
         source_constant_id = bytes(payload[p + 4:p + 12])
@@ -347,6 +347,13 @@ def parse_session_join_v11(payload, *, header_end=None):
         port = int.from_bytes(payload[p + 55:p + 57], "big")
         destination_constant_id = bytes(payload[p + 57:p + 65])
         destination_var = int.from_bytes(payload[p + 67:p + 69], "big")
+        num_players = payload[p + 69]
+        num_participants = payload[p + 70]
+        players = []
+        q = p + 71
+        for _ in range(num_players):
+            player, q = _parse_player_info(payload, q)
+            players.append(player)
         return {
             "protocols": protocols,
             "app4": app4,
@@ -357,6 +364,9 @@ def parse_session_join_v11(payload, *, header_end=None):
             "port": port,
             "destination_constant_id": destination_constant_id,
             "destination_var": destination_var,
+            "num_players": num_players,
+            "num_participants": num_participants,
+            "players": players,
         }
     except (IndexError, ValueError):
         return None

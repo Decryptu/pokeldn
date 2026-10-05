@@ -222,6 +222,9 @@ def build_parser():
                     help="join only a console searching with this Link Code; empty takes any")
     ap.add_argument("--comm-id", default=None,
                     help="local communication id to join, hex; default is either cartridge's")
+    ap.add_argument("--scene-id", type=int, default=None,
+                    help="join only an LDN advertisement with this scene id; use 7 for a local "
+                         "Tera Raid (the Link Trade scene is 4)")
     ap.add_argument("--keys", default="~/.switch/prod.keys")
     ap.add_argument("--ip-join", action="store_true",
                     help="join an emulated console over the LAN through ldn_mitm instead of the "
@@ -239,6 +242,9 @@ def build_parser():
     ap.add_argument("--seconds", type=float, default=600.0, help="how long to keep trying")
     ap.add_argument("--hold", type=float, default=60.0,
                     help="how long to stay in one joined session before scanning again")
+    ap.add_argument("--max-seats", type=int, default=None,
+                    help="stop after this many completed LDN associations; useful for a bounded "
+                         "protocol capture")
     ap.add_argument("--name", default="POKELDN", help="the LDN node name we publish")
     ap.add_argument("--platform", type=int, default=sv.PLATFORM,
                     help="the station platform byte we publish; 1 is what a Switch 2 sends")
@@ -295,6 +301,10 @@ def build_parser():
                          "four messages on 0x7c port 0, the two fragments twice, and nothing sent "
                          "on that port before the announcement reaches the game; repeatable; by "
                          "default the identity fragments in pokeldn.sv.reference")
+    ap.add_argument("--send-after-join", action="append", default=[],
+                    help="DELAY:PROTO:PORT:HEX[:z][:start|:end], sent that many seconds after the "
+                         "Pia session seats us; repeatable. Unlike --send-on-open this is not "
+                         "gated on the trade-specific key-0x80 channel event")
     ap.add_argument("--fresh-pid", action="store_true",
                     help="offer each record under a new PID and encryption constant, shiny state "
                          "kept, so a save that took it before takes it again")
@@ -471,7 +481,8 @@ def main(argv=None):
     want = {int(args.comm_id, 16)} if args.comm_id else {sv.COMM_ID_SCARLET, sv.COMM_ID_VIOLET}
     channels = [int(c) for c in args.channels.split(",") if c.strip()]
     print(f"[sv] phy={phy} channels={channels} dwell={args.dwell}s "
-          f"comm_id={' or '.join(f'{c:#018x}' for c in sorted(want))}")
+          f"comm_id={' or '.join(f'{c:#018x}' for c in sorted(want))}"
+          f"{f' scene={args.scene_id}' if args.scene_id is not None else ''}")
     cleanup_stale()
     if args.mac:
         set_mac(phy, args.mac)
@@ -510,6 +521,9 @@ def main(argv=None):
                            app_data=bytes(n.application_data).hex(), t=time.time())
                     if args.code and sv.link_code(n.application_data) != args.code:
                         print(f"[sv] scan {scans}: its code is not {args.code}")
+                        continue
+                    if args.scene_id is not None and n.scene_id != args.scene_id:
+                        print(f"[sv] scan {scans}: scene {n.scene_id} is not {args.scene_id}")
                         continue
                     if n.num_participants < n.max_participants:
                         target = n
@@ -566,6 +580,9 @@ def main(argv=None):
                 detail = "; ".join(f"{type(e).__name__}: {e}" for e in leaves(exc))
                 print(f"[sv] the seat ended: {detail}")
                 record(rec="seat_failed", detail=detail, t=time.time())
+            if args.max_seats is not None and seats >= args.max_seats:
+                print(f"[sv] reached --max-seats {args.max_seats}; closing")
+                break
             if trades_done():
                 print("[sv] the seat ended after a trade; closing")
                 break
@@ -718,6 +735,7 @@ async def run_session(args, keys, host_ip, host_mac, our_ip, our_mac, record):
                 due = max(due, other[0] + delay)
         pending_trade.append((due, port, payload))
     pending_open = []           # (due, spec) hung on the host's own key-0x80 open
+    join_sends_scheduled = False
     offers_seen = 0
     trades_done = 0
     record_set = []
@@ -892,6 +910,11 @@ async def run_session(args, keys, host_ip, host_mac, our_ip, our_mac, record):
                 join_sent == 0.0 or (args.join_repeat and now - join_sent >= args.join_repeat)):
             join_sent = now
             send_join()
+        if joined and not join_sends_scheduled:
+            join_sends_scheduled = True
+            for spec in args.send_after_join:
+                delay, rest = spec.split(":", 1)
+                pending_open.append((time.time() + float(delay), rest))
         # Retransmitted every 0.25 s until the host's bulk ack for port 1 names it.
         if identity is not None and joined and not record_acked and (
                 now - joined_at >= args.record_delay) and (now - last_record_send >= 0.25):

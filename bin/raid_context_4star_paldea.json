@@ -1,0 +1,31 @@
+{
+  "version": "violet",
+  "progress": "4star",
+  "rate_totals": {"2": {"violet": 5300}},
+  "encounters": [
+    {
+      "identifier": 2037,
+      "species": 624,
+      "nickname": "Pawniard",
+      "form": 0,
+      "stars": 2,
+      "rate": 100,
+      "rate_min": {"violet": 3300},
+      "flawless_ivs": 1,
+      "ability": "any12",
+      "shiny": "random",
+      "level": 20,
+      "moves": [210, 232, 184, 372],
+      "move_pp": [20, 35, 10, 10],
+      "tera": "random",
+      "personal": {
+        "base_stats": [45, 85, 70, 60, 40, 40],
+        "types": [8, 16],
+        "gender_ratio": 127,
+        "abilities": [128, 39, 46],
+        "growth": 0,
+        "base_friendship": 35
+      }
+    }
+  ]
+}

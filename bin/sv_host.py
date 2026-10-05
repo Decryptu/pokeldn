@@ -14,15 +14,16 @@ import struct
 import sys
 import time
 import traceback
+import zlib
 
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
 from pokeldn.host_support import open_output
-from pokeldn import pokemon as pokemon_service
+from pokeldn import gen9, pokemon as pokemon_service
 from pokeldn import config
 from pokeldn import sv
 from pokeldn.ldn import pia6, pia_connect, reliable5
-from pokeldn.sv import pokemon, port2, reference, streams, trade
+from pokeldn.sv import pokemon, port2, raid_generation, raid_seed, reference, streams, trade
 from pokeldn.ldn import game_channel
 from pokeldn.ldn.ldn_mitm_host import IpHostTransport
 from pokeldn.ldn.transport import HostTransport, board_radio, find_ap_phy
@@ -37,6 +38,18 @@ PROTOCOL_NAMES = {
     0x80: "broadcast reliable", 0x81: "stream broadcast reliable", 0x98: "session",
     0xA0: "nat traversal result", 0xA4: "monitoring data", 0xAC: "wan nat",
 }
+
+# The passive Growlithe victory trace missed reliable sequences 77 and 78.  A second retail trace
+# has byte-identical records on both sides of that hole and supplies these two intervening state
+# transitions.  They are generic raid protocol records, not encounter data.
+RETAIL_RAID_VICTORY_GAP = (
+    bytes.fromhex(
+        "7b001327000001000000020000002600000029000000000000000900000000000000"
+        "03000000000000000505000000000000000001000100"),
+    bytes.fromhex(
+        "7b00132700000300000005000000200000002a000000000000000900000000000000"
+        "03000000000000000501000000000000"),
+)
 SESSION_MESSAGE_NAMES = {
     0: "join request", 1: "join request ack", 2: "join response", 3: "leave request",
     4: "leave response", 5: "update session", 6: "update session ack", 7: "left station sync",
@@ -67,6 +80,14 @@ RTT_REQUEST = 0
 RTT_RESPONSE = 1
 # A retail bulk ack: four entries, entry k for station k's stream (docs/sv.md).
 ACK_ENTRIES = 4
+
+# The retail raid host sends this reliable-stream bootstrap on 0x80 ports 0..2 and 0x81 ports
+# 0..7, 40 ms after the Session join.  It is not a response to data: it establishes the host and
+# joiner destination bits before either station publishes its records.
+RETAIL_RAID_STREAM_OPEN = bytes.fromhex(
+    "00000056ffff0001030000000201040000010001000000000000000000000000000000000000"
+    "0100010000000000000000000000000000000000000100010000000000000000000000000000"
+    "0000000001000100000000000000000000000000000000")
 
 
 def _describe(msg):
@@ -126,10 +147,10 @@ def build_rtt(kind, timestamp, target=0):
 
 
 def build_reply(keys, our_ip, body, dst_var, nonce8, *, protocol=PROTO_SESSION,
-                flags=ESTABLISHING_FLAGS, port=0, packet_id=0):
+                flags=ESTABLISHING_FLAGS, port=0, packet_id=0, mesh=False):
     msg = pia6.build_message(body, protocol=protocol, port=port, message_flags=flags)
     footer_ids = ()
-    if protocol in MESH_ADDRESSED:
+    if mesh or protocol in MESH_ADDRESSED:
         footer_ids, dst_var = (dst_var,), MESH_DESTINATION
     return pia6.build_packet(keys.session_key, keys.network_id, our_ip, msg,
                              dst_var=dst_var, src_var=PIA_HOST_VAR, packet_id=packet_id,
@@ -181,15 +202,24 @@ def build_parser():
     ap.add_argument("--comm-id", type=lambda v: int(v, 0), default=None,
                     help="advertise this local communication id")
     ap.add_argument("--app-version", type=int, default=sv.APP_VERSION)
+    ap.add_argument("--scene-id", type=int, default=sv.SCENE_ID,
+                    help="LDN scene to advertise; Scarlet/Violet Link Trade is 4 and a local "
+                         "Tera Raid is 7")
+    ap.add_argument("--max-participants", type=int, default=sv.MAX_PARTICIPANTS,
+                    help="LDN participant capacity to advertise; use 4 for a Tera Raid")
     ap.add_argument("--platform", type=int, default=sv.PLATFORM,
                     help="the station platform byte: 1 is a Switch 2, which is what both retail "
                          "consoles advertise; 0 is a Switch and what the LDN layer defaults to")
     ap.add_argument("--ssid", default=None, help="hex, 16 bytes; default lets the LDN layer pick")
+    ap.add_argument("--mac", default=None,
+                    help="ESP32 AP MAC to keep the BSSID stable, as 02:11:22:33:44:55")
     ap.add_argument("--ip-host", action="store_true",
                     help="host over ldn_mitm on the LAN for an emulator; no radio and no root")
     ap.add_argument("--our-ip", default=None)
     ap.add_argument("--player-name", default="POKELDN", help="the LDN node name")
     ap.add_argument("--no-net-probe", action="store_true")
+    ap.add_argument("--net-unicast", action="store_true",
+                    help="send Net 0x11 to the station IP (ESP32 compatibility path)")
     ap.add_argument("--no-session-ack", action="store_true")
     ap.add_argument("--no-session-response", action="store_true")
     ap.add_argument("--no-session-update", action="store_true")
@@ -220,6 +250,8 @@ def build_parser():
     ap.add_argument("--session-packet-id", type=int, default=0,
                     help="the packet id in the Pia header of the Session replies; a Scarlet host's "
                          "join response carries 1")
+    ap.add_argument("--host-var", type=lambda v: int(v, 0), default=PIA_HOST_VAR,
+                    help="the host Pia variable id advertised by Net and used in packet headers")
     ap.add_argument("--scarlet-response", action="store_true",
                     help="the 41-byte Session join response a Scarlet host sends, with no route "
                          "bytes, rather than Arceus's 43-byte one")
@@ -256,6 +288,8 @@ def build_parser():
                          "recorded set in pokeldn.sv.reference")
     ap.add_argument("--trainer-name", default="POKELDN",
                     help="the player name record 1 of our identity carries, the one the trade screen shows")
+    ap.add_argument("--preserve-records", action="store_true",
+                    help="send every record-set file byte-for-byte, including record 1")
     ap.add_argument("--no-identity", action="store_true",
                     help="send no station identity unless --record-set or --send-on-open names "
                          "one; by default the recorded one in pokeldn.sv.reference")
@@ -264,6 +298,9 @@ def build_parser():
     ap.add_argument("--records-per-packet", type=int, default=1, metavar="N",
                     help="bundle the record set N to a packet, each after the first with its "
                          "header inherited, as a retail host's retransmit round does (docs/sv.md)")
+    ap.add_argument("--record-spacing", type=float, default=0.0,
+                    help="seconds between identity record packets; a retail raid host paces its "
+                         "46-record opening over about 0.13 seconds")
     ap.add_argument("--announce", action="store_true",
                     help="run the game's port-2 opening from the station ids instead of a replay: "
                          "the type-7 announcement on 0x80 port 2 carrying this host's own station "
@@ -272,6 +309,76 @@ def build_parser():
     ap.add_argument("--announce-delay", type=float, default=2.3,
                     help="seconds after the seat before the type 7 goes out; a pair's host "
                          "sends it at about 2.3")
+    ap.add_argument("--announce-capacity", type=int, default=2,
+                    help="participant capacity in the type-7 announcement; Tera Raids use 4")
+    ap.add_argument("--raid", action="store_true",
+                    help="use the captured Tera Raid channel setup, accept the console as raid "
+                         "slot 1, and send the initial lobby heartbeat")
+    ap.add_argument("--raid-start-trace",
+                    help="decoded retail JSONL supplying raid state sequences 13-16 and Net 0x50")
+    ap.add_argument("--raid-replay-trace",
+                    help="decoded retail JSONL supplying a timed, consecutive host 0x80:0 raid "
+                         "stream from the type-9 accepts through battle setup")
+    ap.add_argument("--raid-replay-interactive", action="store_true",
+                    help="experimental: retry battle-state packets and trigger the captured "
+                         "post-selection response after a guest move")
+    ap.add_argument("--raid-replay-timed-tail", action="store_true",
+                    help="append the consecutive stream after a passive-capture gap at its "
+                         "original wall-clock time, closing the missing sequence-id gap")
+    ap.add_argument("--raid-replay-cutoff", type=int, metavar="SEQ",
+                    help="experimental: stop the opening replay after this reliable sequence and "
+                         "renumber the captured tail to follow it")
+    ap.add_argument("--raid-replay-auto-tail-delay", type=float, metavar="SECONDS",
+                    help="experimental: send the captured post-gap terminal stream this many "
+                         "seconds after the truncated opening, without waiting for a move")
+    ap.add_argument("--raid-replay-repair-victory-gap", action="store_true",
+                    help="fill missing victory-trace sequences 77-78 with matching completion "
+                         "records recovered from a second retail capture")
+    ap.add_argument("--raid-replay-stop-after-seq", type=int, metavar="SEQ",
+                    help="diagnostic: do not schedule raid application messages after SEQ; "
+                         "Pia/session/reliable maintenance continues")
+    ap.add_argument("--raid-replay-disconnect-after-stop", type=float, metavar="SECONDS",
+                    help="after sending --raid-replay-stop-after-seq, keep maintenance alive for "
+                         "SECONDS and then shut down the host transport")
+    ap.add_argument("--raid-replay-delay-seq23", type=float, default=0.0,
+                    metavar="SECONDS", help="diagnostic: add a delay before replay sequence 23 "
+                         "and shift all later raid application messages by the same amount")
+    ap.add_argument("--raid-replay-skip-seq23", action="store_true",
+                    help="diagnostic: omit reliable replay sequence 23 while retaining sequence 24")
+    ap.add_argument("--raid-replay-seq12-overlay-trace", type=Path,
+                    help="diagnostic: replace decoded sequence-12 offsets 11..178 inclusive with "
+                         "the same range from sequence 12 of another retail replay trace")
+    ap.add_argument("--raid-replay-seq12-overlay-full", action="store_true",
+                    help="with --raid-replay-seq12-overlay-trace, replace everything after the "
+                         "preserved 11-byte PK9 tail with the overlay trace's complete suffix")
+    ap.add_argument("--raid-replay-seq11-12-template-trace", type=Path,
+                    help="diagnostic: replace complete decoded sequences 11 and 12 from another "
+                         "retail replay, then restore the generated target boss PK9 within them")
+    ap.add_argument("--raid-seed", type=lambda value: int(value, 16), metavar="HEX",
+                    help="experimental generated raid seed to substitute into "
+                         "--raid-replay-trace (use with --raid-base-seed)")
+    ap.add_argument("--raid-base-seed", type=lambda value: int(value, 16), metavar="HEX",
+                    help="seed represented by the source replay, used to identify its boss PK9")
+    ap.add_argument("--raid-lobby-patch", choices=("none", "species", "full"), default="full",
+                    help="diagnostic scope for the compact lobby descriptor when --raid-seed is "
+                         "used (default: full)")
+    ap.add_argument("--raid-context", type=Path,
+                    help="JSON encounter context used to generate --raid-seed before hosting; "
+                         "see bin/sv_raid_profile.py")
+    ap.add_argument("--raid-runtime-source-move", action="store_true",
+                    help="diagnostic: keep the source replay's opening boss move in the generated "
+                         "boss PK9 so it agrees with the capture-backed battle-command stream")
+    ap.add_argument("--raid-runtime-clear-commands", action="store_true",
+                    help="diagnostic: empty the variable command/effect log in the opening "
+                         "0x5080 battle-state record")
+    ap.add_argument("--raid-runtime-move-slot", type=int, choices=range(1, 5), default=1,
+                    help="diagnostic target boss move slot to queue in the opening runtime "
+                         "action (1-4; default: 1)")
+    ap.add_argument("--raid-runtime-template-trace", type=Path,
+                    help="decoded controlled retail trace supplying complete opening 0x5080 and "
+                         "0xe8 runtime records")
+    ap.add_argument("--raid-runtime-template-seed", type=lambda value: int(value, 16),
+                    metavar="HEX", help="raid seed represented by --raid-runtime-template-trace")
     ap.add_argument("--fresh-pid", action="store_true",
                     help="offer each record under a new PID and encryption constant, shiny state "
                          "kept, so a save that took it before takes it again")
@@ -317,8 +424,388 @@ def build_parser():
 
 
 def main():
+    global PIA_HOST_VAR
     ap = build_parser()
     args = ap.parse_args()
+    PIA_HOST_VAR = args.host_var & 0xFFFF
+    raid_start_payloads, raid_start_net = {}, None
+    raid_replay_events, raid_replay_post_events = [], []
+    raid_replay_net_delay = raid_replay_session_delay = None
+    if args.raid_start_trace and args.raid_replay_trace:
+        ap.error("use only one of --raid-start-trace and --raid-replay-trace")
+    if args.raid_start_trace:
+        with open(args.raid_start_trace, encoding="utf-8") as trace_file:
+            for line in trace_file:
+                row = json.loads(line)
+                if (row.get("rec") == "data" and row.get("protocol") == 0x80
+                        and row.get("port") == 0 and row.get("seq") in (13, 14, 15, 16)
+                        and str(row.get("src", "")).endswith(".1")):
+                    raid_start_payloads[row["seq"]] = bytes.fromhex(row["payload"])
+                if (row.get("rec") == "msg" and row.get("protocol") == PROTO_NET
+                        and bytes.fromhex(row.get("payload", "00"))[1:2] == bytes([NET_PROPERTY])):
+                    raid_start_net = bytes.fromhex(row["payload"])
+        if set(raid_start_payloads) != {13, 14, 15, 16} or raid_start_net is None:
+            ap.error("--raid-start-trace lacks host raid sequences 13-16 or Net 0x50")
+    if args.raid_replay_trace:
+        with open(args.raid_replay_trace, encoding="utf-8") as trace_file:
+            replay_rows = [json.loads(line) for line in trace_file]
+        accept_times = [row["t"] for row in replay_rows
+                        if (row.get("rec") == "data" and row.get("protocol") == 0x80
+                            and row.get("port") == 2 and row.get("seq") == 1
+                            and str(row.get("src", "")).endswith(".1")
+                            and bytes.fromhex(row.get("payload", "00"))[:1] == b"\x09")]
+        if not accept_times:
+            ap.error("--raid-replay-trace lacks the host's first type-9 accept")
+        replay_base = min(accept_times)
+        reliable_meta = {}
+        for row in replay_rows:
+            if (row.get("rec") == "msg" and row.get("protocol") == 0x80
+                    and row.get("port") == 0 and str(row.get("src", "")).endswith(".1")):
+                try:
+                    parsed = reliable5.parse(bytes.fromhex(row["payload"]))
+                except (KeyError, ValueError):
+                    continue
+                if not parsed["is_ack"]:
+                    reliable_meta[(row["t"], parsed["sequence_id"])] = parsed["lowest_pending"]
+        by_sequence = {}
+        for row in replay_rows:
+            if (row.get("rec") == "data" and row.get("protocol") == 0x80
+                    and row.get("port") == 0 and str(row.get("src", "")).endswith(".1")
+                    and row["t"] >= replay_base):
+                sequence = row["seq"]
+                by_sequence.setdefault(sequence, (
+                    row["t"] - replay_base, row["reliable_flags"],
+                    reliable_meta.get((row["t"], sequence), sequence),
+                    bytes.fromhex(row["payload"])))
+            if (row.get("rec") == "msg" and row.get("protocol") == PROTO_NET
+                    and str(row.get("src", "")).endswith(".1") and row["t"] >= replay_base
+                    and bytes.fromhex(row.get("payload", "00"))[1:2] == bytes([NET_PROPERTY])):
+                if raid_start_net is None:
+                    raid_start_net = bytes.fromhex(row["payload"])
+                    raid_replay_net_delay = row["t"] - replay_base
+            if (row.get("rec") == "msg" and row.get("protocol") == PROTO_SESSION
+                    and str(row.get("src", "")).endswith(".1") and row["t"] >= replay_base
+                    and bytes.fromhex(row.get("payload", "00"))[:1] == b"\x05"):
+                if raid_replay_session_delay is None:
+                    raid_replay_session_delay = row["t"] - replay_base
+        if raid_start_net is None:
+            # Passive Wi-Fi captures occasionally miss the host's one Net 0x50 even though the
+            # guest's immediate 0x51 proves it arrived.  Preserve its observed timing and rebuild
+            # the property body later from this run's network id and advertised application data.
+            property_acks = [row["t"] for row in replay_rows
+                             if (row.get("rec") == "msg"
+                                 and row.get("protocol") == PROTO_NET
+                                 and not str(row.get("src", "")).endswith(".1")
+                                 and row["t"] >= replay_base
+                                 and bytes.fromhex(row.get("payload", "00"))[1:2]
+                                 == bytes([NET_PROPERTY_ACK]))]
+            if property_acks:
+                raid_start_net = b""
+                raid_replay_net_delay = min(property_acks) - replay_base - 0.02
+        if args.raid_replay_repair_victory_gap:
+            if 77 in by_sequence or 78 in by_sequence or 76 not in by_sequence or 79 not in by_sequence:
+                ap.error("--raid-replay-repair-victory-gap requires the known 76, [77-78], 79 gap")
+            before = by_sequence[76][0]
+            after = by_sequence[79][0]
+            if after <= before:
+                ap.error("victory trace has invalid timing around sequences 76-79")
+            flags = (reliable5.FLAG_APPLICATION_DATA | reliable5.FLAG_MESSAGE_START
+                     | reliable5.FLAG_MESSAGE_END | reliable5.FLAG_ZLIB)
+            span = after - before
+            for sequence, fraction, application in zip(
+                    (77, 78), (0.27, 0.72), RETAIL_RAID_VICTORY_GAP):
+                by_sequence[sequence] = (
+                    before + span * fraction, flags, sequence, streams.compress(application))
+            print("[sv] repaired retail victory stream sequences 77-78 from matching capture")
+        # Stop at the first missing sequence.  A later fragment cannot be delivered by the
+        # receiver's reliable reassembler across that gap, and a passive capture can miss frames.
+        sequence = 1
+        while sequence in by_sequence:
+            delay, flags, lowest, payload = by_sequence[sequence]
+            raid_replay_events.append((delay, sequence, flags, lowest, payload))
+            sequence += 1
+        first_gap = sequence
+        later = sorted(s for s in by_sequence if s > first_gap)
+        if later:
+            # A passive air trace may miss one frame even though the retail receiver got it.  Keep
+            # the next consecutive run as a post-selection response, close the capture-only gap in
+            # its reliable ids, and trigger it from the guest's move instead of wall-clock time.
+            first_later = later[0]
+            collapse = first_later - first_gap
+            post_base = by_sequence[first_later][0]
+            sequence = first_later
+            while sequence in by_sequence:
+                delay, flags, lowest, payload = by_sequence[sequence]
+                raid_replay_post_events.append((
+                    delay - post_base, sequence - collapse, flags,
+                    max(1, lowest - collapse), payload))
+                sequence += 1
+            if args.raid_replay_timed_tail:
+                raid_replay_events.extend((
+                    post_base + delay, sequence, flags, lowest, payload)
+                    for delay, sequence, flags, lowest, payload in raid_replay_post_events)
+                raid_replay_post_events = []
+        if args.raid_replay_cutoff is not None:
+            cutoff = args.raid_replay_cutoff
+            raid_replay_events = [event for event in raid_replay_events if event[1] <= cutoff]
+            if not raid_replay_events or raid_replay_events[-1][1] != cutoff:
+                ap.error("--raid-replay-cutoff is not present in the consecutive opening stream")
+            if raid_replay_post_events:
+                sequence_delta = raid_replay_post_events[0][1] - (cutoff + 1)
+                raid_replay_post_events = [
+                    (delay, sequence - sequence_delta, flags,
+                     max(1, lowest - sequence_delta), payload)
+                    for delay, sequence, flags, lowest, payload in raid_replay_post_events]
+                print(f"[sv] victory-skip replay: opening ends at seq {cutoff}; terminal tail "
+                      f"renumbered to {raid_replay_post_events[0][1]}.."
+                      f"{raid_replay_post_events[-1][1]}")
+        if (args.raid_replay_auto_tail_delay is not None
+                and not raid_replay_post_events):
+            ap.error("--raid-replay-auto-tail-delay requires a captured post-gap tail")
+        if (not raid_replay_events or raid_start_net is None
+                or raid_replay_session_delay is None):
+            ap.error("--raid-replay-trace lacks a consecutive host stream, Net 0x50, or Session update")
+        patched_boss_location = None
+        if args.raid_seed is not None:
+            if args.raid_base_seed is None:
+                ap.error("--raid-seed requires --raid-base-seed")
+            try:
+                generated_raid = None
+                if args.raid_context is not None:
+                    generated_raid = raid_generation.generate_raid(
+                        args.raid_seed, raid_generation.load_context(args.raid_context))
+                    metadata = generated_raid["metadata"]
+                    print(f"[sv] generated raid profile: species {metadata['species']}, "
+                          f"{metadata['stars']} star(s), Tera {metadata['tera_type']}")
+                boss_audit = raid_seed.audit_boss_fields(
+                    raid_replay_events, args.raid_base_seed)
+                patched_boss_location = boss_audit["pk9"][1]
+                print("[sv] raid boss field audit (all identified before replacement):")
+                for line in raid_seed.describe_audit(boss_audit):
+                    print(f"[sv]   {line}")
+                if args.raid_runtime_source_move:
+                    if generated_raid is None:
+                        raise ValueError("--raid-runtime-source-move requires --raid-context")
+                    # The captured command stream describes the source boss's opening attack.  A
+                    # generated target move paired with those old commands is internally
+                    # inconsistent.  Keep every generated seed field except move 1/its PP for this
+                    # diagnostic, allowing us to test that mismatch independently of species data.
+                    profile = dict(generated_raid["profile"])
+                    moves = list(profile["moves"])
+                    move_pp = list(profile["move_pp"])
+                    moves[0] = boss_audit["source"]["moves"][0]
+                    move_pp[0] = boss_audit["source"]["move_pp"][0]
+                    profile["moves"] = tuple(moves)
+                    profile["move_pp"] = tuple(move_pp)
+                    generated_raid = dict(generated_raid, profile=profile)
+                    print(f"[sv] diagnostic runtime compatibility: generated boss move 1 "
+                          f"replaced with source move {moves[0]} (not seed-perfect)")
+                runtime_template_events = None
+                if args.raid_runtime_template_trace is not None:
+                    if args.raid_runtime_template_seed is None:
+                        raise ValueError("--raid-runtime-template-trace requires "
+                                         "--raid-runtime-template-seed")
+                    with open(args.raid_runtime_template_trace, encoding="utf-8") as template_file:
+                        template_rows = [json.loads(line) for line in template_file]
+                    template_accepts = [row["t"] for row in template_rows
+                                        if (row.get("rec") == "data"
+                                            and row.get("protocol") == 0x80
+                                            and row.get("port") == 2 and row.get("seq") == 1
+                                            and str(row.get("src", "")).endswith(".1")
+                                            and bytes.fromhex(row.get("payload", "00"))[:1]
+                                            == b"\x09")]
+                    if not template_accepts:
+                        raise ValueError("runtime template lacks the host's type-9 accept")
+                    template_base = min(template_accepts)
+                    template_by_sequence = {}
+                    for row in template_rows:
+                        if (row.get("rec") == "data" and row.get("protocol") == 0x80
+                                and row.get("port") == 0
+                                and str(row.get("src", "")).endswith(".1")
+                                and row["t"] >= template_base):
+                            template_by_sequence.setdefault(row["seq"], (
+                                row["t"] - template_base, row["seq"], row["reliable_flags"],
+                                row["seq"], bytes.fromhex(row["payload"])))
+                    runtime_template_events = []
+                    template_sequence = 1
+                    while template_sequence in template_by_sequence:
+                        runtime_template_events.append(template_by_sequence[template_sequence])
+                        template_sequence += 1
+                    print(f"[sv] controlled runtime template: "
+                          f"{args.raid_runtime_template_trace} "
+                          f"({len(runtime_template_events)} consecutive packets)")
+                raid_replay_events = raid_seed.patch_boss(
+                    raid_replay_events, args.raid_base_seed, args.raid_seed,
+                    lobby_patch=args.raid_lobby_patch,
+                    target_profile=None if generated_raid is None else generated_raid["profile"],
+                    target_metadata=None if generated_raid is None else generated_raid["metadata"],
+                    clear_runtime_commands=args.raid_runtime_clear_commands,
+                    runtime_move_index=args.raid_runtime_move_slot - 1,
+                    runtime_template_events=runtime_template_events,
+                    runtime_template_seed=args.raid_runtime_template_seed)
+            except ValueError as exc:
+                ap.error(f"cannot patch raid seed: {exc}")
+            print(f"[sv] raid boss EC seed {args.raid_base_seed:08X} -> {args.raid_seed:08X}")
+        if args.raid_replay_seq11_12_template_trace is not None:
+            if patched_boss_location is None:
+                ap.error("--raid-replay-seq11-12-template-trace requires --raid-seed")
+            boss_sequence, boss_local = patched_boss_location
+            if boss_sequence != 11:
+                ap.error("sequence-11/12 template requires the boss PK9 to begin in sequence 11")
+            current = {sequence: (flags, payload)
+                       for _, sequence, flags, _, payload in raid_replay_events}
+            if 11 not in current or 12 not in current:
+                ap.error("base raid replay lacks sequence 11 or 12")
+            current_parts = {
+                sequence: (streams.decompress(payload)
+                           if flags & reliable5.FLAG_ZLIB else bytes(payload))
+                for sequence, (flags, payload) in current.items() if sequence in (11, 12)}
+            first_count = len(current_parts[11]) - boss_local
+            tail_count = gen9.SIZE_PARTY - first_count
+            if first_count <= 0 or tail_count <= 0 or tail_count > len(current_parts[12]):
+                ap.error("target boss PK9 does not span sequences 11 and 12 as expected")
+            target_pk9 = (current_parts[11][boss_local:]
+                          + current_parts[12][:tail_count])
+            if len(target_pk9) != gen9.SIZE_PARTY:
+                ap.error("could not preserve the complete generated boss PK9")
+
+            with open(args.raid_replay_seq11_12_template_trace,
+                      encoding="utf-8") as template_file:
+                template_rows = [json.loads(line) for line in template_file]
+            template_accepts = [
+                row["t"] for row in template_rows
+                if (row.get("rec") == "data" and row.get("protocol") == 0x80
+                    and row.get("port") == 2 and row.get("seq") == 1
+                    and str(row.get("src", "")).endswith(".1")
+                    and bytes.fromhex(row.get("payload", "00"))[:1] == b"\x09")]
+            if not template_accepts:
+                ap.error("sequence-11/12 template lacks the host's type-9 accept")
+            template_base = min(template_accepts)
+            template_parts = {}
+            for row in template_rows:
+                sequence = row.get("seq")
+                if (sequence in (11, 12) and row.get("rec") == "data"
+                        and row.get("protocol") == 0x80 and row.get("port") == 0
+                        and str(row.get("src", "")).endswith(".1")
+                        and row["t"] >= template_base and sequence not in template_parts):
+                    flags = row["reliable_flags"]
+                    payload = bytes.fromhex(row["payload"])
+                    template_parts[sequence] = (
+                        streams.decompress(payload)
+                        if flags & reliable5.FLAG_ZLIB else payload)
+            if set(template_parts) != {11, 12}:
+                ap.error("sequence-11/12 template trace lacks host sequences 11 and 12")
+            if (boss_local + first_count != len(template_parts[11])
+                    or tail_count > len(template_parts[12])):
+                ap.error("sequence-11/12 template boss boundary differs from the base replay")
+            template_parts[11] = (template_parts[11][:boss_local]
+                                  + target_pk9[:first_count])
+            template_parts[12] = (target_pk9[first_count:]
+                                  + template_parts[12][tail_count:])
+            replaced_sequences = set()
+            templated_events = []
+            for delay, sequence, flags, lowest, payload in raid_replay_events:
+                if sequence not in template_parts:
+                    templated_events.append((delay, sequence, flags, lowest, payload))
+                    continue
+                plain = template_parts[sequence]
+                encoded = streams.compress(plain) if flags & reliable5.FLAG_ZLIB else plain
+                templated_events.append((delay, sequence, flags, lowest, encoded))
+                replaced_sequences.add(sequence)
+            raid_replay_events = templated_events
+            print(f"[sv] replay diagnostic: complete sequences 11 and 12 copied from "
+                  f"{args.raid_replay_seq11_12_template_trace}; generated boss PK9 restored at "
+                  f"seq 11+0x{boss_local:x} across the boundary "
+                  f"({len(template_parts[11])}B + {len(template_parts[12])}B decoded)")
+        if args.raid_replay_seq12_overlay_trace is not None:
+            with open(args.raid_replay_seq12_overlay_trace, encoding="utf-8") as overlay_file:
+                overlay_rows = [json.loads(line) for line in overlay_file]
+            overlay_accepts = [
+                row["t"] for row in overlay_rows
+                if (row.get("rec") == "data" and row.get("protocol") == 0x80
+                    and row.get("port") == 2 and row.get("seq") == 1
+                    and str(row.get("src", "")).endswith(".1")
+                    and bytes.fromhex(row.get("payload", "00"))[:1] == b"\x09")]
+            if not overlay_accepts:
+                ap.error("--raid-replay-seq12-overlay-trace lacks the host's type-9 accept")
+            overlay_base = min(overlay_accepts)
+            overlay_row = next((
+                row for row in overlay_rows
+                if (row.get("rec") == "data" and row.get("protocol") == 0x80
+                    and row.get("port") == 0 and row.get("seq") == 12
+                    and str(row.get("src", "")).endswith(".1")
+                    and row["t"] >= overlay_base)), None)
+            if overlay_row is None:
+                ap.error("--raid-replay-seq12-overlay-trace lacks host sequence 12")
+            overlay_flags = overlay_row["reliable_flags"]
+            overlay_wire = bytes.fromhex(overlay_row["payload"])
+            overlay_plain = (streams.decompress(overlay_wire)
+                             if overlay_flags & reliable5.FLAG_ZLIB else overlay_wire)
+            if not args.raid_replay_seq12_overlay_full and len(overlay_plain) < 179:
+                ap.error("overlay trace sequence 12 is shorter than offset 178")
+            replaced = False
+            patched_events = []
+            for delay, sequence, flags, lowest, payload in raid_replay_events:
+                if sequence != 12:
+                    patched_events.append((delay, sequence, flags, lowest, payload))
+                    continue
+                plain = streams.decompress(payload) if flags & reliable5.FLAG_ZLIB else payload
+                if len(plain) < 11:
+                    ap.error("base replay sequence 12 is shorter than the preserved PK9 tail")
+                if args.raid_replay_seq12_overlay_full:
+                    changed = plain[:11] + overlay_plain[11:]
+                    overlay_description = "complete suffix 11..end"
+                else:
+                    changed = plain[:11] + overlay_plain[11:179] + plain[179:]
+                    overlay_description = "offsets 11..178"
+                encoded = streams.compress(changed) if flags & reliable5.FLAG_ZLIB else changed
+                patched_events.append((delay, sequence, flags, lowest, encoded))
+                replaced = True
+                print(f"[sv] replay diagnostic: sequence 12 {overlay_description} replaced from "
+                      f"{args.raid_replay_seq12_overlay_trace}; decoded length "
+                      f"{len(plain)} -> {len(changed)}, PK9 tail 0..10 preserved")
+            if not replaced:
+                ap.error("base raid replay lacks sequence 12")
+            raid_replay_events = patched_events
+        elif args.raid_replay_seq12_overlay_full:
+            ap.error("--raid-replay-seq12-overlay-full requires "
+                     "--raid-replay-seq12-overlay-trace")
+        if args.raid_replay_delay_seq23 < 0:
+            ap.error("--raid-replay-delay-seq23 must be non-negative")
+        if args.raid_replay_delay_seq23:
+            if not any(event[1] == 23 for event in raid_replay_events):
+                ap.error("--raid-replay-delay-seq23 requires replay sequence 23")
+            raid_replay_events = [
+                (delay + (args.raid_replay_delay_seq23 if sequence >= 23 else 0),
+                 sequence, flags, lowest, payload)
+                for delay, sequence, flags, lowest, payload in raid_replay_events]
+            print(f"[sv] replay diagnostic: delaying sequence 23 and later by "
+                  f"{args.raid_replay_delay_seq23:.3f}s")
+        if args.raid_replay_skip_seq23:
+            if not any(event[1] == 23 for event in raid_replay_events):
+                ap.error("--raid-replay-skip-seq23 requires replay sequence 23")
+            raid_replay_events = [event for event in raid_replay_events if event[1] != 23]
+            print("[sv] replay diagnostic: sequence 23 omitted; sequence 24 retains its wire id")
+        if args.raid_replay_stop_after_seq is not None:
+            if args.raid_replay_stop_after_seq < 1:
+                ap.error("--raid-replay-stop-after-seq must be positive")
+            if not any(event[1] == args.raid_replay_stop_after_seq
+                       for event in raid_replay_events):
+                ap.error("--raid-replay-stop-after-seq is not present in the replay")
+            raid_replay_events = [
+                event for event in raid_replay_events
+                if event[1] <= args.raid_replay_stop_after_seq]
+            raid_replay_post_events = []
+            print(f"[sv] replay diagnostic: stopping raid application stream after sequence "
+                  f"{args.raid_replay_stop_after_seq}; maintenance remains active")
+        if (args.raid_replay_disconnect_after_stop is not None
+                and args.raid_replay_stop_after_seq is None):
+            ap.error("--raid-replay-disconnect-after-stop requires --raid-replay-stop-after-seq")
+        if (args.raid_replay_disconnect_after_stop is not None
+                and args.raid_replay_disconnect_after_stop < 0):
+            ap.error("--raid-replay-disconnect-after-stop must be non-negative")
+    elif args.raid_seed is not None or args.raid_base_seed is not None:
+        ap.error("--raid-seed and --raid-base-seed require --raid-replay-trace")
     if args.trade_offer:
         args.trade_offer = [pokemon_service.prepare_file("sv", p, fresh=args.fresh_pid,
             transform=lambda raw: trade.load_offer(raw, args.offer_set)) for p in args.trade_offer]
@@ -338,14 +825,30 @@ def main():
     phy = None
     if not args.ip_host:
         phy = find_ap_phy(log=print) if args.phy == "auto" else args.phy
-        if phy is None:
-            print("[sv] no AP-capable phy")
-            return 1
+    if phy is None:
+        print("[sv] no AP-capable phy")
+        return 1
+    if args.mac:
+        if phy != "esp32":
+            ap.error("--mac is currently supported only by the ESP32 radio")
+        try:
+            ap_mac = bytes.fromhex(args.mac.replace(":", ""))
+        except ValueError:
+            ap.error("--mac must contain six hexadecimal bytes")
+        if len(ap_mac) != 6:
+            ap.error("--mac must contain six hexadecimal bytes")
+        from pokeldn.ldn import esp32_wlan
+        esp32_wlan.set_access_point_mac(ap_mac)
 
     session_flags = (ESTABLISHING_FLAGS if args.session_flags is None else args.session_flags)
     pending_update = {}
     pending_records = {}
     pending_late = {}
+    pending_raid_replay = []
+    pending_raid_bootstrap = {}
+    pending_raid_net = {}
+    pending_raid_session = {}
+    scripted_disconnect_due = {}
     pending_trade = []          # (due, ip, port, payload) the trade stage asked to send
 
     def schedule_trade(delay, ip, port, payload):
@@ -400,8 +903,8 @@ def main():
     factory = IpHostTransport if args.ip_host else HostTransport
     transport = factory(
         app_data=app_data, password=sv.PASSPHRASE, nickname=args.player_name,
-        keys_path=resolve_keys(args.keys), local_comm_id=comm_id, scene_id=sv.SCENE_ID,
-        app_version=args.app_version, max_participants=sv.MAX_PARTICIPANTS, phyname=phy,
+        keys_path=resolve_keys(args.keys), local_comm_id=comm_id, scene_id=args.scene_id,
+        app_version=args.app_version, max_participants=args.max_participants, phyname=phy,
         channel=args.channel, protocol=sv.LDN_PROTOCOL,
         ssid=binascii.unhexlify(args.ssid) if args.ssid else None,
         # ldn_mitm carries neither the platform byte nor the radio profile.
@@ -418,7 +921,8 @@ def main():
 
     def record(**row):
         if cap:
-            cap.write(json.dumps(row) + "\n")
+            cap.write(json.dumps(row, default=lambda value: value.hex()
+                                 if isinstance(value, bytes) else str(value)) + "\n")
             cap.flush()
 
     try:
@@ -428,13 +932,21 @@ def main():
         return 2
 
     keys = sv.session_keys(transport.ssid)
+    if args.raid_replay_trace and raid_start_net == b"":
+        rebuilt = bytearray(NET_PROPERTY_BODY)
+        rebuilt[4:8] = (1).to_bytes(4, "big")
+        rebuilt[12:16] = keys.network_id.to_bytes(4, "big")
+        rebuilt[27] = 7  # the retail Tera Raid property state
+        rebuilt[38:38 + len(app_data)] = app_data
+        raid_start_net = bytes(rebuilt)
+        print("[sv] rebuilt raid-start Net 0x50 from captured 0x51 timing")
     print(f"[sv] ssid={transport.ssid.hex()} network_id={keys.network_id:#010x} us={transport.our_ip}")
     record(rec="host", ssid=transport.ssid.hex(), network_id=keys.network_id,
            our_ip=transport.our_ip, comm_id=comm_id, app_data=app_data.hex())
 
     deadline = time.time() + args.seconds
     seen, authed, failed = 0, 0, 0
-    net_seqid, net_sent, seen_ips = 2, {}, set()
+    net_seqid, net_sent, net_request_seq, seen_ips = 2, {}, {}, set()
     net_prop = {}              # src_ip -> [seqid, when it last went out, acknowledged]
     rtt_sent = {}              # src_ip -> when the last RTT request went out
     net_answered = set()
@@ -443,10 +955,16 @@ def main():
     stream_high = {}
     host_seq = {}
     identity_window = reliable5.SendWindow(0.25)
+    raid_window = reliable5.SendWindow(0.50)
     last_ack = {}
     sent_once = set()           # (src_ip, index of --send) already sent
     counts = {}
     advertised_players = [1]
+    raid_post_started = set()
+    last_raid_replay_sent = {}  # ip -> (replay sequence, timestamp)
+    last_client_application = {}  # ip -> concise decoded reliable application metadata
+    raid_replay_started_at = {}  # ip -> first raid replay application timestamp
+    first_session_leave = set()
 
     def next_seq(src_ip, protocol, port):
         s = host_seq.get((src_ip, protocol, port), 1)
@@ -461,11 +979,57 @@ def main():
         body = build_reliable_body(protocol, flags, seq, data)
         pkt = build_reply(keys, transport.our_ip, body, station_ids[ip]["console_var"],
                           os.urandom(8), protocol=protocol, port=port, flags=0)
-        transport.send(pkt, ip)
-        record(rec="out", dst=ip, kind=why, protocol=protocol, port=port, seq=seq,
+        dst_ip = transport.broadcast if protocol in MESH_ADDRESSED else ip
+        transport.send(pkt, dst_ip)
+        record(rec="out", dst=dst_ip, kind=why, protocol=protocol, port=port, seq=seq,
                hex=pkt.hex(), t=time.time())
         print(f"[sv] -> {ip}: data 0x{protocol:02x}:{port} seq {seq} {len(data)}B "
               f"{data[:8].hex()} ({why})")
+
+    def send_raid_replay(ip, sequence, flags, data, why, *, remember,
+                         lowest_hint=None):
+        key = (ip, 0x80, 0)
+        lowest = raid_window.lowest(
+            key, sequence if lowest_hint is None else lowest_hint)
+        body = build_reliable_body(0x80, flags, sequence, data,
+                                   lowest_pending=lowest)
+        pkt = build_reply(keys, transport.our_ip, body,
+                          station_ids[ip]["console_var"], os.urandom(8),
+                          protocol=0x80, port=0, flags=0)
+        transport.send(pkt, transport.broadcast)
+        sent_at = time.time()
+        raid_replay_started_at.setdefault(ip, sent_at)
+        last_raid_replay_sent[ip] = (sequence, sent_at)
+        if (why == "raid replay" and args.raid_replay_disconnect_after_stop is not None
+                and sequence == args.raid_replay_stop_after_seq):
+            scripted_disconnect_due[ip] = (
+                sent_at + args.raid_replay_disconnect_after_stop, sequence)
+            print(f"[sv] scripted handoff: host shutdown scheduled "
+                  f"{args.raid_replay_disconnect_after_stop:.3f}s after sequence {sequence}")
+        decompressed = None
+        if flags & reliable5.FLAG_ZLIB:
+            try:
+                decompressed = streams.decompress(data)
+            except (ValueError, zlib.error):
+                pass
+        record(rec="raid_app_out", t=sent_at, dst=ip, kind=why,
+               replay_seq=sequence, protocol=0x80, port=0, reliable_seq=sequence,
+               flags=flags, payload_length=len(data), payload=data.hex(),
+               decompressed_payload=(None if decompressed is None else decompressed.hex()))
+        print(f"[sv] RAID-SEQ t={sent_at:.6f} replay={sequence} protocol=0x80 port=0 "
+              f"reliable={sequence} flags=0x{flags:02x} len={len(data)} kind={why}")
+        if 20 <= sequence <= 24:
+            print(f"[sv] RAID-APP-OUT t={sent_at:.6f} replay={sequence} protocol=0x80 "
+                  f"port=0 reliable={sequence} flags=0x{flags:02x} len={len(data)} "
+                  f"payload={data.hex()} decompressed="
+                  f"{None if decompressed is None else decompressed.hex()}")
+        if remember:
+            raid_window.sent(key, sequence, (flags, data), sent_at)
+        host_seq[key] = max(host_seq.get(key, 1), sequence + 1)
+        record(rec="out", dst=transport.broadcast, kind=why,
+               protocol=0x80, port=0, seq=sequence, lowest_pending=lowest,
+               hex=pkt.hex(), t=sent_at)
+        print(f"[sv] -> {ip}: {why} 0x80:0 seq {sequence} {len(data)}B low={lowest}")
 
     def send_record_bundle(ip, bundle, retry=False):
         """The first message whole, the rest inheriting its header."""
@@ -479,7 +1043,7 @@ def main():
         pkt = pia6.build_packet(keys.session_key, keys.network_id, transport.our_ip, msgs,
                                 dst_var=MESH_DESTINATION, src_var=PIA_HOST_VAR,
                                 nonce8=os.urandom(8), footer_ids=(station_ids[ip]["console_var"],))
-        transport.send(pkt, ip)
+        transport.send(pkt, transport.broadcast)
         for seq, _ in bundle:
             record(rec="out", dst=ip, kind="record retry" if retry else "record set",
                    protocol=0x81, port=0, seq=seq,
@@ -499,7 +1063,8 @@ def main():
                                                         host_seq.get((src_ip, protocol, port), 1)))
         pkt = build_reply(keys, transport.our_ip, body, dst_var, os.urandom(8),
                           protocol=protocol, port=port, flags=0)
-        transport.send(pkt, src_ip)
+        dst_ip = transport.broadcast if protocol in MESH_ADDRESSED else src_ip
+        transport.send(pkt, dst_ip)
         last_ack[(src_ip, protocol, port)] = time.time()
         record(rec="out", dst=src_ip, kind="reliable ack", protocol=protocol, port=port,
                ack_id=high + 1, hex=pkt.hex(), t=time.time())
@@ -508,6 +1073,17 @@ def main():
     try:
         while time.time() < deadline:
             now = time.time()
+            due_disconnects = [
+                (ip, due, sequence)
+                for ip, (due, sequence) in scripted_disconnect_due.items()
+                if now >= due]
+            if due_disconnects:
+                ip, due, sequence = min(due_disconnects, key=lambda item: item[1])
+                print(f"[sv] SCRIPTED RAID HANDOFF t={now:.6f}: shutting down host after "
+                      f"sequence {sequence} for {ip}")
+                record(rec="raid_scripted_handoff", t=now, dst=ip,
+                       last_replay_seq=sequence, scheduled_at=due)
+                break
             current_ips = set()
             for entry in list(transport.participants):
                 seen_ips.add(entry[1])
@@ -519,9 +1095,14 @@ def main():
             # returning station needs the Net 0x11 again.
             net_answered.intersection_update(current_ips)
             identity_window.forget(lambda key: key[0] not in current_ips)
+            raid_window.forget(lambda key: key[0] not in current_ips)
             for (ip, _, _), seq, body in identity_window.due(now):
                 if ip in station_ids:
                     send_record_bundle(ip, [(seq, body)], retry=True)
+            for (ip, _, _), seq, item in raid_window.due(now):
+                if ip in station_ids:
+                    flags, data = item
+                    send_raid_replay(ip, seq, flags, data, "raid retry", remember=False)
             players = 1 + len(transport.participants)
             if players != advertised_players[0]:
                 advertised_players[0] = players
@@ -531,23 +1112,28 @@ def main():
                 print(f"[sv] advertising {players} player(s)")
             if not args.no_net_probe:
                 for ip in list(seen_ips):
-                    # A retail host sends Net 0x11 once; a repeat is a fresh connection request.
+                    # Retail repeats the same broadcast request and sequence until the 0x12.
                     if ip in net_answered:
                         continue
                     if ip == transport.our_ip or now - net_sent.get(ip, 0) < NET_REPEAT_SECONDS:
                         continue
                     net_sent[ip] = now
-                    net_seqid += 1
+                    if ip not in net_request_seq:
+                        net_request_seq[ip] = net_seqid
+                        net_seqid += 1
+                    request_seq = net_request_seq[ip]
                     probe = build_net_probe(
                         keys, transport.our_ip, transport.our_mac, [transport.our_ip, ip],
-                        net_seqid, os.urandom(8),
-                        sv.MAX_PARTICIPANTS if args.net_stations is None else args.net_stations,
+                        request_seq, os.urandom(8),
+                        args.max_participants if args.net_stations is None else args.net_stations,
                         net_flags=(ESTABLISHING_FLAGS if args.net_flags is None
                                    else args.net_flags))
-                    transport.send(probe, ip)
-                    record(rec="out", dst=ip, kind="net conn request", seqid=net_seqid,
+                    net_dst = ip if args.net_unicast else transport.broadcast
+                    transport.send(probe, net_dst)
+                    record(rec="out", dst=net_dst, kind="net conn request",
+                           seqid=request_seq,
                            hex=probe.hex(), t=now)
-                    print(f"[sv] -> {ip}: net 0x11 connection request, seqid={net_seqid}")
+                    print(f"[sv] -> {ip}: net 0x11 connection request, seqid={request_seq}")
             if args.rtt_probe:
                 for ip in list(seen_ips):
                     if ip == transport.our_ip or now - rtt_sent.get(ip, 0) < args.rtt_probe:
@@ -558,8 +1144,9 @@ def main():
                                       build_rtt(RTT_REQUEST, tick),
                                       station_ids.get(ip, {}).get("console_var", 0),
                                       os.urandom(8), protocol=PROTO_RTT)
-                    transport.send(pkt, ip)
-                    record(rec="out", dst=ip, kind="rtt request", hex=pkt.hex(), t=now)
+                    transport.send(pkt, transport.broadcast)
+                    record(rec="out", dst=transport.broadcast, kind="rtt request",
+                           hex=pkt.hex(), t=now)
             if args.net_property:
                 for ip, state in list(net_prop.items()):
                     if state[2] or now - state[1] < NET_REPEAT_SECONDS:
@@ -581,6 +1168,88 @@ def main():
                 pending_trade.remove(entry)
                 if ip in station_ids:
                     send_data(ip, PROTO_RELIABLE, port, payload, "trade")
+            # Retail seats the station before opening any game streams.  Keep this ahead of the
+            # bootstrap and identity queues even when several deadlines expire in one board tick.
+            for ip, (due, pkt) in list(pending_update.items()):
+                if now < due:
+                    continue
+                del pending_update[ip]
+                transport.send(pkt, transport.broadcast)
+                record(rec="out", dst=transport.broadcast, kind="session update",
+                       hex=pkt.hex(), t=now)
+                print(f"[sv] -> {ip}: session station-list update (type 5)")
+            for ip, due in list(pending_raid_net.items()):
+                if now < due or ip not in station_ids:
+                    continue
+                del pending_raid_net[ip]
+                # Message flag 0x20 describes the Pia message payload itself, not merely a
+                # receiver hint.  Retail compresses this Net 0x50 body (170 -> 85 bytes); sending
+                # the plain body with flags 0x31 makes the Switch silently ignore the update and
+                # therefore never answer with Net 0x51.
+                pkt = build_reply(keys, transport.our_ip, zlib.compress(raid_start_net), 0,
+                                  os.urandom(8),
+                                  protocol=PROTO_NET, flags=0x31)
+                transport.send(pkt, transport.broadcast)
+                record(rec="out", dst=transport.broadcast, kind="raid start net property",
+                       hex=pkt.hex(), t=now)
+                print(f"[sv] -> {ip}: retail raid-start Net 0x50")
+            for ip, due in list(pending_raid_session.items()):
+                if now < due or ip not in station_ids:
+                    continue
+                del pending_raid_session[ip]
+                state = station_ids[ip]
+                update = pia_connect.build_session_update_v11(
+                    state["host_const"], state["host_var"], state["session_stations"],
+                    sequence_id=1)
+                pkt = build_reply(keys, transport.our_ip, update, state["console_var"],
+                                  os.urandom(8), flags=0, packet_id=0, mesh=True)
+                transport.send(pkt, transport.broadcast)
+                record(rec="out", dst=transport.broadcast, kind="raid start session update",
+                       hex=pkt.hex(), t=now)
+                print(f"[sv] -> {ip}: retail raid-start Session update sequence 1")
+            for ip, due in list(pending_raid_bootstrap.items()):
+                if now < due or ip not in station_ids:
+                    continue
+                del pending_raid_bootstrap[ip]
+                tick = int(time.monotonic() * RTT_TICKS_PER_SECOND)
+                messages = pia6.build_message(
+                    build_rtt(RTT_REQUEST, tick), PROTO_RTT, message_flags=0)
+                for protocol, ports in ((0x80, range(3)), (0x81, range(8))):
+                    for port in ports:
+                        messages += pia6.build_message(
+                            RETAIL_RAID_STREAM_OPEN, protocol, port=port,
+                            message_flags=0xA0)
+                opening = build_reliable_body(
+                    0x81,
+                    reliable5.FLAG_APPLICATION_DATA | reliable5.FLAG_MESSAGE_START
+                    | reliable5.FLAG_MESSAGE_END | reliable5.FLAG_IS_INITIALIZED,
+                    1, bytes.fromhex("000500000ff00800000000"))
+                messages += pia6.build_message(opening, 0x81, port=5, message_flags=0)
+                pkt = pia6.build_packet(
+                    keys.session_key, keys.network_id, transport.our_ip, messages,
+                    dst_var=MESH_DESTINATION, src_var=PIA_HOST_VAR, packet_id=87,
+                    nonce8=os.urandom(8),
+                    footer_ids=(station_ids[ip]["console_var"],))
+                transport.send(pkt, transport.broadcast)
+                host_seq[(ip, 0x81, 5)] = 2
+                record(rec="out", dst=transport.broadcast, kind="retail raid bootstrap",
+                       hex=pkt.hex(), t=now)
+                print(f"[sv] -> {ip}: retail raid stream bootstrap (one Pia packet)")
+            for entry in list(pending_raid_replay):
+                due, ip, sequence, flags, lowest, data = entry
+                if now < due or ip not in station_ids:
+                    continue
+                pending_raid_replay.remove(entry)
+                send_raid_replay(
+                    ip, sequence, flags, data, "raid replay",
+                    # The battle-state snapshots are fragmented across many reliable
+                    # messages.  A single lost fragment leaves the game waiting before
+                    # move selection, so retain only that phase for ACK-driven retries.
+                    # Keep lobby/start packets one-shot: retransmitting those has caused
+                    # the console to regress out of otherwise-working raid startup.
+                    remember=(args.raid_replay_interactive
+                              or args.raid_replay_timed_tail) and sequence >= 33,
+                    lowest_hint=lowest)
             for (ip, index), (due, rest) in list(pending_late.items()):
                 if now < due or ip not in station_ids:
                     continue
@@ -590,11 +1259,18 @@ def main():
                 p_, port_ = int(p_, 0), int(port_)
                 seq = next_seq(ip, p_, port_)
                 flags |= reliable5.FLAG_IS_INITIALIZED if seq == 1 else 0
-                body = build_reliable_body(p_, flags, seq, data)
+                lowest = None
+                if isinstance(index, str) and index.startswith("raid-lobby"):
+                    lowest = (1, 1, 1, 4, 5, 6, 6, 8, 9, 10, 11, 12)[
+                        int(index.removeprefix("raid-lobby"))]
+                elif isinstance(index, str) and index.startswith("raid-start"):
+                    lowest = {13: 13, 14: 13, 15: 15, 16: 16}[seq]
+                body = build_reliable_body(p_, flags, seq, data, lowest_pending=lowest)
                 pkt = build_reply(keys, transport.our_ip, body, station_ids[ip]["console_var"],
                                   os.urandom(8), protocol=p_, port=port_, flags=0)
-                transport.send(pkt, ip)
-                record(rec="out", dst=ip, kind="send-at", protocol=p_, port=port_, seq=seq,
+                dst_ip = transport.broadcast if p_ in MESH_ADDRESSED else ip
+                transport.send(pkt, dst_ip)
+                record(rec="out", dst=dst_ip, kind="send-at", protocol=p_, port=port_, seq=seq,
                        hex=pkt.hex(), t=now)
                 print(f"[sv] -> {ip}: data 0x{p_:02x}:{port_} seq {seq} {len(data)}B (scheduled)")
             for ip, due in list(pending_records.items()):
@@ -618,7 +1294,7 @@ def main():
                         continue
                     payload = Path(path).read_bytes()
                     seq = int(name.split(".")[0])
-                    if seq == 1:
+                    if seq == 1 and not args.preserve_records:
                         payload = reference.named_record(payload, args.trainer_name)
                     flags = (reliable5.FLAG_APPLICATION_DATA | reliable5.FLAG_MESSAGE_START
                              | reliable5.FLAG_MESSAGE_END | reliable5.FLAG_ZLIB
@@ -631,6 +1307,8 @@ def main():
                     if bundle and (len(bundle) >= args.records_per_packet or sum(
                             len(b) + 3 for _, b in bundle) + len(body) + 3 > pia6.MAX_PAYLOAD - 48):
                         send_record_bundle(ip, bundle)
+                        if args.record_spacing > 0:
+                            time.sleep(args.record_spacing)
                         bundle = []
                     bundle.append((seq, body))
                     sent_ids.append(seq)
@@ -641,12 +1319,6 @@ def main():
                     host_seq[(ip, PROTO_STREAM_BROADCAST_RELIABLE, 0)] = max(sent_ids) + 1
                 print(f"[sv] -> {ip}: identity, {len(names)} record(s) on 0x81 port 0, "
                       f"next sequence {max(sent_ids) + 1 if sent_ids else 1}")
-            for ip, (due, pkt) in list(pending_update.items()):
-                if now >= due:
-                    del pending_update[ip]
-                    transport.send(pkt, ip)
-                    record(rec="out", dst=ip, kind="session update", hex=pkt.hex(), t=now)
-                    print(f"[sv] -> {ip}: session station-list update (type 5)")
             if not args.no_ack:
                 for (ip, protocol, port), at in list(last_ack.items()):
                     if now - at >= args.ack_period and ip in station_ids:
@@ -677,6 +1349,16 @@ def main():
                     record(rec="msg", src=src_ip, protocol=msg.protocol, port=msg.port,
                            flags=msg.message_flags, src_var=header.src_var, dst_var=header.dst_var,
                            payload=msg.payload.hex(), t=time.time())
+                    routine_kind = {
+                        PROTO_RTT: "rtt",
+                        PROTO_SESSION: "session",
+                        PROTO_NET: "network",
+                        PROTO_CLONE_CLOCK: "clone_clock",
+                    }.get(msg.protocol)
+                    if routine_kind is not None:
+                        record(rec="client_routine", t=time.time(), src=src_ip,
+                               routine=routine_kind, protocol=msg.protocol, port=msg.port,
+                               payload_length=len(msg.payload), payload=msg.payload.hex())
                     try:
                         if msg.protocol == PROTO_NET and len(msg.payload) >= 8:
                             kind = msg.payload[1]
@@ -694,6 +1376,61 @@ def main():
                                           f"seqid={acked}")
                         # The leaver resends every 500 ms until this, four sends at most
                         # (`0x6db7b0`); a host answers at `0x6d7894` (docs/sv.md, Leaving).
+                        if (msg.protocol == PROTO_SESSION and len(msg.payload) >= 1
+                                and msg.payload[0] == pia_connect.SESSION_LEAVE_REQUEST):
+                            leave_at = time.time()
+                            last_sent = last_raid_replay_sent.get(src_ip)
+                            last_app = last_client_application.get(src_ip)
+                            if last_sent is None:
+                                sent_text = "none"
+                            else:
+                                sent_text = (f"seq {last_sent[0]} at {last_sent[1]:.6f}; "
+                                             f"leave delta={leave_at - last_sent[1]:.6f}s")
+                            if last_app is None:
+                                app_text = "none"
+                            else:
+                                app_text = (f"t={last_app['t']:.6f} protocol="
+                                            f"0x{last_app['protocol']:02x} port={last_app['port']} "
+                                            f"reliable={last_app['reliable_seq']} "
+                                            f"flags=0x{last_app['flags']:02x} "
+                                            f"len={last_app['payload_length']}")
+                            print(f"[sv] SESSION-LEAVE t={leave_at:.6f} last raid replay: "
+                                  f"{sent_text}; last client application: {app_text}")
+                            record(rec="raid_session_leave", t=leave_at, src=src_ip,
+                                   last_replay_seq=None if last_sent is None else last_sent[0],
+                                   last_replay_at=None if last_sent is None else last_sent[1],
+                                   since_last_replay=None if last_sent is None
+                                   else leave_at - last_sent[1],
+                                   last_client_application=last_app)
+                            if src_ip not in first_session_leave:
+                                first_session_leave.add(src_ip)
+                                started_at = raid_replay_started_at.get(src_ip)
+                                print("[sv] RAID DISCONNECT SUMMARY")
+                                print(f"[sv] last replay seq: "
+                                      f"{None if last_sent is None else last_sent[0]}")
+                                print(f"[sv] time battle replay started: {started_at}")
+                                print(f"[sv] time last replay seq sent: "
+                                      f"{None if last_sent is None else last_sent[1]}")
+                                print(f"[sv] time Session type 3 received: {leave_at}")
+                                print(f"[sv] time from battle start to leave: "
+                                      f"{None if started_at is None else leave_at - started_at}")
+                                print(f"[sv] time from last replay seq to leave: "
+                                      f"{None if last_sent is None else leave_at - last_sent[1]}")
+                                print("[sv] last non-ACK application packet received from client: "
+                                      + ("none" if last_app is None
+                                         else json.dumps(last_app, separators=(",", ":"))))
+                                record(rec="raid_disconnect_summary", t=leave_at, src=src_ip,
+                                       last_replay_seq=(None if last_sent is None
+                                                        else last_sent[0]),
+                                       battle_replay_started=started_at,
+                                       last_replay_sent_at=(None if last_sent is None
+                                                            else last_sent[1]),
+                                       session_leave_at=leave_at,
+                                       battle_start_to_leave=(None if started_at is None
+                                                              else leave_at - started_at),
+                                       last_replay_to_leave=(None if last_sent is None
+                                                             else leave_at - last_sent[1]),
+                                       last_non_ack_application=last_app)
                         if (not args.no_leave_response and msg.protocol == PROTO_SESSION
                                 and len(msg.payload) >= 17
                                 and msg.payload[0] == pia_connect.SESSION_LEAVE_REQUEST):
@@ -728,10 +1465,24 @@ def main():
                                 for k in [k for k in d if k[0] == src_ip]:
                                     d.pop(k)
                             identity_window.forget(lambda key: key[0] == src_ip)
+                            # A retail console can retry with the same link-local IP after a
+                            # failed application handshake.  Do not let scheduled packets or
+                            # reliable-window state from that abandoned attempt interleave with
+                            # the fresh raid replay.
+                            raid_window.forget(lambda key: key[0] == src_ip)
+                            pending_raid_replay[:] = [
+                                entry for entry in pending_raid_replay if entry[1] != src_ip]
+                            pending_raid_net.pop(src_ip, None)
+                            pending_raid_session.pop(src_ip, None)
+                            scripted_disconnect_due.pop(src_ip, None)
+                            last_raid_replay_sent.pop(src_ip, None)
+                            raid_replay_started_at.pop(src_ip, None)
+                            last_client_application.pop(src_ip, None)
+                            first_session_leave.discard(src_ip)
+                            raid_post_started.discard(src_ip)
                             sent_once = {s for s in sent_once if s[0] != src_ip}
                             stages.pop(src_ip, None)
                             pending_trade[:] = [e for e in pending_trade if e[1] != src_ip]
-                            net_answered.discard(src_ip)
                             host_const, host_var = j["destination_constant_id"], j["destination_var"]
                             console_const, console_var = j["source_constant_id"], j["source_var"]
                             station_ids[src_ip] = dict(host_const=host_const, host_var=host_var,
@@ -763,7 +1514,12 @@ def main():
                                 print(f"[sv] -> {src_ip}: session join response (type 2)")
                             if not args.no_session_update:
                                 host_player = dict(player_id=host_player_id, name=args.host_player_name)
-                                console_player = dict(player_id=pia_connect.DEFAULT_PLAYER_ID, name=" ")
+                                # The join request's PlayerInfo must be echoed in the station list.
+                                # A placeholder id seats the Pia station, but Scarlet does not expose
+                                # it as a raid-lobby participant.
+                                console_player = (j["players"][0] if j.get("players") else
+                                                  dict(player_id=pia_connect.DEFAULT_PLAYER_ID,
+                                                       name=" "))
                                 stations = [
                                     dict(constant_id=host_const, variable_id=host_var,
                                          ip=transport.our_ip, port=12345, station_index=0,
@@ -776,6 +1532,7 @@ def main():
                                          join_order=1, token=j["identification_token"],
                                          players=[console_player]),
                                 ]
+                                station_ids[src_ip]["session_stations"] = stations
                                 # An emulated host sends the list twice; a retail console leaves
                                 # when sent a type-1 join ack in that breath (docs/sv.md).
                                 if args.update_first_seq is not None:
@@ -784,9 +1541,9 @@ def main():
                                         sequence_id=args.update_first_seq)
                                     pkt0 = build_reply(keys, transport.our_ip, first, console_var,
                                                        os.urandom(8), flags=session_flags,
-                                                       packet_id=args.session_packet_id)
-                                    transport.send(pkt0, src_ip)
-                                    record(rec="out", dst=src_ip, kind="session update",
+                                                       packet_id=args.session_packet_id, mesh=True)
+                                    transport.send(pkt0, transport.broadcast)
+                                    record(rec="out", dst=transport.broadcast, kind="session update",
                                            seq=args.update_first_seq, hex=pkt0.hex(), t=time.time())
                                     print(f"[sv] -> {src_ip}: session station list (type 5), "
                                           f"sequence {args.update_first_seq}, in the same breath")
@@ -794,7 +1551,7 @@ def main():
                                     host_const, host_var, stations, sequence_id=args.update_seq)
                                 pkt = build_reply(keys, transport.our_ip, upd, console_var,
                                                   os.urandom(8), flags=session_flags,
-                                                  packet_id=args.session_packet_id)
+                                                  packet_id=args.session_packet_id, mesh=True)
                                 # The station list goes ~1.5 s after the type 2: sent together, the
                                 # console takes neither.
                                 pending_update[src_ip] = (time.time() + args.update_delay, pkt)
@@ -805,6 +1562,16 @@ def main():
                                     continue
                                 delay, rest = spec.split(":", 1)
                                 pending_late[(src_ip, index)] = (time.time() + float(delay), rest)
+                            if args.raid:
+                                pending_raid_bootstrap[src_ip] = time.time() + 0.04
+                                raid_messages = [
+                                    (0.06, "0x81:1:0000000000f38800000000"),
+                                    (0.06, f"0x7c:1:{streams.compress(port2.RAID_CHANNEL_TABLE).hex()}:z"),
+                                    (0.06, f"0x7c:2:{streams.compress(port2.build_raid_open(port2.station_id(host_const))).hex()}:z"),
+                                ]
+                                for index, (delay, spec) in enumerate(raid_messages):
+                                    pending_late[(src_ip, f"raid{index}")] = (
+                                        time.time() + delay, spec)
                             if trade_offers and args.offer_at is not None:
                                 stages[src_ip] = trade.TradeStage(
                                     trade_offers, confirm_delay=args.confirm_delay)
@@ -814,7 +1581,8 @@ def main():
                             if args.announce and (src_ip, "announce") not in pending_late:
                                 # The type 7 names this host's station, the join's constant id read
                                 # big-endian.
-                                body = port2.build_announce(port2.station_id(host_const))
+                                body = port2.build_announce(
+                                    port2.station_id(host_const), capacity=args.announce_capacity)
                                 pending_late[(src_ip, "announce")] = (
                                     time.time() + args.announce_delay,
                                     f"0x80:2:{port2.deflate_announce(body).hex()}:z")
@@ -848,16 +1616,80 @@ def main():
                                 print(f"[sv] {src_ip}: reliable did not parse: {exc}")
                                 rm = None
                             key = (src_ip, msg.protocol, msg.port)
+                            if rm and not (rm["flags"] & reliable5.FLAG_APPLICATION_DATA):
+                                record(rec="client_routine", t=time.time(), src=src_ip,
+                                       routine="reliable_ack", protocol=msg.protocol,
+                                       port=msg.port, reliable_flags=rm["flags"],
+                                       payload_length=len(msg.payload), payload=msg.payload.hex())
                             if rm and (rm["flags"] & reliable5.FLAG_APPLICATION_DATA):
                                 print(f"[sv] <- {src_ip}: DATA 0x{msg.protocol:02x}:{msg.port} "
                                       f"stream {rm['stream_id']} seq {rm['sequence_id']} "
                                       f"{reliable5.flag_names(rm['flags'])} bits={rm['destination_bits']} "
                                       f"map={rm['bitmap']} {len(rm['payload'])}B "
                                       f"{rm['payload'].hex()}")
+                                application_at = time.time()
                                 record(rec="data", src=src_ip, protocol=msg.protocol, port=msg.port,
                                        seq=rm["sequence_id"], flags=rm["flags"],
-                                       payload=rm["payload"].hex(), t=time.time())
+                                       payload=rm["payload"].hex(), t=application_at)
+                                decoded_application = None
+                                if rm["flags"] & reliable5.FLAG_ZLIB:
+                                    try:
+                                        decoded_application = streams.decompress(rm["payload"])
+                                    except (ValueError, zlib.error):
+                                        pass
+                                last_client_application[src_ip] = {
+                                    "t": application_at,
+                                    "protocol": msg.protocol,
+                                    "port": msg.port,
+                                    "reliable_seq": rm["sequence_id"],
+                                    "flags": rm["flags"],
+                                    "payload_length": len(rm["payload"]),
+                                    "payload": rm["payload"].hex(),
+                                    "decompressed_payload": (None
+                                        if decoded_application is None
+                                        else decoded_application.hex()),
+                                }
+                                last_host = last_raid_replay_sent.get(src_ip)
+                                if src_ip in raid_replay_started_at:
+                                    record(rec="client_application", t=application_at, src=src_ip,
+                                           replay_window_seq=last_host[0], protocol=msg.protocol,
+                                           port=msg.port, reliable_seq=rm["sequence_id"],
+                                           flags=rm["flags"], payload_length=len(rm["payload"]),
+                                           payload=rm["payload"].hex(),
+                                           decompressed_payload=(None if decoded_application is None
+                                                                 else decoded_application.hex()))
+                                if last_host is not None and last_host[0] >= 15:
+                                    print(f"[sv] RAID-APP-IN t={application_at:.6f} "
+                                          f"after-replay={last_host[0]} protocol="
+                                          f"0x{msg.protocol:02x} port={msg.port} "
+                                          f"reliable={rm['sequence_id']} "
+                                          f"flags=0x{rm['flags']:02x} len={len(rm['payload'])} "
+                                          f"payload={rm['payload'].hex()} decompressed="
+                                          f"{None if decoded_application is None else decoded_application.hex()}")
                                 stream_high[key] = max(stream_high.get(key, 0), rm["sequence_id"])
+                                if (args.raid_replay_interactive and raid_replay_post_events
+                                        and msg.protocol == 0x80
+                                        and msg.port == 0 and src_ip not in raid_post_started):
+                                    application = rm["payload"]
+                                    if rm["flags"] & reliable5.FLAG_ZLIB:
+                                        try:
+                                            application = zlib.decompress(application)
+                                        except zlib.error:
+                                            pass
+                                    # The selected-move channel-table message is exactly 250 bytes
+                                    # and begins with the 0x7b / key-0x1327 envelope in both retail
+                                    # captures.  The lobby's uncompressed Pokémon state is 362
+                                    # bytes, so length alone would fire this transition too early.
+                                    if (len(application) == 250
+                                            and application.startswith(bytes.fromhex("7b001327"))):
+                                        raid_post_started.add(src_ip)
+                                        triggered = time.time()
+                                        for delay, sequence, flags, lowest, payload in raid_replay_post_events:
+                                            pending_raid_replay.append((
+                                                triggered + delay, src_ip, sequence,
+                                                flags, lowest, payload))
+                                        print(f"[sv] {src_ip}: move selected; scheduled "
+                                              f"{len(raid_replay_post_events)} post-move host packet(s)")
                                 if not args.no_ack and src_ip in station_ids:
                                     send_ack(src_ip, msg.protocol, msg.port,
                                              station_ids[src_ip]["console_var"],
@@ -916,28 +1748,85 @@ def main():
                                 slot = (port2.parse_join(rm["payload"])
                                         if msg.protocol == PROTO_RELIABLE and msg.port == 2
                                         else None)
-                                if (args.announce and slot is not None and src_ip in station_ids
+                                if ((args.announce or args.raid) and slot is not None
+                                        and src_ip in station_ids
                                         and (src_ip, "accept") not in sent_once):
-                                    # The type 9 carries the joiner's station id; the receiver drops
-                                    # any other.
                                     sent_once.add((src_ip, "accept"))
-                                    data = port2.build_accept(
-                                        port2.station_id(station_ids[src_ip]["console_const"]),
-                                        slot=slot)
-                                    s2 = next_seq(src_ip, 0x80, 2)
-                                    flags = (reliable5.FLAG_APPLICATION_DATA
-                                             | reliable5.FLAG_MESSAGE_START
-                                             | reliable5.FLAG_MESSAGE_END
-                                             | (reliable5.FLAG_IS_INITIALIZED if s2 == 1 else 0))
-                                    body = build_reliable_body(0x80, flags, s2, data)
-                                    pkt = build_reply(keys, transport.our_ip, body,
-                                                      station_ids[src_ip]["console_var"],
-                                                      os.urandom(8), protocol=0x80, port=2, flags=0)
-                                    transport.send(pkt, src_ip)
-                                    record(rec="out", dst=src_ip, kind="accept", protocol=0x80,
-                                           port=2, seq=s2, hex=pkt.hex(), t=time.time())
-                                    print(f"[sv] -> {src_ip}: type 9 accept on 0x80:2 seq {s2}, "
-                                          f"slot {slot}, station {data[-8:].hex()}")
+                                    accepts = ([(port2.station_id(host_const), 0),
+                                                (port2.station_id(
+                                                    station_ids[src_ip]["console_const"]), 1)]
+                                               if args.raid else
+                                               [(port2.station_id(
+                                                   station_ids[src_ip]["console_const"]), slot)])
+                                    for station, assigned_slot in accepts:
+                                        data = (port2.build_accept(station, slot=0,
+                                                                   code=assigned_slot)
+                                                if args.raid else
+                                                port2.build_accept(station,
+                                                                   slot=assigned_slot))
+                                        s2 = next_seq(src_ip, 0x80, 2)
+                                        flags = (reliable5.FLAG_APPLICATION_DATA
+                                                 | reliable5.FLAG_MESSAGE_START
+                                                 | reliable5.FLAG_MESSAGE_END
+                                                 | (reliable5.FLAG_IS_INITIALIZED if s2 == 1 else 0))
+                                        body = build_reliable_body(
+                                            0x80, flags, s2, data,
+                                            lowest_pending=1 if args.raid else None)
+                                        pkt = build_reply(
+                                            keys, transport.our_ip, body,
+                                            station_ids[src_ip]["console_var"], os.urandom(8),
+                                            protocol=0x80, port=2, flags=0)
+                                        transport.send(pkt, transport.broadcast)
+                                        record(rec="out", dst=transport.broadcast, kind="accept", protocol=0x80,
+                                               port=2, seq=s2, hex=pkt.hex(), t=time.time())
+                                        print(f"[sv] -> {src_ip}: type 9 accept on 0x80:2 seq {s2}, "
+                                              f"slot {assigned_slot}, station {data[-8:].hex()}")
+                                    if args.raid:
+                                        accepted_at = time.time()
+                                        if raid_replay_events:
+                                            for delay, sequence, flags, lowest, payload in raid_replay_events:
+                                                pending_raid_replay.append((
+                                                    accepted_at + delay, src_ip, sequence,
+                                                    flags, lowest, payload))
+                                            if args.raid_replay_auto_tail_delay is not None:
+                                                raid_post_started.add(src_ip)
+                                                tail_at = (accepted_at
+                                                           + max(event[0] for event
+                                                                 in raid_replay_events)
+                                                           + args.raid_replay_auto_tail_delay)
+                                                for delay, sequence, flags, lowest, payload in \
+                                                        raid_replay_post_events:
+                                                    pending_raid_replay.append((
+                                                        tail_at + delay, src_ip, sequence,
+                                                        flags, lowest, payload))
+                                                print(f"[sv] {src_ip}: scripted victory tail "
+                                                      f"scheduled after opening "
+                                                      f"({len(raid_replay_post_events)} packet(s))")
+                                            pending_raid_net[src_ip] = (
+                                                accepted_at + raid_replay_net_delay)
+                                            pending_raid_session[src_ip] = (
+                                                accepted_at + raid_replay_session_delay)
+                                        else:
+                                            for index, (delay, compressed, payload) in enumerate(
+                                                    port2.RAID_LOBBY_MESSAGES):
+                                                suffix = ":z" if compressed else ""
+                                                pending_late[(src_ip, f"raid-lobby{index}")] = (
+                                                    accepted_at + delay,
+                                                    f"0x80:0:{payload.hex()}{suffix}")
+                                        if raid_start_payloads and not raid_replay_events:
+                                            pending_raid_net[src_ip] = accepted_at + 7.68
+                                            pending_raid_session[src_ip] = accepted_at + 8.77
+                                            start_specs = {
+                                                13: (9.18, ":start"),
+                                                14: (9.18, ":z:end"),
+                                                15: (14.28, ""),
+                                                16: (22.47, ""),
+                                            }
+                                            for sequence, (delay, suffix) in start_specs.items():
+                                                pending_late[(src_ip, f"raid-start{sequence}")] = (
+                                                    accepted_at + delay,
+                                                    f"0x80:0:{raid_start_payloads[sequence].hex()}"
+                                                    f"{suffix}")
                             elif rm:
                                 a = reliable5.parse_ack_payload(rm["payload"])
                                 if (not rm["truncated"] and a["entries"]
@@ -945,6 +1834,11 @@ def main():
                                         and msg.port == 0 and a["entries"][0]["stream_id"] == 0):
                                     entry = a["entries"][0]
                                     identity_window.acked(key, entry["ack_id"], entry["mask"])
+                                if (not rm["truncated"] and a["entries"]
+                                        and msg.protocol == PROTO_BROADCAST_RELIABLE
+                                        and msg.port == 0 and a["entries"][0]["stream_id"] == 0):
+                                    entry = a["entries"][0]
+                                    raid_window.acked(key, entry["ack_id"], entry["mask"])
                                 print(f"[sv] <- {src_ip}: ACK 0x{msg.protocol:02x}:{msg.port} "
                                       f"low={rm['lowest_pending']} bits={rm['destination_bits']} "
                                       f"map={rm['bitmap']} u0={a['unknown0']} "
