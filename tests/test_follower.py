@@ -17,7 +17,8 @@ from pokeldn.frlg.text import charmap
 pytestmark = pytest.mark.skipif(not bs.emulation_available(), reason="needs unicorn")
 
 CARTRIDGES = {"BPRF": "scratchpad/FireRed_f.gba", "BPGF": "scratchpad/LeafGreen_f.gba",
-              "BPRE": "scratchpad/frlg_en/FireRed_e.gba", "BPGE": "scratchpad/frlg_en/LeafGreen_e.gba"}
+              "BPRE": "scratchpad/frlg_en/FireRed_e.gba", "BPGE": "scratchpad/frlg_en/LeafGreen_e.gba",
+              "BPRS": "scratchpad/frlg_es/FireRed_s.gba"}
 STOP = 0x02030000
 STUB = 0x02030100                       # the game's VBlankIntr, stood in for by `bx lr`
 PARTY, AVATAR, OBJECTS, SPRITES = 0x02024280, 0x02037074, 0x02036E34, 0x0202063C

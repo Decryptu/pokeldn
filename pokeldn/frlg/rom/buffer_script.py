@@ -2147,7 +2147,8 @@ RESIDENT_DATA = {"p_frames": 20, "p_ring": 140, "p_state": 36, "p_words": 12, "p
 RESIDENT_DATA_FLOOR = 0x0203FBB4
 # The follower's line when A is pressed facing it, by cartridge language: FD 02 is STR_VAR_1, the
 # lead's nickname; FE a line break [charmap.txt]. asm/resident/follower.s, p_text.
-FOLLOWER_TEXT = {"french": ("saute", "de joie !"), "english": ("jumps", "for joy!")}
+FOLLOWER_TEXT = {"french": ("saute", "de joie !"), "english": ("jumps", "for joy!"),
+                 "spanish": ("salta", "de gozo!")}
 FOLLOWER_TEXT_SIZE = 20
 R_BUTTON = 0x100
 # gHelpSystemToggleWithRButtonDisabled, French [RunHelpSystemCallback's literal, 0x0813F6FC].

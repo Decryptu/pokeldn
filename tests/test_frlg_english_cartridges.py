@@ -1,4 +1,4 @@
-"""The English builds' payloads on the retail English cartridge images under unicorn, through their
+"""The English and Spanish builds' payloads on their retail cartridge images under unicorn, through their
 own Client_RunBufferScript [mystery_gift_client.c:276]."""
 
 import pathlib
@@ -13,7 +13,8 @@ from pokeldn.frlg.save import mon as monlib
 pytestmark = pytest.mark.skipif(not bs.emulation_available(), reason="needs unicorn")
 
 CARTRIDGES = [pytest.param(builds.BPRE, "scratchpad/frlg_en/FireRed_e.gba", id="BPRE"),
-              pytest.param(builds.BPGE, "scratchpad/frlg_en/LeafGreen_e.gba", id="BPGE")]
+              pytest.param(builds.BPGE, "scratchpad/frlg_en/LeafGreen_e.gba", id="BPGE"),
+              pytest.param(builds.BPRS, "scratchpad/frlg_es/FireRed_s.gba", id="BPRS")]
 TRAINER_ID = 0x0AE73039
 FUNC_RUN = 4                        # client->funcId once the payload returns 1 [mystery_gift_client.c:17]
 FRENCH_INTR_VBLANK = builds.BPRF.intr_vblank
@@ -79,7 +80,7 @@ def test_the_trainer_id_probe_returns_through_the_cartridges_client(build, path)
 
 
 @pytest.mark.parametrize("build, path", CARTRIDGES)
-def test_create_mon_makes_an_english_pikachu(build, path):
+def test_create_mon_makes_a_pikachu_in_the_cartridges_language(build, path):
     machine = _console(_create_mon(build), build, _image(path))
     func_id, _, send = _client_frame(machine, build)
     result = bs.read_create_mon(send)
@@ -87,12 +88,12 @@ def test_create_mon_makes_an_english_pikachu(build, path):
     assert func_id == FUNC_RUN and result["calls"] == 1
     assert (info["pid"], info["otid"], info["checksum_ok"], info["species"]) == \
         (0x12345678, TRAINER_ID, True, 25)
-    assert result["mon"][18] == builds.LANGUAGE_ENGLISH == 2     # struct BoxPokemon.language
+    assert result["mon"][18] == build.language_id     # struct BoxPokemon.language
 
 
 @pytest.mark.parametrize("build, path", CARTRIDGES)
-def test_the_french_create_mon_makes_nothing_on_an_english_cartridge(build, path):
-    """French CreateMon's address is inside another English function; no Pokemon comes back."""
+def test_the_french_create_mon_makes_nothing_on_another_cartridge(build, path):
+    """French CreateMon's address is inside another cartridge function; no Pokemon comes back."""
     from unicorn import UcError
     machine = _console(_create_mon(builds.BPRF), build, _image(path))
     try:
@@ -122,15 +123,17 @@ def test_install_resident_patches_the_cartridges_gintrtable(build, path):
     from unicorn import UC_HOOK_CODE
     from unicorn import arm_const as a
     marker = 0x0A0B0C0D
+    other_intr = (builds.BPRE.intr_vblank if build.intr_vblank == FRENCH_INTR_VBLANK
+                  else FRENCH_INTR_VBLANK)
     code = _payload(build, script=bs.INSTALL_RESIDENT, resident_name="noencounter",
                     write_unsafe=True)
     machine = _console(code, build, _image(path), {
         build.intr_vblank: (build.vblank_intr | 1).to_bytes(4, "little"),
-        FRENCH_INTR_VBLANK: marker.to_bytes(4, "little")})
+        other_intr: marker.to_bytes(4, "little")})
     func_id, original, _ = _client_frame(machine, build)
     assert (func_id, original) == (FUNC_RUN, build.vblank_intr | 1)
     assert _word(machine, build.intr_vblank) == ns.RESIDENT_BASE | 1
-    assert _word(machine, FRENCH_INTR_VBLANK) == marker
+    assert _word(machine, other_intr) == marker
 
     uc = machine.uc
     uc.mem_map(0, BIOS_SIZE)

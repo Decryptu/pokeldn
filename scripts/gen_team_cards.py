@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Builds the GB-Link Team Wonder Cards for the four Switch FireRed/LeafGreen cartridges into
+"""Builds the GB-Link Team Wonder Cards for the supported Switch FireRed/LeafGreen cartridges into
 pokeldn/frlg/data/team_cards.json [docs/frlg_gift.md, GB-Link Team cards].
 
 A port of GB-Link-Switch-LDN `cards/build.mjs` (GPL-3.0): the same script commands, cards and texts;
@@ -40,7 +40,7 @@ CONTEXT_DATA = 0x64                 # the script context's data registers, which
 ROM_GAME, ROM_LANGUAGE, ROM_REVISION = 0x080000AE, 0x080000AF, 0x080000BC
 HOOK_STATE = 0x0203FF60             # first byte 1 while a V-blank hook card is on
 RESIDENT = 0x0203FC00
-LANGUAGE_IDS = {"E": 2, "F": 3}     # include/constants/global.h
+LANGUAGE_IDS = {"E": 2, "F": 3, "S": 7}     # include/constants/global.h
 
 VAR_TEMP_1, VAR_TEMP_2, VAR_TEMP_3, VAR_TEMP_4 = 0x4001, 0x4002, 0x4003, 0x4004
 VAR_0x8004, VAR_0x8005, VAR_0x8006, VAR_RESULT = 0x8004, 0x8005, 0x8006, 0x800D

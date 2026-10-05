@@ -247,7 +247,7 @@ event was released in several languages, the one matching `--language` is sent.
 
 The GB-Link Team's custom Wonder Cards (GB-Link-Switch-LDN `cards/`, GPL-3.0) are a Wonder Card plus a
 delivery-man RAM script that carries THUMB code, called through `callnative`. Their ARM sources are in
-`vendor/gblink-cards/`; `scripts/gen_team_cards.py` assembles them for the four cartridges into
+`vendor/gblink-cards/`; `scripts/gen_team_cards.py` assembles them for five cartridges into
 `pokeldn/frlg/data/team_cards.json`, and `pokeldn/frlg/gift/team_cards.py` registers each card under its
 id without `custom-` (`--gift nature-mint`). With their unmodified sources and their RAM addresses the
 generator reproduces their own `BPRE 1.10` payloads byte for byte, all 44 of them.
@@ -267,12 +267,13 @@ encounter hooks are covered by this project's own.
 
 What differs from their build:
 
-- French cartridges. The 167 addresses the sources take are found on `BPRF`/`BPGF` from the English
-  symbol tables: a function by unique byte windows of its body, RAM and pointer-bearing data by the
+- French and Spanish cartridges. The 167 addresses the sources take are found on `BPRF`/`BPGF`
+  and `BPRS` from the English symbol tables: a function by unique byte windows of its body, RAM and pointer-bearing data by the
   literal pools of mapped functions, a field-script label by its script's start with pointers masked.
-  `vendor/gblink-cards/symbols.json` holds all four; `tests/test_team_cards.py` checks 25 of them
-  against `builds.py` on every cartridge. Each script checks the header's game letter, language letter
-  and revision, so a payload sent to another cartridge only says the gift does not work.
+  `vendor/gblink-cards/symbols.json` holds all five; `tests/test_team_cards.py` checks 25 of them
+  against `builds.py` on every cartridge. Spanish FireRed uses its own verified ROM table
+  ([The Spanish FireRed cartridge](frlg_rom_map.md#the-spanish-firered-cartridge)). Each script
+  checks the header's game letter, language letter and revision, so a payload sent to another cartridge only says the gift does not work.
 - The relocated script (996 bytes) and the menu list (80 bytes) go to `0x0203F768` and `0x0203FB50`,
   newlib's malloc state, instead of `0x0203FC00`, where this project's resident hooks run; see
   [Where a payload can live](frlg_rom.md#where-a-payload-can-live).
@@ -285,7 +286,8 @@ What differs from their build:
 - Two texts are four and six characters shorter (`hm-moves`, `physical-special-split`) to fit 995
   bytes after the installer change.
 
-Every card has run bound to Mom under mGBA on all four cartridges; `nature-mint`, `pc-anywhere` and
+Every card has run bound to Mom under mGBA on French and English FireRed/LeafGreen and Spanish
+FireRed; `nature-mint`, `pc-anywhere` and
 `rival-name` have also run on a retail French FireRed. A payload sent to the other game's cartridge
 answers "This gift doesn't work with this version of the game." With a resident hook running,
 `nature-mint` leaves `0x0203FC00..0x02040000` untouched and `pc-anywhere` takes over `gIntrTable[4]`

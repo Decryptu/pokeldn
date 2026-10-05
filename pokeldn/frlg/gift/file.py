@@ -212,7 +212,7 @@ def from_bins(card, script, *, build=None, name="FRLG gift"):
 
 def from_wc3(raw, *, build=None, name="FRLG gift"):
     if len(raw) == WC3_JAPANESE_SIZE:
-        raise ValueError("This .wc3 is for the Japanese games; the Switch cartridges are French and English.")
+        raise ValueError("This .wc3 is for the Japanese games; this app supports the international card format.")
     if len(raw) != WC3_SIZE:
         raise ValueError(f"A .wc3 has {WC3_SIZE} bytes; this file has {len(raw)}.")
     card, script = raw[:gift_to_bin.WONDER_CARD_BIN_SIZE], raw[WC3_SCRIPT_AT:]

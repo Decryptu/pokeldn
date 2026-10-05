@@ -23,7 +23,8 @@ from tests.test_mystery_gift_end_to_end import _run_full_stack
 TOOLS = {tool.key: tool for game in GAMES for tool in game.tools}
 
 
-@pytest.mark.parametrize("code,version", [("BPRF", "firered"), ("BPGE", "leafgreen")])
+@pytest.mark.parametrize("code,version", [(code, build.version)
+                                          for code, build in builds.BUILDS.items()])
 def test_exported_frlg_gift_reaches_the_correct_cartridge_unchanged(tmp_path, code, version):
     path = tmp_path / "celebi.pokegift"
     original = config.MysteryGiftPayload(gift="celebi")
@@ -95,9 +96,10 @@ def test_news_file_selects_the_news_flow_and_preserves_the_message(tmp_path):
     assert run.console.saved_card is None
 
 
-@pytest.mark.parametrize("code,version", [("BPRF", "firered"), ("BPGE", "leafgreen")])
+@pytest.mark.parametrize("code,version", [(code, build.version)
+                                          for code, build in builds.BUILDS.items()])
 def test_a_wc3_saved_by_the_launcher_delivers_on_every_cartridge(tmp_path, code, version):
-    """One .wc3 serves all four cartridges when the script is relative; reopened through
+    """One .wc3 serves all supported cartridges when the script is relative; reopened through
     --gift-file it reaches the simulated console unchanged."""
     path = tmp_path / "celebi.wc3"
     assert frlg_mg_host.main(["--gift", "celebi", "--export-gift", str(path)]) == 0
@@ -215,7 +217,8 @@ def _wc3(card, script):
     return card_bin + bytes(0x50) + script_bin
 
 
-@pytest.mark.parametrize("code,version", [("BPRF", "firered"), ("BPGE", "leafgreen")])
+@pytest.mark.parametrize("code,version", [(code, build.version)
+                                          for code, build in builds.BUILDS.items()])
 def test_wc3_file_reaches_any_cartridge_through_the_launcher(tmp_path, code, version):
     source = config.MysteryGiftPayload(gift="celebi").build_distribution(builds.BPRF)
     path = tmp_path / "celebi.wc3"

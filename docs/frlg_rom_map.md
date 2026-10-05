@@ -68,7 +68,7 @@ Subtracting every sized EWRAM symbol in the ELF from the region leaves one span 
 
 The Mystery Gift host sends English FireRed (`BPRE`) and English LeafGreen (`BPGE`) code built on their
 own addresses. `pokeldn/frlg/rom/builds.py` holds one table per cartridge (`BPRF`, `BPGF`, `BPRE`,
-`BPGE`): the IWRAM globals, the ROM functions a payload, hook or field stub calls, the functions
+`BPGE`, `BPRS`): the IWRAM globals, the ROM functions a payload, hook or field stub calls, the functions
 `call-chain` names, and the ROM data pointers a gift carries.
 
 The host picks the table from the game code in the console's `MysteryGiftLinkGameData`
@@ -493,6 +493,54 @@ The first hit of `pokemon.o`'s block is `CreateMon` [pokemon.c:1755], instructio
 | `CreateBoxMon` | `0x080411C0` | its call between ZeroMonData and SetMonData |
 | `SetMonData` | `0x08043A78` | called with 56 (`MON_DATA_LEVEL`), then 64 (`MON_DATA_MAIL`) with 255 (`MAIL_NONE`) |
 | `CalculateMonStats` | `0x08041B78` | its last call |
+
+## The Spanish FireRed cartridge
+
+Spanish FireRed base v0 (`0100EB702342C000`, display version 1.0.0) contains `FireRed_s.gba`,
+game code `BPRS`, revision 0x0A. The 16 MiB ROM has SHA-256
+`d4dee5aeb5313e073d6067bee37278b0204886958467633978bb746bbe3d5b76`.
+Its package's four NCA signatures, section-header hashes, PFS0 and IVFC block hashes, and CNMT
+content hashes verify. The control titles are “Pokémon FireRed Version (Spanish Ver.)” and
+“Pokémon Edición Rojo Fuego”.
+
+`builds.BPRS` supplies the Spanish addresses for native gifts, event Pokemon and resident hooks.
+`vendor/gblink-cards/symbols.json` supplies the 167 card symbols; the generator's language id is 7.
+The host selects `BPRS` from the console's game data before it sends a payload. Spanish LeafGreen
+(`BPGS`) has no verified address table and is refused for build-dependent payloads.
+
+Functions are matched against the byte-identical English decomp by unique body windows, then by
+instruction sequences with pointer words and THUMB BL operands masked. A RAM or data pointer is
+read from the corresponding mapped function's literal pool. Small functions sharing an instruction
+sequence need a separate reference: `IsEnoughMoney` calls `GetMoney` at 0x080A376C;
+`SpeciesToNationalPokedexNum` at 0x080469A8 reads the table at 0x0824B9DE, whose species 277 entry
+returns 252. These addresses are found individually; ROM offsets vary within one build.
+
+| symbol | Spanish FireRed |
+|---|---|
+| `gRngValue`, `gSaveBlock1Ptr`, `gSaveBlock2Ptr` | 0x03004220, 0x03004228, 0x0300422C |
+| `gMain`, `gIntrTable[4]`, `gSoundInfo` | 0x030022D0, 0x03002730, 0x03005F80 |
+| `VBlankIntr`, `Client_RunBufferScript` | 0x0800071C, 0x08148CD0 |
+| `CreateMon`, `GetMonData3`, `Random` | 0x08041164, 0x080432F8, 0x080486C4 |
+| `CB1_Overworld`, `CB2_Overworld`, `RunTextPrinters` | 0x08059E5C, 0x08059EDC, 0x08002D50 |
+| `m4aSoundMain`, `ReadFlash` | 0x081E089C, 0x081E224C |
+| `MapGridGetElevationAt`, `MapGridGetCollisionAt` | 0x0805C658, 0x0805C6D8 |
+| Cut, Rock Smash, Strength message return pointers | 0x081C1909, 0x081C19FD, 0x081C1AE6 |
+
+The field-move return pointers follow their scripts' eight-byte `loadword` and message-call sequence.
+The badge checks point to the message scripts at 0x081C1901, 0x081C19F5 and 0x081C1ADE.
+The translated text lengths change the distance between each message and its resume script.
+
+All 44 cards receive through a simulated host/client conversation and run bound to Mom in mGBA
+on this ROM. The shipped 4× speed card's trampoline installs 0x0203FC01 in `gIntrTable[4]` and keeps
+0x0800071D at 0x0203FBFC. On R press, release, then press, it dispatches respectively three, three
+and zero extra overworld callback pairs, and four, four and zero text runs, with one original V-blank
+handler call each frame (`tests/test_team_cards.py`).
+
+`tests/test_frlg_english_cartridges.py`, `tests/test_noclip.py` and `tests/test_follower.py` include the
+Spanish image at `scratchpad/frlg_es/FireRed_s.gba`; ROM-backed checks skip when the image is absent.
+The cartridge's own Mystery Gift client returns from the trainer probe, creates a checksummed
+Pikachu with language 7, calls `GetVarPointer`, installs a resident hook and loads the hook kept
+in the save. The collision and follower checks also run with the Spanish address table.
 
 # The French Easy Chat vocabulary
 

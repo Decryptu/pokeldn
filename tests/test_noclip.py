@@ -10,6 +10,7 @@ pytestmark = pytest.mark.skipif(not bs.emulation_available(), reason="needs unic
 
 # (build, image, MapGridGetElevationAt, MapGridGetCollisionAt)
 CARTRIDGES = [
+    (builds.BPRS, "scratchpad/frlg_es/FireRed_s.gba", 0x0805C658, 0x0805C6D8),
     (builds.BPRF, "scratchpad/FireRed_f.gba", 0x0805C644, 0x0805C6C4),
     (builds.BPGF, "scratchpad/LeafGreen_f.gba", 0x0805C644, 0x0805C6C4),
     (builds.BPRE, "scratchpad/frlg_en/FireRed_e.gba", 0x0805C4E8, 0x0805C568),

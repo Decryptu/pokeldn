@@ -1,4 +1,4 @@
-"""The GB-Link Team Wonder Cards, prebuilt for the four cartridges by scripts/gen_team_cards.py
+"""The GB-Link Team Wonder Cards, prebuilt for the supported cartridges by scripts/gen_team_cards.py
 [docs/frlg_gift.md, GB-Link Team cards]."""
 
 import functools

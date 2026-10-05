@@ -15,7 +15,8 @@ from pokeldn.frlg.rom import buffer_script, builds, custom_code
 from pokeldn.frlg.save.species_names import SPECIES
 
 CARTRIDGES = {"BPRF": "FireRed (French)", "BPGF": "LeafGreen (French)",
-              "BPRE": "FireRed (English)", "BPGE": "LeafGreen (English)"}
+              "BPRE": "FireRed (English)", "BPGE": "LeafGreen (English)",
+              "BPRS": "FireRed (Spanish)"}
 KINDS = (("card", "Wonder Card", "gift"), ("news", "Wonder News", "book-open"), ("code", "Console code", "cpu"))
 # (key, who, where, map group, map number, object id); a bound script replaces that person's own.
 GIVERS = (

@@ -1,6 +1,6 @@
-"""The build-dependent addresses of the four FireRed/LeafGreen cartridges the host sends code to,
+"""The build-dependent addresses of the FireRed/LeafGreen cartridges the host sends code to,
 chosen by the game code in the console's Mystery Gift game data [mystery_gift.c:369]. EWRAM is the
-same on all four. docs/frlg_rom_map.md, The English cartridges.
+same on these builds. docs/frlg_rom_map.md, The English cartridges.
 """
 
 from dataclasses import dataclass, field
@@ -10,6 +10,7 @@ from pokeldn.frlg.rom import rom_map
 
 LANGUAGE_ENGLISH = 2                # include/constants/global.h:21-27
 LANGUAGE_FRENCH = 3
+LANGUAGE_SPANISH = 7
 
 
 class UnknownBuild(KeyError):
@@ -20,7 +21,7 @@ class UnknownBuild(KeyError):
 class Build:
     game_code: str                  # the ROM header's, as the console sends it
     version: str                    # "firered" or "leafgreen"
-    language: str                   # "french" or "english"
+    language: str                   # "french", "english" or "spanish"
     language_id: int                # gGameLanguage, what CreateMon writes into a Pokemon
     # IWRAM
     rng: int                        # gRngValue
@@ -225,7 +226,33 @@ BPGE = Build(
         CompactPartySlots=0x08096F14, ItemIsMail=0x0809B830, StringCompare=0x0800C950,
         InitRamScript=0x0806D48C, RunScriptImmediately=0x0806D2D4))
 
-BUILDS = MappingProxyType({build.game_code: build for build in (BPRF, BPGF, BPRE, BPGE)})
+# Spanish FireRed rev 0x0A: ROM bodies and literal pools [docs/frlg_rom_map.md].
+BPRS = Build(
+    game_code="BPRS", version="firered", language="spanish", language_id=LANGUAGE_SPANISH,
+    rng=0x03004220, sb1ptr=0x03004228, sb2ptr=0x0300422C, intr_vblank=0x03002730, gmain=0x030022D0,
+    pcm_dma_counter=0x03002F68, sound_info=0x03005F80, last_written_sector=0x030045A0,
+    save_counter=0x030045B0, vblank_intr=0x0800071C, cb1_overworld=0x08059E5C,
+    cb2_overworld=0x08059EDC, battle_cb1=0x08015B6C, battle_cb2=0x08014888,
+    run_text_printers=0x08002D50, get_mon_data=0x080432F8, sound_main=0x081E089C,
+    create_mon=0x08041164, random=0x080486C4, seed_rng=0x080486E4, read_flash=0x081E224C,
+    client_run_buffer_script=0x08148CD0, standard_wild_encounter=0x0808653C,
+    get_header_id=0x080861B4, save_slot_layout=0x083F7838, obj_gfx_info=0x08399740,
+    obj_palettes=0x0839EAE8, mon_icon_pal_indices=0x083CD260, mon_icon_palettes=0x083CCB20,
+    get_mon_icon=0x0809AA88, setup_script=0x0806D3E8, selected_object=0x03004294, vmap=0x03004260,
+    spawn_object=0x08062144, set_held_movement=0x080675B8, clear_held_movement=0x08067648,
+    move_object_to=0x08063038, remove_object=0x08061DC8, enigma_desc=(0x083D7914, 0x083D7924),
+    callable=_callable(
+        Random=0x080486C4, SeedRng=0x080486E4, CreateMon=0x08041164, VarGet=0x08071DF0,
+        VarSet=0x08071E0C, GetVarPointer=0x08071CDC, AddBagItem=0x0809DA84,
+        RemoveBagItem=0x0809DBD8, CheckBagHasSpace=0x0809DA00, CheckBagHasItem=0x0809D940,
+        AddPCItem=0x0809DDC8, FlagSet=0x08071F08, FlagClear=0x08071F30, FlagGet=0x08071F58,
+        IncrementGameStat=0x080587B8, GetMoney=0x080A376C, IsEnoughMoney=0x080A379C,
+        AddMoney=0x080A37B4, RemoveMoney=0x080A37EC, CalcCRC16=0x080489B4, ReadFlash=0x081E224C,
+        GetSetPokedexFlag=0x0808C874, SpeciesToNationalPokedexNum=0x080469A8,
+        CompactPartySlots=0x08097210, ItemIsMail=0x0809BB2C, StringCompare=0x0800C938,
+        InitRamScript=0x0806D604, RunScriptImmediately=0x0806D44C))
+
+BUILDS = MappingProxyType({build.game_code: build for build in (BPRF, BPGF, BPRE, BPGE, BPRS)})
 DEFAULT = BPRF
 GAME_CODES = tuple(BUILDS)
 
