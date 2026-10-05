@@ -91,6 +91,21 @@ def test_a_shiny_level_or_evolved_request_is_built_legal(service, game, species,
         assert built["level"] == edit["level"]
 
 
+# Growlithe, Arcanine, Voltorb, Electrode, Typhlosion, Qwilfish, Samurott, Lilligant, Basculin, Zorua, Zoroark,
+# Braviary, Sliggoo, Goodra, Avalugg, Decidueye: Legends Arceus has them only in a Hisuian form.
+HISUIAN_ONLY = [58, 59, 100, 101, 157, 211, 503, 549, 550, 570, 571, 628, 705, 706, 713, 724]
+
+
+def test_the_legends_arceus_list_is_the_hisui_dex_and_a_hisuian_only_species_builds(service):
+    listed = {s["id"] for s in service.species("pla")}
+    assert len(listed) == 242 and set(HISUIAN_ONLY) <= listed
+    for species in HISUIAN_ONLY:
+        built = service.make("pla", species, TRAINER)
+        assert built["legal"] and pa8.read(pa8.load(base64.b64decode(built["data"])))["form"] != 0, species
+    zorua, = service.paste("pla", "Zorua\n", TRAINER)
+    assert not zorua["errors"] and zorua["form"]
+
+
 def test_a_wild_slot_level_range_does_not_make_a_request_fail_at_random(service):
     # Chingling's slots straddle level 50; one roll in ten landed above it and the build was refused.
     for _ in range(40):

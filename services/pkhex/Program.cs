@@ -50,9 +50,18 @@ JsonObject Species(Game game)
 {
     var list = new JsonArray();
     for (ushort s = 1; s <= game.Table.MaxSpeciesID; s++)
-        if (game.Table.IsPresentInGame(s, 0))
+        if (FirstForm(game, s) is not null)
             list.Add(new JsonObject { ["id"] = s, ["name"] = strings.specieslist[s] });
     return new JsonObject { ["species"] = list };
+}
+
+// Legends Arceus holds 16 species only in their Hisuian form (Growlithe, Zorua, Decidueye...): form 0 is absent.
+byte? FirstForm(Game game, ushort species)
+{
+    for (byte f = 0; f < game.Table[species].FormCount; f++)
+        if (game.Table.IsPresentInGame(species, f))
+            return f;
+    return null;
 }
 
 JsonObject GenderRatio(Game game, JsonObject request)
@@ -60,7 +69,7 @@ JsonObject GenderRatio(Game game, JsonObject request)
     var species = checked((ushort)(int)request["species"]!);
     var form = checked((byte)((int?)request["form"] ?? 0));
     if (!game.Table.IsPresentInGame(species, form))
-        form = 0;
+        form = FirstForm(game, species) ?? 0;
     return new JsonObject { ["ratio"] = (int)game.Table.GetFormEntry(species, form).Gender };
 }
 
@@ -107,11 +116,10 @@ JsonObject Names(Game game, string list)
 JsonObject Options(Game game, JsonObject request)
 {
     var species = checked((ushort)(int)request["species"]!);
-    if (!game.Table.IsPresentInGame(species, 0))
-        throw new ArgumentException("This species is absent from the selected game.");
-    var form = checked((byte)((int?)request["form"] ?? 0));
+    var first = FirstForm(game, species) ?? throw new ArgumentException("This species is absent from the selected game.");
+    var form = checked((byte)((int?)request["form"] ?? first));
     if (!game.Table.IsPresentInGame(species, form))
-        form = 0;
+        form = first;
     var detail = game.Table.GetFormEntry(species, form);
     var (versions, trainer) = Trainer(game, request);
     // A ball is listed when PKHeX permits it for at least one encounter of the species.
@@ -195,15 +203,14 @@ JsonObject Options(Game game, JsonObject request)
 JsonObject Make(Game game, JsonObject request)
 {
     var species = checked((ushort)(int)request["species"]!);
-    if (!game.Table.IsPresentInGame(species, 0))
-        throw new ArgumentException("This species is absent from the selected game.");
+    var first = FirstForm(game, species) ?? throw new ArgumentException("This species is absent from the selected game.");
     var level = (int?)request["level"] ?? 0;
     if (level < 0 || level > 100)
         throw new ArgumentException("Level must be between 0 and 100.");
     var shiny = (bool?)request["shiny"] ?? false;
     var nickname = (string?)request["nickname"] ?? "";
     var wish = Wish.From(request["options"] as JsonObject);
-    var form = wish.Form ?? 0;
+    var form = wish.Form ?? first;
     if (!game.Table.IsPresentInGame(species, form))
         throw new ArgumentException("This form is absent from the selected game.");
     // SetNickname cuts a longer name without saying so; the record would not carry what was asked.
@@ -504,18 +511,20 @@ JsonObject Paste(Game game, JsonObject request)
             sets.Add(new JsonObject { ["errors"] = errors });
             continue;
         }
-        if (!game.Table.IsPresentInGame(species, set.Form))
+        // A set that names no form takes the game's own: "Zorua" in Legends Arceus is the Hisuian one.
+        var form = set.Form == 0 && set.FormName.Length == 0 ? FirstForm(game, species) ?? 0 : set.Form;
+        if (!game.Table.IsPresentInGame(species, form))
         {
-            errors.Add(game.Table.IsPresentInGame(species, 0)
+            errors.Add(FirstForm(game, species) is not null
                 ? $"{name} has no {set.FormName} form in this game."
                 : $"{name} is not in this game.");
             sets.Add(new JsonObject { ["species"] = name, ["errors"] = errors });
             continue;
         }
-        var detail = game.Table.GetFormEntry(species, set.Form);
+        var detail = game.Table.GetFormEntry(species, form);
         var options = new JsonObject();
-        if (set.Form != 0)
-            options["form"] = set.Form;
+        if (form != 0)
+            options["form"] = form;
         if (set.Nature != Nature.Random)
             options["nature"] = (int)set.Nature;
         if (set.Ability >= 0)
@@ -576,7 +585,7 @@ JsonObject Paste(Game game, JsonObject request)
         {
             ["species"] = name,
             ["species_id"] = species,
-            ["form"] = set.Form == 0 ? "" : ShowdownParsing.GetStringFromForm(set.Form, strings, species, game.Context),
+            ["form"] = form == 0 ? "" : ShowdownParsing.GetStringFromForm(form, strings, species, game.Context),
             ["nickname"] = set.Nickname,
             ["level"] = set.Level,
             ["shiny"] = set.Shiny,
