@@ -1,10 +1,12 @@
-# pokeldn 0.12.0
+# pokeldn 0.12.1
 
 This desktop app trades with seven Pokemon game families on a Switch or Switch 2
 through an ESP32 radio connected by USB. Nothing is installed on the console.
 
 ## What is new
 
+- 0.12.1: on Windows, a board that does not answer at first no longer leaves its port locked, so
+  the retries stop failing with "Access is denied", and the error names every attempt's cause.
 - Link Codes and the BDSP room password are typed into eight digit boxes: each digit moves to the
   next box, Backspace steps back, a pasted code such as `1234 5678` fills every box, and Start
   stays blocked until all eight digits are in (or none, where a trade runs without a code).
