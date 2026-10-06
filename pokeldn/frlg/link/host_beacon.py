@@ -141,17 +141,19 @@ def build_colosseum_app_data(profile, host_session_id):
                                     beacon.ACTIVITY_BATTLE_SINGLE)
 
 
-def build_wonder_card_app_data(profile, host_session_id):
+def build_wonder_card_app_data(profile, host_session_id, *, japanese=False):
     """Mystery Gift -> Wonder Cards -> Friend (sAcceptedActivityIds_WonderCard)."""
-    return _build_activity_app_data(profile, host_session_id,
-                                    beacon.ACTIVITY_WONDER_CARD)
+    return _build_activity_app_data(
+        profile, host_session_id,
+        beacon.ACTIVITY_WONDER_CARD_JAPANESE if japanese else beacon.ACTIVITY_WONDER_CARD)
 
 
-def build_wonder_news_app_data(profile, host_session_id):
+def build_wonder_news_app_data(profile, host_session_id, *, japanese=False):
     """Mystery Gift -> Wonder News -> Friend, which accepts ACTIVITY_WONDER_NEWS alone
     [sAcceptedActivityIds_WonderNews, src/data/union_room.h:406] (docs/frlg_gift.md)."""
-    return _build_activity_app_data(profile, host_session_id,
-                                    beacon.ACTIVITY_WONDER_NEWS)
+    return _build_activity_app_data(
+        profile, host_session_id,
+        beacon.ACTIVITY_WONDER_NEWS_JAPANESE if japanese else beacon.ACTIVITY_WONDER_NEWS)
 
 
 def activate_trade_app_data(app_data, host_session_id):

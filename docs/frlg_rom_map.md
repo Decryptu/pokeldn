@@ -712,6 +712,16 @@ and validate an app-generated card in the ROM-backed tests. The card CRC is at S
 lines at 41..120 and two 20-byte footers at 121..160. Built-in distributions use this compact
 layout for Japanese cartridges. The native `.wc3` layout is described in [Gift files](gifts.md#native-formats).
 
+The Japanese cartridges list a Mystery Gift Friend under other activity numbers. Their
+`sAcceptedActivityIds` entries for Wonder Cards and Wonder News hold 6 and 7 (`BPRJ` `0x08410EC4`
+and `0x08410EC8`, `BPGJ` `0x08410E4C` and `0x08410E50`), where every other cartridge holds 21
+and 22 [src/data/union_room.h:405-406]; their `LINK_GROUP_UNK_11` list carries 6 and 7 in the same
+places. A host advertising 21 never appears on a Japanese Friend screen. The accepted RFU serials
+are `{0x0002, 0x7F7F}` (`BPRJ` `0x083FC378`), against `{0x0002, 0x7F7D}` internationally. The
+Switch executable is the same code on Japanese and French FireRed; the two differ in strings
+and the ROM path only, and all twelve titles list `0x01006fa0233f8000` as their first local
+communication id.
+
 Both Japanese cartridges execute the native client, `CreateMon`, variable lookup, VBlank handler
 and saved-hook loader under Unicorn. `CreateMon` produces the Japanese nickname ピカチュウ for
 species 25. Japanese names use the kana table and the five-character trainer-name limit;

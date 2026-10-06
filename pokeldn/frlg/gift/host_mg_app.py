@@ -15,7 +15,7 @@ from pokeldn.frlg.gift.host_mystery_gift import (
     MysteryGiftTiming,
 )
 from pokeldn.ldn.host_pia import HostPeerProtocol
-from pokeldn.frlg.link.linkplayer import HOST_NAME_PAD
+from pokeldn.frlg.link.linkplayer import HOST_NAME_PAD, LANGUAGE_JAPANESE
 from pokeldn.frlg.gift.mg_server import (
     BUFFER_EXPECT_TRAINER_ID, SERVER_RESULT_NAMES, SVR_MSG_CARD_SENT, SVR_MSG_GIFT_SENT_1,
     SVR_MSG_NEWS_SENT, SVR_MSG_STAMP_SENT)
@@ -48,6 +48,28 @@ def _log_build_plan(app):
                  + (f"REFUSED, {chosen}" if isinstance(chosen, str) else "its own bytes"))
     app.info("The console's game code picks one at SVR_COPY_GAME_DATA, before anything "
              "build-dependent is sent; any other code is refused with nothing sent.")
+
+
+def _serves_japanese(app):
+    """The Japanese cartridges list a Friend under other activity numbers than the rest
+    (docs/frlg_rom_map.md, Japanese layout): the served builds decide, else the trainer language."""
+    plan = getattr(app, "plan", None)
+    if plan is not None and plan.build is not None:
+        return plan.build.language == "japanese"
+    served = {builds.BUILDS[code].language == "japanese" for code in (plan.codes if plan else ())}
+    if len(served) == 1:
+        return served.pop()
+    return app.profile.to_link_player().language == LANGUAGE_JAPANESE
+
+
+def _log_advertised_activity(app):
+    menu = "Wonder News" if getattr(app, "ACTIVITY_NOUN", None) == "Wonder News" else "Wonder Cards"
+    japanese = _serves_japanese(app)
+    app.info(f"Advertising {menu} for {'Japanese' if japanese else 'non-Japanese'} cartridges. "
+             f"On the Switch choose Mystery Gift -> {menu} -> Friend.")
+    if not japanese:
+        app.info("A Japanese cartridge lists this host only with --console-build BPRJ or BPGJ, "
+                 "or --language japanese.")
 
 
 class MysteryGiftHostApplication(HostApplication):
@@ -134,7 +156,7 @@ class MysteryGiftHostApplication(HostApplication):
     def _build_app_data(self):
         """Which of the console's menus lists this host: only the activity byte differs."""
         return build_wonder_card_app_data(
-            self.profile, self.session.rfu.host_session_id)
+            self.profile, self.session.rfu.host_session_id, japanese=_serves_japanese(self))
 
     def _log_identity(self, link_player):
         wire = link_player.pack(name_pad=HOST_NAME_PAD)
@@ -185,8 +207,7 @@ class MysteryGiftHostApplication(HostApplication):
             self.info("Mystery Gift timing override: "
                       f"block_repeat={self.config.block_repeat}")
         _log_build_plan(self)
-        self.info("Advertising ACTIVITY_WONDER_CARD. On the Switch choose "
-                  "Mystery Gift -> Wonder Cards -> Friend.")
+        _log_advertised_activity(self)
 
     def _hosting_instructions(self):
         return ("Hosting Mystery Gift. On the Switch choose "
@@ -322,7 +343,7 @@ class WonderNewsHostApplication(MysteryGiftHostApplication):
 
     def _build_app_data(self):
         return build_wonder_news_app_data(
-            self.profile, self.session.rfu.host_session_id)
+            self.profile, self.session.rfu.host_session_id, japanese=_serves_japanese(self))
 
     def _log_identity(self, link_player):
         wire = link_player.pack(name_pad=HOST_NAME_PAD)
@@ -343,8 +364,7 @@ class WonderNewsHostApplication(MysteryGiftHostApplication):
                   "MG_LINKID_RESPONSE with TRUE and keeps what it has; pass --news-id to make the "
                   "same text new again.")
         _log_build_plan(self)
-        self.info("Advertising ACTIVITY_WONDER_NEWS. On the Switch choose "
-                  "Mystery Gift -> Wonder News -> Friend.")
+        _log_advertised_activity(self)
 
     def _hosting_instructions(self):
         return ("Hosting Wonder News. On the Switch choose "
@@ -457,8 +477,7 @@ class BufferScriptHostApplication(MysteryGiftHostApplication):
                      if expect == BUFFER_EXPECT_TRAINER_ID else
                      "any answer at all" if expect is None else f"0x{int(expect):08X}"))
         _log_build_plan(self)
-        self.info("Advertising ACTIVITY_WONDER_CARDS. On the Switch choose "
-                  "Mystery Gift -> Wonder Cards -> Friend.")
+        _log_advertised_activity(self)
 
     def _hosting_instructions(self):
         return ("Hosting a buffer script. On the Switch choose "
@@ -545,8 +564,7 @@ class SaveTransferHostApplication(MysteryGiftHostApplication):
             self.info(f"Save restore: {self.restore_path} goes beside the console's newest save, "
                       "every sector is read back, then the game loads it and saves. Until then the "
                       "console keeps the save it had.")
-        self.info("Advertising ACTIVITY_WONDER_CARDS. On the Switch choose "
-                  "Mystery Gift -> Wonder Cards -> Friend.")
+        _log_advertised_activity(self)
 
     def _hosting_instructions(self):
         return ("Hosting a save " + ("backup" if self.backup_path else "restore")

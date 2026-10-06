@@ -16,6 +16,9 @@ ACTIVITY_TRADE = 4
 ACTIVITY_SEARCH = 12
 ACTIVITY_WONDER_CARD = 21
 ACTIVITY_WONDER_NEWS = 22
+# BPRJ/BPGJ accept 6 and 7 there (BPRJ 0x08410EC4); docs/frlg_rom_map.md, Japanese layout.
+ACTIVITY_WONDER_CARD_JAPANESE = 6
+ACTIVITY_WONDER_NEWS_JAPANESE = 7
 # Union Room search activities: docs/frlg_link.md, Getting listed.
 IN_UNION_ROOM = 1 << 6
 LANGUAGE_ENGLISH = 2

@@ -188,16 +188,16 @@ def test_the_identity_log_names_the_payload_and_the_expectation():
 
     lines = []
     payload = configmod.BufferScriptPayload()
+    player = linkplayer.LinkPlayer(name="EMU", version=linkplayer.VERSION_FIRE_RED)
     app = SimpleNamespace(
-        profile=SimpleNamespace(name="EMU", tid=0x1234, sid=0x5678),
+        profile=SimpleNamespace(name="EMU", tid=0x1234, sid=0x5678, to_link_player=lambda: player),
         session=SimpleNamespace(rfu=SimpleNamespace(host_session_id=b"\x01\x02")),
         config=SimpleNamespace(payload=payload),
         distribution=payload.build_distribution(),
         info=lines.append,
     )
 
-    BufferScriptHostApplication._log_identity(
-        app, linkplayer.LinkPlayer(name="EMU", version=linkplayer.VERSION_FIRE_RED))
+    BufferScriptHostApplication._log_identity(app, player)
 
     text = "\n".join(lines)
     assert buffer_script.TRAINER_ID_PROBE in text

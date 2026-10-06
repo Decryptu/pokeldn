@@ -165,7 +165,9 @@ FireRed nor LeafGreen, and prints a message without dropping the link; FR↔LG t
 hardware. `ConvertInternationalString` special-cases Japanese names; a French FireRed accepts an
 English Wonder Card. The Union Room's `Task_SearchForChildOrParent` skips Japanese candidates
 [union_room.c:3726]. Mystery Gift uses `Task_ListenForCompatiblePartners`, whose compatible-player
-check uses the serial number and advertised name flag, without that language filter.
+check uses the serial number and advertised name flag, without that language filter. A Japanese
+cartridge accepts other Wonder Card and Wonder News activity numbers
+([Japanese layout](frlg_rom_map.md#japanese-layout)).
 
 After the player selects pokeldn in the Mystery Gift Friend list, the console sends its ROM game
 code in GameData. The host chooses that cartridge's addresses and card layout before delivery.
