@@ -626,7 +626,8 @@ id/quantity pairs from record `+0x20..+0x37` to header `+0x30..+0x47` (`0x010b60
 sets header `+0x0D` to the number of non-zero quantities (`0x010b6084..0x010b60e4`); the redemption
 calls `Bag::AddItem` per pair with a non-zero quantity (`0x01015d00..0x01015dd0`). The 1.3.2 item
 table has 1607 entries; those whose name in `bin/message/<lang>/common/itemname.dat` starts with `★`
-are dummies (1279 to 1578 among them).
+are dummies (1279 to 1578 among them). PKHeX names 51 of the 1607 ids `???`; the app's item pickers
+list the 817 ids of `ItemStorage8SWSH.GetAllHeld()`, the set its card check accepts.
 
 Kind 4 is clothing ([Clothing](#clothing)). Kinds 3 and 5 add the word at `+0x20` to clamped counters in the status object
 `[[0x2610798]+0x208]`:

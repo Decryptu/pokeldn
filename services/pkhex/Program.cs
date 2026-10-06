@@ -96,7 +96,13 @@ JsonObject Names(Game game, string list)
                     Add(m, strings.movelist[m]);
             break;
         case "items":
+            // PKHeX keeps the games' unused item ids as "???" placeholders.
             for (var i = 1; i <= blank.MaxItemID; i++)
+                if (strings.itemlist[i] != "???")
+                    Add(i, strings.itemlist[i]);
+            break;
+        case "bag" when game.Context == EntityContext.Gen8:
+            foreach (var i in GiftItems().Order())
                 Add(i, strings.itemlist[i]);
             break;
         case "held":
@@ -661,12 +667,15 @@ JsonObject Event(Game game, JsonObject request)
     };
 }
 
+// The items a Sword/Shield gift may give or a gifted Pokemon may hold; the GUI lists the same set.
+static IReadOnlySet<ushort> GiftItems() => ItemStorage8SWSH.GetAllHeld().ToHashSet();
+
 JsonObject Gift(byte[] data)
 {
     if (data.Length != WC8.Size)
         throw new InvalidDataException("A WC8 record must contain 720 bytes.");
     var card = new WC8(data);
-    var held = ItemStorage8SWSH.GetAllHeld();
+    var held = GiftItems();
     bool ValidItem(int item) => item == 0 || held.Contains((ushort)item);
     if (card.IsEntity)
     {

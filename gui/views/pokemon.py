@@ -623,7 +623,8 @@ class OfferOptions:
         return ""
 
 
-NAME_LISTS = {"species": "species", "move": "moves", "item": "items", "ball": "balls"}
+NAME_LISTS = {"species": "species", "move": "moves", "item": "items", "ball": "balls",
+              "bag": "bag"}     # the items a Sword/Shield gift may carry
 EMPTY = "-"
 
 

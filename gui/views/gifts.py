@@ -487,7 +487,7 @@ class GiftBuilder:
         rows = [ft.Row([self.name_field("Species", "species", "species", optional=False),
                         *([] if egg else [self.number_field("Level", "level", width=72)])], spacing=10)]
         if not egg:
-            rows += [ft.Row([self.name_field("Held item", "item", "item"), self.name_field("Ball", "ball", "ball")],
+            rows += [ft.Row([self.name_field("Held item", "bag", "item"), self.name_field("Ball", "ball", "ball")],
                             spacing=10),
                      ft.Row([self.text_field("Nickname", "nickname"), self.text_field("OT", "ot")], spacing=10),
                      self.switch_row("Shiny", "shiny", "The Pokemon arrives shiny."),
@@ -514,7 +514,7 @@ class GiftBuilder:
             def remove(e):
                 del items[n]
                 self.commit(rebuild=True)
-            return ft.Row([t.labeled_control("Item", NamePicker(self.app, "swsh", "item", str(items[n][0] or ""),
+            return ft.Row([t.labeled_control("Item", NamePicker(self.app, "swsh", "bag", str(items[n][0] or ""),
                                                                 item, optional=False).control, expand=True),
                            t.labeled_control("How many", t.field(value=str(items[n][1]), mono=True, width=72,
                                                                  on_change=quantity)),
