@@ -16,7 +16,7 @@ from pokeldn.app.paths import SESSION
 from gui.views.pokemon import NAME_LISTS, LinkCodePicker, NamePicker, OfferQueue, PokemonPicker
 from gui.views.gifts import GiftBuilder
 from gui.views.sprites import MINI, Sprite
-from gui.views.widgets import CodeBlock, Log, PathField, open_folder
+from gui.views.widgets import CodeBlock, DigitCode, Log, PathField, open_folder
 
 TOOL_ICONS = {"Trade": "arrows-horizontal", "Mystery Gift": "gift"}
 EMPTY = "-"   # a dropdown option cannot carry an empty key
@@ -254,6 +254,8 @@ class GamesView:
                                  version=str(self.values.get("--version", ""))).control
         if field.kind == "linkcode":
             return LinkCodePicker(self.app, value, lambda v: self.set_value(field, v)).control
+        if field.kind == "code":
+            return DigitCode(value, lambda v: self.set_value(field, v)).control
         if field.kind == "file":
             return PathField(self.app.picker, lambda: os.path.expanduser("~"), value or "", "file", field.exts,
                              lambda v: self.set_value(field, v)).control
@@ -264,6 +266,7 @@ class GamesView:
             self.set_value(field, e.control.value)
 
         box = t.field(value=str(value), mono=field.kind == "number", error_max_lines=2,
+                      digits=field.kind == "number",
                       width=180 if field.kind == "number" and not grouped else None,
                       error=command.limit_error(field, value) or None, on_change=changed,
                       expand=field.kind != "number" or grouped)

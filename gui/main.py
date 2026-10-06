@@ -19,6 +19,7 @@ import flet as ft  # noqa: E402
 
 from gui import drop, flet_client, screen, theme as t  # noqa: E402
 from gui.app import App  # noqa: E402
+from gui.views.widgets import page_key  # noqa: E402
 from pokeldn import __version__  # noqa: E402
 from pokeldn.app.paths import ROOT  # noqa: E402
 
@@ -98,6 +99,7 @@ def main(page: ft.Page) -> None:
         page.update()
 
     app.navigate = navigate
+    page.on_keyboard_event = page_key     # set once, before a code box takes the focus
     side = t.panel(ft.Column([
         ft.Container(ft.Image(src="logo.svg", width=28, height=32), padding=ft.Padding(0, 16, 0, 18)),
         rail,

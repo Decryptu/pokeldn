@@ -8,8 +8,8 @@ from dataclasses import dataclass
 class Field:
     flag: str | tuple[str, ...]   # "" is positional; a tuple passes the same value to each flag
     label: str
-    kind: str = "text"            # text number choice switch pokemon file builder multi linkcode, or a PKHeX
-                                  # name list: species move item ball
+    kind: str = "text"            # text number choice switch pokemon file builder multi linkcode code (eight
+                                  # digits), or a PKHeX name list: species move item ball
     help: str = ""
     default: str | bool = ""
     choices: tuple[tuple[str, str], ...] = ()
@@ -182,7 +182,7 @@ SWSH = Game("swsh", "Sword & Shield", "SwSh", "swsh.md", (
           "Choose a Pokemon and confirm when POKELDN appears.",
           "Queued Pokemon follow, one per trade: pick again from the box."),
          (queued("--offer-file"), FRESH_PID,
-          Field("--code", "Link Code", help="Eight digits. Empty for a plain trade."),
+          Field("--code", "Link Code", "code", help="Eight digits. Empty for a plain trade."),
           Field("--channel", "Channel", "choice", default="6", choices=CHANNELS, help=CHANNEL_HELP, hidden=True),
           host_seconds("900")),
          fixed=("--player-name", "{ot}", "--trainer-name", "{ot}",
@@ -223,7 +223,7 @@ BDSP = Game("bdsp", "Brilliant Diamond & Shining Pearl", "BDSP", "bdsp.md", (
           "Y, Communicate, Trade Pokemon; accept the greeting, then choose and confirm."),
          (queued("--offer"),
           FRESH_PID,
-          Field("--password", "Room password", help="Eight digits. Empty for the plain room."),
+          Field("--password", "Room password", "code", help="Eight digits. Empty for the plain room."),
           host_seconds("1500")),
          fixed=("--ldn-protocol", "1", "--complete-trade", "--save-theirs", "{received}/bdsp-{stamp}",
                 "--language", "{language}", "--name", "{ot}", "--trainer", "{ot}:{tid}:{sid}"),
@@ -260,7 +260,7 @@ PLA = Game("pla", "Legends Arceus", "PLA", "pla.md", (
          ("Start the host first.", *PLA_STEPS, "Offer a Pokemon and confirm.",
           "Leave the host running until the trade ends: an interrupted trade locks trading for a while."),
          (queued("--trade-box-record", required=False, help=PLA_OFFER_HELP),
-          Field("--code", "Link code", default="00000000", help=CODE_HELP),
+          Field("--code", "Link code", "code", default="00000000", help=CODE_HELP),
           FRESH_PID,
           host_seconds("900")),
          fixed=("--channel", "6", "--session-update", "--sustain", "--clock", "--data-exchange",
@@ -271,7 +271,7 @@ PLA = Game("pla", "Legends Arceus", "PLA", "pla.md", (
          "Find your console's trade search and connect automatically.",
          (*PLA_STEPS, "Start the joiner.", "Offer and confirm once the partner shows."),
          (queued("--offer", required=False, help=PLA_OFFER_HELP),
-          Field("--code", "Link code", default="00000000", help=CODE_HELP),
+          Field("--code", "Link code", "code", default="00000000", help=CODE_HELP),
           FRESH_PID),
          fixed=("--player-name", "{ot}", "--offer-out", "{received}/pla-{stamp}.pa8"),
          doc="pla.md"),
@@ -284,7 +284,7 @@ SV = Game("sv", "Scarlet & Violet", "SV", "sv.md", (
          "Host a trade the searching console joins.",
          ("Start the host first.", SV_SEARCH, "Offer and confirm on the trade screen."),
          (queued("--trade-offer"),
-          Field("--code", "Link Code", help="Empty hosts a search with no code.",
+          Field("--code", "Link Code", "code", help="Empty hosts a search with no code.",
                 unset=("--game-data",
                        "000000000000000000000000000000000000000000000000000000000000000000648cf400000000")),
           FRESH_PID),
@@ -305,7 +305,7 @@ SV = Game("sv", "Scarlet & Violet", "SV", "sv.md", (
          (SV_SEARCH, "Start the joiner.", "Offer and confirm on the trade screen.",
           "If the console keeps refusing, leave and re-enter the search screen."),
          (queued("--trade-offer"),
-          Field("--code", "Link Code", help="Empty joins a search with no code."),
+          Field("--code", "Link Code", "code", help="Empty joins a search with no code."),
           FRESH_PID),
          fixed=("--phy", "auto", "--seconds", "1500", "--hold", "900", "--channels", "1,6,11",
                 "--dwell", "0.4", "--connect-timeout", "6", "--open-delay", "0.3", "--record-delay", "0.3",
@@ -322,7 +322,7 @@ ZA = Game("za", "Legends Z-A", "PLZA", "za.md", (
           "Pick on the trade box, offer, then trade. Queued Pokemon follow, one per trade.",
           "Back out with B after the last trade."),
          (queued("--trade-offer"),
-          Field("--code", "Link code", default="00000000", help=CODE_HELP),
+          Field("--code", "Link code", "code", default="00000000", help=CODE_HELP),
           FRESH_PID,
           host_seconds("900")),
          fixed=("--trainer-name", "{ot}", "--offer-out", "{received}/za-{stamp}.pa9"), doc="za.md"),
@@ -332,7 +332,7 @@ ZA = Game("za", "Legends Z-A", "PLZA", "za.md", (
           "Start the joiner. Refusals while seating are normal; let it run.",
           "Pick on the trade box and confirm once POKELDN appears. Queued Pokemon follow, one per trade."),
          (queued("--trade-offer"),
-          Field("--code", "Link code", default="00000000", help=CODE_HELP),
+          Field("--code", "Link code", "code", default="00000000", help=CODE_HELP),
           FRESH_PID),
          fixed=("--channels", "1,6,11", "--dwell", "0.35", "--seconds", "1200", "--hold", "900",
                 "--quiet-seat", "25", "--connect-timeout", "6", "--mac", "02:11:32:54:76:98", "--game",

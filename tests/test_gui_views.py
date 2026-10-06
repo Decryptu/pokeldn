@@ -500,6 +500,49 @@ def test_the_link_code_slots_fill_in_order_and_give_the_host_its_scene(monkeypat
     assert views.parse_code("evoli,taupiqueur,") == [1, 9, None]
 
 
+CODES = [(tool, f) for tool in TOOLS for f in tool.fields if f.kind == "code"]
+
+
+@pytest.mark.parametrize("tool, field", CODES, ids=[f"{t.key}{f.flag}" for t, f in CODES])
+def test_a_console_code_is_typed_box_by_box_and_only_a_whole_one_reaches_the_launcher(tool, field):
+    """Each digit moves to the next box, a paste fills from where it lands, Backspace on an empty box
+    clears the one before; a partial code blocks Start, the whole one parses as the launcher's flag."""
+    from gui.views import widgets
+    from pokeldn.app import command
+    from pokeldn.app.introspect import parser_of
+    from pokeldn.app.settings import Settings
+    values = {f.key: {"file": "offer.bin"} for f in tool.fields if f.kind == "pokemon"}
+    code = widgets.DigitCode(command.value_of(field, values), lambda v: values.__setitem__(field.key, v))
+    assert code.value == field.default
+    for n in range(8):                      # clear whatever the default put there
+        code._typed(n, "")
+    assert bool(command.problems(tool, values)) == bool(field.default)
+    code._typed(0, "1")
+    code._typed(code.at, "x2")              # a letter never lands
+    assert code.at == 2 and values[field.key] == "12"
+    assert command.problems(tool, values) == [f"{field.label}: all eight digits" +
+                                              ("." if field.default else ", or none.")]
+    code._typed(2, "x")
+    assert values[field.key] == "12" and code.at == 2
+    code._typed(2, "34 5-678")              # a pasted code keeps its digits only
+    assert values[field.key] == "12345678" and code.at == 7
+    assert command.problems(tool, values) == []
+    args = command.build(tool, values, {}, Settings())
+    assert args[args.index(field.flag) + 1] == "12345678"
+    parser_of(tool.script).parse_args(args)
+    code._typed(3, "")                      # a hole keeps the digits after it in their boxes
+    assert values[field.key] == "123 5678" and command.problems(tool, values)
+    code._typed(3, "9")
+    code.at = 7
+    code._typed(7, "")
+    code.key("Backspace")                   # the Backspace that emptied box 8 is not a second one
+    assert values[field.key] == "1239567"
+    code.cleared = (None, 0.0)
+    code.key("Backspace")
+    assert values[field.key] == "123956" and code.at == 6
+    assert widgets.DigitCode(values[field.key], lambda v: None).digits[:6] == list("123956")
+
+
 def test_settings_keep_a_six_digit_switch_id_beside_the_five_digit_one(tmp_path, monkeypatch):
     """A Switch title shows its trainer id as six digits; FireRed shows five (docs/gui.md, Your trainer)."""
     import flet as ft

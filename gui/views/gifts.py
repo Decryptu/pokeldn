@@ -22,10 +22,14 @@ SPECIES_FRLG = [{"id": n, "name": name} for n, name in frlg.species_names()]
 
 
 def _number(value, default=0):
-    try:
-        return int(str(value).strip() or default, 0)
-    except ValueError:
-        return default
+    # Decimal first: base 0 refuses a leading zero ("025").
+    text = str(value).strip() or str(default)
+    for base in (10, 0):
+        try:
+            return int(text, base)
+        except ValueError:
+            pass
+    return default
 
 
 def _chips(choices, value, on_change) -> ft.Row:
@@ -291,7 +295,7 @@ class GiftBuilder:
 
     def number_field(self, label, key, target=None, width=96) -> ft.Control:
         target = self.state if target is None else target
-        box = t.field(value=str(target.get(key, "")), mono=True, width=width,
+        box = t.field(value=str(target.get(key, "")), mono=True, width=width, digits=True,
                       on_change=lambda e: self.edit(key, _number(e.control.value), target=target))
         return t.labeled_control(label, box)
 
@@ -489,7 +493,8 @@ class GiftBuilder:
         if not egg:
             rows += [ft.Row([self.name_field("Held item", "bag", "item"), self.name_field("Ball", "ball", "ball")],
                             spacing=10),
-                     ft.Row([self.text_field("Nickname", "nickname"), self.text_field("OT", "ot")], spacing=10),
+                     ft.Row([self.text_field("Nickname", "nickname", limit=12),
+                             self.text_field("OT", "ot", limit=12)], spacing=10),
                      self.switch_row("Shiny", "shiny", "The Pokemon arrives shiny."),
                      self.switch_row("Gigantamax", "gigantamax",
                                      "It can Gigantamax; only species with a Gigantamax form.")]
@@ -516,7 +521,7 @@ class GiftBuilder:
                 self.commit(rebuild=True)
             return ft.Row([t.labeled_control("Item", NamePicker(self.app, "swsh", "bag", str(items[n][0] or ""),
                                                                 item, optional=False).control, expand=True),
-                           t.labeled_control("How many", t.field(value=str(items[n][1]), mono=True, width=72,
+                           t.labeled_control("How many", t.field(value=str(items[n][1]), mono=True, width=72, digits=True,
                                                                  on_change=quantity)),
                            ft.Container(t.icon_button("close", remove, "Remove"), height=t.CONTROL_HEIGHT,
                                         alignment=ft.Alignment.CENTER)],

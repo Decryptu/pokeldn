@@ -30,10 +30,12 @@ class PokemonPicker:
                                   menu_height=320, hint_text="Loading species...", disabled=True)
         self.species.trailing_icon = PixelActivity("Loading species")
         self.level = t.field(value=str(self.value.get("level") or ""), hint="auto", mono=True, width=90,
+                             digits=True, limit=3,
                              on_change=lambda e: self._set("level", e.control.value))
         self.sprite = Sprite(app, int(self.value.get("species") or 0), bool(self.value.get("shiny")))
         self.shiny = t.switch(bool(self.value.get("shiny")), self._shiny)
         self.nickname = t.field(value=self.value.get("nickname", ""), hint="Nickname (optional)", expand=True,
+                                limit=10 if game == "frlg" else 12,
                                 on_change=lambda e: self._set("nickname", e.control.value))
         self.build_button = t.button("Build", self._build, disabled=True)
         self.options = OfferOptions(self)
@@ -602,6 +604,7 @@ class OfferOptions:
 
         for stat, name in STATS:
             box = t.field(value=str(values.get(stat, "")), hint="-", mono=True, expand=True,
+                          digits=True, limit=3,
                           on_change=lambda e, stat=stat: changed(e, stat))
             boxes.append(t.labeled_control(name, box, expand=True))
         if not values:

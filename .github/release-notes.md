@@ -1,10 +1,15 @@
-# pokeldn 0.11.1
+# pokeldn 0.12.0
 
 This desktop app trades with seven Pokemon game families on a Switch or Switch 2
 through an ESP32 radio connected by USB. Nothing is installed on the console.
 
 ## What is new
 
+- Link Codes and the BDSP room password are typed into eight digit boxes: each digit moves to the
+  next box, Backspace steps back, a pasted code such as `1234 5678` fills every box, and Start
+  stays blocked until all eight digits are in (or none, where a trade runs without a code).
+- Number boxes take digits only, and IDs, levels, stats, names and nicknames stop at the length
+  their game allows.
 - 0.11.1: on macOS the app shows one Dock icon again. 0.11.0 showed a second one that kept
   bouncing.
 - FireRed and LeafGreen saves: the Mystery Gift tool's Your save tab backs up the console's whole

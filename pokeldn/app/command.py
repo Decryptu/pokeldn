@@ -124,7 +124,13 @@ def prepare(tool: Tool, values: dict) -> None:
 
 
 def code_error(field: Field, value) -> str:
-    """A Let's Go link code must name three picker Pokemon; a missing one would host under another code."""
+    """A console code is eight digits, or empty where the field allows none; a Let's Go link code must
+    name three picker Pokemon. Either partial one would host under another code."""
+    if field.kind == "code":
+        value = str(value or "")
+        if (value == "" and not field.default) or (len(value) == 8 and value.isdigit()):
+            return ""
+        return f"{field.label}: all eight digits" + ("." if field.default else ", or none.")
     if field.kind != "linkcode":
         return ""
     try:

@@ -281,9 +281,10 @@ class SaveEditor:
                 except ValueError:
                     e.control.error = "A number"
                 e.control.update()
-            return t.field(value=str(self.trainer[key]), mono=True, width=130, on_change=changed)
+            return t.field(value=str(self.trainer[key]), mono=True, width=130, digits=True,
+                           limit=len(str(limit)), on_change=changed)
 
-        name = t.field(value=self.trainer["name"], width=150,
+        name = t.field(value=self.trainer["name"], width=150, limit=7,
                        on_change=lambda e: self.trainer.__setitem__("name", e.control.value))
         gender = t.dropdown([("0", "Boy"), ("1", "Girl")], str(self.trainer["gender"]),
                             on_select=lambda e: self.trainer.__setitem__("gender", int(e.control.value)), width=110)

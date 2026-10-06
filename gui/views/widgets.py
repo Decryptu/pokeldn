@@ -2,6 +2,7 @@ import asyncio
 import os
 import re
 import threading
+import time
 from collections import deque
 from typing import Callable
 
@@ -226,3 +227,94 @@ def open_folder(path: str) -> None:
         os.startfile(path)
     else:
         subprocess.Popen(["open" if sys.platform == "darwin" else "xdg-open", path])
+
+
+class DigitCode:
+    """An eight-digit console code as eight boxes: a digit moves to the next box, Backspace on an empty
+    box clears the previous one (page_key), a pasted code fills from the box it lands in. The value
+    keeps a cleared box as a space; command.code_error refuses anything but the full code."""
+
+    focused: "DigitCode | None" = None     # the code whose box has the focus; page key events go to it
+
+    def __init__(self, value: str, on_change: Callable[[str], None], length: int = 8):
+        self.on_change, self.length = on_change, length
+        self.digits = [c if c.isdigit() else " " for c in str(value or "")[:length].ljust(length)]
+        self.at, self.cleared = 0, (None, 0.0)
+        self.boxes = [self._box(n) for n in range(length)]
+        half = length // 2
+        self.control = ft.Row([*self.boxes[:half], ft.Container(width=6), *self.boxes[half:]],
+                              spacing=6, tight=True)
+
+    def _box(self, n: int) -> ft.TextField:
+        return t.field(value=self.digits[n].strip(), mono=True, width=36, text_align=ft.TextAlign.CENTER,
+                       content_padding=ft.Padding(0, 8, 0, 8), keyboard_type=ft.KeyboardType.NUMBER,
+                       on_change=lambda e, n=n: self._typed(n, e.control.value),
+                       on_focus=lambda e, n=n: self._focused(n), on_blur=self._blurred)
+
+    @property
+    def value(self) -> str:
+        return "".join(self.digits).rstrip()
+
+    def _typed(self, n: int, text: str) -> None:
+        # No input_filter: Flet's refuses a whole paste over one space, so "1234 5678" is cleaned here.
+        typed = list(text)
+        if len(typed) > 1 and self.digits[n] in typed:
+            typed.remove(self.digits[n])    # the caret sat beside the old digit: keep the new one
+        new = [c for c in typed if c.isdigit()]
+        if not typed:
+            self.digits[n] = " "
+            self.cleared = (n, time.monotonic())
+        elif not new:
+            pass                            # a letter: the box keeps its digit
+        else:
+            for k, c in enumerate(new[:self.length - n]):
+                self.digits[n + k] = c
+            self.at = min(n + len(new), self.length - 1)
+        self._commit()
+
+    def key(self, key: str) -> None:
+        n = self.at
+        if key == "Backspace" and not self.digits[n].strip() and n > 0:
+            # The same Backspace that just emptied this box is not a second one.
+            if self.cleared[0] == n and time.monotonic() - self.cleared[1] < 0.2:
+                return
+            self.at = n - 1
+            self.digits[self.at] = " "
+            self._commit()
+        elif key == "Arrow Left" and n > 0:
+            self.at = n - 1
+            self._focus()
+        elif key == "Arrow Right" and n < self.length - 1:
+            self.at = n + 1
+            self._focus()
+
+    def _commit(self) -> None:
+        for box, digit in zip(self.boxes, self.digits):
+            box.value = digit.strip()
+        self.on_change(self.value)
+        self._focus()
+
+    def _focused(self, n: int) -> None:
+        self.at = n
+        DigitCode.focused = self
+        box = self.boxes[n]
+        box.selection = ft.TextSelection(0, len(box.value or ""))
+        box.update()
+
+    def _blurred(self, e) -> None:
+        if DigitCode.focused is self:
+            DigitCode.focused = None
+
+    def _focus(self) -> None:
+        try:
+            page = self.control.page
+        except RuntimeError:            # not on a page yet
+            return
+        self.control.update()
+        page.run_task(self.boxes[self.at].focus)
+
+
+def page_key(e) -> None:
+    """The page's key handler (gui/main.py): Backspace and arrows reach the focused code."""
+    if DigitCode.focused is not None:
+        DigitCode.focused.key(e.key)

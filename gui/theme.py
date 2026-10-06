@@ -163,7 +163,15 @@ class _Field(ft.TextField):
         self.fit_parent_size = not bool(details)
 
 
-def field(label: str = "", value: str = "", hint: str = "", mono: bool = False, **kwargs) -> ft.TextField:
+def field(label: str = "", value: str = "", hint: str = "", mono: bool = False, digits: bool = False,
+          limit: int = 0, **kwargs) -> ft.TextField:
+    """`digits` takes 0-9 only; `limit` caps the length. Both are one regex over the whole value:
+    Flet's max_length squeezes a fixed-height field into wrapping, and its filter refuses a whole edit."""
+    if digits or limit:
+        count = f"{{0,{limit}}}" if limit else "*"
+        kwargs.setdefault("input_filter", ft.InputFilter(f"^{'[0-9]' if digits else '.'}{count}$"))
+    if digits:
+        kwargs.setdefault("keyboard_type", ft.KeyboardType.NUMBER)
     style = ft.TextStyle(size=13, color=TEXT, font_family=MONO if mono else None)
     uniform = not kwargs.get("multiline") and not label and "height" not in kwargs
     if uniform:
