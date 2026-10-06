@@ -53,6 +53,19 @@ def test_the_encryption_key_is_never_zero():
     assert mon.checksum_ok
 
 
+# A legal WISHMKR Jirachi .pk3 from PKHeX whose clear bytes also checksum-validate as wire bytes.
+CHANCE_VALID_PK3 = bytes.fromhex(
+    "e60250194b4e0000c4c3ccbbbdc2c3ff00000202d1c3cdc2c7c5cc00a9ff00009901a9009c0000000064000011015d00"
+    "9c0000000a190a0000000000000000000000000000ff0521b452f40a000000000000000005001a001a00100010000d00"
+    "0f001000")
+
+
+def test_a_pk3_that_checksums_as_wire_bytes_is_still_read_as_a_pk3():
+    assert monmod.decode_mon(CHANCE_VALID_PK3)["checksum_ok"]
+    mon = monmod.decode_mon(monmod.Mon.from_pk3(CHANCE_VALID_PK3).party_bytes())
+    assert (mon["species_name"], mon["otName"], mon["otid"] & 0xFFFF) == ("JIRACHI", "WISHMKR", 20043)
+
+
 def test_the_origins_halfword_packs_met_level_game_and_ball():
     canon = monmod.to_decrypted(_celebi(met_level=30).party_bytes())
     origins = int.from_bytes(canon[70:72], "little")

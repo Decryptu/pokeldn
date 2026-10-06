@@ -116,6 +116,13 @@ def _wire_valid(b):
     return bool(d and d["checksum_ok"])
 
 
+def _wire_plausible(b):
+    # A .pk3 read as wire bytes checksum-validates by chance about once in 2000 PKHeX events.
+    d = decode_mon(b)
+    return bool(d and d["checksum_ok"] and d["species"] and d["species"] in SPECIES
+                and not SPECIES[d["species"]].startswith("OLD_UNOWN"))
+
+
 class Mon:
     def __init__(self, party100):
         if len(party100) != PARTY_MON_SIZE:
@@ -133,10 +140,14 @@ class Mon:
         # When PID == OTID the key is 0 and .pk3/.ek3 both checksum-validate, so an unshuffled mon
         # would ship; treat key == 0 as a decrypted .pk3.
         key = int.from_bytes(data[0:4], "little") ^ int.from_bytes(data[4:8], "little")
-        if _wire_valid(data) and key != 0:
+        enc = to_encrypted(data)
+        if key != 0 and _wire_plausible(data):
+            wire = data
+        elif _wire_plausible(enc):
+            wire = enc
+        elif _wire_valid(data) and key != 0:
             wire = data
         else:
-            enc = to_encrypted(data)
             wire = enc if _wire_valid(enc) else data
         if len(wire) == BOX_SIZE:
             # mail must be MAIL_NONE (0xFF): a zero byte is mail slot 0, which the host treats as real mail.
