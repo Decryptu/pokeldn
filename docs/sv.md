@@ -654,7 +654,14 @@ receiver `0x1945404`, type 4 by the type-0xB receiver `0x279be18`.
 
 The own-leave path at `0x12fbc3c..0x12fbc4c` completes a client's pending type-2 request with
 result 5 (`+0x40..+0x43 = 02 00 01 05`). The next creator can replace that completed request
-without restarting the game, including after a disconnect before type-9 acceptance.
+without restarting the game, including after a disconnect before type-9 acceptance. A leave event
+for the master's id alone does not complete the request: `0x12fbc70..0x12fbc84` calls only
+`0x12fbef0`. The client's BoxTrade job still ends at 15 s with result 4, because state 5 tests the
+clock (`0x1e51c74..0x1e51ca4`, base `+0x108` set at `0x1e51c6c`) before it polls the request through
+its weak reference `+0xf8` (`0x18ab588`, `0x18ab614`). Neither the timeout path `0x1e51d50` nor the
+job destructor `0x1e51740`, which only releases the weak reference through `0x18ccdb4`, touches the
+relay's request. It stays pending at relay `+0xb8`, and `0x2799b10` and `0x18ab83c` refuse, until
+the type-9 or type-0x0D receiver or the client's own leave event completes it.
 
 The relay lives until the application exits, so a request pending at `+0xb8` survives every seat,
 search and menu until a completer runs. Its holder `0x4739430` (GOT `0x46da9c0`, guard `0x4739440`
@@ -987,9 +994,6 @@ lets `bin/sv_join.py` resume scanning ([Ending a run](architecture.md#ending-a-r
 
 - Why a console joined to `bin/sv_host.py` can acknowledge the host's announcement and never send its
   port-2 join.
-- Whether a master-only leave event, without the client's own leave event, can hold a type-2
-  request across the client's 15 s timeout. The master-only branch drains the relay's queues
-  through `0x12fbef0` while preserving `+0xb8`.
 - What a console does between its player backing out and its first departure message: none of the
   captures marks the button press. In one joiner seat the cancel `8000040100` preceded the type 7
   by 1.5 s.

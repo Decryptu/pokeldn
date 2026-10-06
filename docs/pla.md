@@ -293,7 +293,7 @@ type 6. A joined console then runs RTT, Clone Clock and the Stream Broadcast Rel
 
 ## Sustaining the mesh
 
-A joined console leaves when the game's Matching step times out, 10.2 s after its join request,
+A joined console leaves when the game's DataExchangeStart step times out, 10.2 s after its join request,
 unless the 0x81 data exchange completes first ([The game's reader and the pre-handler
 phase](#the-games-reader-and-the-pre-handler-phase)). RTT (0x58) is 11 bytes: kind, eight-byte timestamp,
 two-byte target; a kind-1 echo with target 0 is accepted.
@@ -356,8 +356,8 @@ Step 0x1e registers the handlers (`0x13d5f94 -> 0x26d8c2c -> 0x2bcb8c8 -> 0x2ca5
 steps, by the name strings `0x26bdcac` pairs with their functors:
 
     LoginRelayServer     looked up before the sequence is built; a missing one returns false
-    Matching             the first child, the one a timed-out session waits on
-    DataExchangeStart
+    Matching             the matchmaking, from the TradeMatchmakingConfig record
+    DataExchangeStart    the two-round data exchange and its 10.0 s deadline
     OnCancelDataExchange
     OnSuccess            the trade scene
     OnFailure            event 8, flow step 0x23 (table `0x397c134`), the leave
@@ -372,8 +372,9 @@ from InputDecide and InputBack (`0x13dc7b4`, `0x13dc7ec`, `0x13dd3ec`, installed
 `0x13dc1a0`, `0x13dc9a0`), 2 and 3 for `button_00` and `button_01` (`0x13ddcb4`), which set
 `[obj+0x7c] = 2` and `[obj+0x84]`. The first gate, the child counter, reads 0 at `0x13d6130`.
 
-The Matching child's start `0x26c5288` stores the data-exchange object at `[matching+0x118]` and
-starts a stopwatch at `[matching+0x120]` on the OS tick (`0x26c539c`). Its update `0x26c6988`
+The DataExchangeStart step's start `0x26c5288` (built by `0x26be3f0`, called at `0x26bde74` after
+the step's name; Matching is `0x26be354`) stores the data-exchange object at `[step+0x118]` and
+starts a stopwatch at `[step+0x120]` on the OS tick (`0x26c539c`). Its update `0x26c6988`
 completes once at least two stations' records have arrived and every occupied slot has one
 (`0x26c6b70`, `0x26c6c04`); otherwise it compares the elapsed seconds with the literal 10.0
 (`fmov d1, #10.0` at `0x26c6a94`, measured 10.2 s after the join request) and fails the request with
@@ -381,14 +382,20 @@ completes once at least two stations' records have arrived and every occupied sl
 `0x13d654c -> 0x13d6384 -> 0x2c43d78 -> 0x2ca0a10 -> Session::LeaveAsync (0x72a6dc)`, then the
 Error 7 dialog. `0x26d4ae8` is in the result callback `0x26d4aa0`, which tests the error against
 `gflnet::request::Error::Timeout`, then `ErrorLeaveAnyone` (`0x26d4e04`), then
-`gflnet::npln::NplnResult`; every error passes it. The only `Error::Timeout` producer is the watcher
-`0x2bdb754`, armed by `0x2bda8cc` in two WaitMember steps: 25000 ms (`0x2bda24c`) and
-`3000 + rand % 1000` ms (`0x2c491b8`). The completion callback is `[request+0x90] -> 0x26d69e8 -> 0x26d6a88`.
+`gflnet::npln::NplnResult`; every error passes it. The step starts only on an established session:
+`0x26c564c` returns false unless the station object at `[exchange+0x80]` reports one and an own
+station index other than 0xfd. The only `Error::Timeout` producer is the watcher `0x2bdb754`, armed
+by `0x2bda8cc` in two WaitMember steps of the matchmaking: 25000 ms (`0x2bda24c`, request
+`0x2bcd394`, target 2) and `3000 + rand % 1000` ms (`0x2c491b8`, `0x2c4874c`, the target from the
+matchmaking record). A WaitMember step completes once the session's member count (vfunc `+0xd8`)
+reaches its target byte `+0x88` (`0x2c1a8f0..0x2c1a920`), and nothing extends its timer. A seated
+hosting slot therefore ends on the 10.0 s deadline: the stopwatch starts after matchmaking returns,
+and its failure leaves the session with host migration. The completion callback is `[request+0x90] -> 0x26d69e8 -> 0x26d6a88`.
 
-The Matching child waits for a two-round data exchange on Stream Broadcast Reliable (0x81), ports 0
+The DataExchangeStart step waits for a two-round data exchange on Stream Broadcast Reliable (0x81), ports 0
 and 1, after the mesh join: each station opens the stream with a type-0x0f message, acknowledges with the 44-byte
 `0000002c ffff` message under flags 0xa0 ([Joining a console's network](#joining-a-consoles-network))
-and sends one 74-byte type-0x1f content record carrying a 64-byte payload beginning `484b6264`. Matching completes on the
+and sends one 74-byte type-0x1f content record carrying a 64-byte payload beginning `484b6264`. The step completes on the
 peer's second-round record (17 ms after it, measured), enqueuing `OnSuccess` (`0x26d5f64`); a host
 that only acknowledges the stream gets the timeout. A joining console opens its stream unprompted and
 sends its content record after the host's (86 ms after it, measured); a hosting console sends its
@@ -1275,5 +1282,6 @@ console leaves.
 
 ## Unresolved
 
-- Whether a seated hosting slot ends on the 10.0 s Matching deadline or on a WaitMember timer.
+- What the matchmaking WaitMember counts as a member (session vfunc `+0xd8`): a first migrating
+  0x11 8.3 s after the seat puts the 10.0 s stopwatch start before the seat.
 - What the console does in the 3.6 s between leaving the network and showing the field.

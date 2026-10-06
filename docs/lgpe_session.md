@@ -809,8 +809,27 @@ state 6 (`0x4d9fb0`) calls slot 9. The pump returns 0 when `[x19+0x80]` is null,
 Only `0x59eab0` writes `+0x1e6`: the sum over the stations in `s+0x178` of byte `+0x415` of each
 state-3 station record (`0x5b5900`, `0x5a9cd0`), filled from connection-response wire byte `0x35`
 (`0x5b962c..0x5b9658`). A retail Let's Go sends 1 there, so the value is the station count. The
-recount runs only when `[s+0xd8]` is outside 2 to 6, `[s+0xd4]` is 2 or 4 and `0x52abf0(s+0x38)` is
-false (`0x59eacc..0x59eaf8`).
+local station counts too: `CreateMeshJob` (`0x581f20`) and `JoinMeshJob` (`0x583b90`) register its
+record through `0x5a9430` in mode 0, which sets state 3 at once (`0x5a9558`, `0x5a9720`), with
+`[mesh+0x12b]` (`0x58e960`; 1 after a mesh reset, `0x58bd20`), and `0x5a3be0` adds the local id
+`[s+0xe0]` to `s+0x178` first (`0x5a3c48`). A two-console session counts 2.
+
+The recount runs only when `[s+0xd8]` is outside 2 to 6, `[s+0xd4]` is 2 or 4 and
+`0x52abf0(s+0x38)` is false (`0x59eacc..0x59eaf8`); all three pass during a trade. `[s+0xd8]` is the
+session status: 1 connected, 2 lost (`0x5a0490`), 3 starting, 4 to 6 a failure seen by
+SessionStatusCheckJob. `[s+0xd4]` is the session state: 1 once the local network is up
+(`0x5d70bc`), 2 in session, 3 and 4 only during a joint session; both reach 2 and 1 at the end of
+`CreateSessionJob::WaitCreateMesh` (`0x582a20`, `0x582a24`) and of the join's mesh wait (`0x586e74`,
+`0x586e98`). `[s+0x38]` is the `LocalMatchLeaveSessionJob` (factory slot `+0x1b8`, `0x5c7d20`);
+`0x52abf0` is true while a job's state `+8` is 1 to 7, which happens only while the local console
+leaves. A partner's departure reaches the session as event 1 from the mesh's station disconnect
+(`0x58be90` -> `0x58c040` -> `0x58ea20`, case `0x58ebf4`), whose leave handler `0x59dea0` (or
+`0x59f1b0` during host migration) removes the id and recounts (`0x59dfc4`), unless `[s+0x13d]`, set
+only during matching, defers it (`0x59df34`). The count drops to 1, the pump returns 0, and slot 9
+records code 0xe through the listener `[obj+0x98]`, set when the manager stores the trade session
+(`0x343ebc`). The manager update `0x344370` runs every frame from `0x13d9d0` (`0x13da00`), so the
+link machine runs during the sync save: a partner leaving while `netmgr+0x121` is set ends on
+`error_fatal_save`. How long the mesh waits before it declares a silent station gone is unread.
 
 The link machine calls the trade session object (vtable `0x154f618`) at six offsets, each from
 `[x19+0x10]`:

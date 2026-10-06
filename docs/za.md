@@ -943,6 +943,31 @@ the type 9 with a type 10 48 ms later, the host sent Net 0x11 sequence 3 and the
 With the type 10 and the 0x12 sent at once, a retail host sent the 0x11 0.04 s after its type 9
 and then Net 0x40 (`01 40 00 00`, source 0) every 0.3 s for 4.06 s while the joiner stayed on its
 network; no second type 9 came.
+
+The Net 0x11 is the leaving host's connection status in the migration form of
+`NetDestroyNetworkJob` (`0x2516444`, flag at job+0xd8, set when the disconnecting station is host,
+`0x2503c44`): `0x2501930` bumps the sequence (NetProtocol+0x15c) and byte 29, the is-migrating byte,
+is 1 while the NetHostMigration state NetProtocol+0x12d0 is 1 (`0x250f084`). It asks every client
+for a Net 0x12 of that sequence; a client stores the sequence, sets NetProtocol+0x308 and answers
+(`0x2503164`, `0x25035c0`). The host waits up to 4000 ms for every 0x12, then sends the 0x40 every
+300 ms for 4000 ms, or 2000 ms when the wait expired, until it is alone, and destroys its network
+(`0x251693c`, `0x25169f8`).
+
+The 0x40 starts the next host's work: `0x2503d44`, on a station that is not host, calls
+NetHostMigration start `0x25099a4`, which picks the next host (`0x2505d10`) and runs
+`NetHostMigrationJob` (`0x2509da0`). On LDN it leaves the old network (`0x2503b14`); the next host
+opens a network (`0x2507050`) and waits 6000 ms for the remaining clients, dropping any that do not
+come back (`0x250acf0`); a client waits 1000 ms and reconnects. Success clears NetProtocol+0x12d0
+and stores result 1 or 2 (host) or 3 (client) at NetProtocol+0x12d4; failure stores 4 with error
+`0xc406`.
+
+A Link Trade ends at the handover. The type-9 handler `0x2550684` removes the leaving host's station
+(`0x2548500`) before starting `ProcessHostMigrationJob`, which drops the session's station count
+(session+0x110). The trade scene update `0x95f398` runs the trade only while that count is above 1
+(`0x95f45c`) and otherwise ends it with reason 3 (`0x95f508`), the ending a partner's leave request
+also reaches. In a two-station trade the leaver is the only partner, so the trade ends whatever the
+migration does, and the leaving console destroys its network.
+
 Leaving on that first 0x40, the joiner was off the network 0.09 s after the type 9 (no trade, the
 player backing out of the box).
 
@@ -965,7 +990,7 @@ is no local-wireless path.
   while it is still seated. The default host waits for the console's departure ([Hosting](#hosting)).
   A leaving retail host sends the type 9 first ([A host leaving](#a-host-leaving)); the timed close
   in `bin/za_host.py` sends none.
-- What the Net 0x11 sequence 3 after a type 9 asks of the next host (`NetHostMigrationJob`, vtable
-  slots from `0x2509d60`), and whether a retail session can continue trading after the handover.
+- What a retail Z-A shows and keeps after its trade ends at a handover it receives: the partner-left
+  message, and whether the network it recreates stays open for a new joiner (`0x961a40` onward).
 - What a station does with a protocol-0 message, and the keepalive's header bytes (`04 00` by the
   header diff). A capture of a seated station the console has nothing else to send to.

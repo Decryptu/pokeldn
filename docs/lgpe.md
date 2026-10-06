@@ -65,10 +65,6 @@ ten minutes of counted play time), then the fatal error screen.
   severity-4 error (`0x4d8a80`, result 2 and the fatal error screen). An `0xa1` repeated until
   answered separates a pending mask (a later copy answered) from a message that never reaches the
   clone protocol (none answered); a sniffing board records what arrived independently of the host.
-- Whether a partner leaving during the sync save reaches the code 0xe abort. The pump fails when
-  `+0x1e6` is 1 or less, but the recount runs only under the guards on `[s+0xd8]`, `[s+0xd4]` and
-  `0x52abf0`, whose values in a trade are unread, and the local station's own record (the other
-  callers of `0x5a9430`, `0x581f20` and `0x583b90`) is untraced.
 - Which process the trade dispatcher's child is, and whether the sync save's commit channel at
   `seq+0xb8` is released after an aborted commit.
 - Whether the dispatcher's modes 1 and 2 are link battles. The reading rests on the scene they build;
