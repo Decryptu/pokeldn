@@ -378,17 +378,20 @@ class BoardView:
             return t.secondary_button(label, lambda e: self.app.page.run_task(self.app.open_url, url),
                                       "external-link")
 
-        return t.card("Board not listed?", ft.Column([
-            t.text("Try another cable or USB port. Many cables only charge.", 13),
-            t.text("Windows needs the driver for the board's USB chip, printed on the chip next to the "
-                   "USB socket (CP2102 or CH340):", 13),
-            ft.Row([link("CP210x driver", board.DRIVERS["Silicon Labs CP210x"]),
-                    link("CH340 driver", board.DRIVERS["WCH CH340"])], spacing=6, wrap=True),
-            t.text(f"CP210x: {board.DRIVER_STEPS['Silicon Labs CP210x']}", 13, t.MUTED),
-            t.text(f"CH340: {board.DRIVER_STEPS['WCH CH340']}", 13, t.MUTED),
-            t.text("Linux: allow serial ports, then log out and back in:", 13),
-            CodeBlock(self.app, "sudo usermod -aG dialout $USER").control,
-            t.text("Arch and its derivatives name the group uucp instead of dialout.", 13, t.MUTED),
-            t.text("Use a classic ESP32 (ESP32-D0WD, WROOM-32E), or an ESP32-S3, C3 or C6 through its native USB port. "
-                   "S2 boards are not supported.", 13, t.MUTED),
-        ], spacing=8))
+        lines = [t.text("Try another cable or USB port. Many cables only charge.", 13)]
+        if sys.platform == "win32":
+            lines += [
+                t.text("Windows needs the driver for the board's USB chip, printed on the chip next to the "
+                       "USB socket (CP2102 or CH340):", 13),
+                ft.Row([link("CP210x driver", board.DRIVERS["Silicon Labs CP210x"]),
+                        link("CH340 driver", board.DRIVERS["WCH CH340"])], spacing=6, wrap=True),
+                t.text(f"CP210x: {board.DRIVER_STEPS['Silicon Labs CP210x']}", 13, t.MUTED),
+                t.text(f"CH340: {board.DRIVER_STEPS['WCH CH340']}", 13, t.MUTED)]
+        elif sys.platform.startswith("linux"):
+            lines += [
+                t.text("Allow serial ports, then log out and back in:", 13),
+                CodeBlock(self.app, "sudo usermod -aG dialout $USER").control,
+                t.text("Arch and its derivatives name the group uucp instead of dialout.", 13, t.MUTED)]
+        lines.append(t.text("Use a classic ESP32 (ESP32-D0WD, WROOM-32E), or an ESP32-S3, C3 or C6 through its "
+                            "native USB port. S2 boards are not supported.", 13, t.MUTED))
+        return t.card("Board not listed?", ft.Column(lines, spacing=8))

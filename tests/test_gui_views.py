@@ -241,6 +241,7 @@ def test_a_port_the_user_may_not_open_names_the_group_not_a_busy_port(tmp_path, 
     assert status.state == "denied" and "usermod -aG" in status.detail
 
 
+@pytest.mark.skipif(sys.platform == "win32", reason="a sysfs interface name carries ':', not a Windows file name")
 @pytest.mark.parametrize("tty, title", [
     (None, "Board found without a serial port"),          # brltty took it: no tty under the interface
     ("ttyUSB0", "No board plugged in"),                    # usb-serial: <interface>/ttyUSB0
@@ -363,10 +364,14 @@ def test_a_pokemon_file_shows_its_own_species_and_shininess(monkeypatch):
     assert (saved[-1]["species"], saved[-1]["shiny"], picker.species.value, picker.shiny.value) == (6, True, "6", True)
 
 
+@pytest.mark.parametrize("assembler", [True, False])   # a computer without the Arm toolchain sees the install hint
 @pytest.mark.parametrize("key", ["frlg-gift", "swsh-gift"])
-def test_the_gift_builder_renders_every_mode_and_kind_and_exports_what_it_shows(tmp_path, monkeypatch, key):
+def test_the_gift_builder_renders_every_mode_and_kind_and_exports_what_it_shows(tmp_path, monkeypatch, key,
+                                                                                assembler):
     import asyncio
     from gui.views import gifts as view_module
+    if not assembler:
+        monkeypatch.setattr(view_module.custom_code, "toolchain", lambda: None)
     from pokeldn import gifts
     from pokeldn.app import gift_builder
     from pokeldn.app.catalog import GAMES
@@ -386,7 +391,8 @@ def test_the_gift_builder_renders_every_mode_and_kind_and_exports_what_it_shows(
         return str(path)
 
     view = SimpleNamespace(tool=tool, values={}, extra={},
-        app=SimpleNamespace(settings=Settings(), picker=SimpleNamespace(save_file=save_file), ui=lambda f: None))
+        app=SimpleNamespace(settings=Settings(), picker=SimpleNamespace(save_file=save_file), ui=lambda f: None,
+                          page=SimpleNamespace(run_task=lambda *a: None)))
     view.set_value = lambda field, value, rebuild=False: view.values.__setitem__(field.key, value)
     module = gift_builder.module(gift_builder.GAMES[key])
     builder = view_module.GiftBuilder(view, field)

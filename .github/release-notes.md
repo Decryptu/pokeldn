@@ -1,12 +1,14 @@
-# pokeldn 0.12.1
+# pokeldn 0.12.2
 
 This desktop app trades with seven Pokemon game families on a Switch or Switch 2
 through an ESP32 radio connected by USB. Nothing is installed on the console.
 
 ## What is new
 
-- Windows: a board that does not answer at first no longer leaves its port locked, so the retries
-  stop failing with "Access is denied", and the error names every attempt's cause.
+- Windows: a board whose USB chip has no driver is named on the Board page ("Board found without a
+  driver") with the steps to install the CP210x or CH340 driver.
+- The Board page's help shows only what applies to your computer: driver links and steps on Windows,
+  the serial-port group on Linux.
 
 The firmware is unchanged (1.4.0); a board flashed by 0.7.0 or later needs no reflash.
 

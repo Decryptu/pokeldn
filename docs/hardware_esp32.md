@@ -712,6 +712,17 @@ retries HELLO for 5 s before switching to 921600. Windows opens a COM port exclu
 while any handle is held, in this process or another, fails with `PermissionError(13, 'Access is
 denied.')`, so a board that never answers HELLO closes its port before the launcher retries.
 
+On Windows 11 with the Silicon Labs driver 11.6.0.420, a classic ESP32 on a CP2102 measured:
+
+| lines before `open()` | opens | reset banner | ROM download mode | what followed |
+|---|---|---|---|---|
+| DTR and RTS released (the host's open) | 40 | 0 | 0 | the running firmware's CREDIT frames; HELLO answered in 0.06 s, 30 of 30 |
+| pyserial's default, both asserted | 20 | 20, `rst:0x1 (POWERON_RESET),boot:0x13 (SPI_FAST_FLASH_BOOT)` | 0 | the firmware's INFO at boot, about 0.3 s after the open |
+| DTR released, RTS asserted | 20 | 0 | 0 | no byte while the port is open: RTS holds EN low on the two-transistor auto-reset circuit |
+
+A board held in ROM download mode never answers HELLO, and the app's check reports no pokeldn
+firmware. Another process holding the port fails the open at once; the app reports the port busy.
+
 On the board the launchers skip every nl80211 step: `--phy auto` resolves to `esp32`, no vif is
 deleted, no `iw`, `ip`, `nmcli` or `sysctl` runs, and a joiner's `--mac` becomes the board station's
 address. No root is needed on macOS. A scan skips 5 GHz channels (36 and up): the board is 2.4 GHz

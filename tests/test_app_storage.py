@@ -9,6 +9,20 @@ from pokeldn.app import storage
 from pokeldn.app.settings import Settings
 
 
+def _can_symlink() -> bool:
+    import tempfile
+    with tempfile.TemporaryDirectory() as folder:
+        try:
+            os.symlink(folder, os.path.join(folder, "link"), target_is_directory=True)
+        except OSError:
+            return False
+    return True
+
+
+# Windows creates a symlink only with Developer Mode on or as administrator (WinError 1314).
+needs_symlinks = pytest.mark.skipif(not _can_symlink(), reason="this account may not create symlinks")
+
+
 @pytest.fixture
 def local(tmp_path, monkeypatch):
     for name, folder in (("SESSION", "session"), ("LOGS", "logs"), ("POKEMON", "pokemon")):
@@ -60,6 +74,7 @@ def test_cleanup_reclaims_app_files_and_keeps_received_keys_firmware_and_saved_q
     assert storage.scan(local).files == ()
 
 
+@needs_symlinks
 def test_cleanup_skips_symlinks_changed_files_and_selections_added_after_the_check(local):
     root = storage.PATH.parent
     outside = put(root / "personal/log.txt", b"personal file")
@@ -144,6 +159,7 @@ def test_every_format_written_by_the_builder_and_launcher_can_be_reclaimed(local
     assert not any(path.exists() for path in created)
 
 
+@needs_symlinks
 def test_a_link_to_the_app_data_parent_keeps_the_custom_received_folder(local, monkeypatch):
     root = storage.PATH.parent
     alias = root / "linked-data"
