@@ -1,20 +1,29 @@
-# pokeldn 0.9.1
+# pokeldn 0.10.0
 
 This desktop app trades with seven Pokemon game families on a Switch or Switch 2
 through an ESP32 radio connected by USB. Nothing is installed on the console.
 
 ## What is new
 
-- Clearer Game boosts and Mom restore instructions, plus explanations of Trainer ID, Secret ID,
-  party IVs and EVs. Preset names and descriptions wrap so their instructions stay visible.
-- Native Sword/Shield `.wc8` files open correctly when their binary checksum starts with a JSON
-  opening brace.
-- Pokemon preparation retries an interrupted legality analysis with a fresh helper.
-- Legends Arceus preparation includes species available only in a Hisuian form.
+- FireRed and LeafGreen support English, French, German, Italian, Spanish and Japanese,
+  including the 44 GB-Link Team cards and game boosts on all twelve cartridges.
+- Game language is detected after choosing pokeldn in the Mystery Gift Friend list. The Basic
+  screen explains this directly below Version.
+- Japanese cartridges use their own RAM addresses, text layout and save checksums. Japanese
+  Wonder Cards, Wonder News and native `.wc3` files use their compact formats; kana names decode
+  correctly. Built-in gift dialogue uses Roman text.
+- Native `.wc3` export asks which version and language to save when cartridge variants differ.
+  A `.pokegift` keeps every supported cartridge together.
+- The Spanish FireRed HM card now starts at the correct field-move script entry.
 
-Everything from 0.9.0 is included: the 171 official Sword/Shield event cards, native `.wc3` and `.wc8`
-gift files, the official FireRed/LeafGreen distribution eggs and event Pokemon, the GB-Link Team's custom cards, and Sword/Shield outfits, money
-and Gigantamax Pokemon.
+All twelve cartridge tables were checked against their extracted ROMs. The newly added German,
+Italian, Spanish LeafGreen and Japanese cartridges passed offline emulation checks; their Switch
+wireless delivery remains unverified on retail hardware.
+
+Everything from 0.9.1 is included: the 171 official Sword/Shield event cards, native `.wc3` and `.wc8`
+gift files, the official FireRed/LeafGreen distribution eggs and event Pokemon, the GB-Link Team's
+custom cards, Sword/Shield outfits, money and Gigantamax Pokemon, and the clearer Game boosts,
+Mom restore and save-readout instructions.
 
 The firmware is unchanged (1.4.0); a board flashed by 0.7.0 or later needs no reflash.
 
