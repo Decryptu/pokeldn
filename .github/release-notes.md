@@ -1,29 +1,29 @@
-# pokeldn 0.10.0
+# pokeldn 0.11.0
 
 This desktop app trades with seven Pokemon game families on a Switch or Switch 2
 through an ESP32 radio connected by USB. Nothing is installed on the console.
 
 ## What is new
 
-- FireRed and LeafGreen support English, French, German, Italian, Spanish and Japanese,
-  including the 44 GB-Link Team cards and game boosts on all twelve cartridges.
-- Game language is detected after choosing pokeldn in the Mystery Gift Friend list. The Basic
-  screen explains this directly below Version.
-- Japanese cartridges use their own RAM addresses, text layout and save checksums. Japanese
-  Wonder Cards, Wonder News and native `.wc3` files use their compact formats; kana names decode
-  correctly. Built-in gift dialogue uses Roman text.
-- Native `.wc3` export asks which version and language to save when cartridge variants differ.
-  A `.pokegift` keeps every supported cartridge together.
-- The Spanish FireRed HM card now starts at the correct field-move script entry.
+- FireRed and LeafGreen saves: the Mystery Gift tool's Your save tab backs up the console's whole
+  save into the app's library over Mystery Gift, then restores, renames, imports, exports and edits
+  saves (trainer and party, with PKHeX). A backup takes about four minutes on a retail French
+  FireRed and leaves the console's save unchanged. Restore is checked offline only and is untried
+  on retail hardware; back the console up first.
+- The app opens about four times faster: on an Apple silicon Mac the window appears in 0.5 s
+  instead of 2.5 s, and each trade or gift session starts in under 0.1 s instead of 1.5 s.
+- Smaller downloads: the macOS app is 51 MB instead of 121 MB. Unused display components, the
+  unused parts of PKHeX's runtime and of the emulator used by Check offline are left out.
+- The Windows download is now a zip: extract it and run `pokeldn.exe` inside the `pokeldn` folder,
+  keeping the `_internal` folder beside it.
+- The app removes the display files its earlier versions left in `~/.flet/client`.
+- Sword/Shield gift item pickers list only items a card can carry.
+- Preset and official-card tiles line up in even rows.
+- A rare `.pk3` that also reads as encrypted data is now opened correctly.
 
-All twelve cartridge tables were checked against their extracted ROMs. The newly added German,
-Italian, Spanish LeafGreen and Japanese cartridges passed offline emulation checks; their Switch
-wireless delivery remains unverified on retail hardware.
-
-Everything from 0.9.1 is included: the 171 official Sword/Shield event cards, native `.wc3` and `.wc8`
-gift files, the official FireRed/LeafGreen distribution eggs and event Pokemon, the GB-Link Team's
-custom cards, Sword/Shield outfits, money and Gigantamax Pokemon, and the clearer Game boosts,
-Mom restore and save-readout instructions.
+Everything from 0.10.0 is included: FireRed and LeafGreen in English, French, German, Italian,
+Spanish and Japanese, the 44 GB-Link Team cards and game boosts on all twelve cartridges, the
+171 official Sword/Shield event cards and native `.wc3` and `.wc8` gift files.
 
 The firmware is unchanged (1.4.0); a board flashed by 0.7.0 or later needs no reflash.
 
@@ -45,7 +45,7 @@ The separate `pokeldn-radio*.bin` files are merged firmware images for manual fl
 
 ## First run
 
-1. Extract the macOS or Linux archive, or launch the Windows executable.
+1. Extract the archive for your computer. On Windows, run `pokeldn.exe` inside the extracted `pokeldn` folder.
    - macOS: the app is unsigned, so the first launch is blocked. Open it once and close the warning,
      then open System Settings, Privacy & Security, scroll down to Security and press Open Anyway next
      to pokeldn, then confirm with your password. Later launches open normally.
