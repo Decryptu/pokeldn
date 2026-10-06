@@ -41,6 +41,22 @@ FireRed and LeafGreen, Let's Go, Sword/Shield and BDSP. FireRed and LeafGreen ho
 characters; a longer name is cut to seven, and a name outside the Gen III characters becomes
 `POKELDN` (`Settings.name`).
 
+## Windows USB drivers
+
+A classic ESP32 board reaches the computer through a USB-to-serial bridge chip, printed next to its
+USB socket. Windows gives the board a COM port only once the bridge's driver is installed; without
+it the board is absent from the app's list and Device Manager shows it with a warning (problem code
+28, drivers not installed). ESP32-S3, C3 and C6 boards on their native USB port need no driver.
+
+| bridge | USB id | driver | install |
+|---|---|---|---|
+| Silicon Labs CP2102 / CP210x | `10c4:ea60` | [CP210x VCP drivers](https://www.silabs.com/developer-tools/usb-to-uart-bridge-vcp-drivers), the CP210x Universal Windows Driver zip | extract it, right-click `silabser.inf`, Install, then unplug and replug the board |
+| WCH CH340 | `1a86:7523` | [CH341SER.EXE](https://www.wch-ic.com/downloads/CH341SER_EXE.html) | run it, Install, then unplug and replug the board |
+
+With no COM port listed, the Board page asks Windows for USB devices with a Device Manager problem
+(`Get-CimInstance Win32_PnPEntity`, `ConfigManagerErrorCode <> 0`) every 2 s and names a known bridge
+it finds, with that driver's install steps (`gui/board.py` `bridges_without_driver`).
+
 ## Linux serial ports
 
 The app opens the board as the user, with no root and no kernel networking. Opening the port needs

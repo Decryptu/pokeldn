@@ -1,5 +1,6 @@
 import os
 import re
+import sys
 import threading
 import time
 
@@ -67,7 +68,14 @@ class BoardView:
     def _poll(self) -> None:
         while self.visible:
             time.sleep(2)
-            if self.visible and [p.device for p in board.ports()] != [p.device for p in self.ports]:
+            present = board.ports()
+            if sys.platform == "win32":
+                hidden = [] if present else board.bridges_without_driver()
+                if hidden != self.app.hidden_bridges:
+                    self.app.hidden_bridges = hidden
+                    self.app.ui(self.scan)
+                    continue
+            if self.visible and [p.device for p in present] != [p.device for p in self.ports]:
                 self.app.ui(self.scan)
 
     def scan(self, update: bool = True) -> None:
@@ -372,9 +380,12 @@ class BoardView:
 
         return t.card("Board not listed?", ft.Column([
             t.text("Try another cable or USB port. Many cables only charge.", 13),
-            t.text("Windows and macOS need the driver for the board's USB chip:", 13),
-            ft.Row([link("CP210x", board.DRIVERS["Silicon Labs CP210x"]),
-                    link("CH340", board.DRIVERS["WCH CH340"])], spacing=6, wrap=True),
+            t.text("Windows needs the driver for the board's USB chip, printed on the chip next to the "
+                   "USB socket (CP2102 or CH340):", 13),
+            ft.Row([link("CP210x driver", board.DRIVERS["Silicon Labs CP210x"]),
+                    link("CH340 driver", board.DRIVERS["WCH CH340"])], spacing=6, wrap=True),
+            t.text(f"CP210x: {board.DRIVER_STEPS['Silicon Labs CP210x']}", 13, t.MUTED),
+            t.text(f"CH340: {board.DRIVER_STEPS['WCH CH340']}", 13, t.MUTED),
             t.text("Linux: allow serial ports, then log out and back in:", 13),
             CodeBlock(self.app, "sudo usermod -aG dialout $USER").control,
             t.text("Arch and its derivatives name the group uucp instead of dialout.", 13, t.MUTED),

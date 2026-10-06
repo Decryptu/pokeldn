@@ -1,5 +1,7 @@
 import os
+import re
 import struct
+import subprocess
 import time
 from dataclasses import dataclass
 
@@ -25,6 +27,11 @@ NATIVE_USB = (0x303A, 0x1001)
 DRIVERS = {
     "Silicon Labs CP210x": "https://www.silabs.com/developer-tools/usb-to-uart-bridge-vcp-drivers",
     "WCH CH340": "https://www.wch-ic.com/downloads/CH341SER_EXE.html",
+}
+DRIVER_STEPS = {   # Windows, docs/gui.md USB drivers
+    "Silicon Labs CP210x": "Download the CP210x Universal Windows Driver zip, extract it, right-click "
+                           "silabser.inf and choose Install, then unplug and replug the board.",
+    "WCH CH340": "Download CH341SER.EXE, run it and press Install, then unplug and replug the board.",
 }
 
 FIRMWARE = os.path.join(ROOT, "gui", "firmware", "pokeldn-radio.bin")   # written by the release build
@@ -95,6 +102,28 @@ def bridges_without_port(sysfs: str = "/sys/bus/usb/devices") -> list[str]:
             continue
         if ids in BRIDGES and not glob.glob(os.path.join(device, "*:*", "tty*")):
             found.append(BRIDGES[ids])
+    return found
+
+
+# Present devices with a Device Manager problem; a bridge with no driver has code 28 and no COM port.
+PROBLEM_DEVICES = ("Get-CimInstance Win32_PnPEntity -Filter 'ConfigManagerErrorCode <> 0' "
+                   "| ForEach-Object { $_.PNPDeviceID }")
+USB_ID = re.compile(r"VID_([0-9A-F]{4})&PID_([0-9A-F]{4})", re.I)
+
+
+def bridges_without_driver(run=subprocess.run) -> list[str]:
+    """Windows: the known bridges plugged in with no working driver, so with no COM port."""
+    try:
+        out = run(["powershell", "-NoProfile", "-NonInteractive", "-Command", PROBLEM_DEVICES],
+                  capture_output=True, text=True, timeout=20,
+                  creationflags=getattr(subprocess, "CREATE_NO_WINDOW", 0)).stdout
+    except (OSError, subprocess.SubprocessError):
+        return []
+    found = []
+    for vid, pid in USB_ID.findall(out or ""):
+        name = BRIDGES.get((int(vid, 16), int(pid, 16)))
+        if name and name not in found:
+            found.append(name)
     return found
 
 

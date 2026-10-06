@@ -51,7 +51,9 @@ Gift below with the tested settings. The only file it asks for is `prod.keys`.
   then System Settings, Privacy & Security, scroll down to Security, Open Anyway next to pokeldn,
   and confirm with your password. Later launches open normally.
 - Windows: extract the zip and run `pokeldn.exe` inside the `pokeldn` folder; keep the `_internal`
-  folder beside it. SmartScreen may stop the unsigned app; choose More info, then Run anyway.
+  folder beside it. SmartScreen may stop the unsigned app; choose More info, then Run anyway. A classic
+  ESP32 needs its USB chip's driver (CP210x or CH340) before it gets a COM port; the Board page links
+  both and names the one missing ([Windows USB drivers](docs/gui.md#windows-usb-drivers)).
 - Linux: it needs GTK 3 and libsecret, present on desktop distributions, and serial access
   (`sudo usermod -aG dialout $USER`; the group is `uucp` on Arch). On Ubuntu 22.04, brltty takes
   CH340 boards and their port never appears: `sudo apt remove brltty` ([Linux serial ports](docs/gui.md#linux-serial-ports)).

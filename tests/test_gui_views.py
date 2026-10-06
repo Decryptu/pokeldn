@@ -264,6 +264,31 @@ def test_a_ch340_on_usb_with_no_tty_names_brltty_on_linux(tmp_path, monkeypatch,
     assert ("apt remove brltty" in status.detail) == (tty is None)
 
 
+@pytest.mark.parametrize("devices, title, step", [
+    ("USB\\VID_10C4&PID_EA60\\0001\r\n", "Board found without a driver", "silabser.inf"),
+    ("USB\\VID_1A86&PID_7523\\5&2A1B&0&2\r\n", "Board found without a driver", "CH341SER.EXE"),
+    ("USB\\VID_046D&PID_C52B\\6&3&0&1\r\n", "No board plugged in", None),   # a mouse receiver
+    ("", "No board plugged in", None),
+])
+def test_a_bridge_with_no_driver_names_its_install_steps_on_windows(monkeypatch, devices, title, step):
+    """A CP210x or CH340 with no Windows driver gets no COM port; Device Manager lists it with a
+    problem code, and the status names the driver to install."""
+    import subprocess
+    calls = []
+
+    def powershell(argv, **kwargs):
+        calls.append(argv)
+        return subprocess.CompletedProcess(argv, 0, devices, "")
+
+    app = _app(UART, None)
+    app.hidden_bridges = board_module.bridges_without_driver(run=powershell)
+    monkeypatch.setattr(sys, "platform", "win32")
+    status = app.board_status([])
+    assert calls[0][0] == "powershell" and "ConfigManagerErrorCode" in calls[0][-1]
+    assert status.state == "missing" and status.title == title
+    assert step is None or step in status.detail
+
+
 def _release_server(routes: dict):
     import http.server
     import threading

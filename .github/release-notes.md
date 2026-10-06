@@ -35,6 +35,8 @@ The separate `pokeldn-radio*.bin` files are merged firmware images for manual fl
    - Windows: if SmartScreen stops the app, choose More info, then Run anyway.
 2. Choose `prod.keys` when prompted.
 3. Connect one supported board with a USB data cable. S3, C3 and C6 boards use native USB Serial/JTAG.
+   On Windows, a classic ESP32 needs its USB chip's driver first (CP210x or CH340); the Board page
+   links both, says how to install them and names the one missing.
    A board that ships an external antenna, such as the Seeed Studio XIAO ESP32C3 or XIAO ESP32S3,
    needs it attached; larger S3 boards such as the N8R2 and N16R8 have an onboard antenna.
 4. On Board, press Flash. The app checks the board on its own and shows Board ready.
