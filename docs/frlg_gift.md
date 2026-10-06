@@ -502,7 +502,9 @@ Offline, against the scripted console (`tests/test_save_transfer.py`): the backu
 byte for byte on French FireRed, English LeafGreen and Japanese FireRed; a backup cut after 40 KB
 resumes and completes; a restore leaves the file's loaded copy as the chip's newest, the extra
 sectors equal to the file's and the console's old copy whole; a restore cut after eight sectors
-leaves the console's own copy loading. Neither direction has run on retail hardware.
+leaves the console's own copy loading.
+
+On retail French FireRed over the ESP32 board, a backup took 64 passes and 219 s from the first pass to the last block; both slots of the file are whole and its trainer is the console's. The console showed the message and kept its save. A restore has not run on retail hardware.
 
 ## Authoring gifts
 
