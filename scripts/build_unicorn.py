@@ -5,6 +5,7 @@ The wheel's library carries every CPU family (16 MB on macOS); the app runs ARM 
 (3 MB). This builds the installed Unicorn's own release from source with CMake into gui/unicorn/lib,
 under the file names the installed package loads. docs/gui.md, Build a desktop app.
 """
+import argparse
 import importlib.metadata
 import shutil
 import subprocess
@@ -20,6 +21,7 @@ MARKER = "pokeldn-unicorn"
 
 
 def main() -> int:
+    argparse.ArgumentParser(description=__doc__).parse_args()
     if not shutil.which("cmake"):
         raise SystemExit("Install CMake first: https://cmake.org/download/")
     import unicorn
