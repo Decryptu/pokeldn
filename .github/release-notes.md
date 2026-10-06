@@ -5,34 +5,8 @@ through an ESP32 radio connected by USB. Nothing is installed on the console.
 
 ## What is new
 
-- 0.12.1: on Windows, a board that does not answer at first no longer leaves its port locked, so
-  the retries stop failing with "Access is denied", and the error names every attempt's cause.
-- Link Codes and the BDSP room password are typed into eight digit boxes: each digit moves to the
-  next box, Backspace steps back, a pasted code such as `1234 5678` fills every box, and Start
-  stays blocked until all eight digits are in (or none, where a trade runs without a code).
-- Number boxes take digits only, and IDs, levels, stats, names and nicknames stop at the length
-  their game allows.
-- 0.11.1: on macOS the app shows one Dock icon again. 0.11.0 showed a second one that kept
-  bouncing.
-- FireRed and LeafGreen saves: the Mystery Gift tool's Your save tab backs up the console's whole
-  save into the app's library over Mystery Gift, then restores, renames, imports, exports and edits
-  saves (trainer and party, with PKHeX). A backup takes about four minutes on a retail French
-  FireRed and leaves the console's save unchanged. Restore is checked offline only and is untried
-  on retail hardware; back the console up first.
-- The app opens about four times faster: on an Apple silicon Mac the window appears in 0.5 s
-  instead of 2.5 s, and each trade or gift session starts in under 0.1 s instead of 1.5 s.
-- Smaller downloads: the macOS app is 51 MB instead of 121 MB. Unused display components, the
-  unused parts of PKHeX's runtime and of the emulator used by Check offline are left out.
-- The Windows download is now a zip: extract it and run `pokeldn.exe` inside the `pokeldn` folder,
-  keeping the `_internal` folder beside it.
-- The app removes the display files its earlier versions left in `~/.flet/client`.
-- Sword/Shield gift item pickers list only items a card can carry.
-- Preset and official-card tiles line up in even rows.
-- A rare `.pk3` that also reads as encrypted data is now opened correctly.
-
-Everything from 0.10.0 is included: FireRed and LeafGreen in English, French, German, Italian,
-Spanish and Japanese, the 44 GB-Link Team cards and game boosts on all twelve cartridges, the
-171 official Sword/Shield event cards and native `.wc3` and `.wc8` gift files.
+- Windows: a board that does not answer at first no longer leaves its port locked, so the retries
+  stop failing with "Access is denied", and the error names every attempt's cause.
 
 The firmware is unchanged (1.4.0); a board flashed by 0.7.0 or later needs no reflash.
 
