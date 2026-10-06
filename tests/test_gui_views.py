@@ -153,6 +153,7 @@ def _app(port, ident, chip=""):
     app.settings = SimpleNamespace(radio_port="", keys="")
     app.identities = {port.device: ident} if ident is not None else {}
     app.chips = {port.device: chip} if chip else {}
+    app.hidden_bridges = []
     return app
 
 
@@ -171,7 +172,9 @@ def test_the_board_status_names_the_fix_for_what_the_board_answered(port, ident,
     assert _app(port, ident, chip).board_status([port]).state == state
 
 
-def test_a_board_unplugged_is_checked_again_when_it_returns():
+@pytest.mark.parametrize("platform", ["darwin", "win32"])   # Windows reads the bridges with no driver
+def test_a_board_unplugged_is_checked_again_when_it_returns(monkeypatch, platform):
+    monkeypatch.setattr(sys, "platform", platform)
     app = _app(UART, CURRENT)
     assert app.board_status([]).state == "missing"
     assert app.board_status([UART]).state == "checking"
