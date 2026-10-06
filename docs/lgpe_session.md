@@ -459,6 +459,16 @@ first three and 4 with the party-offer object the post-trade save re-creates. Ea
 announces a clone set (`0x4d94b8`, the thunk `0x11b4c0` into `0x11aec0`), so clone ids differ from
 channel ids.
 
+Neither bound limits the trades on one seat. The counter is a u32 incremented without a check
+(`0x116ea4..0x116eac`) and the kind is a u32 on the wire, so ids wrap only after 2^32 - 1
+registrations. The 16-entry bound counts live entries: each holds a weak handle (`[chan+0x58]`, made
+by `0x4d98a0`), and `0x117920`, run every frame of an active session from the manager update
+`0x1175d0` (`0x11761c`), erases entries whose channel's strong count `handle+0x54` is zero. The
+commit channel dies with the sync save (`0x838c40`), which dies with its save process (`0x835000`)
+before the dispatcher's state 3 leaves (`0x886670`); the offer channel dies with the party-offer
+object (`0x349dfc`), released after the commit (`0x886c70`) and replaced by the post-trade save
+(`0x3445e0`). A seat holds about four live channels.
+
 Kind 1, body 0x168, the identity: the save's MyStatus block copied to `obj+0x450` (`0x3493f4`),
 sent from state 6 by both stations before either has received anything. UTF-16LE names at body
 offsets:

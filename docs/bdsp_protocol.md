@@ -542,8 +542,17 @@ through it in `NetStateModel$$SetState` [0x023e2604]. The only store to +0x38 is
 when the player recruits a battle (`stateModelType` 0; the A press passes 1 and builds a
 `BattleJoinStateModel`). `UnionStateController` is built once per `UnionRoomManager`
 (`UnionRoomManager$$SetUp`, `.ctor` 0x01e4d01c), and a link battle keeps both
-(`EvDataManager$$UpdateStart` -> `UnionRoomManager$$ReturnBattle` [0x01b02a78], no constructor). A
-0x08 reaching a console whose player has not recruited a battle in that visit writes through null.
+(`EvDataManager$$UpdateStart` -> `UnionRoomManager$$ReturnBattle` [0x01b02a78], no constructor).
+Each entry builds a new `UnionRoomManager`: `EvDataManager$$EvCmdUnionProc` [0x01b35f70] adds it to a
+`new GameObject("UnionRoomManager")` [0x01b36090] before the warp into the room, with no
+`DontDestroyOnLoad`. `UnionRoomManager$$Init` [0x01e49e40] passes the zones {484, 491, 492, 493}
+(`UNION`, `UNION01` to `UNION03`) to `NetUseManager.SetEnableZone` [0x026cfca0], which subscribes to
+`FieldManager`'s zone-change event; `NetUseManager.OnZoneChange` [0x026cfef0] calls
+`Object.Destroy(gameObject)` [0x026d00f0] on the first zone outside the list. Leaving (`LeaveUnion`
+[0x01e4e300], its coroutine setting the transition zone at [0x01e560e0]) is such a change, so
+`UnionRoomManager$$OnDestroy` [0x01e4c540] runs and calls `Clear`. The recruitment model therefore
+starts null on every visit. A 0x08 reaching a console whose player has not recruited a battle in that
+visit writes through null.
 
 The ladder's 0x08 row was measured on a console that had recruited the battle. A 0x08 under a
 sequence id the client already used is discarded by the reliable window ([the Pia

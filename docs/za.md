@@ -228,7 +228,7 @@ accepted. `pokeldn.za.host` resets its round with each trade.
 |---|---|---|
 | 5 | session update `0x95f600` (`0x95f680`) | own state 3 or 4, byte +0x148 set, timer +0x138 at least 1.5 s, partner state 4 or 5, `0x963710` true |
 | 6 | delegate invoke `0xdfda8c`, filled at `0x964e78` | the exchange worker's state-6 delegate |
-| 7 | `0x2dc4b94`, installed by `0x964f0c` | the worker's state-7 delegate |
+| 7 | `0x2dc4b94`, installed by `0x964f0c` | the worker's state-7 delegate; unreachable in 2.0.2 |
 
 `0x9610a4` (caller `0x95fdbc`) runs at own state 5 or more when the worker at +0xd0 is absent or its
 +9 is 0 or 0x10: it calls the callable at session+0x48 with (+0x118, +0x120, +0x128), builds the
@@ -258,8 +258,15 @@ partner's step at +0x70, valid when +0x71 is set.
 | 13 | `0x960d00` | wait for the partner's 0xe | 14 |
 | 14 | `0x960de8` | +0x10 == 0: the state-6 delegate (`0x963810`); else the state-7 delegate (`0x9a0b00`); then `0x9637b8` | 0x10 |
 
-Own state 6 is the exchange completed with no error at worker+0x10, after both stations passed the
-`0200b901XX` steps 3, 6, 0x0b and 0x0e. A station whose +0x15 is clear waits the random 2..302
+Own state 6 is the exchange completed, after both stations passed the `0200b901XX` steps 3, 6, 0x0b
+and 0x0e. Handler 14 picks the state-7 delegate when the worker's error word +0x10 is non-zero, and
+nothing in 2.0.2 writes a non-zero value there: its only stores zero it, in the constructor
+`0x966ba4` (`0x966bcc`) and the start `0x965660` (`0x9656a0`). The worker's abort phase +0xc is read
+by the session tick `0x95f6e4` (`0x95f738`): 1 asks the trade object to cancel (`0x9636f8` sets trade
+object +0x44 = 1) and parks the worker at step 0xf; 2 waits for trade object +0x44 == 3, then sets
+step 14 and phase 3 (`0x95f7e0`). No code stores 1, so the abort phase never starts and no path
+through the worker reaches own state 7. A store through a computed address is not excluded; a write
+breakpoint on worker+0x10 would settle it. A station whose +0x15 is clear waits the random 2..302
 updates before its 0x0b. What `0xdd07cc` returns and how the stored halfword maps onto the `b901XX`
 bytes are untraced.
 
@@ -954,7 +961,6 @@ is no local-wireless path.
   Trade search with one joiner reached it from CloseParticipation.
 - Whether a shipped script calls the binding `0x1673170` that stores any integer into L, and what the
   language-select table `[x0+0x50]` holds (breakpoint `0x16734c0`, read at `0x2c204ac`).
-- What writes the exchange worker's error word +0x10, which selects own state 7 .
 - Whether an optional timed close (`--hold-after-trade`) can leave the console without an error
   while it is still seated. The default host waits for the console's departure ([Hosting](#hosting)).
   A leaving retail host sends the type 9 first ([A host leaving](#a-host-leaving)); the timed close

@@ -71,8 +71,5 @@ ten minutes of counted play time), then the fatal error screen.
   callers of `0x5a9430`, `0x581f20` and `0x583b90`) is untraced.
 - Which process the trade dispatcher's child is, and whether the sync save's commit channel at
   `seq+0xb8` is released after an aborted commit.
-- Whether the channel counter or the 16-entry channel table bounds a long seat. `0x116e80` hands out
-  ids from `mgr+0x270` and returns 0 with 16 channels registered; `0x117920` compacts out dead ones.
-  Three trades on a hosted seat were measured; the limit beyond that is unmeasured.
 - Whether the dispatcher's modes 1 and 2 are link battles. The reading rests on the scene they build;
   a capture of a link battle's session, with the mode word `+0x8c`, settles it.

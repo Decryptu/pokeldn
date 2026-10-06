@@ -66,8 +66,6 @@ fills before the script resumes). A call is `PUSH` per argument, right to left, 
   `0x2D`, and from PKHeX `RestrictVersion` (1 Sword, 2 Shield, 3 both).
 - [Mystery Gift](swsh_gift.md#what-the-menu-refuses): what a retail console shows for a kind-1
   gift whose species is absent from the game, which the constructor flags corrupt.
-- [Trades in a row](swsh_trade.md#trades-in-a-row-on-one-session): what sets `ui+0x5cc`, which
-  ends the box screen's step 7 wait (a timer or the player).
 - [The offered record](swsh_trade.md#the-offered-record): the encryption constant read at
   `0x011e3458` is not followed past the read, and 375 `memcmp` calls with a computed length are
   untraced; none lies in the pml, trade or box code.

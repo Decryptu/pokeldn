@@ -149,6 +149,14 @@ therefore erased, and the console waits in step 7 with "En attente d'une répons
 must arrive after the console has processed its offer: `pokeldn.swsh.host_trade` sends its 4 only
 after the joiner's 4, and the joiner launcher sends its 4 in answer to the host's.
 
+Step 7 also ends on the player pressing B; no timer ends it. The step machine's ui is the View_Model
+at `[this+0x80]` (`0x00aa4e78`, vtable `0x25376d8`). Its input handler `0x00aab0b0` (slot 16, called
+from the UI dispatcher at `0x00efad28`) sets `ui+0x5cc = 1` when `ui+0x5d0` is armed and the
+pressed-this-frame mask carries bit 49, which the remap table `0x02062928` produces from B alone.
+Steps 2 and 6 arm it after the offer and the acceptance (`0x00aa5434`); every tick clears it
+(`0x00aa5608`). In step 7 a press clears the partner's flags, sends box command 5 (the acceptance
+withdrawn) and leaves the sequence (`0x00aa57d0`); in step 3 it sends box command 2.
+
 Every later trade repeats the trade's own part: both offers and box command 1, the two box command
 4s in that order, ping 130 (the joiner pings first), a new content 50 at phase 0, ping 120, a new
 content 40 from phase 0 to 4. No 0x84 snapshot, ping 97 or 110, box command 3 or content 30 publish
