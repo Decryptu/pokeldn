@@ -109,6 +109,23 @@ def section(title: str, body: ft.Control | None = None, trailing: ft.Control | N
     return ft.Column([ft.Row(head, spacing=8), *([body] if body else [])], spacing=8, tight=True)
 
 
+def grid_rows(tiles: list[ft.Control], columns: int = 2, spacing: float = 6) -> list[ft.Control]:
+    """Tiles in rows of `columns`; the tiles of a row share its tallest tile's height."""
+    rows = []
+    for i in range(0, len(tiles), columns):
+        cells = tiles[i:i + columns]
+        for cell in cells:
+            cell.expand = 1
+        cells += [ft.Container(expand=1) for _ in range(columns - len(cells))]
+        rows.append(ft.Row(cells, spacing=spacing, intrinsic_height=True,
+                           vertical_alignment=ft.CrossAxisAlignment.STRETCH))
+    return rows
+
+
+def grid(tiles: list[ft.Control], columns: int = 2, spacing: float = 6) -> ft.Column:
+    return ft.Column(grid_rows(tiles, columns, spacing), spacing=spacing, tight=True)
+
+
 def card(title: str, body: ft.Control | None = None, description: str = "",
          trailing: ft.Control | None = None, tip: str = "") -> ft.Container:
     head = [text(title, 13, weight=ft.FontWeight.W_600, expand=True)]

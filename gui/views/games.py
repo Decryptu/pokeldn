@@ -192,7 +192,8 @@ class GamesView:
                 sprite = self.species_sprite(fields)
                 rows = [ft.Row([
                     t.labeled_control(f.label, self.input(f, grouped=True), expand=True)
-                    for f in fields[i:i + per_row]], spacing=10) for i in range(0, len(fields), per_row)]
+                    for f in fields[i:i + per_row]], spacing=10, vertical_alignment=ft.CrossAxisAlignment.START)
+                    for i in range(0, len(fields), per_row)]
                 if item == "Console" and self.tool.key == "frlg-gift":
                     rows.append(ft.Column([
                         t.text("Game language", 12, t.MUTED),

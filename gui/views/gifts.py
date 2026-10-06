@@ -127,7 +127,7 @@ class GiftBuilder:
                                      settings=bool(b.options)) for b in preset.members]
                 if on:
                     body.append(self.boost_settings(preset))
-            body.insert(0, ft.ResponsiveRow(tiles, spacing=6, run_spacing=6))
+            body.insert(0, t.grid(tiles))
             intro = getattr(self.module, "GROUP_INTROS", {}).get(group, "")
             if intro:
                 body.insert(0, t.text(intro, 12, t.MUTED))
@@ -145,7 +145,7 @@ class GiftBuilder:
             ft.Column([ft.Row(head, spacing=6),
                        t.text(summary, 12, t.MUTED)],
                       spacing=1, expand=True),
-        ], spacing=10), padding=ft.Padding(10, 8, 10, 8), border_radius=10, col={"xs": 12, "md": 6},
+        ], spacing=10), padding=ft.Padding(10, 8, 10, 8), border_radius=10,
             tooltip=summary, border=ft.Border.all(1, t.BLUE if active else t.BORDER),
             bgcolor=t.SELECTED if active else None, on_click=on_click)
 
@@ -212,7 +212,7 @@ class GiftBuilder:
     def events(self) -> ft.Control:
         """Every official card the game's builder ships, filtered by a search and a group."""
         cards = self.module.OFFICIAL.load()
-        tiles = ft.ResponsiveRow(spacing=6, run_spacing=6)
+        tiles = ft.Column(spacing=6, tight=True)
         search = t.field(hint="Search: Pikachu, Master Ball, shiny...", value=self.value.get("event_search", ""))
         group = {"value": self.value.get("event_group", "")}
 
@@ -220,8 +220,8 @@ class GiftBuilder:
             words = search.value.casefold().split()
             shown = [c for c in cards if (not group["value"] or c["group"] == group["value"])
                      and all(w in f"{c['label']} {c['group']} {c['summary']}".casefold() for w in words)]
-            tiles.controls = [self._tile(c["label"], c["summary"], c["key"] == self.value["event"],
-                                         lambda e, k=c["key"]: self._event(k)) for c in shown]
+            tiles.controls = t.grid_rows([self._tile(c["label"], c["summary"], c["key"] == self.value["event"],
+                                                     lambda e, k=c["key"]: self._event(k)) for c in shown])
             count.value = f"{len(shown)} of {len(cards)} cards"
             if update:
                 tiles.update()
