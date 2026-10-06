@@ -117,6 +117,7 @@ if __name__ == "__main__":
                 info = plistlib.load(source)
             assert info["CFBundleShortVersionString"] == __version__, info
             assert info["CFBundleVersion"] == __version__, info
+            assert info.get("LSBackgroundOnly") is True, info   # one Dock icon: the viewer's
         print(result.stdout, end="")
     else:
         check()

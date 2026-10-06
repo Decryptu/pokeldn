@@ -251,7 +251,10 @@ The apps are one-folder PyInstaller builds: `pokeldn.app` on macOS, a `pokeldn` 
 run is the app relaunching itself, so a run paid it again. On an M4 the one-folder app reaches the
 Games page in 0.7 s instead of 2.9 s, and a run's process starts in 0.08 s instead of 1.5 s. Flet's
 packer refuses `--onedir` on macOS; `scripts/pack_app.py` passes it to PyInstaller after Flet's own
-`--onefile`, and the later flag wins.
+`--onefile`, and the later flag wins. The bundle's Python process never checks in with the Dock: as a
+foreground app it shows a second icon that bounces until the app quits. The packer sets
+`LSBackgroundOnly` in its `Info.plist`, so only the viewer has a Dock icon, as under the single-file
+bootloader.
 
 | part | size | what keeps it small |
 |---|---|---|

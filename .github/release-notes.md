@@ -1,10 +1,12 @@
-# pokeldn 0.11.0
+# pokeldn 0.11.1
 
 This desktop app trades with seven Pokemon game families on a Switch or Switch 2
 through an ESP32 radio connected by USB. Nothing is installed on the console.
 
 ## What is new
 
+- 0.11.1: on macOS the app shows one Dock icon again. 0.11.0 showed a second one that kept
+  bouncing.
 - FireRed and LeafGreen saves: the Mystery Gift tool's Your save tab backs up the console's whole
   save into the app's library over Mystery Gift, then restores, renames, imports, exports and edits
   saves (trainer and party, with PKHeX). A backup takes about four minutes on a retail French

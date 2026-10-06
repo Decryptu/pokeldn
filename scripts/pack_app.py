@@ -139,7 +139,9 @@ def main() -> int:
             info_path = expected / "Contents/Info.plist"
             with info_path.open("rb") as source:
                 info = plistlib.load(source)
-            info.update(CFBundleShortVersionString=__version__, CFBundleVersion=__version__)
+            # The Flet viewer is the window; a one-folder Python process never checks in with the Dock and
+            # bounces there forever (docs/gui.md). The single-file bootloader ran as background-only.
+            info.update(CFBundleShortVersionString=__version__, CFBundleVersion=__version__, LSBackgroundOnly=True)
             with info_path.open("wb") as dest:
                 plistlib.dump(info, dest)
             subprocess.run(["codesign", "--force", "--deep", "--sign", "-", str(expected)], check=True)
