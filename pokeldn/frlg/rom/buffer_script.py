@@ -1814,10 +1814,11 @@ SAVE_SLOT_LAYOUT_ADDRESS = 0x083F58C4
 SECTOR_CHUNK_MIN = 2000
 
 
-def sector_chunk_size(sector_id):
+def sector_chunk_size(sector_id, build=None):
     """-> how many bytes of sector `sector_id` the game's checksum covers."""
     try:
-        return SECTOR_CHUNK_SIZES[int(sector_id)]
+        return (builds.resolve(build).saveblock1_size - 3 * SECTOR_DATA_SIZE
+                if int(sector_id) == 4 else SECTOR_CHUNK_SIZES[int(sector_id)])
     except KeyError:
         raise BufferScriptError(
             f"sector id {sector_id} is not one of the {len(SECTOR_CHUNK_SIZES)} a save slot "
@@ -1860,7 +1861,7 @@ def build_flash_write(sector, *, source=FLASH_WRITE_SCRATCH, fill_base=0x4657000
     if footer and words == FLASH_WRITE_WORDS:
         # Fill the id's own chunk and leave the rest zero, as the game does; a full fill would fail
         # the game's chunk checksum.
-        words = (sector_chunk_size(sector_id) if position is None
+        words = (sector_chunk_size(sector_id, build) if position is None
                  else SECTOR_CHUNK_MIN) // 4
     if not 1 <= words <= FLASH_WRITE_WORDS:
         raise BufferScriptError(
@@ -2148,7 +2149,8 @@ RESIDENT_DATA_FLOOR = 0x0203FBB4
 # The follower's line when A is pressed facing it, by cartridge language: FD 02 is STR_VAR_1, the
 # lead's nickname; FE a line break [charmap.txt]. asm/resident/follower.s, p_text.
 FOLLOWER_TEXT = {"french": ("saute", "de joie !"), "english": ("jumps", "for joy!"),
-                 "spanish": ("salta", "de gozo!")}
+                 "spanish": ("salta", "de gozo!"), "italian": ("salta", "di gioia!"),
+                 "german": ("hüpft", "vor Freude"), "japanese": ("jumps", "for joy!")}
 FOLLOWER_TEXT_SIZE = 20
 R_BUTTON = 0x100
 # gHelpSystemToggleWithRButtonDisabled, French [RunHelpSystemCallback's literal, 0x0813F6FC].
@@ -2236,9 +2238,12 @@ def resident_blob(name, *, build=None, **params):
     unknown = set(params) - set(defaults)
     if unknown:
         raise BufferScriptError(f"{name} takes {sorted(defaults)}, not {sorted(unknown)}")
+    build = builds.resolve(build)
+    defaults = {key: build.ewram.get("party" if key == "mon" else key, value)
+                for key, value in defaults.items()}
     params = {**defaults, **params}
     if name in ("turbo", "turbo-lite") and params["hold"] & R_BUTTON and "help" not in explicit:
-        params["help"] = HELP_R_DISABLED  # held R would open the Help System
+        params["help"] = build.ewram.get("help", HELP_R_DISABLED)  # held R would open the Help System
     if name == "shiny" and "state" in explicit and "overlay" not in explicit:
         params["overlay"] = params["state"] + 24  # the word the hook shows
     if name == "follower" and params["deoxys"] is None:
@@ -2249,9 +2254,12 @@ def resident_blob(name, *, build=None, **params):
         params["overlay"], params["overlay2"] = params["words"], params["words"] + 4
     symbols = STUBS[name][2]
     literals = {key: value for key, value in builds.resolve(build).hook_literals().items()
-                if f"p_{key}" in symbols}
+                if f"p_{key}" in symbols and key not in params}
     words = native_script.resident_words(name, **params, **literals)
     blob = b"".join(w.to_bytes(4, "little") for w in words)
+    if build.language == "japanese" and name in ("turbo", "turbo-lite"):
+        at = symbols["printer_stride"]
+        blob = blob[:at] + b"\x20" + blob[at + 1:]
     if name == "follower":
         from pokeldn.frlg.text import charmap
         first, second = FOLLOWER_TEXT[builds.resolve(build).language]
@@ -2380,7 +2388,7 @@ def build_flash_patch(sector_id, patch_offset, data, *, scratch=FLASH_WRITE_SCRA
             "flash-patch edits a live save sector in place. Pass unsafe=True to mean it.")
     if sector_id not in SECTOR_CHUNK_SIZES:
         raise BufferScriptError(f"sector id {sector_id} is not one a save slot carries")
-    chunk = sector_chunk_size(sector_id)
+    chunk = sector_chunk_size(sector_id, build)
     if not 1 <= len(data) <= FLASH_PATCH_MAX_BYTES:
         raise BufferScriptError(
             f"a patch carries 1..{FLASH_PATCH_MAX_BYTES} bytes, got {len(data)}")
@@ -2406,10 +2414,10 @@ def build_flash_patch(sector_id, patch_offset, data, *, scratch=FLASH_WRITE_SCRA
 
 def flash_write_source(fill_base=0x46570000, fill_step=1, words=FLASH_WRITE_WORDS,
                        footer=False, sector_id=0, counter=0, signature=SECTOR_SIGNATURE,
-                       position=None):
+                       position=None, build=None):
     """-> the exact bytes build_flash_write makes the console compose, for verifying the sector."""
     if footer and words == FLASH_WRITE_WORDS:
-        words = (sector_chunk_size(sector_id) if position is None else SECTOR_CHUNK_MIN) // 4
+        words = (sector_chunk_size(sector_id, build) if position is None else SECTOR_CHUNK_MIN) // 4
     pattern = b"".join(((int(fill_base) + i * int(fill_step)) & 0xFFFFFFFF).to_bytes(4, "little")
                        for i in range(int(words)))
     if not footer:
@@ -2418,7 +2426,7 @@ def flash_write_source(fill_base=0x46570000, fill_step=1, words=FLASH_WRITE_WORD
     out[0:len(pattern)] = pattern
     out[SECTOR_FOOTER_AT:SECTOR_FOOTER_AT + 2] = (int(sector_id) & 0xFFFF).to_bytes(2, "little")
     out[SECTOR_FOOTER_AT + 2:SECTOR_FOOTER_AT + 4] = sector_checksum(
-        out, sector_chunk_size(sector_id)).to_bytes(2, "little")
+        out, sector_chunk_size(sector_id, build)).to_bytes(2, "little")
     out[SECTOR_FOOTER_AT + 4:SECTOR_FOOTER_AT + 8] = (int(signature) & 0xFFFFFFFF).to_bytes(4, "little")
     out[SECTOR_FOOTER_AT + 8:SECTOR_FOOTER_AT + 12] = (int(counter) & 0xFFFFFFFF).to_bytes(4, "little")
     return bytes(out)

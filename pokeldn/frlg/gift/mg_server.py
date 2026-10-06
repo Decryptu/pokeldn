@@ -535,9 +535,9 @@ class MysteryGiftServer:
             if card is not None or ram_script is not None:
                 raise MysteryGiftServerError(
                     "a Wonder News session carries no Wonder Card and no RAM script")
-            if len(self.news) != wonder_news.WONDER_NEWS_SIZE:
+            if len(self.news) not in (wonder_news.WONDER_NEWS_SIZE, wonder_news.JAPANESE_WONDER_NEWS_SIZE):
                 raise MysteryGiftServerError(
-                    f"Wonder News must be exactly {wonder_news.WONDER_NEWS_SIZE} bytes, "
+                    f"Wonder News must be exactly 224 or {wonder_news.WONDER_NEWS_SIZE} bytes, "
                     f"got {len(self.news)}")
             if not wonder_news.validate(self.news):
                 raise MysteryGiftServerError(
@@ -553,9 +553,9 @@ class MysteryGiftServer:
                 raise MysteryGiftServerError(
                     f"delivery RAM script is {len(self.ram_script)} bytes; the console "
                     f"only saves the first {self.MAX_RAM_SCRIPT_SIZE}")
-            if len(self.card) != WONDER_CARD_SIZE:
+            if len(self.card) not in (WONDER_CARD_SIZE, 164):
                 raise MysteryGiftServerError(
-                    f"Wonder Card must be exactly {WONDER_CARD_SIZE} bytes, got {len(self.card)}")
+                    f"Wonder Card must be exactly 164 or {WONDER_CARD_SIZE} bytes, got {len(self.card)}")
         self.stamp = None if stamp is None else bytes(stamp)
         self.activation_script = (None if activation_script is None
                                   else bytes(activation_script))
@@ -1162,7 +1162,8 @@ class MysteryGiftServer:
                 self.info(f"  {line}")
         if buffer_script.describe(self.buffer_code).startswith(buffer_script.SAVE_DUMP + " "):
             asked = buffer_script.save_dump_parameters(self.buffer_code)
-            for line in readout.describe(asked["block"], asked["offset"], self.buffer_dump):
+            for line in readout.describe(asked["block"], asked["offset"], self.buffer_dump,
+                    language=1 if self.game_data and self.game_data.game_code.endswith(b"J") else None):
                 self.info(f"  {line}")
 
     def _do_svr_load_buffer_verdict_msg(self):

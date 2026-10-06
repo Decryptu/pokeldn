@@ -52,14 +52,16 @@ class Settings:
         return whole & 0xFFFF, whole >> 16
 
     def name(self, game: str) -> str:
-        """The trainer name `game` can hold: FireRed takes seven Gen III characters."""
+        """The trainer name `game` can hold: Japanese FRLG takes five Gen III characters."""
         if game != "frlg":
             return self.ot
         from pokeldn.frlg.text import charmap
-        for name in (self.ot, self.ot[:7]):
-            if name and charmap.decode(charmap.encode(name)) == name and len(charmap.encode(name)) <= 7:
+        limit = 5 if int(self.language) == 1 else 7
+        for name in (self.ot, self.ot[:limit]):
+            encoded = charmap.encode(name, language=int(self.language))
+            if name and charmap.decode(encoded, language=int(self.language)) == name and len(encoded) <= limit:
                 return name
-        return Settings.ot
+        return Settings.ot[:limit]
 
     def trainer(self, game: str) -> dict:
         tid, sid = self.ids(game)

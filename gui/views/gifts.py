@@ -602,6 +602,37 @@ class GiftBuilder:
             for control in (self.when, self.effects, self.status):
                 control.update()
 
+    async def select_native_build(self, gift):
+        loop = asyncio.get_running_loop()
+        chosen = loop.create_future()
+        options = [(code, frlg.CARTRIDGES[code]) for code in gift.variants]
+        picker = t.dropdown(options, options[0][0])
+
+        async def finish(e):
+            if not chosen.done():
+                chosen.set_result(picker.value)
+            self.app.page.pop_dialog()
+
+        async def cancel(e):
+            if not chosen.done():
+                chosen.set_result(None)
+            self.app.page.pop_dialog()
+
+        async def dismissed(e):
+            if not chosen.done():
+                chosen.set_result(None)
+
+        self.app.page.show_dialog(t.dialog(
+            title=t.text("Export for which cartridge?", 18, t.TEXT),
+            content=ft.Column([
+                t.text("A .wc3 holds one cartridge's gift. Choose its version and language. "
+                       "A .pokegift keeps every supported cartridge together.", 13, t.MUTED),
+                t.labeled_control("Cartridge", picker),
+            ], tight=True, spacing=12, width=420),
+            actions=[t.button("Cancel", cancel, filled=False), t.button("Export", finish)],
+            on_dismiss=dismissed))
+        return await chosen
+
     async def _save(self, e) -> None:
         self.save_button.disabled = True
         self.status.value, self.status.color = "Preparing gift file…", t.MUTED
@@ -617,7 +648,14 @@ class GiftBuilder:
                 file_type=ft.FilePickerFileType.CUSTOM, allowed_extensions=[gifts.EXTENSION, native])
             if path:
                 path += "" if path.lower().endswith((".pokegift", f".{native}")) else ".pokegift"
-                gifts.save(path, gift)
+                build = None
+                if self.game == "frlg" and path.lower().endswith(".wc3") and len({
+                        (v.data.get("card"), v.data.get("ram_script")) for v in gift.variants.values()}) > 1:
+                    build = await self.select_native_build(gift)
+                    if build is None:
+                        self.show_summary()
+                        return
+                gifts.save(path, gift, build=build)
                 self.status.value = f"Saved {path}"
             else:
                 self.show_summary()

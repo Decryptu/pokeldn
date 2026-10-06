@@ -12,23 +12,11 @@ SUBSTRUCT_ORDER = [
     "MGAE", "MGEA", "MAGE", "MAEG", "MEGA", "MEAG",
 ]
 
-_CHARS = {0x00: " ", 0xAB: "!", 0xAC: "?", 0xAD: ".", 0xAE: "-", 0xAF: "·", 0xB0: "…",
-          0xB1: "“", 0xB2: "”", 0xB3: "‘", 0xB4: "’", 0xB5: "♂", 0xB6: "♀", 0xB7: "¥",
-          0xB8: ",", 0xB9: "×", 0xBA: "/", 0xFF: ""}
-for _i in range(10):
-    _CHARS[0xA1 + _i] = "0123456789"[_i]
-for _i in range(26):
-    _CHARS[0xBB + _i] = chr(ord("A") + _i)
-    _CHARS[0xD5 + _i] = chr(ord("a") + _i)
+from pokeldn.frlg.text import charmap
 
 
-def gba_str(b):
-    out = []
-    for x in b:
-        if x == 0xFF:
-            break
-        out.append(_CHARS.get(x, "."))
-    return "".join(out)
+def gba_str(b, language=None):
+    return charmap.decode(b, language=language)
 
 
 from pokeldn.frlg.save.species_names import SPECIES
@@ -57,8 +45,8 @@ def decode_mon(mon):
     ribbon_word = int.from_bytes(misc[8:12], "little")
     return {
         "pid": pid, "otid": otid,
-        "nickname": gba_str(mon[8:18]),
-        "otName": gba_str(mon[20:27]),
+        "nickname": gba_str(mon[8:18], mon[18]),
+        "otName": gba_str(mon[20:27], mon[18]),
         "language": mon[18],
         "checksum_ok": calc == stored,
         "stored": stored, "calc": calc,

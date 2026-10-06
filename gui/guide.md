@@ -49,6 +49,19 @@ remove saved session records, logs, temporary offers and unused built Pokemon. S
 needed for a bug report first. Received Pokemon, selected offers, keys, firmware and settings are
 kept. Finish the current run before clearing files.
 
+## FireRed and LeafGreen language
+
+Mystery Gift's Console card shows the version and automatic language detection. Choose FireRed
+or LeafGreen. After you choose pokeldn in the game's Friend list, the game reports its cartridge
+code; pokeldn selects its language's gift script and RAM addresses before sending code. Both
+versions support English, French, German, Italian, Spanish and Japanese.
+
+Saving a native `.wc3` asks for its cartridge when the gift differs by version or language.
+A `.pokegift` keeps all variants and selects the right one when the console connects.
+
+Trainer language in Advanced describes pokeldn's own trainer on the link. It does not select
+the console's language.
+
 ## Basic and Advanced
 
 Basic shows the fields most runs need; the tested settings for each game are applied underneath.

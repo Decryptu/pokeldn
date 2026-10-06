@@ -193,6 +193,14 @@ class GamesView:
                 rows = [ft.Row([
                     t.labeled_control(f.label, self.input(f, grouped=True), expand=True)
                     for f in fields[i:i + per_row]], spacing=10) for i in range(0, len(fields), per_row)]
+                if item == "Console" and self.tool.key == "frlg-gift":
+                    rows.append(ft.Column([
+                        t.text("Game language", 12, t.MUTED),
+                        t.text("Detected automatically", 13, t.TEXT),
+                        t.text("English · French · German · Italian · Spanish · Japanese", 12, t.MUTED),
+                        t.text("After you choose pokeldn in the Friend list, your game reports its language.",
+                               12, t.MUTED),
+                    ], spacing=4))
                 out.append(t.card(item, ft.Column(rows, spacing=10),
                                   " ".join(f.help for f in fields if f.help), trailing=sprite))
         if not self.tool.fields:

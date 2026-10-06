@@ -62,7 +62,7 @@ class Game:
 
 VERSIONS = (("firered", "FireRed"), ("leafgreen", "LeafGreen"))
 LANGUAGES = (("english", "English"), ("french", "French"), ("german", "German"),
-             ("italian", "Italian"), ("spanish", "Spanish"))
+             ("italian", "Italian"), ("spanish", "Spanish"), ("japanese", "Japanese"))
 CHANNELS = (("1", "1"), ("6", "6"), ("11", "11"))
 FRESH_PID = Field("--fresh-pid", "New PID each run", "switch", default=True, hidden=True,
                   help="Offer the Pokemon under a new PID and encryption constant, so a save that "
@@ -114,7 +114,7 @@ FRLG = Game("frlg", "FireRed & LeafGreen", "FRLG", "frlg.md", (
          (queued(count="--trades"),
           Field("--version", "Version", "choice", default="firered", choices=VERSIONS, group="Console",
                 help="The game pokeldn's own trainer reports on the link, and the one the Pokemon is built for."),
-          Field("--language", "Language", "choice", default="english", choices=LANGUAGES, hidden=True,
+          Field("--language", "Trainer language", "choice", default="english", choices=LANGUAGES, hidden=True,
                 help="The language pokeldn's own trainer reports on the link."),
           Field("--channel", "Channel", "choice", default="11", choices=CHANNELS, help=CHANNEL_HELP, hidden=True)),
          fixed=("--live", "--phy", "auto", "--slot", "0", "--ot", "{ot}", "--id", "{tid}:{sid}",
@@ -137,11 +137,11 @@ FRLG = Game("frlg", "FireRed & LeafGreen", "FRLG", "frlg.md", (
           "Answer Yes if the console asks to replace its card.",
           "For boosts, save readouts or your own console code, keep the app running until the Session log shows the result.",
           "Back out of the search screen between two runs."),
-         (Field("--gift-file", "Gift", "builder"),
-          Field(("--version", "--expect-console"), "Version", "choice", default="firered",
+         (Field(("--version", "--expect-console"), "Version", "choice", default="firered",
                 choices=VERSIONS, group="Console",
                 help="The console's cartridge: another one is refused before anything is sent."),
-          Field("--language", "Language", "choice", default="english", choices=LANGUAGES, hidden=True,
+          Field("--gift-file", "Gift", "builder"),
+          Field("--language", "Trainer language", "choice", default="english", choices=LANGUAGES, hidden=True,
                 help="The language pokeldn's own trainer reports on the link."),
           Field("--channel", "Channel", "choice", default="11", choices=CHANNELS, help=CHANNEL_HELP, hidden=True)),
          fixed=("--live", "--ot", "{ot}", "--id", "{tid}:{sid}", "--dump-file",

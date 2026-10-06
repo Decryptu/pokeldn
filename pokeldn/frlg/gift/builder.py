@@ -14,9 +14,8 @@ from pokeldn.frlg.gift.stamp_rally import MysteryGiftDistribution
 from pokeldn.frlg.rom import buffer_script, builds, custom_code
 from pokeldn.frlg.save.species_names import SPECIES
 
-CARTRIDGES = {"BPRF": "FireRed (French)", "BPGF": "LeafGreen (French)",
-              "BPRE": "FireRed (English)", "BPGE": "LeafGreen (English)",
-              "BPRS": "FireRed (Spanish)"}
+CARTRIDGES = {code: (f"{'FireRed' if build.version == 'firered' else 'LeafGreen'} "
+                     f"({build.language.capitalize()})") for code, build in builds.BUILDS.items()}
 KINDS = (("card", "Wonder Card", "gift"), ("news", "Wonder News", "book-open"), ("code", "Console code", "cpu"))
 # (key, who, where, map group, map number, object id); a bound script replaces that person's own.
 GIVERS = (
@@ -544,7 +543,7 @@ def compile(state):
         lines = [line for line in news.get("lines", ()) if line]
         raw = wonder_news.build_wonder_news(news_id=int(news.get("id") or 1), title=news.get("title", ""),
                                             body=lines)
-        per_build = {code: MysteryGiftDistribution(card=None, ram_script=None, news=raw) for code in CARTRIDGES}
+        per_build = {code: MysteryGiftDistribution(card=None, ram_script=None, news=wonder_news.for_build(raw, code)) for code in CARTRIDGES}
         return gift_file.from_distributions(news.get("title") or "Wonder News", per_build)
     if kind == "code":
         code_state = state.get("code", {})

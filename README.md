@@ -24,6 +24,9 @@ installed on the Switch or Switch 2. Seven games are supported:
 ✓ works on a retail console · ✗ not done · ∅ the game has no such feature over local wireless
 FRLG FireRed/LeafGreen · LGPE Let's Go Pikachu/Eevee · SwSh Sword/Shield · BDSP Brilliant Diamond/Shining Pearl · PLA Legends Arceus · SV Scarlet/Violet · PLZA Legends Z-A
 
+FRLG supports both versions in English, French, German, Italian, Spanish and Japanese. The added
+editions have offline cartridge-ROM tests; their wireless delivery still needs retail checks.
+
 Every game trades through the ESP32 board. Protocol documentation:
 [decryptu.github.io/pokeldn](https://decryptu.github.io/pokeldn/).
 

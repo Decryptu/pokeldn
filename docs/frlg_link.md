@@ -158,12 +158,18 @@ first one with `BOTH_CANCEL_TRADE`, the exit path. A leader's own pick sends not
 that sent `READY_TO_TRADE` first draws `PLAYER_CANCEL_TRADE` on the leader's first Cancel;
 `bin/frlg_trade_join.py` then cancels at the menu, so the leader's second Cancel ends the session.
 
-## Version and language are not gates
+## Version and language on the link
 
 `IsTryingToTradeAcrossVersionTooSoon` [union_room.c:1499] fires only for a partner that is neither
 FireRed nor LeafGreen, and prints a message without dropping the link; FR↔LG trading works on
-hardware. The only language branch, `ConvertInternationalString`, special-cases Japanese; a French
-FireRed accepts an English Wonder Card.
+hardware. `ConvertInternationalString` special-cases Japanese names; a French FireRed accepts an
+English Wonder Card. The Union Room's `Task_SearchForChildOrParent` skips Japanese candidates
+[union_room.c:3726]. Mystery Gift uses `Task_ListenForCompatiblePartners`, whose compatible-player
+check uses the serial number and advertised name flag, without that language filter.
+
+After the player selects pokeldn in the Mystery Gift Friend list, the console sends its ROM game
+code in GameData. The host chooses that cartridge's addresses and card layout before delivery.
+The GUI shows this automatic language detection beside the version on its Basic screen.
 
 ## The emulator can close the link on its own
 

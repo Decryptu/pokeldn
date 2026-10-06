@@ -22,10 +22,10 @@ SCRIPT_BIN_SIZE = 1004
 
 
 def build_wonder_card_bin(card):
-    if len(card) != WONDER_CARD_SIZE:
-        raise ValueError(f"card is {len(card)} B; must be {WONDER_CARD_SIZE}")
+    if len(card) not in (WONDER_CARD_SIZE, 164):
+        raise ValueError(f"card is {len(card)} B; must be 164 or {WONDER_CARD_SIZE}")
     out = crc16(card).to_bytes(2, "little") + b"\x00\x00" + bytes(card)
-    assert len(out) == WONDER_CARD_BIN_SIZE, len(out)
+    assert len(out) == BIN_HEADER_SIZE + len(card), len(out)
     return out
 
 

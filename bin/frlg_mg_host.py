@@ -840,7 +840,8 @@ def main(argv=None):
         try:
             gift = from_payload(config.payload, console_build=config.console_build,
                                 version=config.console_version)
-            gifts.save(args.export_gift, gift)
+            gifts.save(args.export_gift, gift,
+                       build=None if config.console_build == "auto" else config.console_build)
         except (OSError, ValueError) as exc:
             parser.error(str(exc))
         print(f"Saved {args.export_gift}: {gift.summary}")

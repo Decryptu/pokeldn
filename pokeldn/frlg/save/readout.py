@@ -52,10 +52,10 @@ def read_party(data, first_offset):
     return rows
 
 
-def trainer(data):
+def trainer(data, *, language=None):
     """SaveBlock2 from offset 0: name, gender, TID, SID and play time."""
     trainer_id = int.from_bytes(data[TRAINER_ID_OFFSET:TRAINER_ID_OFFSET + 4], "little")
-    return {"name": charmap.decode(data[0:8]), "gender": "girl" if data[8] else "boy",
+    return {"name": charmap.decode(data[0:8], language=language), "gender": "girl" if data[8] else "boy",
             "tid": trainer_id & 0xFFFF, "sid": trainer_id >> 16,
             "hours": int.from_bytes(data[PLAY_TIME_OFFSET:PLAY_TIME_OFFSET + 2], "little"),
             "minutes": data[PLAY_TIME_OFFSET + 2]}
@@ -65,10 +65,10 @@ def _stats(values):
     return ", ".join(f"{name} {values[name]}" for name in SCREEN_ORDER)
 
 
-def describe(block, offset, data):
+def describe(block, offset, data, *, language=None):
     """-> plain lines for the log; [] when the dump holds neither the trainer nor the party."""
     if block == SAV2 and offset == 0 and len(data) >= PLAY_TIME_OFFSET + 3:
-        who = trainer(data)
+        who = trainer(data, language=language)
         return [f"Trainer {who['name']} ({who['gender']})",
                 f"Trainer ID {who['tid']}, Secret ID {who['sid']}",
                 f"Play time {who['hours']}h {who['minutes']:02d}m"]

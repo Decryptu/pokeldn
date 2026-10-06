@@ -73,7 +73,7 @@ def build_wifi_beacon(bssid, channel, sequence, ssid_length=32, dtim_period=3):
 
 def build_trade_app_data(profile, host_session_id):
     app_data = bytearray(beacon.mutate_beacon(
-        CAPTURED_TRADE_BEACON, name=profile.discovery_name,
+        CAPTURED_TRADE_BEACON, name=profile.discovery_name, language=profile.to_link_player().language,
         trainer_id=profile.discovery_trainer_id))
     pia_name = profile.session_name.encode("utf-8")[:64]
     app_data[0x17:0x1B] = len(pia_name).to_bytes(4, "big")
@@ -95,7 +95,7 @@ def _build_activity_app_data(profile, host_session_id, activity, trade_board=Non
     candidate only if IsPartnerActivityAcceptable finds the activity in its link group's accept
     list [src/data/union_room.h:398-453; union_room.c:1590] (docs/frlg_link.md)."""
     app_data = bytearray(beacon.mutate_beacon(
-        CAPTURED_TRADE_BEACON, name=profile.discovery_name,
+        CAPTURED_TRADE_BEACON, name=profile.discovery_name, language=profile.to_link_player().language,
         trainer_id=profile.discovery_trainer_id))
     pia_name = profile.session_name.encode("utf-8")[:64]
     app_data[0x17:0x1B] = len(pia_name).to_bytes(4, "big")

@@ -3,7 +3,7 @@
 pokeldn/frlg/data/team_cards.json [docs/frlg_gift.md, GB-Link Team cards].
 
 A port of GB-Link-Switch-LDN `cards/build.mjs` (GPL-3.0): the same script commands, cards and texts;
-the ARM sources are vendor/gblink-cards/*.s. Changes: French cartridges (vendor/gblink-cards/symbols.json),
+the ARM sources are vendor/gblink-cards/*.s. Changes: all six language pairs (vendor/gblink-cards/symbols.json),
 the script copy and menu list moved below pokeldn's resident hooks, and the cards pokeldn already
 makes its own way left out. Needs arm-none-eabi binutils.
 
@@ -18,6 +18,7 @@ import sys
 import tempfile
 
 ROOT = pathlib.Path(__file__).resolve().parents[1]
+sys.path.insert(0, str(ROOT))
 SRC = ROOT / "vendor" / "gblink-cards"
 OUT = ROOT / "pokeldn" / "frlg" / "data" / "team_cards.json"
 # GBLINK_REFERENCE=DIR builds from their unmodified cards/ at their addresses, for comparing with their payloads.
@@ -40,7 +41,7 @@ CONTEXT_DATA = 0x64                 # the script context's data registers, which
 ROM_GAME, ROM_LANGUAGE, ROM_REVISION = 0x080000AE, 0x080000AF, 0x080000BC
 HOOK_STATE = 0x0203FF60             # first byte 1 while a V-blank hook card is on
 RESIDENT = 0x0203FC00
-LANGUAGE_IDS = {"E": 2, "F": 3, "S": 7}     # include/constants/global.h
+LANGUAGE_IDS = {"J": 1, "E": 2, "F": 3, "I": 4, "D": 5, "S": 7}     # include/constants/global.h
 
 VAR_TEMP_1, VAR_TEMP_2, VAR_TEMP_3, VAR_TEMP_4 = 0x4001, 0x4002, 0x4003, 0x4004
 VAR_0x8004, VAR_0x8005, VAR_0x8006, VAR_RESULT = 0x8004, 0x8005, 0x8006, 0x800D
@@ -1093,11 +1094,14 @@ def layout(items, base):
 
 def build_script(card_def, rom_id, work):
     rom = ROMS[rom_id]
-    symbols = {**rom["symbols"], **FAMILY_SYMBOLS, "JAPANESE": 0, "GAME_LANGUAGE": LANGUAGE_IDS[rom["language"]]}
+    symbols = {**rom["symbols"], **FAMILY_SYMBOLS, "JAPANESE": int(rom["language"] == "J"), "GAME_LANGUAGE": LANGUAGE_IDS[rom["language"]]}
     script = card_def["script"] or no_encounters_script(symbols)
     code = None
     if card_def.get("source"):
-        data = (card_def["data"], card_def.get("tokens", PLACEHOLDERS)) if card_def.get("data") else None
+        data_text = card_def.get("data")
+        if data_text and rom["language"] == "J":
+            data_text = {key: text.replace("é", "e") for key, text in data_text.items()}
+        data = (data_text, card_def.get("tokens", PLACEHOLDERS)) if data_text else None
         code = assemble(card_def["source"], {**symbols, **card_def.get("symbols", {}), "TEXT_BUFFER": TEXT_BUFFER,
                                              "RELOCATED": RELOCATED, "MENU_LIST": MENU_LIST,
                                              "SCRIPT_IN_SB1": SB1_SCRIPT}, work, data)
@@ -1117,7 +1121,14 @@ def build_script(card_def, rom_id, work):
         return [*callnative(rom["symbols"]["SCRIPT_CONTEXT"] + CONTEXT_DATA + 1),
                 {"size": 2, "bytes": lambda labels, at, r=routine: u16(labels["code"] + r + 1 - (at - 2))}]
 
-    texts = {**script["texts"], "wrong_rom_message": "This gift doesn’t work with\nthis version of the game."}
+    texts = {**script["texts"], "wrong_rom_message": ("Wrong game." if rom["language"] == "J"
+             else "This gift doesn’t work with\nthis version of the game.")}
+    if rom["language"] == "J" and "which_text" in texts:
+        texts["which_text"] = "Choose a POKEMON."
+    if rom["language"] == "J":
+        from pokeldn.frlg.text import charmap
+        texts = {key: charmap.japanese_roman_message(text, page_break="¶")
+                 for key, text in texts.items()}
     items = [
         *setvaddress(VIRTUAL_BASE), *lock(), *faceplayer(),
         # The ROM header must name exactly this cartridge: game letter, language, revision.

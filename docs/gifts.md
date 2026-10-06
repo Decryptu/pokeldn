@@ -39,7 +39,7 @@ after any boot installs whatever set the save holds. Sending boosts again replac
 The app shows the restore steps beside the save option and in Before you send, including for sets
 that must be saved. Preset names and descriptions wrap so their instructions remain visible.
 `tests/test_gift_builder.py` sends every combination of boosts, and every setting of each, through the
-launcher for all four cartridges.
+launcher for all twelve cartridges.
 
 Read the save offers Trainer ID (TID) and Secret ID (SID), trainer details and play time, and the
 last saved party's natures, IVs and EVs. Results appear in the Session log; the two dump presets
@@ -174,8 +174,8 @@ The converter imports Sword/Shield WC8 records, FRLG `.wc3` files and paired FRL
 `pokemon-gen3-mysterygift-tool`. A `.wc3` or `.wc8` also opens directly, in the app's Open a file and
 in `--gift-file`.
 
-An FRLG script whose reachable code holds no absolute address serves all four cartridges (`BPRF`,
-`BPGF`, `BPRE`, `BPGE`): its jumps and text are `vgoto`/`vmessage` operands relative to its own
+An FRLG script whose reachable code holds no absolute address can serve each cartridge with the
+same card layout: its jumps and text are `vgoto`/`vmessage` operands relative to its own
 `setvaddress` [scrcmd.c:171], and items come through `callstd`. A script with a `goto`, `call`,
 `message`, `callnative` or other absolute pointer belongs to one cartridge and needs `--build`; a
 `.wc3` of that kind is refused when opened directly.
@@ -186,18 +186,18 @@ An FRLG script whose reachable code holds no absolute address serves all four ca
 ./.venv/bin/python -m pokeldn.gifts import --game frlg --card WonderCard.bin \
   --script Script.bin --name "Event gift" -o event.pokegift
 ./.venv/bin/python -m pokeldn.gifts export celebi.pokegift --build BPRF --out-dir native-gift
-./.venv/bin/python -m pokeldn.gifts export celebi.pokegift --wc3 --out-dir native-gift
-./.venv/bin/python bin/frlg_mg_host.py --gift celebi --export-gift celebi.wc3
+./.venv/bin/python -m pokeldn.gifts export celebi.pokegift --wc3 --build BPRJ --out-dir native-gift
+./.venv/bin/python bin/frlg_mg_host.py --gift celebi --console-build BPRJ --export-gift celebi.wc3
 ```
 
 Saving to a path ending in `.wc3` or `.wc8` writes that native file instead of a `.pokegift`: in
 `--export-gift`, in Save gift file and in `pokeldn.gifts.save`. A `.wc3` holds one cartridge's card
-and script; without `--build` every variant of the gift must carry the same bytes, as a relative
-script's do. The `.wc3` metadata block is written as zero except its icon, which repeats the card's.
+and script; without `--build` every variant of the gift must carry the same bytes. The GUI asks
+which cartridge to export when variants differ. `.pokegift` retains every language variant. The `.wc3` metadata block is written as zero except its icon, which repeats the card's.
 Every international gallery file the game accepts comes back with the same card, script and icon
 bytes after an import and an export.
 
-A `.wc3` is 1420 bytes (`0x58C`):
+An international `.wc3` is 1420 bytes (`0x58C`):
 
 | offset | size | content |
 | --- | --- | --- |
@@ -211,13 +211,15 @@ Project Pokemon's EventsGallery; the game's own covers 999 [script.c:488]. Impor
 (offset 2 of the card) to an internal species id from 0 to 411; 0 draws no icon
 [mystery_gift_show_card.c:466].
 
-Japanese `.wc3` files are 1252 bytes (`0x4E4`) and are refused: the Switch cartridges are French and
-English. Every international gallery script is relative and serves all four cartridges. The gallery's
+Japanese `.wc3` files are 1252 bytes (`0x4E4`): the card structure is 164 bytes, its CRC wrapper
+is 168 bytes, metadata starts at `0x0A8`, and the 1004-byte RAM-script structure starts at `0x0F8`.
+Direct import offers Japanese files to `BPRJ` and `BPGJ`; international files offer the ten Latin
+cartridges. An explicit `--build` must match the card layout. The gallery's
 debug cards with flag ids 4 to 8 are refused: the delivery man hands a gift only for flag ids 1000 to
 1019 [mystery_gift.c:241]. The Aurora and Mystic Tickets are no-ops on a save past its first Hall of
 Fame ([The Aurora and Mystic Tickets](frlg_gift.md#the-aurora-and-mystic-tickets)).
 
-The FRLG pair contains a 336-byte card and a 1004-byte RAM-script structure. Import verifies both
+The FRLG pair contains a 336-byte international or 168-byte Japanese card and a 1004-byte RAM-script structure. Import verifies both
 CRCs and the script's unbound Mystery Gift header. The native pair cannot carry stamps, visiting
 trainers, Mystery Event scripts, questionnaire gates or Wonder News. Export to that pair refuses
 a distribution with those extras. `.pokegift` preserves them together.

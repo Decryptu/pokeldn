@@ -12,9 +12,8 @@ from pokeldn.frlg.save import mon as monlib
 
 pytestmark = pytest.mark.skipif(not bs.emulation_available(), reason="needs unicorn")
 
-CARTRIDGES = [pytest.param(builds.BPRE, "scratchpad/frlg_en/FireRed_e.gba", id="BPRE"),
-              pytest.param(builds.BPGE, "scratchpad/frlg_en/LeafGreen_e.gba", id="BPGE"),
-              pytest.param(builds.BPRS, "scratchpad/frlg_es/FireRed_s.gba", id="BPRS")]
+CARTRIDGES = [pytest.param(build, f"scratchpad/frlg_languages/{'FireRed' if build.version == 'firered' else 'LeafGreen'}_{code[3].lower()}.gba", id=code)
+              for code, build in builds.BUILDS.items() if build.language != "french"]
 TRAINER_ID = 0x0AE73039
 FUNC_RUN = 4                        # client->funcId once the payload returns 1 [mystery_gift_client.c:17]
 FRENCH_INTR_VBLANK = builds.BPRF.intr_vblank
@@ -88,6 +87,8 @@ def test_create_mon_makes_a_pikachu_in_the_cartridges_language(build, path):
     assert func_id == FUNC_RUN and result["calls"] == 1
     assert (info["pid"], info["otid"], info["checksum_ok"], info["species"]) == \
         (0x12345678, TRAINER_ID, True, 25)
+    if build.language == "japanese":
+        assert info["nickname"] == "ピカチュウ"
     assert result["mon"][18] == build.language_id     # struct BoxPokemon.language
 
 
@@ -146,7 +147,7 @@ def test_install_resident_patches_the_cartridges_gintrtable(build, path):
     uc.reg_write(a.UC_ARM_REG_LR, STOP)
     uc.emu_start(_word(machine, build.intr_vblank), STOP, count=2_000_000)
     assert uc.reg_read(a.UC_ARM_REG_PC) == STOP
-    assert (uc.mem_read(NOENCOUNTER_FLAG, 1)[0], len(entered)) == (1, 1)
+    assert (uc.mem_read(build.ewram.get("flag", NOENCOUNTER_FLAG), 1)[0], len(entered)) == (1, 1)
 
 
 def _unstage(field_script):
@@ -185,3 +186,60 @@ def test_moms_script_installs_the_hook_kept_in_the_save(build, path):
     uc.emu_start(target, STOP, count=2_000_000)
     assert uc.reg_read(a.UC_ARM_REG_PC) == STOP
     assert _word(machine, build.intr_vblank) == ns.RESIDENT_BASE | 1
+
+
+@pytest.mark.parametrize("build, path", CARTRIDGES)
+def test_flash_patch_checksums_the_chunk_the_cartridge_actually_loads(build, path):
+    """The id-4 size comes from this ROM's sSaveSlotLayout, including Japanese's shorter tail."""
+    rom = _image(path)
+    table = build.save_slot_layout - 0x08000000
+    size = int.from_bytes(rom[table + 4 * 4 + 2:table + 4 * 4 + 4], "little")
+    flash = bytearray(b"\xFF" * bs.FLASH_SIZE)
+    for ident in (4, 13):
+        sector = bytearray(b"\x11\x22\x33\x44" * 1024)
+        sector[0xFF4:0xFF6] = ident.to_bytes(2, "little")
+        sector[0xFF8:0xFFC] = b"\x25\x20\x01\x08"
+        sector[0xFFC:0x1000] = (134).to_bytes(4, "little")
+        flash[ident * 4096:(ident + 1) * 4096] = sector
+    machine = bs._Machine(bs.build_flash_patch(4, 0x100, b"TEST", unsafe=True, build=build),
+                          build=build, rom=rom, memory={
+                              build.last_written_sector: b"\x00\x00",
+                              build.save_counter: (134).to_bytes(4, "little"),
+                              bs.FLASH_BASE: bytes(flash)})
+    assert machine.call().returned == 1
+    written = bytes(machine.flash[4 * 4096:5 * 4096])
+    assert written[0x100:0x104] == b"TEST"
+    total = sum(int.from_bytes(written[i:i + 4], "little") for i in range(0, size, 4)) & 0xFFFFFFFF
+    assert int.from_bytes(written[0xFF6:0xFF8], "little") == ((total >> 16) + total) & 0xFFFF
+    assert written[0xFF8:0xFFC] == b"\x25\x20\x01\x08"
+
+
+@pytest.mark.parametrize("build,path,save_card,validate_card", [
+    (builds.BPRJ, "scratchpad/frlg_languages/FireRed_j.gba", 0x081481F4, 0x08148250),
+    (builds.BPGJ, "scratchpad/frlg_languages/LeafGreen_j.gba", 0x081481CC, 0x08148228),
+])
+def test_japanese_cartridge_saves_and_validates_the_compact_wonder_card(build, path, save_card, validate_card):
+    from unicorn import arm_const as a
+    from pokeldn.frlg.gift.gift_registry import GIFT_REGISTRY
+    from pokeldn.frlg.save import save_inject
+    from pokeldn.frlg.gift.mystery_gift import crc16
+    gift = GIFT_REGISTRY.build_distribution("celebi", build=build)
+    assert len(gift.card) == 164
+    source = 0x02010000
+    machine = _console(bs.payload(bs.TRAINER_ID_PROBE), build, _image(path), {source: gift.card})
+    uc = machine.uc
+
+    def call(address, r0=0):
+        uc.reg_write(a.UC_ARM_REG_R0, r0)
+        uc.reg_write(a.UC_ARM_REG_SP, bs.STACK_POINTER)
+        uc.reg_write(a.UC_ARM_REG_LR, bs._RETURN_ADDRESS | 1)
+        uc.emu_start(address | 1, bs._RETURN_ADDRESS, count=2_000_000)
+        assert uc.reg_read(a.UC_ARM_REG_PC) == bs._RETURN_ADDRESS
+        return uc.reg_read(a.UC_ARM_REG_R0)
+
+    assert call(save_card, source) == 1
+    assert bytes(uc.mem_read(bs.SAV1_ADDRESS + 0x3208, 164)) == gift.card
+    assert _word(machine, bs.SAV1_ADDRESS + 0x3204) == crc16(gift.card)
+    data, checksum = save_inject.build_ram_script_struct(gift.ram_script)
+    uc.mem_write(bs.SAV1_ADDRESS + 0x361C, checksum.to_bytes(4, "little") + data)
+    assert call(validate_card) == 1

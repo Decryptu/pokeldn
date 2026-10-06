@@ -76,17 +76,19 @@ def test_an_english_firered_console_is_sent_the_english_bytes():
     ("--gift", "event-pokemon"),
     INSTALL_NOENCOUNTER,
 ])
-def test_a_spanish_firered_receives_its_card_or_boost(args):
-    host, client = _session(_run_config(*args), game_code=b"BPRS", version="firered")
+@pytest.mark.parametrize("code", ["BPRS", "BPGS", "BPRD", "BPGD", "BPRI", "BPGI", "BPRJ", "BPGJ"])
+def test_a_localized_console_receives_its_card_or_boost(args, code):
+    host, client = _session(_run_config(*args), game_code=code.encode(),
+                            version=builds.for_game_code(code).version)
     _drive(host, client)
     assert host.server.build_refused is None
     if host.server.build is not None:
-        assert host.server.build.game_code == "BPRS"
+        assert host.server.build.game_code == code
     assert client.error is None
     assert client.buffer_scripts or client.saved_ram_script
 
 
-@pytest.mark.parametrize("game_code", [b"BPRD", b"BPGS"])
+@pytest.mark.parametrize("game_code", [b"XXXX", b"BPRK"])
 def test_an_unknown_game_code_is_refused_with_nothing_build_dependent_sent(game_code):
     host, client = _session(_run_config(*INSTALL_NOENCOUNTER), game_code=game_code,
                             version="firered")

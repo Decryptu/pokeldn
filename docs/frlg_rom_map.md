@@ -68,7 +68,7 @@ Subtracting every sized EWRAM symbol in the ELF from the region leaves one span 
 
 The Mystery Gift host sends English FireRed (`BPRE`) and English LeafGreen (`BPGE`) code built on their
 own addresses. `pokeldn/frlg/rom/builds.py` holds one table per cartridge (`BPRF`, `BPGF`, `BPRE`,
-`BPGE`, `BPRS`): the IWRAM globals, the ROM functions a payload, hook or field stub calls, the functions
+`BPGE`, `BPRS`, `BPGS`, `BPRD`, `BPGD`, `BPRI`, `BPGI`, `BPRJ`, `BPGJ`): the IWRAM globals, the ROM functions a payload, hook or field stub calls, the functions
 `call-chain` names, and the ROM data pointers a gift carries.
 
 The host picks the table from the game code in the console's `MysteryGiftLinkGameData`
@@ -505,8 +505,8 @@ content hashes verify. The control titles are “Pokémon FireRed Version (Spani
 
 `builds.BPRS` supplies the Spanish addresses for native gifts, event Pokemon and resident hooks.
 `vendor/gblink-cards/symbols.json` supplies the 167 card symbols; the generator's language id is 7.
-The host selects `BPRS` from the console's game data before it sends a payload. Spanish LeafGreen
-(`BPGS`) has no verified address table and is refused for build-dependent payloads.
+The host selects `BPRS` from the console's game data before it sends a payload. Spanish LeafGreen (`BPGS`) has its own measured table in
+[The international revision 0x0A cartridges](#the-international-revision-0x0a-cartridges).
 
 Functions are matched against the byte-identical English decomp by unique body windows, then by
 instruction sequences with pointer words and THUMB BL operands masked. A RAM or data pointer is
@@ -614,3 +614,88 @@ easychat_french.check(ids, strict=True)              # raises on anything unread
 LeafGreen's whole Easy Chat region is FireRed's shifted by −0x1C4, with identical vocabulary: 22 entries,
 every count equal, and a `string-gather` of one group reads the same words in the same slots.
 `easychat_french` answers for both consoles.
+
+## The international revision 0x0A cartridges
+
+The six language editions each contain a 16 MiB GBA ROM with header revision `0x0A`. The host
+has address tables for both versions in English, French, German, Italian, Spanish and Japanese.
+
+Functions are paired with the English revision 0x0A ELF by unique instruction windows, masking
+relative calls and pointer literals where necessary. RAM globals and pointer tables are read
+from the corresponding literal pools. The field-move script families are paired as command
+sequences, with their ROM pointers masked; localized text follows those sequences.
+`SpeciesToNationalPokedexNum` is paired with both neighboring conversion functions because
+the three leaf functions share an instruction sequence.
+
+| cartridge | ROM file | SHA-256 |
+|---|---|---|
+| `BPRD` | `FireRed_d.gba` | `04f43a43f7cf9109561cd1744d108f50202c931ce31b30abaa6f18950824d20d` |
+| `BPRE` | `FireRed_e.gba` | `d32c8df8702293716ad8de68755fe5903161f4829a0a2e486bfa7e74a0b62e94` |
+| `BPRF` | `FireRed_f.gba` | `9edf7a3137536b0ccf024a732025da9a0ea1330eb9fd13b2ffed19f5e008c147` |
+| `BPRI` | `FireRed_i.gba` | `cf7fa25cf57fbf12f24709efdd1d1aa8056efb4e9b6520ac7d068d3de13ff135` |
+| `BPRJ` | `FireRed_j.gba` | `e2cdfb0415ef09e887e9d27b925ff02a713a92f004843490cf6b88b68db6cd01` |
+| `BPRS` | `FireRed_s.gba` | `d4dee5aeb5313e073d6067bee37278b0204886958467633978bb746bbe3d5b76` |
+| `BPGD` | `LeafGreen_d.gba` | `eb0e340b5efb3ccb7bab104183d2050fa834261dd816c5ad8221e4e98c04342b` |
+| `BPGE` | `LeafGreen_e.gba` | `993a8a5695a4f7e4dfe8ceec55beb43e020e82b492854d457d4aa3f864d20f08` |
+| `BPGF` | `LeafGreen_f.gba` | `751346c16c0cf3a3ec601d6c2d3c482b54609c5d00ca74f2f668d75b31b8efde` |
+| `BPGI` | `LeafGreen_i.gba` | `b99b9c58c83a61b5bd8a1a69b6f21ce0cfab8d1f6065b53b81a323801c9b2895` |
+| `BPGJ` | `LeafGreen_j.gba` | `a2aa939a23a36610902be51169042efac78f2f6db6a433e06443a2ee09d4f19e` |
+| `BPGS` | `LeafGreen_s.gba` | `a943ecfd6560115b184dc244daed71ba328a67334f343eb35b39932c3ce7c731` |
+
+| symbol | German FireRed | German LeafGreen | Italian FireRed | Italian LeafGreen | Spanish LeafGreen |
+|---|---|---|---|---|---|
+| `gmain` | `0x030022D0` | `0x030022D0` | `0x030022D0` | `0x030022D0` | `0x030022D0` |
+| `sb1ptr` | `0x03004228` | `0x03004228` | `0x03004228` | `0x03004228` | `0x03004228` |
+| `sb2ptr` | `0x0300422C` | `0x0300422C` | `0x0300422C` | `0x0300422C` | `0x0300422C` |
+| `rng` | `0x03004220` | `0x03004220` | `0x03004220` | `0x03004220` | `0x03004220` |
+| `vblank_intr` | `0x08000730` | `0x08000730` | `0x08000730` | `0x08000730` | `0x0800071C` |
+| `create_mon` | `0x08041178` | `0x08041178` | `0x08041164` | `0x08041164` | `0x08041164` |
+| `client_run_buffer_script` | `0x08148BA4` | `0x08148B80` | `0x08148BE4` | `0x08148BC0` | `0x08148CAC` |
+| `save_slot_layout` | `0x083FCEC0` | `0x083FCCFC` | `0x083F464C` | `0x083F4488` | `0x083F7674` |
+
+The ROM-backed tests run each supported cartridge's `Client_RunBufferScript`, `CreateMon`,
+`GetVarPointer`, `VBlankIntr` and saved-hook loader. The collision tests call the cartridge's
+`MapGridGetCollisionAt` and `MapGridGetElevationAt` after installing the hook.
+
+Spanish FireRed's `EventScript_CurrentTooFast` starts at `0x081AA346`, with `lockall` (`0x69`).
+The former card table pointed at `0x081AA347`, the following `loadword` (`0x0F`). The generated
+HM card now uses the script's entry.
+
+### Japanese layout
+
+Japanese FireRed and LeafGreen use a different EWRAM layout. Their party begins at
+`0x020241E0`, player avatar at `0x02036FA8`, object events at `0x02036D68`, palette fade at
+`0x020379E8`, and wild-encounter disable byte at `0x02038624`.
+`RunTextPrinters` at `0x08002D38` reads its array pointer `0x02020030` from the literal at
+`0x08002D60` and advances by `0x20` at `0x08002D94`. The international array advances by `0x24`.
+
+Both Japanese cartridges use `gMain` at `0x030022E0`, `gSaveBlock1Ptr` at `0x03004238`,
+`gSaveBlock2Ptr` at `0x0300423C`, `gRngValue` at `0x03004230` and `gIntrTable[4]` at `0x03002740`.
+`gSpecialVar_0x8000` is `0x02036FE8`; the party count is at `0x02023F85`.
+
+Japanese SaveBlock1 is `0x3D40` bytes; international SaveBlock1 is `0x3D68`. The final chunk,
+sector id 4, covers `0xEC0` bytes in Japanese and `0xEE8` internationally. Save injection and
+native flash patching use the selected cartridge's length. `RamScript` retains its offsets:
+checksum `0x361C`, magic `0x3620`, script body `0x3624`. The chunk length is read from each
+ROM's `sSaveSlotLayout` in the ROM-backed checksum test.
+
+Japanese Wonder Cards occupy 164 bytes and Wonder News 224 bytes. `BPRJ`'s
+`SaveWonderCard` at `0x081481F4` copies and checksums 164 bytes; `BPGJ` uses `0x081481CC`.
+The corresponding validation routines are `0x08148250` and `0x08148228`. Both routines save
+and validate an app-generated card in the ROM-backed tests. The card CRC is at SaveBlock1
+`+0x3204`, its data at `+0x3208`; news data starts at `+0x3124`.
+`BufferCardText` at `0x08149934` reads title bytes 10..27, subtitle 28..40, four 20-byte body
+lines at 41..120 and two 20-byte footers at 121..160. Built-in distributions use this compact
+layout for Japanese cartridges. The native `.wc3` layout is described in [Gift files](gifts.md#native-formats).
+
+Both Japanese cartridges execute the native client, `CreateMon`, variable lookup, VBlank handler
+and saved-hook loader under Unicorn. `CreateMon` produces the Japanese nickname ピカチュウ for
+species 25. Japanese names use the kana table and the five-character trainer-name limit;
+Latin accents share byte values with kana. Built-in gift prose stays in Roman text, with accents
+removed on Japanese cartridges. Dialogue prose wraps at 26 characters, with a page break
+after two lines, because the Japanese dialogue font is wider. The Japanese Team cards use their source's Japanese struct
+sizes and dynamic menu widths; two prompts are shortened to fit the RAM-script limit.
+
+The added German and Italian pairs, Spanish LeafGreen and Japanese pair have mGBA card checks.
+These are offline checks against the extracted cartridge ROMs; their Switch wireless delivery
+has not been checked on retail hardware.

@@ -7,6 +7,7 @@ import pathlib
 from dataclasses import dataclass
 
 from pokeldn.frlg.gift.stamp_rally import MysteryGiftDistribution
+from pokeldn.frlg.gift import wonder_card
 from pokeldn.frlg.rom import builds
 from pokeldn.frlg.text import charmap
 
@@ -36,7 +37,7 @@ class TeamCard:
 
     def distribution(self, flag_id=None, build=None):
         flag_id = self.default_flag_id if flag_id is None else flag_id
-        card = bytearray(self.card)
+        card = bytearray(wonder_card.for_build(self.card, build))
         card[:2] = flag_id.to_bytes(2, "little")
         card[4:8] = (flag_id % 100).to_bytes(4, "little")      # as every composed card [_build_card]
         return MysteryGiftDistribution(bytes(card), self.scripts[builds.resolve(build).game_code])

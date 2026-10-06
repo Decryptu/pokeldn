@@ -1,5 +1,5 @@
 import argparse
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 
 from pokeldn.frlg.gift import team_cards, wonder_card_events
 from pokeldn.frlg.gift.gift_composer import (
@@ -118,7 +118,9 @@ class GiftRegistry:
         entry = self.entry(slug)
         if not entry.live:
             raise ValueError(f"Mystery Gift {slug!r} is not available to the live host")
-        return entry.build_distribution(flag_id=flag_id, build=build)
+        distribution = entry.build_distribution(flag_id=flag_id, build=build)
+        from pokeldn.frlg.gift import wonder_card
+        return replace(distribution, card=wonder_card.for_build(distribution.card, build))
 
     def build_static(self, slug, *, flag_id=None):
         entry = self.entry(slug)

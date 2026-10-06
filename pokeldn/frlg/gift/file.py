@@ -88,8 +88,13 @@ def validate(gift):
         raise ValueError("FRLG variants must name supported cartridge codes: " + ", ".join(builds.GAME_CODES))
     modes = set()
     flag_ids = set()
-    for variant in gift.variants.values():
+    for code, variant in gift.variants.items():
         chosen = distribution(variant)
+        japanese = builds.BUILDS[code].language == "japanese"
+        for name, data, expected in (("card", chosen.card, 164 if japanese else 332),
+                                     ("news", chosen.news, 224 if japanese else 444)):
+            if data is not None and len(data) != expected:
+                raise ValueError(f"{code} needs a {expected}-byte Wonder {name.title()}.")
         modes.add("code" if chosen.buffer_code is not None else "news" if chosen.is_news else "card")
         if chosen.card is not None:
             flag_ids.add(int.from_bytes(chosen.card[:2], "little"))
@@ -182,9 +187,13 @@ def _gift(name, card, ram_script, build):
             offset, command, value = pointers[0]
             raise ValueError(f"The script's {command} at byte {offset} points at 0x{value:08X}, an "
                              "address of one cartridge; choose the cartridge it was written for.")
-        codes = builds.GAME_CODES
+        codes = tuple(code for code, cartridge in builds.BUILDS.items()
+                      if (cartridge.language == "japanese") == (len(card) == 164))
     else:
-        codes = (builds.resolve(build).game_code,)
+        cartridge = builds.resolve(build)
+        if (cartridge.language == "japanese") != (len(card) == 164):
+            raise ValueError("The card format does not match this cartridge language.")
+        codes = (cartridge.game_code,)
     gift = gifts.Gift("frlg", name, {code: gifts.Variant({"card": bytes(card),
                                                           "ram_script": bytes(ram_script)})
                                      for code in codes})
@@ -199,8 +208,8 @@ def _unbound(script):
 
 
 def from_bins(card, script, *, build=None, name="FRLG gift"):
-    if len(card) != gift_to_bin.WONDER_CARD_BIN_SIZE or len(script) != gift_to_bin.SCRIPT_BIN_SIZE:
-        raise ValueError("FRLG import needs a 336-byte WonderCard.bin and a 1004-byte Script.bin.")
+    if len(card) not in (gift_to_bin.WONDER_CARD_BIN_SIZE, 168) or len(script) != gift_to_bin.SCRIPT_BIN_SIZE:
+        raise ValueError("FRLG import needs a 168- or 336-byte WonderCard.bin and a 1004-byte Script.bin.")
     if int.from_bytes(card[:2], "little") != crc16(card[4:]):
         raise ValueError("WonderCard.bin checksum failed.")
     # The game's CRC covers the pad byte too (docs/frlg_gift.md, The one RAM script slot); older
@@ -211,11 +220,11 @@ def from_bins(card, script, *, build=None, name="FRLG gift"):
 
 
 def from_wc3(raw, *, build=None, name="FRLG gift"):
-    if len(raw) == WC3_JAPANESE_SIZE:
-        raise ValueError("This .wc3 is for the Japanese games; this app supports the international card format.")
-    if len(raw) != WC3_SIZE:
-        raise ValueError(f"A .wc3 has {WC3_SIZE} bytes; this file has {len(raw)}.")
-    card, script = raw[:gift_to_bin.WONDER_CARD_BIN_SIZE], raw[WC3_SCRIPT_AT:]
+    if len(raw) not in (WC3_SIZE, WC3_JAPANESE_SIZE):
+        raise ValueError(f"A .wc3 has 1420 or 1252 bytes; this file has {len(raw)}.")
+    japanese = len(raw) == WC3_JAPANESE_SIZE
+    card_size, script_at = (168, 0xF8) if japanese else (gift_to_bin.WONDER_CARD_BIN_SIZE, WC3_SCRIPT_AT)
+    card, script = raw[:card_size], raw[script_at:]
     if int.from_bytes(card[:2], "little") != crc16(card[4:]):
         raise ValueError("The .wc3 card checksum failed.")
     if int.from_bytes(script[:2], "little") not in (crc16(script[4:1004]), crc16(script[4:1003])):
@@ -249,7 +258,7 @@ def from_code(code, *, build, name="Console code", expect=None, dump_size=None):
 
 
 def _native(gift, build, what):
-    """The one card and script a native file holds; without `build`, every variant must carry the same."""
+    """The one card and script a native file holds; without `build`, variants must carry the same bytes."""
     if build is None:
         if len({(v.data.get("card"), v.data.get("ram_script")) for v in gift.variants.values()}) != 1:
             raise ValueError("This gift differs per cartridge; choose --build for the one to export.")
@@ -270,10 +279,10 @@ def export_native(gift, directory, *, build=None):
 
 
 def to_wc3(gift, *, build=None):
-    """-> the 1420-byte .wc3 from_wc3 reads; the metadata block is zero but for the card's icon."""
+    """-> an international or Japanese .wc3; metadata is zero but for the card's icon."""
     chosen = _native(gift, build, "A .wc3")
-    metadata = bytearray(WC3_SCRIPT_AT - gift_to_bin.WONDER_CARD_BIN_SIZE)
-    icon = WC3_METADATA_ICON_AT - gift_to_bin.WONDER_CARD_BIN_SIZE
+    metadata = bytearray(80)
+    icon = 10
     metadata[icon:icon + 2] = chosen.card[2:4]
     return (gift_to_bin.build_wonder_card_bin(chosen.card) + bytes(metadata)
             + gift_to_bin.build_script_bin(chosen.ram_script))

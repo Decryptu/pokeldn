@@ -3,7 +3,7 @@
 import os
 
 from pokeldn.frlg import config as configmod
-from pokeldn.frlg.gift import game_data_log, gift_registry, mystery_gift_attempts, wonder_news
+from pokeldn.frlg.gift import game_data_log, gift_registry, mystery_gift_attempts, wonder_card, wonder_news
 from pokeldn.frlg.link import host_session
 from pokeldn.frlg.rom import buffer_script, builds, mystery_event
 from pokeldn.frlg.text import charmap, easychat
@@ -145,7 +145,7 @@ class MysteryGiftHostApplication(HostApplication):
                   f"u16=0x{int.from_bytes(self.session.rfu.host_session_id, 'little'):04x}")
         details = ("imported gift file" if hasattr(payload, "file") else
                    gift_registry.GIFT_REGISTRY.describe(payload.gift))
-        card_title = charmap.decode(self.card[10:50])
+        card_title = wonder_card.text_fields(self.card)[0]
         self.info(f"Gift: {payload.gift!r}; {details}; card title {card_title!r}; "
                   f"Wonder Card flagId {payload.flag_id} "
                   f"(receipt flag 0x{payload.receipt_flag:03x}), "
@@ -194,7 +194,7 @@ class MysteryGiftHostApplication(HostApplication):
         species, equal to the national number only up to 251 [wonder_card.py]."""
         icon = int.from_bytes(self.card[2:4], "little")
         species = icon if 1 <= icon <= 251 else None
-        return "Mystery Gift", charmap.decode(self.card[10:50]).strip(), species
+        return "Mystery Gift", wonder_card.text_fields(self.card)[0].strip(), species
 
     def _show_screen(self):
         title, line, species = self._screen_card()

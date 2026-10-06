@@ -267,13 +267,13 @@ encounter hooks are covered by this project's own.
 
 What differs from their build:
 
-- French and Spanish cartridges. The 167 addresses the sources take are found on `BPRF`/`BPGF`
-  and `BPRS` from the English symbol tables: a function by unique byte windows of its body, RAM and pointer-bearing data by the
-  literal pools of mapped functions, a field-script label by its script's start with pointers masked.
-  `vendor/gblink-cards/symbols.json` holds all five; `tests/test_team_cards.py` checks 25 of them
-  against `builds.py` on every cartridge. Spanish FireRed uses its own verified ROM table
-  ([The Spanish FireRed cartridge](frlg_rom_map.md#the-spanish-firered-cartridge)). Each script
-  checks the header's game letter, language letter and revision, so a payload sent to another cartridge only says the gift does not work.
+- All twelve revision `0x0A` cartridges. The 167 addresses the sources take are measured on
+  each English, French, German, Italian, Spanish and Japanese FireRed/LeafGreen ROM: a function
+  by unique instruction windows, RAM and pointer-bearing data by literal pools, and a field-script
+  label by its command sequence with pointers masked. `vendor/gblink-cards/symbols.json` holds
+  all twelve tables; `tests/test_team_cards.py` checks 25 entries against `builds.py` on every
+  cartridge. Each script checks the header's game letter, language letter and revision.
+  See [The cartridge maps](frlg_rom_map.md#the-international-revision-0x0a-cartridges).
 - The relocated script (996 bytes) and the menu list (80 bytes) go to `0x0203F768` and `0x0203FB50`,
   newlib's malloc state, instead of `0x0203FC00`, where this project's resident hooks run; see
   [Where a payload can live](frlg_rom.md#where-a-payload-can-live).
@@ -286,10 +286,10 @@ What differs from their build:
 - Two texts are four and six characters shorter (`hm-moves`, `physical-special-split`) to fit 995
   bytes after the installer change.
 
-Every card has run bound to Mom under mGBA on French and English FireRed/LeafGreen and Spanish
-FireRed; `nature-mint`, `pc-anywhere` and
+Every card has been exercised bound to Mom under mGBA on all twelve cartridges;
+these checks cover entry, messages and menus, rather than every choice within each card. `nature-mint`, `pc-anywhere` and
 `rival-name` have also run on a retail French FireRed. A payload sent to the other game's cartridge
-answers "This gift doesn't work with this version of the game." With a resident hook running,
+answers "This gift doesn't work with this version of the game." ("Wrong game." on Japanese). With a resident hook running,
 `nature-mint` leaves `0x0203FC00..0x02040000` untouched and `pc-anywhere` takes over `gIntrTable[4]`
 with `0x0800071D` kept at `0x0203FBFC`.
 

@@ -48,14 +48,13 @@ def test_joiner_cli_builds_full_config_from_identity_overrides():
     assert isinstance(run.role, config.JoinerOptions)
 
 
-def test_latin_languages_are_offered_with_their_decomp_values():
-    """include/constants/global.h:21-27; Japanese is absent: its kana reuse the accented Latin byte values."""
+def test_languages_are_offered_with_their_decomp_values():
+    """include/constants/global.h:21-27; Japanese uses its own kana table."""
     assert config.LANGUAGES == {
-        "english": 2, "french": 3, "italian": 4, "german": 5, "spanish": 7,
+        "japanese": 1, "english": 2, "french": 3, "italian": 4, "german": 5, "spanish": 7,
     }
-    assert "japanese" not in config.LANGUAGES
     for name in config.LANGUAGES:
-        config.TrainerProfile(name="Zoé", tid=1, sid=2, language=name)
+        config.TrainerProfile(name="サトシ" if name == "japanese" else "Zoé", tid=1, sid=2, language=name)
 
 
 def test_accented_names_survive_the_charmap_round_trip():
@@ -78,7 +77,31 @@ def test_language_override_reaches_the_linkplayer_wire_byte():
     """--language lands in LinkPlayer[26:28]."""
     from pokeldn.frlg.link import linkplayer
     for name, code in config.LANGUAGES.items():
-        profile = config.profile_from_overrides(ot="Zoé", language=name)
+        profile = config.profile_from_overrides(ot="サトシ" if name == "japanese" else "Zoé", language=name)
         wire = profile.to_link_player().pack()
         assert int.from_bytes(wire[26:28], "little") == code, name
-        assert linkplayer.LinkPlayer.unpack(wire).name == "Zoé"
+        if name == "japanese":
+            assert wire[8:16] == b"\x5b\x64\x5c\xff\x00\x00\x00\x00"
+        assert linkplayer.LinkPlayer.unpack(wire).name == ("サトシ" if name == "japanese" else "Zoé")
+
+
+def test_japanese_trainer_names_follow_the_cartridges_five_character_limit():
+    import pytest
+    config.TrainerProfile(name="サトシ", tid=1, sid=2, language="japanese")
+    with pytest.raises(ValueError, match="at most 5"):
+        config.TrainerProfile(name="ABCDEF", tid=1, sid=2, language="japanese")
+    with pytest.raises(ValueError, match="unsupported"):
+        config.TrainerProfile(name="Zoé", tid=1, sid=2, language="japanese")
+
+
+def test_japanese_gift_dialogue_keeps_the_words_that_were_clipped_in_mgba():
+    from pokeldn.frlg.gift import gift_composer as gc
+    from pokeldn.frlg.text import charmap
+    prompt = "Shall I raise the PP of every\nmove in your party to the most?"
+    wrapped = charmap.japanese_roman_message(prompt)
+    pages = wrapped.split("{CLEAR}")
+    assert " ".join(line for page in pages for line in page.split("\n")) == prompt.replace("\n", " ")
+    assert all(len(page.split("\n")) <= 2 for page in pages)
+    assert all(len(line) <= 26 for page in pages for line in page.split("\n"))
+    assert b"\xFB" in gc._encode_message(wrapped)
+    assert charmap.latin_text_for_japanese("Pokémon ピカチュウ") == "Pokemon ピカチュウ"

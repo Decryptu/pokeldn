@@ -16,9 +16,8 @@ from pokeldn.frlg.text import charmap
 
 pytestmark = pytest.mark.skipif(not bs.emulation_available(), reason="needs unicorn")
 
-CARTRIDGES = {"BPRF": "scratchpad/FireRed_f.gba", "BPGF": "scratchpad/LeafGreen_f.gba",
-              "BPRE": "scratchpad/frlg_en/FireRed_e.gba", "BPGE": "scratchpad/frlg_en/LeafGreen_e.gba",
-              "BPRS": "scratchpad/frlg_es/FireRed_s.gba"}
+CARTRIDGES = {code: f"scratchpad/frlg_languages/{'FireRed' if b.version == 'firered' else 'LeafGreen'}_{code[3].lower()}.gba"
+              for code, b in builds.BUILDS.items()}
 STOP = 0x02030000
 STUB = 0x02030100                       # the game's VBlankIntr, stood in for by `bx lr`
 PARTY, AVATAR, OBJECTS, SPRITES = 0x02024280, 0x02037074, 0x02036E34, 0x0202063C
@@ -36,6 +35,10 @@ class World:
             pytest.skip("no cartridge image on this machine")
         self.rom = path.read_bytes()
         self.build = b = builds.for_game_code(code)
+        self.party = b.ewram.get("party", PARTY)
+        self.avatar = b.ewram.get("avatar", AVATAR)
+        self.objects = b.ewram.get("objects", OBJECTS)
+        self.sprites = b.ewram.get("sprites", SPRITES)
         kept = bytes(0xB20) + bs.build_resident_save_blob("follower", build=b)
         machine = bs._Machine(bs.build_install_kept(b), rom=self.rom, sav2=kept, build=b, memory={
             b.intr_vblank: (STUB | 1).to_bytes(4, "little"), STUB: b"\x70\x47"})
@@ -44,8 +47,8 @@ class World:
         self.hook = self.word(b.intr_vblank)
         self.put(b.gmain + 4, (b.cb2_overworld | 1).to_bytes(4, "little"))
         self.put(b.gmain + 0x1C, b"\x00\x00")
-        self.put(AVATAR, bytes([0, 0, 0, 0, 0, 0]))           # on foot, object 0
-        self.put(PARTY, build_party_mon(species, 50, nickname="LEAD",
+        self.put(self.avatar, bytes([0, 0, 0, 0, 0, 0]))           # on foot, object 0
+        self.put(self.party, build_party_mon(species, 50, nickname="LEAD",
                                         language=b.language_id).raw)
         self.put(LOCKED, b"\x00")
         self.put(SCRIPT_STATUS, b"\x02")                       # CONTEXT_SHUTDOWN
@@ -72,20 +75,20 @@ class World:
         sp = self.uc.reg_read(self.arm.UC_ARM_REG_SP)
         y, _elevation = struct.unpack("<II", self.uc.mem_read(sp, 8))
         self.calls.append(("spawn", self.reg(0), self.reg(1), self.reg(2), self.reg(3), y))
-        self.put(OBJECTS + 0x24, bytes([1, 0, 0, 0, 0, self.reg(0) & 0xFF, 0, 0, FOLLOW_ID]) +
+        self.put(self.objects + 0x24, bytes([1, 0, 0, 0, 0, self.reg(0) & 0xFF, 0, 0, FOLLOW_ID]) +
                  bytes(7) + struct.pack("<hhhh", self.reg(3), y, self.reg(3), y) + bytes(12))
         return 1
 
     def _held(self):
         self.calls.append(("held", self.reg(1)))
-        self.put(OBJECTS + 0x24, bytes([0x41]))               # active, held movement running
+        self.put(self.objects + 0x24, bytes([0x41]))               # active, held movement running
 
     def _move(self):
         self.calls.append(("move", self.reg(1), self.reg(2)))
 
     def _remove(self):
         self.calls.append(("remove",))
-        self.put(OBJECTS + 0x24, b"\x00")
+        self.put(self.objects + 0x24, b"\x00")
 
     def _script(self):
         self.calls.append(("script", self.reg(0)))
@@ -98,13 +101,13 @@ class World:
 
     def player(self, current, previous, facing, action=WALK_NORMAL, moving=None):
         moving = facing if moving is None else moving
-        self.put(OBJECTS, bytes([1, 0, 0, 0, 0, 0, 0, 0, 0xFF]))
-        self.put(OBJECTS + 0x10, struct.pack("<hhhh", *current, *previous))
-        self.put(OBJECTS + 0x18, bytes([moving << 4 | facing]))
-        self.put(OBJECTS + 0x1C, bytes([action + moving - 1]))
+        self.put(self.objects, bytes([1, 0, 0, 0, 0, 0, 0, 0, 0xFF]))
+        self.put(self.objects + 0x10, struct.pack("<hhhh", *current, *previous))
+        self.put(self.objects + 0x18, bytes([moving << 4 | facing]))
+        self.put(self.objects + 0x1C, bytes([action + moving - 1]))
 
     def finish(self):
-        self.put(OBJECTS + 0x24, bytes([0x81]))               # active, held movement finished
+        self.put(self.objects + 0x24, bytes([0x81]))               # active, held movement finished
 
     def frame(self):
         a = self.arm
@@ -114,7 +117,7 @@ class World:
         assert self.uc.reg_read(a.UC_ARM_REG_PC) == STOP
 
     def follower_at(self, x, y):
-        self.put(OBJECTS + 0x24 + 0x10, struct.pack("<hhhh", x, y, x, y))
+        self.put(self.objects + 0x24 + 0x10, struct.pack("<hhhh", x, y, x, y))
 
     def held(self):
         return [call[1] for call in self.calls if call[0] == "held"]
@@ -125,7 +128,7 @@ def test_chansey_spawns_with_its_sprite_and_walks_the_players_steps(code):
     world = World(code, 113)
     world.frame()
     assert world.calls[0] == ("spawn", 117, 0, FOLLOW_ID, 10, 10)  # OBJ_EVENT_GFX_CHANSEY
-    assert world.uc.mem_read(OBJECTS + 0x24 + 0x0B, 1)[0] & 0x0F == 14    # NO_ELEVATION
+    assert world.uc.mem_read(world.objects + 0x24 + 0x0B, 1)[0] & 0x0F == 14    # NO_ELEVATION
     world.player((10, 11), (10, 10), 1)                     # a step south: shown where it spawned
     world.frame()
     assert world.held() == []
@@ -141,7 +144,7 @@ def test_a_species_without_a_sprite_wears_its_icon_on_snorlaxs_frame(code):
     assert world.calls[0][1] == 109                         # OBJ_EVENT_GFX_SNORLAX
     a = world.arm
     world.uc.reg_write(a.UC_ARM_REG_R0, 9)
-    world.uc.reg_write(a.UC_ARM_REG_R1, world.word(PARTY))
+    world.uc.reg_write(a.UC_ARM_REG_R1, world.word(world.party))
     world.uc.reg_write(a.UC_ARM_REG_R2, 0)
     world.uc.reg_write(a.UC_ARM_REG_LR, STOP)
     world.uc.emu_start(world.build.get_mon_icon | 1, STOP, count=10000)
@@ -149,8 +152,8 @@ def test_a_species_without_a_sprite_wears_its_icon_on_snorlaxs_frame(code):
     table = 0x0203FBB4
     frames = [struct.unpack("<II", world.uc.mem_read(table + 8 * i, 8)) for i in range(9)]
     assert frames == [(icon, 0x200)] * 3 + [(icon + 0x200, 0x200)] * 6
-    assert world.word(SPRITES + 0x0C) == table              # the follower's sprite reads it
-    assert world.uc.mem_read(SPRITES + 5, 1)[0] >> 4 == 15  # on OBJ palette 15
+    assert world.word(world.sprites + 0x0C) == table              # the follower's sprite reads it
+    assert world.uc.mem_read(world.sprites + 5, 1)[0] >> 4 == 15  # on OBJ palette 15
     index = world.rom[world.build.mon_icon_pal_indices - 0x08000000 + 9]
     at = world.build.mon_icon_palettes - 0x08000000 + 32 * index
     assert bytes(world.uc.mem_read(0x020375D4, 32)) == world.rom[at:at + 32]
