@@ -5,6 +5,7 @@ import contextlib
 import contextvars
 import os
 import struct
+import threading
 import time
 
 import pytest
@@ -1155,6 +1156,49 @@ def test_the_fast_rate_comes_from_the_environment(monkeypatch):
     monkeypatch.delenv("POKELDN_ESP32_BAUD")
     esp32.Radio.open_serial("sim").close()
     assert rates[-1] == 921600 and 2000000 in rates
+
+
+def test_a_board_that_leaves_usb_mid_run_stops_the_run_once_and_stops_writing():
+    """Windows fails the read of a removed USB device with PermissionError 13 and every write after
+    it; a run kept writing to the dead port until the player pressed Stop."""
+    board = esp32_sim.SimulatedBoard(esp32_sim.Air()).host_stream()
+    gone = threading.Event()
+    writes_after = []
+
+    class Port:
+        def read(self, n):
+            if gone.is_set():
+                raise PermissionError(13, "Access is denied.", None, 5)
+            return board.read(n)
+
+        def write(self, data):
+            if gone.is_set():
+                writes_after.append(data)
+                raise PermissionError(13, "Access is denied.", None, 5)
+            board.write(data)
+
+        def close(self):
+            board.close()
+
+    lost = []
+    radio = esp32.Radio(Port(), on_lost=lost.append)
+    try:
+        radio.hello()
+        gone.set()
+        deadline = time.monotonic() + 2
+        while not lost and time.monotonic() < deadline:
+            time.sleep(0.01)
+        start = time.monotonic()
+        with pytest.raises(esp32.RadioError, match="left USB"):
+            radio.request(esp32.CMD_HELLO, b"", esp32.MSG_INFO, timeout=3.0)
+        assert time.monotonic() - start < 0.5
+        for _ in range(50):
+            radio.send(esp32.CMD_STATUS)
+        time.sleep(0.2)
+        assert len(lost) == 1 and isinstance(lost[0], PermissionError)
+        assert writes_after == []
+    finally:
+        radio.close()
 
 
 def test_a_board_that_never_answers_releases_its_port(monkeypatch):

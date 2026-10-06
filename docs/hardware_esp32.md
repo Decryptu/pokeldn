@@ -710,7 +710,10 @@ and refuses to choose between several, since opening a port can reset its board.
 per process with DTR and RTS released; a CP2102 board on macOS resets on open regardless, so the host
 retries HELLO for 5 s before switching to 921600. Windows opens a COM port exclusively: a second open
 while any handle is held, in this process or another, fails with `PermissionError(13, 'Access is
-denied.')`, so a board that never answers HELLO closes its port before the launcher retries.
+denied.')`, so a board that never answers HELLO closes its port before the launcher retries. A USB
+device removed under an open port fails the next read the same way (`GetOverlappedResult failed`)
+and every write after it; the launcher then ends the run with `[esp32] The board disconnected from
+USB` instead of writing on.
 
 On Windows 11 with the Silicon Labs driver 11.6.0.420, a classic ESP32 on a CP2102 measured:
 
