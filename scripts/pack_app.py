@@ -35,8 +35,11 @@ def runtime_files() -> list[str]:
 
 
 def platform_excludes():
-    excluded = ["pytest", "PyInstaller", "flet_cli", "pip", "setuptools",
-                "pycparser.lextab", "pycparser.yacctab"]
+    excluded = ["pytest", "_pytest", "PyInstaller", "flet_cli", "pip", "setuptools",
+                "pycparser.lextab", "pycparser.yacctab",
+                # Flet's web server, auth and raw-image extras; the desktop view uses none of them.
+                "flet_web", "fastapi", "starlette", "uvicorn", "uvloop", "httptools", "watchfiles",
+                "pydantic", "pydantic_core", "httpx", "httpcore", "oauthlib", "yaml", "PIL"]
     if sys.platform != "win32":
         excluded += ["serial.tools.list_ports_windows", "serial.serialwin32", "serial.win32",
                      "flet_desktop.win_taskbar", "click._winconsole"]
@@ -115,15 +118,18 @@ def main() -> int:
             args += ["--icon", str(ROOT / "gui" / "assets" / icon)]
         scripts = sorted(p.stem for p in (stage / "bin").glob("*.py"))
         console = ["--console", "--hide-console=hide-early"] if sys.platform == "win32" else []
+        # A single file unpacks all of itself at every launch and every run (docs/gui.md). Flet's own
+        # --onedir refuses macOS; this later PyInstaller flag wins over the --onefile Flet passes.
+        onedir = ["--onedir"]
         for option in (f"--paths={dependencies}", f"--paths={ROOT}", f"--paths={ROOT / 'bin'}", f"--paths={ROOT / 'vendor' / 'LDN'}",
-                       *console,
+                       *console, *onedir,
                        *[f"--hidden-import={s}" for s in scripts],
                        *[f"--exclude-module={m}" for m in platform_excludes()], "--collect-all=esptool", "--collect-submodules=unicorn",
                        "--collect-all=esp_pylib", "--collect-submodules=pokeldn",
                        "--collect-submodules=ldn"):
             args.append(f"--pyinstaller-build-args={option}")
         result = subprocess.run(args, cwd=stage, env=dict(os.environ, FLET_VIEW_PATH=str(client))).returncode
-        expected = ROOT / "dist" / ({"darwin": "pokeldn.app", "win32": "pokeldn.exe"}.get(sys.platform, "pokeldn"))
+        expected = ROOT / "dist" / (("pokeldn.app" if sys.platform == "darwin" else "pokeldn"))
         if result == 0 and not expected.exists():
             raise SystemExit("The packer produced no desktop application.")
         if result == 0 and sys.platform == "darwin":
@@ -135,7 +141,7 @@ def main() -> int:
                 plistlib.dump(info, dest)
             subprocess.run(["codesign", "--force", "--deep", "--sign", "-", str(expected)], check=True)
         if result == 0 and sys.platform == "win32":
-            clear_cfg(expected)
+            clear_cfg(expected / "pokeldn.exe")
         if result == 0 and sys.platform.startswith("linux"):
             (ROOT / "dist" / f"{APP_ID}.desktop").unlink(missing_ok=True)
         return result

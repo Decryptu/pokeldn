@@ -150,7 +150,7 @@ host, for tests (`tests/test_sprites.py`).
 At launch the app asks `api.github.com/repos/Decryptu/pokeldn/releases/latest` for the newest stable
 release, in the background with a 5 s timeout. A tag above the app's `pokeldn.__version__` adds an
 Update entry to the sidebar; it opens the release notes or downloads this computer's archive from the
-release (`pokeldn-macos-arm64.zip`, `pokeldn-windows-x64.exe`, `pokeldn-linux-x64.tar.gz`), or the
+release (`pokeldn-macos-arm64.zip`, `pokeldn-windows-x64.zip`, `pokeldn-linux-x64.tar.gz`), or the
 release page when none fits. The user replaces the app with the download; settings, keys and received
 Pokemon live outside it.
 
@@ -245,12 +245,34 @@ Manual workflow runs produce artifacts; `v*` tags publish a release named `pokel
 Only tags with a hyphen, such as `v0.3.0-rc1`, are marked as pre-releases; GitHub shows the
 newest other release as Latest in the repository sidebar.
 
+The apps are one-folder PyInstaller builds: `pokeldn.app` on macOS, a `pokeldn` folder holding
+`pokeldn` or `pokeldn.exe` and `_internal` on Linux and Windows. A single file unpacks its whole bundle (about 180 MB) to a temporary folder at every launch, and every
+run is the app relaunching itself, so a run paid it again. On an M4 the one-folder app reaches the
+Games page in 0.7 s instead of 2.9 s, and a run's process starts in 0.08 s instead of 1.5 s. Flet's
+packer refuses `--onedir` on macOS; `scripts/pack_app.py` passes it to PyInstaller after Flet's own
+`--onefile`, and the later flag wins.
+
+| part | size | what keeps it small |
+|---|---|---|
+| Flet viewer (`scripts/build_client.py`) | 33 MB | no optional Flet extension (video, maps, camera, webview and the rest; the app draws core controls only), and on macOS only the build machine's architecture |
+| PKHeX helper (`services/pkhex`) | 18 MB | partial trimming: framework code PKHeX.Core never reaches is dropped |
+| Python | | the packer excludes Flet's web server, auth and image extras (`flet_web`, FastAPI, Uvicorn, Pydantic, httpx, Pillow) and pytest |
+
+Trimming turns off reflection-based JSON in .NET; the helper's replies need it, so the project turns it
+back on (`JsonSerializerIsReflectionEnabledByDefault`). Without it every command answers
+`JsonTypeInfo metadata for type 'System.String' was not provided`. Flet's macOS project runs
+`dart run rive_native:setup` on every build; with Rive gone that step fails, so the client build
+replaces it with `exit 0`.
+
+The viewer is unpacked once per build into `~/.flet/client/flet-desktop-full-<version>-<fingerprint>`;
+Flet never removes an older build's folder.
+
 Flet 1.0.2's packer re-signs the macOS viewer without its existing entitlements. The packaging
 wrapper in `scripts/pack_flet.py` retains them when signing the viewer after its metadata changes.
 The frozen check reads the sealed `com.apple.security.files.user-selected.read-write` entitlement
 from the embedded viewer; without it, choosing `prod.keys` raises `ENTITLEMENT_NOT_FOUND`.
 
-The Linux bootloader sets `LD_LIBRARY_PATH` to the unpacked bundle, which carries the build
+The Linux bootloader sets `LD_LIBRARY_PATH` to the bundle folder, which carries the build
 machine's `libstdc++.so.6` (Ubuntu 22.04). Loaded first, it leaves Fedora 44's Mesa with no EGL
 client extensions, and the Flet viewer aborts in libepoxy (`No provider of eglGetPlatformDisplayEXT`).
 `pokeldn/app/paths.py` restores the user's `LD_LIBRARY_PATH` for every program the app starts, and

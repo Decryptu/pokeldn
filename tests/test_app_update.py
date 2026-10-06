@@ -33,7 +33,7 @@ def release(tag, **extra):
     ("v0.3.0", "0.3.0.dev1", None),     # a source checkout with an odd version is never nagged
 ])
 def test_only_a_higher_stable_version_is_offered(tag, current, offered):
-    found = update.newer(release(tag), current, "pokeldn-windows-x64.exe")
+    found = update.newer(release(tag), current, "pokeldn-windows-x64.zip")
     assert (found.version if found else None) == offered
 
 
@@ -44,7 +44,7 @@ def test_a_release_github_marks_prerelease_or_draft_is_not_offered():
 
 @pytest.mark.parametrize("system, machine, name", [
     ("darwin", "arm64", "pokeldn-macos-arm64.zip"),
-    ("win32", "AMD64", "pokeldn-windows-x64.exe"),
+    ("win32", "AMD64", "pokeldn-windows-x64.zip"),
     ("linux", "x86_64", "pokeldn-linux-x64.tar.gz"),
     ("darwin", "x86_64", ""),           # no Intel Mac build: the release page instead
 ])

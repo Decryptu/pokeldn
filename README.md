@@ -50,7 +50,8 @@ Gift below with the tested settings. The only file it asks for is `prod.keys`.
 - macOS: the app is unsigned, so the first launch is blocked. Open it once and close the warning,
   then System Settings, Privacy & Security, scroll down to Security, Open Anyway next to pokeldn,
   and confirm with your password. Later launches open normally.
-- Windows: SmartScreen may stop the unsigned app; choose More info, then Run anyway.
+- Windows: extract the zip and run `pokeldn.exe` inside the `pokeldn` folder; keep the `_internal`
+  folder beside it. SmartScreen may stop the unsigned app; choose More info, then Run anyway.
 - Linux: it needs GTK 3 and libsecret, present on desktop distributions, and serial access
   (`sudo usermod -aG dialout $USER`; the group is `uucp` on Arch). On Ubuntu 22.04, brltty takes
   CH340 boards and their port never appears: `sudo apt remove brltty` ([Linux serial ports](docs/gui.md#linux-serial-ports)).

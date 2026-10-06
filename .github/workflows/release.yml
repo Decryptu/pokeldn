@@ -51,7 +51,7 @@ jobs:
           - os: macos-26
             asset: pokeldn-macos-arm64.zip
           - os: windows-latest
-            asset: pokeldn-windows-x64.exe
+            asset: pokeldn-windows-x64.zip
           - os: ubuntu-22.04
             asset: pokeldn-linux-x64.tar.gz
     runs-on: ${{ matrix.os }}
@@ -102,18 +102,21 @@ jobs:
         run: python scripts/build_client.py
       - name: Pack
         run: python scripts/pack_app.py
-      - name: Verify the frozen app (macOS and Linux)
-        if: runner.os != 'Windows'
-        run: python scripts/check_app.py dist/pokeldn
+      - name: Verify the frozen app (macOS)
+        if: runner.os == 'macOS'
+        run: python scripts/check_app.py dist/pokeldn.app/Contents/MacOS/pokeldn
+      - name: Verify the frozen app (Linux)
+        if: runner.os == 'Linux'
+        run: python scripts/check_app.py dist/pokeldn/pokeldn
       - name: Verify the frozen app (Windows)
         if: runner.os == 'Windows'
-        run: python scripts/check_app.py dist/pokeldn.exe
+        run: python scripts/check_app.py dist/pokeldn/pokeldn.exe
       - name: Archive (macOS)
         if: runner.os == 'macOS'
         run: ditto -c -k --keepParent dist/pokeldn.app "${{ matrix.asset }}"
       - name: Archive (Windows)
         if: runner.os == 'Windows'
-        run: Copy-Item dist/pokeldn.exe "${{ matrix.asset }}"
+        run: Compress-Archive -Path dist/pokeldn -DestinationPath "${{ matrix.asset }}"
       - name: Archive (Linux)
         if: runner.os == 'Linux'
         run: tar -czf "${{ matrix.asset }}" -C dist .

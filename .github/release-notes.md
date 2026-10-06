@@ -35,7 +35,7 @@ meant for commercial or promotional use; see the License section of the README.
 | Computer | File |
 |---|---|
 | macOS, Apple silicon | `pokeldn-macos-arm64.zip` |
-| Windows, x64 | `pokeldn-windows-x64.exe` |
+| Windows, x64 | `pokeldn-windows-x64.zip` |
 | Linux, x64 | `pokeldn-linux-x64.tar.gz` |
 
 Each app includes PKHeX.Core and firmware for classic ESP32, ESP32-S3, ESP32-C3 and ESP32-C6. Python, .NET
