@@ -1,12 +1,13 @@
-# pokeldn 0.12.3
+# pokeldn 0.12.4
 
 This desktop app trades with seven Pokemon game families on a Switch or Switch 2
 through an ESP32 radio connected by USB. Nothing is installed on the console.
 
 ## What is new
 
-- A board that drops off USB during a session (Windows plays its disconnect sound) now ends the run at
-  once with "The board disconnected from USB", instead of filling the log with "Access is denied".
+- Japanese FireRed and LeafGreen now find pokeldn on the Mystery Gift Friend screen, for Wonder
+  Cards and Wonder News. On the Mystery Gift tool's Advanced tab, set Trainer language to Japanese;
+  console code built for a Japanese cartridge needs nothing more.
 
 The firmware is unchanged (1.4.0); a board flashed by 0.7.0 or later needs no reflash.
 
