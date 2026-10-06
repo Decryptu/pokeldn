@@ -324,31 +324,37 @@ class Radio:
         s.rts = False
         s.open()
         radio = cls(s, log=log)
-        # Opening the port still resets some boards (a CP2102 on macOS); a HELLO sent during the
-        # boot is lost, so retry past it.
-        for attempt in range(5):
-            try:
-                radio.request(CMD_HELLO, b"", MSG_INFO, timeout=1.0)
-                break
-            except RadioError:
-                if attempt == 4:
-                    raise
-        info = radio.hello()
-        if fast_baud and fast_baud != baud:
-            radio.request(CMD_BAUD, struct.pack("<I", fast_baud), MSG_RESULT)
-            radio.drain()
-            s.flush()
-            s.baudrate = fast_baud
-            # A HELLO that reaches the board while it is still switching is lost (one open in four
-            # at 1500000), so retry it as the first one is.
+        # Windows opens a COM port exclusively: a handle left open here refuses the retry
+        # (PermissionError 13, Access is denied).
+        try:
+            # Opening the port still resets some boards (a CP2102 on macOS); a HELLO sent during the
+            # boot is lost, so retry past it.
             for attempt in range(5):
                 try:
-                    radio.request(CMD_HELLO, b"", MSG_INFO, timeout=0.5)
+                    radio.request(CMD_HELLO, b"", MSG_INFO, timeout=1.0)
                     break
                 except RadioError:
                     if attempt == 4:
                         raise
             info = radio.hello()
+            if fast_baud and fast_baud != baud:
+                radio.request(CMD_BAUD, struct.pack("<I", fast_baud), MSG_RESULT)
+                radio.drain()
+                s.flush()
+                s.baudrate = fast_baud
+                # A HELLO that reaches the board while it is still switching is lost (one open in four
+                # at 1500000), so retry it as the first one is.
+                for attempt in range(5):
+                    try:
+                        radio.request(CMD_HELLO, b"", MSG_INFO, timeout=0.5)
+                        break
+                    except RadioError:
+                        if attempt == 4:
+                            raise
+                info = radio.hello()
+        except BaseException:
+            radio.close()
+            raise
         if firmware_version(info) >= ALIVE_FIRMWARE:
             threading.Thread(target=radio._keep_alive, name="esp32-alive", daemon=True).start()
         if radio._trace:

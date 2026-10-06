@@ -708,7 +708,9 @@ only USB serial port present (`/dev/cu.usbserial-*`, `/dev/cu.SLAB_USBtoUART*`,
 `/dev/cu.wchusbserial*`, `/dev/cu.usbmodem*`, `/dev/ttyUSB*`, `/dev/ttyACM*`; USB COM ports on Windows)
 and refuses to choose between several, since opening a port can reset its board. The port is opened once
 per process with DTR and RTS released; a CP2102 board on macOS resets on open regardless, so the host
-retries HELLO for 5 s before switching to 921600.
+retries HELLO for 5 s before switching to 921600. Windows opens a COM port exclusively: a second open
+while any handle is held, in this process or another, fails with `PermissionError(13, 'Access is
+denied.')`, so a board that never answers HELLO closes its port before the launcher retries.
 
 On the board the launchers skip every nl80211 step: `--phy auto` resolves to `esp32`, no vif is
 deleted, no `iw`, `ip`, `nmcli` or `sysctl` runs, and a joiner's `--mac` becomes the board station's

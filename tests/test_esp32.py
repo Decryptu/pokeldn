@@ -1157,6 +1157,42 @@ def test_the_fast_rate_comes_from_the_environment(monkeypatch):
     assert rates[-1] == 921600 and 2000000 in rates
 
 
+def test_a_board_that_never_answers_releases_its_port(monkeypatch):
+    """Windows opens a COM port exclusively: a failed open that kept its handle refused every retry
+    with PermissionError 13, hiding the first attempt's cause."""
+    import serial
+    held = []
+
+    class Port:
+        def open(self):
+            if held:
+                raise serial.SerialException("could not open port: PermissionError(13, 'Access is denied.')")
+            held.append(self)
+
+        def read(self, n):
+            time.sleep(0.01)
+            return b""                                   # a board in its ROM bootloader
+
+        def write(self, data):
+            pass
+
+        def flush(self):
+            pass
+
+        def close(self):
+            held.remove(self)
+
+    def silent(self, *args, **kwargs):
+        raise esp32.RadioError("no answer to HELLO")
+
+    monkeypatch.setattr(serial, "Serial", Port)
+    monkeypatch.setattr(esp32.Radio, "request", silent)
+    for _ in range(2):
+        with pytest.raises(esp32.RadioError):
+            esp32.Radio.open_serial("COM7")
+    assert not held
+
+
 @pytest.mark.parametrize("version", ["1.4.0", ""])
 def test_a_board_whose_host_dies_leaves_the_network_and_an_older_board_is_never_fed(monkeypatch, version):
     """A host killed mid-seat stops sending ALIVE; the board leaves and the console's AP sees the
