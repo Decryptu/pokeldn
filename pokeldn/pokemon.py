@@ -142,6 +142,25 @@ class Service:
         reply = self._ask({"cmd": "event", "game": "frlg", "name": name, "language": language})
         return base64.b64decode(reply["data"]), reply["summary"]
 
+    def save_read(self, data: bytes) -> dict:
+        """A FireRed/LeafGreen .sav: trainer, party (each with PKHeX's legality verdict) and box contents."""
+        return self._ask({"cmd": "sav_read", "game": "frlg", "data": base64.b64encode(data).decode()})
+
+    def save_box(self, data: bytes, box: int) -> list[dict | None]:
+        """One box's Pokemon with their legality, None for an empty slot."""
+        return self._ask({"cmd": "sav_box", "game": "frlg", "data": base64.b64encode(data).decode(),
+                          "box": box})["mons"]
+
+    def save_edit(self, data: bytes, *, trainer: dict | None = None, party: list | None = None) -> tuple[bytes, dict]:
+        """-> (the edited .sav, save_read of it). trainer: name, gender, money, coins; party: in order,
+        {"keep": n} for the save's slot n or {"data": base64 PK3}."""
+        request = {"cmd": "sav_edit", "game": "frlg", "data": base64.b64encode(data).decode(),
+                   "trainer": trainer or {}}
+        if party is not None:
+            request["party"] = party
+        reply = self._ask(request)
+        return base64.b64decode(reply["data"]), reply
+
     def validate_gift(self, data):
         from pokeldn.swsh import wc8
         if not wc8.sealed(data):

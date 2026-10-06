@@ -76,6 +76,35 @@ Finish any active session, flash or board check before cleanup. Cleanup runs in 
 holds off new sessions and flashes until it finishes. A file that cannot be removed is reported and
 can be retried. The Pokemon sprites cache has its own Clear the cache button under advanced settings.
 
+## Your saves
+
+The FireRed and LeafGreen Mystery Gift tool's Your save tab backs the console's save up, or puts one
+back, over the Wonder Cards, Friend path ([Save backup and restore](frlg_gift.md#save-backup-and-restore)).
+The saves live in `Documents/pokeldn/Saves` (`pokeldn.app.saves`), one `.sav` each with a `.json`
+beside it holding its name, where it came from and the console's game code. Clear local files never
+touches the folder; with `POKELDN_DATA` set, the library is `Saves` inside that folder instead.
+
+| action | what happens |
+|---|---|
+| Back up from the Switch | the launcher writes `backup-<run>.sav` and its `.json`; a backup the link cut short is kept in `Saves/.partial` and the next one goes on from it |
+| Put a save on the Switch | the chosen save goes to `--save-restore`; Start stays blocked until one is chosen |
+| `+`, or a `.sav` dropped on the card | the file is copied in; a 16-byte emulator footer is dropped, any other size than 128 KB is refused |
+| Rename, Export .sav, Delete | the name is cosmetic and kept in the `.json`; Delete removes both files from this computer only |
+| View and edit | PKHeX reads the trainer, party and PC boxes; see below |
+
+During a run the Session panel draws the launcher's `[save] backup N of 128 KB` or
+`[save] restore N of M sectors` lines as a progress bar, and the list refreshes when the run ends.
+
+A restore is blocked when the save has no whole copy, and when PKHeX finds a party Pokemon not legal,
+until Restore anyway is turned on. A save's name defaults to the trainer and the cartridge, which only
+a backup knows.
+
+The editor changes the trainer's name, gender, money and coins, and the party: reorder, remove, or add
+a Pokemon PKHeX builds for this save's own trainer (name, ID, secret ID and language). Each party
+Pokemon shows PKHeX's verdict; Check legality runs it over one box, which takes seconds. Keep as a new
+save writes the result through PKHeX, which recomputes every sector checksum, checks that the game's
+own sector test passes and adds it to the library as a new entry; the original is unchanged.
+
 ## Pokemon sprites
 
 The sprites are the 96x96 PNGs behind `sprites.front_default` and `sprites.front_shiny` of

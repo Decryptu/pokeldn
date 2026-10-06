@@ -18,10 +18,12 @@ class PokemonPicker:
     """Pick a species and PKHeX builds a legal one for the game; or check a file someone brings."""
 
     def __init__(self, app, game: str, value: dict | None, on_change, version: str = "", on_team=None,
-                 on_more=None, glow=None):
+                 on_more=None, glow=None, trainer: dict | None = None):
         """`on_team(sets)` places the sets after the first of a pasted team and says where they went;
-        `on_more(paths)` places the files dropped with the first. `glow()` is what lights under a drag."""
+        `on_more(paths)` places the files dropped with the first. `glow()` is what lights under a drag.
+        `trainer` replaces the app's own as the Pokemon's original trainer."""
         self.app, self.game, self.on_change, self.version = app, game, on_change, version
+        self.trainer = trainer
         self.on_team, self.on_more = on_team, on_more
         self.value = dict(value or {})
         self.species = t.dropdown([], None, on_select=self._pick, enable_filter=True, editable=True,
@@ -115,7 +117,8 @@ class PokemonPicker:
 
         def work():
             try:
-                info = builder.SERVICE.make(self.game, self.value["species"], self.app.settings.trainer(self.game),
+                info = builder.SERVICE.make(self.game, self.value["species"],
+                                            self.trainer or self.app.settings.trainer(self.game),
                                             level, bool(self.value.get("shiny")),
                                             self.value.get("nickname", ""), VERSIONS.get(self.version, ""),
                                             self.value.get("options"))

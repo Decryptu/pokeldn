@@ -206,6 +206,18 @@ news only if it differs from what it holds; `--news-id N` forces a new one.
 ./.venv/bin/python -u bin/frlg_mg_host.py --news berry --news-id 7
 ```
 
+**Save backup and restore.** The same Friend path copies the whole 128 KB save to a `.sav` file, or
+writes a `.sav` back: beside the console's own save, every sector read back, then the game loads it
+and saves; anything short of that leaves the console's save as it was. In the app, the Mystery Gift
+tool's Your save tab keeps the backups, names them, imports and exports `.sav` files and edits the
+trainer and party through PKHeX. Both directions are proven against the scripted console and have
+not yet run on a retail Switch. [Save backup and restore](docs/frlg_gift.md#save-backup-and-restore).
+
+```bash
+./.venv/bin/python -u bin/frlg_mg_host.py --live --save-backup backup.sav --save-resume-dir partial
+./.venv/bin/python -u bin/frlg_mg_host.py --live --save-restore backup.sav
+```
+
 **Console save.** A Mystery Gift session runs native ARM code on the console. `save-dump` reads the
 live save back (secret ID, every party Pokémon's PID, IVs and nature); nothing is written.
 `flash-patch` edits one field: it reads the save sector, changes only the named bytes, recomputes the

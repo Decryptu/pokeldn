@@ -11,12 +11,18 @@ from pokeldn.app.paths import SESSION
 GAMES = {"frlg-gift": "frlg", "swsh-gift": "swsh"}
 MODULES = {"frlg": "pokeldn.frlg.gift.builder", "swsh": "pokeldn.swsh.gift_builder"}
 MODES = (("preset", "Use a preset", "gift"), ("event", "Official events", "book-open"),
-         ("build", "Build your own", "sliders-horizontal"), ("file", "Open a file", "folder"))
+         ("build", "Build your own", "sliders-horizontal"), ("file", "Open a file", "folder"),
+         ("save", "Your save", "save"))
+# The save mode backs the console's save up into the library or restores one from it [docs/frlg_gift.md].
+SAVE_GAMES = ("frlg",)
+SAVE_ACTIONS = ("backup", "restore")
 
 
 def modes(game):
-    """The modes a game's tool offers: official events only where the builder ships them."""
-    return [m for m in MODES if m[0] != "event" or hasattr(module(game), "OFFICIAL")]
+    """The modes a game's tool offers: official events only where the builder ships them, the
+    save only on FireRed and LeafGreen."""
+    return [m for m in MODES if (m[0] != "event" or hasattr(module(game), "OFFICIAL"))
+            and (m[0] != "save" or game in SAVE_GAMES)]
 
 
 def module(game):
@@ -43,6 +49,12 @@ def normalized(game, value):
     if value.get("preset") not in builder.PRESET:
         value["preset"] = builder.PRESETS[0].key
     value.setdefault("file", "")
+    if not isinstance(value.get("save"), dict):
+        value["save"] = {}
+    value["save"].setdefault("action", "backup")
+    if value["save"]["action"] not in SAVE_ACTIONS:
+        value["save"]["action"] = "backup"
+    value["save"].setdefault("file", "")
     if not isinstance(value.get("build"), dict):
         value["build"] = builder.blank()
     return value
@@ -71,9 +83,45 @@ def _built_state(game, value):
     return None
 
 
+def save_args(value):
+    """--save-backup into the library under the run's {stamp}, or --save-restore of the chosen file."""
+    from pokeldn.app import saves
+    chosen = value["save"]
+    if chosen["action"] == "restore":
+        return ["--save-restore", chosen["file"]] if chosen["file"] else []
+    return ["--save-backup", saves.backup_target(), "--save-resume-dir", saves.partial_dir()]
+
+
+def save_problem(value):
+    from pokeldn.frlg.save import sav
+    chosen = value["save"]
+    if chosen["action"] != "restore":
+        return ""
+    if not chosen["file"]:
+        return "Choose the save to put on the console."
+    try:
+        with open(chosen["file"], "rb") as handle:
+            if not sav.describe(handle.read()).sound:
+                return "This save has no whole copy of a game in it."
+    except (OSError, sav.SaveError) as exc:
+        return str(exc)
+    if not chosen.get("anyway"):
+        from pokeldn.app import saves
+        check = saves.cached_check(chosen["file"])     # the save panel reads it off the UI thread
+        if check is None:
+            return "Checking the save's party with PKHeX..."
+        illegal = check["illegal"]
+        if illegal:
+            return (f"PKHeX finds {', '.join(illegal)} in this save's party not legal. Fix it in the "
+                    "editor, or turn on Restore anyway.")
+    return ""
+
+
 def args(tool, value):
     game = GAMES[tool.key]
     value = normalized(game, value)
+    if value["mode"] == "save":
+        return save_args(value)
     if value["mode"] == "file":
         if not value["file"]:
             return []
@@ -86,6 +134,8 @@ def args(tool, value):
 def compile(tool, value):
     game = GAMES[tool.key]
     value = normalized(game, value)
+    if value["mode"] == "save":
+        raise ValueError("A save backup or restore sends no gift.")
     if value["mode"] == "file":
         if not value["file"]:
             raise ValueError("Open a gift file, or choose a preset.")
@@ -102,6 +152,8 @@ def prepare(tool, value):
     """Write the built gift where args() points the launcher. A preset sent as flags needs nothing."""
     game = GAMES[tool.key]
     value = normalized(game, value)
+    if value["mode"] == "save":
+        return
     if _built_state(game, value) is None and not (value["mode"] == "file" and value.get("icon") is not None):
         return
     path = output(tool)
@@ -113,6 +165,8 @@ def problem(tool, value) -> str:
     """Why the gift cannot be sent as it stands, or ""."""
     game = GAMES[tool.key]
     value = normalized(game, value)
+    if value["mode"] == "save":
+        return save_problem(value)
     if value["mode"] == "preset" and _built_state(game, value) is None:
         preset = module(game).PRESET[value["preset"]]
         check = getattr(preset, "problem", None)

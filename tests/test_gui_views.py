@@ -457,9 +457,10 @@ def test_start_on_another_tool_stops_the_running_session_then_starts(tmp_path, m
     monkeypatch.setattr(SessionPanel, "_tick", lambda self: None)
     first, second = (next(t for t in TOOLS if t.key == key) for key in ("swsh-join", "pla-host"))
     panel = SessionPanel.__new__(SessionPanel)
-    panel.__dict__.update(app=FakeApp(), games=SimpleNamespace(values={}, extra={}, game=SimpleNamespace(
+    panel.__dict__.update(app=FakeApp(), games=SimpleNamespace(values={}, extra={}, visible=False, game=SimpleNamespace(
         name="game", key="swsh")), log=SimpleNamespace(add=lambda line: None, clear=lambda: None),
-        received=SimpleNamespace(), run=None, running_tool=None, restart=False, stopping=False, traded=0)
+        received=SimpleNamespace(), transfer=SimpleNamespace(), run=None, running_tool=None, restart=False,
+        stopping=False, traded=0)
     panel.set_status = panel.refresh = lambda *a, **k: None
     panel.tool = first
     panel._start(None)

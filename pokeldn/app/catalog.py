@@ -131,11 +131,13 @@ FRLG = Game("frlg", "FireRed & LeafGreen", "FRLG", "frlg.md", (
                 "--out", "{received}/frlg-{stamp}.pk3"),
          doc="frlg_link.md"),
     Tool("frlg-gift", "Mystery Gift", "bin/frlg_mg_host.py",
-         "Send Pokemon, items or game boosts, or read your trainer IDs and party stats through Mystery Gift.",
+         "Send Pokemon, items or game boosts, back up or restore your save, or read your trainer IDs "
+         "through Mystery Gift.",
          ("Title screen: Mystery Gift, Wonder Cards, Friend. For news: the second entry, Wonder News.",
           "Start the host, then pick POKELDN when it appears.",
           "Answer Yes if the console asks to replace its card.",
-          "For boosts, save readouts or your own console code, keep the app running until the Session log shows the result.",
+          "For boosts, save backups and restores, readouts or your own console code, keep the app running "
+          "until the Session log shows the result.",
           "Back out of the search screen between two runs."),
          (Field(("--version", "--expect-console"), "Version", "choice", default="firered",
                 choices=VERSIONS, group="Console",

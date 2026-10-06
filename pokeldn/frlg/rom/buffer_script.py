@@ -2773,18 +2773,23 @@ class _Machine:
         uc.mem_map(_RETURN_ADDRESS, 0x1000)
         # The chip is 128 KiB, erased; the CPU sees a 64 KiB window one bank at a time. swi 0x48
         # addresses the chip linearly, a guest load the window, so both are modelled.
-        self.uc = uc  # _show_bank needs it before the rest
+        # The window is I/O: a load reads the selected bank, a store is a command and lands nowhere.
+        self.uc = uc
         self.flash = bytearray(b"\xFF" * FLASH_SIZE)
         self.flash_bank = 0
-        uc.mem_map(FLASH_WINDOW_BASE, FLASH_WINDOW_SIZE)
+        uc.mmio_map(FLASH_WINDOW_BASE, FLASH_WINDOW_SIZE, self._on_flash_load, None,
+                    self._on_flash_store, None)
         self.flash_writes = []          # (number, sector, source, accepted, why)
         self.flash_reads = []           # (sector, offset, dest, length)
         self.bkpts = []                 # the immediate of each bkpt executed
-        uc.hook_add(unicorn.UC_HOOK_MEM_WRITE, self._on_flash_store,
-                    begin=FLASH_WINDOW_BASE, end=FLASH_WINDOW_BASE + FLASH_WINDOW_SIZE - 1)
         uc.hook_add(unicorn.UC_HOOK_INTR, self._on_swi)
         entry = build.read_flash
         uc.hook_add(unicorn.UC_HOOK_CODE, self._on_readflash, begin=entry, end=entry)
+        # On the stand-in ROM LoadGameSave is `bx lr`; the hook sets r0 before it runs.
+        self.loads = []                 # LoadGameSave: (result, the loaded copy's counter)
+        self._load_game_save = build.load_game_save
+        uc.hook_add(unicorn.UC_HOOK_CODE, self._on_load_game_save,
+                    begin=build.load_game_save, end=build.load_game_save)
 
         def word(offset, value):
             uc.mem_write(_CLIENT_ADDRESS + offset, (value & 0xFFFFFFFF).to_bytes(4, "little"))
@@ -2818,24 +2823,23 @@ class _Machine:
                 self.flash[:len(blob)] = bytes(blob)     # the chip, not the aperture
             else:
                 uc.mem_write(address, bytes(blob))
-        self._show_bank()
+        if rom is None and not (memory or {}).get(self._load_game_save):
+            uc.mem_write(self._load_game_save, b"\x70\x47")     # bx lr on the blank stand-in ROM
 
         self.uc = uc
         self.armed_size = send_size
         self._sav2_len, self._sav1_len = len(sav2), len(sav1)
         self.calls = 0
 
-    def _show_bank(self):
-        """Put the selected bank in the aperture, undoing the command bytes a bank select stores."""
-        at = self.flash_bank * FLASH_WINDOW_SIZE
-        self.uc.mem_write(FLASH_WINDOW_BASE, bytes(self.flash[at:at + FLASH_WINDOW_SIZE]))
+    def _on_flash_load(self, uc, offset, size, user_data=None):
+        at = self.flash_bank * FLASH_WINDOW_SIZE + offset
+        return int.from_bytes(self.flash[at:at + size], "little")
 
-    def _on_flash_store(self, uc, access, address, size, value, user_data=None):
+    def _on_flash_store(self, uc, offset, size, value, user_data=None):
         """A store into the aperture is a command. Only the bank select is modelled
         [decomp:src/agb_flash.c SwitchFlashBank]."""
-        if address == FLASH_WINDOW_BASE and size == 1 and value in (0, 1):
+        if offset == 0 and size == 1 and value in (0, 1):
             self.flash_bank = value
-        self._show_bank()
 
     def _on_readflash(self, uc, address, size, user_data=None):
         """Model ReadFlash: copy `size` bytes of sector `sectorNum` into `dest`. Its REG_WAITCNT
@@ -2852,6 +2856,36 @@ class _Machine:
         cpsr = uc.reg_read(arm.UC_ARM_REG_CPSR)
         uc.reg_write(arm.UC_ARM_REG_CPSR, cpsr | (1 << 5) if link & 1 else cpsr & ~(1 << 5))
         uc.reg_write(arm.UC_ARM_REG_PC, link & ~1)
+
+    def _on_load_game_save(self, uc, address, size, user_data=None):
+        """Model LoadGameSave(SAVE_NORMAL): SAVE_STATUS_OK (1) when the chip holds a whole copy, the
+        newest taken as GetSaveValidStatus takes it, else SAVE_STATUS_CORRUPT (2)
+        [decomp:src/save.c:803]."""
+        from pokeldn.frlg.save import sav
+        arm = self._arm
+        summary = sav.describe(bytes(self.flash))
+        result = 1 if summary.sound else 2
+        self.loads.append((result, summary.newest.counter if summary.sound else None))
+        uc.reg_write(arm.UC_ARM_REG_R0, result)
+
+    def load(self, code, *, param, send_size=4, send_ident=0):
+        """The session's next CLI_RUN_BUFFER_SCRIPT: the 1 KiB receive buffer over
+        gDecompressionBuffer [mystery_gift_client.c:239] and the send as CLI_LOAD_TOSS_RESPONSE
+        armed it; everything else stays as the last payload left it."""
+        uc = self.uc
+
+        def word(offset, value):
+            uc.mem_write(_CLIENT_ADDRESS + offset, (value & 0xFFFFFFFF).to_bytes(4, "little"))
+
+        code = bytes(code)
+        uc.mem_write(GDECOMPRESSION_BUFFER, code)
+        uc.mem_write(_RECV_BUFFER_ADDRESS, code)
+        word(CLIENT_PARAM, int(param))
+        word(CLIENT_LINK + LINK_SEND_BUFFER, _SEND_BUFFER_ADDRESS)
+        uc.mem_write(_CLIENT_ADDRESS + CLIENT_LINK + LINK_SEND_SIZE, (send_size & 0xFFFF).to_bytes(2, "little"))
+        uc.mem_write(_CLIENT_ADDRESS + CLIENT_LINK + LINK_SEND_IDENT, (send_ident & 0xFFFF).to_bytes(2, "little"))
+        uc.mem_write(_SEND_BUFFER_ADDRESS, int(param).to_bytes(4, "little"))
+        self.armed_size = send_size
 
     def _on_swi(self, uc, intno, user_data=None):
         """Model the Sloop sector syscalls, as measured on the FR emulator: swi 0x48 copies 0x1000
@@ -2888,7 +2922,6 @@ class _Machine:
             self.flash[offset:offset + FLASH_SECTOR_SIZE] = payload_bytes
             if number == SWI_REPLACE_SECTOR:
                 self.flash[offset + SECTOR_SIGNATURE_OFFSET_IN_SECTOR] = 0xFF
-            self._show_bank()
         elif number == SWI_REPLACE_SECTOR:
             raise BufferScriptError(
                 f"swi 0x56 with a rejected destination aborts: {why}. On the console that is the "
@@ -2954,6 +2987,12 @@ class _Machine:
             client=client,
             pending_send=pending,
         )
+
+
+def session_machine(code, **kwargs):
+    """A console whose memory and flash outlive one payload, as within one Mystery Gift session:
+    call() runs a frame, load() hands it the session's next payload. Keywords as emulate()."""
+    return _Machine(code, **kwargs)
 
 
 def emulate(code, *, param=0, sav2=b"", sav1=b"", memory=None, send_size=4,

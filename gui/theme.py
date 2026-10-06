@@ -244,18 +244,19 @@ def badge(label: str, color: str = MUTED, icon: str = "circle-info") -> ft.Row:
                   spacing=6, tight=True, vertical_alignment=ft.CrossAxisAlignment.CENTER)
 
 
-def segmented(options: list[tuple[str, str, str]], value: str, on_change) -> ft.Row:
-    """The capsule switcher (Basic / Advanced); it sits on the glass toolbar."""
-    row = ft.Row(spacing=0, tight=True)
+def segmented(options: list[tuple[str, str, str]], value: str, on_change, wrap: bool = False) -> ft.Row:
+    """The capsule switcher (Basic / Advanced); it sits on the glass toolbar. `wrap` lets a long one break
+    onto a second line: each capsule is then sized by its padding, since a centred one fills the line."""
+    row = ft.Row(spacing=0, tight=True, wrap=wrap, run_spacing=4)
+    size = ({"padding": ft.Padding(12, 8, 14, 8)} if wrap else
+            {"height": TOOLBAR_ITEM, "padding": ft.Padding(12, 0, 14, 0), "alignment": ft.Alignment.CENTER})
 
     def render(selected):
         row.controls = [
             ft.Container(ft.Row([
                 pixel_icon(icon, color=BLUE if key == selected else FAINT),
                 text(label, 12, TEXT if key == selected else MUTED, weight=ft.FontWeight.W_600),
-            ], spacing=6, tight=True),
-                height=TOOLBAR_ITEM, padding=ft.Padding(12, 0, 14, 0), border_radius=TOOLBAR_ITEM / 2,
-                alignment=ft.Alignment.CENTER,
+            ], spacing=6, tight=True), border_radius=TOOLBAR_ITEM / 2, **size,
                 bgcolor=ft.Colors.with_opacity(0.14, "#FFFFFF") if key == selected else None,
                 on_click=lambda e, k=key: pick(k))
             for key, label, icon in options]

@@ -85,9 +85,9 @@ class MysteryGiftHostApplication(HostApplication):
         phy, keys = self._resolve_phy_and_keys()
         link_player = self.profile.to_link_player()
         self.plan = self._build_plan()
-        self.distribution = self.plan.distribution
-        self.card = self.distribution.card
-        self.ram_script = self.distribution.ram_script
+        self.distribution = self.plan.distribution if self.plan is not None else None
+        self.card = getattr(self.distribution, "card", None)
+        self.ram_script = getattr(self.distribution, "ram_script", None)
         timing = None
         overrides = {}
         if self.config.client_ready_idle_frames is not None:
@@ -100,11 +100,7 @@ class MysteryGiftHostApplication(HostApplication):
             overrides["ram_script_block_repeat"] = self.config.ram_script_block_repeat
         if overrides:
             timing = MysteryGiftTiming(**overrides)
-        engine = HostMysteryGiftEngine(
-            distribution=self.distribution, link_player=link_player,
-            trust_pia=self.config.trust_pia, timing=timing,
-            expect_console=getattr(self.config, "expect_console", None),
-            per_build=self.plan.per_build, log=self.log)
+        engine = self._build_engine(link_player, timing)
         self.session = host_session.HostSession(engine=engine, log=self.log)
         inactive, active = self._build_app_data()
         self.tracer = (ldntrace.Tracer(self.ldn.capture_path, log=self.log)
@@ -127,6 +123,13 @@ class MysteryGiftHostApplication(HostApplication):
             tracer=self.tracer, log=self.log)
         self._last_state = self.session.activity.state
         return link_player
+
+    def _build_engine(self, link_player, timing):
+        return HostMysteryGiftEngine(
+            distribution=self.distribution, link_player=link_player,
+            trust_pia=self.config.trust_pia, timing=timing,
+            expect_console=getattr(self.config, "expect_console", None),
+            per_build=self.plan.per_build, log=self.log)
 
     def _build_app_data(self):
         """Which of the console's menus lists this host: only the activity byte differs."""
@@ -491,3 +494,92 @@ class BufferScriptHostApplication(MysteryGiftHostApplication):
         return ("NATIVE CODE RAN ON THE CONSOLE. It returned "
                 + (f"0x{status:08X}" if status is not None else "an answer")
                 + ", which matched. The console printed our message and saved.")
+
+
+class SaveTransferHostApplication(MysteryGiftHostApplication):
+    """Save backup or restore over Wonder Cards -> Friend [save_transfer.py]: no card is sent and
+    none is replaced. `backup` is where the backed-up .sav goes, `restore` the .sav to write."""
+
+    ACTIVITY_NOUN = "save transfer"
+
+    def __init__(self, config, *, backup=None, restore=None, resume_dir=None, **kwargs):
+        super().__init__(config, **kwargs)
+        if (backup is None) == (restore is None):
+            raise ValueError("a save session either backs up or restores")
+        self.backup_path, self.restore_path, self.resume_dir = backup, restore, resume_dir
+        self._shown = -1
+
+    def _build_plan(self):
+        return None
+
+    def _progress(self, done, total):
+        """One line per 8 KB or per sector, for a reader of the log (the app's progress bar)."""
+        step = done // 8192 if self.backup_path else done
+        if step == self._shown and done < total:
+            return
+        self._shown = step
+        if self.backup_path:
+            print(f"[save] backup {done // 1024} of {total // 1024} KB", flush=True)
+        else:
+            print(f"[save] restore {done} of {total} sectors", flush=True)
+
+    def _build_engine(self, link_player, timing):
+        from pokeldn.frlg.gift import save_transfer
+        common = dict(expect_console=getattr(self.config, "expect_console", None),
+                      progress=self._progress, log=self.log)
+        if self.backup_path:
+            server = save_transfer.SaveBackupServer(resume_dir=self.resume_dir, **common)
+        else:
+            with open(self.restore_path, "rb") as handle:
+                server = save_transfer.SaveRestoreServer(handle.read(), **common)
+        return HostMysteryGiftEngine(server=server, link_player=link_player,
+                                     trust_pia=self.config.trust_pia, timing=timing, log=self.log)
+
+    def _log_identity(self, link_player):
+        self.info(f"Host identity: OT={self.profile.name!r}, "
+                  f"TID=0x{self.profile.tid:04x}, SID=0x{self.profile.sid:04x}")
+        if self.backup_path:
+            self.info(f"Save backup: the console sends its whole 128 KB save; it goes to "
+                      f"{self.backup_path}. The console's save is not changed.")
+        else:
+            self.info(f"Save restore: {self.restore_path} goes beside the console's newest save, "
+                      "every sector is read back, then the game loads it and saves. Until then the "
+                      "console keeps the save it had.")
+        self.info("Advertising ACTIVITY_WONDER_CARDS. On the Switch choose "
+                  "Mystery Gift -> Wonder Cards -> Friend.")
+
+    def _hosting_instructions(self):
+        return ("Hosting a save " + ("backup" if self.backup_path else "restore")
+                + ". On the Switch choose Mystery Gift -> Wonder Cards -> Friend.")
+
+    def _screen_card(self):
+        return "Mystery Gift", "Save backup" if self.backup_path else "Save restore", None
+
+    def run(self):
+        joined = HostApplication.run(self)
+        engine = self.session.activity if self.session is not None else None
+        server = getattr(engine, "server", None)
+        outcome = getattr(server, "outcome", None)
+        if self.backup_path and getattr(server, "save", None) is not None:
+            from pokeldn.frlg.gift import save_transfer
+            save_transfer.write_backup(self.backup_path, server)
+            print(f"[save] wrote {self.backup_path}", flush=True)
+        self.delivery_succeeded = outcome in ("backed-up", "restored")
+        if outcome == "backed-up":
+            show_done("backup")
+            print("Save backed up. The console showed our message and kept its save as it was.")
+        elif outcome == "backed-up-unsound":
+            print("The whole chip came over, but neither of its two save copies is whole.")
+        elif outcome == "restored":
+            show_done("restore")
+            print("Save restored. Let the console finish saving; CONTINUE then loads it.")
+        elif outcome == "not-restored":
+            print("Not restored: the console keeps the save it had.")
+        elif outcome == "refused":
+            print("Nothing was read or written: see the log for why.")
+        elif self.backup_path and self.resume_dir:
+            print("The link dropped before the backup was done. Start it again: it goes on from "
+                  "where it stopped.")
+        print(f"[save] outcome {outcome or 'lost'}", flush=True)
+        self._record_game_data(engine)
+        return joined

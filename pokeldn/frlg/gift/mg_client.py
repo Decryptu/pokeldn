@@ -101,7 +101,8 @@ class MysteryGiftClientEngine:
                  holding_flag_id=0, accept_replacement=True, yes_no_answer=True,
                  game_code=None, software_version=0, trust_pia=False,
                  questionnaire=(), easy_chat_profile=(), rom_stubs=None,
-                 inter_block_gap=DEFAULT_INTER_BLOCK_GAP, log=lambda *a: None):
+                 inter_block_gap=DEFAULT_INTER_BLOCK_GAP, flash=None, build=None,
+                 log=lambda *a: None):
         self.lp = link_player or linkplayer.LinkPlayer(version=linkplayer.VERSION_FIRE_RED)
         self.mpid = 1
         self.log = log
@@ -112,6 +113,11 @@ class MysteryGiftClientEngine:
         # header and zeros, so a payload that calls a ROM function needs a stub modelling the
         # callee.
         self.rom_stubs = dict(rom_stubs or {})
+        # With `flash`, one machine holds the console's memory and its 128 KiB save chip for the
+        # whole session, as the save payloads need; `build` picks its addresses.
+        self.flash = None if flash is None else bytes(flash)
+        self.build = build
+        self.machine = None
         self.ni_activity = ACTIVITY_WONDER_CARD
         self.ni_started = False
         self._live = False
@@ -466,10 +472,13 @@ class MysteryGiftClientEngine:
         try:
             # Called every frame until it returns 1, on its image as it left it
             # [decomp:src/mystery_gift_client.c:276-280]; memory-scan relies on it.
-            repeated = buffer_script.emulate_repeating(
-                code, param=self.param or 0, sav2=self.sav2 or self._save_block2_image(),
-                send_size=armed_size, send_ident=armed_ident,
-                memory=self.rom_stubs or None)
+            if self.flash is not None:
+                repeated = self._run_on_session_machine(code, armed_size, armed_ident)
+            else:
+                repeated = buffer_script.emulate_repeating(
+                    code, param=self.param or 0, sav2=self.sav2 or self._save_block2_image(),
+                    send_size=armed_size, send_ident=armed_ident,
+                    memory=self.rom_stubs or None)
             run = repeated.final
         except buffer_script.BufferScriptError as exc:
             # On the console this hangs the Mystery Gift menu with no way back.
@@ -496,6 +505,24 @@ class MysteryGiftClientEngine:
         self.info(f"[mg] BUFFER SCRIPT RAN: {buffer_script.describe(code)}, "
                   f"{run.instructions} instructions, returned {run.returned}, "
                   f"left 0x{run.param:08X} in param")
+
+    def _run_on_session_machine(self, code, armed_size, armed_ident):
+        if self.machine is None:
+            self.machine = buffer_script.session_machine(
+                code, param=self.param or 0, sav2=self._save_block2_image(), send_size=armed_size,
+                send_ident=armed_ident, build=self.build or self.game_code.decode(),
+                memory={buffer_script.FLASH_BASE: self.flash, **self.rom_stubs})
+        else:
+            self.machine.load(code, param=self.param or 0, send_size=armed_size, send_ident=armed_ident)
+        instructions = 0
+        for _ in range(buffer_script.MAX_SCAN_CALLS):
+            run = self.machine.call()
+            instructions += run.instructions
+            if run.done:
+                self.flash = bytes(self.machine.flash)
+                return buffer_script.RepeatedRun(calls=self.machine.calls, final=run,
+                                                 instructions=instructions)
+        raise buffer_script.BufferScriptError("the payload never returned 1")
 
     def _copy_recv_script(self):
         self.script = bytes(self.recv_buffer)

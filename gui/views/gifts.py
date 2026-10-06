@@ -10,9 +10,10 @@ import flet as ft
 
 from gui import drop, theme as t
 from gui.views.pokemon import NamePicker
+from gui.views.saves import SavePanel
 from gui.views.widgets import PathField
 from pokeldn import gifts, pokemon
-from pokeldn.app import command, gift_builder, gift_files
+from pokeldn.app import command, gift_builder, gift_files, saves
 from pokeldn.frlg.gift import builder as frlg
 from pokeldn.frlg.rom import custom_code
 from pokeldn.swsh import gift_builder as swsh
@@ -79,9 +80,13 @@ class GiftBuilder:
 
     def cards(self) -> list[ft.Control]:
         mode = self.value["mode"]
-        modes = t.segmented(gift_builder.modes(self.game), mode, self._mode)
-        body = {"preset": self.presets, "event": self.events, "build": self.editor, "file": self.file}[mode]()
+        modes = t.segmented(gift_builder.modes(self.game), mode, self._mode, wrap=True)
+        body = {"preset": self.presets, "event": self.events, "build": self.editor, "file": self.file,
+                "save": lambda: SavePanel(self).control()}[mode]()
         self.show_summary()
+        if mode == "save":
+            summary = ft.Column([self.when, self.effects, self.status], spacing=10)
+            return [t.card("Gift", ft.Column([modes, body], spacing=14)), t.card("Before you start", summary)]
         actions = [self.save_button]
         if mode == "preset" and self.module.PRESET[self.value["preset"]].state is not None:
             actions.insert(0, t.secondary_button("Customize", self._customize, "sliders-horizontal"))
@@ -580,6 +585,8 @@ class GiftBuilder:
                 lines = preset.effects(self.value["options"].get(preset.key))
             elif preset.state is not None:
                 when, lines = self.module.describe(preset.state, self.name)
+        elif mode == "save":
+            when, lines = self.save_summary()
         elif mode == "event":
             when, lines = self.module.OFFICIAL.describe(self.module.OFFICIAL.by_key()[self.value["event"]]["record"],
                                                       self.name)
@@ -588,6 +595,8 @@ class GiftBuilder:
         problem = gift_builder.problem(self.tool, self.value)
         if problem:
             self.status.value, self.status.color = problem, t.RED
+        elif mode == "save":
+            pass
         elif mode != "preset" or self.module.PRESET[self.value["preset"]].args == ():
             gift = gift_builder.compile(self.tool, self.value)
             targets = [frlg.CARTRIDGES.get(code, "Sword and Shield") for code in gift.variants]
@@ -601,6 +610,20 @@ class GiftBuilder:
         if update:
             for control in (self.when, self.effects, self.status):
                 control.update()
+
+    def save_summary(self) -> tuple[str, list[str]]:
+        chosen = self.value["save"]
+        if chosen["action"] == "backup":
+            return ("On the console: Mystery Gift, Wonder Cards, Friend, then POKELDN.",
+                    ["The whole save comes to Your saves, named after the trainer.",
+                     "The console shows a message and keeps its save as it was."])
+        entry = saves.entry(chosen["file"]) if chosen["file"] else None
+        if entry is None:
+            return "", []
+        return ("On the console: Mystery Gift, Wonder Cards, Friend, then POKELDN. Back its save up first.",
+                [f"{entry.name} replaces the console's save.",
+                 "The console checks every part, loads it and saves; anything short of that keeps its save.",
+                 "Then choose CONTINUE on the title screen."])
 
     async def select_native_build(self, gift):
         loop = asyncio.get_running_loop()

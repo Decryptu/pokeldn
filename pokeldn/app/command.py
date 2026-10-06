@@ -79,7 +79,10 @@ def build(tool: Tool, values: dict, extra: dict, settings, stamp: str | None = N
         args.append(arg)
     for field in tool.fields:
         if applies(field, tool, values):
-            args += _args(field, value_of(field, values), tool)
+            items = _args(field, value_of(field, values), tool)
+            if field.kind == "builder":     # a backup's file is named after the run
+                items = [item.replace("{stamp}", stamp) for item in items]
+            args += items
     known = accepted(tool.script)
     if "--keys" in known and "--keys" not in args:
         args += ["--keys", os.path.expanduser(settings.keys)]

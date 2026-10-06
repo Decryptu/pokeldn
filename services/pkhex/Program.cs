@@ -35,6 +35,9 @@ while (Console.ReadLine() is { } line)
             "gift" => Gift(Convert.FromBase64String((string)request["data"]!)),
             "events" => Events(),
             "event" => Event(game, request),
+            "sav_read" => SaveRead(game, request),
+            "sav_box" => SaveBox(game, request),
+            "sav_edit" => SaveEdit(game, request),
             var other => throw new ArgumentException($"unknown command {other}"),
         };
         reply["ok"] = true;
@@ -710,6 +713,105 @@ JsonObject Gift(byte[] data)
     else if (card.CardType != WC8.GiftType.BP)
         throw new InvalidDataException("Supported WC8 gifts are Pokemon, bag items, BP, clothing and money.");
     return new JsonObject { ["valid"] = true };
+}
+
+// A FireRed/LeafGreen save: its trainer, party and box contents. Sector checksums are checked by
+// pokeldn.frlg.save.sav, the same test the game runs at load; PKHeX's own note is reported beside it.
+SAV3FRLG LoadSave(JsonObject request)
+{
+    var data = Convert.FromBase64String((string)request["data"]!);
+    return SaveUtil.GetSaveFile(new Memory<byte>(data), "") as SAV3FRLG
+           ?? throw new InvalidDataException("This is not a FireRed or LeafGreen save PKHeX can read.");
+}
+
+JsonObject SaveRead(Game game, JsonObject request)
+{
+    var sav = LoadSave(request);
+    var party = new JsonArray();
+    foreach (var pk in sav.PartyData)
+        party.Add(Describe(game, pk, new LegalityAnalysis(pk)));
+    var boxes = new JsonArray();
+    for (var b = 0; b < sav.BoxCount; b++)
+    {
+        var mons = new JsonArray();
+        var slots = sav.GetBoxData(b);
+        for (var i = 0; i < slots.Length; i++)
+            if (slots[i].Species != 0)
+                mons.Add(new JsonObject { ["slot"] = i, ["species_id"] = slots[i].Species,
+                                          ["species"] = strings.specieslist[slots[i].Species],
+                                          ["level"] = slots[i].CurrentLevel, ["shiny"] = slots[i].IsShiny,
+                                          ["egg"] = slots[i].IsEgg, ["nickname"] = slots[i].Nickname });
+        boxes.Add(new JsonObject { ["name"] = sav.GetBoxName(b), ["mons"] = mons });
+    }
+    return new JsonObject
+    {
+        ["name"] = sav.OT, ["gender"] = sav.Gender, ["trainer_id"] = sav.DisplayTID,
+        ["secret_id"] = sav.DisplaySID, ["hours"] = sav.PlayedHours, ["minutes"] = sav.PlayedMinutes,
+        ["money"] = sav.Money, ["coins"] = sav.Coin, ["max_money"] = sav.MaxMoney,
+        ["max_coins"] = sav.MaxCoins, ["badges"] = System.Numerics.BitOperations.PopCount((uint)sav.Badges),
+        ["seen"] = sav.SeenCount, ["caught"] = sav.CaughtCount, ["japanese"] = sav.Japanese,
+        ["checksum_note"] = sav.ChecksumsValid ? "" : sav.ChecksumInfo.Trim(),
+        ["party"] = party, ["boxes"] = boxes,
+    };
+}
+
+// One box's Pokemon with PKHeX's legality verdict: seconds for a full box, so the app asks per box.
+JsonObject SaveBox(Game game, JsonObject request)
+{
+    var sav = LoadSave(request);
+    var mons = new JsonArray();
+    foreach (var pk in sav.GetBoxData((int)request["box"]!))
+        mons.Add(pk.Species == 0 ? null : Describe(game, pk, new LegalityAnalysis(pk)));
+    return new JsonObject { ["mons"] = mons };
+}
+
+// Trainer fields, then the party as listed: {"keep": n} for the save's own slot n, {"data": PK3} for a
+// Pokemon the app built. Written back through PKHeX, which recomputes every sector checksum.
+JsonObject SaveEdit(Game game, JsonObject request)
+{
+    var sav = LoadSave(request);
+    if (request["trainer"] is JsonObject trainer)
+        foreach (var (name, value) in trainer)
+            switch (name)
+            {
+                case "name":
+                    var ot = ((string)value!).Trim();
+                    if (ot.Length == 0 || ot.Length > (sav.Japanese ? 5 : 7))
+                        throw new ArgumentException($"A trainer name is 1 to {(sav.Japanese ? 5 : 7)} characters.");
+                    sav.OT = ot;
+                    break;
+                case "gender": sav.Gender = checked((byte)(int)value!); break;
+                case "money": sav.Money = Math.Min(checked((uint)(long)value!), (uint)sav.MaxMoney); break;
+                case "coins": sav.Coin = Math.Min(checked((uint)(long)value!), (uint)sav.MaxCoins); break;
+                default: throw new ArgumentException($"Unsupported edit {name}.");
+            }
+    if (request["party"] is JsonArray wanted)
+    {
+        var old = sav.PartyData;
+        var party = new List<PKM>();
+        foreach (var slot in wanted)
+        {
+            if (slot is not JsonObject o)
+                continue;
+            if (o["keep"] is { } keep)
+                party.Add(old[(int)keep]);
+            else
+            {
+                var pk = EntityFormat.GetFromBytes(Convert.FromBase64String((string)o["data"]!), EntityContext.Gen3) as PK3
+                         ?? throw new InvalidDataException("A party Pokemon is not a Gen 3 Pokemon.");
+                if (!pk.ChecksumValid)
+                    throw new InvalidDataException("A party Pokemon's checksum is invalid.");
+                pk.ResetPartyStats();
+                party.Add(pk);
+            }
+        }
+        if (party.Count is 0 or > 6)
+            throw new ArgumentException("A party holds one to six Pokemon.");
+        sav.PartyData = party;
+    }
+    var reply = SaveRead(game, new JsonObject { ["data"] = Convert.ToBase64String(sav.Write(default).Span) });
+    reply["data"] = Convert.ToBase64String(sav.Write(default).Span);
+    return reply;
 }
 
 JsonObject Describe(Game game, PKM pk, LegalityAnalysis la)

@@ -422,6 +422,88 @@ and prints what moved since that console's last one; `tools/frlg/game_data_read.
 counter is evidence only as a difference on the same card flag id. The ledger names every word id
 the French Easy Chat table lacks.
 
+## Save backup and restore
+
+A Wonder Cards, Friend session copies the console's whole 128 KiB save chip to the host, or writes a
+`.sav` onto it and makes the game load and save it. No card is sent and none is replaced. The two
+payloads, `asm/save-backup.s` and `asm/save-restore.s`, are ported from the GB-Link Team's
+`cards/savebackup.s` and `cards/saverestore.s` (`GB-Link/GB-Link-Switch-LDN`, GPL-3.0); the hosts are
+`pokeldn.frlg.gift.save_transfer` and `bin/frlg_mg_host.py --save-backup FILE` / `--save-restore FILE`.
+The app runs both from the Mystery Gift tool's Your save tab ([Your saves](gui.md#your-saves)).
+
+Both run on all twelve cartridges. Two build addresses are patched into the payloads; the rest of
+the save layout is shared ([Save backup and restore](frlg_rom_map.md#save-backup-and-restore)).
+
+### The token coding
+
+Both directions carry chip bytes as tokens: a byte `n < 0x80` is followed by `n + 1` literal bytes;
+a byte `n >= 0x80` by one byte repeated `n - 0x80 + 3` times. A run of three or more is taken whole,
+at most 130; a literal stretch is at most 128. A save is mostly `0x00` and `0xFF` runs.
+
+### Backup
+
+The client script repeats `CLI_LOAD_TOSS_RESPONSE, CLI_RUN_BUFFER_SCRIPT, CLI_SEND_LOADED` up to 32
+times per script, then asks for the next script; the host sends as many passes as the rest should
+take at the pace so far, plus one. Each pass sends up to 1 KiB of tokens for at most 8 KiB of the chip,
+never across the 64 KiB bank boundary. The chip offset lives in `client->param` as
+`0x5A << 24 | offset` [mystery_gift_client.c:276]; a `param` without `0x5A` is the session's first pass,
+which starts at the header word `first`.
+
+| payload word | offset | value |
+|---|---|---|
+| `first` | `0x004` | the chip offset the first pass starts at |
+| `send_queue` | `0x008` | `&gRfu.sendQueue.count` |
+
+A pass stages its stretch into `gDecompressionBuffer + 0x800`, `0x800` bytes a frame (returning 0),
+then compresses it into `gDecompressionBuffer + 0x400` and points `link.sendBuffer` (`param + 0x3C`)
+and `link.sendSize` (`param + 0x34`) at the message. A pass returns 0 while `gRfu.sendQueue.count` is
+not zero: a lost fragment is queued again on top of each frame's send, and the 40-command queue
+drains only while nothing new is sent.
+
+The session ends on `CLI_MSG_BUFFER_FAILURE` after a 64-byte message, so the console shows it and
+does not save [mystery_gift_menu.c:1379]. A backup cut short is kept on the host by game code and
+trainer id; the next backup of that console sets `first` to where it stopped.
+
+### Restore
+
+1. The first message is the whole 620-byte image. `install` copies it to `gDecompressionBuffer + 0x400`,
+   past the 1 KiB each message overwrites, and answers with the 12-byte footers (id, checksum,
+   signature, counter at `+0xFF4`) of the 28 slot sectors.
+2. The host finds the chip's newest whole slot from the footers, as `GetSaveValidStatus` would, and
+   plans the writes: the file's loaded copy into the other slot with counter `newest + 1`, then
+   sectors 28 to 31 (Hall of Fame, Trainer Tower) as the file has them.
+3. The slot being replaced still loads while its 14 ids pass, whatever their counters, so a
+   half-written slot could be taken. The plan erases that slot's id-0 sector first and writes the new
+   id 0 last: until the copy is whole the slot lacks an id and the chip's own copy loads.
+4. Each later message starts with `b RESIDENT + 4` (`0xEA0000FF`), then an op. `OP_DATA` (1) carries
+   the sector, a write flag, a u16 offset, a u16 token length and tokens that fill a 4 KiB staging
+   buffer; the last message of a sector writes it with `swi 0x48` and reads it back through the
+   window. A sector that differs, or tokens that overflow the buffer, set a bit in the fail mask; the
+   host waits for that report before the next sector.
+5. `OP_FINISH` (2) calls `LoadGameSave(SAVE_NORMAL)` when no sector failed [save.c:803] and reports the
+   fail mask and the load result. With `SAVE_STATUS_OK` the session ends on
+   `CLI_MSG_BUFFER_SUCCESS`, and the console saves the loaded game into the slot its old copy held;
+   anything else ends on `CLI_MSG_BUFFER_FAILURE` and the console keeps the save it had.
+
+| payload word | offset | value |
+|---|---|---|
+| `b install` | `0x000` | the first message's entry |
+| `b entry` | `0x004` | every later message's entry, at `gDecompressionBuffer + 0x404` |
+| `load_game_save` | `0x008` | `LoadGameSave \| 1` |
+
+The host refuses a save whose loaded copy is not whole, and a save of the other layout: Japanese
+SaveBlock1 is 40 bytes shorter, which a zero-filled sector does not show in its checksum, so the
+layout is read from the language byte (`+0x12`) of the player's own Pokemon, those whose OT ID is the
+trainer's. A refusal writes nothing.
+
+### What is measured
+
+Offline, against the scripted console (`tests/test_save_transfer.py`): the backup returns the chip
+byte for byte on French FireRed, English LeafGreen and Japanese FireRed; a backup cut after 40 KB
+resumes and completes; a restore leaves the file's loaded copy as the chip's newest, the extra
+sectors equal to the file's and the console's old copy whole; a restore cut after eight sectors
+leaves the console's own copy loading. Neither direction has run on retail hardware.
+
 ## Authoring gifts
 
 `pokeldn.frlg.gift.gift_composer` builds cards and deliveryman scripts from immutable `WonderGift`

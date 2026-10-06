@@ -116,6 +116,16 @@ class Build:
                 "move_object_to": self.move_object_to | 1, "remove_object": self.remove_object | 1,
                 **self.ewram}
 
+    @property
+    def load_game_save(self):
+        """LoadGameSave [decomp:src/save.c:803], without the THUMB bit."""
+        return SAVE_TRANSFER[self.game_code][0]
+
+    @property
+    def rfu_send_queue(self):
+        """gRfu.sendQueue.count, a u8 [decomp:src/link_rfu_2.c:3131]."""
+        return SAVE_TRANSFER[self.game_code][1]
+
     def callable_function(self, name):
         """-> the THUMB pointer for one of `callable`, by the decomp's name, case-insensitively."""
         for known, address in self.callable.items():
@@ -797,6 +807,17 @@ BPGJ = Build(
         "pal_faded": 0x02037908,
         "overlay_pal": 0x0203790A,
         "special_var_8000": 0x02036FE8}))
+
+# (LoadGameSave, gRfu + 0x8D2): the English decomp build's code matched on every cartridge, `bl` and
+# literal pools masked [docs/frlg_rom_map.md, Save backup and restore].
+SAVE_TRANSFER = MappingProxyType({
+    "BPRE": (0x080DDBF4, 0x03005E62), "BPGE": (0x080DDBC8, 0x03005E62),
+    "BPRF": (0x080DDFD4, 0x03005DB2), "BPGF": (0x080DDFA8, 0x03005DB2),
+    "BPRD": (0x080DDF14, 0x03005DB2), "BPGD": (0x080DDEE8, 0x03005DB2),
+    "BPRI": (0x080DDF14, 0x03005DB2), "BPGI": (0x080DDEE8, 0x03005DB2),
+    "BPRS": (0x080DDFFC, 0x03005DB2), "BPGS": (0x080DDFD0, 0x03005DB2),
+    "BPRJ": (0x080DED68, 0x03005DF2), "BPGJ": (0x080DED3C, 0x03005DF2),
+})
 
 BUILDS = MappingProxyType({build.game_code: build for build in (BPRF, BPGF, BPRE, BPGE, BPRS, BPGS, BPRD, BPGD, BPRI, BPGI, BPRJ, BPGJ)})
 DEFAULT = BPRF

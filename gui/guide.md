@@ -80,7 +80,7 @@ it is legal before you offer it. An illegal Pokemon can crash the other game whe
 
 ## Mystery Gift
 
-Each Mystery Gift tool starts with three choices, four on Sword/Shield. Use a preset sends a ready-made gift. On
+Each Mystery Gift tool starts with four choices. Use a preset sends a ready-made gift. On
 Sword/Shield, Official events lists real event cards (Pokemon, items, clothing, Battle Points) with
 a search box. Build your
 own opens a form: on FireRed/LeafGreen a Wonder Card with its text, who hands it over and what it
@@ -109,6 +109,19 @@ console first; code that would hang the menu is refused. Native code can change 
 its save. Send only code whose source and behavior you have checked.
 
 Save gift file stores the selected gift for reuse or sharing. It works without a board.
+
+On FireRed/LeafGreen, Your save copies the whole save from the Switch to this computer, or puts one
+back. Back up from the Switch leaves the console's save as it was; the copy appears in Your saves,
+named after the trainer. Put a save on the Switch writes the chosen save beside the console's own;
+the console checks every part, loads it and saves, and keeps its old save if anything goes wrong.
+Back the console up first. A restore waits until PKHeX finds the whole party legal, or until you turn
+on Restore anyway.
+
+Your saves are kept in `Documents/pokeldn/Saves`. Rename one to tell it apart, export it as a `.sav`
+for an emulator or PKHeX, or add a `.sav` with + or by dropping it on the card. View and edit shows
+the trainer, the party and the PC boxes: change the name, money or coins, reorder or remove party
+Pokemon, add one built for this save's trainer, and check a box's legality. Keep as a new save adds
+the result beside the original, which stays unchanged.
 
 ## When a run fails
 

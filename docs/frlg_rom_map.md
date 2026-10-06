@@ -364,6 +364,30 @@ two is `VarGet`'s body.
 The call veneers are `bx rN` plus alignment, four bytes each: r0 0x081E2224, r1 0x081E2228 and r3
 0x081E2230 measured, so 0x081E2234 is `_call_via_r4` and 0x081E223C `_call_via_r6`.
 
+## Save backup and restore
+
+`LoadGameSave` [decomp:src/save.c:803] and `gRfu.sendQueue.count` [link_rfu_2.c:3131] on every
+cartridge, matched to the English revision 0x0A ELF with `bl` targets and literal-pool words masked.
+`LoadGameSave` opens `push {r4-r6, lr}; lsls r0, r0, #24` (`70 b5 00 06`) and pools
+`gDecompressionBuffer`, `0x0201C000` on all twelve. The queue count is read by a 12-byte leaf,
+`ldr r0, =gRfu; ldr r1, =0x8D2; adds r0, r0, r1; ldrb r0, [r0]; bx lr`, one copy per cartridge.
+
+| cartridge | `LoadGameSave` | `gRfu` | `gRfu.sendQueue.count` |
+|---|---|---|---|
+| `BPRE` | `0x080DDBF4` | `0x03005590` | `0x03005E62` |
+| `BPGE` | `0x080DDBC8` | `0x03005590` | `0x03005E62` |
+| `BPRF` | `0x080DDFD4` | `0x030054E0` | `0x03005DB2` |
+| `BPGF` | `0x080DDFA8` | `0x030054E0` | `0x03005DB2` |
+| `BPRD`, `BPRI` | `0x080DDF14` | `0x030054E0` | `0x03005DB2` |
+| `BPGD`, `BPGI` | `0x080DDEE8` | `0x030054E0` | `0x03005DB2` |
+| `BPRS` | `0x080DDFFC` | `0x030054E0` | `0x03005DB2` |
+| `BPGS` | `0x080DDFD0` | `0x030054E0` | `0x03005DB2` |
+| `BPRJ` | `0x080DED68` | `0x03005520` | `0x03005DF2` |
+| `BPGJ` | `0x080DED3C` | `0x03005520` | `0x03005DF2` |
+
+`sSaveSlotLayout` agrees on all twelve except sector id 4: 3816 bytes on the Latin cartridges,
+3776 on the Japanese ones.
+
 # Reading the console's scripts
 
 With `gScriptCmdTable` measured and operand widths generated from the decomp's macros
