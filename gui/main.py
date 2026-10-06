@@ -1,5 +1,6 @@
 import os
 import sys
+import threading
 
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
@@ -16,7 +17,7 @@ os.environ.pop("POKELDN_RADIO", None)
 
 import flet as ft  # noqa: E402
 
-from gui import drop, screen, theme as t  # noqa: E402
+from gui import drop, flet_client, screen, theme as t  # noqa: E402
 from gui.app import App  # noqa: E402
 from pokeldn import __version__  # noqa: E402
 from pokeldn.app.paths import ROOT  # noqa: E402
@@ -116,8 +117,17 @@ def main(page: ft.Page) -> None:
         render_rail()
         page.update()
     app.update_listeners.append(updated)
+    if getattr(sys, "frozen", False):
+        threading.Thread(target=prune_viewers, daemon=True).start()
     if app.settings.check_updates:
         app.check_update()
+
+
+def prune_viewers() -> None:
+    try:
+        flet_client.prune_cache()
+    except Exception:   # housekeeping: a locked or vanished folder waits for the next launch
+        pass
 
 
 def offer_update(app: App) -> None:

@@ -34,6 +34,9 @@ def check() -> None:
     from pokeldn.frlg.rom import custom_code
     # mov r0, #1; bx lr: Check offline runs it under the bundled Unicorn.
     assert custom_code.check(bytes.fromhex("0100a0e31eff2fe1")).frames == 1
+    import unicorn
+    # scripts/build_unicorn.py's library: ARM and ARM64 only.
+    assert unicorn.uc_arch_supported(unicorn.UC_ARCH_ARM64) and not unicorn.uc_arch_supported(unicorn.UC_ARCH_X86)
     if sys.platform.startswith("linux"):
         import flet_desktop
         import tarfile

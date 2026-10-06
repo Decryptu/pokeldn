@@ -100,6 +100,8 @@ jobs:
           sudo apt-get install -y $(python -c "import json; print(' '.join(json.load(open('flet.json'))['linux_dependencies']))")
       - name: Build the Flet client
         run: python scripts/build_client.py
+      - name: Build the ARM-only Unicorn
+        run: python scripts/build_unicorn.py
       - name: Pack
         run: python scripts/pack_app.py
       - name: Verify the frozen app (macOS)

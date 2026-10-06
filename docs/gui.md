@@ -228,11 +228,12 @@ idf.py -B build/esp32c6 -D SDKCONFIG="$PWD/build/esp32c6/sdkconfig" build
 idf.py -B build/esp32c6 merge-bin -o "$POKELDN_IMAGES/pokeldn-radio-c6.bin"
 cd ../..
 python scripts/build_client.py
+python scripts/build_unicorn.py
 python scripts/pack_app.py
 ```
 
-The absolute output paths keep the images in `gui/firmware`. The packer requires all four images
-and the client from `scripts/build_client.py`; the frozen app check verifies all are included and
+The absolute output paths keep the images in `gui/firmware`. The packer requires all four images,
+the client from `scripts/build_client.py` and the Unicorn from `scripts/build_unicorn.py` (needs CMake); the frozen app check verifies all are included and
 that the bundled client carries `flet_drop`. The release workflow builds each target separately
 and supplies all four images to every desktop packer.
 
@@ -255,6 +256,7 @@ packer refuses `--onedir` on macOS; `scripts/pack_app.py` passes it to PyInstall
 | part | size | what keeps it small |
 |---|---|---|
 | Flet viewer (`scripts/build_client.py`) | 33 MB | no optional Flet extension (video, maps, camera, webview and the rest; the app draws core controls only), and on macOS only the build machine's architecture |
+| Unicorn (`scripts/build_unicorn.py`) | 3 MB | the installed release built from source with the ARM and ARM64 engines only; the wheel's library carries every CPU family (16 MB) |
 | PKHeX helper (`services/pkhex`) | 18 MB | partial trimming: framework code PKHeX.Core never reaches is dropped |
 | Python | | the packer excludes Flet's web server, auth and image extras (`flet_web`, FastAPI, Uvicorn, Pydantic, httpx, Pillow) and pytest |
 
@@ -264,8 +266,10 @@ back on (`JsonSerializerIsReflectionEnabledByDefault`). Without it every command
 `dart run rive_native:setup` on every build; with Rive gone that step fails, so the client build
 replaces it with `exit 0`.
 
-The viewer is unpacked once per build into `~/.flet/client/flet-desktop-full-<version>-<fingerprint>`;
-Flet never removes an older build's folder.
+The viewer is unpacked once per build into `~/.flet/client/flet-desktop-full-<version>-<fingerprint>`,
+and Flet never removes an older build's folder. At each launch the frozen app marks its own folder
+with `pokeldn-drop` and removes the other folders carrying that marker or, from earlier macOS builds,
+a `pokeldn.app` (`gui/flet_client.py`); another Flet app's viewer stays.
 
 Flet 1.0.2's packer re-signs the macOS viewer without its existing entitlements. The packaging
 wrapper in `scripts/pack_flet.py` retains them when signing the viewer after its metadata changes.
@@ -280,8 +284,8 @@ sets `FLET_LINUX_DISTRO` to the bundled viewer's build: Flet otherwise picks a v
 downloads one the bundle does not carry. The frozen check asserts both on Linux.
 
 The app bundles Unicorn for Check offline. It loads its architecture modules by name, so the
-packer collects its submodules and adds the platform's library to `unicorn/lib` itself: PyInstaller's
-library patterns match `lib*.so`, not Linux's `libunicorn.so.2`. PyInstaller's Windows bootloader
+packer collects its submodules and adds the ARM-only library to `unicorn/lib` itself, under the wheel's
+file names; the frozen check asserts ARM64 is there and x86 is not. PyInstaller's Windows bootloader
 is linked with Control Flow Guard (DllCharacteristics `0xC160`), and Unicorn ends a CFG process
 with `0xC0000409` on its first `uc_mem_map`
 ([unicorn#2281](https://github.com/unicorn-engine/unicorn/issues/2281)); a 64 MiB thread stack

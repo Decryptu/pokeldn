@@ -566,3 +566,20 @@ def test_the_boost_settings_leave_with_the_last_unticked_boost(monkeypatch):
     assert frlg_builder.KEEP.label in texts(builder.presets())
     builder._toggle(preset, member.key)
     assert frlg_builder.KEEP.label not in texts(builder.presets())
+
+
+def test_viewer_cleanup_removes_only_this_apps_older_viewers(tmp_path, monkeypatch):
+    import flet_desktop
+    from gui import flet_client
+    folders = {name: tmp_path / name for name in ("current", "marked", "legacy-mac", "other-app", "vanilla")}
+    for folder in folders.values():
+        folder.mkdir()
+    (folders["marked"] / flet_client.MARKER).touch()
+    (folders["legacy-mac"] / "pokeldn.app").mkdir()
+    (folders["other-app"] / "Other.app").mkdir()
+    (folders["vanilla"] / "Flet.app").mkdir()
+    monkeypatch.setattr(flet_desktop, "ensure_client_cached", lambda: folders["current"])
+    removed = flet_client.prune_cache()
+    assert sorted(p.name for p in removed) == ["legacy-mac", "marked"]
+    assert sorted(p.name for p in tmp_path.iterdir()) == ["current", "other-app", "vanilla"]
+    assert (folders["current"] / flet_client.MARKER).is_file()

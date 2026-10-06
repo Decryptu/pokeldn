@@ -20,6 +20,8 @@ FIRMWARE_S3 = ROOT / "gui" / "firmware" / "pokeldn-radio-s3.bin"
 FIRMWARE_C3 = ROOT / "gui" / "firmware" / "pokeldn-radio-c3.bin"
 FIRMWARE_C6 = ROOT / "gui" / "firmware" / "pokeldn-radio-c6.bin"
 APP_ID = "io.github.decryptu.pokeldn"
+UNICORN = ROOT / "gui" / "unicorn"
+MARKER_UNICORN = "pokeldn-unicorn"
 
 
 def runtime_id() -> str:
@@ -75,6 +77,9 @@ def main() -> int:
     if not (client / MARKER).is_file():
         raise SystemExit("Missing the Flet client that takes file drops. Build it with "
                          "python scripts/build_client.py (needs Flutter) before packing.")
+    if not (UNICORN / MARKER_UNICORN).is_file():
+        raise SystemExit("Missing the ARM-only Unicorn. Build it with python scripts/build_unicorn.py "
+                         "(needs CMake) before packing.")
     if importlib.util.find_spec("PyInstaller") is None:
         raise SystemExit("Install desktop build dependencies: python -m pip install -r gui/requirements.txt")
     service = ROOT / "services" / "pkhex"
@@ -104,10 +109,8 @@ def main() -> int:
         data += [(stage / "gui/guide.md", "gui"), (executable, "services/pkhex/dist")]
         data += [(stage / "LICENSE", "."), (stage / "vendor/LDN/LICENSE", "vendor/LDN")]
         data += [(path, "gui/firmware") for path in firmware]
-        # PyInstaller's library patterns miss Linux's libunicorn.so.2; unicorn looks in its own lib/.
-        import unicorn
-        data += [(path, "unicorn/lib") for path in (Path(unicorn.__file__).parent / "lib").iterdir()
-                 if path.suffix in (".dll", ".dylib") or ".so" in path.suffixes]
+        # scripts/build_unicorn.py's ARM-only library, not the wheel's; unicorn looks in its own lib/.
+        data += [(path, "unicorn/lib") for path in (UNICORN / "lib").iterdir()]
         args = [sys.executable, str(ROOT / "scripts/pack_flet.py"), "pack", str(ROOT / "gui" / "main.py"),
                 "--name", "pokeldn", "-y",
                 "--distpath", str(ROOT / "dist"), "--product-name", "pokeldn",
