@@ -1,15 +1,22 @@
-# pokeldn 0.12.4
+# pokeldn 0.13.0
 
 This desktop app trades with seven Pokemon game families on a Switch or Switch 2
 through an ESP32 radio connected by USB. Nothing is installed on the console.
 
 ## What is new
 
-- Japanese FireRed and LeafGreen now find pokeldn on the Mystery Gift Friend screen, for Wonder
-  Cards and Wonder News. On the Mystery Gift tool's Advanced tab, set Trainer language to Japanese;
-  console code built for a Japanese cartridge needs nothing more.
+- A smaller download: the macOS app goes from 51 MB to 41 MB; the Windows and Linux apps drop the
+  same unused parts.
+- Legends Z-A hosting: when the host closes on its own (a timed close, the time limit or Stop) while
+  the console sits on its trade box, the console now shows "Your trading partner chose to quit
+  trading" and returns to Link Play, instead of Error 6.
+- Scarlet/Violet hosting: if a console takes a seat but never opens the trade, the session log names
+  the step it is waiting on, to attach to an issue.
 
-The firmware is unchanged (1.4.0); a board flashed by 0.7.0 or later needs no reflash.
+Firmware 1.5.0: ESP32-S3, C3 and C6 boards keep reading the app's commands under heavy traffic
+(an S3 could stop listening for up to a minute), and the XIAO ESP32S3's yellow LED shows the
+board's state. Reflash S3, C3 and C6 boards from the Board page; a classic ESP32 on 1.4.0 needs no
+reflash.
 
 pokeldn is an unofficial fan project, not affiliated with Nintendo or The Pokemon Company. It is not
 meant for commercial or promotional use; see the License section of the README.
