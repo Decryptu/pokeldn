@@ -118,9 +118,11 @@ packet ids) and a game-level RFU policy; raising the LDN participant limit is no
 
 ## Unresolved
 
-- Whether the console needs the fifteen-second close grace is unmeasured
-  (`HostTradeTiming.post_client_close_grace_frames`); it spans the console's fade and warp after
-  `READY_CLOSE_LINK`.
+- Whether the console needs the host's link during its fade and warp after `READY_CLOSE_LINK`. In
+  12 retail FireRed host trades the console sent `D` 0.1 s after its first `READY_CLOSE_LINK`, kept
+  sending Pia traffic and left LDN 0.5 to 4.0 s after it, so the fifteen-second close grace
+  (`HostTradeTiming.post_client_close_grace_frames`) never ran to its end. `--close-grace SECONDS`
+  shortens it; a trade closed with a grace shorter than the console's leave is the measurement.
 
 ## Source map
 

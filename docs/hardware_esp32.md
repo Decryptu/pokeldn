@@ -843,8 +843,6 @@ misses a given attempt is unknown.
   Go and LeafGreen trades complete with it. Two sniffed Z-A trades retried 11.9% of the board's
   frames and 11.5% of the console's without QoS data, and 1.3% of each with it; nothing attributes
   the difference to the setting.
-- ESP32-S3 throughput, and S3 trades in the host role or with titles other than FireRed, are
-  unmeasured on a local board.
 - A Scarlet console joined to the board's access point once acknowledged the announcement and sent
   no port 2 join; the gates that can hold it are in [the Scarlet page](sv.md#unresolved).
 - What in the access point's receive path misses 1 to 22% of a station's OFDM first copies, and ACKs

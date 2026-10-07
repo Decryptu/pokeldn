@@ -998,10 +998,11 @@ lets `bin/sv_join.py` resume scanning ([Ending a run](architecture.md#ending-a-r
   relay slot of kind 1 that only a type 7 creates (`0x1e51c10`); a leave event of the master's or the
   console's own id clears that slot (`0x12fbc68`, `0x12fbc84`). The 0x80 window acknowledges the
   announcement before the game's poller reads it, so the acknowledgement separates neither. The one
-  recorded instance predates the host's identity retries. In a host log, a console acknowledging the
-  host's identity records below 47 ([The first record on a stream carries
-  INITIALIZED](#the-first-record-on-a-stream-carries-initialized)) is the state-1 gate; an
-  acknowledgement to 47 with an empty mask and no `DATA 0x7c:2` is state 4.
+  recorded instance predates the host's identity retries. `bin/sv_host.py --announce` names the gate
+  20 s after its announcement when no `0x7c` port 2 message has arrived: a line ending `the state-1
+  gate` lists the identity records still unacknowledged ([The first record on a stream carries
+  INITIALIZED](#the-first-record-on-a-stream-carries-initialized)), one ending `the state-4 gate`
+  has all of them acknowledged; the capture keeps it as a `port2_gate` row.
 - What a console does between its player backing out and its first departure message: none of the
   captures marks the button press. In one joiner seat the cancel `8000040100` preceded the type 7
   by 1.5 s.

@@ -106,6 +106,10 @@ def build_parser(file_config=None, *, shared_path=None, local_path=None):
         "--link-player-idle-frames", type=int, default=None, metavar="N",
         help=("diagnostic: quiet console polls after the LinkPlayer exchange "
               "before the leader starts the trainer-card exchange itself"))
+    parser.add_argument(
+        "--close-grace", type=float, default=None, metavar="SECONDS",
+        help=("diagnostic: how long the host keeps the link up after the console confirms it "
+              "left the trade room (default 15; docs/frlg_host.md, Unresolved)"))
     host_cli.add_host_config_arguments(
         parser, shared_path=shared_path, local_path=local_path)
     host_cli.add_host_arguments(
@@ -153,6 +157,8 @@ def build_run_config(parser, args):
             trades=args.trades, anim_delay=args.anim_delay,
             player_ids_repeat_frames=args.player_ids_repeat_frames,
             link_player_idle_frames=args.link_player_idle_frames,
+            close_grace_frames=(None if args.close_grace is None
+                                else max(1, round(args.close_grace * 60))),
             trust_pia=args.trust_pia)
         return configmod.TradeRunConfig(profile, plan, ldn, options)
     except ValueError as exc:

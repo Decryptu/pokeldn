@@ -62,6 +62,8 @@ HOST_STATION_INDEX = 0
 CONSOLE_STATION_INDEX = 1
 JOINER_BITMAP = 0x02
 NET_REPEAT_SECONDS = 0.5
+# BoxTrade state 4 polls 15 s for a master slot (0x1e51c10); past that the console is held.
+PORT2_GATE_SECONDS = 20
 SESSION_JOIN_REQUEST = 0
 RTT_REQUEST = 0
 RTT_RESPONSE = 1
@@ -445,6 +447,8 @@ def main():
     identity_window = reliable5.SendWindow(0.25)
     last_ack = {}
     sent_once = set()           # (src_ip, index of --send) already sent
+    announced_at = {}           # src_ip -> when the type-7 announcement went out
+    port2_joined, gate_reported = set(), set()
     counts = {}
     advertised_players = [1]
 
@@ -522,6 +526,23 @@ def main():
             for (ip, _, _), seq, body in identity_window.due(now):
                 if ip in station_ids:
                     send_record_bundle(ip, [(seq, body)], retry=True)
+            for ip, at in announced_at.items():
+                if (ip in port2_joined or ip in gate_reported or ip not in current_ips
+                        or now - at < PORT2_GATE_SECONDS):
+                    continue
+                gate_reported.add(ip)
+                stream = (ip, PROTO_STREAM_BROADCAST_RELIABLE, 0)
+                unacked = sorted(seq for s_, seq in identity_window.pending if s_ == stream)
+                # Which BoxTrade gate holds the console (docs/sv.md, Unresolved).
+                if unacked:
+                    print(f"[sv] {ip}: no port-2 join {PORT2_GATE_SECONDS} s after the announcement; "
+                          f"identity record(s) {unacked} unacknowledged: the state-1 gate")
+                else:
+                    print(f"[sv] {ip}: no port-2 join {PORT2_GATE_SECONDS} s after the announcement "
+                          f"with every identity record acknowledged (console's 0x81:0 high "
+                          f"{stream_high.get(stream, 0)}): the state-4 gate")
+                record(rec="port2_gate", src=ip, unacked=unacked,
+                       console_identity_high=stream_high.get(stream, 0), t=now)
             players = 1 + len(transport.participants)
             if players != advertised_players[0]:
                 advertised_players[0] = players
@@ -597,6 +618,8 @@ def main():
                 record(rec="out", dst=ip, kind="send-at", protocol=p_, port=port_, seq=seq,
                        hex=pkt.hex(), t=now)
                 print(f"[sv] -> {ip}: data 0x{p_:02x}:{port_} seq {seq} {len(data)}B (scheduled)")
+                if index == "announce":
+                    announced_at[ip] = now
             for ip, due in list(pending_records.items()):
                 if now < due or ip not in station_ids:
                     continue
@@ -913,6 +936,8 @@ def main():
                                         for delay, out_port, payload in stages[src_ip].offer_first():
                                             schedule_trade(args.offer_after_open + delay,
                                                            src_ip, out_port, payload)
+                                if msg.protocol == PROTO_RELIABLE and msg.port == 2:
+                                    port2_joined.add(src_ip)
                                 slot = (port2.parse_join(rm["payload"])
                                         if msg.protocol == PROTO_RELIABLE and msg.port == 2
                                         else None)

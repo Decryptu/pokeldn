@@ -829,7 +829,8 @@ class HostTradeEngine:
                 "Switch confirmed it left the chat; closing now."
                 if self._chat_exiting else
                 "Switch confirmed it left the trade room; keeping peer traffic active "
-                "for 15 seconds before disconnecting.")
+                f"for {self.timing.post_client_close_grace_frames / 60:g} seconds before "
+                "disconnecting.")
 
     def _on_child_block(self, count, data):
         self._child_blocks_landed += 1
@@ -1190,8 +1191,7 @@ class HostTradeEngine:
                 self._close_grace_wait = None
                 self.disconnect_requested = True
                 self.trace.append(("close_grace_complete",))
-                self.info(
-                    "Fifteen-second room-exit buffer complete; closing the RFU session.")
+                self.info("Room-exit grace complete; closing the RFU session.")
         self._close_retry_wait -= 1
         if self._close_retry_wait <= 0:
             for _ in range(self.timing.startup_standby_echo_frames):
