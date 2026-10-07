@@ -1,3 +1,4 @@
+using System.Diagnostics.CodeAnalysis;
 using System.Reflection;
 using System.Text.Json.Nodes;
 using PKHeX.Core;
@@ -609,8 +610,10 @@ JsonObject Paste(Game game, JsonObject request)
     return new JsonObject { ["sets"] = sets };
 }
 
-// PKHeX's Gen 3 event table (internal, read by name: pin the package before renaming it). Japanese
-// distributions are left out: their names do not render on a European cartridge.
+// PKHeX's Gen 3 event table (internal, read by name: pin the package before renaming it; the attribute keeps
+// it through trimming). Japanese distributions are left out: their names do not render on a European cartridge.
+[DynamicDependency(DynamicallyAccessedMemberTypes.PublicFields | DynamicallyAccessedMemberTypes.NonPublicFields,
+    "PKHeX.Core.EncountersWC3", "PKHeX.Core")]
 IEnumerable<EncounterGift3> Gen3Events() =>
     ((EncounterGift3[])typeof(PK3).Assembly.GetType("PKHeX.Core.EncountersWC3")!
         .GetField("Encounter_WC3", BindingFlags.Public | BindingFlags.NonPublic | BindingFlags.Static)!

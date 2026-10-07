@@ -660,3 +660,28 @@ def test_viewer_cleanup_removes_only_this_apps_older_viewers(tmp_path, monkeypat
     assert sorted(p.name for p in removed) == ["legacy-mac", "marked"]
     assert sorted(p.name for p in tmp_path.iterdir()) == ["current", "other-app", "vanilla"]
     assert (folders["current"] / flet_client.MARKER).is_file()
+
+
+# flet_desktop's own extractall passes no filter.
+@pytest.mark.filterwarnings("ignore:Python 3.14 will:DeprecationWarning")
+def test_flet_unpacks_the_xz_viewer_the_packer_writes(tmp_path, monkeypatch):
+    import tarfile
+    import flet_desktop
+    from gui import flet_client
+    bundle = tmp_path / "view" / "Flet.app"
+    bundle.mkdir(parents=True)
+    (bundle / "App").write_bytes(b"package:flet_drop")
+    bin_dir = tmp_path / "bin"
+    bin_dir.mkdir()
+    # scripts/pack_flet.py: xz under the name flet_desktop looks for.
+    with tarfile.open(bin_dir / "flet-macos.tar.gz", "w:xz") as archive:
+        archive.add(bundle, arcname="Flet.app")
+    monkeypatch.setenv("HOME", str(tmp_path / "home"))
+    monkeypatch.setattr(flet_desktop, "get_package_bin_dir", lambda: str(bin_dir))
+    monkeypatch.setattr(flet_desktop, "get_artifact_filename", lambda: "flet-macos.tar.gz")
+    monkeypatch.setattr(flet_desktop, "tarfile", tarfile)
+    with pytest.raises(tarfile.ReadError):
+        flet_desktop.ensure_client_cached()
+    flet_client.read_any_compression()
+    cache = flet_desktop.ensure_client_cached()
+    assert (cache / "Flet.app" / "App").read_bytes() == b"package:flet_drop"

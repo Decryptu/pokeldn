@@ -41,15 +41,33 @@ def platform_excludes():
                 "pycparser.lextab", "pycparser.yacctab",
                 # Flet's web server, auth and raw-image extras; the desktop view uses none of them.
                 "flet_web", "fastapi", "starlette", "uvicorn", "uvloop", "httptools", "watchfiles",
-                "pydantic", "pydantic_core", "httpx", "httpcore", "oauthlib", "yaml", "PIL"]
+                "pydantic", "pydantic_core", "httpx", "httpcore", "oauthlib", "yaml", "PIL",
+                # rich's syntax highlighting, Markdown and tracebacks (Pygments, markdown-it, pydoc): esptool
+                # prints through rich and rich-click and reaches none of them. No code starts processes.
+                "pygments", "rich.syntax", "rich.markdown", "rich.traceback", "rich.__main__",
+                "multiprocessing", "_pydecimal"]
     if sys.platform != "win32":
         excluded += ["serial.tools.list_ports_windows", "serial.serialwin32", "serial.win32",
                      "flet_desktop.win_taskbar", "click._winconsole"]
     if sys.platform != "darwin":
         excluded.append("serial.tools.list_ports_osx")
+    else:
+        # East Asian codecs: macOS Python reads and writes UTF-8 whatever the locale.
+        excluded += ["_multibytecodec", *(f"_codecs_{c}" for c in ("cn", "hk", "iso2022", "jp", "kr", "tw"))]
     if not sys.platform.startswith("linux"):
         excluded.append("serial.tools.list_ports_linux")
     return excluded
+
+
+def strip_local_symbols(app: Path, keep: set[Path]) -> None:
+    """Drops local symbols from the bundle's Mach-O libraries (1 to 2 MB); the exports stay. Never the
+    executable or the PKHeX helper: both carry an archive after their Mach-O image."""
+    for path in app.rglob("*"):
+        if path.is_file() and not path.is_symlink() and path not in keep:
+            with path.open("rb") as f:
+                if f.read(4) not in (b"\xcf\xfa\xed\xfe", b"\xca\xfe\xba\xbe"):
+                    continue
+            subprocess.run(["strip", "-x", str(path)], check=True, capture_output=True)
 
 
 def clear_cfg(exe: Path) -> None:
@@ -144,6 +162,8 @@ def main() -> int:
             info.update(CFBundleShortVersionString=__version__, CFBundleVersion=__version__, LSBackgroundOnly=True)
             with info_path.open("wb") as dest:
                 plistlib.dump(info, dest)
+            strip_local_symbols(expected, {expected / "Contents/MacOS/pokeldn",
+                                           expected / "Contents/Frameworks/services/pkhex/dist" / executable.name})
             subprocess.run(["codesign", "--force", "--deep", "--sign", "-", str(expected)], check=True)
         if result == 0 and sys.platform == "win32":
             clear_cfg(expected / "pokeldn.exe")

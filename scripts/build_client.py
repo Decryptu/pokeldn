@@ -115,7 +115,9 @@ def main() -> int:
     client = SOURCE / "client"
     key = platform_key()
     patch(client)
-    flutter_cmd = ["flutter", "build", key, "--release", f"--build-name={flet}"]
+    # The Dart symbols go to a file beside the build, not into the client (2.6 MB on macOS).
+    flutter_cmd = ["flutter", "build", key, "--release", f"--build-name={flet}",
+                   f"--split-debug-info={client / 'build' / 'dart-symbols'}"]
     subprocess.run(flutter_cmd, cwd=client, check=True, shell=os.name == "nt")
     out = CLIENT / key
     shutil.rmtree(out, ignore_errors=True)

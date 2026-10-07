@@ -20,6 +20,19 @@ def view_path() -> Path | None:
     return out if platform_key() == "macos" else out / "flet"
 
 
+def read_any_compression() -> None:
+    """scripts/pack_flet.py writes the macOS viewer as xz under Flet's .tar.gz name, and flet_desktop
+    1.0.2 opens it with mode "r:gz" (ensure_client_cached); let tarfile detect the compression instead."""
+    import tarfile
+    import types
+    import flet_desktop
+    shim = types.ModuleType("tarfile")
+    shim.__dict__.update(tarfile.__dict__)
+    shim.open = lambda name=None, mode="r", *args, **kwargs: tarfile.open(
+        name, "r:*" if mode == "r:gz" else mode, *args, **kwargs)
+    flet_desktop.tarfile = shim
+
+
 def prune_cache() -> list[Path]:
     """Removes the viewers earlier builds of the frozen app unpacked into ~/.flet/client: Flet unpacks
     one per build and never deletes any. Another Flet app's viewer carries no marker and stays."""

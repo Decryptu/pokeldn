@@ -274,14 +274,20 @@ bootloader.
 
 | part | size | what keeps it small |
 |---|---|---|
-| Flet viewer (`scripts/build_client.py`) | 33 MB | no optional Flet extension (video, maps, camera, webview and the rest; the app draws core controls only), and on macOS only the build machine's architecture |
+| Flet viewer (`scripts/build_client.py`) | 31 MB, 9.4 MB as the macOS archive | no optional Flet extension (video, maps, camera, webview and the rest; the app draws core controls only), on macOS only the build machine's architecture, Dart symbols split out (`--split-debug-info`), and on macOS an xz archive |
 | Unicorn (`scripts/build_unicorn.py`) | 3 MB | the installed release built from source with the ARM and ARM64 engines only; the wheel's library carries every CPU family (16 MB) |
-| PKHeX helper (`services/pkhex`) | 18 MB | partial trimming: framework code PKHeX.Core never reaches is dropped |
-| Python | | the packer excludes Flet's web server, auth and image extras (`flet_web`, FastAPI, Uvicorn, Pydantic, httpx, Pillow) and pytest |
+| PKHeX helper (`services/pkhex`) | 16 MB | full trimming: framework and PKHeX.Core code the helper never reaches is dropped; EventSource, debugger and hot-reload support are off |
+| Python | 8 MB of modules | the packer excludes Flet's web server, auth and image extras (`flet_web`, FastAPI, Uvicorn, Pydantic, httpx, Pillow), pytest, Pygments and rich's syntax, Markdown and traceback modules, `multiprocessing`, `_pydecimal`, and on macOS the East Asian codecs; macOS libraries lose their local symbols (`strip -x`) |
 
 Trimming turns off reflection-based JSON in .NET; the helper's replies need it, so the project turns it
 back on (`JsonSerializerIsReflectionEnabledByDefault`). Without it every command answers
-`JsonTypeInfo metadata for type 'System.String' was not provided`. Flet's macOS project runs
+`JsonTypeInfo metadata for type 'System.String' was not provided`. The Gen 3 event table is internal to
+PKHeX.Core and read by name; a `DynamicDependency` attribute keeps it through trimming.
+
+The macOS packer writes the viewer as xz under Flet's file name `flet-macos.tar.gz` (9.4 MB instead of
+13.6 MB); flet_desktop 1.0.2 opens that file with mode `r:gz`, so the frozen app hands flet_desktop a
+`tarfile` whose `open` detects the compression (`gui/flet_client.py`). The executable and the PKHeX
+helper are never stripped: both carry an archive after their Mach-O image. Flet's macOS project runs
 `dart run rive_native:setup` on every build; with Rive gone that step fails, so the client build
 replaces it with `exit 0`.
 

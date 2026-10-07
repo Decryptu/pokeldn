@@ -11,7 +11,7 @@ from typing import Callable, Optional
 import flet as ft
 
 from gui import theme as t
-from gui.flet_client import view_path
+from gui.flet_client import read_any_compression, view_path
 
 
 def use_client() -> bool:
@@ -20,6 +20,7 @@ def use_client() -> bool:
     if os.environ.get("POKELDN_GUI_WEB"):
         AVAILABLE = False
     elif getattr(sys, "frozen", False):
+        read_any_compression()
         AVAILABLE = True
     elif (path := view_path()) is not None:
         os.environ["FLET_VIEW_PATH"] = str(path)

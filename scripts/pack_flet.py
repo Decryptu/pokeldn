@@ -1,6 +1,5 @@
 #!/usr/bin/env python3
 """Run Flet's packer while preserving the macOS viewer's file-picker permissions."""
-import gzip
 import plistlib
 import shutil
 import subprocess
@@ -26,9 +25,9 @@ def assemble_macos_view(app_path, tar_path):
         subprocess.run(["codesign", "--force", "--sign", "-", "--entitlements", str(path), app_path],
                        check=True)
     subprocess.run(["codesign", "--verify", "--deep", "--strict", app_path], check=True)
-    with open(tar_path, "wb") as raw, gzip.GzipFile(fileobj=raw, mode="wb", mtime=0) as gz:
-        with tarfile.open(fileobj=gz, mode="w") as archive:
-            archive.add(app_path, arcname=Path(app_path).name, filter=normalize_tar_entry)
+    # xz under Flet's .tar.gz name, 30 percent smaller than gzip; gui/flet_client.py lets Flet open it.
+    with tarfile.open(tar_path, "w:xz") as archive:
+        archive.add(app_path, arcname=Path(app_path).name, filter=normalize_tar_entry)
     shutil.rmtree(app_path)
 
 
