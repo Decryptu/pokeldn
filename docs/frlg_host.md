@@ -103,6 +103,11 @@ and derives every view from it:
 - An unexpected participant leave halts output. After a room-close confirmation, a participant that
   disappears from LDN ends the run after a 2 s settle (`HOST_CLOSE_SETTLE_SECONDS`) rather than at
   once; the fifteen-second grace runs to its end only while the participant stays.
+- The grace (`HostTradeTiming.post_client_close_grace_frames`) counts only while the RFU leader is
+  in UNI; the console's `D` moves it to DISCONNECTED (`pokeldn/gba/rfu_leader.py`), and the engine
+  stops ticking. In 13 retail FireRed host trades the console sent `D` 0.1 s after its first
+  `READY_CLOSE_LINK`, kept the Pia transport answered and left LDN 0.5 to 4.0 s after it; the grace
+  never acts on a normal close.
 - Output is written only for a complete received Pokemon; input `.pk3`/`.ek3` files are never
   modified.
 
@@ -115,14 +120,6 @@ or command rows.
 
 The host serves one Switch. More peers need a `HostPeerProtocol` each (own Pia variables, nonces,
 packet ids) and a game-level RFU policy; raising the LDN participant limit is not enough.
-
-## Unresolved
-
-- Whether the console needs the host's link during its fade and warp after `READY_CLOSE_LINK`. In
-  12 retail FireRed host trades the console sent `D` 0.1 s after its first `READY_CLOSE_LINK`, kept
-  sending Pia traffic and left LDN 0.5 to 4.0 s after it, so the fifteen-second close grace
-  (`HostTradeTiming.post_client_close_grace_frames`) never ran to its end. `--close-grace SECONDS`
-  shortens it; a trade closed with a grace shorter than the console's leave is the measurement.
 
 ## Source map
 

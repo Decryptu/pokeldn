@@ -829,7 +829,8 @@ applies. A host that closes the network on a timer after the trade's save, with 
 `bin/za_host.py` hands a seated console the session first ([A host leaving](#a-host-leaving)).
 An emulated Z-A 2.0.2 back on its box answered that handover with the type 10 and the 0x12, showed
 "Your trading partner chose to quit trading. The Link Trade will now end." and returned to Link
-Play with no error (two runs of two). The same handover sent 20 s after the fourth step, while the
+Play with no error (two runs of two); a retail Z-A on its box after a hosted trade showed the
+same message and no error with `--hold-after-trade 5`. The same handover sent 20 s after the fourth step, while the
 console was still in the trade animation, drew "Error Number: 6"; the trade had been saved. The
 console's first preview after a trade came 30 s after its fourth step, so the timed close counts
 from that preview.

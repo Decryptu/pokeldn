@@ -136,7 +136,6 @@ class TradePlan:
     anim_delay: int | None = None
     player_ids_repeat_frames: int | None = None
     link_player_idle_frames: int | None = None
-    close_grace_frames: int | None = None
     trust_pia: bool = False
 
     def __post_init__(self):
@@ -161,10 +160,6 @@ class TradePlan:
                 and (type(self.link_player_idle_frames) is not int
                      or not 0 <= self.link_player_idle_frames <= 600)):
             raise ValueError("link_player_idle_frames must be between 0 and 600")
-        if (self.close_grace_frames is not None
-                and (type(self.close_grace_frames) is not int
-                     or not 1 <= self.close_grace_frames <= 15 * 60)):
-            raise ValueError("close_grace_frames must be between 1 and 900")
         if self.offered_slots is not None:
             if len(self.offered_slots) != self.trades:
                 raise ValueError("offered_slots must contain one slot per trade")

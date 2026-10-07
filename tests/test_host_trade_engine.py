@@ -351,17 +351,8 @@ def test_entry_route_matches_native_and_exit_key_is_one_shot():
     assert h.state == "H_CLOSE"
 
 
-def _engine_from_launcher(argv):
-    import frlg_trade_host
-    parser = frlg_trade_host.build_parser()
-    run = frlg_trade_host.build_run_config(parser, parser.parse_args(["one.pk3", "--slot", "0", *argv]))
-    return HostSession([_mon(1)], plan=run.plan).activity
-
-
-@pytest.mark.parametrize("argv, frames", [((), POST_CLIENT_CLOSE_GRACE_FRAMES),
-                                          (("--close-grace", "1.5"), 90)])
-def test_child_close_confirmation_keeps_peer_traffic_alive_for_the_grace(argv, frames):
-    h = _engine_from_launcher(argv)
+def test_child_close_confirmation_keeps_peer_traffic_alive_for_fifteen_seconds():
+    h = HostTradeEngine([_mon(1)])
     h._words.clear()
     h._blocks.clear()
     h._sender = None
@@ -373,7 +364,7 @@ def test_child_close_confirmation_keeps_peer_traffic_alive_for_the_grace(argv, f
     h.feed_child_slot(close)
     assert h._close_confirmed
     assert not h.disconnect_requested
-    assert h._close_grace_wait == frames
+    assert h._close_grace_wait == POST_CLIENT_CLOSE_GRACE_FRAMES
 
     h.tick()
     remaining = h._close_grace_wait

@@ -719,7 +719,9 @@ every 15 ms during an 884 KB/s BENCH (`esp32_bench.py --trickle 300 --flood`):
 | 21, above the writer | 20493 | 3052 of 3052 |
 
 BENCH stays at 884 KB/s; 5000 uplink ETH_TX take 15.4 s against 13.5 s, none lost. A FireRed joiner
-trade on the raised priority counted 5629 of 5629 ETH_TX.
+trade on the raised priority counted 5629 of 5629 ETH_TX. On a XIAO ESP32C6 at priority 21, a
+14-byte ETH_TX every 20 ms during an 820.6 KB/s BENCH read at most 19997 us apart, 221 of 221
+counted; a FireRed host and a Legends Z-A host trade followed with no error on the console.
 
 ## Running
 
