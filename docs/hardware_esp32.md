@@ -708,6 +708,19 @@ The receive interrupt drops a 64-byte packet when the 16 KB RX ring is full and 
 from filling; a loss there shows only as bytes written past the board's last CREDIT.
 `POKELDN_ESP32_BAUD` is accepted on all targets and only changes the classic ESP32's line rate.
 
+USB drains faster than the writer encodes, so under a full-rate board-to-host stream the writer
+never sleeps. On USB targets the reader runs at priority 21, above the writer (20); the UART build
+keeps it at 19, where the line rate makes the writer sleep. On a XIAO ESP32S3, a 14-byte ETH_TX
+every 15 ms during an 884 KB/s BENCH (`esp32_bench.py --trickle 300 --flood`):
+
+| reader priority | `read_max_us` | ETH_TX counted |
+|---|---|---|
+| 19, below the writer | 53951079 | 785 of 3055, the rest dropped at the host's 512-frame queue |
+| 21, above the writer | 20493 | 3052 of 3052 |
+
+BENCH stays at 884 KB/s; 5000 uplink ETH_TX take 15.4 s against 13.5 s, none lost. A FireRed joiner
+trade on the raised priority counted 5629 of 5629 ETH_TX.
+
 ## Running
 
 `POKELDN_RADIO=esp32:<port>` puts every launcher's `ldn` calls on the board. `esp32:auto` takes the
@@ -794,6 +807,8 @@ Other boards, with their trades:
 | XIAO ESP32C3 | access point | Sword | trade through the packaged macOS app, legal PK8 |
 | XIAO ESP32C6 (ceramic antenna) | station | FireRed | trade, clean console departure |
 | XIAO ESP32C6 (ceramic antenna) | access point | Sword, Scarlet | trade, valid PK8 records, clean console departure |
+| XIAO ESP32S3 (macOS) | station | FireRed | trade, mutual cancel, clean link close; 5099 of 5099 ETH_TX, no bad wire frame, no USB resync |
+| XIAO ESP32S3 (macOS) | access point | FireRed, Sword | trade, 344-byte PK8, clean console departure; zero lost ETH_TX; the board answers HELLO afterwards |
 | ESP32-S3 (Windows, reported in [PR 2](https://github.com/Decryptu/pokeldn/pull/2)) | station | FireRed | trade |
 
 A FireRed console joining the board's access point lists the network (it accepts the zero-length

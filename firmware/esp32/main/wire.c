@@ -389,5 +389,11 @@ void wire_start(wire_handler_t handler)
 {
     s_handler = handler;
     s_out = xQueueCreate(WIRE_QUEUE_LENGTH, sizeof(message_t *));
+#if WIRE_USB
+    /* USB drains faster than the writer encodes: at 888 KB/s the writer never sleeps and a reader
+       below it was not scheduled for 54 s. docs/hardware_esp32.md, The USB host link. */
+    xTaskCreatePinnedToCore(reader, "wire_rx", 6144, NULL, 21, NULL, WIRE_CORE);
+#else
     xTaskCreatePinnedToCore(reader, "wire_rx", 6144, NULL, 19, NULL, WIRE_CORE);
+#endif
 }
