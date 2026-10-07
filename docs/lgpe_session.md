@@ -724,6 +724,12 @@ base moves only when the tick goes backwards (`0x146384..0x1463c0`). A jump of t
 is dropped, so the clock gains at most one second per gated call. A lock of 600 lasts ten minutes
 of counted play time: in focus states 1 and 2, never in the background or while the game is closed
 (base re-read at start, `0x14628c`).
+The seconds follow wall time: `0x1462a0` divides the tick difference converted to nanoseconds by
+10^9 (`0x14632c..0x146354`). At one call per frame and the initial 33.3 ms period the gated body
+runs every 0.667 s and sees an increase of 0 or 1, so a lock of 600 lasts 600 s of wall time in
+focus; a gate spacing above 1 s loses the seconds of every dropped jump. On an emulated Let's Go
+1.0.2 at 30 frames per second in the overworld, the call counter `+0x70` advanced by 4 every 0.125 s:
+one call per frame, the gated body every 0.67 s.
 
 `0x13c944` is in `0x13c850` (which also runs `0x145560`, `0x13f0d0`, `0x142cd0`, `0x1427a0`), reached
 only from `0x13c5a0`, slot `+0x40` of a 0x210-byte job (vtable `0x15379d8`, built by `0x13c440` from
@@ -938,6 +944,22 @@ state it writes 0 alone. Result 1 comes only from `0x837860`, gated on `[x20+0x2
 `[x20+0x250]` (`0x83776c..0x8377a0`). After a trade the dispatcher returns from state 7 to state 1
 (`0x88691c..0x88692c`) with a new party-offer object on a new channel, so one seat carries one trade
 after another.
+
+The child reference `[obj+0x90]` holds the link menu process in state 0 (`0x886cf4` -> `0x8871a0` ->
+`0x887940`, vtable `0x15afdc0`, given the address of the mode word `obj+0x8c` at `0x886d44`) and the
+save process in states 2 and 5 (`0x887340` -> `0x346670`, vtable `0x15aa2a0`). After an aborted sync
+save the commit channel at `seq+0xb8` is gone before state 3 reads result 2: every abort path ends the
+sequence through `0x838540`, the runner pops the process, its destructor `0x835000` releases the
+sequence, whose destructor `0x838c40` releases the channel, and state 3 waits for the child's count
+to reach 0 first (`0x886670..0x886684`).
+
+Modes 1 and 2 are link battles. The process they build adds 1 to a save counter when it ends
+(`0x95ccbc..0x95ce40`): `local_btl_single_cnt` (id `0x1de`) for mode 1, `local_btl_double_cnt`
+(`0x1df`) for mode 2, and `netl_btl_single_cnt` / `net_btl_double_cnt` (`0x1e0`, `0x1e1`) when
+`0x115860` is true. Mode 2 sets the double flag `[obj+0x810]` (`0x886f10`, `0x95c4bc`, `0x95c574`). A
+trade's sync save (mode 3) adds to `local_trade_cnt` (`0x1dc`) or `net_trade_cnt` (`0x1dd`) on the
+same flag (`0x838828..0x838840`). The link menu numbers its choices differently: choice 1, the trade,
+stores 3 (`0x97845c`), choice 2 stores 1 and choice 3 stores 2 (`0x978504..0x978514`).
 
 ### The battle scene's channel
 

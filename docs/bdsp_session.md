@@ -300,6 +300,15 @@ after its leave request and deauthenticated 0.15 s after it.
 Answered (`48 01`, the update-session ack, the leave on 0x13), a retail host leaving its room sent
 0x13 0.11 and 0.45 s after its migration start (2 runs) and closed it.
 
+The 0x13 phase is `LocalDestroyNetworkJob::WaitUntilAllClientsDisconnection` `0x016b95b8`. It sends
+0x13 again whenever 301 ms have passed since the last send (`job+0x68`) and ends on the first of: the
+request's cancel byte set (to `WaitForCancel` `0x016b9330`); the count of present stations from
+`0x016b014c` equal to 1 (`0x016b9614`); more than 10000 ms since the previous state,
+`WaitUntilAllClientsReceiveUpdateSessionMessage` `0x016b936c`, stored `job+0x70` (`0x016b9644`). The
+last two go to `StartDestroyNetwork` `0x016b950c`, which closes the network. A station that leaves
+ends the phase on the next update; a station that stays holds it for the full 10 s. The previous
+state leaves when `[[protocol+0x4f0]+0x5c]` is set (`0x016b0888`) or after 10001 ms.
+
 `pokeldn.bdsp.session.answer_departure` builds both answers; `bin/bdsp_host.py` answers a leaving
 joiner and its disconnection request, and `bin/bdsp_connect.py` answers a migration start, acks every
 later update session and leaves the network on 0x13 (`--no-leave-on-host-migration` stays).
@@ -308,10 +317,6 @@ Leaving the trade box sends no departure message: the box's close callback `Trad
 [1.3.0 main 0x1c26810] sends `NetDataCurrentFlowCancelData{0}` (0x25, `SendCancel` 0x1c26bf0) and
 `UnionTradeManager$$Cancel` [0x1c33780] sends `NetCharacterStateData{0}`, both in one packet, with
 no wait on the partner.
-
-### Unresolved
-
-- What ends the Local Protocol 0x13 phase early.
 
 ## Measurement methods
 

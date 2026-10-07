@@ -823,8 +823,8 @@ misses a given attempt is unknown.
   the difference to the setting.
 - ESP32-S3 throughput, and S3 trades in the host role or with titles other than FireRed, are
   unmeasured on a local board.
-- A Scarlet console joined to the board's access point has acknowledged the announcement and never
-  sent its port 2 join. The cause is unknown.
+- A Scarlet console joined to the board's access point once acknowledged the announcement and sent
+  no port 2 join; the gates that can hold it are in [the Scarlet page](sv.md#unresolved).
 - What in the access point's receive path misses 1 to 22% of a station's OFDM first copies, and ACKs
   during a FireRed hold, is unknown; the settings ruled out are in
   [Receive misses on two boards](#receive-misses-on-two-boards).

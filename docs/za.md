@@ -340,7 +340,11 @@ most 0x17 and byte +0xa0 clear (`0x25770d8`) is stamped at +0xb0 when sent to, a
 is older than the limit (never sent to included). Flagged stations (`0x2568928`) get an extra packet
 (`0x256a89c(p, 0, 0)`): one Pia message with protocol 0, bit-0x10 byte 0xfd, port 0, flags 0, empty
 payload. So a seated station is sent a packet whenever nothing has gone to it for a second; no
-capture has been checked against this. Byte +0xa0 marks a station being kicked, set only by
+capture has been checked against this. The message's header is the presence byte `04` and protocol
+`00`: the writer `0x256dccc` emits only the fields that differ from a fresh header (protocol 0xFF,
+middle byte 0xFD, port 0). The receiving reader files a message under its key (protocol, middle
+byte, port) in a bucket table with no protocol check (`0x2566844`, `0x25670f0`); no Protocol class
+has id 0, so nothing drains it. A full node pool (`0x10c10`) drops the rest of the packet. Byte +0xa0 marks a station being kicked, set only by
 `0x2577094` from `0x255b4a0` and a non-host's drain `0x2548b60`.
 
 ### Packet ids
@@ -686,8 +690,11 @@ At boot `0xaa1340` stores at +0x10 the index `0x17d6368` makes of `nn::oe::GetDe
 (ja, en-US, fr, de, it, es, zh-Hans, ko, nl, pt, ru, zh-Hant, en-GB, fr-CA, es-419 as 0..14, else 15),
 and `0x741760` maps it to L through `0x330f728`, `1 2 3 5 4 7 9 8 2 2 2 10 2 3 11` (2 above 14), so
 the boot value is 1..5 or 7..11. The setter `0x17d62ec` is the one writer of +0x14; its other callers
-are the language-select view (`0x2c204ac`), `0xbb9d30` with the trainer record's +0x47, and a script
-binding `0x1673170` (`0x16734c0`) that stores any integer.
+are the language-select view (`0x2c204ac`; the table at `0x33a19b5` lists 2, 7, 11, 3, 5, 4, 1, 8, 9,
+10), `0xbb9d30` with the trainer record's +0x47, and a script binding `0x1673170` (Lua name
+`f21813187` in module `cE461829E`, `0x16734c0`) that stores any integer. None of the four shipped
+Lua packs (`/arc` `scriptluabinrelease` dll_util, event_ik, main, main_dynamic) names the binding or
+its module.
 
 The pattern `0x339f650[L - 1]` is a set of `nn::ngc` word lists, so the receiving console's
 language picks them, whatever the record's language:
@@ -868,7 +875,9 @@ The 2 path, top down:
 `0x251f18c` sets 0 (accept all), index 24 `0x251f110` sets 1 (reject), index 21 `0x251f208` sets 3
 (whitelist, after `AddAcceptFilterEntry`). Within Pia, `0x255c484` is the only virtual call to facade
 index 19 and `0x2513d1c` the only call through 0xc0 on the LDN protocol, so the game closes
-participation, and policy 1 follows, only while it is session host. Host migration calls
+participation, and policy 1 follows, only while it is session host. CloseParticipation's chain
+`0x255c118`, `0x2546fe8` (open flag always 0), `0x253e7bc`, `0x253e744` has one caller, the
+CloseSession task's update (`0x1a25454`). Host migration calls
 `0x250758c` and `0x2507828` directly (`0x250b098`, `0x250b0f8`).
 
 The task builder `0x1a228f0` is called with "CloseSession" (hash `0x0dd344f64c81e84d`) from index 19
@@ -968,6 +977,14 @@ A Link Trade ends at the handover. The type-9 handler `0x2550684` removes the le
 also reaches. In a two-station trade the leaver is the only partner, so the trade ends whatever the
 migration does, and the leaving console destroys its network.
 
+Measured on two emulated Z-A 2.0.2 consoles (Ryujinx, LDN over loopback), seated in the trade box
+when the host's player backed out (B, then Yes): the other station received the 30-byte type 9
+naming it, answered with the type 10, received the Net 0x11 of sequence 3 with byte 29 set, answered
+with the 0x12, and received the 0x40 0.12 s after the type 9. It left the network 4 ms after the
+0x40 and finalized its LDN service 0.24 s later with no network created. Its screen showed "Your
+trading partner chose to quit trading. The Link Trade will now end." and A returned it to the Link
+Play menu. Two runs of two matched.
+
 Leaving on that first 0x40, the joiner was off the network 0.09 s after the type 9 (no trade, the
 player backing out of the box).
 
@@ -982,15 +999,11 @@ is no local-wireless path.
 
 ## Unresolved
 
-- Whether game code reaches facade index 19 other than through CloseParticipation. A hosted Link
-  Trade search with one joiner reached it from CloseParticipation.
-- Whether a shipped script calls the binding `0x1673170` that stores any integer into L, and what the
-  language-select table `[x0+0x50]` holds (breakpoint `0x16734c0`, read at `0x2c204ac`).
+- Which game feature starts each of the four CloseSession task builders (`0x19a7590`, `0x1a2ab10`,
+  `0x19d7a70`, `0x1a35710`); every route to facade index 19 passes through the CloseSession task.
+- Whether the language-select view's `[x0+0x50]` is the table at `0x33a19b5` (read at `0x2c204ac`).
 - Whether an optional timed close (`--hold-after-trade`) can leave the console without an error
   while it is still seated. The default host waits for the console's departure ([Hosting](#hosting)).
   A leaving retail host sends the type 9 first ([A host leaving](#a-host-leaving)); the timed close
   in `bin/za_host.py` sends none.
-- What a retail Z-A shows and keeps after its trade ends at a handover it receives: the partner-left
-  message, and whether the network it recreates stays open for a new joiner (`0x961a40` onward).
-- What a station does with a protocol-0 message, and the keepalive's header bytes (`04 00` by the
-  header diff). A capture of a seated station the console has nothing else to send to.
+- Whether a receiver reclaims a queued protocol-0 message that no protocol consumes.

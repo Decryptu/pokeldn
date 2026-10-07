@@ -578,6 +578,9 @@ the outgoing offer.
 | selected IVs | HP 31, Attack 0, Speed 31 |
 | EVs | HP 252, Speed 4, every other stat 0 |
 
+The encryption constant read at `0x011e3458` goes, with the party index, into the Pokemon Camp
+model key `[model+0x368]` used by the camp sync; it does not reach the trade or box code.
+
 The offer on 20030 is the snapshot's party slot `--offer-slot`, edited in place, so the shown party
 and the offer agree; the identity rewrite runs first and `party_matches_trainer` holds.
 `pokeldn.swsh.pokemon.build_from` rewrites the checksum, reshuffles under the new encryption

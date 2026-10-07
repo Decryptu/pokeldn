@@ -37,6 +37,14 @@ In local wireless the player's own pick is checked only for the save's illegal f
 (`CoreParam$$GetDprIllegalFlag`); `NetworkManager$$RequestValidateTrade` runs only when
 `UnionFrontDeskStateController.isGlobal` is set.
 
+`RequestValidateTrade` [0x02251cb0] checks nothing in the client. It copies each Pokemon's
+`CoreParam` into a request of 0x148 bytes and sends it to Nintendo's validation server
+(`IlcaNetServerValidate.CheckRequestAutoAsync` [0x027318c0]); the reply is a `ValidateResultID`
+(None, InvalidData, SignatureError, ProcessError), and a signature or process error raises an error
+dialog. `SS_box_182`, the message a flagged Pokemon of the player's own selects, reads "You can't
+trade Pokémon because there is a problem with your Pokémon." (French "Un problème avec votre Pokémon
+rend tout échange impossible."); `SS_box_181` says the same of the partner's Pokemon.
+
 ## The trade state machine
 
 `UnionTradeManager.currentState` (+0x88; +0x80 in 1.3.0) is

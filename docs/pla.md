@@ -133,8 +133,9 @@ writer. The job sends Net 0x11 with a new sequence id and `is migrating host` 1 
 up to 4000 ms for every 0x12 (`0x706b34`), then sends `NetStartHostMigrationMessage` (`0x6f7674`)
 every 300 ms until it is the only station or a deadline passes: 4000 ms after a fully acknowledged
 0x11, 2000 ms after one that timed out (`0x706df0`, `0x706e98`). Then it destroys the LDN network,
-and the station still on it inherits the host role. Over fourteen seats of `bin/pla_join.py` the
-first migrating 0x11 came 8.3 to 10.3 s after the seat, repeated for 4.0 s, then the 0x40 for 2.0 s.
+and the station still on it inherits the host role. Over fourteen seats of a `bin/pla_join.py` whose
+Session join request the console dropped (no join response came) the first migrating 0x11 came 8.3
+to 10.3 s after the seat, repeated for 4.0 s, then the 0x40 for 2.0 s.
 
 The console creates the mesh as a full mesh host (`CreateSessionJob`, no wait). A joining console
 sends its Session join request to header destination 0, from its own variable id. The host's
@@ -388,7 +389,19 @@ station index other than 0xfd. The only `Error::Timeout` producer is the watcher
 by `0x2bda8cc` in two WaitMember steps of the matchmaking: 25000 ms (`0x2bda24c`, request
 `0x2bcd394`, target 2) and `3000 + rand % 1000` ms (`0x2c491b8`, `0x2c4874c`, the target from the
 matchmaking record). A WaitMember step completes once the session's member count (vfunc `+0xd8`)
-reaches its target byte `+0x88` (`0x2c1a8f0..0x2c1a920`), and nothing extends its timer. A seated
+reaches its target byte `+0x88` (`0x2c1a8f0..0x2c1a920`), and nothing extends its timer. The vfunc
+is `0x2bcbdb4` in all three session-driver vtables (`0x4197120`, `0x4197310`, `0x4197cf0`): it
+returns `[Session+0xe0]`, the size of the Pia Session's member list at `Session+0xd0` (`0x72ab78`).
+The list holds the local station (added at Session start, `0x72ad4c`) and one entry per Session join
+event: on a host the accepted join request (`0x737608`, event at `0x7378bc`), on a joiner each
+station of the type-5 update (`0x738bc0`, `0x738f08`). A station that only associated on LDN or sent
+Net 0x11 is not counted; a leave event (`0x735cb8`) removes it.
+
+On an emulated console hosting a search, with `bin/pla_join.py` joining over IP, the host's
+WaitMember compared a count of 1 against a target of 2 (`0x2c1a904`, w0 1, w8 2) 1.4 s before the
+seat, the joiner's variable id entered the member list (`0x7292f4`) 0.09 s after it, with the join
+response, and the 10.0 s stopwatch started (`0x26c539c`) 1.19 s after it. The two-round data
+exchange then completed and no migrating 0x11 came in the 29 s the seat was held. A seated
 hosting slot therefore ends on the 10.0 s deadline: the stopwatch starts after matchmaking returns,
 and its failure leaves the session with host migration. The completion callback is `[request+0x90] -> 0x26d69e8 -> 0x26d6a88`.
 
@@ -1282,6 +1295,7 @@ console leaves.
 
 ## Unresolved
 
-- What the matchmaking WaitMember counts as a member (session vfunc `+0xd8`): a first migrating
-  0x11 8.3 s after the seat puts the 10.0 s stopwatch start before the seat.
+- What makes a console hosting a search leave with host migration 8.3 to 10.3 s after the seat of a
+  station whose Session join it dropped; the 10000 ms silent-station setting (`+0x28c`) is the
+  candidate. The matchmaking record's `+0x22` target.
 - What the console does in the 3.6 s between leaving the network and showing the field.

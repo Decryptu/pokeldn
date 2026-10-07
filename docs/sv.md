@@ -992,8 +992,16 @@ lets `bin/sv_join.py` resume scanning ([Ending a run](architecture.md#ending-a-r
 
 ## Unresolved
 
-- Why a console joined to `bin/sv_host.py` can acknowledge the host's announcement and never send its
-  port-2 join.
+- Which gate held a console joined to `bin/sv_host.py` that acknowledged the announcement and sent no
+  port-2 join. The join is produced only by BoxTrade state 4 (`0x1e51c40`). Before it, state 1 waits
+  with no timer for two finished identity blocks (`0x1e51ae4`), and state 4 waits up to 15 s for a
+  relay slot of kind 1 that only a type 7 creates (`0x1e51c10`); a leave event of the master's or the
+  console's own id clears that slot (`0x12fbc68`, `0x12fbc84`). The 0x80 window acknowledges the
+  announcement before the game's poller reads it, so the acknowledgement separates neither. The one
+  recorded instance predates the host's identity retries. In a host log, a console acknowledging the
+  host's identity records below 47 ([The first record on a stream carries
+  INITIALIZED](#the-first-record-on-a-stream-carries-initialized)) is the state-1 gate; an
+  acknowledgement to 47 with an empty mask and no `DATA 0x7c:2` is state 4.
 - What a console does between its player backing out and its first departure message: none of the
   captures marks the button press. In one joiner seat the cancel `8000040100` preceded the type 7
   by 1.5 s.

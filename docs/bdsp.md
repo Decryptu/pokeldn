@@ -54,16 +54,3 @@ Working on retail hardware:
   ([the protocol page](bdsp_protocol.md#the-grand-underground)).
 - What makes a console in the Union Room stop advertising with no change on screen
   ([Taking a seat](bdsp_session.md#taking-a-seat)).
-- The text of `SS_box_182`, the message `BoxWindow.SetSendPokemon` selects for a flagged Pokemon in
-  a trade, and what `RequestValidateTrade` checks for an online trade
-  ([Duplicate detection](bdsp_trade.md#duplicate-detection)).
-- Where the Unity player takes `Screen.width` from. The 2D grid positions rest on it being the
-  1280 x 720 default that `0x6062e8` keeps when `/Data/rawsettings` +0x1c is 0
-  ([the protocol page](bdsp_protocol.md#the-grand-underground)); another source, such as the
-  player settings in `globalgamemanagers`, has not been excluded.
-- Whether any scene places a `UnionRoomManager` or a `UgNetworkManager` as a component. In code each
-  is created only by one `AddComponent` on a new GameObject (`0x01b35f70`, `UgFieldManager$$StartSession`
-  `0x01cfed48`); no code takes either type as `typeof`, no generic `GetComponent` or `FindObjectOfType`
-  of either exists, and `GameObject.Find` has no Union Room caller. A placed instance would register
-  through its singleton `Awake` with no lookup, so the answer is in the scene bundles: a
-  `MonoBehaviour` whose `m_Script` is either class's `MonoScript`.

@@ -626,7 +626,10 @@ larger byte faults the console.
 
 Each `UgFieldManager` builds a new `UgNetworkManager` in `StartSession` [0x01cfebb0] (the only
 `AddComponent<UgNetworkManager>`, 0x01cfed54) and destroys it in `OnDestroy` [0x01cff530], so each
-adopts a table afresh.
+adopts a table afresh. No scene places either manager: of the 53861 MonoBehaviours in the 14052
+asset bundles and the root files of the 1.3.0 RomFS, none has `UnionRoomManager` or
+`UgNetworkManager` as its script. Both exist only in the script table of
+`globalgamemanagers.assets`, which no bundle references.
 
 0x29 `NetDigGroupIdData` shares 0x61's struct and methods. Only `NetDataParser`'s constructor
 [0x0224a420] references it: nothing sends it, and `UgNetworkManager$$OnReceiveData` [0x01f7a880]
@@ -695,3 +698,11 @@ animators bind only translations. The factor `Screen.width / 1280` is 1: the 1.3
 u32 at +0x1c is 0, which keeps the default-resolution switch `0x006062e8` at 1280 x 720 docked and
 handheld (1 follows the operation mode, 2 the performance mode, 3 both), and no managed code calls
 `SetResolution` or a `Screen` setter.
+
+`Screen.width` is the int at +0x68 of the single native screen object (`0x04efe760`), read through
+vtable slot 0xa8 (`0x002c2c24`). Three sites write it: the constructor `0x002c257c` (1280 x 720), the
+one startup `SetMode(0)` `0x002c2858` with the values of `0x006062e8`, and `SetResolution`
+`0x002c2888`, which only the operation-mode and performance-mode handlers `0x002c2a1c` and
+`0x002c2af0` call, and only when rawsettings +0x1c is nonzero. The player settings in
+`globalgamemanagers` are not read on this path; managed `Screen.SetResolution` stores its arguments
+at `[obj+8]` and changes nothing.

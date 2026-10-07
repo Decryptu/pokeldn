@@ -349,7 +349,11 @@ The sample state is `+0x1c8` of `[[0x261bd18]]`, set only by `0x00ebf570`, zeroe
 also read by the native `IsPlayerRideBicycleType` (`0x0148b960` -> `0x00da0210`); the Lua enum at
 `0x00e57940` names motions `NORMAL`, `BICYCLE_GROUND`, `BICYCLE_WATER` (`1 | 2<<32` at
 `0x00e5793c`). The `0x25614c0` slot also starts an activity record of kind 11 (`0x0111b660`), hands
-it to `[0x26108d8]` (`0x00fa13c0`) and pushes a sample.
+it to `[0x26108d8]` (`0x00fa13c0`) and pushes a sample. The `0x25614c0` object is the Pokemon Camp
+visit: the natives `PokeCampToVisit` (request `0x0100`, state 3) and `NpcPokeCampToVisit` (`0x0000`,
+state 4) build it, as do the network-side requests `0x0101` (state 3) and `0x0001` (state 4), and the
+image carries the multiplayer camp's `contents.pokecamp.pb.KwSyncData`. State 6 is Max Raid Battle
+matching.
 
 `a` and `b` pack into bits 0-1 and 2-3 (`0x01123710`; `0x01123760` reads `b` 3 as 0). The reset
 `0x00eb97b0` in mode 0 sets `a` from the area key `[[[0x2617c48]]+0x180]` (`0x00eb97d0..0x00eb9848`):
