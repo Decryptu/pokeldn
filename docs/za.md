@@ -940,6 +940,15 @@ admitted, called from `0xc8a198` with the fourth argument the constant 1 (`mov w
 address `0x255c490`), while the joiner stayed seated and the trade box opened. Backing out of the
 box reached neither again.
 
+An emulated Z-A 2.0.2 with breakpoints on slots 13, 14 and 16 of all three drivers ran only the
+local driver: Private Battles' Create a Room entered its slot 14 CreateSession (`0x19a3790`, return
+address `0x2a50170`), and a Link Trade search entered its slot 13 (`0x19a1310`) from `0xc8a198` with
+the fourth argument 1, both on the same driver object. No LAN or third-driver step ran. The setter
+`0x199e850` was entered only from `0x1912238`, which passes the constant 0 (`mov w1, wzr`, through the
+thunk `0x199f208`), on entering Link Trade, Private Battles and the internet preparation of Faraway
+Players and Ranked Battles; mode 0 clears the manager's driver at +0x38 and +0x40 (`0x199e9b0`).
+Its object is a static singleton, the local driver a heap object.
+
 On a retail console's Link Trade search the advertisement holds policy 0 with 2 of 2 nodes at the
 seat, the Pia player count (advertise data +0x16, `e1 01 01 00` to `e1 01 02 00`, the only changing
 byte) moves to 2, then policy 1 is advertised just before the console's one Net 0x50 (150 bytes,
@@ -1057,7 +1066,6 @@ is no local-wireless path.
 
 ## Unresolved
 
-- Which modes the network manager's vfunc 26 `0x199e850` receives for Link Trade, Private Battles
-  and Ranked Battles: no caller passes a constant, so whether the LAN driver's builders
-  (`0x1a2ab10`, `0x1a35710`) ever run, and which driver Ranked Battles and Private Battles use, is
-  unknown ([The property update](#the-property-update)).
+- Which driver Ranked Battles uses, and what call selects the local driver: on an emulated console
+  `0x199e850` was entered only with mode 0 (see below), and Ranked Battles returns to the menu with no
+  online service.
