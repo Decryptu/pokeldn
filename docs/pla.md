@@ -137,6 +137,16 @@ and the station still on it inherits the host role. Over fourteen seats of a `bi
 Session join request the console dropped (no join response came) the first migrating 0x11 came 8.3
 to 10.3 s after the seat, repeated for 4.0 s, then the 0x40 for 2.0 s.
 
+A station that associates but sends no Session join ends the slot this way. On an emulated console
+hosting a search, with `bin/pla_join.py --join-delay 20`, the WaitMember timer's expiry (`0x2bdb7a0`)
+fired 0.99 s after the seat, and 2 ms later the matchmaking sequence's error handler built the leave
+request (`0x2c27fb8`, called at `0x2c4ee60` when the caught error's type name does not match,
+`0x2c4ee3c`). `Session::LeaveAsync` (`0x72a6dc`) followed at about 1.4 s. `LeaveSessionJob` then
+runs `LeaveMeshWithHostMigrationJob` (`0x72c640 -> 0x734c8c -> 0x73eee4`), which polls for a next host
+until a deadline 8000 ms out (`0x73efb4`); a station with no Session route (route bytes +0x90 and
++0x91 at 0xfd) never qualifies, so the disconnect and the migrating 0x11 come after the 8 s: 10.48 s
+after the seat without breakpoints.
+
 The console creates the mesh as a full mesh host (`CreateSessionJob`, no wait). A joining console
 sends its Session join request to header destination 0, from its own variable id. The host's
 `ClusterPacketReader` gate `0x744644` (called through vfunc `0x98`, `0x731edc`, at `0x743ec0`)
@@ -1295,7 +1305,5 @@ console leaves.
 
 ## Unresolved
 
-- What makes a console hosting a search leave with host migration 8.3 to 10.3 s after the seat of a
-  station whose Session join it dropped; the 10000 ms silent-station setting (`+0x28c`) is the
-  candidate. The matchmaking record's `+0x22` target.
+- The matchmaking record's `+0x22` halfword, the target of the `3000 + rand % 1000` ms WaitMember.
 - What the console does in the 3.6 s between leaving the network and showing the field.
