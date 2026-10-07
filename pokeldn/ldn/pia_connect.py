@@ -64,9 +64,10 @@ def _net_station(ip=None, port=12345, *, migration_state=0, migration_rank=0, pr
 
 
 def build_net_conn_request(seqid, host_var, host_mac, network_id, stations, max_stations=6,
-                           station_size=22):
+                           station_size=22, migrating=False):
     """Net 0x11 carries all max_stations slots; the network id is the SSID CRC32 zero-extended to 8
-    bytes. `station_size` is 22 at Pia 6.39 (the GBA app) and 21 at 6.16-6.23 (Legends Arceus)."""
+    bytes. `station_size` is 22 at Pia 6.39 (the GBA app) and 21 at 6.16-6.23 (Legends Arceus).
+    `migrating` is a leaving host's form: byte 26 reads 2 and byte 29, is-migrating, 1 (docs/za.md)."""
     entries = list(stations)
     if not 1 <= len(entries) <= max_stations:
         raise ValueError("Net 0x11 needs 1..max_stations occupied station addresses")
@@ -76,9 +77,9 @@ def build_net_conn_request(seqid, host_var, host_mac, network_id, stations, max_
     body += (_vid(host_var) & 0xFFFF).to_bytes(2, "big")
     body += ldn_constant_id(host_mac)
     body += (network_id & 0xFFFFFFFF).to_bytes(8, "big")
-    body += bytes([1])
+    body += bytes([2 if migrating else 1])
     body += max_stations.to_bytes(2, "big")
-    body += bytes([0])
+    body += bytes([1 if migrating else 0])
     for rank, ip in enumerate(entries):
         body += _net_station(ip, migration_rank=rank, prefix_len=prefix_len)
     for _ in range(max_stations - len(entries)):
