@@ -935,8 +935,8 @@ update (`0x911f48`); `0x915630` from the lobby update through `0x913e00`
 PrivateBattleTopPage's slot 15 `0xae0aa0` (vtable `0x3e0e038`). Link Trade code reaches none of the
 three.
 
-An emulated console hosting a Link Trade search under code 00000000 ran slot 13 once a joiner was
-admitted, called from `0xc8a198` with the fourth argument the constant 1 (`mov w3, #1` at
+An emulated console hosting a Link Trade search under code 00000000 ran slot 13
+(at the search's start, below), called from `0xc8a198` with the fourth argument the constant 1 (`mov w3, #1` at
 `0xc8a194`). About 10 s later the task builder `0x1a228f0` was entered from the CloseSession step
 `0x19d7a70` (return address `0x19d7acc`), and facade index 19 from CloseParticipation (return
 address `0x255c490`), while the joiner stayed seated and the trade box opened. Backing out of the
@@ -966,7 +966,8 @@ console with breakpoints armed before the game's first instruction, nothing reac
 through boot, the field, the Link Play page, the Link Trade page or the Link Code prompt. Confirming
 the code 00000000 entered the setter with mode 0 (return address `0x1912240`), then 0.6 s later
 with mode 1 from `0x191213c` and built the local driver (`0x199eaa0`), and 1.0 s after that the
-local driver's slot 13 ran. A breakpoint re-armed 0.3 s after its hit misses the second call.
+local driver's slot 13 ran (`x2` 2, `x3` 1) with no station present; the joiner started four
+minutes later. A breakpoint re-armed 0.3 s after its hit misses the second call.
 
 
 On a retail console's Link Trade search the advertisement holds policy 0 with 2 of 2 nodes at the
