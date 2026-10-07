@@ -69,6 +69,12 @@ commands with none lost. Its idle free heap at start is 255196 bytes. A FireRed 
 its ceramic antenna counted 5155 of 5155 host ETH_TX commands on the board, with no bad wire frame
 and no USB resync.
 
+The Seeed Studio XIAO ESP32S3 (ESP32-S3 revision 0.2, 8 MB flash, 8 MB PSRAM) uses its USB-C
+socket for native USB Serial/JTAG and needs its supplied external antenna. BOOT is GPIO0; the yellow
+user LED on GPIO21 (lit while low) shows the LED looks. Over native USB on macOS it carries a
+2,000,000-byte BENCH transfer as 1429 messages with none missing and no bad checksum, at 883 KB/s,
+and takes 5000 of 5000 uplink commands with none lost. Its idle free heap at start is 212416 bytes.
+
 The classic ESP32 measurements below use the ELEGOO ESP32-D0WD-V3 board unless another board is
 named. Completed trades per board are in [Trades by board](#trades-by-board).
 
@@ -92,7 +98,7 @@ healthy board, GET_CONFIGURATION over EP0 failed, and esptool's USB reset got no
 
 The C6 and S3 builds set `CONFIG_ESP_SYSTEM_BBPLL_RECALIB=n`; its Kconfig help allows that for a
 bootloader built with ESP-IDF v5.2 or later, and every merged image carries its own v6.1
-bootloader. The S3 setting is untested on an S3. The C3 has no such option and showed no fault.
+bootloader. A XIAO ESP32S3 with recalibration off answered 300 of 300 opens. The C3 has no such option and showed no fault.
 With recalibration off, 4 of 600 opens on a C6 found no answer once and a working link on the next
 open, after macOS re-enumerated the device ("Device not configured").
 
@@ -520,8 +526,9 @@ None for a kernel interface, which is how every launcher picks its path.
 
 ## The board's LED and buttons
 
-LED patterns drive GPIO2 on classic ESP32 boards and GPIO15, inverted, on the C6 (the XIAO ESP32C6's
-yellow LED). The S3 and C3 firmware leaves LED pins alone. BOOT trace markers use GPIO0 on classic
+LED patterns drive GPIO2 on classic ESP32 boards, GPIO21, inverted, on the S3 (the XIAO ESP32S3's
+yellow user LED, `LED_BUILTIN` in arduino-esp32's XIAO_ESP32S3 variant) and GPIO15, inverted, on the
+C6 (the XIAO ESP32C6's yellow LED). The C3 firmware leaves LED pins alone. BOOT trace markers use GPIO0 on classic
 ESP32 and S3, and GPIO9 on C3 and C6.
 
 The ELEGOO ESP-32 Type-C board (CP2102, ESP32-D0WD-V3) carries an unbranded module with a PCB antenna
