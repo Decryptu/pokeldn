@@ -1,22 +1,16 @@
-# pokeldn 0.13.0
+# pokeldn 0.13.1
 
 This desktop app trades with seven Pokemon game families on a Switch or Switch 2
 through an ESP32 radio connected by USB. Nothing is installed on the console.
 
 ## What is new
 
-- A smaller download: the macOS app goes from 51 MB to 41 MB; the Windows and Linux apps drop the
-  same unused parts.
-- Legends Z-A hosting: when the host closes on its own (a timed close, the time limit or Stop) while
-  the console sits on its trade box, the console now shows "Your trading partner chose to quit
-  trading" and returns to Link Play, instead of Error 6.
-- Scarlet/Violet hosting: if a console takes a seat but never opens the trade, the session log names
-  the step it is waiting on, to attach to an issue.
+- Small screens: 128x64 SSD1315 and SSD1309 OLED modules work as the board's screen, like the
+  SSD1306; the README gives the ESP32-S3 wiring (SDA GPIO8, SCL GPIO9) beside the classic board's.
+- Updated Legends Arceus and Legends Z-A documentation of how the games search for and host a
+  local session.
 
-Firmware 1.5.0: ESP32-S3, C3 and C6 boards keep reading the app's commands under heavy traffic
-(an S3 could stop listening for up to a minute), and the XIAO ESP32S3's yellow LED shows the
-board's state. Reflash S3, C3 and C6 boards from the Board page; a classic ESP32 on 1.4.0 needs no
-reflash.
+Firmware stays at 1.5.0: a board already flashed from 0.13.0 needs no reflash.
 
 pokeldn is an unofficial fan project, not affiliated with Nintendo or The Pokemon Company. It is not
 meant for commercial or promotional use; see the License section of the README.
