@@ -432,7 +432,7 @@ class HostTradeEngine:
         if child_already_exited:
             self.info("Switch exited the room first; sending the Linux EXIT_ROOM response.")
         else:
-            self.info("Five-second room delay complete; Linux is exiting the trade room.")
+            self.info("Five-second room delay complete; leaving the trade room.")
 
     def _complete_room_exit(self):
         if self.state != H_EXIT:
@@ -1179,7 +1179,7 @@ class HostTradeEngine:
             done = self.timing.post_cancel_exit_wait_frames - self._room_exit_wait
             self.info(
                 f"Room-exit buffer {done}/{self.timing.post_cancel_exit_wait_frames} frames; "
-                f"still waiting before Linux walks out.")
+                f"still waiting before leaving.")
         if self._room_exit_wait <= 0:
             self._begin_room_exit()
 
