@@ -391,7 +391,11 @@ completes once at least two stations' records have arrived and every occupied sl
 (`fmov d1, #10.0` at `0x26c6a94`, measured 10.2 s after the join request) and fails the request with
 `net_contents::p2p::ErrorLeaveAnyone` (vtable `0x416c628`, built by `0x26c6d30`). The failure runs
 `0x13d654c -> 0x13d6384 -> 0x2c43d78 -> 0x2ca0a10 -> Session::LeaveAsync (0x72a6dc)`, then the
-Error 7 dialog. `0x26d4ae8` is in the result callback `0x26d4aa0`, which tests the error against
+Error 7 dialog. The step into `0x2c43d78` is indirect: no instruction references it, and a frame walk
+at its entry gives the return addresses `0x12b37fc`, `0x12b23d0`, `0x2c227c0`, `0x26be9b0`,
+`0x13d63d0`. On an emulated console hosting a search, with a joiner that withheld its data exchange
+record, the failure `0x26c6d30`, `0x13d6384` and `0x2c43d78` ran in that order 11.2 s after the
+seat (the stream opened at 1.17 s), and the type 7 reached the joiner 0.07 s later. `0x26d4ae8` is in the result callback `0x26d4aa0`, which tests the error against
 `gflnet::request::Error::Timeout`, then `ErrorLeaveAnyone` (`0x26d4e04`), then
 `gflnet::npln::NplnResult`; every error passes it. The step starts only on an established session:
 `0x26c564c` returns false unless the station object at `[exchange+0x80]` reports one and an own
@@ -399,7 +403,10 @@ station index other than 0xfd. The only `Error::Timeout` producer is the watcher
 by `0x2bda8cc` in two WaitMember steps of the matchmaking: 25000 ms (`0x2bda24c`, request
 `0x2bcd394`, target 2) and `3000 + rand % 1000` ms (`0x2c491b8`, `0x2c4874c`, the target from the
 matchmaking record). A WaitMember step completes once the session's member count (vfunc `+0xd8`)
-reaches its target byte `+0x88` (`0x2c1a8f0..0x2c1a920`), and nothing extends its timer. The vfunc
+reaches its target byte `+0x88` (`0x2c1a8f0..0x2c1a920`), and nothing extends its timer. The
+second step's target is the record's `+0x22` halfword (`ldrh w28` at `0x2c48a28`, stored to the
+waiter's `+0x88` at `0x2c48cf4`); it read 2 on an emulated console hosting a search under the code
+00000000. The vfunc
 is `0x2bcbdb4` in all three session-driver vtables (`0x4197120`, `0x4197310`, `0x4197cf0`): it
 returns `[Session+0xe0]`, the size of the Pia Session's member list at `Session+0xd0` (`0x72ab78`).
 The list holds the local station (added at Session start, `0x72ad4c`) and one entry per Session join
@@ -1305,5 +1312,4 @@ console leaves.
 
 ## Unresolved
 
-- The matchmaking record's `+0x22` halfword, the target of the `3000 + rand % 1000` ms WaitMember.
 - What the console does in the 3.6 s between leaving the network and showing the field.
