@@ -5,6 +5,10 @@ on:
   pull_request:
 permissions:
   contents: read
+# A newer push to the same branch supersedes a run still in progress.
+concurrency:
+  group: check-${{ github.ref }}
+  cancel-in-progress: true
 jobs:
   test:
     strategy:
@@ -17,9 +21,11 @@ jobs:
       - uses: actions/setup-python@v7
         with:
           python-version: '3.13'
+          cache: pip
+          cache-dependency-path: requirements*.txt
       - uses: actions/setup-dotnet@v6
         with:
           dotnet-version: '10.0.x'
-      - run: python -m pip install -r requirements.txt pytest==9.1.1 esptool==5.4.0
+      - run: python -m pip install -r requirements.txt pytest==9.1.1 pytest-xdist==3.8.0 esptool==5.4.0
       - run: dotnet build -c Release services/pkhex -warnaserror
-      - run: python -m pytest tests/ -q -W error
+      - run: python -m pytest tests/ -q -W error -n auto --dist worksteal

@@ -10,6 +10,7 @@ makes its own way left out. Needs arm-none-eabi binutils.
     ./.venv/bin/python scripts/gen_team_cards.py
 """
 
+import argparse
 import json
 import os
 import pathlib
@@ -1148,8 +1149,14 @@ def build_script(card_def, rom_id, work):
 
 
 def main():
+    parser = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
+    parser.add_argument("reference", nargs="?", type=pathlib.Path,
+                        help="with GBLINK_REFERENCE set: the directory of their built .bin payloads")
+    args = parser.parse_args()
+    if REFERENCE and args.reference is None:
+        parser.error("GBLINK_REFERENCE needs the directory of their payloads")
     if REFERENCE:
-        ref = pathlib.Path(sys.argv[1])
+        ref = args.reference
         bad = 0
         with tempfile.TemporaryDirectory() as tmp:
             for card_def in CARDS:

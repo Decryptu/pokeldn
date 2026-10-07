@@ -1,5 +1,6 @@
 #!/usr/bin/env python3
 """Build a desktop bundle, including PKHeX and the required radio firmware."""
+import argparse
 import os
 import importlib.util
 import platform
@@ -86,6 +87,7 @@ def clear_cfg(exe: Path) -> None:
 
 
 def main() -> int:
+    argparse.ArgumentParser(description=__doc__).parse_args()
     firmware = (FIRMWARE, FIRMWARE_S3, FIRMWARE_C3, FIRMWARE_C6)
     missing = [str(path) for path in firmware if not path.is_file()]
     if missing:

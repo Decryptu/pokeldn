@@ -237,8 +237,9 @@ Linux archives contain the portable executable; desktop entries with build-machi
 ## Verification
 
 ```sh
+pip install -r requirements-dev.txt
 dotnet build -c Release services/pkhex -warnaserror
-python -m pytest tests/ -q -W error
+python -m pytest tests/ -q -W error -n auto --dist worksteal
 ```
 
 CI runs these checks on Linux, macOS and Windows. Private research fixtures are optional; a clean

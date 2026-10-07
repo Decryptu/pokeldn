@@ -142,7 +142,7 @@ A Linux Wi-Fi card (legacy, root, no `POKELDN_RADIO`) is covered on [Adapters](d
 | [`pokeldn/app/`](pokeldn/app), [`services/pkhex/`](services/pkhex), [`gui/`](gui) | shared tool runtime; PKHeX service; desktop views |
 | [`firmware/esp32/`](firmware/esp32), [`asm/`](asm) | the radio's firmware; ARM sources for the payloads the console runs |
 | [`scripts/`](scripts), [`config/`](config), [`vendor/`](vendor) | setup and code generation; host profiles; bundled LDN and the mt7601u driver |
-| [`docs/`](docs), [`tests/`](tests) | the protocol findings, with citations; `python -m pytest tests/ -q` |
+| [`docs/`](docs), [`tests/`](tests) | the protocol findings, with citations; `pip install -r requirements-dev.txt`, then `python -m pytest tests/ -q -n auto` |
 
 Run entry points from the repo root with `POKELDN_RADIO` set, as `./.venv/bin/python -u bin/NAME.py
 ...`. Config files and default output paths resolve against the working directory.

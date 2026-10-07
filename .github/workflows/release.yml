@@ -60,6 +60,10 @@ jobs:
       - uses: actions/setup-python@v7
         with:
           python-version: "3.13"
+          cache: pip
+          cache-dependency-path: |
+            requirements.txt
+            gui/requirements.txt
       - uses: actions/setup-dotnet@v6
         with:
           dotnet-version: "10.0.x"
@@ -81,14 +85,33 @@ jobs:
           path: gui/firmware
       - name: Install
         run: python -m pip install -r gui/requirements.txt
+      # Both builds are pure functions of these inputs; a hit skips Flutter and CMake entirely.
+      - name: Restore the Flet client
+        id: client
+        uses: actions/cache@v4
+        with:
+          path: |
+            gui/client/*
+            !gui/client/flet
+          key: flet-client-${{ runner.os }}-${{ hashFiles('requirements.txt', 'gui/requirements.txt', 'gui/flet_client.py', 'scripts/build_client.py', 'gui/flet_drop/**') }}
+      - name: Restore the ARM-only Unicorn
+        id: unicorn
+        uses: actions/cache@v4
+        with:
+          path: |
+            gui/unicorn/lib
+            gui/unicorn/pokeldn-unicorn
+          key: unicorn-${{ runner.os }}-${{ hashFiles('requirements.txt', 'scripts/build_unicorn.py') }}
       # The app runs its own build of Flet's client, which takes files dropped on it (scripts/build_client.py).
       - name: Flutter version
+        if: steps.client.outputs.cache-hit != 'true'
         id: flet
         shell: bash
         run: |
           python -m flet_cli.cli --version --json > flet.json
           echo "flutter=$(python -c "import json; print(json.load(open('flet.json'))['flutter'])")" >> "$GITHUB_OUTPUT"
       - uses: subosito/flutter-action@v2
+        if: steps.client.outputs.cache-hit != 'true'
         with:
           flutter-version: ${{ steps.flet.outputs.flutter }}
           channel: stable
@@ -99,8 +122,10 @@ jobs:
           sudo apt-get update
           sudo apt-get install -y $(python -c "import json; print(' '.join(json.load(open('flet.json'))['linux_dependencies']))")
       - name: Build the Flet client
+        if: steps.client.outputs.cache-hit != 'true'
         run: python scripts/build_client.py
       - name: Build the ARM-only Unicorn
+        if: steps.unicorn.outputs.cache-hit != 'true'
         run: python scripts/build_unicorn.py
       - name: Pack
         run: python scripts/pack_app.py
