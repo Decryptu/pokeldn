@@ -577,7 +577,8 @@ no such moment. `tools/ldn/esp32_led.py --port PORT PATTERN` sets a look; `--dem
 
 ## The screen
 
-An SSD1306 128x64 one-bit OLED on I2C is optional. At boot the firmware probes 0x3C, then 0x3D;
+An SSD1306 128x64 one-bit OLED on I2C is optional. Users report 128x64 SSD1315 and SSD1309 modules
+working with the same firmware. At boot the firmware probes 0x3C, then 0x3D;
 when neither answers it frees the pins and starts nothing. With a screen, a priority-1 task on the
 last core draws a frame every 50 ms and sends it at 400 kHz (1031 bytes, about 23 ms).
 

@@ -88,7 +88,8 @@ Both launchers accept `--gift-file FILE`. Native conversion and the file schema 
 - A classic ESP32 board with a USB serial bridge, or an ESP32-S3, ESP32-C3 or ESP32-C6 through native USB
   Serial/JTAG, flashed with [`firmware/esp32`](firmware/esp32) for its chip. All use 2.4 GHz.
   Board requirements and hardware verification are on [ESP32 radio](docs/hardware_esp32.md#supported-boards).
-- Optional: a 128x64 SSD1306 I2C OLED on the board (classic ESP32: SDA D21, SCL D22, VCC 3V3) shows
+- Optional: a 128x64 SSD1306, SSD1315 or SSD1309 I2C OLED on the board (classic ESP32: SDA D21, SCL
+  D22; ESP32-S3: SDA GPIO8, SCL GPIO9; VCC 3V3) shows
   the radio's traffic, the Pokemon each trade sends and receives, and the Mystery Gift card; idle,
   it dims after a minute and turns off after ten, and BOOT wakes it
   ([The screen](docs/hardware_esp32.md#the-screen)).
