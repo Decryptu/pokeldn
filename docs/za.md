@@ -265,8 +265,10 @@ nothing in 2.0.2 writes a non-zero value there: its only stores zero it, in the 
 by the session tick `0x95f6e4` (`0x95f738`): 1 asks the trade object to cancel (`0x9636f8` sets trade
 object +0x44 = 1) and parks the worker at step 0xf; 2 waits for trade object +0x44 == 3, then sets
 step 14 and phase 3 (`0x95f7e0`). No code stores 1, so the abort phase never starts and no path
-through the worker reaches own state 7. A store through a computed address is not excluded; a write
-breakpoint on worker+0x10 would settle it. A station whose +0x15 is clear waits the random 2..302
+through the worker reaches own state 7. A store through a computed address is not excluded, and the
+emulator's GDB stub has no data watchpoints. On an emulated console hosting a trade that completed
+with `bin/za_join.py`, handler 14 ran once, on the worker in `x19`, with +0x10 = 0 and the step word
++0x08 = `0x0e02`. A station whose +0x15 is clear waits the random 2..302
 updates before its 0x0b. What `0xdd07cc` returns and how the stored halfword maps onto the `b901XX`
 bytes are untraced.
 
@@ -943,11 +945,29 @@ box reached neither again.
 An emulated Z-A 2.0.2 with breakpoints on slots 13, 14 and 16 of all three drivers ran only the
 local driver: Private Battles' Create a Room entered its slot 14 CreateSession (`0x19a3790`, return
 address `0x2a50170`), and a Link Trade search entered its slot 13 (`0x19a1310`) from `0xc8a198` with
-the fourth argument 1, both on the same driver object. No LAN or third-driver step ran. The setter
-`0x199e850` was entered only from `0x1912238`, which passes the constant 0 (`mov w1, wzr`, through the
-thunk `0x199f208`), on entering Link Trade, Private Battles and the internet preparation of Faraway
-Players and Ranked Battles; mode 0 clears the manager's driver at +0x38 and +0x40 (`0x199e9b0`).
-Its object is a static singleton, the local driver a heap object.
+the fourth argument 1, both on the same driver object. No LAN or third-driver step ran. The manager
+object is a static singleton, the local driver a heap object.
+
+The setter `0x199e850` is reached through the thunk `0x199f208` from two places in one module: the
+reset `0x1912200`, which passes the constant 0 (`mov w1, wzr` at `0x1912234`), and `0x1911540`,
+which passes its first argument (`mov w1, w19` at `0x1912130`). Mode 0 clears the manager's driver at
++0x38 and +0x40 (`0x199e9b0`); the local driver is built only by the setter's mode-1 branch
+(`bl 0x199eaa0` at `0x199e8f8`). `0x1911540` runs from the update of a task named "InitializePia"
+(vtable `0x3c14068`, constructor `0xc5a5f4`), with the mode the task keeps at +0x50. The task is
+built by `0xc5a3e4` with a constant mode from two sequences:
+
+| sequence | builder, mode | steps | callers |
+|---|---|---|---|
+| to local | `0xc57544`, `mov w2, #1` at `0xc575fc` | InitializeSocket, InitializePia, Commit, FinalizeToLocal | Link Trade (`0xc9fe00`), Private Battles (`0x2a49dcc`, and `0xc570a8` under "BattlePrivate") |
+| to internet | `0x2a0bb18`, `mov w2, #2` at `0x2a0bcbc` | NetworkUse, InitializeSocket, InitializeCurl, EnsureNsaTokenId, CheckNSO, InitializeNplnManager, InitializePia, LoginInternet, SaveNplnUserId, ActivatePenaltyClient, Commit, FinalizeToInternetWithGS | |
+
+No call builds the task with mode 3, so the LAN driver is never installed in 2.0.2. On an emulated
+console with breakpoints armed before the game's first instruction, nothing reached the setter
+through boot, the field, the Link Play page, the Link Trade page or the Link Code prompt. Confirming
+the code 00000000 entered the setter with mode 0 (return address `0x1912240`), then 0.6 s later
+with mode 1 from `0x191213c` and built the local driver (`0x199eaa0`), and 1.0 s after that the
+local driver's slot 13 ran. A breakpoint re-armed 0.3 s after its hit misses the second call.
+
 
 On a retail console's Link Trade search the advertisement holds policy 0 with 2 of 2 nodes at the
 seat, the Pia player count (advertise data +0x16, `e1 01 01 00` to `e1 01 02 00`, the only changing
@@ -1066,6 +1086,6 @@ is no local-wireless path.
 
 ## Unresolved
 
-- Which driver Ranked Battles uses, and what call selects the local driver: on an emulated console
-  `0x199e850` was entered only with mode 0 (see below), and Ranked Battles returns to the menu with no
-  online service.
+- Whether Ranked Battles' matching runs on the third driver. The internet sequence installs it
+  (mode 2, see The property update), and an emulated console with no online service returns from Ranked
+  Battles to the menu before matching.

@@ -414,6 +414,15 @@ event: on a host the accepted join request (`0x737608`, event at `0x7378bc`), on
 station of the type-5 update (`0x738bc0`, `0x738f08`). A station that only associated on LDN or sent
 Net 0x11 is not counted; a leave event (`0x735cb8`) removes it.
 
+A search with no station re-hosts on that timer. On an emulated console hosting a search under the
+code 00000000, every network ended the same way: the WaitMember expiry (`0x2bdb7a0`), the leave
+request at `0x2c4ee60` 0.3 s later, `Session::LeaveAsync` (`0x72a6dc`) 0.3 s after that, then the
+LDN network destroyed and a new one created with a new session id and byte-identical advertise data.
+Over 32 networks with no breakpoint armed, a network was created every 2.43 to 4.33 s (median
+3.23 s), and scans found no network for 0.25 to 0.5 s between two (21 of 21 session ids distinct).
+A joining station therefore has what is left of one network's `3000 + rand % 1000` ms to be counted
+as a member.
+
 On an emulated console hosting a search, with `bin/pla_join.py` joining over IP, the host's
 WaitMember compared a count of 1 against a target of 2 (`0x2c1a904`, w0 1, w8 2) 1.4 s before the
 seat, the joiner's variable id entered the member list (`0x7292f4`) 0.09 s after it, with the join
