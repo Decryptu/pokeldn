@@ -550,7 +550,8 @@ destination in EWRAM, IWRAM or the cartridge buffer passes both bounds checks (`
 `size - fold >= 0x1000`); with `r0 = 0xFA000 + n` the destination folds into the ROM copy's
 4 KB at `n * 0x1000` (`n` 0..0xFFF), from any source region.
 
-A ROM destination is a live write into the cartridge buffer, measured on the emulator: with
+A ROM destination is a live write into the cartridge buffer, measured on the patched Ryubing
+build of the emulated console over the IP host (no retail console touched): with
 `r0 = 0xFA3FF` (`dest` 0x083FF000, `n` = 0x3FF, region entry 0x08) and an EWRAM source
 (`r1` 0x0201C400, fold 0x1C400, mask 0x3ffff), both gates pass and the copy lands: the cartridge
 buffer's bytes at 0x3FF000 became the source's own 0x1000 bytes exactly (200 words of a chosen
@@ -558,8 +559,9 @@ pattern at 0x3FF000..0x3FF31F, then the source's own tail bytes at 0x3FF320+ car
 word 200 = 0x11111000 in both places). A guest load at 0x083FF000 then reads the pattern through
 the folded ROM window. The host session held: the payload returned 1, `client->param` carried the
 pattern's own first word, the console printed the success message and closed the link cleanly.
-The write is lost at a reload or soft reset: the ROM buffer is re-copied from the emulator's own
-ROM file at each boot, and nothing commits it persistently.
+The readback was a data read. Whether patched ROM bytes execute as code is unmeasured, and so is
+the write's lifetime: whether a soft reset re-copies the ROM buffer from the emulator's ROM file
+or keeps the session's heap copy is a model, not a measurement.
 
 Each side is rejected (pointer set to null) if the region's backing pointer at `+0x10` is null, the
 folded offset is at or past the size at `+0x20`, or fewer than `0x1000` bytes remain. Both sides
