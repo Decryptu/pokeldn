@@ -141,7 +141,9 @@ A FireRed or LeafGreen leader can only answer what its follower does, so a conso
 left gets `PLAYER_CANCEL_TRADE` ("Canceled", back to the menu) for its pick and for every later
 pick, the answer of a leader that chose Cancel [trade.c:1712]; the menu's Cancel then leaves. A
 party exchange the partner left half-way finishes with an empty party. A player who chooses Cancel
-at the menu tells the partner at once.
+at the menu tells the partner at once. On a retail FireRed and LeafGreen pair: one player picked, the other
+cancelled and left; the first console showed the cancel message, returned to the menu, and its
+Cancel left the room.
 
 A Sword's chained trades already offer records that differ from the snapshot's slot
 ([Sword trades](swsh_trade.md)), and the exchanged record is content 50's.
