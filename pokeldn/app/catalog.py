@@ -376,7 +376,7 @@ ZA = Game("za", "Legends Z-A", "PLZA", "za.md", (
 ))
 
 def with_online(game: Game, steps: tuple[str, ...], code: Field | None = None) -> Game:
-    """`game` with its online trade after its host tool; `code` replaces the host's own code field's
+    """`game` with its online trade after its local trades; `code` replaces the host's own code field's
     help, or is a new field where the game has no code."""
     host = next(t for t in game.tools if t.name == "Trade (Host)")
     if code is None:
@@ -384,7 +384,7 @@ def with_online(game: Game, steps: tuple[str, ...], code: Field | None = None) -
         code = replace(code, help=ONLINE_CODE_HELP if code.kind == "code" else
                        "The three Pokemon you and your partner pick, in the same order, here and on "
                        "the console.")
-    at = game.tools.index(host) + 1
+    at = max(n for n, t in enumerate(game.tools) if t.name.startswith("Trade (")) + 1   # after Join
     return replace(game, tools=game.tools[:at] + (online(host, steps, code),) + game.tools[at:])
 
 
