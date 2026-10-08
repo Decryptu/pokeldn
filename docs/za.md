@@ -265,8 +265,15 @@ nothing in 2.0.2 writes a non-zero value there: its only stores zero it, in the 
 by the session tick `0x95f6e4` (`0x95f738`): 1 asks the trade object to cancel (`0x9636f8` sets trade
 object +0x44 = 1) and parks the worker at step 0xf; 2 waits for trade object +0x44 == 3, then sets
 step 14 and phase 3 (`0x95f7e0`). No code stores 1, so the abort phase never starts and no path
-through the worker reaches own state 7. A store through a computed address is not excluded, and the
-emulator's GDB stub has no data watchpoints. On an emulated console hosting a trade that completed
+through the worker reaches own state 7. A register walk of the worker pointer from every read of
+session+0xd0 (the tick `0x95f608`, `0x95fc80`, the builder `0x9610c8` and its new worker
+`0x961130`, `0x961a74`, the reset `0x9645cc`), the constructor and every handler of
+`0x960c20`, through every callee it is passed to, finds stores at +0x09, +0x0c, +0x14, +0x15, +0x18,
++0xa0 and +0xa8, the two delegates' storage (+0x20 to +0x5f and +0x60 to +0x9f, written by their
+managers `0x965f54` and `0x4177c8`), the zeroing ones above, and no store through a computed
+address. The pointer leaves the walk only into its holder (session+0xd0, `0x961138`; `0x966b68`), and
+the indirect calls carry the delegates' storage, whose bodies `0xdfda8c` and `0x2dc4b94` store only
+through the session pointer they hold. On an emulated console hosting a trade that completed
 with `bin/za_join.py`, handler 14 ran once, on the worker in `x19`, with +0x10 = 0 and the step word
 +0x08 = `0x0e02`. A station whose +0x15 is clear waits the random 2..302
 updates before its 0x0b. What `0xdd07cc` returns and how the stored halfword maps onto the `b901XX`
@@ -959,7 +966,32 @@ built by `0xc5a3e4` with a constant mode from two sequences:
 | sequence | builder, mode | steps | callers |
 |---|---|---|---|
 | to local | `0xc57544`, `mov w2, #1` at `0xc575fc` | InitializeSocket, InitializePia, Commit, FinalizeToLocal | Link Trade (`0xc9fe00`), Private Battles (`0x2a49dcc`, and `0xc570a8` under "BattlePrivate") |
-| to internet | `0x2a0bb18`, `mov w2, #2` at `0x2a0bcbc` | NetworkUse, InitializeSocket, InitializeCurl, EnsureNsaTokenId, CheckNSO, InitializeNplnManager, InitializePia, LoginInternet, SaveNplnUserId, ActivatePenaltyClient, Commit, FinalizeToInternetWithGS | |
+| to internet | `0x2a0bab8`, `mov w2, #2` at `0x2a0bcbc` | NetworkUse, InitializeSocket, InitializeCurl, EnsureNsaTokenId, CheckNSO, InitializeNplnManager, InitializePia, LoginInternet, SaveNplnUserId, ActivatePenaltyClient, Commit, FinalizeToInternetWithGS | the connect request `0x2a388a4` through `0x2a3928c` (callers `0xcac894`, `0x2c66b84`, `0x2c77674`, `0x2cbce04`) |
+
+Every sequence starts with the cleanup `0xc57c8c` (LogoutInternet, DeactivatePenaltyClient,
+TerminateNPLNManager, TerminatePia, TerminateCurl), whose TerminatePia task calls the reset with
+mode 0. The network state word `0x6133018` records which sequence last committed:
+
+| value | written by |
+|---|---|
+| 0 | the start of the to-local and to-internet sequences (`0xc57588`, `0x2a0bb3c`); FinalizeCleanupNetwork (`0xdd0488`), the last step of the stand-alone cleanup `0xc920f0` |
+| 1 | the to-local sequence's Commit (`0xc84f48`) |
+| 2 | Commit (`0x2a18604`) of a second internet sequence `0x2a0ade0` (NetworkUse, InitializeSocket, InitializeCurl, EnsureNsaTokenId, InitializeNplnManager, SaveNplnUserId, Commit, RecoverNetwork, FinalizeToInternet), which runs the cleanup and no InitializePia |
+| 3 | the to-internet sequence's Commit (`0x2a2b14c`, task built by `0x2a0c398` through `0x2a29da8`), after its InitializePia with mode 2 |
+
+`0x961c80` is true when the byte `0x3f9bf6a` is 1 and `nn::nifm::IsNetworkAvailable` returns true.
+
+Ranked Battles' matching runs on the third driver. Its page update `0x2cc1d18` keeps a state at
++0x40 (jump table `0x33a2268`, 70 states); state 0x31 calls the "BattleRandom" request `0x2a48bf8`
+(`0x2cc287c`), which reaches slot 13 through `0xc8a224` (`ldr x0, [x0, #0x38]`, then `br` to slot
+`+0x68`, the manager's current driver). Before any state in 0x2f to 0x34 or 0x43 to 0x45 runs, the
+update reads `0x6133018` (`0x2cc1e14`): 1, or `0x961c80` false, sends the page to state 4; a value
+other than 3 does the same (`0x2cc4760`). States 10 to 0x2f and 0x3b to 0x3e need the same value 3
+or go to `0x2cc5b5c` and state 6 (`0x2cc1d58`). Value 3 means the last sequence to commit installed
+the mode-2 driver. The third driver's slot 13 (`0x191fd30`) builds StartupSession,
+JoinRandomSession, WaitMember, JoinRandomRecover and RandomMatchingCancel steps on
+`gflnet::npln` results. An emulated console with no online service returns from Ranked Battles to
+the menu before matching.
 
 No call builds the task with mode 3, so the LAN driver is never installed in 2.0.2. On an emulated
 console with breakpoints armed before the game's first instruction, nothing reached the setter
@@ -1084,9 +1116,3 @@ against `bin/za_join.py` and pins the type 9 and both Net messages to the emulat
 
 Mystery Gift in 2.0.2 offers Get via Internet, Get with Code/Password and Check Mystery Gifts; there
 is no local-wireless path.
-
-## Unresolved
-
-- Whether Ranked Battles' matching runs on the third driver. The internet sequence installs it
-  (mode 2, see The property update), and an emulated console with no online service returns from Ranked
-  Battles to the menu before matching.

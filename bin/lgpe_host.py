@@ -33,6 +33,7 @@ from pokeldn.ldn import rtt_protocol as rtt
 from pokeldn.ldn.station_protocol import (DISCONNECTION_REQUEST, DISCONNECTION_RESPONSE,
                                           ldn_constant_id, ldn_service_variable_id,
                                           station_location)
+from pokeldn.ldn.ldn_mitm_host import IpHostTransport
 from pokeldn.ldn.transport import HostTransport, board_radio, find_ap_phy
 from pokeldn.host_support import resolve_keys, needs_root, write_file
 from pokeldn.lgpe import (APPLICATION_VERSION, COMM_ID_PIKACHU, MAX_PARTICIPANTS, PASSPHRASE,
@@ -148,6 +149,12 @@ def build_parser():
                          "step this many seconds after the last. Offer unprompted after the party "
                          "clones and after each result, vote on the offered clone, announce and vote "
                          "the commit clone, commit (docs/lgpe_session.md). Never against a console")
+    ap.add_argument("--agree-withdrawn-vote", action="store_true",
+                    help="test only: carry the drive on through a withdrawn vote, as the host did "
+                         "before it answered state 2 (docs/lgpe_session.md). Locks a console's save")
+    ap.add_argument("--ip-host", action="store_true",
+                    help="host over ldn_mitm for an emulator instead of the radio (docs/ldn.md)")
+    ap.add_argument("--our-ip", default=None, help="with --ip-host, the address to advertise")
     online.add_arguments(ap)
     return ap
 
@@ -187,17 +194,22 @@ def main(argv=None):
                 print(f"[lgh] next offer {path} is not a valid {pb7.BOX_SIZE}-byte box structure")
                 return 2
     show_offer(args.offer)
-    if needs_root():
-        print("[lgh] must run as root (LDN needs the raw radio)"); return 1
-    phy = find_ap_phy(log=print) if args.phy == "auto" else args.phy
-    if phy is None:
-        print("[lgh] no AP-capable phy"); return 1
+    if not args.ip_host and needs_root():
+        print("[lgh] hosting over the radio needs root, a board (POKELDN_RADIO), or --ip-host")
+        return 1
+    phy = None
+    if not args.ip_host:
+        phy = find_ap_phy(log=print) if args.phy == "auto" else args.phy
+        if phy is None:
+            print("[lgh] no AP-capable phy"); return 1
     keys_path = resolve_keys(args.keys)
-    if not os.path.exists(keys_path):
+    if not args.ip_host and not os.path.exists(keys_path):
         print(f"[lgh] prod.keys not found at {keys_path!r}"); return 2
 
     scene = args.scene_id if args.scene_id is not None else scene_id(args.code.split(","))
-    if args.channel == "auto":
+    if args.channel == "auto" and args.ip_host:
+        channel = SEARCH_CHANNELS[scene % 3]
+    elif args.channel == "auto":
         channel = console_channel(keys_path, phy, scene, args.seconds)
     elif args.channel == "code":
         channel = SEARCH_CHANNELS[scene % 3]
@@ -218,14 +230,19 @@ def main(argv=None):
         if cap:
             cap.write(json.dumps(kw) + "\n"); cap.flush()
 
-    host = HostTransport(app_data=adv.data, password=PASSPHRASE, nickname=args.player_name,
-                         keys_path=keys_path, local_comm_id=COMM_ID_PIKACHU, scene_id=scene,
-                         app_version=APPLICATION_VERSION, max_participants=MAX_PARTICIPANTS,
-                         phyname=phy, ifname=args.ifname, ap_ifname=args.ap_ifname,
-                         mon_ifname=args.mon_ifname, channel=channel,
-                         skip_encryption=not args.no_skip_encryption,
-                         accept_decrypted_ccmp=not args.no_accept_decrypted_ccmp,
-                         ssid=None if args.random_ssid else SSID, protocol=args.protocol)
+    common = dict(app_data=adv.data, password=PASSPHRASE, nickname=args.player_name,
+                  keys_path=keys_path, local_comm_id=COMM_ID_PIKACHU, scene_id=scene,
+                  app_version=APPLICATION_VERSION, max_participants=MAX_PARTICIPANTS,
+                  channel=channel, ssid=None if args.random_ssid else SSID,
+                  protocol=args.protocol)
+    if args.ip_host:
+        host = IpHostTransport(**common, mirror_comm_version=True,
+                               **({"our_ip": args.our_ip} if args.our_ip else {}))
+    else:
+        host = HostTransport(**common, phyname=phy, ifname=args.ifname, ap_ifname=args.ap_ifname,
+                             mon_ifname=args.mon_ifname,
+                             skip_encryption=not args.no_skip_encryption,
+                             accept_decrypted_ccmp=not args.no_accept_decrypted_ccmp)
     if not host.start():
         print("[lgh] the AP did not come up"); return 3
     print(f"[lgh] hosting: ssid={host.ssid.hex()} us={host.our_ip}/{host.our_mac.hex()}")
@@ -935,7 +952,7 @@ class Session:
                and d["ctype"] == 2 and d["record"] else b"")
         cid = d["clone_id"] if rec else None
         if (len(rec) >= 20 and rec[:4] == b"\x02\0\0\0" and cid in self.clone.flags
-                and self.withdrawn.get(cid) != rec[8:12]):
+                and self.withdrawn.get(cid) != rec[8:12] and not self.args.agree_withdrawn_vote):
             agreed = self.clone.type4_data(cid)[:4]
             if rec[4:8] != agreed:
                 self.withdrawn[cid] = rec[8:12]

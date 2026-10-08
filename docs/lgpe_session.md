@@ -673,9 +673,10 @@ word completes the trade.
 
 Pressing A again as the confirmation greys the buttons withdraws the vote: `2 2 3` (state 2,
 argument 2, counter 3) after `1 2 2`. Answering A 2 gives status 4: the console starts the sync
-save, which commits the trade lock (600) before the commit exchange. A console answered so
-republishes `0 2 3`, announces its commit clone 5.0 s later and goes silent on it; the exchange never
-completes, so the lock stays set and the link menu refuses the next trade (`0x976634`). The right
+save, which commits the trade lock (600) before the commit exchange. A retail console answered so
+republished `0 2 3`, announced its commit clone 5.0 s later and went silent on it; the exchange did
+not complete, the lock stayed set and the link menu refused the next trade (`0x976634`). An emulated
+console answered the same way completed the trade ([Unresolved](lgpe.md#unresolved)). The right
 answer, type 4 `1 0 0 3 0 0 step T+1`,
 takes that record to state 0 under `0x11ba20`; A 1 with state 0 is status 2 (`0xf4e9f0[0]`), back to
 the selection. A withdrawn selection `2 1 4` under A 0 takes `0 0 0 4 0 0 step T+1`.

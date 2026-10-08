@@ -42,15 +42,15 @@ Working on retail hardware:
 ## Unresolved
 
 - A substituted greeting name on a console's screen
-  ([The name in the greeting](bdsp_protocol.md#the-name-in-the-greeting)). How `StartupSessionJob`
-  fills the own station's record at +0x480 from the startup setting is untraced.
-- Whether a 0x08 to a console that has never recruited a battle faults it on hardware. The code
-  writes through a null model; no 0x08 has reached that path, because those sent went out under
-  sequence ids the reliable window had already seen ([The battle
-  ladder](bdsp_protocol.md#the-battle-ladder)).
+  ([The name in the greeting](bdsp_protocol.md#the-name-in-the-greeting)).
+- What a retail console shows when a 0x08 reaches it with no battle recruited: the code stores to
+  address 0x18 with no null check and no user exception handler in the game's module; no 0x08 has
+  reached that path, because those sent went out under sequence ids the reliable window had already
+  seen ([The battle ladder](bdsp_protocol.md#the-battle-ladder)).
 - Whether a retail console that is not the Grand Underground session host adopts a 0x61 from
   pokeldn; the Underground sessions measured had the console as host, and pokeldn does not host one.
   The common dispatch and the `UgNetworkManager` handler have no sender filter
   ([the protocol page](bdsp_protocol.md#the-grand-underground)).
-- What makes a console in the Union Room stop advertising with no change on screen
+- How often `INL1.IlcaNetSession$$Update` runs, which turns the Union Room's restart wait (25 to
+  152 updates) and time-up (270 updates) into seconds
   ([Taking a seat](bdsp_session.md#taking-a-seat)).

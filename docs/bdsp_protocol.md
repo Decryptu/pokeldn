@@ -419,9 +419,19 @@ PlayerInfo writer puts +0x480 at byte 0x7A [0x01550e98]. A French console's conn
 The language is the sender's game text language, save `CONFIG.msg_lang_id` (PlayerWork +0xac,
 `get_msgLangID` [0x0237e100]); `GameManager.<OnetimeInitializeOperation>` [0x01e0eb44] fills it from
 the system language (`GetCurrentIetfCode`) only when the stored value is outside 1..10. The own
-station record's +0x480 is written by `strb w8, [x23, x22]` [0x0154956c] in `0x015494f0`, from
-`JoinMeshJob::SetupLocalPlayerInfo` [0x0155b988], out of the Pia session entry the setting builder
-[0x0156fa08] filled (entry +0x80, stride 0x98). A French console sent byte 0x7A 3 and byte 0x51 0 in
+station record's +0x480 is filled in four copies, each of the PlayerInfo's language byte:
+
+| step | code | from | to |
+|---|---|---|---|
+| `RegisterStartupSessionSetting` | `0x0156f918` (setting builder, `0x0156fa08`), `0x0168d4c8` | the plugin's player array (stride 0x28) | the framework's stored setting +0x3220: PlayerInfo +0x18, language +0x98, stride 0x98 |
+| `ChangeStateJob::StartupSession` | `0x01690d6c` -> `0x0168c5b8` -> `0x0157d36c` -> controller vfunc 2 (`LocalMatchMeshLayerController` `0x016c3e70`) | the setting's first PlayerInfo (`0x016c3f48`) | the controller's player list +8, language +0x88, count 1 at +0x268 |
+| `CreateSessionJob::MeshStartup` `0x015873b0`, `JoinSessionJob::MeshStartup` `0x015884bc` | controller vfunc 4 (`MeshLayerController` `0x0171a068`) -> `0x01546fa4` | the controller's list | the mesh object (`[0x04c4db60]`) +0x128 + n*0x98, language +0x80 (`0x015472e4`), count +0x388 |
+| `CreateMeshJob::SetupLocalPlayerInfo` `0x0155a764`, `JoinMeshJob::SetupLocalPlayerInfo` `0x0155b988` | `0x015494f0` | the mesh object's list | the own station record +0x480 + n (`strb w8, [x23, x22]` `0x0154956c`) |
+
+`ChangeStateJob::StartupSessionBegin` (`0x01690c70`) reaches StartupSession either directly or, when
+framework +0x7c is 0, after `StartupSessionJob` (`0x0168ec7c`, setting at job +0x70) and
+`WaitStartupSessionLdnInitialize` (`0x01690e30`). `StartupSessionJob` has one working step,
+InitializeLdn (`0x0168ed74`), and copies no PlayerInfo. A French console sent byte 0x7A 3 and byte 0x51 0 in
 30 of 30 PlayerInfos (17 connection responses, 13 connection requests).
 
 Both `bin/bdsp_connect.py` and `bin/bdsp_host.py` build the PlayerInfo with `pokeldn/bdsp/host.py`
@@ -552,7 +562,11 @@ Each entry builds a new `UnionRoomManager`: `EvDataManager$$EvCmdUnionProc` [0x0
 [0x01e4e300], its coroutine setting the transition zone at [0x01e560e0]) is such a change, so
 `UnionRoomManager$$OnDestroy` [0x01e4c540] runs and calls `Clear`. The recruitment model therefore
 starts null on every visit. A 0x08 reaching a console whose player has not recruited a battle in that
-visit writes through null.
+visit writes through null: the receiver passes the null model to
+`BattleRecruitmentStateModel$$ChangeBattleRecruitmentState` [0x01d2aab0] with no null test, whose
+case 4 tail-calls `NetStateModel$$SetState` [0x023e25f0] with it, and `str x2, [x20, #0x18]!`
+[0x023e2604] stores to address 0x18. The build emits no IL2CPP null check on this path, and the
+image imports no `nn::os::SetUserExceptionHandler`.
 
 The ladder's 0x08 row was measured on a console that had recruited the battle. A 0x08 under a
 sequence id the client already used is discarded by the reliable window ([the Pia

@@ -58,9 +58,30 @@ The console assigns the IP. The Union Room's eight seats are the LDN `max_partic
 sits below the game: nothing appears on screen, and it is not a seat in the Pia session.
 
 `Connect failed with status code 1` is a failed association; from the ESP32 board about one attempt
-in two fails, so retry before diagnosing. A console in the room can stop advertising with no change
-on screen. Re-entering the room opens a new network (new channel, SSID and
-session parameter), which the key derivation handles live. A receiver on the LDN interface must
+in two fails, so retry before diagnosing. Re-entering the room opens a new network (new channel, SSID
+and session parameter), which the key derivation handles live.
+
+A console in the room can stop advertising with no change on screen: its random matching tears its
+own session down and matches again. The Union Room starts its session through
+`NetworkManager$$StartSessionRandomJoin` [1.3.0 main 0x0224f600] (`SessionManager$$StartSession`
+0x01df89e0, from `UnionRoomManager$$SetUp` and `$$SessionStart`), on a `NetworkParam` whose `Reset`
+[0x0202ec30] sets `matchingMode` 1 (Random) and a local network. After random matching has created
+or joined a session (`GameState_JoinProcessAll` -> `ToGameFrontBeforeLocalRandom` [0x02743940], the
+only way into game state 20), `INL1.IlcaNetSession$$GameState_GameFrontBefore_LocalRandom`
+[0x02740640] runs on every session update:
+
+| stations | effect |
+|---|---|
+| 2 or more | `GameFrontRnoInit` clears both counters; on to the game front |
+| 1 | counter 0 and counter 1 (`gameFront_cnt`) each add one |
+| 1, counter 0 above `localRandomMatchmakeHostWaitTime + (localRandomMatchmakeHostWaitTimeMask & r)`, counter 1 at most `localRandomMatchmakeTimeUp` | `CleanupRecoveryToLoggedIn` [0x0273a7f0], game state 9 (`GS_LoggedInReturnWaitWorker`): the session closes and matching runs again |
+| 1, counter 0 above the wait, counter 1 above the time-up | `GameFrontRnoInit`; the console stays host of its session |
+
+`r` is a fresh random value drawn on each entry to state 20, which also clears counter 0 and leaves
+counter 1 running. The `IlcaNetSessionSetting` constructor [0x01f46fc0] sets the wait to 25, the
+mask to 0x7F and the time-up to 270, and `SessionConnector$$StartSession` [0x0202f2c0] changes none
+of them. A console alone in its new session therefore closes it after 25 to 152 updates, again and
+again, until 270 updates alone have accumulated, and then keeps its last network. A receiver on the LDN interface must
 filter its own source IP: broadcasts loop back.
 
 Unauthenticated Pia is dropped silently, with no error and no loss of the seat.

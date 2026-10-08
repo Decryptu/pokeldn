@@ -261,7 +261,8 @@ later trades.
 ```
 
 Console: Communiquer, Communication locale, Échange, link code Pikachu ×3, wait on the search
-screen. See [Let's Go](docs/lgpe.md).
+screen. For an emulated console over the LAN, use `lgpe_host.py --ip-host --our-ip IP`. See
+[Let's Go](docs/lgpe.md).
 
 ### Sword and Shield
 
