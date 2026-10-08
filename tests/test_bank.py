@@ -92,6 +92,7 @@ def test_a_banked_offer_keeps_its_pid_and_the_launcher_still_parses_the_line(tmp
 def test_a_completed_trade_takes_the_pokemon_out_of_the_bank_and_its_queue(vault, monkeypatch):
     """Trade 1 is a built offer, trade 2 the banked one: only trade 2's completion empties the bank, and
     the queue keeps the built offer for the next run."""
+    pytest.importorskip("flet")
     from gui.views import games
     source = vault / "received.pk8"
     source.write_bytes(b"record")
