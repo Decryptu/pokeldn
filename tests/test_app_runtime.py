@@ -79,7 +79,8 @@ def test_vendor_import_does_not_require_linux_fcntl():
 
 def test_managed_process_logs_utf8_and_stops_on_stdin_close(tmp_path):
     script = tmp_path / "session.py"
-    script.write_text("import time\nprint('Pokémon prêt 🎮')\ntry:\n"
+    # The ready line is printed inside the try: the stop can land as soon as it is read.
+    script.write_text("import time\ntry:\n    print('Pokémon prêt 🎮')\n"
                       "    while True: time.sleep(0.02)\nexcept KeyboardInterrupt:\n"
                       "    print('stopped')\n", encoding="utf-8")
     lines, exits = [], []
