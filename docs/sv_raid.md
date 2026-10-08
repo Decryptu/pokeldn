@@ -1,0 +1,54 @@
+---
+title: Scarlet/Violet Tera Raid hosting
+parent: Scarlet and Violet
+nav_order: 2
+---
+# Scarlet/Violet Tera Raid hosting
+
+The Tera Raid (Host) tool lets a retail Scarlet or Violet console join a raid
+hosted through the ESP32. The raid Pokemon and the reward list are configured
+separately.
+
+## Configure the raid
+
+Enter an eight-digit hexadecimal Raid Pokemon seed. It determines the boss
+species, form, Tera type, stats, ability and moves. The default `000F34C3`
+produces the Pawniard used while validating the host.
+
+The seed field immediately previews the generated species, star level, battle
+level, Tera type, IVs and calculated stats. **Find a raid** scans a chosen
+32-bit seed interval and ranks encounters by estimated physical bulk, special
+bulk, overall bulk, offense or total stats. Its star filter can restrict the
+results to one through four stars, and its shininess filter can find only shiny
+encounters. Pick **Use** on a result to copy that seed back into the host form.
+
+Difficulty rankings are estimates, not a complete battle simulation: moves,
+abilities, type matchups and the Pokemon brought by the player can change which
+encounter is easiest in practice. Search currently uses the same validated
+Violet, Paldea, 4-star story-progress, standard-raid context as the host.
+
+Add between one and sixteen rewards. Search for each item by name and enter a
+quantity from 1 through 999. Rows remain separate and appear in the selected
+order, including duplicate items.
+
+## Join from the console
+
+1. Plug in a board with current pokeldn firmware and add your `prod.keys` in
+   Settings.
+2. In Games, Scarlet & Violet, select Tera Raid (Host), then press Start.
+3. At a Tera crystal on the console, choose Challenge as a group and Link Code.
+4. Enter `4970`, join POKELDN, and start the raid.
+5. Beat and optionally catch the raid Pokemon. The configured items appear on
+   the reward screen.
+
+The host automatically uses client-gated startup and the validated battle
+handoff. Reward-profile files, donor captures and replay timing switches are
+not exposed in the app.
+
+## Current scope
+
+The encounter is generated from the selected seed using the validated 4-star
+Paldea context. Rewards use the Violet 4.0.0 Avalugg bootstrap layout, but the
+boss shown and caught comes from the independently selected Raid Pokemon seed.
+Item IDs and quantities are encoded into the plaintext raid bootstrap before
+it is compressed and transmitted.

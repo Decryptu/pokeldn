@@ -38,6 +38,17 @@ def test_known_seeds_select_the_captured_encounters():
                 raid["tera_type"]) == (species, stars, tera)
 
 
+def test_seed_finder_snorunt_seed_generates_without_the_old_pawniard_context():
+    raid = raid_generation.generate_seed_raid(0x0010843C)
+    assert raid["profile"]["nickname"] == "Snorunt"
+    assert raid["metadata"] == {
+        "species": 361,
+        "stars": 2,
+        "tera_type": 11,
+        "encounter_identifier": 2024,
+    }
+
+
 def test_seed_only_profiles_match_fields_read_from_five_retail_bosses():
     expected = {
         0xBD13FB43: (58, 20, 0xDFB1659E, 19, (54, 39, 24, 33, 38, 25)),

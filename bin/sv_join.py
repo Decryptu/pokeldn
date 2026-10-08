@@ -34,7 +34,7 @@ from pokeldn import pokemon as pokemon_service
 from pokeldn import sv
 from pokeldn.ldn import ldn_mitm, pia6, pia_connect, reliable5
 from pokeldn.sv import pokemon, port2, reference, streams, trade
-from pokeldn.ldn import game_channel
+from pokeldn.ldn import channel_table, game_channel
 from pokeldn.ldn.transport import board_radio, find_ap_phy
 from pokeldn.host_support import resolve_keys, needs_root
 from pokeldn.ldn import show_done, trades_done
@@ -63,8 +63,15 @@ ESTABLISHING_FLAGS = pia6.MESSAGE_FLAG_SKIP_SOURCE_CHECK
 OUR_VAR = 0xC493
 OUR_STATION_INDEX = 1
 PROTO_CLOCK = 0x77
-CLOCK_REQUEST = bytes(18)
+# A retail SV joiner sets the request marker at byte 9.
+CLOCK_REQUEST = bytes(9) + b"\x01" + bytes(8)
 CHANNEL_PORT2_OPEN = port2.build_join(0)
+RAID_HANDLER_KEYS = {
+    bytes.fromhex("8000000033000000"),
+    bytes.fromhex("8000000034000000"),
+}
+RETAIL_RAID_GUEST_PLAYER_ID = "100096e8aa857fe0be9fe53f544feab2"
+RETAIL_RAID_GUEST_MAC = "48:f1:eb:c7:b3:51"
 HOST_BITMAP = 0x01                # the destination mask a joiner writes: the host, station 0
 ACK_ENTRIES = 4  # a retail station's bulk ack carries four
 
@@ -73,6 +80,105 @@ PROTOCOL_NAMES = {
     0x7C: "reliable", 0x80: "broadcast reliable", 0x81: "stream broadcast reliable",
     0x98: "session", 0xA4: "monitoring data",
 }
+
+
+def split_raid_channel_table(payload, flags=0):
+    """Return the retail joiner's base table and optional raid-key update.
+
+    A Violet raid host initializes port 1 with one zlib-compressed table containing six keys.
+    Retail guests inflate it, announce the four generic keys in their initialized message, then
+    announce the 0x8033/0x8034 raid keys in a second message.  Reusing the compressed wire bytes as
+    an uncompressed table leaves the guest registered but unable to become raid-ready.
+    """
+    plain = bytes(payload)
+    if flags & reliable5.FLAG_ZLIB:
+        plain = streams.decompress(plain)
+    try:
+        entries = channel_table.parse(plain)
+    except (ValueError, IndexError):
+        return plain, None
+    raid = [entry for entry in entries if entry[0] in RAID_HANDLER_KEYS]
+    if {key for key, opened in raid if opened} != RAID_HANDLER_KEYS:
+        return plain, None
+    base = [entry for entry in entries if entry[0] not in RAID_HANDLER_KEYS]
+    return channel_table.build(base), channel_table.build(raid)
+
+
+def load_record_trace(path):
+    """Extract one complete joiner identity stream from a JSONL retail capture."""
+    records = {}
+    with open(path, encoding="utf-8") as fh:
+        for line in fh:
+            row = json.loads(line)
+            if (row.get("rec") != "data" or row.get("protocol") != streams.PROTOCOL_STREAM
+                    or row.get("port") != streams.JOINER_INDEX or not row.get("payload")):
+                continue
+            seq = int(row["seq"])
+            payload = bytes.fromhex(row["payload"])
+            previous = records.setdefault(seq, payload)
+            if previous != payload:
+                raise ValueError(f"record {seq} changes within {path}")
+    if not records:
+        raise ValueError(f"no 0x81 port-1 identity records in {path}")
+    expected = set(range(1, max(records) + 1))
+    missing = sorted(expected - records.keys())
+    if missing:
+        raise ValueError(f"identity in {path} is missing record(s) {missing}")
+    return sorted(records.items())
+
+
+def load_trace_session_identity(path):
+    """Return the retail joiner's (player id, station MAC) from the same JSONL capture."""
+    with open(path, encoding="utf-8") as fh:
+        for line in fh:
+            row = json.loads(line)
+            if row.get("rec") != "msg" or row.get("protocol") != PROTO_SESSION:
+                continue
+            payload = bytes.fromhex(row.get("payload", ""))
+            if not payload or payload[0] != pia_connect.SESSION_JOIN_REQUEST:
+                continue
+            try:
+                join = pia_connect.parse_session_join_v11(payload)
+            except (ValueError, IndexError):
+                continue
+            players = join.get("players", ())
+            if players:
+                constant_id = join["source_constant_id"]
+                # Inverse of pia_connect.ldn_constant_id():
+                # constant = mac[2], mac[4], mac[5], mac[3], mac[1], mac[0].
+                station_mac = bytes((constant_id[5], constant_id[4], constant_id[0],
+                                     constant_id[3], constant_id[1], constant_id[2]))
+                return players[0]["player_id"], station_mac
+    raise ValueError(f"no retail session-join identity in {path}")
+
+
+def load_raid_guest_lobby_records(path):
+    """Load the captured guest's two lobby application records, preserving wire flags.
+
+    These are experimental replay payloads; session-dependent fields are not regenerated.
+    Only the observed 0x8033 types 0x2d/0x2e on guest port 0 are eligible.
+    """
+    records = {}
+    with open(path, encoding="utf-8") as fh:
+        for line in fh:
+            row = json.loads(line)
+            if (row.get("rec") != "data" or row.get("protocol") != 0x80
+                    or row.get("port") != 0 or not row.get("src", "").endswith(".2")):
+                continue
+            payload = bytes.fromhex(row["payload"])
+            flags = row["reliable_flags"]
+            plain = streams.decompress(payload) if flags & reliable5.FLAG_ZLIB else payload
+            if plain[:4] not in (bytes.fromhex("80332d01"), bytes.fromhex("80332e01")):
+                continue
+            seq = int(row["seq"])
+            value = (flags, payload)
+            if records.setdefault(seq, value) != value:
+                raise ValueError(f"raid lobby record {seq} changes within {path}")
+    if sorted(records) != [1, 2]:
+        raise ValueError(f"expected guest raid lobby sequences 1 and 2 in {path}")
+    return [(seq, *records[seq]) for seq in sorted(records)]
+
+
 SESSION_MESSAGE_NAMES = {
     0: "join request", 1: "join request ack", 2: "join response", 3: "leave request",
     5: "update session", 6: "update session ack", 7: "start host migration",
@@ -260,6 +366,10 @@ def build_parser():
                          "Session join request): ten protocols with their versions, a four-byte "
                          "nonce, both location ids, a seven-byte station address and one player "
                          "record. A mesh join is unicast, so no passive capture shows a retail one")
+    ap.add_argument("--raid-guest-replay", action="store_true",
+                    help="replay the successful retail Scarlet/Violet raid-guest opening: Net "
+                         "acks, one Session join, clock, delayed channel ACKs, base table, port-2 "
+                         "join, raid-key update and the complete identity stream")
     ap.add_argument("--send-record", metavar="FILE",
                     help="after the seat, send this 1395-byte identity record on 0x81 port 1 "
                          "(our station stream) as the game's data exchange, retransmitting until "
@@ -278,6 +388,14 @@ def build_parser():
                          "writes one from a station's own log, so a whole real identity can be "
                          "replayed rather than the host's mirrored back; by default the recorded "
                          "set in pokeldn.sv.reference")
+    ap.add_argument("--record-trace", metavar="JSONL",
+                    help="load a complete 0x81 port-1 identity directly from a retail capture; "
+                         "takes precedence over --record-set and rejects sequence gaps")
+    ap.add_argument("--raid-lobby-trace", metavar="JSONL",
+                    help="experimentally replay the captured guest's 0x80:0 lobby records "
+                         "after identity and raid channel setup; retains captured application fields")
+    ap.add_argument("--raid-guest-ready-delay", type=float,
+                    help="send the observed guest ready state this many seconds after lobby replay")
     ap.add_argument("--trainer-name", default="POKELDN",
                     help="the player name record 1 of our identity carries, the one the trade screen shows")
     ap.add_argument("--no-identity", action="store_true",
@@ -291,10 +409,19 @@ def build_parser():
                     help="seconds after the seat before the first identity record goes out")
     ap.add_argument("--no-channel-ack", action="store_true",
                     help="do not acknowledge the host's messages on the game's reliable channel 0x7c")
+    ap.add_argument("--channel-ack-delay", type=float, default=0.0,
+                    help="delay 0x7c ACKs by SECONDS; the captured retail raid guest used about "
+                         "0.25 seconds during its opening")
     ap.add_argument("--port2-now", action="store_true",
                     help="send the game's type-3 join on 0x7c port 2 with the channel table, "
                          "rather than in answer to the console's type-7 announcement on 0x80 "
                          "port 2. A pair's joiner answers the announcement (docs/sv.md, Port 2)")
+    ap.add_argument("--port2-delay", type=float, default=None,
+                    help="send the port-2 join this many seconds after our initial port-1 table; "
+                         "used by retail raid guest replay instead of waiting for an announcement")
+    ap.add_argument("--raid-table-delay", type=float, default=0.35,
+                    help="seconds after the initialized game-channel table before announcing the "
+                         "0x8033/0x8034 raid keys (retail captures use a separate update)")
     ap.add_argument("--send-on-open", action="append", default=[],
                     help="DELAY:PROTO:PORT:HEX[:z][:start|:end], sent that many seconds after the "
                          "host announces key 0x80 open on 0x7c port 1. A station's identity is "
@@ -385,8 +512,11 @@ def build_parser():
                     help="the packet header's destination variable id on the join request: 0, "
                          "which is what a joining Arceus uses, or the host's own")
     ap.add_argument("--net-ack", action="store_true",
-                    help="answer the host's Net 0x11 with the 0x12 ack. A retail joiner does not, "
-                         "and the ack makes the console ask for host migration instead (sv08)")
+                    help="answer Net 0x11 with 0x12 and Net 0x50 with 0x51, as a retail Scarlet/"
+                         "Violet raid joiner does")
+    ap.add_argument("--net-flags", type=lambda v: int(v, 0), default=0x11,
+                    help="Pia message flags for Net 0x12/0x51; retail Scarlet/Violet uses 0x11 "
+                         "so the Net connection job wakes (0x01 parses but does not wake it)")
     ap.add_argument("--connect-timeout", type=float, default=8.0,
                     help="seconds to allow the association itself; a console whose host phase "
                          "ends mid-connect leaves ldn.connect blocked with no timeout of its own")
@@ -443,12 +573,42 @@ def describe_offer(body):
 def main(argv=None):
     ap = build_parser()
     args = ap.parse_args(argv)
+    if args.raid_guest_replay:
+        args.session_join = True
+        args.game_channel = True
+        # Suppress bundled trade fragments; supply the captured raid identity via --record-trace.
+        # Guest broadcasts were missing from the old host-MAC-only reference capture.
+        args.no_identity = True
+        args.net_ack = True
+        args.net_flags = 0x11
+        args.join_repeat = 0
+        args.open_delay = 0.02
+        args.record_delay = 0.44
+        args.channel_ack_delay = 0.25
+        args.port2_now = False
+        args.port2_delay = 0.24
+        # Measured from the guest's base channel table in the known-good trace: 0.792 s.
+        args.raid_table_delay = 0.79
+        if args.join_player_id == "arceus":
+            args.join_player_id = RETAIL_RAID_GUEST_PLAYER_ID
+        if args.mac is None:
+            args.mac = RETAIL_RAID_GUEST_MAC
+        print("[sv] retail raid guest replay: exact retail MAC/clock, delayed Session update, "
+              "retail stream opening, captured identity, port-2 at +0.24s, raid keys at +0.79s")
     if args.trade_offer:
         args.trade_offer = [pokemon_service.prepare_file("sv", p, fresh=args.fresh_pid,
             transform=lambda raw: trade.load_offer(raw, args.offer_set)) for p in args.trade_offer]
         args.offer_set = []
         args.fresh_pid = False
     reference.fill_identity(args)
+    if args.record_trace and (args.join_player_id == "arceus" or args.mac is None):
+        trace_player_id, trace_mac = load_trace_session_identity(args.record_trace)
+        if args.join_player_id == "arceus":
+            args.join_player_id = trace_player_id.hex()
+            print(f"[sv] using record trace player id {args.join_player_id}")
+        if args.mac is None:
+            args.mac = ":".join(f"{b:02x}" for b in trace_mac)
+            print(f"[sv] using record trace station MAC {args.mac}")
     # A killed run loses a block-buffered stdout, and the seat's log with it.
     try:
         sys.stdout.reconfigure(line_buffering=True)
@@ -706,6 +866,7 @@ async def run_session(args, keys, host_ip, host_mac, our_ip, our_mac, record):
     joined_at = 0.0
     join_sequence = None
     pending_update = None       # a type-5 update that arrived before the join response
+    replay_first_update_at = None  # retail raid guest ignores the first coalesced update
     migration_sent = 0
     migration_at = None
     handed = False
@@ -713,7 +874,9 @@ async def run_session(args, keys, host_ip, host_mac, our_ip, our_mac, record):
     if args.send_record:
         identity = streams.compress(Path(args.send_record).read_bytes())
     record_seq = 1
-    channel = {"opened": False, "table": None, "key80": False, "port2": False}
+    channel = {"opened": False, "table": None, "table_update": None,
+               "table_update_due": None, "port2_due": None,
+               "key80": False, "port2": False}
     stage = None
     if args.trade_offer:
         stage = trade.JoinerTradeStage(
@@ -735,16 +898,28 @@ async def run_session(args, keys, host_ip, host_mac, our_ip, our_mac, record):
                 due = max(due, other[0] + delay)
         pending_trade.append((due, port, payload))
     pending_open = []           # (due, spec) hung on the host's own key-0x80 open
+    pending_channel_acks = {}   # (port, ack id) -> due; retail coalesces opening retransmits
     join_sends_scheduled = False
     offers_seen = 0
     trades_done = 0
-    record_set = []
-    if args.record_set:
+    record_set = load_record_trace(args.record_trace) if args.record_trace else []
+    raid_lobby_records = (load_raid_guest_lobby_records(args.raid_lobby_trace)
+                          if args.raid_lobby_trace else [])
+    raid_lobby_sent = False
+    raid_ready_due = None
+    raid_guest_state = 1
+    raid_start_ack_scheduled = False
+    raid_application_counter = None
+    if record_set:
+        record_set[0] = (record_set[0][0],
+                         reference.named_record(record_set[0][1], args.trainer_name))
+    elif args.record_set:
         for name in sorted(os.listdir(args.record_set)):
             if name.endswith(".bin"):
                 seq, payload = int(name[:-4]), Path(os.path.join(args.record_set, name)).read_bytes()
                 record_set.append((seq, reference.named_record(payload, args.trainer_name) if seq == 1
                                    else payload))
+    if record_set:
         print(f"[sv] the record set holds {len(record_set)} record(s), "
               f"sequence ids {record_set[0][0]}..{record_set[-1][0]}")
     set_sent = False
@@ -827,6 +1002,9 @@ async def run_session(args, keys, host_ip, host_mac, our_ip, our_mac, record):
                 flags=flags | (reliable5.FLAG_IS_INITIALIZED if seq == 1 else 0))
         send(out(body, host_var or 0, protocol=PROTO_RELIABLE, port=port),
              what, port=port, to=host_ip, seq=seq)
+        sent = reliable5.parse(body)
+        record(rec="channel_out", port=port, seq=seq, flags=sent["flags"],
+               payload=bytes(payload).hex(), t=time.time())
         return seq
 
     def send_join():
@@ -905,6 +1083,7 @@ async def run_session(args, keys, host_ip, host_mac, our_ip, our_mac, record):
         if not opened and elapsed >= args.open_delay and (
                 not args.session_join or (joined_at and now - joined_at >= args.open_delay)):
             opened = True
+            # Guest-MAC capture confirms these opens and ACKs also occur in retail raids.
             send_opening()
         if args.session_join and host_var is not None and not joined and elapsed >= args.join_delay and (
                 join_sent == 0.0 or (args.join_repeat and now - join_sent >= args.join_repeat)):
@@ -939,6 +1118,33 @@ async def run_session(args, keys, host_ip, host_mac, our_ip, our_mac, record):
                 channel["port2"] = True
                 send_channel(2, CHANNEL_PORT2_OPEN, "channel port 2 open")
                 print(f"[sv] -> {host_ip}: the port-2 join, without waiting for an announcement")
+            elif args.port2_delay is not None:
+                channel["port2_due"] = time.time() + args.port2_delay
+            if channel["table_update"] is not None:
+                channel["table_update_due"] = time.time() + args.raid_table_delay
+        if (not channel["port2"] and channel["port2_due"] is not None
+                and time.time() >= channel["port2_due"]):
+            channel["port2"] = True
+            send_channel(2, CHANNEL_PORT2_OPEN, "channel port 2 open")
+            print(f"[sv] -> {host_ip}: the replay-timed port-2 join")
+            channel["port2_due"] = None
+        if (channel["table_update_due"] is not None
+                and time.time() >= channel["table_update_due"]):
+            seq = send_channel(1, channel["table_update"], "raid channel table update")
+            print(f"[sv] -> {host_ip}: announced the 0x8033/0x8034 raid keys "
+                  f"on 0x7c port 1, our sequence {seq}")
+            channel["table_update_due"] = None
+            channel["table_update"] = None
+        for (port, ack_id), due in list(pending_channel_acks.items()):
+            if time.time() < due:
+                continue
+            ack = game_channel.build_ack(
+                ack_id, lowest_pending=our_seq.get((PROTO_RELIABLE, port), 1))
+            send(out(ack, host_var or 0, protocol=PROTO_RELIABLE, port=port,
+                     flags=streams.MESSAGE_FLAGS_ACK),
+                 "channel ack", port=port, ack_id=ack_id,
+                 pia_flags=streams.MESSAGE_FLAGS_ACK, to=host_ip)
+            del pending_channel_acks[(port, ack_id)]
         if record_set and joined and not set_sent and now - joined_at >= args.record_delay:
             set_sent = True
             for seq, payload in record_set:
@@ -954,6 +1160,54 @@ async def run_session(args, keys, host_ip, host_mac, our_ip, our_mac, record):
                 seq for seq, _ in record_set) + 1
             print(f"[sv] -> {host_ip}: our identity, {len(record_set)} records on 0x81 port 1, "
                   f"our next sequence there {our_seq[(streams.PROTOCOL_STREAM, streams.JOINER_INDEX)]}")
+        if (raid_lobby_records and not raid_lobby_sent and set_sent
+                and channel["opened"] and channel["table_update_due"] is None
+                and channel["port2"] and now - joined_at >= args.record_delay + 0.27):
+            key = (PROTO_BROADCAST_RELIABLE, 0)
+            if our_seq.get(key, 1) != 1:
+                raise ValueError("raid lobby replay requires an unused 0x80:0 send stream")
+            for seq, flags, payload in raid_lobby_records:
+                body = reliable5.build_header(
+                    flags, seq, len(payload), lowest_pending=1, destination_bits=3,
+                    bitmap=[streams.bitmap_for(streams.JOINER_INDEX)]) + payload
+                send(out(body, host_var or 0, protocol=key[0], port=key[1],
+                         flags=streams.MESSAGE_FLAGS_DATA), "raid lobby replay",
+                     protocol=key[0], port=key[1], seq=seq,
+                     reliable_flags=flags, application_payload=payload.hex())
+                identity_window.sent(key, seq, body, now)
+            our_seq[key] = 3
+            raid_lobby_sent = True
+            if args.raid_guest_ready_delay is not None:
+                raid_ready_due = now + args.raid_guest_ready_delay
+            print("[sv] sent captured guest raid lobby records 1 and 2 on 0x80:0")
+        if raid_ready_due is not None and now >= raid_ready_due:
+            # Controlled Ready press is state 0x01; 0x0d is tested only after host state 0x0c.
+            # Its application counter follows the type-0x2e record, independently of Pia seq.
+            _, first_flags, first_payload = raid_lobby_records[0]
+            ready = bytearray(streams.decompress(first_payload)
+                              if first_flags & reliable5.FLAG_ZLIB else first_payload)
+            _, second_flags, second_payload = raid_lobby_records[1]
+            second = (streams.decompress(second_payload)
+                      if second_flags & reliable5.FLAG_ZLIB else second_payload)
+            if len(ready) != 42 or ready[34:38] != bytes.fromhex("18000000"):
+                raise ValueError("unrecognized guest lobby state; refusing to guess ready field")
+            if raid_application_counter is None:
+                raid_application_counter = int.from_bytes(second[4:8], "little")
+            raid_application_counter = (raid_application_counter + 1) & 0xffffffff
+            ready[4:8] = raid_application_counter.to_bytes(4, "little")
+            ready[34:38] = raid_guest_state.to_bytes(4, "little")
+            key = (PROTO_BROADCAST_RELIABLE, 0)
+            seq = next_seq(*key)
+            payload = streams.compress(ready)
+            body = streams.build_record_message(payload, seq, streams.JOINER_INDEX,
+                                                lowest_pending=identity_window.lowest(key, seq))
+            send(out(body, host_var or 0, protocol=key[0], port=key[1],
+                     flags=streams.MESSAGE_FLAGS_DATA),
+                 "raid guest ready" if raid_guest_state == 1 else "raid guest start ack",
+                 protocol=key[0], port=key[1], seq=seq, application_plain=ready.hex())
+            identity_window.sent(key, seq, body, now)
+            raid_ready_due = None
+            print(f"[sv] sent guest lobby state {raid_guest_state:#04x} on 0x80:0")
         for key, seq, body in identity_window.due(now):
             body = reliable5.set_lowest_pending(
                 body, identity_window.lowest(key, our_seq.get(key, 1)))
@@ -1055,16 +1309,16 @@ async def run_session(args, keys, host_ip, host_mac, our_ip, our_mac, record):
                               f"host_const={host_const.hex()}")
                     if args.net_ack:
                         send(out(pia_connect.build_net_response(seqid), 0,
-                                       protocol=PROTO_NET, flags=ESTABLISHING_FLAGS),
-                             "net conn response", seqid=seqid)
+                                       protocol=PROTO_NET, flags=args.net_flags),
+                             "net conn response", seqid=seqid, pia_flags=args.net_flags)
                         print(f"[sv] -> {host_ip}: net 0x12 ack, seqid={seqid}")
                 # The 0x50 carries its sequence at [4:8]; the 0x51 echoes it in the 0x12's shape.
                 if args.net_ack and len(msg.payload) >= 8 and msg.payload[0] == 1 \
                         and msg.payload[1] == NET_0x50:
                     seq50 = int.from_bytes(msg.payload[4:8], "big")
                     body = bytes([0x01, NET_0x51, 0, 0]) + seq50.to_bytes(4, "big")
-                    send(out(body, 0, protocol=PROTO_NET, flags=ESTABLISHING_FLAGS),
-                         "net 0x51", seqid=seq50)
+                    send(out(body, 0, protocol=PROTO_NET, flags=args.net_flags),
+                         "net 0x51", seqid=seq50, pia_flags=args.net_flags)
                     print(f"[sv] -> {host_ip}: net 0x51 ack, seqid={seq50}")
             if msg.protocol == PROTO_SESSION and msg.payload:
                 kind = msg.payload[0]
@@ -1081,14 +1335,15 @@ async def run_session(args, keys, host_ip, host_mac, our_ip, our_mac, record):
                         record(rec="join_response", t=time.time(), **{
                             k: (v.hex() if isinstance(v, bytes) else v) for k, v in resp.items()})
                         if resp["status"] == 1:
-                            joined = True
-                            joined_at = now
-                            if not args.no_clock:
-                                send(out(CLOCK_REQUEST, host_var or 0, protocol=PROTO_CLOCK),
-                                     "clock request")
-                                print(f"[sv] -> {host_ip}: the clone clock request")
                             join_sequence = resp["sequence_id"]
-                            if pending_update is not None:
+                            if not args.raid_guest_replay:
+                                joined = True
+                                joined_at = now
+                                if not args.no_clock:
+                                    send(out(CLOCK_REQUEST, host_var or 0, protocol=PROTO_CLOCK),
+                                         "clock request")
+                                    print(f"[sv] -> {host_ip}: the clone clock request")
+                            if pending_update is not None and not args.raid_guest_replay:
                                 send_update_ack(pending_update)
                                 pending_update = None
                 elif kind == pia_connect.SESSION_UPDATE:
@@ -1105,6 +1360,25 @@ async def run_session(args, keys, host_ip, host_mac, our_ip, our_mac, record):
                                stations=[{k: (v.hex() if isinstance(v, bytes) else v)
                                           for k, v in st.items() if k != "players"}
                                          for st in upd["stations"]])
+                        if args.raid_guest_replay:
+                            # Retail receives the join response and first update together, remains
+                            # silent, then answers the host's update retransmission about two
+                            # seconds later.  Its game channel follows that ACK/clock exchange.
+                            if replay_first_update_at is None:
+                                replay_first_update_at = now
+                                pending_update = upd
+                                print("[sv] raid replay: holding the first coalesced Session update")
+                            elif now - replay_first_update_at >= 1.0:
+                                joined = True
+                                joined_at = now
+                                join_sequence = upd["sequence_id"]
+                                send_update_ack(upd)
+                                pending_update = None
+                                if not args.no_clock:
+                                    send(out(CLOCK_REQUEST, host_var or 0, protocol=PROTO_CLOCK),
+                                         "clock request")
+                                    print(f"[sv] -> {host_ip}: the retail clone clock request")
+                            continue
                         # A retail Scarlet seats a joiner with this update alone, no join response;
                         # a joiner waiting for a type 1 sends nothing for the rest of the session.
                         if not joined and any(st["variable_id"] == ours["var"]
@@ -1169,7 +1443,18 @@ async def run_session(args, keys, host_ip, host_mac, our_ip, our_mac, record):
                             and msg.port == 1 and channel["table"] is None:
                         # Held until the opening has gone: a pair's joiner never announces its table
                         # before it.
-                        channel["table"] = cm["payload"]
+                        try:
+                            base, raid_update = split_raid_channel_table(
+                                cm["payload"], cm["flags"])
+                        except Exception as exc:
+                            print(f"[sv] could not decode the host's channel table: {exc}")
+                            base, raid_update = cm["payload"], None
+                        channel["table"] = base
+                        channel["table_update"] = raid_update
+                        if raid_update is not None:
+                            print(f"[sv] the host's compressed raid table became a "
+                                  f"{len(base)}B base table plus a "
+                                  f"{len(raid_update)}B 0x8033/0x8034 update")
                     elif args.game_channel and msg.port == 1 and channel["opened"] \
                             and stage is None \
                             and not (cm["flags"] & reliable5.FLAG_IS_INITIALIZED):
@@ -1180,11 +1465,18 @@ async def run_session(args, keys, host_ip, host_mac, our_ip, our_mac, record):
                     if not args.no_channel_ack:
                         # Our own next sequence: a higher one walks the peer's receive base past our
                         # later messages, which are then discarded at 0x6f03cc (docs/pia.md).
-                        ack = game_channel.build_ack(
-                            cm["sequence_id"] + 1,
-                            lowest_pending=our_seq.get((PROTO_RELIABLE, msg.port), 1))
-                        send(out(ack, host_var or 0, protocol=PROTO_RELIABLE, port=msg.port),
-                             "channel ack", port=msg.port, to=host_ip)
+                        ack_id = cm["sequence_id"] + 1
+                        if args.channel_ack_delay > 0:
+                            pending_channel_acks.setdefault(
+                                (msg.port, ack_id), time.time() + args.channel_ack_delay)
+                        else:
+                            ack = game_channel.build_ack(
+                                ack_id,
+                                lowest_pending=our_seq.get((PROTO_RELIABLE, msg.port), 1))
+                            send(out(ack, host_var or 0, protocol=PROTO_RELIABLE, port=msg.port,
+                                     flags=streams.MESSAGE_FLAGS_ACK),
+                                 "channel ack", port=msg.port, ack_id=ack_id,
+                                 pia_flags=streams.MESSAGE_FLAGS_ACK, to=host_ip)
                     if (msg.port == 1 and not channel["key80"]
                             and cm["payload"] == trade.table_update(trade.KEY_TRADE, True)):
                         # Nothing sent on port 0 before the host's trade-key open reaches the game
@@ -1259,12 +1551,23 @@ async def run_session(args, keys, host_ip, host_mac, our_ip, our_mac, record):
                     print(f"[sv] <- RECORD 0x{msg.protocol:02x}:{msg.port} seq {rm['sequence_id']} "
                           f"{reliable5.flag_names(rm['flags'])} {len(rm['payload'])}B{note}")
                     print(f"       {body.hex()[:400]}")
+                    if (raid_lobby_sent and args.raid_guest_ready_delay is not None
+                            and not raid_start_ack_scheduled and raid_ready_due is None
+                            and msg.protocol == PROTO_BROADCAST_RELIABLE and msg.port == 0
+                            and len(body) == 42 and body[:4] == bytes.fromhex("80332d01")
+                            and body[34:38] == bytes.fromhex("0c000000")):
+                        raid_start_ack_scheduled = True
+                        raid_guest_state = 0x0d
+                        raid_ready_due = time.time()
+                        record(rec="raid_host_start", t=time.time(), plain=body.hex())
+                        print("[sv] host state 0x0c: scheduling guest start acknowledgment 0x0d")
                     if (args.game_channel and msg.protocol == PROTO_BROADCAST_RELIABLE
                             and msg.port == 2 and body[:1] == bytes([port2.TYPE_ANNOUNCE])
                             and not channel["port2"]):
                         # A pair's joiner answers the announcement with the type-3 join 0.09 s later
                         # (docs/sv.md, Port 2).
                         channel["port2"] = True
+                        channel["port2_due"] = None
                         station = body[-9:-1].hex() if len(body) > 9 else "?"
                         print(f"[sv] the console ANNOUNCED on 0x80 port 2, station {station}")
                         record(rec="announce", station=station, plain=body.hex(), t=time.time())

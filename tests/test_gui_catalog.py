@@ -29,7 +29,8 @@ def test_the_tool_builds_arguments_its_entry_point_accepts(tool):
             _check(tool, {**base, choice.key: key})
 
 
-LINKED = [tool for tool in TOOLS if tool.key != "swsh-gift"]   # the gift host advertises a card, no player
+LINKED = [tool for tool in TOOLS if tool.key not in ("swsh-gift", "sv-raid-host")]
+# The gift host advertises a card, and the raid host replays a validated blank retail identity.
 
 
 @pytest.mark.parametrize("tool", LINKED, ids=[t.key for t in LINKED])
@@ -84,6 +85,19 @@ def test_one_offer_from_an_older_settings_file_still_builds():
     tool = next(t for game in GAMES for t in game.tools if t.key == "sv-host")
     args = build(tool, {"--trade-offer": {"file": "/tmp/single.pk9"}}, {}, Settings())
     assert args.count("--trade-offer") == 1 and "/tmp/single.pk9" in args
+
+
+def test_sv_raid_builds_an_ordered_reward_list():
+    tool = next(t for game in GAMES for t in game.tools if t.key == "sv-raid-host")
+    values = {"--raid-seed": "000F34C3", "--reward": [
+        {"item_id": "1", "quantity": "1"},
+        {"item_id": "50", "quantity": "10"},
+    ]}
+    args = build(tool, values, {}, Settings())
+    parsed = parser_of(tool.script).parse_args(args)
+    assert parsed.raid_seed == 0x000F34C3
+    assert parsed.reward == [(1, 1), (50, 10)]
+    assert args.count("--reward") == 2
 
 
 def test_a_setting_kept_off_the_basic_tab_still_reaches_the_entry_point():

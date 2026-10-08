@@ -8,7 +8,8 @@ from dataclasses import dataclass
 class Field:
     flag: str | tuple[str, ...]   # "" is positional; a tuple passes the same value to each flag
     label: str
-    kind: str = "text"            # text number choice switch pokemon file builder multi linkcode, or a PKHeX
+    kind: str = "text"            # text number choice switch pokemon rewards file builder multi linkcode,
+                                  # raidseed, or a PKHeX
                                   # name list: species move item ball
     help: str = ""
     default: str | bool = ""
@@ -310,6 +311,19 @@ SV = Game("sv", "Scarlet & Violet", "SV", "sv.md", (
                 "--session-join", "--answer-migration", "--net-ack", "--ack-flags", "0x00",
                 "--game-channel", "--announce-timeout", "20", "--rtt-delay", "0.3",
                 "--trainer-name", "{ot}", "--offer-out", "{received}/sv-{stamp}.pk9"), doc="sv.md"),
+    Tool("sv-raid-host", "Tera Raid (Host)", "bin/sv_raid_host.py",
+         "Host a Tera Raid with a seed-selected boss and an exact custom reward list.",
+         ("Choose the raid Pokemon seed and the rewards, then start the host.",
+          "At a Tera crystal: Challenge as a group, then choose Link Code.",
+          "Enter 4970 and join. POKELDN hosts the raid.",
+          "Beat and catch the raid Pokemon; the selected rewards appear afterward."),
+         (Field("--raid-seed", "Raid Pokemon seed", "raidseed", default="000F34C3", required=True,
+                help="Eight hexadecimal digits. The seed determines the boss species, Tera type, "
+                     "stats, ability, and moves."),
+          Field("--reward", "Raid rewards", "rewards", required=True,
+                help="Choose 1 to 16 reward rows in display order. Duplicate items are allowed."),
+          host_seconds("600")),
+         doc="sv_raid.md"),
 ))
 
 ZA = Game("za", "Legends Z-A", "PLZA", "za.md", (

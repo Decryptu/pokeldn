@@ -6,7 +6,11 @@
 #include <stddef.h>
 #include <stdint.h>
 
-#define WIRE_MAX_PAYLOAD 1600
+/* RX_SNIFF includes a five-byte PHY header before the complete 802.11 frame.  Raid identity
+   traffic can exceed the old Ethernet-sized 1600-byte ceiling, while a normal 802.11 MPDU is at
+   most 2346 bytes.  2400 carries that whole frame and still fits comfortably in the USB/UART
+   rings and the heap-backed outgoing queue. */
+#define WIRE_MAX_PAYLOAD 2400
 
 typedef void (*wire_handler_t)(uint8_t type, const uint8_t *payload, size_t length);
 

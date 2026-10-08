@@ -1,7 +1,7 @@
 ---
 title: Scarlet and Violet
 nav_order: 9
-has_children: false
+has_children: true
 ---
 
 # Scarlet and Violet

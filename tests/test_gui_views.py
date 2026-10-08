@@ -10,6 +10,7 @@ from gui.views import pokemon
 from gui.views.games import GamesView
 from gui.views.pokemon import OfferOptions, OfferQueue
 from pokeldn.app.catalog import Field, offer
+from pokeldn.app import command
 
 
 def test_saved_pokemon_offer_keeps_its_card_description():
@@ -23,6 +24,37 @@ def test_choice_card_includes_help_for_the_saved_selection():
                   choice_help=(("trade", "Trades Pokemon."),))
     view = SimpleNamespace(values={field.key: "trade"})
     assert GamesView.description(view, field) == "Choose a mode. Trades Pokemon."
+
+
+def test_raid_seed_and_rewards_report_actionable_errors():
+    seed = Field("--raid-seed", "Raid seed", "raidseed")
+    rewards = Field("--reward", "Rewards", "rewards")
+    assert command.code_error(seed, "123")
+    assert not command.code_error(seed, "000F34C3")
+    assert command.code_error(rewards, []) == "Add at least one raid reward."
+    assert command.code_error(rewards, [{"item_id": "50", "quantity": "1000"}])
+    assert not command.code_error(rewards, [{"item_id": "1", "quantity": "1"},
+                                            {"item_id": "50", "quantity": "10"}])
+
+
+def test_raid_reward_picker_preserves_order_and_duplicate_rows(monkeypatch):
+    from gui.views import rewards as reward_view
+
+    class Picker:
+        def __init__(self, app, game, kind, value, on_change, optional=True, names=None):
+            assert names and {n["id"] for n in names} >= {1, 50, 796}
+            self.control = SimpleNamespace(value=value, on_change=on_change)
+
+    monkeypatch.setattr(reward_view, "NamePicker", Picker)
+    saved = []
+    picker = reward_view.RewardPicker(SimpleNamespace(), "sv", [], saved.append)
+    picker._set(0, "item_id", "1")
+    picker._set(0, "quantity", "2")
+    picker._add(None)
+    picker._set(1, "item_id", "1")
+    picker._set(1, "quantity", "3")
+    assert saved[-1] == [{"item_id": "1", "quantity": "2"},
+                         {"item_id": "1", "quantity": "3"}]
 
 
 def test_options_the_new_species_cannot_have_are_dropped_before_a_build():

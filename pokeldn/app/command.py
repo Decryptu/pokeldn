@@ -1,5 +1,6 @@
 import os
 import random
+import re
 import time
 from functools import cache
 
@@ -54,6 +55,9 @@ def _args(field: Field, value, tool: Tool) -> list[str]:
         out = files if not field.flag else [a for n, f in enumerate(files)
                                              for a in ((field.more if n and field.more else flags[0]), f)]
         return out + ([field.count, str(len(files))] if field.count else [])
+    if field.kind == "rewards":
+        return [part for row in (value or ())
+                for part in (flags[0], f"{row.get('item_id', '')}:{row.get('quantity', '')}")]
     if value in ("", None):
         return list(field.unset)
     items = str(value).split() if field.kind == "multi" else [field.template.format(value) if field.template
@@ -121,7 +125,25 @@ def prepare(tool: Tool, values: dict) -> None:
 
 
 def code_error(field: Field, value) -> str:
-    """A Let's Go link code must name three picker Pokemon; a missing one would host under another code."""
+    """Validate structured basic fields before an entry point is launched."""
+    if field.kind == "raidseed":
+        return "Enter exactly eight hexadecimal digits." if not re.fullmatch(
+            r"[0-9A-Fa-f]{8}", str(value or "")) else ""
+    if field.kind == "rewards":
+        if not isinstance(value, (list, tuple)) or not value:
+            return "Add at least one raid reward."
+        if len(value) > 16:
+            return "A raid reward profile supports at most 16 rows."
+        for index, row in enumerate(value, 1):
+            try:
+                item_id, quantity = int(row["item_id"]), int(row["quantity"])
+            except (KeyError, TypeError, ValueError):
+                return f"Choose an item and quantity for reward {index}."
+            if not 1 <= item_id <= 0xFFFFFFFF:
+                return f"Choose an item for reward {index}."
+            if not 1 <= quantity <= 999:
+                return f"Reward {index} quantity must be from 1 to 999."
+        return ""
     if field.kind != "linkcode":
         return ""
     try:

@@ -23,6 +23,15 @@ def test_cli_uses_the_shared_catalog():
     assert "swsh-host" in result.stdout and "za-join" in result.stdout
 
 
+def test_source_ui_can_introspect_the_raid_launcher_without_bin_on_sys_path():
+    """main.py loads entry points as modules; direct script execution adds bin implicitly."""
+    root = Path(__file__).resolve().parents[1]
+    code = (f"import sys; sys.path.insert(0, {str(root)!r}); "
+            "from pokeldn.app.introspect import parser_of; "
+            "parser_of('bin/sv_raid_host.py')")
+    subprocess.run([sys.executable, "-I", "-c", code], check=True, capture_output=True, text=True)
+
+
 def test_limits_apply_to_hexadecimal_values():
     field = Field("--set", "items", limits=(("held_item", 1607, "unsafe"),))
     assert limit_error(field, "held_item=0xffff") == "unsafe"
@@ -38,6 +47,13 @@ def test_packer_uses_tracked_defaults_and_requires_firmware(monkeypatch, tmp_pat
     files = pack.runtime_files()
     assert "config/host.toml" in files
     assert "LICENSE" in files and "vendor/LDN/LICENSE" in files
+    assert {
+        "bin/sv_raid_bootstrap_codec.py",
+        "bin/sv_raid_host.py",
+        "bin/sv_raid_reward_donor.bin",
+        "bin/sv_raid_start_gate.py",
+        "docs/sv_raid.md",
+    } <= set(files)
     assert not any("scratchpad" in p or "host.local.toml" in p or "__pycache__" in p for p in files)
     monkeypatch.setattr(pack, "FIRMWARE", tmp_path / "absent.bin")
     monkeypatch.setattr(pack, "FIRMWARE_S3", tmp_path / "absent-s3.bin")

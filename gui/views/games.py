@@ -14,11 +14,13 @@ from pokeldn.app.catalog import GAMES, Field, Game, Tool
 from pokeldn.app.introspect import flags_of
 from pokeldn.app.paths import SESSION
 from gui.views.pokemon import NAME_LISTS, LinkCodePicker, NamePicker, OfferQueue, PokemonPicker
+from gui.views.raid_seed import RaidSeedPicker
+from gui.views.rewards import RewardPicker
 from gui.views.gifts import GiftBuilder
 from gui.views.sprites import MINI, Sprite
 from gui.views.widgets import CodeBlock, Log, PathField, open_folder
 
-TOOL_ICONS = {"Trade": "arrows-horizontal", "Mystery Gift": "gift"}
+TOOL_ICONS = {"Trade": "arrows-horizontal", "Mystery Gift": "gift", "Tera Raid": "shield"}
 EMPTY = "-"   # a dropdown option cannot carry an empty key
 ADVANCED_NOTE = ("The tested defaults work for most players. Change these only when a guide or a bug report "
                  "asks you to. A value set here overrides the Basic tab.")
@@ -243,6 +245,12 @@ class GamesView:
             return PokemonPicker(self.app, self.game.key, first[0] if first else {},
                                  lambda v: self.set_value(field, v),
                                  version=str(self.values.get("--version", ""))).control
+        if field.kind == "rewards":
+            return RewardPicker(self.app, self.game.key, value,
+                                lambda v: self.set_value(field, v)).control
+        if field.kind == "raidseed":
+            return RaidSeedPicker(self.app, value,
+                                  lambda v: self.set_value(field, v)).control
         if field.kind == "linkcode":
             return LinkCodePicker(self.app, value, lambda v: self.set_value(field, v)).control
         if field.kind == "file":
@@ -254,7 +262,7 @@ class GamesView:
                 e.control.update()
             self.set_value(field, e.control.value)
 
-        box = t.field(value=str(value), mono=field.kind == "number", error_max_lines=2,
+        box = t.field(value=str(value), mono=field.kind in ("number", "raidseed"), error_max_lines=2,
                       width=180 if field.kind == "number" and not grouped else None,
                       error=command.limit_error(field, value) or None, on_change=changed,
                       expand=field.kind != "number" or grouped)
