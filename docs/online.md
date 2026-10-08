@@ -45,6 +45,16 @@ offchain.pub refuses a burst from a key it does not know ("not in our web of tru
 paced events. Over these relays two apps pair 0.4 s after the second one arrives, and a 344-byte
 record crosses in about 0.15 s.
 
+A retail Scarlet and a retail Violet, each hosted by its own board, traded through the relays:
+each console showed the other's offer, both confirmed, and each received the other's Pokemon with no
+error on either screen. A retail FireRed and a retail LeafGreen did the same: both parties crossed
+pair by pair, mail and ribbons included, in about 4 s, and after the trade the re-exchanged parties
+reached the trade menu again.
+
+Two consoles on one desk find each other directly: a Scarlet or Violet searching with the same code
+as the other, a FireRed whose player chooses Become Leader. For such a test each console takes its
+own local code (or Join Group on a board's group) and `--online-code` puts both boards in one room.
+
 ## Meeting
 
 Every event's content is AES-256-GCM under the room key `sha256("pokeldn room key|" + room)`. Inside:
