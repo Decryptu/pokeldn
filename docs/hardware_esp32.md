@@ -597,12 +597,13 @@ segment remap (`A1`), reversed COM scan (`C8`) and alternative COM pins (`DA 12`
 
 The ESP32-C3 0.42-inch OLED board (sold as ABRobot and under other names) carries a 72x40 panel on
 GPIO5 and GPIO6, and an LED on GPIO8 that the firmware leaves alone. Driven with the 128x64 INIT, the
-panel shows columns 30..101 and rows 12..51 of the frame: the vendor's example draws at offset
-(30, 12), and Zephyr's `abrobot_sh1106_72x40` overlay sets segment offset 30 and display offset 12.
+panel shows columns 30..101 and rows 24..63 of the frame, the last 40 rows of the reversed scan.
+The columns are the vendor example's x offset 30. The rows were read off a photo of the idle scene
+drawn at row 12: the first visible row was the bottom row of the "pokeldn" glyphs, frame row 23 with
+the scene's one-pixel drift either way. The vendor example's y offset 12 is a u8g2 text baseline.
 A screen found on these pins gets compact scenes drawn into that window: one line of at most 12
 characters over the picture, and sprites at half size, a pixel lit when two of its 2x2 block are.
-`tools/ldn/screen_preview.py --panel 72x40` renders them. The board has not been run with this
-firmware.
+`tools/ldn/screen_preview.py --panel 72x40` renders them.
 
 Without host commands the screen shows the radio's state: idle, joining or hosting (rings around a
 Poke Ball), and linked, where a cable between a console and a Poke Ball carries one digit per frame

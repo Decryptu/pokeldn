@@ -59,7 +59,7 @@ def test_the_72x40_panel_draws_a_sprite_at_half_size_inside_its_window(small):
     assert small.command(esp32.display_sprite_payload("ours", rows))
     assert small.command(esp32.display_show_payload("trade", 0, "Sw/Sh", "Pikachu"))
     fb = small.frame()            # now 1000: the bob is at rest
-    x0, y0 = 30 + 36 - 7 // 2, 12 + 40 - 5
+    x0, y0 = 30 + 36 - 7 // 2, 24 + 40 - 5
     assert [[lit(fb, x0 + x, y0 + y) for x in range(7)] for y in range(5)] == half
 
 
@@ -71,7 +71,7 @@ def test_the_72x40_panel_draws_inside_its_window_whenever_the_full_one_draws(sma
     built.scene_reset()
     small.radio, small.now = Radio(), 1000
     full = session(small, 25, 150, 151)
-    inside = {(x, y) for x in range(30, 102) for y in range(12, 52)}
+    inside = {(x, y) for x in range(30, 102) for y in range(24, 64)}
     for fb, whole in zip(frames, full, strict=True):
         assert not any(lit(fb, x, y) for x in range(128) for y in range(64) if (x, y) not in inside)
         assert any(lit(fb, x, y) for x, y in inside) == any(whole)

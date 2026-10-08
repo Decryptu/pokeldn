@@ -96,7 +96,7 @@ Both launchers accept `--gift-file FILE`. Native conversion and the file schema 
   Board requirements and hardware verification are on [ESP32 radio](docs/hardware_esp32.md#supported-boards).
 - Optional: a 128x64 SSD1306, SSD1315 or SSD1309 I2C OLED on the board (classic ESP32: SDA D21, SCL
   D22; ESP32-S3: SDA GPIO8, SCL GPIO9; VCC 3V3), or the 72x40 screen built into the 0.42-inch
-  ESP32-C3 OLED board (ABRobot and its clones; untested on hardware), shows
+  ESP32-C3 OLED board (ABRobot and its clones), shows
   the radio's traffic, the Pokemon each trade sends and receives, and the Mystery Gift card; idle,
   it dims after a minute and turns off after ten, and BOOT wakes it
   ([The screen](docs/hardware_esp32.md#the-screen)).

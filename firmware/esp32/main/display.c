@@ -28,7 +28,7 @@ static const struct {
 #define FRAME_MS 50
 
 /* Panel wiring per the module's sheet: segment 127 is column 1 (A1), COM0 is row 63 (C8). The 72x40
-   panel shows columns 30..101, rows 12..51 of the same frame [Zephyr abrobot_sh1106_72x40.overlay]. */
+   panel shows columns 30..101, rows 24..63 of the same frame. docs/hardware_esp32.md, The screen. */
 static const uint8_t INIT[] = {
     0x00,                   /* control byte: commands follow */
     0xae, 0xd5, 0x80, 0xa8, 0x3f, 0xd3, 0x00, 0x40, 0x8d, 0x14, 0x20, 0x00, 0xa1, 0xc8,

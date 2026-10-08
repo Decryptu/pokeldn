@@ -21,7 +21,7 @@ from pokeldn.ldn import esp32  # noqa: E402
 SOURCES = [ROOT / "firmware/esp32/main/scene.c", ROOT / "firmware/esp32/main/screen.c"]
 MODES = {"idle": 0, "joining": 1, "joined": 2, "hosting": 3, "sniffing": 4}
 # scene.h: enum scene_panel, and the window (x, y, w, h) of the frame each panel shows.
-PANELS = {"128x64": (0, (0, 0, 128, 64)), "72x40": (1, (30, 12, 72, 40))}
+PANELS = {"128x64": (0, (0, 0, 128, 64)), "72x40": (1, (30, 24, 72, 40))}
 
 
 class Radio(ctypes.Structure):

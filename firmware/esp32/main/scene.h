@@ -28,11 +28,11 @@ enum { SLOT_OURS, SLOT_THEIRS, SLOT_GIFT, SLOTS };
 #define SPRITE_W 64
 #define SPRITE_H 64
 
-/* What the panel shows of the 128x64 frame: all of it, or the 72x40 window at column 30, row 12 the
+/* What the panel shows of the 128x64 frame: all of it, or the 72x40 window at column 30, row 24 the
    0.42-inch module shows, where the scenes take a compact layout. */
 enum scene_panel { PANEL_128X64, PANEL_72X40 };
 #define SMALL_X 30
-#define SMALL_Y 12
+#define SMALL_Y 24
 #define SMALL_W 72
 #define SMALL_H 40
 
