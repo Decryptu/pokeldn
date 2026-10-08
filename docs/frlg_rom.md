@@ -548,8 +548,18 @@ The destination address is formed in 32-bit arithmetic [main + 0x05737C]:
 [main + 0x057384]: `0x0E + ((r0 & 0xFFFFF) >> 12)` mod 256, so `r0` selects the region. A
 destination in EWRAM, IWRAM or the cartridge buffer passes both bounds checks (`fold < size`,
 `size - fold >= 0x1000`); with `r0 = 0xFA000 + n` the destination folds into the ROM copy's
-4 KB at `n * 0x1000` (`n` 0..0xFFF), from any source region. The cartridge buffer sits inside
-the guest's RAM footprint; the live behaviour of a ROM destination is unmeasured.
+4 KB at `n * 0x1000` (`n` 0..0xFFF), from any source region.
+
+A ROM destination is a live write into the cartridge buffer, measured on the emulator: with
+`r0 = 0xFA3FF` (`dest` 0x083FF000, `n` = 0x3FF, region entry 0x08) and an EWRAM source
+(`r1` 0x0201C400, fold 0x1C400, mask 0x3ffff), both gates pass and the copy lands: the cartridge
+buffer's bytes at 0x3FF000 became the source's own 0x1000 bytes exactly (200 words of a chosen
+pattern at 0x3FF000..0x3FF31F, then the source's own tail bytes at 0x3FF320+ carried along, e.g.
+word 200 = 0x11111000 in both places). A guest load at 0x083FF000 then reads the pattern through
+the folded ROM window. The host session held: the payload returned 1, `client->param` carried the
+pattern's own first word, the console printed the success message and closed the link cleanly.
+The write is lost at a reload or soft reset: the ROM buffer is re-copied from the emulator's own
+ROM file at each boot, and nothing commits it persistently.
 
 Each side is rejected (pointer set to null) if the region's backing pointer at `+0x10` is null, the
 folded offset is at or past the size at `+0x20`, or fewer than `0x1000` bytes remain. Both sides
@@ -572,6 +582,7 @@ Measured with `swi 0x48` on the emulated console:
 | `r0` a sector past the flash size, `r1` an unmapped region | nothing written, flash byte-identical, no fault, no freeze |
 | `r0 = 30`, `r1 = 0x08000000` (the ROM header) | sector 30 became the cartridge's first 4 KB, 4096 of 4096 bytes, neighbours untouched |
 | `r0 = 30`, `r1` an EWRAM buffer the payload filled | sector 30 became those bytes; the buffer read back unchanged |
+| `r0 = 0xFA3FF` (dest 0x083FF000), `r1` an EWRAM buffer | the copy lands in the cartridge buffer: its bytes at fold 0x3FF000 became the source's 4 KB byte for byte; a guest read at 0x083FF000 returns the pattern; the session ended cleanly |
 
 It modifies no guest register and returns no status: only a flash read tells an accepted call from a
 rejected one.
