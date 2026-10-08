@@ -20,7 +20,7 @@ if len(sys.argv) == 6 and sys.argv[1] == "--apply-update":
     from pathlib import Path
     from gui.updating import run
     new, target, pid, version = sys.argv[2:]
-    run(Path(new), Path(target), int(pid), version)   # the swap thread ends the process
+    sys.exit(run(Path(new), Path(target), int(pid), version))
 
 # The app's own process never drives a board: an inherited POKELDN_RADIO would open the port as
 # soon as pokeldn.ldn is imported.
