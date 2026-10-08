@@ -159,6 +159,9 @@ PKHeX's reason. On the way:
 | a species or form absent from the destination | the destination's personal table |
 | no conversion route | PKHeX.Core 26.8.26 converts no Legends Z-A record out to another game |
 
+A record received from a retail Sword and moved to Legends Z-A, with the bank's tracker and its PID
+kept, showed its level and original trainer on a retail Z-A's trade box and completed the trade.
+
 `tests/test_bank.py` moves records between six pairs of games through the real helper and checks
 that the destination's launcher takes them, along with each refusal and the run that takes a traded
 Pokemon out of the bank.
