@@ -33,13 +33,17 @@ order, including duplicate items.
 
 ## Join from the console
 
-1. Plug in a board with current pokeldn firmware and add your `prod.keys` in
-   Settings.
-2. In Games, Scarlet & Violet, select Tera Raid (Host), then press Start.
-3. At a Tera crystal on the console, choose Challenge as a group and Link Code.
-4. Enter `4970`, join POKELDN, and start the raid.
-5. Beat and optionally catch the raid Pokemon. The configured items appear on
-   the reward screen.
+1. Choose a raid Pokemon from its seed and displayed stats. Pick one your team
+   can defeat.
+2. Add the rewards you want to receive after the battle.
+3. Plug in a board with current pokeldn firmware, add your `prod.keys` in
+   Settings, and start the Tera Raid (Host) session.
+4. On the console, open the Poké Portal and join an offline Tera Raid Battle.
+5. Enter the Link Code `4970`.
+6. A communication warning may appear while entering the raid. This is
+   expected; dismiss it and continue.
+7. Defeat the raid Pokemon to receive the configured rewards. Catching the
+   Pokemon is optional.
 
 The host automatically uses client-gated startup and the validated battle
 handoff. Reward-profile files, donor captures and replay timing switches are
