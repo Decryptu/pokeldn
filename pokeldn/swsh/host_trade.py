@@ -148,7 +148,7 @@ class HostTrade:
     def __init__(self, self_id, peer_id, snapshot, offer_pk8, send, send_broadcast, send_mesh,
                  log=print, end_delay=END_DELAY, auto_accept=True, record=None, migrate=False,
                  snapshot_builder=None, next_offer=None, accept_first=False, lead=None,
-                 queued=0):
+                 queued=0, partner=None):
         self.self_id, self.peer_id = self_id, peer_id
         self.snapshot = bytes(snapshot) if snapshot is not None else None
         self.offer_pk8 = bytes(offer_pk8) if offer_pk8 is not None else None
@@ -185,6 +185,9 @@ class HostTrade:
         self.accept_first = accept_first      # a player's side: accept before the joiner does
         # A player's side: with a record still queued, offer it `lead` seconds after a trade.
         self.lead, self.queued = lead, queued
+        # Online (pokeldn.online): our offer is the partner's console's, and our 4 waits for theirs.
+        self.partner = partner
+        self.partner_lost = False
 
     def clock(self):
         """The frame clock, strictly increasing across every envelope we send."""
@@ -237,10 +240,20 @@ class HostTrade:
                 self.box["peer_pk8"] = pk8
                 self.log(f"[trade] <- the joiner offers a Pokemon, EC {pk8[:4].hex()}")
                 self.record(rec="peer_offer", pk8=pk8.hex())
+                if self.partner:
+                    self.partner.offer(pk8)
             if command is not None:
                 self.box["peer_cmds"].append(command)
                 self.log(f"[trade] <- box command {command}")
                 self.record(rec="peer_box_command", command=command)
+                # 2 withdraws the offer and 5 the 4 (docs/swsh_trade.md, The box commands).
+                if command in (2, 5):
+                    self.box["peer_cmds"] = [c for c in self.box["peer_cmds"] if c != 4]
+                if command == 2:
+                    self.box["peer_pk8"] = None
+                if self.partner:
+                    {4: self.partner.accept, 2: self.partner.withdraw,
+                     5: self.partner.unaccept}.get(command, lambda: None)()
             return
         if 10000 < mid < 10100:
             self._on_holder(mid - 10000, body)
@@ -358,6 +371,9 @@ class HostTrade:
             el.open(self.send, now)
         elif now - el.last_publish > STATE_KEEPALIVE and el.peer_pair is None:
             el.publish(self.send, now=now)
+        if self.partner is not None:
+            self._online_box(now)
+            return
         if not self.box["our_offer"] and now - self.stage_since > 1.0:
             self.send(PORT_CONTENT, trade.pokemon_trade(self.offer_pk8))
             self.send(PORT_CONTENT, trade.box_sync_state(1))
@@ -372,6 +388,38 @@ class HostTrade:
             self.send(PORT_CONTENT, trade.box_sync_state(4))
             self.box["our_accept"] = True
             self.log("[trade] -> box command 4, we accept")
+        if self.box["our_accept"] and 4 in self.box["peer_cmds"]:
+            self.goto("sync130")
+
+    def _online_box(self, now):
+        """The box with a partner far away: their console's offer is ours, withdrawn when they
+        withdraw it, and our 4 goes once both consoles have sent one."""
+        theirs = self.partner.theirs()
+        if not self.partner.paired:
+            if self.partner.state == "lost" and not self.partner_lost:
+                self.partner_lost = True
+                if self.box["our_offer"]:
+                    self.send(PORT_CONTENT, trade.box_sync_state(2))
+                    self.box["our_offer"] = False
+                self.log("[online] the partner is gone; back out of the trade on the console")
+            return
+        if self.box["our_offer"] and theirs.offer != self.offer_pk8:
+            if self.box["our_accept"]:
+                return                          # both 4s are out: the exchange follows
+            self.send(PORT_CONTENT, trade.box_sync_state(2))
+            self.box["our_offer"] = False
+            self.log("[trade] -> box command 2, the partner took their offer back")
+        if not self.box["our_offer"] and theirs.offer is not None:
+            self.offer_pk8 = theirs.offer
+            self.send(PORT_CONTENT, trade.pokemon_trade(self.offer_pk8))
+            self.send(PORT_CONTENT, trade.box_sync_state(1))
+            self.box["our_offer"] = True
+            self.log("[trade] -> the partner's Pokemon and box command 1")
+        if (self.box["our_offer"] and not self.box["our_accept"] and theirs.accepted
+                and self.box["peer_pk8"] is not None and 4 in self.box["peer_cmds"]):
+            self.send(PORT_CONTENT, trade.box_sync_state(4))
+            self.box["our_accept"] = True
+            self.log("[trade] -> box command 4, both consoles accepted")
         if self.box["our_accept"] and 4 in self.box["peer_cmds"]:
             self.goto("sync130")
 
@@ -404,6 +452,8 @@ class HostTrade:
             self.ladder_done_at = now
             self.trades += 1
             self.log(f"[trade] the ladder reached phase 4 (trade {self.trades})")
+            if self.partner:
+                self.partner.done()
             show_done()
             screen.received("swsh", self.peer_pk8)
             self.goto("saving")
@@ -417,11 +467,14 @@ class HostTrade:
 
     def _next_round(self):
         """The joiner offers from its box after a trade: the next trade on this session."""
-        if self.next_offer is not None:
+        if self.partner is not None:
+            self.offer_pk8 = None
+        elif self.next_offer is not None:
             offer = self.next_offer(self.trades + 1)
             if offer is not None:
                 self.offer_pk8 = bytes(offer)
-        screen.offer("swsh", self.offer_pk8)
+        if self.offer_pk8 is not None:
+            screen.offer("swsh", self.offer_pk8)
         # Contents 50 and 40 and their pings 130 and 120 are built anew for every trade
         # (0x010d4d90, 0x010da470, 0x006d46d0); content 30 and ping 110 last the session.
         self.box = {"our_offer": False, "our_accept": False, "peer_pk8": None, "peer_cmds": []}

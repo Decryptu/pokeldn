@@ -106,7 +106,8 @@ def test_a_completed_trade_takes_the_pokemon_out_of_the_bank_and_its_queue(vault
     panel.__dict__.update(
         app=SimpleNamespace(settings=settings, ui=lambda fn: fn()), tool=tool, traded=0, stopping=False,
         restart=False, games=SimpleNamespace(values=values, visible=False),
-        log=SimpleNamespace(add=lambda line: None), offering=SimpleNamespace(update=lambda: None))
+        log=SimpleNamespace(add=lambda line: None), offering=SimpleNamespace(update=lambda: None),
+        partner_state=None)
     panel.render_offering = panel.refresh = panel.set_status = lambda *a, **k: None
     panel.banked = [e.get("bank", "") for e in panel.offered_entries()]
     assert bank.queued(settings, entry.id) == [tool.key]

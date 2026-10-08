@@ -8,7 +8,7 @@ import flet as ft
 from gui import board
 from gui.app import keys_found
 from pokeldn import pokemon as builder
-from pokeldn.app import bank, command, received, runner
+from pokeldn.app import bank, command, online, received, runner
 from gui import theme as t
 from pokeldn.app.catalog import GAMES, Field, Game, Tool
 from pokeldn.app.introspect import flags_of
@@ -25,6 +25,8 @@ ADVANCED_NOTE = ("The tested defaults work for most players. Change these only w
 
 
 def tool_icon(tool: Tool):
+    if tool.key.endswith("-online"):
+        return "globe"
     return TOOL_ICONS.get(tool.name.split(" (")[0], "arrows-horizontal")
 
 
@@ -34,6 +36,8 @@ def tool_role(tool: Tool) -> str:
         return "Your console joins pokeldn"
     if tool.key.endswith("-join"):
         return "pokeldn joins your console"
+    if tool.key.endswith("-online"):
+        return "Your console joins pokeldn, which meets your partner online"
     return ""
 
 
@@ -400,6 +404,8 @@ class SessionPanel:
         self.board_line = ft.Container()   # the checklist before Start, or one line once all is set
         self.offering = ft.Container(visible=False)
         self.transfer = ft.Container(visible=False)   # a save backup or restore's progress
+        self.partner = ft.Container(visible=False)    # an online trade's partner
+        self.partner_state = None                     # pokeldn.app.online.Partner
         self.offered = None                # what the offering card shows, to rebuild it only on a change
         self.traded = 0                    # the run's completed trades, from its `[done] trade N` lines
         self.banked: list[str] = []        # the bank id of each offer the run trades, "" for a built one
@@ -423,7 +429,8 @@ class SessionPanel:
         self.control = t.panel(ft.Column([
             t.panel_header("Session", self.status),
             # The checklist and the steps scroll; Start stays in view below them.
-            ft.Container(t.fade(ft.Column([self.board_line, self.offering, self.transfer, self.received, self.steps],
+            ft.Container(t.fade(ft.Column([self.board_line, self.partner, self.offering, self.transfer, self.received,
+                                                     self.steps],
                                           spacing=24,
                                           scroll=ft.ScrollMode.AUTO)),
                          padding=ft.Padding(18, 8, 18, 0), expand=3),
@@ -460,6 +467,7 @@ class SessionPanel:
             self.set_status("Ready", t.MUTED)
             self.seen, self.received.content, self.received.visible = {}, None, False
             self.transfer.content, self.transfer.visible = None, False
+            self.partner.content, self.partner.visible, self.partner_state = None, False, None
             self.traded = 0
         self.tool = tool
         self.steps.content = t.section("On the console", t.step_list(list(tool.steps)))
@@ -573,6 +581,41 @@ class SessionPanel:
             t.text(f"{done} of {total} {unit}. Keep the Switch near the board.", 12, t.MUTED)], spacing=6))
         self.transfer.update()
 
+    def show_partner(self, partner) -> None:
+        """Who the online trade meets, what they offer and whether they confirmed."""
+        self.partner_state = partner
+        looks = {"looking": ("refresh", t.BLUE, "Connecting to the relays"),
+                 "waiting": ("refresh", t.BLUE, "Looking for a partner"),
+                 "paired": ("user", t.GREEN, f"Trading with {partner.name}"),
+                 "lost": ("warning-diamond", t.RED, f"{partner.name or 'Your partner'} left")}
+        icon, color, title = looks[partner.state]
+        if partner.state in ("looking", "waiting"):
+            code = partner.code.removeprefix("code ")
+            detail = ("Anyone trading this game online without a code can be your partner."
+                      if partner.code == "no code" else f"Your partner enters the same code: {code}.")
+        elif partner.state == "lost":
+            detail = "Back out of the trade on the console. Start again to find a partner."
+        elif partner.offer:
+            detail = "They confirmed. Confirm on your console to trade." if partner.confirmed else \
+                "Waiting for them to confirm."
+        else:
+            detail = "Offer a Pokemon on your console; theirs appears here once they choose."
+        rows = [ft.Row([t.pixel_icon(icon, color=color),
+                        ft.Column([t.text(title, 13, weight=ft.FontWeight.W_600),
+                                   t.text(detail, 12, t.MUTED)], spacing=1, expand=True)],
+                       spacing=8, vertical_alignment=ft.CrossAxisAlignment.START)]
+        if partner.offer and partner.state == "paired":
+            species, shiny, summary = partner.offer
+            rows.append(pokemon_row(self.app, species, shiny, summary))
+            if partner.flag:
+                rows.append(t.text(f"PKHeX flags it: {partner.flag}", 12, t.AMBER))
+        if partner.note:
+            rows.append(t.text(partner.note, 12, t.AMBER))
+        trailing = t.text(f"{partner.trades} traded", 12, t.GREEN) if partner.trades else None
+        self.partner.content = t.section("Partner", ft.Column(rows, spacing=10), trailing=trailing)
+        self.partner.visible = True
+        self.partner.update()
+
     def scan_received(self, run: tuple) -> None:
         """Read each Pokemon file the run has saved so far; a file still growing is read again."""
         process, stamp, game = run
@@ -666,6 +709,7 @@ class SessionPanel:
         self.log.add(f"[app] {tool.name} · {self.games.game.name} · radio {port}")
         self.seen, self.received.content, self.received.visible = {}, None, False
         self.transfer.content, self.transfer.visible = None, False
+        self.partner.content, self.partner.visible, self.partner_state = None, False, None
         self.traded = 0
         self.banked = [entry.get("bank", "") for entry in self.offered_entries()]
         self.stopping = False
@@ -681,6 +725,10 @@ class SessionPanel:
         self.log.add(line)
         if progress := received.save_progress(line):
             self.app.ui(lambda: self.show_transfer(*progress))
+        partner = online.update(self.partner_state, line)
+        if partner is not self.partner_state:
+            self.partner_state = partner
+            self.app.ui(lambda p=partner: self.show_partner(p) if self.partner_state is p else None)
         n = received.trades_done(line)
         if n is not None and n > self.traded:
             def mark():
