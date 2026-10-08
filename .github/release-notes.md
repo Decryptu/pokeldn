@@ -1,16 +1,18 @@
-# pokeldn 0.13.1
+# pokeldn 0.14.0
 
 This desktop app trades with seven Pokemon game families on a Switch or Switch 2
 through an ESP32 radio connected by USB. Nothing is installed on the console.
 
 ## What is new
 
-- Small screens: 128x64 SSD1315 and SSD1309 OLED modules work as the board's screen, like the
-  SSD1306; the README gives the ESP32-S3 wiring (SDA GPIO8, SCL GPIO9) beside the classic board's.
-- Updated Legends Arceus and Legends Z-A documentation of how the games search for and host a
-  local session.
+- Updates install from inside the app: Update now downloads the new version, checks it against
+  `SHA256SUMS`, replaces the app and reopens it, with a small window on screen throughout. A failed
+  update leaves the app as it was. This works from 0.14.0 onward, so this version is still a manual
+  download.
+- The 0.42-inch ESP32-C3 OLED board: the C3 firmware finds its built-in 72x40 screen and draws a
+  compact layout on it.
 
-Firmware stays at 1.5.0: a board already flashed from 0.13.0 needs no reflash.
+Firmware 1.6.0 adds the 0.42-inch ESP32-C3 screen; other boards gain nothing from reflashing.
 
 pokeldn is an unofficial fan project, not affiliated with Nintendo or The Pokemon Company. It is not
 meant for commercial or promotional use; see the License section of the README.
