@@ -55,20 +55,27 @@ def build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--raid-seed", required=True, type=raid_seed, metavar="8-HEX-DIGITS",
                         help="seed that determines the raid boss, Tera type, stats, and moves")
+    parser.add_argument("--raid-player-pokemon", metavar="FILE",
+                        help="a legal party PK9 for POKELDN to bring as the raid host; "
+                             "the existing capture-backed behavior is used when omitted")
     source = parser.add_mutually_exclusive_group()
     source.add_argument("--reward", action="append", type=reward, metavar="ITEM_ID:QUANTITY",
                         help="reward row in display order; repeat up to 16 times")
     source.add_argument("--profile", type=Path, metavar="JSON",
                         help="an existing versioned exact-list reward profile")
     parser.add_argument("--keys", default="~/.switch/prod.keys")
+    parser.add_argument("--capture", metavar="JSONL",
+                        help="write the host's machine-readable packet trace here")
     parser.add_argument("--seconds", type=float, default=600.0,
                         help="maximum time to keep the raid host running")
     return parser
 
 
-def host_arguments(seed: int, profile: Path, keys: str, seconds: float) -> list[str]:
+def host_arguments(seed: int, profile: Path, keys: str, seconds: float,
+                   player_pokemon: str | None = None,
+                   capture: str | None = None) -> list[str]:
     """The validated retail-session configuration shared by CLI and GUI hosting."""
-    return [
+    arguments = [
         "--keys", os.path.expanduser(keys),
         "--channel", "1",
         "--scene-id", "7",
@@ -100,6 +107,11 @@ def host_arguments(seed: int, profile: Path, keys: str, seconds: float) -> list[
         "--raid-reward-profile", str(profile),
         "--seconds", str(seconds),
     ]
+    if player_pokemon:
+        arguments += ["--raid-player-pokemon", player_pokemon]
+    if capture:
+        arguments += ["--capture", capture]
+    return arguments
 
 
 def _profile_value(rows: list[tuple[int, int]]) -> dict:
@@ -144,7 +156,9 @@ def main(argv=None) -> int:
 
     from sv_host import main as host
     try:
-        result = host(host_arguments(args.raid_seed, profile_path, args.keys, args.seconds))
+        result = host(host_arguments(
+            args.raid_seed, profile_path, args.keys, args.seconds,
+            player_pokemon=args.raid_player_pokemon, capture=args.capture))
         return int(result or 0)
     finally:
         if temporary is not None:

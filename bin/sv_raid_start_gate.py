@@ -32,7 +32,10 @@ class RaidStartGate:
             return key
 
     def requirement(self, stage):
-        return {7: 'guest_lobby', 10: 'guest_lobby', 'net': 'guest_start',
+        # A fast host can otherwise send the first replay records before retail has published
+        # its lobby record. Retail ACKs those records, but can later remain on Communicating
+        # after the sequence-11/12 bootstrap instead of emitting load_6e.
+        return {1: 'guest_lobby', 7: 'guest_lobby', 10: 'guest_lobby', 'net': 'guest_start',
                 'session': 'net_ack', 11: 'session_ack', 13: 'load_6e',
                 14: 'load_73', 15: 'battle_93'}.get(stage)
 

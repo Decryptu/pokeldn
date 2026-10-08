@@ -8,6 +8,7 @@ import json
 from pathlib import Path
 import struct
 
+from pokeldn import gen9
 from pokeldn.ldn import reliable5
 from pokeldn.sv import streams
 
@@ -21,6 +22,9 @@ RAW_SIZE_OFFSET = MESSAGE_HEADER_OFFSET + 8
 EXPECTED_RAW_SIZE = 0xAA0
 AVALUGG_RAIDPOINT_OFFSET = 0x6B8
 AVALUGG_RAIDPOINT = b"RaidPoint_13_1_1"
+LOBBY_POKEMON_PREFIX = bytes.fromhex("80332e01")
+LOBBY_POKEMON_HEADER_SIZE = 18
+LOBBY_POKEMON_SIZE_OFFSET = 10
 REWARD_PROFILE_FORMAT = "pokeldn.sv.raid-rewards.v1"
 REWARD_PROFILE_TEMPLATE = "violet-4.0.0-c72e1d7f-avalugg"
 
@@ -317,11 +321,15 @@ def encode_reward_profile_application(template_application, profile):
 def _replace_bootstrap_application(events, application, changed):
     """Replace replay fragments 11/12 while preserving their outer flags."""
     parts = _bootstrap_parts(events)
-    first_length = len(parts[11])
+    original_first_length = len(parts[11])
     if application != parts[11] + parts[12]:
         raise ValueError("bootstrap application changed while preparing replacement")
-    if len(changed) <= first_length:
-        raise ValueError("recompressed bootstrap no longer reaches sequence 12")
+    if len(changed) < 2:
+        raise ValueError("recompressed bootstrap is too short for its two reliable fragments")
+    # Keep the capture's boundary when possible. A repeated or especially compressible player
+    # PK9 can make the LZ4 application shorter than sequence 11 used to be; retain both reliable
+    # sequence ids by moving the boundary instead of rejecting an otherwise valid bootstrap.
+    first_length = min(original_first_length, len(changed) - 1)
     replacements = {11: changed[:first_length], 12: changed[first_length:]}
     output = []
     for delay, sequence, flags, lowest, payload in events:
@@ -330,6 +338,56 @@ def _replace_bootstrap_application(events, application, changed):
             payload = streams.compress(plain) if flags & reliable5.FLAG_ZLIB else plain
         output.append((delay, sequence, flags, lowest, payload))
     return output, len(parts[12]), len(replacements[12])
+
+
+def _party_pk9(raw):
+    raw = bytes(raw)
+    if len(raw) != gen9.SIZE_PARTY:
+        raise ValueError(
+            f"a raid player Pokemon must be a {gen9.SIZE_PARTY}-byte party PK9, "
+            f"not {len(raw)} bytes")
+    return gen9.encrypt(gen9.load(raw))
+
+
+def patch_host_lobby_pokemon(events, raw):
+    """Replace the host's PK9 in its 0x80332e lobby announcement."""
+    sealed = _party_pk9(raw)
+    output = list(events)
+    matches = []
+    for index, (delay, sequence, flags, lowest, payload) in enumerate(output):
+        plain = streams.decompress(payload) if flags & reliable5.FLAG_ZLIB else bytes(payload)
+        if plain[:4] == LOBBY_POKEMON_PREFIX:
+            matches.append((index, delay, sequence, flags, lowest, plain))
+    if len(matches) != 1:
+        raise ValueError(f"raid host replay needs one Pokemon lobby record, found {len(matches)}")
+    index, delay, sequence, flags, lowest, plain = matches[0]
+    declared = struct.unpack_from("<I", plain, LOBBY_POKEMON_SIZE_OFFSET)[0]
+    if (len(plain) != LOBBY_POKEMON_HEADER_SIZE + gen9.SIZE_PARTY
+            or declared != gen9.SIZE_PARTY):
+        raise ValueError(
+            f"unrecognized raid host Pokemon lobby record: {len(plain)} bytes, "
+            f"declared size {declared}")
+    changed = plain[:LOBBY_POKEMON_HEADER_SIZE] + sealed
+    payload = streams.compress(changed) if flags & reliable5.FLAG_ZLIB else changed
+    output[index] = (delay, sequence, flags, lowest, payload)
+    return output
+
+
+def patch_bootstrap_host_pokemon(events, raw):
+    """Replace player subobject 0 in the final 0x80332f raid bootstrap."""
+    sealed = _party_pk9(raw)
+    parts = _bootstrap_parts(events)
+    application = parts[11] + parts[12]
+    record = bytearray(decode_application(application))
+    record[:gen9.SIZE_PARTY] = sealed
+    changed = encode_application(application, bytes(record))
+    output, _, _ = _replace_bootstrap_application(events, application, changed)
+    return output
+
+
+def patch_host_player_pokemon(events, raw):
+    """Put the same host-player PK9 in the lobby and battle bootstrap."""
+    return patch_bootstrap_host_pokemon(patch_host_lobby_pokemon(events, raw), raw)
 
 
 def patch_avalugg_reward_profile(events, profile):
@@ -348,4 +406,3 @@ def patch_avalugg_reward_profile(events, profile):
     for index, entry in enumerate(profile.rewards):
         print(f"[sv]   reward[{index}] item={entry.item_id} quantity={entry.quantity}")
     return output
-

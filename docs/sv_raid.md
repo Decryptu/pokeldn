@@ -7,9 +7,15 @@ nav_order: 2
 
 The Tera Raid (Host) tool lets a retail Scarlet or Violet console join a raid
 hosted through the ESP32. The raid Pokemon and the reward list are configured
-separately.
+separately. POKELDN's own Pokemon can also be selected with the same legal
+Pokemon builder used by trades.
 
 ## Configure the raid
+
+Choose **POKELDN's Pokemon** to control the fake host's battler. PKHeX builds
+and validates its complete party record, including its moves, ability, held
+item, stats, current HP, and Tera type. Leaving this empty retains the captured
+replay behavior.
 
 Enter an eight-digit hexadecimal Raid Pokemon seed. It determines the boss
 species, form, Tera type, stats, ability and moves. The default `000F34C3`
@@ -33,16 +39,18 @@ order, including duplicate items.
 
 ## Join from the console
 
-1. Choose a raid Pokemon from its seed and displayed stats. Pick one your team
+1. Choose the Pokemon POKELDN should bring. It remains as an AI-controlled bot
+   after the fake host disconnects.
+2. Choose a raid Pokemon from its seed and displayed stats. Pick one your team
    can defeat.
-2. Add the rewards you want to receive after the battle.
-3. Plug in a board with current pokeldn firmware, add your `prod.keys` in
+3. Add the rewards you want to receive after the battle.
+4. Plug in a board with current pokeldn firmware, add your `prod.keys` in
    Settings, and start the Tera Raid (Host) session.
-4. On the console, open the Poké Portal and join an offline Tera Raid Battle.
-5. Enter the Link Code `4970`.
-6. A communication warning may appear while entering the raid. This is
+5. On the console, open the Poké Portal and join an offline Tera Raid Battle.
+6. Enter the Link Code `4970`.
+7. A communication warning may appear while entering the raid. This is
    expected; dismiss it and continue.
-7. Defeat the raid Pokemon to receive the configured rewards. Catching the
+8. Defeat the raid Pokemon to receive the configured rewards. Catching the
    Pokemon is optional.
 
 The host automatically uses client-gated startup and the validated battle
@@ -55,4 +63,7 @@ The encounter is generated from the selected seed using the validated 4-star
 Paldea context. Rewards use the Violet 4.0.0 Avalugg bootstrap layout, but the
 boss shown and caught comes from the independently selected Raid Pokemon seed.
 Item IDs and quantities are encoded into the plaintext raid bootstrap before
-it is compressed and transmitted.
+it is compressed and transmitted. POKELDN's selected Pokemon is written into
+both its `0x80332e01` lobby announcement and player slot 0 of the final
+`0x80332f01` bootstrap; guest slots, the boss slot, and RaidPoint rewards are
+left unchanged.

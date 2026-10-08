@@ -8,6 +8,7 @@
 from pathlib import Path
 import argparse
 import binascii
+import hashlib
 import json
 import os
 import struct
@@ -325,6 +326,9 @@ def build_parser():
     ap.add_argument("--raid-reward-profile", type=Path, metavar="JSON",
                     help="apply a versioned exact-list JSON reward profile to the validated "
                          "C72E1D7F Avalugg plaintext bootstrap")
+    ap.add_argument("--raid-player-pokemon", metavar="FILE",
+                    help="a legal SV party PK9 for this fake raid host to bring; PKHeX validates "
+                         "it before it replaces both the lobby and battle-bootstrap Pokemon")
     ap.add_argument("--raid-seed", type=lambda value: int(value, 16), metavar="HEX",
                     help="generated raid seed to substitute into "
                          "--raid-replay-trace (use with --raid-base-seed)")
@@ -404,6 +408,13 @@ def main(argv=None):
     # supported mode: it can outrun the retail client's startup state machine.
     args.raid_replay_client_gated = args.raid_replay_trace is not None
     args.raid = args.raid or args.raid_start_trace is not None or args.raid_replay_trace is not None
+    raid_player_pk9 = None
+    if args.raid_player_pokemon:
+        if args.raid_replay_trace is None:
+            ap.error("--raid-player-pokemon requires --raid-replay-trace")
+        args.raid_player_pokemon = pokemon_service.prepare_file(
+            "sv", args.raid_player_pokemon, fresh=args.fresh_pid)
+        raid_player_pk9 = Path(args.raid_player_pokemon).read_bytes()
     repair_victory_gap = profile_mode
     stop_after_seq = 20 if profile_mode else None
     disconnect_after_stop = 5.0 if profile_mode else None
@@ -624,6 +635,14 @@ def main(argv=None):
                     raid_replay_events, reward_profile)
             except ValueError as exc:
                 ap.error(str(exc))
+        if raid_player_pk9 is not None:
+            from sv_raid_bootstrap_codec import patch_host_player_pokemon
+            try:
+                raid_replay_events = patch_host_player_pokemon(
+                    raid_replay_events, raid_player_pk9)
+            except ValueError as exc:
+                ap.error(f"cannot patch raid player Pokemon: {exc}")
+            print(f"[sv] raid host Pokemon: {pokemon.describe(gen9.load(raid_player_pk9))}")
         if stop_after_seq is not None:
             if not any(event[1] == stop_after_seq
                        for event in raid_replay_events):
@@ -680,6 +699,7 @@ def main(argv=None):
     pending_raid_session = {}
     raid_start_gates = {}
     raid_gate_waits = set()
+    raid_start_diagnostics = {}
 
     def startup_allowed(ip, stage, now):
         if not args.raid_replay_client_gated:
@@ -852,6 +872,29 @@ def main(argv=None):
         raid_replay_started_at.setdefault(ip, sent_at)
         if why != "raid retry":
             last_raid_replay_sent[ip] = (sequence, sent_at)
+        if why == "raid replay" and sequence == 12:
+            diagnostic = raid_start_diagnostics.setdefault(ip, {})
+            diagnostic.update(
+                seq12_sent_at=sent_at,
+                seq12_length=len(data),
+                seq12_sha256=hashlib.sha256(data).hexdigest(),
+            )
+            print(f"[sv] RAID START seq12 sent t={sent_at:.6f} len={len(data)} "
+                  f"sha256={diagnostic['seq12_sha256']} waiting-for=load_6e")
+            record(rec="raid_start_seq12", t=sent_at, dst=ip,
+                   payload_length=len(data), sha256=diagnostic["seq12_sha256"])
+        elif why == "raid replay" and sequence == 13:
+            diagnostic = raid_start_diagnostics.setdefault(ip, {})
+            diagnostic["seq13_sent_at"] = sent_at
+            gate = raid_start_gates.get(ip)
+            released_at = None if gate is None else gate.seen.get("load_6e")
+            diagnostic["seq13_reason"] = "load_6e" if released_at is not None else "ungated"
+            delay = None if released_at is None else sent_at - released_at
+            suffix = "" if delay is None else f" after={delay:.3f}s"
+            print(f"[sv] RAID START seq13 released t={sent_at:.6f} "
+                  f"reason={diagnostic['seq13_reason']}{suffix}")
+            record(rec="raid_start_seq13_release", t=sent_at, dst=ip,
+                   reason=diagnostic["seq13_reason"], response_at=released_at)
         if (why == "raid replay" and disconnect_after_stop is not None
                 and sequence == stop_after_seq):
             scripted_disconnect_due[ip] = (
@@ -1779,6 +1822,18 @@ def main(argv=None):
                                         and msg.port == 0 and a["entries"][0]["stream_id"] == 0):
                                     entry = a["entries"][0]
                                     raid_window.acked(key, entry["ack_id"], entry["mask"])
+                                    diagnostic = raid_start_diagnostics.get(src_ip)
+                                    if (diagnostic is not None
+                                            and "seq12_sent_at" in diagnostic
+                                            and "seq12_acked_at" not in diagnostic
+                                            and entry["ack_id"] >= 13):
+                                        acked_at = time.time()
+                                        diagnostic["seq12_acked_at"] = acked_at
+                                        print(f"[sv] RAID START seq12 acknowledged "
+                                              f"t={acked_at:.6f} after="
+                                              f"{acked_at - diagnostic['seq12_sent_at']:.3f}s")
+                                        record(rec="raid_start_seq12_ack", t=acked_at,
+                                               src=src_ip, ack_id=entry["ack_id"])
                                 print(f"[sv] <- {src_ip}: ACK 0x{msg.protocol:02x}:{msg.port} "
                                       f"low={rm['lowest_pending']} bits={rm['destination_bits']} "
                                       f"map={rm['bitmap']} u0={a['unknown0']} "
@@ -1811,6 +1866,28 @@ def main(argv=None):
     except KeyboardInterrupt:
         print("\n[sv] interrupted")
     finally:
+        for ip, diagnostic in raid_start_diagnostics.items():
+            gate = raid_start_gates.get(ip)
+            milestones = {} if gate is None else dict(gate.seen)
+            seq13_sent = diagnostic.get("seq13_sent_at")
+            reason = diagnostic.get(
+                "seq13_reason", "waiting_for_load_6e" if "load_6e" not in milestones
+                else "pending_sequence_13")
+            milestone_text = ",".join(
+                f"{name}@{when:.6f}" for name, when in milestones.items()) or "none"
+            print(f"[sv] RAID START SUMMARY peer={ip} "
+                  f"seq12={diagnostic.get('seq12_length', 0)}B "
+                  f"sha256={diagnostic.get('seq12_sha256', 'missing')} "
+                  f"sent={diagnostic.get('seq12_sent_at', 'missing')} "
+                  f"ack={diagnostic.get('seq12_acked_at', 'missing')} "
+                  f"seq13={'sent' if seq13_sent is not None else 'withheld'} "
+                  f"reason={reason} milestones={milestone_text}")
+            record(rec="raid_start_summary", t=time.time(), dst=ip,
+                   seq12_length=diagnostic.get("seq12_length"),
+                   seq12_sha256=diagnostic.get("seq12_sha256"),
+                   seq12_sent_at=diagnostic.get("seq12_sent_at"),
+                   seq12_acked_at=diagnostic.get("seq12_acked_at"),
+                   seq13_sent_at=seq13_sent, reason=reason, milestones=milestones)
         transport.stop()
         if cap:
             cap.close()

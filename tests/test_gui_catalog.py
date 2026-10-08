@@ -89,13 +89,15 @@ def test_one_offer_from_an_older_settings_file_still_builds():
 
 def test_sv_raid_builds_an_ordered_reward_list():
     tool = next(t for game in GAMES for t in game.tools if t.key == "sv-raid-host")
-    values = {"--raid-seed": "000F34C3", "--reward": [
+    values = {"--raid-player-pokemon": {"file": "/tmp/host.pk9"},
+              "--raid-seed": "000F34C3", "--reward": [
         {"item_id": "1", "quantity": "1"},
         {"item_id": "50", "quantity": "10"},
     ]}
     args = build(tool, values, {}, Settings())
     parsed = parser_of(tool.script).parse_args(args)
     assert parsed.raid_seed == 0x000F34C3
+    assert parsed.raid_player_pokemon == "/tmp/host.pk9"
     assert parsed.reward == [(1, 1), (50, 10)]
     assert args.count("--reward") == 2
 

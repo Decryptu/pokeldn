@@ -7,6 +7,7 @@ import unittest
 
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
+from pokeldn import gen9
 from sv_raid_bootstrap_codec import (
     AVALUGG_BONUS_RECORDS,
     AVALUGG_REWARD_RECORDS,
@@ -19,6 +20,7 @@ from sv_raid_bootstrap_codec import (
     encode_application,
     parse_reward_profile,
     patch_avalugg_reward_profile,
+    patch_host_player_pokemon,
 )
 
 
@@ -105,6 +107,38 @@ class RaidBootstrapCodecTests(unittest.TestCase):
                 "mode": "exact",
                 "rewards": [{"item_id": 15, "quantity": 0}],
             })
+
+    def test_custom_host_pokemon_replaces_lobby_and_bootstrap_slot_zero(self):
+        original_raw = decode_application(self.application)
+        custom = original_raw[gen9.SIZE_PARTY:2 * gen9.SIZE_PARTY]
+        lobby_header = bytes.fromhex("80332e010701000000005801000000000000")
+        lobby = lobby_header + original_raw[:gen9.SIZE_PARTY]
+        boundary = 1395
+        events = [
+            (0.1, 3, 0x07, 1, lobby),
+            (0.2, 11, 0x02, 11, self.application[:boundary]),
+            (0.3, 12, 0x04, 11, self.application[boundary:]),
+        ]
+
+        changed = patch_host_player_pokemon(events, custom)
+        self.assertEqual([event[:4] for event in changed],
+                         [event[:4] for event in events])
+        changed_lobby = changed[0][4]
+        self.assertEqual(changed_lobby[:len(lobby_header)], lobby_header)
+        lobby_plain = gen9.load(changed_lobby[len(lobby_header):])
+        self.assertEqual(gen9.read(lobby_plain)["species"], 475)
+
+        changed_application = changed[1][4] + changed[2][4]
+        changed_raw = decode_application(changed_application)
+        self.assertEqual(
+            gen9.load(changed_raw[:gen9.SIZE_PARTY]), lobby_plain)
+        # Guest slots, empty slots, boss, RaidPoint, and rewards are untouched.
+        self.assertEqual(changed_raw[gen9.SIZE_PARTY:],
+                         original_raw[gen9.SIZE_PARTY:])
+
+    def test_custom_host_pokemon_requires_a_party_pk9(self):
+        with self.assertRaisesRegex(ValueError, "344-byte party PK9"):
+            patch_host_player_pokemon([], bytes(gen9.SIZE_STORED))
 
 
 if __name__ == "__main__":
