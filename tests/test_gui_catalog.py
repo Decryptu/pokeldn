@@ -100,6 +100,24 @@ def test_sv_raid_builds_an_ordered_reward_list():
     assert args.count("--reward") == 2
 
 
+def test_sv_raid_join_uses_the_bundled_fixture():
+    tool = next(t for game in GAMES for t in game.tools if t.key == "sv-raid-join")
+    args = build(tool, {}, {}, Settings(ot="POKELDN"))
+    parsed = parser_of(tool.script).parse_args(args)
+    assert parsed.raid_guest_replay and parsed.scene_id == 7
+    assert parsed.record_trace is None and parsed.raid_lobby_trace is None
+    assert parsed.raid_guest_ready_delay == 2
+    assert parsed.raid_pokemon is None
+
+
+def test_sv_raid_join_passes_the_legal_pokemon_builders_file():
+    tool = next(t for game in GAMES for t in game.tools if t.key == "sv-raid-join")
+    args = build(tool, {"--raid-pokemon": {"file": "/tmp/raid.pk9"}}, {},
+                 Settings(ot="POKELDN"))
+    parsed = parser_of(tool.script).parse_args(args)
+    assert parsed.raid_pokemon == "/tmp/raid.pk9"
+
+
 def test_a_setting_kept_off_the_basic_tab_still_reaches_the_entry_point():
     """New PID and the time limit live on Advanced; their defaults must still be passed."""
     tool = next(t for game in GAMES for t in game.tools if t.key == "za-host")

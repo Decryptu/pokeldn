@@ -327,6 +327,20 @@ SV = Game("sv", "Scarlet & Violet", "SV", "sv.md", (
                 help="Choose 1 to 16 reward rows in display order. Duplicate items are allowed."),
           host_seconds("600")),
          doc="sv_raid.md"),
+    Tool("sv-raid-join", "Tera Raid (Join)", "bin/sv_join.py",
+         "Join a retail-hosted Tera Raid with a legal custom Pokemon, then leave it as a bot.",
+         ("On the console, open an offline Tera Raid lobby and choose Challenge as a group.",
+          "Choose the Pokemon POKELDN should bring to the raid.",
+          "Start the joiner while the host is waiting for participants.",
+          "Confirm POKELDN appears and becomes ready, then choose Start Raid Battle.",
+          "POKELDN disconnects at the battle transition; its Pokemon remains as a bot."),
+         (Field("--raid-pokemon", "Raid Pokemon", "pokemon",
+                help="Pick a species; PKHeX builds a legal Pokemon for this raid. Leave it empty "
+                     "to use the captured Gallade."),
+          join_seconds("240")),
+         fixed=("--scene-id", "7", "--raid-guest-replay", "--raid-guest-ready-delay", "2",
+                "--seconds", "900", "--max-seats", "1", "--trainer-name", "{ot}"),
+         doc="sv_raid_guest.md"),
 ))
 
 ZA = Game("za", "Legends Z-A", "PLZA", "za.md", (

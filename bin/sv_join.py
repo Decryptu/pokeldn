@@ -33,7 +33,7 @@ from pokeldn.host_support import open_output
 from pokeldn import pokemon as pokemon_service
 from pokeldn import sv
 from pokeldn.ldn import ldn_mitm, pia6, pia_connect, reliable5
-from pokeldn.sv import pokemon, port2, reference, streams, trade
+from pokeldn.sv import pokemon, port2, raid_guest, reference, streams, trade
 from pokeldn.ldn import channel_table, game_channel
 from pokeldn.ldn.transport import board_radio, find_ap_phy
 from pokeldn.host_support import resolve_keys, needs_root
@@ -70,8 +70,8 @@ RAID_HANDLER_KEYS = {
     bytes.fromhex("8000000033000000"),
     bytes.fromhex("8000000034000000"),
 }
-RETAIL_RAID_GUEST_PLAYER_ID = "100096e8aa857fe0be9fe53f544feab2"
-RETAIL_RAID_GUEST_MAC = "48:f1:eb:c7:b3:51"
+RETAIL_RAID_GUEST_PLAYER_ID = raid_guest.player_id().hex()
+RETAIL_RAID_GUEST_MAC = raid_guest.station_mac()
 HOST_BITMAP = 0x01                # the destination mask a joiner writes: the host, station 0
 ACK_ENTRIES = 4  # a retail station's bulk ack carries four
 
@@ -171,6 +171,11 @@ def load_raid_guest_lobby_records(path):
             if plain[:4] not in (bytes.fromhex("80332d01"), bytes.fromhex("80332e01")):
                 continue
             seq = int(row["seq"])
+            # A complete successful capture also contains Ready and Start acknowledgement as
+            # sequences 3 and 4.  Only the initial presence records are replayed here; the later
+            # state transitions are regenerated below with fresh application counters.
+            if seq not in (1, 2):
+                continue
             value = (flags, payload)
             if records.setdefault(seq, value) != value:
                 raise ValueError(f"raid lobby record {seq} changes within {path}")
@@ -321,6 +326,34 @@ def build_bulk_ack(high, our_next_seq, stream_id=0):
     return header + payload
 
 
+def hex_bytes(value):
+    try:
+        parsed = bytes.fromhex(value)
+    except ValueError as exc:
+        raise argparse.ArgumentTypeError("expected hexadecimal bytes") from exc
+    if not parsed:
+        raise argparse.ArgumentTypeError("expected at least one hexadecimal byte")
+    return parsed
+
+
+def raid_disconnect_matches(target, prefix, protocol, port, message, body=b""):
+    """Whether this host raid record is the requested post-ACK disconnect point."""
+    return ((target is not None and message["sequence_id"] == target)
+            or (prefix is not None and bytes(body).startswith(prefix))) \
+        and (protocol == PROTO_BROADCAST_RELIABLE
+            and port == 0
+            and bool(message["flags"] & reliable5.FLAG_APPLICATION_DATA))
+
+
+def apply_raid_disconnect_default(args):
+    """Leave at the stable post-bootstrap transition unless an experiment overrides it."""
+    if (args.raid_guest_replay
+            and args.raid_disconnect_after_seq is None
+            and args.raid_disconnect_after_prefix is None
+            and not args.raid_stay_after_battle_transition):
+        args.raid_disconnect_after_prefix = bytes.fromhex("80349301")
+
+
 def build_parser():
     ap = argparse.ArgumentParser(description=__doc__,
                                  formatter_class=argparse.RawDescriptionHelpFormatter)
@@ -396,6 +429,25 @@ def build_parser():
                          "after identity and raid channel setup; retains captured application fields")
     ap.add_argument("--raid-guest-ready-delay", type=float,
                     help="send the observed guest ready state this many seconds after lobby replay")
+    ap.add_argument("--raid-pokemon", metavar="FILE",
+                    help="a legal SV party PK9 for the fake player to bring to a retail-hosted "
+                         "raid; PKHeX validates and refreshes its party stats before the captured "
+                         "Gallade in the guest lobby record is replaced")
+    raid_disconnect = ap.add_mutually_exclusive_group()
+    raid_disconnect.add_argument("--raid-disconnect-after-seq", type=int, metavar="N",
+                    help="experiment: after receiving and acknowledging host raid record N on "
+                         "0x80 port 0, leave the LDN association")
+    raid_disconnect.add_argument("--raid-disconnect-after-prefix", type=hex_bytes, metavar="HEX",
+                    help="experiment: after receiving and acknowledging the host raid record "
+                         "whose decompressed application body starts with HEX, leave the LDN "
+                         "association; unlike reliable sequence numbers this identifies a stable "
+                         "application message")
+    raid_disconnect.add_argument("--raid-stay-after-battle-transition", action="store_true",
+                    help="with --raid-guest-replay, keep the ESP32 associated after battle_93 "
+                         "instead of the product default of leaving so the game substitutes a bot")
+    ap.add_argument("--raid-disconnect-delay", type=float, default=0.0, metavar="SECONDS",
+                    help="wait this long after --raid-disconnect-after-seq is received before "
+                         "leaving; reliable ACK and maintenance traffic continue during the wait")
     ap.add_argument("--trainer-name", default="POKELDN",
                     help="the player name record 1 of our identity carries, the one the trade screen shows")
     ap.add_argument("--no-identity", action="store_true",
@@ -573,6 +625,12 @@ def describe_offer(body):
 def main(argv=None):
     ap = build_parser()
     args = ap.parse_args(argv)
+    if args.raid_disconnect_delay < 0:
+        ap.error("--raid-disconnect-delay cannot be negative")
+    if (args.raid_disconnect_delay and args.raid_disconnect_after_seq is None
+            and args.raid_disconnect_after_prefix is None):
+        ap.error("--raid-disconnect-delay needs a raid disconnect target")
+    apply_raid_disconnect_default(args)
     if args.raid_guest_replay:
         args.session_join = True
         args.game_channel = True
@@ -594,7 +652,14 @@ def main(argv=None):
         if args.mac is None:
             args.mac = RETAIL_RAID_GUEST_MAC
         print("[sv] retail raid guest replay: exact retail MAC/clock, delayed Session update, "
-              "retail stream opening, captured identity, port-2 at +0.24s, raid keys at +0.79s")
+              "retail stream opening, captured identity, port-2 at +0.24s, raid keys at +0.79s"
+              + (", leave after battle_93" if args.raid_disconnect_after_prefix
+                 == bytes.fromhex("80349301") else ""))
+    if args.raid_pokemon and not args.raid_guest_replay:
+        ap.error("--raid-pokemon needs --raid-guest-replay")
+    if args.raid_pokemon:
+        args.raid_pokemon = pokemon_service.prepare_file(
+            "sv", args.raid_pokemon, fresh=args.fresh_pid)
     if args.trade_offer:
         args.trade_offer = [pokemon_service.prepare_file("sv", p, fresh=args.fresh_pid,
             transform=lambda raw: trade.load_offer(raw, args.offer_set)) for p in args.trade_offer]
@@ -902,14 +967,24 @@ async def run_session(args, keys, host_ip, host_mac, our_ip, our_mac, record):
     join_sends_scheduled = False
     offers_seen = 0
     trades_done = 0
-    record_set = load_record_trace(args.record_trace) if args.record_trace else []
+    record_set = (load_record_trace(args.record_trace) if args.record_trace else
+                  raid_guest.identity_records()
+                  if args.raid_guest_replay and not args.record_set else [])
     raid_lobby_records = (load_raid_guest_lobby_records(args.raid_lobby_trace)
-                          if args.raid_lobby_trace else [])
+                          if args.raid_lobby_trace else
+                          raid_guest.lobby_records() if args.raid_guest_replay else [])
+    if args.raid_pokemon:
+        raid_lobby_records = raid_guest.with_lobby_pokemon(
+            raid_lobby_records, Path(args.raid_pokemon).read_bytes())
+        print(f"[sv] raid guest Pokemon: "
+              f"{pokemon.describe(raid_guest.lobby_pokemon(raid_lobby_records))}")
     raid_lobby_sent = False
     raid_ready_due = None
     raid_guest_state = 1
     raid_start_ack_scheduled = False
     raid_application_counter = None
+    raid_disconnect_seen = None
+    raid_disconnect_due = None
     if record_set:
         record_set[0] = (record_set[0][0],
                          reference.named_record(record_set[0][1], args.trainer_name))
@@ -1055,6 +1130,12 @@ async def run_session(args, keys, host_ip, host_mac, our_ip, our_mac, record):
     host_leaving = False
     while time.monotonic() - t0 < args.hold:
         now = time.time()
+        if raid_disconnect_due is not None and now >= raid_disconnect_due:
+            print(f"[sv] raid disconnect delay ended {args.raid_disconnect_delay:.3f}s after "
+                  f"host sequence {raid_disconnect_seen}; leaving the LDN association")
+            record(rec="left_after_raid_sequence", seq=raid_disconnect_seen,
+                   delay=args.raid_disconnect_delay, t=now)
+            break
         for due, request, requester in [e for e in pending_rtt if e[0] <= now]:
             send(out(streams.build_rtt_response(request, requester), requester,
                      protocol=PROTO_RTT), "rtt response")
@@ -1183,19 +1264,10 @@ async def run_session(args, keys, host_ip, host_mac, our_ip, our_mac, record):
         if raid_ready_due is not None and now >= raid_ready_due:
             # Controlled Ready press is state 0x01; 0x0d is tested only after host state 0x0c.
             # Its application counter follows the type-0x2e record, independently of Pia seq.
-            _, first_flags, first_payload = raid_lobby_records[0]
-            ready = bytearray(streams.decompress(first_payload)
-                              if first_flags & reliable5.FLAG_ZLIB else first_payload)
-            _, second_flags, second_payload = raid_lobby_records[1]
-            second = (streams.decompress(second_payload)
-                      if second_flags & reliable5.FLAG_ZLIB else second_payload)
-            if len(ready) != 42 or ready[34:38] != bytes.fromhex("18000000"):
-                raise ValueError("unrecognized guest lobby state; refusing to guess ready field")
-            if raid_application_counter is None:
-                raid_application_counter = int.from_bytes(second[4:8], "little")
-            raid_application_counter = (raid_application_counter + 1) & 0xffffffff
-            ready[4:8] = raid_application_counter.to_bytes(4, "little")
-            ready[34:38] = raid_guest_state.to_bytes(4, "little")
+            ready = raid_guest.state_payload(
+                raid_guest_state, raid_lobby_records,
+                previous_counter=raid_application_counter)
+            raid_application_counter = int.from_bytes(ready[4:8], "little")
             key = (PROTO_BROADCAST_RELIABLE, 0)
             seq = next_seq(*key)
             payload = streams.compress(ready)
@@ -1598,6 +1670,21 @@ async def run_session(args, keys, host_ip, host_mac, our_ip, our_mac, record):
                     held_off = repeat and time.time() - last_ack.get(key, 0.0) < args.repeat_ack_gap
                     if not args.no_ack and not held_off:
                         ack_due[key] = None
+                    if (raid_disconnect_seen is None and raid_disconnect_matches(
+                            args.raid_disconnect_after_seq, args.raid_disconnect_after_prefix,
+                            msg.protocol, msg.port, rm, body)):
+                        raid_disconnect_seen = rm["sequence_id"]
+                        raid_disconnect_due = time.time() + args.raid_disconnect_delay
+                        if args.raid_disconnect_delay > 0:
+                            print(f"[sv] host raid sequence {raid_disconnect_seen} received; "
+                                  f"leaving in {args.raid_disconnect_delay:.3f}s")
+                            record(rec="raid_sequence_disconnect_scheduled",
+                                   seq=raid_disconnect_seen,
+                                   delay=args.raid_disconnect_delay, t=time.time())
+                        else:
+                            # Do not consume later records coalesced into this datagram. Send the
+                            # normal ACK through the target below, then leave the association.
+                            break
                 if key not in last_ack:
                     last_ack[key] = 0.0
         # One ack per stream per packet, after every message: a packet carries up to 14 records.
@@ -1606,6 +1693,12 @@ async def run_session(args, keys, host_ip, host_mac, our_ip, our_mac, record):
             send(out(our_ack(key), host_var or 0, protocol=protocol, port=port,
                      flags=ack_shape["flags"]), "reliable ack", protocol=protocol, port=port)
             last_ack[key] = time.time()
+        if raid_disconnect_seen is not None and args.raid_disconnect_delay <= 0:
+            print(f"[sv] host raid sequence {raid_disconnect_seen} received and "
+                  "acknowledged; leaving the LDN association")
+            record(rec="left_after_raid_sequence", seq=raid_disconnect_seen,
+                   delay=0.0, t=time.time())
+            break
         if host_leaving and not args.stay_on_host_migration:
             print("[sv] the console is destroying its network (NetStartHostMigration); "
                   "leaving the seat")
