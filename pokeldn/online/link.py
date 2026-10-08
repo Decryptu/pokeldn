@@ -120,12 +120,15 @@ class Partner:
         self.log(f"[online] looking for a partner: {self.game}, {where}")
 
     def close(self, reason="closed"):
+        if self.closed.is_set():
+            return
         with self.lock:
             if self.state == "paired":
                 self._send({"t": "bye", "why": reason}, reliable=False)
             self.state = "closed"
         self.closed.set()
-        self.pool.close()
+        # The relays' threads take up to a second to see it; a launcher's frame loop never waits.
+        threading.Thread(target=self.pool.close, name="online close", daemon=True).start()
 
     @property
     def paired(self) -> bool:
@@ -156,6 +159,7 @@ class Partner:
             self._send(self._share_message(key))
 
     def _share_message(self, key):
+        self.traded = self.traded or self.state == "paired"   # a FireRed party is the partner's own
         return {"t": "share", "r": self.round, "k": key,
                 "d": base64.b64encode(self.mine["shared"][key]).decode()}
 
@@ -343,6 +347,9 @@ class Partner:
             return
         self.state = "lost"
         self.ended = why
+        # What a gone partner offered cannot be traded: every host withdraws it from its console.
+        theirs = self.rounds.setdefault(self.round, Round())
+        theirs.offer, theirs.accepted = None, False
         self.log(f"[online] {why}")
 
     # Sending

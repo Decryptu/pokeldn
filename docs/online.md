@@ -135,6 +135,14 @@ for both blocks with no timer [trade.c:1478], so neither host waits on the other
 reaches the console only when PKHeX reads every Pokemon in it. The pick crosses as `pick` (the
 console's cursor) before the offered record.
 
+A partner that leaves, or goes silent for 45 s, counts as one that took its offer back: each host
+withdraws the partner's Pokemon from its console, unless the trade is past its point of no return.
+A FireRed or LeafGreen leader can only answer what its follower does, so a console whose partner
+left gets `PLAYER_CANCEL_TRADE` ("Canceled", back to the menu) for its pick and for every later
+pick, the answer of a leader that chose Cancel [trade.c:1712]; the menu's Cancel then leaves. A
+party exchange the partner left half-way finishes with an empty party. A player who chooses Cancel
+at the menu tells the partner at once.
+
 A Sword's chained trades already offer records that differ from the snapshot's slot
 ([Sword trades](swsh_trade.md)), and the exchanged record is content 50's.
 

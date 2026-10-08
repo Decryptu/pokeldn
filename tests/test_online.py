@@ -568,3 +568,54 @@ def test_two_firered_hosts_relay_the_parties_and_trade_the_picks_online():
     queued = [x[1] for x in hosts[0].trace if x[0] == "queue_block"]
     assert queued.count("host:party:0:partner") == 1 and queued.count("SET_MONS_TO_TRADE") == 1
     assert queued.index("SET_MONS_TO_TRADE") < queued.index("START_TRADE")
+
+
+def test_a_firered_console_whose_partner_left_is_cancelled_back_to_its_menu():
+    """The partner leaves after both picked: the console gets PLAYER_CANCEL_TRADE ("Canceled") and
+    returns to the menu; every later pick is cancelled the same way, so Cancel is what leaves."""
+    from pokeldn.frlg.link import trade
+    from pokeldn.frlg.link.host_trade import H_CONFIRM, H_SELECT, HostTradeEngine
+    from pokeldn.frlg.save import mon
+    from tests.test_host_trade_engine import ScriptedChild, _mon
+    hub, now = Hub(), [1000.0]
+    a, b = partners(hub, now, 2, game="frlg")
+    hosts = [HostTradeEngine([mon.Mon(bytes(100))], anim_delay=1, partner=p) for p in (a, b)]
+    children = [ScriptedChild(h, [_mon(0x21 + n)], offered=(0,)) for n, h in enumerate(hosts)]
+    children[1].maybe_select = lambda: None        # the far player never picks
+    warped = [False, False]
+
+    def step(only=(0, 1)):
+        for n in only:
+            h, c = hosts[n], children[n]
+            for _ in range(20):
+                c.consume_host_words(h.tick())
+                if h.established and not warped[n]:
+                    warped[n] = True
+                    c.send_standby(0)
+                if n == 0 and h.state == H_SELECT and not getattr(c, "picked", False):
+                    c.picked = True
+                    c.send_linkcmd(trade.READY_TO_TRADE, 0)
+
+    assert run(hub, now, [a, b], lambda: hosts[0].state == H_CONFIRM, seconds=300, extra=step)
+    b.close()
+    assert run(hub, now, [a], lambda: hosts[0].state == H_SELECT, seconds=10,
+               extra=lambda: step((0,)))
+    queued = [x[1] for x in hosts[0].trace if x[0] == "queue_block"]
+    assert queued[-1] == "PLAYER_CANCEL_TRADE" and "SET_MONS_TO_TRADE" not in queued
+    children[0].send_linkcmd(trade.READY_TO_TRADE, 0)
+    assert [x[1] for x in hosts[0].trace if x[0] == "queue_block"][-1] == "PLAYER_CANCEL_TRADE"
+    assert hosts[0].state == H_SELECT
+
+
+def test_a_host_whose_partner_left_withdraws_the_partner_offer_from_its_console():
+    """Every title reads a gone partner as an offer taken back."""
+    hub, now = Hub(), [1000.0]
+    a, b = partners(hub, now, 2, game="sv")
+    assert run(hub, now, [a, b], lambda: a.paired and b.paired)
+    a.offer(b"mine")
+    b.offer(b"theirs")
+    b.accept()
+    assert run(hub, now, [a, b], lambda: a.theirs().accepted)
+    b.close()
+    assert run(hub, now, [a], lambda: a.state == "lost", seconds=5)
+    assert a.theirs().offer is None and not a.theirs().accepted

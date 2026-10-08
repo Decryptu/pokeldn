@@ -396,7 +396,7 @@ class HostTradeEngine:
         self._queue_words(rfu.send_block_req_words(reqtype), f"BLOCK_REQ:{reqtype}:{expected}")
         if self.partner is not None and expected in ONLINE_BLOCKS:
             # The console waits for both blocks with no timer [trade.c:1478].
-            self._held = expected
+            self._held, self._held_own = expected, bytes(data)
             return
         self._queue_block(data, f"host:{expected}")
 
@@ -986,6 +986,13 @@ class HostTradeEngine:
 
     def _online_linkcmd(self, cmd, cursor):
         """-> True when the online partner owns this command."""
+        if cmd == trade.READY_TO_TRADE and self.state == H_SELECT and self.partner.state == "lost":
+            # A leader that chose Cancel answers a pick so [trade.c:1712]: "Canceled", back to the
+            # menu, where Cancel leaves.
+            self.child_cursor = cursor % 6
+            self._send_linkcmd(trade.PLAYER_CANCEL_TRADE)
+            self.info("[online] the partner is gone; choose Cancel on the Switch to leave.")
+            return True
         if cmd == trade.READY_TO_TRADE and self.state == H_SELECT:
             self.child_cursor = cursor % 6
             self._set_state(H_CONFIRM)
@@ -1003,7 +1010,8 @@ class HostTradeEngine:
             self.partner.withdraw()
             return False
         if cmd == trade.REQUEST_CANCEL and self.state == H_SELECT:
-            self.partner.withdraw()
+            # The player leaves the trade: the partner hears it now, not when the room closes.
+            self.partner.close("left the trade")
         return False
 
     def _tick_online(self):
@@ -1013,18 +1021,26 @@ class HostTradeEngine:
             if block_data is not None and self._partner_block_readable(block_data):
                 self._queue_block(block_data, f"host:{self._held}:partner")
                 self._held = None
+            elif self.partner.state == "lost":
+                # The console cannot leave mid-exchange: finish it with our own empty party, then
+                # its pick is answered with a cancel.
+                self._queue_block(self._held_own, f"host:{self._held}")
+                self._held = None
         if self.state != H_CONFIRM:
             return
         pick = theirs.shared.get("pick")
         if not self._set_mons_sent and theirs.offer is not None and pick:
             self._set_mons_sent = True
             self._send_linkcmd(trade.SET_MONS_TO_TRADE, pick[0] % 6)
-        elif self._set_mons_sent and theirs.offer is None:
-            # The partner took theirs back: both consoles return to the menu [trade.c:1740-1748].
+        elif (self._set_mons_sent or self.partner.state == "lost") and theirs.offer is None:
+            # The partner took theirs back, or is gone: the console returns to the menu
+            # [trade.c:1740-1748].
             self._send_linkcmd(trade.PLAYER_CANCEL_TRADE)
             self._set_state(H_SELECT)
             self.partner.withdraw()
-            self.info("The partner cancelled; back to the trade menu.")
+            self.info("[online] the partner is gone; choose Cancel on the Switch to leave."
+                      if self.partner.state == "lost" else
+                      "The partner cancelled; back to the trade menu.")
         elif self._set_mons_sent and self._console_yes and theirs.accepted:
             self._set_state(H_ANIM)
             self.anim_starts += 1
