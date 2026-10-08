@@ -165,16 +165,44 @@ host, for tests (`tests/test_sprites.py`).
 
 At launch the app asks `api.github.com/repos/Decryptu/pokeldn/releases/latest` for the newest stable
 release, in the background with a 5 s timeout. A tag above the app's `pokeldn.__version__` adds an
-Update entry to the sidebar; it opens the release notes or downloads this computer's archive from the
-release (`pokeldn-macos-arm64.zip`, `pokeldn-windows-x64.zip`, `pokeldn-linux-x64.tar.gz`), or the
-release page when none fits. The user replaces the app with the download; settings, keys and received
-Pokemon live outside it.
+Update entry to the sidebar. It opens a dialog with the release notes and either Update now or
+Download.
+
+Update now (`pokeldn.app.update`) installs the release in place:
+
+1. Download this computer's archive (`pokeldn-macos-arm64.zip`, `pokeldn-windows-x64.zip`,
+   `pokeldn-linux-x64.tar.gz`) and the release's `SHA256SUMS` into the data folder's `update/`.
+2. Refuse the archive unless its SHA-256 matches the line `SHA256SUMS` gives for its name.
+3. Unpack it: `ditto -x -k` on macOS, which keeps the bundle's symlinks and modes; `tarfile` with
+   the `data` filter on Linux; `zipfile` on Windows.
+4. Start the new app as a helper, `pokeldn --apply-update NEW TARGET PID VERSION`
+   (`gui/updating.py`). Its small "Updating pokeldn" window touches `update/helper.ready`; the old
+   app quits on that file, or after 15 s without it, so one window is always on screen.
+5. The helper waits for the old app's process to end (120 s), renames the installed app to
+   `.<name>.old` beside it (retrying for 30 s while Windows releases the folder), copies the new app
+   into its place, deletes the old copy and opens the new app. Any failure puts the old app back and
+   opens it. The swap runs whether or not the helper's window came up.
+6. The app that opens reads `update/outcome.json` once: "pokeldn updated to X", or a dialog saying
+   why the old app stayed. Removing the file closes the helper (it gives up after 60 s); the app
+   then removes the unpacked copy once the helper's process has ended, and any `.old` folder.
+
+A download made by the app carries no quarantine attribute (macOS) or Mark of the Web (Windows), so
+neither Gatekeeper nor SmartScreen asks again. `SHA256SUMS` comes from the same GitHub release as the
+archive: the check catches a corrupted or truncated download and does not authenticate the release.
 
 | situation | behaviour |
 |---|---|
 | pre-release or draft, or a tag that is not `vX.Y.Z` | not offered |
 | no network, HTTP error, reply that is not a release | nothing shown at launch; Check now says GitHub did not answer |
 | Settings, Updates off | no request at launch; Check now still asks |
+| no archive for this computer, or no `SHA256SUMS` in the release | Download opens the file or the release page |
+| a source checkout, a macOS app run from Downloads (App Translocation), a folder the user cannot write | Download, with the reason |
+| a session, flash or cleanup running | Update now asks to finish it first |
+| checksum mismatch or a failed download | nothing changes; the dialog offers Download |
+
+Settings, keys and received Pokemon live outside the app and stay. Whether macOS asks for App
+Management permission when the helper replaces an app in `/Applications` is unmeasured; a refusal
+leaves the old app in place and the dialog names the error.
 
 The request carries no user data. GitHub allows 60 unauthenticated requests per hour per address.
 `POKELDN_UPDATE_URL` replaces the endpoint, for tests (`tests/test_app_update.py`).
