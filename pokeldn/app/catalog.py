@@ -1,7 +1,7 @@
 """What the app offers per game: each tool is an entry point, the tested flags it always gets, the
 fields a user fills in, and what to press on the console. Fixed arguments may carry {received}
 (the Received folder), {stamp} (the run's time) and {src_var} (a fresh random id)."""
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 
 
 @dataclass(frozen=True)
@@ -105,10 +105,24 @@ ONLINE_CODE_HELP = ("Eight digits you and your partner agree on; you also enter 
                     "Empty meets anyone trading this game online without a code.")
 
 
-def online(host: Tool, steps: tuple[str, ...], code: Field | None = None, seconds: str = "1800") -> Tool:
-    """The host tool trading a partner far away instead of a built offer (docs/online.md)."""
-    kept = tuple(f for f in host.fields if f.kind != "pokemon" and f is not FRESH_PID and f.flag != "--seconds"
-                 and (code is None or f.flag != code.flag))
+def without(fixed: tuple[str, ...], flag: str) -> tuple[str, ...]:
+    """`fixed` with `flag` and its value taken out."""
+    out, skip = [], False
+    for arg in fixed:
+        if skip:
+            skip = False
+        elif arg == flag:
+            skip = True
+        else:
+            out.append(arg)
+    return tuple(out)
+
+
+def online(host: Tool, steps: tuple[str, ...], code: Field) -> Tool:
+    """The host tool trading a partner far away instead of a built offer (docs/online.md). `code`
+    is the room both players enter, the console's own link code where the game has one."""
+    kept = tuple(f for f in host.fields if f.kind != "pokemon" and f is not FRESH_PID
+                 and f.flag not in ("--seconds", code.flag))
     return Tool(host.key.replace("-host", "-online"), "Trade (Online)", host.script,
                 "Trade with a player far away: each of you hosts your own console, and the two trade "
                 "through the internet.",
@@ -116,8 +130,10 @@ def online(host: Tool, steps: tuple[str, ...], code: Field | None = None, second
                  "Start, then wait for 'Trading with' and your partner's name.", *steps,
                  "Your partner's Pokemon appears once they offer it. The trade goes through once both "
                  "of you confirm."),
-                ((code,) if code else ()) + kept + (host_seconds(seconds),),
-                fixed=host.fixed + ("--online",), doc="online.md")
+                (code,) + kept + ((host_seconds("1800", "Leave time to find a partner and trade."),)
+                                  if any(f.flag == "--seconds" for f in host.fields)
+                                  or "--seconds" in host.fixed else ()),
+                fixed=without(host.fixed, "--seconds") + ("--online",), doc="online.md")
 
 
 FRLG_PATH = "Pokemon Center 2F, third attendant, Direct Corner, Trade Center"
@@ -194,7 +210,8 @@ LGPE = Game("lgpe", "Let's Go Pikachu & Eevee", "LGPE", "lgpe.md", (
          doc="lgpe_session.md"),
 ))
 
-SWSH_HOST = Tool("swsh-host", "Trade (Host)", "bin/swsh_host.py", "Host a Link Trade the console joins.",
+SWSH = Game("swsh", "Sword & Shield", "SwSh", "swsh.md", (
+    Tool("swsh-host", "Trade (Host)", "bin/swsh_host.py", "Host a Link Trade the console joins.",
          ("Start the host and wait for the network to come up.",
           "Y-Comm, Link Trade, local communication; press A on both messages, then wait in the overworld.",
           "Choose a Pokemon and confirm when POKELDN appears.",
@@ -205,14 +222,7 @@ SWSH_HOST = Tool("swsh-host", "Trade (Host)", "bin/swsh_host.py", "Host a Link T
           host_seconds("900")),
          fixed=("--player-name", "{ot}", "--trainer-name", "{ot}",
                 "--trainer-tid", "{tid}", "--trainer-sid", "{sid}",
-                "--received", "{received}/swsh-{stamp}.pk8"), doc="swsh_trade.md")
-
-SWSH = Game("swsh", "Sword & Shield", "SwSh", "swsh.md", (
-    SWSH_HOST,
-    online(SWSH_HOST, ("Y-Comm, Link Trade, local communication with the same Link Code; press A on both "
-                       "messages, then wait in the overworld.",
-                       "Choose the Pokemon to send when your partner's name appears."),
-           Field("--code", "Link Code", "code", help=ONLINE_CODE_HELP)),
+                "--received", "{received}/swsh-{stamp}.pk8"), doc="swsh_trade.md"),
     Tool("swsh-join", "Trade (Join)", "bin/swsh_connect.py", "Join the console's Link Trade search.",
          ("Y-Comm, Link Trade, local communication, no code; press A on both messages.",
           "Start the joiner while the console searches.",
@@ -365,4 +375,35 @@ ZA = Game("za", "Legends Z-A", "PLZA", "za.md", (
          doc="za.md"),
 ))
 
-GAMES = (FRLG, LGPE, SWSH, BDSP, PLA, SV, ZA)
+def with_online(game: Game, steps: tuple[str, ...], code: Field | None = None) -> Game:
+    """`game` with its online trade after its host tool; `code` replaces the host's own code field's
+    help, or is a new field where the game has no code."""
+    host = next(t for t in game.tools if t.name == "Trade (Host)")
+    if code is None:
+        code = next(f for f in host.fields if f.kind in ("code", "linkcode"))
+        code = replace(code, help=ONLINE_CODE_HELP if code.kind == "code" else
+                       "The three Pokemon you and your partner pick, in the same order, here and on "
+                       "the console.")
+    at = game.tools.index(host) + 1
+    return replace(game, tools=game.tools[:at] + (online(host, steps, code),) + game.tools[at:])
+
+
+GAMES = (
+    with_online(FRLG, (f"{FRLG_PATH}, Join Group, then pick POKELDN.",
+                       "Your partner's party shows on the right: choose the Pokemon you send, then "
+                       "confirm."),
+                Field("--online-code", "Code", "code", help=ONLINE_CODE_HELP)),
+    with_online(LGPE, (LGPE_STEPS, "Choose a Pokemon and confirm.")),
+    with_online(SWSH, ("Y-Comm, Link Trade, local communication with the same Link Code; press A on "
+                       "both messages, then wait in the overworld.",
+                       "Choose the Pokemon to send when POKELDN appears.")),
+    with_online(BDSP, (f"{BDSP_ROOM} Our character appears.",
+                       "Y, Communicate, Trade Pokemon; accept the greeting, then choose."),
+                Field("--password", "Code", "code", help="Eight digits you and your partner agree "
+                      "on; you also enter them at the Union Room's password prompt. Empty: the "
+                      "plain room, and anyone trading online without a code.")),
+    with_online(PLA, (*PLA_STEPS, "Offer a Pokemon and confirm.")),
+    with_online(SV, (SV_SEARCH, "Offer and confirm on the trade screen.")),
+    with_online(ZA, ("X, Link Play, Link Trade, Nearby Players, the same code, then search.",
+                     "Pick on the trade box, offer, then trade.")),
+)

@@ -8,3 +8,5 @@ trio==0.33.0
 zstandard==0.25.0
 pyserial==3.5
 unicorn==2.1.4
+websockets==17.1
+certifi==2026.7.22

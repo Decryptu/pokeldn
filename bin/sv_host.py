@@ -28,6 +28,7 @@ from pokeldn.ldn.ldn_mitm_host import IpHostTransport
 from pokeldn.ldn.transport import HostTransport, board_radio, find_ap_phy
 from pokeldn.host_support import resolve_keys, needs_root
 from pokeldn.ldn import left_after_trade, show_done
+from pokeldn.online import session as online
 from pokeldn.app import screen
 
 PROTOCOL_NAMES = {
@@ -174,6 +175,7 @@ def build_parser():
     ap = argparse.ArgumentParser(description=__doc__,
                                  formatter_class=argparse.RawDescriptionHelpFormatter)
     ap.add_argument("--seconds", type=float, default=240.0)
+    online.add_arguments(ap)
     ap.add_argument("--phy", default="auto")
     ap.add_argument("--channel", type=int, default=None)
     ap.add_argument("--keys", default="~/.switch/prod.keys")
@@ -344,6 +346,10 @@ def main():
             print("[sv] no AP-capable phy")
             return 1
 
+    if args.online and args.trade_offer:
+        print("[sv] --online offers the partner's Pokemon; --trade-offer is ignored")
+        args.trade_offer = []
+    partner = online.partner("sv", args, code=args.code, name=args.trainer_name)
     session_flags = (ESTABLISHING_FLAGS if args.session_flags is None else args.session_flags)
     pending_update = {}
     pending_records = {}
@@ -382,6 +388,8 @@ def main():
         screen.offer("sv", trade_offers[0])
     elif args.offer_set or args.offer_dump:
         ap.error("--offer-set and --offer-dump need --trade-offer")
+    trading = bool(trade_offers) or partner is not None
+
     def report_offer(ip, body, n):
         try:
             print(f"[sv] {ip}: offers {pokemon.describe(pokemon.from_wire(body))}")
@@ -595,6 +603,9 @@ def main():
                     record(rec="out", dst=ip, kind="net property", seqid=state[0],
                            hex=pkt.hex(), t=now)
                     print(f"[sv] -> {ip}: net 0x50 update property, seqid={state[0]}")
+            for ip, st in list(stages.items()):
+                for delay, out_port, payload in st.tick():
+                    schedule_trade(delay, ip, out_port, payload)
             for entry in list(pending_trade):
                 due, ip, port, payload = entry
                 if now < due:
@@ -828,9 +839,9 @@ def main():
                                     continue
                                 delay, rest = spec.split(":", 1)
                                 pending_late[(src_ip, index)] = (time.time() + float(delay), rest)
-                            if trade_offers and args.offer_at is not None:
+                            if trading and args.offer_at is not None:
                                 stages[src_ip] = trade.TradeStage(
-                                    trade_offers, confirm_delay=args.confirm_delay)
+                                    trade_offers, confirm_delay=args.confirm_delay, partner=partner)
                                 for delay, out_port, payload in stages[src_ip].offer_first():
                                     schedule_trade(args.offer_at + delay,
                                                    src_ip, out_port, payload)
@@ -885,11 +896,12 @@ def main():
                                     send_ack(src_ip, msg.protocol, msg.port,
                                              station_ids[src_ip]["console_var"],
                                              f"seq {rm['sequence_id']}")
-                                if (trade_offers and msg.protocol == PROTO_RELIABLE
+                                if (trading and msg.protocol == PROTO_RELIABLE
                                         and src_ip in station_ids):
                                     if src_ip not in stages:
                                         stages[src_ip] = trade.TradeStage(
-                                            trade_offers, confirm_delay=args.confirm_delay)
+                                            trade_offers, confirm_delay=args.confirm_delay,
+                                            partner=partner)
                                     st = stages[src_ip]
                                     for delay, out_port, payload in st.on_message(
                                             msg.port, rm["payload"]):
@@ -905,7 +917,7 @@ def main():
                                         if st.done:
                                             print(f"[sv] {src_ip}: TRADE {st.trades} COMPLETE; "
                                                   f"no record left to offer")
-                                        else:
+                                        elif partner is None:
                                             screen.offer("sv", st.offer)
                                             print(f"[sv] {src_ip}: TRADE {st.trades} COMPLETE; "
                                                   f"offering the next record")
@@ -930,9 +942,10 @@ def main():
                                         delay, rest = spec.split(":", 1)
                                         pending_late[(src_ip, f"open{index}")] = (
                                             time.time() + float(delay), rest)
-                                    if trade_offers and args.offer_after_open is not None:
+                                    if trading and args.offer_after_open is not None:
                                         stages.setdefault(src_ip, trade.TradeStage(
-                                            trade_offers, confirm_delay=args.confirm_delay))
+                                            trade_offers, confirm_delay=args.confirm_delay,
+                                            partner=partner))
                                         for delay, out_port, payload in stages[src_ip].offer_first():
                                             schedule_trade(args.offer_after_open + delay,
                                                            src_ip, out_port, payload)
@@ -1003,6 +1016,8 @@ def main():
         print("\n[sv] interrupted")
     finally:
         transport.stop()
+        if partner:
+            partner.close()
         if cap:
             cap.close()
 

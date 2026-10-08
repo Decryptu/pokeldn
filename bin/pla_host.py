@@ -24,6 +24,7 @@ from pokeldn import gen8, pla
 from pokeldn.ldn import left_after_trade, pia6, pia_connect, reliable5, rtt_protocol, show_done
 from pokeldn.ldn import channel_table
 from pokeldn.app import screen
+from pokeldn.online import session as online
 from pokeldn.pla import data_exchange, game_channel, trade_box
 from pokeldn.pla import pokemon as pla_pokemon
 from pokeldn.ldn.ldn_mitm_host import IpHostTransport
@@ -142,6 +143,7 @@ def build_parser():
                                  formatter_class=argparse.RawDescriptionHelpFormatter)
     ap.add_argument("--code", default="00000000", help="the eight digits the player types")
     ap.add_argument("--seconds", type=float, default=240.0, help="how long to hold the network up")
+    online.add_arguments(ap)
     ap.add_argument("--phy", default="auto")
     ap.add_argument("--channel", type=int, default=None)
     ap.add_argument("--keys", default="~/.switch/prod.keys")
@@ -370,7 +372,11 @@ def main():
                       f"{pla_pokemon.describe(pla_pokemon.decrypt(box_state['record']))}")
         return box_state["record"]
 
-    if args.trade_box:
+    partner = online.partner("pla", args, code=args.code, name=args.player_name)
+    online_boxes = {}       # station -> trade_box.OnlineBox
+    if partner is not None and args.trade_box_record:
+        print("[pla] --online offers the partner's Pokemon; --trade-box-record is ignored")
+    if args.trade_box and partner is None:
         for n, state in enumerate(box_states, start=1):
             print(f"[pla] trade {n} offers {pla_pokemon.describe(pla_pokemon.decrypt(state['record']))}")
         screen.offer("pla", box_states[0]["record"])
@@ -519,6 +525,20 @@ def main():
                 record(rec="out", dst=ip, kind="game channel resend", port=port, seq=seq,
                        hex=pkt.hex(), t=now)
                 print(f"[pla] -> {ip}: game channel resend (port {port}, seq {seq})")
+            for ip, box in list(online_boxes.items()):
+                if ip in left or ip not in station_ids:
+                    continue
+                offers, mirrors = box.tick()
+                for selector, counter, box_record in offers:
+                    send_reliable(ip, station_ids[ip]["console_var"], trade_box.build_message(
+                        box_record, sequence_id=next_seq(ip, trade_box.PORT), selector=selector,
+                        counter=counter), protocol=trade_box.PROTOCOL, port=trade_box.PORT)
+                    print(f"[pla] -> {ip}: trade box, the partner's {trade_box.describe(box_record)}")
+                for body in mirrors:
+                    send_reliable(ip, station_ids[ip]["console_var"], game_channel.build_message(
+                        bytes(game_channel.KEY_SIZE), body, next_seq(ip, trade_box.PORT)),
+                        protocol=trade_box.PROTOCOL, port=trade_box.PORT)
+                    print(f"[pla] -> {ip}: trade step, both consoles confirmed")
             transport.wait_readable(0.05)
             for payload, src_ip in transport.recv():
                 seen += 1
@@ -724,7 +744,9 @@ def main():
                                             screen.received("pla", console_offer.get(src_ip))
                                             arriving.add(src_ip)
                                             trades[0] += 1
-                                            if args.trade_box:
+                                            if src_ip in online_boxes:
+                                                online_boxes[src_ip].done()
+                                            elif args.trade_box:
                                                 screen.offer("pla", offer_record())
                                             print(f"[pla] {src_ip}: trade {trades[0]} complete, the "
                                                   "phase key closed")
@@ -764,11 +786,16 @@ def main():
                                 # Mirroring the console's selector 5 completes the state its own
                                 # sender set.
                                 selector = trade_box.read_selector(cm["payload"])
+                                mirror_bodies = []
                                 if (args.trade_box and offered is None and selector is not None
                                         and selector[0] in trade_box.MIRRORED_SELECTORS):
+                                    mirror_bodies = [selector[1]] if partner is None else \
+                                        online_boxes.setdefault(src_ip, trade_box.OnlineBox(
+                                            partner)).on_selector(*selector)
+                                for mirror_body in mirror_bodies:
                                     seq = next_seq(src_ip, msg.port)
                                     body = game_channel.build_message(
-                                        bytes(game_channel.KEY_SIZE), selector[1], seq)
+                                        bytes(game_channel.KEY_SIZE), mirror_body, seq)
                                     pkt = send_reliable(src_ip, header.src_var, body,
                                                         protocol=trade_box.PROTOCOL,
                                                         port=trade_box.PORT)
@@ -818,19 +845,23 @@ def main():
                                           f"(port {game_channel.HOST_PORT}, key eight zero bytes)")
                                 # Answer with the selector we were sent: a showing and an offer land
                                 # in different slots.
+                                answers = []
                                 if args.trade_box and offered is not None:
-                                    box_record = offer_record()
+                                    answers = ([(offered["selector"], offered["counter"], offer_record())]
+                                               if partner is None else online_boxes.setdefault(
+                                                   src_ip, trade_box.OnlineBox(partner)).on_box(offered))
+                                for answer_selector, answer_counter, box_record in answers:
                                     seq = next_seq(src_ip, msg.port)
                                     body = trade_box.build_message(
                                         box_record, sequence_id=seq,
-                                        selector=offered["selector"], counter=offered["counter"])
+                                        selector=answer_selector, counter=answer_counter)
                                     pkt = send_reliable(src_ip, header.src_var, body,
                                                         protocol=trade_box.PROTOCOL,
                                                         port=trade_box.PORT)
                                     record(rec="out", dst=src_ip, kind="trade box", hex=pkt.hex(),
                                            t=time.time())
                                     print(f"[pla] -> {src_ip}: trade box (port {trade_box.PORT}, "
-                                          f"{trade_box.selector_name(offered['selector'])}, "
+                                          f"{trade_box.selector_name(answer_selector)}, "
                                           f"{trade_box.describe(box_record)})")
 
                         # Clock kind 0 is answered with kind 1: the sequence and originate tick
@@ -969,6 +1000,8 @@ def main():
         print("\n[pla] interrupted")
     finally:
         transport.stop()
+        if partner:
+            partner.close()
         if cap:
             cap.close()
 

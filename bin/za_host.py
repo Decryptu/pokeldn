@@ -21,6 +21,7 @@ from pokeldn import pokemon as pokemon_service
 from pokeldn import config, za
 from pokeldn.za import host as za_host
 from pokeldn.za import streams
+from pokeldn.online import session as online
 from pokeldn.ldn.ldn_mitm_host import IpHostTransport
 from pokeldn.ldn.transport import HostTransport, board_radio, find_ap_phy
 from pokeldn.host_support import resolve_keys, needs_root
@@ -69,6 +70,7 @@ def build_parser():
                     help="optional seconds to keep the seat once the console is back on its box after a "
                          "trade, then hand the console the session and close; by default the host "
                          "waits for the console to leave")
+    online.add_arguments(ap)
     return ap
 
 
@@ -109,6 +111,9 @@ def describe_offer(body):
 def main(argv=None):
     ap = build_parser()
     args = ap.parse_args(argv)
+    if args.online and args.trade_offer:
+        print("[za-host] --online offers the partner's Pokemon; --trade-offer is ignored")
+        args.trade_offer = []
     renew_offer = args.fresh_pid
     args.trade_offer = [pokemon_service.prepare_file("za", path, fresh=args.fresh_pid)
                         for path in args.trade_offer]
@@ -154,6 +159,7 @@ def main(argv=None):
     record(rec="host", ssid=transport.ssid.hex(), our_ip=transport.our_ip,
            our_mac=bytes(transport.our_mac).hex(), app_data=app_data.hex(), t=time.time())
 
+    partner = online.partner("za", args, code=args.code, name=args.trainer_name)
     sessions = {}
     state = {"done_at": None, "back_at": None, "trades": 0, "closing": None}
     deadline = time.time() + args.seconds
@@ -171,7 +177,8 @@ def main(argv=None):
                 selection=selection, offer=offers, offer_at=args.offer_at,
                 log=print, record=record,
                 renew_offer=(lambda raw: pokemon_service.offer_bytes("za",
-                    pokemon_service.prepare("za", raw, fresh=True))) if renew_offer else None)
+                    pokemon_service.prepare("za", raw, fresh=True))) if renew_offer else None,
+                partner=partner)
         for ip in set(sessions) - seated:
             s = sessions.pop(ip)
             print(f"[za-host] the console at {ip} left; {s.console_offers} offer(s), "
@@ -236,6 +243,8 @@ def main(argv=None):
         print("\n[za-host] interrupted again")
     finally:
         transport.stop()
+        if partner:
+            partner.close()
         if cap:
             cap.close()
     for ip, s in sessions.items():

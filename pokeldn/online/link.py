@@ -65,6 +65,7 @@ class Round:
         self.withdrawn = 0
         self.done = False
         self.refused = ""            # why the partner's app refused our offer
+        self.shared: dict[str, bytes] = {}   # what else their console sent, by name
 
 
 class Partner:
@@ -100,6 +101,7 @@ class Partner:
         self.rounds: dict[int, Round] = {}
         self.ended = ""                       # why the partner left
         self.traded = False                   # an offer went either way: a lost partner stays lost
+        self.mine = {"offer": None, "accepted": False, "shared": {}}   # the local console, this round
         factory = pool_factory or (lambda on_event: relays.RelayPool(relays.relay_urls(), on_event,
                                                                      log=log))
         self.pool = factory(self._on_event)
@@ -133,28 +135,53 @@ class Partner:
         with self.lock:
             return self.rounds.setdefault(self.round, Round())
 
+    # What the local console did this round is kept, so a partner found later hears it.
+
     def offer(self, record: bytes):
         """The local console offers `record` in this round."""
-        self.traded = True
-        self._send({"t": "offer", "r": self.round, "d": base64.b64encode(bytes(record)).decode()})
+        with self.lock:
+            self.mine = {"offer": bytes(record), "accepted": False, "shared": self.mine["shared"]}
+            self._send(self._offer_message())
 
     def withdraw(self):
-        self._send({"t": "withdraw", "r": self.round})
+        with self.lock:
+            self.mine = {"offer": None, "accepted": False, "shared": self.mine["shared"]}
+            self._send({"t": "withdraw", "r": self.round})
+
+    def share(self, key: str, data: bytes):
+        """Something else the local console sent this round that the partner's launcher replays,
+        such as a FireRed party block."""
+        with self.lock:
+            self.mine["shared"][key] = bytes(data)
+            self._send(self._share_message(key))
+
+    def _share_message(self, key):
+        return {"t": "share", "r": self.round, "k": key,
+                "d": base64.b64encode(self.mine["shared"][key]).decode()}
 
     def accept(self):
-        self._send({"t": "accept", "r": self.round})
+        with self.lock:
+            self.mine["accepted"] = True
+            self._send({"t": "accept", "r": self.round})
 
     def unaccept(self):
-        self._send({"t": "unaccept", "r": self.round})
+        with self.lock:
+            self.mine["accepted"] = False
+            self._send({"t": "unaccept", "r": self.round})
+
+    def _offer_message(self):
+        self.traded = self.traded or self.state == "paired"
+        return {"t": "offer", "r": self.round, "d": base64.b64encode(self.mine["offer"]).decode()}
 
     def refuse(self, reason):
         self._send({"t": "refused", "r": self.round, "why": reason})
 
     def done(self):
         """This round's trade completed on the local console; the next round starts."""
-        self._send({"t": "done", "r": self.round})
         with self.lock:
+            self._send({"t": "done", "r": self.round})
             self.round += 1
+            self.mine = {"offer": None, "accepted": False, "shared": {}}
 
     # Relay events, on a relay thread
 
@@ -269,6 +296,11 @@ class Partner:
             theirs.offer, theirs.accepted, theirs.refused = record, False, ""
             self.traded = True
             self.log(f"[online] {self.peer_name} offers {what}")
+        elif kind == "share" and isinstance(msg.get("k"), str):
+            try:
+                theirs.shared[msg["k"][:32]] = base64.b64decode(msg.get("d", ""), validate=True)
+            except ValueError:
+                return
         elif kind == "withdraw":
             theirs.offer, theirs.accepted = None, False
             theirs.withdrawn += 1
@@ -294,6 +326,12 @@ class Partner:
         self.log(f"[online] paired with {self.peer_name}")
         self._announce(force=True)
         self._send({"t": "hello", "n": self.name, "a": self.app})
+        for key in self.mine["shared"]:
+            self._send(self._share_message(key))
+        if self.mine["offer"] is not None:
+            self._send(self._offer_message())
+            if self.mine["accepted"]:
+                self._send({"t": "accept", "r": self.round})
 
     def _lose(self, why):
         if self.state != "paired":
@@ -312,8 +350,6 @@ class Partner:
     def _send(self, msg, reliable=True):
         with self.lock:
             if self.state != "paired":
-                if reliable:
-                    self.log(f"[online] not paired; dropped {msg.get('t')}")
                 return
             body = dict(msg, a=self.in_next - 1)
             if reliable:

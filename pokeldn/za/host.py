@@ -92,7 +92,7 @@ class HostSession:
 
     def __init__(self, *, ssid, our_ip, our_mac, guest_ip, code, identity, identity_tail,
                  selection, offer, host_var=None, offer_at=None, log=print, record=None,
-                 clock=time.monotonic, renew_offer=None):
+                 clock=time.monotonic, renew_offer=None, partner=None):
         self.ssid = bytes(ssid)
         self.our_ip, self.our_mac, self.guest_ip = our_ip, bytes(our_mac), guest_ip
         self.code = code
@@ -107,6 +107,12 @@ class HostSession:
             screen.offer("za", self.offer)
         # Seconds after the preview to make our pick unprompted; None waits for the console's.
         self.offer_at = offer_at
+        # Online (pokeldn.online): the partner's console's pick is ours, previewed then picked once
+        # it arrives, and our 0102 and 0104 wait for both consoles' 0102 (docs/online.md).
+        self.partner = partner
+        self.shown = None                 # the partner's record the console was shown
+        self.console_confirmed = False
+        self.after_cancel = False         # the console redraws our pick after its cancel
         self.host_var = host_var or int.from_bytes(os.urandom(2), "big") % 0xFFF0 + 0x0002
         self.log, self.record, self.clock = log, record, clock
         self.pia = crypto.PiaCrypto(self.ssid, za.GAME_KEY)
@@ -355,6 +361,9 @@ class HostSession:
             self.console_offer = bytes(inner)
             if inner[-1] == OFFER_PICK:
                 self.console_pick = self.console_offer
+                if self.partner is not None:
+                    self.console_confirmed, self.after_cancel = False, False
+                    self.partner.offer(self.console_pick)
             if self.record:
                 self.record(rec="console_offer", n=self.console_offers, data=inner.hex(),
                             t=time.time())
@@ -366,6 +375,17 @@ class HostSession:
             self.round = max(self.round, command_round(inner) or 0)
             self.offer_sent = self.confirmed = self.committed = False
             self.log(f"[za-host] console cancelled; round {self.round}")
+            if self.partner is not None:
+                self.console_confirmed, self.after_cancel = False, True
+                self.offer_sent = self.shown is not None
+                self.partner.withdraw()
+        elif head == MSG_CONFIRM[:2].hex() and self.partner is not None:
+            self.round = max(self.round, command_round(inner) or 0)
+            if not self.console_confirmed and self.console_pick is not None:
+                self.console_confirmed = True
+                self.partner.accept()
+        elif head == MSG_COMMIT[:2].hex() and self.partner is not None:
+            self.round = max(self.round, command_round(inner) or 0)
         elif head == MSG_CONFIRM[:2].hex() and not self.confirmed:
             self.round = max(self.round, command_round(inner) or 0)
             self.confirmed = True
@@ -392,7 +412,11 @@ class HostSession:
                 show_done()
                 screen.received("za", self.console_pick)
                 self.arriving = True
-                if self.trades < len(self.offers):
+                if self.partner is not None:
+                    self.partner.done()
+                    self.offer = self.preview = self.shown = None
+                    self.console_confirmed = self.after_cancel = False
+                elif self.trades < len(self.offers):
                     self._load_offer(self.offers[self.trades])
                     screen.offer("za", self.offer)
                     # A station sends a preview each time its cursor moves to another Pokemon.
@@ -404,6 +428,34 @@ class HostSession:
                     self._load_offer(self.renew_offer(self.offer))
                     screen.offer("za", self.offer)
                 self.log(f"[za-host] trade_complete: the console sent its four steps (trade {self.trades})")
+
+    def _online(self, now):
+        """The partner's progress: their pick previewed then picked on the console, a cancel when
+        they withdraw it, our 0102 and 0104 once both consoles confirmed."""
+        if 1 not in self.update_acked or self.committed:
+            return
+        theirs = self.partner.theirs()
+        if self.shown is not None and theirs.offer != self.shown and not self.confirmed:
+            # A cancel carries the next round (docs/za.md, CommandCancelTrade); a host-sent one is
+            # unmeasured (docs/online.md, Unresolved).
+            self.round += 1
+            self._schedule(now, 0.0, bytes.fromhex(MSG_CANCEL) + bytes([TUPLE]) + encode_uint(2)
+                           + encode_uint(self.round) + encode_uint(0), "cancel 0103")
+            self.shown, self.offer_sent, self.console_confirmed = None, False, False
+        if theirs.offer is not None and self.shown is None:
+            self._load_offer(theirs.offer)
+            self.shown = theirs.offer
+            screen.offer("za", self.offer)
+            if not self.offer_sent:
+                self.offer_sent = True
+                self._schedule(now, 0.0, self.preview, "preview of the partner's pick")
+                self._schedule(now, 0.5, self.offer, "the partner's pick")
+        if (self.shown is not None and self.console_confirmed and theirs.accepted
+                and not self.confirmed):
+            self.confirmed = self.committed = True
+            self._schedule(now, 0.1, build_command("0102", self.round), "confirm 0102")
+            self._schedule(now, COMMIT_DELAY - CONFIRM_DELAY, build_command("0104", self.round),
+                           "commit 0104")
 
     def _arrived(self):
         if self.arriving:
@@ -538,6 +590,8 @@ class HostSession:
                 items.append(item)
             if items:
                 self._send(items, dst=dst)
+        if self.partner is not None:
+            self._online(now)
         for entry in [e for e in self.scheduled if e[0] <= now]:
             self.scheduled.remove(entry)
             _due, proto, payload, why = entry

@@ -23,6 +23,7 @@ import pathlib
 from pokeldn.host_support import open_output, write_file
 from pokeldn import pokemon as pokemon_service
 from pokeldn.ldn import left_after_trade
+from pokeldn.online import session as online
 from pokeldn.bdsp import pokemon, room
 from pokeldn.bdsp.host import (APP_VERSION, MAX_PARTICIPANTS, SCENE_UNION_ROOM,
                                SCENE_UNION_ROOM_PASSWORD, Advertisement,
@@ -84,11 +85,15 @@ def build_parser():
     ap.add_argument("--ifname", default="ldn-tap")
     ap.add_argument("--ap-ifname", default="ldn")
     ap.add_argument("--mon-ifname", default="ldn-mon")
+    online.add_arguments(ap)
     return ap
 
 
 def main(argv=None):
     args = build_parser().parse_args(argv)
+    if args.online and args.offer:
+        print("[bh] --online offers the partner's Pokemon; --offer is ignored")
+        args.offer = []
     args.offer = [pokemon_service.prepare_file("bdsp", path, fresh=args.fresh_pid) for path in args.offer]
     if needs_root():
         print("[bh] needs the ESP32 board (POKELDN_RADIO) or root"); return 1
@@ -138,10 +143,13 @@ def main(argv=None):
         if prefix:
             write_file(f'{prefix}_{n}.pb8', raw)
 
+    remote = online.partner("bdsp", args, code=args.password or "", name=tname)
     partner = TradePartner(offers or bytes(0), tname, int(tid), int(sid), complete=args.complete_trade,
                            approach_delay=args.approach_delay, state=args.state,
-                           recruiting=args.recruiting, save_theirs=save_theirs, record=record)
-    on_game = partner.game if offers else None
+                           recruiting=args.recruiting, save_theirs=save_theirs, record=record,
+                           remote=remote)
+    trading = bool(offers) or remote is not None
+    on_game = partner.game if trading else None
 
     host = HostTransport(app_data=adv.application_data, password=PASSPHRASE, nickname=args.name,
                          keys_path=keys_path, local_comm_id=COMM_ID, scene_id=args.scene_id,
@@ -164,7 +172,7 @@ def main(argv=None):
 
     session = HostSession(keys, adv, host.our_ip, host.our_mac, variable_id, name=args.name,
                           language=args.language, join=join, on_game=on_game,
-                          on_tick=partner.tick if offers else None, record=record,
+                          on_tick=partner.tick if trading else None, record=record,
                           nonce_start=random.getrandbits(48))
     last_status = 0.0
     joins_seen = 0
@@ -199,6 +207,8 @@ def main(argv=None):
         print("[bh] interrupted")
     finally:
         host.stop()
+        if remote:
+            remote.close()
         record(rec="end", t=time.monotonic() - t0, counters=session.counters)
         if cap:
             cap.close()
