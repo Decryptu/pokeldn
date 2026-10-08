@@ -102,7 +102,7 @@ class Service:
         reply = self._ask({"cmd": "make", "game": game, "species": species, "level": level, "shiny": shiny,
                            "nickname": nickname, "trainer": trainer, "version": version,
                            "options": options or {}})
-        reply["file"] = self._save(game, reply)
+        reply["file"] = self.keep(game, reply)
         return reply
 
     def paste(self, game: str, text: str, trainer: dict, version: str = "") -> list[dict]:
@@ -122,7 +122,7 @@ class Service:
         reply = self.check(game, path)
         if not reply["legal"]:
             raise BuilderError(reply["report"])
-        reply["file"] = self._save(game, reply)
+        reply["file"] = self.keep(game, reply)
         return reply
 
     def prepare(self, game: str, data: bytes, *, fresh=False, fields=None) -> bytes:
@@ -132,6 +132,17 @@ class Service:
         if reply.get("note"):
             print(f"[pokemon] the offer {reply['note']}", flush=True)
         return base64.b64decode(reply["data"])
+
+    def move(self, source: str, game: str, data: bytes, tracker: int, trainer: dict) -> dict:
+        """The banked Pokemon as `game` takes it from `trainer`, legal there, or BuilderError with the reason."""
+        return self._ask({"cmd": "move", "game": game, "source": source, "tracker": str(tracker),
+                          "trainer": trainer,
+                          "data": base64.b64encode(entity_bytes(source, data)).decode()})
+
+    def destinations(self, source: str, data: bytes, tracker: int, trainer: dict) -> dict[str, dict]:
+        """Each game key -> {"ok", "reason"}: whether `move` would give a legal Pokemon there."""
+        return self._ask({"cmd": "destinations", "game": source, "tracker": str(tracker), "trainer": trainer,
+                          "data": base64.b64encode(entity_bytes(source, data)).decode()})["games"]
 
     def events(self) -> list[dict]:
         """PKHeX's Gen 3 event gifts a FireRed/LeafGreen can be sent."""
@@ -182,7 +193,8 @@ class Service:
             self.proc.stdout.close()
             self.proc = None
 
-    def _save(self, game: str, reply: dict) -> str:
+    def keep(self, game: str, reply: dict) -> str:
+        """Writes a reply's record where the offer queue keeps built Pokemon; returns the path."""
         data = base64.b64decode(reply["data"])
         folder = POKEMON / game
         folder.mkdir(parents=True, exist_ok=True)

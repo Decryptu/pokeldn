@@ -82,7 +82,7 @@ needed for a bug report before clearing them.
 Cleanup includes the app's `session/` working files (captures, serial traces, temporary offers and
 session metadata), `logs/`, and unused generated or imported offers in `pokemon/`. Built offers
 less than a minute old are kept so a build still finishing can save its selection. Offers referenced
-by saved tool settings and queues are kept. Received files and their selected folder, Switch keys,
+by saved tool settings and queues are kept. Received files and their selected folder, the bank, Switch keys,
 selected firmware and settings are preserved, including when they are stored under a cleanup folder.
 Pokemon records and binary dumps outside the app's named temporary offers are kept even after the
 Received folder changes. Generated offers are identified by the builder's timestamp and random suffix.
@@ -120,6 +120,55 @@ a Pokemon PKHeX builds for this save's own trainer (name, ID, secret ID and lang
 Pokemon shows PKHeX's verdict; Check legality runs it over one box, which takes seconds. Keep as a new
 save writes the result through PKHeX, which recomputes every sector checksum, checks that the game's
 own sector test passes and adds it to the library as a new entry; the original is unchanged.
+
+## The bank
+
+The Bank page keeps every Pokemon a trade brings in and trades one into any game that HOME would move
+it to. The records live in `Documents/pokeldn/Bank` (`pokeldn.app.bank`), one record each in its
+game's own format (`.pk3`, `.pb7`, `.pk8`, `.pb8`, `.pa8`, `.pk9`, `.pa9`) with a `.json` beside it.
+Clear local files never touches the folder; with `POKELDN_DATA` set, the bank is `Bank` inside that
+folder instead.
+
+| step | what happens |
+|---|---|
+| a trade completes | the session panel reads each received file with PKHeX and banks a copy; the Received file stays; bytes already in the bank are not banked twice |
+| a Pokemon is banked | its `.json` keeps the species, the summary, PKHeX's verdict, the source file, a SHA-256 of the bytes and a random 63-bit HOME tracker |
+| the page lists the destinations | the helper's `destinations` command tries a move to all seven games and reports each refusal |
+| a destination's trade tool is chosen | the helper's `move` command converts the record, the result joins that tool's offer queue with `"bank": id`, and the app opens the tool |
+| the run's trade N completes | the `[done] trade N complete` line removes the banked Pokemon queued as trade N; at the run's end its queue entry goes too |
+| the run fails or is stopped first | the Pokemon stays in the bank and in the queue |
+
+A move goes through PKHeX's own HOME conversion (`EntityConverter.ConvertToType`, through `PKH`), then
+PKHeX's legality check in the destination game; a move that is not legal there is refused with
+PKHeX's reason. On the way:
+
+- A Pokemon from another game takes the bank's HOME tracker. PKHeX marks one without a tracker
+  invalid (`HomeTrackerUtil.IsRequired`, `HOMETransferSettings.HOMETransferTrackerNotPresent`).
+- The app's trainer becomes its handler, as a save it is moved into would (`IHandlerUpdate`, and
+  `PB8.UpdateHandler`). When the check still finds it invalid with its own trainer as the current
+  handler, the app's trainer is set as the handling trainer; Sword/Shield asks for it.
+- A move that leaves an invalid move gets PKHeX's suggested moveset for the destination.
+- PID, encryption constant, original trainer and IDs are kept. A run that offers a banked Pokemon
+  is built without `--fresh-pid`.
+
+| refusal | source |
+|---|---|
+| nothing goes back to FireRed/LeafGreen or to Let's Go | `EntityConverter.IsConvertibleToFormat` |
+| an egg | HOME's screen for FireRed and LeafGreen; the converter would hatch it |
+| a FireRed/LeafGreen Pokemon holding an item or knowing an HM move | HOME's screen for FireRed and LeafGreen |
+| a species or form absent from the destination | the destination's personal table |
+| no conversion route | PKHeX.Core 26.8.26 converts no Legends Z-A record out to another game |
+
+`tests/test_bank.py` moves records between six pairs of games through the real helper and checks
+that the destination's launcher takes them, along with each refusal and the run that takes a traded
+Pokemon out of the bank.
+
+### Unresolved
+
+- Whether Pokemon HOME accepts a Pokemon that carries a tracker the bank made, or one moved by the
+  bank, when it is later deposited there. Nothing has been sent to HOME.
+- Whether HOME's own FireRed/LeafGreen import rules go beyond the eggs, held items and HM moves its
+  screen names.
 
 ## Pokemon sprites
 

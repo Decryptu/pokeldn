@@ -5,6 +5,8 @@ using PKHeX.Core;
 using static PKHeX.Core.GameVersion;
 
 var strings = GameInfo.GetStrings("en");
+// Cut, Fly, Surf, Strength, Waterfall, Flash, Rock Smash, Dive
+var hiddenMoves = new HashSet<ushort> { 15, 19, 57, 70, 127, 148, 249, 291 };
 var games = new Dictionary<string, Game>
 {
     ["frlg"] = new([FR, LG, E, R, S], PersonalTable.FR, EntityContext.Gen3, () => new PK3(), DecryptedParty),
@@ -39,6 +41,8 @@ while (Console.ReadLine() is { } line)
             "sav_read" => SaveRead(game, request),
             "sav_box" => SaveBox(game, request),
             "sav_edit" => SaveEdit(game, request),
+            "move" => Move(game, request),
+            "destinations" => Destinations(game, request),
             var other => throw new ArgumentException($"unknown command {other}"),
         };
         reply["ok"] = true;
@@ -438,7 +442,7 @@ void Refit(PKM pk, Wish wish)
     }
 }
 
-JsonObject Check(Game game, byte[] data, JsonObject request)
+PKM Parse(Game game, byte[] data)
 {
     if (game.Context == EntityContext.Gen7b && data.Length == 0xE8)
         data = [.. data, .. new byte[0x104 - data.Length]];
@@ -446,6 +450,12 @@ JsonObject Check(Game game, byte[] data, JsonObject request)
              ?? throw new InvalidDataException($"{data.Length} bytes are not a Pokemon of this game.");
     if (pk.GetType() != game.Blank().GetType())
         throw new InvalidDataException($"Expected {game.Blank().GetType().Name}, received {pk.GetType().Name}.");
+    return pk;
+}
+
+JsonObject Check(Game game, byte[] data, JsonObject request)
+{
+    var pk = Parse(game, data);
     if (!game.Table.IsPresentInGame(pk.Species, pk.Form))
         throw new InvalidDataException("This species or form is absent from the selected game.");
     if (!pk.ChecksumValid)
@@ -490,6 +500,100 @@ JsonObject Check(Game game, byte[] data, JsonObject request)
     if (note is not null)
         reply["note"] = note;
     return reply;
+}
+
+// A banked Pokemon taken to `game` through PKHeX's HOME conversion (docs/gui.md, The bank). A Pokemon from
+// another game carries the bank's HOME tracker, which PKHeX's legality check requires [HomeTrackerUtil].
+(PKM? Pokemon, LegalityAnalysis? Legality, string Refusal) Moved(Game from, Game to, byte[] data, ulong tracker,
+                                                                   ITrainerInfo owner)
+{
+    var source = Parse(from, data);
+    if (!source.ChecksumValid)
+        return (null, null, "The Pokemon checksum is invalid.");
+    PKM pk = source;
+    if (from != to)
+    {
+        if (!EntityConverter.IsConvertibleToFormat(source, to.Blank().Format))
+            return (null, null, "Nothing goes back to this game: HOME only takes from it.");
+        if (source.IsEgg)
+            return (null, null, "An egg stays in its own game.");
+        // HOME's screen for FireRed and LeafGreen: no held item, no hidden move (HM).
+        if (source is PK3 && source.HeldItem != 0)
+            return (null, null, "HOME takes a FireRed or LeafGreen Pokemon only without a held item.");
+        if (source is PK3 && source.Moves.Any(m => hiddenMoves.Contains(m)))
+            return (null, null, "HOME takes a FireRed or LeafGreen Pokemon only without an HM move.");
+        if (!to.Table.IsPresentInGame(source.Species, source.Form))
+            return (null, null, "This species or form is absent from that game.");
+        pk = EntityConverter.ConvertToType(source, to.Blank().GetType(), out var result)
+             ?? throw new InvalidDataException($"PKHeX has no transfer route ({result}).");
+        if (pk is IHomeTrack { HasTracker: false } home)
+            home.Tracker = tracker;
+        // The bank's owner receives it in the new game, as HOME hands it to the save it is moved into.
+        if (pk is IHandlerUpdate handler)
+            handler.UpdateHandler(owner);
+        else if (pk is PB8 pb8)
+            pb8.UpdateHandler(owner);
+        pk.ResetPartyStats();
+        pk.RefreshChecksum();
+    }
+    var la = new LegalityAnalysis(pk);
+    // Sword/Shield's check wants a Pokemon from another game handled even by its own trainer.
+    if (!la.Valid && from != to && pk.CurrentHandler == 0)
+    {
+        pk.CurrentHandler = 1;
+        pk.HandlingTrainerName = owner.OT;
+        pk.HandlingTrainerGender = owner.Gender;
+        if (pk is IHandlerLanguage language)
+            language.HandlingTrainerLanguage = (byte)owner.Language;
+        pk.RefreshChecksum();
+        var handled = new LegalityAnalysis(pk);
+        if (handled.Valid)
+            la = handled;
+        else
+            pk.CurrentHandler = 0;
+    }
+    // A move the new game lacks: HOME's games replace the moves, so the bank takes PKHeX's suggestion.
+    if (!la.Valid && from != to && la.Info.Moves.Any(m => !m.Valid))
+    {
+        Refit(pk, Wish.From(null));
+        pk.RefreshChecksum();
+        la = new LegalityAnalysis(pk);
+    }
+    return la.Valid ? (pk, la, "") : (pk, la, la.Report());
+}
+
+ulong Tracker(JsonObject request) => ulong.Parse((string?)request["tracker"] ?? "0");
+
+JsonObject Move(Game game, JsonObject request)
+{
+    var from = games[(string)request["source"]!];
+    var (pk, la, refusal) = Moved(from, game, Convert.FromBase64String((string)request["data"]!), Tracker(request),
+                                  Trainer(game, request).Item2);
+    if (pk is null || la is null || refusal.Length > 0)
+        throw new InvalidDataException(refusal);
+    return Describe(game, pk, la);
+}
+
+// Every game the banked Pokemon could go to, `game` being the one it is in now.
+JsonObject Destinations(Game game, JsonObject request)
+{
+    var data = Convert.FromBase64String((string)request["data"]!);
+    var tracker = Tracker(request);
+    var reply = new JsonObject();
+    foreach (var (key, to) in games)
+    {
+        string refusal;
+        try
+        {
+            refusal = Moved(game, to, data, tracker, Trainer(to, request).Item2).Refusal;
+        }
+        catch (Exception e)
+        {
+            refusal = e.Message;
+        }
+        reply[key] = new JsonObject { ["ok"] = refusal.Length == 0, ["reason"] = refusal };
+    }
+    return new JsonObject { ["games"] = reply };
 }
 
 // A Showdown or Smogon set, read by PKHeX's own parser in any language it knows, as the values `make` takes.
@@ -851,6 +955,9 @@ JsonObject Describe(Game game, PKM pk, LegalityAnalysis la)
         ["ability"] = game.Context == EntityContext.Gen9a ? "" : strings.abilitylist[pk.Ability],
         ["held_item"] = pk.HeldItem == 0 ? "" : strings.GetItemStrings(game.Context, game.Versions[0])[pk.HeldItem],
         ["moves"] = moves,
+        ["pid"] = pk.PID,
+        ["encryption_constant"] = pk.EncryptionConstant,
+        ["tracker"] = (pk is IHomeTrack home ? home.Tracker : 0).ToString(),
         ["encounter"] = la.EncounterOriginal.LongName,
         ["parsed"] = la.Parsed,
         ["legal"] = la.Valid,

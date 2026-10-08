@@ -37,3 +37,5 @@ _DOCUMENTS = (Path.home() / "Documents" if (Path.home() / "Documents").is_dir() 
 RECEIVED = _DOCUMENTS / "Received"
 # FireRed/LeafGreen saves (pokeldn.app.saves); an isolated POKELDN_DATA keeps its own.
 SAVES = DATA / "Saves" if os.environ.get("POKELDN_DATA") else _DOCUMENTS / "Saves"
+# Pokemon kept between games (pokeldn.app.bank); an isolated POKELDN_DATA keeps its own.
+BANK = DATA / "Bank" if os.environ.get("POKELDN_DATA") else _DOCUMENTS / "Bank"

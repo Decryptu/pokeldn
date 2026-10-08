@@ -8,7 +8,7 @@ import flet as ft
 from gui import board
 from gui.app import keys_found
 from pokeldn import pokemon as builder
-from pokeldn.app import command, received, runner
+from pokeldn.app import bank, command, received, runner
 from gui import theme as t
 from pokeldn.app.catalog import GAMES, Field, Game, Tool
 from pokeldn.app.introspect import flags_of
@@ -68,8 +68,12 @@ class GamesView:
         ], spacing=t.GAP, expand=True, vertical_alignment=ft.CrossAxisAlignment.STRETCH)
         self.select(self.game, self.tool, update=False)
 
-    def enter(self, **_) -> None:
+    def enter(self, game: str = "", tool: str = "", **_) -> None:
+        """`game` and `tool` are catalog keys: the bank opens the trade it queued a Pokemon for."""
         self.visible = True
+        chosen = next(((g, x) for g in GAMES for x in g.tools if g.key == game and x.key == tool), None)
+        if chosen:   # once the view is back on the page: a list rebuilt off it shows empty
+            self.app.ui(lambda: self.select(*chosen))
         self.session.refresh(update=False)
         self.app.check_if_unknown()
 
@@ -398,6 +402,7 @@ class SessionPanel:
         self.transfer = ft.Container(visible=False)   # a save backup or restore's progress
         self.offered = None                # what the offering card shows, to rebuild it only on a change
         self.traded = 0                    # the run's completed trades, from its `[done] trade N` lines
+        self.banked: list[str] = []        # the bank id of each offer the run trades, "" for a built one
         self.running_tool: Tool | None = None
         self.restart = False               # Start on another tool: stop this run, then start that one
         self.received = ft.Container(visible=False)
@@ -524,11 +529,15 @@ class SessionPanel:
         if update:
             self.control.update()
 
+    def offered_entries(self) -> list[dict]:
+        """The queued offers in the order the launcher trades them."""
+        return [entry for field in self.tool.fields
+                if field.kind == "pokemon" and command.applies(field, self.tool, self.games.values)
+                for entry in command.offers(command.value_of(field, self.games.values))[:field.queue]
+                if entry.get("file")]
+
     def render_offering(self) -> None:
-        entries = [entry for field in self.tool.fields
-                   if field.kind == "pokemon" and command.applies(field, self.tool, self.games.values)
-                   for entry in command.offers(command.value_of(field, self.games.values))[:field.queue]
-                   if entry.get("file")]
+        entries = self.offered_entries()
         shown = [(int(e.get("species") or 0), bool(e.get("shiny")), e.get("summary", "")) for e in entries]
         if (shown, self.traded) == self.offered:
             return
@@ -583,6 +592,11 @@ class SessionPanel:
                 return
             self.seen[path] = (size, mtime, info)
             changed = True
+            if info is not None:
+                try:
+                    bank.deposit(game, path, info)
+                except OSError as error:
+                    self.app.ui(lambda m=f"[app] Not banked: {error}": self.log.add(m))
         if changed:
             self.app.ui(lambda: self.render_received(process))
 
@@ -653,6 +667,7 @@ class SessionPanel:
         self.seen, self.received.content, self.received.visible = {}, None, False
         self.transfer.content, self.transfer.visible = None, False
         self.traded = 0
+        self.banked = [entry.get("bank", "") for entry in self.offered_entries()]
         self.stopping = False
         self.app.process_label = tool.name
         self.running_tool = tool
@@ -669,6 +684,10 @@ class SessionPanel:
         n = received.trades_done(line)
         if n is not None and n > self.traded:
             def mark():
+                # A banked Pokemon leaves the bank once its trade completes.
+                for gone in self.banked[self.traded:n]:
+                    if gone:
+                        bank.remove(gone)
                 self.traded = n
                 self.render_offering()
                 self.offering.update()
@@ -700,6 +719,7 @@ class SessionPanel:
             else:
                 self.set_status(f"Failed ({code})", t.RED)
             self.log.add(f"[app] Exited with code {code}.")
+            bank.prune(self.app.settings)     # the traded ones leave the queue too
             if self.games.visible and self.games.tool is self.running_tool:
                 self.games.render_body()      # a backup has joined the save library
                 self.games.cards.update()

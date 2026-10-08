@@ -149,7 +149,7 @@ def test_every_format_written_by_the_builder_and_launcher_can_be_reclaimed(local
     service = pokemon.Service()
     created = []
     for game in pokemon.EXTENSIONS:
-        built = Path(service._save(game, {"species": "Pikachu", "data": base64.b64encode(b"record").decode()}))
+        built = Path(service.keep(game, {"species": "Pikachu", "data": base64.b64encode(b"record").decode()}))
         created.extend([built, Path(pokemon.prepare_file(game, str(built)))])
         os.utime(built, (1, 1))
     inventory = storage.scan(local)
