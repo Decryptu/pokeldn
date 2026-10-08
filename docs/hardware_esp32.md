@@ -587,12 +587,22 @@ last core draws a frame every 50 ms and sends it at 400 kHz (1031 bytes, about 2
 | ESP32 | GPIO21 | GPIO22 | DevKit V1 D21, D22 |
 | ESP32-S3 | GPIO8 | GPIO9 | |
 | ESP32-C3 | GPIO6 | GPIO7 | XIAO D4, D5 |
+| ESP32-C3 | GPIO5 | GPIO6 | the 0.42-inch OLED board's own 72x40 screen, probed second |
 | ESP32-C6 | GPIO22 | GPIO23 | XIAO D4, D5 |
 
 VCC goes to 3V3 and GND to GND. The common four-pin module (GND, VCC, SCL, SDA) carries its own
 3.3 V regulator and 4.7 k pull-ups on SCL and SDA; its address resistor selects 0x3C (silkscreen
 0x78) or 0x3D (0x7A). Its panel maps segment 127 to column 1 and COM0 to row 63, so the firmware sets
 segment remap (`A1`), reversed COM scan (`C8`) and alternative COM pins (`DA 12`).
+
+The ESP32-C3 0.42-inch OLED board (sold as ABRobot and under other names) carries a 72x40 panel on
+GPIO5 and GPIO6, and an LED on GPIO8 that the firmware leaves alone. Driven with the 128x64 INIT, the
+panel shows columns 30..101 and rows 12..51 of the frame: the vendor's example draws at offset
+(30, 12), and Zephyr's `abrobot_sh1106_72x40` overlay sets segment offset 30 and display offset 12.
+A screen found on these pins gets compact scenes drawn into that window: one line of at most 12
+characters over the picture, and sprites at half size, a pixel lit when two of its 2x2 block are.
+`tools/ldn/screen_preview.py --panel 72x40` renders them. The board has not been run with this
+firmware.
 
 Without host commands the screen shows the radio's state: idle, joining or hosting (rings around a
 Poke Ball), and linked, where a cable between a console and a Poke Ball carries one digit per frame

@@ -28,6 +28,15 @@ enum { SLOT_OURS, SLOT_THEIRS, SLOT_GIFT, SLOTS };
 #define SPRITE_W 64
 #define SPRITE_H 64
 
+/* What the panel shows of the 128x64 frame: all of it, or the 72x40 window at column 30, row 12 the
+   0.42-inch module shows, where the scenes take a compact layout. */
+enum scene_panel { PANEL_128X64, PANEL_72X40 };
+#define SMALL_X 30
+#define SMALL_Y 12
+#define SMALL_W 72
+#define SMALL_H 40
+
+void scene_panel(uint8_t panel);
 /* False for a malformed command. */
 bool scene_command(const uint8_t *payload, size_t length, uint32_t now_ms);
 /* Back to the radio's own scenes and no sprites: a new host session. */
