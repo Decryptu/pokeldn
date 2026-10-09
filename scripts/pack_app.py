@@ -32,7 +32,6 @@ RUNTIME_EXTRAS = (
     "bin/sv_raid_bootstrap_codec.py",
     "bin/sv_raid_host.py",
     "bin/sv_raid_start_gate.py",
-    "bin/ESP32_RETAIL_RAID_GUEST.md",
     "docs/sv_raid.md",
     "docs/sv_raid_guest.md",
     "pokeldn/sv/raid_guest.py",

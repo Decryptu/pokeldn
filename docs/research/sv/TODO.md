@@ -5,18 +5,12 @@
 - [x] Capture one new successful session in which the ESP32 joins a retail
   Scarlet/Violet Tera Raid as a guest, appears in the lobby, becomes ready,
   and lets the host begin the raid.
-- [x] From that capture, extract and retain only the minimal reproducible
-  fixtures required by `sv_join.py`:
-  - the complete guest identity stream on `0x81` port 1;
-  - the guest lobby application records on `0x80` port 0, sequences 1 and 2;
-  - the Session join identity needed to verify the player ID and station MAC.
-- [x] Add offline tests that load the compact fixtures and verify their
-  sequence continuity, application types, channel-table split, and ready-state
-  transition.
-- [x] Recreate `ESP32_RETAIL_RAID_GUEST.md` with the known-good command,
-  required console steps, expected log milestones, timings, and failure modes.
-- [x] Mark the compact fixtures as required reference assets so future capture
-  cleanup does not delete them.
+- [x] Use the captures to identify the lobby records, Ready and Start states,
+  channel-table split, timing, and valid Session identity shape.
+- [x] Add offline tests for the application types, channel-table split,
+  generated lobby messages, and Ready/Start transitions.
+- [x] Document the durable protocol and capture findings in
+  `SV_RAID_GUEST_REVERSE_ENGINEERING.md`.
 - [x] Reuse the legal SV Pokemon builder for a custom raid guest Pokemon,
   replacing only the party PK9 inside the captured lobby announcement.
 - [x] Disconnect after the stable battle-transition message so the selected
@@ -25,9 +19,11 @@
 The implementation itself remains in `sv_join.py`, including retail Session
 and Net behavior, delayed channel acknowledgements, the base/raid channel-table
 split, port-2 join, identity delivery, generated lobby messages, and ready-state handling.
-The replacement retail captures were recorded on 2026-10-07. Their compact,
-versioned product fixture is `pokeldn/sv/data/raid_guest.json`; raw traces remain
-local diagnostics and are no longer runtime dependencies.
+The replacement retail captures were recorded on 2026-10-07. The small
+`pokeldn/sv/data/raid_guest.json` fixture now retains only lobby regression
+evidence; raw traces remain local diagnostics and are no longer runtime
+dependencies. Host and guest both reuse the standard Scarlet/Violet application
+identity, and their Session player IDs and MAC addresses are generated.
 
 - [x] Replace the default captured guest lobby records with
   `pokeldn.sv.raid.JoinerRaidStage`. The selected PK9, initial state, Ready, and

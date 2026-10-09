@@ -66,5 +66,5 @@ well.
 - `SEATED` in the log proves only the network join. The retail host screen must
   show POKELDN to validate lobby presence.
 
-The capture and protocol notes used to derive the compact fixture are retained
-in `bin/ESP32_RETAIL_RAID_GUEST.md`.
+The capture and protocol evidence behind this implementation is retained in
+`docs/research/sv/SV_RAID_GUEST_REVERSE_ENGINEERING.md`.

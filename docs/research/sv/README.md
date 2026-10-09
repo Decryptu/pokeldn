@@ -18,10 +18,9 @@ local captures remain in the application's session capture directory.
 - [`TODO.md`](TODO.md): completed milestones and remaining retail-validation work.
 - [`fixtures/`](fixtures/): retired victory/reward donor artifacts retained only
   for byte-level regression and historical comparison.
-- [`ESP32_RETAIL_RAID_GUEST_LEGACY.md`](ESP32_RETAIL_RAID_GUEST_LEGACY.md):
-  the older full-capture guest investigation, retained as historical evidence.
-- [`../../../bin/ESP32_RETAIL_RAID_GUEST.md`](../../../bin/ESP32_RETAIL_RAID_GUEST.md):
-  operational guest workflow retained in `bin/` because it is packaged with the app.
+- [`SV_RAID_GUEST_REVERSE_ENGINEERING.md`](SV_RAID_GUEST_REVERSE_ENGINEERING.md):
+  retail guest state transitions, timing evidence, capture method, and bootstrap
+  acquisition findings.
 
 Reusable Ghidra scripts live in [`../../../tools/sv/ghidra`](../../../tools/sv/ghidra).
 Donor-era command-line analysis tools live in

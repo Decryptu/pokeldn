@@ -51,7 +51,6 @@ def test_packer_uses_tracked_defaults_and_requires_firmware(monkeypatch, tmp_pat
         "bin/sv_raid_bootstrap_codec.py",
         "bin/sv_raid_host.py",
         "bin/sv_raid_start_gate.py",
-        "bin/ESP32_RETAIL_RAID_GUEST.md",
         "docs/sv_raid.md",
         "docs/sv_raid_guest.md",
         "pokeldn/sv/raid_guest.py",
