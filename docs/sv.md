@@ -1,7 +1,7 @@
 ---
 title: Scarlet and Violet
 nav_order: 9
-has_children: false
+has_children: true
 ---
 
 # Scarlet and Violet
@@ -11,6 +11,8 @@ Pia linked into `main`. Both trade with a retail console in both roles: `bin/sv_
 the console's offline Link Trade search, `bin/sv_join.py` joins the console's network.
 A retail Violet joins a host advertising Scarlet's local communication id, and its own search
 network advertises Scarlet's id too (`0x0100a3d008c5c000`, application version 21, scene 4).
+
+Both launchers also run a local Tera Raid in either role ([Tera Raids](sv_raid.md)).
 
 Addresses are offsets into the decompressed `main` of update 4.0.0 (`tools/switch/nso_read.py`):
 text `0x0..0x343fc90`, rodata from `0x3440000`, data from `0x4383000`.
@@ -970,7 +972,11 @@ deauthenticates 0.04 s after it.
 
 A console hosting from its search hands the host role on. `LeaveMeshWithHostMigrationJob` sends
 Session type 7 to the next host and resends it every second (`0x6df050`) until a type 8 names that
-station (`0x6ded94`), giving up after 5 s (`0x6defb8`). Then `NetDestroyNetworkJob`, in its
+station (`0x6ded94`), giving up after 5 s (`0x6defb8`). The type 7 (writer `0x6d8de0`) is 34 bytes:
+
+    07 | host location id (12) | 00 | host IPv4, port | next host's location id (12) | u16
+
+The last u16 is the job's `+0xe0` (`0x6d8ea8`), 0 or 1 in three retail ones. Then `NetDestroyNetworkJob`, in its
 host-migration form, waits until every client has received the connection-status update (4 s at
 most, `0x6ac68c`), sends NetStartHostMigration `01400000` (written only by `0x69d310`, called only
 from `0x6aca54`) every 300 ms (`0x6aca98`) until the network's station count is 1 (`0x6acaf4`) or a

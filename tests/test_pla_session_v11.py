@@ -23,6 +23,9 @@ def test_parse_recovers_ids_and_station():
     assert j["ip"] == "172.16.86.1"
     assert j["port"] == 12345
     assert dict(j["protocols"])[0x98] == 0                       # Session version stated
+    assert j["num_players"] == 1 and j["num_participants"] == 1
+    assert j["players"] == [{"player_id": pc.DEFAULT_PLAYER_ID,
+                              "encoding": 1, "name": b" "}]
 
 
 def test_ack_matches_console_parser():

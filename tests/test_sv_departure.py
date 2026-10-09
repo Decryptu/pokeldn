@@ -232,7 +232,14 @@ def test_the_joiner_leaves_at_the_consoles_first_net_start_host_migration(monkey
     acks = [p for proto, p in sent if proto == sv_join.PROTO_SESSION and p[0] == 8]
     assert acks, "the type 7 went unanswered: the console resends it for up to 5 s (`0x6defb8`)"
     # With --take-host the run becomes bin/sv_host.py on the seat's channel, as bin/pla_join.py does.
-    assert seat == {'handed': True}
+    assert seat == {'handed': True, 'raided': False}
     argv = sv_join.host_argv(args, 11, 30)
     host = sv_host.build_parser().parse_args(argv[argv.index('bin/sv_host.py') + 1:])
     assert (host.channel, host.seconds, host.code) == (11, 60, '')
+
+
+def test_our_type_7_is_a_retail_hosts():
+    """The raid host's handover names the console as a retail host named bin/sv_join.py."""
+    assert pia_connect.build_session_migration_v11(
+        CONSOLE_CID, RETAIL_HOST_VAR, "169.254.25.1", bytes.fromhex("24c93ad134e60000"), 0xC493,
+        tail=1) == RETAIL_TYPE7

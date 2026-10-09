@@ -86,6 +86,17 @@ def test_one_offer_from_an_older_settings_file_still_builds():
     assert args.count("--trade-offer") == 1 and "/tmp/single.pk9" in args
 
 
+def test_raid_rewards_reach_the_host_as_rows_in_their_order():
+    """Duplicates stay separate rows; the raid seed reaches the host as its integer."""
+    tool = next(t for game in GAMES for t in game.tools if t.key == "sv-raid-host")
+    rows = [{"item_id": "1125", "quantity": "3"}, {"item_id": "50", "quantity": "10"},
+            {"item_id": "1125", "quantity": "1"}]
+    args = build(tool, {"--raid-pokemon": {"file": "/tmp/host.pk9"}, "--raid-seed": "000F34C3",
+                        "--raid-reward": rows}, {}, Settings())
+    parsed = parser_of(tool.script).parse_args(args)
+    assert parsed.raid_reward == [(1125, 3), (50, 10), (1125, 1)] and parsed.raid_seed == 0xF34C3
+
+
 def test_a_setting_kept_off_the_basic_tab_still_reaches_the_entry_point():
     """New PID and the time limit live on Advanced; their defaults must still be passed."""
     tool = next(t for game in GAMES for t in game.tools if t.key == "za-host")

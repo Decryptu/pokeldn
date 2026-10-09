@@ -9,7 +9,9 @@ import zlib
 from pokeldn.ldn.channel_table import TUPLE, decode_uint, encode_uint
 
 BYTES = 0xBC
+LIST = 0xBA
 TYPE_JOIN = 3
+TYPE_SESSION = 6
 TYPE_ANNOUNCE = 7
 TYPE_ACCEPT = 9
 
@@ -44,6 +46,21 @@ def build_announce(host_station_id, kind=1, capacity=2, zero=0, key=0):
              + bytes([TUPLE]) + encode_uint(1) + encode_u64(host_station_id) + encode_uint(0))
     return (bytes([TYPE_ANNOUNCE, TUPLE]) + encode_uint(1)
             + bytes([TUPLE]) + encode_uint(5) + outer)
+
+
+def build_session(host_station_id, kind=5, capacity=4):
+    """-> the type 6 a raid host sends on 0x7C port 2 after the seat: the type 7's session block
+    under kind 5, then the four slots, the host's station in the first (docs/sv_raid.md)."""
+    session = (bytes([TUPLE]) + encode_uint(6) + encode_uint(kind) + encode_uint(capacity)
+               + encode_uint(0) + encode_bytes(bytes(JOIN_BLOB_SIZE))
+               + encode_bytes(bytes(ANNOUNCE_BLOB_SIZE)) + encode_uint(0))
+    block = (bytes([TUPLE]) + encode_uint(5) + session + encode_uint(0) + encode_uint(0)
+             + bytes([TUPLE]) + encode_uint(1) + encode_u64(host_station_id) + encode_uint(0))
+    slots = (bytes([LIST]) + encode_uint(capacity)
+             + bytes([TUPLE]) + encode_uint(1) + encode_u64(host_station_id)
+             + (bytes([TUPLE]) + encode_uint(1) + encode_uint(0)) * (capacity - 1))
+    return (bytes([TYPE_SESSION, TUPLE]) + encode_uint(5) + block + slots
+            + encode_bytes(bytes(4)) + encode_uint(1) + encode_uint(0))
 
 
 def _skip_field(data, pos):
