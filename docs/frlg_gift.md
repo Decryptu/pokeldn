@@ -243,6 +243,11 @@ the card sends a stored WISHMKR Jirachi.
 other `10 ANIV` species, the European `10ANNIV`, `10JAHRE`, `10ANNI` and `10ANIV` releases. Where an
 event was released in several languages, the one matching `--language` is sent.
 
+The card is build-independent: the Mystery Event VM's 17-entry table, its `givepokemon` and the
+gift client's 23-case `Client_Run` switch have the same layout on all twelve cartridges, and
+`tests/test_frlg_english_cartridges.py` runs the card's script through each cartridge's own
+`RunMysteryEventScript` (status 2 and the record in the party; status 3 and nothing on a full party).
+
 ### GB-Link Team cards
 
 The GB-Link Team's custom Wonder Cards (GB-Link-Switch-LDN `cards/`, GPL-3.0) are a Wonder Card plus a

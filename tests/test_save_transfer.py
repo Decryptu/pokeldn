@@ -88,7 +88,7 @@ def loaded_blocks(image):
     return summary.newest.counter, [sav.block(image, ident, summary) for ident in range(14)]
 
 
-@pytest.mark.parametrize("game_code", [b"BPRF", b"BPGE", b"BPRJ"])
+@pytest.mark.parametrize("game_code", [code.encode() for code in sorted(builds.BUILDS)])
 def test_a_backup_returns_the_chip_byte_for_byte_and_the_console_saves_nothing(game_code):
     chip = synthetic_save(51, seed=1, layout="japanese" if game_code.endswith(b"J") else "latin")
     server = save_transfer.SaveBackupServer()
@@ -171,6 +171,55 @@ def test_the_save_addresses_are_the_functions_on_each_cartridge(code):
     rfu_base = (build.rfu_send_queue - 0x8D2).to_bytes(4, "little")
     reader = bytes.fromhex("024803494018007870470000") + rfu_base + (0x8D2).to_bytes(4, "little")
     assert rom.count(reader) == 1
+
+
+@pytest.mark.parametrize("code", sorted(builds.BUILDS))
+def test_the_backup_runs_through_each_cartridges_own_client_and_waits_on_its_send_queue(code):
+    """Every pass through the retail image's Client_RunBufferScript [mystery_gift_client.c:276], one
+    frame per call; nothing moves while gRfu.sendQueue.count, as the cartridge's own 12-byte reader
+    finds it [link_rfu_2.c:3131], is not zero."""
+    import re
+    from unicorn import arm_const as a
+    build = builds.BUILDS[code]
+    path = ROMS / f"{'FireRed' if build.version == 'firered' else 'LeafGreen'}_{code[3].lower()}.gba"
+    if not path.exists():
+        pytest.skip(f"{path} is not on this machine")
+    rom = path.read_bytes()
+    [reader] = re.finditer(re.escape(bytes.fromhex("024803494018007870470000")) + b"(....)" + re.escape(
+        (0x8D2).to_bytes(4, "little")), rom, re.S)
+    queue = int.from_bytes(reader.group(1), "little") + 0x8D2
+    chip = synthetic_save(51, seed=12, layout="japanese" if code.endswith("J") else "latin")
+    payload = save_transfer.backup_code(build)
+    machine = buffer_script._Machine(payload, rom=rom, build=build,
+                                     memory={buffer_script.FLASH_BASE: chip})
+    uc = machine.uc
+
+    def word(offset, size=4):
+        return int.from_bytes(uc.mem_read(buffer_script._CLIENT_ADDRESS + offset, size), "little")
+
+    def frame():
+        uc.reg_write(a.UC_ARM_REG_R0, buffer_script._CLIENT_ADDRESS)
+        uc.reg_write(a.UC_ARM_REG_SP, buffer_script.STACK_POINTER)
+        uc.reg_write(a.UC_ARM_REG_LR, buffer_script._RETURN_ADDRESS | 1)
+        uc.emu_start(build.client_run_buffer_script | 1, buffer_script._RETURN_ADDRESS, count=2_000_000)
+        assert uc.reg_read(a.UC_ARM_REG_PC) == buffer_script._RETURN_ADDRESS
+        return word(buffer_script.CLIENT_FUNC_ID) == 4         # FUNC_RUN once the payload returns 1
+
+    image, at, param = bytearray(sav.SAVE_SIZE), 0, 0
+    uc.mem_write(queue, b"\x05")
+    while at < sav.SAVE_SIZE:
+        machine.load(payload, param=param)
+        uc.mem_write(buffer_script._CLIENT_ADDRESS + buffer_script.CLIENT_FUNC_ID, bytes(4))
+        if at == 0:
+            assert not any(frame() for _ in range(3))
+            assert uc.mem_read(buffer_script.GDECOMPRESSION_BUFFER + 0x2800, 4) == bytes(4)   # nothing staged
+            uc.mem_write(queue, b"\x00")
+        assert any(frame() for _ in range(8))
+        param = word(buffer_script.CLIENT_PARAM)
+        send = uc.mem_read(word(buffer_script.CLIENT_LINK + buffer_script.LINK_SEND_BUFFER),
+                           word(buffer_script.CLIENT_LINK + buffer_script.LINK_SEND_SIZE, 2))
+        at = sav.inflate(bytes(send), image, at)
+    assert bytes(image) == chip
 
 
 def test_the_apps_backup_lands_in_its_library_named_for_the_trainer_and_cartridge(monkeypatch, tmp_path):
