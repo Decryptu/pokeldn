@@ -1,15 +1,20 @@
-# pokeldn 0.16.1
+# pokeldn 0.17.0
 
 This desktop app trades with seven Pokemon game families on a Switch or Switch 2
 through an ESP32 radio connected by USB. Nothing is installed on the console.
 
 ## What is new
 
-- Windows: an update from inside the app no longer fails with "could not move the old app aside"
-  (WinError 32). The fix runs in the new version, so updating to 0.16.1 from 0.15.0 or 0.16.0
-  already uses it.
+- Controller board: the new Control page turns an ESP32-S3 into a wired controller for the Switch.
+  Flash it from the Board page with Controller chosen, plug it into the console's USB-C port and
+  press Connect. Press buttons on screen or from the keyboard, record and edit macros, play them on
+  the board (it keeps playing if the computer sleeps), and share them as `.pokemacro` files.
+- Windows: a second session started without closing the app no longer fails with
+  "no reply 0x81 to command 0x01" on a classic ESP32. The app now finds a board still running at
+  the previous session's speed. Thanks to easyworld for the report and the fix.
 
-The firmware is unchanged at 1.6.1; boards need no reflash.
+The radio firmware is unchanged at 1.6.1; wireless boards need no reflash. The controller firmware
+is 1.1.0.
 
 pokeldn is an unofficial fan project, not affiliated with Nintendo or The Pokemon Company. It is not
 meant for commercial or promotional use; see the License section of the README.
@@ -24,8 +29,10 @@ meant for commercial or promotional use; see the License section of the README.
 
 Each app includes PKHeX.Core and firmware for classic ESP32, ESP32-S3, ESP32-C3 and ESP32-C6. Python, .NET
 and ESP-IDF are bundled or unnecessary for running the app. Supply your own `prod.keys`.
-The separate `pokeldn-radio*.bin` files are merged firmware images for manual flashing at address
-`0x0`; the app selects the right image for the connected chip. `SHA256SUMS` covers all seven downloads.
+The separate `pokeldn-radio*.bin` (wireless) and `pokeldn-pad*.bin` (controller) files are merged
+firmware images for manual flashing at address `0x0`; the app selects the right image for the
+connected chip. `pokeldn-pad.bin`, the classic ESP32 controller over Bluetooth, is untested on a
+console. `SHA256SUMS` covers all nine downloads.
 
 ## First run
 
@@ -53,6 +60,7 @@ Received Pokemon are saved in `Documents/pokeldn/Received`, with a configurable 
 - Mystery Gift: FireRed/LeafGreen and Sword/Shield.
 - Tera Raids in both roles: Scarlet/Violet.
 - Legal Pokemon preparation with PKHeX.Core, board detection and flashing, and session recordings.
+- An ESP32-S3 as a wired Switch controller, with macros.
 
 ## Platform notes
 
