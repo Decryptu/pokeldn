@@ -119,6 +119,13 @@ if __name__ == "__main__":
             assert info["CFBundleVersion"] == __version__, info
             assert info.get("LSBackgroundOnly") is True, info   # one Dock icon: the viewer's
             assert info.get("NSBluetoothAlwaysUsageDescription"), info   # or macOS kills the controller service
+            # The controller service runs from a bare-signed copy: as the bundle's main executable macOS 26
+            # delivers it no Bluetooth discoveries (scripts/pack_app.py).
+            helper = bundle / "Contents/Helpers/pokeldn-bluetooth"
+            signature = subprocess.run(["codesign", "-dv", str(helper)], capture_output=True, text=True).stderr
+            assert "Identifier=pokeldn-bluetooth" in signature and "Info.plist=not bound" in signature, signature
+            started = subprocess.run([str(helper), "--module", "platform"], capture_output=True, text=True, timeout=60)
+            assert started.returncode == 0 and "macOS" in started.stdout, (started.stdout, started.stderr)
         print(result.stdout, end="")
     else:
         check()

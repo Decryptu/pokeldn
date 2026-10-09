@@ -227,5 +227,3 @@ TinyUSB comes from the component manager (`espressif/esp_tinyusb` 2.4.0). The re
   only. The sources and their reported pitfalls are in nxbt, joycontrol and friendmaker.
 
 - Whether a Switch 2 takes the HORI ID the same way; only a Switch Lite was measured.
-- Whether the packaged macOS app's Bluetooth key reaches the service child; measured only through
-  the bridge app.

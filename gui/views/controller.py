@@ -54,7 +54,7 @@ def start_service(on_exit=lambda code: None) -> Process | None:
     os.makedirs(SESSION, exist_ok=True)
     # POKELDN_MANAGED_RUN: the child stops when the app's end of its stdin closes (pokeldn.app.runner).
     child = Process(["--module", "pokeldn.pad.service"], str(SESSION),
-                    dict(os.environ, POKELDN_MANAGED_RUN="1"), lambda line: None, on_exit)
+                    dict(os.environ, POKELDN_MANAGED_RUN="1"), lambda line: None, on_exit, bluetooth=True)
     for _ in range(100):
         if service.running() or not child.running:
             break

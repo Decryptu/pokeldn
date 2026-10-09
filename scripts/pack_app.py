@@ -171,7 +171,18 @@ def main() -> int:
                 plistlib.dump(info, dest)
             strip_local_symbols(expected, {expected / "Contents/MacOS/pokeldn",
                                            expected / "Contents/Frameworks/services/pkhex/dist" / executable.name})
+            # macOS 26 gives a background process signed as the bundle's main executable a passive Bluetooth
+            # scan with no discoveries; a bare-signed copy gets an active one (docs/gui.md, The controller).
+            # The bootloader finds its files in _internal beside it.
+            helpers = expected / "Contents/Helpers"
+            helpers.mkdir(exist_ok=True)
+            helper = helpers / "pokeldn-bluetooth"
+            shutil.copy2(expected / "Contents/MacOS/pokeldn", helper)
+            (helpers / "_internal").symlink_to("../Frameworks")
             subprocess.run(["codesign", "--force", "--deep", "--sign", "-", str(expected)], check=True)
+            subprocess.run(["codesign", "--force", "--sign", "-", "--identifier", "pokeldn-bluetooth", str(helper)],
+                           check=True)
+            subprocess.run(["codesign", "--force", "--sign", "-", str(expected)], check=True)
         if result == 0 and sys.platform == "win32":
             clear_cfg(expected / "pokeldn.exe")
         if result == 0 and sys.platform.startswith("linux"):

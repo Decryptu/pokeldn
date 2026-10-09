@@ -232,7 +232,15 @@ for the board again until it answers or Stop looking is pressed.
 The page talks to `pokeldn.pad.service`, a child process that holds the Bluetooth link on
 `127.0.0.1:47800`. macOS stops a process that opens Bluetooth unless its app declares
 `NSBluetoothAlwaysUsageDescription`; the packaged app does, and only the child stops when one does
-not. The child exits when the app closes its stdin. An app that finds a service running other code
+not. The child exits when the app closes its stdin.
+
+On macOS 26, `bluetoothd` gives a background process signed as an app bundle's main executable a
+passive "ThirdPartyApp scan" and delivers it no discoveries, with or without a service UUID filter;
+a bare-signed binary (`Info.plist=not bound`) gets an active scan. The packaged app therefore
+starts the service from `Contents/Helpers/pokeldn-bluetooth`, a copy of its executable signed with
+that identifier, with `_internal` linked to `../Frameworks`; it runs under the app's Bluetooth
+permission. From the main executable, a scan saw 0 devices; from the helper, 19, the board among
+them. An app that finds a service running other code
 (`code` in its status reply) tells it to quit and starts its own.
 
 ## Pokemon sprites

@@ -38,18 +38,25 @@ def child(argv: list[str]) -> None:
         runpy.run_module(target, run_name="__main__", alter_sys=True)
 
 
-def command(*argv: str) -> list[str]:
+# macOS 26 delivers no Bluetooth LE discoveries to a background process signed as an app's main
+# executable; this bare-signed copy of it gets an active scan (scripts/pack_app.py, docs/gui.md).
+BLUETOOTH_HELPER = os.path.join(os.path.dirname(os.path.dirname(sys.executable)), "Helpers", "pokeldn-bluetooth")
+
+
+def command(*argv: str, bluetooth: bool = False) -> list[str]:
     if getattr(sys, "frozen", False):
+        if bluetooth and sys.platform == "darwin" and os.path.isfile(BLUETOOTH_HELPER):
+            return [BLUETOOTH_HELPER, *argv]
         return [sys.executable, *argv]
     return [sys.executable, "-u", os.path.join(ROOT, "pokeldn", "app", "entry.py"), *argv]
 
 
 class Process:
     def __init__(self, argv: list[str], cwd: str, env: dict, on_line: Callable[[str], None],
-                 on_exit: Callable[[int], None]):
+                 on_exit: Callable[[int], None], bluetooth: bool = False):
         self.on_line, self.on_exit = on_line, on_exit
         flags = subprocess.CREATE_NO_WINDOW if os.name == "nt" else 0
-        self.proc = subprocess.Popen(command(*argv), cwd=cwd, env=env, stdin=subprocess.PIPE,
+        self.proc = subprocess.Popen(command(*argv, bluetooth=bluetooth), cwd=cwd, env=env, stdin=subprocess.PIPE,
                                      stdout=subprocess.PIPE, stderr=subprocess.STDOUT, text=True,
                                      encoding="utf-8", errors="replace", bufsize=1,
                                      creationflags=flags)
