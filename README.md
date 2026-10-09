@@ -52,7 +52,9 @@ silicon), Windows and Linux. It includes the radio firmware and flashes the boar
 Pokemon to offer with [PKHeX.Core](https://github.com/kwsch/PKHeX), and runs every trade and Mystery
 Gift below with the tested settings. The only file it asks for is `prod.keys`. Its Bank keeps every
 Pokemon a trade brings in and trades one into another game wherever HOME would move it, converted
-and checked by PKHeX ([the bank](docs/gui.md#the-bank)).
+and checked by PKHeX ([the bank](docs/gui.md#the-bank)). Its Control page turns an ESP32-S3 into a
+wired controller for the Switch: press its buttons from the computer, record and edit macros, and
+share them as `.pokemacro` files ([the controller](docs/gui.md#the-controller)).
 
 - macOS: the app is unsigned, so the first launch is blocked. Open it once and close the warning,
   then System Settings, Privacy & Security, scroll down to Security, Open Anyway next to pokeldn,
@@ -222,8 +224,8 @@ news only if it differs from what it holds; `--news-id N` forces a new one.
 writes a `.sav` back: beside the console's own save, every sector read back, then the game loads it
 and saves; anything short of that leaves the console's save as it was. In the app, the Mystery Gift
 tool's Your save tab keeps the backups, names them, imports and exports `.sav` files and edits the
-trainer and party through PKHeX. A backup took about four minutes on a retail French FireRed; the
-restore is proven against the scripted console and has not yet run on a retail Switch. [Save backup and restore](docs/frlg_gift.md#save-backup-and-restore).
+trainer and party through PKHeX. A backup took about four minutes on a retail French FireRed; a
+restore on a retail English FireRed loaded with CONTINUE, a French save included. [Save backup and restore](docs/frlg_gift.md#save-backup-and-restore).
 
 ```bash
 ./.venv/bin/python -u bin/frlg_mg_host.py --live --save-backup backup.sav --save-resume-dir partial

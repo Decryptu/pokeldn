@@ -24,6 +24,7 @@ class Settings:
     sprites: bool = True    # download Pokemon sprites from PokeAPI; the cache is read either way
     check_updates: bool = True   # ask GitHub for a newer release at launch
     firmware: str = ""
+    firmware_kind: str = "radio"   # what Flash writes: "radio" (wireless) or "pad" (controller, S3 only)
     # Trainer used for generated encounters.
     ot: str = "POKELDN"
     tid: int = field(default_factory=lambda: random.randint(1, 65535))   # FireRed/LeafGreen, as shown

@@ -177,6 +177,31 @@ Pokemon out of the bank.
   unmeasured here). PKHeX.Core 26.8.26 converts a `.pk3` by the Pal Park lineage, so a bank move from
   FireRed/LeafGreen may differ from the record HOME writes.
 
+## The controller
+
+The Control page presses a Switch's buttons through a board running the controller firmware
+([Controller board](hardware_pad.md)) and plays macros on it. Flash the firmware from the Board page
+with Controller chosen (ESP32-S3 only), plug the board into the Switch's USB-C port, and press
+Connect: the page reaches the board over Bluetooth LE.
+
+| part | what it does |
+|---|---|
+| the on-screen controller | holding a button holds it on the console; the sticks take eight directions at full tilt, L3 and R3 are their centres |
+| Keyboard | while on, keys tap buttons for the macro's press time: arrows D-pad, X A, Z B, S X, A Y, Q L, W R, 1 ZL, 2 ZR, Enter +, Backspace -, H HOME, C Capture |
+| Record into the macro | each press becomes a step with how long it was held, and the pause before the next press becomes that step's pause |
+| the macro editor | steps that press buttons and sticks, waits, and repeats that nest; a Run once part and a Loop part repeated a number of times or until stopped |
+| Play on the board | compiles the macro, loads it and starts it; the board plays it on its own clock and keeps going if the computer sleeps or disconnects |
+| Flashing mode | restarts the board as a USB serial port so the Board page can flash it again |
+
+Macros live in `Documents/pokeldn/Macros` (with `POKELDN_DATA` set, `Macros` inside that folder), one
+`.pokemacro` file each, written on every edit. Export writes a copy to share; import checks a file
+and copies it in under a free name. The format is in [Controller board, Macros](hardware_pad.md#macros).
+
+The page talks to `pokeldn.pad.service`, a child process that holds the Bluetooth link on
+`127.0.0.1:47800`. macOS stops a process that opens Bluetooth unless its app declares
+`NSBluetoothAlwaysUsageDescription`; the packaged app does, and only the child stops when one does
+not.
+
 ## Pokemon sprites
 
 The sprites are the 96x96 PNGs behind `sprites.front_default` and `sprites.front_shiny` of
@@ -312,7 +337,8 @@ firmware as out of date.
 ## Build a desktop app
 
 To package an app, install ESP-IDF v6.1 for `esp32`, `esp32s3`, `esp32c3` and `esp32c6` and activate its
-environment. Build all four images with separate configurations:
+environment. Build the four radio images with separate configurations, and the controller image
+(`firmware/pad`, which fetches `espressif/esp_tinyusb` through the component manager):
 
 ```sh
 mkdir -p gui/firmware
@@ -330,23 +356,27 @@ idf.py -B build/esp32c3 merge-bin -o "$POKELDN_IMAGES/pokeldn-radio-c3.bin"
 idf.py -B build/esp32c6 -D SDKCONFIG="$PWD/build/esp32c6/sdkconfig" set-target esp32c6
 idf.py -B build/esp32c6 -D SDKCONFIG="$PWD/build/esp32c6/sdkconfig" build
 idf.py -B build/esp32c6 merge-bin -o "$POKELDN_IMAGES/pokeldn-radio-c6.bin"
+cd ../pad
+idf.py -B build -D SDKCONFIG="$PWD/build/sdkconfig" set-target esp32s3
+idf.py -B build -D SDKCONFIG="$PWD/build/sdkconfig" build
+idf.py -B build merge-bin -o "$POKELDN_IMAGES/pokeldn-pad-s3.bin"
 cd ../..
 python scripts/build_client.py
 python scripts/build_unicorn.py
 python scripts/pack_app.py
 ```
 
-The absolute output paths keep the images in `gui/firmware`. The packer requires all four images,
+The absolute output paths keep the images in `gui/firmware`. The packer requires all five images,
 the client from `scripts/build_client.py` and the Unicorn from `scripts/build_unicorn.py` (needs CMake); the frozen app check verifies all are included and
 that the bundled client carries `flet_drop`. The release workflow builds each target separately
-and supplies all four images to every desktop packer.
+and supplies all five images to every desktop packer.
 
 The app version is `pokeldn.__version__`. It appears in Settings and in the macOS and Windows
 package metadata. Update it and `.github/release-notes.md` together before preparing a release.
-The workflow produces `SHA256SUMS` for the three desktop downloads and four firmware images.
+The workflow produces `SHA256SUMS` for the three desktop downloads and five firmware images.
 Manual workflow runs produce artifacts; `v*` tags publish a release named `pokeldn vX.Y.Z` with
 `.github/release-notes.md` as its body, whose first line must be `# pokeldn X.Y.Z` (the workflow and
-`tests/test_release.py` check it), and with the same eight files every time.
+`tests/test_release.py` check it), and with the same nine files every time.
 Only tags with a hyphen, such as `v0.3.0-rc1`, are marked as pre-releases; GitHub shows the
 newest other release as Latest in the repository sidebar.
 

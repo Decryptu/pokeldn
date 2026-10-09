@@ -38,6 +38,10 @@ FIRMWARE = os.path.join(ROOT, "gui", "firmware", "pokeldn-radio.bin")   # writte
 FIRMWARE_S3 = os.path.join(ROOT, "gui", "firmware", "pokeldn-radio-s3.bin")
 FIRMWARE_C3 = os.path.join(ROOT, "gui", "firmware", "pokeldn-radio-c3.bin")
 FIRMWARE_C6 = os.path.join(ROOT, "gui", "firmware", "pokeldn-radio-c6.bin")
+# The controller firmware (firmware/pad), docs/hardware_pad.md: an S3 over USB, a classic ESP32 over
+# Bluetooth Classic. C3 and C6 cannot be a Switch controller.
+FIRMWARE_PAD = os.path.join(ROOT, "gui", "firmware", "pokeldn-pad-s3.bin")
+FIRMWARE_PAD_ESP32 = os.path.join(ROOT, "gui", "firmware", "pokeldn-pad.bin")
 
 
 RELEASES = os.environ.get("POKELDN_RELEASES_URL", "https://api.github.com/repos/Decryptu/pokeldn/releases")
@@ -173,7 +177,8 @@ def download_firmware(say=print, folder: str = os.path.dirname(FIRMWARE)) -> str
     import json
 
     releases = json.loads(_get(RELEASES, 1_000_000))
-    known = [os.path.basename(f) for f in (FIRMWARE, FIRMWARE_S3, FIRMWARE_C3, FIRMWARE_C6)]
+    known = [os.path.basename(f) for f in (FIRMWARE, FIRMWARE_S3, FIRMWARE_C3, FIRMWARE_C6, FIRMWARE_PAD,
+                                           FIRMWARE_PAD_ESP32)]
     for release in releases:
         files = {a.get("name"): a.get("browser_download_url") for a in release.get("assets") or []}
         if release.get("draft") or not all(n in files for n in (known[0], "SHA256SUMS")):
@@ -198,15 +203,43 @@ def download_firmware(say=print, folder: str = os.path.dirname(FIRMWARE)) -> str
     raise OSError("No published release carries the firmware images")
 
 
-def flash(port: str, firmware: str = "") -> None:
-    """Detect, validate and flash on one connection (docs/hardware_esp32.md, Building and flashing)."""
+LOADER_SETTLE = 8.0   # seconds; see _connect
+
+
+def _native(port: str) -> bool:
+    return any(p.device == port and p.native for p in ports())
+
+
+def _connect(port: str, kind: str):
+    """A controller board reaches the flasher already in the ROM loader (Flashing mode or BOOT); a reset
+    on connect would leave it. On macOS a USB Serial/JTAG port younger than about 8 s fails its first
+    read and stays locked for the process; the node's times do not say its age, so every such flash waits
+    (docs/hardware_pad.md)."""
+    import esptool
+    if kind == "pad" and _native(port):
+        print(f"[app] Waiting {LOADER_SETTLE:.0f} s for the board's port to settle.", flush=True)
+        time.sleep(LOADER_SETTLE)
+        try:
+            return esptool.detect_chip(port, connect_mode="no-reset", connect_attempts=1)
+        except (esptool.FatalError, serial.SerialException, OSError):
+            time.sleep(1)    # a board still running other firmware: reset it into the loader
+    return esptool.detect_chip(port)
+
+
+def flash(port: str, firmware: str = "", kind: str = "radio") -> None:
+    """Detect, validate and flash on one connection (docs/hardware_esp32.md, Building and flashing).
+    `kind` "pad" writes the controller firmware, which needs an S3's USB device."""
     import esptool
     from esptool.bin_image import LoadFirmwareImage
 
-    with esptool.detect_chip(port) as chip:
+    with _connect(port, kind) as chip:
         if chip.CHIP_NAME not in ("ESP32", "ESP32-S3", "ESP32-C3", "ESP32-C6"):
             raise esptool.FatalError(f"{chip.CHIP_NAME} is not supported. Use an ESP32, ESP32-S3, ESP32-C3 or ESP32-C6.")
-        path = firmware or bundled_firmware(chip.CHIP_NAME)
+        if kind == "pad" and chip.CHIP_NAME not in ("ESP32-S3", "ESP32"):
+            raise esptool.FatalError(f"The controller firmware needs an ESP32-S3 (its USB acts as a controller) or a "
+                                     f"classic ESP32 (Bluetooth Classic); an {chip.CHIP_NAME} can be neither.")
+        pad_image = FIRMWARE_PAD if chip.CHIP_NAME == "ESP32-S3" else FIRMWARE_PAD_ESP32
+        path = firmware or (pad_image if kind == "pad" else bundled_firmware(chip.CHIP_NAME))
         if not os.path.isfile(path):
             raise esptool.FatalError(f"Missing firmware for {chip.CHIP_NAME}: {path}")
         # esptool skips its image check on a merged ESP32 image's 0x1000 padding.
@@ -226,7 +259,10 @@ def flash(port: str, firmware: str = "") -> None:
                 image.append_digest and image.stored_digest != image.calc_digest):
             raise esptool.FatalError(f"Firmware checksum does not match: {path}")
         print(f"[app] Firmware for {chip.CHIP_NAME}: {path}", flush=True)
-        esptool.main(["--baud", "460800", "--after", "hard-reset", "write-flash",
+        # The pad owns the USB port once it runs: a reset over USB from the ROM loader it was put
+        # in by `pad.py --download` leaves the chip in the loader; the watchdog boots the image.
+        after = "watchdog-reset" if kind == "pad" and chip.CHIP_NAME == "ESP32-S3" else "hard-reset"
+        esptool.main(["--baud", "460800", "--after", after, "write-flash",
                       "0x0", os.path.abspath(path)], esp=chip)
 
 
@@ -237,9 +273,11 @@ def main() -> int:
     parser = argparse.ArgumentParser(description="Flash pokeldn firmware for the connected chip.")
     parser.add_argument("--port", required=True)
     parser.add_argument("--firmware", default="", help="custom merged image; default: bundled firmware")
+    parser.add_argument("--kind", choices=("radio", "pad"), default="radio",
+                        help="radio: wireless trades; pad: the S3 as a Switch controller")
     args = parser.parse_args()
     try:
-        flash(args.port, args.firmware)
+        flash(args.port, args.firmware, args.kind)
     except (esptool.FatalError, OSError, ValueError) as error:
         print(f"[app] {error}", flush=True)
         return 1

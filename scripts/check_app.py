@@ -118,6 +118,7 @@ if __name__ == "__main__":
             assert info["CFBundleShortVersionString"] == __version__, info
             assert info["CFBundleVersion"] == __version__, info
             assert info.get("LSBackgroundOnly") is True, info   # one Dock icon: the viewer's
+            assert info.get("NSBluetoothAlwaysUsageDescription"), info   # or macOS kills the controller service
         print(result.stdout, end="")
     else:
         check()
