@@ -441,6 +441,9 @@ class RaidHostConsole:
                     route=None, random4=bytes(4))))
                 self.queue.append(self.station_list(0))
                 self.later.append((self.clock.now + 2.0, None))
+            elif msg.protocol == 0x98 and p[0] == 3:
+                self.queue.append(self.reply(pia_connect.build_session_leave_response_v11(
+                    p, random4=bytes(4))))
             elif msg.protocol == 0x98 and p[0] == 6 and not self.list_acked:
                 self.list_acked = True
                 self.data(0.1, 0x7C, 1, raid.channel_table(), compressed=True)
@@ -524,4 +527,5 @@ def test_our_guest_joins_a_console_s_raid_and_leaves_its_pokemon_in_the_battle(m
     assert raid.pokemon_of(lobby[1]["data"]) == gen9.load(party(25))
     assert lobby[2]["t"] - lobby[0]["t"] == pytest.approx(2.0, abs=0.02)
     battle_ack = [r for r in got if (r["protocol"], r["port"]) == (0x80, 0) and "data" not in r]
-    assert battle_ack[-1]["t"] == got[-1]["t"]
+    leave = [r for r in got if r["protocol"] == 0x98 and r["payload"][0] == 3]
+    assert len(leave) == 1 and leave[0] is got[-1] and leave[0]["t"] - battle_ack[-1]["t"] < 0.06

@@ -220,7 +220,7 @@ tool runs it. `pokeldn.sv.raid.RaidGuest` and the joiner do, in order:
 | identity | the standard record set (`pokeldn.sv.reference`) 0.44 s after the seat, record 1 under the trainer name |
 | lobby | state 0x18 and its Pokemon 0.27 s after that; state 0x01 2 s later |
 | start | state 0x0d once the host's state 0x0c arrives; a guest that sent 0x0d as its ready was acknowledged and never shown ready |
-| battle | acknowledges the host's 0x3480 0x93 and leaves the network |
+| battle | acknowledges the host's 0x3480 0x93, sends the Session type-3 leave every 0.5 s until the type 4 (four sends at most) and leaves the network |
 
 Against a retail host the guest appeared in the lobby under the trainer name, became ready and let
 the host start; its Pokemon stayed in the battle.

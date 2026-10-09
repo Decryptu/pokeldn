@@ -78,6 +78,7 @@ RAID_PORT2_DELAY = 0.24
 RAID_KEYS_DELAY = 0.79
 RAID_LOBBY_DELAY = 0.27           # after the identity
 RAID_NET_FLAGS = 0x11             # Net 0x12 and 0x51 wake the host's Net job under 0x11
+LEAVE_SENDS, LEAVE_REPEAT = 4, 0.5  # a leaving station's type 3 (docs/sv.md, Leaving)
 HOST_BITMAP = 0x01                # the destination mask a joiner writes: the host, station 0
 ACK_ENTRIES = 4  # a retail station's bulk ack carries four
 
@@ -749,6 +750,7 @@ async def run_session(args, keys, host_ip, host_mac, our_ip, our_mac, record):
     guest = raid.RaidGuest(Path(args.raid_pokemon).read_bytes(), args.raid_ready_delay) if raiding else None
     first_update_at = None      # a raid guest leaves the first station list unanswered
     raid_lobby_sent = raided = False
+    leaving = None              # a raid guest's type-3 leave: {"sends", "next", "answered"}
     channel_acks = {}           # (port, ack id) -> when a raid guest's delayed 0x7C ack is due
     migration_sent = 0
     migration_at = None
@@ -921,6 +923,19 @@ async def run_session(args, keys, host_ip, host_mac, our_ip, our_mac, record):
     host_leaving = False
     while time.monotonic() - t0 < args.hold:
         now = time.time()
+        # A leaving retail station sends the type 3 every 0.5 s until the type 4, four sends at
+        # most (`0x6db590`, `0x6db7b0`; docs/sv.md, Leaving).
+        if leaving is not None:
+            if leaving["answered"] or (leaving["sends"] >= LEAVE_SENDS and now >= leaving["next"]):
+                print("[sv] our player has left the raid"
+                      + ("" if leaving["answered"] else "; the host never answered our leave"))
+                record(rec="left_at_battle", answered=leaving["answered"], t=time.time())
+                break
+            if now >= leaving["next"] and leaving["sends"] < LEAVE_SENDS:
+                send(out(pia_connect.build_session_leave_v11(our_const, ours["var"], our_ip,
+                                                             random4=os.urandom(4)),
+                         host_var or 0, protocol=PROTO_SESSION), "session leave request")
+                leaving.update(sends=leaving["sends"] + 1, next=now + LEAVE_REPEAT)
         for due, request, requester in [e for e in pending_rtt if e[0] <= now]:
             send(out(streams.build_rtt_response(request, requester), requester,
                      protocol=PROTO_RTT), "rtt response")
@@ -1142,6 +1157,9 @@ async def run_session(args, keys, host_ip, host_mac, our_ip, our_mac, record):
                     print(f"[sv] -> {host_ip}: net 0x51 ack, seqid={seq50}")
             if msg.protocol == PROTO_SESSION and msg.payload:
                 kind = msg.payload[0]
+                if (leaving is not None and kind == pia_connect.SESSION_LEAVE_RESPONSE
+                        and msg.payload[5:17] == pia_connect._location_id(our_const, ours["var"])):
+                    leaving["answered"] = True
                 print(f"[sv] the host spoke Session: {SESSION_MESSAGE_NAMES.get(kind, '?')}")
                 if kind == pia_connect.SESSION_JOIN_RESPONSE:
                     resp = pia_connect.parse_session_join_response_v11(msg.payload)
@@ -1407,10 +1425,9 @@ async def run_session(args, keys, host_ip, host_mac, our_ip, our_mac, record):
             send(out(our_ack(key), host_var or 0, protocol=protocol, port=port,
                      flags=ack_shape["flags"]), "reliable ack", protocol=protocol, port=port)
             last_ack[key] = time.time()
-        if raided:
+        if raided and leaving is None:
             print("[sv] the battle begins; our player leaves and its Pokemon stays in the raid")
-            record(rec="left_at_battle", t=time.time())
-            break
+            leaving = {"sends": 0, "next": time.time(), "answered": False}
         if host_leaving and not args.stay_on_host_migration:
             print("[sv] the console is destroying its network (NetStartHostMigration); "
                   "leaving the seat")
