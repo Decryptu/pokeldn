@@ -10,3 +10,4 @@ pyserial==3.5
 unicorn==2.1.4
 websockets==17.1
 certifi==2026.7.22
+bleak==3.0.2

@@ -314,7 +314,13 @@ class DigitCode:
         page.run_task(self.boxes[self.at].focus)
 
 
+KEY_TARGET: list = [None]    # the shown view that takes keys, such as the controller
+
+
 def page_key(e) -> None:
-    """The page's key handler (gui/main.py): Backspace and arrows reach the focused code."""
+    """The page's key handler (gui/main.py): Backspace and arrows reach the focused code, the rest the
+    view in KEY_TARGET."""
     if DigitCode.focused is not None:
         DigitCode.focused.key(e.key)
+    elif KEY_TARGET[0] is not None:
+        KEY_TARGET[0].key(e)

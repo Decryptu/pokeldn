@@ -249,20 +249,38 @@ class BoardView:
             return chosen
         return ""
 
+    def kind(self) -> str:
+        return "pad" if self.app.settings.firmware_kind == "pad" else "radio"
+
+    def available(self) -> bool:
+        images = ((board.FIRMWARE_PAD, board.FIRMWARE_PAD_ESP32) if self.kind() == "pad" else
+                  (board.FIRMWARE, board.FIRMWARE_S3, board.FIRMWARE_C3, board.FIRMWARE_C6))
+        return bool(self.firmware()) or any(os.path.isfile(f) for f in images)
+
     def flash_button(self) -> ft.Control:
-        image = self.firmware()
-        available = image or any(os.path.isfile(f) for f in (board.FIRMWARE, board.FIRMWARE_S3, board.FIRMWARE_C3, board.FIRMWARE_C6))
+        available = self.available()
         flashing = bool(self.app.process and self.app.process.running and self.app.process_label == "flash")
         return t.button("Flashing..." if flashing else "Flash", self._flash, "zap", filled=not self.status().ready,
                         disabled=self.app.busy or not available or not self.port())
 
     def flash_card(self) -> ft.Control:
         image = self.firmware()
-        available = image or any(os.path.isfile(f) for f in (board.FIRMWARE, board.FIRMWARE_S3, board.FIRMWARE_C3, board.FIRMWARE_C6))
+        available = self.available()
+        pad = self.kind() == "pad"
+        included = ("Controller firmware included with the app: ESP32-S3 or classic ESP32, picked for your chip."
+                    if pad else
+                    "Firmware included with the app: ESP32, ESP32-S3, ESP32-C3 or ESP32-C6, picked for your chip.")
+        choice = ft.Column([
+            ft.Row([t.segmented([("radio", "Wireless", "globe"), ("pad", "Controller", "joystick")],
+                                self.kind(), self._set_kind)]),
+            t.text("The board becomes a controller for the Switch, and this computer presses its buttons and "
+                   "plays macros from the Control page. An ESP32-S3 plugs into the Switch; a classic ESP32 "
+                   "pairs with it over Bluetooth. C3 and C6 boards cannot do this." if pad else
+                   "The board is the radio for trades and Mystery Gift. Every game tool uses it.", 12, t.MUTED),
+        ], spacing=8, tight=True)
         source = ft.Row([
             t.pixel_icon("package", color=t.MUTED),
-            t.text(f"Custom image: {image}" if image else
-                   "Firmware included with the app: ESP32, ESP32-S3, ESP32-C3 or ESP32-C6, picked for your chip." if available
+            t.text(f"Custom image: {image}" if image else included if available
                    else "No firmware image here yet (a copy run from source). Download the released one; "
                         "no ESP-IDF needed.",
                    12, t.MUTED if available else t.RED, expand=True),
@@ -273,6 +291,7 @@ class BoardView:
                            "download", disabled=self.downloading)])),
         ], spacing=6)
         return drop.target(t.card("Flash the firmware", ft.Column([
+            choice,
             t.step_list(FLASH_STEPS),
             source,
             ft.Column([self.progress, self.progress_text], spacing=6, visible=self.progress.visible),
@@ -312,6 +331,12 @@ class BoardView:
     def _clear_file(self, e) -> None:
         self._set_firmware("")
 
+    def _set_kind(self, kind: str) -> None:
+        self.app.settings.firmware_kind = kind
+        self.app.settings.save()
+        self.render()
+        self.control.update()
+
     def _set_firmware(self, path: str) -> None:
         self.app.settings.firmware = path
         self.app.settings.save()
@@ -321,7 +346,7 @@ class BoardView:
     def _flash(self, e) -> None:
         if self.app.busy:
             return
-        args = ["--module", "gui.board", "--port", self.selected]
+        args = ["--module", "gui.board", "--port", self.selected, "--kind", self.kind()]
         if image := self.firmware():
             args += ["--firmware", image]
         self.log.clear()
@@ -354,17 +379,21 @@ class BoardView:
 
     def _flashed(self, code: int) -> None:
         device = self.selected
+        pad = self.kind() == "pad"
 
         def done():
             self.progress.value = 1 if code == 0 else 0
-            self.progress_text.value = ("Done. Checking the board..." if code == 0 else
+            self.progress_text.value = (
+                "Done. The board is a controller now: plug it into the Switch's USB-C port and open the "
+                "Control page." if code == 0 and pad else
+                "Done. Checking the board..." if code == 0 else
                                         "Flashing failed. Hold the BOOT button and press Flash again; the "
                                         "Activity log has the details.")
             self.progress_text.color = t.GREEN if code == 0 else t.RED
             self.app.identities.pop(device, None)
             self.render()
             self.control.update()
-            if code == 0:
+            if code == 0 and not pad:
                 threading.Timer(2.0, lambda: self.app.ui(self._after_flash)).start()
         self.app.ui(done)
 
@@ -394,4 +423,6 @@ class BoardView:
                 t.text("Arch and its derivatives name the group uucp instead of dialout.", 13, t.MUTED)]
         lines.append(t.text("Use a classic ESP32 (ESP32-D0WD, WROOM-32E), or an ESP32-S3, C3 or C6 through its "
                             "native USB port. S2 boards are not supported.", 13, t.MUTED))
+        lines.append(t.text("A board running the controller firmware has no serial port. Connect it on the Control "
+                            "page and choose Flashing mode, or hold BOOT while plugging it in.", 13, t.MUTED))
         return t.card("Board not listed?", ft.Column(lines, spacing=8))

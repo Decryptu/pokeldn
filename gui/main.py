@@ -40,6 +40,7 @@ PAGES = (
     ("games", "Games", "gamepad"),
     ("board", "Board", "cpu"),
     ("bank", "Bank", "package"),
+    ("controller", "Control", "joystick"),
     ("docs", "Docs", "book-open"),
 )
 SETTINGS = ("settings", "Settings", "gear")
@@ -75,6 +76,9 @@ def main(page: ft.Page) -> None:
         if key == "bank":
             from gui.views.bank import BankView
             return BankView(app)
+        if key == "controller":
+            from gui.views.controller import ControllerView
+            return ControllerView(app)
         if key == "docs":
             from gui.views.docs import DocsView
             return DocsView(app)

@@ -52,7 +52,9 @@ silicon), Windows and Linux. It includes the radio firmware and flashes the boar
 Pokemon to offer with [PKHeX.Core](https://github.com/kwsch/PKHeX), and runs every trade and Mystery
 Gift below with the tested settings. The only file it asks for is `prod.keys`. Its Bank keeps every
 Pokemon a trade brings in and trades one into another game wherever HOME would move it, converted
-and checked by PKHeX ([the bank](docs/gui.md#the-bank)).
+and checked by PKHeX ([the bank](docs/gui.md#the-bank)). Its Control page turns an ESP32-S3 into a
+wired controller for the Switch: press its buttons from the computer, record and edit macros, and
+share them as `.pokemacro` files ([the controller](docs/gui.md#the-controller)).
 
 - macOS: the app is unsigned, so the first launch is blocked. Open it once and close the warning,
   then System Settings, Privacy & Security, scroll down to Security, Open Anyway next to pokeldn,

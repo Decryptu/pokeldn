@@ -39,3 +39,5 @@ RECEIVED = _DOCUMENTS / "Received"
 SAVES = DATA / "Saves" if os.environ.get("POKELDN_DATA") else _DOCUMENTS / "Saves"
 # Pokemon kept between games (pokeldn.app.bank); an isolated POKELDN_DATA keeps its own.
 BANK = DATA / "Bank" if os.environ.get("POKELDN_DATA") else _DOCUMENTS / "Bank"
+# Controller macros (pokeldn.app.macros); an isolated POKELDN_DATA keeps its own.
+MACROS = DATA / "Macros" if os.environ.get("POKELDN_DATA") else _DOCUMENTS / "Macros"
