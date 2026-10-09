@@ -123,7 +123,7 @@ jobs:
       # Both builds are pure functions of these inputs; a hit skips Flutter and CMake entirely.
       - name: Restore the Flet client
         id: client
-        uses: actions/cache@v4
+        uses: actions/cache@v6
         with:
           path: |
             gui/client/*
@@ -131,7 +131,7 @@ jobs:
           key: flet-client-${{ runner.os }}-${{ hashFiles('requirements.txt', 'gui/requirements.txt', 'gui/flet_client.py', 'scripts/build_client.py', 'gui/flet_drop/**') }}
       - name: Restore the ARM-only Unicorn
         id: unicorn
-        uses: actions/cache@v4
+        uses: actions/cache@v6
         with:
           path: |
             gui/unicorn/lib
