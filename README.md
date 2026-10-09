@@ -417,6 +417,18 @@ because Z-A's layout is Scarlet's. See [Legends Z-A](docs/za.md).
 
 ## Credits
 
+pokeldn is a fork of [MercuryEnigma/frlg-ldn-trade](https://github.com/MercuryEnigma/frlg-ldn-trade)
+by [MercuryEnigma](https://github.com/MercuryEnigma), itself a fork of
+[tornadus/frlg-ldn-trade](https://github.com/tornadus/frlg-ldn-trade) by
+[tornadus](https://github.com/tornadus), with contributions from
+[trowgundam](https://github.com/trowgundam).
+
+Contributors to this repository (GitHub does not list contributors on a fork):
+
+- [Gr3nSkyDragon](https://github.com/Gr3nSkyDragon): ESP32-S3 firmware
+- [ismailhasannnnnn](https://github.com/ismailhasannnnnn): Scarlet/Violet Tera Raid hosting and joining
+- [easyworld](https://github.com/easyworld): ESP32 serial reconnects after a high-baud session
+
 - [kinnay](https://github.com/kinnay): the [LDN library](https://github.com/kinnay/LDN) this builds on,
   and the [NintendoClients wiki](https://github.com/kinnay/NintendoClients/wiki)
 - [pokefirered](https://github.com/pret/pokefirered): decompilation of FireRed/LeafGreen, including
