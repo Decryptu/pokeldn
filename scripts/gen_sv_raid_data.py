@@ -9,7 +9,8 @@ Sources, all GPL-3.0 or the game itself:
   --raid-enemy   the eighteen `raid_enemy_XX_array` tables of the game's RomFS
                  (arc/worlddataraidraid_gem_item_reward_boostdata.bin.trpak), decoded to JSON with
                  numeric enums by flatc against their own .bfbs schemas: each record's `bossDesc`
-                 is the RaidPoint's 37-word action profile, and its `gemType` is the Tera rule
+                 is the RaidPoint's 37-word action profile, its `gemType` the Tera rule, its
+                 `bossPokePara` level and effort values the battle's, its `captureLv` the catch
 A retail record and its encounter are joined by the record's `no`; the script refuses a record
 that does not join or whose extra moves differ from the encounter's.
 
@@ -76,8 +77,9 @@ def boss_profile(desc):
 
 
 def join_retail(tables, folder):
-    """Adds each row's `boss_desc` and the retail Tera rule (gemType 0 the species' own types,
-    1 any of 18, 2+ a fixed type)."""
+    """Adds each row's `boss_desc`, the retail Tera rule (gemType 0 the species' own types, 1 any
+    of 18, 2+ a fixed type), its battle level and effort values (HP Atk Def Spe SpA SpD) and its
+    capture level, which is Tera-Finder's level."""
     retail = {}
     for map_name, prefix in MAPS.items():
         for stars in range(1, 7):
@@ -93,7 +95,13 @@ def join_retail(tables, folder):
             row["boss_desc"] = boss_profile(info["bossDesc"])
             if row["boss_desc"][13:34:4] != row.pop("extra_moves"):
                 raise ValueError(f"{map_name} {row['identifier']}: extra moves differ")
-            row["tera"] = info["bossPokePara"]["gemType"]
+            para = info["bossPokePara"]
+            row["tera"] = para["gemType"]
+            if row["level"] != info["captureLv"]:
+                raise ValueError(f"{map_name} {row['identifier']}: capture level differs")
+            row["capture_level"], row["level"] = row["level"], para["level"]
+            ev = para["effortValue"]
+            row["evs"] = [ev[k] for k in ("hp", "atk", "def", "agi", "spAtk", "spDef")]
             joined.add((map_name, row["identifier"]))
     if joined != set(retail):
         raise ValueError(f"retail records with no encounter: {sorted(set(retail) - joined)}")

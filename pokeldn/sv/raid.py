@@ -151,9 +151,9 @@ def boss_record(raid):
 
 
 def raid_point(raid, rewards=None, name=POINT_NAME):
-    """-> the 0x3e8-byte RaidPoint: identity, stars and level, the boss's HP coefficient and its
-    37-word action profile, reward rows every player receives, the summary. Unknown words stay
-    zero."""
+    """-> the 0x3e8-byte RaidPoint: identity, stars, crystal and catch level, the boss's HP
+    coefficient and its 37-word action profile, reward rows every player receives, the summary.
+    Unknown words stay zero."""
     rows = raid.rewards if rewards is None else tuple(rewards)
     if len(rows) > REWARD_ROWS:
         raise ValueError(f"a RaidPoint holds at most {REWARD_ROWS} reward rows")
@@ -163,7 +163,8 @@ def raid_point(raid, rewards=None, name=POINT_NAME):
         raise ValueError(f"a RaidPoint name is RaidPoint_ and at most 13 more characters, not {name!r}")
     out[:len(encoded)] = encoded
     out[0x18] = 0x40
-    struct.pack_into("<IIII", out, 0x20, raid.stars, 0, 1, raid.boss["level"])
+    struct.pack_into("<IIII", out, 0x20, raid.stars, int(raid.content == "black"), 1,
+                     raid.row["capture_level"])
     struct.pack_into("<37I", out, 0x4C, *raid.row["boss_desc"])
     for index, (item, quantity) in enumerate(rows):
         struct.pack_into("<IIII", out, POINT_REWARDS + index * 16, item, quantity, 0, SUBJECT_ALL)

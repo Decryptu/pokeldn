@@ -140,8 +140,8 @@ The RaidPoint, offsets from its start:
 | offset | size | what |
 |---|---|---|
 | 0x000 | 24 | the point's name, ASCII, `RaidPoint_` and a suffix (`RaidPoint_POKELDN_0` is accepted) |
-| 0x018 | 1 | 0x40 |
-| 0x020 | 4 x u32 | stars, 0, 1, the boss's level |
+| 0x018 | u32 | 0x40 (one retail black point held `0x458F9952`; 0x40 is accepted) |
+| 0x020 | 4 x u32 | stars, the crystal (0 standard, 1 black), the record's `captureRate` (1), its `captureLv` |
 | 0x04c | 37 x u32 | the boss's action profile: HP coefficient, the shield's nine values, six extra actions (action, timing, value, move), the double action's three values |
 | 0x038 | u32 | nonzero in retail points, zero from `raid_point` |
 | 0x0e4 | 45 x 16 | reward rows: item, quantity, 0, subject |
@@ -193,9 +193,11 @@ Species in the raid tables are the game's DevID: the National Dex number up to 9
 order from 917 (Tinkatink 957 is 1000), as `gen9.internal_index`. The descriptor and the RaidPoint
 carry the DevID too: a retail Scarlet shown a descriptor and RaidPoint with species 1000 listed
 and fought Tinkatink.
-A black-crystal record holds level 90 and effort values (for example 252 HP, 128 Defense, 128
-Special Defense) for the battle and a capture level of 75; the generator gives the boss level 75 and
-no effort values, as a retail event bootstrap's five-star boss carried.
+A black-crystal record holds a battle level of 90 with effort values (for example 128 Defense and
+128 Special Defense) and a capture level of 75; a standard record's two levels agree and its effort
+values are zero. The bootstrap's boss record and the RaidPoint summary carry the battle level and
+the effort values, the RaidPoint's `+0x2c` the capture level: a black boss built from `09F3E337`
+(Scarlet, Paldea) equals a French retail Scarlet's but for the nickname and language.
 
 ## Finding a seed
 
@@ -232,8 +234,5 @@ the host start; its Pokemon stayed in the battle.
 - The serializer header's last four bytes, and whether a nonzero counter or a zero one matters.
 - What separates bonus subjects 4 and 5; what the words at 0x038, 0x3b4, 0x3d8 and 0x3e4 of a
   retail RaidPoint hold.
-- Whether a black-crystal battle takes its level and effort values from the bootstrap: the tables
-  hold level 90 with effort values, the generator sends level 75 without, and a retail Scarlet
-  fought and rewarded such a six-star raid.
 - Whether the six Paldea encounters with the species' own Tera types roll as the retail table says.
 - Event raids, whose encounters and rewards come from the active Poke Portal News tables.

@@ -62,15 +62,20 @@ def test_the_boss_a_seed_gives_is_pkhex_s(case):
 def test_the_bootstrap_matches_retail_records():
     """A retail Violet's bootstrap for seed BD13FB43: its boss record, and the record it puts in an
     empty participant slot (both empty slots of a retail event bootstrap hold the same bytes). A
-    French retail Scarlet's boss for seed 7B741233 (Larvitar, five-star progress) differs from ours
-    only in its host's language and that language's species name."""
+    French retail Scarlet's bosses for seed 7B741233 (Larvitar, five-star progress) and for the black
+    crystal 09F3E337 (Kingambit, battle level 90 with effort values) differ from ours only in their
+    host's language and that language's species name."""
     found = raid_encounter.generate(0xBD13FB43)
     assert hashlib.sha256(raid.boss_record(found)).hexdigest() == \
         "fa48396b91413a0e54b86a074b3b10dcf077d8633e9d5a45c7466830325f66c3"
-    found = raid_encounter.generate(0x7B741233, "scarlet", "paldea", "5star")
-    french = gen9.write(gen9.load(raid.boss_record(found)), nickname="Embrylex", language=3)
-    assert hashlib.sha256(gen9.encrypt(french)).hexdigest() == \
-        "0350e3a0df16d86164742fb6c7308144fc3d4c7b6752bf91fb335c2d6622a6a4"
+    for seed, content, name, digest in (
+            (0x7B741233, "standard", "Embrylex",
+             "0350e3a0df16d86164742fb6c7308144fc3d4c7b6752bf91fb335c2d6622a6a4"),
+            (0x09F3E337, "black", "Scalpereur",
+             "21e85329fd6d4432ab662142831d6af000ff910b5f105fa2259831ebb075adf5")):
+        found = raid_encounter.generate(seed, "scarlet", "paldea", "6star", content)
+        french = gen9.write(gen9.load(raid.boss_record(found)), nickname=name, language=3)
+        assert hashlib.sha256(gen9.encrypt(french)).hexdigest() == digest
     assert hashlib.sha256(raid.empty_participant()).hexdigest() == \
         "befa78ce3efc6035ef511bfab95dd962e1019612e7b9bef80c85fb7955e36ae4"
 
@@ -107,6 +112,12 @@ def test_the_raidpoint_matches_three_retail_points():
     assert struct.unpack_from("<37I", three, 0x4C)[:14] == (800, 0, 0, 0, 0, 0, 0, 0, 0, 0, 3, 2, 75,
                                                             201)
     assert struct.unpack_from("<7I", three, 0x3B8) == (3, 246, 0, 1, 35, 0, 14)
+    # A black crystal's: crystal 1 and the catch level at 0x20, the battle level in the summary.
+    black = raid.raid_point(raid_encounter.generate(0x09F3E337, "scarlet", "paldea", "6star", "black"))
+    assert struct.unpack_from("<4I", black, 0x20) == (6, 1, 1, 75)
+    assert struct.unpack_from("<14I", black, 0x4C) == (2500, 65, 55, 9999, 35, 0, 0, 20, 75, 35, 1, 1,
+                                                       85, 0)
+    assert struct.unpack_from("<7I", black, 0x3B8) == (6, 1008, 0, 0, 90, 0, 17)
 
 
 def test_a_boss_past_916_is_named_by_its_devid():

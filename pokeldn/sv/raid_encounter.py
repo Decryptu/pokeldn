@@ -112,9 +112,9 @@ def experience(level, growth):
     return 5 * n ** 3 // 4
 
 
-def stats(base, ivs, level, nature):
-    """-> the six party stats, HP Atk Def Spe SpA SpD, with no effort values."""
-    out = [(2 * b + iv) * level // 100 + 5 for b, iv in zip(base, ivs)]
+def stats(base, ivs, level, nature, evs=(0,) * 6):
+    """-> the six party stats, HP Atk Def Spe SpA SpD."""
+    out = [(2 * b + iv + ev // 4) * level // 100 + 5 for b, iv, ev in zip(base, ivs, evs)]
     out[0] += level + 5
     # The nature's order is Atk Def Spe SpA SpD, the stats' after HP.
     up, down = nature // 5 + 1, nature % 5 + 1
@@ -177,13 +177,14 @@ def boss_fields(seed, row):
     weight = rand.next_int(0x81) + rand.next_int(0x80)
     scale = rand.next_int(0x81) + rand.next_int(0x80)
     ivs = (ivs[0], ivs[1], ivs[2], ivs[5], ivs[3], ivs[4])
-    party = stats(base, ivs, row["level"], nature)
+    party = stats(base, ivs, row["level"], nature, row["evs"])
     return {
         "species": row["species"], "form": row["form"], "level": row["level"],
         "met_level": row["level"], "experience": experience(row["level"], growth),
         "encryption_constant": ec, "trainer_id": fake_id & 0xFFFF, "secret_id": fake_id >> 16,
         "pid": pid, "ability": abilities[ability], "ability_number": 1 << ability,
         "gender": gender, "nature": nature, "stat_nature": nature, "ivs": ivs,
+        "evs": tuple(row["evs"]),
         "height_scalar": height, "weight_scalar": weight, "scale": scale,
         "tera_type_original": tera_type(seed, row), "tera_type_override": TERA_NONE,
         "moves": tuple(row["moves"]),
