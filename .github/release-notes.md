@@ -1,16 +1,13 @@
-# pokeldn 0.16.0
+# pokeldn 0.16.1
 
 This desktop app trades with seven Pokemon game families on a Switch or Switch 2
 through an ESP32 radio connected by USB. Nothing is installed on the console.
 
 ## What is new
 
-- Scarlet/Violet Tera Raids: Tera Raid (Host) opens a raid the console joins, from a seed you pick
-  or one Find a raid searches for by species, stars, Tera type, nature, shiny and IVs, with the
-  seed's rewards or ones you choose; standard and black crystals. Tera Raid (Join) joins a raid the
-  console hosts. Your chosen Pokemon fights as the console's partner.
-- FireRed/LeafGreen Mystery Gift: the item picker names items by the game's own list, so a chosen
-  Rare Candy arrives as a Rare Candy.
+- Windows: an update from inside the app no longer fails with "could not move the old app aside"
+  (WinError 32). The fix runs in the new version, so updating to 0.16.1 from 0.15.0 or 0.16.0
+  already uses it.
 
 The firmware is unchanged at 1.6.1; boards need no reflash.
 
