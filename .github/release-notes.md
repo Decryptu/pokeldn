@@ -1,20 +1,15 @@
-# pokeldn 0.18.0
+# pokeldn 0.18.1
 
 This desktop app trades with seven Pokemon game families on a Switch or Switch 2
 through an ESP32 radio connected by USB. Nothing is installed on the console.
 
 ## What is new
 
-- Controller: button presses from the Control page no longer go missing. On macOS, many presses
-  were dropped in the first seconds after connecting; every press now reaches the board, a few
-  milliseconds after the click.
-- Board page, redesigned: each board shows its firmware, its version and whether it is up to date,
-  with an Update button only when this app includes a newer version. The Firmware list installs
-  Wireless or Controller on any board, after a confirmation. A controller board plugged into this
-  computer is listed and updated over Bluetooth, with no BOOT button needed.
-- The Control page reconnects on its own when the board loses power (moving it from the computer to
-  the Switch), and says whether the board is plugged into this computer or into the Switch.
-- The controller's background helper now closes with the app.
+- macOS: the Board and Control pages find the controller board again. In 0.18.0 the packaged app
+  saw no Bluetooth devices at all, so the board's version stayed unknown and Connect failed.
+- From 0.18.0: a redesigned Board page shows each board's firmware, its version and whether it is
+  up to date, and installs Wireless or Controller on any board; controller button presses are no
+  longer dropped; the Control page reconnects on its own and says where the board is plugged in.
 
 The radio firmware is unchanged at 1.6.1; wireless boards need no update. The controller firmware is
 1.2.0; the Board page offers the update.
