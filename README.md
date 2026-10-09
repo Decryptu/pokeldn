@@ -435,6 +435,9 @@ Contributors to this repository (GitHub does not list contributors on a fork):
   the Switch port
 - [GB-Link Team](https://github.com/GB-Link/GB-Link-Switch-LDN): the custom FireRed/LeafGreen Wonder
   Cards in `vendor/gblink-cards/` (GPL-3.0)
+- [xCyrusBR](https://github.com/xCyrusBR): [TeraLoop-Bridge](https://github.com/xCyrusBR/TeraLoop-Bridge)
+  and [SV-Past-Tera-Raid](https://github.com/xCyrusBR/SV-Past-Tera-Raid), Scarlet/Violet Tera Raid
+  work
 
 ## License
 
