@@ -51,6 +51,3 @@ Working on retail hardware:
   pokeldn; the Underground sessions measured had the console as host, and pokeldn does not host one.
   The common dispatch and the `UgNetworkManager` handler have no sender filter
   ([the protocol page](bdsp_protocol.md#the-grand-underground)).
-- How often `INL1.IlcaNetSession$$Update` runs, which turns the Union Room's restart wait (25 to
-  152 updates) and time-up (270 updates) into seconds
-  ([Taking a seat](bdsp_session.md#taking-a-seat)).

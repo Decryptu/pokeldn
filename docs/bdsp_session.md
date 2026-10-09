@@ -84,6 +84,23 @@ of them. A console alone in its new session therefore closes it after 25 to 152 
 again, until 270 updates alone have accumulated, and then keeps its last network. A receiver on the LDN interface must
 filter its own source IP: broadcasts loop back.
 
+The session updates once per rendered frame, 30 times a second, so the wait is 0.83 to 5.07 s and
+the time-up 9.0 s; a dropped frame lengthens both. The chain, in 1.3.0 main:
+
+| step | site |
+|---|---|
+| `NetworkManager.<IE_Start>d__28$$MoveNext` subscribes `NetworkManager$$OnUpdate` | `Sequencer$$SubscribeUpdate` call [0x0202da38] |
+| `SubscribeUpdate` inserts the callback into `Sequencer._orderableList` (static +0x8) | [0x01a8fed0] |
+| `Sequencer$$Update`, a Unity `Update`, invokes each listed callback once with `Time.deltaTime`, before its `isSuspendUpdate` (static +0xC8) test | [0x01a906d8]..[0x01a9071c] |
+| `NetworkManager$$OnUpdate` calls `SessionConnector$$OnUpdate` when `[[this+0x30]+0x60]` is set | [0x02253190] |
+| `SessionConnector$$OnUpdate` calls `INL1.IlcaNetSession$$Update` once | [0x02030a38] |
+
+`Sequencer$$Awake` sets `Application.targetFrameRate` to 30 [0x01a8ed68]. The one quality level in
+the 1.3.0 `globalgamemanagers` (`Ultra`, Unity 2019.4.27f1) has `vSyncCount` 2, which on the 60 Hz
+output is also 30 frames a second and makes Unity ignore `targetFrameRate`; no managed code sets
+`vSyncCount` or the quality level. `TimeManager` holds a 1/30 s fixed timestep. The only other caller
+of `NetworkManager$$OnUpdate` is `SoftwareKeyboard$$Open` [0x01c980c8].
+
 Unauthenticated Pia is dropped silently, with no error and no loss of the seat.
 
 ## What is on the wire
