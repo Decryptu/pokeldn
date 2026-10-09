@@ -189,12 +189,15 @@ def party(species):
 class RaidGuestConsole:
     """A retail guest as captured against a raid host: it acknowledges the station list, joins port 2
     after the host's type 6, shows its Pokemon after the type 9s, answers the start with 0x0d, loads
-    the bootstrap, and marks the battle."""
+    the bootstrap, and marks the battle; handed the network as a retail joiner was (docs/sv.md,
+    Leaving), it answers the type 7 with a type 8 and the is-migrating status, then leaves at the
+    first NetStartHostMigration."""
 
     def __init__(self, clock):
         self.clock, self.keys = clock, sv.session_keys(SSID)
         self.later, self.queue, self.seen, self.seqs = [], [], [], {}
         self.done = set()
+        self.left = False
         self.pokemon = party(658)
         self.at(0.2, pia6.build_session_join(CONSOLE_CID, CONSOLE_VAR, JOIN_IP,
                                              pia_connect.ldn_constant_id(HOST_MAC), 1, "Player",
@@ -246,6 +249,12 @@ class RaidGuestConsole:
             self.at(0.03, pia_connect.build_session_update_ack_v11(CONSOLE_CID, update["sequence_id"]), 0x98)
         if protocol == 0x58 and p[0] == 0:
             self.at(0.01, streams.build_rtt_response(p, 1), 0x58)
+        migration = pia_connect.parse_session_migration_v11(p) if protocol == 0x98 else None
+        if migration and migration["target_var"] == CONSOLE_VAR:
+            self.at(0.0, pia_connect.build_session_migration_ack_v11(
+                CONSOLE_CID, CONSOLE_VAR, migration["host_constant_id"], migration["host_var"]), 0x98)
+        if protocol == 0x2C and p[:2] == bytes([1, 0x40]):
+            self.left = True
 
     def answer_data(self, protocol, port, rm, body):
         if protocol == 0x7C:
@@ -282,7 +291,11 @@ def run_raid_host(monkeypatch, tmp_path, rewards=()):
 
     class Transport:
         ssid, our_ip, our_mac, broadcast = SSID, HOST_IP, HOST_MAC, BROADCAST
-        participants, join_events = [(JOIN_MAC, JOIN_IP)], 1
+        join_events = 1
+
+        @property
+        def participants(self):
+            return [] if console.left else [(JOIN_MAC, JOIN_IP)]
 
         def __init__(self, **kwargs):
             pass
@@ -357,7 +370,13 @@ def test_a_console_fights_the_raid_we_host(monkeypatch, tmp_path):
     assert net and net[0]["flags"] == 0x31 and net[0]["data"][27] == 7
     assert sent(10) < net[0]["t"] < session[0]["t"] < sent(11) <= sent(12) < sent(13) < sent(14) < sent(15)
     assert [sent(s) - sent(15) for s in range(15, 21)] == pytest.approx(raid.HANDOFF_AT, abs=0.011)
-    assert clock.now - sent(20) == pytest.approx(raid.LINGER, abs=0.05)
+    handed = [r for r in console.seen if r["protocol"] == 0x98 and r["data"][0] == 7]
+    status = [r for r in console.seen if r["protocol"] == 0x2C and r["data"][1] == 0x11
+              and r["data"][26] == 2 and r["data"][29] == 1]
+    start = [r for r in console.seen if r["protocol"] == 0x2C and r["data"] == bytes.fromhex("01400000")]
+    assert handed[0]["t"] - sent(20) == pytest.approx(raid.LINGER, abs=0.05)
+    assert len(handed) == 1 and handed[0]["t"] < status[0]["t"] < start[0]["t"]
+    assert start[0]["flags"] == 0x11 and clock.now - start[0]["t"] < 0.1
 
 
 

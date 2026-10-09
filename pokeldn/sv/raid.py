@@ -67,7 +67,12 @@ HANDOFF_AT = (0.0, 0.0, 0.101, 0.121, 0.161, 0.181)
 HANDOFF_LOWEST = (None, 15, 15, 17, 18, None)
 GATE_MARGIN = 0.05                # a gated message leaves this long after its milestone
 RETRY = 0.5                       # the raid Net 0x50 and Session update repeat until answered
-LINGER = 5.0                      # the host leaves this long after its twentieth message
+LINGER = 5.0                      # the handover starts this long after the twentieth message
+# A leaving host's Session type 7, Net 0x11 is-migrating and NetStartHostMigration: repeat and give-up
+# times (`0x6df050`, `0x6defb8`, `0x6ac68c`, `0x6aca98`, `0x6ac984`; docs/sv.md, Leaving).
+MIGRATION_REPEAT, MIGRATION_WAIT = 1.0, 5.0
+STATUS_REPEAT, STATUS_WAIT = 0.5, 4.0
+HANDOVER_REPEAT, HANDOVER_SPAN, HANDOVER_SPAN_UNANSWERED = 0.3, 4.0, 2.0
 STATION_LIST_RETRY = 2.0          # a retail raid host resends its Session station list this often
 
 
@@ -186,8 +191,10 @@ def bootstrap_message(plain, counter=FIRST_COUNTER + 10):
 
 class RaidHost:
     """The host's side of one console's raid: twenty messages on 0x80 port 0, each released by the
-    console's previous step. `actions` -> [("app", seq, flags, lowest, payload) | ("net",) |
-    ("session",)]; the launcher reports the console's messages and its Net and Session acks."""
+    console's previous step, then the network handed to the console as a leaving retail host
+    hands it. `actions` -> [("app", seq, flags, lowest, payload) | ("net",) | ("session",) |
+    ("migration",) | ("migrating",) | ("handover",)]; the launcher reports the console's messages,
+    its acks, and its leaving the network. `left` is set once the host may go."""
 
     def __init__(self, raid, pokemon_record, rewards=None):
         self.raid = raid
@@ -200,6 +207,8 @@ class RaidHost:
         self.accepted_at = None
         self.net_at = self.session_at = None
         self.done_at = None
+        self.departure = None                   # [phase, since, next send, span]
+        self.left = False
         self.whole = None
 
     def accepted(self, now):
@@ -230,6 +239,40 @@ class RaidHost:
     def session_acked(self, now):
         if self.session_at is not None:
             self._reach("session_ack", now)
+
+    def migration_acked(self, now):
+        """The console's Session type 8 naming itself: our status goes next."""
+        if self.departure and self.departure[0] == "migration":
+            self._depart("status", now)
+
+    def status_acked(self, now):
+        """The console's Net 0x12 to the is-migrating status."""
+        if self.departure and self.departure[0] == "status":
+            self._depart("handover", now, HANDOVER_SPAN)
+
+    def gone(self, now):
+        """The console left the network: a client of a migrating host leaves to host its own."""
+        if self.departure:
+            self.left = True
+
+    def _depart(self, phase, now, span=None):
+        self.departure = [phase, now, now, span]
+
+    def _leaving(self, now):
+        phase, since, _, span = self.departure
+        if phase == "migration" and now - since >= MIGRATION_WAIT:
+            self._depart("status", now)
+        elif phase == "status" and now - since >= STATUS_WAIT:
+            self._depart("handover", now, HANDOVER_SPAN_UNANSWERED)
+        elif phase == "handover" and now - since >= span:
+            self.left = True
+            return []
+        phase, _, due, _ = self.departure
+        if now < due:
+            return []
+        repeat = {"migration": MIGRATION_REPEAT, "status": STATUS_REPEAT}.get(phase, HANDOVER_REPEAT)
+        self.departure[2] = max(due + repeat, now)
+        return [({"status": "migrating"}.get(phase, phase),)]
 
     def _reach(self, milestone, now):
         self.seen.setdefault(milestone, now)
@@ -290,8 +333,13 @@ class RaidHost:
         return COMPLETE_ZLIB, streams.compress(HANDOFF[seq - 15]), HANDOFF_LOWEST[seq - 15]
 
     def actions(self, now):
-        if self.accepted_at is None:
+        if self.accepted_at is None or self.left:
             return []
+        if self.departure:
+            return self._leaving(now)
+        if self.done_at is not None and now >= self.done_at:
+            self._depart("migration", now)
+            return self._leaving(now)
         out = []
         seq = len(self.sent) + 1
         while seq <= 20 and self._ready(seq, now):

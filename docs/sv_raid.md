@@ -97,9 +97,15 @@ port-2 answer and after the console's previous step:
 | 15 to 20 | the battle-start messages | the console's 0x93; then 0, 0.10, 0.12, 0.16, 0.18 s |
 
 A gated message leaves 50 ms after its milestone; the Net 0x50 and the station list repeat every
-0.5 s until answered, and the raid messages every 0.5 s until acknowledged. Five seconds after
-message 20 the host leaves the network. A retail console once answered the bootstrap with 0x73 and
-no 0x6e, so message 13 waits for either.
+0.5 s until answered, and the raid messages every 0.5 s until acknowledged. A retail console once
+answered the bootstrap with 0x73 and no 0x6e, so message 13 waits for either.
+
+Five seconds after message 20 the host hands the console its network as a leaving retail host does
+([docs/sv.md](sv.md#leaving)): Session type 7 naming the console, every second until its type 8;
+Net 0x11 in its is-migrating form, every 0.5 s until its 0x12; NetStartHostMigration `01400000`
+every 0.3 s until the console leaves the network or 4 s pass. A host that destroyed its network 5 s
+after message 20 instead drew 2318-0006 on the console's screen at the battle's opening in one of
+four retail raids, the battle going on offline after it.
 
 The Net 0x50 is the trade host's property body (`NET_PROPERTY_BODY`) with sequence 1, the network
 id, byte 27 set to 7 and the host's 132 application bytes at +38, zlib-compressed under message flags

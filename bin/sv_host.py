@@ -84,14 +84,23 @@ def _describe(msg):
 
 
 def build_net_probe(keys, our_ip, our_mac, station_ips, seqid, nonce8, max_stations,
-                    net_flags=ESTABLISHING_FLAGS):
-    body = pia6.build_message(
-        pia_connect.build_net_conn_request(seqid, PIA_HOST_VAR, our_mac, keys.network_id,
-                                           station_ips, max_stations=max_stations,
-                                           station_size=21),
-        protocol=PROTO_NET, port=0, message_flags=net_flags)
+                    net_flags=ESTABLISHING_FLAGS, migrating=False):
+    """Net 0x11; a leaving retail host sends its is-migrating form from variable id 0."""
+    body = pia_connect.build_net_conn_request(seqid, PIA_HOST_VAR, our_mac, keys.network_id,
+                                              station_ips, max_stations=max_stations,
+                                              station_size=21, migrating=migrating)
+    return build_net_message(keys, our_ip, body, nonce8, net_flags,
+                             src_var=0 if migrating else PIA_HOST_VAR)
+
+
+def build_net_message(keys, our_ip, body, nonce8, flags, src_var=0):
+    body = pia6.build_message(body, protocol=PROTO_NET, port=0, message_flags=flags)
     return pia6.build_packet(keys.session_key, keys.network_id, our_ip, body,
-                             dst_var=0, src_var=PIA_HOST_VAR, packet_id=0, nonce8=nonce8)
+                             dst_var=0, src_var=src_var, packet_id=0, nonce8=nonce8)
+
+
+NET_START_HOST_MIGRATION = bytes([1, pia_connect.NET_START_HOST_MIGRATION, 0, 0])
+NET_START_HOST_MIGRATION_FLAGS = 0x11   # as a retail Scarlet sent it (docs/sv.md, Leaving)
 
 
 # Replayed from an emulated pair's host, with the sequence at +4, the network id at +12 and the
@@ -711,7 +720,7 @@ def main(argv=None):
                         record(rec="out", dst=dst(ip), kind="raid net property",
                                hex=pkt.hex(), t=now)
                         print(f"[sv] -> {ip}: raid Net 0x50, the battle begins")
-                    else:
+                    elif action[0] == "session":
                         st = station_ids[ip]
                         upd = pia_connect.build_session_update_v11(
                             st["host_const"], st["host_var"], st["stations"], sequence_id=1)
@@ -721,8 +730,38 @@ def main(argv=None):
                         record(rec="out", dst=dst(ip), kind="raid session update",
                                hex=pkt.hex(), t=now)
                         print(f"[sv] -> {ip}: raid Session update, sequence 1")
-                if stage.done_at is not None and now >= stage.done_at:
-                    print(f"[sv] {ip}: the battle has begun with our Pokemon; the host leaves")
+                    elif action[0] == "migration":
+                        st = station_ids[ip]
+                        body = pia_connect.build_session_migration_v11(
+                            st["host_const"], st["host_var"], transport.our_ip,
+                            st["console_const"], st["console_var"])
+                        pkt = build_reply(keys, transport.our_ip, body, st["console_var"],
+                                          os.urandom(8), flags=0)
+                        transport.send(pkt, ip)
+                        record(rec="out", dst=ip, kind="session start host migration",
+                               hex=pkt.hex(), t=now)
+                        print(f"[sv] -> {ip}: Session type 7, the console hosts next")
+                    elif action[0] == "migrating":
+                        pkt = build_net_probe(
+                            keys, transport.our_ip, transport.our_mac, [transport.our_ip, ip],
+                            net_request_seq.get(ip, net_seqid) + 1, os.urandom(8),
+                            args.max_participants if args.net_stations is None else args.net_stations,
+                            net_flags=(ESTABLISHING_FLAGS if args.net_flags is None
+                                       else args.net_flags), migrating=True)
+                        transport.send(pkt, ip)
+                        record(rec="out", dst=ip, kind="net migrating status", hex=pkt.hex(), t=now)
+                        print(f"[sv] -> {ip}: Net 0x11, is-migrating")
+                    elif action[0] == "handover":
+                        pkt = build_net_message(keys, transport.our_ip, NET_START_HOST_MIGRATION,
+                                                os.urandom(8), NET_START_HOST_MIGRATION_FLAGS)
+                        transport.send(pkt, dst(ip))
+                        record(rec="out", dst=dst(ip), kind="net start host migration",
+                               hex=pkt.hex(), t=now)
+                if ip not in current_ips:
+                    stage.gone(now)
+                if stage.left:
+                    print(f"[sv] {ip}: the battle has begun with our Pokemon; the network is the "
+                          f"console's")
                     finished = True
             if finished:
                 break
@@ -932,6 +971,14 @@ def main(argv=None):
                             if (kind == NET_PROPERTY_ACK and src_ip in raid_hosts
                                     and int.from_bytes(msg.payload[4:8], "big") == 1):
                                 raid_hosts[src_ip].net_acked(time.time())
+                            if kind == pia_connect.NET_CONN_RESPONSE and src_ip in raid_hosts:
+                                raid_hosts[src_ip].status_acked(time.time())
+                        migration_ack = bytes([pia_connect.SESSION_START_HOST_MIGRATION_ACK])
+                        if (msg.protocol == PROTO_SESSION and src_ip in raid_hosts
+                                and msg.payload[:1] == migration_ack
+                                and msg.payload[1:9] == station_ids[src_ip]["console_const"]):
+                            print(f"[sv] {src_ip}: Session type 8, the console takes the network")
+                            raid_hosts[src_ip].migration_acked(time.time())
                         if (raiding and msg.protocol == PROTO_SESSION and len(msg.payload) >= 13
                                 and msg.payload[0] == pia_connect.SESSION_UPDATE_ACK
                                 and src_ip in station_ids
