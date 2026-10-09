@@ -394,3 +394,17 @@ def test_the_frlg_item_list_names_gen_3_ids(service):
     names = {n["id"]: n["name"] for n in service.names("frlg", "items")}
     assert (names[42], names[50], names[68], names[374]) == ("Black Flute", "Yellow Shard", "Rare Candy", "Sapphire")
     assert max(names) == 374
+
+
+def test_the_sv_bag_holds_every_reward_a_raid_seed_gives(service):
+    """A raid reward goes straight into the bag: the list a reward row is chosen from is the bag's
+    pouches without key items and unreleased items, and holds everything the raid tables award."""
+    from pokeldn.sv import raid_encounter
+    bag = {n["id"] for n in service.names("sv", "bag")}
+    tables = raid_encounter.tables()
+    awarded = {e["item"] for rows in (*tables["fixed_rewards"].values(), *tables["lottery_rewards"].values())
+               for e in rows if e["item"]}
+    awarded |= {int(i) for i in tables["material_items"].values() if int(i)} | set(raid_encounter.TERA_SHARDS)
+    assert awarded <= bag
+    assert 16 not in bag and 1230 not in bag          # Cherish Ball and TM00, unreleased
+    assert 1829 not in bag and 2405 not in bag        # key items of PKHeX's Event pouch

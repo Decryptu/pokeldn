@@ -24,18 +24,6 @@ APP_ID = "io.github.decryptu.pokeldn"
 UNICORN = ROOT / "gui" / "unicorn"
 MARKER_UNICORN = "pokeldn-unicorn"
 
-# These files are part of the Tera Raid host feature, but may be untracked while
-# developing or testing a local build.  The desktop packer otherwise stages only
-# `git ls-files`, which makes the dynamically loaded helpers disappear from the
-# packaged application.
-RUNTIME_EXTRAS = (
-    "bin/sv_raid_bootstrap_codec.py",
-    "bin/sv_raid_host.py",
-    "bin/sv_raid_start_gate.py",
-    "docs/sv_raid.md",
-    "docs/sv_raid_guest.md",
-)
-
 
 def runtime_id() -> str:
     arch = "arm64" if platform.machine().lower() in ("arm64", "aarch64") else "x64"
@@ -45,11 +33,8 @@ def runtime_id() -> str:
 def runtime_files() -> list[str]:
     tracked = subprocess.check_output(["git", "ls-files", "-z"], cwd=ROOT).decode().split("\0")
     folders = ("bin/", "pokeldn/", "vendor/LDN/ldn/", "docs/", "gui/assets/")
-    files = {name for name in tracked if not name.startswith("docs/research/")
-             and (name.startswith(folders) or name in
-             ("config/host.toml", "gui/guide.md", "LICENSE", "vendor/LDN/LICENSE")) and (ROOT / name).is_file()}
-    files.update(name for name in RUNTIME_EXTRAS if (ROOT / name).is_file())
-    return sorted(files)
+    return [name for name in tracked if (name.startswith(folders) or name in
+            ("config/host.toml", "gui/guide.md", "LICENSE", "vendor/LDN/LICENSE")) and (ROOT / name).is_file()]
 
 
 def platform_excludes():

@@ -157,8 +157,7 @@ static void promiscuous_rx(void *buffer, wifi_promiscuous_pkt_type_t type)
         /* Sniff: every management or data frame to or from one MAC, whole, without FCS. */
         const int length = (int)packet->rx_ctrl.sig_len - 4;
         const uint8_t *frame = packet->payload;
-        if ((type == WIFI_PKT_DATA || type == WIFI_PKT_MGMT) && length >= 24 &&
-            length <= WIRE_MAX_PAYLOAD - 5 &&
+        if ((type == WIFI_PKT_DATA || type == WIFI_PKT_MGMT) && length >= 24 && length <= 1600 &&
             (!memcmp(frame + 4, s_sniff_mac, 6) || !memcmp(frame + 10, s_sniff_mac, 6))) {
             /* The PHY fields: a flood's airtime is its bytes over its rate. */
             const uint8_t head[5] = {packet->rx_ctrl.channel, (uint8_t)packet->rx_ctrl.rssi,

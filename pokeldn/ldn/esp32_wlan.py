@@ -417,7 +417,7 @@ class EspFactory:
     @contextlib.asynccontextmanager
     async def create_ap(self, phyname: str, ifname: str, ssid: str, channel: int,
                         key: bytes | None, max_stations: int):
-        self._ap_address = access_point_mac or _random_mac()
+        self._ap_address = _random_mac()
         access_point = EspAccessPoint(self, self._ap_address, ssid, channel, key, max_stations)
         async with access_point.create():
             yield access_point
@@ -459,19 +459,12 @@ def default_port_factory():
 
 _radio: esp32.Radio | None = None
 station_mac: wlan.MACAddress | None = None
-access_point_mac: wlan.MACAddress | None = None
 
 
 def set_station_mac(mac) -> None:
     """The address the board's station joins with, in place of a random one (`--mac`)."""
     global station_mac
     station_mac = None if mac is None else wlan.MACAddress(mac)
-
-
-def set_access_point_mac(mac) -> None:
-    """The address the board's access point hosts with, in place of a random one."""
-    global access_point_mac
-    access_point_mac = None if mac is None else wlan.MACAddress(mac)
 
 
 def board_lost(log=None) -> None:

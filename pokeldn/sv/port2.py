@@ -9,23 +9,15 @@ import zlib
 from pokeldn.ldn.channel_table import TUPLE, decode_uint, encode_uint
 
 BYTES = 0xBC
+LIST = 0xBA
 TYPE_JOIN = 3
+TYPE_SESSION = 6
 TYPE_ANNOUNCE = 7
 TYPE_ACCEPT = 9
 
 JOIN_BLOB_SIZE = 9
 ANNOUNCE_BLOB_SIZE = 128
 
-# The channel declarations a Scarlet Tera Raid host sent before accepting a player.  Port 1
-# declares the raid's two application keys (0x8033 and 0x8034).  Port 2 is the relay setup; its
-# captured station id occurs twice and is replaced by build_raid_open().
-RAID_CHANNEL_TABLE = bytes.fromhex(
-    "b90106b902b9027b0001b902b902320101b902b902320201b902b902320301"
-    "b902b90280803301b902b90280803401")
-_RAID_OPEN_STATION = bytes.fromhex("000048f1c751b3eb")
-_RAID_OPEN_TEMPLATE = zlib.decompress(bytes.fromhex(
-    "484b62dbc90a846cac2c0c7b381960604f4303c3c0839d8ccd0c0c1e1f8f076e7ecdb08b0589b79391"
-    "0182f6b080d4313200000000ffff0300e24412d1"))
 
 def station_id(constant_id):
     """-> the u64 the game calls a station: the eight constant-id bytes read big-endian."""
@@ -54,6 +46,21 @@ def build_announce(host_station_id, kind=1, capacity=2, zero=0, key=0):
              + bytes([TUPLE]) + encode_uint(1) + encode_u64(host_station_id) + encode_uint(0))
     return (bytes([TYPE_ANNOUNCE, TUPLE]) + encode_uint(1)
             + bytes([TUPLE]) + encode_uint(5) + outer)
+
+
+def build_session(host_station_id, kind=5, capacity=4):
+    """-> the type 6 a raid host sends on 0x7C port 2 after the seat: the type 7's session block
+    under kind 5, then the four slots, the host's station in the first (docs/sv_raid.md)."""
+    session = (bytes([TUPLE]) + encode_uint(6) + encode_uint(kind) + encode_uint(capacity)
+               + encode_uint(0) + encode_bytes(bytes(JOIN_BLOB_SIZE))
+               + encode_bytes(bytes(ANNOUNCE_BLOB_SIZE)) + encode_uint(0))
+    block = (bytes([TUPLE]) + encode_uint(5) + session + encode_uint(0) + encode_uint(0)
+             + bytes([TUPLE]) + encode_uint(1) + encode_u64(host_station_id) + encode_uint(0))
+    slots = (bytes([LIST]) + encode_uint(capacity)
+             + bytes([TUPLE]) + encode_uint(1) + encode_u64(host_station_id)
+             + (bytes([TUPLE]) + encode_uint(1) + encode_uint(0)) * (capacity - 1))
+    return (bytes([TYPE_SESSION, TUPLE]) + encode_uint(5) + block + slots
+            + encode_bytes(bytes(4)) + encode_uint(1) + encode_uint(0))
 
 
 def _skip_field(data, pos):
@@ -115,11 +122,3 @@ def build_accept(joiner_station_id, slot=0, code=0):
     """-> the type-9 answer, 16 bytes: the slot the join named, the result, the joiner's id."""
     return (bytes([TYPE_ACCEPT, TUPLE]) + encode_uint(3) + encode_uint(slot) + encode_uint(code)
             + bytes([TUPLE]) + encode_uint(1) + encode_u64(joiner_station_id))
-
-
-def build_raid_open(host_station_id):
-    """-> the raid relay's initial port-2 configuration for this host station."""
-    packed = struct.pack("<Q", host_station_id)
-    if _RAID_OPEN_TEMPLATE.count(_RAID_OPEN_STATION) != 2:
-        raise AssertionError("the raid-open template must contain two station ids")
-    return _RAID_OPEN_TEMPLATE.replace(_RAID_OPEN_STATION, packed)

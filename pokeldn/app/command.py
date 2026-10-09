@@ -8,7 +8,7 @@ from pokeldn.app import gift_builder
 from pokeldn.app.catalog import Field, Tool
 from pokeldn.app.introspect import flags_of
 from pokeldn.lgpe.session import code_picks
-from pokeldn.sv.raid_generation import MAX_REWARD_ROWS
+from pokeldn.sv.raid import REWARD_ROWS
 
 
 @cache
@@ -136,26 +136,20 @@ def prepare(tool: Tool, values: dict) -> None:
 
 
 def code_error(field: Field, value) -> str:
-    """Validate structured basic fields before an entry point is launched."""
+    """A console code is eight digits, or empty where the field allows none; a Let's Go link code must
+    name three picker Pokemon. Either partial one would host under another code. A raid seed is eight
+    hex digits; a raid reward row names an item and a quantity from 1 to 999."""
     if field.kind == "raidseed":
-        return "Enter exactly eight hexadecimal digits." if not re.fullmatch(
-            r"[0-9A-Fa-f]{8}", str(value or "")) else ""
+        return "" if re.fullmatch(r"[0-9A-Fa-f]{8}", str(value or "")) else "Enter eight hexadecimal digits."
     if field.kind == "rewards":
-        if not value and not field.required:
-            return ""
-        if not isinstance(value, (list, tuple)) or not value:
-            return "Add at least one raid reward."
-        if len(value) > MAX_REWARD_ROWS:
-            return f"A generated RaidPoint supports at most {MAX_REWARD_ROWS} reward rows."
-        for index, row in enumerate(value, 1):
-            try:
-                item_id, quantity = int(row["item_id"]), int(row["quantity"])
-            except (KeyError, TypeError, ValueError):
-                return f"Choose an item and quantity for reward {index}."
-            if not 1 <= item_id <= 0xFFFFFFFF:
-                return f"Choose an item for reward {index}."
-            if not 1 <= quantity <= 999:
-                return f"Reward {index} quantity must be from 1 to 999."
+        rows = list(value or ())
+        if len(rows) > REWARD_ROWS:
+            return f"A raid gives at most {REWARD_ROWS} rewards."
+        for n, row in enumerate(rows, 1):
+            if not str(row.get("item_id", "")).isdigit() or not int(row["item_id"]):
+                return f"Choose an item for reward {n}."
+            if not str(row.get("quantity", "")).isdigit() or not 1 <= int(row["quantity"]) <= 999:
+                return f"Reward {n} needs a quantity from 1 to 999."
         return ""
     if field.kind == "code":
         value = str(value or "")

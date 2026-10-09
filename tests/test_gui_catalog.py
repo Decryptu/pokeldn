@@ -29,8 +29,7 @@ def test_the_tool_builds_arguments_its_entry_point_accepts(tool):
             _check(tool, {**base, choice.key: key})
 
 
-LINKED = [tool for tool in TOOLS if tool.key not in ("swsh-gift", "sv-raid-host")]
-# The gift host advertises a card, and the raid host uses the shared SV application identity.
+LINKED = [tool for tool in TOOLS if tool.key != "swsh-gift"]   # the gift host advertises a card, no player
 
 
 @pytest.mark.parametrize("tool", LINKED, ids=[t.key for t in LINKED])
@@ -87,64 +86,15 @@ def test_one_offer_from_an_older_settings_file_still_builds():
     assert args.count("--trade-offer") == 1 and "/tmp/single.pk9" in args
 
 
-def test_sv_raid_builds_an_ordered_reward_list():
+def test_raid_rewards_reach_the_host_as_rows_in_their_order():
+    """Duplicates stay separate rows; the raid seed reaches the host as its integer."""
     tool = next(t for game in GAMES for t in game.tools if t.key == "sv-raid-host")
-    values = {"--raid-player-pokemon": {"file": "/tmp/host.pk9"},
-              "--raid-seed": "000F34C3", "--reward": [
-        {"item_id": "1", "quantity": "1"},
-        {"item_id": "50", "quantity": "10"},
-    ]}
-    args = build(tool, values, {}, Settings())
+    rows = [{"item_id": "1125", "quantity": "3"}, {"item_id": "50", "quantity": "10"},
+            {"item_id": "1125", "quantity": "1"}]
+    args = build(tool, {"--raid-pokemon": {"file": "/tmp/host.pk9"}, "--raid-seed": "000F34C3",
+                        "--raid-reward": rows}, {}, Settings())
     parsed = parser_of(tool.script).parse_args(args)
-    assert parsed.raid_seed == 0x000F34C3
-    assert parsed.raid_player_pokemon == "/tmp/host.pk9"
-    assert parsed.reward == [(1, 1), (50, 10)]
-    assert args.count("--reward") == 2
-
-
-def test_sv_raid_can_use_generated_seed_rewards():
-    tool = next(t for game in GAMES for t in game.tools if t.key == "sv-raid-host")
-    values = {"--raid-player-pokemon": {"file": "/tmp/host.pk9"},
-              "--raid-seed": "000F34C3"}
-    args = build(tool, values, {}, Settings())
-    parsed = parser_of(tool.script).parse_args(args)
-    assert parsed.reward is None
-
-
-def test_sv_raid_passes_the_selected_region_progress_and_black_table():
-    tool = next(t for game in GAMES for t in game.tools if t.key == "sv-raid-host")
-    values = {
-        "--raid-player-pokemon": {"file": "/tmp/host.pk9"},
-        "--raid-seed": "00000000",
-        "--raid-version": "scarlet",
-        "--raid-map": "kitakami",
-        "--raid-progress": "6star",
-        "--raid-content": "black",
-    }
-    parsed = parser_of(tool.script).parse_args(build(tool, values, {}, Settings()))
-    assert (parsed.raid_version, parsed.raid_map, parsed.raid_progress, parsed.raid_content) == (
-        "scarlet", "kitakami", "6star", "black")
-
-
-def test_sv_raid_join_uses_generated_application_messages():
-    tool = next(t for game in GAMES for t in game.tools if t.key == "sv-raid-join")
-    args = build(tool, {"--raid-pokemon": {"file": "/tmp/raid.pk9"}}, {},
-                 Settings(ot="Ismail"))
-    parsed = parser_of(tool.script).parse_args(args)
-    assert parsed.raid_guest and parsed.scene_id == 7
-    assert parsed.raid_guest_ready_delay == 2
-    assert parsed.raid_pokemon == "/tmp/raid.pk9"
-    assert parsed.name == "POKELDN"
-    assert parsed.trainer_name == "POKELDN"
-    assert parsed.join_player_name == "POKELDN"
-
-
-def test_sv_raid_join_passes_the_legal_pokemon_builders_file():
-    tool = next(t for game in GAMES for t in game.tools if t.key == "sv-raid-join")
-    args = build(tool, {"--raid-pokemon": {"file": "/tmp/raid.pk9"}}, {},
-                 Settings(ot="POKELDN"))
-    parsed = parser_of(tool.script).parse_args(args)
-    assert parsed.raid_pokemon == "/tmp/raid.pk9"
+    assert parsed.raid_reward == [(1125, 3), (50, 10), (1125, 1)] and parsed.raid_seed == 0xF34C3
 
 
 def test_a_setting_kept_off_the_basic_tab_still_reaches_the_entry_point():

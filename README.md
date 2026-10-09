@@ -29,7 +29,8 @@ FRLG FireRed/LeafGreen · LGPE Let's Go Pikachu/Eevee · SwSh Sword/Shield · BD
 FRLG supports both versions in English, French, German, Italian, Spanish and Japanese. The added
 editions have offline cartridge-ROM tests; their wireless delivery still needs retail checks.
 
-Every game trades through the ESP32 board. Online trade joins two players far apart: each hosts
+Scarlet and Violet also host and join local Tera Raids, with a chosen boss and rewards
+([Tera Raids](docs/sv_raid.md)). Every game trades through the ESP32 board. Online trade joins two players far apart: each hosts
 their own console, and the two apps meet through public Nostr relays under a shared code, with no
 server to run ([online trade](docs/online.md)). Protocol documentation:
 [decryptu.github.io/pokeldn](https://decryptu.github.io/pokeldn/).
@@ -374,6 +375,13 @@ joins (`bin/sv_join.py`).
 Console: X → Poké Portal → Link Trade → offline, no code → search. A repeated `--trade-offer`
 offers one record per trade in the same seat. The wire-level requirements
 (identity message order, acknowledgement `lowest_pending`) are in [Scarlet and Violet](docs/sv.md).
+
+Both also run a local Tera Raid. `--raid-seed` hosts one the console joins (Poké Portal → Tera
+Raid Battle, Link Code 4970): the seed and four context flags choose the boss, `--raid-reward
+ITEM:QUANTITY` replaces its rewards, and `--raid-pokemon` is the Pokémon pokeldn's player brings.
+`bin/sv_join.py --raid-pokemon FILE` joins a raid the console hosts. In both, pokeldn's player
+leaves as the battle starts and its Pokémon stays to fight beside the console's. The app's two
+Tera Raid tools carry the flags; see [Tera Raids](docs/sv_raid.md).
 
 ### Legends Z-A
 

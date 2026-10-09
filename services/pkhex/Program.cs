@@ -113,6 +113,11 @@ JsonObject Names(Game game, string list)
             foreach (var i in GiftItems().Order())
                 Add(i, strings.itemlist[i]);
             break;
+        case "bag" when game.Context == EntityContext.Gen9:
+            // What a Tera Raid reward may give: every pouch but the key items, unreleased items left out.
+            foreach (var i in RaidRewardItems().Order())
+                Add(i, strings.itemlist[i]);
+            break;
         case "held":
             var items = strings.GetItemStrings(game.Context, game.Versions[0]);
             for (var i = 1; i < items.Length; i++)
@@ -779,6 +784,15 @@ JsonObject Event(Game game, JsonObject request)
 
 // The items a Sword/Shield gift may give or a gifted Pokemon may hold; the GUI lists the same set.
 static IReadOnlySet<ushort> GiftItems() => ItemStorage8SWSH.GetAllHeld().ToHashSet();
+
+static IReadOnlySet<ushort> RaidRewardItems()
+{
+    InventoryType[] pouches = [InventoryType.Items, InventoryType.TMHMs, InventoryType.Medicine, InventoryType.Berries,
+                               InventoryType.Balls, InventoryType.BattleItems, InventoryType.Treasure,
+                               InventoryType.Ingredients, InventoryType.Candy];
+    var storage = ItemStorage9SV.Instance;
+    return pouches.SelectMany(p => storage.GetItems(p).ToArray().Where(i => storage.IsLegal(p, i, 1))).ToHashSet();
+}
 
 JsonObject Gift(byte[] data)
 {

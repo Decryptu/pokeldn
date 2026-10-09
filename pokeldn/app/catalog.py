@@ -3,13 +3,16 @@ fields a user fills in, and what to press on the console. Fixed arguments may ca
 (the Received folder), {stamp} (the run's time) and {src_var} (a fresh random id)."""
 from dataclasses import dataclass, replace
 
+from pokeldn.sv.raid import REWARD_ROWS
+
 
 @dataclass(frozen=True)
 class Field:
     flag: str | tuple[str, ...]   # "" is positional; a tuple passes the same value to each flag
     label: str
-    kind: str = "text"            # text number choice switch pokemon rewards file builder multi linkcode,
-                                  # code (eight digits), raidseed, or a PKHeX name list: species move item ball
+    kind: str = "text"            # text number choice switch pokemon file builder multi linkcode code
+                                  # (eight digits) raidseed rewards, or a PKHeX name list: species move
+                                  # item ball
     help: str = ""
     default: str | bool = ""
     choices: tuple[tuple[str, str], ...] = ()
@@ -347,60 +350,51 @@ SV = Game("sv", "Scarlet & Violet", "SV", "sv.md", (
                 "--session-join", "--answer-migration", "--net-ack", "--ack-flags", "0x00",
                 "--game-channel", "--announce-timeout", "20", "--rtt-delay", "0.3",
                 "--trainer-name", "{ot}", "--offer-out", "{received}/sv-{stamp}.pk9"), doc="sv.md"),
-    Tool("sv-raid-host", "Tera Raid (Host)", "bin/sv_raid_host.py",
-         "Host a generated Tera Raid with a custom battler and optional exact rewards.",
-         ("Choose the Pokemon POKELDN should bring; it becomes a bot after POKELDN disconnects.",
-          "Choose a raid Pokemon from its seed and stats. Pick one your team can defeat.",
-          "Optionally replace the seed rewards with the exact rewards you want.",
-          "Start the session in pokeldn.",
-          "On the console, open the Poké Portal and join an offline Tera Raid Battle.",
-          "Enter the Link Code 4970.",
-          "A communication warning may appear while entering the raid. This is expected; dismiss it and continue.",
-          "Defeat the raid Pokemon to receive the configured rewards. Catching it is optional."),
-         (Field("--raid-player-pokemon", "POKELDN's Pokemon", "pokemon", required=True,
-                help="Pick a species; PKHeX builds a legal Pokemon for POKELDN to use in the "
-                     "fully generated raid."),
-          Field("--raid-version", "Game", "choice", default="violet",
-                choices=(("scarlet", "Scarlet"), ("violet", "Violet")), group="Raid context",
-                help="Some seeds select a different encounter between versions."),
-          Field("--raid-map", "Region", "choice", default="paldea",
-                choices=(("paldea", "Paldea"), ("kitakami", "Kitakami"),
-                         ("blueberry", "Blueberry")), group="Raid context",
-                help="Use the encounter table for this region."),
-          Field("--raid-progress", "Story progress", "choice", default="4star",
-                choices=(("beginning", "Beginning"), ("tera", "Tera unlocked"),
-                         ("3star", "3-star unlocked"), ("4star", "4-star unlocked"),
-                         ("5star", "5-star unlocked"), ("6star", "6-star unlocked")),
-                group="Raid context", help="Controls the standard raid star distribution; "
-                                             "black raids are always six-star."),
-          Field("--raid-content", "Raid type", "choice", default="standard",
-                choices=(("standard", "Standard"), ("black", "Black crystal")),
-                group="Raid context", help="Black-crystal tables generate six-star raids."),
-          Field("--raid-seed", "Raid Pokemon seed", "raidseed", default="000F34C3", required=True,
-                help="Eight hexadecimal digits. The seed determines the boss species, Tera type, "
-                     "stats, ability, and moves."),
-          Field("--reward", "Raid rewards", "rewards",
-                help="Optionally replace the seed rewards with up to 45 rows in display order. "
-                     "Duplicate items are allowed."),
+    Tool("sv-raid-host", "Tera Raid (Host)", "bin/sv_host.py",
+         "Host a Tera Raid the console joins: you choose the raid, its rewards and the Pokemon we bring.",
+         ("Choose the Pokemon our player brings, the raid and, if you like, its rewards.",
+          "Start the host.",
+          "On the console: X, Poke Portal, Tera Raid Battle, search offline, Link Code 4970.",
+          "Our player leaves when the battle starts; its Pokemon stays and fights at your side.",
+          "A communication error may show as the battle starts: dismiss it and fight on.",
+          "Win the raid to receive the rewards."),
+         (Field("--raid-pokemon", "Our Pokemon", "pokemon", required=True,
+                help="The Pokemon our player brings. PKHeX checks it is legal."),
+          Field("--raid-version", "Game", "choice", default="violet", group="The raid",
+                choices=(("scarlet", "Scarlet"), ("violet", "Violet")),
+                help="A seed can give another raid in the other version."),
+          Field("--raid-map", "Region", "choice", default="paldea", group="The raid",
+                choices=(("paldea", "Paldea"), ("kitakami", "Kitakami"), ("blueberry", "Blueberry"))),
+          Field("--raid-progress", "Story progress", "choice", default="4star", group="The raid",
+                choices=(("beginning", "Beginning"), ("tera", "Tera Raids unlocked"),
+                         ("3star", "3-star raids"), ("4star", "4-star raids"),
+                         ("5star", "5-star raids"), ("6star", "6-star raids")),
+                help="Sets how many stars a standard crystal can have."),
+          Field("--raid-content", "Crystal", "choice", default="standard", group="The raid",
+                choices=(("standard", "Standard"), ("black", "Black (6 stars)"))),
+          Field("--raid-seed", "Raid seed", "raidseed", default="000F34C3", required=True,
+                group="The raid", help="Eight hexadecimal digits. Find a raid searches seeds for you."),
+          Field("--raid-reward", "Rewards", "rewards",
+                help=f"Leave empty for the raid's own rewards, or list up to {REWARD_ROWS} items."),
           host_seconds("600")),
-         fixed=(),
+         fixed=("--channel", "1", "--scene-id", "7", "--max-participants", "4", "--code", "4970",
+                "--scarlet-response", "--session-flags", "0", "--session-packet-id", "1",
+                "--no-session-ack", "--join-seq", "0", "--update-seq", "0", "--update-delay", "0.02",
+                "--rtt-probe", "--clock", "--net-stations", "4", "--record-delay", "0.1",
+                "--record-spacing", "0.003", "--host-player-id", "00000000000000010000000000000000",
+                "--host-player-name", "{ot}", "--trainer-name", "{ot}"),
          doc="sv_raid.md"),
     Tool("sv-raid-join", "Tera Raid (Join)", "bin/sv_join.py",
-         "Join a retail-hosted Tera Raid with a legal custom Pokemon, then leave it as a bot.",
-         ("On the console, open an offline Tera Raid lobby and choose Challenge as a group.",
-          "Choose the Pokemon POKELDN should bring to the raid.",
-          "Start the joiner while the host is waiting for participants.",
-          "Confirm POKELDN appears and becomes ready, then choose Start Raid Battle.",
-          "POKELDN disconnects at the battle transition; its Pokemon remains as a bot."),
-         (Field("--raid-pokemon", "Raid Pokemon", "pokemon",
-                required=True,
-                help="Pick a species; PKHeX builds the legal Pokemon placed in the generated "
-                     "raid lobby record."),
+         "Join a Tera Raid the console hosts and leave one of your Pokemon to fight in it.",
+         ("On the console: a Tera Raid crystal, Challenge as a group, and wait for players.",
+          "Choose the Pokemon our player brings, then start the joiner.",
+          "Our player joins and readies; start the battle on the console.",
+          "Our player leaves as the battle starts; its Pokemon fights on as a partner."),
+         (Field("--raid-pokemon", "Our Pokemon", "pokemon", required=True,
+                help="The Pokemon our player brings. PKHeX checks it is legal."),
           join_seconds("240")),
-         fixed=("--scene-id", "7", "--raid-guest", "--raid-guest-ready-delay", "2",
-                "--seconds", "900", "--max-seats", "1", "--name", "POKELDN",
-                "--trainer-name", "POKELDN", "--join-player-name", "POKELDN"),
-         doc="sv_raid_guest.md"),
+         fixed=("--seconds", "900", "--name", "POKELDN", "--trainer-name", "{ot}"),
+         doc="sv_raid.md"),
 ))
 
 ZA = Game("za", "Legends Z-A", "PLZA", "za.md", (

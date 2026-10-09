@@ -108,7 +108,7 @@ class GamesView:
         self.session.refresh()
 
     def set_raid_context(self, context: dict[str, str]) -> None:
-        """Apply the table dimensions belonging to a chosen raid-search result."""
+        """The raid finder's choice brings its version, region, progress and crystal with it."""
         self.values.update({
             "--raid-version": context["version"],
             "--raid-map": context["map_name"],
@@ -300,7 +300,7 @@ class GamesView:
                 e.control.update()
             self.set_value(field, e.control.value)
 
-        box = t.field(value=str(value), mono=field.kind in ("number", "raidseed"), error_max_lines=2,
+        box = t.field(value=str(value), mono=field.kind == "number", error_max_lines=2,
                       digits=field.kind == "number",
                       width=180 if field.kind == "number" and not grouped else None,
                       error=command.limit_error(field, value) or None, on_change=changed,
