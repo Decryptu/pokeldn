@@ -509,7 +509,17 @@ resumes and completes; a restore leaves the file's loaded copy as the chip's new
 sectors equal to the file's and the console's old copy whole; a restore cut after eight sectors
 leaves the console's own copy loading.
 
-On retail French FireRed over the ESP32 board, a backup took 64 passes and 219 s from the first pass to the last block; both slots of the file are whole and its trainer is the console's. The console showed the message and kept its save. A restore has not run on retail hardware.
+On retail French FireRed over the ESP32 board, a backup took 64 passes and 219 s from the first pass to the last block; both slots of the file are whole and its trainer is the console's. The console showed the message and kept its save.
+
+On retail English FireRed (BPRE) over the ESP32 board, with `--console-build auto` choosing BPRE from
+the console's game code, a backup read both slots whole (counters 2 and 1). A restore of that file
+wrote 19 of 19 sectors and ended on the success message. A backup taken right after held the file's
+loaded copy byte for byte in slot 1 under counter 3, and the console's own save of the loaded game in
+slot 0 under counter 4; that copy differs from the file in sectors 1 to 7, the blocks that carry the
+encryption key `LoadGameSave` re-rolls.
+
+A second restore put a French FireRed save on the same English cartridge. It ended on the success
+message, and CONTINUE loaded the French game into the overworld.
 
 ## Authoring gifts
 
