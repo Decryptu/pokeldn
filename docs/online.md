@@ -55,6 +55,22 @@ Two consoles on one desk find each other directly: a Scarlet or Violet searching
 as the other, a FireRed whose player chooses Become Leader. For such a test each console takes its
 own local code (or Join Group on a board's group) and `--online-code` puts both boards in one room.
 
+### Stored events
+
+Online trade stores nothing. Stored events were measured on seven relays (relay.primal.net,
+relay.nostr.net, nostr.oxtr.dev, nos.lol, nostr.mom, offchain.pub, nostr-pub.wellorder.net) with
+kind 30402 listings (NIP-99) and a kind 1059 wrap (NIP-59), each from a fresh key:
+
+| behaviour | result |
+|---|---|
+| events from a fresh key | 35 of 35 accepted and served back |
+| a 30402 with a NIP-40 `expiration` 2 h out | served at 1.1 h, served by none 6 min after expiry |
+| a 30402 republished with the same `d` | within a minute every relay served only the newer one |
+| a kind 5 naming a 30402 by `e` and `a` | within a minute every relay served only the kind 5 |
+| a kind 1059 read by its `p` key | served by six; relay.nostr.net demands AUTH and refuses every kind 22242 ("relay needs serviceUrl to be configured") |
+
+How long a relay keeps an event with no expiration is unmeasured.
+
 ## Meeting
 
 Every event's content is AES-256-GCM under the room key `sha256("pokeldn room key|" + room)`. Inside:
