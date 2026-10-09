@@ -33,12 +33,12 @@ class StartupRetryTests(unittest.TestCase):
         self.original = build_seed_bootstrap_raw(0xBD13FB43, players=players)
         application = build_application(self.original, message_value=0x010F)
         boundary = 1395
-        replay = [
+        events = [
             (0.2, 11, 0x02, 11, application[:boundary]),
             (0.3, 12, 0x04, 11, application[boundary:]),
         ]
         self.env.update(
-            args=SimpleNamespace(raid_replay_client_gated=True, record_set='records'),
+            args=SimpleNamespace(raid_client_gated=True, record_set='records'),
             disconnect_after_stop=5,
             stop_after_seq=20,
             transport=SimpleNamespace(our_ip='169.254.1.1', broadcast='169.254.1.255',
@@ -47,20 +47,20 @@ class StartupRetryTests(unittest.TestCase):
             station_ids={self.ip: {'console_var': 42, 'host_const': bytes.fromhex(
                 'cc6d5aeb38a40000')}},
             pending_raid_bootstrap={}, pending_late={}, pending_records={},
-            pending_raid_replay=[
+            pending_raid_events=[
                 (10 + delay, self.ip, sequence, flags, lowest, payload)
-                for delay, sequence, flags, lowest, payload in replay],
-            raid_replay_events=replay, raid_guest_pokemon={}, raid_guest_waits={self.ip},
+                for delay, sequence, flags, lowest, payload in events],
+            raid_events=events, raid_guest_pokemon={}, raid_guest_waits={self.ip},
             identity_window=reliable5.SendWindow(.25),
             channel_window=reliable5.SendWindow(.25),
             raid_window=reliable5.SendWindow(.5),
-            host_seq={}, stream_high={}, last_ack={}, raid_replay_started_at={},
-            last_raid_replay_sent={}, scripted_disconnect_due={},
+            host_seq={}, stream_high={}, last_ack={}, raid_events_started_at={},
+            last_raid_event_sent={}, scripted_disconnect_due={},
             record=lambda **kw: self.records.append(kw),
         )
         tree = ast.parse(Path(sv_host.__file__).read_text())
         for name in ('schedule_raid_opening', 'install_raid_guest_pokemon',
-                     'outbound_lowest', 'send_ack', 'send_raid_replay'):
+                     'outbound_lowest', 'send_ack', 'send_raid_event'):
             node = next(n for n in ast.walk(tree)
                         if isinstance(n, ast.FunctionDef) and n.name == name)
             exec(compile(ast.Module(body=[node], type_ignores=[]),
@@ -91,7 +91,7 @@ class StartupRetryTests(unittest.TestCase):
 
         fragments = {
             sequence: payload
-            for _, peer, sequence, _, _, payload in self.env['pending_raid_replay']
+            for _, peer, sequence, _, _, payload in self.env['pending_raid_events']
             if peer == self.ip and sequence in (11, 12)
         }
         changed = decode_application(fragments[11] + fragments[12])
@@ -120,14 +120,14 @@ class StartupRetryTests(unittest.TestCase):
             self.assertEqual(reliable5.parse(self.sent[-1][0])['lowest_pending'], 2)
             self.assertEqual(w.due(2), [])
 
-    def test_replay_retry_preserves_cursor_and_handoff_deadline(self):
-        send = self.env['send_raid_replay']
-        send(self.ip, 19, 7, b'previous', 'raid replay', remember=True)
-        send(self.ip, 20, 7, b'last', 'raid replay', remember=True)
-        cursor = self.env['last_raid_replay_sent'][self.ip]
+    def test_event_retry_preserves_cursor_and_handoff_deadline(self):
+        send = self.env['send_raid_event']
+        send(self.ip, 19, 7, b'previous', 'raid event', remember=True)
+        send(self.ip, 20, 7, b'last', 'raid event', remember=True)
+        cursor = self.env['last_raid_event_sent'][self.ip]
         deadline = self.env['scripted_disconnect_due'][self.ip]
         send(self.ip, 19, 7, b'previous', 'raid retry', remember=False)
-        self.assertEqual(self.env['last_raid_replay_sent'][self.ip], cursor)
+        self.assertEqual(self.env['last_raid_event_sent'][self.ip], cursor)
         send(self.ip, 20, 7, b'last', 'raid retry', remember=False)
         self.assertEqual(self.env['scripted_disconnect_due'][self.ip], deadline)
         packet = reliable5.parse(self.sent[-1][0])

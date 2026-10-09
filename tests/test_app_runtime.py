@@ -53,8 +53,6 @@ def test_packer_uses_tracked_defaults_and_requires_firmware(monkeypatch, tmp_pat
         "bin/sv_raid_start_gate.py",
         "docs/sv_raid.md",
         "docs/sv_raid_guest.md",
-        "pokeldn/sv/raid_guest.py",
-        "pokeldn/sv/data/raid_guest.json",
     } <= set(files)
     assert not any("scratchpad" in p or "host.local.toml" in p or "__pycache__" in p for p in files)
     assert not any(p.startswith("docs/research/") for p in files)

@@ -34,8 +34,6 @@ RUNTIME_EXTRAS = (
     "bin/sv_raid_start_gate.py",
     "docs/sv_raid.md",
     "docs/sv_raid_guest.md",
-    "pokeldn/sv/raid_guest.py",
-    "pokeldn/sv/data/raid_guest.json",
 )
 
 

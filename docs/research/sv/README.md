@@ -23,8 +23,9 @@ local captures remain in the application's session capture directory.
   acquisition findings.
 
 Reusable Ghidra scripts live in [`../../../tools/sv/ghidra`](../../../tools/sv/ghidra).
-Donor-era command-line analysis tools live in
-[`../../../tools/sv/research`](../../../tools/sv/research). Neither research
-fixtures nor research tools are included in desktop runtime bundles.
+The retired capture patcher is preserved as
+[`../../../tools/sv/research/sv_raid_seed_patch.py`](../../../tools/sv/research/sv_raid_seed_patch.py).
+Neither research fixtures nor research tools are included in desktop runtime
+bundles.
 The generated retail encounter/action catalog is reproducible through
 [`../../../tools/sv/import_raid_data.py`](../../../tools/sv/import_raid_data.py).

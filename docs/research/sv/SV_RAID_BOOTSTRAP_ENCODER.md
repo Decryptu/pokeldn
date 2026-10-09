@@ -19,11 +19,11 @@ reference bitstream. The message contains a fixed `0xAA0`-byte plaintext
 structure compressed as a raw LZ4 block. Reward items and quantities are
 ordinary little-endian 32-bit fields inside that plaintext structure.
 
-The implementation is in `sv_raid_bootstrap_codec.py`. The guarded editor
-updates 19 linked reward records from the captured Violet Avalugg seed
-`C72E1D7F`: 16 guest-visible rows and three hidden/conditional counterparts.
-The supported JSON/CLI workflow is documented in
-`SV_RAID_REWARD_PROFILES.md`.
+The retired guarded editor updated 19 linked reward records from the captured
+Violet Avalugg seed `C72E1D7F`: 16 guest-visible rows and three
+hidden/conditional counterparts. Production `sv_raid_bootstrap_codec.py` no
+longer contains that editor; it writes generated reward rows directly. The
+historical JSON/CLI experiment is documented in `SV_RAID_REWARD_PROFILES.md`.
 
 ## Evidence and validation corpus
 
@@ -326,7 +326,11 @@ mode:     exact
 rewards:  1..16 ordered {item_id, quantity} entries
 ```
 
-Create and host a profile:
+The following commands record the historical donor-profile workflow. Its helper
+scripts no longer ship; production writes exact rows directly into the generated
+RaidPoint.
+
+Create and host a profile (historical):
 
 ```bash
 ./.venv/bin/python tools/sv/research/sv_raid_rewards.py create \

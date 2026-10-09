@@ -3,10 +3,11 @@
 > Historical donor-era research. Production hosting now generates the complete
 > raid opening and rewards. Donor artifacts remain only as research evidence.
 
-## Supported product surface
+## Historical product surface
 
-Raid rewards are now configurable through a versioned JSON file and command
-line tools. No GUI code is involved.
+The first custom-reward implementation used a versioned JSON file and command
+line tools. That interface has been removed; the current GUI and CLI pass
+ordered reward rows directly to the generated RaidPoint builder.
 
 The original profile backend was intentionally donor-specific. The archived
 corpus retains `fixtures/sv_raid_reward_donor.bin` alongside its packet capture:
@@ -18,7 +19,8 @@ corpus retains `fixtures/sv_raid_reward_donor.bin` alongside its packet capture:
 - profile format: `pokeldn.sv.raid-rewards.v1`;
 - template ID: `violet-4.0.0-c72e1d7f-avalugg`.
 
-Unknown formats, templates, fields, and donor bytes fail closed.
+The retired parser rejected unknown formats, templates, fields, and donor
+bytes.
 
 ## Profile format
 
@@ -51,7 +53,11 @@ Rules:
 
 ## Commands
 
-Create a profile:
+The commands below describe the historical donor experiment. Their helper
+scripts were removed when production switched to direct generated RaidPoint
+rows; they are retained here as an experiment log, not runnable instructions.
+
+Create a profile (historical):
 
 ```bash
 ./.venv/bin/python tools/sv/research/sv_raid_rewards.py create \

@@ -19,11 +19,11 @@
 The implementation itself remains in `sv_join.py`, including retail Session
 and Net behavior, delayed channel acknowledgements, the base/raid channel-table
 split, port-2 join, identity delivery, generated lobby messages, and ready-state handling.
-The replacement retail captures were recorded on 2026-10-07. The small
-`pokeldn/sv/data/raid_guest.json` fixture now retains only lobby regression
-evidence; raw traces remain local diagnostics and are no longer runtime
-dependencies. Host and guest both reuse the standard Scarlet/Violet application
-identity, and their Session player IDs and MAC addresses are generated.
+The replacement retail captures were recorded on 2026-10-07. Their compact
+lobby evidence is archived as `fixtures/raid_guest_capture.json` and is no
+longer a runtime dependency. Host and guest both reuse the standard
+Scarlet/Violet application identity, and their Session player IDs and MAC
+addresses are generated.
 
 - [x] Replace the default captured guest lobby records with
   `pokeldn.sv.raid.JoinerRaidStage`. The selected PK9, initial state, Ready, and
@@ -57,10 +57,10 @@ Detailed reverse-engineering state is in
   canonical empty slots, and the generated boss PK9.
 - [x] Implement a donor-free `0x012F` envelope/LZ4 constructor and an
   experimental replay replacement path exposed by
-  `sv_raid_host.py --generated-bootstrap`.
-- [ ] Retail-test one generated ordinary raid through the normal sequence-20
-  handoff. The first corrected run reached the battle protocol but mistakenly
-  replayed through sequence 76; the game never became playable and then left.
+  `sv_raid_host.py`.
+- [x] Retail-test a generated ordinary raid through the normal sequence-20
+  handoff. The validated run entered a playable battle and shut down on the
+  intended five-second handoff.
 - [x] Gate the early raid stream/channel/identity opening on the console's
   Session type-6 station-list ACK. The failed run received that ACK 261 ms
   after the old fixed timers had already sent the whole identity.
@@ -76,14 +76,13 @@ Detailed reverse-engineering state is in
   playable battle because the host incorrectly continued past the normal
   sequence-20 handoff.
 - [x] Apply the proven sequence-20 handoff and five-second host shutdown to
-  generated-bootstrap mode as well as reward-profile mode.
-- [x] Replace the generated mode's capture-timed sequences 1-20 with a pure
+  the generated host.
+- [x] Replace capture-timed sequences 1-20 with a pure
   `pokeldn.sv.raid.RaidStage`, including generated lobby metadata/Pokémon,
   bootstrap fragmentation, loading transitions, and battle handoff records.
-- [ ] Retail-test the fully generated sequence-1..20 path. Offline regression
-  tests reproduce every plaintext application message from the successful
-  opening, but the two opaque tokens in battle handoff messages 15/16 still use
-  their retail-validated canonical values pending identification in Ghidra.
+- [x] Retail-test the fully generated sequence-1..20 path. The two opaque tokens
+  in battle handoff messages 15/16 still use their retail-validated canonical
+  values pending identification in Ghidra.
 - [ ] Keep event raids gated on explicit BCAT enemy/action/reward table input.
-- [ ] Separately remove the capture dependency from later battle runtime state;
-  generating RaidPoint alone does not generate the whole battle simulation.
+- [x] Stop at the normal handoff instead of attempting to simulate later battle
+  runtime state from a capture.

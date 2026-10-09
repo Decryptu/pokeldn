@@ -3,6 +3,7 @@ import flet as ft
 from gui import theme as t
 from gui.views.pokemon import NamePicker
 from pokeldn.sv.raid_catalog import load_catalog
+from pokeldn.sv.raid_generation import MAX_REWARD_ROWS
 
 
 # PKHeX's Scarlet/Violet entity type reports this as its highest item ID.  The
@@ -21,7 +22,7 @@ def reward_items() -> list[dict]:
 class RewardPicker:
     """An ordered exact raid-reward list: a searchable item and quantity per row."""
 
-    LIMIT = 16
+    LIMIT = MAX_REWARD_ROWS
 
     def __init__(self, app, game: str, value, on_change):
         self.app, self.game, self.on_change = app, game, on_change

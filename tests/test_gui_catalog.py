@@ -30,7 +30,7 @@ def test_the_tool_builds_arguments_its_entry_point_accepts(tool):
 
 
 LINKED = [tool for tool in TOOLS if tool.key not in ("swsh-gift", "sv-raid-host")]
-# The gift host advertises a card, and the raid host replays a validated blank retail identity.
+# The gift host advertises a card, and the raid host uses the shared SV application identity.
 
 
 @pytest.mark.parametrize("tool", LINKED, ids=[t.key for t in LINKED])
@@ -98,7 +98,6 @@ def test_sv_raid_builds_an_ordered_reward_list():
     parsed = parser_of(tool.script).parse_args(args)
     assert parsed.raid_seed == 0x000F34C3
     assert parsed.raid_player_pokemon == "/tmp/host.pk9"
-    assert parsed.generated_bootstrap
     assert parsed.reward == [(1, 1), (50, 10)]
     assert args.count("--reward") == 2
 
@@ -109,7 +108,6 @@ def test_sv_raid_can_use_generated_seed_rewards():
               "--raid-seed": "000F34C3"}
     args = build(tool, values, {}, Settings())
     parsed = parser_of(tool.script).parse_args(args)
-    assert parsed.generated_bootstrap
     assert parsed.reward is None
 
 
@@ -133,8 +131,7 @@ def test_sv_raid_join_uses_generated_application_messages():
     args = build(tool, {"--raid-pokemon": {"file": "/tmp/raid.pk9"}}, {},
                  Settings(ot="Ismail"))
     parsed = parser_of(tool.script).parse_args(args)
-    assert parsed.raid_guest_replay and parsed.scene_id == 7
-    assert parsed.record_trace is None and parsed.raid_lobby_trace is None
+    assert parsed.raid_guest and parsed.scene_id == 7
     assert parsed.raid_guest_ready_delay == 2
     assert parsed.raid_pokemon == "/tmp/raid.pk9"
     assert parsed.name == "POKELDN"

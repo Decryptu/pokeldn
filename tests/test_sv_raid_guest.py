@@ -1,4 +1,4 @@
-"""Offline checks for the bundled retail Scarlet/Violet raid guest fixture."""
+"""Offline checks for the generated Scarlet/Violet raid guest path."""
 from pathlib import Path
 import sys
 import unittest
@@ -8,7 +8,7 @@ sys.path.insert(0, str(ROOT))
 sys.path.insert(0, str(ROOT / "bin"))
 
 from pokeldn.ldn import channel_table, reliable5
-from pokeldn.sv import pokemon, raid_guest, reference, streams
+from pokeldn.sv import reference, streams
 
 from sv_join import (PROTO_BROADCAST_RELIABLE, RAID_HANDLER_KEYS,
                      ANONYMOUS_PLAYER_ID, apply_raid_disconnect_default,
@@ -16,10 +16,10 @@ from sv_join import (PROTO_BROADCAST_RELIABLE, RAID_HANDLER_KEYS,
                      raid_disconnect_matches, split_raid_channel_table)
 
 
-class RaidGuestFixtureTests(unittest.TestCase):
+class RaidGuestTests(unittest.TestCase):
     def test_raid_guest_uses_generated_session_and_shared_application_identity(self):
         args = build_parser().parse_args([
-            "--raid-guest-replay", "--trainer-name", "POKELDN"])
+            "--raid-guest", "--trainer-name", "POKELDN"])
         apply_raid_guest_identity(
             args, lambda count: bytes.fromhex("ff1122334455"))
         self.assertEqual(args.mac, "fe:11:22:33:44:55")
@@ -27,11 +27,9 @@ class RaidGuestFixtureTests(unittest.TestCase):
         self.assertEqual(args.join_player_name, "POKELDN")
         self.assertEqual(args.record_set, reference.RECORDS)
 
-    def test_generated_raid_guest_alias_selects_the_same_mode(self):
+    def test_generated_raid_guest_selects_the_mode(self):
         generated = build_parser().parse_args(["--raid-guest"])
-        legacy = build_parser().parse_args(["--raid-guest-replay"])
-        self.assertTrue(generated.raid_guest_replay)
-        self.assertTrue(legacy.raid_guest_replay)
+        self.assertTrue(generated.raid_guest)
 
     def test_raid_disconnect_option_defaults_off_and_accepts_sequence(self):
         defaults = build_parser().parse_args([])
@@ -64,11 +62,11 @@ class RaidGuestFixtureTests(unittest.TestCase):
             {"flags": 0, "sequence_id": 12}))
 
     def test_raid_guest_defaults_to_stable_battle_transition_cutoff(self):
-        args = build_parser().parse_args(["--raid-guest-replay"])
+        args = build_parser().parse_args(["--raid-guest"])
         apply_raid_disconnect_default(args)
         self.assertEqual(args.raid_disconnect_after_prefix, bytes.fromhex("80349301"))
         args = build_parser().parse_args([
-            "--raid-guest-replay", "--raid-stay-after-battle-transition"])
+            "--raid-guest", "--raid-stay-after-battle-transition"])
         apply_raid_disconnect_default(args)
         self.assertIsNone(args.raid_disconnect_after_prefix)
 
@@ -80,53 +78,11 @@ class RaidGuestFixtureTests(unittest.TestCase):
         self.assertEqual(reference.player_name(
             reference.named_record(first_record, "POKELDN")), "POKELDN")
 
-    def test_lobby_and_ready_transition_match_the_capture(self):
-        records = raid_guest.lobby_records()
-        self.assertEqual([seq for seq, *_ in records], [1, 2])
-        first = streams.decompress(records[0][2])
-        self.assertEqual(first[:4], bytes.fromhex("80332d01"))
-        self.assertEqual(records[1][2][:4], bytes.fromhex("80332e01"))
-        ready = raid_guest.state_payload(1, records)
-        captured = raid_guest.load_fixture()["ready"]
-        captured_payload = bytes.fromhex(captured["payload"])
-        captured_plain = (streams.decompress(captured_payload)
-                          if captured["flags"] & reliable5.FLAG_ZLIB else captured_payload)
-        self.assertEqual(ready, captured_plain)
-        start = raid_guest.state_payload(
-            0x0d, records, previous_counter=int.from_bytes(ready[4:8], "little"))
-        self.assertEqual(int.from_bytes(start[4:8], "little"), 4)
-        self.assertEqual(int.from_bytes(start[34:38], "little"), 0x0d)
-
-    def test_lobby_pokemon_is_the_captured_gallade(self):
-        fields = pokemon.read(raid_guest.lobby_pokemon())
-        self.assertEqual(fields["species"], 475)
-        self.assertEqual(fields["level"], 98)
-
-    def test_custom_lobby_pokemon_replaces_only_the_pk9(self):
-        records = raid_guest.lobby_records()
-        original_message = records[1][2]
-        custom = pokemon.write(raid_guest.lobby_pokemon(records), species=132,
-                               nickname="RaidBot", current_hp=123)
-        updated = raid_guest.with_lobby_pokemon(records, pokemon.encrypt(custom))
-
-        self.assertEqual(updated[0], records[0])
-        self.assertEqual(updated[1][:2], records[1][:2])
-        self.assertEqual(updated[1][2][:raid_guest.LOBBY_POKEMON_HEADER_SIZE],
-                         original_message[:raid_guest.LOBBY_POKEMON_HEADER_SIZE])
-        fields = pokemon.read(raid_guest.lobby_pokemon(updated))
-        self.assertEqual((fields["species"], fields["nickname"], fields["current_hp"]),
-                         (132, "RaidBot", 123))
-        self.assertEqual(raid_guest.state_payload(1, updated),
-                         raid_guest.state_payload(1, records))
-
-    def test_custom_lobby_pokemon_requires_a_party_pk9(self):
-        with self.assertRaisesRegex(ValueError, "344-byte party PK9"):
-            raid_guest.with_lobby_pokemon(raid_guest.lobby_records(), bytes(328))
-
-    def test_captured_channel_table_splits_base_and_raid_keys(self):
-        row = raid_guest.load_fixture()["channel_table"]
+    def test_combined_channel_table_splits_base_and_raid_keys(self):
+        base_keys = [(bytes([index]) * 8, True) for index in range(1, 5)]
+        combined = channel_table.build(base_keys + [(key, True) for key in RAID_HANDLER_KEYS])
         base, update = split_raid_channel_table(
-            bytes.fromhex(row["payload"]), row["flags"])
+            streams.compress(combined), reliable5.FLAG_ZLIB)
         self.assertEqual(len(channel_table.parse(base)), 4)
         parsed = channel_table.parse(update)
         self.assertEqual({key for key, opened in parsed if opened}, RAID_HANDLER_KEYS)

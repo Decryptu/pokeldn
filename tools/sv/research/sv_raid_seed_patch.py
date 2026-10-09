@@ -10,6 +10,7 @@ import struct
 from pokeldn import gen9
 from pokeldn.ldn import reliable5
 from pokeldn.sv import streams
+from pokeldn.sv.raid_generation import RAID_BOSS_COMMON
 
 
 XOROSHIRO_CONST_LOW = 0x229D6A5B
@@ -51,58 +52,6 @@ GENERATED_METADATA = {
     0x000F34C3: {"species": 624, "stars": 2, "tera_type": 8,
                  "encounter_identifier": 2037},
 }
-
-# A raid boss is not a caught Pokemon yet.  Retail Growlithe and Mareep captures agree on every
-# nonzero field below; all other bytes outside the generated profile are zero.  Building from a
-# blank party record is intentional: editing the captured Growlithe in place could preserve an
-# unmapped species-specific byte that gen9.read() does not expose.
-RAID_BOSS_COMMON = {
-    "sanity": 0,
-    "held_item": 0,
-    "markings": 0,
-    "form": 0,
-    "evs": (0, 0, 0, 0, 0, 0),
-    "contest": (0, 0, 0, 0, 0, 0),
-    "pokerus": 0,
-    "move_pp_ups": (0, 0, 0, 0),
-    "relearn_moves": (0, 0, 0, 0),
-    "status": 0,
-    "tera_type_override": 19,
-    "ht_name": "",
-    "ht_gender": 0,
-    "ht_language": 0,
-    "current_handler": 0,
-    "ht_id": 0,
-    "ht_friendship": 0,
-    "ht_memory_intensity": 0,
-    "ht_memory": 0,
-    "ht_memory_feeling": 0,
-    "ht_memory_variable": 0,
-    "version": 0,
-    "battle_version": 0,
-    "form_argument": 0,
-    "affixed_ribbon": -1,
-    "language": 2,
-    "ot_name": "",
-    "ot_memory_intensity": 0,
-    "ot_memory": 0,
-    "ot_memory_variable": 0,
-    "ot_memory_feeling": 0,
-    "obedience_level": 0,
-    "egg_date": (0, 0, 0),
-    "met_date": (0, 0, 0),
-    "egg_location": 0,
-    "met_location": 0,
-    "ball": 0,
-    "hyper_train": 0,
-    "tracker": 0,
-    "is_favourite": 0,
-    "fateful": 0,
-    "is_egg": 0,
-    "is_nicknamed": 0,
-    "ot_gender": 0,
-}
-
 
 def encryption_constant(seed):
     """Return the first xoroshiro128+ output used as a Gen-9 raid PK9's EC."""

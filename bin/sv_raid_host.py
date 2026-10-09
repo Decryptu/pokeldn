@@ -2,11 +2,8 @@
 """Host an SV Tera Raid with a generated boss and seed-derived or exact rewards."""
 
 import argparse
-import json
 import os
-from pathlib import Path
 import sys
-import tempfile
 
 # The GUI imports this file to inspect its argparse parser.  In that case Python
 # does not automatically put the script's directory on sys.path as it does for
@@ -16,9 +13,8 @@ sys.path.insert(0, os.path.dirname(SCRIPT_DIR))
 sys.path.insert(0, SCRIPT_DIR)
 
 from sv_raid_bootstrap_codec import (
-    REWARD_PROFILE_FORMAT,
-    REWARD_PROFILE_TEMPLATE,
-    parse_reward_profile,
+    MAX_REWARD_ROWS,
+    parse_reward,
 )
 
 
@@ -34,21 +30,9 @@ def raid_seed(value: str) -> int:
 
 def reward(value: str) -> tuple[int, int]:
     try:
-        item_text, quantity_text = value.split(":", 1)
-        item_id, quantity = int(item_text, 0), int(quantity_text, 0)
-    except (TypeError, ValueError) as exc:
-        raise argparse.ArgumentTypeError("reward must be ITEM_ID:QUANTITY") from exc
-    try:
-        profile = parse_reward_profile({
-            "format": REWARD_PROFILE_FORMAT,
-            "template": REWARD_PROFILE_TEMPLATE,
-            "mode": "exact",
-            "rewards": [{"item_id": item_id, "quantity": quantity}],
-        })
+        return parse_reward(value)
     except ValueError as exc:
         raise argparse.ArgumentTypeError(str(exc)) from exc
-    entry = profile.rewards[0]
-    return entry.item_id, entry.quantity
 
 
 def mac_address(value: str) -> str:
@@ -92,19 +76,9 @@ def build_parser() -> argparse.ArgumentParser:
     parser.add_argument("--raid-seed", required=True, type=raid_seed, metavar="8-HEX-DIGITS",
                         help="seed that determines the raid boss, Tera type, stats, and moves")
     parser.add_argument("--raid-player-pokemon", metavar="FILE",
-                        help="a legal party PK9 for POKELDN to bring as the raid host; required "
-                             "by --generated-bootstrap")
-    source = parser.add_mutually_exclusive_group()
-    source.add_argument("--reward", action="append", type=reward, metavar="ITEM_ID:QUANTITY",
-                        help="reward row in display order; repeat up to 16 times")
-    source.add_argument("--profile", type=Path, metavar="JSON",
-                        help="an existing versioned exact-list reward profile")
-    parser.add_argument("--generated-bootstrap", action="store_true",
-                        help="generate the complete raid application opening through sequence "
-                             "20, including RaidPoint and seed rewards, without the victory "
-                             "replay; optional --reward rows replace the seed rewards; requires "
-                             "--raid-player-pokemon and supports standard 1-5-star and black "
-                             "6-star raids")
+                        help="a legal party PK9 for POKELDN to bring as the raid host")
+    parser.add_argument("--reward", action="append", type=reward, metavar="ITEM_ID:QUANTITY",
+                        help=f"reward row in display order; repeat up to {MAX_REWARD_ROWS} times")
     parser.add_argument("--raid-version", choices=("scarlet", "violet"), default="violet",
                         help="game version used to select the generated encounter")
     parser.add_argument("--raid-map", choices=("paldea", "kitakami", "blueberry"),
@@ -131,10 +105,9 @@ def build_parser() -> argparse.ArgumentParser:
     return parser
 
 
-def host_arguments(seed: int, profile: Path | None, keys: str, seconds: float,
+def host_arguments(seed: int, rewards: list[tuple[int, int]] | None, keys: str, seconds: float,
                    player_pokemon: str | None = None,
                    capture: str | None = None,
-                   generated_bootstrap: bool = True,
                    mac: str | None = None,
                    host_player_id: str | None = None,
                    host_player_name: str = "POKELDN",
@@ -177,35 +150,14 @@ def host_arguments(seed: int, profile: Path | None, keys: str, seconds: float,
         "--raid-content", raid_content,
         "--seconds", str(seconds),
     ]
-    if profile is not None:
-        arguments += ["--raid-reward-profile", str(profile)]
-    if not generated_bootstrap:
-        raise ValueError("donor-backed raid hosting was removed")
+    for item_id, quantity in rewards or ():
+        arguments += ["--raid-reward", f"{item_id}:{quantity}"]
     arguments.append("--raid-generated-bootstrap")
     if player_pokemon:
         arguments += ["--raid-player-pokemon", player_pokemon]
     if capture:
         arguments += ["--capture", capture]
     return arguments
-
-
-def _profile_value(rows: list[tuple[int, int]]) -> dict:
-    profile = parse_reward_profile({
-        "format": REWARD_PROFILE_FORMAT,
-        "template": REWARD_PROFILE_TEMPLATE,
-        "mode": "exact",
-        "name": "PokeLDN custom raid rewards",
-        "rewards": [{"item_id": item_id, "quantity": quantity}
-                    for item_id, quantity in rows],
-    })
-    return {
-        "format": profile.format,
-        "template": profile.template,
-        "mode": profile.mode,
-        "name": profile.name,
-        "rewards": [{"item_id": row.item_id, "quantity": row.quantity}
-                    for row in profile.rewards],
-    }
 
 
 def main(argv=None) -> int:
@@ -215,43 +167,20 @@ def main(argv=None) -> int:
         parser.error("--seconds must be positive")
     if not args.raid_player_pokemon:
         parser.error("raid hosting requires --raid-player-pokemon")
-    args.generated_bootstrap = True
-    try:
-        if args.profile is not None:
-            from sv_raid_bootstrap_codec import load_reward_profile
-            load_reward_profile(args.profile)
-            profile_path = args.profile.resolve()
-            temporary = None
-        elif args.reward:
-            value = _profile_value(args.reward)
-            temporary = tempfile.TemporaryDirectory(prefix="pokeldn-sv-raid-")
-            profile_path = Path(temporary.name) / "rewards.json"
-            profile_path.write_text(json.dumps(value, indent=2) + "\n", encoding="utf-8")
-        else:
-            profile_path = None
-            temporary = None
-    except (OSError, ValueError) as exc:
-        parser.error(str(exc))
-
     from sv_host import main as host
-    try:
-        arguments = host_arguments(
-            args.raid_seed, profile_path, args.keys, args.seconds,
-            player_pokemon=args.raid_player_pokemon, capture=args.capture,
-            generated_bootstrap=args.generated_bootstrap,
-            mac=args.mac, host_player_id=args.host_player_id,
-            host_player_name=args.host_player_name,
-            raid_version=args.raid_version, raid_map=args.raid_map,
-            raid_progress=args.raid_progress, raid_content=args.raid_content)
-        chosen_mac = arguments[arguments.index("--mac") + 1]
-        chosen_player_id = arguments[arguments.index("--host-player-id") + 1]
-        print(f"[sv-raid] synthetic host identity: mac={chosen_mac} "
-              f"player_id={chosen_player_id}")
-        result = host(arguments)
-        return int(result or 0)
-    finally:
-        if temporary is not None:
-            temporary.cleanup()
+    arguments = host_arguments(
+        args.raid_seed, args.reward, args.keys, args.seconds,
+        player_pokemon=args.raid_player_pokemon, capture=args.capture,
+        mac=args.mac, host_player_id=args.host_player_id,
+        host_player_name=args.host_player_name,
+        raid_version=args.raid_version, raid_map=args.raid_map,
+        raid_progress=args.raid_progress, raid_content=args.raid_content)
+    chosen_mac = arguments[arguments.index("--mac") + 1]
+    chosen_player_id = arguments[arguments.index("--host-player-id") + 1]
+    print(f"[sv-raid] synthetic host identity: mac={chosen_mac} "
+          f"player_id={chosen_player_id}")
+    result = host(arguments)
+    return int(result or 0)
 
 
 if __name__ == "__main__":

@@ -33,9 +33,9 @@ def main():
     parser.add_argument("--content", choices=("standard", "black"), default="standard")
     parser.add_argument("--pk9", type=Path, help="write the generated encrypted 344-byte boss PK9")
     parser.add_argument("--bootstrap", type=Path,
-                        help="write the donor-free 0xAA0 bootstrap plaintext")
+                        help="write the generated 0xAA0 bootstrap plaintext")
     parser.add_argument("--application", type=Path,
-                        help="write the donor-free LZ4-compressed 0x012F application")
+                        help="write the generated LZ4-compressed 0x012F application")
     parser.add_argument("--point-name", default="RaidPoint_POKELDN_0",
                         help="synthetic RaidPoint identity for bootstrap generation")
     parser.add_argument("--player-pk9", action="append", type=Path, default=[], metavar="FILE",
@@ -54,7 +54,7 @@ def main():
     if args.player_pk9 and not (args.bootstrap or args.application):
         parser.error("--player-pk9 requires --bootstrap or --application")
     if (args.bootstrap or args.application) and reward_seed != args.seed:
-        parser.error("donor-free bootstrap generation currently uses one fight/reward seed")
+        parser.error("bootstrap generation currently uses one fight/reward seed")
     if (args.bootstrap or args.application) and args.context:
         parser.error("--bootstrap/--application require the bundled retail tables")
     if args.pk9:

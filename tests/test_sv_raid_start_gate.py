@@ -11,7 +11,7 @@ from sv_raid_start_gate import RaidStartGate
 
 
 class RaidStartGateTests(unittest.TestCase):
-    def test_first_replay_waits_for_guest_lobby(self):
+    def test_first_generated_event_waits_for_guest_lobby(self):
         gate = RaidStartGate()
 
         self.assertEqual(gate.requirement(1), "guest_lobby")

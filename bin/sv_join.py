@@ -33,7 +33,7 @@ from pokeldn.host_support import open_output
 from pokeldn import pokemon as pokemon_service
 from pokeldn import sv
 from pokeldn.ldn import ldn_mitm, pia6, pia_connect, reliable5
-from pokeldn.sv import pokemon, port2, raid, raid_guest, reference, streams, trade
+from pokeldn.sv import pokemon, port2, raid, reference, streams, trade
 from pokeldn.ldn import channel_table, game_channel
 from pokeldn.ldn.transport import board_radio, find_ap_phy
 from pokeldn.host_support import resolve_keys, needs_root
@@ -97,7 +97,7 @@ def apply_raid_guest_identity(args, random_bytes=os.urandom):
     if args.mac is None:
         args.mac = synthetic_mac(random_bytes)
     args.join_player_name = args.trainer_name
-    if args.record_set is None and not args.record_trace:
+    if args.record_set is None:
         args.record_set = reference.RECORDS
 
 
@@ -121,86 +121,6 @@ def split_raid_channel_table(payload, flags=0):
         return plain, None
     base = [entry for entry in entries if entry[0] not in RAID_HANDLER_KEYS]
     return channel_table.build(base), channel_table.build(raid)
-
-
-def load_record_trace(path):
-    """Extract one complete joiner identity stream from a JSONL retail capture."""
-    records = {}
-    with open(path, encoding="utf-8") as fh:
-        for line in fh:
-            row = json.loads(line)
-            if (row.get("rec") != "data" or row.get("protocol") != streams.PROTOCOL_STREAM
-                    or row.get("port") != streams.JOINER_INDEX or not row.get("payload")):
-                continue
-            seq = int(row["seq"])
-            payload = bytes.fromhex(row["payload"])
-            previous = records.setdefault(seq, payload)
-            if previous != payload:
-                raise ValueError(f"record {seq} changes within {path}")
-    if not records:
-        raise ValueError(f"no 0x81 port-1 identity records in {path}")
-    expected = set(range(1, max(records) + 1))
-    missing = sorted(expected - records.keys())
-    if missing:
-        raise ValueError(f"identity in {path} is missing record(s) {missing}")
-    return sorted(records.items())
-
-
-def load_trace_session_identity(path):
-    """Return the retail joiner's (player id, station MAC) from the same JSONL capture."""
-    with open(path, encoding="utf-8") as fh:
-        for line in fh:
-            row = json.loads(line)
-            if row.get("rec") != "msg" or row.get("protocol") != PROTO_SESSION:
-                continue
-            payload = bytes.fromhex(row.get("payload", ""))
-            if not payload or payload[0] != pia_connect.SESSION_JOIN_REQUEST:
-                continue
-            try:
-                join = pia_connect.parse_session_join_v11(payload)
-            except (ValueError, IndexError):
-                continue
-            players = join.get("players", ())
-            if players:
-                constant_id = join["source_constant_id"]
-                # Inverse of pia_connect.ldn_constant_id():
-                # constant = mac[2], mac[4], mac[5], mac[3], mac[1], mac[0].
-                station_mac = bytes((constant_id[5], constant_id[4], constant_id[0],
-                                     constant_id[3], constant_id[1], constant_id[2]))
-                return players[0]["player_id"], station_mac
-    raise ValueError(f"no retail session-join identity in {path}")
-
-
-def load_raid_guest_lobby_records(path):
-    """Load the captured guest's two lobby application records, preserving wire flags.
-
-    These are experimental replay payloads; session-dependent fields are not regenerated.
-    Only the observed 0x8033 types 0x2d/0x2e on guest port 0 are eligible.
-    """
-    records = {}
-    with open(path, encoding="utf-8") as fh:
-        for line in fh:
-            row = json.loads(line)
-            if (row.get("rec") != "data" or row.get("protocol") != 0x80
-                    or row.get("port") != 0 or not row.get("src", "").endswith(".2")):
-                continue
-            payload = bytes.fromhex(row["payload"])
-            flags = row["reliable_flags"]
-            plain = streams.decompress(payload) if flags & reliable5.FLAG_ZLIB else payload
-            if plain[:4] not in (bytes.fromhex("80332d01"), bytes.fromhex("80332e01")):
-                continue
-            seq = int(row["seq"])
-            # A complete successful capture also contains Ready and Start acknowledgement as
-            # sequences 3 and 4.  Only the initial presence records are replayed here; the later
-            # state transitions are regenerated below with fresh application counters.
-            if seq not in (1, 2):
-                continue
-            value = (flags, payload)
-            if records.setdefault(seq, value) != value:
-                raise ValueError(f"raid lobby record {seq} changes within {path}")
-    if sorted(records) != [1, 2]:
-        raise ValueError(f"expected guest raid lobby sequences 1 and 2 in {path}")
-    return [(seq, *records[seq]) for seq in sorted(records)]
 
 
 SESSION_MESSAGE_NAMES = {
@@ -366,7 +286,7 @@ def raid_disconnect_matches(target, prefix, protocol, port, message, body=b""):
 
 def apply_raid_disconnect_default(args):
     """Leave at the stable post-bootstrap transition unless an experiment overrides it."""
-    if (args.raid_guest_replay
+    if (args.raid_guest
             and args.raid_disconnect_after_seq is None
             and args.raid_disconnect_after_prefix is None
             and not args.raid_stay_after_battle_transition):
@@ -418,8 +338,7 @@ def build_parser():
                          "Session join request): ten protocols with their versions, a four-byte "
                          "nonce, both location ids, a seven-byte station address and one player "
                          "record. A mesh join is unicast, so no passive capture shows a retail one")
-    ap.add_argument("--raid-guest", "--raid-guest-replay", dest="raid_guest_replay",
-                    action="store_true",
+    ap.add_argument("--raid-guest", action="store_true",
                     help="join a retail Scarlet/Violet raid with generated lobby/Ready/Start "
                          "application messages, plus the validated Session, channel, and "
                          "identity opening")
@@ -441,12 +360,6 @@ def build_parser():
                          "writes one from a station's own log, so a whole real identity can be "
                          "replayed rather than the host's mirrored back; by default the recorded "
                          "set in pokeldn.sv.reference")
-    ap.add_argument("--record-trace", metavar="JSONL",
-                    help="load a complete 0x81 port-1 identity directly from a retail capture; "
-                         "takes precedence over --record-set and rejects sequence gaps")
-    ap.add_argument("--raid-lobby-trace", metavar="JSONL",
-                    help="experimentally replay the captured guest's 0x80:0 lobby records "
-                         "after identity and raid channel setup; retains captured application fields")
     ap.add_argument("--raid-guest-ready-delay", type=float,
                     help="send the generated guest Ready state this many seconds after its lobby")
     ap.add_argument("--raid-pokemon", metavar="FILE",
@@ -490,7 +403,7 @@ def build_parser():
                          "port 2. A pair's joiner answers the announcement (docs/sv.md, Port 2)")
     ap.add_argument("--port2-delay", type=float, default=None,
                     help="send the port-2 join this many seconds after our initial port-1 table; "
-                         "used by retail raid guest replay instead of waiting for an announcement")
+                         "used by the generated raid guest instead of waiting for an announcement")
     ap.add_argument("--raid-table-delay", type=float, default=0.35,
                     help="seconds after the initialized game-channel table before announcing the "
                          "0x8033/0x8034 raid keys (retail captures use a separate update)")
@@ -651,7 +564,7 @@ def main(argv=None):
             and args.raid_disconnect_after_prefix is None):
         ap.error("--raid-disconnect-delay needs a raid disconnect target")
     apply_raid_disconnect_default(args)
-    if args.raid_guest_replay:
+    if args.raid_guest:
         args.session_join = True
         args.game_channel = True
         # Suppress trade-only open fragments; use the shared SV application records below.
@@ -674,10 +587,9 @@ def main(argv=None):
               "+0.24s, raid keys at +0.79s"
               + (", leave after battle_93" if args.raid_disconnect_after_prefix
                  == bytes.fromhex("80349301") else ""))
-        if not args.raid_pokemon and not args.raid_lobby_trace:
-            ap.error("--raid-guest requires --raid-pokemon (or an explicit experimental "
-                     "--raid-lobby-trace)")
-    if args.raid_pokemon and not args.raid_guest_replay:
+        if not args.raid_pokemon:
+            ap.error("--raid-guest requires --raid-pokemon")
+    if args.raid_pokemon and not args.raid_guest:
         ap.error("--raid-pokemon needs --raid-guest")
     if args.raid_pokemon:
         args.raid_pokemon = pokemon_service.prepare_file(
@@ -688,14 +600,6 @@ def main(argv=None):
         args.offer_set = []
         args.fresh_pid = False
     reference.fill_identity(args)
-    if args.record_trace and (args.join_player_id == "arceus" or args.mac is None):
-        trace_player_id, trace_mac = load_trace_session_identity(args.record_trace)
-        if args.join_player_id == "arceus":
-            args.join_player_id = trace_player_id.hex()
-            print(f"[sv] using record trace player id {args.join_player_id}")
-        if args.mac is None:
-            args.mac = ":".join(f"{b:02x}" for b in trace_mac)
-            print(f"[sv] using record trace station MAC {args.mac}")
     # A killed run loses a block-buffered stdout, and the seat's log with it.
     try:
         sys.stdout.reconfigure(line_buffering=True)
@@ -953,7 +857,7 @@ async def run_session(args, keys, host_ip, host_mac, our_ip, our_mac, record):
     joined_at = 0.0
     join_sequence = None
     pending_update = None       # a type-5 update that arrived before the join response
-    replay_first_update_at = None  # retail raid guest ignores the first coalesced update
+    raid_first_update_at = None  # retail raid guest ignores the first coalesced update
     migration_sent = 0
     migration_at = None
     handed = False
@@ -989,27 +893,21 @@ async def run_session(args, keys, host_ip, host_mac, our_ip, our_mac, record):
     join_sends_scheduled = False
     offers_seen = 0
     trades_done = 0
-    record_set = load_record_trace(args.record_trace) if args.record_trace else []
+    record_set = []
     raid_stage = None
-    raid_lobby_records = (load_raid_guest_lobby_records(args.raid_lobby_trace)
-                          if args.raid_lobby_trace else [])
-    if args.raid_guest_replay and not args.raid_lobby_trace:
-        raid_stage = raid.JoinerRaidStage(Path(args.raid_pokemon).read_bytes())
+    raid_lobby_records = []
+    if args.raid_guest:
+        raid_pokemon = Path(args.raid_pokemon).read_bytes()
+        raid_stage = raid.JoinerRaidStage(raid_pokemon)
         raid_lobby_records = [
             (sequence, message.flags, message.payload)
             for sequence, message in enumerate(raid_stage.lobby(), 1)
         ]
-    elif args.raid_pokemon:
-        raid_lobby_records = raid_guest.with_lobby_pokemon(
-            raid_lobby_records, Path(args.raid_pokemon).read_bytes())
-    if args.raid_pokemon:
-        print(f"[sv] raid guest Pokemon: "
-              f"{pokemon.describe(raid_guest.lobby_pokemon(raid_lobby_records))}")
+        print(f"[sv] raid guest Pokemon: {pokemon.describe(pokemon.load(raid_pokemon))}")
     raid_lobby_sent = False
     raid_ready_due = None
     raid_guest_state = 1
     raid_start_ack_scheduled = False
-    raid_application_counter = None  # explicit trace compatibility path
     raid_disconnect_seen = None
     raid_disconnect_due = None
     if record_set:
@@ -1234,7 +1132,7 @@ async def run_session(args, keys, host_ip, host_mac, our_ip, our_mac, record):
                 and time.time() >= channel["port2_due"]):
             channel["port2"] = True
             send_channel(2, CHANNEL_PORT2_OPEN, "channel port 2 open")
-            print(f"[sv] -> {host_ip}: the replay-timed port-2 join")
+            print(f"[sv] -> {host_ip}: the raid-timed port-2 join")
             channel["port2_due"] = None
         if (channel["table_update_due"] is not None
                 and time.time() >= channel["table_update_due"]):
@@ -1287,25 +1185,16 @@ async def run_session(args, keys, host_ip, host_mac, our_ip, our_mac, record):
             raid_lobby_sent = True
             if args.raid_guest_ready_delay is not None:
                 raid_ready_due = now + args.raid_guest_ready_delay
-            print("[sv] sent generated guest raid lobby records 1 and 2 on 0x80:0"
-                  if raid_stage else
-                  "[sv] sent captured guest raid lobby records 1 and 2 on 0x80:0")
+            print("[sv] sent generated guest raid lobby records 1 and 2 on 0x80:0")
         if raid_ready_due is not None and now >= raid_ready_due:
             # Controlled Ready press is state 0x01; 0x0d is tested only after host state 0x0c.
             # Its application counter follows the type-0x2e record, independently of Pia seq.
             generated = (raid_stage.ready() if raid_guest_state == 1
-                         else raid_stage.start_ack()) if raid_stage else None
-            if generated:
-                message = generated[0]
-                ready = (streams.decompress(message.payload)
-                         if message.flags & reliable5.FLAG_ZLIB else message.payload)
-                payload = message.payload
-            else:
-                ready = raid_guest.state_payload(
-                    raid_guest_state, raid_lobby_records,
-                    previous_counter=raid_application_counter)
-                raid_application_counter = int.from_bytes(ready[4:8], "little")
-                payload = streams.compress(ready)
+                         else raid_stage.start_ack())
+            message = generated[0]
+            ready = (streams.decompress(message.payload)
+                     if message.flags & reliable5.FLAG_ZLIB else message.payload)
+            payload = message.payload
             key = (PROTO_BROADCAST_RELIABLE, 0)
             seq = next_seq(*key)
             body = streams.build_record_message(payload, seq, streams.JOINER_INDEX,
@@ -1445,14 +1334,14 @@ async def run_session(args, keys, host_ip, host_mac, our_ip, our_mac, record):
                             k: (v.hex() if isinstance(v, bytes) else v) for k, v in resp.items()})
                         if resp["status"] == 1:
                             join_sequence = resp["sequence_id"]
-                            if not args.raid_guest_replay:
+                            if not args.raid_guest:
                                 joined = True
                                 joined_at = now
                                 if not args.no_clock:
                                     send(out(CLOCK_REQUEST, host_var or 0, protocol=PROTO_CLOCK),
                                          "clock request")
                                     print(f"[sv] -> {host_ip}: the clone clock request")
-                            if pending_update is not None and not args.raid_guest_replay:
+                            if pending_update is not None and not args.raid_guest:
                                 send_update_ack(pending_update)
                                 pending_update = None
                 elif kind == pia_connect.SESSION_UPDATE:
@@ -1469,15 +1358,15 @@ async def run_session(args, keys, host_ip, host_mac, our_ip, our_mac, record):
                                stations=[{k: (v.hex() if isinstance(v, bytes) else v)
                                           for k, v in st.items() if k != "players"}
                                          for st in upd["stations"]])
-                        if args.raid_guest_replay:
+                        if args.raid_guest:
                             # Retail receives the join response and first update together, remains
                             # silent, then answers the host's update retransmission about two
                             # seconds later.  Its game channel follows that ACK/clock exchange.
-                            if replay_first_update_at is None:
-                                replay_first_update_at = now
+                            if raid_first_update_at is None:
+                                raid_first_update_at = now
                                 pending_update = upd
-                                print("[sv] raid replay: holding the first coalesced Session update")
-                            elif now - replay_first_update_at >= 1.0:
+                                print("[sv] raid guest: holding the first coalesced Session update")
+                            elif now - raid_first_update_at >= 1.0:
                                 joined = True
                                 joined_at = now
                                 join_sequence = upd["sequence_id"]

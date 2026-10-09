@@ -38,6 +38,9 @@ def test_raid_seed_and_rewards_report_actionable_errors():
     assert command.code_error(rewards, [{"item_id": "50", "quantity": "1000"}])
     assert not command.code_error(rewards, [{"item_id": "1", "quantity": "1"},
                                             {"item_id": "50", "quantity": "10"}])
+    assert not command.code_error(rewards, [{"item_id": "1", "quantity": "1"}] * 45)
+    assert command.code_error(rewards, [{"item_id": "1", "quantity": "1"}] * 46) == (
+        "A generated RaidPoint supports at most 45 reward rows.")
 
 
 def test_raid_iv_search_accepts_any_exact_and_bounded_ranges():

@@ -49,7 +49,7 @@ abilities, type matchups and the Pokemon brought by the player can change which
 encounter is easiest in practice.
 
 The seed's normal rewards are used when the reward list is empty. To override
-them, add between one and sixteen rewards. Search for each item by name and
+them, add between one and 45 rewards. Search for each item by name and
 enter a quantity from 1 through 999. Rows remain separate and appear in the
 selected order, including duplicate items.
 
@@ -71,8 +71,8 @@ selected order, including duplicate items.
 
 The host automatically generates application sequences 1 through 20, including
 the `0xAA0` RaidPoint bootstrap, and advances the loading transitions from the
-client's observed state. Reward-profile files, donor captures and replay timing
-switches are not exposed in the app.
+client's observed state. The production raid path contains no reward-profile
+files, donor captures, or replay timing switches.
 
 ## Current scope
 

@@ -17,14 +17,16 @@ import time
 import traceback
 import zlib
 
-sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+SCRIPT_DIR = os.path.dirname(os.path.abspath(__file__))
+sys.path.insert(0, os.path.dirname(SCRIPT_DIR))
+sys.path.insert(0, SCRIPT_DIR)
 
 from pokeldn.host_support import open_output
-from pokeldn import gen9, pokemon as pokemon_service
+from pokeldn import pokemon as pokemon_service
 from pokeldn import config
 from pokeldn import sv
 from pokeldn.ldn import pia6, pia_connect, reliable5
-from pokeldn.sv import pokemon, port2, raid, raid_generation, raid_seed, reference, streams, trade
+from pokeldn.sv import pokemon, port2, raid, raid_generation, reference, streams, trade
 from pokeldn.ldn import game_channel
 from pokeldn.ldn.ldn_mitm_host import IpHostTransport
 from pokeldn.ldn.transport import HostTransport, board_radio, find_ap_phy
@@ -32,6 +34,7 @@ from pokeldn.host_support import resolve_keys, needs_root
 from pokeldn.ldn import left_after_trade, show_done
 from pokeldn.online import session as online
 from pokeldn.app import screen
+from sv_raid_bootstrap_codec import parse_reward
 
 PROTOCOL_NAMES = {
     0x08: "keep alive", 0x2C: "net", 0x30: "turn", 0x58: "rtt", 0x65: "sync",
@@ -306,36 +309,19 @@ def build_parser():
                          "sends it at about 2.3")
     ap.add_argument("--announce-capacity", type=int, default=2,
                     help="participant capacity in the type-7 announcement; Tera Raids use 4")
-    ap.add_argument("--raid", action="store_true",
-                    help="use the captured Tera Raid channel setup, accept the console as raid "
-                         "slot 1, and send the initial lobby heartbeat")
-    ap.add_argument("--raid-start-trace",
-                    help="decoded retail JSONL supplying raid state sequences 13-16 and Net 0x50")
-    ap.add_argument("--raid-replay-trace",
-                    help="decoded retail JSONL supplying a timed, consecutive host 0x80:0 raid "
-                         "stream from the type-9 accepts through battle setup")
-    ap.add_argument("--raid-replay-interactive", action="store_true",
-                    help="retry battle-state packets and trigger the captured "
-                         "post-selection response after a guest move")
-    ap.add_argument("--raid-reward-profile", type=Path, metavar="JSON",
-                    help="apply a versioned exact-list JSON reward profile to either the "
-                         "validated Avalugg bootstrap or --raid-generated-bootstrap")
+    ap.add_argument("--raid-reward", action="append", type=parse_reward,
+                    metavar="ITEM_ID:QUANTITY",
+                    help="exact generated reward row; repeat in display order")
     ap.add_argument("--raid-player-pokemon", metavar="FILE",
                     help="a legal SV party PK9 for this fake raid host to bring; PKHeX validates "
                          "it before it replaces both the lobby and battle-bootstrap Pokemon")
     ap.add_argument("--raid-seed", type=lambda value: int(value, 16), metavar="HEX",
-                    help="generated raid seed to substitute into "
-                         "--raid-replay-trace (use with --raid-base-seed)")
-    ap.add_argument("--raid-base-seed", type=lambda value: int(value, 16), metavar="HEX",
-                    help="seed represented by the source replay, used to identify its boss PK9")
+                    help="seed used to generate the complete raid opening")
     ap.add_argument("--raid-generated-bootstrap", action="store_true",
                     help="generate raid application sequences 1-20, including the complete "
                          "0xAA0 bootstrap, from --raid-seed and context; requires "
                          "--raid-player-pokemon and supports bundled standard 1-5-star and "
                          "black 6-star profiles")
-    ap.add_argument("--raid-context", type=Path,
-                    help="JSON encounter context used to generate --raid-seed before hosting; "
-                         "omit to use the bundled retail encounter tables")
     ap.add_argument("--raid-version", choices=("scarlet", "violet"), default="violet")
     ap.add_argument("--raid-progress", choices=("beginning", "tera", "3star", "4star",
                                                  "5star", "6star"), default="4star")
@@ -390,75 +376,45 @@ def main(argv=None):
     global PIA_HOST_VAR
     ap = build_parser()
     args = ap.parse_args(argv)
-    profile_mode = args.raid_reward_profile is not None
     if args.raid_generated_bootstrap and args.raid_player_pokemon is None:
         ap.error("--raid-generated-bootstrap requires --raid-player-pokemon")
     if args.raid_generated_bootstrap and args.raid_seed is None:
         ap.error("--raid-generated-bootstrap requires --raid-seed")
-    if profile_mode and not args.raid_generated_bootstrap:
-        ap.error("--raid-reward-profile requires --raid-generated-bootstrap; "
-                 "donor-backed reward hosting was removed")
-    # A replay is paced by client application progress. Ungated wall-clock replay is not a
-    # supported mode: it can outrun the retail client's startup state machine.
-    args.raid_replay_client_gated = (
-        args.raid_replay_trace is not None or args.raid_generated_bootstrap)
-    args.raid = (args.raid or args.raid_start_trace is not None
-                 or args.raid_replay_trace is not None or args.raid_generated_bootstrap)
+    if args.raid_reward and not args.raid_generated_bootstrap:
+        ap.error("--raid-reward requires --raid-generated-bootstrap")
+    args.raid_client_gated = args.raid_generated_bootstrap
+    args.raid = args.raid_generated_bootstrap
     raid_player_pk9 = None
     if args.raid_player_pokemon:
-        if args.raid_replay_trace is None and not args.raid_generated_bootstrap:
-            ap.error("--raid-player-pokemon requires --raid-replay-trace or "
-                     "--raid-generated-bootstrap")
+        if not args.raid_generated_bootstrap:
+            ap.error("--raid-player-pokemon requires --raid-generated-bootstrap")
         args.raid_player_pokemon = pokemon_service.prepare_file(
             "sv", args.raid_player_pokemon, fresh=args.fresh_pid)
         raid_player_pk9 = Path(args.raid_player_pokemon).read_bytes()
-    handoff_mode = profile_mode or args.raid_generated_bootstrap
-    stop_after_seq = 20 if handoff_mode else None
-    disconnect_after_stop = 5.0 if handoff_mode else None
+    stop_after_seq = 20 if args.raid_generated_bootstrap else None
+    disconnect_after_stop = 5.0 if args.raid_generated_bootstrap else None
     PIA_HOST_VAR = args.host_var & 0xFFFF
-    raid_start_payloads, raid_start_net = {}, None
-    raid_replay_events, raid_replay_post_events = [], []
-    raid_replay_net_delay = raid_replay_session_delay = None
-    if args.raid_generated_bootstrap and (args.raid_replay_trace or args.raid_start_trace):
-        ap.error("--raid-generated-bootstrap constructs sequences 1-20 and does not use a "
-                 "raid trace")
-    if args.raid_start_trace and args.raid_replay_trace:
-        ap.error("use only one of --raid-start-trace and --raid-replay-trace")
-    if args.raid_start_trace:
-        with open(args.raid_start_trace, encoding="utf-8") as trace_file:
-            for line in trace_file:
-                row = json.loads(line)
-                if (row.get("rec") == "data" and row.get("protocol") == 0x80
-                        and row.get("port") == 0 and row.get("seq") in (13, 14, 15, 16)
-                        and str(row.get("src", "")).endswith(".1")):
-                    raid_start_payloads[row["seq"]] = bytes.fromhex(row["payload"])
-                if (row.get("rec") == "msg" and row.get("protocol") == PROTO_NET
-                        and bytes.fromhex(row.get("payload", "00"))[1:2] == bytes([NET_PROPERTY])):
-                    raid_start_net = bytes.fromhex(row["payload"])
-        if set(raid_start_payloads) != {13, 14, 15, 16} or raid_start_net is None:
-            ap.error("--raid-start-trace lacks host raid sequences 13-16 or Net 0x50")
+    raid_start_net = None
+    raid_events = []
+    raid_net_delay = raid_session_delay = None
     if args.raid_generated_bootstrap:
-        if args.raid_context is not None:
-            ap.error("generated bootstrap requires the bundled retail raid tables")
         try:
             from sv_raid_bootstrap_codec import (
-                build_application, build_seed_bootstrap_raw, load_reward_profile)
+                build_application, build_seed_bootstrap_raw, normalize_rewards)
             generated_raid = raid_generation.generate_seed_raid(
                 args.raid_seed, version=args.raid_version, progress=args.raid_progress,
                 map_name=args.raid_map, content=args.raid_content)
-            exact_rewards = (
-                load_reward_profile(args.raid_reward_profile)
-                if args.raid_reward_profile is not None else None)
+            exact_rewards = normalize_rewards(args.raid_reward) if args.raid_reward else None
             generated_raw = build_seed_bootstrap_raw(
                 args.raid_seed, version=args.raid_version,
                 progress=args.raid_progress, map_name=args.raid_map,
                 content=args.raid_content, players=(raid_player_pk9,),
-                reward_profile=exact_rewards)
+                exact_rewards=exact_rewards)
             # 0x010f is the next serializer value after the ten generated lobby
             # records. Standard retail captures use an all-zero header tail.
             application = build_application(
                 generated_raw, message_value=0x010F, header_tail=b"\0\0\0\0")
-            raid_replay_events = raid.RaidStage(
+            raid_events = raid.RaidStage(
                 generated_raid["metadata"], generated_raid["profile"],
                 raid_player_pk9, application).events()
         except (OSError, ValueError) as exc:
@@ -469,148 +425,13 @@ def main(argv=None):
               f"Tera {metadata['tera_type']}")
         print(f"[sv] generated bootstrap: complete 0x{len(generated_raw):x}-byte "
               "plaintext and application sequences 1-20"
-              + (f" with {len(exact_rewards.rewards)} exact reward(s)"
+              + (f" with {len(exact_rewards)} exact reward(s)"
                  if exact_rewards is not None else ""))
         raid_start_net = b""
-        raid_replay_net_delay = 5.655
-        raid_replay_session_delay = 6.746
+        raid_net_delay = 5.655
+        raid_session_delay = 6.746
         print("[sv] raid handoff: stopping raid application stream after sequence 20; "
               "all 20 sequences are generated; maintenance remains active")
-    elif args.raid_replay_trace:
-        with open(args.raid_replay_trace, encoding="utf-8") as trace_file:
-            replay_rows = [json.loads(line) for line in trace_file]
-        accept_times = [row["t"] for row in replay_rows
-                        if (row.get("rec") == "data" and row.get("protocol") == 0x80
-                            and row.get("port") == 2 and row.get("seq") == 1
-                            and str(row.get("src", "")).endswith(".1")
-                            and bytes.fromhex(row.get("payload", "00"))[:1] == b"\x09")]
-        if not accept_times:
-            ap.error("--raid-replay-trace lacks the host's first type-9 accept")
-        replay_base = min(accept_times)
-        reliable_meta = {}
-        for row in replay_rows:
-            if (row.get("rec") == "msg" and row.get("protocol") == 0x80
-                    and row.get("port") == 0 and str(row.get("src", "")).endswith(".1")):
-                try:
-                    parsed = reliable5.parse(bytes.fromhex(row["payload"]))
-                except (KeyError, ValueError):
-                    continue
-                if not parsed["is_ack"]:
-                    reliable_meta[(row["t"], parsed["sequence_id"])] = parsed["lowest_pending"]
-        by_sequence = {}
-        for row in replay_rows:
-            if (row.get("rec") == "data" and row.get("protocol") == 0x80
-                    and row.get("port") == 0 and str(row.get("src", "")).endswith(".1")
-                    and row["t"] >= replay_base):
-                sequence = row["seq"]
-                by_sequence.setdefault(sequence, (
-                    row["t"] - replay_base, row["reliable_flags"],
-                    reliable_meta.get((row["t"], sequence), sequence),
-                    bytes.fromhex(row["payload"])))
-            if (row.get("rec") == "msg" and row.get("protocol") == PROTO_NET
-                    and str(row.get("src", "")).endswith(".1") and row["t"] >= replay_base
-                    and bytes.fromhex(row.get("payload", "00"))[1:2] == bytes([NET_PROPERTY])):
-                if raid_start_net is None:
-                    raid_start_net = bytes.fromhex(row["payload"])
-                    raid_replay_net_delay = row["t"] - replay_base
-            if (row.get("rec") == "msg" and row.get("protocol") == PROTO_SESSION
-                    and str(row.get("src", "")).endswith(".1") and row["t"] >= replay_base
-                    and bytes.fromhex(row.get("payload", "00"))[:1] == b"\x05"):
-                if raid_replay_session_delay is None:
-                    raid_replay_session_delay = row["t"] - replay_base
-        if raid_start_net is None:
-            # Passive Wi-Fi captures occasionally miss the host's one Net 0x50 even though the
-            # guest's immediate 0x51 proves it arrived.  Preserve its observed timing and rebuild
-            # the property body later from this run's network id and advertised application data.
-            property_acks = [row["t"] for row in replay_rows
-                             if (row.get("rec") == "msg"
-                                 and row.get("protocol") == PROTO_NET
-                                 and not str(row.get("src", "")).endswith(".1")
-                                 and row["t"] >= replay_base
-                                 and bytes.fromhex(row.get("payload", "00"))[1:2]
-                                 == bytes([NET_PROPERTY_ACK]))]
-            if property_acks:
-                raid_start_net = b""
-                raid_replay_net_delay = min(property_acks) - replay_base - 0.02
-        # Stop at the first missing sequence.  A later fragment cannot be delivered by the
-        # receiver's reliable reassembler across that gap, and a passive capture can miss frames.
-        sequence = 1
-        while sequence in by_sequence:
-            delay, flags, lowest, payload = by_sequence[sequence]
-            raid_replay_events.append((delay, sequence, flags, lowest, payload))
-            sequence += 1
-        first_gap = sequence
-        later = sorted(s for s in by_sequence if s > first_gap)
-        if later:
-            # A passive air trace may miss one frame even though the retail receiver got it.  Keep
-            # the next consecutive run as a post-selection response, close the capture-only gap in
-            # its reliable ids, and trigger it from the guest's move instead of wall-clock time.
-            first_later = later[0]
-            collapse = first_later - first_gap
-            post_base = by_sequence[first_later][0]
-            sequence = first_later
-            while sequence in by_sequence:
-                delay, flags, lowest, payload = by_sequence[sequence]
-                raid_replay_post_events.append((
-                    delay - post_base, sequence - collapse, flags,
-                    max(1, lowest - collapse), payload))
-                sequence += 1
-        if (not raid_replay_events or raid_start_net is None
-                or raid_replay_session_delay is None):
-            ap.error("--raid-replay-trace lacks a consecutive host stream, Net 0x50, or Session update")
-        if args.raid_seed is not None:
-            if args.raid_base_seed is None:
-                ap.error("--raid-seed requires --raid-base-seed")
-            try:
-                generated_raid = None
-                if args.raid_context is not None:
-                    generated_raid = raid_generation.generate_raid(
-                        args.raid_seed, raid_generation.load_context(args.raid_context))
-                else:
-                    generated_raid = raid_generation.generate_seed_raid(
-                        args.raid_seed, version=args.raid_version, progress=args.raid_progress,
-                        map_name=args.raid_map, content=args.raid_content)
-                metadata = generated_raid["metadata"]
-                print(f"[sv] generated fight raid: seed {args.raid_seed:08X}, "
-                      f"species {metadata['species']}, {metadata['stars']} star(s), "
-                      f"Tera {metadata['tera_type']}")
-                boss_audit = raid_seed.audit_boss_fields(
-                    raid_replay_events, args.raid_base_seed)
-                print("[sv] raid boss field audit (all identified before replacement):")
-                for line in raid_seed.describe_audit(boss_audit):
-                    print(f"[sv]   {line}")
-                raid_replay_events = raid_seed.patch_boss(
-                    raid_replay_events, args.raid_base_seed, args.raid_seed,
-                    lobby_patch="full",
-                    target_profile=None if generated_raid is None else generated_raid["profile"],
-                    target_metadata=None if generated_raid is None else generated_raid["metadata"],
-                    clear_runtime_commands=profile_mode,
-                    runtime_move_index=0,
-                    runtime_template_events=None,
-                    runtime_template_seed=None)
-            except ValueError as exc:
-                ap.error(f"cannot patch raid seed: {exc}")
-            print(f"[sv] raid boss EC seed {args.raid_base_seed:08X} -> {args.raid_seed:08X}")
-        if raid_player_pk9 is not None:
-            from sv_raid_bootstrap_codec import patch_host_player_pokemon
-            try:
-                raid_replay_events = patch_host_player_pokemon(
-                    raid_replay_events, raid_player_pk9)
-            except ValueError as exc:
-                ap.error(f"cannot patch raid player Pokemon: {exc}")
-            print(f"[sv] raid host Pokemon: {pokemon.describe(gen9.load(raid_player_pk9))}")
-        if stop_after_seq is not None:
-            if not any(event[1] == stop_after_seq
-                       for event in raid_replay_events):
-                ap.error("the production handoff sequence is not present in the replay")
-            raid_replay_events = [
-                event for event in raid_replay_events
-                if event[1] <= stop_after_seq]
-            raid_replay_post_events = []
-            print(f"[sv] raid handoff: stopping raid application stream after sequence "
-                  f"{stop_after_seq}; maintenance remains active")
-    elif args.raid_seed is not None or args.raid_base_seed is not None:
-        ap.error("--raid-seed and --raid-base-seed require --raid-replay-trace")
     if args.trade_offer:
         args.trade_offer = [pokemon_service.prepare_file("sv", p, fresh=args.fresh_pid,
             transform=lambda raw: trade.load_offer(raw, args.offer_set)) for p in args.trade_offer]
@@ -653,7 +474,7 @@ def main(argv=None):
     pending_update = {}
     pending_records = {}
     pending_late = {}
-    pending_raid_replay = []
+    pending_raid_events = []
     pending_raid_bootstrap = {}
     pending_raid_net = {}
     pending_raid_session = {}
@@ -665,7 +486,7 @@ def main(argv=None):
     raid_start_diagnostics = {}
 
     def startup_allowed(ip, stage, now):
-        if not args.raid_replay_client_gated:
+        if not args.raid_client_gated:
             return True
         from sv_raid_start_gate import RaidStartGate
         gate = raid_start_gates.setdefault(ip, RaidStartGate())
@@ -716,7 +537,7 @@ def main(argv=None):
         if raid_guest_pokemon.get(ip) == pk9:
             return
         from sv_raid_bootstrap_codec import patch_bootstrap_participant
-        patched = patch_bootstrap_participant(raid_replay_events, 1, pk9)
+        patched = patch_bootstrap_participant(raid_events, 1, pk9)
         replacements = {
             sequence: (flags, lowest, payload)
             for _, sequence, flags, lowest, payload in patched
@@ -724,15 +545,15 @@ def main(argv=None):
         }
         changed = 0
         for index, (due, peer, sequence, flags, lowest, payload) in enumerate(
-                pending_raid_replay):
+                pending_raid_events):
             if peer != ip or sequence not in replacements:
                 continue
             flags, lowest, payload = replacements[sequence]
-            pending_raid_replay[index] = (
+            pending_raid_events[index] = (
                 due, peer, sequence, flags, lowest, payload)
             changed += 1
-        # If the port-2 join has not arrived yet there is no pending replay to patch. The accept
-        # path below will apply the stored PK9 when it queues that station's replay.
+        # If the port-2 join has not arrived yet there is no pending event to patch. The accept
+        # path below will apply the stored PK9 when it queues that station's events.
         if changed not in (0, 2):
             raise ValueError(f"guest PK9 patched {changed} of two bootstrap fragments")
         raid_guest_pokemon[ip] = pk9
@@ -817,7 +638,7 @@ def main(argv=None):
         return 2
 
     keys = sv.session_keys(transport.ssid)
-    if args.raid_replay_client_gated and raid_start_net == b"":
+    if args.raid_client_gated and raid_start_net == b"":
         rebuilt = bytearray(NET_PROPERTY_BODY)
         rebuilt[4:8] = (1).to_bytes(4, "big")
         rebuilt[12:16] = keys.network_id.to_bytes(4, "big")
@@ -850,10 +671,9 @@ def main(argv=None):
     port2_joined, gate_reported = set(), set()
     counts = {}
     advertised_players = [1]
-    raid_post_started = set()
-    last_raid_replay_sent = {}  # ip -> (replay sequence, timestamp)
+    last_raid_event_sent = {}  # ip -> (generated sequence, timestamp)
     last_client_application = {}  # ip -> concise decoded reliable application metadata
-    raid_replay_started_at = {}  # ip -> first raid replay application timestamp
+    raid_events_started_at = {}  # ip -> first raid event application timestamp
     first_session_leave = set()
 
     def next_seq(src_ip, protocol, port):
@@ -880,7 +700,7 @@ def main(argv=None):
         print(f"[sv] -> {ip}: data 0x{protocol:02x}:{port} seq {seq} {len(data)}B "
               f"{data[:8].hex()} ({why})")
 
-    def send_raid_replay(ip, sequence, flags, data, why, *, remember,
+    def send_raid_event(ip, sequence, flags, data, why, *, remember,
                          lowest_hint=None):
         key = (ip, 0x80, 0)
         lowest = raid_window.lowest(
@@ -892,10 +712,10 @@ def main(argv=None):
                           protocol=0x80, port=0, flags=0)
         transport.send(pkt, transport.broadcast)
         sent_at = time.time()
-        raid_replay_started_at.setdefault(ip, sent_at)
+        raid_events_started_at.setdefault(ip, sent_at)
         if why != "raid retry":
-            last_raid_replay_sent[ip] = (sequence, sent_at)
-        if why == "raid replay" and sequence == 12:
+            last_raid_event_sent[ip] = (sequence, sent_at)
+        if why == "raid event" and sequence == 12:
             diagnostic = raid_start_diagnostics.setdefault(ip, {})
             diagnostic.update(
                 seq12_sent_at=sent_at,
@@ -906,7 +726,7 @@ def main(argv=None):
                   f"sha256={diagnostic['seq12_sha256']} waiting-for=load_6e")
             record(rec="raid_start_seq12", t=sent_at, dst=ip,
                    payload_length=len(data), sha256=diagnostic["seq12_sha256"])
-        elif why == "raid replay" and sequence == 13:
+        elif why == "raid event" and sequence == 13:
             diagnostic = raid_start_diagnostics.setdefault(ip, {})
             diagnostic["seq13_sent_at"] = sent_at
             gate = raid_start_gates.get(ip)
@@ -920,7 +740,7 @@ def main(argv=None):
                   f"reason={diagnostic['seq13_reason']}{suffix}")
             record(rec="raid_start_seq13_release", t=sent_at, dst=ip,
                    reason=diagnostic["seq13_reason"], response_at=released_at)
-        if (why == "raid replay" and disconnect_after_stop is not None
+        if (why == "raid event" and disconnect_after_stop is not None
                 and sequence == stop_after_seq):
             scripted_disconnect_due[ip] = (
                 sent_at + disconnect_after_stop, sequence)
@@ -933,13 +753,13 @@ def main(argv=None):
             except (ValueError, zlib.error):
                 pass
         record(rec="raid_app_out", t=sent_at, dst=ip, kind=why,
-               replay_seq=sequence, protocol=0x80, port=0, reliable_seq=sequence,
+               raid_seq=sequence, protocol=0x80, port=0, reliable_seq=sequence,
                flags=flags, payload_length=len(data), payload=data.hex(),
                decompressed_payload=(None if decompressed is None else decompressed.hex()))
-        print(f"[sv] RAID-SEQ t={sent_at:.6f} replay={sequence} protocol=0x80 port=0 "
+        print(f"[sv] RAID-SEQ t={sent_at:.6f} event={sequence} protocol=0x80 port=0 "
               f"reliable={sequence} flags=0x{flags:02x} len={len(data)} kind={why}")
         if 20 <= sequence <= 24:
-            print(f"[sv] RAID-APP-OUT t={sent_at:.6f} replay={sequence} protocol=0x80 "
+            print(f"[sv] RAID-APP-OUT t={sent_at:.6f} event={sequence} protocol=0x80 "
                   f"port=0 reliable={sequence} flags=0x{flags:02x} len={len(data)} "
                   f"payload={data.hex()} decompressed="
                   f"{None if decompressed is None else decompressed.hex()}")
@@ -978,12 +798,12 @@ def main(argv=None):
             body = game_channel.build_ack(
                 high + 1, lowest_pending=(channel_window.lowest(
                     (src_ip, protocol, port), host_seq.get((src_ip, protocol, port), 1))
-                    if args.raid_replay_client_gated else host_seq.get((src_ip, protocol, port), 1)))
+                    if args.raid_client_gated else host_seq.get((src_ip, protocol, port), 1)))
         else:
             body = build_bulk_ack({CONSOLE_STATION_INDEX: high},
                                   identity_window.lowest((src_ip, protocol, port),
                                                         host_seq.get((src_ip, protocol, port), 1)))
-        if args.raid_replay_client_gated:
+        if args.raid_client_gated:
             key = (src_ip, protocol, port)
             body = reliable5.set_lowest_pending(
                 body, outbound_lowest(key, host_seq.get(key, 1)))
@@ -1008,7 +828,7 @@ def main(argv=None):
                 print(f"[sv] SCRIPTED RAID HANDOFF t={now:.6f}: shutting down host after "
                       f"sequence {sequence} for {ip}")
                 record(rec="raid_scripted_handoff", t=now, dst=ip,
-                       last_replay_seq=sequence, scheduled_at=due)
+                       last_raid_seq=sequence, scheduled_at=due)
                 break
             current_ips = set()
             for entry in list(transport.participants):
@@ -1040,7 +860,7 @@ def main(argv=None):
             for (ip, _, _), seq, item in raid_window.due(now):
                 if ip in station_ids:
                     flags, data = item
-                    send_raid_replay(ip, seq, flags, data, "raid retry", remember=False)
+                    send_raid_event(ip, seq, flags, data, "raid retry", remember=False)
             for ip, at in announced_at.items():
                 if (ip in port2_joined or ip in gate_reported or ip not in current_ips
                         or now - at < PORT2_GATE_SECONDS):
@@ -1137,18 +957,18 @@ def main(argv=None):
                        hex=pkt.hex(), t=now)
                 print(f"[sv] -> {ip}: session station-list update (type 5)")
             for ip, due in list(pending_raid_net.items()):
-                if args.raid_replay_client_gated and ip in raid_start_gates:
+                if args.raid_client_gated and ip in raid_start_gates:
                     gate = raid_start_gates[ip]
                     if 'net_ack' in gate.seen:
                         del pending_raid_net[ip]
                         continue
                     if 'net' in gate.sent and now < due:
                         continue
-                if ip not in station_ids or (not args.raid_replay_client_gated and now < due):
+                if ip not in station_ids or (not args.raid_client_gated and now < due):
                     continue
                 if not startup_allowed(ip, 'net', now):
                     continue
-                if args.raid_replay_client_gated:
+                if args.raid_client_gated:
                     pending_raid_net[ip] = now + 0.5
                 else:
                     del pending_raid_net[ip]
@@ -1160,7 +980,7 @@ def main(argv=None):
                                   os.urandom(8),
                                   protocol=PROTO_NET, flags=0x31)
                 transport.send(pkt, transport.broadcast)
-                if args.raid_replay_client_gated:
+                if args.raid_client_gated:
                     gate = raid_start_gates[ip]
                     gate.sent.add('net')
                     gate.net_sequence = int.from_bytes(raid_start_net[4:8], 'big')
@@ -1168,18 +988,18 @@ def main(argv=None):
                        hex=pkt.hex(), t=now)
                 print(f"[sv] -> {ip}: retail raid-start Net 0x50")
             for ip, due in list(pending_raid_session.items()):
-                if args.raid_replay_client_gated and ip in raid_start_gates:
+                if args.raid_client_gated and ip in raid_start_gates:
                     gate = raid_start_gates[ip]
                     if 'session_ack' in gate.seen:
                         del pending_raid_session[ip]
                         continue
                     if 'session' in gate.sent and now < due:
                         continue
-                if ip not in station_ids or (not args.raid_replay_client_gated and now < due):
+                if ip not in station_ids or (not args.raid_client_gated and now < due):
                     continue
                 if not startup_allowed(ip, 'session', now):
                     continue
-                if args.raid_replay_client_gated:
+                if args.raid_client_gated:
                     pending_raid_session[ip] = now + 0.5
                 else:
                     del pending_raid_session[ip]
@@ -1190,7 +1010,7 @@ def main(argv=None):
                 pkt = build_reply(keys, transport.our_ip, update, state["console_var"],
                                   os.urandom(8), flags=0, packet_id=0, mesh=True)
                 transport.send(pkt, transport.broadcast)
-                if args.raid_replay_client_gated:
+                if args.raid_client_gated:
                     raid_start_gates[ip].sent.add('session')
                 record(rec="out", dst=transport.broadcast, kind="raid start session update",
                        hex=pkt.hex(), t=now)
@@ -1220,18 +1040,18 @@ def main(argv=None):
                     footer_ids=(station_ids[ip]["console_var"],))
                 transport.send(pkt, transport.broadcast)
                 host_seq[(ip, 0x81, 5)] = 2
-                if args.raid_replay_client_gated:
+                if args.raid_client_gated:
                     channel_window.sent((ip, 0x81, 5), 1, opening, now)
                 record(rec="out", dst=transport.broadcast, kind="retail raid bootstrap",
                        hex=pkt.hex(), t=now)
                 print(f"[sv] -> {ip}: retail raid stream bootstrap (one Pia packet)")
-            for entry in list(pending_raid_replay):
+            for entry in list(pending_raid_events):
                 due, ip, sequence, flags, lowest, data = entry
-                gated_transition = args.raid_replay_client_gated and sequence in (11, 13, 14, 15)
+                gated_transition = args.raid_client_gated and sequence in (11, 13, 14, 15)
                 if (now < due and not gated_transition) or ip not in station_ids:
                     continue
-                if args.raid_replay_client_gated:
-                    previous = last_raid_replay_sent.get(ip, (0,))[0]
+                if args.raid_client_gated:
+                    previous = last_raid_event_sent.get(ip, (0,))[0]
                     if sequence != previous + 1:
                         continue
                 if (args.raid_generated_bootstrap and sequence == 11
@@ -1244,30 +1064,26 @@ def main(argv=None):
                     continue
                 if not startup_allowed(ip, sequence, now):
                     continue
-                pending_raid_replay.remove(entry)
-                if args.raid_replay_client_gated:
+                pending_raid_events.remove(entry)
+                if args.raid_client_gated:
                     raid_start_gates[ip].sent.add(sequence)
                     if gated_transition:
                         # Keep relative spacing after a response-driven transition. Do not let
                         # an overdue queue burst or a recorded human delay control the next phase.
                         shift = now - due
-                        pending_raid_replay[:] = [
+                        pending_raid_events[:] = [
                             (d + shift, peer, s, f, low, p) if peer == ip else (d, peer, s, f, low, p)
-                            for d, peer, s, f, low, p in pending_raid_replay]
+                            for d, peer, s, f, low, p in pending_raid_events]
                         break_after_transition = True
                     else:
                         break_after_transition = False
-                send_raid_replay(
-                    ip, sequence, flags, data, "raid replay",
-                    # The battle-state snapshots are fragmented across many reliable
-                    # messages.  A single lost fragment leaves the game waiting before
-                    # move selection, so retain only that phase for ACK-driven retries.
-                    # Gated startup retains every message until ACKed. Retries must
-                    # not rewind the replay cursor or advance the receive watermark.
-                    remember=(args.raid_replay_client_gated or
-                              (args.raid_replay_interactive and sequence >= 33)),
+                send_raid_event(
+                    ip, sequence, flags, data, "raid event",
+                    # Startup retains every message until ACKed. Retries must not rewind
+                    # the send cursor or advance the receive watermark.
+                    remember=args.raid_client_gated,
                     lowest_hint=lowest)
-                if args.raid_replay_client_gated and break_after_transition:
+                if args.raid_client_gated and break_after_transition:
                     break
             for (ip, index), (due, rest) in list(pending_late.items()):
                 if now < due or ip not in station_ids:
@@ -1285,14 +1101,14 @@ def main(argv=None):
                 elif isinstance(index, str) and index.startswith("raid-start"):
                     lowest = {13: 13, 14: 13, 15: 15, 16: 16}[seq]
                 body = build_reliable_body(p_, flags, seq, data, lowest_pending=lowest)
-                if args.raid_replay_client_gated:
+                if args.raid_client_gated:
                     body = reliable5.set_lowest_pending(
                         body, outbound_lowest((ip, p_, port_), seq))
                 pkt = build_reply(keys, transport.our_ip, body, station_ids[ip]["console_var"],
                                   os.urandom(8), protocol=p_, port=port_, flags=0)
                 dst_ip = transport.broadcast if p_ in MESH_ADDRESSED else ip
                 transport.send(pkt, dst_ip)
-                if args.raid_replay_client_gated and p_ in RELIABLE_PROTOCOLS:
+                if args.raid_client_gated and p_ in RELIABLE_PROTOCOLS:
                     channel_window.sent((ip, p_, port_), seq, body, now)
                 record(rec="out", dst=dst_ip, kind="send-at", protocol=p_, port=port_, seq=seq,
                        hex=pkt.hex(), t=now)
@@ -1375,7 +1191,7 @@ def main(argv=None):
                     record(rec="msg", src=src_ip, protocol=msg.protocol, port=msg.port,
                            flags=msg.message_flags, src_var=header.src_var, dst_var=header.dst_var,
                            payload=msg.payload.hex(), t=time.time())
-                    if args.raid_replay_client_gated and src_ip in raid_start_gates:
+                    if args.raid_client_gated and src_ip in raid_start_gates:
                         milestone = raid_start_gates[src_ip].observe(
                             msg.protocol, msg.port, msg.payload if msg.protocol in (0x2c, 0x98) else b'',
                             time.time())
@@ -1424,7 +1240,7 @@ def main(argv=None):
                         if (msg.protocol == PROTO_SESSION and len(msg.payload) >= 1
                                 and msg.payload[0] == pia_connect.SESSION_LEAVE_REQUEST):
                             leave_at = time.time()
-                            last_sent = last_raid_replay_sent.get(src_ip)
+                            last_sent = last_raid_event_sent.get(src_ip)
                             last_app = last_client_application.get(src_ip)
                             if last_sent is None:
                                 sent_text = "none"
@@ -1439,41 +1255,41 @@ def main(argv=None):
                                             f"reliable={last_app['reliable_seq']} "
                                             f"flags=0x{last_app['flags']:02x} "
                                             f"len={last_app['payload_length']}")
-                            print(f"[sv] SESSION-LEAVE t={leave_at:.6f} last raid replay: "
+                            print(f"[sv] SESSION-LEAVE t={leave_at:.6f} last raid event: "
                                   f"{sent_text}; last client application: {app_text}")
                             record(rec="raid_session_leave", t=leave_at, src=src_ip,
-                                   last_replay_seq=None if last_sent is None else last_sent[0],
-                                   last_replay_at=None if last_sent is None else last_sent[1],
-                                   since_last_replay=None if last_sent is None
+                                   last_raid_seq=None if last_sent is None else last_sent[0],
+                                   last_event_at=None if last_sent is None else last_sent[1],
+                                   since_last_event=None if last_sent is None
                                    else leave_at - last_sent[1],
                                    last_client_application=last_app)
                             if src_ip not in first_session_leave:
                                 first_session_leave.add(src_ip)
-                                started_at = raid_replay_started_at.get(src_ip)
+                                started_at = raid_events_started_at.get(src_ip)
                                 print("[sv] RAID DISCONNECT SUMMARY")
-                                print(f"[sv] last replay seq: "
+                                print(f"[sv] last generated seq: "
                                       f"{None if last_sent is None else last_sent[0]}")
-                                print(f"[sv] time battle replay started: {started_at}")
-                                print(f"[sv] time last replay seq sent: "
+                                print(f"[sv] time generated raid events started: {started_at}")
+                                print(f"[sv] time last generated seq sent: "
                                       f"{None if last_sent is None else last_sent[1]}")
                                 print(f"[sv] time Session type 3 received: {leave_at}")
                                 print(f"[sv] time from battle start to leave: "
                                       f"{None if started_at is None else leave_at - started_at}")
-                                print(f"[sv] time from last replay seq to leave: "
+                                print(f"[sv] time from last generated seq to leave: "
                                       f"{None if last_sent is None else leave_at - last_sent[1]}")
                                 print("[sv] last non-ACK application packet received from client: "
                                       + ("none" if last_app is None
                                          else json.dumps(last_app, separators=(",", ":"))))
                                 record(rec="raid_disconnect_summary", t=leave_at, src=src_ip,
-                                       last_replay_seq=(None if last_sent is None
+                                       last_raid_seq=(None if last_sent is None
                                                         else last_sent[0]),
-                                       battle_replay_started=started_at,
-                                       last_replay_sent_at=(None if last_sent is None
+                                       raid_events_started=started_at,
+                                       last_event_sent_at=(None if last_sent is None
                                                             else last_sent[1]),
                                        session_leave_at=leave_at,
                                        battle_start_to_leave=(None if started_at is None
                                                               else leave_at - started_at),
-                                       last_replay_to_leave=(None if last_sent is None
+                                       last_event_to_leave=(None if last_sent is None
                                                              else leave_at - last_sent[1]),
                                        last_non_ack_application=last_app)
                         if (not args.no_leave_response and msg.protocol == PROTO_SESSION
@@ -1514,7 +1330,7 @@ def main(argv=None):
                             # A retail console can retry with the same link-local IP after a
                             # failed application handshake.  Do not let scheduled packets or
                             # reliable-window state from that abandoned attempt interleave with
-                            # the fresh raid replay.
+                            # the fresh raid event.
                             raid_window.forget(lambda key: key[0] == src_ip)
                             pending_update.pop(src_ip, None)
                             pending_records.pop(src_ip, None)
@@ -1523,16 +1339,15 @@ def main(argv=None):
                                 key: value for key, value in pending_late.items()
                                 if key[0] != src_ip
                             }
-                            pending_raid_replay[:] = [
-                                entry for entry in pending_raid_replay if entry[1] != src_ip]
+                            pending_raid_events[:] = [
+                                entry for entry in pending_raid_events if entry[1] != src_ip]
                             pending_raid_net.pop(src_ip, None)
                             pending_raid_session.pop(src_ip, None)
                             scripted_disconnect_due.pop(src_ip, None)
-                            last_raid_replay_sent.pop(src_ip, None)
-                            raid_replay_started_at.pop(src_ip, None)
+                            last_raid_event_sent.pop(src_ip, None)
+                            raid_events_started_at.pop(src_ip, None)
                             last_client_application.pop(src_ip, None)
                             first_session_leave.discard(src_ip)
-                            raid_post_started.discard(src_ip)
                             raid_session_waiting.discard(src_ip)
                             raid_guest_pokemon.pop(src_ip, None)
                             raid_guest_waits.discard(src_ip)
@@ -1717,7 +1532,7 @@ def main(argv=None):
                                         if decoded_application is None
                                         else decoded_application.hex()),
                                 }
-                                if args.raid_replay_client_gated and src_ip in raid_start_gates:
+                                if args.raid_client_gated and src_ip in raid_start_gates:
                                     milestone = raid_start_gates[src_ip].observe(
                                         msg.protocol, msg.port,
                                         decoded_application if decoded_application is not None else rm['payload'],
@@ -1726,10 +1541,10 @@ def main(argv=None):
                                         record(rec="raid_start_response", t=application_at,
                                                src=src_ip, milestone=milestone)
                                         print(f"[sv] startup received: {milestone}")
-                                last_host = last_raid_replay_sent.get(src_ip)
-                                if src_ip in raid_replay_started_at:
+                                last_host = last_raid_event_sent.get(src_ip)
+                                if src_ip in raid_events_started_at:
                                     record(rec="client_application", t=application_at, src=src_ip,
-                                           replay_window_seq=last_host[0], protocol=msg.protocol,
+                                           event_window_seq=last_host[0], protocol=msg.protocol,
                                            port=msg.port, reliable_seq=rm["sequence_id"],
                                            flags=rm["flags"], payload_length=len(rm["payload"]),
                                            payload=rm["payload"].hex(),
@@ -1737,36 +1552,13 @@ def main(argv=None):
                                                                  else decoded_application.hex()))
                                 if last_host is not None and last_host[0] >= 15:
                                     print(f"[sv] RAID-APP-IN t={application_at:.6f} "
-                                          f"after-replay={last_host[0]} protocol="
+                                          f"after-event={last_host[0]} protocol="
                                           f"0x{msg.protocol:02x} port={msg.port} "
                                           f"reliable={rm['sequence_id']} "
                                           f"flags=0x{rm['flags']:02x} len={len(rm['payload'])} "
                                           f"payload={rm['payload'].hex()} decompressed="
                                           f"{None if decoded_application is None else decoded_application.hex()}")
                                 stream_high[key] = max(stream_high.get(key, 0), rm["sequence_id"])
-                                if (args.raid_replay_interactive and raid_replay_post_events
-                                        and msg.protocol == 0x80
-                                        and msg.port == 0 and src_ip not in raid_post_started):
-                                    application = rm["payload"]
-                                    if rm["flags"] & reliable5.FLAG_ZLIB:
-                                        try:
-                                            application = zlib.decompress(application)
-                                        except zlib.error:
-                                            pass
-                                    # The selected-move channel-table message is exactly 250 bytes
-                                    # and begins with the 0x7b / key-0x1327 envelope in both retail
-                                    # captures.  The lobby's uncompressed Pokémon state is 362
-                                    # bytes, so length alone would fire this transition too early.
-                                    if (len(application) == 250
-                                            and application.startswith(bytes.fromhex("7b001327"))):
-                                        raid_post_started.add(src_ip)
-                                        triggered = time.time()
-                                        for delay, sequence, flags, lowest, payload in raid_replay_post_events:
-                                            pending_raid_replay.append((
-                                                triggered + delay, src_ip, sequence,
-                                                flags, lowest, payload))
-                                        print(f"[sv] {src_ip}: move selected; scheduled "
-                                              f"{len(raid_replay_post_events)} post-move host packet(s)")
                                 if not args.no_ack and src_ip in station_ids:
                                     send_ack(src_ip, msg.protocol, msg.port,
                                              station_ids[src_ip]["console_var"],
@@ -1860,53 +1652,30 @@ def main(argv=None):
                                         transport.send(pkt, transport.broadcast)
                                         record(rec="out", dst=transport.broadcast, kind="accept", protocol=0x80,
                                                port=2, seq=s2, hex=pkt.hex(), t=time.time())
-                                        if args.raid_replay_client_gated:
+                                        if args.raid_client_gated:
                                             channel_window.sent((src_ip, 0x80, 2), s2, body, time.time())
                                         print(f"[sv] -> {src_ip}: type 9 accept on 0x80:2 seq {s2}, "
                                               f"slot {assigned_slot}, station {data[-8:].hex()}")
                                     if args.raid:
                                         accepted_at = time.time()
-                                        if raid_replay_events:
-                                            station_events = raid_replay_events
-                                            if (args.raid_generated_bootstrap
-                                                    and src_ip in raid_guest_pokemon):
-                                                from sv_raid_bootstrap_codec import (
-                                                    patch_bootstrap_participant)
-                                                station_events = patch_bootstrap_participant(
-                                                    raid_replay_events, 1,
-                                                    raid_guest_pokemon[src_ip])
-                                            for delay, sequence, flags, lowest, payload in station_events:
-                                                pending_raid_replay.append((
-                                                    accepted_at + delay, src_ip, sequence,
-                                                    flags, lowest, payload))
-                                            pending_raid_net[src_ip] = (
-                                                accepted_at + raid_replay_net_delay)
-                                            pending_raid_session[src_ip] = (
-                                                accepted_at + raid_replay_session_delay)
-                                        else:
-                                            for index, (delay, compressed, payload) in enumerate(
-                                                    port2.RAID_LOBBY_MESSAGES):
-                                                suffix = ":z" if compressed else ""
-                                                pending_late[(src_ip, f"raid-lobby{index}")] = (
-                                                    accepted_at + delay,
-                                                    f"0x80:0:{payload.hex()}{suffix}")
-                                        if raid_start_payloads and not raid_replay_events:
-                                            pending_raid_net[src_ip] = accepted_at + 7.68
-                                            pending_raid_session[src_ip] = accepted_at + 8.77
-                                            start_specs = {
-                                                13: (9.18, ":start"),
-                                                14: (9.18, ":z:end"),
-                                                15: (14.28, ""),
-                                                16: (22.47, ""),
-                                            }
-                                            for sequence, (delay, suffix) in start_specs.items():
-                                                pending_late[(src_ip, f"raid-start{sequence}")] = (
-                                                    accepted_at + delay,
-                                                    f"0x80:0:{raid_start_payloads[sequence].hex()}"
-                                                    f"{suffix}")
+                                        station_events = raid_events
+                                        if src_ip in raid_guest_pokemon:
+                                            from sv_raid_bootstrap_codec import (
+                                                patch_bootstrap_participant)
+                                            station_events = patch_bootstrap_participant(
+                                                raid_events, 1,
+                                                raid_guest_pokemon[src_ip])
+                                        for delay, sequence, flags, lowest, payload in station_events:
+                                            pending_raid_events.append((
+                                                accepted_at + delay, src_ip, sequence,
+                                                flags, lowest, payload))
+                                        pending_raid_net[src_ip] = (
+                                            accepted_at + raid_net_delay)
+                                        pending_raid_session[src_ip] = (
+                                            accepted_at + raid_session_delay)
                             elif rm:
                                 a = reliable5.parse_ack_payload(rm["payload"])
-                                if (args.raid_replay_client_gated
+                                if (args.raid_client_gated
                                         and not rm["truncated"] and a["entries"]
                                         and a["entries"][0]["stream_id"] == 0):
                                     entry = a["entries"][0]

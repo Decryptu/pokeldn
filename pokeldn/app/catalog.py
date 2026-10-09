@@ -380,10 +380,10 @@ SV = Game("sv", "Scarlet & Violet", "SV", "sv.md", (
                 help="Eight hexadecimal digits. The seed determines the boss species, Tera type, "
                      "stats, ability, and moves."),
           Field("--reward", "Raid rewards", "rewards",
-                help="Optionally replace the seed rewards with 1 to 16 rows in display order. "
+                help="Optionally replace the seed rewards with up to 45 rows in display order. "
                      "Duplicate items are allowed."),
           host_seconds("600")),
-         fixed=("--generated-bootstrap",),
+         fixed=(),
          doc="sv_raid.md"),
     Tool("sv-raid-join", "Tera Raid (Join)", "bin/sv_join.py",
          "Join a retail-hosted Tera Raid with a legal custom Pokemon, then leave it as a bot.",

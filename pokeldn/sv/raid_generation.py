@@ -16,6 +16,57 @@ from pathlib import Path
 
 MASK64 = (1 << 64) - 1
 XOROSHIRO_CONST = 0x82A2B175229D6A5B
+MAX_REWARD_ROWS = 45
+
+# A raid boss is not a caught Pokemon yet. Retail captures of different species
+# agree on these nonzero defaults; all remaining fields come from the generated
+# encounter profile or stay zero in the fresh party record.
+RAID_BOSS_COMMON = {
+    "sanity": 0,
+    "held_item": 0,
+    "markings": 0,
+    "form": 0,
+    "evs": (0, 0, 0, 0, 0, 0),
+    "contest": (0, 0, 0, 0, 0, 0),
+    "pokerus": 0,
+    "move_pp_ups": (0, 0, 0, 0),
+    "relearn_moves": (0, 0, 0, 0),
+    "status": 0,
+    "tera_type_override": 19,
+    "ht_name": "",
+    "ht_gender": 0,
+    "ht_language": 0,
+    "current_handler": 0,
+    "ht_id": 0,
+    "ht_friendship": 0,
+    "ht_memory_intensity": 0,
+    "ht_memory": 0,
+    "ht_memory_feeling": 0,
+    "ht_memory_variable": 0,
+    "version": 0,
+    "battle_version": 0,
+    "form_argument": 0,
+    "affixed_ribbon": -1,
+    "language": 2,
+    "ot_name": "",
+    "ot_memory_intensity": 0,
+    "ot_memory": 0,
+    "ot_memory_variable": 0,
+    "ot_memory_feeling": 0,
+    "obedience_level": 0,
+    "egg_date": (0, 0, 0),
+    "met_date": (0, 0, 0),
+    "egg_location": 0,
+    "met_location": 0,
+    "ball": 0,
+    "hyper_train": 0,
+    "tracker": 0,
+    "is_favourite": 0,
+    "fateful": 0,
+    "is_egg": 0,
+    "is_nicknamed": 0,
+    "ot_gender": 0,
+}
 
 
 class Xoroshiro128Plus:

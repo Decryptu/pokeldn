@@ -8,6 +8,7 @@ from pokeldn.app import gift_builder
 from pokeldn.app.catalog import Field, Tool
 from pokeldn.app.introspect import flags_of
 from pokeldn.lgpe.session import code_picks
+from pokeldn.sv.raid_generation import MAX_REWARD_ROWS
 
 
 @cache
@@ -144,8 +145,8 @@ def code_error(field: Field, value) -> str:
             return ""
         if not isinstance(value, (list, tuple)) or not value:
             return "Add at least one raid reward."
-        if len(value) > 16:
-            return "A raid reward profile supports at most 16 rows."
+        if len(value) > MAX_REWARD_ROWS:
+            return f"A generated RaidPoint supports at most {MAX_REWARD_ROWS} reward rows."
         for index, row in enumerate(value, 1):
             try:
                 item_id, quantity = int(row["item_id"]), int(row["quantity"])
