@@ -1158,6 +1158,69 @@ def test_the_fast_rate_comes_from_the_environment(monkeypatch):
     assert rates[-1] == 921600 and 2000000 in rates
 
 
+@pytest.mark.parametrize("run_baud,next_baud", [(921600, 921600), (1500000, 921600),
+                                               (921600, 1500000)])
+def test_new_run_and_board_check_reconnect_without_reset(monkeypatch, run_baud, next_baud):
+    """A UART board retains BAUD across client exits; Windows releases DTR/RTS on every open."""
+    import collections
+    import serial
+    from gui import board as gui_board
+
+    state = {"baud": 115200, "held": False, "opens": 0}
+    decoder = esp32.FrameReader()
+    replies = collections.deque()
+    info = struct.pack("<B6s6sB", esp32.PROTOCOL_VERSION, bytes(6), bytes(6), 3) + b"sim"
+
+    class Port:
+        baudrate = 115200
+
+        def open(self):
+            assert not state["held"]
+            assert self.dtr is False and self.rts is False
+            state["held"] = True
+            state["opens"] += 1
+
+        def write(self, data):
+            if self.baudrate != state["baud"]:
+                list(decoder.feed(b"wrong-rate"))
+                return
+            for kind, payload in decoder.feed(data):
+                if kind == esp32.CMD_HELLO:
+                    replies.append((state["baud"], esp32.encode_frame(esp32.MSG_INFO, info)))
+                elif kind == esp32.CMD_BAUD:
+                    replies.append((state["baud"], esp32.encode_frame(
+                        esp32.MSG_RESULT, bytes([kind]) + bytes(4))))
+                    state["baud"] = struct.unpack("<I", payload)[0]
+
+        def read(self, n):
+            time.sleep(0.001)
+            if replies:
+                rate, data = replies.popleft()
+                return data if rate == self.baudrate else b""
+            return b""
+
+        def flush(self):
+            pass
+
+        def close(self):
+            state["held"] = False
+
+    monkeypatch.setattr(serial, "Serial", Port)
+    first = esp32.Radio.open_serial("COM16", fast_baud=run_baud)
+    first.close()
+    assert state["baud"] == run_baud
+    # Checking the board must work at the retained rate and must not change it.
+    assert gui_board.identify("COM16", blink=False).protocol == esp32.PROTOCOL_VERSION
+    assert state["baud"] == run_baud
+    second = esp32.Radio.open_serial("COM16", fast_baud=next_baud)
+    try:
+        assert second.hello().version == esp32.PROTOCOL_VERSION
+        assert state["baud"] == next_baud
+    finally:
+        second.close()
+    assert state["opens"] == 3 and not state["held"]
+
+
 def test_a_board_that_leaves_usb_mid_run_stops_the_run_once_and_stops_writing():
     """Windows fails the read of a removed USB device with PermissionError 13 and every write after
     it; a run kept writing to the dead port until the player pressed Stop."""

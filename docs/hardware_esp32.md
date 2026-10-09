@@ -742,12 +742,18 @@ only USB serial port present (`/dev/cu.usbserial-*`, `/dev/cu.SLAB_USBtoUART*`,
 `/dev/cu.wchusbserial*`, `/dev/cu.usbmodem*`, `/dev/ttyUSB*`, `/dev/ttyACM*`; USB COM ports on Windows)
 and refuses to choose between several, since opening a port can reset its board. The port is opened once
 per process with DTR and RTS released; a CP2102 board on macOS resets on open regardless, so the host
-retries HELLO for 5 s before switching to 921600. Windows opens a COM port exclusively: a second open
+retries HELLO across the boot and supported run rates before selecting the requested rate. Windows opens a COM port exclusively: a second open
 while any handle is held, in this process or another, fails with `PermissionError(13, 'Access is
 denied.')`, so a board that never answers HELLO closes its port before the launcher retries. A USB
 device removed under an open port fails the next read the same way (`GetOverlappedResult failed` or `ClearCommError failed`)
 and every write after it; the launcher then ends the run with `[esp32] The board disconnected from
 USB` instead of writing on.
+
+A classic UART board retains its baud rate when a session process exits. Opening the next session
+only at 115200 can therefore time out on HELLO after a successful run at 921600 or 1500000.
+The launcher and the app's board check probe the boot rate, the requested run rate and both app
+rates, terminating any partial serial frame before HELLO. They reconnect without resetting the
+board; the board check leaves the current rate unchanged.
 
 On Windows 11 with the Silicon Labs driver 11.6.0.420, a classic ESP32 on a CP2102 measured:
 
