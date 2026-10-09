@@ -20,6 +20,7 @@ if len(sys.argv) == 6 and sys.argv[1] == "--apply-update":
     from pathlib import Path
     from gui.updating import run
     new, target, pid, version = sys.argv[2:]
+    os.chdir(Path(new).parent)   # an older app started this helper in target; Windows then refuses the rename
     sys.exit(run(Path(new), Path(target), int(pid), version))
 
 # The app's own process never drives a board: an inherited POKELDN_RADIO would open the port as

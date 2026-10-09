@@ -237,9 +237,10 @@ def _detach() -> dict:
 def start_swap(new: Path, target: Path, version: str, system: str = sys.platform) -> None:
     """Starts the new app as the helper that replaces target once this process (os.getpid()) exits."""
     log = (new.parent.parent / "helper.log").open("ab")
+    # Launched from Explorer, this app's working folder is target: inherited, Windows refuses the rename.
     subprocess.Popen([str(executable_in(new, system)), "--apply-update", str(new), str(target),
-                      str(os.getpid()), version], stdin=subprocess.DEVNULL, stdout=log, stderr=log,
-                     close_fds=True, **_detach())
+                      str(os.getpid()), version], cwd=str(new.parent), stdin=subprocess.DEVNULL, stdout=log,
+                     stderr=log, close_fds=True, **_detach())
     log.close()
 
 
@@ -264,6 +265,46 @@ def wait_for_exit(pid: int, timeout: float) -> bool:
             pass
         time.sleep(0.2)
     return False
+
+
+def running_from(root: Path) -> list[int]:
+    """Windows: the processes whose executable lies under root (the old app's PKHeX service outlives
+    it); each one keeps root from being renamed. Elsewhere a running file never blocks a rename."""
+    if sys.platform != "win32":
+        return []
+    import ctypes
+    from ctypes import wintypes
+    kernel, psapi = ctypes.windll.kernel32, ctypes.windll.psapi
+    pids = (wintypes.DWORD * 4096)()
+    size = wintypes.DWORD()
+    if not psapi.EnumProcesses(pids, ctypes.sizeof(pids), ctypes.byref(size)):
+        return []
+    prefix = os.path.normcase(str(root.resolve())) + os.sep
+    found = []
+    for pid in pids[:size.value // ctypes.sizeof(wintypes.DWORD)]:
+        handle = kernel.OpenProcess(0x1000, False, pid)   # PROCESS_QUERY_LIMITED_INFORMATION
+        if not handle:
+            continue
+        try:
+            name, length = ctypes.create_unicode_buffer(32768), wintypes.DWORD(32768)
+            if kernel.QueryFullProcessImageNameW(handle, 0, name, ctypes.byref(length)) and \
+                    os.path.normcase(name.value).startswith(prefix) and pid != os.getpid():
+                found.append(pid)
+        finally:
+            kernel.CloseHandle(handle)
+    return found
+
+
+def end_processes_from(root: Path, timeout: float) -> None:
+    """Waits for the processes running from root to end, then terminates the rest."""
+    if wait_for(lambda: not running_from(root), timeout):
+        return
+    for pid in running_from(root):
+        try:
+            os.kill(pid, 9)           # TerminateProcess on Windows
+        except OSError:
+            pass
+    wait_for(lambda: not running_from(root), 5.0)
 
 
 def _copy(source: Path, dest: Path, system: str) -> None:
@@ -305,6 +346,7 @@ def apply(new: Path, target: Path, pid: int, version: str, system: str = sys.pla
     if not wait_for_exit(pid, EXIT_WAIT):
         _record(outcome, version, "the old app did not quit")
         return False
+    end_processes_from(target, 10.0)
     shutil.rmtree(old, ignore_errors=True)
     end = time.monotonic() + RENAME_WAIT
     while True:

@@ -275,3 +275,18 @@ def test_the_new_app_leaves_the_helpers_folder_until_the_helper_has_closed(tmp_p
         helper.kill()
         helper.wait()
     assert update.wait_for(lambda: not new.exists(), 5.0)
+
+
+@pytest.mark.filterwarnings("ignore::ResourceWarning", "ignore::pytest.PytestUnraisableExceptionWarning")
+def test_the_helper_never_runs_inside_the_folder_it_renames(tmp_path, monkeypatch):
+    # Windows refuses to rename a folder that is any process's working folder; Explorer starts the
+    # old app with its own folder as one, and the helper inherited it.
+    target = packed_app(tmp_path / "Applications", "linux", "0.1.0")
+    new = packed_app(tmp_path / "data/update/new", "linux", "9.0.0")
+    seen = tmp_path / "helper_cwd"
+    update.executable_in(new, "linux").write_text(f"#!/bin/sh\npwd -P > '{seen}'\n")
+    monkeypatch.chdir(target)
+    update.start_swap(new, target, "9.0.0", "linux")
+    assert update.wait_for(lambda: seen.exists() and seen.read_text().strip(), 10.0)
+    helper_cwd = Path(seen.read_text().strip())
+    assert target.resolve() not in (helper_cwd, *helper_cwd.parents)

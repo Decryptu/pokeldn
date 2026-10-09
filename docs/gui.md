@@ -234,10 +234,14 @@ Update now (`pokeldn.app.update`) installs the release in place:
 4. Start the new app as a helper, `pokeldn --apply-update NEW TARGET PID VERSION`
    (`gui/updating.py`). Its small "Updating pokeldn" window touches `update/helper.ready`; the old
    app quits on that file, or after 15 s without it, so one window is always on screen.
-5. The helper waits for the old app's process to end (120 s), renames the installed app to
-   `.<name>.old` beside it (retrying for 30 s while Windows releases the folder), copies the new app
-   into its place, deletes the old copy and opens the new app. Any failure puts the old app back and
-   opens it. The swap runs whether or not the helper's window came up.
+5. The helper waits for the old app's process to end (120 s), then on Windows for every process
+   whose executable lies in the installed app (the PKHeX service) and terminates any left after
+   10 s. It renames the installed app to `.<name>.old` beside it (retrying for 30 s while Windows
+   releases the folder), copies the new app into its place, deletes the old copy and opens the new
+   app. Any failure puts the old app back and opens it. The swap runs whether or not the helper's
+   window came up.
+   The helper runs from the unpacked copy's folder: Windows refuses to rename a folder that is any
+   process's working folder, and Explorer starts the app with its own folder as one.
 6. The app that opens reads `update/outcome.json` once: "pokeldn updated to X", or a dialog saying
    why the old app stayed. Removing the file closes the helper (it gives up after 60 s); the app
    then removes the unpacked copy once the helper's process has ended, and any `.old` folder.
