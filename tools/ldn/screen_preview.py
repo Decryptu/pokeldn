@@ -4,6 +4,7 @@ machine, plays a scripted session through them and writes an animated GIF (needs
 Pillow). docs/hardware_esp32.md, The screen.
 
     ./.venv/bin/python tools/ldn/screen_preview.py OUT.gif [--offer 25] [--receive 150] [--gift 151]
+        [--panel 72x40]   the 0.42-inch ESP32-C3 board's window
 """
 import argparse
 import ctypes
@@ -19,6 +20,8 @@ from pokeldn.ldn import esp32  # noqa: E402
 
 SOURCES = [ROOT / "firmware/esp32/main/scene.c", ROOT / "firmware/esp32/main/screen.c"]
 MODES = {"idle": 0, "joining": 1, "joined": 2, "hosting": 3, "sniffing": 4}
+# scene.h: enum scene_panel, and the window (x, y, w, h) of the frame each panel shows.
+PANELS = {"128x64": (0, (0, 0, 128, 64)), "72x40": (1, (30, 24, 72, 40))}
 
 
 class Radio(ctypes.Structure):
@@ -29,7 +32,7 @@ class Radio(ctypes.Structure):
 class Scene:
     """The firmware's scene code, built as a shared library and driven frame by frame."""
 
-    def __init__(self, build_dir: str | None = None):
+    def __init__(self, build_dir: str | None = None, panel: str = "128x64"):
         folder = Path(build_dir or tempfile.mkdtemp(prefix="pokeldn-screen-"))
         lib = folder / ("libscene" + (".dylib" if sys.platform == "darwin" else ".so"))
         subprocess.run([os.environ.get("CC", "cc"), "-O1", "-Wall", "-Werror", "-shared", "-fPIC",
@@ -37,6 +40,7 @@ class Scene:
         self.lib = ctypes.CDLL(str(lib))
         self.lib.scene_command.restype = ctypes.c_bool
         self.lib.scene_draw.restype = ctypes.c_uint8
+        self.lib.scene_panel(PANELS[panel][0])
         self.lib.scene_reset()
         self.radio = Radio()
         self.now = 1000
@@ -57,13 +61,14 @@ def pixel(fb: bytes, x: int, y: int) -> bool:
     return bool(fb[x + 128 * (y >> 3)] >> (y & 7) & 1)
 
 
-def image(fb: bytes, scale: int = 4):
+def image(fb: bytes, scale: int = 4, panel: str = "128x64"):
     from PIL import Image
-    img = Image.new("RGB", (128 * scale, 64 * scale), (6, 8, 14))
+    x0, y0, w, h = PANELS[panel][1]
+    img = Image.new("RGB", (w * scale, h * scale), (6, 8, 14))
     lit = Image.new("RGB", (scale - 1, scale - 1), (90, 180, 255))
-    for y in range(64):
-        for x in range(128):
-            if pixel(fb, x, y):
+    for y in range(h):
+        for x in range(w):
+            if pixel(fb, x0 + x, y0 + y):
                 img.paste(lit, (x * scale, y * scale))
     return img
 
@@ -107,8 +112,10 @@ def main() -> None:
     parser.add_argument("--offer", type=int, default=25)
     parser.add_argument("--receive", type=int, default=150)
     parser.add_argument("--gift", type=int, default=151)
+    parser.add_argument("--panel", choices=PANELS, default="128x64")
     args = parser.parse_args()
-    frames = [image(fb) for fb in session(Scene(), args.offer, args.receive, args.gift)]
+    scene = Scene(panel=args.panel)
+    frames = [image(fb, panel=args.panel) for fb in session(scene, args.offer, args.receive, args.gift)]
     frames[0].save(args.out, save_all=True, append_images=frames[1:], duration=50, loop=0)
     print(f"{len(frames)} frames -> {args.out}")
 

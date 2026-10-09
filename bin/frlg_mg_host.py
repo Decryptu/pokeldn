@@ -27,7 +27,8 @@ from pokeldn.frlg.link import trade_runtime  # noqa: E402
 from pokeldn.frlg.rom import buffer_script, builds, native_script  # noqa: E402
 from pokeldn.frlg.text import easychat  # noqa: E402
 from pokeldn.frlg.gift.host_mg_app import (  # noqa: E402
-    BufferScriptHostApplication, MysteryGiftHostApplication, WonderNewsHostApplication)
+    BufferScriptHostApplication, MysteryGiftHostApplication, SaveTransferHostApplication,
+    WonderNewsHostApplication)
 from pokeldn.frlg.gift import wonder_card_events  # noqa: E402
 from pokeldn.frlg.gift.wonder_card import GIFT_BEAST_CUTSCENE  # noqa: E402
 from pokeldn.ldn import ldn_mitm_host, transport  # noqa: E402
@@ -68,6 +69,17 @@ def build_parser(file_config=None, *, shared_path=None, local_path=None):
     payload_group.add_argument("--gift-file", help="a complete FRLG .pokegift file, or a .wc3 Wonder Card")
     parser.add_argument("--export-gift", metavar="FILE",
                         help="save a .pokegift file and exit without using the radio")
+    payload_group.add_argument(
+        "--save-backup", metavar="FILE",
+        help=("copy the console's whole 128 KB save into FILE (.sav); the console's save is not "
+              "changed [docs/frlg_gift.md, Save backup and restore]"))
+    payload_group.add_argument(
+        "--save-restore", metavar="FILE",
+        help=("write the .sav FILE onto the console: beside its newest save, every sector read "
+              "back, then the game loads it and saves; anything short of that keeps the old save"))
+    parser.add_argument(
+        "--save-resume-dir", metavar="DIR",
+        help="with --save-backup: keep a backup the link cut short here; the next one goes on from it")
     payload_group.add_argument(
         "--news", nargs="?", const=wonder_news.DEFAULT_NEWS, default=None,
         choices=wonder_news.news_choices(), metavar="NAME",
@@ -813,6 +825,42 @@ def build_run_config(parser, args):
         parser.error(str(exc))
 
 
+def _transport(parser, args):
+    factory = transport.HostTransport
+    if args.over_ip:
+        our_ip = None if args.over_ip == "auto" else args.over_ip
+        factory = functools.partial(ldn_mitm_host.IpHostTransport, our_ip=our_ip)
+        # functools.partial hides the class attribute the phy resolution reads.
+        factory.NEEDS_RADIO = False
+    elif needs_root():
+        parser.error("live LDN hosting requires root; run with sudo -E")
+    return factory
+
+
+def _save_session(parser, args, config):
+    if args.export_gift:
+        parser.error("--export-gift saves a gift; a save session sends none")
+    if args.save_restore:
+        from pokeldn.frlg.save import sav
+        try:
+            with open(args.save_restore, "rb") as handle:
+                summary = sav.describe(handle.read())
+        except (OSError, sav.SaveError) as exc:
+            parser.error(f"--save-restore: {exc}")
+        if not summary.sound:
+            parser.error("--save-restore: the save has no whole copy of a game in it")
+    app = SaveTransferHostApplication(
+        config, backup=args.save_backup, restore=args.save_restore,
+        resume_dir=args.save_resume_dir, transport_factory=_transport(parser, args),
+        log=trade_runtime.ConsoleLog(args.verbose))
+    app.run()
+    if app.interrupted:
+        return 130
+    if app.idle_timed_out:
+        return 124
+    return 0 if app.delivery_succeeded else 1
+
+
 def main(argv=None):
     try:
         file_config, shared_path, local_path = \
@@ -829,7 +877,11 @@ def main(argv=None):
         return 0
     if not args.live and not args.export_gift:
         parser.error("hosting only supports live mode; omit --no-live")
+    if args.save_resume_dir and not args.save_backup:
+        parser.error("--save-resume-dir goes with --save-backup")
     config = build_run_config(parser, args)
+    if args.save_backup or args.save_restore:
+        return _save_session(parser, args, config)
     try:
         plan = configmod.plan_builds(config.payload, config.console_build, config.console_version)
     except ValueError as exc:
@@ -840,7 +892,8 @@ def main(argv=None):
         try:
             gift = from_payload(config.payload, console_build=config.console_build,
                                 version=config.console_version)
-            gifts.save(args.export_gift, gift)
+            gifts.save(args.export_gift, gift,
+                       build=None if config.console_build == "auto" else config.console_build)
         except (OSError, ValueError) as exc:
             parser.error(str(exc))
         print(f"Saved {args.export_gift}: {gift.summary}")
@@ -866,14 +919,7 @@ def main(argv=None):
         except OSError as exc:
             parser.error(f"could not write --artifact-dir {args.artifact_dir!r}: {exc}")
         print(f"wrote Mystery Gift artifact: {artifact_path}")
-    factory = transport.HostTransport
-    if args.over_ip:
-        our_ip = None if args.over_ip == "auto" else args.over_ip
-        factory = functools.partial(ldn_mitm_host.IpHostTransport, our_ip=our_ip)
-        # functools.partial hides the class attribute the phy resolution reads.
-        factory.NEEDS_RADIO = False
-    elif needs_root():
-        parser.error("live LDN hosting requires root; run with sudo -E")
+    factory = _transport(parser, args)
     application = (WonderNewsHostApplication if plan.distribution.is_news
                    else BufferScriptHostApplication if plan.distribution.buffer_code is not None
                    else MysteryGiftHostApplication)

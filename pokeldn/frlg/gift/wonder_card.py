@@ -371,3 +371,29 @@ def build_legendary_beast_cutscene_gift(
         footer1="pokeldn",
     )
     return card, build_legendary_beast_cutscene_script(level=level)
+
+
+JAPANESE_WONDER_CARD_SIZE = 164
+JAPANESE_TEXT_FIELDS = ((10, 18), (28, 13), (41, 20), (61, 20), (81, 20),
+                        (101, 20), (121, 20), (141, 20))
+
+
+def for_build(card, build=None):
+    """Roman card prose in the Japanese wire layout [BPRJ BufferCardText, 0x08149934]."""
+    from pokeldn.frlg.rom import builds
+    if builds.resolve(build).language != "japanese" or len(card) == JAPANESE_WONDER_CARD_SIZE:
+        return card
+    out = bytearray(JAPANESE_WONDER_CARD_SIZE)
+    out[:10] = card[:10]
+    for index, (offset, width) in enumerate(JAPANESE_TEXT_FIELDS):
+        text = charmap.latin_text_for_japanese(charmap.decode(card[10 + index * 40:50 + index * 40]))
+        out[offset:offset + width] = charmap.encode(text, width=width, pad=0xFF)
+    return bytes(out)
+
+
+def text_fields(card):
+    """Decode the eight text fields using the card's international or Japanese layout."""
+    japanese = len(card) == JAPANESE_WONDER_CARD_SIZE
+    fields = JAPANESE_TEXT_FIELDS if japanese else tuple((10 + i * 40, 40) for i in range(8))
+    return tuple(charmap.decode(card[offset:offset + width], language=1 if japanese else 2)
+                 for offset, width in fields)

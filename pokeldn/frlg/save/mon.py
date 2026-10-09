@@ -12,23 +12,11 @@ SUBSTRUCT_ORDER = [
     "MGAE", "MGEA", "MAGE", "MAEG", "MEGA", "MEAG",
 ]
 
-_CHARS = {0x00: " ", 0xAB: "!", 0xAC: "?", 0xAD: ".", 0xAE: "-", 0xAF: "·", 0xB0: "…",
-          0xB1: "“", 0xB2: "”", 0xB3: "‘", 0xB4: "’", 0xB5: "♂", 0xB6: "♀", 0xB7: "¥",
-          0xB8: ",", 0xB9: "×", 0xBA: "/", 0xFF: ""}
-for _i in range(10):
-    _CHARS[0xA1 + _i] = "0123456789"[_i]
-for _i in range(26):
-    _CHARS[0xBB + _i] = chr(ord("A") + _i)
-    _CHARS[0xD5 + _i] = chr(ord("a") + _i)
+from pokeldn.frlg.text import charmap
 
 
-def gba_str(b):
-    out = []
-    for x in b:
-        if x == 0xFF:
-            break
-        out.append(_CHARS.get(x, "."))
-    return "".join(out)
+def gba_str(b, language=None):
+    return charmap.decode(b, language=language)
 
 
 from pokeldn.frlg.save.species_names import SPECIES
@@ -57,8 +45,8 @@ def decode_mon(mon):
     ribbon_word = int.from_bytes(misc[8:12], "little")
     return {
         "pid": pid, "otid": otid,
-        "nickname": gba_str(mon[8:18]),
-        "otName": gba_str(mon[20:27]),
+        "nickname": gba_str(mon[8:18], mon[18]),
+        "otName": gba_str(mon[20:27], mon[18]),
         "language": mon[18],
         "checksum_ok": calc == stored,
         "stored": stored, "calc": calc,
@@ -128,6 +116,13 @@ def _wire_valid(b):
     return bool(d and d["checksum_ok"])
 
 
+def _wire_plausible(b):
+    # A .pk3 read as wire bytes checksum-validates by chance about once in 2000 PKHeX events.
+    d = decode_mon(b)
+    return bool(d and d["checksum_ok"] and d["species"] and d["species"] in SPECIES
+                and not SPECIES[d["species"]].startswith("OLD_UNOWN"))
+
+
 class Mon:
     def __init__(self, party100):
         if len(party100) != PARTY_MON_SIZE:
@@ -145,10 +140,14 @@ class Mon:
         # When PID == OTID the key is 0 and .pk3/.ek3 both checksum-validate, so an unshuffled mon
         # would ship; treat key == 0 as a decrypted .pk3.
         key = int.from_bytes(data[0:4], "little") ^ int.from_bytes(data[4:8], "little")
-        if _wire_valid(data) and key != 0:
+        enc = to_encrypted(data)
+        if key != 0 and _wire_plausible(data):
+            wire = data
+        elif _wire_plausible(enc):
+            wire = enc
+        elif _wire_valid(data) and key != 0:
             wire = data
         else:
-            enc = to_encrypted(data)
             wire = enc if _wire_valid(enc) else data
         if len(wire) == BOX_SIZE:
             # mail must be MAIL_NONE (0xFF): a zero byte is mail slot 0, which the host treats as real mail.

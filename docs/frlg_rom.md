@@ -11,8 +11,7 @@ The Mystery Gift client runs code sent to it through two interpreters: `CLI_RUN_
 Neither needs a glitch, a prepared save or any setup; the console stays on its Mystery Gift menu.
 
 Addresses on this page are French FireRed, cartridge BPRF, software version 0x0A. LeafGreen's are on
-[LeafGreen](frlg_leafgreen.md); the tables and how they were found are on
-[The ROM map](frlg_rom_map.md).
+[LeafGreen](frlg_leafgreen.md); the tables are on [The ROM map](frlg_rom_map.md).
 
 # The Mystery Event VM
 
@@ -148,8 +147,7 @@ field_control_avatar.c:458], which runs the script in place of the object's own 
 
 It costs the Wonder Card ([the one RAM script slot](frlg_gift.md#the-one-ram-script-slot)); sessions
 log "holding no Wonder Card" until the next ordinary card takes the slot back. The object loses its
-own script while bound: bound to a static encounter's object (Mewtwo in Cerulean Cave B1F), the script
-replaces the encounter.
+own script while bound: bound to a static encounter's object, the script replaces the encounter.
 
 ## Traps
 
@@ -274,8 +272,8 @@ A soft reset clears EWRAM twice: `DoSoftReset` calls `SoftReset(RESET_ALL & ~RES
 `RegisterRamReset(RESET_ALL)` [main.c:134]; bit 0 of 0xFF is `RESET_EWRAM` [include/gba/syscall.h:4,12].
 The Switch wrapper also restarts the emulated console, so `AgbMain` runs twice: `gIntrTable` and
 `INTR_VECTOR` (0x03007FFC) are cleared and rebuilt twice per boot, entries 1, 2 and 7 taking wireless
-values in between (sampled at 328000 a second on one boot: 33.3 ms, then 133.6 ms to the second clear,
-33.6 ms to its rebuild). The boot rebuilds nothing above 0x0203B0E8. Nothing between two boots writes
+values in between (sampled at 328000 a second: 33.3 ms, then 133.6 ms to the second clear, 33.6 ms to
+its rebuild). The boot rebuilds nothing above 0x0203B0E8. Nothing between two boots writes
 0x0203FC00..0x02040000: a marker there persists across the title screen, a reload, menus, a save, a
 map change, a battle and a PC box, and a soft reset (A+B+START+SELECT) clears it.
 
@@ -335,7 +333,7 @@ A `call-chain` installs it: the five words first, entry 4 last, every write read
     read32  [0x0203FC40]                the counter
 
 The hook runs once per frame in every game state: over 19995 frames it counted 59.0 to 63.3 calls
-a second on the menu, title screen, overworld, party menu and a wild battle, and across an in-game
+a second on the menu, title screen, overworld, party menu, a wild battle and across an in-game
 restart. A soft reset ends it: `InitIntrHandlers` rewrites entry 4 [main.c:339] (`gIntrTable[4]`
 reads zero, then 0x0800071D). Mystery Gift is reachable only after a boot, which clears EWRAM, so a payload that
 must be present without a fresh session needs its installer in the save.
@@ -361,8 +359,8 @@ The tail target comes from the table, so the hook chains whatever handler is the
 top is required: installing twice makes the stub tail-branch to itself, which spins inside an
 interrupt handler and freezes the overworld.
 
-The script block at `SaveBlock1 + 0x32E0` survives a soft reset at the re-rolled pointer; talking to
-her after any boot arms the hook within the conversation, with no host (verified on an emulator).
+The script block at `SaveBlock1 + 0x32E0` survives a soft reset at the re-rolled pointer (verified on
+an emulator).
 
 The script rebuilds the code on every arming, so the code is bounded by a script body: 162 bytes
 staged, or about 755 appended after the last command and reached with a trampoline.
@@ -545,6 +543,26 @@ Guest `r0` is a 4 KB sector number, guest `r1` the source:
     source      = r1, resolved through the region table and folded
     destination = 0x0E000000 + r0 * 0x1000, resolved the same way
 
+The destination address is formed in 32-bit arithmetic [main + 0x05737C]:
+`0x0E000000 + ((r0 & 0xFFFFF) << 12)`, and the region entry is that address's top byte
+[main + 0x057384]: `0x0E + ((r0 & 0xFFFFF) >> 12)` mod 256, so `r0` selects the region. A
+destination in EWRAM, IWRAM or the cartridge buffer passes both bounds checks (`fold < size`,
+`size - fold >= 0x1000`); with `r0 = 0xFA000 + n` the destination folds into the ROM copy's
+4 KB at `n * 0x1000` (`n` 0..0xFFF), from any source region.
+
+A ROM destination is a live write into the cartridge buffer, measured on the patched Ryubing
+build of the emulated console over the IP host (no retail console touched): with
+`r0 = 0xFA3FF` (`dest` 0x083FF000, `n` = 0x3FF, region entry 0x08) and an EWRAM source
+(`r1` 0x0201C400, fold 0x1C400, mask 0x3ffff), both gates pass and the copy lands: the cartridge
+buffer's bytes at 0x3FF000 became the source's own 0x1000 bytes exactly (200 words of a chosen
+pattern at 0x3FF000..0x3FF31F, then the source's own tail bytes at 0x3FF320+ carried along, e.g.
+word 200 = 0x11111000 in both places). A guest load at 0x083FF000 then reads the pattern through
+the folded ROM window. The host session held: the payload returned 1, `client->param` carried the
+pattern's own first word, the console printed the success message and closed the link cleanly.
+The readback was a data read. Whether patched ROM bytes execute as code is unmeasured, and so is
+the write's lifetime: whether a soft reset re-copies the ROM buffer from the emulator's ROM file
+or keeps the session's heap copy is a model, not a measurement.
+
 Each side is rejected (pointer set to null) if the region's backing pointer at `+0x10` is null, the
 folded offset is at or past the size at `+0x20`, or fewer than `0x1000` bytes remain. Both sides
 resolve before `0x1000` bytes are copied. `swi 0x56` then stores `0xFF` at destination `+0xFF8` with
@@ -566,6 +584,7 @@ Measured with `swi 0x48` on the emulated console:
 | `r0` a sector past the flash size, `r1` an unmapped region | nothing written, flash byte-identical, no fault, no freeze |
 | `r0 = 30`, `r1 = 0x08000000` (the ROM header) | sector 30 became the cartridge's first 4 KB, 4096 of 4096 bytes, neighbours untouched |
 | `r0 = 30`, `r1` an EWRAM buffer the payload filled | sector 30 became those bytes; the buffer read back unchanged |
+| `r0 = 0xFA3FF` (dest 0x083FF000), `r1` an EWRAM buffer | the copy lands in the cartridge buffer: its bytes at fold 0x3FF000 became the source's 4 KB byte for byte; a guest read at 0x083FF000 returns the pattern; the session ended cleanly |
 
 It modifies no guest register and returns no status: only a flash read tells an accepted call from a
 rejected one.
@@ -600,6 +619,12 @@ read through the Mystery Gift client, retail and emulated):
 | `0x081E187C` | ARM `ldr r3, [pc, #0x50]` (`e59f3050`) | `bkpt #0x52` (`e1200572`) |
 | `0x081E1F90` | ARM `mov lr, r0, lsr #14` (`e1a0e720`) | `b 0x081E1FB8` (`ea000008`) |
 
+The third patch removes a wait loop. The function at `0x081E1F74` polls `REG_SIOCNT`
+(`0x04000128`) bit 2 against the caller's `r0` (`r0` masked to u16, `lr = r0 >> 14`), and
+returns early when the byte at `[*(0x03000030) + 0x10]` is 1, clearing it and answering 1. In
+emulation the poll never matches, so the wrapper replaces the body with `mov r0, #0; return`:
+the wait answers 0 at once.
+
 `bkpt #0x52` is keyed by address: its hook holds two records `{u32 pc, u32 original insn, ..., u32
 hits at +0x0C}` at `+0x120` and `+0x148`, and `main + 0x0546C0` matches the address and returns the
 original instruction. At the `Sio32IDMain` patch (`0x081E1696`) it resolves guest `r0`
@@ -629,8 +654,7 @@ resolver:
   null and the wrapper faults reading address `0x1`. With the flag clear the resolver returns
   without the write. Holder `+0x108` is `[+0xA8] + 0x170` (holder is `[+0xA8] + 0x68`), the same
   byte as the adapter power switch below: three live reads through `main + 0x03E850` during the
-  console's own Mystery Gift search (`ldn_bridge/tools/bp038.py --bp resolver=main+0x3E850`) found
-  it `0x1` every time, so `swi 0x40` alone arms the write path.
+  console's own Mystery Gift search found it `0x1` every time, so `swi 0x40` alone arms the write path.
 - on a record-1 mismatch re-keys record 2 (holder `+0x148`): `record2.pc := the bkpt address`,
   then matches it, so the core executes record 2's original, which is never updated: the stale
   `0x081E187C` original `e59f3050` (`ldr r3, [pc, #0x50]`), at any address the guest executes a
@@ -643,6 +667,11 @@ resolver:
   address stored at holder `+0x170`, reads a word at the folded address, and uses the word's top
   byte as a region selector and the word itself as the address to fold again, bounds-checked,
   decrementing a counter at holder `+0x42B8 + 0x7C`.
+- on a record-2 match with the `+0x108` flag clear, falls into `main + 0x03E960`: it folds the
+  address stored at holder `+0x170`, reads a word there, and tests its bits 15 to 26 against
+  `0x600`. On a match it folds the word's low 24 bits through the same region table,
+  bounds-checked, and decrements the counter at holder `+0x42B8 + 0x7C`; on a mismatch,
+  nothing.
 
 The guest controls the whole trigger: a payload that branches to `0x081E1696` (the patched site,
 THUMB) with a chosen `r0` makes the wrapper write `0x8001` at `fold(r0) + 0xA` and set `r1` to the
@@ -650,6 +679,44 @@ byte at `fold(r0) + 1`; a payload that executes a `bkpt #0x52` anywhere else exe
 `e59f3050` there. Both are guest-relative; the `+0xA` write is the one path that leaves the
 guest's regions: it can write `0x8001` two constant bytes up to 11 bytes past any region's
 backing allocation, including the 16 MB ROM copy's.
+
+#### What follows the ROM buffer: the Sloop component
+
+The ROM objects' mask (`+0x34`) is `0x1ffffff` while the cartridge occupies `0x1000000` bytes, so
+folds `0xFFFFF6..0xFFFFFF` pass the bounds check and put the write on the ten bytes immediately
+behind the ROM buffer. The object there is the Sloop component
+([The breakpoint hooks](#the-breakpoint-hooks)): its first word is the vtable pointer
+`main + 0x1C3878`, `+8` `0x000004bf`, `+0xC` `0x0A828400`, `+0x18` and `+0x20` `main + 0x16EB83`,
+`+0x28` a `0x655db` heap pointer, `+0x60` and `+0x88` further vtables (`main + 0x1C3948`,
+`main + 0x1C3978`), `+0xE0` the CPU-bus object.
+
+The neighbour changes between boots: one boot's ROM neighbour is an object whose first word is
+the vtable `main + 0x1C36D8` and whose `+0x60` is the vtable `main + 0x1C3790`. The constructor
+`main + 0x547CC` writes exactly that pair, reading the static pointer at `main + 0x86D67E8`
+(addend `main + 0x1C36C8` [main_relocs.json]). That class's fields are written by its own
+constructor and its own code; no store from a guest session reaches them.
+
+At the patched site the cartridge's own code parks its own `r0` (`ldr r0, [pc, #0x10]` loads
+`0x0300744A`, its own `&gRfuSIO32Id`, IWRAM), so the game's own dispatches always fold to the
+game's own struct: the wrapper's `0x8001` store is the adapter id reaching
+`gRfuSIO32Id.lastId` (`RFU_ID = 0x8001` [librfu.h]), the value `AgbRFU_checkID` waits for. A
+payload that branches to `0x081E1696` directly skips that load and parks its own `r0`, which is
+what moves the store instead.
+
+Instrumented on the strh itself (`main + 0x3E928`) and its continuation: with a direct branch
+and `r0 = 0x08FFFFF6`, the store's `x8` is `backing + 0xFFFFF6` (`0x66209f9ff6`, the tail's
+`ff` padding behind it), and the pre/post dumps read `0x66209fa000` as `78 98 6c 08 ...` before
+the store and `01 80 6c 08 ...` after it: two stores about 90 ms apart (the payload's trigger,
+then a second dispatch through the same site with the parked `r0`).
+
+A write over the component's first two bytes plants the vtable pointer `0x086C8001`, and the
+dispatcher `main + 0x1F820` then reads hook slot 19 (offset `+0x98`) from it: the eight bytes at
+`main + 0x1C2099` are `f7 01 00 00 00 00 00 00`, so the wrapper's next virtual call executes at
+guest PC `0x1F7`, an unmapped address no guest path otherwise reaches. On the emulator this
+aborts the process (`Unhandled guest exception InstructionAbortLowerEl`); the same trigger with
+the fold inside a region ends the session in the local fold's write only, no such dispatch. The
+cartridge's own code at the site rules out the other candidate: `mov ip, r1` stores `ip` as a
+value (`mov r0, ip; strh r0, [r4]`), it is never branched through.
 
 The hook acts only while the byte at `[component + 0x40] -> [+0xA8] + 0x170` is set: the virtual
 adapter's power switch. `swi 0x40` sets it, `swi 0x41` clears it (handler `main + 0x05706C` stores
@@ -659,6 +726,75 @@ a soft reset, so the next wireless menu reports "L'adaptateur sans fil GBA n'est
 byte survives a soft reset; relaunching, or
 `swi 0x40`, restores it. It is read per frame: `swi 0x41` then `swi 0x40` in one payload is harmless.
 
+#### The chain from a bkpt to the resolver
+
+An NSO's vtable slots hold unrelocated addends in the file; the loader adds the image base
+(`main` at `0x8506000`). With that base applied, a guest `bkpt #0x52` runs this chain:
+
+- both decode paths (THUMB `main + 0x1EFE0`, ARM `main + 0x1B7B8`) call the dispatcher
+  `main + 0x1F820` as `(CPU, bkpt address, immediate, &insn)`;
+- the dispatcher takes hook = `[CPU + (imm & 0xff) * 8 + 0x170]`; for `bkpt #0x52` that is
+  `component + 0x60`, a sub-object of the component (the component is the GBA CPU object: `+0x84`
+  current pc, `+0x170` hook table, `+0x960` a second bus table, `+0xE0` the bus object). It reads
+  the hook's own vtable (`main + 0x1C3948`) slot `+0x10`, and calls it as
+  `f(hook, &insn, bkpt address, CPU)`. Slot `+0x10` is `main + 0x5499C` directly;
+- `main + 0x5499C` writes `0xE1200572` into `insn`, then loads `[component]` and tail-calls the
+  virtual at `[that pointer + 0x98]` with `(component, &insn, bkpt address, CPU)`: slot `+0x98`
+  of `main + 0x1C3878` is `main + 0x56368`, which derives the record holder and reaches the
+  resolver `main + 0x03E850`.
+
+A store over the component's first ten bytes is therefore consumed at slot `+0x98`; the
+`+0x10` read happens on the hook sub-object, outside those ten bytes. The resolver's write
+target is `buffer_data + fold + 0xA`, the fold being the selected region's slot 9
+([`swi 0x52` and `swi 0x55`: the memory bus](#swi-0x52-and-swi-0x55-the-memory-bus)).
+
+#### What a plant over a seam does
+
+With `fold = size - 0xB` (in range) the write pair is `(size-1, size)`: the region's last byte
+gets `0x01` and the first byte of the neighbouring allocation gets `0x80`. With
+`fold = size - 0xA` the pair is `(size, size+1)`: `0x01 0x80` onto the neighbour's first two
+bytes. One Mystery Gift session buys one chosen fold; the payload's branch into the patched site
+does not return, and the body loops afterwards with the same parked `r0`, re-writing the same
+pair.
+
+Window 4, the GBA IO registers, maps to a 0x400-byte region object that sits immediately behind
+its own backing allocation: the backing is at bus `+0x14C0`, the object at bus `+0x18C0`, and
+the key-interrupt sub-object is embedded at object `+0x88`. The plant therefore lands on the
+object the bus dispatches every IO access through. The image's CPU core has 210 call sites in
+the accessor shape ([`swi 0x52` and `swi 0x55`: the memory bus](#swi-0x52-and-swi-0x55-the-memory-bus)).
+
+On the emulated console:
+
+| plant | consumed at | outcome |
+| --- | --- | --- |
+| component byte pair `01 80` (`0x086C8001`) | the slot `+0x98` read at `main + 0x1C2099`, unrelocated, `0x1f7` ([above](#what-follows-the-rom-buffer-the-sloop-component)) | |
+| component byte 0 `0x80` (`0x086C9880`) | `main + 0x5492C`, the same method without the `-0x60` | it re-reads `[x0] + 0x98` on the still-planted component and recurses into itself; the thread stack exhausts and the process dies with a data abort (`InvalidMemoryRegionException`) |
+| IO object byte 0 `0x80` (`0x086C8480`) | the bus's store slots `+0x38`/`+0x40`, whose planted targets are raw `0xffffffffffffe5e0` and `0` | the first IO store after the plant aborts the process within ~30 ms; the load targets (`main + 0x30EAC`, `main + 0x31114`, `main + 0x36D54`) never run |
+| name-hash block byte 0 (`0x80`) | the block is an SDK binder/surface descriptor object (`android.gui.IGraphicBufferProducer` and friends are static strings in the SDK image), not a dispatched object | no reaction; the game runs to its own clean exit |
+
+The plant `0x086C8080` (bytes `80 80`: every `bkpt #0x52` then runs the pure counter getter
+`main + 0x1F7F0`, so each bkpt becomes a no-op) needs two writes with no dispatch in between;
+one session buys one write, and both single-write states on the way kill the process. Planted
+through the debugger instead, that pointer stayed in place for five minutes with the game
+running and the process alive. No code site in the image writes a wrapper object's header after
+init.
+
+### Where the boundary stands
+
+Every guest path into the wrapper's own memory is decoded on this page. The one store past a
+region's backing is the resolver's `0x8001` strh at `fold + 0xA`; a planted pointer's consumers
+read their targets from `main`'s own data at static addresses ([What a plant over a seam
+does](#what-a-plant-over-a-seam-does)). The syscalls' stores into the component and their
+readers are in [The remaining syscalls](#the-remaining-syscalls); the `main + 0x1C36C8` class's
+fields are written by its own constructor and its own code ([What follows the ROM
+buffer](#what-follows-the-rom-buffer-the-sloop-component)). The third load-time patch replaces
+a wait loop. The bad-word filter's two buffers are length-bounded inside the dispatcher's own
+frame ([The bad-word filter](#the-bad-word-filter)); the flash-sector path's bounds are in
+[The flash sector path](#the-flash-sector-path).
+
+The next surface is the wrapper's own LDN parsing: the emulator is a Pia client of the ldn user
+service, and the other seat's advertisement bytes reach it in native form.
+
 #### The remaining syscalls
 
 Handler addresses are `main + 0x05706C + entry * 4` from the jump table at `main + 0x17D7F6`. The last
@@ -666,35 +802,50 @@ column is what one issue from the Mystery Gift client with `sloop-svc` showed.
 
 | swi | handler, callee | what it does | observed when issued once |
 | --- | --- | --- | --- |
+| 0x40, 0x41 | `main + 0x05706C` | the adapter power switch: stores `r0 == 0x40` at `[component + 0x40] -> [+0xA8] + 0x170` | swi 0x41 from the Mystery Gift menu raises the link error and leaves LDN ([above](#what-follows-the-rom-buffer-the-sloop-component)) |
 | 0x42 | mode switch `main + 0x0588A0` | `rfu_REQ_startSearchChild` [sloopsvc.c:49]; sets the network manager to mode 2 | ends the session with the link error; no access point opens |
 | 0x43 | `main + 0x0570EC` -> `main + 0x058AD0` | `rfu_REQ_startConnectParent`, 16-bit PID in `r0` [sloopsvc.c:91]; the same mode switch | the buffer script answered, then "Erreur de connexion" at close |
 | 0x44 | `main + 0x057100` -> `main + 0x058B0C` | `rfu_REQ_stopMode`, no arguments [sloopsvc.c:102] | after 0x43, no visible change |
 | 0x45 | `main + 0x057110` -> `main + 0x058900` | `rfu_REQ_startSearchParent`, `rfu_STC_readParentCandidateList` with `&gRfuLinkStatus` [sloopsvc.c:67-75]; copies the wrapper's scan result through the region table into `struct RfuLinkStatus`, `findParentCount` [include/librfu.h] at offset 8 first | 220 zeroed bytes stayed zero (no parent search in a gift session) |
+| 0x46 | jump-table entry `0x147` | falls through to the dispatcher's exit: the syscall does nothing | |
 | 0x47 | `main + 0x05715C` -> `main + 0x058680` | `rfu_REQ_configGameData`, `r0` points to `struct RfuGameData` (16 bytes) and the username (8, `RFU_USER_NAME_LENGTH`) [sloopsvc.c:34-46; include/link_rfu.h:103-115,232]; copies all 24 to `component + 0x6050D8` and `activity` (bits 16-22 of the second 64-bit word) to `component + 0x605360` if changed | `activity` 0x30 landed byte for byte at both |
+| 0x48, 0x56 | `main + 0x057084` | the flash-sector copy: the destination sector is guest `r0`, the source is `fold(guest r1)` through the same region table and bounds-checked against the region's size, up to 4 KB | [The flash sector path](#the-flash-sector-path) |
+| 0x49 | `main + 0x0571A8` -> `main + 0x0588D0` | calls `main + 0x0588D0` on the `component + 0xD0` object; takes no guest argument | returns 0 |
+| 0x4A | `main + 0x0571B8` -> `main + 0x058AB8` | the same shape on `component + 0xD0` | returns 0 |
 | 0x4B | `main + 0x0572C4` | no argument; bit 1 makes `RfuMain1` reseed the RNG from `gHostRfuGameData->compatibility.playerTrainerId`, bit 0 clear makes `SpawnGroupLeaderAndMembers` exit early for a leader [sloopsvc.c:132-145] | 0 |
-| 0x4D | `main + 0x0571FC` | the bad-word filter, below | |
+| 0x4C | `main + 0x0571CC` | calls `main + 0x05D930` on `[component + 0xE8] + 0xA0`, and when it answers 0 calls `main + 0x049D28` on a global pointer; no guest data reaches either | returns 0 |
+| 0x4D | `main + 0x0571FC` | the bad-word filter: resolves `r0` and reads up to 256 bytes at `fold(r0)`, [below](#the-bad-word-filter) | |
+| 0x4E | jump-table entry `0x147` | falls through to the dispatcher's exit: the syscall does nothing | |
 | 0x4F | `main + 0x057248` -> `main + 0x058B54` | builds `{u16 tag 0x4757; u32 value = r0}` on its stack; the tagged-property dispatcher `main + 0x4EBD0` and setter `main + 0x058BB4` store the value unvalidated at `component + 0x6052A0` | writing 3 and `0x7FFFFFFF`, each followed by 0x49 and 0x4A, changed nothing observable |
 | 0x50 | getter `main + 0x058BA4` | reads the same 4-byte count back | |
 | 0x51 | `main + 0x057270` -> `main + 0x0511BC` | reads `component + 0x3404` into an out-parameter and clears it; the out-parameter is always the dispatcher's own stack slot | |
+| 0x52 | `main + 0x05728C` | loads `[bus vtable + (r1 >> 24) * 8 + 0x50]` with the index unbounded 0..255, calls the load's `+0x48` virtual, and discards the result: guest `r1` reads back 0. On a fresh boot no index loads an object pointer with a real `+0x48` method | |
+| 0x53 | `main + 0x0572D4` | answers `component + 0x2770 == 0` (through `[component + 0xD0]`) | |
+| 0x54 | `main + 0x0572EC` | `svc_CommsAllowedByParentalControls` [sloopsvc.c:182] | returns 1 |
+| 0x55 | `main + 0x057304` | stores `r0` at `component + 0xE1BC`, folds the stored word through the region table and reads one byte back ([What the play reports are built from](#what-the-play-reports-are-built-from)) | |
+| 0x57 | `main + 0x057330` | `MonsSelect` into the report copy at `component + 0x140` | |
+| 0x58 to 0x60 | jump-table entry `0x147` | falls through to the dispatcher's exit: the syscall does nothing | |
 | 0x61 | `main + 0x057340` -> `main + 0x058B2C` | `svc_SetActivity`; writes `r0` to `component + 0x605360` only for 0x41 to 0x48, the Union Room activity codes | 0x45: a breakpoint on the callee's `ret` (`main + 0x058B50`) read `w1` and the field as 0x45; normal close |
+| 0x62 | `main + 0x057354` | adds 1 to `component + 0xE1B0`, the next report's `CommsError` | |
 
-Answer-only syscalls issued with a pointer in `r0` return 0 (0x49, 0x4A, 0x4B, 0x51, 0x53) or 1
-(0x50, 0x54), with `r1` to `r3` as passed.
+Answers come back through `main + 0x2209C`: guest `r0` = 1 when the number is above 0x2A, guest
+`r1` = the handler's answer word. No handler's answer carries a wrapper address.
 
 `component + 0x6052A0` is 16 bytes: a 4-byte count, 4 unused, an 8-byte pointer into `main`. Freshly
 launched: count 1, pointer `main + 0x1E8D20`, an array of pointers with two nulls after the one
-populated slot. The dispatcher's mismatch path (`main + 0x50618`) checks a second tag, `0x59`, with a
-third argument (`x2`) no known syscall supplies; what it reaches is unknown.
+populated slot.
 
 The tagged-property dispatcher `main + 0x4EBD0` walks a listener list on the component: entries of
 `0xd0` at `component + 0x10`, the count at `+0x688`, the enabled byte at `+0x690`; for each entry
 whose first word is 2 it calls the component vtable slot `+0x50` with the 8 bytes at `entry - 8`
-and the tagged entry. The setter `main + 0x058BB4` is the `0x4757` listener; the `0x59` listener at
-`main + 0x50618` writes its value at `component + 0x3324 + index * 4` with the index bounded 0..7 by
-`main + 0x4DB0C`. The count the `0x4757` listener stores at `component + 0x6052A0` has no reader
-but the getter `main + 0x058BA4` (`swi 0x50`): every other code site that forms the offset
-`0x6052A0` or `0x6052A8` in the image writes it or the pointer beside it at init. The value the
-`0x4F` caller supplies is inert.
+and the tagged entry. The setter `main + 0x058BB4` is the `0x4757` listener. The `0x59` listener
+at `main + 0x50618` writes the value at `[tagged entry + 4]` to `component + 0x3324 + index * 4`,
+the index read from `[x2]` and bounded 0..7 by `main + 0x4DB0C`. No syscall builds a `0x59`
+entry or supplies that third argument, and the twelve calls of the dispatcher build their
+entries from wrapper-internal fields. The count the `0x4757` listener stores at
+`component + 0x6052A0` has no reader but the getter `main + 0x058BA4` (`swi 0x50`): every other
+code site that forms the offset `0x6052A0` or `0x6052A8` in the image writes it or the pointer
+beside it at init. The value the `0x4F` caller supplies is inert.
 
 The console's own Mystery Gift search issues `swi 0x47` before any buffer script, advertising
 `activity` 0x15 (`ACTIVITY_WONDER_CARD` [include/constants/union_room.h:46]); a payload's call
@@ -706,14 +857,15 @@ live addresses differ by `0x100000000`.
 The per-candidate layout 0x45 writes is unsettled: the copy loop's byte count does not match
 `sizeof(struct RfuTgtData)`; read it live before depending on it.
 
+`component + 0x6050D8`, the 24 bytes `swi 0x47` copies ([main + 0x058694], a pre-indexed
+store from the guest's `r0` buffer), has no reader in the image. `component + 0x605360`'s
+readers are the activity diff `main + 0x058698` (through `component + 0x6050E0`) and
+`svc_SetActivity`'s setter `main + 0x058B40`; both compare or store the activity code.
+
 `component + 0x2770` (through `[component + 0xD0]`) is read by `swi 0x53` (a boolean) and by
 `main + 0x0511CC` and `main + 0x0511F4`, which no syscall reaches. `main + 0x0511F4` compares it with
 10 and, at or past it, atomically loads a flag at `component + 0x2790`; a set flag enters
 `main + 0x057250`'s continuation, which tests a third argument for null. Its caller is unidentified.
-
-Unresolved: the effect of 0x46, 0x4E, 0x58 to 0x60, 0x48, 0x4C, 0x51, 0x53 past its `+0x2770` read,
-0x55 and 0x56 issued from the Mystery Gift client is unknown, and the source side of the flash-sector
-fold of 0x48 and 0x56 is unread.
 
 The `bkpt #0x52` component also owns the dispatcher (slot 21 of its vtable) and 2324 species names,
 six languages each, hashed with djb2 (`main + 0x056540`, strings at `main + 0x1C4470`). The
@@ -801,6 +953,55 @@ screen saves the typed name only when it answers 0 [naming_screen.c:686].
 | `POKELDN` | 0 | unchanged |
 | `ASSASSIN` | 0 | unchanged |
 | `NINTENDO` | 0 | unchanged |
+
+The path [main + 0x0571FC -> main + 0x057458]: the handler folds `r0`, requires `0x100` bytes
+behind the fold, and copies the string into a `0x100`-byte stack buffer at frame `-0x100` (the
+copy at `main + 0x85645F0` is bounded by its `w1 = 0x100` argument). The conversion to UTF-16
+runs from that buffer into a `0x200`-byte buffer at `sp + 0x10` ([main + 0x855F100], `w2 =
+0x200`), the profanity check runs through a global pointer [main + 0x574AC, callee `main +
+0x86664C0`], and the masked string is copied back to the guest fold. Both buffers end inside
+the dispatcher's own `0x310`-byte frame (`sp + 0x210` and `sp + 0x310`); the copy reaches
+neither the saved registers nor past the frame. The replacement byte is the constant `0xA1`.
+
+### The wrapper's own scan pipeline
+
+The wrapper scans networks with `nn::ldn::Scan` through its own PLT (`main + 0x160B70`;
+`ScanPrivate` at `main + 0x160B60`), from the manager object `x23` at the call sites
+`main + 0x80944`/`0x8095C` with `w2 = 0x18` networks, into an inline array at
+`manager + 0x14C0`, 24 entries x `0x480` (zero-filled once at init, `main + 0x7E290`).
+The emulator's own ldn service casts the wire `ScanResponse` body into `NetworkInfo` without
+a length check, so the other seat's field values reach the wrapper verbatim.
+
+A consume loop (`main + 0x80A20..0x80B9C`) walks the array: it zeroes a `0x480`-byte record at
+`sp + 0x128` (`main + 0x874A0`), converts the entry into it (`main + 0x87374`: one memcpy of
+the whole `0x480` to `record + 0xB8`, then bit-precise field reads: source `+0xA`, `+0x11`
+(a 15-byte integer parse, `main + 0xA9830`, hex/oct/dec/bin with `b`/`x` prefixes,
+bound-checked at every advance), `+0x26A` (the advertise data size), `+0x281`/`+0x282`,
+`+0x11A..0x11F`; stores to record `+0x90`, `+0xA0`, `+0xA2`, `+0xA4`, `+0xA6`, `+0xB0`), then
+passes the record through a filter virtual and an accept virtual (`main + 0x80A88..0x80A94`).
+
+The accepted networks land in the parent-candidate list: 16 slots x `0x1A` bytes at
+`owner + 0x6050F2`, the write index at `owner + 0x605294` capped at 15 (`cmp w8, #0xf; b.le`
+[main + 0x58C3C]); the array ends at `+0x605292`, tight against the index. The fill is the
+owner class's (vtable `main + 0x1C3B30`) slot `+0xA0`, `main + 0x58BF8`, called per
+scan-result station by `main + 0x536A4`; the station's name length comes from the station's
+own virtual [slot `+0x50`], and `sub w8, w0, #1; cmp w8, #0x3f; b.hi` [main + 0x5364C] drops
+`x6 > 0x40` before the call. Inside the fill, a `0x41`-byte stack buffer at `sp + 7` receives
+`memcpy(sp + 7, x5, x6)` with the tail-zeroing memset skipped when `x6 > 0x40` [main +
+0x58C68]: for `x6 > 0x40` the copy reaches the frame's saved `x29`/`x30` (buffer offsets
+`0x59`/`0x61`). The one caller decoded clamps first, so the length through it is at most
+`0x40`; of the image's eight sites loading a class's slot `+0xA0`, `main + 0x536A4` is the
+one confirmed to dispatch on this class.
+
+Measured on the emulated console, one host advertising: count 1, slot 0 = the host's
+advertisement byte for byte: the 16-byte game data (activity `0x15`), the 8-byte display
+name, the parent id u16 (`0x59f1`).
+
+In `main` the list is written only through the fill family (`main + 0x58BB4`, `0x58BE4`,
+`0x58BF8`), all virtual; every other component-anchored access in the image is a read. The
+owner class's vtable pointer `main + 0x1C3B30` is formed by no `main`-side idiom (adrp/add,
+movz/movk, literal pool, reloc addend all absent): owner-class objects are constructed
+outside `main`.
 
 ## Repointing the console's outgoing message
 
@@ -1518,9 +1719,7 @@ reset removes the hook until MOM is talked to again.
 
 `tests/test_resident_save.py` runs the whole session between the host and the emulated client, and
 MOM's body script on a booted console: a flipped byte, a missing second write, a length past
-`filler_B20` and the older `PKLD` payload install nothing. The earlier `PKRS` blob (a 60-byte head and
-the 148-byte installer in the save) was verified with turbo on an emulator and on retail FireRed; the
-`PKR2` form is offline only.
+`filler_B20` install nothing. A retail FireRed installs the follower from its `PKR2` blob.
 
 A new Wonder Card undoes the binding: `SaveWonderCard` calls `ClearSavedWonderCardAndRelated`, which
 calls `ClearRamScript` [mystery_gift.c:172, 160]. `filler_B20` stays as written.
@@ -1588,7 +1787,7 @@ belong to a [field stub](frlg_rng.md#the-payload-in-the-script-body).
 
 Everything below was measured on the emulator.
 
-### The checksum covers the id's chunk, not the data area
+### The checksum covers the id's chunk
 
 `CalculateChecksum(data, size)` sums `size` bytes as little-endian u32 words and folds
 `(sum >> 16) + sum` to u16 [decomp:src/save.c]. `size` is the id's own chunk from `sSaveSlotLayout`,
@@ -1647,10 +1846,10 @@ the session's save writes the other one. To be adopted,
 a sector sits at band position 13 with counter `gSaveCounter + 2`, one above the session's
 `gSaveCounter + 1`. The id at position 13 is `(13 - gLastWrittenSector) % 14`, derived on the console.
 
-### A RAM snapshot is not a save
+### Composing a sector from a RAM snapshot
 
-The save routine serializes at save time, so SaveBlock2's live contents are not what it would write.
-Every checksum passes and `gDamagedSaveSectors` stays 0 in both cases below:
+The save routine serializes at save time, so SaveBlock2's live contents differ from what it would
+write. Every checksum passes and `gDamagedSaveSectors` stays 0 in both cases below:
 
 - The encryption key is re-rolled on load. `LoadGameSave` restores the blocks, makes a new key,
   applies it to every encrypted field in RAM and stores it in SaveBlock2

@@ -25,7 +25,7 @@ class HostSession:
                  player_ids_repeat_frames=None, link_player_idle_frames=None,
                  union_room=False, union_room_chat=False, chat_messages=None,
                  union_room_battle=False, battle_forfeit=True, battle_move_slot=0,
-                 colosseum=False):
+                 colosseum=False, partner=None):
         if plan is not None:
             trade_slot = plan.trade_slot
             offered_slots = plan.offered_slots
@@ -57,7 +57,7 @@ class HostSession:
                 union_room_chat=union_room_chat, chat_messages=chat_messages,
                 union_room_battle=union_room_battle, battle_forfeit=battle_forfeit,
                 battle_move_slot=battle_move_slot, colosseum=colosseum,
-                log=log)
+                log=log, partner=partner)
         else:
             raise ValueError("HostSession needs either a party or an activity engine")
         self.log = log

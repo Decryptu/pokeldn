@@ -98,3 +98,5 @@ EVAL_RUN_NOTES.txt
 
 # The Flet client scripts/build_client.py builds, with its Flet checkout.
 /gui/client/
+# The ARM-only Unicorn scripts/build_unicorn.py builds, with its source.
+/gui/unicorn/

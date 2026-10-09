@@ -117,19 +117,18 @@ then the console drops every datagram and times out, with no error.
 A joined console sends broadcast and multicast straight to the BSS (no DS bits; addresses group,
 console, BSSID; CCMP group key, key id 1) and unicast to-DS (pairwise key, key id 0). FireRed's first
 broadcasts are an ARP for the host and IPv6 multicast. A standard access point drops frames with no
-DS bits, and a host that does not answer the ARP is deauthenticated with reason 3. The Linux
-host decrypts them off its monitor interface (`vendor/LDN/ldn/__init__.py` `_process_data_frame`);
-the [ESP32](hardware_esp32.md) forwards them whole.
+DS bits, and a host that does not answer the ARP is deauthenticated with reason 3. The
+[ESP32](hardware_esp32.md) forwards these frames whole (`vendor/LDN/ldn/__init__.py`
+`_process_data_frame` decrypts them for the legacy Linux path).
 
 ## Channels
 
-LDN also allows 5 GHz channels 36/40/44/48, which the ESP32 cannot reach (on a Linux card: `sudo iw
-dev <managed iface> scan | grep -A3 <console MAC>`); FireRed/LeafGreen scans 2.4 GHz only. A
-re-hosting console may change channel; the board's scan prints it:
+LDN also allows 5 GHz channels 36/40/44/48, which the ESP32 cannot reach; FireRed/LeafGreen scans
+2.4 GHz only. A re-hosting console may change channel; the board's scan prints it:
 
     POKELDN_RADIO=esp32:auto ./.venv/bin/python tools/ldn/ldn_scan.py --keys PROD_KEYS --dwell 2.5
 
 Advertisements leak onto neighbouring channels: a board hears a host's advertisements on the
 channels beside its own too, far fewer of them and at the same RSSI. Joining on a neighbour
-associates, then the next advertisement on the host's own channel drops the link as an incompatible
-network, so the scan reports the busiest one.
+associates, and the next advertisement on the host's own channel drops the link as an incompatible
+network; the scan therefore reports the busiest channel.

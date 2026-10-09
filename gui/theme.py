@@ -109,6 +109,23 @@ def section(title: str, body: ft.Control | None = None, trailing: ft.Control | N
     return ft.Column([ft.Row(head, spacing=8), *([body] if body else [])], spacing=8, tight=True)
 
 
+def grid_rows(tiles: list[ft.Control], columns: int = 2, spacing: float = 6) -> list[ft.Control]:
+    """Tiles in rows of `columns`; the tiles of a row share its tallest tile's height."""
+    rows = []
+    for i in range(0, len(tiles), columns):
+        cells = tiles[i:i + columns]
+        for cell in cells:
+            cell.expand = 1
+        cells += [ft.Container(expand=1) for _ in range(columns - len(cells))]
+        rows.append(ft.Row(cells, spacing=spacing, intrinsic_height=True,
+                           vertical_alignment=ft.CrossAxisAlignment.STRETCH))
+    return rows
+
+
+def grid(tiles: list[ft.Control], columns: int = 2, spacing: float = 6) -> ft.Column:
+    return ft.Column(grid_rows(tiles, columns, spacing), spacing=spacing, tight=True)
+
+
 def card(title: str, body: ft.Control | None = None, description: str = "",
          trailing: ft.Control | None = None, tip: str = "") -> ft.Container:
     head = [text(title, 13, weight=ft.FontWeight.W_600, expand=True)]
@@ -146,7 +163,15 @@ class _Field(ft.TextField):
         self.fit_parent_size = not bool(details)
 
 
-def field(label: str = "", value: str = "", hint: str = "", mono: bool = False, **kwargs) -> ft.TextField:
+def field(label: str = "", value: str = "", hint: str = "", mono: bool = False, digits: bool = False,
+          limit: int = 0, **kwargs) -> ft.TextField:
+    """`digits` takes 0-9 only; `limit` caps the length. Both are one regex over the whole value:
+    Flet's max_length squeezes a fixed-height field into wrapping, and its filter refuses a whole edit."""
+    if digits or limit:
+        count = f"{{0,{limit}}}" if limit else "*"
+        kwargs.setdefault("input_filter", ft.InputFilter(f"^{'[0-9]' if digits else '.'}{count}$"))
+    if digits:
+        kwargs.setdefault("keyboard_type", ft.KeyboardType.NUMBER)
     style = ft.TextStyle(size=13, color=TEXT, font_family=MONO if mono else None)
     uniform = not kwargs.get("multiline") and not label and "height" not in kwargs
     if uniform:
@@ -244,18 +269,19 @@ def badge(label: str, color: str = MUTED, icon: str = "circle-info") -> ft.Row:
                   spacing=6, tight=True, vertical_alignment=ft.CrossAxisAlignment.CENTER)
 
 
-def segmented(options: list[tuple[str, str, str]], value: str, on_change) -> ft.Row:
-    """The capsule switcher (Basic / Advanced); it sits on the glass toolbar."""
-    row = ft.Row(spacing=0, tight=True)
+def segmented(options: list[tuple[str, str, str]], value: str, on_change, wrap: bool = False) -> ft.Row:
+    """The capsule switcher (Basic / Advanced); it sits on the glass toolbar. `wrap` lets a long one break
+    onto a second line: each capsule is then sized by its padding, since a centred one fills the line."""
+    row = ft.Row(spacing=0, tight=True, wrap=wrap, run_spacing=4)
+    size = ({"padding": ft.Padding(12, 8, 14, 8)} if wrap else
+            {"height": TOOLBAR_ITEM, "padding": ft.Padding(12, 0, 14, 0), "alignment": ft.Alignment.CENTER})
 
     def render(selected):
         row.controls = [
             ft.Container(ft.Row([
                 pixel_icon(icon, color=BLUE if key == selected else FAINT),
                 text(label, 12, TEXT if key == selected else MUTED, weight=ft.FontWeight.W_600),
-            ], spacing=6, tight=True),
-                height=TOOLBAR_ITEM, padding=ft.Padding(12, 0, 14, 0), border_radius=TOOLBAR_ITEM / 2,
-                alignment=ft.Alignment.CENTER,
+            ], spacing=6, tight=True), border_radius=TOOLBAR_ITEM / 2, **size,
                 bgcolor=ft.Colors.with_opacity(0.14, "#FFFFFF") if key == selected else None,
                 on_click=lambda e, k=key: pick(k))
             for key, label, icon in options]

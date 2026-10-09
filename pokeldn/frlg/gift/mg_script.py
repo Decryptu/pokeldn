@@ -382,7 +382,8 @@ def parse_link_game_data(payload):
         stamp_species=tuple(u16(GD_OFF_STAMP_SPECIES + 2 * i) for i in range(7)),
         stamp_ids=tuple(u16(GD_OFF_STAMP_IDS + 2 * i) for i in range(7)),
         max_stamps=payload[GD_OFF_MAX_STAMPS],
-        player_name=charmap.decode(payload[GD_OFF_PLAYER_NAME:GD_OFF_PLAYER_NAME + 7]),
+        player_name=charmap.decode(payload[GD_OFF_PLAYER_NAME:GD_OFF_PLAYER_NAME + 7],
+                                 language=1 if payload[GD_OFF_GAME_CODE + 3] == ord("J") else None),
         trainer_id=u32(GD_OFF_TRAINER_ID),
         questionnaire_words=tuple(
             u16(GD_OFF_QUESTIONNAIRE + 2 * i) for i in range(4)),

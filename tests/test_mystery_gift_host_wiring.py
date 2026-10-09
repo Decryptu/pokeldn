@@ -229,3 +229,54 @@ def test_the_cli_passes_the_expectation_through_to_the_engine():
 
     assert config.expect_console == "leafgreen"
 
+
+
+def _accepted_wonder_activities(rom):
+    """sAcceptedActivityIds_{WonderCard,WonderNews} [src/data/union_room.h:398-406] from the
+    cartridge's own table: nine ALIGNED(4) {activity, 0xFF} entries from SingleBattle on."""
+    import re
+    for match in re.finditer(rb"\x01\xff..\x02\xff..\x03\xff..\x04\xff..", rom, re.S):
+        if match.start() % 4 == 0:
+            entries = rom[match.start():match.start() + 36]
+            return entries[28], entries[32]
+    raise AssertionError("no sAcceptedActivityIds table")
+
+
+def _advertised_activity(argv):
+    import frlg_mg_host
+    from pokeldn.frlg.gift.host_mg_app import WonderNewsHostApplication
+    seen = {}
+
+    class FakeTransport:
+        NEEDS_RADIO = False
+
+        def __init__(self, **kwargs):
+            seen.update(kwargs)
+
+    parser = frlg_mg_host.build_parser()
+    config = frlg_mg_host.build_run_config(parser, parser.parse_args(argv))
+    cls = WonderNewsHostApplication if "--news" in argv else MysteryGiftHostApplication
+    app = cls(config, transport_factory=FakeTransport, log=lambda *_args: None)
+    app._build_components()
+    return _search_word(seen["app_data"]) & beacon.SEARCH_ACTIVITY_MASK
+
+
+@pytest.mark.parametrize("code", ["BPRE", "BPRF", "BPGD", "BPRS", "BPRJ", "BPGJ"])
+def test_the_advertised_activity_is_one_the_cartridge_lists_as_a_friend(code):
+    """A Japanese Friend list drops activity 21; its table holds 6 and 7."""
+    import pathlib
+    from pokeldn.frlg.rom import builds
+    build = builds.BUILDS[code]
+    rom = pathlib.Path(f"scratchpad/frlg_languages/"
+                       f"{'FireRed' if build.version == 'firered' else 'LeafGreen'}_{code[3].lower()}.gba")
+    if not rom.exists():
+        pytest.skip("no cartridge image on this machine")
+    card, news = _accepted_wonder_activities(rom.read_bytes())
+    assert _advertised_activity(["--buffer-script", "trainer-id-probe", "--version", build.version,
+                                 "--console-build", code]) == card
+    assert _advertised_activity(["--news", "--version", build.version, "--console-build", code]) == news
+
+
+def test_the_trainer_language_picks_the_numbering_when_any_cartridge_is_served():
+    assert _advertised_activity(["--buffer-script", "trainer-id-probe"]) == 21
+    assert _advertised_activity(["--buffer-script", "trainer-id-probe", "--language", "japanese"]) == 6

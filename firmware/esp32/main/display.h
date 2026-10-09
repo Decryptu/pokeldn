@@ -1,5 +1,5 @@
-/* An optional SSD1306 128x64 OLED on I2C (ESP32: SDA GPIO21, SCL GPIO22), redrawn by a priority-1
-   task on the last core. A board without one probes nothing at 0x3C/0x3D and starts no task.
+/* An optional SSD1306 128x64 OLED on I2C (ESP32: SDA GPIO21, SCL GPIO22), or the 0.42-inch ESP32-C3
+   board's 72x40 one, redrawn by a priority-1 task on the last core. A board without one probes nothing at 0x3C/0x3D and starts no task.
    docs/hardware_esp32.md, The screen. */
 #pragma once
 

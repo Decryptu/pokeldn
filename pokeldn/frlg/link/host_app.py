@@ -66,7 +66,7 @@ class ChatFileWatcher:
 class HostApplication:
     def __init__(self, config, *, log=print,
                  transport_factory=transport.HostTransport,
-                 injector_factory=BeaconInjector):
+                 injector_factory=BeaconInjector, partner=None):
         if not isinstance(config.role, configmod.HostOptions):
             raise ValueError("HostApplication requires HostOptions")
         self.config = config
@@ -76,6 +76,7 @@ class HostApplication:
         self.options = config.role
         self.log = log
         self.info = getattr(log, "info", log)
+        self.partner = partner             # pokeldn.online: a trade with a player far away
         self.transport_factory = transport_factory
         self.injector_factory = injector_factory
         self.network = None
@@ -136,7 +137,7 @@ class HostApplication:
             union_room_battle=bool(getattr(self.options, "union_room_battle", False)),
             battle_forfeit=bool(getattr(self.options, "battle_forfeit", True)),
             battle_move_slot=int(getattr(self.options, "battle_move_slot", 0) or 0),
-            colosseum=bool(getattr(self.options, "colosseum", False)))
+            colosseum=bool(getattr(self.options, "colosseum", False)), partner=self.partner)
         if union_room:
             trade_board = None
             board_type = getattr(self.options, "union_room_board_type", None)
@@ -340,7 +341,8 @@ class HostApplication:
             mons, output_path=self.plan.output_path,
             output_size=self.plan.output_size,
             output_format=self.plan.output_format,
-            trades=self.plan.trades, log=self.log)
+            trades=max(self.plan.trades, len(mons)) if self.partner else self.plan.trades,
+            log=self.log)
 
     def run(self):
         joined_once = False

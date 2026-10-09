@@ -48,6 +48,7 @@ class App:
         self.identities: dict[str, board.Identity | str] = {}   # device -> identity, or why none answered
         self.chips: dict[str, str] = {}                         # device -> chip the last flash detected
         self.board_listeners: list = []                         # called on the UI loop after a check
+        self.hidden_bridges: list[str] = []                     # Windows: bridges with no driver, polled
         self.update: update.Release | None = None               # a newer release GitHub offered
         self.update_state = ""                                  # checking, current, available, offline
         self.update_listeners: list = []                        # called on the UI loop after a check
@@ -80,6 +81,11 @@ class App:
                        "Unplug and replug it; the kernel log (sudo dmesg) says why.")
                 return BoardStatus("missing", "Board found without a serial port",
                                    f"Linux gave the {hidden[0]} no serial port. {fix}")
+            if sys.platform == "win32" and self.hidden_bridges:
+                name = self.hidden_bridges[0]
+                steps = board.DRIVER_STEPS.get(name, "Install its driver; the Board page links it.")
+                return BoardStatus("missing", "Board found without a driver",
+                                   f"Windows has no driver for the {name}, so it has no COM port. {steps}")
             return BoardStatus("missing", "No board plugged in",
                                "Plug the ESP32 in with a USB data cable. Charge-only cables show nothing.")
         port = device or self.radio_port(present)

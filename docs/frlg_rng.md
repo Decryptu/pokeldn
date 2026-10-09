@@ -52,10 +52,9 @@ The +2 is one extra frame around the `delay`; a 2.003333-per-frame model fits N=
 at N=3000. `rng-trace` sampling `gRngValue` once a frame at the Mystery Gift link menu gave gaps of
 exactly 2, 95 of 95. The state n frames after a reading is `advance(S, 2n)`.
 
-The probe measures a locked player during `delay` (`lock=False` measures unlocked); four press trials
-(below) all give even turn counts in ordinary overworld play. Turn counts come from two readings
-(`distance`) or the resulting Pokemon (`recover_wild_state`); one turn is about 8 ms, so hand-timed
-seconds do not determine a count.
+The probe measures a locked player during `delay` (`lock=False` measures unlocked); turn counts in
+ordinary overworld play are even. A count comes from two readings (`distance`) or the resulting
+Pokemon (`recover_wild_state`); one turn is about 8 ms, so hand-timed seconds do not determine it.
 
 ## Where the seed comes from, and why it cannot be carried
 
@@ -85,11 +84,10 @@ if ((svc_4b() & SVC4B_RESEED_RNG) != 0)
 ```
 
 [link_rfu_2.c:2114, `#if REVISION >= 0xA`]. `RfuMain1` runs every frame while RFU is up, so a set
-bit would pin the state near the advertised `playerTrainerId`. No
-state measured descends from it, so the bit was clear in both samples: the first sample at the
-Mystery Gift menu was 1.37 billion turns from the console's `playerTrainerId`, and an encounter after
-a Union Room session 2.10 billion turns from it. When the bit is set is unknown; a state descending from the console's
-`playerTrainerId` would name this hook.
+bit would pin the state near the advertised `playerTrainerId`. No measured state descends from it:
+a state sampled at the Mystery Gift menu was 1.37 billion turns from the console's
+`playerTrainerId`, and one sampled at an encounter after Union Room play 2.10 billion turns.
+When the bit is set is unknown.
 
 Timing START cannot choose a seed. Timer 1 runs at F/1 and a frame is 280,896 cycles, so frame-aligned
 reads would all be multiples of `gcd(280896 mod 65536, 65536) = 64`. Recovered seeds `0xB8C0`,
@@ -103,23 +101,17 @@ Pokemon is four draws: personality low, personality high, HP/ATK/DEF, SPEED/SPAT
 draws add 30 bits of check and exactly one state survives (`lcg.recover_wild_state`). `Random32()`,
 `(Random() | (Random() << 16))`, draws the low half first at both call sites.
 
-Both gaps must be searched; the console does not use one layout:
+Both gaps must be searched; the layout varies between mons. Observed on retail:
 
-| Pokemon | gap before IVs | gap between IVs | method |
+| method | gap before IVs | gap between IVs | observed on |
 |---|---|---|---|
-| Weedle | 1 | 0 | 2 |
-| Caterpie | 0 | 1 | 4 |
-| Weedle #2 | 0 | 1 | 4 |
-| Mankey | 0 | 1 | 4 |
-| Ditto (scripted) | 0 | 0 | 1 |
-| Magikarp (scripted) | 0 | 0 | 1 |
-| Magikarp (scripted) | 1 | 0 | 2 |
-| Magikarp (scripted) | 0 | 0 | 1 |
-| Magikarp (scripted) | 0 | 1 | 4 |
+| 1 | 0 | 0 | scripted Ditto, scripted Magikarp (2) |
+| 2 | 1 | 0 | wild Weedle, scripted Magikarp |
+| 4 | 0 | 1 | wild Caterpie, Weedle, Mankey; scripted Magikarp |
 
-A one-gap search reports "no state builds this mon" for the others. The stray draw is in no line of
-`CreateBoxMon`; its source is unknown. On a scripted encounter it is intermittent. Example: a stub
-asking for shiny + Jolly + SPEED >= 20 can yield a shiny Jolly Magikarp with SPEED 10; exactly one
+A search over one gap reports "no state builds this mon" for the others. The stray draw is in no
+line of `CreateBoxMon`; its source is unknown. On a scripted encounter it is intermittent. A stub
+asking for shiny + Jolly + SPEED >= 20 produced a shiny Jolly Magikarp with SPEED 10; exactly one
 state in 2<sup>32</sup> has that PID on its next two draws:
 
     state 0x429D2189
@@ -161,14 +153,13 @@ BEFORE  0x9A4F5DAA        (read off the console)
 AFTER   0x8EEB8648
 ```
 
-Predicted from `BEFORE` alone and checked against the mon dumped from `gPlayerParty`: PID 0x0BF87DD1,
-nature 13 Jolly, not shiny, IVs 25/10/28/9/19/3, all seven fields. The four draws start at the state
-read, offset zero.
+Predicted from `BEFORE` alone, the mon dumped from `gPlayerParty` matched on all seven fields: PID
+0x0BF87DD1, nature 13 Jolly, not shiny, IVs 25/10/28/9/19/3. The four draws start at the state read,
+offset zero.
 
 `distance(BEFORE, AFTER)` is 6 where `CreateBoxMon` spends 4: 2 for `Random32()`, none for the OT
 because the player is the OT [pokemon.c:1796], 2 for the IVs [:1836,1845]. The extra 2 (one frame of
-overworld consumption) land after the generation; a mon built from `advance(BEFORE, 2)` would have a
-different PID.
+overworld consumption) land after the generation.
 
 ## The seed-reading NPC
 
@@ -195,7 +186,7 @@ It alters nothing; `rng_script.seed_from_printed(low, high)` reassembles the wor
   so the operand is an offset into the script's own body.
 - `buffernumberstring` prints a `u16` [scrcmd.c:1678], so the seed takes two vars and two lines.
 
-Two readings about twenty seconds apart:
+Two readings about twenty seconds apart gave:
 
 ```
 reading 1   RNG HI 4685   RNG LO 26687   -> 0x124D683F
@@ -212,7 +203,7 @@ hidden, a step from the player. Both Pallet Town object events are `MOVEMENT_TYP
 
 ## How precisely a human can press A
 
-Four trials by one player against a target 30.00 s ahead, read off the seed-printing NPC:
+Four presses by one player against a target 30.00 s ahead, read off the seed-printing NPC:
 
 | trial | frames elapsed | error vs 1791.8 |
 |---|---|---|
@@ -221,12 +212,12 @@ Four trials by one player against a target 30.00 s ahead, read off the seed-prin
 | 3 | 1800 | +8.2 |
 | 4 | 1796 | +4.2 |
 
-Mean +9.2 frames (a fixed offset that cancels), standard deviation 4.5, range 11: the four presses
-landed within about ±6 frames of the aim. All four turn counts are even.
+Mean +9.2 frames (a fixed offset that cancels), standard deviation 4.5, range 11. All four turn
+counts are even.
 
-A shiny frame arrives every ~8192 frames (~137 s); at that 4.5-frame spread a press hits one chosen
+A shiny frame arrives every ~8192 frames (~137 s); at a 4.5-frame spread a press hits one chosen
 frame about 9% of the time, so a hand-aimed shiny costs about 25 minutes against about 23 hours of
-random encounters. A miss costs one A press and is measured exactly. `pokeldn/frlg/rom/rng_countdown.py` is
+random encounters. A miss is measured exactly. `pokeldn/frlg/rom/rng_countdown.py` is
 the countdown; `--aimed-at STATE` turns a miss into a signed frame count. This remains the route when
 the RAM script slot holds a Wonder Card.
 
@@ -294,9 +285,8 @@ the IVs [pokemon.c:1836, HP/ATK/DEF then SPE/SPATK/SPDEF].
 
     --hunt-nature adamant,jolly   --hunt-iv speed=31 --hunt-iv attack=20   --hunt-cap N
 
-The Magikarp of the table above (catch rate 255, one Ultra Ball) reads back PID 0x01503B8A, shiny
-value 4, Jolly, IVs 6/2/25/28/12/7; `lcg.recover_wild_state` gives state 0x7041F74F and
-`rng_countdown` reproduces every field.
+A caught Magikarp reads back PID 0x01503B8A, shiny value 4, Jolly, IVs 6/2/25/28/12/7;
+`lcg.recover_wild_state` gives state 0x7041F74F and `rng_countdown` reproduces every field.
 
 Shininess is tested in the fifteen-instruction hot loop; the division by 25 and the IV comparisons run
 for 1 state in 8192, so a criterion multiplies the iterations needed without slowing one:
@@ -347,18 +337,17 @@ The trampoline tail-branches (`bx r0`, `lr` untouched), so the payload's `pop {r
 `ScrCmd_callnative`'s caller. It first checks `ramScript.data.magic` is `RAM_SCRIPT_MAGIC` = 51
 [script.c:12]; on a wrong offset it returns and the encounter is ordinary.
 
-### Alignment must be a multiple of four, not merely even
+### Alignment to four bytes
 
 THUMB `ldr rN, [pc, #imm]` and `adr` use `Align(PC, 4)`. Two bytes off, the branch lands and the code
-runs but every pool word is read two bytes late: one stub got a filler length of `0x0433CF15` and
-faulted in its checksum loop. Four suffices: `offset = Random() & ((SAVEBLOCK_MOVE_RANGE - 1) & ~3)`
+runs but every pool word is read two bytes late. Four-byte alignment holds: `offset = Random() & ((SAVEBLOCK_MOVE_RANGE - 1) & ~3)`
 [load_save.c:75] is `& 0x7C`, `gSaveBlock1` is word-aligned, and `RAMSCRIPT_BODY_OFFSET` (0x3624) keeps
 it so. `native_script.emulate_body_script` catches a misalignment by walking the real script bytes
 (the 36 `setptr`s, the `callnative`, the trampoline's `gSaveBlock1Ptr` read, the branch into the body).
 
 ### Proving the size rather than the jump
 
-A shiny proves the jump, not the size. `asm/field/mon-seek-far.s` is followed by non-zero filler to
+A shiny result confirms the jump but not the delivered size. `asm/field/mon-seek-far.s` is followed by non-zero filler to
 byte 995; the stub sums it and searches only on a match. `InitRamScript` zero-fills the rest
 [`ClearRamScript`, script.c:495], so a short delivery leaves `gRngValue` alone. `--gift
 rng-mon-hunt-far` carries 196 bytes of stub and 559 of filler.
@@ -381,7 +370,7 @@ Only the IV term is squared: shiny + Jolly + SPEED >= 20 goes from 1 in 546,000 
 about 4 s typical. The cap is 95%, since a miss costs one A press while 99% costs 18 s on an unlucky
 run.
 
-State 0xFCB5674F gives shiny, Jolly, SPEED 22 by Method 1 on retail, and every method passes:
+State 0xFCB5674F gave shiny, Jolly, SPEED 22 by Method 1 on retail, and every method passes:
 
 | method | IVs | floors |
 |---|---|---|
@@ -389,9 +378,8 @@ State 0xFCB5674F gives shiny, Jolly, SPEED 22 by Method 1 on retail, and every m
 | 2 | 22/14/21/25/1/18 | ok |
 | 4 | 4/1/10/25/1/18 | ok |
 
-Another logged state predicts the PID exactly, with the IVs from Method 4 (SPEED 21, floor 20):
+State 0x4FB97B07 predicts the PID exactly, with the IVs from Method 4 (SPEED 21, floor 20):
 
-    logged found state 0x4FB97B07
       Method 1 (clean)  25/10/30/20/ 9/25
       Method 2 (stray)  20/ 9/25/21/ 3/ 1
       Method 4          25/10/30/21/ 3/ 1   <- the mon that appeared
@@ -417,8 +405,8 @@ survives the battle (`MoveSaveBlocks_ResetHeap` copies the blocks) and reaches f
 | observed by the player | 2-3 s |
 | implied | 3.7-5.6 cycles/instruction |
 
-`CYCLES_PER_INSTRUCTION_FROM_EWRAM` stays 3: the time side is a stopwatch and a search is
-exponentially distributed. An underestimate only makes the freeze ceiling refuse sooner.
+`CYCLES_PER_INSTRUCTION_FROM_EWRAM` is 3. The observed time is a stopwatch reading and search times
+are exponentially distributed; an underestimate only makes the freeze ceiling refuse sooner.
 
 ## LeafGreen
 

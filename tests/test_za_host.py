@@ -32,6 +32,15 @@ NET_PROPERTY = bytes.fromhex(
     "00000000000000000000000000000000000000000000000000000000000000000000000000003030303030303030"
     "000000000000000008000000")
 
+# An emulated pair's departure: the host's type 9 naming the joiner, the joiner's type 10, then the
+# host's Net 0x11 sequence 3 and the joiner's 0x12. The host's network closed 0.25 s after its type 9.
+PAIR_START_MIGRATION = bytes.fromhex("097f00020000020000905c007f00000230397f00030000020000b7010001")
+PAIR_MIGRATION_ACK = bytes.fromhex("0a7f00030000020000b7017f00020000020000905c")
+PAIR_NET_STATUS_3 = bytes.fromhex(
+    "0111005800000003905c7f000200000200000000000091a31a6d02000401000000007f00000200000000000000"
+    "00000000003039000100007f000003000000000000000000000000303900ff000000000000000000000000000000"
+    "000000000000ff0000000000000000000000000000000000000000")
+
 
 @pytest.mark.parametrize("seq", [0, 1])
 def test_the_update_session_is_the_reference_hosts(seq):
@@ -42,10 +51,17 @@ def test_the_update_session_is_the_reference_hosts(seq):
     assert update.hex() == UPDATE.format(seq=f"{seq:04x}")
 
 
-def test_the_net_messages_are_the_reference_hosts():
+@pytest.mark.parametrize("seq, host_var, network_id, migrating, expected", [
+    (2, HOST_VAR, NETWORK_ID, False, NET_STATUS),
+    (3, 0x905C, 0x91A31A6D, True, PAIR_NET_STATUS_3),     # a leaving host's, `0x2501930`
+])
+def test_the_net_status_is_the_reference_hosts(seq, host_var, network_id, migrating, expected):
     assert pia_connect.build_net_conn_request(
-        2, HOST_VAR, HOST_MAC, NETWORK_ID, [HOST_IP, JOINER_IP], max_stations=4) == NET_STATUS
+        seq, host_var, HOST_MAC, network_id, [HOST_IP, JOINER_IP], max_stations=4,
+        migrating=migrating) == expected
 
+
+def test_the_net_property_is_the_reference_hosts():
     class Network:
         ssid, participants, max_participants, SCENE_ID = SSID, [(1, JOINER_IP)], 4, za.SCENE_ID
     assert host_pia.build_net_property_update(
@@ -313,21 +329,12 @@ def test_the_host_answers_a_leave_as_the_console_reads_it():
     assert host.leave_requests == 1
 
 
-# An emulated pair's departure: the host's type 9 naming the joiner, the joiner's type 10, then the
-# host's Net 0x11 sequence 3 and the joiner's 0x12. The host's network closed 0.25 s after its type 9.
-PAIR_START_MIGRATION = bytes.fromhex("097f00020000020000905c007f00000230397f00030000020000b7010001")
-PAIR_MIGRATION_ACK = bytes.fromhex("0a7f00030000020000b7017f00020000020000905c")
-PAIR_NET_STATUS_3 = bytes.fromhex(
-    "0111005800000003905c7f000200000200000000000091a31a6d02000401000000007f00000200000000000000"
-    "00000000003039000100007f000003000000000000000000000000303900ff000000000000000000000000000000"
-    "000000000000ff0000000000000000000000000000000000000000")
-
-
-def run_joiner(monkeypatch, argv, script, answer):
+def run_joiner(monkeypatch, argv, script, answer, host=None):
     """`bin/za_join.py` seated with a scripted host from the emulated pair (0x905c, our id 0xb701):
     `script` is (seconds, proto, payload) the host sends; `answer(proto, payload)` -> what it sends
-    back to each message of ours. -> (seconds, header, proto, payload) for everything we sent, and
-    the seconds the seat lasted."""
+    back to each message of ours. With `host`, a HostSession on the same clock is the host instead,
+    and `script` is (seconds, callable(host, now)). -> (seconds, header, proto, payload) for
+    everything we sent, and the seconds the seat lasted."""
     import trio
 
     import za_join
@@ -337,7 +344,7 @@ def run_joiner(monkeypatch, argv, script, answer):
     network = type("N", (), {"our_ip": host_ip})
     clock = [100.0]
     start = clock[0]
-    script, heard, inbox = list(script), [], []
+    script, heard, inbox, raw = list(script), [], [], []
 
     class Clock:
         @staticmethod
@@ -353,12 +360,21 @@ def run_joiner(monkeypatch, argv, script, answer):
             for m in messages:
                 heard.append((clock[0] - start, header, m.proto, m.payload))
                 inbox.extend(answer(m.proto, m.payload))
+            if host is not None:
+                host.receive(data, our_ip, now=clock[0])
 
         def recvfrom(self, _):
             due = [x for x in script if start + x[0] <= clock[0]]
             for x in due:
                 script.remove(x)
-                inbox.append((x[1], x[2], our_var))
+                if host is not None:
+                    x[1](host, clock[0])
+                else:
+                    inbox.append((x[1], x[2], our_var))
+            if host is not None:
+                raw.extend(data for data, _ in host.tick(now=clock[0]))
+                if raw:
+                    return raw.pop(0), (host_ip, za.PIA_PORT)
             if inbox:
                 proto, payload, dst = inbox.pop(0)
                 data = host_pia.build_messages(network, pia, [(proto, payload)], dst_var=dst,
@@ -406,10 +422,17 @@ def test_the_joiner_hands_a_leaving_console_its_acknowledgement(monkeypatch):
     assert not [m for _, _, p, m in heard if p == pia_connect.PROTO_SESSION and m[:1] == b"\x03"]
 
 
-def test_the_leave_request_is_a_retail_consoles():
-    assert za.build_leave_request(bytes.fromhex("eb9b2220f1480000"), 0x2583, "169.254.97.2",
-                                  bytes.fromhex("b584a8be")) == bytes.fromhex(
-        "03b584a8beeb9b2220f1480000258300a9fe61023039")
+@pytest.mark.parametrize("built, retail", [
+    (lambda: za.build_leave_request(bytes.fromhex("eb9b2220f1480000"), 0x2583, "169.254.97.2",
+                                    bytes.fromhex("b584a8be")),
+     "03b584a8beeb9b2220f1480000258300a9fe61023039"),
+    # a retail host leaving a seated joiner, its type 9
+    (lambda: za.build_start_migration(bytes.fromhex("eb9b2220f1480000"), 0xA6E4, "169.254.35.1",
+                                      bytes.fromhex("3276985411020000"), 0xC493),
+     "09eb9b2220f1480000a6e400a9fe230130393276985411020000c4930001"),
+])
+def test_the_session_leave_messages_are_a_retail_consoles(built, retail):
+    assert built() == bytes.fromhex(retail)
 
 
 @pytest.mark.parametrize("answered", [True, False])
@@ -430,3 +453,70 @@ def test_the_joiner_leaves_as_a_console_leaves(monkeypatch, answered):
     assert m[5:] == bytes.fromhex("7f00030000020000b701007f0000033039") and len(m) == 22
     assert [round(b[0] - t, 1) for b in leaves] == [0.0, 0.5, 1.0, 1.5][:len(leaves)]
     assert lasted < (2.2 if answered else 4.2)
+
+
+def pair_host(**kw):
+    """Our host under the emulated pair's ids (0x905c, the joiner 0xb701 on 127.0.0.3)."""
+    return za_host.HostSession(
+        ssid=SSID, our_ip=HOST_IP, our_mac=HOST_MAC, guest_ip=JOINER_IP, code="00000000",
+        identity=bytes(106), identity_tail=bytes(9), selection=bytes(1211), offer=None,
+        host_var=0x905C, clock=lambda: 100.0, log=lambda *a: None, **kw)
+
+
+def test_the_host_hands_our_joiner_the_session_as_a_leaving_console_does(monkeypatch):
+    """Our host leaving against `bin/za_join.py`: the pair's type 9 and its Net 0x11 migration form
+    go out framed as the emulated and retail hosts framed them, our joiner answers both, leaves on
+    the first Net 0x40, and the host's handover is complete (docs/za.md, A host leaving)."""
+    sent = []
+
+    def record(rec, data=None, **_):
+        if rec == "tx":
+            decoded, why = host_pia.decode_datagram(bytes.fromhex(data), HOST_IP, host.pia)
+            assert decoded is not None, why
+            sent.extend((decoded[0], m.proto, m.payload) for m in decoded[1])
+    host = pair_host(record=record)
+    heard, lasted = run_joiner(monkeypatch, ["--hold", "30"], [(2.0, lambda h, now: h.leave(now))],
+                               lambda proto, payload: [], host=host)
+    assert 0 in host.update_acked              # seated: the joiner took the update session
+    left = [x for x in sent if x[1] == pia_connect.PROTO_SESSION and x[2][:1] == b"\x09"]
+    assert [m for _, _, m in left] == [PAIR_START_MIGRATION]
+    h = left[0][0]
+    assert (h.dst, h.src, h.footer, h.flags & 0x03) == (0xB701, 0x905C, 2, 0)
+
+    nets = [(h, m) for h, p, m in sent if p == pia_connect.PROTO_NET and h.src == 0]
+    status = PAIR_NET_STATUS_3[:18] + host.network_id.to_bytes(8, "big") + PAIR_NET_STATUS_3[26:]
+    assert [m for _, m in nets] == [status, bytes.fromhex("01400000")]
+    assert [(h.dst, h.pktid, h.footer, h.flags & 0x0F) for h, _ in nets] == [(0, 0, 0, 3),
+                                                                           (0, 0, 0, 2)]
+    ours = [(p, m) for _, _, p, m in heard if p in (pia_connect.PROTO_SESSION, pia_connect.PROTO_NET)]
+    assert (pia_connect.PROTO_SESSION, PAIR_MIGRATION_ACK) in ours
+    assert (pia_connect.PROTO_NET, bytes.fromhex("0112000000000003")) in ours
+    assert host.departure["phase"] == "handover" and host.departure["acked"]
+    assert 2.0 < lasted < 2.4                  # on the first 0x40, not on --hold
+
+
+def test_a_host_left_unanswered_keeps_the_retail_timeline():
+    """A seated console that answers nothing: five type 9 a second apart (`0x255a91c`, 5000 ms),
+    the migration status every 0.5 s for 4 s, then Net 0x40 every 0.3 s for 2 s, and the host may
+    close; a retail host went silent 10.82 to 10.86 s after its first type 9."""
+    host = pair_host()
+    joiner = ScriptedJoiner(host)
+    host.host_var = HOST_VAR
+    t = joiner.run(0.1, 0.0)
+    joiner.send(pia_connect.PROTO_NET, bytes.fromhex("0112000000000002"), dst=0, now=t)
+    joiner.send(pia_connect.PROTO_SESSION, JOIN, dst=0, now=t)
+    t = joiner.run(t + 0.5, t)
+    leave_at = t
+    joiner.heard.clear()
+    host.leave(t)
+    while not host.departed and t < leave_at + 20:
+        t = joiner.run(t + 0.01, t)
+    out = [(round(at - leave_at, 2), p, m) for at, p, m in joiner.heard
+           if p in (pia_connect.PROTO_SESSION, pia_connect.PROTO_NET)]
+    starts = [at for at, p, m in out if m[:1] == b"\x09"]
+    status = [at for at, p, m in out if m[:2] == b"\x01\x11"]
+    handover = [at for at, p, m in out if m == bytes.fromhex("01400000")]
+    assert starts == pytest.approx([0.0, 1.0, 2.0, 3.0, 4.0], abs=0.02)
+    assert len(status) == 8 and 5.0 <= status[0] < 5.05
+    assert len(handover) == 7 and 9.0 <= handover[0] < 9.05
+    assert 10.8 < t - leave_at < 11.1

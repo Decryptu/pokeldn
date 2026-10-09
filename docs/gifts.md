@@ -8,13 +8,14 @@ Sword/Shield, or an FRLG ARM console payload, with its target game and native re
 
 ## Desktop app
 
-Games, Mystery Gift is one tool per game with three ways to choose the gift. The same builder serves
-FireRed/LeafGreen and Sword/Shield; each game's module supplies its presets and its form
+Games, Mystery Gift is one tool per game with three ways to choose the gift, four on Sword/Shield.
+One builder serves both games; each game's module supplies its presets and its form
 (`pokeldn/frlg/gift/builder.py`, `pokeldn/swsh/gift_builder.py`, bound in `pokeldn/app/gift_builder.py`).
 
 | mode | what it sends |
 |---|---|
 | Use a preset | a built-in gift; FRLG Wonder Cards, Wonder News and console code go to the launcher as flags |
+| Official events | a real Sword/Shield event card ([Official event cards](swsh_gift.md#official-event-cards)), compiled like a built gift |
 | Build your own | the form, compiled to `session/gifts/<tool>.pokegift` at Start and passed as `--gift-file` |
 | Open a file | a shared `.pokegift`, or a `.wc8` on Sword/Shield |
 
@@ -30,13 +31,25 @@ bytes the ticked set takes of the 1024 the console has.
 | Shiny countdown | the slow-down button; x2, x4 or x8 slower | `slow`, `slow_frames` 1, 3 or 7 |
 | No wild encounters, Lead's IVs on screen, Pokemon follower | none | |
 
-L is not offered: only R's Help System toggle has a flag the hooks hold off. Save them in the game
+L is not offered: only R's Help System toggle has a flag the hooks hold off. Save boosts for later
 sends `save-write --resident` in place of `install-resident`: the set goes into `filler_B20` and is
 installed in the same session. A set past one `install-resident` session (876 bytes), and the
 follower, always go through the save. Mom restores your boosts binds Mom's loader, and talking to Mom
 after any boot installs whatever set the save holds. Sending boosts again replaces the set running.
+The app shows the restore steps beside the save option and in Before you send, including for sets
+that must be saved. Preset names and descriptions wrap so their instructions remain visible.
 `tests/test_gift_builder.py` sends every combination of boosts, and every setting of each, through the
-launcher for all four cartridges.
+launcher for all twelve cartridges.
+
+Read the save offers Trainer ID (TID) and Secret ID (SID), trainer details and play time, and the
+last saved party's natures, IVs and EVs. Results appear in the Session log; the two dump presets
+also write the read data into Received. The group explains the normally hidden SID, IVs as six
+individual values from 0 to 31, and EVs as training points. These reads preserve the save and
+Wonder Card ([Reading the save](frlg_rom.md#reading-the-save)).
+
+Native `.wc3` and `.wc8` extensions select the game's binary reader before JSON detection.
+A WC8's binary seal can start with `{`; it remains a native record. `.pokegift` files use the
+JSON reader, and an unknown extension with a JSON opening brace can still hold a shared gift.
 
 Customize copies a preset into the form. A FRLG card preset offers it only when the form expresses
 every step: unconditional stages of Pokemon, item, egg, wild battle and message steps, no event
@@ -92,9 +105,8 @@ is refused before gift data is sent. A preset's card id is on the Advanced tab (
 
 The app does not modify gift files on import. Files remain at the chosen paths.
 
-Opened files have been delivered to retail consoles: a French FireRed received a Celebi card file,
-and a console code file that answered with the value it was built for; a Sword received a
-Pikachu card file. Console code built in the form answered with the save's trainer id.
+Delivered from an opened file on retail consoles: a Celebi card and a console code file on a French
+FireRed, a Pikachu card on a Sword. Console code built in the form answered with the save's trainer id.
 
 ## Command line
 
@@ -162,8 +174,8 @@ The converter imports Sword/Shield WC8 records, FRLG `.wc3` files and paired FRL
 `pokemon-gen3-mysterygift-tool`. A `.wc3` or `.wc8` also opens directly, in the app's Open a file and
 in `--gift-file`.
 
-An FRLG script whose reachable code holds no absolute address serves all four cartridges (`BPRF`,
-`BPGF`, `BPRE`, `BPGE`): its jumps and text are `vgoto`/`vmessage` operands relative to its own
+An FRLG script whose reachable code holds no absolute address can serve each cartridge with the
+same card layout: its jumps and text are `vgoto`/`vmessage` operands relative to its own
 `setvaddress` [scrcmd.c:171], and items come through `callstd`. A script with a `goto`, `call`,
 `message`, `callnative` or other absolute pointer belongs to one cartridge and needs `--build`; a
 `.wc3` of that kind is refused when opened directly.
@@ -174,9 +186,18 @@ An FRLG script whose reachable code holds no absolute address serves all four ca
 ./.venv/bin/python -m pokeldn.gifts import --game frlg --card WonderCard.bin \
   --script Script.bin --name "Event gift" -o event.pokegift
 ./.venv/bin/python -m pokeldn.gifts export celebi.pokegift --build BPRF --out-dir native-gift
+./.venv/bin/python -m pokeldn.gifts export celebi.pokegift --wc3 --build BPRJ --out-dir native-gift
+./.venv/bin/python bin/frlg_mg_host.py --gift celebi --console-build BPRJ --export-gift celebi.wc3
 ```
 
-A `.wc3` is 1420 bytes (`0x58C`):
+Saving to a path ending in `.wc3` or `.wc8` writes that native file instead of a `.pokegift`: in
+`--export-gift`, in Save gift file and in `pokeldn.gifts.save`. A `.wc3` holds one cartridge's card
+and script; without `--build` every variant of the gift must carry the same bytes. The GUI asks
+which cartridge to export when variants differ. `.pokegift` retains every language variant. The `.wc3` metadata block is written as zero except its icon, which repeats the card's.
+Every international gallery file the game accepts comes back with the same card, script and icon
+bytes after an import and an export.
+
+An international `.wc3` is 1420 bytes (`0x58C`):
 
 | offset | size | content |
 | --- | --- | --- |
@@ -190,13 +211,15 @@ Project Pokemon's EventsGallery; the game's own covers 999 [script.c:488]. Impor
 (offset 2 of the card) to an internal species id from 0 to 411; 0 draws no icon
 [mystery_gift_show_card.c:466].
 
-Japanese `.wc3` files are 1252 bytes (`0x4E4`) and are refused: the Switch cartridges are French and
-English. Every international gallery script is relative and serves all four cartridges. The gallery's
+Japanese `.wc3` files are 1252 bytes (`0x4E4`): the card structure is 164 bytes, its CRC wrapper
+is 168 bytes, metadata starts at `0x0A8`, and the 1004-byte RAM-script structure starts at `0x0F8`.
+Direct import offers Japanese files to `BPRJ` and `BPGJ`; international files offer the ten Latin
+cartridges. An explicit `--build` must match the card layout. The gallery's
 debug cards with flag ids 4 to 8 are refused: the delivery man hands a gift only for flag ids 1000 to
 1019 [mystery_gift.c:241]. The Aurora and Mystic Tickets are no-ops on a save past its first Hall of
 Fame ([The Aurora and Mystic Tickets](frlg_gift.md#the-aurora-and-mystic-tickets)).
 
-The FRLG pair contains a 336-byte card and a 1004-byte RAM-script structure. Import verifies both
+The FRLG pair contains a 336-byte international or 168-byte Japanese card and a 1004-byte RAM-script structure. Import verifies both
 CRCs and the script's unbound Mystery Gift header. The native pair cannot carry stamps, visiting
 trainers, Mystery Event scripts, questionnaire gates or Wonder News. Export to that pair refuses
 a distribution with those extras. `.pokegift` preserves them together.

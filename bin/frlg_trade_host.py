@@ -23,6 +23,7 @@ from pokeldn.frlg.link import trade_runtime  # noqa: E402
 from pokeldn.frlg.link import beacon as beaconmod
 from pokeldn.ldn import transport  # noqa: E402
 from pokeldn.frlg.link.host_app import HostApplication  # noqa: E402
+from pokeldn.online import session as online  # noqa: E402
 
 
 def build_parser(file_config=None, *, shared_path=None, local_path=None):
@@ -106,6 +107,7 @@ def build_parser(file_config=None, *, shared_path=None, local_path=None):
         "--link-player-idle-frames", type=int, default=None, metavar="N",
         help=("diagnostic: quiet console polls after the LinkPlayer exchange "
               "before the leader starts the trainer-card exchange itself"))
+    online.add_arguments(parser)
     host_cli.add_host_config_arguments(
         parser, shared_path=shared_path, local_path=local_path)
     host_cli.add_host_arguments(
@@ -169,7 +171,12 @@ def main(argv=None):
     parser = build_parser(
         file_config, shared_path=shared_path, local_path=local_path)
     args = parser.parse_args(argv)
-    if args.party and not getattr(args, "print_effective_config", False):
+    if args.online:
+        # The consoles see each other's parties; ours only fills the trainer card's slot.
+        if args.party:
+            print("[online] the partner's party is offered; the MON files are ignored")
+        args.party, args.slot, args.slots, args.trades = [online_placeholder()], 0, "", 1
+    elif args.party and not getattr(args, "print_effective_config", False):
         args.party = [pokemon_service.prepare_file("frlg", p) for p in args.party]
     if args.print_effective_config:
         host_cli.build_host_config(parser, args)
@@ -182,9 +189,23 @@ def main(argv=None):
     if needs_root():
         parser.error("live LDN hosting requires root; run with sudo -E")
     run_config = build_run_config(parser, args)
-    joined = HostApplication(
-        run_config, log=trade_runtime.ConsoleLog(args.verbose)).run()
+    partner = online.partner("frlg", args, name=run_config.profile.to_link_player().name)
+    try:
+        joined = HostApplication(
+            run_config, log=trade_runtime.ConsoleLog(args.verbose), partner=partner).run()
+    finally:
+        if partner:
+            partner.close()
     return 0 if joined else 130
+
+
+def online_placeholder():
+    """An empty 100-byte party slot in a file, for the run plan's party."""
+    from pokeldn.app.paths import SESSION
+    path = SESSION / "offers" / "frlg-online-placeholder.pk3"
+    path.parent.mkdir(parents=True, exist_ok=True)
+    path.write_bytes(bytes(100))
+    return str(path)
 
 
 if __name__ == "__main__":

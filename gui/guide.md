@@ -49,6 +49,19 @@ remove saved session records, logs, temporary offers and unused built Pokemon. S
 needed for a bug report first. Received Pokemon, selected offers, keys, firmware and settings are
 kept. Finish the current run before clearing files.
 
+## FireRed and LeafGreen language
+
+Mystery Gift's Console card shows the version and automatic language detection. Choose FireRed
+or LeafGreen. After you choose pokeldn in the game's Friend list, the game reports its cartridge
+code; pokeldn selects its language's gift script and RAM addresses before sending code. Both
+versions support English, French, German, Italian, Spanish and Japanese.
+
+Saving a native `.wc3` asks for its cartridge when the gift differs by version or language.
+A `.pokegift` keeps all variants and selects the right one when the console connects.
+
+Trainer language in Advanced describes pokeldn's own trainer on the link. It does not select
+the console's language.
+
 ## Basic and Advanced
 
 Basic shows the fields most runs need; the tested settings for each game are applied underneath.
@@ -67,7 +80,9 @@ it is legal before you offer it. An illegal Pokemon can crash the other game whe
 
 ## Mystery Gift
 
-Each Mystery Gift tool starts with three choices. Use a preset sends a ready-made gift. Build your
+Each Mystery Gift tool starts with four choices. Use a preset sends a ready-made gift. On
+Sword/Shield, Official events lists real event cards (Pokemon, items, clothing, Battle Points) with
+a search box. Build your
 own opens a form: on FireRed/LeafGreen a Wonder Card with its text, who hands it over and what it
 gives, a Wonder News, or your own ARM code; on Sword/Shield a Pokemon, an egg, items or Battle
 Points. Open a file sends a `.pokegift` someone shared, a `.wc3` card on FireRed/LeafGreen or a
@@ -76,11 +91,37 @@ Points. Open a file sends a `.pokegift` someone shared, a `.wc3` card on FireRed
 Customize turns a preset into a form you can change. Before you send shows what the console gets,
 when it happens and which cartridges it works on; a problem shows there in red and Start stays off.
 
+On FireRed/LeafGreen, Game boosts lets you change how the game plays, such as speeding it up or adding a
+Pokemon follower. Select the boosts and send them; they start immediately and stop when the game
+restarts. To use them again after a restart, enable Save boosts for later, send the boosts, then send
+Mom restores your boosts. Talk to Mom at home in Pallet Town after each restart to turn them back
+on. The follower is always saved. Receiving another Wonder Card replaces Mom's gift; send it again
+to restore her ability to turn the saved boosts on.
+
+Read the save shows results in the Session log. Trainer ID (TID) is the number on your Trainer Card;
+Secret ID (SID) is normally hidden. The party readout shows each Pokemon in your last saved party,
+with its nature, six IVs (individual stat values from 0 to 31) and EVs (training points). These tools
+keep your save and Wonder Card unchanged. The trainer-details and party tools also save a copy of
+the read data in Received.
+
 Console code runs inside the game while it receives the gift. Check offline runs it on a simulated
 console first; code that would hang the menu is refused. Native code can change the running game or
 its save. Send only code whose source and behavior you have checked.
 
 Save gift file stores the selected gift for reuse or sharing. It works without a board.
+
+On FireRed/LeafGreen, Your save copies the whole save from the Switch to this computer, or puts one
+back. Back up from the Switch leaves the console's save as it was; the copy appears in Your saves,
+named after the trainer. Put a save on the Switch writes the chosen save beside the console's own;
+the console checks every part, loads it and saves, and keeps its old save if anything goes wrong.
+Back the console up first. A restore waits until PKHeX finds the whole party legal, or until you turn
+on Restore anyway.
+
+Your saves are kept in `Documents/pokeldn/Saves`. Rename one to tell it apart, export it as a `.sav`
+for an emulator or PKHeX, or add a `.sav` with + or by dropping it on the card. View and edit shows
+the trainer, the party and the PC boxes: change the name, money or coins, reorder or remove party
+Pokemon, add one built for this save's trainer, and check a box's legality. Keep as a new save adds
+the result beside the original, which stays unchanged.
 
 ## When a run fails
 

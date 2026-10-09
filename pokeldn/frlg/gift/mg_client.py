@@ -4,7 +4,7 @@ runs in pokeldn.frlg.link.sim.Sim; every message both ways is kept in ``messages
 
 from collections import deque
 
-from pokeldn.frlg.gift import ereader_trainer, mg_link, mg_script, wonder_news
+from pokeldn.frlg.gift import ereader_trainer, mg_link, mg_script, wonder_card, wonder_news
 from pokeldn.frlg.link import linkplayer
 from pokeldn.frlg.rom import buffer_script, mystery_event
 from pokeldn.frlg.text import charmap
@@ -72,7 +72,7 @@ def build_link_game_data(link_player, *, version_code, flag_id=0, game_code=b"BP
         data[off:off + 2] = (int(value) & 0xFFFF).to_bytes(2, "little")
     tid = (link_player.trainer_id & 0xFFFFFFFF).to_bytes(4, "little")
     data[mg_script.GD_OFF_TRAINER_ID:mg_script.GD_OFF_TRAINER_ID + 4] = tid
-    name = charmap.encode(link_player.name)[:7] + b"\xff"
+    name = charmap.encode(link_player.name, language=link_player.language)[:7] + b"\xff"
     data[mg_script.GD_OFF_PLAYER_NAME:mg_script.GD_OFF_PLAYER_NAME + len(name)] = name
     data[mg_script.GD_OFF_GAME_CODE:mg_script.GD_OFF_GAME_CODE + 4] = bytes(game_code)[:4].ljust(4, b"\x00")
     data[mg_script.GD_OFF_VERSION] = software_version & 0xFF
@@ -90,13 +90,10 @@ def describe_wonder_card(card):
     card_type, bg, send = bits & 3, (bits >> 2) & 0xF, (bits >> 6) & 3
     max_stamps = card[9]
 
-    def text(off):
-        return charmap.decode(card[off:off + 40])
-
-    lines = [text(90 + 40 * i) for i in range(4)]
+    fields = wonder_card.text_fields(card)
     return (f"flagId={flag_id} icon={icon} id={id_number} type={card_type} bg={bg} "
-            f"sendType={send} maxStamps={max_stamps} title={text(10)!r} subtitle={text(50)!r} "
-            f"body={lines!r} footer={[text(250), text(290)]!r}")
+            f"sendType={send} maxStamps={max_stamps} title={fields[0]!r} subtitle={fields[1]!r} "
+            f"body={list(fields[2:6])!r} footer={list(fields[6:])!r}")
 
 
 class MysteryGiftClientEngine:
@@ -104,7 +101,8 @@ class MysteryGiftClientEngine:
                  holding_flag_id=0, accept_replacement=True, yes_no_answer=True,
                  game_code=None, software_version=0, trust_pia=False,
                  questionnaire=(), easy_chat_profile=(), rom_stubs=None,
-                 inter_block_gap=DEFAULT_INTER_BLOCK_GAP, log=lambda *a: None):
+                 inter_block_gap=DEFAULT_INTER_BLOCK_GAP, flash=None, build=None,
+                 log=lambda *a: None):
         self.lp = link_player or linkplayer.LinkPlayer(version=linkplayer.VERSION_FIRE_RED)
         self.mpid = 1
         self.log = log
@@ -115,6 +113,11 @@ class MysteryGiftClientEngine:
         # header and zeros, so a payload that calls a ROM function needs a stub modelling the
         # callee.
         self.rom_stubs = dict(rom_stubs or {})
+        # With `flash`, one machine holds the console's memory and its 128 KiB save chip for the
+        # whole session, as the save payloads need; `build` picks its addresses.
+        self.flash = None if flash is None else bytes(flash)
+        self.build = build
+        self.machine = None
         self.ni_activity = ACTIVITY_WONDER_CARD
         self.ni_started = False
         self._live = False
@@ -123,6 +126,7 @@ class MysteryGiftClientEngine:
                         else mg.VERSION_CODE_FIRERED)
         if game_code is None:
             game_code = GAME_CODES.get((version, language), b"BPRE")
+        self.game_code = bytes(game_code)
         self.game_data = build_link_game_data(
             self.lp, version_code=version_code, flag_id=holding_flag_id,
             game_code=game_code, software_version=software_version,
@@ -383,13 +387,13 @@ class MysteryGiftClientEngine:
         elif instr == mg_script.CLI_LOAD_TOSS_RESPONSE:
             self._pending_send = (MG_LINKID_RESPONSE, (self.param & 0xFFFFFFFF).to_bytes(4, "little"), 4)
         elif instr == mg_script.CLI_SAVE_CARD:
-            self.saved_card = bytes(self.recv_buffer[:332])
+            self.saved_card = bytes(self.recv_buffer[:164 if self.game_code.endswith(b"J") else 332])
             self.info(f"[mg] WONDER CARD SAVED: {describe_wonder_card(self.saved_card)}")
         elif instr == mg_script.CLI_SAVE_NEWS:
             # IsWonderNewsSameAsSaved [decomp:src/mystery_gift.c:140]: the verdict is FALSE when the
             # news was taken, TRUE when kept [mystery_gift_client.c:210]; invalid news still answers
             # FALSE.
-            news = bytes(self.recv_buffer[:wonder_news.WONDER_NEWS_SIZE])
+            news = bytes(self.recv_buffer[:224 if self.game_code.endswith(b"J") else wonder_news.WONDER_NEWS_SIZE])
             same = (self.saved_news is not None
                     and wonder_news.validate(self.saved_news)
                     and self.saved_news == news)
@@ -448,7 +452,7 @@ class MysteryGiftClientEngine:
         """As much of struct SaveBlock2 [decomp:include/global.h:327] as a payload can read. The
         trainer id is the real one, unlike the game-data copy [decomp:src/mystery_gift.c:364]."""
         sav2 = bytearray(0x1000)
-        name = charmap.encode(self.lp.name)[:7] + b"\xff"
+        name = charmap.encode(self.lp.name, language=self.lp.language)[:7] + b"\xff"
         sav2[buffer_script.SAV2_PLAYER_NAME:buffer_script.SAV2_PLAYER_NAME + len(name)] = name
         sav2[buffer_script.SAV2_PLAYER_TRAINER_ID:buffer_script.SAV2_PLAYER_TRAINER_ID + 4] = (
             (self.lp.trainer_id & 0xFFFFFFFF).to_bytes(4, "little"))
@@ -468,10 +472,13 @@ class MysteryGiftClientEngine:
         try:
             # Called every frame until it returns 1, on its image as it left it
             # [decomp:src/mystery_gift_client.c:276-280]; memory-scan relies on it.
-            repeated = buffer_script.emulate_repeating(
-                code, param=self.param or 0, sav2=self.sav2 or self._save_block2_image(),
-                send_size=armed_size, send_ident=armed_ident,
-                memory=self.rom_stubs or None)
+            if self.flash is not None:
+                repeated = self._run_on_session_machine(code, armed_size, armed_ident)
+            else:
+                repeated = buffer_script.emulate_repeating(
+                    code, param=self.param or 0, sav2=self.sav2 or self._save_block2_image(),
+                    send_size=armed_size, send_ident=armed_ident,
+                    memory=self.rom_stubs or None)
             run = repeated.final
         except buffer_script.BufferScriptError as exc:
             # On the console this hangs the Mystery Gift menu with no way back.
@@ -498,6 +505,24 @@ class MysteryGiftClientEngine:
         self.info(f"[mg] BUFFER SCRIPT RAN: {buffer_script.describe(code)}, "
                   f"{run.instructions} instructions, returned {run.returned}, "
                   f"left 0x{run.param:08X} in param")
+
+    def _run_on_session_machine(self, code, armed_size, armed_ident):
+        if self.machine is None:
+            self.machine = buffer_script.session_machine(
+                code, param=self.param or 0, sav2=self._save_block2_image(), send_size=armed_size,
+                send_ident=armed_ident, build=self.build or self.game_code.decode(),
+                memory={buffer_script.FLASH_BASE: self.flash, **self.rom_stubs})
+        else:
+            self.machine.load(code, param=self.param or 0, send_size=armed_size, send_ident=armed_ident)
+        instructions = 0
+        for _ in range(buffer_script.MAX_SCAN_CALLS):
+            run = self.machine.call()
+            instructions += run.instructions
+            if run.done:
+                self.flash = bytes(self.machine.flash)
+                return buffer_script.RepeatedRun(calls=self.machine.calls, final=run,
+                                                 instructions=instructions)
+        raise buffer_script.BufferScriptError("the payload never returned 1")
 
     def _copy_recv_script(self):
         self.script = bytes(self.recv_buffer)

@@ -51,27 +51,37 @@ def build_wonder_news(*, news_id, title="", body=(), send_type=SEND_TYPE_ALLOWED
     return bytes(out)
 
 
+JAPANESE_WONDER_NEWS_SIZE = 224
+
+
+def for_build(news, build=None):
+    """Roman news text in the Japanese twenty-byte fields [BPRJ Server_Run, 0x081494EE]."""
+    from pokeldn.frlg.rom import builds
+    if builds.resolve(build).language != "japanese" or len(news) == JAPANESE_WONDER_NEWS_SIZE:
+        return news
+    out = bytearray(news[:4])
+    for offset in range(4, WONDER_NEWS_SIZE, WONDER_NEWS_TEXT_LENGTH):
+        text = charmap.latin_text_for_japanese(charmap.decode(news[offset:offset + WONDER_NEWS_TEXT_LENGTH]))
+        out += charmap.encode(text, width=20, pad=0xFF)
+    return bytes(out)
+
+
 def validate(news):
     """Port of ValidateWonderNews [decomp:src/mystery_gift.c:113]."""
     news = bytes(news)
-    return len(news) == WONDER_NEWS_SIZE and int.from_bytes(news[0:2], "little") != 0
+    return len(news) in (WONDER_NEWS_SIZE, JAPANESE_WONDER_NEWS_SIZE) and int.from_bytes(news[0:2], "little") != 0
 
 
 def parse(news):
     news = bytes(news)
-    if len(news) != WONDER_NEWS_SIZE:
-        raise ValueError(f"Wonder News is {len(news)} bytes, expected {WONDER_NEWS_SIZE}")
-    body = tuple(
-        charmap.decode(news[44 + index * WONDER_NEWS_TEXT_LENGTH:
-                            44 + (index + 1) * WONDER_NEWS_TEXT_LENGTH])
-        for index in range(WONDER_NEWS_BODY_TEXT_LINES))
-    return {
-        "id": int.from_bytes(news[0:2], "little"),
-        "send_type": news[2],
-        "bg_type": news[3],
-        "title": charmap.decode(news[4:44]),
-        "body": body,
-    }
+    width = 20 if len(news) == JAPANESE_WONDER_NEWS_SIZE else WONDER_NEWS_TEXT_LENGTH
+    if len(news) not in (WONDER_NEWS_SIZE, JAPANESE_WONDER_NEWS_SIZE):
+        raise ValueError(f"Wonder News is {len(news)} bytes; expected 444 or 224")
+    language = 1 if width == 20 else None
+    return {"id": int.from_bytes(news[:2], "little"), "send_type": news[2], "bg_type": news[3],
+            "title": charmap.decode(news[4:4 + width], language=language),
+            "body": tuple(charmap.decode(news[4 + (i + 1) * width:4 + (i + 2) * width],
+                                         language=language) for i in range(10))}
 
 
 def describe(news):

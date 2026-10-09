@@ -283,9 +283,11 @@ class Radio:
     """Owns one byte stream to a board (`read(n)` with a short timeout, `write(data)`). Events go to
     every subscriber from the reader thread; `request` waits for a command's reply."""
 
-    def __init__(self, stream, log=None):
+    def __init__(self, stream, log=None, on_lost=None):
         self._stream = stream
         self._log = log
+        self._on_lost = on_lost   # called once, from the reader thread, when the port dies
+        self.lost = None
         self._write_lock = threading.Lock()
         self._request_lock = threading.Lock()
         self._reader = FrameReader()
@@ -310,7 +312,7 @@ class Radio:
         self._writer.start()
 
     @classmethod
-    def open_serial(cls, port: str, baud: int = 115200, fast_baud: int | None = None, log=None):
+    def open_serial(cls, port: str, baud: int = 115200, fast_baud: int | None = None, log=None, on_lost=None):
         """`fast_baud` defaults to POKELDN_ESP32_BAUD, else 921600."""
         import serial
         if fast_baud is None:
@@ -323,32 +325,38 @@ class Radio:
         s.dtr = False
         s.rts = False
         s.open()
-        radio = cls(s, log=log)
-        # Opening the port still resets some boards (a CP2102 on macOS); a HELLO sent during the
-        # boot is lost, so retry past it.
-        for attempt in range(5):
-            try:
-                radio.request(CMD_HELLO, b"", MSG_INFO, timeout=1.0)
-                break
-            except RadioError:
-                if attempt == 4:
-                    raise
-        info = radio.hello()
-        if fast_baud and fast_baud != baud:
-            radio.request(CMD_BAUD, struct.pack("<I", fast_baud), MSG_RESULT)
-            radio.drain()
-            s.flush()
-            s.baudrate = fast_baud
-            # A HELLO that reaches the board while it is still switching is lost (one open in four
-            # at 1500000), so retry it as the first one is.
+        radio = cls(s, log=log, on_lost=on_lost)
+        # Windows opens a COM port exclusively: a handle left open here refuses the retry
+        # (PermissionError 13, Access is denied).
+        try:
+            # Opening the port still resets some boards (a CP2102 on macOS); a HELLO sent during the
+            # boot is lost, so retry past it.
             for attempt in range(5):
                 try:
-                    radio.request(CMD_HELLO, b"", MSG_INFO, timeout=0.5)
+                    radio.request(CMD_HELLO, b"", MSG_INFO, timeout=1.0)
                     break
                 except RadioError:
                     if attempt == 4:
                         raise
             info = radio.hello()
+            if fast_baud and fast_baud != baud:
+                radio.request(CMD_BAUD, struct.pack("<I", fast_baud), MSG_RESULT)
+                radio.drain()
+                s.flush()
+                s.baudrate = fast_baud
+                # A HELLO that reaches the board while it is still switching is lost (one open in four
+                # at 1500000), so retry it as the first one is.
+                for attempt in range(5):
+                    try:
+                        radio.request(CMD_HELLO, b"", MSG_INFO, timeout=0.5)
+                        break
+                    except RadioError:
+                        if attempt == 4:
+                            raise
+                info = radio.hello()
+        except BaseException:
+            radio.close()
+            raise
         if firmware_version(info) >= ALIVE_FIRMWARE:
             threading.Thread(target=radio._keep_alive, name="esp32-alive", daemon=True).start()
         if radio._trace:
@@ -484,6 +492,8 @@ class Radio:
                     if code:
                         raise RadioError(f"command 0x{msg_type:02x} failed: {code:#x}")
                     return reply
+                if self.lost is not None:
+                    raise RadioError(f"the board left USB: {self.lost}")
                 if not self._reply_cv.wait(timeout):
                     self._replies.pop(reply_type, None)
                     raise RadioError(f"no reply 0x{reply_type:02x} to command 0x{msg_type:02x}")
@@ -493,13 +503,27 @@ class Radio:
             try:
                 data = self._stream.read(4096)
             except Exception as e:
-                if self._log:
-                    self._log(f"[esp32] read failed: {e}")
+                if not self._closed:
+                    self._lose(e)
                 return
             if not data:
                 continue
             for msg_type, payload in self._reader.feed(data):
                 self._dispatch(msg_type, payload)
+
+    def _lose(self, error: Exception) -> None:
+        # A removed USB device fails the read (Windows: PermissionError 13, Access is denied); every
+        # later write fails too, so the writer stops and waiting requests fail at once.
+        self.lost = error
+        if self._log:
+            self._log(f"[esp32] read failed: {error}")
+        self._closed = True
+        with self._out_cv:
+            self._out_cv.notify_all()
+        with self._reply_cv:
+            self._reply_cv.notify_all()
+        if self._on_lost:
+            self._on_lost(error)
 
     def _record(self, direction: str, msg_type: int, payload: bytes) -> None:
         if self._trace:

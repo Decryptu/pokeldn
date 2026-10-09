@@ -99,6 +99,7 @@ turbo_hook:
     cmp     r2, r3
     beq     .Lout                   @ not started by the game yet: leave every printer alone
 .Lnext:
+printer_stride:
     add     r0, #0x24
     sub     r1, #1
     bne     .Lscan

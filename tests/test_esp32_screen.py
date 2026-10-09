@@ -44,6 +44,39 @@ def test_a_sprite_lands_bit_for_bit_where_the_trade_scene_draws_it(scene):
     assert not any(lit(fb, x, y) for x in range(x0 - 3, x0 + 16) for y in range(y0 - 3, y0))
 
 
+@pytest.fixture
+def small(scene, built):
+    built.scene_panel(1)          # PANEL_72X40
+    yield scene
+    built.scene_panel(0)
+
+
+@needs_cc
+def test_the_72x40_panel_draws_a_sprite_at_half_size_inside_its_window(small):
+    # Uniform 2x2 blocks halve exactly; a wrong bit order, block or window offset moves pixels.
+    half = [[(x * 3 + y * 5) % 7 < 3 for x in range(7)] for y in range(5)]
+    rows = [[half[y // 2][x // 2] for x in range(14)] for y in range(10)]
+    assert small.command(esp32.display_sprite_payload("ours", rows))
+    assert small.command(esp32.display_show_payload("trade", 0, "Sw/Sh", "Pikachu"))
+    fb = small.frame()            # now 1000: the bob is at rest
+    x0, y0 = 30 + 36 - 7 // 2, 24 + 40 - 5
+    assert [[lit(fb, x0 + x, y0 + y) for x in range(7)] for y in range(5)] == half
+
+
+@needs_cc
+def test_the_72x40_panel_draws_inside_its_window_whenever_the_full_one_draws(small, built):
+    from screen_preview import Radio, session
+    frames = session(small, 25, 150, 151)
+    built.scene_panel(0)
+    built.scene_reset()
+    small.radio, small.now = Radio(), 1000
+    full = session(small, 25, 150, 151)
+    inside = {(x, y) for x in range(30, 102) for y in range(24, 64)}
+    for fb, whole in zip(frames, full, strict=True):
+        assert not any(lit(fb, x, y) for x in range(128) for y in range(64) if (x, y) not in inside)
+        assert any(lit(fb, x, y) for x, y in inside) == any(whole)
+
+
 @needs_cc
 def test_malformed_commands_are_refused(scene):
     good = esp32.display_sprite_payload("theirs", [[True] * 8] * 2)

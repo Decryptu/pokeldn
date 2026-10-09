@@ -31,6 +31,13 @@ RETRANSMIT_FLAGS = 0x20
 BROADCAST_RECIPIENTS = 3
 HOST_ENTRY = 1                    # a host acknowledges the joiner's broadcast stream in entry 1
 RTT_TICKS = 19_200_000
+NET_SEQUENCE = 2                  # the connection status's sequence; a leaving host bumps it
+# A host leaving (docs/za.md, A host leaving): type 9 each second for 5 s (0x255a91c, 0x255a8c8), Net
+# 0x11 migration form until the 0x12 or 4 s, then Net 0x40 every 0.3 s for 4 s, 2 s unanswered.
+MIGRATION_REPEAT, MIGRATION_WAIT = 1.0, 5.0
+STATUS_REPEAT, STATUS_WAIT = 0.5, 4.0
+HANDOVER_REPEAT, HANDOVER_SPAN, HANDOVER_SPAN_UNANSWERED = 0.3, 4.0, 2.0
+NET_START_HOST_MIGRATION = bytes([0x01, pia_connect.NET_START_HOST_MIGRATION, 0x00, 0x00])
 
 MSG_SELECTION = "0100"
 MSG_OFFER = "0101"
@@ -85,7 +92,7 @@ class HostSession:
 
     def __init__(self, *, ssid, our_ip, our_mac, guest_ip, code, identity, identity_tail,
                  selection, offer, host_var=None, offer_at=None, log=print, record=None,
-                 clock=time.monotonic, renew_offer=None):
+                 clock=time.monotonic, renew_offer=None, partner=None):
         self.ssid = bytes(ssid)
         self.our_ip, self.our_mac, self.guest_ip = our_ip, bytes(our_mac), guest_ip
         self.code = code
@@ -100,6 +107,12 @@ class HostSession:
             screen.offer("za", self.offer)
         # Seconds after the preview to make our pick unprompted; None waits for the console's.
         self.offer_at = offer_at
+        # Online (pokeldn.online): the partner's console's pick is ours, previewed then picked once
+        # it arrives, and our 0102 and 0104 wait for both consoles' 0102 (docs/online.md).
+        self.partner = partner
+        self.shown = None                 # the partner's record the console was shown
+        self.console_confirmed = False
+        self.after_cancel = False         # the console redraws our pick after its cancel
         self.host_var = host_var or int.from_bytes(os.urandom(2), "big") % 0xFFF0 + 0x0002
         self.log, self.record, self.clock = log, record, clock
         self.pia = crypto.PiaCrypto(self.ssid, za.GAME_KEY)
@@ -144,11 +157,14 @@ class HostSession:
         # called on our offer after each trade; a console refuses a PID its save already holds
         self.renew_offer = renew_offer
         self.counts = {}
+        self.net_sequence = NET_SEQUENCE
+        self.departure = None         # the phase of our own leaving, once `leave` is called
+        self.departed = False
 
     def _elapsed(self, now):
         return now - self.t0
 
-    def _send(self, items, *, dst, establishing=False, footer=True, pktid=None, note=""):
+    def _send(self, items, *, dst, establishing=False, footer=True, pktid=None, src=None, note=""):
         raw = b"".join(reliable.build_message(p, payload, mf) for p, payload, mf in items)
         # A reference host compresses exactly the packets compression shortens.
         compress = crypto.HAVE_ZSTD and len(crypto.compress(raw)) < len(raw)
@@ -157,7 +173,8 @@ class HostSession:
             pktid = self.pkt[channel]
             self.pkt[channel] = pktid + 1 if pktid < 0xFFFF else 1
         data = host_pia.build_messages(
-            self.network, self.pia, items, dst_var=dst, src_var=self.host_var, pktid=pktid,
+            self.network, self.pia, items, dst_var=dst,
+            src_var=self.host_var if src is None else src, pktid=pktid,
             compress=compress, establishing=establishing,
             footer_var=(self.guest_var if footer else None), nonce_source=self.nonces)
         self.out.append((data, self.guest_ip))
@@ -169,12 +186,14 @@ class HostSession:
         out, self.out = self.out, []
         return out
 
-    def _net_status(self):
+    def _net_status(self, migrating=False):
         body = pia_connect.build_net_conn_request(
-            2, self.host_var, self.our_mac, self.network_id, [self.our_ip, self.guest_ip],
-            max_stations=NET_STATIONS)
+            self.net_sequence, self.host_var, self.our_mac, self.network_id,
+            [self.our_ip, self.guest_ip], max_stations=NET_STATIONS, migrating=migrating)
+        # A leaving host sends its migration form from source 0, as a retail one does.
         self._send([(pia_connect.PROTO_NET, body, None)], dst=0, establishing=True, footer=False,
-                   pktid=0, note="net 0x11")
+                   pktid=0, src=0 if migrating else None,
+                   note="net 0x11 migration" if migrating else "net 0x11")
 
     def _net_property(self):
         app = za.build_advertise_data(self.code, num_players=2)
@@ -236,6 +255,14 @@ class HostSession:
                     if self.offer_at is not None:
                         self.offer_sent = True
                         self._schedule(now, self.offer_at, self.offer, "our offer")
+        elif kind == za.SESSION_START_MIGRATION_ACK and self.departure is not None:
+            if (za.migration_acked(payload, self.constant_id, self.host_var,
+                                   self.join["source_constant_id"], self.guest_var)
+                    and not self.departure["acked"]):
+                self.departure["acked"] = True
+                self.log(f"[za-host] the console acknowledged our handover at "
+                         f"{self._elapsed(now):.2f}s")
+                self._depart_phase("status", now)
         elif kind == za.SESSION_LEAVE_REQUEST and len(payload) >= 15:
             # Unanswered, a console re-sends its leave every 0.5 s and gives up after four (docs/za.md).
             self.leave_requests += 1
@@ -334,6 +361,9 @@ class HostSession:
             self.console_offer = bytes(inner)
             if inner[-1] == OFFER_PICK:
                 self.console_pick = self.console_offer
+                if self.partner is not None:
+                    self.console_confirmed, self.after_cancel = False, False
+                    self.partner.offer(self.console_pick)
             if self.record:
                 self.record(rec="console_offer", n=self.console_offers, data=inner.hex(),
                             t=time.time())
@@ -345,6 +375,17 @@ class HostSession:
             self.round = max(self.round, command_round(inner) or 0)
             self.offer_sent = self.confirmed = self.committed = False
             self.log(f"[za-host] console cancelled; round {self.round}")
+            if self.partner is not None:
+                self.console_confirmed, self.after_cancel = False, True
+                self.offer_sent = self.shown is not None
+                self.partner.withdraw()
+        elif head == MSG_CONFIRM[:2].hex() and self.partner is not None:
+            self.round = max(self.round, command_round(inner) or 0)
+            if not self.console_confirmed and self.console_pick is not None:
+                self.console_confirmed = True
+                self.partner.accept()
+        elif head == MSG_COMMIT[:2].hex() and self.partner is not None:
+            self.round = max(self.round, command_round(inner) or 0)
         elif head == MSG_CONFIRM[:2].hex() and not self.confirmed:
             self.round = max(self.round, command_round(inner) or 0)
             self.confirmed = True
@@ -371,7 +412,11 @@ class HostSession:
                 show_done()
                 screen.received("za", self.console_pick)
                 self.arriving = True
-                if self.trades < len(self.offers):
+                if self.partner is not None:
+                    self.partner.done()
+                    self.offer = self.preview = self.shown = None
+                    self.console_confirmed = self.after_cancel = False
+                elif self.trades < len(self.offers):
                     self._load_offer(self.offers[self.trades])
                     screen.offer("za", self.offer)
                     # A station sends a preview each time its cursor moves to another Pokemon.
@@ -383,6 +428,34 @@ class HostSession:
                     self._load_offer(self.renew_offer(self.offer))
                     screen.offer("za", self.offer)
                 self.log(f"[za-host] trade_complete: the console sent its four steps (trade {self.trades})")
+
+    def _online(self, now):
+        """The partner's progress: their pick previewed then picked on the console, a cancel when
+        they withdraw it, our 0102 and 0104 once both consoles confirmed."""
+        if 1 not in self.update_acked or self.committed:
+            return
+        theirs = self.partner.theirs()
+        if self.shown is not None and theirs.offer != self.shown and not self.confirmed:
+            # A cancel carries the next round (docs/za.md, CommandCancelTrade); a host-sent one is
+            # unmeasured (docs/online.md, Unresolved).
+            self.round += 1
+            self._schedule(now, 0.0, bytes.fromhex(MSG_CANCEL) + bytes([TUPLE]) + encode_uint(2)
+                           + encode_uint(self.round) + encode_uint(0), "cancel 0103")
+            self.shown, self.offer_sent, self.console_confirmed = None, False, False
+        if theirs.offer is not None and self.shown is None:
+            self._load_offer(theirs.offer)
+            self.shown = theirs.offer
+            screen.offer("za", self.offer)
+            if not self.offer_sent:
+                self.offer_sent = True
+                self._schedule(now, 0.0, self.preview, "preview of the partner's pick")
+                self._schedule(now, 0.5, self.offer, "the partner's pick")
+        if (self.shown is not None and self.console_confirmed and theirs.accepted
+                and not self.confirmed):
+            self.confirmed = self.committed = True
+            self._schedule(now, 0.1, build_command("0102", self.round), "confirm 0102")
+            self._schedule(now, COMMIT_DELAY - CONFIRM_DELAY, build_command("0104", self.round),
+                           "commit 0104")
 
     def _arrived(self):
         if self.arriving:
@@ -410,7 +483,13 @@ class HostSession:
         for m in messages:
             if m.proto == pia_connect.PROTO_NET:
                 kind = m.payload[1] if len(m.payload) > 1 else None
-                if kind == pia_connect.NET_CONN_RESPONSE and not self.net_acked:
+                if (kind == pia_connect.NET_CONN_RESPONSE and self.departure is not None
+                        and self.departure["phase"] == "status" and len(m.payload) >= 8
+                        and int.from_bytes(m.payload[4:8], "big") == self.net_sequence):
+                    self.log(f"[za-host] the console answered our migration status at "
+                             f"{self._elapsed(now):.2f}s")
+                    self._depart_phase("handover", now, span=HANDOVER_SPAN)
+                elif kind == pia_connect.NET_CONN_RESPONSE and not self.net_acked:
                     self.net_acked = True
                     self.log(f"[za-host] the console answered our connection status at "
                              f"{self._elapsed(now):.2f}s")
@@ -423,8 +502,72 @@ class HostSession:
             elif m.proto in self.links and self.guest_var is not None:
                 self._on_stream(m.proto, m.payload, now)
 
+    def leave(self, now=None):
+        """Hand the session to the console, as a leaving host does, so it ends the trade with "chose
+        to quit" and no error; `departed` turns True when the network may close."""
+        now = self.clock() if now is None else now
+        if self.departure is not None or self.departed:
+            return
+        if self.join is None:
+            self.departed = True
+            return
+        self.log(f"[za-host] leaving at {self._elapsed(now):.2f}s: naming the console the next host")
+        self.departure = {"phase": None, "acked": False}
+        self._depart_phase("migration", now)
+
+    def _depart_phase(self, phase, now, span=None):
+        d = self.departure
+        d.update(phase=phase, since=now, next=now, span=span)
+        if phase == "status":
+            self.net_sequence += 1
+
+    def _depart(self, now):
+        d = self.departure
+        waited = now - d["since"]
+        if d["phase"] == "migration" and waited >= MIGRATION_WAIT:
+            self.log("[za-host] the console never acknowledged our handover")
+            self._depart_phase("status", now)
+        elif d["phase"] == "status" and waited >= STATUS_WAIT:
+            self.log("[za-host] the console never answered our migration status")
+            self._depart_phase("handover", now, span=HANDOVER_SPAN_UNANSWERED)
+        elif d["phase"] == "handover" and waited >= d["span"]:
+            self.departure = None
+            self.departed = True
+            self.log(f"[za-host] handover over at {self._elapsed(now):.2f}s")
+            return
+        if now < d["next"]:
+            return
+        if d["phase"] == "migration":
+            body = za.build_start_migration(self.constant_id, self.host_var, self.our_ip,
+                                            self.join["source_constant_id"], self.guest_var)
+            self._send([(pia_connect.PROTO_SESSION, body, None)], dst=self.guest_var,
+                       note="start host migration")
+            d["next"] = max(d["next"] + MIGRATION_REPEAT, now)
+        elif d["phase"] == "status":
+            self._net_status(migrating=True)
+            d["next"] = max(d["next"] + STATUS_REPEAT, now)
+        else:
+            self._send([(pia_connect.PROTO_NET, NET_START_HOST_MIGRATION, None)], dst=0,
+                       establishing=True, footer=False, pktid=0, src=0, note="net 0x40")
+            d["next"] = max(d["next"] + HANDOVER_REPEAT, now)
+
+    def _rtt(self, now):
+        if self.next_rtt is not None and now >= self.next_rtt:
+            request = build_rtt_request(int((now - self.t0) * RTT_TICKS), self._micros(now),
+                                        self.host_var)
+            self._send([(pia_connect.PROTO_RTT, request, None)], dst=pia_connect.SESSION_VAR)
+            self.next_rtt = now + RTT_PERIOD
+
     def tick(self, now=None):
         now = self.clock() if now is None else now
+        if self.departed:
+            return self.drain()
+        if self.departure is not None:
+            # A retail host keeps its RTT going while it waits for the type 10.
+            if self.departure["phase"] == "migration":
+                self._rtt(now)
+            self._depart(now)
+            return self.drain()
         if not self.net_acked and now >= self.next_net:
             self._net_status()
             self.next_net = now + NET_REPEAT
@@ -436,11 +579,7 @@ class HostSession:
                 and now >= self.next_property):
             self._net_property()
             self.next_property = now + PROPERTY_REPEAT
-        if self.next_rtt is not None and now >= self.next_rtt:
-            request = build_rtt_request(int((now - self.t0) * RTT_TICKS), self._micros(now),
-                                        self.host_var)
-            self._send([(pia_connect.PROTO_RTT, request, None)], dst=pia_connect.SESSION_VAR)
-            self.next_rtt = now + RTT_PERIOD
+        self._rtt(now)
         if self.guest_var is None:
             return self.drain()
         now_ms = int(now * 1000)
@@ -451,6 +590,8 @@ class HostSession:
                 items.append(item)
             if items:
                 self._send(items, dst=dst)
+        if self.partner is not None:
+            self._online(now)
         for entry in [e for e in self.scheduled if e[0] <= now]:
             self.scheduled.remove(entry)
             _due, proto, payload, why = entry

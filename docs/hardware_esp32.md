@@ -38,9 +38,7 @@ The Seeed Studio XIAO ESP32C3 uses its USB-C socket for native USB Serial/JTAG.
 Attach its supplied external antenna before radio use. BOOT is GPIO9, and the onboard LED
 is a charging indicator ([Seeed's board guide](https://wiki.seeedstudio.com/XIAO_ESP32C3_Getting_Started/)).
 The C3 build runs at 160 MHz. Wire and button tasks run on core 0; the dual-core targets keep
-these tasks on core 1. The XIAO ESP32C3 trades as FireRed joiner, with valid received PK3
-checksums and no in-game error, and as Sword host through the packaged macOS app, with a legal
-received PK8. Both roles report zero lost host ETH_TX commands, bad wire frames and USB resyncs.
+these tasks on core 1.
 
 A XIAO ESP32C3 revision 0.4 over native USB on macOS carries a 2,000,000-byte BENCH transfer as
 1429 messages with none missing and no bad checksum, at 880.1 KB/s with the host baud setting at
@@ -67,14 +65,18 @@ firmware uses, with the same `lmacConfMib` offsets as the C3.
 
 A XIAO ESP32C6 revision 0.2 over native USB on macOS carries a 2,000,000-byte BENCH transfer as
 1429 messages with none missing and no bad checksum, at 824.6 KB/s, and takes 5000 of 5000 uplink
-commands with none lost. Its idle free heap at start is 255196 bytes. On its ceramic antenna it
-trades as FireRed joiner and as Sword and Scarlet host: received PK3 and PK8 records are valid, the player saw
-no error, and the console left cleanly. A FireRed joiner session counted 5155 of 5155 host ETH_TX
-commands on the board, with no bad wire frame and no USB resync.
+commands with none lost. Its idle free heap at start is 255196 bytes. A FireRed joiner session on
+its ceramic antenna counted 5155 of 5155 host ETH_TX commands on the board, with no bad wire frame
+and no USB resync.
 
-Gr3nSkyDragon reports a completed FireRed joiner trade on an ESP32-S3 under Windows in
-[the S3 contribution](https://github.com/Decryptu/pokeldn/pull/2). The classic ESP32 measurements
-below use the ELEGOO ESP32-D0WD-V3 board unless another board is named.
+The Seeed Studio XIAO ESP32S3 (ESP32-S3 revision 0.2, 8 MB flash, 8 MB PSRAM) uses its USB-C
+socket for native USB Serial/JTAG and needs its supplied external antenna. BOOT is GPIO0; the yellow
+user LED on GPIO21 (lit while low) shows the LED looks. Over native USB on macOS it carries a
+2,000,000-byte BENCH transfer as 1429 messages with none missing and no bad checksum, at 883 KB/s,
+and takes 5000 of 5000 uplink commands with none lost. Its idle free heap at start is 212416 bytes.
+
+The classic ESP32 measurements below use the ELEGOO ESP32-D0WD-V3 board unless another board is
+named. Completed trades per board are in [Trades by board](#trades-by-board).
 
 ### The USB link after a reset (C6, S3)
 
@@ -84,7 +86,7 @@ runs `recalib_bbpll()` (`esp_system/port/soc/esp32c6/clk.c`, the same on S3): on
 than a CPU reset it calls `rtc_clk_cpu_freq_set_xtal()`, which stops the BBPLL with no check for its
 USB consumer, then restarts it. USB Serial/JTAG takes its 48 MHz clock from that PLL while the host
 is talking to it. On a XIAO ESP32C6 the link then sometimes came up garbled and stayed so until the
-board was unplugged: the firmware ran on, the SOF frame number never moved after that boot,
+board was unplugged: the firmware kept running, the SOF frame number never moved after that boot,
 `USB_SERIAL_JTAG_INT_RAW` held PID, CRC5 and bit-stuffing errors (`0000b5b2` against `0000b50a`
 healthy) with the reply stuck in the IN FIFO, the clock-enable, pad and PCR registers matched a
 healthy board, GET_CONFIGURATION over EP0 failed, and esptool's USB reset got no answer.
@@ -96,12 +98,11 @@ healthy board, GET_CONFIGURATION over EP0 failed, and esptool's USB reset got no
 
 The C6 and S3 builds set `CONFIG_ESP_SYSTEM_BBPLL_RECALIB=n`; its Kconfig help allows that for a
 bootloader built with ESP-IDF v5.2 or later, and every merged image carries its own v6.1
-bootloader. The S3 change is untested on an S3. The C3 has no such option and never showed the
-fault. With recalibration off, 4 of 600 opens on a C6 found no answer once and a working link on
-the next open, after macOS re-enumerated the device ("Device not configured").
+bootloader. A XIAO ESP32S3 with recalibration off answered 300 of 300 opens. The C3 has no such option and showed no fault.
+With recalibration off, 4 of 600 opens on a C6 found no answer once and a working link on the next
+open, after macOS re-enumerated the device ("Device not configured").
 
-Both of the C6's retail sessions that seemed to end in a dead link were first found dead at the
-next port open. The C6 build also carries a USB watch (`usbwatch.c`): it samples the SOF frame
+The C6 build also carries a USB watch (`usbwatch.c`): it samples the SOF frame
 number every 5 ms and, once frames have counted or the host has sent a byte, restarts the chip
 after a 2 s stall and reports the USB and clock registers from before and after it as LOG lines on
 the next HELLO. Built with `POKELDN_USB_BEACON=1` in the environment of `idf.py`, the C6 image also
@@ -236,9 +237,9 @@ station disconnects. It then discards every message for the host, uncounted, unt
 command again: a host gone from a USB board otherwise turns each queued or overheard message into a
 500 ms write and a `wire_dropped`, and the LED's alarm into a constant `flash3`.
 
-Measured on a XIAO ESP32C6 with a retail FireRed in the trade room of `frlg_trade_host.py`, the host
-killed with SIGKILL: the console showed 2318-0006, a JOIN search afterwards listed no host, and the
-LED returned to its idle look. Without the discard the LED kept `flash3`.
+On a XIAO ESP32C6 with a retail FireRed in the trade room of `frlg_trade_host.py` and the host
+killed with SIGKILL, the console showed 2318-0006, a later JOIN search listed no host, and the LED
+returned to its idle look. Without the discard the LED stayed on `flash3`.
 
 ## The serial ceiling
 
@@ -273,8 +274,8 @@ on macOS:
 | 1500000 | 140.2 KB/s | 20000 of 100 bytes | 0 | 0 |
 | 2000000, 3000000 | the board never answers HELLO at the new rate | | | |
 
-One Legends Z-A seat at 921600 with CREDIT had no refused association, its first message at 1.68 s
-(1.7 s in a seat at 1500000), 695 of 695 ETH_TX, and a trade.
+A Legends Z-A seat at 921600 with CREDIT had no refused association, its first message at 1.68 s
+(1.7 s at 1500000) and 695 of 695 ETH_TX counted.
 
 ### Host-to-board command loss and CREDIT
 
@@ -306,19 +307,19 @@ outgoing queue (at most one queued) yet arrives about 0.5 s late behind a Scarle
 RX_ETH. A board without CREDIT never opens the window and the host writes unthrottled. The board logs a
 command over 50 ms (`slow command`) and a reader turn over 100 ms (`reader held`).
 
-With the idle count and the CREDIT ahead of the queue, the board counts every ETH_TX the host hands
+With the idle count and the CREDIT ahead of the queue, the board counted every ETH_TX the host handed
 it: 520315 of 520315 over 228 board sessions (classic ESP32 up to firmware 1.2.0, C3, C6 1.0.0), every
-overflow and wire counter 0, every repeated idle count equal to the bytes written. Six of those seats
-had the host writing over 500 ETH_TX a second while the board-to-host line ran at 148 to 152 KB/s.
+overflow and wire counter 0, every repeated idle count equal to the bytes written. Six of those
+sessions had the host writing over 500 ETH_TX a second while the board-to-host line ran at 148 to
+152 KB/s.
 
-Three seats on firmware before the idle count lost a few host commands with no overflow counted: 6
-of 2333 at 921600 with no CREDIT and 10 of 1691 at 1500000 with the CREDIT at the back of the queue,
-each with `wire_rx_bad` 1 and `tx_eth_retried` 0, and 1 of 836 on a seat with no trace. In the two
-traced seats the loss fell in the host's first burst with the board-to-host line at its ceiling
-(91.4 KB in one second at 921600). That firmware's writer spun on a full TX ring above the reader,
-and only the reader drained the UART event queue, so an overflow during a starved read was never
-counted. One `wire_rx_bad` for several lost commands fits one contiguous lost span. Which buffer
-dropped the bytes is unmeasured: those traces carry no CREDIT.
+Firmware before the idle count lost a few host commands with no overflow counted: 6 of 2333 at
+921600 with no CREDIT and 10 of 1691 at 1500000 with the CREDIT at the back of the queue, each with
+`wire_rx_bad` 1 and `tx_eth_retried` 0. The loss fell in the host's first burst with the
+board-to-host line at its ceiling (91.4 KB in one second at 921600). That firmware's writer spun on
+a full TX ring above the reader, and only the reader drained the UART event queue, so an overflow
+during a starved read went uncounted. One `wire_rx_bad` for several lost commands fits one
+contiguous lost span. Which buffer dropped the bytes is unmeasured: those traces carry no CREDIT.
 
 A HELLO restarts both counts, so the host holds it until nothing is in flight and keeps the window
 shut across it until the board's CREDIT 0. A host that wrote unthrottled after a mid-session HELLO
@@ -445,7 +446,7 @@ alone. The board missed 4.5 to 12.1% of the console's first copies at 54 and 48 
 missed first copy follows another console frame 37 to 52% of the time, a heard one 28 to 32%; RSSI,
 rate and length do not differ.
 
-### Two boards reproduce the misses
+### Receive misses on two boards
 
 `tools/ldn/esp32_pair_bench.py AP STA --flood 0 --burst N --send R` has the station board send
 200-byte frames and counts, from the access point's header copies, the frames whose first copy it
@@ -525,8 +526,9 @@ None for a kernel interface, which is how every launcher picks its path.
 
 ## The board's LED and buttons
 
-LED patterns drive GPIO2 on classic ESP32 boards and GPIO15, inverted, on the C6 (the XIAO ESP32C6's
-yellow LED). The S3 and C3 firmware leaves LED pins alone. BOOT trace markers use GPIO0 on classic
+LED patterns drive GPIO2 on classic ESP32 boards, GPIO21, inverted, on the S3 (the XIAO ESP32S3's
+yellow user LED, `LED_BUILTIN` in arduino-esp32's XIAO_ESP32S3 variant) and GPIO15, inverted, on the
+C6 (the XIAO ESP32C6's yellow LED). The C3 firmware leaves LED pins alone. BOOT trace markers use GPIO0 on classic
 ESP32 and S3, and GPIO9 on C3 and C6.
 
 The ELEGOO ESP-32 Type-C board (CP2102, ESP32-D0WD-V3) carries an unbranded module with a PCB antenna
@@ -575,7 +577,8 @@ no such moment. `tools/ldn/esp32_led.py --port PORT PATTERN` sets a look; `--dem
 
 ## The screen
 
-An SSD1306 128x64 one-bit OLED on I2C is optional. At boot the firmware probes 0x3C, then 0x3D;
+An SSD1306 128x64 one-bit OLED on I2C is optional. Users report 128x64 SSD1315 and SSD1309 modules
+working with the same firmware. At boot the firmware probes 0x3C, then 0x3D;
 when neither answers it frees the pins and starts nothing. With a screen, a priority-1 task on the
 last core draws a frame every 50 ms and sends it at 400 kHz (1031 bytes, about 23 ms).
 
@@ -584,12 +587,23 @@ last core draws a frame every 50 ms and sends it at 400 kHz (1031 bytes, about 2
 | ESP32 | GPIO21 | GPIO22 | DevKit V1 D21, D22 |
 | ESP32-S3 | GPIO8 | GPIO9 | |
 | ESP32-C3 | GPIO6 | GPIO7 | XIAO D4, D5 |
+| ESP32-C3 | GPIO5 | GPIO6 | the 0.42-inch OLED board's own 72x40 screen, probed second |
 | ESP32-C6 | GPIO22 | GPIO23 | XIAO D4, D5 |
 
 VCC goes to 3V3 and GND to GND. The common four-pin module (GND, VCC, SCL, SDA) carries its own
 3.3 V regulator and 4.7 k pull-ups on SCL and SDA; its address resistor selects 0x3C (silkscreen
 0x78) or 0x3D (0x7A). Its panel maps segment 127 to column 1 and COM0 to row 63, so the firmware sets
 segment remap (`A1`), reversed COM scan (`C8`) and alternative COM pins (`DA 12`).
+
+The ESP32-C3 0.42-inch OLED board (sold as ABRobot and under other names) carries a 72x40 panel on
+GPIO5 and GPIO6, and an LED on GPIO8 that the firmware leaves alone. Driven with the 128x64 INIT, the
+panel shows columns 30..101 and rows 24..63 of the frame, the last 40 rows of the reversed scan.
+The columns are the vendor example's x offset 30. The rows were read off a photo of the idle scene
+drawn at row 12: the first visible row was the bottom row of the "pokeldn" glyphs, frame row 23 with
+the scene's one-pixel drift either way. The vendor example's y offset 12 is a u8g2 text baseline.
+A screen found on these pins gets compact scenes drawn into that window: one line of at most 12
+characters over the picture, and sprites at half size, a pixel lit when two of its 2x2 block are.
+`tools/ldn/screen_preview.py --panel 72x40` renders them.
 
 Without host commands the screen shows the radio's state: idle, joining or hosting (rings around a
 Poke Ball), and linked, where a cable between a console and a Poke Ball carries one digit per frame
@@ -603,7 +617,8 @@ it turns off (`AE`); the panel keeps its RAM. The next of those events lights it
 `AF`. The idle scene moves 2 pixels every 60 s around a 2x2 square. `scene_draw` returns the
 brightness; `tests/test_esp32_screen.py` holds the timings.
 
-Measured on the four-pin 0.96-inch module, by eye, from INIT's `81 CF D9 F1 DB 40`:
+Contrast, pre-charge and VCOMH settings on the four-pin 0.96-inch module, judged by eye from INIT's
+`81 CF D9 F1 DB 40`:
 
 | setting | seen |
 |---|---|
@@ -650,7 +665,7 @@ to the received Pokemon appearing on the console, less 2.5 s so the ball opens w
 | Scarlet/Violet | `8001010e` | 19.8 s | none ([Scarlet and Violet](sv.md#the-trade)) |
 | Legends Z-A | the fourth step | 26.2 s | the next `01 01` preview ([Legends Z-A](za.md#a-trade-with-a-retail-console)) |
 
-Each time is one run marked by hand, up to 2 s late. Where the console sends a message after its
+Each time was marked by hand in one session and may be up to 2 s late. Where the console sends a message after its
 animation, the launcher calls `arrived` there. A record goes through the PKHeX helper for its national species
 and name; the sprite is PokeAPI's FireRed/LeafGreen one (64x64) up to species 386 and the default one
 after, through the app's sprite cache and its download setting. A sprite becomes one bit per pixel:
@@ -705,6 +720,21 @@ The receive interrupt drops a 64-byte packet when the 16 KB RX ring is full and 
 from filling; a loss there shows only as bytes written past the board's last CREDIT.
 `POKELDN_ESP32_BAUD` is accepted on all targets and only changes the classic ESP32's line rate.
 
+USB drains faster than the writer encodes, so under a full-rate board-to-host stream the writer
+never sleeps. On USB targets the reader runs at priority 21, above the writer (20); the UART build
+keeps it at 19, where the line rate makes the writer sleep. On a XIAO ESP32S3, a 14-byte ETH_TX
+every 15 ms during an 884 KB/s BENCH (`esp32_bench.py --trickle 300 --flood`):
+
+| reader priority | `read_max_us` | ETH_TX counted |
+|---|---|---|
+| 19, below the writer | 53951079 | 785 of 3055, the rest dropped at the host's 512-frame queue |
+| 21, above the writer | 20493 | 3052 of 3052 |
+
+BENCH stays at 884 KB/s; 5000 uplink ETH_TX take 15.4 s against 13.5 s, none lost. A FireRed joiner
+trade on the raised priority counted 5629 of 5629 ETH_TX. On a XIAO ESP32C6 at priority 21, a
+14-byte ETH_TX every 20 ms during an 820.6 KB/s BENCH read at most 19997 us apart, 221 of 221
+counted; a FireRed host and a Legends Z-A host trade followed with no error on the console.
+
 ## Running
 
 `POKELDN_RADIO=esp32:<port>` puts every launcher's `ldn` calls on the board. `esp32:auto` takes the
@@ -712,7 +742,23 @@ only USB serial port present (`/dev/cu.usbserial-*`, `/dev/cu.SLAB_USBtoUART*`,
 `/dev/cu.wchusbserial*`, `/dev/cu.usbmodem*`, `/dev/ttyUSB*`, `/dev/ttyACM*`; USB COM ports on Windows)
 and refuses to choose between several, since opening a port can reset its board. The port is opened once
 per process with DTR and RTS released; a CP2102 board on macOS resets on open regardless, so the host
-retries HELLO for 5 s before switching to 921600.
+retries HELLO for 5 s before switching to 921600. Windows opens a COM port exclusively: a second open
+while any handle is held, in this process or another, fails with `PermissionError(13, 'Access is
+denied.')`, so a board that never answers HELLO closes its port before the launcher retries. A USB
+device removed under an open port fails the next read the same way (`GetOverlappedResult failed` or `ClearCommError failed`)
+and every write after it; the launcher then ends the run with `[esp32] The board disconnected from
+USB` instead of writing on.
+
+On Windows 11 with the Silicon Labs driver 11.6.0.420, a classic ESP32 on a CP2102 measured:
+
+| lines before `open()` | opens | reset banner | ROM download mode | what followed |
+|---|---|---|---|---|
+| DTR and RTS released (the host's open) | 40 | 0 | 0 | the running firmware's CREDIT frames; HELLO answered in 0.06 s, 30 of 30 |
+| pyserial's default, both asserted | 20 | 20, `rst:0x1 (POWERON_RESET),boot:0x13 (SPI_FAST_FLASH_BOOT)` | 0 | the firmware's INFO at boot, about 0.3 s after the open |
+| DTR released, RTS asserted | 20 | 0 | 0 | no byte while the port is open: RTS holds EN low on the two-transistor auto-reset circuit |
+
+A board held in ROM download mode never answers HELLO, and the app's check reports no pokeldn
+firmware. Another process holding the port fails the open at once; the app reports the port busy.
 
 On the board the launchers skip every nl80211 step: `--phy auto` resolves to `esp32`, no vif is
 deleted, no `iw`, `ip`, `nmcli` or `sysctl` runs, and a joiner's `--mac` becomes the board station's
@@ -748,14 +794,14 @@ back to DSSS. A generic ESP32-WROOM-32 DevKit (ESP32-D0WD-V3 revision 3.1, CP210
 with firmware other than pokeldn's; a WROOM-32E board with the same chip passes both, hears Sword's
 gift network and delivers a Mystery Gift ([issue 1](https://github.com/Decryptu/pokeldn/issues/1)).
 
-## Measured on a board
+## Trades by board
 
 The ELEGOO board (ESP32-D0WD-V3 revision 3.1 on its unbranded module, CP2102, macOS, 921600 baud)
-has traded with retail Switch 2 consoles:
+trades with retail Switch 2 consoles:
 
 | role | title | result |
 |---|---|---|
-| station | FireRed | trade; 38 to 42 'T' slots a second each way, as on the rtw88 adapter |
+| station | FireRed | trade; 38 to 42 'T' slots a second each way |
 | access point | FireRed, LeafGreen | trade and Wonder Cards; the console's association below |
 | station | Scarlet | trade, more than one in a seat; below |
 | access point | Scarlet | trade: the console's type-3 join answered with the type 9 accept, key `0x80` opened, offer sent 11.4 s after the join |
@@ -767,18 +813,29 @@ has traded with retail Switch 2 consoles:
 | station | Brilliant Diamond | Union Room trade to the save. A client that stops without leaving stays a station in the room; the console refuses the same variable id (result 7) until the player re-enters the room or a fresh id is used ([The Pia layer](pia.md#the-version-9-connection-request)) |
 | access point | Brilliant Diamond | a Shining Pearl entered the hosted room and traded to the save ([Hosting](bdsp_session.md#hosting)) |
 
+Other boards, with their trades:
+
+| board | role | title | result |
+|---|---|---|---|
+| XIAO ESP32C3 | station | FireRed | trade, valid PK3 checksums; zero lost ETH_TX, bad wire frames and USB resyncs |
+| XIAO ESP32C3 | access point | Sword | trade through the packaged macOS app, legal PK8 |
+| XIAO ESP32C6 (ceramic antenna) | station | FireRed | trade, clean console departure |
+| XIAO ESP32C6 (ceramic antenna) | access point | Sword, Scarlet | trade, valid PK8 records, clean console departure |
+| XIAO ESP32S3 (macOS) | station | FireRed | trade, mutual cancel, clean link close; 5099 of 5099 ETH_TX, no bad wire frame, no USB resync |
+| XIAO ESP32S3 (macOS) | access point | FireRed, Sword | trade, 344-byte PK8, clean console departure; zero lost ETH_TX; the board answers HELLO afterwards |
+| ESP32-S3 (Windows, reported in [PR 2](https://github.com/Decryptu/pokeldn/pull/2)) | station | FireRed | trade |
+
 A FireRed console joining the board's access point lists the network (it accepts the zero-length
 hidden SSID, the rate order, capability `0x0431` and the WMM element), authenticates open and sends
-an association request (one, 24 ms after the authentication, in the captured join): capability
-`0x0431`, listen interval 10, the SSID
-as 32 hex characters, rates `02 04 0b 16 0c 12 18 24` and `30 48 60 6c`, power capability `00 14`,
+one association request 24 ms after the authentication: capability `0x0431`, listen interval 10,
+the SSID as 32 hex characters, rates `02 04 0b 16 0c 12 18 24` and `30 48 60 6c`, power capability `00 14`,
 RSN capabilities `0x0000`, a WMM information element, vendor element `00 22 aa 10 01 02`. Its LDN
 authentication request reaches `RX_ETH` 40 ms after `STA_JOINED`. Its first broadcasts need the
 firmware's forwarding ([A station's broadcasts](ldn.md#a-stations-broadcasts)).
 
-Scarlet as joiner: in the measured seats the board seated on its first association attempt, 0.35 s
-from `STA_JOIN` to `LINK`, where the rtw88 adapter needed 30 to 60 refused attempts; the session join
-was answered at 0.93 s and the announcement came 5.8 to 7.7 s after the seat. The console's first
+Scarlet as joiner: the board seated on its first association attempt, 0.35 s from `STA_JOIN` to
+`LINK`; the session join was answered at 0.93 s and the announcement came 5.8 to 7.7 s after the
+seat. The console's first
 burst of 46 records (about 50 KB) saturates board-to-host at 92 KB/s.
 
 ### Joining
@@ -796,20 +853,18 @@ misses a given attempt is unknown.
 
 - The softAP negotiates WMM, which a Switch host does not; trades complete with and without it.
   `POKELDN_ESP32_AP_FLAGS=2` (`AP_FLAG_NO_QOS`) clears the station's QoS flag after association: the
-  board then sends plain data (446 frames on a Z-A trade) while the console keeps sending QoS data.
-  Z-A, Legends Arceus, Let's Go and LeafGreen trades completed with it. Of two sniffed Z-A trades,
-  the one without QoS data retried 11.9% of the board's frames and 11.5% of the console's, the one
-  with QoS data 1.3% of each: the retry rate follows the air, and nothing attributes a difference to
-  the setting.
-- ESP32-S3 throughput, and S3 trades in the host role or with titles other than FireRed, are
-  unmeasured on a local board.
-- A Scarlet console joined to the board's access point acknowledged the announcement and never sent
-  its port 2 join in one of two seats. The cause is unknown.
+  board then sends plain data while the console keeps sending QoS data. Z-A, Legends Arceus, Let's
+  Go and LeafGreen trades complete with it. Two sniffed Z-A trades retried 11.9% of the board's
+  frames and 11.5% of the console's without QoS data, and 1.3% of each with it; nothing attributes
+  the difference to the setting.
+- A Scarlet console joined to the board's access point once acknowledged the announcement and sent
+  no port 2 join; the gates that can hold it are in [the Scarlet page](sv.md#unresolved).
 - What in the access point's receive path misses 1 to 22% of a station's OFDM first copies, and ACKs
   during a FireRed hold, is unknown; the settings ruled out are in
-  [Two boards reproduce the misses](#two-boards-reproduce-the-misses).
+  [Receive misses on two boards](#receive-misses-on-two-boards).
 - Whether an Espressif ESP32-WROOM-32E module misses fewer frames as an access point than the ELEGOO
   board's unbranded module is unmeasured. easyworld reports that a classic ESP32 must be the
   ESP32-WROOM-32E and that the older ESP32-WROOM-32 does not trade reliably; one WROOM-32 DevKit
   decoded no OFDM at all ([A board that decodes no OFDM](#a-board-that-decodes-no-ofdm)). Whether
-  that is the module or that one board is unknown. Espressif's ESP32-DevKitC-32E carries that module; its shield reads ESP32-WROOM-32E with the Espressif logo.
+  that is the module or that one board is unknown. Espressif's ESP32-DevKitC-32E carries the
+  WROOM-32E module; its shield reads ESP32-WROOM-32E with the Espressif logo.

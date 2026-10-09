@@ -225,3 +225,13 @@ def test_the_news_payload_builds_what_the_registry_describes():
             pass
         else:
             raise AssertionError(f"{bad} should be rejected")
+
+
+def test_roman_news_does_not_turn_accents_into_kana_on_japanese_cartridges():
+    from pokeldn.frlg.text import charmap
+    raw = wonder_news.build_wonder_news(news_id=123, title="Pokémon", body=("Une étoile",))
+    jp = wonder_news.for_build(raw, "BPRJ")
+    assert jp[:4] == raw[:4]
+    assert charmap.decode(jp[4:24], language=1) == "Pokemon"
+    assert charmap.decode(jp[24:44], language=1) == "Une　etoile"
+    assert wonder_news.for_build(raw, "BPRD") == raw

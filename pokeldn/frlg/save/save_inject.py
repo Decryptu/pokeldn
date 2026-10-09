@@ -6,6 +6,7 @@ and magic 51, map 0xFF/0xFF, objectId 0xFF, checksum == crc16(RamScriptData[999]
 Injection does not enable Mystery Gift; the save must already have it."""
 
 from pokeldn.frlg.gift.gift_registry import GIFT_REGISTRY, add_flag_id_argument, resolve_flag_id
+from pokeldn.frlg.rom import builds
 from pokeldn.frlg.gift.mystery_gift import crc16, CARD_TYPE_COUNT, NUM_WONDER_BGS, SEND_TYPE_DISALLOWED, \
     SEND_TYPE_ALLOWED, SEND_TYPE_ALLOWED_ALWAYS
 from pokeldn.frlg.gift.wonder_card import (
@@ -49,12 +50,13 @@ RAM_SCRIPT_DATA_SIZE = 4 + RAM_SCRIPT_BODY_MAX          # magic+mapGroup+mapNum+
 RAM_SCRIPT_CRC_SIZE = RAM_SCRIPT_DATA_SIZE + 1
 
 
-def sb1_chunk_size(chunk_index):
+def sb1_chunk_size(chunk_index, build=None):
     """SAVEBLOCK_CHUNK size [decomp:src/save.c:44]; the last chunk is short."""
     off = chunk_index * SECTOR_DATA_SIZE
-    if SB1_SIZE < off:
+    size = builds.resolve(build).saveblock1_size
+    if size < off:
         return 0
-    return min(SB1_SIZE - off, SECTOR_DATA_SIZE)
+    return min(size - off, SECTOR_DATA_SIZE)
 
 
 def sector_checksum(sector_data, size):
@@ -107,15 +109,16 @@ def find_saveblock1_end_sector(sav):
     return best
 
 
-def inject_gift(sav_bytes, card, script):
-    if len(card) != WONDER_CARD_SIZE:
-        raise ValueError(f"card is {len(card)} B; must be {WONDER_CARD_SIZE}")
+def inject_gift(sav_bytes, card, script, *, build=None):
+    expected = 164 if builds.resolve(build).language == "japanese" else WONDER_CARD_SIZE
+    if len(card) != expected:
+        raise ValueError(f"card is {len(card)} B; must be {expected}")
     phys, counter = find_saveblock1_end_sector(sav_bytes)
     sav = bytearray(sav_bytes)
     base = phys * SECTOR_SIZE
 
-    cardcrc_off = MYSTERYGIFT_CARDCRC_OFF - SAVEBLOCK1_END_CHUNK_BASE
-    card_off = MYSTERYGIFT_CARD_OFF - SAVEBLOCK1_END_CHUNK_BASE
+    cardcrc_off = (0x3204 if builds.resolve(build).language == "japanese" else MYSTERYGIFT_CARDCRC_OFF) - SAVEBLOCK1_END_CHUNK_BASE
+    card_off = (0x3208 if builds.resolve(build).language == "japanese" else MYSTERYGIFT_CARD_OFF) - SAVEBLOCK1_END_CHUNK_BASE
     ramchk_off = SB1_RAMSCRIPT_OFF - SAVEBLOCK1_END_CHUNK_BASE
     ramdata_off = ramchk_off + 4
 
@@ -124,11 +127,11 @@ def inject_gift(sav_bytes, card, script):
 
     # u32 fields; crc16 is a u16 so the high halfword stays zero.
     sav[base + cardcrc_off:base + cardcrc_off + 4] = card_crc.to_bytes(4, "little")
-    sav[base + card_off:base + card_off + WONDER_CARD_SIZE] = card
+    sav[base + card_off:base + card_off + len(card)] = card
     sav[base + ramchk_off:base + ramchk_off + 4] = ram_crc.to_bytes(4, "little")
     sav[base + ramdata_off:base + ramdata_off + RAM_SCRIPT_CRC_SIZE] = ram_data + b"\x00"
 
-    size = sb1_chunk_size(SAVEBLOCK1_END_CHUNK)
+    size = sb1_chunk_size(SAVEBLOCK1_END_CHUNK, build)
     chk = sector_checksum(sav[base:base + SECTOR_DATA_SIZE], size)
     sav[base + SECTOR_CHECKSUM_OFF:base + SECTOR_CHECKSUM_OFF + 2] = chk.to_bytes(2, "little")
 
@@ -138,18 +141,19 @@ def inject_gift(sav_bytes, card, script):
     }
 
 
-def inject_selected_gift(sav_bytes, gift=GIFT_BEAST_CUTSCENE, *, flag_id=1003):
-    card, script = GIFT_REGISTRY.build_static(gift, flag_id=flag_id)
-    return inject_gift(sav_bytes, card, script)
+def inject_selected_gift(sav_bytes, gift=GIFT_BEAST_CUTSCENE, *, flag_id=1003, build=None):
+    distribution = GIFT_REGISTRY.build_distribution(gift, flag_id=flag_id, build=build)
+    return inject_gift(sav_bytes, distribution.card, distribution.ram_script, build=build)
 
 
-def read_saved_wonder_card(sav):
+def read_saved_wonder_card(sav, *, build=None):
     phys, _ = find_saveblock1_end_sector(sav)
     base = phys * SECTOR_SIZE
-    cardcrc_off = MYSTERYGIFT_CARDCRC_OFF - SAVEBLOCK1_END_CHUNK_BASE
-    card_off = MYSTERYGIFT_CARD_OFF - SAVEBLOCK1_END_CHUNK_BASE
+    cardcrc_off = (0x3204 if builds.resolve(build).language == "japanese" else MYSTERYGIFT_CARDCRC_OFF) - SAVEBLOCK1_END_CHUNK_BASE
+    card_off = (0x3208 if builds.resolve(build).language == "japanese" else MYSTERYGIFT_CARD_OFF) - SAVEBLOCK1_END_CHUNK_BASE
     stored = int.from_bytes(sav[base + cardcrc_off:base + cardcrc_off + 2], "little")
-    card = bytes(sav[base + card_off:base + card_off + WONDER_CARD_SIZE])
+    size = 164 if builds.resolve(build).language == "japanese" else WONDER_CARD_SIZE
+    card = bytes(sav[base + card_off:base + card_off + size])
     return card, (stored == crc16(card))
 
 
@@ -166,9 +170,9 @@ def validate_wonder_card(card):
             and bg_type < NUM_WONDER_BGS and max_stamps <= 7)
 
 
-def get_saved_ram_script_if_valid(sav):
+def get_saved_ram_script_if_valid(sav, *, build=None):
     """GetSavedRamScriptIfValid [decomp:src/script.c:554]: the script body the console would run, else None."""
-    card, crc_ok = read_saved_wonder_card(sav)
+    card, crc_ok = read_saved_wonder_card(sav, build=build)
     if not (crc_ok and validate_wonder_card(card)):
         return None
     phys, _ = find_saveblock1_end_sector(sav)
@@ -197,6 +201,8 @@ def build_parser():
     ap.add_argument("-g", "--gift", choices=GIFT_REGISTRY.static_choices,
                     default=GIFT_BEAST_CUTSCENE,
                     help="gift payload to inject (default: beast-cutscene)")
+    ap.add_argument("--build", choices=builds.GAME_CODES, default=builds.DEFAULT.game_code,
+                    help="cartridge game code; selects its payload and save checksum size")
     add_flag_id_argument(ap)
     ap.add_argument("-o", "--out", help="output path (default: <sav>.gift.sav)")
     ap.add_argument("--in-place", action="store_true", help="overwrite the input save")
@@ -211,11 +217,11 @@ def main(argv=None):
         original = fh.read()
     try:
         injected, info = inject_selected_gift(
-            original, args.gift, flag_id=resolve_flag_id(args))
+            original, args.gift, flag_id=resolve_flag_id(args), build=args.build)
     except ValueError as exc:
         ap.error(str(exc))
 
-    script = get_saved_ram_script_if_valid(injected)
+    script = get_saved_ram_script_if_valid(injected, build=args.build)
     if script is None:
         raise SystemExit("ERROR: injected save fails the console's deliveryman validation")
 

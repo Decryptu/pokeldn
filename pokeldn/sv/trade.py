@@ -48,9 +48,12 @@ class TradeStage:
     them: with a list the cycle starts again at the next record when the exchange key closes, so
     one seat carries more than one trade."""
 
-    def __init__(self, offer, confirm_delay=1.0):
+    def __init__(self, offer, confirm_delay=1.0, partner=None):
         offers = [offer] if isinstance(offer, (bytes, bytearray)) else list(offer)
-        if not offers:
+        # Online (pokeldn.online): our offer is the partner's console's, and our confirm waits for
+        # both consoles' (docs/online.md).
+        self.partner = partner
+        if not offers and partner is None:
             raise ValueError("a host needs at least one offer")
         self.offers = []
         for one in offers:
@@ -72,15 +75,17 @@ class TradeStage:
         self.confirmed = False
         self.committed = False
         self.step_index = None
+        self.sent = None                  # online: the partner record the console was shown
+        self.console_confirmed = False
 
     @property
     def offer(self):
-        return self.offers[self.index]
+        return self.sent if self.partner is not None else self.offers[self.index]
 
     def offer_first(self):
         """-> the host's offer, for a host that puts its Pokemon up before the joiner does, as the
         pair's host did (its offer came 9 s before the joiner's)."""
-        if self.offered:
+        if self.offered or self.partner is not None:
             return []
         self.offered = True
         return [(0.0, 0, build(KEY_TRADE, KIND_OFFER, 0, self.offer))]
@@ -107,6 +112,10 @@ class TradeStage:
             if self.joiner_offer != body:
                 self.joiner_offers.append(body)
             self.joiner_offer = body
+            if self.partner is not None:
+                self.console_confirmed = False
+                self.partner.offer(body)
+                return []
             out = []
             if not self.offered:
                 self.offered = True
@@ -116,6 +125,14 @@ class TradeStage:
                 out.append((self.confirm_delay, 0, build(KEY_TRADE, KIND_CONFIRM)))
             return out
         if key == KEY_TRADE and kind == KIND_CONFIRM:
+            if self.partner is not None and self.joiner_offer is not None:
+                self.console_confirmed = True
+                self.partner.accept()
+            return []
+        if key == KEY_TRADE and kind == KIND_CANCEL and self.partner is not None and not self.committed:
+            # 8000040100: the player backed out of the wait (docs/sv.md, The trade).
+            self.partner.withdraw()
+            self.joiner_offer, self.console_confirmed = None, False
             return []
         if key == KEY_TRADE and kind == KIND_COMMIT and not self.committed:
             self.committed = True
@@ -130,7 +147,10 @@ class TradeStage:
                 out.append((0.05, 0, build(KEY_EXCHANGE, KIND_STEP_OPEN, STEPS[self.step_index])))
             else:
                 self.trades += 1
-                if self.index + 1 < len(self.offers):
+                if self.partner is not None:
+                    self.partner.done()
+                    self._start()
+                elif self.index + 1 < len(self.offers):
                     self.index += 1
                     self._start()
                 else:
@@ -138,6 +158,28 @@ class TradeStage:
                 out.append((0.2, 1, table_update(KEY_EXCHANGE, False)))
             return out
         return []
+
+
+    def tick(self):
+        """Online: -> [(delay, port, payload)] that the partner's progress releases. The partner's
+        record goes up once it arrives and comes down when they withdraw it; our confirm goes once
+        both consoles have confirmed."""
+        if self.partner is None or self.committed:
+            return []
+        theirs = self.partner.theirs()
+        out = []
+        if self.offered and theirs.offer != self.sent and not self.confirmed:
+            # A host-sent cancel is unmeasured on a console (docs/online.md, Unresolved).
+            out.append((0.0, 0, build(KEY_TRADE, KIND_CANCEL, 1, b"\x00")))
+            self.offered, self.sent = False, None
+        if not self.offered and theirs.offer is not None:
+            self.offered, self.sent = True, theirs.offer
+            out.append((0.0, 0, build(KEY_TRADE, KIND_OFFER, 0, theirs.offer)))
+        if (self.offered and not self.confirmed and self.console_confirmed and theirs.accepted
+                and self.joiner_offer is not None):
+            self.confirmed = True
+            out.append((0.0, 0, build(KEY_TRADE, KIND_CONFIRM)))
+        return out
 
 
 class JoinerTradeStage:

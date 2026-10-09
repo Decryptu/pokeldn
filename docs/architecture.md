@@ -13,6 +13,7 @@ formats and timing; shared components belong outside a game directory.
 | `pokeldn/gifts.py` | Shared [Mystery Gift file](gifts.md) envelope, reader, writer and native conversion |
 | `services/pkhex/` | Pinned PKHeX.Core dependency; legal encounter generation and game compatibility checks |
 | `pokeldn/ldn/` | Radio transport, IP, Pia, reliability and channel tables |
+| `pokeldn/online/` | [Online trade](online.md): relays, matching and the encrypted partner channel |
 | `pokeldn/gba/` | GBA wireless link protocols |
 | `pokeldn/gen8.py`, `pokeldn/gen9.py` | Shared Pokémon record codecs |
 | `pokeldn/<game>/` | Game identities, messages, state machines and protocol-specific variations |
@@ -33,6 +34,11 @@ Each trading launcher prepares a supplied file before opening its radio. Edits a
 identities are checked after they are applied. Incompatible formats, unavailable species and
 illegal final records are refused. A session's trainer identity does not overwrite an imported
 Pokémon's original trainer.
+
+PKHeX's `LegalityAnalysis.Parsed` records whether analysis completed. The helper returns it as
+`parsed`. A check with `parsed: false` restarts the helper and repeats the same request once;
+a second incomplete analysis raises a validator error. Completed checks that reject a record
+remain refused. The service lock covers the first check, restart and retry.
 
 PID and encryption-constant changes can invalidate encounter correlations, especially events and
 raids. Fresh identity is opt-in and must pass PKHeX; a fixed event trainer is preserved. A record legal
@@ -85,9 +91,10 @@ level 50, nickname), plain builds that fail are:
 Every failure but three is a species PKHeX has no encounter for in that game: Celebi and Deoxys in
 Brilliant Diamond/Shining Pearl, Diancie, Magearna and Meltan in Sword/Shield, Scatterbug, Spewpa,
 Vivillon and Zygarde in Legends Z-A, and in Scarlet/Violet the legendaries that arrive only from HOME.
-The three with an encounter are Milotic in Legends Z-A and Wyrdeer and Ursaluna in Scarlet/Violet. PKHeX
-gives Wyrdeer and Ursaluna no Generation 9 evolution. For a Z-A Milotic built from Feebas with a
-handling trainer, PKHeX's evolution chain stops at Milotic; the game's records refuse contest stats.
+The three with an encounter are Milotic in Legends Z-A and Wyrdeer and Ursaluna in Scarlet/Violet.
+PKHeX gives Wyrdeer and Ursaluna no Generation 9 evolution; a Z-A Milotic built from Feebas with a
+handling trainer stops at Milotic in PKHeX's evolution chain, and the game's records refuse contest
+stats.
 
 ### Offer options
 
@@ -127,13 +134,11 @@ fixed effort values, each gender and a held item, 8088 of 8095 builds are legal.
 Docile and Bashful on the Sword/Shield event Celebi, and the same three and Quirky on the Legends Z-A
 gift Melmetal.
 
-Custom offer options are also verified by a retail Sword round trip: the received Pokemon was
-traded back on the next queued exchange and its saved record compared with the outgoing offer
-([The offered record](swsh_trade.md#the-offered-record)).
-On a retail Brilliant Diamond (host, then traded back) and a retail Scarlet (host), a shiny level 37
-Pikachu built with a nickname, nature, hidden ability, gender, held item, ball, four moves, IVs and
-effort values showed every option and the stats they produce on its summary screen; the BDSP record
-traded back matched all twelve. Six queued trades completed on one BDSP hosted session.
+On a retail Sword, a Pokemon built with custom options and traded back on the next queued exchange
+saved a record equal to the offer ([The offered record](swsh_trade.md#the-offered-record)). On retail
+Brilliant Diamond and Scarlet, a shiny level 37 Pikachu with a nickname, nature, hidden ability, gender,
+held item, ball, four moves, IVs and effort values showed each option on its summary screen; the
+Brilliant Diamond record traded back matched in all twelve fields.
 
 ### Showdown sets
 
@@ -207,10 +212,7 @@ needed after a session that worked.
 
 The time limit (`--seconds`, `--hold`) still bounds a run whose console never leaves.
 
-App runs completed queued trades, marked their offers complete and returned to idle after the
-console left in all seven title families, in both roles. Game-specific departure measurements and
-remaining questions are on each title's Leaving section; screen delays before the first leave
-message remain separate from the answered departure exchange.
+Departure measurements and open questions are on each title's Leaving section.
 
 ## Local files and releases
 
@@ -236,8 +238,9 @@ Linux archives contain the portable executable; desktop entries with build-machi
 ## Verification
 
 ```sh
+pip install -r requirements-dev.txt
 dotnet build -c Release services/pkhex -warnaserror
-python -m pytest tests/ -q -W error
+python -m pytest tests/ -q -W error -n auto --dist worksteal
 ```
 
 CI runs these checks on Linux, macOS and Windows. Private research fixtures are optional; a clean

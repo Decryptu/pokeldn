@@ -143,3 +143,71 @@ def build_phase(selector, phase, sequence_id, flags=0x07):
         raise ValueError(f"phase {phase} is past what a single byte encodes")
     return game_channel.build_message(PHASE_KEY, bytes([selector, phase]), sequence_id,
                                       flags=flags)
+
+
+class OnlineBox:
+    """The trade box with a partner far away (pokeldn.online, docs/online.md): the partner's
+    console's record answers this console's showings and offer, and the mirror of its selector 5,
+    which is our confirmation, waits for the partner's console to confirm."""
+
+    def __init__(self, partner):
+        self.partner = partner
+        self._start()
+
+    def _start(self):
+        self.counter = None          # the console's offer counter, which our answer repeats
+        self.sent = None             # the partner record our selector 4 carried
+        self.confirm = None          # the console's selector-5 body, held
+        self.mirrored = False
+
+    def on_box(self, offered):
+        """A showing or an offer from the console -> [(selector, counter, record)] to answer now."""
+        remote = self.partner.theirs().offer
+        if offered["selector"] == SELECTOR_SHOWING:
+            return [(SELECTOR_SHOWING, offered["counter"], remote)] if remote else []
+        self.partner.offer(offered["record"])
+        self.counter, self.confirm, self.sent = offered["counter"], None, None
+        if remote is None:
+            return []
+        self.sent = remote
+        return [(SELECTOR_OFFERING, offered["counter"], remote)]
+
+    def on_selector(self, selector, body):
+        """A mirrored selector from the console -> the bodies to mirror now."""
+        if selector == SELECTOR_CONFIRMING and self.counter is not None and not self.mirrored:
+            self.confirm = body
+            self.partner.accept()
+            return self._release()
+        if selector == SELECTOR_OFFER_MADE and not self.mirrored:
+            # 6 takes back a confirmation (state 4) or the offer (state 3) (docs/pla.md).
+            if self.confirm is not None:
+                self.confirm = None
+                self.partner.unaccept()
+            else:
+                self.partner.withdraw()
+                self.counter = self.sent = None
+        return [body]
+
+    def _release(self):
+        theirs = self.partner.theirs()
+        if self.confirm is not None and theirs.accepted and self.sent is not None \
+                and theirs.offer == self.sent:
+            self.mirrored, body, self.confirm = True, self.confirm, None
+            return [body]
+        return []
+
+    def tick(self):
+        """-> ([(selector, counter, record)], [mirror bodies]) the partner's progress releases."""
+        if self.mirrored:
+            return [], []
+        remote = self.partner.theirs().offer
+        offers = []
+        if self.counter is not None and remote is not None and remote != self.sent:
+            # A second offer over one the console holds is unmeasured (docs/online.md).
+            self.sent = remote
+            offers.append((SELECTOR_OFFERING, self.counter, remote))
+        return offers, self._release()
+
+    def done(self):
+        self.partner.done()
+        self._start()

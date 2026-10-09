@@ -235,7 +235,7 @@ def decode_joyspot_app_data(app_data):
     return DecodedJoySpotAdvertisement(
         record=record,
         trainer_id=int.from_bytes(record[0:2], "little"),
-        name=charmap.decode(record[2:10]),
+        name=charmap.decode(record[2:10], language=(search_word >> 11) & 7),
         rfu_session_id=record[10:12],
         search_word=search_word,
         activity=search_word & SEARCH_ACTIVITY_MASK,

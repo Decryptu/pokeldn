@@ -760,7 +760,8 @@ def build_rng_seed_reader_script(build=None, **kwargs):
     gSpecialVar_0x8000/0x8001 (0x020370B4) and prints it in one frame, writing nothing
     [gift_composer.build_seed_read_script]."""
     return build_mevent_npc_script(
-        field_script=build_seed_read_script(address=builds.resolve(build).rng),
+        field_script=build_seed_read_script(address=builds.resolve(build).rng,
+                                            var_address=builds.resolve(build).ewram.get("special_var_8000")),
         **_at_mom(kwargs))
 
 
@@ -806,7 +807,8 @@ def build_rng_rate_probe_script(frames=None, build=None, **kwargs):
     frames with `delay`, and reads it again."""
     asked = ({} if frames is None else {"frames": frames})
     return build_mevent_npc_script(
-        field_script=build_seed_rate_script(address=builds.resolve(build).rng, **asked),
+        field_script=build_seed_rate_script(address=builds.resolve(build).rng,
+                                            var_address=builds.resolve(build).ewram.get("special_var_8000"), **asked),
         **_at_mom(kwargs))
 
 
@@ -1421,7 +1423,8 @@ def build_rng_draw_count_script(build=None, **kwargs):
     return build_mevent_npc_script(
         field_script=build_draw_count_script(species=RNG_DRAW_COUNT_SPECIES,
                                              level=RNG_DRAW_COUNT_LEVEL,
-                                             address=builds.resolve(build).rng),
+                                             address=builds.resolve(build).rng,
+                                             var_address=builds.resolve(build).ewram.get("special_var_8000")),
         **_at_mom(kwargs))
 
 

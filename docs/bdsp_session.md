@@ -18,9 +18,9 @@ nav_order: 1
     application_data        17 bytes
 
 The comm id is Brilliant Diamond's title id, shared by Shining Pearl (`010018e011d92000`). The
-advertisement decrypts with `prod.keys` alone (`tools/ldn/ldn_scan.py`). The 17 bytes of application data are Pia's LDN advertisement header
-([The wireless layer](ldn.md)), 16 bytes, then one byte of application data; the CRC32 field is 0 in
-a room opened with no password.
+advertisement decrypts with `prod.keys` alone (`tools/ldn/ldn_scan.py`). The 17 bytes of application
+data are Pia's LDN advertisement header ([The wireless layer](ldn.md)), 16 bytes, then one byte of
+application data; the CRC32 field is 0 in a room opened with no password.
 
 A room entered with a password carries the CRC32 of the password's ASCII digits there, little-endian
 (00000000 -> `0xC0088D03`), and scene id 5120. `bin/bdsp_connect.py` joins such a room unchanged;
@@ -55,12 +55,33 @@ crypto.
     participant 1: ip=169.254.54.2  mac=58d8122149a2  name=b'POKELDN' <- the client
 
 The console assigns the IP. The Union Room's eight seats are the LDN `max_participants`. An LDN seat
-is below the game: nothing appears on screen, and it is not a seat in the Pia session.
+sits below the game: nothing appears on screen, and it is not a seat in the Pia session.
 
 `Connect failed with status code 1` is a failed association; from the ESP32 board about one attempt
-in two failed, so retry before diagnosing. A console in the room can stop advertising with no change
-on screen; what stops it is unread. Re-entering the room opens a new network (new channel, SSID and
-session parameter), which the key derivation handles live. A receiver on the LDN interface must
+in two fails, so retry before diagnosing. Re-entering the room opens a new network (new channel, SSID
+and session parameter), which the key derivation handles live.
+
+A console in the room can stop advertising with no change on screen: its random matching tears its
+own session down and matches again. The Union Room starts its session through
+`NetworkManager$$StartSessionRandomJoin` [1.3.0 main 0x0224f600] (`SessionManager$$StartSession`
+0x01df89e0, from `UnionRoomManager$$SetUp` and `$$SessionStart`), on a `NetworkParam` whose `Reset`
+[0x0202ec30] sets `matchingMode` 1 (Random) and a local network. After random matching has created
+or joined a session (`GameState_JoinProcessAll` -> `ToGameFrontBeforeLocalRandom` [0x02743940], the
+only way into game state 20), `INL1.IlcaNetSession$$GameState_GameFrontBefore_LocalRandom`
+[0x02740640] runs on every session update:
+
+| stations | effect |
+|---|---|
+| 2 or more | `GameFrontRnoInit` clears both counters; on to the game front |
+| 1 | counter 0 and counter 1 (`gameFront_cnt`) each add one |
+| 1, counter 0 above `localRandomMatchmakeHostWaitTime + (localRandomMatchmakeHostWaitTimeMask & r)`, counter 1 at most `localRandomMatchmakeTimeUp` | `CleanupRecoveryToLoggedIn` [0x0273a7f0], game state 9 (`GS_LoggedInReturnWaitWorker`): the session closes and matching runs again |
+| 1, counter 0 above the wait, counter 1 above the time-up | `GameFrontRnoInit`; the console stays host of its session |
+
+`r` is a fresh random value drawn on each entry to state 20, which also clears counter 0 and leaves
+counter 1 running. The `IlcaNetSessionSetting` constructor [0x01f46fc0] sets the wait to 25, the
+mask to 0x7F and the time-up to 270, and `SessionConnector$$StartSession` [0x0202f2c0] changes none
+of them. A console alone in its new session therefore closes it after 25 to 152 updates, again and
+again, until 270 updates alone have accumulated, and then keeps its last network. A receiver on the LDN interface must
 filter its own source IP: broadcasts loop back.
 
 Unauthenticated Pia is dropped silently, with no error and no loss of the seat.
@@ -89,8 +110,8 @@ it to 5.31-5.43. The header, message framing and transport protocols are on
     crc32(netid||MAC)  0xda291352
     IV (first packet)  da29130df5a83bd383ce712d
 
-All 674 packets of one capture authenticate, and re-encrypting each plaintext reproduces the
-console's ciphertext and tag byte for byte.
+All 674 packets of the reference capture authenticate, and re-encrypting each plaintext reproduces
+the console's ciphertext and tag byte for byte.
 
 ### Where the seed lives
 
@@ -148,7 +169,7 @@ source MAC cannot be recovered from the packet being decrypted.
 
 ## The Local Protocol, decoded
 
-Every one of the 674 packets of the capture carries the same message:
+Every packet of the reference capture carries the same message:
 
     presence 0x7f  flags 0x11  size 121  protocol 36  port 0  destination 0
 
@@ -264,8 +285,7 @@ both, 40. The host's station entry has index and join order 0, the joiner's 1.
 The joiner sends Sync Clock (0x1C) requests about once a second from the acknowledged join response;
 the host answers with the request's tick and the mesh clock in milliseconds. A joiner whose Sync
 Clock requests go unanswered deauthenticates and re-associates repeatedly while the screen shows
-"communication en cours". The measured departures came about ten seconds after the first request;
-the timeout is unread. Answered, it sends `NetJoinData` and requests 0x04 and 0x23, as a retail
+"communication en cours". Departures came about ten seconds after the first request; the timeout is unread. Answered, it sends `NetJoinData` and requests 0x04 and 0x23, as a retail
 host does, and from there the room is symmetric: the approach, the greeting and
 [the trade](bdsp_trade.md) run unchanged with the console as joiner.
 
@@ -293,31 +313,36 @@ Measured with nothing answered:
 
 | the console | first message | then | gone |
 |---|---|---|---|
-| joiner leaving a hosted room, 4 runs | leave request every 0.125 s for 4.9 to 5.0 s | disconnection request every 0.5 s, 3.6 s in the one run captured to the end | deauthentication 9.0 s after the first request, in that run |
-| host leaving its room with one station joined, 4 runs | migration start every 0.125 s for 4.9 s | update session, sequence +1, migration state 1, every 0.11 s for 10 s; then Local Protocol 0x13 (start host migration) every 0.3 s for 10 s | its network closes 25.3 s after the first migration start |
+| joiner leaving a hosted room (4 captures) | leave request every 0.125 s for 4.9 to 5.0 s | disconnection request every 0.5 s, from 3.6 s (one capture ran to the end) | deauthentication 9.0 s after the first request, in that capture |
+| host leaving its room with one station joined (4 captures) | migration start every 0.125 s for 4.9 s | update session, sequence +1, migration state 1, every 0.11 s for 10 s; then Local Protocol 0x13 (start host migration) every 0.3 s for 10 s | its network closes 25.3 s after the first migration start |
 
 Answered (`08 00` twice and `04`), a retail joiner leaving sent one disconnection request 0.06 s
 after its leave request and deauthenticated 0.15 s after it.
 Answered (`48 01`, the update-session ack, the leave on 0x13), a retail host leaving its room sent
 0x13 0.11 and 0.45 s after its migration start (2 runs) and closed it.
 
+The 0x13 phase is `LocalDestroyNetworkJob::WaitUntilAllClientsDisconnection` `0x016b95b8`. It sends
+0x13 again whenever 301 ms have passed since the last send (`job+0x68`) and ends on the first of: the
+request's cancel byte set (to `WaitForCancel` `0x016b9330`); the count of present stations from
+`0x016b014c` equal to 1 (`0x016b9614`); more than 10000 ms since the previous state,
+`WaitUntilAllClientsReceiveUpdateSessionMessage` `0x016b936c`, stored `job+0x70` (`0x016b9644`). The
+last two go to `StartDestroyNetwork` `0x016b950c`, which closes the network. A station that leaves
+ends the phase on the next update; a station that stays holds it for the full 10 s. The previous
+state leaves when `[[protocol+0x4f0]+0x5c]` is set (`0x016b0888`) or after 10001 ms.
+
 `pokeldn.bdsp.session.answer_departure` builds both answers; `bin/bdsp_host.py` answers a leaving
 joiner and its disconnection request, and `bin/bdsp_connect.py` answers a migration start, acks every
 later update session and leaves the network on 0x13 (`--no-leave-on-host-migration` stays).
 
-Leaving the trade box is not a departure: the box's close callback `TradeSelectPokeModel$$CheckComplete`
+Leaving the trade box sends no departure message: the box's close callback `TradeSelectPokeModel$$CheckComplete`
 [1.3.0 main 0x1c26810] sends `NetDataCurrentFlowCancelData{0}` (0x25, `SendCancel` 0x1c26bf0) and
 `UnionTradeManager$$Cancel` [0x1c33780] sends `NetCharacterStateData{0}`, both in one packet, with
 no wait on the partner.
 
-### Unresolved
-
-- What ends the Local Protocol 0x13 phase early.
-
 ## Measurement methods
 
-- A refusing check is an instrument. The console answers a connection request only when the protocol
-  count matches its own, so sweeping the count measured 9. An unregistered protocol expects version
-  0, so a version of 1 against it always fails, and bisection reads any protocol's version.
-- The equality signal must be a reply; silence is as often a lost packet. A reliable window must
-  acknowledge data it accepts, so send data and sweep only the sequence id.
+- The console answers a connection request only when the protocol count matches its own; sweeping
+  the count gives 9. An unregistered protocol expects version 0, so a version of 1 against it fails,
+  and bisection reads any protocol's version.
+- The signal must be a reply; silence is as often a lost packet. A reliable window acknowledges
+  data it accepts, so send data and sweep only the sequence id.

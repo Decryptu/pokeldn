@@ -528,8 +528,13 @@ class TradePartner:
 
     def __init__(self, offer, trainer_name="POKELDN", trainer_id=41234, secret_id=23117,
                  complete=False, approach_delay=0.0, security_repeat=1.0, state=room.STATE_NONE,
-                 recruiting=0, save_theirs=None, record=None):
+                 recruiting=0, save_theirs=None, record=None, remote=None):
         self.offers = [offer] if isinstance(offer, (bytes, bytearray)) else list(offer)
+        # Online (pokeldn.online): the partner's console's 0x13 answers this console's, and our
+        # ready-ok, after which the console saves, waits for both consoles' (docs/online.md).
+        self.remote = remote
+        self.want_offer = self.want_ready = False
+        self.sent = None                   # the partner record our 0x13 carried this round
         self.trainer = room.build_trade_traner(trainer_name, trainer_id, secret_id)
         self.complete = complete
         self.approach_delay, self.security_repeat = approach_delay, security_repeat
@@ -551,6 +556,8 @@ class TradePartner:
 
     @property
     def offer(self):
+        if self.remote is not None:
+            return self.sent
         return self.offers[min(self.trades, len(self.offers) - 1)]
 
     def game(self, joiner, g, payload, now):
@@ -589,6 +596,12 @@ class TradePartner:
             self.save_theirs(self.trades + 1, body)
             self.their_poke = body
             self.record(rec="their_poke", t=now, n=self.their_pokes)
+            if self.remote is not None:
+                if self.their_security is not None and self.sent is not None:
+                    return [room.build_trade_poke(self.sent)]   # the security phase's copy
+                self.remote.offer(body)
+                self.want_offer, self.want_ready, self.sent = True, False, None
+                return []
             return [room.build_trade_poke(self.offer)]
         if data_id == room.TRADE_POKE_CHECK_OK:
             self.record(rec="their_check_ok", t=now)
@@ -604,6 +617,8 @@ class TradePartner:
             if self.their_security >= room.TRADE_STATE_SEND_READYOK and not self.arriving:
                 self.arriving = True
                 self.trades += 1
+                if self.remote is not None:
+                    self.remote.done()
                 self.record(rec="trade_complete", t=now, trades=self.trades)
                 show_done()
                 screen.received("bdsp", self.their_poke)
@@ -612,16 +627,37 @@ class TradePartner:
             return [room.build_trade_ready_ok(self.our_security, is_trade_ok=1)]
         if data_id == room.TRADE_READY_OK:
             self.record(rec="their_ready_ok", t=now, fields=fields, answered=self.complete)
+            if self.remote is not None and self.complete:
+                self.want_ready = True
+                self.remote.accept()
+                return []
             return [room.build_trade_ready_ok()] if self.complete else []
         if data_id == room.RETURN_SELECT:
             # a reset of the round: the console's back-out, or its answer to a stray 0x21
             self.record(rec="their_return_select", t=now, fields=fields)
             self.our_security, self.their_security, self.arriving = 0, None, False
+            if self.remote is not None and fields.get("isReturnSelect"):
+                self.want_offer = self.want_ready = False
+                self.remote.withdraw()
             return []
         return []
 
     def tick(self, joiner, now):
         out = []
+        if self.remote is not None and self.their_security is None and not self.arriving:
+            theirs = self.remote.theirs()
+            if self.sent is not None and theirs.offer != self.sent and not self.want_offer:
+                # 0x45 {1}: "the other player chose to cancel"; the console picks again
+                # (docs/bdsp_trade.md, Leaving the box).
+                self.sent, self.want_ready = None, False
+                out.append(room.build_fields(room.RETURN_SELECT, 1))
+            if self.want_offer and theirs.offer is not None:
+                self.want_offer, self.sent = False, theirs.offer
+                out.append(room.build_trade_poke(self.sent))
+                screen.offer("bdsp", self.sent)
+            if self.want_ready and theirs.accepted and self.sent is not None and theirs.offer == self.sent:
+                self.want_ready = False
+                out.append(room.build_trade_ready_ok())
         if (self.approach_at is not None and not self.approached and now >= self.approach_at
                 and joiner.join_acked):
             self.approached = True

@@ -1,4 +1,4 @@
-/* The board's LED on GPIO2 (classic ESP32) or GPIO15 (XIAO ESP32C6), driven by LEDC PWM from a low-priority task at 100 Hz.
+/* The board's LED on GPIO2 (classic ESP32), GPIO21 (XIAO ESP32S3) or GPIO15 (XIAO ESP32C6), driven by LEDC PWM from a low-priority task at 100 Hz.
    The looks and the LED command are in docs/hardware_esp32.md, The board's LED and buttons. */
 #pragma once
 

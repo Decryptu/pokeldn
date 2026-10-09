@@ -33,5 +33,9 @@ DATA = _data_dir()                              # settings, built Pokemon, sessi
 SESSION = DATA / "session"                      # the working directory of every run
 POKEMON = DATA / "pokemon"
 LOGS = DATA / "logs"
-RECEIVED = (Path.home() / "Documents" if (Path.home() / "Documents").is_dir() else Path.home()) \
-    / "pokeldn" / "Received"
+_DOCUMENTS = (Path.home() / "Documents" if (Path.home() / "Documents").is_dir() else Path.home()) / "pokeldn"
+RECEIVED = _DOCUMENTS / "Received"
+# FireRed/LeafGreen saves (pokeldn.app.saves); an isolated POKELDN_DATA keeps its own.
+SAVES = DATA / "Saves" if os.environ.get("POKELDN_DATA") else _DOCUMENTS / "Saves"
+# Pokemon kept between games (pokeldn.app.bank); an isolated POKELDN_DATA keeps its own.
+BANK = DATA / "Bank" if os.environ.get("POKELDN_DATA") else _DOCUMENTS / "Bank"

@@ -7,6 +7,7 @@ scripts/pack_app.py bundles it. Needs Flutter on PATH, the version `flet --versi
 """
 import json
 import os
+import re
 import shutil
 import subprocess
 import sys
@@ -26,17 +27,17 @@ def flet_versions() -> tuple[str, str]:
     return found["flet"], found["flutter"]
 
 
-def strip(path: Path, *blocks: str) -> None:
-    """Drops the marked blocks Flet's own CI removes for its light client."""
-    lines, out, skip = path.read_text().splitlines(keepends=True), [], None
-    for line in lines:
-        if skip is None and any(f"--{b}_START--" in line for b in blocks):
-            skip = next(b for b in blocks if f"--{b}_START--" in line)
-        if skip is None:
-            out.append(line)
-        elif f"--{skip}_END--" in line:
-            skip = None
-    path.write_text("".join(out))
+def drop_extensions(pubspec: Path, main: Path) -> None:
+    """Removes every optional Flet extension (video, maps, camera...): the app draws core controls only,
+    and the extensions' native libraries were most of the client's size."""
+    text, count = re.subn(r"^  flet_\w+:\n    path: \.\./sdk/python/packages/.*\n", "", pubspec.read_text(),
+                          flags=re.M)
+    assert count, "Flet's client pubspec changed shape"
+    pubspec.write_text(text)
+    text = re.sub(r"^import ['\"]package:flet_\w+/[^;]*;\n", "", main.read_text(), flags=re.M)
+    text, count = re.subn(r"^\s*flet_\w+\.Extension\(\),\n", "", text, flags=re.M)
+    assert count and "flet_" not in text.replace("package:flet/", ""), "Flet's client main.dart changed shape"
+    main.write_text(text)
 
 
 MACOS_FLOOR = "12.0"   # Xcode 27 builds nothing older; Flet's client asks for 11.0
@@ -54,15 +55,33 @@ def raise_macos_floor(client: Path) -> None:
                                                    f"MACOSX_DEPLOYMENT_TARGET = {MACOS_FLOOR};"))
 
 
-def patch(client: Path, light: bool) -> None:
+def skip_rive_setup(client: Path) -> None:
+    """Flet's macOS project runs `dart run rive_native:setup` on every build; without flet_rive it fails."""
+    project = client / "macos" / "Runner.xcodeproj" / "project.pbxproj"
+    text, count = re.subn(r'(name = "Rive Native Setup";.*?shellScript = )".*?";', r'\1"exit 0\\n";',
+                          project.read_text(), count=1, flags=re.S)
+    assert count, "Flet's client project changed shape"
+    project.write_text(text)
+
+
+def thin(app: Path) -> None:
+    """Flutter builds a universal client; the release is per architecture, so keep this machine's half."""
+    arch = os.uname().machine
+    for path in app.rglob("*"):
+        if path.is_file() and not path.is_symlink() and path.read_bytes()[:4] == b"\xca\xfe\xba\xbe":
+            subprocess.run(["lipo", "-thin", arch, str(path), "-output", str(path)], check=True)
+    subprocess.run(["codesign", "--force", "--deep", "--sign", "-", "--preserve-metadata=entitlements", str(app)],
+                   check=True)
+
+
+def patch(client: Path) -> None:
     subprocess.run(["git", "checkout", "--", "pubspec.yaml", "lib/main.dart", "macos/Podfile",
                     "macos/Runner.xcodeproj/project.pbxproj"], cwd=client, check=True)
     if sys.platform == "darwin":
         raise_macos_floor(client)
+        skip_rive_setup(client)
     pubspec, main = client / "pubspec.yaml", client / "lib" / "main.dart"
-    for path in (pubspec, main):
-        if light:
-            strip(path, "FAT_CLIENT")
+    drop_extensions(pubspec, main)
     text = pubspec.read_text()
     anchor = "dependencies:\n  flutter:\n    sdk: flutter\n"
     assert anchor in text, "Flet's client pubspec changed shape"
@@ -95,8 +114,10 @@ def main() -> int:
             subprocess.run(["git", "checkout", "-f", tag], cwd=SOURCE, check=True)
     client = SOURCE / "client"
     key = platform_key()
-    patch(client, light=key == "linux")
-    flutter_cmd = ["flutter", "build", key, "--release", f"--build-name={flet}"]
+    patch(client)
+    # The Dart symbols go to a file beside the build, not into the client (2.6 MB on macOS).
+    flutter_cmd = ["flutter", "build", key, "--release", f"--build-name={flet}",
+                   f"--split-debug-info={client / 'build' / 'dart-symbols'}"]
     subprocess.run(flutter_cmd, cwd=client, check=True, shell=os.name == "nt")
     out = CLIENT / key
     shutil.rmtree(out, ignore_errors=True)
@@ -104,6 +125,7 @@ def main() -> int:
     if key == "macos":
         built = client / "build/macos/Build/Products/Release/Flet.app"
         subprocess.run(["ditto", str(built), str(out / "Flet.app")], check=True)
+        thin(out / "Flet.app")
     elif key == "windows":
         built = client / "build/windows/x64/runner/Release"
         shutil.copytree(built, out / "flet")

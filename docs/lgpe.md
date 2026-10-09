@@ -27,8 +27,8 @@ Jigglypuff, Diglett. The code sets the advertisement's scene id
 
 ## What works
 
-A retail Let's Go Pikachu trades in both directions: `bin/lgpe_join.py` joins the console's session,
-`bin/lgpe_host.py` hosts one the console joins. A seat carries one trade after another: after each
+`bin/lgpe_join.py` joins a console's session and `bin/lgpe_host.py` hosts one the console joins. A
+seat carries one trade after another: after each
 trade's normal save the trade dispatcher goes from state 7 back to state 1 unless the save reports
 that the link ends (`0x886908`), and the save re-creates the party-offer object on a new channel
 (`0x8375a4`) ([the session page](lgpe_session.md#the-trade-dispatcher)). Both launchers take a queue
@@ -38,14 +38,10 @@ The Clone Protocol's take-over exchange passes the game's `0x11b080` gate, and t
 carries identity, offer, commit and kind 4 (the next trade's selection); `pokeldn.lgpe.pb7` reads and
 writes the 232-byte box structure the offer and kind 4 carry.
 
-A retail console joined to the app's host completed three queued trades on one seat, receiving
-Pikachu, Eevee and Onix in order. All three queue entries were marked complete, exactly three
-checksummed 260-byte received files were saved, and the host exited with code 0 after the console left.
-In the joiner role, three queued trades completed on one retail seat without an error.
-
-A Pikachu built by `pokeldn.pokemon` with chosen options (level 30, female, Adamant, Ultra Ball,
-IVs and AVs set) and offered by `bin/lgpe_host.py --fresh-pid` arrived on a retail Let's Go Pikachu
-showing female, Adamant and Ultra Ball on its summary screen.
+Three queued trades complete on one seat in both roles. Each completed entry is saved as a
+checksummed 260-byte file, and the host exits with code 0 after the console leaves. A record built by
+`pokeldn.pokemon` (level, gender, nature, ball, IVs and AVs chosen) and offered by `bin/lgpe_host.py
+--fresh-pid` shows those fields on the receiving summary screen.
 
 A console leaves the seat when its player presses Retour. `bin/lgpe_join.py --leave-after SECONDS`
 runs the same exit that long after its first answered trade step, and `bin/lgpe_host.py` answers a
@@ -56,27 +52,15 @@ ten minutes of counted play time), then the fatal error screen.
 
 ## Unresolved
 
-- How counted play time relates to wall time, so how long the lock lasts on a clock: the rate of
-  the gated call `0x13c944` and whether the frame period stays at 33.3 ms are unread. Trying Link
-  Trade at play time P + 9 and P + 11 minutes after an aborted commit, against a stopwatch, measures
-  both.
-- What leaves a console's clone protocol silent on the host's `0xa1` on clone type 4, while its radio
-  acknowledges every frame, after a host answers its withdrawn vote with A 2. `0x51c110`
-  drops such a message silently in `0x522a60` while the sender's bit is in the `+0xc0` mask, and
-  earlier at the destination check, the per-sender count filter or a length check; the message's own
-  bytes (destination `0x0002`, count 69 after a highest earlier host count of 63) pass the first two
-  for in-order delivery. What held the silence is unknown; the capture shows no
-  severity-4 error (`0x4d8a80`, result 2 and the fatal error screen). An `0xa1` repeated until
-  answered separates a pending mask (a later copy answered) from a message that never reaches the
-  clone protocol (none answered); a sniffing board records what arrived independently of the host.
-- Whether a partner leaving during the sync save reaches the code 0xe abort. The pump fails when
-  `+0x1e6` is 1 or less, but the recount runs only under the guards on `[s+0xd8]`, `[s+0xd4]` and
-  `0x52abf0`, whose values in a trade are unread, and the local station's own record (the other
-  callers of `0x5a9430`, `0x581f20` and `0x583b90`) is untraced.
-- Which process the trade dispatcher's child is, and whether the sync save's commit channel at
-  `seq+0xb8` is released after an aborted commit.
-- Whether the channel counter or the 16-entry channel table bounds a long seat. `0x116e80` hands out
-  ids from `mgr+0x270` and returns 0 with 16 channels registered; `0x117920` compacts out dead ones.
-  A hosted retail seat carried three trades. The limit beyond that is unmeasured.
-- Whether the dispatcher's modes 1 and 2 are link battles. The reading rests on the scene they build;
-  a capture of a link battle's session, with the mode word `+0x8c`, settles it.
+- What left a retail console silent on the host's `0xa1` on clone type 4 after a host answered its
+  withdrawn vote with A 2. In that capture the console announced its commit clone 5.0 s after the
+  A 2; the host answered with `82, 91, 91, 84, 81, a1, a1` in one datagram, and the console reacted
+  to the `0x82` (it re-announced the clone on clone type 1) but answered neither the `0x81` on clone
+  type 2 nor the `0xa1` on clone type 4. Its radio acknowledged every one of the 6923 unicast frames
+  of the session. The per-sender count filter (`0x51c1e0`) passes every host message (counts 14 to
+  71, strictly rising). In the game's code the only silent outcome left for that `0xa1` is
+  `0x522a60` returning 2 (the sender's bit in `[[x0+0x30]+0xc0]`), and no mask-setting event
+  (state `0x22` or `0x42`, a join in state `0x22` or `0x31`) appears on the wire. An emulated Let's
+  Go 1.0.2 given the same withdrawal, the same A 2 and the same burst announced its commit clone 3.4 s
+  after the A 2, answered the host's `0xa1` with `0xa2` and completed the trade; breakpoints on the four `+0xc0` writers, the clear
+  site `0x51c3b4` and the silent return `0x522a9c` never fired. What differs on retail is unknown.

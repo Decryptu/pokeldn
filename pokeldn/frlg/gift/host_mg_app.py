@@ -3,7 +3,7 @@
 import os
 
 from pokeldn.frlg import config as configmod
-from pokeldn.frlg.gift import game_data_log, gift_registry, mystery_gift_attempts, wonder_news
+from pokeldn.frlg.gift import game_data_log, gift_registry, mystery_gift_attempts, wonder_card, wonder_news
 from pokeldn.frlg.link import host_session
 from pokeldn.frlg.rom import buffer_script, builds, mystery_event
 from pokeldn.frlg.text import charmap, easychat
@@ -15,7 +15,7 @@ from pokeldn.frlg.gift.host_mystery_gift import (
     MysteryGiftTiming,
 )
 from pokeldn.ldn.host_pia import HostPeerProtocol
-from pokeldn.frlg.link.linkplayer import HOST_NAME_PAD
+from pokeldn.frlg.link.linkplayer import HOST_NAME_PAD, LANGUAGE_JAPANESE
 from pokeldn.frlg.gift.mg_server import (
     BUFFER_EXPECT_TRAINER_ID, SERVER_RESULT_NAMES, SVR_MSG_CARD_SENT, SVR_MSG_GIFT_SENT_1,
     SVR_MSG_NEWS_SENT, SVR_MSG_STAMP_SENT)
@@ -48,6 +48,28 @@ def _log_build_plan(app):
                  + (f"REFUSED, {chosen}" if isinstance(chosen, str) else "its own bytes"))
     app.info("The console's game code picks one at SVR_COPY_GAME_DATA, before anything "
              "build-dependent is sent; any other code is refused with nothing sent.")
+
+
+def _serves_japanese(app):
+    """The Japanese cartridges list a Friend under other activity numbers than the rest
+    (docs/frlg_rom_map.md, Japanese layout): the served builds decide, else the trainer language."""
+    plan = getattr(app, "plan", None)
+    if plan is not None and plan.build is not None:
+        return plan.build.language == "japanese"
+    served = {builds.BUILDS[code].language == "japanese" for code in (plan.codes if plan else ())}
+    if len(served) == 1:
+        return served.pop()
+    return app.profile.to_link_player().language == LANGUAGE_JAPANESE
+
+
+def _log_advertised_activity(app):
+    menu = "Wonder News" if getattr(app, "ACTIVITY_NOUN", None) == "Wonder News" else "Wonder Cards"
+    japanese = _serves_japanese(app)
+    app.info(f"Advertising {menu} for {'Japanese' if japanese else 'non-Japanese'} cartridges. "
+             f"On the Switch choose Mystery Gift -> {menu} -> Friend.")
+    if not japanese:
+        app.info("A Japanese cartridge lists this host only with --console-build BPRJ or BPGJ, "
+                 "or --language japanese.")
 
 
 class MysteryGiftHostApplication(HostApplication):
@@ -85,9 +107,9 @@ class MysteryGiftHostApplication(HostApplication):
         phy, keys = self._resolve_phy_and_keys()
         link_player = self.profile.to_link_player()
         self.plan = self._build_plan()
-        self.distribution = self.plan.distribution
-        self.card = self.distribution.card
-        self.ram_script = self.distribution.ram_script
+        self.distribution = self.plan.distribution if self.plan is not None else None
+        self.card = getattr(self.distribution, "card", None)
+        self.ram_script = getattr(self.distribution, "ram_script", None)
         timing = None
         overrides = {}
         if self.config.client_ready_idle_frames is not None:
@@ -100,11 +122,7 @@ class MysteryGiftHostApplication(HostApplication):
             overrides["ram_script_block_repeat"] = self.config.ram_script_block_repeat
         if overrides:
             timing = MysteryGiftTiming(**overrides)
-        engine = HostMysteryGiftEngine(
-            distribution=self.distribution, link_player=link_player,
-            trust_pia=self.config.trust_pia, timing=timing,
-            expect_console=getattr(self.config, "expect_console", None),
-            per_build=self.plan.per_build, log=self.log)
+        engine = self._build_engine(link_player, timing)
         self.session = host_session.HostSession(engine=engine, log=self.log)
         inactive, active = self._build_app_data()
         self.tracer = (ldntrace.Tracer(self.ldn.capture_path, log=self.log)
@@ -128,10 +146,17 @@ class MysteryGiftHostApplication(HostApplication):
         self._last_state = self.session.activity.state
         return link_player
 
+    def _build_engine(self, link_player, timing):
+        return HostMysteryGiftEngine(
+            distribution=self.distribution, link_player=link_player,
+            trust_pia=self.config.trust_pia, timing=timing,
+            expect_console=getattr(self.config, "expect_console", None),
+            per_build=self.plan.per_build, log=self.log)
+
     def _build_app_data(self):
         """Which of the console's menus lists this host: only the activity byte differs."""
         return build_wonder_card_app_data(
-            self.profile, self.session.rfu.host_session_id)
+            self.profile, self.session.rfu.host_session_id, japanese=_serves_japanese(self))
 
     def _log_identity(self, link_player):
         wire = link_player.pack(name_pad=HOST_NAME_PAD)
@@ -145,7 +170,7 @@ class MysteryGiftHostApplication(HostApplication):
                   f"u16=0x{int.from_bytes(self.session.rfu.host_session_id, 'little'):04x}")
         details = ("imported gift file" if hasattr(payload, "file") else
                    gift_registry.GIFT_REGISTRY.describe(payload.gift))
-        card_title = charmap.decode(self.card[10:50])
+        card_title = wonder_card.text_fields(self.card)[0]
         self.info(f"Gift: {payload.gift!r}; {details}; card title {card_title!r}; "
                   f"Wonder Card flagId {payload.flag_id} "
                   f"(receipt flag 0x{payload.receipt_flag:03x}), "
@@ -182,8 +207,7 @@ class MysteryGiftHostApplication(HostApplication):
             self.info("Mystery Gift timing override: "
                       f"block_repeat={self.config.block_repeat}")
         _log_build_plan(self)
-        self.info("Advertising ACTIVITY_WONDER_CARD. On the Switch choose "
-                  "Mystery Gift -> Wonder Cards -> Friend.")
+        _log_advertised_activity(self)
 
     def _hosting_instructions(self):
         return ("Hosting Mystery Gift. On the Switch choose "
@@ -194,7 +218,7 @@ class MysteryGiftHostApplication(HostApplication):
         species, equal to the national number only up to 251 [wonder_card.py]."""
         icon = int.from_bytes(self.card[2:4], "little")
         species = icon if 1 <= icon <= 251 else None
-        return "Mystery Gift", charmap.decode(self.card[10:50]).strip(), species
+        return "Mystery Gift", wonder_card.text_fields(self.card)[0].strip(), species
 
     def _show_screen(self):
         title, line, species = self._screen_card()
@@ -319,7 +343,7 @@ class WonderNewsHostApplication(MysteryGiftHostApplication):
 
     def _build_app_data(self):
         return build_wonder_news_app_data(
-            self.profile, self.session.rfu.host_session_id)
+            self.profile, self.session.rfu.host_session_id, japanese=_serves_japanese(self))
 
     def _log_identity(self, link_player):
         wire = link_player.pack(name_pad=HOST_NAME_PAD)
@@ -340,8 +364,7 @@ class WonderNewsHostApplication(MysteryGiftHostApplication):
                   "MG_LINKID_RESPONSE with TRUE and keeps what it has; pass --news-id to make the "
                   "same text new again.")
         _log_build_plan(self)
-        self.info("Advertising ACTIVITY_WONDER_NEWS. On the Switch choose "
-                  "Mystery Gift -> Wonder News -> Friend.")
+        _log_advertised_activity(self)
 
     def _hosting_instructions(self):
         return ("Hosting Wonder News. On the Switch choose "
@@ -454,8 +477,7 @@ class BufferScriptHostApplication(MysteryGiftHostApplication):
                      if expect == BUFFER_EXPECT_TRAINER_ID else
                      "any answer at all" if expect is None else f"0x{int(expect):08X}"))
         _log_build_plan(self)
-        self.info("Advertising ACTIVITY_WONDER_CARDS. On the Switch choose "
-                  "Mystery Gift -> Wonder Cards -> Friend.")
+        _log_advertised_activity(self)
 
     def _hosting_instructions(self):
         return ("Hosting a buffer script. On the Switch choose "
@@ -491,3 +513,91 @@ class BufferScriptHostApplication(MysteryGiftHostApplication):
         return ("NATIVE CODE RAN ON THE CONSOLE. It returned "
                 + (f"0x{status:08X}" if status is not None else "an answer")
                 + ", which matched. The console printed our message and saved.")
+
+
+class SaveTransferHostApplication(MysteryGiftHostApplication):
+    """Save backup or restore over Wonder Cards -> Friend [save_transfer.py]: no card is sent and
+    none is replaced. `backup` is where the backed-up .sav goes, `restore` the .sav to write."""
+
+    ACTIVITY_NOUN = "save transfer"
+
+    def __init__(self, config, *, backup=None, restore=None, resume_dir=None, **kwargs):
+        super().__init__(config, **kwargs)
+        if (backup is None) == (restore is None):
+            raise ValueError("a save session either backs up or restores")
+        self.backup_path, self.restore_path, self.resume_dir = backup, restore, resume_dir
+        self._shown = -1
+
+    def _build_plan(self):
+        return None
+
+    def _progress(self, done, total):
+        """One line per 8 KB or per sector, for a reader of the log (the app's progress bar)."""
+        step = done // 8192 if self.backup_path else done
+        if step == self._shown and done < total:
+            return
+        self._shown = step
+        if self.backup_path:
+            print(f"[save] backup {done // 1024} of {total // 1024} KB", flush=True)
+        else:
+            print(f"[save] restore {done} of {total} sectors", flush=True)
+
+    def _build_engine(self, link_player, timing):
+        from pokeldn.frlg.gift import save_transfer
+        common = dict(expect_console=getattr(self.config, "expect_console", None),
+                      progress=self._progress, log=self.log)
+        if self.backup_path:
+            server = save_transfer.SaveBackupServer(resume_dir=self.resume_dir, **common)
+        else:
+            with open(self.restore_path, "rb") as handle:
+                server = save_transfer.SaveRestoreServer(handle.read(), **common)
+        return HostMysteryGiftEngine(server=server, link_player=link_player,
+                                     trust_pia=self.config.trust_pia, timing=timing, log=self.log)
+
+    def _log_identity(self, link_player):
+        self.info(f"Host identity: OT={self.profile.name!r}, "
+                  f"TID=0x{self.profile.tid:04x}, SID=0x{self.profile.sid:04x}")
+        if self.backup_path:
+            self.info(f"Save backup: the console sends its whole 128 KB save; it goes to "
+                      f"{self.backup_path}. The console's save is not changed.")
+        else:
+            self.info(f"Save restore: {self.restore_path} goes beside the console's newest save, "
+                      "every sector is read back, then the game loads it and saves. Until then the "
+                      "console keeps the save it had.")
+        _log_advertised_activity(self)
+
+    def _hosting_instructions(self):
+        return ("Hosting a save " + ("backup" if self.backup_path else "restore")
+                + ". On the Switch choose Mystery Gift -> Wonder Cards -> Friend.")
+
+    def _screen_card(self):
+        return "Mystery Gift", "Save backup" if self.backup_path else "Save restore", None
+
+    def run(self):
+        joined = HostApplication.run(self)
+        engine = self.session.activity if self.session is not None else None
+        server = getattr(engine, "server", None)
+        outcome = getattr(server, "outcome", None)
+        if self.backup_path and getattr(server, "save", None) is not None:
+            from pokeldn.frlg.gift import save_transfer
+            save_transfer.write_backup(self.backup_path, server)
+            print(f"[save] wrote {self.backup_path}", flush=True)
+        self.delivery_succeeded = outcome in ("backed-up", "restored")
+        if outcome == "backed-up":
+            show_done("backup")
+            print("Save backed up. The console showed our message and kept its save as it was.")
+        elif outcome == "backed-up-unsound":
+            print("The whole chip came over, but neither of its two save copies is whole.")
+        elif outcome == "restored":
+            show_done("restore")
+            print("Save restored. Let the console finish saving; CONTINUE then loads it.")
+        elif outcome == "not-restored":
+            print("Not restored: the console keeps the save it had.")
+        elif outcome == "refused":
+            print("Nothing was read or written: see the log for why.")
+        elif self.backup_path and self.resume_dir:
+            print("The link dropped before the backup was done. Start it again: it goes on from "
+                  "where it stopped.")
+        print(f"[save] outcome {outcome or 'lost'}", flush=True)
+        self._record_game_data(engine)
+        return joined

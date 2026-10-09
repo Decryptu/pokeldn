@@ -95,10 +95,9 @@ eight thousand) is a well-formed message whose length accounts exactly for its b
 | `NetDataIsMatchWaitData` (0x23) | 4333 |
 | `NetCharacterStateData` (0x04) | 55 |
 
-The console requests 0x04 only for a character it has created (55 requests, none across 265 joins
-that drew no character). The game asks each character's station for its state when it creates the
-character, so a 0x04 request signals that a character exists; `bin/bdsp_connect.py` prints it as the
-verdict. The console repeats its 0x23 request until the client acknowledges its reliable window;
+The game asks each character's station for its state when it creates the character, so a 0x04
+request signals that a character exists (55 requests, none across 265 joins that drew no
+character); `bin/bdsp_connect.py` prints it as the verdict. The console repeats its 0x23 request until the client acknowledges its reliable window;
 unacknowledged, 487 requests came in 75 seconds.
 
 `UnionRoomManager$$SetNetData` [1.3.0 main 0x01e50700] answers a `NetRequestData` for six ids and
@@ -267,9 +266,8 @@ twentieth of a unit, x negated. A remote character collides with walls (the play
 with it) and keeps `rot_y` literally. Keep a walk within the room: sixty messages at the console's
 stride cross it and leave through the far wall, `--room-walk-steps 8` stays inside.
 
-A walk is not needed to trade. A retail console asked for `NetCharacterStateData`, accepted the talk
-and completed two trades with a client character that sent no `NetPosData` at all
-(`--room-walk-steps 0`, the default on the trade path).
+A trade needs no walk: a retail console completed two trades with a client character that sent no
+`NetPosData` (`--room-walk-steps 0`, the default on the trade path).
 
 ## Being talked to
 
@@ -421,9 +419,19 @@ PlayerInfo writer puts +0x480 at byte 0x7A [0x01550e98]. A French console's conn
 The language is the sender's game text language, save `CONFIG.msg_lang_id` (PlayerWork +0xac,
 `get_msgLangID` [0x0237e100]); `GameManager.<OnetimeInitializeOperation>` [0x01e0eb44] fills it from
 the system language (`GetCurrentIetfCode`) only when the stored value is outside 1..10. The own
-station record's +0x480 is written by `strb w8, [x23, x22]` [0x0154956c] in `0x015494f0`, from
-`JoinMeshJob::SetupLocalPlayerInfo` [0x0155b988], out of the Pia session entry the setting builder
-[0x0156fa08] filled (entry +0x80, stride 0x98). A French console sent byte 0x7A 3 and byte 0x51 0 in
+station record's +0x480 is filled in four copies, each of the PlayerInfo's language byte:
+
+| step | code | from | to |
+|---|---|---|---|
+| `RegisterStartupSessionSetting` | `0x0156f918` (setting builder, `0x0156fa08`), `0x0168d4c8` | the plugin's player array (stride 0x28) | the framework's stored setting +0x3220: PlayerInfo +0x18, language +0x98, stride 0x98 |
+| `ChangeStateJob::StartupSession` | `0x01690d6c` -> `0x0168c5b8` -> `0x0157d36c` -> controller vfunc 2 (`LocalMatchMeshLayerController` `0x016c3e70`) | the setting's first PlayerInfo (`0x016c3f48`) | the controller's player list +8, language +0x88, count 1 at +0x268 |
+| `CreateSessionJob::MeshStartup` `0x015873b0`, `JoinSessionJob::MeshStartup` `0x015884bc` | controller vfunc 4 (`MeshLayerController` `0x0171a068`) -> `0x01546fa4` | the controller's list | the mesh object (`[0x04c4db60]`) +0x128 + n*0x98, language +0x80 (`0x015472e4`), count +0x388 |
+| `CreateMeshJob::SetupLocalPlayerInfo` `0x0155a764`, `JoinMeshJob::SetupLocalPlayerInfo` `0x0155b988` | `0x015494f0` | the mesh object's list | the own station record +0x480 + n (`strb w8, [x23, x22]` `0x0154956c`) |
+
+`ChangeStateJob::StartupSessionBegin` (`0x01690c70`) reaches StartupSession either directly or, when
+framework +0x7c is 0, after `StartupSessionJob` (`0x0168ec7c`, setting at job +0x70) and
+`WaitStartupSessionLdnInitialize` (`0x01690e30`). `StartupSessionJob` has one working step,
+InitializeLdn (`0x0168ed74`), and copies no PlayerInfo. A French console sent byte 0x7A 3 and byte 0x51 0 in
 30 of 30 PlayerInfos (17 connection responses, 13 connection requests).
 
 Both `bin/bdsp_connect.py` and `bin/bdsp_host.py` build the PlayerInfo with `pokeldn/bdsp/host.py`
@@ -544,14 +552,27 @@ through it in `NetStateModel$$SetState` [0x023e2604]. The only store to +0x38 is
 when the player recruits a battle (`stateModelType` 0; the A press passes 1 and builds a
 `BattleJoinStateModel`). `UnionStateController` is built once per `UnionRoomManager`
 (`UnionRoomManager$$SetUp`, `.ctor` 0x01e4d01c), and a link battle keeps both
-(`EvDataManager$$UpdateStart` -> `UnionRoomManager$$ReturnBattle` [0x01b02a78], no constructor). A
-0x08 reaching a console whose player has not recruited a battle in that visit writes through null.
+(`EvDataManager$$UpdateStart` -> `UnionRoomManager$$ReturnBattle` [0x01b02a78], no constructor).
+Each entry builds a new `UnionRoomManager`: `EvDataManager$$EvCmdUnionProc` [0x01b35f70] adds it to a
+`new GameObject("UnionRoomManager")` [0x01b36090] before the warp into the room, with no
+`DontDestroyOnLoad`. `UnionRoomManager$$Init` [0x01e49e40] passes the zones {484, 491, 492, 493}
+(`UNION`, `UNION01` to `UNION03`) to `NetUseManager.SetEnableZone` [0x026cfca0], which subscribes to
+`FieldManager`'s zone-change event; `NetUseManager.OnZoneChange` [0x026cfef0] calls
+`Object.Destroy(gameObject)` [0x026d00f0] on the first zone outside the list. Leaving (`LeaveUnion`
+[0x01e4e300], its coroutine setting the transition zone at [0x01e560e0]) is such a change, so
+`UnionRoomManager$$OnDestroy` [0x01e4c540] runs and calls `Clear`. The recruitment model therefore
+starts null on every visit. A 0x08 reaching a console whose player has not recruited a battle in that
+visit writes through null: the receiver passes the null model to
+`BattleRecruitmentStateModel$$ChangeBattleRecruitmentState` [0x01d2aab0] with no null test, whose
+case 4 tail-calls `NetStateModel$$SetState` [0x023e25f0] with it, and `str x2, [x20, #0x18]!`
+[0x023e2604] stores to address 0x18. The build emits no IL2CPP null check on this path, and the
+image imports no `nn::os::SetUserExceptionHandler`.
 
 The ladder's 0x08 row was measured on a console that had recruited the battle. A 0x08 under a
 sequence id the client already used is discarded by the reliable window ([the Pia
-page](pia.md#what-the-receiver-discards-in-silence)). The 22 sent to a talking console that had not
-recruited went out under an id one of the client's own 0x64 answers already held, so none has
-reached the null path.
+page](pia.md#what-the-receiver-discards-in-silence)); the 22 sent to a talking console that had not
+recruited went out under an id one of the client's own 0x64 answers already held, so none reached
+the null path.
 
 Never send 0x08 unless the console's own 0x04 says state 3 with `isRecruiment` 1.
 
@@ -619,7 +640,10 @@ larger byte faults the console.
 
 Each `UgFieldManager` builds a new `UgNetworkManager` in `StartSession` [0x01cfebb0] (the only
 `AddComponent<UgNetworkManager>`, 0x01cfed54) and destroys it in `OnDestroy` [0x01cff530], so each
-adopts a table afresh.
+adopts a table afresh. No scene places either manager: of the 53861 MonoBehaviours in the 14052
+asset bundles and the root files of the 1.3.0 RomFS, none has `UnionRoomManager` or
+`UgNetworkManager` as its script. Both exist only in the script table of
+`globalgamemanagers.assets`, which no bundle references.
 
 0x29 `NetDigGroupIdData` shares 0x61's struct and methods. Only `NetDataParser`'s constructor
 [0x0224a420] references it: nothing sends it, and `UgNetworkManager$$OnReceiveData` [0x01f7a880]
@@ -688,3 +712,11 @@ animators bind only translations. The factor `Screen.width / 1280` is 1: the 1.3
 u32 at +0x1c is 0, which keeps the default-resolution switch `0x006062e8` at 1280 x 720 docked and
 handheld (1 follows the operation mode, 2 the performance mode, 3 both), and no managed code calls
 `SetResolution` or a `Screen` setter.
+
+`Screen.width` is the int at +0x68 of the single native screen object (`0x04efe760`), read through
+vtable slot 0xa8 (`0x002c2c24`). Three sites write it: the constructor `0x002c257c` (1280 x 720), the
+one startup `SetMode(0)` `0x002c2858` with the values of `0x006062e8`, and `SetResolution`
+`0x002c2888`, which only the operation-mode and performance-mode handlers `0x002c2a1c` and
+`0x002c2af0` call, and only when rawsettings +0x1c is nonzero. The player settings in
+`globalgamemanagers` are not read on this path; managed `Screen.SetResolution` stores its arguments
+at `[obj+8]` and changes nothing.

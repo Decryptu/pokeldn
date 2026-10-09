@@ -37,7 +37,7 @@ def build_game_data(version_low, trainer_id, ot_name, *, language=linkplayer.LAN
     rgd[11] = 0                                                # playerGender:1 | tradeLevel:7
     rgd[12] = 0
     gname = bytes(rgd).ljust(15, b"\x00")                      # RFU_GAME_NAME_LENGTH + 2
-    uname = charmap.encode(ot_name, width=9, pad=0x00)         # uname[RFU_USER_NAME_LENGTH + 1] = 9
+    uname = charmap.encode(ot_name, width=9, pad=0x00, language=language)         # uname[RFU_USER_NAME_LENGTH + 1] = 9
     src = RFU_SERIAL_GAME.to_bytes(2, "little") + gname + uname
     assert len(src) == 26, len(src)
     return bytes(src)

@@ -4,7 +4,7 @@ mirrors a record a retail Sword listed and redeemed (docs/swsh_gift.md, A card d
 import struct
 from dataclasses import dataclass
 
-from pokeldn.swsh import gift_file, wc8
+from pokeldn.swsh import events as OFFICIAL, gift_file, wc8
 
 KINDS = (("pokemon", "Pokemon", "gift"), ("egg", "Egg", "package"), ("items", "Items", "bulletlist"),
          ("clothing", "Clothing", "shirt"), ("bp", "Battle Points", "zap"), ("money", "Money", "coins"))

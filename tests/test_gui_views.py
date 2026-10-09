@@ -217,6 +217,7 @@ def _app(port, ident, chip=""):
     app.settings = SimpleNamespace(radio_port="", keys="")
     app.identities = {port.device: ident} if ident is not None else {}
     app.chips = {port.device: chip} if chip else {}
+    app.hidden_bridges = []
     return app
 
 
@@ -235,7 +236,9 @@ def test_the_board_status_names_the_fix_for_what_the_board_answered(port, ident,
     assert _app(port, ident, chip).board_status([port]).state == state
 
 
-def test_a_board_unplugged_is_checked_again_when_it_returns():
+@pytest.mark.parametrize("platform", ["darwin", "win32"])   # Windows reads the bridges with no driver
+def test_a_board_unplugged_is_checked_again_when_it_returns(monkeypatch, platform):
+    monkeypatch.setattr(sys, "platform", platform)
     app = _app(UART, CURRENT)
     assert app.board_status([]).state == "missing"
     assert app.board_status([UART]).state == "checking"
@@ -305,6 +308,7 @@ def test_a_port_the_user_may_not_open_names_the_group_not_a_busy_port(tmp_path, 
     assert status.state == "denied" and "usermod -aG" in status.detail
 
 
+@pytest.mark.skipif(sys.platform == "win32", reason="a sysfs interface name carries ':', not a Windows file name")
 @pytest.mark.parametrize("tty, title", [
     (None, "Board found without a serial port"),          # brltty took it: no tty under the interface
     ("ttyUSB0", "No board plugged in"),                    # usb-serial: <interface>/ttyUSB0
@@ -326,6 +330,31 @@ def test_a_ch340_on_usb_with_no_tty_names_brltty_on_linux(tmp_path, monkeypatch,
     status = _app(UART, None).board_status([])
     assert status.state == "missing" and status.title == title
     assert ("apt remove brltty" in status.detail) == (tty is None)
+
+
+@pytest.mark.parametrize("devices, title, step", [
+    ("USB\\VID_10C4&PID_EA60\\0001\r\n", "Board found without a driver", "silabser.inf"),
+    ("USB\\VID_1A86&PID_7523\\5&2A1B&0&2\r\n", "Board found without a driver", "CH341SER.EXE"),
+    ("USB\\VID_046D&PID_C52B\\6&3&0&1\r\n", "No board plugged in", None),   # a mouse receiver
+    ("", "No board plugged in", None),
+])
+def test_a_bridge_with_no_driver_names_its_install_steps_on_windows(monkeypatch, devices, title, step):
+    """A CP210x or CH340 with no Windows driver gets no COM port; Device Manager lists it with a
+    problem code, and the status names the driver to install."""
+    import subprocess
+    calls = []
+
+    def powershell(argv, **kwargs):
+        calls.append(argv)
+        return subprocess.CompletedProcess(argv, 0, devices, "")
+
+    app = _app(UART, None)
+    app.hidden_bridges = board_module.bridges_without_driver(run=powershell)
+    monkeypatch.setattr(sys, "platform", "win32")
+    status = app.board_status([])
+    assert calls[0][0] == "powershell" and "ConfigManagerErrorCode" in calls[0][-1]
+    assert status.state == "missing" and status.title == title
+    assert step is None or step in status.detail
 
 
 def _release_server(routes: dict):
@@ -402,10 +431,14 @@ def test_a_pokemon_file_shows_its_own_species_and_shininess(monkeypatch):
     assert (saved[-1]["species"], saved[-1]["shiny"], picker.species.value, picker.shiny.value) == (6, True, "6", True)
 
 
+@pytest.mark.parametrize("assembler", [True, False])   # a computer without the Arm toolchain sees the install hint
 @pytest.mark.parametrize("key", ["frlg-gift", "swsh-gift"])
-def test_the_gift_builder_renders_every_mode_and_kind_and_exports_what_it_shows(tmp_path, monkeypatch, key):
+def test_the_gift_builder_renders_every_mode_and_kind_and_exports_what_it_shows(tmp_path, monkeypatch, key,
+                                                                                assembler):
     import asyncio
     from gui.views import gifts as view_module
+    if not assembler:
+        monkeypatch.setattr(view_module.custom_code, "toolchain", lambda: None)
     from pokeldn import gifts
     from pokeldn.app import gift_builder
     from pokeldn.app.catalog import GAMES
@@ -417,20 +450,33 @@ def test_the_gift_builder_renders_every_mode_and_kind_and_exports_what_it_shows(
     monkeypatch.setattr(swsh_builder, "card_gender", lambda species, form=0: 0)
     tool = next(tool for game in GAMES for tool in game.tools if tool.key == key)
     field = next(field for field in tool.fields if field.kind == "builder")
+    native = "wc8" if key == "swsh-gift" else "wc3"
     path = tmp_path / "gift.pokegift"
 
     async def save_file(**kwargs):
-        assert kwargs["allowed_extensions"] == ["pokegift"]
+        assert kwargs["allowed_extensions"] == ["pokegift", native]
         return str(path)
 
     view = SimpleNamespace(tool=tool, values={}, extra={},
-        app=SimpleNamespace(settings=Settings(), picker=SimpleNamespace(save_file=save_file), ui=lambda f: None))
+        app=SimpleNamespace(settings=Settings(), picker=SimpleNamespace(save_file=save_file), ui=lambda f: None,
+                          page=SimpleNamespace(run_task=lambda *a: None)))
     view.set_value = lambda field, value, rebuild=False: view.values.__setitem__(field.key, value)
     module = gift_builder.module(gift_builder.GAMES[key])
     builder = view_module.GiftBuilder(view, field)
-    for mode, *_ in gift_builder.MODES:
+
+    async def select_native_build(gift):
+        return next(iter(gift.variants))
+
+    builder.select_native_build = select_native_build
+    for mode, *_ in gift_builder.modes(gift_builder.GAMES[key]):
         builder.value["mode"] = mode
         assert len(builder.cards()) == 2
+    if key == "swsh-gift":
+        builder.value["mode"] = "event"
+        for event in module.OFFICIAL.load():
+            builder.value["event"] = event["key"]
+            builder.cards()
+            assert builder.status.color != view_module.t.RED, (event["key"], builder.status.value)
     builder.value["mode"] = "preset"
     for preset in module.PRESETS:
         builder.value["preset"] = preset.key
@@ -449,6 +495,12 @@ def test_the_gift_builder_renders_every_mode_and_kind_and_exports_what_it_shows(
         control.update = lambda: None
     asyncio.run(builder._save(None))
     assert gifts.dumps(gifts.load(path)) == gifts.dumps(module.compile(builder.state))
+    path = tmp_path / f"gift.{native}"                # the native file the extension names
+    asyncio.run(builder._save(None))
+    built = next(iter(module.compile(builder.state).variants.values())).data
+    loaded = next(iter(gifts.load(path).variants.values())).data
+    # A .wc3 carries the script padded to its 995-byte slot.
+    assert {k: v.rstrip(b"\0") for k, v in loaded.items()} == {k: v.rstrip(b"\0") for k, v in built.items()}
 
 
 def test_a_worker_answering_after_its_picker_left_the_page_is_dropped():
@@ -503,9 +555,10 @@ def test_start_on_another_tool_stops_the_running_session_then_starts(tmp_path, m
     monkeypatch.setattr(SessionPanel, "_tick", lambda self: None)
     first, second = (next(t for t in TOOLS if t.key == key) for key in ("swsh-join", "pla-host"))
     panel = SessionPanel.__new__(SessionPanel)
-    panel.__dict__.update(app=FakeApp(), games=SimpleNamespace(values={}, extra={}, game=SimpleNamespace(
+    panel.__dict__.update(app=FakeApp(), games=SimpleNamespace(values={}, extra={}, visible=False, game=SimpleNamespace(
         name="game", key="swsh")), log=SimpleNamespace(add=lambda line: None, clear=lambda: None),
-        received=SimpleNamespace(), run=None, running_tool=None, restart=False, stopping=False, traded=0)
+        received=SimpleNamespace(), transfer=SimpleNamespace(), partner=SimpleNamespace(), run=None,
+        running_tool=None, restart=False, stopping=False, traded=0)
     panel.set_status = panel.refresh = lambda *a, **k: None
     panel.tool = first
     panel._start(None)
@@ -543,6 +596,49 @@ def test_the_link_code_slots_fill_in_order_and_give_the_host_its_scene(monkeypat
     picker._choose(4)                       # a filled slot is replaced, nothing else moves
     assert values[field.key] == "eevee,squirtle,pikachu"
     assert views.parse_code("evoli,taupiqueur,") == [1, 9, None]
+
+
+CODES = [(tool, f) for tool in TOOLS for f in tool.fields if f.kind == "code"]
+
+
+@pytest.mark.parametrize("tool, field", CODES, ids=[f"{t.key}{f.flag}" for t, f in CODES])
+def test_a_console_code_is_typed_box_by_box_and_only_a_whole_one_reaches_the_launcher(tool, field):
+    """Each digit moves to the next box, a paste fills from where it lands, Backspace on an empty box
+    clears the one before; a partial code blocks Start, the whole one parses as the launcher's flag."""
+    from gui.views import widgets
+    from pokeldn.app import command
+    from pokeldn.app.introspect import parser_of
+    from pokeldn.app.settings import Settings
+    values = {f.key: {"file": "offer.bin"} for f in tool.fields if f.kind == "pokemon"}
+    code = widgets.DigitCode(command.value_of(field, values), lambda v: values.__setitem__(field.key, v))
+    assert code.value == field.default
+    for n in range(8):                      # clear whatever the default put there
+        code._typed(n, "")
+    assert bool(command.problems(tool, values)) == bool(field.default)
+    code._typed(0, "1")
+    code._typed(code.at, "x2")              # a letter never lands
+    assert code.at == 2 and values[field.key] == "12"
+    assert command.problems(tool, values) == [f"{field.label}: all eight digits" +
+                                              ("." if field.default else ", or none.")]
+    code._typed(2, "x")
+    assert values[field.key] == "12" and code.at == 2
+    code._typed(2, "34 5-678")              # a pasted code keeps its digits only
+    assert values[field.key] == "12345678" and code.at == 7
+    assert command.problems(tool, values) == []
+    args = command.build(tool, values, {}, Settings())
+    assert args[args.index(field.flag) + 1] == "12345678"
+    parser_of(tool.script).parse_args(args)
+    code._typed(3, "")                      # a hole keeps the digits after it in their boxes
+    assert values[field.key] == "123 5678" and command.problems(tool, values)
+    code._typed(3, "9")
+    code.at = 7
+    code._typed(7, "")
+    code.key("Backspace")                   # the Backspace that emptied box 8 is not a second one
+    assert values[field.key] == "1239567"
+    code.cleared = (None, 0.0)
+    code.key("Backspace")
+    assert values[field.key] == "123956" and code.at == 6
+    assert widgets.DigitCode(values[field.key], lambda v: None).digits[:6] == list("123956")
 
 
 def test_settings_keep_a_six_digit_switch_id_beside_the_five_digit_one(tmp_path, monkeypatch):
@@ -611,3 +707,45 @@ def test_the_boost_settings_leave_with_the_last_unticked_boost(monkeypatch):
     assert frlg_builder.KEEP.label in texts(builder.presets())
     builder._toggle(preset, member.key)
     assert frlg_builder.KEEP.label not in texts(builder.presets())
+
+
+def test_viewer_cleanup_removes_only_this_apps_older_viewers(tmp_path, monkeypatch):
+    import flet_desktop
+    from gui import flet_client
+    folders = {name: tmp_path / name for name in ("current", "marked", "legacy-mac", "other-app", "vanilla")}
+    for folder in folders.values():
+        folder.mkdir()
+    (folders["marked"] / flet_client.MARKER).touch()
+    (folders["legacy-mac"] / "pokeldn.app").mkdir()
+    (folders["other-app"] / "Other.app").mkdir()
+    (folders["vanilla"] / "Flet.app").mkdir()
+    monkeypatch.setattr(flet_desktop, "ensure_client_cached", lambda: folders["current"])
+    removed = flet_client.prune_cache()
+    assert sorted(p.name for p in removed) == ["legacy-mac", "marked"]
+    assert sorted(p.name for p in tmp_path.iterdir()) == ["current", "other-app", "vanilla"]
+    assert (folders["current"] / flet_client.MARKER).is_file()
+
+
+# flet_desktop's own extractall passes no filter.
+@pytest.mark.filterwarnings("ignore:Python 3.14 will:DeprecationWarning")
+def test_flet_unpacks_the_xz_viewer_the_packer_writes(tmp_path, monkeypatch):
+    import tarfile
+    import flet_desktop
+    from gui import flet_client
+    bundle = tmp_path / "view" / "Flet.app"
+    bundle.mkdir(parents=True)
+    (bundle / "App").write_bytes(b"package:flet_drop")
+    bin_dir = tmp_path / "bin"
+    bin_dir.mkdir()
+    # scripts/pack_flet.py: xz under the name flet_desktop looks for.
+    with tarfile.open(bin_dir / "flet-macos.tar.gz", "w:xz") as archive:
+        archive.add(bundle, arcname="Flet.app")
+    monkeypatch.setenv("HOME", str(tmp_path / "home"))
+    monkeypatch.setattr(flet_desktop, "get_package_bin_dir", lambda: str(bin_dir))
+    monkeypatch.setattr(flet_desktop, "get_artifact_filename", lambda: "flet-macos.tar.gz")
+    monkeypatch.setattr(flet_desktop, "tarfile", tarfile)
+    with pytest.raises(tarfile.ReadError):
+        flet_desktop.ensure_client_cached()
+    flet_client.read_any_compression()
+    cache = flet_desktop.ensure_client_cached()
+    assert (cache / "Flet.app" / "App").read_bytes() == b"package:flet_drop"

@@ -3,7 +3,7 @@ cursor, VAR_MYSTERY_GIFT_2..7 = stamp-slot cursors (0 absent, 1 activated, +1 pe
 FLAG_MYSTERY_GIFT_DONE = one-shot."""
 
 import re
-from dataclasses import dataclass, field
+from dataclasses import dataclass, field, fields, is_dataclass, replace
 from typing import TypeAlias
 
 from pokeldn.frlg.gift import ereader_trainer
@@ -402,6 +402,7 @@ def _validate_plain_text(text, path, *, max_encoded=None):
 # Field text placeholders: 0xFD then a source byte [decomp:charmap.txt:334]; STR_VAR_1..3 are
 # gStringVar1..3, which `buffernumberstring` fills [src/scrcmd.c:1678].
 MESSAGE_TOKENS = {
+    "{CLEAR}": b"\xFB",
     "{PLAYER}": b"\xFD\x01",
     "{STR_VAR_1}": b"\xFD\x02",
     "{STR_VAR_2}": b"\xFD\x03",
@@ -1462,12 +1463,29 @@ def build_draw_count_script(*, species, level, item=0, address=None, var_address
     return script
 
 
-def compile_definition(definition, *, flag_id=None, build=None):
+def _japanese_roman_text(value):
+    if isinstance(value, Message):
+        return replace(value, text=charmap.japanese_roman_message(value.text))
+    if isinstance(value, str):
+        return charmap.latin_text_for_japanese(value)
+    if is_dataclass(value):
+        return replace(value, **{f.name: _japanese_roman_text(getattr(value, f.name)) for f in fields(value)})
+    if isinstance(value, (list, tuple)):
+        return type(value)(_japanese_roman_text(item) for item in value)
+    if isinstance(value, dict):
+        return {key: _japanese_roman_text(item) for key, item in value.items()}
+    return value
+
+
+def _compile_definition(definition, *, flag_id=None, build=None):
     """-> one MysteryGiftDistribution for a GiftSpec, or ``{slot_slug: distribution}`` for a rally.
     `build` is the cartridge the bytes are for [builds.py]; None is French FireRed."""
     if build is not None and definition.for_build is not None:
         from pokeldn.frlg.rom import builds
         definition = definition.for_build(builds.resolve(build))
+    from pokeldn.frlg.rom import builds
+    if builds.resolve(build).language == "japanese":
+        definition = _japanese_roman_text(definition)
     validate_definition(definition, flag_id=flag_id)
     actual_flag_id = definition.card.default_flag_id if flag_id is None else flag_id
     if isinstance(definition.event, GiftSpec):
@@ -1498,3 +1516,11 @@ __all__ = [
     "compile_definition",
     "validate_definition",
 ]
+
+
+def compile_definition(definition, *, flag_id=None, build=None):
+    result = _compile_definition(definition, flag_id=flag_id, build=build)
+    from pokeldn.frlg.gift import wonder_card
+    def convert(distribution):
+        return replace(distribution, card=wonder_card.for_build(distribution.card, build))
+    return {key: convert(value) for key, value in result.items()} if isinstance(result, dict) else convert(result)

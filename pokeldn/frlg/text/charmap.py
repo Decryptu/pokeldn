@@ -1,4 +1,4 @@
-"""International Gen-3 charmap. Terminator 0xFF; name fields are fixed width and 0xFF-filled after it."""
+"""International and Japanese Gen-3 charmaps. Terminator 0xFF; name fields are fixed width and 0xFF-filled after it."""
 
 EOS = 0xFF
 PAD = 0xFF
@@ -15,7 +15,7 @@ for _i in range(26):
     _DEC[0xD5 + _i] = chr(ord("a") + _i)
 
 # Accented Latin range 0x01-0x2E from the international charmap.txt. The Japanese build reuses these bytes for
-# kana (0x01 is both A-grave and HIRAGANA A), so the kana are excluded and Japanese is not offered.
+# kana (0x01 is both A-grave and HIRAGANA A); the language selects the decoding table.
 _DEC.update({
     0x01: "\u00c0", 0x02: "\u00c1", 0x03: "\u00c2", 0x04: "\u00c7", 0x05: "\u00c8", 0x06: "\u00c9", 0x07: "\u00ca",
     0x08: "\u00cb", 0x09: "\u00cc", 0x0B: "\u00ce", 0x0C: "\u00cf", 0x0D: "\u00d2", 0x0E: "\u00d3", 0x0F: "\u00d4",
@@ -38,14 +38,28 @@ for _b, _c in _DEC.items():
     _ENC.setdefault(_c, _b)
 
 
-def decode(b, stop_at_eos=True):
+# Japanese kana and punctuation [pret charmap.txt, Hiragana/Katakana]. docs/frlg_rom_map.md.
+_JP_DEC = {**_DEC, **dict(enumerate(
+    'あいうえおかきくけこさしすせそたちつてとなにぬねのはひふへほまみむめもやゆよらりるれろわをんぁぃぅぇぉゃゅょがぎぐげござじずぜぞだぢづでどばびぶべぼぱぴぷぺぽっ' +
+    'アイウエオカキクケコサシスセソタチツテトナニヌネノハヒフヘホマミムメモヤユヨラリルレロワヲンァィゥェォャュョガギグゲゴザジズゼゾダヂヅデドバビブベボパピプペポッ', start=1)),
+    0x00: "　", 0xAB: "！", 0xAC: "？", 0xAD: "。", 0xAE: "ー", 0xB0: "‥"}
+_JP_ENC = {ch: byte for byte, ch in _JP_DEC.items()}
+_JP_ENC.update({" ": 0x00, "!": 0xAB, "?": 0xAC, ".": 0xAD, "-": 0xAE})
+
+
+def _japanese(language):
+    return language in (1, "japanese")
+
+
+def decode(b, stop_at_eos=True, *, language=None):
+    table = _JP_DEC if _japanese(language) else _DEC
     out = []
     for x in b:
         if x == EOS:
             if stop_at_eos:
                 break
             continue
-        out.append(_DEC.get(x, "."))
+        out.append(table.get(x, "."))
     return "".join(out)
 
 
@@ -94,13 +108,14 @@ def decode_message(b):
     return "".join(out)
 
 
-def encode(s, width=None, pad=PAD):
+def encode(s, width=None, pad=PAD, *, language=None):
     """With `width`: truncate, append 0xFF, pad to `width`. Mon name fields pad with 0xFF; struct LinkPlayer.name
     pads with 0x00 (InitLocalLinkPlayer over a zeroed struct). Unknown chars are dropped."""
+    table = _JP_ENC if _japanese(language) else _ENC
     out = bytearray()
     for ch in s:
-        if ch in _ENC:
-            out.append(_ENC[ch])
+        if ch in table:
+            out.append(table[ch])
     if width is not None:
         out = out[:width - 1] if width else out
         out.append(EOS)
@@ -108,3 +123,32 @@ def encode(s, width=None, pad=PAD):
             out.append(pad)
         out = out[:width]
     return bytes(out)
+
+
+def latin_text_for_japanese(text):
+    """Roman text on a Japanese cartridge, whose kana occupy the Latin accent bytes."""
+    import unicodedata
+    text = text.replace("Œ", "OE").replace("œ", "oe").replace("ß", "ss")
+    return "".join("".join(c for c in unicodedata.normalize("NFD", ch)
+                           if not unicodedata.combining(c)) if ord(ch) < 0x250 else ch
+                   for ch in text)
+
+
+def japanese_roman_message(text, *, page_break="{CLEAR}"):
+    """Fit Roman prose to the Japanese dialogue font; two lines per page [text.c]."""
+    import re
+    pages = []
+    for paragraph in latin_text_for_japanese(text).split(page_break):
+        lines = []
+        for original in paragraph.split("\n"):
+            line, width = [], 0
+            for word in original.split():
+                word_width = len(re.sub(r"\{[^}]+\}", "X" * 10, word))
+                if line and width + 1 + word_width > 26:
+                    lines.append(" ".join(line))
+                    line, width = [], 0
+                width += word_width + bool(line)
+                line.append(word)
+            lines.append(" ".join(line))
+        pages.extend("\n".join(lines[i:i + 2]) for i in range(0, len(lines), 2))
+    return page_break.join(pages)

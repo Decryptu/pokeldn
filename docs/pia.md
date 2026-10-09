@@ -186,8 +186,8 @@ one AES block.
 
 ## The protocols
 
-Read off `GetProtocolId` (vfunc4 on every `nn::pia` protocol object, a two-word body) in one pass
-over the RTTI vtables.
+From `GetProtocolId` (vfunc4 on every `nn::pia` protocol object, a two-word body), read over the
+RTTI vtables.
 
 | id | class | notes |
 |---|---|---|
@@ -337,7 +337,7 @@ the station location (one serializer call capped at 0x40 bytes), unchanged from 
 (deserializer `0x0185ee20`, same offsets, address size 2, 6 or 18), which makes [1] and [0x10] its
 nat flags and nat location.
 
-With [3] = 1 the console does not answer (96 requests measured). With [3] = 0 the console answers with its own request: its
+With [3] = 1 the console does not answer (96 requests). With [3] = 0 the console answers with its own request: its
 location, constant id, the variable id the update session gave the joiner, a service variable id, a
 nat quad, then an ack id, a per-message counter `0x017d5750` reads at message size minus four.
 
@@ -374,9 +374,9 @@ drop:
 
 A 17-byte response (`RESPONSE_SIZE`, the short-form allocation `mov w3, #0x11` at `0x017c6c30`)
 leaves `[0x37]` 38 bytes past its end, in stale buffer bytes, so whether it is read depends on
-memory the sender does not control (an emulated Shield accepted 3 of 22 byte-identical responses,
-then 0 of 49 after a restart; a retail Sword accepted those it was sent). The console's
-own accepted response is 840 bytes with 1 at `[0x37]`;
+memory the sender does not control: an emulated Shield accepted 3 of 22 byte-identical responses
+and, after a restart, 0 of 49; a retail Sword accepted those it was sent. The console's own
+accepted response is 840 bytes with 1 at `[0x37]`;
 `station4.build_connection_response(..., min_size=ACCEPTED_RESPONSE_SIZE)` pads to 0x38 and writes 1.
 
 After the response: the console's connection response is acceptance; its request retransmitted every
@@ -503,8 +503,8 @@ A retail console's ack to sequences 0 and 1:
 
 No flags, stream 0, sequence id 0xFFFF (a control message has no sequence), then the lowest id the
 sender still waits on. `ack id` is one more than the highest sequence received.
-`pokeldn/ldn/reliable5.build_ack_message()` reproduces it byte for byte. Sweeping the sequence id of
-a data message measures the ack format: sequence 0 draws nothing, sequence 1 draws the ack.
+`pokeldn/ldn/reliable5.build_ack_message()` reproduces it byte for byte. A data message with sequence 0 draws
+no ack; sequence 1 draws the ack.
 
 ### What the receiver discards in silence
 

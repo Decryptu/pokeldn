@@ -19,8 +19,8 @@ VERSIONS = {
     "firered": linkplayer.VERSION_FIRE_RED,
     "leafgreen": linkplayer.VERSION_LEAF_GREEN,
 }
-# Japanese is absent: its kana table shares byte values with the accented Latin range in charmap.py.
 LANGUAGES = {
+    "japanese": linkplayer.LANGUAGE_JAPANESE,
     "english": linkplayer.LANGUAGE_ENGLISH,
     "french": linkplayer.LANGUAGE_FRENCH,
     "italian": linkplayer.LANGUAGE_ITALIAN,
@@ -48,11 +48,12 @@ class TrainerProfile:
     def __post_init__(self):
         if not isinstance(self.name, str):
             raise ValueError("trainer name must be a string")
-        encoded = charmap.encode(self.name)
-        if not self.name or charmap.decode(encoded) != self.name:
+        encoded = charmap.encode(self.name, language=self.language)
+        if not self.name or charmap.decode(encoded, language=self.language) != self.name:
             raise ValueError("trainer name contains unsupported Gen III characters")
-        if len(encoded) > 7:
-            raise ValueError("trainer name must encode to at most 7 Gen III characters")
+        limit = 5 if self.language == "japanese" else 7
+        if len(encoded) > limit:
+            raise ValueError(f"trainer name must encode to at most {limit} Gen III characters")
         if (type(self.tid) is not int or type(self.sid) is not int
                 or not 0 <= self.tid <= 0xFFFF or not 0 <= self.sid <= 0xFFFF):
             raise ValueError("TID and SID must each fit in 16 bits")
@@ -642,6 +643,7 @@ class BufferScriptPayload:
                 fixed_personality=self.create_mon_personality if has_fixed else 0,
                 ot_id_type=self.create_mon_ot_id_type, fixed_ot_id=self.create_mon_ot_id,
                 destination=self.create_mon_destination,
+                party_base=build.ewram.get("party"), party_count=build.ewram.get("party_count"),
                 party_append=(buffer_script.PARTY_APPEND_DRY_RUN
                               if self.create_mon_append_dry_run
                               else buffer_script.PARTY_APPEND_WRITE if self.create_mon_append
@@ -740,8 +742,8 @@ class WonderNewsPayload:
         return wonder_news.build_news(self.news, news_id=self.news_id)
 
     def build_distribution(self, build=None):
-        """Text only: the same bytes for every build."""
-        return MysteryGiftDistribution(None, None, news=self.build_news())
+        """Text only, encoded for the selected cartridge."""
+        return MysteryGiftDistribution(None, None, news=wonder_news.for_build(self.build_news(), build))
 
 
 def _mystery_gift_host_defaults():
@@ -914,6 +916,8 @@ def profile_from_overrides(*, ot=None, version=None, language=None, trainer_id=N
         changes["version"] = version
     if language is not None:
         changes["language"] = language
+        if language == "japanese" and ot is None:
+            changes["name"] = base.name[:5]
     if trainer_id is not None:
         tid, sid = trainer_id
         changes["tid"] = tid

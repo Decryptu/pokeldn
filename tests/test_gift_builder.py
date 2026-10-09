@@ -298,3 +298,19 @@ def test_pkhex_takes_every_sword_preset_and_refuses_what_the_game_cannot_hold():
     struct.pack_into("<II", cape, 0x20, 15, 0)                # the setter 0x0143a450 takes categories 0..14
     with pytest.raises(pokemon.BuilderError, match="clothing"):
         pokemon.SERVICE.validate_gift(wc8.seal(cape))
+
+
+@pytest.mark.skipif(not _pkhex_available(), reason="needs the PKHeX helper")
+def test_the_sword_item_picker_offers_exactly_what_the_validator_accepts():
+    """The picker once listed the whole item table: 790 refused ids, 51 of them "???" placeholders."""
+    from pokeldn import pokemon
+    offered = {e["id"]: e["name"] for e in pokemon.SERVICE.names("swsh", "bag")}
+    accepted = set()
+    for item in range(1, swsh.MAX_ITEM + 1):
+        try:
+            pokemon.SERVICE.validate_gift(swsh.record(swsh.blank(kind="items", items=[[item, 1]])))
+            accepted.add(item)
+        except pokemon.BuilderError:
+            pass
+    assert set(offered) == accepted
+    assert "???" not in offered.values()

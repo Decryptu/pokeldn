@@ -121,6 +121,10 @@ COLOSSEUM_SPOT_ROUTE = (
 )
 
 
+# The blocks an online partner's console sends in place of ours, with their sizes [trade.c:1444-1560].
+ONLINE_BLOCKS = {"party:0": 200, "party:1": 200, "party:2": 200, "mail": 220, "ribbons": 40}
+
+
 class HostTradeEngine:
     ECHO_WAIT_MAX_POLLS = ECHO_WAIT_MAX_POLLS
     """Call feed_child_slot(cmd14) for each *new* child UNI command and tick() once per VBlank; after
@@ -134,8 +138,15 @@ class HostTradeEngine:
                  link_player=None, profile=None, anim_delay=1935, trust_pia=True, timing=None,
                  union_room=False, union_room_chat=False, chat_messages=None,
                  union_room_battle=False, battle_forfeit=True, battle_move_slot=0,
-                 colosseum=False, card_flag_id=0, log=lambda *a: None):
+                 colosseum=False, card_flag_id=0, log=lambda *a: None, partner=None):
         self.party = list(party)
+        # Online (pokeldn.online): the partner's console's blocks answer this console's, pair by
+        # pair; its pick is our SET_MONS and START_TRADE waits for both consoles' YES
+        # (docs/online.md).
+        self.partner = partner
+        self._held = None                  # the block of ours waiting for the partner's
+        self._refused = None
+        self._set_mons_sent = self._console_yes = False
         if not 1 <= len(self.party) <= 6:
             raise ValueError("party must contain 1..6 Pokémon")
         if not 1 <= trades <= 6:
@@ -383,6 +394,10 @@ class HostTradeEngine:
     def _request_and_send(self, reqtype, data, expected):
         self._expected = expected
         self._queue_words(rfu.send_block_req_words(reqtype), f"BLOCK_REQ:{reqtype}:{expected}")
+        if self.partner is not None and expected in ONLINE_BLOCKS:
+            # The console waits for both blocks with no timer [trade.c:1478].
+            self._held, self._held_own = expected, bytes(data)
+            return
         self._queue_block(data, f"host:{expected}")
 
     def _send_linkcmd(self, cmd, cursor=0):
@@ -411,7 +426,7 @@ class HostTradeEngine:
 
     def _finish_party_exchange(self):
         self._expected = None
-        if self.round >= self.trades:
+        if self.round >= self.trades and self.partner is None:
             self._set_state(H_LEAVE_MENU)
             self._leave_menu_wait = self.timing.final_menu_ready_frames
             self._host_cancel_ready = False
@@ -432,7 +447,7 @@ class HostTradeEngine:
         if child_already_exited:
             self.info("Switch exited the room first; sending the Linux EXIT_ROOM response.")
         else:
-            self.info("Five-second room delay complete; Linux is exiting the trade room.")
+            self.info("Five-second room delay complete; leaving the trade room.")
 
     def _complete_room_exit(self):
         if self.state != H_EXIT:
@@ -570,6 +585,8 @@ class HostTradeEngine:
                 return
             self._expected = "warp1"
             return
+        if self.partner is not None and expected in ONLINE_BLOCKS:
+            self.partner.share(expected, bytes(data[:ONLINE_BLOCKS[expected]]))
         if expected and expected.startswith("party:"):
             i = int(expected.split(":", 1)[1])
             self.child_party[i * 200:(i + 1) * 200] = data[:200]
@@ -685,6 +702,9 @@ class HostTradeEngine:
             self._begin_card_exchange()
 
     def _idle_party_link_settle(self):
+        if self._held is not None:
+            self._link_idle_frames = 0       # the console's link task waits on our block
+            return
         self._link_idle_frames += 1
         if self._link_idle_frames >= self.timing.party_link_settle_frames:
             completed = self._link_completed
@@ -829,7 +849,8 @@ class HostTradeEngine:
                 "Switch confirmed it left the chat; closing now."
                 if self._chat_exiting else
                 "Switch confirmed it left the trade room; keeping peer traffic active "
-                "for 15 seconds before disconnecting.")
+                f"for {self.timing.post_client_close_grace_frames / 60:g} seconds before "
+                "disconnecting.")
 
     def _on_child_block(self, count, data):
         self._child_blocks_landed += 1
@@ -918,6 +939,15 @@ class HostTradeEngine:
 
     def _on_child_linkcmd(self, cmd, cursor):
         self.trace.append(("child_linkcmd", trade.LINKCMD_NAMES.get(cmd, hex(cmd)), cursor))
+        if self.partner is not None and self._online_linkcmd(cmd, cursor):
+            return
+        if cmd == trade.READY_CANCEL_TRADE and self.state == H_CONFIRM:
+            # NO on the prompt, or a partner mon the console refuses: the native leader answers
+            # PLAYER_CANCEL_TRADE and both return to the menu [trade.c:1740-1748].
+            self._send_linkcmd(trade.PLAYER_CANCEL_TRADE)
+            self._set_state(H_SELECT)
+            self.info("The Switch declined the trade; back to the trade menu.")
+            return
         if cmd == trade.READY_TO_TRADE and self.state == H_SELECT:
             self.child_cursor = cursor % 6
             self._set_state(H_CONFIRM)
@@ -954,6 +984,85 @@ class HostTradeEngine:
                 "Switch selected another trade; Linux declined it. Dismiss the message, then "
                 "select CANCEL and confirm YES to leave.")
 
+    def _online_linkcmd(self, cmd, cursor):
+        """-> True when the online partner owns this command."""
+        if cmd == trade.READY_TO_TRADE and self.state == H_SELECT and self.partner.state == "lost":
+            # A leader that chose Cancel answers a pick so [trade.c:1712]: "Canceled", back to the
+            # menu, where Cancel leaves.
+            self.child_cursor = cursor % 6
+            self._send_linkcmd(trade.PLAYER_CANCEL_TRADE)
+            self.info("[online] the partner is gone; choose Cancel on the Switch to leave.")
+            return True
+        if cmd == trade.READY_TO_TRADE and self.state == H_SELECT:
+            self.child_cursor = cursor % 6
+            self._set_state(H_CONFIRM)
+            self._set_mons_sent = self._console_yes = False
+            self.partner.share("pick", bytes([self.child_cursor]))
+            self.partner.offer(self.incoming_mon().raw)
+            self.info("The Switch picked a Pokemon; waiting for the partner's pick.")
+            return True
+        if cmd == trade.INIT_BLOCK and self.state == H_CONFIRM:
+            self._console_yes = True
+            self.partner.accept()
+            self.info("The Switch said YES; waiting for the partner's.")
+            return True
+        if cmd == trade.READY_CANCEL_TRADE and self.state == H_CONFIRM:
+            self.partner.withdraw()
+            return False
+        if cmd == trade.REQUEST_CANCEL and self.state == H_SELECT:
+            # The player leaves the trade: the partner hears it now, not when the room closes.
+            self.partner.close("left the trade")
+        return False
+
+    def _tick_online(self):
+        theirs = self.partner.theirs()
+        if self._held is not None:
+            block_data = theirs.shared.get(self._held)
+            if block_data is not None and self._partner_block_readable(block_data):
+                self._queue_block(block_data, f"host:{self._held}:partner")
+                self._held = None
+            elif self.partner.state == "lost":
+                # The console cannot leave mid-exchange: finish it with our own empty party, then
+                # its pick is answered with a cancel.
+                self._queue_block(self._held_own, f"host:{self._held}")
+                self._held = None
+        if self.state != H_CONFIRM:
+            return
+        pick = theirs.shared.get("pick")
+        if not self._set_mons_sent and theirs.offer is not None and pick:
+            self._set_mons_sent = True
+            self._send_linkcmd(trade.SET_MONS_TO_TRADE, pick[0] % 6)
+        elif (self._set_mons_sent or self.partner.state == "lost") and theirs.offer is None:
+            # The partner took theirs back, or is gone: the console returns to the menu
+            # [trade.c:1740-1748].
+            self._send_linkcmd(trade.PLAYER_CANCEL_TRADE)
+            self._set_state(H_SELECT)
+            self.partner.withdraw()
+            self.info("[online] the partner is gone; choose Cancel on the Switch to leave."
+                      if self.partner.state == "lost" else
+                      "The partner cancelled; back to the trade menu.")
+        elif self._set_mons_sent and self._console_yes and theirs.accepted:
+            self._set_state(H_ANIM)
+            self.anim_starts += 1
+            self._anim_wait = self.anim_delay
+            self._send_linkcmd(trade.START_TRADE)
+
+    def _partner_block_readable(self, block_data):
+        """A party block reaches the console only when PKHeX can read each Pokemon in it."""
+        if not self._held.startswith("party:") or self.partner.validate is None:
+            return True
+        for at in range(0, len(block_data), monmod.PARTY_MON_SIZE):
+            raw = block_data[at:at + monmod.PARTY_MON_SIZE]
+            if any(raw):
+                reason, _ = self.partner.validate(raw)
+                if reason:
+                    if self._refused != self._held:
+                        self._refused = self._held
+                        self.partner.refuse(reason)
+                        self.info(f"[online] refused the partner's party: {reason}")
+                    return False
+        return True
+
     def incoming_mon(self):
         """The console's chosen Pokemon, the one `_commit` takes, or None before it chose."""
         if self.child_cursor is None:
@@ -962,14 +1071,18 @@ class HostTradeEngine:
         return monmod.Mon(bytes(self.child_party[off:off + monmod.PARTY_MON_SIZE]))
 
     def _commit(self):
-        host_slot = self.offered_slots[self.round]
+        # Online, our party is the partner's; ours keeps the placeholder it started with.
+        host_slot = self.offered_slots[self.round] if self.partner is None else None
         child_slot = self.child_cursor
         received = self.incoming_mon()
         if received is None:
             raise RuntimeError("cannot commit without child selection")
         self.received_mons.append(received)
-        self.party[host_slot] = received
+        if host_slot is not None:
+            self.party[host_slot] = received
         self.round += 1
+        if self.partner is not None:
+            self.partner.done()
         self.commits += 1
         self.trace.append(("commit", self.commits, host_slot, child_slot))
         self._send_linkcmd(trade.CONFIRM_FINISH_TRADE)
@@ -996,6 +1109,8 @@ class HostTradeEngine:
             self._tick_anim()
         if self.state == H_UROOM_CHAT:
             self._tick_chat_exit() if self._chat_exiting else self._tick_chat_outbox()
+        if self.partner is not None:
+            self._tick_online()
         return self._next_parent_words()
 
     def _on_colosseum_link_player(self, data):
@@ -1179,7 +1294,7 @@ class HostTradeEngine:
             done = self.timing.post_cancel_exit_wait_frames - self._room_exit_wait
             self.info(
                 f"Room-exit buffer {done}/{self.timing.post_cancel_exit_wait_frames} frames; "
-                f"still waiting before Linux walks out.")
+                f"still waiting before leaving.")
         if self._room_exit_wait <= 0:
             self._begin_room_exit()
 
@@ -1190,8 +1305,7 @@ class HostTradeEngine:
                 self._close_grace_wait = None
                 self.disconnect_requested = True
                 self.trace.append(("close_grace_complete",))
-                self.info(
-                    "Fifteen-second room-exit buffer complete; closing the RFU session.")
+                self.info("Room-exit grace complete; closing the RFU session.")
         self._close_retry_wait -= 1
         if self._close_retry_wait <= 0:
             for _ in range(self.timing.startup_standby_echo_frames):

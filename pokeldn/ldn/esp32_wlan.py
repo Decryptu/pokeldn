@@ -3,6 +3,7 @@
 other frames go to an L2 port: a Linux TAP, a userspace IP stack, or a `MemoryPort` for tests.
 """
 
+import _thread
 import contextlib
 import math
 import os
@@ -473,6 +474,13 @@ def set_access_point_mac(mac) -> None:
     access_point_mac = None if mac is None else wlan.MACAddress(mac)
 
 
+def board_lost(log=None) -> None:
+    """Ends the run as the app's Stop does: a board that left USB never comes back to this process."""
+    (log or print)("[esp32] The board disconnected from USB. Try another USB port or cable; if a screen "
+                   "is wired to the board, try without it.")
+    _thread.interrupt_main()
+
+
 def use(port: str | None = None, *, radio: esp32.Radio | None = None, port_factory=None,
         ap_flags: int = 0, ap_flags2: int = 0, log=None) -> esp32.Radio:
     """Routes every later `ldn.scan` / `ldn.connect` / `ldn.create_network` through the board.
@@ -480,7 +488,7 @@ def use(port: str | None = None, *, radio: esp32.Radio | None = None, port_facto
     global _radio
     if radio is None:
         if _radio is None:
-            _radio = esp32.Radio.open_serial(port, log=log)
+            _radio = esp32.Radio.open_serial(port, log=log, on_lost=lambda error: board_lost(log))
         radio = _radio
     else:
         _radio = radio

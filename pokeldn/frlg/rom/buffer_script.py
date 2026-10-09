@@ -1814,10 +1814,11 @@ SAVE_SLOT_LAYOUT_ADDRESS = 0x083F58C4
 SECTOR_CHUNK_MIN = 2000
 
 
-def sector_chunk_size(sector_id):
+def sector_chunk_size(sector_id, build=None):
     """-> how many bytes of sector `sector_id` the game's checksum covers."""
     try:
-        return SECTOR_CHUNK_SIZES[int(sector_id)]
+        return (builds.resolve(build).saveblock1_size - 3 * SECTOR_DATA_SIZE
+                if int(sector_id) == 4 else SECTOR_CHUNK_SIZES[int(sector_id)])
     except KeyError:
         raise BufferScriptError(
             f"sector id {sector_id} is not one of the {len(SECTOR_CHUNK_SIZES)} a save slot "
@@ -1860,7 +1861,7 @@ def build_flash_write(sector, *, source=FLASH_WRITE_SCRATCH, fill_base=0x4657000
     if footer and words == FLASH_WRITE_WORDS:
         # Fill the id's own chunk and leave the rest zero, as the game does; a full fill would fail
         # the game's chunk checksum.
-        words = (sector_chunk_size(sector_id) if position is None
+        words = (sector_chunk_size(sector_id, build) if position is None
                  else SECTOR_CHUNK_MIN) // 4
     if not 1 <= words <= FLASH_WRITE_WORDS:
         raise BufferScriptError(
@@ -2147,7 +2148,9 @@ RESIDENT_DATA = {"p_frames": 20, "p_ring": 140, "p_state": 36, "p_words": 12, "p
 RESIDENT_DATA_FLOOR = 0x0203FBB4
 # The follower's line when A is pressed facing it, by cartridge language: FD 02 is STR_VAR_1, the
 # lead's nickname; FE a line break [charmap.txt]. asm/resident/follower.s, p_text.
-FOLLOWER_TEXT = {"french": ("saute", "de joie !"), "english": ("jumps", "for joy!")}
+FOLLOWER_TEXT = {"french": ("saute", "de joie !"), "english": ("jumps", "for joy!"),
+                 "spanish": ("salta", "de gozo!"), "italian": ("salta", "di gioia!"),
+                 "german": ("hüpft", "vor Freude"), "japanese": ("jumps", "for joy!")}
 FOLLOWER_TEXT_SIZE = 20
 R_BUTTON = 0x100
 # gHelpSystemToggleWithRButtonDisabled, French [RunHelpSystemCallback's literal, 0x0813F6FC].
@@ -2235,9 +2238,12 @@ def resident_blob(name, *, build=None, **params):
     unknown = set(params) - set(defaults)
     if unknown:
         raise BufferScriptError(f"{name} takes {sorted(defaults)}, not {sorted(unknown)}")
+    build = builds.resolve(build)
+    defaults = {key: build.ewram.get("party" if key == "mon" else key, value)
+                for key, value in defaults.items()}
     params = {**defaults, **params}
     if name in ("turbo", "turbo-lite") and params["hold"] & R_BUTTON and "help" not in explicit:
-        params["help"] = HELP_R_DISABLED  # held R would open the Help System
+        params["help"] = build.ewram.get("help", HELP_R_DISABLED)  # held R would open the Help System
     if name == "shiny" and "state" in explicit and "overlay" not in explicit:
         params["overlay"] = params["state"] + 24  # the word the hook shows
     if name == "follower" and params["deoxys"] is None:
@@ -2248,9 +2254,12 @@ def resident_blob(name, *, build=None, **params):
         params["overlay"], params["overlay2"] = params["words"], params["words"] + 4
     symbols = STUBS[name][2]
     literals = {key: value for key, value in builds.resolve(build).hook_literals().items()
-                if f"p_{key}" in symbols}
+                if f"p_{key}" in symbols and key not in params}
     words = native_script.resident_words(name, **params, **literals)
     blob = b"".join(w.to_bytes(4, "little") for w in words)
+    if build.language == "japanese" and name in ("turbo", "turbo-lite"):
+        at = symbols["printer_stride"]
+        blob = blob[:at] + b"\x20" + blob[at + 1:]
     if name == "follower":
         from pokeldn.frlg.text import charmap
         first, second = FOLLOWER_TEXT[builds.resolve(build).language]
@@ -2379,7 +2388,7 @@ def build_flash_patch(sector_id, patch_offset, data, *, scratch=FLASH_WRITE_SCRA
             "flash-patch edits a live save sector in place. Pass unsafe=True to mean it.")
     if sector_id not in SECTOR_CHUNK_SIZES:
         raise BufferScriptError(f"sector id {sector_id} is not one a save slot carries")
-    chunk = sector_chunk_size(sector_id)
+    chunk = sector_chunk_size(sector_id, build)
     if not 1 <= len(data) <= FLASH_PATCH_MAX_BYTES:
         raise BufferScriptError(
             f"a patch carries 1..{FLASH_PATCH_MAX_BYTES} bytes, got {len(data)}")
@@ -2405,10 +2414,10 @@ def build_flash_patch(sector_id, patch_offset, data, *, scratch=FLASH_WRITE_SCRA
 
 def flash_write_source(fill_base=0x46570000, fill_step=1, words=FLASH_WRITE_WORDS,
                        footer=False, sector_id=0, counter=0, signature=SECTOR_SIGNATURE,
-                       position=None):
+                       position=None, build=None):
     """-> the exact bytes build_flash_write makes the console compose, for verifying the sector."""
     if footer and words == FLASH_WRITE_WORDS:
-        words = (sector_chunk_size(sector_id) if position is None else SECTOR_CHUNK_MIN) // 4
+        words = (sector_chunk_size(sector_id, build) if position is None else SECTOR_CHUNK_MIN) // 4
     pattern = b"".join(((int(fill_base) + i * int(fill_step)) & 0xFFFFFFFF).to_bytes(4, "little")
                        for i in range(int(words)))
     if not footer:
@@ -2417,7 +2426,7 @@ def flash_write_source(fill_base=0x46570000, fill_step=1, words=FLASH_WRITE_WORD
     out[0:len(pattern)] = pattern
     out[SECTOR_FOOTER_AT:SECTOR_FOOTER_AT + 2] = (int(sector_id) & 0xFFFF).to_bytes(2, "little")
     out[SECTOR_FOOTER_AT + 2:SECTOR_FOOTER_AT + 4] = sector_checksum(
-        out, sector_chunk_size(sector_id)).to_bytes(2, "little")
+        out, sector_chunk_size(sector_id, build)).to_bytes(2, "little")
     out[SECTOR_FOOTER_AT + 4:SECTOR_FOOTER_AT + 8] = (int(signature) & 0xFFFFFFFF).to_bytes(4, "little")
     out[SECTOR_FOOTER_AT + 8:SECTOR_FOOTER_AT + 12] = (int(counter) & 0xFFFFFFFF).to_bytes(4, "little")
     return bytes(out)
@@ -2764,18 +2773,23 @@ class _Machine:
         uc.mem_map(_RETURN_ADDRESS, 0x1000)
         # The chip is 128 KiB, erased; the CPU sees a 64 KiB window one bank at a time. swi 0x48
         # addresses the chip linearly, a guest load the window, so both are modelled.
-        self.uc = uc  # _show_bank needs it before the rest
+        # The window is I/O: a load reads the selected bank, a store is a command and lands nowhere.
+        self.uc = uc
         self.flash = bytearray(b"\xFF" * FLASH_SIZE)
         self.flash_bank = 0
-        uc.mem_map(FLASH_WINDOW_BASE, FLASH_WINDOW_SIZE)
+        uc.mmio_map(FLASH_WINDOW_BASE, FLASH_WINDOW_SIZE, self._on_flash_load, None,
+                    self._on_flash_store, None)
         self.flash_writes = []          # (number, sector, source, accepted, why)
         self.flash_reads = []           # (sector, offset, dest, length)
         self.bkpts = []                 # the immediate of each bkpt executed
-        uc.hook_add(unicorn.UC_HOOK_MEM_WRITE, self._on_flash_store,
-                    begin=FLASH_WINDOW_BASE, end=FLASH_WINDOW_BASE + FLASH_WINDOW_SIZE - 1)
         uc.hook_add(unicorn.UC_HOOK_INTR, self._on_swi)
         entry = build.read_flash
         uc.hook_add(unicorn.UC_HOOK_CODE, self._on_readflash, begin=entry, end=entry)
+        # On the stand-in ROM LoadGameSave is `bx lr`; the hook sets r0 before it runs.
+        self.loads = []                 # LoadGameSave: (result, the loaded copy's counter)
+        self._load_game_save = build.load_game_save
+        uc.hook_add(unicorn.UC_HOOK_CODE, self._on_load_game_save,
+                    begin=build.load_game_save, end=build.load_game_save)
 
         def word(offset, value):
             uc.mem_write(_CLIENT_ADDRESS + offset, (value & 0xFFFFFFFF).to_bytes(4, "little"))
@@ -2809,24 +2823,23 @@ class _Machine:
                 self.flash[:len(blob)] = bytes(blob)     # the chip, not the aperture
             else:
                 uc.mem_write(address, bytes(blob))
-        self._show_bank()
+        if rom is None and not (memory or {}).get(self._load_game_save):
+            uc.mem_write(self._load_game_save, b"\x70\x47")     # bx lr on the blank stand-in ROM
 
         self.uc = uc
         self.armed_size = send_size
         self._sav2_len, self._sav1_len = len(sav2), len(sav1)
         self.calls = 0
 
-    def _show_bank(self):
-        """Put the selected bank in the aperture, undoing the command bytes a bank select stores."""
-        at = self.flash_bank * FLASH_WINDOW_SIZE
-        self.uc.mem_write(FLASH_WINDOW_BASE, bytes(self.flash[at:at + FLASH_WINDOW_SIZE]))
+    def _on_flash_load(self, uc, offset, size, user_data=None):
+        at = self.flash_bank * FLASH_WINDOW_SIZE + offset
+        return int.from_bytes(self.flash[at:at + size], "little")
 
-    def _on_flash_store(self, uc, access, address, size, value, user_data=None):
+    def _on_flash_store(self, uc, offset, size, value, user_data=None):
         """A store into the aperture is a command. Only the bank select is modelled
         [decomp:src/agb_flash.c SwitchFlashBank]."""
-        if address == FLASH_WINDOW_BASE and size == 1 and value in (0, 1):
+        if offset == 0 and size == 1 and value in (0, 1):
             self.flash_bank = value
-        self._show_bank()
 
     def _on_readflash(self, uc, address, size, user_data=None):
         """Model ReadFlash: copy `size` bytes of sector `sectorNum` into `dest`. Its REG_WAITCNT
@@ -2843,6 +2856,36 @@ class _Machine:
         cpsr = uc.reg_read(arm.UC_ARM_REG_CPSR)
         uc.reg_write(arm.UC_ARM_REG_CPSR, cpsr | (1 << 5) if link & 1 else cpsr & ~(1 << 5))
         uc.reg_write(arm.UC_ARM_REG_PC, link & ~1)
+
+    def _on_load_game_save(self, uc, address, size, user_data=None):
+        """Model LoadGameSave(SAVE_NORMAL): SAVE_STATUS_OK (1) when the chip holds a whole copy, the
+        newest taken as GetSaveValidStatus takes it, else SAVE_STATUS_CORRUPT (2)
+        [decomp:src/save.c:803]."""
+        from pokeldn.frlg.save import sav
+        arm = self._arm
+        summary = sav.describe(bytes(self.flash))
+        result = 1 if summary.sound else 2
+        self.loads.append((result, summary.newest.counter if summary.sound else None))
+        uc.reg_write(arm.UC_ARM_REG_R0, result)
+
+    def load(self, code, *, param, send_size=4, send_ident=0):
+        """The session's next CLI_RUN_BUFFER_SCRIPT: the 1 KiB receive buffer over
+        gDecompressionBuffer [mystery_gift_client.c:239] and the send as CLI_LOAD_TOSS_RESPONSE
+        armed it; everything else stays as the last payload left it."""
+        uc = self.uc
+
+        def word(offset, value):
+            uc.mem_write(_CLIENT_ADDRESS + offset, (value & 0xFFFFFFFF).to_bytes(4, "little"))
+
+        code = bytes(code)
+        uc.mem_write(GDECOMPRESSION_BUFFER, code)
+        uc.mem_write(_RECV_BUFFER_ADDRESS, code)
+        word(CLIENT_PARAM, int(param))
+        word(CLIENT_LINK + LINK_SEND_BUFFER, _SEND_BUFFER_ADDRESS)
+        uc.mem_write(_CLIENT_ADDRESS + CLIENT_LINK + LINK_SEND_SIZE, (send_size & 0xFFFF).to_bytes(2, "little"))
+        uc.mem_write(_CLIENT_ADDRESS + CLIENT_LINK + LINK_SEND_IDENT, (send_ident & 0xFFFF).to_bytes(2, "little"))
+        uc.mem_write(_SEND_BUFFER_ADDRESS, int(param).to_bytes(4, "little"))
+        self.armed_size = send_size
 
     def _on_swi(self, uc, intno, user_data=None):
         """Model the Sloop sector syscalls, as measured on the FR emulator: swi 0x48 copies 0x1000
@@ -2879,7 +2922,6 @@ class _Machine:
             self.flash[offset:offset + FLASH_SECTOR_SIZE] = payload_bytes
             if number == SWI_REPLACE_SECTOR:
                 self.flash[offset + SECTOR_SIGNATURE_OFFSET_IN_SECTOR] = 0xFF
-            self._show_bank()
         elif number == SWI_REPLACE_SECTOR:
             raise BufferScriptError(
                 f"swi 0x56 with a rejected destination aborts: {why}. On the console that is the "
@@ -2945,6 +2987,12 @@ class _Machine:
             client=client,
             pending_send=pending,
         )
+
+
+def session_machine(code, **kwargs):
+    """A console whose memory and flash outlive one payload, as within one Mystery Gift session:
+    call() runs a frame, load() hands it the session's next payload. Keywords as emulate()."""
+    return _Machine(code, **kwargs)
 
 
 def emulate(code, *, param=0, sav2=b"", sav1=b"", memory=None, send_size=4,

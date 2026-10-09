@@ -1,6 +1,6 @@
-/* The LED: LEDC PWM on GPIO2 (classic ESP32) or GPIO15 (XIAO ESP32C6), recomputed every 10 ms by
-   a priority-1 task on the last core, below the wire tasks (19 to 21). It reads counters the radio
-   already keeps. docs/hardware_esp32.md, The board's LED and buttons. */
+/* The LED: LEDC PWM on GPIO2 (classic ESP32), GPIO21 (XIAO ESP32S3) or GPIO15 (XIAO ESP32C6),
+   recomputed every 10 ms by a priority-1 task on the last core, below the wire tasks (19 to 21).
+   It reads counters the radio already keeps. docs/hardware_esp32.md, The board's LED and buttons. */
 #include <math.h>
 #include <stdbool.h>
 
@@ -15,6 +15,9 @@
 #if CONFIG_IDF_TARGET_ESP32
 #define LED_GPIO 2
 #define LED_INVERT 0
+#elif CONFIG_IDF_TARGET_ESP32S3
+#define LED_GPIO 21     /* the XIAO ESP32S3's yellow LED, lit while low */
+#define LED_INVERT 1
 #elif CONFIG_IDF_TARGET_ESP32C6
 #define LED_GPIO 15     /* the XIAO ESP32C6's yellow LED, lit while low */
 #define LED_INVERT 1
@@ -149,7 +152,7 @@ static void led_task(void *arg)
                       (uint32_t)lroundf(powf(clamp01(shown_level), 2.2f) * DUTY_MAX));
         ledc_update_duty(LEDC_LOW_SPEED_MODE, LEDC_CHANNEL_0);
 #else
-        (void)shown_level;   /* S3 and C3 LED wiring varies; keep BOOT markers active. */
+        (void)shown_level;   /* C3 LED wiring varies; keep BOOT markers active. */
 #endif
         vTaskDelayUntil(&wake, pdMS_TO_TICKS(TICK_MS));
     }

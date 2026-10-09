@@ -274,7 +274,7 @@ class LiveTransport:
 
     def start(self, timeout=30, attempts=3, settle=1.5):
         """Join, retrying through radio busy, association timeouts and stale vifs."""
-        last_err = None
+        errors = []
         for attempt in range(1, attempts + 1):
             free_radio({self.phyname}, self.log)
             self._err = None
@@ -283,11 +283,11 @@ class LiveTransport:
             self._thread = threading.Thread(target=self._run_ldn, daemon=True)
             self._thread.start()
             if not self._ready.wait(timeout):
-                last_err = f"LDN join timed out after {timeout}s (attempt {attempt}/{attempts})"
-                self.log(f"[live] {last_err}")
+                errors.append(f"timed out after {timeout}s")
+                self.log(f"[live] LDN join timed out after {timeout}s (attempt {attempt}/{attempts})")
                 self._stop.set()
             elif self._err:
-                last_err = self._err
+                errors.append(self._err)
             else:
                 tune_iface(self.iface, self.our_ip, self.broadcast, self.log)
                 disable_power_save(self.iface, self.info)
@@ -303,7 +303,8 @@ class LiveTransport:
                          f"(attempt {attempt + 1}/{attempts})...")
                 time.sleep(settle)
         light_cleanup(self.log)
-        raise RuntimeError(f"LDN join failed after {attempts} attempt(s):\n{last_err}")
+        detail = "\n".join(f"attempt {n}: {e}" for n, e in enumerate(errors, 1))
+        raise RuntimeError(f"LDN join failed after {attempts} attempt(s):\n{detail}")
 
     def _run_ldn(self):
         try:
@@ -769,7 +770,7 @@ class HostTransport:
             self.info(message)
         if preflight:
             preflight_host(self.phyname, self.log)
-        last_err = None
+        errors = []
         for attempt in range(1, attempts + 1):
             free_radio({self.phyname}, self.log)
             self._err = None
@@ -778,11 +779,11 @@ class HostTransport:
             self._thread = threading.Thread(target=self._run_host, daemon=True)
             self._thread.start()
             if not self._ready.wait(timeout):
-                last_err = f"LDN host bring-up timed out after {timeout}s (attempt {attempt}/{attempts})"
-                self.log(f"[host] {last_err}")
+                errors.append(f"timed out after {timeout}s")
+                self.log(f"[host] LDN host bring-up timed out after {timeout}s (attempt {attempt}/{attempts})")
                 self._stop.set()
             elif self._err:
-                last_err = self._err
+                errors.append(self._err)
             else:
                 self._assert_vifs()
                 tune_iface(self.iface, self.our_ip, self.broadcast, self.log)
@@ -797,7 +798,9 @@ class HostTransport:
                 self.log(f"[host] retrying AP bring-up in {settle}s (attempt {attempt + 1}/{attempts})...")
                 time.sleep(settle)
         light_cleanup(self.log)
-        raise RuntimeError(f"LDN host bring-up failed after {attempts} attempt(s):\n{last_err}")
+        # Every attempt's error: a later one can be a leftover of the first (a port still held).
+        detail = "\n".join(f"attempt {n}: {e}" for n, e in enumerate(errors, 1))
+        raise RuntimeError(f"LDN host bring-up failed after {attempts} attempt(s):\n{detail}")
 
     def set_app_data_later(self, data):
         """Swap the advertisement's application data from another thread; the host loop applies it

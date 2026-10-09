@@ -1,7 +1,7 @@
 """What the app offers per game: each tool is an entry point, the tested flags it always gets, the
 fields a user fills in, and what to press on the console. Fixed arguments may carry {received}
 (the Received folder), {stamp} (the run's time) and {src_var} (a fresh random id)."""
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 
 
 @dataclass(frozen=True)
@@ -9,8 +9,7 @@ class Field:
     flag: str | tuple[str, ...]   # "" is positional; a tuple passes the same value to each flag
     label: str
     kind: str = "text"            # text number choice switch pokemon rewards file builder multi linkcode,
-                                  # raidseed, or a PKHeX
-                                  # name list: species move item ball
+                                  # code (eight digits), raidseed, or a PKHeX name list: species move item ball
     help: str = ""
     default: str | bool = ""
     choices: tuple[tuple[str, str], ...] = ()
@@ -63,7 +62,7 @@ class Game:
 
 VERSIONS = (("firered", "FireRed"), ("leafgreen", "LeafGreen"))
 LANGUAGES = (("english", "English"), ("french", "French"), ("german", "German"),
-             ("italian", "Italian"), ("spanish", "Spanish"))
+             ("italian", "Italian"), ("spanish", "Spanish"), ("japanese", "Japanese"))
 CHANNELS = (("1", "1"), ("6", "6"), ("11", "11"))
 FRESH_PID = Field("--fresh-pid", "New PID each run", "switch", default=True, hidden=True,
                   help="Offer the Pokemon under a new PID and encryption constant, so a save that "
@@ -102,6 +101,41 @@ def queued(flag: str = "", help: str = "", **kw) -> Field:
                  queue=QUEUE, **kw)
 
 
+ONLINE_CODE_HELP = ("Eight digits you and your partner agree on; you also enter them on the console. "
+                    "Empty meets anyone trading this game online without a code.")
+
+
+def without(fixed: tuple[str, ...], flag: str) -> tuple[str, ...]:
+    """`fixed` with `flag` and its value taken out."""
+    out, skip = [], False
+    for arg in fixed:
+        if skip:
+            skip = False
+        elif arg == flag:
+            skip = True
+        else:
+            out.append(arg)
+    return tuple(out)
+
+
+def online(host: Tool, steps: tuple[str, ...], code: Field) -> Tool:
+    """The host tool trading a partner far away instead of a built offer (docs/online.md). `code`
+    is the room both players enter, the console's own link code where the game has one."""
+    kept = tuple(f for f in host.fields if f.kind != "pokemon" and f is not FRESH_PID
+                 and f.flag not in ("--seconds", code.flag))
+    return Tool(host.key.replace("-host", "-online"), "Trade (Online)", host.script,
+                "Trade with a player far away: each of you hosts your own console, and the two trade "
+                "through the internet.",
+                ("Agree on a code with your partner, or leave it empty to meet anyone trading online.",
+                 "Start, then wait for 'Trading with' and your partner's name.", *steps,
+                 "Your partner's Pokemon appears once they offer it. The trade goes through once both "
+                 "of you confirm."),
+                (code,) + kept + ((host_seconds("1800", "Leave time to find a partner and trade."),)
+                                  if any(f.flag == "--seconds" for f in host.fields)
+                                  or "--seconds" in host.fixed else ()),
+                fixed=without(host.fixed, "--seconds") + ("--online",), doc="online.md")
+
+
 FRLG_PATH = "Pokemon Center 2F, third attendant, Direct Corner, Trade Center"
 
 FRLG = Game("frlg", "FireRed & LeafGreen", "FRLG", "frlg.md", (
@@ -115,7 +149,7 @@ FRLG = Game("frlg", "FireRed & LeafGreen", "FRLG", "frlg.md", (
          (queued(count="--trades"),
           Field("--version", "Version", "choice", default="firered", choices=VERSIONS, group="Console",
                 help="The game pokeldn's own trainer reports on the link, and the one the Pokemon is built for."),
-          Field("--language", "Language", "choice", default="english", choices=LANGUAGES, hidden=True,
+          Field("--language", "Trainer language", "choice", default="english", choices=LANGUAGES, hidden=True,
                 help="The language pokeldn's own trainer reports on the link."),
           Field("--channel", "Channel", "choice", default="11", choices=CHANNELS, help=CHANNEL_HELP, hidden=True)),
          fixed=("--live", "--phy", "auto", "--slot", "0", "--ot", "{ot}", "--id", "{tid}:{sid}",
@@ -132,17 +166,19 @@ FRLG = Game("frlg", "FireRed & LeafGreen", "FRLG", "frlg.md", (
                 "--out", "{received}/frlg-{stamp}.pk3"),
          doc="frlg_link.md"),
     Tool("frlg-gift", "Mystery Gift", "bin/frlg_mg_host.py",
-         "Send a Wonder Card, Wonder News or console code: pick a preset or build your own.",
+         "Send Pokemon, items or game boosts, back up or restore your save, or read your trainer IDs "
+         "through Mystery Gift.",
          ("Title screen: Mystery Gift, Wonder Cards, Friend. For news: the second entry, Wonder News.",
           "Start the host, then pick POKELDN when it appears.",
           "Answer Yes if the console asks to replace its card.",
-          "Console code: keep the host running until the log shows the result.",
+          "For boosts, save backups and restores, readouts or your own console code, keep the app running "
+          "until the Session log shows the result.",
           "Back out of the search screen between two runs."),
-         (Field("--gift-file", "Gift", "builder"),
-          Field(("--version", "--expect-console"), "Version", "choice", default="firered",
+         (Field(("--version", "--expect-console"), "Version", "choice", default="firered",
                 choices=VERSIONS, group="Console",
                 help="The console's cartridge: another one is refused before anything is sent."),
-          Field("--language", "Language", "choice", default="english", choices=LANGUAGES, hidden=True,
+          Field("--gift-file", "Gift", "builder"),
+          Field("--language", "Trainer language", "choice", default="english", choices=LANGUAGES, hidden=True,
                 help="The language pokeldn's own trainer reports on the link."),
           Field("--channel", "Channel", "choice", default="11", choices=CHANNELS, help=CHANNEL_HELP, hidden=True)),
          fixed=("--live", "--ot", "{ot}", "--id", "{tid}:{sid}", "--dump-file",
@@ -181,7 +217,7 @@ SWSH = Game("swsh", "Sword & Shield", "SwSh", "swsh.md", (
           "Choose a Pokemon and confirm when POKELDN appears.",
           "Queued Pokemon follow, one per trade: pick again from the box."),
          (queued("--offer-file"), FRESH_PID,
-          Field("--code", "Link Code", help="Eight digits. Empty for a plain trade."),
+          Field("--code", "Link Code", "code", help="Eight digits. Empty for a plain trade."),
           Field("--channel", "Channel", "choice", default="6", choices=CHANNELS, help=CHANNEL_HELP, hidden=True),
           host_seconds("900")),
          fixed=("--player-name", "{ot}", "--trainer-name", "{ot}",
@@ -202,7 +238,7 @@ SWSH = Game("swsh", "Sword & Shield", "SwSh", "swsh.md", (
                 "--save-offered", "{received}/swsh-{stamp}.pk8"),
          doc="swsh_trade.md"),
     Tool("swsh-gift", "Mystery Gift", "bin/swsh_gift_host.py",
-         "Advertise a Wonder Card: pick a preset or build your own. The console reads it off the air.",
+         "Send a local wireless gift: choose a preset, an official event, or build your own.",
          ("Mystery Gift, Receive a Gift, via local wireless.",
           "Start the host: the card is listed within a few seconds or not at all.",
           "Accept the card, then stop the host."),
@@ -222,7 +258,7 @@ BDSP = Game("bdsp", "Brilliant Diamond & Shining Pearl", "BDSP", "bdsp.md", (
           "Y, Communicate, Trade Pokemon; accept the greeting, then choose and confirm."),
          (queued("--offer"),
           FRESH_PID,
-          Field("--password", "Room password", help="Eight digits. Empty for the plain room."),
+          Field("--password", "Room password", "code", help="Eight digits. Empty for the plain room."),
           host_seconds("1500")),
          fixed=("--ldn-protocol", "1", "--complete-trade", "--save-theirs", "{received}/bdsp-{stamp}",
                 "--language", "{language}", "--name", "{ot}", "--trainer", "{ot}:{tid}:{sid}"),
@@ -259,7 +295,7 @@ PLA = Game("pla", "Legends Arceus", "PLA", "pla.md", (
          ("Start the host first.", *PLA_STEPS, "Offer a Pokemon and confirm.",
           "Leave the host running until the trade ends: an interrupted trade locks trading for a while."),
          (queued("--trade-box-record", required=False, help=PLA_OFFER_HELP),
-          Field("--code", "Link code", default="00000000", help=CODE_HELP),
+          Field("--code", "Link code", "code", default="00000000", help=CODE_HELP),
           FRESH_PID,
           host_seconds("900")),
          fixed=("--channel", "6", "--session-update", "--sustain", "--clock", "--data-exchange",
@@ -267,10 +303,10 @@ PLA = Game("pla", "Legends Arceus", "PLA", "pla.md", (
                 "--offer-out", "{received}/pla-{stamp}.pa8"),
          doc="pla.md"),
     Tool("pla-join", "Trade (Join)", "bin/pla_join.py",
-         "Join the console's search. It hands pokeldn the host role, which the joiner takes on its own.",
+         "Find your console's trade search and connect automatically.",
          (*PLA_STEPS, "Start the joiner.", "Offer and confirm once the partner shows."),
          (queued("--offer", required=False, help=PLA_OFFER_HELP),
-          Field("--code", "Link code", default="00000000", help=CODE_HELP),
+          Field("--code", "Link code", "code", default="00000000", help=CODE_HELP),
           FRESH_PID),
          fixed=("--player-name", "{ot}", "--offer-out", "{received}/pla-{stamp}.pa8"),
          doc="pla.md"),
@@ -283,7 +319,7 @@ SV = Game("sv", "Scarlet & Violet", "SV", "sv.md", (
          "Host a trade the searching console joins.",
          ("Start the host first.", SV_SEARCH, "Offer and confirm on the trade screen."),
          (queued("--trade-offer"),
-          Field("--code", "Link Code", help="Empty hosts a search with no code.",
+          Field("--code", "Link Code", "code", help="Empty hosts a search with no code.",
                 unset=("--game-data",
                        "000000000000000000000000000000000000000000000000000000000000000000648cf400000000")),
           FRESH_PID),
@@ -304,7 +340,7 @@ SV = Game("sv", "Scarlet & Violet", "SV", "sv.md", (
          (SV_SEARCH, "Start the joiner.", "Offer and confirm on the trade screen.",
           "If the console keeps refusing, leave and re-enter the search screen."),
          (queued("--trade-offer"),
-          Field("--code", "Link Code", help="Empty joins a search with no code."),
+          Field("--code", "Link Code", "code", help="Empty joins a search with no code."),
           FRESH_PID),
          fixed=("--phy", "auto", "--seconds", "1500", "--hold", "900", "--channels", "1,6,11",
                 "--dwell", "0.4", "--connect-timeout", "6", "--open-delay", "0.3", "--record-delay", "0.3",
@@ -375,7 +411,7 @@ ZA = Game("za", "Legends Z-A", "PLZA", "za.md", (
           "Pick on the trade box, offer, then trade. Queued Pokemon follow, one per trade.",
           "Back out with B after the last trade."),
          (queued("--trade-offer"),
-          Field("--code", "Link code", default="00000000", help=CODE_HELP),
+          Field("--code", "Link code", "code", default="00000000", help=CODE_HELP),
           FRESH_PID,
           host_seconds("900")),
          fixed=("--trainer-name", "{ot}", "--offer-out", "{received}/za-{stamp}.pa9"), doc="za.md"),
@@ -385,7 +421,7 @@ ZA = Game("za", "Legends Z-A", "PLZA", "za.md", (
           "Start the joiner. Refusals while seating are normal; let it run.",
           "Pick on the trade box and confirm once POKELDN appears. Queued Pokemon follow, one per trade."),
          (queued("--trade-offer"),
-          Field("--code", "Link code", default="00000000", help=CODE_HELP),
+          Field("--code", "Link code", "code", default="00000000", help=CODE_HELP),
           FRESH_PID),
          fixed=("--channels", "1,6,11", "--dwell", "0.35", "--seconds", "1200", "--hold", "900",
                 "--quiet-seat", "25", "--connect-timeout", "6", "--mac", "02:11:32:54:76:98", "--game",
@@ -393,4 +429,35 @@ ZA = Game("za", "Legends Z-A", "PLZA", "za.md", (
          doc="za.md"),
 ))
 
-GAMES = (FRLG, LGPE, SWSH, BDSP, PLA, SV, ZA)
+def with_online(game: Game, steps: tuple[str, ...], code: Field | None = None) -> Game:
+    """`game` with its online trade after its local trades; `code` replaces the host's own code field's
+    help, or is a new field where the game has no code."""
+    host = next(t for t in game.tools if t.name == "Trade (Host)")
+    if code is None:
+        code = next(f for f in host.fields if f.kind in ("code", "linkcode"))
+        code = replace(code, help=ONLINE_CODE_HELP if code.kind == "code" else
+                       "The three Pokemon you and your partner pick, in the same order, here and on "
+                       "the console.")
+    at = max(n for n, t in enumerate(game.tools) if t.name.startswith("Trade (")) + 1   # after Join
+    return replace(game, tools=game.tools[:at] + (online(host, steps, code),) + game.tools[at:])
+
+
+GAMES = (
+    with_online(FRLG, (f"{FRLG_PATH}, Join Group, then pick POKELDN.",
+                       "Your partner's party shows on the right: choose the Pokemon you send, then "
+                       "confirm."),
+                Field("--online-code", "Code", "code", help=ONLINE_CODE_HELP)),
+    with_online(LGPE, (LGPE_STEPS, "Choose a Pokemon and confirm.")),
+    with_online(SWSH, ("Y-Comm, Link Trade, local communication with the same Link Code; press A on "
+                       "both messages, then wait in the overworld.",
+                       "Choose the Pokemon to send when POKELDN appears.")),
+    with_online(BDSP, (f"{BDSP_ROOM} Our character appears.",
+                       "Y, Communicate, Trade Pokemon; accept the greeting, then choose."),
+                Field("--password", "Code", "code", help="Eight digits you and your partner agree "
+                      "on; you also enter them at the Union Room's password prompt. Empty: the "
+                      "plain room, and anyone trading online without a code.")),
+    with_online(PLA, (*PLA_STEPS, "Offer a Pokemon and confirm.")),
+    with_online(SV, (SV_SEARCH, "Offer and confirm on the trade screen.")),
+    with_online(ZA, ("X, Link Play, Link Trade, Nearby Players, the same code, then search.",
+                     "Pick on the trade box, offer, then trade.")),
+)

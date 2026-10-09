@@ -191,3 +191,62 @@ def test_a_card_refuses_outfits_that_overflow_six_pieces_and_unknown_ones():
         swsh.record(swsh.blank(kind="clothing", outfits=["cape"]))
     with pytest.raises(ValueError, match="Money is 1"):
         swsh.record(swsh.blank(kind="money", money=10_000_000))
+
+
+def test_every_official_event_card_is_sealed_and_puts_no_dummy_item_in_the_bag():
+    """A ★ name or an id past the 1.3.2 table aborts the bag screen [docs/swsh_gift.md]."""
+    from pokeldn import pokemon
+    from pokeldn.swsh import events, gift_builder
+    names = {n["id"]: n["name"] for n in pokemon.SERVICE.names("swsh", "items")}
+    cards = events.load()
+    assert len({c["key"] for c in cards}) == len(cards) and {c["group"] for c in cards} == set(events.GROUPS)
+    for card in cards:
+        assert wc8.sealed(card["record"]), card["key"]
+        for item in events.item_ids(card["record"]):
+            assert 0 < item <= gift_builder.MAX_ITEM and not names[item].startswith("★"), card["key"]
+
+
+@pytest.mark.skipif(not __import__("os").path.exists(SWORD_IMAGE),
+                    reason="needs Sword's extracted main NSO")
+def test_the_app_sends_an_official_event_card_byte_for_byte_and_the_game_accepts_every_one(tmp_path, monkeypatch):
+    """Every shipped card passes the game's validator 0x010b5de0; one per group goes from the app's
+    event mode through the launcher's PKHeX and validator checks to the bytes it would send."""
+    import swsh_gift_host
+    from nso_run import SCRATCH, Runner
+    from pokeldn.app import catalog, gift_builder
+    from pokeldn.swsh import events
+    runner = Runner(SWORD_IMAGE)
+    card, header, rec = SCRATCH + 0x1000, SCRATCH + 0x3000, SCRATCH + 0x4000
+    for event in events.load():
+        runner.write(card, bytes(0x3A8))
+        runner.write(header, bytes(0x68))
+        runner.write(rec, event["record"])
+        assert runner.call(swsh_gift_host.VALIDATOR, (0, card, header, rec, 0x2D0))[0] == 0, event["key"]
+
+    tool = next(t for g in catalog.GAMES for t in g.tools if t.key == "swsh-gift")
+    monkeypatch.setattr(gift_builder, "output", lambda tool: str(tmp_path / "gift.pokegift"))
+    for group in events.GROUPS:
+        event = next(e for e in events.load() if e["group"] == group)
+        value = {"mode": "event", "event": event["key"]}
+        assert gift_builder.problem(tool, value) == ""
+        gift_builder.prepare(tool, value)
+        out = tmp_path / f"{event['key']}.bin"
+        assert swsh_gift_host.main([*gift_builder.args(tool, value), "--image", SWORD_IMAGE,
+                                    "--dump", str(out)]) == 0
+        assert out.read_bytes() == event["record"]
+
+
+def test_the_event_list_loads_where_text_defaults_to_cp1252(monkeypatch):
+    """Windows opens text as cp1252; the list carries Japanese and Korean names."""
+    import pathlib
+    from pokeldn.swsh import events
+    read = pathlib.Path.read_text
+    monkeypatch.setattr(pathlib.Path, "read_text",
+                        lambda self, encoding=None, errors=None: read(self, encoding or "cp1252", errors))
+    events.load.cache_clear()
+    events.by_key.cache_clear()
+    try:
+        assert len(events.load()) == 171
+    finally:
+        events.load.cache_clear()
+        events.by_key.cache_clear()

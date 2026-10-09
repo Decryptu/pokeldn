@@ -31,6 +31,7 @@ from pokeldn.swsh import beacon, host_trade, league_card, pokemon as swsh_pokemo
 from pokeldn.ldn.pia5 import password_crc
 from pokeldn.swsh.session import COMM_ID, PASSPHRASE, session_keys
 from pokeldn.app import screen
+from pokeldn.online import session as online
 
 SCENE_ID = 60001  # a retail Sword's Link Trade network
 APP_VERSION = 7
@@ -197,11 +198,15 @@ def build_parser():
                          "own; default 0xFFFF and two random bytes")
     ap.add_argument("--seconds", type=float, default=300)
     ap.add_argument("--capture", default=None)
+    online.add_arguments(ap)
     return ap
 
 
 def main(argv=None):
     args = build_parser().parse_args(argv)
+    if args.online and args.offer_file:
+        print("[sw] --online offers the partner's Pokemon; --offer-file is ignored")
+        args.offer_file = []
     args.offer_file = [pokemon_service.prepare_file("swsh", path, fresh=args.fresh_pid)
                        for path in args.offer_file]
     # A trade past the queue offers the last file again, under a new PID with --fresh-pid.
@@ -222,9 +227,11 @@ def main(argv=None):
         return args.offer_file[min(n, len(args.offer_file) - 1)] if args.offer_file else None
 
     def build_snapshot(source, n):
+        # Online, the snapshot's slot keeps the console's own Pokemon: the offer goes on 20030.
         snapshot, offer = prepare_snapshot(source, args, app_data, offer_file(n),
                                            renew=args.renew_offer and n >= len(args.offer_file))
-        screen.offer("swsh", offer)
+        if partner is None:
+            screen.offer("swsh", offer)
         return snapshot, offer
 
     class Net:
@@ -253,6 +260,7 @@ def main(argv=None):
     record({"rec": "host", "comm_id": args.comm_id, "app_data": app_data.hex(),
             "session_key": keys.session_key.hex()})
 
+    partner = online.partner("swsh", args, code=args.code, name=args.trainer_name)
     trades = {}
     completed = [0]     # trades that reached the end of the ladder, every session
     seen = {}           # HostTrade -> trades counted from it
@@ -319,7 +327,8 @@ def main(argv=None):
                                              snapshot_builder=(lambda peer: build_snapshot(peer, n))
                                              if snapshot is None else None,
                                              next_offer=next_offer, accept_first=args.accept_first,
-                                             lead=args.lead, queued=len(args.offer_file) - n)
+                                             lead=args.lead, queued=len(args.offer_file) - n,
+                                             partner=partner)
         print(f"[sw] {st.ip}: trade {n + 1} starts")
 
     try:
@@ -367,6 +376,8 @@ def main(argv=None):
         print("\n[sw] stopping")
     finally:
         transport.stop()
+        if partner:
+            partner.close()
         if cap:
             cap.close()
     return 0

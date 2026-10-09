@@ -173,6 +173,24 @@ def migration_target(start):
     return start[18:26], int.from_bytes(start[26:28], "big")
 
 
+def build_start_migration(host_constant_id, host_var, host_ip, next_constant_id, next_var,
+                          port=PIA_PORT):
+    """-> the 30-byte type 9 a leaving host names the next host with: its location, address type 0,
+    IPv4 and port, then the next host's location and `00 01` (`0x255a91c`; handler `0x2550684`)."""
+    return (bytes([SESSION_START_MIGRATION]) + bytes(host_constant_id)
+            + (host_var & 0xFFFF).to_bytes(2, "big") + b"\0"
+            + bytes(int(x) for x in host_ip.split(".")) + (port & 0xFFFF).to_bytes(2, "big")
+            + bytes(next_constant_id) + (next_var & 0xFFFF).to_bytes(2, "big") + b"\0\x01")
+
+
+def migration_acked(ack, host_constant_id, host_var, next_constant_id, next_var):
+    """-> True when a type 10 is the named next host's answer to our type 9 (reader `0x2550a64`)."""
+    ack = bytes(ack)
+    return (len(ack) == 21 and ack[0] == SESSION_START_MIGRATION_ACK
+            and ack[1:11] == bytes(next_constant_id) + (next_var & 0xFFFF).to_bytes(2, "big")
+            and ack[11:21] == bytes(host_constant_id) + (host_var & 0xFFFF).to_bytes(2, "big"))
+
+
 def build_migration_ack(start):
     """-> the 21-byte type 10 the named station answers a type 9 with: its own location, then the
     sender's (reader `0x2550a64`)."""

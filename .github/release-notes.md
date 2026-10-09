@@ -1,20 +1,19 @@
-# pokeldn 0.8.0
+# pokeldn 0.15.0
 
 This desktop app trades with seven Pokemon game families on a Switch or Switch 2
 through an ESP32 radio connected by USB. Nothing is installed on the console.
 
 ## What is new
 
-- FireRed/LeafGreen Mystery Gift: the official distribution eggs and Gen 3 event Pokemon, made legal
-  by PKHeX and delivered straight into the party; a starter egg, rare berries and National Pokedex
-  cards; and the GB-Link Team's 44 custom cards (nature mint, ability capsule, IV/EV judge, PC
-  anywhere, reusable TMs and more) on all four cartridges.
-- Sword/Shield Mystery Gift: official outfits (Pikachu and Eevee uniforms, tracksuit, Leon's cap and
-  tights, backpack, tees), pocket money, Pokemon that can Gigantamax, and more item presets.
-- The app explains game boosts and save reads in plain words, and every game lists Trade (Host),
-  Trade (Join), then Mystery Gift.
+- Online trade: Trade (Online) in every game's list meets a partner far away by game and code
+  through public relays, with each player's console on their own board. A partner who leaves
+  withdraws the offer, and a FireRed or LeafGreen console returns to its menu.
+- The bank: every received Pokemon is kept in `Documents/pokeldn/Bank`, and one can be queued for
+  another game's trade, converted by PKHeX.
+- Updates install from inside the app from 0.14.0 onward.
 
-The firmware is unchanged (1.4.0); a board flashed by 0.7.0 needs no reflash.
+Firmware 1.6.1 moves the drawing on the 0.42-inch ESP32-C3 screen into the visible rows; other
+boards gain nothing from reflashing.
 
 pokeldn is an unofficial fan project, not affiliated with Nintendo or The Pokemon Company. It is not
 meant for commercial or promotional use; see the License section of the README.
@@ -24,7 +23,7 @@ meant for commercial or promotional use; see the License section of the README.
 | Computer | File |
 |---|---|
 | macOS, Apple silicon | `pokeldn-macos-arm64.zip` |
-| Windows, x64 | `pokeldn-windows-x64.exe` |
+| Windows, x64 | `pokeldn-windows-x64.zip` |
 | Linux, x64 | `pokeldn-linux-x64.tar.gz` |
 
 Each app includes PKHeX.Core and firmware for classic ESP32, ESP32-S3, ESP32-C3 and ESP32-C6. Python, .NET
@@ -34,13 +33,15 @@ The separate `pokeldn-radio*.bin` files are merged firmware images for manual fl
 
 ## First run
 
-1. Extract the macOS or Linux archive, or launch the Windows executable.
+1. Extract the archive for your computer. On Windows, run `pokeldn.exe` inside the extracted `pokeldn` folder.
    - macOS: the app is unsigned, so the first launch is blocked. Open it once and close the warning,
      then open System Settings, Privacy & Security, scroll down to Security and press Open Anyway next
      to pokeldn, then confirm with your password. Later launches open normally.
    - Windows: if SmartScreen stops the app, choose More info, then Run anyway.
 2. Choose `prod.keys` when prompted.
 3. Connect one supported board with a USB data cable. S3, C3 and C6 boards use native USB Serial/JTAG.
+   On Windows, a classic ESP32 needs its USB chip's driver first (CP210x or CH340); the Board page
+   links both, says how to install them and names the one missing.
    A board that ships an external antenna, such as the Seeed Studio XIAO ESP32C3 or XIAO ESP32S3,
    needs it attached; larger S3 boards such as the N8R2 and N16R8 have an onboard antenna.
 4. On Board, press Flash. The app checks the board on its own and shows Board ready.

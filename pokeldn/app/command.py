@@ -76,20 +76,30 @@ def build(tool: Tool, values: dict, extra: dict, settings, stamp: str | None = N
               "{src_var}": f"0x{random.getrandbits(32):08x}",
               "{ot}": settings.name(game), "{tid}": str(tid), "{sid}": str(sid),
               "{language}": str(settings.language)}
+    # A banked Pokemon keeps its PID and encryption constant: they are who it is [docs/gui.md, The bank].
+    banked = any(entry.get("bank") for field in tool.fields if field.kind == "pokemon"
+                 for entry in offers(value_of(field, values)))
     args = []
     for arg in tool.fixed:
         for token, value in tokens.items():
             arg = arg.replace(token, value)
         args.append(arg)
     for field in tool.fields:
+        if banked and field.key == "--fresh-pid":
+            continue
         if applies(field, tool, values):
-            args += _args(field, value_of(field, values), tool)
+            items = _args(field, value_of(field, values), tool)
+            if field.kind == "builder":     # a backup's file is named after the run
+                items = [item.replace("{stamp}", stamp) for item in items]
+            args += items
     known = accepted(tool.script)
     if "--keys" in known and "--keys" not in args:
         args += ["--keys", os.path.expanduser(settings.keys)]
     if "--capture" in known and settings.capture:
         args += ["--capture", f"captures/{tool.key}-{stamp}.jsonl"]
     for flag, value in extra.items():
+        if banked and flag == "--fresh-pid":
+            continue
         args += ([flag] if value is True else [] if value in (False, "", None) else [flag, str(value)])
     return args
 
@@ -146,6 +156,11 @@ def code_error(field: Field, value) -> str:
             if not 1 <= quantity <= 999:
                 return f"Reward {index} quantity must be from 1 to 999."
         return ""
+    if field.kind == "code":
+        value = str(value or "")
+        if (value == "" and not field.default) or (len(value) == 8 and value.isdigit()):
+            return ""
+        return f"{field.label}: all eight digits" + ("." if field.default else ", or none.")
     if field.kind != "linkcode":
         return ""
     try:

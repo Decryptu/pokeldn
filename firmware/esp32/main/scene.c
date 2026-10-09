@@ -44,6 +44,8 @@ static struct {
     uint32_t rx, tx, last_ms, rx_ms, tx_ms, seed;
 } d;
 
+static uint8_t s_panel;   /* enum scene_panel: the hardware's, kept across scene_reset */
+
 /* Kept across scene_reset: a new host session is activity, not a new boot. */
 static struct {
     bool seen, pending;
@@ -359,6 +361,158 @@ static void gifted_scene(uint8_t *fb, uint32_t now)
     fb_text_centered(fb, 56, s.now.line, 1);
 }
 
+/* ---- the 72x40 panel: drawn at the origin, then moved into the window it shows ---------------- */
+
+/* A sprite at half size: a pixel is lit when two of its 2x2 block are. */
+static bool sprite_half(uint8_t *fb, int slot, int cx, int bottom)
+{
+    const sprite_t *p = &s.sprite[slot];
+    if (!p->w) return false;
+    const int stride = (p->w + 7) / 8, w = (p->w + 1) / 2, h = (p->h + 1) / 2;
+    for (int y = 0; y < h; ++y)
+        for (int x = 0; x < w; ++x) {
+            int count = 0;
+            for (int k = 0; k < 4; ++k) {
+                const int sx = 2 * x + (k & 1), sy = 2 * y + (k >> 1);
+                if (sx < p->w && sy < p->h) count += p->bits[sy * stride + sx / 8] >> (7 - sx % 8) & 1;
+            }
+            if (count >= 2) fb_pixel(fb, cx - w / 2 + x, bottom - h + y, true);
+        }
+    return true;
+}
+
+/* One line of at most 12 characters, centred across the window and moved `dx` pixels. */
+static void small_text(uint8_t *fb, int dx, int y, const char *text)
+{
+    char cut[13];
+    snprintf(cut, sizeof(cut), "%s", text);
+    fb_text(fb, (SMALL_W - fb_text_width(cut, 1)) / 2 + dx, y, cut, 1);
+}
+
+static void small_radio(uint8_t *fb, const scene_radio_t *r, uint32_t now)
+{
+    char text[32];
+    const bool linked = r->mode == SCENE_JOINED || (r->mode == SCENE_HOSTING && r->stations);
+    if (linked) {
+        small_text(fb, 0, 0, "linked");
+        console_icon(fb, 0, 14);
+        poke_ball(fb, 66, 20, 5);
+        cable(fb, 24, 59, 20);
+        snprintf(text, sizeof(text), "%lu/%lu", (unsigned long)r->rx, (unsigned long)r->tx);
+        small_text(fb, 0, 32, text);
+        return;
+    }
+    if (r->mode == SCENE_JOINING || r->mode == SCENE_HOSTING) {
+        const uint32_t t = now % 1500;
+        for (int k = 0; k < 3; ++k)
+            fb_circle(fb, 36, 25, 6 + (int)((t + k * 500) % 1500) * 14 / 1500, false, true);
+        fb_fill(fb, 28, 17, 17, 17, false);
+        poke_ball(fb, 36, 25, 6);
+        fb_fill(fb, 0, 0, SMALL_W, 10, false);
+        small_text(fb, 0, 0, r->mode == SCENE_JOINING ? "joining" : "hosting");
+        return;
+    }
+    static const int8_t ORBIT[][2] = {{-1, -1}, {1, -1}, {1, 1}, {-1, 1}};
+    const int8_t *o = ORBIT[now / ORBIT_MS % 4];
+    poke_ball(fb, 8 + o[0], 8 + o[1] + (int)(now / 400 % 2), 6);
+    fb_text(fb, 19 + o[0], 5 + o[1], "pokeldn", 1);
+    fb_fill(fb, 0, 17 + o[1], SMALL_W, 1, true);
+    if (r->mode == SCENE_SNIFFING) {
+        small_text(fb, o[0], 21 + o[1], "sniffing");
+        snprintf(text, sizeof(text), "%lu fr", (unsigned long)r->rx);
+        small_text(fb, o[0], 31 + o[1], text);
+    } else {
+        small_text(fb, o[0], 21 + o[1], "radio ready");
+        small_text(fb, o[0], 31 + o[1], "trade, gift");
+    }
+}
+
+static void small_trade(uint8_t *fb, uint32_t now)
+{
+    small_text(fb, 0, 0, s.now.line[0] ? s.now.line : "offering");
+    if (!sprite_half(fb, SLOT_OURS, 36, 40 - (int)(now / 500 % 2))) poke_ball(fb, 36, 25, 9);
+}
+
+static void small_traded(uint8_t *fb, uint32_t now)
+{
+    const uint32_t t = elapsed(now);
+    if (t < 1100) {
+        if (t < 400 || (t < 700 && t / 80 % 2 == 0)) {
+            if (!sprite_half(fb, SLOT_OURS, 36, 40)) poke_ball(fb, 36, 25, 8);
+        } else if (t >= 700) {
+            poke_ball(fb, 36, 25, 5);
+            const int ray = (int)(t - 700) / 60;
+            for (int k = 0; k < 8; ++k) {
+                static const int8_t DIR[8][2] = {{1, 0}, {1, 1}, {0, 1}, {-1, 1}, {-1, 0}, {-1, -1}, {0, -1}, {1, -1}};
+                fb_line(fb, 36 + DIR[k][0] * (7 + ray), 25 + DIR[k][1] * (7 + ray),
+                        36 + DIR[k][0] * (9 + ray), 25 + DIR[k][1] * (9 + ray));
+            }
+        }
+        small_text(fb, 0, 0, "go!");
+    } else if (t < LEAVE_MS) {
+        const float x = (t - 1100) / 1000.0f;
+        const int bx = lerp(36, 84, x), by = lerp(25, 4, x);
+        poke_ball(fb, bx, by, 5);
+        for (int k = 1; k < 4; ++k) bit_glyph(fb, bx - 8 * k, by + 3 * k, (t / 90 + k) % 2);
+    } else if (t < s.reveal) {
+        small_text(fb, 0, 0, "trading...");
+        console_icon(fb, 0, 14);
+        poke_ball(fb, 66, 20, 5);
+        if (t / 60 % 2) dot_spawn(t / 120 % 2 ? 1 : -1);
+        cable(fb, 24, 59, 20);
+    } else if (t < s.reveal + 1000) {
+        const float x = (t - s.reveal) / 1000.0f;
+        poke_ball(fb, lerp(-8, 36, x), lerp(4, 25, x), 5);
+    } else if (t < s.reveal + REVEAL_MS) {
+        const int k = (int)(t - s.reveal - 1000);
+        open_ball(fb, 36, 28, 6, k / 80);
+        const int flash = k * 40 / 600;
+        fb_circle(fb, 36, 25, flash, true, true);
+        if (flash > 4) fb_circle(fb, 36, 25, flash - 4, true, false);
+    } else {
+        small_text(fb, 0, 0, s.now.line[0] ? s.now.line : "received");
+        if (!sprite_half(fb, SLOT_THEIRS, 36, 40)) poke_ball(fb, 36, 25, 9);
+        sparkles(fb, 14, 10, 44, 30, t);
+    }
+}
+
+static void small_card(uint8_t *fb, int x, int y)   /* 38x31 */
+{
+    fb_fill(fb, x, y, 38, 31, false);
+    fb_rect(fb, x, y, 38, 31);
+    if (!sprite_half(fb, SLOT_GIFT, x + 19, y + 29)) gift_box(fb, x + 19, y + 18);
+}
+
+static void small_gift(uint8_t *fb, uint32_t now)
+{
+    small_text(fb, 0, 0, s.now.line[0] ? s.now.line : s.now.title[0] ? s.now.title : "Mystery Gift");
+    small_card(fb, 17, 9 - (int)(now / 600 % 2));
+}
+
+static void small_gifted(uint8_t *fb, uint32_t now)
+{
+    const uint32_t t = elapsed(now);
+    if (t < 900) {
+        small_card(fb, lerp(17, 76, t / 900.0f), 9);
+        for (int k = 0; k < 3; ++k) bit_glyph(fb, (int)(t / 10) - 16 * k, 12 + 9 * k, (t / 70 + k) % 2);
+        return;
+    }
+    small_text(fb, 0, 0, "delivered!");
+    gift_box(fb, 36, 27);
+    sparkles(fb, 8, 12, 56, 28, t);
+}
+
+/* The frame drawn at the origin, moved into the panel's window; what fell outside it is dropped. */
+static void to_window(uint8_t *fb)
+{
+    static uint8_t drawn[SCREEN_BYTES];
+    memcpy(drawn, fb, SCREEN_BYTES);
+    fb_clear(fb);
+    for (int y = 0; y < SMALL_H; ++y)
+        for (int x = 0; x < SMALL_W; ++x)
+            if (fb_get(drawn, x, y)) fb_pixel(fb, SMALL_X + x, SMALL_Y + y, true);
+}
+
 /* ---- commands -------------------------------------------------------------------------------- */
 
 static void copy_text(char *dst, const char **p, const char *end)
@@ -424,6 +578,8 @@ bool scene_command(const uint8_t *p, size_t n, uint32_t now)
     return true;
 }
 
+void scene_panel(uint8_t panel) { s_panel = panel; }
+
 void scene_reset(void)
 {
     memset(&s, 0, sizeof(s));
@@ -459,12 +615,23 @@ uint8_t scene_draw(uint8_t *fb, const scene_radio_t *radio, uint32_t now)
     s.radio_mode = radio->mode;
     dots_step(radio->rx, radio->tx, now);
     fb_clear(fb);
-    switch (s.now.show) {
-    case SHOW_TRADE: trade_scene(fb, now); break;
-    case SHOW_TRADED: traded_scene(fb, now); break;
-    case SHOW_GIFT: gift_scene(fb, now); break;
-    case SHOW_GIFTED: gifted_scene(fb, now); break;
-    default: radio_scene(fb, radio, now); break;
+    if (s_panel == PANEL_72X40) {
+        switch (s.now.show) {
+        case SHOW_TRADE: small_trade(fb, now); break;
+        case SHOW_TRADED: small_traded(fb, now); break;
+        case SHOW_GIFT: small_gift(fb, now); break;
+        case SHOW_GIFTED: small_gifted(fb, now); break;
+        default: small_radio(fb, radio, now); break;
+        }
+        to_window(fb);
+    } else {
+        switch (s.now.show) {
+        case SHOW_TRADE: trade_scene(fb, now); break;
+        case SHOW_TRADED: traded_scene(fb, now); break;
+        case SHOW_GIFT: gift_scene(fb, now); break;
+        case SHOW_GIFTED: gifted_scene(fb, now); break;
+        default: radio_scene(fb, radio, now); break;
+        }
     }
     return power(radio, now);
 }

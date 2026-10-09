@@ -10,11 +10,25 @@ pytestmark = pytest.mark.skipif(not bs.emulation_available(), reason="needs unic
 
 # (build, image, MapGridGetElevationAt, MapGridGetCollisionAt)
 CARTRIDGES = [
+    (builds.BPRS, "scratchpad/frlg_es/FireRed_s.gba", 0x0805C658, 0x0805C6D8),
     (builds.BPRF, "scratchpad/FireRed_f.gba", 0x0805C644, 0x0805C6C4),
     (builds.BPGF, "scratchpad/LeafGreen_f.gba", 0x0805C644, 0x0805C6C4),
     (builds.BPRE, "scratchpad/frlg_en/FireRed_e.gba", 0x0805C4E8, 0x0805C568),
     (builds.BPGE, "scratchpad/frlg_en/LeafGreen_e.gba", 0x0805C4E8, 0x0805C568),
 ]
+CARTRIDGES += [
+    (builds.BPRD, "scratchpad/frlg_languages/FireRed_d.gba", 0x0805C584, 0x0805C604),
+    (builds.BPGD, "scratchpad/frlg_languages/LeafGreen_d.gba", 0x0805C584, 0x0805C604),
+    (builds.BPRI, "scratchpad/frlg_languages/FireRed_i.gba", 0x0805C570, 0x0805C5F0),
+    (builds.BPGI, "scratchpad/frlg_languages/LeafGreen_i.gba", 0x0805C570, 0x0805C5F0),
+    (builds.BPGS, "scratchpad/frlg_languages/LeafGreen_s.gba", 0x0805C658, 0x0805C6D8),
+]
+
+CARTRIDGES += [
+    (builds.BPRJ, "scratchpad/frlg_languages/FireRed_j.gba", 0x0805BE00, 0x0805BE80),
+    (builds.BPGJ, "scratchpad/frlg_languages/LeafGreen_j.gba", 0x0805BE00, 0x0805BE80),
+]
+
 GRID = 0x02031DF8                   # gBackupMapData
 MAP_HEADER = 0x02036DF8             # gMapHeader; .mapLayout first
 AVATAR = 0x02037074                 # gPlayerAvatar; objectEventId at +5
@@ -37,6 +51,9 @@ def _grid():
 def console(request):
     from unicorn import arm_const as a
     build, path, elevation_at, collision_at = request.param
+    map_header = build.ewram.get("map_header", MAP_HEADER)
+    avatar = build.ewram.get("avatar", AVATAR)
+    objects = build.ewram.get("objects", OBJECTS)
     machine = _console(_payload(build, script=bs.INSTALL_RESIDENT, resident_name="noclip",
                                 write_unsafe=True), build, _image(path))
     assert _client_frame(machine, build)[1] == build.vblank_intr | 1
@@ -46,8 +63,8 @@ def console(request):
     uc.mem_write(build.intr_check, b"\x00\x00")
     uc.mem_write(build.vmap, b"".join(v.to_bytes(4, "little") for v in (SIZE, SIZE, GRID)))
     uc.mem_write(GRID, b"".join(v.to_bytes(2, "little") for v in _grid()))
-    uc.mem_write(MAP_HEADER, (0x08400000).to_bytes(4, "little"))
-    uc.mem_write(AVATAR + 5, b"\x00")
+    uc.mem_write(map_header, (0x08400000).to_bytes(4, "little"))
+    uc.mem_write(avatar + 5, b"\x00")
 
     def call(function, *args):
         for register, value in zip((a.UC_ARM_REG_R0, a.UC_ARM_REG_R1), args):
@@ -60,7 +77,7 @@ def console(request):
 
     class Console:
         def frame(self, x, y, keys):
-            uc.mem_write(OBJECTS + 0x10, x.to_bytes(2, "little") + y.to_bytes(2, "little"))
+            uc.mem_write(objects + 0x10, x.to_bytes(2, "little") + y.to_bytes(2, "little"))
             uc.mem_write(build.gmain + 0x2C, keys.to_bytes(2, "little"))
             uc.mem_write(build.intr_check, b"\x00\x00")  # WaitForVBlank's; VBlankIntr sets it
             call(int.from_bytes(uc.mem_read(build.intr_vblank, 4), "little"))
@@ -80,10 +97,10 @@ def console(request):
             return [int.from_bytes(raw[i:i + 2], "little") for i in range(0, len(raw), 2)]
 
         def help_disabled(self):
-            return uc.mem_read(0x0203F171, 1)[0]
+            return uc.mem_read(build.ewram.get("help", 0x0203F171), 1)[0]
 
         def map_changes(self):
-            uc.mem_write(MAP_HEADER, (0x08400100).to_bytes(4, "little"))
+            uc.mem_write(map_header, (0x08400100).to_bytes(4, "little"))
 
     assert int.from_bytes(uc.mem_read(build.intr_vblank, 4), "little") == ns.RESIDENT_BASE | 1
     return Console()

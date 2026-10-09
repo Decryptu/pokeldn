@@ -81,15 +81,14 @@ On the local-wireless screen the console advertises its always-on local-play net
 communication id `0x0100ABF008968000` (both titles), version 4, scene id 65535 (60001 on the link
 trade), accept policy ALL, `NodeCountMax` 2, 384 bytes of advertise data, password CRC zero. The game
 creates that access point once, some seconds after loading (16 to 31 s measured); entering or leaving
-Mystery Gift makes no
-LDN call. The gift screen only sets its advertise data and arms the Pia join filter.
+Mystery Gift makes no LDN call. The gift screen only sets its advertise data and arms the Pia join filter.
 
 On the screen the game calls `nn::ldn::Scan` about forty times a minute (33 in a 40 s IPC trace),
 interleaved with `SetAdvertiseData` and `GetNetworkInfo`, never `Connect` or `CreateNetwork`. The
 scan is passive at the 802.11 layer. Its filter names only the local communication id and the network
 type; `SessionId` and `SceneId` are unfiltered.
 
-Monitor captures, the console hosting on channel 6:
+Monitor captures with the console hosting on channel 6:
 
 | channel | beacons from it | LDN advertisement action frames | probe requests |
 |---|---|---|---|
@@ -258,8 +257,7 @@ by the type-0x19 event.
   second listing it as seat 1, and none with no node. One ack stops it; unacked
   (`--no-ack-update`) it continues. Trap: the emulator's wildcard
   socket on 12345 can take another listener's broadcasts; observe updates with an external capture.
-- The only flows between the nodes are Pia on 12345 and ldn_mitm's control channel on 11452 (every
-  port captured, 48,123 UDP ports listened on).
+- The only flows between the nodes are Pia on 12345 and ldn_mitm's control channel on 11452.
 - Seated, the scene sends RTT probes, reliable-window opens on two ports and mesh updates, and no
   application payload; nothing opens on 0x84. It acks pings on 0x7C in sequence.
 - A 0x2D0 record behind the trade driver's 4-byte header (`u16 id, u8 disc, u8 0`), sent on 0x7C and
@@ -493,8 +491,8 @@ projectpokemon's EventsGallery carry zero at `+0x0A` and at `+0x0C` either 3 or 
 
 Title: `+0x15` indexes the title table PKHeX ships as `text_wondercard8_<lang>.txt`, shown in the
 list before the card is accepted. Indices the builder uses: 1 Pokemon egg, 3 the item's name, 21
-"{species} (Gigantamax Pokemon)", 34 pocket money, 36 clothing, 39 Battle Points. Index 0 is the species name alone (a record with `0b 00` at `+0x0C`
-and title 0 was listed as "Pikachu"); index 11 is "{species} de {original trainer}", listed and kept
+"{species} (Gigantamax Pokemon)", 34 pocket money, 36 clothing, 39 Battle Points. Index 0 is the
+species name alone (a record with `0b 00` at `+0x0C` and title 0 was listed as "Pikachu"); index 11 is "{species} de {original trainer}", listed and kept
 as "Pikachu de POKELDN" on a French console.
 
 Kind: 1 to 5 dispatch through `0x02067620`; anything else returns success with nothing built. Kinds
@@ -569,8 +567,8 @@ Gender 3 is rolled once per build, and a claim builds the Pokemon twice: the rev
 `0x00fe3720` builds one from the record (`0x00fe3a50`) and reads its sex for the model, and the
 redemption `0x010159d0` builds the one the party receives (`0x01015a0c`). On a retail Sword one claim
 showed a female and gave a male. Gender 0, 1 or 2 skips the roll (`0x00766d94`), so both builds
-agree; a retail Sword showed and gave a male for 0 and a female for 1. The app and `bin/swsh_gift_host.py` draw the gender once when the card is built, as the game
-draws it (female when `r + 1 < ratio`, `r` below 253, the species' personal ratio from PKHeX);
+agree; a retail Sword showed and gave a male for 0 and a female for 1. The app and
+`bin/swsh_gift_host.py` draw the gender once when the card is built, as the game draws it (female when `r + 1 < ratio`, `r` below 253, the species' personal ratio from PKHeX);
 `--set gender=3` restores the game's own rolls.
 
 ## A card delivered by beacon, end to end
@@ -616,7 +614,6 @@ emulator cannot test these variables.
 | 2 | item id at `+0x20`, quantity at `+0x22`: `01 00 03 00`, title index 3 | listed "Master Ball", three in the bag |
 | 3 | amount 10 at `+0x20`, title index 1 | listed with the title "Oeuf de Pokemon", 10 BP added |
 | 3 | amount 10 at `+0x20`, title index 39, as the EventsGallery Battle Points cards carry | listed "Points de Combat", 10 BP added |
-
 | 4 | EventsGallery's Casual Tee (Pokemon Quest) card, title index 36 | listed, the tee in the wardrobe |
 | 4 | the Pikachu uniform's pairs, title index 36 | received five pieces: haut, gants, short, bas and chaussures de sport |
 | 5 | amount 100,000 at `+0x20`, title index 34 | listed "Argent de poche", money up by 100,000 |
@@ -629,7 +626,8 @@ id/quantity pairs from record `+0x20..+0x37` to header `+0x30..+0x47` (`0x010b60
 sets header `+0x0D` to the number of non-zero quantities (`0x010b6084..0x010b60e4`); the redemption
 calls `Bag::AddItem` per pair with a non-zero quantity (`0x01015d00..0x01015dd0`). The 1.3.2 item
 table has 1607 entries; those whose name in `bin/message/<lang>/common/itemname.dat` starts with `★`
-are dummies (1279 to 1578 among them).
+are dummies (1279 to 1578 among them). PKHeX names 51 of the 1607 ids `???`; the app's item pickers
+list the 817 ids of `ItemStorage8SWSH.GetAllHeld()`, the set its card check accepts.
 
 Kind 4 is clothing ([Clothing](#clothing)). Kinds 3 and 5 add the word at `+0x20` to clamped counters in the status object
 `[[0x2610798]+0x208]`:
@@ -669,6 +667,34 @@ id in bits 0-14, count in bits 15-29, bit 30 the new-item flag. The save block i
 | 6 | Treasures | 100 |
 | 7 | Ingredients | 100 |
 | 8 | Key | 64 |
+
+## Official event cards
+
+The desktop app's Official events mode offers 171 cards from projectpokemon EventsGallery
+(`pokeldn/swsh/data/events.json`, built by `scripts/gen_swsh_events.py` from a folder of its `.wc8`
+files; `pokeldn/swsh/events.py` reads it). Each one is sent as it was distributed, byte for byte.
+
+| group | cards |
+|---|---|
+| Pokemon | 87 |
+| Items | 69 |
+| Clothing | 9 |
+| Battle Points | 6 |
+
+Of the gallery's 949 Sword/Shield cards, all 949 pass the validator `0x010b5de0`. Left out: 740
+whose gift repeats a kept card with only the date or card id changed (mostly ranked-battle rewards),
+24 simulated cards, 12 whose items are ★ dummies, and 2 HOME Gigantamax gifts of a species with no
+Gigantamax form, which the PKHeX check refuses.
+
+The flags at `+0x10` set how often a console takes a card ([What the menu refuses](#what-the-menu-refuses)):
+
+| flags | cards | receipt |
+|---|---|---|
+| bit 0 | 112 | once per card id, refused afterwards with message 7 |
+| bit 2 | 13 | once per card date, at most ten a day |
+| neither | 46 | every time |
+
+Two Pokemon cards carry a version mask of 1 or 2 and are skipped by the other version.
 
 ## Clothing
 
@@ -754,8 +780,7 @@ bitmap is 0x100 bytes (ids 0 to 2047), so a record with flag bit 0 and an id of 
 past it, and from id 13000 past the block's 0x17C8 bytes. A record with flag bit 0 clear never
 reads it. The bit is set on receipt; its writer is not located. On a retail Sword, EventsGallery's
 Poke Ball x100 card (id 0x6A, flags 1) sent a second time over local wireless was refused with message
-7 and then no longer listed, while records with flags 0 and the same id 0x270F were received ten
-times over.
+7 and dropped from the list; records with flags 0 and id 0x270F were received ten times.
 
 The entries are written only by `0x01449560`, whose only caller `0x00ff1558` sits behind
 `0x00ff154c tbz w8,#2` on `[card+0xe8]`, and they store the record's own date (`0x01449570`,

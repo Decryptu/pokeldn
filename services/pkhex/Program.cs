@@ -1,9 +1,12 @@
+using System.Diagnostics.CodeAnalysis;
 using System.Reflection;
 using System.Text.Json.Nodes;
 using PKHeX.Core;
 using static PKHeX.Core.GameVersion;
 
 var strings = GameInfo.GetStrings("en");
+// Cut, Fly, Surf, Strength, Waterfall, Flash, Rock Smash, Dive
+var hiddenMoves = new HashSet<ushort> { 15, 19, 57, 70, 127, 148, 249, 291 };
 var games = new Dictionary<string, Game>
 {
     ["frlg"] = new([FR, LG, E, R, S], PersonalTable.FR, EntityContext.Gen3, () => new PK3(), DecryptedParty),
@@ -35,6 +38,11 @@ while (Console.ReadLine() is { } line)
             "gift" => Gift(Convert.FromBase64String((string)request["data"]!)),
             "events" => Events(),
             "event" => Event(game, request),
+            "sav_read" => SaveRead(game, request),
+            "sav_box" => SaveBox(game, request),
+            "sav_edit" => SaveEdit(game, request),
+            "move" => Move(game, request),
+            "destinations" => Destinations(game, request),
             var other => throw new ArgumentException($"unknown command {other}"),
         };
         reply["ok"] = true;
@@ -50,9 +58,18 @@ JsonObject Species(Game game)
 {
     var list = new JsonArray();
     for (ushort s = 1; s <= game.Table.MaxSpeciesID; s++)
-        if (game.Table.IsPresentInGame(s, 0))
+        if (FirstForm(game, s) is not null)
             list.Add(new JsonObject { ["id"] = s, ["name"] = strings.specieslist[s] });
     return new JsonObject { ["species"] = list };
+}
+
+// Legends Arceus holds 16 species only in their Hisuian form (Growlithe, Zorua, Decidueye...): form 0 is absent.
+byte? FirstForm(Game game, ushort species)
+{
+    for (byte f = 0; f < game.Table[species].FormCount; f++)
+        if (game.Table.IsPresentInGame(species, f))
+            return f;
+    return null;
 }
 
 JsonObject GenderRatio(Game game, JsonObject request)
@@ -60,7 +77,7 @@ JsonObject GenderRatio(Game game, JsonObject request)
     var species = checked((ushort)(int)request["species"]!);
     var form = checked((byte)((int?)request["form"] ?? 0));
     if (!game.Table.IsPresentInGame(species, form))
-        form = 0;
+        form = FirstForm(game, species) ?? 0;
     return new JsonObject { ["ratio"] = (int)game.Table.GetFormEntry(species, form).Gender };
 }
 
@@ -84,7 +101,13 @@ JsonObject Names(Game game, string list)
                     Add(m, strings.movelist[m]);
             break;
         case "items":
+            // PKHeX keeps the games' unused item ids as "???" placeholders.
             for (var i = 1; i <= blank.MaxItemID; i++)
+                if (strings.itemlist[i] != "???")
+                    Add(i, strings.itemlist[i]);
+            break;
+        case "bag" when game.Context == EntityContext.Gen8:
+            foreach (var i in GiftItems().Order())
                 Add(i, strings.itemlist[i]);
             break;
         case "held":
@@ -107,11 +130,10 @@ JsonObject Names(Game game, string list)
 JsonObject Options(Game game, JsonObject request)
 {
     var species = checked((ushort)(int)request["species"]!);
-    if (!game.Table.IsPresentInGame(species, 0))
-        throw new ArgumentException("This species is absent from the selected game.");
-    var form = checked((byte)((int?)request["form"] ?? 0));
+    var first = FirstForm(game, species) ?? throw new ArgumentException("This species is absent from the selected game.");
+    var form = checked((byte)((int?)request["form"] ?? first));
     if (!game.Table.IsPresentInGame(species, form))
-        form = 0;
+        form = first;
     var detail = game.Table.GetFormEntry(species, form);
     var (versions, trainer) = Trainer(game, request);
     // A ball is listed when PKHeX permits it for at least one encounter of the species.
@@ -195,15 +217,14 @@ JsonObject Options(Game game, JsonObject request)
 JsonObject Make(Game game, JsonObject request)
 {
     var species = checked((ushort)(int)request["species"]!);
-    if (!game.Table.IsPresentInGame(species, 0))
-        throw new ArgumentException("This species is absent from the selected game.");
+    var first = FirstForm(game, species) ?? throw new ArgumentException("This species is absent from the selected game.");
     var level = (int?)request["level"] ?? 0;
     if (level < 0 || level > 100)
         throw new ArgumentException("Level must be between 0 and 100.");
     var shiny = (bool?)request["shiny"] ?? false;
     var nickname = (string?)request["nickname"] ?? "";
     var wish = Wish.From(request["options"] as JsonObject);
-    var form = wish.Form ?? 0;
+    var form = wish.Form ?? first;
     if (!game.Table.IsPresentInGame(species, form))
         throw new ArgumentException("This form is absent from the selected game.");
     // SetNickname cuts a longer name without saying so; the record would not carry what was asked.
@@ -421,7 +442,7 @@ void Refit(PKM pk, Wish wish)
     }
 }
 
-JsonObject Check(Game game, byte[] data, JsonObject request)
+PKM Parse(Game game, byte[] data)
 {
     if (game.Context == EntityContext.Gen7b && data.Length == 0xE8)
         data = [.. data, .. new byte[0x104 - data.Length]];
@@ -429,6 +450,12 @@ JsonObject Check(Game game, byte[] data, JsonObject request)
              ?? throw new InvalidDataException($"{data.Length} bytes are not a Pokemon of this game.");
     if (pk.GetType() != game.Blank().GetType())
         throw new InvalidDataException($"Expected {game.Blank().GetType().Name}, received {pk.GetType().Name}.");
+    return pk;
+}
+
+JsonObject Check(Game game, byte[] data, JsonObject request)
+{
+    var pk = Parse(game, data);
     if (!game.Table.IsPresentInGame(pk.Species, pk.Form))
         throw new InvalidDataException("This species or form is absent from the selected game.");
     if (!pk.ChecksumValid)
@@ -475,6 +502,100 @@ JsonObject Check(Game game, byte[] data, JsonObject request)
     return reply;
 }
 
+// A banked Pokemon taken to `game` through PKHeX's HOME conversion (docs/gui.md, The bank). A Pokemon from
+// another game carries the bank's HOME tracker, which PKHeX's legality check requires [HomeTrackerUtil].
+(PKM? Pokemon, LegalityAnalysis? Legality, string Refusal) Moved(Game from, Game to, byte[] data, ulong tracker,
+                                                                   ITrainerInfo owner)
+{
+    var source = Parse(from, data);
+    if (!source.ChecksumValid)
+        return (null, null, "The Pokemon checksum is invalid.");
+    PKM pk = source;
+    if (from != to)
+    {
+        if (!EntityConverter.IsConvertibleToFormat(source, to.Blank().Format))
+            return (null, null, "Nothing goes back to this game: HOME only takes from it.");
+        if (source.IsEgg)
+            return (null, null, "An egg stays in its own game.");
+        // HOME's screen for FireRed and LeafGreen: no held item, no hidden move (HM).
+        if (source is PK3 && source.HeldItem != 0)
+            return (null, null, "HOME takes a FireRed or LeafGreen Pokemon only without a held item.");
+        if (source is PK3 && source.Moves.Any(m => hiddenMoves.Contains(m)))
+            return (null, null, "HOME takes a FireRed or LeafGreen Pokemon only without an HM move.");
+        if (!to.Table.IsPresentInGame(source.Species, source.Form))
+            return (null, null, "This species or form is absent from that game.");
+        pk = EntityConverter.ConvertToType(source, to.Blank().GetType(), out var result)
+             ?? throw new InvalidDataException($"PKHeX has no transfer route ({result}).");
+        if (pk is IHomeTrack { HasTracker: false } home)
+            home.Tracker = tracker;
+        // The bank's owner receives it in the new game, as HOME hands it to the save it is moved into.
+        if (pk is IHandlerUpdate handler)
+            handler.UpdateHandler(owner);
+        else if (pk is PB8 pb8)
+            pb8.UpdateHandler(owner);
+        pk.ResetPartyStats();
+        pk.RefreshChecksum();
+    }
+    var la = new LegalityAnalysis(pk);
+    // Sword/Shield's check wants a Pokemon from another game handled even by its own trainer.
+    if (!la.Valid && from != to && pk.CurrentHandler == 0)
+    {
+        pk.CurrentHandler = 1;
+        pk.HandlingTrainerName = owner.OT;
+        pk.HandlingTrainerGender = owner.Gender;
+        if (pk is IHandlerLanguage language)
+            language.HandlingTrainerLanguage = (byte)owner.Language;
+        pk.RefreshChecksum();
+        var handled = new LegalityAnalysis(pk);
+        if (handled.Valid)
+            la = handled;
+        else
+            pk.CurrentHandler = 0;
+    }
+    // A move the new game lacks: HOME's games replace the moves, so the bank takes PKHeX's suggestion.
+    if (!la.Valid && from != to && la.Info.Moves.Any(m => !m.Valid))
+    {
+        Refit(pk, Wish.From(null));
+        pk.RefreshChecksum();
+        la = new LegalityAnalysis(pk);
+    }
+    return la.Valid ? (pk, la, "") : (pk, la, la.Report());
+}
+
+ulong Tracker(JsonObject request) => ulong.Parse((string?)request["tracker"] ?? "0");
+
+JsonObject Move(Game game, JsonObject request)
+{
+    var from = games[(string)request["source"]!];
+    var (pk, la, refusal) = Moved(from, game, Convert.FromBase64String((string)request["data"]!), Tracker(request),
+                                  Trainer(game, request).Item2);
+    if (pk is null || la is null || refusal.Length > 0)
+        throw new InvalidDataException(refusal);
+    return Describe(game, pk, la);
+}
+
+// Every game the banked Pokemon could go to, `game` being the one it is in now.
+JsonObject Destinations(Game game, JsonObject request)
+{
+    var data = Convert.FromBase64String((string)request["data"]!);
+    var tracker = Tracker(request);
+    var reply = new JsonObject();
+    foreach (var (key, to) in games)
+    {
+        string refusal;
+        try
+        {
+            refusal = Moved(game, to, data, tracker, Trainer(to, request).Item2).Refusal;
+        }
+        catch (Exception e)
+        {
+            refusal = e.Message;
+        }
+        reply[key] = new JsonObject { ["ok"] = refusal.Length == 0, ["reason"] = refusal };
+    }
+    return new JsonObject { ["games"] = reply };
+}
+
 // A Showdown or Smogon set, read by PKHeX's own parser in any language it knows, as the values `make` takes.
 // A line it cannot read or a choice this game lacks is an error; a value the builder does not set is a note.
 JsonObject Paste(Game game, JsonObject request)
@@ -504,18 +625,20 @@ JsonObject Paste(Game game, JsonObject request)
             sets.Add(new JsonObject { ["errors"] = errors });
             continue;
         }
-        if (!game.Table.IsPresentInGame(species, set.Form))
+        // A set that names no form takes the game's own: "Zorua" in Legends Arceus is the Hisuian one.
+        var form = set.Form == 0 && set.FormName.Length == 0 ? FirstForm(game, species) ?? 0 : set.Form;
+        if (!game.Table.IsPresentInGame(species, form))
         {
-            errors.Add(game.Table.IsPresentInGame(species, 0)
+            errors.Add(FirstForm(game, species) is not null
                 ? $"{name} has no {set.FormName} form in this game."
                 : $"{name} is not in this game.");
             sets.Add(new JsonObject { ["species"] = name, ["errors"] = errors });
             continue;
         }
-        var detail = game.Table.GetFormEntry(species, set.Form);
+        var detail = game.Table.GetFormEntry(species, form);
         var options = new JsonObject();
-        if (set.Form != 0)
-            options["form"] = set.Form;
+        if (form != 0)
+            options["form"] = form;
         if (set.Nature != Nature.Random)
             options["nature"] = (int)set.Nature;
         if (set.Ability >= 0)
@@ -576,7 +699,7 @@ JsonObject Paste(Game game, JsonObject request)
         {
             ["species"] = name,
             ["species_id"] = species,
-            ["form"] = set.Form == 0 ? "" : ShowdownParsing.GetStringFromForm(set.Form, strings, species, game.Context),
+            ["form"] = form == 0 ? "" : ShowdownParsing.GetStringFromForm(form, strings, species, game.Context),
             ["nickname"] = set.Nickname,
             ["level"] = set.Level,
             ["shiny"] = set.Shiny,
@@ -591,8 +714,10 @@ JsonObject Paste(Game game, JsonObject request)
     return new JsonObject { ["sets"] = sets };
 }
 
-// PKHeX's Gen 3 event table (internal, read by name: pin the package before renaming it). Japanese
-// distributions are left out: their names do not render on a European cartridge.
+// PKHeX's Gen 3 event table (internal, read by name: pin the package before renaming it; the attribute keeps
+// it through trimming). Japanese distributions are left out: their names do not render on a European cartridge.
+[DynamicDependency(DynamicallyAccessedMemberTypes.PublicFields | DynamicallyAccessedMemberTypes.NonPublicFields,
+    "PKHeX.Core.EncountersWC3", "PKHeX.Core")]
 IEnumerable<EncounterGift3> Gen3Events() =>
     ((EncounterGift3[])typeof(PK3).Assembly.GetType("PKHeX.Core.EncountersWC3")!
         .GetField("Encounter_WC3", BindingFlags.Public | BindingFlags.NonPublic | BindingFlags.Static)!
@@ -649,12 +774,15 @@ JsonObject Event(Game game, JsonObject request)
     };
 }
 
+// The items a Sword/Shield gift may give or a gifted Pokemon may hold; the GUI lists the same set.
+static IReadOnlySet<ushort> GiftItems() => ItemStorage8SWSH.GetAllHeld().ToHashSet();
+
 JsonObject Gift(byte[] data)
 {
     if (data.Length != WC8.Size)
         throw new InvalidDataException("A WC8 record must contain 720 bytes.");
     var card = new WC8(data);
-    var held = ItemStorage8SWSH.GetAllHeld();
+    var held = GiftItems();
     bool ValidItem(int item) => item == 0 || held.Contains((ushort)item);
     if (card.IsEntity)
     {
@@ -703,6 +831,105 @@ JsonObject Gift(byte[] data)
     return new JsonObject { ["valid"] = true };
 }
 
+// A FireRed/LeafGreen save: its trainer, party and box contents. Sector checksums are checked by
+// pokeldn.frlg.save.sav, the same test the game runs at load; PKHeX's own note is reported beside it.
+SAV3FRLG LoadSave(JsonObject request)
+{
+    var data = Convert.FromBase64String((string)request["data"]!);
+    return SaveUtil.GetSaveFile(new Memory<byte>(data), "") as SAV3FRLG
+           ?? throw new InvalidDataException("This is not a FireRed or LeafGreen save PKHeX can read.");
+}
+
+JsonObject SaveRead(Game game, JsonObject request)
+{
+    var sav = LoadSave(request);
+    var party = new JsonArray();
+    foreach (var pk in sav.PartyData)
+        party.Add(Describe(game, pk, new LegalityAnalysis(pk)));
+    var boxes = new JsonArray();
+    for (var b = 0; b < sav.BoxCount; b++)
+    {
+        var mons = new JsonArray();
+        var slots = sav.GetBoxData(b);
+        for (var i = 0; i < slots.Length; i++)
+            if (slots[i].Species != 0)
+                mons.Add(new JsonObject { ["slot"] = i, ["species_id"] = slots[i].Species,
+                                          ["species"] = strings.specieslist[slots[i].Species],
+                                          ["level"] = slots[i].CurrentLevel, ["shiny"] = slots[i].IsShiny,
+                                          ["egg"] = slots[i].IsEgg, ["nickname"] = slots[i].Nickname });
+        boxes.Add(new JsonObject { ["name"] = sav.GetBoxName(b), ["mons"] = mons });
+    }
+    return new JsonObject
+    {
+        ["name"] = sav.OT, ["gender"] = sav.Gender, ["trainer_id"] = sav.DisplayTID,
+        ["secret_id"] = sav.DisplaySID, ["hours"] = sav.PlayedHours, ["minutes"] = sav.PlayedMinutes,
+        ["money"] = sav.Money, ["coins"] = sav.Coin, ["max_money"] = sav.MaxMoney,
+        ["max_coins"] = sav.MaxCoins, ["badges"] = System.Numerics.BitOperations.PopCount((uint)sav.Badges),
+        ["seen"] = sav.SeenCount, ["caught"] = sav.CaughtCount, ["japanese"] = sav.Japanese,
+        ["checksum_note"] = sav.ChecksumsValid ? "" : sav.ChecksumInfo.Trim(),
+        ["party"] = party, ["boxes"] = boxes,
+    };
+}
+
+// One box's Pokemon with PKHeX's legality verdict: seconds for a full box, so the app asks per box.
+JsonObject SaveBox(Game game, JsonObject request)
+{
+    var sav = LoadSave(request);
+    var mons = new JsonArray();
+    foreach (var pk in sav.GetBoxData((int)request["box"]!))
+        mons.Add(pk.Species == 0 ? null : Describe(game, pk, new LegalityAnalysis(pk)));
+    return new JsonObject { ["mons"] = mons };
+}
+
+// Trainer fields, then the party as listed: {"keep": n} for the save's own slot n, {"data": PK3} for a
+// Pokemon the app built. Written back through PKHeX, which recomputes every sector checksum.
+JsonObject SaveEdit(Game game, JsonObject request)
+{
+    var sav = LoadSave(request);
+    if (request["trainer"] is JsonObject trainer)
+        foreach (var (name, value) in trainer)
+            switch (name)
+            {
+                case "name":
+                    var ot = ((string)value!).Trim();
+                    if (ot.Length == 0 || ot.Length > (sav.Japanese ? 5 : 7))
+                        throw new ArgumentException($"A trainer name is 1 to {(sav.Japanese ? 5 : 7)} characters.");
+                    sav.OT = ot;
+                    break;
+                case "gender": sav.Gender = checked((byte)(int)value!); break;
+                case "money": sav.Money = Math.Min(checked((uint)(long)value!), (uint)sav.MaxMoney); break;
+                case "coins": sav.Coin = Math.Min(checked((uint)(long)value!), (uint)sav.MaxCoins); break;
+                default: throw new ArgumentException($"Unsupported edit {name}.");
+            }
+    if (request["party"] is JsonArray wanted)
+    {
+        var old = sav.PartyData;
+        var party = new List<PKM>();
+        foreach (var slot in wanted)
+        {
+            if (slot is not JsonObject o)
+                continue;
+            if (o["keep"] is { } keep)
+                party.Add(old[(int)keep]);
+            else
+            {
+                var pk = EntityFormat.GetFromBytes(Convert.FromBase64String((string)o["data"]!), EntityContext.Gen3) as PK3
+                         ?? throw new InvalidDataException("A party Pokemon is not a Gen 3 Pokemon.");
+                if (!pk.ChecksumValid)
+                    throw new InvalidDataException("A party Pokemon's checksum is invalid.");
+                pk.ResetPartyStats();
+                party.Add(pk);
+            }
+        }
+        if (party.Count is 0 or > 6)
+            throw new ArgumentException("A party holds one to six Pokemon.");
+        sav.PartyData = party;
+    }
+    var reply = SaveRead(game, new JsonObject { ["data"] = Convert.ToBase64String(sav.Write(default).Span) });
+    reply["data"] = Convert.ToBase64String(sav.Write(default).Span);
+    return reply;
+}
+
 JsonObject Describe(Game game, PKM pk, LegalityAnalysis la)
 {
     var moves = new JsonArray();
@@ -728,7 +955,11 @@ JsonObject Describe(Game game, PKM pk, LegalityAnalysis la)
         ["ability"] = game.Context == EntityContext.Gen9a ? "" : strings.abilitylist[pk.Ability],
         ["held_item"] = pk.HeldItem == 0 ? "" : strings.GetItemStrings(game.Context, game.Versions[0])[pk.HeldItem],
         ["moves"] = moves,
+        ["pid"] = pk.PID,
+        ["encryption_constant"] = pk.EncryptionConstant,
+        ["tracker"] = (pk is IHomeTrack home ? home.Tracker : 0).ToString(),
         ["encounter"] = la.EncounterOriginal.LongName,
+        ["parsed"] = la.Parsed,
         ["legal"] = la.Valid,
         ["report"] = la.Report(),
     };

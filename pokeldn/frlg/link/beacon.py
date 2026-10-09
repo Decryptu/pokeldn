@@ -16,6 +16,9 @@ ACTIVITY_TRADE = 4
 ACTIVITY_SEARCH = 12
 ACTIVITY_WONDER_CARD = 21
 ACTIVITY_WONDER_NEWS = 22
+# BPRJ/BPGJ accept 6 and 7 there (BPRJ 0x08410EC4); docs/frlg_rom_map.md, Japanese layout.
+ACTIVITY_WONDER_CARD_JAPANESE = 6
+ACTIVITY_WONDER_NEWS_JAPANESE = 7
 # Union Room search activities: docs/frlg_link.md, Getting listed.
 IN_UNION_ROOM = 1 << 6
 LANGUAGE_ENGLISH = 2
@@ -80,11 +83,11 @@ def b85_encode(data):
     return bytes(out)
 
 
-def encode_name(name, width=8):
-    return charmap.encode(name or "", width=width, pad=0xFF)
+def encode_name(name, width=8, *, language=None):
+    return charmap.encode(name or "", width=width, pad=0xFF, language=language)
 
 
-def mutate_beacon(captured_app_data, *, name=None, trainer_id=None, rfu_session_id=None):
+def mutate_beacon(captured_app_data, *, name=None, trainer_id=None, rfu_session_id=None, language=None):
     """Clone a captured host's application data, Pia header verbatim, re-encoding only the
     overridden record fields."""
     captured = bytes(captured_app_data)
@@ -93,7 +96,7 @@ def mutate_beacon(captured_app_data, *, name=None, trainer_id=None, rfu_session_
     if trainer_id is not None:
         rec[0:2] = (trainer_id & 0xFFFF).to_bytes(2, "little")
     if name is not None:
-        rec[2:10] = encode_name(name, width=8)
+        rec[2:10] = encode_name(name, width=8, language=language)
     if rfu_session_id is not None:
         rec[10:12] = (rfu_session_id & 0xFFFF).to_bytes(2, "little")
     return header + b85_encode(bytes(rec))
@@ -112,7 +115,9 @@ def b85_decode(s):
     return bytes(out)
 
 
-def decode_name(b):
+def decode_name(b, *, language=None):
+    if language == 1:
+        return charmap.decode(b, language=language).rstrip()
     out = []
     for x in b:
         if x == 0xFF:
@@ -141,7 +146,7 @@ def diagnose(app_data, log):
         try:
             d = b85_decode(gba)
             if len(d) >= 24:
-                log(f"[live] beacon decoded: host name={decode_name(d[2:10])!r} "
+                log(f"[live] beacon decoded: host name={decode_name(d[2:10], language=(int.from_bytes(d[16:18], "little") >> 11) & 7)!r} "
                     f"TID=0x{int.from_bytes(d[0:2], 'little'):04x} "
                     f"RFU-session-id=0x{int.from_bytes(d[10:12], 'little'):04x} "
                     f"tradeSpecies={int.from_bytes(d[20:24], 'little') >> 16}")

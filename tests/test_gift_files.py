@@ -23,7 +23,8 @@ from tests.test_mystery_gift_end_to_end import _run_full_stack
 TOOLS = {tool.key: tool for game in GAMES for tool in game.tools}
 
 
-@pytest.mark.parametrize("code,version", [("BPRF", "firered"), ("BPGE", "leafgreen")])
+@pytest.mark.parametrize("code,version", [(code, build.version)
+                                          for code, build in builds.BUILDS.items()])
 def test_exported_frlg_gift_reaches_the_correct_cartridge_unchanged(tmp_path, code, version):
     path = tmp_path / "celebi.pokegift"
     original = config.MysteryGiftPayload(gift="celebi")
@@ -67,7 +68,7 @@ def test_equal_frlg_variants_still_refuse_an_undeclared_cartridge(tmp_path):
     gifts.save(path, frlg_file.from_payload(config.MysteryGiftPayload(gift="celebi")))
     parser = frlg_mg_host.build_parser()
     run = frlg_mg_host.build_run_config(parser, parser.parse_args(["--gift-file", str(path)]))
-    host, console = _session(run, game_code=b"BPRD", version="firered")
+    host, console = _session(run, game_code=b"BPRK", version="firered")
     with pytest.raises(mg_server.MysteryGiftServerError, match="NOTHING WAS SENT"):
         _drive(host, console)
     assert console.saved_card is None and console.saved_ram_script is None
@@ -93,6 +94,71 @@ def test_news_file_selects_the_news_flow_and_preserves_the_message(tmp_path):
     run = _run_full_stack(payload=distribution)
     assert run.console.saved_news == distribution.news
     assert run.console.saved_card is None
+
+
+@pytest.mark.parametrize("code,version", [(code, build.version)
+                                          for code, build in builds.BUILDS.items()])
+def test_a_wc3_saved_by_the_launcher_delivers_on_every_cartridge(tmp_path, code, version):
+    """A .wc3 exported for each cartridge reaches that simulated console unchanged."""
+    path = tmp_path / "celebi.wc3"
+    assert frlg_mg_host.main(["--gift", "celebi", "--console-build", code, "--export-gift", str(path)]) == 0
+    raw = path.read_bytes()
+    expected = config.MysteryGiftPayload(gift="celebi").build_distribution(builds.BUILDS[code])
+    script_at = 0xF8 if code.endswith("J") else 0x1A0
+    assert len(raw) == (1252 if code.endswith("J") else frlg_file.WC3_SIZE)
+    assert int.from_bytes(raw[script_at:script_at + 2], "little") == mystery_gift.crc16(raw[script_at + 4:script_at + 1004])
+    parser = frlg_mg_host.build_parser()
+    run = frlg_mg_host.build_run_config(parser, parser.parse_args(["--gift-file", str(path)]))
+    host, console = _session(run, game_code=code.encode(), version=version)
+    _drive(host, console)
+    assert console.error is None
+    assert console.saved_card == expected.card
+    assert console.saved_ram_script == expected.ram_script.ljust(1024, b"\0")
+
+
+GALLERY_WC3 = sorted(Path("scratchpad/wc3").glob("*.wc3"))
+
+
+@pytest.mark.skipif(not GALLERY_WC3, reason="needs EventsGallery's .wc3 files in scratchpad/wc3")
+def test_every_gallery_wc3_the_game_accepts_comes_back_byte_for_byte():
+    """Card, script and the metadata's icon come back as the gallery wrote them; the rest of the
+    80-byte metadata is save-side and written as zero."""
+    kept = 0
+    for path in GALLERY_WC3:
+        raw = path.read_bytes()
+        try:
+            gift = frlg_file.from_wc3(raw, build="BPRE")
+        except ValueError:
+            continue                  # Japanese files and debug flag ids 4 to 8 (docs/gifts.md)
+        out = frlg_file.to_wc3(gift)
+        assert (out[:0x150], out[0x15A:0x15C], out[0x1A0:]) == (raw[:0x150], raw[0x15A:0x15C], raw[0x1A0:]), path
+        kept += 1
+    assert kept >= 28
+
+
+def test_a_native_file_refuses_another_game_and_extras_it_cannot_hold(tmp_path):
+    pikachu = gifts.adapter("swsh").from_record(wc8.pokemon_card(25))
+    with pytest.raises(ValueError, match="holds a frlg gift"):
+        gifts.save(tmp_path / "x.wc3", pikachu)
+    gifts.save(tmp_path / "x.wc8", pikachu)
+    assert (tmp_path / "x.wc8").read_bytes() == pikachu.variants["swsh"].data["wc8"]
+    stamp = next(p.args[1] for p in frlg_builder.PRESETS if p.args[0] == "--gift"
+                 and config.MysteryGiftPayload(gift=p.args[1]).build_distribution(builds.BPRF).is_stamp)
+    with pytest.raises(ValueError, match="cannot preserve"):
+        gifts.save(tmp_path / "stamp.wc3", frlg_file.from_payload(config.MysteryGiftPayload(gift=stamp)), build="BPRF")
+
+
+@pytest.mark.parametrize("suffix", [".wc8", ".WC8"])
+@pytest.mark.parametrize("game", [None, "swsh"])
+def test_native_wc8_with_a_json_like_seal_imports_unchanged(tmp_path, suffix, game):
+    raw = bytes.fromhex((Path(__file__).parent / "data/wc8_json_prefix.hex").read_text())
+    assert raw.startswith(b"{") and wc8.sealed(raw)
+    path = tmp_path / f"gift{suffix}"
+    path.write_bytes(raw)
+    loaded = gifts.load(path, game=game)
+    assert loaded.variants["swsh"].data["wc8"] == raw
+    with pytest.raises(ValueError, match="for swsh, not frlg"):
+        gifts.load(path, game="frlg")
 
 
 def test_wc8_round_trip_reassembles_the_original_record(tmp_path, monkeypatch):
@@ -151,7 +217,8 @@ def _wc3(card, script):
     return card_bin + bytes(0x50) + script_bin
 
 
-@pytest.mark.parametrize("code,version", [("BPRF", "firered"), ("BPGE", "leafgreen")])
+@pytest.mark.parametrize("code,version", [(code, build.version)
+                                          for code, build in builds.BUILDS.items() if build.language != "japanese"])
 def test_wc3_file_reaches_any_cartridge_through_the_launcher(tmp_path, code, version):
     source = config.MysteryGiftPayload(gift="celebi").build_distribution(builds.BPRF)
     path = tmp_path / "celebi.wc3"
@@ -166,10 +233,10 @@ def test_wc3_file_reaches_any_cartridge_through_the_launcher(tmp_path, code, ver
     assert host.server.build.game_code == code
 
 
-def test_wc3_refuses_japanese_files_corruption_and_cartridge_addresses():
+def test_wc3_refuses_corruption_and_undeclared_cartridge_addresses():
     source = config.MysteryGiftPayload(gift="celebi").build_distribution(builds.BPRF)
     raw = _wc3(source.card, source.ram_script)
-    with pytest.raises(ValueError, match="Japanese"):
+    with pytest.raises(ValueError, match="card checksum"):
         frlg_file.from_wc3(raw[:frlg_file.WC3_JAPANESE_SIZE])
     with pytest.raises(ValueError, match="script checksum"):
         frlg_file.from_wc3(raw[:-1] + b"\1")
@@ -324,3 +391,30 @@ def test_a_saved_console_code_file_replaces_the_preset_and_old_gift_files_still_
     assert gifts.loads(source.replace('"version": 2', '"version": 1')).name == "celebi"
     with pytest.raises(ValueError, match="version 2"):
         gifts.loads(gifts.dumps(gift).replace('"version": 2', '"version": 1'))
+
+
+def test_japanese_native_card_round_trip_keeps_its_compact_layout():
+    payload = config.MysteryGiftPayload(gift="celebi")
+    gift = frlg_file.from_payload(payload, console_build="BPRJ")
+    raw = frlg_file.to_wc3(gift, build="BPRJ")
+    assert len(raw) == 1252
+    loaded = frlg_file.from_wc3(raw)
+    assert set(loaded.variants) == {"BPRJ", "BPGJ"}
+    assert loaded.variants["BPRJ"].data["card"] == gift.variants["BPRJ"].data["card"]
+    assert frlg_file.to_wc3(loaded) == raw
+
+
+@pytest.mark.parametrize("code,source", [("BPRJ", "BPRF"), ("BPRF", "BPRJ")])
+def test_gift_files_refuse_a_card_layout_for_another_language(code, source):
+    original = frlg_file.from_payload(config.MysteryGiftPayload(gift="celebi"), console_build=source)
+    with pytest.raises(ValueError, match=f"{code} needs a"):
+        gifts.Gift("frlg", "Wrong layout", {code: original.variants[source]})
+
+
+def test_japanese_card_description_decodes_native_kana_fields():
+    from pokeldn.frlg.gift import wonder_card, mg_client
+    from pokeldn.frlg.text import charmap
+    card = bytearray(config.MysteryGiftPayload(gift="celebi").build_distribution(builds.BPRJ).card)
+    card[10:28] = charmap.encode("サトシ", language=1, width=18, pad=0xFF)
+    assert wonder_card.text_fields(card)[0] == "サトシ"
+    assert "title='サトシ'" in mg_client.describe_wonder_card(card)
