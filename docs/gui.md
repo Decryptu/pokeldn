@@ -172,6 +172,10 @@ Pokemon out of the bank.
   bank, when it is later deposited there. Nothing has been sent to HOME.
 - Whether HOME's own FireRed/LeafGreen import rules go beyond the eggs, held items and HM moves its
   screen names.
+- Which record field carries the origin icon HOME shows on a Pokemon imported from the Switch
+  FireRed/LeafGreen, which a cartridge Pokemon moved through Pokemon Bank lacks (players' screenshots,
+  unmeasured here). PKHeX.Core 26.8.26 converts a `.pk3` by the Pal Park lineage, so a bank move from
+  FireRed/LeafGreen may differ from the record HOME writes.
 
 ## Pokemon sprites
 
