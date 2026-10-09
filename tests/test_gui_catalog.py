@@ -98,18 +98,48 @@ def test_sv_raid_builds_an_ordered_reward_list():
     parsed = parser_of(tool.script).parse_args(args)
     assert parsed.raid_seed == 0x000F34C3
     assert parsed.raid_player_pokemon == "/tmp/host.pk9"
+    assert parsed.generated_bootstrap
     assert parsed.reward == [(1, 1), (50, 10)]
     assert args.count("--reward") == 2
 
 
-def test_sv_raid_join_uses_the_bundled_fixture():
+def test_sv_raid_can_use_generated_seed_rewards():
+    tool = next(t for game in GAMES for t in game.tools if t.key == "sv-raid-host")
+    values = {"--raid-player-pokemon": {"file": "/tmp/host.pk9"},
+              "--raid-seed": "000F34C3"}
+    args = build(tool, values, {}, Settings())
+    parsed = parser_of(tool.script).parse_args(args)
+    assert parsed.generated_bootstrap
+    assert parsed.reward is None
+
+
+def test_sv_raid_passes_the_selected_region_progress_and_black_table():
+    tool = next(t for game in GAMES for t in game.tools if t.key == "sv-raid-host")
+    values = {
+        "--raid-player-pokemon": {"file": "/tmp/host.pk9"},
+        "--raid-seed": "00000000",
+        "--raid-version": "scarlet",
+        "--raid-map": "kitakami",
+        "--raid-progress": "6star",
+        "--raid-content": "black",
+    }
+    parsed = parser_of(tool.script).parse_args(build(tool, values, {}, Settings()))
+    assert (parsed.raid_version, parsed.raid_map, parsed.raid_progress, parsed.raid_content) == (
+        "scarlet", "kitakami", "6star", "black")
+
+
+def test_sv_raid_join_uses_generated_application_messages():
     tool = next(t for game in GAMES for t in game.tools if t.key == "sv-raid-join")
-    args = build(tool, {}, {}, Settings(ot="POKELDN"))
+    args = build(tool, {"--raid-pokemon": {"file": "/tmp/raid.pk9"}}, {},
+                 Settings(ot="Ismail"))
     parsed = parser_of(tool.script).parse_args(args)
     assert parsed.raid_guest_replay and parsed.scene_id == 7
     assert parsed.record_trace is None and parsed.raid_lobby_trace is None
     assert parsed.raid_guest_ready_delay == 2
-    assert parsed.raid_pokemon is None
+    assert parsed.raid_pokemon == "/tmp/raid.pk9"
+    assert parsed.name == "POKELDN"
+    assert parsed.trainer_name == "POKELDN"
+    assert parsed.join_player_name == "POKELDN"
 
 
 def test_sv_raid_join_passes_the_legal_pokemon_builders_file():

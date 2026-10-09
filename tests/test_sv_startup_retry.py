@@ -2,10 +2,19 @@
 import ast
 from pathlib import Path
 from types import SimpleNamespace
+import sys
 import unittest
 
+ROOT = Path(__file__).resolve().parent.parent
+BIN = ROOT / "bin"
+RESEARCH = ROOT / "docs" / "research" / "sv" / "fixtures"
+sys.path.insert(0, str(ROOT))
+sys.path.insert(0, str(BIN))
+
 import sv_host
+from pokeldn import gen9
 from pokeldn.ldn import reliable5
+from sv_raid_bootstrap_codec import decode_application
 
 
 class StartupRetryTests(unittest.TestCase):
@@ -14,14 +23,26 @@ class StartupRetryTests(unittest.TestCase):
         self.sent = []
         self.records = []
         self.ip = '169.254.1.2'
+        application = (RESEARCH / "sv_raid_reward_donor.bin").read_bytes()
+        boundary = 1395
+        replay = [
+            (0.2, 11, 0x02, 11, application[:boundary]),
+            (0.3, 12, 0x04, 11, application[boundary:]),
+        ]
         self.env.update(
-            args=SimpleNamespace(raid_replay_client_gated=True),
+            args=SimpleNamespace(raid_replay_client_gated=True, record_set='records'),
             disconnect_after_stop=5,
             stop_after_seq=20,
             transport=SimpleNamespace(our_ip='169.254.1.1', broadcast='169.254.1.255',
                                       send=lambda packet, ip: self.sent.append((packet, ip))),
             keys=None, build_reply=lambda keys, ip, body, *a, **kw: body,
-            station_ids={self.ip: {'console_var': 42}},
+            station_ids={self.ip: {'console_var': 42, 'host_const': bytes.fromhex(
+                'cc6d5aeb38a40000')}},
+            pending_raid_bootstrap={}, pending_late={}, pending_records={},
+            pending_raid_replay=[
+                (10 + delay, self.ip, sequence, flags, lowest, payload)
+                for delay, sequence, flags, lowest, payload in replay],
+            raid_replay_events=replay, raid_guest_pokemon={}, raid_guest_waits={self.ip},
             identity_window=reliable5.SendWindow(.25),
             channel_window=reliable5.SendWindow(.25),
             raid_window=reliable5.SendWindow(.5),
@@ -30,11 +51,48 @@ class StartupRetryTests(unittest.TestCase):
             record=lambda **kw: self.records.append(kw),
         )
         tree = ast.parse(Path(sv_host.__file__).read_text())
-        for name in ('outbound_lowest', 'send_ack', 'send_raid_replay'):
+        for name in ('schedule_raid_opening', 'install_raid_guest_pokemon',
+                     'outbound_lowest', 'send_ack', 'send_raid_replay'):
             node = next(n for n in ast.walk(tree)
                         if isinstance(n, ast.FunctionDef) and n.name == name)
             exec(compile(ast.Module(body=[node], type_ignores=[]),
                          sv_host.__file__, 'exec'), self.env)
+
+    def test_raid_opening_is_scheduled_relative_to_session_ack(self):
+        acknowledged_at = 12.5
+        self.assertEqual(self.env['pending_raid_bootstrap'], {})
+        self.assertEqual(self.env['pending_late'], {})
+        self.assertEqual(self.env['pending_records'], {})
+
+        self.env['schedule_raid_opening'](self.ip, acknowledged_at)
+
+        self.assertEqual(self.env['pending_raid_bootstrap'][self.ip], acknowledged_at)
+        self.assertEqual(
+            {key: due for key, (due, _) in self.env['pending_late'].items()},
+            {(self.ip, 'raid0'): acknowledged_at,
+             (self.ip, 'raid1'): acknowledged_at,
+             (self.ip, 'raid2'): acknowledged_at})
+        self.assertEqual(self.env['pending_records'][self.ip], acknowledged_at + 0.02)
+        self.assertEqual(self.records[-1]['rec'], 'raid_session_ready')
+
+    def test_guest_lobby_pokemon_late_binds_pending_bootstrap(self):
+        original = decode_application((RESEARCH / "sv_raid_reward_donor.bin").read_bytes())
+        guest = original[:gen9.SIZE_PARTY]
+
+        self.env['install_raid_guest_pokemon'](self.ip, guest)
+
+        fragments = {
+            sequence: payload
+            for _, peer, sequence, _, _, payload in self.env['pending_raid_replay']
+            if peer == self.ip and sequence in (11, 12)
+        }
+        changed = decode_application(fragments[11] + fragments[12])
+        self.assertEqual(
+            changed[gen9.SIZE_PARTY:2 * gen9.SIZE_PARTY], guest)
+        self.assertEqual(changed[:gen9.SIZE_PARTY], original[:gen9.SIZE_PARTY])
+        self.assertEqual(self.env['raid_guest_pokemon'][self.ip], guest)
+        self.assertNotIn(self.ip, self.env['raid_guest_waits'])
+        self.assertEqual(self.records[-1]['pending_fragments'], 2)
 
     def test_startup_ack_cannot_skip_unacknowledged_open(self):
         for protocol, port, window in ((0x81, 1, 'channel_window'),

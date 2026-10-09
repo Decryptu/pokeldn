@@ -1,13 +1,15 @@
 # Scarlet/Violet raid reward profiles
 
+> Historical donor-era research. Production hosting now generates the complete
+> raid opening and rewards. Donor artifacts remain only as research evidence.
+
 ## Supported product surface
 
 Raid rewards are now configurable through a versioned JSON file and command
 line tools. No GUI code is involved.
 
-The current production profile backend is intentionally donor-specific. The
-runtime ships only the compact `sv_raid_reward_donor.bin` application fixture,
-not its original packet capture:
+The original profile backend was intentionally donor-specific. The archived
+corpus retains `fixtures/sv_raid_reward_donor.bin` alongside its packet capture:
 
 - game: Pokémon Violet 4.0.0;
 - donor seed: `C72E1D7F`;
@@ -52,7 +54,7 @@ Rules:
 Create a profile:
 
 ```bash
-./.venv/bin/python sv_raid_rewards.py create \
+./.venv/bin/python tools/sv/research/sv_raid_rewards.py create \
   --name "Quick Ball x500" \
   --reward 15:500 \
   --output quick500.json
@@ -65,20 +67,20 @@ hexadecimal `0x0f`. JSON output is normalized to decimal integers.
 Validate and normalize a profile:
 
 ```bash
-./.venv/bin/python sv_raid_rewards.py validate quick500.json
+./.venv/bin/python tools/sv/research/sv_raid_rewards.py validate quick500.json
 ```
 
 Inspect all known reward slots in the donor capture:
 
 ```bash
-./.venv/bin/python sv_raid_rewards.py inspect \
+./.venv/bin/python tools/sv/research/sv_raid_rewards.py inspect \
   --trace tera_raid_retail_seed_C72E1D7F_max_quantity_avalugg_run1.jsonl
 ```
 
 Offline-encode an application and its decoded `0xAA0`-byte object:
 
 ```bash
-./.venv/bin/python sv_raid_rewards.py encode quick500.json \
+./.venv/bin/python tools/sv/research/sv_raid_rewards.py encode quick500.json \
   --trace tera_raid_retail_seed_C72E1D7F_max_quantity_avalugg_run1.jsonl \
   --application-out quick500.application.bin \
   --raw-out quick500.raw.bin
@@ -87,7 +89,7 @@ Offline-encode an application and its decoded `0xAA0`-byte object:
 Host the profile with an independently selected fight/catch seed:
 
 ```bash
-./sv_raid_reward_host.sh 000F34C3 quick500.json
+tools/sv/research/sv_raid_reward_host.sh 000F34C3 quick500.json
 ```
 
 The current host wrapper uses link code `4970`, the connected ESP32 at

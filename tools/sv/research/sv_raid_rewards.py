@@ -3,11 +3,12 @@
 
 import argparse
 import json
-import os
 from pathlib import Path
 import sys
 
-sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+ROOT = Path(__file__).resolve().parents[3]
+sys.path.insert(0, str(ROOT))
+sys.path.insert(0, str(ROOT / "bin"))
 
 from sv_raid_bootstrap_codec import (
     REWARD_PROFILE_FORMAT,

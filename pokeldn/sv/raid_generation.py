@@ -138,7 +138,7 @@ def _move_pp(encounter: dict) -> tuple[int, ...]:
 
 def _select_encounter(seed: int, context: dict) -> tuple[dict, int]:
     rand = Xoroshiro128Plus(seed)
-    stars = _stars(rand, context["progress"])
+    stars = 6 if context.get("content") == "black" else _stars(rand, context["progress"])
     version = context.get("version", "violet")
     totals = context["rate_totals"]
     try:
@@ -303,6 +303,7 @@ def generate_seed_raid(seed: int, *, version: str = "violet", progress: str = "4
     context_data = {
         "version": version,
         "progress": progress,
+        "content": content,
         "rate_totals": {str(source["stars"]): {version: 1}},
         "encounters": [encounter],
     }

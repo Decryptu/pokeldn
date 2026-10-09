@@ -50,7 +50,6 @@ def test_packer_uses_tracked_defaults_and_requires_firmware(monkeypatch, tmp_pat
     assert {
         "bin/sv_raid_bootstrap_codec.py",
         "bin/sv_raid_host.py",
-        "bin/sv_raid_reward_donor.bin",
         "bin/sv_raid_start_gate.py",
         "bin/ESP32_RETAIL_RAID_GUEST.md",
         "docs/sv_raid.md",
@@ -59,6 +58,7 @@ def test_packer_uses_tracked_defaults_and_requires_firmware(monkeypatch, tmp_pat
         "pokeldn/sv/data/raid_guest.json",
     } <= set(files)
     assert not any("scratchpad" in p or "host.local.toml" in p or "__pycache__" in p for p in files)
+    assert not any(p.startswith("docs/research/") for p in files)
     monkeypatch.setattr(pack, "FIRMWARE", tmp_path / "absent.bin")
     monkeypatch.setattr(pack, "FIRMWARE_S3", tmp_path / "absent-s3.bin")
     monkeypatch.setattr(pack, "FIRMWARE_C3", tmp_path / "absent-c3.bin")

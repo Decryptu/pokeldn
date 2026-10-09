@@ -1,4 +1,4 @@
-"""Capture-derived startup gates for the known sequence-1..20 host replay."""
+"""Client-observed startup gates for the generated sequence-1..20 raid flow."""
 
 
 class RaidStartGate:
@@ -36,9 +36,15 @@ class RaidStartGate:
         # its lobby record. Retail ACKs those records, but can later remain on Communicating
         # after the sequence-11/12 bootstrap instead of emitting load_6e.
         return {1: 'guest_lobby', 7: 'guest_lobby', 10: 'guest_lobby', 'net': 'guest_start',
-                'session': 'net_ack', 11: 'session_ack', 13: 'load_6e',
+                'session': 'net_ack', 11: 'session_ack', 13: 'load_6e/load_73',
                 14: 'load_73', 15: 'battle_93'}.get(stage)
 
     def allowed(self, stage, now):
+        if stage == 13:
+            # Retail can answer the generated bootstrap with either transition marker. The
+            # shiny-Ralts capture skipped 0x32016e entirely and sent 0x320173, followed by
+            # 0x803493; withholding sequence 13 in that state deadlocked an otherwise live game.
+            seen = [self.seen[key] for key in ('load_6e', 'load_73') if key in self.seen]
+            return bool(seen) and now >= min(seen) + 0.05
         key = self.requirement(stage)
         return key is None or (key in self.seen and now >= self.seen[key] + 0.05)

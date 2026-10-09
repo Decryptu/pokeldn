@@ -23,9 +23,6 @@ def load_fixture():
     identity = fixture.get("identity", ())
     if [row.get("seq") for row in identity] != list(range(1, 47)):
         raise ValueError("raid guest fixture identity must contain sequences 1 through 46")
-    lobby = fixture.get("lobby", ())
-    if [row.get("seq") for row in lobby] != [1, 2]:
-        raise ValueError("raid guest fixture lobby must contain sequences 1 and 2")
     return fixture
 
 
@@ -43,8 +40,10 @@ def identity_records():
 
 
 def lobby_records():
-    return [(row["seq"], row["flags"], bytes.fromhex(row["payload"]))
-            for row in load_fixture()["lobby"]]
+    lobby = load_fixture().get("lobby", ())
+    if [row.get("seq") for row in lobby] != [1, 2]:
+        raise ValueError("raid guest fixture lobby must contain sequences 1 and 2")
+    return [(row["seq"], row["flags"], bytes.fromhex(row["payload"])) for row in lobby]
 
 
 def _plain(flags, payload):

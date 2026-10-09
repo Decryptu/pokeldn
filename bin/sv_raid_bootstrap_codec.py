@@ -20,6 +20,11 @@ MESSAGE_HEADER_SIZE = 16
 LZ4_OFFSET = MESSAGE_HEADER_OFFSET + MESSAGE_HEADER_SIZE
 RAW_SIZE_OFFSET = MESSAGE_HEADER_OFFSET + 8
 EXPECTED_RAW_SIZE = 0xAA0
+PARTICIPANT_COUNT = 4
+RAIDPOINT_OFFSET = gen9.SIZE_PARTY * 5
+RAIDPOINT_SIZE = 0x3E8
+RAIDPOINT_REWARD_OFFSET = 0x0E0
+RAIDPOINT_SUMMARY_OFFSET = 0x3B8
 AVALUGG_RAIDPOINT_OFFSET = 0x6B8
 AVALUGG_RAIDPOINT = b"RaidPoint_13_1_1"
 LOBBY_POKEMON_PREFIX = bytes.fromhex("80332e01")
@@ -67,6 +72,8 @@ AVALUGG_BONUS_RECORDS = (
     (0x8B8, 4, 89, 1),   # Big Pearl
     (0x8C8, 4, 92, 1),   # Nugget; observed on the retail single-entry test
 )
+
+STANDARD_CONTENT_KIND = 2
 
 
 @dataclass(frozen=True)
@@ -254,6 +261,186 @@ def encode_application(template, raw):
     return bytes(header) + _compress_block(raw)
 
 
+def build_application(raw, *, message_value=0, header_tail=b"\0\0\0\0"):
+    """Build a complete compressed 0x012F application without a donor envelope.
+
+    ``message_value`` is the opaque 16-bit field at application offset 4.
+    ``header_tail`` is the opaque four-byte field at offset 0x0e. Ordinary
+    retail captures use zero for both tail words; callers can supply live
+    session values once their semantics are known.
+    """
+    raw = bytes(raw)
+    if len(raw) != EXPECTED_RAW_SIZE:
+        raise ValueError(f"raid record must be 0x{EXPECTED_RAW_SIZE:x} bytes")
+    if not 0 <= message_value <= 0xFFFF:
+        raise ValueError("message_value must fit in an unsigned 16-bit field")
+    header_tail = bytes(header_tail)
+    if len(header_tail) != 4:
+        raise ValueError("header_tail must contain exactly four bytes")
+    header = OUTER_PREFIX + struct.pack(
+        "<HHII4s", MESSAGE_TYPE, message_value, 2, len(raw), header_tail)
+    if len(header) != LZ4_OFFSET:
+        raise AssertionError("0x012F application envelope has the wrong size")
+    return header + _compress_block(raw)
+
+
+def _raidpoint_name(value):
+    try:
+        encoded = value.encode("ascii")
+    except (AttributeError, UnicodeEncodeError) as exc:
+        raise ValueError("RaidPoint name must be an ASCII string") from exc
+    if not encoded.startswith(b"RaidPoint_"):
+        raise ValueError("RaidPoint name must start with 'RaidPoint_'")
+    if len(encoded) > 23:
+        raise ValueError("RaidPoint name must fit in the 24-byte inline string")
+    return encoded
+
+
+def build_raid_point(raid, *, point_name="RaidPoint_POKELDN_0", reward_profile=None):
+    """Build the understood portion of a standard `0x3E8` RaidPoint.
+
+    Encounter-specific boss/shield/action parameters come from the bundled
+    retail raid tables. Unknown padding and player-specific Raid Power bonus rows are zeroed.
+    Reward rows use the retail-tested neutral marker zero. Four-star captures
+    place marker 5 after one definition slot and three bonus slots; lower-star
+    captures do not establish that marker as a universal terminator.
+    """
+    try:
+        encounter = raid["encounter"]
+        profile = raid["profile"]
+        metadata = raid["metadata"]
+        rewards = raid["rewards"]
+        stars = metadata["stars"]
+    except (KeyError, TypeError) as exc:
+        raise ValueError("raid must be a generate_seed_raid result") from exc
+    if encounter.get("content") not in ("standard", "black"):
+        raise ValueError("donor-free RaidPoint supports standard and black raids")
+    boss_desc = encounter.get("boss_desc")
+    if not isinstance(boss_desc, (list, tuple)) or len(boss_desc) != 37:
+        raise ValueError("raid encounter is missing its 37-word boss_desc profile")
+    if any(isinstance(value, bool) or not isinstance(value, int)
+           or not 0 <= value <= 0xFFFFFFFF for value in boss_desc):
+        raise ValueError("raid encounter boss_desc words must be unsigned 32-bit integers")
+    hp_multiplier, *actions = boss_desc
+
+    out = bytearray(RAIDPOINT_SIZE)
+    name = _raidpoint_name(point_name)
+    out[:len(name)] = name
+    out[0x18] = 0x40
+    struct.pack_into("<IIII", out, 0x20, stars, 0, 1, profile["level"])
+    struct.pack_into("<I", out, 0x4C, hp_multiplier)
+    struct.pack_into(f"<{len(actions)}I", out, 0x50, *actions)
+
+    if reward_profile is not None:
+        if not isinstance(reward_profile, RewardProfile):
+            reward_profile = parse_reward_profile(reward_profile)
+        rewards = tuple(
+            {"item": entry.item_id, "amount": entry.quantity}
+            for entry in reward_profile.rewards)
+
+    # A neutral generated list is deliberately independent of subject/source
+    # marker aliases and of the host's meal-based Raid Power bonuses. Marker-0
+    # exact lists have already been accepted by retail in the donor-backed path.
+    max_rows = (RAIDPOINT_SUMMARY_OFFSET - RAIDPOINT_REWARD_OFFSET) // 16
+    # Seed-derived four-star lists retain the observed marker-5 metadata row.
+    # Exact lists deliberately omit it: retail accepted the donor-backed exact
+    # representation with every row after the requested marker-0 entries zeroed.
+    trailing_rows = 5 if stars == 4 and reward_profile is None else 0
+    if len(rewards) + trailing_rows > max_rows:
+        raise ValueError(
+            f"raid has {len(rewards)} rewards; RaidPoint profile supports at most "
+            f"{max_rows - trailing_rows}")
+    for index, reward in enumerate(rewards):
+        struct.pack_into(
+            "<IIII", out, RAIDPOINT_REWARD_OFFSET + index * 16,
+            0, reward["item"], reward["amount"], 0)
+    if stars == 4 and reward_profile is None:
+        struct.pack_into(
+            "<IIII", out, RAIDPOINT_REWARD_OFFSET + (len(rewards) + 4) * 16,
+            5, 0, 0, 0)
+
+    struct.pack_into(
+        "<IIIIIII", out, RAIDPOINT_SUMMARY_OFFSET,
+        stars, profile["species"], profile["form"], profile["gender"],
+        profile["level"], 0, metadata["tera_type"])
+    struct.pack_into("<I", out, 0x3E0, STANDARD_CONTENT_KIND)
+    return bytes(out)
+
+
+def _empty_party_pk9():
+    """Return the exact species-zero placeholder retail uses for open raid slots."""
+    # This static value is identical in the Growlithe and Avalugg bootstraps. It is not an
+    # all-zero party record: the game gives its placeholder the nickname "Egg", level 1, neutral
+    # Tera sentinel 19, and the minimum level-1 HP/stat block. An all-zero record survives the
+    # wire codec but crashes later when the battle participant array is initialized.
+    plain = bytearray(gen9.SIZE_PARTY)
+    plain[gen9.OFF_NICKNAME:gen9.OFF_NICKNAME + 8] = (
+        "Egg".encode("utf-16le") + b"\0\0")
+    struct.pack_into("<H", plain, gen9.OFF_CURRENT_HP, 11)
+    plain[gen9.OFF_TERA_TYPE_ORIGINAL] = 19
+    plain[gen9.OFF_TERA_TYPE_OVERRIDE] = 19
+    plain[gen9.OFF_LANGUAGE] = 2
+    plain[gen9.OFF_LEVEL] = 1
+    struct.pack_into("<6H", plain, gen9.OFF_STATS, 11, 5, 5, 5, 5, 5)
+    return gen9.encrypt(bytes(plain))
+
+
+def extract_lobby_pokemon(application):
+    """Return the sealed party PK9 carried by a raid `0x80332e` lobby message."""
+    application = bytes(application)
+    declared = (struct.unpack_from("<I", application, LOBBY_POKEMON_SIZE_OFFSET)[0]
+                if len(application) >= LOBBY_POKEMON_SIZE_OFFSET + 4 else None)
+    if (len(application) != LOBBY_POKEMON_HEADER_SIZE + gen9.SIZE_PARTY
+            or application[:4] != LOBBY_POKEMON_PREFIX
+            or declared != gen9.SIZE_PARTY):
+        raise ValueError("not a complete raid 0x80332e party-PK9 lobby message")
+    return _party_pk9(application[LOBBY_POKEMON_HEADER_SIZE:])
+
+
+def build_raid_boss_pk9(profile):
+    """Build the complete encrypted party PK9 used for a generated raid boss."""
+    # Import lazily: raid_seed imports transport helpers that also use this
+    # codec in command-line workflows.
+    from pokeldn.sv.raid_seed import RAID_BOSS_COMMON
+
+    fields = dict(RAID_BOSS_COMMON)
+    fields.update(profile)
+    # gen9.write applies mappings in insertion order. Nickname sets the flag,
+    # so apply the explicit raid-boss is_nicknamed=0 override afterward.
+    is_nicknamed = fields.pop("is_nicknamed")
+    fields["is_nicknamed"] = is_nicknamed
+    return gen9.encrypt(gen9.write(bytes(gen9.SIZE_PARTY), **fields))
+
+
+def build_seed_bootstrap_raw(seed, *, version="violet", progress="4star",
+                             map_name="paldea", content="standard",
+                             point_name="RaidPoint_POKELDN_0", players=(),
+                             reward_profile=None):
+    """Generate a donor-free `0xAA0` bootstrap plaintext from seed and context.
+
+    Up to four encrypted or plaintext party PK9s may be supplied. Missing
+    participant slots become canonical species-zero records. The fifth slot is
+    the complete seed-generated raid boss.
+    """
+    from pokeldn.sv import raid_generation
+
+    players = tuple(players)
+    if len(players) > PARTICIPANT_COUNT:
+        raise ValueError(f"a raid bootstrap has at most {PARTICIPANT_COUNT} participants")
+    participant_records = [_party_pk9(player) for player in players]
+    participant_records.extend(
+        _empty_party_pk9() for _ in range(PARTICIPANT_COUNT - len(participant_records)))
+    raid = raid_generation.generate_seed_raid(
+        seed, version=version, progress=progress, map_name=map_name, content=content)
+    boss = build_raid_boss_pk9(raid["profile"])
+    raidpoint = build_raid_point(
+        raid, point_name=point_name, reward_profile=reward_profile)
+    raw = b"".join(participant_records) + boss + raidpoint
+    if len(raw) != EXPECTED_RAW_SIZE:
+        raise AssertionError("generated raid bootstrap has the wrong size")
+    return raw
+
+
 def _bootstrap_parts(events):
     parts = {}
     for delay, sequence, flags, lowest, payload in events:
@@ -338,6 +525,34 @@ def _replace_bootstrap_application(events, application, changed):
             payload = streams.compress(plain) if flags & reliable5.FLAG_ZLIB else plain
         output.append((delay, sequence, flags, lowest, payload))
     return output, len(parts[12]), len(replacements[12])
+
+
+def replace_bootstrap_raw(events, raw):
+    """Replace replay sequences 11/12 with a generated `0xAA0` plaintext.
+
+    The live replay's 18-byte application envelope is retained because its two
+    opaque fields may be session/message state. No RaidPoint, reward, boss, or
+    participant bytes are retained from the old compressed plaintext.
+    """
+    parts = _bootstrap_parts(events)
+    application = parts[11] + parts[12]
+    changed = encode_application(application, bytes(raw))
+    output, _, _ = _replace_bootstrap_application(events, application, changed)
+    return output
+
+
+def patch_bootstrap_participant(events, slot, raw):
+    """Replace one of the four live participant PK9s in replay sequences 11/12."""
+    if not 0 <= slot < PARTICIPANT_COUNT:
+        raise ValueError(f"raid participant slot must be 0..{PARTICIPANT_COUNT - 1}")
+    parts = _bootstrap_parts(events)
+    application = parts[11] + parts[12]
+    bootstrap = bytearray(decode_application(application))
+    offset = slot * gen9.SIZE_PARTY
+    bootstrap[offset:offset + gen9.SIZE_PARTY] = _party_pk9(raw)
+    changed = encode_application(application, bytes(bootstrap))
+    output, _, _ = _replace_bootstrap_application(events, application, changed)
+    return output
 
 
 def _party_pk9(raw):

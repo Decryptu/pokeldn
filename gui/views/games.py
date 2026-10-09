@@ -99,6 +99,19 @@ class GamesView:
             self.cards.update()
         self.session.refresh()
 
+    def set_raid_context(self, context: dict[str, str]) -> None:
+        """Apply the table dimensions belonging to a chosen raid-search result."""
+        self.values.update({
+            "--raid-version": context["version"],
+            "--raid-map": context["map_name"],
+            "--raid-progress": context["progress"],
+            "--raid-content": context["content"],
+        })
+        self.app.settings.save()
+        self.render_body()
+        self.cards.update()
+        self.session.refresh()
+
     # Rendering
 
     def select(self, game: Game, tool: Tool, update: bool = True) -> None:
@@ -250,7 +263,13 @@ class GamesView:
                                 lambda v: self.set_value(field, v)).control
         if field.kind == "raidseed":
             return RaidSeedPicker(self.app, value,
-                                  lambda v: self.set_value(field, v)).control
+                                  lambda v: self.set_value(field, v),
+                                  context=lambda: {
+                                      "version": str(self.values.get("--raid-version", "violet")),
+                                      "map_name": str(self.values.get("--raid-map", "paldea")),
+                                      "progress": str(self.values.get("--raid-progress", "4star")),
+                                      "content": str(self.values.get("--raid-content", "standard")),
+                                  }, on_context_change=self.set_raid_context).control
         if field.kind == "linkcode":
             return LinkCodePicker(self.app, value, lambda v: self.set_value(field, v)).control
         if field.kind == "file":

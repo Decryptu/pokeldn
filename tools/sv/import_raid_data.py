@@ -19,6 +19,19 @@ import subprocess
 MAPS = ("paldea", "kitakami", "blueberry")
 CONTENTS = ("standard", "black")
 ENCOUNTER_SIZE = 0x3C
+RAID_TABLE_PREFIX = {
+    "paldea": "raid",
+    "kitakami": "su1_raid",
+    "blueberry": "su2_raid",
+}
+RAID_ACTION = {
+    "NONE": 0,
+    "BOSS_STATUS_RESET": 1,
+    "PLAYER_STATUS_RESET": 2,
+    "WAZA": 3,
+    "GEM_COUNT": 4,
+}
+RAID_TIMING = {"NONE": 0, "TIME": 1, "HP": 2}
 
 
 def revision(path: Path) -> str:
@@ -130,10 +143,90 @@ def encounters(directory: Path) -> dict[str, list[dict]]:
     return result
 
 
+def csharp_enum(path: Path, prefix: str) -> dict[str, int]:
+    """Read explicit integer members from a flatc-generated C# enum."""
+    return {
+        name: int(value)
+        for name, value in re.findall(
+            rf"^\s+({re.escape(prefix)}[A-Z0-9_]+) = (\d+),$",
+            path.read_text(encoding="utf-8-sig"), re.M)
+    }
+
+
+def boss_desc_values(desc: dict, moves: dict[str, int]) -> list[int]:
+    """Serialize a retail RaidBossData record in RaidPoint word order."""
+    result = [
+        desc["hpCoef"],
+        desc["powerChargeTrigerHp"],
+        desc["powerChargeTrigerTime"],
+        desc["powerChargeLimitTime"],
+        desc["powerChargeCancelDamage"],
+        desc["powerChargePenaltyTime"],
+        moves[desc["powerChargePenaltyAction"]],
+        desc["powerChargeDamageRate"],
+        desc["powerChargeGemDamageRate"],
+        desc["powerChargeChangeGemDamageRate"],
+    ]
+    for index in range(1, 7):
+        action = desc[f"extraAction{index}"]
+        result.extend((
+            RAID_ACTION[action["action"]],
+            RAID_TIMING[action["timming"]],
+            action["value"],
+            moves[action["wazano"]],
+        ))
+    result.extend((
+        desc["doubleActionTrigerHp"],
+        desc["doubleActionTrigerTime"],
+        desc["doubleActionRate"],
+    ))
+    if len(result) != 37:
+        raise AssertionError("RaidBossData did not produce 37 RaidPoint words")
+    return result
+
+
+def add_boss_desc(encounter_tables: dict[str, list[dict]], directory: Path,
+                  waza_enum: Path) -> None:
+    """Join flatc-decoded retail raid enemy tables to compact encounters by record number."""
+    moves = csharp_enum(waza_enum, "WAZA_")
+    profiles: dict[tuple[str, int], list[int]] = {}
+    for map_name, prefix in RAID_TABLE_PREFIX.items():
+        for stars in range(1, 7):
+            table = json.loads(
+                (directory / f"{prefix}_enemy_{stars:02}.json").read_text(encoding="utf-8"))
+            for row in table["values"]:
+                info = row["raidEnemyInfo"]
+                key = (map_name, int(info["no"]))
+                if key in profiles:
+                    raise ValueError(f"duplicate retail raid profile {key}")
+                profiles[key] = boss_desc_values(info["bossDesc"], moves)
+
+    matched = set()
+    for table_name, rows in encounter_tables.items():
+        map_name, _content = table_name.split("_", 1)
+        for row in rows:
+            key = (map_name, row["identifier"])
+            try:
+                row["boss_desc"] = profiles[key]
+            except KeyError as exc:
+                raise ValueError(f"retail raid profile {key} is missing") from exc
+            if row["boss_desc"][13:34:4] != row["extra_moves"]:
+                raise ValueError(f"retail raid profile {key} has mismatched extra moves")
+            matched.add(key)
+    unmatched = sorted(set(profiles) - matched)
+    if unmatched:
+        raise ValueError(f"unmatched retail raid profiles: {unmatched}")
+
+
 def main() -> None:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--tera-finder", required=True, type=Path)
     parser.add_argument("--pkhex", required=True, type=Path)
+    parser.add_argument("--raid-enemy-json", required=True, type=Path,
+                        help="directory containing flatc-decoded raid_enemy_01..06, "
+                             "su1_raid_enemy_01..06, and su2_raid_enemy_01..06 JSON files")
+    parser.add_argument("--waza-enum", required=True, type=Path,
+                        help="flatc-generated pml/common/WazaID.cs from a raid enemy BFBS")
     parser.add_argument("--output", required=True, type=Path)
     args = parser.parse_args()
 
@@ -141,13 +234,15 @@ def main() -> None:
     pk = args.pkhex
     raid_data = tf / "TeraFinder.Core/Resources/raid_default"
     core = pk / "PKHeX.Core"
+    encounter_tables = encounters(raid_data)
+    add_boss_desc(encounter_tables, args.raid_enemy_json, args.waza_enum)
     result = {
         "source": {
             "tera_finder": revision(tf),
             "pkhex": revision(pk),
             "license": "GPL-3.0",
         },
-        "encounters": encounters(raid_data),
+        "encounters": encounter_tables,
         "fixed_rewards": reward_tables(raid_data / "raid_fixed_reward_item_array.json", False),
         "lottery_rewards": reward_tables(raid_data / "raid_lottery_reward_item_array.json", True),
         "material_items": material_map(

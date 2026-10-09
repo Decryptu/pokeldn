@@ -33,7 +33,7 @@ from pokeldn.host_support import open_output
 from pokeldn import pokemon as pokemon_service
 from pokeldn import sv
 from pokeldn.ldn import ldn_mitm, pia6, pia_connect, reliable5
-from pokeldn.sv import pokemon, port2, raid_guest, reference, streams, trade
+from pokeldn.sv import pokemon, port2, raid, raid_guest, reference, streams, trade
 from pokeldn.ldn import channel_table, game_channel
 from pokeldn.ldn.transport import board_radio, find_ap_phy
 from pokeldn.host_support import resolve_keys, needs_root
@@ -70,8 +70,7 @@ RAID_HANDLER_KEYS = {
     bytes.fromhex("8000000033000000"),
     bytes.fromhex("8000000034000000"),
 }
-RETAIL_RAID_GUEST_PLAYER_ID = raid_guest.player_id().hex()
-RETAIL_RAID_GUEST_MAC = raid_guest.station_mac()
+ANONYMOUS_PLAYER_ID = pia6.DEFAULT_PLAYER_ID.hex()
 HOST_BITMAP = 0x01                # the destination mask a joiner writes: the host, station 0
 ACK_ENTRIES = 4  # a retail station's bulk ack carries four
 
@@ -80,6 +79,24 @@ PROTOCOL_NAMES = {
     0x7C: "reliable", 0x80: "broadcast reliable", 0x81: "stream broadcast reliable",
     0x98: "session", 0xA4: "monitoring data",
 }
+
+
+def synthetic_mac(random_bytes=os.urandom):
+    """Return a fresh locally administered unicast station MAC."""
+    raw = bytearray(random_bytes(6))
+    if len(raw) != 6:
+        raise ValueError("MAC entropy source must return six bytes")
+    raw[0] = (raw[0] & 0xFC) | 0x02
+    return ":".join(f"{octet:02x}" for octet in raw)
+
+
+def apply_raid_guest_identity(args, random_bytes=os.urandom):
+    """Install the donor-free identity validated against retail Scarlet/Violet."""
+    if args.join_player_id == "arceus":
+        args.join_player_id = ANONYMOUS_PLAYER_ID
+    if args.mac is None:
+        args.mac = synthetic_mac(random_bytes)
+    args.join_player_name = args.trainer_name
 
 
 def split_raid_channel_table(payload, flags=0):
@@ -399,10 +416,11 @@ def build_parser():
                          "Session join request): ten protocols with their versions, a four-byte "
                          "nonce, both location ids, a seven-byte station address and one player "
                          "record. A mesh join is unicast, so no passive capture shows a retail one")
-    ap.add_argument("--raid-guest-replay", action="store_true",
-                    help="replay the successful retail Scarlet/Violet raid-guest opening: Net "
-                         "acks, one Session join, clock, delayed channel ACKs, base table, port-2 "
-                         "join, raid-key update and the complete identity stream")
+    ap.add_argument("--raid-guest", "--raid-guest-replay", dest="raid_guest_replay",
+                    action="store_true",
+                    help="join a retail Scarlet/Violet raid with generated lobby/Ready/Start "
+                         "application messages, plus the validated Session, channel, and "
+                         "identity opening")
     ap.add_argument("--send-record", metavar="FILE",
                     help="after the seat, send this 1395-byte identity record on 0x81 port 1 "
                          "(our station stream) as the game's data exchange, retransmitting until "
@@ -428,11 +446,11 @@ def build_parser():
                     help="experimentally replay the captured guest's 0x80:0 lobby records "
                          "after identity and raid channel setup; retains captured application fields")
     ap.add_argument("--raid-guest-ready-delay", type=float,
-                    help="send the observed guest ready state this many seconds after lobby replay")
+                    help="send the generated guest Ready state this many seconds after its lobby")
     ap.add_argument("--raid-pokemon", metavar="FILE",
                     help="a legal SV party PK9 for the fake player to bring to a retail-hosted "
-                         "raid; PKHeX validates and refreshes its party stats before the captured "
-                         "Gallade in the guest lobby record is replaced")
+                         "raid; PKHeX validates and refreshes its party stats before a generated "
+                         "0x80332e lobby record is built")
     raid_disconnect = ap.add_mutually_exclusive_group()
     raid_disconnect.add_argument("--raid-disconnect-after-seq", type=int, metavar="N",
                     help="experiment: after receiving and acknowledging host raid record N on "
@@ -443,7 +461,7 @@ def build_parser():
                          "association; unlike reliable sequence numbers this identifies a stable "
                          "application message")
     raid_disconnect.add_argument("--raid-stay-after-battle-transition", action="store_true",
-                    help="with --raid-guest-replay, keep the ESP32 associated after battle_93 "
+                    help="with --raid-guest, keep the ESP32 associated after battle_93 "
                          "instead of the product default of leaving so the game substitutes a bot")
     ap.add_argument("--raid-disconnect-delay", type=float, default=0.0, metavar="SECONDS",
                     help="wait this long after --raid-disconnect-after-seq is received before "
@@ -647,16 +665,18 @@ def main(argv=None):
         args.port2_delay = 0.24
         # Measured from the guest's base channel table in the known-good trace: 0.792 s.
         args.raid_table_delay = 0.79
-        if args.join_player_id == "arceus":
-            args.join_player_id = RETAIL_RAID_GUEST_PLAYER_ID
-        if args.mac is None:
-            args.mac = RETAIL_RAID_GUEST_MAC
-        print("[sv] retail raid guest replay: exact retail MAC/clock, delayed Session update, "
-              "retail stream opening, captured identity, port-2 at +0.24s, raid keys at +0.79s"
+        apply_raid_guest_identity(args)
+        print(f"[sv] generated retail raid guest: Session MAC {args.mac}, player ID "
+              f"{args.join_player_id}, player name {args.trainer_name!r}, delayed Session "
+              "update, retail stream opening, productized identity, port-2 at "
+              "+0.24s, raid keys at +0.79s"
               + (", leave after battle_93" if args.raid_disconnect_after_prefix
                  == bytes.fromhex("80349301") else ""))
+        if not args.raid_pokemon and not args.raid_lobby_trace:
+            ap.error("--raid-guest requires --raid-pokemon (or an explicit experimental "
+                     "--raid-lobby-trace)")
     if args.raid_pokemon and not args.raid_guest_replay:
-        ap.error("--raid-pokemon needs --raid-guest-replay")
+        ap.error("--raid-pokemon needs --raid-guest")
     if args.raid_pokemon:
         args.raid_pokemon = pokemon_service.prepare_file(
             "sv", args.raid_pokemon, fresh=args.fresh_pid)
@@ -970,19 +990,26 @@ async def run_session(args, keys, host_ip, host_mac, our_ip, our_mac, record):
     record_set = (load_record_trace(args.record_trace) if args.record_trace else
                   raid_guest.identity_records()
                   if args.raid_guest_replay and not args.record_set else [])
+    raid_stage = None
     raid_lobby_records = (load_raid_guest_lobby_records(args.raid_lobby_trace)
-                          if args.raid_lobby_trace else
-                          raid_guest.lobby_records() if args.raid_guest_replay else [])
-    if args.raid_pokemon:
+                          if args.raid_lobby_trace else [])
+    if args.raid_guest_replay and not args.raid_lobby_trace:
+        raid_stage = raid.JoinerRaidStage(Path(args.raid_pokemon).read_bytes())
+        raid_lobby_records = [
+            (sequence, message.flags, message.payload)
+            for sequence, message in enumerate(raid_stage.lobby(), 1)
+        ]
+    elif args.raid_pokemon:
         raid_lobby_records = raid_guest.with_lobby_pokemon(
             raid_lobby_records, Path(args.raid_pokemon).read_bytes())
+    if args.raid_pokemon:
         print(f"[sv] raid guest Pokemon: "
               f"{pokemon.describe(raid_guest.lobby_pokemon(raid_lobby_records))}")
     raid_lobby_sent = False
     raid_ready_due = None
     raid_guest_state = 1
     raid_start_ack_scheduled = False
-    raid_application_counter = None
+    raid_application_counter = None  # explicit trace compatibility path
     raid_disconnect_seen = None
     raid_disconnect_due = None
     if record_set:
@@ -1246,13 +1273,13 @@ async def run_session(args, keys, host_ip, host_mac, our_ip, our_mac, record):
                 and channel["port2"] and now - joined_at >= args.record_delay + 0.27):
             key = (PROTO_BROADCAST_RELIABLE, 0)
             if our_seq.get(key, 1) != 1:
-                raise ValueError("raid lobby replay requires an unused 0x80:0 send stream")
+                raise ValueError("raid lobby opening requires an unused 0x80:0 send stream")
             for seq, flags, payload in raid_lobby_records:
                 body = reliable5.build_header(
                     flags, seq, len(payload), lowest_pending=1, destination_bits=3,
                     bitmap=[streams.bitmap_for(streams.JOINER_INDEX)]) + payload
                 send(out(body, host_var or 0, protocol=key[0], port=key[1],
-                         flags=streams.MESSAGE_FLAGS_DATA), "raid lobby replay",
+                         flags=streams.MESSAGE_FLAGS_DATA), "raid lobby",
                      protocol=key[0], port=key[1], seq=seq,
                      reliable_flags=flags, application_payload=payload.hex())
                 identity_window.sent(key, seq, body, now)
@@ -1260,17 +1287,27 @@ async def run_session(args, keys, host_ip, host_mac, our_ip, our_mac, record):
             raid_lobby_sent = True
             if args.raid_guest_ready_delay is not None:
                 raid_ready_due = now + args.raid_guest_ready_delay
-            print("[sv] sent captured guest raid lobby records 1 and 2 on 0x80:0")
+            print("[sv] sent generated guest raid lobby records 1 and 2 on 0x80:0"
+                  if raid_stage else
+                  "[sv] sent captured guest raid lobby records 1 and 2 on 0x80:0")
         if raid_ready_due is not None and now >= raid_ready_due:
             # Controlled Ready press is state 0x01; 0x0d is tested only after host state 0x0c.
             # Its application counter follows the type-0x2e record, independently of Pia seq.
-            ready = raid_guest.state_payload(
-                raid_guest_state, raid_lobby_records,
-                previous_counter=raid_application_counter)
-            raid_application_counter = int.from_bytes(ready[4:8], "little")
+            generated = (raid_stage.ready() if raid_guest_state == 1
+                         else raid_stage.start_ack()) if raid_stage else None
+            if generated:
+                message = generated[0]
+                ready = (streams.decompress(message.payload)
+                         if message.flags & reliable5.FLAG_ZLIB else message.payload)
+                payload = message.payload
+            else:
+                ready = raid_guest.state_payload(
+                    raid_guest_state, raid_lobby_records,
+                    previous_counter=raid_application_counter)
+                raid_application_counter = int.from_bytes(ready[4:8], "little")
+                payload = streams.compress(ready)
             key = (PROTO_BROADCAST_RELIABLE, 0)
             seq = next_seq(*key)
-            payload = streams.compress(ready)
             body = streams.build_record_message(payload, seq, streams.JOINER_INDEX,
                                                 lowest_pending=identity_window.lowest(key, seq))
             send(out(body, host_var or 0, protocol=key[0], port=key[1],

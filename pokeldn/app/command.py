@@ -130,6 +130,8 @@ def code_error(field: Field, value) -> str:
         return "Enter exactly eight hexadecimal digits." if not re.fullmatch(
             r"[0-9A-Fa-f]{8}", str(value or "")) else ""
     if field.kind == "rewards":
+        if not value and not field.required:
+            return ""
         if not isinstance(value, (list, tuple)) or not value:
             return "Add at least one raid reward."
         if len(value) > 16:

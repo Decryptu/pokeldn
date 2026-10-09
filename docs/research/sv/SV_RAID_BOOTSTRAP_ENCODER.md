@@ -1,9 +1,18 @@
 # Pokémon Scarlet/Violet Tera Raid Bootstrap Encoder
 
+> Historical donor-era analysis. Production now uses the fully generated
+> RaidPoint and sequence-1..20 path. These artifacts remain for regression and
+> reverse-engineering evidence only.
+
 ## Status
 
 This document describes the validated encoder for the large Scarlet/Violet
 Tera Raid bootstrap application message used by game version 4.0.0.
+
+For the continuing work to construct this message without a captured raid
+template, including the full `0x3E8` RaidPoint layout, three-capture comparison,
+Ghidra call chain, and the exact remaining unknowns, see
+`SV_RAIDPOINT_REVERSE_ENGINEERING.md`.
 
 The important result is that raid rewards are **not** encoded as a proprietary
 reference bitstream. The message contains a fixed `0xAA0`-byte plaintext
@@ -21,7 +30,7 @@ The supported JSON/CLI workflow is documented in
 The production fixture extracted from the primary retail capture is:
 
 ```text
-sv_raid_reward_donor.bin
+fixtures/sv_raid_reward_donor.bin
 ```
 
 Properties of that capture:
@@ -79,10 +88,11 @@ layer.
 
 ## Complete application envelope
 
-The known Avalugg application starts with:
+The known Avalugg application starts with the following 18-byte envelope. The
+last two bytes shown (`28 3a`) are part of the opaque header, not LZ4 data:
 
 ```text
-80 33 2f 01 13 00 02 00 00 00 a0 0a 00 00 00 00
+80 33 2f 01 13 00 02 00 00 00 a0 0a 00 00 00 00 28 3a
 ```
 
 The raw LZ4 block begins immediately after those bytes, at application offset
@@ -93,14 +103,16 @@ bytes are emitted by the serializer found in Ghidra.
 | ---: | ---: | --- | --- |
 | `0x00` | 2 | `80 33` | Outer Scarlet/Violet application prefix |
 | `0x02` | 2 | `2f 01` | Message type `0x012F` |
-| `0x04` | 2 | `13 00` | Message metadata/version; exact name unknown |
+| `0x04` | 2 | `13 00` | Opaque message/session value; differs between captures |
 | `0x06` | 4 | `02 00 00 00` | Serializer flags; bit/value 2 means compressed |
 | `0x0A` | 4 | `a0 0a 00 00` | Uncompressed size, `0xAA0` |
-| `0x0E` | 4 | `00 00 00 00` | Reserved/unknown, preserved from template |
+| `0x0E` | 4 | `00 00 28 3a` | Opaque, preserved from template; standard captures use four zero bytes |
 | `0x12` | variable | — | Raw LZ4 block through end of application message |
 
 Only the uncompressed-size field is regenerated. All other unknown envelope
-fields are preserved from the validated retail template.
+fields are preserved from the validated retail template. In particular, do not
+assume raw offset `0x0E` is uniformly zero: it differs between the standard and
+event captures currently available.
 
 The compressed byte count is not stored in this header. It is determined by
 the enclosing reliable message length.
@@ -317,9 +329,9 @@ rewards:  1..16 ordered {item_id, quantity} entries
 Create and host a profile:
 
 ```bash
-./.venv/bin/python sv_raid_rewards.py create \
+./.venv/bin/python tools/sv/research/sv_raid_rewards.py create \
   --reward 15:500 --output quick500.json
-./sv_raid_reward_host.sh 000F34C3 quick500.json
+tools/sv/research/sv_raid_reward_host.sh 000F34C3 quick500.json
 ```
 
 The direct host option is `--raid-reward-profile PROFILE.json`. The obsolete

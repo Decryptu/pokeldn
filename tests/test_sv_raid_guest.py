@@ -3,17 +3,35 @@ from pathlib import Path
 import sys
 import unittest
 
-sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
+ROOT = Path(__file__).resolve().parent.parent
+sys.path.insert(0, str(ROOT))
+sys.path.insert(0, str(ROOT / "bin"))
 
 from pokeldn.ldn import channel_table, pia_connect, reliable5
 from pokeldn.sv import pokemon, raid_guest, reference, streams
 
 from sv_join import (PROTO_BROADCAST_RELIABLE, RAID_HANDLER_KEYS,
-                     apply_raid_disconnect_default, build_parser,
+                     ANONYMOUS_PLAYER_ID, apply_raid_disconnect_default,
+                     apply_raid_guest_identity, build_parser,
                      raid_disconnect_matches, split_raid_channel_table)
 
 
 class RaidGuestFixtureTests(unittest.TestCase):
+    def test_raid_guest_uses_validated_donor_free_session_identity(self):
+        args = build_parser().parse_args([
+            "--raid-guest-replay", "--trainer-name", "POKELDN"])
+        apply_raid_guest_identity(
+            args, lambda count: bytes.fromhex("ff1122334455"))
+        self.assertEqual(args.mac, "fe:11:22:33:44:55")
+        self.assertEqual(args.join_player_id, ANONYMOUS_PLAYER_ID)
+        self.assertEqual(args.join_player_name, "POKELDN")
+
+    def test_generated_raid_guest_alias_selects_the_same_mode(self):
+        generated = build_parser().parse_args(["--raid-guest"])
+        legacy = build_parser().parse_args(["--raid-guest-replay"])
+        self.assertTrue(generated.raid_guest_replay)
+        self.assertTrue(legacy.raid_guest_replay)
+
     def test_raid_disconnect_option_defaults_off_and_accepts_sequence(self):
         defaults = build_parser().parse_args([])
         self.assertIsNone(defaults.raid_disconnect_after_seq)

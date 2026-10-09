@@ -28,8 +28,6 @@ APP_ID = "io.github.decryptu.pokeldn"
 RUNTIME_EXTRAS = (
     "bin/sv_raid_bootstrap_codec.py",
     "bin/sv_raid_host.py",
-    "bin/sv_raid_reward_donor.bin",
-    "bin/sv_raid_rewards.py",
     "bin/sv_raid_start_gate.py",
     "bin/ESP32_RETAIL_RAID_GUEST.md",
     "docs/sv_raid.md",
@@ -47,9 +45,12 @@ def runtime_id() -> str:
 def runtime_files() -> list[str]:
     tracked = subprocess.check_output(["git", "ls-files", "-z"], cwd=ROOT).decode().split("\0")
     folders = ("bin/", "pokeldn/", "vendor/LDN/ldn/", "docs/", "gui/assets/")
-    files = {name for name in tracked if (name.startswith(folders) or name in
+    files = {name for name in tracked if not name.startswith("docs/research/")
+             and (name.startswith(folders) or name in
              ("config/host.toml", "gui/guide.md", "LICENSE", "vendor/LDN/LICENSE")) and (ROOT / name).is_file()}
     files.update(name for name in RUNTIME_EXTRAS if (ROOT / name).is_file())
+    identity = ROOT / "bin" / "sv_raid_identity_records"
+    files.update(str(path.relative_to(ROOT)) for path in identity.iterdir() if path.is_file())
     return sorted(files)
 
 

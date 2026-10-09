@@ -16,6 +16,12 @@ The latest run stalls before move selection. This is not a complete playable
 guest, and we have not implemented the remaining battle synchronization. No
 victory, catch, or reward-screen behavior is established for this guest mode.
 
+The donor-free network/Session identity was live-validated on 2026-10-08 in
+lobby 4216. A generated local-unicast MAC and Pia's anonymous player ID were
+accepted through Session setup, Ready, Start acknowledgment, the complete raid
+bootstrap, `battle_93`, and the intended disconnect. All 252 received datagrams
+authenticated successfully.
+
 The workflow was recaptured on 2026-10-07. Lobby 5352 supplied the complete
 46-record identity, initial lobby records and controlled Ready transition;
 lobby 6071 supplied the Start acknowledgment and successful battle entry. The
@@ -26,8 +32,9 @@ minimal runtime material is tracked as `pokeldn/sv/data/raid_guest.json`.
 Run from `/home/ismail/Documents/GitHub/pokeldn/bin`, with the project `.venv` and
 the ESP32 connected at `/dev/ttyACM0`. Only one process may own the radio.
 Stop a previous fake host, fake guest, or passive sniffer before launching.
-The retail guest Switch must be disconnected: this experiment reuses its MAC
-and recorded player identity.
+The joiner now generates a fresh local-unicast MAC and uses Pia's anonymous
+local player ID, so the retail guest that supplied the protocol capture is no
+longer an identity donor.
 
 Open a local/offline raid lobby on the retail host, then run:
 
@@ -64,9 +71,9 @@ minimum delays or universal protocol requirements.
 
 | Stage | Guest action / evidence |
 | --- | --- |
-| LDN seat | Join the discovered retail scene-7 network using the captured guest MAC. |
+| LDN seat | Generate a fresh local-unicast MAC and join the discovered retail scene-7 network. Pia derives the matching constant station ID from that MAC. |
 | Net setup | Respond to Net connection status with 0x12; outer flags 0x11. |
-| Pia Session | Send the captured player identity in the Session join request. Hold the first Session update, then ACK a repeated update at least one second later; the observed retail repeat was about two seconds later. |
+| Pia Session | Send Pia's anonymous/local player ID and the configured trainer name in the Session join request. Hold the first Session update, then ACK a repeated update at least one second later; the observed retail repeat was about two seconds later. |
 | Clone clock | Send 18 bytes with byte 9 equal to 1; all other bytes zero. |
 | Stream opening | Send the eleven bulk ACKs and guest stream opens on 0x81 ports 0 and 4. These are needed in raid mode too. |
 | Game channels | Send the four-key base table on 0x7c:1, port-2 join at +0.24 s, and the separate 0x8033/0x8034 key update at +0.79 s relative to the base table. Channel ACK delay is 0.25 s. |
@@ -82,10 +89,17 @@ have stronger direct evidence from sequential tests and controlled UI actions.
 
 ### Guest identity and address mapping
 
-- Actual guest Wi-Fi MAC: `48:f1:eb:c7:b3:51`.
-- Its Pia constant ID: `ebb351c7f1480000`.
-- Captured player ID: `100096e8aa857fe0be9fe53f544feab2`.
-- Tested host MAC: `a4:38:cc:eb:6d:5a`.
+At runtime the joiner uses:
+
+- a fresh random local-unicast Wi-Fi MAC;
+- the Pia constant ID derived from that MAC;
+- anonymous/local player ID `00000000000000010000000000000000`;
+- the configured trainer name (POKELDN by default) in both Pia and game record 1.
+
+The source capture used guest MAC `48:f1:eb:c7:b3:51`, constant ID
+`ebb351c7f1480000`, player ID `100096e8aa857fe0be9fe53f544feab2`, and host
+MAC `a4:38:cc:eb:6d:5a`. These remain useful evidence but are no longer replayed
+as the runtime Session identity.
 
 The inverse constant-ID mapping is
 `mac = [constant[5], constant[4], constant[0], constant[3], constant[1], constant[2]]`.
@@ -120,9 +134,10 @@ produced state 0x0c and stalled. In retry20, replying 0x0d permitted battle entr
 These observations establish the behavior tested here; broader state-machine
 semantics and other state values remain undecoded.
 
-The 0x2e payload and identity are still capture-backed. This is not arbitrary
-guest-Pokémon generation. Unknown session-dependent fields are retained, and
-success with this recorded identity does not establish portability to all raids.
+The 0x2e payload and 46-record application identity are still capture-backed.
+This is not a fully generated guest context. Unknown application fields are
+retained even though the network MAC, Session player ID, names, and selected
+Pokémon are productized.
 
 ## Passive capture pitfalls and correct workflow
 
@@ -164,12 +179,14 @@ START-to-END fragments and excludes following application messages.
 
 Retry20 contains this message in seq 14–15: 1,395 uncompressed bytes followed by
 a compressed fragment inflating to 246 bytes, total 1,641 serialized bytes.
-`RaidPoint_10_01_07` is at offset 0x57e and the reward marker at 0x5cb. This is a
-complete transmitted bootstrap despite the subsequent stall. The header field
-0x0aa0 is not the serialized byte count; its interpretation is unresolved.
+It is a complete transmitted bootstrap despite the subsequent stall. Later
+Ghidra work established that `0x0AA0` is the exact size of the plaintext record
+inside the application's raw LZ4 block, not the compressed application length.
+After LZ4 decoding, `RaidPoint_10_01_07` begins at raw offset `0x6B8`.
 
 Older retail-guest captures contain further messages with prefixes 32016e00,
 32017300, and 80349301 before battle commands. Their triggering conditions and
 session-specific fields must be established before adding responses. They are
-not needed just to acquire the RaidPoint bootstrap. Main reward analysis can
-continue independently; see `REWARD_SERIALIZATION_40CE99D3_ANALYSIS.md`.
+not needed just to acquire the RaidPoint bootstrap. The current serializer,
+RaidPoint layout, comparative captures, and donor-free construction boundary
+are documented in `docs/research/sv/SV_RAIDPOINT_REVERSE_ENGINEERING.md`.
