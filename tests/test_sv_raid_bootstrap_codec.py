@@ -1,5 +1,6 @@
 """Offline regression tests for the plaintext SV raid bootstrap codec."""
 
+import hashlib
 import struct
 import sys
 from pathlib import Path
@@ -21,13 +22,13 @@ from sv_raid_bootstrap_codec import (
     RAIDPOINT_OFFSET,
     RAIDPOINT_SIZE,
     build_application,
+    build_raid_boss_pk9,
     build_raid_point,
     build_seed_bootstrap_raw,
     decode_application,
     encode_reward_profile_application,
     encode_application,
     extract_lobby_pokemon,
-    extract_retail_bootstrap,
     parse_reward_profile,
     patch_avalugg_reward_profile,
     patch_bootstrap_participant,
@@ -36,16 +37,28 @@ from sv_raid_bootstrap_codec import (
 )
 
 
-RESEARCH = ROOT / "docs" / "research" / "sv" / "fixtures"
-DONOR = RESEARCH / "sv_raid_reward_donor.bin"
-GROWLITHE_CAPTURE = RESEARCH / "tera_raid_retail_victory_full.jsonl"
+def avalugg_application():
+    """Build a deterministic legacy reward-editing envelope without a retail donor."""
+    from pokeldn.sv import raid_generation
+
+    players = tuple(
+        build_raid_boss_pk9(raid_generation.generate_seed_raid(seed)["profile"])
+        for seed in (1, 2, 3, 4)
+    )
+    raw = bytearray(build_seed_bootstrap_raw(0xFDAE7B7D, players=players))
+    raw[AVALUGG_RAIDPOINT_OFFSET:AVALUGG_RAIDPOINT_OFFSET + 24] = bytes(24)
+    raw[AVALUGG_RAIDPOINT_OFFSET:
+        AVALUGG_RAIDPOINT_OFFSET + len(AVALUGG_RAIDPOINT)] = AVALUGG_RAIDPOINT
+    for offset, source, item, quantity in AVALUGG_REWARD_RECORDS + AVALUGG_BONUS_RECORDS:
+        struct.pack_into("<IIII", raw, offset, source, item, quantity, 0)
+    return build_application(
+        bytes(raw), message_value=0x018B, header_tail=bytes.fromhex("01020304"))
 
 
 class RaidBootstrapCodecTests(unittest.TestCase):
     @classmethod
     def setUpClass(cls):
-        cls.application = DONOR.read_bytes()
-        cls.growlithe_raw = decode_application(extract_retail_bootstrap(GROWLITHE_CAPTURE))
+        cls.application = avalugg_application()
 
     def test_decode_matches_ghidra_layout(self):
         raw = decode_application(self.application)
@@ -69,34 +82,43 @@ class RaidBootstrapCodecTests(unittest.TestCase):
         self.assertEqual(decode_application(application), raw)
 
     def test_seed_build_reproduces_complete_retail_growlithe_boss(self):
+        from pokeldn.sv import raid_generation
+
         raw = build_seed_bootstrap_raw(
             0xBD13FB43, point_name="RaidPoint_12_1_11")
         self.assertEqual(len(raw), EXPECTED_RAW_SIZE)
         boss = slice(4 * gen9.SIZE_PARTY, 5 * gen9.SIZE_PARTY)
-        self.assertEqual(raw[boss], self.growlithe_raw[boss])
+        generated = raid_generation.generate_seed_raid(0xBD13FB43)
+        self.assertEqual(raw[boss], build_raid_boss_pk9(generated["profile"]))
+        self.assertEqual(
+            hashlib.sha256(raw[boss]).hexdigest(),
+            "fa48396b91413a0e54b86a074b3b10dcf077d8633e9d5a45c7466830325f66c3")
         for slot in range(4):
             plain = gen9.load(raw[slot * gen9.SIZE_PARTY:(slot + 1) * gen9.SIZE_PARTY])
             self.assertEqual(gen9.read(plain)["species"], 0)
 
     def test_seed_build_uses_retail_empty_participant_records(self):
         generated = build_seed_bootstrap_raw(0xBD13FB43)
-        donor = decode_application(self.application)
-        retail_empty = donor[2 * gen9.SIZE_PARTY:3 * gen9.SIZE_PARTY]
-        self.assertEqual(
-            generated[2 * gen9.SIZE_PARTY:3 * gen9.SIZE_PARTY], retail_empty)
+        retail_empty = generated[2 * gen9.SIZE_PARTY:3 * gen9.SIZE_PARTY]
         self.assertEqual(
             generated[3 * gen9.SIZE_PARTY:4 * gen9.SIZE_PARTY], retail_empty)
+        self.assertEqual(
+            hashlib.sha256(retail_empty).hexdigest(),
+            "befa78ce3efc6035ef511bfab95dd962e1019612e7b9bef80c85fb7955e36ae4")
         self.assertEqual(gen9.read(gen9.load(retail_empty))["level"], 1)
 
     def test_seed_build_reproduces_understood_growlithe_raidpoint_fields(self):
         raw = build_seed_bootstrap_raw(
             0xBD13FB43, point_name="RaidPoint_12_1_11")
         generated = raw[RAIDPOINT_OFFSET:RAIDPOINT_OFFSET + RAIDPOINT_SIZE]
-        captured = self.growlithe_raw[RAIDPOINT_OFFSET:RAIDPOINT_OFFSET + RAIDPOINT_SIZE]
-        self.assertEqual(generated[:0x30], captured[:0x30])
+        self.assertEqual(generated[:0x30], bytes.fromhex(
+            "52616964506f696e745f31325f315f3131000000000000004000000000000000"
+            "02000000000000000100000014000000"))
         self.assertEqual(struct.unpack_from("<I", generated, 0x4C)[0], 500)
         self.assertEqual(generated[0x50:0xE0], bytes(0x90))
-        self.assertEqual(generated[0x3B8:0x3D4], captured[0x3B8:0x3D4])
+        self.assertEqual(
+            struct.unpack_from("<7I", generated, 0x3B8),
+            (2, 58, 0, 0, 20, 0, 11))
         expected_rewards = (
             (1125, 3), (1961, 2), (566, 1), (1961, 1), (88, 1),
             (1961, 1), (155, 1), (566, 1), (88, 1),
@@ -250,8 +272,11 @@ class RaidBootstrapCodecTests(unittest.TestCase):
             })
 
     def test_custom_host_pokemon_replaces_lobby_and_bootstrap_slot_zero(self):
+        from pokeldn.sv import raid_generation
+
         original_raw = decode_application(self.application)
-        custom = original_raw[gen9.SIZE_PARTY:2 * gen9.SIZE_PARTY]
+        custom_raid = raid_generation.generate_seed_raid(0xBD13FB43)
+        custom = build_raid_boss_pk9(custom_raid["profile"])
         lobby_header = bytes.fromhex("80332e010701000000005801000000000000")
         lobby = lobby_header + original_raw[:gen9.SIZE_PARTY]
         boundary = 1395
@@ -267,7 +292,7 @@ class RaidBootstrapCodecTests(unittest.TestCase):
         changed_lobby = changed[0][4]
         self.assertEqual(changed_lobby[:len(lobby_header)], lobby_header)
         lobby_plain = gen9.load(changed_lobby[len(lobby_header):])
-        self.assertEqual(gen9.read(lobby_plain)["species"], 475)
+        self.assertEqual(gen9.read(lobby_plain)["species"], 58)
 
         changed_application = changed[1][4] + changed[2][4]
         changed_raw = decode_application(changed_application)
@@ -282,8 +307,11 @@ class RaidBootstrapCodecTests(unittest.TestCase):
             patch_host_player_pokemon([], bytes(gen9.SIZE_STORED))
 
     def test_guest_lobby_pokemon_patches_bootstrap_slot_one(self):
+        from pokeldn.sv import raid_generation
+
         original_raw = decode_application(self.application)
-        guest = original_raw[gen9.SIZE_PARTY:2 * gen9.SIZE_PARTY]
+        guest = build_raid_boss_pk9(
+            raid_generation.generate_seed_raid(0xBD13FB43)["profile"])
         lobby_header = bytes.fromhex("80332e010200000000005801000000000000")
         self.assertEqual(extract_lobby_pokemon(lobby_header + guest), guest)
         boundary = 1395
@@ -291,7 +319,8 @@ class RaidBootstrapCodecTests(unittest.TestCase):
             (0.2, 11, 0x02, 11, self.application[:boundary]),
             (0.3, 12, 0x04, 11, self.application[boundary:]),
         ]
-        replacement = original_raw[:gen9.SIZE_PARTY]
+        replacement = build_raid_boss_pk9(
+            raid_generation.generate_seed_raid(0xFDAE7B7D)["profile"])
         changed = patch_bootstrap_participant(events, 1, replacement)
         changed_raw = decode_application(changed[0][4] + changed[1][4])
         self.assertEqual(

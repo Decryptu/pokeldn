@@ -7,14 +7,17 @@ import unittest
 
 ROOT = Path(__file__).resolve().parent.parent
 BIN = ROOT / "bin"
-RESEARCH = ROOT / "docs" / "research" / "sv" / "fixtures"
 sys.path.insert(0, str(ROOT))
 sys.path.insert(0, str(BIN))
 
 import sv_host
 from pokeldn import gen9
 from pokeldn.ldn import reliable5
-from sv_raid_bootstrap_codec import decode_application
+from pokeldn.sv import raid_generation
+from sv_raid_bootstrap_codec import (
+    build_application, build_raid_boss_pk9, build_seed_bootstrap_raw,
+    decode_application,
+)
 
 
 class StartupRetryTests(unittest.TestCase):
@@ -23,7 +26,12 @@ class StartupRetryTests(unittest.TestCase):
         self.sent = []
         self.records = []
         self.ip = '169.254.1.2'
-        application = (RESEARCH / "sv_raid_reward_donor.bin").read_bytes()
+        players = tuple(
+            build_raid_boss_pk9(raid_generation.generate_seed_raid(seed)["profile"])
+            for seed in (1, 2, 3, 4)
+        )
+        self.original = build_seed_bootstrap_raw(0xBD13FB43, players=players)
+        application = build_application(self.original, message_value=0x010F)
         boundary = 1395
         replay = [
             (0.2, 11, 0x02, 11, application[:boundary]),
@@ -76,7 +84,7 @@ class StartupRetryTests(unittest.TestCase):
         self.assertEqual(self.records[-1]['rec'], 'raid_session_ready')
 
     def test_guest_lobby_pokemon_late_binds_pending_bootstrap(self):
-        original = decode_application((RESEARCH / "sv_raid_reward_donor.bin").read_bytes())
+        original = self.original
         guest = original[:gen9.SIZE_PARTY]
 
         self.env['install_raid_guest_pokemon'](self.ip, guest)

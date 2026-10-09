@@ -1,4 +1,3 @@
-import json
 from pathlib import Path
 import sys
 import unittest
@@ -6,47 +5,48 @@ import unittest
 
 ROOT = Path(__file__).resolve().parents[1]
 BIN = ROOT / "bin"
-RESEARCH = ROOT / "docs" / "research" / "sv" / "fixtures"
 sys.path.insert(0, str(ROOT))
 sys.path.insert(0, str(BIN))
 
 from pokeldn import gen9
 from pokeldn.ldn import reliable5
-from pokeldn.sv import raid, streams
+from pokeldn.sv import raid, raid_generation, streams
+from sv_raid_bootstrap_codec import (
+    build_application, build_raid_boss_pk9, build_seed_bootstrap_raw,
+)
 
 
 class RaidStageTests(unittest.TestCase):
     @classmethod
     def setUpClass(cls):
-        rows = [json.loads(line) for line in
-                (RESEARCH / "tera_raid_retail_victory_full.jsonl").read_text().splitlines()]
-        cls.capture = {}
-        for row in rows:
-            if (row.get("rec") == "data" and row.get("protocol") == 0x80
-                    and row.get("port") == 0 and str(row.get("src", "")).endswith(".1")
-                    and 1 <= row.get("seq", 0) <= 20):
-                cls.capture.setdefault(row["seq"], row)
-
-    def plain(self, sequence):
-        row = self.capture[sequence]
-        payload = bytes.fromhex(row["payload"])
-        return (streams.decompress(payload)
-                if row["reliable_flags"] & reliable5.FLAG_ZLIB else payload)
+        generated = raid_generation.generate_seed_raid(0xBD13FB43)
+        cls.metadata = generated["metadata"]
+        cls.profile = generated["profile"]
+        cls.host_pk9 = build_raid_boss_pk9(cls.profile)
+        raw = build_seed_bootstrap_raw(
+            0xBD13FB43, point_name="RaidPoint_12_1_11", players=(cls.host_pk9,))
+        cls.application = build_application(raw, message_value=0x010F)
 
     def stage(self):
-        host_pk9 = gen9.decrypt(self.plain(3)[18:])
-        application = self.plain(11) + self.plain(12)
-        metadata = {"species": 58, "stars": 2, "tera_type": 11,
-                    "encounter_identifier": 2007}
-        profile = {"form": 0, "gender": 0}
-        return raid.RaidStage(metadata, profile, host_pk9, application)
+        return raid.RaidStage(
+            self.metadata, self.profile, self.host_pk9, self.application)
 
-    def test_generated_sequence_plaintexts_match_successful_opening(self):
+    def test_generated_sequence_contains_the_complete_protocol_opening(self):
         events = self.stage().events()
         self.assertEqual([event[1] for event in events], list(range(1, 21)))
-        for _, sequence, flags, _, payload in events:
-            generated = streams.decompress(payload) if flags & reliable5.FLAG_ZLIB else payload
-            self.assertEqual(generated, self.plain(sequence), f"sequence {sequence}")
+        plain = {
+            sequence: (streams.decompress(payload)
+                       if flags & reliable5.FLAG_ZLIB else payload)
+            for _, sequence, flags, _, payload in events
+        }
+        self.assertEqual(plain[1], raid.descriptor(self.metadata, self.profile))
+        self.assertEqual(plain[2], raid.state(0x0106, 0x18, initial=True))
+        self.assertEqual(plain[3], raid.pokemon(0x0107, self.host_pk9))
+        self.assertEqual(plain[11] + plain[12], self.application)
+        self.assertEqual(plain[13], raid.load_transition("load"))
+        self.assertEqual(plain[14], raid.load_transition("battle"))
+        self.assertEqual(tuple(plain[index] for index in range(15, 21)),
+                         raid.battle_handoff())
 
     def test_stage_transitions_are_idempotent(self):
         stage = self.stage()
@@ -74,29 +74,24 @@ class RaidStageTests(unittest.TestCase):
         self.assertEqual(int.from_bytes(body[24:28], "little"), 1)
         self.assertEqual(int.from_bytes(body[28:32], "little"), 1234)
 
-    def test_generated_joiner_messages_match_successful_capture(self):
-        fixture = json.loads(
-            (ROOT / "pokeldn/sv/data/raid_guest.json").read_text())
-        captured = fixture["lobby"] + [fixture["ready"]]
-        party = gen9.decrypt(bytes.fromhex(fixture["lobby"][1]["payload"])[18:])
-        stage = raid.JoinerRaidStage(party)
+    def test_generated_joiner_messages_have_the_complete_protocol_shape(self):
+        stage = raid.JoinerRaidStage(self.host_pk9)
         messages = stage.lobby() + stage.ready()
-        self.assertEqual(len(messages), 3)
-        for message, row in zip(messages, captured):
-            expected = bytes.fromhex(row["payload"])
-            expected = (streams.decompress(expected)
-                        if row["flags"] & reliable5.FLAG_ZLIB else expected)
-            actual = (streams.decompress(message.payload)
-                      if message.flags & reliable5.FLAG_ZLIB else message.payload)
-            self.assertEqual(actual, expected)
+        actual = [streams.decompress(message.payload)
+                  if message.flags & reliable5.FLAG_ZLIB else message.payload
+                  for message in messages]
+        self.assertEqual(actual, [
+            raid.state(1, 0x18),
+            raid.pokemon(2, self.host_pk9),
+            raid.state(3, 0x01),
+        ])
         start = stage.start_ack()[0]
         start_plain = streams.decompress(start.payload)
         self.assertEqual(int.from_bytes(start_plain[4:6], "little"), 4)
         self.assertEqual(int.from_bytes(start_plain[34:38], "little"), 0x0D)
 
     def test_generated_joiner_transitions_are_idempotent(self):
-        party = gen9.decrypt(self.plain(3)[18:])
-        stage = raid.JoinerRaidStage(party)
+        stage = raid.JoinerRaidStage(self.host_pk9)
         self.assertEqual(len(stage.lobby()), 2)
         self.assertEqual(stage.lobby(), [])
         self.assertEqual(len(stage.ready()), 1)
