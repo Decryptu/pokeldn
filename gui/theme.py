@@ -20,6 +20,8 @@ BLUE = "#47AEFA"
 RED = "#FD474D"
 GREEN = "#3DD68C"
 AMBER = "#FF9F0A"
+BRAND_BLUE = ("#4FD9F5", "#4E61FC")   # the logo's two gradients (assets/logo.svg)
+BRAND_RED = ("#FAA555", "#FD474D")
 SELECTED = ft.Colors.with_opacity(0.14, BLUE)
 MONO = "monospace"
 CONTROL_HEIGHT = 34
@@ -267,6 +269,22 @@ def switch(value: bool, on_change) -> ft.Switch:
 def badge(label: str, color: str = MUTED, icon: str = "circle-info") -> ft.Row:
     return ft.Row([pixel_icon(icon, size=12, color=color), text(label, 12, SOFT)],
                   spacing=6, tight=True, vertical_alignment=ft.CrossAxisAlignment.CENTER)
+
+
+def tinted(control: ft.Control, colors: tuple[str, ...]) -> ft.ShaderMask:
+    """The control's opaque pixels painted with a diagonal gradient, such as a brand gradient over pixel icons."""
+    return ft.ShaderMask(content=control, blend_mode=ft.BlendMode.SRC_IN,
+                         shader=ft.LinearGradient(begin=ft.Alignment.TOP_LEFT, end=ft.Alignment.BOTTOM_RIGHT,
+                                                  colors=list(colors)))
+
+
+def chip(label: str, icon: str | None = None, color: str = MUTED) -> ft.Container:
+    """A small capsule holding a fact: an icon in its colour and a label."""
+    row = [pixel_icon(icon, size=12, color=color)] if icon else []
+    row.append(text(label, 12, SOFT, weight=ft.FontWeight.W_500))
+    return ft.Container(ft.Row(row, spacing=6, tight=True, vertical_alignment=ft.CrossAxisAlignment.CENTER),
+                        padding=ft.Padding(10, 3, 10, 3), border_radius=999,
+                        bgcolor=ft.Colors.with_opacity(0.06, "#FFFFFF"))
 
 
 def segmented(options: list[tuple[str, str, str]], value: str, on_change, wrap: bool = False) -> ft.Row:

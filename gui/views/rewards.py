@@ -48,13 +48,17 @@ class RewardPicker:
                                keyboard_type=ft.KeyboardType.NUMBER,
                                on_change=lambda event, n=index: self._quantity(event, n))
             rows.append(ft.Row([
-                ft.Container(t.text(str(index + 1), 12, t.MUTED), width=22, alignment=ft.Alignment.CENTER),
+                ft.Container(t.text(str(index + 1), 11, t.BLUE, weight=ft.FontWeight.W_700), width=24, height=24,
+                             margin=ft.Margin(0, 0, 0, 5), alignment=ft.Alignment.CENTER, border_radius=12,
+                             bgcolor=ft.Colors.with_opacity(0.12, t.BLUE)),
                 ft.Column([t.text("Item", 11, t.MUTED), item], spacing=4, expand=True),
                 ft.Column([t.text("Quantity", 11, t.MUTED), quantity], spacing=4),
                 t.icon_button("close", lambda _e, n=index: self._remove(n), "Remove reward"),
             ], spacing=8, vertical_alignment=ft.CrossAxisAlignment.END))
         if not rows:
-            rows.append(t.text("The raid's own rewards.", 12, t.MUTED))
+            rows.append(ft.Row([t.pixel_icon("gift", color=t.FAINT),
+                                t.text("The raid's own rewards, shown with the raid above.", 12, t.MUTED)],
+                               spacing=8))
         self.rows.controls = rows
         self.add.disabled = len(self.value) >= REWARD_ROWS
         if update:

@@ -20,7 +20,7 @@ from gui.views.gifts import GiftBuilder
 from gui.views.sprites import MINI, Sprite
 from gui.views.widgets import CodeBlock, DigitCode, Log, PathField, open_folder
 
-TOOL_ICONS = {"Trade": "arrows-horizontal", "Mystery Gift": "gift", "Tera Raid": "shield"}
+TOOL_ICONS = {"Trade": "arrows-horizontal", "Mystery Gift": "gift", "Tera Raid": "diamond-gem"}
 EMPTY = "-"   # a dropdown option cannot carry an empty key
 ADVANCED_NOTE = ("The tested defaults work for most players. Change these only when a guide or a bug report "
                  "asks you to. A value set here overrides the Basic tab.")
