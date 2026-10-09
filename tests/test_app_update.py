@@ -277,6 +277,7 @@ def test_the_new_app_leaves_the_helpers_folder_until_the_helper_has_closed(tmp_p
     assert update.wait_for(lambda: not new.exists(), 5.0)
 
 
+@pytest.mark.skipif(sys.platform == "win32", reason="the stand-in app is a shell script")
 @pytest.mark.filterwarnings("ignore::ResourceWarning", "ignore::pytest.PytestUnraisableExceptionWarning")
 def test_the_helper_never_runs_inside_the_folder_it_renames(tmp_path, monkeypatch):
     # Windows refuses to rename a folder that is any process's working folder; Explorer starts the

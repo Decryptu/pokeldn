@@ -236,12 +236,11 @@ def _detach() -> dict:
 
 def start_swap(new: Path, target: Path, version: str, system: str = sys.platform) -> None:
     """Starts the new app as the helper that replaces target once this process (os.getpid()) exits."""
-    log = (new.parent.parent / "helper.log").open("ab")
     # Launched from Explorer, this app's working folder is target: inherited, Windows refuses the rename.
-    subprocess.Popen([str(executable_in(new, system)), "--apply-update", str(new), str(target),
-                      str(os.getpid()), version], cwd=str(new.parent), stdin=subprocess.DEVNULL, stdout=log,
-                     stderr=log, close_fds=True, **_detach())
-    log.close()
+    with (new.parent.parent / "helper.log").open("ab") as log:
+        subprocess.Popen([str(executable_in(new, system)), "--apply-update", str(new), str(target),
+                          str(os.getpid()), version], cwd=str(new.parent), stdin=subprocess.DEVNULL,
+                         stdout=log, stderr=log, close_fds=True, **_detach())
 
 
 def wait_for_exit(pid: int, timeout: float) -> bool:
