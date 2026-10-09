@@ -47,8 +47,9 @@ POKELDN_RADIO=esp32:/dev/ttyACM0 ./.venv/bin/python bin/sv_join.py \
 anonymous/local player ID. The GUI fixes the LDN node, Session player, and game
 identity names to `POKELDN`. `pokeldn.sv.raid.JoinerRaidStage` constructs
 the initial state, selected-Pokémon announcement, Ready transition, and Start
-acknowledgment. The 46-record game identity and established Session/channel
-timing remain shared transport fixtures. `--record-trace` and
+acknowledgment. The standard Scarlet/Violet application identity from
+`pokeldn.sv.reference` and the established Session/channel timing are shared
+with trades. `--record-trace` and
 `--raid-lobby-trace` remain available only for explicit protocol experiments.
 
 `--raid-pokemon` accepts a party `.pk9`. The shared PKHeX service validates it
@@ -59,9 +60,9 @@ well.
 
 ## Limitations
 
-- The 46-record game identity remains capture-backed and validated against game
-  version 4.0.0, matching the identity layer used by trades. The raid lobby
-  application sequence itself is generated.
+- The standard application identity remains the capture-backed fixture already
+  used by Scarlet/Violet trades; raids no longer carry a separate identity
+  corpus. The raid lobby application sequence itself is generated.
 - `SEATED` in the log proves only the network join. The retail host screen must
   show POKELDN to validate lobby presence.
 

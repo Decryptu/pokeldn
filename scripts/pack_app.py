@@ -52,8 +52,6 @@ def runtime_files() -> list[str]:
              and (name.startswith(folders) or name in
              ("config/host.toml", "gui/guide.md", "LICENSE", "vendor/LDN/LICENSE")) and (ROOT / name).is_file()}
     files.update(name for name in RUNTIME_EXTRAS if (ROOT / name).is_file())
-    identity = ROOT / "bin" / "sv_raid_identity_records"
-    files.update(str(path.relative_to(ROOT)) for path in identity.iterdir() if path.is_file())
     return sorted(files)
 
 

@@ -7,7 +7,7 @@ ROOT = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(ROOT))
 sys.path.insert(0, str(ROOT / "bin"))
 
-from pokeldn.ldn import channel_table, pia_connect, reliable5
+from pokeldn.ldn import channel_table, reliable5
 from pokeldn.sv import pokemon, raid_guest, reference, streams
 
 from sv_join import (PROTO_BROADCAST_RELIABLE, RAID_HANDLER_KEYS,
@@ -17,7 +17,7 @@ from sv_join import (PROTO_BROADCAST_RELIABLE, RAID_HANDLER_KEYS,
 
 
 class RaidGuestFixtureTests(unittest.TestCase):
-    def test_raid_guest_uses_validated_donor_free_session_identity(self):
+    def test_raid_guest_uses_generated_session_and_shared_application_identity(self):
         args = build_parser().parse_args([
             "--raid-guest-replay", "--trainer-name", "POKELDN"])
         apply_raid_guest_identity(
@@ -25,6 +25,7 @@ class RaidGuestFixtureTests(unittest.TestCase):
         self.assertEqual(args.mac, "fe:11:22:33:44:55")
         self.assertEqual(args.join_player_id, ANONYMOUS_PLAYER_ID)
         self.assertEqual(args.join_player_name, "POKELDN")
+        self.assertEqual(args.record_set, reference.RECORDS)
 
     def test_generated_raid_guest_alias_selects_the_same_mode(self):
         generated = build_parser().parse_args(["--raid-guest"])
@@ -71,23 +72,13 @@ class RaidGuestFixtureTests(unittest.TestCase):
         apply_raid_disconnect_default(args)
         self.assertIsNone(args.raid_disconnect_after_prefix)
 
-    def test_session_identity_is_coherent(self):
-        fixture = raid_guest.load_fixture()
-        response = pia_connect.parse_session_join_response_v11(
-            bytes.fromhex(fixture["session_join_response"]))
-        self.assertEqual(response["status_name"], "accepted")
-        mac = bytes.fromhex(fixture["station_mac"].replace(":", ""))
-        self.assertEqual(response["console_constant_id"], pia_connect.ldn_constant_id(mac))
-        self.assertEqual(len(raid_guest.player_id()), 16)
-
-    def test_identity_is_complete_and_name_can_be_productized(self):
-        records = raid_guest.identity_records()
-        self.assertEqual([seq for seq, _ in records], list(range(1, 47)))
-        first = streams.decompress(records[0][1])
+    def test_shared_identity_name_can_be_productized(self):
+        first_record = Path(reference.RECORDS, "001.bin").read_bytes()
+        first = streams.decompress(first_record)
         self.assertEqual(len(first), 1395)
         self.assertEqual(first[0], 1)
         self.assertEqual(reference.player_name(
-            reference.named_record(records[0][1], "POKELDN")), "POKELDN")
+            reference.named_record(first_record, "POKELDN")), "POKELDN")
 
     def test_lobby_and_ready_transition_match_the_capture(self):
         records = raid_guest.lobby_records()

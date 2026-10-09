@@ -1,4 +1,4 @@
-"""Bundled retail Scarlet/Violet raid-guest identity and lobby fixture."""
+"""Compatibility helpers for the retail Scarlet/Violet raid-lobby fixture."""
 from functools import lru_cache
 import json
 from pathlib import Path
@@ -20,23 +20,7 @@ def load_fixture():
         fixture = json.load(source)
     if fixture.get("format") != FORMAT:
         raise ValueError(f"unsupported raid guest fixture {fixture.get('format')!r}")
-    identity = fixture.get("identity", ())
-    if [row.get("seq") for row in identity] != list(range(1, 47)):
-        raise ValueError("raid guest fixture identity must contain sequences 1 through 46")
     return fixture
-
-
-def player_id():
-    return bytes.fromhex(load_fixture()["player_id"])
-
-
-def station_mac():
-    return load_fixture()["station_mac"]
-
-
-def identity_records():
-    return [(row["seq"], bytes.fromhex(row["payload"]))
-            for row in load_fixture()["identity"]]
 
 
 def lobby_records():

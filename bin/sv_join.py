@@ -91,12 +91,14 @@ def synthetic_mac(random_bytes=os.urandom):
 
 
 def apply_raid_guest_identity(args, random_bytes=os.urandom):
-    """Install the donor-free identity validated against retail Scarlet/Violet."""
+    """Install the synthetic Session identity and standard SV application identity."""
     if args.join_player_id == "arceus":
         args.join_player_id = ANONYMOUS_PLAYER_ID
     if args.mac is None:
         args.mac = synthetic_mac(random_bytes)
     args.join_player_name = args.trainer_name
+    if args.record_set is None and not args.record_trace:
+        args.record_set = reference.RECORDS
 
 
 def split_raid_channel_table(payload, flags=0):
@@ -652,7 +654,7 @@ def main(argv=None):
     if args.raid_guest_replay:
         args.session_join = True
         args.game_channel = True
-        # Suppress bundled trade fragments; supply the captured raid identity via --record-trace.
+        # Suppress trade-only open fragments; use the shared SV application records below.
         # Guest broadcasts were missing from the old host-MAC-only reference capture.
         args.no_identity = True
         args.net_ack = True
@@ -987,9 +989,7 @@ async def run_session(args, keys, host_ip, host_mac, our_ip, our_mac, record):
     join_sends_scheduled = False
     offers_seen = 0
     trades_done = 0
-    record_set = (load_record_trace(args.record_trace) if args.record_trace else
-                  raid_guest.identity_records()
-                  if args.raid_guest_replay and not args.record_set else [])
+    record_set = load_record_trace(args.record_trace) if args.record_trace else []
     raid_stage = None
     raid_lobby_records = (load_raid_guest_lobby_records(args.raid_lobby_trace)
                           if args.raid_lobby_trace else [])
