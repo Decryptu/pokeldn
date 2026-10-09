@@ -18,6 +18,11 @@ from pokeldn.pad.link import Pad
 from pokeldn.pad.serial_link import SerialPad, candidates
 
 PORT = 47800
+# CoreBluetooth never fails a read or a connect to a board that lost power; past these the link is
+# dropped and the request answered (docs/hardware_pad.md, The host side).
+SECONDS = {"status": 5, "play": 120, "scan": 20, "tap": 40}
+SECONDS_DEFAULT = 40
+REPLY_SECONDS = 150    # the app's wait, longer than any request above
 
 
 def _code() -> str:
@@ -66,11 +71,21 @@ class Service:
     async def tap(self, report: bytes, ms: int):
         self.taps += 1
         mine = self.taps
-        pad = await self.ensure()
-        await pad.send(report)
-        await asyncio.sleep(ms / 1000)
-        if mine == self.taps:    # a later tap took over the report; it releases it
-            await pad.send(macro.NEUTRAL)
+        try:
+            async with asyncio.timeout(SECONDS["tap"]):
+                pad = await self.ensure()
+                await pad.send(report)
+                await asyncio.sleep(ms / 1000)
+                if mine == self.taps:    # a later tap took over the report; it releases it
+                    await pad.send(macro.NEUTRAL)
+        except Exception:
+            self.drop()
+
+    def drop(self) -> None:
+        """Forgets the link; a stale CoreBluetooth connection is closed so the board advertises again."""
+        stale, self.pad = self.pad, None
+        if stale is not None:
+            asyncio.ensure_future(_close_quietly(stale))
 
     async def handle(self, req: dict) -> dict:
         op = req.get("op")
@@ -122,16 +137,31 @@ class Service:
     async def client(self, reader, writer):
         try:
             while line := await reader.readline():
+                req = json.loads(line)
+                op = req.get("op")
                 try:
-                    reply = await self.handle(json.loads(line))
+                    async with asyncio.timeout(SECONDS.get(op, SECONDS_DEFAULT)):
+                        reply = await self.handle(req)
+                except TimeoutError:
+                    self.drop()
+                    reply = {"ok": False, "error": f"the board did not answer {op} within "
+                                                   f"{SECONDS.get(op, SECONDS_DEFAULT)} s"}
                 except (Exception, macro.MacroError) as e:
                     if not isinstance(e, macro.MacroError):
-                        self.pad = None
+                        self.drop()
                     reply = {"ok": False, "error": str(e) or type(e).__name__}
                 writer.write(json.dumps(reply).encode() + b"\n")
                 await writer.drain()
         finally:
             writer.close()
+
+
+async def _close_quietly(pad) -> None:
+    try:
+        async with asyncio.timeout(5):
+            await pad.close()
+    except Exception:
+        pass
 
 
 def _exit_with_the_app() -> None:
@@ -161,7 +191,7 @@ class Client:
 
     def __init__(self, port: int = PORT, timeout: float = 2.0):
         self.sock = socket.create_connection(("127.0.0.1", port), timeout=timeout)
-        self.sock.settimeout(None)
+        self.sock.settimeout(REPLY_SECONDS)
         self.file = self.sock.makefile("rwb")
         self.lock = threading.Lock()
 
@@ -169,7 +199,11 @@ class Client:
         with self.lock:
             self.file.write(json.dumps({"op": op, **fields}).encode() + b"\n")
             self.file.flush()
-            line = self.file.readline()
+            try:
+                line = self.file.readline()
+            except TimeoutError:
+                self.close()    # a late reply would answer the next request
+                raise ServiceError("the controller service did not answer") from None
         if not line:
             raise ServiceError("the controller service stopped")
         reply = json.loads(line)

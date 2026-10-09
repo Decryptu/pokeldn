@@ -177,6 +177,12 @@ holds them as one. A file whose `version` is newer than the reader's is refused.
 `disconnect`. The app starts it as its own child; `tools/switch/pad.py` starts it in its own process
 when none is running.
 
+On macOS, when the board loses power with a link open (unplugged from the Switch), CoreBluetooth
+can leave a read or a write pending with no error. The service answers every request within a limit
+(`status` 5 s, `play` 120 s, `scan` 20 s, the rest 40 s, a connect included). Past it, the service
+closes the link so the board advertises again, and replies with an error. The app's client stops
+waiting after 150 s.
+
     ./.venv/bin/python tools/switch/pad.py A
     ./.venv/bin/python tools/switch/pad.py HOME wait:1 'RIGHT*3' A
     ./.venv/bin/python tools/switch/pad.py hold:B:2 stick:L:-1:0:0.5

@@ -138,3 +138,93 @@ def test_the_service_exits_when_the_app_closes_its_stdin():
     finally:
         child.kill()
         child.stdout.close()
+
+
+def test_a_board_that_stops_answering_never_holds_the_app(monkeypatch):
+    """A board unplugged from the Switch mid-link: CoreBluetooth never failed the status read, and the
+    Board page waited on it forever."""
+    import socket
+    import threading
+    from pokeldn.pad import service
+    monkeypatch.setitem(service.SECONDS, "status", 0.3)
+    monkeypatch.setattr(service, "REPLY_SECONDS", 1.0)
+    closed, connects = [], []
+
+    class Hung:
+        connected = True
+
+        async def status(self):
+            await asyncio.Event().wait()
+
+        async def close(self):
+            closed.append(self)
+
+    class Fresh(Hung):
+        async def status(self):
+            return macro_status()
+
+    async def connect_any(port=""):
+        connects.append(port)
+        return Fresh()
+
+    def macro_status():
+        return SimpleNamespace(version="1.2.0")
+
+    monkeypatch.setattr(service, "connect_any", connect_any)
+    svc = service.Service()
+    svc.pad = Hung()
+    with socket.socket() as s:
+        s.bind(("127.0.0.1", 0))
+        port = s.getsockname()[1]
+    loop = asyncio.new_event_loop()
+    started = threading.Event()
+
+    async def serve():
+        nonlocal stop
+        stop = asyncio.Event()
+        server = await asyncio.start_server(svc.client, "127.0.0.1", port)
+        started.set()
+        await stop.wait()
+        server.close()
+        for task in asyncio.all_tasks() - {asyncio.current_task()}:
+            task.cancel()
+        await server.wait_closed()
+
+    stop = None
+    host = threading.Thread(target=lambda: loop.run_until_complete(serve()), daemon=True)
+    host.start()
+    assert started.wait(5)
+    replies = []
+
+    def app():
+        client = service.Client(port)
+        try:
+            for op in ("status", "connect", "status"):
+                try:
+                    replies.append(client.call(op))
+                except service.ServiceError as error:
+                    replies.append(str(error))
+        finally:
+            client.close()
+
+    worker = threading.Thread(target=app, daemon=True)
+    worker.start()
+    worker.join(10)
+    loop.call_soon_threadsafe(stop.set)
+    host.join(5)
+    loop.close()
+    assert not worker.is_alive(), "the app still waits on the service"
+    assert replies[0] == "the board did not answer status within 0.3 s"
+    assert len(closed) == 1 and connects == [""]
+    assert replies[2]["status"] == {"version": "1.2.0"}
+
+    silent = socket.socket()                     # a service that takes the request and never answers
+    silent.bind(("127.0.0.1", 0))
+    silent.listen()
+    client = service.Client(silent.getsockname()[1])
+    try:
+        with pytest.raises(service.ServiceError, match="did not answer"):
+            client.call("status")
+    finally:
+        client.close()
+        silent.close()
