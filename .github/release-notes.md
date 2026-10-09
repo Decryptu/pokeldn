@@ -1,20 +1,23 @@
-# pokeldn 0.17.0
+# pokeldn 0.18.0
 
 This desktop app trades with seven Pokemon game families on a Switch or Switch 2
 through an ESP32 radio connected by USB. Nothing is installed on the console.
 
 ## What is new
 
-- Controller board: the new Control page turns an ESP32-S3 into a wired controller for the Switch.
-  Flash it from the Board page with Controller chosen, plug it into the console's USB-C port and
-  press Connect. Press buttons on screen or from the keyboard, record and edit macros, play them on
-  the board (it keeps playing if the computer sleeps), and share them as `.pokemacro` files.
-- Windows: a second session started without closing the app no longer fails with
-  "no reply 0x81 to command 0x01" on a classic ESP32. The app now finds a board still running at
-  the previous session's speed. Thanks to easyworld for the report and the fix.
+- Controller: button presses from the Control page no longer go missing. On macOS, many presses
+  were dropped in the first seconds after connecting; every press now reaches the board, a few
+  milliseconds after the click.
+- Board page, redesigned: each board shows its firmware, its version and whether it is up to date,
+  with an Update button only when this app includes a newer version. The Firmware list installs
+  Wireless or Controller on any board, after a confirmation. A controller board plugged into this
+  computer is listed and updated over Bluetooth, with no BOOT button needed.
+- The Control page reconnects on its own when the board loses power (moving it from the computer to
+  the Switch), and says whether the board is plugged into this computer or into the Switch.
+- The controller's background helper now closes with the app.
 
-The radio firmware is unchanged at 1.6.1; wireless boards need no reflash. The controller firmware
-is 1.1.0.
+The radio firmware is unchanged at 1.6.1; wireless boards need no update. The controller firmware is
+1.2.0; the Board page offers the update.
 
 pokeldn is an unofficial fan project, not affiliated with Nintendo or The Pokemon Company. It is not
 meant for commercial or promotional use; see the License section of the README.
@@ -47,7 +50,7 @@ console. `SHA256SUMS` covers all nine downloads.
    links both, says how to install them and names the one missing.
    A board that ships an external antenna, such as the Seeed Studio XIAO ESP32C3 or XIAO ESP32S3,
    needs it attached; larger S3 boards such as the N8R2 and N16R8 have an onboard antenna.
-4. On Board, press Flash. The app checks the board on its own and shows Board ready.
+4. On Board, choose Install beside Wireless. The app checks the board on its own and shows Up to date.
 5. On Games, choose a game and a tool, build an offer or select a Pokemon file, and follow the
    console instructions before starting.
 
