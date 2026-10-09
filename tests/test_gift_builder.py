@@ -314,3 +314,20 @@ def test_the_sword_item_picker_offers_exactly_what_the_validator_accepts():
             pass
     assert set(offered) == accepted
     assert "???" not in offered.values()
+
+
+@pytest.mark.parametrize("preset, stale, sent", [
+    ("event-wishmkr-jirachi", {"--gift": "celebi"}, "event-pokemon"),   # "--event-pokemon belongs to --gift"
+    ("celebi", {"--buffer-script": "trainer-id-probe"}, "celebi"),       # "not allowed with argument --gift"
+    ("celebi", {"--gift": "worlds-xp"}, "celebi"),                        # the stale card, sent silently
+])
+def test_an_all_options_value_for_a_flag_the_gift_card_sets_never_reaches_the_launcher(
+        preset, stale, sent, monkeypatch, tmp_path):
+    """A player's saved All options value came after the Gift card's flags; the launcher refused the
+    run or sent the other card. The real launcher parses what the app builds."""
+    assert preset in frlg.PRESET
+    monkeypatch.setattr(gift_builder, "SESSION", tmp_path)
+    values = {"--gift-file": {"mode": "preset", "preset": preset}, "--version": "firered"}
+    args = command.build(TOOLS["frlg-gift"], values, stale, Settings(), stamp="T")
+    run = _frlg_run(args)
+    assert run.payload.gift == sent

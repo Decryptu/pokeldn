@@ -8,7 +8,7 @@ import flet as ft
 from gui import board
 from gui.app import keys_found
 from pokeldn import pokemon as builder
-from pokeldn.app import bank, command, online, received, runner
+from pokeldn.app import bank, command, gift_builder, online, received, runner
 from gui import theme as t
 from pokeldn.app.catalog import GAMES, Field, Game, Tool
 from pokeldn.app.introspect import flags_of
@@ -333,6 +333,9 @@ class GamesView:
             return
         query = self.search.lower().strip()
         hidden = {f.key: f for f in self.tool.fields if f.hidden}
+        if any(f.kind == "builder" for f in self.tool.fields):   # the Gift card sets these
+            owned = gift_builder.owned_flags(self.tool)
+            flags = [f for f in flags if f.option not in owned]
         rows = []
         # The settings kept off the Basic tab come first.
         for flag in sorted(flags, key=lambda f: f.option not in hidden):

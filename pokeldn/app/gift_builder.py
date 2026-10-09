@@ -67,6 +67,22 @@ def preset_args(game, value):
     return list(arguments(value["options"].get(preset.key)) if arguments else preset.args)
 
 
+def owned_flags(tool) -> frozenset[str]:
+    """Every flag the builder can send. An All options value for one of them came after the builder's
+    and overrode it: a stale --gift beat --gift event-pokemon, a --buffer-script clashed with a
+    preset's --gift, and the launcher refused both before the radio opened."""
+    game = GAMES[tool.key]
+    found = {"--gift-file"}
+    if game in SAVE_GAMES:
+        found |= {"--save-backup", "--save-restore", "--save-resume-dir"}
+    for preset in module(game).PRESETS:
+        variants = [preset.args]
+        for member in getattr(preset, "members", ()):
+            variants += [preset.arguments({"on": [member.key], "keep": keep}) for keep in (False, True)]
+        found |= {arg for args in variants for arg in args if str(arg).startswith("--")}
+    return frozenset(found)
+
+
 def output(tool):
     return str(SESSION / "gifts" / f"{tool.key}.pokegift")
 

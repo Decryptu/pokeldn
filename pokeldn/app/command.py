@@ -98,8 +98,10 @@ def build(tool: Tool, values: dict, extra: dict, settings, stamp: str | None = N
         args += ["--keys", os.path.expanduser(settings.keys)]
     if "--capture" in known and settings.capture:
         args += ["--capture", f"captures/{tool.key}-{stamp}.jsonl"]
+    owned = (gift_builder.owned_flags(tool) if any(f.kind == "builder" for f in tool.fields)
+             else frozenset())
     for flag, value in extra.items():
-        if banked and flag == "--fresh-pid":
+        if (banked and flag == "--fresh-pid") or flag in owned:
             continue
         args += ([flag] if value is True else [] if value in (False, "", None) else [flag, str(value)])
     return args
