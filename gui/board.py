@@ -134,20 +134,10 @@ def bridges_without_driver(run=subprocess.run) -> list[str]:
 def identify(port: str, blink: bool = True) -> Identity:
     """HELLO, then blink GPIO2 on classic boards to identify them (docs/hardware_esp32.md).
     Raises esp32.RadioError when no pokeldn firmware answers. Opening the port can reset it."""
-    s = serial.Serial()
-    s.port, s.baudrate, s.timeout = port, 115200, 0.02
-    s.dtr = s.rts = False   # most boards reset on a DTR/RTS edge
-    s.open()
-    radio = esp32.Radio(s)
+    # Another protocol version is reported, not refused.
+    radio = esp32.Radio.open_serial(port, fast_baud=0, check_protocol=False)
+    info = radio.info
     try:
-        # Radio.hello() refuses another protocol version; parse it here to report it instead.
-        for attempt in range(5):   # a HELLO sent while the board boots is lost
-            try:
-                info = esp32.Info.parse(radio.request(esp32.CMD_HELLO, b"", esp32.MSG_INFO, timeout=1.0))
-                break
-            except esp32.RadioError:
-                if attempt == 4:
-                    raise
         if blink and info.version == esp32.PROTOCOL_VERSION:
             time.sleep(1.0)   # the boot pulse
             radio.led("blink", 255, 300, 5000)

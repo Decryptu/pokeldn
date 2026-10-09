@@ -23,21 +23,61 @@ class _HostStream:
 
     def read(self, n: int) -> bytes:
         try:
-            data = self._inbox.get(timeout=0.02)
+            data = self._take(self._inbox.get(timeout=0.02))
         except queue.Empty:
             return b""
         while len(data) < n:
             try:
-                data += self._inbox.get_nowait()
+                data += self._take(self._inbox.get_nowait())
             except queue.Empty:
                 break
         return data
+
+    def _take(self, sent: tuple[int | None, bytes]) -> bytes:
+        return sent[1]
 
     def write(self, data: bytes) -> None:
         self._board._from_host(data)
 
     def close(self) -> None:
         pass
+
+
+class UartPort(_HostStream):
+    """pyserial's `Serial` on a classic board's UART: the board keeps its line rate across opens
+    (wire.c sets it at boot and on BAUD), and bytes sent at another rate arrive as noise."""
+
+    def __init__(self, board: "SimulatedBoard"):
+        super().__init__(board)
+        board.stream = self
+        if board.line_rate is None:
+            board.line_rate = 115200
+        self.baudrate = 115200
+        self.dtr = self.rts = True   # pyserial asserts both on open unless told otherwise
+        self._credit_at = 0.0
+
+    def open(self) -> None:
+        pass
+
+    def flush(self) -> None:
+        pass
+
+    def read(self, n: int) -> bytes:
+        data = super().read(n)
+        if not data and time.monotonic() - self._credit_at > 0.1:
+            self._credit_at = time.monotonic()
+            # Idle, the firmware repeats its CREDIT every 100 ms (wire.c reader): the one after a
+            # BAUD leaves at the new rate, before the host has switched.
+            self._board._emit(esp32.MSG_CREDIT, struct.pack("<I", getattr(self._board, "_consumed", 0)))
+        return data
+
+    def _take(self, sent: tuple[int | None, bytes]) -> bytes:
+        rate, data = sent
+        return data if rate == self.baudrate else b"\x55" * len(data)
+
+    def write(self, data: bytes) -> None:
+        # Noise with no 0x00 leaves a partial frame in the board's decoder.
+        self._board._from_host(data if self.baudrate == self._board.line_rate else b"\xff" * len(data))
 
 
 class Air:
@@ -72,6 +112,7 @@ class SimulatedBoard:
         self.stations: dict[bytes, "SimulatedBoard"] = {}   # AP: mac -> station board
         self.ap: "SimulatedBoard | None" = None              # STA: the joined access point
         self.stream = _HostStream(self)
+        self.line_rate: int | None = None   # a classic board's UART rate; None for native USB
         self._reader = esp32.FrameReader()
         self.sent_raw: list[bytes] = []
         self.led_looks: list[bytes] = []
@@ -86,7 +127,7 @@ class SimulatedBoard:
         return self.stream
 
     def _emit(self, msg_type: int, payload: bytes = b"") -> None:
-        self.stream._inbox.put(esp32.encode_frame(msg_type, payload))
+        self.stream._inbox.put((self.line_rate, esp32.encode_frame(msg_type, payload)))
 
     def _result(self, command: int, code: int = 0) -> None:
         self._emit(esp32.MSG_RESULT, bytes([command]) + struct.pack("<i", code))
@@ -116,7 +157,9 @@ class SimulatedBoard:
                 self._watched = True
                 threading.Thread(target=self._watch_host, daemon=True).start()
         elif t == esp32.CMD_BAUD:
-            self._result(t)
+            self._result(t)   # at the old rate
+            if self.line_rate is not None:
+                self.line_rate = struct.unpack("<I", p)[0]
         elif t == esp32.CMD_CHANNEL:
             if self.mode != IDLE:
                 self._result(t, 0x103)

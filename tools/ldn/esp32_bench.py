@@ -40,17 +40,18 @@ def main(argv=None):
                     help="--trickle: host an empty network, so each ETH_TX goes to the air")
     ap.add_argument("--body", type=int, default=0, help="--trickle: bytes after the Ethernet header")
     args = ap.parse_args(argv)
+    bauds = [int(b) for b in args.bauds.split(",") if b.strip()]
     if args.trickle:
-        for baud in [int(b) for b in args.bauds.split(",") if b.strip()]:
-            trickle(args.port, baud, args.trickle, args.flood, args.ap, args.body)
+        for baud in bauds:
+            trickle(args.port, baud, args.trickle, args.flood, args.ap, args.body, bauds)
         return 0
     if args.uplink:
-        for baud in [int(b) for b in args.bauds.split(",") if b.strip()]:
-            uplink(args.port, baud, args.uplink, args.burst, args.gap, args.no_flow)
+        for baud in bauds:
+            uplink(args.port, baud, args.uplink, args.burst, args.gap, args.no_flow, bauds)
         return 0
-    for baud in [int(b) for b in args.bauds.split(",") if b.strip()]:
+    for baud in bauds:
         try:
-            radio = esp32.Radio.open_serial(args.port, fast_baud=baud)
+            radio = esp32.Radio.open_serial(args.port, fast_baud=baud, left_at=bauds)
         except Exception as exc:
             print(f"{baud:>8}  did not come up at this rate: {exc}")
             continue
@@ -70,11 +71,11 @@ def board_sent(radio):
     return int(fields["tx_eth"]) + int(fields["tx_eth_failed"]), fields
 
 
-def uplink(port, baud, total, burst, gap, no_flow=False):
+def uplink(port, baud, total, burst, gap, no_flow=False, left_at=()):
     if no_flow:
         esp32.FLOW_WINDOW = 1 << 40
     try:
-        radio = esp32.Radio.open_serial(port, fast_baud=baud)
+        radio = esp32.Radio.open_serial(port, fast_baud=baud, left_at=left_at)
     except Exception as exc:
         print(f"{baud:>8}  did not come up at this rate: {exc}")
         return
@@ -107,8 +108,8 @@ def uplink(port, baud, total, burst, gap, no_flow=False):
           f"tx_eth_failed {fields['tx_eth_failed']} tx_eth_retried {fields['tx_eth_retried']}")
 
 
-def trickle(port, baud, seconds, flood, ap=False, body=0):
-    radio = esp32.Radio.open_serial(port, fast_baud=baud)
+def trickle(port, baud, seconds, flood, ap=False, body=0, left_at=()):
+    radio = esp32.Radio.open_serial(port, fast_baud=baud, left_at=left_at)
     try:
         if ap:
             radio.ap_start(11, "02:00:00:be:4c:01", "pokeldn-bench".ljust(32, "x"), os.urandom(16))

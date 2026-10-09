@@ -1158,6 +1158,41 @@ def test_the_fast_rate_comes_from_the_environment(monkeypatch):
     assert rates[-1] == 921600 and 2000000 in rates
 
 
+@pytest.mark.parametrize("run_baud,next_baud", [(921600, 921600), (1500000, 921600), (921600, 1500000)])
+def test_a_uart_board_left_at_a_run_rate_answers_the_next_session_and_board_check(monkeypatch, run_baud,
+                                                                                  next_baud):
+    """A classic board keeps the last BAUD while the port is closed and opened with DTR and RTS
+    released; a second run that only spoke 115200 failed with no reply 0x81 to command 0x01."""
+    import serial
+    from gui import board as gui_board
+
+    board = esp32_sim.SimulatedBoard(esp32_sim.Air())
+    opens = []
+
+    class Port(esp32_sim.UartPort):
+        held = False
+
+        def open(self):
+            assert (self.dtr, self.rts) == (False, False) and not any(p.held for p in opens)
+            self.held = True
+            opens.append(self)
+
+        def close(self):
+            self.held = False
+
+    monkeypatch.setattr(serial, "Serial", lambda: Port(board))
+    esp32.Radio.open_serial("COM16", fast_baud=run_baud).close()
+    assert board.line_rate == run_baud
+    assert gui_board.identify("COM16", blink=False).current
+    assert board.line_rate == run_baud
+    radio = esp32.Radio.open_serial("COM16", fast_baud=next_baud)
+    try:
+        assert radio.hello().version == esp32.PROTOCOL_VERSION and board.line_rate == next_baud
+    finally:
+        radio.close()
+    assert len(opens) == 3 and not any(p.held for p in opens)
+
+
 def test_a_board_that_leaves_usb_mid_run_stops_the_run_once_and_stops_writing():
     """Windows fails the read of a removed USB device with PermissionError 13 and every write after
     it; a run kept writing to the dead port until the player pressed Stop."""
