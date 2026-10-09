@@ -61,17 +61,24 @@ def test_the_boss_a_seed_gives_is_pkhex_s(case):
 
 def test_the_bootstrap_matches_retail_records():
     """A retail Violet's bootstrap for seed BD13FB43: its boss record, and the record it puts in an
-    empty participant slot (both empty slots of a retail event bootstrap hold the same bytes)."""
+    empty participant slot (both empty slots of a retail event bootstrap hold the same bytes). A
+    French retail Scarlet's boss for seed 7B741233 (Larvitar, five-star progress) differs from ours
+    only in its host's language and that language's species name."""
     found = raid_encounter.generate(0xBD13FB43)
     assert hashlib.sha256(raid.boss_record(found)).hexdigest() == \
         "fa48396b91413a0e54b86a074b3b10dcf077d8633e9d5a45c7466830325f66c3"
+    found = raid_encounter.generate(0x7B741233, "scarlet", "paldea", "5star")
+    french = gen9.write(gen9.load(raid.boss_record(found)), nickname="Embrylex", language=3)
+    assert hashlib.sha256(gen9.encrypt(french)).hexdigest() == \
+        "0350e3a0df16d86164742fb6c7308144fc3d4c7b6752bf91fb335c2d6622a6a4"
     assert hashlib.sha256(raid.empty_participant()).hexdigest() == \
         "befa78ce3efc6035ef511bfab95dd962e1019612e7b9bef80c85fb7955e36ae4"
 
 
-def test_the_raidpoint_matches_two_retail_points():
+def test_the_raidpoint_matches_three_retail_points():
     """Words of a two-star (Growlithe, BD13FB43) and a four-star (Forretress, FDAE7B7D) retail
-    RaidPoint, Violet, Paldea, four-star progress; the bonus rows after the seed's are the host's."""
+    RaidPoint, Violet, Paldea, four-star progress, and a three-star (Larvitar, 7B741233) Scarlet one.
+    Retail rows carry the table's subject (2 guests, 1 host) and end with the host's bonus rows."""
     two = raid.raid_point(raid_encounter.generate(0xBD13FB43), name="RaidPoint_12_1_11")
     assert two[:0x30] == bytes.fromhex("52616964506f696e745f31325f315f3131000000000000004000000000000000"
                                        "02000000000000000100000014000000")
@@ -86,8 +93,20 @@ def test_the_raidpoint_matches_two_retail_points():
     assert [struct.unpack_from("<II", four, 0xE4 + 16 * i) for i in range(15)] == [
         (1126, 2), (1127, 1), (1983, 4), (567, 2), (1983, 2), (1868, 1), (1868, 2), (1126, 1),
         (157, 1), (1126, 1), (171, 3), (171, 3), (1126, 1), (89, 1), (1983, 2)]
-    assert struct.unpack_from("<4I", four, 0x210) == (5, 0, 0, 0)
+    assert four[0xE4 + 16 * 15:0x3B8] == bytes(0x3B8 - 0xE4 - 16 * 15)
     assert struct.unpack_from("<7I", four, 0x3B8) == (4, 205, 0, 0, 45, 0, 1)
+    three = raid.raid_point(raid_encounter.generate(0x7B741233, "scarlet", "paldea", "5star"),
+                            name="RaidPoint_14_1_12")
+    assert three[:0x30] == bytes.fromhex("52616964506f696e745f31345f315f313200000000000000"
+                                         "400000000000000003000000000000000100000023000000")
+    # Retail's subjects are 2 on row 4 and 1 on row 6; ours give every row to every player.
+    assert [struct.unpack_from("<IIxxxxI", three, 0xE4 + 16 * i) for i in range(14)] == [
+        (1125, 1, 0), (1126, 2, 0), (1993, 3, 0), (566, 2, 0), (1993, 2, 0), (1867, 1, 0),
+        (1867, 1, 0), (159, 1, 0), (90, 1, 0), (1126, 2, 0), (1126, 1, 0), (159, 1, 0), (91, 1, 0),
+        (0, 0, 0)]
+    assert struct.unpack_from("<37I", three, 0x4C)[:14] == (800, 0, 0, 0, 0, 0, 0, 0, 0, 0, 3, 2, 75,
+                                                            201)
+    assert struct.unpack_from("<7I", three, 0x3B8) == (3, 246, 0, 1, 35, 0, 14)
 
 
 def test_a_boss_past_916_is_named_by_its_devid():

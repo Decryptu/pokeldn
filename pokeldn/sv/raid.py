@@ -52,9 +52,10 @@ BOOTSTRAP_SIZE = 5 * gen9.SIZE_PARTY + 0x3E8
 RAIDPOINT = 5 * gen9.SIZE_PARTY
 POINT_SIZE = 0x3E8
 POINT_NAME = "RaidPoint_POKELDN_0"
-POINT_REWARDS = 0x0E0
+POINT_REWARDS = 0x0E4             # rows of item, quantity, 0, subject
 POINT_SUMMARY = 0x3B8
 REWARD_ROWS = (POINT_SUMMARY - POINT_REWARDS) // 16           # 45
+SUBJECT_ALL = 0                   # the table's SubjectType: 0 everyone, 1 host, 2 guests
 CONTENT_STANDARD = 2
 TERA_EMPTY = raid_encounter.TERA_NONE
 FIRST_COUNTER = 0x0105            # the host's lobby counters run on from here; the bootstrap 0x010f
@@ -146,11 +147,10 @@ def boss_record(raid):
 
 def raid_point(raid, rewards=None, name=POINT_NAME):
     """-> the 0x3e8-byte RaidPoint: identity, stars and level, the boss's HP coefficient and its
-    37-word action profile, reward rows, the summary. Unknown words stay zero."""
+    37-word action profile, reward rows every player receives, the summary. Unknown words stay
+    zero."""
     rows = raid.rewards if rewards is None else tuple(rewards)
-    # A four-star retail point closes its rows with a marker-5 row after four free ones.
-    trailer = raid.stars == 4 and rewards is None
-    if len(rows) + (5 if trailer else 0) > REWARD_ROWS:
+    if len(rows) > REWARD_ROWS:
         raise ValueError(f"a RaidPoint holds at most {REWARD_ROWS} reward rows")
     out = bytearray(POINT_SIZE)
     encoded = name.encode("ascii")
@@ -161,9 +161,7 @@ def raid_point(raid, rewards=None, name=POINT_NAME):
     struct.pack_into("<IIII", out, 0x20, raid.stars, 0, 1, raid.boss["level"])
     struct.pack_into("<37I", out, 0x4C, *raid.row["boss_desc"])
     for index, (item, quantity) in enumerate(rows):
-        struct.pack_into("<IIII", out, POINT_REWARDS + index * 16, 0, item, quantity, 0)
-    if trailer:
-        struct.pack_into("<I", out, POINT_REWARDS + (len(rows) + 4) * 16, 5)
+        struct.pack_into("<IIII", out, POINT_REWARDS + index * 16, item, quantity, 0, SUBJECT_ALL)
     struct.pack_into("<7I", out, POINT_SUMMARY, raid.stars, gen9.internal_index(raid.species),
                      raid.boss["form"], raid.boss["gender"], raid.boss["level"], 0, raid.tera_type)
     struct.pack_into("<I", out, 0x3E0, CONTENT_STANDARD)

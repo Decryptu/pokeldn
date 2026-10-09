@@ -137,21 +137,23 @@ The RaidPoint, offsets from its start:
 | 0x018 | 1 | 0x40 |
 | 0x020 | 4 x u32 | stars, 0, 1, the boss's level |
 | 0x04c | 37 x u32 | the boss's action profile: HP coefficient, the shield's nine values, six extra actions (action, timing, value, move), the double action's three values |
-| 0x0e0 | 45 x 16 | reward rows: marker, item, quantity, 0 |
+| 0x038 | u32 | nonzero in retail points, zero from `raid_point` |
+| 0x0e4 | 45 x 16 | reward rows: item, quantity, 0, subject |
 | 0x3b8 | 7 x u32 | stars, species (DevID), form, gender, level, 0, Tera type |
-| 0x3e0 | u32 | 2 for a standard raid, 4 for the event raid seen |
+| 0x3d8 | 2 x u32 | nonzero in retail points, zero from `raid_point` |
+| 0x3e0 | u32 | 4 in every retail point seen; `raid_point` writes 2, which a retail Scarlet accepts |
 
 The action profile is the record's `bossDesc` in the game's raid tables, in that order; the
 actions are 0 none, 1 reset the boss's stat changes, 2 reset the players', 3 a move, 4 drain the
 Tera orb, and the timings 0 none, 1 time, 2 HP. HP coefficients run 500, 500, 800, 1200, 2000 and
 2500 for one to six stars.
 
-A retail point's reward rows are the seed's fixed rows, then its lottery draws, then rows for the
-host's meal-power bonuses (marker 4); markers 0, 1 and 2 occur on rows players receive, a four-star
-point closes with a marker-5 row after four free ones, and a lottery list can carry one extra row.
-`raid_point` writes the seed's rows (or the chosen ones) under marker 0, no bonus rows, and the
-marker-5 row on a four-star point with the seed's rewards. A retail console awarded a row rewritten
-to Quick Ball x500, with the other rows cleared and one bonus row left, as written.
+A retail point's reward rows are the seed's fixed rows, then its lottery draws, then the host's
+bonus rows: three under subject 4 and one under subject 5. A fixed row's subject is the reward
+table's `SubjectType` (0 every player, 1 the host, 2 the guests, 3 once). `raid_point` writes the
+seed's rows (or the chosen ones) under subject 0 and no bonus rows, so a guest receives every row,
+the host's included. A retail console awarded a row rewritten to Quick Ball x500, with the other
+rows cleared and one bonus row left, as written.
 
 ## The seed
 
@@ -162,7 +164,8 @@ values, picks a standard crystal's stars against the story stage's bounds (a bla
 the second picks the encounter by rate within that star level and version. `0xe29404` builds the
 table name with `%sdifficulty_%02d` and passes the record to `0x1eab5e4`, which reads its
 `raidEnemyInfo`; `0x2935b68` walks all three prefixes and six levels. A fresh xoroshiro from the
-same seed then draws the boss: EC, a fake trainer id, PID, flawless IVs, IVs, ability, gender,
+same seed then draws the boss: EC (the low half of the seed plus `0x229D6A5B`, so a boss record
+gives its seed back), a fake trainer id, PID, flawless IVs, IVs, ability, gender,
 nature (Toxtricity's from its form's list), height, weight and scale, as PKHeX's
 `Encounter9RNG.GenerateData` does; the Tera type and the reward lottery each take another fresh
 generator.
@@ -174,11 +177,16 @@ table and the eighteen `raid_enemy_XX_array` tables of the game's RomFS
 schemas). Over 12600 seeds in every context its bosses equal PKHeX.Core 26.8.26's field for field,
 except six Paldea encounters (records 5094 to 5099) whose Tera rule the retail table gives as the
 species' own types where PKHeX has any type; the generator follows the game's table. A boss record
-built from seed `BD13FB43` (Violet, Paldea, four stars) equals a retail bootstrap's byte for byte.
+built from seed `BD13FB43` (Violet, Paldea, four stars) equals a retail bootstrap's byte for byte;
+one from `7B741233` (Scarlet, Paldea, five stars) equals a French retail Scarlet's but for the
+nickname and language: a retail host writes its own language and that language's species name
+(`Embrylex`, 3), the generator English (2). The console shows the boss under its own language's
+name either way.
 
 Species in the raid tables are the game's DevID: the National Dex number up to 916, the game's own
 order from 917 (Tinkatink 957 is 1000), as `gen9.internal_index`. The descriptor and the RaidPoint
-carry the DevID too; every species seen there is below 917, where the two numberings agree.
+carry the DevID too: a retail Scarlet shown a descriptor and RaidPoint with species 1000 listed
+and fought Tinkatink.
 A black-crystal record holds level 90 and effort values (for example 252 HP, 128 Defense, 128
 Special Defense) for the battle and a capture level of 75; the generator gives the boss level 75 and
 no effort values, as a retail event bootstrap's five-star boss carried.
@@ -216,9 +224,10 @@ the host start; its Pokemon stayed in the battle.
 - What the two words in the battle-start messages (`05050726` in message 15, `ceaf29` in message
   16) are; both are sent as a retail host sent them.
 - The serializer header's last four bytes, and whether a nonzero counter or a zero one matters.
-- What the reward markers 0, 1, 2 and 5 mean; how many reward rows a console reads.
-- The battle level and effort values a black-crystal bootstrap needs: the tables hold level 90
-  with effort values, the generator sends level 75 without.
+- What separates bonus subjects 4 and 5; what the words at 0x038, 0x3b4, 0x3d8 and 0x3e4 of a
+  retail RaidPoint hold.
+- Whether a black-crystal battle takes its level and effort values from the bootstrap: the tables
+  hold level 90 with effort values, the generator sends level 75 without, and a retail Scarlet
+  fought and rewarded such a six-star raid.
 - Whether the six Paldea encounters with the species' own Tera types roll as the retail table says.
 - Event raids, whose encounters and rewards come from the active Poke Portal News tables.
-- Whether a boss whose DevID differs from its National Dex number shows as itself on a console.
