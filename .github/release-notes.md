@@ -1,19 +1,18 @@
-# pokeldn 0.15.0
+# pokeldn 0.16.0
 
 This desktop app trades with seven Pokemon game families on a Switch or Switch 2
 through an ESP32 radio connected by USB. Nothing is installed on the console.
 
 ## What is new
 
-- Online trade: Trade (Online) in every game's list meets a partner far away by game and code
-  through public relays, with each player's console on their own board. A partner who leaves
-  withdraws the offer, and a FireRed or LeafGreen console returns to its menu.
-- The bank: every received Pokemon is kept in `Documents/pokeldn/Bank`, and one can be queued for
-  another game's trade, converted by PKHeX.
-- Updates install from inside the app from 0.14.0 onward.
+- Scarlet/Violet Tera Raids: Tera Raid (Host) opens a raid the console joins, from a seed you pick
+  or one Find a raid searches for by species, stars, Tera type, nature, shiny and IVs, with the
+  seed's rewards or ones you choose; standard and black crystals. Tera Raid (Join) joins a raid the
+  console hosts. Your chosen Pokemon fights as the console's partner.
+- FireRed/LeafGreen Mystery Gift: the item picker names items by the game's own list, so a chosen
+  Rare Candy arrives as a Rare Candy.
 
-Firmware 1.6.1 moves the drawing on the 0.42-inch ESP32-C3 screen into the visible rows; other
-boards gain nothing from reflashing.
+The firmware is unchanged at 1.6.1; boards need no reflash.
 
 pokeldn is an unofficial fan project, not affiliated with Nintendo or The Pokemon Company. It is not
 meant for commercial or promotional use; see the License section of the README.
@@ -55,6 +54,7 @@ Received Pokemon are saved in `Documents/pokeldn/Received`, with a configurable 
 - Trades in both directions: FireRed/LeafGreen, Let's Go Pikachu/Eevee, Sword/Shield, Brilliant
   Diamond/Shining Pearl, Legends Arceus, Scarlet/Violet and Legends Z-A.
 - Mystery Gift: FireRed/LeafGreen and Sword/Shield.
+- Tera Raids in both roles: Scarlet/Violet.
 - Legal Pokemon preparation with PKHeX.Core, board detection and flashing, and session recordings.
 
 ## Platform notes
