@@ -505,7 +505,7 @@ class SessionPanel:
         state is ok, wait, warn (Start still allowed) or block."""
         status = self.app.board_status()
         board_state = ("ok" if status.ready else "wait" if status.state == "checking" else
-                       "block" if status.state in ("missing", "choose") else "warn")
+                       "block" if status.state in ("missing", "choose", "controller") else "warn")
         items = [
             ("ok", "Switch keys added", "", "") if keys_found(self.app.settings.keys) else
             ("block", "Add your Switch keys", "Choose prod.keys in Settings.", "settings"),

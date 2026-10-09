@@ -1,4 +1,5 @@
 """The Bluetooth LE link to the controller board [docs/hardware_pad.md, The Bluetooth side]."""
+import asyncio
 import struct
 from dataclasses import dataclass
 
@@ -72,7 +73,17 @@ class Pad:
         return self.client.is_connected
 
     async def send(self, report: bytes):
-        await self.client.write_gatt_char(REPORT, report, response=False)
+        # CoreBluetooth drops a write without response its queue cannot take, and bleak never asks
+        # canSendWriteWithoutResponse; elsewhere, or if the queue stays full, a response paces it
+        # (docs/hardware_pad.md, The Bluetooth side).
+        peripheral = getattr(getattr(self.client, "_backend", None), "_peripheral", None)
+        if peripheral is not None and hasattr(peripheral, "canSendWriteWithoutResponse"):
+            for _ in range(500):
+                if peripheral.canSendWriteWithoutResponse():
+                    await self.client.write_gatt_char(REPORT, report, response=False)
+                    return
+                await asyncio.sleep(0.002)
+        await self.client.write_gatt_char(REPORT, report, response=True)
 
     async def status(self) -> Status:
         return parse_status(bytes(await self.client.read_gatt_char(STATUS)))

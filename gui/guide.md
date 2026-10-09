@@ -15,8 +15,8 @@ the radio. Nothing is installed on the console.
 
 ## First run
 
-1. Board: plug the board in and press Flash. The app detects the chip, writes its firmware, then
-   checks the board on its own. The top of the page says Board ready when it answers.
+1. Board: plug the board in and choose Install beside Wireless. The app detects the chip, writes the
+   firmware, then checks the board on its own. The top of the page says Up to date when it answers.
 2. Games: pick a game and a tool. A Host tool waits for your console to join; a Join tool finds the
    console's own search.
 3. Pokemon to offer: search a species and press Build. PKHeX makes a legal one for that game, owned by
@@ -38,7 +38,7 @@ next. It shows on every trade tool. Each trade's received Pokemon gets its own f
 
 Files can be dragged onto the app: a Pokemon file or a Showdown team (`.txt`) onto a trade fills it,
 and onto Add a trade queues one trade per file. A gift file dropped on the Gift card opens it, and a
-`.bin` dropped on Flash the firmware becomes the custom image.
+`.bin` dropped on the Board page's Firmware card installs it after a confirmation.
 
 The Pokemon the console sends you are saved in `Documents/pokeldn/Received`.
 

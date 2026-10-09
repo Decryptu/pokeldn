@@ -3,11 +3,13 @@
 process that opens Bluetooth without NSBluetoothAlwaysUsageDescription, and only this one dies.
 
 One JSON object per line each way. Requests: status, connect, send {report}, tap {report, ms},
-play {macro}, stop, download, scan, disconnect.
+play {macro}, stop, download, scan, disconnect, quit.
 """
 import argparse
 import asyncio
+import hashlib
 import json
+import os
 import socket
 import threading
 
@@ -16,6 +18,21 @@ from pokeldn.pad.link import Pad
 from pokeldn.pad.serial_link import SerialPad, candidates
 
 PORT = 47800
+
+
+def _code() -> str:
+    """The link code this process runs; an app finding a service with other code replaces it."""
+    from pokeldn.pad import link, serial_link
+    digest = hashlib.sha256()
+    for module in (link, serial_link, macro):
+        with open(module.__file__, "rb") as f:
+            digest.update(f.read())
+    with open(__file__, "rb") as f:
+        digest.update(f.read())
+    return digest.hexdigest()[:16]
+
+
+CODE = _code()
 
 
 async def connect_any(port: str = ""):
@@ -59,9 +76,14 @@ class Service:
         op = req.get("op")
         if op == "status":
             if self.pad is None or not self.pad.connected:
-                return {"ok": True, "connected": False}
+                return {"ok": True, "connected": False, "code": CODE}
             s = await self.pad.status()
-            return {"ok": True, "connected": True, "status": s.__dict__, "link": self.link()}
+            return {"ok": True, "connected": True, "status": s.__dict__, "link": self.link(), "code": CODE}
+        if op == "quit":
+            if self.pad is not None:
+                await self.pad.close()
+            asyncio.get_running_loop().call_later(0.2, os._exit, 0)
+            return {"ok": True}
         if op == "scan":
             from bleak import BleakScanner
             found = await BleakScanner.discover(timeout=8, return_adv=True)
@@ -112,7 +134,17 @@ class Service:
             writer.close()
 
 
+def _exit_with_the_app() -> None:
+    """runner's stdin watch interrupts the main thread, which asyncio.run here does not leave: a
+    service from a closed app kept the port and its old code. EOF on stdin ends the process."""
+    import sys
+    sys.stdin.read()
+    os._exit(0)
+
+
 async def serve(port: int = PORT, serial_port: str = ""):
+    if os.environ.get("POKELDN_MANAGED_RUN"):
+        threading.Thread(target=_exit_with_the_app, daemon=True).start()
     service = Service(serial_port)
     server = await asyncio.start_server(service.client, "127.0.0.1", port)
     print(f"[pad] listening on 127.0.0.1:{port}", flush=True)

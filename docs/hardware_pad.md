@@ -86,6 +86,21 @@ The program holds 8192 entries. Entries before the loop start play once; the res
 waits with `vTaskDelayUntil` on the 1 kHz tick, so holds add up without drift: on the Mac's USB side
 a 10-loop macro played every loop in exactly its 500 ms.
 
+Through bleak on macOS a write without response is lost when CoreBluetooth's queue is full, and
+bleak never reads `canSendWriteWithoutResponse`: 300 neutral reports sent back to back reached the
+board's write counter 67 times; at 20 ms or wider spacing, 40 of 40. `pokeldn.pad.link` waits for
+that flag before each report write, and writes with a response where the flag does not exist or
+stays false for a second.
+
+| report write | per report, back to back | reached the board |
+|---|---|---|
+| without response, unpaced | 0.1 ms | 67 of 300 |
+| with response | 60 ms, flat over the first 25 s of a connection | 300 of 300 |
+| without response, paced by the flag | 2.4 ms | 200 of 200 |
+
+Firmware 1.2.0 asks for a 15 to 30 ms connection interval on connect; with responses the write
+still took 63 ms, and whether macOS granted the request is unknown.
+
 A disconnect returns the report to neutral, so a host that vanishes leaves no button held; a playing
 macro keeps going.
 
@@ -176,7 +191,7 @@ Bluetooth, and later `pad.py` calls and a source checkout's app use it.
 ## Flashing again
 
 The pad owns the USB port, so esptool cannot reset it into the loader. The download command, the
-Control page's Flashing mode and `pad.py --download` do it over Bluetooth; holding BOOT while
+Board page's installs and `pad.py --download` do it over Bluetooth; holding BOOT while
 plugging the board in does it without firmware.
 
 - `RTC_CNTL_USB_CONF` survives a reset. Left on USB-OTG, the loader came up as the OTG CDC device
@@ -191,7 +206,9 @@ plugging the board in does it without firmware.
   the image (`--after watchdog-reset`).
 
 Both directions, radio to controller and controller to radio, flashed through
-`python -m gui.board --kind pad|radio`.
+`python -m gui.board --kind pad|radio`. `--from-loader` flashes a board the download command already
+put in the loader: it waits, connects without a reset and boots the image with the watchdog, as for
+the controller firmware.
 
 Trap: the USB loop's delay is zero ticks at FreeRTOS's default 100 Hz and starves NimBLE; the
 firmware builds at 1000 Hz.

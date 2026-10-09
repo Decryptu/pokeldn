@@ -33,6 +33,35 @@ BLUETOOTH_REFUSED = ("macOS refused Bluetooth to this program. The packaged app 
                      "checkout, allow Bluetooth for the terminal in System Settings, Privacy & Security.")
 
 
+def start_service(on_exit=lambda code: None) -> Process | None:
+    """The child that holds the Bluetooth link, started unless one with this code already answers; None
+    if it did. A service outlives an app that crashed, so one running other code is told to quit."""
+    if service.running():
+        client = service.Client()
+        try:
+            if client.call("status").get("code") == service.CODE:
+                return None
+            client.call("quit")
+        except service.ServiceError as error:
+            raise service.ServiceError("an older controller service holds the Bluetooth link; quit every "
+                                       "pokeldn window and open the app again") from error
+        finally:
+            client.close()
+        for _ in range(50):
+            if not service.running():
+                break
+            time.sleep(0.1)
+    os.makedirs(SESSION, exist_ok=True)
+    # POKELDN_MANAGED_RUN: the child stops when the app's end of its stdin closes (pokeldn.app.runner).
+    child = Process(["--module", "pokeldn.pad.service"], str(SESSION),
+                    dict(os.environ, POKELDN_MANAGED_RUN="1"), lambda line: None, on_exit)
+    for _ in range(100):
+        if service.running() or not child.running:
+            break
+        time.sleep(0.1)
+    return child
+
+
 def describe(step: dict, macro: m.Macro) -> str:
     if "wait" in step:
         return f"Wait {step['wait']} ms"
@@ -95,6 +124,7 @@ class ControllerView:
             ], spacing=0, expand=True), width=t.SESSION_WIDTH),
         ], spacing=t.GAP, expand=True, vertical_alignment=ft.CrossAxisAlignment.STRETCH)
         self.render_all()
+        app.board_listeners.append(lambda: self.visible and self.render_status())
 
     def enter(self, **_) -> None:
         self.visible = True
@@ -119,17 +149,16 @@ class ControllerView:
 
     def _connect(self) -> None:
         try:
-            if not service.running():
-                env = dict(os.environ)
-                os.makedirs(SESSION, exist_ok=True)
-                self.child = Process(["--module", "pokeldn.pad.service"], str(SESSION), env,
-                                     lambda line: None, self._child_exit)
-                for _ in range(100):
-                    if service.running() or not self.child.running:
-                        break
-                    time.sleep(0.1)
-            if self.client is None:
-                self.client = service.Client()
+            for attempt in range(3):   # a service from a closed app may still hold the port while it exits
+                try:
+                    self.child = start_service(self._child_exit) or self.child
+                    if self.client is None:
+                        self.client = service.Client()
+                    break
+                except ConnectionRefusedError:
+                    if attempt == 2:
+                        raise
+                    time.sleep(1)
             self.client.call("connect")
             reply = self.client.call("status")
             self.board = {**reply.get("status", {}), "link": reply.get("link", "")}
@@ -148,6 +177,21 @@ class ControllerView:
             self.error = BLUETOOTH_REFUSED
         self.app.ui(self.render_status)
 
+    def _reconnect(self) -> None:
+        """The link dropped (the board lost power moving to the Switch, or went out of range): the
+        service finds it again when it advertises."""
+        if self.state == "Connected":
+            self.board, self.state, self.error = {}, "Board lost: looking for it again...", ""
+            self.app.ui(self.render_status)
+        try:
+            self.client.call("connect")
+        except (OSError, service.ServiceError):
+            self.state = "Board lost: looking for it again. Is it plugged into the Switch or a USB power source?"
+            self.app.ui(self.render_status)
+            return
+        self.state, self.error = "Connected", ""
+        self.app.ui(self.render_status)
+
     def _drop(self) -> None:
         if self.client is not None:
             self.client.close()
@@ -162,15 +206,6 @@ class ControllerView:
         self._drop()
         self.board, self.state = {}, "Not connected"
         self.render_status()
-
-    def _flashing_mode(self, e) -> None:
-        def work():
-            if self._call("download") is not None:
-                self._drop()
-                self.board, self.state = {}, "Not connected"
-                self._say("The board restarted in flashing mode. Open the Board page and press Flash.")
-                self.app.ui(self.render_status)
-        threading.Thread(target=work, daemon=True).start()
 
     def _call(self, op: str, **fields) -> dict | None:
         if self.client is None:
@@ -189,7 +224,9 @@ class ControllerView:
         while self.visible:
             if self.client is not None and not self.connecting:
                 reply = self._call("status")
-                if reply is not None:
+                if reply is not None and not reply.get("connected"):
+                    self._reconnect()
+                elif reply is not None:
                     board = ({**reply.get("status", {}), "link": reply.get("link", "")}
                              if reply.get("connected") else {})
                     if board != self.board:
@@ -377,35 +414,24 @@ class ControllerView:
 
     def render_status(self, update: bool = True) -> None:
         connected = self.client is not None and self.state == "Connected"
+        lost = self.client is not None and self.state.startswith("Board lost")
         board = self.board or {}
         facts = []
         if connected:
             link = board.get("link", "")
             facts.append(t.chip(f"Board connected on {link.split(' ')[1]}" if link.startswith("serial ")
                                 else "Board connected over Bluetooth", "check", t.GREEN))
-            serial_link = board.get("link", "").startswith("serial ")
-            facts.append(t.chip(("Paired with the Switch" if serial_link else "Switch plugged in") if board.get("mounted")
-                                else "Not paired: open Change Grip/Order on the Switch" if serial_link
-                                else "No Switch on its USB port",
-                                "usb", t.GREEN if board.get("mounted") else t.AMBER))
-            if board.get("version"):
-                facts.append(t.chip(f"Firmware {board['version']}", "cpu"))
-        action = (ft.Row([
-            t.icon_button("download", self._flashing_mode,
-                          "Flashing mode: the board restarts as a USB serial port, so the Board page can flash it. "
-                          "Plug it into this computer first."),
-            t.button("Disconnect", self.disconnect, "close", filled=False)], spacing=4, tight=True) if connected else
+            facts.append(self.where(board))
+        action = (t.button("Disconnect", self.disconnect, "close", filled=False) if connected else
+                  t.button("Stop looking", self.disconnect, "close", filled=False) if lost else
                   t.button("Looking..." if self.connecting else "Connect", self.connect, "zap",
                            disabled=self.connecting))
         body = [ft.Row([ft.Row(facts or [t.text(self.state, 13, t.MUTED)], spacing=6, wrap=True, expand=True),
                         action], vertical_alignment=ft.CrossAxisAlignment.CENTER)]
         if self.error:
             body.append(t.text(self.error, 12, t.RED))
-        if not connected:
-            body.append(t.text("Flash the controller firmware from the Board page. An ESP32-S3 plugs into the "
-                               "Switch's USB-C port and this computer reaches it over Bluetooth; a classic ESP32 "
-                               "stays plugged into this computer and pairs with the Switch as a Pro Controller.",
-                               12, t.MUTED))
+        if not connected and not lost:
+            body += self.guidance()
         if board.get("playing"):
             body.append(ft.Row([
                 t.badge(f"Macro running: loop {board.get('loops_done', 0) + 1}, "
@@ -420,6 +446,36 @@ class ControllerView:
                 self.footer.update()
             except RuntimeError:
                 pass
+
+    def where(self, board: dict) -> ft.Control:
+        """Where the board is plugged in. `mounted` says only that some USB host configured it: this
+        computer does too, so being on this computer's USB bus is asked first."""
+        if board.get("link", "").startswith("serial "):   # a classic board pairs over Bluetooth Classic
+            return (t.chip("Paired with the Switch", "check", t.GREEN) if board.get("mounted") else
+                    t.chip("Not paired: on the Switch, open Controllers, Change Grip/Order", "usb", t.AMBER))
+        if self.app.controllers:
+            return t.chip("Plugged into this computer: plug it into the Switch to play", "usb", t.AMBER)
+        if board.get("mounted"):
+            return t.chip("Plugged into the Switch", "check", t.GREEN)
+        return t.chip("Not plugged into the Switch", "usb", t.AMBER)
+
+    def guidance(self) -> list[ft.Control]:
+        """What is plugged in and the next step, while no board is connected."""
+        from gui import board
+        to_board = t.secondary_button("Open the Board page", lambda e: self.app.navigate("board"), "cpu")
+        if self.app.controllers:
+            return [t.text("A controller board is plugged into this computer. Press Connect to reach it over "
+                           "Bluetooth. To play, plug it into the Switch's USB-C port; it reconnects on its own.",
+                           12, t.MUTED)]
+        radios = [d for d, ident in self.app.identities.items() if isinstance(ident, board.Identity)]
+        if radios:
+            return [t.text("The board plugged in runs the wireless firmware, for trades. To use it as a controller, "
+                           "install the Controller firmware on the Board page.",
+                           12, t.MUTED), ft.Row([to_board])]
+        return [t.text("No controller board found. An ESP32-S3 with the controller firmware plugs into the "
+                       "Switch's USB-C port and this computer reaches it over Bluetooth; a classic ESP32 stays "
+                       "plugged into this computer and pairs with the Switch as a Pro Controller. Install it on "
+                       "the Board page.", 12, t.MUTED), ft.Row([to_board])]
 
     def _button(self, key: str, label: str, width=44, height=44, round_=True, icon: str = "") -> ft.Control:
         hint = HINT.get(key, "")

@@ -65,7 +65,7 @@ def _protected(settings) -> set[Path]:
             except (OSError, ValueError, RuntimeError):
                 pass
 
-    for value in (settings.received, settings.keys, settings.firmware, settings.tool_values):
+    for value in (settings.received, settings.keys, settings.tool_values):
         visit(value)
     return paths
 

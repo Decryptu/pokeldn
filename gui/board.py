@@ -1,7 +1,9 @@
+import asyncio
 import os
 import re
 import struct
 import subprocess
+import sys
 import time
 from dataclasses import dataclass
 
@@ -23,6 +25,8 @@ BRIDGES = {
     (0x303A, 0x1001): "Espressif USB (S3, C3, C6)",
 }
 NATIVE_USB = (0x303A, 0x1001)
+# An S3 running the controller firmware is a HID controller with no serial port (firmware/pad/main/usb_s3.c).
+PAD_USB = (0x0F0D, 0x0092)
 
 DRIVERS = {
     "Silicon Labs CP210x": "https://www.silabs.com/developer-tools/usb-to-uart-bridge-vcp-drivers",
@@ -42,6 +46,72 @@ FIRMWARE_C6 = os.path.join(ROOT, "gui", "firmware", "pokeldn-radio-c6.bin")
 # Bluetooth Classic. C3 and C6 cannot be a Switch controller.
 FIRMWARE_PAD = os.path.join(ROOT, "gui", "firmware", "pokeldn-pad-s3.bin")
 FIRMWARE_PAD_ESP32 = os.path.join(ROOT, "gui", "firmware", "pokeldn-pad.bin")
+
+
+
+
+@dataclass(frozen=True)
+class Firmware:
+    """One firmware a board can run; the Board page lists them in this order."""
+    kind: str
+    name: str
+    summary: str
+    icon: str
+    chips: tuple[str, ...]
+    role: str     # what the board is while it runs this, after "the board stops working as"
+
+
+FIRMWARES = (
+    Firmware("radio", "Wireless", "The board is the radio for trades, Mystery Gift and every tool on the Games "
+             "page.", "globe", ("ESP32", "ESP32-S3", "ESP32-C3", "ESP32-C6"), "the radio for trades"),
+    Firmware("pad", "Controller", "The board is a controller for the Switch: this computer presses its buttons "
+             "and plays macros from the Control page.", "joystick", ("ESP32-S3", "ESP32"),
+             "a controller for the Switch"),
+)
+FIRMWARE_BY_KIND = {f.kind: f for f in FIRMWARES}
+CHIP_NAMES = {"esp32": "ESP32", "esp32s3": "ESP32-S3", "esp32c3": "ESP32-C3", "esp32c6": "ESP32-C6"}
+
+
+def image_for(kind: str, chip: str) -> str:
+    if kind == "pad":
+        return FIRMWARE_PAD if chip == "ESP32-S3" else FIRMWARE_PAD_ESP32
+    return bundled_firmware(chip)
+
+
+APP_DESC_MAGIC = 0xABCD5432   # esp_app_desc_t: magic, secure version, two reserved words, version[32]
+
+
+def image_info(path: str) -> tuple[str, str]:
+    """The project name and version an ESP-IDF image carries in its app descriptor, ("", "") if none."""
+    try:
+        with open(path, "rb") as f:
+            data = f.read(IMAGE_BYTES)
+    except OSError:
+        return "", ""
+    at = data.find(struct.pack("<I", APP_DESC_MAGIC))
+    if at < 0:
+        return "", ""
+    version, project = data[at + 16:at + 48], data[at + 48:at + 80]
+    return (project.split(b"\0")[0].decode(errors="replace"), version.split(b"\0")[0].decode(errors="replace"))
+
+
+def image_version(path: str) -> str:
+    return image_info(path)[1]
+
+
+PROJECTS = {"pokeldn_radio": "radio", "pokeldn_pad": "pad"}   # firmware/*/CMakeLists.txt project()
+
+
+def version_key(version: str) -> tuple[int, ...]:
+    return tuple(int(n) if n.isdigit() else 0 for n in re.split(r"[.\-]", version)) if version else ()
+
+
+def update_for(installed: str, kind: str, chip: str) -> str:
+    """The included version when it is newer than the installed one, else ""."""
+    if kind not in FIRMWARE_BY_KIND or chip not in FIRMWARE_BY_KIND[kind].chips:
+        return ""
+    included = image_version(image_for(kind, chip))
+    return included if installed and version_key(included) > version_key(installed) else ""
 
 
 RELEASES = os.environ.get("POKELDN_RELEASES_URL", "https://api.github.com/repos/Decryptu/pokeldn/releases")
@@ -78,6 +148,12 @@ class Identity:
     @property
     def current(self) -> bool:
         return self.protocol == esp32.PROTOCOL_VERSION
+
+    @property
+    def chip(self) -> str:
+        """From the HELLO text, `pokeldn-radio esp32c3 version=1.0.0 idf=v6.1`."""
+        words = self.firmware.split()
+        return CHIP_NAMES.get(words[1], "") if len(words) > 1 else ""
 
 
 def ports() -> list[Port]:
@@ -129,6 +205,62 @@ def bridges_without_driver(run=subprocess.run) -> list[str]:
         if name and name not in found:
             found.append(name)
     return found
+
+
+def controllers(platform: str = "", run=subprocess.run,
+                sysfs: str = "/sys/bus/usb/devices") -> int:
+    """How many S3 controller boards are on this computer's USB. They have no serial port, so ports()
+    never lists them. A retail HORI Pokken controller carries the same ids."""
+    platform = platform or sys.platform
+    try:
+        if platform == "darwin":
+            out = run(["ioreg", "-p", "IOUSB", "-l", "-w0"], capture_output=True, text=True, timeout=10).stdout
+            return sum(1 for block in (out or "").split("+-o ")
+                       if re.search(rf'"idVendor" = {PAD_USB[0]}\b', block)
+                       and re.search(rf'"idProduct" = {PAD_USB[1]}\b', block))
+        if platform == "win32":
+            out = run(["powershell", "-NoProfile", "-NonInteractive", "-Command",
+                       "Get-CimInstance Win32_PnPEntity -Filter \"PNPDeviceID LIKE 'USB%'\" "
+                       "| ForEach-Object { $_.PNPDeviceID }"],
+                      capture_output=True, text=True, timeout=20,
+                      creationflags=getattr(subprocess, "CREATE_NO_WINDOW", 0)).stdout
+            return sum(1 for line in (out or "").splitlines()
+                       if (m := USB_ID.search(line)) and "&MI_" not in line.upper()
+                       and (int(m[1], 16), int(m[2], 16)) == PAD_USB)
+    except (OSError, subprocess.SubprocessError):
+        return 0
+    import glob
+    found = 0
+    for device in glob.glob(os.path.join(sysfs, "*")):
+        try:
+            with open(os.path.join(device, "idVendor")) as v, open(os.path.join(device, "idProduct")) as p:
+                found += (int(v.read(), 16), int(p.read(), 16)) == PAD_USB
+        except (OSError, ValueError):
+            continue
+    return found
+
+
+@dataclass(frozen=True)
+class PadIdentity:
+    """A classic ESP32 answering with the controller firmware on its serial port."""
+    version: str
+
+
+def identify_pad(port: str, seconds: float = 3.0) -> PadIdentity:
+    """The controller firmware's status frame [pokeldn.pad.serial_link]. Opening the port for the radio
+    check may have reset the board, so this asks until it has booted."""
+    from pokeldn.pad.serial_link import SerialPad, SerialError
+    pad = SerialPad(port)
+    try:
+        end = time.monotonic() + seconds
+        while True:
+            try:
+                return PadIdentity(asyncio.run(pad.status()).version)
+            except SerialError:
+                if time.monotonic() > end:
+                    raise
+    finally:
+        pad.serial.close()
 
 
 def identify(port: str, blink: bool = True) -> Identity:
@@ -210,13 +342,13 @@ def _native(port: str) -> bool:
     return any(p.device == port and p.native for p in ports())
 
 
-def _connect(port: str, kind: str):
-    """A controller board reaches the flasher already in the ROM loader (Flashing mode or BOOT); a reset
+def _connect(port: str, kind: str, from_loader: bool = False):
+    """A controller board reaches the flasher already in the ROM loader (the Board page's Make it wireless again, or BOOT); a reset
     on connect would leave it. On macOS a USB Serial/JTAG port younger than about 8 s fails its first
     read and stays locked for the process; the node's times do not say its age, so every such flash waits
     (docs/hardware_pad.md)."""
     import esptool
-    if kind == "pad" and _native(port):
+    if (kind == "pad" or from_loader) and _native(port):
         print(f"[app] Waiting {LOADER_SETTLE:.0f} s for the board's port to settle.", flush=True)
         time.sleep(LOADER_SETTLE)
         try:
@@ -226,13 +358,14 @@ def _connect(port: str, kind: str):
     return esptool.detect_chip(port)
 
 
-def flash(port: str, firmware: str = "", kind: str = "radio") -> None:
+def flash(port: str, firmware: str = "", kind: str = "radio", from_loader: bool = False) -> None:
     """Detect, validate and flash on one connection (docs/hardware_esp32.md, Building and flashing).
-    `kind` "pad" writes the controller firmware, which needs an S3's USB device."""
+    `kind` "pad" writes the controller firmware, which needs an S3's USB device. `from_loader`: the
+    controller firmware just restarted the board into the ROM loader (its download command)."""
     import esptool
     from esptool.bin_image import LoadFirmwareImage
 
-    with _connect(port, kind) as chip:
+    with _connect(port, kind, from_loader) as chip:
         if chip.CHIP_NAME not in ("ESP32", "ESP32-S3", "ESP32-C3", "ESP32-C6"):
             raise esptool.FatalError(f"{chip.CHIP_NAME} is not supported. Use an ESP32, ESP32-S3, ESP32-C3 or ESP32-C6.")
         if kind == "pad" and chip.CHIP_NAME not in ("ESP32-S3", "ESP32"):
@@ -261,7 +394,7 @@ def flash(port: str, firmware: str = "", kind: str = "radio") -> None:
         print(f"[app] Firmware for {chip.CHIP_NAME}: {path}", flush=True)
         # The pad owns the USB port once it runs: a reset over USB from the ROM loader it was put
         # in by `pad.py --download` leaves the chip in the loader; the watchdog boots the image.
-        after = "watchdog-reset" if kind == "pad" and chip.CHIP_NAME == "ESP32-S3" else "hard-reset"
+        after = "watchdog-reset" if (kind == "pad" or from_loader) and chip.CHIP_NAME == "ESP32-S3" else "hard-reset"
         esptool.main(["--baud", "460800", "--after", after, "write-flash",
                       "0x0", os.path.abspath(path)], esp=chip)
 
@@ -275,9 +408,11 @@ def main() -> int:
     parser.add_argument("--firmware", default="", help="custom merged image; default: bundled firmware")
     parser.add_argument("--kind", choices=("radio", "pad"), default="radio",
                         help="radio: wireless trades; pad: the S3 as a Switch controller")
+    parser.add_argument("--from-loader", action="store_true",
+                        help="the controller firmware already restarted the board into its ROM loader")
     args = parser.parse_args()
     try:
-        flash(args.port, args.firmware, args.kind)
+        flash(args.port, args.firmware, args.kind, args.from_loader)
     except (esptool.FatalError, OSError, ValueError) as error:
         print(f"[app] {error}", flush=True)
         return 1

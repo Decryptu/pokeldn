@@ -2,6 +2,7 @@ import asyncio
 import os
 import struct
 import threading
+from types import SimpleNamespace
 
 import pytest
 
@@ -88,3 +89,52 @@ def test_a_macro_loads_and_presses_over_a_serial_port(monkeypatch):
     assert struct.unpack("<BHHI", load) == (0x10, len(program.entries), 0, 0)
     assert b"".join(d[3:] for d in data) == b"".join(r + struct.pack("<H", ms) for r, ms in program.entries)
     assert play == b"\x12"
+
+
+def test_a_report_waits_while_corebluetooth_cannot_take_a_write_without_response():
+    """A write CoreBluetooth cannot queue is dropped with no error: 67 of 300 reached the board."""
+    from pokeldn.pad import link
+
+    class Peripheral:
+        free = 0
+
+        def canSendWriteWithoutResponse(self):
+            Peripheral.free += 1
+            return Peripheral.free > 3
+
+    writes = []
+
+    class Client:
+        _backend = SimpleNamespace(_peripheral=Peripheral())
+
+        async def write_gatt_char(self, uuid, data, response):
+            writes.append((Peripheral.free, response))
+
+    pad = link.Pad.__new__(link.Pad)
+    pad.client = Client()
+    asyncio.run(pad.send(macro.NEUTRAL))
+    assert writes == [(4, False)]
+    Client._backend = SimpleNamespace(_peripheral=None)     # another platform: the response paces it
+    asyncio.run(pad.send(macro.NEUTRAL))
+    assert writes[-1][1] is True
+
+
+def test_the_service_exits_when_the_app_closes_its_stdin():
+    """asyncio.run never left on runner's interrupt: a closed app's service kept the port."""
+    import socket
+    import subprocess
+    import sys
+    import time
+    with socket.socket() as s:
+        s.bind(("127.0.0.1", 0))
+        port = s.getsockname()[1]
+    entry = os.path.join(os.path.dirname(os.path.dirname(__file__)), "pokeldn", "app", "entry.py")
+    child = subprocess.Popen([sys.executable, "-u", entry, "--module", "pokeldn.pad.service", "--port", str(port)],
+                             stdin=subprocess.PIPE, stdout=subprocess.PIPE, env=dict(os.environ, POKELDN_MANAGED_RUN="1"))
+    try:
+        assert b"listening" in child.stdout.readline()
+        child.stdin.close()
+        child.wait(timeout=10)
+    finally:
+        child.kill()
+        child.stdout.close()

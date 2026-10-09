@@ -175,8 +175,15 @@ static int gap_event(struct ble_gap_event *event, void *arg)
     switch (event->type) {
     case BLE_GAP_EVENT_CONNECT:
         ble_state = 3;
-        if (event->connect.status != 0)
+        if (event->connect.status != 0) {
             advertise();
+        } else {
+            // macOS keeps 30 ms unless asked: a report written with a response then takes 60 ms.
+            // Apple's accessory rules: min >= 15 ms, max >= min + 15 ms (docs/hardware_pad.md).
+            struct ble_gap_upd_params p = {.itvl_min = 12, .itvl_max = 24, .latency = 0,
+                                           .supervision_timeout = 400};
+            ble_gap_update_params(event->connect.conn_handle, &p);
+        }
         break;
     case BLE_GAP_EVENT_DISCONNECT:
         pad_disconnected();
