@@ -1,5 +1,5 @@
-"""The English and Spanish builds' payloads on their retail cartridge images under unicorn, through their
-own Client_RunBufferScript [mystery_gift_client.c:276]."""
+"""The other cartridges' payloads on their retail images under unicorn, through their own
+Client_RunBufferScript [mystery_gift_client.c:276] and RunMysteryEventScript [mystery_event_script.c:84]."""
 
 import pathlib
 
@@ -243,3 +243,43 @@ def test_japanese_cartridge_saves_and_validates_the_compact_wonder_card(build, p
     data, checksum = save_inject.build_ram_script_struct(gift.ram_script)
     uc.mem_write(bs.SAV1_ADDRESS + 0x361C, checksum.to_bytes(4, "little") + data)
     assert call(validate_card) == 1
+
+
+# RunMysteryEventScript, gPlayerPartyCount, gPlayerParty: the first is 0x28 below MEScrCmd_end, the
+# table's third entry; the others are givepokemon's literals [mystery_event_script.c:234].
+MEVENT_ADDRESSES = {
+    "BPRF": (0x080DE3CC, 0x02024025, 0x02024280), "BPGF": (0x080DE3A4, 0x02024025, 0x02024280),
+    "BPRE": (0x080DDFEC, 0x02024025, 0x02024280), "BPGE": (0x080DDFC4, 0x02024025, 0x02024280),
+    "BPRS": (0x080DE3F4, 0x02024025, 0x02024280), "BPGS": (0x080DE3CC, 0x02024025, 0x02024280),
+    "BPRD": (0x080DE30C, 0x02024025, 0x02024280), "BPGD": (0x080DE2E4, 0x02024025, 0x02024280),
+    "BPRI": (0x080DE30C, 0x02024025, 0x02024280), "BPGI": (0x080DE2E4, 0x02024025, 0x02024280),
+    "BPRJ": (0x080DF160, 0x02023F85, 0x020241E0), "BPGJ": (0x080DF138, 0x02023F85, 0x020241E0),
+}
+EVERY_CARTRIDGE = [pytest.param(build, f"scratchpad/frlg_languages/{'FireRed' if build.version == 'firered' else 'LeafGreen'}_{code[3].lower()}.gba", id=code)
+                   for code, build in builds.BUILDS.items()]
+
+
+@pytest.mark.parametrize("party_count", [0, 6])
+@pytest.mark.parametrize("build, path", EVERY_CARTRIDGE)
+def test_the_event_pokemon_lands_through_the_cartridges_own_mystery_event_vm(build, path, party_count):
+    """The event-pokemon card's script through the cartridge's RunMysteryEventScript: status 2 and the
+    record in slot 0, or status 3 and nothing on a full party [docs/frlg_gift.md, Event Pokemon]."""
+    from unicorn import arm_const as a
+    run, count_at, party_at = MEVENT_ADDRESSES[build.game_code]
+    script_at = 0x02010000
+    machine = _console(bs.payload(bs.TRAINER_ID_PROBE), build, _image(path),
+                       {script_at: wce.EVENT_POKEMON_GIFT.mevent, count_at: bytes([party_count]),
+                        party_at: bytes(600)})
+    uc = machine.uc
+    uc.reg_write(a.UC_ARM_REG_R0, script_at)
+    uc.reg_write(a.UC_ARM_REG_SP, bs.STACK_POINTER)
+    uc.reg_write(a.UC_ARM_REG_LR, bs._RETURN_ADDRESS | 1)
+    uc.emu_start(run | 1, bs._RETURN_ADDRESS, count=2_000_000)
+    assert uc.reg_read(a.UC_ARM_REG_PC) == bs._RETURN_ADDRESS
+    status, count = uc.reg_read(a.UC_ARM_REG_R0), uc.mem_read(count_at, 1)[0]
+    landed = monlib.decode_mon(bytes(uc.mem_read(party_at, 100)))
+    if party_count == 6:
+        assert (status, count, landed["species"]) == (3, 6, 0)
+    else:
+        assert (status, count) == (2, 1)
+        assert (landed["species_name"], landed["otName"], landed["checksum_ok"]) == ("JIRACHI", "WISHMKR", True)

@@ -101,10 +101,13 @@ JsonObject Names(Game game, string list)
                     Add(m, strings.movelist[m]);
             break;
         case "items":
-            // PKHeX keeps the games' unused item ids as "???" placeholders.
-            for (var i = 1; i <= blank.MaxItemID; i++)
-                if (strings.itemlist[i] != "???")
-                    Add(i, strings.itemlist[i]);
+            // Gen 3 keeps its own item ids (Rare Candy 68, national 50); "???" marks the unused ones.
+            // FireRed's table ends at 374 [pokefirered include/constants/items.h]; 375-376 are Emerald's.
+            var names3 = strings.GetItemStrings(game.Context, game.Versions[0]);
+            var last = game.Context == EntityContext.Gen3 ? 374 : blank.MaxItemID;
+            for (var i = 1; i <= last && i < names3.Length; i++)
+                if (names3[i] != "???")
+                    Add(i, names3[i]);
             break;
         case "bag" when game.Context == EntityContext.Gen8:
             foreach (var i in GiftItems().Order())
