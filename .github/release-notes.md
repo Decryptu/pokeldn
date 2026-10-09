@@ -1,15 +1,17 @@
-# pokeldn 0.18.1
+# pokeldn 0.18.2
 
 This desktop app trades with seven Pokemon game families on a Switch or Switch 2
 through an ESP32 radio connected by USB. Nothing is installed on the console.
 
 ## What is new
 
-- macOS: the Board and Control pages find the controller board again. In 0.18.0 the packaged app
-  saw no Bluetooth devices at all, so the board's version stayed unknown and Connect failed.
-- From 0.18.0: a redesigned Board page shows each board's firmware, its version and whether it is
-  up to date, and installs Wireless or Controller on any board; controller button presses are no
-  longer dropped; the Control page reconnects on its own and says where the board is plugged in.
+- FireRed/LeafGreen Mystery Gift: a value left on the tool's All options tab for `--gift` or
+  `--buffer-script` no longer stops a run. It overrode the Gift card's choice, so an Event Pokemon,
+  a card, a Game boost or a save backup was refused before anything was sent. The Gift card now
+  owns those options; they are gone from All options and an old saved value is ignored.
+- From 0.18.1: on macOS the Board and Control pages find the controller board over Bluetooth again.
+- From 0.18.0: a redesigned Board page shows each board's firmware and version and installs
+  Wireless or Controller on any board; controller button presses are no longer dropped.
 
 The radio firmware is unchanged at 1.6.1; wireless boards need no update. The controller firmware is
 1.2.0; the Board page offers the update.
