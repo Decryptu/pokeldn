@@ -44,7 +44,7 @@ def test_identify_preserves_release_and_protocol_across_serial(monkeypatch, prot
             pass
 
         def write(self, frame):
-            command, payload = esp32.decode_frame(frame[:-1])
+            [(command, payload)] = esp32.FrameReader().feed(frame)
             assert command == 0x01 and payload == b""
             # INFO's fixed header: protocol, STA MAC, AP MAC, chip revision.
             header = bytes([protocol]) + bytes.fromhex("021122334455 0266778899aa 03")

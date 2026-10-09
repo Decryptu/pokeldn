@@ -1158,67 +1158,39 @@ def test_the_fast_rate_comes_from_the_environment(monkeypatch):
     assert rates[-1] == 921600 and 2000000 in rates
 
 
-@pytest.mark.parametrize("run_baud,next_baud", [(921600, 921600), (1500000, 921600),
-                                               (921600, 1500000)])
-def test_new_run_and_board_check_reconnect_without_reset(monkeypatch, run_baud, next_baud):
-    """A UART board retains BAUD across client exits; Windows releases DTR/RTS on every open."""
-    import collections
+@pytest.mark.parametrize("run_baud,next_baud", [(921600, 921600), (1500000, 921600), (921600, 1500000)])
+def test_a_uart_board_left_at_a_run_rate_answers_the_next_session_and_board_check(monkeypatch, run_baud,
+                                                                                  next_baud):
+    """A classic board keeps the last BAUD while the port is closed and opened with DTR and RTS
+    released; a second run that only spoke 115200 failed with no reply 0x81 to command 0x01."""
     import serial
     from gui import board as gui_board
 
-    state = {"baud": 115200, "held": False, "opens": 0}
-    decoder = esp32.FrameReader()
-    replies = collections.deque()
-    info = struct.pack("<B6s6sB", esp32.PROTOCOL_VERSION, bytes(6), bytes(6), 3) + b"sim"
+    board = esp32_sim.SimulatedBoard(esp32_sim.Air())
+    opens = []
 
-    class Port:
-        baudrate = 115200
+    class Port(esp32_sim.UartPort):
+        held = False
 
         def open(self):
-            assert not state["held"]
-            assert self.dtr is False and self.rts is False
-            state["held"] = True
-            state["opens"] += 1
-
-        def write(self, data):
-            if self.baudrate != state["baud"]:
-                list(decoder.feed(b"wrong-rate"))
-                return
-            for kind, payload in decoder.feed(data):
-                if kind == esp32.CMD_HELLO:
-                    replies.append((state["baud"], esp32.encode_frame(esp32.MSG_INFO, info)))
-                elif kind == esp32.CMD_BAUD:
-                    replies.append((state["baud"], esp32.encode_frame(
-                        esp32.MSG_RESULT, bytes([kind]) + bytes(4))))
-                    state["baud"] = struct.unpack("<I", payload)[0]
-
-        def read(self, n):
-            time.sleep(0.001)
-            if replies:
-                rate, data = replies.popleft()
-                return data if rate == self.baudrate else b""
-            return b""
-
-        def flush(self):
-            pass
+            assert (self.dtr, self.rts) == (False, False) and not any(p.held for p in opens)
+            self.held = True
+            opens.append(self)
 
         def close(self):
-            state["held"] = False
+            self.held = False
 
-    monkeypatch.setattr(serial, "Serial", Port)
-    first = esp32.Radio.open_serial("COM16", fast_baud=run_baud)
-    first.close()
-    assert state["baud"] == run_baud
-    # Checking the board must work at the retained rate and must not change it.
-    assert gui_board.identify("COM16", blink=False).protocol == esp32.PROTOCOL_VERSION
-    assert state["baud"] == run_baud
-    second = esp32.Radio.open_serial("COM16", fast_baud=next_baud)
+    monkeypatch.setattr(serial, "Serial", lambda: Port(board))
+    esp32.Radio.open_serial("COM16", fast_baud=run_baud).close()
+    assert board.line_rate == run_baud
+    assert gui_board.identify("COM16", blink=False).current
+    assert board.line_rate == run_baud
+    radio = esp32.Radio.open_serial("COM16", fast_baud=next_baud)
     try:
-        assert second.hello().version == esp32.PROTOCOL_VERSION
-        assert state["baud"] == next_baud
+        assert radio.hello().version == esp32.PROTOCOL_VERSION and board.line_rate == next_baud
     finally:
-        second.close()
-    assert state["opens"] == 3 and not state["held"]
+        radio.close()
+    assert len(opens) == 3 and not any(p.held for p in opens)
 
 
 def test_a_board_that_leaves_usb_mid_run_stops_the_run_once_and_stops_writing():

@@ -33,6 +33,9 @@ CMD_DISPLAY = 0x0E
 CMD_ALIVE = 0x0F
 ALIVE_FIRMWARE = (1, 4, 0)
 ALIVE_EVERY = 1.0
+# The run rates the app's Settings offer (gui/views/settings.py); open_serial looks for a board
+# left at any of them.
+RUN_BAUDS = (921600, 1500000)
 
 # The LED's patterns (firmware/esp32/main/led.h); "auto" hands the LED back to the radio's state.
 LED_PATTERNS = ("auto", "off", "on", "breathe", "blink", "flash3", "ramp-up", "ramp-down", "pulse")
@@ -288,6 +291,7 @@ class Radio:
         self._log = log
         self._on_lost = on_lost   # called once, from the reader thread, when the port dies
         self.lost = None
+        self.info: Info | None = None
         self._write_lock = threading.Lock()
         self._request_lock = threading.Lock()
         self._reader = FrameReader()
@@ -313,11 +317,14 @@ class Radio:
 
     @classmethod
     def open_serial(cls, port: str, baud: int = 115200, fast_baud: int | None = None, log=None,
-                    on_lost=None, check_protocol=True):
-        """`fast_baud` defaults to POKELDN_ESP32_BAUD, else 921600."""
+                    on_lost=None, check_protocol: bool = True, left_at=()):
+        """`fast_baud` defaults to POKELDN_ESP32_BAUD, else 921600; 0 keeps the rate the board
+        answers at. `left_at`: more rates an earlier process may have left the board at.
+        `radio.info` is the board's HELLO reply."""
         import serial
+        run_baud = int(os.environ.get("POKELDN_ESP32_BAUD", "921600"))
         if fast_baud is None:
-            fast_baud = int(os.environ.get("POKELDN_ESP32_BAUD", "921600"))
+            fast_baud = run_baud
         s = serial.Serial()
         s.port = port
         s.baudrate = baud
@@ -330,15 +337,11 @@ class Radio:
         # Windows opens a COM port exclusively: a handle left open here refuses the retry
         # (PermissionError 13, Access is denied).
         try:
-            # Closing a run does not reset a UART board: it still speaks the previous run's
-            # fast rate. Probe both the boot rate and the app's supported run rates without
-            # toggling DTR/RTS. Repeated passes also cover boards that reset on open.
-            rates = list(dict.fromkeys(rate for rate in (baud, fast_baud, 921600, 1500000) if rate))
-            info = radio._serial_handshake(rates)
-            if check_protocol and info.version != PROTOCOL_VERSION:
-                raise RadioError(f"board speaks protocol {info.version}, host speaks {PROTOCOL_VERSION}")
+            # A classic board keeps the last run's BAUD until it resets, and opening the port does
+            # not reset it. docs/hardware_esp32.md, Running.
+            info = radio._find_rate([baud, fast_baud, run_baud, *RUN_BAUDS, *left_at])
             if log and s.baudrate != baud:
-                log(f"[esp32] reconnected to the board at {s.baudrate} baud")
+                log(f"[esp32] the board answered at {s.baudrate} baud")
             if fast_baud and fast_baud != s.baudrate:
                 radio.request(CMD_BAUD, struct.pack("<I", fast_baud), MSG_RESULT)
                 radio.drain()
@@ -348,17 +351,17 @@ class Radio:
                 # at 1500000), so retry it as the first one is.
                 for attempt in range(5):
                     try:
-                        radio.request(CMD_HELLO, b"", MSG_INFO, timeout=0.5)
+                        info = Info.parse(radio.request(CMD_HELLO, b"", MSG_INFO, timeout=0.5))
                         break
                     except RadioError:
                         if attempt == 4:
                             raise
-                info = Info.parse(radio.request(CMD_HELLO, b"", MSG_INFO))
             if check_protocol and info.version != PROTOCOL_VERSION:
                 raise RadioError(f"board speaks protocol {info.version}, host speaks {PROTOCOL_VERSION}")
         except BaseException:
             radio.close()
             raise
+        radio.info = info
         if firmware_version(info) >= ALIVE_FIRMWARE:
             threading.Thread(target=radio._keep_alive, name="esp32-alive", daemon=True).start()
         if radio._trace:
@@ -366,17 +369,16 @@ class Radio:
             threading.Thread(target=radio._poll_status, name="esp32-status", daemon=True).start()
         return radio
 
-    def _serial_handshake(self, rates) -> Info:
+    def _find_rate(self, rates) -> Info:
+        """HELLO at each rate in turn. Five passes also outlast a board that resets on open (a
+        CP2102 on macOS): a HELLO sent during its boot is lost."""
+        rates = [rate for rate in dict.fromkeys(rates) if rate]
         for attempt in range(5):
             for rate in rates:
                 if self._stream.baudrate != rate:
                     self.drain()
                     self._stream.flush()
                     self._stream.baudrate = rate
-                # A previous client or a probe at the wrong rate may leave a partial COBS
-                # frame in the board's decoder. Terminate it before sending HELLO.
-                with self._write_lock:
-                    self._stream.write(b"\0")
                 try:
                     return Info.parse(self.request(CMD_HELLO, b"", MSG_INFO, timeout=0.5))
                 except RadioError:
@@ -424,6 +426,10 @@ class Radio:
     def send(self, msg_type: int, payload: bytes = b"") -> None:
         """Queue one command for the writer thread; never blocks."""
         frame = encode_frame(msg_type, payload)
+        if msg_type == CMD_HELLO:
+            # Ends a partial frame a closed client or a HELLO at another rate left in the board's
+            # decoder; the firmware skips an empty frame (wire.c reader).
+            frame = b"\x00" + frame
         with self._out_cv:
             if len(self._out) >= QUEUE_LIMIT and msg_type in (CMD_ETH_TX, CMD_RAW_TX):
                 self.tx_dropped += 1
