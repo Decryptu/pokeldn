@@ -85,6 +85,7 @@ class RaidHostTests(unittest.TestCase):
             "1000000102030405060708090a0b0c0d")
         self.assertEqual(args[args.index("--host-player-name") + 1], "POKELDN")
         self.assertEqual(args[args.index("--trainer-name") + 1], "POKELDN")
+        self.assertNotIn("--record-set", args)
         self.assertNotIn("--preserve-records", args)
         self.assertNotIn("--raid-replay-client-gated", args)
 
