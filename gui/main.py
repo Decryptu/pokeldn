@@ -40,6 +40,7 @@ PAGES = (
     ("games", "Games", "gamepad"),
     ("board", "Board", "cpu"),
     ("bank", "Bank", "package"),
+    ("gts", "GTS", "globe"),
     ("controller", "Control", "joystick"),
     ("docs", "Docs", "book-open"),
 )
@@ -76,6 +77,9 @@ def main(page: ft.Page) -> None:
         if key == "bank":
             from gui.views.bank import BankView
             return BankView(app)
+        if key == "gts":
+            from gui.views.gts import GtsView
+            return GtsView(app)
         if key == "controller":
             from gui.views.controller import ControllerView
             return ControllerView(app)
@@ -147,6 +151,8 @@ def main(page: ft.Page) -> None:
         threading.Thread(target=prune_viewers, daemon=True).start()
     if app.settings.check_updates:
         app.check_update()
+    from gui.views.gts import resume
+    resume(app)      # a listing or an offer left open is answered while the app runs
 
 
 def prune_viewers() -> None:

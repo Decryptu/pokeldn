@@ -52,7 +52,9 @@ silicon), Windows and Linux. It includes the radio firmware and flashes the boar
 Pokemon to offer with [PKHeX.Core](https://github.com/kwsch/PKHeX), and runs every trade and Mystery
 Gift below with the tested settings. The only file it asks for is `prod.keys`. Its Bank keeps every
 Pokemon a trade brings in and trades one into another game wherever HOME would move it, converted
-and checked by PKHeX ([the bank](docs/gui.md#the-bank)). Its Control page turns an ESP32-S3 into a
+and checked by PKHeX ([the bank](docs/gui.md#the-bank)). Its GTS lists a banked Pokemon on public
+Nostr relays against a wanted species and trades it with another player's app, neither of them online
+at the same time ([the GTS](docs/online.md#the-gts)). Its Control page turns an ESP32-S3 into a
 wired controller for the Switch, or a classic ESP32 into a wireless Pro Controller: press its buttons from the computer, record and edit macros, and
 share them as `.pokemacro` files ([the controller](docs/gui.md#the-controller)).
 

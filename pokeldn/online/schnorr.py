@@ -107,3 +107,13 @@ def verify(public: bytes, message: bytes, signature: bytes) -> bool:
         zi = pow(sum_[2], -1, P)
         point = (sum_[0] * zi * zi % P, sum_[1] * zi * zi * zi % P)
     return point is not None and point[1] % 2 == 0 and point[0] == r
+
+
+def shared_x(secret: bytes, public: bytes) -> bytes:
+    """-> the x coordinate of secret * public, the same from either end of a pair of x-only keys (the
+    point's sign never changes its x)."""
+    d = int.from_bytes(secret, "big")
+    point = _lift_x(int.from_bytes(public, "big"))
+    if not 1 <= d < N or point is None:
+        raise ValueError("not a key pair")
+    return _mul(d, point)[0].to_bytes(32, "big")

@@ -164,8 +164,61 @@ Cancel left the room.
 A Sword's chained trades already offer records that differ from the snapshot's slot
 ([Sword trades](swsh_trade.md)), and the exchanged record is content 50's.
 
+## The GTS
+
+The GTS trades banked Pokemon between players who are never online at the same time. A player lists
+a Pokemon from the [bank](gui.md#the-bank) against a wanted species and level range; another player
+answers with one of theirs; the lister's app makes the trade the next time it is open. No console takes
+part: what comes back lands in the bank, and the bank moves it to a game. Code: `pokeldn/online/gts.py`
+(the events), `pokeldn/app/gts.py` (the bank side), the app's GTS page.
+
+| event | kind | signed by | content |
+|---|---|---|---|
+| listing | 30402 (NIP-99), `d` a random id | a key made for that listing | JSON: protocol 1, game, the Pokemon as PKHeX reads it (species, level, nature, ability, ball, item, moves, OT), a SHA-256 of the record, the wanted species and levels, the trainer name, status, the winning offer |
+| offer | 1059, `p` the listing key | a key made for that offer | sealed: the listing's `d`, the game, the record, the trainer name |
+| answer | 1059, `p` the offer key | the listing key | sealed: the offer id and either the listed record or a refusal and why |
+| deletion | 5 (NIP-09) | the key of the event it names | none |
+
+A listing carries `["t", "pokeldn-gts"]`, `["t", "pokeldn-gts-has-<species>"]` and
+`["t", "pokeldn-gts-wants-<species>"]`, so a relay filters by either species; `title`, `summary`,
+`status` and `published_at` as NIP-99 has them, and a NIP-40 `expiration` 30 days out. A sealed body
+is AES-256-GCM under `sha256("pokeldn gts|" + x)`, where x is the x coordinate of the ECDH product of
+one end's secret and the other end's x-only key (`schnorr.shared_x`). An app checks every stored event's
+id and signature before it believes it.
+
+| step | what happens |
+|---|---|
+| deposit | PKHeX must find the Pokemon legal; its record and `.json` move out of the bank into the GTS folder; the listing goes to every relay |
+| offer | the Pokemon must be legal and answer the wanted species and levels; it moves out of the bank and the sealed offer goes to the listing key |
+| the lister's app opens | it asks for wraps to its listing keys; stored offers are answered oldest first; the first legal offer that answers the listing is traded, every other one refused |
+| a trade | the answer carries the listed record; the listing is republished with status traded and the winning offer's id; the received record is banked |
+| the offering app opens | the answer's record is checked against the listing's SHA-256 and banked; a refusal, a listing traded to another offer, or a listing taken down puts its own Pokemon back in the bank; it deletes its offer |
+| a listing ends | after 30 days its Pokemon returns to the lister's bank and no offer is traded; an offer's Pokemon returns once a relay has sent every stored answer one hour after the end and none was for it |
+| taken down | the listing is republished with status withdrawn and its Pokemon returns; later offers are refused |
+
+Each listing and offer is a folder in `Documents/pokeldn/GTS` (`GTS` inside `POKELDN_DATA` when set)
+with `state.json` (its secret key, its signed events, every answer sent) and the record. An answer is
+written before it is published, and every live event is sent again to each relay that connects, so an
+answer lost on the way is delivered the next time the app opens. Finished folders are deleted 60 days
+after their last change.
+
+Two apps with their own banks traded through the seven relays, each open only while the other was
+closed: all seven stored the listing, the offer and the answer (OK true), the lister's app traded on
+opening, the offering app banked the listed record on opening, and after the deletions the seven
+served nothing from the test keys but the kind 5 events. The round took about 30 s.
+
+The relays are the seven of [Stored events](#stored-events); `POKELDN_GTS_RELAYS` (comma-separated)
+replaces them. relay.snort.social keeps nothing and is left out.
+
+An app follows these rules; a modified app need not. A lister's app can keep an offered Pokemon and
+send nothing back, and a listing can show a Pokemon its lister does not hold; the SHA-256 shows which
+afterwards, never before. A fair exchange with no trusted third party is impossible (Pagnia and
+Gaertner, 1999).
+
 ## Unresolved
 
+- How long a relay keeps a listing or a wrap beyond 24 hours. At 24.1 h all seven relays served a
+  30402 with a 3-day expiry, one with none and a kind 5; six served the kind 1059 wrap.
 - How each console answers a host taking its offer back while the console holds it: a Sword's box
   command 2 (a Sword hosting console whose player was on the confirmation screen began leaving four
   seconds after a joiner sent command 1 then 2), a Scarlet's kind 4, a Z-A's `0103`, a Brilliant

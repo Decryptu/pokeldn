@@ -53,6 +53,7 @@ class App:
         self.update: update.Release | None = None               # a newer release GitHub offered
         self.update_state = ""                                  # checking, current, available, offline
         self.update_listeners: list = []                        # called on the UI loop after a check
+        self.gts = None                                         # gui.views.gts.service, once used
         threading.Thread(target=self._watch_controllers, daemon=True).start()
 
     def ui(self, fn) -> None:

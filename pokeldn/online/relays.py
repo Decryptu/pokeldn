@@ -43,6 +43,19 @@ class Identity:
                 "tags": tags, "content": content, "sig": schnorr.sign(self.secret, event_id).hex()}
 
 
+def valid(event) -> bool:
+    """The event's id is the hash of its fields and its key signed that id (NIP-01). A relay can serve
+    anything; a stored event read back is checked before it is believed."""
+    try:
+        serial = json.dumps([0, event["pubkey"], event["created_at"], event["kind"], event["tags"],
+                             event["content"]], separators=(",", ":"), ensure_ascii=False)
+        event_id = hashlib.sha256(serial.encode()).digest()
+        return (event_id.hex() == event["id"]
+                and schnorr.verify(bytes.fromhex(event["pubkey"]), event_id, bytes.fromhex(event["sig"])))
+    except (KeyError, TypeError, ValueError):
+        return False
+
+
 def _ssl_context():
     try:
         import certifi
@@ -77,7 +90,8 @@ class Relay(threading.Thread):
         delay = RECONNECT_MIN
         while not self.pool.closed.is_set():
             try:
-                with connect(self.url, ssl=_ssl_context(), open_timeout=8, close_timeout=2,
+                secure = {"ssl": _ssl_context()} if self.url.startswith("wss:") else {}
+                with connect(self.url, **secure, open_timeout=8, close_timeout=2,
                              proxy=None, max_size=1 << 20) as ws:
                     with self.lock:
                         self.ws = ws
@@ -114,9 +128,12 @@ class Relay(threading.Thread):
             return
         if message[0] == "EVENT" and len(message) >= 3 and isinstance(message[2], dict):
             self.pool.received(message[2])
+        elif message[0] == "EOSE" and len(message) >= 2:
+            self.pool.end_of_stored(self, message[1])
         elif message[0] == "OK" and len(message) >= 3:
             if message[2]:
                 self.accepted += 1
+                self.pool.stored(self, message[1])
             else:
                 self.refused += 1
                 reason = str(message[3]) if len(message) > 3 else ""
@@ -130,12 +147,13 @@ class Relay(threading.Thread):
 class RelayPool:
     """Publishes to every connected relay; on_event(event) sees each event id once, on a relay thread."""
 
-    def __init__(self, urls, on_event, log=print, on_change=None):
-        self.on_event, self.log, self.on_change = on_event, log, on_change
+    def __init__(self, urls, on_event, log=print, on_change=None, on_eose=None):
+        self.on_event, self.log, self.on_change, self.on_eose = on_event, log, on_change, on_eose
         self.closed = threading.Event()
         self.lock = threading.Lock()
         self.subs: dict[str, list] = {}
         self.seen: dict[str, float] = {}
+        self.kept: dict[str, set] = {}       # event id -> the relays that answered OK true
         self.relays = [Relay(url, self) for url in urls]
 
     def start(self):
@@ -163,6 +181,20 @@ class RelayPool:
             self.subs[sub_id] = list(filters)
         for relay in self.relays:
             relay.send(["REQ", sub_id, *filters])
+
+    def unsubscribe(self, sub_id):
+        with self.lock:
+            self.subs.pop(sub_id, None)
+        for relay in self.relays:
+            relay.send(["CLOSE", sub_id])
+
+    def end_of_stored(self, relay, sub_id):
+        if self.on_eose:
+            self.on_eose(relay.url, sub_id)
+
+    def stored(self, relay, event_id):
+        with self.lock:
+            self.kept.setdefault(str(event_id), set()).add(relay.url)
 
     def publish(self, event) -> int:
         with self.lock:

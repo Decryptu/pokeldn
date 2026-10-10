@@ -185,6 +185,15 @@ run that takes a traded Pokemon out of the bank.
   unmeasured here). PKHeX.Core 26.8.26 converts a `.pk3` by the Pal Park lineage, so a bank move from
   FireRed/LeafGreen may differ from the record HOME writes.
 
+## The GTS
+
+The GTS page lists other players' open listings, filtered by the species offered or wanted, and the
+player's own listings and offers under Yours. Deposit a Pokemon takes a legal banked Pokemon that is
+not queued for a trade; a listing's detail offers each banked Pokemon that answers it. While listed or
+offered, a Pokemon is in `Documents/pokeldn/GTS`, out of the bank. The app answers offers whenever it
+runs, on any page, once a listing or an offer exists. The events and the rules are in
+[The GTS](online.md#the-gts).
+
 ## Boards and firmware
 
 The Board page lists every board plugged into this computer. The header of the selected board names
