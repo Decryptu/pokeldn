@@ -1302,6 +1302,10 @@ sequence is done (`0x26bdc94`) and the job is gone (`0x26d9cf0`), then closes th
 returns true once it has closed. A leave answered at once (0.05 s) and one answered by no host
 (2.0 s) both end inside the 3.0 s, so the host's answer does not move the field. One retail departure
 with the type-4 answer measured 3.77 s from the console's type 3 to the field.
+An emulated Arceus 1.1.1 hosting its own search, quitting with one station seated, reached step 1
+(`0x110b78c`) and passed step 2 (`0x110b81c`) 4.33 s later, 0.43 s after its last packet: the host
+migration it hands the station (type 7) outlasts the 3.0 s floor. Step 3 (`0x110b80c`) followed
+0.03 s later and the scene's destructor (`0x110bec0`) 0.33 s after step 2.
 
 No timer inside Pia precedes the first type 3 ([pia.md](pia.md), Leaving a session). The only
 caller of `Session::LeaveAsync` is the game's leave request, update `0x2ca0a10` (vtable `0x4198ef8`,
@@ -1334,6 +1338,5 @@ console leaves.
 ## Unresolved
 
 - How the 0.8 s after the 3.0 s floor splits between the message close, the scene's teardown and
-  the field's fade-in, and whether a console that hosts the network (a migration leave, 8 s
-  deadline) holds the message longer.
+  the field's fade-in on a console that is a station of the network.
 - What sets the save flag `[[[0x4279560]+0x2b8]+0x78]` read before the leave.
