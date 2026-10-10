@@ -349,6 +349,10 @@ beginning progress, crystal 2: a one-star Eevee, caught, its reward screen listi
 order. Charizard the Unrivaled (20221202) at seed `00000001`, six-star progress, crystal 3 and
 `raidTimeData` 1, 600, 0, 60: the boss named "Charizard the Unrivaled", its timer bar losing about a
 tenth of its length a minute, a 600 s limit where the console's own is 300 s.
+A retail Scarlet over the ESP32 board fought the same two raids: the one-star Eevee won, its catch
+offered and the seed's rewards given; Charizard the Unrivaled shown as seven stars, its timer bar
+shrinking slowly. It also fought a standard black raid (seed `00000004`, Pincurchin) whose RaidPoint
+carried the record's `raidTimeData` 1, 450, 0, 60.
 
 The app's Tera Raid (Host) tool picks the event from its own copy of the gallery, which it downloads
 and updates, and narrows the raid's version, progress and crystal to what the event spawns
@@ -487,7 +491,6 @@ the host start; its Pokemon stayed in the battle.
   Every raid hosted with it began its battle, on retail and emulated consoles.
 - End-to-end reward-screen checks for Raid Power Lv. 2 and 3 and six-star bonus rows.
 - What the RaidPoint's u64 at 0x3d8 and byte 0x3b4 hold.
-- What a retail console does with an event RaidPoint's crystal word, 2 or 3 (an emulated one fought
-  both), and with a fixed reward row's subject (host, guests, once), which `raid_point` writes as 0,
-  every player's.
+- What a retail console does with a fixed reward row's subject (host, guests, once), which
+  `raid_point` writes as 0, every player's.
 - Whether the five-star catch-once records go in the save's list as the seven-star ones do.
