@@ -379,6 +379,20 @@ The console acks a response at `0x017c7134`, after the `[0x37]` check and before
 response it never acks failed the ids, the location or `[0x37]`. A non-zero result, or `[0x37]` of 5
 or more, stores its result (2 for the gate) at byte +0x79 of the object at station +0xa0.
 
+That object is the station's mesh ConnectStationJob. Its step `0x017afa70` reads the byte
+(`0x017afc34`) while its deadline holds and the station is not in state 5: 0 keeps waiting, 1 is
+error `0xc25`, 2 is `0x646f`, `0x6470` or `0x11c26` by the sign of `+0x7c` (`response[2] - 9`), any
+other value `0xc24`. It hands the error to the waiting context (`0x01769720`), frees the pending ack
+id (`0x017d5770`) and moves the station from state 4 to 6 (`0x017afafc`).
+State 4 is written through a pointer to station +0x48 (`str w9, [x8]`) by
+`ProcessConnectionRequestJob::ConnectToRequesterStation` (`0x017c8e90`, store `0x017c8fd8`) for a
+type-1 request and `::WaitInverseConnection` (`0x017c9760`, store `0x017c98a8`) for a type-6
+message, both called from the request handler `0x017c62a0` (`0x017c6aac`, `0x017c6aa4`) after it
+stores the peer's id at +0x79, state 3 and its own id at +0x78. In state 3 with `request[3]` not 1,
+each starts the ConnectStationJob toward the peer (`0x017af520` or `0x017b0120`), writes state 4,
+sets a deadline and installs the step `0x017c9080`, which ends once the context holds an error
+(`0x017c90d4`). With `request[3]` 1 they return 0 and write nothing.
+
 A 17-byte response (`RESPONSE_SIZE`, the short-form allocation `mov w3, #0x11` at `0x017c6c30`)
 leaves `[0x37]` 38 bytes past its end, in stale buffer bytes, so whether it is read depends on
 memory the sender does not control: an emulated Shield 1.3.2 under ldn_mitm accepted 3 of 52, with
@@ -746,7 +760,8 @@ limit measured).
 - What a retail Sword reads at `[0x37]` of a 17-byte connection response, 38 bytes past the message
   in bytes the sender does not write: it passed the gate on 12 of 12, an emulated Shield 1.3.2 under
   ldn_mitm on 3 of 52.
-- What writes station state 4 at +0x48, and what reads the +0x79 status after a refusal.
+- Which error code a live refusal hands to the waiting context (`0x01769720`); no reader of it past a zero test
+  was found.
 
 ## Credits
 

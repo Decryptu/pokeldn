@@ -59,6 +59,14 @@ def test_the_boss_a_seed_gives_is_pkhex_s(case):
             found.tera_type) == (species, form, stars, ec, pid, ivs, ability, gender, nature, sizes, tera)
 
 
+
+# Indeedee, five stars, whose retail table gives Tera rule 0: PKHeX.Core 26.8.26's
+# `Tera9RNG.GetTeraType` on its own encounter (gem Random), and the game's draw at 0xe27414.
+@pytest.mark.parametrize("seed, version, tera", [(0x1D002, "scarlet", 8), (0x6677C, "violet", 11)])
+def test_a_default_tera_rule_draws_any_type(seed, version, tera):
+    found = raid_encounter.generate(seed, version, "paldea", "5star")
+    assert (found.boss["species"], found.tera_type) == (876, tera)
+
 def test_the_bootstrap_matches_retail_records():
     """A retail Violet's bootstrap for seed BD13FB43: its boss record, and the record it puts in an
     empty participant slot (both empty slots of a retail event bootstrap hold the same bytes). A

@@ -163,13 +163,11 @@ def select(seed, version, map_name, progress, content):
 
 
 def tera_type(seed, row):
-    """-> the boss's Tera type: the table's own, one of the species' types, or any of 18."""
+    """-> the boss's Tera type: the table's own, or any of 18."""
+    # Table values 0 and 1 both draw any of 18 (0xe27414); docs/sv_raid.md, The seed.
     if row["tera"] >= 2:
         return row["tera"] - 2
-    rand = Xoroshiro(seed)
-    if row["tera"] == 1:
-        return rand.next_int(18)
-    return personal(row["species"], row["form"])[1][rand.next_int(2)]
+    return Xoroshiro(seed).next_int(18)
 
 
 def battle_pid(pid, fake_id, shiny):

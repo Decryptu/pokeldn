@@ -211,7 +211,10 @@ async def find_ip(args):
     want = int(args.comm_id, 16) if args.comm_id else COMM_ID
     print(f"[cx] ip-join: host {args.host_ip}, us {our_ip}, comm_id={want:#018x}")
     net = None
-    for _ in range(args.scans):
+    for attempt in range(args.scans):
+        if attempt:
+            await trio.sleep(args.dwell)
+        # Windows fails a scan at once (WSAECONNRESET) while nothing listens: the sleep paces it.
         info = ip_scan_once(args.scan_ip or our_ip, args.host_ip, args.dwell)
         if info is None:
             continue
@@ -221,7 +224,6 @@ async def find_ip(args):
         if n.local_communication_id == want and n.scene_id == SCENE_ACCEPTING:
             net = n
             break
-        await trio.sleep(args.dwell)
     if net is None:
         print(f"[cx] no matching search at {args.host_ip} - is the emulated console on Y-Comm -> "
               "Link Trade, past BOTH messages?")

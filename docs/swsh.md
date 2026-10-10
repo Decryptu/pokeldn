@@ -55,9 +55,9 @@ fills before the script resumes). A call is `PUSH` per argument, right to left, 
 - [Player profile](swsh_protocol.md#the-player-profile): which role sample states 3 and 4 stand for
   in a Pokemon Camp session (`StateCreateSession`, `StateConnect`). `a_wr0301` as the Crown Tundra wild area is read from the numbering; one beacon
   taken there settles it.
-- [Battle Stadium](swsh_protocol.md#the-battle-stadium-block): the writer of `match+0x98`. The team
-  descriptor's `+0` to `+7` is one u64 copied from `[job+0x88]+0x38` of the rental-team response
-  (`0x014f7fd0`); the `v1/validate` reply is copied over its signature at `0x014f8094`.
+- [Battle Stadium](swsh_protocol.md#the-battle-stadium-block): which save block `0x01430670` reads
+  for a stored team record, and what a save team's descriptor holds at `+0x30..+0x135` before the
+  `v1/validate` signature replaces `+0x36` (the entry at `[sp+0x28]` after `0x015039f0`).
 - Sword against Shield: binary readings are Shield's, the console is Sword; the
   [session constants](swsh_session.md#taking-a-seat) hold across the pair. Sword testing bit 0 of a
   card's version mask is inferred from Shield's code, where the test is `1 << (v == 0x2D)` and eleven
