@@ -344,6 +344,12 @@ event, or its `Files`) and generates the `Raid` the host stages:
 The RaidPoint carries the record's capture rate and, as the crystal, the save's raid content: 2 an
 event, 3 a seven-star event (Tera-Finder `RaidContent`).
 
+An emulated Scarlet 4.0.0 guest fought both. Eevee Spotlight (20221125) at seed `00000002`,
+beginning progress, crystal 2: a one-star Eevee, caught, its reward screen listing the seed's rows in
+order. Charizard the Unrivaled (20221202) at seed `00000001`, six-star progress, crystal 3 and
+`raidTimeData` 1, 600, 0, 60: the boss named "Charizard the Unrivaled", its timer bar losing about a
+tenth of its length a minute, a 600 s limit where the console's own is 300 s.
+
 The app's Tera Raid (Host) tool picks the event from its own copy of the gallery, which it downloads
 and updates, and narrows the raid's version, progress and crystal to what the event spawns
 ([Raid events](gui.md#raid-events)). The crystals offered come from `raid_event.dens`: a delivery
@@ -481,6 +487,7 @@ the host start; its Pokemon stayed in the battle.
   Every raid hosted with it began its battle, on retail and emulated consoles.
 - End-to-end reward-screen checks for Raid Power Lv. 2 and 3 and six-star bonus rows.
 - What the RaidPoint's u64 at 0x3d8 and byte 0x3b4 hold.
-- What a retail console does with an event RaidPoint's crystal word, 2 or 3, and with a fixed reward
-  row's subject (host, guests, once), which `raid_point` writes as 0, every player's.
+- What a retail console does with an event RaidPoint's crystal word, 2 or 3 (an emulated one fought
+  both), and with a fixed reward row's subject (host, guests, once), which `raid_point` writes as 0,
+  every player's.
 - Whether the five-star catch-once records go in the save's list as the seven-star ones do.
