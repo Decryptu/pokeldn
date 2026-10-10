@@ -806,7 +806,20 @@ item 9999 as given.
 The one species test is in the PokemonParam constructor `0x777f40` (`0x778118..0x778148`): a
 species whose personal entry has bit 6 of byte 0x21 clear (`0x764990`, `0x77f530`) gets bit 2 of
 the record's `+0x04` word set (`0x76eb40`). With that bit set, every accessor reads and writes a
-static stand-in whose species is 0x383 (`0x776c50`). A species above 898 reads personal entry 0,
+static stand-in whose species is 0x383 (`0x776c50`, filled by `0x776bc0`). The bit is the game's
+bad-egg flag: `0x77d610(pp, mode)` reads it through `0x767f40` (mode 0 an egg and not bad, mode 1
+bad, mode 2 either), and `0x77f600` names any species above 0x382 with text 0, "Egg" in the 1.3.2
+English `monsname.dat`. Nothing on the menu's path refuses such a card: the validator `0x010b5de0`
+reads the species only in its checksum and header copy (`0x010b59b8`), none of the branches of
+`0x01014a60` reads it, the party add `0x7840f0` takes species 0x383, Pokedex registration returns on
+the egg byte (`0x01434b24`), and the copy `0x766390` keeps the raw 0x148 bytes with the flag and the
+record's species. Under unicorn, species 19 and 493 come out flagged and species 25 and 1000 do not;
+the validator accepts the Rattata record. An emulated French Shield 1.3.2 given that record
+(species 19, absent) listed it as "Rattata", played the reveal through, showed "Vous avez reçu un
+Rattata !" and filed "Rattata" in its album, and put in the party an entry named "Egg" with an egg
+model, language tag ANG and every summary field blank. The game saved on receipt; the party slot
+kept species 19 with bit 2 of `+0x04` set. A species above 898
+ reads personal entry 0,
 which is marked present, and a form at or above the species' form count reads the base species, so
 neither is flagged. Never send a species absent from Sword and Shield; the PKHeX check in the
 desktop app refuses one.

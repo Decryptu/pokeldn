@@ -54,11 +54,12 @@ A raid message is a game message on 0x80 port 0: a u16 handler key, a kind byte,
 | bytes | field |
 |---|---|
 | 0 | handler key, u16 |
-| 2 | kind, step |
-| 4 | a counter, u16, per sender: a retail host's lobby runs 0x0105 to 0x010e, a guest's 1, 2, 3... |
+| 2 | kind, step: one u16 message id (0x012f the bootstrap, 0x0193 the battle begins) |
+| 4 | a counter, u16, per sender, incremented on every send by `0xa583fc`: a retail host's lobby runs 0x0105 to 0x010e, a guest's 1, 2, 3... |
 | 6 | compression, u32: 0 none, 2 LZ4 |
 | 10 | the payload's plain size, u32 |
-| 14 | four bytes no reader is known for (zero, or stale bytes in retail messages) |
+| 14 | a network-object id, u16, zero unless the sender's `0x14ede48` finds one |
+| 16 | two bytes of padding the constructor never writes (stale heap in retail messages) |
 | 18 | the payload |
 
 | key | kind | what |
@@ -71,6 +72,23 @@ A raid message is a game message on 0x80 port 0: a u16 handler key, a kind byte,
 | 0x0132 | 0x6e, 0x73 | a console loading the battle, then loaded |
 | 0x3480 | 0x93 | the battle begins |
 | 0x007b | 0x13 | the battle-start messages a host sends after 0x3480 |
+
+The header is message object `+0x40..+0x4f`. The receive path `0x18bec54` copies the id, the
+counter and the object id back into the object and compares none of them; it does not check the LZ4
+return value, and uses the plain size only as the output capacity.
+
+A battle-start frame on key 0x007b is a 12-byte port address (three u32), a u32 length and a
+payload whose first 32 bytes are a header struct copied verbatim by `0x1227714`: u32 type at 0x00,
+u64 at 0x08 and 0x10, u8 at 0x18 and 0x19, and padding at 0x04 and 0x1a..0x1f. Message 15 carries
+`05 05` at 0x18 then padding `07 26 5a 00 00 00`; message 16 (type 0x46, builder `0x2898350`)
+carries `ceaf29` in the padding its builder never writes. The readers `0xf5a2fc` (+0, +8, +0x10,
++0x18, which accepts 5 or the receiver's own index) and the type switch `0xe10088` (0x46 handler
+`0x2897afc`) read no padding. `0x14ab234` drops a frame unless one of the receiver's ports
+registered its address: message 15 is addressed (0x2713, 1, 2), messages 16 to 20 (0x2713, 3, 5),
+where 0x2713 is a runtime u32 at `+0x40` of an object whose writer is untraced.
+An emulated Scarlet 4.0.0 given messages 13, 15 and 16 with that padding zeroed acknowledged every
+battle-start message on its first send and began the battle with the host's Pokemon, as with the
+retail bytes.
 
 The channel table a raid host announces on 0x7C port 1 holds six keys, zlib-compressed: a Link
 Trade's four (`0x007b`, `0x0132`, `0x0232`, `0x0332`) and `0x3380`, `0x3480`. A retail guest
@@ -229,9 +247,10 @@ the host start; its Pokemon stayed in the battle.
 
 ## Unresolved
 
-- What the two words in the battle-start messages (`05050726` in message 15, `ceaf29` in message
-  16) are; both are sent as a retail host sent them.
-- The serializer header's last four bytes, and whether a nonzero counter or a zero one matters.
+- Whether a retail console takes the battle-start messages and the serializer header with zero
+  padding, as an emulated one does; pokeldn sends the retail bytes.
+- What writes the 0x2713 word of the battle-start port address, and whether it changes between
+  battles.
 - What separates bonus subjects 4 and 5; what the words at 0x038, 0x3b4, 0x3d8 and 0x3e4 of a
   retail RaidPoint hold.
 - Whether the six Paldea encounters with the species' own Tera types roll as the retail table says.

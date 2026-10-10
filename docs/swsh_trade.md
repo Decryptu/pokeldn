@@ -596,6 +596,14 @@ PK8 byte 0x52, where Brilliant Diamond keeps its illegal flag
 `bin/swsh_connect.py --fresh-pid` draw a new encryption constant and PID; on Sword this is a
 precaution.
 
+The 375 calls to the `memcmp` stub `0x018fe460` with a computed length compare no Pokemon with
+another: 374 compare strings or library data (sol2, protobuf, NEX, Lua, Pia, SDK graphics, a name
+dictionary, a battle data holder, FlatBuffers vtables), and `0x014514ac` compares a 0x158-byte slot
+at `obj+0x60` with zeros. None is reached from the trade receive path (`0x010d81d0` to
+`0x010f5cc0`) or the box path (`0x010ce180`, `0x00c8d900`) by a direct call; the trade code reaches
+only protobuf's descriptor registration (`0x006e26f0`), whose operands are names from rodata.
+Calls through vtables are not followed.
+
     --offer-slot 1 --offer-nickname POKELDN --offer-ivs 31,31,31,31,31,31
 
 | flag | effect |

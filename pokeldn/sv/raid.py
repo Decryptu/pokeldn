@@ -28,7 +28,7 @@ CONSOLE_LOADING = trade.build(KEY_LOAD, 0x6E)
 CONSOLE_LOADED = trade.build(KEY_LOAD, 0x73)
 BATTLE = trade.build(KEY_BATTLE, 0x93, 1)
 # The host's two loading transitions and its six battle-start messages, as a retail host sent them.
-# Two opaque words in the handoff (`05050726`, `ceaf29`) are untraced (docs/sv_raid.md, Unresolved).
+# The handoff's `07265a` and `ceaf29` and LOADED's `6f74` are unwritten padding (docs/sv_raid.md, The lobby).
 LOADED = bytes.fromhex("320173000400000000000800000000006f740100000001000000")
 BATTLE_READY = bytes.fromhex("803493010400000000000400000000000000ed030000")
 HANDOFF = tuple(bytes.fromhex(h) for h in (

@@ -64,7 +64,6 @@ fills before the script resumes). A call is `PUSH` per argument, right to left, 
   of the 31 call sites of `0x007d4270` compare against both `0x2C` and `0x2D`, and from PKHeX
   `RestrictVersion` (1 Sword, 2 Shield, 3 both); two retail Sword snapshots carry `0x2C` at MyStatus
   `+0xA4`. Sword's own `0x007d4270` and its communication id literal are unread.
-- [Mystery Gift](swsh_gift.md#what-the-menu-refuses): what a retail console shows for a kind-1
-  gift whose species is absent from the game, which the constructor flags corrupt.
-- [The offered record](swsh_trade.md#the-offered-record): 375 `memcmp` calls with a computed length
-  are untraced; none lies in the pml, trade or box code.
+- [Mystery Gift](swsh_gift.md#what-the-menu-refuses): whether a retail console takes a kind-1 gift
+  whose species is absent from the game as an emulated Shield does, as a bad egg named "Egg"; and
+  what such an egg does on hatching or in a trade.
