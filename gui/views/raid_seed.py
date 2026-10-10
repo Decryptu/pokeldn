@@ -210,6 +210,8 @@ class RaidSeedPicker:
                                species_id=pick(species) and int(species.value),
                                tera_type=pick(tera) and int(tera.value))
         wants = RewardFilter(self.app, reward_scope)
+        if raid_search.FAST:          # the compiled scan loads while the filters are chosen
+            threading.Thread(target=lambda: raid_search.raid_kernel().warm(), daemon=True).start()
         choose = lambda options, value: t.dropdown(options, value, on_select=lambda _e: wants.changed())
         if event is None:
             version = choose([("any", "Any game"), ("scarlet", "Scarlet"), ("violet", "Violet")],

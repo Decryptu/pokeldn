@@ -490,7 +490,11 @@ python scripts/pack_app.py
 
 The absolute output paths keep the images in `gui/firmware`. The packer requires all five images,
 the client from `scripts/build_client.py` and the Unicorn from `scripts/build_unicorn.py` (needs CMake); the frozen app check verifies all are included and
-that the bundled client carries `flet_drop`. The release workflow builds each target separately
+that the bundled client carries `flet_drop`. The packer also compiles the raid finder's numba scan
+into `jit_cache` (`scripts/build_jit_cache.py`, about 20 s, 150 KB) for the runner's OS and
+architecture, and the check searches ten million seeds with it and fails on a compile
+([docs/sv_raid.md](sv_raid.md#finding-a-seed)). numba adds about 140 MB to the unpacked app, most of
+it LLVM, and 48 MB to the download. The release workflow builds each target separately
 and supplies all five images to every desktop packer.
 
 The app version is `pokeldn.__version__`. It appears in Settings and in the macOS and Windows

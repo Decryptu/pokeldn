@@ -2,3 +2,5 @@
 flet[all]==1.0.2
 esptool==5.4.0
 pyinstaller==6.22.3
+# The raid finder's compiled seed scan (pokeldn.sv.raid_kernel); without it, Python scans.
+numba==0.68.0

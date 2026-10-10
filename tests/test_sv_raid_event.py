@@ -307,6 +307,20 @@ def test_every_delivery_agrees_with_its_encounters_text():
     assert "537 encounters" in run.stdout
 
 
+@pytest.mark.parametrize("event, filters", [
+    (TYRANITAR, {}), (TYRANITAR, {"one_per_species": True}), (SPOTLIGHT, {"shiny": False}),
+    (MIGHTY, {"rewards": {1606: 2, 1127: 10}, "objective": "hardest"})])
+def test_the_compiled_scan_finds_an_event_s_raids_as_python_does(monkeypatch, event, filters):
+    pytest.importorskip("numba")
+    scope = raid_search.contexts(event=event)
+    out = []
+    for fast in (True, False):
+        monkeypatch.setattr(raid_search, "FAST", fast)
+        out.append([(f.seed, f.context["version"], f.context["group"], f.score, f.rewards)
+                    for f in raid_search.search(0xFFFFFE00, 1200, scope, **filters)])
+    assert out[0] == out[1] and out[0]
+
+
 def test_the_rewards_listed_are_what_an_event_s_raids_can_give():
     """A fixed Ability Patch and three Tera shards of the boss's Fire type, and a lottery of Bottle
     Caps by twos beside an empty slot: any number of caps up to the ten draws of a five-star raid."""

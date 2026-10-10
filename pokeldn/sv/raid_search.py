@@ -3,11 +3,14 @@ app's raid finder (docs/sv_raid.md, Finding a seed)."""
 
 from dataclasses import dataclass
 import heapq
+import importlib.util
 from itertools import product
 
 from pokeldn.sv import raid_encounter as encounter, raid_event
 
-MAX_WORK = 1_000_000              # seeds times contexts in one search
+# With numba, pokeldn.sv.raid_kernel scans the seeds compiled, millions a second; without it, Python.
+FAST = importlib.util.find_spec("numba") is not None
+MAX_WORK = (1 << 32) if FAST else 1_000_000         # seeds times contexts in one search
 MAX_RESULTS = 100
 # (label, score, lowest first). Stats are HP Atk Def Spe SpA SpD.
 OBJECTIVES = {
@@ -219,15 +222,22 @@ def search(start, count, scope, objective="overall", *, stars=None, shiny=None, 
     best, by_species = [], {}
     total, done = count * len(scope), 0
     wanted = dict(rewards or {})
-    for context in scope:
+    filters = dict(stars=stars, shiny=shiny, species_id=species_id, tera_type=tera_type, nature=nature,
+                   gender=gender, ability=ability, ivs=ivs, rewards=rewards)
+    for index, context in enumerate(scope):
         draw = _drawer(context)
         tables = _reward_tables(context)
         able = {}                     # a row's id -> whether its raids can give what is wanted
-        for offset in range(count):
-            if cancelled and cancelled():
+        # The compiled scan names the few seeds this loop can keep; without numba it takes them all.
+        picked = raid_kernel().offsets(
+            start, count, context, objective, lowest_first, limit, one_per_species, cancelled=cancelled,
+            progress=progress and (lambda n, base=index * count: progress(base + n, total)),
+            **filters) if FAST else None
+        for offset in range(count) if picked is None else picked:
+            if picked is None and cancelled and cancelled():
                 return _ranked(best, by_species, one_per_species, limit)
-            done += 1
-            if progress and done % 5000 == 0:
+            done = index * count + offset + 1
+            if progress and picked is None and done % 5000 == 0:
                 progress(done, total)
             seed = (start + offset) & 0xFFFFFFFF
             row, found_stars = draw(seed)
@@ -266,6 +276,12 @@ def search(start, count, scope, objective="overall", *, stars=None, shiny=None, 
     if progress:
         progress(total, total)
     return _ranked(best, by_species, one_per_species, limit)
+
+
+def raid_kernel():
+    """-> pokeldn.sv.raid_kernel, imported at the first search: numba takes half a second to load."""
+    from pokeldn.sv import raid_kernel
+    return raid_kernel
 
 
 def _ranked(best, by_species, one_per_species, limit):

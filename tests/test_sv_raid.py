@@ -183,6 +183,74 @@ def test_a_search_for_rewards_finds_every_raid_that_gives_them():
     assert all(q in choices[i] for r in every for i, q in totals(r.rewards).items())
 
 
+def searched_both_ways(monkeypatch, *args, **kwargs):
+    """-> (the compiled scan's search, the plain Python one) as (seed, context, stars, score, rewards, PID)."""
+    pytest.importorskip("numba")
+    out = []
+    for fast in (True, False):
+        monkeypatch.setattr(raid_search, "FAST", fast)
+        out.append([(f.seed, f.context, f.stars, f.score, f.rewards, f.boss["pid"])
+                    for f in raid_search.search(*args, **kwargs)])
+    return out
+
+
+@pytest.mark.parametrize("filters", [
+    {}, {"objective": "hardest"}, {"shiny": False, "objective": "offense"}, {"nature": 3, "gender": 0},
+    {"ivs": ((20, 31), (0, 15), (0, 31), (0, 31), (10, 31), (0, 31))}, {"tera_type": 4, "stars": 5},
+    {"rewards": {50: 2, 645: 1}}, {"one_per_species": True, "limit": 100},
+    {"one_per_species": True, "ability": 22, "objective": "special"}])
+@pytest.mark.parametrize("scope, start", [
+    (raid_search.contexts("violet", "paldea", "any", "standard"), 0x12345678),
+    (raid_search.contexts("any", "kitakami", "any", "black"), 0xFFFFFF00),     # past FFFFFFFF to 0
+    (raid_search.contexts("scarlet", "blueberry", "5star", "standard"), 7)])
+def test_the_compiled_scan_finds_what_python_finds(monkeypatch, scope, start, filters):
+    """pokeldn.sv.raid_kernel only picks the seeds the search keeps; the raids, their order and the
+    ties between seeds and contexts are the Python search's."""
+    filters = {"objective": "overall", "limit": 12, **filters}
+    compiled, python = searched_both_ways(monkeypatch, start, 3600 // len(scope), scope,
+                                          filters.pop("objective"), **filters)
+    assert compiled == python
+    assert compiled or {"ability", "nature", "stars"} & set(filters)     # a black crystal has no 5 stars
+
+
+def test_a_stopped_compiled_search_keeps_what_it_found(monkeypatch):
+    pytest.importorskip("numba")
+    from pokeldn.sv import raid_kernel
+    monkeypatch.setattr(raid_kernel, "CHUNK", 1000)
+    seen = []
+    found = raid_search.search(0, 10_000, raid_search.contexts("violet", "paldea", "6star", "standard"),
+                               progress=lambda done, total: seen.append(done), cancelled=lambda: len(seen) >= 3)
+    assert seen[:3] == [1000, 2000, 3000] and len(found) == 12 and max(f.seed for f in found) < 3000
+
+
+def test_without_numba_the_search_scans_in_python():
+    import subprocess
+    code = "; ".join((
+        "import sys", "sys.modules['numba'] = None",
+        "from pokeldn.sv import raid_kernel, raid_search",
+        "assert not raid_search.FAST and not raid_kernel.available()",
+        "assert raid_search.MAX_WORK == 1_000_000",
+        "found = raid_search.search(0, 2000, raid_search.contexts('violet', 'paldea', '6star', 'standard'))",
+        "assert len(found) == 12"))
+    subprocess.run([sys.executable, "-c", code], cwd=ROOT, check=True, timeout=120)
+
+
+def test_the_compiled_scan_s_cache_follows_its_bytecode(monkeypatch):
+    """The stamp numba keys the shipped cache on: the kernel module's bytecode, not its path."""
+    pytest.importorskip("numba")
+    from pokeldn.sv import raid_kernel
+    stamp = raid_kernel.code_stamp()
+    assert stamp == raid_kernel.code_stamp() and raid_kernel.CacheLocator.stamp in (None, stamp)
+
+    def digest(source, path):
+        h = hashlib.sha256()
+        raid_kernel._hash_code(compile(source, path, "exec"), h)
+        return h.hexdigest()
+    one = "def f():" + chr(10) + "    return {1, 2}" + chr(10)
+    other = one.replace("2", "3")
+    assert digest(one, "/one/place.py") == digest(one, "/another/place.py") != digest(other, "/one/place.py")
+
+
 # The scripted console. Addresses and ids as tests/test_sv_departure.py's.
 HOST_IP, JOIN_IP, BROADCAST = "169.254.10.1", "169.254.10.2", "169.254.10.255"
 HOST_MAC, JOIN_MAC = bytes.fromhex("02aabbccdd01"), bytes.fromhex("02aabbccdd02")

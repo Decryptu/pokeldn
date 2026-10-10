@@ -343,11 +343,10 @@ agree with its `Encounters.txt`, Gimmighoul's malformed round aside.
 ## Finding a seed
 
 The app's raid seed field shows the boss and rewards the seed gives in the tool's context, and Find
-a raid searches up to a million seed and context pairs (`pokeldn.sv.raid_search`) for a species,
-star level, Tera type, nature, gender, shininess and IV ranges, ranked by a score of the boss's
-stats: HP times the sum of its defenses, either defense alone, its better attacking stat, or its
-total. One result per species is kept unless a species is chosen. A search covers about 40 000
-seeds a second.
+a raid searches seeds from a first one in every context the filters leave (`pokeldn.sv.raid_search`)
+for a species, star level, Tera type, nature, gender, shininess and IV ranges, ranked by a score of
+the boss's stats: HP times the sum of its defenses, either defense alone, its better attacking
+stat, or its total. One result per species is kept unless a species is chosen.
 
 Its Rewards section, folded until opened, wants rewards: rows of an item and the least quantity a
 raid must give of it, the raid's quantities of an item summed and two rows of one item added up.
@@ -360,6 +359,27 @@ nothing else), each Tera type the boss can take naming its shards and the specie
 Every Paldea, Kitakami and Blueberry context at once lists 343 items in about a second, so the list
 is made off the page. The search skips an encounter that cannot give what is wanted, then draws a
 seed's rewards before its boss, which keeps its speed.
+
+With numba installed, as in the desktop app, `pokeldn.sv.raid_kernel` scans the seeds compiled on
+every core: a seed's encounter, its boss up to the nature, the score, every filter and the rewards,
+the work of `select`, `boss_fields`, `rewards` and `tera_type` on arrays of the context's tables. It
+keeps a context's best seeds (or each species' best), and `search` makes their raids with the plain
+Python code, so the results, their order and the ties between seeds and contexts are the same with
+or without it (`tests/test_sv_raid.py` compares both). On a Ryzen 9 5900X ten million seeds of one
+context take 0.16 s, 0.08 s for shiny ones, and ten million in each of the 42 contexts 4.5 s; a
+search covers up to 4 294 967 296 seed and context pairs. Without numba, Python scans every seed,
+about 22 000 a second, up to a million pairs.
+
+numba takes about 20 s to compile the scan, once per machine and version, cached on disk. The packed
+app ships a cache `scripts/build_jit_cache.py` builds on the release runner, copied at the first
+search to the user's cache folder (`%LOCALAPPDATA%\pokeldn\numba`, `~/Library/Caches/pokeldn/numba`
+or `~/.cache/pokeldn/numba`), and loads it in 0.2 s. It loads on any user's CPU as it holds code
+for the architecture's generic CPU (`NUMBA_CPU_NAME=generic`, measured as fast for this integer
+work), numba then keying its cache on the target triple alone. The kernel's own cache locator keeps
+it in one folder whatever the install path and fresh by a hash of the kernel module's bytecode,
+the helpers numba inlines included: numba's own frozen-app locator would key it on the executable,
+which a changed kernel leaves the same. A cache that misses (another numba, another argument type)
+only costs the compile; `scripts/check_app.py` fails a release whose cache misses.
 
 ## Joining
 
