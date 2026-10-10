@@ -742,7 +742,9 @@ async def main_async(args):
                                 args.respond_with == "both" and st["responses"] % 2)
                             cid = our_constant if mine else them["constant_id"]
                             vid = (st["our_variable_id"] if mine else them["variable_id"])
-                            reply = station4.build_connection_response(args.respond_result, cid, vid)
+                            reply = station4.build_connection_response(
+                                args.respond_result, cid, vid,
+                                min_size=station4.ACCEPTED_RESPONSE_SIZE)
                             pkt = wrap(keys, our_mac, our_constant, next_nonce(), reply,
                                        station4.PROTOCOL, args.connect_station_first)
                             sock.sendto(pkt, (addr[0], PIA_PORT))

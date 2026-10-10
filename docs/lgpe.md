@@ -52,15 +52,20 @@ ten minutes of counted play time), then the fatal error screen.
 
 ## Unresolved
 
-- What left a retail console silent on the host's `0xa1` on clone type 4 after a host answered its
-  withdrawn vote with A 2. In that capture the console announced its commit clone 5.0 s after the
-  A 2; the host answered with `82, 91, 91, 84, 81, a1, a1` in one datagram, and the console reacted
-  to the `0x82` (it re-announced the clone on clone type 1) but answered neither the `0x81` on clone
-  type 2 nor the `0xa1` on clone type 4. Its radio acknowledged every one of the 6923 unicast frames
-  of the session. The per-sender count filter (`0x51c1e0`) passes every host message (counts 14 to
-  71, strictly rising). In the game's code the only silent outcome left for that `0xa1` is
-  `0x522a60` returning 2 (the sender's bit in `[[x0+0x30]+0xc0]`), and no mask-setting event
-  (state `0x22` or `0x42`, a join in state `0x22` or `0x31`) appears on the wire. An emulated Let's
-  Go 1.0.2 given the same withdrawal, the same A 2 and the same burst announced its commit clone 3.4 s
-  after the A 2, answered the host's `0xa1` with `0xa2` and completed the trade; breakpoints on the four `+0xc0` writers, the clear
-  site `0x51c3b4` and the silent return `0x522a9c` never fired. What differs on retail is unknown.
+- What left a retail console silent on both of the host's `0xa1` after a host answered its withdrawn
+  vote with A 2. The host's publishes: A 2 with trailing word 1, then A 2 with trailing word 2 one
+  second later; the console republished `0 2 3` under trailing word 2 and announced its commit clone
+  5.0 s after the first A 2. The host answered the announcement with `82, 91, 91, 84, 81, a1, a1`,
+  seven datagrams within 1 ms, all acknowledged by the console's radio. The console re-announced the
+  clone on clone type 1 under a new clock, which only the `0x81` on clone type 2 does (`0x51ca48`
+  -> `0x520c30`, after the `0x91` on clone type 2 unlinked the announcement at `0x520d30`; the `0x82`
+  on clone type 1 reaches only `0x5223c0` and sends nothing). It answered neither `0xa1`. The clone
+  type 1 `0xa1` handler (`0x51c714`, `0x522350`) sends on every outcome and `0x51e3d0` spends a
+  message count before it can fail; the console spent none. Every gate before the handlers (the
+  receive loop's station mask and frame-counter filter `0x51ae20..0x51ae84`, the destination check
+  `0x51ce80`, the count filter `0x51c1e0`, the `+0x3c` mask `0x51c6b0`) passed for the `0x81` with
+  the same sender, frame counter and mask. `0x522a60` returning 2 would silence the clone type 4
+  `0xa1` alone. An emulated Let's Go 1.0.2 given the withdrawal, A 2 with trailing word 1 only and
+  the same burst answered both `0xa1` and completed the trade; it never saw the trailing word 2
+  publish. What differs on retail is unknown; the retail console's update version is not on the
+  wire.

@@ -355,13 +355,15 @@ The handshake, [3] cleared:
          variable id and the player's name in plain ASCII, repeated until acknowledged
 
 The u32 in an ack is the acked message's trailing counter. Send the type-5 ack of the console's
-request: a Shield 1.3.2 under Ryujinx ignores the response without one and re-requests every 10 s
-(`--ack-request` on the bridge driver sends it).
+request to stop its retransmission (`--ack-request` on the bridge driver sends it). The response
+handler reads no ack state: the type-5 handler (`0x017c6034`) only clears the id from the pending
+table (`0x017d5770`), and the console's connection job (`0x017afa70`) finishes on either the ack or
+the station reaching state 5. A retail Sword read 12 of 12 responses sent without the ack.
 
 ### What a connection response must satisfy to be read
 
-Both types reach handler `0x017c6e70` (`0x017c60c0` sets a flag for a request, the type-2 dispatch
-entry clears it). A response whose result is not 2 is checked field by field, each failure a silent
+Types 2 and 7 reach handler `0x017c6e70` (entries `0x017c5fb4` and `0x017c60c0`, table
+`0x02081804`; the type-7 entry passes w2 = 1). A response whose result is not 2 is checked field by field, each failure a silent
 drop:
 
 | the handler reads | it requires | a failure gives |
@@ -371,17 +373,25 @@ drop:
 | `[0xD]` a big-endian u32 | the receiver's own variable id | drop, `0x017c6f68` |
 | the sender's station location | resolves to a station it knows | drop, `0x017c6f04` |
 | `[0x37]` one byte, result 0 only | under 5 | drop, `0x017c6ff0` |
+| station state at +0x48 | 4, checked after the ack is sent (`0x017c71a4`) | return; 5 on acceptance (`0x017c7990`) |
+
+The console acks a response at `0x017c7134`, after the `[0x37]` check and before the state check: a
+response it never acks failed the ids, the location or `[0x37]`. A non-zero result, or `[0x37]` of 5
+or more, stores its result (2 for the gate) at byte +0x79 of the object at station +0xa0.
 
 A 17-byte response (`RESPONSE_SIZE`, the short-form allocation `mov w3, #0x11` at `0x017c6c30`)
 leaves `[0x37]` 38 bytes past its end, in stale buffer bytes, so whether it is read depends on
-memory the sender does not control: an emulated Shield accepted 3 of 22 byte-identical responses
-and, after a restart, 0 of 49; a retail Sword accepted those it was sent. The console's own
+memory the sender does not control: an emulated Shield 1.3.2 under ldn_mitm accepted 3 of 52, with
+or without the ack of its request; a retail Sword accepted 12 of 12. An emulated Shield accepted 23
+of 23 responses padded to 56 bytes with 1 at `[0x37]` and 0 of 4 with 5 there. The console's own
 accepted response is 840 bytes with 1 at `[0x37]`;
-`station4.build_connection_response(..., min_size=ACCEPTED_RESPONSE_SIZE)` pads to 0x38 and writes 1.
+`station4.build_connection_response(..., min_size=ACCEPTED_RESPONSE_SIZE)` pads to 0x38 and writes 1,
+and `bin/swsh_connect.py --respond` sends that form.
 
 After the response: the console's connection response is acceptance; its request retransmitted every
 500 ms with the same trailing counter is rejection (a response carrying the joiner's own ids drew
-20 retransmits, then silence); silence alone is neither, and it re-requests about 10 s later.
+20 retransmits, then silence); silence alone is neither. A request answered with the console's ids and never acked drew no
+retransmission in 44 s.
 
 The nat-flags byte at [1] of the console's request varies between connections and follows no byte
 the joiner controls (both readings of each tried over 26 connections). What writes it is unknown; its
@@ -731,8 +741,10 @@ limit measured).
 
 ## Unresolved
 
-- Whether a retail Sword reads a version-4 connection response sent without the type-5 ack of its
-  request. One did; an emulated Shield 1.3.2 did not.
+- What a retail Sword reads at `[0x37]` of a 17-byte connection response, 38 bytes past the message
+  in bytes the sender does not write: it passed the gate on 12 of 12, an emulated Shield 1.3.2 under
+  ldn_mitm on 3 of 52.
+- What writes station state 4 at +0x48, and what reads the +0x79 status after a refusal.
 
 ## Credits
 

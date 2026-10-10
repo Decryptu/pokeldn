@@ -90,6 +90,14 @@ An emulated Scarlet 4.0.0 given messages 13, 15 and 16 with that padding zeroed 
 battle-start message on its first send and began the battle with the host's Pokemon, as with the
 retail bytes.
 
+In 4.0.0 no decision reads the padding. The receive path loads the serializer header's last two
+bytes (`0x18bec98`) and stores them at `+0x4e` (`0x18bece4`) with no comparison; of the 49 message
+classes, only the serializers `0x290b150` and `0x14c7904` load `+0x4e`, to write the header out. The
+battle-start readers `0xe0fd68`, `0xe106a4`, `0xf5a2fc`, `0xf5a810` and `0xf5bc10` read the 32-byte
+header at +0x00, +0x08, +0x10, +0x18 and +0x19; `0xf5a454` and `0xf5ae40` copy all 32 bytes into a
+frame `0xf5bb4c` re-sends, and compare none. The transport copies (`0x14ab150`, `0x14ab234`,
+`0x16a319c`) compare only the 12-byte address.
+
 The channel table a raid host announces on 0x7C port 1 holds six keys, zlib-compressed: a Link
 Trade's four (`0x007b`, `0x0132`, `0x0232`, `0x0332`) and `0x3380`, `0x3480`. A retail guest
 announces them as two messages: the four, then the raid's two 0.79 s later. Port 2 carries a type 6
@@ -247,10 +255,14 @@ the host start; its Pokemon stayed in the battle.
 
 ## Unresolved
 
-- Whether a retail console takes the battle-start messages and the serializer header with zero
-  padding, as an emulated one does; pokeldn sends the retail bytes.
-- What writes the 0x2713 word of the battle-start port address, and whether it changes between
-  battles.
+- Which Scarlet version a retail console runs. The addresses here are 4.0.0's; a retail console
+  advertises LDN application version 21, which `0x6b083c` copies from a runtime setting.
+- Whether a listener of the GlueCode dispatcher `0x18beef4` reads `+0x4c` as a word, and what
+  reads the battle-start frames the queues of `0xe106a4` and `0xf5bc10` hold.
+- Whether the console keeps the battle-start frames: Pia acknowledges them before `0x14ab234`
+  filters by address, and the battle began in every raid.
+- What writes the 0x2713 word of the battle-start port address. Every raid hosted with it began
+  its battle, on retail and emulated consoles.
 - What separates bonus subjects 4 and 5; what the words at 0x038, 0x3b4, 0x3d8 and 0x3e4 of a
   retail RaidPoint hold.
 - Whether the six Paldea encounters with the species' own Tera types roll as the retail table says.

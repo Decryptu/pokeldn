@@ -1291,6 +1291,18 @@ station (`0x735b90`). The type-4 handler `0x738280` sets the job's done flag `[j
 With the type-4 answer the first type 3 comes within 0.15 s of the player confirming the quit
 (BOOT-marked, two departures) and the field is back on screen 3.70 s after the confirmation.
 
+After a quit the trade scene holds "Communicating. Please stand by..." (`msg_ui_box_p2ptrd_09`) for
+at least 3.0 s. The player's quit (`0x110bd50`, from the yes/no at `0x110b970`), the partner-gone
+message (`0x110c9bc`) and a session error (`0x110b504`) all enter mode 9 (`0x110b72c`, steps
+`[scene+0xb4]`, table `0x3979c98`). Step 0 runs `0x26dcc74`, which saves (`0x10457e4`, request kind
+3) only when `[[[0x4279560]+0x2b8]+0x78]` is set. Step 1 starts a stopwatch on
+`nn::os::GetSystemTick` at `[scene+0x278]`, starts the leave (`0x26be890`) and cancels the trade
+job (`0x26d9e90`). Step 2 waits until 3.0 s have passed (`fmov d1,#3.0` at `0x110b7d8`), the leave
+sequence is done (`0x26bdc94`) and the job is gone (`0x26d9cf0`), then closes the message; step 3
+returns true once it has closed. A leave answered at once (0.05 s) and one answered by no host
+(2.0 s) both end inside the 3.0 s, so the host's answer does not move the field. One retail departure
+with the type-4 answer measured 3.77 s from the console's type 3 to the field.
+
 No timer inside Pia precedes the first type 3 ([pia.md](pia.md), Leaving a session). The only
 caller of `Session::LeaveAsync` is the game's leave request, update `0x2ca0a10` (vtable `0x4198ef8`,
 state `[req+0x88]`, jump table `0x3985448`): its first update calls `LeaveAsync` (`0x2ca0ac0`)
@@ -1321,4 +1333,7 @@ console leaves.
 
 ## Unresolved
 
-- What the console does in the 3.6 s between leaving the network and showing the field.
+- How the 0.8 s after the 3.0 s floor splits between the message close, the scene's teardown and
+  the field's fade-in, and whether a console that hosts the network (a migration leave, 8 s
+  deadline) holds the message longer.
+- What sets the save flag `[[[0x4279560]+0x2b8]+0x78]` read before the leave.
