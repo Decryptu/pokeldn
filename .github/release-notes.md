@@ -1,22 +1,21 @@
-# pokeldn 0.19.0
+# pokeldn 0.20.0
 
 This desktop app trades with seven Pokemon game families on a Switch or Switch 2
 through an ESP32 radio connected by USB. Nothing is installed on the console.
 
 ## What is new
 
-- GTS: list a banked Pokemon against a wanted species on public relays. Another app trades for it
-  while either app is open; the two apps never need to be open together.
-- Bank: an Edit button changes a banked Pokemon's nickname, level (upward only), moves and held
-  item, and refuses an edit that would make it not legal. Refusal reasons are shorter and list each
-  problem once. A FireRed or LeafGreen Pokemon is now refused for Let's Go.
-- Controller board: a classic ESP32 now pairs with a Switch Lite as a Bluetooth Pro Controller and
-  its presses reach the console.
-- Windows: a copy installed in a folder the user cannot write, such as Program Files, now updates
-  itself after asking for administrator permission, and the old unpacked copy is removed.
+- Tera Raid (Host): a Raid event card hosts the event raids of past Poke Portal News distributions,
+  seven-star Unrivaled raids included, from Project Pokemon's EventsGallery, which the app downloads
+  and updates. A boss a save may catch only once can be offered as a normal catch again.
+- Find a raid: a Rewards section finds raids that give at least the items you want, among those the
+  searched raids can give. The search covers ten million seeds by default, can start at a random
+  seed, search every seed of one raid, or stop at the first match.
+- Raids now run on their own time limits: six-star raids 450 s and seven-star event raids up to
+  900 s, where the console used its 300 s default before.
 
-The radio firmware is unchanged at 1.6.1; wireless boards need no update. The controller firmware is
-1.3.0; the Board page offers the update.
+The radio firmware is unchanged at 1.6.1 and the controller firmware at 1.3.0; no board needs an
+update.
 
 pokeldn is an unofficial fan project, not affiliated with Nintendo or The Pokemon Company. It is not
 meant for commercial or promotional use; see the License section of the README.
