@@ -16,7 +16,7 @@ from pokeldn.app.catalog import GAMES
 from pokeldn.app.command import build
 from pokeldn.app.settings import Settings
 from pokeldn.ldn import channel_table, game_channel, pia6, pia_connect, reliable5
-from pokeldn.sv import lz4, port2, raid, raid_encounter, raid_search, streams
+from pokeldn.sv import lz4, port2, raid, raid_encounter, raid_event, raid_search, streams
 
 ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 sys.path.insert(0, os.path.join(ROOT, "tools", "switch"))
@@ -296,7 +296,7 @@ class RaidGuestConsole:
                                                 flags=flags, src_var=CONSOLE_VAR))
 
 
-def run_raid_host(monkeypatch, tmp_path, rewards=()):
+def run_raid_host(monkeypatch, tmp_path, rewards=(), extra=()):
     clock = Clock()
     console = RaidGuestConsole(clock)
 
@@ -343,7 +343,7 @@ def run_raid_host(monkeypatch, tmp_path, rewards=()):
     args = build(tool, {"--raid-pokemon": {"file": str(ours)}, "--raid-seed": "000F34C3",
                         "--raid-reward": [{"item_id": str(i), "quantity": str(q)} for i, q in rewards]},
                  {}, Settings())
-    assert sv_host.main(args + ["--keys", str(tmp_path / "prod.keys"), "--seconds", "60"]) == 0
+    assert sv_host.main(args + ["--keys", str(tmp_path / "prod.keys"), "--seconds", "60", *extra]) == 0
     return console, clock
 
 
@@ -389,6 +389,51 @@ def test_a_console_fights_the_raid_we_host(monkeypatch, tmp_path):
     assert len(handed) == 1 and handed[0]["t"] < status[0]["t"] < start[0]["t"]
     assert start[0]["flags"] == 0x11 and clock.now - start[0]["t"] < 0.1
 
+
+@pytest.mark.parametrize("capture, extra, word, record, summary", [
+    (1, [], 1, 2022120904, "caught as any raid boss"),
+    (2, [], 2, 2022120904, "caught once per save"),
+    (2, ["--raid-catch-normal"], 1, 2022120999,
+     "caught once per save, served as a normal catch of record 2022120999"),
+    (0, ["--raid-catch-normal"], 0, 2022120904, "cannot be caught")])
+def test_a_console_fights_an_event_raid_we_host(monkeypatch, tmp_path, capsys, capture, extra, word, record,
+                                                summary):
+    """`--raid-event`: the seed draws from the delivery's encounters at the tool's progress, and
+    the bootstrap carries that boss and a RaidPoint with the event crystal, the record's capture
+    rate and its rewards. Under `--raid-catch-normal` a catch-once record is a normal catch, and the
+    lobby shows a record number no save caught."""
+    salamence = dict(species=373, form=0, ability=1, flawless_ivs=3, level=45, capture_level=45,
+                     moves=[428, 337, 242, 814], tera=1, stars=4, rate=2, identifier=2022120904,
+                     fixed_rewards="1", lottery_rewards="1", boss_desc=[1200] + [0] * 36, evs=[0] * 6,
+                     rom=0, group=1, capture_rate=capture, ivs=None, gender=None, nature=None, shiny=0,
+                     scale_type=0, scale=0, held_item=0)
+    event = raid_event.Event(20221209, "", (salamence,),
+                             {"1": [dict(category=0, item=1126, amount=2, probability=100, subject=0)]},
+                             {"1": []}, (5,) + (0,) * 9)
+    monkeypatch.setattr(sv_host.raid_event, "load", lambda folder: event)
+    console, _ = run_raid_host(monkeypatch, tmp_path, extra=["--raid-event", "delivery", *extra])
+    tera = raid_encounter.tera_type(0x000F34C3, salamence)
+    assert f"Tera type {tera}, {summary}\n" in capsys.readouterr().out
+    first = {}
+    for row in console.seen:
+        if (row["protocol"], row["port"]) == (0x80, 0) and "data" in row:
+            first.setdefault(row["seq"], row)
+    assert sorted(first) == list(range(1, 21))
+    plain = raid.payload_of(first[11]["data"] + first[12]["data"])
+    boss = gen9.read(gen9.load(plain[4 * gen9.SIZE_PARTY:5 * gen9.SIZE_PARTY]))
+    assert (boss["species"], boss["level"]) == (373, 45)
+    point = plain[raid.RAIDPOINT:]
+    assert struct.unpack_from("<4I", point, 0x20) == (4, 2, word, 45)
+    assert struct.unpack_from("<4I", point, raid.POINT_REWARDS) == (1126, 2, 0, 0)
+    descriptor = struct.unpack_from("<11I", first[1]["data"], 18)
+    assert (descriptor[1], descriptor[4], descriptor[7]) == (373, 4, record)
+    # The delivery's record stays.
+    assert (salamence["capture_rate"], salamence["identifier"]) == (capture, 2022120904)
+
+
+def test_a_normal_catch_needs_an_event_raid(monkeypatch, tmp_path):
+    with pytest.raises(SystemExit):
+        run_raid_host(monkeypatch, tmp_path, extra=["--raid-catch-normal"])
 
 
 HOST_VAR = sv_host.PIA_HOST_VAR

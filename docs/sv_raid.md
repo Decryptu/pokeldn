@@ -170,7 +170,7 @@ The RaidPoint, offsets from its start:
 |---|---|---|
 | 0x000 | 24 | the point's name, ASCII, `RaidPoint_` and a suffix (`RaidPoint_POKELDN_0` is accepted) |
 | 0x018 | u32 | 0x40 (one retail black point held `0x458F9952`; 0x40 is accepted) |
-| 0x020 | 4 x u32 | stars, the crystal (0 standard, 1 black), the record's `captureRate` (1), its `captureLv` |
+| 0x020 | 4 x u32 | stars, the crystal (0 standard, 1 black; [2 and 3 for an event](#event-raids)), the record's `captureRate` (1; an event's 0 or 2), its `captureLv` |
 | 0x04c | 37 x u32 | the boss's action profile: HP coefficient, the shield's nine values, six extra actions (action, timing, value, move), the double action's three values |
 | 0x038 | u32 | nonzero in retail points, zero from `raid_point` |
 | 0x0e4 | 45 x 16 | reward rows: item, quantity, 0, subject |
@@ -228,6 +228,115 @@ values are zero. The bootstrap's boss record and the RaidPoint summary carry the
 the effort values, the RaidPoint's `+0x2c` the capture level: a black boss built from `09F3E337`
 (Scarlet, Paldea) equals a French retail Scarlet's but for the nickname and language.
 
+## Event raids
+
+A Poke Portal News delivery holds five files: `raid_enemy_array`, `fixed_reward_item_array`,
+`lottery_reward_item_array` and `raid_priority_array`, FlatBuffers with the base tables' layout, and
+`event_raid_identifier`, a u32 that repeats the priority table's `VersionNo` (`20221202`). From 1.3.0 a
+delivery carries each again under the patch it is for (`_1_3_0`, `_2_0_0`, `_3_0_0`), the older copy
+dummied out; the newest is read. A `raid_enemy_array` record is a standard one's, with
+`RomVer` (0 both versions, 1 Scarlet, 2 Violet), `DeliveryGroupID`, `Difficulty` as the stars (7 a
+seven-star raid), `CaptureRate` (0 never caught, 1, 2 caught once) and its own reward table names, and
+its `BossPokePara` fixes what a standard boss draws:
+
+| field | an event record |
+|---|---|
+| `Sex` | 0 drawn; 1 male, 2 female, and the gender draw is skipped |
+| `Seikaku` | 0 drawn; the nature plus 1, no draw |
+| `TalentType` | 1: `TalentVnum` flawless IVs; 2: `TalentValue`'s six IVs, no draws |
+| `RareType` | 0 drawn; 1 never: a PID shiny against the fake trainer has bit 28 flipped; 2 always: its high half is rewritten to a shiny xor of 0 |
+| `ScaleType` | 0 two draws; 1 to 5 one draw in 0-15, 16-47, 48-207, 208-239, 240-255; 6 `ScaleValue` |
+| `Item`, `EffortValue` | the boss's held item and battle EVs (a seven-star Pikachu holds a Light Ball) |
+
+A den belongs to a delivery group, 1 to 10; `raid_priority_array` counts the dens of each. xoroshiro
+from the seed draws the hundred-sided roll a standard crystal's stars take and drops it, then a value
+under the total rate of the group's records that are the console's version and of a star level the
+story stage allows, and takes the record whose span holds it, in table order [PKHeX
+`EncounterDist9.GetIsPossibleSlot`]:
+
+| progress | stage | stars drawn |
+|---|---|---|
+| beginning, Tera Raids | 0 | 1, 2 |
+| 3-star | 1 | 1 to 3 |
+| 4-star | 2 | 1 to 4 |
+| 5-star, 6-star | 3 | 3 to 7 |
+
+A record of rate 0 is never drawn. The boss and its Tera type are drawn as a standard raid's with
+the record's fixed fields; the rewards are the record's fixed table, then the lottery's draws from
+the delivery's own tables, a seven-star raid's count as a six-star one's. A lottery slot with a rate
+and no item weighs in the total and gives nothing, as does a row of quantity 0. The lottery tables of
+Gimmighoul's first 2023 round in Scarlet are malformed so, every slot empty or of quantity 0, and its
+raids give their fixed rows only.
+
+`pokeldn.sv.raid_event` reads a delivery folder (an [EventsGallery](https://github.com/projectpokemon/EventsGallery)
+event, or its `Files`) and generates the `Raid` the host stages:
+
+    sudo ./.venv/bin/python bin/sv_host.py ... --raid-pokemon FILE --raid-seed 52E6B438 \
+        --raid-event "EventsGallery/Released/Gen 9/SV/Raid Events/002 Charizard the Unrivaled" \
+        --raid-version scarlet --raid-progress 6star [--raid-event-group 1] [--raid-catch-normal]
+
+The RaidPoint carries the record's capture rate and, as the crystal, the save's raid content: 2 an
+event, 3 a seven-star event (Tera-Finder `RaidContent`); no retail console has fought one of ours.
+
+A den's choices come from `raid_event.dens`: a delivery group with dens in the priority table and
+a record in that version; Walking Wake's spotlight offers Scarlet its group 1 and Violet its group 2.
+
+A capture rate of 2 is a catch once per save: every seven-star record has it, and so do the five-star
+Walking Wake and Iron Leaves of each spotlight round, Dialga and Palkia's spotlight and the shiny
+Rayquaza. The save keeps the record numbers caught, eight bytes each, the number and a captured flag
+(block `0x8B14392F`; from 2.0.1 the defeated flags are `0xA4BA4848`'s, PKHeX `RaidSevenStar9`), and a
+rerun repeats its number
+(Walking Wake is 2023022801 in all seven rounds), so a catch in one round closes the others. The
+shiny Treasures of Ruin spotlights' records have 0: never caught. The host's summary names the rule
+(`caught once per save`, `cannot be caught`).
+
+A console checks that list by the record number of the lobby descriptor (0x2c). A retail Violet
+that had caught Mighty Mewtwo (2023090101), shown our descriptor of it, said "you won't be able to
+catch the Tera Pokemon" in the lobby, with the RaidPoint's capture rate written 1 or 2 alike, as no
+RaidPoint is sent before the battle. Against Magikarp the Unrivaled (2026071701), which its save had
+caught, the same console (2026-10-10):
+
+| descriptor's record number | RaidPoint's capture rate | the lobby | after the win |
+|---|---|---|---|
+| 2026071701, the record's | 2 | won't be able to catch | no catch |
+| 2026071701 | 1 | won't be able to catch | no catch |
+| 2026071799, a stand-in | 1 | no warning | caught |
+| 2026071799, again | 1 | no warning | caught |
+
+Changing the record number is what lets a save catch the boss again, and it is required. The console
+decides from its own list by the record number the lobby shows, and a number it lists as caught
+blocks the catch after the win, whatever capture rate the RaidPoint carries (the second row): the
+capture rate alone does not do it. A catch under capture rate 1 does not add the stand-in to the list
+(the fourth row). So `--raid-catch-normal` serves a catch-once record as a normal catch in both: the
+RaidPoint's capture rate 1, and in the descriptor a stand-in record number, the record's date with
+the suffix 99 (`raid_event.stand_in`: 2026071799), which no delivery has (every one's suffix is at
+most 14) and so no save has caught. The summary says `served as a normal catch of record 2026071799`.
+A never-caught record stays 0.
+
+The stand-in is in the descriptor alone: the boss record and the RaidPoint but its capture rate are
+the event's, byte for byte, and no PK9 field holds a record number. PKHeX.Core 26.8.26's raid
+encounters (`EncounterDist9`, `EncounterMight9`) have none either, only their delivery group, so a
+catch's legality cannot depend on it. Every catch-once record of the gallery but Kingambit's second
+round (newer than that release), in each version it spawns in, at three seeds each and Magikarp at
+`000FD5D7`, 331 raids: the boss record we send, given a test trainer as PKHeX's own conversion of the
+encounter gives it, equals PKHeX's catch of that raid from that seed and is legal. A seven-star catch
+is legal only with the Mightiest Mark (`RibbonMarkMightiest`), which the console gives it: the
+Magikarp the console caught under 2026071799 has it.
+
+A fixed reward row's subject 3 (`Only Once` in `Encounters.txt`: a seven-star raid's TM and Ability
+Patch) is a separate rule, and `raid_point` gives every row to every player anyway.
+An event boss can be any species, so the personal entries, move PP and names past the raid bosses'
+come from `pokeldn/sv/data/species.json` (`scripts/gen_sv_species_data.py`, the PKHeX revision of
+`raid_base.json`).
+
+Against EventsGallery's 153 delivery folders (2026-09-06): every table decodes as its JSON; the
+distribution and seven-star encounters pkNX's ripper makes of them equal PKHeX.Core 26.8.26's 174 and
+55, all of them (Kingambit's second round is newer than that release, `000 Base Data` the game's own
+placeholder); 20 080 bosses, forty seeds for every event, version, stage and group, equal PKHeX's
+`GenerateSeed32` field for field, PKHeX allowing each record at its stage; and
+`scripts/check_sv_raid_events.py` finds every delivery's 537 encounters, and raids drawn from them,
+agree with its `Encounters.txt`, Gimmighoul's malformed round aside.
+
 ## Finding a seed
 
 The app's raid seed field shows the boss and rewards the seed gives in the tool's context, and Find
@@ -269,4 +378,6 @@ the host start; its Pokemon stayed in the battle.
 - What separates bonus subjects 4 and 5; what the words at 0x038, 0x3b4, 0x3d8 and 0x3e4 of a
   retail RaidPoint hold.
 - Whether the six Paldea encounters with the species' own Tera types roll as the retail table says.
-- Event raids, whose encounters and rewards come from the active Poke Portal News tables.
+- Whether a retail console takes an event raid's crystal words 2 and 3, and what it does with a
+  fixed reward row's subject (host, guests, once), which `raid_point` writes as 0, every player's.
+- Whether the five-star catch-once records go in the save's list as the seven-star ones do.

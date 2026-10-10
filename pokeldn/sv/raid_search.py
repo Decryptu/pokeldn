@@ -50,9 +50,10 @@ def contexts(version="any", map_name="any", progress="any", content="any"):
 
 
 def species():
-    """-> [(species, name)] of every raid boss, by name."""
+    """-> [(species, name)] of every standard and black-crystal raid boss, by name."""
     names = encounter.tables()["species_names"]
-    return sorted(((int(s), n) for s, n in names.items()), key=lambda pair: pair[1].casefold())
+    found = {row["species"] for rows in encounter.tables()["encounters"].values() for row in rows}
+    return sorted(((s, names[str(s)]) for s in found), key=lambda pair: pair[1].casefold())
 
 
 def search(start, count, scope, objective="overall", *, stars=None, shiny=None, species_id=None,

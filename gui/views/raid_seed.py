@@ -12,12 +12,7 @@ from gui.views.sprites import MINI, SIZE, Sprite
 from gui.views.widgets import PixelActivity
 from pokeldn import pokemon as builder
 from pokeldn.sv import raid_encounter, raid_search
-
-TERA_TYPES = ("Normal", "Fighting", "Flying", "Poison", "Ground", "Rock", "Bug", "Ghost", "Steel",
-              "Fire", "Water", "Grass", "Electric", "Psychic", "Ice", "Dragon", "Dark", "Fairy")
-NATURES = ("Hardy", "Lonely", "Brave", "Adamant", "Naughty", "Bold", "Docile", "Relaxed", "Impish",
-           "Lax", "Timid", "Hasty", "Serious", "Jolly", "Naive", "Modest", "Mild", "Quiet", "Bashful",
-           "Rash", "Calm", "Gentle", "Sassy", "Careful", "Quirky")
+from pokeldn.sv.raid_encounter import NATURES, TERA_TYPES
 GENDERS = ("Male", "Female", "Genderless")
 STATS = ("HP", "Atk", "Def", "Spe", "SpA", "SpD")
 PROGRESS = (("beginning", "Beginning"), ("tera", "Tera Raids unlocked"), ("3star", "3-star raids"),
