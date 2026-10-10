@@ -5,7 +5,8 @@ and Violet 4.0.0 [docs/sv_raid.md, The seed].
 Sources, all GPL-3.0 or the game itself:
   --tera-finder  a Tera-Finder checkout: the encounter lists (`encounter_gem_*.pkl`, PKHeX's layout
                  extended with the reward table ids), both reward tables, the material per species
-  --pkhex        a PKHeX checkout: the personal table, move PP, English species names
+  --pkhex        a PKHeX checkout: the species enum the materials are named by; the personal table,
+                 move PP and names are scripts/gen_sv_species_data.py's
   --raid-enemy   the eighteen `raid_enemy_XX_array` tables of the game's RomFS
                  (arc/worlddataraidraid_gem_item_reward_boostdata.bin.trpak), decoded to JSON with
                  numeric enums by flatc against their own .bfbs schemas: each record's `bossDesc`
@@ -76,10 +77,19 @@ def boss_profile(desc):
                     desc["doubleActionRate"]]
 
 
+def time_data(time):
+    """-> a record's raidTimeData as the RaidPoint's seven words, or None when it is inactive and
+    the console uses its own limits (docs/sv_raid.md, The battle bootstrap)."""
+    if not time or not time["isActive"]:
+        return None
+    return [1, *(int(time[k]) for k in ("gameLimit", "clientLimit", "commandLimit", "pokeReviveTime",
+                                        "aiIntervalTime", "aiIntervalRand"))]
+
+
 def join_retail(tables, folder):
     """Adds each row's `boss_desc`, the retail Tera rule (gemType 0 the species' own types, 1 any
-    of 18, 2+ a fixed type), its battle level and effort values (HP Atk Def Spe SpA SpD) and its
-    capture level, which is Tera-Finder's level."""
+    of 18, 2+ a fixed type), its battle level and effort values (HP Atk Def Spe SpA SpD), its
+    capture level, which is Tera-Finder's level, and an active `raidTimeData` as `time`."""
     retail = {}
     for map_name, prefix in MAPS.items():
         for stars in range(1, 7):
@@ -102,6 +112,8 @@ def join_retail(tables, folder):
             row["capture_level"], row["level"] = row["level"], para["level"]
             ev = para["effortValue"]
             row["evs"] = [ev[k] for k in ("hp", "atk", "def", "agi", "spAtk", "spDef")]
+            if time := time_data(info["raidTimeData"]):
+                row["time"] = time
             joined.add((map_name, row["identifier"]))
     if joined != set(retail):
         raise ValueError(f"retail records with no encounter: {sorted(set(retail) - joined)}")
@@ -185,9 +197,6 @@ def main():
     tables = encounters(data)
     join_retail(tables, args.raid_enemy)
     rows = [row for table in tables.values() for row in table]
-    pp = move_pp(core / "Moves" / "MoveInfo9.cs")
-    names = (core / "Resources" / "text" / "other" / "en" / "text_Species_en.txt").read_text(
-        encoding="utf-8-sig").splitlines()
     result = {
         "source": {"tera_finder": revision(args.tera_finder), "pkhex": revision(args.pkhex),
                    "game": "Scarlet 4.0.0 RomFS raid_enemy tables", "license": "GPL-3.0"},
@@ -196,10 +205,6 @@ def main():
         "lottery_rewards": reward_tables(data / "raid_lottery_reward_item_array.json", True),
         "material_items": materials(args.tera_finder / "TeraFinder.Core" / "Utils" / "RewardUtil.cs",
                                     core / "Game" / "Enums" / "Species.cs"),
-        "personal": personal(core / "Resources" / "byte" / "personal" / "personal_sv",
-                             {(r["species"], r["form"]) for r in rows}),
-        "move_pp": {str(m): pp[m] for m in sorted({m for r in rows for m in r["moves"]})},
-        "species_names": {str(s): names[s] for s in sorted({r["species"] for r in rows})},
     }
     args.out.write_text(json.dumps(result, separators=(",", ":")) + "\n", encoding="utf-8")
     print(f"{args.out}: {len(rows)} encounters")

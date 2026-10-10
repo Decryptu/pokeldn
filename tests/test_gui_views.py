@@ -685,3 +685,174 @@ def test_flet_unpacks_the_xz_viewer_the_packer_writes(tmp_path, monkeypatch):
     flet_client.read_any_compression()
     cache = flet_desktop.ensure_client_cached()
     assert (cache / "Flet.app" / "App").read_bytes() == b"package:flet_drop"
+
+
+def test_an_event_narrows_the_raid_card_to_what_it_spawns():
+    """Walking Wake's spotlight: Scarlet's den only, Paldea, the progresses its five stars draw at."""
+    from pokeldn.app.catalog import GAMES
+    from pokeldn.sv import raid_event
+    rows = tuple(dict(species=s, rate=1, rom=rom, group=g, stars=5, capture_rate=2)
+                 for s, rom, g in ((1009, 1, 1), (1010, 2, 2)))
+    spotlight = raid_event.Event(20230228, "", rows, {}, {}, (1, 1) + (0,) * 8)
+    tool = next(t for game in GAMES for t in game.tools if t.key == "sv-raid-host")
+    saved = []
+    view = SimpleNamespace(tool=tool, app=SimpleNamespace(settings=SimpleNamespace(save=lambda: saved.append(1))),
+                           values={"--raid-event": "013 Walking Wake", "--raid-version": "scarlet",
+                                   "--raid-event-group": "2", "--raid-progress": "tera", "--raid-map": "kitakami"})
+    view.raid_event = lambda: spotlight
+    view.raid_context = lambda: GamesView.raid_context(view)
+    GamesView.constrain_raid(view)
+    assert [view.values[k] for k in ("--raid-event-group", "--raid-progress", "--raid-map")] == ["1", "6star", "paldea"]
+    assert saved
+    field = {f.key: f for f in tool.fields}
+    assert GamesView.raid_choices(view, field["--raid-progress"]) == (
+        ("5star", "5-star raids"), ("6star", "6-star raids"))
+    assert GamesView.raid_choices(view, field["--raid-map"]) == (("paldea", "Paldea"),)
+    assert GamesView.raid_choices(view, field["--raid-version"]) == (("scarlet", "Scarlet"), ("violet", "Violet"))
+    assert GamesView.raid_choices(view, field["--raid-seed"]) is None
+    assert GamesView.raid_context(view)["den"] == "5 stars: Walking Wake"
+
+
+def test_folding_the_raid_event_card_sets_its_event_aside_until_it_unfolds():
+    """Folded, the host, the raid card and its finder are a standard raid's; the catch override
+    and den go with the event; unfolding brings them back."""
+    from pokeldn.app.catalog import GAMES
+    from pokeldn.app.command import build
+    from pokeldn.app.introspect import parser_of
+    from pokeldn.app.settings import Settings
+    tool = next(t for game in GAMES for t in game.tools if t.key == "sv-raid-host")
+    redrawn = []
+    view = SimpleNamespace(tool=tool, raid_event_open=True, redraw=lambda: redrawn.append(1),
+                           values={"--raid-pokemon": {"file": "/tmp/host.pk9"}, "--raid-seed": "52E6B438",
+                                   "--raid-event": "002 Charizard the Unrivaled", "--raid-event-group": "1",
+                                   "--raid-catch-normal": True})
+    view.raid_event = lambda: GamesView.raid_event(view)
+
+    def hosted():
+        return parser_of(tool.script).parse_args(build(tool, view.values, {}, Settings()))
+    GamesView.show_raid_event(view, False)
+    assert not view.raid_event_open and redrawn
+    assert GamesView.raid_event(view) is None and "event" not in GamesView.raid_context(view)
+    folded = hosted()
+    assert (folded.raid_event, folded.raid_event_group, folded.raid_catch_normal) == (None, None, False)
+    GamesView.show_raid_event(view, True)
+    unfolded = hosted()
+    assert view.raid_event_open and view.values["--raid-event"] == "002 Charizard the Unrivaled"
+    assert unfolded.raid_event and (unfolded.raid_event_group, unfolded.raid_catch_normal) == (1, True)
+    # With no event chosen, the card folds and unfolds with nothing to set aside.
+    view.values["--raid-event"] = ""
+    GamesView.show_raid_event(view, False)
+    GamesView.show_raid_event(view, True)
+    assert view.values["--raid-event"] == "" and "#raid-event-folded" not in view.values
+
+
+def test_the_finder_wants_the_rewards_its_unfolded_list_names():
+    """Rows of one item add up; folded or empty, the search wants nothing; a row without an item, one
+    the raids searched cannot give, or a list still being made stops the search."""
+    from gui.views.reward_filter import RewardFilter
+    wants = RewardFilter(SimpleNamespace(ui=lambda f: f()), lambda: ([], {}))
+    wants.names = {1606: "Ability Patch", 795: "Bottle Cap"}
+    wants.choices, wants.open = {1606: (1, 2, 3)}, True
+    assert wants.wanted() is None
+    wants.rows = [{"item": 1606, "least": 1}, {"item": 1606, "least": 2}]
+    assert wants.wanted() == {1606: 3}
+    wants.open = False
+    assert wants.wanted() is None
+    wants.open = True
+    for rows, choices, error in (([{"item": None, "least": 1}], {1606: (1,)}, "Choose an item"),
+                                 ([{"item": 795, "least": 1}], {1606: (1,)}, "No raid searched gives Bottle Cap"),
+                                 ([{"item": 1606, "least": 1}], None, "still being listed")):
+        wants.rows, wants.choices = rows, choices
+        with pytest.raises(ValueError, match=error):
+            wants.wanted()
+    # A row kept from a wider search names its item as one these raids do not give.
+    wants.rows, wants.choices = [{"item": 795, "least": 2}], {1606: (1,)}
+    wants._render(update=False)
+    picker = wants.list.controls[0].controls[0].controls[0].controls[1]
+    assert [o.text for o in picker.options] == ["Bottle Cap (not given here)", "Ability Patch"]
+
+
+def test_find_a_raid_searches_ten_million_seeds_from_any_first_seed(monkeypatch):
+    """The finder offers the compiled scan's ten million seeds, and its shuffle picks a random first seed."""
+    import flet as ft
+    from gui.views import raid_seed
+    from pokeldn.sv import raid_search
+    shown = []
+    app = SimpleNamespace(page=SimpleNamespace(show_dialog=shown.append, pop_dialog=lambda: None),
+                          ui=lambda f: f())
+    monkeypatch.setattr(raid_search, "FAST", False)       # no warm-up thread
+    picker = raid_seed.RaidSeedPicker(app, "", lambda _v: None,
+                                      lambda: {"version": "violet", "map_name": "paldea", "progress": "6star",
+                                               "content": "standard"}, lambda _c: None)
+    picker._open(None)
+
+    def walk(control):
+        yield control
+        for name in ("content", "controls"):
+            child = getattr(control, name, None)
+            for c in child if isinstance(child, list) else [child] if isinstance(child, ft.Control) else []:
+                yield from walk(c)
+    controls = list(walk(shown[0].content))
+    labels = [c for c in controls if isinstance(c, ft.Column) and c.controls and isinstance(c.controls[0], ft.Container)
+              and isinstance(c.controls[0].content, ft.Text)]
+    first = next(c.controls[1] for c in labels if c.controls[0].content.value == "First seed")
+    count = next(c.controls[1] for c in labels if c.controls[0].content.value == "Seeds to search")
+    assert count.value == str(raid_search.DEFAULT_COUNT)
+    start, shuffle = first.controls
+    assert start.value == "00000000" and shuffle.tooltip == "Start at a random seed"
+    monkeypatch.setattr(type(start), "update", lambda self: None)
+    values = set()
+    for _ in range(5):
+        shuffle.on_click(None)
+        assert raid_seed.seed_of(start.value) is not None and len(start.value) == 8
+        values.add(start.value)
+    assert len(values) > 1
+
+
+def test_the_finder_tells_how_far_a_search_is_and_how_long_it_has_left():
+    from gui.views.raid_seed import duration, searching
+    assert [duration(s) for s in (0, 59.9, 60, 200, 3600, 7500)] == [
+        "0 s", "59 s", "1 min 0 s", "3 min 20 s", "1 h 0 min", "2 h 5 min"]
+    assert searching(0, 1000, 0) == "Searching 0 of 1,000 seeds..."
+    assert searching(500, 1000, 2) == "Searching 500 of 1,000 seeds, 250 a second, 2 s left..."
+    assert searching(50_000_000, 1 << 32, 2) == (
+        "Searching 50,000,000 of 4,294,967,296 seeds, 25.0 million a second, 2 min 49 s left...")
+
+
+def test_the_finder_s_checkboxes_flip_and_tell(monkeypatch):
+    import flet as ft
+    from gui.views.raid_seed import Check
+    monkeypatch.setattr(ft.Container, "update", lambda self: None)
+    told = []
+    box = Check("Every seed", "tip", told.append)
+    assert not box.value and box.icon.src.endswith("checkbox.svg") and box.control.tooltip == "tip"
+    box.control.on_click(None)
+    assert box.value and box.icon.src == "icons/checkbox-on.svg" and told == [True]
+    box.control.on_click(None)
+    assert not box.value and told == [True, False]
+
+
+@pytest.mark.parametrize("downloaded", [True, False])
+def test_an_event_missing_from_the_gallery_stays_chosen_and_shows_missing(monkeypatch, tmp_path, downloaded):
+    """The card keeps an event the gallery lacks (the run refuses it) and says so in red, rather than
+    quietly hosting a standard raid."""
+    from gui import theme as t
+    from gui.views import raid_event as card
+    from pokeldn.app import events_gallery as gallery
+    from pokeldn.app.catalog import GAMES
+    key = "013 Walking Wake"
+    if downloaded:
+        (tmp_path / key / "Files").mkdir(parents=True)
+    monkeypatch.setattr(gallery, "event_path", lambda k, root=None: str(tmp_path / k))
+    tool = next(t for game in GAMES for t in game.tools if t.key == "sv-raid-host")
+    field = next(f for f in tool.fields if f.key == "--raid-event")
+    saved = []
+    view = SimpleNamespace(tool=tool, raid_event_open=False, values={"--raid-event": key, card.CATCH: True},
+                           app=SimpleNamespace(settings=SimpleNamespace(save=lambda: saved.append(1))),
+                           raid_event=lambda: None)
+    picker = card.RaidEventPicker(view, field)
+    assert view.values == {"--raid-event": key, card.CATCH: True} and not saved
+    if downloaded:
+        assert (picker.summary.value, picker.summary.color) == ("Walking Wake", t.BLUE)
+    else:
+        assert (picker.summary.value, picker.summary.color) == ("Missing: Walking Wake", t.RED)

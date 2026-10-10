@@ -57,6 +57,10 @@ POINT_SUMMARY = 0x3B8
 REWARD_ROWS = (POINT_SUMMARY - POINT_REWARDS) // 16           # 45
 SUBJECT_ALL = 0                   # the table's SubjectType: 0 everyone, 1 host, 2 guests
 CONTENT_STANDARD = 2
+POINT_TIME = 0x30                 # the record's raidTimeData; zero leaves the console's own limits
+# The crystal word: the save's raid content, 0 standard, 1 black (retail), 2 an event, 3 a seven-star
+# event (Tera-Finder RaidContent); no retail event RaidPoint has been seen (docs/sv_raid.md).
+CRYSTALS = {"standard": 0, "black": 1, "event": 2, "might": 3}
 TERA_EMPTY = raid_encounter.TERA_NONE
 FIRST_COUNTER = 0x0105            # the host's lobby counters run on from here; the bootstrap 0x010f
 
@@ -163,8 +167,9 @@ def raid_point(raid, rewards=None, name=POINT_NAME):
         raise ValueError(f"a RaidPoint name is RaidPoint_ and at most 13 more characters, not {name!r}")
     out[:len(encoded)] = encoded
     out[0x18] = 0x40
-    struct.pack_into("<IIII", out, 0x20, raid.stars, int(raid.content == "black"), 1,
-                     raid.row["capture_level"])
+    struct.pack_into("<IIII", out, 0x20, raid.stars, CRYSTALS[raid.content],
+                     raid.row.get("capture_rate", 1), raid.row["capture_level"])
+    struct.pack_into("<7I", out, POINT_TIME, *(raid.row.get("time") or (0,) * 7))
     struct.pack_into("<37I", out, 0x4C, *raid.row["boss_desc"])
     for index, (item, quantity) in enumerate(rows):
         struct.pack_into("<IIII", out, POINT_REWARDS + index * 16, item, quantity, 0, SUBJECT_ALL)

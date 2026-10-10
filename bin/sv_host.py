@@ -24,7 +24,7 @@ from pokeldn import pokemon as pokemon_service
 from pokeldn import config
 from pokeldn import sv
 from pokeldn.ldn import pia6, pia_connect, reliable5
-from pokeldn.sv import pokemon, port2, raid, raid_encounter, reference, streams, trade
+from pokeldn.sv import pokemon, port2, raid, raid_encounter, raid_event, reference, streams, trade
 from pokeldn.ldn import game_channel
 from pokeldn.ldn.ldn_mitm_host import IpHostTransport
 from pokeldn.ldn.transport import HostTransport, board_radio, find_ap_phy
@@ -375,6 +375,20 @@ def build_parser():
                     help="the story stage, which sets a standard crystal's star odds")
     ap.add_argument("--raid-content", choices=raid_encounter.CONTENTS, default="standard",
                     help="a standard or a black (six-star) crystal")
+    ap.add_argument("--raid-event", metavar="FOLDER",
+                    help="host an event raid: a Poke Portal News delivery's folder (an EventsGallery "
+                         "event, or its Files); the seed draws from the event's encounters at "
+                         "--raid-version and --raid-progress, and --raid-map and --raid-content "
+                         "are unused")
+    ap.add_argument("--raid-event-group", type=int, default=None, metavar="N",
+                    help="the delivery group of the event's den, 1 to 10; by default the first "
+                         "with dens and an encounter at that progress")
+    ap.add_argument("--raid-catch-normal", action="store_true",
+                    help="with --raid-event: serve a catch-once encounter (every seven-star raid, "
+                         "Walking Wake, Iron Leaves...) as a normal catch, its capture rate normal and "
+                         "its record number a stand-in no save has caught, so a save that caught it "
+                         "may catch it again; one that cannot be caught stays so (docs/sv_raid.md, "
+                         "Event raids)")
     ap.add_argument("--send", action="append", default=[],
                     help="PROTO:PORT:HEX, a reliable data message to send once the console has "
                          "joined (host seq 1 on that port, INITIALIZED); repeatable")
@@ -390,6 +404,8 @@ def prepare_raid(ap, args):
         ap.error("a raid host offers no trade")
     if len(args.raid_reward) > raid.REWARD_ROWS:
         ap.error(f"a raid gives at most {raid.REWARD_ROWS} rewards")
+    if args.raid_catch_normal and not args.raid_event:
+        ap.error("--raid-catch-normal needs --raid-event; a standard raid's boss is caught normally")
     if args.raid_reward:
         bag = {entry["id"] for entry in pokemon_service.SERVICE.names("sv", "bag")}
         unknown = sorted({item for item, _ in args.raid_reward} - bag)
@@ -397,16 +413,34 @@ def prepare_raid(ap, args):
             ap.error(f"items {unknown} cannot go in a Scarlet/Violet bag")
     path = pokemon_service.prepare_file("sv", args.raid_pokemon, fresh=args.fresh_pid)
     record = Path(path).read_bytes()
-    found = raid_encounter.generate(args.raid_seed, args.raid_version, args.raid_map,
-                                    args.raid_progress, args.raid_content)
+    if args.raid_event:
+        try:
+            event = raid_event.load(args.raid_event)
+            found = raid_event.generate(event, args.raid_seed, args.raid_version, args.raid_progress,
+                                        args.raid_event_group)
+        except (OSError, ValueError) as exc:
+            ap.error(f"--raid-event: {exc}")
+        where = (f"event {event.identifier} group {found.row['group']}, {args.raid_version}, "
+                 f"{args.raid_progress}")
+        catch = f", {raid_event.catch_rule(found)}"
+        if args.raid_catch_normal:
+            normal = raid_event.caught_normally(found)
+            if normal is not found:
+                catch += f", served as a normal catch of record {normal.row['identifier']}"
+            found = normal
+    else:
+        found = raid_encounter.generate(args.raid_seed, args.raid_version, args.raid_map,
+                                        args.raid_progress, args.raid_content)
+        where = f"{args.raid_version}, {args.raid_map}, {args.raid_progress}, {args.raid_content}"
+        catch = ""
     try:
         raid.RaidHost(found, record, args.raid_reward or None)
     except ValueError as exc:
         ap.error(str(exc))
     rewards = args.raid_reward or found.rewards
-    print(f"[sv] raid {args.raid_seed:08X} ({args.raid_version}, {args.raid_map}, {args.raid_progress}, "
-          f"{args.raid_content}): {found.stars} stars, species {found.species} level "
-          f"{found.boss['level']}, Tera type {found.tera_type}{', shiny' if found.is_shiny else ''}")
+    print(f"[sv] raid {args.raid_seed:08X} ({where}): {found.stars} stars, species {found.species} "
+          f"level {found.boss['level']}, Tera type {found.tera_type}"
+          f"{', shiny' if found.is_shiny else ''}{catch}")
     print(f"[sv] raid rewards{'' if args.raid_reward else ' of the seed'}: "
           + ", ".join(f"{item} x{quantity}" for item, quantity in rewards))
     print(f"[sv] our raid Pokemon: {pokemon.describe(pokemon.load(record))}")

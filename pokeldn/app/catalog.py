@@ -11,8 +11,8 @@ class Field:
     flag: str | tuple[str, ...]   # "" is positional; a tuple passes the same value to each flag
     label: str
     kind: str = "text"            # text number choice switch pokemon file builder multi linkcode code
-                                  # (eight digits) raidseed rewards, or a PKHeX name list: species move
-                                  # item ball
+                                  # (eight digits) raidseed rewards raidevent raidden, or a PKHeX name
+                                  # list: species move item ball
     help: str = ""
     default: str | bool = ""
     choices: tuple[tuple[str, str], ...] = ()
@@ -23,6 +23,7 @@ class Field:
     exts: tuple[str, ...] = ()
     when: tuple[str, str] = ()    # (flag, value): the field applies only while that field has that value
     unless: str = ""             # hide and omit the field while this source field has a value
+    requires: str = ""           # hide and omit the field while this source field has no value
     template: str = ""            # the value is passed as template.format(value), e.g. "ball={}"
     limits: tuple[tuple[str, int, str], ...] = ()   # (NAME, highest, why) for NAME=VALUE text
     choice_help: tuple[tuple[str, str], ...] = ()
@@ -360,6 +361,9 @@ SV = Game("sv", "Scarlet & Violet", "SV", "sv.md", (
           "Win the raid to receive the rewards."),
          (Field("--raid-pokemon", "Our Pokemon", "pokemon", required=True,
                 help="The Pokemon our player brings. PKHeX checks it is legal."),
+          Field("--raid-event", "Raid event", "raidevent",
+                help="A raid from a past Poke Portal News event, from Project Pokemon's EventsGallery. "
+                     "Leave it empty, or fold this card, for a standard raid."),
           Field("--raid-version", "Game", "choice", default="violet", group="The raid",
                 choices=(("scarlet", "Scarlet"), ("violet", "Violet")),
                 help="A seed can give another raid in the other version."),
@@ -371,11 +375,17 @@ SV = Game("sv", "Scarlet & Violet", "SV", "sv.md", (
                          ("5star", "5-star raids"), ("6star", "6-star raids")),
                 help="Sets how many stars a standard crystal can have."),
           Field("--raid-content", "Crystal", "choice", default="standard", group="The raid",
-                choices=(("standard", "Standard"), ("black", "Black (6 stars)"))),
+                choices=(("standard", "Standard"), ("black", "Black (6 stars)")), unless="--raid-event"),
+          Field("--raid-event-group", "Crystal", "raidden", group="The raid", requires="--raid-event",
+                help="Each of the event's crystals has its own bosses."),
           Field("--raid-seed", "Raid seed", "raidseed", default="000F34C3", required=True,
                 group="The raid", help="Eight hexadecimal digits. Find a raid searches seeds for you."),
           Field("--raid-reward", "Rewards", "rewards",
                 help=f"Leave empty for the raid's own rewards, or list up to {REWARD_ROWS} items."),
+          Field("--raid-catch-normal", "Catch an event boss again", "switch", hidden=True,
+                requires="--raid-event",
+                help="Offer a boss the event lets a save catch once as a normal catch, under a record "
+                     "number no save has caught. The Raid event card sets it."),
           host_seconds("600")),
          fixed=("--channel", "1", "--scene-id", "7", "--max-participants", "4", "--code", "4970",
                 "--scarlet-response", "--session-flags", "0", "--session-packet-id", "1",

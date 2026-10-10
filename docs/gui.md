@@ -302,6 +302,44 @@ A sprite downloads on first use and is read from disk afterwards, with no networ
 Settings has the switch and a button that empties the cache. `POKELDN_SPRITE_BASE` replaces the sprite
 host, for tests (`tests/test_sprites.py`).
 
+## Raid events
+
+The Scarlet/Violet Tera Raid (Host) tool's Raid event card hosts a raid from Project Pokemon's
+[EventsGallery](https://github.com/projectpokemon/EventsGallery) ([Event raids](sv_raid.md#event-raids)).
+The app keeps its own copy of the gallery's raid events in `EventsGallery/` in its data folder
+(`pokeldn.app.events_gallery`); Clear local files leaves it.
+
+| action | what happens |
+|---|---|
+| Download | asks `api.github.com` for the newest commit of master that changed `Released/Gen 9/SV/Raid Events`, downloads `codeload.github.com/projectpokemon/EventsGallery/zip/<commit>` (22 MB, October 2026) and unpacks each event's four tables of its newest patch, about 17 MB; `gallery.json` keeps the commit and its date |
+| Check for updates | one request for that newest commit; an update when it differs from the copy's. A change elsewhere in the gallery is none |
+| Update | the download again |
+
+A new copy replaces the old one only once complete; a failed or cancelled download leaves the old
+one. An event's folder name reaches 152 characters, so on Windows the app opens the files as `\\?\`
+paths.
+
+The event list holds every event of the copy but `000 Base Data`, the game's own table: 152 on
+2026-09-06, newest first, the arrow beside it turning the order. Each entry is the folder's name
+without its number (a round, "Event · Round") over its bosses; typing filters on both. Choosing one:
+
+- The raid card offers the game versions the event spawns in, Paldea alone, the progresses at which
+  the chosen crystal draws, and in place of Crystal the event's crystals for that version, each a
+  delivery group with its stars and bosses ("7 stars: Charizard", "4-5 stars: Florges, Mimikyu"). A
+  value the event cannot spawn moves to the nearest one it can (`raid_event.constrain`).
+- Find a raid searches the event's crystals only, one progress per stage, with its bosses as
+  species, and its Rewards section offers the items and quantities of the event's own reward tables
+  ([Finding a seed](sv_raid.md#finding-a-seed); `gui/views/reward_filter.py`).
+- An event with a boss a save catches once shows "Let it be caught again" (`--raid-catch-normal`),
+  unchecked at each launch and for each event chosen ([Event raids](sv_raid.md#event-raids)).
+
+Folding the card sets its event aside (`#raid-event-folded` in the tool's values,
+`GamesView.show_raid_event`): the raid card, Find a raid and the command are a standard raid's, and
+the header reads "Off: Event". Unfolding brings the event back. The card opens at launch when an
+event is in use. An event the copy lacks (not downloaded, or an update dropped it) stays chosen: the
+header reads "Missing: Event" in red, and the run refuses it until the copy has it or another event
+is chosen (`pokeldn.app.command.code_error`).
+
 ## Updates
 
 At launch the app asks `api.github.com/repos/Decryptu/pokeldn/releases/latest` for the newest stable

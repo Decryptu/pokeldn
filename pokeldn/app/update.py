@@ -75,18 +75,24 @@ def newer(reply: dict, current: str = __version__, name: str | None = None) -> R
                    sums if isinstance(sums, str) else "")
 
 
-def check(url: str = LATEST, current: str = __version__) -> Release | None:
-    """A newer release, or None when this app is the latest."""
+def github_json(url: str, timeout: float = TIMEOUT, what: str = "release", limit: int = MAX_BYTES):
+    """-> what GitHub's API answers at url; an HTTPError (an OSError) for a refusal, an OSError
+    naming `what` for an answer that is not JSON."""
     request = urllib.request.Request(url, headers={"User-Agent": "pokeldn-desktop",
                                                    "Accept": "application/vnd.github+json"})
     try:
-        with urllib.request.urlopen(request, timeout=TIMEOUT, context=_context()) as reply:
-            data = json.loads(reply.read(MAX_BYTES))
+        with urllib.request.urlopen(request, timeout=timeout, context=_context()) as reply:
+            return json.loads(reply.read(limit))
     except urllib.error.HTTPError as error:
         error.close()   # an HTTPError keeps its socket open until closed
         raise
     except ValueError as error:
-        raise OSError(f"GitHub sent no release: {error}") from error
+        raise OSError(f"GitHub sent no {what}: {error}") from error
+
+
+def check(url: str = LATEST, current: str = __version__) -> Release | None:
+    """A newer release, or None when this app is the latest."""
+    data = github_json(url)
     if not isinstance(data, dict):
         raise OSError("GitHub sent no release")
     return newer(data, current)

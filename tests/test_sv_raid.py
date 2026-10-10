@@ -16,7 +16,7 @@ from pokeldn.app.catalog import GAMES
 from pokeldn.app.command import build
 from pokeldn.app.settings import Settings
 from pokeldn.ldn import channel_table, game_channel, pia6, pia_connect, reliable5
-from pokeldn.sv import lz4, port2, raid, raid_encounter, raid_search, streams
+from pokeldn.sv import lz4, port2, raid, raid_encounter, raid_event, raid_scan, raid_search, streams
 
 ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 sys.path.insert(0, os.path.join(ROOT, "tools", "switch"))
@@ -120,9 +120,11 @@ def test_the_raidpoint_matches_three_retail_points():
     assert struct.unpack_from("<37I", three, 0x4C)[:14] == (800, 0, 0, 0, 0, 0, 0, 0, 0, 0, 3, 2, 75,
                                                             201)
     assert struct.unpack_from("<7I", three, 0x3B8) == (3, 246, 0, 1, 35, 0, 14)
-    # A black crystal's: crystal 1 and the catch level at 0x20, the battle level in the summary.
+    # A black crystal's (record 6045): crystal 1 and the catch level at 0x20, the record's active
+    # raidTimeData at 0x30 as retail's, the battle level in the summary.
     black = raid.raid_point(raid_encounter.generate(0x09F3E337, "scarlet", "paldea", "6star", "black"))
     assert struct.unpack_from("<4I", black, 0x20) == (6, 1, 1, 75)
+    assert struct.unpack_from("<7I", black, 0x30) == (1, 450, 0, 60, 0, 0, 0)
     assert struct.unpack_from("<14I", black, 0x4C) == (2500, 65, 55, 9999, 35, 0, 0, 20, 75, 35, 1, 1,
                                                        85, 0)
     assert struct.unpack_from("<7I", black, 0x3B8) == (6, 1008, 0, 0, 90, 0, 17)
@@ -172,6 +174,92 @@ def test_a_search_keeps_the_best_boss_of_the_species_asked_for():
     every = [raid_encounter.generate(s) for s in range(3000)]
     pawniard = sorted((r.boss["stats"][0] * r.boss["stats"][2], r.seed) for r in every if r.species == 624)
     assert [(f.score, f.seed) for f in found] == pawniard[:3]
+
+
+def test_a_search_for_rewards_finds_every_raid_that_gives_them():
+    """At least two Ability Patches from a black crystal: every seed whose raid gives them, with its
+    rewards; and every quantity a raid gives is among those the finder lists."""
+    def totals(rewards):
+        out = {}
+        for item, quantity in rewards:
+            out[item] = out.get(item, 0) + quantity
+        return out
+    scope = raid_search.contexts("violet", "paldea", "6star", "black")
+    found = raid_search.search(0, 8000, scope, rewards={1606: 2}, limit=100)
+    every = [raid_encounter.generate(s, "violet", "paldea", "6star", "black") for s in range(8000)]
+    giving = {r.seed: r.rewards for r in every if totals(r.rewards).get(1606, 0) >= 2}
+    assert giving and {f.seed: f.rewards for f in found} == giving
+    choices = raid_search.reward_choices(scope)
+    assert all(q in choices[i] for r in every for i, q in totals(r.rewards).items())
+
+
+def searched_both_ways(monkeypatch, *args, **kwargs):
+    """-> (the helper's scan's search, the plain Python one) as (seed, context, stars, score, rewards, PID)."""
+    if not raid_scan.available():
+        pytest.skip("needs the PKHeX helper")
+    out = []
+    for fast in (True, False):
+        monkeypatch.setattr(raid_search, "FAST", fast)
+        out.append([(f.seed, f.context, f.stars, f.score, f.rewards, f.boss["pid"])
+                    for f in raid_search.search(*args, **kwargs)])
+    return out
+
+
+@pytest.mark.parametrize("filters", [
+    {}, {"objective": "hardest"}, {"shiny": False, "objective": "offense"}, {"nature": 3, "gender": 0},
+    {"ivs": ((20, 31), (0, 15), (0, 31), (0, 31), (10, 31), (0, 31))}, {"tera_type": 4, "stars": 5},
+    {"rewards": {50: 2, 645: 1}}, {"one_per_species": True, "limit": 100},
+    {"one_per_species": True, "ability": 22, "objective": "special"}])
+@pytest.mark.parametrize("scope, start", [
+    (raid_search.contexts("violet", "paldea", "any", "standard"), 0x12345678),
+    (raid_search.contexts("any", "kitakami", "any", "black"), 0xFFFFFF00),     # past FFFFFFFF to 0
+    (raid_search.contexts("scarlet", "blueberry", "5star", "standard"), 7)])
+def test_the_helper_s_scan_finds_what_python_finds(monkeypatch, scope, start, filters):
+    """pokeldn.sv.raid_scan only picks the seeds the search keeps; the raids, their order and the
+    ties between seeds and contexts are the Python search's."""
+    filters = {"objective": "overall", "limit": 12, **filters}
+    compiled, python = searched_both_ways(monkeypatch, start, 3600 // len(scope), scope,
+                                          filters.pop("objective"), **filters)
+    assert compiled == python
+    assert compiled or {"ability", "nature", "stars"} & set(filters)     # a black crystal has no 5 stars
+
+
+@pytest.mark.parametrize("chunk", [1 << 24, 1000])
+@pytest.mark.parametrize("filters", [
+    {}, {"shiny": True}, {"rewards": {645: 1}, "objective": "hardest"}, {"nature": 3}])
+def test_the_search_can_stop_at_its_first_match(monkeypatch, chunk, filters):
+    """The earliest seed that matches in the first context with a match, whatever its score; the
+    helper's scan, chunked or not, is Python's."""
+    monkeypatch.setattr(raid_scan, "CHUNK", chunk)
+    scope = raid_search.contexts("any", "paldea", "6star", "standard")
+    compiled, python = searched_both_ways(monkeypatch, 0xFFFFF000, 6000, scope, stop_at_first=True, **filters)
+    assert compiled == python and len(python) == 1
+    context, offset = python[0][1], (python[0][0] - 0xFFFFF000) % (1 << 32)
+    before = scope[:scope.index(context)]
+    assert not before or not raid_search.search(0xFFFFF000, 6000, before, **filters)
+    assert not offset or not raid_search.search(0xFFFFF000, offset, [context], **filters)
+
+
+def test_a_stopped_helper_search_keeps_what_it_found(monkeypatch):
+    if not raid_scan.available():
+        pytest.skip("needs the PKHeX helper")
+    monkeypatch.setattr(raid_scan, "CHUNK", 1000)
+    seen = []
+    found = raid_search.search(0, 10_000, raid_search.contexts("violet", "paldea", "6star", "standard"),
+                               progress=lambda done, total: seen.append(done), cancelled=lambda: len(seen) >= 3)
+    assert seen[:3] == [1000, 2000, 3000] and len(found) == 12 and max(f.seed for f in found) < 3000
+
+
+def test_without_the_helper_the_search_scans_in_python():
+    import subprocess
+    code = "; ".join((
+        "from pokeldn import pokemon", "pokemon._command = lambda: (_ for _ in ()).throw(pokemon.BuilderError())",
+        "from pokeldn.sv import raid_search",
+        "assert not raid_search.FAST",
+        "assert raid_search.MAX_WORK == 1_000_000 and raid_search.DEFAULT_COUNT == 100_000",
+        "found = raid_search.search(0, 2000, raid_search.contexts('violet', 'paldea', '6star', 'standard'))",
+        "assert len(found) == 12"))
+    subprocess.run([sys.executable, "-c", code], cwd=ROOT, check=True, timeout=120)
 
 
 # The scripted console. Addresses and ids as tests/test_sv_departure.py's.
@@ -304,7 +392,7 @@ class RaidGuestConsole:
                                                 flags=flags, src_var=CONSOLE_VAR))
 
 
-def run_raid_host(monkeypatch, tmp_path, rewards=()):
+def run_raid_host(monkeypatch, tmp_path, rewards=(), extra=()):
     clock = Clock()
     console = RaidGuestConsole(clock)
 
@@ -351,7 +439,7 @@ def run_raid_host(monkeypatch, tmp_path, rewards=()):
     args = build(tool, {"--raid-pokemon": {"file": str(ours)}, "--raid-seed": "000F34C3",
                         "--raid-reward": [{"item_id": str(i), "quantity": str(q)} for i, q in rewards]},
                  {}, Settings())
-    assert sv_host.main(args + ["--keys", str(tmp_path / "prod.keys"), "--seconds", "60"]) == 0
+    assert sv_host.main(args + ["--keys", str(tmp_path / "prod.keys"), "--seconds", "60", *extra]) == 0
     return console, clock
 
 
@@ -397,6 +485,52 @@ def test_a_console_fights_the_raid_we_host(monkeypatch, tmp_path):
     assert len(handed) == 1 and handed[0]["t"] < status[0]["t"] < start[0]["t"]
     assert start[0]["flags"] == 0x11 and clock.now - start[0]["t"] < 0.1
 
+
+@pytest.mark.parametrize("capture, extra, word, record, summary", [
+    (1, [], 1, 2022120904, "caught as any raid boss"),
+    (2, [], 2, 2022120904, "caught once per save"),
+    (2, ["--raid-catch-normal"], 1, 2022120999,
+     "caught once per save, served as a normal catch of record 2022120999"),
+    (0, ["--raid-catch-normal"], 0, 2022120904, "cannot be caught")])
+def test_a_console_fights_an_event_raid_we_host(monkeypatch, tmp_path, capsys, capture, extra, word, record,
+                                                summary):
+    """`--raid-event`: the seed draws from the delivery's encounters at the tool's progress, and
+    the bootstrap carries that boss and a RaidPoint with the event crystal, the record's capture
+    rate and its rewards. Under `--raid-catch-normal` a catch-once record is a normal catch, and the
+    lobby shows a record number no save caught."""
+    salamence = dict(species=373, form=0, ability=1, flawless_ivs=3, level=45, capture_level=45,
+                     moves=[428, 337, 242, 814], tera=1, stars=4, rate=2, identifier=2022120904,
+                     fixed_rewards="1", lottery_rewards="1", boss_desc=[1200] + [0] * 36, evs=[0] * 6,
+                     rom=0, group=1, capture_rate=capture, ivs=None, gender=None, nature=None, shiny=0,
+                     scale_type=0, scale=0, held_item=0, time=[1, 450, 0, 60, 0, 0, 0])
+    event = raid_event.Event(20221209, "", (salamence,),
+                             {"1": [dict(category=0, item=1126, amount=2, probability=100, subject=0)]},
+                             {"1": []}, (5,) + (0,) * 9)
+    monkeypatch.setattr(sv_host.raid_event, "load", lambda folder: event)
+    console, _ = run_raid_host(monkeypatch, tmp_path, extra=["--raid-event", "delivery", *extra])
+    tera = raid_encounter.tera_type(0x000F34C3, salamence)
+    assert f"Tera type {tera}, {summary}\n" in capsys.readouterr().out
+    first = {}
+    for row in console.seen:
+        if (row["protocol"], row["port"]) == (0x80, 0) and "data" in row:
+            first.setdefault(row["seq"], row)
+    assert sorted(first) == list(range(1, 21))
+    plain = raid.payload_of(first[11]["data"] + first[12]["data"])
+    boss = gen9.read(gen9.load(plain[4 * gen9.SIZE_PARTY:5 * gen9.SIZE_PARTY]))
+    assert (boss["species"], boss["level"]) == (373, 45)
+    point = plain[raid.RAIDPOINT:]
+    assert struct.unpack_from("<4I", point, 0x20) == (4, 2, word, 45)
+    assert struct.unpack_from("<7I", point, 0x30) == (1, 450, 0, 60, 0, 0, 0)
+    assert struct.unpack_from("<4I", point, raid.POINT_REWARDS) == (1126, 2, 0, 0)
+    descriptor = struct.unpack_from("<11I", first[1]["data"], 18)
+    assert (descriptor[1], descriptor[4], descriptor[7]) == (373, 4, record)
+    # The delivery's record stays.
+    assert (salamence["capture_rate"], salamence["identifier"]) == (capture, 2022120904)
+
+
+def test_a_normal_catch_needs_an_event_raid(monkeypatch, tmp_path):
+    with pytest.raises(SystemExit):
+        run_raid_host(monkeypatch, tmp_path, extra=["--raid-catch-normal"])
 
 
 HOST_VAR = sv_host.PIA_HOST_VAR

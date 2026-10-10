@@ -63,6 +63,12 @@ def check() -> None:
             assert entitlements.get("com.apple.security.files.user-selected.read-write"), entitlements
             subprocess.run(["codesign", "--verify", "--deep", "--strict", str(bundle)],
                            capture_output=True, check=True)
+    # The raid finder scans in the bundled PKHeX helper (services/pkhex/RaidScan.cs), trimmed with it.
+    from pokeldn.sv import raid_search
+    assert raid_search.FAST
+    found = raid_search.search(0, 10_000_000, raid_search.contexts("violet", "paldea", "6star", "standard"),
+                               shiny=True)
+    assert len(found) == 12 and all(f.is_shiny for f in found), found
     trainer = {"ot": "POKELDN", "tid": 12345, "sid": 54321, "language": 2, "gender": 0}
     with tempfile.TemporaryDirectory(prefix="pokeldn-check-") as folder:
         pokemon.POKEMON = Path(folder)
