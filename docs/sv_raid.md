@@ -222,6 +222,29 @@ on its reward screen and left out 1 and 4. With a meal's Raid Power: Ghost Lv. 1
 subject 4 against a Steel Tera boss and listed it against a Ghost Tera boss; sent three subject-4
 rows there, it listed the first only.
 
+Scarlet 4.0.0's Lua reward filter, `C07C34FC3B976E5A7.F316609DEA110601D`
+(source lines 78707 to 78765), keeps subject 0 for every player, 1 for the host, 2 for a guest
+and 3 when its once-reward eligibility argument is true. It keeps the first N subject-4 rows,
+where N is the highest level of an active Raid Power matching the boss's Tera type. Meal kind 5
+is Raid Power; type 18 matches every Tera type. Subject 5 requires item 2481, the Glimmering Charm,
+in the receiving player's inventory. The row counter advances for every subject-4 row.
+Executing the unchanged Lua function with native environment getters supplied by a test harness
+kept zero, one, two and three subject-4 rows at levels 0 to 3, for both host and guest, with and
+without the charm. Mismatched types kept zero; multiple matching powers used the highest level.
+
+A host matching retail reward construction preserves each fixed row's subject and each row's
+rare-item flag, writes ordinary lottery rows under subject 0, then appends three continued
+lottery draws under subject 4. It appends the difficulty's Tera Shard boost under subject 5
+when its quantity is positive. Each receiver applies its own meal and charm eligibility.
+
+The timer initializer `C2D7F486425487755.F0C64BA9B6853E61A` (source lines 79486 to 79513)
+uses supplied time fields when `raidTimeData.active` is true. With it false, a group battle uses
+game limit 300, command limit 60, client limit 0, revive time 30, AI interval 17 and AI interval
+randomness 6. Executing its unchanged Lua function with the six-star table data yielded
+450, 60, 0, 0, 0 and 0 respectively; a zeroed RaidPoint yielded the defaults.
+Both functions are in Lua chunk `be21e65463b9a98f`, SHA-256
+`c1a4f4e2625912cf0b739a642a79ba3357df0557a544b92da22a6cb139de2815`.
+
 `raid_point` writes the seed's rows (or the chosen ones) under subject 0 and no bonus rows, so a
 guest receives every row, the host's included. A retail console awarded a row rewritten to Quick Ball x500, with the other
 rows cleared and one bonus row left, as written.
@@ -310,8 +333,7 @@ the host start; its Pokemon stayed in the battle.
   constructor `0x16b21f0`, which zeroes `+0x40`, destructor `0x2894604`) held the u32 pair
   `0x1527b, 7` at `+0x38` and 0x2713 at `+0x40` when the builders first read it at the join.
   Every raid hosted with it began its battle, on retail and emulated consoles.
-- Which code filters reward rows by subject on receipt; whether Raid Power Lv. 2 and 3 keep two and
-  three subject-4 rows; whether a guest always keeps subject 5.
+- End-to-end reward-screen checks for Raid Power Lv. 2 and 3 and six-star bonus rows.
 - What the RaidPoint's u64 at 0x3d8 and byte 0x3b4 hold, and what a console does with a six-star
   point whose `raidTimeData` is zero, as `raid_point` writes it.
 - Event raids, whose encounters and rewards come from the active Poke Portal News tables.
