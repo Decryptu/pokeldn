@@ -433,6 +433,8 @@ Contributors to this repository (GitHub does not list contributors on a fork):
 - [Gr3nSkyDragon](https://github.com/Gr3nSkyDragon): ESP32-S3 firmware
 - [ismailhasannnnnn](https://github.com/ismailhasannnnnn): Scarlet/Violet Tera Raid hosting and joining
 - [easyworld](https://github.com/easyworld): ESP32 serial reconnects after a high-baud session
+- [capito27](https://github.com/capito27): Scarlet/Violet event Tera Raids, the raid finder's reward
+  filter and its full seed search
 
 - [kinnay](https://github.com/kinnay): the [LDN library](https://github.com/kinnay/LDN) this builds on,
   and the [NintendoClients wiki](https://github.com/kinnay/NintendoClients/wiki)
