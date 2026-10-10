@@ -65,7 +65,9 @@ ten minutes of counted play time), then the fatal error screen.
   receive loop's station mask and frame-counter filter `0x51ae20..0x51ae84`, the destination check
   `0x51ce80`, the count filter `0x51c1e0`, the `+0x3c` mask `0x51c6b0`) passed for the `0x81` with
   the same sender, frame counter and mask. `0x522a60` returning 2 would silence the clone type 4
-  `0xa1` alone. An emulated Let's Go 1.0.2 given the withdrawal, A 2 with trailing word 1 only and
-  the same burst answered both `0xa1` and completed the trade; it never saw the trailing word 2
-  publish. What differs on retail is unknown; the retail console's update version is not on the
-  wire.
+  `0xa1` alone. An emulated Let's Go 1.0.2 given the same inputs answered both `0xa1` with `0xa2`
+  within 30 ms and completed the trade: it withdrew its vote (`2 2 3`) 0.81 s after its own `1 2 2`,
+  the host published A 2 with trailing word 1 0.16 s later and trailing word 2 1.0 s after that, the
+  console republished `0 2 3` under trailing word 2, announced its commit clone 5.4 s after the first
+  A 2 and drew the same seven-message burst. What differs on retail is unknown; the retail console's
+  update version is not on the wire.
