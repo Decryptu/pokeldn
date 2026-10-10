@@ -362,8 +362,8 @@ SV = Game("sv", "Scarlet & Violet", "SV", "sv.md", (
          (Field("--raid-pokemon", "Our Pokemon", "pokemon", required=True,
                 help="The Pokemon our player brings. PKHeX checks it is legal."),
           Field("--raid-event", "Raid event", "raidevent",
-                help="An event raid from Project Pokemon's EventsGallery. With none, or with this card "
-                     "folded, the raid is a standard or black crystal's."),
+                help="A raid from a past Poke Portal News event, from Project Pokemon's EventsGallery. "
+                     "Leave it empty, or fold this card, for a standard raid."),
           Field("--raid-version", "Game", "choice", default="violet", group="The raid",
                 choices=(("scarlet", "Scarlet"), ("violet", "Violet")),
                 help="A seed can give another raid in the other version."),
@@ -377,7 +377,7 @@ SV = Game("sv", "Scarlet & Violet", "SV", "sv.md", (
           Field("--raid-content", "Crystal", "choice", default="standard", group="The raid",
                 choices=(("standard", "Standard"), ("black", "Black (6 stars)")), unless="--raid-event"),
           Field("--raid-event-group", "Crystal", "raidden", group="The raid", requires="--raid-event",
-                help="An event's dens hold the bosses of their delivery group."),
+                help="Each of the event's crystals has its own bosses."),
           Field("--raid-seed", "Raid seed", "raidseed", default="000F34C3", required=True,
                 group="The raid", help="Eight hexadecimal digits. Find a raid searches seeds for you."),
           Field("--raid-reward", "Rewards", "rewards",

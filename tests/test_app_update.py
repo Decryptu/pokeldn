@@ -215,20 +215,6 @@ def test_a_failed_copy_puts_the_old_app_back_and_says_why(files, tmp_path):
     assert "could not copy" in json.loads(outcome.read_text())["error"]
 
 
-def test_the_event_gallery_the_app_downloaded_moves_to_the_new_app(tmp_path):
-    """pokeldn.app.events_gallery keeps it beside the packed files, in _internal."""
-    new = packed_app(tmp_path / "update/new", "linux", "9.0.0")
-    (new / "_internal").mkdir()
-    target = packed_app(tmp_path / "Applications", "linux", "0.1.0")
-    events = target / "_internal" / "EventsGallery" / "Released"
-    events.mkdir(parents=True)
-    (events / "event").write_text("kept")
-    assert update.apply(new, target, exited_pid(), "9.0.0", "linux", tmp_path / "o.json", lambda r: None)
-    assert (target / "VERSION").read_text() == "9.0.0"
-    assert (target / "_internal/EventsGallery/Released/event").read_text() == "kept"
-    assert sorted(p.name for p in target.parent.iterdir()) == [target.name]
-
-
 def test_the_helper_waits_for_the_old_app_to_quit(tmp_path, monkeypatch):
     monkeypatch.setattr(update, "EXIT_WAIT", 0.5)
     running = subprocess.Popen([sys.executable, "-c", "import time; time.sleep(30)"])

@@ -305,54 +305,39 @@ host, for tests (`tests/test_sprites.py`).
 ## Raid events
 
 The Scarlet/Violet Tera Raid (Host) tool's Raid event card hosts a raid from Project Pokemon's
-[EventsGallery](https://github.com/projectpokemon/EventsGallery) ([docs/sv_raid.md](sv_raid.md#event-raids)).
-Unfolded, it looks for the app's copy of the gallery (`pokeldn.app.events_gallery`):
+[EventsGallery](https://github.com/projectpokemon/EventsGallery) ([Event raids](sv_raid.md#event-raids)).
+The app keeps its own copy of the gallery's raid events in `EventsGallery/` in its data folder
+(`pokeldn.app.events_gallery`); Clear local files leaves it.
 
-| the app | the copy |
+| action | what happens |
 |---|---|
-| packed, Windows or Linux | `_internal/EventsGallery`, carried over by [Updates](#updates); the data folder's `EventsGallery` when `_internal` cannot be written |
-| packed, macOS | the data folder's `EventsGallery` (a file written inside the signed app breaks its signature) |
-| run from source | the checkout's `EventsGallery/`, which `.gitignore` leaves out |
+| Download | asks `api.github.com` for the newest commit of master that changed `Released/Gen 9/SV/Raid Events`, downloads `codeload.github.com/projectpokemon/EventsGallery/zip/<commit>` (22 MB, October 2026) and unpacks each event's four tables of its newest patch, about 17 MB; `gallery.json` keeps the commit and its date |
+| Check for updates | one request for that newest commit; an update when it differs from the copy's. A change elsewhere in the gallery is none |
+| Update | the download again |
 
-Only `Released/Gen 9/SV/Raid Events/**/Files/` and `**/Encounters.txt` are kept, about 20 MB; the JSON
-copies are not. An event's files sit some 205 characters below the gallery, past Windows' 260, so the
-app opens them as `\\?\` paths and runs git with `core.longpaths`.
+A new copy replaces the old one only once complete; a failed or cancelled download leaves the old
+one. An event's folder name reaches 152 characters, so on Windows the app opens the files as `\\?\`
+paths.
 
-| | git on the PATH | without git |
-|---|---|---|
-| Download | a shallow, blobless, sparse clone of master (`--depth 1 --filter=blob:none --sparse`), 3 s | the head of master from `api.github.com`, then `codeload.github.com/.../zip/<commit>`, unpacked with only the paths above, 5 s; `.pokeldn.json` keeps the commit and the date of its newest raid event change |
-| Check for updates | `git fetch` of master; an update when the raid events folder differs from `FETCH_HEAD` | `api.github.com/repos/projectpokemon/EventsGallery/commits?path=Released/Gen 9/SV/Raid Events`; an update when its newest commit is later than the copy's |
-| Update | a fast-forward, or `git reset --keep FETCH_HEAD` for the shallow clone | the download again |
-
-A change elsewhere in the gallery is no update. A new copy replaces the old one only once complete.
-Times are from a home connection, October 2026.
-
-The event list holds every folder with `Files/` but `000 Base Data`, the game's own placeholder: 152
-on 2026-09-06, newest first, the arrow beside it turning the order. Each entry is the folder's name
-without its number (a round, "Event · Round") over its bosses; typing filters on both. With no event
-the field is empty under a "No event" hint, so a search is typed straight in. Choosing one:
+The event list holds every event of the copy but `000 Base Data`, the game's own table: 152 on
+2026-09-06, newest first, the arrow beside it turning the order. Each entry is the folder's name
+without its number (a round, "Event · Round") over its bosses; typing filters on both. Choosing one:
 
 - The raid card offers the game versions the event spawns in, Paldea alone, the progresses at which
-  the chosen den draws, and in place of Crystal the event's dens for that version, each a delivery
-  group with its stars and bosses ("7★ Charizard", "4–5★ Florges, Mimikyu"). A value the event cannot
-  spawn moves to the nearest one it can (`raid_event.constrain`).
-- Find a raid searches the event's dens only, one progress per stage, with its bosses as species,
-  and its Rewards section offers the items and quantities of the event's own reward tables
-  ([docs/sv_raid.md](sv_raid.md#finding-a-seed); `gui/views/reward_filter.py`).
+  the chosen crystal draws, and in place of Crystal the event's crystals for that version, each a
+  delivery group with its stars and bosses ("7 stars: Charizard", "4-5 stars: Florges, Mimikyu"). A
+  value the event cannot spawn moves to the nearest one it can (`raid_event.constrain`).
+- Find a raid searches the event's crystals only, one progress per stage, with its bosses as
+  species, and its Rewards section offers the items and quantities of the event's own reward tables
+  ([Finding a seed](sv_raid.md#finding-a-seed); `gui/views/reward_filter.py`).
 - An event with a boss a save catches once shows "Let it be caught again" (`--raid-catch-normal`),
-  unchecked at each launch and for each event chosen. Checked, the boss is a normal catch under a
-  stand-in record number. The record number has to change: a console checks the one the lobby shows
-  against those its save has caught, and blocks the catch of one it has caught however the battle
-  data offers the boss ([docs/sv_raid.md](sv_raid.md#event-raids)). It leaves the caught Pokemon's
-  legality as it is.
+  unchecked at each launch and for each event chosen ([Event raids](sv_raid.md#event-raids)).
 
-Folding the card sets its event aside (`#raid-event-folded` in the tool's values, `GamesView.show_raid_event`):
-the raid card, Find a raid and the command are a standard raid's, `--raid-event` and the den and
-catch override that need it left out, and the header reads "Off: Event". Unfolding brings the event
-back. The card opens at launch when an event is in use.
-
-An event the gallery lacks (not downloaded, or an update dropped it) stays chosen: the header
-reads "Missing: Event" in red, and the run refuses it until the gallery has it or another event
+Folding the card sets its event aside (`#raid-event-folded` in the tool's values,
+`GamesView.show_raid_event`): the raid card, Find a raid and the command are a standard raid's, and
+the header reads "Off: Event". Unfolding brings the event back. The card opens at launch when an
+event is in use. An event the copy lacks (not downloaded, or an update dropped it) stays chosen: the
+header reads "Missing: Event" in red, and the run refuses it until the copy has it or another event
 is chosen (`pokeldn.app.command.code_error`).
 
 ## Updates
@@ -375,9 +360,8 @@ Update now (`pokeldn.app.update`) installs the release in place:
 5. The helper waits for the old app's process to end (120 s), then on Windows for every process
    whose executable lies in the installed app (the PKHeX service) and terminates any left after
    10 s. It renames the installed app to `.<name>.old` beside it (retrying for 30 s while Windows
-   releases the folder), copies the new app into its place, moves the old copy's
-   `_internal/EventsGallery` ([Raid events](#raid-events)) across, deletes the old copy and opens the
-   new app. Any failure puts the old app back and opens it. The swap runs whether or not the helper's
+   releases the folder), copies the new app into its place, deletes the old copy and opens the new
+   app. Any failure puts the old app back and opens it. The swap runs whether or not the helper's
    window came up.
    The helper runs from the unpacked copy's folder: Windows refuses to rename a folder that is any
    process's working folder, and Explorer starts the app with its own folder as one.
@@ -490,11 +474,7 @@ python scripts/pack_app.py
 
 The absolute output paths keep the images in `gui/firmware`. The packer requires all five images,
 the client from `scripts/build_client.py` and the Unicorn from `scripts/build_unicorn.py` (needs CMake); the frozen app check verifies all are included and
-that the bundled client carries `flet_drop`. The packer also compiles the raid finder's numba scan
-into `jit_cache` (`scripts/build_jit_cache.py`, about 20 s, 150 KB) for the runner's OS and
-architecture, and the check searches ten million seeds with it and fails on a compile
-([docs/sv_raid.md](sv_raid.md#finding-a-seed)). numba adds about 140 MB to the unpacked app, most of
-it LLVM, and 48 MB to the download. The release workflow builds each target separately
+that the bundled client carries `flet_drop`. The release workflow builds each target separately
 and supplies all five images to every desktop packer.
 
 The app version is `pokeldn.__version__`. It appears in Settings and in the macOS and Windows

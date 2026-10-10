@@ -1,16 +1,15 @@
-"""The local copy of Project Pokemon's EventsGallery the app's event raids come from: where it lives,
-downloading it, checking for and taking its updates (by git when the machine has git, by GitHub's
-zip of master otherwise), and the index of its Scarlet/Violet raid events. docs/gui.md (Raid events).
+"""The app's copy of the Scarlet/Violet raid events of Project Pokemon's EventsGallery: where it lives,
+downloading it, checking for and taking its updates, and the index of its events. docs/gui.md (Raid
+events).
 
-Only each raid event's tables (`Files/`) and pkNX's text of them (`Encounters.txt`) are kept, about a
-fifth of the raid events folder; the JSON copies stay on GitHub.
+The copy is GitHub's zip of the gallery unpacked to the four tables `pokeldn.sv.raid_event` reads of
+each event's newest patch, as `<event>/Files/<table>`; `gallery.json` beside them names the newest
+raid event change it holds.
 """
 import json
 import os
 import re
 import shutil
-import subprocess
-import sys
 import urllib.parse
 import zipfile
 from dataclasses import dataclass
@@ -22,54 +21,40 @@ from pokeldn.app import paths, update
 from pokeldn.sv import raid_event
 
 REPOSITORY = "projectpokemon/EventsGallery"
-GIT_URL = f"https://github.com/{REPOSITORY}.git"
 API = f"https://api.github.com/repos/{REPOSITORY}"
 ZIP = f"https://codeload.github.com/{REPOSITORY}/zip/{{commit}}"
 BRANCH = "master"
-FOLDER = "EventsGallery"
 RAID_EVENTS = "Released/Gen 9/SV/Raid Events"
-SPARSE = (f"/{RAID_EVENTS}/**/Files/", f"/{RAID_EVENTS}/**/Encounters.txt")
-MARKER = ".pokeldn.json"          # a zip copy's commit and the date of its last raid event change
+FOLDER = "EventsGallery"
+MANIFEST = "gallery.json"
 PLACEHOLDER = "000 Base Data"     # the game's own table, no delivery
+TABLES = (raid_event.ENEMY, raid_event.FIXED, raid_event.LOTTERY, raid_event.PRIORITY)
 TIMEOUT = 10.0
-GIT_TIMEOUT = 900.0
 
 Progress = Callable[[str, int, int], None]   # what is happening, bytes done, bytes in all (0 unknown)
 
 
-def location(frozen: bool = bool(getattr(sys, "frozen", False)), system: str = sys.platform) -> Path:
-    """Where the gallery lives: beside the packed app's own files (its `_internal` folder, which an
-    app update carries over) unless that folder is not writable or the app is a signed macOS bundle,
-    then the app's data folder; running from source, the repository's EventsGallery/."""
-    if not frozen:
-        return Path(paths.ROOT) / FOLDER
-    bundled, data = Path(paths.ROOT) / FOLDER, paths.DATA / FOLDER
-    if system == "darwin" or data.is_dir():
-        return data
-    return bundled if bundled.is_dir() or update.writable(Path(paths.ROOT)) else data
+def location() -> Path:
+    """The app's data folder's EventsGallery; `POKELDN_DATA` moves it with the rest."""
+    return paths.DATA / FOLDER
 
 
 def long_path(path) -> str:
     """-> the path as Windows opens it past 260 characters (the \\\\?\\ form); elsewhere as it is. An
-    event's files sit some 205 characters below the gallery."""
+    event's name reaches 152 characters."""
     text = os.path.abspath(str(path))
     if os.name != "nt" or text.startswith("\\\\?\\"):
         return text
     return "\\\\?\\UNC\\" + text[2:] if text.startswith("\\\\") else "\\\\?\\" + text
 
 
-def raid_events(root: Path | None = None) -> Path:
-    return (location() if root is None else Path(root)) / RAID_EVENTS
-
-
 def event_path(key: str, root: Path | None = None) -> str:
     """-> the folder of an event the index named, as `bin/sv_host.py --raid-event` takes it."""
-    return long_path(raid_events(root) / key)
+    return long_path((location() if root is None else Path(root)) / key)
 
 
 def present(root: Path | None = None) -> bool:
-    """Whether a copy is there; no git runs."""
-    return os.path.isdir(long_path(raid_events(root)))
+    return state(root).present
 
 
 def holds(key: str, root: Path | None = None) -> bool:
@@ -83,199 +68,114 @@ def holds(key: str, root: Path | None = None) -> bool:
 @dataclass(frozen=True)
 class State:
     present: bool
-    method: str = ""        # "git" or "zip"
-    commit: str = ""
-    date: str = ""          # ISO 8601, the newest raid event change the copy holds
+    commit: str = ""        # the newest raid event change the copy holds
+    date: str = ""          # its date, ISO 8601
 
 
 @dataclass(frozen=True)
 class Check:
     available: bool
-    commit: str             # master's head
-    date: str               # its newest raid event change
-
-
-def git() -> str | None:
-    return shutil.which("git")
-
-
-def _run_git(args: list[str], cwd: Path | None = None, timeout: float = 120.0) -> subprocess.CompletedProcess:
-    if not git():
-        raise OSError("git is not installed")
-    return subprocess.run([git(), "-c", "core.longpaths=true", *args], cwd=None if cwd is None else str(cwd),
-                          capture_output=True, text=True, encoding="utf-8", errors="replace", timeout=timeout,
-                          env={**os.environ, "GIT_TERMINAL_PROMPT": "0"},
-                          creationflags=subprocess.CREATE_NO_WINDOW if os.name == "nt" else 0)
-
-
-def _git_ok(args: list[str], cwd: Path | None = None, timeout: float = 120.0) -> str:
-    run = _run_git(args, cwd, timeout)
-    if run.returncode:
-        lines = [line for line in run.stderr.splitlines() if line.strip()]
-        raise OSError(f"git {args[0]} failed: {lines[-1] if lines else run.returncode}")
-    return run.stdout.strip()
-
-
-_STATES: dict = {}
+    commit: str             # the newest raid event change on master
+    date: str
 
 
 def state(root: Path | None = None) -> State:
-    """-> the copy at `root`, read once until `forget`."""
     root = location() if root is None else Path(root)
-    if str(root) not in _STATES:
-        _STATES[str(root)] = _read_state(root)
-    return _STATES[str(root)]
-
-
-def _read_state(root: Path) -> State:
-    if not present(root):
+    try:
+        manifest = json.loads((root / MANIFEST).read_text(encoding="utf-8"))
+        return State(True, str(manifest["commit"]), str(manifest["date"]))
+    except (OSError, ValueError, KeyError, TypeError):
         return State(False)
-    if (root / ".git").exists() and git():
-        commit = _git_ok(["rev-parse", "HEAD"], root)
-        return State(True, "git", commit, _git_ok(["log", "-1", "--format=%cI", "HEAD", "--", RAID_EVENTS], root)
-                     or _git_ok(["log", "-1", "--format=%cI", "HEAD"], root))
-    try:
-        marker = json.loads((root / MARKER).read_text(encoding="utf-8"))
-    except (OSError, ValueError):
-        marker = {}
-    return State(True, "zip", str(marker.get("commit", "")), str(marker.get("date", "")))
-
-
-def _latest() -> tuple[str, str]:
-    """-> (master's head commit, the date of master's newest raid event change)."""
-    head = update.github_json(f"{API}/commits/{BRANCH}", TIMEOUT, "commit")
-    changes = update.github_json(f"{API}/commits?sha={BRANCH}&per_page=1&path={urllib.parse.quote(RAID_EVENTS)}",
-                                 TIMEOUT, "commit")
-    try:
-        return head["sha"], changes[0]["commit"]["committer"]["date"]
-    except (KeyError, IndexError, TypeError) as error:
-        raise OSError("GitHub sent no commit") from error
 
 
 def date_of(date: str) -> datetime | None:
-    """-> an ISO 8601 date as GitHub and git write it, or None."""
+    """-> an ISO 8601 date as GitHub writes it, or None."""
     try:
         return datetime.fromisoformat(date.replace("Z", "+00:00"))
     except ValueError:
         return None
 
 
+def _latest() -> tuple[str, str]:
+    """-> (the newest commit of master that changed the raid events, its date)."""
+    found = update.github_json(f"{API}/commits?sha={BRANCH}&per_page=1&path={urllib.parse.quote(RAID_EVENTS)}",
+                               TIMEOUT, "commit")
+    try:
+        return found[0]["sha"], found[0]["commit"]["committer"]["date"]
+    except (KeyError, IndexError, TypeError) as error:
+        raise OSError("GitHub sent no commit") from error
+
+
 def check(root: Path | None = None) -> Check:
-    """Whether master has a raid event change the copy lacks. A git copy fetches master and compares
-    the raid events folder; a zip copy asks GitHub for master's newest change to it."""
-    root = location() if root is None else Path(root)
+    """Whether master has a raid event change the copy lacks; a change elsewhere in the gallery is none."""
     found = state(root)
     if not found.present:
         raise OSError("the event gallery is not downloaded")
-    if found.method == "git":
-        _fetch(root)
-        changed = _run_git(["diff", "--quiet", "HEAD", "FETCH_HEAD", "--", RAID_EVENTS], root).returncode == 1
-        return Check(changed, _git_ok(["rev-parse", "FETCH_HEAD"], root),
-                     _git_ok(["log", "-1", "--format=%cI", "FETCH_HEAD"], root))
     commit, date = _latest()
-    ours, theirs = date_of(found.date), date_of(date)
-    return Check(ours is None or (theirs is not None and theirs > ours), commit, date)
+    return Check(commit != found.commit, commit, date)
+
+
+def newest_tables(names) -> dict[str, str]:
+    """-> {path under the copy: path in the gallery} of every event's newest tables among the
+    gallery's file paths."""
+    events: dict[str, set] = {}
+    for name in names:
+        key, files, table = name.partition(RAID_EVENTS + "/")[2].rpartition("/Files/")
+        if files and key.split("/")[0] != PLACEHOLDER and ".." not in key.split("/"):
+            events.setdefault(key, set()).add(table)
+    out = {}
+    for key, tables in events.items():
+        patch = next((p for p in raid_event.PATCHES if raid_event.ENEMY + p in tables), None)
+        for table in TABLES if patch is not None else ():
+            if table + patch in tables:
+                out[f"{key}/Files/{table}{patch}"] = f"{RAID_EVENTS}/{key}/Files/{table}{patch}"
+    return out
+
+
+def extract(archive: Path, folder: Path) -> int:
+    """Unpacks every event's newest tables from GitHub's zip of the gallery (whose entries sit under
+    one top folder); -> how many files."""
+    with zipfile.ZipFile(archive) as z:
+        inside = {info.filename.partition("/")[2]: info for info in z.infolist() if not info.is_dir()}
+        wanted = newest_tables(inside)
+        for path, name in wanted.items():
+            target = long_path(folder / path)
+            os.makedirs(os.path.dirname(target), exist_ok=True)
+            with z.open(inside[name]) as source, open(target, "wb") as out:
+                shutil.copyfileobj(source, out)
+    if not wanted:
+        raise OSError("the download holds no raid events")
+    return len(wanted)
 
 
 # --- Downloading and updating ----------------------------------------------------------------------
 
-def _fetch(root: Path) -> bool:
-    """Fetches master into FETCH_HEAD, as shallow as the copy is; -> whether it is shallow."""
-    shallow = (root / ".git" / "shallow").exists()
-    _git_ok(["fetch", *(["--depth", "1"] if shallow else []), "origin", BRANCH], root, GIT_TIMEOUT)
-    return shallow
-
-
-def _swap(fresh: Path, root: Path) -> None:
-    old = root.parent / f".{root.name}.old"
-    shutil.rmtree(long_path(old), ignore_errors=True)
-    if root.exists():
-        os.rename(root, old)
-    os.rename(fresh, root)
-    shutil.rmtree(long_path(old), ignore_errors=True)
-
-
-def _git_clone(root: Path, progress: Progress) -> None:
-    fresh = root.parent / f".{root.name}.download"
-    shutil.rmtree(long_path(fresh), ignore_errors=True)
-    progress("Cloning the gallery with git...", 0, 0)
-    _git_ok(["clone", "--depth", "1", "--filter=blob:none", "--sparse", "--no-checkout", "--branch", BRANCH,
-             GIT_URL, str(fresh)], timeout=GIT_TIMEOUT)
-    _git_ok(["config", "core.longpaths", "true"], fresh)
-    _git_ok(["sparse-checkout", "set", "--no-cone", *SPARSE], fresh)
-    progress("Fetching the raid events...", 0, 0)
-    _git_ok(["checkout", BRANCH], fresh, GIT_TIMEOUT)
-    _swap(fresh, root)
-
-
-def _zip_download(root: Path, progress: Progress, cancelled: Callable[[], bool]) -> None:
-    progress("Asking GitHub for the latest gallery...", 0, 0)
+def download(root: Path | None = None, progress: Progress = lambda text, done, total: None,
+             cancelled: Callable[[], bool] = lambda: False) -> State:
+    """Puts master's raid events at `root`, a first copy or an update; a copy there is replaced only
+    once the new one is complete."""
+    root = location() if root is None else Path(root)
+    progress("Asking GitHub for the latest raid events...", 0, 0)
     commit, date = _latest()
-    work = paths.DATA / "gallery-download"
+    work = root.parent / f".{root.name}.download"
     shutil.rmtree(long_path(work), ignore_errors=True)
-    work.mkdir(parents=True)
-    archive, fresh = work / "gallery.zip", root.parent / f".{root.name}.download"
+    fresh = work / root.name
+    fresh.mkdir(parents=True)
     try:
-        update.fetch(ZIP.format(commit=commit), archive, lambda done, total: progress(
-            "Downloading the gallery...", done, total), cancelled)
+        archive = work / "gallery.zip"
+        update.fetch(ZIP.format(commit=commit), archive,
+                     lambda done, total: progress("Downloading the event gallery...", done, total), cancelled)
         progress("Unpacking the raid events...", 0, 0)
-        shutil.rmtree(long_path(fresh), ignore_errors=True)
         extract(archive, fresh)
-        (fresh / MARKER).write_text(json.dumps({"commit": commit, "date": date}), encoding="utf-8")
-        _swap(fresh, root)
+        (fresh / MANIFEST).write_text(json.dumps({"commit": commit, "date": date}), encoding="utf-8")
+        old = root.parent / f".{root.name}.old"
+        shutil.rmtree(long_path(old), ignore_errors=True)
+        if root.exists():
+            os.rename(root, old)
+        os.rename(fresh, root)
+        shutil.rmtree(long_path(old), ignore_errors=True)
     finally:
         shutil.rmtree(long_path(work), ignore_errors=True)
-        shutil.rmtree(long_path(fresh), ignore_errors=True)
-
-
-def extract(archive: Path, folder: Path) -> int:
-    """Unpacks the raid events' tables and texts from GitHub's zip of the repository (whose entries
-    sit under one top folder); -> how many files."""
-    count = 0
-    with zipfile.ZipFile(archive) as z:
-        for info in z.infolist():
-            _, _, inside = info.filename.partition("/")
-            if info.is_dir() or not inside.startswith(RAID_EVENTS + "/") or ".." in inside.split("/"):
-                continue
-            if "/Files/" not in inside and not inside.endswith("/Encounters.txt"):
-                continue
-            target = long_path(folder / inside)
-            os.makedirs(os.path.dirname(target), exist_ok=True)
-            with z.open(info) as source, open(target, "wb") as out:
-                shutil.copyfileobj(source, out)
-            count += 1
-    if not count:
-        raise OSError("the download holds no raid events")
-    return count
-
-
-def download(root: Path | None = None, progress: Progress = lambda text, done, total: None,
-             cancelled: Callable[[], bool] = lambda: False, use_git: bool | None = None) -> State:
-    """Puts a fresh copy at `root`, by git when the machine has it; a copy there is replaced only once
-    the new one is complete."""
-    root = location() if root is None else Path(root)
-    root.parent.mkdir(parents=True, exist_ok=True)
-    if (git() is not None) if use_git is None else use_git:
-        _git_clone(root, progress)
-    else:
-        _zip_download(root, progress, cancelled)
-    forget()
-    return state(root)
-
-
-def take_update(root: Path | None = None, progress: Progress = lambda text, done, total: None,
-                cancelled: Callable[[], bool] = lambda: False) -> State:
-    """Brings the copy to master: a git copy moves to what it fetched (a fast-forward, or a reset
-    that keeps local edits for a shallow one), a zip copy is downloaded again."""
-    root = location() if root is None else Path(root)
-    if state(root).method != "git":
-        return download(root, progress, cancelled, use_git=False)
-    progress("Updating the gallery with git...", 0, 0)
-    shallow = _fetch(root)
-    if _run_git(["merge", "--ff-only", "FETCH_HEAD"], root, GIT_TIMEOUT).returncode:
-        if not shallow:
-            raise OSError("the gallery has commits of its own; update it with git yourself")
-        _git_ok(["reset", "--keep", "FETCH_HEAD"], root, GIT_TIMEOUT)
     forget()
     return state(root)
 
@@ -284,7 +184,7 @@ def take_update(root: Path | None = None, progress: Progress = lambda text, done
 
 @dataclass(frozen=True)
 class Entry:
-    key: str                # its folder under Raid Events, with "/"
+    key: str                # its folder, with "/"
     title: str              # the folder's name without its number; a round, "Event · Round"
     number: int
     species: tuple          # boss names, table order
@@ -297,10 +197,9 @@ _EVENTS: dict = {}
 
 
 def forget() -> None:
-    """Drops what was read of the gallery, after it changed."""
+    """Drops what was read of the copy, after it changed."""
     _INDEX.clear()
     _EVENTS.clear()
-    _STATES.clear()
 
 
 def title(key: str) -> str:
@@ -308,16 +207,14 @@ def title(key: str) -> str:
 
 
 def index(root: Path | None = None) -> list[Entry]:
-    """-> the gallery's raid events, oldest first: every folder that holds an event's Files."""
+    """-> the copy's raid events, oldest first."""
     root = location() if root is None else Path(root)
-    base = long_path(root / RAID_EVENTS)
+    base = long_path(root)
     if base in _INDEX:
         return _INDEX[base]
     found = []
     for folder in raid_event.deliveries(base):
         key = os.path.relpath(folder, base).replace(os.sep, "/")
-        if key.split("/")[0] == PLACEHOLDER:
-            continue
         try:
             event = load(key, root)
         except (OSError, ValueError):

@@ -283,11 +283,11 @@ class Den:
 
     @property
     def label(self):
-        """-> "7★ Charizard", "4–5★ Florges, Mimikyu"."""
+        """-> "7 stars: Charizard", "4-5 stars: Florges, Mimikyu"."""
         names = encounter.tables()["species_names"]
         low, high = self.stars[0], self.stars[-1]
-        stars = f"{low}★" if low == high else f"{low}–{high}★"
-        return f"{stars} {', '.join(names[str(s)] for s in self.species)}"
+        stars = f"{low} star{'s' if low > 1 else ''}" if low == high else f"{low}-{high} stars"
+        return f"{stars}: {', '.join(names[str(s)] for s in self.species)}"
 
 
 def dens(event, version=None):

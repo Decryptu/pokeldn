@@ -167,8 +167,9 @@ def test_an_event_the_gallery_lacks_is_refused_before_the_host_starts(tmp_path, 
     values = {"--raid-pokemon": {"file": "/tmp/host.pk9"}, "--raid-seed": "52E6B438",
               "--raid-event": "002 Charizard the Unrivaled"}
     assert problems(tool, values) == ["Download the event gallery in Raid event, or choose no event."]
-    events = tmp_path / "EventsGallery" / events_gallery.RAID_EVENTS
+    events = tmp_path / "EventsGallery"
     (events / "001 Eevee Spotlight" / "Files").mkdir(parents=True)
+    (events / events_gallery.MANIFEST).write_text('{"commit": "abc", "date": "2026-09-06T21:05:05Z"}')
     assert problems(tool, values) == ["The chosen event is not in the event gallery any more."]
     (events / "002 Charizard the Unrivaled" / "Files").mkdir(parents=True)
     assert problems(tool, values) == []

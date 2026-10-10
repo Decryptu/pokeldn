@@ -75,14 +75,14 @@ def newer(reply: dict, current: str = __version__, name: str | None = None) -> R
                    sums if isinstance(sums, str) else "")
 
 
-def github_json(url: str, timeout: float = TIMEOUT, what: str = "release"):
+def github_json(url: str, timeout: float = TIMEOUT, what: str = "release", limit: int = MAX_BYTES):
     """-> what GitHub's API answers at url; an HTTPError (an OSError) for a refusal, an OSError
     naming `what` for an answer that is not JSON."""
     request = urllib.request.Request(url, headers={"User-Agent": "pokeldn-desktop",
                                                    "Accept": "application/vnd.github+json"})
     try:
         with urllib.request.urlopen(request, timeout=timeout, context=_context()) as reply:
-            return json.loads(reply.read(MAX_BYTES))
+            return json.loads(reply.read(limit))
     except urllib.error.HTTPError as error:
         error.close()   # an HTTPError keeps its socket open until closed
         raise
@@ -132,7 +132,7 @@ def executable_in(root: Path, system: str = sys.platform) -> Path:
     return root / ("pokeldn.exe" if system == "win32" else "pokeldn")
 
 
-def writable(folder: Path) -> bool:
+def _writable(folder: Path) -> bool:
     # os.access on Windows reads only the read-only attribute, never the folder's ACL: create a file.
     probe = folder / f".pokeldn-write-{os.getpid()}"
     try:
@@ -150,7 +150,7 @@ def blocker(root: Path | None, system: str = sys.platform) -> str:
     if "AppTranslocation" in root.parts:
         # macOS runs a quarantined app from Downloads out of a random read-only copy.
         return "Move pokeldn to your Applications folder, open it from there, then update."
-    if not needs_admin(root, system) and not (writable(root.parent) and writable(root)):
+    if not needs_admin(root, system) and not (_writable(root.parent) and _writable(root)):
         return f"pokeldn cannot write to {root.parent}."
     return ""
 
@@ -159,7 +159,7 @@ def needs_admin(root: Path | None, system: str = sys.platform) -> bool:
     """Windows: a folder only an administrator may change (C:\\Program Files); the swap asks Windows."""
     if system != "win32" or root is None:
         return False
-    return FORCE_ADMIN or not (writable(root.parent) and writable(root))
+    return FORCE_ADMIN or not (_writable(root.parent) and _writable(root))
 
 
 def checksums(text: str) -> dict[str, str]:
@@ -423,26 +423,10 @@ def apply(new: Path, target: Path, pid: int, version: str, system: str = sys.pla
         _record(outcome, version, f"could not copy the new app ({error})")
         relaunch(target)
         return False
-    carry(old, target)
     shutil.rmtree(old, ignore_errors=True)
     _record(outcome, version)
     relaunch(target)
     return True
-
-
-# What the app downloads into its own folder and keeps across updates: the event gallery
-# (pokeldn.app.events_gallery), beside the packed files in _internal.
-GALLERY = Path("_internal") / "EventsGallery"
-
-
-def carry(old: Path, target: Path) -> None:
-    """Moves the gallery the old app downloaded into its folder over to the new one, which lacks it."""
-    source, dest = old / GALLERY, target / GALLERY
-    if source.is_dir() and not dest.exists() and dest.parent.is_dir():
-        try:
-            os.rename(source, dest)
-        except OSError:
-            pass        # the new app offers to download it again
 
 
 def finish(root: Path | None, outcome: Path = OUTCOME, work: Path = WORK) -> dict | None:

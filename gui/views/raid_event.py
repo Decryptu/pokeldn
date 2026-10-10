@@ -1,6 +1,6 @@
-"""The Tera Raid host's Raid event card: the local EventsGallery (pokeldn.app.events_gallery), found,
-downloaded, checked and updated by git or GitHub's zip; the event the raid comes from, searchable by
-its name or its bosses'; and the override for a boss a save catches once."""
+"""The Tera Raid host's Raid event card: the app's copy of the EventsGallery's raid events
+(pokeldn.app.events_gallery), downloaded, checked and updated; the event the raid comes from,
+searchable by its name or its bosses'; and the override for a boss a save catches once."""
 
 import threading
 import time
@@ -8,7 +8,7 @@ import time
 import flet as ft
 
 from gui import theme as t
-from gui.views.widgets import PixelActivity
+from gui.views.widgets import Check, PixelActivity
 from pokeldn.app import events_gallery as gallery
 from pokeldn.sv import raid_event
 
@@ -108,15 +108,13 @@ class RaidEventPicker:
             self._failed(error, self._refresh)
             return
         if not found.present:
-            way = "with git" if gallery.git() else "from GitHub"
             self.status.value = "The event gallery is not downloaded yet."
-            self.actions.controls = [t.button(f"Download {way}", self._download, "download")]
+            self.actions.controls = [t.button("Download", self._download, "download")]
             self.dropdown.hint_text, self.dropdown.disabled = "Download the event gallery first", True
             self.dropdown.options, self.dropdown.value = [], None
             self.control.update()
             return
-        self.status.value = (f"Event gallery of {day(found.date)}"
-                             + (", kept with git" if found.method == "git" else ", from GitHub's zip"))
+        self.status.value = f"Event gallery of {day(found.date)}"
         self.actions.controls = [t.secondary_button("Check for updates", self._check, "refresh")]
         self.control.update()
         self._background(gallery.index, self._fill)
@@ -181,18 +179,13 @@ class RaidEventPicker:
         self.catch.visible = bool(names)
         if not names:
             return
-        on = bool(self.view.values.get(CATCH))
         field = next(f for f in self.view.tool.fields if f.key == CATCH)
-        box = ft.Container(ft.Row([
-            t.pixel_icon("checkbox-on" if on else "checkbox", color=t.BLUE if on else t.MUTED),
-            t.text("Let it be caught again", 13, t.TEXT),
-        ], spacing=8, tight=True), on_click=lambda _e: self.view.set_value(field, not on, rebuild=True),
-            padding=ft.Padding(2, 4, 2, 4), border_radius=8)
+        box = Check("Let it be caught again", value=bool(self.view.values.get(CATCH)), size=13,
+                    on_change=lambda on: self.view.set_value(field, on, rebuild=True))
         who = " and ".join([", ".join(names[:-1]), names[-1]] if len(names) > 1 else names)
-        self.catch.controls = [box, t.text(
-            f"A save catches {who} once, and one that has refuses the catch in the lobby. Checked, the "
-            "raid shows the boss under a record number no save has caught and offers it as a normal "
-            "catch. Checking it does not change the caught Pokemon's legality.", 12, t.MUTED)]
+        self.catch.controls = [box.control, t.text(
+            f"A save can catch {who} only once. Checked, a save that already caught it can catch it "
+            "again, and the Pokemon caught is as legal as the first.", 12, t.MUTED)]
 
     # Download, check, update
 
@@ -201,7 +194,7 @@ class RaidEventPicker:
                   "Downloading the event gallery...")
 
     def _update(self, _e) -> None:
-        self._run(lambda progress: gallery.take_update(progress=progress, cancelled=self.stop.is_set),
+        self._run(lambda progress: gallery.download(progress=progress, cancelled=self.stop.is_set),
                   "Updating the event gallery...")
 
     def _run(self, job, text: str) -> None:

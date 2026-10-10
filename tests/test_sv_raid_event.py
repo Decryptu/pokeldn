@@ -11,10 +11,12 @@ import sys
 import pytest
 
 from pokeldn import gen9
-from pokeldn.sv import raid, raid_encounter, raid_event, raid_search
+from pokeldn.sv import raid, raid_encounter, raid_event, raid_scan, raid_search
 
 ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
-GALLERY = os.path.join(ROOT, "EventsGallery", "Released", "Gen 9", "SV", "Raid Events")
+# A clone of the whole gallery, its JSON and Encounters.txt included: POKELDN_EVENTS_GALLERY or EventsGallery/.
+GALLERY = os.path.join(os.environ.get("POKELDN_EVENTS_GALLERY", os.path.join(ROOT, "EventsGallery")),
+                       "Released", "Gen 9", "SV", "Raid Events")
 needs_gallery = pytest.mark.skipif(not os.path.isdir(GALLERY),
                                    reason="needs projectpokemon/EventsGallery cloned as EventsGallery/")
 
@@ -113,11 +115,11 @@ def test_an_event_offers_each_version_its_own_dens():
     """Group 3 has no dens in the priority table, so its record never spawns."""
     assert raid_event.versions(SPOTLIGHT) == ["scarlet", "violet"]
     assert [(d.group, d.content, d.stars, d.species, d.label) for d in raid_event.dens(SPOTLIGHT, "scarlet")] == [
-        (1, "event", (5,), (1009,), "5★ Walking Wake")]
-    assert [d.label for d in raid_event.dens(SPOTLIGHT, "violet")] == ["5★ Iron Leaves"]
+        (1, "event", (5,), (1009,), "5 stars: Walking Wake")]
+    assert [d.label for d in raid_event.dens(SPOTLIGHT, "violet")] == ["5 stars: Iron Leaves"]
     assert [d.group for d in raid_event.dens(SPOTLIGHT)] == [1, 2]
-    assert [(d.content, d.label) for d in raid_event.dens(TYRANITAR, "scarlet")] == [("event", "4–5★ Tyranitar")]
-    assert [(d.content, d.label) for d in raid_event.dens(MIGHTY, "violet")] == [("might", "7★ Charizard")]
+    assert [(d.content, d.label) for d in raid_event.dens(TYRANITAR, "scarlet")] == [("event", "4-5 stars: Tyranitar")]
+    assert [(d.content, d.label) for d in raid_event.dens(MIGHTY, "violet")] == [("might", "7 stars: Charizard")]
     assert raid_event.progresses(SPOTLIGHT, "violet", 2) == ["5star", "6star"]
     assert raid_event.progresses(TYRANITAR, "scarlet", 1) == ["4star", "5star", "6star"]
     assert raid_event.catch_once(SPOTLIGHT) == ["Walking Wake", "Iron Leaves"]
@@ -136,8 +138,8 @@ def test_a_raid_context_moves_to_the_nearest_one_the_event_spawns(asked, nearest
 def test_the_finder_searches_an_events_dens_once_per_stage():
     scope = raid_search.contexts(event=TYRANITAR)
     assert [(c["version"], c["progress"], c["group"], c["den"]) for c in scope] == [
-        ("scarlet", "4star", 1, "4–5★ Tyranitar"), ("scarlet", "5star", 1, "4–5★ Tyranitar"),
-        ("violet", "4star", 1, "4–5★ Salamence"), ("violet", "5star", 1, "4–5★ Salamence")]
+        ("scarlet", "4star", 1, "4-5 stars: Tyranitar"), ("scarlet", "5star", 1, "4-5 stars: Tyranitar"),
+        ("violet", "4star", 1, "4-5 stars: Salamence"), ("violet", "5star", 1, "4-5 stars: Salamence")]
     assert raid_search.contexts("violet", progress="6star", event=SPOTLIGHT, group="1") == []
     found = raid_search.search(0, 300, scope[1:2], "overall", limit=5)
     assert found
@@ -238,15 +240,17 @@ def test_a_lottery_without_weight_draws_nothing():
     assert raid_event.generate(event, 7, "violet", "tera").rewards == ((1124, 1),)
 
 
-def test_every_species_entry_agrees_with_the_raid_tables():
-    """species.json is built from the same PKHeX revision as raid_base.json, with the same readers."""
+def test_species_data_covers_every_standard_boss():
+    """species.json is built from the PKHeX revision of raid_base.json and holds every standard and
+    black-crystal boss's personal entry, moves' PP and name."""
     with open(raid_encounter.DATA, encoding="utf-8") as fh:
         base = json.load(fh)
     with open(raid_encounter.SPECIES, encoding="utf-8") as fh:
         every = json.load(fh)
     assert every["source"]["pkhex"] == base["source"]["pkhex"]
-    for key in ("personal", "move_pp", "species_names"):
-        assert all(every[key][k] == v for k, v in base[key].items())
+    rows = [r for table in base["encounters"].values() for r in table]
+    assert all(f"{r['species']}/{r['form']}" in every["personal"] and str(r["species"]) in every["species_names"]
+               and all(str(m) in every["move_pp"] for m in r["moves"]) for r in rows)
 
 
 @needs_gallery
@@ -310,8 +314,9 @@ def test_every_delivery_agrees_with_its_encounters_text():
 @pytest.mark.parametrize("event, filters", [
     (TYRANITAR, {}), (TYRANITAR, {"one_per_species": True}), (SPOTLIGHT, {"shiny": False}),
     (MIGHTY, {"rewards": {1606: 2, 1127: 10}, "objective": "hardest"})])
-def test_the_compiled_scan_finds_an_event_s_raids_as_python_does(monkeypatch, event, filters):
-    pytest.importorskip("numba")
+def test_the_helper_s_scan_finds_an_event_s_raids_as_python_does(monkeypatch, event, filters):
+    if not raid_scan.available():
+        pytest.skip("needs the PKHeX helper")
     scope = raid_search.contexts(event=event)
     out = []
     for fast in (True, False):

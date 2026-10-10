@@ -39,6 +39,29 @@ class PixelActivity(ft.Container):
             self.update()
 
 
+class Check:
+    """A pixel checkbox and its label; `value` is whether it is checked."""
+
+    def __init__(self, label: str, tooltip: str = "", on_change=None, value: bool = False, size: int = 12):
+        self.value, self.on_change = value, on_change
+        self.icon = t.pixel_icon("checkbox", color=t.MUTED)
+        self._show()
+        self.control = ft.Container(ft.Row([self.icon, t.text(label, size, t.TEXT)], spacing=8, tight=True),
+                                    on_click=self._flip, tooltip=tooltip or None, padding=ft.Padding(2, 4, 2, 4),
+                                    border_radius=8)
+
+    def _show(self) -> None:
+        self.icon.src = f"icons/{'checkbox-on' if self.value else 'checkbox'}.svg"
+        self.icon.color = t.BLUE if self.value else t.MUTED
+
+    def _flip(self, _e) -> None:
+        self.value = not self.value
+        self._show()
+        self.control.update()
+        if self.on_change:
+            self.on_change(self.value)
+
+
 class CodeBlock:
     def __init__(self, app, value: str = "", content: ft.Control | None = None):
         self.app = app

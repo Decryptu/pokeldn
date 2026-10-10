@@ -46,8 +46,8 @@ class RewardFilter:
         self.list = ft.Column(spacing=8)
         self.add = t.secondary_button("Add reward", self._add, "plus")
         self.body = ft.Column([
-            t.text("A raid found gives at least these, its quantities of an item summed. The items and "
-                   "quantities are those the raids searched can give.", 11, t.FAINT),
+            t.text("Find raids that give at least these. Only what the raids searched can give is listed.",
+                   11, t.FAINT),
             self.busy, self.list, self.add], spacing=8, visible=False)
         self.control = ft.Column([header, self.body], spacing=8, tight=True)
         self._render(update=False)
