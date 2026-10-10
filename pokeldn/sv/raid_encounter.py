@@ -92,7 +92,7 @@ class Xoroshiro:
 @cache
 def tables():
     """-> raid_base.json with species.json's personal entries, move PP and names, every species' and
-    move's; raid_base.json's own copies are their subset."""
+    move's."""
     with open(DATA, encoding="utf-8") as fh:
         data = json.load(fh)
     with open(SPECIES, encoding="utf-8") as fh:
