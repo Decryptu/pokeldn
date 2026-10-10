@@ -559,9 +559,20 @@ pattern at 0x3FF000..0x3FF31F, then the source's own tail bytes at 0x3FF320+ car
 word 200 = 0x11111000 in both places). A guest load at 0x083FF000 then reads the pattern through
 the folded ROM window. The host session held: the payload returned 1, `client->param` carried the
 pattern's own first word, the console printed the success message and closed the link cleanly.
-The readback was a data read. Whether patched ROM bytes execute as code is unmeasured, and so is
-the write's lifetime: whether a soft reset re-copies the ROM buffer from the emulator's ROM file
-or keeps the session's heap copy is a model, not a measurement.
+
+Code copied the same way executes. With the source's word 0 a two-instruction THUMB routine
+(`0x47706001`: `str r1,[r0]; bx lr`) and words 1..199 the pattern, after the copy the payload read
+the fold back (`0x47706001`, the routine) and branched to `0x083FF001` with a nonce in `r1` and the
+address of its own result word in `r0`: the console's answer carried the nonce, so the wrapper's
+instruction fetch reads the same live backing the syscall wrote, and the copied bytes run as code
+through the normal fetch path. The session closed with the success message and the game saved.
+
+The write persists through a soft reset. After A+B+START+SELECT the same 4 KB at fold 0x3FF000
+read back byte-identical (0 of 4096 bytes changed) through the debugger while the EWRAM source
+scratch was cleared. A second session opened after the reset read 0x083FF000 (`0x47706001`) and
+branched to 0x083FF001 with a fresh nonce; the resident routine returned that nonce. A full
+application relaunch restored the bytes from the emulator's ROM file: the fresh process held the
+file's original bytes at the fold. The write's lifetime is the emulator process lifetime.
 
 Each side is rejected (pointer set to null) if the region's backing pointer at `+0x10` is null, the
 folded offset is at or past the size at `+0x20`, or fewer than `0x1000` bytes remain. Both sides
@@ -585,6 +596,10 @@ Measured with `swi 0x48` on the emulated console:
 | `r0 = 30`, `r1 = 0x08000000` (the ROM header) | sector 30 became the cartridge's first 4 KB, 4096 of 4096 bytes, neighbours untouched |
 | `r0 = 30`, `r1` an EWRAM buffer the payload filled | sector 30 became those bytes; the buffer read back unchanged |
 | `r0 = 0xFA3FF` (dest 0x083FF000), `r1` an EWRAM buffer | the copy lands in the cartridge buffer: its bytes at fold 0x3FF000 became the source's 4 KB byte for byte; a guest read at 0x083FF000 returns the pattern; the session ended cleanly |
+| the same copy, the source's word 0 a THUMB routine, then a branch to `0x083FF001` with a nonce in `r1` | the copied routine returned the nonce; the console showed success, saved and closed cleanly |
+| after a soft reset, a debugger read of the same fold | the 4 KB matched byte-for-byte (0 of 4096 bytes differed), while the EWRAM source scratch was cleared |
+| after the reset, a second session that reads the routine then branches to `0x083FF001` | the resident routine returned a fresh nonce and remained callable across resets in one process |
+| after a full application relaunch, a debugger read of the same fold | the original ROM-file bytes were restored at the fold; the write's lifetime is the process lifetime |
 
 It modifies no guest register and returns no status: only a flash read tells an accepted call from a
 rejected one.
