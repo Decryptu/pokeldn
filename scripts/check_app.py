@@ -63,19 +63,12 @@ def check() -> None:
             assert entitlements.get("com.apple.security.files.user-selected.read-write"), entitlements
             subprocess.run(["codesign", "--verify", "--deep", "--strict", str(bundle)],
                            capture_output=True, check=True)
-    # The raid finder loads the scan scripts/build_jit_cache.py compiled, copied from the bundle to an
-    # empty cache: no compile, and every one of a search's seeds scanned.
-    with tempfile.TemporaryDirectory(prefix="pokeldn-jit-check-") as folder:
-        os.environ["POKELDN_JIT_CACHE"] = str(Path(folder) / "numba")
-        from pokeldn.sv import raid_search
-        kernel = raid_search.raid_kernel()
-        assert raid_search.FAST and kernel.available() and (root / kernel.SHIPPED).is_dir()
-        found = raid_search.search(0, 10_000_000, raid_search.contexts("violet", "paldea", "6star", "standard"),
-                                   shiny=True)
-        assert len(found) == 12 and all(f.is_shiny for f in found), found
-        for function in (kernel._scan, kernel._best_per_species):
-            assert not function.stats.cache_misses, f"{function.__name__} compiled: the bundled cache missed"
-        assert kernel._scan.stats.cache_hits, "the raid finder's scan never ran"
+    # The raid finder scans in the bundled PKHeX helper (services/pkhex/RaidScan.cs), trimmed with it.
+    from pokeldn.sv import raid_search
+    assert raid_search.FAST
+    found = raid_search.search(0, 10_000_000, raid_search.contexts("violet", "paldea", "6star", "standard"),
+                               shiny=True)
+    assert len(found) == 12 and all(f.is_shiny for f in found), found
     trainer = {"ot": "POKELDN", "tid": 12345, "sid": 54321, "language": 2, "gender": 0}
     with tempfile.TemporaryDirectory(prefix="pokeldn-check-") as folder:
         pokemon.POKEMON = Path(folder)

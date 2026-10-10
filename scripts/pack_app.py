@@ -47,9 +47,8 @@ def platform_excludes():
                 "pydantic", "pydantic_core", "httpx", "httpcore", "oauthlib", "yaml", "PIL",
                 # rich's syntax highlighting, Markdown and tracebacks (Pygments, markdown-it, pydoc): esptool
                 # prints through rich and rich-click and reaches none of them. No code starts processes.
-                # multiprocessing stays: numba's thread pool takes its lock from it (pokeldn.sv.raid_kernel).
                 "pygments", "rich.syntax", "rich.markdown", "rich.traceback", "rich.__main__",
-                "_pydecimal"]
+                "multiprocessing", "_pydecimal"]
     if sys.platform != "win32":
         excluded += ["serial.tools.list_ports_windows", "serial.serialwin32", "serial.win32",
                      "flet_desktop.win_taskbar", "click._winconsole"]
@@ -127,11 +126,8 @@ def main() -> int:
                 source = source.replace(f"'/System/Library/Frameworks/{framework}.framework/{framework}'",
                                         f"ctypes.util.find_library('{framework}')")
             ports.write_text(source)
-        # The raid finder's compiled scan, so the app's first search does not wait on numba.
-        subprocess.run([sys.executable, str(ROOT / "scripts" / "build_jit_cache.py"), str(stage / "jit_cache")],
-                       check=True)
         data = [(stage / name, name) for name in
-                ("bin", "pokeldn", "vendor/LDN/ldn", "docs", "config", "gui/assets", "jit_cache")]
+                ("bin", "pokeldn", "vendor/LDN/ldn", "docs", "config", "gui/assets")]
         data += [(stage / "gui/guide.md", "gui"), (executable, "services/pkhex/dist")]
         data += [(stage / "LICENSE", "."), (stage / "vendor/LDN/LICENSE", "vendor/LDN")]
         data += [(path, "gui/firmware") for path in firmware]

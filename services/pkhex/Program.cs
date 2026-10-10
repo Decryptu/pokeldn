@@ -44,6 +44,7 @@ while (Console.ReadLine() is { } line)
             "sav_edit" => SaveEdit(game, request),
             "move" => Move(game, request),
             "destinations" => Destinations(game, request),
+            "raid_scan" => RaidScan.Run(request),
             var other => throw new ArgumentException($"unknown command {other}"),
         };
         reply["ok"] = true;

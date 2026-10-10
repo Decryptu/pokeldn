@@ -16,7 +16,7 @@ from pokeldn.app.catalog import GAMES
 from pokeldn.app.command import build
 from pokeldn.app.settings import Settings
 from pokeldn.ldn import channel_table, game_channel, pia6, pia_connect, reliable5
-from pokeldn.sv import lz4, port2, raid, raid_encounter, raid_event, raid_search, streams
+from pokeldn.sv import lz4, port2, raid, raid_encounter, raid_event, raid_scan, raid_search, streams
 
 ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 sys.path.insert(0, os.path.join(ROOT, "tools", "switch"))
@@ -184,8 +184,9 @@ def test_a_search_for_rewards_finds_every_raid_that_gives_them():
 
 
 def searched_both_ways(monkeypatch, *args, **kwargs):
-    """-> (the compiled scan's search, the plain Python one) as (seed, context, stars, score, rewards, PID)."""
-    pytest.importorskip("numba")
+    """-> (the helper's scan's search, the plain Python one) as (seed, context, stars, score, rewards, PID)."""
+    if not raid_scan.available():
+        pytest.skip("needs the PKHeX helper")
     out = []
     for fast in (True, False):
         monkeypatch.setattr(raid_search, "FAST", fast)
@@ -203,8 +204,8 @@ def searched_both_ways(monkeypatch, *args, **kwargs):
     (raid_search.contexts("violet", "paldea", "any", "standard"), 0x12345678),
     (raid_search.contexts("any", "kitakami", "any", "black"), 0xFFFFFF00),     # past FFFFFFFF to 0
     (raid_search.contexts("scarlet", "blueberry", "5star", "standard"), 7)])
-def test_the_compiled_scan_finds_what_python_finds(monkeypatch, scope, start, filters):
-    """pokeldn.sv.raid_kernel only picks the seeds the search keeps; the raids, their order and the
+def test_the_helper_s_scan_finds_what_python_finds(monkeypatch, scope, start, filters):
+    """pokeldn.sv.raid_scan only picks the seeds the search keeps; the raids, their order and the
     ties between seeds and contexts are the Python search's."""
     filters = {"objective": "overall", "limit": 12, **filters}
     compiled, python = searched_both_ways(monkeypatch, start, 3600 // len(scope), scope,
@@ -213,15 +214,13 @@ def test_the_compiled_scan_finds_what_python_finds(monkeypatch, scope, start, fi
     assert compiled or {"ability", "nature", "stars"} & set(filters)     # a black crystal has no 5 stars
 
 
-@pytest.mark.parametrize("chunk", [1 << 22, 1000])
+@pytest.mark.parametrize("chunk", [1 << 24, 1000])
 @pytest.mark.parametrize("filters", [
     {}, {"shiny": True}, {"rewards": {645: 1}, "objective": "hardest"}, {"nature": 3}])
 def test_the_search_can_stop_at_its_first_match(monkeypatch, chunk, filters):
     """The earliest seed that matches in the first context with a match, whatever its score; the
-    compiled scan's, chunked or not, is Python's."""
-    pytest.importorskip("numba")
-    from pokeldn.sv import raid_kernel
-    monkeypatch.setattr(raid_kernel, "CHUNK", chunk)
+    helper's scan, chunked or not, is Python's."""
+    monkeypatch.setattr(raid_scan, "CHUNK", chunk)
     scope = raid_search.contexts("any", "paldea", "6star", "standard")
     compiled, python = searched_both_ways(monkeypatch, 0xFFFFF000, 6000, scope, stop_at_first=True, **filters)
     assert compiled == python and len(python) == 1
@@ -231,42 +230,26 @@ def test_the_search_can_stop_at_its_first_match(monkeypatch, chunk, filters):
     assert not offset or not raid_search.search(0xFFFFF000, offset, [context], **filters)
 
 
-def test_a_stopped_compiled_search_keeps_what_it_found(monkeypatch):
-    pytest.importorskip("numba")
-    from pokeldn.sv import raid_kernel
-    monkeypatch.setattr(raid_kernel, "CHUNK", 1000)
+def test_a_stopped_helper_search_keeps_what_it_found(monkeypatch):
+    if not raid_scan.available():
+        pytest.skip("needs the PKHeX helper")
+    monkeypatch.setattr(raid_scan, "CHUNK", 1000)
     seen = []
     found = raid_search.search(0, 10_000, raid_search.contexts("violet", "paldea", "6star", "standard"),
                                progress=lambda done, total: seen.append(done), cancelled=lambda: len(seen) >= 3)
     assert seen[:3] == [1000, 2000, 3000] and len(found) == 12 and max(f.seed for f in found) < 3000
 
 
-def test_without_numba_the_search_scans_in_python():
+def test_without_the_helper_the_search_scans_in_python():
     import subprocess
     code = "; ".join((
-        "import sys", "sys.modules['numba'] = None",
-        "from pokeldn.sv import raid_kernel, raid_search",
-        "assert not raid_search.FAST and not raid_kernel.available()",
+        "from pokeldn import pokemon", "pokemon._command = lambda: (_ for _ in ()).throw(pokemon.BuilderError())",
+        "from pokeldn.sv import raid_search",
+        "assert not raid_search.FAST",
         "assert raid_search.MAX_WORK == 1_000_000 and raid_search.DEFAULT_COUNT == 100_000",
         "found = raid_search.search(0, 2000, raid_search.contexts('violet', 'paldea', '6star', 'standard'))",
         "assert len(found) == 12"))
     subprocess.run([sys.executable, "-c", code], cwd=ROOT, check=True, timeout=120)
-
-
-def test_the_compiled_scan_s_cache_follows_its_bytecode(monkeypatch):
-    """The stamp numba keys the shipped cache on: the kernel module's bytecode, not its path."""
-    pytest.importorskip("numba")
-    from pokeldn.sv import raid_kernel
-    stamp = raid_kernel.code_stamp()
-    assert stamp == raid_kernel.code_stamp() and raid_kernel.CacheLocator.stamp in (None, stamp)
-
-    def digest(source, path):
-        h = hashlib.sha256()
-        raid_kernel._hash_code(compile(source, path, "exec"), h)
-        return h.hexdigest()
-    one = "def f():" + chr(10) + "    return {1, 2}" + chr(10)
-    other = one.replace("2", "3")
-    assert digest(one, "/one/place.py") == digest(one, "/another/place.py") != digest(other, "/one/place.py")
 
 
 # The scripted console. Addresses and ids as tests/test_sv_departure.py's.

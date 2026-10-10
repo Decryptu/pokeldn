@@ -14,7 +14,7 @@ from gui import theme as t
 from gui.views.pokemon import NamePicker
 from gui.views.reward_filter import RewardFilter
 from gui.views.sprites import MINI, SIZE, Sprite
-from gui.views.widgets import PixelActivity
+from gui.views.widgets import Check, PixelActivity
 from pokeldn import pokemon as builder
 from pokeldn.sv import raid_encounter, raid_event, raid_search
 from pokeldn.sv.raid_encounter import NATURES, TERA_TYPES
@@ -46,25 +46,6 @@ def searching(done: int, total: int, elapsed: float) -> str:
     rate = done / elapsed
     speed = f"{rate / 1e6:.1f} million" if rate >= 1e6 else f"{rate:,.0f}"
     return f"Searching {done:,} of {total:,} seeds, {speed} a second, {duration((total - done) / rate)} left..."
-
-
-class Check:
-    """A pixel checkbox, as the Raid event card's; `value` is whether it is checked."""
-
-    def __init__(self, label: str, tooltip: str, on_change=None):
-        self.value, self.on_change = False, on_change
-        self.icon = t.pixel_icon("checkbox", color=t.MUTED)
-        self.control = ft.Container(ft.Row([self.icon, t.text(label, 12, t.TEXT)], spacing=8, tight=True),
-                                    on_click=self._flip, tooltip=tooltip, padding=ft.Padding(2, 4, 2, 4),
-                                    border_radius=8)
-
-    def _flip(self, _e) -> None:
-        self.value = not self.value
-        self.icon.src = f"icons/{'checkbox-on' if self.value else 'checkbox'}.svg"
-        self.icon.color = t.BLUE if self.value else t.MUTED
-        self.control.update()
-        if self.on_change:
-            self.on_change(self.value)
 
 
 def iv_range(text: str) -> tuple[int, int]:
@@ -251,8 +232,6 @@ class RaidSeedPicker:
                                species_id=pick(species) and int(species.value),
                                tera_type=pick(tera) and int(tera.value))
         wants = RewardFilter(self.app, reward_scope)
-        if raid_search.FAST:          # the compiled scan loads while the filters are chosen
-            threading.Thread(target=lambda: raid_search.raid_kernel().warm(), daemon=True).start()
         choose = lambda options, value: t.dropdown(options, value, on_select=lambda _e: wants.changed())
         if event is None:
             version = choose([("any", "Any game"), ("scarlet", "Scarlet"), ("violet", "Violet")],
@@ -420,8 +399,6 @@ class RaidSeedPicker:
                  t.labeled_control("Seeds to search", count, expand=True)),
             *([every.control] if raid_search.FAST else []),
             first_only.control,
-            *([] if raid_search.FAST else [t.text("Python searches without numba: up to a million seeds, and "
-                                                  "not every seed.", 11, t.FAINT)]),
         ], spacing=10, scroll=ft.ScrollMode.AUTO, expand=True)
         found = ft.Column([
             ft.Row([busy, status], spacing=8, vertical_alignment=ft.CrossAxisAlignment.CENTER),

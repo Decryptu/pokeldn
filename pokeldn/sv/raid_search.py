@@ -3,13 +3,12 @@ app's raid finder (docs/sv_raid.md, Finding a seed)."""
 
 from dataclasses import dataclass
 import heapq
-import importlib.util
 from itertools import product
 
-from pokeldn.sv import raid_encounter as encounter, raid_event
+from pokeldn.sv import raid_encounter as encounter, raid_event, raid_scan
 
-# With numba, pokeldn.sv.raid_kernel scans the seeds compiled, millions a second; without it, Python.
-FAST = importlib.util.find_spec("numba") is not None
+# The PKHeX helper scans tens of millions of seeds a second (pokeldn.sv.raid_scan); without it, Python.
+FAST = raid_scan.available()
 MAX_WORK = (1 << 32) if FAST else 1_000_000         # seeds times contexts: every seed of a context
 DEFAULT_COUNT = 10_000_000 if FAST else 100_000
 MAX_RESULTS = 100
@@ -231,8 +230,8 @@ def search(start, count, scope, objective="overall", *, stars=None, shiny=None, 
         draw = _drawer(context)
         tables = _reward_tables(context)
         able = {}                     # a row's id -> whether its raids can give what is wanted
-        # The compiled scan names the few seeds this loop can keep; without numba it takes them all.
-        picked = raid_kernel().offsets(
+        # The helper's scan names the few seeds this loop can keep; without it the loop takes them all.
+        picked = raid_scan.offsets(
             start, count, context, objective, lowest_first, limit, one_per_species, cancelled=cancelled,
             progress=progress and (lambda n, base=index * count: progress(base + n, total)),
             stop_at_first=stop_at_first, **filters) if FAST else None
@@ -281,12 +280,6 @@ def search(start, count, scope, objective="overall", *, stars=None, shiny=None, 
     if progress:
         progress(total, total)
     return _ranked(best, by_species, one_per_species, limit)
-
-
-def raid_kernel():
-    """-> pokeldn.sv.raid_kernel, imported at the first search: numba takes half a second to load."""
-    from pokeldn.sv import raid_kernel
-    return raid_kernel
 
 
 def _ranked(best, by_species, one_per_species, limit):

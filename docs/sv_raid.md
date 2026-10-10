@@ -271,33 +271,33 @@ raids give their fixed rows only.
 `pokeldn.sv.raid_event` reads a delivery folder (an [EventsGallery](https://github.com/projectpokemon/EventsGallery)
 event, or its `Files`) and generates the `Raid` the host stages:
 
-    sudo ./.venv/bin/python bin/sv_host.py ... --raid-pokemon FILE --raid-seed 52E6B438 \
+    ./.venv/bin/python bin/sv_host.py ... --raid-pokemon FILE --raid-seed 52E6B438 \
         --raid-event "EventsGallery/Released/Gen 9/SV/Raid Events/002 Charizard the Unrivaled" \
         --raid-version scarlet --raid-progress 6star [--raid-event-group 1] [--raid-catch-normal]
 
 The RaidPoint carries the record's capture rate and, as the crystal, the save's raid content: 2 an
-event, 3 a seven-star event (Tera-Finder `RaidContent`); no retail console has fought one of ours.
+event, 3 a seven-star event (Tera-Finder `RaidContent`).
 
 The app's Tera Raid (Host) tool picks the event from its own copy of the gallery, which it downloads
-and updates, and narrows the raid's version, progress and den to what the event spawns
-([docs/gui.md](gui.md#raid-events)). A den's choices come from `raid_event.dens`: a delivery group with
-dens in the priority table and a record in that version; Walking Wake's spotlight offers Scarlet its
-group 1 and Violet its group 2.
+and updates, and narrows the raid's version, progress and crystal to what the event spawns
+([Raid events](gui.md#raid-events)). The crystals offered come from `raid_event.dens`: a delivery
+group with dens in the priority table and a record in that version; Walking Wake's spotlight offers
+Scarlet its group 1 and Violet its group 2.
 
 A capture rate of 2 is a catch once per save: every seven-star record has it, and so do the five-star
 Walking Wake and Iron Leaves of each spotlight round, Dialga and Palkia's spotlight and the shiny
 Rayquaza. The save keeps the record numbers caught, eight bytes each, the number and a captured flag
 (block `0x8B14392F`; from 2.0.1 the defeated flags are `0xA4BA4848`'s, PKHeX `RaidSevenStar9`), and a
-rerun repeats its number
-(Walking Wake is 2023022801 in all seven rounds), so a catch in one round closes the others. The
+rerun repeats its number (Walking Wake is 2023022801 in all seven rounds), so a catch in one round
+closes the others. The
 shiny Treasures of Ruin spotlights' records have 0: never caught. The host's summary names the rule
 (`caught once per save`, `cannot be caught`).
 
 A console checks that list by the record number of the lobby descriptor (0x2c). A retail Violet
-that had caught Mighty Mewtwo (2023090101), shown our descriptor of it, said "you won't be able to
+that had caught Mighty Mewtwo (2023090101), shown the host's descriptor of it, said "you won't be able to
 catch the Tera Pokemon" in the lobby, with the RaidPoint's capture rate written 1 or 2 alike, as no
 RaidPoint is sent before the battle. Against Magikarp the Unrivaled (2026071701), which its save had
-caught, the same console (2026-10-10):
+caught, the same console:
 
 | descriptor's record number | RaidPoint's capture rate | the lobby | after the win |
 |---|---|---|---|
@@ -306,23 +306,21 @@ caught, the same console (2026-10-10):
 | 2026071799, a stand-in | 1 | no warning | caught |
 | 2026071799, again | 1 | no warning | caught |
 
-Changing the record number is what lets a save catch the boss again, and it is required. The console
-decides from its own list by the record number the lobby shows, and a number it lists as caught
-blocks the catch after the win, whatever capture rate the RaidPoint carries (the second row): the
-capture rate alone does not do it. A catch under capture rate 1 does not add the stand-in to the list
-(the fourth row). So `--raid-catch-normal` serves a catch-once record as a normal catch in both: the
+A record number the save lists as caught blocks the catch after the win whatever capture rate the
+RaidPoint carries (the second row). A catch under capture rate 1 does not add the stand-in to the
+list (the fourth row). `--raid-catch-normal` serves a catch-once record as a normal catch: the
 RaidPoint's capture rate 1, and in the descriptor a stand-in record number, the record's date with
-the suffix 99 (`raid_event.stand_in`: 2026071799), which no delivery has (every one's suffix is at
-most 14) and so no save has caught. The summary says `served as a normal catch of record 2026071799`.
-A never-caught record stays 0.
+the suffix 99 (`raid_event.stand_in`: 2026071799). No delivery has that suffix (every one's is at
+most 14). The summary says `served as a normal catch of record 2026071799`. A never-caught record
+stays 0.
 
 The stand-in is in the descriptor alone: the boss record and the RaidPoint but its capture rate are
 the event's, byte for byte, and no PK9 field holds a record number. PKHeX.Core 26.8.26's raid
 encounters (`EncounterDist9`, `EncounterMight9`) have none either, only their delivery group, so a
 catch's legality cannot depend on it. Every catch-once record of the gallery but Kingambit's second
 round (newer than that release), in each version it spawns in, at three seeds each and Magikarp at
-`000FD5D7`, 331 raids: the boss record we send, given a test trainer as PKHeX's own conversion of the
-encounter gives it, equals PKHeX's catch of that raid from that seed and is legal. A seven-star catch
+`000FD5D7`, 331 raids: the boss record the host sends, given a test trainer as PKHeX's own conversion
+of the encounter gives it, equals PKHeX's catch of that raid from that seed and is legal. A seven-star catch
 is legal only with the Mightiest Mark (`RibbonMarkMightiest`), which the console gives it: the
 Magikarp the console caught under 2026071799 has it.
 
@@ -338,7 +336,10 @@ distribution and seven-star encounters pkNX's ripper makes of them equal PKHeX.C
 placeholder); 20 080 bosses, forty seeds for every event, version, stage and group, equal PKHeX's
 `GenerateSeed32` field for field, PKHeX allowing each record at its stage; and
 `scripts/check_sv_raid_events.py` finds every delivery's 537 encounters, and raids drawn from them,
-agree with its `Encounters.txt`, Gimmighoul's malformed round aside.
+agree with its `Encounters.txt`, Gimmighoul's malformed round aside. Each of PKHeX's 229 encounters
+at seeds `00000001`, `12345678`, `9ABCDEF0`, `DEADBEEF`, `52E6B438` and `0000F00D` gives the
+encryption constant, IVs, ability number, gender, nature, height, weight and scale that
+`boss_fields` draws for the gallery's record of it.
 
 ## Finding a seed
 
@@ -361,33 +362,22 @@ Every Paldea, Kitakami and Blueberry context at once lists 343 items in about a 
 is made off the page. The search skips an encounter that cannot give what is wanted, then draws a
 seed's rewards before its boss, which keeps its speed.
 
-With numba installed, as in the desktop app, `pokeldn.sv.raid_kernel` scans the seeds compiled on
-every core: a seed's encounter, its boss up to the nature, the score, every filter and the rewards,
-the work of `select`, `boss_fields`, `rewards` and `tera_type` on arrays of the context's tables. It
-keeps a context's best seeds (or each species' best), and `search` makes their raids with the plain
-Python code, so the results, their order and the ties between seeds and contexts are the same with
-or without it (`tests/test_sv_raid.py` compares both). On a Ryzen 9 5900X ten million seeds of one
-context take 0.16 s, 0.08 s for shiny ones, and ten million in each of the 42 contexts 4.5 s; a
-search covers up to 4 294 967 296 seed and context pairs, and the finder offers ten million seeds.
-Without numba, Python scans every seed, about 22 000 a second, up to a million pairs, and the
-finder offers 100 000.
+The PKHeX helper scans the seeds over every core (`services/pkhex/RaidScan.cs`, packed and sent by
+`pokeldn.sv.raid_scan`, in a helper process of its own): a seed's encounter, its boss up to the
+nature, the score, every filter and the rewards, the work of `select`, `boss_fields`, `rewards` and
+`tera_type` on the context's tables. It names a context's best seeds (or each species' best), and
+`search` makes their raids with the plain Python code, so the results, their order and the ties
+between seeds and contexts are the Python scan's (`tests/test_sv_raid.py` compares both). On an
+Apple M4, ten million seeds of one context take 0.36 s, 0.12 s for shiny ones, and ten million in
+each of the 42 contexts 9.1 s. A search covers up to 4 294 967 296 seed and context pairs, sent to
+the helper 16 777 216 seeds at a time, and the finder offers ten million seeds. Without the helper
+(a source checkout that has not built it), Python scans every seed, about 22 000 a second, up to a
+million pairs, and the finder offers 100 000.
 
-With numba the finder's Every seed searches all 4 294 967 296 seeds of one context (a game,
-region, progress and crystal chosen), about 65 s on that CPU. Stop at the first match answers the
-first raid that matches, whatever its score, instead of the best ones (`stop_at_first`): the
-earliest seed of the first context that has one, the contexts searched one after the other. The
-scan stops at the chunk of 4 194 304 seeds that holds it.
-
-numba takes about 20 s to compile the scan, once per machine and version, cached on disk. The packed
-app ships a cache `scripts/build_jit_cache.py` builds on the release runner, copied at the first
-search to the user's cache folder (`%LOCALAPPDATA%\pokeldn\numba`, `~/Library/Caches/pokeldn/numba`
-or `~/.cache/pokeldn/numba`), and loads it in 0.2 s. It loads on any user's CPU as it holds code
-for the architecture's generic CPU (`NUMBA_CPU_NAME=generic`, measured as fast for this integer
-work), numba then keying its cache on the target triple alone. The kernel's own cache locator keeps
-it in one folder whatever the install path and fresh by a hash of the kernel module's bytecode,
-the helpers numba inlines included: numba's own frozen-app locator would key it on the executable,
-which a changed kernel leaves the same. A cache that misses (another numba, another argument type)
-only costs the compile; `scripts/check_app.py` fails a release whose cache misses.
+The finder's Every seed searches all 4 294 967 296 seeds of one context (a game, region, progress
+and crystal chosen), 41 s on that machine. Stop at the first match answers the first raid that
+matches, whatever its score, instead of the best ones (`stop_at_first`): the earliest seed of the
+first context that has one, the contexts searched one after the other.
 
 ## Joining
 
@@ -421,6 +411,6 @@ the host start; its Pokemon stayed in the battle.
 - What separates bonus subjects 4 and 5; what the words at 0x038, 0x3b4, 0x3d8 and 0x3e4 of a
   retail RaidPoint hold.
 - Whether the six Paldea encounters with the species' own Tera types roll as the retail table says.
-- Whether a retail console takes an event raid's crystal words 2 and 3, and what it does with a
-  fixed reward row's subject (host, guests, once), which `raid_point` writes as 0, every player's.
+- What a retail console does with an event RaidPoint's crystal word, 2 or 3, and with a fixed reward
+  row's subject (host, guests, once), which `raid_point` writes as 0, every player's.
 - Whether the five-star catch-once records go in the save's list as the seven-star ones do.

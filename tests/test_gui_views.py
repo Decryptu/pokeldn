@@ -710,7 +710,7 @@ def test_an_event_narrows_the_raid_card_to_what_it_spawns():
     assert GamesView.raid_choices(view, field["--raid-map"]) == (("paldea", "Paldea"),)
     assert GamesView.raid_choices(view, field["--raid-version"]) == (("scarlet", "Scarlet"), ("violet", "Violet"))
     assert GamesView.raid_choices(view, field["--raid-seed"]) is None
-    assert GamesView.raid_context(view)["den"] == "5★ Walking Wake"
+    assert GamesView.raid_context(view)["den"] == "5 stars: Walking Wake"
 
 
 def test_folding_the_raid_event_card_sets_its_event_aside_until_it_unfolds():
@@ -797,9 +797,7 @@ def test_find_a_raid_searches_ten_million_seeds_from_any_first_seed(monkeypatch)
               and isinstance(c.controls[0].content, ft.Text)]
     first = next(c.controls[1] for c in labels if c.controls[0].content.value == "First seed")
     count = next(c.controls[1] for c in labels if c.controls[0].content.value == "Seeds to search")
-    import importlib.util
     assert count.value == str(raid_search.DEFAULT_COUNT)
-    assert raid_search.DEFAULT_COUNT == (10_000_000 if importlib.util.find_spec("numba") else 100_000)
     start, shuffle = first.controls
     assert start.value == "00000000" and shuffle.tooltip == "Start at a random seed"
     monkeypatch.setattr(type(start), "update", lambda self: None)
