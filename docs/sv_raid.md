@@ -89,6 +89,8 @@ where 0x2713 is a runtime u32 at `+0x40` of an object whose writer is untraced.
 An emulated Scarlet 4.0.0 given messages 13, 15 and 16 with that padding zeroed acknowledged every
 battle-start message on its first send and began the battle with the host's Pokemon, as with the
 retail bytes.
+An emulated Scarlet 4.0.0 took the keep branch `0x14ab210` 13 ms after the host sent messages 15
+and 16: `0x14ab234` matched a battle-start frame's address and `0x14ab298` stored it.
 
 In 4.0.0 no decision reads the padding. The receive path loads the serializer header's last two
 bytes (`0x18bec98`) and stores them at `+0x4e` (`0x18bece4`) with no comparison; of the 49 message
@@ -259,8 +261,10 @@ the host start; its Pokemon stayed in the battle.
   advertises LDN application version 21, which `0x6b083c` copies from a runtime setting.
 - Whether a listener of the GlueCode dispatcher `0x18beef4` reads `+0x4c` as a word, and what
   reads the battle-start frames the queues of `0xe106a4` and `0xf5bc10` hold.
-- Whether the console keeps the battle-start frames: Pia acknowledges them before `0x14ab234`
-  filters by address, and the battle began in every raid.
+- Whether the battle reads the battle-start messages it keeps. On an emulated Scarlet 4.0.0 the 0x46
+  handler `0x2897afc` first ran during the first turn, 40 s after the frames and after the network
+  had gone down, with `x1` pointing at 0x60 zero bytes; whether that call carries message 16 is
+  unknown.
 - What writes the 0x2713 word of the battle-start port address. Every raid hosted with it began
   its battle, on retail and emulated consoles.
 - What separates bonus subjects 4 and 5; what the words at 0x038, 0x3b4, 0x3d8 and 0x3e4 of a
