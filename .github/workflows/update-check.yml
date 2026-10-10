@@ -1,0 +1,68 @@
+name: Update check
+
+# Updates a packed app in place on Windows and Linux (scripts/check_update.py), from the archives a
+# Release run built by hand. Never publishes anything.
+on:
+  workflow_dispatch:
+    inputs:
+      release_run:
+        description: "The id of a Release workflow run whose archives to test"
+        required: true
+
+permissions:
+  contents: read
+  actions: read
+
+jobs:
+  windows:
+    runs-on: windows-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - name: user folder
+            folder: C:\Users\runneradmin\Desktop
+            flags: --busy
+          - name: Program Files, administrator path
+            folder: C:\Program Files
+            flags: --busy --admin
+    name: windows (${{ matrix.name }})
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-python@v7
+        with:
+          python-version: "3.13"
+          cache: pip
+          cache-dependency-path: requirements.txt
+      - run: python -m pip install -r requirements.txt
+      - uses: actions/download-artifact@v8
+        with:
+          name: pokeldn-windows-x64.zip
+          run-id: ${{ inputs.release_run }}
+          github-token: ${{ github.token }}
+      - run: python scripts/check_update.py pokeldn-windows-x64.zip "${{ matrix.folder }}" ${{ matrix.flags }}
+
+  linux:
+    runs-on: ubuntu-22.04
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-python@v7
+        with:
+          python-version: "3.13"
+          cache: pip
+          cache-dependency-path: |
+            requirements.txt
+            gui/requirements.txt
+      - run: python -m pip install -r gui/requirements.txt
+      - name: The Flet viewer's libraries and a virtual display
+        run: |
+          python -m flet_cli.cli --version --json > flet.json
+          sudo apt-get update
+          sudo apt-get install -y xvfb $(python -c "import json; print(' '.join(json.load(open('flet.json'))['linux_dependencies']))")
+      - uses: actions/download-artifact@v8
+        with:
+          name: pokeldn-linux-x64.tar.gz
+          run-id: ${{ inputs.release_run }}
+          github-token: ${{ github.token }}
+      - run: mkdir -p "$HOME/apps"
+      - run: xvfb-run -a python scripts/check_update.py pokeldn-linux-x64.tar.gz "$HOME/apps"

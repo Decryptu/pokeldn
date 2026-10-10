@@ -165,7 +165,9 @@ def prune_viewers() -> None:
 def offer_update(app: App) -> None:
     """A newer release on GitHub: installed in place when this copy can replace itself, else its file."""
     release = app.update
-    reason = update.blocker(update.install_root()) if release.installable else "manual"
+    root = update.install_root()
+    reason = update.blocker(root) if release.installable else "manual"
+    admin = not reason and update.needs_admin(root)
 
     def close(e):
         app.page.pop_dialog()
@@ -182,7 +184,7 @@ def offer_update(app: App) -> None:
             note.update()
             return
         app.page.pop_dialog()
-        install_update(app, release)
+        install_update(app, release, admin)
 
     note = t.text(f"You have {__version__}. "
                   + ("pokeldn downloads it, checks it and restarts in the new version. " if not reason else
@@ -190,6 +192,7 @@ def offer_update(app: App) -> None:
                      "Download the new version for your computer from the release page, then replace this app "
                      "with it. ")
                   + (f"{reason} " if reason and reason != "manual" else "")
+                  + (f"Windows asks for permission to change {root.parent}. " if admin else "")
                   + "Your settings, keys and received Pokemon stay where they are.", 13, t.MUTED)
     main = (t.button("Update now", install, "download") if not reason else
             t.button("Download", open_(release.download), "download"))
@@ -203,7 +206,7 @@ def offer_update(app: App) -> None:
     app.page.update()   # also shown from a background check, where Flet does not flush on its own
 
 
-def install_update(app: App, release: update.Release) -> None:
+def install_update(app: App, release: update.Release, admin: bool = False) -> None:
     """Downloads and checks the release, then quits so the new app can take this one's place."""
     stop = threading.Event()
     status = t.text("Downloading...", 13, t.MUTED)
@@ -259,7 +262,7 @@ def install_update(app: App, release: update.Release) -> None:
             new = update.prepare(release, progress, stop.is_set)
             if stop.is_set():
                 raise update.Cancelled
-            update.start_swap(new, root, release.version)
+            update.start_swap(new, root, release.version, admin=admin)
             # This window stays until the helper's own is up, so one is always on screen.
             update.wait_for(update.READY.exists, 15.0)
         except update.Cancelled:

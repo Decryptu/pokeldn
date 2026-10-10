@@ -100,6 +100,8 @@ READY = WORK / "helper.ready"    # the helper's window is up; the old app may cl
 MAX_ARCHIVE = 600_000_000
 EXIT_WAIT = 120.0                # how long the helper waits for the old app to quit
 RENAME_WAIT = 30.0               # Windows keeps a quitting exe's folder locked for a moment
+# Takes the administrator path in a folder the user can write (CI runners); scripts/check_update.py.
+FORCE_ADMIN = os.environ.get("POKELDN_UPDATE_ADMIN") == "1"
 
 
 class Cancelled(Exception):
@@ -135,16 +137,23 @@ def _writable(folder: Path) -> bool:
         return False
 
 
-def blocker(root: Path | None) -> str:
+def blocker(root: Path | None, system: str = sys.platform) -> str:
     """Why this copy of the app cannot replace itself, or "" when it can."""
     if root is None:
         return "Only the packed app updates itself."
     if "AppTranslocation" in root.parts:
         # macOS runs a quarantined app from Downloads out of a random read-only copy.
         return "Move pokeldn to your Applications folder, open it from there, then update."
-    if not (_writable(root.parent) and _writable(root)):
+    if not needs_admin(root, system) and not (_writable(root.parent) and _writable(root)):
         return f"pokeldn cannot write to {root.parent}."
     return ""
+
+
+def needs_admin(root: Path | None, system: str = sys.platform) -> bool:
+    """Windows: a folder only an administrator may change (C:\\Program Files); the swap asks Windows."""
+    if system != "win32" or root is None:
+        return False
+    return FORCE_ADMIN or not (_writable(root.parent) and _writable(root))
 
 
 def checksums(text: str) -> dict[str, str]:
@@ -234,13 +243,50 @@ def _detach() -> dict:
     return {"start_new_session": True}
 
 
-def start_swap(new: Path, target: Path, version: str, system: str = sys.platform) -> None:
+def start_swap(new: Path, target: Path, version: str, system: str = sys.platform, admin: bool = False) -> None:
     """Starts the new app as the helper that replaces target once this process (os.getpid()) exits."""
+    args = ["--apply-update", str(new), str(target), str(os.getpid()), version]
+    if admin:
+        _run_as_admin(executable_in(new, system), args, new.parent, target.parent)
+        return
     # Launched from Explorer, this app's working folder is target: inherited, Windows refuses the rename.
     with (new.parent.parent / "helper.log").open("ab") as log:
-        subprocess.Popen([str(executable_in(new, system)), "--apply-update", str(new), str(target),
-                          str(os.getpid()), version], cwd=str(new.parent), stdin=subprocess.DEVNULL,
+        subprocess.Popen([str(executable_in(new, system)), *args], cwd=str(new.parent), stdin=subprocess.DEVNULL,
                          stdout=log, stderr=log, close_fds=True, **_detach())
+
+
+def _run_as_admin(exe: Path, args: list[str], cwd: Path, folder: Path) -> None:
+    """ShellExecuteExW with the runas verb: Windows asks the user (UAC) before the helper starts."""
+    import ctypes
+    from ctypes import wintypes
+
+    class Info(ctypes.Structure):     # SHELLEXECUTEINFOW
+        _fields_ = [("cbSize", wintypes.DWORD), ("fMask", wintypes.ULONG), ("hwnd", wintypes.HWND),
+                    ("lpVerb", wintypes.LPCWSTR), ("lpFile", wintypes.LPCWSTR),
+                    ("lpParameters", wintypes.LPCWSTR), ("lpDirectory", wintypes.LPCWSTR),
+                    ("nShow", ctypes.c_int), ("hInstApp", wintypes.HINSTANCE), ("lpIDList", ctypes.c_void_p),
+                    ("lpClass", wintypes.LPCWSTR), ("hkeyClass", wintypes.HKEY), ("dwHotKey", wintypes.DWORD),
+                    ("hIconOrMonitor", wintypes.HANDLE), ("hProcess", wintypes.HANDLE)]
+
+    shell = ctypes.WinDLL("shell32", use_last_error=True)
+    info = Info(cbSize=ctypes.sizeof(Info), fMask=0x40 | 0x400,   # SEE_MASK_NOCLOSEPROCESS | FLAG_NO_UI
+                lpVerb="runas", lpFile=str(exe), lpParameters=subprocess.list2cmdline(args),
+                lpDirectory=str(cwd), nShow=1)
+    if not shell.ShellExecuteExW(ctypes.byref(info)):
+        error = ctypes.get_last_error()
+        if error == 1223:             # ERROR_CANCELLED: the user said no on the UAC prompt
+            raise OSError(f"Windows did not give pokeldn permission to change {folder}")
+        raise ctypes.WinError(error)
+    if info.hProcess:
+        ctypes.windll.kernel32.CloseHandle(info.hProcess)
+
+
+def _elevated() -> bool:
+    import ctypes
+    try:
+        return bool(ctypes.windll.shell32.IsUserAnAdmin())
+    except (AttributeError, OSError):
+        return False
 
 
 def wait_for_exit(pid: int, timeout: float) -> bool:
@@ -316,6 +362,9 @@ def _copy(source: Path, dest: Path, system: str) -> None:
 def launch(root: Path, system: str = sys.platform) -> None:
     if system == "darwin":
         subprocess.Popen(["open", str(root)], **_detach())
+    elif system == "win32" and _elevated():
+        # Explorer opens it at the user's own level; a child of this helper would run as administrator.
+        subprocess.Popen(["explorer.exe", str(executable_in(root, system))], **_detach())
     else:
         subprocess.Popen([str(executable_in(root, system))], cwd=str(root), stdin=subprocess.DEVNULL,
                          stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL, close_fds=True, **_detach())

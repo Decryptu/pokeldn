@@ -341,9 +341,17 @@ archive: the check catches a corrupted or truncated download and does not authen
 | no network, HTTP error, reply that is not a release | nothing shown at launch; Check now says GitHub did not answer |
 | Settings, Updates off | no request at launch; Check now still asks |
 | no archive for this computer, or no `SHA256SUMS` in the release | Download opens the file or the release page |
-| a source checkout, a macOS app run from Downloads (App Translocation), a folder the user cannot write | Download, with the reason |
+| a source checkout, a macOS app run from Downloads (App Translocation), a macOS or Linux folder the user cannot write | Download, with the reason |
+| Windows, a folder the user cannot write (`C:\Program Files`) | Update now; Windows asks for administrator permission (UAC) before the helper starts, and a refusal leaves the app unchanged |
 | a session, flash or cleanup running | Update now asks to finish it first |
 | checksum mismatch or a failed download | nothing changes; the dialog offers Download |
+
+On Windows in a folder only an administrator may change, the helper starts through
+`ShellExecuteExW` with the `runas` verb, reads and writes its outcome beside the unpacked copy (an
+administrator's helper may run as another user), and opens the new app through Explorer, so it runs at
+the user's own level. `scripts/check_update.py ARCHIVE FOLDER` runs a packed app's own update against a
+release served on 127.0.0.1; the Update check workflow runs it on Windows (a user folder and
+`C:\Program Files`) and Linux from a Release run's archives.
 
 Settings, keys and received Pokemon live outside the app and stay. Whether macOS asks for App
 Management permission when the helper replaces an app in `/Applications` is unmeasured; a refusal

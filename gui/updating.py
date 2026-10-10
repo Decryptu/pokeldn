@@ -15,10 +15,12 @@ def run(new: Path, target: Path, pid: int, version: str) -> int:
     shown: list = []          # the page, once the window is up
     closed = threading.Event()
     result = {}
+    # Beside new, not this process's own data folder: an administrator's helper may be another user.
+    outcome, ready = new.parent / update.OUTCOME.name, new.parent / update.READY.name
 
     def work():
-        result["ok"] = update.apply(new, target, pid, version, helper=os.getpid())
-        update.wait_for(lambda: not update.OUTCOME.exists(), 60.0)
+        result["ok"] = update.apply(new, target, pid, version, outcome=outcome, helper=os.getpid())
+        update.wait_for(lambda: not outcome.exists(), 60.0)
         if shown and not closed.is_set():
             # os._exit with the window open leaves Flet's viewer orphaned on its "Working..." screen.
             try:
@@ -51,7 +53,7 @@ def run(new: Path, target: Path, pid: int, version: str) -> int:
             ], spacing=18, vertical_alignment=ft.CrossAxisAlignment.CENTER, expand=True))
             page.run_task(page.window.center)
             shown.append(page)
-            update.READY.touch()
+            ready.touch()
 
         drop.use_client()
         ft.run(main, assets_dir=os.path.join(ROOT, "gui", "assets"))
