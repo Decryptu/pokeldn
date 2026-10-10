@@ -93,6 +93,18 @@ retail bytes.
 An emulated Scarlet 4.0.0 took the keep branch `0x14ab210` 13 ms after the host sent messages 15
 and 16: `0x14ab234` matched a battle-start frame's address and `0x14ab298` stored it.
 
+The battle reads message 16 by its type. The reader `0xe0fd68` pops a frame and, when the header's
+u64 at +0x08 is 0, switches on the type at +0x00 (`0xe10088`): type 0x46 calls `0x2897afc` with
+`[reader+0x48]` as its only argument, and `0x2897afc` stores 1 at its `+0x71`. The per-frame update
+`0x289358c` reads `+0x71` of its own object, whose `+0x50` is the reader: while the byte is 0 it pumps
+the reader (`0xe0f014`) and calls `0xfc363c([+0x48], 0)`; while it is 1 it stops pumping and calls
+`0xfc363c([+0x48], 1)` each frame, and `0x28935b8` clears the byte when that returns true. With 1,
+`0xfc363c` takes an item from the source at `+0xa8` and hands it to the sinks at `+0xa0` and `+0xb8`
+while the sink at `[+0xb8]+0xa0` is empty.
+An emulated Scarlet 4.0.0 popped on the type-0x46 branch a frame carrying a marker the host wrote into
+message 16's padding (`46000000 d16a1616`, `0500 161616161616`): the frame was message 16. The pop
+came after the network had gone down, after the Error 7 dialog and before the first command menu.
+
 In 4.0.0 no decision reads the padding. The receive path loads the serializer header's last two
 bytes (`0x18bec98`) and stores them at `+0x4e` (`0x18bece4`) with no comparison; of the 49 message
 classes, only the serializers `0x290b150` and `0x14c7904` load `+0x4e`, to write the header out. The
@@ -260,10 +272,9 @@ the host start; its Pokemon stayed in the battle.
 
 - Whether a listener of the GlueCode dispatcher `0x18beef4` reads `+0x4c` as a word, and what
   reads the battle-start frames the queues of `0xe106a4` and `0xf5bc10` hold.
-- Whether the battle reads the battle-start messages it keeps. On an emulated Scarlet 4.0.0 the 0x46
-  handler `0x2897afc` first ran during the first turn, 40 s after the frames and after the network
-  had gone down, with `x1` pointing at 0x60 zero bytes; whether that call carries message 16 is
-  unknown.
+- Whether `[reader+0x48]` is the update `0x289358c`'s own object (the static reading suggests it;
+  no live read has tied the two), what the source at `+0xa8` of the object `0xfc363c` steps holds, and
+  what the battle does once that step returns true.
 - What writes the 0x2713 word of the battle-start port address. Every raid hosted with it began
   its battle, on retail and emulated consoles.
 - What separates bonus subjects 4 and 5; what the words at 0x038, 0x3b4, 0x3d8 and 0x3e4 of a
