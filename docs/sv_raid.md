@@ -343,10 +343,11 @@ agree with its `Encounters.txt`, Gimmighoul's malformed round aside.
 ## Finding a seed
 
 The app's raid seed field shows the boss and rewards the seed gives in the tool's context, and Find
-a raid searches seeds from a first one in every context the filters leave (`pokeldn.sv.raid_search`)
-for a species, star level, Tera type, nature, gender, shininess and IV ranges, ranked by a score of
-the boss's stats: HP times the sum of its defenses, either defense alone, its better attacking
-stat, or its total. One result per species is kept unless a species is chosen.
+a raid searches seeds from a first one, typed or picked at random, in every context the filters
+leave (`pokeldn.sv.raid_search`) for a species, star level, Tera type, nature, gender, shininess and
+IV ranges, ranked by a score of the boss's stats: HP times the sum of its defenses, either defense
+alone, its better attacking stat, or its total. One result per species is kept unless a species is
+chosen.
 
 Its Rewards section, folded until opened, wants rewards: rows of an item and the least quantity a
 raid must give of it, the raid's quantities of an item summed and two rows of one item added up.
@@ -367,8 +368,15 @@ keeps a context's best seeds (or each species' best), and `search` makes their r
 Python code, so the results, their order and the ties between seeds and contexts are the same with
 or without it (`tests/test_sv_raid.py` compares both). On a Ryzen 9 5900X ten million seeds of one
 context take 0.16 s, 0.08 s for shiny ones, and ten million in each of the 42 contexts 4.5 s; a
-search covers up to 4 294 967 296 seed and context pairs. Without numba, Python scans every seed,
-about 22 000 a second, up to a million pairs.
+search covers up to 4 294 967 296 seed and context pairs, and the finder offers ten million seeds.
+Without numba, Python scans every seed, about 22 000 a second, up to a million pairs, and the
+finder offers 100 000.
+
+With numba the finder's Every seed searches all 4 294 967 296 seeds of one context (a game,
+region, progress and crystal chosen), about 65 s on that CPU. Stop at the first match answers the
+first raid that matches, whatever its score, instead of the best ones (`stop_at_first`): the
+earliest seed of the first context that has one, the contexts searched one after the other. The
+scan stops at the chunk of 4 194 304 seeds that holds it.
 
 numba takes about 20 s to compile the scan, once per machine and version, cached on disk. The packed
 app ships a cache `scripts/build_jit_cache.py` builds on the release runner, copied at the first

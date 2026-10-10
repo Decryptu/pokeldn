@@ -213,6 +213,24 @@ def test_the_compiled_scan_finds_what_python_finds(monkeypatch, scope, start, fi
     assert compiled or {"ability", "nature", "stars"} & set(filters)     # a black crystal has no 5 stars
 
 
+@pytest.mark.parametrize("chunk", [1 << 22, 1000])
+@pytest.mark.parametrize("filters", [
+    {}, {"shiny": True}, {"rewards": {645: 1}, "objective": "hardest"}, {"nature": 3}])
+def test_the_search_can_stop_at_its_first_match(monkeypatch, chunk, filters):
+    """The earliest seed that matches in the first context with a match, whatever its score; the
+    compiled scan's, chunked or not, is Python's."""
+    pytest.importorskip("numba")
+    from pokeldn.sv import raid_kernel
+    monkeypatch.setattr(raid_kernel, "CHUNK", chunk)
+    scope = raid_search.contexts("any", "paldea", "6star", "standard")
+    compiled, python = searched_both_ways(monkeypatch, 0xFFFFF000, 6000, scope, stop_at_first=True, **filters)
+    assert compiled == python and len(python) == 1
+    context, offset = python[0][1], (python[0][0] - 0xFFFFF000) % (1 << 32)
+    before = scope[:scope.index(context)]
+    assert not before or not raid_search.search(0xFFFFF000, 6000, before, **filters)
+    assert not offset or not raid_search.search(0xFFFFF000, offset, [context], **filters)
+
+
 def test_a_stopped_compiled_search_keeps_what_it_found(monkeypatch):
     pytest.importorskip("numba")
     from pokeldn.sv import raid_kernel
@@ -229,7 +247,7 @@ def test_without_numba_the_search_scans_in_python():
         "import sys", "sys.modules['numba'] = None",
         "from pokeldn.sv import raid_kernel, raid_search",
         "assert not raid_search.FAST and not raid_kernel.available()",
-        "assert raid_search.MAX_WORK == 1_000_000",
+        "assert raid_search.MAX_WORK == 1_000_000 and raid_search.DEFAULT_COUNT == 100_000",
         "found = raid_search.search(0, 2000, raid_search.contexts('violet', 'paldea', '6star', 'standard'))",
         "assert len(found) == 12"))
     subprocess.run([sys.executable, "-c", code], cwd=ROOT, check=True, timeout=120)

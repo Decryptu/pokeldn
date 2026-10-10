@@ -3,8 +3,10 @@ searches seeds by what the boss is and the rewards it gives (pokeldn.sv.raid_sea
 context (its `event`, `group` and `den`) draws from the event and narrows the finder to what the
 event spawns."""
 
+import random
 import re
 import threading
+import time
 
 import flet as ft
 
@@ -20,10 +22,49 @@ GENDERS = ("Male", "Female", "Genderless")
 STATS = ("HP", "Atk", "Def", "Spe", "SpA", "SpD")
 PROGRESS = (("beginning", "Beginning"), ("tera", "Tera Raids unlocked"), ("3star", "3-star raids"),
             ("4star", "4-star raids"), ("5star", "5-star raids"), ("6star", "6-star raids"))
+ALL_SEEDS = 1 << 32
 
 
 def seed_of(text: str) -> int | None:
     return int(text, 16) if re.fullmatch(r"[0-9A-Fa-f]{8}", text or "") else None
+
+
+def duration(seconds: float) -> str:
+    """-> 45 s, 3 min 20 s or 2 h 5 min."""
+    seconds = int(seconds)
+    if seconds < 60:
+        return f"{seconds} s"
+    if seconds < 3600:
+        return f"{seconds // 60} min {seconds % 60} s"
+    return f"{seconds // 3600} h {seconds % 3600 // 60} min"
+
+
+def searching(done: int, total: int, elapsed: float) -> str:
+    """-> how far a search is, its speed and the time it has left."""
+    if not done or elapsed <= 0:
+        return f"Searching {done:,} of {total:,} seeds..."
+    rate = done / elapsed
+    speed = f"{rate / 1e6:.1f} million" if rate >= 1e6 else f"{rate:,.0f}"
+    return f"Searching {done:,} of {total:,} seeds, {speed} a second, {duration((total - done) / rate)} left..."
+
+
+class Check:
+    """A pixel checkbox, as the Raid event card's; `value` is whether it is checked."""
+
+    def __init__(self, label: str, tooltip: str, on_change=None):
+        self.value, self.on_change = False, on_change
+        self.icon = t.pixel_icon("checkbox", color=t.MUTED)
+        self.control = ft.Container(ft.Row([self.icon, t.text(label, 12, t.TEXT)], spacing=8, tight=True),
+                                    on_click=self._flip, tooltip=tooltip, padding=ft.Padding(2, 4, 2, 4),
+                                    border_radius=8)
+
+    def _flip(self, _e) -> None:
+        self.value = not self.value
+        self.icon.src = f"icons/{'checkbox-on' if self.value else 'checkbox'}.svg"
+        self.icon.color = t.BLUE if self.value else t.MUTED
+        self.control.update()
+        if self.on_change:
+            self.on_change(self.value)
 
 
 def iv_range(text: str) -> tuple[int, int]:
@@ -247,8 +288,26 @@ class RaidSeedPicker:
         ivs = [t.field(hint="any", mono=True, expand=True, text_align=ft.TextAlign.CENTER,
                        content_padding=ft.Padding(4, 8, 4, 8)) for _ in STATS]
         start = t.field(value=self.seed.value if seed_of(self.seed.value) is not None else "00000000",
-                        mono=True)
-        count = t.field(value="100000", mono=True, keyboard_type=ft.KeyboardType.NUMBER)
+                        mono=True, expand=True)
+
+        count = t.field(value=str(raid_search.DEFAULT_COUNT), mono=True, keyboard_type=ft.KeyboardType.NUMBER)
+        shuffle = t.icon_button("shuffle", None, "Start at a random seed")
+
+        def randomize(_e):
+            start.value = f"{random.getrandbits(32):08X}"
+            start.update()
+        shuffle.on_click = randomize
+
+        def everything(on: bool) -> None:
+            """Every seed: the first seed and the count step aside, and the search covers all of them."""
+            for control in (start, count, shuffle):
+                control.disabled = on
+                control.update()
+        every = Check(f"Every seed, all {ALL_SEEDS:,}", "Search every seed of one game, region, progress "
+                      "and crystal", everything)
+        first_only = Check("Stop at the first match", "Answer the first raid that matches, whatever its "
+                           "score: the earliest seed of the first game, region, progress and crystal "
+                           "that has one")
         results = ft.ListView(spacing=8, expand=True)
         results.controls = [empty_results()]
         status = t.text("Choose what the raid should be, then Search.", 12, t.MUTED)
@@ -281,10 +340,17 @@ class RaidSeedPicker:
                                              event=event, group=crystal.value)
                 if not scope:
                     raise ValueError("No den of the event spawns in that game at that progress.")
-                first, amount = seed_of(start.value), int(count.value)
-                if first is None or not 1 <= amount * len(scope) <= raid_search.MAX_WORK:
-                    raise ValueError(f"Start at an eight-digit seed and search up to "
-                                     f"{raid_search.MAX_WORK // len(scope):,} seeds in this scope.")
+                if every.value:
+                    if len(scope) > 1:
+                        raise ValueError(f"Every seed is {ALL_SEEDS:,} seeds in one raid: choose a game, "
+                                         "region, progress and crystal.")
+                    first, amount = 0, ALL_SEEDS
+                else:
+                    first = seed_of(start.value)
+                    amount = int(count.value) if count.value.strip().isdigit() else 0
+                    if first is None or not 1 <= amount * len(scope) <= raid_search.MAX_WORK:
+                        raise ValueError(f"Start at an eight-digit seed and search up to "
+                                         f"{raid_search.MAX_WORK // len(scope):,} seeds in this scope.")
                 ranges = tuple(iv_range(field.value) for field in ivs)
                 filters = dict(stars=pick(stars) and int(stars.value),
                                species_id=pick(species) and int(species.value),
@@ -304,15 +370,18 @@ class RaidSeedPicker:
             for control in (status, results, run, stop, busy):
                 control.update()
 
+            began = time.monotonic()
+
             def progress(done_count, total):
-                status.value = f"Searching {done_count:,} of {total:,} seeds..."
+                status.value = searching(done_count, total, time.monotonic() - began)
                 self.app.ui(lambda: self._update(status))
 
             def work():
                 try:
                     found = raid_search.search(first, amount, scope, rank.value,
                                                one_per_species=filters["species_id"] is None, limit=30,
-                                               progress=progress, cancelled=cancel.is_set, **filters)
+                                               progress=progress, cancelled=cancel.is_set,
+                                               stop_at_first=first_only.value, **filters)
                     self.app.ui(lambda: done(found, cancel.is_set()))
                 except Exception as exc:
                     message = str(exc)
@@ -345,8 +414,14 @@ class RaidSeedPicker:
             heading("search", "Search"),
             t.labeled_control("Rank by", rank),
             t.text("Bulk and offense estimate how hard the boss is from its stats alone.", 11, t.FAINT),
-            pair(t.labeled_control("First seed", start, expand=True),
+            pair(t.labeled_control("First seed", ft.Row([start, shuffle], spacing=4,
+                                                         vertical_alignment=ft.CrossAxisAlignment.CENTER),
+                                   expand=True),
                  t.labeled_control("Seeds to search", count, expand=True)),
+            *([every.control] if raid_search.FAST else []),
+            first_only.control,
+            *([] if raid_search.FAST else [t.text("Python searches without numba: up to a million seeds, and "
+                                                  "not every seed.", 11, t.FAINT)]),
         ], spacing=10, scroll=ft.ScrollMode.AUTO, expand=True)
         found = ft.Column([
             ft.Row([busy, status], spacing=8, vertical_alignment=ft.CrossAxisAlignment.CENTER),

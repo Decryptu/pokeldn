@@ -10,7 +10,8 @@ from pokeldn.sv import raid_encounter as encounter, raid_event
 
 # With numba, pokeldn.sv.raid_kernel scans the seeds compiled, millions a second; without it, Python.
 FAST = importlib.util.find_spec("numba") is not None
-MAX_WORK = (1 << 32) if FAST else 1_000_000         # seeds times contexts in one search
+MAX_WORK = (1 << 32) if FAST else 1_000_000         # seeds times contexts: every seed of a context
+DEFAULT_COUNT = 10_000_000 if FAST else 100_000
 MAX_RESULTS = 100
 # (label, score, lowest first). Stats are HP Atk Def Spe SpA SpD.
 OBJECTIVES = {
@@ -208,10 +209,12 @@ def species(event=None):
 
 def search(start, count, scope, objective="overall", *, stars=None, shiny=None, species_id=None,
            tera_type=None, nature=None, gender=None, ability=None, ivs=None, rewards=None,
-           one_per_species=False, limit=12, progress=None, cancelled=None):
+           one_per_species=False, limit=12, progress=None, cancelled=None, stop_at_first=False):
     """-> up to `limit` matches among seeds start..start+count-1 in every context of `scope`, best
     score first. `ivs` is six (low, high) ranges, HP Atk Def Spe SpA SpD; `rewards` {item: least
-    quantity}, a raid's quantities of an item summed, and a match carries its rewards."""
+    quantity}, a raid's quantities of an item summed, and a match carries its rewards.
+    `stop_at_first` answers the first match alone, whatever its score: the earliest seed of the first
+    context in `scope` that has one."""
     if objective not in OBJECTIVES:
         raise ValueError(f"no objective {objective!r}")
     if not scope or count < 1 or count * len(scope) > MAX_WORK:
@@ -232,7 +235,7 @@ def search(start, count, scope, objective="overall", *, stars=None, shiny=None, 
         picked = raid_kernel().offsets(
             start, count, context, objective, lowest_first, limit, one_per_species, cancelled=cancelled,
             progress=progress and (lambda n, base=index * count: progress(base + n, total)),
-            **filters) if FAST else None
+            stop_at_first=stop_at_first, **filters) if FAST else None
         for offset in range(count) if picked is None else picked:
             if picked is None and cancelled and cancelled():
                 return _ranked(best, by_species, one_per_species, limit)
@@ -263,6 +266,8 @@ def search(start, count, scope, objective="overall", *, stars=None, shiny=None, 
                     or (ivs is not None and not all(lo <= iv <= hi for iv, (lo, hi)
                                                      in zip(boss["ivs"], ivs)))):
                 continue
+            if stop_at_first:
+                return [found]
             # Larger is better on the heap; the earlier seed wins a tie.
             entry = (-found.score if lowest_first else found.score, -seed, done, found)
             if one_per_species:

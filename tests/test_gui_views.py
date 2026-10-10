@@ -772,6 +772,68 @@ def test_the_finder_wants_the_rewards_its_unfolded_list_names():
     assert [o.text for o in picker.options] == ["Bottle Cap (not given here)", "Ability Patch"]
 
 
+def test_find_a_raid_searches_ten_million_seeds_from_any_first_seed(monkeypatch):
+    """The finder offers the compiled scan's ten million seeds, and its shuffle picks a random first seed."""
+    import flet as ft
+    from gui.views import raid_seed
+    from pokeldn.sv import raid_search
+    shown = []
+    app = SimpleNamespace(page=SimpleNamespace(show_dialog=shown.append, pop_dialog=lambda: None),
+                          ui=lambda f: f())
+    monkeypatch.setattr(raid_search, "FAST", False)       # no warm-up thread
+    picker = raid_seed.RaidSeedPicker(app, "", lambda _v: None,
+                                      lambda: {"version": "violet", "map_name": "paldea", "progress": "6star",
+                                               "content": "standard"}, lambda _c: None)
+    picker._open(None)
+
+    def walk(control):
+        yield control
+        for name in ("content", "controls"):
+            child = getattr(control, name, None)
+            for c in child if isinstance(child, list) else [child] if isinstance(child, ft.Control) else []:
+                yield from walk(c)
+    controls = list(walk(shown[0].content))
+    labels = [c for c in controls if isinstance(c, ft.Column) and c.controls and isinstance(c.controls[0], ft.Container)
+              and isinstance(c.controls[0].content, ft.Text)]
+    first = next(c.controls[1] for c in labels if c.controls[0].content.value == "First seed")
+    count = next(c.controls[1] for c in labels if c.controls[0].content.value == "Seeds to search")
+    import importlib.util
+    assert count.value == str(raid_search.DEFAULT_COUNT)
+    assert raid_search.DEFAULT_COUNT == (10_000_000 if importlib.util.find_spec("numba") else 100_000)
+    start, shuffle = first.controls
+    assert start.value == "00000000" and shuffle.tooltip == "Start at a random seed"
+    monkeypatch.setattr(type(start), "update", lambda self: None)
+    values = set()
+    for _ in range(5):
+        shuffle.on_click(None)
+        assert raid_seed.seed_of(start.value) is not None and len(start.value) == 8
+        values.add(start.value)
+    assert len(values) > 1
+
+
+def test_the_finder_tells_how_far_a_search_is_and_how_long_it_has_left():
+    from gui.views.raid_seed import duration, searching
+    assert [duration(s) for s in (0, 59.9, 60, 200, 3600, 7500)] == [
+        "0 s", "59 s", "1 min 0 s", "3 min 20 s", "1 h 0 min", "2 h 5 min"]
+    assert searching(0, 1000, 0) == "Searching 0 of 1,000 seeds..."
+    assert searching(500, 1000, 2) == "Searching 500 of 1,000 seeds, 250 a second, 2 s left..."
+    assert searching(50_000_000, 1 << 32, 2) == (
+        "Searching 50,000,000 of 4,294,967,296 seeds, 25.0 million a second, 2 min 49 s left...")
+
+
+def test_the_finder_s_checkboxes_flip_and_tell(monkeypatch):
+    import flet as ft
+    from gui.views.raid_seed import Check
+    monkeypatch.setattr(ft.Container, "update", lambda self: None)
+    told = []
+    box = Check("Every seed", "tip", told.append)
+    assert not box.value and box.icon.src.endswith("checkbox.svg") and box.control.tooltip == "tip"
+    box.control.on_click(None)
+    assert box.value and box.icon.src == "icons/checkbox-on.svg" and told == [True]
+    box.control.on_click(None)
+    assert not box.value and told == [True, False]
+
+
 @pytest.mark.parametrize("downloaded", [True, False])
 def test_an_event_missing_from_the_gallery_stays_chosen_and_shows_missing(monkeypatch, tmp_path, downloaded):
     """The card keeps an event the gallery lacks (the run refuses it) and says so in red, rather than

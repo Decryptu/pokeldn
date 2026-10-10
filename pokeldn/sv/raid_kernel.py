@@ -415,10 +415,11 @@ def _pack(context):
 
 def offsets(start, count, context, objective, lowest, limit, one_per_species, *, stars=None, shiny=None,
             species_id=None, tera_type=None, nature=None, gender=None, ability=None, ivs=None, rewards=None,
-            progress=None, cancelled=None):
+            progress=None, cancelled=None, stop_at_first=False):
     """-> the offsets from `start`, in order, of the seeds among start..start+count-1 that can be a
-    match raid_search keeps in this context: its best `limit` or each species' best; None without
-    numba. Scanned in chunks; `progress(n)` after each, and a Stop answers what was found so far."""
+    match raid_search keeps in this context: its best `limit`, each species' best, or with
+    `stop_at_first` the earliest match alone; None without numba. Scanned in chunks; `progress(n)`
+    after each, and a Stop answers what was found so far."""
     if njit is None:
         return None
     (mode, star_ceil, star_val, totals, lut, rows, fixed, lottery, toxt_tab, toxt_n, shards, slots,
@@ -439,7 +440,12 @@ def offsets(start, count, context, objective, lowest, limit, one_per_species, *,
                   totals, lut, rows, fixed, lottery, flt, ivr, want, toxt_tab, toxt_n, shards, slots, columns,
                   rank[:n], species[:n])
             visit += (np.flatnonzero(rank[:n] == VISIT) + first).tolist()
-            if one_per_species:
+            if stop_at_first:
+                hits = np.flatnonzero((rank[:n] >= 0) & (rank[:n] != NO_MATCH))
+                if hits.size:
+                    hit = first + int(hits[0])
+                    return [v for v in visit if v < hit] + [hit]
+            elif one_per_species:
                 _best_per_species(rank[:n], species[:n], best)
             else:
                 part = rank[:n]
