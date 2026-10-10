@@ -215,9 +215,15 @@ table's `SubjectType` (0 every player, 1 the host, 2 the guests, 3 once); the ga
 lottery drawn three more times on the same generator, and the subject-5 row the boss's Tera Shard
 with the count `RaidGemItemRewardBoost` gives its difficulty (0, 0, 2, 5, 10, 12 and 0 for one to
 seven stars; 2 at three stars, 12 at six). The meal-power table reader `0xef885c` reads one raid
-field, `AddRewardSlots`. A row's third word was 1 on a Bottle Cap lottery row and 0 elsewhere. `raid_point` writes the
-seed's rows (or the chosen ones) under subject 0 and no bonus rows, so a guest receives every row,
-the host's included. A retail console awarded a row rewritten to Quick Ball x500, with the other
+field, `AddRewardSlots`. A row's third word was 1 on a Bottle Cap lottery row and 0 elsewhere.
+
+An emulated Scarlet 4.0.0 guest sent one row under each subject 0 to 5 listed subjects 0, 2, 3 and 5
+on its reward screen and left out 1 and 4. With a meal's Raid Power: Ghost Lv. 1 active it left out
+subject 4 against a Steel Tera boss and listed it against a Ghost Tera boss; sent three subject-4
+rows there, it listed the first only.
+
+`raid_point` writes the seed's rows (or the chosen ones) under subject 0 and no bonus rows, so a
+guest receives every row, the host's included. A retail console awarded a row rewritten to Quick Ball x500, with the other
 rows cleared and one bonus row left, as written.
 
 ## The seed
@@ -299,10 +305,13 @@ the host start; its Pokemon stayed in the battle.
   releases into the sink: the item `0xfc363c` returns through x8 at `0xfc36ac`, then its vtable's
   `+0x68`. The source is `[[sm+0x48]+0x128]` (`0xfa46d4`); what fills `[sm+0x48]` is untraced.
 - What writes the 0x2713 word of the battle-start port address. The builders read it at `+0x40`
-  of the object at the battle network object's `+0x110` (`0xfa7320`, `0xfa8628`, `0xfb1cf8`, `0x28949f4`); no instruction in the image
-  materialises 0x2713. Every raid hosted with it began its battle, on retail and emulated consoles.
-- Which code filters reward rows by subject on receipt, whether subject 4 rows are kept per the
-  receiving player's Raid Power meal (`AddRewardSlots`), and what grants subject 5.
+  of the object at the battle network object's `+0x110` (`0xfa7320`, `0xfa8628`, `0xfb1cf8`,
+  `0x28949f4`); no instruction in the image materialises 0x2713. On an emulated Scarlet 4.0.0 guest that object (vtable `0x44ff6c8`,
+  constructor `0x16b21f0`, which zeroes `+0x40`, destructor `0x2894604`) held the u32 pair
+  `0x1527b, 7` at `+0x38` and 0x2713 at `+0x40` when the builders first read it at the join.
+  Every raid hosted with it began its battle, on retail and emulated consoles.
+- Which code filters reward rows by subject on receipt; whether Raid Power Lv. 2 and 3 keep two and
+  three subject-4 rows; whether a guest always keeps subject 5.
 - What the RaidPoint's u64 at 0x3d8 and byte 0x3b4 hold, and what a console does with a six-star
   point whose `raidTimeData` is zero, as `raid_point` writes it.
 - Event raids, whose encounters and rewards come from the active Poke Portal News tables.
