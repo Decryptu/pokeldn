@@ -120,9 +120,11 @@ def test_the_raidpoint_matches_three_retail_points():
     assert struct.unpack_from("<37I", three, 0x4C)[:14] == (800, 0, 0, 0, 0, 0, 0, 0, 0, 0, 3, 2, 75,
                                                             201)
     assert struct.unpack_from("<7I", three, 0x3B8) == (3, 246, 0, 1, 35, 0, 14)
-    # A black crystal's: crystal 1 and the catch level at 0x20, the battle level in the summary.
+    # A black crystal's (record 6045): crystal 1 and the catch level at 0x20, the record's active
+    # raidTimeData at 0x30 as retail's, the battle level in the summary.
     black = raid.raid_point(raid_encounter.generate(0x09F3E337, "scarlet", "paldea", "6star", "black"))
     assert struct.unpack_from("<4I", black, 0x20) == (6, 1, 1, 75)
+    assert struct.unpack_from("<7I", black, 0x30) == (1, 450, 0, 60, 0, 0, 0)
     assert struct.unpack_from("<14I", black, 0x4C) == (2500, 65, 55, 9999, 35, 0, 0, 20, 75, 35, 1, 1,
                                                        85, 0)
     assert struct.unpack_from("<7I", black, 0x3B8) == (6, 1008, 0, 0, 90, 0, 17)
@@ -500,7 +502,7 @@ def test_a_console_fights_an_event_raid_we_host(monkeypatch, tmp_path, capsys, c
                      moves=[428, 337, 242, 814], tera=1, stars=4, rate=2, identifier=2022120904,
                      fixed_rewards="1", lottery_rewards="1", boss_desc=[1200] + [0] * 36, evs=[0] * 6,
                      rom=0, group=1, capture_rate=capture, ivs=None, gender=None, nature=None, shiny=0,
-                     scale_type=0, scale=0, held_item=0)
+                     scale_type=0, scale=0, held_item=0, time=[1, 450, 0, 60, 0, 0, 0])
     event = raid_event.Event(20221209, "", (salamence,),
                              {"1": [dict(category=0, item=1126, amount=2, probability=100, subject=0)]},
                              {"1": []}, (5,) + (0,) * 9)
@@ -518,6 +520,7 @@ def test_a_console_fights_an_event_raid_we_host(monkeypatch, tmp_path, capsys, c
     assert (boss["species"], boss["level"]) == (373, 45)
     point = plain[raid.RAIDPOINT:]
     assert struct.unpack_from("<4I", point, 0x20) == (4, 2, word, 45)
+    assert struct.unpack_from("<7I", point, 0x30) == (1, 450, 0, 60, 0, 0, 0)
     assert struct.unpack_from("<4I", point, raid.POINT_REWARDS) == (1126, 2, 0, 0)
     descriptor = struct.unpack_from("<11I", first[1]["data"], 18)
     assert (descriptor[1], descriptor[4], descriptor[7]) == (373, 4, record)

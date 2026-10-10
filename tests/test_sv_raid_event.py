@@ -28,7 +28,7 @@ def row(**fields):
                moves=[33, 0, 0, 0], tera=1, stars=1, rate=1, identifier=1, fixed_rewards="1",
                lottery_rewards="1", boss_desc=[500] + [0] * 36, evs=[0] * 6, rom=0, group=1,
                capture_rate=1, ivs=None, gender=None, nature=None, shiny=0, scale_type=0, scale=0,
-               held_item=0)
+               held_item=0, time=None)
     out.update(fields)
     return out
 
@@ -167,7 +167,8 @@ CHARIZARD_DESC = [2500, 65, 55, 9999, 40, 0, 0, 20, 70, 30, 3, 1, 99, 315, 1, 1,
 CHARIZARD = row(species=6, ability=4, level=100, capture_level=100, moves=[406, 126, 542, 411],
                 ivs=SEVEN, tera=17, gender=0, nature=15, shiny=1, scale_type=6, scale=128, stars=7,
                 capture_rate=2, identifier=2022120201, boss_desc=CHARIZARD_DESC,
-                fixed_rewards="16547307249463849196", lottery_rewards="16547307249463849196")
+                fixed_rewards="16547307249463849196", lottery_rewards="16547307249463849196",
+                time=[1, 600, 0, 60, 0, 0, 0])
 FIXED = [(0, 1127, 6, 0), (0, 1128, 4, 0), (0, 49, 5, 0), (2, 0, 10, 0), (2, 0, 5, 1), (0, 2217, 1, 3),
          (0, 1606, 1, 3)]
 LOTTERY = [(0, 1127, 3, 15), (0, 1127, 5, 23), (0, 50, 2, 10), (0, 49, 5, 10), (0, 1128, 2, 5),

@@ -190,7 +190,7 @@ The RaidPoint, offsets from its start:
 | 0x000 | 24 | the point's name, ASCII, `RaidPoint_` and a suffix (`RaidPoint_POKELDN_0` is accepted) |
 | 0x018 | u32 | 0x40 (one retail black point held `0x458F9952`; 0x40 is accepted) |
 | 0x020 | 4 x u32 | stars, the crystal (0 standard, 1 black; [2 and 3 for an event](#event-raids)), the record's `captureRate` (1; an event's 0 or 2), its `captureLv` |
-| 0x030 | 7 x u32 | the record's `raidTimeData`: active (a bool), `gameLimit`, `clientLimit`, `commandLimit`, `pokeReviveTime`, `aiIntervalTime`, `aiIntervalRand`; zero from `raid_point` |
+| 0x030 | 7 x u32 | the record's `raidTimeData`: active (a bool), `gameLimit`, `clientLimit`, `commandLimit`, `pokeReviveTime`, `aiIntervalTime`, `aiIntervalRand`; `raid_point` writes an active record's, zero for an inactive one |
 | 0x04c | 37 x u32 | the boss's action profile: HP coefficient, the shield's nine values, six extra actions (action, timing, value, move), the double action's three values |
 | 0x0e4 | 45 x 16 | reward rows: item, quantity, a rare-item flag, subject |
 | 0x3b4 | u8 | 0 in a retail standard point, 1 in a retail black one |
@@ -309,6 +309,10 @@ its `BossPokePara` fixes what a standard boss draws:
 | `RareType` | 0 drawn; 1 never: a PID shiny against the fake trainer has bit 28 flipped; 2 always: its high half is rewritten to a shiny xor of 0 |
 | `ScaleType` | 0 two draws; 1 to 5 one draw in 0-15, 16-47, 48-207, 208-239, 240-255; 6 `ScaleValue` |
 | `Item`, `EffortValue` | the boss's held item and battle EVs (a seven-star Pikachu holds a Light Ball) |
+
+A record's `TimeDesc` is its `raidTimeData`, and the RaidPoint carries it at 0x030: every seven-star
+record's is active, `gameLimit` 450 to 900 and `commandLimit` 60, as are five five-star records'
+(`gameLimit` 320 to 450); the other 420 records' are inactive (gallery of 2026-09-06).
 
 A den belongs to a delivery group, 1 to 10; `raid_priority_array` counts the dens of each. xoroshiro
 from the seed draws the hundred-sided roll a standard crystal's stars take and drops it, then a value
@@ -476,8 +480,7 @@ the host start; its Pokemon stayed in the battle.
   `0x1527b, 7` at `+0x38` and 0x2713 at `+0x40` when the builders first read it at the join.
   Every raid hosted with it began its battle, on retail and emulated consoles.
 - End-to-end reward-screen checks for Raid Power Lv. 2 and 3 and six-star bonus rows.
-- What the RaidPoint's u64 at 0x3d8 and byte 0x3b4 hold, and what a console does with a six-star
-  point whose `raidTimeData` is zero, as `raid_point` writes it.
+- What the RaidPoint's u64 at 0x3d8 and byte 0x3b4 hold.
 - What a retail console does with an event RaidPoint's crystal word, 2 or 3, and with a fixed reward
   row's subject (host, guests, once), which `raid_point` writes as 0, every player's.
 - Whether the five-star catch-once records go in the save's list as the seven-star ones do.

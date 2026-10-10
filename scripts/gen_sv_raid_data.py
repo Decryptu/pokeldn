@@ -77,10 +77,19 @@ def boss_profile(desc):
                     desc["doubleActionRate"]]
 
 
+def time_data(time):
+    """-> a record's raidTimeData as the RaidPoint's seven words, or None when it is inactive and
+    the console uses its own limits (docs/sv_raid.md, The battle bootstrap)."""
+    if not time or not time["isActive"]:
+        return None
+    return [1, *(int(time[k]) for k in ("gameLimit", "clientLimit", "commandLimit", "pokeReviveTime",
+                                        "aiIntervalTime", "aiIntervalRand"))]
+
+
 def join_retail(tables, folder):
     """Adds each row's `boss_desc`, the retail Tera rule (gemType 0 the species' own types, 1 any
-    of 18, 2+ a fixed type), its battle level and effort values (HP Atk Def Spe SpA SpD) and its
-    capture level, which is Tera-Finder's level."""
+    of 18, 2+ a fixed type), its battle level and effort values (HP Atk Def Spe SpA SpD), its
+    capture level, which is Tera-Finder's level, and an active `raidTimeData` as `time`."""
     retail = {}
     for map_name, prefix in MAPS.items():
         for stars in range(1, 7):
@@ -103,6 +112,8 @@ def join_retail(tables, folder):
             row["capture_level"], row["level"] = row["level"], para["level"]
             ev = para["effortValue"]
             row["evs"] = [ev[k] for k in ("hp", "atk", "def", "agi", "spAtk", "spDef")]
+            if time := time_data(info["raidTimeData"]):
+                row["time"] = time
             joined.add((map_name, row["identifier"]))
     if joined != set(retail):
         raise ValueError(f"retail records with no encounter: {sorted(set(retail) - joined)}")

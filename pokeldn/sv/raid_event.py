@@ -133,8 +133,8 @@ def boss_profile(desc):
 
 def encounter_row(info):
     """-> a raid_enemy record as a `raid_encounter` row, with what the event table fixes: the game
-    version (`rom`), delivery group, capture rate, IVs, gender, nature, shiny and scale rules and
-    the held item."""
+    version (`rom`), delivery group, capture rate, IVs, gender, nature, shiny and scale rules,
+    the held item and the battle's time limits."""
     para = info["BossPokePara"]
     ev, talent = para["EffortValue"], para["TalentValue"]
     return {
@@ -152,8 +152,17 @@ def encounter_row(info):
         "gender": para["Sex"] - 1 if para["Sex"] else None,
         "nature": para["Seikaku"] - 1 if para["Seikaku"] else None,
         "shiny": para["RareType"], "scale_type": para["ScaleType"], "scale": para["ScaleValue"],
-        "held_item": para["Item"],
+        "held_item": para["Item"], "time": time_words(info["TimeDesc"]),
     }
+
+
+def time_words(time):
+    """-> a record's TimeDesc as the RaidPoint's seven words, or None when it is inactive and the
+    console uses its own limits (docs/sv_raid.md, The battle bootstrap)."""
+    if not time or not time["IsActive"]:
+        return None
+    return [1, *(time[k] for k in ("GameLimit", "ClientLimit", "CommandLimit", "PokeReviveTime",
+                                   "AiIntervalTime", "AiIntervalRand"))]
 
 
 def reward_tables(table, lottery):
