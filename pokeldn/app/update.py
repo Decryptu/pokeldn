@@ -441,7 +441,13 @@ def finish(root: Path | None, outcome: Path = OUTCOME, work: Path = WORK) -> dic
         # The helper runs from work/new; Windows keeps a running exe's folder.
         if isinstance(helper, int):
             wait_for_exit(helper, 30.0)
-        shutil.rmtree(work / "new", ignore_errors=True)
+        # One pass left the helper's exe and loaded DLLs on Windows runners: retry until they go.
+        end = time.monotonic() + 120.0
+        while True:
+            shutil.rmtree(work / "new", ignore_errors=True)
+            if not (work / "new").exists() or time.monotonic() > end:
+                break
+            time.sleep(1.0)
     if isinstance(helper, int):
         threading.Thread(target=remove_new, daemon=True).start()
     else:
