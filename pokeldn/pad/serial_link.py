@@ -17,6 +17,7 @@ MAGIC = b"\xa5\x5a"
 REPORT, STATUS, COMMAND = 0x01, 0x02, 0x03
 RESULT, STATUS_REPLY = 0x81, 0x82
 BAUD = 921600
+BOOT_WAIT = 3.0   # seconds a board reset by the port opening may take to answer
 
 
 def frame(kind: int, payload: bytes = b"") -> bytes:
@@ -76,12 +77,20 @@ class SerialPad:
     @classmethod
     async def connect(cls, port: str):
         pad = await asyncio.to_thread(cls, port)
-        try:
-            await pad.status()
-        except Exception:
-            await pad.close()
-            raise
-        return pad
+        # Opening the port resets a CP2102 board; a request sent during its boot is lost.
+        end = time.monotonic() + BOOT_WAIT
+        while True:
+            try:
+                await pad.status()
+                return pad
+            except SerialError:
+                if time.monotonic() < end:
+                    continue
+                await pad.close()
+                raise
+            except Exception:
+                await pad.close()
+                raise
 
     @property
     def connected(self) -> bool:

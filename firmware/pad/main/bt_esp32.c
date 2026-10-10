@@ -13,12 +13,15 @@
 #include "esp_hidd_api.h"
 #include "esp_mac.h"
 #include "esp_system.h"
+#include "esp_log.h"
 #include "player.h"
 #include "uart_link.h"
 #include "pro_report.h"
 
 #define LED_GPIO 2 // the DevKit's blue LED, lit while paired
 #define PAYLOAD 48 // 0x21 and 0x30 after the report ID
+
+static const char *TAG = "pad"; // compiled out at CONFIG_LOG_DEFAULT_LEVEL_NONE
 
 // Boot stages (pad_stage): 1 nvs, 2 controller, 3 bluedroid, 4 hid init, 5 app registered,
 // 6 opened by a host, 7 paired (player lights set)
@@ -73,6 +76,7 @@ static void subcommand(const uint8_t *d, uint16_t len)
     if (len < 10)
         return;
     uint8_t sub = d[9];
+    ESP_LOGI(TAG, "sub %02x arg %02x %02x %02x %02x %02x", sub, d[10], d[11], d[12], d[13], d[14]);
     const uint8_t *arg = d + 10;
     switch (sub) {
     case 0x02: { // device info: firmware 4.00, Pro Controller, MAC, colours from SPI
@@ -118,24 +122,46 @@ static void subcommand(const uint8_t *d, uint16_t len)
     }
 }
 
+// Pacing after friendmaker's Switch Lite profile (classic_bt_controller_transport.cpp, SWITCH_LITE):
+// a 15 ms 0x30 stream congests the link once it enters sniff, and the Switch then drops it.
+#define IDLE_MS 100      // an unchanged 0x30; before the 0x03 mode switch too, or the Switch never starts the handshake
+#define OPEN_QUIET_MS 1000
+#define SNIFF_QUIET_MS 250
+#define CONGESTED_MS 45
+static volatile TickType_t quiet_until;
+
+static void quiet_for(uint32_t ms)
+{
+    TickType_t until = xTaskGetTickCount() + pdMS_TO_TICKS(ms);
+    if ((int32_t)(until - quiet_until) > 0)
+        quiet_until = until;
+}
+
 static void sender_task(void *arg)
 {
-    uint8_t p[PAYLOAD];
+    uint8_t p[PAYLOAD], sent[9] = {0};
     TickType_t last = 0;
     for (;;) {
-        // A reply goes first; 0x30 streams wait while the Switch still sets the controller up.
-        TickType_t period = pdMS_TO_TICKS(full_mode ? 15 : 100);
-        if (xQueueReceive(replies, p, period) == pdTRUE) {
+        // A reply goes first; 0x30 waits while the Switch still sets the controller up.
+        if (xQueueReceive(replies, p, pdMS_TO_TICKS(5)) == pdTRUE) {
             if (open_)
                 esp_bt_hid_device_send_report(ESP_HIDD_REPORT_TYPE_INTRDATA, 0x21, PAYLOAD, p);
             last = xTaskGetTickCount();
             continue;
         }
-        if (!open_ || xTaskGetTickCount() - last < pdMS_TO_TICKS(15))
+        TickType_t now = xTaskGetTickCount();
+        if (!open_ || (int32_t)(quiet_until - now) > 0)
             continue;
         memset(p, 0, sizeof(p));
         fill_state(p);
+        bool changed = memcmp(sent, p + 2, sizeof(sent)) != 0;
+        if (!changed && now - last < pdMS_TO_TICKS(IDLE_MS))
+            continue;
+        if (changed)
+            ESP_LOGI(TAG, "0x30 buttons %02x %02x %02x", p[2], p[3], p[4]);
+        memcpy(sent, p + 2, sizeof(sent));
         esp_bt_hid_device_send_report(ESP_HIDD_REPORT_TYPE_INTRDATA, 0x30, PAYLOAD, p);
+        last = now;
     }
 }
 
@@ -159,6 +185,21 @@ static void discoverable(bool on)
 
 static void hidd_cb(esp_hidd_cb_event_t event, esp_hidd_cb_param_t *param)
 {
+    static uint32_t sent, failed;
+    if (event == ESP_HIDD_SEND_REPORT_EVT) {
+        if (param->send_report.status != ESP_HIDD_SUCCESS && param->send_report.reason == 8)
+            quiet_for(CONGESTED_MS);
+        if (param->send_report.status != ESP_HIDD_SUCCESS && failed++ % 50 == 0)
+            ESP_LOGW(TAG, "send %02x failed status %d reason %d (%lu ok)", param->send_report.report_id,
+                     param->send_report.status, param->send_report.reason, (unsigned long)sent);
+        else if (param->send_report.status == ESP_HIDD_SUCCESS && sent++ % 500 == 0)
+            ESP_LOGI(TAG, "sent %lu reports, %lu failed", (unsigned long)sent, (unsigned long)failed);
+    } else if (event == ESP_HIDD_INTR_DATA_EVT) {
+        if (param->intr_data.report_id != 0x10)
+            ESP_LOGI(TAG, "out report %02x len %u", param->intr_data.report_id, param->intr_data.len);
+    } else {
+        ESP_LOGI(TAG, "hidd event %d", event);
+    }
     switch (event) {
     case ESP_HIDD_INIT_EVT:
         if (param->init.status == ESP_HIDD_SUCCESS)
@@ -174,14 +215,17 @@ static void hidd_cb(esp_hidd_cb_event_t event, esp_hidd_cb_param_t *param)
         break;
     }
     case ESP_HIDD_OPEN_EVT:
+        ESP_LOGI(TAG, "open status %d conn %d", param->open.status, param->open.conn_status);
         if (param->open.conn_status == ESP_HIDD_CONN_STATE_CONNECTED) {
             pad_stage(6);
+            quiet_for(OPEN_QUIET_MS);
             discoverable(false);
             full_mode = paired = false;
             open_ = true;
         }
         break;
     case ESP_HIDD_CLOSE_EVT:
+        ESP_LOGI(TAG, "close status %d conn %d", param->close.status, param->close.conn_status);
         open_ = paired = full_mode = false;
         gpio_set_level(LED_GPIO, 0);
         pad_disconnected();
@@ -199,6 +243,20 @@ static void hidd_cb(esp_hidd_cb_event_t event, esp_hidd_cb_param_t *param)
 static void gap_cb(esp_bt_gap_cb_event_t event, esp_bt_gap_cb_param_t *param)
 {
     switch (event) {
+    case ESP_BT_GAP_AUTH_CMPL_EVT:
+        ESP_LOGI(TAG, "auth status %d", param->auth_cmpl.stat);
+        break;
+    case ESP_BT_GAP_ACL_CONN_CMPL_STAT_EVT:
+        ESP_LOGI(TAG, "acl up status %d", param->acl_conn_cmpl_stat.stat);
+        break;
+    case ESP_BT_GAP_ACL_DISCONN_CMPL_STAT_EVT:
+        ESP_LOGI(TAG, "acl down reason 0x%02x", param->acl_disconn_cmpl_stat.reason);
+        break;
+    case ESP_BT_GAP_MODE_CHG_EVT:
+        ESP_LOGI(TAG, "mode %d", param->mode_chg.mode);
+        if (param->mode_chg.mode != ESP_BT_PM_MD_ACTIVE)
+            quiet_for(SNIFF_QUIET_MS);
+        break;
     case ESP_BT_GAP_CFM_REQ_EVT:
         esp_bt_gap_ssp_confirm_reply(param->cfm_req.bda, true);
         break;

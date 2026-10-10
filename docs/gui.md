@@ -203,8 +203,10 @@ the loader's port, and flashes with `--from-loader`.
 
 The Control page presses a Switch's buttons through a board running the controller firmware
 ([Controller board](hardware_pad.md)) and plays macros on it. Install the Controller firmware from
-the Board page (ESP32-S3 or classic ESP32), plug the board into the Switch's USB-C port, and press
-Connect: the page reaches the board over Bluetooth LE.
+the Board page (ESP32-S3 or classic ESP32). An ESP32-S3 goes into the Switch's USB-C port, and
+Connect reaches it over Bluetooth LE. A classic ESP32 stays on this computer's USB and pairs with the
+Switch from HOME, Controllers, Change Grip/Order; Connect reaches it over its serial port. Installing
+the firmware again clears the pairing.
 
 The status line says where the board is: plugged into this computer (it is on this computer's USB
 bus), into the Switch (its USB is configured and it is not on this computer's bus), or into neither.

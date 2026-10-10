@@ -16,6 +16,6 @@ Linux host can instead drive an AP-capable Wi-Fi card directly; that path is leg
 - [Switch keys](hardware_switch_keys.md): installing `prod.keys` safely.
 - [Adapters](hardware_adapters.md): the Linux Wi-Fi cards, their configuration and failure modes.
 - [Controller board](hardware_pad.md): an ESP32-S3 the console takes as a wired controller,
-  driven over Bluetooth LE.
+  driven over Bluetooth LE, or a classic ESP32 it pairs as a Pro Controller, driven over USB serial.
 - [Raspberry Pi host](hardware_raspberry_pi.md): the Linux deployment and the supervised Mystery Gift
   runner.

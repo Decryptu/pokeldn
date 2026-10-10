@@ -35,18 +35,23 @@ def test_reader_skips_boot_text_and_broken_frames_and_joins_split_ones():
 class FakeBoard(threading.Thread):
     """The board side of the documented protocol on a pty, recording what it was sent."""
 
-    def __init__(self, fd):
+    def __init__(self, fd, boot=0.0):
         super().__init__(daemon=True)
         self.fd, self.reports, self.commands, self.running = fd, [], [], True
+        self.boot = boot      # seconds a board reset by the port opening drops what it is sent
 
     def run(self):
+        import time
         r = Reader()
         os.write(self.fd, b"rst:0x1 (POWERON_RESET)\r\n")
+        ready = time.monotonic() + self.boot
         while self.running:
             try:
                 data = os.read(self.fd, 256)
             except OSError:
                 return
+            if time.monotonic() < ready:
+                continue
             for kind, body in r.feed(data):
                 if kind == 0x01:
                     self.reports.append(body)
@@ -59,14 +64,16 @@ class FakeBoard(threading.Thread):
                     os.write(self.fd, frame(0x82, record))
 
 
-def test_a_macro_loads_and_presses_over_a_serial_port(monkeypatch):
+@pytest.mark.parametrize("boot", [0.0, 1.5])
+def test_a_macro_loads_and_presses_over_a_serial_port(monkeypatch, boot):
+    """boot: a CP2102 board restarts when its port opens; a single 1 s status request found none."""
     import tty
     from pokeldn.pad import serial_link
     monkeypatch.setattr(serial_link, "BAUD", 115200)    # a pty takes no IOSSIOSPEED rate
     board_fd, host_fd = os.openpty()
     tty.setraw(board_fd)
     tty.setraw(host_fd)
-    board = FakeBoard(board_fd)
+    board = FakeBoard(board_fd, boot)
     board.start()
     program = macro.compile_macro(macro.loads(
         '{"format": "pokeldn-macro", "version": 1, "loop": [{"repeat": 30, "steps": [{"press": "A"}]}], "loops": 0}'))

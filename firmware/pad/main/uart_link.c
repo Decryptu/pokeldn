@@ -89,5 +89,7 @@ void uart_link_start(bool (*mounted)(void))
     };
     uart_driver_install(PORT, 2048, 2048, 0, NULL, 0);
     uart_param_config(PORT, &cfg);
+    // With CONFIG_ESP_CONSOLE_NONE nothing routes UART0 to GPIO1/3; without this the board never answers.
+    uart_set_pin(PORT, 1, 3, UART_PIN_NO_CHANGE, UART_PIN_NO_CHANGE);
     xTaskCreate(uart_task, "pad_uart", 4096, NULL, 5, NULL);
 }

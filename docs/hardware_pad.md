@@ -107,7 +107,9 @@ macro keeps going.
 ## The serial side
 
 The classic ESP32 stays on the computer's USB: UART0 at 921600 baud carries frames both ways
-(`firmware/pad/main/uart_link.c`, `pokeldn/pad/serial_link.py`), and console output is off.
+(`firmware/pad/main/uart_link.c`, `pokeldn/pad/serial_link.py`), and console output is off. With the
+console off nothing routes UART0 to GPIO1 and GPIO3, so the firmware sets the pins itself; without it
+the board answers nothing.
 
     A5 5A | length u16 (type and payload) | type u8 | payload | sum of type and payload mod 256
 
@@ -119,8 +121,11 @@ The classic ESP32 stays on the computer's USB: UART0 at 921600 baud carries fram
 | `0x81` | to the host | result i8: 0, -1 bad length, -2 refused |
 | `0x82` | to the host | the status record; mounted means the Switch set the player lights |
 
-The host opens the port with DTR and RTS low. The service tries each USB serial port that is not
-an S3's native USB before it scans for Bluetooth LE.
+The host opens the port with DTR and RTS low. A DevKit's CP2102 still restarts the board when the
+port opens on macOS, and a request sent during the boot is lost; the host repeats the status request
+for up to 3 s. The service tries each USB serial port that is not an S3's native USB before it scans
+for Bluetooth LE. Hold the port with one process: every new open restarts the board and drops its
+Bluetooth link.
 
 ## The Bluetooth Classic side
 
@@ -129,8 +134,24 @@ descriptor, service "Wireless Gamepad", provider "Nintendo", subclass 0x08, clas
 0x002508, name "Pro Controller", SSP with no input and no output, modem sleep off. It answers the
 0x01 subcommands by ID: 0x02 device info (firmware 4.00, type 0x03, its Bluetooth address), 0x10 SPI
 reads, 0x03 report mode, 0x04 trigger times, 0x21 MCU configuration, a plain ACK for the rest; 0x30
-(player lights) marks the controller as taken. It streams 0x30 every 15 ms once the Switch asks for
-full reports, 100 ms before, and holds the stream while a reply waits.
+(player lights) marks the controller as taken. A reply goes out ahead of any 0x30.
+
+The 0x30 report goes out at once when the buttons or sticks change, and otherwise every 100 ms, from
+the moment the link opens; a Switch Lite connected and never started the handshake while the board
+sent none. After the link opens the board waits 1 s, after a change to sniff mode 250 ms, and after
+a send refused as congested (reason 8) 45 ms. These are friendmaker's Switch Lite values
+(`classic_bt_controller_transport.cpp`, `SWITCH_LITE`).
+
+| 0x30 pacing | retail Switch Lite |
+|---|---|
+| every 15 ms after the 0x03 mode switch | handshake through player lights, then Bluedroid toggles sniff mode, sends fail as congested, and the Switch disconnects (HCI 0x13) 2 to 20 s after the lights; no press reached the screen |
+| on change, else every 100 ms, with the waits above | link held, 0 of 501 sends failed; presses move the cursor on Change Grip/Order and on the Controllers menu |
+
+The Switch's handshake, in order: 0x02, 0x08, 0x10 at 0x6000 and 0x6050, 0x03 (0x30), 0x04, 0x10 at
+0x6080, 0x6098, 0x8010, 0x603D, 0x6020, 0x40, 0x30 (0), 0x48, 0x21, 0x30 (player 1).
+
+A bonded board reconnects to its Switch at boot. Flashing the merged image overwrites the NVS
+partition and with it the bond: pair again from Change Grip/Order.
 
 `pro_report.c` maps the shared report onto the Pro Controller's bytes (dekuNukem
 `bluetooth_hid_notes.md`): sticks 0x800 at rest, 0x700 either way, matching the factory calibration
@@ -229,7 +250,6 @@ TinyUSB comes from the component manager (`espressif/esp_tinyusb` 2.4.0). The re
 
 ## Unresolved
 
-- Whether a retail Switch pairs with the classic ESP32 firmware; it is built and tested offline
-  only. The sources and their reported pitfalls are in nxbt, joycontrol and friendmaker.
+- Whether a Switch 2 pairs with the classic ESP32 firmware; only a Switch Lite was measured.
 
 - Whether a Switch 2 takes the HORI ID the same way; only a Switch Lite was measured.
