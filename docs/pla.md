@@ -1306,6 +1306,10 @@ An emulated Arceus 1.1.1 hosting its own search, quitting with one station seate
 (`0x110b78c`) and passed step 2 (`0x110b81c`) 4.33 s later, 0.43 s after its last packet: the host
 migration it hands the station (type 7) outlasts the 3.0 s floor. Step 3 (`0x110b80c`) followed
 0.03 s later and the scene's destructor (`0x110bec0`) 0.33 s after step 2.
+An emulated Arceus 1.1.1 seated as the station of `bin/pla_host.py`, quitting from the box, reached
+step 1 and sent its type 3 within 0.07 s (answered at once), passed step 2 3.03 s after step 1, step 3
+0.03 s later and the destructor 0.33 s after step 2: with the leave done inside the floor, step 2
+waits out the 3.0 s alone.
 
 No timer inside Pia precedes the first type 3 ([pia.md](pia.md), Leaving a session). The only
 caller of `Session::LeaveAsync` is the game's leave request, update `0x2ca0a10` (vtable `0x4198ef8`,
@@ -1337,6 +1341,6 @@ console leaves.
 
 ## Unresolved
 
-- How the 0.8 s after the 3.0 s floor splits between the message close, the scene's teardown and
-  the field's fade-in on a console that is a station of the network.
+- What fills the 0.4 s between the destructor (3.36 s after step 1 on an emulated station) and the
+  field on screen (3.77 s after the type 3 on retail); the emulator gives no field marker.
 - What sets the save flag `[[[0x4279560]+0x2b8]+0x78]` read before the leave.
