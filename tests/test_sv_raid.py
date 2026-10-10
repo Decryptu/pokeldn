@@ -166,6 +166,23 @@ def test_a_search_keeps_the_best_boss_of_the_species_asked_for():
     assert [(f.score, f.seed) for f in found] == pawniard[:3]
 
 
+def test_a_search_for_rewards_finds_every_raid_that_gives_them():
+    """At least two Ability Patches from a black crystal: every seed whose raid gives them, with its
+    rewards; and every quantity a raid gives is among those the finder lists."""
+    def totals(rewards):
+        out = {}
+        for item, quantity in rewards:
+            out[item] = out.get(item, 0) + quantity
+        return out
+    scope = raid_search.contexts("violet", "paldea", "6star", "black")
+    found = raid_search.search(0, 8000, scope, rewards={1606: 2}, limit=100)
+    every = [raid_encounter.generate(s, "violet", "paldea", "6star", "black") for s in range(8000)]
+    giving = {r.seed: r.rewards for r in every if totals(r.rewards).get(1606, 0) >= 2}
+    assert giving and {f.seed: f.rewards for f in found} == giving
+    choices = raid_search.reward_choices(scope)
+    assert all(q in choices[i] for r in every for i, q in totals(r.rewards).items())
+
+
 # The scripted console. Addresses and ids as tests/test_sv_departure.py's.
 HOST_IP, JOIN_IP, BROADCAST = "169.254.10.1", "169.254.10.2", "169.254.10.255"
 HOST_MAC, JOIN_MAC = bytes.fromhex("02aabbccdd01"), bytes.fromhex("02aabbccdd02")

@@ -336,8 +336,9 @@ the field is empty under a "No event" hint, so a search is typed straight in. Ch
   the chosen den draws, and in place of Crystal the event's dens for that version, each a delivery
   group with its stars and bosses ("7★ Charizard", "4–5★ Florges, Mimikyu"). A value the event cannot
   spawn moves to the nearest one it can (`raid_event.constrain`).
-- Find a raid searches the event's dens only, one progress per stage, with its bosses as species
-  ([docs/sv_raid.md](sv_raid.md#finding-a-seed)).
+- Find a raid searches the event's dens only, one progress per stage, with its bosses as species,
+  and its Rewards section offers the items and quantities of the event's own reward tables
+  ([docs/sv_raid.md](sv_raid.md#finding-a-seed); `gui/views/reward_filter.py`).
 - An event with a boss a save catches once shows "Let it be caught again" (`--raid-catch-normal`),
   unchecked at each launch and for each event chosen. Checked, the boss is a normal catch under a
   stand-in record number. The record number has to change: a console checks the one the lobby shows

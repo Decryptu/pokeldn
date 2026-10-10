@@ -1,6 +1,7 @@
 """The raid seed field: the boss and rewards the seed gives in the chosen context, and a finder that
-searches seeds by what the boss is (pokeldn.sv.raid_search). An event's context (its `event`,
-`group` and `den`) draws from the event and narrows the finder to what the event spawns."""
+searches seeds by what the boss is and the rewards it gives (pokeldn.sv.raid_search). An event's
+context (its `event`, `group` and `den`) draws from the event and narrows the finder to what the
+event spawns."""
 
 import re
 import threading
@@ -9,6 +10,7 @@ import flet as ft
 
 from gui import theme as t
 from gui.views.pokemon import NamePicker
+from gui.views.reward_filter import RewardFilter
 from gui.views.sprites import MINI, SIZE, Sprite
 from gui.views.widgets import PixelActivity
 from pokeldn import pokemon as builder
@@ -196,7 +198,19 @@ class RaidSeedPicker:
     def _open(self, _event) -> None:
         current = self.context()
         event = current.get("event")
-        choose = lambda options, value: t.dropdown(options, value)
+        pick = lambda control: None if control.value in (None, "any", "-", "") else control.value
+
+        def reward_scope():
+            """-> the contexts searched and the boss filters that narrow the rewards listed."""
+            scope = raid_search.contexts(version.value, region.value, story.value, crystal.value,
+                                         event=event, group=crystal.value)
+            if not scope:
+                raise ValueError("No den of the event spawns in that game at that progress.")
+            return scope, dict(stars=pick(stars) and int(stars.value),
+                               species_id=pick(species) and int(species.value),
+                               tera_type=pick(tera) and int(tera.value))
+        wants = RewardFilter(self.app, reward_scope)
+        choose = lambda options, value: t.dropdown(options, value, on_select=lambda _e: wants.changed())
         if event is None:
             version = choose([("any", "Any game"), ("scarlet", "Scarlet"), ("violet", "Violet")],
                              current["version"])
@@ -220,7 +234,7 @@ class RaidSeedPicker:
             crystal = choose(([("any", "Any den")] if len(dens) > 1 else [])
                              + [(str(d.group), d.label) for d in dens], str(current["group"]))
             star_levels = sorted({s for d in dens for s in d.stars})
-        species = NamePicker(self.app, "sv", "species", "", lambda _v: None,
+        species = NamePicker(self.app, "sv", "species", "", lambda _v: wants.changed(),
                              names=[{"id": s, "name": n} for s, n in raid_search.species(event)]).control
         stars = choose([("any", "Any stars"), *((str(n), f"{n} stars") for n in star_levels)], "any")
         tera = choose([("any", "Any Tera type"), *((str(i), n) for i, n in enumerate(TERA_TYPES))], "any")
@@ -241,7 +255,6 @@ class RaidSeedPicker:
         stop = t.secondary_button("Stop", None)
         stop.disabled = True
         cancel, closed = threading.Event(), threading.Event()
-        pick = lambda control: None if control.value in (None, "any", "-", "") else control.value
 
         def close(_=None):
             cancel.set()
@@ -252,6 +265,7 @@ class RaidSeedPicker:
             if closed.is_set():
                 return
             results.controls = [boss_card(self.app, f.seed, f.stars, f.boss, f.context, compact=True,
+                                          rewards=reward_chips(wants.names, f.rewards) if f.rewards else None,
                                           on_use=self._use) for f in found] or [empty_results(True)]
             status.value = (f"{len(found)} {'raid' if len(found) == 1 else 'raids'}"
                             + (" before the search stopped." if stopped else ".") if found else "No raid matches.")
@@ -276,7 +290,8 @@ class RaidSeedPicker:
                                nature=pick(nature) and int(nature.value),
                                gender=pick(gender) and int(gender.value),
                                shiny=None if pick(shiny) is None else shiny.value == "yes",
-                               ivs=None if ranges == ((0, 31),) * 6 else ranges)
+                               ivs=None if ranges == ((0, 31),) * 6 else ranges,
+                               rewards=wants.wanted())
             except ValueError as exc:
                 status.value, status.color = str(exc), t.RED
                 status.update()
@@ -324,6 +339,7 @@ class RaidSeedPicker:
             heading("sliders-horizontal", "IVs"),
             pair(*(t.labeled_control(label, field, expand=True) for label, field in zip(STATS, ivs))),
             t.text("Blank for any, a value, or a range such as 20-31.", 11, t.FAINT),
+            wants.control,
             heading("search", "Search"),
             t.labeled_control("Rank by", rank),
             t.text("Bulk and offense estimate how hard the boss is from its stats alone.", 11, t.FAINT),

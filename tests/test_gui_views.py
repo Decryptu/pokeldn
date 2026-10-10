@@ -746,6 +746,32 @@ def test_folding_the_raid_event_card_sets_its_event_aside_until_it_unfolds():
     assert view.values["--raid-event"] == "" and "#raid-event-folded" not in view.values
 
 
+def test_the_finder_wants_the_rewards_its_unfolded_list_names():
+    """Rows of one item add up; folded or empty, the search wants nothing; a row without an item, one
+    the raids searched cannot give, or a list still being made stops the search."""
+    from gui.views.reward_filter import RewardFilter
+    wants = RewardFilter(SimpleNamespace(ui=lambda f: f()), lambda: ([], {}))
+    wants.names = {1606: "Ability Patch", 795: "Bottle Cap"}
+    wants.choices, wants.open = {1606: (1, 2, 3)}, True
+    assert wants.wanted() is None
+    wants.rows = [{"item": 1606, "least": 1}, {"item": 1606, "least": 2}]
+    assert wants.wanted() == {1606: 3}
+    wants.open = False
+    assert wants.wanted() is None
+    wants.open = True
+    for rows, choices, error in (([{"item": None, "least": 1}], {1606: (1,)}, "Choose an item"),
+                                 ([{"item": 795, "least": 1}], {1606: (1,)}, "No raid searched gives Bottle Cap"),
+                                 ([{"item": 1606, "least": 1}], None, "still being listed")):
+        wants.rows, wants.choices = rows, choices
+        with pytest.raises(ValueError, match=error):
+            wants.wanted()
+    # A row kept from a wider search names its item as one these raids do not give.
+    wants.rows, wants.choices = [{"item": 795, "least": 2}], {1606: (1,)}
+    wants._render(update=False)
+    picker = wants.list.controls[0].controls[0].controls[0].controls[1]
+    assert [o.text for o in picker.options] == ["Bottle Cap (not given here)", "Ability Patch"]
+
+
 @pytest.mark.parametrize("downloaded", [True, False])
 def test_an_event_missing_from_the_gallery_stays_chosen_and_shows_missing(monkeypatch, tmp_path, downloaded):
     """The card keeps an event the gallery lacks (the run refuses it) and says so in red, rather than

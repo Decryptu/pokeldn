@@ -305,3 +305,25 @@ def test_every_delivery_agrees_with_its_encounters_text():
     glitched = os.path.join("024 Gimmighoul Spotlight", "Scarlet Event Round 1 (Glitched Rewards)")
     assert differing == [glitched], run.stdout + run.stderr
     assert "537 encounters" in run.stdout
+
+
+def test_the_rewards_listed_are_what_an_event_s_raids_can_give():
+    """A fixed Ability Patch and three Tera shards of the boss's Fire type, and a lottery of Bottle
+    Caps by twos beside an empty slot: any number of caps up to the ten draws of a five-star raid."""
+    fixed = {"1": [dict(category=0, item=1606, amount=1, probability=100, subject=0),
+                   dict(category=2, item=0, amount=3, probability=100, subject=0)]}
+    caps = dict(category=0, item=795, amount=2, probability=50, subject=0)
+    lottery = {"1": [caps, dict(category=0, item=0, amount=0, probability=50, subject=0)]}
+    event = raid_event.Event(1, "", (row(stars=5, tera=11),), fixed, lottery, (1,) + (0,) * 9)
+    scope = raid_search.contexts(event=event)
+    fire = raid_encounter.TERA_SHARDS[9]
+    assert raid_search.reward_choices(scope) == {1606: (1,), fire: (3,), 795: tuple(range(2, 21, 2))}
+    assert raid_search.reward_choices(scope, tera_type=0) == {}
+    # A lottery of caps alone gives one per draw, as many as a raid draws.
+    only = raid_event.Event(1, "", (row(stars=5, tera=11),), fixed, {"1": [caps]}, (1,) + (0,) * 9)
+    assert raid_search.reward_choices(raid_search.contexts(event=only))[795] == (12, 14, 16, 18, 20)
+    violet = raid_search.contexts("violet", event=event)
+    found = raid_search.search(0, 150, violet, rewards={795: 8, fire: 3}, limit=100)
+    assert found and all(raid_search.gives(f.rewards, {795: 8, fire: 3}) for f in found)
+    assert len(found) == sum(1 for s in range(150) if raid_search.gives(
+        raid_search.generate(s, violet[0]).rewards, {795: 8}))

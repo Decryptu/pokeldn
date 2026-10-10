@@ -349,6 +349,18 @@ stats: HP times the sum of its defenses, either defense alone, its better attack
 total. One result per species is kept unless a species is chosen. A search covers about 40 000
 seeds a second.
 
+Its Rewards section, folded until opened, wants rewards: rows of an item and the least quantity a
+raid must give of it, the raid's quantities of an item summed and two rows of one item added up.
+A result then shows its rewards. Folded, the rows stay and the search ignores them. The items and
+quantities offered are those the raids searched can give (`raid_search.reward_choices`): for every
+encounter a context draws (its star levels at that progress, in that version, or an event's den),
+narrowed to the stars, species and Tera type chosen, its fixed rows plus any number of its lottery's
+draws of an item up to the most a raid draws (exactly as many as it draws when the lottery holds
+nothing else), each Tera type the boss can take naming its shards and the species its material.
+Every Paldea, Kitakami and Blueberry context at once lists 343 items in about a second, so the list
+is made off the page. The search skips an encounter that cannot give what is wanted, then draws a
+seed's rewards before its boss, which keeps its speed.
+
 ## Joining
 
 `bin/sv_join.py --raid-pokemon FILE` joins a scene-7 network and takes part as a guest. The

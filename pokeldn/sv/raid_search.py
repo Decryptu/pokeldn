@@ -26,6 +26,7 @@ class Found:
     stars: int
     boss: dict
     score: int
+    rewards: tuple = ()           # [(item, quantity)], drawn when the search wants rewards
 
     @property
     def is_shiny(self):
@@ -91,6 +92,107 @@ def _drawer(context):
     return draw
 
 
+def _rows(context):
+    """-> [(row, stars)] every encounter the context can draw."""
+    if "event" in context:
+        return [(r, r["stars"]) for r in raid_event.candidates(context["event"], context["version"],
+                                                               context["progress"], context["group"])]
+    content = context["content"]
+    stars = {6} if content == "black" else {s for _, s in encounter.STAR_LOTTERY[context["progress"]]}
+    return [(r, r["stars"]) for r in encounter.tables()["encounters"][f"{context['map_name']}_{content}"]
+            if r["stars"] in stars and r["rate"] and r["rate_min"][context["version"]] >= 0]
+
+
+def _reward_tables(context):
+    """-> (fixed, lottery) tables a context's raids draw their rewards from; None the base game's."""
+    event = context.get("event")
+    return (event.fixed, event.lottery) if event is not None else (None, None)
+
+
+def _gems(row):
+    """-> the Tera types the boss of a row can have, which pick its Tera shards."""
+    if row["tera"] >= 2:
+        return {row["tera"] - 2}
+    if row["tera"] == 1:
+        return set(range(len(encounter.TERA_TYPES)))
+    return set(encounter.personal(row["species"], row["form"])[1])
+
+
+def _sums(amounts, counts):
+    """-> every total of exactly k draws from `amounts`, k one of `counts`."""
+    reach, out = {0}, {0} if 0 in counts else set()
+    for k in range(1, max(counts, default=0) + 1):
+        reach = {s + a for s in reach for a in amounts}
+        if k in counts:
+            out |= reach
+    return out
+
+
+def _totals(row, stars, fixed, lottery, gem):
+    """-> {item: every total of it a raid of the row gives with that Tera type}: its fixed rows, plus
+    any number of the lottery's draws of it up to the most a raid draws (all of them when the
+    lottery holds nothing else)."""
+    data = encounter.tables()
+    material = int(data["material_items"].get(str(row["species"]), 0))
+
+    def item(entry):
+        return entry["item"] or {encounter.REWARD_MATERIAL: material,
+                                 encounter.REWARD_SHARD: encounter.TERA_SHARDS[gem]}.get(entry["category"], 0)
+    fixed = data["fixed_rewards"] if fixed is None else fixed
+    lottery = data["lottery_rewards"] if lottery is None else lottery
+    given = {}
+    for entry in fixed.get(row["fixed_rewards"], ()):
+        if item(entry) and entry["amount"]:
+            given[item(entry)] = given.get(item(entry), 0) + entry["amount"]
+    draws = [(item(e), e["amount"]) for e in lottery.get(row["lottery_rewards"], ()) if e["probability"]]
+    counts = set(encounter.REWARD_SLOTS[stars - 1]) if draws else {0}
+    out = {}
+    for wanted in set(given) | {i for i, n in draws if i and n}:
+        amounts = {n for i, n in draws if i == wanted and n}
+        others = any(i != wanted or not n for i, n in draws)
+        drawn = _sums(amounts, set(range(max(counts) + 1)) if others else counts)
+        totals = {given.get(wanted, 0) + s for s in drawn} - {0}
+        if totals:
+            out[wanted] = totals
+    return out
+
+
+def reward_choices(scope, *, stars=None, species_id=None, tera_type=None):
+    """-> {item: (every total of it, lowest first)} of the items the raids of `scope` can give,
+    narrowed to a star level, species and Tera type as the search would be."""
+    out, seen = {}, {}
+    for context in scope:
+        fixed, lottery = _reward_tables(context)
+        for row, row_stars in _rows(context):
+            if (stars is not None and row_stars != stars) or (species_id is not None
+                                                              and row["species"] != species_id):
+                continue
+            for gem in _gems(row) if tera_type is None else _gems(row) & {tera_type}:
+                key = (row["fixed_rewards"], row["lottery_rewards"], row["species"], row_stars, gem, id(fixed))
+                if key not in seen:
+                    seen[key] = _totals(row, row_stars, fixed, lottery, gem)
+                for item, totals in seen[key].items():
+                    out.setdefault(item, set()).update(totals)
+    return {item: tuple(sorted(totals)) for item, totals in out.items()}
+
+
+def _can_give(row, stars, tables, wanted):
+    """-> whether some raid of the row gives at least the wanted quantity of every wanted item."""
+    best = {}
+    for gem in _gems(row):
+        for item, totals in _totals(row, stars, *tables, gem).items():
+            best[item] = max(best.get(item, 0), max(totals))
+    return all(best.get(item, 0) >= least for item, least in wanted.items())
+
+
+def gives(rewards, wanted):
+    """-> whether the rewards hold at least the wanted quantity of every wanted item."""
+    totals = {}
+    for item, quantity in rewards:
+        totals[item] = totals.get(item, 0) + quantity
+    return all(totals.get(item, 0) >= least for item, least in wanted.items())
+
+
 def species(event=None):
     """-> [(species, name)] of every standard and black-crystal raid boss, or of an event's, by name."""
     names = encounter.tables()["species_names"]
@@ -102,10 +204,11 @@ def species(event=None):
 
 
 def search(start, count, scope, objective="overall", *, stars=None, shiny=None, species_id=None,
-           tera_type=None, nature=None, gender=None, ability=None, ivs=None, one_per_species=False,
-           limit=12, progress=None, cancelled=None):
+           tera_type=None, nature=None, gender=None, ability=None, ivs=None, rewards=None,
+           one_per_species=False, limit=12, progress=None, cancelled=None):
     """-> up to `limit` matches among seeds start..start+count-1 in every context of `scope`, best
-    score first. `ivs` is six (low, high) ranges, HP Atk Def Spe SpA SpD."""
+    score first. `ivs` is six (low, high) ranges, HP Atk Def Spe SpA SpD; `rewards` {item: least
+    quantity}, a raid's quantities of an item summed, and a match carries its rewards."""
     if objective not in OBJECTIVES:
         raise ValueError(f"no objective {objective!r}")
     if not scope or count < 1 or count * len(scope) > MAX_WORK:
@@ -115,8 +218,11 @@ def search(start, count, scope, objective="overall", *, stars=None, shiny=None, 
     _, score, lowest_first = OBJECTIVES[objective]
     best, by_species = [], {}
     total, done = count * len(scope), 0
+    wanted = dict(rewards or {})
     for context in scope:
         draw = _drawer(context)
+        tables = _reward_tables(context)
+        able = {}                     # a row's id -> whether its raids can give what is wanted
         for offset in range(count):
             if cancelled and cancelled():
                 return _ranked(best, by_species, one_per_species, limit)
@@ -128,8 +234,17 @@ def search(start, count, scope, objective="overall", *, stars=None, shiny=None, 
             if (stars is not None and found_stars != stars) or (
                     species_id is not None and row["species"] != species_id):
                 continue
+            given = ()
+            if wanted:
+                if id(row) not in able:
+                    able[id(row)] = _can_give(row, found_stars, tables, wanted)
+                if not able[id(row)]:
+                    continue
+                given = tuple(encounter.rewards(seed, row, found_stars, *tables))
+                if not gives(given, wanted):
+                    continue
             boss = encounter.boss_fields(seed, row)
-            found = Found(seed, context, found_stars, boss, score(boss["stats"]))
+            found = Found(seed, context, found_stars, boss, score(boss["stats"]), given)
             if ((shiny is not None and found.is_shiny != shiny)
                     or (tera_type is not None and boss["tera_type_original"] != tera_type)
                     or (nature is not None and boss["nature"] != nature)
