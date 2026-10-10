@@ -383,7 +383,8 @@ A 17-byte response (`RESPONSE_SIZE`, the short-form allocation `mov w3, #0x11` a
 leaves `[0x37]` 38 bytes past its end, in stale buffer bytes, so whether it is read depends on
 memory the sender does not control: an emulated Shield 1.3.2 under ldn_mitm accepted 3 of 52, with
 or without the ack of its request; a retail Sword accepted 12 of 12. An emulated Shield accepted 23
-of 23 responses padded to 56 bytes with 1 at `[0x37]` and 0 of 4 with 5 there. The console's own
+of 23 responses padded to 56 bytes with 1 at `[0x37]` and 0 of 4 with 5 there. Sent without the ack of
+its request, the padded form was accepted on its first send (`bin/swsh_connect.py --ip-join`). The console's own
 accepted response is 840 bytes with 1 at `[0x37]`;
 `station4.build_connection_response(..., min_size=ACCEPTED_RESPONSE_SIZE)` pads to 0x38 and writes 1,
 and `bin/swsh_connect.py --respond` sends that form.

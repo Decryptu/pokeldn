@@ -2,9 +2,13 @@
 """Speak version-4 Pia to a Sword/Shield console, from the first packet out to a completed trade.
 
 Never pass --verbose to a live run; use --capture. docs/swsh_session.md, docs/pia.md.
+An emulated console hosting over ldn_mitm, with no radio:
+
+    ./.venv/bin/python bin/swsh_connect.py --ip-join --host-ip 127.0.0.2 --our-ip 127.0.0.3 \
+        --preset trade --offer-file FILE
 """
 from pathlib import Path
-import argparse, json, math, os, shlex, socket, struct, sys, time, traceback, zlib
+import argparse, contextlib, json, math, os, shlex, socket, struct, sys, time, traceback, zlib
 
 PROJECT_ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 sys.path.insert(0, PROJECT_ROOT)
@@ -16,7 +20,8 @@ import trio, ldn
 from pokeldn.host_support import open_output, write_file
 from pokeldn import pokemon as pokemon_service
 from pokeldn.host_support import resolve_keys, needs_root
-from pokeldn.ldn import (broadcast4, local_protocol as lp, mesh_protocol as mesh, pia4, reliable4,
+from pokeldn.ldn import (broadcast4, ldn_mitm, ldn_mitm_host, local_protocol as lp,
+                        mesh_protocol as mesh, pia4, reliable4,
                         reliable5, rtt_protocol as rtt, station4,
                         station_protocol as stp)
 from pokeldn.ldn.transport import board_radio, find_ap_phy
@@ -55,7 +60,14 @@ def cleanup():
                        stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
 
 
-def make_socket(ifname):
+def make_socket(ifname, our_ip=None):
+    if our_ip is not None:
+        # An emulated host holds UDP *:12345 on this machine: bind our own address [docs/ldn.md].
+        s = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
+        s.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
+        s.bind((our_ip, PIA_PORT))
+        s.setblocking(False)
+        return s
     from pokeldn.ldn import userspace_ip  # no kernel interface on the ESP32
     if (user := userspace_ip.udp_socket(ifname, PIA_PORT)) is not None:
         user.setblocking(False)
@@ -88,7 +100,9 @@ def wrap(keys, our_mac, our_constant, nonce8, payload, protocol, station, port=0
     return pia4.build_packet(keys.session_key, iv, body, station=station, nonce8=nonce8)
 
 
-async def main_async(args):
+async def find_radio(args):
+    """-> (SessionKeys, target record, seat context) for the matching search on the air, or an exit
+    code. The seat yields (host_ip, host_mac, our_ip, our_mac)."""
     keys_file = ldn.load_keys(resolve_keys(args.keys))
     phy = find_ap_phy(log=print) if args.phy == "auto" else args.phy
     cleanup()
@@ -121,7 +135,124 @@ async def main_async(args):
     param.keys, param.network, param.password = keys_file, net, PASSPHRASE
     param.name, param.app_version = args.name.encode(), net.app_version
     param.phyname, param.ifname = phy, args.ifname
+    target = dict(comm_id=net.local_communication_id, channel=net.channel,
+                  scene_id=net.scene_id, ssid=net.ssid.hex(),
+                  application_data=bytes(getattr(net, "application_data", b"") or b"").hex())
 
+    @contextlib.asynccontextmanager
+    async def seat():
+        async with ldn.connect(param) as network:
+            info = network.info()
+            parts = list(getattr(info, "participants", []) or [])
+            host = parts[0] if parts else None
+            host_ip = getattr(host, "ip_address", None) or "169.254.14.1"
+            host_mac = bytes(getattr(host, "mac_address", b"") or b"")
+            ours = next((p for p in parts[1:] if getattr(p, "connected", False)), None)
+            our_ip = getattr(ours, "ip_address", None) or host_ip.rsplit(".", 1)[0] + ".2"
+            our_mac = bytes(getattr(ours, "mac_address", b"") or b"")
+            yield host_ip, host_mac, our_ip, our_mac
+    return keys, target, seat
+
+
+class _Advertised:
+    """The fields of a scanned network `session_keys` and the target record read."""
+
+    def __init__(self, info):
+        self.application_data = bytes(ldn_mitm.advertise_data(info))
+        self.local_communication_id, _, self.scene_id = struct.unpack_from("<QHH", info, 0)
+        self.num_participants = info[ldn_mitm_host.OFF_NODE_COUNT]
+        self.max_participants = info[ldn_mitm_host.OFF_NODE_COUNT_MAX]
+        self.app_version = ldn_mitm_host.node_local_comm_version(info, 0)
+        self.ssid = ldn_mitm.session_id(info)
+
+
+def ip_scan_once(scan_ip, host_ip, timeout):
+    """-> the emulated host's NetworkInfo, or None. The bridge drops a scan from the host's own
+    address, so it leaves from `scan_ip` [docs/ldn.md, Hosting for an emulator]."""
+    with socket.socket(socket.AF_INET, socket.SOCK_DGRAM) as us:
+        us.settimeout(timeout)
+        us.bind((scan_ip, 0))
+        try:
+            us.sendto(ldn_mitm.build(ldn_mitm.SCAN), (host_ip, ldn_mitm.PORT))
+            while True:
+                data, _ = us.recvfrom(4096)
+                kind, info = ldn_mitm.parse(data)
+                if kind == ldn_mitm.SCAN_RESP:
+                    return info
+        except (socket.timeout, OSError, ValueError):
+            return None
+
+
+def ip_associate(our_ip, host_ip, our_mac, name, timeout, version):
+    """-> (synced NetworkInfo, the TCP connection the seat lasts as long as)."""
+    tcp = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+    tcp.settimeout(timeout)
+    tcp.bind((our_ip, 0))
+    tcp.connect((host_ip, ldn_mitm.PORT))
+    tcp.sendall(ldn_mitm.build(ldn_mitm.CONNECT,
+                               ldn_mitm.build_node_info(our_ip, our_mac, name.encode(),
+                                                        version=version)))
+    kind, synced = ldn_mitm.parse(tcp.recv(8192))
+    if kind != ldn_mitm.SYNC_NETWORK:
+        tcp.close()
+        raise RuntimeError(f"the host answered our connect with type {kind}, not SyncNetwork")
+    tcp.settimeout(None)
+    return synced, tcp
+
+
+async def find_ip(args):
+    """`find_radio` against an emulated console hosting over ldn_mitm: no radio, no root, no keys."""
+    our_ip = args.our_ip
+    if our_ip is None:
+        with socket.socket(socket.AF_INET, socket.SOCK_DGRAM) as probe:
+            probe.connect((args.host_ip, ldn_mitm.PORT))
+            our_ip = probe.getsockname()[0]
+    our_mac = b"\x02\x00" + socket.inet_aton(our_ip)
+    want = int(args.comm_id, 16) if args.comm_id else COMM_ID
+    print(f"[cx] ip-join: host {args.host_ip}, us {our_ip}, comm_id={want:#018x}")
+    net = None
+    for _ in range(args.scans):
+        info = ip_scan_once(args.scan_ip or our_ip, args.host_ip, args.dwell)
+        if info is None:
+            continue
+        n = _Advertised(info)
+        print(f"[cx] saw comm_id=0x{n.local_communication_id:016x} scene={n.scene_id} "
+              f"{n.num_participants}/{n.max_participants}")
+        if n.local_communication_id == want and n.scene_id == SCENE_ACCEPTING:
+            net = n
+            break
+        await trio.sleep(args.dwell)
+    if net is None:
+        print(f"[cx] no matching search at {args.host_ip} - is the emulated console on Y-Comm -> "
+              "Link Trade, past BOTH messages?")
+        return 3
+    if net.num_participants >= net.max_participants:
+        print("[cx] the session is FULL, no seat to take")
+        return 5
+    synced, tcp = ip_associate(our_ip, args.host_ip, our_mac, args.name, args.dwell * 4,
+                               net.app_version)
+    net = _Advertised(synced)
+    keys = session_keys(net)
+    print(f"[cx] target ssid={net.ssid.hex()} scene={net.scene_id} app_version={net.app_version}")
+    print(f"[cx] {keys}")
+    target = dict(comm_id=net.local_communication_id, channel=None, scene_id=net.scene_id,
+                  ssid=net.ssid.hex(), application_data=net.application_data.hex())
+    _ip, host_mac, *_ = ldn_mitm_host.read_node(synced, 0)
+
+    @contextlib.asynccontextmanager
+    async def seat():
+        try:
+            yield args.host_ip, bytes(host_mac), our_ip, our_mac
+        finally:
+            tcp.close()
+    return keys, target, seat
+
+
+async def main_async(args):
+    found = await (find_ip if args.ip_join else find_radio)(args)
+    if isinstance(found, int):
+        return found
+    keys, target, seat = found
     cap = open_output(args.capture, "w") if args.capture else None
 
     def record(**kw):
@@ -129,21 +260,12 @@ async def main_async(args):
             cap.write(json.dumps(kw) + "\n")
             cap.flush()
 
-    record(rec="target", comm_id=net.local_communication_id, channel=net.channel,
-           scene_id=net.scene_id, ssid=net.ssid.hex(),
-           application_data=bytes(getattr(net, "application_data", b"") or b"").hex(),
-           session_key=keys.session_key.hex(), session_param=keys.session_param)
+    record(rec="target", **target, session_key=keys.session_key.hex(),
+           session_param=keys.session_param)
 
-    async with ldn.connect(param) as network:
-        info = network.info()
-        parts = list(getattr(info, "participants", []) or [])
-        host = parts[0] if parts else None
-        host_ip = getattr(host, "ip_address", None) or "169.254.14.1"
-        host_mac = bytes(getattr(host, "mac_address", b"") or b"")
-        ours = next((p for p in parts[1:] if getattr(p, "connected", False)), None)
-        our_ip = getattr(ours, "ip_address", None) or host_ip.rsplit(".", 1)[0] + ".2"
-        our_mac = bytes(getattr(ours, "mac_address", b"") or b"")
-        bcast = our_ip.rsplit(".", 1)[0] + ".255"
+    async with seat() as (host_ip, host_mac, our_ip, our_mac):
+        # Over ldn_mitm the subnet broadcast reaches no emulator: the host is the only peer.
+        bcast = host_ip if args.ip_join else our_ip.rsplit(".", 1)[0] + ".255"
         print(f"[cx] *** ASSOCIATED *** us={our_ip} ({our_mac.hex()}) "
               f"host={host_ip} ({host_mac.hex()})")
         if len(our_mac) != 6 or len(host_mac) != 6:
@@ -156,7 +278,7 @@ async def main_async(args):
         record(rec="seat", us=our_ip, our_mac=our_mac.hex(), host=host_ip,
                host_mac=host_mac.hex(), our_constant=our_constant, host_constant=host_constant)
 
-        sock = make_socket(args.ifname)
+        sock = make_socket(args.ifname, our_ip if args.ip_join else None)
         t0 = time.monotonic()
         st = {"seq": None, "host_var": None, "host_constant_seen": None, "last_update": None,
               "updates": 0, "phase": "listen", "station": None, "acks": 0,
@@ -1745,6 +1867,13 @@ def build_parser():
     ap.add_argument("--comm-id", default=None, help="hex; defaults to Sword's 0x0100abf008968000")
     ap.add_argument("--keys", default="~/.switch/prod.keys")
     ap.add_argument("--phy", default="auto")
+    ap.add_argument("--ip-join", action="store_true",
+                    help="join an emulated console hosting over ldn_mitm on the LAN; no radio, "
+                         "no root, no keys. Each of --scans waits --dwell seconds for an answer")
+    ap.add_argument("--host-ip", default="127.0.0.2", help="--ip-join: the console's address")
+    ap.add_argument("--our-ip", default=None, help="--ip-join: our own address on that LAN")
+    ap.add_argument("--scan-ip", default=None,
+                    help="--ip-join: the address a scan leaves from; default --our-ip")
     ap.add_argument("--ifname", default="ldnclient")
     ap.add_argument("--channels", default="1,6,11")
     ap.add_argument("--dwell", type=float, default=1.5)
@@ -2192,7 +2321,7 @@ def main(argv=None):
         for key in ("species", "ability", "level", "experience", "nickname", "ot", "ivs", "moves"):
             setattr(args, "offer_" + key, None)
     args.validate_offer = True
-    if needs_root():
+    if not args.ip_join and needs_root():
         build_parser().error("must run as root (LDN needs the raw radio)")
     try:
         return trio.run(main_async, args)
@@ -2200,7 +2329,8 @@ def main(argv=None):
         print(f"[cx] {type(e).__name__}: {e}")
         for sub in getattr(e, "exceptions", ()) or ():
             print(f"[cx]   caused by: {type(sub).__name__}: {sub}")
-        cleanup()
+        if not args.ip_join:
+            cleanup()
         raise
 
 
