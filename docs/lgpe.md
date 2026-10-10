@@ -69,5 +69,5 @@ ten minutes of counted play time), then the fatal error screen.
   within 30 ms and completed the trade: it withdrew its vote (`2 2 3`) 0.81 s after its own `1 2 2`,
   the host published A 2 with trailing word 1 0.16 s later and trailing word 2 1.0 s after that, the
   console republished `0 2 3` under trailing word 2, announced its commit clone 5.4 s after the first
-  A 2 and drew the same seven-message burst. What differs on retail is unknown; the retail console's
-  update version is not on the wire.
+  A 2 and drew the same seven-message burst. The retail console runs 1.0.2 as well; what differs on
+  retail is unknown.

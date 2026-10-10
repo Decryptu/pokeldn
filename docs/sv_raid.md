@@ -11,8 +11,9 @@ the lobby, then sends every participant one bootstrap message holding the four p
 boss and its RaidPoint, and each console fights the battle on its own. `bin/sv_host.py --raid-seed`
 hosts a raid a retail console joins, `bin/sv_join.py --raid-pokemon` joins one a console hosts; in
 both, the program's player leaves as the battle begins and its Pokemon fights on as the console's
-AI partner. Addresses are offsets into the decompressed `main` of Scarlet 4.0.0; Violet 4.0.0 has the
-same code at the same offsets ([docs/sv.md](sv.md)).
+AI partner. Addresses are offsets into the decompressed `main` of Scarlet 4.0.0, the version the
+retail Scarlet measured here runs; Violet 4.0.0 has the same code at the same offsets
+([docs/sv.md](sv.md)).
 
 ## Hosting
 
@@ -257,8 +258,6 @@ the host start; its Pokemon stayed in the battle.
 
 ## Unresolved
 
-- Which Scarlet version a retail console runs. The addresses here are 4.0.0's; a retail console
-  advertises LDN application version 21, which `0x6b083c` copies from a runtime setting.
 - Whether a listener of the GlueCode dispatcher `0x18beef4` reads `+0x4c` as a word, and what
   reads the battle-start frames the queues of `0xe106a4` and `0xf5bc10` hold.
 - Whether the battle reads the battle-start messages it keeps. On an emulated Scarlet 4.0.0 the 0x46
