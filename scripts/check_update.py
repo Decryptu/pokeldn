@@ -135,6 +135,18 @@ def main() -> int:
     for log in (work / "helper.log",):
         if log.exists():
             print(f"--- {log}\n{log.read_text(errors='replace')}", flush=True)
+    if (work / "new").exists():
+        # What keeps the unpacked copy: its files and, on Windows, the processes running from it.
+        remaining = [p for p in (work / "new").rglob("*") if p.is_file()]
+        print(f"unpacked copy: {len(remaining)} files left, e.g. {[str(p) for p in remaining[:5]]}", flush=True)
+        for pid in update.running_from(work / "new"):
+            image = subprocess.run(["tasklist", "/FI", f"PID eq {pid}", "/FO", "CSV", "/NH"],
+                                   capture_output=True, text=True).stdout.strip()
+            print(f"running from it: {image}", flush=True)
+        if sys.platform == "win32":
+            listing = subprocess.run(["tasklist", "/V", "/FO", "CSV"], capture_output=True, text=True).stdout
+            print("\n".join(line for line in listing.splitlines() if "pokeldn" in line.lower()
+                            or "flet" in line.lower()), flush=True)
     ok = ok and not left and (busy is None or busy.poll() is not None)
     stop_all(target)
     print("PASS" if ok else "FAIL", flush=True)
