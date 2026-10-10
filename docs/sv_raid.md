@@ -278,8 +278,11 @@ event, or its `Files`) and generates the `Raid` the host stages:
 The RaidPoint carries the record's capture rate and, as the crystal, the save's raid content: 2 an
 event, 3 a seven-star event (Tera-Finder `RaidContent`); no retail console has fought one of ours.
 
-A den's choices come from `raid_event.dens`: a delivery group with dens in the priority table and
-a record in that version; Walking Wake's spotlight offers Scarlet its group 1 and Violet its group 2.
+The app's Tera Raid (Host) tool picks the event from its own copy of the gallery, which it downloads
+and updates, and narrows the raid's version, progress and den to what the event spawns
+([docs/gui.md](gui.md#raid-events)). A den's choices come from `raid_event.dens`: a delivery group with
+dens in the priority table and a record in that version; Walking Wake's spotlight offers Scarlet its
+group 1 and Violet its group 2.
 
 A capture rate of 2 is a catch once per save: every seven-star record has it, and so do the five-star
 Walking Wake and Iron Leaves of each spotlight round, Dialga and Palkia's spotlight and the shiny

@@ -1,5 +1,6 @@
 """The raid seed field: the boss and rewards the seed gives in the chosen context, and a finder that
-searches seeds by what the boss is (pokeldn.sv.raid_search)."""
+searches seeds by what the boss is (pokeldn.sv.raid_search). An event's context (its `event`,
+`group` and `den`) draws from the event and narrows the finder to what the event spawns."""
 
 import re
 import threading
@@ -11,7 +12,7 @@ from gui.views.pokemon import NamePicker
 from gui.views.sprites import MINI, SIZE, Sprite
 from gui.views.widgets import PixelActivity
 from pokeldn import pokemon as builder
-from pokeldn.sv import raid_encounter, raid_search
+from pokeldn.sv import raid_encounter, raid_event, raid_search
 from pokeldn.sv.raid_encounter import NATURES, TERA_TYPES
 GENDERS = ("Male", "Female", "Genderless")
 STATS = ("HP", "Atk", "Def", "Spe", "SpA", "SpD")
@@ -35,8 +36,12 @@ def iv_range(text: str) -> tuple[int, int]:
     return low, high
 
 
+CRYSTALS = {"standard": "Standard crystal", "black": "Black crystal", "event": "Event crystal",
+            "might": "Seven-star event crystal"}
+
+
 def crystal_colors(context) -> tuple[str, str]:
-    return t.BRAND_RED if context["content"] == "black" else t.BRAND_BLUE
+    return t.BRAND_RED if context["content"] in ("black", "might") else t.BRAND_BLUE
 
 
 def stars_row(count: int, context) -> ft.ShaderMask:
@@ -95,7 +100,7 @@ def boss_card(app, seed, stars, boss, context, *, compact=False, rewards=None, o
     if shiny:
         title.append(t.tinted(t.pixel_icon("sparkles", color="#FFFFFF", tooltip="Shiny"), crystal_colors(context)))
     title.append(stars_row(stars, context))
-    accent = t.RED if context["content"] == "black" else t.BLUE
+    accent = t.RED if context["content"] in ("black", "might") else t.BLUE
     facts = ft.Row([
         t.chip(f"Level {boss['level']}", "sword", accent),
         t.chip(f"{TERA_TYPES[boss['tera_type_original']]} Tera", "diamond-gem", accent),
@@ -103,8 +108,8 @@ def boss_card(app, seed, stars, boss, context, *, compact=False, rewards=None, o
         *([t.chip("Shiny", "sparkles", accent)] if shiny and not compact else []),
     ], spacing=6, run_spacing=6, wrap=True)
     where = (f"{context['version'].title()} · {context['map_name'].title()} · "
-             f"{dict(PROGRESS)[context['progress']]} · "
-             f"{'Black' if context['content'] == 'black' else 'Standard'} crystal")
+             f"{dict(PROGRESS)[context['progress']]} · {CRYSTALS[context['content']]}"
+             + (f" · {context['den']}" if context.get("den") else ""))
     ivs = ft.Row([iv_tile(label, iv, stat, compact)
                   for label, iv, stat in zip(STATS, boss["ivs"], boss["stats"])], spacing=6, wrap=True)
     column = [ft.Row(title, spacing=8, vertical_alignment=ft.CrossAxisAlignment.CENTER), facts, ivs]
@@ -149,11 +154,16 @@ class RaidSeedPicker:
         self.seed.error = None if seed is not None else "Eight hexadecimal digits."
         self.preview.content = None
         if seed is not None:
-            raid = raid_encounter.generate(seed, **self.context())
-            rewards = ft.Container(reward_chips(None, raid.rewards))
-            self.preview.content = boss_card(self.app, seed, raid.stars, raid.boss, raid.context,
-                                             rewards=rewards)
-            threading.Thread(target=self._name_rewards, args=(rewards, raid.rewards), daemon=True).start()
+            context = self.context()
+            try:
+                raid = raid_search.generate(seed, context)
+            except ValueError as exc:       # an event this context cannot spawn
+                self.seed.error, raid = str(exc), None
+            if raid is not None:
+                rewards = ft.Container(reward_chips(None, raid.rewards))
+                self.preview.content = boss_card(self.app, seed, raid.stars, raid.boss,
+                                                 {**context, **raid.context}, rewards=rewards)
+                threading.Thread(target=self._name_rewards, args=(rewards, raid.rewards), daemon=True).start()
         if update:
             self.control.update()
 
@@ -185,15 +195,34 @@ class RaidSeedPicker:
 
     def _open(self, _event) -> None:
         current = self.context()
+        event = current.get("event")
         choose = lambda options, value: t.dropdown(options, value)
-        version = choose([("any", "Any game"), ("scarlet", "Scarlet"), ("violet", "Violet")], current["version"])
-        region = choose([("any", "Any region"), ("paldea", "Paldea"), ("kitakami", "Kitakami"),
-                         ("blueberry", "Blueberry")], current["map_name"])
-        story = choose([("any", "Any progress"), *PROGRESS], current["progress"])
-        crystal = choose([("any", "Any crystal"), ("standard", "Standard"), ("black", "Black")], "any")
+        if event is None:
+            version = choose([("any", "Any game"), ("scarlet", "Scarlet"), ("violet", "Violet")],
+                             current["version"])
+            region = choose([("any", "Any region"), ("paldea", "Paldea"), ("kitakami", "Kitakami"),
+                             ("blueberry", "Blueberry")], current["map_name"])
+            story = choose([("any", "Any progress"), *PROGRESS], current["progress"])
+            crystal = choose([("any", "Any crystal"), ("standard", "Standard"), ("black", "Black")], "any")
+            star_levels = range(1, 7)
+        else:
+            # Only what the event spawns: its games, Paldea, its dens and the progresses they draw at.
+            games = raid_event.versions(event)
+            version = choose(([("any", "Any game")] if len(games) > 1 else [])
+                             + [(v, v.title()) for v in games], current["version"])
+            region = choose([("paldea", "Paldea")], "paldea")
+            region.disabled = True
+            dens = raid_event.dens(event)
+            stages = {p for v in games for d in raid_event.dens(event, v)
+                      for p in raid_event.progresses(event, v, d.group)}
+            story = choose([("any", "Any progress"),
+                            *((key, label) for key, label in PROGRESS if key in stages)], current["progress"])
+            crystal = choose(([("any", "Any den")] if len(dens) > 1 else [])
+                             + [(str(d.group), d.label) for d in dens], str(current["group"]))
+            star_levels = sorted({s for d in dens for s in d.stars})
         species = NamePicker(self.app, "sv", "species", "", lambda _v: None,
-                             names=[{"id": s, "name": n} for s, n in raid_search.species()]).control
-        stars = choose([("any", "Any stars"), *((str(n), f"{n} stars") for n in range(1, 7))], "any")
+                             names=[{"id": s, "name": n} for s, n in raid_search.species(event)]).control
+        stars = choose([("any", "Any stars"), *((str(n), f"{n} stars") for n in star_levels)], "any")
         tera = choose([("any", "Any Tera type"), *((str(i), n) for i, n in enumerate(TERA_TYPES))], "any")
         nature = choose([("any", "Any nature"), *((str(i), n) for i, n in enumerate(NATURES))], "any")
         gender = choose([("any", "Any gender"), *((str(i), n) for i, n in enumerate(GENDERS))], "any")
@@ -232,8 +261,11 @@ class RaidSeedPicker:
 
         def submit(_):
             try:
+                scope = raid_search.contexts(version.value, region.value, story.value, crystal.value,
+                                             event=event, group=crystal.value)
+                if not scope:
+                    raise ValueError("No den of the event spawns in that game at that progress.")
                 first, amount = seed_of(start.value), int(count.value)
-                scope = raid_search.contexts(version.value, region.value, story.value, crystal.value)
                 if first is None or not 1 <= amount * len(scope) <= raid_search.MAX_WORK:
                     raise ValueError(f"Start at an eight-digit seed and search up to "
                                      f"{raid_search.MAX_WORK // len(scope):,} seeds in this scope.")

@@ -302,6 +302,58 @@ A sprite downloads on first use and is read from disk afterwards, with no networ
 Settings has the switch and a button that empties the cache. `POKELDN_SPRITE_BASE` replaces the sprite
 host, for tests (`tests/test_sprites.py`).
 
+## Raid events
+
+The Scarlet/Violet Tera Raid (Host) tool's Raid event card hosts a raid from Project Pokemon's
+[EventsGallery](https://github.com/projectpokemon/EventsGallery) ([docs/sv_raid.md](sv_raid.md#event-raids)).
+Unfolded, it looks for the app's copy of the gallery (`pokeldn.app.events_gallery`):
+
+| the app | the copy |
+|---|---|
+| packed, Windows or Linux | `_internal/EventsGallery`, carried over by [Updates](#updates); the data folder's `EventsGallery` when `_internal` cannot be written |
+| packed, macOS | the data folder's `EventsGallery` (a file written inside the signed app breaks its signature) |
+| run from source | the checkout's `EventsGallery/`, which `.gitignore` leaves out |
+
+Only `Released/Gen 9/SV/Raid Events/**/Files/` and `**/Encounters.txt` are kept, about 20 MB; the JSON
+copies are not. An event's files sit some 205 characters below the gallery, past Windows' 260, so the
+app opens them as `\\?\` paths and runs git with `core.longpaths`.
+
+| | git on the PATH | without git |
+|---|---|---|
+| Download | a shallow, blobless, sparse clone of master (`--depth 1 --filter=blob:none --sparse`), 3 s | the head of master from `api.github.com`, then `codeload.github.com/.../zip/<commit>`, unpacked with only the paths above, 5 s; `.pokeldn.json` keeps the commit and the date of its newest raid event change |
+| Check for updates | `git fetch` of master; an update when the raid events folder differs from `FETCH_HEAD` | `api.github.com/repos/projectpokemon/EventsGallery/commits?path=Released/Gen 9/SV/Raid Events`; an update when its newest commit is later than the copy's |
+| Update | a fast-forward, or `git reset --keep FETCH_HEAD` for the shallow clone | the download again |
+
+A change elsewhere in the gallery is no update. A new copy replaces the old one only once complete.
+Times are from a home connection, October 2026.
+
+The event list holds every folder with `Files/` but `000 Base Data`, the game's own placeholder: 152
+on 2026-09-06, newest first, the arrow beside it turning the order. Each entry is the folder's name
+without its number (a round, "Event · Round") over its bosses; typing filters on both. With no event
+the field is empty under a "No event" hint, so a search is typed straight in. Choosing one:
+
+- The raid card offers the game versions the event spawns in, Paldea alone, the progresses at which
+  the chosen den draws, and in place of Crystal the event's dens for that version, each a delivery
+  group with its stars and bosses ("7★ Charizard", "4–5★ Florges, Mimikyu"). A value the event cannot
+  spawn moves to the nearest one it can (`raid_event.constrain`).
+- Find a raid searches the event's dens only, one progress per stage, with its bosses as species
+  ([docs/sv_raid.md](sv_raid.md#finding-a-seed)).
+- An event with a boss a save catches once shows "Let it be caught again" (`--raid-catch-normal`),
+  unchecked at each launch and for each event chosen. Checked, the boss is a normal catch under a
+  stand-in record number. The record number has to change: a console checks the one the lobby shows
+  against those its save has caught, and blocks the catch of one it has caught however the battle
+  data offers the boss ([docs/sv_raid.md](sv_raid.md#event-raids)). It leaves the caught Pokemon's
+  legality as it is.
+
+Folding the card sets its event aside (`#raid-event-folded` in the tool's values, `GamesView.show_raid_event`):
+the raid card, Find a raid and the command are a standard raid's, `--raid-event` and the den and
+catch override that need it left out, and the header reads "Off: Event". Unfolding brings the event
+back. The card opens at launch when an event is in use.
+
+An event the gallery lacks (not downloaded, or an update dropped it) stays chosen: the header
+reads "Missing: Event" in red, and the run refuses it until the gallery has it or another event
+is chosen (`pokeldn.app.command.code_error`).
+
 ## Updates
 
 At launch the app asks `api.github.com/repos/Decryptu/pokeldn/releases/latest` for the newest stable
@@ -322,8 +374,9 @@ Update now (`pokeldn.app.update`) installs the release in place:
 5. The helper waits for the old app's process to end (120 s), then on Windows for every process
    whose executable lies in the installed app (the PKHeX service) and terminates any left after
    10 s. It renames the installed app to `.<name>.old` beside it (retrying for 30 s while Windows
-   releases the folder), copies the new app into its place, deletes the old copy and opens the new
-   app. Any failure puts the old app back and opens it. The swap runs whether or not the helper's
+   releases the folder), copies the new app into its place, moves the old copy's
+   `_internal/EventsGallery` ([Raid events](#raid-events)) across, deletes the old copy and opens the
+   new app. Any failure puts the old app back and opens it. The swap runs whether or not the helper's
    window came up.
    The helper runs from the unpacked copy's folder: Windows refuses to rename a folder that is any
    process's working folder, and Explorer starts the app with its own folder as one.

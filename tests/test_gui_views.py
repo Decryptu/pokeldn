@@ -685,3 +685,88 @@ def test_flet_unpacks_the_xz_viewer_the_packer_writes(tmp_path, monkeypatch):
     flet_client.read_any_compression()
     cache = flet_desktop.ensure_client_cached()
     assert (cache / "Flet.app" / "App").read_bytes() == b"package:flet_drop"
+
+
+def test_an_event_narrows_the_raid_card_to_what_it_spawns():
+    """Walking Wake's spotlight: Scarlet's den only, Paldea, the progresses its five stars draw at."""
+    from pokeldn.app.catalog import GAMES
+    from pokeldn.sv import raid_event
+    rows = tuple(dict(species=s, rate=1, rom=rom, group=g, stars=5, capture_rate=2)
+                 for s, rom, g in ((1009, 1, 1), (1010, 2, 2)))
+    spotlight = raid_event.Event(20230228, "", rows, {}, {}, (1, 1) + (0,) * 8)
+    tool = next(t for game in GAMES for t in game.tools if t.key == "sv-raid-host")
+    saved = []
+    view = SimpleNamespace(tool=tool, app=SimpleNamespace(settings=SimpleNamespace(save=lambda: saved.append(1))),
+                           values={"--raid-event": "013 Walking Wake", "--raid-version": "scarlet",
+                                   "--raid-event-group": "2", "--raid-progress": "tera", "--raid-map": "kitakami"})
+    view.raid_event = lambda: spotlight
+    view.raid_context = lambda: GamesView.raid_context(view)
+    GamesView.constrain_raid(view)
+    assert [view.values[k] for k in ("--raid-event-group", "--raid-progress", "--raid-map")] == ["1", "6star", "paldea"]
+    assert saved
+    field = {f.key: f for f in tool.fields}
+    assert GamesView.raid_choices(view, field["--raid-progress"]) == (
+        ("5star", "5-star raids"), ("6star", "6-star raids"))
+    assert GamesView.raid_choices(view, field["--raid-map"]) == (("paldea", "Paldea"),)
+    assert GamesView.raid_choices(view, field["--raid-version"]) == (("scarlet", "Scarlet"), ("violet", "Violet"))
+    assert GamesView.raid_choices(view, field["--raid-seed"]) is None
+    assert GamesView.raid_context(view)["den"] == "5★ Walking Wake"
+
+
+def test_folding_the_raid_event_card_sets_its_event_aside_until_it_unfolds():
+    """Folded, the host, the raid card and its finder are a standard raid's; the catch override
+    and den go with the event; unfolding brings them back."""
+    from pokeldn.app.catalog import GAMES
+    from pokeldn.app.command import build
+    from pokeldn.app.introspect import parser_of
+    from pokeldn.app.settings import Settings
+    tool = next(t for game in GAMES for t in game.tools if t.key == "sv-raid-host")
+    redrawn = []
+    view = SimpleNamespace(tool=tool, raid_event_open=True, redraw=lambda: redrawn.append(1),
+                           values={"--raid-pokemon": {"file": "/tmp/host.pk9"}, "--raid-seed": "52E6B438",
+                                   "--raid-event": "002 Charizard the Unrivaled", "--raid-event-group": "1",
+                                   "--raid-catch-normal": True})
+    view.raid_event = lambda: GamesView.raid_event(view)
+
+    def hosted():
+        return parser_of(tool.script).parse_args(build(tool, view.values, {}, Settings()))
+    GamesView.show_raid_event(view, False)
+    assert not view.raid_event_open and redrawn
+    assert GamesView.raid_event(view) is None and "event" not in GamesView.raid_context(view)
+    folded = hosted()
+    assert (folded.raid_event, folded.raid_event_group, folded.raid_catch_normal) == (None, None, False)
+    GamesView.show_raid_event(view, True)
+    unfolded = hosted()
+    assert view.raid_event_open and view.values["--raid-event"] == "002 Charizard the Unrivaled"
+    assert unfolded.raid_event and (unfolded.raid_event_group, unfolded.raid_catch_normal) == (1, True)
+    # With no event chosen, the card folds and unfolds with nothing to set aside.
+    view.values["--raid-event"] = ""
+    GamesView.show_raid_event(view, False)
+    GamesView.show_raid_event(view, True)
+    assert view.values["--raid-event"] == "" and "#raid-event-folded" not in view.values
+
+
+@pytest.mark.parametrize("downloaded", [True, False])
+def test_an_event_missing_from_the_gallery_stays_chosen_and_shows_missing(monkeypatch, tmp_path, downloaded):
+    """The card keeps an event the gallery lacks (the run refuses it) and says so in red, rather than
+    quietly hosting a standard raid."""
+    from gui import theme as t
+    from gui.views import raid_event as card
+    from pokeldn.app import events_gallery as gallery
+    from pokeldn.app.catalog import GAMES
+    key = "013 Walking Wake"
+    if downloaded:
+        (tmp_path / key / "Files").mkdir(parents=True)
+    monkeypatch.setattr(gallery, "event_path", lambda k, root=None: str(tmp_path / k))
+    tool = next(t for game in GAMES for t in game.tools if t.key == "sv-raid-host")
+    field = next(f for f in tool.fields if f.key == "--raid-event")
+    saved = []
+    view = SimpleNamespace(tool=tool, raid_event_open=False, values={"--raid-event": key, card.CATCH: True},
+                           app=SimpleNamespace(settings=SimpleNamespace(save=lambda: saved.append(1))),
+                           raid_event=lambda: None)
+    picker = card.RaidEventPicker(view, field)
+    assert view.values == {"--raid-event": key, card.CATCH: True} and not saved
+    if downloaded:
+        assert (picker.summary.value, picker.summary.color) == ("Walking Wake", t.BLUE)
+    else:
+        assert (picker.summary.value, picker.summary.color) == ("Missing: Walking Wake", t.RED)

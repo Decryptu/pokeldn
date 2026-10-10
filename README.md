@@ -384,7 +384,8 @@ Both also run a local Tera Raid. `--raid-seed` hosts one the console joins (Pok�
 Raid Battle, Link Code 4970): the seed and four context flags choose the boss, `--raid-reward
 ITEM:QUANTITY` replaces its rewards, and `--raid-pokemon` is the Pokémon pokeldn's player brings.
 `--raid-event FOLDER` draws the boss and rewards from a Poké Portal News delivery instead, an event
-of Project Pokemon's [EventsGallery](https://github.com/projectpokemon/EventsGallery).
+of Project Pokemon's [EventsGallery](https://github.com/projectpokemon/EventsGallery), which the app
+downloads and updates on request.
 `bin/sv_join.py --raid-pokemon FILE` joins a raid the console hosts. In both, pokeldn's player
 leaves as the battle starts and its Pokémon stays to fight beside the console's. The app's two
 Tera Raid tools carry the flags; see [Tera Raids](docs/sv_raid.md).
@@ -443,7 +444,7 @@ Contributors to this repository (GitHub does not list contributors on a fork):
   and [SV-Past-Tera-Raid](https://github.com/xCyrusBR/SV-Past-Tera-Raid), Scarlet/Violet Tera Raid
   work
 - [Project Pokemon](https://github.com/projectpokemon): the [EventsGallery](https://github.com/projectpokemon/EventsGallery)
-  of Scarlet/Violet raid event deliveries, with pkNX's text of each
+  of Scarlet/Violet raid event deliveries the app downloads, with pkNX's text of each
 
 ## License
 

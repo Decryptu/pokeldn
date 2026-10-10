@@ -5,7 +5,7 @@ from dataclasses import dataclass
 import heapq
 from itertools import product
 
-from pokeldn.sv import raid_encounter as encounter
+from pokeldn.sv import raid_encounter as encounter, raid_event
 
 MAX_WORK = 1_000_000              # seeds times contexts in one search
 MAX_RESULTS = 100
@@ -33,9 +33,12 @@ class Found:
         return (b["trainer_id"] ^ b["secret_id"] ^ (b["pid"] >> 16) ^ (b["pid"] & 0xFFFF)) < 16
 
 
-def contexts(version="any", map_name="any", progress="any", content="any"):
+def contexts(version="any", map_name="any", progress="any", content="any", event=None, group="any"):
     """-> the raid contexts a search covers; "any" widens a dimension. A black crystal ignores the
-    story progress, so it is searched once."""
+    story progress, so it is searched once. With an event, the contexts are its dens' (`group` one
+    of them): Paldea, and one progress per stage, since the progresses of a stage draw alike."""
+    if event is not None:
+        return _event_contexts(event, version, progress, group)
     for value, choices in ((version, encounter.VERSIONS), (map_name, encounter.MAPS),
                            (progress, encounter.PROGRESS), (content, encounter.CONTENTS)):
         if value != "any" and value not in choices:
@@ -49,10 +52,52 @@ def contexts(version="any", map_name="any", progress="any", content="any"):
     return out
 
 
-def species():
-    """-> [(species, name)] of every standard and black-crystal raid boss, by name."""
+def _event_contexts(event, version, progress, group):
+    out = []
+    for v in raid_event.versions(event):
+        if version not in ("any", v):
+            continue
+        for den in raid_event.dens(event, v):
+            if str(group) not in ("any", str(den.group)):
+                continue
+            stages = {}
+            for p in raid_event.progresses(event, v, den.group):
+                if progress in ("any", p):
+                    stages.setdefault(raid_event.STAGES[p], p)
+            out += [{"version": v, "map_name": "paldea", "progress": p, "content": den.content,
+                     "event": event, "group": den.group, "den": den.label} for p in stages.values()]
+    return out
+
+
+def generate(seed, context):
+    """-> the Raid the seed gives in a context as `contexts` makes it, an event's when it names one."""
+    if "event" in context:
+        return raid_event.generate(context["event"], seed, context["version"], context["progress"],
+                                   context["group"])
+    return encounter.generate(seed, context["version"], context["map_name"], context["progress"],
+                              context["content"])
+
+
+def _drawer(context):
+    """-> seed -> (row, stars) in the context; an event's rows are gathered once, not per seed."""
+    if "event" not in context:
+        return lambda seed: encounter.select(seed, context["version"], context["map_name"],
+                                             context["progress"], context["content"])
+    rows = raid_event.candidates(context["event"], context["version"], context["progress"], context["group"])
+
+    def draw(seed):
+        row = raid_event.draw(rows, seed)
+        return row, row["stars"]
+    return draw
+
+
+def species(event=None):
+    """-> [(species, name)] of every standard and black-crystal raid boss, or of an event's, by name."""
     names = encounter.tables()["species_names"]
-    found = {row["species"] for rows in encounter.tables()["encounters"].values() for row in rows}
+    if event is not None:
+        found = {r["species"] for r in event.rows if r["rate"]}
+    else:
+        found = {row["species"] for rows in encounter.tables()["encounters"].values() for row in rows}
     return sorted(((s, names[str(s)]) for s in found), key=lambda pair: pair[1].casefold())
 
 
@@ -71,6 +116,7 @@ def search(start, count, scope, objective="overall", *, stars=None, shiny=None, 
     best, by_species = [], {}
     total, done = count * len(scope), 0
     for context in scope:
+        draw = _drawer(context)
         for offset in range(count):
             if cancelled and cancelled():
                 return _ranked(best, by_species, one_per_species, limit)
@@ -78,8 +124,7 @@ def search(start, count, scope, objective="overall", *, stars=None, shiny=None, 
             if progress and done % 5000 == 0:
                 progress(done, total)
             seed = (start + offset) & 0xFFFFFFFF
-            row, found_stars = encounter.select(seed, context["version"], context["map_name"],
-                                                context["progress"], context["content"])
+            row, found_stars = draw(seed)
             if (stars is not None and found_stars != stars) or (
                     species_id is not None and row["species"] != species_id):
                 continue

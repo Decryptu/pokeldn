@@ -123,6 +123,30 @@ def test_an_event_offers_each_version_its_own_dens():
     assert raid_event.catch_once(SPOTLIGHT) == ["Walking Wake", "Iron Leaves"]
 
 
+@pytest.mark.parametrize("asked, nearest", [
+    ({"version": "violet", "group": "1", "progress": "tera"}, ("violet", "6star", "event", 2)),
+    ({"version": "scarlet", "group": 1, "progress": "5star"}, ("scarlet", "5star", "event", 1)),
+    ({"version": "", "progress": "4star"}, ("scarlet", "6star", "event", 1))])
+def test_a_raid_context_moves_to_the_nearest_one_the_event_spawns(asked, nearest):
+    context = raid_event.constrain(SPOTLIGHT, {"map_name": "kitakami", **asked})
+    assert (context["version"], context["progress"], context["content"], context["group"]) == nearest
+    assert context["map_name"] == "paldea"
+
+
+def test_the_finder_searches_an_events_dens_once_per_stage():
+    scope = raid_search.contexts(event=TYRANITAR)
+    assert [(c["version"], c["progress"], c["group"], c["den"]) for c in scope] == [
+        ("scarlet", "4star", 1, "4–5★ Tyranitar"), ("scarlet", "5star", 1, "4–5★ Tyranitar"),
+        ("violet", "4star", 1, "4–5★ Salamence"), ("violet", "5star", 1, "4–5★ Salamence")]
+    assert raid_search.contexts("violet", progress="6star", event=SPOTLIGHT, group="1") == []
+    found = raid_search.search(0, 300, scope[1:2], "overall", limit=5)
+    assert found
+    for f in found:
+        drawn = raid_event.generate(TYRANITAR, f.seed, "scarlet", "5star", 1)
+        assert (f.boss, f.stars) == (drawn.boss, drawn.stars)
+    assert raid_search.species(TYRANITAR) == [(373, "Salamence"), (248, "Tyranitar")]
+
+
 def test_the_finder_lists_the_standard_and_black_bosses_only():
     bosses = {row["species"] for rows in raid_encounter.tables()["encounters"].values() for row in rows}
     names = dict(raid_search.species())

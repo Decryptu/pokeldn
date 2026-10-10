@@ -141,3 +141,34 @@ def test_the_session_panel_finds_every_file_a_run_saves_and_none_from_another_ru
     saved("20261001-115959")
     found = session_files(str(tmp_path), "20261001-120000")
     assert ours and sorted(map(os.path.normpath, found)) == sorted(map(os.path.normpath, ours))   # Windows mixes / and \
+
+
+def test_an_event_raid_reaches_the_host_as_its_folder_den_and_catch_override():
+    """The crystal choice gives way to the event's den; the override goes only with an event."""
+    from pokeldn.app import events_gallery
+    tool = next(t for game in GAMES for t in game.tools if t.key == "sv-raid-host")
+    base = {"--raid-pokemon": {"file": "/tmp/host.pk9"}, "--raid-seed": "52E6B438", "--raid-content": "black"}
+    event = {**base, "--raid-event": "002 Charizard the Unrivaled", "--raid-event-group": "1",
+             "--raid-catch-normal": True}
+    parsed = parser_of(tool.script).parse_args(build(tool, event, {}, Settings()))
+    assert parsed.raid_event == events_gallery.event_path("002 Charizard the Unrivaled")
+    assert (parsed.raid_event_group, parsed.raid_catch_normal, parsed.raid_content) == (1, True, "standard")
+    standard = parser_of(tool.script).parse_args(build(tool, {**base, "--raid-catch-normal": True,
+                                                              "--raid-event-group": "2"}, {}, Settings()))
+    assert (standard.raid_event, standard.raid_event_group, standard.raid_catch_normal,
+            standard.raid_content) == (None, None, False, "black")
+
+
+def test_an_event_the_gallery_lacks_is_refused_before_the_host_starts(tmp_path, monkeypatch):
+    from pokeldn.app import events_gallery
+    from pokeldn.app.command import problems
+    monkeypatch.setattr(events_gallery, "location", lambda: tmp_path / "EventsGallery")
+    tool = next(t for game in GAMES for t in game.tools if t.key == "sv-raid-host")
+    values = {"--raid-pokemon": {"file": "/tmp/host.pk9"}, "--raid-seed": "52E6B438",
+              "--raid-event": "002 Charizard the Unrivaled"}
+    assert problems(tool, values) == ["Download the event gallery in Raid event, or choose no event."]
+    events = tmp_path / "EventsGallery" / events_gallery.RAID_EVENTS
+    (events / "001 Eevee Spotlight" / "Files").mkdir(parents=True)
+    assert problems(tool, values) == ["The chosen event is not in the event gallery any more."]
+    (events / "002 Charizard the Unrivaled" / "Files").mkdir(parents=True)
+    assert problems(tool, values) == []

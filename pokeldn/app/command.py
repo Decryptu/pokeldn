@@ -4,7 +4,7 @@ import re
 import time
 from functools import cache
 
-from pokeldn.app import gift_builder
+from pokeldn.app import events_gallery, gift_builder
 from pokeldn.app.catalog import Field, Tool
 from pokeldn.app.introspect import flags_of
 from pokeldn.lgpe.session import code_picks
@@ -26,6 +26,10 @@ def applies(field: Field, tool: Tool, values: dict) -> bool:
     if field.unless:
         source = next(f for f in tool.fields if f.key == field.unless)
         if value_of(source, values):
+            return False
+    if field.requires:
+        source = next(f for f in tool.fields if f.key == field.requires)
+        if not value_of(source, values):
             return False
     if not field.when:
         return True
@@ -59,6 +63,8 @@ def _args(field: Field, value, tool: Tool) -> list[str]:
     if field.kind == "rewards":
         return [part for row in (value or ())
                 for part in (flags[0], f"{row.get('item_id', '')}:{row.get('quantity', '')}")]
+    if field.kind == "raidevent":     # the event's folder in the app's gallery
+        return [flags[0], events_gallery.event_path(value)] if value else []
     if value in ("", None):
         return list(field.unset)
     items = str(value).split() if field.kind == "multi" else [field.template.format(value) if field.template
@@ -140,9 +146,16 @@ def prepare(tool: Tool, values: dict) -> None:
 def code_error(field: Field, value) -> str:
     """A console code is eight digits, or empty where the field allows none; a Let's Go link code must
     name three picker Pokemon. Either partial one would host under another code. A raid seed is eight
-    hex digits; a raid reward row names an item and a quantity from 1 to 999."""
+    hex digits; a raid reward row names an item and a quantity from 1 to 999; a raid event is in the
+    app's event gallery."""
     if field.kind == "raidseed":
         return "" if re.fullmatch(r"[0-9A-Fa-f]{8}", str(value or "")) else "Enter eight hexadecimal digits."
+    if field.kind == "raidevent":
+        if not value or events_gallery.holds(value):
+            return ""
+        if not events_gallery.present():
+            return "Download the event gallery in Raid event, or choose no event."
+        return "The chosen event is not in the event gallery any more."
     if field.kind == "rewards":
         rows = list(value or ())
         if len(rows) > REWARD_ROWS:

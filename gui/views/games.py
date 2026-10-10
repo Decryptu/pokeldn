@@ -8,12 +8,14 @@ import flet as ft
 from gui import board
 from gui.app import keys_found
 from pokeldn import pokemon as builder
-from pokeldn.app import bank, command, gift_builder, online, received, runner
+from pokeldn.app import bank, command, events_gallery, gift_builder, online, received, runner
+from pokeldn.sv import raid_event as raid_events
 from gui import theme as t
 from pokeldn.app.catalog import GAMES, Field, Game, Tool
 from pokeldn.app.introspect import flags_of
 from pokeldn.app.paths import SESSION
 from gui.views.pokemon import NAME_LISTS, LinkCodePicker, NamePicker, OfferQueue, PokemonPicker
+from gui.views.raid_event import FOLDED, RaidEventPicker
 from gui.views.raid_seed import RaidSeedPicker
 from gui.views.rewards import RewardPicker
 from gui.views.gifts import GiftBuilder
@@ -22,6 +24,10 @@ from gui.views.widgets import CodeBlock, DigitCode, Log, PathField, open_folder
 
 TOOL_ICONS = {"Trade": "arrows-horizontal", "Mystery Gift": "gift", "Tera Raid": "diamond-gem"}
 EMPTY = "-"   # a dropdown option cannot carry an empty key
+# The Tera Raid host's event fields (pokeldn/app/catalog.py) and the context fields an event narrows.
+RAID_EVENT, RAID_DEN, RAID_CATCH = "--raid-event", "--raid-event-group", "--raid-catch-normal"
+RAID_CONTEXT = {"--raid-version": ("version", "violet"), "--raid-map": ("map_name", "paldea"),
+                "--raid-progress": ("progress", "4star"), "--raid-content": ("content", "standard")}
 ADVANCED_NOTE = ("The tested defaults work for most players. Change these only when a guide or a bug report "
                  "asks you to. A value set here overrides the Basic tab.")
 
@@ -52,6 +58,12 @@ class GamesView:
         self.search = ""
         self.sprites: dict[str, Sprite] = {}   # a species field's key -> the sprite on its card
         self.visible = False
+        # The Tera Raid host's Raid event card is unfolded while its event is in use (show_raid_event).
+        self.raid_event_open = False
+        # The override of a boss a save catches once starts unchecked at every launch.
+        for stored in app.settings.tool_values.values():
+            stored.get("values", {}).pop(RAID_CATCH, None)
+            self.raid_event_open = self.raid_event_open or bool(stored.get("values", {}).get(RAID_EVENT))
         self.tree = ft.ListView(spacing=2, padding=ft.Padding(8, 8, 8, 8), expand=True)
         self.summary = t.text("", 12, t.MUTED, text_align=ft.TextAlign.CENTER)
         self.cards = ft.Column(spacing=t.GAP)
@@ -107,18 +119,84 @@ class GamesView:
             self.cards.update()
         self.session.refresh()
 
-    def set_raid_context(self, context: dict[str, str]) -> None:
-        """The raid finder's choice brings its version, region, progress and crystal with it."""
-        self.values.update({
-            "--raid-version": context["version"],
-            "--raid-map": context["map_name"],
-            "--raid-progress": context["progress"],
-            "--raid-content": context["content"],
-        })
+    def redraw(self) -> None:
+        """Saves the values and redraws the cards and the session on them."""
         self.app.settings.save()
         self.render_body()
         self.cards.update()
         self.session.refresh()
+
+    def set_raid_context(self, context: dict) -> None:
+        """The raid finder's choice brings its version, region, progress and crystal with it; an
+        event raid's, its den's delivery group in place of the crystal."""
+        self.values.update({
+            "--raid-version": context["version"],
+            "--raid-map": context["map_name"],
+            "--raid-progress": context["progress"],
+        })
+        if "event" in context:
+            self.values[RAID_DEN] = str(context["group"])
+        else:
+            self.values["--raid-content"] = context["content"]
+        self.redraw()
+
+    # Event raids
+
+    def show_raid_event(self, unfolded: bool) -> None:
+        """Unfolds or folds the Raid event card. Folding sets its event aside, and the raid, its finder
+        and the command are a standard raid's; unfolding brings the event back."""
+        self.raid_event_open = unfolded
+        if unfolded and not self.values.get(RAID_EVENT) and self.values.get(FOLDED):
+            self.values[RAID_EVENT] = self.values.pop(FOLDED)
+        elif not unfolded and self.values.get(RAID_EVENT):
+            self.values[FOLDED] = self.values.pop(RAID_EVENT)
+        self.redraw()
+
+    def raid_event(self):
+        """-> the event the Raid event card chose, or None: none chosen, folded, or not in the gallery."""
+        key = self.values.get(RAID_EVENT)
+        if not key:
+            return None
+        try:
+            return events_gallery.load(key)
+        except (OSError, ValueError):
+            return None
+
+    def raid_context(self) -> dict:
+        """-> the raid the tool's fields describe; an event's carries the event, its group and den."""
+        context = {name: str(self.values.get(key, default)) for key, (name, default) in RAID_CONTEXT.items()}
+        event = self.raid_event()
+        if event is None:
+            return context
+        context = raid_events.constrain(event, {**context, "group": self.values.get(RAID_DEN)})
+        den = next(d for d in raid_events.dens(event, context["version"]) if d.group == context["group"])
+        return {**context, "event": event, "den": den.label}
+
+    def constrain_raid(self) -> None:
+        """Keeps the stored version, region, progress and den ones the chosen event spawns."""
+        if self.raid_event() is None:
+            return
+        context = self.raid_context()
+        wanted = {"--raid-version": context["version"], "--raid-map": context["map_name"],
+                  "--raid-progress": context["progress"], RAID_DEN: str(context["group"])}
+        if any(self.values.get(key) != value for key, value in wanted.items()):
+            self.values.update(wanted)
+            self.app.settings.save()
+
+    def raid_choices(self, field: Field) -> tuple | None:
+        """-> the choices of a raid context field the chosen event allows, or None to keep them all."""
+        event = self.raid_event()
+        if event is None or field.key not in ("--raid-version", "--raid-map", "--raid-progress"):
+            return None
+        context = self.raid_context()
+        allowed = {"--raid-version": raid_events.versions(event), "--raid-map": ["paldea"],
+                   "--raid-progress": raid_events.progresses(event, context["version"], context["group"])}
+        return tuple((key, label) for key, label in field.choices if key in allowed[field.key])
+
+    def gallery_changed(self) -> None:
+        """The event gallery was downloaded or updated: the card and the raid redraw on it."""
+        events_gallery.forget()
+        self.redraw()
 
     # Rendering
 
@@ -183,6 +261,7 @@ class GamesView:
 
     def basic_cards(self) -> list[ft.Control]:
         cards, groups = [], {}
+        self.constrain_raid()
         for field in self.tool.fields:
             if field.hidden or not command.applies(field, self.tool, self.values):
                 continue
@@ -198,6 +277,8 @@ class GamesView:
         for kind, item in cards:
             if kind == "field" and item.kind == "builder":
                 out.extend(GiftBuilder(self, item).cards())
+            elif kind == "field" and item.kind == "raidevent":
+                out.append(RaidEventPicker(self, item).control)
             elif kind == "field" and item.kind == "switch":
                 out.append(t.card(item.label, None, item.help, trailing=self.input(item)))
             elif kind == "field" and item.kind == "pokemon" and item.queue > 1:
@@ -258,9 +339,19 @@ class GamesView:
         if field.kind == "switch":
             return t.switch(bool(value), lambda e: self.set_value(field, e.control.value, rebuild=True))
         if field.kind == "choice":
-            return t.dropdown([(k or EMPTY, label) for k, label in field.choices], value or EMPTY,
-                              on_select=lambda e: self.set_value(
-                                  field, "" if e.control.value == EMPTY else e.control.value, rebuild=True))
+            choices = self.raid_choices(field) or field.choices
+            control = t.dropdown([(k or EMPTY, label) for k, label in choices], value or EMPTY,
+                                 on_select=lambda e: self.set_value(
+                                     field, "" if e.control.value == EMPTY else e.control.value, rebuild=True))
+            control.disabled = len(choices) == 1 and len(field.choices) > 1   # an event leaves one
+            return control
+        if field.kind == "raidden":
+            event, context = self.raid_event(), self.raid_context()
+            dens = raid_events.dens(event, context["version"]) if event is not None else []
+            control = t.dropdown([(str(d.group), d.label) for d in dens], str(context.get("group", "")),
+                                 on_select=lambda e: self.set_value(field, e.control.value, rebuild=True))
+            control.disabled = len(dens) == 1
+            return control
         if field.kind in NAME_LISTS:
             def picked(v):
                 self.set_value(field, v)
@@ -279,14 +370,8 @@ class GamesView:
             return RewardPicker(self.app, self.game.key, value,
                                 lambda v: self.set_value(field, v)).control
         if field.kind == "raidseed":
-            return RaidSeedPicker(self.app, value,
-                                  lambda v: self.set_value(field, v),
-                                  context=lambda: {
-                                      "version": str(self.values.get("--raid-version", "violet")),
-                                      "map_name": str(self.values.get("--raid-map", "paldea")),
-                                      "progress": str(self.values.get("--raid-progress", "4star")),
-                                      "content": str(self.values.get("--raid-content", "standard")),
-                                  }, on_context_change=self.set_raid_context).control
+            return RaidSeedPicker(self.app, value, lambda v: self.set_value(field, v),
+                                  context=self.raid_context, on_context_change=self.set_raid_context).control
         if field.kind == "linkcode":
             return LinkCodePicker(self.app, value, lambda v: self.set_value(field, v)).control
         if field.kind == "code":
