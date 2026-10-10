@@ -95,15 +95,22 @@ and 16: `0x14ab234` matched a battle-start frame's address and `0x14ab298` store
 
 The battle reads message 16 by its type. The reader `0xe0fd68` pops a frame and, when the header's
 u64 at +0x08 is 0, switches on the type at +0x00 (`0xe10088`): type 0x46 calls `0x2897afc` with
-`[reader+0x48]` as its only argument, and `0x2897afc` stores 1 at its `+0x71`. The per-frame update
-`0x289358c` reads `+0x71` of its own object, whose `+0x50` is the reader: while the byte is 0 it pumps
+`[reader+0x48]` as its only argument, and `0x2897afc` stores 1 at its `+0x71`. That argument is the
+per-frame update `0x289358c`'s own object: `0xfa4bb4` builds it with the initialiser `0x28950c8`
+(`+0x40` the battle state machine, here `sm`; `+0x48` the stepped object `[sm+0xa8]`, `+0x50` the reader
+`[sm+0xb0]`), stores it at `[sm+0x148]` (`0xfa4c18`) and assigns it to `reader+0x48` (`0x2892ab4`
+at `0xfa4c68`). The state `0x28932a4` calls the update with `[sm+0x148]` (`0x28932d0`). The update
+reads `+0x71`: while the byte is 0 it pumps
 the reader (`0xe0f014`) and calls `0xfc363c([+0x48], 0)`; while it is 1 it stops pumping and calls
 `0xfc363c([+0x48], 1)` each frame, and `0x28935b8` clears the byte when that returns true. With 1,
 `0xfc363c` takes an item from the source at `+0xa8` and hands it to the sinks at `+0xa0` and `+0xb8`
-while the sink at `[+0xb8]+0xa0` is empty.
+while the sink at `[+0xb8]+0xa0` is empty. The sink holds a deque (map `+0x60`, start `+0x98`,
+size `+0xa0`) and steps each element's vf `+0x68` every frame (`0xfc38dc`). The update's result is
+unused (`0x28932d4`) and nothing on this path writes the state machine's state at `+0x68`.
 An emulated Scarlet 4.0.0 popped on the type-0x46 branch a frame carrying a marker the host wrote into
 message 16's padding (`46000000 d16a1616`, `0500 161616161616`): the frame was message 16. The pop
-came after the network had gone down, after the Error 7 dialog and before the first command menu.
+came after the network had gone down, after the Error 7 dialog and before the first command menu,
+on the update's own pump (return addresses `0x28935d0`, then `0x28932d4`).
 
 In 4.0.0 no decision reads the padding. The receive path loads the serializer header's last two
 bytes (`0x18bec98`) and stores them at `+0x4e` (`0x18bece4`) with no comparison; of the 49 message
@@ -183,12 +190,18 @@ The RaidPoint, offsets from its start:
 | 0x000 | 24 | the point's name, ASCII, `RaidPoint_` and a suffix (`RaidPoint_POKELDN_0` is accepted) |
 | 0x018 | u32 | 0x40 (one retail black point held `0x458F9952`; 0x40 is accepted) |
 | 0x020 | 4 x u32 | stars, the crystal (0 standard, 1 black), the record's `captureRate` (1), its `captureLv` |
+| 0x030 | 7 x u32 | the record's `raidTimeData`: active (a bool), `gameLimit`, `clientLimit`, `commandLimit`, `pokeReviveTime`, `aiIntervalTime`, `aiIntervalRand`; zero from `raid_point` |
 | 0x04c | 37 x u32 | the boss's action profile: HP coefficient, the shield's nine values, six extra actions (action, timing, value, move), the double action's three values |
-| 0x038 | u32 | nonzero in retail points, zero from `raid_point` |
-| 0x0e4 | 45 x 16 | reward rows: item, quantity, 0, subject |
+| 0x0e4 | 45 x 16 | reward rows: item, quantity, a rare-item flag, subject |
+| 0x3b4 | u8 | 0 in a retail standard point, 1 in a retail black one |
 | 0x3b8 | 7 x u32 | stars, species (DevID), form, gender, level, 0, Tera type |
-| 0x3d8 | 2 x u32 | nonzero in retail points, zero from `raid_point` |
+| 0x3d8 | u64 | nonzero in retail points, zero from `raid_point` |
 | 0x3e0 | u32 | 4 in every retail point seen; `raid_point` writes 2, which a retail Scarlet accepts |
+
+In the raid tables every six-star record's `raidTimeData` is active with `gameLimit` 450 and
+`commandLimit` 60, every one-star record's inactive with `gameLimit` 300, and the rest zero; a retail
+black point (record 6045) carried 1, 450, 0, 60, a retail three-star point (record 3019) an inactive bool byte with three stale bytes after it, then zeros.
+Bytes 0x3b5..0x3b7, 0x3d4..0x3d7 and 0x3e4..0x3e7 held stale bytes in both retail points.
 
 The action profile is the record's `bossDesc` in the game's raid tables, in that order; the
 actions are 0 none, 1 reset the boss's stat changes, 2 reset the players', 3 a move, 4 drain the
@@ -197,7 +210,12 @@ Tera orb, and the timings 0 none, 1 time, 2 HP. HP coefficients run 500, 500, 80
 
 A retail point's reward rows are the seed's fixed rows, then its lottery draws, then the host's
 bonus rows: three under subject 4 and one under subject 5. A fixed row's subject is the reward
-table's `SubjectType` (0 every player, 1 the host, 2 the guests, 3 once). `raid_point` writes the
+table's `SubjectType` (0 every player, 1 the host, 2 the guests, 3 once); the game's enum
+`RaidRewardItemSubjectType` has no 4 or 5. In both retail points the subject-4 rows were the seed's
+lottery drawn three more times on the same generator, and the subject-5 row the boss's Tera Shard
+with the count `RaidGemItemRewardBoost` gives its difficulty (0, 0, 2, 5, 10, 12 and 0 for one to
+seven stars; 2 at three stars, 12 at six). The meal-power table reader `0xef885c` reads one raid
+field, `AddRewardSlots`. A row's third word was 1 on a Bottle Cap lottery row and 0 elsewhere. `raid_point` writes the
 seed's rows (or the chosen ones) under subject 0 and no bonus rows, so a guest receives every row,
 the host's included. A retail console awarded a row rewritten to Quick Ball x500, with the other
 rows cleared and one bonus row left, as written.
@@ -222,8 +240,11 @@ generator.
 table and the eighteen `raid_enemy_XX_array` tables of the game's RomFS
 (`arc/worlddataraidraid_gem_item_reward_boostdata.bin.trpak`, FlatBuffers with their own `.bfbs`
 schemas). Over 12600 seeds in every context its bosses equal PKHeX.Core 26.8.26's field for field,
-except six Paldea encounters (records 5094 to 5099) whose Tera rule the retail table gives as the
-species' own types where PKHeX has any type; the generator follows the game's table. A boss record
+including six Paldea encounters (records 5094 to 5099) whose retail table gives Tera rule 0 (the
+species' own types), which PKHeX holds as rule 1 (any type). The crystal builder `0xe26ff0` reads
+`gemType` and draws any of 18 for both 0 and 1 (`cmp w9, #2` at `0xe27414`, redrawing until the
+value is under 18), as PKHeX does; the generic converter `0x160e108` treats 0 as the species' types
+but is not on the raid's path. A boss record
 built from seed `BD13FB43` (Violet, Paldea, four stars) equals a retail bootstrap's byte for byte;
 one from `7B741233` (Scarlet, Paldea, five stars) equals a French retail Scarlet's but for the
 nickname and language: a retail host writes its own language and that language's species name
@@ -270,14 +291,18 @@ the host start; its Pokemon stayed in the battle.
 
 ## Unresolved
 
-- Whether a listener of the GlueCode dispatcher `0x18beef4` reads `+0x4c` as a word, and what
-  reads the battle-start frames the queues of `0xe106a4` and `0xf5bc10` hold.
-- Whether `[reader+0x48]` is the update `0x289358c`'s own object (the static reading suggests it;
-  no live read has tied the two), what the source at `+0xa8` of the object `0xfc363c` steps holds, and
-  what the battle does once that step returns true.
-- What writes the 0x2713 word of the battle-start port address. Every raid hosted with it began
-  its battle, on retail and emulated consoles.
-- What separates bonus subjects 4 and 5; what the words at 0x038, 0x3b4, 0x3d8 and 0x3e4 of a
-  retail RaidPoint hold.
-- Whether the six Paldea encounters with the species' own Tera types roll as the retail table says.
+- Whether a listener of the GlueCode dispatcher `0x18beef4` reads `+0x4c` as a word (listeners
+  register at run time; groups 1 to 3 are called at `0x18bf87c`), and which consumer drains the
+  per-slot queues `0xe106a4` fills (`0x113d5e0` from `0xe107ac`). Message 16, with +0x08 zero,
+  enters neither queue: the reader switches on it and `0xf5bc10` returns at `0xf5bc30`.
+- What the source at `+0xa8` of the object `0xfc363c` steps holds, and which item message 16
+  releases into the sink: the item `0xfc363c` returns through x8 at `0xfc36ac`, then its vtable's
+  `+0x68`. The source is `[[sm+0x48]+0x128]` (`0xfa46d4`); what fills `[sm+0x48]` is untraced.
+- What writes the 0x2713 word of the battle-start port address. The builders read it at `+0x40`
+  of the object at the battle network object's `+0x110` (`0xfa7320`, `0xfa8628`, `0xfb1cf8`, `0x28949f4`); no instruction in the image
+  materialises 0x2713. Every raid hosted with it began its battle, on retail and emulated consoles.
+- Which code filters reward rows by subject on receipt, whether subject 4 rows are kept per the
+  receiving player's Raid Power meal (`AddRewardSlots`), and what grants subject 5.
+- What the RaidPoint's u64 at 0x3d8 and byte 0x3b4 hold, and what a console does with a six-star
+  point whose `raidTimeData` is zero, as `raid_point` writes it.
 - Event raids, whose encounters and rewards come from the active Poke Portal News tables.

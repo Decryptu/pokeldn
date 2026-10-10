@@ -249,6 +249,21 @@ the result is 9 when both hold, else 10 (`cinc` `0x00b2e778`). `0x010719f0`, `0x
 `0x01071c00` compare it and a CRC over 0x640 bytes at `+0x188` (`0x008ffa10`). The descriptor is
 copied whole at 18 sites, four in `StateDownloadTeamMenu` (`0x013e660c` to `0x013e7c58`).
 
+match+0x70 is an optional (flag `+0x70`, value from `+0x78`: a u64 key, a pointer, a u64, a pointer,
+then the descriptor at `+0x98`). Its only writer is `0x00ad9cf0` (memcpy in `0x00adeaf0`): the Battle
+Stadium matching update `0x00ad5750` fills it at `0x00ad6a2c` from `[state+0xb8]+0x20`, and
+`0x00ad6a68` and `0x00b1ea88` clear it. That request object is filled by the team download job
+(`0x014f7fd0`..`0x014f809c`, done flag `+0x18`) from its result holder at `[job+0x88]`: descriptor
+`+0x00..+0x2f` six u64 from `+0x38`, `+0x30..+0x35` six bytes from `+0x68`, `+0x36..+0x135` from
+`+0x6e`, then overwritten by the `v1/validate` signature (`0x014f8094`). The holder takes whole the
+0x158-byte entry of the team list whose key matches the list's selected key (`0x01503f10`, copied
+at `0x014fa804`). The list `0x0150320c` holds two kinds of entry:
+
+| key | entry |
+|---|---|
+| (1, team) | a save battle team: six u64 `box \| slot << 32`, one per member, from `save+0x525 + team*12 + i*2` (`0x0140a5c0`, `0x0140a5f0`); name at `save+0x4a0 + team*0x16` |
+| (2, i) | a stored record: bytes 0x26..0x15b of a 0x87f-byte record `0x01430670` loads |
+
 The signature is RSA-2048, PKCS#1 v1.5, SHA-256, checked by `0x011aedf0(team, v, sig)` (callers
 `0x00b2f19c`, `0x00b2f1e0`, `0x00b2f2e0`, `0x0109eb68`), the only caller of
 `nn::crypto::detail::BigNum::ModExp` (PLT `0x018fff50`, GOT `0x0260fb38`):
