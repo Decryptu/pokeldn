@@ -1,5 +1,6 @@
 using System.Diagnostics.CodeAnalysis;
 using System.Reflection;
+using System.Text.RegularExpressions;
 using System.Text.Json.Nodes;
 using PKHeX.Core;
 using static PKHeX.Core.GameVersion;
@@ -436,6 +437,16 @@ void Refit(PKM pk, Wish wish)
     else
         pk.SetMoveset();
     pk.SetRelearnMoves(new LegalityAnalysis(pk));
+    Permit(pk);
+    if (pk is PA8 pa8)
+    {
+        pa8.ResetHeight();
+        pa8.ResetWeight();
+    }
+}
+
+void Permit(PKM pk)
+{
     // A TM or TR move the suggested moveset holds is legal only with its record flag (Sword/Shield's TRs).
     if (pk is ITechRecord record)
         record.SetRecordFlags(pk, TechnicalRecordApplicatorOption.LegalCurrent);
@@ -443,11 +454,26 @@ void Refit(PKM pk, Wish wish)
         PlusRecordApplicator.SetPlusFlags(plus, pk, permit, PlusRecordApplicatorOption.LegalCurrent);
     if (pk is IMoveShop8Mastery shop)
         shop.SetMoveShopFlags(pk);
-    if (pk is PA8 pa8)
+}
+
+// PKHeX's report as a player reads it: the per-move lines folded into one, each problem once.
+static string Plain(LegalityAnalysis la)
+{
+    var lines = new List<string>();
+    var moves = la.Info.Moves.Count(m => !m.Valid);
+    if (moves > 0)
+        lines.Add(moves == 1 ? "One of its moves is not legal." : $"{moves} of its moves are not legal.");
+    foreach (var raw in la.Report().Split('\n'))
     {
-        pa8.ResetHeight();
-        pa8.ResetWeight();
+        var line = raw.Trim();
+        if (line.Length == 0 || Regex.IsMatch(line, @"^Invalid (Relearn )?Move \d+:"))
+            continue;
+        if (line.StartsWith("Invalid: "))
+            line = line["Invalid: ".Length..];
+        if (!lines.Contains(line))
+            lines.Add(line);
     }
+    return string.Join("\n", lines);
 }
 
 PKM Parse(Game game, byte[] data)
@@ -473,10 +499,27 @@ JsonObject Check(Game game, byte[] data, JsonObject request)
         {
             switch (name)
             {
+                case "nickname" when ((string)value!).Trim().Length == 0: pk.ClearNickname(); break;
                 case "nickname": pk.SetNickname((string)value!); break;
                 case "ot_name": pk.OriginalTrainerName = (string)value!; break;
                 case "trainer_id": pk.TID16 = checked((ushort)(int)value!); break;
                 case "secret_id": pk.SID16 = checked((ushort)(int)value!); break;
+                // The bank's editor (docs/gui.md, The bank): what a player can change in the game itself.
+                case "level":
+                    var level = (int)value!;
+                    if (level < pk.CurrentLevel || level > 100)
+                        throw new ArgumentException($"The level goes from {pk.CurrentLevel} to 100: a Pokemon never loses levels.");
+                    pk.CurrentLevel = (byte)level;
+                    break;
+                case "moves":
+                    var moves = ((JsonArray)value!).Select(m => (ushort)(int)m!).Where(m => m != 0).ToArray();
+                    if (moves.Length == 0)
+                        throw new ArgumentException("A Pokemon knows at least one move.");
+                    pk.SetMoves(moves);
+                    pk.HealPP();
+                    Permit(pk);
+                    break;
+                case "held_item": pk.HeldItem = (int)value!; break;
                 default: throw new ArgumentException($"Unsupported edit {name}.");
             }
         }
@@ -521,8 +564,9 @@ JsonObject Check(Game game, byte[] data, JsonObject request)
     PKM pk = source;
     if (from != to)
     {
-        if (!EntityConverter.IsConvertibleToFormat(source, to.Blank().Format))
-            return (null, null, "Nothing goes back to this game: HOME only takes from it.");
+        // Let's Go's format (7) is above FireRed's, so the converter alone would let a PK3 through.
+        if (to.Context == EntityContext.Gen7b || !EntityConverter.IsConvertibleToFormat(source, to.Blank().Format))
+            return (null, null, "HOME cannot send Pokemon into this game.");
         if (source.IsEgg)
             return (null, null, "An egg stays in its own game.");
         // HOME's screen for FireRed and LeafGreen: no held item, no hidden move (HM).
@@ -531,7 +575,8 @@ JsonObject Check(Game game, byte[] data, JsonObject request)
         if (source is PK3 && source.Moves.Any(m => hiddenMoves.Contains(m)))
             return (null, null, "HOME takes a FireRed or LeafGreen Pokemon only without an HM move.");
         if (!to.Table.IsPresentInGame(source.Species, source.Form))
-            return (null, null, "This species or form is absent from that game.");
+            return (null, null, source.Form == 0 ? $"{strings.specieslist[source.Species]} is not in that game."
+                                                 : $"This form of {strings.specieslist[source.Species]} is not in that game.");
         pk = EntityConverter.ConvertToType(source, to.Blank().GetType(), out var result)
              ?? throw new InvalidDataException($"PKHeX has no transfer route ({result}).");
         if (pk is IHomeTrack { HasTracker: false } home)
@@ -567,7 +612,7 @@ JsonObject Check(Game game, byte[] data, JsonObject request)
         pk.RefreshChecksum();
         la = new LegalityAnalysis(pk);
     }
-    return la.Valid ? (pk, la, "") : (pk, la, la.Report());
+    return la.Valid ? (pk, la, "") : (pk, la, Plain(la));
 }
 
 ulong Tracker(JsonObject request) => ulong.Parse((string?)request["tracker"] ?? "0");
@@ -971,7 +1016,9 @@ JsonObject Describe(Game game, PKM pk, LegalityAnalysis la)
         ["ball"] = strings.balllist[pk.Ball],
         ["ability"] = game.Context == EntityContext.Gen9a ? "" : strings.abilitylist[pk.Ability],
         ["held_item"] = pk.HeldItem == 0 ? "" : strings.GetItemStrings(game.Context, game.Versions[0])[pk.HeldItem],
+        ["held_item_id"] = pk.HeldItem,
         ["moves"] = moves,
+        ["move_ids"] = new JsonArray(pk.Moves.Where(m => m != 0).Select(m => (JsonNode?)(int)m).ToArray()),
         ["pid"] = pk.PID,
         ["encryption_constant"] = pk.EncryptionConstant,
         ["tracker"] = (pk is IHomeTrack home ? home.Tracker : 0).ToString(),
@@ -979,6 +1026,7 @@ JsonObject Describe(Game game, PKM pk, LegalityAnalysis la)
         ["parsed"] = la.Parsed,
         ["legal"] = la.Valid,
         ["report"] = la.Report(),
+        ["problems"] = la.Valid ? "" : Plain(la),
     };
 }
 

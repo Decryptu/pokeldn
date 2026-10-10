@@ -140,7 +140,8 @@ folder instead.
 
 A move goes through PKHeX's own HOME conversion (`EntityConverter.ConvertToType`, through `PKH`), then
 PKHeX's legality check in the destination game; a move that is not legal there is refused with
-PKHeX's reason. On the way:
+PKHeX's reason, its per-move lines folded into one ("2 of its moves are not legal") and each problem
+listed once. On the way:
 
 - A Pokemon from another game takes the bank's HOME tracker. PKHeX marks one without a tracker
   invalid (`HomeTrackerUtil.IsRequired`, `HOMETransferSettings.HOMETransferTrackerNotPresent`).
@@ -153,18 +154,25 @@ PKHeX's reason. On the way:
 
 | refusal | source |
 |---|---|
-| nothing goes back to FireRed/LeafGreen or to Let's Go | `EntityConverter.IsConvertibleToFormat` |
+| nothing goes back to FireRed/LeafGreen | `EntityConverter.IsConvertibleToFormat` |
+| nothing goes to Let's Go | HOME only takes from it; the converter alone takes a `PK3` into `PB7`, Let's Go's format (7) being above FireRed's (3) |
 | an egg | HOME's screen for FireRed and LeafGreen; the converter would hatch it |
 | a FireRed/LeafGreen Pokemon holding an item or knowing an HM move | HOME's screen for FireRed and LeafGreen |
 | a species or form absent from the destination | the destination's personal table |
 | no conversion route | PKHeX.Core 26.8.26 converts no Legends Z-A record out to another game |
 
+Edit changes what a player can change in the game itself: the nickname (empty restores the species
+name), the level (upward only), the moves and the held item. The helper's `check` command applies the
+fields and runs PKHeX's legality check; an edit that would make a legal Pokemon not legal is refused and
+the record is left as it was. A saved edit rewrites the record and its `.json` (summary, verdict,
+SHA-256) and the destinations are checked again. A Pokemon queued for a trade is not editable.
+
 A record received from a retail Sword and moved to Legends Z-A, with the bank's tracker and its PID
 kept, showed its level and original trainer on a retail Z-A's trade box and completed the trade.
 
 `tests/test_bank.py` moves records between six pairs of games through the real helper and checks
-that the destination's launcher takes them, along with each refusal and the run that takes a traded
-Pokemon out of the bank.
+that the destination's launcher takes them, along with each refusal, an edit kept and refused, and the
+run that takes a traded Pokemon out of the bank.
 
 ### Unresolved
 

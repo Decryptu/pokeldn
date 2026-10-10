@@ -1,6 +1,7 @@
 """The Pokemon the app keeps between games: each record in the bank folder with a `.json` beside it
 [docs/gui.md, The bank]. A trade's received Pokemon is deposited on its own; one queued for a trade
 carries {"bank": id} in the offer queue and leaves the bank when that trade completes."""
+import base64
 import hashlib
 import json
 import os
@@ -113,6 +114,26 @@ def deposit(game: str, source: str, info: dict) -> Entry | None:
         "tracker": str(random.randrange(1, 1 << 63)), "created": time.time(),
         "origin": str(source), "sha256": digest,
     })
+    return _entry(path)
+
+
+def edit(entry: Entry, fields: dict) -> Entry:
+    """Change what a player could change in the game (nickname, level, moves, held item) and keep the result,
+    or BuilderError with the reason. A legal Pokemon stays legal: an edit PKHeX rejects is refused."""
+    from pokeldn.pokemon import SERVICE, BuilderError, summary
+    reply = SERVICE.check_bytes(entry.game, data(entry), fields=fields)
+    if entry.legal and not reply["legal"]:
+        raise BuilderError(reply["problems"])
+    content = base64.b64decode(reply["data"])
+    path = Path(entry.path)
+    tmp = path.with_suffix(".tmp")
+    tmp.write_bytes(content)
+    os.replace(tmp, path)
+    meta = _read_meta(path)
+    meta.update({"species": reply["species"], "species_id": int(reply["species_id"]), "shiny": bool(reply["shiny"]),
+                 "summary": summary(reply), "legal": bool(reply["legal"]), "sha256": _digest(content),
+                 "edited": time.time()})
+    _write_meta(path, meta)
     return _entry(path)
 
 

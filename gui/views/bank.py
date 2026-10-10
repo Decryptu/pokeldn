@@ -187,6 +187,7 @@ class BankView:
         else:
             controls.append(t.section("Send it to a game", self._routes(entry)))
         controls.append(ft.Row([
+            *([] if queued else [t.secondary_button("Edit", lambda e: self._edit(entry), "edit")]),
             t.secondary_button("Export", lambda e: self.app.page.run_task(self._export, entry), "upload"),
             t.secondary_button("Remove", lambda e: self._remove(entry), "trash"),
         ], spacing=8, wrap=True))
@@ -200,7 +201,8 @@ class BankView:
         for key in NAMES:
             route = routes.get(key, {"ok": False, "reason": ""})
             ok, chosen = route["ok"], key == self.target
-            why = route["reason"].split("\n")[0] if not ok else (
+            lines = route["reason"].split("\n")
+            why = lines[0] + (f" (+{len(lines) - 1} more)" if len(lines) > 1 else "") if not ok else (
                 "Its own game" if key == entry.game else "Moves as HOME would move it")
             rows.append(ft.Container(ft.Row([
                 game_icon(key, 24),
@@ -261,6 +263,31 @@ class BankView:
         self.render_detail()
         self.control.update()
 
+    def _edit(self, entry: bank.Entry) -> None:
+        self._say("Reading it...", t.BLUE)
+
+        def work():
+            try:
+                info = pokemon.SERVICE.check_bytes(entry.game, bank.data(entry))
+                moves = pokemon.SERVICE.names(entry.game, "moves")
+                items = pokemon.SERVICE.names(entry.game, "items")
+                problem = ""
+            except (OSError, pokemon.BuilderError) as error:
+                info, moves, items, problem = {}, [], [], str(error)
+
+            def done():
+                self._say(problem, t.RED)
+                if not problem:
+                    EditDialog(self, entry, info, moves, items).show()
+            self.app.ui(done)
+        threading.Thread(target=work, daemon=True).start()
+
+    def edited(self, entry: bank.Entry) -> None:
+        self.routes.pop(entry.id, None)
+        self.refresh()
+        self.select(entry.id)
+        self._say("Saved. PKHeX checks again where it can go.", t.MUTED)
+
     async def _export(self, entry: bank.Entry) -> None:
         extension = os.path.splitext(entry.path)[1][1:]
         path = await self.app.picker.save_file(dialog_title="Export Pokemon", file_name=os.path.basename(entry.path),
@@ -296,3 +323,96 @@ class BankView:
             self.note.update()
         except RuntimeError:
             pass
+
+
+NONE = "-"
+
+
+class EditDialog:
+    """What a player could change in the game itself: nickname, level (only up), moves and held item. PKHeX
+    checks the result, and a legal Pokemon is never saved illegal [pokeldn.app.bank.edit]."""
+
+    def __init__(self, view: BankView, entry: bank.Entry, info: dict, moves: list[dict], items: list[dict]):
+        self.view, self.entry, self.info = view, entry, info
+        self.nickname = t.field(value=info["nickname"], hint=info["species"], expand=True,
+                                limit=10 if entry.game == "frlg" else 12)
+        self.level = t.field(value=str(info["level"]), mono=True, width=90, digits=True, limit=3)
+        move_options = [(NONE, "None")] + [(str(n["id"]), n["name"]) for n in moves]
+        known = (list(info["move_ids"]) + [0] * 4)[:4]
+        self.moves = [t.dropdown(move_options, str(m) if m else NONE, enable_filter=True, editable=True,
+                                 menu_height=320) for m in known]
+        self.item = t.dropdown([(NONE, "Nothing")] + [(str(n["id"]), n["name"]) for n in items],
+                               str(info["held_item_id"]) if info["held_item_id"] else NONE,
+                               enable_filter=True, editable=True, menu_height=320)
+        self.message = t.text("", 12, t.MUTED)
+        self.save = t.button("Save", self._save, "save")
+        self.dialog = t.dialog(
+            title=t.text(f"Edit {info['species']}", 18),
+            content=ft.Column([
+                ft.Row([t.labeled_control("Nickname", self.nickname, expand=True),
+                        t.labeled_control("Level", self.level)], spacing=10),
+                t.labeled_control("Moves", ft.Column([ft.Row(self.moves[:2], spacing=6),
+                                                      ft.Row(self.moves[2:], spacing=6)], spacing=6)),
+                t.labeled_control("Held item", self.item),
+                t.text("Only what the game itself lets a player change. PKHeX checks every edit; one that "
+                       "would make it not legal is refused.", 12, t.FAINT),
+                self.message,
+            ], spacing=14, tight=True, width=420),
+            actions=[t.button("Cancel", lambda e: view.app.page.pop_dialog(), filled=False), self.save])
+
+    def show(self) -> None:
+        self.view.app.page.show_dialog(self.dialog)
+
+    def _changes(self) -> dict | str:
+        info, fields = self.info, {}
+        nickname = self.nickname.value.strip()
+        if nickname != info["nickname"]:
+            fields["nickname"] = nickname
+        level = self.level.value.strip()
+        if not level.isdigit() or not info["level"] <= int(level) <= 100:
+            return f"The level goes from {info['level']} to 100."
+        if int(level) != info["level"]:
+            fields["level"] = int(level)
+        moves = [int(box.value) for box in self.moves if box.value and box.value != NONE]
+        if not moves:
+            return "It needs at least one move."
+        if len(set(moves)) < len(moves):
+            return "A move appears twice."
+        if moves != list(info["move_ids"]):
+            fields["moves"] = moves
+        item = 0 if self.item.value in (None, NONE) else int(self.item.value)
+        if item != info["held_item_id"]:
+            fields["held_item"] = item
+        return fields
+
+    def _say(self, text: str, color: str) -> None:
+        self.message.value, self.message.color = text, color
+        self.dialog.update()
+
+    def _save(self, e) -> None:
+        fields = self._changes()
+        if isinstance(fields, str):
+            self._say(fields, t.RED)
+            return
+        if not fields:
+            self.view.app.page.pop_dialog()
+            return
+        self.save.disabled = True
+        self._say("PKHeX is checking it...", t.BLUE)
+
+        def work():
+            try:
+                bank.edit(self.entry, fields)
+                problem = ""
+            except (OSError, pokemon.BuilderError) as error:
+                problem = str(error)
+
+            def done():
+                if problem:
+                    self.save.disabled = False
+                    self._say(f"Not saved: {problem}", t.RED)
+                    return
+                self.view.app.page.pop_dialog()
+                self.view.edited(self.entry)
+            self.view.app.ui(done)
+        threading.Thread(target=work, daemon=True).start()

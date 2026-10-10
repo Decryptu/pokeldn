@@ -44,13 +44,14 @@ def test_a_moved_pokemon_keeps_who_it_is_and_its_launcher_takes_it(service, vaul
 
 
 @pytest.mark.parametrize("source, target, why", [
-    ("swsh", "lgpe", "Nothing goes back"),  # HOME sends nothing to Let's Go
-    ("sv", "frlg", "Nothing goes back"),    # nor to a GBA game
-    ("frlg", "sv", "held item"),            # HOME's FireRed/LeafGreen screen
-    ("swsh", "pla", "absent"),              # Charizard is not in Legends Arceus
+    ("swsh", "lgpe", "HOME cannot send"),  # HOME sends nothing to Let's Go
+    ("frlg", "lgpe", "HOME cannot send"),  # Let's Go's format is above FireRed's: the converter takes a PK3
+    ("sv", "frlg", "HOME cannot send"),    # nor to a GBA game
+    ("frlg", "sv", "held item"),             # HOME's FireRed/LeafGreen screen
+    ("swsh", "pla", "Charizard is not in"),  # Charizard is not in Legends Arceus
 ])
 def test_a_move_home_would_refuse_is_refused_with_its_reason(service, vault, source, target, why):
-    species, options = (6, None) if why == "absent" else (25, None)
+    species, options = (6, None) if why.startswith("Charizard") else (25, None)
     if why == "held item":
         options = {"held_item": 139}        # an Oran Berry
     entry, _ = receive(service, vault, source, species, options)
@@ -66,6 +67,21 @@ def test_a_fire_red_pokemon_that_knows_an_hm_stays_in_its_game(service, vault):
     assert "Rock Smash" in built["moves"]
     with pytest.raises(pokemon.BuilderError, match="HM move"):
         bank.offer(entry, "swsh", OWNER)
+
+
+def test_an_edit_is_kept_only_while_pkhex_finds_it_legal(service, vault):
+    entry, _ = receive(service, vault, "frlg", 113)             # Chansey
+    before = bank.data(entry)
+    for fields, why in (({"moves": [221]}, "its moves is not legal"),     # Sacred Fire
+                        ({"level": 1}, "never loses levels")):
+        with pytest.raises(pokemon.BuilderError, match=why):
+            bank.edit(entry, fields)
+        assert bank.data(entry) == before
+    edited = bank.edit(entry, {"nickname": "LUCKY", "level": 60, "moves": [135, 94]})   # Soft-Boiled, Psychic
+    info = service.check_bytes("frlg", bank.data(edited))
+    assert info["legal"] and edited.legal and edited.id == entry.id
+    assert (info["nickname"], info["level"], info["moves"]) == ("LUCKY", 60, ["Soft-Boiled", "Psychic"])
+    assert "'LUCKY'" in edited.summary and bank.offer(edited, "swsh", OWNER)["legal"]
 
 
 def test_a_file_read_again_is_banked_once(service, vault):
