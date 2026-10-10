@@ -121,7 +121,19 @@ def main() -> int:
                             capture_output=True, text=True, timeout=300)
     print(driver.stdout, driver.stderr, f"driver exit {driver.returncode}", sep="\n", flush=True)
 
+    seen: dict[str, float] = {}
+
     def done() -> bool:
+        # A timeline of the swap: when each file appeared or went, from the driver's start.
+        state = {"helper window up": (work / update.READY.name).exists(), "outcome written": outcome.exists(),
+                 "marker in place": (target / MARKER).is_file(), "unpacked copy gone": not (work / "new").exists()}
+        for name, now in state.items():
+            if now and name not in seen:
+                seen[name] = time.monotonic() - started
+                print(f"{seen[name]:6.1f} s  {name}", flush=True)
+        if "outcome written" in seen and not outcome.exists() and "outcome read" not in seen:
+            seen["outcome read"] = time.monotonic() - started
+            print(f"{seen['outcome read']:6.1f} s  outcome read", flush=True)
         # work/new goes only when the new app has read the outcome (update.finish).
         return (target / MARKER).is_file() and not outcome.exists() and not (work / "new").exists()
     ok = driver.returncode == 0 and update.wait_for(done, 240.0)
@@ -144,9 +156,11 @@ def main() -> int:
                                    capture_output=True, text=True).stdout.strip()
             print(f"running from it: {image}", flush=True)
         if sys.platform == "win32":
-            listing = subprocess.run(["tasklist", "/V", "/FO", "CSV"], capture_output=True, text=True).stdout
-            print("\n".join(line for line in listing.splitlines() if "pokeldn" in line.lower()
-                            or "flet" in line.lower()), flush=True)
+            print(subprocess.run(["powershell", "-NoProfile", "-Command",
+                                  "Get-CimInstance Win32_Process | Where-Object { $_.Name -match 'pokeldn|flet|Terminal' }"
+                                  " | ForEach-Object { '{0} parent {1} {2} | {3}' -f $_.ProcessId, $_.ParentProcessId,"
+                                  " $_.CreationDate, $_.CommandLine }"],
+                                 capture_output=True, text=True).stdout, flush=True)
     ok = ok and not left and (busy is None or busy.poll() is not None)
     stop_all(target)
     print("PASS" if ok else "FAIL", flush=True)
