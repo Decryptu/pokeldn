@@ -386,8 +386,9 @@ or without the ack of its request; a retail Sword accepted 12 of 12. An emulated
 of 23 responses padded to 56 bytes with 1 at `[0x37]` and 0 of 4 with 5 there. Sent without the ack of
 its request, the padded form was accepted on its first send (`bin/swsh_connect.py --ip-join`). The console's own
 accepted response is 840 bytes with 1 at `[0x37]`;
-`station4.build_connection_response(..., min_size=ACCEPTED_RESPONSE_SIZE)` pads to 0x38 and writes 1,
-and `bin/swsh_connect.py --respond` sends that form.
+`station4.build_connection_response(..., min_size=ACCEPTED_RESPONSE_SIZE)` pads to 0x38 and writes 1.
+Acceptance at this layer does not start the game above it: Sword and Shield wait for the fields past
+0x37 ([Reaching the game layer](swsh_session.md#reaching-the-game-layer)).
 
 After the response: the console's connection response is acceptance; its request retransmitted every
 500 ms with the same trailing counter is rejection (a response carrying the joiner's own ids drew

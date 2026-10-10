@@ -23,7 +23,7 @@ from pokeldn.host_support import resolve_keys, needs_root
 from pokeldn.ldn import (broadcast4, ldn_mitm, ldn_mitm_host, local_protocol as lp,
                         mesh_protocol as mesh, pia4, reliable4,
                         reliable5, rtt_protocol as rtt, station4,
-                        station_protocol as stp)
+                        station_protocol as stp, host4)
 from pokeldn.ldn.transport import board_radio, find_ap_phy
 from pokeldn.swsh import COMM_ID, PASSPHRASE, PIA_PORT, packet_iv, session_keys
 from pokeldn.swsh import trade as swsh_trade
@@ -864,9 +864,15 @@ async def main_async(args):
                                 args.respond_with == "both" and st["responses"] % 2)
                             cid = our_constant if mine else them["constant_id"]
                             vid = (st["our_variable_id"] if mine else them["variable_id"])
-                            reply = station4.build_connection_response(
-                                args.respond_result, cid, vid,
-                                min_size=station4.ACCEPTED_RESPONSE_SIZE)
+                            # The 840-byte form: an emulated Shield never pings after the
+                            # 56-byte one (docs/swsh_session.md, Reaching the game layer).
+                            if args.respond_result == 0:
+                                reply = host4.build_host_response(
+                                    cid, vid, 0x40000000 | st["responses"], name=args.name)
+                            else:
+                                reply = station4.build_connection_response(
+                                    args.respond_result, cid, vid,
+                                    min_size=station4.ACCEPTED_RESPONSE_SIZE)
                             pkt = wrap(keys, our_mac, our_constant, next_nonce(), reply,
                                        station4.PROTOCOL, args.connect_station_first)
                             sock.sendto(pkt, (addr[0], PIA_PORT))

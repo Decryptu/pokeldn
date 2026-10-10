@@ -224,6 +224,15 @@ the confirmation ladder on commands; one that joined pokeldn's host follows the 
 Every layer below the game works both ways ([The Pia layer](pia.md)): Local Protocol 0x24, station
 handshake 0x14, mesh join 0x18, RTT 0x58, reliable windows 0x7C and 0x80.
 
+The joiner's 0x14 connection response must be the 840-byte form a Sword sends
+(`host4.build_host_response`: account id at 0x11, player name at 0x88, the tail at 0xB1, a token at
+0xBC). An emulated Shield 1.3.2 host accepted a 56-byte response (1 at `[0x37]`, zero past it), joined
+the station to its mesh, and never sent a game message; given the 840-byte form it sent its first
+ping 0.03 s after its join response, opened the trade box under the joiner's name and completed the
+trade. A retail Sword completed trades after 17-byte responses, whose fields past 0x11 it reads from
+stale buffer bytes ([The Pia layer](pia.md#what-a-connection-response-must-satisfy-to-be-read)).
+`bin/swsh_connect.py --respond` sends the 840-byte form.
+
 Left alone, the console repeats `61 00 00 00 0a 00`, a ping (about four a second); 0x80
 asks for ack id 1 once a second, 0x7C stays silent. `bin/swsh_connect.py --send-data HEX
 --send-protocol 0x7c` sends application data (`reliable4.build_data_message`, byte-exact with the
