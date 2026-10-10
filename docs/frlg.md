@@ -19,8 +19,10 @@ protocol at `REVISION >= 0xA`. Cartridge header, read off both consoles: softwar
 game code `BPRF` (FireRed, French) and `BPGF` (LeafGreen, French). The host also selects measured
 ROM and RAM addresses for the English, German, Italian, Spanish and Japanese pairs, twelve
 cartridges in total. Mystery Gift detects the language from the cartridge code after the
-player chooses pokeldn in the Friend list; the Basic screen shows this beside the version. The added languages have offline ROM and mGBA checks; wireless delivery
-on those editions still requires retail verification. See [The cartridge maps](frlg_rom_map.md#the-international-revision-0x0a-cartridges).
+player chooses pokeldn in the Friend list; the Basic screen shows this beside the version. The added
+languages have offline ROM and mGBA checks. Retail coverage is listed under
+[Retail verification](frlg_rom_map.md#retail-verification).
+See [The cartridge maps](frlg_rom_map.md#the-international-revision-0x0a-cartridges).
 
 A console that leaves about three seconds after associating, once the Pia session has finalized,
 was given an association response without 6, 9 and 12 Mbit/s ([frlg_link.md](frlg_link.md), The

@@ -731,5 +731,10 @@ after two lines, because the Japanese dialogue font is wider. The Japanese Team 
 sizes and dynamic menu widths; two prompts are shortened to fit the RAM-script limit.
 
 The added German and Italian pairs, Spanish LeafGreen and Japanese pair have mGBA card checks.
-These are offline checks against the extracted cartridge ROMs; their Switch wireless delivery
-has not been checked on retail hardware.
+These are offline checks against the extracted cartridge ROMs.
+
+### Retail verification
+
+| cartridge | verified on retail hardware | source |
+|---|---|---|
+| Italian LeafGreen (`BPGI`, revision `0x0A`) | All 41 `Build` fields match console memory; follower installation; Master Ball card and item delivery | [Contributor verification](https://github.com/Decryptu/pokeldn/issues/13) |

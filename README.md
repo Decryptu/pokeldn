@@ -26,8 +26,10 @@ installed on the Switch or Switch 2. Seven games are supported:
 ∅ the game has no such feature over local wireless
 FRLG FireRed/LeafGreen · LGPE Let's Go Pikachu/Eevee · SwSh Sword/Shield · BDSP Brilliant Diamond/Shining Pearl · PLA Legends Arceus · SV Scarlet/Violet · PLZA Legends Z-A
 
-FRLG supports both versions in English, French, German, Italian, Spanish and Japanese. The added
-editions have offline cartridge-ROM tests; their wireless delivery still needs retail checks.
+FRLG supports both versions in English, French, German, Italian, Spanish and Japanese. All twelve
+editions have offline cartridge-ROM tests. Italian LeafGreen's address table, follower and Master
+Ball delivery are verified on retail hardware
+([verification coverage](docs/frlg_rom_map.md#retail-verification)).
 
 Scarlet and Violet also host and join local Tera Raids, with a chosen boss and rewards
 ([Tera Raids](docs/sv_raid.md)). Every game trades through the ESP32 board. Online trade joins two players far apart: each hosts
