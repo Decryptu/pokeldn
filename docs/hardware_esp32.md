@@ -590,6 +590,15 @@ no such moment. `tools/ldn/esp32_led.py --port PORT PATTERN` sets a look; `--dem
 
 ## The screen
 
+The default `OLED` display profile auto-probes the SSD1306 I2C panels described below. To build for the
+E32R40T 480x320 ST7796 SPI panel instead, configure the ESP32 firmware with
+`idf.py -D POKELDN_DISPLAY=E32R40T build` (original ESP32 target only). Its profile owns the SPI/GPIO
+pins (CS 15, DC 2, SCK 14, MOSI 13, MISO 12, backlight 27), controller setup and RGB565 transfer.
+Scene drawing stays on the shared 128x64 monochrome framebuffer and is scaled to the panel, with lit
+scene pixels rendered black on white. The TFT backlight is held at a steady GPIO-high level; the ESP32
+status LED on GPIO2 is disabled in this profile because that pin is LCD data/command. OLED scene
+dim/off behavior is unchanged.
+
 An SSD1306 128x64 one-bit OLED on I2C is optional. Users report 128x64 SSD1315 and SSD1309 modules
 working with the same firmware. At boot the firmware probes 0x3C, then 0x3D;
 when neither answers it frees the pins and starts nothing. With a screen, a priority-1 task on the
