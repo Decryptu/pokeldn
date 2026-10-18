@@ -17,6 +17,49 @@ TRAINER = {"ot": "POKELDN", "tid": 12345, "sid": 54321, "language": 2, "gender":
 FORMATS = {"frlg": "PK3", "lgpe": "PB7", "swsh": "PK8", "bdsp": "PB8", "pla": "PA8", "sv": "PK9", "za": "PA9"}
 
 
+def test_chinese_display_preserves_species_and_cartridge_ids(service):
+    localized = pokemon.Service(display_language="zh-Hans")
+    try:
+        national = {entry["id"]: entry["name"] for entry in localized.species("frlg")}
+        cartridge = {entry["id"]: entry["name"] for entry in localized.names("frlg", "species3")}
+        assert national[25] == cartridge[25] == "皮卡丘"
+        assert national[252] == cartridge[277] == "木守宫"
+        assert {entry["id"]: entry["name"] for entry in service.species("frlg")}[25] == "Pikachu"
+    finally:
+        localized.close()
+
+
+def test_chinese_display_imports_english_showdown_and_keeps_trainer(service):
+    localized = pokemon.Service(display_language="zh-Hans")
+    try:
+        found = localized.paste("sv", "Pikachu @ Light Ball\nAbility: Static\nTimid Nature\n- Thunderbolt", TRAINER)[0]
+        assert not found["errors"] and found["species_id"] == 25 and found["species"] == "皮卡丘"
+        assert found["options"]["held_item"] == 236 and found["options"]["ability"] == 9
+        assert found["moves"] == ["十万伏特"]
+        info = localized.make("sv", 25, TRAINER)
+        assert info["legal"] and info["ot"] == TRAINER["ot"]
+        assert info["is_nicknamed"] is False
+        assert f"'{info['nickname']}'" not in pokemon.summary(info)
+        assert info["canonical"]["species"] == "Pikachu"
+        assert pokemon.summary(info).startswith("Pikachu · level ")
+        assert Path(info["file"]).name.startswith("Pikachu-")
+        assert service.check_bytes("sv", base64.b64decode(info["data"]))["legal"]
+    finally:
+        localized.close()
+
+
+def test_localized_forms_keep_species_and_form_ids(service):
+    localized = pokemon.Service(display_language="zh-Hans")
+    try:
+        english = {n["id"]: n["name"] for n in service.names("lgpe", "forms")}
+        chinese = {n["id"]: n["name"] for n in localized.names("lgpe", "forms")}
+        assert (6 << 8) | 1 in english
+        assert english.keys() == chinese.keys()
+        assert any(english[key] != chinese[key] for key in english)
+    finally:
+        localized.close()
+
+
 @pytest.mark.parametrize("failure, error, requests", [
     ("interrupted", None, 2),
     ("persistent", "could not complete its legality analysis after restarting", 2),
@@ -609,6 +652,30 @@ def test_the_frlg_item_list_names_gen_3_ids(service):
     assert max(names) == 374
 
 
+def test_chinese_frlg_item_names_keep_gen_3_ids(service):
+    localized = pokemon.Service(display_language="zh-Hans")
+    try:
+        names = {n["id"]: n["name"] for n in localized.names("frlg", "items")}
+        assert (names[42], names[50], names[68], names[374]) == (
+            "黑色玻璃哨", "黄色碎片", "神奇糖果", "蓝宝石")
+        assert max(names) == 374
+    finally:
+        localized.close()
+
+
+@pytest.mark.parametrize("language,ident,name", [("fr-FR", 7, "Carapuce"), ("de", 4, "Glumanda"),
+                                               ("unknown-XX", 4, "Charmander")])
+def test_display_language_is_independent_of_game_ids_and_has_english_fallback(service, language, ident, name):
+    localized = pokemon.Service(display_language=language)
+    try:
+        names = {n["id"]: n["name"] for n in localized.names("sv", "species")}
+        assert names[ident] == name
+        assert set(names) == {n["id"] for n in service.names("sv", "species")}
+        assert localized.display_language == language
+    finally:
+        localized.close()
+
+
 def test_the_sv_bag_holds_every_reward_a_raid_seed_gives(service):
     """A raid reward goes straight into the bag: the list a reward row is chosen from is the bag's
     pouches without key items and unreleased items, and holds everything the raid tables award."""
@@ -648,6 +715,18 @@ for line in sys.stdin:
     finally:
         instance.close()
 
+
+@pytest.mark.parametrize("mode", ["empty", "made"])
+def test_chinese_builder_keeps_home_tracker_policy_and_display_language(service, mode):
+    localized = pokemon.Service(display_language="zh-Hans")
+    localized.home_tracker = mode
+    try:
+        built = localized.make("swsh", 809, TRAINER)
+        assert built["species"] == "美录梅塔" and built["legal"]
+        assert built["home_tracker"] == mode
+        assert (built["tracker"] != "0") == (mode == "made")
+    finally:
+        localized.close()
 
 @pytest.mark.parametrize("command,library", [
     # GitHub's macOS runner: Python itself lives in Python.framework, and a test's helper runs on it.

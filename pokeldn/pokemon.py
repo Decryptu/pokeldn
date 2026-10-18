@@ -86,7 +86,8 @@ class _Library:
 
 
 class Service:
-    def __init__(self):
+    def __init__(self, display_language: str = "en"):
+        self.display_language = display_language
         self.lock = threading.Lock()
         self.proc = None
         self.species_cache: dict[str, list[dict]] = {}
@@ -94,6 +95,8 @@ class Service:
         self.home_tracker = os.environ.get("POKELDN_HOME_TRACKER") or "empty"
 
     def _ask(self, request: dict) -> dict:
+        if self.display_language != "en":
+            request = {**request, "display_language": self.display_language}
         request = {**request, "home_tracker": self.home_tracker}
         with self.lock:
             for attempt in range(2):
@@ -154,7 +157,7 @@ class Service:
         return self.species_cache[game]
 
     def names(self, game: str, kind: str) -> list[dict]:
-        """species, moves, items or balls the game has, by name."""
+        """Names by ID; form IDs encode (national species << 8) | form, unlike cartridge species3 IDs."""
         key = f"{game}:{kind}"
         if key not in self.species_cache:
             names = self._ask({"cmd": "names", "game": game, "list": kind})["names"]
@@ -326,7 +329,8 @@ class Service:
         data = base64.b64decode(reply["data"])
         folder = POKEMON / game
         folder.mkdir(parents=True, exist_ok=True)
-        name = re.sub(r"[^A-Za-z0-9]+", "", reply["species"]) or "pokemon"
+        species = reply.get("canonical", {}).get("species", reply["species"])
+        name = re.sub(r"[^A-Za-z0-9]+", "", species) or "pokemon"
         path = folder / f"{name}-{time.strftime('%Y%m%d-%H%M%S')}-{uuid4().hex[:8]}.{EXTENSIONS[game]}"
         path.write_bytes(data)
         return str(path)
@@ -341,10 +345,11 @@ HOME_TRACKER_WARNINGS = {"empty": "PKHeX flags the missing HOME tracker", "made"
 
 
 def summary(info: dict) -> str:
+    info = {**info, **info.get("canonical", {})}
     parts = [f"{info['species']}-{info['form']}" if info.get("form") else info["species"], f"level {info['level']}"]
     if info.get("shiny"):
         parts.append("shiny")
-    if info.get("nickname") and info["nickname"].lower() != info["species"].lower():
+    if info.get("nickname") and info.get("is_nicknamed", info["nickname"].lower() != info["species"].lower()):
         parts.append(f"'{info['nickname']}'")
     parts += [info.get("nature", ""), info.get("ability", ""), info.get("ball", "")]
     if info.get("held_item"):
