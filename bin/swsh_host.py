@@ -210,6 +210,9 @@ def build_parser():
                     help="the BattleSeed value; random by default")
     ap.add_argument("--raid-ready", type=float, default=3.0, metavar="SECONDS",
                     help="our player readies this long after the guest's lobby opens")
+    ap.add_argument("--raid-console-serves", action="store_true",
+                    help="put the console first in BattleStart and framework object 0, so it serves "
+                         "the battle and the board answers as a client (docs/swsh_raid.md)")
     online.add_arguments(ap)
     return ap
 
@@ -217,6 +220,10 @@ def build_parser():
 def raid_advert(app_data, boss_pk8):
     """The den advertisement with the boss's species and encryption constant written in."""
     out = bytearray(app_data)
+    # A guest's Y-Comm list leaves out a raid that carries its own account (docs/swsh_raid.md).
+    for at, n in ((trade_payload.TAIL_DEVICE_ID, trade_payload.DEVICE_ID_LENGTH),
+                  (trade_payload.TAIL_ACCOUNT_UID, trade_payload.ACCOUNT_UID_LENGTH)):
+        out[STATION_PROFILE_OFF + at:STATION_PROFILE_OFF + at + n] = os.urandom(n)
     boss = swsh_pokemon.read(boss_pk8)
     for at in RAID_BOSS_OFFSETS:
         struct.pack_into("<HB", out, at, boss["species"], 0x11)
@@ -368,7 +375,7 @@ def main(argv=None):
                 send_mesh, rewards=rewards, seed=seed, name=args.player_name,
                 ready_after=args.raid_ready, record=on_record,
                 snapshot_builder=(lambda peer: build_snapshot(peer, n)) if snapshot is None else None,
-                on_battle=on_battle)
+                on_battle=on_battle, console_serves=args.raid_console_serves)
             print(f"[raid] {st.ip}: lobby opens, seed {seed:#018x}")
             return
         trades[st.ip] = host_trade.HostTrade(host.constant, st.constant, snapshot, offer, send,

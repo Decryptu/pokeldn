@@ -99,6 +99,24 @@ same serial, type and tag, length 4 and four zero bytes, except:
 Types seen from a host: 0x01, 0x0d, 0x07 (123 bytes), 0x0e, 0x02, 0x10 (47 bytes), 0x09 (the turn's
 log, zlib, 0.4 to 2.4 KB), 0x04, 0x11 and 0x0a after the guest's Pokemon fainted, 0x21 at the end.
 
+### Which station serves
+
+The server is the station whose ServerVersion record wins a table each console keeps; neither the
+Pia host check (`0x110e620`, no caller in the battle or lobby code) nor BattleStart's order decides it.
+
+ServerVersion is `btl.net.protocol_buffers.BtlDataHolder` (id 10000) field 3: station id u64, client
+id u32, version u32. Every copy sends version `0x6e` (`0x8b1778`). A console keeps eight slots of
+{station, client id, version, valid} (battle network object `+0x190 + 16 * i`); `0x8b4030` takes the
+client id of the first valid slot whose version equals the highest seen, and `0x8b1990` (IsServer)
+compares it with the console's own client id. The collecting station files a record in the slot of the
+sender's Pia station index (`0x8b4440`, `0x6b5850`); every other console receives the slots as 40000
+framework objects 0 to 7, the object number in field 2. In the recorded raid the host published object
+0 (its own record, client id 0) and object 1 (the guest's, client id 1).
+
+A console's client id is its position in BattleStart among the lobby's members (`0x1025120`,
+`0x10253bc`). Removing a station clears its slot and reruns the choice (`0x8b3f70`), and every console
+holds a standby server it promotes once IsServer turns true (`0x7f838c`, `0x7f87f0`).
+
 ### The action
 
 The 88-byte action is eleven 8-byte entries. Only entry 2 changed between four moves of one guest:
@@ -118,6 +136,29 @@ guest could not act sent entry 2 as zero. `raid_battle.action(move, target)` bui
 The 0x7C acknowledgement carries 32 slots; only slot 0 tracks the guest's stream, the others hold
 stale ids (34460 seen). A resend gated on the maximum over slots never resends.
 
+## Hosting
+
+`bin/swsh_host.py --raid-boss PK8 --advert FILE --snapshot FILE --raid-console-serves` hosts a den
+lobby a console joins from its Y-Comm list (`pokeldn/swsh/raid_host.py`). The advertisement is a den
+host's, with a fresh station profile and the boss written at `0xb0` and `0xd4`; the snapshot goes out
+before the guest's. `--raid-reward ITEM:COUNT` fills Rewards and `--raid-seed` BattleSeed.
+
+With `--raid-console-serves` the joined console serves the battle and the host answers as client 1
+(`raid_battle.Master`):
+
+| step | the host |
+|---|---|
+| BattleStart | lists the console first, so the console's client id is 0 |
+| 0x7C port 0 | sends ping; answers the console's ping and pingSynced |
+| framework objects | publishes object 0 = the console's ServerVersion record, object 1 = its own |
+| 0x7C port 0 | sends its own ServerVersion (client id 1) |
+| base 20000 | publishes the counter and its own body, 0000 / 00000100, then 0100 / 01000100, 01000200, 0200 / 02000200, each once the console mirrors the last body |
+| object 8 | the console publishes it (24 bytes, a seed); the host answers EmptyCommand (10000 field 1) |
+| battle commands | answered as a guest answers them, the action naming the host's Pokemon's first move |
+
+An emulated Shield guest served a whole raid this way against the host, won it and received the
+host's Rewards; it then sent the mesh leave request.
+
 ## Leaving
 
 Once its player leaves the reward screens, a retail Sword host closes the network with
@@ -126,6 +167,9 @@ A guest that does not leave holds the host's player frozen in the overworld unti
 `--leave-with-host` leaves on the first one.
 
 ## Unresolved
+
+- Whether a console that is not the Pia host would publish framework objects 0 to 7; in every
+  recording and hosted raid the Pia host published them.
 
 - The meaning of PlayerInfo's u32 and final bytes.
 - The action's other ten entries, Dynamax, and the target codes beyond 8 and 2. Replayed unchanged, a

@@ -5,7 +5,7 @@ then the id-2000 lobby messages on 0x80 port 0 as an emulated Shield host sent t
 import time
 
 from pokeldn.ldn import reliable4
-from pokeldn.swsh import raid
+from pokeldn.swsh import pokemon, raid, raid_battle
 from pokeldn.swsh.host_trade import HostTrade
 
 TIME_LIMIT_START = 0xA0               # seconds the emulated host counted down from
@@ -23,7 +23,7 @@ class RaidHost(HostTrade):
 
     def __init__(self, self_id, peer_id, snapshot, our_pk8, boss_pk8, send, send_broadcast,
                  send_mesh, rewards=(), seed=0, name="POKELDN", ready_after=1.0, log=print,
-                 record=None, snapshot_builder=None, on_battle=None):
+                 record=None, snapshot_builder=None, on_battle=None, console_serves=False):
         super().__init__(self_id, peer_id, snapshot, our_pk8,
                          lambda protocol, port, payload: send(protocol, port, payload, False),
                          send_broadcast, send_mesh, log=log, record=record,
@@ -37,11 +37,19 @@ class RaidHost(HostTrade):
         self.lobby_at = None
         self.ready_sent = self.start_sent = False
         self.guest = {"info": None, "pk8": None, "ready": False, "started": False}
+        # The console first in BattleStart and in framework object 0, so it serves the battle and we
+        # answer as client 1 (docs/swsh_raid.md, Which station serves).
+        self.console_serves = console_serves
+        self.battle = None
 
     def lobby(self, which, payload):
         self._send_lobby(reliable4.BROADCAST_PROTOCOL, 0, payload, which in COMPRESSED)
 
     def on_data(self, protocol, port, payload, now=None):
+        if protocol == reliable4.PROTOCOL and self.battle is not None:
+            for port_out, msg in self.battle.receive(port, bytes(payload)):
+                self._send_lobby(reliable4.PROTOCOL, port_out, msg, False)
+            return
         got = raid.parse(bytes(payload)) if protocol == reliable4.BROADCAST_PROTOCOL else None
         if got is None:
             return super().on_data(protocol, port, payload, now)
@@ -88,7 +96,8 @@ class RaidHost(HostTrade):
     def _stage_start(self, now):
         if not self.start_sent:
             self.start_sent = True
-            self.lobby(raid.BATTLE_START, raid.battle_start([self.self_id, self.peer_id]))
+            order = [self.peer_id, self.self_id] if self.console_serves else [self.self_id, self.peer_id]
+            self.lobby(raid.BATTLE_START, raid.battle_start(order))
             self.lobby(raid.SELECT_POKEMON, raid.select_pokemon(self.offer_pk8))
             self.lobby(raid.BOSS_POKEMON, raid.boss_pokemon(self.boss_pk8))
             self.lobby(raid.REWARDS, raid.rewards(self.rewards))
@@ -99,6 +108,14 @@ class RaidHost(HostTrade):
         if self.guest["started"]:
             self.goto("battle")
             self.on_battle(self)
+            if self.console_serves:
+                # Our Pokemon's first move; the recorded action named Water Gun for any Pokemon.
+                move = next((m for m in pokemon.read(self.offer_pk8)["moves"] if m), 55)
+                self.battle = raid_battle.Master(self.self_id, self.peer_id, slot=1, console_slot=0,
+                                                 clock=self.clock, log=self.log,
+                                                 action=raid_battle.action(move))
+                for port_out, msg in self.battle.start():
+                    self._send_lobby(reliable4.PROTOCOL, port_out, msg, False)
 
     def _stage_battle(self, now):
         pass

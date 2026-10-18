@@ -146,3 +146,79 @@ class Guest:
                 out.append((0, battle_message(2, self.slot, counter,
                                               struct.pack("<HHHH", serial, kind, 4, x) + bytes(4))))
         return out
+
+
+SERVER_VERSION = 0x6E                 # every copy's ServerVersion version (main 0x8b1778)
+
+
+def server_record(station, client_id, version=SERVER_VERSION):
+    """A framework object 0..7 body as the emulated host published it: station, client id, version,
+    valid, then `0a` and four zero bytes (docs/swsh_raid.md, Which station serves)."""
+    return struct.pack("<QBBBB", station, client_id, version, 1, 0x0A) + bytes(4)
+
+
+class Master:
+    """The station that publishes the framework objects, here a battle client: object 0 is the
+    console's record, so the console serves and we answer as client `slot`. The steps follow the
+    recorded host's framework; the battle itself is answered by a `Guest`."""
+
+    def __init__(self, station, console, slot=1, console_slot=0, clock=None, log=print,
+                 action=ACTION):
+        self.station, self.console, self.slot, self.console_slot = station, console, slot, console_slot
+        self.log = log
+        self.t_clock = clock or (lambda: 0x680)
+        self.guest = Guest(station, slot, clock=self.t_clock, action=action)
+        self.guest.started = self.guest.seat_sent = self.guest.ping_sent = True
+        self.synced = False
+        self.step = 0                     # the anonymous base-20000 counter we published
+        self.ours = None                  # our station's last base-20000 body
+        self.mirrored = {bytes(4), bytes.fromhex("000018fc")}
+        self.empty_sent = False
+
+    def start(self):
+        return [(0, sync(PING))]
+
+    def _ours(self, body):
+        self.ours = body
+        return (1, framework(BATTLE, self.station, self.t_clock(), body))
+
+    def _anon(self, step):
+        self.step = step
+        return (1, framework(BATTLE, None, self.t_clock(), struct.pack("<H", step)))
+
+    def receive(self, port, payload):
+        out = []
+        if payload == sync(PING_REPLY) and not self.synced:
+            self.synced = True
+            c = self.t_clock()
+            out += [(0, sync(PING_SYNCED)), self._anon(0),
+                    (1, framework(SEAT, self.station, c, bytes(4))),
+                    self._ours(bytes.fromhex("000018fc")),
+                    (1, framework(0, None, c, server_record(self.console, self.console_slot))),
+                    self._ours(bytes.fromhex("00000100")),
+                    (1, framework(1, None, c, server_record(self.station, self.slot))),
+                    (0, seat(self.station, self.slot, SERVER_VERSION))]
+            self.log("[raid] -> pingSynced, framework objects 0 (the console) and 1 (us)")
+            return out
+        fw = parse_framework(payload)
+        if fw is not None:
+            self.log(f"[raid] <- fw base={fw['base']} station={fw['station'] and hex(fw['station'])} "
+                     f"body={fw['body'].hex()}")
+            # The server publishes object 8 (24 bytes, a seed); a client answers EmptyCommand.
+            if fw["base"] == 8 and fw["station"] is None and not self.empty_sent:
+                self.empty_sent = True
+                out.append((0, message(SEAT, field(1, b""))))
+            # The recorded host's barrier: once the peer mirrors our body, the next step.
+            if (fw["station"] == self.console and fw["base"] == BATTLE and fw["body"] != self.ours
+                    and fw["body"] not in self.mirrored and len(fw["body"]) == 4):
+                self.mirrored.add(fw["body"])
+                out.append((1, framework(BATTLE, self.station, self.t_clock(), fw["body"])))
+            if fw["station"] == self.console and fw["base"] == BATTLE and fw["body"] == self.ours:
+                nxt = {"00000100": lambda: [self._anon(1), self._ours(bytes.fromhex("01000100"))],
+                       "01000100": lambda: [self._ours(bytes.fromhex("01000200"))],
+                       "01000200": lambda: [self._anon(2), self._ours(bytes.fromhex("02000200"))]}
+                out += nxt.get(self.ours.hex(), list)()
+            return out
+        if parse_battle(payload) is None and payload not in (sync(PING), sync(PING_SYNCED)):
+            self.log(f"[raid] <- {port} {payload.hex()[:80]}")
+        return out + self.guest.receive(port, payload)

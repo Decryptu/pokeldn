@@ -80,3 +80,12 @@ def test_lobby_host_follows_the_emulated_hosts_order():
     fields = [f for f in sent if f[0] != raid.TIME_LIMIT]
     assert fields == [(2, True), (3, False), (4, False), (3, False),
                       (5, True), (4, False), (6, False), (7, True), (8, False), (3, False)]
+
+
+def test_master_steps_the_barrier_once_the_console_mirrors_it():
+    console, ours = 0x7F00030000020000, 0x7F00020000020000
+    m = raid_battle.Master(ours, console, log=lambda *a: None)
+    m.receive(0, raid_battle.sync(raid_battle.PING_REPLY))
+    out = m.receive(1, raid_battle.framework(raid_battle.BATTLE, console, 909, bytes.fromhex("00000100")))
+    bodies = [raid_battle.parse_framework(p)["body"].hex() for _, p in out]
+    assert bodies == ["0100", "01000100"]
