@@ -1,13 +1,13 @@
-# pokeldn 0.31.3
+# pokeldn 0.31.4
 
 This desktop app trades with seven Pokemon game families on a Switch or Switch 2
 through an ESP32 radio connected by USB. Nothing is installed on the console.
 
 ## What is new
 
-- Android: the app no longer opens on a screen with icons but no text on phones with a larger
-  system font size, which is common on Samsung Galaxy phones. Android's font size made the
-  interface's text so large that nothing could be read.
+- The Docs page has a search field above its page list. It searches every page of the
+  documentation and the app guide, lists the matching sections with the words highlighted, and
+  opens the page at the section you pick. Links between docs pages now open at the linked section.
 
 The radio firmware stays at 1.6.2 and the controller firmware at 1.3.0; no board update is needed.
 
