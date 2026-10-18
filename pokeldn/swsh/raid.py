@@ -116,7 +116,8 @@ def _boss_record(old, species, form, gigantamax, ec):
 
 def den_advert(app_data, boss_pk8, rank=None):
     """The den advertisement showing `boss_pk8`. A boss no den of the host's version holds gets a zero
-    den record, which a guest lists without the encounter check."""
+    den record, which a guest lists without the encounter check and a retail Sword then refuses at
+    BossPokemon."""
     out = bytearray(app_data)
     plain = gen8.decrypt(bytes(boss_pk8))
     boss = gen8.read(plain)

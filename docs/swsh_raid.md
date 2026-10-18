@@ -165,10 +165,17 @@ A guest drops a station whose device id and account uid (`0x1F` to `0x3E`) both 
 ### The boss record
 
 A retail Sword guest left with 2-ALZAA-0016 on BossPokemon when the boss was a traded record (a
-trainer, version, met data and ball) and when its party Dynamax type (`+0x156`) was 0; both recorded
+trainer, version, met data and ball), when its party Dynamax type (`+0x156`) was 0, and when the
+advertisement's den record was zero (a boss no base den holds: Mew on an accepted record, an event's
+Gigantamax Toxtricity with or without its Gigantamax bit), though it listed each of those raids; both recorded
 den bosses have no trainer data and Dynamax type 1. A boss on a den boss's record with only the species
 changed, and a level-20 boss built by `raid.boss_record` (the Pokemon's species, form, moves, IVs, EVs,
 nature, ability, PID, encryption constant and party stats on a den boss's record), were accepted.
+
+In three recorded den bosses (an emulated Pidove at Dynamax level 1 and Hoothoot at level 2, a retail
+Torkoal at level 7), the party HP stat and current HP are the plain HP stat times
+`(150 + 5 * Dynamax level) / 100`, rounded down; the other five stats are plain. The Dynamax level is
+at `+0x90`, the ability slot bit at `+0x16` bits 0 to 2, and the experience is the level's least.
 
 ## Hosting
 
@@ -199,6 +206,80 @@ With `--raid-console-serves` the joined console serves the battle and the host a
 An emulated Shield guest and a retail Sword each served a whole raid this way, won it and received
 the host's Rewards, then sent the mesh leave request.
 
+## Event raids
+
+A Wild Area Event is a BCAT delivery of den encounter and reward tables, one numbered index per
+delivery. Project Pokemon's EventsGallery keeps each index under
+`Released/Gen 8/SwSh/Wild Area Events/Index NNN/`, its `readme.md` naming the event each index carries.
+`pokeldn/swsh/raid_event.py` reads one; `pokeldn.app.events_gallery` keeps a copy under game `swsh`.
+
+| file | content |
+|---|---|
+| `normal_encount` | the Wild Area dens' event encounters |
+| `normal_encount_rigel1`, `normal_encount_rigel2` | the Isle of Armor's and the Crown Tundra's (in Index 080 and 117, not in 010) |
+| `drop_rewards`, `bonus_rewards` | the delivery's reward tables |
+| `dai_encount` | the Dynamax crystal encounters [pkNX `NestHoleCrystalEncounterArchive`]; unread here |
+
+Every file opens with a 0x20-byte header: the u8 BCAT index at 0, `ff ff ff ff` at 4, u32 `0x20` at 8,
+u32 file size - 4 at `0x10`. The FlatBuffer runs from `0x20` to four bytes before the end, which
+hold a CRC [pkNX `GameDumperSWSH.GetDistributionContents`].
+
+An encounter file is a vector of tables (field 0): TableID u64, GameVersion u32 (1 Sword, 2 Shield),
+two bytes, and Entries (field 4). Index 010's tables hold 30 entries each; every entry's vtable has
+37 fields, read here as follows (field number, type, content).
+
+| field | type | content |
+|---|---|---|
+| 0 | i32 | entry index, 1 to 30 |
+| 1, 2, 3 | i32 | species, form, level |
+| 4 | u16 | Dynamax level |
+| 5 to 10 | u32 | absent in every Index 010 entry |
+| 11 | u8 | ability: 0, 1, 2 the first, second, hidden; 3 either of the first two; 4 any |
+| 12 | bool | Gigantamax |
+| 13, 14 | u64 | drop and bonus reward table ids |
+| 15 | [i32] | five chances in percent, star ranks 1 to 5; each rank's sum is 100 per version |
+| 16 | i8 | gender: 0 drawn, else the record's gender + 1 |
+| 17 | i8 | perfect IV count |
+| 18 | u8 | shiny: 0 drawn, 1 never, 2 always |
+| 19, 20 | u8 | 3 or 2 in Index 010; unread |
+| 21 | i8 | nature, 25 drawn |
+| 22 | i32 | 0 in Index 010 |
+| 23 to 26 | u32 | the four moves |
+| 27 | f32 | 1.4, 1.6, 1.9, 2.5, 3.0 at ranks 1 to 5 in Index 010; unread |
+| 28, 29 | u32 | unread |
+| 30 | u32 | 0 to 6; the shield, by PyNXBot's schema |
+| 31 to 33, 34 to 36 | u32 | rate, move, value: two extra moves by PyNXBot's schema (move 150 at rate 0) |
+
+Index 010 decodes to Wild Area Event #7 as its readme describes it: Gigantamax Toxtricity at ranks 3
+to 5 (form 0 in Sword, form 1 in Shield), Gigantamax Milcery at every rank, Kingler and Grimmsnarl in
+Sword, Orbeetle and Hatterene in Shield. Its rank-5 Toxtricity (level 60, Dynamax level 10, five
+perfect IVs, moves 786, 586, 482, 506) is PKHeX's `encounter_sw_dist.pkl` record for index 10.
+
+A delivery reward file is a vector of tables (field 0): TableID u64 and Entries (field 1), each entry
+five u8 values for ranks 1 to 5 (fields 0 to 4) and a u16 item (field 5). The game's own tables,
+`data_table.gfpak` files 7 (drops) and 6 (bonus), hold TableID, then entries of u32 entry index, u32
+item and a u32 vector of five values (`pokeldn/swsh/data/nest_rewards.json`,
+`scripts/gen_swsh_nest_data.py`). An encounter names its tables by id among both, the game's first
+[pkNX `NestHoleDistributionEncounterTable`]; every Index 010 boss's bonus table and all but Milcery's
+drop table are the game's.
+
+A bonus value is a count, a drop value a percent chance. An emulated 1-star den host's Rewards
+(`raid.DEN_REWARDS`) opened with the rows of the game's bonus table `0xf966212316b78eb6` at rank 1 at
+their count (Exp. Candy XS x5, S x1, Dynamax Candy x1), then held two items, one each.
+`raid_event.rewards` builds bonus rows, then one row per drop, rolling each drop's chance or keeping
+them all.
+
+`raid_event.boss_pk8` builds the boss on the den boss record `raid.boss_record` starts from: the
+table's species, form, level, moves, Gigantamax and Dynamax level, an ability, IVs, nature, gender and
+PID the table allows, and the party stats of [The boss record](#the-boss-record), from the personal
+table in `pokeldn/swsh/data/species.json` (`scripts/gen_swsh_species_data.py`).
+
+    bin/swsh_host.py --raid-event "FOLDER/Index 010" --raid-stars 5 --raid-event-boss 4 --raid-console-serves
+
+Without `--raid-stars` or `--raid-event-boss` the host lists what it takes. `--raid-version` picks
+the table's version (the advertisement's by default), `--raid-area` the den area, `--raid-event-drops
+all` every drop; `--raid-reward` rows replace the event's.
+
 ## Leaving
 
 Once its player leaves the reward screens, a retail Sword host closes the network with
@@ -216,3 +297,6 @@ A guest that does not leave holds the host's player frozen in the overworld unti
   recorded Water Gun action makes any guest Pokemon use Water Gun, on a retail Sword host too.
 - Dynamax Adventures over local communication: the matching code shares the session layer; the
   messages are unread.
+- Whether a retail guest takes an event boss from a den advertisement whose den record is zero, and
+  what a retail event den host writes in the den kind bits and the den record.
+- The encounter fields read above as unread or by PyNXBot's names.

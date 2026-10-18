@@ -13,6 +13,7 @@ import binascii
 import traceback
 import json
 import os
+import random
 import struct
 import sys
 import time
@@ -27,7 +28,7 @@ from pokeldn.host_support import resolve_keys, needs_root
 from pokeldn.ldn import host4, left_after_trade, mesh_protocol as mesh, reliable4
 from pokeldn.ldn.ldn_mitm_host import IpHostTransport
 from pokeldn.ldn.transport import HostTransport, board_radio, find_ap_phy
-from pokeldn.swsh import beacon, host_trade, league_card, pokemon as swsh_pokemon, raid, raid_host, trade_payload
+from pokeldn.swsh import beacon, host_trade, league_card, pokemon as swsh_pokemon, raid, raid_event, raid_host, trade_payload
 from pokeldn.ldn.pia5 import password_crc
 from pokeldn.swsh.session import COMM_ID, PASSPHRASE, session_keys
 from pokeldn.app import screen
@@ -210,6 +211,21 @@ def build_parser():
                     help="the BattleSeed value; random by default")
     ap.add_argument("--raid-ready", type=float, default=3.0, metavar="SECONDS",
                     help="our player readies this long after the guest's lobby opens")
+    ap.add_argument("--raid-event", default=None, metavar="FOLDER",
+                    help="host a Max Raid with a boss of this Wild Area Event delivery (an EventsGallery "
+                         "'Index NNN' folder) instead of --raid-boss; its rewards unless --raid-reward "
+                         "(docs/swsh_raid.md, Event raids)")
+    ap.add_argument("--raid-stars", type=int, default=None, metavar="N",
+                    help="with --raid-event: the star rank, 1 to 5")
+    ap.add_argument("--raid-event-boss", type=int, default=None, metavar="N",
+                    help="with --raid-event: the boss, numbered as the list printed without it")
+    ap.add_argument("--raid-version", choices=("sword", "shield"), default=None,
+                    help="with --raid-event: whose table the boss comes from; the advertisement's "
+                         "version by default")
+    ap.add_argument("--raid-area", choices=[a for _, a in raid_event.AREAS], default=raid_event.AREAS[0][1],
+                    help="with --raid-event: the den area whose table the boss comes from")
+    ap.add_argument("--raid-event-drops", choices=("roll", "all"), default="roll",
+                    help="with --raid-event: roll each drop's chance as a den does, or give every drop")
     ap.add_argument("--raid-console-serves", action="store_true",
                     help="put the console first in BattleStart and framework object 0, so it serves "
                          "the battle and the board answers as a client (docs/swsh_raid.md)")
@@ -217,7 +233,7 @@ def build_parser():
     return ap
 
 
-def raid_advert(app_data, boss_pk8, player_name="POKELDN"):
+def raid_advert(app_data, boss_pk8, player_name="POKELDN", rank=None):
     """The den advertisement with the boss's species and encryption constant written in."""
     out = bytearray(app_data)
     # A guest's Y-Comm list leaves out a raid that carries its own account (docs/swsh_raid.md).
@@ -228,7 +244,41 @@ def raid_advert(app_data, boss_pk8, player_name="POKELDN"):
     name = player_name.encode("utf-16-le")[:trade_payload.TAIL_NAME_LENGTH - 2]
     at = STATION_PROFILE_OFF + trade_payload.TAIL_NAME_OFFSET
     out[at:at + trade_payload.TAIL_NAME_LENGTH] = name.ljust(trade_payload.TAIL_NAME_LENGTH, b"\0")
-    return raid.den_advert(bytes(out), boss_pk8)
+    return raid.den_advert(bytes(out), boss_pk8, rank)
+
+
+def event_raid(args, app_data):
+    """-> (boss record, rank, reward rows) the --raid-event flags pick, or an error to print."""
+    if args.raid_boss:
+        return "--raid-event and --raid-boss each name the boss; pass one"
+    try:
+        event = raid_event.load(args.raid_event)
+    except (OSError, ValueError) as error:
+        return f"{args.raid_event}: {error}"
+    if args.raid_area not in event.areas():
+        return f"this event has no {args.raid_area} table; it has {', '.join(event.areas())}"
+    version = ({"sword": 1, "shield": 2}[args.raid_version] if args.raid_version
+               else 2 if app_data[raid.ADVERT_VERSION] & 2 else 1)
+    if args.raid_stars is None or not 1 <= args.raid_stars <= raid_event.RANKS:
+        ranks = sorted({r + 1 for b in event.bosses if b.version == version and b.area == args.raid_area
+                        for r in b.ranks})
+        return f"--raid-stars takes the star rank, 1 to 5; this event has {ranks}"
+    rank = args.raid_stars - 1
+    bosses = event.choices(version, rank, args.raid_area)
+    if not bosses:
+        return f"no {args.raid_stars}-star boss in {raid_event.VERSIONS[version]}'s {args.raid_area} table"
+    if args.raid_event_boss is None or not 1 <= args.raid_event_boss <= len(bosses):
+        lines = "\n".join(f"  {n}. {raid_event.describe(b, rank)}" for n, b in enumerate(bosses, 1))
+        return (f"--raid-event-boss picks one of the {args.raid_stars}-star bosses of "
+                f"{raid_event.VERSIONS[version]}'s {args.raid_area} table:\n{lines}")
+    boss = bosses[args.raid_event_boss - 1]
+    missing = raid_event.missing_rewards(event, boss)
+    if missing and not args.raid_reward:
+        print(f"[raid] no {' and '.join(missing)} reward table for this boss in the event or the game")
+    rewards = raid_event.rewards(event, boss, rank,
+                                 None if args.raid_event_drops == "all" else random.SystemRandom())
+    print(f"[raid] event index {event.index}: {raid_event.describe(boss, rank)}, {args.raid_stars} stars")
+    return raid_event.boss_pk8(boss), rank, rewards
 
 
 def main(argv=None):
@@ -248,18 +298,44 @@ def main(argv=None):
         phy = find_ap_phy(log=print) if args.phy == "auto" else args.phy
     network_id = (bytes.fromhex(args.network_id) if args.network_id
                   else os.urandom(2) + NETWORK_ID_HIGH)       # little-endian: the high half last
-    if args.raid_boss:
+    event_only = [flag for flag, value in (("--raid-stars", args.raid_stars), ("--raid-event-boss", args.raid_event_boss),
+                                           ("--raid-version", args.raid_version)) if value is not None]
+    if event_only and not args.raid_event:
+        print(f"[raid] {', '.join(event_only)} pick from an event; pass --raid-event FOLDER")
+        return 1
+    raiding = bool(args.raid_boss or args.raid_event)
+    if raiding:
         args.advert = args.advert or str(raid.DEN_ADVERT)
         args.snapshot = args.snapshot or str(raid.DEN_SNAPSHOT)
     app_data = build_advert(load_advert(args.advert) if args.advert else None,
                             network_id=network_id, code=args.code, player_name=args.player_name)
     boss_pk8 = None
-    if args.raid_boss:
-        boss_file = pokemon_service.prepare_file("swsh", args.raid_boss)
-        boss_pk8 = raid.boss_record(swsh_pokemon.encrypt(gen8.load(Path(boss_file).read_bytes())))
-        app_data = raid_advert(app_data, boss_pk8, args.player_name)
+    if raiding:
+        rank, event_rewards = None, list(raid.DEN_REWARDS)
+        if args.raid_event:
+            picked = event_raid(args, app_data)
+            if isinstance(picked, str):
+                print(f"[raid] {picked}")
+                return 1
+            boss_pk8, rank, event_rewards = picked
+        else:
+            boss_file = pokemon_service.prepare_file("swsh", args.raid_boss)
+            boss_pk8 = raid.boss_record(swsh_pokemon.encrypt(gen8.load(Path(boss_file).read_bytes())))
+        if os.environ.get("POKELDN_RAID_BOSS_EDIT"):
+            # Test only: OFFSET=HEX,... written into the plain boss record, to bisect a refusal.
+            plain = bytearray(gen8.decrypt(boss_pk8))
+            for edit in os.environ["POKELDN_RAID_BOSS_EDIT"].split(","):
+                at, value = edit.split("=")
+                data = bytes.fromhex(value)
+                plain[int(at, 0):int(at, 0) + len(data)] = data
+            boss_pk8 = swsh_pokemon.encrypt(bytes(plain))
+            print(f"[raid] boss edited: {os.environ['POKELDN_RAID_BOSS_EDIT']}")
+        app_data = raid_advert(app_data, boss_pk8, args.player_name, rank)
+        if app_data[raid.ADVERT_DEN:raid.ADVERT_DEN + 8] == bytes(8):
+            print("[raid] no den of this version holds the boss: a retail console lists the raid and "
+                  "leaves at Ready (docs/swsh_raid.md, The boss record)")
         args.scene_id = RAID_SCENE_ID
-        rewards = [tuple(int(x, 0) for x in r.split(":")) for r in args.raid_reward] or list(raid.DEN_REWARDS)
+        rewards = [tuple(int(x, 0) for x in r.split(":")) for r in args.raid_reward] or event_rewards
         if len(rewards) > raid.REWARD_SLOTS:
             print(f"[raid] a Max Raid gives at most {raid.REWARD_SLOTS} rewards")
             return 1

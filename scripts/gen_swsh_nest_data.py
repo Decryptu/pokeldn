@@ -1,7 +1,9 @@
 #!/usr/bin/env python3
 """Builds pokeldn/swsh/data/nest_slots.json, the Max Raid den encounter slots of Sword and Shield
-1.3.2 [docs/swsh_raid.md, The den record], from the game's own RomFS file
-`bin/archive/field/resident/data_table.gfpak` (file 8, a FlatBuffer; its CRC16 is advert 0xE6).
+1.3.2 [docs/swsh_raid.md, The den record], and nest_rewards.json, the game's own den drop and bonus
+reward tables an event raid's encounters also name [docs/swsh_raid.md, Event raids], from the game's
+RomFS file `bin/archive/field/resident/data_table.gfpak` (file 8 the slots, file 7 the drops, file 6
+the bonus rewards, each a FlatBuffer; their CRC16s are advert 0xE6, 0xEA and 0xE8).
 
     ./.venv/bin/python scripts/gen_swsh_nest_data.py --gfpak scratchpad/swsh_raid/nest/data_table_132.gfpak
 
@@ -17,7 +19,8 @@ import zlib
 
 ROOT = pathlib.Path(__file__).resolve().parents[1]
 OUT = ROOT / "pokeldn" / "swsh" / "data" / "nest_slots.json"
-NEST_FILE = 8
+REWARDS_OUT = OUT.with_name("nest_rewards.json")
+NEST_FILE, DROP_FILE, BONUS_FILE = 8, 7, 6
 
 
 def lz4_block(src):
@@ -89,14 +92,50 @@ def nest_rows(d):
     return rows
 
 
+def reward_rows(d):
+    """-> {table id: [[item, value at ranks 0 to 4]]} of a NestHoleRewardArchive [pkNX
+    NestHoleRewardArchive.fbs]: tables of (u64 id, entries); an entry is (u32 entry, u32 item, [u32])."""
+    u32 = lambda o: struct.unpack_from("<I", d, o)[0]
+
+    def field(t, idx):
+        vt = t - struct.unpack_from("<i", d, t)[0]
+        off = 4 + 2 * idx
+        if off >= struct.unpack_from("<H", d, vt)[0]:
+            return None
+        fo = struct.unpack_from("<H", d, vt + off)[0]
+        return t + fo if fo else None
+
+    def vec(at):
+        v = at + u32(at)
+        return v + 4, u32(v)
+
+    out = {}
+    start, count = vec(field(u32(0), 0))
+    for k in range(count):
+        t = start + 4 * k + u32(start + 4 * k)
+        rows = []
+        first, n = vec(field(t, 1))
+        for j in range(n):
+            e = first + 4 * j + u32(first + 4 * j)
+            item = field(e, 1)
+            values, m = vec(field(e, 2))
+            rows.append([u32(item) if item else 0, *struct.unpack_from(f"<{m}I", d, values)])
+        out[str(struct.unpack_from("<Q", d, field(t, 0))[0])] = rows
+    return out
+
+
 def main():
     ap = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
     ap.add_argument("--gfpak", required=True)
     args = ap.parse_args()
-    rows = nest_rows(gfpak_file(pathlib.Path(args.gfpak).read_bytes(), NEST_FILE))
+    pack = pathlib.Path(args.gfpak).read_bytes()
+    rows = nest_rows(gfpak_file(pack, NEST_FILE))
     OUT.write_text(json.dumps({"versions": {"1": "Sword", "2": "Shield"}, "slots": rows},
                               separators=(",", ":")) + "\n")
     print(f"{OUT}: " + ", ".join(f"version {v}: {len(r)} slots" for v, r in rows.items()))
+    rewards = {"drop": reward_rows(gfpak_file(pack, DROP_FILE)), "bonus": reward_rows(gfpak_file(pack, BONUS_FILE))}
+    REWARDS_OUT.write_text(json.dumps(rewards, separators=(",", ":")) + "\n")
+    print(f"{REWARDS_OUT}: {len(rewards['drop'])} drop and {len(rewards['bonus'])} bonus tables")
 
 
 if __name__ == "__main__":
