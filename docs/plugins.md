@@ -500,10 +500,46 @@ Copy the template into a separate plugin repository and translate its values; om
 maintenance. The partial pseudo-locale in `examples/plugins/pseudo` brackets selected strings and
 leaves others to exercise fallback. Examples are excluded from desktop packages.
 
-The lookup covers desktop controls, dialogs, local errors and catalog labels, help and console
-instructions. Reference Markdown, game data supplied by PKHeX and game modules, third-party plugin
-copy and upstream exception messages retain their source language. Session logs, radio script
-output and `[done]` protocol lines retain their existing text.
+### Additional resources (1.9)
+
+A data-only language pack can also declare these optional files and folder beside `plugin.toml`:
+
+```toml
+api = "1.9"
+messages = "messages.toml"
+templates = "templates.toml"
+terms = "terms.toml"
+help = "help.toml"
+documents = "docs"
+font_family = "Noto Sans CJK SC" # optional bundled or system font
+```
+
+`messages.toml` maps literal English module and legacy messages to display text, like gettext's
+source messages. Unlike `strings.toml`, its keys are the original text and braces are literal.
+Use stable `t(key, English, **values)` calls for new app copy. `terms.toml` maps game terms such as
+species names for summaries received from older peers; replacements occur only at display
+boundaries and word boundaries, never in protocol IDs or player input. `help.toml` maps
+`"TOOL-KEY:--option"` to parser help, allowing two tools to translate the same flag independently.
+All are flat TOML string tables; a missing entry retains its source text.
+
+`templates.toml` translates legacy messages with varying values without executable code or
+regular expressions. For example, `"Could not open {path}: {reason}" = "..."` matches a complete
+message and formats the translation with those values. Keep exactly the named fields, without
+conversions, format specifications or attribute access. Separate fields with literal text; the
+matcher takes the first following delimiter without regular-expression backtracking. Values stay literal unless the field name
+starts with `term`, which explicitly opts into game-term and nested-message translation, or
+`message`, which translates recognized nested messages while keeping unknown diagnostics literal. Match
+the most specific templates first; messages longer than 4096 characters retain their source text.
+
+The documents folder mirrors the built-in Markdown names and uses `guide.md` for the app guide.
+The reader and search index use the same localized document, falling back to English per page.
+The original navigation IDs and hierarchy stay intact; a localized front-matter `title` changes
+only the displayed name. Preserve explicit HTML anchors and relative links when translating.
+Resources cannot name paths outside the plugin. Installation, signatures and updates cover the
+resources just as they cover `strings.toml`. Older API 1.5 packs remain valid.
+
+The selected locale also controls built-in system dialogs. Trainer language remains independent.
+Diagnostic output, radio script output and `[done]` protocol lines retain their existing text.
 
 ## The Plugin Test Kit
 
@@ -543,6 +579,7 @@ or a downgrade.
 | 1.6 | `add_battle_server` |
 | 1.7 | `pokeldn.ldn.network`, `pokeldn.ldn.radio_lost`, `library` and `api.library`, `pokeldn.popup.choose`, `pokeldn.progress`, the `{keys}` token |
 | 1.8 | `pokeldn.panel`, `library_sort` |
+| 1.9 | language-pack messages, templates, terms, tool help, documents and font preference |
 
 ## The API, version 1
 

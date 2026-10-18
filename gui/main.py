@@ -64,6 +64,12 @@ def main(page: ft.Page) -> None:
     page.title = "pokeldn"
     page.theme_mode = ft.ThemeMode.DARK
     page.theme = page.dark_theme = t.app_theme()
+    from pokeldn.app.i18n import locale
+    language, *parts = locale().split("-")
+    script = next((part for part in parts if len(part) == 4), None)
+    country = next((part for part in parts if len(part) == 2 or part.isdigit()), None)
+    selected_locale = ft.Locale(language.lower(), country.upper() if country else None, script.title() if script else None)
+    page.locale_configuration = ft.LocaleConfiguration(supported_locales=[ft.Locale("en"), selected_locale], current_locale=selected_locale)
     page.bgcolor = t.BG
     page.padding = 0
     # 1440 x 900 overflows a 13-inch MacBook Air (1440 x 932 points less the menu bar): fit, then center.

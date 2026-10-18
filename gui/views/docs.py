@@ -10,10 +10,21 @@ from gui.views.widgets import MarkdownDocument, heading_sections
 from pokeldn.app import preview
 from pokeldn.app.paths import ROOT
 from pokeldn.app.i18n import t as tr
+from pokeldn.app import i18n
 
 DOCS = os.path.join(ROOT, "docs")
 GUIDE = os.path.join(ROOT, "gui", "guide.md")
 SITE = "https://decryptu.github.io/pokeldn/"
+
+
+def document_path(file: str):
+    return i18n.document(file, GUIDE if file == "guide" else os.path.join(DOCS, file))
+
+
+def page_title(page: "Page") -> str:
+    with open(document_path(page.file), encoding="utf-8") as source:
+        meta, _ = split_front_matter(source.read())
+    return i18n.message(meta.get("title", page.title))
 
 
 @dataclass
@@ -70,7 +81,7 @@ def index(tree: list[Page], guide_title: str) -> list[Section]:
     found = []
 
     def add(file, title):
-        with open(GUIDE if file == "guide" else os.path.join(DOCS, file), encoding="utf-8") as f:
+        with open(document_path(file), encoding="utf-8") as f:
             _, body = split_front_matter(f.read())
         for key, heading, source in heading_sections(body):
             text = plain(HEADING_LINE.sub("", source, count=1) if key else source)
@@ -79,7 +90,7 @@ def index(tree: list[Page], guide_title: str) -> list[Section]:
 
     def walk(items):
         for p in items:
-            add(p.file, p.title)
+            add(p.file, page_title(p))
             walk(p.children)
     add("guide", guide_title)
     walk(tree)
@@ -153,7 +164,7 @@ class DocsView:
 
     def show(self, file: str, update: bool = True) -> None:
         self.file = file
-        path = GUIDE if file == "guide" else os.path.join(DOCS, file)
+        path = document_path(file)
         with open(path, encoding="utf-8") as f:
             _, body = split_front_matter(f.read())
         self.markdown.set_value(body)
@@ -175,7 +186,7 @@ class DocsView:
 
         def walk(items, depth):
             for p in items:
-                rows.append(self.row(p.title, p.file, depth, bool(p.children)))
+                rows.append(self.row(page_title(p), p.file, depth, bool(p.children)))
                 if p.children and p.file in self.open_parents:
                     walk(p.children, depth + 1)
         walk(self.tree, 0)
