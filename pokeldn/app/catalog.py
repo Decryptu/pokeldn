@@ -290,6 +290,8 @@ SWSH = Game("swsh", tr('catalog.sword_shield_71b23d', 'Sword & Shield'), tr('cat
           tr('catalog.win_the_raid_to_receive_the_rewards_dcd72e', 'Win the raid to receive the rewards.')),
          (Field("--raid-boss", tr('catalog.boss_8f6c1d', 'Boss'), "pokemon", required=True,
                 help=tr('catalog.the_raid_s_boss_a_boss_a_den_can_hold_shows_in_every_co_e2a7b9', "The raid's boss. A boss a den can hold shows in every console's list; its level sets the stars.")),
+          Field("--raid-gigantamax", tr('catalog.gigantamax_boss_0a7e52', 'Gigantamax boss'), "switch",
+                help=tr('catalog.for_a_pokemon_a_den_holds_as_gigantamax_charizard_snorl_6b1d40', 'For a Pokemon a den holds as Gigantamax: Charizard, Snorlax, Toxtricity and the other Gigantamax Pokemon.')),
           Field("--offer-file", tr('catalog.our_pokemon_14a66b', 'Our Pokemon'), "pokemon", required=True,
                 help=tr('catalog.the_pokemon_our_player_brings_pkhex_checks_it_is_legal_abc1cf', 'The Pokemon our player brings. PKHeX checks it is legal.')),
           Field("--raid-reward", tr('catalog.rewards_59afe4', 'Rewards'), "rewards",

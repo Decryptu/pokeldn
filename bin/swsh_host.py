@@ -226,6 +226,9 @@ def build_parser():
                     help="with --raid-event: the den area whose table the boss comes from")
     ap.add_argument("--raid-event-drops", choices=("roll", "all"), default="roll",
                     help="with --raid-event: roll each drop's chance as a den does, or give every drop")
+    ap.add_argument("--raid-gigantamax", action="store_true",
+                    help="the --raid-boss boss is Gigantamax; a retail console accepts it where a base "
+                         "den holds that Gigantamax Pokemon (docs/swsh_raid.md)")
     ap.add_argument("--raid-console-serves", action="store_true",
                     help="put the console first in BattleStart and framework object 0, so it serves "
                          "the battle and the board answers as a client (docs/swsh_raid.md)")
@@ -320,7 +323,10 @@ def main(argv=None):
             boss_pk8, rank, event_rewards = picked
         else:
             boss_file = pokemon_service.prepare_file("swsh", args.raid_boss)
-            boss_pk8 = raid.boss_record(swsh_pokemon.encrypt(gen8.load(Path(boss_file).read_bytes())))
+            plain = bytearray(gen8.load(Path(boss_file).read_bytes()))
+            if args.raid_gigantamax:
+                plain[raid.PK8_GIGANTAMAX] |= 0x10
+            boss_pk8 = raid.boss_record(swsh_pokemon.encrypt(bytes(plain)))
         if os.environ.get("POKELDN_RAID_BOSS_EDIT"):
             # Test only: OFFSET=HEX,... written into the plain boss record, to bisect a refusal.
             plain = bytearray(gen8.decrypt(boss_pk8))
@@ -348,6 +354,17 @@ def main(argv=None):
             if unknown:
                 print(f"[raid] items {unknown} cannot go in a Sword/Shield bag")
                 return 1
+        # A guest leaves unless every reward fits its den slot's tables at the rank (0x01032570).
+        row, den_rank = raid.den_of(app_data)
+        if row is not None:
+            if args.raid_reward or args.raid_event:
+                rewards, refused = raid.fitting_rewards(row, den_rank, rewards)
+                if refused:
+                    print(f"[raid] left out, not in this den's rewards: {refused}")
+                rewards = rewards or raid.den_rewards(row, den_rank)[:raid.REWARD_SLOTS]
+            else:
+                rewards = raid.den_rewards(row, den_rank)[:raid.REWARD_SLOTS]
+            print(f"[raid] rewards {rewards}")
         seed = args.raid_seed if args.raid_seed is not None else struct.unpack("<Q", os.urandom(8))[0]
     if not 1 <= args.offer_slot <= swsh_pokemon.PARTY_SLOTS:
         raise ValueError(f"offer slot must be 1..{swsh_pokemon.PARTY_SLOTS}")

@@ -7,8 +7,9 @@ the bonus rewards, each a FlatBuffer; their CRC16s are advert 0xE6, 0xEA and 0xE
 
     ./.venv/bin/python scripts/gen_swsh_nest_data.py --gfpak scratchpad/swsh_raid/nest/data_table_132.gfpak
 
-Rows are [table, slot, species, form, gigantamax]; a table is counted among the tables of its version,
-as a guest indexes advert 0xDE (`0x00ea51d0`).
+Rows are [table, slot, species, form, gigantamax, drop table id, bonus table id]; a table is counted
+among the tables of its version, as a guest indexes advert 0xDE (`0x00ea51d0`); the ids key
+nest_rewards.json (`0x01032570` reads them at vtable 0x10 and 0x12).
 """
 
 import argparse
@@ -82,13 +83,18 @@ def nest_rows(d):
         f = field(t, idx)
         return 0 if f is None else u32(f)
 
+    def val64(t, idx):
+        f = field(t, idx)
+        return 0 if f is None else struct.unpack_from("<Q", d, f)[0]
+
     count, rows = {}, {}
     for t in vec(u32(0), 0):
         version = val(t, 1)
         k = count.get(version, 0)
         count[version] = k + 1
         for slot, e in enumerate(vec(t, 2)):
-            rows.setdefault(str(version), []).append([k, slot, val(e, 1), val(e, 2), val(e, 5)])
+            rows.setdefault(str(version), []).append([k, slot, val(e, 1), val(e, 2), val(e, 5),
+                                                      str(val64(e, 6)), str(val64(e, 7))])
     return rows
 
 

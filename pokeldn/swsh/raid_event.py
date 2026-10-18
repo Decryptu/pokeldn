@@ -325,6 +325,7 @@ def boss_pk8(boss, rand=None, template=None):
         encryption_constant=rand.getrandbits(32), held_item=0, stats=stats))
     out[OFF_ABILITY_NUMBER] = (out[OFF_ABILITY_NUMBER] & ~0x07) | 1 << slot
     out[raid.PK8_GIGANTAMAX] = (out[raid.PK8_GIGANTAMAX] & ~0x10) | (0x10 if boss.gigantamax else 0)
+    out[raid.DYNAMAX_KIND] = 2 if boss.gigantamax else 1
     out[OFF_DYNAMAX_LEVEL] = boss.dynamax_level
     struct.pack_into("<H", out, OFF_HP_CURRENT, stats[0])
     return gen8.encrypt(bytes(out))

@@ -164,6 +164,21 @@ A guest drops a station whose device id and account uid (`0x1F` to `0x3E`) both 
 
 ### The boss record
 
+A guest checks BossPokemon and Rewards before it sends its started BattleReady (`0x01030d14`, state
+10); a failed check leaves with 2-ALZAA-0016.
+
+| check | code | passes when |
+|---|---|---|
+| the boss | `0x01032270` | species, form and party `+0x156` (1 normal, 2 Gigantamax) equal the entry the den record names: kind 0 the base table `0xDE`, slot `0xE0` of the advertised version; kinds 1 to 3 the guest's own saved event encounters, slot `0xE0`; kind 4 its saved crystal encounters |
+| the rewards | `0x01032570` | every pair with an item and a count is a bonus row of the slot's bonus table at exactly its count for the advertised rank, or an item of its drop table with a chance at that rank (count free) |
+
+Level, moves, IVs, PID, ability, shininess and trainer fields are not compared. A zero den record
+names kind 0, table 0, slot 0 (Tyrogue). Base dens hold no legendary or mythical Pokemon, so a hosted
+boss is one of the species, forms and Gigantamax states `nest_slots.json` lists; `raid.den_advert`
+switches the advertised version when only the other one holds the boss, and an event boss is shown as
+the base den slot holding its species, form and Gigantamax state. `raid.den_rewards` and
+`raid.fitting_rewards` keep the rewards to what the slot allows.
+
 A retail Sword guest left with 2-ALZAA-0016 on BossPokemon when the boss was a traded record (a
 trainer, version, met data and ball), when its party Dynamax type (`+0x156`) was 0, and when the
 advertisement's den record was zero (a boss no base den holds: Mew on an accepted record, an event's

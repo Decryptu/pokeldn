@@ -102,11 +102,51 @@ DEN_ADVERT = Path(__file__).with_name("data") / "raid_advert.bin"
 DEN_SNAPSHOT = Path(__file__).with_name("data") / "raid_snapshot.bin"
 
 
-def den_slot(version, species, form, gigantamax):
-    """-> (table, slot) of a den encounter of `version` (1 Sword, 2 Shield) with this Pokemon, or None."""
+NEST_REWARDS = Path(__file__).with_name("data") / "nest_rewards.json"
+DYNAMAX_KIND = gen8.OFF_DYNAMAX_TYPE   # 1 normal, 2 Gigantamax: what the guest matches (0x011226b0)
+
+
+def den_entry(version, species, form, gigantamax):
+    """-> the base den slot row [table, slot, species, form, gigantamax, drop id, bonus id] of `version`
+    (1 Sword, 2 Shield) holding this Pokemon, or None."""
     slots = json.loads(NEST_SLOTS.read_text())["slots"][str(version)]
-    return next(((t, s) for t, s, sp, f, g in slots
-                 if (sp, f, bool(g)) == (species, form, bool(gigantamax))), None)
+    return next((row for row in slots
+                 if (row[2], row[3], bool(row[4])) == (species, form, bool(gigantamax))), None)
+
+
+def den_slot(version, species, form, gigantamax):
+    """-> (table, slot) of a den encounter of `version` with this Pokemon, or None."""
+    row = den_entry(version, species, form, gigantamax)
+    return None if row is None else (row[0], row[1])
+
+
+def den_of(advert):
+    """-> (den slot row, rank) an advertisement names, or (None, rank) for a zero den record."""
+    version = 2 if advert[ADVERT_VERSION] & 2 else 1
+    rank = advert[ADVERT_RANK] >> 4
+    table, slot = struct.unpack_from("<HH", advert, ADVERT_TABLE)
+    if advert[ADVERT_DEN:ADVERT_DEN + 8] == bytes(8):
+        return None, rank
+    slots = json.loads(NEST_SLOTS.read_text())["slots"][str(version)]
+    return next((row for row in slots if row[:2] == [table, slot]), None), rank
+
+
+def den_rewards(row, rank):
+    """-> the reward pairs a guest accepts for this den slot at `rank` (0x01032570): each bonus row at
+    exactly its count for the rank, and every drop with a chance at the rank, one each."""
+    tables = json.loads(NEST_REWARDS.read_text())
+    bonus = [(item, values[rank]) for item, *values in tables["bonus"].get(row[6], []) if values[rank]]
+    drops = [(item, 1) for item, *values in tables["drop"].get(row[5], []) if values[rank]]
+    return bonus + drops
+
+
+def fitting_rewards(row, rank, wanted):
+    """-> (kept, refused): the wanted pairs a guest accepts for this den slot, and the others."""
+    tables = json.loads(NEST_REWARDS.read_text())
+    bonus = {(item, values[rank]) for item, *values in tables["bonus"].get(row[6], []) if values[rank]}
+    drops = {item for item, *values in tables["drop"].get(row[5], []) if values[rank]}
+    kept = [(item, n) for item, n in wanted if (item, n) in bonus or item in drops]
+    return kept, [pair for pair in wanted if pair not in kept]
 
 
 def _boss_record(old, species, form, gigantamax, ec):
@@ -124,6 +164,11 @@ def den_advert(app_data, boss_pk8, rank=None):
     gmax = bool(plain[PK8_GIGANTAMAX] & 0x10)
     ec = bytes(boss_pk8[:4])
     version = 2 if out[ADVERT_VERSION] & 2 else 1
+    # A guest searches the version the advertisement names: the other one where only it holds the boss.
+    if den_slot(version, boss["species"], boss["form"], gmax) is None and den_slot(
+            3 - version, boss["species"], boss["form"], gmax) is not None:
+        version = 3 - version
+        out[ADVERT_VERSION] = (out[ADVERT_VERSION] & ~2) | (2 if version == 2 else 0)
     rank = rank_for_level(boss["level"]) if rank is None else rank
     out[ADVERT_KIND] = 0x11 if rank == 0 else 0x13 + 2 * (rank - 1)
     out[ADVERT_RANK] = (out[ADVERT_RANK] & 0x0F) | rank << 4
@@ -157,8 +202,9 @@ def boss_record(pk8, template=None):
     fields["encryption_constant"] = struct.unpack_from("<I", plain, 0)[0]
     out = bytearray(gen8.write(wild, **fields))
     out[PK8_GIGANTAMAX] = (out[PK8_GIGANTAMAX] & ~0x10) | (plain[PK8_GIGANTAMAX] & 0x10)
+    out[DYNAMAX_KIND] = 2 if plain[PK8_GIGANTAMAX] & 0x10 else 1
     if len(plain) == gen8.SIZE_PARTY:
-        # The party stats, but the den boss's Dynamax type (1 in the retail and emulated bosses).
+        # The party stats, but not the Dynamax kind (+0x156), which a guest matches with the den slot.
         out[gen8.SIZE_STORED:gen8.OFF_DYNAMAX_TYPE] = plain[gen8.SIZE_STORED:gen8.OFF_DYNAMAX_TYPE]
     return gen8.encrypt(bytes(out))
 

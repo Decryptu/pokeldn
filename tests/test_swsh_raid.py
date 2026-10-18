@@ -127,3 +127,16 @@ def test_boss_record_keeps_the_den_bosss_dynamax_type():
     built = gen8.decrypt(raid.boss_record(pokemon.encrypt(bytes(traded))))
     assert built[gen8.OFF_DYNAMAX_TYPE:] == den_boss[gen8.OFF_DYNAMAX_TYPE:] == b"\x01\x00"
     assert gen8.read(built)["species"] == 831
+
+
+def test_an_emulated_den_hosts_rewards_fit_its_den_slot():
+    """The Rewards an emulated Shield den host sent all pass the guest's check against the den slot
+    and rank its advertisement names (0x01032570), and a pair from outside the tables does not."""
+    import struct
+    ads = json.loads((Path(__file__).parent / "data" / "swsh_raid_adverts.json").read_text())
+    row, rank = raid.den_of(bytes.fromhex(ads["advert_pidove"]))
+    assert row[:4] == [38, 2, 519, 0] and rank == 0
+    sent = raid.parse(bytes.fromhex(DATA["host_start"][2]))[1]
+    pairs = [p for p in struct.iter_unpack("<II", sent) if p[0]]
+    kept, refused = raid.fitting_rewards(row, rank, pairs + [(1, 1)])
+    assert kept == pairs and refused == [(1, 1)]
