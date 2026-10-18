@@ -2,6 +2,10 @@
 (pokeldn.pokemon.Service.gift_events), searched by anything a tile shows. Up to the field's queue limit are
 picked in order, each made fresh and legal for the app's trainer, then offered by the trade host
 (docs/gift_simulated.md)."""
+
+from gui.localization import event_text
+from gui.localization import summary_text
+from gui.localization import SERVICE, error_message, translate
 from pokeldn.app.i18n import t as tr
 
 import threading
@@ -19,7 +23,8 @@ PAGE = 24   # tiles shown at once, and how many Show more adds: each tile loads 
 BOX = 440   # the height of the list's scroll box, for more tiles than FIT
 FIT = 10    # tiles that show whole without one: Legends Z-A has 8 gifts
 LANGUAGES = {1: tr('event_gifts.japanese_be4ee9', 'Japanese'), 2: tr('event_gifts.english_ba118b', 'English'), 3: tr('event_gifts.french_745819', 'French'), 4: tr('event_gifts.italian_fe1d9c', 'Italian'), 5: tr('event_gifts.german_a659b6', 'German'), 7: tr('event_gifts.spanish_341105', 'Spanish'), 8: tr('event_gifts.korean_04656c', 'Korean'),
-             9: tr('event_gifts.chinese_8a9779', 'Chinese'), 10: tr('event_gifts.chinese_8a9779', 'Chinese')}
+             9: tr("event_gifts.simplified_chinese", "Simplified Chinese"),
+             10: tr("event_gifts.traditional_chinese", "Traditional Chinese")}
 UNMADE = tr('event_gifts.illegal_pkhex_makes_no_legal_copy_3e6796', 'Illegal: PKHeX makes no legal copy')
 
 
@@ -31,13 +36,14 @@ def day(iso: str) -> str:
 
 
 def species(event: dict) -> str:
-    return f"{event['species']}-{event['form']}" if event.get("form") else event["species"]
+    return translate(f"{event['species']}-{event['form']}" if event.get("form") else event["species"])
 
 
 def facts(event: dict) -> str:
     """The Pokemon: species, level, Tera type, shininess and held item."""
-    parts = [species(event), tr('event_gifts.lv_05ae97', 'Lv {value0}', value0=event['level']), tr('event_gifts.tera_163a27', 'Tera {value0}', value0=event['tera']) if event.get("tera") else "",
-             {"always": "shiny", "random": tr('event_gifts.may_be_shiny_5d8e28', 'may be shiny')}.get(event["shiny"], ""), event.get("held_item", "")]
+    parts = [species(event), tr('event_gifts.lv_05ae97', 'Lv {value0}', value0=event['level']),
+             tr('event_gifts.tera_163a27', 'Tera {value0}', value0=translate(event['tera'])) if event.get("tera") else "",
+             {"always": tr("presentation.shiny", "shiny"), "random": tr('event_gifts.may_be_shiny_5d8e28', 'may be shiny')}.get(event["shiny"], ""), translate(event.get("held_item", ""))]
     return " · ".join(p for p in parts if p)
 
 
@@ -53,16 +59,16 @@ def problem(event: dict) -> str:
     language received the card (pokeldn.pokemon.Service.gift_event)."""
     if event.get("legal", True):
         return ""
-    return tr('event_gifts.illegal_058818', 'Illegal: {value0}', value0=event['refused']) if event.get("refused") else UNMADE
+    return tr('event_gifts.illegal_058818', 'Illegal: {value0}', value0=translate(event['refused'])) if event.get("refused") else UNMADE
 
 
 def warning(event: dict) -> str:
     """What the HOME tracker setting gave a gift HOME gave (docs/gui.md, The HOME tracker setting), or ""."""
-    return builder.HOME_TRACKER_WARNINGS.get(event.get("home_tracker", ""), "")
+    return translate(builder.HOME_TRACKER_WARNINGS.get(event.get("home_tracker", ""), ""))
 
 
 def haystack(event: dict) -> str:
-    return " ".join([event["title"], facts(event), origin(event), event.get("ball", ""), *event.get("moves", ()),
+    return " ".join([event["title"], facts(event), origin(event), translate(event.get("ball", "")), *(translate(m) for m in event.get("moves", ())),
                      str(event.get("card_id", "")), problem(event), warning(event)]).casefold()
 
 
@@ -96,9 +102,9 @@ class EventGiftPicker:
 
     def _load(self) -> None:
         try:
-            events, error = builder.SERVICE.gift_events(self.game, self.app.settings.trainer(self.game)), ""
+            events, error = SERVICE.gift_events(self.game, self.app.settings.trainer(self.game)), ""
         except Exception as exc:
-            events, error = [], str(exc) or type(exc).__name__
+            events, error = [], error_message(exc) or type(exc).__name__
 
         def show():
             if error:
@@ -189,18 +195,18 @@ class EventGiftPicker:
 
         def work():
             try:
-                info = builder.SERVICE.gift_event(self.game, key, trainer)
+                info = SERVICE.gift_event(self.game, key, trainer)
                 if info["refused"]:
-                    raise ValueError(tr('event_gifts.your_trainer_from_settings_cannot_receive_this_gift_91fa4c', 'Your trainer from Settings cannot receive this gift: {value0}.', value0=info['refused']))
+                    raise ValueError(tr('event_gifts.your_trainer_from_settings_cannot_receive_this_gift_91fa4c', 'Your trainer from Settings cannot receive this gift: {value0}.', value0=translate(info['refused'])))
                 value, error = {"file": info["file"], "event": key, "title": info["title"],
                                 "species": info["species_id"], "shiny": info["shiny"],
                                 "form_id": info.get("form_id", 0),
                                 "summary": builder.summary(info), "legal": info["legal"],
                                 "home_tracker": info.get("home_tracker", ""),
-                                "encounter": info["encounter"], "moves": info["moves"], "ot": info["ot"],
+                                "encounter": info.get("canonical", info)["encounter"], "moves": info.get("canonical", info)["moves"], "ot": info["ot"],
                                 "your_ot": info["your_ot"], "handled": info.get("handled", False)}, ""
             except Exception as exc:
-                value, error = None, str(exc) or type(exc).__name__
+                value, error = None, error_message(exc) or type(exc).__name__
 
             def done():
                 self.busy = False
@@ -238,14 +244,14 @@ class EventGiftPicker:
         title = value.get("title", "")
         if number is not None:
             title = tr('event_gifts._04903a', '{value0}. {value1}', value0=number, value1=title)
-        detail = " · ".join(p for p in (", ".join(value.get("moves", ())), f"OT {value.get('ot', '')}") if p)
+        detail = " · ".join(p for p in (tr("presentation.list_separator", ", ").join(translate(move) for move in value.get("moves", ())), f"OT {value.get('ot', '')}") if p)
         lines = [ft.Row([t.text(title, 13, weight=ft.FontWeight.W_600, expand=True),
                          t.badge(tr('event_gifts.legal_4787ea', 'Legal') if legal else tr('event_gifts.not_legal_c66729', 'Not legal'), t.GREEN if legal else t.RED,
                                  "check" if legal else "warning-diamond")], spacing=8),
-                 t.text(value.get("summary", ""), 12, t.SOFT),
+                 t.text(summary_text(value.get("summary", "")), 12, t.SOFT),
                  t.text(detail, 12, t.MUTED)]
         if warned := builder.HOME_TRACKER_WARNINGS.get(value.get("home_tracker", "")):
-            lines.append(ft.Row([t.badge(warned, t.AMBER, "warning-diamond")]))
+            lines.append(ft.Row([t.badge(translate(warned), t.AMBER, "warning-diamond")]))
         trailing = ([t.icon_button("close", lambda e, n=number - 1: self._remove(n), tr('event_gifts.remove_this_gift_17ade5', 'Remove this gift'))]
                     if number is not None else [])
         return ft.Container(ft.Row([

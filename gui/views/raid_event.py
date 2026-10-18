@@ -1,6 +1,8 @@
 """The Tera Raid host's Raid event card: the app's copy of the EventsGallery's raid events
 (pokeldn.app.events_gallery), downloaded, checked and updated; the event the raid comes from,
 searchable by its name or its bosses'; and the override for a boss a save catches once."""
+
+from gui.localization import error_message, raid_label, translate
 from pokeldn.app.i18n import t as tr
 
 import threading
@@ -40,12 +42,12 @@ class RaidEventPicker:
         # gallery to come back; the run refuses it (pokeldn.app.command.code_error).
         missing = bool(key) and not gallery.holds(key)
         if missing:
-            summary, tip = (tr('raid_event.missing_0d71ec', 'Missing: {value0}', value0=gallery.title(key)),
+            summary, tip = (tr('raid_event.missing_0d71ec', 'Missing: {value0}', value0=raid_label(gallery.title(key))),
                             tr('raid_event.not_in_the_event_gallery_download_or_update_it_or_choos_8b8767', 'Not in the event gallery: download or update it, or choose another event'))
         elif key:
-            summary, tip = gallery.title(key), tr('raid_event.fold_to_set_the_event_aside_and_host_a_standard_raid_c8854c', 'Fold to set the event aside and host a standard raid')
+            summary, tip = raid_label(gallery.title(key)), tr('raid_event.fold_to_set_the_event_aside_and_host_a_standard_raid_c8854c', 'Fold to set the event aside and host a standard raid')
         elif folded:
-            summary, tip = tr('raid_event.off_d2834c', 'Off: {value0}', value0=gallery.title(folded)), tr('raid_event.unfold_to_raid_the_event_again_2db3e3', 'Unfold to raid the event again')
+            summary, tip = tr('raid_event.off_d2834c', 'Off: {value0}', value0=raid_label(gallery.title(folded))), tr('raid_event.unfold_to_raid_the_event_again_2db3e3', 'Unfold to raid the event again')
         else:
             summary, tip = tr('raid_event.none_a_standard_raid_23a8c4', 'None, a standard raid'), tr('raid_event.show_or_hide_the_event_raids_19f0b5', 'Show or hide the event raids')
         self.summary = t.text(summary, 12, t.RED if missing else t.BLUE if key else t.MUTED, max_lines=1,
@@ -124,16 +126,17 @@ class RaidEventPicker:
 
     def _fill(self, events, error: str) -> None:
         if error:
-            self.dropdown.hint_text = tr('raid_event.the_events_could_not_be_read_523a5c', 'The events could not be read: {value0}', value0=error)
+            self.dropdown.hint_text = tr('raid_event.the_events_could_not_be_read_523a5c', 'The events could not be read: {value0}', value0=error_message(error))
             self.dropdown.update()
             return
         self.events = events
         newest = self.view.values.get(ORDER, "newest") != "oldest"
         options = [ft.DropdownOption(key=NONE, text=tr('raid_event.no_event_a_standard_raid_562e51', 'No event, a standard raid'))]
         for entry in (reversed(events) if newest else events):
-            species = ", ".join(entry.species)
-            options.append(ft.DropdownOption(key=entry.key, text=tr('raid_event._75414c', '{value0} · {value1}', value0=entry.title, value1=species), content=ft.Column([
-                t.text(entry.title, 13, max_lines=1, overflow=ft.TextOverflow.ELLIPSIS),
+            species = tr("presentation.list_separator", ", ").join(translate(name) for name in entry.species)
+            title = raid_label(entry.title)
+            options.append(ft.DropdownOption(key=entry.key, text=tr('raid_event._75414c', '{value0} · {value1}', value0=title, value1=species), content=ft.Column([
+                t.text(title, 13, max_lines=1, overflow=ft.TextOverflow.ELLIPSIS),
                 t.text(species, 11, t.MUTED, max_lines=1, overflow=ft.TextOverflow.ELLIPSIS),
             ], spacing=0, tight=True)))
         key = self.view.values.get(self.field.key) or ""
@@ -176,14 +179,14 @@ class RaidEventPicker:
     def _show_catch(self) -> None:
         """The override under the event, for an event whose bosses a save catches once."""
         event = self.view.raid_event()
-        names = raid_event.catch_once(event) if event is not None else []
+        names = [translate(name) for name in raid_event.catch_once(event)] if event is not None else []
         self.catch.visible = bool(names)
         if not names:
             return
         field = next(f for f in self.view.tool.fields if f.key == CATCH)
         box = Check(tr('raid_event.let_it_be_caught_again_15aa86', 'Let it be caught again'), value=bool(self.view.values.get(CATCH)), size=13,
                     on_change=lambda on: self.view.set_value(field, on, rebuild=True))
-        who = " and ".join([", ".join(names[:-1]), names[-1]] if len(names) > 1 else names)
+        who = tr("presentation.list_separator", ", ").join(names)
         self.catch.controls = [box.control, t.text(
             tr('raid_event.a_save_can_catch_only_once_checked_a_save_that_already__1b48ec', 'A save can catch {value0} only once. Checked, a save that already caught it can catch it again, and the Pokemon caught is as legal as the first.', value0=who), 12, t.MUTED)]
 
@@ -212,8 +215,8 @@ class RaidEventPicker:
             mb = 1 << 20
 
             def show():
-                self.status.value = (tr('raid_event.of_mb_b97c07', '{value0} {value1:.0f} of {value2:.0f} MB', value0=what, value1=done / mb, value2=total / mb) if total else
-                                     tr('raid_event.mb_ad7a1d', '{value0} {value1:.0f} MB', value0=what, value1=done / mb) if done else what)
+                self.status.value = (tr('raid_event.of_mb_b97c07', '{value0} {value1:.0f} of {value2:.0f} MB', value0=translate(what), value1=done / mb, value2=total / mb) if total else
+                                     tr('raid_event.mb_ad7a1d', '{value0} {value1:.0f} MB', value0=translate(what), value1=done / mb) if done else translate(what))
                 self.bar.value = done / total if total else None
                 self.status.update()
                 self.bar.update()
@@ -254,6 +257,7 @@ class RaidEventPicker:
 
     def _failed(self, error: str, retry) -> None:
         self.busy.visible = self.bar.visible = False
-        self.status.value, self.status.color = f"{error[:1].upper()}{error[1:]}", t.RED
+        message = error_message(error)
+        self.status.value, self.status.color = f"{message[:1].upper()}{message[1:]}", t.RED
         self.actions.controls = [t.secondary_button(tr('raid_event.try_again_d8b839', 'Try again'), lambda _e: retry())]
         self.control.update()

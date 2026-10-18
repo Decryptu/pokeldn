@@ -100,3 +100,21 @@ def test_symlinked_documents_cannot_escape_pack(pack, tmp_path):
     except OSError:
         pytest.skip("Creating symlinks is unavailable")
     assert i18n.document("outside.md", "english.md") == Path("english.md")
+
+
+def test_display_service_invalidates_names_when_selected_pack_changes(pack, monkeypatch):
+    from gui.localization import DisplayService
+    from pokeldn import pokemon
+    asked = []
+
+    def reply(self, request):
+        asked.append(self.display_language)
+        return {"names": [{"id": 25, "name": self.display_language}]}
+
+    monkeypatch.setattr(pokemon.Service, "_ask", reply)
+    service = DisplayService()
+    assert service.names("sv", "species") == [{"id": 25, "name": "fr"}]
+    assert service.names("sv", "species") == [{"id": 25, "name": "fr"}]
+    i18n.select()
+    assert service.names("sv", "species") == [{"id": 25, "name": "en"}]
+    assert asked == ["fr", "en"]

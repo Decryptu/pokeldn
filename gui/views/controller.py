@@ -1,6 +1,7 @@
 """The controller: a Switch's buttons pressed from this computer through the controller board, and
 the macros the board plays on its own clock [pokeldn.pad, docs/gui.md, The controller]."""
 from pokeldn.app.i18n import t as tr
+from gui.localization import error_message
 import copy
 import os
 import sys
@@ -72,7 +73,7 @@ def describe(step: dict, macro: m.Macro) -> str:
     keys = [keys] if isinstance(keys, str) else list(keys)
     for side in ("left", "right"):
         if side in step:
-            keys.append(tr('controller.stick_e120fb', '{value0} stick {value1}', value0=side, value1=direction_of(step[side])[1].lower()))
+            keys.append(tr('controller.stick_e120fb', '{value0} stick {value1}', value0=tr('controller.stick_side_left', 'Left') if side == 'left' else tr('controller.stick_side_right', 'Right'), value1=direction_of(step[side])[1].lower()))
     return tr('controller.ms_then_ms_a88cbd', '{value0}  ·  {value1} ms, then {value2} ms', value0=' + '.join(keys) or tr('controller.nothing_67e1bc', 'Nothing'), value1=step.get('ms', macro.press_ms), value2=step.get('after', macro.gap_ms))
 
 
@@ -167,7 +168,7 @@ class ControllerView:
         except (OSError, service.ServiceError) as error:
             self._drop()
             self.state = tr('controller.not_connected_0303e1', 'Not connected')
-            self.error = self.error or str(error)
+            self.error = self.error or error_message(error)
         self.connecting = False
         self.app.ui(self.render_status)
 
@@ -214,7 +215,7 @@ class ControllerView:
         try:
             return self.client.call(op, **fields)
         except (OSError, service.ServiceError) as error:
-            self.error = str(error)
+            self.error = error_message(error)
             self.app.ui(self.render_status)
             return None
 
@@ -306,7 +307,7 @@ class ControllerView:
             t.text(entry.name, 13, t.TEXT if active else t.SOFT, weight=ft.FontWeight.W_600, expand=True,
                    max_lines=1, overflow=ft.TextOverflow.ELLIPSIS),
         ], spacing=10), padding=ft.Padding(10, 8, 10, 8), border_radius=12,
-            tooltip=entry.error or None, bgcolor=t.SELECTED if active else None,
+            tooltip=error_message(entry.error) or None, bgcolor=t.SELECTED if active else None,
             on_click=lambda e, p=entry.path: self.open(p))
 
     def open(self, path) -> None:
@@ -314,7 +315,7 @@ class ControllerView:
             self.macro, self.path = macros.load(path), path
             self._say("")
         except (OSError, m.MacroError) as error:
-            self._say(tr('controller.this_file_does_not_load_1d6a84', 'This file does not load: {value0}', value0=error), t.RED)
+            self._say(tr('controller.this_file_does_not_load_1d6a84', 'This file does not load: {value0}', value0=error_message(error)), t.RED)
             return
         self.recording = False
         self.refresh_list()
@@ -342,7 +343,7 @@ class ControllerView:
                 try:
                     last = macros.import_file(f.path)
                 except (OSError, UnicodeDecodeError, m.MacroError) as error:
-                    self._say(tr('controller._6a7768', '{value0}: {value1}', value0=os.path.basename(f.path), value1=error), t.RED)
+                    self._say(tr('controller._6a7768', '{value0}: {value1}', value0=os.path.basename(f.path), value1=error_message(error)), t.RED)
         if last:
             self.open(last)
 
@@ -361,7 +362,7 @@ class ControllerView:
                 out.write(self.macro.dumps())
             self._say(tr('controller.exported_to_58eb1e', 'Exported to {value0}', value0=path))
         except OSError as error:
-            self._say(str(error), t.RED)
+            self._say(error_message(error), t.RED)
 
     def _delete(self) -> None:
         def done(e):
@@ -387,7 +388,7 @@ class ControllerView:
         try:
             m.compile_macro(self.macro)
         except m.MacroError as error:
-            self._say(str(error), t.RED)
+            self._say(error_message(error), t.RED)
             return
         self.recording = False
 
@@ -567,7 +568,8 @@ class ControllerView:
             self.editor.controls = [t.text(tr('controller.pick_a_macro_on_the_left_or_make_a_new_one_with_3cf0ac', 'Pick a macro on the left, or make a new one with +.'), 13, t.MUTED)]
         else:
             self.editor.controls = [
-                self._text_field(tr('controller.name_dcd1d5', 'Name'), mac.name, lambda v: setattr(mac, "name", v or "Macro")),
+                self._text_field(tr('controller.name_dcd1d5', 'Name'), mac.name,
+                                 lambda v: setattr(mac, "name", v or tr('controller.macro_cdf16e', 'Macro')), rename=True),
                 self._text_field(tr('controller.description_526e00', 'Description'), mac.description, lambda v: setattr(mac, "description", v),
                                  multiline=True),
                 ft.Row([self._number(tr('controller.press_ms_1f75f4', 'Press (ms)'), mac.press_ms, lambda v: setattr(mac, "press_ms", max(1, v)),
@@ -590,11 +592,11 @@ class ControllerView:
     def render_footer(self) -> None:
         self.footer.controls = [self._summary(), self._actions(), self.note] if self.macro else [self.note]
 
-    def _text_field(self, label, value, setter, multiline=False) -> ft.Control:
+    def _text_field(self, label, value, setter, multiline=False, *, rename=False) -> ft.Control:
         def changed(e):
             setter(e.control.value)
             self.save()
-            if label == "Name":
+            if rename:
                 self.refresh_list()
                 self.list.update()
         return t.labeled_control(label, t.field(value=value, multiline=multiline, min_lines=2 if multiline else None,
@@ -741,7 +743,7 @@ class ControllerView:
             try:
                 m.check_steps([new])
             except m.MacroError as error:
-                error_text.value = str(error)
+                error_text.value = error_message(error)
                 error_text.update()
                 return
             steps[n] = new
@@ -759,7 +761,7 @@ class ControllerView:
         try:
             p = m.compile_macro(self.macro)
         except m.MacroError as error:
-            return t.text(str(error), 12, t.AMBER)
+            return t.text(error_message(error), 12, t.AMBER)
         loops = tr('controller.until_stopped_ca2053', 'until stopped') if p.loops == 0 else f"x{p.loops}"
         return t.text(tr('controller.of_board_steps_run_once_s_loop_s_3d534d', '{value0} of {value1} board steps  ·  run once {value2:g} s  ·  loop {value3:g} s {value4}', value0=len(p.entries), value1=m.MAX_ENTRIES, value2=p.setup_ms / 1000, value3=p.loop_ms / 1000, value4=loops), 12, t.MUTED)
 

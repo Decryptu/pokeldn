@@ -2,6 +2,9 @@
 searches seeds by what the boss is and the rewards it gives (pokeldn.sv.raid_search). An event's
 context (its `event`, `group` and `den`) draws from the event and narrows the finder to what the
 event spawns."""
+
+from gui.localization import raid_label
+from gui.localization import SERVICE, error_message, translate
 from pokeldn.app.i18n import t as tr
 
 import random
@@ -18,10 +21,14 @@ from gui.views.sprites import MINI, SIZE, Sprite
 from gui.views.widgets import Check, PixelActivity
 from pokeldn import pokemon as builder
 from pokeldn.sv import raid_encounter, raid_event, raid_search
-from pokeldn.sv.raid_encounter import NATURES, TERA_TYPES
+from pokeldn.sv.raid_encounter import NATURES as NATURES_EN, TERA_TYPES as TERA_TYPES_EN
+NATURES = tuple(translate(name) for name in NATURES_EN)
+TERA_TYPES = tuple(translate(name) for name in TERA_TYPES_EN)
+VERSIONS = {key: translate(name) for key, name in (("scarlet", "Scarlet"), ("violet", "Violet"))}
+REGIONS = {key: translate(name) for key, name in (("paldea", "Paldea"), ("kitakami", "Kitakami"), ("blueberry", "Blueberry Academy"))}
 GENDERS = (tr('raid_seed.male_03f8c1', 'Male'), tr('raid_seed.female_e8cca8', 'Female'), tr('raid_seed.genderless_300b01', 'Genderless'))
 STATS = (tr('raid_seed.hp_9449a7', 'HP'), tr('raid_seed.atk_f231c4', 'Atk'), tr('raid_seed.def_fcc0fc', 'Def'), tr('raid_seed.spe_80f7bc', 'Spe'), tr('raid_seed.spa_099d09', 'SpA'), tr('raid_seed.spd_08fc8c', 'SpD'))
-SIZE_MARKS = {0: tr('raid_seed.mini_3e5d19', 'Mini'), 0xFF: tr('raid_seed.jumbo_db6ca7', 'Jumbo')}      # a boss's scale -> the size mark it is eligible for
+SIZE_MARKS = {0: "Mini", 0xFF: "Jumbo"}      # a boss's scale -> the size mark it is eligible for
 PROGRESS = (("beginning", tr('raid_seed.beginning_9e6b41', 'Beginning')), ("tera", tr('raid_seed.tera_raids_unlocked_07d442', 'Tera Raids unlocked')), ("3star", tr('raid_seed.3_star_raids_e72615', '3-star raids')),
             ("4star", tr('raid_seed.4_star_raids_d82c77', '4-star raids')), ("5star", tr('raid_seed.5_star_raids_d693f5', '5-star raids')), ("6star", tr('raid_seed.6_star_raids_e7e30a', '6-star raids')))
 ALL_SEEDS = 1 << 32
@@ -114,7 +121,7 @@ def reward_chips(names: dict[int, str] | None, rewards) -> ft.Control:
     for item, quantity in rewards:
         totals[item] = totals.get(item, 0) + quantity
     return ft.Row([ft.Container(ft.Row([
-        t.text(names.get(item, f"Item {item}"), 12, t.SOFT),
+        t.text(names.get(item, tr("presentation.item_number", "Item {number}", number=item)), 12, t.SOFT),
         t.text(f"×{quantity}", 12, t.BLUE, weight=ft.FontWeight.W_700)], spacing=6, tight=True),
         padding=ft.Padding(10, 4, 10, 4), border_radius=999, bgcolor=ft.Colors.with_opacity(0.06, "#FFFFFF"))
         for item, quantity in totals.items()], spacing=6, run_spacing=6, wrap=True)
@@ -128,9 +135,12 @@ ACTIONS_WIDTH = 520
 
 
 def action_label(action, boss: str, moves: dict[int, str]) -> str:
-    return {"shield": tr('raid_seed.shield_activation_2f21f1', 'Shield activation'), "boss_reset": tr('raid_seed.stats_status_reset_62fa08', '{value0} stats & status reset', value0=boss),
-            "player_reset": tr('raid_seed.players_stats_status_reset_bd1ac1', "Players' stats & status reset"), "drain": tr('raid_seed.tera_orb_charge_drained_c89279', 'Tera Orb charge drained'),
-            "move": tr('raid_seed.uses_fbac7f', '{value0} uses {value1}', value0=boss, value1=moves.get(action.move, f'Move {action.move}'))}[action.kind]
+    return {"shield": tr('raid_seed.shield_activation_2f21f1', 'Shield activation'),
+            "boss_reset": tr('raid_seed.stats_status_reset_62fa08', '{value0} stats & status reset', value0=boss),
+            "player_reset": tr('raid_seed.players_stats_status_reset_bd1ac1', "Players' stats & status reset"),
+            "drain": tr('raid_seed.tera_orb_charge_drained_c89279', 'Tera Orb charge drained'),
+            "move": tr('raid_seed.uses_fbac7f', '{value0} uses {value1}', value0=boss,
+                       value1=moves.get(action.move, tr("presentation.move_number", "Move {number}", number=action.move)))}[action.kind]
 
 
 def action_rows(moves: dict[int, str] | None, boss: str, actions) -> ft.Control:
@@ -157,13 +167,13 @@ def action_rows(moves: dict[int, str] | None, boss: str, actions) -> ft.Control:
 def boss_card(app, seed, stars, boss, context, *, compact=False, rewards=None, actions=None, on_use=None):
     """The boss a seed gives: sprite, stars, level, Tera type, IVs over stats, nature, context."""
     shiny = (boss["trainer_id"] ^ boss["secret_id"] ^ (boss["pid"] >> 16) ^ (boss["pid"] & 0xFFFF)) < 16
-    name = raid_encounter.tables()["species_names"][str(boss["species"])]
+    name = translate(raid_encounter.tables()["species_names"][str(boss["species"])])
     title = [t.text(name, 14 if compact else 17, weight=ft.FontWeight.W_700)]
     if shiny:
         title.append(t.tinted(t.pixel_icon("sparkles", color="#FFFFFF", tooltip=tr('raid_seed.shiny_039a0a', 'Shiny')), crystal_colors(context)))
     mark = SIZE_MARKS.get(boss["scale"])
     if mark:
-        title.append(t.tinted(t.pixel_icon(f"{mark.lower()}-mark", color="#FFFFFF", tooltip=tr('raid_seed.mark_ba9e99', '{value0} mark', value0=mark)),
+        title.append(t.tinted(t.pixel_icon(f"{mark.lower()}-mark", color="#FFFFFF", tooltip=translate(f"{mark} mark")),
                               crystal_colors(context)))
     title.append(stars_row(stars, context))
     accent = t.RED if context["content"] in ("black", "might") else t.BLUE
@@ -173,10 +183,10 @@ def boss_card(app, seed, stars, boss, context, *, compact=False, rewards=None, a
         t.chip(NATURES[boss["nature"]]), t.chip(GENDERS[boss["gender"]]),
         # The compact card keeps to one row: its title's icons tell these.
         *([t.chip(tr('raid_seed.shiny_039a0a', 'Shiny'), "sparkles", accent)] if shiny and not compact else []),
-        *([t.chip(tr('raid_seed.mark_ba9e99', '{value0} mark', value0=mark), f"{mark.lower()}-mark", accent)] if mark and not compact else []),
+        *([t.chip(translate(f"{mark} mark"), f"{mark.lower()}-mark", accent)] if mark and not compact else []),
     ], spacing=6, run_spacing=6, wrap=True)
-    where = (tr('raid_seed._c00a83', '{value0} · {value1} · {value2} · {value3}', value0=context['version'].title(), value1=context['map_name'].title(), value2=dict(PROGRESS)[context['progress']], value3=CRYSTALS[context['content']])
-             + (tr('raid_seed._940234', ' · {value0}', value0=context['den']) if context.get("den") else ""))
+    where = (tr('raid_seed._c00a83', '{value0} · {value1} · {value2} · {value3}', value0=VERSIONS[context['version']], value1=REGIONS[context['map_name']], value2=dict(PROGRESS)[context['progress']], value3=CRYSTALS[context['content']])
+             + (tr('raid_seed._940234', ' · {value0}', value0=raid_label(context['den'])) if context.get("den") else ""))
     ivs = ft.Row([iv_tile(label, iv, stat, compact)
                   for label, iv, stat in zip(STATS, boss["ivs"], boss["stats"])], spacing=6, wrap=True)
     column = [ft.Row(title, spacing=8, vertical_alignment=ft.CrossAxisAlignment.CENTER), facts, ivs]
@@ -229,9 +239,9 @@ class RaidSeedPicker:
             try:
                 raid = raid_search.generate(seed, context)
             except ValueError as exc:       # an event this context cannot spawn
-                self.seed.error, raid = str(exc), None
+                self.seed.error, raid = error_message(exc), None
             if raid is not None:
-                boss = raid_encounter.tables()["species_names"][str(raid.species)]
+                boss = translate(raid_encounter.tables()["species_names"][str(raid.species)])
                 rewards = ft.Container(reward_chips(None, raid.rewards))
                 actions = ft.Container(action_rows(None, boss, raid.actions))
                 self.preview.content = boss_card(self.app, seed, raid.stars, raid.boss,
@@ -244,7 +254,7 @@ class RaidSeedPicker:
         """Names the rewards and the moves of the scripted actions."""
         def names(kind):
             try:
-                return {n["id"]: n["name"] for n in builder.SERVICE.names("sv", kind)}
+                return {n["id"]: n["name"] for n in SERVICE.names("sv", kind)}
             except Exception:
                 return {}
         rewards.content = reward_chips(names("bag"), raid.rewards)
@@ -302,7 +312,7 @@ class RaidSeedPicker:
             # Only what the event spawns: its games, Paldea, its dens and the progresses they draw at.
             games = raid_event.versions(event)
             version = choose(([("any", tr('raid_seed.any_game_44475d', 'Any game'))] if len(games) > 1 else [])
-                             + [(v, v.title()) for v in games], current["version"])
+                             + [(v, VERSIONS[v]) for v in games], current["version"])
             region = choose([("paldea", tr('raid_seed.paldea_14c1fa', 'Paldea'))], "paldea")
             region.disabled = True
             dens = raid_event.dens(event)
@@ -311,10 +321,10 @@ class RaidSeedPicker:
             story = choose([("any", tr('raid_seed.any_progress_92dec4', 'Any progress')),
                             *((key, label) for key, label in PROGRESS if key in stages)], current["progress"])
             crystal = choose(([("any", tr('raid_seed.any_den_110e59', 'Any den'))] if len(dens) > 1 else [])
-                             + [(str(d.group), d.label) for d in dens], str(current["group"]))
+                             + [(str(d.group), raid_label(d.label)) for d in dens], str(current["group"]))
             star_levels = sorted({s for d in dens for s in d.stars})
         species = NamePicker(self.app, "sv", "species", "", lambda _v: changed(),
-                             names=[{"id": s, "name": n} for s, n in raid_search.species(event)]).control
+                             names=[{"id": s, "name": translate(n)} for s, n in raid_search.species(event)]).control
         stars = choose([("any", tr('raid_seed.any_stars_c3a446', 'Any stars')), *((str(n), tr('raid_seed.stars_0dc50f', '{value0} stars', value0=n)) for n in star_levels)], "any")
         tera = choose([("any", tr('raid_seed.any_tera_type_b8f9f7', 'Any Tera type')), *((str(i), n) for i, n in enumerate(TERA_TYPES))], "any")
         nature = choose([("any", tr('raid_seed.any_nature_c9ac32', 'Any nature')), *((str(i), n) for i, n in enumerate(NATURES))], "any")
@@ -339,7 +349,7 @@ class RaidSeedPicker:
                 size_mark.update()
         if event is not None:
             size_marks(update=False)
-        rank = choose([(key, label) for key, (label, _, _) in raid_search.OBJECTIVES.items()], "overall")
+        rank = choose([(key, translate(label)) for key, (label, _, _) in raid_search.OBJECTIVES.items()], "overall")
         ivs = [t.field(hint=tr('raid_seed.any_d6a7cd', 'any'), mono=True, expand=True, text_align=ft.TextAlign.CENTER,
                        content_padding=ft.Padding(4, 8, 4, 8)) for _ in STATS]
         start = t.field(value=self.seed.value if seed_of(self.seed.value) is not None else "00000000",
@@ -416,7 +426,7 @@ class RaidSeedPicker:
                 if rank.value == "rewards" and not filters["rewards"]:
                     raise ValueError(tr('raid_seed.most_desired_rewards_ranks_by_the_wanted_rewards_open_r_a0bf6d', 'Most desired rewards ranks by the wanted rewards: open Rewards and add one.'))
             except ValueError as exc:
-                status.value, status.color = str(exc), t.RED
+                status.value, status.color = error_message(exc), t.RED
                 status.update()
                 return
             cancel.clear()
@@ -441,7 +451,7 @@ class RaidSeedPicker:
                                                stop_at_first=first_only.value, **filters)
                     self.app.ui(lambda: done(found, cancel.is_set()))
                 except Exception as exc:
-                    message = str(exc)
+                    message = error_message(exc)
 
                     def failed():
                         if not closed.is_set():

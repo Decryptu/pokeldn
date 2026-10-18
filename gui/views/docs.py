@@ -21,6 +21,18 @@ def document_path(file: str):
     return i18n.document(file, GUIDE if file == "guide" else os.path.join(DOCS, file))
 
 
+def document_body(file: str):
+    path = document_path(file)
+    with open(path, encoding="utf-8") as source:
+        _, body = split_front_matter(source.read())
+    original = GUIDE if file == "guide" else os.path.join(DOCS, file)
+    reference = None
+    if os.path.abspath(path) != os.path.abspath(original):
+        with open(original, encoding="utf-8") as source:
+            _, reference = split_front_matter(source.read())
+    return body, reference
+
+
 def page_title(page: "Page") -> str:
     with open(document_path(page.file), encoding="utf-8") as source:
         meta, _ = split_front_matter(source.read())
@@ -81,9 +93,8 @@ def index(tree: list[Page], guide_title: str) -> list[Section]:
     found = []
 
     def add(file, title):
-        with open(document_path(file), encoding="utf-8") as f:
-            _, body = split_front_matter(f.read())
-        for key, heading, source in heading_sections(body):
+        body, reference = document_body(file)
+        for key, heading, source in heading_sections(body, reference=reference):
             text = plain(HEADING_LINE.sub("", source, count=1) if key else source)
             if text or heading:
                 found.append(Section(file, title, plain(heading) or title, key, text))
@@ -164,10 +175,8 @@ class DocsView:
 
     def show(self, file: str, update: bool = True) -> None:
         self.file = file
-        path = document_path(file)
-        with open(path, encoding="utf-8") as f:
-            _, body = split_front_matter(f.read())
-        self.markdown.set_value(body)
+        body, reference = document_body(file)
+        self.markdown.set_value(body, reference=reference)
         for root in self.tree:
             if file == root.file or any(file == c.file or any(file == g.file for g in c.children)
                                         for c in root.children):

@@ -2,6 +2,8 @@
 pool's trainers for each slot the consoles joining leave empty, in slot order (pokeldn.sv.raid_partners);
 the host draws a partner seed that seats them when it starts, and draws a partner left unpicked as the
 game does. Folding only hides the card: the choice goes to the raid."""
+
+from gui.localization import translate
 from pokeldn.app.i18n import t as tr
 
 import flet as ft
@@ -124,16 +126,16 @@ class RaidPartnersPicker:
             Sprite(self.app, partner.species, size=MINI).control,
             ft.Column([t.text(partner.trainer, 13, weight=ft.FontWeight.W_600, max_lines=1,
                               overflow=ft.TextOverflow.ELLIPSIS),
-                       t.text(partner.name, 12, t.MUTED, max_lines=1, overflow=ft.TextOverflow.ELLIPSIS)],
+                       t.text(translate(partner.name), 12, t.MUTED, max_lines=1, overflow=ft.TextOverflow.ELLIPSIS)],
                       spacing=0, expand=True),
             order,
         ], spacing=10, vertical_alignment=ft.CrossAxisAlignment.CENTER)
         facts = ft.Row([t.chip(tr('raid_partners.lv_1b4f67', 'Lv. {value0}', value0=self.level) if self.level else tr('raid_partners.lv_3e543b', 'Lv. —')),
-                        t.chip(partner.tera, "diamond-gem", t.FAINT)], spacing=6, tight=True)
+                        t.chip(translate(partner.tera), "diamond-gem", t.FAINT)], spacing=6, tight=True)
         # Every partner has three moves, one to a line, so every card of a pool stands as tall.
-        moves = ft.Column([t.text(partner.ability, 12, t.SOFT, weight=ft.FontWeight.W_500, max_lines=1,
+        moves = ft.Column([t.text(translate(partner.ability), 12, t.SOFT, weight=ft.FontWeight.W_500, max_lines=1,
                                   overflow=ft.TextOverflow.ELLIPSIS)]
-                          + [t.text(move, 12, t.MUTED, max_lines=1, overflow=ft.TextOverflow.ELLIPSIS)
+                          + [t.text(translate(move), 12, t.MUTED, max_lines=1, overflow=ft.TextOverflow.ELLIPSIS)
                              for move in partner.moves], spacing=1)
         column = [title, facts, moves]
         if footer:
@@ -144,11 +146,11 @@ class RaidPartnersPicker:
                 ink, tier = RANKS[partner.rank]
                 strip = ft.Container(ft.Row([
                     t.pixel_icon("star", 12, color=ink),
-                    ft.Container(t.text(partner.why, 11, ink, max_lines=2, overflow=ft.TextOverflow.ELLIPSIS),
+                    ft.Container(t.text(translate(partner.why), 11, ink, max_lines=2, overflow=ft.TextOverflow.ELLIPSIS),
                                  expand=True),
                 ], spacing=6, vertical_alignment=ft.CrossAxisAlignment.START),
                     height=REASON_HEIGHT, padding=ft.Padding(8, 6, 8, 6), border_radius=8,
-                    bgcolor=ft.Colors.with_opacity(0.10, ink), tooltip=tr('raid_partners._bbee01', '{value0}: {value1}.', value0=tier, value1=partner.detail))
+                    bgcolor=ft.Colors.with_opacity(0.10, ink), tooltip=tr('raid_partners._bbee01', '{value0}: {value1}.', value0=tier, value1=translate(partner.detail)))
             column.append(strip)
         return ft.Container(
             ft.Column(column, spacing=8, horizontal_alignment=ft.CrossAxisAlignment.STRETCH), expand=True,

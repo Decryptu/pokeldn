@@ -1,6 +1,9 @@
 """The FireRed/LeafGreen Mystery Gift tool's save mode: back the console's save up into the library, or
 put one from the library back on the console; the library lists, names, imports, exports and edits them
 [pokeldn.app.saves, docs/gui.md, Your saves]."""
+
+from gui.localization import date_time
+from gui.localization import SERVICE, translate
 from pokeldn.app.i18n import t as tr
 
 import os
@@ -97,7 +100,7 @@ class SavePanel:
             *lead,
             ft.Column([t.text(entry.name, 13, weight=ft.FontWeight.W_600, max_lines=1,
                               overflow=ft.TextOverflow.ELLIPSIS), line,
-                       t.text(entry.when, 11, t.FAINT)], spacing=1, expand=True),
+                       t.text(date_time(entry.created), 11, t.FAINT)], spacing=1, expand=True),
             tools,
         ], spacing=10, vertical_alignment=ft.CrossAxisAlignment.CENTER),
             padding=ft.Padding(10, 6, 4, 6), border_radius=10,
@@ -243,7 +246,7 @@ class SaveEditor:
 
     def _load(self) -> None:
         try:
-            info = pokemon.SERVICE.save_read(self.data)
+            info = SERVICE.save_read(self.data)
         except Exception as exc:
             message = str(exc)
             self.app.ui(lambda: self._fail(message))
@@ -339,7 +342,7 @@ class SaveEditor:
         def built(value: dict) -> None:
             data = open(value["file"], "rb").read()
             try:
-                described = pokemon.SERVICE.check_bytes("frlg", data)
+                described = SERVICE.check_bytes("frlg", data)
             except Exception as exc:
                 message = str(exc)
                 self.app.ui(lambda: self._say(message, t.RED))
@@ -378,7 +381,7 @@ class SaveEditor:
 
             def work():
                 try:
-                    mons = pokemon.SERVICE.save_box(self.data, index)
+                    mons = SERVICE.save_box(self.data, index)
                     bad = [m for m in mons if m and not m["legal"]]
                     lines = [t.badge(tr('saves.lv_is_not_legal_079587', '{value0} (Lv {value1}) is not legal', value0=m['species'], value1=m['level']), t.AMBER, "warning-diamond")
                              for m in bad] or [t.badge(tr('saves.every_pokemon_in_this_box_is_legal_acd21c', 'Every Pokemon in this box is legal.'), t.GREEN, "check")]
@@ -406,7 +409,7 @@ class SaveEditor:
 
         def work():
             try:
-                data, _info = pokemon.SERVICE.save_edit(self.data, trainer=trainer, party=party)
+                data, _info = SERVICE.save_edit(self.data, trainer=trainer, party=party)
                 if not sav.describe(data).sound:
                     raise sav.SaveError(tr('saves.the_edited_save_did_not_pass_the_game_s_own_sector_chec_831cd5', "the edited save did not pass the game's own sector checks"))
                 added = saves.add(data, source="edit", name=tr('saves.edited_ab28e1', '{value0} (edited)', value0=self.entry.name),

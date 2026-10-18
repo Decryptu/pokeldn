@@ -9,6 +9,7 @@ pytest.importorskip("flet")
 import flet as ft
 
 from gui import theme as t
+from gui.localization import SERVICE as DISPLAY_SERVICE
 from gui.views import pokemon
 from gui.views.games import GamesView
 from gui.views.pokemon import OfferOptions, OfferQueue
@@ -365,8 +366,8 @@ def test_the_released_firmware_lands_only_when_every_image_matches_its_checksum(
 @pytest.mark.parametrize("form", [0, 1])
 def test_a_pokemon_file_shows_its_own_species_and_shininess(monkeypatch, form):
     import asyncio
-    monkeypatch.setattr(pokemon.builder.SERVICE, "species", lambda game: [{"id": 25, "name": "Pikachu"}])
-    monkeypatch.setattr(pokemon.builder.SERVICE, "import_file", lambda game, path: {
+    monkeypatch.setattr(pokemon.SERVICE, "species", lambda game: [{"id": 25, "name": "Pikachu"}])
+    monkeypatch.setattr(pokemon.SERVICE, "import_file", lambda game, path: {
         "file": path, "species": "Charizard", "species_id": 6, "form_id": form,
         "level": 50, "shiny": True, "legal": True,
         "encounter": "", "moves": [], "report": ""})
@@ -846,7 +847,7 @@ def test_official_gift_icons_follow_the_record_and_keep_selection(monkeypatch, s
     monkeypatch.setattr(view_module, "Sprite", lambda app, n, shiny, size, form=0:
                         SimpleNamespace(control=ft.Container(data=(n, shiny, form), width=size)))
     builder = view_module.GiftBuilder.__new__(view_module.GiftBuilder)
-    builder.app, builder.module = None, gift_builder
+    builder.app, builder.module, builder.game = None, gift_builder, "swsh"
     builder.value = {"event": "other"}
     builder.commit = lambda rebuild=False: None
     raw = (wc8.pokemon_card(species, shiny_type=shiny_type, form=form) if species else
@@ -915,7 +916,7 @@ def test_gift_form_replies_cannot_change_another_editor_or_a_newer_request(monke
     work, replies = [], []
     monkeypatch.setattr(view_module.threading, "Thread", lambda target, daemon: SimpleNamespace(
         start=lambda: work.append(target)))
-    monkeypatch.setattr(view_module.pokemon.SERVICE, "options", lambda *a: {
+    monkeypatch.setattr(view_module.SERVICE, "options", lambda *a: {
         "forms": [{"id": 0, "name": "Kanto"}, {"id": 1, "name": "Galar"}]})
     builder = view_module.GiftBuilder.__new__(view_module.GiftBuilder)
     builder.game = "swsh"
@@ -956,7 +957,7 @@ def test_offline_gift_catalog_rebuilds_never_start_sprite_workers(monkeypatch, t
     monkeypatch.setattr(view_module.threading, "Thread", unexpected)
     builder = view_module.GiftBuilder.__new__(view_module.GiftBuilder)
     builder.app = SimpleNamespace(settings=SimpleNamespace(sprites=False))
-    builder.module = gift_builder
+    builder.module, builder.game = gift_builder, "swsh"
     builder.value = {"event": ""}
     for _ in range(3):
         for card in gift_builder.OFFICIAL.load():
@@ -1352,7 +1353,7 @@ def test_the_raid_card_lists_its_scripted_actions_after_its_rewards(monkeypatch)
     naming = []
     monkeypatch.setattr(raid_seed.threading, "Thread",
                         lambda target, args, daemon: SimpleNamespace(start=lambda: naming.append((target, args))))
-    monkeypatch.setattr(builder.SERVICE, "names", lambda game, kind: {
+    monkeypatch.setattr(DISPLAY_SERVICE, "names", lambda game, kind: {
         "bag": [{"id": 1127, "name": "Exp. Candy XL"}], "moves": [{"id": 315, "name": "Overheat"}]}[kind])
     desc = [2500, 65, 55, 9999, 40, 0, 0, 20, 70, 30, 3, 1, 99, 315, 2, 2, 70, 0] + [0] * 19
     charizard = dict(species=6, form=0, ability=4, flawless_ivs=0, level=100, capture_level=100,
@@ -1428,9 +1429,9 @@ def gift_picker(monkeypatch, value=None, view=None):
     monkeypatch.setattr(event_gifts.threading, "Thread", lambda target, daemon, args=None: SimpleNamespace(
         start=lambda: args is None and work.append(target)))
     asked = []
-    monkeypatch.setattr(builder.SERVICE, "gift_events",
+    monkeypatch.setattr(DISPLAY_SERVICE, "gift_events",
                         lambda game, who: asked.append((game, who)) or GIFT_EVENTS)
-    monkeypatch.setattr(builder.SERVICE, "gift_event", lambda game, key, who:
+    monkeypatch.setattr(DISPLAY_SERVICE, "gift_event", lambda game, key, who:
                         asked.append((game, key, who)) or GIFT_COPIES[key])
     app = SimpleNamespace(settings=SimpleNamespace(sprites=False, trainer=lambda game: GIFT_TRAINER),
                           page=None, ui=lambda fn: fn())
@@ -1518,7 +1519,7 @@ def test_event_queue_restores_a_single_saved_gift_and_keeps_duplicates_in_trade_
     def make(game, key, who):
         calls.append(key)
         return dict(GIFT_COPIES[key], file=f"copy-{len(calls)}.pk9")
-    monkeypatch.setattr(builder.SERVICE, "gift_event", make)
+    monkeypatch.setattr(DISPLAY_SERVICE, "gift_event", make)
     for name in ("Sprigatito", "Palafin", "Palafin", "Sprigatito", "Palafin"):
         gift_tile(control, name).on_click(None)
         run()
