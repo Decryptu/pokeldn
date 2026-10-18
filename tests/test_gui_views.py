@@ -1852,3 +1852,31 @@ def test_an_event_missing_from_the_gallery_stays_chosen_and_shows_missing(monkey
         assert (picker.summary.value, picker.summary.color) == ("Walking Wake", t.BLUE)
     else:
         assert (picker.summary.value, picker.summary.color) == ("Missing: Walking Wake", t.RED)
+
+
+def test_every_docs_fragment_link_scrolls_to_a_keyed_heading():
+    """A heading renamed without its links leaves a link that opens the page and scrolls nowhere."""
+    import re
+    from gui.views import docs
+    from gui.views.widgets import MarkdownDocument
+    keys, bodies = {}, {}
+    for name in os.listdir(docs.DOCS):
+        if name.endswith(".md"):
+            with open(os.path.join(docs.DOCS, name), encoding="utf-8") as f:
+                _, bodies[name] = docs.split_front_matter(f.read())
+            document = MarkdownDocument(None, None)
+            document.set_value(bodies[name])
+            keys[name] = {c.key.value for c in document.control.controls if isinstance(c.key, ft.ScrollKey)}
+    missing = [(name, link) for name, body in bodies.items()
+               for target, fragment in re.findall(r"\]\((?!https?://)([^)#\s]*)#([^)\s]+)\)", body)
+               if (os.path.basename(target) or name) in keys and fragment not in keys[os.path.basename(target) or name]
+               for link in [f"{target}#{fragment}"]]
+    assert missing == []
+
+
+def test_docs_search_finds_a_section_under_its_heading():
+    from gui.views import docs
+    found = docs.search(docs.index(docs.pages(), "Start here"), "host watchdog")
+    assert (found[0].file, found[0].anchor) == ("hardware_esp32.md", "the-host-watchdog")
+    runs = docs.snippet(found[0].text, ["host", "watchdog"])
+    assert any(hit and part.lower() in ("host", "watchdog") for part, hit in runs)

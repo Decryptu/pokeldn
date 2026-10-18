@@ -668,6 +668,13 @@ always carries the built one. The script needs Flutter, at the version
 deployment target from 11.0 to 12.0: Xcode 27 builds nothing older. The Linux client is Flet's light
 flavor, as Flet's own CI builds it.
 
+## The docs page
+
+The Docs page shows the app guide and every page of this site that its navigation lists. The search
+field above the page list matches sections: each heading and the text under it, every word of the
+query required. A word in a heading or a page title ranks first. Picking a result opens the page at
+that heading; a link to `page.md#heading` scrolls the same way (`gui/views/docs.py`).
+
 ## Unreleased titles
 
 A title prepared ahead of its Switch release appears in the Games list, the Bank and the Docs page

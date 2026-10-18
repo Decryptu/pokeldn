@@ -102,15 +102,53 @@ def fenced_blocks(source: str):
         yield source[cursor:], None
 
 
+HEADING = re.compile(r"(?m)^ {0,3}#{1,6}[ \t]+(.+?)[ \t#]*$")
+
+
+def anchor(heading: str) -> str:
+    """The id kramdown gives a heading on the docs site: letters first, ASCII words joined by hyphens."""
+    text = re.sub(r"\[([^\]]*)\]\([^)]*\)", r"\1", heading)
+    text = re.sub(r"^[^a-zA-Z]+", "", text)
+    return re.sub(r"[^a-z0-9 -]", "", text.lower()).replace(" ", "-")
+
+
+def heading_sections(source: str):
+    """(anchor, heading, markdown) per heading, outside fenced examples, with the text before the first
+    heading under ('', ''). Repeated anchors take kramdown's -1, -2 suffixes."""
+    seen: dict[str, int] = {}
+    current, heading, parts = "", "", []
+    for block, code in fenced_blocks(source):
+        cursor = 0
+        for match in HEADING.finditer(block) if code is None else ():
+            parts.append(block[cursor:match.start()])
+            yield current, heading, "".join(parts)
+            heading, base = match[1], anchor(match[1])
+            current = f"{base}-{seen[base]}" if base in seen else base
+            seen[base] = seen.get(base, 0) + 1
+            parts, cursor = [], match.start()
+        parts.append(block[cursor:])
+    yield current, heading, "".join(parts)
+
+
 class MarkdownDocument:
     def __init__(self, app, on_link):
         self.app, self.on_link = app, on_link
         self.control = ft.Column(spacing=14, horizontal_alignment=ft.CrossAxisAlignment.STRETCH)
 
     def set_value(self, value: str) -> None:
-        self.control.controls = [self._markdown(source) if code is None else
-                                 CodeBlock(self.app, code, self._markdown(source)).control
-                                 for source, code in fenced_blocks(value)]
+        """Each heading starts its own control keyed by its anchor, so a link or a search result scrolls to it."""
+        controls = []
+        for key, _, section in heading_sections(value):
+            first = True
+            for source, code in fenced_blocks(section):
+                if not source.strip():
+                    continue
+                control = self._markdown(source) if code is None else CodeBlock(self.app, code, self._markdown(source)).control
+                if first and key:
+                    control.key = ft.ScrollKey(key)
+                first = False
+                controls.append(control)
+        self.control.controls = controls
 
     def _markdown(self, value: str) -> ft.Markdown:
         return ft.Markdown(
