@@ -94,6 +94,10 @@ def rank_for_level(level):
     return sum(level >= floor for floor in RANK_FLOORS)
 PK8_GIGANTAMAX = 0x16                 # bit 4 (PKHeX PK8.CanGigantamax)
 NEST_SLOTS = Path(__file__).with_name("data") / "nest_slots.json"
+# An emulated Shield den host's advertisement and 0x84 snapshot, renamed POKELDN and with no account
+# ids: what a hosted raid starts from (the host sends its snapshot before the guest's).
+DEN_ADVERT = Path(__file__).with_name("data") / "raid_advert.bin"
+DEN_SNAPSHOT = Path(__file__).with_name("data") / "raid_snapshot.bin"
 
 
 def den_slot(version, species, form, gigantamax):

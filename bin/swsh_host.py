@@ -202,8 +202,8 @@ def build_parser():
     ap.add_argument("--seconds", type=float, default=300)
     ap.add_argument("--capture", default=None)
     ap.add_argument("--raid-boss", default=None, metavar="PK8",
-                    help="host a Max Raid den lobby with this boss instead of a Link Trade; pass "
-                         "--advert with a den host's advertisement (docs/swsh_raid.md)")
+                    help="host a Max Raid den lobby with this boss instead of a Link Trade "
+                         "(docs/swsh_raid.md)")
     ap.add_argument("--raid-reward", action="append", default=[], metavar="ITEM:COUNT",
                     help="a reward row, item id and count; up to 15")
     ap.add_argument("--raid-seed", type=lambda s: int(s, 0), default=None,
@@ -248,13 +248,13 @@ def main(argv=None):
         phy = find_ap_phy(log=print) if args.phy == "auto" else args.phy
     network_id = (bytes.fromhex(args.network_id) if args.network_id
                   else os.urandom(2) + NETWORK_ID_HIGH)       # little-endian: the high half last
+    if args.raid_boss:
+        args.advert = args.advert or str(raid.DEN_ADVERT)
+        args.snapshot = args.snapshot or str(raid.DEN_SNAPSHOT)
     app_data = build_advert(load_advert(args.advert) if args.advert else None,
                             network_id=network_id, code=args.code, player_name=args.player_name)
     boss_pk8 = None
     if args.raid_boss:
-        if not args.advert:
-            print("[sw] --raid-boss needs --advert, a den host's advertisement")
-            return 1
         boss_pk8 = raid.boss_record(swsh_pokemon.encrypt(gen8.load(Path(args.raid_boss).read_bytes())))
         app_data = raid_advert(app_data, boss_pk8, args.player_name)
         args.scene_id = RAID_SCENE_ID

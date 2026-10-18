@@ -172,9 +172,11 @@ nature, ability, PID, encryption constant and party stats on a den boss's record
 
 ## Hosting
 
-`bin/swsh_host.py --raid-boss PK8 --advert FILE --snapshot FILE --raid-console-serves` hosts a den
-lobby a console joins from its Y-Comm list (`pokeldn/swsh/raid_host.py`). The advertisement is a den
-host's with a fresh station profile, the board's name, the boss and a den record for it
+`bin/swsh_host.py --raid-boss PK8 --raid-console-serves` hosts a den lobby a console joins from its
+Y-Comm list (`pokeldn/swsh/raid_host.py`). The advertisement and the snapshot are an emulated Shield
+den host's, renamed and with no account ids (`pokeldn/swsh/data/raid_advert.bin`,
+`raid_snapshot.bin`; `--advert` and `--snapshot` replace them). The advertisement goes out with a
+fresh station profile, the board's name, the boss and a den record for it
 ([The den record](#the-den-record)); `--raid-boss` takes any PK8 and sends it through
 `raid.boss_record`. The snapshot goes out before the guest's. `--raid-reward ITEM:COUNT` fills Rewards and `--raid-seed` BattleSeed.
 
