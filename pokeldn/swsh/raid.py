@@ -1,13 +1,20 @@
 """The Max Raid den lobby's messages: id 2000, `net_contents.nesthole.protocol_buffers.
 NestholeAsyncDataHolder`, each field a holder of one `bytes` field (main `0x1bfde43`, `0x20677b0`).
-A joining guest sends PlayerInfo, BattleReady and SelectPokemon after the snapshot (docs/swsh_raid.md)."""
+A joining guest sends PlayerInfo, BattleReady and SelectPokemon after the snapshot; the host adds
+the time limit and, at the start, BattleStart, BossPokemon, Rewards and BattleSeed (docs/swsh_raid.md)."""
 import struct
 
 from pokeldn.swsh.trade import field, message
 
 NESTHOLE = 2000
 TIME_LIMIT, PLAYER_INFO, BATTLE_READY, SELECT_POKEMON = 1, 2, 3, 4
+BATTLE_START, BOSS_POKEMON, REWARDS, BATTLE_SEED = 5, 6, 7, 8
 NAME_CHARS = 13
+STATIONS = 4
+REWARD_SLOTS = 15
+# BossPokemon's 20-byte head and BattleSeed's last 8 bytes, the same in two emulated raids; unread.
+BOSS_HEAD = bytes(19) + b"\xff"
+SEED_TAIL = bytes.fromhex("00ffffff1e000300")
 
 
 def holder(which, data):
@@ -38,6 +45,35 @@ def select_pokemon(pk8):
     if len(pk8) != 0x158:
         raise ValueError(f"{len(pk8)} bytes is not a party PK8 (0x158)")
     return holder(SELECT_POKEMON, bytes(8) + pk8)
+
+
+def time_limit(seconds):
+    return holder(TIME_LIMIT, struct.pack("<I", seconds))
+
+
+def battle_start(stations):
+    """The participants' Pia constant ids, the host's first, as u64 in four slots."""
+    if not 0 < len(stations) <= STATIONS:
+        raise ValueError(f"{len(stations)} stations, a raid holds 1 to {STATIONS}")
+    return holder(BATTLE_START, b"".join(struct.pack("<Q", s) for s in stations).ljust(8 * STATIONS, b"\0"))
+
+
+def boss_pokemon(pk8):
+    pk8 = bytes(pk8)
+    if len(pk8) != 0x158:
+        raise ValueError(f"{len(pk8)} bytes is not a party PK8 (0x158)")
+    return holder(BOSS_POKEMON, BOSS_HEAD + pk8)
+
+
+def rewards(items):
+    """(item id, count) pairs, at most 15."""
+    if len(items) > REWARD_SLOTS:
+        raise ValueError(f"{len(items)} rewards, the record holds {REWARD_SLOTS}")
+    return holder(REWARDS, b"".join(struct.pack("<II", i, n) for i, n in items).ljust(8 * REWARD_SLOTS, b"\0"))
+
+
+def battle_seed(seed):
+    return holder(BATTLE_SEED, struct.pack("<Q", seed) + SEED_TAIL)
 
 
 def parse(payload):

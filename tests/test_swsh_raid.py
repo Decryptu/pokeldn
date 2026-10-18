@@ -39,3 +39,44 @@ def test_action_names_the_move_as_the_emulated_guest_did():
         built = raid_battle.action(move, target)
         assert built[8:16].hex() == entry
         assert built[:8] + built[16:] == raid_battle.ACTION[:8] + raid_battle.ACTION[16:]
+
+
+def test_host_start_messages_are_the_emulated_hosts():
+    got = {raid.parse(bytes.fromhex(h))[0]: bytes.fromhex(h) for h in DATA["host_start"]}
+    stations = raid.parse(got[raid.BATTLE_START])[1]
+    boss = raid.parse(got[raid.BOSS_POKEMON])[1][len(raid.BOSS_HEAD):]
+    seed = raid.parse(got[raid.BATTLE_SEED])[1][:8]
+    assert got[raid.BATTLE_START] == raid.battle_start([0x7F00020000020000, 0x7F00030000020000])
+    assert stations[16:] == bytes(16)
+    assert got[raid.BOSS_POKEMON] == raid.boss_pokemon(boss)
+    # The emulated den's item ids and counts, as the guest listed them.
+    assert got[raid.REWARDS] == raid.rewards([(1124, 5), (1125, 1), (1129, 1), (50, 1), (1149, 1)])
+    assert got[raid.BATTLE_SEED] == raid.battle_seed(int.from_bytes(seed, "little"))
+
+
+def test_lobby_host_follows_the_emulated_hosts_order():
+    """The fields the emulated host sent after the snapshot, in order, time limits dropped, against
+    our host fed the emulated guest's lobby messages."""
+    from pokeldn.swsh import raid_host
+    sent = []
+    lobby = [bytes.fromhex(h) for h in DATA["lobby"]]
+    guest_pk8 = raid.parse(lobby[2])[1][8:]
+    boss = raid.parse(bytes.fromhex(DATA["host_start"][1]))[1][len(raid.BOSS_HEAD):]
+    host = raid_host.RaidHost(0x7F00020000020000, 0x7F00030000020000, None, guest_pk8, boss,
+                              lambda pr, port, p, z: sent.append((raid.parse(p)[0], z)),
+                              None, None, ready_after=1.0, log=lambda *a: None)
+    host.stage = "lobby"
+    for p in lobby:
+        host.on_data(0x80, 0, p)
+    t = 100.0
+    for _ in range(4):
+        host.tick(t); t += 0.5
+    host.on_data(0x80, 0, raid.battle_ready(True))
+    host.tick(t)
+    host.on_data(0x80, 0, raid.select_pokemon(guest_pk8))
+    host.on_data(0x80, 0, raid.battle_ready(True, started=True))
+    host.tick(t + 0.1)
+    assert host.stage == "battle"
+    fields = [f for f in sent if f[0] != raid.TIME_LIMIT]
+    assert fields == [(2, True), (3, False), (4, False), (3, False),
+                      (5, True), (4, False), (6, False), (7, True), (8, False), (3, False)]

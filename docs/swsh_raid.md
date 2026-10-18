@@ -20,6 +20,7 @@ in a console's lobby; the lobby shows it with the chosen Pokemon.
 | participants | 1 of 4 when opened |
 | advertise data byte `0x97` | `0x11` |
 | Pia session maximum | 4 (`0x0110e5e0`, called from the den lobby at `0x01031c74`) |
+| advertise `0xb0` and `0xd4` | u16 boss species, a byte `0x11`, the boss's u32 encryption constant |
 
 The den lobby's code sits among `View_NestHole`, `StateGuestReady` and `StateHostReady`
 (`0x0102aba4..0x010370cc`). Dynamax Adventures match through `ChikaMatchingState*`
@@ -40,20 +41,24 @@ field 1.
 | 2 | NestholePlayerInfo | 40 | 8 zero bytes, u32 (0x11 retail Sword, 0x12 emulated Shield), UTF-16 name in 13 characters, `00 03` |
 | 3 | NestholeBattleReady | 16 | byte 8 is 1 once the player pressed ready; byte 12 is 1 once the battle starts |
 | 4 | NestholeSelectPokemon | 352 | 8 zero bytes, then the chosen Pokemon as an encrypted party PK8 (0x158) |
-| 5 | NestholeBattleStart | 32 | the participants' station ids |
-| 6 | NestholeBossPokemon | 364 | the boss |
-| 7 | NestholeRewards | 120 | u32 pairs: item id, count |
-| 8 | NestholeBattleSeed | 16 | the battle's seed |
+| 5 | NestholeBattleStart | 32 | the participants' Pia constant ids as four u64, the host's first, unused slots zero |
+| 6 | NestholeBossPokemon | 364 | 19 zero bytes and `ff`, then the boss as an encrypted party PK8 |
+| 7 | NestholeRewards | 120 | fifteen u32 pairs: item id, count; unused pairs zero |
+| 8 | NestholeBattleSeed | 16 | u64 seed, then `00 ff ff ff 1e 00 03 00` |
 
 PlayerInfo goes out zlib-compressed with a 4 KB window (header `48 4b`) under reliable flag 0x10;
-the others go out plain. `pokeldn/swsh/raid.py` builds fields 2, 3 and 4; its output equals an
-emulated guest's bytes.
+the others go out plain. `pokeldn/swsh/raid.py` builds every field; its output equals the bytes of an
+emulated guest (2, 3, 4) and an emulated host (5 to 8).
+
+The boss record carries the boss in full: species, level, moves, IVs and PID. In two emulated
+raids, the den's raid generator applied to the BattleSeed value gives neither the boss's
+encryption constant nor its PID. What the seed feeds is unread.
 
 ## The guest's sequence
 
 Recorded between two emulated Shields, a whole raid won:
 
-1. The snapshot exchange on 0x84, as in a link trade.
+1. The snapshot exchange on 0x84, as in a link trade; the host's snapshot went first.
 2. PlayerInfo, BattleReady (zero) and SelectPokemon on 0x80 port 0, sequences 1 to 3.
 3. BattleReady with byte 8 set when the player presses ready.
 4. Once every player is ready, the host sends BattleStart, its SelectPokemon again, BossPokemon,

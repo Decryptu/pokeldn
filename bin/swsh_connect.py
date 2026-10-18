@@ -459,7 +459,14 @@ async def main_async(args):
                 st["their_payload"] = got["payload"]
                 st["said_by_proto"][protocol] = got["payload"]
                 if protocol == reliable4.BROADCAST_PROTOCOL:
-                    st["raid_rx"].append(got["payload"])
+                    # BattleStart and Rewards come deflated under flag 0x10 (docs/swsh_raid.md).
+                    data = got["payload"]
+                    if got["flags"] & reliable5.FLAG_ZLIB:
+                        try:
+                            data = zlib.decompress(data)
+                        except zlib.error:
+                            pass
+                    st["raid_rx"].append(data)
             if protocol == 0x7C and got["sequence_id"] not in w["seqs"]:
                 data = got["payload"]
                 if got["flags"] & reliable5.FLAG_ZLIB:

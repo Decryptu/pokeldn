@@ -230,16 +230,22 @@ class Pia4Host:
                           flags=STATION_FLAGS | (pia4.MESSAGE_FLAG_ZLIB if compressed else 0),
                           destination=st.bitmap)
 
-    def send_data(self, ip, protocol, port, payload):
-        """Queue one application message on 0x7C or 0x80 and put it on the wire now."""
+    def send_data(self, ip, protocol, port, payload, compress=False):
+        """Queue one application message on 0x7C or 0x80 and put it on the wire now. `compress`
+        deflates it with a 4 KB window under flag 0x10, as a Sword sends its larger 0x80 messages."""
         st = self.stations[ip]
         w = st.window(protocol, port)
         seq = w.next_seq
         w.next_seq += 1
         lowest = min(w.unacked) if w.unacked else seq
         dests = (st.constant,) if protocol == reliable4.BROADCAST_PROTOCOL else ()
-        msg = reliable4.build_data_message(payload, sequence_id=seq, lowest_pending=lowest,
-                                           destinations=dests)
+        body = payload
+        flags = reliable4.FIRST_DATA_FLAGS if seq == reliable4.FIRST_SEQUENCE else reliable4.DATA_FLAGS
+        if compress:
+            z = zlib.compressobj(9, zlib.DEFLATED, 12)
+            body = z.compress(payload) + z.flush()
+            flags |= reliable5.FLAG_ZLIB
+        msg = reliable4.build_message(body, flags, seq, lowest_pending=lowest, destinations=dests)
         w.unacked[seq] = [msg, time.time()]
         self.send_message(ip, msg, protocol, port=port, destination=st.bitmap)
         self.record(rec="tx_data", dst=ip, protocol=protocol, port=port, seq=seq,
@@ -269,6 +275,11 @@ class Pia4Host:
         w.through = reliable5.contiguous_through(w.seen, w.through)
         self.send_window_ack(st, protocol, port, w)
         if fresh:
+            if got["flags"] & reliable5.FLAG_ZLIB:
+                try:
+                    got["payload"] = zlib.decompress(got["payload"])
+                except zlib.error:
+                    pass
             self.record(rec="rx_data", src=st.ip, protocol=protocol, port=port,
                         seq=got["sequence_id"], payload=got["payload"].hex())
             if protocol == mesh.PROTOCOL and mesh.parse_leave_request(got["payload"]) is not None:

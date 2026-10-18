@@ -27,13 +27,16 @@ from pokeldn.host_support import resolve_keys, needs_root
 from pokeldn.ldn import host4, left_after_trade, mesh_protocol as mesh, reliable4
 from pokeldn.ldn.ldn_mitm_host import IpHostTransport
 from pokeldn.ldn.transport import HostTransport, board_radio, find_ap_phy
-from pokeldn.swsh import beacon, host_trade, league_card, pokemon as swsh_pokemon, trade_payload
+from pokeldn.swsh import beacon, host_trade, league_card, pokemon as swsh_pokemon, raid_host, trade_payload
 from pokeldn.ldn.pia5 import password_crc
 from pokeldn.swsh.session import COMM_ID, PASSPHRASE, session_keys
 from pokeldn.app import screen
 from pokeldn.online import session as online
 
 SCENE_ID = 60001  # a retail Sword's Link Trade network
+RAID_SCENE_ID = 60006  # a den lobby (docs/swsh_raid.md)
+RAID_PARTICIPANTS = 4
+RAID_BOSS_OFFSETS = (0xB0, 0xD4)  # u16 species, 0x11, u32 encryption constant
 APP_VERSION = 7
 LDN_PROTOCOL = 1
 MAX_PARTICIPANTS = 2
@@ -198,8 +201,29 @@ def build_parser():
                          "own; default 0xFFFF and two random bytes")
     ap.add_argument("--seconds", type=float, default=300)
     ap.add_argument("--capture", default=None)
+    ap.add_argument("--raid-boss", default=None, metavar="PK8",
+                    help="host a Max Raid den lobby with this boss instead of a Link Trade; pass "
+                         "--advert with a den host's advertisement (docs/swsh_raid.md)")
+    ap.add_argument("--raid-reward", action="append", default=[], metavar="ITEM:COUNT",
+                    help="a reward row, item id and count; up to 15")
+    ap.add_argument("--raid-seed", type=lambda s: int(s, 0), default=None,
+                    help="the BattleSeed value; random by default")
+    ap.add_argument("--raid-ready", type=float, default=3.0, metavar="SECONDS",
+                    help="our player readies this long after the guest's lobby opens")
     online.add_arguments(ap)
     return ap
+
+
+def raid_advert(app_data, boss_pk8):
+    """The den advertisement with the boss's species and encryption constant written in."""
+    out = bytearray(app_data)
+    boss = swsh_pokemon.read(boss_pk8)
+    for at in RAID_BOSS_OFFSETS:
+        struct.pack_into("<HB", out, at, boss["species"], 0x11)
+        out[at + 3:at + 7] = boss_pk8[:4]
+    record = out[GAME_DATA_OFF:GAME_DATA_OFF + RECORD_LEN]
+    struct.pack_into("<H", out, GAME_DATA_OFF, beacon.crc16(record[2:]))
+    return bytes(out)
 
 
 def main(argv=None):
@@ -221,6 +245,16 @@ def main(argv=None):
                   else os.urandom(2) + NETWORK_ID_HIGH)       # little-endian: the high half last
     app_data = build_advert(load_advert(args.advert) if args.advert else None,
                             network_id=network_id, code=args.code, player_name=args.player_name)
+    boss_pk8 = None
+    if args.raid_boss:
+        if not args.advert:
+            print("[sw] --raid-boss needs --advert, a den host's advertisement")
+            return 1
+        boss_pk8 = swsh_pokemon.encrypt(gen8.load(Path(args.raid_boss).read_bytes()))
+        app_data = raid_advert(app_data, boss_pk8)
+        args.scene_id = RAID_SCENE_ID
+        rewards = [tuple(int(x, 0) for x in r.split(":")) for r in args.raid_reward]
+        seed = args.raid_seed if args.raid_seed is not None else struct.unpack("<Q", os.urandom(8))[0]
     if not 1 <= args.offer_slot <= swsh_pokemon.PARTY_SLOTS:
         raise ValueError(f"offer slot must be 1..{swsh_pokemon.PARTY_SLOTS}")
     def offer_file(n):
@@ -249,7 +283,8 @@ def main(argv=None):
     transport = factory(
         app_data=app_data, password=PASSPHRASE, nickname=args.player_name,
         keys_path=resolve_keys(args.keys), local_comm_id=args.comm_id, scene_id=args.scene_id,
-        app_version=args.app_version, max_participants=MAX_PARTICIPANTS, phyname=phy,
+        app_version=args.app_version,
+        max_participants=RAID_PARTICIPANTS if boss_pk8 else MAX_PARTICIPANTS, phyname=phy,
         channel=args.channel, protocol=args.protocol,
         **({"our_ip": args.our_ip} if args.ip_host and args.our_ip else {}),
         **({"mirror_comm_version": True} if args.ip_host else {}),
@@ -320,6 +355,22 @@ def main(argv=None):
         snapshot = offer = None
         if args.snapshot:
             snapshot, offer = build_snapshot(Path(args.snapshot).read_bytes(), n)
+        if boss_pk8 is not None:
+            def send_lobby(protocol, port, payload, compress):
+                host.send_data(st.ip, protocol, port, payload, compress=compress)
+                record({"rec": "app_tx", "dst": st.ip, "protocol": protocol, "port": port,
+                        "payload": payload.hex()})
+
+            def on_battle(lobby):
+                print(f"[raid] {st.ip}: both sides started; the battle on 0x7C follows")
+            trades[st.ip] = raid_host.RaidHost(
+                host.constant, st.constant, snapshot, offer, boss_pk8, send_lobby, send_broadcast,
+                send_mesh, rewards=rewards, seed=seed, name=args.player_name,
+                ready_after=args.raid_ready, record=on_record,
+                snapshot_builder=(lambda peer: build_snapshot(peer, n)) if snapshot is None else None,
+                on_battle=on_battle)
+            print(f"[raid] {st.ip}: lobby opens, seed {seed:#018x}")
+            return
         trades[st.ip] = host_trade.HostTrade(host.constant, st.constant, snapshot, offer, send,
                                              send_broadcast, send_mesh,
                                              end_delay=args.end_delay, record=on_record,
