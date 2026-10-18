@@ -10,7 +10,7 @@ from pokeldn.app.catalog import Field, Tool
 from pokeldn.app.introspect import flags_of
 from pokeldn.lgpe.session import code_picks
 from pokeldn.sv import raid_partners
-from pokeldn.sv.raid import REWARD_ROWS
+from pokeldn.app import raid_rewards
 
 
 @cache
@@ -179,7 +179,8 @@ def limit_error(field: Field, value) -> str:
 
 def problems(tool: Tool, values: dict) -> list[str]:
     errors = [error for f in tool.fields if applies(f, tool, values)
-            if (error := limit_error(f, value_of(f, values)) if f.limits else code_error(f, value_of(f, values)))]
+            if (error := limit_error(f, value_of(f, values)) if f.limits
+                else code_error(f, value_of(f, values), tool.key.split("-")[0]))]
     for field in tool.fields:
         if field.kind == "builder" and (error := gift_builder.problem(tool, value_of(field, values))):
             errors.append(error)
@@ -201,7 +202,7 @@ def prepare(tool: Tool, values: dict) -> None:
             gift_builder.prepare(tool, value_of(field, values))
 
 
-def code_error(field: Field, value) -> str:
+def code_error(field: Field, value, game: str = "sv") -> str:
     """A console code is eight digits, or empty where the field allows none; a Let's Go link code must
     name three picker Pokemon. Either partial one would host under another code. A raid seed is eight
     hex digits; a raid reward row names an item and a quantity from 1 to 999; a raid event is in the
@@ -229,8 +230,8 @@ def code_error(field: Field, value) -> str:
         return "The chosen event is not in the event gallery any more."
     if field.kind == "rewards":
         rows = list(value or ())
-        if len(rows) > REWARD_ROWS:
-            return f"A raid gives at most {REWARD_ROWS} rewards."
+        if len(rows) > raid_rewards.rows(game):
+            return f"A raid gives at most {raid_rewards.rows(game)} rewards."
         for n, row in enumerate(rows, 1):
             item = str(row.get("item_id", ""))
             quantity = str(row.get("quantity", ""))

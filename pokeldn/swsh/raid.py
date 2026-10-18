@@ -16,6 +16,8 @@ BATTLE_START, BOSS_POKEMON, REWARDS, BATTLE_SEED = 5, 6, 7, 8
 NAME_CHARS = 13
 STATIONS = 4
 REWARD_SLOTS = 15
+# An emulated den's reward rows (item id, count): what a hosted raid gives when none are chosen.
+DEN_REWARDS = ((1124, 5), (1125, 1), (1129, 1), (50, 1), (1149, 1))
 # BossPokemon's 20-byte head and BattleSeed's last 8 bytes, the same in two emulated raids; unread.
 BOSS_HEAD = bytes(19) + b"\xff"
 SEED_TAIL = bytes.fromhex("00ffffff1e000300")

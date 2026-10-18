@@ -180,6 +180,9 @@ fresh station profile, the board's name, the boss and a den record for it
 ([The den record](#the-den-record)); `--raid-boss` takes any PK8 and sends it through
 `raid.boss_record`. The snapshot goes out before the guest's. `--raid-reward ITEM:COUNT` fills Rewards and `--raid-seed` BattleSeed.
 
+The app's Max Raid (Host) tool runs these flags with a boss, our Pokemon and up to 15 reward rows;
+without rows the host gives `raid.DEN_REWARDS`, an emulated den's.
+
 With `--raid-console-serves` the joined console serves the battle and the host answers as client 1
 (`raid_battle.Master`):
 

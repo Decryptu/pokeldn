@@ -2,18 +2,29 @@ import flet as ft
 
 from gui import theme as t
 from gui.views.pokemon import NamePicker
-from pokeldn.sv.raid import REWARD_ROWS
+from pokeldn.app import raid_rewards
 from pokeldn.app.i18n import t as tr
 
 
-TEMPLATES = (
-    ("training", tr('rewards.training_bundle_514868', 'Training bundle'), (1128, 50, 53, 795, 796, 1606)),
-    ("shards", tr('rewards.tera_shard_bundle_6365de', 'Tera shard bundle'), tuple(range(1862, 1880)) + (2549,)),
-    ("herba", tr('rewards.herba_mystica_bundle_2f20ef', 'Herba Mystica bundle'), (1904, 1905, 1906, 1907, 1908)),
-    ("treasure", tr('rewards.treasure_bundle_c68d29', 'Treasure bundle'), (92, 581, 91, 583)),
-    ("balls", tr('rewards.ball_bundle_5f0879', 'Ball bundle'), (2, 3, 6, 7, 9, 10, 11, 12, 13, 15)),
-)
-TEMPLATE_ITEMS = {key: items for key, _, items in TEMPLATES}
+
+
+TEMPLATES = {
+    "sv": (
+        ("training", tr('rewards.training_bundle_514868', 'Training bundle'), (1128, 50, 53, 795, 796, 1606)),
+        ("shards", tr('rewards.tera_shard_bundle_6365de', 'Tera shard bundle'), tuple(range(1862, 1880)) + (2549,)),
+        ("herba", tr('rewards.herba_mystica_bundle_2f20ef', 'Herba Mystica bundle'), (1904, 1905, 1906, 1907, 1908)),
+        ("treasure", tr('rewards.treasure_bundle_c68d29', 'Treasure bundle'), (92, 581, 91, 583)),
+        ("balls", tr('rewards.ball_bundle_5f0879', 'Ball bundle'), (2, 3, 6, 7, 9, 10, 11, 12, 13, 15)),
+    ),
+    # Sword/Shield: the Mystery Gift training kit's items, and an emulated den's reward rows.
+    "swsh": (
+        ("training", tr('rewards.training_bundle_514868', 'Training bundle'), (50, 1128, 53, 645, 795, 796)),
+        ("den", tr('rewards.den_bundle_4a1e0c', 'Den bundle'), (1124, 1125, 1129, 50, 1149)),
+        ("balls", tr('rewards.ball_bundle_5f0879', 'Ball bundle'), (2, 3, 6, 7, 9, 10, 11, 12, 13, 15)),
+    ),
+}
+
+
 
 
 def quantity_error(value: str) -> str | None:
@@ -26,12 +37,15 @@ class RewardPicker:
 
     def __init__(self, app, game: str, value, on_change):
         self.app, self.game, self.on_change = app, game, on_change
+        self.templates_of = TEMPLATES.get(game, TEMPLATES["sv"])
+        self.template_items = {key: items for key, _, items in self.templates_of}
+        self.max_rows = raid_rewards.rows(game)
         self.value = [dict(row) for row in value] if isinstance(value, (list, tuple)) else []
         self.template = self._template_of()
         self.template_quantity = self._template_quantity()
         self.rows = ft.Column(spacing=8)
         self.templates = t.dropdown([("seed", tr('rewards.raid_s_own_rewards_31b68b', "Raid's own rewards")), ("custom", tr('rewards.custom_rewards_2d9083', 'Custom rewards'))]
-                                    + [(key, label) for key, label, _ in TEMPLATES], self.template,
+                                    + [(key, label) for key, label, _ in self.templates_of], self.template,
                                     on_select=self._choose_template)
         self.quantity = t.field(value=self.template_quantity, mono=True, width=110,
                                 keyboard_type=ft.KeyboardType.NUMBER,
@@ -55,7 +69,7 @@ class RewardPicker:
         quantities = {str(row.get("quantity", "")) for row in self.value}
         if len(quantities) != 1 or quantity_error(next(iter(quantities))):
             return "custom"
-        return next((key for key, expected in TEMPLATE_ITEMS.items()
+        return next((key for key, expected in self.template_items.items()
                      if items == tuple(map(str, expected))), "custom")
 
     def _template_quantity(self) -> str:
@@ -85,7 +99,7 @@ class RewardPicker:
     def _set_template_quantity(self, event) -> None:
         text = event.control.value
         self.template_quantity = text
-        if self.template in TEMPLATE_ITEMS:
+        if self.template in self.template_items:
             self._apply_template()
             for field in self.quantities:
                 field.value = text
@@ -95,7 +109,7 @@ class RewardPicker:
 
     def _apply_template(self) -> None:
         self.value = [{"item_id": str(item), "quantity": self.template_quantity}
-                      for item in TEMPLATE_ITEMS[self.template]]
+                      for item in self.template_items[self.template]]
         self.on_change([dict(row) for row in self.value])
 
     def _quantity(self, event, index: int) -> None:
@@ -104,7 +118,7 @@ class RewardPicker:
         self._set(index, "quantity", text)
 
     def _add(self, _event) -> None:
-        if len(self.value) < REWARD_ROWS:
+        if len(self.value) < self.max_rows:
             self.value.append({"item_id": "", "quantity": "1"})
             self.template = "custom"
             self.on_change([dict(row) for row in self.value])
@@ -145,7 +159,7 @@ class RewardPicker:
                                spacing=8))
         self.rows.controls = rows
         self._show_template()
-        self.add.disabled = len(self.value) >= REWARD_ROWS
+        self.add.disabled = len(self.value) >= self.max_rows
         if update:
             self.control.update()
 
@@ -153,5 +167,5 @@ class RewardPicker:
         self.templates.value = self.template
         self.quantity.value = self.template_quantity
         t.mark_invalid(self.quantity, bool(quantity_error(self.template_quantity)))
-        self.template_quantity_control.visible = self.template in TEMPLATE_ITEMS
+        self.template_quantity_control.visible = self.template in self.template_items
         self.problem.visible = any(quantity_error(str(row.get("quantity", ""))) for row in self.value)

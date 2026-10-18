@@ -205,7 +205,7 @@ def build_parser():
                     help="host a Max Raid den lobby with this boss instead of a Link Trade "
                          "(docs/swsh_raid.md)")
     ap.add_argument("--raid-reward", action="append", default=[], metavar="ITEM:COUNT",
-                    help="a reward row, item id and count; up to 15")
+                    help="a reward row, item id and count; up to 15; none gives an emulated den's rows")
     ap.add_argument("--raid-seed", type=lambda s: int(s, 0), default=None,
                     help="the BattleSeed value; random by default")
     ap.add_argument("--raid-ready", type=float, default=3.0, metavar="SECONDS",
@@ -255,10 +255,23 @@ def main(argv=None):
                             network_id=network_id, code=args.code, player_name=args.player_name)
     boss_pk8 = None
     if args.raid_boss:
-        boss_pk8 = raid.boss_record(swsh_pokemon.encrypt(gen8.load(Path(args.raid_boss).read_bytes())))
+        boss_file = pokemon_service.prepare_file("swsh", args.raid_boss)
+        boss_pk8 = raid.boss_record(swsh_pokemon.encrypt(gen8.load(Path(boss_file).read_bytes())))
         app_data = raid_advert(app_data, boss_pk8, args.player_name)
         args.scene_id = RAID_SCENE_ID
-        rewards = [tuple(int(x, 0) for x in r.split(":")) for r in args.raid_reward]
+        rewards = [tuple(int(x, 0) for x in r.split(":")) for r in args.raid_reward] or list(raid.DEN_REWARDS)
+        if len(rewards) > raid.REWARD_SLOTS:
+            print(f"[raid] a Max Raid gives at most {raid.REWARD_SLOTS} rewards")
+            return 1
+        if any(not 1 <= count <= 999 for _, count in rewards):
+            print("[raid] a reward's count is 1 to 999")
+            return 1
+        if args.raid_reward:
+            bag = {entry["id"] for entry in pokemon_service.SERVICE.names("swsh", "bag")}
+            unknown = sorted({item for item, _ in rewards} - bag)
+            if unknown:
+                print(f"[raid] items {unknown} cannot go in a Sword/Shield bag")
+                return 1
         seed = args.raid_seed if args.raid_seed is not None else struct.unpack("<Q", os.urandom(8))[0]
     if not 1 <= args.offer_slot <= swsh_pokemon.PARTY_SLOTS:
         raise ValueError(f"offer slot must be 1..{swsh_pokemon.PARTY_SLOTS}")

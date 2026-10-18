@@ -7,6 +7,7 @@ from pokeldn.app.i18n import t as tr
 from dataclasses import dataclass, replace
 
 from pokeldn.sv.raid import REWARD_ROWS
+from pokeldn.swsh.raid import REWARD_SLOTS as SWSH_REWARD_ROWS
 
 
 @dataclass(frozen=True)
@@ -258,6 +259,23 @@ SWSH = Game("swsh", tr('catalog.sword_shield_71b23d', 'Sword & Shield'), tr('cat
          fixed=("--player-name", "{ot}", "--trainer-name", "{ot}",
                 "--trainer-tid", "{tid}", "--trainer-sid", "{sid}",
                 "--received", "{received}/swsh-{stamp}.pk8"), doc="swsh_trade.md"),
+    Tool("swsh-raid-host", tr('catalog.max_raid_host_5d0e1a', 'Max Raid (Host)'), "bin/swsh_host.py",
+         tr('catalog.host_a_max_raid_the_console_joins_you_choose_the_boss_i_7c2f41', 'Host a Max Raid the console joins: you choose the boss, its rewards and the Pokemon we bring.'),
+         (tr('catalog.choose_the_boss_the_pokemon_our_player_brings_and_if_yo_3b8e90', 'Choose the boss, the Pokemon our player brings and, if you like, the rewards.'),
+          tr('catalog.start_the_host_9b26a9', 'Start the host.'),
+          tr('catalog.y_comm_in_local_wireless_mode_join_pokeldn_s_raid_from__a91d47', "Y-Comm in local wireless mode: join POKELDN's raid from the list."),
+          tr('catalog.press_ready_the_console_runs_the_battle_and_our_pokemon_6f02b3', 'Press Ready: the console runs the battle and our Pokemon fights at your side.'),
+          tr('catalog.win_the_raid_to_receive_the_rewards_dcd72e', 'Win the raid to receive the rewards.')),
+         (Field("--raid-boss", tr('catalog.boss_8f6c1d', 'Boss'), "pokemon", required=True,
+                help=tr('catalog.the_raid_s_boss_a_boss_a_den_can_hold_shows_in_every_co_e2a7b9', "The raid's boss. A boss a den can hold shows in every console's list; its level sets the stars.")),
+          Field("--offer-file", tr('catalog.our_pokemon_14a66b', 'Our Pokemon'), "pokemon", required=True,
+                help=tr('catalog.the_pokemon_our_player_brings_pkhex_checks_it_is_legal_abc1cf', 'The Pokemon our player brings. PKHeX checks it is legal.')),
+          Field("--raid-reward", tr('catalog.rewards_59afe4', 'Rewards'), "rewards",
+                help=tr('catalog.leave_empty_for_a_den_s_own_rewards_or_list_up_to_value_4c9d02', "Leave empty for a den's own rewards, or list up to {value0} items.", value0=SWSH_REWARD_ROWS)),
+          Field("--channel", tr('catalog.channel_ce4683', 'Channel'), "choice", default="6", choices=CHANNELS, help=CHANNEL_HELP, hidden=True),
+          host_seconds("900")),
+         fixed=("--raid-console-serves", "--player-name", "{ot}", "--trainer-name", "{ot}",
+                "--trainer-tid", "{tid}", "--trainer-sid", "{sid}"), doc="swsh_raid.md"),
     Tool("swsh-join", tr('catalog.trade_join_8cec7d', 'Trade (Join)'), "bin/swsh_connect.py", tr('catalog.join_the_console_s_link_trade_search_52ee13', "Join the console's Link Trade search."),
          (tr('catalog.y_comm_link_trade_local_communication_no_code_press_a_o_db5138', 'Y-Comm, Link Trade, local communication, no code; press A on both messages.'),
           tr('catalog.start_the_joiner_while_the_console_searches_5f19a9', 'Start the joiner while the console searches.'),
