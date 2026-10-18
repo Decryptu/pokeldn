@@ -20,14 +20,14 @@ in a console's lobby; the lobby shows it with the chosen Pokemon.
 | participants | 1 of 4 when opened |
 | advertise data byte `0x97` | `0x11` |
 | Pia session maximum | 4 (`0x0110e5e0`, called from the den lobby at `0x01031c74`) |
-| advertise `0xb0` and `0xd4` | u16 boss species, a byte `0x11`, the boss's u32 encryption constant |
+| advertise `0xb0` and `0xd4` | the boss and the den record ([The den record](#the-den-record)) |
 
 The den lobby's code sits among `View_NestHole`, `StateGuestReady` and `StateHostReady`
 (`0x0102aba4..0x010370cc`). Dynamax Adventures match through `ChikaMatchingState*`
 (`0x00bd1978..0x00bda158`), which calls the same Pia session maximum from `0x00bd9b30`.
 
-A guest's Y-Comm list leaves out a raid whose advertisement carries the guest's own trainer: two
-consoles with the same save, or the same user id and trainer id, do not see each other's raids.
+A guest's Y-Comm list leaves out a raid whose advertisement carries the guest's own device id and
+account uid ([The den record](#the-den-record)).
 
 ## The lobby messages
 
@@ -136,12 +136,47 @@ guest could not act sent entry 2 as zero. `raid_battle.action(move, target)` bui
 The 0x7C acknowledgement carries 32 slots; only slot 0 tracks the guest's stream, the others hold
 stale ids (34460 seen). A resend gated on the maximum over slots never resends.
 
+## The den record
+
+A den host's advertisement describes its raid; a guest's Y-Comm entry builder (`0x00fa1560`) reads it.
+
+| offset | content |
+|---|---|
+| `0x5F` bit 1 | the host's version: clear Sword, set Shield |
+| `0xAF` | activity kind: `0x11` at rank 0, `0x13 + 2 (rank - 1)` above; `0xFF` is never listed |
+| `0xB0` | the boss shown: u16 species (bits 0 to 9) and form (10 to 15), a byte whose bits 4 and 5 are 1 normal, 2 Gigantamax, the u32 encryption constant |
+| `0xD4` | the den record, the same eight-byte layout |
+| `0xDC` | high nibble: the star rank, 0 to 4 |
+| `0xDD` | bits 3 to 5: den kind, 0 for a normal den |
+| `0xDE`, `0xE0` | u16 encounter table, counted among the host version's tables, and u16 slot |
+| `0xE6` to `0xED` | CRC16s of files 8, 6, 7 and 9 of `bin/archive/field/resident/data_table.gfpak` |
+
+With a non-zero species at `0xD4`, a guest lists the raid only when its own table CRCs match, the den
+kind is 0, and table `0xDE` slot `0xE0` of the host's version holds that species, form and Gigantamax
+flag (`0x00ea5160`, `0x00ea51d0`). A species of 0 skips those checks. The rank must not exceed the
+guest's own rank, from its badge count, when the byte at `0x02510b2c` is 1 or 2 and the host is not a
+friend. The record at `0xB0` is range-checked only. `pokeldn/swsh/data/nest_slots.json` holds the
+1.3.2 slots (`scripts/gen_swsh_nest_data.py`); `raid.den_advert` points the den record at a slot
+holding the boss, or zeroes it.
+
+A guest drops a station whose device id and account uid (`0x1F` to `0x3E`) both equal its own
+(`0x0111b160`).
+
+### The boss record
+
+A retail Sword guest left with 2-ALZAA-0016 on BossPokemon when the boss was a traded record (a
+trainer, version, met data and ball) and when its party Dynamax type (`+0x156`) was 0; both recorded
+den bosses have no trainer data and Dynamax type 1. A boss on a den boss's record with only the species
+changed, and a level-20 boss built by `raid.boss_record` (the Pokemon's species, form, moves, IVs, EVs,
+nature, ability, PID, encryption constant and party stats on a den boss's record), were accepted.
+
 ## Hosting
 
 `bin/swsh_host.py --raid-boss PK8 --advert FILE --snapshot FILE --raid-console-serves` hosts a den
 lobby a console joins from its Y-Comm list (`pokeldn/swsh/raid_host.py`). The advertisement is a den
-host's, with a fresh station profile and the boss written at `0xb0` and `0xd4`; the snapshot goes out
-before the guest's. `--raid-reward ITEM:COUNT` fills Rewards and `--raid-seed` BattleSeed.
+host's with a fresh station profile, the board's name, the boss and a den record for it
+([The den record](#the-den-record)); `--raid-boss` takes any PK8 and sends it through
+`raid.boss_record`. The snapshot goes out before the guest's. `--raid-reward ITEM:COUNT` fills Rewards and `--raid-seed` BattleSeed.
 
 With `--raid-console-serves` the joined console serves the battle and the host answers as client 1
 (`raid_battle.Master`):
@@ -156,8 +191,8 @@ With `--raid-console-serves` the joined console serves the battle and the host a
 | object 8 | the console publishes it (24 bytes, a seed); the host answers EmptyCommand (10000 field 1) |
 | battle commands | answered as a guest answers them, the action naming the host's Pokemon's first move |
 
-An emulated Shield guest served a whole raid this way against the host, won it and received the
-host's Rewards; it then sent the mesh leave request.
+An emulated Shield guest and a retail Sword each served a whole raid this way, won it and received
+the host's Rewards, then sent the mesh leave request.
 
 ## Leaving
 

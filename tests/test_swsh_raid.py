@@ -89,3 +89,41 @@ def test_master_steps_the_barrier_once_the_console_mirrors_it():
     out = m.receive(1, raid_battle.framework(raid_battle.BATTLE, console, 909, bytes.fromhex("00000100")))
     bodies = [raid_battle.parse_framework(p)["body"].hex() for _, p in out]
     assert bodies == ["0100", "01000100"]
+
+
+def test_den_advert_points_at_the_bosss_den_slot_as_the_emulated_host_did():
+    """The first raid's advertisement rewritten for the second raid's boss carries the second
+    advertisement's boss block and den table and slot (Hoothoot, Shield table 30, slot 1)."""
+    ads = json.loads((Path(__file__).parent / "data" / "swsh_raid_adverts.json").read_text())
+    first, second = bytes.fromhex(ads["advert_pidove"]), bytes.fromhex(ads["advert_hoothoot"])
+    built = raid.den_advert(first, bytes.fromhex(ads["boss_hoothoot"]))
+    assert built[0xB0:0xB8] == second[0xB0:0xB8]
+    assert built[0xD4:0xDC] == second[0xD4:0xDC]
+    assert built[0xDE:0xE2] == second[0xDE:0xE2]
+    from pokeldn.swsh import beacon
+    assert int.from_bytes(built[0x18:0x1A], "little") == beacon.crc16(built[0x1A:0x180])
+
+
+def test_den_advert_zeroes_the_den_record_for_a_boss_no_den_holds():
+    ads = json.loads((Path(__file__).parent / "data" / "swsh_raid_adverts.json").read_text())
+    from pokeldn import gen8
+    from pokeldn.swsh import pokemon
+    plain = bytearray(gen8.decrypt(bytes.fromhex(ads["boss_hoothoot"])))
+    plain[gen8.OFF_SPECIES:gen8.OFF_SPECIES + 2] = (151).to_bytes(2, "little")   # Mew: no den
+    built = raid.den_advert(bytes.fromhex(ads["advert_pidove"]), pokemon.encrypt(bytes(plain)))
+    assert built[0xD4:0xDC] == bytes(8)
+    assert int.from_bytes(built[0xB0:0xB2], "little") & 0x3FF == 151
+
+
+def test_boss_record_keeps_the_den_bosss_dynamax_type():
+    """Both recorded den bosses carry Dynamax type 1; a traded record's 0 made a retail guest leave."""
+    from pokeldn import gen8
+    from pokeldn.swsh import pokemon
+    ads = json.loads((Path(__file__).parent / "data" / "swsh_raid_adverts.json").read_text())
+    den_boss = gen8.decrypt(bytes.fromhex(ads["boss_hoothoot"]))
+    traded = bytearray(den_boss)
+    traded[gen8.OFF_DYNAMAX_TYPE:gen8.OFF_DYNAMAX_TYPE + 2] = bytes(2)
+    traded[gen8.OFF_SPECIES:gen8.OFF_SPECIES + 2] = (831).to_bytes(2, "little")
+    built = gen8.decrypt(raid.boss_record(pokemon.encrypt(bytes(traded))))
+    assert built[gen8.OFF_DYNAMAX_TYPE:] == den_boss[gen8.OFF_DYNAMAX_TYPE:] == b"\x01\x00"
+    assert gen8.read(built)["species"] == 831

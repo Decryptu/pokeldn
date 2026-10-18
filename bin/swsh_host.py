@@ -27,7 +27,7 @@ from pokeldn.host_support import resolve_keys, needs_root
 from pokeldn.ldn import host4, left_after_trade, mesh_protocol as mesh, reliable4
 from pokeldn.ldn.ldn_mitm_host import IpHostTransport
 from pokeldn.ldn.transport import HostTransport, board_radio, find_ap_phy
-from pokeldn.swsh import beacon, host_trade, league_card, pokemon as swsh_pokemon, raid_host, trade_payload
+from pokeldn.swsh import beacon, host_trade, league_card, pokemon as swsh_pokemon, raid, raid_host, trade_payload
 from pokeldn.ldn.pia5 import password_crc
 from pokeldn.swsh.session import COMM_ID, PASSPHRASE, session_keys
 from pokeldn.app import screen
@@ -36,7 +36,7 @@ from pokeldn.online import session as online
 SCENE_ID = 60001  # a retail Sword's Link Trade network
 RAID_SCENE_ID = 60006  # a den lobby (docs/swsh_raid.md)
 RAID_PARTICIPANTS = 4
-RAID_BOSS_OFFSETS = (0xB0, 0xD4)  # u16 species, 0x11, u32 encryption constant
+RAID_UID_COPY = 0x55
 APP_VERSION = 7
 LDN_PROTOCOL = 1
 MAX_PARTICIPANTS = 2
@@ -217,20 +217,18 @@ def build_parser():
     return ap
 
 
-def raid_advert(app_data, boss_pk8):
+def raid_advert(app_data, boss_pk8, player_name="POKELDN"):
     """The den advertisement with the boss's species and encryption constant written in."""
     out = bytearray(app_data)
     # A guest's Y-Comm list leaves out a raid that carries its own account (docs/swsh_raid.md).
     for at, n in ((trade_payload.TAIL_DEVICE_ID, trade_payload.DEVICE_ID_LENGTH),
                   (trade_payload.TAIL_ACCOUNT_UID, trade_payload.ACCOUNT_UID_LENGTH)):
         out[STATION_PROFILE_OFF + at:STATION_PROFILE_OFF + at + n] = os.urandom(n)
-    boss = swsh_pokemon.read(boss_pk8)
-    for at in RAID_BOSS_OFFSETS:
-        struct.pack_into("<HB", out, at, boss["species"], 0x11)
-        out[at + 3:at + 7] = boss_pk8[:4]
-    record = out[GAME_DATA_OFF:GAME_DATA_OFF + RECORD_LEN]
-    struct.pack_into("<H", out, GAME_DATA_OFF, beacon.crc16(record[2:]))
-    return bytes(out)
+    out[RAID_UID_COPY:RAID_UID_COPY + 10] = out[0x2D:0x37]   # the same 10 bytes, in both adverts read
+    name = player_name.encode("utf-16-le")[:trade_payload.TAIL_NAME_LENGTH - 2]
+    at = STATION_PROFILE_OFF + trade_payload.TAIL_NAME_OFFSET
+    out[at:at + trade_payload.TAIL_NAME_LENGTH] = name.ljust(trade_payload.TAIL_NAME_LENGTH, b"\0")
+    return raid.den_advert(bytes(out), boss_pk8)
 
 
 def main(argv=None):
@@ -257,8 +255,8 @@ def main(argv=None):
         if not args.advert:
             print("[sw] --raid-boss needs --advert, a den host's advertisement")
             return 1
-        boss_pk8 = swsh_pokemon.encrypt(gen8.load(Path(args.raid_boss).read_bytes()))
-        app_data = raid_advert(app_data, boss_pk8)
+        boss_pk8 = raid.boss_record(swsh_pokemon.encrypt(gen8.load(Path(args.raid_boss).read_bytes())))
+        app_data = raid_advert(app_data, boss_pk8, args.player_name)
         args.scene_id = RAID_SCENE_ID
         rewards = [tuple(int(x, 0) for x in r.split(":")) for r in args.raid_reward]
         seed = args.raid_seed if args.raid_seed is not None else struct.unpack("<Q", os.urandom(8))[0]
