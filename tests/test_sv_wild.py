@@ -1,5 +1,5 @@
 """The Union Circle's crafted encounters (docs/sv_union_circle.md, Crafted encounters): where the host stands
-from the wild Pokemon its game shares, and our spawns kept out around it."""
+from the wild Pokemon its game shares, our spawns kept out around it, and the app entry."""
 import math
 import random
 
@@ -280,6 +280,41 @@ def test_our_own_spawns_are_not_weighed():
     assert located.spawns == []
 
 
+# The app entry
+
+def encounters_tool():
+    from pokeldn.app import catalog
+    return next(t for t in catalog.SV.tools if t.key == "sv-circle-encounters-join")
+
+
+def test_the_encounters_entry_crafts_the_spawn_s_arguments():
+    from pokeldn.app import command
+    from pokeldn.app.introspect import parser_of
+    from pokeldn.app.settings import Settings
+    tool = encounters_tool()
+    values = {"--code": "4807"}
+    assert command.problems(tool, values) == ["Pick the Pokemon to spawn."]
+    values["--spawn"] = {"legal": True, "species": 906, "level": 20, "shiny": True, "tera": 11, "form": 0,
+                         "nature": None, "gender": 1, "ability": 2, "scale": None, "item": 0,
+                         "ivs": "31/31/31/0/0/31"}
+    assert command.problems(tool, values) == []
+    parsed = parser_of(tool.script).parse_args(command.build(tool, values, {}, Settings()))
+    assert parsed.union_circle and parsed.follow_host
+    assert parsed.spawn == (gen9.internal_index(906), 20) and parsed.spawn_legal and parsed.spawn_shiny
+    assert (parsed.spawn_tera, parsed.spawn_form, parsed.spawn_gender, parsed.spawn_ability) == (11, 0, 1, 2)
+    assert parsed.spawn_nature is None and parsed.spawn_scale is None and parsed.spawn_item is None
+    assert sv_join.spawn_ivs(parsed.spawn_ivs) == (31, 31, 31, 31, 0, 0)    # HP Atk Def Spe SpA SpD
+    values["--spawn"] = dict(values["--spawn"], legal=False, level=0)
+    assert command.problems(tool, values) == ["The level is 1 to 100."]
+
+
+def test_the_encounters_entry_steps_name_the_rules():
+    from pokeldn.app import command
+    steps = command.steps(encounters_tool(), {})
+    assert any("15 to 25 m" in s for s in steps) and any("50 m" in s for s in steps)
+    assert not any("Snacksworth" in s for s in steps)
+
+
 def circle_args(argv):
     ap = sv_join.build_parser()
     args = ap.parse_args(["--union-circle", *argv])
@@ -423,3 +458,72 @@ def test_a_long_list_of_areas_is_cut_with_how_many_more():
     listed = wild._listed(names)
     assert len(listed) <= wild.CARD_NAMES and listed.endswith(" more")
     assert wild._listed(names[:2]) == "South Province (Area 0), South Province (Area 1)"
+
+
+def test_a_built_in_run_s_cards_top_its_tool_s_options_only_while_it_runs(monkeypatch):
+    import flet as ft
+    from types import SimpleNamespace
+    from gui.views.games import GamesView, SessionPanel
+    from pokeldn import panel as cards, plugins
+    monkeypatch.setattr(plugins, "owner", lambda key: None)
+    tool, other = encounters_tool(), SimpleNamespace(key="sv-circle-join")
+    process = SimpleNamespace(running=True)
+    app = SimpleNamespace(ui=lambda fn: fn(), process=process)
+    logged = []
+    games = GamesView.__new__(GamesView)
+    session = SessionPanel.__new__(SessionPanel)
+    games.__dict__.update(app=app, session=session, tool=tool, run_panel=ft.Column(visible=False))
+    session.__dict__.update(app=app, games=games, log=SimpleNamespace(add=logged.append), run_cards={},
+                            partner_state=None, traded=0, running_tool=tool)
+    printed = []
+    monkeypatch.setattr("builtins.print", lambda line, **kw: printed.append(line))
+    cards.show("zone", "Narrowing down your area", ["You may be in\tLake, Meadow"], chips=[("Areas left", "2")])
+    cards.show("zone", "Area found: spawning", ["You are in\tMeadow"], tone="ok")
+    for line in printed:
+        session._line(line)
+    assert logged == [] and list(session.run_cards) == ["zone"]
+    assert session.run_cards["zone"]["title"] == "Area found: spawning"
+    assert games.run_panel.visible and len(games.run_panel.controls) == 1
+    games.tool = other                          # another tool's page: not there
+    games.show_run_cards(update=False)
+    assert not games.run_panel.visible
+    games.tool, process.running = tool, False   # the run is over
+    games.show_run_cards(update=False)
+    assert not games.run_panel.visible
+    process.running = True
+    printed.clear()
+    cards.clear("zone")
+    session._line(printed[0])
+    assert not games.run_panel.visible and session.run_cards == {}
+
+
+def test_a_union_circle_link_code_starts_empty_at_every_launch():
+    from gui.views.games import forget_unremembered
+    from pokeldn.app import catalog
+    codes = [f for t in catalog.SV.tools if "circle" in t.key for f in t.fields if f.flag == "--code"]
+    assert len(codes) == 2 and not any(f.remembered for f in codes)
+    stored = {"sv-circle-join": {"values": {"--code": "1826", "--circle-task": "bp"}},
+              "sv-circle-encounters-join": {"values": {"--code": "4807"}},
+              "sv-raid-host": {"values": {"--code": "12345678"}}}
+    forget_unremembered(stored, [catalog.SV])
+    assert stored["sv-circle-join"]["values"] == {"--circle-task": "bp"}
+    assert stored["sv-circle-encounters-join"]["values"] == {}
+    assert stored["sv-raid-host"]["values"] == {"--code": "12345678"}
+
+
+def test_a_new_species_on_the_card_starts_over_from_a_wild_one(monkeypatch):
+    from types import SimpleNamespace
+    from gui.views.encounter import EncounterPicker
+    picker = EncounterPicker.__new__(EncounterPicker)
+    loads = []
+    picker.__dict__.update(value={"legal": True, "species": 25, "form": 8, "level": 57, "shiny": True, "tera": 11,
+                                  "nature": 3, "gender": 1, "ability": 2, "scale": 9, "item": 4, "ivs": "1/2/3/4/5/6"},
+                           info={}, scanned=[])
+    picker._save = lambda redraw=True: None
+    picker._load_species = lambda: loads.append(dict(picker.value))
+    picker._species(SimpleNamespace(control=SimpleNamespace(value="991")))
+    assert loads == [{"legal": True, "species": 991, "form": 0, "shiny": True}]
+    assert picker.info is None and picker.scanned is None
+    picker.value.update(legal=False, level=30)
+    picker._species(SimpleNamespace(control=SimpleNamespace(value="25")))
+    assert loads[-1] == {"legal": False, "species": 25, "form": 0, "level": 30, "shiny": True}

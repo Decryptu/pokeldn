@@ -6,6 +6,7 @@ from pokeldn.app import preview
 from pokeldn.app.i18n import t as tr
 from dataclasses import dataclass, replace
 
+from pokeldn.sv.circle import BP_MAX
 from pokeldn.sv.raid import REWARD_ROWS
 from pokeldn.swsh.raid import REWARD_SLOTS as SWSH_REWARD_ROWS
 
@@ -17,7 +18,7 @@ class Field:
     label: str
     kind: str = "text"            # text number choice switch pokemon file builder multi linkcode code
                                   # (eight digits) raidseed rewards raidevent raidden raidpartners
-                                  # raideventboss (one value per flag, colon-separated), or a
+                                  # raideventboss (one value per flag, colon-separated) encounter, or a
                                   # PKHeX name list: species move item ball
     help: str = ""
     default: str | bool = ""
@@ -41,6 +42,10 @@ class Field:
     events: bool = False          # a pokemon field picked among the game's Mystery Gift Pokemon, not built
     your_ot: bool = False         # a switch for a gift that names its receiver: off and disabled while
                                   # the one chosen has its own trainer (command.locked)
+    length: int = 8               # a code field's digits
+    remembered: bool = True       # False: the value starts empty at every launch, as a Union
+                                  # Circle's Link Code, new each time
+    bounds: tuple[int, int] = ()  # a number field's lowest and highest value
 
     identity: str = ""         # stable key for a translated positional field
 
@@ -59,7 +64,8 @@ class Tool:
     name: str
     script: str
     summary: str
-    steps: tuple[str, ...]
+    steps: tuple[str | tuple[str, tuple[str, str]], ...]   # a (step, (flag, value)) shows only while
+                                                            # that field has that value
     fields: tuple[Field, ...] = ()
     fixed: tuple[str, ...] = ()
     doc: str = ""
@@ -466,6 +472,48 @@ SV = Game("sv", tr('catalog.scarlet_violet_504657', 'Scarlet & Violet'), tr('cat
           join_seconds("240")),
          fixed=("--seconds", "900", "--name", 'POKELDN', "--trainer-name", "{ot}"),
          doc="sv_raid.md"),
+    Tool("sv-circle-join", tr('catalog.union_circle_bbqs_bp_3a6433', 'Union Circle - BBQs/BP'), "bin/sv_join.py",
+         tr('catalog.join_the_union_circle_the_console_hosts_and_clear_blueb_a7f910', 'Join the Union Circle the console hosts and clear Blueberry Quests for it: every Snacksworth legendary, or the BP you choose.'),
+         (tr('catalog.on_the_console_x_poke_portal_union_circle_then_start_a__28de4e', 'On the console: X, Poke Portal, Union Circle, then start a group playing locally under a Link Code.'),
+          tr('catalog.enter_the_same_link_code_here_choose_the_task_and_start_0dffcf', 'Enter the same Link Code here, choose the task and start.'),
+          (tr('catalog.once_pokeldn_is_in_the_group_start_the_circle_on_the_co_0d4e89', 'Once POKELDN is in the group, start the circle on the console. As its start demo ends, the quests go in one a second, then our player leaves.'),
+           ("--circle-task", "snacksworth")),
+          (tr('catalog.once_pokeldn_is_in_the_group_start_the_circle_on_the_co_7a9a17', 'Once POKELDN is in the group, start the circle on the console. As its start demo ends, the BP clear goes in, then our player leaves.'),
+           ("--circle-task", "bp")),
+          tr('catalog.close_the_bp_side_bar_on_the_console_to_see_the_bp_come_bd0b25', 'Close the BP side bar on the console to see the BP come in.'),
+          (tr('catalog.for_snacksworth_talk_to_him_once_for_each_legendary_eac_87f6c8', 'For Snacksworth, talk to him once for each legendary; each talk releases one.'),
+           ("--circle-task", "snacksworth"))),
+         (Field("--code", tr('catalog.link_code_cc04a1', 'Link Code'), "code", required=True, length=4,
+                remembered=False,
+                help=tr('catalog.the_union_circle_s_four_digit_link_code_2e76dc', "The Union Circle's four-digit Link Code.")),
+          Field("--circle-task", tr('catalog.task_4bc74b', 'Task'), "choice", default="snacksworth",
+                choices=(("snacksworth", tr('catalog.unlock_all_remaining_snacksworth_legendaries_cd6e98', 'Unlock all remaining Snacksworth legendaries')),
+                         ("bp", tr('catalog.give_bp_b0e117', 'Give BP'))),
+                choice_help=(("snacksworth", tr('catalog.reads_how_many_solo_and_team_quests_the_host_still_lack_55eb31', "Reads how many solo and Team quests the host still lacks of the 130 and 12 that release all 25 legendaries, then gives them, one a second: Team quests drawn as the game draws them, then the host's own solo quests as they come up.")),
+                             ("bp", tr('catalog.clears_a_made_up_solo_quest_that_pays_the_host_this_bp_96bdeb', 'Clears a made-up solo quest that pays the host this BP.')))),
+          Field("--bbq-clear", tr('catalog.bp_36b717', 'BP'), "number", default="1000", required=True,
+                when=("--circle-task", "bp"), bounds=(1, BP_MAX),
+                help=tr('catalog.from_1_to_9_999_999_the_most_bp_a_player_holds_99d199', 'From 1 to 9,999,999, the most BP a player holds.')),
+          join_seconds("900")),
+         fixed=("--union-circle", "--seconds", "900", "--name", 'POKELDN', "--trainer-name", "{ot}"),
+         doc="sv_union_circle.md"),
+    Tool("sv-circle-encounters-join", tr('catalog.union_circle_encounters_31663b', 'Union Circle - Encounters'), "bin/sv_join.py",
+         tr('catalog.join_the_union_circle_the_console_hosts_and_spawn_the_w_88db74', 'Join the Union Circle the console hosts and spawn the wild Pokemon you craft around its player, to battle and catch.'),
+         (tr('catalog.on_the_console_x_poke_portal_union_circle_then_start_a__28de4e', 'On the console: X, Poke Portal, Union Circle, then start a group playing locally under a Link Code.'),
+          tr('catalog.enter_the_same_link_code_here_craft_the_pokemon_and_sta_23247e', 'Enter the same Link Code here, craft the Pokemon and start.'),
+          tr('catalog.once_pokeldn_is_in_the_group_start_the_circle_on_the_co_c34ac9', 'Once POKELDN is in the group, start the circle on the console. As its start demo ends, our player follows yours.'),
+          tr('catalog.three_of_the_pokemon_come_15_to_25_m_around_you_one_you_47e6f7', 'Three of the Pokemon come 15 to 25 m around you. One you battle, or walk more than 50 m from, comes back near you.'),
+          tr('catalog.with_legal_encounters_only_they_wait_until_the_wild_pok_aca8b5', 'With Legal encounters only they wait until the wild Pokemon your game shares show you stand where PKHeX accepts them caught, and go when you walk 50 m from where that was found.'),
+          tr('catalog.close_the_circle_on_the_console_to_stop_fa751d', 'Close the circle on the console to stop.')),
+         (Field("--code", tr('catalog.link_code_cc04a1', 'Link Code'), "code", required=True, length=4,
+                remembered=False,
+                help=tr('catalog.the_union_circle_s_four_digit_link_code_2e76dc', "The Union Circle's four-digit Link Code.")),
+          Field("--spawn", tr('catalog.pokemon_to_spawn_c7ecd1', 'Pokemon to spawn'), "encounter", required=True,
+                help=tr('catalog.what_a_wild_pokemon_s_shared_record_carries_the_game_bu_d16306', "What a wild Pokemon's shared record carries; the game builds the rest when it is caught.")),
+          join_seconds("3600")),
+         fixed=("--union-circle", "--seconds", "3600", "--follow-host", "--name", 'POKELDN',
+                "--trainer-name", "{ot}"),
+         doc="sv_union_circle.md"),
 ))
 
 ZA = Game("za", tr('catalog.legends_z_a_594c26', 'Legends Z-A'), tr('catalog.plza_bc9316', 'PLZA'), "za.md", (

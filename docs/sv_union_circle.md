@@ -428,6 +428,10 @@ With `--circle-task`, our player leaves the circle once the task is done, and th
 
 Each clear is a message 3 with its BP, our station id and our status record.
 
+The app's Scarlet & Violet entry Union Circle - BBQs/BP runs these two tasks. It takes the circle's
+four-digit Link Code and a choice between unlocking every remaining Snacksworth legendary and giving
+an amount of BP.
+
 A retail host paid every clear sent this way, Normal or Team, with no message 1 from us before
 them; the notices and BP show once the host's player has closed the BP side bar. A single Team clear,
 even of a quest that is not a Team quest, was enough for Snacksworth to release the next Team-route
@@ -572,6 +576,12 @@ nature and each IV at random, the ability slot 0 or 1, no held item. Each spawn 
 50 m from is let go and another comes near the host. In the captures the host never sent a kind 2
 for a member's spawn: only its asks to battle one.
 
+The app's Scarlet & Violet entry Union Circle - Encounters runs it with `--follow-host`. Its card
+sets what a record carries, the species and level too; the nature, ability slot, size and IVs are
+drawn unless set. With its Legal encounters only switch (`--spawn-legal`), the card offers only the
+species, forms and levels some wild slot gives and the Tera Types PKHeX accepts somewhere, and lists
+every location where PKHeX accepts the spawn as chosen.
+
 With `--spawn-legal`, PKHeX decides. Its Scarlet / Violet wild slots name
 the location a catch there gets; the `wild_areas` command of the PKHeX helper lists them by location,
 with a slot's drawn form (Scatterbug's pattern) as any form. The `wild_legal` command builds the
@@ -598,8 +608,8 @@ player. The spawns come and hold around that estimate. With no spawn in that tim
 one does. A transform within 10 m of the origin (riding, or set down) never places the host.
 
 While it runs, it prints the search as a status card (a `[panel]` line with id `zone`, printed when
-it changes): the areas still possible, how many allow the spawn and how many wild
-Pokemon were weighed. When no area left allows it, the card names the areas to go to; after the host
+it changes), which the app shows above the tool's options: the areas still possible, how many allow
+the spawn and how many wild Pokemon were weighed. When no area left allows it, the card names the areas to go to; after the host
 walks too far, it says why the search started over; once found, it shows how far the host is from
 where the area was found. It says when the host's position is estimated from its spawns, or unknown.
 Until the area is found it suggests a picnic where one can be started: packing it up

@@ -758,6 +758,26 @@ def test_a_member_spawns_only_once_it_knows_where_the_host_stands():
     assert spawn_out(member, 110.0) == ([], [])
 
 
+def test_the_app_s_union_circle_entry_runs_a_task_per_choice():
+    from pokeldn.app import catalog, command
+    from pokeldn.app.introspect import parser_of
+    from pokeldn.app.settings import Settings
+    tool = next(t for t in catalog.SV.tools if t.key == "sv-circle-join")
+    values = {"--code": "1826"}
+    args = command.build(tool, values, {}, Settings())
+    parsed = parser_of(tool.script).parse_args(args)
+    assert parsed.union_circle and parsed.code == "1826" and parsed.circle_task == "snacksworth"
+    assert parsed.bbq_clear is None and command.problems(tool, values) == []
+    values.update({"--circle-task": "bp", "--bbq-clear": "5000"})
+    parsed = parser_of(tool.script).parse_args(command.build(tool, values, {}, Settings()))
+    assert parsed.circle_task == "bp" and parsed.bbq_clear == 5000
+    for refused in ("0", "10000000", "", "1e3"):
+        values["--bbq-clear"] = refused
+        assert command.problems(tool, values) == ["BP: a whole number from 1 to 9,999,999."]
+    values["--bbq-clear"], values["--code"] = str(circle.BP_MAX), "18"
+    assert command.problems(tool, values) == ["Link Code: all four digits."]
+
+
 @pytest.mark.parametrize("argv, why", [
     (["--circle-task", "bp"], "needs the BP to give"),
     (["--circle-task", "bp", "--bbq-clear", "10000000"], "1 to 9999999 BP"),
@@ -766,6 +786,17 @@ def test_a_circle_task_refuses_bp_a_player_cannot_hold(argv, why, capsys):
     with pytest.raises(SystemExit):
         sv_join.main(["--union-circle", *argv])
     assert why in capsys.readouterr().err
+
+
+def test_the_union_circle_entry_shows_each_task_its_own_steps():
+    from pokeldn.app import catalog, command
+    tool = next(t for t in catalog.SV.tools if t.key == "sv-circle-join")
+    snacks = command.steps(tool, {})
+    bp = command.steps(tool, {"--circle-task": "bp"})
+    assert len(snacks) == 5 and len(bp) == 4
+    assert not any("Snacksworth" in step for step in bp)
+    assert any("one a second" in step for step in snacks) and any("BP clear" in step for step in bp)
+    assert snacks[:2] == bp[:2]
 
 
 def test_a_spawn_draws_its_ivs_and_ability_at_random_as_the_host_s_wild_ones_come():

@@ -518,7 +518,7 @@ def test_start_on_another_tool_stops_the_running_session_then_starts(tmp_path, m
     monkeypatch.setattr(SessionPanel, "_tick", lambda self: None)
     first, second = (next(t for t in TOOLS if t.key == key) for key in ("swsh-join", "pla-host"))
     panel = SessionPanel.__new__(SessionPanel)
-    panel.__dict__.update(app=FakeApp(), games=SimpleNamespace(values={}, extra={}, visible=False, panes=SimpleNamespace(show=lambda *a, **k: None), game=SimpleNamespace(
+    panel.__dict__.update(app=FakeApp(), games=SimpleNamespace(values={}, extra={}, visible=False, show_run_cards=lambda: None, panes=SimpleNamespace(show=lambda *a, **k: None), game=SimpleNamespace(
         name="game", key="swsh")), log=SimpleNamespace(add=lambda line: None, clear=lambda: None),
         received=SimpleNamespace(), transfer=SimpleNamespace(), partner=SimpleNamespace(), run=None,
         running_tool=None, restart=False, stopping=False, traded=0)
@@ -705,35 +705,39 @@ def test_a_console_code_is_typed_box_by_box_and_only_a_whole_one_reaches_the_lau
     from pokeldn.app.introspect import parser_of
     from pokeldn.app.settings import Settings
     values = {f.key: {"file": "offer.bin"} for f in tool.fields if f.kind == "pokemon"}
-    code = widgets.DigitCode(command.value_of(field, values), lambda v: values.__setitem__(field.key, v))
+    values |= {f.key: {"species": 25, "level": 10} for f in tool.fields if f.kind == "encounter"}
+    n = field.length
+    code = widgets.DigitCode(command.value_of(field, values), lambda v: values.__setitem__(field.key, v),
+                             length=n)
     assert code.value == field.default
-    for n in range(8):                      # clear whatever the default put there
-        code._typed(n, "")
-    assert bool(command.problems(tool, values)) == bool(field.default)
+    for box in range(n):                    # clear whatever the default put there
+        code._typed(box, "")
+    assert bool(command.problems(tool, values)) == bool(field.default or field.required)
     code._typed(0, "1")
     code._typed(code.at, "x2")              # a letter never lands
     assert code.at == 2 and values[field.key] == "12"
-    assert command.problems(tool, values) == [f"{field.label}: all eight digits" +
-                                              ("." if field.default else ", or none.")]
+    assert command.problems(tool, values) == [f"{field.label}: all {dict({4: 'four', 8: 'eight'})[n]} digits" +
+                                              ("." if field.default or field.required else ", or none.")]
     code._typed(2, "x")
     assert values[field.key] == "12" and code.at == 2
-    code._typed(2, "34 5-678")              # a pasted code keeps its digits only
-    assert values[field.key] == "12345678" and code.at == 7
+    whole = "12345678"[:n]
+    code._typed(2, "34 5-678"[:2 * n - 6] if n < 8 else "34 5-678")   # a pasted code keeps its digits only
+    assert values[field.key] == whole and code.at == n - 1
     assert command.problems(tool, values) == []
     args = command.build(tool, values, {}, Settings())
-    assert args[args.index(field.flag) + 1] == "12345678"
+    assert args[args.index(field.flag) + 1] == whole
     parser_of(tool.script).parse_args(args)
-    code._typed(3, "")                      # a hole keeps the digits after it in their boxes
-    assert values[field.key] == "123 5678" and command.problems(tool, values)
-    code._typed(3, "9")
-    code.at = 7
-    code._typed(7, "")
-    code.key("Backspace")                   # the Backspace that emptied box 8 is not a second one
-    assert values[field.key] == "1239567"
+    code._typed(1, "")                      # a hole keeps the digits after it in their boxes
+    assert values[field.key] == whole[0] + " " + whole[2:] and command.problems(tool, values)
+    code._typed(1, "9")
+    code.at = n - 1
+    code._typed(n - 1, "")
+    code.key("Backspace")                   # the Backspace that emptied the last box is not a second one
+    assert values[field.key] == "19" + whole[2:n - 1]
     code.cleared = (None, 0.0)
     code.key("Backspace")
-    assert values[field.key] == "123956" and code.at == 6
-    assert widgets.DigitCode(values[field.key], lambda v: None).digits[:6] == list("123956")
+    assert values[field.key] == "19" + whole[2:n - 2] and code.at == n - 2
+    assert widgets.DigitCode(values[field.key], lambda v: None, length=n).digits[:n - 2] == list("19" + whole[2:n - 2])
 
 
 def test_settings_keep_a_six_digit_switch_id_beside_the_five_digit_one(tmp_path, monkeypatch):

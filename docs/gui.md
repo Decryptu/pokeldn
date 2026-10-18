@@ -486,6 +486,32 @@ Each pick passes `--raid-partner`, in order. Raising Consoles joining drops the 
 pick the chosen stage lacks (Dylan or Luke below four stars) is dropped. Folding only hides the card
 (`GamesView.show_raid_partners`): the choice still goes to the raid, and the header names it.
 
+## Union Circle
+
+Scarlet/Violet's two Union Circle tools join the circle a console hosts under a four-digit Link Code
+([Union Circle](sv_union_circle.md)). A circle's code is new each time, so the field starts empty at
+every launch (`Field.remembered`).
+
+- Union Circle - BBQs/BP: Task unlocks every remaining Snacksworth legendary or gives BP; the BP
+  field takes 1 to 9,999,999 (`Field.bounds`). The console steps follow the task chosen: a step
+  given as `(text, (flag, value))` shows only while that field has that value (`command.steps`).
+  A Snacksworth run draws a bar of the host's clears against those it lacked ([Progress](#progress)).
+- Union Circle - Encounters: the Pokemon to spawn card (`gui/views/encounter.py`, field kind
+  `encounter`) sets the species, shiny, form, level, Tera Type, nature, gender, ability, held item,
+  scale and IVs. Nature, ability, scale and IVs left empty are drawn as the host's own wild ones
+  are. A new species resets the fields below it. With Legal encounters only, on by default, the card
+  offers the species, forms and levels PKHeX's wild slots give and the Tera Types PKHeX accepts
+  somewhere, and lists every location where PKHeX accepts the spawn caught, or why it accepts it
+  nowhere. The card passes `--spawn` and the `--spawn-*` flags (`command.encounter_args`).
+
+A built-in run's `[panel]` cards ([Status cards](plugins.md#status-cards-18)) show at the top of its
+tool's options while it runs, and only there (`GamesView.show_run_cards`); they go when the run ends.
+The encounters run shows its area search this way.
+
+A circle run's log keeps to what a user follows: the join, the host's totals, the BP clear, our
+spawns coming out or being battled, and the host's area found or lost. `--verbose` (in the Advanced tab's
+Advanced options) adds every circle message sent and each step of the area search.
+
 ## Mystery Gift - Simulated
 
 The Mystery Gift - Simulated tool's card, on Let's Go, Brilliant Diamond/Shining Pearl, Legends
