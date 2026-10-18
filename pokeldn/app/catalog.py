@@ -16,7 +16,8 @@ class Field:
                                   # raidpartners's tuple is its picks' flag then its progress's
     label: str
     kind: str = "text"            # text number choice switch pokemon file builder multi linkcode code
-                                  # (eight digits) raidseed rewards raidevent raidden raidpartners, or a
+                                  # (eight digits) raidseed rewards raidevent raidden raidpartners
+                                  # raideventboss (one value per flag, colon-separated), or a
                                   # PKHeX name list: species move item ball
     help: str = ""
     default: str | bool = ""
@@ -288,9 +289,14 @@ SWSH = Game("swsh", tr('catalog.sword_shield_71b23d', 'Sword & Shield'), tr('cat
           tr('catalog.y_comm_in_local_wireless_mode_join_pokeldn_s_raid_from__a91d47', "Y-Comm in local wireless mode: join POKELDN's raid from the list."),
           tr('catalog.press_ready_the_console_runs_the_battle_and_our_pokemon_6f02b3', 'Press Ready: the console runs the battle and our Pokemon fights at your side.'),
           tr('catalog.win_the_raid_to_receive_the_rewards_dcd72e', 'Win the raid to receive the rewards.')),
-         (Field("--raid-boss", tr('catalog.boss_8f6c1d', 'Boss'), "pokemon", required=True,
+         (Field("--raid-event", tr('catalog.raid_event_d4b4e5', 'Raid event'), "raidevent",
+                help=tr('catalog.a_boss_from_a_past_wild_area_event_from_project_pokemon_3e1f70', "A boss from a past Wild Area Event, from Project Pokemon's EventsGallery. Leave it empty, or fold this card, to host the boss you build.")),
+          Field(("--raid-version", "--raid-stars", "--raid-event-boss", "--raid-area"), tr('catalog.event_boss_6b2a9d', 'Event boss'),
+                "raideventboss", requires="--raid-event",
+                help=tr('catalog.the_event_s_bosses_a_den_can_show_with_their_stars_leve_0c58e2', "The event's bosses a den can show, with their stars, level and game; the event's rewards that fit the den go with it.")),
+          Field("--raid-boss", tr('catalog.boss_8f6c1d', 'Boss'), "pokemon", required=True, unless="--raid-event",
                 help=tr('catalog.the_raid_s_boss_a_boss_a_den_can_hold_shows_in_every_co_e2a7b9', "The raid's boss. A boss a den can hold shows in every console's list; its level sets the stars.")),
-          Field("--raid-gigantamax", tr('catalog.gigantamax_boss_0a7e52', 'Gigantamax boss'), "switch",
+          Field("--raid-gigantamax", tr('catalog.gigantamax_boss_0a7e52', 'Gigantamax boss'), "switch", unless="--raid-event",
                 help=tr('catalog.for_a_pokemon_a_den_holds_as_gigantamax_charizard_snorl_6b1d40', 'For a Pokemon a den holds as Gigantamax: Charizard, Snorlax, Toxtricity and the other Gigantamax Pokemon.')),
           Field("--offer-file", tr('catalog.our_pokemon_14a66b', 'Our Pokemon'), "pokemon", required=True,
                 help=tr('catalog.the_pokemon_our_player_brings_pkhex_checks_it_is_legal_abc1cf', 'The Pokemon our player brings. PKHeX checks it is legal.')),

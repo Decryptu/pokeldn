@@ -109,7 +109,10 @@ def _args(field: Field, value, tool: Tool) -> list[str]:
         return [part for row in (value or ())
                 for part in (flags[0], f"{row.get('item_id', '')}:{row.get('quantity', '')}")]
     if field.kind == "raidevent":     # the event's folder in the app's gallery
-        return [flags[0], events_gallery.event_path(value)] if value else []
+        return [flags[0], events_gallery.event_path(value, game=tool.key.split("-")[0])] if value else []
+    if field.kind == "raideventboss":   # version:stars:number:area, one value per flag
+        parts = str(value or "").split(":", 3)
+        return [a for flag, v in zip(flags, parts) for a in (flag, v)] if len(parts) == 4 else []
     if field.kind == "raidpartners":  # {"progress": a stage or "", "picks": trainers in slot order}
         value = value if isinstance(value, dict) else {}
         progress = [flags[1], value["progress"]] if value.get("progress") else []
@@ -223,9 +226,9 @@ def code_error(field: Field, value, game: str = "sv") -> str:
             return "A chosen partner is not among this progress's trainers."
         return ""
     if field.kind == "raidevent":
-        if not value or events_gallery.holds(value):
+        if not value or events_gallery.holds(value, game=game):
             return ""
-        if not events_gallery.present():
+        if not events_gallery.present(game=game):
             return "Download the event gallery in Raid event, or choose no event."
         return "The chosen event is not in the event gallery any more."
     if field.kind == "rewards":

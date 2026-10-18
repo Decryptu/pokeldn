@@ -191,3 +191,22 @@ def test_the_host_picks_an_event_boss_and_refuses_what_does_not_name_one(tmp_pat
     assert rewards[:3] == [(1127, 2), (1128, 1), (1129, 2)]
     assert swsh_host.main(["--ip-host", "--raid-stars", "5"]) == 1
     assert "pass --raid-event" in capsys.readouterr().out
+
+
+def test_every_boss_the_app_offers_is_the_one_the_host_picks_and_shows_in_a_den(event, tmp_path):
+    """The app's Event boss choices (raid_event.hostable, emitted as --raid-version, --raid-stars,
+    --raid-event-boss, --raid-area) name the same boss when the host reads them back, and only bosses
+    a base den holds are offered: Index 010's Milcery is not."""
+    folder = event_folder(tmp_path / "Index 010")
+    offered = raid_event.hostable(event)
+    assert offered and all(any(raid.den_slot(v, b.species, b.form, b.gigantamax) for v in (SWORD, SHIELD))
+                           for *_, b in offered)
+    assert not any(b.species == 868 for *_, b in offered)
+    advert = raid.DEN_ADVERT.read_bytes()
+    for version, stars, number, area, chosen in offered:
+        args = swsh_host.build_parser().parse_args(
+            ["--raid-event", str(folder), "--raid-version", version, "--raid-stars", str(stars),
+             "--raid-event-boss", str(number), "--raid-area", area])
+        pk8, rank, _ = swsh_host.event_raid(args, advert)
+        got = gen8.read(gen8.decrypt(pk8))
+        assert (got["species"], got["form"], rank) == (chosen.species, chosen.form, stars - 1)

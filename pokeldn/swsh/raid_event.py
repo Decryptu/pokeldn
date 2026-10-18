@@ -340,3 +340,17 @@ def describe(boss, rank):
     elif boss.shiny == SHINY_NEVER:
         parts.append("never shiny")
     return ", ".join(parts)
+
+
+def hostable(event):
+    """-> (version name, stars, number, area, boss) for every boss of `event` a hosted raid can show:
+    one a base den of either version holds as the same species, form and Gigantamax state (a guest
+    refuses any other, docs/swsh_raid.md, The boss record). `number` counts as --raid-event-boss does."""
+    out = []
+    for area in event.areas():
+        for version in VERSIONS:
+            for rank in range(RANKS):
+                for number, boss in enumerate(event.choices(version, rank, area), 1):
+                    if any(raid.den_slot(v, boss.species, boss.form, boss.gigantamax) for v in VERSIONS):
+                        out.append((VERSIONS[version].lower(), rank + 1, number, area, boss))
+    return out

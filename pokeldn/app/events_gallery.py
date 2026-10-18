@@ -254,7 +254,12 @@ def forget() -> None:
     _EVENTS.clear()
 
 
-def title(key: str) -> str:
+def title(key: str, game: str = "sv") -> str:
+    if game == "swsh":
+        try:
+            return titles(Path(long_path(_home(game)), README).read_text(encoding="utf-8-sig")).get(key, key)
+        except OSError:
+            return key
     return " · ".join(re.sub(r"^\d+\s*", "", part) for part in key.split("/"))
 
 

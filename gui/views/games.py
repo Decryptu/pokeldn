@@ -12,6 +12,7 @@ from gui.app import keys_found
 from pokeldn import pokemon as builder
 from pokeldn import panel, progress
 from pokeldn.app import bank, command, panels, events_gallery, gift_builder, online, received, runner
+from pokeldn.swsh import raid_event as swsh_raid_event
 from pokeldn.sv import raid_event as raid_events
 from gui import theme as t
 from pokeldn import plugins
@@ -60,6 +61,11 @@ def tool_role(tool: Tool) -> str:
     if tool.key.endswith("-online"):
         return tr('games.your_console_joins_pokeldn_which_reaches_your_partner_0a41b2', 'Your console joins pokeldn, which reaches your partner')
     return ""
+
+
+def game_of(view) -> str:
+    """-> the shown game's key; a raid view without one is Scarlet/Violet's."""
+    return getattr(getattr(view, "game", None), "key", "sv")
 
 
 class GamesView:
@@ -220,7 +226,7 @@ class GamesView:
         if not key:
             return None
         try:
-            return events_gallery.load(key)
+            return events_gallery.load(key, game=game_of(self))
         except (OSError, ValueError):
             return None
 
@@ -236,7 +242,7 @@ class GamesView:
 
     def constrain_raid(self) -> None:
         """Keeps the stored version, region, progress and den ones the chosen event spawns."""
-        if self.raid_event() is None:
+        if game_of(self) != "sv" or self.raid_event() is None:
             return
         context = self.raid_context()
         wanted = {"--raid-version": context["version"], "--raid-map": context["map_name"],
@@ -247,6 +253,8 @@ class GamesView:
 
     def raid_choices(self, field: Field) -> tuple | None:
         """-> the choices of a raid context field the chosen event allows, or None to keep them all."""
+        if game_of(self) != "sv":
+            return None
         event = self.raid_event()
         if event is None or field.key not in ("--raid-version", "--raid-map", "--raid-progress"):
             return None
@@ -440,6 +448,20 @@ class GamesView:
                                  on_select=lambda e: self.set_value(
                                      field, "" if e.control.value == EMPTY else e.control.value, rebuild=True))
             control.disabled = len(choices) == 1 and len(field.choices) > 1   # an event leaves one
+            return control
+        if field.kind == "raideventboss":
+            event = self.raid_event()
+            bosses = swsh_raid_event.hostable(event) if event is not None else []
+            options = [(f"{v}:{stars}:{n}:{area}",
+                        f"{'★' * stars} {b.name} · Lv {b.level} · {v.title()}" + (f" · {area}" if area != "Wild Area" else ""))
+                       for v, stars, n, area, b in bosses]
+            keys = [k for k, _ in options]
+            chosen = value if value in keys else (keys[-1] if keys else "")
+            if chosen != value and chosen:
+                self.values[field.key] = chosen
+            control = t.dropdown(options or [(EMPTY, tr('games.no_boss_of_this_event_shows_in_a_den_8a4b1e', 'No boss of this event shows in a den'))],
+                                 chosen or EMPTY, on_select=lambda e: self.set_value(field, e.control.value, rebuild=True))
+            control.disabled = not options
             return control
         if field.kind == "raidden":
             event, context = self.raid_event(), self.raid_context()
