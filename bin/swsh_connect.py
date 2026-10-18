@@ -27,6 +27,9 @@ from pokeldn.ldn import (broadcast4, ldn_mitm, ldn_mitm_host, local_protocol as 
 from pokeldn.ldn.transport import board_radio, find_ap_phy
 from pokeldn.swsh import COMM_ID, PASSPHRASE, PIA_PORT, packet_iv, session_keys
 from pokeldn.swsh import trade as swsh_trade
+from pokeldn.swsh import raid as swsh_raid
+from pokeldn.swsh import raid_battle
+from pokeldn.ldn import sync_clock
 from pokeldn import gen8
 from pokeldn.swsh import pokemon as swsh_pokemon
 from pokeldn.swsh import trade_payload
@@ -116,7 +119,7 @@ async def find_radio(args):
             print(f"[cx] saw comm_id=0x{n.local_communication_id:016x} ch={n.channel} "
                   f"scene={n.scene_id} {n.num_participants}/{n.max_participants}")
         net = next((n for n in nets if n.local_communication_id == want
-                    and n.scene_id == SCENE_ACCEPTING), None)
+                    and args.scene in (None, n.scene_id)), None)
         if net is not None:
             break
     if net is None:
@@ -221,7 +224,7 @@ async def find_ip(args):
         n = _Advertised(info)
         print(f"[cx] saw comm_id=0x{n.local_communication_id:016x} scene={n.scene_id} "
               f"{n.num_participants}/{n.max_participants}")
-        if n.local_communication_id == want and n.scene_id == SCENE_ACCEPTING:
+        if n.local_communication_id == want and args.scene in (None, n.scene_id):
             net = n
             break
     if net is None:
@@ -290,7 +293,7 @@ async def main_async(args):
               "joins_out": 0, "mesh_in": 0, "join_response": None, "mesh_acks": 0,
               "updates_mesh": 0, "rtt_in": 0, "rtt_out": 0, "reliable_in": 0,
               "reliable_last": None, "broadcast_in": 0, "data_out": 0, "data_acked": None,
-              "broadcast_ack_ids": set(), "broadcast_stray_ids": set(), "windows": {},
+              "broadcast_ack_ids": set(), "raid_rx": [], "raid_rx7c": [], "ack_slot0": {}, "broadcast_stray_ids": set(), "windows": {},
               "their_ack_id": 0, "data_seqs": 0,
               "their_payload": None, "ack_by_proto": {}, "said_by_proto": {},
               "seen_by_proto": {}, "answer_queue": [],
@@ -434,6 +437,10 @@ async def main_async(args):
                 record(rec="rx_reliable_ack", t=now, protocol=protocol, port=port,
                        raw=got["payload"].hex())
                 for e in (shape if isinstance(shape, list) else []):
+                    if e["slot"] == 0:
+                        # Slot 0 only: other slots hold stale ids (docs/pia.md, the ack payload).
+                        key = (protocol, port)
+                        st["ack_slot0"][key] = max(st["ack_slot0"].get(key, 0), e["ack_id"])
                     st["their_ack_id"] = max(st["their_ack_id"], e["ack_id"])
                     st["ack_by_proto"][protocol] = max(st["ack_by_proto"].get(protocol, 0),
                                                        e["ack_id"])
@@ -451,6 +458,16 @@ async def main_async(args):
             if not (w["seqs"] and got["sequence_id"] <= max(w["seqs"])):
                 st["their_payload"] = got["payload"]
                 st["said_by_proto"][protocol] = got["payload"]
+                if protocol == reliable4.BROADCAST_PROTOCOL:
+                    st["raid_rx"].append(got["payload"])
+            if protocol == 0x7C and got["sequence_id"] not in w["seqs"]:
+                data = got["payload"]
+                if got["flags"] & reliable5.FLAG_ZLIB:
+                    try:
+                        data = zlib.decompress(data)
+                    except zlib.error:
+                        pass
+                st["raid_rx7c"].append((port, data))
                 st["said_by_port"][(protocol, port)] = got["payload"]
             # pingSynced on id 130 is the cue to open the selection phase.
             if args.selection_start and got["payload"] == swsh_trade.sync(
@@ -1663,6 +1680,130 @@ async def main_async(args):
                 await trio.sleep(args.update_mesh_period)
 
 
+        async def raid_sender():
+            """A Max Raid guest's three lobby messages on 0x80 port 0 once our snapshot is through:
+            PlayerInfo (zlib, 4 KB window, flag 0x10), BattleReady, SelectPokemon (docs/swsh_raid.md)."""
+            if not args.raid_join:
+                return
+            while not st["snapshot_done_sent"]:
+                await trio.sleep(0.1)
+            await trio.sleep(0.3)
+            if st["our_pk8"] is None:
+                print("[raid] no Pokemon to select: pass --offer-slot N")
+                return
+            z = zlib.compressobj(9, zlib.DEFLATED, 12)
+            info = z.compress(swsh_raid.player_info(args.raid_name)) + z.flush()
+            msgs = [reliable4.build_message(info, reliable4.FIRST_DATA_FLAGS | reliable5.FLAG_ZLIB, 1,
+                                            lowest_pending=1, destinations=[host_constant]),
+                    reliable4.build_data_message(swsh_raid.battle_ready(), 2,
+                                                 destinations=[host_constant]),
+                    reliable4.build_data_message(swsh_raid.select_pokemon(st["our_pk8"]), 3,
+                                                 destinations=[host_constant])]
+            print(f"\n[raid] *** SENDING PlayerInfo {args.raid_name!r}, BattleReady, SelectPokemon ***")
+            for attempt in range(40):
+                for body in msgs:
+                    sock.sendto(wrap(keys, our_mac, our_constant, next_nonce(), body,
+                                     reliable4.BROADCAST_PROTOCOL, args.connect_station_first),
+                                (host_ip, PIA_PORT))
+                    record(rec="tx_data", t=time.monotonic() - t0, protocol=0x80, message=body.hex())
+                await trio.sleep(0.5)
+                if max(st["broadcast_ack_ids"], default=0) > 3:
+                    print(f"[raid] *** THE HOST ACKED ALL THREE *** after {attempt + 1} sends")
+                    break
+            else:
+                print("[raid] the host never acked the three messages")
+                return
+            if args.raid_ready is None:
+                return
+            await trio.sleep(args.raid_ready)
+            body = reliable4.build_data_message(swsh_raid.battle_ready(True), 4,
+                                                destinations=[host_constant])
+            print("\n[raid] *** READY ***")
+            for attempt in range(40):
+                sock.sendto(wrap(keys, our_mac, our_constant, next_nonce(), body,
+                                 reliable4.BROADCAST_PROTOCOL, args.connect_station_first),
+                            (host_ip, PIA_PORT))
+                record(rec="tx_data", t=time.monotonic() - t0, protocol=0x80, message=body.hex())
+                await trio.sleep(0.5)
+                if max(st["broadcast_ack_ids"], default=0) > 4:
+                    print(f"[raid] *** THE HOST ACKED OUR READY *** after {attempt + 1} sends")
+                    break
+            # The host answers its own ready with BattleStart, BossPokemon, Rewards, BattleSeed and a
+            # BattleReady whose byte 12 is 1; the guest echoes that stage (docs/swsh_raid.md).
+            while True:
+                said = [swsh_raid.parse(p) for p in st["raid_rx"]]
+                if any(x and x[0] == swsh_raid.BATTLE_READY and x[1][12] == 1 for x in said):
+                    break
+                await trio.sleep(0.1)
+            print("\n[raid] *** THE HOST STARTS THE BATTLE *** fields "
+                  f"{sorted({x[0] for x in said if x})}")
+            # An emulated guest sends its SelectPokemon again first.
+            msgs = [reliable4.build_data_message(swsh_raid.select_pokemon(st["our_pk8"]), 5,
+                                                 destinations=[host_constant]),
+                    reliable4.build_data_message(swsh_raid.battle_ready(True, started=True), 6,
+                                                 destinations=[host_constant])]
+            for attempt in range(40):
+                for body in msgs:
+                    sock.sendto(wrap(keys, our_mac, our_constant, next_nonce(), body,
+                                     reliable4.BROADCAST_PROTOCOL, args.connect_station_first),
+                                (host_ip, PIA_PORT))
+                    record(rec="tx_data", t=time.monotonic() - t0, protocol=0x80, message=body.hex())
+                await trio.sleep(0.5)
+                if max(st["broadcast_ack_ids"], default=0) > 6:
+                    print(f"[raid] *** THE HOST ACKED OUR SECOND READY *** after {attempt + 1} sends")
+                    break
+            # The battle on 0x7C: raid_battle.Guest answers the host's messages; each port is its
+            # own reliable stream, resent until acked.
+            moves = [m for m in swsh_pokemon.read(st["our_pk8"])["moves"] if m]
+            move = moves[min(args.raid_move, len(moves)) - 1]
+            print(f"[raid] our Pokemon fights with move {move} (slot {args.raid_move} of {moves})")
+            guest = raid_battle.Guest(our_constant, slot=1, action=raid_battle.action(move))
+            done, seq, sent = 0, {0: 1, 1: 1}, {0: [], 1: []}
+            last_send = 0.0
+            while True:
+                fresh = False
+                while done < len(st["raid_rx7c"]):
+                    port, data = st["raid_rx7c"][done]
+                    done += 1
+                    for out_port, payload in guest.receive(port, data):
+                        sent[out_port].append((seq[out_port], payload))
+                        print(f"[raid] 0x7c/{out_port} seq {seq[out_port]} {payload.hex()[:80]}")
+                        record(rec="raid_tx", port=out_port, sequence=seq[out_port],
+                               payload=payload.hex())
+                        seq[out_port] += 1
+                        fresh = True
+                now = time.monotonic()
+                if now - last_send > 0.3 or fresh:
+                    last_send = now
+                    for p_ in sent:
+                        acked = st["ack_slot0"].get((0x7C, p_), 1)
+                        pending = [(s_, pl) for s_, pl in sent[p_] if s_ >= acked]
+                        low = pending[0][0] if pending else seq[p_]
+                        for s_, pl in pending[:16]:
+                            body = reliable4.build_data_message(pl, s_, lowest_pending=low)
+                            sock.sendto(wrap(keys, our_mac, our_constant, next_nonce(), body,
+                                             0x7C, args.connect_station_first, port=p_),
+                                        (host_ip, PIA_PORT))
+                await trio.sleep(0.03)
+
+        async def raid_clock_sender():
+            """A raid guest's clocks, as an emulated guest runs them from the mesh join: one
+            ClockProtocol (0x77) request and a SyncClockProtocol (0x1C) request every second."""
+            if not args.raid_join:
+                return
+            await accepted.wait()
+            sock.sendto(wrap(keys, our_mac, our_constant, next_nonce(),
+                             bytes.fromhex("00000000000000000000000000000000006f"), 0x77,
+                             args.connect_station_first, destination=1), (host_ip, PIA_PORT))
+            clock = sync_clock.SyncClock(time.monotonic(), interval=1.0)
+            while True:
+                for payload in clock.poll(time.monotonic()):
+                    sock.sendto(wrap(keys, our_mac, our_constant, next_nonce(), payload,
+                                     sync_clock.PROTOCOL, args.connect_station_first,
+                                     destination=1),
+                                (host_ip, PIA_PORT))
+                await trio.sleep(0.1)
+
         async def block_sender():
             """The second stream: `imReady` (`60ea000012020801`) on the broadcast window.
 
@@ -1725,6 +1866,8 @@ async def main_async(args):
             nursery.start_soon(guarded, "joiner", joiner)
             nursery.start_soon(guarded, "data_sender", data_sender)
             nursery.start_soon(guarded, "block_sender", block_sender)
+            nursery.start_soon(guarded, "raid_sender", raid_sender)
+            nursery.start_soon(guarded, "raid_clock_sender", raid_clock_sender)
             nursery.start_soon(guarded, "snapshot_sender", snapshot_sender)
             nursery.start_soon(guarded, "rpc_sender", rpc_sender)
             nursery.start_soon(guarded, "migration_sender", migration_sender)
@@ -1891,7 +2034,10 @@ def build_parser():
     ap.add_argument("--channels", default="1,6,11")
     ap.add_argument("--dwell", type=float, default=1.5)
     ap.add_argument("--scans", type=int, default=8,
-                    help="scans for a matching search (scene 60001) before giving up")
+                    help="scans for a matching search (--scene) before giving up")
+    ap.add_argument("--scene", type=lambda v: None if v == "any" else int(v), default=SCENE_ACCEPTING,
+                    help="the LDN scene id to seat in: 60001 a Link Trade search; any takes the first "
+                         "Sword network (a Max Raid den, docs/swsh_gift.md)")
     ap.add_argument("--name", default="POKELDN")
     ap.add_argument("--listen-first", type=float, default=6.0,
                     help="seconds of listening before the first packet out, so the capture holds "
@@ -2304,6 +2450,14 @@ def build_parser():
     ap.add_argument("--send-seconds", type=float, default=60.0,
                     help="how long to keep retransmitting if nothing acknowledges it; 0 sends "
                          "until the run ends")
+    ap.add_argument("--raid-join", action="store_true",
+                    help="a Max Raid den guest: after the snapshot send PlayerInfo, BattleReady and "
+                         "SelectPokemon (the --offer-slot Pokemon); use with --scene 60006")
+    ap.add_argument("--raid-ready", type=float, default=None, metavar="SECONDS",
+                    help="press ready this many seconds after the host acked the lobby messages")
+    ap.add_argument("--raid-move", type=int, default=1, choices=(1, 2, 3, 4),
+                    help="the move slot our Pokemon uses every turn")
+    ap.add_argument("--raid-name", default="POKELDN", help="the name the raid lobby shows for us")
     ap.add_argument("--hold", type=float, default=30.0)
     ap.add_argument("--grace", type=float, default=300.0,
                     help="seconds past --hold to keep a session whose trade is under way: the "
