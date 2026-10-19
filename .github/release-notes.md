@@ -64,7 +64,8 @@ Received Pokemon are saved in `Documents/pokeldn/Received`, with a configurable 
 - Trades in both directions: FireRed/LeafGreen, Let's Go Pikachu/Eevee, Sword/Shield, Brilliant
   Diamond/Shining Pearl, Legends Arceus, Scarlet/Violet and Legends Z-A.
 - Mystery Gift: FireRed/LeafGreen and Sword/Shield.
-- Tera Raids in both roles: Scarlet/Violet.
+- Tera Raids in both roles and the Union Circle as a guest: Scarlet/Violet.
+- Max Raid and Dynamax Adventure hosting: Sword/Shield.
 - Legal Pokemon preparation with PKHeX.Core, board detection and flashing, and session recordings.
 - An ESP32-S3 as a wired Switch controller or a classic ESP32 as a Bluetooth one, with macros.
 - Online trade over public relays, and a GTS for banked Pokemon.
