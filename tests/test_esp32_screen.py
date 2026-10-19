@@ -33,6 +33,18 @@ def lit(fb, x, y):
 
 
 @needs_cc
+@pytest.mark.parametrize("panel, y_range", [("full", range(58, 64)), ("small", range(54, 63))])
+def test_idle_screen_shows_firmware_version(scene, built, panel, y_range):
+    if panel == "small":
+        built.scene_panel(1)
+    fb = scene.frame()
+    x0 = 30 if panel == "small" else 0
+    assert any(lit(fb, x, y) for y in y_range for x in range(x0, x0 + (72 if panel == "small" else 128)))
+    if panel == "small":
+        built.scene_panel(0)
+
+
+@needs_cc
 def test_a_sprite_lands_bit_for_bit_where_the_trade_scene_draws_it(scene):
     # Odd width and a pattern in each row: a wrong bit order, stride or row order moves pixels.
     rows = [[(x * 3 + y * 5) % 7 < 3 for x in range(13)] for y in range(9)]

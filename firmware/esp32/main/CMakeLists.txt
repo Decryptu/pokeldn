@@ -36,6 +36,8 @@ if(display_profile_definition)
     target_compile_definitions(${COMPONENT_LIB} PRIVATE ${display_profile_definition})
 endif()
 
+target_compile_definitions(${COMPONENT_LIB} PRIVATE POKELDN_FIRMWARE_VERSION="${POKELDN_FIRMWARE_VERSION}")
+
 # A diagnostic build: POKELDN_USB_BEACON=1 in the environment of idf.py (usbwatch.c).
 if(DEFINED ENV{POKELDN_USB_BEACON})
     target_compile_definitions(${COMPONENT_LIB} PRIVATE POKELDN_USB_BEACON=1)
