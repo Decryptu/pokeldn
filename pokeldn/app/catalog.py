@@ -8,6 +8,7 @@ from dataclasses import dataclass, replace
 
 from pokeldn.sv.raid import REWARD_ROWS
 from pokeldn.swsh.raid import REWARD_SLOTS as SWSH_REWARD_ROWS
+from pokeldn.swsh import lair as swsh_lair
 
 
 @dataclass(frozen=True)
@@ -16,7 +17,7 @@ class Field:
                                   # raidpartners's tuple is its picks' flag then its progress's
     label: str
     kind: str = "text"            # text number choice switch pokemon file builder multi linkcode code
-                                  # (eight digits) raidseed rewards raidevent raidden raidpartners
+                                  # (eight digits) raidseed lairseed rewards raidevent raidden raidpartners
                                   # raideventboss (one value per flag, colon-separated), or a
                                   # PKHeX name list: species move item ball
     help: str = ""
@@ -80,6 +81,16 @@ VERSIONS = (("firered", tr('catalog.firered_7d9d1b', 'FireRed')), ("leafgreen", 
 LANGUAGES = (("english", tr('catalog.english_ba118b', 'English')), ("french", tr('catalog.french_745819', 'French')), ("german", tr('catalog.german_a659b6', 'German')),
              ("italian", tr('catalog.italian_fe1d9c', 'Italian')), ("spanish", tr('catalog.spanish_341105', 'Spanish')), ("japanese", tr('catalog.japanese_be4ee9', 'Japanese')))
 CHANNELS = (("1", "1"), ("6", "6"), ("11", "11"))
+
+
+def _swsh_lair_legendaries():
+    import json
+    from pathlib import Path
+    names = json.loads((Path(swsh_lair.__file__).with_name("data") / "species.json").read_text())["species_names"]
+    return tuple((str(n), names.get(str(n), f"#{n}")) for n in swsh_lair.legendaries())
+
+
+SWSH_LAIR_LEGENDARIES = _swsh_lair_legendaries()
 FRESH_PID = Field("--fresh-pid", tr('catalog.new_pid_each_run_a6f96e', 'New PID each run'), "switch", default=True, hidden=True,
                   help=tr('catalog.offer_the_pokemon_under_a_new_pid_and_encryption_consta_4e58db', 'Offer the Pokemon under a new PID and encryption constant, so a save that already received it takes it again. Turn it off for a file whose PID must stay, such as an event Pokemon.'))
 FOR_RECEIVER = Field("--for-receiver", tr('catalog.made_for_the_receiving_player_1dfdde', 'Made for the receiving player'), "switch", default=True, hidden=True,
@@ -305,6 +316,23 @@ SWSH = Game("swsh", tr('catalog.sword_shield_71b23d', 'Sword & Shield'), tr('cat
           Field("--channel", tr('catalog.channel_ce4683', 'Channel'), "choice", default="6", choices=CHANNELS, help=CHANNEL_HELP, hidden=True),
           host_seconds("900")),
          fixed=("--raid-console-serves", "--player-name", "{ot}", "--trainer-name", "{ot}",
+                "--trainer-tid", "{tid}", "--trainer-sid", "{sid}"), doc="swsh_raid.md"),
+    Tool("swsh-lair-raid-host", tr('catalog.dynamax_adventure_host_4c81e2', 'Dynamax Adventure (Host)'), "bin/swsh_host.py",
+         tr('catalog.host_a_dynamax_adventure_the_console_joins_you_choose_t_9a3f17', 'Host a Dynamax Adventure the console joins: you choose the legendary at the end of the Max Lair.'),
+         (tr('catalog.choose_the_legendary_then_start_the_host_5be0c4', 'Choose the legendary, then start the host.'),
+          tr('catalog.at_the_max_lair_talk_to_the_receptionist_press_to_set_t_8d4b19', 'At the Max Lair, talk to the receptionist, press + to set the same Link Code if you chose one, then choose Invite Others.'),
+          tr('catalog.press_ready_once_pokeldn_is_in_the_lobby_80d6b3', 'Press Ready once POKELDN is in the lobby.'),
+          tr('catalog.pokeldn_leaves_once_the_adventure_starts_a_computer_par_2c7f05', 'POKELDN leaves once the adventure starts: a computer partner takes its seat and the adventure goes on.')),
+         (Field("--lair-legendary", tr('catalog.legendary_6e94a1', 'Legendary'), "choice", default="150",
+                choices=SWSH_LAIR_LEGENDARIES,
+                help=tr('catalog.the_legendary_pokemon_waiting_at_the_end_of_the_max_lai_b0d3e8', 'The legendary Pokemon waiting at the end of the Max Lair.')),
+          Field("--code", tr('catalog.link_code_cc04a1', 'Link Code'), "code",
+                help=tr('catalog.eight_digits_the_console_sets_with_at_the_receptionist__5a8e30', 'Eight digits, set on the console with + at the receptionist. Empty for none.')),
+          Field("--lair-seed", tr('catalog.adventure_seed_1f7c55', 'Adventure seed'), "lairseed", template="0x{}",
+                help=tr('catalog.sets_the_rental_pokemon_and_the_pokemon_met_on_the_way_e4b8d2', 'Sets the rental Pokemon and the Pokemon met on the way. Leave empty for a random one.')),
+          Field("--channel", tr('catalog.channel_ce4683', 'Channel'), "choice", default="6", choices=CHANNELS, help=CHANNEL_HELP, hidden=True),
+          host_seconds("600")),
+         fixed=("--player-name", "{ot}", "--trainer-name", "{ot}",
                 "--trainer-tid", "{tid}", "--trainer-sid", "{sid}"), doc="swsh_raid.md"),
 ))
 

@@ -15,7 +15,11 @@ FRAMEWORK = 40000
 PING, PING_REPLY, PING_SYNCED = 1, 2, 3
 
 # The command types read from a won emulated raid: 2 asks for the guest's action, 0x21 ends.
-ACTION_REQUEST, BATTLE_END = 0x02, 0x21
+ACTION_REQUEST, FAINTED, BATTLE_END = 0x02, 0x04, 0x21
+# A Max Lair guest's action: entry 1 `01` then 0xff, entry 2 the move, the rest 0xff. Its answer to a
+# type 4 carrying `01 00 ff ff ff ff`, after its Pokemon fainted, is that action with entry 2 zero.
+LAIR_ACTION = bytes.fromhex("01ffffffffffffff") + bytes(8) + b"\xff" * 72
+FAINTED_ASK = bytes.fromhex("0100ffffffff")
 
 # The emulated guest's action, both turns the same: 11 eight-byte entries (docs/swsh_raid.md).
 ACTION = bytes.fromhex(
@@ -27,12 +31,13 @@ ACTION = bytes.fromhex(
 SINGLE_TARGET = 8
 
 
-def action(move, target=SINGLE_TARGET):
-    """-> the 88-byte action using `move` (a move id) against `target`."""
+def action(move, target=SINGLE_TARGET, template=ACTION):
+    """-> the 88-byte action using `move` (a move id) against `target`; `template` LAIR_ACTION in a
+    Dynamax Adventure."""
     if not 0 < move < 1 << 11:
         raise ValueError(f"move id {move} out of range")
     entry = struct.pack("<I", move << 13 | target << 8 | 0xC1).ljust(8, b"\0")
-    return ACTION[:8] + entry + ACTION[16:]
+    return template[:8] + entry + template[16:]
 
 
 def sync(which):
@@ -139,6 +144,10 @@ class Guest:
                 out.append((0, battle_message(2, self.slot, counter,
                                               struct.pack("<HHHH", serial, kind, len(self.action), x)
                                               + self.action)))
+            elif kind == FAINTED and data[8:14] == FAINTED_ASK:
+                out.append((0, battle_message(2, self.slot, counter,
+                                              struct.pack("<HHHH", serial, kind, len(LAIR_ACTION), x)
+                                              + LAIR_ACTION)))
             elif kind == BATTLE_END:
                 out.append((0, battle_message(1, self.slot, 0,
                                               struct.pack("<HHHH", 0, 0x1e, 0, 0x2f))))

@@ -24,6 +24,7 @@ from gui.views.pokemon import NAME_LISTS, LinkCodePicker, NamePicker, OfferQueue
 from gui.views.raid_event import FOLDED, RaidEventPicker
 from gui.views.raid_partners import RaidPartnersPicker
 from gui.views.raid_seed import RaidSeedPicker
+from gui.views.lair_seed import LairSeedPicker
 from gui.views.rewards import RewardPicker
 from gui.views.gifts import GiftBuilder
 from gui.views.library import LibraryCard
@@ -510,6 +511,8 @@ class GamesView:
         if field.kind == "raidseed":
             return RaidSeedPicker(self.app, value, lambda v: self.set_value(field, v),
                                   context=self.raid_context, on_context_change=self.set_raid_context).control
+        if field.kind == "lairseed":
+            return LairSeedPicker(self.app, value, lambda v: self.set_value(field, v)).control
         if field.kind == "linkcode":
             return LinkCodePicker(self.app, value, lambda v: self.set_value(field, v)).control
         if field.kind == "code":

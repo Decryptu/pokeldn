@@ -36,7 +36,8 @@ those protocols and write parts of the code.
 FRLG: FireRed/LeafGreen · LGPE: Let's Go Pikachu/Eevee · SwSh: Sword/Shield ·
 BDSP: Brilliant Diamond/Shining Pearl · PLA: Legends Arceus · SV: Scarlet/Violet · PLZA: Legends Z-A
 
-Scarlet/Violet also supports [local Tera Raids](docs/sv_raid.md). Event Pokemon arrive through Mystery
+Scarlet/Violet also supports [local Tera Raids](docs/sv_raid.md), and Sword/Shield
+[Max Raid Battles and Dynamax Adventures](docs/swsh_raid.md) with a chosen boss or legendary. Event Pokemon arrive through Mystery
 Gift on FRLG and SwSh, and on the other titles as a fresh legal copy of an official gift traded by the
 game's trade host ([Simulated Mystery Gifts](docs/gift_simulated.md)).
 See each game's docs for setup, features and verification coverage.

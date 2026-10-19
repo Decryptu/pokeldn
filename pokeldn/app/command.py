@@ -257,6 +257,8 @@ def code_error(field: Field, value, game: str = "sv") -> str:
     app's event gallery."""
     if field.kind == "raidseed":
         return "" if re.fullmatch(r"[0-9A-Fa-f]{8}", str(value or "")) else "Enter eight hexadecimal digits."
+    if field.kind == "lairseed":
+        return "" if re.fullmatch(r"[0-9A-Fa-f]{0,16}", str(value or "")) else "Enter up to sixteen hexadecimal digits."
     if field.kind == "raidpartners":
         value = value if isinstance(value, dict) else {}
         picks = list(value.get("picks", ()))

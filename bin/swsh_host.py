@@ -28,7 +28,7 @@ from pokeldn.host_support import resolve_keys, needs_root
 from pokeldn.ldn import host4, left_after_trade, mesh_protocol as mesh, reliable4
 from pokeldn.ldn.ldn_mitm_host import IpHostTransport
 from pokeldn.ldn.transport import HostTransport, board_radio, find_ap_phy
-from pokeldn.swsh import beacon, host_trade, league_card, pokemon as swsh_pokemon, raid, raid_event, raid_host, trade_payload
+from pokeldn.swsh import beacon, host_trade, lair, lair_host, league_card, pokemon as swsh_pokemon, raid, raid_event, raid_host, trade_payload
 from pokeldn.ldn.pia5 import password_crc
 from pokeldn.swsh.session import COMM_ID, PASSPHRASE, session_keys
 from pokeldn.app import screen
@@ -36,6 +36,8 @@ from pokeldn.online import session as online
 
 SCENE_ID = 60001  # a retail Sword's Link Trade network
 RAID_SCENE_ID = 60006  # a den lobby (docs/swsh_raid.md)
+LAIR_SCENE_ID = 50000  # a Max Lair lobby
+LAIR_HANDOVER = 10.0   # a hosting Sword destroys its network within 10 s of the handover
 RAID_PARTICIPANTS = 4
 RAID_UID_COPY = 0x55
 APP_VERSION = 7
@@ -232,12 +234,27 @@ def build_parser():
     ap.add_argument("--raid-console-serves", action="store_true",
                     help="put the console first in BattleStart and framework object 0, so it serves "
                          "the battle and the board answers as a client (docs/swsh_raid.md)")
+    ap.add_argument("--lair-legendary", type=int, default=None, metavar="SPECIES",
+                    help="host a Dynamax Adventure (Max Lair) lobby whose legendary is this species; "
+                         "the host leaves once the adventure starts (docs/swsh_raid.md)")
+    ap.add_argument("--lair-seed", type=lambda s: int(s, 0), default=None,
+                    help="the adventure seed (ChikaBattleSeed): the rentals and encounters; random "
+                         "by default")
+    ap.add_argument("--lair-leave", type=float, default=5.0, metavar="SECONDS",
+                    help="leave this long after the legendary is sent; a computer partner then takes "
+                         "our seat and picks our rental")
     online.add_arguments(ap)
     return ap
 
 
-def raid_advert(app_data, boss_pk8, player_name="POKELDN", rank=None):
-    """The den advertisement with the boss's species and encryption constant written in."""
+def lair_code(code):
+    """A Max Lair lobby's Link Code as its advertisement hashes it: the decimal value, leading zeros
+    dropped (docs/swsh_raid.md)."""
+    return str(int(code)) if code else ""
+
+
+def station_advert(app_data, player_name="POKELDN"):
+    """A lobby advertisement with fresh device and account ids and our name."""
     out = bytearray(app_data)
     # A guest's Y-Comm list leaves out a raid that carries its own account (docs/swsh_raid.md).
     for at, n in ((trade_payload.TAIL_DEVICE_ID, trade_payload.DEVICE_ID_LENGTH),
@@ -247,7 +264,13 @@ def raid_advert(app_data, boss_pk8, player_name="POKELDN", rank=None):
     name = player_name.encode("utf-16-le")[:trade_payload.TAIL_NAME_LENGTH - 2]
     at = STATION_PROFILE_OFF + trade_payload.TAIL_NAME_OFFSET
     out[at:at + trade_payload.TAIL_NAME_LENGTH] = name.ljust(trade_payload.TAIL_NAME_LENGTH, b"\0")
-    return raid.den_advert(bytes(out), boss_pk8, rank)
+    struct.pack_into("<H", out, GAME_DATA_OFF, beacon.crc16(out[GAME_DATA_OFF + 2:GAME_DATA_OFF + RECORD_LEN]))
+    return bytes(out)
+
+
+def raid_advert(app_data, boss_pk8, player_name="POKELDN", rank=None):
+    """The den advertisement with the boss's species and encryption constant written in."""
+    return raid.den_advert(station_advert(app_data, player_name), boss_pk8, rank)
 
 
 def event_raid(args, app_data):
@@ -336,11 +359,28 @@ def main(argv=None):
         print(f"[raid] {', '.join(event_only)} pick from an event; pass --raid-event FOLDER")
         return 1
     raiding = bool(args.raid_boss or args.raid_event)
+    lairing = args.lair_legendary is not None
+    if lairing:
+        if raiding:
+            print("[lair] --lair-legendary hosts a Dynamax Adventure; drop the --raid flags")
+            return 1
+        if args.lair_legendary not in lair.legendaries():
+            print(f"[lair] {args.lair_legendary} is not a Max Lair legendary; one of {lair.legendaries()}")
+            return 1
+        args.advert = args.advert or str(lair_host.ADVERT)
+        args.snapshot = args.snapshot or str(raid.DEN_SNAPSHOT)
+        args.scene_id = LAIR_SCENE_ID
+        lair_seed = (args.lair_seed if args.lair_seed is not None
+                     else struct.unpack("<Q", os.urandom(8))[0])
+        offer, encounters = lair.adventure(lair_seed)
+        print(f"[lair] seed {lair_seed:#018x}: rentals {[r[0] for r in offer[:3]]}, "
+              f"encounters {[r[0] for r in encounters]}")
     if raiding:
         args.advert = args.advert or str(raid.DEN_ADVERT)
         args.snapshot = args.snapshot or str(raid.DEN_SNAPSHOT)
     app_data = build_advert(load_advert(args.advert) if args.advert else None,
-                            network_id=network_id, code=args.code, player_name=args.player_name)
+                            network_id=network_id, code=lair_code(args.code) if lairing else args.code,
+                            player_name=args.player_name)
     boss_pk8 = None
     if raiding:
         rank, event_rewards = None, list(raid.DEN_REWARDS)
@@ -381,6 +421,8 @@ def main(argv=None):
             print(f"[raid] {rewards}")
             return 1
         seed = args.raid_seed if args.raid_seed is not None else struct.unpack("<Q", os.urandom(8))[0]
+    if lairing:
+        app_data = station_advert(app_data, args.player_name)
     if not 1 <= args.offer_slot <= swsh_pokemon.PARTY_SLOTS:
         raise ValueError(f"offer slot must be 1..{swsh_pokemon.PARTY_SLOTS}")
     def offer_file(n):
@@ -410,7 +452,7 @@ def main(argv=None):
         app_data=app_data, password=PASSPHRASE, nickname=args.player_name,
         keys_path=resolve_keys(args.keys), local_comm_id=args.comm_id, scene_id=args.scene_id,
         app_version=args.app_version,
-        max_participants=RAID_PARTICIPANTS if boss_pk8 else MAX_PARTICIPANTS, phyname=phy,
+        max_participants=RAID_PARTICIPANTS if boss_pk8 or lairing else MAX_PARTICIPANTS, phyname=phy,
         channel=args.channel, protocol=args.protocol,
         **({"our_ip": args.our_ip} if args.ip_host and args.our_ip else {}),
         **({"mirror_comm_version": True} if args.ip_host else {}),
@@ -482,11 +524,21 @@ def main(argv=None):
         snapshot = offer = None
         if args.snapshot:
             snapshot, offer = build_snapshot(Path(args.snapshot).read_bytes(), n)
-        if boss_pk8 is not None:
+        if boss_pk8 is not None or lairing:
             def send_lobby(protocol, port, payload, compress):
                 host.send_data(st.ip, protocol, port, payload, compress=compress)
                 record({"rec": "app_tx", "dst": st.ip, "protocol": protocol, "port": port,
                         "payload": payload.hex()})
+
+            if lairing:
+                trades[st.ip] = lair_host.LairHost(
+                    host.constant, st.constant, snapshot, offer, send_lobby, send_broadcast, send_mesh,
+                    args.lair_legendary, lair_seed, struct.unpack("<Q", os.urandom(8))[0],
+                    name=args.player_name, ready_after=args.raid_ready, leave_after=args.lair_leave,
+                    record=on_record,
+                    snapshot_builder=(lambda peer: build_snapshot(peer, n)) if snapshot is None else None)
+                print(f"[lair] {st.ip}: lobby opens, legendary {args.lair_legendary}")
+                return
 
             def on_battle(lobby):
                 print(f"[raid] {st.ip}: both sides started; the battle on 0x7C follows")
@@ -518,7 +570,7 @@ def main(argv=None):
                           transport.our_mac, transport.send, on_data=on_data,
                           on_other=on_other, on_broadcast=on_broadcast,
                           name=args.player_name, capture=record,
-                          max_stations=RAID_PARTICIPANTS if boss_pk8 else 2)
+                          max_stations=RAID_PARTICIPANTS if boss_pk8 or lairing else 2)
     if boss_pk8 is not None:
         party[0] = raid_host.RaidParty(host.constant, args.raid_console_serves)
     print(f"[sw] up at {transport.our_ip}; waiting for a console")
@@ -546,6 +598,14 @@ def main(argv=None):
             for ip, st in host.stations.items():
                 if st.state == "joined" and ip not in trades:
                     start_trade(st)
+            # Hand the session to the console as a leaving host does, then close the network.
+            if host.migrating is None and any(getattr(tr, "finished", False) for tr in trades.values()):
+                host.leave_with_migration(now)
+                print("[lair] the adventure has started; handing the session to the console")
+            if host.migrating is not None and (not host.stations or now - host.migrating >= LAIR_HANDOVER):
+                print(f"[lair] closing the network {now - host.migrating:.1f} s after the handover, "
+                      f"{len(host.stations)} station(s) left in it")
+                break
             for tr in list(trades.values()):
                 guarded(tr.tick, now)
                 if tr.trades > seen.get(tr, 0):

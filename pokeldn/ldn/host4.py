@@ -23,6 +23,7 @@ CLONE_CLOCK = 0x77                # 18 bytes in; 01, bytes 1..9 echoed, the clon
 UPDATE_SESSION_PERIOD = 0.1       # the console's own rebroadcast rate until acked
 UPDATE_MESH_PERIOD = 2.0
 RTT_PERIOD = 0.4
+DESTROY_PERIOD = 0.33             # START_HOST_MIGRATION, `0x12d` ms (docs/swsh_session.md, Leaving)
 WINDOW_ACK_PERIOD = 1.0           # the host acks both 0x80 ports once a second, data or not
 RETRANSMIT_AFTER = 0.3
 STATION_FLAGS = 0x01              # message flags on 0x14, 0x18, 0x58 and 0x7C
@@ -123,6 +124,8 @@ class Pia4Host:
         self.ack_counter = struct.unpack(">I", os.urandom(4))[0] & 0x7FFFFFFF
         self.rtt_seen = 0
         self.t0 = time.time()
+        self.migrating = None         # when we started handing the session over, or None
+        self.last_destroy = 0.0
 
     def record(self, **row):
         if self.capture is not None:
@@ -173,12 +176,31 @@ class Pia4Host:
                 out.append((st.location, st.index))
         return out
 
+    def leave_with_migration(self, now=None):
+        """Hand the session to station 1 and destroy the network as a hosting Sword leaves:
+        MIGRATION_START on mesh port 1, the update session with its host-migration byte set, then
+        START_HOST_MIGRATION every 0.33 s (docs/swsh_session.md, Leaving)."""
+        if self.migrating is not None:
+            return
+        self.migrating = time.time() if now is None else now
+        self.sequence += 1
+        for st in self.stations.values():
+            self.send_data(st.ip, mesh.PROTOCOL, mesh.PORT_RELIABLE,
+                           bytes([mesh.MIGRATION_START, 0, 1]))
+        self.log("[pia4] -> MIGRATION_START, host 0 hands over to 1")
+
     def tick(self, now=None):
         now = time.time() if now is None else now
+        if self.migrating is not None and now - self.last_destroy >= DESTROY_PERIOD:
+            for broadcast in self.broadcast_ips():
+                self.send_message(broadcast, bytes([1, lp.START_HOST_MIGRATION]) + bytes(14),
+                                  lp.PROTOCOL, flags=0x09)
+            self.last_destroy = now
         if (any(st.update_acked < self.sequence for st in self.stations.values())
                 or not self.stations) and now - self.last_update >= UPDATE_SESSION_PERIOD:
             upd = lp.build_update_session(self.sequence, self.local_network_id, self.variable,
-                                          self.service_variable, self.constant, self.nodes())
+                                          self.service_variable, self.constant, self.nodes(),
+                                          host_migration_state=int(self.migrating is not None))
             for broadcast in self.broadcast_ips():
                 self.send_message(broadcast, upd, lp.PROTOCOL, flags=0x09)
             self.last_update = now
