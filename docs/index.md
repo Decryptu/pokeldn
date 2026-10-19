@@ -52,6 +52,7 @@ Legends Arceus, in Scarlet and Violet and in Legends Z-A.
 | [Desktop app](gui.md) | Setup, Bank, controller, updates and builds; the same app on Android and iOS. |
 | [Code organization](architecture.md) | Shared modules, Pokémon preparation and verification. |
 | [Hardware and setup](hardware.md) | The ESP32 radio, Switch keys, and legacy Linux Wi-Fi cards. |
+| [Code signing policy](code_signing.md) | What the Windows release signs, the team roles, and the privacy policy. |
 
 ## Credits
 

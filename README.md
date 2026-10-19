@@ -129,6 +129,12 @@ Contributors to this repository (GitHub does not list contributors on a fork):
   of Scarlet/Violet raid event deliveries the app downloads, with pkNX's text of each
 - [Matcore962](https://github.com/Matcore962): importing Pokemon files and game saves into the Bank
 
+## Code signing policy
+
+Free code signing provided by [SignPath.io](https://about.signpath.io), certificate by [SignPath Foundation](https://signpath.org).
+What is signed, the team roles and the privacy policy are on the
+[Code signing policy](https://decryptu.github.io/pokeldn/code_signing.html) page.
+
 ## License
 
 The code is licensed under AGPLv3. The license covers this repository's code and nothing else.
