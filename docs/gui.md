@@ -258,13 +258,17 @@ helper request, and a run inherits it as `POKELDN_HOME_TRACKER`.
 
 | setting | bank move, import, and the builder's gift repair | legality | warning shown |
 |---|---|---|---|
-| `empty` (default) | the tracker stays unset | the missing tracker is accepted when it is PKHeX's only problem; every other problem is refused | PKHeX flags the missing HOME tracker |
+| `empty` (default) | the tracker stays unset | accepted when PKHeX finds the record legal with a tracker; any other problem is refused | PKHeX flags the missing HOME tracker |
 | `made` | a random 63-bit tracker, the bank's for a banked Pokemon | unchanged | Can't be deposited in HOME |
 
 Every helper reply carries `home_tracker` (`empty`, `made` or empty), and `destinations` gives it per
 game. The warning shows on a built or loaded offer, a bank entry, a bank destination and an import line.
-An unset tracker can change other verdicts: PKHeX 26.8.26 refuses the Hidden Ability of the Black 2 Patrat
-in `tests/data/bank_import.json` moved into Legends Z-A without a tracker, and accepts it with one.
+PKHeX 26.8.26 conditions other checks on a tracker being present: without one it lets no evolution happen
+in another HOME game (`EvolutionGroupHOME.CheckAllAdjacent`), so a Pikachu hatched as a Pichu in Scarlet
+reads as an impossible evolution in Sword/Shield, and Legends Z-A keeps the ability HOME realigned only on a
+tracked record (`AbilityVerifier.VerifyBirthAbility`, the Black 2 Patrat's Hidden Ability in
+`tests/data/bank_import.json`). Under `empty` the helper judges such a record on a copy that carries a tracker
+and what HOME changes on a Pokemon it has seen (`ValidWithTracker`); the record itself keeps none.
 
 Mystery Gift - Simulated follows the setting too ([Mystery Gift - Simulated](#mystery-gift---simulated)).
 Among the gifts, PKHeX wants a tracker only on one HOME gave: under `empty` its copy has none, under

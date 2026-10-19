@@ -372,7 +372,7 @@ static partial class Program
                         wish.Apply(pk);
                         var la = Mend(pk, evolved, encounter, trainer, wish);
                         var unmet = wish.Unmet(pk, strings);
-                        if (Accepted(la) && unmet is null)
+                        if (Accepted(pk, la) && unmet is null)
                             return Describe(game, pk, la);
                         if (unmet is null)
                             firstProblem ??= la.Report(displayLanguage);
@@ -399,7 +399,7 @@ static partial class Program
         LegalityAnalysis Mend(PKM pk, bool evolved, IEncounterTemplate encounter, ITrainerInfo trainer, Wish wish)
         {
             var la = Refresh(pk, wish);
-            if (Accepted(la))
+            if (Accepted(pk, la))
                 return la;
             var repairs = new List<Action>();
             // Event Pokemon that Sword/Shield received only through HOME (Zeraora, Melmetal) carry a HOME tracker.
@@ -447,7 +447,7 @@ static partial class Program
                     continue;
                 }
                 la = Refresh(pk, wish);
-                if (Accepted(la))
+                if (Accepted(pk, la))
                     break;
             }
             return la;
@@ -465,7 +465,21 @@ static partial class Program
         }
 
         // Valid, or invalid only for the HOME tracker the "empty" setting leaves unset [HomeTrackerUtil.IsRequired].
-        bool Accepted(LegalityAnalysis la) => la.Valid || emptyTracker && OnlyTrackerMissing(la);
+        bool Accepted(PKM pk, LegalityAnalysis la) => la.Valid || emptyTracker && (OnlyTrackerMissing(la) || ValidWithTracker(pk, la));
+
+        // A record judged with the tracker it lacks: PKHeX lets a Pokemon evolve in another HOME game, or keep the
+        // ability HOME realigned in Legends Z-A, only with one [EvolutionGroupHOME.CheckAllAdjacent, AbilityVerifier].
+        static bool ValidWithTracker(PKM pk, LegalityAnalysis la)
+        {
+            if (pk is not IHomeTrack { HasTracker: false }
+                || !la.Results.Any(r => r.Result == LegalityCheckResultCode.TransferTrackerMissing))
+                return false;
+            var tracked = pk.Clone();
+            ((IHomeTrack)tracked).Tracker = 1;
+            HomeSeen(tracked);
+            tracked.RefreshChecksum();
+            return new LegalityAnalysis(tracked).Valid;
+        }
 
         static bool OnlyTrackerMissing(LegalityAnalysis la)
             => la.Parsed && la.Results.Any(r => !r.Valid)
@@ -631,13 +645,13 @@ static partial class Program
             if ((bool?)request["fresh"] == true)
             {
                 var (pid, ec) = (pk.PID, pk.EncryptionConstant);
-                var legal = Accepted(new LegalityAnalysis(pk));
+                var legal = Accepted(pk, new LegalityAnalysis(pk));
                 var xor = (pk.PID >> 16) ^ (pk.PID & 0xFFFF);
                 var high = (uint)Random.Shared.Next(0x10000);
                 pk.PID = (high << 16) | (high ^ xor);
                 pk.EncryptionConstant = (uint)Random.Shared.NextInt64(1, 1L << 32);
                 // An event Pokemon's PID is part of the event: a new one makes it illegal.
-                if (legal && !Accepted(new LegalityAnalysis(pk)))
+                if (legal && !Accepted(pk, new LegalityAnalysis(pk)))
                 {
                     (pk.PID, pk.EncryptionConstant) = (pid, ec);
                     note = "kept its own PID: this event Pokemon is legal only with it";
@@ -699,7 +713,7 @@ static partial class Program
             }
             var la = new LegalityAnalysis(pk);
             // Sword/Shield's check wants a Pokemon from another game handled even by its own trainer.
-            if (!Accepted(la) && transfer && pk.CurrentHandler == 0)
+            if (!Accepted(pk, la) && transfer && pk.CurrentHandler == 0)
             {
                 pk.CurrentHandler = 1;
                 pk.HandlingTrainerName = owner.OT;
@@ -708,19 +722,19 @@ static partial class Program
                     language.HandlingTrainerLanguage = (byte)owner.Language;
                 pk.RefreshChecksum();
                 var handled = new LegalityAnalysis(pk);
-                if (Accepted(handled))
+                if (Accepted(pk, handled))
                     la = handled;
                 else
                     pk.CurrentHandler = 0;
             }
             // A move the new game lacks: HOME's games replace the moves, so the bank takes PKHeX's suggestion.
-            if (!Accepted(la) && transfer && la.Info.Moves.Any(m => !m.Valid))
+            if (!Accepted(pk, la) && transfer && la.Info.Moves.Any(m => !m.Valid))
             {
                 Refit(pk, Wish.From(null));
                 pk.RefreshChecksum();
                 la = new LegalityAnalysis(pk);
             }
-            return Accepted(la) ? (pk, la, "") : (pk, la, Plain(la));
+            return Accepted(pk, la) ? (pk, la, "") : (pk, la, Plain(la));
         }
 
         // A Pokemon file or a game save, each Pokemon in it as the bank would keep it (docs/gui.md, Importing). A
@@ -801,7 +815,7 @@ static partial class Program
                 if (source.GetType() == game.Blank().GetType())
                 {
                     var la = new LegalityAnalysis(source);
-                    return Accepted(la) ? (key, source, la, []) : throw new InvalidDataException(Plain(la));
+                    return Accepted(source, la) ? (key, source, la, []) : throw new InvalidDataException(Plain(la));
                 }
             // What HOME's way in takes off: the held item goes back to the bag, and Pal Park and Poke Transfer
             // refuse a Pokemon knowing an HM. The file is left as it is, so the item and moves stay in that game.
@@ -1151,7 +1165,7 @@ static partial class Program
                     ["ball"] = strings.balllist[pk.Ball],
                     ["held_item"] = pk.HeldItem == 0 ? "" : items[pk.HeldItem],
                     ["moves"] = moves,
-                    ["legal"] = Accepted(la) && refused.Length == 0,
+                    ["legal"] = Accepted(pk, la) && refused.Length == 0,
                     ["refused"] = refused,
                     ["home_tracker"] = TrackerState(pk, la),
                 }));
@@ -1181,13 +1195,13 @@ static partial class Program
             {
                 if (versions.Length < game.Versions.Length && !ReachedVersion(gift, versions[0]))
                     refused = NeverTo(gift, game.Versions.Where(version => ReachedVersion(gift, version)), versions[0]);
-                else if (Accepted(la))
+                else if (Accepted(pk, la))
                     (pk, la, refused) = InTrainerLanguage(gift, pk, la, trainer);
-                else if (game.Versions.Except(versions).Where(version => Accepted(MakeGift(gift, [version], trainer).Legality))
+                else if (game.Versions.Except(versions).Where(version => MakeGift(gift, [version], trainer) is var made && Accepted(made.Pokemon, made.Legality))
                              .ToArray() is { Length: > 0 } elsewhere)
                     refused = NeverTo(gift, elsewhere, versions[0]);
             }
-            if (!Accepted(la) && refused.Length == 0)
+            if (!Accepted(pk, la) && refused.Length == 0)
                 throw new InvalidDataException($"PKHeX made an illegal {strings.specieslist[gift.Species]} from card "
                                                + $"{gift.CardID}: {Plain(la).Replace("\n", " ")}");
             var reply = Describe(game, pk, la);
@@ -1230,14 +1244,14 @@ static partial class Program
         (PKM Pokemon, LegalityAnalysis Legality, string Refused) InTrainerLanguage(MysteryGift gift, PKM pk,
             LegalityAnalysis la, ITrainerInfo trainer)
         {
-            if (!Accepted(la) || !YourOT(pk, trainer) || pk.Language == trainer.Language)
+            if (!Accepted(pk, la) || !YourOT(pk, trainer) || pk.Language == trainer.Language)
                 return (pk, la, "");
             var copy = pk.Clone();
             copy.Language = trainer.Language;
             if (!copy.IsNicknamed)
                 copy.ClearNickname();
             var checkedCopy = Refresh(copy);
-            return Accepted(checkedCopy)
+            return Accepted(copy, checkedCopy)
                 ? (copy, checkedCopy, "")
                 : (pk, la, $"card {gift.CardID} gave it in {LanguageName(pk.Language)} alone, never to a save in "
                            + LanguageName(trainer.Language));
@@ -1275,7 +1289,7 @@ static partial class Program
                     pk = gift.ConvertToPKM(receiver, EncounterCriteria.Unrestricted);
                     SetHomeIVs(gift, pk);
                     la = MendGift(pk, receiver);
-                    if (Accepted(la))
+                    if (Accepted(pk, la))
                         return (pk, la);
                 }
             }
@@ -1301,7 +1315,7 @@ static partial class Program
         LegalityAnalysis MendGift(PKM pk, ITrainerInfo trainer)
         {
             var la = Refresh(pk);
-            if (!Accepted(la) && !OnlyTrackerMissing(la) && pk.HandlingTrainerName.Length == 0)
+            if (!Accepted(pk, la) && !OnlyTrackerMissing(la) && pk.HandlingTrainerName.Length == 0)
             {
                 pk.CurrentHandler = 1;
                 pk.HandlingTrainerName = "POKELDN";
@@ -1310,7 +1324,7 @@ static partial class Program
                     language.HandlingTrainerLanguage = (byte)trainer.Language;
                 la = Refresh(pk);
             }
-            if (!Accepted(la) && OnlyTrackerMissing(la) && pk is IHomeTrack { HasTracker: false } home)
+            if (!Accepted(pk, la) && OnlyTrackerMissing(la) && pk is IHomeTrack { HasTracker: false } home)
             {
                 home.Tracker = MadeTracker((ulong)Random.Shared.NextInt64(1, long.MaxValue));
                 HomeSeen(pk);
@@ -1510,6 +1524,7 @@ static partial class Program
 
         JsonObject Describe(Game game, PKM pk, LegalityAnalysis la)
         {
+            var accepted = Accepted(pk, la);
             var moves = new JsonArray();
             foreach (var move in pk.Moves)
                 if (move != 0)
@@ -1543,9 +1558,9 @@ static partial class Program
                 ["encounter"] = la.EncounterOriginal.LongName,
                 ["parsed"] = la.Parsed,
                 ["home_tracker"] = TrackerState(pk, la),
-                ["legal"] = Accepted(la),
+                ["legal"] = accepted,
                 ["report"] = la.Report(displayLanguage),
-                ["problems"] = Accepted(la) ? "" : Plain(la),
+                ["problems"] = accepted ? "" : Plain(la),
             };
             if (displayLanguage != "en")
             {
