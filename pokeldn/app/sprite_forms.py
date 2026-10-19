@@ -2,6 +2,44 @@
 PKHeX.Core/PKM/Util/Conversion/FormConverter.cs defines the indices; docs/gui.md, Pokemon sprites.
 """
 
+GIGANTAMAX_SPRITES = {
+    (3, 0): 10195,       # Venusaur
+    (6, 0): 10196,       # Charizard
+    (9, 0): 10197,       # Blastoise
+    (12, 0): 10198,      # Butterfree
+    (25, 0): 10199,      # Pikachu
+    (52, 0): 10200,      # Meowth
+    (68, 0): 10201,      # Machamp
+    (94, 0): 10202,      # Gengar
+    (99, 0): 10203,      # Kingler
+    (131, 0): 10204,     # Lapras
+    (133, 0): 10205,     # Eevee
+    (143, 0): 10206,     # Snorlax
+    (569, 0): 10207,     # Garbodor
+    (809, 0): 10208,     # Melmetal
+    (812, 0): 10209,     # Rillaboom
+    (815, 0): 10210,     # Cinderace
+    (818, 0): 10211,     # Inteleon
+    (823, 0): 10212,     # Corviknight
+    (826, 0): 10213,     # Orbeetle
+    (834, 0): 10214,     # Drednaw
+    (839, 0): 10215,     # Coalossal
+    (841, 0): 10216,     # Flapple
+    (842, 0): 10217,     # Appletun
+    (844, 0): 10218,     # Sandaconda
+    (849, 0): 10219,     # Toxtricity Amped
+    (851, 0): 10220,     # Centiskorch
+    (858, 0): 10221,     # Hatterene
+    (861, 0): 10222,     # Grimmsnarl
+    (869, 0): 10223,     # Alcremie
+    (879, 0): 10224,     # Copperajah
+    (884, 0): 10225,     # Duraludon
+    (892, 0): 10226,     # Urshifu Single Strike
+    (892, 1): 10227,     # Urshifu Rapid Strike
+    (849, 1): 10228,     # Toxtricity Low Key
+}
+
+
 FORM_SPRITES = {
     # Cosmetic forms use filenames, battle forms use pokemon.csv's alternate IDs.
     **{(201, n): f"201-{name}" for n, name in enumerate(
@@ -63,5 +101,7 @@ FORM_SPRITES = {
 }
 
 
-def sprite_key(species: int, form: int = 0) -> int | str | None:
+def sprite_key(species: int, form: int = 0, gigantamax: bool = False) -> int | str | None:
+    if gigantamax and (key := GIGANTAMAX_SPRITES.get((species, form))) is not None:
+        return key
     return FORM_SPRITES.get((species, form), None if form else species)

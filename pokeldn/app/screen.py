@@ -89,17 +89,20 @@ def to_bits(png: bytes, size: int = 64) -> list[list[bool]] | None:
     return lines
 
 
-def sprite_bits(species: int, size: int = 64) -> list[list[bool]] | None:
-    if not isinstance(species, int) or species < 1:
+def sprite_bits(species: int, size: int = 64, *, form: int = 0,
+                gigantamax: bool = False) -> list[list[bool]] | None:
+    from pokeldn.app.sprite_forms import sprite_key
+    key = sprite_key(species, form, gigantamax)
+    if key is None:
         return None
     from pokeldn.app import settings
     try:
         online = bool(settings.load().sprites)
     except Exception:
         online = True
-    cache = GBA if species <= GBA_LAST else LATER
+    cache = GBA if isinstance(key, int) and key <= GBA_LAST else LATER
     cache.online = online
-    data = cache.get(species) or (LATER.get(species) if cache is GBA else None)
+    data = cache.get(key) or (LATER.get(key) if cache is GBA else None)
     return to_bits(data, size) if data else None
 
 
@@ -185,11 +188,12 @@ def delivered(line: str = "") -> bool:
     return _submit(lambda: _send(esp32.display_show_payload("gifted", GIFTED_HOLD_S, "", ascii_text(line))))
 
 
-def show_raid(species: int, stars: int, occupied: int, target: int, title: str = "Tera Raid") -> bool:
+def show_raid(species: int, stars: int, occupied: int, target: int, title: str = "Tera Raid", *,
+              form: int = 0, gigantamax: bool = False) -> bool:
     """Show a raid boss and lobby size on the board, using its monochrome sprite cache."""
     def job():
         from pokeldn.ldn import esp32
-        bits = sprite_bits(species, 40) if species else None
+        bits = sprite_bits(species, 40, form=form, gigantamax=gigantamax) if species else None
         _send(esp32.display_sprite_payload("ours", bits or []))
         _send(esp32.display_raid_payload(stars, occupied, target, ascii_text(title)))
     return _submit(job)
