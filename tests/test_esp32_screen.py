@@ -94,6 +94,21 @@ def test_the_72x40_panel_draws_inside_its_window_whenever_the_full_one_draws(sma
         assert any(lit(fb, x, y) for x, y in inside) == any(whole)
 
 
+def test_adventure_payloads_have_nul_separators_and_validate_party_and_code():
+    assert esp32.display_adventure_payload(3, "Mewtwo", "12345678") == (
+        b"\x04\x03Mewtwo\0" + b"12345678\0")
+    assert esp32.display_adventure_payload(1, "Mewtwo") == b"\x04\x01Mewtwo\0\0"
+    assert esp32.display_adventure_lobby_payload(4) == b"\x05\x04"
+    for players in (0, 5):
+        with pytest.raises(ValueError):
+            esp32.display_adventure_payload(players, "Mewtwo")
+        with pytest.raises(ValueError):
+            esp32.display_adventure_lobby_payload(players)
+    for code in ("123456789", "12x4", "１２３４"):
+        with pytest.raises(ValueError):
+            esp32.display_adventure_payload(1, "Mewtwo", code)
+
+
 def test_raid_payloads_and_sprite_rows_are_validated():
     assert esp32.display_raid_payload(5, 2, 3) == bytes([2, 5, 2, 3])
     assert esp32.display_raid_payload(5, 0, 3, "Dyna Raid") == bytes([2, 5, 0, 3]) + b"Dyna Raid" + bytes([0])
@@ -110,6 +125,37 @@ def test_raid_payloads_and_sprite_rows_are_validated():
 
 
 @needs_cc
+@pytest.mark.parametrize("panel", ["full", "small"])
+def test_adventure_scene_draws_and_updates_player_count(scene, built, panel):
+    from screen_preview import pixel
+    if panel == "small":
+        built.scene_panel(1)
+        bounds = (30, 24, 102, 64)
+    else:
+        bounds = (0, 0, 128, 64)
+    half = [[(x + y) % 2 == 0 for x in range(4)] for y in range(4)]
+    sprite = [[half[y // 2][x // 2] for x in range(8)] for y in range(8)]
+    assert scene.command(esp32.display_sprite_payload("ours", sprite))
+    show = esp32.display_adventure_payload(1, "Mewtwo", "12345678")
+    assert scene.command(show)
+    waiting = scene.frame()
+    assert any(pixel(waiting, x, y) for x in range(bounds[0], bounds[2])
+               for y in range(bounds[1], bounds[3]))
+    # The Link Code line stays visible above either panel's lower edge.
+    code_y = range(48, 56) if panel == "full" else range(44, 52)
+    code_x = range(63, bounds[2]) if panel == "full" else range(bounds[0], bounds[2])
+    assert any(pixel(waiting, x, y) for x in code_x for y in code_y)
+    assert scene.command(esp32.display_adventure_lobby_payload(3))
+    updated = scene.frame()
+    assert updated != waiting
+    assert all(not pixel(updated, x, y) for y in range(64) for x in range(128)
+               if not (bounds[0] <= x < bounds[2] and bounds[1] <= y < bounds[3]))
+    assert scene.command(esp32.display_show_payload("auto"))
+    if panel == "small":
+        built.scene_panel(0)
+
+
+@needs_cc
 def test_malformed_commands_are_refused(scene):
     good = esp32.display_sprite_payload("theirs", [[True] * 8] * 2)
     assert scene.command(good)
@@ -122,6 +168,8 @@ def test_malformed_commands_are_refused(scene):
     assert not scene.command(bytes([2, 5, 0, 4]))                     # invalid target
     assert not scene.command(bytes([2, 5, 0]))                        # short raid command
     assert not scene.command(bytes([3, 1, 2]))                        # no active raid
+    assert not scene.command(bytes([5, 1]))                            # no active adventure
+    assert not scene.command(bytes([4, 1, ord("M"), ord("e")]))       # missing NUL separators
     assert not scene.command(b"")
     with pytest.raises(ValueError):
         esp32.display_sprite_payload("ours", [[True] * 65])

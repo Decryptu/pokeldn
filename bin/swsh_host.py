@@ -336,6 +336,32 @@ def raid_rewards(args, app_data, event_rewards):
     return rewards
 
 
+class AdventureScreen:
+    """The optional ESP32 display for one Sword/Shield Dynamax Adventure lobby."""
+
+    def __init__(self, species, code=""):
+        self.species = int(species)
+        species_file = Path(lair.__file__).with_name("data") / "species.json"
+        names = json.loads(species_file.read_text(encoding="utf-8"))["species_names"]
+        self.legendary = names.get(str(self.species), f"#{self.species}")
+        self.code = code
+        self.players = None
+
+    def start(self):
+        self.players = 1
+        screen.show_adventure(self.species, self.players, self.legendary, self.code)
+
+    def update(self, guests):
+        players = min(max(guests + 1, 1), RAID_PARTICIPANTS)
+        if players != self.players:
+            self.players = players
+            screen.adventure_lobby(players)
+
+    def close(self):
+        screen.reset()
+        screen.drain()
+
+
 class RaidScreen:
     """The optional ESP32 display for one Sword/Shield Max Raid lobby."""
 
@@ -597,8 +623,11 @@ def main(argv=None):
     if boss_pk8 is not None:
         party[0] = raid_host.RaidParty(host.constant, args.raid_console_serves)
     raid_screen = RaidScreen(app_data) if boss_pk8 is not None else None
+    adventure_screen = AdventureScreen(args.lair_legendary, args.code) if lairing else None
     if raid_screen is not None:
         raid_screen.start()
+    if adventure_screen is not None:
+        adventure_screen.start()
     print(f"[sw] up at {transport.our_ip}; waiting for a console")
     deadline = time.time() + args.seconds
     try:
@@ -617,6 +646,8 @@ def main(argv=None):
                         party[0].remove(gone)
             if raid_screen is not None:
                 raid_screen.update(len(present))
+            if adventure_screen is not None:
+                adventure_screen.update(len(present))
             if left_after_trade(present):
                 print("[sw] the console left after the trade; closing")
                 break
@@ -653,6 +684,8 @@ def main(argv=None):
             cap.close()
         if raid_screen is not None:
             raid_screen.close()
+        if adventure_screen is not None:
+            adventure_screen.close()
     return 0
 
 

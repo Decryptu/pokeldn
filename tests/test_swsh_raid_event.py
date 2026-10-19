@@ -218,6 +218,27 @@ def test_swsh_raid_screen_lifecycle_uses_dynamax_advert_and_resets(monkeypatch):
                      ("reset",), ("drain",)]
 
 
+def test_swsh_adventure_screen_lifecycle_shows_legendary_and_host_in_player_count(monkeypatch):
+    calls = []
+    monkeypatch.setattr(screen, "show_adventure", lambda *args: calls.append(("show", args)))
+    monkeypatch.setattr(screen, "adventure_lobby", lambda *args: calls.append(("lobby", args)))
+    monkeypatch.setattr(screen, "reset", lambda: calls.append(("reset",)))
+    monkeypatch.setattr(screen, "drain", lambda: calls.append(("drain",)))
+
+    display = swsh_host.AdventureScreen(150, "12345678")
+    display.start()
+    display.update(0)
+    display.update(1)
+    display.update(1)
+    display.update(3)
+    display.update(5)
+    display.close()
+
+    assert calls == [("show", (150, 1, "Mewtwo", "12345678")),
+                     ("lobby", (2,)), ("lobby", (4,)),
+                     ("reset",), ("drain",)]
+
+
 def test_every_boss_the_app_offers_is_the_one_the_host_picks_and_shows_in_a_den(event, tmp_path):
     """The app's Event boss choices (raid_event.hostable, emitted as --raid-version, --raid-stars,
     --raid-event-boss, --raid-area) name the same boss when the host reads them back, and only bosses

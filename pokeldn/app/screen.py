@@ -201,6 +201,22 @@ def raid_lobby(occupied: int, target: int) -> bool:
     return _submit(lambda: _send(esp32.display_raid_lobby_payload(occupied, target)))
 
 
+def show_adventure(species: int, players: int, legendary: str, code: str = "") -> bool:
+    """Show a Dynamax Adventure's legendary, current party size, and optional link code."""
+    def job():
+        from pokeldn.ldn import esp32
+        bits = sprite_bits(species, 40) if species else None
+        _send(esp32.display_sprite_payload("ours", bits or []))
+        _send(esp32.display_adventure_payload(players, ascii_text(legendary), ascii_text(code)))
+    return _submit(job)
+
+
+def adventure_lobby(players: int) -> bool:
+    """Update a Dynamax Adventure lobby's player count."""
+    from pokeldn.ldn import esp32
+    return _submit(lambda: _send(esp32.display_adventure_lobby_payload(players)))
+
+
 def reset() -> bool:
     """Return to the radio scene after a host session ends."""
     from pokeldn.ldn import esp32

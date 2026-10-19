@@ -89,6 +89,24 @@ def display_raid_lobby_payload(occupied: int, target: int) -> bytes:
         raise ValueError("raid occupied must be 0..3 and target 1..3")
     return struct.pack("<BBB", 3, occupied, target)
 
+
+def display_adventure_payload(players: int, legendary: str, code: str = "") -> bytes:
+    """ADVENTURE: four-seat count, legendary name, and optional link code."""
+    if not 1 <= players <= 4:
+        raise ValueError("adventure players must be 1..4")
+    if len(code) > 8 or (code and not (code.isascii() and code.isdecimal())):
+        raise ValueError("adventure code must be at most eight ASCII decimal digits")
+    text = b"".join(value.encode("ascii", "replace")[:DISPLAY_TEXT] + b"\0"
+                    for value in (legendary, code))
+    return bytes((4, players)) + text
+
+
+def display_adventure_lobby_payload(players: int) -> bytes:
+    """ADVENTURE_LOBBY: update the four-seat count without resending encounter details."""
+    if not 1 <= players <= 4:
+        raise ValueError("adventure players must be 1..4")
+    return bytes((5, players))
+
 MSG_INFO = 0x81
 MSG_RESULT = 0x82
 MSG_LOG = 0x83
